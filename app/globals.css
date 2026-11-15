@@ -1559,6 +1559,30 @@
     animation-duration: 1s !important;
     animation-iteration-count: infinite !important;
   }
+
+  /* ─── Sobreposto que está FECHANDO: sai da árvore no mesmo quadro ─────────
+
+     `0.01ms` NÃO é instantâneo para o Radix. O `Presence` desmonta a camada
+     quando chega o `animationend`, e o navegador entrega esse evento no QUADRO
+     seguinte. Até lá a camada do `DismissableLayer` segue montada — invisível
+     (`opacity: 0` do `both`) — e segurando `pointer-events: none` no body e
+     `aria-hidden` no resto da página: o fundo do que está atrás não recebe
+     clique nenhum, nem o `elementFromPoint` o enxerga.
+
+     Medido no e2e do #4606 (`e2e-parte (5)`, job 132418618829): o seletor
+     "Tipo da resposta" fechou 17ms antes de a spec amostrar o fundo do canvas,
+     e o `elementFromPoint` devolveu `<html>` — nunca `.react-flow__pane`. A
+     spec reprovou com "o canvas precisa ter fundo exposto para fechar o
+     painel" tendo o canvas visível e vazio na tela.
+
+     Sem nome de animação, o `Presence` desmonta no próprio efeito de layout
+     (`currentAnimationName === "none"` → `UNMOUNT`) e o `pointer-events` do
+     body volta no mesmo quadro. Para quem pediu movimento reduzido nada muda
+     no que se vê: a saída já durava 0.01ms. */
+  .ds-painel[data-state="closed"],
+  .ds-modal[data-state="closed"] {
+    animation: none !important;
+  }
 }
 
 /* As ondas da ligação no Cold Call: só `transform`, e paradas fora de uma ligação. */

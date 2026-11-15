@@ -7,7 +7,7 @@
  * never name an arbitrary org id.
  */
 import { invalidarOrg } from "@/lib/auth/cache-curto";
-import { supportWriteError } from "@/lib/impersonate/support";
+import { permanentAccessError, supportWriteError } from "@/lib/impersonate/support";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ehOperante } from "@/lib/organizacao/operante";
@@ -43,14 +43,12 @@ export async function requireOnboardingCtx(orgIdDaAba?: string): Promise<Onboard
   const user = await loadAuthUser();
   if (!user) throw new OnboardingError("auth_required", "Auth required.");
   if (supportWriteError(user.support)) throw new OnboardingError("forbidden", "Acompanhamento somente leitura ou encerrado.");
-  // Doc 321 / #4034: a sessão de agência não planta acesso permanente no cliente.
-  // `sendOnboardingInvites` emite convite pelo client de serviço, e lá o gatilho
-  // `agencia_acesso_permanente` não enxerga a sessão (auth.uid() é nulo); e o
-  // `requireSupportWrite` barra por caminho de rota, que Server Action não tem.
-  // O layout do onboarding já expulsa toda sessão de acompanhamento, então
-  // nenhum uso legítimo passa por aqui.
-  if (user.support?.agency_id)
-    throw new OnboardingError("forbidden", "O acesso pela agência não altera o onboarding do cliente.");
+  // `sendOnboardingInvites` emite convite pelo client de serviço, e o bloqueio de
+  // acesso permanente não pode depender de caminho de rota, que Server Action
+  // não tem. O layout do onboarding já expulsa toda sessão de acompanhamento,
+  // então nenhum uso legítimo passa por aqui.
+  const acessoPermanente = permanentAccessError(user.support);
+  if (acessoPermanente) throw new OnboardingError("forbidden", acessoPermanente);
 
   // A aba de boas-vindas foi aberta para UMA organização. Trocar de org ativa
   // em outra aba (o cookie `active_org`) NÃO pode redirecionar este submit

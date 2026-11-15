@@ -39,6 +39,8 @@ vi.mock("@/lib/prospecting/guard", () => ({
   // cenário de verdade (guarda REAL + handler carimbando) mora em
   // `lib/prospecting/prospeccao-bolhas-com-guarda-real.test.ts`.
   assertProspectingContinuation: mocks.continuation,
+  // A leitura das marcas ANTES da vaga: aqui o contato é sempre limpo.
+  vetoDoContatoAntesDaVaga: vi.fn().mockResolvedValue(null),
 }));
 vi.mock("@/lib/agent-engine/pacing/store", () => ({
   loadChannelKnobs: mocks.knobs,
@@ -760,6 +762,25 @@ describe("tick da prospecção × organização que para no meio do envio", () =
     expect(gravou(db, "status='paused'")).toBe(false);
     expect(gravou(db, "update prospecting_candidates set status='failed',error=$3")).toBe(false);
     expect(gravou(db, "update prospecting_candidates set status='queued'")).toBe(true);
+  });
+
+  it("\"sempre atendimento humano\" (`autorizou:false`): NÃO envia, marca só a empresa e a campanha segue", async () => {
+    // `autorizarContatoParaIA` devolve `{ok:true, autorizou:false}` quando o
+    // contato tem `ai_opt_out`: o update casa 0 linhas. Só olhar `ok` mandava a
+    // abordagem a quem a operação trancou.
+    const { db, rodar } = tickComEnvioQueFalha(new Error("não devia chegar ao envio"));
+    // A rejeição de uso único do ajudante não pode sobrar para o caso seguinte:
+    // aqui o envio NÃO deve acontecer, então ela nunca seria consumida.
+    mocks.send.mockReset();
+    mocks.send.mockResolvedValue({ status: "sent" });
+    mocks.authorize.mockResolvedValue({ ok: true, autorizou: false });
+    await rodar();
+    expect(mocks.send).not.toHaveBeenCalled();
+    expect(gravou(db, "status='paused'")).toBe(false);
+    const falhou = db.query.mock.calls.find(([sql]) =>
+      String(sql).startsWith("update prospecting_candidates set status='failed',error=$3"),
+    ) as unknown[] | undefined;
+    expect((falhou?.[1] as unknown[] | undefined)?.[2]).toBe("A IA não pode atender este contato.");
   });
 
   it("controle: falha inesperada do envio continua pausando a campanha e marcando o candidato failed", async () => {
