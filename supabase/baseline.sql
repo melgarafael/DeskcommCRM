@@ -82312,7 +82312,7 @@ begin
 end
 $fichas_absorvidas$;
 
--- ---- tabela de valores de negociação: partida e limite por procedimento (migration 9383) ----
+-- ---- tabela de valores de negociação: partida e limite por procedimento (migration 9384) ----
 -- manifest: Tabela de valores de negociação — por organização, procedimento com código e descrição, valor em US e em reais com valor de PARTIDA e valor LIMITE (a faixa é conferida pelo próprio banco), mais o registro de cada importação por chave do arquivo, para a mesma planilha não gravar duas vezes.
 --
 -- Fatia 1 (issue #4612): IMPORTAR e MODELAR. A conversa de negociação do
