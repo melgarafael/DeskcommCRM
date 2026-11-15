@@ -25038,7 +25038,7 @@ as $$
     'whatsapp.chat_id_not_recognized',
     'whatsapp.conversation_mark_failed',
     -- contato, lead, organização e plataforma
-    -- ('lead.reopened' saiu na 0534 e 'lead.updated' na 1749: ganharam consumidor)
+    -- ('lead.reopened' saiu na 0534 e 'lead.updated' na 9383: ganharam consumidor)
     'contact.anonymized',
     'contact.created',
     'contact.deleted',

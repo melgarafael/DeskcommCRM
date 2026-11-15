@@ -111,7 +111,7 @@ export const ENTIDADE_ESPERADA_POR_GATILHO = {
   // mudou, por `lib/leads/campos-alterados.ts`) desde a wave 6. Faltava o
   // consumidor: a linha nascia `done` porque o tipo estava na lista de REGISTRO
   // (`fn_event_log_e_registro`, migration 0239), e nenhuma regra podia reagir a
-  // uma mudança de campo. A migration 1749 tira o tipo dessa lista — o mesmo
+  // uma mudança de campo. A migration 9383 tira o tipo dessa lista — o mesmo
   // conserto que a 0417 fez com `message.failed` —, e a partir daqui o motor o
   // assina como qualquer outro gatilho de negócio.
   //

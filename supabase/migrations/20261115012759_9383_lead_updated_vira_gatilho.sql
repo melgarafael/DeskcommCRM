@@ -1,6 +1,6 @@
 -- manifest: **O `lead.updated` vira gatilho de automação de verdade (issue #1749).** O evento já era emitido por `updateLeadHandler` com `payload: { fields }` — os NOMES das colunas que a edição mudou —, mas estava na lista de REGISTRO da `fn_event_log_e_registro` (0239, redefinida na 0417 e na 9212): a linha nascia `done`, o dreno nunca a selecionava e nenhuma regra podia reagir a "o valor foi preenchido", "a data prevista mudou", "o campo personalizado recebeu aprovado". Com o gatilho em `ENTIDADE_ESPERADA_POR_GATILHO` e o handler de automação assinando-o, o tipo ganha consumidor; esta migration é o conserto do outro lado, o mesmo da 0417 com `message.failed`: redefinição ADITIVA que tira `lead.updated` da lista (0239/0417/9212 intocadas), com a linha do baseline espelhada. Sem backfill: as linhas antigas nasceram `done` como registro e continuam legíveis assim — voltá-las a `pending` faria o motor reprocessar edição velha com o estado de hoje do negócio.
 
--- ---- lead.updated vira gatilho (migration 1749, issue #1749) ----
+-- ---- lead.updated vira gatilho (migration 9383, issue #1749) ----
 --
 -- O DEFEITO
 --
@@ -71,7 +71,7 @@ as $$
     'whatsapp.chat_id_not_recognized',
     'whatsapp.conversation_mark_failed',
     -- contato, lead, organização e plataforma
-    -- ('lead.reopened' saiu na 0534 e 'lead.updated' sai aqui na 1749: ganharam consumidor)
+    -- ('lead.reopened' saiu na 0534 e 'lead.updated' sai aqui na 9383: ganharam consumidor)
     'contact.anonymized',
     'contact.created',
     'contact.deleted',
