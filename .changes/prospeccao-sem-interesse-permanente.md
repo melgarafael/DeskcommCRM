@@ -12,6 +12,6 @@ escolhendo, como "não tenho interesse no plano mensal, quero o anual", não con
 recusa. A ficha do contato e o painel lateral da conversa ganharam o botão "Marcar sem
 interesse", para quando o "não" chegar de outro jeito; a aba LGPD da ficha mostra a
 recusa e permite desfazê-la (só administradores). O contato não fica bloqueado: a
-equipe continua respondendo na mesma conversa, e se ele voltar a escrever horas depois
-querendo comprar, um negócio novo é aberto como sempre. Fora da prospecção, a mesma
+equipe continua respondendo na mesma conversa, e se ele voltar a escrever querendo comprar
+depois de 6 horas da recusa, um negócio novo é aberto como sempre. Fora da prospecção, a mesma
 frase não registra nada.

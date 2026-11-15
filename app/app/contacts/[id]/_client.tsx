@@ -640,8 +640,8 @@ export function ContactDetailClient({
                       ` ${format(new Date(recusaDeOfertas.declinedAt), "dd/MM/yyyy", { locale: localeDaData })}`}
                     {", "}
                     {recusaDeOfertas?.origem === "conversa_de_prospeccao"
-                      ? t("pela conversa da prospecção")
-                      : t("pela ficha do contato")}
+                      ? t("na conversa da prospecção")
+                      : t("pela equipe")}
                     {". "}
                     {t("Este contato disse que não tem interesse e não entra em prospecção nem em campanhas.")}
                   </p>
@@ -663,7 +663,7 @@ export function ContactDetailClient({
                       <AlertDialogHeader>
                         <AlertDialogTitle>{t("Desfazer a recusa de ofertas?")}</AlertDialogTitle>
                         <AlertDialogDescription>
-                          {t("O contato volta a poder entrar em prospecção e campanhas. O negócio e o follow-up que foram encerrados não voltam: o negócio continua como Perdido. A ação fica registrada na auditoria em seu nome.")}
+                          {t("O contato volta a poder entrar em prospecção e campanhas. O que a recusa encerrou não volta: o negócio continua em Perdido e o follow-up não recomeça. A ação fica registrada na auditoria em seu nome.")}
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>

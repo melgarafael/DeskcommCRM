@@ -58,7 +58,7 @@ export function BotaoMarcarSemInteresse({
           <AlertDialogTitle>{t("Marcar este contato como sem interesse?")}</AlertDialogTitle>
           <AlertDialogDescription>
             {t(
-              "O contato sai da prospecção e das campanhas. O negócio aberto pela prospecção vai para Perdido e o follow-up da conversa da prospecção é encerrado, quando existirem. A conversa continua aberta para a equipe responder. Só um administrador desfaz, na aba LGPD.",
+              "O contato sai da prospecção e das campanhas. Os negócios da prospecção que ainda estão abertos vão para Perdido, e o follow-up da prospecção é encerrado. A conversa não é bloqueada: a equipe continua respondendo normalmente. Só um administrador desfaz, na aba LGPD.",
             )}
           </AlertDialogDescription>
         </AlertDialogHeader>

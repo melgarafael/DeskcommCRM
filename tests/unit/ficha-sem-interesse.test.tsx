@@ -117,7 +117,7 @@ describe("ficha · sem interesse", () => {
 
     await userEvent.click(screen.getByRole("tab", { name: "LGPD" }));
     const cartao = await screen.findByTestId("recusa-de-ofertas");
-    expect(cartao).toHaveTextContent("pela conversa da prospecção");
+    expect(cartao).toHaveTextContent("na conversa da prospecção");
     expect(cartao).toHaveTextContent("14/11/2026");
 
     await userEvent.click(within(cartao).getByTestId("desfazer-sem-interesse"));
@@ -141,6 +141,16 @@ describe("ficha · sem interesse", () => {
     expect(screen.getByText("Sem interesse")).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "LGPD" })).toBeNull();
     expect(screen.queryByTestId("desfazer-sem-interesse")).toBeNull();
+  });
+
+  it("recusa marcada pelo botão (ficha ou painel da conversa): o cartão diz que foi a equipe", async () => {
+    // As duas telas gravam pela mesma rota, com `origem: "ficha"`: o cartão não pode
+    // dizer "pela ficha" para quem marcou no Inbox.
+    abrirFicha(consentComSemInteresse({}, { agora: "2026-11-14T12:00:00.000Z", origem: "ficha" })!);
+    await userEvent.click(screen.getByRole("tab", { name: "LGPD" }));
+    const cartao = await screen.findByTestId("recusa-de-ofertas");
+    expect(cartao).toHaveTextContent("pela equipe");
+    expect(cartao).not.toHaveTextContent("na conversa da prospecção");
   });
 
   it("leitor (viewer) não vê o botão", () => {
