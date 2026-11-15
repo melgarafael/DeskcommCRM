@@ -7511,6 +7511,10 @@ export const DICIONARIO: Traducoes = {
   "Cliente da sua carteira falou com outro vendedor: {{contact.name}}": {
     es: "El cliente de tu cartera habló con otro vendedor: {{contact.name}}",
   },
+  // Tarefa do adiamento na prospecção (`lib/prospecting/resposta-da-prospeccao.ts`).
+  "Retomar a prospecção: {{contact.name}} pediu para falar depois": {
+    es: "Retomar la prospección: {{contact.name}} pidió hablar más adelante",
+  },
   // Motivo do 403 quando o negócio novo cairia no cliente de outro vendedor
   // (rota de criação, modo "Só os seus").
   "Este cliente pertence à carteira de outro vendedor. O negócio novo nasce com o dono da carteira.": {
@@ -10809,6 +10813,7 @@ export const DICIONARIO: Traducoes = {
   "O cliente respondeu — o fluxo acordou na hora": { es: "El cliente respondió: el flujo despertó al instante" },
   "Encerrado porque o cliente respondeu": { es: "Finalizado porque el cliente respondió" },
   "Encerrado porque o cliente pediu para parar": { es: "Finalizado porque el cliente pidió parar" },
+  "Encerrado porque o cliente disse que não tem interesse": { es: "Finalizado porque el cliente dijo que no tiene interés" },
   "Encerrado porque uma pessoa assumiu a conversa": {
     es: "Finalizado porque una persona asumió la conversación",
   },
@@ -13046,6 +13051,25 @@ export const DICIONARIO: Traducoes = {
   "Removendo...": { es: "Quitando..." },
   "Este contato está marcado como sempre atendimento humano. Para a IA voltar a atendê-lo, remova a marca na ficha do contato.": { es: "Este contacto está marcado como siempre atención humana. Para que la IA vuelva a atenderlo, quita la marca en la ficha del contacto." },
   "Não foi possível conferir o contato desta conversa — nada foi alterado. Tente de novo.": { es: "No fue posible verificar el contacto de esta conversación — no se cambió nada. Inténtalo de nuevo." },
+  // Decisão D3 — "não tem interesse" como recusa de ofertas, pela ficha e pela prospecção.
+  // Não é "Sem interesse" sozinho: essa é a classe padrão do nó de classificação do
+  // follow-up, que é dado do usuário e fica FORA do dicionário (nodeVisuals.test.ts).
+  "Sem interesse em ofertas": { es: "Sin interés en ofertas" },
+  "Marcar sem interesse": { es: "Marcar sin interés" },
+  "Marcar este contato como sem interesse?": { es: "¿Marcar este contacto como sin interés?" },
+  "O contato sai da prospecção e das campanhas. Os negócios da prospecção que ainda estão abertos vão para Perdido, e o follow-up da prospecção é encerrado. A conversa não é bloqueada: a equipe continua respondendo normalmente. Só um administrador desfaz, na aba LGPD.": { es: "El contacto sale de la prospección y de las campañas. Los negocios de la prospección que siguen abiertos pasan a Perdido, y el seguimiento de la prospección se finaliza. La conversación no se bloquea: el equipo sigue respondiendo con normalidad. Solo un administrador lo deshace, en la pestaña LGPD." },
+  "Recusa de ofertas": { es: "Rechazo de ofertas" },
+  "Recusa registrada em": { es: "Rechazo registrado el" },
+  "Recusa registrada": { es: "Rechazo registrado" },
+  "na conversa da prospecção": { es: "en la conversación de prospección" },
+  "pela equipe": { es: "por el equipo" },
+  "Este contato disse que não tem interesse e não entra em prospecção nem em campanhas.": { es: "Este contacto dijo que no tiene interés y no entra en prospección ni en campañas." },
+  "Desfazer recusa": { es: "Deshacer rechazo" },
+  "Desfazer a recusa de ofertas?": { es: "¿Deshacer el rechazo de ofertas?" },
+  "O contato volta a poder entrar em prospecção e campanhas. O que a recusa encerrou não volta: os negócios que ela levou para Perdido continuam lá e o follow-up não recomeça. A ação fica registrada na auditoria em seu nome.": { es: "El contacto vuelve a poder entrar en prospección y campañas. Lo que el rechazo finalizó no vuelve: los negocios que pasó a Perdido siguen ahí y el seguimiento no se reanuda. La acción queda registrada en la auditoría a tu nombre." },
+  "Este contato disse que não tem interesse. Só um administrador desfaz essa recusa, na aba LGPD da ficha do contato.": { es: "Este contacto dijo que no tiene interés. Solo un administrador deshace este rechazo, en la pestaña LGPD de la ficha del contacto." },
+  "Não foi possível registrar que o contato não tem interesse.": { es: "No fue posible registrar que el contacto no tiene interés." },
+  "Não foi possível desfazer a recusa.": { es: "No fue posible deshacer el rechazo." },
   "Não foi possível alterar a marca de atendimento humano.": { es: "No fue posible cambiar la marca de atención humana." },
   "Desmarcar pessoal": { es: "Desmarcar personal" },
   "Desmarcando...": { es: "Desmarcando..." },
@@ -14945,6 +14969,8 @@ export const DICIONARIO: Traducoes = {
   "Sem resposta além do prazo deste estágio": { es: "Sin respuesta tras vencer el plazo de esta etapa" },
   "Parado há muito tempo — sem resposta": { es: "Detenido desde hace mucho tiempo, sin respuesta" },
   "Voltou a ter movimento": { es: "Volvió a tener movimiento" },
+  // Recusa "não tenho interesse" que encerra o negócio aberto (#4632).
+  "O cliente disse que não tem interesse": { es: "El cliente dijo que no tiene interés" },
   "Essa etapa não faz parte deste funil. Recarregue a página e tente de novo.": {
     es: "Esa etapa no forma parte de este embudo. Recarga la página e intenta de nuevo.",
   },
