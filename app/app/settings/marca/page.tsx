@@ -29,6 +29,7 @@
  */
 import { redirect } from "next/navigation";
 
+import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { marcaDaInstalacao } from "@/lib/branding/instalacao";
@@ -87,12 +88,11 @@ export default async function MarcaDaOrganizacaoPage() {
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{traduzir("Marca", idioma)}</h1>
+      <CabecalhoDaSubTela titulo={traduzir("Marca", idioma)} idioma={idioma}>
         <p className="max-w-2xl text-sm text-muted-foreground">
           {traduzir("O nome e a cor que a sua empresa mostra para quem trabalha aqui dentro.", idioma)}
         </p>
-      </header>
+      </CabecalhoDaSubTela>
 
       <FormularioDaMarcaDaOrganizacao
         gravada={{

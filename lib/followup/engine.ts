@@ -26,7 +26,7 @@ import { logger } from "@/lib/logger";
 
 import { flowGraphSchema, type FlowGraph, type FlowNode, type ReplySaveTo } from "./graph-schema";
 import { TETO_DE_PASSOS_DO_MOTOR } from "./custo-no-motor";
-import { enviosJaFeitos, redacaoDaVez, redacoesDoPasso } from "./variacoes-do-passo";
+import { enviosJaFeitos, redacoesDoPasso, redacoesNaOrdemDaVez } from "./variacoes-do-passo";
 import {
   ACTION_RECHECK_MS,
   BACKOFF_MS,
@@ -114,6 +114,13 @@ export interface FollowupJobRequest {
     fallback_template_id?: string;
     /** action (mode 'text') — corpo pronto; o turno envia sem chamar o modelo. */
     fixed_body?: string;
+    /**
+     * action (mode 'text') — #4429: as redações do MESMO passo, na ordem da vez
+     * (a preferida primeiro, que é o `fixed_body`). O turno escolhe entre elas
+     * com a janela de repetição na mão, na hora do envio. Ausente = uma redação
+     * só (o passo de hoje e todo job já enfileirado), e aí nada muda.
+     */
+    fixed_variacoes?: string[];
     /**
      * action (mode 'text') — #2734/#2972: mídia OPCIONAL (imagem, vídeo, áudio ou
      * documento) por URL. Presente,
@@ -443,9 +450,17 @@ function turnPayloadExtras(
     // hoje, e todo grafo já publicado — cai em `redacoes[0]`, que é o `body`:
     // nenhuma diferença byte a byte no que sai.
     const redacoes = redacoesDoPasso(node.config);
-    const redacao = redacaoDaVez(redacoes, semente ?? "", enviosJaFeitos(events));
+    // A LISTA inteira vai no job, na ordem da vez (a preferida primeiro). O
+    // turno escolhe com a JANELA na mão — ela só está fresca na hora do envio, e
+    // é lá que vive o gate que mede (#4429, segunda metade). A escolha daqui
+    // segue sendo a da rotação: `ordem[0]` é, byte a byte, o `fixed_body` de
+    // antes, e é ele que sai quando a janela não pressiona nenhuma redação.
+    const ordem = redacoesNaOrdemDaVez(redacoes, semente ?? "", enviosJaFeitos(events));
     return {
-      fixed_body: interpolarVolta(redacao, events, contexto),
+      fixed_body: interpolarVolta(ordem[0]!, events, contexto),
+      ...(ordem.length > 1
+        ? { fixed_variacoes: ordem.map((redacao) => interpolarVolta(redacao, events, contexto)) }
+        : {}),
       ...(node.config.media_url ? { fixed_media_url: node.config.media_url } : {}),
     };
   }

@@ -14,7 +14,7 @@ Em **Inscrições e atividade**, busque um negócio pelo título e inscreva-o. E
 
 A lista de cadências e as inscrições permitem carregar páginas anteriores. Em cada inscrição, **Ver histórico** mostra os eventos reais com data/hora e paginação; a fila ativa também informa a próxima execução agendada.
 
-O cron anda a fila a cada minuto. E-mail só sai dentro da janela e dos dias configurados. A espera e o prazo de tarefa usam o calendário de dias úteis brasileiros já presente na fonte; a condição de abertura usa dias corridos, explicitados na tela. O sinal precisa ter sido registrado até o prazo do ramo; atraso do cron não transforma abertura tardia em abertura dentro do prazo. Os tetos são de tentativas por janela fixa de24h: o valor desta cadência e `CADENCIA_LIMITE_EMAILS_POR_DIA` da instalação. Sem Upstash, o limitador existente é por processo em memória; não é um limite global entre várias réplicas.
+O cron anda a fila a cada minuto. E-mail só sai dentro da janela e dos dias configurados. A espera e o prazo de tarefa usam o calendário de dias úteis brasileiros já presente na fonte, no fuso da cadência e preservando a hora local; a condição de abertura usa dias corridos, explicitados na tela. O sinal precisa ter sido registrado até o prazo do ramo; atraso do cron não transforma abertura tardia em abertura dentro do prazo. Os tetos são de tentativas por janela fixa de24h: o valor desta cadência e `CADENCIA_LIMITE_EMAILS_POR_DIA` da instalação. Sem Upstash, o limitador existente é por processo em memória; não é um limite global entre várias réplicas.
 
 ## Paradas e preservação
 
