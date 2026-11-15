@@ -94,7 +94,9 @@ export async function gerarRelatorioDiario(input: {
     texto,
   };
   const { data, error } = await admin
-    .from(TABELA_DOS_RELATORIOS)
+    // O nome LITERAL, e não a constante: tests/invariants/on-conflict-aponta-para-constraint-real.test.ts
+    // acha a tabela do upsert pelo `.from("...")` mais próximo.
+    .from("relatorios_operacao_diarios")
     .upsert(linha, { onConflict: "organization_id,dia", ignoreDuplicates: !input.substituir })
     .select("id");
   if (error) throw new Error(`relatório não gravado: ${error.message}`);
