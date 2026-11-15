@@ -236,6 +236,23 @@ describe("triarCandidato", () => {
     expect(dono?.params).toEqual([ORG, "alheio", CAMPANHA, "place-1"]);
   });
 
+  it("`contact_id` preenchido não é passe livre: se o telefone acha OUTRO contato, pula", async () => {
+    // A candidata já carrega um contato (o da pegada desta campanha), mas o
+    // telefone agora pertence a um atendimento alheio. Antes bastava o
+    // `contact_id` vir preenchido para seguir para a abordagem fria.
+    const { db } = bancoFalso({ contatosConhecidos: [{ id: "alheio" }] });
+    expect(
+      await triarCandidato(db, ORG, CAMPANHA, candidato(1, { contact_id: CONTATO })),
+    ).toEqual({ motivo: "Contato já existe no CRM; atendimento preservado." });
+  });
+
+  it("controle: `contact_id` preenchido e o telefone acha o MESMO contato, segue com ele", async () => {
+    const { db } = bancoFalso({ contatosConhecidos: [{ id: CONTATO }] });
+    expect(
+      await triarCandidato(db, ORG, CAMPANHA, candidato(1, { contact_id: CONTATO })),
+    ).toEqual({ contatoDaCampanha: CONTATO });
+  });
+
   it("sem telefone: pula, e nem consulta o CRM", async () => {
     const { db, chamadas } = bancoFalso();
     expect(await triarCandidato(db, ORG, CAMPANHA, candidato(1, { phone: null }))).toEqual({
