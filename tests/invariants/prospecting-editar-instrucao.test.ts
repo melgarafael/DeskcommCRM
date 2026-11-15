@@ -150,9 +150,10 @@ beforeAll(async () => {
 
 afterAll(async () => {
   try {
-    if (f) await limparFixtureDeOfertas(pool, f);
+    // A conversa da empresa na fila usa o canal da fixture: sai antes dele.
     if (naFila.conversation)
       await pool.query("delete from conversations where id=$1", [naFila.conversation]);
+    if (f) await limparFixtureDeOfertas(pool, f);
     await pool.query("delete from contacts where id=$1", [naFila.contact]);
     if (rodando) await limparFixtureDeOfertas(pool, rodando);
     for (const org of [ORG_A, ORG_B, orgAlheia]) {
