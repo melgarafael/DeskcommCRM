@@ -34,8 +34,8 @@ import { encerraDemanda } from "@/lib/leads/encerramento";
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
-// O clone e o `movido_para` vão pelo cliente de SERVIÇO (migration 9389): ele
-// recebe o MESMO cliente falso, e as escritas dele entram em `escritas`.
+// O vínculo (`clonado_de` no clone, `movido_para` na origem) vai pelo cliente de
+// SERVIÇO (migration 9389): ele recebe o MESMO cliente falso, e as escritas dele entram em `escritas`.
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({
   audit: vi.fn(async () => undefined),
@@ -147,6 +147,10 @@ function clienteFake(): { cliente: never; escritas: Escrita[] } {
 
     if (tabela === "crm_leads" && colunas === "*") {
       return { data: origem(), error: null };
+    }
+    // O UPDATE que grava `clonado_de` no clone, pelo cliente de serviço (9389).
+    if (tabela === "crm_leads" && colunas === "source_metadata") {
+      return { data: { source_metadata: {} }, error: null };
     }
     if (tabela === "crm_pipelines" && colunas === "id, name") {
       return { data: { id: FUNIL_DESTINO, name: "Vendas" }, error: null };

@@ -146,6 +146,41 @@ describe("chaves de clone reservadas ao servidor (9389)", () => {
     expect(metadados(CARD_DO_AGENTE)).toHaveProperty("movido_para");
   });
 
+  it("(e) o INSERT do clone, sem o vínculo, segue decidido pela policy: modo 'só os meus' recusa o card sem dono, aceita o do próprio agente", () => {
+    // É o INSERT que a rota `/clone` faz pela sessão (o vínculo entra depois,
+    // pelo serviço). O dono herdado DESCARTADO vira card sem dono — e no modo
+    // `own` a `crm_leads_insert` não deixa o agente criá-lo.
+    const SEM_DONO = "93890000-0000-4000-8000-000000000004";
+    const DO_AGENTE = "93890000-0000-4000-8000-000000000005";
+    sql(`update public.organizations set settings = coalesce(settings, '{}'::jsonb) || '{"visibility_mode":"own"}'::jsonb
+          where id = '${GOV_ORG}';`);
+    try {
+      const semDono = comoAgente(
+        `insert into public.crm_leads (id, organization_id, pipeline_id, stage_id, title, source_metadata)
+           values ('${SEM_DONO}', '${GOV_ORG}', '${GOV_PIPELINE}', '${GOV_STAGE}', 'Clone sem dono', '{"canal":"whatsapp"}')`,
+      );
+      expect(semDono).toContain("row-level security");
+      expect(sql(`select count(*) from public.crm_leads where id = '${SEM_DONO}';`)).toBe("0");
+
+      expect(
+        comoAgente(
+          `insert into public.crm_leads (id, organization_id, pipeline_id, stage_id, title, owner_user_id, owner_kind, source_metadata)
+             values ('${DO_AGENTE}', '${GOV_ORG}', '${GOV_PIPELINE}', '${GOV_STAGE}', 'Clone do agente', '${GOV_AGENT_A}', 'user', '{"canal":"whatsapp"}')`,
+        ),
+      ).toBeNull();
+      // …e o vínculo, gravado em seguida pelo servidor, passa no card que a policy aceitou.
+      expect(
+        comoServidor(
+          `update public.crm_leads set source_metadata = source_metadata || '{"clonado_de":${VINCULO}}'::jsonb
+            where id = '${DO_AGENTE}' and organization_id = '${GOV_ORG}'`,
+        ),
+      ).toBeNull();
+      expect((metadados(DO_AGENTE).clonado_de as { lead_id: string }).lead_id).toBe(ORIGEM_ALHEIA);
+    } finally {
+      sql(`update public.organizations set settings = settings - 'visibility_mode' where id = '${GOV_ORG}';`);
+    }
+  });
+
   it("a função do gatilho não é chamável por anon nem pela sessão", () => {
     expect(
       sql(`select has_function_privilege('anon', 'public.fn_guard_vinculo_de_clone_do_lead()', 'execute')::text
