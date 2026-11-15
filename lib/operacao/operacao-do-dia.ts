@@ -184,7 +184,9 @@ function contarCanal(c: ContagemPorCanal, canal: string): void {
 
 function rotuloDoNumero(s: SessaoLida | undefined): string | null {
   if (!s) return null;
-  return s.display_name || s.phone_number || s.waha_session_name || null;
+  // Sem `waha_session_name`: é o identificador de transporte (`org_2dd5e6ea`),
+  // não o nome do número — a mesma regra de `nomeDoCanal` (lib/channels/estado.ts).
+  return s.display_name?.trim() || s.phone_number?.trim() || null;
 }
 
 function contatoDaLinha(id: string | null, c: ContatoLido | undefined): ContatoDaLinha {

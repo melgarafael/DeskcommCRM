@@ -11,10 +11,11 @@ import Link from "next/link";
 
 import { useT } from "@/hooks/i18n/useT";
 import { kindLabel } from "@/lib/ai/agent-inbox-copy";
+import { rotuloDoEstadoDoCanal } from "@/lib/channels/estado";
 import { ROTULO_DO_COMANDO } from "@/lib/inbox/comando-da-conversa";
 import { useIdioma } from "@/lib/i18n/IdiomaProvider";
 import { duracaoCurta, horaCurtaNoFuso, minutosDeEspera } from "@/lib/operacao/regras";
-import { nomeDoCanal, valorFormatado } from "@/lib/operacao/texto-do-relatorio";
+import { nomeDaRede, valorFormatado } from "@/lib/operacao/texto-do-relatorio";
 import type {
   ContagemPorCanal,
   ContatoDaLinha,
@@ -101,7 +102,7 @@ function TabelaDeConversas({
                 <Contato c={l.contato} />
               </td>
               <td className="px-3 py-2">
-                <div>{nomeDoCanal(l.canal)}</div>
+                <div>{nomeDaRede(l.canal)}</div>
                 <div className="text-xs text-text-muted">{l.numero ?? nr}</div>
               </td>
               <td className="max-w-[22rem] px-3 py-2">
@@ -327,7 +328,7 @@ export function SecoesDaOperacao({ operacao, referencia }: { operacao: OperacaoD
                   <Link href="/app/connections" className="hover:underline">
                     {c.numero ?? nr}
                   </Link>{" "}
-                  · {c.provedor} · {c.status}
+                  · {c.provedor} · {rotuloDoEstadoDoCanal(c.status, t)}
                   {c.motivo ? ` · ${c.motivo}` : ""}
                 </li>
               ))}

@@ -9,6 +9,7 @@
  * Campo vazio sai como "não registrado", nunca omitido em silêncio: quem lê o
  * relatório precisa distinguir "não tem" de "ninguém anotou".
  */
+import { rotuloDoEstadoDoCanal } from "@/lib/channels/estado";
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
 
@@ -24,7 +25,7 @@ export function linkDoNegocio(baseUrl: string, leadId: string): string {
 }
 
 /** O nome do canal como a equipe fala. */
-export function nomeDoCanal(canal: string): string {
+export function nomeDaRede(canal: string): string {
   switch (canal) {
     case "whatsapp":
       return "WhatsApp";
@@ -77,7 +78,7 @@ export function textoDoRelatorio(
     const espera = minutosDeEspera(l.esperando_desde, geradoEm);
     const cabeca = [
       identificacaoDoContato(l.contato, t),
-      `${nomeDoCanal(l.canal)}${l.numero ? ` (${l.numero})` : ""}`,
+      `${nomeDaRede(l.canal)}${l.numero ? ` (${l.numero})` : ""}`,
       espera !== null ? `${t("esperando há")} ${duracaoCurta(espera)}` : null,
       `${t("responsável")}: ${l.responsavel_tipo === "ia" ? t("IA") : (l.responsavel ?? nr)}`,
       `${t("próxima ação")}: ${l.proxima_acao ? l.proxima_acao.titulo + (l.proxima_acao.vence_em ? ` (${t("vence")} ${l.proxima_acao.vence_em.slice(0, 10)})` : "") : nr}`,
@@ -151,7 +152,7 @@ export function textoDoRelatorio(
     );
   }
   linhas.push(`- ${t("Canais fora do ar agora")}: ${f.canais.length}`);
-  for (const c of f.canais) linhas.push(`  · ${c.numero ?? nr} · ${c.provedor} · ${c.status}${c.motivo ? ` · ${c.motivo}` : ""}`);
+  for (const c of f.canais) linhas.push(`  · ${c.numero ?? nr} · ${c.provedor} · ${rotuloDoEstadoDoCanal(c.status, t)}${c.motivo ? ` · ${c.motivo}` : ""}`);
   linhas.push(`- ${t("Avisos abertos na Central")}: ${f.avisos.length}`);
   for (const a of f.avisos.slice(0, 20)) linhas.push(`  · ${a.titulo}`);
 
