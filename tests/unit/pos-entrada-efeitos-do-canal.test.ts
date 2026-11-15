@@ -85,6 +85,8 @@ let filtrosDeMessages: Array<[string, unknown]> = [];
  * ref que NÃO casa: já consumido, de outra organização, ou nunca gravado.
  */
 let refCasado: { utm: Record<string, string> } | null = null;
+let refGoogleCasado: { gclid: string; query_raw: Record<string, unknown> } | null = null;
+let filtrosDoRefGoogle: Record<string, unknown> = {};
 /** Os `.eq()`/`.is()` do consumo do ref — provam a organização e a trava de uso único. */
 let filtrosDoRef: Record<string, unknown> = {};
 /** Os negócios ABERTOS do contato, como a leitura de `crm_leads` os devolve. */
@@ -120,6 +122,26 @@ const admin = {
   from(tabela: string) {
     return {
       update(payload: Record<string, unknown>) {
+        if (tabela === "google_ads_click_refs") {
+          const consumo = {
+            eq(coluna: string, valor: unknown) {
+              filtrosDoRefGoogle[coluna] = valor;
+              return consumo;
+            },
+            is(coluna: string, valor: unknown) {
+              filtrosDoRefGoogle[coluna] = valor;
+              return consumo;
+            },
+            select() { return consumo; },
+            async maybeSingle() {
+              sequencia.push("update:google_ads_click_refs");
+              const data = refGoogleCasado;
+              refGoogleCasado = null;
+              return { data, error: null };
+            },
+          };
+          return consumo;
+        }
         if (tabela === "meta_ads_click_refs") {
           const consumo = {
             eq(coluna: string, valor: unknown) {
@@ -237,6 +259,8 @@ beforeEach(() => {
   rpcChamadas = [];
   filtrosDeMessages = [];
   refCasado = { utm: { utm_campaign: "black-friday", utm_ad: "video-depoimento-v3" } };
+  refGoogleCasado = null;
+  filtrosDoRefGoogle = {};
   filtrosDoRef = {};
   leadsAbertos = [];
   leadsErro = null;
@@ -986,6 +1010,43 @@ describe("o ref curto da página que veio no texto", () => {
 
     expect(sequencia).not.toContain("update:meta_ads_click_refs");
     expect(nomesDeRpc()).toContain("fn_estampar_atribuicao_de_anuncio");
+  });
+});
+
+describe("o clique Google é tratado pelo caminho comum dos canais", () => {
+  it.each(["waha_webhook", "meta_cloud_webhook", "zernio_webhook"])(
+    "%s leva a campanha ao nascimento, inclusive contato antigo ainda sem origem",
+    async (origem) => {
+      historicoDoContato = { id: "mensagem-antiga", count: 10 };
+      refGoogleCasado = { gclid: "clique", query_raw: {
+        utm_campaign: "Campanha atual", utm_adset: "Grupo", campaignid: "123", adgroupid: "456",
+      } };
+      garantirLeadDaConversa.mockImplementationOnce(async (...args: unknown[]) => {
+        expect(sequencia).toContain("rpc:fn_estampar_atribuicao_de_anuncio");
+        expect(args[1]).toMatchObject({ atribuicaoDaMensagem: {
+          plataforma: "google_ads", metadadosDaCampanha: {
+            utm_campaign: "Campanha atual", utm_adset: "Grupo", google_campaign_id: "123", google_adgroup_id: "456",
+          },
+        } });
+        return { criado: true, leadId: "lead-1" } as never;
+      });
+      await rodar({ origem, texto: "Olá [ref:K7M2P9]" });
+      expect(garantirLeadDaConversa).toHaveBeenCalledTimes(1);
+      expect(filtrosDoRefGoogle).toMatchObject({ organization_id: "org-1", token: "K7M2P9", matched_at: null });
+      expect(sequencia).not.toContain("update:meta_ads_click_refs");
+      expect(filtrosDeMessages).toEqual([]);
+    },
+  );
+
+  it("sem ref não consulta a tabela de cliques Google", async () => {
+    await rodar();
+    expect(sequencia).not.toContain("update:google_ads_click_refs");
+  });
+  it("ref recebido em rede social não consome clique reservado ao WhatsApp", async () => {
+    refGoogleCasado = { gclid: "clique", query_raw: { utm_campaign: "Real" } };
+    await rodar({ canal: "instagram", texto: "Olá [ref:K7M2P9]" });
+    expect(sequencia).not.toContain("update:google_ads_click_refs");
+    expect(refGoogleCasado).not.toBeNull();
   });
 });
 

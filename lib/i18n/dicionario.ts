@@ -46,6 +46,10 @@ export const DICIONARIO: Traducoes = {
   ...TEXTOS_CONTRATACAO,
   ...TEXTOS_CADENCIAS_ORIGINAIS,
   ...TEXTOS_CADENCIAS,
+  "Grupo de anúncios": { es: "Grupo de anuncios" },
+  "Palavra-chave": { es: "Palabra clave" },
+  "Conta do Google Ads": { es: "Cuenta de Google Ads" },
+  "Para distinguir contas, acrescente google_customer_id ao sufixo de cada conta e use o ID de cliente de dez dígitos. Exemplo: &google_customer_id=1234567890.": { es: "Para distinguir cuentas, añade google_customer_id al sufijo de cada cuenta y usa el ID de cliente de diez dígitos. Ejemplo: &google_customer_id=1234567890." },
   "Dados do negócio para conferência": { es: "Datos del negocio para revisar" },
   // Mensagens agendadas na conversa (issue #3118, primeira parte): textos do popup.
   "Mensagens agendadas": { es: "Mensajes programados" },
@@ -19542,6 +19546,9 @@ export const DICIONARIO: Traducoes = {
   "Carregando etiquetas…": { es: "Cargando etiquetas…" },
   // #2498 — destino opcional da ação add_tag, no editor de automações.
   "Destino da etiqueta": { es: "Destino de la etiqueta" },
+  "Etiquetas automáticas do Google Ads (opcional)": { es: "Etiquetas automáticas de Google Ads (opcional)" },
+  "Escolha os dados de origem que viram etiquetas. Só se aplica a negócios identificados como Google Ads; campos ausentes são ignorados.": { es: "Elige los datos de origen que se convierten en etiquetas. Solo se aplica a negocios identificados como Google Ads; los campos ausentes se omiten." },
+  "Até dez etiquetas no total, com até 60 caracteres cada. O nome inclui o ID quando disponível; nomes longos usam só o ID ou são ignorados.": { es: "Hasta diez etiquetas en total, con un máximo de 60 caracteres cada una. El nombre incluye el ID cuando está disponible; los nombres largos usan solo el ID o se omiten." },
   "Card (comportamento atual)": { es: "Card (comportamiento actual)" },
   "Contato do lead": { es: "Contacto del lead" },
   "Sem contato vinculado, a etiqueta não é aplicada.": {
