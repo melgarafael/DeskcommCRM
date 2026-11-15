@@ -22,6 +22,9 @@
  * estável ao CSS do cliente.
  */
 import { NAV_CATALOG, type NavGroupId } from "./catalogo";
+import { classeDaSecaoDoGrupo } from "./secoes-da-tela";
+
+export { CLASSE_DA_SECAO, CLASSES_DE_SECAO } from "./secoes-da-tela";
 
 /** Uma classe por grupo do menu — o alvo de `.nav-grupo-crm .rounded-md:hover`. */
 export const CLASSES_DE_GRUPO: Readonly<Record<NavGroupId, string>> = Object.freeze({
@@ -65,3 +68,28 @@ export function classeDoGrupo(id: NavGroupId): string {
 export const CLASSES_DE_ITEM: Readonly<Record<string, string>> = Object.freeze(
   Object.fromEntries(NAV_CATALOG.map((destino) => [destino.href, classeDoItem(destino.href)])),
 );
+
+/**
+ * A ROTA ATUAL → a classe da seção dela (#4705) — a única regra, nada por tela.
+ *
+ * A régua de "em qual destino estou" é a MESMA que o menu usa para pintar o item
+ * ativo (`components/shell/Sidebar.tsx`): `caminho === href || caminho.startsWith(href + "/")`.
+ * Quando mais de um destino casa, vence o href MAIS LONGO: `/app/ai/cases` é a
+ * tela de casos, não o hub `/app/ai`, e `tela-secao-ia` sai igual nos dois porque
+ * o grupo é o mesmo.
+ *
+ * Rota fora do registro (hub sem entrada, tela solta, onboarding) devolve `null`:
+ * o `<main>` fica só com `tela-secao`, como a issue pede — inventar uma seção a
+ * partir do primeiro segmento daria nomes que nenhum cliente conhece.
+ */
+export function classeDaSecao(pathname: string): string | null {
+  const caminho = pathname.replace(/\/+$/, "") || "/";
+  let casado: { href: string; grupo: NavGroupId } | null = null;
+  for (const destino of NAV_CATALOG) {
+    if (caminho !== destino.href && !caminho.startsWith(`${destino.href}/`)) continue;
+    if (casado === null || destino.href.length > casado.href.length) {
+      casado = { href: destino.href, grupo: destino.group };
+    }
+  }
+  return casado ? classeDaSecaoDoGrupo(casado.grupo) : null;
+}
