@@ -23,6 +23,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildOpeningMessage } from '@/lib/agent-engine/agent/abertura/ritual';
+import { disclosureGate } from '@/lib/agent-engine/guardrails/before-send';
 import {
   TITULO_DO_BLOCO_DE_PASSAGEM,
   montarBlocoDePassagemDoRoteador,
@@ -194,6 +195,16 @@ describe('#4679 — a passagem automática não reapresenta o mesmo agente', () 
     expect(prompt).toContain('primeiro turno — sem checkpoint anterior');
     expect(prompt).not.toContain(TITULO_DO_BLOCO_DE_PASSAGEM);
     expect(prompt).not.toMatch(/NÃO se apresente/);
+    // A outra metade da apresentação inicial: o gate de disclosure continua
+    // exigindo que a 1ª mensagem a um lead novo se apresente. Nada nesta fatia
+    // o afrouxa — e é ele que garante a apresentação do primeiro turno.
+    const template = 'Sou a assistente virtual da Webtecnica.';
+    const ctxDoGate = (body: string) =>
+      ({ body, disclosure: { template, isFirstOutbound: true, mode: 'veto' } }) as never;
+    expect(disclosureGate.evaluate(ctxDoGate('Temos três planos disponíveis.')))
+      .toMatchObject({ pass: false, code: 'disclosure_required' });
+    expect(disclosureGate.evaluate(ctxDoGate(`${template} Temos três planos disponíveis.`)))
+      .toMatchObject({ pass: true });
   });
 
   it('sticky sem intenção não apresenta de novo', async () => {
