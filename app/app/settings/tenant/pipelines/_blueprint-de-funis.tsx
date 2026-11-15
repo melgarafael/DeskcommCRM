@@ -161,8 +161,6 @@ function ImportarFunisDialog() {
     importar.mutate(arquivo);
   };
 
-  const comNumero = (frase: string, n: number) => t(frase).replace("{n}", String(n));
-
   return (
     <>
       <Button
@@ -194,21 +192,15 @@ function ImportarFunisDialog() {
 
           {resultado ? (
             <div className="space-y-3" data-testid="importar-funis-resultado">
-              <p className="text-sm">{comNumero("Funis criados: {n}.", resultado.importados)}</p>
+              <p className="text-sm">{t("Funis criados: {n}.").replace("{n}", String(resultado.importados))}</p>
               {resultado.renomeados > 0 && (
                 <p className="text-sm text-text-muted">
-                  {comNumero(
-                    "Criados como cópia, porque já havia um funil com o mesmo nome: {n}.",
-                    resultado.renomeados,
-                  )}
+                  {t("Criados como cópia, porque já havia um funil com o mesmo nome: {n}.").replace("{n}", String(resultado.renomeados))}
                 </p>
               )}
               {resultado.ja_existiam > 0 && (
                 <p className="text-sm text-text-muted">
-                  {comNumero(
-                    "Já estavam aqui, com as mesmas etapas, e ficaram como estavam: {n}.",
-                    resultado.ja_existiam,
-                  )}
+                  {t("Já estavam aqui, com as mesmas etapas, e ficaram como estavam: {n}.").replace("{n}", String(resultado.ja_existiam))}
                 </p>
               )}
               <DialogFooter>
