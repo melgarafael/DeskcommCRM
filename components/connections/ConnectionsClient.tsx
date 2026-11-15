@@ -31,6 +31,7 @@ import { PairingOptions } from "./PairingOptions";
 import { ChannelAcervo } from "./ChannelAcervo";
 import { ChannelHistorico } from "./ChannelHistorico";
 import { ChannelAiAccess } from "./ChannelAiAccess";
+import { NegocioDaConversa } from "./NegocioDaConversa";
 import { ParaIntegrar } from "./ParaIntegrar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -603,6 +604,10 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                     : t("Ainda não verificado")}
                 </p>
                 <ChannelAiAccess channelId={c.id} />
+                {/* #4670: a chave é POR CONEXÃO — o cartão de cada número tem o
+                    interruptor, e não há nada disso em Configurações da
+                    organização, onde só caberia desligar para todo mundo. */}
+                <NegocioDaConversa channelId={c.id} />
                 {dependeDoTransporte(c) && <ChannelAcervo channelId={c.id} />}
                 {dependeDoTransporte(c) && <ChannelHistorico channelId={c.id} />}
                 <p className="text-xs text-muted-foreground">{t(!policy ? "Consulte os responsáveis em Atendimento." : policy.mode === "legacy_unconfigured" ? "Usa todos os atendentes elegíveis da organização." : policy.mode === "restricted_empty" ? "Ninguém configurado — as conversas ficarão na fila." : "Somente as pessoas selecionadas recebem este número.")}</p>

@@ -338,6 +338,9 @@ export const AUDIT_ACTIONS = [
   "channel.social_webhook_ressincronizado",
   "channel.ai_access_updated",
   "channel.acervo_updated",
+  // #4670: o interruptor "conversas novas criam negócio" do cartão da conexão.
+  // Por CONEXÃO — nunca da organização inteira.
+  "channel.negocio_da_conversa_updated",
   // A importação do histórico do número (#999): prévia, início, cancelamento e
   // retomada depois de erro (rotas), e o fim, concluída ou em erro (cron). A
   // rodada que só anda o cursor não audita.
