@@ -536,6 +536,22 @@ export function planejarRodada(registros: readonly unknown[], opcoes: OpcoesDoPl
   // ─── O que saiu do feed ───────────────────────────────────────────────────
   // Só o que é DESTA fonte e está ATIVO: produto manual (`id_externo` nulo) não
   // é do feed, e o que já está desativado não tem o que desativar de novo.
+  //
+  // A TRAVA: feed que não trouxe NENHUM item reconhecível (`[]` válido, ou toda
+  // linha recusada porque o sistema da revenda trocou o nome da coluna) não
+  // desativa nada. Sem ela, um feed vazio na rodada automática apagava o
+  // catálogo inteiro da vista do agente, sem ninguém clicar e sem ninguém ver.
+  // ponytail: trava só no caso "nenhum item"; um feed que perdeu metade dos
+  // itens ainda desativa a metade — teto proporcional se isso aparecer medido.
+  if (vistosNoFeed.size === 0) {
+    if ([...porChave.values()].some((produto) => produto.ativo)) {
+      plano.errosPorItem.push({
+        referencia: "feed",
+        motivo: t("o feed não trouxe nenhum item reconhecível — nenhum produto foi desativado"),
+      });
+    }
+    return plano;
+  }
   for (const produto of porChave.values()) {
     if (!produto.ativo) continue;
     if (vistosNoFeed.has(chaveDoIdExterno(produto.id_externo!))) continue;

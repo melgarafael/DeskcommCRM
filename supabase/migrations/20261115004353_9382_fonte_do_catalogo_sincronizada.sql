@@ -1,6 +1,10 @@
--- manifest: **A revenda publica o estoque num FEED e o CRM se sincroniza sozinho (#3587, fatia 2):** cria `catalog_feed_sources` (UMA fonte por organização — URL, formato `json`/`csv`, mapeamento de campos e último resumo) e a coluna `catalog_products.id_externo`, com índice único parcial em `(organization_id, id_externo)`. O id externo é a CHAVE do casamento entre feed e catálogo: sem ele a rodada duplicaria produto, e produto duplicado é dois preços para o mesmo item na conversa com o cliente. Nada é apagado — o item que sai do feed vira `ativo = false`, porque histórico de conversa e proposta apontam para a linha. Idempotente; espelho no fim do apêndice do `supabase/baseline.sql`.
+-- manifest: **A revenda publica o estoque num FEED e o CRM se sincroniza sozinho (#3587, fatia 2):** cria `catalog_feed_sources` (UMA fonte por organização — URL, formato `json`/`csv`, mapeamento de campos e último resumo) e a coluna `catalog_products.id_externo`, com índice único parcial em `(organization_id, id_externo)`. O id externo é a CHAVE do casamento entre feed e catálogo: sem ele a rodada duplicaria produto, e produto duplicado é dois preços para o mesmo item na conversa com o cliente. Nada é apagado — o item que sai do feed vira `ativo = false`, porque histórico de conversa e proposta apontam para a linha. Módulo opcional `catalogo_por_feed`, desligado de fábrica (doc 322, A): desligado, nenhum cron busca o feed nem grava no catálogo. Falha seguida fica em `falhas_seguidas`/`ultimo_erro`, e a 3ª abre aviso na Central. Idempotente; espelho no apêndice do `supabase/baseline.sql`.
 -- ============================================================================
--- 9222 — A FONTE DE CATÁLOGO SINCRONIZADA (issue #3587, fatia 2).
+-- 9382 — A FONTE DE CATÁLOGO SINCRONIZADA (issue #3587, fatia 2; PR #4179 de
+-- @webtecnica). Nasceu como 9222, número que colidiu com o do #4195; o
+-- conteúdo é o mesmo, renumerado na adaptação a MÓDULO OPCIONAL (doc 322, A):
+-- a tabela existe em toda instalação, vazia, e quem decide se ela vale é a
+-- chave `MODULO_CATALOGO_POR_FEED` em `platform_config` (desligada de fábrica).
 --
 -- ─── Por que uma tabela NOVA, e não `webhook_sources` ───────────────────────
 --
@@ -49,6 +53,12 @@ create table if not exists public.catalog_feed_sources (
   -- quando o catálogo parece parado.
   ultima_leitura_em timestamptz,
   ultimo_resumo jsonb,
+
+  -- Falha repetida não fica muda: quantas rodadas seguidas o cron não conseguiu
+  -- ler o feed, e o motivo da última. Zera na primeira rodada que dá certo. Ao
+  -- chegar a 3, o cron abre um aviso na Central (kind `other`).
+  falhas_seguidas integer not null default 0,
+  ultimo_erro text,
 
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),

@@ -231,4 +231,46 @@ describe("planejarFeed: o plano da rodada", () => {
     if (!resultado.ok) return;
     expect(resultado.plano.atualizar).toHaveLength(0);
   });
+
+  /**
+   * A TRAVA (parecer da triagem de 10/11): `[]` é JSON válido, e sem trava a
+   * rodada automática desativava o catálogo inteiro — o agente passava a dizer
+   * "não temos" para tudo, sem ninguém ter clicado em nada.
+   */
+  it("feed válido e VAZIO não desativa nada", () => {
+    const resultado = planejarFeed({
+      conteudo: "[]",
+      formato: "json",
+      existentes: [existente(), existente({ id: "p-2", id_externo: "SKU-2", nome: "Cabo" })],
+    });
+
+    expect(resultado.ok).toBe(true);
+    if (!resultado.ok) return;
+    expect(resultado.plano.desativar).toHaveLength(0);
+    expect(resultado.plano.errosPorItem[0]!.motivo).toContain("nenhum produto foi desativado");
+  });
+
+  it("feed em que NENHUMA linha é reconhecível (coluna de id renomeada) também não desativa nada", () => {
+    const resultado = planejarFeed({
+      conteudo: feedDe([{ codigo_novo: "SKU-1", nome: "Fone", preco: 10 }]),
+      formato: "json",
+      existentes: [existente()],
+    });
+
+    expect(resultado.ok).toBe(true);
+    if (!resultado.ok) return;
+    expect(resultado.plano.desativar).toHaveLength(0);
+  });
+
+  it("controle: com UM item reconhecível, o que sumiu continua sendo desativado", () => {
+    const resultado = planejarFeed({
+      conteudo: feedDe([{ id: "SKU-1", nome: "Fone Bluetooth", preco: "1.000,00" }]),
+      formato: "json",
+      existentes: [existente(), existente({ id: "p-sumiu", id_externo: "SKU-9", nome: "Capa antiga" })],
+    });
+
+    expect(resultado.ok).toBe(true);
+    if (!resultado.ok) return;
+    expect(resultado.plano.desativar.map((p) => p.id)).toEqual(["p-sumiu"]);
+  });
 });

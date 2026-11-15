@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
@@ -14,13 +15,17 @@ import {
 } from "@/lib/catalogo/busca-da-tela";
 import { apresentacaoDoCatalogoLigada } from "@/lib/catalogo/apresentacao-ligada";
 import { BUCKET_DAS_FOTOS, fotoPertenceAoProduto } from "@/lib/catalogo/fotos";
+import { resumoDaFonte } from "@/lib/catalogo/fonte-do-feed";
+import { tagDeIdioma } from "@/lib/i18n/datas";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import { capacidadesDaOrganizacao } from "@/lib/organizacao/capacidades";
 import { COLUNAS_DO_PRODUTO, type Produto } from "@/lib/schemas/produtos";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 import { ProdutosClient } from "./_client";
+import { FonteDoFeed, type FonteDoFeedNaTela } from "./_fonte-do-feed";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Produtos" };
@@ -119,6 +124,31 @@ export default async function ProdutosPage({
     "capacidade_do_produto",
   );
 
+  // O módulo `catalogo_por_feed` (doc 322, A): desligado, a seção nem existe e a
+  // fonte nem é lida. A leitura é pelo cliente da sessão (RLS da organização).
+  let fonteDoFeed: ReactNode = null;
+  if (await moduloLigado(createAdminClient(), "catalogo_por_feed")) {
+    const { data: linha, error: erroDaFonte } = await supabase
+      .from("catalog_feed_sources")
+      .select("url,formato,ultima_leitura_em,ultimo_resumo,falhas_seguidas,ultimo_erro")
+      .eq("organization_id", activeOrg.orgId)
+      .maybeSingle();
+    if (erroDaFonte) throw new Error(`Não consegui ler a fonte do catálogo: ${erroDaFonte.message}`);
+    const fonte: FonteDoFeedNaTela | null = linha
+      ? {
+          url: linha.url,
+          formato: linha.formato === "csv" ? "csv" : "json",
+          ultimaLeitura: linha.ultima_leitura_em
+            ? new Date(linha.ultima_leitura_em).toLocaleString(tagDeIdioma(user.idioma))
+            : null,
+          resumo: resumoDaFonte(linha.ultimo_resumo),
+          falhasSeguidas: linha.falhas_seguidas,
+          ultimoErro: linha.ultimo_erro,
+        }
+      : null;
+    fonteDoFeed = <FonteDoFeed fonte={fonte} podeEditar={podeEditar} />;
+  }
+
   return (
     <ProdutosClient
       inicial={produtos}
@@ -130,6 +160,7 @@ export default async function ProdutosPage({
       podeEditar={podeEditar}
       capacidadeLigada={capacidadeLigada}
       apresentacaoLigada={await apresentacaoDoCatalogoLigada(createAdminClient(), activeOrg.orgId)}
+      fonteDoFeed={fonteDoFeed}
       textos={{
         titulo: t("Produtos"),
         subtitulo: t(

@@ -1,6 +1,7 @@
 import "server-only";
 
-import { assertUrlDeMidiaSegura } from "@/lib/messaging/media/url-de-midia-externa";
+import { assertDestinoResolvidoSeguro } from "@/lib/automation/outbound-ip";
+import { assertSafeOutboundUrl } from "@/lib/automation/outbound-url";
 
 /**
  * BUSCAR O FEED DA REVENDA — de dentro da rede, com a URL escolhida por alguém.
@@ -11,10 +12,13 @@ import { assertUrlDeMidiaSegura } from "@/lib/messaging/media/url-de-midia-exter
  * a cada rodada. Sem guarda, "https://minha-loja.example/estoque.json" pode ser
  * `http://169.254.169.254/latest/meta-data/iam/security-credentials/` — o
  * endereço de metadados da instância, que entrega credencial de nuvem a quem
- * pedir. `assertUrlDeMidiaSegura` é a MESMA guarda da foto por URL da fatia 1
- * (esquema, host literal privado e o IP RESOLVIDO, porque um hostname público
- * pode apontar para dentro): uma segunda guarda aqui divergiria da primeira na
- * primeira correção de segurança.
+ * pedir. A guarda é a MESMA do webhook de saída (`call-webhook.ts`):
+ * `assertSafeOutboundUrl` (esquema, https em produção, host literal privado) e
+ * `assertDestinoResolvidoSeguro` (o IP RESOLVIDO, porque um hostname público
+ * pode apontar para dentro). Não é `assertUrlDeMidiaSegura`: aquela abre uma
+ * exceção para a URL assinada do próprio Storage, que existe para o gateway de
+ * mídia e não tem por que valer para um feed que alguém cadastra. A janela
+ * residual de DNS-rebinding é a declarada em `lib/automation/outbound-ip.ts`.
  *
  * Redirecionamento é seguido À MÃO, uma casa por vez, com a guarda rodando de
  * novo em cada `Location` — `redirect: "follow"` deixaria o salto para o
@@ -31,7 +35,10 @@ import { assertUrlDeMidiaSegura } from "@/lib/messaging/media/url-de-midia-exter
 /** O teto do feed: 8 MB é folgado para 100 mil itens de loja de bairro. */
 export const TETO_DO_FEED_BYTES = 8 * 1024 * 1024;
 
-/** O prazo de UMA busca. Um feed lento não pode prender a rota nem o cron. */
+/**
+ * O prazo da busca INTEIRA — saltos e corpo juntos. Um prazo por salto deixaria
+ * um feed com 3 redirecionamentos lentos prender a rota e o cron por 80 s.
+ */
 const PRAZO_MS = 20_000;
 
 /** Quantos saltos ainda são "o mesmo link" (http→https, CDN da revenda). */
@@ -69,9 +76,11 @@ async function lerAteOTeto(resposta: Response): Promise<string | null> {
  */
 export async function buscarFeedDaUrl(url: string): Promise<LeituraDoFeedRemoto> {
   let destino = url;
+  const prazo = AbortSignal.timeout(PRAZO_MS);
   for (let salto = 0; salto <= MAXIMO_DE_SALTOS; salto += 1) {
     try {
-      await assertUrlDeMidiaSegura(destino);
+      assertSafeOutboundUrl(destino);
+      await assertDestinoResolvidoSeguro(new URL(destino).hostname);
     } catch {
       return {
         ok: false,
@@ -83,7 +92,7 @@ export async function buscarFeedDaUrl(url: string): Promise<LeituraDoFeedRemoto>
     try {
       resposta = await fetch(destino, {
         redirect: "manual",
-        signal: AbortSignal.timeout(PRAZO_MS),
+        signal: prazo,
         headers: { accept: "application/json, text/csv;q=0.9, */*;q=0.5" },
       });
     } catch (erro) {
@@ -104,7 +113,14 @@ export async function buscarFeedDaUrl(url: string): Promise<LeituraDoFeedRemoto>
       return { ok: false, motivo: `a origem respondeu ${resposta.status}` };
     }
 
-    const texto = await lerAteOTeto(resposta);
+    let texto: string | null;
+    try {
+      texto = await lerAteOTeto(resposta);
+    } catch (erro) {
+      // O prazo também vale para o corpo: origem que manda devagar é abortada aqui.
+      const detalhe = erro instanceof Error ? erro.message : String(erro);
+      return { ok: false, motivo: `não foi possível ler o feed (${detalhe.slice(0, 200)})` };
+    }
     if (texto === null) {
       return {
         ok: false,

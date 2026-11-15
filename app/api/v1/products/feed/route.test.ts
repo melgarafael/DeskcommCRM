@@ -34,6 +34,8 @@ const estado = vi.hoisted(() => ({
   /** Os `organization_id` que a rota passou em algum `.eq()`. */
   equais: [] as [string, unknown][],
   produtos: [] as unknown[],
+  /** A chave `catalogo_por_feed` da instalação. */
+  moduloLigado: true,
 }));
 
 /** Cliente de mentira: conta ESCRITAS e devolve as linhas combinadas na leitura. */
@@ -64,6 +66,10 @@ const clienteFalso = { from: (tabela: string) => cadeia(tabela) };
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => clienteFalso }));
+vi.mock("@/lib/instalacao/modulos", () => ({
+  moduloLigado: vi.fn(async (_db: unknown, modulo: string) => modulo === "catalogo_por_feed" && estado.moduloLigado),
+}));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
 vi.mock("@/lib/catalogo/feed-remoto", () => ({ buscarFeedDaUrl: vi.fn() }));
@@ -115,6 +121,7 @@ beforeEach(() => {
   estado.escritas = [];
   estado.equais = [];
   estado.produtos = [existente, SUMIU];
+  estado.moduloLigado = true;
   vi.mocked(createClient).mockResolvedValue(clienteFalso as never);
   vi.mocked(requireRole).mockResolvedValue({
     ok: true,
@@ -236,5 +243,33 @@ describe("POST /api/v1/products/feed — autoridade e escopo", () => {
     expect(new Set(escopos)).toEqual(new Set([ORG_ID]));
     const insert = estado.escritas.find((e) => e.tipo === "insert");
     expect((insert?.valor as { organization_id?: string }).organization_id).toBe(ORG_ID);
+  });
+});
+
+describe("POST /api/v1/products/feed — módulo `catalogo_por_feed` desligado (doc 322, A)", () => {
+  it("responde 404, não busca a URL, não lê o catálogo e não escreve", async () => {
+    estado.moduloLigado = false;
+    vi.mocked(buscarFeedDaUrl).mockResolvedValue({ ok: true, texto: JSON.stringify(ITENS) });
+    const { POST } = await import("./route");
+
+    const res = await POST(pedido({ url: "https://revenda.example/feed.json", dry_run: false }));
+
+    expect(res.status).toBe(404);
+    expect(vi.mocked(buscarFeedDaUrl)).not.toHaveBeenCalled();
+    expect(vi.mocked(requireRole)).not.toHaveBeenCalled();
+    expect(estado.equais).toEqual([]);
+    expect(estado.escritas).toEqual([]);
+  });
+
+  it("aplicar pela URL zera a conta de falhas da fonte e resolve o aviso da Central", async () => {
+    vi.mocked(buscarFeedDaUrl).mockResolvedValue({ ok: true, texto: JSON.stringify(ITENS) });
+    const { POST } = await import("./route");
+
+    await POST(pedido({ url: "https://revenda.example/feed.json", dry_run: false }));
+
+    const upsert = estado.escritas.find((e) => e.tipo === "upsert");
+    expect(upsert?.valor).toMatchObject({ falhas_seguidas: 0, ultimo_erro: null });
+    const resolvido = estado.escritas.find((e) => e.tabela === "agent_inbox_items" && e.tipo === "update");
+    expect(resolvido?.valor).toMatchObject({ status: "resolved" });
   });
 });

@@ -416,6 +416,15 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
       "Ligado, o funil que declarar a régua de revisão por quilometragem passa a calcular a data prevista da próxima revisão quando o km do negócio é informado, pelo card, pela API, pelo MCP ou pela resposta do roteiro, e grava essa data no campo de data que o funil escolheu. Desligado, o km continua sendo gravado e nenhuma data é calculada; as datas já gravadas ficam como estão.",
     foraDoMenu: "Não cria porta no menu do CRM: a régua é declarada por funil, em pipelines.settings.revisao_por_km, e ainda não há tela para declará-la.",
   },
+  {
+    modulo: "catalogo_por_feed",
+    id: "modulo-catalogo-por-feed",
+    rotulo: "Catálogo sincronizado por feed",
+    descricao:
+      "Ligado, a tela de Produtos de cada empresa ganha a seção Catálogo por feed, onde se cadastra o endereço do feed que o sistema de estoque da revenda publica. A cada 2 horas o servidor busca esse endereço, cria o produto novo, atualiza preço e estoque do que mudou e desativa o que saiu do feed, sem apagar nada. Desligado, a seção some, nenhum feed é buscado e nada no catálogo muda; os endereços já cadastrados ficam guardados.",
+    foraDoMenu: "Não cria porta no menu do CRM: ele libera uma seção na tela de Produtos, em",
+    painelEm: "/app/products",
+  },
 ];
 
 /**

@@ -34,6 +34,11 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *
  * `manager` e não `viewer` porque isto é preço de venda: papel de leitura não
  * altera catálogo (a mesma régua de `POST /api/v1/products` e da planilha).
+ *
+ * ─── Módulo opcional (doc 322, A) ───────────────────────────────────────────
+ *
+ * Desligado `catalogo_por_feed` (o padrão), a rota responde 404 antes de
+ * qualquer leitura ou busca de URL, como as rotas dos outros módulos.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -54,6 +59,9 @@ import {
 import { aplicarPlano, type BancoDoFeed, type CamposDoUpdate, type LinhaDoProduto } from "@/lib/catalogo/feed-aplicacao";
 import { buscarFeedDaUrl } from "@/lib/catalogo/feed-remoto";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
+import { REF_DO_AVISO } from "@/lib/catalogo/fonte-do-feed";
+import { moduloLigado } from "@/lib/instalacao/modulos";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -100,10 +108,14 @@ const corpoSchema = z
 const COLUNAS_DA_COMPARACAO = "id,id_externo,nome,descricao,preco_cents,fotos,quantidade,ativo";
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const requestId = randomUUID();
+  if (!(await moduloLigado(createAdminClient(), "catalogo_por_feed"))) {
+    return fail("not_found", "Not found", 404, { requestId });
+  }
+
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
-  const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "catalog_products" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
@@ -242,10 +254,23 @@ export async function POST(req: NextRequest): Promise<Response> {
         ativo: true,
         ultima_leitura_em: new Date().toISOString(),
         ultimo_resumo: resumoDaAplicacao,
+        // Quem acabou de aplicar pela tela viu dar certo: a conta de falhas recomeça.
+        falhas_seguidas: 0,
+        ultimo_erro: null,
       },
       { onConflict: "organization_id" },
     );
     fonteSalva = error === null;
+    if (fonteSalva) {
+      // A conta de falhas recomeçou: o aviso de "não está sincronizando" da Central
+      // deixa de ser verdade. Service role, filtrado pela organização do COOKIE.
+      await createAdminClient()
+        .from("agent_inbox_items")
+        .update({ status: "resolved", resolved_at: new Date().toISOString() })
+        .eq("organization_id", orgId)
+        .eq("ref_kind", REF_DO_AVISO)
+        .eq("status", "open");
+    }
   }
 
   await audit({

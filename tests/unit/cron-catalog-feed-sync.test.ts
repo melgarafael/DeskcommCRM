@@ -28,6 +28,8 @@ const estado = vi.hoisted(() => ({
   fontes: [] as unknown[],
   produtos: [] as unknown[],
   portaoOcioso: true,
+  /** A chave `catalogo_por_feed` da instalação. */
+  moduloLigado: true,
 }));
 
 function cadeia(tabela: string) {
@@ -62,6 +64,9 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => clienteFalso }
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/catalogo/moeda-da-org", () => ({ moedaDaOrganizacao: vi.fn(async () => "BRL") }));
 vi.mock("@/lib/catalogo/feed-remoto", () => ({ buscarFeedDaUrl: vi.fn() }));
+vi.mock("@/lib/instalacao/modulos", () => ({
+  moduloLigado: vi.fn(async (_db: unknown, modulo: string) => modulo === "catalogo_por_feed" && estado.moduloLigado),
+}));
 
 /**
  * O portão REAL é substituído por um que REGISTRA a ordem — é o único jeito de
@@ -91,6 +96,7 @@ beforeEach(() => {
   estado.fontes = [];
   estado.produtos = [];
   estado.portaoOcioso = true;
+  estado.moduloLigado = true;
   PisoOcioso.esquecerRetrato();
 });
 
@@ -194,5 +200,124 @@ describe("GET /api/v1/cron/catalog-feed-sync — a rodada", () => {
     expect(dados.fontes).toHaveLength(2);
     expect(dados.fontes[0]!.falhou).toContain("500");
     expect(dados.fontes[1]).toMatchObject({ criados: 1 });
+  });
+});
+
+/**
+ * O MÓDULO DESLIGADO, no ponto de execução (doc 322, A).
+ *
+ * O caso que importa não é "instalação sem fonte" (o portão já cobre): é a
+ * empresa que CADASTROU o feed e depois o dono do servidor desligou o módulo. A
+ * fonte continua `ativo = true` na tabela, o portão do piso ocioso diz "em uso",
+ * e a única coisa entre a batida e a internet é a chave conferida dentro de
+ * `sincronizarFontes`. Por isso o teste chama a FUNÇÃO, e não só a rota.
+ */
+describe("catalog-feed-sync — módulo `catalogo_por_feed` desligado", () => {
+  const fonteCadastrada = {
+    id: "f-1",
+    organization_id: ORG_ID,
+    url: "https://revenda.example/feed.json",
+    formato: "json",
+    mapeamento: {},
+    falhas_seguidas: 0,
+  };
+
+  it("sincronizarFontes NÃO lê fonte, NÃO busca URL e NÃO escreve — mesmo com fonte ativa cadastrada", async () => {
+    estado.moduloLigado = false;
+    estado.fontes = [fonteCadastrada];
+    vi.mocked(buscarFeedDaUrl).mockResolvedValue({ ok: true, texto: "[]" });
+    const { sincronizarFontes } = await import("@/app/api/v1/cron/catalog-feed-sync/route");
+
+    const resultado = await sincronizarFontes(clienteFalso as never);
+
+    expect(resultado).toBeNull();
+    expect(estado.ordem).not.toContain("leitura:fontes");
+    expect(vi.mocked(buscarFeedDaUrl)).not.toHaveBeenCalled();
+    expect(estado.escritas).toEqual([]);
+  });
+
+  it("pela rota: responde `modulo_desligado` e nada sai para a internet", async () => {
+    estado.moduloLigado = false;
+    estado.portaoOcioso = false;
+    estado.fontes = [fonteCadastrada];
+    const { GET } = await import("@/app/api/v1/cron/catalog-feed-sync/route");
+
+    const res = await GET(pedido());
+
+    expect(res.status).toBe(200);
+    expect((await dadosDe(res)).pulado).toBe("modulo_desligado");
+    expect(vi.mocked(buscarFeedDaUrl)).not.toHaveBeenCalled();
+    expect(estado.escritas).toEqual([]);
+  });
+
+  it("controle positivo: LIGADO, a mesma fonte é lida e o feed é buscado", async () => {
+    estado.fontes = [fonteCadastrada];
+    vi.mocked(buscarFeedDaUrl).mockResolvedValue({ ok: true, texto: JSON.stringify([{ id: "SKU-1", nome: "Fone", preco: 10 }]) });
+    const { sincronizarFontes } = await import("@/app/api/v1/cron/catalog-feed-sync/route");
+
+    const resultado = await sincronizarFontes(clienteFalso as never);
+
+    expect(resultado).toHaveLength(1);
+    expect(estado.ordem).toContain("leitura:fontes");
+    expect(vi.mocked(buscarFeedDaUrl)).toHaveBeenCalledWith(fonteCadastrada.url);
+  });
+});
+
+describe("catalog-feed-sync — falha repetida não fica muda", () => {
+  const fonte = (falhas: number) => ({
+    id: "f-1",
+    organization_id: ORG_ID,
+    url: "https://ruim.example/feed.json",
+    formato: "json",
+    mapeamento: {},
+    falhas_seguidas: falhas,
+  });
+
+  it("a falha fica na fonte, com a conta e o motivo — e não abre aviso antes do limite", async () => {
+    estado.fontes = [fonte(0)];
+    vi.mocked(buscarFeedDaUrl).mockResolvedValue({ ok: false, motivo: "a origem respondeu 500" });
+    const { sincronizarFontes } = await import("@/app/api/v1/cron/catalog-feed-sync/route");
+
+    await sincronizarFontes(clienteFalso as never);
+
+    const rastro = estado.escritas.find((e) => e.tabela === "catalog_feed_sources" && e.tipo === "update");
+    expect(rastro?.valor).toMatchObject({ falhas_seguidas: 1, ultimo_erro: "a origem respondeu 500" });
+    expect(estado.escritas.some((e) => e.tabela === "agent_inbox_items")).toBe(false);
+  });
+
+  it("a 3ª falha seguida abre UM aviso na Central, da organização da fonte", async () => {
+    estado.fontes = [fonte(2)];
+    vi.mocked(buscarFeedDaUrl).mockResolvedValue({ ok: false, motivo: "a origem respondeu 500" });
+    const { sincronizarFontes, LIMITE_DE_FALHAS } = await import("@/app/api/v1/cron/catalog-feed-sync/route");
+    expect(LIMITE_DE_FALHAS).toBe(3);
+
+    await sincronizarFontes(clienteFalso as never);
+
+    const avisos = estado.escritas.filter((e) => e.tabela === "agent_inbox_items" && e.tipo === "insert");
+    expect(avisos).toHaveLength(1);
+    expect(avisos[0]!.valor).toMatchObject({ organization_id: ORG_ID, kind: "other", ref_kind: "catalog_feed_source", ref_id: "f-1" });
+  });
+
+  it("a 4ª falha não abre outro aviso (um por sequência, não um por batida)", async () => {
+    estado.fontes = [fonte(3)];
+    vi.mocked(buscarFeedDaUrl).mockResolvedValue({ ok: false, motivo: "a origem respondeu 500" });
+    const { sincronizarFontes } = await import("@/app/api/v1/cron/catalog-feed-sync/route");
+
+    await sincronizarFontes(clienteFalso as never);
+
+    expect(estado.escritas.some((e) => e.tabela === "agent_inbox_items" && e.tipo === "insert")).toBe(false);
+  });
+
+  it("a primeira leitura que dá certo zera a conta e resolve o aviso", async () => {
+    estado.fontes = [{ ...fonte(4), url: "https://boa.example/feed.json" }];
+    vi.mocked(buscarFeedDaUrl).mockResolvedValue({ ok: true, texto: JSON.stringify([{ id: "SKU-1", nome: "Fone", preco: 10 }]) });
+    const { sincronizarFontes } = await import("@/app/api/v1/cron/catalog-feed-sync/route");
+
+    await sincronizarFontes(clienteFalso as never);
+
+    const rastro = estado.escritas.find((e) => e.tabela === "catalog_feed_sources" && e.tipo === "update");
+    expect(rastro?.valor).toMatchObject({ falhas_seguidas: 0, ultimo_erro: null });
+    const resolvido = estado.escritas.find((e) => e.tabela === "agent_inbox_items" && e.tipo === "update");
+    expect(resolvido?.valor).toMatchObject({ status: "resolved" });
   });
 });

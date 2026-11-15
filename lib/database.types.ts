@@ -4630,11 +4630,13 @@ export type Database = {
         Row: {
           ativo: boolean;
           created_at: string;
+          falhas_seguidas: number;
           formato: string;
           id: string;
           mapeamento: Json;
           organization_id: string;
           ultima_leitura_em: string | null;
+          ultimo_erro: string | null;
           ultimo_resumo: Json | null;
           updated_at: string;
           url: string;
@@ -4643,11 +4645,13 @@ export type Database = {
         Insert: {
           ativo?: boolean;
           created_at?: string;
+          falhas_seguidas?: number;
           formato?: string;
           id?: string;
           mapeamento?: Json;
           organization_id: string;
           ultima_leitura_em?: string | null;
+          ultimo_erro?: string | null;
           ultimo_resumo?: Json | null;
           updated_at?: string;
           url: string;
@@ -4655,11 +4659,13 @@ export type Database = {
         Update: {
           ativo?: boolean;
           created_at?: string;
+          falhas_seguidas?: number;
           formato?: string;
           id?: string;
           mapeamento?: Json;
           organization_id?: string;
           ultima_leitura_em?: string | null;
+          ultimo_erro?: string | null;
           ultimo_resumo?: Json | null;
           updated_at?: string;
           url?: string;
@@ -4753,7 +4759,7 @@ export type Database = {
           descricao: string | null;
           fotos: string[];
           id: string;
-          id_externo: string;
+          id_externo: string | null;
           imagem_url: string | null;
           marca: string | null;
           moeda: string;
@@ -4776,7 +4782,7 @@ export type Database = {
           descricao?: string | null;
           fotos?: string[];
           id?: string;
-          id_externo?: string;
+          id_externo?: string | null;
           imagem_url?: string | null;
           marca?: string | null;
           moeda?: string;
@@ -4798,7 +4804,7 @@ export type Database = {
           descricao?: string | null;
           fotos?: string[];
           id?: string;
-          id_externo?: string;
+          id_externo?: string | null;
           imagem_url?: string | null;
           marca?: string | null;
           moeda?: string;

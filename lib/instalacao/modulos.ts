@@ -41,7 +41,7 @@ import type pg from "pg";
 import { logger } from "@/lib/logger";
 
 /**
- * `banco_externo`, `fluxos_atendimento`, `propostas`, `crm_b2b`, `cobranca`, `login_codex`, `setores`, `avisos`, `conferir_whatsapp`, `mcp_por_agente`, `cold_call`, `status_whatsapp`, `painel_atendimento`, `reservas_de_lugar`, `link_de_pagamento`, `canal_bot`, `campanha_por_email` e `revisao_por_km` ligam/desligam por uma linha em `platform_config`
+ * `banco_externo`, `fluxos_atendimento`, `propostas`, `crm_b2b`, `cobranca`, `login_codex`, `setores`, `avisos`, `conferir_whatsapp`, `mcp_por_agente`, `cold_call`, `status_whatsapp`, `painel_atendimento`, `reservas_de_lugar`, `link_de_pagamento`, `canal_bot`, `campanha_por_email`, `revisao_por_km` e `catalogo_por_feed` ligam/desligam por uma linha em `platform_config`
  * (ver o resto deste arquivo). `honorarios`, `financeiro`, `lista_de_espera` e `ouvidoria` são MÓDULOS DE TABELA (ADR-0002): a fonte da
  * verdade é `modulos_instalados`, escrita só por `fn_modulo_instalar` (`lib/modulos/service.ts`),
  * nunca por esta tela. Os dois mecanismos convivem na mesma lista porque é isso que
@@ -82,6 +82,7 @@ export const MODULOS_OPCIONAIS = [
   "canal_bot",
   "campanha_por_email",
   "revisao_por_km",
+  "catalogo_por_feed",
 ] as const;
 export type ModuloOpcional = (typeof MODULOS_OPCIONAIS)[number];
 
@@ -115,6 +116,7 @@ export const MODULOS_OPCIONAIS_POR_FLAG = [
   "canal_bot",
   "campanha_por_email",
   "revisao_por_km",
+  "catalogo_por_feed",
 ] as const satisfies readonly ModuloOpcional[];
 
 /** A linha de cada módulo por FLAG em `platform_config`. O formato é o da CHECK da 0341.
@@ -202,6 +204,13 @@ export const CHAVE_DO_MODULO: Record<(typeof MODULOS_OPCIONAIS_POR_FLAG)[number]
   // Desligado, o km gravado não projeta nada e o roteiro não faz consulta a mais
   // (`lib/revisao-por-km/modulo.ts`).
   revisao_por_km: "MODULO_REVISAO_POR_KM",
+  // Doc 322 (A): o catálogo sincronizado por feed do #3587 (PR #4179 de
+  // @webtecnica) serve à revenda cujo sistema de estoque publica um feed, não à
+  // maioria (régua do núcleo enxuto). Ele faz o SERVIDOR buscar uma URL de fora
+  // a cada 2 h e reescrever preço no catálogo que a IA responde. Desligado, a
+  // rota responde 404, a seção some da tela de Produtos e o cron não lê nenhuma
+  // fonte — nem a de quem configurou antes de desligar (`sincronizarFontes`).
+  catalogo_por_feed: "MODULO_CATALOGO_POR_FEED",
 };
 
 const LIGADO = "ligado";

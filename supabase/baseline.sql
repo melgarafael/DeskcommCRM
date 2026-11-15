@@ -76136,8 +76136,12 @@ revoke all on function public.fn_resumo_historico_analise(uuid, uuid)
 grant execute on function public.fn_resumo_historico_analise(uuid, uuid)
   to service_role;
 
--- ---- fonte do catálogo sincronizada (migration 9222, issue #3587) ----
--- Espelho idempotente da 9222. A tabela e a coluna nascem no apêndice, e não no
+-- ---- fonte do catálogo sincronizada (migration 9382, issue #3587, PR #4179) ----
+-- Espelho idempotente da 9382 (nasceu como 9222). Módulo opcional
+-- `catalogo_por_feed`, desligado de fábrica: a tabela existe vazia em toda
+-- instalação e nada a lê enquanto a chave estiver desligada. Fica ANTES da
+-- cascata da 9243 (o invariante `lgpd-alcanca-fichas-fundidas` compara aquele
+-- trecho por igualdade). A tabela e a coluna nascem no apêndice, e não no
 -- bloco do `create table catalog_products`, pelo mesmo motivo das outras
 -- entradas daqui: o `update.sh` pula o create de tabela que já existe, e a
 -- coluna nova precisa alcançar toda instalação já instalada.
@@ -76150,6 +76154,8 @@ create table if not exists public.catalog_feed_sources (
   ativo boolean not null default true,
   ultima_leitura_em timestamptz,
   ultimo_resumo jsonb,
+  falhas_seguidas integer not null default 0,
+  ultimo_erro text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint catalog_feed_sources_url_http check (url ~* '^https?://')
