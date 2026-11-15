@@ -34,6 +34,7 @@ import {
   createSearch,
   desarquivarCampanha,
   descartarDesmarcadas,
+  editBriefing,
   selecionarNaFila,
   validateConfig,
   withProspectingLock,
@@ -244,6 +245,18 @@ export async function POST(req: NextRequest) {
     } else if (body.action === "adjust_tags") {
       // Mesma régua do ritmo (spec 27): só campanha pausada, e a auditoria diz de quanto para quanto.
       const { previous, next } = await adjustTags(pool, org, body.id, body.contact_tags);
+      result = next;
+      auditMetadata = { operation: body.action, previous, next };
+    } else if (body.action === "edit_briefing") {
+      // Mesma régua do ritmo (#4570): só campanha pausada. O texto e as ofertas são
+      // lidos da config a cada turno, então o que se grava aqui alcança as próximas
+      // conversas — e o histórico já trocado não é reescrito. A auditoria guarda o
+      // texto anterior, que é o único registro de como a campanha falava antes.
+      const { previous, next } = await editBriefing(pool, org, body.id, {
+        instruction: body.instruction,
+        qualification: body.qualification,
+        ofertas: body.ofertas,
+      });
       result = next;
       auditMetadata = { operation: body.action, previous, next };
     } else if (body.action === "select") {

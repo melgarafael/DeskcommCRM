@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { loadChannelKnobs, loadPacingState, recordSend } from "@/lib/agent-engine/pacing/store";
 import {
+  dayStartInTz,
   decidePacing,
   janelaDeProspeccaoAberta,
   proximaAberturaDaProspeccao,
@@ -46,6 +47,12 @@ import { mensagemDaRecusaDoCanal } from "./motivo-da-pausa";
 import { canalDaCampanha } from "./canal-da-campanha";
 // O carimbo do pedido da prospecção: `prospecting:` — nunca `rule:` (#3072).
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
+import {
+  abordagensComMidiaDesde,
+  prepararMidiaDaAbordagem,
+  TETO_DE_LEGENDA,
+  TETO_DIARIO_DE_MIDIA_POR_NUMERO,
+} from "./midia-da-abordagem";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 import {
   withProspectingLock,
@@ -404,7 +411,11 @@ export async function sendNextCandidate(
       // Fonte única em `montarDadosDeAbordagem` (prévia da tela bebe da mesma).
       dados: soCumprimenta
         ? montarDadosDeAbordagem(p.data, null, null)
-        : montarDadosDeAbordagem(p.data, site, previaDoAgente(p.data, cfg.agent_id)),
+        : montarDadosDeAbordagem(
+            p.data,
+            site,
+            previaDoAgente(p.data, cfg.agent_id, cfg.briefing_editado_em),
+          ),
     });
     if (!generated.ok)
       // DO CANDIDATO: o modelo não produziu texto para ESTES dados.
@@ -453,10 +464,54 @@ export async function sendNextCandidate(
     // `split_max_chars` — é o mesmo preço que o `splitForSend` já paga quando o
     // teto de bolhas do turno é atingido: a alternativa seria picar a saída em
     // duas mensagens, e aí ela voltaria a depender de uma bolha posterior.
+    // A MÍDIA FIXA DA CAMPANHA (#4581) muda o RECORTE do texto, e por isso ela é
+    // decidida ANTES do corte: com mídia, a 1ª bolha não é "a primeira de N
+    // mensagens de texto" — é a LEGENDA do arquivo, e legenda tem teto próprio no
+    // WhatsApp (`TETO_DE_LEGENDA`, 1024). Um teto de bolha maior que isso
+    // (o schema do agente aceita até 4000) mandaria uma legenda que a plataforma
+    // corta ou recusa, e a primeira frase da abordagem — a única que a pessoa lê
+    // antes de decidir se responde — chegaria pela metade.
+    //
+    // O teto da legenda RESERVA o espaço da SAÍDA: ela entra na 1ª bolha logo
+    // abaixo e, se o corte enchesse os 1024 caracteres, o "responda PARAR" seria
+    // exatamente o que a plataforma cortaria — a pessoa receberia a apresentação
+    // e ficaria sem caminho de volta, que é o desfecho que a saída existe para
+    // evitar. `comSaida("")` devolve só o que ela acrescenta, então a folga é
+    // medida, não estimada.
+    //
+    // SEM mídia nada disto roda: estilo e teto são os de sempre, bolha a bolha.
+    //
+    // O TETO DIÁRIO DE MÍDIA DO NÚMERO (doc 358 › 2A) vem antes de tudo isso:
+    // passado o teto, a abordagem é a de uma campanha sem mídia — texto puro, no
+    // estilo do agente — e a campanha segue. O "dia" é o do fuso da janela do
+    // número (`knobs.timezone`), a mesma régua do portão 7h–22h.
+    const midiaOmitidaPeloTeto =
+      cfg.midia_da_abordagem != null &&
+      (await abordagensComMidiaDesde(
+        db,
+        c.organization_id,
+        canal,
+        dayStartInTz(now, knobs.timezone),
+      )) >= TETO_DIARIO_DE_MIDIA_POR_NUMERO;
+    if (midiaOmitidaPeloTeto)
+      logger.info("[prospecting] teto diário de mídia do número atingido; a abordagem sai só com texto", {
+        organization_id: c.organization_id,
+        campaign_id: c.id,
+        channel_session_id: canal,
+        teto: TETO_DIARIO_DE_MIDIA_POR_NUMERO,
+      });
+    const comMidia = cfg.midia_da_abordagem != null && !midiaOmitidaPeloTeto;
+    const folgaDaSaida =
+      comMidia && cfg.exit_offer === "first_message"
+        ? comSaida("", locale, cfg.texto_da_saida).length
+        : 0;
+    const tetoDaBolha = comMidia
+      ? Math.min(agent.split_max_chars ?? 600, Math.max(80, TETO_DE_LEGENDA - folgaDaSaida))
+      : (agent.split_max_chars ?? 600);
     const baloes = splitForSend(
       generated.texto,
-      agent.split_messages ?? false,
-      agent.split_max_chars ?? 600,
+      comMidia ? true : (agent.split_messages ?? false),
+      tetoDaBolha,
       TETO_DE_BOLHAS_DA_ABORDAGEM,
     );
     // Texto vazio com o estilo ligado não devolve bolha nenhuma (`splitForSend` →
@@ -477,6 +532,32 @@ export async function sendNextCandidate(
     // reconhece é trocado pelo padrão em `rodape-de-saida.ts` — a saída não pode
     // depender da redação ter dado certo.
     if (cfg.exit_offer === "first_message") baloes[0] = comSaida(baloes[0]!, locale, cfg.texto_da_saida);
+    // A MÍDIA VAI JUNTO DA PRIMEIRA BOLHA — e é a MESMA mensagem física, não uma
+    // segunda logo antes dela. Três razões, todas medidas no caminho que já
+    // existe:
+    //
+    //   1. ORDEM: o handler manda o que recebe e devolve o status; mandar a mídia
+    //      "antes" seria um segundo envio cuja ordem eu mesmo teria de garantir —
+    //      exatamente o que a legenda dispensa. Um envio, uma ordem.
+    //   2. IDEMPOTÊNCIA: a 1ª bolha é a ÚNICA que leva `internalMessageId`
+    //      (`p.message_id`). Numa repetição com o mesmo id, o handler acha a linha
+    //      (`_handler.ts`, ramo 23505) e devolve sem falar com o canal — então a
+    //      mídia não tem como sair duas vezes. Numa mensagem separada e sem id, a
+    //      repetição reenviaria o arquivo, e o contato receberia a mesma imagem
+    //      duas vezes (o desfecho que mais queima número).
+    //   3. SAÍDA: o rodapé já está na 1ª bolha, então "responda PARAR" viaja junto
+    //      do arquivo em vez de depender de uma bolha que pode não sair.
+    //
+    // A assinatura acontece AQUI e não a cada bolha: uma URL para o envio inteiro.
+    // Falha de assinatura RECUSA a abordagem (a configuração pediu um arquivo, e
+    // entregar texto puro seria outra abordagem) — o `ProspectingError` sem escopo
+    // é `campanha`, que é o certo: o arquivo é o mesmo para a fila inteira.
+    const midiaPreparada = await prepararMidiaDaAbordagem(
+      admin,
+      comMidia ? cfg.midia_da_abordagem : null,
+    );
+    if (midiaPreparada && !midiaPreparada.ok) throw new ProspectingError(midiaPreparada.motivo);
+    const midia = midiaPreparada && midiaPreparada.ok ? midiaPreparada : null;
     let mensagem: Message | undefined;
     let falhouEm: Message | undefined;
     /** A conversa deixou de ser fria ENTRE bolhas: a pessoa respondeu ou um humano assumiu. */
@@ -543,11 +624,26 @@ export async function sendNextCandidate(
               revision: String(agent.operation_revision),
             },
           },
-          {
-            conversation_id: p.conversation_id,
-            type: "text",
-            body: baloes[i]!,
-          },
+          // A 1ª bolha leva a MÍDIA junto, como LEGENDA: `type` diz ao canal o que
+          // é o arquivo, `media_*` entregam o endereço assinado e o `body` continua
+          // sendo o texto desta bolha (com a saída, no modo `first_message`). As
+          // seguintes saem `text` puro — e SEM mídia este ramo é o de sempre,
+          // byte a byte.
+          midia && i === 0
+            ? {
+                conversation_id: p.conversation_id,
+                type: midia.tipo,
+                // Legenda vazia é AUSÊNCIA de legenda, não `body: ""`: o schema do
+                // envio exige `body` com pelo menos 1 caractere quando ele existe.
+                ...(baloes[i] ? { body: baloes[i]! } : {}),
+                media_url: midia.url,
+                media_mime: midia.mime,
+              }
+            : {
+                conversation_id: p.conversation_id,
+                type: "text",
+                body: baloes[i]!,
+              },
         );
       } catch (error) {
         // Na 1ª bolha nada saiu: o erro segue para o `catch` de fora (candidato
@@ -659,6 +755,15 @@ export async function sendNextCandidate(
         // Bolhas FÍSICAS confirmadas / bolhas em que o texto foi fatiado.
         bubbles_sent: entregues,
         bubbles_total: baloes.length,
+        // A abordagem saiu COM o arquivo da campanha (#4581). Sem PII e sem o
+        // endereço assinado: o tipo basta para responder, depois, "quem recebeu
+        // aquele arquivo" — a pergunta que a régua de banimento faz.
+        ...(midia ? { media_type: midia.tipo } : {}),
+        // A campanha tem mídia, mas este número já passou do teto do dia (doc 358
+        // › 2A): a abordagem saiu só com texto, e é aqui que isso fica dito.
+        ...(midiaOmitidaPeloTeto
+          ? { media_omitted: "teto_diario_por_numero", media_daily_cap: TETO_DIARIO_DE_MIDIA_POR_NUMERO }
+          : {}),
         // Por que as seguintes não saíram, quando a conversa deixou de ser fria.
         ...(parouEm || lancouEm ? { stopped_reason: parouEm ?? lancouEm } : {}),
       },

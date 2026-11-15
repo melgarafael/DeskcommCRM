@@ -1,4 +1,4 @@
-import webpush from "web-push";
+import * as webpush from "web-push";
 
 import { roleAtLeast, type Role } from "@/lib/auth/types";
 import { createAdminClient } from "@/lib/supabase/admin";

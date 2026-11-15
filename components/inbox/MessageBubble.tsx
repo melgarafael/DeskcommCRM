@@ -36,6 +36,7 @@ import { ApiError } from "@/lib/api/types";
 import { resolveSharedContact } from "@/lib/messaging/contact-card";
 import { lerAnuncioDaMensagem } from "@/lib/leads/atribuicao-de-anuncio";
 import { marcadorDaApagada, textoDaApagadaApareceNaInbox } from "@/lib/messaging/apagada";
+import { TextoRetidoDaMensagem } from "@/components/inbox/TextoRetidoDaMensagem";
 import { AnuncioCard } from "@/components/inbox/AnuncioCard";
 import { TextoComLinks } from "@/components/inbox/TextoComLinks";
 import {
@@ -739,6 +740,14 @@ export function MessageBubble({
                 <p className="text-[10px] opacity-70">{t("Visível só aqui no CRM")}</p>
                 <p className="whitespace-pre-wrap wrap-anywhere leading-snug"><TextoComLinks texto={message.body} /></p>
               </div>
+            )}
+            {/* Apagada pelo CONTATO: o corpo não vem no payload (#4500). Quem
+                decide se ele aparece é o servidor, ao clique — e o aviso de
+                exclusão CONTINUA acima, porque a mensagem segue apagada. O
+                botão só existe com `texto_retido`: o servidor só manda o sinal
+                quando há corpo guardado E a empresa autorizou algum perfil. */}
+            {!textoApagadoVisivel && message.texto_retido === true && (
+              <TextoRetidoDaMensagem mensagemId={message.id} />
             )}
           </div>
         ) : ocultaNoCrm ? (
