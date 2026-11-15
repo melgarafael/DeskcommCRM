@@ -324,8 +324,21 @@ export class AudioSocketCallBridge {
    */
   private agendaPendente = new Map<
     string,
-    { operacao: PreparoDaVoz["operacao"]; args: Record<string, unknown> }
+    {
+      operacao: PreparoDaVoz["operacao"];
+      args: Record<string, unknown>;
+      /** `falasDoCliente` quando o resumo foi entregue ao modelo. */
+      falasNoPreparo: number;
+    }
   >();
+  /**
+   * Turnos de fala do CLIENTE (`input_audio_buffer.committed`). A confirmação
+   * só grava se a pessoa falou DEPOIS do resumo: sem isso, o "sim" seria só o
+   * modelo obedecendo a instrução, e um modelo que chama preparar e confirmar
+   * em sequência marcaria sem ninguém ter ouvido dia e hora. Não lê o conteúdo
+   * — quem decide se a resposta foi "sim" continua sendo o modelo.
+   */
+  private falasDoCliente = 0;
   /** Só o contador: o código é `prep-1`, `prep-2` — opaco, curto e nunca um UUID. */
   private agendaSeq = 0;
 
@@ -597,6 +610,12 @@ export class AudioSocketCallBridge {
           this.ctx.onTranscriptTurn({ speaker: "agent", text: transcriptLimpo });
           break;
         }
+        // Fim de um turno do cliente (o VAD fechou o áudio). Chega ANTES da
+        // resposta que esse turno dispara — a transcrição, não: ela é
+        // assíncrona e pode vir depois da chamada de função.
+        case "input_audio_buffer.committed":
+          this.falasDoCliente += 1;
+          break;
         case "conversation.item.input_audio_transcription.completed":
           this.ctx.onTranscriptTurn({ speaker: "customer", text: event.transcript });
           break;
@@ -790,7 +809,11 @@ export class AudioSocketCallBridge {
         if ("recusa" in preparo) return preparo.recusa;
 
         const id = `prep-${++this.agendaSeq}`;
-        this.agendaPendente.set(id, { operacao: preparo.operacao, args: preparo.args });
+        this.agendaPendente.set(id, {
+          operacao: preparo.operacao,
+          args: preparo.args,
+          falasNoPreparo: this.falasDoCliente,
+        });
         return (
           `${preparo.resumo} ` +
           `Leia isso à pessoa e pergunte se pode confirmar; se ela disser sim, chame "${CONFIRMAR_AGENDAMENTO_TOOL_NAME}" ` +
@@ -806,6 +829,14 @@ export class AudioSocketCallBridge {
           // NADA é escrito. Uma preparação = uma confirmação: o código sai do
           // mapa ANTES da escrita, então repetir a chamada não marca duas vezes.
           return "Não tenho nada preparado com esse código, e nada foi marcado. Posso olhar os horários de novo.";
+        }
+        if (this.falasDoCliente <= pendente.falasNoPreparo) {
+          // A pessoa ainda não respondeu ao resumo. O preparo FICA: depois do
+          // sim dela, o mesmo código confirma.
+          return (
+            "Nada foi marcado: a pessoa ainda não respondeu. Leia o resumo, pergunte se pode confirmar " +
+            `e só chame "${CONFIRMAR_AGENDAMENTO_TOOL_NAME}" depois que ela disser sim.`
+          );
         }
         this.agendaPendente.delete(id);
         return agenda.executar(pendente.operacao, pendente.args);

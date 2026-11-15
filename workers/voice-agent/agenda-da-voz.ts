@@ -28,6 +28,7 @@
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { auditMcpToolCall } from "@/lib/mcp/audit";
 import type { McpContext } from "@/lib/mcp/types";
 import {
   crmBookAppointment,
@@ -104,7 +105,8 @@ export interface ContextoDaAgendaNaVoz {
   /** Da linha de `voice_calls` — a ÚNICA organização que esta ligação alcança. */
   organizationId: string;
   callId: string;
-  agentId?: string | null;
+  /** A linha de `ai_agents` do agente de voz — o ATOR da escrita (timeline e auditoria). */
+  agentId: string;
   /** Quem está sendo atendido. Sem contato não há para quem marcar. */
   contactId: string | null;
 }
@@ -209,15 +211,19 @@ export function montarAgendaDaVoz(entrada: ContextoDaAgendaNaVoz): AgendaDaVoz {
     return {
       organizationId: entrada.organizationId,
       role: "ai_operator",
+      // Mesma forma do turno de texto (`lib/agent-engine/edge/crm/mcp-tools.ts`):
+      // o ator é o AGENTE, e `agent_id` é o que vai para a timeline com FK.
       actor: {
         type: "ai_agent",
-        id: entrada.callId,
+        id: entrada.agentId,
+        agent_id: entrada.agentId,
         role: "ai_operator",
-        ...(entrada.agentId ? { agent_id: entrada.agentId } : {}),
       },
-      // Ligação não tem token de API: o campo existe no tipo, e é vazio de
-      // propósito — nenhuma tool de agenda o persiste.
+      // Ligação não tem token de API: vazio de propósito, e `auditMcpToolCall`
+      // grava ausente (a coluna é uuid).
       apiTokenId: "",
+      // A CHAMADA DE ORIGEM: vai como `request_id` na auditoria que o próprio
+      // handler grava (`agenda.appointment_created` / `_rescheduled`).
       requestId: entrada.callId,
       supabase: entrada.supabase,
       ...(entrada.contactId ? { contatoDoTurno: entrada.contactId } : {}),
@@ -364,6 +370,14 @@ export function montarAgendaDaVoz(entrada: ContextoDaAgendaNaVoz): AgendaDaVoz {
         if (!atual) {
           return { recusa: "Não encontrei compromisso marcado no seu nome. Quer marcar um novo?" };
         }
+        // Com dois ou mais, "o mais próximo" pode não ser o que a pessoa quer
+        // mover — e ela ouviria o resumo de outro. Por telefone, a equipe decide.
+        if (futuros.length > 1) {
+          return {
+            recusa:
+              "Você tem mais de um compromisso marcado, e por esta ligação eu só consigo remarcar quando há um. Alguém da equipe confirma com você qual mudar.",
+          };
+        }
         const tipoDoCompromisso = atual.tipo?.slug ?? "";
         if (tipoDoCompromisso === "") {
           return {
@@ -434,7 +448,7 @@ export function montarAgendaDaVoz(entrada: ContextoDaAgendaNaVoz): AgendaDaVoz {
         if (!lido.success) {
           return "Não consegui concluir o agendamento. Alguém da equipe confirma com você.";
         }
-        const r = (await crmBookAppointment.handler(lido.data, contextoDaTool())) as {
+        const r = (await escritaAuditada(crmBookAppointment, lido.data, "marcado")) as {
           marcado?: boolean;
           compromisso?: { quando?: string; title?: string };
           aguarda_confirmacao?: boolean;
@@ -457,7 +471,7 @@ export function montarAgendaDaVoz(entrada: ContextoDaAgendaNaVoz): AgendaDaVoz {
       if (!lido.success) {
         return "Não consegui concluir a remarcação. Alguém da equipe confirma com você.";
       }
-      const r = (await crmRescheduleAppointment.handler(lido.data, contextoDaTool())) as {
+      const r = (await escritaAuditada(crmRescheduleAppointment, lido.data, "remarcado")) as {
         remarcado?: boolean;
         compromisso?: { quando?: string };
         mensagem?: string;
@@ -470,6 +484,41 @@ export function montarAgendaDaVoz(entrada: ContextoDaAgendaNaVoz): AgendaDaVoz {
       return duasFrases(`Pronto: remarquei para ${falarQuando(quando)}.`);
     },
   };
+
+  /**
+   * A escrita, com o MESMO rastro que o turno de texto deixa (`mcp.tool_called`
+   * de `wrapMcpTool`), que esta ponte pula ao chamar o handler direto: ator = o
+   * agente de voz, `voice_call_id` = a ligação de onde veio. Recusa do handler
+   * (`{ marcado: false, motivo }`) entra como recusa, não como sucesso.
+   */
+  async function escritaAuditada<I>(
+    def: { name: string; handler: (input: I, ctx: McpContext) => Promise<unknown> },
+    input: I,
+    chaveDoEfeito: "marcado" | "remarcado",
+  ): Promise<unknown> {
+    const ctx = contextoDaTool();
+    const inicio = Date.now();
+    const rastro = { ctx, toolName: def.name, args: input as Record<string, unknown>, chamadaDeVoz: entrada.callId };
+    try {
+      const r = (await def.handler(input, ctx)) as Record<string, unknown>;
+      const motivo = textoDe(r[chaveDoEfeito] === false ? r.motivo : undefined);
+      void auditMcpToolCall({
+        ...rastro,
+        durationMs: Date.now() - inicio,
+        success: r[chaveDoEfeito] !== false,
+        ...(r[chaveDoEfeito] === false ? { desfecho: "recusa" as const, ...(motivo ? { motivo } : {}) } : {}),
+      });
+      return r;
+    } catch (err) {
+      void auditMcpToolCall({
+        ...rastro,
+        durationMs: Date.now() - inicio,
+        success: false,
+        errorMessage: err instanceof Error ? err.message : "unknown_error",
+      });
+      throw err;
+    }
+  }
 
   /**
    * Recusa de ESCRITA: a mensagem do handler já é a face do cliente, mas em voz

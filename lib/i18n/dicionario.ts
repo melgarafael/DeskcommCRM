@@ -15423,6 +15423,10 @@ export const DICIONARIO: Traducoes = {
   "Modelo de voz": { es: "Modelo de voz" },
   "Voz do modelo": { es: "Voz del modelo" },
   "Velocidade da fala (0,25–1,5)": { es: "Velocidad del habla (0,25–1,5)" },
+  "Marcar e remarcar horários na ligação": { es: "Agendar y reprogramar citas durante la llamada" },
+  "Ligado, o agente consulta a agenda e marca ou remarca horários enquanto fala com o cliente. Antes de gravar, ele lê o dia e a hora e só marca depois que a pessoa disser sim. Vale só quando o número de quem ligou está no cadastro. Desligado, o agente não mexe na agenda.": {
+    es: "Activado, el agente consulta la agenda y agenda o reprograma citas mientras habla con el cliente. Antes de guardar, lee el día y la hora y solo agenda después de que la persona diga que sí. Solo funciona cuando el número de quien llama está registrado. Desactivado, el agente no toca la agenda.",
+  },
   "1,0 é a velocidade padrão do modelo — abaixo disso fala mais devagar, acima fala mais rápido. Vale a partir da próxima ligação.": {
     es: "1,0 es la velocidad predeterminada del modelo. Por debajo habla más despacio y por encima, más rápido. Se aplica desde la próxima llamada.",
   },

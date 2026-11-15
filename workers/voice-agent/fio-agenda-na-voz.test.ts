@@ -12,12 +12,19 @@
  * (c) confirmar com código desconhecido é RECUSADO e a escrita não é chamada;
  * (d) preparar + confirmar executa a marcação e o texto não tem UUID/JSON;
  * (e) preparar de REMARCAR executa remarcar, não marcar;
- * (f) `organization_id` nos argumentos não é encaminhado (a org é a da ligação).
+ * (f) `organization_id` nos argumentos não é encaminhado (a org é a da ligação);
+ * (g) confirmar SEM a pessoa ter falado depois do resumo não grava — e a
+ *     ligação que termina sem resposta não grava nada;
+ * (h) o fio (`index.ts`): sem `config.agenda_na_ligacao`, a ligação não recebe
+ *     ferramenta de agenda nenhuma.
  *
  * SABOTAGEM:
  * - fazer `confirmar_agendamento` executar mesmo com código desconhecido
  *   (ex.: cair num preparo padrão) derruba (c);
- * - espalhar `args` cru para a agenda (`...args`) derruba (f).
+ * - espalhar `args` cru para a agenda (`...args`) derruba (f);
+ * - tirar a conferência `falasDoCliente <= falasNoPreparo` derruba (g);
+ * - trocar `agent.agendaNaLigacao && contactIdDaChamada` por só o contato
+ *   derruba (h).
  */
 import { EventEmitter } from "node:events";
 
@@ -25,6 +32,54 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fakes = vi.hoisted(() => ({
   ultimoWs: null as (EventEmitter & { send: ReturnType<typeof vi.fn>; readyState: number }) | null,
+  agendaNaLigacao: false,
+}));
+
+// Só para o fio (h): `handleAudioSocketConnection` lê a linha de voice_calls e
+// o agente de voz. A ponte, nos demais casos, não toca em nada disto.
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: () => ({
+    from: () => {
+      const consulta = {
+        select: () => consulta,
+        update: () => consulta,
+        eq: () => consulta,
+        in: () => consulta,
+        single: async () => ({
+          data: { id: "chamada-1", organization_id: "org-1", contact_id: "contato-1", direction: "inbound" },
+          error: null,
+        }),
+        maybeSingle: async () => ({ data: { status: "active" }, error: null }),
+        then: (ok: (r: unknown) => unknown) =>
+          Promise.resolve({ data: [{ id: "chamada-1" }], error: null }).then(ok),
+      };
+      return consulta;
+    },
+  }),
+}));
+vi.mock("@/lib/voip/ariClient", () => ({
+  connectAriEvents: () => undefined,
+  hangupChannel: () => undefined,
+  setChannelVariable: () => undefined,
+  continueDialplan: () => undefined,
+}));
+vi.mock("@/lib/ai/agents", () => ({
+  getActiveVoiceAgent: async () => ({
+    id: "agente-1",
+    systemPrompt: "Você é a Ana.",
+    voice: "marin",
+    voiceSpeed: 1,
+    apiKey: "k",
+    agendaNaLigacao: fakes.agendaNaLigacao,
+  }),
+}));
+vi.mock("@/lib/ai/knowledge/busca", () => ({
+  buscarConhecimento: async () => ({ trechos: [] }),
+  resolverAcervoDoAgente: async () => [],
+}));
+vi.mock("@/lib/organizacao/operante", () => ({ ehOperante: () => true }));
+vi.mock("@/lib/ai/usage/registrar-chamada", () => ({
+  registrarChamadaDeIa: async () => undefined,
 }));
 
 // WebSocket de brinquedo: nenhum byte sai para a OpenAI.
@@ -45,6 +100,7 @@ vi.mock("ws", async () => {
 
 import type { AgendaDaVoz, PreparoDaVoz } from "./agenda-da-voz";
 import { AudioSocketCallBridge } from "./audioSocketBridge";
+import { handleAudioSocketConnection } from "./index";
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
@@ -139,6 +195,11 @@ function chamarTool(nome: string, callId: string, args: unknown) {
   );
 }
 
+/** A pessoa terminou de falar (o VAD fechou o turno dela). */
+function falaDoCliente() {
+  fakes.ultimoWs!.emit("message", JSON.stringify({ type: "input_audio_buffer.committed", item_id: "item-x" }));
+}
+
 async function abrirSessao() {
   fakes.ultimoWs!.emit("open");
   await vi.waitFor(() => expect(enviados()).toContain("session.update"));
@@ -165,6 +226,7 @@ function abrirPonte(agenda?: AgendaDaVoz) {
 
 beforeEach(() => {
   fakes.ultimoWs = null;
+  fakes.agendaNaLigacao = false;
 });
 
 afterEach(() => {
@@ -249,6 +311,7 @@ describe("(d) preparar e confirmar", () => {
     const codigo = /prep-\d+/.exec(preparo)?.[0];
     expect(codigo).toBeTruthy();
 
+    falaDoCliente(); // "pode, sim"
     chamarTool("confirmar_agendamento", "call-q", { id: codigo });
     const confirmacao = await outputDe("call-q");
 
@@ -270,6 +333,7 @@ describe("(d) preparar e confirmar", () => {
     chamarTool("preparar_agendamento", "call-p", { tipo: "consulta-inicial", hora: "14:00" });
     const codigo = /prep-\d+/.exec(await outputDe("call-p"))?.[0];
 
+    falaDoCliente();
     chamarTool("confirmar_agendamento", "call-q", { id: codigo });
     await outputDe("call-q");
     chamarTool("confirmar_agendamento", "call-r", { id: codigo });
@@ -302,6 +366,7 @@ describe("(e) remarcar", () => {
     expect(preparo).not.toMatch(UUID);
 
     const codigo = /prep-\d+/.exec(preparo)?.[0];
+    falaDoCliente();
     chamarTool("confirmar_agendamento", "call-q", { id: codigo });
     await outputDe("call-q");
 
@@ -340,5 +405,71 @@ describe("(f) organização nos argumentos", () => {
     });
     await outputDe("call-h");
     expect(agenda.horariosLivres).toHaveBeenCalledWith({ tipo: "consulta-inicial" });
+  });
+});
+
+describe("(g) sem o sim da pessoa, nada é gravado", () => {
+  it("confirmar logo depois do preparo, sem a pessoa falar, é recusado — e o mesmo código vale depois do sim", async () => {
+    const agenda = agendaFalsa();
+    abrirPonte(agenda);
+    await abrirSessao();
+
+    falaDoCliente(); // o pedido ("quero segunda às 14h") veio ANTES do preparo: não conta
+    chamarTool("preparar_agendamento", "call-p", { tipo: "consulta-inicial", hora: "14:00" });
+    const codigo = /prep-\d+/.exec(await outputDe("call-p"))?.[0];
+
+    chamarTool("confirmar_agendamento", "call-q", { id: codigo });
+    const semResposta = await outputDe("call-q");
+
+    expect(semResposta).toMatch(/nada foi marcado/i);
+    expect(agenda.executar).not.toHaveBeenCalled();
+
+    falaDoCliente(); // "pode, sim"
+    chamarTool("confirmar_agendamento", "call-r", { id: codigo });
+    await outputDe("call-r");
+
+    expect(agenda.executar).toHaveBeenCalledTimes(1);
+  });
+
+  it("a ligação termina depois do preparo, sem confirmação: nada é gravado", async () => {
+    const agenda = agendaFalsa();
+    abrirPonte(agenda);
+    await abrirSessao();
+
+    chamarTool("preparar_agendamento", "call-p", { tipo: "consulta-inicial", hora: "14:00" });
+    await outputDe("call-p");
+    falaDoCliente(); // "deixa eu ver e te ligo"
+    ponte!.close();
+    ponte = null;
+
+    expect(agenda.preparar).toHaveBeenCalledTimes(1);
+    expect(agenda.executar).not.toHaveBeenCalled();
+  });
+});
+
+describe("(h) o fio: a opção da aba Voz decide", () => {
+  async function toolsDaLigacao(): Promise<string[]> {
+    const socket = socketDeBrinquedo();
+    await handleAudioSocketConnection(socket as never, "uuid-1", Buffer.alloc(0));
+    await abrirSessao();
+    return nomesDasTools();
+  }
+
+  it("desligada (padrão): nenhuma ferramenta de agenda, nem de consulta, mesmo com contato", async () => {
+    fakes.agendaNaLigacao = false;
+    const nomes = await toolsDaLigacao();
+
+    expect(nomes).toContain("encerrar_chamada");
+    for (const n of ["listar_tipos_de_atendimento", "achar_horario_livre", "listar_compromissos", "preparar_agendamento", "confirmar_agendamento"]) {
+      expect(nomes).not.toContain(n);
+    }
+    expect(sessao().instructions).not.toContain("cuida da agenda da empresa");
+  });
+
+  it("ligada: a ligação com contato recebe as cinco", async () => {
+    fakes.agendaNaLigacao = true;
+    expect(await toolsDaLigacao()).toEqual(
+      expect.arrayContaining(["achar_horario_livre", "preparar_agendamento", "confirmar_agendamento"]),
+    );
   });
 });

@@ -22,7 +22,10 @@ const chamadas = vi.hoisted(() => ({
   lista: vi.fn(),
   marcar: vi.fn(),
   remarcar: vi.fn(),
+  auditoria: vi.fn(async () => undefined),
 }));
+
+vi.mock("@/lib/mcp/audit", () => ({ auditMcpToolCall: chamadas.auditoria }));
 
 vi.mock("@/lib/mcp/tools/agendamento", async () => {
   const { z } = await import("zod");
@@ -272,6 +275,101 @@ describe("(e) remarcar", () => {
     expect(chamadas.remarcar).toHaveBeenCalledTimes(1);
     expect(chamadas.marcar).not.toHaveBeenCalled();
     expect(fala).toBe("Pronto: remarquei para terça-feira, 8 de janeiro, às 9 horas.");
+  });
+});
+
+describe("(g) remarcar com mais de um compromisso", () => {
+  it("recusa e passa à equipe, sem ler horário nem escrever", async () => {
+    chamadas.lista.mockResolvedValue({
+      compromissos: [
+        {
+          id: "3f0c1b7a-2d7e-4c1f-9a55-8f0f2f9e1d10",
+          titulo: "Consulta inicial",
+          inicio: "2030-01-07T17:00:00.000Z",
+          quando: "segunda-feira 07/01 às 14:00",
+          situacao: "confirmed",
+          tipo: { slug: "consulta-inicial", nome: "Consulta inicial" },
+        },
+        {
+          id: "9a1d2c3b-0000-4c1f-9a55-8f0f2f9e1d11",
+          titulo: "Retorno",
+          inicio: "2030-01-09T17:00:00.000Z",
+          quando: "quarta-feira 09/01 às 14:00",
+          situacao: "confirmed",
+          tipo: { slug: "retorno", nome: "Retorno" },
+        },
+      ],
+    });
+
+    const preparo = await agendaDa().preparar({ tipo: "retorno", hora: "09:00", remarcar: true });
+
+    expect("recusa" in preparo).toBe(true);
+    if (!("recusa" in preparo)) return;
+    expect(preparo.recusa).toContain("mais de um compromisso");
+    expect(chamadas.horarios).not.toHaveBeenCalled();
+    expect(chamadas.remarcar).not.toHaveBeenCalled();
+  });
+});
+
+describe("(h) a escrita deixa rastro do agente de voz e da ligação", () => {
+  type Rastro = {
+    toolName: string;
+    chamadaDeVoz: string;
+    success: boolean;
+    desfecho?: string;
+    motivo?: string;
+    ctx: { requestId: string; actor: { type: string; id: string; agent_id?: string } };
+  };
+  const rastro = (i = 0) => (chamadas.auditoria.mock.calls as unknown as Rastro[][])[i]![0]!;
+
+  it("marcar grava mcp.tool_called com ator = agente e voice_call_id = a ligação", async () => {
+    await agendaDa().executar("marcar", { event_type_slug: "consulta-inicial", starts_at: INICIO });
+
+    expect(chamadas.auditoria).toHaveBeenCalledTimes(1);
+    expect(rastro()).toMatchObject({
+      toolName: "crm_book_appointment",
+      chamadaDeVoz: "chamada-1",
+      success: true,
+      ctx: { requestId: "chamada-1", actor: { type: "ai_agent", id: "agente-1", agent_id: "agente-1" } },
+    });
+    // O handler recebe o MESMO ator: é ele que vai à timeline (actor_agent_id).
+    expect(contextoDa(chamadas.marcar).actor).toMatchObject({ id: "agente-1", agent_id: "agente-1" });
+  });
+
+  it("recusa do handler entra como recusa, não como sucesso", async () => {
+    chamadas.marcar.mockResolvedValueOnce({ marcado: false, motivo: "agenda_horario_indisponivel", mensagem: "x" });
+
+    await agendaDa().executar("marcar", { event_type_slug: "consulta-inicial", starts_at: INICIO });
+
+    expect(rastro()).toMatchObject({ success: false, desfecho: "recusa", motivo: "agenda_horario_indisponivel" });
+  });
+
+  it("leitura não grava rastro de escrita", async () => {
+    await agendaDa().horariosLivres({ tipo: "consulta-inicial" });
+    expect(chamadas.auditoria).not.toHaveBeenCalled();
+  });
+});
+
+describe("(i) a régua do texto", () => {
+  // No texto, a agenda passa por `tool_ids` da versão + `deModuloDesligado` +
+  // `deCapacidadeDesligada` (`lib/ai/runtime/tools.ts`). Hoje nenhuma das cinco
+  // declara módulo nem capacidade, então só a escolha do dono decide — e na voz
+  // essa escolha é `config.agenda_na_ligacao`. Se uma delas ganhar `modulo` ou
+  // `capacidade`, este caso reprova: a voz passa a ter de filtrar igual.
+  it("as ferramentas que a voz usa não dependem de módulo nem de capacidade da organização", async () => {
+    const { catalogEntry } = await import("@/lib/mcp/tools/catalogo");
+    for (const nome of [
+      "crm_list_event_types",
+      "crm_find_free_slots",
+      "crm_list_appointments",
+      "crm_book_appointment",
+      "crm_reschedule_appointment",
+    ]) {
+      const entrada = catalogEntry(nome);
+      expect(entrada, nome).toBeDefined();
+      expect(entrada?.modulo, nome).toBeUndefined();
+      expect(entrada?.capacidade, nome).toBeUndefined();
+    }
   });
 });
 

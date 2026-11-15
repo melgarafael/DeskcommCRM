@@ -466,10 +466,11 @@ export async function handleAudioSocketConnection(socket: net.Socket, uuid: stri
     // verdade da tool de texto (lib/mcp/tools/agendamento.ts) por
     // `montarAgendaDaVoz`, com a organização e o contato DESTA linha.
     //
-    // Sem contato identificado não há para quem marcar, então a agenda nem é
-    // oferecida — mesma disciplina do `consultar_conhecimento` sem acervo:
-    // ferramenta que não existe não é declarada ao modelo.
-    ...(contactIdDaChamada
+    // Duas condições, e as duas fecham: a opção "Agenda na ligação" da aba Voz
+    // (`config.agenda_na_ligacao`, desligada de fábrica) e um contato
+    // identificado — sem ele não há para quem marcar. Faltando qualquer uma,
+    // a agenda nem é oferecida: ferramenta que não existe não é declarada.
+    ...(agent.agendaNaLigacao && contactIdDaChamada
       ? {
           agenda: montarAgendaDaVoz({
             supabase: supabaseAdmin,
