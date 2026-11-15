@@ -18499,25 +18499,12 @@ create table if not exists public.crm_tasks (
   assigned_to uuid references auth.users(id) on delete set null,
   created_by uuid references auth.users(id) on delete set null,
 
-  -- A TAREFA QUE SE REPETE (9369, issue #4595). `recurrence` é a regra da
-  -- SÉRIE — `{"dias":[0..6, domingo=0, no fuso da org],"hora":0..23,"ativa":true}`
-  -- — e `recurrence_source_id` amarra a ocorrência gerada à série que a gerou.
-  -- Duas colunas e não tabela: a série JÁ é uma tarefa (é ela que a pessoa vê e
-  -- desliga), e o JSON é o mesmo sítio de `settings.task_plans`. Nulas de
-  -- propósito: tarefa avulsa (todo o histórico) fica exatamente como hoje.
-  recurrence jsonb,
-  recurrence_source_id uuid references public.crm_tasks(id) on delete cascade,
-
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
 
   constraint crm_tasks_titulo_nao_vazio check (length(btrim(title)) > 0),
   constraint crm_tasks_priority_check check (priority in ('low','medium','high','urgent')),
-  constraint crm_tasks_status_check check (status in ('pending','in_progress','done','cancelled')),
-  -- Forma do JSON da recorrência (9369). `jsonb_typeof` e não uma lista de
-  -- chaves: o leitor tolerante descarta dia/hora inválidos um a um, e exigir o
-  -- shape exato recusaria linha escrita à mão que o produto sabe ler.
-  constraint crm_tasks_recurrence_forma check (recurrence is null or jsonb_typeof(recurrence) = 'object')
+  constraint crm_tasks_status_check check (status in ('pending','in_progress','done','cancelled'))
 );
 
 -- A consulta da tela: "o que vence, na minha organização, em ordem de prazo".
@@ -18532,19 +18519,6 @@ create index if not exists crm_tasks_org_status_idx
 -- linhas não tem lead, e indexar NULL aqui só engorda o índice.
 create index if not exists crm_tasks_lead_idx
   on public.crm_tasks (lead_id) where lead_id is not null;
-
--- A trava da OCORRÊNCIA REPETIDA (9369): a mesma ocorrência da mesma série não
--- nasce duas vezes, mesmo com dois geradores no mesmo minuto. É a idempotência
--- do cron, e o `on conflict` dele mira exatamente este índice.
-create unique index if not exists crm_tasks_recurrence_ocorrencia_unica
-  on public.crm_tasks (recurrence_source_id, due_date)
-  where recurrence_source_id is not null and due_date is not null;
-
--- A varredura do gerador: só as séries (com regra e sem vínculo). Parcial para
--- o índice não crescer com o histórico de tarefas comuns.
-create index if not exists crm_tasks_series_idx
-  on public.crm_tasks (organization_id)
-  where recurrence is not null and recurrence_source_id is null;
 
 alter table public.crm_tasks enable row level security;
 
@@ -18569,11 +18543,6 @@ comment on column public.crm_tasks.due_date is
   'Nula = sem prazo. Forçar data faria o operador inventar uma, e um prazo inventado envenena a lista de atrasadas.';
 comment on column public.crm_tasks.lead_id is
   'set null, não cascade: apagar o funil não pode apagar o que a pessoa escreveu para si mesma.';
-comment on column public.crm_tasks.recurrence is
-  'Regra da SÉRIE: {"dias":[0..6 domingo=0, no fuso da org],"hora":0..23,"ativa":true}. Nula = tarefa avulsa; é o caso de hoje para toda linha antiga.';
-comment on column public.crm_tasks.recurrence_source_id is
-  'A série que gerou esta ocorrência. Nula nas tarefas avulsas e na própria série (que é quem carrega a regra).';
-
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- LGPD: a anonimização do contato alcança as tarefas dele
@@ -37843,6 +37812,27 @@ exception when duplicate_object then null; end $$;
 comment on column public.ai_router_members.flow_pointer_id is
   'Roteiro de atendimento (surface=atendimento) que começa quando esta intenção casa. NULL = só roteia o agente. FK composta: só roteiro da mesma organização.';
 
+-- ---- roteador: a frase que avisa o CLIENTE da troca automática (migration 9367, issue #4363) ----
+-- O #4385 já avisa o AGENTE que herdou a conversa; esta coluna é a outra metade
+-- — a frase que o cliente lê quando o classificador troca quem atende sozinho.
+-- NULL = desligado, e o comportamento é o de antes (o agente novo se apresenta).
+-- Coluna e não chave do `config` jsonb: o limite de tamanho precisa ser CHECK.
+alter table public.ai_routers
+  add column if not exists passagem_ao_cliente text;
+
+do $$ begin
+  alter table public.ai_routers
+    add constraint ai_routers_passagem_ao_cliente_tamanho
+    check (
+      passagem_ao_cliente is null
+      or length(btrim(passagem_ao_cliente)) between 1 and 1200
+    );
+exception when duplicate_object then null; end $$;
+
+comment on column public.ai_routers.passagem_ao_cliente is
+  'Frase enviada ao CLIENTE, uma vez, quando o roteador troca de agente automaticamente (desfecho reclassified). NULL = desligado (comportamento de antes: o agente novo se apresenta). Escrita na tela do roteador, no idioma da organização. Não carrega PII e não entra em ai_router_decisions.';
+
+
 create or replace function public.fn_contato_anonimizado_encerra_roteiro()
 returns trigger
 language plpgsql
@@ -41767,7 +41757,7 @@ create policy companies_select on public.companies
 drop policy if exists companies_insert on public.companies;
 create policy companies_insert on public.companies
   for insert with check (organization_id in (select public.fn_user_org_ids())
-                         and public.fn_role_at_least(organization_id, 'manager'));
+                         and public.fn_role_at_least(organization_id, 'agent'));
 drop policy if exists companies_update on public.companies;
 create policy companies_update on public.companies
   for update
@@ -41820,7 +41810,7 @@ create policy people_select on public.people
 drop policy if exists people_insert on public.people;
 create policy people_insert on public.people
   for insert with check (organization_id in (select public.fn_user_org_ids())
-                         and public.fn_role_at_least(organization_id, 'manager'));
+                         and public.fn_role_at_least(organization_id, 'agent'));
 drop policy if exists people_update on public.people;
 create policy people_update on public.people
   for update
@@ -41878,7 +41868,7 @@ create policy company_people_select on public.company_people
 drop policy if exists company_people_insert on public.company_people;
 create policy company_people_insert on public.company_people
   for insert with check (organization_id in (select public.fn_user_org_ids())
-                         and public.fn_role_at_least(organization_id, 'manager'));
+                         and public.fn_role_at_least(organization_id, 'agent'));
 drop policy if exists company_people_update on public.company_people;
 create policy company_people_update on public.company_people
   for update
@@ -69350,6 +69340,47 @@ comment on column public.ai_agent_versions.image_vision_enabled is
   'Lido em lib/agent-engine/agent/agent-config.ts e no predicado '
   'lib/messaging/media/leitura-adiada.ts:haLeitorDaDescricao.';
 
+-- ---- Reserva de modelo configurável: reserve_provider + reserve_model (migration 9368) ----
+-- Espelho idêntico da 9368 (o porquê está no cabeçalho dela). Fica ANTES da
+-- VARREDURA anon porque recria `fn_ai_agent_version_content_immutable`; o corpo
+-- é o da 9108 (a última definição acima) mais as duas colunas de reserva.
+-- NULOS por padrão: quem não configura nada tem exatamente o comportamento de
+-- antes, inclusive o caminho da assinatura.
+alter table public.ai_agent_versions
+  add column if not exists reserve_provider text;
+
+alter table public.ai_agent_versions
+  add column if not exists reserve_model text;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'ai_agent_versions_reserva_check'
+  ) then
+    alter table public.ai_agent_versions
+      add constraint ai_agent_versions_reserva_check
+      check (
+        (reserve_provider is null and reserve_model is null)
+        or (
+          reserve_provider is not null and btrim(reserve_provider) <> ''
+          and reserve_model is not null and btrim(reserve_model) <> ''
+        )
+      );
+  end if;
+end $$;
+
+comment on column public.ai_agent_versions.reserve_provider is
+  'Migration 9368. Provedor para onde a chamada cai quando o principal falha por '
+  'cota (429), servidor (5xx) ou tempo esgotado — qualquer provedor já cadastrado. '
+  'NULL (default) = sem reserva, comportamento de antes. Lido em '
+  'lib/agent-engine/agent/agent-config.ts e decidido em '
+  'lib/ai/pontos/reserva-da-assinatura.ts (decidirQuedaDoModeloDeReserva).';
+
+comment on column public.ai_agent_versions.reserve_model is
+  'Migration 9368. Modelo do provedor de reserva. Os dois campos são configurados '
+  'juntos (ai_agent_versions_reserva_check): provedor sem modelo é configuração '
+  'pela metade e não vira degrau nenhum.';
+
 create or replace function fn_ai_agent_version_content_immutable() returns trigger
 -- search_path fixo na PRÓPRIA definição: um create or replace sem a cláusula
 -- apaga o alter function ... set search_path da 0521 (invariante
@@ -69390,6 +69421,8 @@ begin
     or new.reply_min_interval_ms  is distinct from old.reply_min_interval_ms
     or new.voz_enabled            is distinct from old.voz_enabled
     or new.voz_quando             is distinct from old.voz_quando
+    or new.reserve_provider       is distinct from old.reserve_provider
+    or new.reserve_model          is distinct from old.reserve_model
     or new.version_number         is distinct from old.version_number
     or new.agent_id               is distinct from old.agent_id
     or new.organization_id        is distinct from old.organization_id
@@ -76895,6 +76928,87 @@ begin
   );
 end;
 $function$;
+
+-- ---- a leitura de `llm_calls` volta à organização dona (migration 9362) ----
+-- Espelho de supabase/migrations/20261112200947_9362_reparar_leitura_de_llm_calls.sql.
+-- Conserta a instalação EXISTENTE: a 0325 só age em tabela com RLS desligada, então
+-- banco que perdeu a policy permissiva com a RLS ligada nunca era curado pela
+-- atualização. Fica acima do bloco da 9243 e depois de toda tabela que toca.
+-- manifest: devolve a LEITURA de `llm_calls`, `before_send_traces` e `flywheel_judge_verdicts` à organização dona — a instalação que ficou com RLS ligada e sem policy permissiva volta a mostrar IA › Execuções e o Custo da IA no primeiro `update.sh`; idempotente, por organização, sem tocar em linha.
+--
+-- 9362 — a policy de leitura que a atualização nunca recriava (#4527).
+--
+-- O DEFEITO, medido na instalação do membro: `llm_calls` com as 73 chamadas no
+-- banco, `relrowsecurity = true` e só as restritivas `support_write_*`. Sem
+-- policy PERMISSIVA, a sessão do usuário lê 0 linha — a tela `/app/ai/runs`
+-- (app/api/v1/ai/runs/route.ts, `createClient()` + `.eq("organization_id", …)`)
+-- mostra "nenhuma execução", e `fn_uso_de_ia` (security invoker, a rota do
+-- custo) soma 0 e devolve "Custo da IA no período US$ 0,00". Não é tela: é
+-- permissão.
+--
+-- POR QUE O `update.sh` NÃO CONSERTAVA: a única rotina do baseline que dá a
+-- policy de leitura a tabela de organização é
+-- `fn_proteger_tabelas_de_organizacao()` (migration 0325), e a régua dela é
+-- `and not c.relrowsecurity` — ela SÓ age em tabela com RLS DESLIGADA. Tabela
+-- que perdeu a policy com a RLS ligada fica fora da varredura para sempre, e
+-- `fn_aplicar_travas_de_suporte()` (0274) só acrescenta as três restritivas de
+-- escrita. O estado fica preso: reaplicar o baseline não o cura.
+--
+-- O CONSERTO é cirúrgico e ADITIVO: `drop policy if exists` + `create policy`
+-- de SELECT por `fn_user_org_ids()` — o MESMO filtro da `tenant_isolation_*_all`
+-- que a 0050 cria e que o baseline entrega na instalação nova. Não se recria a
+-- `_all`: leitura é o que falta, e devolver `for all` a quem só precisa ler abre
+-- mais do que o defeito pedia. Quem já tem a `_all` ganha uma policy redundante
+-- (permissivas somam em OR) — inofensiva, e é o que mantém esta migração
+-- idempotente em banco que já está no ar.
+--
+-- As duas vizinhas entram junto porque são a MESMA família da 0050 e aparecem
+-- do mesmo jeito na instalação do membro: `before_send_traces` é lido com a
+-- sessão do usuário em app/api/v1/conversations/[id]/retention/route.ts, e
+-- `flywheel_judge_verdicts` alimenta o flywheel. Consertar só `llm_calls`
+-- deixaria a mesma armadilha armada para as duas.
+--
+-- Idempotente: rodar duas vezes converge. Sem `security definer`, sem view, sem
+-- backfill, sem dado tocado.
+--
+-- E IDEMPOTENTE TAMBÉM CONTRA O CONTORNO À MÃO: a comunidade aplicou a policy de
+-- SELECT direto no banco para ver a tela de novo. Se ela tiver outro nome, a
+-- nossa somaria com a dela (permissivas são OR) e o banco ficaria com duas
+-- regras dizendo a mesma coisa. O laço abaixo remove as policies de SELECT
+-- permissivas das três tabelas antes de criar a canônica — nunca a `_all` da
+-- instalação saudável (é `ALL`, não `SELECT`) nem as restritivas de escrita.
+
+drop policy if exists tenant_isolation_llm_calls_select on public.llm_calls;
+drop policy if exists tenant_isolation_before_send_traces_select on public.before_send_traces;
+drop policy if exists tenant_isolation_flywheel_judge_verdicts_select on public.flywheel_judge_verdicts;
+
+do $reparo$
+declare p record;
+begin
+  for p in
+    select tablename, policyname
+      from pg_policies
+     where schemaname = 'public'
+       and tablename in ('llm_calls', 'before_send_traces', 'flywheel_judge_verdicts')
+       and permissive = 'PERMISSIVE'
+       and cmd = 'SELECT'
+  loop
+    execute format('drop policy %I on public.%I', p.policyname, p.tablename);
+  end loop;
+end $reparo$;
+
+create policy tenant_isolation_llm_calls_select on public.llm_calls
+  for select to authenticated
+  using (organization_id in (select public.fn_user_org_ids()));
+
+create policy tenant_isolation_before_send_traces_select on public.before_send_traces
+  for select to authenticated
+  using (organization_id in (select public.fn_user_org_ids()));
+
+create policy tenant_isolation_flywheel_judge_verdicts_select on public.flywheel_judge_verdicts
+  for select to authenticated
+  using (organization_id in (select public.fn_user_org_ids()));
+
 -- ---- o vínculo de clone do card só é gravado pelo servidor (migration 9389) ----
 -- Espelho de supabase/migrations/20261115075848_9389_chaves_de_clone_reservadas_ao_servidor.sql.
 -- `clonado_de`/`movido_para` de crm_leads.source_metadata passam a ser reservadas
@@ -76959,6 +77073,655 @@ create or replace view public.calendar_service_google_push_queue with (security_
   and a.ends_at>now()-interval '1 day';
 revoke all on public.calendar_service_google_push_queue from public,anon,authenticated;
 grant select on public.calendar_service_google_push_queue to service_role;
+
+-- ---- a transferência de conversa leva o que anda junto (migration 9361, #4312) ----
+-- Espelho de supabase/migrations/20261112191200_9361_transferencia_leva_o_que_vai_junto.sql.
+-- Corpo idêntico ao da migration. Fica ACIMA da VARREDURA anon (cria/recria
+-- função) e ANTES da cascata da 9243: o invariante `lgpd-alcanca-fichas-fundidas`
+-- compara o trecho que vai do cabeçalho dela até a VARREDURA com a migration, e
+-- nada pode entrar no meio. O porquê inteiro está no cabeçalho da migration:
+-- o negócio aberto acompanha quando quem transfere é o dono dele (com a prévia
+-- que avisa quem não é), a conversa devolvida volta ao número da última entrada
+-- do cliente, e o diálogo de Transferir lista as outras conversas do contato.
+-- ─── (2) o número da devolução: a última entrada do cliente tem prioridade ───
+-- Mesma assinatura e mesmas cercas da 9039. A única diferença é a ORDEM entre
+-- os números do destino: o da última mensagem inbound da conversa (prioridade
+-- 0) vem antes do primeiro número conectado do destino (prioridade 1), e o
+-- ramo 1 continua exigindo que o destino NÃO responda pelo número atual.
+create or replace function public.fn_numero_da_transferencia(
+  p_organization_id uuid,
+  p_conversation_id uuid,
+  p_to_user_id uuid
+)
+returns uuid
+language sql
+stable
+set search_path = ''
+as $$
+  with conversa as (
+    select c.id, c.organization_id, c.contact_id, c.channel_session_id, atual.provider
+      from public.conversations c
+      join public.channel_sessions atual
+        on atual.organization_id = c.organization_id and atual.id = c.channel_session_id
+     where c.id = p_conversation_id
+       and c.organization_id = p_organization_id
+       and c.is_group = false
+       and p_to_user_id is not null
+  ),
+  responsaveis_do_atual as (
+    select r.user_id
+      from conversa
+      join public.channel_routing_policies p
+        on p.organization_id = conversa.organization_id
+       and p.channel_session_id = conversa.channel_session_id
+      join public.channel_routing_responsibles r
+        on r.organization_id = p.organization_id and r.policy_id = p.id
+  ),
+  -- #4312: o número em que o CLIENTE falou por último nesta conversa. É para
+  -- lá que a conversa devolvida volta — o número de origem, e o único em que
+  -- uma resposta não sai de um número que o cliente nunca viu.
+  ultima_entrada as (
+    select m.channel_session_id
+      from conversa
+      join public.messages m
+        on m.organization_id = conversa.organization_id
+       and m.conversation_id = conversa.id
+       and m.direction = 'inbound'
+     order by m.created_at desc, m.id desc
+     limit 1
+  ),
+  candidato as (
+    select cs.id,
+           case when cs.id = (select channel_session_id from ultima_entrada) then 0 else 1 end as prioridade
+      from conversa
+      join public.channel_routing_responsibles r
+        on r.organization_id = conversa.organization_id and r.user_id = p_to_user_id
+      join public.channel_routing_policies p
+        on p.organization_id = r.organization_id and p.id = r.policy_id
+      join public.channel_sessions cs
+        on cs.organization_id = p.organization_id and cs.id = p.channel_session_id
+     where cs.id <> conversa.channel_session_id
+       and cs.provider = conversa.provider
+       and cs.archived_at is null
+       and cs.status = 'WORKING'
+       and coalesce(cs.metadata ->> 'disabled', 'false') <> 'true'
+       -- #4312: o número da última entrada do cliente, quando ele é do destino;
+       -- OU a regra da 9039 (o destino ainda não responde pelo número atual).
+       and (cs.id = (select channel_session_id from ultima_entrada)
+            or (exists (select 1 from responsaveis_do_atual)
+                and not exists (select 1 from responsaveis_do_atual a where a.user_id = p_to_user_id)))
+     order by prioridade, cs.created_at, cs.id
+     limit 1
+  )
+  select candidato.id
+    from candidato, conversa
+   where not exists (
+     select 1
+       from public.conversations o
+      where o.organization_id = conversa.organization_id
+        and o.contact_id = conversa.contact_id
+        and o.channel_session_id = candidato.id
+        and o.is_group = false
+        and o.id <> conversa.id
+   );
+$$;
+
+revoke execute on function public.fn_numero_da_transferencia(uuid, uuid, uuid)
+  from public, anon, authenticated;
+grant execute on function public.fn_numero_da_transferencia(uuid, uuid, uuid)
+  to service_role;
+
+-- ─── (1) o negócio aberto: o dono entrega o que é dele ──────────────────────
+-- Corpo da 9208 inteiro, com UMA condição a mais no portão do negócio (e o
+-- comentário dela). Nada mais muda: guardas de suporte, papel, elegibilidade do
+-- destino, visibilidade da conversa, o número que segue o vendedor, a conversa
+-- que continua e a origem do turno seguem como estavam.
+
+create or replace function public.fn_conversation_assign(
+  p_organization_id uuid,
+  p_conversation_id uuid,
+  p_to_user_id uuid,
+  p_reason text,
+  p_expected_assignee uuid default null,
+  p_enforce_expected boolean default false,
+  p_source_job_id uuid default null,
+  -- #4019: com `true`, o negócio aberto só ganha dono se estiver SEM dono,
+  -- qualquer que seja o motivo. Fora de `'transfer'` essa já é a régua.
+  p_negocio_so_sem_dono boolean default false
+)
+ RETURNS SETOF conversations
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_from uuid;
+  v_conv public.conversations%rowtype;
+  v_numero uuid;
+  v_trocou_de_numero boolean := false;
+  v_continua uuid;
+  -- #4019 — o negócio ABERTO do contato que acompanha o dono novo.
+  v_negocios integer;
+  v_negocio public.crm_leads%rowtype;
+  -- Doc 178 (B) / doc 267 (A): só a transferência tira o negócio de alguém.
+  v_so_sem_dono boolean := p_negocio_so_sem_dono or p_reason is distinct from 'transfer';
+begin
+  if not public.fn_support_write_allowed(p_organization_id) then raise exception 'support_readonly' using errcode='42501'; end if;
+  -- #3926 — `p_source_job_id` é do RUNTIME (o turno que está executando),
+  -- nunca de uma sessão de pessoa: recusar em vez de ignorar, porque ignorar
+  -- em silêncio deixaria a atribuição de uma pessoa passando com o turno
+  -- revogado sem ninguém saber por quê.
+  if p_source_job_id is not null and auth.uid() is not null then
+    raise exception 'source_job_requires_runtime_caller'
+      using hint = 'p_source_job_id is set by the agent runtime, never by a user session';
+  end if;
+  if auth.uid() is not null
+     and not public.fn_role_at_least(p_organization_id, 'agent') then
+    raise exception 'caller_not_authorized_for_org'
+      using hint = 'caller must be an active agent+ member of the organization';
+  end if;
+
+  if p_to_user_id is not null then
+    if coalesce(public.fn_member_role_in_org(p_to_user_id, p_organization_id), 'none')
+         not in ('agent','manager','admin') then
+      raise exception 'assignee_not_eligible_member'
+        using hint = 'target must be an active agent+ member of the organization';
+    end if;
+  end if;
+
+  -- Conversa fora da visibilidade de quem chama responde como conversa
+  -- inexistente (zero linhas). A regra fica no WHERE, com o dono da própria
+  -- linha (reavaliado na versão nova se houver espera), nunca um valor do
+  -- corpo. Service role (sem auth.uid) segue.
+  --
+  -- A EXCEÇÃO DA #3479: conversa SEM dono pode ser assumida por quem assume
+  -- para si. Sem ela o modo "Só os seus" se morde: a conversa que nasceu do
+  -- cadastro do contato tem dono nulo, o predicado do modo responde "não vejo"
+  -- para dono nulo, e o claim — a operação que daria dono a ela — era recusado,
+  -- com a tela dizendo "está com outro atendente" sobre uma conversa de
+  -- ninguém. O termo se limita sozinho: exige dono nulo E dono novo =
+  -- chamador, então conversa de colega (o caso que a 0685 protege), a
+  -- transferência para terceiro e o release continuam respondendo zero linhas
+  -- exatamente como antes.
+  select * into v_conv
+    from public.conversations
+   where id = p_conversation_id
+     and organization_id = p_organization_id
+     and (
+       auth.uid() is null
+       or public.fn_can_view_conversation(organization_id, assigned_to_user_id)
+       or (assigned_to_user_id is null and p_to_user_id = auth.uid()
+           and p_reason = 'claim' and p_enforce_expected)
+     )
+   for no key update;
+
+  if not found then
+    return;
+  end if;
+
+  v_from := v_conv.assigned_to_user_id;
+
+  if p_enforce_expected and v_from is distinct from p_expected_assignee then
+    return;
+  end if;
+
+  -- ─── #3642: o número segue o vendedor ──────────────────────────────────────
+  -- Numa empresa com um número por vendedor (`channel_routing_policies` +
+  -- `channel_routing_responsibles`), a troca de dono mudava só o dono: a
+  -- conversa continuava no `channel_session_id` do vendedor ANTERIOR e o envio
+  -- (que sai pela sessão da conversa) fazia o vendedor novo responder pelo
+  -- WhatsApp do colega. Aqui a conversa passa para o número conectado do dono
+  -- novo, na MESMA transação — e como esta é a porta única da atribuição, a
+  -- regra vale para Transferir (um e em lote), Assumir, MCP, automação e a
+  -- passagem de carteira sem nenhum deles precisar conhecê-la.
+  --
+  -- QUAL número é a `fn_numero_da_transferencia` — a mesma que o diálogo de
+  -- Transferir consulta para avisar antes de confirmar, então o aviso e o efeito
+  -- não divergem. Nulo = o número fica (número compartilhado, número sem dono,
+  -- dono novo sem número conectado do mesmo canal, grupo, ou o contato já tem
+  -- conversa no número novo). A transferência nunca falha por causa do número.
+  v_numero := public.fn_numero_da_transferencia(p_organization_id, p_conversation_id, p_to_user_id);
+  v_trocou_de_numero := v_numero is not null;
+
+  -- ─── #3732: e quando o número NÃO pode seguir ──────────────────────────────
+  -- O caso que a 9039 deixou em pé: o contato já tem conversa no número do dono
+  -- novo, então o número fica, e a conversa ficava presa com o dono novo num
+  -- número que não é dele (envio em 409, "transfira para você" — já feito).
+  --
+  -- A conversa que está NESSE número passa para o dono novo quando estava sem
+  -- dono ou com o dono ANTERIOR: é a metade que faltava para ele ter onde
+  -- responder. Conversa que já é de uma TERCEIRA pessoa não é tomada — quem a
+  -- assumiu no meio continua com ela, e o aviso do envio diz o nome dele. A
+  -- adoção passa por esta mesma função, então o evento da linha do tempo e o
+  -- resto vão junto.
+  if not v_trocou_de_numero and p_to_user_id is not null then
+    select o.id into v_continua
+      from public.conversations o
+     where o.id = public.fn_conversa_que_continua(
+             p_organization_id, p_conversation_id, p_to_user_id)
+       and (o.assigned_to_user_id is null
+            or o.assigned_to_user_id is not distinct from v_from)
+       and o.assigned_to_user_id is distinct from p_to_user_id
+       -- Doc 237, escolha 3-B: a conversa que a IA está atendendo fica com a
+       -- IA. Sem esta condição, conversa sem dono e com a IA ativa era adotada
+       -- e calada sem prazo (`bot_silenced_until = 'infinity'`), inclusive por
+       -- tabela numa troca de carteira, que pula essa conversa de propósito.
+       and public.comando_da_conversa(o) <> 'automatico';
+  end if;
+
+  update public.conversations
+     set assigned_to_user_id = p_to_user_id,
+         -- Desnormalizado JUNTO com o dono, na mesma transação: nunca existe
+         -- uma janela em que id e nome discordam. NULL junto com o id quando
+         -- a atribuição é removida (release) — nunca sobra um nome órfão de
+         -- dono nenhum. Lido de auth.users porque quem chama esta função
+         -- (RPC) não necessariamente tem acesso ao Admin API — a definer
+         -- resolve por dentro.
+         assigned_to_user_name = case
+           when p_to_user_id is null then null
+           else (select raw_user_meta_data ->> 'full_name' from auth.users where id = p_to_user_id)
+         end,
+         assigned_at = case when p_to_user_id is null then null else now() end,
+         assignee_kind = case when p_to_user_id is null then null else 'user' end,
+         status = case when p_to_user_id is null then 'open' else 'claimed' end,
+         status_changed_at = now(),
+         unread_count_for_assignee = 0,
+         bot_silenced_until = case
+           when p_reason = 'routing'  then bot_silenced_until
+           when p_to_user_id is null  then (case when last_handoff_at is null
+                                                 then null
+                                                 else bot_silenced_until end)
+           else 'infinity'::timestamptz
+         end,
+         -- #3642: o número acompanha o dono, e a thread do provider ANTERIOR não
+         -- viaja — ela pertence ao número antigo.
+         channel_session_id = case when v_trocou_de_numero then v_numero
+                                   else channel_session_id end,
+         provider_conversation_id = case when v_trocou_de_numero then null
+                                         else provider_conversation_id end,
+         updated_at = now()
+   where id = p_conversation_id
+   returning * into v_conv;
+
+  insert into public.conversation_assignment_events
+    (organization_id, conversation_id, from_user_id, to_user_id, changed_by, reason, source_job_id)
+  values
+    (p_organization_id, p_conversation_id, v_from, p_to_user_id, auth.uid(), p_reason, p_source_job_id);
+
+  -- #3732: a conversa que continua no número do dono novo vai junto (depois do
+  -- evento da conversa transferida, para a linha do tempo contar na ordem).
+  if v_continua is not null then
+    perform public.fn_conversation_assign(
+      p_organization_id, v_continua, p_to_user_id, 'transfer', null, false, p_source_job_id,
+      v_so_sem_dono);
+  end if;
+
+  -- ─── #4019: o NEGÓCIO ABERTO do contato acompanha o dono novo ──────────────
+  --
+  -- Porta única: Transferir (um e em lote), Assumir, MCP, automação, fila e
+  -- carteira entram todos por aqui. A régua:
+  --   · só status = 'open'; zero aberto = nada criado; mais de um = nada tocado
+  --     (caminho 4 da issue, decisão de produto);
+  --   · já é o dono novo: não escreve (o gatilho de crm_leads emite
+  --     `lead.assigned` a cada UPDATE);
+  --   · v_so_sem_dono (todo motivo que não é 'transfer'): só card SEM
+  --     responsável — nunca tira o card de um colega;
+  --   · com sessão, a escrita é a que a RLS de crm_leads_update já daria a quem
+  --     clicou: enxergar o responsável atual E o novo (fn_can_view_lead) — mais
+  --     a exceção do #4312, o dono do card entregando o próprio negócio.
+  if p_to_user_id is not null then
+    select count(*) into v_negocios
+      from public.crm_leads l
+     where l.organization_id = p_organization_id
+       and l.contact_id = v_conv.contact_id
+       and l.status = 'open';
+
+    if v_negocios = 1 then
+      -- Sem `for update`: o UPDATE abaixo repete `status = 'open'`, então uma
+      -- corrida que feche o card entre a leitura e a escrita não é vencida por
+      -- engano. Travar a linha aqui só acrescentaria, no caminho mais quente da
+      -- atribuição, um lock de crm_leads DEPOIS do lock de conversations — a
+      -- ordem inversa da automação que cria card e mexe na conversa.
+      select * into v_negocio
+        from public.crm_leads l
+       where l.organization_id = p_organization_id
+         and l.contact_id = v_conv.contact_id
+         and l.status = 'open';
+
+      if found
+         and v_negocio.owner_user_id is distinct from p_to_user_id
+         and (not v_so_sem_dono
+              or (v_negocio.owner_user_id is null and v_negocio.owner_agent_id is null))
+         -- A permissão é a de quem clicou: a mesma conta de crm_leads_update
+         -- (USING sobre o responsável atual, WITH CHECK sobre o novo) — com a
+         -- exceção do DONO do card, que entrega o que é dele (#4312).
+         and (auth.uid() is null
+              -- #4312: quando quem transfere é o DONO ATUAL do card, o destino
+              -- não precisa ser visível a ele. Sem este termo, em `own`/
+              -- `own_and_unassigned` o `fn_can_view_lead(A → B)` é falso, a
+              -- escrita é pulada em SILÊNCIO e o negócio fica com quem saiu (o
+              -- defeito da issue). Estreito de propósito: exige `'transfer'` —
+              -- claim/routing/handoff entram com `v_so_sem_dono = true` e não
+              -- passam por aqui — e exige que o card seja DELE.
+              or (p_reason = 'transfer' and v_negocio.owner_user_id = auth.uid())
+              or (public.fn_can_view_lead(p_organization_id, v_negocio.owner_user_id)
+                  and public.fn_can_view_lead(p_organization_id, p_to_user_id)))
+      then
+        -- O trio dono/kind é o da migration 0070: owner_user_id sozinho produz
+        -- card com dono e sem kind, que some do filtro e das métricas sem erro.
+        update public.crm_leads
+           set owner_user_id = p_to_user_id,
+               owner_agent_id = null,
+               owner_kind = 'user',
+               assigned_at = now()
+         where id = v_negocio.id
+           and organization_id = p_organization_id
+           and status = 'open'
+           -- Sem lock na leitura: o responsável lido é a condição da escrita.
+           -- Se alguém trocou o card no meio, a escrita não acontece.
+           and owner_user_id is not distinct from v_negocio.owner_user_id
+           and owner_agent_id is not distinct from v_negocio.owner_agent_id;
+      end if;
+    end if;
+  end if;
+
+  return next v_conv;
+end;
+$function$;
+revoke all     on function public.fn_conversation_assign(uuid, uuid, uuid, text, uuid, boolean, uuid, boolean) from public;
+revoke execute on function public.fn_conversation_assign(uuid, uuid, uuid, text, uuid, boolean, uuid, boolean) from anon;
+grant  execute on function public.fn_conversation_assign(uuid, uuid, uuid, text, uuid, boolean, uuid, boolean)
+  to authenticated, service_role;
+-- ─── (1b) a prévia do negócio para o diálogo de Transferir ─────────────────
+-- A MESMA regra da escrita, numa função só, porque DUAS peças precisam da
+-- mesma resposta: `fn_conversation_assign` (que aplica) e o diálogo de
+-- Transferir (que avisa ANTES). Duas cópias da conta divergiriam, e o diálogo
+-- diria que o negócio vai junto enquanto a troca o deixa para trás — ou o
+-- contrário, que é o silêncio que esta issue fechou.
+--
+-- Devolve UMA linha sempre que a conversa é da organização e quem pergunta a
+-- enxerga (as mesmas guardas da atribuição):
+--   · `tem_negocio` — há exatamente UM negócio aberto do contato (zero ou mais
+--     de um: nada é tocado na transferência, e não há o que avisar);
+--   · `leva` — o negócio vai junto nesta transferência;
+--   · `dono_user_id` — com quem o negócio fica (o atual), para o diálogo dizer
+--     o nome de quem continua com ele.
+-- Zero linhas = não há o que dizer (conversa fora da visibilidade de quem
+-- pergunta, ou destino nulo). Só leitura: nada muda aqui.
+create or replace function public.fn_previa_do_negocio_na_transferencia(
+  p_organization_id uuid,
+  p_conversation_id uuid,
+  p_to_user_id uuid
+)
+returns table (tem_negocio boolean, leva boolean, dono_user_id uuid)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  v_dono_da_conversa uuid;
+  v_negocios integer;
+  v_negocio public.crm_leads%rowtype;
+begin
+  if p_to_user_id is null then
+    return;
+  end if;
+
+  -- A conversa tem de existir e estar na visibilidade de quem pergunta: a
+  -- mesma conta da leitura da `fn_conversation_assign`. Sem isto, a prévia
+  -- responderia sobre conversa de colega a quem não a enxerga.
+  select c.assigned_to_user_id into v_dono_da_conversa
+    from public.conversations c
+   where c.id = p_conversation_id
+     and c.organization_id = p_organization_id;
+  if not found then
+    return;
+  end if;
+  if auth.uid() is not null
+     and not public.fn_role_at_least(p_organization_id, 'agent') then
+    raise exception 'caller_not_authorized_for_org'
+      using hint = 'caller must be an active agent+ member of the organization';
+  end if;
+  if auth.uid() is not null
+     and not public.fn_can_view_conversation(p_organization_id, v_dono_da_conversa) then
+    return;
+  end if;
+
+  select count(*) into v_negocios
+    from public.crm_leads l
+    join public.conversations c
+      on c.organization_id = l.organization_id and c.contact_id = l.contact_id
+   where c.id = p_conversation_id
+     and c.organization_id = p_organization_id
+     and l.status = 'open';
+
+  tem_negocio := v_negocios = 1;
+  if not tem_negocio then
+    leva := false;
+    dono_user_id := null;
+    return next;
+    return;
+  end if;
+
+  select l.* into v_negocio
+    from public.crm_leads l
+    join public.conversations c
+      on c.organization_id = l.organization_id and c.contact_id = l.contact_id
+   where c.id = p_conversation_id
+     and c.organization_id = p_organization_id
+     and l.status = 'open';
+
+  dono_user_id := v_negocio.owner_user_id;
+  -- A conta do portão da escrita da `fn_conversation_assign` com p_reason =
+  -- 'transfer', termo por termo: já é o dono novo (nada a escrever); servidor
+  -- (sem sessão); o DONO ATUAL do card entregando o que é dele (#4312); ou a
+  -- permissão de quem clicou sobre o responsável atual E o novo.
+  --
+  -- Card SEM responsável não é termo à parte: na escrita, essa condição só
+  -- afrouxa o `v_so_sem_dono` (claim/routing/handoff), que a transferência não
+  -- usa. Tratá-lo aqui como "a transferência preenche" fazia o diálogo avisar
+  -- "vai junto" para o agente em `own` cujo card sem dono a escrita pula (prova
+  -- de tela do #4530, item 2c): o aviso e o efeito divergiam.
+  -- `coalesce(..., false)`: com o card sem dono, `owner_user_id = auth.uid()`
+  -- é NULL, e `false or NULL` também é NULL. A prévia responderia "não sei"
+  -- onde a escrita responde "não".
+  leva := coalesce(
+            v_negocio.owner_user_id is distinct from p_to_user_id
+            and (
+              auth.uid() is null
+              or v_negocio.owner_user_id = auth.uid()
+              or (public.fn_can_view_lead(p_organization_id, v_negocio.owner_user_id)
+                  and public.fn_can_view_lead(p_organization_id, p_to_user_id))
+            ),
+            false
+          );
+  return next;
+end;
+$$;
+
+revoke all     on function public.fn_previa_do_negocio_na_transferencia(uuid, uuid, uuid) from public;
+revoke execute on function public.fn_previa_do_negocio_na_transferencia(uuid, uuid, uuid) from anon;
+grant  execute on function public.fn_previa_do_negocio_na_transferencia(uuid, uuid, uuid)
+  to authenticated, service_role;
+
+notify pgrst, 'reload schema';
+
+-- ---- a taxa de cache do uso de IA só conta as chamadas cacheáveis (migration 9366, #4362) ----
+-- manifest: **A taxa de cache da tela Uso de IA conta só as chamadas ELEGÍVEIS a cache (#4362, segunda porta do aviso consertado no #4383).** `fn_uso_de_ia` devolvia só os totais de todas as `llm_calls`, então a taxa dividia o cache lido pelos tokens de entrada de chamadas que o provedor NUNCA guarda (entrada abaixo de 1.024 tokens: classificadores, conferência de campo, extrações curtas) — elas entravam no denominador sem chance de entrar no numerador. A função passa a devolver também `chamadas_cacheaveis`, `input_tokens_cacheaveis` e `cache_read_tokens_cacheaveis` (filtro `input_tokens >= 1024`), e a tela divide por eles; os totais de custo, tokens e latência não mudam de definição. O corte é o mesmo do aviso, escrito uma vez em `lib/ai/cache-de-prompt.ts`. Gate: `tests/unit/uso-de-ia-tela-honesta.test.ts`.
+--
+-- Espelho da 9366 (o porquê inteiro está no cabeçalho dela). Fica ACIMA da VARREDURA anon,
+-- porque cria função, e antes do bloco da 9243. Redefine a função viva — a última versão
+-- antes desta era a da 9097 — acrescentando as três colunas do recorte cacheável ao bucket.
+create or replace function public.fn_uso_de_ia(
+  p_org uuid,
+  p_desde timestamptz,
+  p_ate timestamptz,
+  p_agent_id uuid default null,
+  p_purpose text default null
+)
+returns jsonb
+  language sql
+  stable
+  security invoker
+  set search_path to 'public', 'pg_temp'
+as $$
+  with chamadas as (
+    select (c.created_at at time zone 'UTC')::date as dia,
+           c.purpose,
+           c.cost_cents,
+           c.input_tokens,
+           c.output_tokens,
+           c.cache_read_tokens,
+           c.cache_write_tokens,
+           c.latency_ms
+      from public.llm_calls c
+     where c.organization_id = p_org
+       and c.created_at >= p_desde
+       and c.created_at <= p_ate
+       and (p_agent_id is null or c.agent_id = p_agent_id)
+       and (p_purpose is null or c.purpose = p_purpose)
+  ),
+  jobs_de_turno as (
+    select distinct c.job_id
+      from public.llm_calls c
+     where c.organization_id = p_org
+       and c.created_at >= p_desde
+       and c.created_at <= p_ate
+       and c.purpose in ('agent_turn', 'followup_turn')
+       and c.status = 'ok'
+       and c.job_id is not null
+       and (p_agent_id is null or c.agent_id = p_agent_id)
+  ),
+  turnos as (
+    select (select count(*) from jobs_de_turno) as turnos,
+           coalesce(sum(c.cost_cents), 0) as custo_dos_turnos_cents
+      from public.llm_calls c
+      join jobs_de_turno t on t.job_id = c.job_id
+     where c.organization_id = p_org
+       and c.created_at >= p_desde
+       and c.created_at <= p_ate
+  ),
+  agregado as (
+    select grouping(dia) as sem_dia,
+           grouping(purpose) as sem_purpose,
+           dia,
+           purpose,
+           count(*) as chamadas,
+           coalesce(sum(cost_cents), 0) as custo_cents,
+           coalesce(sum(input_tokens), 0) as input_tokens,
+           coalesce(sum(output_tokens), 0) as output_tokens,
+           coalesce(sum(cache_read_tokens), 0) as cache_read_tokens,
+           -- A régua do cache elegível (#4362). O mesmo corte da razão do run e
+           -- do aviso (`lib/ai/cache-de-prompt.ts`, MIN_TOKENS_DE_ENTRADA_PARA_CACHE):
+           -- o provedor não guarda prefixo abaixo de 1.024 tokens de entrada, então
+           -- essas chamadas não podem entrar no denominador da taxa.
+           count(*) filter (where input_tokens >= 1024) as chamadas_cacheaveis,
+           coalesce(sum(input_tokens) filter (where input_tokens >= 1024), 0) as input_tokens_cacheaveis,
+           coalesce(sum(cache_read_tokens) filter (where input_tokens >= 1024), 0) as cache_read_tokens_cacheaveis,
+           coalesce(sum(cache_write_tokens), 0) as cache_write_tokens,
+           coalesce(percentile_disc(0.5) within group (order by latency_ms) filter (where latency_ms > 0), 0) as p50_latency_ms,
+           coalesce(percentile_disc(0.95) within group (order by latency_ms) filter (where latency_ms > 0), 0) as p95_latency_ms
+      from chamadas
+     group by grouping sets ((dia), (purpose), ())
+  ),
+  inbounds as (
+    select (m.created_at at time zone 'UTC')::date as dia, count(*) as n
+      from public.messages m
+     where m.organization_id = p_org
+       and m.direction = 'inbound'
+       and m.created_at >= p_desde
+       and m.created_at <= p_ate
+     group by 1
+  ),
+  handoffs as (
+    select (e.created_at at time zone 'UTC')::date as dia, count(*) as n
+      from public.event_log e
+     where e.organization_id = p_org
+       and e.event_type = 'ai.handoff_triggered'
+       and e.created_at >= p_desde
+       and e.created_at <= p_ate
+     group by 1
+  )
+  select jsonb_build_object(
+    'totais', (select (to_jsonb(a) - 'sem_dia' - 'sem_purpose' - 'dia' - 'purpose') || to_jsonb(tr)
+                 from agregado a, turnos tr where a.sem_dia = 1 and a.sem_purpose = 1),
+    'dias', coalesce((select jsonb_agg(to_jsonb(a) - 'sem_dia' - 'sem_purpose' - 'purpose' order by a.dia)
+                        from agregado a where a.sem_dia = 0), '[]'::jsonb),
+    'purposes', coalesce((select jsonb_agg(to_jsonb(a) - 'sem_dia' - 'sem_purpose' - 'dia' order by a.purpose)
+                            from agregado a where a.sem_dia = 1 and a.sem_purpose = 0), '[]'::jsonb),
+    'inbounds', coalesce((select jsonb_object_agg(i.dia::text, i.n) from inbounds i), '{}'::jsonb),
+    'handoffs', coalesce((select jsonb_object_agg(h.dia::text, h.n) from handoffs h), '{}'::jsonb)
+  );
+$$;
+
+comment on function public.fn_uso_de_ia(uuid, timestamptz, timestamptz, uuid, text) is
+  'Uso de IA da organização num período, agregado no banco para a tela Uso de IA (/api/v1/ai/usage): totais, por dia (UTC) e por purpose de llm_calls — custo, tokens, cache (com o recorte CACHEÁVEL: chamadas_cacheaveis, input_tokens_cacheaveis e cache_read_tokens_cacheaveis, entrada >= 1.024 tokens — a régua do #4362, única com lib/ai/cache-de-prompt.ts), p50/p95 de latência de UMA chamada, turnos do agente (jobs distintos com agent_turn ou followup_turn ok, sem os filtros de agente/purpose sobre o custo do job) e o custo desses turnos, só nos totais — mais inbounds e ai.handoff_triggered por dia. Devolve jsonb para não passar pelo max_rows do PostgREST. security invoker: a RLS isola; p_org é defesa em profundidade. Não é a régua do teto mensal (fn_gasto_de_ia_do_mes).';
+
+revoke execute on function public.fn_uso_de_ia(uuid, timestamptz, timestamptz, uuid, text)
+  from public, anon;
+grant  execute on function public.fn_uso_de_ia(uuid, timestamptz, timestamptz, uuid, text)
+  to authenticated, service_role;
+
+-- ---- Atendente cria empresa e pessoa (migration 9370) ----
+-- O piso do INSERT desce de `manager` para `agent` em companies, people e company_people.
+-- Excluir segue `manager`. Idempotente: drop policy if exists + create policy.
+drop policy if exists companies_insert on public.companies;
+create policy companies_insert on public.companies
+  for insert with check (organization_id in (select public.fn_user_org_ids())
+                         and public.fn_role_at_least(organization_id, 'agent'));
+
+drop policy if exists people_insert on public.people;
+create policy people_insert on public.people
+  for insert with check (organization_id in (select public.fn_user_org_ids())
+                         and public.fn_role_at_least(organization_id, 'agent'));
+
+drop policy if exists company_people_insert on public.company_people;
+create policy company_people_insert on public.company_people
+  for insert with check (organization_id in (select public.fn_user_org_ids())
+                         and public.fn_role_at_least(organization_id, 'agent'));
+
+-- ---- a tarefa que se repete por dia da semana e hora (migration 9369, #4595) ----
+-- Espelho de supabase/migrations/20261114075500_9369_tarefa_que_se_repete.sql.
+-- Num bloco do apêndice, e não dentro do `create table if not exists
+-- public.crm_tasks`: em instalação que já tem a tabela, o create é pulado, e as
+-- colunas, o CHECK e os índices só chegam pelo `update.sh` se estiverem aqui.
+-- `recurrence` é a regra da SÉRIE — {"dias":[0..6, domingo=0, no fuso da
+-- org],"hora":0..23,"ativa":true} —, e `recurrence_source_id` amarra a
+-- ocorrência gerada à série. As duas nascem nulas: tarefa avulsa (todo o
+-- histórico) fica exatamente como hoje.
+alter table public.crm_tasks
+  add column if not exists recurrence jsonb,
+  add column if not exists recurrence_source_id uuid
+    references public.crm_tasks(id) on delete cascade;
+
+comment on column public.crm_tasks.recurrence is
+  'Regra da SÉRIE: {"dias":[0..6 domingo=0, no fuso da org],"hora":0..23,"ativa":true}. Nula = tarefa avulsa; é o caso de hoje para toda linha antiga.';
+comment on column public.crm_tasks.recurrence_source_id is
+  'A série que gerou esta ocorrência. Nula nas tarefas avulsas e na própria série (que é quem carrega a regra).';
+
+-- A troca do CHECK num bloco só: com o update.sh sem ON_ERROR_STOP, um drop
+-- solto seguido de um add que falhasse deixaria a tabela sem a guarda.
+do $recorrencia$
+begin
+  alter table public.crm_tasks drop constraint if exists crm_tasks_recurrence_forma;
+  alter table public.crm_tasks
+    add constraint crm_tasks_recurrence_forma
+    check (recurrence is null or jsonb_typeof(recurrence) = 'object');
+end
+$recorrencia$;
+
+-- A trava da OCORRÊNCIA REPETIDA: a mesma ocorrência da mesma série não nasce
+-- duas vezes, mesmo com dois geradores no mesmo minuto. O `on conflict` do
+-- cron mira exatamente este índice.
+create unique index if not exists crm_tasks_recurrence_ocorrencia_unica
+  on public.crm_tasks (recurrence_source_id, due_date)
+  where recurrence_source_id is not null and due_date is not null;
+
+-- A varredura do gerador: só as séries (com regra e sem vínculo).
+create index if not exists crm_tasks_series_idx
+  on public.crm_tasks (organization_id)
+  where recurrence is not null and recurrence_source_id is null;
 
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
