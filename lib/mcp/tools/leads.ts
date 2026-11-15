@@ -426,6 +426,38 @@ const updateInputShape = {
   custom_fields: z.record(z.string(), z.unknown()).optional(),
 };
 
+/**
+ * O ERRO DE ENSINO da chave que o funil não declara (#4667, parte 2).
+ *
+ * A lista VÁLIDA vai na mensagem, e não só em `details`: quem escreve por tool
+ * recebe `err.message` (`lib/mcp/server.ts`, e o runtime do turno devolve
+ * `{ error: message }`), e `details` não atravessa nenhum dos dois. Sem chave e
+ * rótulo no texto, o modelo leria "essa chave não existe" e chutaria outra.
+ *
+ * 422 como a irmã dela (`custom_field_value_not_in_list`, #3508): é o valor da
+ * escrita que não serve, não o servidor que falhou.
+ */
+function erroDeChaveForaDoFunil(
+  fora: readonly string[],
+  validas: readonly { chave: string; rotulo: string }[],
+  requestId: string,
+): ApiError {
+  const inventadas = fora.map((chave) => `"${chave}"`).join(", ");
+  const listaDeValidas =
+    validas.length === 0
+      ? "este funil não declara nenhum campo personalizado"
+      : validas.map((c) => `"${c.chave}" (${c.rotulo})`).join(", ");
+  return new ApiError(
+    422,
+    "custom_field_key_not_in_funnel",
+    { chaves_invalidas: [...fora], chaves_validas: validas },
+    requestId,
+    `O funil deste negócio não declara o(s) campo(s) ${inventadas}, e nada foi gravado. ` +
+      `Chaves válidas: ${listaDeValidas}. ` +
+      "Chame de novo com uma dessas chaves — se o dado não couber em nenhuma, não invente: registre no título ou na descrição.",
+  );
+}
+
 export const crmUpdateLead: McpToolDefinition<typeof updateInputShape> = {
   name: "crm_update_lead",
   description:
@@ -444,6 +476,22 @@ export const crmUpdateLead: McpToolDefinition<typeof updateInputShape> = {
     // cliente não disse volta como ERRO DE ENSINO para o modelo, com os outros
     // campos da mesma chamada seguindo gravando (`lib/mcp/conferencia-de-campos`).
     const conferencia = await conferirCamposPersonalizados(ctx, { leadId: lead_id }, parsed.custom_fields);
+    // #4667, parte 2 — a chave que o funil NÃO declara é RECUSA, não gravação.
+    //
+    // Antes daqui, `valor_do_plano` (inventado pelo modelo) entrava no merge do
+    // `updateLeadHandler` sem casar com campo nenhum: ficava em
+    // `crm_leads.custom_fields` e ninguém — nem a ficha, que desenha o funil —
+    // voltava a vê-lo. O dado caía no limbo em silêncio, e o modelo seguia
+    // achando que tinha preenchido o contrato.
+    //
+    // A recusa vem antes da escrita, então NADA é gravado: o modelo recebe as
+    // chaves válidas (chave e rótulo) e corrige na hora. Só o turno do agente
+    // passa por isto — `estadoDasChaves` é `nao_conferida` no token de pessoa,
+    // que mantém o comportamento de hoje.
+    const foraDoFunil = conferencia.chavesForaDoFunil ?? [];
+    if (foraDoFunil.length > 0) {
+      throw erroDeChaveForaDoFunil(foraDoFunil, conferencia.chavesDoFunil ?? [], ctx.requestId);
+    }
     const lead = await updateLeadHandler(
       ctx.supabase,
       {
@@ -462,6 +510,17 @@ export const crmUpdateLead: McpToolDefinition<typeof updateInputShape> = {
         ? {
             campos_nao_gravados: conferencia.recusados,
             erro_de_ensino: conferencia.recusados.map((r) => r.mensagem).join(" "),
+          }
+        : {}),
+      // Degradação honesta (#4667): o funil não pôde ser lido, então as chaves
+      // foram gravadas como vieram — e o modelo fica sabendo que ninguém
+      // conferiu, em vez de supor que a chave existe.
+      ...(conferencia.estadoDasChaves === "funil_ilegivel"
+        ? {
+            chaves_do_funil: "nao_conferidas" as const,
+            aviso:
+              "Não conferi as chaves de `custom_fields`: os campos do funil deste negócio não puderam ser lidos agora, " +
+              "e o valor foi gravado como veio. Se um campo não aparecer na ficha, a chave não existe no funil.",
           }
         : {}),
     };

@@ -27,7 +27,6 @@ import { conferirCamposDoNegocio, type CampoPersonalizado, type CampoRecusado } 
 import { lerConfigDoJev } from "@/lib/ai/decisao/config";
 import { estadoEfetivoDaTarefa, TAREFA_DA_CONFERENCIA_DE_CAMPO } from "@/lib/ai/decisao/tarefas";
 import type { DependenciasDoPonto } from "@/lib/ai/decisao/ponto";
-import { settingsDoFunil } from "@/lib/leads/campos-exigidos";
 import {
   defsDoPadraoDoFunil,
   mensagemDaRecusa,
@@ -130,9 +129,20 @@ export type AlvoDaConferencia = { leadId: string } | { pipelineId: string };
 interface FunilDaConferencia {
   rotulos: Map<string, string>;
   defs: DefComPadrao[];
+  /**
+   * O funil foi LIDO? `false` é a degradação honesta da #4667: sem a lista de
+   * campos não há como dizer que a chave do modelo não existe, e recusar por
+   * um erro de leitura tornaria a ferramenta inútil — quem chama grava como
+   * hoje e DIZ que não conferiu.
+   *
+   * `defs: []` sozinho não responde isto: um funil que não declara campo nenhum
+   * (legítimo) devolve a mesma lista vazia de um funil ilegível.
+   */
+  lido: boolean;
 }
 
 async function funilDaConferencia(ctx: McpContext, alvo: AlvoDaConferencia): Promise<FunilDaConferencia> {
+  const semLeitura = (): FunilDaConferencia => ({ rotulos: new Map(), defs: [], lido: false });
   try {
     let settings: unknown;
     if ("pipelineId" in alvo) {
@@ -145,7 +155,7 @@ async function funilDaConferencia(ctx: McpContext, alvo: AlvoDaConferencia): Pro
         .eq("organization_id", ctx.organizationId)
         .eq("id", alvo.pipelineId)
         .maybeSingle();
-      if (error || !data) return { rotulos: new Map(), defs: [] };
+      if (error || !data) return semLeitura();
       settings = (data as { settings?: unknown }).settings;
     } else {
       const { data, error } = await ctx.supabase
@@ -154,16 +164,29 @@ async function funilDaConferencia(ctx: McpContext, alvo: AlvoDaConferencia): Pro
         .eq("organization_id", ctx.organizationId)
         .eq("id", alvo.leadId)
         .maybeSingle();
-      if (error || !data) return { rotulos: new Map(), defs: [] };
-      settings = await settingsDoFunil(ctx.supabase, (data as { pipeline_id?: string | null }).pipeline_id);
+      if (error || !data) return semLeitura();
+      const pipelineId = (data as { pipeline_id?: string | null }).pipeline_id;
+      // Negócio sem funil é leitura que não aconteceu, não funil vazio: o
+      // `settingsDoFunil` de sempre confundia os dois (`null` para os dois
+      // casos), e a chave de todo mundo passaria a ser recusada.
+      if (!pipelineId) return semLeitura();
+      const { data: funil, error: erroDoFunil } = await ctx.supabase
+        .from("crm_pipelines")
+        .select("settings")
+        .eq("organization_id", ctx.organizationId)
+        .eq("id", pipelineId)
+        .maybeSingle();
+      if (erroDoFunil || !funil) return semLeitura();
+      settings = (funil as { settings?: unknown }).settings;
     }
     const defs = defsDoPadraoDoFunil(settings);
     return {
       rotulos: new Map(defs.map((c) => [c.key, c.label ?? c.key])),
       defs,
+      lido: true,
     };
   } catch {
-    return { rotulos: new Map(), defs: [] };
+    return semLeitura();
   }
 }
 
@@ -176,9 +199,37 @@ export interface ConferenciaDeCampos {
   estado: string;
   /** `jev_*` quando o degrau 2 falhou (fail-open: o valor foi gravado mesmo assim). */
   error_code?: string;
+  /**
+   * As chaves que o funil do NEGÓCIO declara, com o rótulo do dono (#4667).
+   *
+   * É a lista que o erro de ensino leva ao modelo quando ele inventa uma chave:
+   * `details` não atravessa o servidor MCP, então chave e rótulo têm de caber
+   * na mensagem — e é daqui que ela sai.
+   */
+  chavesDoFunil?: Array<{ chave: string; rotulo: string }>;
+  /**
+   * As chaves de `custom_fields` que o funil NÃO declara. Vazio quando todas
+   * casam — ou quando não deu para ler o funil (ver `estadoDasChaves`).
+   */
+  chavesForaDoFunil?: string[];
+  /**
+   * `conferidas` = o funil foi lido e as chaves acima valem; `funil_ilegivel` =
+   * a leitura falhou e quem chama grava como hoje, DIZENDO que não conferiu;
+   * `nao_conferida` = a conferência não era devida (sem `custom_fields`, ou
+   * chamada por token de pessoa), e nada muda no que a ferramenta devolve.
+   */
+  estadoDasChaves?: "conferidas" | "funil_ilegivel" | "nao_conferida";
 }
 
-const SEM_CONFERENCIA = (estado: string): ConferenciaDeCampos => ({ recusados: [], estado });
+
+const SEM_CONFERENCIA = (estado: string): ConferenciaDeCampos => ({
+  recusados: [],
+  estado,
+  // Nenhuma chave foi olhada: nem lista para ensinar, nem aviso de degradação.
+  chavesDoFunil: [],
+  chavesForaDoFunil: [],
+  estadoDasChaves: "nao_conferida",
+});
 
 /**
  * Uma recusa do turno (#2730): a MESMA forma da `CampoRecusado` para quem
@@ -256,12 +307,32 @@ export async function conferirCamposPersonalizados(
 
   // ── DEGRAU 0 (#2730): o padrão, com ou sem conferência ───────────────────
   const funil = await funilDaConferencia(ctx, alvo);
+  // ── A CHAVE EXISTE NO FUNIL? (#4667, parte 2) ────────────────────────────
+  // Antes do padrão e DEPOIS da origem: uma chave que o funil não declara não
+  // tem padrão para conferir, e não há valor que a salve — quem inventou
+  // `valor_do_plano` precisa saber as chaves reais para corrigir na hora.
+  //
+  // Determinístico, como o degrau 0: não depende do Jev estar ligado. E
+  // fail-open na LEITURA (`funil.lido === false`): sem a lista de campos não
+  // há como afirmar que a chave não existe, então não recusa nada e o chamador
+  // grava como hoje, dizendo que não conferiu.
+  const chavesDoFunil = funil.defs.map((c) => ({ chave: c.key, rotulo: c.label ?? c.key }));
+  const dasChaves: Pick<ConferenciaDeCampos, "chavesDoFunil" | "chavesForaDoFunil" | "estadoDasChaves"> = {
+    chavesDoFunil,
+    chavesForaDoFunil: funil.lido ? Object.keys(campos).filter((chave) => !funil.rotulos.has(chave)) : [],
+    estadoDasChaves: funil.lido ? "conferidas" : "funil_ilegivel",
+  };
   const recusadosDePadrao = recusasDePadrao(funil.defs, campos, testaComPrazo);
   const restantes = restantesSem(campos, recusadosDePadrao);
   if (recusadosDePadrao.length > 0 && Object.keys(restantes).length === 0) {
     // Nada sobrou para perguntar: nem conversa, nem Jev. O motivo de gravar
     // zero é o FORMATO, e ele é do próprio produto.
-    return { custom_fields: {}, recusados: recusadosDePadrao.map(paraTurno), estado: "fora_do_padrao" };
+    return {
+      custom_fields: {},
+      recusados: recusadosDePadrao.map(paraTurno),
+      estado: "fora_do_padrao",
+      ...dasChaves,
+    };
   }
 
   if (estadoEfetivoDaTarefa(config, TAREFA_DA_CONFERENCIA_DE_CAMPO) === "desligada") {
@@ -270,8 +341,9 @@ export async function conferirCamposPersonalizados(
           custom_fields: restantes,
           recusados: recusadosDePadrao.map(paraTurno),
           estado: "desligada",
+          ...dasChaves,
         }
-      : SEM_CONFERENCIA("desligada");
+      : { ...SEM_CONFERENCIA("desligada"), ...dasChaves };
   }
 
   const { conversationId, mensagens } = await mensagensPendentesDoTurno(ctx);
@@ -302,5 +374,6 @@ export async function conferirCamposPersonalizados(
     recusados: [...recusadosDePadrao.map(paraTurno), ...r.recusados],
     estado: r.estado,
     ...(r.error_code === undefined ? {} : { error_code: r.error_code }),
+    ...dasChaves,
   };
 }
