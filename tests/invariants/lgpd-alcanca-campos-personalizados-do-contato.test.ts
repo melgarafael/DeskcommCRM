@@ -2,6 +2,12 @@ import { execFileSync } from "node:child_process";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
+import {
+  aplicarDiagnostico,
+  autoriaDoAgente,
+  CHAVES_DO_DIAGNOSTICO,
+} from "@/lib/contacts/diagnostico-do-contato";
+
 /**
  * O CPF GUARDADO NUM CAMPO PERSONALIZADO NÃO SOBREVIVE À ANONIMIZAÇÃO.
  *
@@ -40,6 +46,14 @@ import { beforeAll, describe, expect, it } from "vitest";
  *
  * A coluna é achado de @prevprocesso-maker no PR #465; esta metade foi
  * acrescentada na triagem, porque a cascata não conhecia o campo novo.
+ *
+ * ─── O diagnóstico da empresa (aba Diagnóstico da ficha) ───────────────────
+ *
+ * Segmento, CNPJ, diagnóstico, oferta e a autoria (`diag_por`, que pode nomear
+ * um agente) também moram em `custom_fields`. O caso dele grava o objeto
+ * montado PELO ESQUEMA CENTRAL (`lib/contacts/diagnostico-do-contato.ts`),
+ * não chaves digitadas aqui: se uma chave nova entrar no esquema, ela entra
+ * neste caso sozinha.
  */
 
 const container = process.env.TEST_DB_CONTAINER;
@@ -61,6 +75,21 @@ const ORG = "0206cf00-0000-4000-8000-00000000000a";
 const VIA_CASCATA = "0206cf00-2222-4000-8000-000000000001";
 const VIA_ROTA = "0206cf00-2222-4000-8000-000000000002";
 const VIZINHO = "0206cf00-2222-4000-8000-000000000003";
+const COM_DIAGNOSTICO = "0206cf00-2222-4000-8000-000000000004";
+
+/** O diagnóstico completo, montado pelo esquema central, ao lado de um link. */
+const DIAGNOSTICO = aplicarDiagnostico(
+  { link_site: "exemplo.com.br" },
+  { segmento: "", cnpj: "", resumo: "", oferta: "", observacoes: "" },
+  {
+    segmento: "Clínica odontológica",
+    cnpj: "11.222.333/0001-81",
+    resumo: "Agenda com buracos às terças.",
+    oferta: "Lembrete de consulta pelo WhatsApp.",
+    observacoes: "A dona atende à tarde.",
+  },
+  autoriaDoAgente("0206cf00-3333-4000-8000-000000000001"),
+);
 
 /** O que um operador de clínica escreve num campo chamado "documento". */
 const CPF = "529.982.247-25";
@@ -73,7 +102,8 @@ beforeAll(() => {
     insert into public.contacts (id, organization_id, name, custom_fields) values
       ('${VIA_CASCATA}', '${ORG}', 'Maria Silva',  '{"documento":"${CPF}","convenio":"Unimed"}'::jsonb),
       ('${VIA_ROTA}',    '${ORG}', 'Joao Pereira', '{"documento":"${CPF}","convenio":"Unimed"}'::jsonb),
-      ('${VIZINHO}',     '${ORG}', 'Ana Souza',    '{"documento":"${CPF}","convenio":"Unimed"}'::jsonb)
+      ('${VIZINHO}',     '${ORG}', 'Ana Souza',    '{"documento":"${CPF}","convenio":"Unimed"}'::jsonb),
+      ('${COM_DIAGNOSTICO}', '${ORG}', 'Clínica Sorriso', '${JSON.stringify(DIAGNOSTICO).replace(/'/g, "''")}'::jsonb)
       on conflict (id) do nothing;
   `);
 });
@@ -120,6 +150,16 @@ describe("a anonimização alcança contacts.custom_fields", () => {
       where id = '${VIA_ROTA}';
     `);
     expect(campos(VIA_ROTA)).toBe("{}");
+  });
+
+  it("⭐ o diagnóstico da empresa (todas as chaves do esquema) some na anonimização", () => {
+    // Controle positivo: todas as chaves do esquema estão gravadas antes.
+    const antes = JSON.parse(campos(COM_DIAGNOSTICO)) as Record<string, unknown>;
+    for (const chave of Object.values(CHAVES_DO_DIAGNOSTICO)) {
+      expect(antes, `a fixture não gravou ${chave}`).toHaveProperty(chave);
+    }
+    sql(`select public.fn_lgpd_cascade_redact_contact('${ORG}', '${COM_DIAGNOSTICO}', gen_random_uuid());`);
+    expect(campos(COM_DIAGNOSTICO)).toBe("{}");
   });
 
   it("edição normal PRESERVA os campos — o gatilho não é um apagador geral", () => {

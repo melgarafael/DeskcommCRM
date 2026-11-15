@@ -340,6 +340,9 @@ export function LinksRastreaveis({
               "Ative a codificação automática no Google Ads. O script preserva gclid, gbraid ou wbraid recebidos no site. UTMs sozinhas identificam a origem no CRM, mas não comprovam uma conversão no Google.",
             )}
           </p>
+          <p className="text-sm text-muted-foreground">
+            {t("Para distinguir contas, acrescente google_customer_id ao sufixo de cada conta e use o ID de cliente de dez dígitos. Exemplo: &google_customer_id=1234567890.")}
+          </p>
         </div>
       )}
     </section>

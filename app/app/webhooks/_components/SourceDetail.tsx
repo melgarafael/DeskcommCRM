@@ -379,9 +379,10 @@ export function SourceDetail({ source, open, onOpenChange }: Props) {
                 type="button"
                 variant="secondary"
                 size="icon"
+                aria-label={t("Copiar endereço")}
                 onClick={() => copy(url, t("Endereço copiado."), t)}
               >
-                <Copy />
+                <Copy aria-hidden />
               </Button>
             </div>
           </section>
@@ -585,9 +586,10 @@ export function SourceDetail({ source, open, onOpenChange }: Props) {
                     type="button"
                     variant="secondary"
                     size="icon"
+                    aria-label={t("Copiar segredo")}
                     onClick={() => copy(secretRevelado, t("Segredo copiado."), t)}
                   >
-                    <Copy />
+                    <Copy aria-hidden />
                   </Button>
                 </div>
                 <p className="text-xs text-error">

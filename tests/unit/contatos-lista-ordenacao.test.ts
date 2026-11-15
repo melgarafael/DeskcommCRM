@@ -75,7 +75,7 @@ describe("lista de contatos — ordenação e cursor", () => {
         limit: 25,
       },
     );
-    expect(cap.orFilters[0]).toContain("last_activity_at.lt.2026-01-15T12:00:00.000Z");
+    expect(cap.orFilters[0]).toContain('last_activity_at.lt."2026-01-15T12:00:00.000Z"');
     expect(cap.orFilters[0]).toContain("id.lt.cccccccc-cccc-4ccc-8ccc-cccccccccccc");
   });
 

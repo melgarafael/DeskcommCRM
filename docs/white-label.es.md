@@ -1,4 +1,4 @@
-<!-- traduzido-de: docs/white-label.md@e862cd45e445 -->
+<!-- traduzido-de: docs/white-label.md@e402509d6d62 -->
 
 [🇧🇷 Português](white-label.md) · [🇺🇸 English](white-label.en.md) · 🇪🇸 Español
 
@@ -26,6 +26,8 @@ En la misma página **Marca de la instalación**, el administrador de la instala
 
 Por seguridad, no es un editor de CSS sin restricciones: acepta selectores de clase y propiedades visuales de color, borde, sombra y tipografía. Rechaza selectores globales o por ID, reglas `@`, URL y cargas remotas, funciones fuera de `rgb`/`rgba`/`hsl`/`hsla`/`var`/`calc`/`min`/`max`/`clamp`, comentarios, escapes, scripts, `!important` y propiedades de diseño o posicionamiento. El límite es 16 KB. Si una hoja guardada deja de superar la validación, no se aplica y la página Marca muestra el motivo. Como esta configuración pertenece a la instalación, también afecta a todas las organizaciones que atiende; revisa las pantallas después de guardar.
 
+El editor tiene **dos campos**. El primero vale en los dos temas; el segundo, **CSS del tema oscuro**, vale solo con el tema oscuro activo — se aplica con el alcance del tema, así que una regla escrita allí no aparece en el claro. Es la forma de elegir un color que funcione en el oscuro sin estropear el claro. Las dos hojas se validan juntas: si cualquiera tiene una regla no válida, no se aplica ninguna y la página Marca indica qué campo corregir.
+
 Ejemplo:
 
 ```css
@@ -35,6 +37,20 @@ Ejemplo:
 
 .rounded-md {
 	border-radius: 12px;
+}
+```
+
+**Color por sección del menú lateral.** El menú tiene clases estables, pensadas para este CSS. Todo grupo lleva `nav-grupo`, y cada uno lleva también la suya: `nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais`, `nav-grupo-analise` y `nav-grupo-organizacao` (la del pie, con Configuración y Ayuda). Cada destino tiene la suya: `nav-item-inbox`, `nav-item-kanban`, etcétera. Estas clases forman parte del contrato de la pantalla y no cambian entre versiones; las clases utilitarias de Tailwind, sí.
+
+Para pintar el texto del menú, apunta a `text-muted-foreground` dentro del grupo, no a `rounded-md`. El título del grupo y los enlaces tienen las dos, pero el ítem de la pantalla abierta solo tiene `rounded-md`: ya tiene fondo en el color de destaque, y un color de texto elegido para el fondo del menú puede desaparecer sobre él. Como `text-muted-foreground` es de Tailwind, revisa el menú después de actualizar. El color del ejemplo es para el tema claro; en el oscuro, repite la regla en el campo **CSS del tema oscuro** con un color claro.
+
+```css
+.nav-grupo .text-muted-foreground {
+	color: #3d4f45;
+}
+
+.nav-grupo-crm .text-muted-foreground {
+	color: #2f6f8f;
 }
 ```
 
