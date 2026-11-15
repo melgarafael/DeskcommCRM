@@ -28,6 +28,8 @@ import { audit } from "@/lib/audit";
 import { nomesDosAtendentesCom } from "@/lib/users/nome-do-atendente";
 import type { McpContext, McpToolDefinition } from "../types";
 import { ApiError } from "@/lib/api/types";
+import { filtrarCamposLegiveisPelaIa } from "@/lib/leads/campos-do-funil";
+import { settingsDoFunil } from "@/lib/leads/campos-exigidos";
 
 /**
  * A recusa ÚNICA das leituras de negócio durante um turno: negócio de outro
@@ -274,6 +276,23 @@ export const crmGetLead: McpToolDefinition<typeof getInputShape> = {
     if ((lead as { organization_id?: string }).organization_id !== ctx.organizationId) {
       // Defesa em profundidade — service-role bypassa RLS.
       throw new Error("not_found");
+    }
+    // #4669: DENTRO de um turno de agente o `custom_fields` é o que o modelo lê,
+    // então só saem as chaves que o dono do funil marcou "A IA pode ler". A
+    // leitura por token de pessoa (sem `contatoDoTurno`) continua devolvendo a
+    // ficha inteira — lá quem lê é uma pessoa, com a permissão dela.
+    if (doTurno) {
+      const settings = await settingsDoFunil(
+        ctx.supabase,
+        (lead as { pipeline_id?: string | null }).pipeline_id,
+      );
+      lead = {
+        ...lead,
+        custom_fields: filtrarCamposLegiveisPelaIa(
+          settings as Record<string, unknown> | null,
+          (lead as { custom_fields?: unknown }).custom_fields,
+        ),
+      };
     }
     const [enriched] = await enrichLeads(ctx, [lead]);
     return { lead: enriched };
