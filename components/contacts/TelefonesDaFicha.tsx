@@ -175,15 +175,6 @@ export function TelefonesDaFicha({
   const [edicao, setEdicao] = useState<Edicao | null>(null);
   const [rascunho, setRascunho] = useState<Rascunho>(RASCUNHO_VAZIO);
   const [erro, setErro] = useState<string | null>(null);
-  /**
-   * O aviso antes de "Tornar principal" num extra COM rótulo (#4242).
-   *
-   * O telefone principal da ficha não tem onde guardar o rótulo: `contacts` só
-   * leva número, tipo e WhatsApp, e a função que troca os dois
-   * (`fn_tornar_telefone_principal`) não copia `rotulo`. Preservar exigiria
-   * coluna nova — migration, que esta entrega não faz. Então a tela avisa antes
-   * do clique, em vez de descartar a informação em silêncio.
-   */
 
   const ocupado =
     adicionar.isPending ||

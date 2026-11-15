@@ -495,11 +495,9 @@ export function TestPanel({ agent, draft, published, readOnly, channelSessions }
                     {x.message}
                   </p>
                 ))}
-                {result.impediments?.map((x, i) => (
-                  <p role="status" key={i}>
-                    {x.message}
-                  </p>
-                ))}
+                {/* #4592 — os vetos saem no card do TURNO que os levou
+                    (`TurnoDoTesteCard`), com o código da trava; repetir aqui a
+                    mesma frase do último turno só duplicava o aviso na tela. */}
               </div>
             ) : result.guardrails ? (
               <Verificacoes g={result.guardrails} />
@@ -525,6 +523,13 @@ function TurnoDoTesteCard({ turno, indice }: { turno: TurnoDoTeste; indice: numb
   const resposta = resultado.final_text?.trim() ?? "";
   const ferramentas = resultado.ferramentas ?? [];
   const propostas = resultado.proposals ?? [];
+  /**
+   * Os vetos das travas neste turno (#4592). É o único lugar em que o texto
+   * barrado aparece com o CÓDIGO da trava: antes só existia em `impediments` na
+   * resposta da API, e quem testava não distinguia "o agente errou a frase" de
+   * "a trava cortou a frase certa".
+   */
+  const impedimentos = resultado.impediments ?? [];
   return (
     <div
       data-testid={`teste-turno-${indice}`}
@@ -576,6 +581,27 @@ function TurnoDoTesteCard({ turno, indice }: { turno: TurnoDoTeste; indice: numb
                 <Badge variant="secondary" className="font-mono text-xs">
                   {p.tool}
                 </Badge>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {impedimentos.length > 0 ? (
+        <div
+          data-testid={`teste-vetos-${indice}`}
+          className="space-y-1 rounded-md border border-destructive/50 bg-destructive/5 p-2 text-xs"
+        >
+          <p className="font-medium text-destructive">{t("Vetado pela trava antes de enviar")}</p>
+          <p className="text-muted-foreground">
+            {t(
+              "O agente escreveu esta resposta, mas a verificação de envio a barrou: o texto não chegaria ao cliente. O código abaixo identifica a trava que cortou.",
+            )}
+          </p>
+          <ul className="space-y-1">
+            {impedimentos.map((x, i) => (
+              <li key={`${x.code}-${i}`}>
+                <span className="font-mono">{x.code}</span>
+                <span className="text-muted-foreground"> — {x.message}</span>
               </li>
             ))}
           </ul>

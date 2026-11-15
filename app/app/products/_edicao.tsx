@@ -37,11 +37,13 @@ export function EdicaoDoProduto({
   produto,
   urlsDasFotos,
   apresentacaoLigada = false,
+  capacidadeLigada = false,
   aoFechar,
 }: {
   produto: Produto;
   urlsDasFotos: Record<string, string>;
   apresentacaoLigada?: boolean;
+  capacidadeLigada?: boolean;
   aoFechar: () => void;
 }) {
   const t = useT();
@@ -139,6 +141,20 @@ export function EdicaoDoProduto({
             data-testid="edicao-categoria"
           />
         </label>
+        {capacidadeLigada ? (
+          <label className="text-sm">
+            {t("Capacidade")}
+            <input
+              value={rascunho.capacidade}
+              onChange={(e) => setRascunho({ ...rascunho, capacidade: e.target.value })}
+              placeholder={t("Ex.: 128GB")}
+              maxLength={60}
+              className="mt-1 h-9 w-full rounded-md border px-3"
+              disabled={desabilitado}
+              data-testid="edicao-capacidade"
+            />
+          </label>
+        ) : null}
         <label className="text-sm">
           {t("Preço de venda")}
           <input

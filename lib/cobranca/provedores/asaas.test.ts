@@ -622,7 +622,7 @@ const rotaDePagamentos = (todas: Linha[]) => (url: URL): Resposta =>
     (url.searchParams.get("subscription") === null || c.subscription === url.searchParams.get("subscription")) &&
     (url.searchParams.get("customer") === null || c.customer === url.searchParams.get("customer")) &&
     (url.searchParams.get("status") === null || c.status === url.searchParams.get("status"))));
-const PLANO = { id: "1d0e4b9a-7c2f-4e1a-9b3c-5d6e7f8a9b0c", nome: "Essencial", precoCents: 4990, intervalo: "mes" as const };
+const PLANO = { id: "1d0e4b9a-7c2f-4e1a-9b3c-5d6e7f8a9b0c", nome: "Essencial", precoCents: 4990, moeda: "BRL" as const, intervalo: "mes" as const };
 
 describe("iniciarAssinatura", () => {
   const PEDIDO = {
@@ -636,6 +636,17 @@ describe("iniciarAssinatura", () => {
       "GET /payments": rotaDePagamentos([cobranca({ id: "pay_1", subscription: "sub_novo", dueDate: "2026-10-05" })]),
       ...extra,
     });
+
+  it("⭐ plano em dólar ou euro (migration 9332) é recusado antes de qualquer chamada: o Asaas cobraria o número como real", async () => {
+    for (const moeda of ["USD", "EUR"] as const) {
+      const { adaptador, chamadas } = criando();
+      const plano = { ...PLANO, moeda };
+      expect(await adaptador.iniciarAssinatura({ ...PEDIDO, plano }).catch((e: unknown) => e)).toMatchObject({ codigo: "moeda_nao_suportada", transitorio: false });
+      expect(await adaptador.iniciarAjusteProporcional({ ...PEDIDO, plano, valorCents: 100 }).catch((e: unknown) => e)).toMatchObject({ codigo: "moeda_nao_suportada" });
+      expect(await adaptador.trocarPlano({ assinaturaRef: "sub_x", plano }).catch((e: unknown) => e)).toMatchObject({ codigo: "moeda_nao_suportada" });
+      expect(chamadas).toHaveLength(0);
+    }
+  });
 
   it("⭐ cria com UNDEFINED (Pix, boleto ou cartão na fatura) e devolve a invoiceUrl da 1ª cobrança", async () => {
     const { adaptador, chamadas } = criando();
@@ -951,7 +962,7 @@ describe("lerSituacao", () => {
 });
 
 describe("trocarPlano", () => {
-  const PRO = { id: "2e1f5c0b-8d3a-4f2b-a0c4-6e7f8a9b0c1d", nome: "Pro", precoCents: 9990, intervalo: "mes" as const };
+  const PRO = { id: "2e1f5c0b-8d3a-4f2b-a0c4-6e7f8a9b0c1d", nome: "Pro", precoCents: 9990, moeda: "BRL" as const, intervalo: "mes" as const };
   const trocar = (cobrancas: Linha[], put: Responder = { corpo: assinatura({ value: 99.9 }) }, agora = AGORA) => {
     const m = montar({ "GET /payments": rotaDePagamentos(cobrancas), "PUT /subscriptions/sub_1": put }, { agora: () => agora });
     return { ...m, troca: m.adaptador.trocarPlano({ assinaturaRef: "sub_1", plano: PRO }) };
