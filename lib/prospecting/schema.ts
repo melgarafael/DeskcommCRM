@@ -113,9 +113,21 @@ export const campaignConfigSchema = z
         TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA,
         `O texto da opção de parar tem até ${TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA} caracteres.`,
       )
-      .refine((texto) => problemaNoTextoDaSaida(texto) === null, {
-        message:
-          "O texto da opção de parar precisa conter a palavra que a pessoa responde para sair (PARAR, BAJA ou STOP) e não pode ter link.",
+      // Uma issue por MOTIVO (#4370): "sem a palavra" e "palavra escondida" pedem
+      // consertos diferentes, e a mensagem única antiga mandava procurar uma
+      // palavra que já estava lá (`~PARAR~`), o que não se conserta lendo o aviso.
+      .superRefine((texto, ctx) => {
+        const problema = problemaNoTextoDaSaida(texto);
+        if (problema === null || problema === "longo") return;
+        ctx.addIssue({
+          code: "custom",
+          message:
+            problema === "sem_palavra"
+              ? "O texto da opção de parar precisa conter a palavra que a pessoa responde para sair (PARAR, BAJA ou STOP) e não pode ter link."
+              : problema === "palavra_escondida"
+                ? "A palavra que a pessoa responde para sair não pode ir riscada, escondida ou em código: ela precisa aparecer legível, porque é o que a pessoa vai responder."
+                : "O texto da opção de parar não pode ter link.",
+        });
       })
       .optional(),
     // Etiquetas do contato na abordagem (spec 27). Ausente = a campanha não etiqueta ninguém.

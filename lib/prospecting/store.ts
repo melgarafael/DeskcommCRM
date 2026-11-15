@@ -682,6 +682,15 @@ async function validarTextoDaSaidaNoIdioma(
       422,
       "campanha",
     );
+  // A palavra existe, mas dentro de marcação que a esconde (riscado, spoiler,
+  // código). O conserto não é "incluir a palavra" — ela já está lá: é tirar a
+  // marcação de cima dela. Por isso a frase não repete a de cima (#4370).
+  if (problema === "palavra_escondida")
+    throw new ProspectingError(
+      `A palavra "${palavraDeSaida(idioma)}" está no texto, mas riscada, escondida ou dentro de código: deixe a palavra legível, sem marcação em cima dela, porque é o que a pessoa vai responder.`,
+      422,
+      "campanha",
+    );
   throw new ProspectingError(
     problema === "longo"
       ? `O texto da opção de parar tem até ${TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA} caracteres.`

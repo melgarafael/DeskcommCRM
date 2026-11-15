@@ -5,6 +5,8 @@ import path from "node:path";
 import type { ChannelSendResult } from "@/lib/agent-engine/channel-adapter";
 import { audit } from "@/lib/audit";
 import { campaignConfigSchema } from "@/lib/prospecting/schema";
+import { ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
+import { traduzir } from "@/lib/i18n/dicionario";
 import {
   comSaida,
   problemaNoTextoDaSaida,
@@ -286,5 +288,93 @@ describe("o caminho de envio lê o texto da CAMPANHA, não o do modelo", () => {
       "o modo `first_message` não usa o texto configurado da campanha",
     ).toMatch(/comSaida\([^)]*cfg\.texto_da_saida/);
     expect(worker).not.toMatch(/generated\.texto\s*\+\s*["'`]/);
+  });
+});
+
+/**
+ * ─── (5) A PALAVRA QUE ESTÁ LÁ E NÃO SE LÊ (#4370) ──────────────────────────
+ *
+ * O pedido diz "a PALAVRA continua presente", e o defeito que sobrava passa por
+ * aqui: `~PARAR~` TEM a palavra e o schema aceitava. No aparelho, `~x~` é
+ * riscado no WhatsApp, `||x||` é spoiler e crases viram código — a campanha
+ * inicia e a instrução manda responder algo que o cliente desenha como
+ * APAGADO. É a mesma família de erro que o rodapé existe para impedir (prometer
+ * uma saída que não se consegue usar), só que pela FORMA.
+ */
+describe("(5) a palavra não pode ir escondida por formatação", () => {
+  /** A régua que a tela e o servidor aplicam: o idioma é o da instalação. */
+  const noIdioma = (texto: string) => problemaNoTextoDaSaidaNoIdioma(texto, "pt-BR");
+
+  it("riscado, spoiler e código em cima da palavra são RECUSADOS ao salvar", () => {
+    for (const texto of [
+      "Se não quiser mais, responda ~PARAR~.",
+      "Se não quiser mais, responda ~~PARAR~~.",
+      "Se não quiser mais, responda ||PARAR||.",
+      "Se não quiser mais, responda `PARAR`.",
+      "Se não quiser mais, responda ```PARAR```.",
+    ])
+      expect(noIdioma(texto), `a palavra escondida passou: ${texto}`).toBe("palavra_escondida");
+  });
+
+  it("o schema recusa com o MOTIVO certo — não com a frase de 'sem a palavra'", () => {
+    const recusado = campaignConfigSchema.safeParse({
+      ...BASE,
+      texto_da_saida: "Se não quiser mais, responda ~PARAR~.",
+    });
+    expect(recusado.success, "o texto com a palavra riscada passou no schema").toBe(false);
+    const recusa = recusado.success
+      ? undefined
+      : recusado.error.issues.find((i) => i.path.join(".") === "texto_da_saida");
+    expect(recusa, "a recusa tem de ser do campo `texto_da_saida`").toBeDefined();
+    // A frase antiga mandaria INCLUIR uma palavra que já está no texto: conserto
+    // que não se acha lendo o aviso.
+    expect(recusa!.message).toContain("riscada");
+    expect(recusa!.message).not.toContain("precisa conter");
+  });
+
+  it("o servidor pega o caso que só a régua do IDIOMA vê", () => {
+    // pt instalado, BAJA legível e PARAR riscado: o schema genérico passa (há
+    // palavra de saída no texto) e é `validarTextoDaSaidaNoIdioma` quem recusa.
+    const misto = "Si no quieres más, escribe BAJA (o ~~PARAR~~ también vale).";
+    expect(problemaNoTextoDaSaida(misto), "o schema genérico já recusaria — o caso perde o sentido").toBeNull();
+    expect(noIdioma(misto)).toBe("palavra_escondida");
+  });
+
+  it("palavra LEGÍVEL continua aceita — negrito, acento, caixa e o til de 'cerca de'", () => {
+    expect(noIdioma("Se não quiser mais, responda *PARAR*.")).toBeNull();
+    expect(noIdioma("Se não for o caso, é só responder PARÁR.")).toBeNull();
+    expect(noIdioma("Se não quiser mais, pode responder parar.")).toBeNull();
+    // Um til solto (de "cerca de", sem par fechando) não é riscado; a palavra
+    // está fora dele e continua visível.
+    expect(noIdioma("Custa ~R$ 50 por mês. Para sair, responda PARAR.")).toBeNull();
+  });
+
+  it("texto escondido gravado por fora não sai: cai na frase padrão de hoje", () => {
+    const escondido = "Se não quiser mais, responda ~PARAR~.";
+    expect(textoDaSaidaEfetivo(escondido, "pt-BR")).toBe(PADRAO_PT);
+    expect(comSaida("Oi, tudo bem?", "pt-BR", escondido)).toBe(`Oi, tudo bem?\n\n${PADRAO_PT}`);
+  });
+
+  it("o detector continua reconhecendo a resposta com o rodapé personalizado", () => {
+    // O rodapé é texto da EMPRESA: não é pedido de opt-out.
+    expect(ehPedidoDeOptOut(TEXTO_DO_DONO)).toBe(false);
+    // A resposta que ele ENSINA a dar é, e continua sendo, a palavra sozinha.
+    expect(ehPedidoDeOptOut("PARAR")).toBe(true);
+    expect(ehPedidoDeOptOut("parar.")).toBe(true);
+    expect(ehPedidoDeOptOut("Parar!")).toBe(true);
+  });
+
+  it("a recusa chega traduzida em espanhol e em inglês", () => {
+    const chave =
+      "A palavra está no texto, mas riscada, escondida ou em código. Tire a marcação de cima dela: é o que a pessoa vai responder.";
+    // pt-BR é a CHAVE do dicionário; o espanhol é coluna dele.
+    expect(traduzir(chave, "pt-BR")).toBe(chave);
+    expect(traduzir(chave, "es")).not.toBe(chave);
+    // O inglês deste produto mora no catálogo (`em_construcao`, ainda não
+    // carregado em runtime) — a frase tem de existir lá para o dia da promoção.
+    const en = JSON.parse(
+      fs.readFileSync(path.join(RAIZ, "lib/i18n/traducoes/en.json"), "utf8"),
+    ) as Record<string, string>;
+    expect(en[chave], "a frase da recusa não está no catálogo em inglês").toBeTruthy();
   });
 });
