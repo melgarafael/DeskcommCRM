@@ -47,10 +47,11 @@ import {
   horasDoIntervaloNaConfig,
 } from "@/lib/automation/limite-por-contato";
 import {
-  CAMPO_DOS_CAMPOS_ALTERADOS,
   CAMPOS_ALTERAVEIS_DO_NEGOCIO,
   CONDICOES_DO_CONTATO,
   OPERADORES_SEM_VALOR,
+  operadorCabeNoCampo,
+  rotuloDoCampoAlterado,
   valorPadraoDoCampo,
   type ConditionNode,
   type ConditionOp,
@@ -1051,11 +1052,8 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {/* "Foi alterado" só existe sobre a lista de campos do
-                            evento, e essa linha só aceita ele: oferecer o par
-                            errado seria oferecer a regra que a porta recusa. */}
                         {(Object.keys(OP_LABELS) as Op[])
-                          .filter((op) => (op === "campo_alterado") === (cond.field === CAMPO_DOS_CAMPOS_ALTERADOS))
+                          .filter((op) => operadorCabeNoCampo(op, cond.field))
                           .map((op) => (
                           <SelectItem key={op} value={op}>
                             {/* Em campo de lista, `contains` é pertinência: o
@@ -1084,9 +1082,9 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                           <SelectValue placeholder={t("Escolha o campo")} />
                         </SelectTrigger>
                         <SelectContent>
-                          {Object.entries(CAMPOS_ALTERAVEIS_DO_NEGOCIO).map(([nome, rotulo]) => (
+                          {Object.keys(CAMPOS_ALTERAVEIS_DO_NEGOCIO).map((nome) => (
                             <SelectItem key={nome} value={nome}>
-                              {t(rotulo)}
+                              {t(rotuloDoCampoAlterado(nome))}
                             </SelectItem>
                           ))}
                         </SelectContent>

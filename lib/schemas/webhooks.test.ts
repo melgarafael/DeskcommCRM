@@ -418,7 +418,8 @@ describe("#1749: a condição “foi alterado” e o gatilho de negócio alterad
   it("a criação recusa a condição em outro gatilho — inclusive dentro de grupo", () => {
     for (const conditions of [
       [alterou("expected_close_date")],
-      { any: [{ field: "lead.title", op: "eq", value: "x" }, { all: [alterou("title")] }] },
+      // O grupo do topo é o único que a API aceita (#2727).
+      { any: [{ field: "lead.title", op: "eq", value: "x" }, alterou("title")] },
     ]) {
       const r = regra("lead.created", conditions);
       expect(r.success).toBe(false);

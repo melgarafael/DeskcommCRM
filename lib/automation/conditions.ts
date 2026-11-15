@@ -109,6 +109,20 @@ function ehCampoAlteravelDoNegocio(nome: string): boolean {
   return Object.hasOwn(CAMPOS_ALTERAVEIS_DO_NEGOCIO, nome);
 }
 
+/** O nome que a tela mostra no lugar da coluna (`expected_close_date`). */
+export function rotuloDoCampoAlterado(nome: string): string {
+  return ehCampoAlteravelDoNegocio(nome) ? CAMPOS_ALTERAVEIS_DO_NEGOCIO[nome as keyof UpdateLeadInput] : nome;
+}
+
+/**
+ * Os editores oferecem este operador nesta linha? "Foi alterado" só existe
+ * sobre a lista de campos do evento, e essa linha só aceita ele: oferecer o par
+ * errado seria oferecer a regra que a porta recusa.
+ */
+export function operadorCabeNoCampo(op: ConditionOp, campo: string): boolean {
+  return (op === "campo_alterado") === (campo === CAMPO_DOS_CAMPOS_ALTERADOS);
+}
+
 /**
  * As recusas da condição "foi alterado" — as mesmas frases na tela e na porta.
  *
