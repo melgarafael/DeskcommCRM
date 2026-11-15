@@ -44,4 +44,4 @@ createServer((req, res) => {
     res.statusCode = 404;
     res.end(JSON.stringify({ status: "error", message: "not found" }));
   });
-}).listen(PORTA, "127.0.0.1", () => console.log(`receptor do Amigo em 127.0.0.1:${PORTA}`));
+}).listen(PORTA, "127.0.0.1", () => console.info(`receptor do Amigo em 127.0.0.1:${PORTA}`));
