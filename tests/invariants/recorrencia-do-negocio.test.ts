@@ -268,3 +268,36 @@ describe("recurring_entries.ends_on — o fim do contrato (9371, doc 312 = A)", 
     ).toBe("nulo");
   });
 });
+
+describe("a marca da perda: o re-ganho só religa o que a PERDA desligou (#4256)", () => {
+  const estado = () =>
+    sql(`select is_active::text || '|' || desativada_pela_perda::text from public.recurring_entries where id = '${MOLDE_B}';`);
+
+  it("a perda desliga COM a marca, e o re-ganho religa limpando a marca", () => {
+    sql(`update public.recurring_entries set is_active = false, desativada_pela_perda = true where id = '${MOLDE_B}';`);
+    expect(estado()).toBe("false|true");
+    sql(`update public.recurring_entries set is_active = true, desativada_pela_perda = false where id = '${MOLDE_B}';`);
+    expect(estado()).toBe("true|false");
+  });
+
+  it("trocar is_active sem mandar a marca (a equipe, no catálogo) zera a marca", () => {
+    sql(`update public.recurring_entries set is_active = false, desativada_pela_perda = true where id = '${MOLDE_B}';`);
+    // A equipe religa à mão: a marca de "foi a perda" deixa de valer.
+    sql(`update public.recurring_entries set is_active = true where id = '${MOLDE_B}';`);
+    expect(estado()).toBe("true|false");
+    // E desliga à mão: continua sem a marca, então o re-ganho não religa.
+    sql(`update public.recurring_entries set is_active = false where id = '${MOLDE_B}';`);
+    expect(estado()).toBe("false|false");
+    sql(`update public.recurring_entries set is_active = true where id = '${MOLDE_B}';`);
+    expect(estado()).toBe("true|false");
+  });
+
+  it("a função do gatilho não é chamável por anon nem authenticated", () => {
+    expect(
+      sql(`
+        select has_function_privilege('anon', 'public.fn_recorrencia_marca_de_perda()', 'execute')::text || '|' ||
+               has_function_privilege('authenticated', 'public.fn_recorrencia_marca_de_perda()', 'execute')::text;
+      `),
+    ).toBe("false|false");
+  });
+});

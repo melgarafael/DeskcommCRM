@@ -1577,6 +1577,11 @@ restaurar_versao_anterior() {  # → 0 sempre (rollback que falha não mata a vo
 # que o sistema voltou atrás sozinho.
 VIGIA_ARQUIVO=".update-vigia"
 VIGIA_FALHAS_ARQUIVO=".update-vigia-falhas"
+# De qual versão a última atualização PARA FRENTE saiu. É o único alvo de volta
+# que o agente aceita do app: o alvo de um pedido de volta chega pela rota, e o
+# host não recua para onde a rota mandar. Voltar para outra versão anterior
+# continua possível, mas só pelo terminal (update.sh --to <versão> --force).
+ORIGEM_DA_ATUALIZACAO_ARQUIVO=".update-de-onde-vim"
 # Janela de 2 horas = 24 ciclos de cron. Folgada de propósito: uma atualização
 # que derruba o app costuma derrubar na largada (primeiros requests, cron que
 # roda pela primeira vez na versão nova), e o rollback só devolve versão — o

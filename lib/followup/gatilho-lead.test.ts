@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import { ORIGEM_DA_PLANILHA } from "@/lib/leads/planilha";
 import type { EnabledFollowupAgent, FollowupGateDb } from "./agent-followup-gate";
+import { triggerConfigSchema } from "./api-schemas";
 import {
   EVENTO_DE_LEAD_CRIADO,
   aplicaGatilhoDeLead,
@@ -18,6 +19,9 @@ const CONTATO = "55555555-5555-5555-5555-555555555555";
 const VERSION = "99999999-9999-9999-9999-999999999999";
 const ENROLLMENT = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const EVENTO = "e0000000-0000-4000-8000-000000000001";
+/** Funil do card e funil que o fluxo pede — dois ids distintos, como na conta real. */
+const FUNIL_DO_CARD = "b1000000-0000-4000-8000-000000000001";
+const FUNIL_DO_FLUXO = "b1000000-0000-4000-8000-000000000002";
 
 interface Registro {
   contatoConsultado: number;
@@ -28,6 +32,8 @@ interface Registro {
 function fakeDb(opts: {
   pointers?: PointerDeLead[];
   contato?: string | null;
+  pipelineId?: string | null;
+  tags?: string[];
   noDeGatilho?: string | null;
   pedeAgente?: boolean;
   jaVivo?: boolean;
@@ -38,9 +44,13 @@ function fakeDb(opts: {
     async carregaPointersDeLead() {
       return opts.pointers ?? [];
     },
-    async carregaContatoDoNegocio() {
+    async carregaCartaoDoNegocio() {
       opts.registro.contatoConsultado++;
-      return opts.contato === undefined ? CONTATO : opts.contato;
+      return {
+        contactId: opts.contato === undefined ? CONTATO : opts.contato,
+        pipelineId: opts.pipelineId === undefined ? FUNIL_DO_CARD : opts.pipelineId,
+        tags: opts.tags ?? [],
+      };
     },
     async carregaNoDeGatilho() {
       if (opts.noDeGatilho === null) return null;
@@ -272,5 +282,111 @@ describe("aplicaGatilhoDeLead — a IA no modo assistido (doc 301 = B)", () => {
     );
     expect(s.enrolled).toBe(1);
     expect(s.parados_no_assistido).toBeUndefined();
+  });
+});
+
+/**
+ * #4587 — O FILTRO DO CARD: FUNIL E ETIQUETA.
+ *
+ * O defeito medido: `lead_created` valia para qualquer card novo de qualquer
+ * funil. Como só existe UM fluxo vivo por contato
+ * (`idx_followup_enrollments_one_live`), o card aberto no funil errado
+ * inscrevia o contato no fluxo errado — e essa inscrição bloqueava a do fluxo
+ * certo (23505 → skip). Os quatro casos abaixo são os quatro lados do filtro,
+ * e o último é o contrato de compatibilidade: sem filtro, NADA mudou.
+ */
+describe("aplicaGatilhoDeLead — o filtro por funil e por etiqueta (#4587)", () => {
+  const comFiltro = (filtro: PointerDeLead["filtro"]): PointerDeLead => ({
+    ...pointerArmado,
+    filtro,
+  });
+
+  it("filtro por FUNIL: card nascido em outro funil não inscreve o contato", async () => {
+    const reg = registro();
+    const s = await aplicaGatilhoDeLead(
+      {
+        db: fakeDb({
+          pointers: [comFiltro({ pipelineId: FUNIL_DO_FLUXO })],
+          pipelineId: FUNIL_DO_CARD,
+          pedeAgente: false,
+          registro: reg,
+        }),
+        gateDb: fakeGate([]),
+        clock: CLOCK,
+      },
+      evento(),
+    );
+    expect(s.enrolled).toBe(0);
+    expect(s.fora_do_filtro).toBe(1);
+    expect(reg.enrollments).toHaveLength(0);
+  });
+
+  it("filtro por ETIQUETA: card sem a etiqueta não inscreve o contato", async () => {
+    const reg = registro();
+    const s = await aplicaGatilhoDeLead(
+      {
+        db: fakeDb({
+          pointers: [comFiltro({ tag: "vip" })],
+          tags: ["lead-frio"],
+          pedeAgente: false,
+          registro: reg,
+        }),
+        gateDb: fakeGate([]),
+        clock: CLOCK,
+      },
+      evento(),
+    );
+    expect(s.enrolled).toBe(0);
+    expect(s.fora_do_filtro).toBe(1);
+    expect(reg.enrollments).toHaveLength(0);
+  });
+
+  it("card que CASA com funil e etiqueta inscreve — e a caixa da etiqueta não decide", async () => {
+    const reg = registro();
+    const s = await aplicaGatilhoDeLead(
+      {
+        db: fakeDb({
+          pointers: [comFiltro({ pipelineId: FUNIL_DO_CARD, tag: "VIP" })],
+          pipelineId: FUNIL_DO_CARD,
+          tags: ["vip"],
+          pedeAgente: false,
+          registro: reg,
+        }),
+        gateDb: fakeGate([]),
+        clock: CLOCK,
+      },
+      evento(),
+    );
+    expect(s.enrolled).toBe(1);
+    expect(s.fora_do_filtro).toBeUndefined();
+    expect(reg.enrollments).toHaveLength(1);
+  });
+
+  it("SEM filtro, qualquer card inscreve — o comportamento de sempre", async () => {
+    const reg = registro();
+    const s = await aplicaGatilhoDeLead(
+      {
+        db: fakeDb({ pointers: [pointerArmado], pipelineId: FUNIL_DO_CARD, tags: [], pedeAgente: false, registro: reg }),
+        gateDb: fakeGate([]),
+        clock: CLOCK,
+      },
+      evento(),
+    );
+    expect(s.enrolled).toBe(1);
+    expect(s.fora_do_filtro).toBeUndefined();
+    expect(reg.enrollments).toHaveLength(1);
+  });
+
+  it("o fio aceita os dois campos e continua aceitando o params ausente", () => {
+    expect(
+      triggerConfigSchema.safeParse({
+        kind: "lead_created",
+        params: { pipeline_id: FUNIL_DO_FLUXO, tag: "vip" },
+      }).success,
+    ).toBe(true);
+    expect(triggerConfigSchema.safeParse({ kind: "lead_created" }).success).toBe(true);
+    expect(
+      triggerConfigSchema.safeParse({ kind: "lead_created", params: { funil: "x" } }).success,
+    ).toBe(false);
   });
 });

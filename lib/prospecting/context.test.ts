@@ -93,3 +93,27 @@ describe("prospectingConversationContext — o que o agente lê sobre as ofertas
     expect(consultas[0]).not.toContain(ORG_B);
   });
 });
+
+describe("prospectingConversationContext — qual campanha vale quando há mais de uma", () => {
+  it("forma do SQL: a consulta ordena pela tentativa mais recente (nulos no fim) antes do `limit 1`", async () => {
+    // Com `limit 1` sem ordem, a campanha cujo objetivo o agente lê era a que o
+    // plano de execução devolvesse primeiro. A ordem pela tentativa mais recente
+    // (nulos no fim) torna a escolha determinística.
+    //
+    // Este caso confere SÓ o texto do SQL: o banco falso devolve uma linha e não
+    // escolhe entre duas. Hoje a organização não tem duas candidatas na mesma
+    // conversa (`prospecting_phone_once_org` e `unique(organization_id,
+    // place_id)`); a prova pelo resultado, com duas candidatas, fica para um
+    // invariante de `test:db` quando o reaproveitamento de lista permitir o caso.
+    const sqls: string[] = [];
+    const db = {
+      query: async (sql: string) => {
+        sqls.push(sql);
+        return { rows: [{ config: configDaCampanha(), exit_offered_at: null }] };
+      },
+    } as unknown as Queryable;
+    await prospectingConversationContext(db, ORG_A, CONVERSA);
+    expect(sqls).toHaveLength(1);
+    expect(sqls[0]).toMatch(/order by p\.attempted_at desc nulls last limit 1$/);
+  });
+});

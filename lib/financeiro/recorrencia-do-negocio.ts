@@ -79,6 +79,8 @@ export type DesfechoDaRecorrenciaDoNegocio =
   | { estado: "criado"; recorrenciaId: string; valorCents: number; diaDoMes: number }
   | { estado: "ja_existia"; recorrenciaId: string | null }
   | { estado: "reativado"; recorrenciaId: string }
+  /** A equipe desligou o molde à mão: o ganho não passa por cima. */
+  | { estado: "desligado_pela_equipe"; recorrenciaId: string }
   | {
       estado: "ignorado";
       motivo:
@@ -185,21 +187,28 @@ export async function recorrenciaDoNegocio(
   // do funil, e o segundo fecho não pode criar um segundo molde.
   const { data: existente, error: erroLeitura } = await supabase
     .from("recurring_entries")
-    .select("id, is_active")
+    .select("id, is_active, desativada_pela_perda")
     .eq("organization_id", entrada.organizationId)
     .eq("crm_lead_id", entrada.leadId)
     .limit(1)
     .maybeSingle();
   if (erroLeitura) return { estado: "falhou", erro: `molde: ${erroLeitura.message}` };
   if (existente) {
-    const molde = existente as { id: string; is_active?: boolean };
+    const molde = existente as { id: string; is_active?: boolean; desativada_pela_perda?: boolean };
     if (molde.is_active !== false) return { estado: "ja_existia", recorrenciaId: String(molde.id) };
+    // Desligado, mas NÃO pela perda: foi alguém da equipe, no catálogo do
+    // financeiro. Reativar por cima seria voltar a cobrar o que uma pessoa
+    // decidiu parar de cobrar. A marca é do banco (trg_recorrencia_marca_de_perda).
+    if (molde.desativada_pela_perda !== true) {
+      return { estado: "desligado_pela_equipe", recorrenciaId: String(molde.id) };
+    }
     // Re-ganho depois de uma perda (doc 312): o MESMO molde volta a valer, com o
     // valor e o prazo deste ganho — nunca uma segunda linha.
     const { error: erroReativa } = await supabase
       .from("recurring_entries")
       .update({
         is_active: true,
+        desativada_pela_perda: false,
         amount_cents: valor,
         ends_on: fim,
         updated_at: new Date().toISOString(),
@@ -283,7 +292,8 @@ export async function desativaRecorrenciaDoNegocio(
 ): Promise<DesfechoDaDesativacao> {
   const { data: desativados, error } = await supabase
     .from("recurring_entries")
-    .update({ is_active: false, updated_at: new Date().toISOString() })
+    // A marca diz ao re-ganho que foi a PERDA quem desligou (e não a equipe).
+    .update({ is_active: false, desativada_pela_perda: true, updated_at: new Date().toISOString() })
     .eq("organization_id", entrada.organizationId)
     .eq("crm_lead_id", entrada.leadId)
     .eq("is_active", true)

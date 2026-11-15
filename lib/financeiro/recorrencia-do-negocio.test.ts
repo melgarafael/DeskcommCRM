@@ -209,7 +209,7 @@ describe("recorrenciaDoNegocio — doc 312 = A", () => {
   });
 
   it("re-ganho depois da perda reativa o MESMO molde, sem segunda linha", async () => {
-    const falso = bancoFalso({ moldeExistente: { id: MOLDE, is_active: false } });
+    const falso = bancoFalso({ moldeExistente: { id: MOLDE, is_active: false, desativada_pela_perda: true } });
 
     const desfecho = await recorrenciaDoNegocio(falso.supabase, entrada({ meses: 6 }));
 
@@ -218,9 +218,26 @@ describe("recorrenciaDoNegocio — doc 312 = A", () => {
     expect(falso.atualizacoes).toHaveLength(1);
     expect(falso.atualizacoes[0]).toMatchObject({
       tabela: "recurring_entries",
-      dados: { is_active: true, amount_cents: 50_000, ends_on: fimDaRecorrencia(6, 5) },
+      dados: {
+        is_active: true,
+        desativada_pela_perda: false,
+        amount_cents: 50_000,
+        ends_on: fimDaRecorrencia(6, 5),
+      },
       filtros: { id: MOLDE, organization_id: ORG },
     });
+  });
+
+  it("molde que a EQUIPE desligou à mão não volta com o re-ganho (#4256)", async () => {
+    // Desligado, sem a marca da perda: alguém decidiu parar de cobrar no
+    // catálogo do financeiro. O ganho não passa por cima.
+    const falso = bancoFalso({ moldeExistente: { id: MOLDE, is_active: false, desativada_pela_perda: false } });
+
+    const desfecho = await recorrenciaDoNegocio(falso.supabase, entrada({ meses: 6 }));
+
+    expect(desfecho).toEqual({ estado: "desligado_pela_equipe", recorrenciaId: MOLDE });
+    expect(falso.escritas).toHaveLength(0);
+    expect(falso.atualizacoes).toHaveLength(0);
   });
 });
 
@@ -329,7 +346,7 @@ describe("desativaRecorrenciaDoNegocio", () => {
     const [atualizacao] = falso.atualizacoes;
     expect(atualizacao).toMatchObject({
       tabela: "recurring_entries",
-      dados: { is_active: false },
+      dados: { is_active: false, desativada_pela_perda: true },
       filtros: { organization_id: ORG, crm_lead_id: LEAD, is_active: true },
     });
   });
