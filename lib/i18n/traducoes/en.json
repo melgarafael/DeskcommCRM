@@ -7293,6 +7293,7 @@
   "Funil de destino não encontrado.": "Destination pipeline not found.",
   "O funil de origem não tem etapa de perda para encerrar o negócio.": "The source pipeline has no loss stage to close the deal.",
   "Não enviei: o contato pediu para parar de receber mensagens": "Didn't send: the contact asked to stop receiving messages",
+  "O cliente disse que não tem interesse": "The client said they are not interested",
   "Não enviei: fora da janela de horário permitida": "Didn't send: outside the allowed time window",
   "Não enviei: limite de ritmo de envio atingido": "Didn't send: sending rate limit reached",
   "Não enviei: orçamento de IA esgotado": "Didn't send: AI budget exhausted",

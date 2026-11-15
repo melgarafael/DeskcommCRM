@@ -14865,6 +14865,8 @@ export const DICIONARIO: Traducoes = {
   "Sem resposta além do prazo deste estágio": { es: "Sin respuesta tras vencer el plazo de esta etapa" },
   "Parado há muito tempo — sem resposta": { es: "Detenido desde hace mucho tiempo, sin respuesta" },
   "Voltou a ter movimento": { es: "Volvió a tener movimiento" },
+  // Recusa "não tenho interesse" que encerra o negócio aberto (#4632).
+  "O cliente disse que não tem interesse": { es: "El cliente dijo que no tiene interés" },
   "Essa etapa não faz parte deste funil. Recarregue a página e tente de novo.": {
     es: "Esa etapa no forma parte de este embudo. Recarga la página e intenta de nuevo.",
   },

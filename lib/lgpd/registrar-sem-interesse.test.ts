@@ -10,14 +10,17 @@
  *
  * ─── SABOTAGEM ─────────────────────────────────────────────────────────────
  * - Tirar o `if (contato.is_anonymized)`: "anonimizado" fica vermelho.
- * - Tirar o `.eq("organization_id")` de `lerContato`: os 9 ficam vermelhos (medido) — o dublê
+ * - Tirar o `.eq("organization_id")` de `lerContato`: os 10 ficam vermelhos (medido) — o dublê
  *   só devolve a linha com a cerca inteira, então o contato "some" e nada é gravado.
  * - Tirar o `await audit` do desfazer: "desfazer" fica vermelho.
  * - Voltar o ramo `ja_recusado` a sair sem fechar: "repetir a frase" fica vermelho.
  * - Tirar a chamada de `encerrarFollowupsDaProspeccao`: "follow-up" e "a cerca" ficam
- *   vermelhos (2 de 9, medido; a cerca também confere as operações nas tabelas do follow-up).
+ *   vermelhos (2 de 10, medido; a cerca também confere as operações nas tabelas do follow-up).
  * - Tirar o `.eq("updated_at")`: "escrita concorrente" fica vermelho.
+ * - Tirar do dicionário a frase da linha do tempo: "tem tradução em es e en" fica
+ *   vermelho (1 de 10, medido).
  */
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { auditSpy, encerraDemandaSpy } = vi.hoisted(() => ({
@@ -29,6 +32,7 @@ vi.mock("@/lib/logger", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: 
 vi.mock("@/lib/leads/encerramento", () => ({ encerraDemanda: encerraDemandaSpy }));
 
 import { desfazerSemInteresse, registrarSemInteresse } from "@/lib/lgpd/registrar-sem-interesse";
+import { DICIONARIO } from "@/lib/i18n/dicionario";
 import { consentComSemInteresse } from "@/lib/lgpd/sem-interesse";
 
 const ORG = "org-1";
@@ -177,6 +181,22 @@ describe("registrarSemInteresse", () => {
     expect(auditSpy).toHaveBeenCalledTimes(1);
     expect(auditSpy.mock.calls[0]?.[0]?.metadata).toMatchObject({ consentimento: "recusado", origem: "conversa_de_prospeccao" });
     expect(encerraDemandaSpy).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * A frase vai gravada como `reason` da atividade e a linha do tempo a traduz só na
+   * leitura, com `t(item.reason)`. Sem a chave no dicionário e no catálogo em inglês,
+   * quem usa o CRM em espanhol ou em inglês lê o texto em português, e nenhum teste de
+   * idioma pega, porque a frase não passa por um `t()` estático.
+   */
+  it("a frase que a linha do tempo mostra no negócio fechado tem tradução em es e en", async () => {
+    await registrarSemInteresse(bancoFalso(), PEDIDO);
+    const razao = (encerraDemandaSpy.mock.calls[0]?.[2] as { razaoNaTimeline?: string } | undefined)
+      ?.razaoNaTimeline;
+    expect(razao).toBe("O cliente disse que não tem interesse");
+    const en = JSON.parse(readFileSync("lib/i18n/traducoes/en.json", "utf8")) as Record<string, string>;
+    expect(DICIONARIO[razao ?? ""]?.es).toBe("El cliente dijo que no tiene interés");
+    expect(en[razao ?? ""]).toBe("The client said they are not interested");
   });
 
   it("a cerca: toda leitura e escrita leva organization_id (e o id do contato em contacts)", async () => {
