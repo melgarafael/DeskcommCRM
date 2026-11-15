@@ -181,6 +181,16 @@ export interface UserOrgMembership {
   org_status?: string | null;
   /** `organizations.suspended_kind` — só significa algo com status 'suspended'. */
   suspended_kind?: string | null;
+  /**
+   * `user_organizations.senha_provisoria` (migration 9227).
+   *
+   * `true` = a senha deste vínculo foi definida por quem administra e precisa
+   * ser trocada no primeiro acesso. Vem junto da lista porque o gate do layout
+   * e o da API decidem com o que a mesma consulta já trouxe — uma segunda
+   * leitura por requisição só para saber isso seria um round-trip em todo
+   * /app e em toda rota /api/v1.
+   */
+  senha_provisoria?: boolean;
 }
 
 export interface AuthUser {

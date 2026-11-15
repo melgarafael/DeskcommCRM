@@ -63,9 +63,17 @@ export default async function TeamPage({
           </p>
         </div>
         {isAdmin ? (
-          <Button asChild className="shrink-0">
-            <Link href="/app/team/invite">{t("Convidar membros")}</Link>
-          </Button>
+          // DUAS portas para a mesma pergunta ("quem entra na equipe"), lado a
+          // lado e com peso diferente: convidar é o caminho de sempre; criar com
+          // senha é o que funciona sem SMTP nem caixa postal (#3876).
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <Button asChild variant="outline">
+              <Link href="/app/team/novo">{t("Criar usuário com senha")}</Link>
+            </Button>
+            <Button asChild>
+              <Link href="/app/team/invite">{t("Convidar membros")}</Link>
+            </Button>
+          </div>
         ) : null}
       </header>
 
