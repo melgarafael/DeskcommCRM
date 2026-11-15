@@ -4342,6 +4342,11 @@ export const DICIONARIO: Traducoes = {
   "+ Seção": { es: "+ Sección" },
   "Salvar modelo": { es: "Guardar modelo" },
   "Campos usados": { es: "Campos usados" },
+  "Campos do negócio": { es: "Campos del negocio" },
+  "Vêm do card do negócio: quem preenche é o funil, não a proposta.": {
+    es: "Vienen de la tarjeta del negocio: los llena el embudo, no la propuesta.",
+  },
+  "Vem do card do negócio, no funil.": { es: "Viene de la tarjeta del negocio, en el embudo." },
   "Escreva {{campo}} no texto; a proposta troca pelo valor de cada cliente.": {
     es: "Escribe {{campo}} en el texto; la propuesta lo cambia por el valor de cada cliente.",
   },
@@ -9623,6 +9628,40 @@ export const DICIONARIO: Traducoes = {
   "Esta mensagem foi apagada pelo contato": { es: "Este mensaje fue eliminado por el contacto" },
   "Esta mensagem foi apagada pelo atendente": { es: "Este mensaje fue eliminado por el agente" },
   "Visível só aqui no CRM": { es: "Visible solo aquí en el CRM" },
+  // O TEXTO RETIDO DA APAGADA PELO CONTATO (#4500): o botão, os quatro estados
+  // e a tela de permissões. "Retido" aqui é o termo do produto — o corpo que o
+  // CRM guarda depois de o contato apagar.
+  "Ver texto retido": { es: "Ver texto retenido" },
+  "Verificando permissão…": { es: "Verificando permiso…" },
+  "Você não tem permissão para ver este texto": {
+    es: "No tienes permiso para ver este texto",
+  },
+  "Você não tem permissão para ver este texto.": {
+    es: "No tienes permiso para ver este texto.",
+  },
+  "Texto não disponível": { es: "Texto no disponible" },
+  "Texto não disponível.": { es: "Texto no disponible." },
+  "Não foi possível verificar a mensagem.": {
+    es: "No fue posible verificar el mensaje.",
+  },
+  "Não foi possível verificar a permissão.": {
+    es: "No fue posible verificar el permiso.",
+  },
+  "Não foi possível ler o texto.": { es: "No fue posible leer el texto." },
+  "Permissões": { es: "Permisos" },
+  "Ver o texto de mensagens apagadas pelo contato": {
+    es: "Ver el texto de mensajes eliminados por el contacto",
+  },
+  "Quando o contato apaga uma mensagem, o texto fica guardado e escondido. Marque os perfis que podem revelá-lo na conversa. Cada clique é registrado na auditoria, inclusive quando é negado. Sem nenhum perfil marcado, ninguém vê o texto.":
+    {
+      es: "Cuando el contacto elimina un mensaje, el texto queda guardado y oculto. Marca los perfiles que pueden revelarlo en la conversación. Cada clic se registra en la auditoría, incluso cuando es denegado. Sin ningún perfil marcado, nadie ve el texto.",
+    },
+  "Nenhum perfil autorizado.": { es: "Ningún perfil autorizado." },
+  "Salvar permissões": { es: "Guardar permisos" },
+  "Permissões salvas.": { es: "Permisos guardados." },
+  "Não foi possível salvar as permissões.": {
+    es: "No fue posible guardar los permisos.",
+  },
   editada: { es: "editado" },
   "O autor editou esta mensagem": { es: "El autor editó este mensaje" },
   "Erro desconhecido": { es: "Error desconocido" },
@@ -17795,6 +17834,20 @@ export const DICIONARIO: Traducoes = {
   },
   "Nenhum servidor externo respondeu. Salve o endereço e a chave e teste de novo.": {
     es: "Ningún servidor externo respondió. Guarda la dirección y la clave y prueba de nuevo.",
+  },
+  // ─── Escrita liberada no atendimento (#4445) ───
+  "Ferramentas de escrita liberadas": { es: "Herramientas de escritura liberadas" },
+  "A liberação nasce vazia: enquanto esta lista estiver em branco, nenhuma ferramenta de escrita roda durante o atendimento — a IA consulta, mas não altera nada no sistema de fora. Deixar em branco e salvar revoga as liberações.": {
+    es: "La liberación nace vacía: mientras esta lista esté en blanco, ninguna herramienta de escritura se ejecuta durante la atención — la IA consulta, pero no altera nada en el sistema externo. Dejar en blanco y guardar revoca las liberaciones.",
+  },
+  "Só para esta conexão (servidor compartilhado)": {
+    es: "Solo para esta conexión (servidor compartido)",
+  },
+  "Uma ferramenta por linha, com o nome exato que o servidor anuncia. A lista é explícita: curinga (*, all, todos) não é aceito.": {
+    es: "Una herramienta por línea, con el nombre exacto que anuncia el servidor. La lista es explícita: no se acepta comodín (*, all, todos).",
+  },
+  "Curinga não é aceito. Escreva o nome de cada ferramenta de escrita que pode rodar: * ou all liberariam também as ferramentas que o servidor ainda nem anuncia.": {
+    es: "No se acepta comodín. Escribe el nombre de cada herramienta de escritura que puede ejecutarse: * o all liberarían también las herramientas que el servidor aún no anuncia.",
   },
 
   // ─── Campanhas (migration 0264) ───
