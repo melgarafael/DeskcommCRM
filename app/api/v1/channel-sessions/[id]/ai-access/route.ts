@@ -109,6 +109,31 @@ export async function PATCH(req: NextRequest, { params }: Context): Promise<Resp
   const parsed = aiAccessUpdateSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return fail("validation_failed", "Use telefones com DDI, por exemplo +5511999998888, e escolha os testadores de rede social entre os contatos do canal.", 422, { requestId });
   const { mode, test_phone_numbers, test_social_identities } = parsed.data;
+  // A forma não basta: só entra o que a tela oferece para ESTE canal. Lista
+  // vazia é remoção, e remover é sempre permitido.
+  if (test_social_identities !== undefined && test_social_identities.length > 0) {
+    const admin = createAdminClient();
+    const { data: canal, error: erroDoCanal } = await admin.from("channel_sessions")
+      .select("provider, metadata").eq("organization_id", auth.org.orgId).eq("id", id)
+      .is("archived_at", null).maybeSingle();
+    if (erroDoCanal) return fail("internal_error", "Não foi possível carregar o canal.", 500, { requestId });
+    if (!canal) return fail("not_found", "Canal não encontrado.", 404, { requestId });
+    if (canal.provider !== "zernio_social") {
+      return fail("testador_social_recusado", `Este canal não é de rede social; a identidade ${test_social_identities[0]} não pode ser testadora aqui.`, 422, { requestId });
+    }
+    const gravadas = lerIdentidadesSociaisDeTeste(canal.metadata);
+    const novas = test_social_identities.filter((i) => !gravadas.includes(i));
+    if (novas.length > 0) {
+      // A MESMA leitura que o GET usa para oferecer os candidatos.
+      const candidatos = await candidatosSociais(admin, auth.org.orgId, id, gravadas);
+      if (candidatos === null) return fail("internal_error", "Não foi possível carregar os contatos deste canal.", 500, { requestId });
+      const oferecidas = new Set(candidatos.map((c) => c.social_identity));
+      const recusada = novas.find((i) => !oferecidas.has(i));
+      if (recusada !== undefined) {
+        return fail("testador_social_recusado", `A identidade ${recusada} não é de um contato que conversou com este canal. Escolha entre os contatos oferecidos.`, 422, { requestId });
+      }
+    }
+  }
   // RPC atômica: não sobrescreve as demais configurações de metadata. A lista
   // social só vai quando a tela a mandou — ausente, a sobrecarga de 4
   // argumentos deixa a lista gravada como está.

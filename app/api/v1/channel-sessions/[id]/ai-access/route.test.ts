@@ -18,7 +18,7 @@ const testador = "instagram:6af9e0ef28984e27de07bef4:1011223655361506";
 const antigo = "instagram:6af9e0ef28984e27de07bef4:2222";
 const filters: Record<string, unknown> = {};
 const rpc = vi.fn();
-const row = { id: canal, organization_id: org, archived_at: null, metadata: { ai_gate: "allowlist", ai_gate_mode: "pre_go_live", ai_test_phone_numbers: [telefone], ai_test_social_identities: [testador, antigo, "lixo"], segredo_do_transporte: "nao-expor" } };
+const row = { id: canal, organization_id: org, archived_at: null, provider: "zernio_social", metadata: { ai_gate: "allowlist", ai_gate_mode: "pre_go_live", ai_test_phone_numbers: [telefone], ai_test_social_identities: [testador, antigo, "lixo"], segredo_do_transporte: "nao-expor" } };
 /** Conversas do canal e fichas, como o embed `contacts:contact_id!inner(...)` as devolve. */
 const conversas = [
   { contacts: { social_identity: testador, display_name: "WB", name: null } },
@@ -35,6 +35,8 @@ beforeEach(() => {
   vi.mocked(loadAuthUser).mockResolvedValue(null);
   for (const k of Object.keys(filters)) delete filters[k];
   lidos.length = 0;
+  row.provider = "zernio_social";
+  row.metadata.ai_test_social_identities = [testador, antigo, "lixo"];
   vi.mocked(requireRole).mockResolvedValue({ ok: true, user: { id: org }, org: { orgId: org, role: "admin" } } as Awaited<ReturnType<typeof requireRole>>);
   const query = {
     select: () => query,
@@ -135,6 +137,44 @@ describe("configuração de acesso da IA", () => {
       expect((await PATCH(req({ mode: "pre_go_live", test_phone_numbers: [], test_social_identities: ids }), context())).status).toBe(422);
     }
     expect(rpc).not.toHaveBeenCalled();
+  });
+  describe("a lista social só aceita o que a tela oferece para ESTE canal", () => {
+    const social = (ids: string[]) => req({ mode: "pre_go_live", test_phone_numbers: [], test_social_identities: ids });
+    it("recusa a identidade de OUTRA conta conectada, dizendo qual", async () => {
+      const outraPagina = "instagram:aaaaaaaaaaaaaaaaaaaaaaaa:1011223655361506";
+      const response = await PATCH(social([testador, outraPagina]), context());
+      expect(response.status).toBe(422);
+      const { error } = await response.json();
+      expect(error.code).toBe("testador_social_recusado");
+      expect(error.message).toContain(outraPagina);
+      expect(lidos[0]).toBe("conversations:" + JSON.stringify({ organization_id: org, channel_session_id: canal }));
+      expect(rpc).not.toHaveBeenCalled();
+    });
+    it("recusa lista social num canal de WhatsApp", async () => {
+      row.provider = "waha";
+      const response = await PATCH(social([testador]), context());
+      expect(response.status).toBe(422);
+      expect((await response.json()).error.code).toBe("testador_social_recusado");
+      expect(rpc).not.toHaveBeenCalled();
+    });
+    it("mantém a identidade já gravada, mesmo sem conversa recente", async () => {
+      const response = await PATCH(social([antigo]), context());
+      expect(response.status).toBe(200);
+      expect(lidos).toEqual([]);
+      expect(rpc).toHaveBeenCalledWith("fn_configurar_pre_go_live_canal", expect.objectContaining({ p_identidades: [antigo] }));
+    });
+    it("aceita um candidato que conversou com o canal", async () => {
+      row.metadata.ai_test_social_identities = [antigo];
+      const response = await PATCH(social([testador, antigo]), context());
+      expect(response.status).toBe(200);
+      expect(rpc).toHaveBeenCalledWith("fn_configurar_pre_go_live_canal", expect.objectContaining({ p_identidades: [testador, antigo] }));
+    });
+    it("remover é sempre permitido, até num canal que não é de rede social", async () => {
+      row.provider = "waha";
+      const response = await PATCH(social([]), context());
+      expect(response.status).toBe(200);
+      expect(rpc).toHaveBeenCalledWith("fn_configurar_pre_go_live_canal", expect.objectContaining({ p_identidades: [] }));
+    });
   });
   it("recusa lista ou modo inválido sem alteração", async () => {
     for (const body of [{ mode: "open" }, { mode: "allowlist", test_phone_numbers: [] }, { mode: "open", test_phone_numbers: ["abc5511999998888"] }]) {
