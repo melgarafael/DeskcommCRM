@@ -78,12 +78,12 @@ commit. Exemplo de saída, com Anthropic e Google ativos:
 > Com a IA ligada, o conteúdo das conversas é processado por: Anthropic (sede nos Estados Unidos —
 > de quem recebe o conteúdo; não há declaração da região de processamento registrada no sistema,
 > consulte a política do provedor), Google (sede nos Estados Unidos — de quem recebe o conteúdo; não
-> declara a região de processamento, consulte a política do provedor). A data acompanha a linha em
-> que o país é declaração do provedor; onde a linha diz sede, o país é o da empresa que recebe o conteúdo e a
-> região de processamento deve ser conferida na política do provedor. As sedes foram conferidas no
-> catálogo em 13/11/2026. O CRM e o banco ficam no servidor do operador, no Brasil. Você, como
-> controlador, deve indicar na sua política o mecanismo de transferência que adota (Resolução
-> CD/ANPD nº 19/2024).
+> declara a região de processamento, consulte a política do provedor). A data acompanha a linha do
+> provedor que declarou o país de processamento; onde a linha diz sede, o país é o da empresa que
+> recebe o conteúdo e a região de processamento deve ser conferida na política do provedor. As sedes
+> foram conferidas no catálogo em 13/11/2026. O CRM e o banco ficam no servidor do operador, no
+> Brasil. Você, como controlador, deve indicar na sua política o mecanismo de transferência que adota
+> (Resolução CD/ANPD nº 19/2024).
 
 ## O argumento da ANPD, do jeito certo
 

@@ -372,7 +372,7 @@ export function clausulaDeTransferenciaInternacional(
     // consultada em X" para TODOS, e só a DeepSeek tinha país declarado com
     // fonte. Agora a data mora na linha de quem declarou, e o que é sede se
     // apresenta como sede.
-    "A data acompanha a linha em que o país é declaração do provedor; onde a " +
+    "A data acompanha a linha do provedor que declarou o país de processamento; onde a " +
     "linha diz sede, o país é o da empresa que recebe o conteúdo e a região de processamento " +
     "deve ser conferida na política do provedor. " +
     (temSede ? `As sedes foram conferidas no catálogo em ${dataDaConsulta(CONSULTA_DOS_PAISES_EM)}. ` : "") +
