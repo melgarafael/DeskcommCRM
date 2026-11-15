@@ -59,6 +59,7 @@ const CT = {
   entradaAtual: "eeeeeeee-3333-4000-8000-000000000004",
   primeiroNumero: "eeeeeeee-3333-4000-8000-000000000005",
   semNegocio: "eeeeeeee-3333-4000-8000-000000000006",
+  cardSemDono: "eeeeeeee-3333-4000-8000-000000000007",
 } as const;
 
 const CONV = {
@@ -68,11 +69,13 @@ const CONV = {
   entradaAtual: "eeeeeeee-4444-4000-8000-000000000004",
   primeiroNumero: "eeeeeeee-4444-4000-8000-000000000005",
   semNegocio: "eeeeeeee-4444-4000-8000-000000000006",
+  cardSemDono: "eeeeeeee-4444-4000-8000-000000000007",
 } as const;
 
 const NEG = {
   dono: "eeeeeeee-6666-4000-8000-000000000001",
   doAdmin: "eeeeeeee-6666-4000-8000-000000000002",
+  semDono: "eeeeeeee-6666-4000-8000-000000000003",
 } as const;
 
 function donoDaConversa(conversa: string): string {
@@ -236,7 +239,8 @@ beforeAll(() => {
       ('${CT.devolucao}', '${ORG}', 'Contato Devolucao', '+5511911110003'),
       ('${CT.entradaAtual}', '${ORG}', 'Contato Entrada Atual', '+5511911110004'),
       ('${CT.primeiroNumero}', '${ORG}', 'Contato Primeiro Numero', '+5511911110005'),
-      ('${CT.semNegocio}', '${ORG}', 'Contato Sem Negocio', '+5511911110006')
+      ('${CT.semNegocio}', '${ORG}', 'Contato Sem Negocio', '+5511911110006'),
+      ('${CT.cardSemDono}', '${ORG}', 'Contato Card Sem Dono', '+5511911110007')
     on conflict (id) do nothing;
   `);
 
@@ -310,6 +314,11 @@ beforeAll(() => {
 
   // Caso 6 (lado oposto) — contato SEM negócio aberto: a prévia não inventa card.
   conversaNova(CONV.semNegocio, CT.semNegocio, A, S_X);
+
+  // Caso 7 — o card aberto do contato está SEM responsável. Em `own`, o agente
+  // não enxerga card sem dono, e a escrita da transferência o pula.
+  conversaNova(CONV.cardSemDono, CT.cardSemDono, A, S_X);
+  negocioNovo(NEG.semDono, CT.cardSemDono, null);
 });
 
 afterAll(() => {
@@ -391,6 +400,17 @@ describe("#4312 — a transferência leva o que anda junto", () => {
 
     expect(donoDaConversa(CONV.primeiroNumero)).toBe(B);
     expect(numeroDaConversa(CONV.primeiroNumero)).toBe(S_Z);
+  });
+
+  it("card sem responsável: a prévia diz o que a escrita faz (prova de tela do #4530, item 2c)", () => {
+    // Antes do conserto, a prévia dizia `leva = true` ("vai junto") e a escrita
+    // pulava o card: o diálogo prometia o que a transferência não fazia.
+    expect(previaDoNegocio(A, CONV.cardSemDono, B)).toBe("true|false|SEM_DONO");
+
+    atribui({ como: A, conversa: CONV.cardSemDono, para: B });
+
+    expect(donoDaConversa(CONV.cardSemDono)).toBe(B);
+    expect(donoDoNegocio(NEG.semDono)).toBe("SEM_DONO");
   });
 
   it("a prévia não inventa negócio para contato sem card aberto", () => {

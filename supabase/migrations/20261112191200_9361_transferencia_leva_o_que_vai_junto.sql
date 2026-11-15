@@ -500,17 +500,22 @@ begin
      and l.status = 'open';
 
   dono_user_id := v_negocio.owner_user_id;
-  -- A conta do portão da escrita, termo por termo: já é o dono novo (nada a
-  -- escrever); card sem responsável (a transferência preenche); servidor (sem
-  -- sessão, decide o motivo); ou a permissão de quem clicou — com a exceção do
-  -- dono do card (#4312).
+  -- A conta do portão da escrita da `fn_conversation_assign` com p_reason =
+  -- 'transfer', termo por termo: já é o dono novo (nada a escrever); servidor
+  -- (sem sessão); o DONO ATUAL do card entregando o que é dele (#4312); ou a
+  -- permissão de quem clicou sobre o responsável atual E o novo.
+  --
+  -- Card SEM responsável não é termo à parte: na escrita, essa condição só
+  -- afrouxa o `v_so_sem_dono` (claim/routing/handoff), que a transferência não
+  -- usa. Tratá-lo aqui como "a transferência preenche" fazia o diálogo avisar
+  -- "vai junto" para o agente em `own` cujo card sem dono a escrita pula (prova
+  -- de tela do #4530, item 2c): o aviso e o efeito divergiam.
   leva := v_negocio.owner_user_id is distinct from p_to_user_id
           and (
-            (v_negocio.owner_user_id is null and v_negocio.owner_agent_id is null)
-            or auth.uid() is null
+            auth.uid() is null
+            or v_negocio.owner_user_id = auth.uid()
             or (public.fn_can_view_lead(p_organization_id, v_negocio.owner_user_id)
-                and (public.fn_can_view_lead(p_organization_id, p_to_user_id)
-                     or v_negocio.owner_user_id = auth.uid()))
+                and public.fn_can_view_lead(p_organization_id, p_to_user_id))
           );
   return next;
 end;
