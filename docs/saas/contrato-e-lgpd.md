@@ -57,13 +57,14 @@ escreva-a à mão seguindo as mesmas regras:
 - entram também os provedores que **não conversam** mas recebem dado da conversa: o Jev (a
   TypeSafe AI recebe cada mensagem) e o serviço de voz (recebe o áudio do cliente);
 - provedor **sem credencial ativa** não entra: listar o que não é usado assusta sem informar;
-- provedor que **declara a região de processamento** aparece com o país declarado, a fonte e a data
-  da consulta — hoje só a DeepSeek (China, política da própria empresa, consultada em 12/11/2026);
+- provedor que **declara o país de processamento** com fonte registrada aparece com o país declarado,
+  a fonte e a data da consulta — hoje só a DeepSeek (China, política da própria empresa, consultada em 12/11/2026);
 - provedor que **só tem sede registrada** (Anthropic, OpenAI, OpenAI pela assinatura, Google,
   OpenRouter, TypeSafe) aparece com a **sede**, dito assim: a região de processamento dele deve ser
-  conferida na política do provedor, e o contrato **não** afirma que ele declarou algo. A OpenAI
-  declara região por projeto, o Gemini não publica a lista de países e o OpenRouter varia por
-  chamada; não invente fonte nem data para nenhum deles;
+  conferida na política do provedor, e sobre a região o contrato só afirma o que o catálogo
+  registra: a OpenAI declara residência de dados por projeto, o Gemini não publica a lista de
+  países, o OpenRouter varia por chamada, e dos demais o sistema não registrou declaração — o que a
+  linha diz assim, nunca como "não declara"; não invente fonte nem data para nenhum deles;
 - provedor **sem sede e sem declaração** (Requesty, ElevenLabs) aparece assim mesmo, com "não
   declara o país; consulte a política do provedor" — omitir esconde uma transferência que existe;
 - endpoint próprio ou modelo local aparecem como **"no servidor do operador"**.
@@ -75,10 +76,10 @@ provedor tenha declarado onde processa. Ao mudar uma `sede` no catálogo, atuali
 commit. Exemplo de saída, com Anthropic e Google ativos:
 
 > Com a IA ligada, o conteúdo das conversas é processado por: Anthropic (sede nos Estados Unidos —
-> de quem recebe o conteúdo; não declara a região de processamento, consulte a política do
-> provedor), Google (sede nos Estados Unidos — de quem recebe o conteúdo; não declara a região de
-> processamento, consulte a política do provedor). A data acompanha a linha do provedor que declara
-> a região de processamento; onde a linha diz sede, o país é o da empresa que recebe o conteúdo e a
+> de quem recebe o conteúdo; não há declaração da região de processamento registrada no sistema,
+> consulte a política do provedor), Google (sede nos Estados Unidos — de quem recebe o conteúdo; não
+> declara a região de processamento, consulte a política do provedor). A data acompanha a linha em
+> que o país é declaração do provedor; onde a linha diz sede, o país é o da empresa que recebe o conteúdo e a
 > região de processamento deve ser conferida na política do provedor. As sedes foram conferidas no
 > catálogo em 13/11/2026. O CRM e o banco ficam no servidor do operador, no Brasil. Você, como
 > controlador, deve indicar na sua política o mecanismo de transferência que adota (Resolução

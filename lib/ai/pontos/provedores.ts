@@ -184,8 +184,9 @@ export const PROVEDORES = [
   {
     id: PROVEDOR_POR_ASSINATURA,
     rotulo: "OpenAI pela assinatura (ChatGPT)",
-    // A assinatura é da OpenAI: mesma sede do `openai`, mesma ausência de
-    // declaração de região — o dado sai para a mesma empresa.
+    // A assinatura é da OpenAI: mesma sede do `openai`, o dado sai para a mesma
+    // empresa. A residência por projeto do `openai` é da API; para a assinatura
+    // o catálogo não registra declaração de região.
     pais: "US",
     sede: "US",
     paisDeclarado: null,

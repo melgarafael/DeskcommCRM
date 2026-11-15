@@ -68,7 +68,7 @@ describe("clausulaDeTransferenciaInternacional — o texto vem dos provedores at
   it("dois provedores ativos: cita os DOIS países, com a data, e não cita os inativos", () => {
     const texto = clausulaDeTransferenciaInternacional(["anthropic", "google"]);
 
-    // Nenhum dos dois declara região de processamento: o que a cláusula tem
+    // Nenhum dos dois tem país declarado no catálogo: o que a cláusula tem
     // deles é a SEDE registrada, e é assim que ela diz (#4588).
     expect(texto).toContain("Anthropic (sede nos Estados Unidos");
     expect(texto).toContain("Google (sede nos Estados Unidos");

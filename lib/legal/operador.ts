@@ -199,9 +199,9 @@ export function nomeDoOperador(op: Operador): string {
 // o país que ele DECLARA para a região de processamento (`paisDeclarado`, com
 // `fonteDoPais`). Antes do #4588 o campo `pais` misturava as duas e a frase
 // final atribuía a todos os provedores uma "declaração consultada em data" que
-// só a DeepSeek tinha: OpenAI, Anthropic, Google, OpenRouter, TypeSafe e a
-// assinatura da OpenAI nunca declararam região de processamento — e a OpenAI,
-// quando declara, declara por projeto.
+// só a DeepSeek tinha: de OpenAI, Anthropic, Google, OpenRouter, TypeSafe e a
+// assinatura da OpenAI o catálogo não registra um país declarado com fonte — e
+// a OpenAI declara residência de dados por projeto, não um país único.
 //
 // Por isso a data agora acompanha a LINHA de quem declarou, e não o parágrafo.
 // Continua valendo o que a issue pede (nada de fonte inventada): quem não
@@ -276,6 +276,19 @@ const SEDE_POR_EXTENSO: Record<PaisDaSede, string> = {
   UE: "na União Europeia",
 };
 
+/**
+ * O que a linha da SEDE diz sobre a região de processamento — só o que o
+ * catálogo registra no comentário de cada provedor (`lib/ai/pontos/provedores.ts`).
+ * Quem não está aqui recebe a frase de ausência de REGISTRO, nunca "não declara":
+ * o contrato não afirma sobre terceiro o que o sistema não conferiu.
+ */
+const REGIAO_NA_LINHA_DA_SEDE: Readonly<Record<string, string>> = {
+  openai: "declara residência de dados por projeto, e a região depende da conta do operador",
+  google: "não declara a região de processamento",
+  openrouter: "a região de processamento varia a cada chamada, conforme o modelo",
+};
+const SEM_REGISTRO_DA_REGIAO = "não há declaração da região de processamento registrada no sistema";
+
 /** Como uma linha da lista nomeia o provedor e o destino do dado. */
 function linhaDoProvedor(id: string): string | null {
   const provedor = PROVEDOR_DA_CLAUSULA_POR_ID.get(id);
@@ -296,7 +309,7 @@ function linhaDoProvedor(id: string): string | null {
   if (provedor.sede !== null) {
     return (
       `${nome} (sede ${SEDE_POR_EXTENSO[provedor.sede]} — de quem recebe o conteúdo; ` +
-      "não declara a região de processamento, consulte a política do provedor)"
+      `${REGIAO_NA_LINHA_DA_SEDE[provedor.id] ?? SEM_REGISTRO_DA_REGIAO}, consulte a política do provedor)`
     );
   }
   if (provedor.pais === "operador") {
@@ -356,10 +369,10 @@ export function clausulaDeTransferenciaInternacional(
     // "conteúdo", e não "texto": o serviço de voz recebe o áudio do cliente.
     `Com a IA ligada, o conteúdo das conversas é processado por: ${linhas.join(", ")}. ` +
     // A frase que o #4588 corrigiu: era "conforme a declaração de cada provedor,
-    // consultada em X" para TODOS, e seis deles nunca declararam região de
-    // processamento. Agora a data mora na linha de quem declarou, e o que é
-    // sede se apresenta como sede.
-    "A data acompanha a linha do provedor que declara a região de processamento; onde a " +
+    // consultada em X" para TODOS, e só a DeepSeek tinha país declarado com
+    // fonte. Agora a data mora na linha de quem declarou, e o que é sede se
+    // apresenta como sede.
+    "A data acompanha a linha em que o país é declaração do provedor; onde a " +
     "linha diz sede, o país é o da empresa que recebe o conteúdo e a região de processamento " +
     "deve ser conferida na política do provedor. " +
     (temSede ? `As sedes foram conferidas no catálogo em ${dataDaConsulta(CONSULTA_DOS_PAISES_EM)}. ` : "") +

@@ -4,8 +4,8 @@
  *
  * O defeito medido em 14/11 na `origin/main`: a cláusula prometia que o conteúdo
  * era processado "conforme a declaração de cada provedor, consultada em data", e
- * SEIS dos dez provedores do catálogo nunca declararam região de processamento —
- * para eles, `US` era a sede de quem recebe o texto. Uma frase que afirma uma
+ * SEIS dos dez provedores do catálogo não têm país de processamento declarado
+ * com fonte — para eles, `US` era a sede de quem recebe o texto. Uma frase que afirma uma
  * declaração inexistente é o pior tipo de defeito num contrato: ela é assinada
  * por quem opera e não pode ser cumprida por quem fornece.
  *
@@ -98,7 +98,7 @@ describe("catálogo — sede e declaração são campos diferentes (#4588)", () 
     expect(tabela).toEqual(MEDIDO);
   });
 
-  it("nenhum dos seis provedores da sede declara região de processamento", () => {
+  it("nenhum dos seis provedores da sede tem país declarado no catálogo", () => {
     for (const id of COM_SEDE_NO_CATALOGO) {
       const p = CATALOGO.find((provedor) => provedor.id === id);
       expect(p, `${id} sumiu do catálogo`).toBeDefined();
@@ -132,13 +132,28 @@ describe("cláusula 9 — quem não declarou não aparece como declarante", () =
     expect(texto).not.toContain("12/11/2026");
   });
 
-  it("a linha da sede diz o que é e manda conferir a política do provedor", () => {
-    const texto = clausulaDeTransferenciaInternacional(["anthropic"]);
+  // O que cada linha afirma sobre a região é só o que o comentário do provedor
+  // no catálogo registra: a OpenAI declara residência por projeto, o Gemini não
+  // publica os países, o OpenRouter varia por chamada; dos outros três o
+  // catálogo não registra nada, e a linha diz isso — nunca "não declara".
+  it.each([
+    ["anthropic", "Anthropic", "não há declaração da região de processamento registrada no sistema"],
+    ["openai", "OpenAI", "declara residência de dados por projeto, e a região depende da conta do operador"],
+    ["openai-assinatura", "OpenAI pela assinatura", "não há declaração da região de processamento registrada no sistema"],
+    ["google", "Google", "não declara a região de processamento"],
+    ["openrouter", "OpenRouter", "a região de processamento varia a cada chamada, conforme o modelo"],
+    ["typesafe", "TypeSafe AI", "não há declaração da região de processamento registrada no sistema"],
+  ])("a linha da sede de %s diz só o que o catálogo registra sobre a região", (id, nome, regiao) => {
+    const texto = clausulaDeTransferenciaInternacional([id]);
 
     expect(texto).toContain(
-      "Anthropic (sede nos Estados Unidos — de quem recebe o conteúdo; " +
-        "não declara a região de processamento, consulte a política do provedor)",
+      `${nome} (sede nos Estados Unidos — de quem recebe o conteúdo; ${regiao}, consulte a política do provedor)`,
     );
+  });
+
+  it("a OpenAI nunca aparece como quem não declara a região", () => {
+    const texto = clausulaDeTransferenciaInternacional(["openai", "openai-assinatura"]);
+    expect(texto).not.toContain("não declara");
   });
 
   it("provedor que não declara NADA continua aparecendo, com a frase própria", () => {
