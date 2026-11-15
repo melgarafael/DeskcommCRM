@@ -15,7 +15,8 @@
  * (`store.ts`, `triarCandidato`).
  *
  * `quem=todas`: a lista INTEIRA da campanha, com uma coluna final `situacao`
- * (não abordada, abordada ou respondeu). A #4360 decidiu entregar só a primeira,
+ * (respondeu, abordada, envio não confirmado, não abordada ou fora da fila;
+ * `situacaoDaEmpresa`). A #4360 decidiu entregar só a primeira,
  * e a decisão era certa para o arquivo de reimportar; ela deixava sem saída quem
  * terminou a campanha e quer a lista para outra oferta, por outro número — a
  * campanha concluída não tinha botão nenhum. A lista inteira não promete
@@ -157,12 +158,43 @@ export function naLista(c: CandidatoDaLista): boolean {
 }
 
 /** O que aconteceu com a empresa, na coluna `situacao` do arquivo completo. */
-export type SituacaoDaEmpresa = "não abordada" | "abordada" | "respondeu";
+export const SITUACOES_DA_EMPRESA = [
+  "respondeu",
+  "abordada",
+  "envio não confirmado",
+  "não abordada",
+  "fora da fila",
+] as const;
+export type SituacaoDaEmpresa = (typeof SITUACOES_DA_EMPRESA)[number];
 
+/**
+ * A coluna promete o que ACONTECEU com cada empresa, então cada valor só é dito
+ * quando a fonte dele confirma:
+ *
+ * - `abordada` é envio CONFIRMADO: o worker só grava `sent` quando a 1ª bolha
+ *   foi aceita pelo canal (`worker.ts`, `abordou`). `attempted_at` sozinho NÃO
+ *   é envio: ele é gravado antes da guarda, da geração por IA e da autorização,
+ *   e a falha em qualquer um desses passos deixa a linha `failed` com a
+ *   tentativa gravada e nenhuma mensagem enviada.
+ * - `envio não confirmado` é a tentativa sem confirmação (`failed` ou `sending`
+ *   com `attempted_at`): pode não ter saído nada (IA sem texto, guarda vetou) ou
+ *   ter saído sem o canal confirmar (a limpeza de 10 minutos do `sending`). O
+ *   arquivo não afirma nenhum dos dois, como o "Envio não confirmado. Consulte
+ *   a conversa antes de reenviar." que o próprio worker grava.
+ * - `não abordada` é EXATAMENTE `naoAbordada`, a régua do arquivo das não
+ *   abordadas e do número do menu. Sem isso, o menu diria "0" e a coluna
+ *   mostraria 3.
+ * - `fora da fila` é o resto sem tentativa: a triagem pulou (já é contato do
+ *   CRM, sem WhatsApp, sem telefone) ou a linha saiu da fila antes de tentar.
+ *   Não é "não abordada": parte dessas empresas já é contato, talvez em
+ *   atendimento, e não deve ser abordada por fora.
+ */
 export function situacaoDaEmpresa(c: CandidatoDaLista): SituacaoDaEmpresa {
   if (c.respondeu === true) return "respondeu";
-  if (c.attempted_at != null || c.status === "sending" || c.status === "sent") return "abordada";
-  return "não abordada";
+  if (c.status === "sent") return "abordada";
+  if (c.attempted_at != null || c.status === "sending") return "envio não confirmado";
+  if (naoAbordada(c)) return "não abordada";
+  return "fora da fila";
 }
 
 export interface ResumoDaLista {

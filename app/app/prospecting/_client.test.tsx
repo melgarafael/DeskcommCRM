@@ -816,6 +816,9 @@ describe("voz e vocabulário à vista (issue #4360)", () => {
  */
 describe("baixar a lista da campanha (issue #4360)", () => {
   const RESUMO_URL = `/api/v1/prospecting/${COMPLETA}/exportar?resumo=1`;
+  /** A única promessa escrita na tela de que quem pediu para parar não sai no arquivo. */
+  const FRASE_DO_CARTAO =
+    "Baixar lista tem duas opções: só as empresas que ainda não foram abordadas, ou todas, com a situação de cada uma. Quem pediu para parar, contatos pessoais e quem teve os dados apagados nunca entram no arquivo.";
 
   function comResumo(estado: unknown, resumo: unknown): (url: string) => Promise<unknown> {
     return async (url: string) => (url === RESUMO_URL ? { data: resumo } : { data: estado });
@@ -862,6 +865,8 @@ describe("baixar a lista da campanha (issue #4360)", () => {
       "1 empresa fica fora do arquivo porque pediu para parar, é contato pessoal ou teve os dados apagados.",
     );
     expect(api.get).toHaveBeenCalledWith(RESUMO_URL);
+    // Na concluída a frase continua prometendo o que o arquivo cumpre.
+    expect(screen.getByText(FRASE_DO_CARTAO)).toBeInTheDocument();
   });
 
   it("os números do menu são os do servidor, não um filtro dos candidatos da tela", async () => {
@@ -896,7 +901,7 @@ describe("baixar a lista da campanha (issue #4360)", () => {
     expect(api.get).not.toHaveBeenCalledWith(RESUMO_URL);
   });
 
-  it("sem conseguir contar, o menu avisa e os dois arquivos seguem no menu", async () => {
+  it("sem conseguir contar, o menu avisa e nenhum dos dois vira link de arquivo", async () => {
     api.get.mockImplementation(async (url: string) => {
       if (url === RESUMO_URL) throw new Error("falhou");
       return { data: fixture() };
@@ -905,17 +910,41 @@ describe("baixar a lista da campanha (issue #4360)", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Não foi possível contar as empresas. Feche e abra o menu para tentar de novo.",
     );
-    expect(screen.getByRole("menuitem", { name: "Todas" })).toHaveAttribute(
-      "href",
-      `/api/v1/prospecting/${COMPLETA}/exportar?quem=todas`,
-    );
+    // Sem a contagem ninguém sabe se há o que baixar: um `<a download>` ali
+    // salvaria o corpo da recusa (422) como se fosse a planilha.
+    for (const nome of ["Todas", "Só as não abordadas"]) {
+      const item = screen.getByRole("menuitem", { name: nome });
+      expect(item).toHaveAttribute("aria-disabled", "true");
+      expect(item).not.toHaveAttribute("href");
+    }
   });
 
-  it("campanha sem nenhuma empresa não mostra o botão", async () => {
+  it("enquanto conta, os dois itens esperam desabilitados", async () => {
+    api.get.mockImplementation(async (url: string) => {
+      if (url === RESUMO_URL) return new Promise(() => {});
+      return { data: fixture() };
+    });
+    await abrirMenu();
+    expect(await screen.findByText("Contando as empresas…")).toBeVisible();
+    for (const nome of ["Todas", "Só as não abordadas"]) {
+      const item = screen.getByRole("menuitem", { name: nome });
+      expect(item).toHaveAttribute("aria-disabled", "true");
+      expect(item).not.toHaveAttribute("href");
+    }
+  });
+
+  it("a frase sob o cartão promete que quem pediu para parar não entra no arquivo", async () => {
+    openPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Clínicas de estética/ }));
+    expect(await screen.findByText(FRASE_DO_CARTAO)).toBeVisible();
+  });
+
+  it("campanha sem nenhuma empresa não mostra o botão nem a frase", async () => {
     api.get.mockImplementation(async () => ({ data: { ...fixture(), candidates: [] } }));
     openPage();
     fireEvent.click(await screen.findByRole("button", { name: /Clínicas de estética/ }));
     await screen.findByRole("heading", { name: "Clínicas de estética" });
     expect(screen.queryByTestId("baixar-lista")).toBeNull();
+    expect(screen.queryByText(FRASE_DO_CARTAO)).toBeNull();
   });
 });

@@ -313,7 +313,28 @@ describe("a lista inteira da campanha concluída", () => {
     expect(sql?.params[0]).toBe(ORG);
     expect(sql?.params[1]).toEqual([BLOQUEADO]);
     expect(sql?.params[2]).toEqual(expect.arrayContaining(["+5511987650004", "+551187650004"]));
+    // As DUAS metades da união filtram a organização: este pool passa por cima
+    // da RLS, e um contato bloqueado de outra empresa com o mesmo telefone não
+    // pode tirar ninguém da lista daqui (nem aparecer no resumo dela).
+    expect(sql?.sql).toMatch(/from contacts c\s+where c\.organization_id=\$1 and \(c\.id=any/);
     expect(sql?.sql).toMatch(/cp\.organization_id=\$1 and c\.organization_id=\$1/);
+    expect(sql?.sql).toMatch(/join contacts c on c\.organization_id=cp\.organization_id and c\.id=cp\.contact_id/);
+    // E as linhas da campanha, inclusive a conversa que diz quem respondeu.
+    const linhasSql = fake.consultas.find((c) => /from prospecting_candidates/.test(c.sql));
+    expect(linhasSql?.params.slice(0, 2)).toEqual([ORG, CAMPANHA]);
+    expect(linhasSql?.sql).toMatch(/where p\.organization_id=\$1 and p\.campaign_id=\$2/);
+    expect(linhasSql?.sql).toMatch(/v\.organization_id=p\.organization_id and v\.id=p\.conversation_id/);
+  });
+
+  it("tentativa sem envio confirmado não sai como `abordada`", async () => {
+    fake = banco({
+      campanha: { id: CAMPANHA, name: "Clínicas" },
+      candidatos: [{ ...enviada("IA Sem Texto", "+5511911110008"), status: "failed" }],
+    });
+    deps.pool.mockReturnValue({ query: fake.query });
+    const csv = await (await GET(pedido(CAMPANHA, "?quem=todas"), contexto())).text();
+    expect(csv).toContain(";envio não confirmado\r\n");
+    expect(csv).not.toContain(";abordada\r\n");
   });
 
   it("a situação sai no idioma da organização", async () => {

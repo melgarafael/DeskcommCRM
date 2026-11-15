@@ -1337,11 +1337,13 @@ export const DICIONARIO: Traducoes = {
   "empresas ficam fora do arquivo porque pediram para parar, são contatos pessoais ou tiveram os dados apagados.": {
     es: "empresas quedan fuera del archivo porque pidieron dejar de recibir mensajes, son contactos personales o se borraron sus datos.",
   },
-  "Baixar lista tem duas opções: só as empresas que ainda não foram abordadas, ou todas, com a situação de cada uma (não abordada, abordada ou respondeu). Quem pediu para parar, contatos pessoais e quem teve os dados apagados nunca entram no arquivo.": {
-    es: "Descargar lista tiene dos opciones: solo las empresas que aún no fueron contactadas, o todas, con la situación de cada una (no contactada, contactada o respondió). Quien pidió dejar de recibir mensajes, los contactos personales y quien tuvo sus datos borrados nunca entran en el archivo.",
+  "Baixar lista tem duas opções: só as empresas que ainda não foram abordadas, ou todas, com a situação de cada uma. Quem pediu para parar, contatos pessoais e quem teve os dados apagados nunca entram no arquivo.": {
+    es: "Descargar lista tiene dos opciones: solo las empresas que aún no fueron contactadas, o todas, con la situación de cada una. Quien pidió dejar de recibir mensajes, los contactos personales y quien tuvo sus datos borrados nunca entran en el archivo.",
   },
   "não abordada": { es: "no contactada" },
   "abordada": { es: "contactada" },
+  "envio não confirmado": { es: "envío no confirmado" },
+  "fora da fila": { es: "fuera de la cola" },
   "Linhas recusadas": { es: "Líneas rechazadas" },
   "Planilha": { es: "Planilla" },
   "Escolha o arquivo da planilha.": { es: "Elige el archivo de la planilla." },

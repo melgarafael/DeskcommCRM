@@ -1444,7 +1444,7 @@ export function ProspectingClient() {
                 {candidates.length > 0 && (
                   <p className="mt-3 text-xs text-muted-foreground">
                     {t(
-                      "Baixar lista tem duas opções: só as empresas que ainda não foram abordadas, ou todas, com a situação de cada uma (não abordada, abordada ou respondeu). Quem pediu para parar, contatos pessoais e quem teve os dados apagados nunca entram no arquivo.",
+                      "Baixar lista tem duas opções: só as empresas que ainda não foram abordadas, ou todas, com a situação de cada uma. Quem pediu para parar, contatos pessoais e quem teve os dados apagados nunca entram no arquivo.",
                     )}
                   </p>
                 )}

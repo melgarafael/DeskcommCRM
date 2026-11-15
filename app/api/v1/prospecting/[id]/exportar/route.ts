@@ -16,8 +16,9 @@
  * pode ser abordado — o arquivo para reimportar aqui, porque quem já recebeu
  * mensagem é recusado pela triagem com "Contato já existe no CRM".
  *
- * `todas`: a lista INTEIRA da campanha, com a coluna `situacao` (não abordada,
- * abordada ou respondeu). A #4360 entregou só o primeiro modo e o botão sumia
+ * `todas`: a lista INTEIRA da campanha, com a coluna `situacao` (respondeu,
+ * abordada, envio não confirmado, não abordada ou fora da fila). A #4360
+ * entregou só o primeiro modo e o botão sumia
  * quando todo mundo já tinha sido abordado: a campanha CONCLUÍDA, justamente a
  * que a pessoa quer reaproveitar para outra oferta, não tinha saída nenhuma. A
  * coluna `situacao` é o que tira do arquivo a promessa falsa que fez a #4360
@@ -63,20 +64,15 @@ import {
   LISTAS,
   csvDaLista,
   entraNaLista,
-  ligarContatos,
   nomeDoArquivoDaLista,
   resumoDaLista,
-  telefonesDaEmpresa,
-  type CandidatoDaLista,
-  type ContatoDaLista,
   type QualLista,
 } from "@/lib/prospecting/exportar";
+import { TETO_DA_LEITURA, lerListaDaCampanha } from "@/lib/prospecting/exportar-leitura";
 
 export const dynamic = "force-dynamic";
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** Mesmo teto da tela (o GET de candidatos lê 5.000 linhas): o arquivo não é maior que a lista. */
-const TETO_DA_LEITURA = 5_000;
 const headers = { "Cache-Control": "no-store" };
 
 type RouteCtx = { params: Promise<{ id: string }> };
@@ -86,7 +82,7 @@ const SEM_EMPRESA: Record<QualLista, string> = {
   nao_abordadas:
     "Nenhuma empresa desta campanha ainda pode ser abordada — não há lista para baixar. Quem já recebeu mensagem fica de fora do arquivo.",
   todas:
-    "Nenhuma empresa desta campanha pode sair no arquivo: quem pediu para parar, ficha pessoal e quem teve os dados apagados ficam de fora.",
+    "Nenhuma empresa desta campanha pode sair no arquivo: quem pediu para parar, contato pessoal e quem teve os dados apagados ficam de fora.",
 };
 
 export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
@@ -137,45 +133,10 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (!campanha)
     return fail("not_found", "Campanha não encontrada.", 404, { requestId, headers });
 
-  // `suppression_*` são tokens só do servidor (migration 0370): sai daqui só o
-  // booleano "esta linha foi apagada", nunca o token. `respondeu` é a mesma
-  // régua do "Responderam" da tela (`prospecting/route.ts`, `progress`).
-  const linhas = (
-    await db.query<CandidatoDaLista>(
-      `select p.status,p.attempted_at,p.phone,p.data,p.contact_id,
-              (p.suppression_salt is not null) as suprimida,
-              (v.last_inbound_at is not null) as respondeu
-         from prospecting_candidates p
-         left join conversations v on v.organization_id=p.organization_id and v.id=p.conversation_id
-        where p.organization_id=$1 and p.campaign_id=$2
-        order by p.created_at,p.id limit $3`,
-      [org, campanha.id, TETO_DA_LEITURA],
-    )
-  ).rows;
-
-  // Os contatos do CRM destas empresas numa consulta só: pelo vínculo da linha,
-  // pelo telefone da ficha e pelo telefone extra. As duas pontas filtram a
-  // organização — o `join` do extra inclusive.
-  const ids = [...new Set(linhas.map((c) => c.contact_id).filter((x): x is string => !!x))];
-  const telefones = [...new Set(linhas.flatMap(telefonesDaEmpresa))];
-  const contatos =
-    ids.length === 0 && telefones.length === 0
-      ? []
-      : (
-          await db.query<ContatoDaLista>(
-            `select c.id,c.phone_number as telefone,c.is_blocked,c.is_personal,c.is_anonymized,c.consent
-               from contacts c
-              where c.organization_id=$1 and (c.id=any($2::uuid[]) or c.phone_number=any($3::text[]))
-             union all
-             select c.id,cp.phone_number as telefone,c.is_blocked,c.is_personal,c.is_anonymized,c.consent
-               from contact_phones cp
-               join contacts c on c.organization_id=cp.organization_id and c.id=cp.contact_id
-              where cp.organization_id=$1 and c.organization_id=$1 and cp.phone_number=any($3::text[])`,
-            [org, ids, telefones],
-          )
-        ).rows;
-
-  const candidatos = ligarContatos(linhas, contatos);
+  // As linhas e os contatos do CRM delas (pelo vínculo e pelo telefone), com a
+  // organização filtrada em cada ponta: este pool passa por cima da RLS. A
+  // leitura mora em `exportar-leitura.ts` para o invariante de banco chamá-la.
+  const candidatos = await lerListaDaCampanha(db, org, campanha.id, TETO_DA_LEITURA);
   const resumo = resumoDaLista(candidatos);
   const truncada = resumo.total >= TETO_DA_LEITURA;
 

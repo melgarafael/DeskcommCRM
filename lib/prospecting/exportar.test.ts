@@ -226,14 +226,44 @@ describe("a lista inteira da campanha concluída", () => {
     const csv = csvDaLista(ligados.filter(naLista), { comSituacao: true }).replace("\uFEFF", "");
     const [cabecalho, ...linhas] = csv.trim().split("\r\n");
     expect(cabecalho).toBe("empresa;telefone;site;segmento;endereco;email;redes;situacao");
-    expect(linhas.map((l) => l.split(";").at(-1))).toEqual(["abordada", "respondeu", "não abordada"]);
+    // "Falhou Antes" falhou SEM tentativa: não foi abordada, mas também não está
+    // na fila — não é "não abordada" (o menu não a conta).
+    expect(linhas.map((l) => l.split(";").at(-1))).toEqual(["abordada", "respondeu", "fora da fila"]);
   });
 
-  it("a situação segue a régua da tela", () => {
-    expect(situacaoDaEmpresa(linha())).toBe("não abordada");
-    expect(situacaoDaEmpresa(linha({ status: "sending" }))).toBe("abordada");
-    expect(situacaoDaEmpresa(linha({ status: "queued", attempted_at: "2026-11-01T12:00:00Z" }))).toBe("abordada");
+  it("`abordada` só com envio confirmado: tentativa sem confirmação não é abordagem", () => {
+    const tentou = "2026-11-01T12:00:00Z";
+    expect(situacaoDaEmpresa(linha({ status: "sent", attempted_at: tentou }))).toBe("abordada");
+    // O worker grava `attempted_at` ANTES da guarda, da IA e da autorização: a
+    // linha que falhou num desses passos não recebeu mensagem nenhuma.
+    expect(situacaoDaEmpresa(linha({ status: "failed", attempted_at: tentou }))).toBe("envio não confirmado");
+    expect(situacaoDaEmpresa(linha({ status: "sending", attempted_at: tentou }))).toBe("envio não confirmado");
+    expect(situacaoDaEmpresa(linha({ status: "queued", attempted_at: tentou }))).toBe("envio não confirmado");
     expect(situacaoDaEmpresa(linha({ status: "sent", respondeu: true }))).toBe("respondeu");
+  });
+
+  it("`não abordada` é a MESMA régua do arquivo das não abordadas e do número do menu", () => {
+    const campanha: CandidatoDaLista[] = [
+      linha({ status: "new" }),
+      linha({ status: "queued" }),
+      // A triagem pulou: já é contato do CRM, ou o número não tem WhatsApp.
+      linha({ status: "skipped" }),
+      linha({ status: "failed" }),
+      linha({ status: "new", data: empresa({ whatsapp: { existe: false } }) }),
+      linha({ status: "new", data: empresa({ phone: null }) }),
+      linha({ status: "sent", attempted_at: "2026-11-01T12:00:00Z" }),
+    ];
+    const situacoes = campanha.map(situacaoDaEmpresa);
+    expect(situacoes).toEqual([
+      "não abordada",
+      "não abordada",
+      "fora da fila",
+      "fora da fila",
+      "fora da fila",
+      "fora da fila",
+      "abordada",
+    ]);
+    expect(situacoes.filter((s) => s === "não abordada")).toHaveLength(resumoDaLista(campanha).nao_abordadas);
   });
 
   it("a situação pode sair no idioma da organização", () => {

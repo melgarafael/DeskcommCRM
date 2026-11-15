@@ -67,8 +67,11 @@ export function BaixarLista({ campaignId }: { campaignId: string }) {
 
   function item(quem: QualLista, rotulo: string, quantas: number | undefined) {
     const texto = quantas === undefined ? rotulo : `${rotulo} (${quantas})`;
-    // Lista vazia não vira link: o arquivo seria só o cabeçalho (a rota recusa).
-    if (quantas === 0)
+    // Só vira link com a contagem na mão e maior que zero. Lista vazia seria só
+    // o cabeçalho (a rota recusa com 422); e enquanto a contagem carrega, ou se
+    // ela falhou, ninguém sabe se há o que baixar: um `<a download>` ali salvaria
+    // o corpo da recusa como se fosse a planilha.
+    if (quantas === undefined || quantas === 0)
       return (
         <DropdownMenuItem disabled data-testid={`baixar-lista-${quem}`}>
           {texto}
