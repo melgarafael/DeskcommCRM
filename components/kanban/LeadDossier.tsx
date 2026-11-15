@@ -275,6 +275,7 @@ export function LeadDossier({
         ownerKind={owner.kind}
         ownerName={owner.name}
         agentVersion={owner.agentVersion}
+        foraDaEquipe={owner.foraDaEquipe}
       />
       {score && (
         // O MESMO componente do card, não uma cópia do medidor.

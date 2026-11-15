@@ -15433,6 +15433,10 @@ export const DICIONARIO: Traducoes = {
   "Modelo de voz": { es: "Modelo de voz" },
   "Voz do modelo": { es: "Voz del modelo" },
   "Velocidade da fala (0,25–1,5)": { es: "Velocidad del habla (0,25–1,5)" },
+  "Marcar e remarcar horários na ligação": { es: "Agendar y reprogramar citas durante la llamada" },
+  "Ligado, o agente consulta a agenda e marca ou remarca horários enquanto fala com o cliente. Antes de gravar, ele lê o dia e a hora e só marca depois que a pessoa disser sim. Vale só quando o número de quem ligou está no cadastro. Desligado, o agente não mexe na agenda.": {
+    es: "Activado, el agente consulta la agenda y agenda o reprograma citas mientras habla con el cliente. Antes de guardar, lee el día y la hora y solo agenda después de que la persona diga que sí. Solo funciona cuando el número de quien llama está registrado. Desactivado, el agente no toca la agenda.",
+  },
   "1,0 é a velocidade padrão do modelo — abaixo disso fala mais devagar, acima fala mais rápido. Vale a partir da próxima ligação.": {
     es: "1,0 es la velocidad predeterminada del modelo. Por debajo habla más despacio y por encima, más rápido. Se aplica desde la próxima llamada.",
   },
@@ -20651,6 +20655,26 @@ export const DICIONARIO: Traducoes = {
   "Erro ao exportar respostas rápidas.": { es: "Error al exportar respuestas rápidas." },
   "Não há respostas rápidas compartilhadas para exportar.": { es: "No hay respuestas rápidas compartidas para exportar." },
   "O blueprint leva até 200 respostas rápidas compartilhadas, e esta organização tem mais do que isso. Nada foi exportado.": { es: "El blueprint lleva hasta 200 respuestas rápidas compartidas, y esta organización tiene más que eso. No se exportó nada." },
+  // Blueprint de FUNIS (#1995, fatia 2): o segundo tipo do mesmo envelope —
+  // export com as etapas e import que cria funil novo, nunca sobrescreve.
+  "Erro ao exportar funis.": { es: "Error al exportar embudos." },
+  "Não há funis para exportar.": { es: "No hay embudos para exportar." },
+  "O blueprint leva até 200 funis, e esta organização tem mais do que isso. Nada foi exportado.": { es: "El blueprint lleva hasta 200 embudos, y esta organización tiene más que eso. No se exportó nada." },
+  "O blueprint leva até 200 etapas por funil, e esta organização tem um funil com mais do que isso. Nada foi exportado.": { es: "El blueprint lleva hasta 200 etapas por embudo, y esta organización tiene un embudo con más que eso. No se exportó nada." },
+  "Há um funil sem etapas ativas nesta organização, e o blueprint de funis não cria quadro sem coluna. Nada foi exportado.": { es: "Hay un embudo sin etapas activas en esta organización, y el blueprint de embudos no crea un tablero sin columnas. No se exportó nada." },
+  "Este blueprint não é de funis.": { es: "Este blueprint no es de embudos." },
+  "O arquivo tem funis inválidos: confira a quantidade (de 1 a 200), o nome do funil (até 80), a descrição (até 280) e as etapas (de 1 a 200 por funil, com nome de até 80).": { es: "El archivo tiene embudos inválidos: revisa la cantidad (de 1 a 200), el nombre del embudo (hasta 80), la descripción (hasta 280) y las etapas (de 1 a 200 por embudo, con nombre de hasta 80)." },
+  "Não consegui importar o blueprint de funis. Nada foi aplicado.": { es: "No pude importar el blueprint de embudos. No se aplicó nada." },
+  // A porta na tela (Configurações › Funis) e a reaplicação que não duplica.
+  "Exportar funis": { es: "Exportar embudos" },
+  "Importar funis": { es: "Importar embudos" },
+  "Funis exportados.": { es: "Embudos exportados." },
+  "Arquivo de funis (.json)": { es: "Archivo de embudos (.json)" },
+  "Use o arquivo baixado em «Exportar funis», desta ou de outra organização. Cada funil chega como um funil novo, com as etapas na ordem do arquivo, e nada do que já existe é alterado. Aplicar o mesmo arquivo de novo não duplica.": { es: "Usa el archivo descargado en «Exportar embudos», de esta u otra organización. Cada embudo llega como un embudo nuevo, con las etapas en el orden del archivo, y no se modifica nada de lo que ya existe. Aplicar el mismo archivo de nuevo no duplica." },
+  "O arquivo leva o nome, a descrição e as etapas de cada funil (nome, cor, ganho e perda). Vocabulário, campos personalizados e os ajustes finos de cada etapa ficam na origem.": { es: "El archivo lleva el nombre, la descripción y las etapas de cada embudo (nombre, color, ganado y perdido). El vocabulario, los campos personalizados y los ajustes finos de cada etapa se quedan en el origen." },
+  "Funis criados: {n}.": { es: "Embudos creados: {n}." },
+  "Criados como cópia, porque já havia um funil com o mesmo nome: {n}.": { es: "Creados como copia, porque ya había un embudo con el mismo nombre: {n}." },
+  "Já estavam aqui, com as mesmas etapas, e ficaram como estavam: {n}.": { es: "Ya estaban aquí, con las mismas etapas, y se quedaron como estaban: {n}." },
   "Respostas rápidas exportadas.": { es: "Respuestas rápidas exportadas." },
   "Mídias que ficaram de fora, porque o arquivo leva só o texto: {n}.": { es: "Archivos multimedia que quedaron fuera, porque el archivo lleva solo el texto: {n}." },
   "Importar respostas rápidas": { es: "Importar respuestas rápidas" },

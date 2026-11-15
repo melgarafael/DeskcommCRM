@@ -38,7 +38,7 @@ Hub: "Ver tudo em CRM" → `/app/crm`
 |---|---|---|---|---|
 | Produtos | CRM → Hub "Ver tudo em CRM" → Produtos `/app/products` | O catálogo da loja, com o preço que o atendente de IA responde. | todos |  |
 | Importações | CRM → Hub "Ver tudo em CRM" → Importações `/app/imports` | Lotes CSV/XLSX de empresas, pessoas e telefones. | gerente ou acima | Só aparece se o módulo `crm_b2b` estiver ligado. |
-| Etapas do funil | CRM → Hub "Ver tudo em CRM" → Etapas do funil `/app/settings/tenant/pipelines` | As colunas de cada funil, o vocabulário do negócio e os motivos de perda. | gerente ou acima |  |
+| Etapas do funil | CRM → Hub "Ver tudo em CRM" → Etapas do funil `/app/settings/tenant/pipelines` | As colunas de cada funil, o vocabulário do negócio e os motivos de perda. No topo, Exportar funis e Importar funis levam os funis com as etapas para outra organização (reaplicar o mesmo arquivo não duplica). | gerente ou acima |  |
 
 ### Fechar a venda
 
