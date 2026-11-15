@@ -313,13 +313,19 @@ export type GravacaoDoAgente =
       /** Chaves a tirar na mesma instrução (autoria que deixaria de ser verdade). */
       remover: string[];
       gravados: CampoDoAgente[];
-      /** Pedidos que não entram porque a chave é um campo da própria organização. */
+      /**
+       * Pedidos que não entram: a chave é um campo da própria organização, ou o
+       * valor é de uma pessoa da equipe (ver `daEquipe`).
+       */
       preservados: CampoDoAgente[];
+      /** O recorte de `preservados` que fica porque uma PESSOA assinou o diagnóstico. */
+      daEquipe: CampoDoAgente[];
       escritoPelaIA: boolean;
     }
   | { ok: false; motivo: "nada_para_gravar" }
   | { ok: false; motivo: "valor_invalido"; campo: CampoDoAgente }
-  | { ok: false; motivo: "campo_da_organizacao"; preservados: CampoDoAgente[] };
+  | { ok: false; motivo: "campo_da_organizacao"; preservados: CampoDoAgente[] }
+  | { ok: false; motivo: "escrito_pela_equipe"; preservados: CampoDoAgente[]; daEquipe: CampoDoAgente[] };
 
 /**
  * O que a ferramenta do agente GRAVA, calculado sobre o `custom_fields` atual.
@@ -332,6 +338,14 @@ export type GravacaoDoAgente =
  * - Chave que a organização declarou como campo de contato nos funis
  *   (`chavesDaOrganizacao`), ou que já guarda um valor fora do nosso formato,
  *   é DELA e não é sobrescrita — a mesma regra de `segmentoDoContatoNovo`.
+ * - Diagnóstico assinado por uma PESSOA (`diag_por = usuario:<uuid>`) é da
+ *   equipe: quem não é pessoa (o agente, um token de integração sem autor) não
+ *   sobrescreve. Resumo e oferta ficam os dois — gravar a oferta vazia trocaria
+ *   a assinatura do resumo da equipe pelo selo da IA, e a pessoa perderia a
+ *   autoria de um texto que é dela; segmento e CNPJ ficam quando preenchidos, e
+ *   os vazios a IA completa. Sem isto, cada turno do agente apagava o que a
+ *   equipe escreveu, sem cópia em lugar nenhum (a auditoria guarda só os nomes
+ *   dos campos). Uma pessoa por token edita como na aba: grava e assina.
  * - Diagnóstico ou oferta gravados mudam a autoria para `autor` e a data para
  *   `agora` (o selo "Escrito pela IA" vem daí). Sem autor reconhecível, a
  *   autoria antiga SAI: a assinatura de uma pessoa não pode ficar sobre um
@@ -350,6 +364,10 @@ export function gravacaoDoAgente(
   const campos: Record<string, string> = {};
   const gravados: CampoDoAgente[] = [];
   const preservados: CampoDoAgente[] = [];
+  const daEquipe: CampoDoAgente[] = [];
+  const autorValido = autor !== null && autoriaSchema.safeParse(autor).success ? autor : null;
+  const assinadoPelaEquipe =
+    autoriaDoDiagnostico(legivel)?.tipo === "usuario" && !autorValido?.startsWith("usuario:");
 
   const pedidos = CAMPOS_DO_AGENTE.filter((campo) => entrada[campo] !== undefined);
   if (pedidos.length === 0) return { ok: false, motivo: "nada_para_gravar" };
@@ -366,14 +384,23 @@ export function gravacaoDoAgente(
       preservados.push(campo);
       continue;
     }
+    const defineAutoria = (CAMPOS_QUE_DEFINEM_A_AUTORIA as readonly string[]).includes(campo);
+    if (assinadoPelaEquipe && (defineAutoria || legivel[campo] !== undefined)) {
+      preservados.push(campo);
+      daEquipe.push(campo);
+      continue;
+    }
     campos[chave] = lido.data;
     gravados.push(campo);
   }
 
-  if (gravados.length === 0) return { ok: false, motivo: "campo_da_organizacao", preservados };
+  if (gravados.length === 0) {
+    return daEquipe.length > 0
+      ? { ok: false, motivo: "escrito_pela_equipe", preservados, daEquipe }
+      : { ok: false, motivo: "campo_da_organizacao", preservados };
+  }
 
   const remover: string[] = [];
-  const autorValido = autor !== null && autoriaSchema.safeParse(autor).success ? autor : null;
   const mudouAutoria = gravados.some((c) => (CAMPOS_QUE_DEFINEM_A_AUTORIA as readonly string[]).includes(c));
   if (mudouAutoria) {
     if (autorValido) {
@@ -389,6 +416,7 @@ export function gravacaoDoAgente(
     remover,
     gravados,
     preservados,
+    daEquipe,
     escritoPelaIA: mudouAutoria && autorValido?.startsWith("agente:") === true,
   };
 }

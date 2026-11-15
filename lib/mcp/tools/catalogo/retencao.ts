@@ -142,6 +142,11 @@ export const TOOLS_RETENCAO = declararTools([
     // de 27 para 28 vagas, medido em `pacote-reserva-vaga-da-critica.test.ts`).
     // Quem precisa dela é o agente da prospecção, e `lib/prospecting/agent-setup.ts`
     // a liga por nome.
+    // O ALCANCE do pacote: ligar "reter" numa tela de capacidades também a liga
+    // (o risco `atencao` entra por pacote), inclusive em agente de retenção que
+    // atende cliente antigo. Por isso a cerca não depende de quem a liga: o que
+    // uma pessoa da equipe assinou não é sobrescrito (`gravacaoDoAgente`), e o
+    // agente só alcança o contato da conversa.
     pacotes: ["reter"],
   },
 ]);

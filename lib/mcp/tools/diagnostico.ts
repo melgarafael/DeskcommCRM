@@ -16,7 +16,7 @@
  * aparece no que o cliente disse no turno. O diagnóstico não é algo que o
  * cliente disse — é o que a IA concluiu (do site, do Instagram, da conversa) —,
  * então passar por ali recusaria todo diagnóstico legítimo. Esta ferramenta não
- * importa nada de lá, e `tests/unit/diagnostico-pela-ia.test.ts` vigia isso.
+ * importa nada de lá, e `tests/unit/diagnostico-pela-ia.test.tsx` vigia isso.
  *
  * ── Por que mescla NO BANCO ─────────────────────────────────────────────────
  *
@@ -37,6 +37,16 @@
  * - Ficha pessoal ou anonimizada: recusa com motivo em texto, no molde de
  *   `crm_get_contact`. A anonimizada é conferida também DENTRO da função do
  *   banco, porque gravar depois da anonimização devolveria dado apagado.
+ * - O que a EQUIPE escreveu: diagnóstico assinado por uma pessoa não é
+ *   sobrescrito por quem não é pessoa (`gravacaoDoAgente`). "Editável pela
+ *   equipe" (D7) não pode virar "a equipe perde o que escreveu a cada turno".
+ * - Token de integração: gravar direto na ficha exige `contacts:write`, além do
+ *   `mcp:write`. A decisão D7 (gravar direto) vale para o agente da casa; um
+ *   integrador sem esse escopo não grava direto, que é a régua que o PR #4534
+ *   põe no `crm_update_contact`.
+ * - Campos da organização: a leitura das definições FECHA na falha. Numa
+ *   escrita que grava direto, seguir sem saber quais chaves são da organização
+ *   deixaria o modelo sobrescrever, com texto livre, um campo dela.
  */
 import { z } from "zod";
 
@@ -51,12 +61,58 @@ import {
   type EntradaDoAgente,
 } from "@/lib/contacts/diagnostico-do-contato";
 import type { Actor } from "@/lib/api/handlers/types";
-import { defsDoPadraoDaOrg } from "@/lib/leads/padrao-do-campo";
+import { defsDoPadraoDoFunil } from "@/lib/leads/padrao-do-campo";
 
-import type { McpToolDefinition } from "../types";
+import { McpAuthError } from "../auth";
+import type { McpContext, McpToolDefinition } from "../types";
 
 /** A função do banco que mescla `custom_fields` numa instrução só. */
 export const FUNCAO_DE_MESCLA = "fn_contato_anotar_campos";
+
+/**
+ * O escopo que um TOKEN DE INTEGRAÇÃO precisa para gravar direto na ficha. É o
+ * `contacts:write` ("Criar e editar contatos") que a tela de tokens já oferece.
+ *
+ * Fica aqui, e não num módulo compartilhado, porque o PR #4534 cria
+ * `lib/api/escopos-do-token.ts` (`ESCOPO_CONTATOS_ESCRITA`) e
+ * `lib/mcp/escopo-do-token.ts` (`exigeEscopoDoTokenDeIntegracao`) com esta mesma
+ * régua: criar os dois arquivos aqui daria conflito de "adicionado dos dois
+ * lados". Quando os dois PRs estiverem na `main`, esta função vira uma chamada
+ * àquela.
+ */
+export const ESCOPO_DA_FICHA = "contacts:write";
+
+/**
+ * `ctx.tokenScopes` só existe no MCP externo (`lib/mcp/server.ts`); o agente da
+ * casa monta o contexto sem ele e não paga este escopo. Não se usa
+ * `actor.type`: um token com `actor:ai_agent` vira `ai_agent` e passaria batido.
+ */
+export function exigeEscopoDaFicha(ctx: Pick<McpContext, "tokenScopes">): void {
+  if (ctx.tokenScopes === undefined) return;
+  if (ctx.tokenScopes.includes(ESCOPO_DA_FICHA)) return;
+  throw new McpAuthError(-32002, 403, `Token missing required scope '${ESCOPO_DA_FICHA}'.`, "forbidden_role");
+}
+
+/**
+ * As chaves dos campos de CONTATO que a organização declarou nos funis, ou
+ * `null` quando a leitura falha. É a mesma leitura de `defsDoPadraoDaOrg`, que
+ * é fail-open de propósito para as rotas; aqui a falha precisa ser vista.
+ */
+async function chavesDaOrganizacao(ctx: McpContext): Promise<string[] | null> {
+  try {
+    const { data, error } = await ctx.supabase
+      .from("crm_pipelines")
+      .select("settings")
+      .eq("organization_id", ctx.organizationId)
+      .order("created_at", { ascending: true });
+    if (error || !Array.isArray(data)) return null;
+    return (data as Array<{ settings?: unknown }>)
+      .flatMap((linha) => defsDoPadraoDoFunil(linha?.settings, "contato"))
+      .map((def) => def.key);
+  } catch {
+    return null;
+  }
+}
 
 const diagnosticoShape = {
   contact_id: z.string().uuid().describe("UUID do contato desta conversa."),
@@ -109,6 +165,9 @@ const RECUSAS = {
   nada_para_gravar: "informe ao menos um campo: segmento, cnpj, resumo ou oferta.",
   campo_da_organizacao:
     "esses campos são da própria empresa (configurados por ela) e não são preenchidos por esta ferramenta.",
+  escrito_pela_equipe:
+    "o diagnóstico desta ficha foi escrito por uma pessoa da equipe e não é sobrescrito; nada foi gravado.",
+  indisponivel: "não foi possível conferir os campos da empresa agora; nada foi gravado. Tente de novo mais tarde.",
 } as const;
 
 function recusa(motivo: keyof typeof RECUSAS, extra: Record<string, unknown> = {}) {
@@ -130,6 +189,7 @@ export const crmSaveLeadDiagnosis: McpToolDefinition<typeof diagnosticoShape> = 
   requiresScope: "mcp:write",
   redigirParaAuditoria,
   handler: async (input, ctx) => {
+    exigeEscopoDaFicha(ctx);
     const { data: contato, error } = await ctx.supabase
       .from("contacts")
       .select("id, is_anonymized, is_personal, custom_fields")
@@ -151,12 +211,10 @@ export const crmSaveLeadDiagnosis: McpToolDefinition<typeof diagnosticoShape> = 
       if (input[campo] !== undefined) entrada[campo] = input[campo];
     }
     // Campo de CONTATO declarado pela organização nos funis é dela (tipo,
-    // opções, padrão). Fail-open: falha de leitura devolve lista vazia, e a
-    // segunda régua (valor fora do nosso formato) continua valendo.
-    const chavesDaOrganizacao = (await defsDoPadraoDaOrg(ctx.supabase, ctx.organizationId, "contato")).map(
-      (def) => def.key,
-    );
-    const plano = gravacaoDoAgente(ficha.custom_fields, entrada, autoriaDoAtor(ctx.actor), chavesDaOrganizacao);
+    // opções, padrão). Fecha na falha: sem saber quais chaves são dela, não grava.
+    const daOrganizacao = await chavesDaOrganizacao(ctx);
+    if (daOrganizacao === null) return recusa("indisponivel");
+    const plano = gravacaoDoAgente(ficha.custom_fields, entrada, autoriaDoAtor(ctx.actor), daOrganizacao);
     if (!plano.ok) {
       if (plano.motivo === "valor_invalido") {
         return {
@@ -166,7 +224,7 @@ export const crmSaveLeadDiagnosis: McpToolDefinition<typeof diagnosticoShape> = 
           mensagem: `o valor de ${plano.campo} não é válido (vazio, longo demais ou CNPJ inválido); nada foi gravado.`,
         };
       }
-      if (plano.motivo === "campo_da_organizacao") {
+      if (plano.motivo === "campo_da_organizacao" || plano.motivo === "escrito_pela_equipe") {
         return recusa(plano.motivo, { preservados: plano.preservados });
       }
       return recusa(plano.motivo);
@@ -199,6 +257,7 @@ export const crmSaveLeadDiagnosis: McpToolDefinition<typeof diagnosticoShape> = 
         ...ator.metadata,
         campos: plano.gravados,
         preservados: plano.preservados,
+        preservados_pela_equipe: plano.daEquipe,
         escrito_pela_ia: plano.escritoPelaIA,
       },
     });
@@ -207,6 +266,7 @@ export const crmSaveLeadDiagnosis: McpToolDefinition<typeof diagnosticoShape> = 
       gravado: true,
       campos: plano.gravados,
       ...(plano.preservados.length > 0 ? { preservados: plano.preservados } : {}),
+      ...(plano.daEquipe.length > 0 ? { preservados_pela_equipe: plano.daEquipe } : {}),
       escrito_pela_ia: plano.escritoPelaIA,
       mensagem:
         "diagnóstico gravado na ficha do contato; a equipe revisa na aba Diagnóstico. " +

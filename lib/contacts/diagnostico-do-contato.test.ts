@@ -19,6 +19,7 @@ import {
 
 const AGENTE = "11111111-1111-4111-8111-111111111111";
 const USUARIO = "22222222-2222-4222-8222-222222222222";
+const AGENTE_ANTERIOR = "55555555-5555-4555-8555-555555555555";
 /** CNPJ numérico de exemplo com DV válido. */
 const CNPJ = "11222333000181";
 const AGORA = new Date("2026-11-14T15:00:00.000Z");
@@ -304,12 +305,13 @@ describe("gravacaoDaAba — a diferença aplicada sobre a ficha RELIDA", () => {
 });
 
 describe("gravacaoDoAgente — o PEDAÇO que a ferramenta do agente mescla no banco", () => {
+  /** Ficha com diagnóstico de uma rodada ANTERIOR da IA: a IA pode refazer o próprio texto. */
   const atual = {
     link_instagram: "instagram.com/padaria",
     convenio: "Unimed",
     diag_observacoes: "Recado da equipe.",
-    diag_resumo: "Texto antigo.",
-    diag_por: autoriaDoUsuario(USUARIO),
+    diag_resumo: "Texto antigo da IA.",
+    diag_por: autoriaDoAgente(AGENTE_ANTERIOR),
     diag_em: "2026-11-01T10:00:00.000Z",
   };
 
@@ -334,6 +336,7 @@ describe("gravacaoDoAgente — o PEDAÇO que a ferramenta do agente mescla no ba
       remover: [],
       gravados: ["segmento", "cnpj", "resumo", "oferta"],
       preservados: [],
+      daEquipe: [],
       escritoPelaIA: true,
     });
     if (r.ok) {
@@ -393,5 +396,66 @@ describe("gravacaoDoAgente — o PEDAÇO que a ferramenta do agente mescla no ba
     expect(r).toMatchObject({ ok: true, campos: { diag_resumo: "Novo." }, remover: ["diag_por", "diag_em"] });
     const torto = gravacaoDoAgente(atual, { resumo: "Novo." }, "agente:nao-e-uuid", [], AGORA);
     expect(torto).toMatchObject({ ok: true, remover: ["diag_por", "diag_em"], escritoPelaIA: false });
+  });
+});
+
+describe("gravacaoDoAgente — o que uma PESSOA da equipe escreveu a IA não sobrescreve", () => {
+  /** Diagnóstico assinado por uma pessoa: a equipe assumiu a ficha. */
+  const daEquipe = {
+    link_instagram: "instagram.com/padaria",
+    segmento: "Panificação artesanal",
+    diag_resumo: "Texto da equipe.",
+    diag_por: autoriaDoUsuario(USUARIO),
+    diag_em: "2026-11-01T00:00:00.000Z",
+  };
+
+  it("⭐ resumo e oferta assinados pela equipe ficam; nada é gravado e a resposta diz por quê", () => {
+    const r = gravacaoDoAgente(daEquipe, { resumo: "Texto da IA.", oferta: "Oferta da IA." }, autoriaDoAgente(AGENTE));
+    expect(r).toEqual({
+      ok: false,
+      motivo: "escrito_pela_equipe",
+      preservados: ["resumo", "oferta"],
+      daEquipe: ["resumo", "oferta"],
+    });
+  });
+
+  it("a oferta vazia também fica: gravá-la trocaria a assinatura do resumo da equipe pelo selo da IA", () => {
+    const r = gravacaoDoAgente(daEquipe, { oferta: "Oferta da IA." }, autoriaDoAgente(AGENTE));
+    expect(r).toMatchObject({ ok: false, motivo: "escrito_pela_equipe", daEquipe: ["oferta"] });
+  });
+
+  it("segmento e CNPJ preenchidos ficam; os VAZIOS a IA completa, sem mexer na assinatura", () => {
+    const r = gravacaoDoAgente(
+      daEquipe,
+      { segmento: "Padaria", cnpj: "11.222.333/0001-81", resumo: "Texto da IA." },
+      autoriaDoAgente(AGENTE),
+      [],
+      AGORA,
+    );
+    expect(r).toEqual({
+      ok: true,
+      campos: { documento_cnpj: CNPJ },
+      remover: [],
+      gravados: ["cnpj"],
+      preservados: ["segmento", "resumo"],
+      daEquipe: ["segmento", "resumo"],
+      escritoPelaIA: false,
+    });
+  });
+
+  it("token de integração sem autor também não apaga o texto nem a assinatura da equipe", () => {
+    const r = gravacaoDoAgente(daEquipe, { resumo: "Texto do integrador." }, null);
+    expect(r).toMatchObject({ ok: false, motivo: "escrito_pela_equipe" });
+  });
+
+  it("uma PESSOA (por token) edita como na aba: grava e assina como ela", () => {
+    const outra = autoriaDoUsuario("66666666-6666-4666-8666-666666666666");
+    const r = gravacaoDoAgente(daEquipe, { resumo: "Revisado." }, outra, [], AGORA);
+    expect(r).toMatchObject({
+      ok: true,
+      campos: { diag_resumo: "Revisado.", diag_por: outra },
+      daEquipe: [],
+      escritoPelaIA: false,
+    });
   });
 });

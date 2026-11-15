@@ -52,6 +52,9 @@ const PESSOAL = "88888888-8888-4888-8888-888888888888";
 const ANONIMIZADO = "99999999-9999-4999-8999-999999999999";
 const AGENTE = "33333333-3333-4333-8333-333333333333";
 const USUARIO = "44444444-4444-4444-8444-444444444444";
+const AGENTE_ANTERIOR = "55555555-5555-4555-8555-555555555555";
+const DA_EQUIPE = "12121212-1212-4212-8212-121212121212";
+const SEM_DIAGNOSTICO = "13131313-1313-4313-8313-131313131313";
 /** CNPJ numérico de exemplo com DV válido. */
 const CNPJ = "11222333000181";
 
@@ -67,9 +70,20 @@ function fichaDoTurno(): Record<string, unknown> {
     convenio: "Unimed",
     numero_de_filiais: 3,
     diag_observacoes: "Falar com a Bia, a dona.",
-    diag_resumo: "Texto antigo da equipe.",
-    diag_por: `usuario:${USUARIO}`,
+    diag_resumo: "Texto de uma rodada anterior da IA.",
+    diag_por: `agente:${AGENTE_ANTERIOR}`,
     diag_em: "2026-11-01T10:00:00.000Z",
+  };
+}
+
+/** Diagnóstico escrito e ASSINADO por uma pessoa da equipe. */
+function fichaDaEquipe(): Record<string, unknown> {
+  return {
+    link_instagram: "instagram.com/padaria",
+    segmento: "Panificação artesanal",
+    diag_resumo: "Texto da equipe.",
+    diag_por: `usuario:${USUARIO}`,
+    diag_em: "2026-11-01T00:00:00.000Z",
   };
 }
 
@@ -79,6 +93,8 @@ interface Banco {
   rpc: Array<{ nome: string; args: Linha }>;
   /** Anonimiza a ficha ENTRE a leitura do handler e a gravação. */
   anonimizarAntesDaGravacao?: string;
+  /** A leitura desta tabela devolve erro (falha de rede, de permissão). */
+  falhaNaLeitura?: string;
 }
 
 function novoBanco(): Banco {
@@ -89,6 +105,14 @@ function novoBanco(): Banco {
       { id: DE_OUTRA_ORG, organization_id: ORG_B, is_anonymized: false, is_personal: false, custom_fields: { intacto: "sim" } },
       { id: PESSOAL, organization_id: ORG, is_anonymized: false, is_personal: true, custom_fields: {} },
       { id: ANONIMIZADO, organization_id: ORG, is_anonymized: true, is_personal: false, custom_fields: {} },
+      { id: DA_EQUIPE, organization_id: ORG, is_anonymized: false, is_personal: false, custom_fields: fichaDaEquipe() },
+      {
+        id: SEM_DIAGNOSTICO,
+        organization_id: ORG,
+        is_anonymized: false,
+        is_personal: false,
+        custom_fields: { link_instagram: "instagram.com/padaria" },
+      },
     ],
     crm_pipelines: [],
     rpc: [],
@@ -109,7 +133,11 @@ function clienteFalso(banco: Banco) {
       },
       maybeSingle: () => Promise.resolve({ data: linhas[0] ?? null, error: null }),
       then: (ok: (v: unknown) => unknown, falha?: (e: unknown) => unknown) =>
-        Promise.resolve({ data: linhas, error: null }).then(ok, falha),
+        Promise.resolve(
+          banco.falhaNaLeitura === tabela
+            ? { data: null, error: { message: "falha simulada" } }
+            : { data: linhas, error: null },
+        ).then(ok, falha),
     };
     const cadeia: unknown = new Proxy(alvo, { get: (t, p: string) => (p in t ? t[p] : () => cadeia) });
     return cadeia;
@@ -357,22 +385,134 @@ describe("autoria e auditoria", () => {
   });
 });
 
+describe("uma pessoa por token assina como ela mesma", () => {
+  it("⭐ ator user: diag_por = usuario:<id>, sem selo da IA, e a auditoria leva o id da pessoa", async () => {
+    const banco = novoBanco();
+    const r = await executar(
+      banco,
+      { contact_id: DO_TURNO, resumo: "Revisado pela pessoa." },
+      { ator: { type: "user", id: USUARIO } },
+    );
+    expect(r).toMatchObject({ gravado: true, escrito_pela_ia: false });
+    expect(ficha(banco, DO_TURNO)).toMatchObject({
+      diag_resumo: "Revisado pela pessoa.",
+      diag_por: `usuario:${USUARIO}`,
+    });
+    expect(vi.mocked(audit).mock.calls[0]![0]).toMatchObject({
+      action: "contact.diagnosis_saved",
+      actorUserId: USUARIO,
+      metadata: { actor_type: "user", escrito_pela_ia: false },
+    });
+  });
+});
+
+describe("o que a equipe escreveu a IA não sobrescreve", () => {
+  it("⭐ resumo assinado por pessoa: recusa escrito_pela_equipe, nada vai ao banco, a ficha segue igual", async () => {
+    const banco = novoBanco();
+    const r = await executar(banco, { contact_id: DA_EQUIPE, resumo: "Texto da IA.", oferta: "Oferta da IA." });
+    expect(r).toMatchObject({ gravado: false, motivo: "escrito_pela_equipe", preservados: ["resumo", "oferta"] });
+    expect(banco.rpc).toEqual([]);
+    expect(ficha(banco, DA_EQUIPE)).toEqual(fichaDaEquipe());
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it("o campo vazio a IA completa; o texto e a assinatura da equipe ficam, e a auditoria diz o que ficou", async () => {
+    const banco = novoBanco();
+    const r = await executar(banco, { contact_id: DA_EQUIPE, cnpj: "11.222.333/0001-81", resumo: "Texto da IA." });
+    expect(r).toMatchObject({
+      gravado: true,
+      campos: ["cnpj"],
+      preservados_pela_equipe: ["resumo"],
+      escrito_pela_ia: false,
+    });
+    expect(ficha(banco, DA_EQUIPE)).toMatchObject({
+      documento_cnpj: CNPJ,
+      diag_resumo: "Texto da equipe.",
+      diag_por: `usuario:${USUARIO}`,
+    });
+    expect(vi.mocked(audit).mock.calls[0]![0]).toMatchObject({
+      metadata: { campos: ["cnpj"], preservados_pela_equipe: ["resumo"] },
+    });
+  });
+
+  it("a aba continua sem o selo depois da tentativa", async () => {
+    const banco = novoBanco();
+    await executar(banco, { contact_id: DA_EQUIPE, resumo: "Texto da IA." });
+    const contato = { id: DA_EQUIPE, organization_id: ORG, name: "Padaria", custom_fields: ficha(banco, DA_EQUIPE) } as never;
+    render(<DiagnosticoDoContato contato={contato} podeEditar usuarioId={USUARIO} />);
+    expect(screen.queryByText("Escrito pela IA")).toBeNull();
+  });
+});
+
+describe("token de integração precisa de contacts:write (a mesma régua do crm_update_contact do #4534)", () => {
+  const ctxDoToken = (banco: Banco, scopes: readonly string[]) => ({
+    organizationId: ORG,
+    role: "agent" as const,
+    actor: { type: "api_token", id: "tok-1" },
+    apiTokenId: "tok-1",
+    tokenScopes: scopes,
+    requestId: "req-1",
+    supabase: clienteFalso(banco),
+  });
+
+  it("⭐ sem contacts:write: 403 nomeado, nada vai ao banco", async () => {
+    const banco = novoBanco();
+    const def = getToolByName(NOME)!;
+    await expect(
+      def.handler({ contact_id: DO_TURNO, resumo: "x" } as never, ctxDoToken(banco, ["mcp:read", "mcp:write"]) as never),
+    ).rejects.toMatchObject({ name: "McpAuthError", httpStatus: 403 });
+    expect(banco.rpc).toEqual([]);
+    expect(ficha(banco, DO_TURNO)).toEqual(fichaDoTurno());
+  });
+
+  it("com contacts:write: grava", async () => {
+    const banco = novoBanco();
+    const def = getToolByName(NOME)!;
+    const r = await def.handler(
+      { contact_id: DO_TURNO, resumo: "x" } as never,
+      ctxDoToken(banco, ["mcp:read", "mcp:write", "contacts:write"]) as never,
+    );
+    expect(r).toMatchObject({ gravado: true });
+  });
+
+  it("o agente da casa (sem escopos de token) não paga o escopo", async () => {
+    const banco = novoBanco();
+    const r = await executar(banco, { contact_id: DO_TURNO, resumo: "x" });
+    expect(r).toMatchObject({ gravado: true, escrito_pela_ia: true });
+  });
+});
+
+describe("leitura dos campos da organização falhou: fecha, não grava", () => {
+  it("⭐ crm_pipelines com erro: recusa indisponivel, nada vai ao banco", async () => {
+    const banco = novoBanco();
+    banco.falhaNaLeitura = "crm_pipelines";
+    const r = await executar(banco, { contact_id: DO_TURNO, segmento: "clínica" });
+    expect(r).toMatchObject({ gravado: false, motivo: "indisponivel" });
+    expect(banco.rpc).toEqual([]);
+  });
+});
+
 describe("o selo Escrito pela IA aparece na aba Diagnóstico", () => {
   it("⭐ o que a ferramenta gravou pinta o selo na ficha", async () => {
     const banco = novoBanco();
-    await executar(banco, { contact_id: DO_TURNO, resumo: "Sem cardápio online.", oferta: "Cardápio digital." });
+    await executar(banco, { contact_id: SEM_DIAGNOSTICO, resumo: "Sem cardápio online.", oferta: "Cardápio digital." });
     const contato = {
-      id: DO_TURNO,
+      id: SEM_DIAGNOSTICO,
       organization_id: ORG,
       name: "Padaria Exemplo",
-      custom_fields: ficha(banco, DO_TURNO),
+      custom_fields: ficha(banco, SEM_DIAGNOSTICO),
     } as never;
     render(<DiagnosticoDoContato contato={contato} podeEditar usuarioId={USUARIO} />);
     expect(screen.getByText("Escrito pela IA")).toBeTruthy();
   });
 
-  it("controle: a mesma ficha antes da ferramenta (assinada por pessoa) não tem selo", () => {
-    const contato = { id: DO_TURNO, organization_id: ORG, name: "Padaria", custom_fields: fichaDoTurno() } as never;
+  it("controle: a mesma ficha antes da ferramenta não tem selo", () => {
+    const contato = {
+      id: SEM_DIAGNOSTICO,
+      organization_id: ORG,
+      name: "Padaria",
+      custom_fields: novoBanco().contacts.find((c) => c.id === SEM_DIAGNOSTICO)!.custom_fields,
+    } as never;
     render(<DiagnosticoDoContato contato={contato} podeEditar usuarioId={USUARIO} />);
     expect(screen.queryByText("Escrito pela IA")).toBeNull();
   });
