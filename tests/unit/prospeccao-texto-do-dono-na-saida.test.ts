@@ -312,6 +312,10 @@ describe("(5) a palavra não pode ir escondida por formatação", () => {
       "Se não quiser mais, responda ||PARAR||.",
       "Se não quiser mais, responda `PARAR`.",
       "Se não quiser mais, responda ```PARAR```.",
+      // O til de "cerca de" ANTES do riscado de verdade: sem a borda de letra, o
+      // padrão pareava o til solto com o que abre `~PARAR~` e deixava `PARAR~`
+      // de fora do par — a palavra riscada passava como legível.
+      "Custa ~R$ 50. Se não quiser mais, responda ~PARAR~.",
     ])
       expect(noIdioma(texto), `a palavra escondida passou: ${texto}`).toBe("palavra_escondida");
   });
