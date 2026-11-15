@@ -379,7 +379,7 @@ describe("a guarda da abordagem fria veta as três marcas, no escopo do candidat
     ].map((marca) => motivoDoVetoDoContato({ ...CONTATO_LIMPO, ...marca }, etiquetas));
     expect(new Set(motivos).size, "duas marcas com o mesmo motivo, ou uma sem veto").toBe(9);
     expect(motivos).not.toContain(null);
-    for (const m of [...motivos, "Não foi possível liberar a IA para este contato."])
+    for (const m of [...motivos, "A IA não pode atender este contato."])
       expect(DICIONARIO[m as string]?.es, `sem espanhol: ${m}`).toBeTruthy();
     // A ficha pessoal usa a MESMA frase do 403 do handler de mensagens.
     expect(motivoDoVetoDoContato({ ...CONTATO_LIMPO, is_personal: true })).toBe("Contato marcado como pessoal.");

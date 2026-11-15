@@ -72,9 +72,9 @@ export function motivoDoVetoDoContato(
   if (ehContatoDaEquipe(contact.tags, etiquetas.daEquipe))
     return "Contato da equipe (marcado por etiqueta).";
   // Nos dois formatos, `declined_at` da captação e `granted: false` da ficha.
-  if (recusaRegistrada(contact.consent)) return "Contato recusou receber marketing.";
+  if (recusaRegistrada(contact.consent)) return "O contato recusou mensagens de marketing.";
   if (!isLegalBasisValid(deriveLgpdFromContact(contact, true).legalBasis))
-    return "Sem base legal registrada para abordar este contato.";
+    return "Sem base legal (LGPD) registrada para abordar este contato.";
   return null;
 }
 

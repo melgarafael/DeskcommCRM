@@ -1,14 +1,16 @@
 ---
 impacto: nada_mudou
 secao: corrigido
-titulo: A prospecção não aborda contato pessoal, "sempre atendimento humano" nem contato interno ou da equipe, e não para a campanha por causa deles
+titulo: A prospecção pula o contato pessoal, "sempre atendimento humano", interno ou da equipe, e a campanha segue
 ---
 
-A abordagem automática da prospecção passou a conferir, antes de cada envio, se o contato está
-marcado como "Pessoal", como "Sempre atendimento humano" ou com uma etiqueta das listas de contato
-interno ou de contato da equipe. Nesses casos a mensagem não sai, a empresa fica de fora com o motivo
-escrito embaixo dela, sem gastar o limite diário do número, e a campanha continua rodando com as próximas. Antes, o contato marcado como
-"Sempre atendimento humano" recebia a mensagem, e uma ficha pessoal fazia a campanha inteira parar
-com "Falha inesperada". Os outros impedimentos do contato (bloqueado, anonimizado, recusa de
-marketing, sem base legal) também deixaram de pausar a campanha: só aquela empresa fica de fora.
-Nenhuma ação é necessária na instalação.
+Antes de cada envio, a abordagem automática da prospecção passa a conferir se o contato está
+marcado como "Pessoal" ou "Sempre atendimento humano", ou se tem uma etiqueta das listas
+"Etiquetas de contato interno" ou "Etiquetas de contato da equipe". Nesses casos a mensagem não sai,
+a empresa fica de fora com o motivo escrito embaixo dela, e a campanha segue com as próximas. Como a
+conferência vem antes de reservar o envio, a empresa barrada não ocupa o limite de envios por dia.
+
+Antes, o contato "Sempre atendimento humano" recebia a mensagem, e uma ficha pessoal pausava a
+campanha inteira com o aviso "Falha inesperada no envio". Os outros impedimentos do contato
+(bloqueado, anonimizado, recusa de marketing, sem base legal) também pausavam a campanha; agora só
+aquela empresa fica de fora. Nenhuma ação é pedida a quem opera a instalação.

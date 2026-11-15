@@ -780,9 +780,7 @@ describe("tick da prospecção × organização que para no meio do envio", () =
     const falhou = db.query.mock.calls.find(([sql]) =>
       String(sql).startsWith("update prospecting_candidates set status='failed',error=$3"),
     ) as unknown[] | undefined;
-    expect((falhou?.[1] as unknown[] | undefined)?.[2]).toBe(
-      "Não foi possível liberar a IA para este contato.",
-    );
+    expect((falhou?.[1] as unknown[] | undefined)?.[2]).toBe("A IA não pode atender este contato.");
   });
 
   it("controle: falha inesperada do envio continua pausando a campanha e marcando o candidato failed", async () => {

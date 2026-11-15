@@ -427,7 +427,7 @@ export async function sendNextCandidate(
     // operação trancou. A recusa é DESTE contato: a campanha segue.
     if (authorization.autorizou === false)
       throw new ProspectingError(
-        "Não foi possível liberar a IA para este contato.",
+        "A IA não pode atender este contato.",
         409,
         "candidato",
       );
