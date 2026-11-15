@@ -59,18 +59,6 @@ export interface CampoDoFunilParaRotulo {
 }
 
 /**
- * As variáveis `{{lead.<chave>}}` com o nome que a EMPRESA deu ao campo (#4533).
- *
- * O modelo da proposta é escrito por quem vende, não por quem programou: sem
- * este mapa o editor mostra "Endereco do imovel" (o fallback de
- * `rotuloDaVariavel`), e quem escreve precisa decorar a chave do funil. Aqui o
- * rótulo é o mesmo que a pessoa vê no card.
- *
- * Campo do CONTATO fica de fora — o valor dele mora em `contacts.custom_fields`
- * e não existe em `{{lead.<chave>}}` —, e campo `file` também (o anexo mora em
- * `crm_lead_attachments`, nunca no jsonb).
- */
-/**
  * As variáveis FIXAS do negócio (`{{lead.titulo}}` e as outras três). Um campo
  * do funil com a mesma chave não as substitui (doc 343): `{{lead.titulo}}`
  * significa sempre o título do card, e o campo homônimo fica sem variável.
@@ -82,6 +70,19 @@ export const CHAVES_FIXAS_DO_NEGOCIO: ReadonlySet<string> = new Set([
   "responsavel_telefone",
 ]);
 
+/**
+ * As variáveis `{{lead.<chave>}}` com o nome que a EMPRESA deu ao campo (#4533).
+ *
+ * O modelo da proposta é escrito por quem vende, não por quem programou: sem
+ * este mapa o editor mostra "Endereco do imovel" (o fallback de
+ * `rotuloDaVariavel`), e quem escreve precisa decorar a chave do funil. Aqui o
+ * rótulo é o mesmo que a pessoa vê no card.
+ *
+ * Campo do CONTATO fica de fora — o valor dele mora em `contacts.custom_fields`
+ * e não existe em `{{lead.<chave>}}` —, e campo `file` também (o anexo mora em
+ * `crm_lead_attachments`, nunca no jsonb). Campo homônimo de variável fixa
+ * (`CHAVES_FIXAS_DO_NEGOCIO`) não troca o rótulo dela.
+ */
 export function rotulosDoNegocio(
   campos: readonly CampoDoFunilParaRotulo[],
 ): Record<string, string> {
