@@ -6,6 +6,11 @@ import { ehFraseDeSemInteresse } from "@/lib/opt-out/sem-interesse";
 /**
  * A frase do "não tenho interesse" (decisão D3). Quem decide ONDE ela vale é a
  * ingestão (só na conversa de prospecção); aqui só se mede a frase.
+ *
+ * ─── SABOTAGEM ─────────────────────────────────────────────────────────────
+ * Desligar o `SINAL_DE_INTERESSE` em `ehFraseDeSemInteresse`: as quatro últimas frases
+ * de "cliente escolhendo" ficam vermelhas, e só elas (as outras têm uma segunda régua:
+ * pergunta, complemento escolhido, condição ou contraste).
  */
 describe("ehFraseDeSemInteresse", () => {
   it.each([
@@ -77,6 +82,12 @@ describe("ehFraseDeSemInteresse", () => {
     "Você acha que não tenho interesse?",
     "Quero o anual. Não tenho interesse no mensal",
     "Não tenho interesse. Vocês fazem entrega?",
+    // Recusa de UM item com pedido de outro, sem pergunta nem complemento escolhido:
+    // só o sinal de interesse ("quero", "me manda", "quanto") as separa da recusa.
+    "Não tenho interesse nisso, quero o outro modelo",
+    "Não tenho interesse agora, me manda o preço para o mês que vem",
+    "Por enquanto não tenho interesse, quanto fica no ano que vem",
+    "Não tenho interesse nesse serviço, quero o site completo",
   ])("cliente escolhendo, NÃO é recusa: %s", (frase) => {
     expect(ehFraseDeSemInteresse(frase)).toBe(false);
     expect(ehPedidoDeOptOut(frase)).toBe(false);
