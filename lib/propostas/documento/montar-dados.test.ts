@@ -205,6 +205,38 @@ describe("montarDadosDoDocumento — o negócio (#4533)", () => {
     expect((dados.lead as Record<string, unknown>).endereco_do_imovel).toBe("Rua X, 10");
   });
 
+  it("campo do funil com o nome de uma variável fixa (titulo, etapa) NÃO a apaga: o fixo vence (doc 343)", () => {
+    const funil = {
+      fields: [
+        { key: "titulo", label: "Título do anúncio", type: "text" },
+        { key: "etapa", label: "Etapa da obra", type: "text" },
+      ],
+    };
+    const lead = dadosDoNegocio(
+      { ...NEGOCIO_BASE, custom_fields: { titulo: "Anúncio no portal", etapa: "Fundação" } },
+      funil,
+      "BRL",
+    );
+    expect(lead.titulo).toBe("Aluguel — apartamento no Centro");
+    expect(lead.etapa).toBe("Proposta enviada");
+
+    // Sem o fixo, o campo homônimo também não toma o lugar dele: `{{lead.titulo}}`
+    // significa o título do negócio, e o vazio é pendência, não outro dado.
+    const semTitulo = dadosDoNegocio(
+      { ...NEGOCIO_BASE, titulo: null, custom_fields: { titulo: "Anúncio no portal" } },
+      funil,
+      "BRL",
+    );
+    expect(semTitulo).not.toHaveProperty("titulo");
+    // A chave gravada sem declaração no funil segue a mesma regra.
+    const naoDeclarado = dadosDoNegocio(
+      { ...NEGOCIO_BASE, custom_fields: { responsavel_nome: "importado por API" } },
+      null,
+      "BRL",
+    );
+    expect(naoDeclarado.responsavel_nome).toBe("Ana Souza");
+  });
+
   it("REGRESSÃO: sem negócio (lead_id nulo ou leitura falhando) o dataset é o de hoje, sem `lead`", () => {
     const semNegocio = montarDadosDoDocumento(PROPOSTA_BASE, null);
     expect(semNegocio).not.toHaveProperty("lead");

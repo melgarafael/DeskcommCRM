@@ -10,10 +10,12 @@
  * `lead_id`: quem vende por funil digitava de novo no texto da proposta o que
  * já estava no negócio — endereço do imóvel, valor do aluguel, data de entrada.
  *
- * A sintaxe é a MESMA que o follow-up usa para campo do funil
- * (`anexarCamposDoFunil`, `lib/automation/campos-do-render.ts`):
- * `{{lead.<chave>}}`, mais `lead.titulo`, `lead.etapa`,
- * `lead.responsavel_nome` e `lead.responsavel_telefone`.
+ * A escrita é a CURTA das campanhas (`{{lead.<chave>}}`, como em
+ * `lib/campanhas/consulta-de-audiencia.ts`), mais `lead.titulo`, `lead.etapa`,
+ * `lead.responsavel_nome` e `lead.responsavel_telefone` — decisão do doc 343.
+ * NÃO é a do follow-up, que escreve `{{lead.custom_fields.<chave>}}` e
+ * `{{lead.title}}`. Campo do funil com a chave de uma variável fixa não a
+ * substitui: o fixo vence (`CHAVES_FIXAS_DO_NEGOCIO`).
  *
  * ─── AS RÉGUAS, e por que são estas ────────────────────────────────────────
  *
@@ -51,7 +53,7 @@ import { formatCents, parseReaisToCents } from "@/lib/money";
 import type { CustomFieldDef } from "@/lib/schemas/settings";
 import { nomesDosAtendentesCom } from "@/lib/users/nome-do-atendente";
 
-import { rotulosDoNegocio } from "./rotulos-das-variaveis";
+import { CHAVES_FIXAS_DO_NEGOCIO, rotulosDoNegocio } from "./rotulos-das-variaveis";
 
 /** O que a leitura do card precisa entregar — e o rótulo de cada variável. */
 export interface NegocioDoDocumento {
@@ -184,7 +186,8 @@ export function dadosDoNegocio(
   const gravados = camposGravados(negocio.custom_fields);
   const declarados = camposPorEscopo(camposDoFunil(settings), "negocio").filter(
     // Arquivo não é valor no jsonb: o anexo mora em `crm_lead_attachments`.
-    (campo) => campo.type !== "file",
+    // Homônimo de variável fixa também fica de fora — o fixo vence (doc 343).
+    (campo) => campo.type !== "file" && !CHAVES_FIXAS_DO_NEGOCIO.has(campo.key),
   );
 
   const contexto: Record<string, unknown> = {};
@@ -204,6 +207,7 @@ export function dadosDoNegocio(
   // citá-la; sem definição não há tipo para formatar.
   for (const [chave, valor] of Object.entries(gravados)) {
     if (Object.hasOwn(saida, chave)) continue;
+    if (CHAVES_FIXAS_DO_NEGOCIO.has(chave)) continue;
     if (declarados.some((campo) => campo.key === chave)) continue;
     const texto = Array.isArray(valor)
       ? valor.filter((item) => typeof item === "string" && item.trim() !== "").join(", ")

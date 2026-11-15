@@ -70,6 +70,18 @@ export interface CampoDoFunilParaRotulo {
  * e não existe em `{{lead.<chave>}}` —, e campo `file` também (o anexo mora em
  * `crm_lead_attachments`, nunca no jsonb).
  */
+/**
+ * As variáveis FIXAS do negócio (`{{lead.titulo}}` e as outras três). Um campo
+ * do funil com a mesma chave não as substitui (doc 343): `{{lead.titulo}}`
+ * significa sempre o título do card, e o campo homônimo fica sem variável.
+ */
+export const CHAVES_FIXAS_DO_NEGOCIO: ReadonlySet<string> = new Set([
+  "titulo",
+  "etapa",
+  "responsavel_nome",
+  "responsavel_telefone",
+]);
+
 export function rotulosDoNegocio(
   campos: readonly CampoDoFunilParaRotulo[],
 ): Record<string, string> {
@@ -82,6 +94,7 @@ export function rotulosDoNegocio(
   for (const campo of campos) {
     if (campo.escopo === "contato") continue;
     if (campo.type === "file") continue;
+    if (CHAVES_FIXAS_DO_NEGOCIO.has(campo.key)) continue;
     saida[`lead.${campo.key}`] = campo.label;
   }
   return saida;
