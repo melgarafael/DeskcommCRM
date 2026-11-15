@@ -732,15 +732,15 @@ test.describe("LeadSubmitted causal pelo webhook WAHA", () => {
     const chave = page.getByRole("switch", { name: "Enviar LeadSubmitted por clique CTWA à Meta" });
     await expect(chave).toBeChecked();
     await page.getByRole("link", { name: "Histórico de envios", exact: true }).click();
-    // A aba troca por navegação de CLIENTE, e é só o `goto`/`reload` que a
-    // fixture espera: até o React esvaziar a caixa do streaming SSR
-    // (`div[hidden][id^="S:"]`) o mesmo bloco existe duas vezes — a cópia do
-    // servidor na caixa escondida e a que o React desenhou — e o modo estrito
-    // do Playwright reprova com "resolved to 2 elements" (#1374, #884). A
-    // contagem, e não `.first()`, é o que prova UMA cópia: se a tela voltar a
-    // montar dois painéis de verdade, ela reprova.
+    // Mesmo defeito, dois consertos (#1374, #884): o locator escopado no <main>
+    // é o da main e fica — ao trocar de aba pelo link, a resposta em streaming
+    // pode deixar por um instante uma cópia ESCONDIDA da seção fora do <main>, e
+    // sem o escopo o strict mode acha duas seções. A espera da revelação e a
+    // contagem continuam porque não são conserto duplicado: a contagem é o que
+    // prova UMA cópia no <main> (e não um `.first()`); se a tela voltar a montar
+    // dois painéis de verdade, ela reprova.
     await esperarARevelacao(page);
-    const historico = page.getByTestId("historico-de-cliques-ctwa");
+    const historico = page.getByRole("main").getByTestId("historico-de-cliques-ctwa");
     await expect(historico).toHaveCount(1);
     await expect(historico).toBeVisible();
     const linha = historico.locator("li").filter({ hasText: eventId });

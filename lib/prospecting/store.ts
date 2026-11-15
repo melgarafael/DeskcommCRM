@@ -36,6 +36,8 @@ import { audit } from "@/lib/audit";
 import { vereditoPuro } from "./site-classify";
 import { linksDoCandidato } from "./links-do-candidato";
 import { aplicarLinks } from "@/lib/leads/links-de-contato";
+import { segmentoDoContatoNovo } from "@/lib/contacts/diagnostico-do-contato";
+import { defsDoPadraoDaOrg } from "@/lib/leads/padrao-do-campo";
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
 import { motivoSemWhatsapp } from "./whatsapp";
 import { idiomaDaOrganizacao } from "./idioma";
@@ -834,6 +836,12 @@ export async function triarCandidato(
   }
   if (known.rows.length && !contactId)
     return { motivo: "Contato já existe no CRM; atendimento preservado." };
+  // `p.contact_id` preenchido não é passe livre: ele precisa ser o MESMO contato
+  // que o telefone acha. Antes bastava vir preenchido para pular a recusa — e
+  // um telefone que virou atendimento de OUTRO contato depois da pegada seguia
+  // para a abordagem fria por cima dele.
+  if (contactId && known.rows.some((r: { id: string }) => r.id !== contactId))
+    return { motivo: "Contato já existe no CRM; atendimento preservado." };
   return { contatoDaCampanha: contactId };
 }
 
@@ -890,13 +898,31 @@ export async function marcarEtiquetasDaCampanha(
 }
 
 /**
- * Os `link_<tipo>` que o contato NOVO já nasce carregando (Spec 26 §3.2). Fail-open: o
- * mapeador não deveria lançar, mas se algo escapar o contato nasce sem links e a criação
- * segue. Devolve `undefined` quando não há link, para não mandar `custom_fields` vazio.
+ * Os `link_<tipo>` que o contato NOVO já nasce carregando (Spec 26 §3.2), mais o
+ * `segmento` do diagnóstico da ficha, copiado da categoria da busca
+ * (`lib/contacts/diagnostico-do-contato.ts`). Fail-open: o mapeador não deveria lançar,
+ * mas se algo escapar o contato nasce sem esses campos e a criação segue. Devolve
+ * `undefined` quando não há nada, para não mandar `custom_fields` vazio.
+ *
+ * O segmento só entra se a organização NÃO tem campo de contato próprio chamado
+ * `segmento`: o `createContactHandler` confere o `custom_fields` contra o padrão desses
+ * campos e recusa com 422, e uma categoria do Maps fora do padrão derrubaria a criação
+ * de todo contato da campanha. A leitura das definições só acontece quando há
+ * categoria, e é fail-open (`defsDoPadraoDaOrg` devolve lista vazia se falhar).
  */
-function linksParaContatoNovo(p: Candidate): Record<string, unknown> | undefined {
+async function camposDoContatoNovo(
+  admin: SupabaseClient,
+  org: string,
+  p: Candidate,
+): Promise<Record<string, unknown> | undefined> {
   try {
-    const campos = aplicarLinks({}, linksDoCandidato(p.data));
+    const chavesDaOrganizacao = p.data.category?.trim()
+      ? (await defsDoPadraoDaOrg(admin, org, "contato")).map((def) => def.key)
+      : [];
+    const campos = {
+      ...aplicarLinks({}, linksDoCandidato(p.data)),
+      ...segmentoDoContatoNovo(p.data.category, chavesDaOrganizacao),
+    };
     return Object.keys(campos).length > 0 ? campos : undefined;
   } catch (error) {
     logger.warn("[prospecting] mapeador de links falhou; o contato nasce sem links", {
@@ -955,11 +981,25 @@ export async function criarPegadaDoCandidato(
     title: p.data.name,
     owner_agent_id: config.agent_id,
     source: "prospecting",
+    // #4586 — AS MESMAS ETIQUETAS DO CONTATO VÃO PARA O CARD.
+    //
+    // A condição "Etiqueta do contato" do follow-up (tela em `lib/followup/vocabulario.ts`)
+    // lê `crm_leads.tags` — a etiqueta do CARD —, e `loadLeadFacts` do motor
+    // (`lib/followup/engine.ts`, `lib/followup/turn-bridge.ts`) confirma: é a lista do
+    // negócio, não `contacts.tags`. A campanha só etiquetava o CONTATO (logo abaixo, por
+    // `marcarEtiquetasDaCampanha`), então o par que a própria tela oferece com o nicho da
+    // campanha nunca casava: a pessoa montava o fluxo certo e ele nunca disparava.
+    //
+    // A saída é a da issue: a campanha também etiqueta o card. Nada muda no motor nem no
+    // significado de `crm_leads.tags`; o rótulo do vocabulário fica como está porque ele
+    // descreve o que o motor lê. `contact_tags` já chega normalizada (minúscula, sem
+    // repetida) pelo `campaignConfigSchema`; ausente/vazio cai no `[]` do schema.
+    tags: [...(config.contact_tags ?? [])],
     description: `Campanha: ${c.name}\nQualificação: ${config.qualification}`.slice(0, 2000),
   });
   let contactId = contatoDaCampanha ?? p.contact_id;
   if (!contactId) {
-    const linksDoNovo = linksParaContatoNovo(p);
+    const linksDoNovo = await camposDoContatoNovo(admin, org, p);
     // Porta `prospeccao`: a conversa abre logo abaixo, no canal da CAMPANHA. Pela
     // porta `manual` o cadastro abria antes outra, no telefone mais antigo da
     // organização, e cada empresa abordada aparecia duas vezes na caixa.
