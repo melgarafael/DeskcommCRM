@@ -20,15 +20,8 @@ import { AppShell } from "@/app/app/_components/AppShell";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { validarCssPersonalizado } from "@/lib/branding/css-personalizado";
 import { GRUPO_NO_RODAPE, NAV_GROUPS } from "@/lib/navigation/catalogo";
-import {
-  classeDaSecao,
-  classeDoGrupo,
-  classeDoItem,
-} from "@/lib/navigation/classes-estaveis";
-import {
-  CLASSES_DE_SECAO,
-  CLASSES_DE_SECAO_CONHECIDAS,
-} from "@/lib/navigation/secoes-da-tela";
+import { classeDaSecao, classeDoGrupo, classeDoItem } from "@/lib/navigation/classes-estaveis";
+import { CLASSES_DE_SECAO, CLASSES_DE_SECAO_CONHECIDAS } from "@/lib/navigation/secoes-da-tela";
 import { ProvedorDaOcupacaoDoRodape } from "@/lib/ui/rodape-ocupado";
 
 /** A rota que a casca "vê" agora — trocada no caso (b), sem remontar a árvore. */
@@ -153,7 +146,9 @@ describe("o conteúdo diz em que seção a pessoa está", () => {
   });
 
   it("(c) o validador aceita a classe de seção e recusa a que não existe", () => {
-    const aceita = validarCssPersonalizado(".tela-secao-crm .rounded-lg { border-top-color: #1d4ed8; }");
+    const aceita = validarCssPersonalizado(
+      ".tela-secao-crm .rounded-lg { border-top-color: #1d4ed8; }",
+    );
     expect(aceita.erro).toBeNull();
     expect(aceita.css).toContain(":root:root .tela-secao-crm .rounded-lg");
 
@@ -169,8 +164,12 @@ describe("o conteúdo diz em que seção a pessoa está", () => {
     // A classe comum e a do menu continuam aceitas — o validador só passou a
     // conhecer a família `tela-secao-*`; o resto do catálogo de classes do app
     // (`.card`, utilitárias) segue como sempre foi.
-    expect(validarCssPersonalizado(".tela-secao .card { background-color: #10261a; }").erro).toBeNull();
-    expect(validarCssPersonalizado(".nav-grupo-crm .rounded-md:hover { color: #52645a; }").erro).toBeNull();
+    expect(
+      validarCssPersonalizado(".tela-secao .card { background-color: #10261a; }").erro,
+    ).toBeNull();
+    expect(
+      validarCssPersonalizado(".nav-grupo-crm .rounded-md:hover { color: #52645a; }").erro,
+    ).toBeNull();
     expect(validarCssPersonalizado(".tela-inbox { color: #1d4ed8; }").erro).toBeNull();
   });
 
