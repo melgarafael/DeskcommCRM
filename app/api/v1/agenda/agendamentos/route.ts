@@ -502,7 +502,11 @@ async function despachar<T>(
     ((parsed.data as { status?: unknown }).status === "completed" ||
       (parsed.data as { status?: unknown }).status === "no_show");
   if (authz.via === "token" && pedeDesfecho && !tokenTemEscopoDoComparecimento(authz.scopes)) {
-    return fail("forbidden_role", t(RECUSA_DO_COMPARECIMENTO), 403, { requestId });
+    // Sem `t()`: a frase é a MESMA que o handler e a ferramenta devolvem, e
+    // `t()` sobre chave montada em runtime sai em português de qualquer jeito
+    // (`i18n-espanhol-cobre-a-tela` proíbe a forma). Traduzir de verdade pede
+    // a frase no dicionário, como qualquer outra mensagem de erro.
+    return fail("forbidden_role", RECUSA_DO_COMPARECIMENTO, 403, { requestId });
   }
 
   try {
