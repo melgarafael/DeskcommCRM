@@ -2888,6 +2888,11 @@ export const DICIONARIO: Traducoes = {
   },
   "Buscar por nome…": { es: "Buscar por nombre…" },
   "Buscar agentes": { es: "Buscar agentes" },
+  // ─── Busca nas listas de Follow-ups e de Funis (#4593) ───
+  "Buscar fluxos": { es: "Buscar flujos" },
+  "Nenhum fluxo corresponde aos filtros atuais.": { es: "Ningún flujo coincide con los filtros actuales." },
+  "Buscar funis": { es: "Buscar embudos" },
+  "Nenhum funil corresponde à busca.": { es: "Ningún embudo coincide con la búsqueda." },
   "Filtrar por status": { es: "Filtrar por estado" },
   Status: { es: "Estado" },
   status: { es: "estado" },
