@@ -623,6 +623,10 @@ const ENSINO_POR_CODIGO: Record<string, string> = {
     "esse atendimento ainda não tem responsável definido. Não invente horários: avise que alguém da equipe confirma.",
   agenda_disponibilidade_invalida:
     "não consigo ler a agenda desse atendente agora. Não ofereça horários e não diga que está sem vaga — avise que alguém da equipe confirma.",
+  agenda_autoridade_externa:
+    "esse compromisso é gerido em outro sistema da equipe e não se muda por aqui. Não tente de novo: avise que alguém da equipe confirma.",
+  agenda_tipo_de_sistema_externo:
+    "esse atendimento é marcado pela equipe em outro sistema. Não ofereça horários: avise que alguém da equipe confirma.",
   agenda_ja_cancelado:
     "esse compromisso já estava desmarcado. Não é erro: siga sem desmarcar de novo.",
   agenda_ainda_nao_aconteceu:
