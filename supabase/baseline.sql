@@ -83029,8 +83029,8 @@ comment on column public.channel_sessions.zernio_webhook_id is
 comment on column public.channel_sessions.zernio_credencial_da_instalacao is
   'true = a sessão fala com o provedor pela chave da INSTALAÇÃO (platform_config), resolvida na hora; zernio_token_encrypted fica nulo. false = chave própria da organização, cifrada em zernio_token_encrypted. Migration 9093.';
 
--- ---- a CONEXÃO decide se a conversa nova cria negócio (migration 9394) ----
--- Espelho da 9394 (issue #4670); o porquê inteiro está no cabeçalho da migration.
+-- ---- a CONEXÃO decide se a conversa nova cria negócio (migration 9395) ----
+-- Espelho da 9395 (issue #4670); o porquê inteiro está no cabeçalho da migration.
 -- Coluna, e não `metadata`: a leitura acontece uma vez por card que nasce, no
 -- caminho quente da ingestão, e a ausência de chave em jsonb teria de significar
 -- LIGADO — o oposto da chave vizinha (`guardar_historico`, #999), que é a razão
