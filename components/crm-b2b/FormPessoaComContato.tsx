@@ -70,7 +70,10 @@ export function FormPessoaComContato({
         const json = await res.json().catch(() => null);
         // A frase útil ("Telefone deve ter DDD + número…") vem em `issues`; `message` é o genérico.
         const campo = json?.error?.details?.issues?.[0]?.message as string | undefined;
-        setErro(campo || json?.error?.message || t("Não foi possível salvar."));
+        // O servidor responde em português; `t()` traduz a frase que o dicionário
+        // conhece ("E-mail inválido." → "Correo inválido.") e devolve as outras como vieram.
+        const doServidor = campo || json?.error?.message;
+        setErro(doServidor ? t(doServidor) : t("Não foi possível salvar."));
         return;
       }
       onSalvo();
