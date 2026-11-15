@@ -4702,6 +4702,7 @@ export type Database = {
       catalog_products: {
         Row: {
           ativo: boolean;
+          capacidade: string | null;
           categoria: string | null;
           codigo: string;
           controla_estoque: boolean;
@@ -4723,6 +4724,7 @@ export type Database = {
         ComputedFields: never;
         Insert: {
           ativo?: boolean;
+          capacidade?: string | null;
           categoria?: string | null;
           codigo: string;
           controla_estoque?: boolean;
@@ -4743,6 +4745,7 @@ export type Database = {
         };
         Update: {
           ativo?: boolean;
+          capacidade?: string | null;
           categoria?: string | null;
           codigo?: string;
           controla_estoque?: boolean;
@@ -6133,6 +6136,7 @@ export type Database = {
           name_lookup_at: string | null;
           organization_id: string;
           person_id: string | null;
+          phone_label: string | null;
           phone_lookup_at: string | null;
           phone_number: string | null;
           phone_type: string | null;
@@ -6195,6 +6199,7 @@ export type Database = {
           name_lookup_at?: string | null;
           organization_id: string;
           person_id?: string | null;
+          phone_label?: string | null;
           phone_lookup_at?: string | null;
           phone_number?: string | null;
           phone_type?: string | null;
@@ -6256,6 +6261,7 @@ export type Database = {
           name_lookup_at?: string | null;
           organization_id?: string;
           person_id?: string | null;
+          phone_label?: string | null;
           phone_lookup_at?: string | null;
           phone_number?: string | null;
           phone_type?: string | null;
@@ -13140,6 +13146,7 @@ export type Database = {
           id: string;
           organization_id: string;
           p256dh: string;
+          tipos_calados: string[];
           updated_at: string;
           user_id: string;
         };
@@ -13151,6 +13158,7 @@ export type Database = {
           id?: string;
           organization_id: string;
           p256dh: string;
+          tipos_calados?: string[];
           updated_at?: string;
           user_id: string;
         };
@@ -13161,6 +13169,7 @@ export type Database = {
           id?: string;
           organization_id?: string;
           p256dh?: string;
+          tipos_calados?: string[];
           updated_at?: string;
           user_id?: string;
         };
@@ -15096,6 +15105,33 @@ export type Database = {
         Returns: Json;
       };
 
+      fn_enqueue_historico_analise: {
+        Args: { p_importacao: string; p_limite: number; p_org: string };
+        Returns: number;
+      };
+      fn_historico_analise_candidatos: {
+        Args: { p_importacao: string; p_org: string };
+        Returns: {
+          caracteres: number;
+          contact_id: string;
+          conversation_id: string;
+          job_status: string;
+          motivo: string;
+          ultima_mensagem_em: string;
+        }[];
+      };
+      fn_historico_analise_motivo_para_pular: {
+        Args: { p_contato: string; p_importacao: string; p_org: string };
+        Returns: string;
+      };
+      fn_previa_historico_analise: {
+        Args: { p_importacao: string; p_limite: number; p_org: string };
+        Returns: Json;
+      };
+      fn_resumo_historico_analise: {
+        Args: { p_importacao: string; p_org: string };
+        Returns: Json;
+      };
       activate_kb_version: {
         Args: { p_agent_id: string; p_version_id: string };
         Returns: undefined;

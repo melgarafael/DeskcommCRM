@@ -375,6 +375,11 @@ export function applyPreviewPolicy(
         'get_lead_context',
         'get_lead_note',
         'search_knowledge',
+        // #4572 — o irmão do `search_knowledge` no modo `leitura_direta`: só
+        // leitura, escopado pela organização no closure. Fora daqui ele virava
+        // `unknown_preview_tool`, e o Testar dizia "preciso verificar" sobre o
+        // que a produção lê e responde.
+        'ler_documento',
         'read_skill_reference',
       ].includes(name);
       const catalog = getToolByName(name);

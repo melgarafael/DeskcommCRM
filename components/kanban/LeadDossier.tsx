@@ -14,6 +14,8 @@ import type { Lead } from "@/lib/types/leads";
 import type { Stage } from "@/lib/kanban/types";
 import { ArrowLeft, ArrowsOutSimple } from "@/lib/ui/icons";
 import { ContatoDoNegocio } from "./ContatoDoNegocio";
+import { NiveisDaOrigem } from "@/components/contacts/NiveisDaOrigem";
+import { origemDoContato } from "@/lib/leads/origem-do-contato";
 import { AtalhosDoNegocio } from "./AtalhosDoCard";
 import { ConversaNoDossie } from "./ConversaNoDossie";
 import { ConversasDosNumeros } from "./ConversasDosNumeros";
@@ -164,6 +166,7 @@ export function LeadDossier({
 }: Props) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
+  const origem = origemDoContato(lead.source_metadata, lead.source);
   // Sem prop, nenhum botão: quem abre o dossiê TEM o funil em mão (o quadro, a
   // lista e o calendário passam `atalhos`) e é de lá que sai o `settings`. Ler
   // o cache do react-query aqui dentro custaria um `QueryClientProvider`
@@ -275,6 +278,7 @@ export function LeadDossier({
         ownerKind={owner.kind}
         ownerName={owner.name}
         agentVersion={owner.agentVersion}
+        foraDaEquipe={owner.foraDaEquipe}
       />
       {score && (
         // O MESMO componente do card, não uma cópia do medidor.
@@ -378,6 +382,15 @@ export function LeadDossier({
       recolhida={fechadas.has("dados-do-negocio")}
       aoAlternar={alternar}
     >
+      {origem.googleAds && (
+        <dl className="mb-4 grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <dt className="text-xs uppercase text-muted-foreground">{t("Origem")}</dt>
+            <dd className="mt-1">{t("Google Ads")}</dd>
+          </div>
+          <NiveisDaOrigem origem={origem} />
+        </dl>
+      )}
       <div ref={campos}>
         {/* ⚠️ A REVISÃO FICA AQUI, dentro do card, e é esta linha que o
             mantenedor cobrou no #3415: a fila existia como API e não tinha

@@ -436,7 +436,15 @@ export function ConversationHeader({
             recebida, a resposta vai para o número por onde ela chegou; nos outros
             segue pelo principal, e a linha não aparece. */}
         {endereco?.has_extras && c?.phone_number && endereco.follows_last_inbound && endereco.phone_number && (
-          <p className="mt-0.5 min-w-0 truncate text-xs text-muted-foreground max-md:hidden" data-testid="resposta-sai-por">
+          // O `truncate` corta o número na largura de 768 px com o menu aberto
+          // (#4242, item 3), e a linha existe justamente para dizer o número
+          // inteiro: o `title` é onde ele continua legível quando o corte
+          // acontece.
+          <p
+            className="mt-0.5 min-w-0 truncate text-xs text-muted-foreground max-md:hidden"
+            data-testid="resposta-sai-por"
+            title={`${t("A resposta sai por:")} ${phoneForDisplay(endereco.phone_number)}`}
+          >
             {t("A resposta sai por:")} {phoneForDisplay(endereco.phone_number)}
           </p>
         )}
