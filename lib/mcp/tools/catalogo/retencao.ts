@@ -131,7 +131,7 @@ export const TOOLS_RETENCAO = declararTools([
     category: "write",
     rotulo: "Registrar o diagnóstico da empresa",
     explicacao:
-      "Grava na ficha do contato o segmento, o CNPJ, o diagnóstico da empresa e a oferta sugerida, com o selo Escrito pela IA. Não mexe nas observações da equipe nem nos outros campos da ficha, e a equipe revisa o texto na aba Diagnóstico.",
+      "Grava na ficha do contato o segmento, o CNPJ, o diagnóstico da empresa e a oferta sugerida, com o selo Escrito pela IA. Depois que alguém da equipe escreve o diagnóstico ou a oferta na aba Diagnóstico, a IA não troca mais o que está lá. Não mexe nas observações da equipe nem nos outros campos da ficha.",
     oQueToca: "Cadastro de clientes",
     // `atencao`: muda a ficha, mas nada sai para o cliente, o texto fica à
     // vista com o selo e a equipe desfaz editando a aba.

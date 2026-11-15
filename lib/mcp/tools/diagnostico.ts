@@ -164,10 +164,12 @@ const RECUSAS = {
     "este contato foi marcado como pessoal — ele está fora da operação e nada se escreve para ele.",
   nada_para_gravar: "informe ao menos um campo: segmento, cnpj, resumo ou oferta.",
   campo_da_organizacao:
-    "esses campos são da própria empresa (configurados por ela) e não são preenchidos por esta ferramenta.",
+    "esses campos foram configurados pela equipe desta conta e esta ferramenta não os preenche; nada foi gravado.",
   escrito_pela_equipe:
-    "o diagnóstico desta ficha foi escrito por uma pessoa da equipe e não é sobrescrito; nada foi gravado.",
-  indisponivel: "não foi possível conferir os campos da empresa agora; nada foi gravado. Tente de novo mais tarde.",
+    "o diagnóstico desta ficha foi escrito por uma pessoa da equipe e fica como está; nada foi gravado. " +
+    "Não tente gravar de novo.",
+  indisponivel:
+    "não foi possível conferir os campos configurados nesta conta agora; nada foi gravado. Tente de novo mais tarde.",
 } as const;
 
 function recusa(motivo: keyof typeof RECUSAS, extra: Record<string, unknown> = {}) {
@@ -177,10 +179,11 @@ function recusa(motivo: keyof typeof RECUSAS, extra: Record<string, unknown> = {
 export const crmSaveLeadDiagnosis: McpToolDefinition<typeof diagnosticoShape> = {
   name: "crm_save_lead_diagnosis",
   description:
-    "Grava na ficha do contato o diagnóstico da empresa: segmento, CNPJ, resumo (o que ela faz e onde " +
-    "perde venda) e oferta sugerida. Grava direto, com o selo Escrito pela IA; a equipe revisa na aba " +
-    "Diagnóstico. Só mude o campo que você concluiu; os outros ficam como estão. Não use para dados " +
-    "pessoais do cliente nem para repetir o que ele disse.",
+    "Grava na ficha do contato desta conversa o que você concluiu sobre a empresa (pelo site, pelas " +
+    "redes ou pela conversa): segmento, CNPJ, resumo (o que ela faz e onde perde venda) e oferta " +
+    "sugerida. Grava direto, com o selo Escrito pela IA; a equipe revisa na aba Diagnóstico. Mande só " +
+    "os campos que você concluiu; os outros não mudam. Não use para dados pessoais do cliente (nome, " +
+    "telefone, e-mail) nem para copiar a fala dele: grave a sua conclusão.",
   inputSchema: diagnosticoShape,
   category: "write",
   // Paridade com `PATCH /api/v1/contacts/:id` (`requireRole("agent")`): editar
@@ -268,8 +271,13 @@ export const crmSaveLeadDiagnosis: McpToolDefinition<typeof diagnosticoShape> = 
       ...(plano.preservados.length > 0 ? { preservados: plano.preservados } : {}),
       ...(plano.daEquipe.length > 0 ? { preservados_pela_equipe: plano.daEquipe } : {}),
       escrito_pela_ia: plano.escritoPelaIA,
+      // Gravação parcial não pode soar como total: sem a frase do meio, o modelo
+      // lê "gravado" e acha que o resumo preservado pela equipe é o dele.
       mensagem:
-        "diagnóstico gravado na ficha do contato; a equipe revisa na aba Diagnóstico. " +
+        "os campos listados em campos foram gravados na ficha do contato; a equipe revisa na aba Diagnóstico. " +
+        (plano.preservados.length > 0
+          ? "Os campos listados em preservados ficaram como estavam; não tente gravá-los de novo. "
+          : "") +
         "Não repita este texto ao cliente.",
     };
   },
