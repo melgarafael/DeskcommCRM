@@ -70,10 +70,15 @@ export function FormPessoaComContato({
         const json = await res.json().catch(() => null);
         // A frase útil ("Telefone deve ter DDD + número…") vem em `issues`; `message` é o genérico.
         const campo = json?.error?.details?.issues?.[0]?.message as string | undefined;
-        // O servidor responde em português; `t()` traduz a frase que o dicionário
-        // conhece ("E-mail inválido." → "Correo inválido.") e devolve as outras como vieram.
+        // O servidor responde em português. As duas frases que este formulário
+        // provoca de verdade (e-mail inválido, telefone repetido) saem traduzidas,
+        // cada uma com o seu literal — t() não recebe chave montada em runtime.
         const doServidor = campo || json?.error?.message;
-        setErro(doServidor ? t(doServidor) : t("Não foi possível salvar."));
+        const traduzidas: Record<string, string> = {
+          "E-mail inválido.": t("E-mail inválido."),
+          "Já existe um contato com este telefone.": t("Já existe um contato com este telefone."),
+        };
+        setErro(doServidor ? (traduzidas[doServidor] ?? doServidor) : t("Não foi possível salvar."));
         return;
       }
       onSalvo();
