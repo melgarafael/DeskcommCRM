@@ -209,8 +209,8 @@ export async function importarTabelaDeValores(
       linhas_recusadas: number;
     }>(
       "select linhas_lidas, linhas_aceitas, linhas_recusadas from tabela_de_valores_importacoes " +
-        "where tabela_id=$1 and chave_do_arquivo=$2",
-      [tabelaId, dados.chave_do_arquivo],
+        "where organization_id=$1 and tabela_id=$2 and chave_do_arquivo=$3",
+      [org, tabelaId, dados.chave_do_arquivo],
     );
     if (anterior.rows[0]) {
       await db.query("commit");

@@ -271,6 +271,8 @@ describe("tabela de valores — a equipe lê, só o servidor grava (RLS por JWT)
       `update public.tabela_de_valores_itens set valor_brl_limite_cents = 1 where organization_id = '${GOV_ORG}';`,
       `delete from public.tabela_de_valores_itens where organization_id = '${GOV_ORG}';`,
       `delete from public.tabelas_de_valores where organization_id = '${GOV_ORG}';`,
+      `insert into public.tabela_de_valores_importacoes (organization_id, tabela_id, chave_do_arquivo) values ('${GOV_ORG}', gen_random_uuid(), 'pelo navegador');`,
+      `delete from public.tabela_de_valores_importacoes where organization_id = '${GOV_ORG}';`,
     ];
     for (const comando of comandos) expect(recusaAoMembro(comando), comando).toMatch(/permission denied/);
   });

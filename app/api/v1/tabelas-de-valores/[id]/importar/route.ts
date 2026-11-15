@@ -6,6 +6,7 @@ import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { fail, ok } from "@/lib/api/wrappers";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { audit } from "@/lib/audit";
+import { logger } from "@/lib/logger";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import {
@@ -117,9 +118,10 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   if ("erro" in leitura) return fail("validation_failed", t(leitura.erro), 422, { requestId, headers });
 
   const chave = chaveDoArquivo(bytes);
-  // A CLASSIFICAÇÃO ACONTECE ANTES DE QUALQUER ESCRITA, e de novo dentro da
-  // transação da importação: entre a prévia e o clique podem ter mudado os
-  // códigos da tabela. Quem responde as duas perguntas é a mesma prévia.
+  // A CLASSIFICAÇÃO ACONTECE ANTES DE QUALQUER ESCRITA, e a prévia e a
+  // confirmação usam a mesma. Entre a prévia e o clique os códigos da tabela
+  // podem ter mudado: a gravação não reclassifica, e quem segura o código que
+  // entrou nesse meio-tempo é o `on conflict do nothing` (conta em `ja_existe`).
   const previa = await previaDaPlanilha(pool, org, tabelaId, leitura, chave);
   const recusadas = previa.fora.slice(0, MAX_RECUSADAS_NA_RESPOSTA);
   const somentePrevia = form.get("somente_previa") === "true";
@@ -214,7 +216,13 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       },
       { requestId, headers },
     );
-  } catch {
+  } catch (erro) {
+    logger.error("[tabela-de-valores] importação falhou", {
+      organizationId: org,
+      tabelaId,
+      requestId,
+      erro: erro instanceof Error ? erro.message : String(erro),
+    });
     return fail(
       "internal_error",
       t("Não foi possível importar a planilha. Tente novamente."),
