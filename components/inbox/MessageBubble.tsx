@@ -661,7 +661,15 @@ export function MessageBubble({
                 ? t("Mensagem ocultada no CRM")
                 : citada.type === "contact"
                 ? resolveSharedContact(citada)?.name || t("Contato")
-                : citada.body?.trim() ? <TextoComLinks texto={citada.body.trim()} /> : t("(sem texto)")}
+                : citada.body?.trim()
+                ? // Link dentro do <button> da citação é HTML inválido (controle
+                  // interativo aninhado): o clique no endereço também dispararia
+                  // o "ir para a original". Quando a citação é botão, o endereço
+                  // sai como texto; quando não há para onde ir, continua link (#4582).
+                  onIrParaCitada
+                  ? citada.body.trim()
+                  : <TextoComLinks texto={citada.body.trim()} />
+                : t("(sem texto)")}
             </span>
           </CitacaoDaBolha>
         )}
