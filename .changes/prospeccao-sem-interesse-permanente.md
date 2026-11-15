@@ -5,9 +5,13 @@ titulo: Quem responde "não tenho interesse" à prospecção não volta a ser ab
 ---
 
 Quando alguém responde "não tenho interesse" a uma mensagem de prospecção, o CRM
-registra na ficha do contato uma recusa de ofertas e encerra como perdido o negócio
-aberto da prospecção. A partir daí o contato fica de fora das próximas prospecções
-e das campanhas. A ficha ganhou o botão "Marcar sem interesse", para quando o "não"
-chegar por outro caminho, e a aba LGPD mostra a recusa e permite desfazê-la (só
-administradores). O contato não fica bloqueado: a conversa continua aberta para a
-equipe responder. Fora da prospecção, a mesma frase não registra nada.
+registra na ficha do contato uma recusa de ofertas, fecha como perdido o negócio
+aberto da prospecção e encerra o follow-up daquela conversa. A partir daí o contato
+fica de fora das próximas prospecções e das campanhas. Frases de quem ainda está
+escolhendo, como "não tenho interesse no plano mensal, quero o anual", não contam como
+recusa. A ficha do contato e o painel lateral da conversa ganharam o botão "Marcar sem
+interesse", para quando o "não" chegar de outro jeito; a aba LGPD da ficha mostra a
+recusa e permite desfazê-la (só administradores). O contato não fica bloqueado: a
+equipe continua respondendo na mesma conversa, e se ele voltar a escrever horas depois
+querendo comprar, um negócio novo é aberto como sempre. Fora da prospecção, a mesma
+frase não registra nada.
