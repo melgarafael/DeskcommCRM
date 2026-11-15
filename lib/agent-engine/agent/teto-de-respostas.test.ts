@@ -515,7 +515,8 @@ describe("ao bater o teto, a equipe é avisada uma vez por conversa", () => {
         title: TITULO_DO_AVISO_DO_TETO_DE_RESPOSTAS,
       },
     ]);
-    const [{ sql, params }] = c.consultas;
+    expect(c.consultas).toHaveLength(1);
+    const { sql, params } = c.consultas[0]!;
     expect(sql).toMatch(/where not exists/);
     // $8 (casa a ref) e $9 (casa o título) ligados = `kind_ref_e_titulo`.
     expect(params.slice(7)).toEqual([true, true]);
