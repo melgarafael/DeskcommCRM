@@ -8,7 +8,7 @@ export async function prospectingConversationContext(
   conversationId: string,
 ) {
   const { rows } = await db.query<{ config: unknown; exit_offered_at: Date | null }>(
-    "select c.config, p.exit_offered_at from prospecting_candidates p join prospecting_campaigns c on c.organization_id=p.organization_id and c.id=p.campaign_id where p.organization_id=$1 and p.conversation_id=$2 and p.status in ('sending','sent') limit 1",
+    "select c.config, p.exit_offered_at from prospecting_candidates p join prospecting_campaigns c on c.organization_id=p.organization_id and c.id=p.campaign_id where p.organization_id=$1 and p.conversation_id=$2 and p.status in ('sending','sent') order by p.attempted_at desc nulls last limit 1",
     [org, conversationId],
   );
   const parsed = campaignConfigSchema.safeParse(rows[0]?.config);

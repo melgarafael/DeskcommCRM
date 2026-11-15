@@ -64,6 +64,8 @@ import { ListaDeLinks } from "@/components/contacts/ListaDeLinks";
 import { AcessosMcpDoContato } from "@/components/contacts/AcessosMcpDoContato";
 import { PessoaDoContato } from "@/components/crm-b2b/PessoaDoContato";
 import { linksParaExibir } from "@/lib/leads/links-de-contato";
+import { DiagnosticoDoContato } from "@/components/contacts/DiagnosticoDoContato";
+import { podeEditarDiagnostico } from "@/lib/contacts/diagnostico-do-contato";
 
 interface Props {
   contactId: string;
@@ -422,6 +424,7 @@ export function ContactDetailClient({
         <TabsList>
           <TabsTrigger value="overview">{t("Visão geral")}</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
+          <TabsTrigger value="diagnostico">{t("Diagnóstico")}</TabsTrigger>
           {isAdmin && <TabsTrigger value="lgpd">LGPD</TabsTrigger>}
         </TabsList>
 
@@ -622,6 +625,18 @@ export function ContactDetailClient({
 
         <TabsContent value="timeline" className="mt-4">
           <TimelineView contactId={contactId} />
+        </TabsContent>
+
+        {/* Os dados da EMPRESA que a prospecção usa (segmento, CNPJ, links,
+            diagnóstico e oferta). Lidos e gravados só pelo esquema central,
+            lib/contacts/diagnostico-do-contato.ts. */}
+        <TabsContent value="diagnostico" className="mt-4">
+          <DiagnosticoDoContato
+            key={contact.updated_at}
+            contato={contact}
+            usuarioId={user.id}
+            podeEditar={podeEditarDiagnostico(contact, user, activeOrg?.role)}
+          />
         </TabsContent>
 
         {isAdmin && (
