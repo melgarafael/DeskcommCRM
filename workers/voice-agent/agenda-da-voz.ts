@@ -19,9 +19,10 @@
  * ⚠️ AUTORIZAÇÃO: os handlers são chamados DIRETO, sem passar pelo
  * `requiresRole`/`requiresScope` do MCP (`lib/mcp/types.ts`). Isso é de
  * propósito e é o desenho: numa ligação não existe token de API nem papel de
- * usuário — a autorização é ter entrado na fila do SIP e o agente estar
- * configurado para aquela organização (checado em `handleAudioSocketConnection`
- * antes de abrir a sessão paga). O caminho de TEXTO continua com a régua dele,
+ * usuário — a autorização é ter entrado na fila do SIP, o agente estar
+ * configurado para aquela organização e quem administra ter ligado
+ * `config.agenda_na_ligacao` (desligada de fábrica; tudo checado em
+ * `handleAudioSocketConnection` antes de abrir a sessão paga). O caminho de TEXTO continua com a régua dele,
  * intacta: nada aqui afrouxa o `guard` do MCP.
  */
 
