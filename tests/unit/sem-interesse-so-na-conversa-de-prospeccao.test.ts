@@ -29,6 +29,8 @@
  *   valendo para sempre, decisão 1B): os casos "fora da janela" ficam vermelhos.
  * - Tratar o adiamento como recusa em `pos-entrada.ts` (tirar o ramo `"adiamento"`):
  *   o bloco "adiamento" fica vermelho — o negócio vai para Perdido e a tarefa não nasce.
+ * - Tirar o `encerrarFollowupsDaProspeccao` do ramo do adiamento: o caso do follow-up
+ *   automático fica vermelho.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -86,6 +88,8 @@ interface Cena {
   erroNaAbordagem: boolean;
   responsavel: string | null;
   tarefaAberta: boolean;
+  /** Inscrições vivas de follow-up do contato: uma da prospecção, uma de atendimento. */
+  inscricoes: Array<{ id: string; status: string; current_node_id: null; conversation_id: string }>;
 }
 
 let cena: Cena;
@@ -94,15 +98,23 @@ let filtrosDeLeads: Array<[string, unknown]>;
 /** As tabelas que receberam UPDATE (o follow-up encerrado aparece aqui). */
 let tabelasAtualizadas: string[];
 let filtrosDaAbordagem: Array<[string, unknown]>;
+/** Os ids de `followup_enrollments` que receberam o UPDATE de encerramento. */
+let inscricoesEncerradas: string[];
 /** Os filtros `.eq` de CADA leitura de `conversations`. */
 let leiturasDaConversa: Array<Array<[string, unknown]>>;
 
 /** Builder encadeável do PostgREST: o efeito acontece no `await` ou no `maybeSingle`. */
 function consulta(tabela: string) {
   let patch: Record<string, unknown> | null = null;
+  let idFiltrado: unknown = null;
+  let lista = false;
   const resposta = (): { data: unknown; error: null } => {
     if (patch) {
       tabelasAtualizadas.push(tabela);
+      if (tabela === "followup_enrollments") {
+        inscricoesEncerradas.push(String(idFiltrado));
+        return { data: [{ id: idFiltrado }], error: null };
+      }
       if (tabela === "contacts") {
         updatesDeContato.push(patch);
         if (patch.consent) cena.consent = patch.consent as Record<string, unknown>;
@@ -111,6 +123,10 @@ function consulta(tabela: string) {
       }
       return { data: null, error: null };
     }
+    // A conferência das OUTRAS conversas das inscrições (`.in("id", …)`): a de atendimento
+    // não tem a marca da prospecção.
+    if (tabela === "conversations" && lista)
+      return { data: [{ id: "conversa-atendimento", metadata: { origem: "inbox" } }], error: null };
     if (tabela === "conversations") return { data: { metadata: cena.metadataDaConversa }, error: null };
     if (tabela === "contacts")
       return { data: { id: "contato-1", consent: cena.consent, is_anonymized: false }, error: null };
@@ -120,7 +136,7 @@ function consulta(tabela: string) {
         ? ({ data: null, error: { message: "falhou" } } as never)
         : { data: cena.abordagens, error: null };
     if (tabela === "followup_enrollments")
-      return { data: [{ id: "inscricao-1", status: "active", current_node_id: null, conversation_id: "conversa-1" }], error: null };
+      return { data: cena.inscricoes, error: null };
     if (tabela === "crm_pipelines")
       return { data: [{ id: "funil-prospeccao", settings: cena.settingsDoFunil }], error: null };
     return { data: null, error: null };
@@ -134,6 +150,8 @@ function consulta(tabela: string) {
       if (tabela === "crm_leads" && m === "eq") filtrosDeLeads.push([args[0] as string, args[1]]);
       if (tabela === "conversations" && m === "eq") filtrosDaConversa.push([args[0] as string, args[1]]);
       if (tabela === "prospecting_candidates" && m === "eq") filtrosDaAbordagem.push([args[0] as string, args[1]]);
+      if (m === "eq" && args[0] === "id") idFiltrado = args[1];
+      if (m === "in" && args[0] === "id") lista = true;
       return encadeia();
     };
   }
@@ -141,6 +159,8 @@ function consulta(tabela: string) {
     patch = p;
     return q;
   };
+  // A linha da timeline do encerramento (`followup_enrollment_events`).
+  q.insert = () => q;
   q.maybeSingle = async () => resposta();
   q.single = async () => resposta();
   q.then = (resolve: (v: unknown) => void) => Promise.resolve(resposta()).then(resolve);
@@ -193,7 +213,12 @@ beforeEach(() => {
     erroNaAbordagem: false,
     responsavel: "vendedor-1",
     tarefaAberta: false,
+    inscricoes: [
+      { id: "inscricao-prospeccao", status: "active", current_node_id: null, conversation_id: "conversa-1" },
+      { id: "inscricao-atendimento", status: "active", current_node_id: null, conversation_id: "conversa-atendimento" },
+    ],
   };
+  inscricoesEncerradas = [];
   updatesDeContato = [];
   tabelasAtualizadas = [];
   filtrosDaAbordagem = [];
@@ -489,6 +514,14 @@ describe("2A · adiamento vira tarefa, não Perdido", () => {
     await rodar({ texto: "Não tenho interesse agora, me chama mês que vem" });
     const responsavel = consultasDaPorta.find((c) => c.sql.includes("user_organizations"));
     expect(responsavel?.parametros.slice(0, 3)).toEqual(["org-1", "contato-1", "dono-do-lead"]);
+  });
+
+  it("encerra o follow-up AUTOMÁTICO da prospecção e mantém o negócio aberto; o de atendimento fica", async () => {
+    await rodar({ texto: "Não tenho interesse agora, me chama mês que vem" });
+    expect(inscricoesEncerradas, "o toque automático continuaria saindo").toContain("inscricao-prospeccao");
+    expect(inscricoesEncerradas, "encerrou acompanhamento de atendimento").not.toContain("inscricao-atendimento");
+    expect(encerraDemanda, "adiamento mandou o negócio para Perdido").not.toHaveBeenCalled();
+    expect(recusouMarketing(cena.consent)).toBe(false);
   });
 
   it("com tarefa aberta para o mesmo vendedor, não cria outra", async () => {

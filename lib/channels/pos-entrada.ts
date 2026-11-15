@@ -65,6 +65,7 @@ import {
   lerJanelaDaProspeccao,
 } from "@/lib/prospecting/resposta-da-prospeccao";
 import { portaDaAplicacao } from "@/lib/db";
+import { encerrarFollowupsDaProspeccao } from "@/lib/followup/encerrar-pela-recusa";
 import { ehContatoDoNumeroInterno } from "@/lib/escalacao/numero-interno-de-aviso";
 import { acelerarFollowupDoInbound, drenarEventosDoInbound } from "@/lib/dev/kick-local-pipeline";
 import { origemDoNegocioPeloCanal } from "@/lib/channels/origem-do-negocio";
@@ -715,7 +716,9 @@ async function ehContatoPessoal(admin: Admin, entrada: EntradaDeMensagem): Promi
  *
  * O ADIAMENTO ("não tenho interesse agora, me chama mês que vem", doc 360 · 2A) não é
  * recusa: nada vai para Perdido, o contato segue nas campanhas, e o vendedor ganha uma
- * tarefa para retomar.
+ * tarefa para retomar. O follow-up AUTOMÁTICO da prospecção morre pelo mesmo caminho da
+ * recusa (`encerrarFollowupsDaProspeccao`): quem pediu "me chama mês que vem" não recebe
+ * mais toques, e a retomada é do vendedor. O follow-up de atendimento fica.
  *
  * Não é o PARAR e não mexe em `is_blocked`: quem casa o PARAR já foi tratado no
  * passo 1, e aqui sai sem fazer nada. A consulta da conversa só roda quando a frase
@@ -776,9 +779,15 @@ async function aplicarSemInteresseDaProspeccao(admin: Admin, entrada: EntradaDeM
         atendenteDaConversa: conversa?.assigned_to_user_id ?? null,
         requestId: entrada.requestId ?? `adiamento:${entrada.conversationId}`,
       });
+      const followupsEncerrados = await encerrarFollowupsDaProspeccao(admin as unknown as SupabaseClient, {
+        organizationId: entrada.organizationId,
+        contactId: entrada.contactId,
+        conversationId: entrada.conversationId,
+      });
       const campos = {
         organization_id: entrada.organizationId,
         conversation_id: entrada.conversationId,
+        followups_encerrados: followupsEncerrados,
         ...(tarefa.criada ? { task_id: tarefa.tarefaId } : { motivo: tarefa.motivo }),
       };
       if (!tarefa.criada && tarefa.motivo === "falha")
