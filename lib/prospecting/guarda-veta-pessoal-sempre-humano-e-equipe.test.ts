@@ -4,15 +4,23 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * A GUARDA DA ABORDAGEM FRIA VETA FICHA PESSOAL, "SEMPRE HUMANO" E ETIQUETA
  * INTERNA OU DA EQUIPE — E A CAMPANHA SEGUE.
  *
- * Três brechas medidas na `main` antes deste conserto:
+ * Três brechas na `main` antes deste conserto:
  *
  *   (a) `contactMayBeProspected` não conferia `is_personal`, `ai_opt_out` nem as
- *       etiquetas, e a guarda nem as pedia no `select`;
- *   (b) o "sempre humano" recebia a mensagem: `autorizarContatoParaIA` devolve
- *       `{ok:true, autorizou:false}` e o worker só olhava `ok` (o caso mora em
+ *       etiquetas, e a guarda nem as pedia no `select`. Para as etiquetas
+ *       interna e da equipe, isso chegava ao cliente: a mensagem saía;
+ *   (b) o worker só olhava `ok` de `autorizarContatoParaIA`, que devolve
+ *       `{ok:true, autorizou:false}` com `ai_opt_out` (o caso mora em
  *       `tests/unit/prospecting-worker.test.ts`);
- *   (c) a ficha pessoal chegava ao 403 do handler de mensagens, que não é
- *       `ProspectingError`, e o tick PAUSAVA a campanha como "Falha inesperada".
+ *   (c) a ficha pessoal só era barrada pelo 403 do handler de mensagens, que
+ *       não é `ProspectingError` e PAUSARIA a campanha como "Falha inesperada".
+ *
+ * (b) e (c) são defesa em profundidade, não defeito que o produto alcançava:
+ * quem liga o "sempre humano" grava `force_human` junto
+ * (`contacts/[id]/always-human/route.ts`), e a guarda antiga já o vetava (com
+ * pausa); marcar a ficha como pessoal tira os candidatos `new`/`queued` da fila
+ * (`contacts/[id]/personal/route.ts`). Os estados de (b) e (c) abaixo são
+ * fabricados para provar a guarda nova sozinha.
  *
  * Aqui a guarda é a REAL, e o cliente falso devolve SÓ as colunas que a guarda
  * pediu no `select` — como a REST faz. Sem isso, um `select` que esquece a

@@ -13,7 +13,8 @@
  * colunas e as tabelas vêm do código da guarda, nunca do teste — transcrevê-las
  * aqui mediria o teste contra ele mesmo.
  *
- * SABOTAGEM (prevista, NÃO rodada: escrita sem Docker): voltar
+ * SABOTAGEM (prevista sem Docker; rodada na triagem da #4652 com
+ * `pnpm test:db` deste arquivo, e o resultado bateu): voltar
  * `COLUNAS_DO_CONTATO` (`lib/prospecting/guard.ts`) para
  * `is_blocked,force_human,is_anonymized,source,consent` derruba os 7 casos de
  * marca — 4 da guarda cheia e 3 da leitura antes da vaga, que usa a mesma
