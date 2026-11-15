@@ -97,6 +97,47 @@ describe("relatorios_operacao_diarios: isolamento entre organizações", () => {
     expect(out.split("\n").at(-1)).toBe("recusado");
   });
 
+  it("conversa NOVA é a que não tinha mensagem do cliente antes do dia; grupo e outra organização ficam de fora", () => {
+    const SESSAO = "c9395000-2222-4000-8000-000000000001";
+    const [K1, K2, K3] = ["1", "2", "3"].map((n) => `c9395000-3333-4000-8000-00000000000${n}`);
+    const [C1, C2, C3] = ["1", "2", "3"].map((n) => `c9395000-4444-4000-8000-00000000000${n}`);
+    sql(`
+      insert into channel_sessions (id, organization_id, waha_session_name, webhook_secret_encrypted)
+        values ('${SESSAO}', '${ORG_A}', 'relatorio-9395-a', '\\x00'::bytea);
+      insert into contacts (id, organization_id, display_name) values
+        ('${K1}','${ORG_A}','Antiga'), ('${K2}','${ORG_A}','Nova'), ('${K3}','${ORG_A}','Grupo');
+      insert into conversations (id, organization_id, contact_id, channel_session_id, status, channel, is_group) values
+        ('${C1}','${ORG_A}','${K1}','${SESSAO}','open','whatsapp',false),
+        ('${C2}','${ORG_A}','${K2}','${SESSAO}','open','instagram',false),
+        ('${C3}','${ORG_A}','${K3}','${SESSAO}','open','whatsapp',true);
+      insert into messages (organization_id, conversation_id, channel_session_id, contact_id, type, direction, status, sent_at) values
+        ('${ORG_A}','${C1}','${SESSAO}','${K1}','text','inbound','received','2026-11-13T10:00:00Z'),
+        ('${ORG_A}','${C1}','${SESSAO}','${K1}','text','inbound','received','2026-11-15T08:00:00Z'),
+        ('${ORG_A}','${C2}','${SESSAO}','${K2}','text','outbound','sent','2026-11-14T09:00:00Z'),
+        ('${ORG_A}','${C2}','${SESSAO}','${K2}','text','inbound','received','2026-11-15T09:00:00Z'),
+        ('${ORG_A}','${C2}','${SESSAO}','${K2}','text','inbound','received','2026-11-15T09:05:00Z'),
+        ('${ORG_A}','${C3}','${SESSAO}','${K3}','text','inbound','received','2026-11-15T09:00:00Z');
+    `);
+    const chamada = (org: string) =>
+      `select coalesce(string_agg(channel || ':' || entradas || ':' || nova, ',' order by channel), 'nenhuma') as r
+         from fn_operacao_conversas_com_entrada('${org}', '2026-11-14T22:00:00Z', '2026-11-15T22:00:00Z')`;
+    expect(sql(`${chamada(ORG_A)};`).split("\n").at(-1)).toBe("instagram:2:true,whatsapp:1:false");
+    // Pela sessão do gestor da OUTRA organização, a RLS não devolve nada.
+    const comoB = sql(`
+      set role authenticated;
+      select set_config('request.jwt.claims', '{"sub":"${MANAGER_B}"}', false);
+      ${chamada(ORG_A)};
+    `);
+    expect(comoB.split("\n").at(-1)).toBe("nenhuma");
+    // E pela sessão do gestor da PRÓPRIA organização (security invoker: a RLS deixa ver).
+    const comoA = sql(`
+      set role authenticated;
+      select set_config('request.jwt.claims', '{"sub":"${MANAGER_A}"}', false);
+      ${chamada(ORG_A)};
+    `);
+    expect(comoA.split("\n").at(-1)).toBe("instagram:2:true,whatsapp:1:false");
+  });
+
   it("a função das conversas com entrada não é alcançável pela anon key", () => {
     const out = sql(`
       select has_function_privilege('anon','public.fn_operacao_conversas_com_entrada(uuid,timestamptz,timestamptz,integer)','EXECUTE')::text

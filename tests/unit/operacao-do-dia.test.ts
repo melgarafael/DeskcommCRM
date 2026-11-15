@@ -343,6 +343,18 @@ describe("o texto do relatório", () => {
   });
 });
 
+describe("os filtros que vão para o PostgREST", () => {
+  it("etiquetas entram no literal de array COM aspas (espaço, vírgula e aspas não quebram o filtro)", async () => {
+    const { literalDeArray } = await import("@/lib/operacao/operacao-do-dia");
+    expect(literalDeArray(["reclamação", "projeto grande", 'a,"b"'])).toBe('{"reclamação","projeto grande","a,\\"b\\""}');
+  });
+
+  it("a busca de produtos filtra o jsonb com JSON (cs.[...]), não com literal de array", async () => {
+    const { FILTRO_DA_BUSCA_DE_PRODUTOS } = await import("@/lib/operacao/operacao-do-dia");
+    expect(JSON.stringify(FILTRO_DA_BUSCA_DE_PRODUTOS)).toBe('[{"tool_calls":[{"tool_name":"crm_search_products"}]}]');
+  });
+});
+
 describe("o conteúdo congelado, na volta", () => {
   it("só desenha a versão que conhece", () => {
     expect(lerConteudo(conteudo())).not.toBeNull();

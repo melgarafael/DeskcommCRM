@@ -55,6 +55,9 @@ export const TETO_POR_SECAO = 200;
 /** Quantas conversas com mensagem recebida no dia a contagem lê. */
 const TETO_DA_CONTAGEM = 5000;
 
+/** `tool_calls @> isto`: a execução teve pelo menos uma chamada da busca de produtos. */
+export const FILTRO_DA_BUSCA_DE_PRODUTOS = [{ tool_calls: [{ tool_name: FERRAMENTA_DE_PRODUTOS }] }];
+
 /** Uma mensagem `sending` há mais que isto está presa (a mesma régua de `recover-stuck-messages`). */
 const PRESA_APOS_MS = 5 * 60_000;
 
@@ -154,6 +157,16 @@ function exigir<T>(etapa: string, r: { data: unknown; error: { message: string }
   return (r.data ?? ([] as unknown)) as T;
 }
 
+/**
+ * O literal de array do Postgres com cada etiqueta entre aspas. O supabase-js
+ * junta um array por vírgula SEM aspas, e uma etiqueta configurada com espaço,
+ * vírgula ou chave quebraria o filtro (ou casaria outra coisa).
+ */
+export function literalDeArray(valores: readonly string[]): string {
+  const aspas = (v: string) => `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  return `{${valores.map(aspas).join(",")}}`;
+}
+
 function pedacos<T>(lista: readonly T[], tamanho = 200): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < lista.length; i += tamanho) out.push(lista.slice(i, i + tamanho));
@@ -241,7 +254,7 @@ export async function montarOperacaoDoDia(entrada: EntradaDaOperacao): Promise<O
       .select(COLUNAS_DA_CONVERSA)
       .eq("organization_id", orgId)
       .eq("is_group", false)
-      .overlaps("tags", tagsDaSecao)
+      .overlaps("tags", literalDeArray(tagsDaSecao))
       .gte("last_message_at", ini)
       .lte("created_at", fimIso)
       .order("last_message_at", { ascending: false })
@@ -264,7 +277,9 @@ export async function montarOperacaoDoDia(entrada: EntradaDaOperacao): Promise<O
       .not("conversation_id", "is", null)
       .gte("started_at", ini)
       .lt("started_at", fimIso)
-      .contains("tool_calls", [{ tool_calls: [{ tool_name: FERRAMENTA_DE_PRODUTOS }] }])
+      // JSON em TEXTO, de propósito: com um array o supabase-js monta o literal de
+      // ARRAY do Postgres (`cs.{...}`), e numa coluna jsonb o filtro não casaria nada.
+      .contains("tool_calls", JSON.stringify(FILTRO_DA_BUSCA_DE_PRODUTOS))
       .order("started_at", { ascending: true })
       .limit(TETO_POR_SECAO * 2),
   );
