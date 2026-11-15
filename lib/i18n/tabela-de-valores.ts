@@ -62,6 +62,10 @@ export const TEXTOS_TABELA_DE_VALORES = {
     en: "Invalid parameters.",
     es: "Parámetros inválidos.",
   },
+  "Criar tabela de valores exige a tela.": {
+    en: "Creating a value table requires the screen.",
+    es: "Crear una tabla de valores requiere la pantalla.",
+  },
   "Importar planilha exige a tela.": {
     en: "Importing a spreadsheet requires the screen.",
     es: "Importar una planilla requiere la pantalla.",

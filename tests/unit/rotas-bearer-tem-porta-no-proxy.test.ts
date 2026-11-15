@@ -35,7 +35,7 @@ export const SO_SESSAO_POR_DESENHO: Record<string, string> = {
   // tela, e o token `dsk_…` recusa a escrita com 403 logo no handler. A porta
   // que o agente vai usar é a ferramenta da fatia 2, com escopo próprio.
   "app/api/v1/tabelas-de-valores/route.ts":
-    "fatia 1 só de tela; o token leva 403 no handler e a leitura do agente vem por ferramenta própria",
+    "fatia 1 só de tela: a escrita recusa token com 403 no handler e a leitura fica atrás do proxy; a do agente vem por ferramenta própria",
   "app/api/v1/tabelas-de-valores/[id]/importar/route.ts":
     "importar planilha exige a tela (403 para token), como a importação de prospecção",
 };

@@ -66,6 +66,15 @@ export async function POST(req: NextRequest): Promise<Response> {
   const teto = await tetoDeEscritaDoToken(authz, "tabela_de_valores", requestId);
   if (teto) return teto;
   const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
+  // Como na importação de prospecção: criar tabela de valores é operação de
+  // tela. O `proxy.ts` já recusa o Bearer antes daqui (a rota não está em
+  // `PUBLIC_PATHS`); esta linha deixa a intenção escrita no handler e cobre o
+  // dia em que alguém abrir a porta sem lembrar do resto.
+  if (authz.via === "token")
+    return fail("forbidden", t("Criar tabela de valores exige a tela."), 403, {
+      requestId,
+      headers,
+    });
 
   let corpo: unknown;
   try {
