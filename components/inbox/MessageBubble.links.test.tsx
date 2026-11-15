@@ -14,6 +14,8 @@
  *   5. legenda de mídia              → o texto ao lado do anexo também linka;
  *   6. `<b>` no corpo                → sai como TEXTO, nunca como marcação
  *      (o link é criado por código; não há `dangerouslySetInnerHTML`).
+ *   7. citação clicável (#4575)      → o endereço citado sai como texto: link
+ *      dentro do <button> da citação é controle interativo aninhado.
  *
  * Sem provider de idioma o `t()` degrada para a chave (pt-BR).
  */
@@ -127,5 +129,26 @@ describe("MessageBubble — links no corpo (#4576)", () => {
     expect(container.querySelector("b")).toBeNull();
     expect(container.querySelector("script")).toBeNull();
     expect(screen.getByText(/<b>negrito<\/b> e <script>x<\/script>/)).toBeInTheDocument();
+  });
+
+  it("7. endereço na citação clicável sai como texto: link dentro do botão é controle aninhado", () => {
+    const url = "https://www.domtravel.com.br/orcamento";
+    const citada = msg({ id: "orig", body: `veja ${url}` });
+    const resposta = msg({ id: "m2", body: "ok", reply_to_message_id: "orig" });
+
+    const { unmount } = render(
+      <MessageBubble message={resposta} citada={citada} onIrParaCitada={() => {}} />,
+    );
+    const botao = screen.getByRole("button", { name: "Ir para a mensagem citada" });
+    expect(botao.querySelector("a")).toBeNull();
+    expect(botao).toHaveTextContent(url);
+    // O nome é a ação; o trecho citado chega ao leitor de tela como descrição.
+    expect(botao).toHaveAccessibleDescription(expect.stringContaining(url));
+    unmount();
+
+    // Sem para onde ir, a citação não é botão e o endereço continua link (#4582).
+    render(<MessageBubble message={resposta} citada={citada} />);
+    expect(screen.queryByRole("button", { name: "Ir para a mensagem citada" })).toBeNull();
+    expect(screen.getByRole("link", { name: url })).toHaveAttribute("href", url);
   });
 });

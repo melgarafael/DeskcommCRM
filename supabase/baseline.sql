@@ -76939,6 +76939,35 @@ create policy tenant_isolation_flywheel_judge_verdicts_select on public.flywheel
   for select to authenticated
   using (organization_id in (select public.fn_user_org_ids()));
 
+-- ---- o vínculo de clone do card só é gravado pelo servidor (migration 9389) ----
+-- Espelho de supabase/migrations/20261115075848_9389_chaves_de_clone_reservadas_ao_servidor.sql.
+-- `clonado_de`/`movido_para` de crm_leads.source_metadata passam a ser reservadas
+-- como a meta_capi_lead_birth_v1 (acima): a sessão (authenticated/anon) não cria
+-- card com elas nem muda o valor delas; service_role e security definer passam.
+-- Fica ANTES da cascata da 9243: o invariante `lgpd-alcanca-fichas-fundidas`
+-- compara o trecho que vai dela até a VARREDURA com a migration.
+create or replace function public.fn_guard_vinculo_de_clone_do_lead()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  if current_user in ('authenticated', 'anon')
+     and (case when tg_op = 'INSERT'
+               then coalesce(new.source_metadata ?| array['clonado_de', 'movido_para'], false)
+               else (new.source_metadata->'clonado_de') is distinct from (old.source_metadata->'clonado_de')
+                 or (new.source_metadata->'movido_para') is distinct from (old.source_metadata->'movido_para')
+          end) then
+    raise exception 'crm_lead_clone_link_reserved'
+      using errcode = '42501',
+            detail = 'source_metadata.clonado_de e source_metadata.movido_para são gravados só pelo servidor.';
+  end if;
+  return new;
+end;
+$$;
+revoke execute on function public.fn_guard_vinculo_de_clone_do_lead() from public, anon, authenticated;
+grant execute on function public.fn_guard_vinculo_de_clone_do_lead() to service_role;
+drop trigger if exists trg_guard_vinculo_de_clone_do_lead on public.crm_leads;
+create trigger trg_guard_vinculo_de_clone_do_lead before insert or update of source_metadata
+  on public.crm_leads for each row execute function public.fn_guard_vinculo_de_clone_do_lead();
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.
