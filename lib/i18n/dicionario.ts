@@ -16882,8 +16882,8 @@ export const DICIONARIO: Traducoes = {
   Segmento: { es: "Segmento" },
   "Oferta sugerida": { es: "Oferta sugerida" },
   "Observações da equipe": { es: "Observaciones del equipo" },
-  "Revise antes de usar. Quando você edita o diagnóstico ou a oferta, o selo da IA sai.": {
-    es: "Revisa antes de usar. Cuando editas el diagnóstico o la oferta, el sello de la IA desaparece.",
+  "Revise antes de usar. O selo da IA sai quando você salva uma mudança no diagnóstico ou na oferta.": {
+    es: "Revisa antes de usar. El sello de la IA desaparece cuando guardas un cambio en el diagnóstico o en la oferta.",
   },
   "O CNPJ digitado não é válido. Confira e salve de novo.": {
     es: "El CNPJ ingresado no es válido. Revísalo y guarda de nuevo.",

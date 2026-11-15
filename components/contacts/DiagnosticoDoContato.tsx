@@ -116,7 +116,7 @@ export function DiagnosticoDoContato({ contato, podeEditar, usuarioId }: Props) 
       {cabecalho}
       {daIA && (
         <p className="text-sm text-muted-foreground">
-          {t("Revise antes de usar. Quando você edita o diagnóstico ou a oferta, o selo da IA sai.")}
+          {t("Revise antes de usar. O selo da IA sai quando você salva uma mudança no diagnóstico ou na oferta.")}
         </p>
       )}
       <FormularioDoDiagnostico contato={contato} usuarioId={usuarioId} />
