@@ -12,6 +12,8 @@
  *
  * ─── SABOTAGEM ─────────────────────────────────────────────────────────────
  * - Tirar `!recusouOfertas` do gate do botão: o caso 3 acusa.
+ * - Voltar a escrever "Recusa registrada em" fora do teste de `declinedAt`: os dois
+ *   casos sem data acusam ("Recusa registrada em, pela equipe.").
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
@@ -151,6 +153,32 @@ describe("ficha · sem interesse", () => {
     const cartao = await screen.findByTestId("recusa-de-ofertas");
     expect(cartao).toHaveTextContent("pela equipe");
     expect(cartao).not.toHaveTextContent("na conversa da prospecção");
+  });
+
+  it("com data, o cartão diz quando: \"Recusa registrada em 14/11/2026, pela equipe.\"", async () => {
+    abrirFicha(consentComSemInteresse({}, { agora: "2026-11-14T12:00:00.000Z", origem: "ficha" })!);
+    await userEvent.click(screen.getByRole("tab", { name: "LGPD" }));
+    const cartao = await screen.findByTestId("recusa-de-ofertas");
+    expect(cartao).toHaveTextContent("Recusa registrada em 14/11/2026, pela equipe.");
+  });
+
+  it("sem data legível, a frase não quebra: \"Recusa registrada pela equipe.\"", async () => {
+    // `lerRecusaSemInteresse` devolve `declinedAt: null` quando a data gravada não se lê,
+    // e `recusaRegistrada` aceita `granted: false` sem data (ex.: PATCH por token de API).
+    abrirFicha({ marketing: { granted: false, motivo: "sem_interesse", origem: "ficha" } });
+    await userEvent.click(screen.getByRole("tab", { name: "LGPD" }));
+    const cartao = await screen.findByTestId("recusa-de-ofertas");
+    expect(cartao).toHaveTextContent("Recusa registrada pela equipe.");
+    expect(cartao).not.toHaveTextContent("Recusa registrada em");
+    expect(cartao).not.toHaveTextContent(", pela equipe");
+  });
+
+  it("sem data e vinda da prospecção: \"Recusa registrada na conversa da prospecção.\"", async () => {
+    abrirFicha({ marketing: { granted: false, declined_at: "data ruim", motivo: "sem_interesse", origem: "conversa_de_prospeccao" } });
+    await userEvent.click(screen.getByRole("tab", { name: "LGPD" }));
+    const cartao = await screen.findByTestId("recusa-de-ofertas");
+    expect(cartao).toHaveTextContent("Recusa registrada na conversa da prospecção.");
+    expect(cartao).not.toHaveTextContent("Recusa registrada em");
   });
 
   it("leitor (viewer) não vê o botão", () => {

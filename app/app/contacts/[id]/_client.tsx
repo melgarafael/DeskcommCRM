@@ -635,10 +635,11 @@ export function ContactDetailClient({
                 <div>
                   <h2 className="text-lg font-semibold">{t("Recusa de ofertas")}</h2>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {t("Recusa registrada em")}
-                    {recusaDeOfertas?.declinedAt &&
-                      ` ${format(new Date(recusaDeOfertas.declinedAt), "dd/MM/yyyy", { locale: localeDaData })}`}
-                    {", "}
+                    {/* Sem data legível (`declinedAt: null`), a frase perde o "em" e a vírgula:
+                        "Recusa registrada pela equipe.", nunca "Recusa registrada em, pela equipe." */}
+                    {recusaDeOfertas?.declinedAt
+                      ? `${t("Recusa registrada em")} ${format(new Date(recusaDeOfertas.declinedAt), "dd/MM/yyyy", { locale: localeDaData })}, `
+                      : `${t("Recusa registrada")} `}
                     {recusaDeOfertas?.origem === "conversa_de_prospeccao"
                       ? t("na conversa da prospecção")
                       : t("pela equipe")}
@@ -663,7 +664,7 @@ export function ContactDetailClient({
                       <AlertDialogHeader>
                         <AlertDialogTitle>{t("Desfazer a recusa de ofertas?")}</AlertDialogTitle>
                         <AlertDialogDescription>
-                          {t("O contato volta a poder entrar em prospecção e campanhas. O que a recusa encerrou não volta: o negócio continua em Perdido e o follow-up não recomeça. A ação fica registrada na auditoria em seu nome.")}
+                          {t("O contato volta a poder entrar em prospecção e campanhas. O que a recusa encerrou não volta: os negócios que ela levou para Perdido continuam lá e o follow-up não recomeça. A ação fica registrada na auditoria em seu nome.")}
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
