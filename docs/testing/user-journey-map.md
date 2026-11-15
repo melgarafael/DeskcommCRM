@@ -4335,6 +4335,21 @@ funções copiáveis com `credential_id` nulo — regra única em `lib/ai/molde-
 Não provado: que a primeira chamada de IA da empresa nova sai com a chave da instalação (o
 painel mostra modelo e origem, não faz chamada paga).
 
+## J68 — Capacidade do produto, ligada por empresa `[P1]` (2026-11-06)
+
+Recorte do #3472 (commit `44cac90dd`, de @adsinside, publicado por @igornewmedia). O relato de
+prova do fork é contexto: as capturas dele mostram o campo `cor`, que a main não tem, e por isso
+não entram aqui. Quem liga é a empresa, em `/app/settings/tenant`, cartão Catálogo.
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J68.1 | Chave desligada, o padrão | sem campo ao criar e editar, sem o valor na lista; POST e PATCH com capacidade dão 422 | **PASS (unit)** — `tests/unit/catalogo-edicao-do-produto.test.tsx`, `app/api/v1/products/route.test.ts`, `app/api/v1/products/[id]/route.test.ts`. Tela: **NÃO MEDIDO** |
+| J68.2 | Ligar no cartão Catálogo | grava `settings.catalogo.capacidade`, audita, e a escrita concorrente vira 409 | **PASS (unit)** — `app/api/v1/settings/catalogo/route.test.ts`. Tela: **NÃO MEDIDO** |
+| J68.3 | Ligada: criar, editar, limpar, ver na lista | o campo vem depois de Categoria e a lista mostra o valor | Tela: **NÃO MEDIDO** |
+| J68.4 | Planilha | desligada, a coluna vai para as colunas não usadas; ligada, lê a coluna, 61 caracteres recusam a linha com o motivo e sem a coluna não apaga | **PASS (unit)** — `tests/unit/capacidade-do-produto.test.ts`. Tela: **NÃO MEDIDO** |
+| J68.5 | Busca do agente | ligada, «iphone 256gb» acha o produto cujo nome não repete a capacidade e elimina o de 512GB; desligada, não pontua nem devolve | **PASS (unit)** — `tests/unit/capacidade-do-produto.test.ts` |
+| J68.6 | Desligar de novo | o valor some da tela e continua no banco | Tela: **NÃO MEDIDO** |
+| J68.7 | Editar só o preço de um produto com estoque | quantidade, controle de estoque e `ativo` não mudam | **PASS (unit)** — `app/api/v1/products/[id]/route.test.ts`. Tela: **NÃO MEDIDO** |
 
 ## E-mail da organização — conta e domínio (#3443 + #3464)
 

@@ -213,6 +213,11 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
    */
   commercial_requires_human:
     "Esta empresa deixou valores e negociação só com a equipe, e a mensagem escrita pela IA falava disso: ela não foi enviada e a conversa passou para o atendimento humano.",
+  // Spec 34 — a automação não passa a conversa à equipe quando o cliente não
+  // perguntou nada: reescreve uma vez e, barrada de novo, só não envia. Código
+  // próprio, para a frase não aparecer em execução antiga que passou à equipe.
+  commercial_requires_human_duas_tentativas:
+    "Esta empresa deixou valores e negociação só com a equipe, e a mensagem escrita pela IA falava disso nas duas tentativas: nada foi enviado, e a conversa continua com a IA.",
   // A mesma parada quando o orquestrador RECUSOU a passagem
   // (`passagem_para_a_equipe: false`): a frase acima afirmaria um handoff que
   // não houve.
@@ -408,6 +413,16 @@ function detalheTecnicoDe(action: AutomationRuleRunActionResult): string | null 
   return null;
 }
 
+/** Spec 34 — o que a trava barrou, na execução que escreveu duas vezes e não enviou. */
+function textosBarradosDe(action: AutomationRuleRunActionResult): { textos: string[]; trecho: string | null } | null {
+  const detail = action.detail ?? {};
+  const textos = Array.isArray(detail.textos_barrados)
+    ? detail.textos_barrados.filter((x): x is string => typeof x === "string" && x.trim() !== "")
+    : [];
+  if (textos.length === 0) return null;
+  return { textos, trecho: typeof detail.trecho === "string" && detail.trecho ? detail.trecho : null };
+}
+
 function horarioDeRetorno(action: AutomationRuleRunActionResult, idioma: string): string | null {
   const retryAt = action.detail?.retry_at;
   if (typeof retryAt !== "string") return null;
@@ -440,6 +455,7 @@ function ActionLine({ action, run }: { action: AutomationRuleRunActionResult; ru
   const explicacao = explicacaoDe(action, t);
   const detalheTecnico = detalheTecnicoDe(action);
   const retorno = horarioDeRetorno(action, tagDoIdioma);
+  const barrados = textosBarradosDe(action);
 
   return (
     <div className="space-y-1">
@@ -494,6 +510,20 @@ function ActionLine({ action, run }: { action: AutomationRuleRunActionResult; ru
             {explicacao}
             {retorno ? ` ${t("Nova tentativa em")} ${retorno}.` : null}
           </p>
+          {barrados ? (
+            <div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
+              {barrados.textos.map((texto, i) => (
+                <p key={i} className="break-words">
+                  {t("Texto barrado:")} {texto}
+                </p>
+              ))}
+              {barrados.trecho ? (
+                <p className="break-words">
+                  {t("Trecho que acionou a trava:")} {barrados.trecho}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           {detalheTecnico ? (
             <p className="break-words text-[11px] text-muted-foreground">
               {t("Detalhe técnico:")} {detalheTecnico}

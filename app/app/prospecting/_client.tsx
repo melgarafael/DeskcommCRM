@@ -32,6 +32,7 @@ import {
 import { normalizarTags } from "@/lib/contacts/tag-normalizada";
 import { ProspectingAgentBuilder, type CreatedProspectingAgent } from "./_create-agent";
 import { AuditoriaDoCandidato, type PreviaDaAbordagem } from "./_auditoria-site";
+import { BaixarLista } from "./_baixar-lista";
 import type { ProspectingAgentSetupInput } from "@/lib/prospecting/agent-setup-schema";
 import type { PersonalizacaoProspeccao } from "@/lib/prospecting/personalizar";
 import {
@@ -39,8 +40,8 @@ import {
   type OfertaDaCampanha,
 } from "@/lib/prospecting/estrategia-site";
 import { precisaDeRede, siteEfetivo } from "@/lib/prospecting/site-efetivo";
+import { arquivadaEm, campanhasVisiveis } from "@/lib/prospecting/arquivamento";
 import { opcoesDoPreparo } from "@/lib/prospecting/opcoes-do-preparo";
-import { naoAbordada } from "@/lib/prospecting/exportar";
 import { previaPorGerar, previaValida } from "@/lib/prospecting/previa";
 
 /** Uma linha que a importação recusou — o número é o da planilha (1 = cabeçalho). */
@@ -345,6 +346,9 @@ export function ProspectingClient() {
   const [createdAgents, setCreatedAgents] = useState<{ id: string; name: string }[]>([]);
   // As desmarcadas ficam escondidas por padrão; este botão só decide se aparecem.
   const [mostrarDesmarcadas, setMostrarDesmarcadas] = useState(false);
+  // #4359: a lista principal esconde as arquivadas; este interruptor as traz de
+  // volta — sem ele, "arquivar" viraria "perder de vista".
+  const [verArquivadas, setVerArquivadas] = useState(false);
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
   // Revisão do formulário de personalização: remonta com os valores gravados
   // a cada save (sem effect e sem sobrescrever o que está digitado no refetch).
@@ -357,6 +361,14 @@ export function ProspectingClient() {
     interval_minutes: number;
   } | null>(null);
   const campaign = data?.campaigns.find((c) => c.id === selected) ?? data?.campaigns[0];
+  // #4359: a lista principal e o filtro das arquivadas são as duas metades do MESMO
+  // conjunto. Uma campanha arquivada sai da principal e aparece no filtro — nunca
+  // some das duas. A seleção acima continua olhando TODAS: quem arquivou com o
+  // cartão aberto vê o próprio cartão, com o aviso de que ele saiu da lista.
+  const campanhasDaLista = campanhasVisiveis(data?.campaigns ?? [], verArquivadas);
+  const quantasArquivadas = (data?.campaigns ?? []).filter(
+    (c) => arquivadaEm(c.config) !== null,
+  ).length;
   // A stored config is frozen by activation; unsaved choices belong to one campaign.
   const configGuardada =
     campaign?.config ?? (campaign && campaignDrafts[campaign.id]) ?? emptyConfig;
@@ -432,13 +444,6 @@ export function ProspectingClient() {
     );
   }
   const candidates = data?.candidates.filter((c) => c.campaign_id === campaign?.id) ?? [];
-  /**
-   * Quantas empresas desta campanha ainda podem ser abordadas (#4360) — e por
-   * isso quantas o "Baixar lista" leva. A régua é a do SERVIDOR
-   * (`naoAbordada`): um `filter` escrito de novo aqui faria o botão prometer um
-   * número que o arquivo não entrega.
-   */
-  const naoAbordadas = candidates.filter(naoAbordada).length;
   // `message` pode ser uma função que lê a resposta (o envelope `{ data }`): só o
   // "Completar fichas" precisa dela. Texto fixo segue igual para os outros botões.
   async function perform(body: unknown, message: string | ((resposta: unknown) => string)) {
@@ -487,6 +492,21 @@ export function ProspectingClient() {
     // A confirmação de exclusão vale para UMA campanha: ao trocar, ela some.
     setConfirmandoExclusao(false);
     setMostrarDesmarcadas(false);
+  }
+  /**
+   * #4359 — ARQUIVAR/ DESARQUIVAR. Sem confirmação e sem apagar nada: é um clique
+   * reversível, então o aviso basta. A frase diz o que aconteceu com o que a pessoa
+   * já construiu — "arquivada" sozinho daria a impressão de exclusão, que é
+   * justamente o que este gesto não é.
+   */
+  async function alternarArquivamento(c: Campaign) {
+    const arquivada = arquivadaEm(c.config) !== null;
+    await perform(
+      { action: arquivada ? "desarquivar" : "arquivar", id: c.id },
+      arquivada
+        ? t("Campanha de volta à lista. Nada do que ela criou mudou.")
+        : t("Campanha arquivada. Negócios, conversas e custo continuam lá."),
+    );
   }
   const update = <K extends keyof CampaignConfig>(field: K, value: CampaignConfig[K]) =>
     setConfig((c) => ({ ...c, [field]: value }));
@@ -1269,21 +1289,57 @@ export function ProspectingClient() {
             )}
           </Card>
           <section>
-            <h2 className="mb-3 text-sm font-semibold">{t("Suas campanhas")}</h2>
-            <div className="space-y-2">
-              {data?.campaigns.map((c) => (
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold">
+                {verArquivadas ? t("Campanhas arquivadas") : t("Suas campanhas")}
+              </h2>
+              {/* #4359: o arquivamento só é seguro se houver caminho de volta para
+                  VER a campanha. O filtro é esse caminho — e ele só aparece quando
+                  existe algo arquivado (ou quando já se está olhando as arquivadas). */}
+              {(quantasArquivadas > 0 || verArquivadas) && (
                 <button
-                  key={c.id}
                   type="button"
-                  onClick={() => abrirCampanha(c.id)}
-                  className={`w-full rounded-lg border p-3 text-left ${campaign?.id === c.id ? "border-primary bg-primary/5" : "bg-card"}`}
+                  onClick={() => setVerArquivadas((atual) => !atual)}
+                  className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
                 >
-                  <span className="block text-sm font-medium">{c.name}</span>
-                  <span className="mt-1 block text-xs text-muted-foreground">
-                    {ehImportada(c.search?.origem) && <>{t("Planilha")} · </>}
-                    {t(labels[c.status] ?? c.status)} · {c.result_count} {t("empresas")}
-                  </span>
+                  {verArquivadas
+                    ? t("Voltar para as ativas")
+                    : `${t("Ver arquivadas")} (${quantasArquivadas})`}
                 </button>
+              )}
+            </div>
+            <div className="space-y-2">
+              {campanhasDaLista.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {verArquivadas ? t("Nenhuma campanha arquivada.") : t("Nenhuma campanha aqui.")}
+                </p>
+              )}
+              {campanhasDaLista.map((c) => (
+                <div
+                  key={c.id}
+                  className={`flex items-stretch gap-2 rounded-lg border ${campaign?.id === c.id ? "border-primary bg-primary/5" : "bg-card"}`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => abrirCampanha(c.id)}
+                    className="min-w-0 flex-1 p-3 text-left"
+                  >
+                    <span className="block text-sm font-medium">{c.name}</span>
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      {ehImportada(c.search?.origem) && <>{t("Planilha")} · </>}
+                      {t(labels[c.status] ?? c.status)} · {c.result_count} {t("empresas")}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void alternarArquivamento(c)}
+                    title={t("Some da lista sem apagar negócios nem conversas")}
+                    className="shrink-0 px-3 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                  >
+                    {arquivadaEm(c.config) !== null ? t("Desarquivar") : t("Arquivar")}
+                  </button>
+                </div>
               ))}
             </div>
           </section>
@@ -1328,22 +1384,27 @@ export function ProspectingClient() {
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant="outline">{t(labels[campaign.status] ?? campaign.status)}</Badge>
                     {/*
-                      A LISTA DE VOLTA (#4360). Link direto para o CSV — a rota
-                      responde `attachment`, então o navegador baixa em vez de
-                      navegar. `download` no <a> dá o nome do arquivo também em
-                      quem ignora o `Content-Disposition`.
+                      A LISTA DE VOLTA (#4360), agora com as duas listas: só as
+                      não abordadas ou a campanha inteira, com a situação de
+                      cada empresa. Aparece em QUALQUER status — a campanha
+                      concluída é a que mais se quer reaproveitar, e com a
+                      lista só das não abordadas o botão sumia justamente nela.
+                      A contagem é do servidor (`_baixar-lista.tsx`).
                     */}
-                    {naoAbordadas > 0 && (
-                      <Button variant="outline" size="sm" asChild>
-                        <a
-                          data-testid="baixar-lista"
-                          download
-                          href={`/api/v1/prospecting/${campaign.id}/exportar`}
-                        >
-                          {`${t("Baixar lista")} (${naoAbordadas})`}
-                        </a>
-                      </Button>
+                    {candidates.length > 0 && <BaixarLista campaignId={campaign.id} />}
+                    {/* #4359: o cartão aberto de uma campanha arquivada continua
+                        acessível (a lista principal é que a esconde). */}
+                    {arquivadaEm(campaign.config) !== null && (
+                      <Badge variant="outline">{t("Arquivada")}</Badge>
                     )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void alternarArquivamento(campaign)}
+                    >
+                      {arquivadaEm(campaign.config) !== null ? t("Desarquivar") : t("Arquivar")}
+                    </Button>
                   </div>
                 </div>
                 {campaign.error && (
@@ -1380,13 +1441,13 @@ export function ProspectingClient() {
                     {t("resultados repetidos ou indisponíveis foram desconsiderados.")}
                   </p>
                 )}
-                <p className="mt-3 text-xs text-muted-foreground">
-                  {naoAbordadas > 0
-                    ? t("Baixar lista leva só as empresas que ainda não foram abordadas.")
-                    : t(
-                        "Nenhuma empresa ainda pode ser abordada nesta campanha: não há lista para baixar.",
-                      )}
-                </p>
+                {candidates.length > 0 && (
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    {t(
+                      "Baixar lista tem duas opções: só as empresas que ainda não foram abordadas, ou todas, com a situação de cada uma. Quem pediu para parar, contatos pessoais e quem teve os dados apagados ficam fora das duas listas.",
+                    )}
+                  </p>
+                )}
                 {configCompleta && (
                   <>
                     <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
@@ -1409,7 +1470,7 @@ export function ProspectingClient() {
                           {t("Pausar abordagens")}
                         </Button>
                       ) : campaign.status === "paused" ? (
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <Button
                             variant="outline"
                             disabled={busy}
@@ -1417,17 +1478,26 @@ export function ProspectingClient() {
                           >
                             {t("Editar ritmo")}
                           </Button>
-                          <Button
-                            disabled={busy}
-                            onClick={() =>
-                              perform(
-                                { action: "resume", id: campaign.id },
-                                t("Campanha retomada."),
-                              )
-                            }
-                          >
-                            {t("Retomar fila")}
-                          </Button>
+                          {/* #4359: campanha arquivada NÃO retoma por aqui — retomar
+                              a deixaria invisível e enviando, o pior desfecho. O
+                              servidor recusa a retomada e a tela nem oferece. */}
+                          {arquivadaEm(campaign.config) === null ? (
+                            <Button
+                              disabled={busy}
+                              onClick={() =>
+                                perform(
+                                  { action: "resume", id: campaign.id },
+                                  t("Campanha retomada."),
+                                )
+                              }
+                            >
+                              {t("Retomar fila")}
+                            </Button>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">
+                              {t("Desarquive a campanha para retomar os envios.")}
+                            </p>
+                          )}
                         </div>
                       ) : null}
                     </div>
@@ -1498,9 +1568,22 @@ export function ProspectingClient() {
                   </>
                 )}
               </Card>
+              {/* #4430: rascunho ARQUIVADO não inicia — iniciar o deixaria invisível e
+                  enviando. O servidor recusa (409), e a tela troca o formulário pelo aviso. */}
               {campaign.status === "draft" &&
                 campaign.search_status === "succeeded" &&
-                candidates.length > 0 && (
+                candidates.length > 0 &&
+                arquivadaEm(campaign.config) !== null && (
+                  <Card className="p-5">
+                    <p className="text-sm text-muted-foreground">
+                      {t("Desarquive a campanha para iniciar os envios.")}
+                    </p>
+                  </Card>
+                )}
+              {campaign.status === "draft" &&
+                campaign.search_status === "succeeded" &&
+                candidates.length > 0 &&
+                arquivadaEm(campaign.config) === null && (
                   <Card className="p-5">
                     <h2 className="text-lg font-semibold">{t("2. Preparar a abordagem")}</h2>
                     <p className="mt-1 text-sm text-muted-foreground">

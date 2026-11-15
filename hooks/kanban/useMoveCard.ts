@@ -2,6 +2,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { liberarEcoLocal, marcarEcoLocal } from "@/lib/kanban/local-echo";
+import { fundeRespostaNoCard } from "@/lib/kanban/owner";
 import { ApiError } from "@/lib/api/types";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import type { Lead } from "@/lib/types/leads";
@@ -117,7 +118,9 @@ export function useMoveCard(pipelineId: string, opcoes: OpcoesDeMove = {}) {
         atual
           ? {
               ...atual,
-              leads: atual.leads.map((l) => (l.id === args.leadId ? { ...l, ...res.data } : l)),
+              leads: atual.leads.map((l) =>
+                l.id === args.leadId ? fundeRespostaNoCard(l, res.data) : l,
+              ),
             }
           : atual,
       );

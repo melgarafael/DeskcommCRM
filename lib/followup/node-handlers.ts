@@ -94,6 +94,12 @@ export interface LeadFacts {
    */
   fuso?: string | null;
   lead_stage: string | null;
+  /**
+   * As etiquetas do lead — as DUAS caixas, unidas (`etiquetas-do-lead.ts`, #4586):
+   * `crm_leads.tags` (negócio) e `contacts.tags` (pessoa). A condição `tag`
+   * compara pertinência aqui, então marcar o contato — que é o que a campanha
+   * de prospecção faz com o nicho — vale tanto quanto marcar o card.
+   */
   tags: string[];
   steps_taken: number;
   /**

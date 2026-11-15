@@ -5,10 +5,11 @@
  *
  * O que este teste trava:
  *
- *   1. **Só a lista não abordada sai.** A empresa que já recebeu mensagem não
- *      aparece no CSV: quem já foi abordado não volta para outra campanha (a
- *      triagem recusa com "Contato já existe no CRM"), e o arquivo prometeria uma
- *      reimportação que não acontece.
+ *   1. **Por padrão, só a lista não abordada sai.** A empresa que já recebeu
+ *      mensagem não aparece nesse CSV: quem já foi abordado não volta para outra
+ *      campanha (a triagem recusa com "Contato já existe no CRM"). A lista
+ *      inteira é pedida com `?quem=todas` e leva a coluna `situacao`; nas duas,
+ *      quem pediu para parar, contato pessoal e dados apagados não saem (D13).
  *   2. **É LEITURA.** A rota faz `select` e mais nada — nenhum contato, campanha
  *      ou candidato é criado. Exportar é devolver o que a tela mostra; gravar por
  *      baixo seria outra feature (e a origem da lista tem de ficar intacta).
@@ -68,7 +69,12 @@ const CANDIDATOS = [
 
 type Consulta = { sql: string; params: unknown[] };
 
-function banco(opcoes: { campanha?: { id: string; name: string } | null; candidatos?: unknown[] }) {
+function banco(opcoes: {
+  campanha?: { id: string; name: string } | null;
+  candidatos?: unknown[];
+  contatos?: unknown[];
+  locale?: string | null;
+}) {
   const consultas: Consulta[] = [];
   const query = vi.fn(async (sql: string, params: unknown[] = []) => {
     consultas.push({ sql, params });
@@ -78,6 +84,12 @@ function banco(opcoes: { campanha?: { id: string; name: string } | null; candida
     if (/from prospecting_candidates/.test(sql)) {
       return { rows: opcoes.candidatos ?? [] };
     }
+    if (/from contacts c/.test(sql)) {
+      return { rows: opcoes.contatos ?? [] };
+    }
+    if (/from organizations/.test(sql)) {
+      return { rows: [{ locale: opcoes.locale ?? null }] };
+    }
     return { rows: [] };
   });
   return { query, consultas };
@@ -85,8 +97,8 @@ function banco(opcoes: { campanha?: { id: string; name: string } | null; candida
 
 let fake: ReturnType<typeof banco>;
 
-function pedido(id = CAMPANHA) {
-  return new NextRequest(`http://localhost/api/v1/prospecting/${id}/exportar`, { method: "GET" });
+function pedido(id = CAMPANHA, busca = "") {
+  return new NextRequest(`http://localhost/api/v1/prospecting/${id}/exportar${busca}`, { method: "GET" });
 }
 
 function contexto(id = CAMPANHA) {
@@ -190,7 +202,14 @@ describe("o arquivo", () => {
         action: "prospecting.exported",
         organizationId: ORG,
         actorUserId: USUARIO,
-        metadata: { campaign_id: CAMPANHA, total: 4, nao_abordadas: 2 },
+        metadata: {
+          campaign_id: CAMPANHA,
+          quem: "nao_abordadas",
+          total: 4,
+          nao_abordadas: 2,
+          todas: 4,
+          fora_da_lista: { dados_apagados: 0, pediu_para_parar: 0, ficha_pessoal: 0 },
+        },
       }),
     );
   });
@@ -202,5 +221,153 @@ describe("o arquivo", () => {
     for (const consulta of fake.consultas) {
       expect(consulta.sql.trim().toLowerCase().startsWith("select")).toBe(true);
     }
+  });
+});
+
+/**
+ * A LISTA INTEIRA (`?quem=todas`) e a contagem do menu (`?resumo=1`).
+ *
+ * Campanha CONCLUÍDA: todo mundo já foi abordado. O arquivo das não abordadas
+ * não tem o que levar (era aí que o botão sumia); a lista inteira leva as M
+ * empresas que podem sair, com a situação, e nenhuma das que nunca saem (D13).
+ */
+describe("a lista inteira da campanha concluída", () => {
+  const BLOQUEADO = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1";
+  const PESSOAL = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2";
+  const enviada = (nome: string, telefone: string, extra: Record<string, unknown> = {}) => ({
+    status: "sent",
+    attempted_at: "2026-11-01T12:00:00.000Z",
+    phone: telefone,
+    contact_id: null,
+    suprimida: false,
+    respondeu: false,
+    data: empresa(nome, telefone),
+    ...extra,
+  });
+  const CONCLUIDA = [
+    enviada("Sem Resposta", "+5511911110001"),
+    enviada("Respondeu Sim", "+5511911110002", { respondeu: true }),
+    enviada("Pediu Parar", "+5511911110003", { contact_id: BLOQUEADO }),
+    enviada("Contato Pessoal", "+5511987650004"),
+    enviada("Recusou Marketing", "+5511911110005"),
+    { ...enviada("Cliente Anonimizado #9", "", { phone: null, suprimida: true }), status: "skipped" },
+  ];
+  const CONTATOS = [
+    { id: BLOQUEADO, telefone: "+5511911110003", is_blocked: true, is_personal: false, is_anonymized: false, consent: {} },
+    // Achado pelo telefone extra, na grafia sem o nono dígito.
+    { id: PESSOAL, telefone: "+551187650004", is_blocked: false, is_personal: true, is_anonymized: false, consent: {} },
+    {
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3",
+      telefone: "+5511911110005",
+      is_blocked: false,
+      is_personal: false,
+      is_anonymized: false,
+      consent: { marketing: { declined_at: "2026-11-02T00:00:00.000Z" } },
+    },
+  ];
+
+  beforeEach(() => {
+    fake = banco({ campanha: { id: CAMPANHA, name: "Clínicas" }, candidatos: CONCLUIDA, contatos: CONTATOS });
+    deps.pool.mockReturnValue({ query: fake.query });
+  });
+
+  it("leva as M empresas com a situação, e ninguém que pediu para parar, é pessoal ou foi apagado", async () => {
+    const resposta = await GET(pedido(CAMPANHA, "?quem=todas"), contexto());
+    expect(resposta.status).toBe(200);
+    expect(resposta.headers.get("content-disposition")).toContain("lista-completa-clinicas-");
+
+    const csv = (await resposta.text()).replace("\uFEFF", "");
+    const [cabecalho, ...linhas] = csv.trim().split("\r\n");
+    expect(cabecalho).toBe("empresa;telefone;site;segmento;endereco;email;redes;situacao");
+    expect(linhas).toHaveLength(2);
+    expect(linhas[0]).toMatch(/^Sem Resposta;\+5511911110001;.*;abordada$/);
+    expect(linhas[1]).toMatch(/^Respondeu Sim;\+5511911110002;.*;respondeu$/);
+    for (const vetado of ["Pediu Parar", "Contato Pessoal", "Recusou Marketing", "Anonimizado"])
+      expect(csv).not.toContain(vetado);
+  });
+
+  it("a lista das não abordadas continua recusando a campanha concluída", async () => {
+    const resposta = await GET(pedido(), contexto());
+    expect(resposta.status).toBe(422);
+    expect(deps.audit).not.toHaveBeenCalled();
+  });
+
+  it("a contagem do menu sai da mesma leitura, e contar não vai para a auditoria", async () => {
+    const resposta = await GET(pedido(CAMPANHA, "?resumo=1"), contexto());
+    expect(resposta.status).toBe(200);
+    await expect(resposta.json()).resolves.toEqual({
+      data: {
+        total: 6,
+        nao_abordadas: 0,
+        todas: 2,
+        fora_da_lista: { dados_apagados: 1, pediu_para_parar: 2, ficha_pessoal: 1 },
+        truncada: false,
+      },
+    });
+    expect(deps.audit).not.toHaveBeenCalled();
+  });
+
+  it("os contatos são lidos só da organização da sessão, pelo vínculo e pelas duas grafias do telefone", async () => {
+    await GET(pedido(CAMPANHA, "?quem=todas"), contexto());
+    const sql = fake.consultas.find((c) => /from contacts c/.test(c.sql));
+    expect(sql?.params[0]).toBe(ORG);
+    expect(sql?.params[1]).toEqual([BLOQUEADO]);
+    expect(sql?.params[2]).toEqual(expect.arrayContaining(["+5511987650004", "+551187650004"]));
+    // As DUAS metades da união filtram a organização: este pool passa por cima
+    // da RLS, e um contato bloqueado de outra empresa com o mesmo telefone não
+    // pode tirar ninguém da lista daqui (nem aparecer no resumo dela).
+    expect(sql?.sql).toMatch(/from contacts c\s+where c\.organization_id=\$1 and \(c\.id=any/);
+    expect(sql?.sql).toMatch(/cp\.organization_id=\$1 and c\.organization_id=\$1/);
+    expect(sql?.sql).toMatch(/join contacts c on c\.organization_id=cp\.organization_id and c\.id=cp\.contact_id/);
+    // E as linhas da campanha, inclusive a conversa que diz quem respondeu.
+    const linhasSql = fake.consultas.find((c) => /from prospecting_candidates/.test(c.sql));
+    expect(linhasSql?.params.slice(0, 2)).toEqual([ORG, CAMPANHA]);
+    expect(linhasSql?.sql).toMatch(/where p\.organization_id=\$1 and p\.campaign_id=\$2/);
+    expect(linhasSql?.sql).toMatch(/v\.organization_id=p\.organization_id and v\.id=p\.conversation_id/);
+  });
+
+  it("tentativa sem envio confirmado não sai como `abordada`", async () => {
+    fake = banco({
+      campanha: { id: CAMPANHA, name: "Clínicas" },
+      candidatos: [{ ...enviada("IA Sem Texto", "+5511911110008"), status: "failed" }],
+    });
+    deps.pool.mockReturnValue({ query: fake.query });
+    const csv = await (await GET(pedido(CAMPANHA, "?quem=todas"), contexto())).text();
+    expect(csv).toContain(";envio não confirmado\r\n");
+    expect(csv).not.toContain(";abordada\r\n");
+  });
+
+  it("a situação sai no idioma da organização", async () => {
+    fake = banco({ campanha: { id: CAMPANHA, name: "Clínicas" }, candidatos: CONCLUIDA, contatos: CONTATOS, locale: "es" });
+    deps.pool.mockReturnValue({ query: fake.query });
+    const csv = await (await GET(pedido(CAMPANHA, "?quem=todas"), contexto())).text();
+    expect(csv).toContain(";contactada\r\n");
+    expect(csv).toContain(";respondió\r\n");
+  });
+
+  it("a auditoria diz qual lista saiu e quantas ficaram de fora", async () => {
+    await GET(pedido(CAMPANHA, "?quem=todas"), contexto());
+    expect(deps.audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "prospecting.exported",
+        metadata: expect.objectContaining({
+          quem: "todas",
+          todas: 2,
+          fora_da_lista: { dados_apagados: 1, pediu_para_parar: 2, ficha_pessoal: 1 },
+        }),
+      }),
+    );
+  });
+
+  it("lista desconhecida é 422 e não chega ao banco", async () => {
+    const resposta = await GET(pedido(CAMPANHA, "?quem=tudo"), contexto());
+    expect(resposta.status).toBe(422);
+    expect(fake.consultas).toEqual([]);
+  });
+
+  it("é LEITURA também na lista inteira", async () => {
+    await GET(pedido(CAMPANHA, "?quem=todas"), contexto());
+    for (const consulta of fake.consultas)
+      expect(consulta.sql.trim().toLowerCase().startsWith("select")).toBe(true);
   });
 });
