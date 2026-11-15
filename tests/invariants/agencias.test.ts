@@ -21,6 +21,10 @@ beforeEach(async () => {
     string,
     string,
   ];
+  // Doc 321: o módulo nasce desligado; cada caso liga dentro da própria transação.
+  await db.query(
+    "insert into platform_config(chave,valor) values('MODULO_AGENCIAS','ligado') on conflict (chave) do update set valor='ligado'",
+  );
   await db.query("insert into auth.users(id,email) values($1,$2)", [
     ator,
     `qa-${ator}@invariant.test`,
@@ -69,6 +73,7 @@ afterEach(async () => {
       ]);
       await db.query("delete from auth.sessions where user_id=$1", [ator]);
       await db.query("delete from auth.users where id=$1", [ator]);
+      await db.query("delete from platform_config where chave='MODULO_AGENCIAS'");
       await db.query("commit");
     }
   } finally {
@@ -357,7 +362,7 @@ describe("agências: autorização real no banco", () => {
     await db.query("set local role authenticated");
     await negado("select fn_agencia_abrir_cliente($1,$2)", [agencia, outra]);
   });
-  it.each(["desabilitada", "papel", "suspensa"])("revoga sessão aberta: %s", async (motivo) => {
+  it.each(["desabilitada", "papel", "suspensa", "vinculo"])("revoga sessão aberta: %s", async (motivo) => {
     await abrir();
     await db.query("reset role");
     if (motivo === "desabilitada")
@@ -376,6 +381,9 @@ describe("agências: autorização real no banco", () => {
     }
     if (motivo === "suspensa")
       await db.query("update organizations set status='suspended' where id=$1", [agencia]);
+    // O vínculo removido corta na hora: nada fica em cache no banco.
+    if (motivo === "vinculo")
+      await db.query("delete from agencia_clientes where organization_id=$1", [cliente]);
     await db.query("set local role authenticated");
     expect((await db.query("select fn_support_context() c")).rows[0].c.status).toBe("revoked");
     expect(
@@ -415,5 +423,68 @@ describe("agências: autorização real no banco", () => {
     expect((await db.query("select fn_user_role_in_org($1) papel", [cliente])).rows[0].papel).toBe(
       "viewer",
     );
+  });
+
+  // ─── Doc 321 (1A): módulo opcional, desligado de fábrica ────────────────────
+  // Desligar não é só esconder a tela: o banco para de conceder. Os três casos
+  // medem as três portas — a sessão já aberta, abrir/criar, e as policies.
+  async function desligarModulo() {
+    await db.query("reset role");
+    await db.query("delete from platform_config where chave='MODULO_AGENCIAS'");
+    await db.query("set local role authenticated");
+  }
+  it("módulo desligado: a sessão aberta some na hora e a agência não lê o cliente", async () => {
+    await abrir();
+    expect(
+      (await db.query("select count(*)::int n from contacts where organization_id=$1", [cliente]))
+        .rows[0].n,
+    ).toBe(1);
+    await desligarModulo();
+    expect((await db.query("select fn_support_context() c")).rows[0].c).toBeNull();
+    expect((await db.query("select fn_user_role_in_org($1) papel", [cliente])).rows[0].papel).toBeNull();
+    expect(
+      (await db.query("select count(*)::int n from contacts where organization_id=$1", [cliente]))
+        .rows[0].n,
+    ).toBe(0);
+    await db.query("reset role");
+    expect(
+      (await db.query("select fn_support_callback_write_allowed($1,$2,$3) ok", [cliente, ator, sessao]))
+        .rows[0].ok,
+    ).toBe(false);
+  });
+  it("módulo desligado: não abre nem cria cliente", async () => {
+    await desligarModulo();
+    await negado("select fn_agencia_abrir_cliente($1,$2)", [agencia, cliente]);
+    await negado("select fn_agencia_criar_cliente($1,$2,$3,$4)", [
+      agencia,
+      randomUUID(),
+      "Cliente recusado",
+      `qa-${randomUUID()}`,
+    ]);
+  });
+  it("módulo desligado: nenhuma policy de agência devolve linha, nem o valor que não é 'ligado'", async () => {
+    await db.query("set local role authenticated");
+    expect((await db.query("select count(*)::int n from agencia_configuracoes")).rows[0].n).toBe(1);
+    expect((await db.query("select count(*)::int n from agencia_clientes")).rows[0].n).toBe(1);
+    await db.query("reset role");
+    await db.query("update platform_config set valor='desligado' where chave='MODULO_AGENCIAS'");
+    await db.query("set local role authenticated");
+    expect((await db.query("select count(*)::int n from agencia_configuracoes")).rows[0].n).toBe(0);
+    expect((await db.query("select count(*)::int n from agencia_clientes")).rows[0].n).toBe(0);
+    expect((await db.query("select fn_agencia_pode_gerir($1) ok", [agencia])).rows[0].ok).toBe(false);
+  });
+  it("módulo desligado: a criação global recusa a habilitação de agência", async () => {
+    await desligarModulo();
+    await db.query("reset role");
+    await db.query("savepoint tentativa");
+    await expect(
+      db.query("select fn_create_tenant_with_owner($1,$2,$3::jsonb,$4)", [
+        ator,
+        randomUUID(),
+        JSON.stringify({ display_name: "X", slug: `qa-${randomUUID()}`, owner_email: "x@invariant.test", agencia: { habilitada: true, limite_clientes: 1 } }),
+        "00",
+      ]),
+    ).rejects.toMatchObject({ code: "22023", message: "agencias_desligado" });
+    await db.query("rollback to savepoint tentativa");
   });
 });

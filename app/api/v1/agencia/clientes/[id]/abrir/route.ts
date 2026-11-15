@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { seAgenciasDesligado } from "@/lib/agencias/modulo";
 import { z } from "zod";
 import { type NextRequest } from "next/server";
 import { requireAgencia } from "@/lib/agencias/require-agencia";
@@ -8,6 +9,8 @@ import { audit } from "@/lib/audit";
 import { invalidarUsuario } from "@/lib/auth/cache-curto";
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const requestId = randomUUID();
+  const desligado = await seAgenciasDesligado(requestId);
+  if (desligado) return desligado;
   const id = z
     .string()
     .uuid()

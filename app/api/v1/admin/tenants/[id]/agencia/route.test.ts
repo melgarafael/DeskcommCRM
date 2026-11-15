@@ -8,6 +8,7 @@ const h = vi.hoisted(() => ({
   erroNoUpdate: null as { code?: string; message: string } | null,
   updates: [] as unknown[],
   audit: vi.fn(),
+  modulo: true,
 }));
 vi.mock("next/navigation", () => ({
   redirect: (destino: string) => {
@@ -17,6 +18,7 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
 vi.mock("@/lib/auth/server", () => ({ mfaEmDividaEstrita: h.mfaEmDivida }));
 vi.mock("@/lib/audit", () => ({ audit: h.audit }));
+vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: async () => h.modulo }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
     auth: {
@@ -75,8 +77,15 @@ beforeEach(() => {
   h.mfaEmDivida.mockResolvedValue(false);
   h.erroNoUpdate = null;
   h.updates = [];
+  h.modulo = true;
 });
 describe("configuração de agência só pela plataforma", () => {
+  it("módulo desligado (doc 321): 404 antes de autorizar, sem gravar nem auditar", async () => {
+    h.modulo = false;
+    expect((await PATCH(pedido(CADASTRO), ctx)).status).toBe(404);
+    expect(h.updates).toEqual([]);
+    expect(h.audit).not.toHaveBeenCalled();
+  });
   it("recusa pessoa sem administração global antes de escrever", async () => {
     h.linhaDoAdmin = null;
     expect((await PATCH(pedido(CADASTRO), ctx)).status).toBe(403);

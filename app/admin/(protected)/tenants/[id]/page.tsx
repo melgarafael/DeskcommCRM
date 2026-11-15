@@ -25,38 +25,47 @@ interface TenantDetailPageProps {
 
 export default async function TenantDetailPage({ params }: TenantDetailPageProps) {
   const { id } = await params;
-  const [cobranca, iaDoMolde, ctx] = await Promise.all([
+  const [cobranca, iaDoMolde, ctx, agencia] = await Promise.all([
     lerCobrancaDoTenant(id),
     lerIaDoMolde(id),
     requirePlatformAdmin(),
+    lerAgenciaDoTenant(id),
   ]);
-  const admin = createAdminClient();
-  const [config, clientes] = await Promise.all([
-    admin
-      .from("agencia_configuracoes")
-      .select("habilitada, limite_clientes, clientes_inclusos")
-      .eq("organization_id", id)
-      .maybeSingle(),
-    admin
-      .from("agencia_clientes")
-      .select("organization_id", { count: "exact", head: true })
-      .eq("agencia_id", id),
-  ]);
-  if (config.error || clientes.error)
-    throw new Error("Não foi possível carregar a configuração de agência.");
   return (
     <div className="space-y-6">
       <TenantOverviewClient id={id} cobrancaLigada={cobranca !== null} />
-      <CardDeAgencia
-        organizationId={id}
-        inicial={config.data ?? { habilitada: false, limite_clientes: 0 }}
-        utilizadas={clientes.count ?? 0}
-        podeEditar={ctx.platformAdmin.scope === "full"}
-      />
+      {agencia && (
+        <CardDeAgencia
+          organizationId={id}
+          inicial={agencia.config ?? { habilitada: false, limite_clientes: 0 }}
+          utilizadas={agencia.utilizadas}
+          podeEditar={ctx.platformAdmin.scope === "full"}
+        />
+      )}
       {iaDoMolde && <CartaoDaIaDoMolde ia={iaDoMolde} />}
       {cobranca && <CardDeCobranca orgId={id} {...cobranca} />}
     </div>
   );
+}
+
+/** `null` com o módulo `agencias` desligado (doc 321): o card nem é lido. */
+async function lerAgenciaDoTenant(orgId: string) {
+  const admin = createAdminClient();
+  if (!(await moduloLigado(admin, "agencias"))) return null;
+  const [config, clientes] = await Promise.all([
+    admin
+      .from("agencia_configuracoes")
+      .select("habilitada, limite_clientes, clientes_inclusos")
+      .eq("organization_id", orgId)
+      .maybeSingle(),
+    admin
+      .from("agencia_clientes")
+      .select("organization_id", { count: "exact", head: true })
+      .eq("agencia_id", orgId),
+  ]);
+  if (config.error || clientes.error)
+    throw new Error("Não foi possível carregar a configuração de agência.");
+  return { config: config.data, utilizadas: clientes.count ?? 0 };
 }
 
 /**

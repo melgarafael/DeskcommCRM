@@ -32,8 +32,12 @@ export default async function SettingsHubPage() {
   const activeOrg = await resolveActiveOrg(user);
   const idioma = user.idioma;
 
+  const ligados = await modulosLigados(createAdminClient());
   const agencia =
-    activeOrg && !user.support && (user.agency_org_ids ?? []).includes(activeOrg.orgId);
+    ligados.includes("agencias") &&
+    activeOrg &&
+    !user.support &&
+    (user.agency_org_ids ?? []).includes(activeOrg.orgId);
   const porta = NAV_CATALOG.find((d) => d.href === "/app/settings/organizacoes")!;
   return (
     <>
@@ -49,7 +53,7 @@ export default async function SettingsHubPage() {
         role={activeOrg?.role ?? null}
         interfaceSettings={activeOrg?.interface_settings}
         // A porta do banco externo mora neste hub, e só existe com o módulo ligado.
-        modulosLigados={await modulosLigados(createAdminClient())}
+        modulosLigados={ligados}
         title={traduzir("Configurações", idioma)}
         subtitle={traduzir("Sua conta, os dados da empresa e quem tem acesso ao quê.", idioma)}
         locale={idioma}

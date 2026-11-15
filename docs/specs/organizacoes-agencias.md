@@ -2,7 +2,7 @@
 
 ## Escopo e destino
 
-Implementação no núcleo: autorização e isolamento de organizações são contratos comuns do CRM. Sem habilitar agência, as organizações continuam usando seus vínculos diretos e a administração global existente. Base inicial da contribuição: `25102672f3082928369db90ed82838d6ea630fc9`; conferir atualização antes de publicar.
+**Módulo opcional da instalação, desligado de fábrica** (doc 321, alternativa 1A): `agencias` em `lib/instalacao/modulos.ts`, chave `MODULO_AGENCIAS` em `platform_config`, ligada em `/admin/sistema`. Desligado, as rotas `/api/v1/agencia/*` e `/api/v1/admin/tenants/[id]/agencia` respondem 404, as telas e o card somem, e o banco ignora as sessões de agência (`fn_agencias_ligado()`, migration 9379, dentro de `fn_agencia_pode_gerir`, `fn_agencia_autoridade` e `fn_support_context`): nenhuma policy de agência concede acesso. Ligado, cada agência ainda é habilitada uma a uma no painel da empresa. Sem habilitar agência, as organizações continuam usando seus vínculos diretos e a administração global existente. Base inicial da contribuição: `25102672f3082928369db90ed82838d6ea630fc9`; conferir atualização antes de publicar.
 
 A habilitação de agência é independente do plano comercial. O administrador global configura habilitação, limite e inclusão dos clientes no acordo comercial da agência, tanto na criação quanto na edição de uma organização. A agência não altera essas autorizações.
 
@@ -42,7 +42,7 @@ Preço, porcentagem e repasse são negociados separadamente nesta etapa. O recur
 
 ## Self-host e migrations
 
-As migrations de agências têm cabeçalho `-- manifest:` e apêndices no baseline. Na contribuição separada, elas foram renumeradas para 9200–9205: a `main` ocupa 9105–9108 e a consulta pública dos PRs abertos encontrou 9109–9114 em uso. A numeração não colide com a `main` medida em `7321fb9ba`; como a API pública do GitHub atingiu o limite durante a varredura completa, os PRs abertos precisam ser conferidos novamente imediatamente antes de publicar. As migrations já aplicadas no Supabase de teste permaneceram intactas na árvore principal. Não houve alteração na VPS nem uso de Docker.
+As migrations de agências têm cabeçalho `-- manifest:` e apêndices no baseline. Na incorporação, elas foram renumeradas pelo alocador do mantenedor para 9373–9378, e a 9379 põe tudo atrás do módulo. As migrations já aplicadas no Supabase de teste permaneceram intactas na árvore principal. Não houve alteração na VPS nem uso de Docker.
 
 ## Provas e pendências
 

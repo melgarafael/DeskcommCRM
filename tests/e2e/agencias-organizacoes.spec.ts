@@ -23,6 +23,10 @@ test("agência cria cliente, entra, volta e perde delegação quando desabilitad
   let actor = "";
   const operator = await browser.newContext({ baseURL: testInfo.project.use.baseURL });
   const clientIds: string[] = [];
+  // Doc 321 (1A): o módulo nasce desligado. Guarda o estado de antes para devolvê-lo.
+  const antes = await db.from("platform_config").select("valor").eq("chave", "MODULO_AGENCIAS").maybeSingle();
+  if (antes.error) throw antes.error;
+  const moduloAntes = (antes.data?.valor as string | null) ?? null;
   try {
     await afirmarDonoDoServidor(lerCreds().users.dono!.email);
     const user = await db.auth.admin.createUser({ email, password, email_confirm: true });
@@ -51,6 +55,21 @@ test("agência cria cliente, entra, volta e perde delegação quando desabilitad
       });
     if (member.error) throw member.error;
     await loginComoDono(page, lerCreds());
+    // Desligado: o painel da empresa não oferece agência e a rota não existe.
+    await db.from("platform_config").delete().eq("chave", "MODULO_AGENCIAS");
+    await page.goto(`/admin/tenants/${agency}`);
+    // O card é renderizado no servidor: depois do `goto`, ausente é ausente.
+    await expect(
+      page.getByRole("heading", { name: "Gestão de organizações clientes", exact: true }),
+    ).toHaveCount(0);
+    expect((await page.request.get("/api/v1/agencia/clientes")).status()).toBe(404);
+    const ligar = await db
+      .from("platform_config")
+      .upsert(
+        { chave: "MODULO_AGENCIAS", valor: "ligado", eh_segredo: false, semeado_do_env: false },
+        { onConflict: "chave" },
+      );
+    if (ligar.error) throw ligar.error;
     await page.goto(`/admin/tenants/${agency}`);
     await page.getByLabel("Permitir que esta agência administre organizações clientes").check();
     await page.getByLabel("Limite de organizações clientes").fill("1");
@@ -128,6 +147,14 @@ test("agência cria cliente, entra, volta e perde delegação quando desabilitad
       })
       .toBe(true);
   } finally {
+    if (moduloAntes === null) await db.from("platform_config").delete().eq("chave", "MODULO_AGENCIAS");
+    else
+      await db
+        .from("platform_config")
+        .upsert(
+          { chave: "MODULO_AGENCIAS", valor: moduloAntes, eh_segredo: false, semeado_do_env: false },
+          { onConflict: "chave" },
+        );
     await operator.close();
     await page.goto("about:blank");
     if (agency) {

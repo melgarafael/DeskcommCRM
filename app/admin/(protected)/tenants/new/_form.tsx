@@ -91,6 +91,7 @@ function formatarPreco(cents: number, moeda: string): string {
 export function NewTenantForm({
   cobranca,
   moldeDeIa = null,
+  agenciasLigado = false,
 }: {
   /** Spec da cobrança §9: ligada, o plano de cobrança substitui o rótulo antigo (D-2). */
   cobranca: { ligada: boolean; planos: readonly PlanoParaEscolher[] };
@@ -100,6 +101,8 @@ export function NewTenantForm({
    * e não só em Recursos opcionais — é aqui que a pessoa decide criar.
    */
   moldeDeIa?: { nome: string } | null;
+  /** Módulo `agencias` (doc 321). Desligado, o bloco some e o pedido não leva `agencia`. */
+  agenciasLigado?: boolean;
 }) {
   const t = useT();
   const idioma = useIdioma();
@@ -159,6 +162,7 @@ export function NewTenantForm({
         ...(cobranca.ligada ? { plano_id: values.plano_id } : { plan: values.plan }),
         owner_email: values.owner_email,
         owner_interface_settings: ownerInterface,
+        ...(agenciasLigado ? { agencia: values.agencia } : {}),
       });
 
       toast.success(t("Tenant criado com sucesso!"));
@@ -366,6 +370,7 @@ export function NewTenantForm({
               </div>
             )}
 
+            {agenciasLigado && (
             <div className="space-y-3 rounded-lg border p-4">
               <label className="flex items-center gap-2">
                 <input type="checkbox" {...register("agencia.habilitada")} />
@@ -390,6 +395,7 @@ export function NewTenantForm({
                 )}
               </p>
             </div>
+            )}
             {/* owner_email */}
             <div className="space-y-1.5">
               <Label htmlFor="owner_email">

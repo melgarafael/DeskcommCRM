@@ -1,4 +1,5 @@
 import { criarClienteAgenciaSchema } from "@/lib/agencias/schema";
+import { seAgenciasDesligado } from "@/lib/agencias/modulo";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { audit } from "@/lib/audit";
 import { randomUUID } from "node:crypto";
@@ -13,6 +14,8 @@ const querySchema = z
   .strict();
 export async function GET(req: NextRequest) {
   const requestId = randomUUID();
+  const desligado = await seAgenciasDesligado(requestId);
+  if (desligado) return desligado;
   const input = querySchema.safeParse(Object.fromEntries(req.nextUrl.searchParams));
   if (!input.success) return fail("validation_error", "Página inválida.", 422, { requestId });
   const auth = await requireAgencia(requestId);
@@ -64,6 +67,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const requestId = randomUUID();
+  const desligado = await seAgenciasDesligado(requestId);
+  if (desligado) return desligado;
   const input = criarClienteAgenciaSchema.safeParse(await req.json().catch(() => null));
   const key = z.string().uuid().safeParse(req.headers.get("Idempotency-Key"));
   if (!input.success || !key.success)

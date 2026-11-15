@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { seAgenciasDesligado } from "@/lib/agencias/modulo";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { cookieSecure } from "@/lib/supabase/cookie-secure";
@@ -8,6 +9,8 @@ import { invalidarSessao, invalidarUsuario, sessaoDosCookies } from "@/lib/auth/
 /** Encerrar depende da posse da sessão, inclusive depois da revogação. */
 export async function POST() {
   const requestId = randomUUID();
+  const desligado = await seAgenciasDesligado(requestId);
+  if (desligado) return desligado;
   const db = await createClient();
   const {
     data: { user },
