@@ -67,10 +67,21 @@ export interface ContextoDoRetornoDescartado {
   combinadoPara: Date | string | null;
 }
 
-/** O que ficou registrado — os dois campos são o que os testes cobram. */
+/** O que ficou registrado — os campos são o que os testes e o chamador cobram. */
 export interface RastroDoRetornoDescartado {
   aviso: InboxItemRow | null;
   linhaDoTempo: boolean;
+  /**
+   * `true` só quando uma das duas escritas ESTOUROU (savepoint desfeito).
+   *
+   * É o que separa "não escreveu porque não havia o que escrever" — aviso já
+   * aberto para esta conversa (dedup), contato sem negócio aberto (a linha do
+   * tempo não tem onde ser roteada) — de "não escreveu porque quebrou". Só o
+   * segundo é motivo de log: aviso deduplicado e ficha sem negócio são o
+   * desfecho normal, e transformá-los em `warn` faria o log gritar em todo
+   * descarte repetido.
+   */
+  falhou: boolean;
 }
 
 /** "12/11 às 15:00" no fuso da empresa — nunca ISO, nunca UTC na cara de quem lê. */
@@ -134,10 +145,15 @@ async function dadosDoAviso(
 /**
  * Roda `fn` na própria subtransação.
  *
- * Devolve `null` quando a escrita falhou, e NUNCA propaga: falhar em avisar não
- * pode desfazer o descarte que o aviso descreve. O log é a única saída quando
- * os dois rastros caem — é ele que impede o silêncio de voltar por outro
- * caminho.
+ * Devolve `{ ok: false }` quando a escrita ESTOUROU, e NUNCA propaga: falhar em
+ * avisar não pode desfazer o descarte que o aviso descreve. O log do erro sai
+ * aqui, e é a única saída quando os dois rastros caem — é ele que impede o
+ * silêncio de voltar por outro caminho.
+ *
+ * Devolver `null` de dentro de `fn` (aviso já aberto para a conversa, contato
+ * sem negócio aberto para rotear a linha do tempo) NÃO é falha: `ok` continua
+ * `true` e ninguém loga. A distinção existe porque o dedup é o desfecho normal
+ * do segundo descarte do mesmo dia, e `warn` nele faria o log gritar à toa.
  *
  * `23505` merece tratamento próprio: o `insertInboxItem` o captura e devolve
  * `null` (dedup do banco), mas a transação já está abortada nesse instante —
@@ -151,12 +167,12 @@ async function emSavepoint<T>(
   contexto: Record<string, unknown>,
   log: Pick<Logger, "warn">,
   fn: () => Promise<T>,
-): Promise<T | null> {
+): Promise<{ ok: true; valor: T } | { ok: false }> {
   await db.query(`savepoint ${nome}`);
   try {
     const valor = await fn();
     await db.query(`release savepoint ${nome}`);
-    return valor;
+    return { ok: true, valor };
   } catch (erro) {
     // `rollback to savepoint` é permitido mesmo com a transação abortada — é
     // ele que devolve o cliente ao estado utilizável para o commit do descarte.
@@ -168,7 +184,7 @@ async function emSavepoint<T>(
         : "followup_descartado_rastro_falhou",
       { ...contexto, motivo: erro instanceof Error ? erro.message : String(erro) },
     );
-    return null;
+    return { ok: false };
   }
 }
 
@@ -195,7 +211,7 @@ export async function registrarRetornoDescartado(
       organization_id: ctx.organizationId,
       contact_id: ctx.contactId,
     });
-    return { aviso: null, linhaDoTempo: false };
+    return { aviso: null, linhaDoTempo: false, falhou: false };
   }
 
   // O instante normalizado UMA vez: o job pode trazer `Date` ou texto, e o
@@ -258,5 +274,9 @@ export async function registrarRetornoDescartado(
       }),
   );
 
-  return { aviso, linhaDoTempo: linha?.routed === true };
+  return {
+    aviso: aviso.ok ? aviso.valor : null,
+    linhaDoTempo: linha.ok && linha.valor.routed === true,
+    falhou: !aviso.ok || !linha.ok,
+  };
 }
