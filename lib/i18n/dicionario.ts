@@ -9469,6 +9469,46 @@ export const DICIONARIO: Traducoes = {
     es: "Las conversaciones siguen guardadas. No se perdió nada.",
   },
   "Tentar novamente": { es: "Intentar de nuevo" },
+  "Analisar perfis e oportunidades": { es: "Analizar perfiles y oportunidades" },
+  "Analisando clientes: {feitos} de {total}": {
+    es: "Analizando clientes: {feitos} de {total}",
+  },
+  "Análise concluída para {total} clientes.": {
+    es: "Análisis completado para {total} clientes.",
+  },
+  "Ver oportunidades": { es: "Ver oportunidades" },
+  "{falhas} clientes não puderam ser analisados.": {
+    es: "No se pudieron analizar {falhas} clientes.",
+  },
+  "A análise atualiza o CRM e nunca envia mensagens ao cliente.": {
+    es: "El análisis actualiza el CRM y nunca envía mensajes al cliente.",
+  },
+  "Gasto de IA desta análise até agora: {valor}.": {
+    es: "Gasto de IA de este análisis hasta ahora: {valor}.",
+  },
+  "Faltam {restantes} clientes para analisar.": { es: "Faltan {restantes} clientes por analizar." },
+  "Analisar a próxima rodada": { es: "Analizar la próxima ronda" },
+  "Confirmar a análise": { es: "Confirmar el análisis" },
+  "A IA vai ler a conversa de {n} clientes nesta rodada.": {
+    es: "La IA va a leer la conversación de {n} clientes en esta ronda.",
+  },
+  "Cada rodada analisa no máximo {teto} clientes. Os outros {restantes} ficam para a próxima rodada.": {
+    es: "Cada ronda analiza como máximo {teto} clientes. Los otros {restantes} quedan para la próxima ronda.",
+  },
+  "Ainda não há gasto de IA registrado para estimar o custo. O limite de {teto} clientes por rodada segura o gasto.": {
+    es: "Todavía no hay gasto de IA registrado para estimar el costo. El límite de {teto} clientes por ronda contiene el gasto.",
+  },
+  "Custo estimado: até {valor}.": { es: "Costo estimado: hasta {valor}." },
+  "Sai do mesmo saldo de IA do atendimento. Gasto deste mês: {gasto}.": {
+    es: "Sale del mismo saldo de IA de la atención. Gasto de este mes: {gasto}.",
+  },
+  "Sai do mesmo saldo de IA do atendimento. Gasto deste mês: {gasto} de {limite}.": {
+    es: "Sale del mismo saldo de IA de la atención. Gasto de este mes: {gasto} de {limite}.",
+  },
+  "Confirmar e analisar {n} clientes": { es: "Confirmar y analizar {n} clientes" },
+  "{n} clientes ficam de fora: recusaram atendimento por IA ou já têm informação mais nova no CRM.": {
+    es: "{n} clientes quedan fuera: rechazaron la atención por IA o ya tienen información más reciente en el CRM.",
+  },
   "Buscar conversas": { es: "Buscar conversaciones" },
   "Filtrar por número de WhatsApp": { es: "Filtrar por número de WhatsApp" },
   "Filtrar por tag": { es: "Filtrar por etiqueta" },
