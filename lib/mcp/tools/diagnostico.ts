@@ -167,7 +167,7 @@ const RECUSAS = {
     "esses campos foram configurados pela equipe desta conta e esta ferramenta não os preenche; nada foi gravado.",
   escrito_pela_equipe:
     "o diagnóstico desta ficha foi escrito por uma pessoa da equipe e fica como está; nada foi gravado. " +
-    "Não tente gravar de novo.",
+    "Não tente gravar de novo os campos listados em preservados.",
   indisponivel:
     "não foi possível conferir os campos configurados nesta conta agora; nada foi gravado. Tente de novo mais tarde.",
 } as const;
