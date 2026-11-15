@@ -10,6 +10,8 @@
 import { z } from "zod";
 
 import { normalizarTag, normalizarTags } from "@/lib/contacts/tag-normalizada";
+import { traduzir } from "@/lib/i18n/dicionario";
+import type { Idioma } from "@/lib/i18n/idiomas";
 import {
   MAXIMO_DE_ETIQUETAS_NO_FILTRO,
   MODOS_DE_ETIQUETA,
@@ -258,12 +260,22 @@ function normalizarTelefoneBR(valor: string): string {
  * do E.164 do perfil (sem o `+55`), em vez de escrito à mão: um exemplo
  * cravado envelhece calado no dia em que o perfil mudar.
  */
-export function mensagemDoTelefone(perfil: PerfilDoPais): string {
+export function mensagemDoTelefone(perfil: PerfilDoPais, idioma: Idioma = "pt-BR"): string {
+  // #4242, item 1: a frase é a MESMA nos dois lados (schema e API), e passa pelo
+  // dicionário para a interface de quem opera em espanhol não receber português.
   if (perfil.codigo !== PAIS_PADRAO) {
-    return `Telefone deve estar em formato E.164 (${perfil.telefoneExemplo})`;
+    return traduzir("Telefone deve estar em formato E.164 ({exemplo})", idioma).replace(
+      "{exemplo}",
+      perfil.telefoneExemplo,
+    );
   }
   const exemploNacional = perfil.telefoneExemplo.replace(/^\+55/, "");
-  return `Telefone deve ter DDD + número (ex.: ${exemploNacional}) ou o formato E.164 (${perfil.telefoneExemplo})`;
+  return traduzir(
+    "Telefone deve ter DDD + número (ex.: {exemplo}) ou o formato E.164 ({exemploE164})",
+    idioma,
+  )
+    .replace("{exemplo}", exemploNacional)
+    .replace("{exemploE164}", perfil.telefoneExemplo);
 }
 
 /**

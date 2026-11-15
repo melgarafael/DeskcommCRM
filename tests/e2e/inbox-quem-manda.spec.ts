@@ -25,6 +25,7 @@ import * as path from "node:path";
 import { expect, test, type Page } from "./helpers/test";
 import { createClient } from "@supabase/supabase-js";
 
+import { funilDeEntrada } from "../../lib/leads/nascimento-do-lead";
 import { carregarEnvLocal } from "../../scripts/lib/env-de-teste";
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
@@ -197,22 +198,38 @@ test.describe("Inbox — quem manda nesta conversa", () => {
     // pendurar a linha da timeline, e é a MESMA limitação que a ida e a volta
     // IA↔humano já têm. Semear o lead aqui é o que faz o passo (5) medir o
     // caminho que existe, em vez de reprovar por uma ausência que já era conhecida.
-    const { data: funil } = await admin
-      .from("crm_pipelines")
-      .select("id, crm_stages(id)")
-      .eq("organization_id", creds.org_id)
-      .eq("is_archived", false)
-      .limit(1)
-      .maybeSingle();
-    const funilId = (funil as { id: string } | null)?.id;
-    const etapaId = (funil as { crm_stages?: Array<{ id: string }> } | null)?.crm_stages?.[0]?.id;
-    if (!funilId || !etapaId) throw new Error("a org de teste não tem funil com etapa");
+    //
+    // ⚠️ ONDE ELE NASCE É A REGRA DO PRODUTO, não a primeira linha que o embed
+    // devolveu. A semeadura anterior pegava `crm_stages[0]` de
+    // `crm_pipelines.select("id, crm_stages(id)")` — sem ORDER BY e sem filtro
+    // de papel. A lista do embed não tem ordem, e a org de teste é
+    // COMPARTILHADA entre as specs da mesma parte: qual etapa vem primeiro não
+    // é propriedade de nada que este arquivo controle.
+    //
+    // Na corrida que reprovou o `e2e-parte (3)`, veio a etapa de PERDA: o
+    // `trg_crm_lead_close_on_stage` gravou `status='lost'` no INSERT e o
+    // `fn_validate_lost_reason_required` levantou `22023 lost_reason_required`.
+    // O `beforeAll` morria em `crm_leads: lost_reason_required`, antes de o
+    // corpo do teste rodar (0ms, e o teste seguinte "did not run") — e nada
+    // disso tinha a ver com o comando da conversa, que é o que a spec mede.
+    //
+    // `funilDeEntrada` é a MESMA regra pela qual a conversa vira negócio
+    // (`lib/leads/nascimento-do-lead.ts`, `primeiraEtapa`): funil padrão da
+    // organização e etapa de MENOR `position` entre as não arquivadas, não
+    // ganhas e não perdidas. Semear por ela é o que faz o card nascer onde o
+    // produto o faria — e um funil mal ordenado não pode mais fazer o negócio
+    // do teste nascer fechado.
+    const entrada = await funilDeEntrada(admin, creds.org_id);
+    if ("erro" in entrada) {
+      throw new Error(`a org de teste não tem funil de entrada com etapa aberta: ${entrada.erro}`);
+    }
+    const { pipelineId, stageId } = entrada;
 
     const { error: erroLead } = await admin.from("crm_leads").insert({
       organization_id: creds.org_id,
       contact_id: contatoId,
-      pipeline_id: funilId,
-      stage_id: etapaId,
+      pipeline_id: pipelineId,
+      stage_id: stageId,
       title: `Negócio de ${NOME_DO_CONTATO}`,
     });
     if (erroLead) throw new Error(`crm_leads: ${erroLead.message}`);

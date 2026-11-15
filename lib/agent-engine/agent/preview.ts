@@ -1,11 +1,12 @@
 import { comercialExigeHumano } from '@/lib/escalacao/assunto-comercial';
 /** Preview is an execution policy of the real turn, never a simulated queue job. */
 import type pg from 'pg';
-import { hasOpenCaseForContact } from './human-cases';
+import { hasOpenCaseForContact, openHumanCaseInputSchema } from './human-cases';
 import type { ToolSet } from '../edge/llm/run-model-call';
 import type { LeadContext, LeadContextResult } from '../edge/crm/get-lead-context';
 import type { PublishedAgentConfig } from './agent-config';
 import type { LeadCheckpointRow } from './inbound-turn';
+import type { FerramentaNoTraco } from './traco-do-turno';
 import { ferramentasDeAgendaDoAgente, temFerramentaDeAgenda } from './inbound-turn';
 import {
   BEFORE_SEND_GATES,
@@ -60,6 +61,15 @@ export interface PreviewResult {
   checkpoint?: unknown;
   candidates: Array<{ body: string; citations: Citation[]; trace: GateTraceEntry[] }>;
   proposals: Array<{ tool: string; arguments: unknown }>;
+  /**
+   * #4424 — as ferramentas que o turno REALMENTE chamou (as de leitura rodam de
+   * verdade na prévia). É a mesma lista que o traço do turno grava; ela passou a
+   * viajar na resposta para o Testar mostrar, turno a turno, o que a IA usou —
+   * antes quem lia o painel só via as ações PROPOSTAS.
+   *
+   * Opcional: `reply-drafts` não a preenche nem a lê.
+   */
+  ferramentas?: FerramentaNoTraco[];
   impediments: Array<{ code: string; message: string }>;
   /**
    * O que NÃO impediu o candidato, mas o operador precisa ver sobre o ENVIO real:
@@ -359,12 +369,33 @@ export function applyPreviewPolicy(
   /** A procedência da `imagem_url` no turno (`criarProcedenciaDeImagens().viu`), a mesma do envio real. */
   imagemVistaNoTurno?: (url: string) => boolean,
 ): ToolSet {
+  /**
+   * #4592 — o caso humano que a prévia SIMULA abrir neste turno.
+   *
+   * No turno real, `openedCaseThisTurn` só vira `true` quando o `execute` de
+   * `open_human_case` grava o caso (`inbound-turn.ts`). Na prévia a ferramenta é
+   * uma PROPOSTA: nada é gravado, então a trava `case_promise_without_case`
+   * (`guardrails/human-promise.ts` + `casePromiseGate`) vetava a frase de espera
+   * mesmo com a ferramenta chamada — e o teste deixava de reproduzir a produção.
+   *
+   * Esta é a única coisa que a chamada muda aqui: um sinal PARA A TRAVA. O
+   * retorno ao modelo continua `proposal_only`, nenhum INSERT/UPDATE acontece, e
+   * o `execute` original da ferramenta nunca roda (como todo o resto da prévia).
+   * Vive no closure porque é por TURNO — `applyPreviewPolicy` é montado uma vez
+   * por turno de prévia.
+   */
+  let casoHumanoSimuladoNesteTurno = false;
   return Object.fromEntries(
     Object.entries(tools).map(([name, definition]) => {
       const nativeRead = [
         'get_lead_context',
         'get_lead_note',
         'search_knowledge',
+        // #4572 — o irmão do `search_knowledge` no modo `leitura_direta`: só
+        // leitura, escopado pela organização no closure. Fora daqui ele virava
+        // `unknown_preview_tool`, e o Testar dizia "preciso verificar" sobre o
+        // que a produção lê e responde.
+        'ler_documento',
         'read_skill_reference',
       ].includes(name);
       const catalog = getToolByName(name);
@@ -485,6 +516,15 @@ export function applyPreviewPolicy(
                 {
                   ...ctx,
                   ...liveContext?.(),
+                  // #4592 — leitura VIVA do sinal de caso, no instante do
+                  // `send_message`: o contexto deste gate foi montado ANTES de as
+                  // ferramentas rodarem (`previewGateContext`), então o valor
+                  // congelado (`openedCaseThisTurn: false`) é o que fazia a prévia
+                  // vetar o que a produção libera. Vem DEPOIS do `liveContext`
+                  // porque é o mesmo tipo de leitura fresca — e porque nenhum
+                  // chamador o preenche hoje (conferido: só o `agenda` e o
+                  // `lastroComercial` viajam por lá).
+                  ...(casoHumanoSimuladoNesteTurno ? { openedCaseThisTurn: true } : {}),
                   body,
                   semanticPromise,
                   factualClaim,
@@ -541,6 +581,13 @@ export function applyPreviewPolicy(
                 'provide_case_update',
               ].includes(name)
             ) {
+              // #4592 — a MESMA whitelist que o turno real aplica antes de gravar
+              // (`openHumanCaseInputSchema`, `.strict()`): payload válido conta como
+              // caso aberto PARA A TRAVA deste turno; inválido não conta (a produção
+              // devolveria `invalid_payload` e não abriria nada). Nenhum dos dois
+              // grava: o retorno abaixo continua o de proposta, sem executar a tool.
+              if (name === 'open_human_case' && openHumanCaseInputSchema.safeParse(args).success)
+                casoHumanoSimuladoNesteTurno = true;
               p.result.proposals.push({ tool: name, arguments: args });
               return {
                 ok: true,

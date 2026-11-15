@@ -37,4 +37,23 @@ describe("o arquivo do webhook nunca guarda credencial no cabeçalho", () => {
     // Controle: a assinatura fica — é o que permite reconferir depois.
     expect(guardados["x-hub-signature-256"]).toBe("sha256=abc");
   });
+
+  it("⭐ o segredo do webhook do robô do Telegram não entra (é o segredo inteiro, não assinatura)", async () => {
+    const { admin, linhas } = adminQueGuarda();
+    await abrirArquivoDoWebhook(admin, {
+      organizationId: "org",
+      channelSessionId: "sessao",
+      provider: "telegram",
+      rawBody: "{}",
+      headers: new Headers({
+        "X-Telegram-Bot-Api-Secret-Token": "segredo-do-setwebhook",
+        "content-type": "application/json",
+      }),
+    });
+    const guardados = linhas[0]?.headers as Record<string, string>;
+    expect(Object.keys(guardados).map((k) => k.toLowerCase())).not.toContain("x-telegram-bot-api-secret-token");
+    expect(JSON.stringify(linhas[0])).not.toContain("segredo-do-setwebhook");
+    // Controle: o resto do cabeçalho fica.
+    expect(guardados["content-type"]).toBe("application/json");
+  });
 });

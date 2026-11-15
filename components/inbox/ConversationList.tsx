@@ -17,6 +17,7 @@ import { ConversationListItem } from "./ConversationListItem";
 import { EmptyInbox } from "@/components/empty";
 import { EmptyPorFiltro } from "./EmptyPorFiltro";
 import { filtrosAuxiliaresAtivos } from "@/lib/inbox/filtros-ativos";
+import { textoDaFalhaDaLista } from "@/lib/inbox/falha-da-lista";
 import type {
   ConversationsFilters,
   ConversationWithContact,
@@ -191,17 +192,26 @@ export function ConversationList({
   // rede por uma caixa de entrada vazia — e o `queryFn` do hook já disparou o
   // toast com o motivo cru. Sem dado nenhum (primeira carga), o erro continua
   // sendo tudo o que existe para mostrar, com o botão de tentar de novo.
+  //
+  // E ele DIZ QUAL FOI (#4508): tempo esgotado, servidor fora, sessão caída e
+  // pedido recusado pedem ações diferentes de quem está atendendo. A frase sai
+  // de `textoDaFalhaDaLista`, cuja régua é a mesma da retentativa — antes daqui
+  // todo mundo caía em "Erro ao carregar conversas", e o operador só descobria
+  // que era timeout recarregando a página e perdendo filtro e conversa aberta.
   if (q.isError && q.data === undefined) {
     return (
-      <div className="p-4 text-center text-sm text-muted-foreground">
-        <p>{t("Erro ao carregar conversas.")}</p>
+      <div className="space-y-2 p-4 text-center text-sm text-muted-foreground" role="alert">
+        <p className="text-foreground">{textoDaFalhaDaLista(q.error, t)}</p>
+        {/* A frase que impede a leitura de "perdi os dados" — o banco continua
+            com tudo, é a LEITURA que não voltou. */}
+        <p>{t("As conversas continuam salvas. Nada foi perdido.")}</p>
         <Button
           size="sm"
           variant="outline"
           className="mt-2"
           onClick={() => q.refetch()}
         >
-          Tentar novamente
+          {t("Tentar novamente")}
         </Button>
       </div>
     );

@@ -87,6 +87,10 @@ function candidato(id: string, campaignId: string, data: unknown, selected?: boo
     id,
     campaign_id: campaignId,
     data,
+    // A linha como o GET devolve: `status` e `attempted_at` são o que decide
+    // "ainda não abordada" (issue #4360).
+    status: "new",
+    attempted_at: null,
     progress: "new",
     message_status: null,
     error: null,
@@ -752,5 +756,84 @@ describe("o aviso do agente (issue #4118)", () => {
     const alerta = await screen.findByRole("alert");
     expect(alerta).toHaveTextContent(/versão publicada/);
     expect(within(alerta).queryByTestId("abrir-o-agente")).toBeNull();
+  });
+});
+
+/**
+ * A VOZ É DA ORGANIZAÇÃO, NÃO DA CAMPANHA (issue #4360, parte 2).
+ *
+ * O card existia e era salvo em `organizations.settings.prospeccao`, mas morava
+ * dentro do painel que o botão "Configurar busca" abre — então quem não clicava
+ * ali concluía que precisava reescrever a voz a cada prospecção. O card passa a
+ * ficar na tela; o painel da chave continua fechado até alguém pedir.
+ *
+ * O segundo caso é o que impede a "solução" errada: um segundo lugar para a
+ * mesma configuração (estado local, campo novo, endpoint novo) faria a voz
+ * digitada aqui divergir da que o envio usa.
+ */
+describe("voz e vocabulário à vista (issue #4360)", () => {
+  it("o card aparece sem clicar em 'Configurar busca'", async () => {
+    openPage();
+    expect(
+      await screen.findByRole("heading", { name: "Voz e vocabulário" }),
+    ).toBeVisible();
+    // A chave da busca continua atrás do botão: o card da voz saiu de lá, o
+    // painel inteiro não.
+    expect(screen.queryByLabelText("Chave da Apify")).toBeNull();
+  });
+
+  it("salva pelo MESMO PATCH por organização (sem endpoint novo)", async () => {
+    openPage();
+    fireEvent.change(await screen.findByLabelText("Seu nome"), {
+      target: { value: "Marcos" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar personalização" }));
+    await waitFor(() =>
+      expect(api.patch).toHaveBeenCalledWith(
+        "/api/v1/settings/prospeccao",
+        expect.objectContaining({ vendedor_nome: "Marcos" }),
+      ),
+    );
+    expect(await screen.findByText("Personalização salva.")).toBeVisible();
+  });
+});
+
+/**
+ * A LISTA DE VOLTA (issue #4360, parte 1).
+ *
+ * O link do arquivo carrega a contagem do que ele leva — e a contagem sai da
+ * MESMA régua do servidor (`naoAbordada`, `lib/prospecting/exportar.ts`), não
+ * de um `filter` escrito de novo aqui. Quem já foi abordado fica fora do
+ * arquivo: a campanha nova recusaria essa empresa ("Contato já existe no CRM")
+ * e o download prometeria uma reimportação que não acontece.
+ */
+describe("baixar a lista da campanha (issue #4360)", () => {
+  it("o link aponta para o CSV da campanha e diz quantas ainda não foram abordadas", async () => {
+    openPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Clínicas de estética/ }));
+    const link = await screen.findByTestId("baixar-lista");
+    expect(link).toHaveAttribute("href", `/api/v1/prospecting/${COMPLETA}/exportar`);
+    expect(link).toHaveTextContent("Baixar lista (5)");
+  });
+
+  it("só empresa abordada não gera link: não há lista para baixar", async () => {
+    const base = fixture();
+    api.get.mockImplementation(async () => ({
+      data: {
+        ...base,
+        candidates: [
+          {
+            ...candidato("c1", COMPLETA, empresa("Já abordada", "https://a.test/", null)),
+            status: "sent",
+            attempted_at: "2026-11-01T12:00:00.000Z",
+            progress: "replied",
+          },
+        ],
+      },
+    }));
+    openPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Clínicas de estética/ }));
+    expect(await screen.findByText(/nenhuma empresa ainda pode ser abordada/i)).toBeVisible();
+    expect(screen.queryByTestId("baixar-lista")).toBeNull();
   });
 });

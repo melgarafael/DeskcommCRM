@@ -43,8 +43,16 @@ describe("entregarAviso", () => {
     expect(emitNotification).not.toHaveBeenCalled();
   });
 
-  it("push de mensagem desligado: nenhuma categoria vai à bandeja (a inscrição é do aparelho)", async () => {
+  it("push de mensagem desligado: o lead atribuído continua indo à bandeja (cada tipo é o seu)", async () => {
     gravarCanal("message", "push", false);
+    entregarAviso({ category: "lead_assigned", kind: "lead_assigned", title: "Lead atribuído", body: "Carlos" });
+    expect(toast).toHaveBeenCalledTimes(1);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(emitNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it("o push do PRÓPRIO tipo desligado: não vai à bandeja, e o toast fica", async () => {
+    gravarCanal("lead_assigned", "push", false);
     entregarAviso({ category: "lead_assigned", kind: "lead_assigned", title: "Lead atribuído", body: "Carlos" });
     expect(toast).toHaveBeenCalledTimes(1);
     await new Promise((r) => setTimeout(r, 0));

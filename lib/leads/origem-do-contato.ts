@@ -52,6 +52,9 @@ export interface OrigemDoContato {
    * e `t()` com argumento não literal escapa do guardião de espanhol — a tabela
    * inteira poderia ficar sem tradução com o teste verde (issue #603).
    */
+  googleAds: boolean;
+  contaGoogle: string | null;
+  palavraChave: string | null;
   campanha: string | null;
   conjunto: string | null;
   anuncio: string | null;
@@ -87,6 +90,11 @@ function primeiro(
   return null;
 }
 
+function rotuloComId(rotulo: string | null, id: string | null): string | null {
+  if (rotulo && id && rotulo !== id) return `${rotulo} (${id})`;
+  return rotulo ?? id;
+}
+
 export function origemDoContato(
   metadata: Record<string, unknown> | null | undefined,
   source: string,
@@ -100,14 +108,23 @@ export function origemDoContato(
   // o dado na origem.
   const plataforma = texto(meta.ad_platform);
   const deAnuncio = plataforma !== null && plataforma !== "site";
+  const googleAds = (plataforma ?? source) === "google_ads";
+  const campanha = primeiro(meta, ["utm_campaign", "campaign_name"]);
+  const conjunto = primeiro(meta, ["utm_adset", "adset_name"]);
+  const anuncio = primeiro(meta, ["utm_ad", "ad_name", "ad_title"]);
 
   return {
-    origem: primeiro(meta, CHAVES_DA_ORIGEM) ?? source,
-    campanha: primeiro(meta, ["utm_campaign", "campaign_name"]),
-    conjunto: primeiro(meta, ["utm_adset", "adset_name"]),
-    anuncio: primeiro(meta, ["utm_ad", "ad_name", "ad_title"]),
+    origem: googleAds ? "google_ads" : primeiro(meta, CHAVES_DA_ORIGEM) ?? source,
+    googleAds,
+    contaGoogle: googleAds ? texto(meta.google_customer_id) : null,
+    palavraChave: googleAds ? texto(meta.utm_term) : null,
+    campanha: googleAds ? rotuloComId(texto(meta.utm_campaign), texto(meta.google_campaign_id)) : campanha,
+    conjunto: googleAds ? rotuloComId(texto(meta.utm_adset), texto(meta.google_adgroup_id)) : conjunto,
+    anuncio: googleAds
+      ? rotuloComId(primeiro(meta, ["utm_ad", "utm_content"]), texto(meta.google_ad_id))
+      : anuncio,
     posicionamento,
-    semPosicionamentoDeAnuncio: deAnuncio && posicionamento === null,
+    semPosicionamentoDeAnuncio: deAnuncio && !googleAds && posicionamento === null,
     inferidaPorHorario: meta.origem_inferida_por === "horario",
   };
 }

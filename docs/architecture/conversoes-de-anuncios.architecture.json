@@ -116,6 +116,20 @@
       "label": "Captura Google → referência → contato"
     },
     {
+      "id": "fichas-google",
+      "lane": "tela",
+      "col": 2,
+      "type": "component",
+      "label": "Origem Google Ads no contato e no negócio"
+    },
+    {
+      "id": "etiquetas-google",
+      "lane": "motor",
+      "col": 3,
+      "type": "component",
+      "label": "Automação: adicionar etiquetas da campanha"
+    },
+    {
       "id": "qualificacao",
       "lane": "motor",
       "col": 3,
@@ -236,6 +250,18 @@
     }
   ],
   "edges": [
+    {
+      "id": "clique-google-fichas",
+      "from": "captura",
+      "to": "fichas-google",
+      "label": "primeira origem do contato e origem do novo negócio"
+    },
+    {
+      "id": "negocio-etiquetas-google",
+      "from": "eventos",
+      "to": "etiquetas-google",
+      "label": "origem do negócio e campos escolhidos na regra"
+    },
     {
       "id": "e0",
       "from": "origem",

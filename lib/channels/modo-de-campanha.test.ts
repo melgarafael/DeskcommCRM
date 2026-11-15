@@ -29,6 +29,10 @@ describe("modoDeCampanhaDoCanal", () => {
     expect(modoDeCampanhaDoCanal("um_provider_do_futuro")).toBeNull();
     expect(modoDeCampanhaDoCanal(null)).toBeNull();
   });
+
+  it("o bot (#3440) escreve livre na conversa e mesmo assim não faz campanha", () => {
+    expect(modoDeCampanhaDoCanal("telegram")).toBeNull();
+  });
 });
 
 describe("canalTemRiscoDeBanimento", () => {
