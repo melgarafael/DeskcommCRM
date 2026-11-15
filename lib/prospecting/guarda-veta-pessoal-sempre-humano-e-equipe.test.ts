@@ -316,6 +316,22 @@ describe("a guarda da abordagem fria veta as três marcas, no escopo do candidat
     await expect(assertProspectingContinuation(clienteDoSupa() as never, ctx)).resolves.toBeUndefined();
   });
 
+  it("bolha seguinte de quem respondeu E ficou bloqueado: o motivo é o da conversa, não o do contato", async () => {
+    // Quem responde "PARAR" no meio fica bloqueado E com `last_inbound_at`. A
+    // continuação confere a conversa ANTES do contato, e a tela mostra "a
+    // pessoa respondeu", não "Contato bloqueado.". Os dois ramos são do candidato.
+    estado.contato = { ...CONTATO_LIMPO, is_blocked: true };
+    estado.conversation.last_inbound_at = new Date().toISOString();
+    const erro = await assertProspectingContinuation(clienteDoSupa() as never, ctx).catch(
+      (e: unknown) => e,
+    );
+    expect(erro).toBeInstanceOf(ProspectingError);
+    expect((erro as ProspectingError).message).toBe(
+      "A pessoa respondeu ou o atendimento foi assumido; a abordagem parou aqui.",
+    );
+    expect((erro as ProspectingError).escopo).toBe("candidato");
+  });
+
   it("controle: etiqueta que não está em lista nenhuma não veta", async () => {
     estado.contato = { ...CONTATO_LIMPO, tags: ["cliente-vip"] };
     estado.settings = { crm: { internal_contact_tags: ["interno"], team_contact_tags: ["socio"] } };

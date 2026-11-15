@@ -13,9 +13,12 @@
  * colunas e as tabelas vêm do código da guarda, nunca do teste — transcrevê-las
  * aqui mediria o teste contra ele mesmo.
  *
- * SABOTAGEM: voltar o `select` de contatos da guarda para
- * `is_blocked,force_human,is_anonymized,source,consent` derruba os quatro casos
- * de marca; os dois controles seguem verdes.
+ * SABOTAGEM (prevista, NÃO rodada: escrita sem Docker): voltar
+ * `COLUNAS_DO_CONTATO` (`lib/prospecting/guard.ts`) para
+ * `is_blocked,force_human,is_anonymized,source,consent` derruba os 7 casos de
+ * marca — 4 da guarda cheia e 3 da leitura antes da vaga, que usa a mesma
+ * constante —; os 2 controles (contato limpo e isolamento) seguem verdes.
+ * 7 vermelhos de 9.
  */
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
