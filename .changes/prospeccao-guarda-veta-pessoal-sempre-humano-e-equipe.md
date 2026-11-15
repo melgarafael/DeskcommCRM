@@ -12,11 +12,8 @@ conferência vem antes de reservar o envio, a empresa barrada não ocupa o limit
 
 Antes, o contato "Sempre atendimento humano" recebia a mensagem, e uma ficha pessoal pausava a
 campanha inteira com o aviso "Falha inesperada no envio". Os outros impedimentos do contato
-(bloqueado, anonimizado, recusa de marketing, sem base legal) também pausavam a campanha; agora só
-aquela empresa fica de fora.
-
-A prospecção também deixa de abordar a empresa cujo telefone já virou atendimento de outro contato
-do CRM: ela fica de fora com o motivo "Contato já existe no CRM; atendimento preservado.". Nenhuma
-ação é pedida a quem opera a instalação.
+(bloqueado, anonimizado, passado para atendimento humano, recusa de marketing, sem base legal) também
+pausavam a campanha; agora só aquela empresa fica de fora. Nenhuma ação é pedida a quem opera a
+instalação.
 
 Crédito: @tabaterral.
