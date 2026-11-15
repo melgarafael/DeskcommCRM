@@ -45,6 +45,9 @@ vi.mock("@/lib/tarefas/responsavel", () => ({
 vi.mock("@/lib/tarefas/demanda", () => ({
   conferirDemanda: vi.fn(async () => "ok"),
 }));
+vi.mock("@/lib/tarefas/vinculos", () => ({
+  conferirNegocioEContato: vi.fn(async () => "aceito"),
+}));
 vi.mock("@/lib/db", () => ({ portaDaAplicacao: () => ({ fake: true }) }));
 
 const { criarTarefaHandler, editarTarefaHandler, excluirTarefaHandler, listarTarefasHandler } =
@@ -52,6 +55,7 @@ const { criarTarefaHandler, editarTarefaHandler, excluirTarefaHandler, listarTar
 const { audit } = await import("@/lib/audit");
 const { ApiError } = await import("@/lib/api/types");
 const { conferirDemanda } = await import("@/lib/tarefas/demanda");
+const { conferirNegocioEContato } = await import("@/lib/tarefas/vinculos");
 
 const ORG = "aaaaaaaa-4516-4000-8000-00000000000a";
 const OUTRA_ORG = "bbbbbbbb-4516-4000-8000-00000000000b";
@@ -362,5 +366,75 @@ describe("#4523 — conferência de demanda: 422 e 409 nos dois caminhos", () =>
     expect((erro as InstanceType<typeof ApiError>).status).toBe(409);
     expect((erro as InstanceType<typeof ApiError>).code).toBe("state_conflict");
     expect(tabelas.crm_tasks[0]?.title).toBe("intacta");
+  });
+});
+
+/**
+ * O NEGÓCIO E O CONTATO DA TAREFA SÃO CONFERIDOS NA ORGANIZAÇÃO.
+ *
+ * `lead_id` e `contact_id` são FK que a RLS não cobre, e pelo token o client é
+ * service-role. A régua (`lib/tarefas/vinculos.ts`, provada contra Postgres em
+ * `tests/invariants/tarefas-piloto-pg.test.ts`) roda antes de qualquer escrita,
+ * na criação e na edição.
+ */
+describe("negócio e contato fora da organização: 422, nada gravado", () => {
+  const LEAD = "22222222-4523-4000-8000-000000000022";
+  const CONTATO = "33333333-4523-4000-8000-000000000033";
+
+  it("criação com negócio de outra organização não grava", async () => {
+    const { cliente, estado } = banco();
+    vi.mocked(conferirNegocioEContato).mockResolvedValueOnce("fora_da_organizacao");
+
+    const erro = await criarTarefaHandler(cliente, ctxDoToken(), { ...criacao, lead_id: LEAD }).catch(
+      (e: unknown) => e,
+    );
+
+    expect(erro).toBeInstanceOf(ApiError);
+    expect((erro as InstanceType<typeof ApiError>).status).toBe(422);
+    expect(estado.insertsDeTarefa).toBe(0);
+    expect(conferirNegocioEContato).toHaveBeenCalledWith(
+      expect.anything(),
+      ORG,
+      expect.objectContaining({ lead_id: LEAD }),
+    );
+  });
+
+  it("edição com contato de outra organização não grava", async () => {
+    const { cliente, tabelas } = banco();
+    tabelas.crm_tasks.push({ id: TAREFA, organization_id: ORG, status: "pending", title: "intacta" });
+    vi.mocked(conferirNegocioEContato).mockResolvedValueOnce("fora_da_organizacao");
+
+    const erro = await editarTarefaHandler(cliente, ctxDoToken(), { id: TAREFA, contact_id: CONTATO }).catch(
+      (e: unknown) => e,
+    );
+
+    expect(erro).toBeInstanceOf(ApiError);
+    expect((erro as InstanceType<typeof ApiError>).status).toBe(422);
+    expect(tabelas.crm_tasks[0]?.contact_id).toBeUndefined();
+  });
+
+  it("falha da conferência é 500, nunca gravação", async () => {
+    const { cliente, estado } = banco();
+    vi.mocked(conferirNegocioEContato).mockResolvedValueOnce("falha_na_consulta");
+
+    const erro = await criarTarefaHandler(cliente, ctxDoToken(), { ...criacao, contact_id: CONTATO }).catch(
+      (e: unknown) => e,
+    );
+
+    expect((erro as InstanceType<typeof ApiError>).status).toBe(500);
+    expect(estado.insertsDeTarefa).toBe(0);
+  });
+
+  it("negócio e contato da casa seguem gravando", async () => {
+    const { cliente, estado } = banco();
+
+    const r = await criarTarefaHandler(cliente, ctxDoToken(), {
+      ...criacao,
+      lead_id: LEAD,
+      contact_id: CONTATO,
+    });
+
+    expect(r.task).toBeDefined();
+    expect(estado.insertsDeTarefa).toBe(1);
   });
 });

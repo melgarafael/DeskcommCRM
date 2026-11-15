@@ -33,6 +33,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { registraAtividadeDaTarefa } from "@/lib/tarefas/atividade";
 import { conferirDemanda } from "@/lib/tarefas/demanda";
 import { conferirResponsavel } from "@/lib/tarefas/responsavel";
+import { conferirNegocioEContato } from "@/lib/tarefas/vinculos";
 import {
   SITUACOES_ABERTAS_DA_TAREFA,
   type PrioridadeDaTarefa,
@@ -184,15 +185,37 @@ export async function listarTarefasHandler(
 }
 
 /**
- * O responsável e a demanda têm FK que a RLS não cobre (`lib/tarefas/responsavel.ts`
- * e `demanda.ts` fazem SQL direto na porta de `lib/db`): sem conferir, um id de
- * fora da organização GRAVARIA sem erro. A conferência vale igual para a tela e
- * para o token — é a mesma regra, no mesmo lugar.
+ * O responsável, a demanda, o negócio e o contato têm FK que a RLS não cobre
+ * (`lib/tarefas/responsavel.ts`, `demanda.ts` e `vinculos.ts` fazem SQL direto
+ * na porta de `lib/db`): sem conferir, um id de fora da organização GRAVARIA sem
+ * erro. A conferência vale igual para a tela e para o token — é a mesma regra,
+ * no mesmo lugar.
  */
 async function confereVinculos(
   ctx: HandlerCtx,
-  input: { assigned_to?: string | null; demanda_id?: string | null },
+  input: {
+    assigned_to?: string | null;
+    demanda_id?: string | null;
+    lead_id?: string | null;
+    contact_id?: string | null;
+  },
 ): Promise<void> {
+  if (input.lead_id || input.contact_id) {
+    const veredito = await conferirNegocioEContato(portaDaAplicacao(), ctx.organization_id, input);
+    if (veredito === "falha_na_consulta") {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, "Erro ao salvar a tarefa.");
+    }
+    if (veredito === "fora_da_organizacao") {
+      throw new ApiError(
+        422,
+        "validation_failed",
+        undefined,
+        ctx.requestId,
+        "O negócio, o contato ou a demanda vinculada não existe.",
+      );
+    }
+  }
+
   if (input.assigned_to) {
     const veredito = await conferirResponsavel(portaDaAplicacao(), ctx.organization_id, input.assigned_to);
     if (veredito === "falha_na_consulta") {

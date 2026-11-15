@@ -7,6 +7,7 @@ import { criarTarefaInterna } from "@/lib/tarefas/criar-tarefa";
 import { conferirDemanda } from "@/lib/tarefas/demanda";
 import { aplicarPlanoDeTarefas } from "@/lib/tarefas/plano";
 import { conferirResponsavel } from "@/lib/tarefas/responsavel";
+import { conferirNegocioEContato } from "@/lib/tarefas/vinculos";
 
 /**
  * F1 do #3715 — `lib/tarefas` FALANDO SQL DIRETO, contra Postgres de verdade.
@@ -452,6 +453,24 @@ describe("conferirDemanda — a régua do vínculo com o atendimento", () => {
 
   it("erro do banco vira `falha_na_consulta`, nunca aceite (id fora do formato uuid)", async () => {
     expect(await conferirDemanda(db, ORG_A, "nao-e-um-uuid")).toBe("falha_na_consulta");
+  });
+});
+
+describe("conferirNegocioEContato — o negócio e o contato da tarefa", () => {
+  it("negócio e contato da organização são aceitos", async () => {
+    expect(await conferirNegocioEContato(db, ORG_A, { lead_id: LEAD_A, contact_id: CONTATO_A })).toBe("aceito");
+  });
+
+  it("⭐ negócio ou contato de OUTRA organização é `fora_da_organizacao`", async () => {
+    expect(await conferirNegocioEContato(db, ORG_A, { lead_id: LEAD_B })).toBe("fora_da_organizacao");
+    expect(await conferirNegocioEContato(db, ORG_A, { contact_id: CONTATO_B })).toBe("fora_da_organizacao");
+    expect(await conferirNegocioEContato(db, ORG_A, { lead_id: LEAD_A, contact_id: CONTATO_B })).toBe(
+      "fora_da_organizacao",
+    );
+  });
+
+  it("erro do banco vira `falha_na_consulta`, nunca aceite (id fora do formato uuid)", async () => {
+    expect(await conferirNegocioEContato(db, ORG_A, { lead_id: "nao-e-um-uuid" })).toBe("falha_na_consulta");
   });
 });
 
