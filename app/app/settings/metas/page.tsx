@@ -16,6 +16,7 @@
  */
 import { redirect } from "next/navigation";
 
+import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK, escreveComoPlatformAdmin } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -53,14 +54,13 @@ export default async function MetaDeVendasPage() {
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-6">
-      <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">{t("Meta de vendas")}</h1>
+      <CabecalhoDaSubTela className="flex flex-col gap-2" titulo={t("Meta de vendas")} idioma={idioma}>
         <p className="max-w-2xl text-sm text-muted-foreground">
           {t(
             "Quanto a empresa quer vender neste mês. O Desempenho passa a mostrar o quanto já foi feito contra esse número — o realizado, o percentual e o quanto falta.",
           )}
         </p>
-      </header>
+      </CabecalhoDaSubTela>
 
       <FormularioDaMeta mes={mes} alvoAtual={alvoAtual} />
 
