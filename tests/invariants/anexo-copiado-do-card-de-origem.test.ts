@@ -22,6 +22,9 @@
  * `lib/automation/actions/create-or-move-lead-anexos.test.ts`; aqui se mede o que
  * só o banco pode recusar.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { sql, lastLine } from "./gov-helpers";
@@ -146,5 +149,62 @@ describe("crm_lead_attachments — o anexo copiado aponta para a linha de origem
               '${caminho(LEAD_ORIGEM, `${ANEXO_ORIGEM}.pdf`)}', '${ANEXO_ORIGEM}');
     `);
     expect(erro).toContain("crm_lead_attachments_storage_path_check");
+  });
+});
+
+/**
+ * As cópias feitas na v1.111.0 (#4569) nasceram SEM o vínculo. A migration as
+ * liga à origem: sem isso, a primeira reposição numa continuação daquela versão
+ * copiaria cada arquivo de novo (medido na triagem: o dublê de
+ * `copiarAnexosDoClone` com uma cópia sem vínculo no destino copiou 1, não 0).
+ * A migration é reaplicada aqui, como o `update.sh` reaplica o baseline.
+ */
+describe("crm_lead_attachments — a cópia antiga, sem vínculo, é ligada à origem", () => {
+  const MIGRATION = join(
+    process.cwd(),
+    "supabase",
+    "migrations",
+    "20261115043256_9387_anexo_copiado_do_card_de_origem.sql",
+  );
+  const ANEXO_MANUAL = "4544a000-5555-4000-8000-00000000000d";
+
+  function anexoSemVinculo(id: string, lead: string, nome: string): void {
+    sql(`
+      insert into crm_lead_attachments
+        (id, organization_id, lead_id, field_key, file_name, file_size, mime_type, storage_path)
+      values ('${id}', '${ORG}', '${lead}', 'voucher', '${nome}', 184320,
+              'application/pdf', '${caminho(lead, `${id}.pdf`)}');
+    `);
+  }
+
+  function vinculoDe(id: string): string {
+    return lastLine(
+      sql(`select coalesce(clonado_do_attachment_id::text, 'nulo') from crm_lead_attachments where id = '${id}';`),
+    );
+  }
+
+  it("liga a cópia do card que declara a origem, e só ela; reaplicar não muda nada", () => {
+    sql(`
+      update crm_leads set source_metadata = jsonb_build_object('clonado_de', jsonb_build_object('lead_id', '${LEAD_ORIGEM}'))
+       where id = '${LEAD_DESTINO}';
+      update crm_leads set source_metadata = '{}'::jsonb where id = '${LEAD_OUTRO}';
+    `);
+    anexoSemVinculo(ANEXO_COPIA, LEAD_DESTINO, "apolice.pdf");
+    // Upload direto no card novo, com outro nome: não é cópia de nada.
+    anexoSemVinculo(ANEXO_MANUAL, LEAD_DESTINO, "comprovante.pdf");
+    // Mesmo arquivo num card que NÃO declara a origem: não se adivinha vínculo.
+    anexoSemVinculo(ANEXO_COPIA_OUTRO_CARD, LEAD_OUTRO, "apolice.pdf");
+
+    sql(readFileSync(MIGRATION, "utf8"));
+
+    expect(vinculoDe(ANEXO_COPIA)).toBe(ANEXO_ORIGEM);
+    expect(vinculoDe(ANEXO_MANUAL)).toBe("nulo");
+    expect(vinculoDe(ANEXO_COPIA_OUTRO_CARD)).toBe("nulo");
+
+    sql(readFileSync(MIGRATION, "utf8"));
+    expect(vinculoDe(ANEXO_COPIA)).toBe(ANEXO_ORIGEM);
+    expect(
+      lastLine(sql(`select count(*) from crm_lead_attachments where organization_id = '${ORG}';`)),
+    ).toBe("4");
   });
 });
