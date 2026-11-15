@@ -137,7 +137,7 @@ function extensaoDoCaminho(caminho: string): string {
  * Storage na primeira execução deixava o voucher fora do card para sempre: a
  * guarda de continuação responde `ja_existia` e nunca voltava a tentar.
  *
- * O índice único parcial `crm_lead_attachments_clonado_unico` (migration 4544)
+ * O índice único parcial `crm_lead_attachments_clonado_unico` (migration 9387)
  * fecha a corrida entre duas execuções simultâneas: a que perder não deixa
  * linha duplicada, e a contagem a trata como "já estava".
  */

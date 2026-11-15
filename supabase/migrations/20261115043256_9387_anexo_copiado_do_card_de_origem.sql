@@ -1,5 +1,5 @@
 -- manifest: **A cópia do anexo do card clonado sabe de qual anexo ela veio (#4544).** O card criado em outro funil leva os anexos da origem (#4569), mas a cópia não guardava o vínculo: repetir a cópia duplicava o anexo, e o ramo de `lead.won` em que a continuação JÁ existe respondia `ja_existia` sem tentar de novo — uma falha de Storage na primeira execução deixava o voucher fora do card de pós-venda para sempre. Coluna `clonado_do_attachment_id` (FK para a própria tabela, `on delete set null`: apagar a origem não apaga o voucher do card novo) e índice único parcial `crm_lead_attachments_clonado_unico` em `(lead_id, clonado_do_attachment_id)`, que é a idempotência no banco — a segunda execução (ou duas simultâneas) não duplica. A restrição do `storage_path` e o gatilho de imutabilidade NÃO foram afrouxados: a cópia continua sendo linha do próprio card, com objeto copiado pelo Storage. Gate: `tests/invariants/anexo-copiado-do-card-de-origem.test.ts`.
--- 4544 — A CÓPIA DO ANEXO SABE DE QUAL ANEXO ELA VEIO (#4544).
+-- 9387 — A CÓPIA DO ANEXO SABE DE QUAL ANEXO ELA VEIO (#4544).
 --
 -- ═══ O que esta coluna fecha ═══
 --
