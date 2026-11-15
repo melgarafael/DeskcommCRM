@@ -9,6 +9,7 @@ import { ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
 import { traduzir } from "@/lib/i18n/dicionario";
 import {
   comSaida,
+  palavraDeSaida,
   problemaNoTextoDaSaida,
   problemaNoTextoDaSaidaNoIdioma,
   rodapeDeSaida,
@@ -157,6 +158,44 @@ describe("(2) a palavra exigida é a do IDIOMA da instalação", () => {
     expect(textoDaSaidaEfetivo(TEXTO_DO_DONO, "es-AR")).toBe(PADRAO_ES);
     expect(textoDaSaidaEfetivo(TEXTO_DO_DONO, "pt-BR")).toBe(TEXTO_DO_DONO);
     expect(comSaida("Hola", "es-AR", TEXTO_DO_DONO)).toBe(`Hola\n\n${PADRAO_ES}`);
+  });
+
+  it("texto que TROCA a palavra por sinônimo é recusado — o sinônimo não é resposta de saída", () => {
+    // O pedido é explícito: a PALAVRA reconhecida continua no texto; escrever em
+    // volta é livre, substituí-la por um sinônimo não. Estes três são os
+    // sinônimos que alguém escreveria de boa-fé — e nenhum deles descadastra:
+    // `cancelar` sozinho saiu do detector no #4579 (é resposta de menu), e
+    // "chega"/"que não" nunca estiveram lá.
+    for (const texto of [
+      "Se não quiser mais, responda CANCELAR.",
+      "Se não fizer sentido, é só escrever CHEGA.",
+      "Se não quiser mais, é só responder que não.",
+    ]) {
+      expect(
+        problemaNoTextoDaSaidaNoIdioma(texto, "pt-BR"),
+        `sinônimo aceito no lugar da palavra: ${texto}`,
+      ).toBe("sem_palavra");
+      // E a recusa acontece AO SALVAR: o schema tem de barrar o texto, no campo.
+      const recusado = campaignConfigSchema.safeParse({ ...BASE, texto_da_saida: texto });
+      expect(recusado.success, `o schema aceitou um sinônimo: ${texto}`).toBe(false);
+      const recusa = recusado.success
+        ? undefined
+        : recusado.error.issues.find((i) => i.path.join(".") === "texto_da_saida");
+      expect(recusa, `a recusa não é do campo texto_da_saida: ${texto}`).toBeDefined();
+    }
+    // Por que a recusa é a certa: nenhuma dessas respostas é pedido de saída. Se
+    // o rodapé ensinasse uma delas, a pessoa responderia e seguiria recebendo.
+    expect(ehPedidoDeOptOut("CANCELAR")).toBe(false);
+    expect(ehPedidoDeOptOut("CHEGA")).toBe(false);
+    expect(ehPedidoDeOptOut("que não")).toBe(false);
+    // `SAIR` é o caso de borda: o detector o reconhece SOZINHO (está em
+    // `PALAVRAS_DE_OPT_OUT`), mas ele não é a palavra que este idioma promete —
+    // a régua exige a do idioma da instalação (PARAR em pt, BAJA em es, STOP em
+    // en), para a campanha não ensinar duas saídas diferentes na mesma operação.
+    expect(ehPedidoDeOptOut("SAIR")).toBe(true);
+    expect(problemaNoTextoDaSaidaNoIdioma("Se não quiser mais, responda SAIR.", "pt-BR")).toBe(
+      "sem_palavra",
+    );
   });
 
   it("tamanho e link, sem palavra, e vazio como válido", () => {
@@ -373,6 +412,32 @@ describe("(5) a palavra não pode ir escondida por formatação", () => {
     expect(ehPedidoDeOptOut("Parar!")).toBe(true);
   });
 
+  it("a palavra que o texto do dono ENSINA é a que o detector reconhece — nos três idiomas", () => {
+    // O laço é o ponto: a régua de aceitação (`problemaNoTextoDaSaidaNoIdioma`) e
+    // o detector são DOIS lados do mesmo contrato, e o que fecha o laço é a
+    // palavra que o texto manda responder. Sem este teste, um texto aceito com
+    // uma palavra que o detector não conhece passaria — a pessoa responderia e
+    // seguiria recebendo.
+    const casos = [
+      { locale: "pt-BR", texto: "Se não fizer sentido, é só responder PARAR.", resposta: "Parar!" },
+      { locale: "es-AR", texto: "Si no tiene sentido, escribí BAJA y no escribo más.", resposta: "baja." },
+      { locale: "en-US", texto: "If this isn't for you, reply STOP and I won't write again.", resposta: "STOP" },
+    ] as const;
+    for (const { locale, texto, resposta } of casos) {
+      expect(
+        problemaNoTextoDaSaidaNoIdioma(texto, locale),
+        `o texto com tom próprio foi recusado em ${locale}`,
+      ).toBeNull();
+      // A palavra do texto é a do idioma — o dono escreve EM VOLTA dela, não no
+      // lugar dela.
+      expect(texto).toContain(palavraDeSaida(locale));
+      // E ela, respondida sozinha (com caixa e pontuação do dia a dia), descadastra.
+      expect(ehPedidoDeOptOut(resposta), `a resposta ensinada em ${locale} não descadastra`).toBe(
+        true,
+      );
+    }
+  });
+
   it("a recusa chega traduzida em espanhol e em inglês", () => {
     const chave =
       "A palavra está no texto, mas riscada, escondida ou em código. Tire a marcação de cima dela: é o que a pessoa vai responder.";
@@ -385,5 +450,15 @@ describe("(5) a palavra não pode ir escondida por formatação", () => {
       fs.readFileSync(path.join(RAIZ, "lib/i18n/traducoes/en.json"), "utf8"),
     ) as Record<string, string>;
     expect(en[chave], "a frase da recusa não está no catálogo em inglês").toBeTruthy();
+    // As OUTRAS recusas do mesmo campo — inclusive a de "sem a palavra", que é a
+    // dos casos (2) e (3) — também precisam de inglês: sem elas, a validação que
+    // o pedido chama de clara só existiria em pt e es.
+    for (const outra of [
+      "Inclua a palavra que a pessoa responde para sair; sem ela o pedido não é reconhecido.",
+      "Use até 160 caracteres e nenhum link.",
+    ]) {
+      expect(en[outra], `sem inglês para a recusa: ${outra}`).toBeTruthy();
+      expect(traduzir(outra, "es"), `sem espanhol para a recusa: ${outra}`).not.toBe(outra);
+    }
   });
 });
