@@ -4,6 +4,7 @@
  */
 import type { EventHandler, HandlerResult } from "@/lib/event-log/dispatcher";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { avisarSequenciaParada } from "@/lib/automation/parada-no-assistido";
 import { createSupabaseFollowupGateDb } from "@/lib/followup/agent-followup-gate";
 import {
   EVENTO_DE_LEAD_CRIADO,
@@ -28,13 +29,20 @@ export const followupGatilhoLeadHandler: EventHandler = {
         },
         row,
       );
+      if (summary.parados_no_assistido && row.entity_id) {
+        await avisarSequenciaParada(admin, {
+          organizationId: row.organization_id,
+          leadId: row.entity_id,
+          quantas: summary.parados_no_assistido,
+        });
+      }
       return {
         consumer_key: FOLLOWUP_GATILHO_LEAD_HANDLER_KEY,
         status: summary.matched && summary.enrolled > 0 ? "ok" : "skipped",
         detail:
           `armados=${summary.pointers_armados} enrolled=${summary.enrolled} ` +
           `origem_obsoleta=${summary.skipped_stale_origin ?? 0} ja_vivo=${summary.skipped_existing} gate=${summary.pointers_barrados_pelo_gate} ` +
-          `sem_contato=${summary.sem_contato} planilha=${summary.vindos_de_planilha}`,
+          `parado_no_assistido=${summary.parados_no_assistido ?? 0} sem_contato=${summary.sem_contato} planilha=${summary.vindos_de_planilha}`,
       };
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);

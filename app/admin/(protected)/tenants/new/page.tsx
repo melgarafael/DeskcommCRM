@@ -19,7 +19,7 @@ export default async function NewTenantPage() {
   if (ligada) {
     const { data, error } = await admin
       .from("cobranca_planos")
-      .select("id, nome, preco_cents, intervalo, trial_dias")
+      .select("id, nome, preco_cents, moeda, intervalo, trial_dias")
       .is("arquivado_em", null)
       .order("nome");
     if (error) throw new Error(`planos de cobrança: leitura falhou (${error.code})`);

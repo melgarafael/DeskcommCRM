@@ -51,6 +51,7 @@ import { useFollowupFlows } from "@/hooks/followup/useFollowupFlows";
 // #2155 — funil/etapa de DESTINO da intenção: o card vai para o funil do produto.
 import { usePipelines } from "@/hooks/webhooks/useWebhookSources";
 import { useT } from "@/hooks/i18n/useT";
+import type { NumeroSemRoteador } from "../estado-dos-numeros";
 
 interface AgentLite {
   id: string;
@@ -71,6 +72,12 @@ interface Props {
    * coisa não pode desativar o roteador sem o operador ter escolhido.
    */
   numeroRemovido?: boolean;
+  /**
+   * #4340 — números vivos desta empresa que ainda não têm roteador: os destinos
+   * possíveis da ação "mover o roteador para o número novo". Vazio = nenhum
+   * número livre (a tela mantém só o aviso).
+   */
+  numerosLivres?: NumeroSemRoteador[];
 }
 
 interface DraftMember extends RouterMemberInput {
@@ -129,6 +136,7 @@ export function RouterEditorClient({
   channelSessions,
   classifierModels,
   numeroRemovido = false,
+  numerosLivres = [],
 }: Props) {
   const t = useT();
   const nextRouter = useNextRouter();
@@ -190,6 +198,12 @@ export function RouterEditorClient({
   }, [members]);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [testMessage, setTestMessage] = React.useState("");
+  // #4340 — destino da ação de mover. Com um número só livre, ele já vem
+  // escolhido: o caso comum (o número novo ÚNICO) vira um clique.
+  const [novoNumero, setNovoNumero] = React.useState(
+    numerosLivres.length === 1 ? numerosLivres[0]!.id : "",
+  );
+  const [movendoNumero, setMovendoNumero] = React.useState(false);
 
   const updateRouter = useUpdateRouter(routerId);
   const deleteRouter = useDeleteRouter();
@@ -316,6 +330,29 @@ export function RouterEditorClient({
     }
   }
 
+  /**
+   * #4340 — o gesto que faz o roteador acompanhar a troca de número. O PATCH
+   * leva `channel_session_id` e a rota aplica a régua (só sai de número
+   * removido / só entra em número vivo e sem roteador) e a auditoria "de X
+   * para Y". Aqui não há regra: só o pedido e o desfecho.
+   */
+  async function handleMoverParaNumero() {
+    if (!novoNumero) return;
+    setMovendoNumero(true);
+    try {
+      await updateRouter.mutateAsync({ channel_session_id: novoNumero });
+      toast.success(t("Roteador movido para o número novo."));
+      setNovoNumero("");
+      // O aviso de número removido e os números livres vêm do SSR (page.tsx);
+      // invalidar o React Query não os recalcula.
+      nextRouter.refresh();
+    } catch (err) {
+      showApiError(err);
+    } finally {
+      setMovendoNumero(false);
+    }
+  }
+
   function handleDelete() {
     deleteRouter.mutate(routerId, {
       onSuccess: () => {
@@ -372,9 +409,41 @@ export function RouterEditorClient({
           </p>
           <p className="text-xs text-muted-foreground">
             {t(
-              "Nenhuma conversa chega neste roteador: o número foi removido do WhatsApp. As conversas do número novo caem no agente principal dele, sem roteador decidindo a intenção — crie um roteador para o número novo.",
+              "Nenhuma conversa chega neste roteador: o número foi removido do WhatsApp. Mova o roteador para o número novo para as conversas voltarem a ser classificadas — sem isso, elas caem no agente principal do número, sem decisão de intenção.",
             )}
           </p>
+          {canManage && numerosLivres.length > 0 ? (
+            <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
+              <div className="w-full space-y-1 sm:max-w-xs">
+                <Label htmlFor="router-novo-numero">{t("Número novo")}</Label>
+                <Select value={novoNumero || undefined} onValueChange={setNovoNumero}>
+                  <SelectTrigger id="router-novo-numero">
+                    <SelectValue placeholder={t("Selecione um número")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {numerosLivres.map((numero) => (
+                      <SelectItem key={numero.id} value={numero.id}>
+                        {numero.rotulo}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                type="button"
+                onClick={handleMoverParaNumero}
+                disabled={!novoNumero || movendoNumero || updateRouter.isPending}
+                data-testid="mover-roteador-de-numero"
+              >
+                <ArrowRight /> {t("Mover roteador para este número")}
+              </Button>
+            </div>
+          ) : null}
+          {canManage && numerosLivres.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              {t("Nenhum número livre para mover: conecte o número novo em Canais.")}
+            </p>
+          ) : null}
         </Card>
       )}
 

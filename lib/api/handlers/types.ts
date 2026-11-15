@@ -31,7 +31,20 @@ export type Actor =
    * porque nem todo caminho conhece o agente (token externo, por exemplo) — e
    * "não sei qual agente" tem de virar atividade de sistema, nunca linha perdida.
    */
-  | { type: "ai_agent"; id: string; role: string; api_token_id?: string; agent_id?: string }
+  | {
+      type: "ai_agent";
+      id: string;
+      role: string;
+      api_token_id?: string;
+      agent_id?: string;
+      /**
+       * `assisted` quando quem age é um agente em modo ASSISTIDO (doc 301 = B).
+       * Viaja para o `metadata` do evento como `actor_operation_mode`, e é por
+       * ele que o motor de automação segura as ações que falam com o cliente
+       * (`lib/automation/parada-no-assistido.ts`). Ausente = automático.
+       */
+      operation_mode?: "assisted";
+    }
   /**
    * TOKEN DE SERVIDOR sem escopo de agente — uma integração, não uma pessoa.
    *
@@ -73,8 +86,12 @@ export type Actor =
    * — o mesmo campo do ator `ai_agent` e pela mesma razão: o `id` deste ator é
    * a REGRA que disparou, e a assinatura `por_agente` (#3310) precisa do nome
    * de quem escreveu, não do nome de quem mandou disparar.
+   *
+   * `operation_mode` (doc 301 = B) é a marca HERDADA: a regra rodou por causa de
+   * algo que a IA fez no modo assistido, e o que ela escreve leva a mesma marca
+   * (`marcaHerdadaDoEvento` em `lib/automation/parada-no-assistido.ts`).
    */
-  | { type: "webhook_source"; id: string; textoEscritoPelaIA?: true; agent_id?: string };
+  | { type: "webhook_source"; id: string; textoEscritoPelaIA?: true; agent_id?: string; operation_mode?: "assisted" };
 
 export interface HandlerCtx {
   prospectingDelivery?: ProspectingDelivery;

@@ -24,6 +24,7 @@ import { serviceForEvent } from "@/lib/atendimento/origem";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { EventRow } from "@/lib/event-log/dispatcher";
+import { eventoDaIaNoAssistido } from "@/lib/automation/parada-no-assistido";
 import { ORIGEM_DA_PLANILHA } from "@/lib/leads/planilha";
 import { flowGraphSchema } from "./graph-schema";
 import { triggerConfigSchema } from "./api-schemas";
@@ -74,6 +75,8 @@ export interface GatilhoLeadSummary {
   enrolled: number;
   skipped_existing: number;
   skipped_stale_origin?: number;
+  /** A IA criou o negócio no modo assistido: a sequência espera alguém inscrever (doc 301 = B). */
+  parados_no_assistido?: number;
   sem_contato: number;
   vindos_de_planilha: number;
 }
@@ -124,6 +127,12 @@ export async function aplicaGatilhoDeLead(
   const contatoId = await deps.db.carregaContatoDoNegocio(row.organization_id, negocioId);
   if (!contatoId) {
     summary.sem_contato = armados.length;
+    return summary;
+  }
+
+  // Doc 301 = B: a mesma guarda do gatilho de etapa (`gatilho-etapa.ts`).
+  if (eventoDaIaNoAssistido(row)) {
+    summary.parados_no_assistido = armados.length;
     return summary;
   }
 

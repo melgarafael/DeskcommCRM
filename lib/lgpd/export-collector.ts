@@ -369,6 +369,20 @@ export interface ProposalRow {
  * saber não só que a empresa escreveu algo sobre ele, mas quando ela combinou
  * agir — que é a informação que dá sentido ao texto.
  */
+/**
+ * Mensagem de texto agendada para o titular (migration 9336, #3118). O texto é
+ * escrito PARA ele e a anonimização o apaga, então o pedido de acesso o entrega,
+ * com o horário e o desfecho (agendada, encaminhada, falhou, cancelada).
+ */
+export interface ScheduledMessageRow {
+  id: string;
+  title: string | null;
+  body: string;
+  scheduled_at: string;
+  status: string;
+  created_at: string;
+}
+
 export interface TaskRow {
   id: string;
   title: string;
@@ -792,6 +806,12 @@ export interface ExportPayload {
   sales: SaleRow[];
   proposals: ProposalRow[];
   tasks: TaskRow[];
+  /**
+   * Mensagens agendadas (migration 9336). Presente só quando há linha, como
+   * `calendar_waitlist`: o data.json de quem não tem agendamento fica byte a
+   * byte o de antes (fixtures de `lgpd-texto-segue-o-pais.test.tsx`).
+   */
+  scheduled_messages?: ScheduledMessageRow[];
   webhook_captures: CaptureRow[];
   audit_log_extract: AuditRow[];
   meeting_deliveries: MeetingDeliveryRow[];
@@ -1941,6 +1961,27 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // Mensagens agendadas — contact_id direto em mensagens_agendadas (migration 9336).
+  let scheduled_messages: ScheduledMessageRow[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("mensagens_agendadas")
+      .select("id, title, body, scheduled_at, status, created_at")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("scheduled_at", { ascending: false })
+      .limit(500);
+    if (error) {
+      logger.warn("[lgpd-export-worker] scheduled messages load failed", {
+        request_id: requestId,
+        error: error.message,
+      });
+    } else if (data) {
+      conferirTeto("scheduled_messages", data, 500);
+      scheduled_messages = data;
+    }
+  }
+
   // Chamadas de voz — `contact_id` direto em `voice_calls` (migration 0232).
   //
   // O que existe aqui é o REGISTRO da ligação, nunca o áudio: gravação está
@@ -2643,6 +2684,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     sales,
     proposals,
     tasks,
+    ...(scheduled_messages.length > 0 ? { scheduled_messages } : {}),
     webhook_captures,
     audit_log_extract,
     reply_drafts,

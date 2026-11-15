@@ -216,7 +216,7 @@ describe("notify_team — a ação que NÃO EXISTE ainda (#2642)", () => {
     const canalEmail = actionSchema.safeParse({ type: "notify_team", config: { canal: "email" } });
     expect(canalEmail.success).toBe(false);
 
-    const canalTorto = actionSchema.safeParse({ type: "notify_team", config: { canal: "telegram" } });
+    const canalTorto = actionSchema.safeParse({ type: "notify_team", config: { canal: "pombo_correio" } });
     expect(canalTorto.success).toBe(false);
 
     // `membro_id` também saiu: quem recebe é o número da empresa, não uma

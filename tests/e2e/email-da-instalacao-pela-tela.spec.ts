@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { test, expect, type Page } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, type Page } from "./helpers/test";
 
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
 
@@ -242,6 +242,7 @@ test.afterAll(async ({ browser }) => {
   // a validação e deixaria a próxima spec medindo um estado que o produto nunca
   // produziria.
   const page = await browser.newPage();
+  esperarARevelacaoNasCargas(page);
   try {
     await entrarComoDono(page);
     await page.goto("/admin/email");

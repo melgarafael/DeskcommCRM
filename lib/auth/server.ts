@@ -476,6 +476,35 @@ export const loadAuthUser = cache(async (): Promise<AuthUser | null> => {
 });
 
 /**
+ * O `user_metadata` CRU da sessão desta requisição — `{}` quando não há.
+ *
+ * ─── Por que não alargar `AuthUser`, e por que não um `getUser` novo ──────
+ *
+ * `AuthUser` é o recorte que TODA tela usa, e ele viaja para o cliente em
+ * `app/app/layout.tsx` (`<AuthProvider user={user}>`). Espalhar o metadata
+ * inteiro ali mandaria ao navegador chaves que não são da tela — o
+ * `invite_token` do cadastro, por exemplo. Quem precisa de uma preferência
+ * específica lê esta função e extrai a chave dela, como
+ * `app/get-started/page.tsx` já faz com uma consulta própria.
+ *
+ * A consulta própria seria um SEGUNDO `/auth/v1/user` por carregamento — a
+ * linha que a #3696 mediu 18,6 mil vezes em 17 h. Aqui não há ida nova ao
+ * GoTrue: é o resultado de `sessaoDaRequisicao`, que `loadAuthUser` já pediu e
+ * que o `cache()` do React reaproveita dentro da mesma requisição.
+ */
+export const metadadosDaSessao = cache(async (): Promise<Record<string, unknown>> => {
+  const {
+    resposta: {
+      data: { user },
+    },
+  } = await sessaoDaRequisicao();
+  const metadata = user?.user_metadata;
+  return typeof metadata === "object" && metadata !== null
+    ? (metadata as Record<string, unknown>)
+    : {};
+});
+
+/**
  * A organização ativa SEM o portão de suspensão — o corpo que `resolveActiveOrg`
  * tinha até a spec da cobrança (§4, item 3).
  *

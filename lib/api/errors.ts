@@ -152,6 +152,12 @@ export const ApiErrorCodes = {
   agent_name_taken: "agent_name_taken",
   duplicate_external_id: "duplicate_external_id",
   event_gone: "event_gone", // resend de run cujo event_log original foi apagado (on delete set null)
+  // Doc 301 = B: o disparo do que ficou parado no assistido caiu fora da janela de envio
+  // (ou no limite do dia); nada saiu, o aviso volta a ficar aberto.
+  dispatch_postponed: "dispatch_postponed",
+  // Doc 301 = B: o disparo rodou e nenhuma ação parada saiu (todas falharam);
+  // o run fica na Atividade com o motivo e o aviso volta a ficar aberto.
+  dispatch_failed: "dispatch_failed",
   no_actions_to_resend: "no_actions_to_resend", // resend de regra que não tem mais nenhuma ação de webhook — reenviar nada não é sucesso
   next_action_absent: "next_action_absent", // decisão sobre proposta que não existe (mais) [wave 4]
   next_action_changed: "next_action_changed", // o agente reescreveu a proposta entre o render e o clique
@@ -394,6 +400,14 @@ export const ApiErrorCodes = {
   campanha_velocidade_do_canal: "campanha_velocidade_do_canal", // 422: envio rápido ou broadcast pedido num número que não o faz
   campanha_transmissao_variavel: "campanha_transmissao_variavel", // 422: broadcast com variável que muda por pessoa (migration 0712)
   campanha_transmissao_entregue: "campanha_transmissao_entregue", // 409: a velocidade não muda depois que a lista foi entregue ao provedor
+  // Migration 9334 (#3441, fatia E2a): campanha por e-mail, sem número.
+  campanha_email_sem_conta: "campanha_email_sem_conta", // 409: a organização não conectou a conta Resend
+  campanha_email_conta_indisponivel: "campanha_email_conta_indisponivel", // 503: a conta existe e não pôde ser lida — não é ausência
+  campanha_email_assunto_vazio: "campanha_email_assunto_vazio", // 422: e-mail sem assunto não sai
+  campanha_email_assunto_longo: "campanha_email_assunto_longo", // 422: assunto acima do limite do envio
+  campanha_email_corpo_vazio: "campanha_email_corpo_vazio", // 422: e-mail sem corpo não sai
+  campanha_email_corpo_longo: "campanha_email_corpo_longo", // 422: corpo acima do limite do envio
+  campanha_email_desligada: "campanha_email_desligada", // 404: o módulo `campanha_por_email` está desligado na instalação (doc 305)
 
   // 500 / upstream
   internal_error: "internal_error",

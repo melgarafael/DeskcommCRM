@@ -11,12 +11,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   useAgentInbox,
+  useDispararAcoesParadas,
   useResolveAllInboxItems,
   useUpdateInboxItem,
   type AgentInboxItem,
 } from "@/hooks/ai/useAgentInbox";
 import { kindLabel, SEVERITY_LABEL, type AgentInboxSeverity } from "@/lib/ai/agent-inbox-copy";
 import { linkDePagamentoSeguro } from "@/lib/cobranca/link";
+// Só o TIPO: o módulo é do servidor (logger); o literal abaixo é conferido contra ele.
+import type { REF_DO_AVISO_DE_PARADA } from "@/lib/automation/parada-no-assistido";
 import { Bell, Check } from "@/lib/ui/icons";
 import { useT } from "@/hooks/i18n/useT";
 import { ApiError } from "@/lib/api/types";
@@ -27,7 +30,11 @@ const SEVERITY_VARIANT: Record<AgentInboxSeverity, "info" | "warning" | "error">
   critical: "error",
 };
 
-export function AgentInboxList({ canResolve }: { canResolve: boolean }) {
+/**
+ * `podeDisparar`: quem pode disparar o que a automação segurou no modo assistido
+ * (doc 301 = B) — `manager`, a régua da rota `runs/[runId]/disparar`.
+ */
+export function AgentInboxList({ canResolve, podeDisparar = false }: { canResolve: boolean; podeDisparar?: boolean }) {
   const t = useT();
   const [tab, setTab] = useState<"open" | "resolved">("open");
   const { data: cachedData, error, isLoading, isError, refetch, isFetching, podeConsultar } = useAgentInbox(tab);
@@ -35,6 +42,7 @@ export function AgentInboxList({ canResolve }: { canResolve: boolean }) {
   const data = acessoNegado ? undefined : cachedData;
   const update = useUpdateInboxItem();
   const resolveAll = useResolveAllInboxItems();
+  const disparar = useDispararAcoesParadas();
 
   /*
    * QUEM NÃO ALCANÇA A CENTRAL NÃO LÊ "NENHUM AVISO EM ABERTO" (issue #3147).
@@ -99,6 +107,7 @@ export function AgentInboxList({ canResolve }: { canResolve: boolean }) {
         </div>
       ) : null}
       {update.isError ? <p role="alert" className="text-sm text-destructive">{t("Não foi possível atualizar este aviso. Tente novamente.")}</p> : null}
+      {disparar.isError ? <p role="alert" className="text-sm text-destructive">{t("Não foi possível disparar. O aviso continua aberto se nada saiu; leia o motivo na atividade das automações.")}</p> : null}
       {/* O lote pode falhar depois de resolver PARTE dos avisos: a mensagem manda
           conferir a lista em vez de afirmar que nada mudou. Sem isto o clique em
           "Marcar todos resolvidos" não deixaria rastro nenhum quando errasse. */}
@@ -136,6 +145,12 @@ export function AgentInboxList({ canResolve }: { canResolve: boolean }) {
               canResolve={canResolve}
               pending={update.isPending}
               onToggle={(status) => update.mutate({ id: item.id, status })}
+              onDisparar={
+                podeDisparar && item.ref_kind === ("automation_rule_run" satisfies typeof REF_DO_AVISO_DE_PARADA) && item.ref_id && item.status !== "resolved"
+                  ? () => disparar.mutate(item.ref_id!)
+                  : undefined
+              }
+              disparando={disparar.isPending}
             />
           ))}
         </ul>
@@ -150,11 +165,15 @@ function InboxRow({
   canResolve,
   pending,
   onToggle,
+  onDisparar,
+  disparando = false,
 }: {
   item: AgentInboxItem;
   canResolve: boolean;
   pending: boolean;
   onToggle: (status: "open" | "resolved") => void;
+  onDisparar?: () => void;
+  disparando?: boolean;
 }) {
   const localeDaData = useLocaleDeData();
   const t = useT();
@@ -187,6 +206,11 @@ function InboxRow({
         {item.destination.estado === "disponivel" ? (
           <Button asChild size="sm" variant="link" className="mt-1 h-auto whitespace-normal px-0 text-left max-md:min-h-11">
             <Link href={item.destination.href}>{t(item.destination.rotulo)}</Link>
+          </Button>
+        ) : null}
+        {onDisparar ? (
+          <Button size="sm" className="ml-3 mt-1" disabled={disparando} onClick={onDisparar}>
+            {t("Disparar agora")}
           </Button>
         ) : null}
         {linkDePagamentoSeguro(item.link_de_pagamento) ? (

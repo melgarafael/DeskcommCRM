@@ -17,7 +17,7 @@ import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { chromium, type Locator, type Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 
 import { caixaNaFoto } from "./geometria";
 import {
@@ -187,6 +187,8 @@ export function salvarManifestoDasLicoes(
 }
 
 async function main() {
+  // Importar os ajudantes não precisa carregar o motor de navegador.
+  const { chromium } = await import("@playwright/test");
   const filtro = process.argv[2];
   const soLicao = process.argv[3]; // depuração: uma lição só
   // filtra ANTES de ler: a lição quebrada de um módulo não derruba a captura de outro

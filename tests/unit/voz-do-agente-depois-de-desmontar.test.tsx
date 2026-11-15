@@ -25,7 +25,7 @@
  * teardown do ambiente faz), resolve o GET e conta as rejeições não tratadas.
  * Sem o cancelamento, o setState pós-desmontagem lança exatamente o erro do log.
  */
-import { render } from "@testing-library/react";
+import { act, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const rede = vi.hoisted(() => ({ get: vi.fn(), patch: vi.fn() }));
@@ -33,6 +33,7 @@ vi.mock("@/lib/api/client", () => ({ apiClient: rede }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 import { VozDoAgente } from "@/app/app/ai/agents/[id]/_components/VozDoAgente";
+import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 
 function adiada<T>() {
   let resolver!: (v: T) => void;
@@ -81,5 +82,26 @@ describe("VozDoAgente depois de desmontar (verify da 1.108.0)", () => {
   it("falha que chega depois da desmontagem também não", async () => {
     const rejeicoes = await respostaDepoisDeDesmontar((g) => g.rejeitar(new Error("rede caiu")));
     expect(rejeicoes.map(String)).toEqual([]);
+  });
+
+  // Controle positivo, trazido do #4456 (@webtecnica). Os dois casos acima só
+  // provam que nada lança depois do desmonte — uma guarda invertida que nunca
+  // deixa o cartão carregar (`if (vivo) return`) os mantém verdes. Medido: com
+  // essa sabotagem, só este caso cai.
+  it("a resposta que chega ANTES do desmonte continua preenchendo o cartão", async () => {
+    rede.get.mockReturnValueOnce(
+      Promise.resolve({ data: { voiceId: "voz-org", vozesDisponiveis: ["voz-a"] } }),
+    );
+    const { unmount } = render(
+      <IdiomaProvider locale="pt-BR">
+        <VozDoAgente agentId="44444444-4444-4444-8444-444444444444" />
+      </IdiomaProvider>,
+    );
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(document.querySelector('[data-testid="voz-do-agente"]')).not.toBeNull();
+    unmount();
   });
 });
