@@ -2,6 +2,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { liberarEcoLocal, marcarEcoLocal } from "@/lib/kanban/local-echo";
+import { fundeRespostaNoCard } from "@/lib/kanban/owner";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import type { Lead } from "@/lib/types/leads";
 import type { BoardData } from "@/lib/kanban/types";
@@ -31,7 +32,10 @@ function gravaLeadNoQuadro(
   if (!lead) return;
   qc.setQueryData<BoardData>(queryKey, (atual) =>
     atual
-      ? { ...atual, leads: atual.leads.map((l) => (l.id === leadId ? { ...l, ...lead } : l)) }
+      ? {
+          ...atual,
+          leads: atual.leads.map((l) => (l.id === leadId ? fundeRespostaNoCard(l, lead) : l)),
+        }
       : atual,
   );
 }

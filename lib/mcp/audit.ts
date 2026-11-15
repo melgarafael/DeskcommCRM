@@ -54,6 +54,12 @@ interface AuditMcpToolCallInput {
    * a uma tool que redija os próprios args (`redigirParaAuditoria`).
    */
   termo?: string;
+  /**
+   * A ligação de onde a chamada veio, quando quem chama é o agente de VOZ
+   * (`workers/voice-agent/agenda-da-voz.ts`). Vai em `metadata.voice_call_id`:
+   * é o que separa, na trilha, a marcação feita por telefone da feita por texto.
+   */
+  chamadaDeVoz?: string;
 }
 
 const ARGS_REDACT_KEYS = new Set([
@@ -79,7 +85,7 @@ function redactArgs(args: Record<string, unknown>): Record<string, unknown> {
 }
 
 export async function auditMcpToolCall(input: AuditMcpToolCallInput): Promise<void> {
-  const { ctx, toolName, args, durationMs, success, errorMessage, resultSummary, resultBytes, desfecho, motivo, termo } =
+  const { ctx, toolName, args, durationMs, success, errorMessage, resultSummary, resultBytes, desfecho, motivo, termo, chamadaDeVoz } =
     input;
 
   const metadata: Record<string, unknown> = {
@@ -104,6 +110,7 @@ export async function auditMcpToolCall(input: AuditMcpToolCallInput): Promise<vo
   // O contato da conversa, quando o turno o injetou no ctx (hoje: ferramenta
   // de servidor MCP externo em turno de atendimento, #2147).
   if (ctx.contatoDoTurno) metadata.contact_id = ctx.contatoDoTurno;
+  if (chamadaDeVoz) metadata.voice_call_id = chamadaDeVoz;
   if (ctx.actor.type === "ai_agent" && ctx.actor.api_token_id) {
     metadata.actor_api_token_id = ctx.actor.api_token_id;
   }
@@ -115,7 +122,9 @@ export async function auditMcpToolCall(input: AuditMcpToolCallInput): Promise<vo
     // como actorUserId estourava a FK api_audit_log_actor_user_id_fkey. O ator
     // já fica registrado em actorApiTokenId e em metadata.actor_id.
     actorUserId: null,
-    actorApiTokenId: ctx.apiTokenId,
+    // `||`, não `??`: a ligação de voz não tem token e passa `""`, que a coluna
+    // uuid recusaria — e o insert do audit morreria calado.
+    actorApiTokenId: ctx.apiTokenId || null,
     organizationId: ctx.organizationId,
     resourceType: "mcp_tool",
     // `resource_id` é uuid no banco; o nome da tool ia aqui como texto e o

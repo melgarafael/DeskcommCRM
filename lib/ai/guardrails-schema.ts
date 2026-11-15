@@ -156,6 +156,15 @@ export const agentConfigSchema = z.object({
    */
   voz_voice_id: z.string().trim().min(1).max(200).nullable().optional(),
   /**
+   * O agente de VOZ consulta e marca a agenda durante a ligação (#4221/#4304)?
+   * `false` (default) = a ligação não recebe ferramenta de agenda nenhuma, nem
+   * de consulta. A voz não tem versão nem `tool_ids` (ver `getActiveVoiceAgent`),
+   * então a chave mora aqui, como `mcp_externo_no_atendimento`: quem administra
+   * liga na aba Voz do agente. Marcar ainda exige o "sim" de quem ligou depois
+   * de ouvir dia e hora (`workers/voice-agent/audioSocketBridge.ts`).
+   */
+  agenda_na_ligacao: z.boolean().default(false),
+  /**
    * Aceita os comandos de controle `#on`/`#off` enviados pelo CELULAR do
    * operador (C-076)? `false` (default do produto) = o ingest NÃO reconhece os
    * comandos; qualquer mensagem do celular continua pausando a IA normalmente.
@@ -209,6 +218,7 @@ export const AGENT_CONFIG_DEFAULTS: AgentConfig = {
   voice_model: "gpt-realtime",
   aceita_comandos_celular: false,
   mcp_externo_no_atendimento: false,
+  agenda_na_ligacao: false,
   knowledge_mode: "busca",
   sentiment_threshold: DEFAULT_SENTIMENT_THRESHOLD,
 };
@@ -236,6 +246,7 @@ export const agentConfigPatchSchema = agentConfigSchema
     voice_model: cfg.voice_model.removeDefault(),
     aceita_comandos_celular: cfg.aceita_comandos_celular.removeDefault(),
     mcp_externo_no_atendimento: cfg.mcp_externo_no_atendimento.removeDefault(),
+    agenda_na_ligacao: cfg.agenda_na_ligacao.removeDefault(),
     // Mesma regra: sem `.default()`, um PATCH de outra chave regravaria o modo
     // de conhecimento de todo agente que nunca o configurou (#4133).
     knowledge_mode: cfg.knowledge_mode.removeDefault(),
