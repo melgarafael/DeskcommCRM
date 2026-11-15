@@ -36,6 +36,7 @@ import { ProspectingAgentBuilder, type CreatedProspectingAgent } from "./_create
 import { AuditoriaDoCandidato, type PreviaDaAbordagem } from "./_auditoria-site";
 import { BaixarLista } from "./_baixar-lista";
 import type { ProspectingAgentSetupInput } from "@/lib/prospecting/agent-setup-schema";
+import { TETO_DIARIO_DE_MIDIA_POR_NUMERO } from "@/lib/prospecting/midia-da-abordagem";
 import type { PersonalizacaoProspeccao } from "@/lib/prospecting/personalizar";
 import {
   pontuarCandidato,
@@ -1490,6 +1491,15 @@ export function ProspectingClient() {
                   <p className="mt-3 text-xs text-muted-foreground">
                     {campaign.skipped_count}{" "}
                     {t("resultados repetidos ou indisponíveis foram desconsiderados.")}
+                  </p>
+                )}
+                {/* Doc 358 › 2A: o mesmo arquivo para muitos números frios pesa no
+                    bloqueio. Quem configurou a mídia precisa ler isto na campanha. */}
+                {configCompleta?.midia_da_abordagem && (
+                  <p role="note" className="mt-3 rounded-md bg-muted/40 p-3 text-sm">
+                    {t(
+                      "Atenção: esta campanha manda o mesmo arquivo junto da primeira mensagem. Quando muita gente que não conhece você recebe o mesmo arquivo, aumenta o risco de o WhatsApp bloquear o seu número. Por segurança, cada número manda o arquivo em no máximo {teto} abordagens por dia; depois disso, as abordagens do dia saem só com o texto.",
+                    ).replace("{teto}", String(TETO_DIARIO_DE_MIDIA_POR_NUMERO))}
                   </p>
                 )}
                 {candidates.length > 0 && (
