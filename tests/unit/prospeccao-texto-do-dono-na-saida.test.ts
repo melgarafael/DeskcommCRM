@@ -347,6 +347,11 @@ describe("(5) a palavra não pode ir escondida por formatação", () => {
     // Um til solto (de "cerca de", sem par fechando) não é riscado; a palavra
     // está fora dele e continua visível.
     expect(noIdioma("Custa ~R$ 50 por mês. Para sair, responda PARAR.")).toBeNull();
+    // DOIS tis de "cerca de", com a palavra legível entre eles: o riscado do
+    // WhatsApp não fecha depois de espaço nem atravessa linha, então não há par.
+    // Medido na triagem: o padrão sem essa borda devolvia `palavra_escondida`.
+    expect(noIdioma("Planos de ~R$ 50. Para sair, responda PARAR. Entrega em ~3 dias.")).toBeNull();
+    expect(noIdioma("Custa ~50 reais.\nPara sair, responda PARAR.\nPrazo ~2 dias.")).toBeNull();
   });
 
   it("texto escondido gravado por fora não sai: cai na frase padrão de hoje", () => {

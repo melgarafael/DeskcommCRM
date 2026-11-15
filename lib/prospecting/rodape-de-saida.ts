@@ -149,8 +149,14 @@ function contemPalavra(texto: string, palavra: string): boolean {
  * O `~` de "cerca de" (`~R$ 50`) não é riscado: o padrão exige o par fechando.
  * Um til solto no meio de uma frase não casa, e a palavra fora do par continua
  * visível — o teste de aceitação mede os dois lados.
+ *
+ * Dois tis de "cerca de" na mesma frase também não formam par: o riscado do
+ * WhatsApp só fecha numa letra (`~PARAR~`, nunca ` ~3 dias`) e não atravessa
+ * linha. Sem essa borda, "Planos de ~R$ 50. Responda PARAR. Entrega em ~3
+ * dias." era recusado — e a campanha já salva com ele perdia o texto do dono
+ * para a frase padrão, em silêncio (`textoDaSaidaEfetivo`).
  */
-const MARCACAO_QUE_ESCONDE = /(~{1,2})[\s\S]*?\1|\|\|[\s\S]*?\|\||```[\s\S]*?```|`[^`\n]*`/gu;
+const MARCACAO_QUE_ESCONDE = /(~{1,2})(?=\S)[^~\n]*?\S\1|\|\|[\s\S]*?\|\||```[\s\S]*?```|`[^`\n]*`/gu;
 
 /** O texto SEM os trechos que o cliente do canal mostra riscados, escondidos ou como código. */
 function semMarcacaoQueEsconde(texto: string): string {
