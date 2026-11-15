@@ -40,7 +40,7 @@ const admin = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/audit", async (original) => ({
-  ...(await original<typeof import("@/lib/audit")>()),
+  ...((await original()) as object),
   isServiceRoleConfigured: () => admin.comChave,
 }));
 
