@@ -32,6 +32,18 @@
  * vale mais que o da agenda do aparelho, e o vínculo de identidade WhatsApp
  * (`wa_identity`) a própria mensagem seguinte faz, pelo caminho de sempre.
  *
+ * ─── O TITULAR APAGADO A PEDIDO NÃO VOLTA POR AQUI (LGPD) ──────────────────
+ *
+ * A anonimização ZERA o telefone do cadastro e apaga as linhas de
+ * `contact_phones` (migration 9243). Para a pré-leitura de telefones a ficha
+ * anonimizada é INVISÍVEL — e `fn_upsert_wa_contact` criaria outra, com o
+ * número e o nome da agenda, desfazendo o pedido do titular por um caminho que
+ * roda sozinho (a agenda do aparelho sincroniza sem ninguém clicar). A pergunta
+ * é a MESMA da porta da coexistência (`lib/channels/meta/ingest.ts`), pelo
+ * MESMO helper (`perguntarTitularesApagadosNoLote`, migration 9321), feita em
+ * LOTE antes de qualquer escrita. Na dúvida não se cria — falha fechada — e o
+ * pulado entra em `ignorados` com o motivo no log.
+ *
  * ─── Dois tetos, e a leitura RETOMA de onde parou ───────────────────────────
  *
  * Ler a agenda tem teto (`TETO_DE_LEITURA`): a agenda do aparelho devolve
@@ -63,7 +75,8 @@
 import { audit as auditReal } from "@/lib/audit";
 import type { ContatoDoAparelho } from "@/lib/channels";
 import { contatosDonosDosExtras } from "@/lib/channels/contato-por-telefone";
-import { phoneLookupVariants } from "@/lib/channels/phone-variants";
+import { perguntarTitularesApagadosNoLote, type RespostaDoLote } from "@/lib/channels/meta/titular-apagado";
+import { canonicalPhoneBR, phoneLookupVariants } from "@/lib/channels/phone-variants";
 import { nomeGravavel } from "@/lib/contacts/nome-da-agenda";
 import { ORIGEM_AGENDA_DO_CELULAR } from "@/lib/leads/origem-do-contato";
 import { logger } from "@/lib/logger";
@@ -108,7 +121,7 @@ export interface ResumoDaAgenda {
   importados: number;
   /** Já estavam no CRM pelo mesmo telefone — nada foi reescrito nem duplicado. */
   ja_existentes: number;
-  /** Fora da régua (não salvo na agenda, número do operador, grupo, sem WhatsApp ou sem número utilizável) ou repetido na própria agenda. */
+  /** Fora da régua (não salvo na agenda, número do operador, grupo, sem WhatsApp ou sem número utilizável), repetido na própria agenda, ou titular apagado a pedido (LGPD — ver `titularesApagados`). */
   ignorados: number;
   /** Falhas de gravação — cada uma logada, e as demais seguem. */
   erros: number;
@@ -164,6 +177,17 @@ export interface AgendaDeps {
   telefonesExistentes(organizationId: string, variantes: string[]): Promise<Set<string>>;
   /** O upsert ATÔMICO do webhook (`fn_upsert_wa_contact`). Devolve o id do contato. */
   upsertContato(e: { organizationId: string; telefone: string; chatId: string; notify: string | null }): Promise<string | null>;
+  /**
+   * "Este número foi apagado a pedido?" — a MESMA pergunta que a porta da
+   * coexistência faz antes de escrever, em LOTE (o helper
+   * `perguntarTitularesApagadosNoLote`, migration 9321: N telefones numa
+   * consulta só, mesma régua de variantes e HMAC da pergunta unitária).
+   *
+   * Sem ela, a ficha anonimizada — telefone zerado — é invisível para
+   * `telefonesExistentes` e o upsert a recria. `erro` preenchido é falha
+   * FECHADA: nada do lote é criado.
+   */
+  titularesApagados(organizationId: string, telefones: string[]): Promise<RespostaDoLote>;
   /** `contact.created` para o contato que NASCEU agora — o mesmo evento do import de planilha. */
   emitirContatoCriado(e: { organizationId: string; contactId: string; requestId: string }): Promise<void>;
   /**
@@ -337,6 +361,28 @@ export async function sincronizarAgendaDoCelular(
   resumo.ignorados = leitura.lidos - leitura.candidatos.length;
 
   const existentes = await telefonesExistentesEmBlocos(deps, e.organizationId, leitura.candidatos);
+
+  // ─── LGPD: o titular apagado a pedido não volta pela agenda ────────────────
+  // A MESMA pergunta da porta da coexistência (`ingestMetaAppContactSync`), pelo
+  // MESMO helper — aqui em LOTE, porque a agenda entrega até 1.000 números de
+  // uma vez. Perguntar DEPOIS de escrever seria tarde: a ficha anonimizada já
+  // teria voltado com o número e o nome da agenda.
+  const apagados = await deps.titularesApagados(
+    e.organizationId,
+    leitura.candidatos.map((c) => c.telefone),
+  );
+  if (apagados.erro) {
+    // Falha FECHADA: sem a resposta, nenhum contato do lote é criado — a mesma
+    // régua do histórico e da coexistência. A escrita não começou, então a rota
+    // devolve falha e o clique seguinte refaz a leitura inteira.
+    logger.error("contacts.sync-agenda: a pergunta do titular apagado não foi respondida — nada foi criado", {
+      organization_id: e.organizationId,
+      request_id: e.requestId,
+      detail: apagados.erro.slice(0, 160),
+    });
+    throw new Error(`titular_apagado: ${apagados.erro}`);
+  }
+
   const criados: string[] = [];
 
   for (const candidato of leitura.candidatos) {
@@ -346,6 +392,12 @@ export async function sincronizarAgendaDoCelular(
       // leitura (que pode estar bem à frente) o pularia para sempre.
       resumo.proximo_offset = candidato.linha;
       break;
+    }
+    // Titular que pediu anonimização não volta: a resposta veio canônica, e a
+    // comparação é na mesma forma canônica do número do aparelho.
+    if (apagados.apagados.has(canonicalPhoneBR(candidato.telefone))) {
+      resumo.ignorados += 1;
+      continue;
     }
     const variantes = phoneLookupVariants(candidato.telefone);
     // No CRM (pela pré-leitura) ou recém-criado neste mesmo lote: não toca.
@@ -483,6 +535,8 @@ export function criarDepsDeAgenda(
       if (error) throw new Error(error.message);
       return (data as string) ?? null;
     },
+    titularesApagados: (organizationId, telefones) =>
+      perguntarTitularesApagadosNoLote(admin, organizationId, telefones),
     emitirContatoCriado: async ({ organizationId, contactId, requestId }) => {
       await admin
         .rpc("emit_event", {

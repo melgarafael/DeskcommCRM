@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { CredentialRow } from "@/hooks/ai/useCredentials";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { contarUsoQueBloqueia, type VersaoVinculada } from "@/lib/ai/credenciais/uso";
@@ -234,6 +235,39 @@ export default async function CredentialsPage() {
           )}
         </p>
       </header>
+      {/* O AVISO DE QUEM NÃO VÊ O PAINEL (#4438). O #1672 decidiu que,
+          desligado, o login por assinatura não aparece — e a tela ficava muda:
+          quem procurava a assinatura do ChatGPT concluía que o produto não tem
+          o recurso. Aqui a tela DIZ que ele existe, para que serve e onde se
+          liga, sem oferecer conexão nenhuma: nada de painel, nada de token.
+          Este bloco só existe com o módulo FORA; ligado, a tela é a de sempre. */}
+      {!moduloLoginCodex && (
+        <Card data-testid="aviso-login-codex-desligado">
+          <CardHeader>
+            <CardTitle>{traduzir("Assinatura do ChatGPT", idioma)}</CardTitle>
+            <CardDescription>
+              {traduzir(
+                "Ligada, a assinatura do ChatGPT deixa o agente responder com a conta do ChatGPT da sua empresa, no lugar de uma chave de API da organização. Cada empresa conecta a própria conta nesta tela, assim que o recurso estiver ligado.",
+                idioma,
+              )}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <p>
+              {traduzir(
+                "Este recurso vem desligado de fábrica: quem administra a instalação liga em Administração › Recursos opcionais (/admin/sistema).",
+                idioma,
+              )}
+            </p>
+            <p>
+              {traduzir(
+                "Se você não administra esta instalação, peça a essa pessoa que ligue o recurso. Depois disso, o painel para conectar a conta aparece nesta tela.",
+                idioma,
+              )}
+            </p>
+          </CardContent>
+        </Card>
+      )}
       {moduloLoginCodex && sessaoPkce && (
         <PainelDeLoginCodex
           url={sessaoPkce.url}

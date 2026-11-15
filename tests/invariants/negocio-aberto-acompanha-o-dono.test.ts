@@ -12,12 +12,14 @@
  * (MCP), automação e chamadas diretas de `fn_conversation_assign` — não
  * passava por régua nenhuma.
  *
- * ─── A regra (doc 178, letra B; reafirmada no doc 267, letra A) ────────────
+ * ─── A regra (doc 178, letra B; doc 267 A, revista no doc 328 (A+ estreito, #4371)) ─
  *
  *   · TRANSFERIR leva o negócio aberto do contato, dentro da permissão de quem
- *     clicou (a mesma de `crm_leads_update`): na visibilidade padrão, o
- *     Atendente que transfere para uma colega NÃO leva o negócio (caminho 1);
- *     gestor leva; o servidor (MCP, automação) leva (caminho 2);
+ *     clicou (a mesma de `crm_leads_update`), com a exceção do #4371: quando
+ *     quem transfere é o DONO ATUAL do card, o card vai junto mesmo para role
+ *     `agent` na visibilidade padrão — ele está entregando o próprio
+ *     atendimento de propósito (caminho 1); gestor leva; o servidor (MCP,
+ *     automação) leva (caminho 2);
  *   · Assumir, Iniciar conversa, a fila automática e a passagem só dão dono a
  *     negócio SEM responsável — nunca tiram de um colega (caminho 3, fila).
  *
@@ -82,6 +84,8 @@ const CT = {
   carteira: "dddddddd-3333-4000-8000-000000000013",
   passagem: "dddddddd-3333-4000-8000-000000000014",
   passagemLivre: "dddddddd-3333-4000-8000-000000000015",
+  /** #4371 controle: a conversa é do COLEGA, e o card é do A. */
+  conversaDoColega: "dddddddd-3333-4000-8000-000000000016",
 } as const;
 
 const CONV = {
@@ -109,6 +113,8 @@ const CONV = {
   carteira: "dddddddd-4444-4000-8000-000000000014",
   passagem: "dddddddd-4444-4000-8000-000000000015",
   passagemLivre: "dddddddd-4444-4000-8000-000000000016",
+  /** #4371 controle: conversa do colega B, card do A. */
+  conversaDoColega: "dddddddd-4444-4000-8000-000000000017",
 } as const;
 
 const NEG = {
@@ -133,6 +139,8 @@ const NEG = {
   carteira: "dddddddd-6666-4000-8000-000000000013",
   passagem: "dddddddd-6666-4000-8000-000000000014",
   passagemLivre: "dddddddd-6666-4000-8000-000000000015",
+  /** #4371 controle: card do A (dono), na conversa que é do B. */
+  conversaDoColega: "dddddddd-6666-4000-8000-000000000016",
 } as const;
 
 /** Agente de IA dono de um card: "sem responsável" exige também owner_agent_id nulo. */
@@ -327,7 +335,8 @@ beforeAll(() => {
       ('${CT.daIa}', '${ORG}', 'Contato Da IA'),
       ('${CT.carteira}', '${ORG}', 'Contato Carteira'),
       ('${CT.passagem}', '${ORG}', 'Contato Passagem'),
-      ('${CT.passagemLivre}', '${ORG}', 'Contato Passagem Livre')
+      ('${CT.passagemLivre}', '${ORG}', 'Contato Passagem Livre'),
+      ('${CT.conversaDoColega}', '${ORG}', 'Contato Conversa Do Colega')
     on conflict (id) do nothing;
 
     insert into public.ai_agents (id, organization_id, name, system_prompt) values
@@ -456,6 +465,10 @@ beforeAll(() => {
   // A escada A→B→C.
   conversaNova(CONV.escada, CT.escada, A);
   negocioNovo({ id: NEG.escada, contato: CT.escada, dono: A });
+
+  // #4371 controle — o A é dono do CARD, mas a conversa é do B.
+  conversaNova(CONV.conversaDoColega, CT.conversaDoColega, B);
+  negocioNovo({ id: NEG.conversaDoColega, contato: CT.conversaDoColega, dono: A });
 });
 
 afterAll(() => {
@@ -478,7 +491,7 @@ afterAll(() => {
 });
 
 describe("#4019 — o negócio aberto acompanha o dono da conversa", () => {
-  it("caminho 1: atendente transfere em own_and_unassigned; a conversa vai e o card fica (permissão de quem clicou)", () => {
+  it("caminho 1: atendente transfere em own_and_unassigned — #4371: o DONO do card transfere e o card vai junto", () => {
     expect(donoDaConversa(CONV.atendenteTransfere)).toBe(A);
     expect(donoDoNegocio(NEG.atendenteTransfere)).toBe(A);
 
@@ -492,9 +505,24 @@ describe("#4019 — o negócio aberto acompanha o dono da conversa", () => {
     );
     expect(evento).toBe(`${A}>${B}`);
     expect(donoDaConversa(CONV.atendenteTransfere)).toBe(B);
-    // Doc 267 (A): na visibilidade padrão, o Atendente não entrega o negócio a
-    // uma colega — é o que crm_leads_update já recusaria a ele (#2556).
-    expect(donoDoNegocio(NEG.atendenteTransfere)).toBe(A);
+    // #4371: na visibilidade padrão, `fn_can_view_lead(A → B)` é falso e o card
+    // ficava com quem saiu — a colega não achava o negócio no filtro
+    // "Responsável". Quem entrega o atendimento do PRÓPRIO card de propósito não
+    // precisa enxergar o destino: o card acompanha.
+    expect(donoDoNegocio(NEG.atendenteTransfere)).toBe(B);
+  });
+
+  it("#4371 controle: ser dono do CARD não abre a conversa de um colega", () => {
+    // A é dono do card, mas a conversa é do B. A visibilidade da CONVERSA barra
+    // antes de o negócio ser lido: a chamada responde zero linhas e nada se
+    // move. A exceção do #4371 vale na permissão do CARD — nunca como chave
+    // para transferir a conversa de outra pessoa.
+    expect(quantosEnxerga(A, NEG.conversaDoColega)).toBe(1);
+
+    atribui({ como: A, conversa: CONV.conversaDoColega, para: C });
+
+    expect(donoDaConversa(CONV.conversaDoColega)).toBe(B);
+    expect(donoDoNegocio(NEG.conversaDoColega)).toBe(A);
   });
 
   it("caminho 1, gestor: quem pode entregar o card transfere e o card vai junto", () => {
@@ -591,7 +619,8 @@ describe("#4019 — o negócio aberto acompanha o dono da conversa", () => {
     expect(quantosEnxerga(B, NEG.gestorTransfere)).toBe(1);
     expect(quantosEnxerga(C, NEG.gestorTransfere)).toBe(0);
 
-    // E o card de um COLEGA que o chamador não enxerga não se move de passagem.
+    // #4371 controle: o card de um COLEGA que o chamador não enxerga continua
+    // sem se mover — a exceção do dono do card não vale para quem não é dono.
     expect(quantosEnxerga(A, NEG.doColega)).toBe(0);
     atribui({ como: A, conversa: CONV.cardInvisivel, para: B });
 

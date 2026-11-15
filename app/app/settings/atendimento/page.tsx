@@ -18,6 +18,7 @@
  */
 import { redirect } from "next/navigation";
 
+import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { DEFAULT_VISIBILITY_MODE, ROLE_RANK, type VisibilityMode } from "@/lib/auth/types";
 import { routingConfigSchema } from "@/lib/schemas";
@@ -86,17 +87,14 @@ export default async function AtendimentoSettingsPage() {
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {traduzir("Distribuição de atendimento", idioma)}
-        </h1>
+      <CabecalhoDaSubTela titulo={traduzir("Distribuição de atendimento", idioma)} idioma={idioma}>
         <p className="max-w-2xl text-sm text-muted-foreground">
           {traduzir(
             "Quem recebe cada cliente novo, e o que cada atendente enxerga. As duas decisões andam juntas: distribuir sem restringir deixa todo mundo vendo a carteira do colega; restringir sem distribuir deixa o funil de cada um vazio.",
             idioma,
           )}
         </p>
-      </header>
+      </CabecalhoDaSubTela>
 
       <AtendimentoForm
         initial={{ ...routing, visibility_mode: settings.visibility_mode ?? DEFAULT_VISIBILITY_MODE }}
