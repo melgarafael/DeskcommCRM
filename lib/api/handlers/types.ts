@@ -94,6 +94,9 @@ export type Actor =
   | { type: "webhook_source"; id: string; textoEscritoPelaIA?: true; agent_id?: string; operation_mode?: "assisted" };
 
 export interface HandlerCtx {
+  /** Módulo `amigo`: a escrita vem do turno do agente (contexto do servidor, nunca do corpo). */
+  amigoAgentExecution?: boolean;
+  amigoAgentToolIds?: readonly string[];
   prospectingDelivery?: ProspectingDelivery;
   agentOperation?: AgentOperationContext;
   meetingDelivery?: MeetingDeliveryContext;
