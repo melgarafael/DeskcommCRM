@@ -5,6 +5,7 @@ import pg from "pg";
 import { runFollowupTick, type AdminClient, type FollowupJobRequest, type TickDeps } from "@/lib/followup/engine";
 import { flowGraphSchema, type FlowGraph } from "@/lib/followup/graph-schema";
 import { MAX_ACTION_RECHECKS, type EnrollmentEventRef, type EnrollmentRow } from "@/lib/followup/node-handlers";
+import { etiquetasDoLead } from "@/lib/followup/etiquetas-do-lead";
 import { completeTurnForEnrollment, createPgAdminClient } from "@/lib/followup/turn-bridge";
 import { persistirRespostaFollowupPg } from "@/lib/followup/persistir-resposta";
 
@@ -109,14 +110,16 @@ function pgAdminClient(opts?: { failInboxTimes?: number }): AdminClient {
          order by updated_at desc limit 1`,
         [orgId, contactId],
       );
-      const { rows: contacts } = await pool.query<{ name: string | null }>(
-        `select name from contacts where organization_id = $1 and id = $2`,
+      const { rows: contacts } = await pool.query<{ name: string | null; tags: string[] | null }>(
+        `select name, tags from contacts where organization_id = $1 and id = $2`,
         [orgId, contactId],
       );
       const lead = leads[0];
       return {
         lead_stage: lead?.stage_id ?? null,
-        tags: lead?.tags ?? [],
+        // #4586 — o dublê lê as MESMAS duas caixas do adapter de produção; um
+        // dublê que só olhasse o card esconderia justamente o defeito daqui.
+        tags: etiquetasDoLead(lead?.tags, contacts[0]?.tags),
         contact_name: contacts[0]?.name ?? null,
         custom_fields: lead?.custom_fields ?? {},
       };

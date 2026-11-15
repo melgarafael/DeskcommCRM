@@ -24,7 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
-import { Tag, Receipt, Users, ArrowRight, CaretDoubleLeft, CaretDoubleRight } from "@/lib/ui/icons";
+import { Tag, Receipt, Users, ArrowRight, CaretDoubleLeft, CaretDoubleRight, CalendarCheck } from "@/lib/ui/icons";
 import { apiClient } from "@/lib/api/client";
 import { toast } from "sonner";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
@@ -36,6 +36,7 @@ import { MOEDA_PADRAO, formatValorDoNegocio, simboloDaMoeda } from "@/lib/money"
 import { ConversationTagsEditor } from "./ConversationTagsEditor";
 import { ContactTagsEditor } from "./ContactTagsEditor";
 import { TarefasDaDemanda } from "./TarefasDaDemanda";
+import { NovaTarefaDaConversa } from "./NovaTarefaDaConversa";
 import { FollowupDoContato } from "./FollowupDoContato";
 import { DialogoDosModulos } from "./DialogoDosModulos";
 import {
@@ -1013,6 +1014,7 @@ export function CRMSidePanel({
 
   const [tagEditorOpen, setTagEditorOpen] = useState(false);
   const [leadDialogOpen, setLeadDialogOpen] = useState(false);
+  const [tarefaDialogOpen, setTarefaDialogOpen] = useState(false);
   const [leadAtivoId, setLeadAtivoId] = useState<string | null>(null);
   const defaultPipeline = useDefaultPipeline(leadDialogOpen);
 
@@ -1255,6 +1257,18 @@ export function CRMSidePanel({
               <Users size={12} className="mr-1" weight="regular" aria-hidden />
               {leadDialogOpen && defaultPipeline.isLoading ? t("Carregando…") : t("Novo negócio")}
             </Button>
+            {contactId && podeCriarTarefa && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-11 px-2 text-xs lg:h-7"
+                disabled={readonly}
+                onClick={() => setTarefaDialogOpen(true)}
+              >
+                <CalendarCheck size={12} className="mr-1" weight="regular" aria-hidden />
+                {t("Nova tarefa")}
+              </Button>
+            )}
             {contactId && (
               <Button asChild size="sm" variant="ghost" className="h-11 px-2 text-xs lg:h-7">
                 <Link href={`/app/contacts/${contactId}`}>
@@ -1411,8 +1425,8 @@ export function CRMSidePanel({
     ),
 
     /* A TAREFA DO ATENDIMENTO (#2818): fica logo DEPOIS da demanda porque é
-       dela que a tarefa pende — a seção só se desenha com demanda vigente no
-       canal, e traz o PRÓPRIO divisor. Só a demanda vigente AINDA ABERTA
+       dela que a tarefa pende — e traz o PRÓPRIO divisor. Sem demanda vigente,
+       a seção mostra as tarefas abertas do contato (#4630). Só a demanda vigente AINDA ABERTA
        (`current_demanda_id` continua apontando depois de "Encerrar demanda"). */
     tarefas: (
       <TarefasDaDemanda
@@ -1638,6 +1652,16 @@ export function CRMSidePanel({
             setLeadAtivoId(null);
             recarregar();
           }}
+        />
+      )}
+
+      {contactId && tarefaDialogOpen && (
+        <NovaTarefaDaConversa
+          contactId={contactId}
+          leadId={negocioAtivoId ?? null}
+          demandaId={demandas?.find((d) => d.id === conversation.current_demanda_id)?.id ?? null}
+          responsavelPadrao={user.id}
+          aoFechar={() => setTarefaDialogOpen(false)}
         />
       )}
 
