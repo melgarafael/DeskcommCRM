@@ -205,11 +205,10 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +1.612 com as cinco ferramentas de #4517 (627 + 243 + 244 + 256 + 242),
 // medidas na criação em 2026-11-12. Nenhuma delas entra em todo turno: as quatro
 // de conversa dependem do pacote ligado, e o catálogo é a régua de quem as liga.
-// A catraca é a SOMA das duas fatias (a main cresceu depois da base do PR): o
-// valor da main sozinho (30724) não alcança estas cinco, e o da fatia sozinho
-// (35884) já inclui o que a main tinha na base. Fica o maior, que é o que cabe
-// nas duas; quem apertar tem a tabela medida na mensagem de erro.
-const TETO_TOTAL = 35884;
+// A catraca é a SOMA medida depois do merge da main (2026-11-15): 35884 da
+// fatia + 57 das ferramentas que a main ganhou desde a base do PR (o valor
+// autônomo dela, 30724, não conhece estas cinco). Medido, não somado à mão.
+const TETO_TOTAL = 35941;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
