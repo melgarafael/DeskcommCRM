@@ -120,9 +120,9 @@ export function PesquisaDeSatisfacao({
                 return (
                   <li key={nota} className="flex items-center gap-2 text-xs">
                     <span className="w-3 tabular-nums">{nota}</span>
-                    <span className="h-2 flex-1 rounded bg-muted">
+                    <span className="h-2 flex-1 rounded-full bg-muted">
                       <span
-                        className="block h-2 rounded bg-primary"
+                        className="block h-2 rounded-full bg-primary"
                         style={{ width: `${(quantidade / maiorContagem) * 100}%` }}
                       />
                     </span>
