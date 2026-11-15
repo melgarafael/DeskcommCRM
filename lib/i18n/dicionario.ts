@@ -14110,7 +14110,6 @@ export const DICIONARIO: Traducoes = {
   "Nenhum feed cadastrado nesta empresa.": { es: "Ningún feed registrado en esta empresa." },
   "Endereço do feed": { es: "Dirección del feed" },
   "Formato do feed": { es: "Formato del feed" },
-  "Sincronizar": { es: "Sincronizar" },
   "Se sincronizar agora:": { es: "Si sincroniza ahora:" },
 
   // ─── Análise → Meta Ads e Configurações → Meta Ads (0214) ───
