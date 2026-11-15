@@ -396,9 +396,9 @@ export function createPgAdminClient(pool: pg.Pool): TurnBridgeAdminClient {
       const lead = leads[0];
       return {
         lead_stage: lead?.stage_id ?? null,
-        // #4586 — as duas caixas: a campanha de prospecção põe a etiqueta do
-        // nicho no CONTATO (`marcarEtiquetasDaCampanha`) e o card que ela cria
-        // nasce sem etiqueta. Ver `etiquetas-do-lead.ts`.
+        // #4586 — as duas caixas. A campanha de prospecção põe a etiqueta do
+        // nicho no CONTATO (`marcarEtiquetasDaCampanha`); o #4606 copia para o
+        // card, mas só no nascimento. Ver `etiquetas-do-lead.ts`.
         tags: etiquetasDoLead(lead?.tags, contacts[0]?.tags),
         contact_name: contacts[0]?.name ?? null,
         custom_fields: lead?.custom_fields ?? {},

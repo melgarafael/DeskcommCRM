@@ -1447,9 +1447,10 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
           : {};
       return {
         lead_stage: lead?.stage_id ?? null,
-        // #4586 — as duas caixas: a campanha de prospecção grava a etiqueta do
-        // nicho no CONTATO e o card nasce sem etiqueta. Ler só `crm_leads.tags`
-        // fazia a condição «Etiqueta do contato» responder «não tem» sempre.
+        // #4586 — as duas caixas. A campanha de prospecção grava a etiqueta do
+        // nicho no CONTATO; o #4606 passou a copiá-la para o card, mas só no
+        // nascimento (card antigo, e etiqueta posta no Inbox/ficha, ficam sem).
+        // Ler só `crm_leads.tags` fazia a condição responder «não tem».
         tags: etiquetasDoLead(lead?.tags, contact?.tags),
         contact_name: contact?.name ?? null,
         custom_fields: custom,
