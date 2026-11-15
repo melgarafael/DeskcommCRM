@@ -38,6 +38,9 @@ const cenario = vi.hoisted(() => ({
   post: vi.fn(),
 }));
 
+// A seção de tarefas do contato (#4630) monta sempre e lê `useUser`; os outros testes
+// do painel a desligam da mesma forma.
+vi.mock("@/components/inbox/TarefasDaDemanda", () => ({ TarefasDaDemanda: () => null }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useAuth: () => ({
     user: { id: "u-eu", role: cenario.papel, support: cenario.suporte, is_platform_admin: false },
