@@ -183,6 +183,13 @@ describe("o gate do pré-go-live com o testador social", () => {
       .toBe("fora_da_lista_de_teste");
   });
 
+  it("canal em teste com a lista social vazia ou corrompida: ninguém passa, nem o contato social", () => {
+    for (const lista of [[], ["lixo", 7, null], `{${TESTADOR}}`, { 0: TESTADOR }]) {
+      expect(decidirElegibilidade(estado({ aiTestSocialIdentities: lista })).motivo, JSON.stringify(lista))
+        .toBe("fora_da_lista_de_teste");
+    }
+  });
+
   it("vetos humanos continuam acima da lista social", () => {
     expect(decidirElegibilidade(estado({ forceHuman: true })).motivo).toBe("force_human");
     expect(decidirElegibilidade(estado({ aiOptOut: true })).motivo).toBe("ai_opt_out");
