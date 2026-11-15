@@ -788,10 +788,12 @@ export type Database = {
           error_message: string | null;
           id: string;
           inbound_message_id: string | null;
+          input_text: string | null;
           is_dry_run: boolean;
           latency_ms: number | null;
           organization_id: string;
           outbound_message_id: string | null;
+          output_text: string | null;
           started_at: string;
           status: string;
           steps_count: number;
@@ -814,10 +816,12 @@ export type Database = {
           error_message?: string | null;
           id?: string;
           inbound_message_id?: string | null;
+          input_text?: string | null;
           is_dry_run?: boolean;
           latency_ms?: number | null;
           organization_id: string;
           outbound_message_id?: string | null;
+          output_text?: string | null;
           started_at?: string;
           status?: string;
           steps_count?: number;
@@ -839,10 +843,12 @@ export type Database = {
           error_message?: string | null;
           id?: string;
           inbound_message_id?: string | null;
+          input_text?: string | null;
           is_dry_run?: boolean;
           latency_ms?: number | null;
           organization_id?: string;
           outbound_message_id?: string | null;
+          output_text?: string | null;
           started_at?: string;
           status?: string;
           steps_count?: number;
@@ -10590,6 +10596,7 @@ export type Database = {
           partes_de_midia: number | null;
           passos: number | null;
           prefixo_hash: string | null;
+          preview_run_id: string | null;
           provider: string;
           purpose: string;
           status: string;
@@ -10622,6 +10629,7 @@ export type Database = {
           partes_de_midia?: number | null;
           passos?: number | null;
           prefixo_hash?: string | null;
+          preview_run_id?: string | null;
           provider: string;
           purpose?: string;
           status?: string;
@@ -10653,6 +10661,7 @@ export type Database = {
           partes_de_midia?: number | null;
           passos?: number | null;
           prefixo_hash?: string | null;
+          preview_run_id?: string | null;
           provider?: string;
           purpose?: string;
           status?: string;
