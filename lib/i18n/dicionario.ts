@@ -14378,6 +14378,14 @@ export const DICIONARIO: Traducoes = {
   // ─── Tarefas (extraídas do PR #418) ───
   "Tarefas": { es: "Tareas" },
   "Tarefas desta demanda": { es: "Tareas de esta demanda" },
+  // #4630 — tarefas do contato e o atalho "Criar tarefa" no menu da conversa.
+  "Tarefas do contato": { es: "Tareas del contacto" },
+  "Nenhuma tarefa para este contato. Anote o próximo passo combinado, com prazo e responsável.": {
+    es: "Ninguna tarea para este contacto. Anota el próximo paso acordado, con plazo y responsable.",
+  },
+  "Cria uma tarefa para este atendimento com prazo e responsável": {
+    es: "Crea una tarea para esta atención con plazo y responsable",
+  },
   "Nenhuma tarefa nesta demanda. Anote o próximo passo combinado, com prazo e responsável.": {
     es: "Ninguna tarea en esta demanda. Anota el próximo paso acordado, con plazo y responsable.",
   },
