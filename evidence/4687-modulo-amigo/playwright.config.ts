@@ -11,7 +11,7 @@ export default defineConfig({
   reporter: [["list"]],
   outputDir: "./resultado",
   use: {
-    baseURL: process.env.BASE_URL ?? "http://127.0.0.1:3687",
+    baseURL: process.env.BASE_URL ?? "http://localhost:3687",
     trace: "on",
     screenshot: "off",
     viewport: { width: 1280, height: 900 },
