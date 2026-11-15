@@ -9836,5 +9836,15 @@
   "Confirmar alteração": "Confirm change",
   "Instrução e critérios atualizados. A campanha continua pausada.": "Instructions and criteria updated. The campaign remains paused.",
   "Vale só para as empresas que ainda não foram abordadas. Quem já recebeu a primeira mensagem continua a conversa com o texto com que ela começou, e as prévias de quem está na fila são refeitas com o texto novo.": "Applies only to businesses not yet approached. Anyone who already got the first message keeps the conversation going with the text it started with, and the previews of those still in the queue are redone with the new text.",
-  "Confirmar a troca do texto desta campanha? Quem já foi abordado não recebe nada de novo por causa disso.": "Confirm changing this campaign's text? Anyone already approached receives nothing new because of it."
+  "Confirmar a troca do texto desta campanha? Quem já foi abordado não recebe nada de novo por causa disso.": "Confirm changing this campaign's text? Anyone already approached receives nothing new because of it.",
+  "Modelo do decisor": "Decider model",
+  "Modelo do decisor salvo.": "Decider model saved.",
+  "Voltar ao Jev": "Back to Jev",
+  "Respondendo com": "Answering with",
+  "O Jev (typesafe/jev-1.13) é o padrão e o único calibrado para o corte de passagem para humano. Outro modelo muda as probabilidades: deixe a tarefa em Observando e compare antes de deixar decidir.": "Jev (typesafe/jev-1.13) is the default and the only one calibrated for the human hand-off threshold. Another model changes the probabilities: leave the task in Observing and compare before letting it decide.",
+  "O Jev responde hoje com o modelo padrão. Para escolher outro modelo de decisão, troque a origem para a OpenRouter.": "Jev answers with the default model today. To pick another decision model, switch the origin to OpenRouter.",
+  "Este modelo não serve como decisor: ele não declara a saída de decisões (decisions) na OpenRouter. Confira o id — o do Jev é typesafe/jev-1.13 — ou escolha um da lista de modelos de decisão.": "This model cannot act as the decider: it does not declare the decisions output on OpenRouter. Check the id — the Jev one is typesafe/jev-1.13 — or pick one from the decision models list.",
+  "Os outros modelos de decisão são servidos pela OpenRouter. Para escolher um, troque a origem do Jev para a OpenRouter — é a mesma credencial que a sua IA de conversa usa.": "The other decision models are served by OpenRouter. To pick one, switch the Jev origin to OpenRouter — it is the same credential your chat AI uses.",
+  "Não consegui conferir a lista de modelos de decisão na OpenRouter agora, então nada foi gravado. O Jev continua como padrão; tente de novo em instantes.": "I could not check the decision model list on OpenRouter right now, so nothing was saved. Jev stays as the default; try again in a moment.",
+  "Salvar modelo do decisor": "Save decider model"
 }

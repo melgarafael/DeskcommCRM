@@ -42,6 +42,7 @@ import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { llmEdgeConfigFromEnv, temIaDeSempre } from "@/lib/agent-engine/edge/llm/credentials";
 import { camadasEfetivas } from "@/lib/agent-engine/guardrails/camadas-da-org";
 import { haQuemAtendaAOrganizacao } from "@/lib/ai/agents/quem-atende-a-sessao";
+import { conferirModeloDaConfig } from "@/lib/ai/decisao/catalogo";
 import { credencialEmUsoPeloJev, PROVEDOR_DO_JEV } from "@/lib/ai/decisao/credencial";
 import {
   ESTADO_DO_MODO,
@@ -53,6 +54,7 @@ import {
   type MudancaDaConfig,
 } from "@/lib/ai/decisao/config";
 import { CHAVES_DO_CLIMA, type MotorDoClima } from "@/lib/ai/decisao/metadados-do-clima";
+import { modeloDaChamada } from "@/lib/ai/decisao/modelo";
 import {
   ORIGENS_DO_JEV,
   provedorDaCredencial,
@@ -603,6 +605,16 @@ export async function GET(): Promise<Response> {
        * cadastrar quando não (issue #2947).
        */
       origem,
+      /**
+       * O MODELO do decisor (`./modelo`), ao lado da origem porque é a mesma
+       * decisão: quem responde e por onde. `modelo` é o EFETIVO — o Jev quando
+       * ninguém escolheu, e o Jev também quando a origem é `typesafe` —, e é o
+       * que a tela mostra; `modelo_escolhido` é o valor gravado, que a tela
+       * limpa para voltar ao padrão. Ausentes na resposta da imagem anterior: lá
+       * o modelo era sempre o Jev, e é o que o cartão assume sem eles.
+       */
+      modelo: modeloDaChamada(config),
+      modelo_escolhido: config.modelo ?? null,
       openrouter: {
         disponivel: credencialOpenRouter !== null,
         rotulo: credencialOpenRouter?.label ?? null,
@@ -657,6 +669,13 @@ const corpoDoPatch = z
      * credencial da origem nova já validada.
      */
     origem: z.enum(ORIGENS_DO_JEV).optional(),
+    /**
+     * O MODELO do decisor (`lib/ai/decisao/modelo`). `null` volta ao padrão (o
+     * Jev); ausente não mexe. Um id que não seja o Jev só vale com a origem
+     * OpenRouter, e é conferido no catálogo de modelos de decisão
+     * (`lib/ai/decisao/catalogo`) — a recusa diz o que falta.
+     */
+    modelo: z.string().trim().min(1).max(120).nullable().optional(),
     /** A caixa marcada na tela. Pesa ao ligar pela primeira vez e ao trocar a origem para a OpenRouter. */
     aceite_lgpd: z.literal(true).optional(),
     tarefa: idDaTarefaSchema.optional(),
@@ -675,9 +694,10 @@ const corpoDoPatch = z
       c.modo !== undefined ||
       c.modo_roteador !== undefined ||
       c.origem !== undefined ||
+      c.modelo !== undefined ||
       c.tarefa !== undefined,
     {
-      message: "informe `ligado`, `modo`, `modo_roteador`, `origem` ou `tarefa`",
+      message: "informe `ligado`, `modo`, `modo_roteador`, `origem`, `modelo` ou `tarefa`",
     },
   );
 
@@ -755,6 +775,18 @@ export async function PATCH(req: NextRequest): Promise<Response> {
       mudanca.aceite = { ...atual.aceite, em: new Date().toISOString(), por: user.id };
     }
     mudanca.origem = corpo.origem;
+  }
+  if (corpo.modelo !== undefined) {
+    // A conferência vale para a origem que valerá DEPOIS deste PATCH: trocar de
+    // origem e escolher modelo no mesmo pedido é o caso de quem sai da TypeSafe.
+    const conferido = await conferirModeloDaConfig({
+      modelo: corpo.modelo,
+      origem: corpo.origem ?? atual.origem,
+    });
+    if (!conferido.ok) {
+      return fail(conferido.motivo, t(conferido.mensagem), 422, { requestId });
+    }
+    if ((conferido.modelo ?? null) !== (atual.modelo ?? null)) mudanca.modelo = conferido.modelo;
   }
   if (corpo.modo_roteador !== undefined && corpo.modo_roteador !== atual.modo_roteador) {
     // Decisão B (doc 89): sem a IA de sempre, o Jev não roteia sozinho. O turno
@@ -843,7 +875,9 @@ export async function PATCH(req: NextRequest): Promise<Response> {
               ? "ai.jev.modo_roteador_alterado"
               : mudanca.origem !== undefined
                 ? "ai.jev.origem_alterada"
-                : "ai.jev.tarefa_alterada",
+                : mudanca.modelo !== undefined
+                  ? "ai.jev.modelo_alterado"
+                  : "ai.jev.tarefa_alterada",
     organizationId: org.orgId,
     actorUserId: user.id,
     resourceType: "organization",
@@ -859,6 +893,12 @@ export async function PATCH(req: NextRequest): Promise<Response> {
         modo_roteador: mudanca.modo_roteador,
         modo_roteador_anterior: atual.modo_roteador,
       } : {}),
+      ...(mudanca.modelo !== undefined
+        ? {
+            modelo: mudanca.modelo ?? modeloDaChamada(gravado.config),
+            modelo_anterior: modeloDaChamada(atual),
+          }
+        : {}),
       ...(gravado.config.modo !== atual.modo ? { modo_anterior: atual.modo } : {}),
       ...(mudanca.tarefas !== undefined && pedido
         ? { tarefa: pedido.tarefa, estado: pedido.estado, estado_anterior: estadoAnterior ?? null }

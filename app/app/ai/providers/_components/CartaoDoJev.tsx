@@ -40,7 +40,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { descreverErroDeValidacao } from "@/lib/ai/credenciais/erro-de-validacao";
 import type { EstadoDaTarefa } from "@/lib/ai/decisao/config";
 import { PROVEDOR_DO_JEV } from "@/lib/ai/decisao/credencial";
-import type { OrigemDoJev } from "@/lib/ai/decisao/origem";
+import { MODELO_NA_OPENROUTER, type OrigemDoJev } from "@/lib/ai/decisao/origem";
 import { ROTEADOR_SOB_DEMANDA, ROTEADOR_SOB_DEMANDA_SEM_IA, TAREFA_DO_CLIMA, TAREFAS_DO_JEV, tarefaPodeDecidir } from "@/lib/ai/decisao/tarefas";
 import { O_QUE_FAZER_DO_JEV } from "@/lib/ai/decisao/textos";
 import type { ProvedorComChave } from "@/lib/ai/pontos/provedores";
@@ -105,6 +105,15 @@ export interface DadosDoJev {
    * único que aquela imagem conhece.
    */
   origem?: OrigemDoJev;
+  /**
+   * O MODELO do decisor (`@/lib/ai/decisao/modelo`), ao lado da origem: `modelo`
+   * é o efetivo — o Jev quando ninguém escolheu, e o Jev também com a origem
+   * TypeSafe —, e `modelo_escolhido` é o gravado, que a tela limpa para voltar
+   * ao padrão. Ausentes na resposta da imagem anterior: lá o modelo era sempre o
+   * Jev, que é o padrão.
+   */
+  modelo?: string;
+  modelo_escolhido?: string | null;
   /**
    * O que a empresa já tem na OpenRouter, para o cartão oferecer REAPROVEITAR
    * em vez de exigir uma chave TypeSafe separada. `disponivel` é a credencial
@@ -496,6 +505,8 @@ export function CartaoDoJev({
 
       <DeOndeResponde dados={dados} recarregar={recarregar} />
 
+      <ModeloDoDecisor dados={dados} recarregar={recarregar} />
+
       {estado === "sem_chave" && <SemChave dados={dados} recarregar={recarregar} />}
 
       {/* Também com o Jev ligado: chave girada para uma que não passa, ou
@@ -628,6 +639,83 @@ function DeOndeResponde({ dados, recarregar }: { dados: DadosDoJev; recarregar: 
       {podeReaproveitar && origem === "typesafe" && (
         <p className="max-w-2xl text-xs text-muted-foreground" data-testid="jev-origem-pode-reaproveitar">
           {t("Esta empresa já tem uma credencial OpenRouter conferida: dá para o Jev usá-la sem cadastrar chave nova.")}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * O MODELO do decisor (`lib/ai/decisao/modelo`).
+ *
+ * O Jev é o padrão e continua sendo para quem nunca escolheu nada. O OpenRouter
+ * serve outros modelos de decisão (`output_modalities: ["decisions"]`), e o
+ * administrador escolhe aqui — no MESMO cartão em que escolhe a origem e vê a
+ * chave, porque é a mesma decisão: quem paga e para quem a mensagem vai.
+ *
+ * A validação é do SERVIDOR (PATCH): o campo aceita um id, e é o catálogo do
+ * OpenRouter que diz se ele declara `decisions`. No navegador não há segunda
+ * lista para envelhecer — a recusa da rota já vem escrita para leigo, e é ela
+ * que diz o que falta.
+ *
+ * Sem a origem OpenRouter não há o que escolher: os outros modelos são servidos
+ * por ela, e a chave da TypeSafe não abre essa porta. O campo aparece assim
+ * mesmo, desligado, com o modelo efetivo — esconder deixaria "por que não posso"
+ * sem resposta na tela.
+ */
+function ModeloDoDecisor({ dados, recarregar }: { dados: DadosDoJev; recarregar: () => Promise<void> }) {
+  const t = useT();
+  const { mudar, enviando } = useMudarOJev(recarregar);
+  const pelaOpenRouter = origemDoCartao(dados) === "openrouter";
+  const escolhido = dados.modelo_escolhido ?? "";
+  const [valor, setValor] = useState(escolhido);
+  // A resposta do PATCH recarrega o cartão: o campo acompanha o que foi gravado.
+  useEffect(() => setValor(escolhido), [escolhido]);
+  const mudou = valor.trim() !== escolhido;
+
+  return (
+    <div className="mt-4 space-y-1" data-testid="jev-modelo">
+      <label htmlFor="jev-modelo-id" className="block text-xs font-medium">
+        {t("Modelo do decisor")}
+      </label>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          id="jev-modelo-id"
+          type="text"
+          className="block w-full max-w-md rounded-md border bg-background p-2 text-sm"
+          value={valor}
+          placeholder={MODELO_NA_OPENROUTER}
+          disabled={!dados.pode_editar || !pelaOpenRouter || enviando}
+          onChange={(e) => setValor(e.target.value)}
+        />
+        <Button
+          size="sm"
+          disabled={!dados.pode_editar || !pelaOpenRouter || enviando || !mudou}
+          onClick={() => void mudar({ modelo: valor.trim() }, t("Modelo do decisor salvo."))}
+        >
+          {t("Salvar modelo do decisor")}
+        </Button>
+        {escolhido !== "" && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!dados.pode_editar || enviando}
+            onClick={() => void mudar({ modelo: null }, t("Modelo do decisor salvo."))}
+          >
+            {t("Voltar ao Jev")}
+          </Button>
+        )}
+      </div>
+      <p className="max-w-2xl text-xs text-muted-foreground">
+        {pelaOpenRouter
+          ? t(
+              "O Jev (typesafe/jev-1.13) é o padrão e o único calibrado para o corte de passagem para humano. Outro modelo muda as probabilidades: deixe a tarefa em Observando e compare antes de deixar decidir.",
+            )
+          : t("O Jev responde hoje com o modelo padrão. Para escolher outro modelo de decisão, troque a origem para a OpenRouter.")}
+      </p>
+      {pelaOpenRouter && escolhido !== "" && (
+        <p className="max-w-2xl text-xs text-muted-foreground" data-testid="jev-modelo-atual">
+          {t("Respondendo com")} <code>{escolhido}</code>
         </p>
       )}
     </div>
