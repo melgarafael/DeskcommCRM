@@ -22,7 +22,8 @@ import type { ConversationWithContact } from "@/hooks/inbox/useConversationsReal
  *
  * ─── SABOTAGEM ─────────────────────────────────────────────────────────────
  * Trocar `recusaDeOfertas === null` por `true` no gate do botão em `CRMSidePanel.tsx`:
- * os casos 2, 3 e 4 ficam vermelhos (3 de 6), e só eles.
+ * os casos 2 e 3 ficam vermelhos (2 de 6, medido), e só eles. O caso 4 não cai: sem resumo
+ * lido o painel também não tem o contato do resumo, e o botão segue escondido.
  */
 
 const ORG = "00000000-0000-4000-8000-0000000005bb";

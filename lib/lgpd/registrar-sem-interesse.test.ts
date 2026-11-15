@@ -10,10 +10,12 @@
  *
  * ─── SABOTAGEM ─────────────────────────────────────────────────────────────
  * - Tirar o `if (contato.is_anonymized)`: "anonimizado" fica vermelho.
- * - Tirar um `.eq("organization_id")` de `lerContato` ou de `gravarConsent`: "a cerca" fica vermelho.
+ * - Tirar o `.eq("organization_id")` de `lerContato`: os 9 ficam vermelhos (medido) — o dublê
+ *   só devolve a linha com a cerca inteira, então o contato "some" e nada é gravado.
  * - Tirar o `await audit` do desfazer: "desfazer" fica vermelho.
  * - Voltar o ramo `ja_recusado` a sair sem fechar: "repetir a frase" fica vermelho.
- * - Tirar a chamada de `encerrarFollowupsDaProspeccao`: "follow-up" fica vermelho.
+ * - Tirar a chamada de `encerrarFollowupsDaProspeccao`: "follow-up" e "a cerca" ficam
+ *   vermelhos (2 de 9, medido; a cerca também confere as operações nas tabelas do follow-up).
  * - Tirar o `.eq("updated_at")`: "escrita concorrente" fica vermelho.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
