@@ -8,8 +8,14 @@ import { createClient } from "@/lib/supabase/server";
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
+// O clone e o `movido_para` são gravados pelo cliente de SERVIÇO (migration
+// 9389): ele fala com o MESMO banco falso, para os testes lerem o que as duas
+// escritas deixaram. `db` é lido na chamada, não na fábrica do mock.
 vi.mock("@/lib/supabase/admin", () => ({
-  createAdminClient: () => ({ rpc: async () => ({ error: null }) }),
+  createAdminClient: () => ({
+    rpc: async () => ({ error: null }),
+    from: (tabela: string) => (db.client as unknown as { from: (t: string) => unknown }).from(tabela),
+  }),
 }));
 vi.mock("@/lib/atendimento/origem", () => ({
   observeServiceOrigin: vi.fn(async () => "api"),
@@ -337,6 +343,44 @@ describe("POST /api/v1/leads/[id]/clone", () => {
       stage_id: S2_A,
     });
     expect((origem.source_metadata as Row).canal).toBe("whatsapp");
+  });
+
+  it("o vínculo de clone sai pelo cliente de serviço: a sessão nunca grava `clonado_de`/`movido_para` (migration 9389)", async () => {
+    // O banco recusa essas chaves vindas da sessão (`trg_guard_vinculo_de_clone_do_lead`).
+    // Aqui a sessão é o banco falso com um espião nas escritas de `crm_leads`:
+    // se a rota voltar a gravar o vínculo por ela, a lista deixa de ser vazia.
+    const sessao = db.client as unknown as {
+      from: (t: string) => Record<string, (linha: Row) => unknown>;
+    };
+    const pelaSessao: string[] = [];
+    vi.mocked(createClient).mockResolvedValue({
+      from: (tabela: string) => {
+        const consulta = sessao.from(tabela);
+        if (tabela !== "crm_leads") return consulta;
+        for (const metodo of ["insert", "update"]) {
+          const original = consulta[metodo]!;
+          consulta[metodo] = (linha: Row) => {
+            const meta = (linha?.source_metadata ?? {}) as Row;
+            for (const chave of ["clonado_de", "movido_para"]) {
+              if (chave in meta) pelaSessao.push(`${metodo}:${chave}`);
+            }
+            return original(linha);
+          };
+        }
+        return consulta;
+      },
+    } as never);
+    const { POST } = await import("./route");
+
+    const response = await POST(cloneRequest({ pipeline_id: P2 }), params);
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(pelaSessao).toEqual([]);
+    const clone = (db.tables.crm_leads ?? []).find((row) => row.id === body.data.lead.id) as Row;
+    expect((clone.source_metadata as Row).clonado_de).toMatchObject({ lead_id: LEAD_ID, pipeline_id: P1 });
+    const origem = (db.tables.crm_leads ?? []).find((row) => row.id === LEAD_ID) as Row;
+    expect((origem.source_metadata as Row).movido_para).toMatchObject({ lead_id: clone.id });
   });
 
   it("cada lado conta a troca na LINHA DO TEMPO — e a origem não diz 'Perdido — other'", async () => {

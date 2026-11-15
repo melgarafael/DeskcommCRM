@@ -27,12 +27,16 @@ import { NextRequest } from "next/server";
 
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createLeadHandler } from "@/app/api/v1/leads/_handler";
 import { encerraDemanda } from "@/lib/leads/encerramento";
 
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+// O clone e o `movido_para` vão pelo cliente de SERVIÇO (migration 9389): ele
+// recebe o MESMO cliente falso, e as escritas dele entram em `escritas`.
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({
   audit: vi.fn(async () => undefined),
   isServiceRoleConfigured: vi.fn(() => false),
@@ -210,6 +214,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   const { cliente } = clienteFake();
   vi.mocked(createClient).mockResolvedValue(cliente);
+  vi.mocked(createAdminClient).mockReturnValue(cliente);
   vi.mocked(requireRole).mockResolvedValue({
     ok: true,
     user: { id: USER, idioma: "pt-BR" },
@@ -252,6 +257,7 @@ describe("POST /clone com etapa de destino (#3643)", () => {
   it("etapa de OUTRO funil: 422 `stage_pipeline_mismatch` no SERVIDOR e nada é gravado", async () => {
     const { cliente, escritas } = clienteFake();
     vi.mocked(createClient).mockResolvedValue(cliente);
+    vi.mocked(createAdminClient).mockReturnValue(cliente);
 
     const res = await POST(
       pedido({ pipeline_id: FUNIL_DESTINO, stage_id: ETAPA_DE_OUTRO_FUNIL }),
@@ -269,6 +275,7 @@ describe("POST /clone com etapa de destino (#3643)", () => {
   it("etapa de FECHAMENTO escolhida: 422 `stage_destino_terminal` e nada é gravado", async () => {
     const { cliente, escritas } = clienteFake();
     vi.mocked(createClient).mockResolvedValue(cliente);
+    vi.mocked(createAdminClient).mockReturnValue(cliente);
 
     const res = await POST(pedido({ pipeline_id: FUNIL_DESTINO, stage_id: ETAPA_GANHO }), ctx);
     const corpo = (await res.json()) as { error: { code: string } };

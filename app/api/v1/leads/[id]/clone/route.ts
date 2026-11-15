@@ -53,6 +53,7 @@ import {
   recusaDeMotivoForaDoVocabulario,
 } from "@/lib/leads/motivo-da-perda";
 import { cloneLeadSchema, validateRequest } from "@/lib/schemas";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -380,8 +381,16 @@ export async function POST(
     // precisa ler. A cópia é do passo único dos três caminhos de troca de funil,
     // depois do INSERT do clone — o anexo mora em `crm_lead_attachments.lead_id`,
     // e o id do card novo só existe aí.
+    //
+    // As DUAS escritas do vínculo — `clonado_de` no clone e `movido_para` na
+    // origem — vão pelo cliente de SERVIÇO (migration 9389): o banco recusa essas
+    // chaves vindas da sessão, porque `create_or_move_lead` reconhece a
+    // continuação de um negócio por elas. A autorização já foi feita acima pela
+    // sessão (papel `agent`, origem e funil de destino lidos sob a RLS); o
+    // `organization_id` segue filtrado à mão, no `createLeadHandler` e no update.
+    const servidor = createAdminClient();
     const { clone, anexos } = await criarCloneNoFunil(
-      supabase,
+      servidor,
       handlerCtx,
       origem as OrigemParaClonar,
       destino.etapa,
@@ -463,7 +472,7 @@ export async function POST(
       movido_para: destination,
     };
 
-    const { data: origemFinal, error: updErr } = await supabase
+    const { data: origemFinal, error: updErr } = await servidor
       .from("crm_leads")
       .update({ source_metadata: sourceMetadata, updated_at: new Date().toISOString() })
       .eq("id", leadId)
