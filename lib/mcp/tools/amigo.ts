@@ -346,7 +346,13 @@ const linkPatient: McpToolDefinition = {
         .safeParse(raw);
       if (!input.success) return fora;
       domain.expectedConnectionId = input.data.connection_id;
-      return { ...(await linkAmigoPatient(domain, input.data)), aviso };
+      // Sem `manual`: pela IA e pelo MCP o paciente sempre precisa aparecer na
+      // busca pelo telefone do contato. A resposta traz só os ids do vínculo.
+      const { contact_id, patient_id, lead_id } = input.data;
+      return {
+        ...(await linkAmigoPatient(domain, { contact_id, patient_id, ...(lead_id ? { lead_id } : {}) })),
+        aviso,
+      };
     } catch (error) {
       return failure(error);
     }

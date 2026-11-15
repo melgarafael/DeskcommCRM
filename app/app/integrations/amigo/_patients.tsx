@@ -87,6 +87,7 @@ export function AmigoPatients({
           contact={contact}
           timezone={config.timezone}
           onUpdated={setPatient}
+          canManage={canManage}
         />
       )}
       {canManage && (
@@ -140,11 +141,13 @@ function PatientDetails({
   contact,
   timezone,
   onUpdated,
+  canManage,
 }: {
   patient: Patient;
   contact: ContactChoice | null;
   timezone: string;
   onUpdated: (value: Patient) => void;
+  canManage: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [showDoctors, setShowDoctors] = useState(false);
@@ -244,13 +247,27 @@ function PatientDetails({
           </div>
         )}
       </Panel>
-      <PatientLink key={`${patient.id}:${contact?.id ?? ""}`} patient={patient} contact={contact} />
+      <PatientLink
+        key={`${patient.id}:${contact?.id ?? ""}`}
+        patient={patient}
+        contact={contact}
+        canManage={canManage}
+      />
     </>
   );
 }
-function PatientLink({ patient, contact }: { patient: Patient; contact: ContactChoice | null }) {
+function PatientLink({
+  patient,
+  contact,
+  canManage,
+}: {
+  patient: Patient;
+  contact: ContactChoice | null;
+  canManage: boolean;
+}) {
   const [lead, setLead] = useState("");
   const [confirmed, setConfirmed] = useState(false);
+  const [manual, setManual] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -281,6 +298,7 @@ function PatientLink({ patient, contact }: { patient: Patient; contact: ContactC
         patient_id: patient.id,
         contact_id: contact.id,
         ...(lead && lead !== "none" ? { lead_id: lead } : {}),
+        ...(manual ? { manual: true } : {}),
       });
       setMessage("Vínculo confirmado. Este contato é o destinatário escolhido para o paciente.");
       await links.refresh();
@@ -353,6 +371,21 @@ function PatientLink({ patient, contact }: { patient: Patient; contact: ContactC
               responsável por este atendimento.
             </span>
           </label>
+          {canManage && (
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-1 size-4"
+                checked={manual}
+                disabled={pending}
+                onChange={(e) => setManual(e.target.checked)}
+              />
+              <span>
+                Vincular mesmo que o paciente não apareça pelo telefone deste contato (fica
+                registrado como vínculo manual).
+              </span>
+            </label>
+          )}
           <Button
             disabled={
               !confirmed ||

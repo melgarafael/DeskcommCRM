@@ -8,7 +8,13 @@ import { getAmigoConfig } from "@/lib/amigo/store";
 import { linkAmigoPatient } from "@/lib/amigo/service";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
-import { amigoDesligado, amigoFailure, moduloIndisponivel } from "../_shared";
+import {
+  amigoDesligado,
+  amigoFailure,
+  contatoForaDoAlcance,
+  contatoVisivelNaSessao,
+  moduloIndisponivel,
+} from "../_shared";
 
 export async function GET(req: Request) {
   const requestId = randomUUID();
@@ -20,6 +26,8 @@ export async function GET(req: Request) {
       .uuid()
       .optional()
       .parse(new URL(req.url).searchParams.get("contact_id") ?? undefined);
+    if (contactId && !(await contatoVisivelNaSessao(contactId, auth.org.orgId)))
+      return contatoForaDoAlcance(requestId);
     if (!contactId && !roleAtLeast(auth.org.role, "manager"))
       return fail("forbidden", "Selecione o contato para consultar os vínculos.", 403, {
         requestId,
@@ -97,8 +105,12 @@ export async function POST(req: Request) {
         patient_id: z.number().int().positive(),
         contact_id: z.uuid(),
         lead_id: z.uuid().optional(),
+        // Vínculo fora da busca pelo telefone do contato: só gestão (o domínio recusa o resto).
+        manual: z.boolean().optional(),
       })
       .parse(await req.json());
+    if (!(await contatoVisivelNaSessao(input.contact_id, auth.org.orgId)))
+      return contatoForaDoAlcance(requestId);
     const result = await linkAmigoPatient(
       {
         organizationId: auth.org.orgId,

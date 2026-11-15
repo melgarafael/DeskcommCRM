@@ -600,6 +600,7 @@ export interface AgendamentoListado {
   /** `local` ou o provedor externo (9392); o estado lá vem em `external_status`. */
   authority?: string;
   external_status?: string | null;
+  external_connection_id?: string | null;
   meetingState?: string;
   meetingUrl?: string | null;
   revision?:number;
@@ -961,7 +962,7 @@ export async function listaAgendamentos(
   let q = supabase
     .from("calendar_appointments")
     .select(
-      "id, authority, external_status, title, starts_at, ends_at, time_zone, status, revision, meeting_state, meeting_url, owner_user_id, contact_id, location_kind, location_details, calendar_event_types(id, name, slug), contacts(name, display_name), service_occurrence_id, participant_name, service_booking_mode, service_capacity_limit, service_party_size, service_publication_mode, google_event_id, google_local_revision, google_synced_local_revision, google_conflict, google_sync_error, team_guest_user_ids",
+      "id, authority, external_status, external_connection_id, title, starts_at, ends_at, time_zone, status, revision, meeting_state, meeting_url, owner_user_id, contact_id, location_kind, location_details, calendar_event_types(id, name, slug), contacts(name, display_name), service_occurrence_id, participant_name, service_booking_mode, service_capacity_limit, service_party_size, service_publication_mode, google_event_id, google_local_revision, google_synced_local_revision, google_conflict, google_sync_error, team_guest_user_ids",
     )
     .eq("organization_id", organizationId)
     .order("starts_at", { ascending: true })
@@ -1111,6 +1112,7 @@ export async function listaAgendamentos(
         id: String(l.id),
         authority: l.authority ?? "local",
         external_status: l.external_status ?? null,
+        external_connection_id: l.external_connection_id ?? null,
         titulo: String(l.title),
         meetingState: l.meeting_state,
         meetingUrl: l.meeting_state === "ready" ? l.meeting_url : null,
@@ -1193,6 +1195,7 @@ export interface TipoDeAtendimento {
   /** Tipo que veio de um sistema externo (9392): marca-se lá, não aqui. */
   external_provider?: string | null;
   external_id?: string | null;
+  external_connection_id?: string | null;
   /** Chave de lista e alvo de PATCH/DELETE na TELA. Nunca vai ao modelo (ver a tool). */
   id: string;
   nome: string;
@@ -1262,7 +1265,7 @@ export type ResultadoDosTipos =
  * formulário reabrir sem o valor gravado e, ao salvar, apagá-lo.
  */
 export const COLUNAS_DO_TIPO_DE_AGENDAMENTO =
-  "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, levar_dados_do_negocio, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents, service_enabled, booking_mode, service_capacity, service_revision, service_publication_mode, external_provider, external_id";
+  "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, levar_dados_do_negocio, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents, service_enabled, booking_mode, service_capacity, service_revision, service_publication_mode, external_provider, external_id, external_connection_id";
 
 /**
  * Os tipos de atendimento da organização.
@@ -1315,6 +1318,7 @@ export async function listaTiposDeAtendimento(
     tipos: (data ?? []).map((t) => ({
       external_provider: t.external_provider ?? null,
       external_id: t.external_id ?? null,
+      external_connection_id: t.external_connection_id ?? null,
       id: String(t.id),
       nome: String(t.name),
       slug: String(t.slug),

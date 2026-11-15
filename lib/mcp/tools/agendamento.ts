@@ -146,7 +146,9 @@ export const crmListEventTypes: McpToolDefinition<typeof tiposShape> = {
         // preço — grátis — que ninguém cadastrou.
         preco_padrao_cents: t.precoPadraoCents ?? null,
         precisa_confirmacao: t.precisaConfirmacao,
-        ...(t.external_provider ? { external_provider: t.external_provider, external_id: t.external_id } : {}),
+        ...(t.external_provider
+          ? { external_provider: t.external_provider, external_id: t.external_id, external_connection_id: t.external_connection_id }
+          : {}),
         ...(t.servico ? { servico: t.servico } : {}),
       })),
     };
@@ -577,7 +579,9 @@ export const crmListAppointments: McpToolDefinition<typeof listarShape> = {
         quando: rotuloLocal(new Date(a.iniciaEm), a.fuso),
         fim_quando: rotuloLocal(new Date(a.terminaEm), a.fuso),
         situacao: a.situacao,
-        ...(a.authority && a.authority !== "local" ? { authority: a.authority, external_status: a.external_status } : {}),
+        ...(a.authority && a.authority !== "local"
+          ? { authority: a.authority, external_status: a.external_status, external_connection_id: a.external_connection_id }
+          : {}),
         meet_state: a.meetingState,
         meeting_url: a.meetingState === "ready" ? a.meetingUrl : null,
         // O RÓTULO DO CONTATO nunca é montado aqui: vem de `nomeDoContato` por

@@ -58,7 +58,7 @@ describe("Amigo MCP — contexto e recursos", () => {
   it("vínculo exige escolha explícita e usa o domínio sem escrita delegada", async () => {
     expect(z.object(tool("link_patient").inputSchema).safeParse({ contact_id: CONTACT }).success).toBe(false);
     await call("link_patient", { connection_id:"current", contact_id: CONTACT, patient_id: 13 });
-    expect(domain.link).toHaveBeenCalledWith(expect.objectContaining({ contactId: CONTACT }), { contact_id: CONTACT, patient_id: 13, connection_id:"current" });
+    expect(domain.link).toHaveBeenCalledWith(expect.objectContaining({ contactId: CONTACT }), { contact_id: CONTACT, patient_id: 13 });
     expect(tool("link_patient").escritaDelegadaAoContato).toBeUndefined();
   });
   it("catálogo cobre cada operação com handler, sem proxy de HTTP", () => {

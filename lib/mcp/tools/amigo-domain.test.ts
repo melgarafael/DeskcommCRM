@@ -55,7 +55,7 @@ describe("tools Amigo com domínio real", () => {
   it("vincula a segunda escolha explicitamente validada em vez de assumir o primeiro resultado", async () => {
     const database = db(); io.db.mockReturnValue(database);
     io.request.mockImplementation(async (_token, op) => ({ data: op === "patient_get" ? { id: 16 } : op === "patient_search" ? [{ id: 12 }, { id: 16 }] : [], status: "success" }));
-    expect(await call("link_patient", { contact_id: CONTACT, patient_id: 16 })).toMatchObject({ patient: { id: 16 }, contact_id: CONTACT });
+    expect(await call("link_patient", { contact_id: CONTACT, patient_id: 16 })).toMatchObject({ linked: true, patient_id: 16, contact_id: CONTACT });
     expect(database.writes).toEqual([{ organization_id: ORG, connection_id: "current", patient_id: 16, contact_id: CONTACT, lead_id: null }]);
   });
 });

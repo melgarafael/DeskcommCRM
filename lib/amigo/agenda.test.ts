@@ -164,7 +164,7 @@ describe("agenda authority boundary", () => {
     });
   });
   it("legacy creation in active mode refuses missing patient/doctor/place before any local write", async () => {
-    const { db, rpc } = database();
+    const { db, rpc, calls } = database();
     await expect(
       marcarAgendamentoHandler(db, ctx, {
         event_type_id: "type",
@@ -250,7 +250,7 @@ describe("agenda authority boundary", () => {
     expect(deps.execute).not.toHaveBeenCalled();
   });
   it("cancels external history through its original connection even after mode is disabled", async () => {
-    const { db, rpc } = database({ active: false });
+    const { db, rpc, calls } = database({ active: false });
     await cancelarAgendamentoHandler(db, ctx, {
       id: "appointment",
       revision: 2,

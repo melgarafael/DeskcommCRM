@@ -7,6 +7,18 @@ const g = vi.hoisted(() => ({
   disconnect: vi.fn(),
   execute: vi.fn(),
   ligado: vi.fn(async () => true),
+  visivel: { current: true },
+}));
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: async () => {
+    const q = {
+      from: () => q,
+      select: () => q,
+      eq: () => q,
+      maybeSingle: async () => ({ data: g.visivel.current ? { id: "c" } : null, error: null }),
+    };
+    return q;
+  },
 }));
 vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: g.ligado }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
@@ -30,6 +42,7 @@ const req = (body: unknown) =>
 beforeEach(() => {
   vi.clearAllMocks();
   g.ligado.mockResolvedValue(true);
+  g.visivel.current = true;
   g.auth.mockResolvedValue({
     ok: true,
     user: { id: "actor" },
@@ -93,6 +106,16 @@ describe("módulo desligado na instalação", () => {
     const executada = await POST(req({ operation: "places", input: {} }));
     expect(executada.status).toBe(404);
     expect(g.config).not.toHaveBeenCalled();
+    expect(g.execute).not.toHaveBeenCalled();
+  });
+});
+describe("contato fora do alcance da sessão", () => {
+  it("o id de contato que a sessão não enxerga é recusado antes do domínio do Amigo", async () => {
+    g.visivel.current = false;
+    const r = await POST(
+      req({ operation: "patient_get", input: { patientId: 9 }, contact_id: "11111111-1111-4111-8111-111111111111" }),
+    );
+    expect(r.status).toBe(403);
     expect(g.execute).not.toHaveBeenCalled();
   });
 });

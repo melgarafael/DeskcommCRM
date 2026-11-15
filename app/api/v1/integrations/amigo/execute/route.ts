@@ -5,7 +5,13 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { amigoOperations } from "@/lib/amigo/contracts";
 import { executeAmigo } from "@/lib/amigo/service";
 import { ok } from "@/lib/api/wrappers";
-import { amigoDesligado, amigoFailure, moduloIndisponivel } from "../_shared";
+import {
+  amigoDesligado,
+  amigoFailure,
+  contatoForaDoAlcance,
+  contatoVisivelNaSessao,
+  moduloIndisponivel,
+} from "../_shared";
 
 const inputSchema = z.strictObject({
   operation: z.enum(amigoOperations),
@@ -22,6 +28,8 @@ export async function POST(req: Request) {
   if (await amigoDesligado()) return moduloIndisponivel(requestId);
   try {
     const input = inputSchema.parse(await req.json());
+    if (input.contact_id && !(await contatoVisivelNaSessao(input.contact_id, auth.org.orgId)))
+      return contatoForaDoAlcance(requestId);
     const result = await executeAmigo(
       {
         organizationId: auth.org.orgId,

@@ -3,6 +3,7 @@ import { checkConnection } from "./connection";
 import { randomUUID } from "node:crypto";
 import type { Actor } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
+import { roleAtLeast } from "@/lib/auth/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { amigoInputSchemas, isAmigoMutation, type AmigoOperation } from "./contracts";
 import { requestAmigo } from "./transport";
@@ -131,6 +132,18 @@ export async function executeAmigo(
     input = { ...input, contact_cellphone: contactPhone };
   }
   const patientId = input.patientId ?? input.patient_id;
+  // Paciente ou consulta escolhidos pelo id que o chamador mandou: sem o
+  // contato do atendimento (que prende o paciente ao vínculo, abaixo), só a
+  // gestão alcança. Sem isto um atendente lia ou mexia na consulta de qualquer
+  // paciente da clínica passando o número.
+  const callerRole = ctx.role ?? ("role" in ctx.actor ? ctx.actor.role : undefined) ?? "viewer";
+  if (
+    !ctx.contactId &&
+    !roleAtLeast(callerRole, "manager") &&
+    (patientId !== undefined ||
+      (operation.startsWith("attendance_") && operation !== "attendance_create"))
+  )
+    denied("Abra a ficha do contato do paciente ou peça à gestão para consultar este paciente.");
   if (ctx.contactId && patientId !== undefined) {
     const { data: link, error } = await db
       .from("amigo_patient_links")
@@ -430,19 +443,30 @@ export async function executeAmigo(
   };
 }
 
-/** Explicit patient selection; never the first result from a shared phone. */
+/**
+ * Vínculo contato ↔ paciente: escolha explícita, nunca o primeiro resultado de
+ * um telefone compartilhado.
+ *
+ * A MESMA regra para pessoa e para a IA: o paciente precisa aparecer na busca
+ * do Amigo pelo telefone DESTE contato. A única exceção é o vínculo manual
+ * (`manual: true`), para quem o telefone não basta (dependente com outro
+ * número, cadastro antigo) — só pessoa da gestão (manager ou acima), e
+ * auditado como manual. A resposta devolve só os ids do vínculo: o cadastro do
+ * paciente nunca sai por aqui (dado de saúde; a leitura tem rota própria, com a
+ * regra de quem pode ler).
+ */
 export async function linkAmigoPatient(
   ctx: AmigoContext,
-  input: { patient_id: number; contact_id: string; lead_id?: string },
+  input: { patient_id: number; contact_id: string; lead_id?: string; manual?: boolean },
 ) {
+  const role = ctx.role ?? ("role" in ctx.actor ? ctx.actor.role : undefined) ?? "viewer";
   requireAmigoAccess(
-    {
-      role: ctx.role ?? ("role" in ctx.actor ? ctx.actor.role : undefined) ?? "viewer",
-      automated: ctx.actor.type !== "user",
-      contactId: ctx.contactId,
-    },
+    { role, automated: ctx.actor.type !== "user", contactId: ctx.contactId },
     "patient_get",
   );
+  const manual = input.manual === true;
+  if (manual && (ctx.actor.type !== "user" || !roleAtLeast(role, "manager")))
+    denied("Vincular um paciente que não aparece pelo telefone do contato exige a gestão.");
   const db = createAdminClient();
   if (ctx.contactId && input.contact_id !== ctx.contactId) denied();
   const { data: contact, error } = await db
@@ -479,12 +503,15 @@ export async function linkAmigoPatient(
       "O vínculo de pacientes está desativado para o agente.",
     );
   checkConnection(connection.id, ctx.expectedConnectionId ?? ctx.connectionId, true);
-  const response = await requestAmigo(connection.token, "patient_get", {
-    patientId: input.patient_id,
-  });
-  if (ctx.actor.type !== "user") {
+  if (manual) {
+    // Confere só que o paciente existe nesta conta; o cadastro é descartado.
+    await requestAmigo(connection.token, "patient_get", { patientId: input.patient_id });
+  } else {
+    const phone = cellphone(contact.phone_number);
+    if (phone.length < 10)
+      denied("Cadastre um telefone válido no contato para conferir o paciente pelo Amigo.");
     const search = await requestAmigo(connection.token, "patient_search", {
-      contact_cellphone: cellphone(contact.phone_number),
+      contact_cellphone: phone,
     });
     const patients = Array.isArray(search.data) ? search.data : [search.data];
     if (
@@ -495,7 +522,9 @@ export async function linkAmigoPatient(
           Number((p as Record<string, unknown>).id) === input.patient_id,
       )
     )
-      denied();
+      denied(
+        "Este paciente não aparece no Amigo pelo telefone deste contato. Confira o paciente ou peça à gestão o vínculo manual.",
+      );
   }
   const { data: previous } = await db
     .from("amigo_patient_links")
@@ -533,7 +562,7 @@ export async function linkAmigoPatient(
     resourceType: "contact",
     resourceId: input.contact_id,
     requestId: ctx.requestId,
-    metadata: { connection_id: connection.id, patient_id: input.patient_id },
+    metadata: { connection_id: connection.id, patient_id: input.patient_id, manual },
   });
   const appointments = await requestAmigo(connection.token, "patient_attendances", {
     patient_id: input.patient_id,
@@ -545,7 +574,13 @@ export async function linkAmigoPatient(
       row,
       { bootstrap: true, contactId: input.contact_id },
     );
-  return { patient: response.data, contact_id: input.contact_id };
+  return {
+    linked: true,
+    patient_id: input.patient_id,
+    contact_id: input.contact_id,
+    lead_id: input.lead_id ?? null,
+    connection_id: connection.id,
+  };
 }
 
 export function newOperationKey(): string {
