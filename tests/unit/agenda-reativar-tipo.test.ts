@@ -69,6 +69,9 @@ vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
 
 const RAIZ = join(__dirname, "..", "..");
 const ROTA_TIPOS = join(RAIZ, "app", "api", "v1", "agenda", "tipos", "route.ts");
+// Desde a #4688 a regra de alterar/desativar (e os schemas que a descrevem)
+// mora aqui. A travessia abaixo lê o dono do símbolo, não o endereço antigo.
+const MODULO_TIPOS = join(RAIZ, "lib", "agenda", "tipos-de-agendamento.ts");
 const ROTA_REATIVAR = join(RAIZ, "app", "api", "v1", "agenda", "tipos", "reativar", "route.ts");
 const TELA = join(RAIZ, "app", "app", "settings", "tenant", "agenda", "_client.tsx");
 
@@ -215,23 +218,38 @@ function percorre(no: ts.Node, visita: (n: ts.Node) => void): void {
   no.forEachChild((filho) => percorre(filho, visita));
 }
 
-/** Os nomes declarados em `const <nome> = { … }` no arquivo dado. */
-function chavesDaConstante(arquivo: ts.SourceFile, nome: string): string[] {
+/** Os nomes declarados em `const <nome> = { … }` nos arquivos dados. */
+function chavesDaConstante(arquivos: ts.SourceFile[], nome: string): string[] {
   let achadas: string[] | null = null;
-  percorre(arquivo, (no) => {
-    if (
-      ts.isVariableDeclaration(no) &&
-      ts.isIdentifier(no.name) &&
-      no.name.text === nome &&
-      no.initializer &&
-      ts.isObjectLiteralExpression(no.initializer)
-    ) {
-      achadas = no.initializer.properties.flatMap((p) =>
-        p.name && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) ? [p.name.text] : [],
-      );
-    }
-  });
-  if (achadas === null) throw new Error(`não achei \`const ${nome} = { … }\` — a rota mudou de forma`);
+  let onde: string | null = null;
+  for (const arquivo of arquivos) {
+    percorre(arquivo, (no) => {
+      if (
+        ts.isVariableDeclaration(no) &&
+        ts.isIdentifier(no.name) &&
+        no.name.text === nome &&
+        no.initializer &&
+        ts.isObjectLiteralExpression(no.initializer)
+      ) {
+        if (achadas !== null) {
+          // Duas declarações do MESMO nome é divergência esperando para acontecer:
+          // uma delas vai envelhecer calada. Reprova em vez de escolher a última.
+          throw new Error(
+            `\`const ${nome}\` está declarado em mais de um lugar (${onde} e ${arquivo.fileName}) — escolha o dono`,
+          );
+        }
+        achadas = no.initializer.properties.flatMap((p) =>
+          p.name && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) ? [p.name.text] : [],
+        );
+        onde = arquivo.fileName;
+      }
+    });
+  }
+  if (achadas === null) {
+    throw new Error(
+      `não achei \`const ${nome} = { … }\` em ${arquivos.map((a) => a.fileName).join(", ")} — a rota mudou de forma`,
+    );
+  }
   return achadas;
 }
 
@@ -307,7 +325,7 @@ function chavesEnviadas(arquivo: ts.SourceFile, metodo: string, caminho: string)
   return [...chaves];
 }
 
-function chavesDoExtend(arquivo: ts.SourceFile, nome: string): string[] {
+function chavesDoExtend(arquivos: ts.SourceFile[], nome: string): string[] {
   /*
    * As chaves que `<nome>` acrescenta em `.extend({ … })`.
    *
@@ -318,40 +336,61 @@ function chavesDoExtend(arquivo: ts.SourceFile, nome: string): string[] {
    * falso positivo, e do pior tipo: o que ensina a ignorar o gate. Lendo o
    * `.extend` no mesmo AST, a lista aceita passa a ser a de verdade, e uma
    * chave que nenhum dos dois lados conhece continua reprovando.
+   *
+   * Desde a #4688 o `alterarSchema` saiu da rota para
+   * `lib/agenda/tipos-de-agendamento.ts`, junto da regra que ele valida. A
+   * varredura segue o dono do símbolo em vez de exigir o arquivo antigo: o que
+   * este guarda mede é a lista de campos aceitos, não o endereço dela.
    */
   let achadas: string[] | null = null;
-  percorre(arquivo, (no) => {
-    if (
-      ts.isVariableDeclaration(no) &&
-      ts.isIdentifier(no.name) &&
-      no.name.text === nome &&
-      no.initializer
-    ) {
-      percorre(no.initializer, (dentro) => {
-        if (
-          ts.isCallExpression(dentro) &&
-          ts.isPropertyAccessExpression(dentro.expression) &&
-          dentro.expression.name.text === "extend" &&
-          dentro.arguments.length === 1 &&
-          ts.isObjectLiteralExpression(dentro.arguments[0]!)
-        ) {
-          achadas = (dentro.arguments[0] as ts.ObjectLiteralExpression).properties.flatMap((pr) =>
-            pr.name && (ts.isIdentifier(pr.name) || ts.isStringLiteral(pr.name)) ? [pr.name.text] : [],
-          );
-        }
-      });
-    }
-  });
-  if (achadas === null) throw new Error(`não achei \`const ${nome} = … .extend({ … })\` — a rota mudou de forma`);
+  let onde: string | null = null;
+  for (const arquivo of arquivos) {
+    percorre(arquivo, (no) => {
+      if (
+        ts.isVariableDeclaration(no) &&
+        ts.isIdentifier(no.name) &&
+        no.name.text === nome &&
+        no.initializer
+      ) {
+        percorre(no.initializer, (dentro) => {
+          if (
+            ts.isCallExpression(dentro) &&
+            ts.isPropertyAccessExpression(dentro.expression) &&
+            dentro.expression.name.text === "extend" &&
+            dentro.arguments.length === 1 &&
+            ts.isObjectLiteralExpression(dentro.arguments[0]!)
+          ) {
+            if (achadas !== null) {
+              throw new Error(
+                `\`${nome}\` estende em mais de um lugar (${onde} e ${arquivo.fileName}) — escolha o dono`,
+              );
+            }
+            achadas = (dentro.arguments[0] as ts.ObjectLiteralExpression).properties.flatMap((pr) =>
+              pr.name && (ts.isIdentifier(pr.name) || ts.isStringLiteral(pr.name)) ? [pr.name.text] : [],
+            );
+            onde = arquivo.fileName;
+          }
+        });
+      }
+    });
+  }
+  if (achadas === null) {
+    throw new Error(
+      `não achei \`const ${nome} = … .extend({ … })\` em ${arquivos.map((a) => a.fileName).join(", ")} — a rota mudou de forma`,
+    );
+  }
   return achadas;
 }
 
 describe("travessia tela → rota: a tela não manda campo que a rota descarta", () => {
   const rota = ast(ROTA_TIPOS);
+  const modulo = ast(MODULO_TIPOS);
   const tela = ast(TELA);
-  const camposDoTipo = chavesDaConstante(rota, "camposDoTipo");
-  const soNoPatch = chavesDoExtend(rota, "alterarSchema");
-  const soNaCriacao = chavesDoExtend(rota, "criarComRascunhoSchema");
+  // `camposDoTipo` e `alterarSchema` moraram nesta rota até a #4688; hoje moram
+  // no módulo. `criarComRascunhoSchema` nunca saiu da rota (a criação ficou).
+  const camposDoTipo = chavesDaConstante([rota, modulo], "camposDoTipo");
+  const soNoPatch = chavesDoExtend([rota, modulo], "alterarSchema");
+  const soNaCriacao = chavesDoExtend([rota], "criarComRascunhoSchema");
 
   it("CONTROLE: as duas pontas foram realmente lidas", () => {
     // Sem isto, um `camposDoTipo` que o leitor não achasse viraria lista vazia e
