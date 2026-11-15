@@ -23,8 +23,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { JanelaSelo } from "@/components/inbox/JanelaSelo";
 import { ChannelLogo } from "@/components/inbox/ChannelLogo";
-import { Phone, MagnifyingGlass, DotsThree, Pause, Archive, EyeSlash, UserCircle, UsersThree, Robot, Check, DownloadSimple } from "@/lib/ui/icons";
+import { Phone, MagnifyingGlass, DotsThree, Pause, Archive, EyeSlash, UserCircle, UsersThree, Robot, Check, DownloadSimple, CalendarCheck } from "@/lib/ui/icons";
 import { useAuth } from "@/hooks/auth/AuthProvider";
+import { NovaTarefaDaConversa } from "@/components/inbox/NovaTarefaDaConversa";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useReleaseConversation } from "@/hooks/inbox/useReleaseConversation";
 import {
@@ -145,8 +146,13 @@ export function ConversationHeader({
   // A FILA (#3876): o item do ⋯ só levanta a bandeira — o diálogo mora fora do
   // menu, pelo mesmo motivo do convite acima.
   const [filaAberta, setFilaAberta] = useState(false);
+  const [tarefaAberta, setTarefaAberta] = useState(false);
 
   const c = conversation.contacts ?? null;
+  const podeCriarTarefa = Boolean(
+    (user?.is_platform_admin && !user?.support) ||
+      (activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent),
+  );
   /**
    * A TRAVA DE HUMANO MORA NO CONTATO, não na conversa — e é por isso que
    * fechar a conversa não a solta. Enquanto `force_human` for `true`, os três
@@ -679,6 +685,16 @@ export function ConversationHeader({
             {!conversation.is_group && c?.id && (
               <DialButton contactId={c.id} hasPhone={!!c.phone_number} comoItemDeMenu />
             )}
+            {c?.id && podeCriarTarefa && (
+              <DropdownMenuItem
+                data-testid="acao-criar-tarefa"
+                title={t("Cria uma tarefa para este atendimento com prazo e responsável")}
+                onSelect={() => setTarefaAberta(true)}
+              >
+                <CalendarCheck size={16} aria-hidden className="mr-2" />
+                {t("Criar tarefa")}
+              </DropdownMenuItem>
+            )}
             {podeReservar && <ItemReservarServico onSelect={() => setReservaAberta(true)} />}
             {/* Vídeo: sem JITSI_SERVER_URL o componente devolve `null` e o item
                 não existe — o menu não promete o que a instalação não tem. */}
@@ -1060,6 +1076,14 @@ export function ConversationHeader({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {tarefaAberta && c?.id && (
+        <NovaTarefaDaConversa
+          contactId={c.id}
+          demandaId={conversation.current_demanda_id ?? null}
+          responsavelPadrao={user?.id}
+          aoFechar={() => setTarefaAberta(false)}
+        />
+      )}
     </div>
   );
 }
