@@ -26,6 +26,7 @@ import {
 import {
   TIPO_FUNIS,
   blueprintDeFunis,
+  funilJaAplicado,
   lerBlueprintDeFunis,
   nomeDeCopia,
   nomeDoArquivoDeFunis,
@@ -233,6 +234,48 @@ describe("nomeDeCopia — import nunca sobrescreve", () => {
     expect(copia.length).toBeLessThanOrEqual(80);
     expect(copia.endsWith("(importado)")).toBe(true);
     expect(copia).not.toContain("  (importado)");
+  });
+});
+
+describe("funilJaAplicado — reaplicar não duplica", () => {
+  const etapas = [
+    { nome: "Novo", cor: "#22C55E", is_won: false, is_lost: false },
+    { nome: "Ganho", cor: null, is_won: true, is_lost: false },
+  ];
+  const item = { nome: "Clínica", descricao: null, etapas };
+
+  it("mesmo nome e mesmas etapas: já aplicado (nome e cor na régua da tela)", () => {
+    const noDestino = [
+      { nome: "novo", cor: "#22c55e", is_won: false, is_lost: false },
+      { nome: "Ganho", cor: null, is_won: true, is_lost: false },
+    ];
+    expect(funilJaAplicado(item, [{ name: "clinica", is_archived: false, etapas: noDestino }])).toBe(
+      true,
+    );
+  });
+
+  it("a cópia `(importado N)` de um import anterior também conta", () => {
+    const outro = [{ nome: "Recepção", cor: null, is_won: false, is_lost: false }];
+    expect(
+      funilJaAplicado(item, [
+        { name: "Clínica", is_archived: false, etapas: outro },
+        { name: "Clínica (importado)", is_archived: false, etapas: outro },
+        { name: "Clínica (importado 2)", is_archived: false, etapas },
+      ]),
+    ).toBe(true);
+  });
+
+  it("etapa diferente, ordem diferente ou funil arquivado: não está aplicado", () => {
+    expect(
+      funilJaAplicado(item, [
+        { name: "Clínica", is_archived: false, etapas: [etapas[0]!, { ...etapas[1]!, nome: "Fechado" }] },
+      ]),
+    ).toBe(false);
+    expect(
+      funilJaAplicado(item, [{ name: "Clínica", is_archived: false, etapas: [...etapas].reverse() }]),
+    ).toBe(false);
+    expect(funilJaAplicado(item, [{ name: "Clínica", is_archived: true, etapas }])).toBe(false);
+    expect(funilJaAplicado(item, [])).toBe(false);
   });
 });
 

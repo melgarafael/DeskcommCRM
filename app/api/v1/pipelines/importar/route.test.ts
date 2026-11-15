@@ -13,7 +13,11 @@
  *    formato e a versão casam, então só o tipo impede o "melhor esforço".
  * 4. Arquivo com 201 funis é recusado por `itens`, com o limite na frase.
  * 5. Escrita pela metade não fica: se a etapa falha, o funil criado é desfeito
- *    (funil recém-criado não tem negócio, então o RESTRICT não atrapalha).
+ *    (funil recém-criado não tem negócio, então o RESTRICT não atrapalha), e o
+ *    500 não carrega a mensagem do banco.
+ * 6. Reaplicar o MESMO arquivo não duplica — nem quando o primeiro import já
+ *    tinha virado cópia `(importado)`.
+ * 7. Id e organização de fora, dentro do envelope, não chegam à escrita.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
@@ -61,7 +65,7 @@ function banco(inicial: { funis?: Linha[]; etapas?: Linha[] } = {}) {
   let falharEtapa = false;
   let proximoId = 1;
 
-  function consultaFunis() {
+  function consulta(linhas: Linha[]) {
     const filtros: Array<[string, unknown]> = [];
     const q = {
       select() {
@@ -75,7 +79,7 @@ function banco(inicial: { funis?: Linha[]; etapas?: Linha[] } = {}) {
         return q;
       },
       then<T>(resolve: (valor: unknown) => T) {
-        const casadas = funis
+        const casadas = linhas
           .filter((linha) => filtros.every(([coluna, valor]) => linha[coluna] === valor))
           .sort((a, b) => Number(a.position) - Number(b.position));
         return Promise.resolve({ data: casadas, error: null }).then(resolve);
@@ -87,7 +91,7 @@ function banco(inicial: { funis?: Linha[]; etapas?: Linha[] } = {}) {
   h.from.mockImplementation((tabela: string) => {
     if (tabela === "crm_pipelines") {
       return {
-        select: () => consultaFunis(),
+        select: () => consulta(funis),
         insert: (linha: Linha) => {
           const id = `novo-${proximoId++}`;
           const nova = { id, is_archived: false, ...linha };
@@ -132,6 +136,7 @@ function banco(inicial: { funis?: Linha[]; etapas?: Linha[] } = {}) {
 
     if (tabela === "crm_stages") {
       return {
+        select: () => consulta(etapas),
         insert: async (linhas: Linha[]) => {
           if (falharEtapa) return { error: { message: "falha forjada na etapa" } };
           insertsDeEtapa.push(linhas);
@@ -209,7 +214,7 @@ describe("POST /pipelines/importar", () => {
     const res = await POST(pedido(arquivoExportado()));
 
     expect(res.status).toBe(201);
-    expect((await res.json()).data).toEqual({ importados: 1, etapas: 4, renomeados: 0 });
+    expect((await res.json()).data).toEqual({ importados: 1, etapas: 4, renomeados: 0, ja_existiam: 0 });
 
     expect(db.insertsDeFunil).toEqual([
       {
@@ -373,9 +378,109 @@ describe("POST /pipelines/importar", () => {
     const res = await POST(pedido(arquivoExportado()));
 
     expect(res.status).toBe(500);
+    // A frase é para quem usa; a mensagem do banco fica no log.
+    const corpo = await res.json();
+    expect(corpo.error.message).toBe("Não consegui importar o blueprint de funis. Nada foi aplicado.");
+    expect(JSON.stringify(corpo)).not.toContain("falha forjada");
     expect(db.deletes).toEqual(["novo-1"]);
     expect(db.funis).toHaveLength(0);
     expect(h.audit).not.toHaveBeenCalled();
+  });
+
+  it("aplicar o MESMO arquivo duas vezes não duplica funil nem etapas", async () => {
+    const db = banco();
+
+    const primeira = await POST(pedido(arquivoExportado()));
+    expect(primeira.status).toBe(201);
+
+    const segunda = await POST(pedido(arquivoExportado()));
+    expect(segunda.status).toBe(200);
+    expect((await segunda.json()).data).toEqual({
+      importados: 0,
+      etapas: 0,
+      renomeados: 0,
+      ja_existiam: 1,
+    });
+    expect(db.insertsDeFunil).toHaveLength(1);
+    expect(db.insertsDeEtapa).toHaveLength(1);
+    expect(db.funis.map((funil) => funil.name)).toEqual(["Clínica"]);
+    // Só a primeira mutou; a reaplicação não vira linha de audit.
+    expect(h.audit).toHaveBeenCalledTimes(1);
+  });
+
+  it("a cópia `(importado)` do primeiro import é reconhecida no segundo", async () => {
+    const db = banco({
+      funis: [
+        {
+          id: "original",
+          organization_id: ORG,
+          name: "Clínica",
+          slug: "clinica",
+          position: 1000,
+          is_default: true,
+          is_client_pipeline: false,
+          is_archived: false,
+        },
+      ],
+      etapas: [
+        {
+          organization_id: ORG,
+          pipeline_id: "original",
+          name: "Recepção",
+          is_won: false,
+          is_lost: false,
+          color: null,
+          is_archived: false,
+          position: 1000,
+        },
+      ],
+    });
+
+    expect((await (await POST(pedido(arquivoExportado()))).json()).data).toMatchObject({
+      importados: 1,
+      renomeados: 1,
+    });
+    expect((await (await POST(pedido(arquivoExportado()))).json()).data).toMatchObject({
+      importados: 0,
+      ja_existiam: 1,
+    });
+    expect(db.funis.map((funil) => funil.name)).toEqual(["Clínica", "Clínica (importado)"]);
+  });
+
+  it("id e organização de fora dentro do envelope não chegam à escrita", async () => {
+    const db = banco();
+    const OUTRA_ORG = "c7d40000-0000-4000-8000-0000000000ff";
+    const arquivo = arquivoExportado() as { itens: Array<Record<string, unknown>> };
+    arquivo.itens = arquivo.itens.map((item) => ({
+      ...item,
+      id: "funil-da-outra-org",
+      organization_id: OUTRA_ORG,
+      slug: "forjado",
+      is_default: true,
+      etapas: (item.etapas as Array<Record<string, unknown>>).map((etapa) => ({
+        ...etapa,
+        id: "etapa-da-outra-org",
+        organization_id: OUTRA_ORG,
+        pipeline_id: "funil-da-outra-org",
+        position: 0.5,
+      })),
+    }));
+
+    const res = await POST(pedido(arquivo));
+
+    expect(res.status).toBe(201);
+    const funil = db.insertsDeFunil[0]!;
+    expect(funil.organization_id).toBe(ORG);
+    expect(funil).not.toHaveProperty("id");
+    expect(funil.slug).toBe("clinica");
+    for (const etapa of db.insertsDeEtapa[0]!) {
+      expect(etapa.organization_id).toBe(ORG);
+      expect(etapa.pipeline_id).toBe("novo-1");
+      expect(etapa).not.toHaveProperty("id");
+    }
+    expect(JSON.stringify(db.insertsDeFunil.concat(db.insertsDeEtapa.flat()))).not.toContain(
+      OUTRA_ORG,
+    );
   });
 
   it("corpo que não é JSON é 400", async () => {

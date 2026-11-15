@@ -18,6 +18,14 @@
  * comparação da tela (`chaveDeNome`: caixa, acento e espaço não distinguem).
  * Quem importou vê os dois funis e decide o que fazer; nada foi sobrescrito.
  *
+ * ─── Reaplicar o mesmo arquivo não duplica ─────────────────────────────────
+ *
+ * Funil do arquivo que já está no destino com as MESMAS etapas (no nome dele
+ * ou numa cópia `(importado)` de um import anterior) é pulado e contado em
+ * `ja_existiam` — `funilJaAplicado`. Sem isso, clicar Importar duas vezes no
+ * mesmo arquivo criava `Clínica (importado)` com o quadro idêntico. Quando nada
+ * é criado a resposta é 200 e não há linha de audit: não houve mutação.
+ *
  * ─── UMA operação, ou nada ─────────────────────────────────────────────────
  *
  * São duas escritas por funil (funil + etapas) e o PostgREST não dá transação
@@ -46,14 +54,18 @@ import { requireRole } from "@/lib/auth/require-role";
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
+import { logger } from "@/lib/logger";
 import { slugDeNome } from "@/lib/leads/stage-editing";
 import { posicaoEntre, slugDeFunil, type FunilEditavel } from "@/lib/pipelines/pipeline-editing";
 import { createClient } from "@/lib/supabase/server";
 import { TETO_DE_ITENS_DO_BLUEPRINT, type MotivoDeRecusa } from "@/lib/templates/blueprint";
 import {
   PASSO_DA_POSICAO_DA_ETAPA,
+  funilJaAplicado,
   lerBlueprintDeFunis,
   nomeDeCopia,
+  type EtapaDoBlueprintDeFunil,
+  type FunilDoDestino,
 } from "@/lib/templates/blueprint-de-funis";
 import { lerFunis } from "../_funis";
 
@@ -130,21 +142,62 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const supabase = await createClient();
+  // A frase de quem usa é esta; o motivo do banco vai para o log, nunca para a resposta.
+  const falhou = (contexto: string, detalhe: string | undefined) => {
+    logger.error(`pipelines.importar.${contexto}`, { requestId, orgId, detail: detalhe });
+    return fail("internal_error", t("Não consegui importar o blueprint de funis. Nada foi aplicado."), 500, {
+      requestId,
+    });
+  };
 
   let funis: FunilEditavel[];
   try {
     funis = await lerFunis(supabase, orgId);
   } catch (err) {
-    return fail("internal_error", (err as Error).message, 500, { requestId });
+    return falhou("ler_funis", (err as Error).message);
   }
+
+  // As etapas VIVAS do destino, para reconhecer o funil que já foi aplicado.
+  const { data: etapasDoDestino, error: erroDaLeitura } = await supabase
+    .from("crm_stages")
+    .select("pipeline_id, name, color, is_won, is_lost")
+    .eq("organization_id", orgId)
+    .eq("is_archived", false)
+    .order("position", { ascending: true });
+  if (erroDaLeitura) return falhou("ler_etapas", erroDaLeitura.message);
+
+  const etapasPorFunil = new Map<string, EtapaDoBlueprintDeFunil[]>();
+  for (const etapa of (etapasDoDestino ?? []) as Array<{
+    pipeline_id: string;
+    name: string;
+    color: string | null;
+    is_won: boolean;
+    is_lost: boolean;
+  }>) {
+    const lista = etapasPorFunil.get(etapa.pipeline_id) ?? [];
+    lista.push({ nome: etapa.name, cor: etapa.color, is_won: etapa.is_won, is_lost: etapa.is_lost });
+    etapasPorFunil.set(etapa.pipeline_id, lista);
+  }
+  const destino: FunilDoDestino[] = funis.map((funil) => ({
+    name: funil.name,
+    is_archived: funil.is_archived,
+    etapas: etapasPorFunil.get(funil.id) ?? [],
+  }));
 
   const criados: string[] = [];
   let etapasCriadas = 0;
   let renomeados = 0;
+  let jaExistiam = 0;
 
   // Em série de propósito: o nome do próximo depende dos anteriores (sufixo de
   // cópia e ordem da lista), e o volume é de até 200 funis.
   for (const item of lido.itens) {
+    // Reaplicar o mesmo arquivo não duplica (ver `funilJaAplicado`).
+    if (funilJaAplicado(item, destino)) {
+      jaExistiam += 1;
+      continue;
+    }
+
     const nome = nomeDeCopia(
       item.nome,
       funis.map((funil) => funil.name),
@@ -176,10 +229,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
     if (erroDoFunil || !criado) {
       await desfazerCriados(supabase, orgId, criados);
-      return fail("internal_error", t("Não consegui importar o blueprint de funis. Nada foi aplicado."), 500, {
-        requestId,
-        details: { erro: erroDoFunil?.message },
-      });
+      return falhou("criar_funil", erroDoFunil?.message);
     }
 
     const pipelineId = (criado as { id: string }).id;
@@ -207,10 +257,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
     if (erroDasEtapas) {
       await desfazerCriados(supabase, orgId, criados);
-      return fail("internal_error", t("Não consegui importar o blueprint de funis. Nada foi aplicado."), 500, {
-        requestId,
-        details: { erro: erroDasEtapas.message },
-      });
+      return falhou("criar_etapas", erroDasEtapas.message);
     }
 
     etapasCriadas += etapas.length;
@@ -225,6 +272,12 @@ export async function POST(req: NextRequest): Promise<Response> {
       is_client_pipeline: false,
       is_archived: false,
     });
+    destino.push({ name: linha.name, is_archived: false, etapas: item.etapas });
+  }
+
+  // Reaplicar sem criar nada não é mutação, e não audita.
+  if (criados.length === 0) {
+    return ok({ importados: 0, etapas: 0, renomeados: 0, ja_existiam: jaExistiam }, { requestId });
   }
 
   await audit({
@@ -236,15 +289,16 @@ export async function POST(req: NextRequest): Promise<Response> {
     requestId,
     metadata: {
       // Contagem, nunca nomes: o audit diz o que a organização recebeu.
-      total: lido.itens.length,
+      total: criados.length,
       etapas: etapasCriadas,
       renomeados,
+      ja_existiam: jaExistiam,
       teto: TETO_DE_ITENS_DO_BLUEPRINT,
     },
   });
 
   return ok(
-    { importados: lido.itens.length, etapas: etapasCriadas, renomeados },
+    { importados: criados.length, etapas: etapasCriadas, renomeados, ja_existiam: jaExistiam },
     { status: 201, requestId },
   );
 }

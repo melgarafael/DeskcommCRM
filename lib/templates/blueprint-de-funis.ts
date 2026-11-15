@@ -291,13 +291,71 @@ const SUFIXO_DA_COPIA = " (importado)";
  */
 export function nomeDeCopia(nome: string, nomesExistentes: readonly string[]): string {
   const ocupados = new Set(nomesExistentes.map((existente) => chaveDeNome(existente)));
-  const limpo = nome.trim();
-  if (!ocupados.has(chaveDeNome(limpo))) return limpo;
-
-  for (let n = 1; ; n++) {
-    const sufixo = n === 1 ? SUFIXO_DA_COPIA : ` (importado ${n})`;
-    const base = limpo.slice(0, LIMITE_DO_NOME_DO_FUNIL - sufixo.length).trimEnd();
-    const candidato = `${base}${sufixo}`;
+  for (const candidato of nomesDaCadeia(nome)) {
     if (!ocupados.has(chaveDeNome(candidato))) return candidato;
   }
+  throw new Error("inalcançável: a cadeia de nomes é infinita");
+}
+
+/** `Nome`, `Nome (importado)`, `Nome (importado 2)`, … — cortados no teto de 80. */
+function* nomesDaCadeia(nome: string): Generator<string> {
+  const limpo = nome.trim();
+  yield limpo;
+  for (let n = 1; ; n++) {
+    const sufixo = n === 1 ? SUFIXO_DA_COPIA : ` (importado ${n})`;
+    yield `${limpo.slice(0, LIMITE_DO_NOME_DO_FUNIL - sufixo.length).trimEnd()}${sufixo}`;
+  }
+}
+
+/** Um funil que já está no destino, com as etapas VIVAS na ordem do quadro. */
+export interface FunilDoDestino {
+  name: string;
+  is_archived: boolean;
+  etapas: readonly EtapaDoBlueprintDeFunil[];
+}
+
+/** O que o arquivo leva de uma etapa, numa forma comparável (nome na régua da tela). */
+function assinaturaDasEtapas(etapas: readonly EtapaDoBlueprintDeFunil[]): string {
+  return JSON.stringify(
+    etapas.map((etapa) => [
+      chaveDeNome(etapa.nome),
+      etapa.cor?.toLowerCase() ?? null,
+      etapa.is_won,
+      etapa.is_lost,
+    ]),
+  );
+}
+
+/**
+ * ⚠️ APLICAR O MESMO ARQUIVO DUAS VEZES NÃO DUPLICA.
+ *
+ * O funil do arquivo já está aplicado quando a cadeia de nomes dele (`Nome`,
+ * `Nome (importado)`, …) chega a um funil VIVO com as MESMAS etapas — nome na
+ * régua de `chaveDeNome`, cor, ganho e perda, na mesma ordem. A cadeia é a
+ * mesma de `nomeDeCopia`, então a cópia criada pelo primeiro import também é
+ * reconhecida no segundo. A busca para no primeiro nome LIVRE: dali em diante
+ * é onde o import criaria.
+ *
+ * Arquivado não conta: pular por causa dele deixaria quem importou sem o
+ * quadro na lista. E etapa diferente (renomeada, cor trocada) é funil
+ * diferente — vira cópia, como antes; o import continua nunca sobrescrevendo.
+ */
+export function funilJaAplicado(
+  item: ItemDeFunil,
+  existentes: readonly FunilDoDestino[],
+): boolean {
+  const assinatura = assinaturaDasEtapas(item.etapas);
+  for (const candidato of nomesDaCadeia(item.nome)) {
+    const chave = chaveDeNome(candidato);
+    const ocupantes = existentes.filter((funil) => chaveDeNome(funil.name) === chave);
+    if (ocupantes.length === 0) return false;
+    if (
+      ocupantes.some(
+        (funil) => !funil.is_archived && assinaturaDasEtapas(funil.etapas) === assinatura,
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
