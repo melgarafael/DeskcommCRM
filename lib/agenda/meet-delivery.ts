@@ -24,6 +24,9 @@ const policySchema = z.discriminatedUnion("current", [
     // é recusado — nunca lido como "marca desligada".
     force_human: z.boolean().nullable(), ai_opt_out: z.boolean(), ai_gate: z.string().nullable(),
     ai_authorized_at: z.string().nullable(), assignee_kind: z.string().nullable(), bot_silenced_until: z.string().nullable(),
+    // Obrigatórios como CHAVE, igual à marca acima: banco sem a 9398 não devolve o
+    // modo do canal, e a entrega é recusada em vez de pular a lista de teste.
+    ai_gate_mode: z.string().nullable(), ai_test_phone_numbers: z.unknown(), contact_phone_number: z.string().nullable(),
     /**
      * O modo "IA com o dono" (#3967). OPCIONAL porque a política de hoje
      * (`fn_meet_delivery_current`) ainda não o devolve: ausente = não ligado,
@@ -50,6 +53,8 @@ function requirePolicy(raw: unknown): { humanCommand: boolean; contactId: string
     // política chega aqui, a org ESTAVA operante na mesma leitura.
     orgStatus: STATUS_OPERANTE,
     aiGate: p.ai_gate, forceHuman: p.force_human,
+    // Pré-go-live (#4701): só a lista de teste do canal recebe o link, como nos outros caminhos da IA.
+    aiGateMode: p.ai_gate_mode, aiTestPhoneNumbers: p.ai_test_phone_numbers, contactPhoneNumber: p.contact_phone_number,
     // `ai_opt_out` lido do contato pela própria política (migration 0676), e não
     // deduzido de `force_human`: outro escritor que zere `force_human` não pode
     // liberar para a IA um contato marcado "sempre atendimento humano".
