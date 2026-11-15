@@ -3,19 +3,24 @@
  *
  * O contrato do operador (`docs/saas/contrato-e-lgpd.md`) já dizia que a conversa
  * vai "para provedores fora do Brasil"; o produto não dizia PARA ONDE. Este teste
- * guarda a regra que torna o campo confiável depois do #4520: `pais` é CÓDIGO de
- * um vocabulário FECHADO (`PaisDoProvedor`), a cláusula 9 o lê, e toda declaração
- * tem procedência — a fonte por provedor (`fonteDoPais`) ou, quando não há
- * documento por provedor, a data de conferência do catálogo
- * (`CONSULTA_DOS_PAISES_EM`), que é a que a cláusula imprime.
+ * guarda a regra do campo depois do #4588: `pais` é CÓDIGO de um vocabulário
+ * FECHADO (`PaisDoProvedor`), e o catálogo separa DUAS perguntas que o #4520
+ * tinha juntado num campo só —
  *
- * O contrato que MUDOU em relação ao #4519 original: país declarado não exige
- * mais URL por provedor. O #4520 declarou a sede de Anthropic/OpenAI/Google/
- * OpenRouter sem citar documento por provedor (a proveniência é a conferência do
- * catálogo, datada e impressa no contrato), e o valor por extenso ("China") virou
- * código ISO. O que continua proibido — e é o que este arquivo prova — é país
- * FORA do vocabulário, `desconhecido` com fonte, e fonte sem URL https ou sem
- * data de calendário.
+ *   - `sede`: onde fica a empresa que recebe o texto, registrado por nós;
+ *   - `paisDeclarado`: onde o PROVEDOR diz que processa, e só existe junto com
+ *     `fonteDoPais` (URL do documento e data da consulta).
+ *
+ * A diferença é o defeito que o #4588 consertou: seis provedores tinham em `pais`
+ * a sede (Estados Unidos) e a cláusula 9 anunciava aquilo como "declaração de cada
+ * provedor, consultada em data" — afirmação que nenhum deles fez. `pais` continua
+ * sendo o código que as superfícies imprimem, e as duas invariantes abaixo
+ * impedem que ele volte a misturar os casos: nenhum provedor muda de país, e
+ * declaração sem fonte (ou fonte sem declaração) reprova.
+ *
+ * O que continua proibido — e é o que este arquivo também prova — é país FORA do
+ * vocabulário, `desconhecido` com fonte, e fonte sem URL https ou sem data de
+ * calendário.
  */
 import { describe, expect, it } from "vitest";
 
@@ -27,8 +32,11 @@ import { CONSULTA_DOS_PAISES_EM } from "@/lib/legal/operador";
 /** O vocabulário fechado que a cláusula 9 sabe imprimir. */
 const VOCABULARIO: readonly PaisDoProvedor[] = ["US", "CN", "UE", "operador", "desconhecido"];
 
-/** O que este teste lê de cada entrada: o id, o país declarado e a fonte dele. */
-type DeclaracaoDePais = Pick<ProvedorSuportado, "id" | "pais" | "fonteDoPais">;
+/** O que este teste lê de cada entrada: os dois países e a fonte da declaração. */
+type DeclaracaoDePais = Pick<
+  ProvedorSuportado,
+  "id" | "pais" | "sede" | "paisDeclarado" | "fonteDoPais"
+>;
 
 /**
  * TUDO o que a tela de IA oferece, inclusive o provedor de voz: a tela de
@@ -78,10 +86,34 @@ describe("o catálogo declara onde o texto é processado", () => {
     expect(problemas).toEqual([]);
   });
 
-  it("país declarado sem fonte por provedor tem procedência: a data de conferência do catálogo", () => {
-    // O #4520 declara a sede sem citar documento por provedor; o que impede o
-    // campo de virar texto de vitrine é a data do catálogo, impressa pela
-    // cláusula 9. Sem ela, "Estados Unidos" seria afirmação de ninguém.
+  it("`sede` é onde fica a empresa; `paisDeclarado` só existe COM fonte — os dois casos não se misturam", () => {
+    // O #4588: `pais` sozinho não distingue "o provedor declarou a região de
+    // processamento" de "esta é a sede de quem recebe o texto". Sem esta
+    // invariante, a cláusula 9 volta a anunciar uma declaração que ninguém fez.
+    const problemas: string[] = [];
+    for (const p of TODOS) {
+      const temPaisDeVerdade = p.pais !== "desconhecido" && p.pais !== "operador";
+      if (temPaisDeVerdade) {
+        // Um dos dois tem de carregar o código que a tela e o contrato imprimem.
+        if ((p.paisDeclarado ?? p.sede) !== p.pais) {
+          problemas.push(`${p.id}: pais "${p.pais}" não é a declaração nem a sede`);
+        }
+      } else if (p.sede !== null || p.paisDeclarado !== null) {
+        problemas.push(`${p.id}: diz "${p.pais}" e ainda assim tem sede/declaração`);
+      }
+      // Declaração sem documento citável seria afirmação de ninguém.
+      if ((p.paisDeclarado !== null) !== (p.fonteDoPais !== null)) {
+        problemas.push(`${p.id}: declaração e fonte discordam (${p.paisDeclarado}/${p.fonteDoPais ? "com fonte" : "sem fonte"})`);
+      }
+    }
+    expect(problemas).toEqual([]);
+
+    // E existe pelo menos um caso de cada tipo — senão a régua mede o vazio.
+    expect(TODOS.filter((p) => p.paisDeclarado !== null).map((p) => p.id)).toEqual(["deepseek"]);
+    expect(TODOS.filter((p) => p.paisDeclarado === null && p.sede !== null).length).toBeGreaterThan(0);
+  });
+
+  it("a conferência do catálogo é uma data real — ela data a SEDE, não uma declaração", () => {
     expect(CONSULTA_DOS_PAISES_EM).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     const hoje = new Date().toISOString().slice(0, 10);
     expect(
@@ -90,13 +122,16 @@ describe("o catálogo declara onde o texto é processado", () => {
     ).toBe(true);
 
     const comPais = TODOS.filter((p) => p.pais !== "desconhecido" && p.pais !== "operador");
-    expect(comPais.length, "o catálogo não tem nenhum país declarado — a régua mediria o vazio").toBeGreaterThan(0);
+    expect(comPais.length, "o catálogo não tem nenhum país registrado — a régua mediria o vazio").toBeGreaterThan(0);
   });
 
   it("a DeepSeek é o caso de transferência para a China, com a fonte da própria empresa", () => {
     const deepseek = PROVEDORES.find((p) => p.id === "deepseek");
     expect(deepseek?.pais).toBe("CN");
     // A declaração é da própria DeepSeek: processa e armazena na República Popular da China.
+    // Desde o #4588 ela é a ÚNICA entrada com `paisDeclarado` — é o que autoriza
+    // a cláusula a dizer "declaração do provedor" nesta linha e só nesta.
+    expect(deepseek?.paisDeclarado).toBe("CN");
     expect(deepseek?.fonteDoPais?.url).toContain("deepseek.com");
   });
 

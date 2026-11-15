@@ -7895,7 +7895,7 @@ alter table job_queue add constraint job_queue_kind_check
   -- antigos rodam antes e falham em cadeia. Vigiado por
   -- tests/unit/baseline-constraint-reconstruida.test.ts.
   -- 'transactional_delivery' (0226) segue a mesma consolidação de vocabulário.
-  check (kind in ('inbound_turn','followup_turn','watchdog','flywheel','case_reply_turn','operator_turn','transactional_delivery','approved_reply'));
+  check (kind in ('inbound_turn','followup_turn','watchdog','flywheel','case_reply_turn','operator_turn','transactional_delivery','approved_reply','history_analysis'));
 alter table job_queue drop constraint if exists job_queue_turn_needs_contact;
 do $$
 declare c text;
@@ -7906,7 +7906,7 @@ begin
   if c is not null then execute format('alter table job_queue drop constraint %I', c); end if;
 end $$;
 alter table job_queue add constraint job_queue_turn_needs_contact
-  check ((kind in ('inbound_turn','followup_turn','case_reply_turn','operator_turn','transactional_delivery','approved_reply')) = (contact_id is not null));
+  check ((kind in ('inbound_turn','followup_turn','case_reply_turn','operator_turn','transactional_delivery','approved_reply','history_analysis')) = (contact_id is not null));
 
 alter table cron_jobs drop constraint if exists cron_jobs_job_kind_check;
 alter table cron_jobs add constraint cron_jobs_job_kind_check
@@ -75801,6 +75801,482 @@ begin
 end
 $moeda_do_plano$;
 
+-- ---- histórico vira perfil e oportunidade, com confirmação, teto e recusa de IA (migration 9350, PR #4152) ----
+-- Espelho de supabase/migrations/20261112071608_9350_historico_analisa_perfis_e_oportunidades.sql.
+-- Os dois CHECKs de job_queue NÃO se repetem aqui: `history_analysis` entrou no
+-- bloco canônico do vocabulário (reconstruir a mesma constraint em dois blocos
+-- quebra o update.sh de quem já tem linha do kind novo). Cria FUNÇÃO, então
+-- entra ANTES da VARREDURA anon — e antes da cascata da 9243, cujo trecho até a
+-- varredura é comparado por igualdade de texto. Idempotente.
+create unique index if not exists job_queue_historico_analise_unica_idx
+  on public.job_queue (
+    organization_id,
+    contact_id,
+    ((payload ->> 'importacao_id'))
+  )
+  where kind = 'history_analysis';
+
+-- A RÉGUA ÚNICA de quem a análise do histórico não lê. A prévia, o enfileirar e
+-- o handler (duas vezes: antes da chamada de IA e dentro da transação de
+-- escrita) perguntam a ESTA função — uma régua por chamador seria duas réguas.
+--
+-- 'recusou_ia': os mesmos sinais que calam o agente e o follow-up
+-- (`readStopFlags`, `isLeadInHandoff`): `ai_opt_out`, `is_blocked`,
+-- `is_personal`; mais a LGPD (`is_anonymized`, ficha fundida) e a recusa
+-- REGISTRADA de `consent.automated_service` (o atendimento por IA) ou
+-- `consent.profiling` (perfilamento, que é o que esta análise faz), nos dois
+-- formatos de `lib/lgpd/recusa-registrada.ts` — `declined_at` da captação e
+-- `granted: false` da ficha. Ausência de consentimento NÃO é recusa.
+-- `force_human` fica fora de propósito: é a conversa com a equipe (#3310), não
+-- um pedido do contato, e a análise não fala com ninguém.
+--
+-- 'estado_mais_novo': o contato já tem `lead_state` ou checkpoint gravado
+-- DEPOIS da última mensagem desta importação. A análise lê conversa antiga; o
+-- que foi escrito depois dela é mais novo e não pode ser coberto.
+--
+-- As quatro funções desta migration são PL/pgSQL, não SQL, de propósito: o
+-- baseline as cria ANTES da VARREDURA anon, e `contacts.ai_opt_out` e
+-- `importacoes_de_historico.origem` só nascem no apêndice DEPOIS dela. Função
+-- SQL valida o corpo ao ser criada e quebraria o install; PL/pgSQL adia.
+create or replace function public.fn_historico_analise_motivo_para_pular(
+  p_org uuid,
+  p_contato uuid,
+  p_importacao uuid
+) returns text
+language plpgsql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+begin
+  return (
+  select case
+    when c.id is null then 'sem_contato'
+    when c.ai_opt_out or c.is_blocked or c.is_personal or c.is_anonymized
+      or c.is_merged_into is not null
+      or nullif(c.consent #>> '{automated_service,declined_at}', '') is not null
+      or c.consent #> '{automated_service,granted}' = 'false'::jsonb
+      or nullif(c.consent #>> '{profiling,declined_at}', '') is not null
+      or c.consent #> '{profiling,granted}' = 'false'::jsonb
+      then 'recusou_ia'
+    when greatest(
+      (select s.updated_at from public.lead_state s
+        where s.organization_id = p_org and s.contact_id = p_contato),
+      (select max(k.created_at) from public.lead_checkpoints k
+        where k.organization_id = p_org and k.contact_id = p_contato)
+    ) > (
+      select max(m.sent_at) from public.messages m
+       where m.organization_id = p_org
+         and m.contact_id = p_contato
+         and m.metadata ->> 'importacao_id' = p_importacao::text
+    ) then 'estado_mais_novo'
+    else null
+  end
+  from (select 1) as um
+  left join public.contacts c on c.organization_id = p_org and c.id = p_contato
+  );
+end;
+$$;
+
+revoke all on function public.fn_historico_analise_motivo_para_pular(uuid, uuid, uuid)
+  from public, anon, authenticated;
+grant execute on function public.fn_historico_analise_motivo_para_pular(uuid, uuid, uuid)
+  to service_role;
+
+-- Os contatos da importação manual concluída, um por linha: a conversa mais
+-- recente, a última mensagem, quanto texto há para ler (cortado no mesmo teto
+-- de caracteres do handler, `MAX_CARACTERES_DA_ANALISE`), o motivo para pular
+-- e o estado do job que já exista. Uma leitura só de `messages`. As colunas de
+-- saída viram variáveis em PL/pgSQL: `use_column` e tudo qualificado.
+create or replace function public.fn_historico_analise_candidatos(
+  p_org uuid,
+  p_importacao uuid
+) returns table (
+  contact_id uuid,
+  conversation_id uuid,
+  ultima_mensagem_em timestamptz,
+  caracteres integer,
+  motivo text,
+  job_status text
+)
+language plpgsql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+#variable_conflict use_column
+begin
+  return query
+  with importacao as (
+    select i.id
+      from public.importacoes_de_historico i
+     where i.id = p_importacao
+       and i.organization_id = p_org
+       and i.origem = 'manual'
+       and i.status = 'concluida'
+  ), por_contato as (
+    select m.contact_id,
+           (array_agg(m.conversation_id order by m.sent_at desc, m.id desc))[1] as conversation_id,
+           max(m.sent_at) as ultima_mensagem_em,
+           least(
+             coalesce(sum(length(m.body)) filter (where m.type not in ('reaction', 'system')), 0),
+             48000
+           )::integer as caracteres
+      from public.messages m
+      join importacao i on m.metadata ->> 'importacao_id' = i.id::text
+     where m.organization_id = p_org
+       and m.contact_id is not null
+     group by m.contact_id
+  )
+  select p.contact_id,
+         p.conversation_id,
+         p.ultima_mensagem_em,
+         p.caracteres,
+         public.fn_historico_analise_motivo_para_pular(p_org, p.contact_id, p_importacao),
+         (select j.status
+            from public.job_queue j
+           where j.organization_id = p_org
+             and j.contact_id = p.contact_id
+             and j.kind = 'history_analysis'
+             and j.payload ->> 'importacao_id' = p_importacao::text)
+    from por_contato p;
+end;
+$$;
+
+revoke all on function public.fn_historico_analise_candidatos(uuid, uuid)
+  from public, anon, authenticated;
+grant execute on function public.fn_historico_analise_candidatos(uuid, uuid)
+  to service_role;
+
+-- O que o administrador vê ANTES de confirmar: quantos clientes entram nesta
+-- rodada (no máximo `p_limite`), quantos ficam para a próxima, quantos são
+-- pulados e por quê, e a estimativa de custo contra o orçamento que já existe.
+--
+-- A estimativa é centavos-por-token das chamadas `checkpoint` da organização
+-- nos últimos 30 dias (o purpose da análise, logo o mesmo modelo pelo
+-- `ai_purpose_bindings`) vezes os tokens da rodada: texto/4 de entrada mais
+-- 4000 por contato (instruções e o teto de saída de 3000). É teto, não média.
+-- Sem chamada com preço nesse período, `null`: sem base, o número não é inventado.
+create or replace function public.fn_previa_historico_analise(
+  p_org uuid,
+  p_importacao uuid,
+  p_limite integer
+) returns jsonb
+language plpgsql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+begin
+  return (
+  with c as (
+    select * from public.fn_historico_analise_candidatos(p_org, p_importacao)
+  ), pendentes as (
+    select * from c
+     where c.motivo is null
+       and (c.job_status is null or c.job_status in ('failed', 'dead'))
+  ), rodada as (
+    select * from pendentes
+     order by ultima_mensagem_em desc, contact_id
+     limit greatest(coalesce(p_limite, 0), 0)
+  ), taxa as (
+    select sum(l.cost_cents) / nullif(sum(l.input_tokens + l.output_tokens), 0) as cents_por_token
+      from public.llm_calls l
+     where l.organization_id = p_org
+       and l.purpose = 'checkpoint'
+       and l.cost_cents is not null
+       and l.created_at >= now() - interval '30 days'
+  )
+  select jsonb_build_object(
+    'nesta_rodada', (select count(*) from rodada),
+    'restantes', (select count(*) from pendentes) - (select count(*) from rodada),
+    'pulados_recusa', (select count(*) from c
+                        where c.motivo = 'recusou_ia' and c.job_status is distinct from 'done'),
+    'pulados_mais_novos', (select count(*) from c
+                            where c.motivo = 'estado_mais_novo' and c.job_status is distinct from 'done'),
+    'em_andamento', (select count(*) from c where c.job_status in ('pending', 'running')),
+    'teto_da_rodada', p_limite,
+    'estimativa_cents', (
+      select round(t.cents_por_token * (
+               (select coalesce(sum(r.caracteres), 0) from rodada r) / 4.0
+               + (select count(*) from rodada) * 4000
+             ), 2)
+        from taxa t
+    ),
+    'gasto_do_mes_cents', public.fn_gasto_de_ia_do_mes(p_org),
+    'teto_mensal_cents', (select case when b.enforcement_mode <> 'off' then b.monthly_limit_cents end
+                            from public.ai_budgets b where b.organization_id = p_org)
+  )
+  );
+end;
+$$;
+
+revoke all on function public.fn_previa_historico_analise(uuid, uuid, integer)
+  from public, anon, authenticated;
+grant execute on function public.fn_previa_historico_analise(uuid, uuid, integer)
+  to service_role;
+
+-- Enfileira NO MÁXIMO `p_limite` contatos — o número que o administrador
+-- confirmou na tela, nunca acima do teto da rodada (a rota corta). A ordem é a
+-- da prévia (conversa mais recente primeiro), então a rodada confirmada é a
+-- rodada enfileirada. Falha terminal volta a `pending` e conta no teto.
+create or replace function public.fn_enqueue_historico_analise(
+  p_org uuid,
+  p_importacao uuid,
+  p_limite integer
+) returns integer
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_total integer;
+begin
+  if coalesce(p_limite, 0) < 1 then
+    return 0;
+  end if;
+
+  with rodada as (
+    select c.contact_id, c.conversation_id
+      from public.fn_historico_analise_candidatos(p_org, p_importacao) c
+     where c.motivo is null
+       and (c.job_status is null or c.job_status in ('failed', 'dead'))
+     order by c.ultima_mensagem_em desc, c.contact_id
+     limit p_limite
+  ), reativados as (
+    update public.job_queue j
+       set status = 'pending',
+           attempts = 0,
+           run_after = now(),
+           last_error = null,
+           locked_by = null,
+           locked_at = null
+      from rodada c
+     where j.organization_id = p_org
+       and j.contact_id = c.contact_id
+       and j.kind = 'history_analysis'
+       and j.payload ->> 'importacao_id' = p_importacao::text
+       and j.status in ('failed', 'dead')
+    returning 1
+  ), inseridos as (
+    insert into public.job_queue (
+      organization_id,
+      contact_id,
+      kind,
+      payload,
+      priority,
+      max_attempts
+    )
+    select p_org,
+           c.contact_id,
+           'history_analysis',
+           jsonb_build_object(
+             'importacao_id', p_importacao,
+             'conversation_id', c.conversation_id
+           ),
+           140,
+           3
+      from rodada c
+    on conflict do nothing
+    returning 1
+  )
+  select ((select count(*) from reativados) + (select count(*) from inseridos))::integer
+    into v_total;
+
+  return v_total;
+end;
+$$;
+
+revoke all on function public.fn_enqueue_historico_analise(uuid, uuid, integer)
+  from public, anon, authenticated;
+grant execute on function public.fn_enqueue_historico_analise(uuid, uuid, integer)
+  to service_role;
+
+-- Contagens por estado e o gasto REAL das análises desta importação (soma de
+-- `llm_calls.cost_cents` pelos jobs dela — gasto por job, não a régua mensal,
+-- que continua sendo `fn_gasto_de_ia_do_mes`). Nenhum texto de conversa.
+create or replace function public.fn_resumo_historico_analise(
+  p_org uuid,
+  p_importacao uuid
+) returns jsonb
+language plpgsql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+begin
+  return (
+  select jsonb_build_object(
+    'total', count(*),
+    'pending', count(*) filter (where status = 'pending'),
+    'running', count(*) filter (where status = 'running'),
+    'done', count(*) filter (where status = 'done'),
+    'failed', count(*) filter (where status = 'failed'),
+    'dead', count(*) filter (where status = 'dead'),
+    'gasto_cents', (
+      select coalesce(sum(l.cost_cents), 0)
+        from public.llm_calls l
+        join public.job_queue j on j.id = l.job_id
+       where l.organization_id = p_org
+         and j.organization_id = p_org
+         and j.kind = 'history_analysis'
+         and j.payload ->> 'importacao_id' = p_importacao::text
+    )
+  )
+    from public.job_queue
+   where organization_id = p_org
+     and kind = 'history_analysis'
+     and payload ->> 'importacao_id' = p_importacao::text
+  );
+end;
+$$;
+
+revoke all on function public.fn_resumo_historico_analise(uuid, uuid)
+  from public, anon, authenticated;
+grant execute on function public.fn_resumo_historico_analise(uuid, uuid)
+  to service_role;
+
+-- ---- pesquisa de satisfação do encerramento (migration 9352, #4023) ----
+-- Espelho de supabase/migrations/20261112102214_9352_pesquisa_de_satisfacao.sql.
+-- Tabela nova e funções novas: ACIMA da VARREDURA anon (cria função) e depois
+-- de tudo que ela referencia (`organizations`, `conversations`, `contacts`).
+-- A `enable row level security` vem antes da última chamada de
+-- `fn_proteger_tabelas_de_organizacao()`, como o invariante de RBAC exige.
+-- ═══ #4023 — A PESQUISA DE SATISFAÇÃO DO ENCERRAMENTO ═══
+--
+-- O gatilho `conversation.closed` já existe desde a migration 9212: fechar a
+-- conversa passou a ser fato no `event_log`. O que faltava era o desfecho do
+-- pedido — e o desfecho precisa de lugar próprio, porque a nota é do PEDIDO (a
+-- pergunta feita naquele encerramento), não do contato: o mesmo cliente fecha
+-- dez atendimentos e cada um tem a sua nota.
+--
+-- `status` tem três valores, e o terceiro é o que impede a conta de mentir:
+-- `aguardando` (perguntou e o cliente ainda não respondeu), `respondida` (a
+-- mensagem de 1 a 5 chegou e a nota é dela) e `sem_nota` (a janela venceu sem
+-- resposta, a conversa seguiu antes da nota, ou a pergunta não saiu). Quem calcula média usa só `respondida`; quem conta pedidos usa as
+-- três. Tratar "sem resposta" como nota zero faria a média despencar por
+-- silêncio, que é o defeito clássico de CSAT.
+create table if not exists public.satisfacao_do_atendimento (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  conversation_id uuid not null references public.conversations(id) on delete cascade,
+  contact_id uuid references public.contacts(id) on delete set null,
+  status text not null default 'aguardando',
+  nota smallint,
+  perguntado_em timestamptz not null default now(),
+  expira_em timestamptz not null,
+  respondido_em timestamptz,
+  mensagem_da_resposta_id uuid,
+  created_at timestamptz not null default now(),
+  constraint satisfacao_status_check check (status in ('aguardando', 'respondida', 'sem_nota')),
+  constraint satisfacao_nota_check check (nota is null or (nota >= 1 and nota <= 5)),
+  -- A nota só existe quando a resposta existe. Sem esta constraint, um UPDATE
+  -- parcial deixaria `respondida` sem nota e a média dividiria por ela.
+  constraint satisfacao_nota_e_do_respondido check (
+    (status = 'respondida' and nota is not null and respondido_em is not null)
+    or (status <> 'respondida' and nota is null and respondido_em is null)
+  )
+);
+
+-- UM pedido aberto por conversa. É o que garante "pergunta UMA vez": fechar de
+-- novo a mesma conversa (ou o lote fechando em paralelo) bate no índice e não
+-- manda a segunda mensagem — a guarda é do banco, não da ordem das chamadas.
+create unique index if not exists satisfacao_um_pedido_aberto_por_conversa
+  on public.satisfacao_do_atendimento (conversation_id)
+  where status = 'aguardando';
+
+create index if not exists satisfacao_da_org_no_periodo
+  on public.satisfacao_do_atendimento (organization_id, perguntado_em desc);
+
+-- A varredura de vencidos procura exatamente `aguardando` com `expira_em` no
+-- passado, em todas as organizações (ou numa só).
+create index if not exists satisfacao_aguardando_vencendo
+  on public.satisfacao_do_atendimento (expira_em)
+  where status = 'aguardando';
+
+alter table public.satisfacao_do_atendimento enable row level security;
+
+revoke all on public.satisfacao_do_atendimento from public, anon, authenticated, service_role;
+grant select on public.satisfacao_do_atendimento to authenticated;
+grant select, insert, update, delete on public.satisfacao_do_atendimento to service_role;
+
+-- A NOTA É DE QUEM GERENCIA. Não é a tela que esconde: um `agent` que peça a
+-- tabela direto pelo PostgREST com o token dele casa ZERO linhas. Quem responde
+-- pela média é a rota `/api/v1/metrics/satisfacao`, com piso `manager`.
+drop policy if exists satisfacao_so_quem_gerencia_select on public.satisfacao_do_atendimento;
+create policy satisfacao_so_quem_gerencia_select on public.satisfacao_do_atendimento
+  for select to authenticated
+  using (
+    public.fn_is_platform_admin()
+    or (
+      organization_id in (select public.fn_user_org_ids())
+      and public.fn_user_role_in_org(organization_id) in ('manager', 'admin')
+    )
+  );
+
+comment on table public.satisfacao_do_atendimento is
+  'Um pedido de nota 1-5 por encerramento de atendimento (#4023). status aguardando → respondida (nota) ou sem_nota (janela vencida, conversa que seguiu antes da nota, ou pergunta que não saiu). Um pedido ABERTO por conversa. Leitura só manager+ (a média não é por conversa para quem não gerencia).';
+comment on column public.satisfacao_do_atendimento.expira_em is
+  'Fim da janela de resposta. Vencido, o pedido vira sem_nota por fn_satisfacao_fechar_vencidas — nunca nota zero.';
+comment on column public.satisfacao_do_atendimento.mensagem_da_resposta_id is
+  'A mensagem de ENTRADA que trouxe o 1-5. Sem FK de propósito: a resposta é dado de pesquisa e a mensagem pode ser podada pela retenção da conversa; perder a referência não pode derrubar o pedido já respondido.';
+
+-- ═══ As perguntas que a rota e o teste fazem ═══
+--
+-- Sem estas duas funções, a rota teria de ler N linhas para somar.
+-- `security definer` + `search_path` fixo, execute só para `service_role`: são
+-- contadores de operação, não API pública.
+
+create or replace function public.fn_satisfacao_fechar_vencidas(p_org uuid default null)
+returns integer language plpgsql security definer
+set search_path = public, pg_temp as $$
+declare
+  v_fechados integer;
+begin
+  update public.satisfacao_do_atendimento
+     set status = 'sem_nota'
+   where status = 'aguardando'
+     and expira_em < now()
+     and (p_org is null or organization_id = p_org);
+  get diagnostics v_fechados = row_count;
+  return v_fechados;
+end $$;
+
+create or replace function public.fn_satisfacao_resumo(
+  p_org uuid,
+  p_de timestamptz default null,
+  p_ate timestamptz default null
+) returns jsonb language sql security definer
+set search_path = public, pg_temp as $$
+  select jsonb_build_object(
+    'respostas', count(*) filter (where status = 'respondida'),
+    'pedidos', count(*),
+    'sem_nota', count(*) filter (where status = 'sem_nota'),
+    'aguardando', count(*) filter (where status = 'aguardando'),
+    'media', round(avg(nota) filter (where status = 'respondida'), 2),
+    'notas', coalesce(
+      jsonb_object_agg(nota::text, quantidade) filter (where nota is not null),
+      '{}'::jsonb
+    )
+  )
+  from (
+    select s.status, s.nota,
+           count(*) over (partition by s.nota) as quantidade
+      from public.satisfacao_do_atendimento s
+     where s.organization_id = p_org
+       and (p_de is null or s.perguntado_em >= p_de)
+       and (p_ate is null or s.perguntado_em < p_ate)
+  ) t;
+$$;
+
+revoke execute on function public.fn_satisfacao_fechar_vencidas(uuid) from public, anon, authenticated, service_role;
+revoke execute on function public.fn_satisfacao_resumo(uuid, timestamptz, timestamptz) from public, anon, authenticated, service_role;
+grant execute on function public.fn_satisfacao_fechar_vencidas(uuid) to service_role;
+grant execute on function public.fn_satisfacao_resumo(uuid, timestamptz, timestamptz) to service_role;
+
+
+notify pgrst, 'reload schema';
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.
@@ -82021,6 +82497,17 @@ begin
   end if;
 end
 $canal_do_telegram$;
+
+notify pgrst, 'reload schema';
+
+-- ---- push_subscriptions.tipos_calados: o aparelho escolhe os tipos de aviso (migration 9351) ----
+-- Só `add column if not exists`: re-aplicar (o `update.sh`) não toca no que o
+-- aparelho já gravou. Quem calou um tipo continua com ele calado.
+alter table public.push_subscriptions
+  add column if not exists tipos_calados text[] not null default '{}';
+
+comment on column public.push_subscriptions.tipos_calados is
+  'Tipos de aviso que este aparelho não quer receber no celular (NOTIFY_UI_CATEGORIES). Vazio = recebe todos.';
 
 notify pgrst, 'reload schema';
 
