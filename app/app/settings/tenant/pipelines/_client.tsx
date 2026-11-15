@@ -67,7 +67,8 @@ import {
   type OperadorDeMostra,
 } from "@/lib/schemas/mostrar-quando";
 import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
-import { CaretDown, CaretUp, DragHandle, Plus, Trash } from "@/lib/ui/icons";
+import { CaretDown, CaretUp, DragHandle, MagnifyingGlass, Plus, Trash } from "@/lib/ui/icons";
+import { filtrarFunis } from "@/lib/pipelines/filtrar-funis";
 import { entradaDoInboxDeclarada } from "@/lib/leads/entrada-do-inbox";
 import { RolagemDeChegada, type Chegada } from "@/lib/ui/rolagem-de-chegada";
 import { AgentMappingSection, ancoraDoMapeamento } from "./_mapping";
@@ -458,6 +459,18 @@ export function PipelinesClient({
   );
   const [chegada, setChegada] = useState<ChegadaAoFunil | null>(null);
   /**
+   * A BUSCA DA LISTA DE FUNIS (#4593).
+   *
+   * Ela filtra por NOME — o mesmo recorte da lista de Fluxos e o que a issue
+   * pede na fatia 1. Slug e nomes de etapa são a fatia 2 e estão declarados
+   * como fora do PR: casar por etapa faria um funil aparecer por um termo que a
+   * tela não mostra, e o resultado pareceria aleatório.
+   *
+   * O casamento mora em `lib/pipelines/filtrar-funis.ts`, fora deste componente.
+   */
+  const [busca, setBusca] = useState("");
+  const funisVisiveis = filtrarFunis(pipelines, busca);
+  /**
    * A ÂNCORA ABRE O FUNIL QUE ELA APONTA.
    *
    * `#etapas-<id>` e `#mapeamento-<id>` são os destinos do «Mudar isso» da etapa
@@ -501,7 +514,25 @@ export function PipelinesClient({
   }
   return (
     <div className="flex flex-col gap-4">
-      {pipelines.map((p) => (
+      {/* A BUSCA ANTES DOS CARDS (#4593): com oito ou dez funis abertos, achar
+          um era rolar o rolo inteiro. No celular ela ocupa a linha toda. */}
+      <div className="relative w-full sm:w-72">
+        <MagnifyingGlass
+          size={14}
+          className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+          aria-hidden
+        />
+        <Input
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder={t("Buscar funil…")}
+          aria-label={t("Buscar funil")}
+          className="h-9 w-full pl-8 text-sm"
+          data-testid="buscar-funil"
+        />
+      </div>
+
+      {funisVisiveis.map((p) => (
         <CardDoFunil
           key={p.id}
           pipeline={p}
@@ -517,6 +548,17 @@ export function PipelinesClient({
           }}
         />
       ))}
+      {/* Nenhum funil casou o termo — e isso NÃO quer dizer que não há funil. */}
+      {funisVisiveis.length === 0 && (
+        <Card className="flex flex-col items-center gap-2 p-8 text-center" data-testid="sem-resultado-funil">
+          <p className="text-sm">
+            {t("Nenhum funil corresponde a")} “{busca}”.
+          </p>
+          <Button variant="outline" onClick={() => setBusca("")}>
+            {t("Limpar busca")}
+          </Button>
+        </Card>
+      )}
       {chegada && <RolagemDoFunil {...chegada} aoTerminar={() => setChegada(null)} />}
     </div>
   );

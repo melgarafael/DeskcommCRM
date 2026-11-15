@@ -21631,6 +21631,22 @@ export const DICIONARIO: Traducoes = {
   "Mensagem citada": { es: "Mensaje citado" },
   "Toque para carregar a original": { es: "Toque para cargar el original" },
   "A mensagem original não está mais na conversa.": { es: "El mensaje original ya no está en la conversación." },
+  // ─── Busca nas listas de Follow-ups e Funis, e itens no ⌘K (#4593) ───
+  // «Funil» e «Funis» já existem neste dicionário (chaves sem aspas, de ondas
+  // anteriores) — não repita aqui: duas entradas com a mesma chave são TS1117.
+  "Buscar fluxo": { es: "Buscar flujo" },
+  "Buscar fluxo…": { es: "Buscar flujo…" },
+  "Buscar funil": { es: "Buscar embudo" },
+  "Buscar funil…": { es: "Buscar embudo…" },
+  "Nenhum fluxo corresponde a": { es: "Ningún flujo coincide con" },
+  "Nenhum funil corresponde a": { es: "Ningún embudo coincide con" },
+  "Limpar busca": { es: "Limpiar búsqueda" },
+  "Buscar por nome ou descrição…": { es: "Buscar por nombre o descripción…" },
+  "Buscar no sistema": { es: "Buscar en el sistema" },
+  "Resultados": { es: "Resultados" },
+  "Buscar telas, funis, fluxos e agentes (ex: kanban, prospecção, retomada, whatsapp)…": {
+    es: "Buscar pantallas, embudos, flujos y agentes (ej: kanban, prospección, retomada, whatsapp)…",
+  },
 };
 
 /**
