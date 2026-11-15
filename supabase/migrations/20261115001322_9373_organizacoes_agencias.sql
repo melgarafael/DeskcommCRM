@@ -1,5 +1,4 @@
 -- manifest: Configuração protegida de agências e vínculo exclusivo de clientes, com autorização atual e bloqueio de hierarquia e exclusão da agência com clientes.
--- Número provisório: conferir colisão com PRs abertos antes de publicar.
 create table if not exists public.agencia_configuracoes (
   organization_id uuid primary key references public.organizations(id) on delete cascade,
   habilitada boolean not null default false,
