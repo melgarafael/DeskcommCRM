@@ -46,6 +46,10 @@ export const DICIONARIO: Traducoes = {
   ...TEXTOS_CONTRATACAO,
   ...TEXTOS_CADENCIAS_ORIGINAIS,
   ...TEXTOS_CADENCIAS,
+  "Grupo de anúncios": { es: "Grupo de anuncios" },
+  "Palavra-chave": { es: "Palabra clave" },
+  "Conta do Google Ads": { es: "Cuenta de Google Ads" },
+  "Para distinguir contas, acrescente google_customer_id ao sufixo de cada conta e use o ID de cliente de dez dígitos. Exemplo: &google_customer_id=1234567890.": { es: "Para distinguir cuentas, añade google_customer_id al sufijo de cada cuenta y usa el ID de cliente de diez dígitos. Ejemplo: &google_customer_id=1234567890." },
   "Dados do negócio para conferência": { es: "Datos del negocio para revisar" },
   // Mensagens agendadas na conversa (issue #3118, primeira parte): textos do popup.
   "Mensagens agendadas": { es: "Mensajes programados" },
@@ -13025,6 +13029,41 @@ export const DICIONARIO: Traducoes = {
   "corpo inválido": { es: "cuerpo inválido" },
   "Corpo inválido.": { es: "Cuerpo inválido." },
   "Corpo inválido para desconectar.": { es: "Cuerpo inválido para desconectar." },
+  // #4023 — pesquisa de satisfação.
+  "Não foi possível calcular a satisfação.": { es: "No fue posible calcular la satisfacción." },
+  "De 1 a 5, como você avalia este atendimento? Responda só com o número.": {
+    es: "Del 1 al 5, ¿cómo calificas esta atención? Responde solo con el número.",
+  },
+  "Pesquisa de satisfação ao encerrar": {
+    es: "Encuesta de satisfacción al cerrar",
+  },
+  "Ligada, quem tem o atendimento encerrado recebe uma pergunta: de 1 a 5, como avalia o atendimento. A resposta vira nota só se vier logo em seguida: se a equipe ou a IA voltar a falar com o cliente, um número que ele mande é conversa normal. Não sai para contato bloqueado ou pessoal, nem fora do horário de envio do número.": {
+    es: "Activada, quien tiene la atención cerrada recibe una pregunta: del 1 al 5, cómo califica la atención. La respuesta se vuelve nota solo si llega enseguida: si el equipo o la IA vuelve a hablar con el cliente, un número que él envíe es conversación normal. No se envía a contactos bloqueados o personales, ni fuera del horario de envío del número.",
+  },
+  "Ligada: a pergunta sai ao encerrar o atendimento.": {
+    es: "Activada: la pregunta se envía al cerrar la atención.",
+  },
+  "Desligada: nenhuma pergunta sai ao encerrar.": {
+    es: "Desactivada: no se envía ninguna pregunta al cerrar.",
+  },
+  "Resultado dos últimos 30 dias": {
+    es: "Resultado de los últimos 30 días",
+  },
+  "Respostas": {
+    es: "Respuestas",
+  },
+  "Perguntas feitas": {
+    es: "Preguntas enviadas",
+  },
+  "Quem não respondeu conta em \"Sem resposta\", nunca como nota baixa. A média usa só as respostas.": {
+    es: "Quien no respondió cuenta en \"Sin respuesta\", nunca como nota baja. El promedio usa solo las respuestas.",
+  },
+  "Há perguntas ainda esperando resposta.": {
+    es: "Hay preguntas que aún esperan respuesta.",
+  },
+  "Prazo para o cliente responder:": {
+    es: "Plazo para que el cliente responda:",
+  },
   "Corpo não é JSON válido.": { es: "El cuerpo no es un JSON válido." },
   "Credential desativada.": { es: "Credencial desactivada." },
   "Credential não encontrada.": { es: "Credencial no encontrada." },
@@ -19557,6 +19596,9 @@ export const DICIONARIO: Traducoes = {
   "Carregando etiquetas…": { es: "Cargando etiquetas…" },
   // #2498 — destino opcional da ação add_tag, no editor de automações.
   "Destino da etiqueta": { es: "Destino de la etiqueta" },
+  "Etiquetas automáticas do Google Ads (opcional)": { es: "Etiquetas automáticas de Google Ads (opcional)" },
+  "Escolha os dados de origem que viram etiquetas. Só se aplica a negócios identificados como Google Ads; campos ausentes são ignorados.": { es: "Elige los datos de origen que se convierten en etiquetas. Solo se aplica a negocios identificados como Google Ads; los campos ausentes se omiten." },
+  "Até dez etiquetas no total, com até 60 caracteres cada. O nome inclui o ID quando disponível; nomes longos usam só o ID ou são ignorados.": { es: "Hasta diez etiquetas en total, con un máximo de 60 caracteres cada una. El nombre incluye el ID cuando está disponible; los nombres largos usan solo el ID o se omiten." },
   "Card (comportamento atual)": { es: "Card (comportamiento actual)" },
   "Contato do lead": { es: "Contacto del lead" },
   "Sem contato vinculado, a etiqueta não é aplicada.": {
