@@ -1,6 +1,6 @@
 /**
  * QUAIS ferramentas de ESCRITA de um servidor MCP externo podem rodar durante o
- * atendimento (#4445) — lista EXPLÍCITA, por organização e por conexão.
+ * atendimento (#4445) — lista EXPLÍCITA, por conexão.
  *
  * ── Por que a liberação é uma lista, e não uma chave ────────────────────────
  *
@@ -26,14 +26,19 @@
  * endereço do servidor compartilhado:
  *
  *   {
- *     "organizacao": ["cancelar_reserva"],            // vale para toda conexão
- *     "conexoes": { "<id-do-servidor>": ["agendar"] } // por conexão
+ *     "conexoes": { "<id-do-servidor>": ["agendar"] }
  *   }
  *
  * A conexão do servidor COMPARTILHADO da organização é `compartilhado`
  * (`CONEXAO_COMPARTILHADA`); a de um servidor do agente é o id dele em
  * `ai_agent_mcp_servers` — nomes iguais em conexões diferentes são liberações
  * diferentes, do mesmo jeito que a escolha em `tool_ids` (ver `ids.ts`).
+ *
+ * Não há nível "da organização inteira" (doc de decisão 347 = A): um nome
+ * liberado para o servidor compartilhado não vale num servidor do agente, que
+ * pode anunciar uma ferramenta homônima de outro sistema. Uma chave
+ * `organizacao` deixada por versão anterior é ignorada na leitura e apagada na
+ * próxima gravação.
  *
  * A leitura NUNCA lança: quem chama é o caminho quente do turno, e configuração
  * torta tem de significar "nada liberado", nunca "turno caído".
@@ -48,10 +53,8 @@ export const CONEXAO_COMPARTILHADA = "compartilhado";
 /** O código da recusa NOMEADA de uma escrita fora da lista (#4445). */
 export const RECUSA_ESCRITA_NAO_LIBERADA = "escrita_nao_liberada";
 
-/** A liberação como o turno a lê: os dois níveis, já sem nada inválido. */
+/** A liberação como o turno a lê, já sem nada inválido. */
 export interface EscritaLiberada {
-  /** Nomes liberados para QUALQUER conexão da organização. */
-  readonly organizacao: readonly string[];
   /** Nomes liberados por conexão (`id do servidor` ou `compartilhado`). */
   readonly conexoes: Readonly<Record<string, readonly string[]>>;
 }
@@ -101,13 +104,13 @@ function nomesExplicitos(bruto: unknown): string[] {
  */
 export function lerEscritaLiberada(settings: unknown): EscritaLiberada {
   if (typeof settings !== "object" || settings === null) {
-    return { organizacao: [], conexoes: {} };
+    return { conexoes: {} };
   }
   const bruto = (settings as Record<string, unknown>)[BOLSO_ESCRITA_LIBERADA];
   if (typeof bruto !== "object" || bruto === null) {
-    return { organizacao: [], conexoes: {} };
+    return { conexoes: {} };
   }
-  const { organizacao, conexoes } = bruto as Record<string, unknown>;
+  const { conexoes } = bruto as Record<string, unknown>;
   const porConexao: Record<string, readonly string[]> = {};
   if (typeof conexoes === "object" && conexoes !== null && !Array.isArray(conexoes)) {
     for (const [conexao, lista] of Object.entries(conexoes as Record<string, unknown>)) {
@@ -117,19 +120,15 @@ export function lerEscritaLiberada(settings: unknown): EscritaLiberada {
       if (nomes.length > 0) porConexao[conexao] = nomes;
     }
   }
-  return { organizacao: nomesExplicitos(organizacao), conexoes: porConexao };
+  return { conexoes: porConexao };
 }
 
 /**
- * Os nomes liberados para UMA conexão: a lista da organização MAIS a da
- * conexão. Duas listas explícitas, uma união — não há hierarquia escondida, e
- * tirar um nome de uma das duas continua tirando a liberação dele daquela
- * origem (para revogar de vez, o nome sai das duas).
+ * Os nomes liberados para UMA conexão — só a lista dela, sem união com lista
+ * nenhuma de fora (ver o cabeçalho).
  */
 export function escritasLiberadasDaConexao(config: EscritaLiberada, conexao: string): string[] {
-  const nomes = new Set(config.organizacao);
-  for (const nome of config.conexoes[conexao] ?? []) nomes.add(nome);
-  return [...nomes];
+  return [...(config.conexoes[conexao] ?? [])];
 }
 
 /** O teste que o turno faz: esta ferramenta, nesta conexão, está liberada? */
@@ -169,37 +168,30 @@ export function recusaDaEscritaNaoLiberada(
  * Grava a liberação no jsonb de `settings`, preservando os outros bolsos — o
  * mesmo merge em dois níveis de `mesclarServidorMcpExterno` (`registro.ts`).
  *
- * Lista vazia APAGA o bolso: `{ organizacao: [], conexoes: { x: [] } }` seria um
+ * Lista vazia APAGA o bolso: `{ conexoes: { x: [] } }` seria um
  * registro que a leitura enxerga como presente e não libera nada, e o operador
  * não teria como distinguir "não configurei" de "configurei e não pegou".
  */
 export function mesclarEscritaLiberada(
   settings: unknown,
-  entrada: { organizacao?: readonly string[]; conexoes?: Readonly<Record<string, readonly string[]>> },
+  entrada: { conexoes?: Readonly<Record<string, readonly string[]>> },
 ): Record<string, unknown> {
   const atual: Record<string, unknown> =
     typeof settings === "object" && settings !== null
       ? { ...(settings as Record<string, unknown>) }
       : {};
 
-  const organizacao = nomesExplicitos(entrada.organizacao ?? []);
   const conexoes: Record<string, readonly string[]> = {};
   for (const [conexao, lista] of Object.entries(entrada.conexoes ?? {})) {
     const nomes = nomesExplicitos(lista);
     if (conexao.trim() !== "" && nomes.length > 0) conexoes[conexao.trim()] = nomes;
   }
 
-  if (organizacao.length === 0 && Object.keys(conexoes).length === 0) {
+  if (Object.keys(conexoes).length === 0) {
     delete atual[BOLSO_ESCRITA_LIBERADA];
     return atual;
   }
-  return {
-    ...atual,
-    [BOLSO_ESCRITA_LIBERADA]: {
-      ...(organizacao.length > 0 ? { organizacao } : {}),
-      ...(Object.keys(conexoes).length > 0 ? { conexoes } : {}),
-    },
-  };
+  return { ...atual, [BOLSO_ESCRITA_LIBERADA]: { conexoes } };
 }
 
 /**

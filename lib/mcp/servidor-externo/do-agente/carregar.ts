@@ -272,8 +272,8 @@ export async function carregarServidoresDoAgenteNoTurno(
   const servidores = (await lerServidoresDoAgente(supabase, organizationId, agentId, { somenteAtivos: true })).filter(
     (s) => escolhidos.has(s.id),
   );
-  // A liberação de ESCRITA (#4445) é por ORGANIZAÇÃO e por CONEXÃO: uma
-  // leitura do jsonb por turno, e o recorte de cada servidor pelo id dele. Sem
+  // A liberação de ESCRITA (#4445) é por CONEXÃO: uma leitura do jsonb por
+  // turno, e o recorte de cada servidor pelo id dele. Sem
   // o bolso, lista vazia — nenhuma escrita remota roda no atendimento.
   const { data: organizacao } = await supabase
     .from("organizations")

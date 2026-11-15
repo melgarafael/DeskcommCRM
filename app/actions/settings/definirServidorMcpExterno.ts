@@ -85,11 +85,10 @@ const entradaSchema = z.object({
    * por vírgula). Ausente = não mexe no que já está gravado — a tela manda
    * sempre, quem chama a action por outro caminho pode não mandar.
    *
-   * São DOIS níveis, os mesmos que a leitura entende
-   * (`lib/mcp/servidor-externo/escrita-liberada.ts`): o da organização, que vale
-   * para toda conexão, e o da conexão do servidor compartilhado.
+   * Vale SÓ para a conexão do servidor compartilhado
+   * (`lib/mcp/servidor-externo/escrita-liberada.ts`): não há nível que valha
+   * para toda conexão (doc de decisão 347 = A).
    */
-  escritasLiberadasOrganizacao: z.string().max(4000).optional(),
   escritasLiberadasConexao: z.string().max(4000).optional(),
 });
 
@@ -140,11 +139,9 @@ export async function definirServidorMcpExterno(
   // com código próprio. A lista é explícita — `*`, `all`, `todos` e
   // `erp_*` significam "tudo o que o terceiro anunciar hoje e amanhã", que é
   // exatamente o que esta configuração existe para NÃO ser.
-  const organizacaoDigitada = entrada.data.escritasLiberadasOrganizacao;
   const conexaoDigitada = entrada.data.escritasLiberadasConexao;
-  const listaOrganizacao = organizacaoDigitada === undefined ? null : separarNomesDigitados(organizacaoDigitada);
   const listaConexao = conexaoDigitada === undefined ? null : separarNomesDigitados(conexaoDigitada);
-  if ((listaOrganizacao?.curingas.length ?? 0) > 0 || (listaConexao?.curingas.length ?? 0) > 0) {
+  if ((listaConexao?.curingas.length ?? 0) > 0) {
     return { ok: false, error: "curinga_nao_aceito" };
   }
 
@@ -159,16 +156,12 @@ export async function definirServidorMcpExterno(
   // `settings` é jsonb compartilhado: ler, mesclar SÓ o nosso bolso e gravar
   // preserva o que é dos outros — é a razão do merge em dois níveis.
   let settings = mesclarServidorMcpExterno(atual?.settings ?? {}, { endpoint, chave });
-  if (listaOrganizacao !== null || listaConexao !== null) {
+  if (listaConexao !== null) {
     // As OUTRAS conexões (servidores do agente) saem daqui como entraram: a
     // tela do servidor compartilhado não é dona da liberação delas.
     const atualLiberacao = lerEscritaLiberada(settings);
     settings = mesclarEscritaLiberada(settings, {
-      ...(listaOrganizacao === null ? { organizacao: atualLiberacao.organizacao } : { organizacao: listaOrganizacao.nomes }),
-      conexoes: {
-        ...atualLiberacao.conexoes,
-        ...(listaConexao === null ? {} : { [CONEXAO_COMPARTILHADA]: listaConexao.nomes }),
-      },
+      conexoes: { ...atualLiberacao.conexoes, [CONEXAO_COMPARTILHADA]: listaConexao.nomes },
     });
   }
   const temRegistro = settings[BOLSO_MCP_EXTERNO] !== undefined;
@@ -199,11 +192,8 @@ export async function definirServidorMcpExterno(
       endpoint: temRegistro ? hostDoEndpoint(endpoint) : null,
       registrado: temRegistro,
       chave_presente: temRegistro,
-      // As listas de ESCRITA liberadas (#4445): NOMES de ferramenta, nunca
-      // argumento nem payload. `null` = esta chamada não mexeu nas listas.
-      ...(listaOrganizacao === null
-        ? {}
-        : { escritas_liberadas_organizacao: listaOrganizacao.nomes.slice(0, 50) }),
+      // A lista de ESCRITA liberada (#4445): NOMES de ferramenta, nunca
+      // argumento nem payload. Ausente = esta chamada não mexeu na lista.
       ...(listaConexao === null
         ? {}
         : { escritas_liberadas_conexao: listaConexao.nomes.slice(0, 50) }),

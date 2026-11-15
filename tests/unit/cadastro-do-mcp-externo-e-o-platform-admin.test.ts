@@ -321,14 +321,13 @@ describe("o endereço não carrega segredo para a trilha (item 5)", () => {
   });
 });
 
-// ─── #4445: a liberação de ESCRITA, por organização e por conexão ───────────
+// ─── #4445: a liberação de ESCRITA, por conexão ─────────────────────────────
 
 describe("a escrita remota é liberada por LISTA, e curinga não é aceito (#4445)", () => {
-  it("grava os dois níveis no jsonb, preservando os outros bolsos", async () => {
+  it("grava a lista da conexão compartilhada no jsonb, preservando os outros bolsos", async () => {
     const resultado = await definirServidorMcpExterno({
       endpoint: "https://erp.loja/mcp",
       chave: CHAVE,
-      escritasLiberadasOrganizacao: "cancelar_reserva",
       escritasLiberadasConexao: "criar_agendamento\nremarcar_reserva",
     });
     expect(resultado).toEqual({ ok: true, chaveUltimos4: "abcd" });
@@ -336,7 +335,6 @@ describe("a escrita remota é liberada por LISTA, e curinga não é aceito (#444
     const settings = estado.updates[0]!.settings as Record<string, unknown>;
     expect(settings.conversions).toEqual({ meta_page_id: "111" });
     expect(settings.mcp_externo_escrita).toEqual({
-      organizacao: ["cancelar_reserva"],
       conexoes: { compartilhado: ["criar_agendamento", "remarcar_reserva"] },
     });
   });
@@ -349,7 +347,7 @@ describe("a escrita remota é liberada por LISTA, e curinga não é aceito (#444
       const resultado = await definirServidorMcpExterno({
         endpoint: "https://erp.loja/mcp",
         chave: CHAVE,
-        escritasLiberadasOrganizacao: curinga,
+        escritasLiberadasConexao: curinga,
       });
       expect(resultado, `"${curinga}" foi aceito`).toEqual({ ok: false, error: "curinga_nao_aceito" });
       expect(estado.updates, `"${curinga}" gravou alguma coisa`).toEqual([]);
@@ -367,7 +365,6 @@ describe("a escrita remota é liberada por LISTA, e curinga não é aceito (#444
     await definirServidorMcpExterno({
       endpoint: "https://erp.loja/mcp",
       chave: CHAVE,
-      escritasLiberadasOrganizacao: "",
       escritasLiberadasConexao: "",
     });
     const settings = estado.updates[0]!.settings as Record<string, unknown>;

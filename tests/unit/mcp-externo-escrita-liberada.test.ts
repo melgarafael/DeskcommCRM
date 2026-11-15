@@ -1,7 +1,7 @@
 // @vitest-environment node
 /**
  * #4445 — ESCRITA de servidor MCP externo DURANTE o atendimento, com
- * autorização explícita por organização e por conexão.
+ * autorização explícita por conexão.
  *
  * ── O que este arquivo prova, e por que cada caso existe ───────────────────
  *
@@ -285,23 +285,18 @@ function ultimaAuditoriaDa(toolName: string): Record<string, unknown> {
   return eventos.at(-1)!.metadata as Record<string, unknown>;
 }
 
-// ─── 1. A configuração: lista explícita, dois níveis ────────────────────────
+// ─── 1. A configuração: lista explícita, por conexão ────────────────────────
 
-describe("a liberação de escrita é uma LISTA explícita, por organização e por conexão", () => {
-  it("lê os dois níveis e cruza pelo nome da conexão", () => {
+describe("a liberação de escrita é uma LISTA explícita, por conexão", () => {
+  it("cruza pelo nome da conexão: o que foi liberado numa não vale em outra", () => {
     const config = lerEscritaLiberada({
       mcp_externo_escrita: {
-        organizacao: ["cancelar_reserva"],
-        conexoes: { [CONEXAO_COMPARTILHADA]: ["criar_agendamento"] },
+        conexoes: { [CONEXAO_COMPARTILHADA]: ["criar_agendamento"], "outro-servidor": ["cancelar_reserva"] },
       },
     });
-    expect(escritasLiberadasDaConexao(config, CONEXAO_COMPARTILHADA).sort()).toEqual([
-      "cancelar_reserva",
-      "criar_agendamento",
-    ]);
-    // Outra conexão herda SÓ o nível da organização: liberação é por conexão.
+    expect(escritasLiberadasDaConexao(config, CONEXAO_COMPARTILHADA)).toEqual(["criar_agendamento"]);
     expect(escritasLiberadasDaConexao(config, "outro-servidor")).toEqual(["cancelar_reserva"]);
-    expect(config.conexoes[CONEXAO_COMPARTILHADA]).toEqual(["criar_agendamento"]);
+    expect(escritasLiberadasDaConexao(config, "terceiro-servidor")).toEqual([]);
   });
 
   it("CURINGA não é expandido nem guardado — `*`, `all` e `erp_*` não liberam nada", () => {
@@ -309,9 +304,8 @@ describe("a liberação de escrita é uma LISTA explícita, por organização e 
     // impede a lista explícita de virar uma chave booleana disfarçada.
     for (const curinga of ["*", "all", "todos", "erp_*", "erp_?", "qualquer"]) {
       const config = lerEscritaLiberada({
-        mcp_externo_escrita: { organizacao: [curinga], conexoes: { [CONEXAO_COMPARTILHADA]: [curinga] } },
+        mcp_externo_escrita: { conexoes: { [CONEXAO_COMPARTILHADA]: [curinga] } },
       });
-      expect(config.organizacao, `"${curinga}" virou liberação de organização`).toEqual([]);
       expect(config.conexoes, `"${curinga}" virou liberação de conexão`).toEqual({});
       expect(escritasLiberadasDaConexao(config, CONEXAO_COMPARTILHADA)).toEqual([]);
     }
@@ -319,29 +313,31 @@ describe("a liberação de escrita é uma LISTA explícita, por organização e 
 
   it("bolso ausente/malformado = nada liberado, e a leitura nunca lança", () => {
     for (const settings of [undefined, null, {}, { mcp_externo_escrita: "tudo" }, { mcp_externo_escrita: [] }]) {
-      expect(lerEscritaLiberada(settings)).toEqual({ organizacao: [], conexoes: {} });
+      expect(lerEscritaLiberada(settings)).toEqual({ conexoes: {} });
     }
   });
 
   it("nome fora do protocolo é descartado; repetido conta uma vez", () => {
     const config = lerEscritaLiberada({
-      mcp_externo_escrita: { organizacao: ["criar agendamento", "a".repeat(80), "ok_tool", "ok_tool"] },
+      mcp_externo_escrita: {
+        conexoes: { [CONEXAO_COMPARTILHADA]: ["criar agendamento", "a".repeat(80), "ok_tool", "ok_tool"] },
+      },
     });
-    expect(config.organizacao).toEqual(["ok_tool"]);
+    expect(config.conexoes[CONEXAO_COMPARTILHADA]).toEqual(["ok_tool"]);
   });
 
   it("grava preservando os outros bolsos do jsonb, e lista vazia APAGA o bolso", () => {
     const gravado = mesclarEscritaLiberada(
       { conversions: { meta_page_id: "111" }, mcp_externo: { endpoint: "https://erp.loja/mcp" } },
-      { organizacao: ["cancelar_reserva"], conexoes: { [CONEXAO_COMPARTILHADA]: ["criar_agendamento"] } },
+      { conexoes: { [CONEXAO_COMPARTILHADA]: ["criar_agendamento"] } },
     );
     expect(gravado.conversions).toEqual({ meta_page_id: "111" });
     expect(gravado.mcp_externo).toEqual({ endpoint: "https://erp.loja/mcp" });
     expect(lerEscritaLiberada(gravado).conexoes[CONEXAO_COMPARTILHADA]).toEqual(["criar_agendamento"]);
 
-    const apagado = mesclarEscritaLiberada(gravado, { organizacao: [], conexoes: {} });
+    const apagado = mesclarEscritaLiberada(gravado, { conexoes: {} });
     expect(apagado.mcp_externo_escrita).toBeUndefined();
-    expect(lerEscritaLiberada(apagado)).toEqual({ organizacao: [], conexoes: {} });
+    expect(lerEscritaLiberada(apagado)).toEqual({ conexoes: {} });
   });
 
   it("a tela separa por linha/vírgula e devolve o curinga para recusar com código", () => {
@@ -431,14 +427,13 @@ describe("a carga do turno resolve a liberação da conexão `compartilhado`", (
       bancoCom({
         mcp_externo: { endpoint: base },
         mcp_externo_escrita: {
-          organizacao: ["cancelar_reserva"],
           conexoes: { [CONEXAO_COMPARTILHADA]: ["criar_agendamento"], "outro-servidor": ["apagar_tudo"] },
         },
       }),
       ORG,
       { fetch: fetchDoStub() },
     );
-    expect([...(montado?.escritasLiberadas ?? [])].sort()).toEqual(["cancelar_reserva", "criar_agendamento"]);
+    expect(montado?.escritasLiberadas).toEqual(["criar_agendamento"]);
   });
 });
 
@@ -494,24 +489,23 @@ describe("escrita liberada roda no turno e volta ao modelo", () => {
     expect(JSON.stringify(metadata)).not.toContain("Beatriz de Albuquerque");
   });
 
-  it("a liberação da ORGANIZAÇÃO vale para a conexão; nome não liberado continua recusado", async () => {
-    const montadas = turno({
-      liberadas: escritasLiberadasDaConexao(
-        lerEscritaLiberada({ mcp_externo_escrita: { organizacao: ["erp_cancelar_reserva"] } }),
-        CONEXAO_COMPARTILHADA,
-      ),
-      escolhas: [
-        toolIdRemoto("erp_cancelar_reserva", "escrita"),
-        toolIdRemoto("erp_criar_agendamento", "escrita"),
-      ],
-    });
+  it("não há liberação da ORGANIZAÇÃO inteira: a chave `organizacao` não libera nenhuma conexão", async () => {
+    // Guarda do doc de decisão 347 = A. Uma lista "para toda conexão" faria o
+    // nome liberado para um sistema valer num servidor do agente que anuncia
+    // uma ferramenta homônima de OUTRO sistema. Restaurar a união em
+    // `escritasLiberadasDaConexao` reprova aqui.
+    const legado = lerEscritaLiberada({ mcp_externo_escrita: { organizacao: ["erp_cancelar_reserva"] } });
+    expect(escritasLiberadasDaConexao(legado, CONEXAO_COMPARTILHADA)).toEqual([]);
+    expect(escritasLiberadasDaConexao(legado, "6f1c2b9e-0000-4000-8000-000000000001")).toEqual([]);
 
-    expect(await ferramenta(montadas, "erp_cancelar_reserva").execute({ reserva_id: "r-1" })).toEqual({
-      texto: "ok: erp_cancelar_reserva",
+    const montadas = turno({
+      liberadas: escritasLiberadasDaConexao(legado, CONEXAO_COMPARTILHADA),
+      escolhas: [toolIdRemoto("erp_cancelar_reserva", "escrita")],
     });
-    expect(await ferramenta(montadas, "erp_criar_agendamento").execute({ inicio: "x", nome_cliente: "Ana" })).toMatchObject({
+    expect(await ferramenta(montadas, "erp_cancelar_reserva").execute({ reserva_id: "r-1" })).toMatchObject({
       motivo: "escrita_nao_liberada",
     });
+    expect(chamadas, "a chave `organizacao` liberou a chamada").toEqual([]);
   });
 });
 
@@ -549,7 +543,7 @@ describe("ferramenta fora da lista devolve recusa NOMEADA", () => {
     // `erp_criar_agendamento` e a chamada chegaria ao ERP.
     const liberadas = escritasLiberadasDaConexao(
       lerEscritaLiberada({
-        mcp_externo_escrita: { organizacao: ["*"], conexoes: { [CONEXAO_COMPARTILHADA]: ["all", "erp_*"] } },
+        mcp_externo_escrita: { conexoes: { [CONEXAO_COMPARTILHADA]: ["*", "all", "erp_*"] } },
       }),
       CONEXAO_COMPARTILHADA,
     );

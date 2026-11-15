@@ -229,8 +229,8 @@ export async function carregarServidorMcpExterno(
       return null;
     }
     // A liberação de ESCRITA (#4445) vem do MESMO jsonb, lida pela MESMA
-    // linha da organização deste turno — lista explícita por organização e por
-    // conexão (`compartilhado`, aqui). Sem bolso configurado, `[]`: nenhuma
+    // linha da organização deste turno — lista explícita por conexão
+    // (`compartilhado`, aqui). Sem bolso configurado, `[]`: nenhuma
     // escrita remota roda no atendimento, e o turno é o de antes.
     const escritasLiberadas = escritasLiberadasDaConexao(
       lerEscritaLiberada(linha?.settings),
