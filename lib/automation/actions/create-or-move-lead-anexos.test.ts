@@ -282,3 +282,56 @@ describe("create_or_move_lead — a continuação já existente repõe o anexo q
     expect(daOrigem[0]).toMatchObject({ id: APOLICE.id, storage_path: APOLICE.storage_path });
   });
 });
+
+describe("create_or_move_lead — a reposição só entra em card com o mesmo dono da origem (#4544)", () => {
+  const DONO = "11111111-aaaa-4aaa-8aaa-111111111111";
+  const OUTRO = "22222222-bbbb-4bbb-8bbb-222222222222";
+
+  /** Uma continuação que JÁ existe no pós-venda, com o dono que o caso escolhe. */
+  function comContinuacao(donoDaContinuacao: string | null) {
+    const db = dbDoGanho();
+    db.tabelas.crm_leads[0]!.owner_user_id = DONO;
+    db.tabelas.crm_leads.push({
+      ...NEGOCIO_GANHO,
+      id: "continuacao-1",
+      pipeline_id: FUNIL_DE_POS_VENDA,
+      stage_id: "pos_venda",
+      status: "open",
+      owner_user_id: donoDaContinuacao,
+      source_metadata: { clonado_de: { lead_id: NEGOCIO_GANHO.id } },
+    } as never);
+    const ctx = ctxDoGanho(db);
+    ctx.context.lead = { ...NEGOCIO_GANHO, owner_user_id: DONO };
+    return { db, ctx };
+  }
+
+  it("dono diferente: nada é copiado para o card achado, e o recibo diz por quê", async () => {
+    storage.copias = [];
+    storage.falhar = false;
+    const { db, ctx } = comContinuacao(OUTRO);
+
+    const resultado = await getAction("create_or_move_lead")!.execute(ctx, CONFIG_POS_VENDA);
+
+    expect(resultado).toMatchObject({
+      status: "success",
+      detail: { ja_existia: "continuacao-1", anexos_nao_repostos: "dono_diferente" },
+    });
+    expect(anexosDoDb(db).filter((linha) => linha.lead_id === "continuacao-1")).toHaveLength(0);
+    expect(storage.copias).toHaveLength(0);
+  });
+
+  it("CONTROLE: mesmo dono, o anexo que faltava é reposto", async () => {
+    storage.copias = [];
+    storage.falhar = false;
+    const { db, ctx } = comContinuacao(DONO);
+
+    const resultado = await getAction("create_or_move_lead")!.execute(ctx, CONFIG_POS_VENDA);
+
+    expect(resultado).toMatchObject({
+      status: "success",
+      detail: { ja_existia: "continuacao-1", anexos: 1, anexos_que_ja_estavam: 0 },
+    });
+    expect(anexosDoDb(db).filter((linha) => linha.lead_id === "continuacao-1")).toHaveLength(1);
+    expect(storage.copias).toHaveLength(1);
+  });
+});

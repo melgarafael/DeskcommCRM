@@ -245,12 +245,29 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
             // existe conserta o que faltou sem duplicar o que já está lá. O
             // custo é uma leitura por execução; o benefício é o pós-venda não
             // ficar sem o documento porque o bucket piscou uma vez.
+            //
+            // ── E SÓ NUM CARD COM O MESMO DONO DA ORIGEM ─────────────────────
+            //
+            // Aqui o card de destino NÃO foi criado por esta execução: ele foi
+            // achado por `source_metadata.clonado_de`, e a cópia roda com o
+            // cliente de serviço. Quem enxerga um negócio (e os anexos dele, que
+            // seguem o negócio pai) é decidido pela organização e pelo
+            // `owner_user_id` — `crm_leads_select` não olha mais nada. Com o
+            // MESMO dono, quem vê o destino já via a origem, e a cópia não
+            // entrega documento a ninguém novo. Dono diferente (a continuação
+            // foi reatribuída, ou nasceu sem dono porque o da origem não podia
+            // mais ser dono): a reposição fica de fora e o recibo diz por quê;
+            // a cópia da criação, que é da própria ação, segue intacta.
             const idDaContinuacao = String((continuacao as { id?: unknown }).id ?? "");
-            const anexos = await copiarAnexosDoClone(ctx.admin, {
-              organizationId: ctx.organizationId,
-              origemLeadId: lead.id,
-              destinoLeadId: idDaContinuacao,
-            });
+            const donoDaContinuacao = (continuacao as { owner_user_id?: string | null }).owner_user_id ?? null;
+            const mesmoDono = donoDaContinuacao === (lead.owner_user_id ?? null);
+            const anexos = mesmoDono
+              ? await copiarAnexosDoClone(ctx.admin, {
+                  organizationId: ctx.organizationId,
+                  origemLeadId: lead.id,
+                  destinoLeadId: idDaContinuacao,
+                })
+              : null;
             publicaNoContexto(ctx, continuacao as Record<string, unknown>, contactId);
             return {
               type: "create_or_move_lead",
@@ -258,9 +275,13 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
               detail: {
                 ja_existia: idDaContinuacao,
                 origem: lead.id,
-                anexos: anexos.copiados,
-                anexos_que_ja_estavam: anexos.jaEstavam,
-                ...(anexos.falhas > 0 ? { anexos_com_falha: anexos.falhas } : {}),
+                ...(anexos
+                  ? {
+                      anexos: anexos.copiados,
+                      anexos_que_ja_estavam: anexos.jaEstavam,
+                      ...(anexos.falhas > 0 ? { anexos_com_falha: anexos.falhas } : {}),
+                    }
+                  : { anexos_nao_repostos: "dono_diferente" }),
               },
             };
           }
