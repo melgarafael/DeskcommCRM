@@ -116,10 +116,41 @@ export function RunDetailDrawer({ run, open, onOpenChange }: Props) {
             </div>
 
             <div>
+              {/*
+                #4426 — O QUE FOI PERGUNTADO E O QUE A IA RESPONDEU.
+
+                Antes desta fatia o drawer mostrava métricas e "Sem trace
+                disponível.": a linha de teste existia com custo e sem conteúdo.
+                Os dois blocos vêm ANTES do trace porque são o que se lê primeiro
+                ("o que eu testei?"); o trace responde "o que ele fez". Nenhum
+                dos dois aparece quando o valor é nulo — execução real não tem
+                texto, e uma caixa vazia com título afirmaria que tem.
+              */}
+              {run.input_text ? (
+                <div data-testid="execucao-mensagem-do-teste">
+                  <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {t("Mensagem do teste")}
+                  </p>
+                  <p className="whitespace-pre-wrap rounded-md border border-border/60 bg-surface-elevated px-2 py-1.5 text-xs">
+                    {run.input_text}
+                  </p>
+                </div>
+              ) : null}
+              {run.output_text ? (
+                <div data-testid="execucao-resposta-da-ia">
+                  <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {t("Resposta da IA")}
+                  </p>
+                  <p className="whitespace-pre-wrap rounded-md border border-border/60 bg-surface-elevated px-2 py-1.5 text-xs">
+                    {run.output_text}
+                  </p>
+                </div>
+              ) : null}
+
               <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 {t("Trace")}
               </p>
-              <RunTrace toolCalls={run.tool_calls} />
+              <RunTrace toolCalls={run.tool_calls} finalText={run.output_text} />
             </div>
           </div>
         ) : (

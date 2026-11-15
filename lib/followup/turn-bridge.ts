@@ -19,6 +19,7 @@ import { requireCurrentServiceBoundary } from "@/lib/atendimento/fronteira-serve
 import type pg from "pg";
 
 import type { AdminClient, EnrollmentPatch } from "./engine";
+import { etiquetasDoLead } from "./etiquetas-do-lead";
 import { flowGraphSchema } from "./graph-schema";
 import { EVENTO_ACAO_ADIADA, EVENTO_CLASSIFICACAO_ESPERANDO, classEdgeMatch, selectEdge, type EnrollmentRow } from "./node-handlers";
 import { coletarEsperasAdaptativas, montarTimingPlan, type PropostaDeEspera } from "./timing-plan";
@@ -388,14 +389,17 @@ export function createPgAdminClient(pool: pg.Pool): TurnBridgeAdminClient {
          order by updated_at desc limit 1`,
         [orgId, contactId],
       );
-      const { rows: contacts } = await pool.query<{ name: string | null }>(
-        `select name from contacts where organization_id = $1 and id = $2`,
+      const { rows: contacts } = await pool.query<{ name: string | null; tags: string[] | null }>(
+        `select name, tags from contacts where organization_id = $1 and id = $2`,
         [orgId, contactId],
       );
       const lead = leads[0];
       return {
         lead_stage: lead?.stage_id ?? null,
-        tags: lead?.tags ?? [],
+        // #4586 — as duas caixas. A campanha de prospecção põe a etiqueta do
+        // nicho no CONTATO (`marcarEtiquetasDaCampanha`); o #4606 copia para o
+        // card, mas só no nascimento. Ver `etiquetas-do-lead.ts`.
+        tags: etiquetasDoLead(lead?.tags, contacts[0]?.tags),
         contact_name: contacts[0]?.name ?? null,
         custom_fields: lead?.custom_fields ?? {},
       };
