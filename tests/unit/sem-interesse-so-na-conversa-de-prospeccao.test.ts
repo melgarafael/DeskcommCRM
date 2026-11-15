@@ -275,6 +275,42 @@ describe("fora da conversa de prospecção", () => {
   });
 });
 
+// Frases de controle de NICHO (clínica, imobiliária): o paciente e o comprador escolhendo
+// dizem "não tenho interesse" o tempo todo. Na conversa comum nada pode ser gravado, nem
+// com a frase nua; e as que têm complemento de escolha não gravam nem na prospecção.
+const FRASES_DE_NICHO = [
+  "Não tenho interesse nesse horário, tem às 15h?",
+  "não tenho interesse em fazer o clareamento agora, só a limpeza",
+  "Não tenho interesse no plano odontológico",
+  "não me interessa a consulta online, prefiro presencial",
+  "Não tenho interesse nesse apartamento, tem outro de dois quartos?",
+  "não tenho interesse em casa, só apartamento",
+  "Não tenho interesse na região norte",
+] as const;
+
+describe("frases de controle de nicho (clínica, imobiliária)", () => {
+  it.each([
+    ["clínica", "Não tenho interesse."],
+    ["imobiliária", "não tenho interesse, obrigado"],
+    ...FRASES_DE_NICHO.map((f) => ["nicho", f] as [string, string]),
+  ])("%s, conversa de atendimento: %s — nada é gravado", async (_nicho, texto) => {
+    cena.metadataDaConversa = { origem: "inbox" };
+    await rodar({ texto });
+    expect(updatesDeContato).toEqual([]);
+    expect(encerraDemanda).not.toHaveBeenCalled();
+  });
+
+  it.each(FRASES_DE_NICHO.map((f) => [f]))(
+    "nem na conversa de prospecção a escolha vira recusa: %s",
+    async (texto) => {
+      await rodar({ texto });
+      expect(cena.consent.marketing).toBeUndefined();
+      expect(updatesDeContato).toEqual([]);
+      expect(encerraDemanda).not.toHaveBeenCalled();
+    },
+  );
+});
+
 describe("o PARAR continua sendo outra regra", () => {
   it("'parar de receber' bloqueia pelo caminho de sempre, e o 'sem interesse' não roda por cima", async () => {
     await rodar({ texto: "não tenho interesse, quero parar de receber mensagens" });
