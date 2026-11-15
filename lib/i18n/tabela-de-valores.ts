@@ -94,4 +94,13 @@ export const TEXTOS_TABELA_DE_VALORES = {
     en: "The spreadsheet could not be imported. Try again.",
     es: "No fue posible importar la planilla. Inténtelo de nuevo.",
   },
+  // Recusas de `lerPlanilhaDaTabelaDeValores` que a rota passa por `t()`.
+  "Máximo de 2000 linhas de dados por planilha.": {
+    en: "Maximum of 2000 data rows per spreadsheet.",
+    es: "Máximo de 2000 filas de datos por planilla.",
+  },
+  "A planilha não tem nenhuma coluna de valor. Use 'valor de partida' e 'valor limite', em reais ou em US (por exemplo: 'valor de partida (R$)' e 'valor limite (R$)').": {
+    en: "The spreadsheet has no value column. Use 'valor de partida' and 'valor limite', in reais or in US (for example: 'valor de partida (R$)' and 'valor limite (R$)').",
+    es: "La planilla no tiene ninguna columna de valor. Use 'valor de partida' y 'valor limite', en reales o en US (por ejemplo: 'valor de partida (R$)' y 'valor limite (R$)').",
+  },
 } as const;

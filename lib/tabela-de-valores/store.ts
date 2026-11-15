@@ -133,7 +133,7 @@ export async function buscarTabelaDeValores(
   pool: pg.Pool,
   org: string,
   tabelaId: string,
-: Promise<TabelaDeValores | null> {
+): Promise<TabelaDeValores | null> {
   // O id vem da URL. Um id que não é uuid não é tabela de ninguém: sem esta
   // linha o Postgres recusa o cast (22P02) e as rotas respondem 500, não 404.
   if (!z.string().uuid().safeParse(tabelaId).success) return null;

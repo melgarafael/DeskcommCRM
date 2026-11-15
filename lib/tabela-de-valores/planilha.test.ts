@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { traduzir } from "@/lib/i18n/dicionario";
 import type { SheetMatrix } from "@/lib/planilha/ler-arquivo";
 import {
   campoDoCabecalho,
@@ -144,5 +145,20 @@ describe("lerPlanilhaDaTabelaDeValores", () => {
     if ("erro" in r) throw new Error(r.erro);
     expect(r.colunasIgnoradas).toEqual(["Porte da empresa"]);
     expect(r.itens).toHaveLength(1);
+  });
+});
+
+describe("as recusas da planilha que a rota passa por t() têm espanhol", () => {
+  it("teto de linhas e planilha sem coluna de valor", () => {
+    const muitas = lerPlanilhaDaTabelaDeValores(
+      planilha(["codigo", "descricao", "valor de partida", "valor limite"], Array.from({ length: 2_001 }, () => ["1", "x", "1", "1"])),
+    );
+    const semValor = lerPlanilhaDaTabelaDeValores(planilha(["codigo", "descricao"], [["1", "x"]]));
+    for (const lida of [muitas, semValor]) {
+      if (!("erro" in lida)) throw new Error("a planilha devia ser recusada");
+      // A chave do dicionário é a frase inteira: se o texto (ou o teto) mudar
+      // sem a entrada mudar junto, o espanhol volta a sair em português.
+      expect(traduzir(lida.erro, "es")).not.toBe(lida.erro);
+    }
   });
 });
