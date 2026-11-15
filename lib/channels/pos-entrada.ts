@@ -42,6 +42,7 @@ import { audit } from "@/lib/audit";
 import { idsDosCanaisDesativados } from "@/lib/channels/desativado";
 import { encerraDemanda } from "@/lib/leads/encerramento";
 import { garantirLeadDaConversa } from "@/lib/leads/nascimento-do-lead";
+import type { AtribuicaoDeAnuncio } from "@/lib/leads/atribuicao-de-anuncio";
 import type { CanonicalLostReason } from "@/lib/schemas/leads";
 import {
   ehAPrimeiraMensagemDoContato,
@@ -50,6 +51,7 @@ import {
 } from "@/lib/leads/origem-do-site";
 import { logger } from "@/lib/logger";
 import { PADRAO_DO_REF } from "@/lib/plataformas-de-anuncio/captura-de-clique";
+import { extrairEEstamparAtribuicaoGoogle } from "@/lib/plataformas-de-anuncio/google/atribuicao";
 import { casarClickRef } from "@/lib/plataformas-de-anuncio/meta/captura-de-clique";
 import { casarOrigemPorHorario } from "@/lib/leads/origem-por-horario";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -66,6 +68,7 @@ import type { EventRow } from "@/lib/event-log/dispatcher";
 import { applyReactivityEvent, createSupabaseReactivityClient } from "@/lib/followup/reactivity";
 import { aplicarRespostaNaCampanha } from "@/lib/campanhas/resposta";
 import { marcarConversaComMensagem } from "@/lib/channels/marcar-conversa";
+import { capturarRespostaDeSatisfacao } from "@/lib/atendimento/satisfacao";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -164,6 +167,47 @@ export async function aplicarEfeitosPosEntrada(
   }
 
   await aplicarOptOut(admin, entrada);
+
+  // ── #4023: A RESPOSTA DA PESQUISA DE SATISFAÇÃO ────────────────────────
+  //
+  // A resposta do cliente à pergunta de 1 a 5 chega por AQUI, pelo caminho
+  // normal do WhatsApp — não existe segundo webhook nem número dedicado. Ela
+  // vira a nota do pedido aberto e a mensagem NÃO pede resposta: um "5" que
+  // acordasse o agente faria a IA responder a uma nota, e o cliente já tinha
+  // encerrado o atendimento. Só o dígito sozinho é capturado; "vcs demoraram"
+  // segue o fluxo de sempre, porque é conversa, não nota.
+  const notaDaPesquisa = await capturarRespostaDeSatisfacao(admin, {
+    organizationId: entrada.organizationId,
+    conversationId: entrada.conversationId,
+    texto: entrada.texto,
+    messageId: entrada.messageId,
+    enviadaEm: new Date(),
+  });
+  if (notaDaPesquisa.capturada) {
+    const reencerrada = await devolverAoEncerramentoDepoisDaNota(admin, entrada);
+    logger.info("[pos-entrada] nota da pesquisa de satisfação gravada", {
+      organizationId: entrada.organizationId,
+      conversationId: entrada.conversationId,
+      nota: notaDaPesquisa.nota,
+      reencerrada,
+    });
+    await audit({
+      action: "satisfacao.nota_recebida",
+      organizationId: entrada.organizationId,
+      resourceType: "conversation",
+      resourceId: entrada.conversationId,
+      requestId: entrada.requestId ?? `satisfacao:${entrada.conversationId}`,
+      metadata: {
+        pedido_id: notaDaPesquisa.pedidoId ?? null,
+        message_id: entrada.messageId,
+        reencerrada,
+        actor_type: "system",
+        actor_id: "pesquisa-de-satisfacao",
+      },
+    });
+    return;
+  }
+
   // Contato pessoal (spec 21, etapa 6): a mensagem já está gravada, com o
   // carimbo de não-lida que o ingest gravou — mas NADA nasce dela: sem negócio,
   // sem campanha, sem follow-up, sem IA (fila e resposta). O STOP continua na
@@ -182,8 +226,8 @@ export async function aplicarEfeitosPosEntrada(
   // mensagem que não é dele) devolve `null`, e tudo abaixo roda como sempre.
   if (await desviadaPorModulo(admin, entrada)) return;
 
-  await guardarOrigemDaPagina(admin, entrada);
-  await abrirDemanda(admin, entrada);
+  const atribuicaoDaMensagem = await guardarOrigemDaPagina(admin, entrada);
+  await abrirDemanda(admin, entrada, atribuicaoDaMensagem);
   await avaliarCampanha(admin, entrada);
   const sinal = {
     organizationId: entrada.organizationId,
@@ -199,6 +243,144 @@ export async function aplicarEfeitosPosEntrada(
   // o agente fala (o "cliente voltou" é previsto por `deveCederTurnoAoRetorno`
   // nas duas ordens), e cada evento drenado aqui atrasava o pedido do turno.
   await drenarEventosDoInbound(admin, sinal);
+}
+
+/**
+ * #4023 · A NOTA NÃO REABRE O ATENDIMENTO.
+ *
+ * A mensagem do cliente reabre a conversa encerrada ANTES de chegar aqui: o
+ * INSERT em `messages` roda `fn_service_inbound` (gatilho
+ * `trg_demanda_abre_no_inbound`), que põe a conversa em `open` (ou `claimed`,
+ * com "a conversa fica com quem atendeu"), sobe `service_revision`, carimba
+ * `service_started_at`, solta dono/agente ativo e abre uma DEMANDA nova
+ * ("Responder à nova mensagem do cliente") como `current_demanda_id`. Quando
+ * essa mensagem era só a nota da pesquisa, a equipe via uma conversa aberta
+ * com uma nota dentro.
+ *
+ * O desfazer passa pelas MESMAS portas de produção, e nada de SQL novo:
+ *   - `fn_service_status(…, 'closed', revisão lida)` encerra de novo, como o
+ *     botão "Encerrar" — o CAS da revisão recusa se alguém mexeu na conversa
+ *     entre a reabertura e aqui (aí ela fica aberta, e a pessoa decide);
+ *   - `fn_demanda_encerrar(…, 'nao_procede')` fecha a demanda que a nota abriu,
+ *     como o botão "encerrar" da demanda (timeline e revisão do banco).
+ *
+ * Só quando foi ESTA mensagem quem reabriu: a conversa não está encerrada e o
+ * episódio corrente (`service_revision`) tem esta mensagem e mais nenhuma. Se
+ * outra mensagem entrou no episódio (o cliente escreveu antes, a IA ou a
+ * equipe responderam), o atendimento é de verdade e não se mexe.
+ *
+ * O que NÃO se desfaz, porque não tem porta para isso: a revisão e
+ * `service_closed_at` andam para a frente (o reencerramento é um fechamento
+ * novo, e emite outro `conversation.closed`, que não tem consumidor); o dono
+ * humano que a reabertura soltou não volta (com "a conversa fica com quem
+ * atendeu" ele nunca saiu). O `message.received` desta mensagem já está no
+ * `event_log` desde o INSERT, e os consumidores dele rodam no dreno do cron;
+ * os que conferem a fronteira do atendimento (o worker de resposta da IA)
+ * pulam a conversa encerrada.
+ *
+ * NUNCA lança: a nota já foi gravada; falhar aqui deixa a conversa aberta, que
+ * é o comportamento de antes.
+ */
+async function devolverAoEncerramentoDepoisDaNota(
+  admin: Admin,
+  entrada: EntradaDeMensagem,
+): Promise<boolean> {
+  if (!entrada.messageId) return false;
+  try {
+    const { data: conversa, error: erroDaConversa } = await admin
+      .from("conversations")
+      .select("status, service_revision, current_demanda_id")
+      .eq("organization_id", entrada.organizationId)
+      .eq("id", entrada.conversationId)
+      .maybeSingle();
+    if (erroDaConversa || !conversa) return false;
+    const c = conversa as { status: string; service_revision: number; current_demanda_id: string | null };
+    if (["closed", "resolved", "archived"].includes(c.status)) return false;
+
+    const { data: doEpisodio, error: erroDoEpisodio } = await admin
+      .from("messages")
+      .select("id")
+      .eq("organization_id", entrada.organizationId)
+      .eq("conversation_id", entrada.conversationId)
+      .eq("service_revision", c.service_revision)
+      .limit(2);
+    if (erroDoEpisodio) return false;
+    const ids = ((doEpisodio ?? []) as Array<{ id: string }>).map((m) => m.id);
+    if (ids.length !== 1 || ids[0] !== entrada.messageId) return false;
+
+    const { error: erroAoEncerrar } = await admin.rpc("fn_service_status", {
+      p_org: entrada.organizationId,
+      p_conversation: entrada.conversationId,
+      p_status: "closed",
+      p_expected: c.service_revision,
+    });
+    if (erroAoEncerrar) {
+      logger.warn("[pos-entrada] a conversa reaberta pela nota não voltou a ser encerrada", {
+        organization_id: entrada.organizationId,
+        conversation_id: entrada.conversationId,
+        code: erroAoEncerrar.code,
+        detail: erroAoEncerrar.message.slice(0, 160),
+      });
+      return false;
+    }
+
+    if (c.current_demanda_id) await encerrarDemandaAbertaPelaNota(admin, entrada, c.current_demanda_id);
+    return true;
+  } catch (err) {
+    logger.error("[pos-entrada] reencerrar depois da nota falhou (a conversa segue aberta)", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
+    });
+    return false;
+  }
+}
+
+/** A demanda que a nota abriu fecha pela porta do botão "encerrar" (`fn_demanda_encerrar`). */
+async function encerrarDemandaAbertaPelaNota(
+  admin: Admin,
+  entrada: EntradaDeMensagem,
+  demandaId: string,
+): Promise<void> {
+  const { data: demanda } = await admin
+    .from("demandas")
+    .select("id, revision, fechada_em")
+    .eq("organization_id", entrada.organizationId)
+    .eq("id", demandaId)
+    .maybeSingle();
+  const d = demanda as { id: string; revision: number; fechada_em: string | null } | null;
+  if (!d || d.fechada_em !== null) return;
+  const { error } = await admin.rpc("fn_demanda_encerrar", {
+    p_org: entrada.organizationId,
+    p_demanda: d.id,
+    p_expected: d.revision,
+    p_desfecho: "nao_procede",
+    // `null` = não foi uma pessoa (mesma regra do opt-out, abaixo).
+    p_actor: null as unknown as string,
+  });
+  if (error) {
+    logger.warn("[pos-entrada] a demanda aberta pela nota não foi encerrada", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      demanda_id: d.id,
+      detail: error.message.slice(0, 160),
+    });
+    return;
+  }
+  await audit({
+    action: "demanda.encerrada",
+    organizationId: entrada.organizationId,
+    resourceType: "demanda",
+    resourceId: d.id,
+    requestId: entrada.requestId ?? `satisfacao:${entrada.conversationId}`,
+    metadata: {
+      desfecho: "nao_procede",
+      motivo: "nota_da_pesquisa_de_satisfacao",
+      contact_id: entrada.contactId,
+      actor_type: "system",
+      actor_id: "pesquisa-de-satisfacao",
+    },
+  });
 }
 
 /**
@@ -790,7 +972,11 @@ async function encerrarDemandasAbertasDeQuemPediuParar(
  * `garantirLeadDaConversa` é idempotente por contato e já recusa contato
  * bloqueado — por isso o passo 1 vem antes.
  */
-async function abrirDemanda(admin: Admin, entrada: EntradaDeMensagem): Promise<void> {
+async function abrirDemanda(
+  admin: Admin,
+  entrada: EntradaDeMensagem,
+  atribuicaoDaMensagem?: AtribuicaoDeAnuncio | void,
+): Promise<void> {
   // Sem ID retornado pelo INSERT, ainda tentamos abrir a demanda pelo caminho
   // legado. A prova CTWA exige um ID persistido e não nasce desta alternativa.
   try {
@@ -801,6 +987,7 @@ async function abrirDemanda(admin: Admin, entrada: EntradaDeMensagem): Promise<v
       messageId: entrada.messageId,
       nomeDoContato: entrada.nomeDoContato,
       origem: origemDoNegocioPeloCanal(entrada.canal),
+      ...(atribuicaoDaMensagem ? { atribuicaoDaMensagem } : {}),
     });
 
     // Os DOIS desfechos viram log. Sem a linha do "não criou", o silêncio de
@@ -914,7 +1101,27 @@ async function pedirDespachoDoAgente(admin: Admin, entrada: EntradaDeMensagem): 
  * O `[dk1:]` é tentado PRIMEIRO porque é o que não custa consulta nenhuma: ele
  * se resolve no texto. O ref só vai ao banco quando o texto não trouxe UTM.
  */
-async function guardarOrigemDaPagina(admin: Admin, entrada: EntradaDeMensagem): Promise<void> {
+async function guardarOrigemDaPagina(
+  admin: Admin,
+  entrada: EntradaDeMensagem,
+): Promise<AtribuicaoDeAnuncio | void> {
+  // O Google também usa [ref:] e precisa atravessar TODOS os canais antes do
+  // nascimento do card. Preserva a regra já existente: contato importado ou
+  // antigo ainda sem atribuição pode reivindicar o clique; a RPC continua
+  // protegendo o primeiro toque e o recibo continua de consumo único.
+  if ((!entrada.canal || entrada.canal === "whatsapp") && PADRAO_DO_REF.test(entrada.texto ?? "")) {
+    try {
+      const atribuicao = await extrairEEstamparAtribuicaoGoogle(
+        admin, entrada.organizationId, entrada.contactId, entrada.texto,
+      );
+      if (atribuicao) return atribuicao;
+    } catch (erro) {
+      logger.error("pos-entrada: atribuição do clique falhou (a mensagem entra assim mesmo)", {
+        contactId: entrada.contactId,
+        error: erro instanceof Error ? erro.message.slice(0, 160) : "desconhecido",
+      });
+    }
+  }
   const achada = extrairOrigemDaPagina(entrada.texto);
   // O ref não é lido no banco aqui: a leitura CONSOME o clique, e consumir um
   // clique fora da primeira mensagem o queimaria sem estampar ninguém.
