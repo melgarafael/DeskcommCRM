@@ -67,6 +67,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   A regra vale para as próximas: `tests/unit/volta-das-subtelas-de-configuracoes.test.ts` percorre os `page.tsx` de `app/app/settings/` e reprova a subtela que não usar o cabeçalho. As três rotas antigas que só redirecionam (canal oficial, templates e WhatsApp) continuam sem cabeçalho, e o teste cobra que sigam sendo redirecionamento.
 
+  Contribuição de @webtecnica (#4608).
+
 - **O agente passa a ver o preço padrão do tipo de atendimento** A ferramenta `crm_list_event_types` passa a devolver `preco_padrao_cents`: o preço padrão do tipo de agendamento, em centavos, o mesmo valor que a comanda já sugere. Quando o tipo não tem preço cadastrado, o campo vem `null`, e não `0`.
 
   Com isso, quando o agente consulta a lista de tipos, ele pode dizer o valor cadastrado no tipo em vez de pedir que a equipe confirme. Quem integra pela ferramenta e lê a lista de tipos passa a receber também esse campo.
@@ -92,6 +94,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   e conta de anúncios conforme os parâmetros recebidos no link. Nas automações,
   a ação de adicionar etiquetas permite escolher quais desses dados viram
   etiquetas do contato ou do negócio. Regras existentes continuam funcionando.
+
+  Contribuição de @SerusoNakamoto (#4631).
 
 - **O agente fala quando o cliente pede áudio, mesmo tendo escrito pedindo** Na tela do agente, "Quando falar" ganha a opção que responde em áudio quando o cliente manda áudio, pede áudio por escrito ou avisa que não consegue ler. Quem pede para continuar no texto segue recebendo texto. "Só quando o cliente mandar áudio" continua sendo o padrão, e quem já está em "Sempre" ou "Nunca" não muda. Nada a fazer na VPS.
 
@@ -145,7 +149,11 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Nenhuma ação é necessária na atualização. A busca é por compromisso, não por data: o que já estava parado na fila some dela na primeira rodada e aparece com o motivo certo.
 
+  Contribuição de @webtecnica (#4453).
+
 - **O botão "Excluir nota" do Inbox aparece com o foco do teclado e em tela de toque** O botão de lixeira da nota interna só existia na tela quando o mouse passava por cima: quem navega por Tab chegava nele invisível, e no celular ele nunca aparecia. Agora ele fica visível por padrão, é escondido apenas onde existe hover e volta a aparecer com o hover do cartão ou com o foco do teclado — mesmo padrão do botão de opções da mensagem. Para quem usa mouse, o desenho continua o mesmo.
+
+  Contribuição de @webtecnica (#4578).
 
 - **Endereço na mensagem do Inbox vira link clicável, inclusive o www. sem protocolo** No Inbox o endereço mandado na conversa — orçamento, check-in, boleto, localização
   do hotel — aparecia como texto comum: era preciso selecionar, copiar e colar no
@@ -191,6 +199,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **O provedor de IA personalizado pede JSON, e gateways que assumem streaming deixam de quebrar a chamada** Com um gateway OpenAI-compatível que trata a ausência de `stream` como streaming (o 9Router é um), a resposta voltava como `text/event-stream` e a chamada falhava com "Invalid JSON response", mesmo com HTTP 200. O provedor personalizado agora manda `Accept: application/json`, que é o que a chamada sem streaming quer. Quem já usava um gateway que responde JSON por padrão não percebe diferença.
 
+  Contribuição de @renatomprado (#4599).
+
 - **O card criado pela campanha de prospecção nasce com as etiquetas do ramo** A campanha de prospecção gravava as etiquetas do ramo só no contato, e o card que ela cria nascia sem etiqueta nenhuma. A condição "Etiqueta do contato" do follow-up lê a etiqueta do card, então um fluxo montado com o ramo da campanha nunca casava e sempre caía no caminho padrão. Agora o card nasce com as mesmas etiquetas que a campanha põe no contato. Vale para os cards criados a partir da atualização; os que já existem não mudam. Nenhuma ação é pedida a quem opera a instalação. Contribuição de @webtecnica (#4606).
 
 - **A queda da assinatura registra o erro que a causou, além do erro da reserva** Quando a assinatura do ChatGPT recusava o turno e a chamada caía na reserva, o
@@ -201,6 +211,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   reserva), com o status HTTP e a mensagem já sem segredo. O turno continua com o
   mesmo comportamento: uma única tentativa na reserva. Refs #4610.
 
+  Contribuição de @webtecnica (#4616).
+
 - **O webhook de saída espera aprovação no modo assistido** No modo assistido, quando a IA move o card e a automação da etapa tem a ação "Avisar outro sistema (webhook)", essa ação agora fica parada e aparece na Central para alguém aprovar, como já acontecia com WhatsApp, e-mail, mensagem da IA e sequência. Vale também quando a decisão da IA pode escolher o webhook. No modo automático, ou quando uma pessoa move o card, o webhook sai como antes. Isso evita que um sistema de fora receba o aviso e fale com o cliente antes da aprovação. Crédito: @CRYSCWK-code.
 
 - **Follow-up barrado pela trava de valores não avisa o cliente nem pausa a conversa** Quando o texto que a IA escreveu num follow-up ou numa automação tocava em valores e a organização deixou isso só com a equipe, o cliente que nunca tinha escrito recebia "uma pessoa vai assumir" e a conversa era pausada. Agora, sem mensagem do cliente esperando resposta, o texto só não sai e a IA continua; na automação ela reescreve uma vez, e com o cliente esperando a conversa passa à equipe como antes. O cartão da passagem passa a dizer que foi a trava de valores, e a linha "Não enviei" mostra o trecho que a acionou. Crédito: @paulolimajr77.
@@ -208,6 +220,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 - **O diálogo Nova conversa no Inbox exibe o nome salvo na agenda do contato** Ao buscar um contato no diálogo "Nova conversa" (`PainelIniciarConversa`), contatos sincronizados via WhatsApp que possuíam apenas o nome salvo na agenda do aparelho (`address_book_name`), sem `name` ou `display_name` cadastrado, eram apresentados com o telefone no rótulo principal e novamente no rótulo secundário.
 
   O componente passa a utilizar `rotuloParaAEquipe`, alinhando-se com a lista de conversas e o cabeçalho do Inbox, apresentando o nome amigável da agenda na busca e na confirmação do contato existente.
+
+  Contribuição de @Villa-Nova-Cont (#4567).
 
 ## [1.111.0] — 2026-11-14
 
