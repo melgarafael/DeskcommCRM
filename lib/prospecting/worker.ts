@@ -404,7 +404,11 @@ export async function sendNextCandidate(
       // Fonte única em `montarDadosDeAbordagem` (prévia da tela bebe da mesma).
       dados: soCumprimenta
         ? montarDadosDeAbordagem(p.data, null, null)
-        : montarDadosDeAbordagem(p.data, site, previaDoAgente(p.data, cfg.agent_id)),
+        : montarDadosDeAbordagem(
+            p.data,
+            site,
+            previaDoAgente(p.data, cfg.agent_id, cfg.briefing_editado_em),
+          ),
     });
     if (!generated.ok)
       // DO CANDIDATO: o modelo não produziu texto para ESTES dados.
