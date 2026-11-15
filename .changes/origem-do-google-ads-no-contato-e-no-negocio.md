@@ -9,3 +9,5 @@ fichas passam a mostrar campanha, grupo de anúncios, anúncio, palavra-chave
 e conta de anúncios conforme os parâmetros recebidos no link. Nas automações,
 a ação de adicionar etiquetas permite escolher quais desses dados viram
 etiquetas do contato ou do negócio. Regras existentes continuam funcionando.
+
+Contribuição de @SerusoNakamoto (#4631).
