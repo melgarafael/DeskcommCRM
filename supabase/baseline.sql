@@ -77115,7 +77115,7 @@ grant select on table public.storage_redaction_queue to authenticated;
 -- ---- A busca do Inbox usa o índice de trigrama (migration 9386, #4326 fatia 1) ----
 -- Espelho idêntico ao corpo da 9386. Cria FUNÇÃO, então mora ACIMA da VARREDURA
 -- anon (0116), que proíbe `create function` depois dela.
--- manifest: **A busca do Inbox passa a usar o índice de trigrama — e, para isso, o casamento de texto sai de dentro da RLS (#4326, fatia 1, item b).** Medido num Postgres descartável (pg15) com o baseline e 40 mil contatos numa organização, um `agent` membro: a consulta que o handler montava (`busca_sem_acento like` + `phone_number ilike`, mais uma segunda consulta a `contact_phones` para o telefone extra) lia **40.000 linhas** num `Seq Scan` para devolver 120, em **38,1 ms** — o custo cresce com a ORGANIZAÇÃO, não com o que a busca acha. Criar o índice de trigrama **sozinho não muda o plano**: `like`/`ilike` não são `leakproof`, e com RLS na tabela o planejador não pode usá-los como condição de índice antes de avaliar a política (medido: com os índices criados e `analyze` feito, o plano sob `authenticated` segue `Rows Removed by Filter: 40000`; o MESMO SQL como dono da tabela vira `BitmapOr` sobre `idx_contacts_busca_sem_acento_trgm` + `idx_contacts_phone_trgm`, em **5,0 ms**). Daí as duas partes: (1) índices `gin_trgm_ops` em `contacts.phone_number` e `contact_phones.phone_number` — o nome já tinha trigrama desde a 9098, e os btree de telefone não servem para `'%x%'`; (2) `fn_contatos_da_busca(p_org, p_termo, p_digitos, p_limite)` — `security definer`, `stable`, `set search_path = ''` —, que confere a organização contra `fn_user_org_ids()` (quem chega com sessão e não é membro recebe **zero** linha), repete o filtro de organização nas duas tabelas e mantém as regras de hoje (`is_anonymized = false`, `is_personal = false` e `is_merged_into is null` no telefone extra); o handler passa a filtrar por `contact_id.in.(...)`, e igualdade de uuid é `leakproof`, então a RLS continua decidindo o que a pessoa vê. Resultado no mesmo conjunto: **4,3 ms** pela função (o braço do telefone sozinho, 0,2 ms, um bloco de heap), contra **47,4 ms** com o índice removido. Contrato, colunas e filtros: inalterados. Fora desta fatia, com número medido: a busca de Contatos/seletores (nome + **e-mail** + telefone, `contacts/_handler.ts`) tem a MESMA forma e o MESMO defeito, mas precisa das flags `?pessoais` e `_sem_agenda` que a listagem tem — o índice de e-mail entra junto com ela; e `conversations.last_message_preview`, onde 100 mil conversas com termo raro custam 852 ms e leem 100.700 linhas, e usar trigrama exigiria reimplementar `fn_conversation_scope` fora da política, que é mudança de autorização.
+-- manifest: **A busca do Inbox passa a usar o índice de trigrama — e, para isso, o casamento de texto sai de dentro da RLS (#4326, fatia 1, item b).** Medido num Postgres descartável (pg15) com o baseline e 40 mil contatos numa organização, um `agent` membro: a consulta que o handler montava (`busca_sem_acento like` + `phone_number ilike`, mais uma segunda consulta a `contact_phones` para o telefone extra) lia **40.000 linhas** num `Seq Scan` para devolver 1, em **37,0 ms** — o custo cresce com a ORGANIZAÇÃO, não com o que a busca acha. Criar o índice de trigrama **sozinho não muda o plano**: `like`/`ilike` não são `leakproof`, e com RLS na tabela o planejador não pode usá-los como condição de índice antes de avaliar a política (medido: com os índices criados e `analyze` feito, o plano sob `authenticated` segue `Rows Removed by Filter: 40000`; o MESMO SQL como dono da tabela vira `BitmapOr` sobre `idx_contacts_busca_sem_acento_trgm` + `idx_contacts_phone_trgm`, em **0,24 ms**). Daí as duas partes: (1) índices `gin_trgm_ops` em `contacts.phone_number` e `contact_phones.phone_number` — o nome já tinha trigrama desde a 9098, e os btree de telefone não servem para `'%x%'`; (2) `fn_contatos_da_busca(p_org, p_termo, p_digitos, p_limite)` — `security definer`, `stable`, `set search_path = ''` —, que confere a organização contra `fn_user_org_ids()` (quem chega com sessão e não é membro recebe **zero** linha), repete o filtro de organização nas duas tabelas e mantém as regras de hoje (`is_anonymized = false`, `is_personal = false` e `is_merged_into is null` no telefone extra); o handler passa a filtrar por `contact_id.in.(...)`, e igualdade de uuid é `leakproof`, então a RLS continua decidindo o que a pessoa vê. Resultado no mesmo conjunto: **8,0 ms** pela função, contra **47,0 ms** com o índice removido — e dos 8,0 ms, **3,7 ms sao a guarda de organizacao** (`fn_user_org_ids()`, o preco de nao confiar no `p_org` que chega) e ~1 ms o overhead do plpgsql; o casamento em si e 0,24 ms. Contrato, colunas e filtros: inalterados. Fora desta fatia, com número medido: a busca de Contatos/seletores (nome + **e-mail** + telefone, `contacts/_handler.ts`) tem a MESMA forma e o MESMO defeito, mas precisa das flags `?pessoais` e `_sem_agenda` que a listagem tem — o índice de e-mail entra junto com ela; e `conversations.last_message_preview`, onde 100 mil conversas com termo raro custam 852 ms e leem 100.700 linhas, e usar trigrama exigiria reimplementar `fn_conversation_scope` fora da política, que é mudança de autorização.
 
 -- 9386 — a busca do Inbox usa o índice de trigrama (issue #4326, fatia 1).
 --
@@ -77127,17 +77127,18 @@ grant select on table public.storage_redaction_queue to authenticated;
 --
 --   busca do Inbox por nome ou telefone (casa 1 ficha):
 --     Limit  ->  Seq Scan on contacts
---                Rows Removed by Filter: 40000     Execution Time: 38,1 ms
+--                Rows Removed by Filter: 40000     Execution Time: 37,0 ms
 --
 --   o MESMO SQL como dono da tabela (fora da RLS):
 --     Limit  ->  BitmapOr
 --                  Bitmap Index Scan on idx_contacts_busca_sem_acento_trgm
 --                  Bitmap Index Scan on idx_contacts_phone_trgm
---                                                  Execution Time: 5,0 ms
+--                                                  Execution Time: 0,24 ms
 --
---   a função, já no handler:                       Execution Time: 4,3 ms
+--   a função, já no handler:                       Execution Time: 8,0 ms
+--     dos quais 3,7 ms são a guarda de organização e ~1 ms o plpgsql
 --   o braço do telefone sozinho:                   Execution Time: 0,2 ms
---   a função com o índice do telefone removido:    Execution Time: 47,4 ms
+--   a função com o índice do telefone removido:    Execution Time: 47,0 ms
 --
 
 -- ═══ POR QUE O ÍNDICE SOZINHO NÃO RESOLVE ═══
@@ -77152,8 +77153,10 @@ grant select on table public.storage_redaction_queue to authenticated;
 -- Detalhe operacional que a medição revelou, e que não é defeito do índice: o GIN
 -- nasce com `fastupdate = on`, e com a lista pendente grande o planejador cobra a
 -- varredura dela. Logo depois de uma carga em massa o índice pode perder para a
--- varredura até o autovacuum limpar — medido: 13,5 ms com a lista suja contra
--- 4,3 ms depois de `gin_clean_pending_list`.
+-- varredura até o autovacuum limpar: com a lista pendente grande o mesmo plano
+-- custa mais, e a diferença some depois de `gin_clean_pending_list` (é por isso
+-- que o invariante limpa a lista antes de medir o plano, senão mede a idade da
+-- lista em vez do índice).
 --
 -- Ou seja: o índice está certo; o caminho até ele é que estava tapado.
 --

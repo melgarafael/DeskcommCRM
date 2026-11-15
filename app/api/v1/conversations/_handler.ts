@@ -417,11 +417,13 @@ export async function listConversationsHandler(
     // uma SEGUNDA consulta a `contact_phones` para o telefone extra. As duas
     // liam a organização inteira: `like`/`ilike` não são `leakproof`, e com RLS
     // na tabela o planejador não pode usá-los como condição de índice antes de
-    // avaliar a política. Medido em Postgres descartável — 6 mil contatos na
-    // organização, busca que casa 120: `Rows Removed by Filter: 6000`, 10,4 ms;
-    // com 50 mil contatos, 75,8 ms. O custo cresce com a ORGANIZAÇÃO, não com o
-    // que a busca acha, e criar o índice de trigrama sozinho não mudava o plano
-    // (medido: com o índice no lugar, o mesmo `Rows Removed by Filter: 6000`).
+    // avaliar a política. Medido em Postgres descartável — 40 mil contatos na
+    // organização, busca que casa 1: `Rows Removed by Filter: 40000`, 37,0 ms.
+    // O custo cresce com a ORGANIZAÇÃO, não com o que a busca acha, e criar o
+    // índice de trigrama sozinho não muda o plano (medido: com os índices no
+    // lugar e `analyze` feito, a mesma consulta sob RLS gasta 35,7 ms e segue
+    // `Rows Removed by Filter: 40000`; o MESMO SQL como dono da tabela vira
+    // `BitmapOr` sobre os dois índices de trigrama, em 0,24 ms).
     //
     // `fn_contatos_da_busca` faz o MESMO casamento num `security definer`: ela
     // confere a organização contra `fn_user_org_ids()` (quem tem sessão e não é
