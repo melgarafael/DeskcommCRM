@@ -299,6 +299,20 @@ export interface RunModelCallInput {
   /** Teto por chamada auxiliar; nunca aumenta o limite configurado pela organização. */
   maxOutputTokens?: number;
   /**
+   * Amostragem pedida NESTA chamada — vence `settings.llm.params.temperature`
+   * da organização, e só para baixo da decisão dela no que importa aqui: quem
+   * pede 0 quer o MESMO veredito para a MESMA entrada.
+   *
+   * Existe por causa do classificador de promessa (#4665): a temperatura da
+   * org é knob de redação e vale para o turno; uma classificação binária que
+   * varia entre duas execuções do mesmo texto veta numa e aprova na outra, e o
+   * agente não tem como saber o que mudou. Ausente = padrão da org, como antes.
+   *
+   * O provedor que não aceita amostragem continua descartando o campo (quem
+   * tira é o registry, por modelo) — aqui ele só deixa de ser sempre o da org.
+   */
+  temperature?: number;
+  /**
    * Raciocínio pedido NESTA chamada, na opção portátil do AI SDK (`reasoning`).
    * Cada provedor traduz para o seu campo — a Anthropic desliga o `thinking` (ou
    * baixa o esforço no modelo que não deixa desligar), a OpenAI manda
@@ -1098,7 +1112,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
 
     return generateText({
       ...opcoesBase,
-      temperature,
+      // A chamada pode fixar a amostragem (`input.temperature`); sem ela vale o
+      // knob da organização, como sempre foi.
+      temperature: input.temperature ?? temperature,
       topP,
       topK,
       maxOutputTokens: tetoDeSaida(maxOutputTokens, input.maxOutputTokens),
