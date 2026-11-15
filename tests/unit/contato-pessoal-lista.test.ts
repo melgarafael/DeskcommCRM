@@ -17,11 +17,12 @@ import { listMessagesHandler } from "@/app/api/v1/messages/_handler";
  * ─── SABOTAGEM (prova no CI) ───────────────────────────────────────────────
  * - Tirar o `.not("contact_id", ...)` da lista mas manter o da busca: a busca
  *   por prévia acha a conversa escondida (critério 2 acusa pelo `.not`).
- * - Tirar o `.eq("is_personal", false)` da subconsulta de contatos: busca por
- *   nome/telefone volta a achar pessoal.
+ * - Tirar o `is_personal = false` de `fn_contatos_da_busca` (migration 9386):
+ *   busca por nome/telefone volta a achar pessoal.
  * - Manter somando no counts: o badge diverge da lista (critério 3).
  * - Tirar o 404 do `getConversationHandler`: o caso "link direto dá 404" cai.
  * Linha para reverter: `app/api/v1/conversations/_handler.ts`,
+ * `supabase/migrations/*_9386_*.sql`,
  * `app/api/v1/conversations/counts/route.ts`, `app/api/v1/messages/_handler.ts`.
  */
 
@@ -33,6 +34,22 @@ const semComentarios = (src: string) =>
 const LISTA = semComentarios(fonte("app", "api", "v1", "conversations", "_handler.ts"));
 const CONTAS = semComentarios(fonte("app", "api", "v1", "conversations", "counts", "route.ts"));
 const HISTORICO = semComentarios(fonte("app", "api", "v1", "messages", "_handler.ts"));
+
+/**
+ * Onde o filtro de pessoal da BUSCA mora desde o #4326 (fatia 1).
+ *
+ * O casamento de texto saiu do handler para `fn_contatos_da_busca` — `like` e
+ * `ilike` não são `leakproof`, e a RLS de `contacts` impedia o índice de
+ * trigrama de ser usado. O filtro de pessoal foi junto com o casamento: ele
+ * continua existindo UMA vez, só não é mais nesta consulta do PostgREST. A
+ * asserção abaixo segue a linha que ele ocupa hoje; se a função perder o filtro,
+ * este teste fica vermelho, como antes.
+ */
+const MIGRACOES = path.join(RAIZ, "supabase", "migrations");
+const ARQUIVO_9386 = fs.readdirSync(MIGRACOES).find((nome) => nome.includes("_9386_"));
+const FUNCAO_DA_BUSCA = ARQUIVO_9386
+  ? semComentarios(fs.readFileSync(path.join(MIGRACOES, ARQUIVO_9386), "utf8"))
+  : "";
 
 describe("lista do inbox esconde pessoal (critério 1)", () => {
   it("a query principal exclui os contatos pessoais", () => {
@@ -48,7 +65,20 @@ describe("lista do inbox esconde pessoal (critério 1)", () => {
 
 describe("busca zera para pessoal (critério 2: nome, telefone e prévia)", () => {
   it("a subconsulta de contatos filtra pessoal", () => {
-    expect(LISTA).toMatch(/\.eq\("is_personal",\s*false\)/);
+    // #4326 (fatia 1): o casamento de texto saiu do handler para
+    // `fn_contatos_da_busca` (`security definer`), porque `like`/`ilike` não são
+    // `leakproof` e a RLS impediria o índice de trigrama. O filtro de pessoal foi
+    // junto — continua havendo UM lugar que o aplica. A prova de COMPORTAMENTO
+    // (ficha pessoal não é achada) está em
+    // `tests/invariants/fn-contatos-da-busca-usa-o-indice.test.ts`; aqui fica a de
+    // FONTE, que é a que esta cerca sempre cobrou.
+    expect(LISTA, "a busca deixou de delegar o casamento à função").toMatch(
+      /fn_contatos_da_busca/,
+    );
+    expect(ARQUIVO_9386, "faltou a migration 9386 — o filtro de pessoal sumiu junto").toBeDefined();
+    expect(FUNCAO_DA_BUSCA, "a função da busca não filtra ficha pessoal").toMatch(
+      /is_personal\s*=\s*false/,
+    );
   });
 
   it("a prévia segue coberta pelo .not da query principal", () => {
