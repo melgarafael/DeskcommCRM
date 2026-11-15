@@ -254,6 +254,7 @@ describe("o push que chega ao celular", () => {
       corpoSemPrevia: corpoDoAvisoDeEtapa("es"),
       tag: "aviso:i1",
       href: "/app/pipelines/p1?lead=l1",
+      tipo: "stage_alert",
     });
     expect(JSON.stringify(payload)).not.toContain("Maria");
   });

@@ -7,6 +7,7 @@ import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { PipelinesClient, type EtapaDoFunil, type PipelineRow } from "./_client";
+import { BlueprintDeFunis } from "./_blueprint-de-funis";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -76,6 +77,10 @@ export default async function PipelinesSettingsPage() {
           .
         </p>
       </CabecalhoDaSubTela>
+      {/* Exportar/importar (#1995): manager+, a mesma régua desta página. Fica
+          fora de `PipelinesClient` porque a organização sem funil é justamente
+          quem mais precisa de importar. */}
+      <BlueprintDeFunis />
       <PipelinesClient
         pipelines={pipelines}
         etapas={etapasPorFunil}
