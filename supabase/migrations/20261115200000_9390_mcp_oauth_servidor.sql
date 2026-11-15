@@ -1,4 +1,4 @@
--- manifest: **O MCP do CRM aceita OAuth 2.1, para clientes que não deixam colar chave (ChatGPT).** Três tabelas server-side only (RLS ligada, nenhuma policy, nenhum privilégio para `anon`/`authenticated`): `mcp_oauth_clientes` (registro dinâmico, RFC 7591, da instalação — sem organização, sem dado de cliente; segredo só como SHA-256), `mcp_oauth_codigos` (código de autorização de uso único, 5 min, amarrado a organização, pessoa, cliente, redirect_uri e desafio PKCE S256; só o hash) e `mcp_oauth_concessoes` (a conexão: um `api_tokens` por concessão, o refresh token só como hash). O access token É um `dsk_` de `api_tokens` — o mesmo ator, papel, escopos (`mcp:read`, `mcp:write`, `role:admin`), auditoria e isolamento dos tokens de servidor; revogar na tela de Tokens de API desliga a conexão. Quatro funções `security definer` só para `service_role`: `fn_mcp_oauth_trocar_codigo` (PKCE conferido no banco, código queimado mesmo na recusa, reuso revoga a concessão emitida), `fn_mcp_oauth_renovar` (rotação do refresh, re-confere que a pessoa segue admin da organização e que o token não foi revogado na tela), `fn_mcp_oauth_revogar` (RFC 7009, só concessões do próprio cliente) e `fn_mcp_oauth_podar` (códigos vencidos, clientes nunca usados há 30 dias, concessões mortas há 30 dias). Idempotente; espelho no apêndice do `baseline.sql`, antes da cascata da 9243 (e portanto antes da varredura de `anon`). Prova em `tests/invariants/mcp-oauth-servidor.test.ts`.
+-- manifest: **O MCP do CRM aceita OAuth 2.1, para clientes que não deixam colar chave (ChatGPT).** Três tabelas server-side only (RLS ligada, nenhuma policy, nenhum privilégio para `anon`/`authenticated`): `mcp_oauth_clientes` (registro dinâmico, RFC 7591, da instalação — sem organização, sem dado de cliente; segredo só como SHA-256), `mcp_oauth_codigos` (código de autorização de uso único, 5 min, amarrado a organização, pessoa, cliente, redirect_uri e desafio PKCE S256; só o hash) e `mcp_oauth_concessoes` (a conexão: um `api_tokens` por concessão, o refresh token só como hash). O access token É um `dsk_` de `api_tokens` — o mesmo ator, papel, escopos (`mcp:read`, `mcp:write`, `role:admin`), auditoria e isolamento dos tokens de servidor; revogar na tela de Tokens de API desliga a conexão. Quatro funções `security definer` só para `service_role`: `fn_mcp_oauth_trocar_codigo` (PKCE conferido no banco, código queimado mesmo na recusa, reuso revoga a concessão emitida), `fn_mcp_oauth_renovar` (rotação do refresh, com o anterior aceito por 60 s para a resposta perdida na rede; re-confere que a pessoa segue admin da organização e que o token não foi revogado na tela), `fn_mcp_oauth_revogar` (RFC 7009, só concessões do próprio cliente) e `fn_mcp_oauth_podar` (códigos vencidos, clientes nunca usados há 30 dias, concessões mortas há 30 dias). Idempotente; espelho no apêndice do `baseline.sql`, antes da cascata da 9243 (e portanto antes da varredura de `anon`). Prova em `tests/invariants/mcp-oauth-servidor.test.ts`.
 
 -- O CRM COMO SERVIDOR DE AUTORIZAÇÃO DO PRÓPRIO MCP
 --
@@ -47,6 +47,11 @@ create table if not exists public.mcp_oauth_concessoes (
   -- O access token vivo da conexão. Uma concessão = uma linha de api_tokens.
   api_token_id uuid not null unique references public.api_tokens(id) on delete cascade,
   refresh_hash bytea not null unique,
+  -- O refresh imediatamente anterior, aceito por 60 s depois da rotação: a
+  -- resposta da renovação pode se perder na rede, e o cliente repete o pedido
+  -- com o refresh que ainda tem. Sem isto, uma resposta perdida desconectava
+  -- a pessoa para sempre.
+  refresh_hash_anterior bytea,
   refresh_expira_em timestamptz not null,
   escopos text[] not null,
   renovada_em timestamptz,
@@ -216,7 +221,8 @@ grant execute on function public.fn_mcp_oauth_trocar_codigo(bytea, uuid, text, t
 -- RENOVAÇÃO (grant_type=refresh_token), com rotação.
 --
 -- O hash do access token é trocado NA MESMA linha de api_tokens: o token
--- anterior deixa de valer na hora. Antes de emitir, re-confere o que pode ter
+-- anterior deixa de valer na hora. O refresh anterior segue aceito por 60 s
+-- (resposta perdida na rede → o cliente repete); depois disso, morre. Antes de emitir, re-confere o que pode ter
 -- mudado desde o consentimento: a concessão revogada, o token revogado na tela,
 -- e a pessoa que autorizou ainda administrando a organização. Sem isso, um
 -- admin removido da empresa seguiria lendo o CRM pelo ChatGPT para sempre.
@@ -239,7 +245,9 @@ declare
   v_escopos text[];
 begin
   select * into v_con from public.mcp_oauth_concessoes c
-   where c.refresh_hash = p_refresh_hash and c.cliente_id = p_cliente
+   where c.cliente_id = p_cliente
+     and (c.refresh_hash = p_refresh_hash
+          or (c.refresh_hash_anterior = p_refresh_hash and c.renovada_em > now() - interval '60 seconds'))
    for update;
   if not found or v_con.revogada_em is not null or v_con.refresh_expira_em <= now() then
     return query select 'invalid_grant'::text, null::uuid, null::uuid, null::uuid, null::text[];
@@ -269,8 +277,11 @@ begin
 
   update public.mcp_oauth_concessoes
      set refresh_hash = p_novo_refresh_hash,
-         refresh_expira_em = p_refresh_expira_em,
-         renovada_em = now()
+         -- Repetição dentro da tolerância mantém o MESMO anterior: a janela de
+         -- 60 s conta da primeira rotação e não se estende a cada repetição.
+         refresh_hash_anterior = case when refresh_hash = p_refresh_hash then refresh_hash else refresh_hash_anterior end,
+         renovada_em = case when refresh_hash = p_refresh_hash then now() else renovada_em end,
+         refresh_expira_em = p_refresh_expira_em
    where id = v_con.id;
 
   update public.mcp_oauth_clientes set ultimo_uso_em = now() where id = v_con.cliente_id;

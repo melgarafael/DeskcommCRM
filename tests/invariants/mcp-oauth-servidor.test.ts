@@ -12,8 +12,8 @@
  * 4. O token emitido é uma linha de `api_tokens` da organização certa, criada
  *    pela pessoa que consentiu, com `role:admin` — e a RLS de `api_tokens` a
  *    mostra ao admin da organização dona e a ninguém da vizinha.
- * 5. Renovação rotaciona (o refresh velho morre, o hash do token muda na MESMA
- *    linha) e re-confere: token revogado na tela, pessoa que deixou de ser
+ * 5. Renovação rotaciona (o hash do token muda na MESMA linha; o refresh
+ *    anterior só vale mais 60 s, para a resposta perdida na rede) e re-confere: token revogado na tela, pessoa que deixou de ser
  *    admin → recusa e desliga a conexão.
  * 6. Revogação só alcança concessão do próprio cliente.
  * 7. A poda leva códigos vencidos e clientes nunca usados.
@@ -220,7 +220,25 @@ describe("renovação (refresh_token) com rotação", () => {
     expect(renovar("dsr_ren0", "dsr_ren1", "dsk_t_ren1")).toBe("ok|mcp:read mcp:write");
     expect(sql(`select (token_hash = ${h("dsk_t_ren1")})::text from public.api_tokens where id = '${token}';`)).toBe("true");
     expect(sql(`select count(*) from public.api_tokens where token_hash = ${h("dsk_t_ren0")};`)).toBe("0");
+    // Passada a tolerância de 60 s, o refresh anterior não vale mais.
+    sql(`update public.mcp_oauth_concessoes set renovada_em = now() - interval '61 seconds' where api_token_id = '${token}';`);
     expect(renovar("dsr_ren0", "dsr_renX", "dsk_t_renX")).toBe("invalid_grant|");
+    expect(sql(`select (token_hash = ${h("dsk_t_ren1")})::text from public.api_tokens where id = '${token}';`)).toBe("true");
+  });
+
+  it("resposta perdida: o refresh anterior renova de novo por 60 s — e a janela não se estende", () => {
+    novoCodigo("dco_perdida");
+    const [, token] = trocar("dco_perdida", "dsk_t_p0", "dsr_p0").split("|");
+    expect(renovar("dsr_p0", "dsr_p1", "dsk_t_p1")).toBe("ok|mcp:read mcp:write");
+    // O cliente não recebeu a resposta e repete com o refresh que ainda tem.
+    expect(renovar("dsr_p0", "dsr_p2", "dsk_t_p2")).toBe("ok|mcp:read mcp:write");
+    expect(sql(`select (token_hash = ${h("dsk_t_p2")})::text from public.api_tokens where id = '${token}';`)).toBe("true");
+    // O refresh da resposta perdida (p1) foi superado e nunca foi o "anterior": morre.
+    expect(renovar("dsr_p1", "dsr_p3", "dsk_t_p3")).toBe("invalid_grant|");
+    // A repetição não renovou o relógio: a janela conta da PRIMEIRA rotação.
+    sql(`update public.mcp_oauth_concessoes set renovada_em = renovada_em - interval '61 seconds' where api_token_id = '${token}';`);
+    expect(renovar("dsr_p0", "dsr_p4", "dsk_t_p4")).toBe("invalid_grant|");
+    expect(renovar("dsr_p2", "dsr_p5", "dsk_t_p5")).toBe("ok|mcp:read mcp:write");
   });
 
   it("pedir menos escopo vale; pedir mais, não", () => {

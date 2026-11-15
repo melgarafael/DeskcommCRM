@@ -52,8 +52,8 @@ export const TEXTOS_MCP_OAUTH = {
   "No aplicativo, adicione um servidor MCP com o endereço": {
     es: "En la aplicación, agrega un servidor MCP con la dirección",
   },
-  'e escolha a autenticação OAuth. Você entra com a sua conta do CRM e decide se ele só lê ou também altera dados. A conexão aparece nesta lista com "(OAuth)" no nome; revogar a desliga.':
+  'e escolha a autenticação OAuth. Você entra com a sua conta do CRM e decide se ele só lê ou também altera dados. A conexão aparece nesta lista com "(OAuth)" no nome; revogar a desliga. A data em Expira é a do acesso em uso, renovado sozinho a cada hora.':
     {
-      es: 'y elige la autenticación OAuth. Entras con tu cuenta del CRM y decides si solo lee o también modifica datos. La conexión aparece en esta lista con "(OAuth)" en el nombre; revocarla la desactiva.',
+      es: 'y elige la autenticación OAuth. Entras con tu cuenta del CRM y decides si solo lee o también modifica datos. La conexión aparece en esta lista con "(OAuth)" en el nombre; revocarla la desactiva. La fecha en Expira es la del acceso en uso, que se renueva solo cada hora.',
     },
 } as const;

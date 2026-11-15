@@ -119,7 +119,8 @@ autorização do MCP:
   mesma linha. Revogar na tela API Tokens desliga a conexão na renovação seguinte.
 - Só **admin** da organização escolhida autoriza (a régua de quem emite token na tela). A renovação
   (a cada hora) re-confere que a pessoa segue admin; se não, revoga.
-- Prazos: código 5 min, access 1 h, refresh 60 dias (renovado a cada uso). Origem anunciada =
+- Prazos: código 5 min, access 1 h, refresh 60 dias (renovado a cada uso; o refresh anterior segue
+  aceito por 60 s, para a resposta de renovação perdida na rede). Origem anunciada =
   `NEXT_PUBLIC_APP_URL`, nunca o `Host`.
 - Mapa: `docs/architecture/mcp-oauth-servidor.architecture.json`. Prova de banco:
   `tests/invariants/mcp-oauth-servidor.test.ts`.

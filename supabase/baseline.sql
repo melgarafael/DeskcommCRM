@@ -77648,6 +77648,11 @@ create table if not exists public.mcp_oauth_concessoes (
   -- O access token vivo da conexão. Uma concessão = uma linha de api_tokens.
   api_token_id uuid not null unique references public.api_tokens(id) on delete cascade,
   refresh_hash bytea not null unique,
+  -- O refresh imediatamente anterior, aceito por 60 s depois da rotação: a
+  -- resposta da renovação pode se perder na rede, e o cliente repete o pedido
+  -- com o refresh que ainda tem. Sem isto, uma resposta perdida desconectava
+  -- a pessoa para sempre.
+  refresh_hash_anterior bytea,
   refresh_expira_em timestamptz not null,
   escopos text[] not null,
   renovada_em timestamptz,
@@ -77817,7 +77822,8 @@ grant execute on function public.fn_mcp_oauth_trocar_codigo(bytea, uuid, text, t
 -- RENOVAÇÃO (grant_type=refresh_token), com rotação.
 --
 -- O hash do access token é trocado NA MESMA linha de api_tokens: o token
--- anterior deixa de valer na hora. Antes de emitir, re-confere o que pode ter
+-- anterior deixa de valer na hora. O refresh anterior segue aceito por 60 s
+-- (resposta perdida na rede → o cliente repete); depois disso, morre. Antes de emitir, re-confere o que pode ter
 -- mudado desde o consentimento: a concessão revogada, o token revogado na tela,
 -- e a pessoa que autorizou ainda administrando a organização. Sem isso, um
 -- admin removido da empresa seguiria lendo o CRM pelo ChatGPT para sempre.
@@ -77840,7 +77846,9 @@ declare
   v_escopos text[];
 begin
   select * into v_con from public.mcp_oauth_concessoes c
-   where c.refresh_hash = p_refresh_hash and c.cliente_id = p_cliente
+   where c.cliente_id = p_cliente
+     and (c.refresh_hash = p_refresh_hash
+          or (c.refresh_hash_anterior = p_refresh_hash and c.renovada_em > now() - interval '60 seconds'))
    for update;
   if not found or v_con.revogada_em is not null or v_con.refresh_expira_em <= now() then
     return query select 'invalid_grant'::text, null::uuid, null::uuid, null::uuid, null::text[];
@@ -77870,8 +77878,11 @@ begin
 
   update public.mcp_oauth_concessoes
      set refresh_hash = p_novo_refresh_hash,
-         refresh_expira_em = p_refresh_expira_em,
-         renovada_em = now()
+         -- Repetição dentro da tolerância mantém o MESMO anterior: a janela de
+         -- 60 s conta da primeira rotação e não se estende a cada repetição.
+         refresh_hash_anterior = case when refresh_hash = p_refresh_hash then refresh_hash else refresh_hash_anterior end,
+         renovada_em = case when refresh_hash = p_refresh_hash then now() else renovada_em end,
+         refresh_expira_em = p_refresh_expira_em
    where id = v_con.id;
 
   update public.mcp_oauth_clientes set ultimo_uso_em = now() where id = v_con.cliente_id;
