@@ -25,6 +25,24 @@ const policySchema = z.discriminatedUnion("current", [
     force_human: z.boolean().nullable(), ai_opt_out: z.boolean(), ai_gate: z.string().nullable(),
     ai_authorized_at: z.string().nullable(), assignee_kind: z.string().nullable(), bot_silenced_until: z.string().nullable(),
     /**
+     * O pré-go-live do canal (issue #4701). A régua de elegibilidade já lê
+     * estes três campos em TODOS os outros caminhos da IA (dreno, turno,
+     * follow-up, varredura de silêncio), via `ai_gate_mode`,
+     * `ai_test_phone_numbers` e `phone_number` de `channel_sessions.metadata` e
+     * `contacts` em `lib/ai/elegibilidade/consulta-pg.ts`. Aqui eles vinham de
+     * fora do estado montado, então `preGoLiveAtivo` saía sempre `false` e a
+     * decisão caía no allowlist comum: contato fora da lista de teste recebia
+     * o link de reunião se tivesse carimbo de outra origem.
+     *
+     * Opcionais pela mesma razão que `ai_com_dono`: ausente = canal fora do
+     * pré-go-live, que é exatamente o que a régua conclui quando
+     * `ai_gate_mode` não está no metadata (`lerModoDeAcessoDaIa`). Não é um
+     * "fail-open" novo — é a leitura do modo de antes do pré-go-live.
+     */
+    ai_gate_mode: z.string().nullable().optional(),
+    ai_test_phone_numbers: z.array(z.unknown()).nullable().optional(),
+    contact_phone_number: z.string().nullable().optional(),
+    /**
      * O modo "IA com o dono" (#3967). OPCIONAL porque a política de hoje
      * (`fn_meet_delivery_current`) ainda não o devolve: ausente = não ligado,
      * que é o comportamento de hoje (dono humano bloqueia a entrega de agenda).
@@ -54,6 +72,13 @@ function requirePolicy(raw: unknown): { humanCommand: boolean; contactId: string
     // deduzido de `force_human`: outro escritor que zere `force_human` não pode
     // liberar para a IA um contato marcado "sempre atendimento humano".
     aiOptOut: p.ai_opt_out, assigneeKind: p.assignee_kind ?? null,
+    // #4701: o pré-go-live do canal, com os MESMOS três campos que
+    // `consulta-pg.ts` entrega ao dreno/turno/follow-up. Sem eles a régua
+    // decidia o canal a partir de `ai_authorized_at` (allowlist comum) e a
+    // lista de teste do canal nunca era lida nesta entrega.
+    aiGateMode: p.ai_gate_mode ?? null,
+    aiTestPhoneNumbers: p.ai_test_phone_numbers ?? null,
+    contactPhoneNumber: p.contact_phone_number ?? null,
     metadataDaConversa: { [CHAVE_DA_IA_COM_DONO]: p.ai_com_dono === true },
     botSilencedUntil: p.bot_silenced_until, aiAuthorizedAt: p.ai_authorized_at,
     agora: new Date(), ttlMs: ttlDaAutorizacaoMs(process.env),
