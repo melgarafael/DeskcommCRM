@@ -36,8 +36,7 @@ import { MOEDA_PADRAO, formatValorDoNegocio, simboloDaMoeda } from "@/lib/money"
 import { ConversationTagsEditor } from "./ConversationTagsEditor";
 import { ContactTagsEditor } from "./ContactTagsEditor";
 import { TarefasDaDemanda } from "./TarefasDaDemanda";
-import { FormularioDeTarefa } from "@/app/app/tasks/_components/FormularioDeTarefa";
-import { useTasks } from "@/hooks/tasks/useTasks";
+import { NovaTarefaDaConversa } from "./NovaTarefaDaConversa";
 import { FollowupDoContato } from "./FollowupDoContato";
 import { DialogoDosModulos } from "./DialogoDosModulos";
 import {
@@ -1018,10 +1017,6 @@ export function CRMSidePanel({
   const [tarefaDialogOpen, setTarefaDialogOpen] = useState(false);
   const [leadAtivoId, setLeadAtivoId] = useState<string | null>(null);
   const defaultPipeline = useDefaultPipeline(leadDialogOpen);
-  const { criarTarefa } = useTasks(
-    contactId ? { contact_id: contactId, aberto: true } : { aberto: true },
-    { enabled: Boolean(contactId) },
-  );
 
   useEffect(() => {
     if (leadDialogOpen && defaultPipeline.isError) {
@@ -1660,17 +1655,13 @@ export function CRMSidePanel({
         />
       )}
 
-      {contactId && (
-        <FormularioDeTarefa
-          aberto={tarefaDialogOpen}
-          aoMudarAbertura={setTarefaDialogOpen}
-          aoSalvar={async (entrada) => {
-            await criarTarefa(entrada);
-          }}
+      {contactId && tarefaDialogOpen && (
+        <NovaTarefaDaConversa
           contactId={contactId}
           leadId={negocioAtivoId ?? null}
           demandaId={demandas?.find((d) => d.id === conversation.current_demanda_id)?.id ?? null}
           responsavelPadrao={user.id}
+          aoFechar={() => setTarefaDialogOpen(false)}
         />
       )}
 

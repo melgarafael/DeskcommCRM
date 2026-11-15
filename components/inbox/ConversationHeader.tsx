@@ -25,8 +25,7 @@ import { JanelaSelo } from "@/components/inbox/JanelaSelo";
 import { ChannelLogo } from "@/components/inbox/ChannelLogo";
 import { Phone, MagnifyingGlass, DotsThree, Pause, Archive, EyeSlash, UserCircle, UsersThree, Robot, Check, DownloadSimple, CalendarCheck } from "@/lib/ui/icons";
 import { useAuth } from "@/hooks/auth/AuthProvider";
-import { useTasks } from "@/hooks/tasks/useTasks";
-import { FormularioDeTarefa } from "@/app/app/tasks/_components/FormularioDeTarefa";
+import { NovaTarefaDaConversa } from "@/components/inbox/NovaTarefaDaConversa";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useReleaseConversation } from "@/hooks/inbox/useReleaseConversation";
 import {
@@ -154,7 +153,6 @@ export function ConversationHeader({
     (user?.is_platform_admin && !user?.support) ||
       (activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent),
   );
-  const { criarTarefa } = useTasks(c?.id ? { contact_id: c.id, aberto: true } : { aberto: true }, { enabled: Boolean(c?.id) });
   /**
    * A TRAVA DE HUMANO MORA NO CONTATO, não na conversa — e é por isso que
    * fechar a conversa não a solta. Enquanto `force_human` for `true`, os três
@@ -1079,15 +1077,11 @@ export function ConversationHeader({
         </AlertDialogContent>
       </AlertDialog>
       {tarefaAberta && c?.id && (
-        <FormularioDeTarefa
-          aberto={tarefaAberta}
-          aoMudarAbertura={setTarefaAberta}
-          aoSalvar={async (entrada) => {
-            await criarTarefa(entrada);
-          }}
+        <NovaTarefaDaConversa
           contactId={c.id}
           demandaId={conversation.current_demanda_id ?? null}
           responsavelPadrao={user?.id}
+          aoFechar={() => setTarefaAberta(false)}
         />
       )}
     </div>
