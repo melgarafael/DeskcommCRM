@@ -24,6 +24,19 @@ export function supportWriteError(support: SupportContext | null | undefined, or
   return null;
 }
 
+/** Recusa única para criar o que SOBREVIVE ao fim do acompanhamento: convite,
+ * token de API, vínculo ou papel. Vale para toda sessão de acompanhamento — de
+ * qualquer origem, modo (inclusive `full`) e alvo —, porque o efeito não termina
+ * com ela. Quem precisa disso é um administrador direto da organização.
+ * Server Action passa por aqui; a cerca é
+ * `tests/unit/acoes-nao-criam-acesso-permanente-em-acompanhamento.test.ts`.
+ */
+export const PERMANENT_ACCESS_MESSAGE =
+  "A gestão de acessos permanentes exige um administrador direto da organização.";
+export function permanentAccessError(support: SupportContext | null | undefined): string | null {
+  return support ? PERMANENT_ACCESS_MESSAGE : null;
+}
+
 /** Guarda de EFEITO, antes dos clientes service role. Não substitui RBAC/MFA.
  * Sem cookie de usuário, workers/tokens seguem sua autorização própria.
  * targetOrganizationId é exclusivamente path ou registro confiável de administração.

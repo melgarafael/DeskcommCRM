@@ -11,6 +11,7 @@ import { webhookFormFieldsSchema } from "@/lib/webhooks/formulario";
 
 import { ESCOLHAS_NO_ENVIO } from "@/lib/agenda/escolha-no-envio";
 import { conditionsSchema } from "@/lib/automation/conditions";
+import { CAMPOS_DE_ETIQUETA_GOOGLE_ADS } from "@/lib/automation/etiquetas-google-ads";
 import { configDoAniversario } from "@/lib/automation/aniversario-do-contato";
 import {
   GATILHO_DE_DATA_DO_FUNIL,
@@ -517,7 +518,8 @@ const acoesFixas = [
   z.object({
     type: z.literal("add_tag"),
     config: z.object({
-      tags: z.array(z.string().min(1).max(60)).min(1).max(10),
+      tags: z.array(z.string().min(1).max(60)).max(10),
+      google_ads_fields: z.array(z.enum(CAMPOS_DE_ETIQUETA_GOOGLE_ADS)).max(5).optional(),
       /**
        * #2498 — onde a etiqueta é GRAVADA: `card` (padrão, o comportamento de
        * sempre) ou `contato`. Opcional de propósito: as regras antigas não têm
@@ -525,6 +527,15 @@ const acoesFixas = [
        * no save e a tela mostraria uma escolha que não foi gravada.
        */
       destino: z.enum(["card", "contato"]).optional(),
+    }).superRefine((config, ctx) => {
+      const campos = config.google_ads_fields ?? [];
+      const quantidade = config.tags.length + campos.length;
+      if (quantidade < 1 || quantidade > 10) {
+        ctx.addIssue({ code: "custom", path: ["tags"], message: "Escolha de uma a dez etiquetas, incluindo os campos do Google Ads." });
+      }
+      if (new Set(campos).size !== campos.length) {
+        ctx.addIssue({ code: "custom", path: ["google_ads_fields"], message: "Escolha cada campo do Google Ads uma única vez." });
+      }
     }),
   }),
   // A irmã da `add_tag`: TIRA as etiquetas, do card ou do contato, com a mesma
