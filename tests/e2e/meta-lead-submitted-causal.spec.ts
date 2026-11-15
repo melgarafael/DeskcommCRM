@@ -732,7 +732,10 @@ test.describe("LeadSubmitted causal pelo webhook WAHA", () => {
     const chave = page.getByRole("switch", { name: "Enviar LeadSubmitted por clique CTWA à Meta" });
     await expect(chave).toBeChecked();
     await page.getByRole("link", { name: "Histórico de envios", exact: true }).click();
-    const historico = page.getByTestId("historico-de-cliques-ctwa");
+    // Escopo no <main>: ao trocar de aba pelo link, a resposta em streaming pode
+    // deixar por um instante uma cópia ESCONDIDA da seção fora do <main>, antes
+    // da revelação. Sem o escopo, o strict mode acha duas seções e reprova.
+    const historico = page.getByRole("main").getByTestId("historico-de-cliques-ctwa");
     await expect(historico).toBeVisible();
     const linha = historico.locator("li").filter({ hasText: eventId });
     await expect(linha).toHaveCount(1);

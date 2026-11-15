@@ -256,6 +256,17 @@ export interface RunModelCallInput {
    * (classificador, compaction, flywheel) e não pertence a um agente.
    */
   agentId?: string | null;
+  /**
+   * O run de PRÉVIA (`ai_agent_runs.id`) que causou esta chamada (#4426).
+   *
+   * Nulo em toda execução real — o turno de verdade é chaveado por `job_id`. Na
+   * prévia é o único elo entre a linha de `llm_calls` (custo, tokens, latência,
+   * o que a aba "Execuções" lê) e o `ai_agent_runs` que guarda a pergunta e a
+   * resposta do teste. Sem ele, a aba teria de adivinhar por horário qual run
+   * gerou qual chamada — e dois testes simultâneos do mesmo agente trocariam o
+   * texto entre si.
+   */
+  previewRunId?: string | null;
   /** atribuição de custo: 'agent_turn' (default) | 'classifier' | 'compaction' | 'connection_test' */
   purpose?: string;
   system?: string;
@@ -394,7 +405,10 @@ export function usosCrusDosPassos(result: { usage: { raw?: unknown }; steps?: Re
  */
 
 /** Só o que a linha de recusa em `llm_calls` grava — quem chama de fora do seam não tem mensagens. */
-export type RastroDaChamada = Pick<RunModelCallInput, 'tenantId' | 'leadId' | 'jobId' | 'variantId' | 'agentId'>;
+export type RastroDaChamada = Pick<
+  RunModelCallInput,
+  'tenantId' | 'leadId' | 'jobId' | 'variantId' | 'agentId' | 'previewRunId'
+>;
 
 /** O que o statement do gate devolve — uma ida ao banco, um snapshot. */
 interface LinhaDoOrcamento {
@@ -1305,6 +1319,34 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     }
   };
 
+  /**
+   * O ERRO ORIGINAL DA ASSINATURA, preservado para o registro (#4610).
+   *
+   * A queda troca `config` pela reserva e a falha que sobe é a DELA. Sem
+   * guardar o erro da assinatura, a linha de `llm_calls` e o log contam só a
+   * última metade da história: o incidente de 06/11 leu "chave de API
+   * inválida" (a reserva) e trocou a chave errada, com a IA muda por seis
+   * horas. Passe pelo `normalizarErro` UMA vez, aqui: ele já redige e trunca,
+   * e é o mesmo caminho da linha gravada.
+   */
+  let erroDaAssinatura: ReturnType<typeof normalizarErro> | null = null;
+
+  /**
+   * Os campos do erro da assinatura para o log — o MESMO trio no aviso da queda
+   * e no log da falha final. É função, e não expressão no call site, porque o
+   * `catch` do `try` de dentro não estreita o tipo deste `let` lá fora (o TS lê
+   * `never` no ramo positivo); e porque um nome só descreve o que foi perdido.
+   */
+  const camposDaAssinaturaQueCaiu = (): Record<string, unknown> => {
+    const erro = erroDaAssinatura;
+    if (erro === null) return {};
+    return {
+      http_status_da_assinatura: erro.http_status,
+      codigo_da_assinatura: erro.error_code,
+      erro_da_assinatura: erro.error_message,
+    };
+  };
+
   try {
     input.abortSignal?.throwIfAborted();
     // `system` aceita SystemModelMessage (com providerOptions de cache) — igual
@@ -1326,12 +1368,17 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       // a chamada começou a falar.
       config = reserva;
       await gateDeOrcamento(reserva);
+      erroDaAssinatura = normalizarErro(falhaDaAssinatura);
       deps.log?.warn('llm: assinatura indisponível — chamada caiu na reserva', {
         organization_id: input.tenantId,
         purpose,
         provider: reserva.provider,
         model,
         origem_da_escolha: decisao.origem,
+        // Os dois lados do aviso: QUEM caiu, com status e mensagem (redigida),
+        // e QUEM assumiu. Só o segundo existia — e é por isso que o aviso
+        // apontava para o lugar errado.
+        ...camposDaAssinaturaQueCaiu(),
       });
       result = await chamarCom(reserva, fabricaDaReserva);
     }
@@ -1373,6 +1420,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       origem: origemDaFalha,
       latencyMs: Date.now() - startedAt,
       erro: err,
+      // A assinatura caiu antes desta falha: a linha conta as DUAS, senão o
+      // operador troca a chave que não era a causa (#4610).
+      erroDaAssinatura,
     }).catch(() => {
       // O log da falha não pode causar uma segunda falha.
     });
@@ -1402,6 +1452,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       model,
       origem_da_escolha: origemDaFalha,
       ...normalizarErro(err),
+      // Os dois lados no log da falha final: o erro da assinatura vai em campo
+      // próprio (nome legível), sem depender de ler o texto do outro lado.
+      ...camposDaAssinaturaQueCaiu(),
     };
     if (!vaiParaAReservaDoModelo || reservaDoModelo === undefined || fabricaAtual === undefined) {
       deps.log?.error('llm: chamada falhou', camposDaFalha);
@@ -1523,9 +1576,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
         input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_cents, latency_ms,
         status, origem_da_escolha, agent_id,
         passos, entrada_do_primeiro_passo, chars_sistema, chars_ferramentas, chars_mensagens,
-        partes_de_midia, prefixo_hash)
+        partes_de_midia, prefixo_hash, preview_run_id)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'ok', $14, $15,
-        $16, $17, $18, $19, $20, $21, $22)
+        $16, $17, $18, $19, $20, $21, $22, $23)
      returning id`,
     [
       input.tenantId,
@@ -1550,6 +1603,8 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       composicao?.charsMensagens ?? null,
       composicao?.partesDeMidia ?? null,
       composicao?.prefixoHash ?? null,
+      // #4426: na prévia, o run que guarda a pergunta e a resposta do teste.
+      input.previewRunId ?? null,
     ],
   );
 
@@ -1704,6 +1759,19 @@ export function redigirMensagemDoProvedor(bruto: string): string {
 }
 
 /**
+ * Um lado da falha em uma linha: `assinatura: credencial_recusada (HTTP 401):
+ * <mensagem>`. A mensagem já vem redigida e truncada pelo `normalizarErro`;
+ * aqui só se dá NOME ao lado que falhou — sem o nome, a linha de `llm_calls`
+ * lê-se como uma falha só, e aponta o lugar errado (#4610).
+ */
+function rotuloDaFalha(
+  lado: 'assinatura' | 'reserva',
+  erro: { error_code: string; error_message: string; http_status: number | null },
+): string {
+  return `${lado}: ${erro.error_code} (HTTP ${erro.http_status ?? 'sem status'}): ${erro.error_message}`;
+}
+
+/**
  * Grava a chamada que FALHOU, na MESMA tabela do sucesso.
  *
  * Mesma tabela de propósito: a tela de execuções conta a história de um ponto em
@@ -1723,15 +1791,30 @@ async function registrarFalha(
     origem: string;
     latencyMs: number;
     erro: unknown;
+    /**
+     * A falha da ASSINATURA que abriu a queda, quando houve queda e a reserva
+     * também falhou (#4610). `llm_calls` tem UM campo de erro — e é o texto
+     * dele que a tela de Execuções mostra —, então as duas falhas entram nele
+     * com o lado nomeado: `error_message` aceita os dois sem coluna nova, e o
+     * `erro` da reserva continua sendo o código/status da linha (a chamada que
+     * de fato encerrou o turno, com o provedor que a linha carrega).
+     */
+    erroDaAssinatura?: ReturnType<typeof normalizarErro> | null;
   },
 ): Promise<void> {
   const { error_code, error_message, http_status } = normalizarErro(d.erro);
+  const erroDaAssinatura = d.erroDaAssinatura ?? null;
+  const mensagemDaLinha =
+    erroDaAssinatura === null
+      ? error_message
+      : `${rotuloDaFalha('assinatura', erroDaAssinatura)} | ${rotuloDaFalha('reserva', { error_code, error_message, http_status })}`;
   await db.query(
     `insert into llm_calls
        (organization_id, contact_id, job_id, variant_id, purpose, provider, model,
         input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_cents, latency_ms,
-        status, error_code, error_message, http_status, origem_da_escolha, agent_id)
-     values ($1, $2, $3, $4, $5, $6, $7, 0, 0, 0, 0, null, $8, 'erro', $9, $10, $11, $12, $13)`,
+        status, error_code, error_message, http_status, origem_da_escolha, agent_id,
+        preview_run_id)
+     values ($1, $2, $3, $4, $5, $6, $7, 0, 0, 0, 0, null, $8, 'erro', $9, $10, $11, $12, $13, $14)`,
     [
       d.input.tenantId,
       d.input.leadId ?? null,
@@ -1742,10 +1825,14 @@ async function registrarFalha(
       d.model,
       d.latencyMs,
       error_code,
-      error_message,
+      mensagemDaLinha,
       http_status,
       d.origem,
       d.input.agentId ?? null,
+      // #4426: a linha de RECUSA também aponta para o run de prévia. Sem isso o
+      // teste que falhou (o caso em que mais se quer reler a pergunta) apareceria
+      // na aba sem texto nenhum.
+      d.input.previewRunId ?? null,
     ],
   );
 }

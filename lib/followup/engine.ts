@@ -26,7 +26,7 @@ import { logger } from "@/lib/logger";
 
 import { flowGraphSchema, type FlowGraph, type FlowNode, type ReplySaveTo } from "./graph-schema";
 import { TETO_DE_PASSOS_DO_MOTOR } from "./custo-no-motor";
-import { enviosJaFeitos, redacaoDaVez, redacoesDoPasso } from "./variacoes-do-passo";
+import { enviosJaFeitos, redacoesDoPasso, redacoesNaOrdemDaVez } from "./variacoes-do-passo";
 import {
   ACTION_RECHECK_MS,
   BACKOFF_MS,
@@ -58,6 +58,7 @@ import {
 import { interpolarDestino, persistirRespostaFollowupSupabase } from "./persistir-resposta";
 import { funilUnicoDasEtapas, idsDeEtapaCitados } from "./etapas-citadas";
 import { desvioAntesDoEnvio } from "./condicao-antes-do-envio";
+import { etiquetasDoLead } from "./etiquetas-do-lead";
 import { criarTarefaInterna as criarTarefaNoCrm } from "@/lib/tarefas/criar-tarefa";
 import { moveLeadHandler } from "@/app/api/v1/leads/_handler";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
@@ -115,6 +116,13 @@ export interface FollowupJobRequest {
     /** action (mode 'text') — corpo pronto; o turno envia sem chamar o modelo. */
     fixed_body?: string;
     /**
+     * action (mode 'text') — #4429: as redações do MESMO passo, na ordem da vez
+     * (a preferida primeiro, que é o `fixed_body`). O turno escolhe entre elas
+     * com a janela de repetição na mão, na hora do envio. Ausente = uma redação
+     * só (o passo de hoje e todo job já enfileirado), e aí nada muda.
+     */
+    fixed_variacoes?: string[];
+    /**
      * action (mode 'text') — #2734/#2972: mídia OPCIONAL (imagem, vídeo, áudio ou
      * documento) por URL. Presente,
      * o `fixed_body` vira a LEGENDA. O envio reusa o caminho de mídia do Inbox e das
@@ -160,6 +168,11 @@ export interface AdminClient {
    */
   loadLeadFacts(orgId: string, contactId: string, pipelineId?: string | null): Promise<{
     lead_stage: string | null;
+    /**
+     * As duas caixas de marcador, unidas — ver `etiquetas-do-lead.ts` (#4586).
+     * A condição «Etiqueta do contato» pergunta à etiqueta do NEGÓCIO e à do
+     * CONTATO, porque a campanha de prospecção só grava a do contato.
+     */
     tags: string[];
     contact_name?: string | null;
     custom_fields?: Record<string, unknown>;
@@ -443,9 +456,17 @@ function turnPayloadExtras(
     // hoje, e todo grafo já publicado — cai em `redacoes[0]`, que é o `body`:
     // nenhuma diferença byte a byte no que sai.
     const redacoes = redacoesDoPasso(node.config);
-    const redacao = redacaoDaVez(redacoes, semente ?? "", enviosJaFeitos(events));
+    // A LISTA inteira vai no job, na ordem da vez (a preferida primeiro). O
+    // turno escolhe com a JANELA na mão — ela só está fresca na hora do envio, e
+    // é lá que vive o gate que mede (#4429, segunda metade). A escolha daqui
+    // segue sendo a da rotação: `ordem[0]` é, byte a byte, o `fixed_body` de
+    // antes, e é ele que sai quando a janela não pressiona nenhuma redação.
+    const ordem = redacoesNaOrdemDaVez(redacoes, semente ?? "", enviosJaFeitos(events));
     return {
-      fixed_body: interpolarVolta(redacao, events, contexto),
+      fixed_body: interpolarVolta(ordem[0]!, events, contexto),
+      ...(ordem.length > 1
+        ? { fixed_variacoes: ordem.map((redacao) => interpolarVolta(redacao, events, contexto)) }
+        : {}),
       ...(node.config.media_url ? { fixed_media_url: node.config.media_url } : {}),
     };
   }
@@ -1416,7 +1437,7 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
           .order("updated_at", { ascending: false })
           .limit(1)
           .maybeSingle(),
-        admin.from("contacts").select("name").eq("organization_id", orgId).eq("id", contactId).maybeSingle(),
+        admin.from("contacts").select("name, tags").eq("organization_id", orgId).eq("id", contactId).maybeSingle(),
       ]);
       if (leadErr) throw new Error(leadErr.message);
       if (contactErr) throw new Error(contactErr.message);
@@ -1426,7 +1447,11 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
           : {};
       return {
         lead_stage: lead?.stage_id ?? null,
-        tags: lead?.tags ?? [],
+        // #4586 — as duas caixas. A campanha de prospecção grava a etiqueta do
+        // nicho no CONTATO; o #4606 passou a copiá-la para o card, mas só no
+        // nascimento (card antigo, e etiqueta posta no Inbox/ficha, ficam sem).
+        // Ler só `crm_leads.tags` fazia a condição responder «não tem».
+        tags: etiquetasDoLead(lead?.tags, contact?.tags),
         contact_name: contact?.name ?? null,
         custom_fields: custom,
       };

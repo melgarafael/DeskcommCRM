@@ -21,7 +21,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
-import { createLeadHandler } from "@/app/api/v1/leads/_handler";
+import { criarCloneNoFunil } from "@/lib/leads/clone-com-anexos";
 import { ocultarProvaMetaNaResposta } from "@/lib/leads/prova-meta-lead-submitted";
 import { modoDeReabertura } from "@/lib/leads/reabertura";
 import {
@@ -54,6 +54,8 @@ import {
   recusaDeMotivoForaDoVocabulario,
 } from "@/lib/leads/motivo-da-perda";
 import { cloneLeadSchema, validateRequest } from "@/lib/schemas";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -376,11 +378,59 @@ export async function POST(
       }
     }
 
-    const clone = await createLeadHandler(
+    // O card do destino nasce COM os anexos do card de origem (#4544): o
+    // voucher/apólice anexado no funil de Vendas é justamente o que o pós-venda
+    // precisa ler. A cópia é do passo único dos três caminhos de troca de funil,
+    // depois do INSERT do clone — o anexo mora em `crm_lead_attachments.lead_id`,
+    // e o id do card novo só existe aí.
+    //
+    // O VÍNCULO É DO SERVIDOR (migration 9389): o banco recusa `clonado_de` e
+    // `movido_para` vindos da sessão, porque `create_or_move_lead` reconhece a
+    // continuação de um negócio por eles. O INSERT do clone continua pela
+    // SESSÃO — é a policy `crm_leads_insert` que decide se quem pede pode criar
+    // aquele card (no modo "só os meus", o clone cujo dono herdado foi
+    // descartado é recusado ali) — e nasce SEM as duas chaves. O vínculo entra
+    // logo depois, pelo cliente de serviço, num UPDATE filtrado por `id` +
+    // `organization_id`; o `movido_para` da origem, mais abaixo, idem.
+    const servidor = createAdminClient();
+    const sourceMetadataDoClone = montaPayloadDoClone(origem as OrigemParaClonar, destino.etapa).source_metadata;
+    const semVinculo = { ...sourceMetadataDoClone };
+    delete semVinculo.clonado_de;
+    // A origem que já foi levada antes (nova tentativa do `novo_negocio`) traz
+    // o `movido_para` dela, e o clone o herda como sempre herdou — pelo UPDATE.
+    delete semVinculo.movido_para;
+    const { clone, anexos } = await criarCloneNoFunil(
       supabase,
       handlerCtx,
-      montaPayloadDoClone(origem as OrigemParaClonar, destino.etapa),
+      origem as OrigemParaClonar,
+      destino.etapa,
+      { ajustes: { source_metadata: semVinculo } },
     );
+
+    // Falha parcial segue a regra do cabeçalho: o clone já existe (visível e
+    // corrigível), a origem fica ABERTA — o encerramento vem depois daqui — e a
+    // rota devolve 500 com o id do clone, sem esconder a meia-execução.
+    const { data: vinculado, error: vinculoErr } = await servidor
+      .from("crm_leads")
+      .update({ source_metadata: sourceMetadataDoClone })
+      .eq("id", String(clone.id))
+      .eq("organization_id", handlerCtx.organization_id)
+      .select("source_metadata")
+      .maybeSingle();
+    if (vinculoErr || !vinculado) {
+      logger.error("[leads/clone] o clone nasceu, mas o vínculo com a origem não foi gravado", {
+        lead_id: leadId,
+        cloned_lead_id: clone.id,
+        organization_id: handlerCtx.organization_id,
+        error: vinculoErr?.message ?? "nenhuma linha atualizada",
+        requestId,
+      });
+      return fail("internal_error", vinculoErr?.message ?? "clone_link_not_written", 500, {
+        details: { cloned_lead_id: clone.id },
+        requestId,
+      });
+    }
+    clone.source_metadata = (vinculado as { source_metadata: unknown }).source_metadata;
 
     const destination = registroDoDestino(clone);
     const nomeDoFunilDeOrigem = (pipelineOrigem as { name?: string | null } | null)?.name ?? null;
@@ -458,7 +508,7 @@ export async function POST(
       movido_para: destination,
     };
 
-    const { data: origemFinal, error: updErr } = await supabase
+    const { data: origemFinal, error: updErr } = await servidor
       .from("crm_leads")
       .update({ source_metadata: sourceMetadata, updated_at: new Date().toISOString() })
       .eq("id", leadId)
@@ -494,6 +544,9 @@ export async function POST(
       {
         lead: clone,
         origem: ocultarProvaMetaNaResposta((origemFinal ?? origemEncerrada ?? origem) as Record<string, unknown>),
+        // Quantos anexos o card novo herdou da origem (#4544). Aditivo no
+        // contrato: quem já lia `lead`/`origem` não muda.
+        anexos: anexos.copiados,
       },
       { requestId, status: 201 },
     );
