@@ -83,13 +83,16 @@ interface FerramentaAnunciada {
   readonly descricao: string | null;
 }
 
-export function CadastroDoServidorMcpExterno() {
+export function CadastroDoServidorMcpExterno({ liberadasIniciais = "" }: { liberadasIniciais?: string }) {
   const t = useT();
   const [endpoint, setEndpoint] = useState("");
   const [chave, setChave] = useState("");
-  /** As ESCRITAS liberadas (#4445) — uma por linha, nos dois níveis. */
-  const [liberadasOrganizacao, setLiberadasOrganizacao] = useState("");
-  const [liberadasConexao, setLiberadasConexao] = useState("");
+  /**
+   * As ESCRITAS liberadas (#4445) para a conexão do servidor compartilhado, uma
+   * por linha. Abre com a lista JÁ GRAVADA: o salvar sempre manda este campo, e
+   * começar em branco apagaria as liberações de quem só trocou o endereço.
+   */
+  const [liberadasConexao, setLiberadasConexao] = useState(liberadasIniciais);
   const [erro, setErro] = useState<string | null>(null);
   /** O desfecho que deu certo (salvou, testou ou removeu). */
   const [aviso, setAviso] = useState<string | null>(null);
@@ -127,7 +130,6 @@ export function CadastroDoServidorMcpExterno() {
       const r = await definirServidorMcpExterno({
         endpoint,
         chave,
-        escritasLiberadasOrganizacao: liberadasOrganizacao,
         escritasLiberadasConexao: liberadasConexao,
       });
       if (!r.ok) {
@@ -259,18 +261,6 @@ export function CadastroDoServidorMcpExterno() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="mcp-escrita-organizacao">{t("Para toda conexão MCP desta empresa")}</Label>
-            <Textarea
-              id="mcp-escrita-organizacao"
-              data-testid="escritas-organizacao"
-              rows={3}
-              spellCheck={false}
-              placeholder="cancelar_reserva"
-              value={liberadasOrganizacao}
-              onChange={(e) => setLiberadasOrganizacao(e.target.value)}
-            />
-          </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="mcp-escrita-conexao">{t("Só para esta conexão (servidor compartilhado)")}</Label>
             <Textarea

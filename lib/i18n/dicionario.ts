@@ -17787,7 +17787,6 @@ export const DICIONARIO: Traducoes = {
   "A liberação nasce vazia: enquanto esta lista estiver em branco, nenhuma ferramenta de escrita roda durante o atendimento — a IA consulta, mas não altera nada no sistema de fora. Deixar em branco e salvar revoga as liberações.": {
     es: "La liberación nace vacía: mientras esta lista esté en blanco, ninguna herramienta de escritura se ejecuta durante la atención — la IA consulta, pero no altera nada en el sistema externo. Dejar en blanco y guardar revoca las liberaciones.",
   },
-  "Para toda conexão MCP desta empresa": { es: "Para toda conexión MCP de esta empresa" },
   "Só para esta conexão (servidor compartilhado)": {
     es: "Solo para esta conexión (servidor compartido)",
   },

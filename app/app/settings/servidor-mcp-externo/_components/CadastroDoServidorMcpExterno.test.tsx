@@ -38,8 +38,7 @@ import { CadastroDoServidorMcpExterno } from "./CadastroDoServidorMcpExterno";
 
 const ENDERECO = "https://erp.loja/mcp";
 const CHAVE = "segredo-do-erp-abcd";
-/** As listas de escrita liberada (#4445): a tela manda as duas no salvar. */
-const LIBERADAS_ORGANIZACAO = "listar_contratos, consultar_saldo";
+/** A lista de escrita liberada (#4445) da conexão compartilhada: vai no salvar. */
 const LIBERADAS_CONEXAO = "criar_titulo";
 /** O de sempre: o endereço de metadados da nuvem que o guard recusa. */
 const ENDERECO_INSEGURO = "http://169.254.169.254/mcp";
@@ -56,9 +55,8 @@ function digitar(endpoint: string, chave = CHAVE) {
   fireEvent.change(screen.getByTestId("chave"), { target: { value: chave } });
 }
 
-/** Os dois campos da liberação de escrita (#4445), que entram no mesmo salvar. */
-function digitarLiberacao(organizacao: string, conexao: string) {
-  fireEvent.change(screen.getByTestId("escritas-organizacao"), { target: { value: organizacao } });
+/** O campo da liberação de escrita (#4445), que entra no mesmo salvar. */
+function digitarLiberacao(conexao: string) {
   fireEvent.change(screen.getByTestId("escritas-conexao"), { target: { value: conexao } });
 }
 
@@ -80,16 +78,15 @@ describe("cadastro: a chave só aparece na criação", () => {
     expect(screen.queryByTestId("chave-criada")).toBeNull();
 
     digitar(ENDERECO);
-    digitarLiberacao(LIBERADAS_ORGANIZACAO, LIBERADAS_CONEXAO);
+    digitarLiberacao(LIBERADAS_CONEXAO);
     fireEvent.click(screen.getByTestId("salvar"));
 
-    // O salvar leva QUATRO campos desde a #4445: endereço, chave e as duas
-    // listas de escrita liberada, exatamente como foram digitadas.
+    // O salvar leva TRÊS campos desde a #4445: endereço, chave e a lista de
+    // escrita liberada, exatamente como foi digitada.
     await waitFor(() =>
       expect(cadastro()).toHaveBeenCalledWith({
         endpoint: ENDERECO,
         chave: CHAVE,
-        escritasLiberadasOrganizacao: LIBERADAS_ORGANIZACAO,
         escritasLiberadasConexao: LIBERADAS_CONEXAO,
       }),
     );
@@ -100,6 +97,32 @@ describe("cadastro: a chave só aparece na criação", () => {
     expect(valorDoCampoDaChave()).toBe("");
     expect(screen.getByTestId("aviso").textContent).toContain("Configuração salva");
     expect(screen.queryByTestId("erro")).toBeNull();
+  });
+});
+
+describe("a lista de escrita JÁ GRAVADA abre preenchida (doc de decisão 347)", () => {
+  it("trocar só endereço e chave salva a lista que já estava lá, e não a apaga", async () => {
+    // Antes, o campo abria em branco: salvar o endereço de novo mandava "" e a
+    // action, que trata "" como revogar, apagava as liberações.
+    render(<CadastroDoServidorMcpExterno liberadasIniciais="criar_titulo" />);
+    expect((screen.getByTestId("escritas-conexao") as HTMLTextAreaElement).value).toBe("criar_titulo");
+
+    digitar(ENDERECO);
+    fireEvent.click(screen.getByTestId("salvar"));
+
+    await waitFor(() =>
+      expect(cadastro()).toHaveBeenCalledWith({
+        endpoint: ENDERECO,
+        chave: CHAVE,
+        escritasLiberadasConexao: "criar_titulo",
+      }),
+    );
+  });
+
+  it("não há campo de liberação para toda conexão da empresa", () => {
+    abrir();
+    expect(screen.queryByTestId("escritas-organizacao")).toBeNull();
+    expect(screen.queryByText("Para toda conexão MCP desta empresa")).toBeNull();
   });
 });
 
@@ -116,9 +139,8 @@ describe("recusa do anti-SSRF: a tela diz o motivo, e nada mais", () => {
       expect(cadastro()).toHaveBeenCalledWith({
         endpoint: ENDERECO_INSEGURO,
         chave: CHAVE,
-        // Nada digitado nas listas de escrita: elas vão vazias, e quem recusa o
+        // Nada digitado na lista de escrita: ela vai vazia, e quem recusa o
         // endereço inseguro é a action — a tela não inventa liberação.
-        escritasLiberadasOrganizacao: "",
         escritasLiberadasConexao: "",
       }),
     );
