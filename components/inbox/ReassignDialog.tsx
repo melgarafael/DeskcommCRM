@@ -263,10 +263,14 @@ export function ReassignDialog({
             )}
             {negocio && destino && previa.isSuccess && !negocio.leva && (
               <p className="text-xs text-muted-foreground" role="status" data-testid="aviso-negocio-fica">
-                {t("O negócio aberto deste contato continua com {nome} — a conversa vai sem ele.").replace(
-                  "{nome}",
-                  nomeDeQuemFica,
-                )}
+                {donoDoNegocio === null
+                  ? // Card sem responsável humano (ou com um agente de IA): não
+                    // há "outro atendente" a nomear, e dizer que há seria falso.
+                    t("O negócio aberto deste contato fica onde está — a conversa vai sem ele.")
+                  : t("O negócio aberto deste contato continua com {nome} — a conversa vai sem ele.").replace(
+                      "{nome}",
+                      nomeDeQuemFica,
+                    )}
               </p>
             )}
             {!numeroNovo && destino && previa.isSuccess && (

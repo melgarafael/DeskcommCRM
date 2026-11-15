@@ -77378,12 +77378,18 @@ begin
   -- usa. Tratá-lo aqui como "a transferência preenche" fazia o diálogo avisar
   -- "vai junto" para o agente em `own` cujo card sem dono a escrita pula (prova
   -- de tela do #4530, item 2c): o aviso e o efeito divergiam.
-  leva := v_negocio.owner_user_id is distinct from p_to_user_id
-          and (
-            auth.uid() is null
-            or v_negocio.owner_user_id = auth.uid()
-            or (public.fn_can_view_lead(p_organization_id, v_negocio.owner_user_id)
-                and public.fn_can_view_lead(p_organization_id, p_to_user_id))
+  -- `coalesce(..., false)`: com o card sem dono, `owner_user_id = auth.uid()`
+  -- é NULL, e `false or NULL` também é NULL. A prévia responderia "não sei"
+  -- onde a escrita responde "não".
+  leva := coalesce(
+            v_negocio.owner_user_id is distinct from p_to_user_id
+            and (
+              auth.uid() is null
+              or v_negocio.owner_user_id = auth.uid()
+              or (public.fn_can_view_lead(p_organization_id, v_negocio.owner_user_id)
+                  and public.fn_can_view_lead(p_organization_id, p_to_user_id))
+            ),
+            false
           );
   return next;
 end;

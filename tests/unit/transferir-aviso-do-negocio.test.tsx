@@ -108,6 +108,17 @@ describe("#4312 — o aviso do negócio aberto no diálogo de Transferir", () =>
     expect(aviso).toHaveTextContent("continua com você");
   });
 
+  it("card sem responsável: o aviso não inventa um 'outro atendente' (prova de tela do #4530, 2c)", async () => {
+    comNegocio(false, null);
+    abrirDialogo();
+    await escolherAna();
+
+    const aviso = await screen.findByTestId("aviso-negocio-fica");
+    expect(aviso).toHaveTextContent("O negócio aberto deste contato fica onde está — a conversa vai sem ele.");
+    expect(aviso).not.toHaveTextContent("outro atendente");
+    expect(screen.queryByTestId("aviso-negocio-acompanha")).toBeNull();
+  });
+
   it("o caminho do dono: o diálogo diz que o negócio VAI JUNTO", async () => {
     comNegocio(true, "eu-mesmo-0000");
     abrirDialogo();

@@ -9741,6 +9741,9 @@ export const DICIONARIO: Traducoes = {
   "O negócio aberto deste contato continua com {nome} — a conversa vai sem ele.": {
     es: "El negocio abierto de este contacto sigue con {nome} — la conversación va sin él.",
   },
+  "O negócio aberto deste contato fica onde está — a conversa vai sem ele.": {
+    es: "El negocio abierto de este contacto se queda donde está — la conversación va sin él.",
+  },
   "Conversas deste contato": { es: "Conversaciones de este contacto" },
   "Este contato não tem outra conversa.": { es: "Este contacto no tiene otra conversación." },
   "Sem número": { es: "Sin número" },
