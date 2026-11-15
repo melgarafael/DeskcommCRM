@@ -220,6 +220,15 @@ export interface DbOpts {
   /** Erro do banco numa LEITURA, decidido pela tabela e pelos filtros `eq` dela. */
   readError?: (table: string, filtros: Array<[string, unknown]>) => { code: string; message: string } | null;
   /**
+   * Resposta de uma RPC por nome — o que o PostgREST devolveria de `data`/`error`.
+   *
+   * Sem entrada, a RPC responde `{data: null, error: null}`, que é o caso de uma
+   * função que não devolve linha. Quem precisa do RETORNO de uma RPC (o
+   * `fn_conversation_assign` do menu de atendimento devolve a conversa atribuída,
+   * #4594) declara aqui em vez de injetar um segundo dublê de banco.
+   */
+  rpcResult?: (nome: string, args: unknown) => { data: unknown; error: { message: string } | null } | null;
+  /**
    * Fluxos de follow-up da org (issue #3603) — é deles que sai a lista read-only
    * de «quais fluxos disparam ao entrar nesta etapa». O `trigger_config` vai
    * cru, como no banco: quem decide se ele arma alguma coisa é o código da rota,
@@ -697,7 +706,8 @@ export function makeDb(opts: DbOpts = {}): Registro {
   // comportamento ("o arquivamento não é desfeito por causa do rastro").
   const rpc = async (nome: string, args: unknown) => {
     registro.rpcs.push({ nome, args });
-    return { data: null, error: null };
+    const declarada = opts.rpcResult?.(nome, args);
+    return declarada ?? { data: null, error: null };
   };
 
   // A sessão do cookie (#2995): `getUser()` é a primeira coisa que a rota do

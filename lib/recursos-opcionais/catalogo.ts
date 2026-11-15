@@ -201,6 +201,10 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     nome: "Revisão por quilometragem",
     oQueFaz: "O km informado no negócio vira a data prevista da próxima revisão, no campo de data que o funil escolheu.",
   },
+  menu_de_atendimento: {
+    nome: "Menu de atendimento sem IA",
+    oQueFaz: "A primeira mensagem recebe um menu com opções numeradas e o cliente escolhe por número — fila, pessoa ou arquivo — sem nenhuma resposta gerada por IA.",
+  },
 };
 
 /**

@@ -82,6 +82,12 @@ export const MODULOS_OPCIONAIS = [
   "canal_bot",
   "campanha_por_email",
   "revisao_por_km",
+  // #4594 (fatia 1): o menu de boas-vindas com opções numeradas. Assume a
+  // ENTRADA da conversa sem chamar modelo nenhum — é o atendimento de quem
+  // não quer gastar token para receber "bom dia". Entra desligado porque muda
+  // quem responde primeiro, e quem já atende por IA ou à mão não pode acordar
+  // com um menu que não configurou.
+  "menu_de_atendimento",
 ] as const;
 export type ModuloOpcional = (typeof MODULOS_OPCIONAIS)[number];
 
@@ -115,6 +121,7 @@ export const MODULOS_OPCIONAIS_POR_FLAG = [
   "canal_bot",
   "campanha_por_email",
   "revisao_por_km",
+  "menu_de_atendimento",
 ] as const satisfies readonly ModuloOpcional[];
 
 /** A linha de cada módulo por FLAG em `platform_config`. O formato é o da CHECK da 0341.
@@ -202,6 +209,12 @@ export const CHAVE_DO_MODULO: Record<(typeof MODULOS_OPCIONAIS_POR_FLAG)[number]
   // Desligado, o km gravado não projeta nada e o roteiro não faz consulta a mais
   // (`lib/revisao-por-km/modulo.ts`).
   revisao_por_km: "MODULO_REVISAO_POR_KM",
+  // #4594 (fatia 1): o menu de atendimento sem IA. A chave da INSTALAÇÃO é a
+  // porta de fora; a da empresa é `settings.menu_de_atendimento.ativa`. As duas
+  // são necessárias — o administrador do servidor decide se oferece, a empresa
+  // decide se usa. Desligada aqui, `atenderMenuSemIa` devolve `tratado: false`
+  // e a mensagem segue o caminho de hoje (`lib/atendimento/menu/atender.ts`).
+  menu_de_atendimento: "MODULO_MENU_DE_ATENDIMENTO",
 };
 
 const LIGADO = "ligado";
