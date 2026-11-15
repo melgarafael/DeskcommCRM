@@ -168,6 +168,10 @@ export const campaignConfigSchema = z
     // configuração, e uma chave desconhecida faria a campanha arquivada ser
     // recusada pelo próprio código que a gravou.
     arquivada_em: z.string().datetime().optional(),
+    // CARIMBO DA ÚLTIMA EDIÇÃO DO TEXTO (#4570, doc 358 › 1A). Gravado só por
+    // `editBriefing`. A prévia guarda o carimbo com que nasceu e o envio só usa a
+    // que tem o carimbo atual (`previaDoAgente`). Ausente = nunca editada.
+    briefing_editado_em: z.string().datetime().optional(),
   })
   .strict();
 export const searchSchema = z
@@ -383,6 +387,13 @@ export interface Prospect {
    * conexão capaz de conferir); `existe: false` tira a empresa da abordagem.
    */
   whatsapp?: VereditoWhatsapp | null;
+  /**
+   * O texto com que a abordagem COMEÇOU (#4570, doc 358 › 1A), gravado por
+   * `editBriefing` em quem já foi abordado quando a campanha é editada. O turno
+   * (`context.ts`) lê este antes da `config`. Ausente = a campanha não foi
+   * editada desde a abordagem, e a `config` ainda é o texto com que ela começou.
+   */
+  briefing?: Partial<CampaignBriefing> | null;
 }
 
 /**

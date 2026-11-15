@@ -37,7 +37,10 @@ import {
   TAMANHO_MINIMO_DO_BRIEFING,
   prospectingInputSchema,
 } from "@/lib/prospecting/schema";
+import { previaDoAgente } from "@/lib/prospecting/previa";
 import {
+  CONGELA_BRIEFING_DOS_ABORDADOS_SQL,
+  DESCARTA_PREVIAS_DA_FILA_SQL,
   EDICAO_DO_BRIEFING_SQL,
   MENSAGEM_DE_CAMPANHA_PAUSADA_PARA_EDITAR,
   editBriefing,
@@ -139,7 +142,23 @@ describe("editBriefing: só campanha pausada, só desta organização", () => {
       NOVO.instruction,
       NOVO.qualification,
       JSON.stringify(NOVO.ofertas),
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
     ]);
+    // Doc 358 › 1A: na mesma transação, o texto ANTERIOR fica com quem já foi
+    // abordado e a prévia da fila, escrita com ele, sai.
+    const textos = consultas.map((q) => q.texto);
+    const congela = consultas.find((q) => q.texto === CONGELA_BRIEFING_DOS_ABORDADOS_SQL);
+    expect(congela?.params).toEqual([
+      ORG,
+      CAMPANHA,
+      JSON.stringify({
+        instruction: "Texto antigo, ainda em uso.",
+        qualification: "Critério antigo.",
+        ofertas: ["site"],
+      }),
+    ]);
+    expect(textos.indexOf("begin")).toBeLessThan(textos.indexOf(EDICAO_DO_BRIEFING_SQL));
+    expect(textos.indexOf(DESCARTA_PREVIAS_DA_FILA_SQL)).toBeLessThan(textos.indexOf("commit"));
   });
 
   it("campanha antiga sem ofertas gravadas: o `previous` sai null, não some", async () => {
@@ -156,10 +175,15 @@ describe("editBriefing: só campanha pausada, só desta organização", () => {
   });
 
   it("alguém retomou entre a leitura e a escrita: o `where` recusou e o resultado é 409", async () => {
-    const { pool } = poolDeMentira({ status: "paused", config: {} }, false);
+    const { pool, consultas } = poolDeMentira({ status: "paused", config: {} }, false);
     await expect(
       editBriefing(pool, ORG, CAMPANHA, { ...NOVO, ofertas: [...NOVO.ofertas] }),
     ).rejects.toMatchObject({ status: 409 });
+    // Nada congela nem descarta prévia por uma edição que não aconteceu.
+    const textos = consultas.map((q) => q.texto);
+    expect(textos).toContain("rollback");
+    expect(textos).not.toContain(CONGELA_BRIEFING_DOS_ABORDADOS_SQL);
+    expect(textos).not.toContain(DESCARTA_PREVIAS_DA_FILA_SQL);
   });
 });
 
@@ -176,7 +200,7 @@ describe("o texto do update troca só o briefing e exige pausada", () => {
 
   it("faz merge com `||` nas TRÊS chaves e não substitui a configuração inteira", () => {
     expect(texto).toContain(
-      "set config = config || jsonb_build_object('instruction', $3::text, 'qualification', $4::text, 'ofertas', $5::jsonb)",
+      "set config = config || jsonb_build_object('instruction', $3::text, 'qualification', $4::text, 'ofertas', $5::jsonb, 'briefing_editado_em', $6::text)",
     );
     expect(texto).not.toMatch(/set config\s*=\s*\$/);
   });
@@ -262,5 +286,50 @@ describe("a rota aceita edit_briefing com o formato fechado das irmãs", () => {
         `o campo ${campo} não pode passar por edit_briefing`,
       ).toBe(false);
     }
+  });
+});
+
+describe("doc 358 › 1A: o texto novo não alcança quem já foi abordado, nem o rascunho velho", () => {
+  it("congela só quem já foi abordado, só nesta campanha, e não sobrescreve o primeiro congelado", () => {
+    const texto = CONGELA_BRIEFING_DOS_ABORDADOS_SQL;
+    expect(texto).toContain("where organization_id = $1 and campaign_id = $2");
+    expect(texto).toContain("status in ('sending','sent')");
+    expect(texto).toContain("not (data ? 'briefing')");
+  });
+
+  it("descarta a prévia só de quem ainda está na fila", () => {
+    const texto = DESCARTA_PREVIAS_DA_FILA_SQL;
+    expect(texto).toContain("where organization_id = $1 and campaign_id = $2");
+    expect(texto).toContain("status in ('new','queued')");
+    expect(texto).toContain("data - 'previa'");
+  });
+
+  const AGENTE = "0c120000-2222-4000-8000-000000000001";
+  const site = {
+    ver: 1, classe: "sem-site", problemas: [], checklist: { tem: [], falta: [] },
+    final_url: null, http_status: null, tempo_ms: null, conteudo_resumo: null,
+    pagespeed: null, verificado_em: "2026-11-01T00:00:00.000Z", provisorio: false, tentativas: 0,
+  } as never;
+  const previa = (carimbo?: string) => ({
+    website: null,
+    site,
+    previa: {
+      texto: "Olá! Rascunho escrito com o texto da campanha.",
+      baseada_em: "sem-site@2026-11-01T00:00:00.000Z",
+      gerada_em: "2026-11-01T00:00:00.000Z",
+      agente_id: AGENTE,
+      ...(carimbo ? { briefing_editado_em: carimbo } : {}),
+    },
+  });
+
+  it("campanha nunca editada: a prévia sem carimbo continua valendo no envio", () => {
+    expect(previaDoAgente(previa(), AGENTE, undefined)).not.toBeNull();
+  });
+
+  it("campanha editada: a prévia de antes da edição (sem carimbo ou com o velho) não sai", () => {
+    const agora = "2026-11-15T12:00:00.000Z";
+    expect(previaDoAgente(previa(), AGENTE, agora)).toBeNull();
+    expect(previaDoAgente(previa("2026-11-10T12:00:00.000Z"), AGENTE, agora)).toBeNull();
+    expect(previaDoAgente(previa(agora), AGENTE, agora)).not.toBeNull();
   });
 });

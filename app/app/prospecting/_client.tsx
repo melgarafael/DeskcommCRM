@@ -1695,7 +1695,7 @@ export function ProspectingClient() {
                         </fieldset>
                         <p className="text-xs text-muted-foreground">
                           {t(
-                            "Vale para as próximas abordagens. As conversas já em andamento não são reescritas: o histórico trocado continua como está, e o texto novo é o que o agente lê do próximo turno em diante.",
+                            "Vale só para as empresas que ainda não foram abordadas. Quem já recebeu a primeira mensagem continua a conversa com o texto com que ela começou, e as prévias de quem está na fila são refeitas com o texto novo.",
                           )}
                         </p>
                         {confirmandoBriefing ? (

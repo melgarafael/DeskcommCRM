@@ -19002,9 +19002,9 @@ export const DICIONARIO: Traducoes = {
   "Instrução e critérios atualizados. A campanha continua pausada.": {
     es: "Instrucción y criterios actualizados. La campaña sigue en pausa.",
   },
-  "Vale para as próximas abordagens. As conversas já em andamento não são reescritas: o histórico trocado continua como está, e o texto novo é o que o agente lê do próximo turno em diante.":
+  "Vale só para as empresas que ainda não foram abordadas. Quem já recebeu a primeira mensagem continua a conversa com o texto com que ela começou, e as prévias de quem está na fila são refeitas com o texto novo.":
     {
-      es: "Vale para los próximos abordajes. Las conversaciones ya en curso no se reescriben: el historial intercambiado sigue como está, y el texto nuevo es el que el agente lee desde el próximo turno.",
+      es: "Vale solo para las empresas que aún no fueron abordadas. Quien ya recibió el primer mensaje sigue la conversación con el texto con que empezó, y las vistas previas de quien está en la fila se rehacen con el texto nuevo.",
     },
   "Confirmar a troca do texto desta campanha? Quem já foi abordado não recebe nada de novo por causa disso.":
     {

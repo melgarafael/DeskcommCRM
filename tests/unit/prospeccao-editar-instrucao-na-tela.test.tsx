@@ -109,6 +109,10 @@ describe("o formulário nasce com o texto gravado e só salva depois de confirma
     fireEvent.click(await screen.findByRole("button", { name: "Editar instrução e critérios" }));
     expect(screen.getByDisplayValue(INSTRUCAO)).toBeInTheDocument();
     expect(screen.getByDisplayValue(CRITERIO)).toBeInTheDocument();
+    // Doc 358 › 1A: a tela diz a quem o texto novo vale — e a quem não vale.
+    expect(
+      screen.getByText(/Vale só para as empresas que ainda não foram abordadas/),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Salvar instrução e critérios" }));
     // A confirmação existe porque o texto vale para as próximas abordagens.

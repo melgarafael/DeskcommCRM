@@ -1465,10 +1465,25 @@ export async function adjustTags(pool: pg.Pool, org: string, id: string, etiquet
 /**
  * Troca a INSTRUÇÃO, os CRITÉRIOS e as OFERTAS de uma campanha PAUSADA (#4570).
  *
- * O texto e as ofertas são lidos da `config` a CADA turno (`context.ts`), então o
- * que se grava aqui vale para as próximas conversas — e para o próximo turno de uma
- * conversa já aberta. O que NÃO se toca é o histórico: mensagens, candidatos e
- * negócios já criados ficam como estão, e nenhuma conversa é reescrita.
+ * O TEXTO NOVO VALE SÓ PARA QUEM AINDA NÃO FOI ABORDADO (decisão do dono, 15/11,
+ * doc 358 › 1A). O contexto do turno é montado da `config` a cada turno
+ * (`context.ts`), então trocar a `config` sozinha mudaria a oferta no meio de uma
+ * conversa que já andou. Por isso, na MESMA transação:
+ *
+ * 1. quem já foi abordado (`sending`/`sent`) e ainda não tem o seu, ganha em
+ *    `data.briefing` o texto com que começou — o texto ANTERIOR à edição. O turno
+ *    lê esse congelado antes da `config`. Só esta função troca o briefing, e ela
+ *    congela todo abordado antes de trocar: quem foi abordado entre duas edições
+ *    recebe o texto da primeira na segunda, e o `not ?` mantém o primeiro;
+ * 2. a prévia guardada de quem ainda está na fila (`data.previa`) é descartada.
+ *    Ela foi escrita com o texto velho e entraria no envio como "Rascunho"; sem
+ *    ela, o preparo escreve outra com o texto novo;
+ * 3. a `config` ganha `briefing_editado_em`. A prévia carrega o carimbo da
+ *    `config` com que nasceu, e o envio só usa a que tem o carimbo atual
+ *    (`previaDoAgente`): uma prévia que o preparo estava gerando com o texto velho
+ *    durante a edição (ele não toma este bloqueio) nasce vencida.
+ *
+ * O histórico não é tocado: mensagens, candidatos e negócios ficam como estão.
  *
  * Mesma régua de `adjust_pace`/`adjust_tags`, nas duas camadas de propósito: o `if`
  * dá o 409 com a mensagem certa, e o `where` repete organização, id, `paused` e
@@ -1481,7 +1496,15 @@ export async function adjustTags(pool: pg.Pool, org: string, id: string, etiquet
  * atual ainda pode ser consertada por aqui.
  */
 export const EDICAO_DO_BRIEFING_SQL =
-  "update prospecting_campaigns set config = config || jsonb_build_object('instruction', $3::text, 'qualification', $4::text, 'ofertas', $5::jsonb), updated_at = now() where organization_id = $1 and id = $2 and status = 'paused' and config is not null returning id";
+  "update prospecting_campaigns set config = config || jsonb_build_object('instruction', $3::text, 'qualification', $4::text, 'ofertas', $5::jsonb, 'briefing_editado_em', $6::text), updated_at = now() where organization_id = $1 and id = $2 and status = 'paused' and config is not null returning id";
+
+/** Passo 1: o texto anterior fica com quem já foi abordado. `jsonb_strip_nulls`: chave ausente na config antiga não vira `null` no congelado. */
+export const CONGELA_BRIEFING_DOS_ABORDADOS_SQL =
+  "update prospecting_candidates set data = data || jsonb_build_object('briefing', jsonb_strip_nulls($3::jsonb)), updated_at = now() where organization_id = $1 and campaign_id = $2 and status in ('sending','sent') and not (data ? 'briefing')";
+
+/** Passo 2: a prévia escrita com o texto velho não sai para quem ainda está na fila. */
+export const DESCARTA_PREVIAS_DA_FILA_SQL =
+  "update prospecting_candidates set data = data - 'previa', updated_at = now() where organization_id = $1 and campaign_id = $2 and status in ('new','queued') and data ? 'previa'";
 
 export const MENSAGEM_DE_CAMPANHA_PAUSADA_PARA_EDITAR =
   "Pause a campanha antes de editar a instrução e os critérios.";
@@ -1502,22 +1525,33 @@ export async function editBriefing(
     if (!c) throw new ProspectingError("Campanha não encontrada.", 404);
     if (c.status !== "paused" || !c.config)
       throw new ProspectingError(MENSAGEM_DE_CAMPANHA_PAUSADA_PARA_EDITAR, 409);
-    const changed = await db.query(EDICAO_DO_BRIEFING_SQL, [
-      org,
-      id,
-      briefing.instruction,
-      briefing.qualification,
-      JSON.stringify(briefing.ofertas),
-    ]);
-    // Alguém retomou entre o select e o update: o `where` recusou, e é isso que vale.
-    if (!changed.rows.length)
-      throw new ProspectingError(MENSAGEM_DE_CAMPANHA_PAUSADA_PARA_EDITAR, 409);
+    const anterior = {
+      instruction: c.config.instruction ?? null,
+      qualification: c.config.qualification ?? null,
+      ofertas: c.config.ofertas ?? null,
+    };
+    await db.query("begin");
+    try {
+      const changed = await db.query(EDICAO_DO_BRIEFING_SQL, [
+        org,
+        id,
+        briefing.instruction,
+        briefing.qualification,
+        JSON.stringify(briefing.ofertas),
+        new Date().toISOString(),
+      ]);
+      // Alguém retomou entre o select e o update: o `where` recusou, e é isso que vale.
+      if (!changed.rows.length)
+        throw new ProspectingError(MENSAGEM_DE_CAMPANHA_PAUSADA_PARA_EDITAR, 409);
+      await db.query(CONGELA_BRIEFING_DOS_ABORDADOS_SQL, [org, id, JSON.stringify(anterior)]);
+      await db.query(DESCARTA_PREVIAS_DA_FILA_SQL, [org, id]);
+      await db.query("commit");
+    } catch (error) {
+      await db.query("rollback");
+      throw error;
+    }
     return {
-      previous: {
-        instruction: c.config.instruction ?? null,
-        qualification: c.config.qualification ?? null,
-        ofertas: c.config.ofertas ?? null,
-      },
+      previous: anterior,
       next: {
         instruction: briefing.instruction,
         qualification: briefing.qualification,
