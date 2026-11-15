@@ -351,7 +351,9 @@ export const customFieldSchema = z.object({
    * existem (sem a chave) param de ir ao modelo até alguém marcá-las; é o
    * mesmo sentido dos outros booleanos opcionais daqui (`multiple`,
    * `allow_new`, `mostrar_no_resumo_da_passagem`), cuja ausência também é
-   * "desligado". O interruptor na tela do funil entra numa fatia seguinte.
+   * "desligado". O interruptor mora na mesma fatia, na tela do funil
+   * (`app/app/settings/tenant/pipelines/_client.tsx`), e desmarcá-lo APAGA a
+   * chave — é o que faz da ausência o desmarcado também no que a tela grava.
    *
    * Sem `.default(false)` de propósito, igual a `escopo`: o `handleSave`
    * regrava `fields` inteiro, e gravar a chave em cima de toda definição
