@@ -1575,6 +1575,7 @@ jobs:
         system-update.spec.ts
         respostas-rapidas-conteudos.spec.ts
         b2b-vinculos-pela-tela.spec.ts
+        mcp-oauth-chatgpt.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #

@@ -15,6 +15,7 @@
  */
 import { randomUUID } from "node:crypto";
 
+import { comIdDaRequisicao } from "@/lib/api/wrappers";
 import { respostaDePonte } from "@/lib/auth/ponte-de-volta";
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { buscarCliente } from "@/lib/mcp/oauth/clientes";
@@ -50,7 +51,10 @@ export async function GET(req: Request): Promise<Response> {
 
   const e = enderecosOAuth();
   const voltaComErro = (erro: string) =>
-    Response.redirect(urlDeVoltaComErro(identidade.data.redirect_uri, erro, identidade.data.state, e.issuer), 302);
+    comIdDaRequisicao(
+      Response.redirect(urlDeVoltaComErro(identidade.data.redirect_uri, erro, identidade.data.state, e.issuer), 302),
+      requestId,
+    );
 
   const pedido = pedidoDeAutorizacaoSchema.safeParse(params);
   if (!pedido.success) {
@@ -63,5 +67,8 @@ export async function GET(req: Request): Promise<Response> {
   const adiante = new URLSearchParams();
   for (const [k, v] of Object.entries(pedido.data)) if (v !== undefined) adiante.set(k, v);
   const marca = await marcaDaSaida(null);
-  return respostaDePonte(`/oauth/mcp/consentir?${adiante.toString()}`, marca.nome, "Abrindo a autorização…");
+  return comIdDaRequisicao(
+    respostaDePonte(`/oauth/mcp/consentir?${adiante.toString()}`, marca.nome, "Abrindo a autorização…"),
+    requestId,
+  );
 }
