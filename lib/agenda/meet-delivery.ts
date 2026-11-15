@@ -24,7 +24,7 @@ const policySchema = z.discriminatedUnion("current", [
     // é recusado — nunca lido como "marca desligada".
     force_human: z.boolean().nullable(), ai_opt_out: z.boolean(), ai_gate: z.string().nullable(),
     ai_authorized_at: z.string().nullable(), assignee_kind: z.string().nullable(), bot_silenced_until: z.string().nullable(),
-    // Obrigatórios como CHAVE, igual à marca acima: banco sem a 9398 não devolve o
+    // Obrigatórios como CHAVE, igual à marca acima: banco sem a 9399 não devolve o
     // modo do canal, e a entrega é recusada em vez de pular a lista de teste.
     ai_gate_mode: z.string().nullable(), ai_test_phone_numbers: z.unknown(), contact_phone_number: z.string().nullable(),
     /**

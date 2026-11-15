@@ -57,8 +57,11 @@ describe("envio do link da agenda em canal pré-go-live", () => {
       });
     });
 
-    it("política sem o modo do canal (banco sem a 9398) é recusada, nunca lida como canal aberto", async () => {
-      const { ai_gate_mode: _ausente, ...semModo } = politica();
+    it("política sem o modo do canal (banco sem a 9399) é recusada, nunca lida como canal aberto", async () => {
+      // Autorizado antes: na `main`, sem a chave obrigatória, ele passaria.
+      const { ai_gate_mode: _ausente, ...semModo } = politica({
+        ai_authorized_at: new Date().toISOString(),
+      });
       await expect(assertMeetingDeliveryPg(pg(semModo), CONTEXTO)).rejects.toThrow();
     });
   });
@@ -69,7 +72,7 @@ describe("envio do link da agenda em canal pré-go-live", () => {
       await expect(assertMeetingDeliveryPg(pg(p), CONTEXTO)).resolves.toMatchObject({ humanCommand: false });
     });
 
-    it("comando humano envia mesmo fora da lista: a lista cala a IA, não a pessoa", async () => {
+    it("comando humano passa pelo porteiro mesmo fora da lista", async () => {
       const p = politica({ human_command: true });
       await expect(assertMeetingDeliveryPg(pg(p), CONTEXTO)).resolves.toMatchObject({ humanCommand: true });
     });

@@ -1,6 +1,6 @@
 /**
  * Num canal em pré-go-live, o link de reunião que a IA envia só sai para quem
- * está na lista de teste do canal (migration 9398, #4701). A decisão sai do
+ * está na lista de teste do canal (migration 9399, #4701). A decisão sai do
  * banco, como nos outros caminhos da IA:
  *
  *   1. `fn_meet_delivery_policy` devolve o modo do canal, os números de teste

@@ -78516,8 +78516,8 @@ create trigger trg_contacts_fusao_e_anonimizacao_so_pelo_servidor_ao_criar
 revoke all on table public.storage_redaction_queue from authenticated;
 grant select on table public.storage_redaction_queue to authenticated;
 
--- ---- o envio do link da agenda confere a lista de teste em pré-go-live (migration 9398, #4701) ----
--- Espelho de supabase/migrations/20261115230000_9398_entrega_da_agenda_confere_a_lista_de_teste.sql.
+-- ---- o envio do link da agenda confere a lista de teste em pré-go-live (migration 9399, #4701) ----
+-- Espelho de supabase/migrations/20261115233000_9399_entrega_da_agenda_confere_a_lista_de_teste.sql.
 create or replace function public.fn_meet_delivery_policy(p_org uuid,p_job uuid,p_worker text,p_acquired_at timestamptz)
 returns jsonb language plpgsql stable security definer set search_path=public as $$
 declare r record;

@@ -1,6 +1,6 @@
 -- manifest: **O link de reunião que a IA envia confere a lista de teste do canal em pré-go-live (issue #4701).** `fn_meet_delivery_policy` devolve o modo de acesso da IA do canal (`ai_gate_mode`), os números de teste (`ai_test_phone_numbers`) e o telefone do contato, e `lib/agenda/meet-delivery.ts` passa os três ao gate, como `consulta-pg.ts` já faz; `fn_meet_delivery_settle` aceita o motivo `fora_da_lista_de_teste` (sem isso, a recusa nova estouraria `meet_reason_invalid`). Corpos copiados da ÚLTIMA definição no baseline (0676), só com essas diferenças. Gate: `tests/invariants/pre-go-live-no-envio-da-agenda.test.ts` e `tests/unit/meet-delivery-pre-go-live.test.ts`.
 
--- ---- o envio do link da agenda confere a lista de teste em pré-go-live (migration 9398, #4701) ----
+-- ---- o envio do link da agenda confere a lista de teste em pré-go-live (migration 9399, #4701) ----
 -- Os outros caminhos da IA (dreno, turno, follow-up, varredura de silêncio) já
 -- conferem a lista de teste do canal; a entrega do link de reunião montava a
 -- elegibilidade sem o modo do canal nem o telefone do contato. O settle precisa
