@@ -15,6 +15,7 @@ import {
 import { apresentacaoDoCatalogoLigada } from "@/lib/catalogo/apresentacao-ligada";
 import { BUCKET_DAS_FOTOS, fotoPertenceAoProduto } from "@/lib/catalogo/fotos";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { capacidadesDaOrganizacao } from "@/lib/organizacao/capacidades";
 import { COLUNAS_DO_PRODUTO, type Produto } from "@/lib/schemas/produtos";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -114,6 +115,10 @@ export default async function ProdutosPage({
     }
   }
 
+  const capacidadeLigada = (await capacidadesDaOrganizacao(supabase, activeOrg.orgId)).includes(
+    "capacidade_do_produto",
+  );
+
   return (
     <ProdutosClient
       inicial={produtos}
@@ -123,6 +128,7 @@ export default async function ProdutosPage({
       buscaInicial={busca}
       urlsDasFotos={urlsDasFotos}
       podeEditar={podeEditar}
+      capacidadeLigada={capacidadeLigada}
       apresentacaoLigada={await apresentacaoDoCatalogoLigada(createAdminClient(), activeOrg.orgId)}
       textos={{
         titulo: t("Produtos"),

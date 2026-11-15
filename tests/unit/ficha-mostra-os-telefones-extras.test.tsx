@@ -126,6 +126,16 @@ describe("a ficha do contato mostra os telefones extras", () => {
     expect(screen.queryByText("Telefone", { selector: "dt" })).toBeNull();
   });
 
+  it("o rótulo do extra promovido aparece no principal (#4242, item 2)", () => {
+    // "Tornar principal" leva o rótulo do extra para a ficha; sem a coluna
+    // `phone_label` ele sumia, porque o principal não tinha onde guardá-lo.
+    abrirFicha({ phone_label: "Casa", additional_phones: [] });
+
+    const bloco = screen.getByText("Telefone", { selector: "dt" }).parentElement as HTMLElement;
+    // Sabotagem: deixar de renderizar `contato.phone_label` faz este caso cair.
+    expect(bloco).toHaveTextContent("Casa");
+  });
+
   it("sem extra: a linha Telefone segue como hoje, com o tipo ao lado do número", () => {
     abrirFicha({ additional_phones: [] });
 

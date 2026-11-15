@@ -5,6 +5,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { idiomaAtual } from "@/lib/i18n/IdiomaProvider";
 import { ApiError } from "@/lib/api/types";
+import { tipoDeFalha } from "@/lib/api/retentativa";
 
 type Variant = "error" | "warning" | "info";
 
@@ -181,6 +182,23 @@ function toastFor(err: unknown, t: (texto: string) => string): void {
     return;
   }
   const requestId = requestIdDoErro(err);
+  // ─── A FALHA DE TRANSPORTE NÃO É "INESPERADA" (#4508) ────────────────────
+  //
+  // Tempo esgotado e conexão caída chegam aqui como `DOMException`
+  // (`TimeoutError`) e `TypeError`, e caíam no genérico abaixo: a tela dizia
+  // "Erro inesperado. Tente novamente." para um timeout — o texto literal do
+  // relato da issue. Não é inesperado, é transitório, e a espera é parte do
+  // que a frase precisa dizer. `warning`, e não `error`: nada quebrou e tentar
+  // de novo é o caminho.
+  const tipo = tipoDeFalha(err);
+  if (tipo === "tempo_esgotado" || tipo === "sem_conexao") {
+    const texto =
+      tipo === "tempo_esgotado"
+        ? t("A consulta excedeu o tempo limite. Tente de novo.")
+        : t("Sem conexão com o servidor. Verifique a rede e tente de novo.");
+    toast.warning(texto, { description: requestId ? `ID: ${requestId}` : undefined });
+    return;
+  }
   const generico = t("Erro inesperado. Tente novamente.");
   if (requestId) {
     toast.error(generico, { description: `ID: ${requestId}` });
