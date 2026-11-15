@@ -18995,6 +18995,21 @@ export const DICIONARIO: Traducoes = {
   "O Jev escolhe primeiro. A IA de sempre só entra em caso de falha, baixa confiança ou intenção inválida.": { es: "Jev elige primero. La IA de siempre solo interviene en caso de fallo, baja confianza o intención inválida." },
   "Sem a sua IA de sempre, o Jev não escolhe o agente sozinho: é ela que cobre quando ele falha ou fica em dúvida. Cadastre uma chave de IA em Agentes IA › Credenciais para usar este modo. Até lá, vale a comparação.": { es: "Sin tu IA de siempre, Jev no elige el agente solo: es ella la que cubre cuando él falla o duda. Registra una clave de IA en Agentes IA › Credenciales para usar este modo. Hasta entonces, vale la comparación." },
   "Editar ritmo": { es: "Editar ritmo" },
+  // #4570: editar a instrução e os critérios com a campanha pausada.
+  "Editar instrução e critérios": { es: "Editar instrucción y criterios" },
+  "Salvar instrução e critérios": { es: "Guardar instrucción y criterios" },
+  "Confirmar alteração": { es: "Confirmar cambio" },
+  "Instrução e critérios atualizados. A campanha continua pausada.": {
+    es: "Instrucción y criterios actualizados. La campaña sigue en pausa.",
+  },
+  "Vale só para as empresas que ainda não foram abordadas. Quem já recebeu a primeira mensagem continua a conversa com o texto com que ela começou, e as prévias de quem está na fila são refeitas com o texto novo.":
+    {
+      es: "Vale solo para las empresas que aún no fueron abordadas. Quien ya recibió el primer mensaje sigue la conversación con el texto con que empezó, y las vistas previas de quien está en la fila se rehacen con el texto nuevo.",
+    },
+  "Confirmar a troca do texto desta campanha? Quem já foi abordado não recebe nada de novo por causa disso.":
+    {
+      es: "¿Confirmar el cambio del texto de esta campaña? Quien ya fue abordado no recibe nada nuevo por esto.",
+    },
   "Ritmo atualizado. A campanha continua pausada.": { es: "Ritmo actualizado. La campaña sigue en pausa." },
   // #4581 / doc 358 › 2A: aviso da mídia igual para muitos números frios.
   "Atenção: esta campanha manda o mesmo arquivo junto da primeira mensagem. Quando muita gente que não conhece você recebe o mesmo arquivo, aumenta o risco de o WhatsApp bloquear o seu número. Por segurança, cada número manda o arquivo em no máximo {teto} abordagens por dia; depois disso, as abordagens do dia saem só com o texto.": {
