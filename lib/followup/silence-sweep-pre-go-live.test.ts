@@ -74,4 +74,26 @@ describe("sweep de silêncio no pré-go-live", () => {
       db.loadSilentContactIds("org", "2026-09-02T10:00:00.000Z", []),
     ).resolves.toEqual(["tester"]);
   });
+
+  it("canal social: só a conta da lista social vira candidato, nunca a mesma pessoa por outra conta", async () => {
+    const testador = "instagram:6af9e0ef28984e27de07bef4:1011223655361506";
+    const social = (contactId: string, identidade: string) => {
+      const c = conversa(contactId, "");
+      return {
+        ...c,
+        contacts: { ...c.contacts, phone_number: null, social_identity: identidade },
+        sessao: { metadata: { ...metadata, ai_test_phone_numbers: [], ai_test_social_identities: [testador] } },
+      };
+    };
+    const db = createSupabaseSilenceSweepDb(
+      supabaseComConversas([
+        social("testador", testador),
+        social("outra-conta", "instagram:0123456789abcdef01234567:1011223655361506"),
+      ]),
+    );
+
+    await expect(
+      db.loadSilentContactIds("org", "2026-09-02T10:00:00.000Z", []),
+    ).resolves.toEqual(["testador"]);
+  });
 });
