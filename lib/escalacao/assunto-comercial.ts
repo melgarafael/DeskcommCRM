@@ -12,19 +12,23 @@ import { CAMADA_RESTRICAO_COMERCIAL } from "@/lib/agent-engine/guardrails/camada
  */
 const normalizar = (texto: string): string => texto.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
+const PRECO_NA_ENTRADA: readonly RegExp[] = [
+  /\b(?:precos?|prec[io]+s?|custa\w*|custos?|quanto (?:fica|sai|e|seria)|descont\w*|negoci\w*|parcel\w*|pagamento\w*|pagar|pag[ao]s?|pix|boleto\w*|credito|debito|promoc\w*|oferta\w*|orcamento\w*|reais|gratis|gratuit\w*|barat\w*|caro|cobran\w*|cobra(?:m|r|mos)?|reembolso\w*|estorno\w*|investimentos?|mensalidades?|anuidades?|sem juros)\b/u,
+  // "valor" só quando é o do produto: "qual o valor?", "valor da consulta" — não "valor nutricional".
+  /\bvalor(?:es)?(?=\s*(?:$|[?!.,;]|d[aeo]s?\b|total\b|final\b|a vista\b|pra\b|para\b|com desconto\b))/u,
+  /(?:r\$|us\$|\$|€|£)\s*\d/u,
+  /\b(?:em|ate|de)\s+\d{1,2}\s*x\b|\b\d{1,2}\s*x\s*(?:de\b|sem juros\b|no cartao\b)/u,
+  // "em 10 vezes" é parcela; "2 vezes ao dia" é remédio e não chega aqui.
+  /\b(?:em|ate)\s+\d{1,2}\s*vezes\b|\b\d{1,2}\s*vezes\s+no cartao\b/u,
+  /\b\d+(?:[.,]\d+)?\s*%\s*off\b/u,
+  // ponytail: vírgula com 2 casas é preço ("299,90"); com ponto é data/hora, e não conta.
+  /\b\d+,\d{2}\b/u,
+  /\b(?:fica|sai|apenas|somente|a partir de)\s*(?:por|em)?\s*\d/u,
+];
+
 export function contemAssuntoComercialRestrito(texto: string): boolean {
   const normal = normalizar(texto);
-  return /\b(?:precos?|prec[io]+s?|custa\w*|custos?|quanto (?:fica|sai|e|seria)|descont\w*|negoci\w*|parcel\w*|pagamento\w*|pagar|pag[ao]s?|pix|boleto\w*|credito|debito|promoc\w*|oferta\w*|orcamento\w*|reais|gratis|gratuit\w*|barat\w*|caro|cobran\w*|cobra(?:m|r|mos)?|reembolso\w*|estorno\w*|investimentos?|mensalidades?|anuidades?|sem juros)\b/u.test(normal)
-    // "valor" só quando é o do produto: "qual o valor?", "valor da consulta" — não "valor nutricional".
-    || /\bvalor(?:es)?(?=\s*(?:$|[?!.,;]|d[aeo]s?\b|total\b|final\b|a vista\b|pra\b|para\b|com desconto\b))/u.test(normal)
-    || /(?:r\$|us\$|\$|€|£)\s*\d/u.test(normal)
-    || /\b(?:em|ate|de)\s+\d{1,2}\s*x\b|\b\d{1,2}\s*x\s*(?:de\b|sem juros\b|no cartao\b)/u.test(normal)
-    // "em 10 vezes" é parcela; "2 vezes ao dia" é remédio e não chega aqui.
-    || /\b(?:em|ate)\s+\d{1,2}\s*vezes\b|\b\d{1,2}\s*vezes\s+no cartao\b/u.test(normal)
-    || /\b\d+(?:[.,]\d+)?\s*%\s*off\b/u.test(normal)
-    // ponytail: vírgula com 2 casas é preço ("299,90"); com ponto é data/hora, e não conta.
-    || /\b\d+,\d{2}\b/u.test(normal)
-    || /\b(?:fica|sai|apenas|somente|a partir de)\s*(?:por|em)?\s*\d/u.test(normal);
+  return PRECO_NA_ENTRADA.some((re) => re.test(normal));
 }
 
 /**
@@ -63,10 +67,29 @@ const PRECO_SO_NA_SAIDA: readonly RegExp[] = [
   /(?:\b(?:por|faco|fazer|sai a|saindo a)|(?<!\b(?:mais|menos|cerca|acima|alem)\s)\bde)\s+(?!(?:19|20)\d{2}\b)(?:\d{1,3}(?:\.\d{3})+|\d{3,})(?![\d,]|[-/:.]\d|\s*%)/u,
 ];
 
-export function contemAssuntoComercialNaSaida(texto: string): boolean {
-  if (contemAssuntoComercialRestrito(texto)) return true;
+/** O maior trecho que a trava mostra: o suficiente para o operador entender, curto para não carregar dado pessoal. */
+const TRECHO_MAXIMO = 40;
+
+/**
+ * O trecho do texto que acionou a trava de SAÍDA, ou `null` quando nada a aciona.
+ * Sai do texto NORMALIZADO (minúsculo, sem acento) — é o que a regra enxergou — do
+ * início do casamento até o fim da palavra em que ele termina, cortado em 40
+ * caracteres. A primeira regra que casar, na ordem da entrada e depois a só-saída.
+ */
+export function trechoComercialNaSaida(texto: string): string | null {
   const normal = normalizar(texto);
-  return PRECO_SO_NA_SAIDA.some((re) => re.test(normal));
+  for (const re of [...PRECO_NA_ENTRADA, ...PRECO_SO_NA_SAIDA]) {
+    const m = re.exec(normal);
+    if (!m) continue;
+    const fim = m.index + m[0].length;
+    const resto = /^\S*/u.exec(normal.slice(fim))?.[0] ?? "";
+    return normal.slice(m.index, fim + resto.length).trim().slice(0, TRECHO_MAXIMO);
+  }
+  return null;
+}
+
+export function contemAssuntoComercialNaSaida(texto: string): boolean {
+  return trechoComercialNaSaida(texto) !== null;
 }
 
 /**

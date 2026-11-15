@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { exigirProvaDeMfa, mfaEmDividaEstrita, requireAuth } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { CadastroDoServidorMcpExterno } from "./_components/CadastroDoServidorMcpExterno";
@@ -42,17 +43,14 @@ export default async function ServidorMcpExternoPage() {
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {traduzir("Servidor MCP externo", idioma)}
-        </h1>
+      <CabecalhoDaSubTela titulo={traduzir("Servidor MCP externo", idioma)} idioma={idioma}>
         <p className="text-sm text-muted-foreground">
           {traduzir(
             "O endereço e a chave do sistema de fora que a IA desta empresa pode consultar. Só o dono da instalação vê esta tela.",
             idioma,
           )}
         </p>
-      </header>
+      </CabecalhoDaSubTela>
       <CadastroDoServidorMcpExterno />
     </div>
   );

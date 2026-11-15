@@ -34,6 +34,7 @@ const COLUNAS: Record<string, readonly string[]> = {
   custo: ["custo", "preco de custo", "preço de custo", "compra", "costo", "coste", "precio de costo", "precio de coste"],
   marca: ["marca", "fabricante"],
   categoria: ["categoria", "tipo", "departamento"],
+  capacidade: ["capacidade", "armazenamento", "capacidad", "almacenamiento"],
   quantidade: ["quantidade", "estoque", "qtd", "qtde", "qty", "cantidad", "existencias", "stock"],
   /**
    * A FOTO POR URL (#3587). Uma coluna só, com um link — ou até 5 separados por
@@ -91,6 +92,9 @@ function campoDaColuna(cabecalho: string): string | null {
  * `lib/webhooks/respondi.ts`.
  */
 const LIMITE_DO_CODIGO = 60;
+
+/** O mesmo teto da coluna e do schema (`lib/schemas/produtos.ts`). */
+const LIMITE_DA_CAPACIDADE = 60;
 
 /** 32 bits em hex, zero à esquerda: o tamanho não varia com o valor. */
 const TAMANHO_DA_ASSINATURA = 8;
@@ -206,6 +210,12 @@ export interface LinhaImportada {
   custo_cents: number | null;
   marca?: string;
   categoria?: string;
+  /**
+   * Só existe quando a planilha TEM a coluna e a empresa ligou o campo (célula
+   * vazia vira null). Sem isso a chave some, e reimportar uma planilha antiga
+   * não apaga a capacidade.
+   */
+  capacidade?: string | null;
   quantidade: number;
   controla_estoque: boolean;
   /**
@@ -239,6 +249,7 @@ export interface ResultadoDaLeitura {
 export function lerPlanilha(
   conteudo: string,
   t?: (text: string) => string,
+  opcoes: { capacidade?: boolean } = {},
 ): ResultadoDaLeitura | { erro: string } {
   const _t = t || ((x) => x);
   const linhas = parseCsv(conteudo).filter((l) => l.some((c) => c.trim() !== ""));
@@ -248,7 +259,9 @@ export function lerPlanilha(
   const mapa = new Map<number, string>();
   const colunasIgnoradas: string[] = [];
   cabecalho.forEach((titulo, i) => {
-    const campo = campoDaColuna(titulo);
+    const coluna = campoDaColuna(titulo);
+    // Campo desligado na empresa: a coluna cai no aviso de colunas não usadas.
+    const campo = coluna === "capacidade" && !opcoes.capacidade ? null : coluna;
     if (campo) mapa.set(i, campo);
     else if (titulo.trim() !== "") colunasIgnoradas.push(titulo.trim());
   });
@@ -354,6 +367,14 @@ export function lerPlanilha(
       continue;
     }
 
+    // Recusa com motivo, como o preço: cortar em silêncio gravaria uma capacidade
+    // que a planilha não disse, e o agente a repetiria ao cliente.
+    const capacidade = valor("capacidade");
+    if (capacidade.length > LIMITE_DA_CAPACIDADE) {
+      erros.push({ linha: numeroNaPlanilha, motivo: _t("capacidade com mais de 60 caracteres") });
+      continue;
+    }
+
     // Célula vazia não declara nada sobre a foto: reimportar a lista de preços
     // não pode apagar a foto que a pessoa subiu pela tela (mesmo cuidado que
     // `descricao` e `ativo` têm na rota). Quem traz link, manda na foto.
@@ -406,6 +427,7 @@ export function lerPlanilha(
       custo_cents,
       ...(valor("marca") ? { marca: valor("marca") } : {}),
       ...(valor("categoria") ? { categoria: valor("categoria") } : {}),
+      ...(campos.has("capacidade") ? { capacidade: capacidade || null } : {}),
       quantidade,
       controla_estoque: temColunaEstoque,
       ...(descricao ? { descricao } : {}),

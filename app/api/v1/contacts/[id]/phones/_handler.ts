@@ -145,7 +145,7 @@ async function numeroCanonico(ctx: TelefoneCtx, bruto: string): Promise<string> 
       ctx.requestId,
       brasileiro
         ? traduzir("Telefone inválido. Informe DDD e número.", idioma(ctx))
-        : mensagemDoTelefone(perfil),
+        : mensagemDoTelefone(perfil, idioma(ctx)),
     );
   }
   return e164;
@@ -203,31 +203,52 @@ export async function adicionarTelefone(
     };
     if (input.type !== undefined) patch.phone_type = input.type;
     if (input.whatsapp !== undefined) patch.phone_whatsapp = input.whatsapp;
-    const { error } = await ctx.supabase
+    // O rótulo digitado vai junto: desde a 9354 o principal guarda rótulo
+    // (`phone_label`), e um número que chega à ficha vazia vira o principal.
+    if (input.label) patch.phone_label = input.label;
+    const { data, error } = await ctx.supabase
       .from("contacts")
       .update(patch)
       .eq("organization_id", ctx.organizationId)
-      .eq("id", ctx.contactId);
+      .eq("id", ctx.contactId)
+      // CONDICIONAL (#4242, item 4): grava só se a ficha AINDA está sem
+      // principal. Dois pedidos ao mesmo tempo — duas abas, duas pessoas — leem
+      // `phone_number` nulo na `fichaViva`; sem esta condição o segundo update
+      // sobrescreve o número do primeiro e aquele telefone some sem erro nenhum.
+      .is("phone_number", null)
+      .select("id")
+      .maybeSingle();
     if (error) {
       if (error.code === "23505") throw erroDeNumeroEmUso(ctx);
       throw erroDeBanco(ctx, error.message);
     }
-    await auditar(ctx, "contact.primary_phone_changed", ctx.contactId, {
-      became_primary: true,
-      type: input.type ?? null,
-      whatsapp: input.whatsapp ?? null,
-    });
-    await emitirTelefoneAdicionado(ctx, numero);
-    return { became_primary: true };
-  }
-
-  if (canonicalPhoneBR(ficha.phone_number) === numero) {
+    if (data) {
+      await auditar(ctx, "contact.primary_phone_changed", ctx.contactId, {
+        became_primary: true,
+        type: input.type ?? null,
+        whatsapp: input.whatsapp ?? null,
+      });
+      await emitirTelefoneAdicionado(ctx, numero);
+      return { became_primary: true };
+    }
+    // O outro pedido gravou primeiro. Este número não se perde: entra como
+    // extra, que é o destino normal de quem chega numa ficha com principal.
+  } else if (canonicalPhoneBR(ficha.phone_number) === numero) {
     throw erroDeNumeroEmUso(
       ctx,
       traduzir("Este número já é o principal desta ficha.", idioma(ctx)),
     );
   }
 
+  return inserirComoExtra(ctx, numero, input);
+}
+
+/** O número novo numa ficha que já tem principal (ou que ganhou um na corrida). */
+async function inserirComoExtra(
+  ctx: TelefoneCtx,
+  numero: string,
+  input: TelefoneExtraCreate,
+): Promise<TelefoneExtraApi> {
   const linha: Record<string, unknown> = {
     organization_id: ctx.organizationId,
     contact_id: ctx.contactId,

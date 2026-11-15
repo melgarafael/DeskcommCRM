@@ -77,6 +77,7 @@ CRONS="
 * * * * *|45|api/v1/cron/campaign-worker
 # Módulo opcional: não instalado, só lê a lista de módulos e sai, sem tocar nas tabelas dele.
 * * * * *|55|api/v1/cron/cadencia-worker
+* * * * *|50|api/v1/cron/mensagens-agendadas
 */5 * * * *|60|api/v1/cron/webhook-log-retention
 # OAuth por contato dos servidores MCP do agente (migration 9095): revoga no
 # terceiro o acesso cuja conversa encerrou (ou cujo contato foi anonimizado).

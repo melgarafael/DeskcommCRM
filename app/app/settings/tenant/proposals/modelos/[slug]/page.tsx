@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation";
+
+import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 import type { CampoDoFunilParaRotulo } from "@/lib/propostas/documento/rotulos-das-variaveis";
@@ -51,5 +53,12 @@ export default async function EditorDeModeloPage({ params }: { params: Promise<{
   if (!activeOrg) redirect("/app");
   const { slug } = await params;
   const camposDoFunilDaOrg = await camposDoNegocioDaOrganizacao(activeOrg.orgId);
-  return <EditorDeModelo slug={slug} camposDoFunil={camposDoFunilDaOrg} />;
+  return (
+    <>
+      <div className="mx-auto w-full max-w-5xl px-6 pt-6">
+        <CabecalhoDaSubTela idioma={user.idioma} />
+      </div>
+      <EditorDeModelo slug={slug} camposDoFunil={camposDoFunilDaOrg} />
+    </>
+  );
 }

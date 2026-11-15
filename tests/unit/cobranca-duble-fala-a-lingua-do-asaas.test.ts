@@ -69,8 +69,8 @@ afterAll(async () => {
 });
 
 const ORG = "55555555-5555-4555-8555-555555555555";
-const ESSENCIAL = { id: "66666666-6666-4666-8666-666666666666", nome: "Essencial", precoCents: 4990, intervalo: "mes" as const };
-const PROFISSIONAL = { id: "77777777-7777-4777-8777-777777777777", nome: "Profissional", precoCents: 9990, intervalo: "mes" as const };
+const ESSENCIAL = { id: "66666666-6666-4666-8666-666666666666", nome: "Essencial", precoCents: 4990, moeda: "BRL" as const, intervalo: "mes" as const };
+const PROFISSIONAL = { id: "77777777-7777-4777-8777-777777777777", nome: "Profissional", precoCents: 9990, moeda: "BRL" as const, intervalo: "mes" as const };
 const VOLTA = "http://localhost:3001/app/settings/billing?voltou=1";
 
 async function asaas() {
