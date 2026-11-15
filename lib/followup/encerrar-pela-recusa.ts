@@ -21,11 +21,14 @@
  * Os status alcançados são os do opt-out (vivos, dormente, coletando e pausados): uma
  * espera longa que sobrevivesse voltaria a falar com quem recusou.
  *
- * ═══ Idempotência, como em `saida-da-etapa.ts` ═══
+ * ═══ Idempotência: o UPDATE primeiro, o evento depois ═══
  *
- * A linha de `followup_enrollment_events` entra PRIMEIRO, com chave por inscrição; só
- * quando ela é nova o UPDATE roda, e ele casa apenas com o status ainda vivo — um
- * cancelamento concorrente não é sobrescrito.
+ * O UPDATE casa apenas com o status ainda vivo — um cancelamento concorrente não é
+ * sobrescrito — e só quando ele mudou a linha entra o evento, com chave por inscrição.
+ * Na ordem inversa (evento primeiro, como em `saida-da-etapa.ts`), um UPDATE que
+ * falhasse deixava a chave gravada: a frase repetida batia no 23505 e a inscrição
+ * nunca morria; e um UPDATE que não casava deixava na timeline um "encerrado" que
+ * não aconteceu.
  *
  * NUNCA lança: a recusa já está gravada. A falha fica no log.
  */
@@ -102,20 +105,6 @@ export async function encerrarFollowupsDaProspeccao(
     for (const inscricao of vivas) {
       if (!daProspeccao.has(inscricao.conversation_id as string)) continue;
 
-      const { error: errEvento } = await admin.from("followup_enrollment_events").insert({
-        organization_id: pedido.organizationId,
-        enrollment_id: inscricao.id,
-        node_id: inscricao.current_node_id,
-        event_type: EVENTO_DA_RECUSA,
-        payload: { reason: MOTIVO_DA_RECUSA, previous_status: inscricao.status },
-        idempotency_key: `sem-interesse:${inscricao.id}`,
-      });
-      if (errEvento) {
-        // 23505 é a chave de idempotência: esta inscrição já foi encerrada por aqui.
-        if (errEvento.code === "23505") continue;
-        throw new Error(errEvento.message);
-      }
-
       const { data: mudou, error: errUpdate } = await admin
         .from("followup_enrollments")
         .update({
@@ -134,7 +123,28 @@ export async function encerrarFollowupsDaProspeccao(
         // um encerramento que não houve.
         .select("id");
       if (errUpdate) throw new Error(errUpdate.message);
-      if ((mudou ?? []).length > 0) encerradas += 1;
+      if ((mudou ?? []).length === 0) continue;
+      encerradas += 1;
+
+      const { error: errEvento } = await admin.from("followup_enrollment_events").insert({
+        organization_id: pedido.organizationId,
+        enrollment_id: inscricao.id,
+        node_id: inscricao.current_node_id,
+        event_type: EVENTO_DA_RECUSA,
+        payload: { reason: MOTIVO_DA_RECUSA, previous_status: inscricao.status },
+        idempotency_key: `sem-interesse:${inscricao.id}`,
+      });
+      if (errEvento) {
+        // 23505 é a chave de idempotência: o evento desta inscrição já existe. A
+        // inscrição está encerrada (o UPDATE acima casou), e a falha do evento não a
+        // desfaz: fica no log.
+        if (errEvento.code !== "23505")
+          logger.warn("sem-interesse: inscrição encerrada sem a linha da timeline", {
+            organization_id: pedido.organizationId,
+            enrollment_id: inscricao.id,
+            detail: errEvento.message.slice(0, 160),
+          });
+      }
     }
     return encerradas;
   } catch (err) {

@@ -54,6 +54,10 @@ interface Estado {
   /** Uma escrita concorrente que chega entre a 1ª leitura e a 1ª gravação do contato. */
   concorrente?: (consent: Record<string, unknown>) => Record<string, unknown>;
   chavesDeEvento: Set<string>;
+  /** Quantas vezes o UPDATE da inscrição falha antes de passar (erro passageiro). */
+  falhasNoUpdateDaInscricao?: number;
+  /** Outro caminho (o PARAR, o fim do roteiro) encerra a inscrição entre a leitura e o UPDATE. */
+  outroEncerraAntesDoUpdate?: boolean;
 }
 
 let estado: Estado;
@@ -86,8 +90,14 @@ function responder(op: Op): { data: unknown; error: unknown } {
   if (op.tabela === "crm_pipelines") return { data: [{ id: "funil-1", settings: {} }], error: null };
   if (op.tabela === "followup_enrollments" && op.tipo === "select") return { data: estado.inscricoes, error: null };
   if (op.tabela === "followup_enrollments" && op.tipo === "update") {
+    if (estado.falhasNoUpdateDaInscricao) {
+      estado.falhasNoUpdateDaInscricao -= 1;
+      return { data: null, error: { code: "57014", message: "statement timeout" } };
+    }
     const i = estado.inscricoes.find((x) => x.id === valorDo(op, "id"));
-    if (!i) return { data: [], error: null };
+    if (i && estado.outroEncerraAntesDoUpdate) i.status = "cancelled";
+    if (!i || !["active", "waiting_reply", "paused_handoff", "dormente", "coletando", "paused_manual"].includes(i.status))
+      return { data: [], error: null };
     i.status = String(op.payload?.status);
     return { data: [{ id: i.id }], error: null };
   }
@@ -235,6 +245,27 @@ describe("registrarSemInteresse", () => {
     const r = await registrarSemInteresse(bancoFalso(), PEDIDO);
     expect(r).toMatchObject({ gravado: false, motivo: "ja_recusado", negociosFechados: 0 });
     expect(encerraDemandaSpy).not.toHaveBeenCalled();
+  });
+
+  it("UPDATE da inscrição que falhou: a frase repetida termina o serviço (o evento não trava a chave)", async () => {
+    estado.inscricoes = [{ id: "insc-da-frase", status: "waiting_reply", current_node_id: "n1", conversation_id: "conv-prosp" }];
+    estado.falhasNoUpdateDaInscricao = 1;
+    const primeira = await registrarSemInteresse(bancoFalso(), PEDIDO);
+    expect(primeira).toMatchObject({ gravado: true, followupsEncerrados: 0 });
+    expect(opsDe("followup_enrollment_events", "insert")).toHaveLength(0);
+
+    const segunda = await registrarSemInteresse(bancoFalso(), PEDIDO);
+    expect(segunda).toMatchObject({ gravado: false, motivo: "ja_recusado", followupsEncerrados: 1 });
+    expect(estado.inscricoes[0]?.status).toBe("cancelled");
+    expect(opsDe("followup_enrollment_events", "insert")).toHaveLength(1);
+  });
+
+  it("inscrição que outro caminho já encerrou: nenhum 'encerrado' falso na timeline", async () => {
+    estado.inscricoes = [{ id: "insc-da-frase", status: "waiting_reply", current_node_id: "n1", conversation_id: "conv-prosp" }];
+    estado.outroEncerraAntesDoUpdate = true;
+    const r = await registrarSemInteresse(bancoFalso(), PEDIDO);
+    expect(r).toMatchObject({ gravado: true, followupsEncerrados: 0 });
+    expect(opsDe("followup_enrollment_events", "insert")).toHaveLength(0);
   });
 
   it("follow-up: a inscrição da prospecção morre; a de atendimento e a sem conversa ficam", async () => {

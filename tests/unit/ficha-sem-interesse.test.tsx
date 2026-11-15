@@ -26,13 +26,14 @@ import { consentComSemInteresse } from "@/lib/lgpd/sem-interesse";
 import type { Contact } from "@/lib/types/contacts";
 
 const papel = vi.hoisted(() => ({ atual: "admin" }));
+const sessao = vi.hoisted(() => ({ support: null as null | { access_mode: string } }));
 const marcarMutate = vi.hoisted(() => vi.fn());
 const desfazerMutate = vi.hoisted(() => vi.fn());
 
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useActiveOrg: () => ({ orgId: "org-1", name: "Loja", role: papel.atual, cliente_pela_agenda: false }),
   useAuth: () => ({
-    user: { id: "u-1", is_platform_admin: false, support: null },
+    user: { id: "u-1", is_platform_admin: false, support: sessao.support },
     activeOrg: { orgId: "org-1", name: "Loja", role: papel.atual, cliente_pela_agenda: false },
   }),
 }));
@@ -84,8 +85,8 @@ const BASE = {
 
 let contato: Contact = BASE;
 
-function abrirFicha(consent: Record<string, unknown>) {
-  contato = { ...BASE, consent };
+function abrirFicha(consent: Record<string, unknown>, extra: Partial<Contact> = {}) {
+  contato = { ...BASE, consent, ...extra };
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const comQuery = (ui: ReactNode) => <QueryClientProvider client={qc}>{ui}</QueryClientProvider>;
   render(comQuery(<ContactDetailClient contactId="c-1" />));
@@ -96,11 +97,24 @@ const RECUSA = consentComSemInteresse({}, { agora: "2026-11-14T12:00:00.000Z", o
 
 beforeEach(() => {
   papel.atual = "admin";
+  sessao.support = null;
   marcarMutate.mockClear();
   desfazerMutate.mockClear();
 });
 
 describe("ficha · sem interesse", () => {
+  it("contato anonimizado não vê o botão (a rota devolveria 403)", () => {
+    papel.atual = "agent";
+    abrirFicha({}, { is_anonymized: true, anonymized_at: "2026-11-01T00:00:00.000Z" });
+    expect(screen.queryByTestId("marcar-sem-interesse")).toBeNull();
+  });
+
+  it("suporte só-leitura não vê o botão", () => {
+    sessao.support = { access_mode: "support_readonly" };
+    abrirFicha({});
+    expect(screen.queryByTestId("marcar-sem-interesse")).toBeNull();
+  });
+
   it("atendente vê o botão, e marcar confirma antes de gravar", async () => {
     papel.atual = "agent";
     abrirFicha({});
