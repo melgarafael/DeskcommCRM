@@ -39,6 +39,8 @@ vi.mock("@/lib/prospecting/guard", () => ({
   // cenário de verdade (guarda REAL + handler carimbando) mora em
   // `lib/prospecting/prospeccao-bolhas-com-guarda-real.test.ts`.
   assertProspectingContinuation: mocks.continuation,
+  // A leitura das marcas ANTES da vaga: aqui o contato é sempre limpo.
+  vetoDoContatoAntesDaVaga: vi.fn().mockResolvedValue(null),
 }));
 vi.mock("@/lib/agent-engine/pacing/store", () => ({
   loadChannelKnobs: mocks.knobs,

@@ -12969,6 +12969,23 @@ export const DICIONARIO: Traducoes = {
   "Pessoais": { es: "Personales" },
   "Contato marcado como pessoal.": { es: "Contacto marcado como personal." },
   "Contato marcado como pessoal": { es: "Contacto marcado como personal" },
+  // ─── lib/prospecting/guard.ts e worker.ts (motivo embaixo da empresa vetada na Prospecção) ───
+  // "Contato marcado como pessoal." é a frase acima, a mesma do 403 do handler de mensagens.
+  "Contato bloqueado.": { es: "Contacto bloqueado." },
+  "Contato anonimizado (LGPD).": { es: "Contacto anonimizado (LGPD)." },
+  "Contato marcado como sempre atendimento humano.": {
+    es: "Contacto marcado como siempre atención humana.",
+  },
+  "Contato passado para atendimento humano.": { es: "Contacto derivado a atención humana." },
+  "Contato interno (marcado por etiqueta).": { es: "Contacto interno (marcado por etiqueta)." },
+  "Contato da equipe (marcado por etiqueta).": { es: "Contacto del equipo (marcado por etiqueta)." },
+  "Contato recusou receber marketing.": { es: "El contacto rechazó recibir marketing." },
+  "Sem base legal registrada para abordar este contato.": {
+    es: "Sin base legal registrada para abordar a este contacto.",
+  },
+  "Não foi possível liberar a IA para este contato.": {
+    es: "No fue posible habilitar la IA para este contacto.",
+  },
   "Não foi possível marcar o contato como pessoal.": { es: "No fue posible marcar el contacto como personal." },
   "Não foi possível desmarcar o contato como pessoal.": { es: "No fue posible desmarcar el contacto como personal." },
   "content é obrigatório.": { es: "content es obligatorio." },

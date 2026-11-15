@@ -129,7 +129,10 @@ import {
   assertProspectingContinuation,
   assertProspectingDelivery,
   contactMayBeProspected,
+  motivoDoVetoDoContato,
 } from "@/lib/prospecting/guard";
+import { DICIONARIO } from "@/lib/i18n/dicionario";
+import { recordSend } from "@/lib/agent-engine/pacing/store";
 import { ProspectingError } from "@/lib/prospecting/provider";
 import { withProspectingLock } from "@/lib/prospecting/store";
 import type { Campaign } from "@/lib/prospecting/store";
@@ -244,11 +247,11 @@ const MARCAS: Array<{
   settings?: Record<string, unknown>;
   motivo: string;
 }> = [
-  { caso: "ficha pessoal", contato: { is_personal: true }, motivo: 'Contato marcado como "Pessoal".' },
+  { caso: "ficha pessoal", contato: { is_personal: true }, motivo: "Contato marcado como pessoal." },
   {
     caso: "sempre atendimento humano",
     contato: { ai_opt_out: true },
-    motivo: 'Contato marcado como "Sempre atendimento humano".',
+    motivo: "Contato marcado como sempre atendimento humano.",
   },
   {
     caso: "etiqueta de contato interno (a comparação normaliza os dois lados)",
@@ -342,6 +345,30 @@ describe("a guarda da abordagem fria veta as três marcas, no escopo do candidat
     expect((erro as ProspectingError).escopo).toBe("campanha");
   });
 
+  it("todo motivo que a tela mostra embaixo da empresa tem espanhol no dicionário", () => {
+    // A tela mostra `t(c.error)`: frase sem entrada cai para o português numa
+    // instalação em espanhol. Os motivos saem da régua, não de uma lista
+    // transcrita aqui, para uma frase reescrita na guarda reprovar este caso.
+    const etiquetas = { internas: ["interno"], daEquipe: ["socio"] };
+    const motivos = [
+      { is_blocked: true },
+      { is_anonymized: true },
+      { is_personal: true },
+      { ai_opt_out: true },
+      { force_human: true },
+      { tags: ["interno"] },
+      { tags: ["socio"] },
+      { consent: { legitimate_interest: { ref: "LIA-example" }, marketing: { granted: false } } },
+      { consent: null, source: "manual" },
+    ].map((marca) => motivoDoVetoDoContato({ ...CONTATO_LIMPO, ...marca }, etiquetas));
+    expect(new Set(motivos).size, "duas marcas com o mesmo motivo, ou uma sem veto").toBe(9);
+    expect(motivos).not.toContain(null);
+    for (const m of [...motivos, "Não foi possível liberar a IA para este contato."])
+      expect(DICIONARIO[m as string]?.es, `sem espanhol: ${m}`).toBeTruthy();
+    // A ficha pessoal usa a MESMA frase do 403 do handler de mensagens.
+    expect(motivoDoVetoDoContato({ ...CONTATO_LIMPO, is_personal: true })).toBe("Contato marcado como pessoal.");
+  });
+
   it("a régua pura recusa as três marcas e aceita o contato limpo", () => {
     expect(contactMayBeProspected(CONTATO_LIMPO)).toBe(true);
     expect(contactMayBeProspected({ ...CONTATO_LIMPO, is_personal: true })).toBe(false);
@@ -371,8 +398,39 @@ describe("pelo tick: a empresa vetada fica `failed` com o motivo e a campanha se
     expect(falhou?.[1]?.[2]).toBe(m.motivo);
   });
 
+  // O veto não pausa mais, então a fila segue; se ele viesse DEPOIS da reserva,
+  // cada vetada gastaria uma vaga do teto diário e do aquecimento do número,
+  // mais um intervalo inteiro, sem mandar nada.
+  it.each(MARCAS)("$caso: a vetada não gasta a vaga do número nem o intervalo", async (m) => {
+    estado.contato = { ...CONTATO_LIMPO, ...m.contato };
+    estado.settings = m.settings ?? {};
+    const db = await rodarOTick();
+    const sqls = db.query.mock.calls.map(([q]) => String(q));
+    expect(sqls.some((q) => q.includes("status='sending',attempted_at=now()")), "gravou attempted_at").toBe(false);
+    expect(sqls.some((q) => q.startsWith("update prospecting_campaigns set next_send_at")), "agendou o intervalo").toBe(
+      false,
+    );
+    expect(recordSend, "reservou a vaga do número").not.toHaveBeenCalled();
+    const falhou = db.query.mock.calls.find(([q]) =>
+      String(q).startsWith("update prospecting_candidates set status='failed',error=$3"),
+    );
+    // Ela ainda está `queued` (não houve tentativa): o update é o da fila.
+    expect(String(falhou?.[0])).toContain("status='queued'");
+  });
+
+  it("leitura das listas falhando antes da vaga: a guarda cheia falha fechada e pausa", async () => {
+    estado.erroDaOrganizacao = true;
+    const db = await rodarOTick();
+    expect(envios).toHaveLength(0);
+    const pausou = db.query.mock.calls.find(([q]) =>
+      String(q).includes("update prospecting_campaigns set status='paused'"),
+    );
+    expect(pausou?.[1]?.[2]).toBe("Campanha pausada ou dados indisponíveis.");
+  });
+
   it("controle: contato limpo recebe a abordagem pelo mesmo caminho", async () => {
     const db = await rodarOTick();
+    expect(recordSend).toHaveBeenCalledTimes(1);
     expect(envios).toHaveLength(1);
     expect(
       db.query.mock.calls.some(([q]) => String(q).includes("update prospecting_campaigns set status='paused'")),

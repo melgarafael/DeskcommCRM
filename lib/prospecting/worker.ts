@@ -24,7 +24,11 @@ import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { decidirPreGoLiveDoCanalViaSupabase } from "@/lib/ai/elegibilidade/consulta-pre-go-live";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
-import { assertProspectingContinuation, assertProspectingDelivery } from "./guard";
+import {
+  assertProspectingContinuation,
+  assertProspectingDelivery,
+  vetoDoContatoAntesDaVaga,
+} from "./guard";
 import { instrucaoDeAbordagemFria, montarDadosDeAbordagem, estrategiaDoCandidato } from "./estrategia-site";
 import {
   INTERVALO_MINIMO_ENTRE_TENTATIVAS_MIN,
@@ -291,6 +295,25 @@ export async function sendNextCandidate(
       422,
       "candidato",
     );
+  // A MARCA DO CONTATO é conferida ANTES de reservar a vaga do número. A guarda
+  // cheia, mais abaixo, vem depois da transação que grava `attempted_at`, o
+  // intervalo e o `recordSend`: sem esta leitura, cada empresa vetada gastaria
+  // uma vaga do teto diário e do aquecimento, mais um intervalo inteiro, sem
+  // mandar nada. Aqui ela sai `failed` com o motivo e SEM `attempted_at` (não
+  // houve tentativa), e a próxima rodada pega a seguinte sem esperar.
+  const vetoAntes = await vetoDoContatoAntesDaVaga(admin, c.organization_id, p.contact_id);
+  if (vetoAntes) {
+    await db.query(
+      "update prospecting_candidates set status='failed',error=$3,updated_at=now() where organization_id=$1 and id=$2 and status='queued'",
+      [c.organization_id, p.id, vetoAntes],
+    );
+    logger.warn("[prospecting] contato vetado antes de reservar a vaga; a campanha segue", {
+      organization_id: c.organization_id,
+      campaign_id: c.id,
+      error: vetoAntes,
+    });
+    return;
+  }
   await db.query("begin");
   try {
     await db.query(

@@ -22,7 +22,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import pg from "pg";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { assertProspectingDelivery } from "@/lib/prospecting/guard";
+import { assertProspectingDelivery, vetoDoContatoAntesDaVaga } from "@/lib/prospecting/guard";
 import { ProspectingError } from "@/lib/prospecting/provider";
 
 const pool = new pg.Pool({
@@ -122,11 +122,11 @@ async function vetoDe(ctx: Awaited<ReturnType<typeof cenario>>) {
 
 describe("a guarda da abordagem fria lê as três marcas do banco do baseline", () => {
   it.each([
-    { caso: "ficha pessoal", opcoes: { contato: { is_personal: true } }, motivo: 'Contato marcado como "Pessoal".' },
+    { caso: "ficha pessoal", opcoes: { contato: { is_personal: true } }, motivo: "Contato marcado como pessoal." },
     {
       caso: "sempre atendimento humano",
       opcoes: { contato: { ai_opt_out: true } },
-      motivo: 'Contato marcado como "Sempre atendimento humano".',
+      motivo: "Contato marcado como sempre atendimento humano.",
     },
     {
       caso: "etiqueta de contato interno",
@@ -157,5 +157,28 @@ describe("a guarda da abordagem fria lê as três marcas do banco do baseline", 
       [randomUUID(), `guarda-outra-${randomUUID().slice(0, 8)}`, JSON.stringify({ crm: { internal_contact_tags: ["interno"] } })],
     );
     expect(await vetoDe(await cenario({ contato: { tags: ["interno"] } }))).toBeNull();
+  });
+});
+
+describe("a leitura ANTES da vaga lê as mesmas marcas do banco do baseline", () => {
+  // O worker confere as marcas antes de reservar a vaga do número; se esta
+  // leitura errasse uma coluna, ela devolveria `null` e a vetada gastaria a
+  // vaga (a guarda cheia ainda barraria o envio, mais tarde).
+  it.each([
+    { opcoes: { contato: { is_personal: true } }, motivo: "Contato marcado como pessoal." },
+    { opcoes: { contato: { ai_opt_out: true } }, motivo: "Contato marcado como sempre atendimento humano." },
+    {
+      opcoes: { contato: { tags: ["socio"] }, settings: { crm: { team_contact_tags: ["socio"] } } },
+      motivo: "Contato da equipe (marcado por etiqueta).",
+    },
+  ])("$motivo", async ({ opcoes, motivo }) => {
+    const ctx = await cenario(opcoes);
+    const { rows } = await pool.query<{ contact_id: string }>(
+      "select contact_id from prospecting_candidates where id=$1",
+      [ctx.candidateId],
+    );
+    expect(
+      await vetoDoContatoAntesDaVaga(clienteSobreOPostgres(), ctx.organizationId, rows[0]!.contact_id),
+    ).toBe(motivo);
   });
 });

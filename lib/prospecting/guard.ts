@@ -61,8 +61,11 @@ export function motivoDoVetoDoContato(
 ): string | null {
   if (contact.is_blocked) return "Contato bloqueado.";
   if (contact.is_anonymized) return "Contato anonimizado (LGPD).";
-  if (contact.is_personal) return 'Contato marcado como "Pessoal".';
-  if (contact.ai_opt_out) return 'Contato marcado como "Sempre atendimento humano".';
+  // As duas frases são as que a casa já usa para a mesma marca: a do 403 do
+  // handler de mensagens (`_handler.ts`) e a da tela da conversa. Uma marca,
+  // um texto, uma tradução no dicionário.
+  if (contact.is_personal) return "Contato marcado como pessoal.";
+  if (contact.ai_opt_out) return "Contato marcado como sempre atendimento humano.";
   if (contact.force_human) return "Contato passado para atendimento humano.";
   if (ehContatoInterno(contact.tags, etiquetas.internas))
     return "Contato interno (marcado por etiqueta).";
@@ -93,6 +96,42 @@ const COLUNAS_DO_CONTATO = "is_blocked,force_human,is_anonymized,source,consent,
 function lerOrganizacao(db: SupabaseClient, organizationId: string) {
   return db.from("organizations").select("settings").eq("id", organizationId).maybeSingle();
 }
+/**
+ * A conferência das marcas do contato ANTES de o worker reservar a vaga do número.
+ *
+ * Com o veto de contato no escopo do candidato, a campanha não pausa mais na
+ * primeira empresa vetada: a fila segue. Mas a guarda cheia roda DEPOIS da
+ * transação que grava `attempted_at`, `next_send_at` (intervalo + jitter) e o
+ * `recordSend` do número, e cada vetada gastaria uma vaga do teto diário e do
+ * aquecimento, mais um intervalo inteiro, sem mandar nada. Esta leitura barra a
+ * marca antes do gasto.
+ *
+ * Devolve o motivo, ou `null`. Leitura que falha ou contato que não volta
+ * devolvem `null` DE PROPÓSITO: quem falha fechado é a guarda cheia, que roda
+ * logo depois e pausa a campanha com "dados indisponíveis". Esta não substitui
+ * aquela: a marca pode mudar entre as duas, e a cheia continua no caminho.
+ */
+export async function vetoDoContatoAntesDaVaga(
+  db: SupabaseClient,
+  organizationId: string,
+  contactId: string,
+): Promise<string | null> {
+  const [contact, organizacao] = await Promise.all([
+    db
+      .from("contacts")
+      .select(COLUNAS_DO_CONTATO)
+      .eq("organization_id", organizationId)
+      .eq("id", contactId)
+      .maybeSingle(),
+    lerOrganizacao(db, organizationId),
+  ]);
+  if (contact.error || organizacao.error || !contact.data) return null;
+  return motivoDoVetoDoContato(
+    contact.data as ContatoDaProspeccao,
+    etiquetasDaOrganizacao(organizacao.data?.settings),
+  );
+}
+
 /** Rechecked after model generation and immediately before the provider effect. */
 export async function assertProspectingDelivery(db: SupabaseClient, ctx: ProspectingDelivery) {
   const { data: candidate, error } = await db
