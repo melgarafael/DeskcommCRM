@@ -200,6 +200,17 @@ export const AUDIT_ACTIONS = [
   "message.revoked_in_channel",
   "message.hidden_in_crm",
   "message.restored_in_crm",
+  // O TEXTO RETIDO DE UMA APAGADA PELO CONTATO (#4500), por clique em "Ver
+  // texto retido" (`api/v1/messages/[id]/texto-retido`). Três resultados, três
+  // códigos: revelado, NEGADO (perfil não autorizado — o caso que mais precisa
+  // de rastro, porque é tentativa de leitura de conteúdo alheio) e INDISPONÍVEL
+  // (a linha não guarda mais texto, ou não é uma apagada pelo contato). O
+  // metadata leva organização, conversa, mensagem, perfil e resultado — e
+  // NUNCA o texto: `api_audit_log` é append-only e não alcança a cascata de
+  // anonimização da LGPD.
+  "message.retained_text_revealed",
+  "message.retained_text_denied",
+  "message.retained_text_unavailable",
   // Uma rodada do cron `recover-stuck-messages` que de fato marcou mensagem
   // como falha (rodada vazia não vira linha — varredura não é mutação).
   "message.recover_stuck_run",
@@ -326,6 +337,11 @@ export const AUDIT_ACTIONS = [
   // A PERSONALIZAÇÃO que MUDOU (spec 24): voz do vendedor e vocabulário por
   // nicho em `organizations.settings.prospeccao`. Sem segredo no metadata.
   "prospecting.settings_updated",
+  // A LISTA que SAIU em arquivo (issue #4360). Responde "quem levou a base de
+  // prospecção embora": quantas empresas foram exportadas e quantas das da
+  // campanha ainda podiam ser abordadas. Sem telefone, sem nome, sem endereço —
+  // o arquivo em si não fica nesta trilha.
+  "prospecting.exported",
   // A SAÍDA ("responda PARAR") oferecida numa mensagem automática da prospecção
   // (modo da 2ª mensagem). Sem texto, sem telefone — só os ponteiros.
   // Emitida por inbound-turn e followup-turn quando o envio é aceito.
@@ -352,6 +368,7 @@ export const AUDIT_ACTIONS = [
   "channel.historico_import_resumed",
   "channel.historico_import_completed",
   "channel.historico_import_failed",
+  "channel.historico_analysis_started",
   "channel.reconnected",
   // Duas ações distintas de propósito: `deleted` apagou a linha (canal virgem),
   // `archived` só a escondeu porque conversas/mensagens ainda a referenciam.
@@ -407,6 +424,7 @@ export const AUDIT_ACTIONS = [
   "routing.config_changed",
   "proposals.config_changed",
   "catalogo.apresentacao_changed",
+  "catalogo.capacidade_changed",
   // Mudar a régua do abandono (spec 16 §5.2) muda como TODO período passa a ser
   // lido — é mutação relevante, não preferência de exibição.
   "metrics.atrito_regua_changed",
@@ -1314,6 +1332,13 @@ export const AUDIT_ACTIONS = [
   // regra consulta o modelo.
   "settings.automation_ai_decide_updated",
 
+  // Quem pode revelar o texto de uma mensagem apagada pelo contato (#4500):
+  // a lista `organizations.settings.texto_retido.perfis` mudou pela tela
+  // Configurações → Organização → Permissões. Metadata com `de` e `para` (só
+  // papéis, nunca conteúdo). Sem esta linha, conceder a alguém a leitura de
+  // conteúdo retido ficaria sem rastro de QUEM autorizou.
+  "settings.retained_text_profiles_updated",
+
   // A entrada automática no funil (#3603): o interruptor
   // `organizations.settings.entrada_automatica_no_funil.ativa` foi ligado ou
   // desligado. A trilha responde "quem fez a conversa que o CRM abre passar a
@@ -1525,6 +1550,14 @@ export const AUDIT_ACTIONS = [
   // 9096), na organização NOVA, com o id do molde e as contagens no metadata;
   // quem lê é Painel › Empresas › [empresa] ("IA copiada do molde").
   "ai.molde_de_ia_aplicado",
+  // #4023: a organização ligou/desligou a pesquisa de satisfação e, quando
+  // ligada, mudou a janela ou o texto em `organizations.settings.satisfacao`.
+  // metadata só com o `ligado` — o texto é configuração, não dado de cliente.
+  "settings.satisfacao_alterada",
+  // #4023: a resposta do cliente à pesquisa virou a NOTA do pedido.
+  // `resource_id` = a conversa; metadata com o pedido e se a conversa voltou a
+  // ficar encerrada — nunca a nota nem o texto, que são do cliente.
+  "satisfacao.nota_recebida",
   // A CONTA Resend da organização (#3287): conectar e desconectar. Códigos
   // próprios (não um `org.branding_updated`) porque a pergunta depois é outra —
   // "quem ligou/desligou a conta de e-mail própria, e quando" muda por qual
@@ -1547,6 +1580,12 @@ export const AUDIT_ACTIONS = [
   // Reação enviada pelo inbox (#4194). Sem o emoji no metadata: a trilha guarda
   // o evento, não o conteúdo — mesma regra de message.edited/revoked.
   "message.reaction_sent",
+  // Blueprint de FUNIS (#1995, fatia 2): o arquivo de configuração que sai e o
+  // que entra. Códigos próprios (não `pipeline.created` repetido N vezes) porque
+  // a pergunta depois é "de onde veio esse quadro?" — e a resposta tem de caber
+  // numa linha do audit, com contagem de funis e etapas, nunca com os nomes.
+  "pipeline.exported",
+  "pipeline.imported",
   // A mudança de STATUS de uma manifestação (#3611, fatia 3). O metadata leva
   // `de`, `para`, `reabertura` e — só quando existe — o motivo da reabertura.
   // NUNCA o texto do relato: `api_audit_log` é append-only e a cascata de LGPD
@@ -1554,6 +1593,18 @@ export const AUDIT_ACTIONS = [
   // código é o que faz a falta de UPDATE para `authenticated` na 9040 ser
   // aceitável: a única porta da escrita deixa rastro.
   "ouvidoria.status_updated",
+  // Doc 301 = B: alguém disparou pela Central o que a automação segurou porque
+  // a IA mexeu no modo assistido. Metadata leva só ids e os tipos de ação.
+  "automation.held_actions_dispatched",
+  // Mensagem de texto agendada na conversa (#3118, primeira parte — envio único).
+  // `dispatched` é o cron entregando ao envio, não "enviada": a mensagem pode
+  // ficar em `queued` esperando o canal. `cancelled` vem da pessoa (com ator) ou
+  // do cron (sem ator, com o motivo no metadata). Nunca o texto no metadata.
+  "scheduled_message.created",
+  "scheduled_message.updated",
+  "scheduled_message.cancelled",
+  "scheduled_message.dispatched",
+  "scheduled_message.failed",
   // Desfazer o vínculo pessoa ↔ empresa pela tela (issue #3198). O metadata
   // leva só os dois ids da junção.
   "company_people.unlinked",

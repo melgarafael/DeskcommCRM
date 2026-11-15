@@ -38,6 +38,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { audit } from "@/lib/audit";
 import { ApiError } from "@/lib/api/types";
+import { pedirSatisfacaoAoEncerrar } from "@/lib/atendimento/satisfacao";
 import { logger } from "@/lib/logger";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 import { roleAtLeast } from "@/lib/auth/types";
@@ -64,6 +65,7 @@ interface LinhaDaConversa {
   id: string;
   organization_id: string;
   contact_id: string | null;
+  channel_session_id: string | null;
   status: string;
   assigned_to_user_id: string | null;
   assignee_kind: string | null;
@@ -79,7 +81,7 @@ async function lerConversa(
   const { data, error } = await supabase
     .from("conversations")
     .select(
-      "id, organization_id, contact_id, status, assigned_to_user_id, assignee_kind, service_revision, bot_silenced_until",
+      "id, organization_id, contact_id, channel_session_id, status, assigned_to_user_id, assignee_kind, service_revision, bot_silenced_until",
     )
     .eq("id", conversationId)
     // ⚠️ O FILTRO DE ORGANIZAÇÃO É A ÚNICA BARREIRA no caminho do token: com
@@ -501,6 +503,35 @@ export async function fecharConversaHandler(
     resourceId: conversationId,
     requestId: ctx.requestId,
   });
+
+  // ── #4023 no caminho do token: o MESMO efeito da tela ─────────────────────
+  //
+  // A pesquisa de satisfação passou a fazer parte do gesto de encerrar (a main
+  // a colocou na rota). Se ela ficasse só lá, fechar por token e fechar pelo
+  // botão teriam efeitos diferentes — que é exatamente o que a #4517 recusa.
+  // Ela vem DEPOIS do fechamento e não pode desfazê-lo: organização que nunca
+  // ligou a opção recebe `desligada` sem tocar o banco além da leitura.
+  const pesquisa = await pedirSatisfacaoAoEncerrar(createAdminClient(), {
+    organizationId: conv.organization_id,
+    conversationId,
+    contactId: conv.contact_id,
+    channelSessionId: conv.channel_session_id,
+  });
+  if (pesquisa.pedida) {
+    logger.info("[conversations.close] pesquisa de satisfação enviada", {
+      conversation_id: conversationId,
+      organization_id: conv.organization_id,
+      pedido_id: pesquisa.pedidoId,
+      requestId: ctx.requestId,
+    });
+  } else if (pesquisa.motivo === "falha_ao_enviar" || pesquisa.motivo === "erro") {
+    logger.warn("[conversations.close] pesquisa de satisfação não saiu", {
+      conversation_id: conversationId,
+      organization_id: conv.organization_id,
+      motivo: pesquisa.motivo,
+      requestId: ctx.requestId,
+    });
+  }
 
   return { conversation: fechada, devolucao };
 }

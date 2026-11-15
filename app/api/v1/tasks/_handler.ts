@@ -28,6 +28,8 @@ import { comIdempotencia, hashDoCorpo } from "@/lib/api/idempotency";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { ApiError } from "@/lib/api/types";
 import { portaDaAplicacao } from "@/lib/db";
+import { moduloLigado } from "@/lib/instalacao/modulos";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { registraAtividadeDaTarefa } from "@/lib/tarefas/atividade";
 import { conferirDemanda } from "@/lib/tarefas/demanda";
 import { conferirResponsavel } from "@/lib/tarefas/responsavel";
@@ -72,6 +74,8 @@ export interface FiltrosDaLista {
   /** `?assigned_to=ninguem` — tarefa sem responsável. */
   sem_responsavel?: boolean;
   pipeline_id?: string;
+  /** Só as tarefas de membros DESTE setor (`attendant_sectors`, doc 213). */
+  sector_id?: string;
   limite?: number;
 }
 
@@ -149,6 +153,27 @@ export async function listarTarefasHandler(
   if (filtros.sem_responsavel) query = query.is("assigned_to", null);
   else if (filtros.assigned_to) query = query.eq("assigned_to", filtros.assigned_to);
   if (filtros.pipeline_id) query = query.eq("lead.pipeline_id", filtros.pipeline_id);
+
+  if (filtros.sector_id) {
+    // Setores é módulo opcional (doc 213): desligado, o filtro não existe — a
+    // mesma resposta das rotas de setor, em vez de filtrar por um dado que a
+    // instalação não mostra.
+    if (!(await moduloLigado(createAdminClient(), "setores"))) {
+      throw new ApiError(404, "not_found", undefined, ctx.requestId, "Not found.");
+    }
+    const { data: membrosDoSetor, error: erroDoSetor } = await supabase
+      .from("attendant_sector_members")
+      .select("user_id")
+      .eq("sector_id", filtros.sector_id)
+      .eq("organization_id", ctx.organization_id);
+    if (erroDoSetor) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, "Erro ao listar as tarefas.");
+    }
+    const ids = (membrosDoSetor ?? []).map((m) => (m as { user_id: string }).user_id);
+    // Setor sem ninguém: nenhuma tarefa é dele.
+    if (ids.length === 0) return { tasks: [] as Tarefa[] };
+    query = query.in("assigned_to", ids);
+  }
 
   const { data, error } = await query;
   if (error) {
@@ -324,12 +349,18 @@ export async function editarTarefaHandler(
   // A situação ANTES da edição decide se esta é a vez em que a tarefa fechou.
   // Sem ler antes, marcar "concluída" duas vezes emitiria duas linhas na
   // timeline do negócio — e a segunda seria mentira.
-  const { data: antes } = await supabase
+  const { data: antes, error: erroDaLeitura } = await supabase
     .from("crm_tasks")
     .select("status")
     .eq("id", id)
     .eq("organization_id", ctx.organization_id)
     .maybeSingle();
+
+  // Delta da main (#4028): leitura que falhou não é "tarefa sem status" —
+  // seguir gravaria a transição com `de: null`.
+  if (erroDaLeitura) {
+    throw new ApiError(500, "internal_error", undefined, ctx.requestId, "Erro ao salvar a tarefa.");
+  }
 
   const { data, error } = await supabase
     .from("crm_tasks")

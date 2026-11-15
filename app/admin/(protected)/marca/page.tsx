@@ -5,6 +5,7 @@ import { TemaDaPlataforma } from "./_tema-da-plataforma";
 import { loadAuthUser } from "@/lib/auth/server";
 import {
   cssPersonalizadoDaInstalacao,
+  cssPersonalizadoEscuroDaInstalacao,
   validarCssPersonalizado,
 } from "@/lib/branding/css-personalizado";
 import { marcaDaInstalacao } from "@/lib/branding/instalacao";
@@ -70,13 +71,18 @@ export default async function Page() {
   if (!usuario?.is_platform_admin) notFound();
   const idioma = normalizarIdioma(usuario.locale);
 
-  const [linha, cssPersonalizado, temasInstalados, temaEscolhido] = await Promise.all([
-    marcaDaInstalacao(),
-    cssPersonalizadoDaInstalacao(),
-    temasInstaladosDaPlataforma(),
-    idDoTemaDaPlataforma(),
-  ]);
-  const validacaoCss = validarCssPersonalizado(cssPersonalizado);
+  const [linha, cssPersonalizado, cssPersonalizadoEscuro, temasInstalados, temaEscolhido] =
+    await Promise.all([
+      marcaDaInstalacao(),
+      cssPersonalizadoDaInstalacao(),
+      cssPersonalizadoEscuroDaInstalacao(),
+      temasInstaladosDaPlataforma(),
+      idDoTemaDaPlataforma(),
+    ]);
+  // Cada campo com o SEU escopo: é o mesmo prefixo que o layout aplica, então a
+  // tela relata exatamente o que está valendo (ou o erro do campo certo).
+  const validacaoCss = validarCssPersonalizado(cssPersonalizado, "claro");
+  const validacaoCssEscuro = validarCssPersonalizado(cssPersonalizadoEscuro, "escuro");
   // A MESMA pilha do `app/layout.tsx` — banco acima, arquivo de instalação
   // embaixo. Montar outra aqui faria a tela relatar uma precedência que o
   // produto não usa, que é a pior mentira possível numa tela de diagnóstico.
@@ -139,7 +145,12 @@ export default async function Page() {
         }))}
         escolhido={temaEscolhido}
       />
-      <CssPersonalizado gravado={cssPersonalizado} erroAtual={validacaoCss.erro} />
+      <CssPersonalizado
+        gravado={cssPersonalizado}
+        gravadoEscuro={cssPersonalizadoEscuro}
+        erroAtual={validacaoCss.erro}
+        erroAtualEscuro={validacaoCssEscuro.erro}
+      />
     </div>
   );
 }

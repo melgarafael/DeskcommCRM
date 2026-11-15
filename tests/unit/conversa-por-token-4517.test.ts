@@ -36,8 +36,21 @@ vi.mock("@/lib/escalacao/retomada", () => ({
 }));
 
 const adminRpc = vi.fn();
+/**
+ * O admin também é lido pela pesquisa de satisfação (#4023), que o fechamento
+ * passou a chamar DEPOIS do `fn_service_status` — no caminho do token também,
+ * porque "mesmo efeito da tela" inclui isso. Aqui a organização vem sem
+ * `settings`, que é o estado de fábrica: a pesquisa responde `desligada` e não
+ * cria pedido. Sem esta linha o dublê não teria `from` e o caso do fechamento
+ * morreria por dublê incompleto, não por defeito no código.
+ */
+const adminFrom = vi.fn(() => ({
+  select: () => ({
+    eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }),
+  }),
+}));
 vi.mock("@/lib/supabase/admin", () => ({
-  createAdminClient: () => ({ rpc: adminRpc }),
+  createAdminClient: () => ({ rpc: adminRpc, from: adminFrom }),
   isServiceRoleConfigured: () => true,
 }));
 

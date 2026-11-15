@@ -366,6 +366,7 @@ export default async function AgendaPage() {
           titulo: a.title ?? "Agendamento",
           responsavelId: a.owner_user_id ?? "",
           convidadosDaEquipe: a.team_guest_user_ids,
+          tipoId: a.event_type_id,
           comeca: a.starts_at,
           termina: a.ends_at,
           origem: "ui" as const,

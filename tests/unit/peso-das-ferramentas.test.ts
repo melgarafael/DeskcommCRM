@@ -95,7 +95,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_consultar_receita": { tokens: 403, motivo: BASE },
   "crm_list_privacy_requests": { tokens: 248, motivo: BASE },
   "crm_get_prospecting_site_audit": { tokens: 220, motivo: BASE },
-  "crm_list_stages": { tokens: 255, motivo: BASE },
+  "crm_list_stages": { tokens: 312, motivo: "+57 de description e agent_stage_hint no retorno (#4319, recorte do #3915): o Operador precisa do CRITÉRIO da etapa para decidir para onde mover o card" },
   "crm_list_tags": { tokens: 111, motivo: BASE },
   "crm_list_message_templates": { tokens: 146, motivo: BASE },
   "crm_render_message_template": { tokens: 597, motivo: BASE },
@@ -205,6 +205,10 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +1.612 com as cinco ferramentas de #4517 (627 + 243 + 244 + 256 + 242),
 // medidas na criação em 2026-11-12. Nenhuma delas entra em todo turno: as quatro
 // de conversa dependem do pacote ligado, e o catálogo é a régua de quem as liga.
+// A catraca é a SOMA das duas fatias (a main cresceu depois da base do PR): o
+// valor da main sozinho (30724) não alcança estas cinco, e o da fatia sozinho
+// (35884) já inclui o que a main tinha na base. Fica o maior, que é o que cabe
+// nas duas; quem apertar tem a tabela medida na mensagem de erro.
 const TETO_TOTAL = 35884;
 
 const VARIANTE = "schedule_followup (com negócio)";
