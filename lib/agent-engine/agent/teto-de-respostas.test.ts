@@ -7,8 +7,8 @@
  *
  * O que este arquivo prova, e por quê:
  *
- *  1. **12 respostas seguidas param na N-ésima** — a régua do produto: com o
- *     default (10 em 60 min), as 10 primeiras saem e a 11ª/12ª são vetadas com
+ *  1. **N+2 respostas seguidas param na N-ésima** — a régua do produto: com o
+ *     default (20 em 60 min), as N primeiras saem e as 2 seguintes são vetadas com
  *     `teto_de_respostas` e REGISTRO (trace persistido em `before_send_traces`).
  *  2. **conversa diferente não herda a contagem** — o filtro é por
  *     `conversation_id`, não por contato/número. Sem isto, um cliente com dois
@@ -33,6 +33,8 @@ import {
   CODIGO_DO_TETO_DE_RESPOSTAS,
   JANELA_DO_TETO_DE_RESPOSTAS_MINUTOS_PADRAO,
   TETO_DE_RESPOSTAS_PADRAO,
+  TITULO_DO_AVISO_DO_TETO_DE_RESPOSTAS,
+  avisarEquipeDoTetoDeRespostas,
   carregarRespostasDaConversa,
   contarRespostasAutomaticas,
   knobsDoTetoDeRespostas,
@@ -176,12 +178,12 @@ function tentaEnviar(
 
 const COMECO = new Date("2026-11-10T13:00:00Z"); // 10h BRT, terça
 
-describe("12 respostas seguidas na janela param na décima", () => {
-  it("sai 10, veta a 11ª e a 12ª, com código legível e registro durável", async () => {
+describe("N+2 respostas seguidas na janela param na N-ésima", () => {
+  it("sai N, veta as 2 seguintes, com código legível e registro durável", async () => {
     const b = bancada({ linhas: [] });
     const desfechos: string[] = [];
 
-    for (let i = 0; i < 12; i += 1) {
+    for (let i = 0; i < TETO_DE_RESPOSTAS_PADRAO + 2; i += 1) {
       const now = new Date(COMECO.getTime() + i * 30_000); // uma a cada 30 s
       const r = await tentaEnviar(b, { now });
       desfechos.push(r.status === "sent" ? "sent" : r.code);
@@ -190,16 +192,7 @@ describe("12 respostas seguidas na janela param na décima", () => {
     }
 
     expect(desfechos).toEqual([
-      "sent",
-      "sent",
-      "sent",
-      "sent",
-      "sent",
-      "sent",
-      "sent",
-      "sent",
-      "sent",
-      "sent",
+      ...Array.from({ length: TETO_DE_RESPOSTAS_PADRAO }, () => "sent"),
       CODIGO_DO_TETO_DE_RESPOSTAS,
       CODIGO_DO_TETO_DE_RESPOSTAS,
     ]);
@@ -219,7 +212,7 @@ describe("12 respostas seguidas na janela param na décima", () => {
     expect(r.gate).toBe("teto_de_respostas");
     expect(r.code).toBe(CODIGO_DO_TETO_DE_RESPOSTAS);
     // Motivo legível: número, janela e o que fazer (não reescrever).
-    expect(r.message).toContain("10 resposta(s)");
+    expect(r.message).toContain(`${TETO_DE_RESPOSTAS_PADRAO} resposta(s)`);
     expect(r.message).toContain("60 min");
     expect(r.message).toMatch(/Encerre o turno/);
     // O trace é o que vira auditoria no banco.
@@ -287,9 +280,9 @@ describe("a conta é POR CONVERSA — não por contato nem por número", () => {
 
 describe("a janela desliza: vencida, a conversa volta a poder responder", () => {
   it("mensagens fora da janela não contam", async () => {
-    // 10 respostas, mas de DUAS horas atrás — fora dos 60 min.
+    // N respostas, mas de DUAS horas atrás — fora dos 60 min.
     const b = bancada({
-      linhas: Array.from({ length: 10 }, (_, i) =>
+      linhas: Array.from({ length: TETO_DE_RESPOSTAS_PADRAO }, (_, i) =>
         respostaDaIa(CONVERSA_A, new Date(COMECO.getTime() - 120 * 60_000 - i * 1000)),
       ),
     });
@@ -298,7 +291,7 @@ describe("a janela desliza: vencida, a conversa volta a poder responder", () => 
 
   it("passada a janela, a conversa saturada volta a passar", async () => {
     const b = bancada({
-      linhas: Array.from({ length: 10 }, (_, i) =>
+      linhas: Array.from({ length: TETO_DE_RESPOSTAS_PADRAO }, (_, i) =>
         respostaDaIa(CONVERSA_A, new Date(COMECO.getTime() - (i + 1) * 60_000)),
       ),
     });
@@ -457,7 +450,91 @@ describe("fiação do teto no turno", () => {
     expect(trecho).toMatch(/eResposta && !preview/);
   });
 
+  it("o veto do teto no send_message AVISA a equipe na Central, fora da prévia", () => {
+    const i = FONTE_INBOUND.indexOf("chain.code === CODIGO_DO_TETO_DE_RESPOSTAS && !preview");
+    expect(i, "o turno não reage ao veto do teto").toBeGreaterThan(0);
+    const trecho = FONTE_INBOUND.slice(i, i + 400);
+    expect(trecho).toMatch(/await avisarEquipeDoTetoDeRespostas\(pool,/);
+    expect(trecho).toMatch(/conversationId:\s*input\.conversationId/);
+  });
+
   it("o follow-up determinístico NÃO arma — ali não houve mensagem recebida", () => {
     expect(FONTE_FOLLOWUP).not.toMatch(/tetoDeRespostas/);
+  });
+});
+
+/**
+ * AVISO NA CENTRAL (decisão do mantenedor no doc 355: B) — o teto não cala
+ * calado. Um aviso ABERTO por conversa: o dedupe é do repositório
+ * (`kind_ref_e_titulo`), e a bancada abaixo responde ao `where not exists`
+ * olhando os avisos abertos que ela mesma guardou.
+ */
+function centralFalsa(opcoes: { quebrada?: boolean } = {}) {
+  const abertos: { org: string; kind: string; refKind: string; refId: string; title: string }[] = [];
+  const consultas: { sql: string; params: unknown[] }[] = [];
+  const db = {
+    query: vi.fn(async (sql: string, params: unknown[]) => {
+      consultas.push({ sql, params });
+      if (opcoes.quebrada === true) throw new Error("connection terminated");
+      const [org, kind, , title, , refKind, refId, porRef, porTitulo] = params as [
+        string, string, string, string, string, string, string, boolean, boolean,
+      ];
+      const existe = abertos.some(
+        (a) =>
+          a.org === org &&
+          a.kind === kind &&
+          (!porRef || (a.refKind === refKind && a.refId === refId)) &&
+          (!porTitulo || a.title === title),
+      );
+      if (existe) return { rows: [] };
+      abertos.push({ org, kind, refKind, refId, title });
+      return { rows: [{ id: `aviso-${abertos.length}` }] };
+    }),
+  } as unknown as Pick<pg.Pool, "query">;
+  return { db, abertos, consultas };
+}
+
+describe("ao bater o teto, a equipe é avisada uma vez por conversa", () => {
+  const avisar = (db: Pick<pg.Pool, "query">, conversationId: string, log?: Logger) =>
+    avisarEquipeDoTetoDeRespostas(db, {
+      organizationId: ORG,
+      conversationId,
+      ...knobsDoTetoDeRespostas(null),
+      ...(log ? { log } : {}),
+    });
+
+  it("grava 'other' com ref na conversa, título fixo e dedupe por kind+ref+título", async () => {
+    const c = centralFalsa();
+    await avisar(c.db, CONVERSA_A);
+    expect(c.abertos).toEqual([
+      {
+        org: ORG,
+        kind: "other",
+        refKind: "conversation",
+        refId: CONVERSA_A,
+        title: TITULO_DO_AVISO_DO_TETO_DE_RESPOSTAS,
+      },
+    ]);
+    const [{ sql, params }] = c.consultas;
+    expect(sql).toMatch(/where not exists/);
+    // $8 (casa a ref) e $9 (casa o título) ligados = `kind_ref_e_titulo`.
+    expect(params.slice(7)).toEqual([true, true]);
+    expect(params[4]).toContain(`${TETO_DE_RESPOSTAS_PADRAO} respostas`);
+  });
+
+  it("2º veto na mesma conversa não duplica; outra conversa abre o dela", async () => {
+    const c = centralFalsa();
+    await avisar(c.db, CONVERSA_A);
+    await avisar(c.db, CONVERSA_A);
+    expect(c.abertos).toHaveLength(1);
+    await avisar(c.db, CONVERSA_B);
+    expect(c.abertos.map((a) => a.refId)).toEqual([CONVERSA_A, CONVERSA_B]);
+  });
+
+  it("banco quebrado não lança — registra e segue", async () => {
+    const c = centralFalsa({ quebrada: true });
+    const log = loggerFalso();
+    await expect(avisar(c.db, CONVERSA_A, log)).resolves.toBeUndefined();
+    expect(log.warn).toHaveBeenCalled();
   });
 });

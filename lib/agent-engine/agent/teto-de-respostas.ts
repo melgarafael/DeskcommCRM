@@ -45,10 +45,11 @@
  * ## O que este arquivo NÃO faz, de propósito
  *
  *  - **Não silencia a conversa.** `conversations.bot_silenced_until` é o
- *    silêncio humano, mais forte e reversível pela tela; escrever nele sozinho
- *    seria a IA decidindo calar um atendimento sem ninguém saber. Aqui só se
- *    VETA o envio, com registro (trace em `before_send_traces` + timeline do
- *    veto), e a conversa continua com dono.
+ *    silêncio humano, mais forte e reversível pela tela, e continua intocado.
+ *    Aqui só se VETA o envio, com registro (trace em `before_send_traces` +
+ *    timeline do veto), e a equipe é AVISADA na Central
+ *    (`avisarEquipeDoTetoDeRespostas`), para decidir se do outro lado é um robô
+ *    ou um cliente.
  *  - **Não conta disparo nem follow-up.** Chega armado só no caminho de
  *    RESPOSTA (`RunBeforeSendArgs.tetoDeRespostas` só é passado pelo
  *    `send_message` do turno de entrada); follow-up e prospecção ficam de fora
@@ -60,6 +61,7 @@ import type pg from 'pg';
 
 import { instanteDoBanco } from '@/lib/tempo/agora';
 
+import { insertInboxItem } from '../db/repository';
 import type { Logger } from '../obs/logger';
 import type { Gate, GateContext, GateVerdict } from '../guardrails/before-send';
 
@@ -71,15 +73,16 @@ const MS_POR_MINUTO = 60_000;
 export const CODIGO_DO_TETO_DE_RESPOSTAS = 'teto_de_respostas';
 
 /**
- * N padrão — respostas automáticas por conversa dentro da janela.
+ * N padrão — mensagens da IA por conversa dentro da janela.
  *
- * Conservador de propósito: uma troca legítima raramente passa de ~10 mensagens
- * da IA numa hora (o cliente manda 3 fotos, a IA responde em 3 bolhas, confirma
- * endereço, manda o horário…). O incidente medido fez **216**. Quem tem um
- * atendimento mais conversado sobe o número no env; quem não mexer fica
- * protegido do caso que originou a issue.
+ * A conta é de LINHAS de `messages`: cada bolha e cada foto de um turno contam
+ * uma a uma (um turno com 3 bolhas vale 3). Com 10, um cliente de verdade numa
+ * conversa animada (manda fotos, a IA responde em bolhas, confirma endereço,
+ * manda o horário…) batia no teto. 20 ainda corta o pingue-pongue medido
+ * (**216** em uma hora) com folga para o cliente. Quem tem um atendimento mais
+ * conversado sobe o número no env.
  */
-export const TETO_DE_RESPOSTAS_PADRAO = 10;
+export const TETO_DE_RESPOSTAS_PADRAO = 20;
 
 /**
  * W padrão — largura da janela, em minutos (1 h).
@@ -268,3 +271,57 @@ export const tetoDeRespostasGate: Gate = {
     };
   },
 };
+
+/** Título FIXO: é parte da chave do dedupe (`kind_ref_e_titulo`) — mudar o texto reabre avisos. */
+export const TITULO_DO_AVISO_DO_TETO_DE_RESPOSTAS =
+  'A IA parou de responder esta conversa: muitas respostas em pouco tempo';
+
+/**
+ * Avisa a equipe na Central que o teto vetou uma resposta nesta conversa.
+ *
+ * "Uma vez" = um aviso ABERTO por conversa: o dedupe `kind_ref_e_titulo` não
+ * insere se já há um aberto com o mesmo kind, a mesma conversa e o mesmo título.
+ * Cada veto seguinte do mesmo pingue-pongue cai nele. Se a equipe resolve o aviso
+ * e o loop volta, abre-se outro — e é o certo: é um episódio novo.
+ *
+ * Kind `other` com ref `conversation` (o botão da Central leva a
+ * /app/inbox/<id>), no molde de `lib/catalogo/retomada-de-apresentacao.ts`: não
+ * precisa de kind novo nem de migration.
+ *
+ * **Nunca lança.** O veto já foi registrado (trace + timeline); o aviso é camada
+ * auxiliar, e falhar nele não pode derrubar o turno.
+ */
+export async function avisarEquipeDoTetoDeRespostas(
+  db: Queryable,
+  input: {
+    organizationId: string;
+    conversationId: string;
+    porConversa: number;
+    janelaMinutos: number;
+    log?: Logger;
+  },
+): Promise<void> {
+  try {
+    await insertInboxItem(
+      db,
+      input.organizationId,
+      {
+        kind: 'other',
+        severity: 'warn',
+        title: TITULO_DO_AVISO_DO_TETO_DE_RESPOSTAS,
+        body:
+          `A IA já mandou ${input.porConversa} respostas nesta conversa em ${input.janelaMinutos} min ` +
+          'e parou de responder. Confira se do outro lado é um robô (atendimento automático) ' +
+          'ou um cliente. Se for cliente, assuma a conversa.',
+        refKind: 'conversation',
+        refId: input.conversationId,
+      },
+      'kind_ref_e_titulo',
+    );
+  } catch (err) {
+    input.log?.warn('teto de respostas por conversa: aviso na Central não gravado', {
+      conversation_id: input.conversationId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
+}

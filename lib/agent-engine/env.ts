@@ -327,8 +327,8 @@ const envSchema = z.object({
   // #4590 — teto de RESPOSTAS automáticas por CONVERSA numa janela. É a trava que faltava
   // quando dois robôs se responderam 216 vezes numa hora: cada resposta era legítima, e nem o
   // pacing (que mede o número) nem o spinning (que mede cópia para muita gente) olham para a
-  // mesma conversa girando. Default conservador: 10 respostas em 1 h.
-  TETO_DE_RESPOSTAS_POR_CONVERSA: z.coerce.number().int().positive().default(10),
+  // mesma conversa girando. Default: 20 respostas em 1 h (cada bolha e foto conta uma).
+  TETO_DE_RESPOSTAS_POR_CONVERSA: z.coerce.number().int().positive().default(20),
   TETO_DE_RESPOSTAS_JANELA_MIN: z.coerce.number().int().positive().default(60),
   // Circuit breaker de tools por run.
   TOOL_BREAKER_EXACT_WARN: z.coerce.number().int().positive().default(2),
