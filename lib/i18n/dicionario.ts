@@ -5013,6 +5013,9 @@ export const DICIONARIO: Traducoes = {
   "do texto das chamadas que o provedor guarda em cache (entrada ≥ 1.024 tokens); as menores ficam fora da conta": {
     es: "del texto de las llamadas que el proveedor guarda en caché (entrada ≥ 1.024 tokens); las menores quedan fuera de la cuenta",
   },
+  "nenhuma chamada no período passa do tamanho que o provedor guarda em cache": {
+    es: "ninguna llamada del período supera el tamaño que el proveedor guarda en caché",
+  },
   "Tempo de uma chamada à IA": { es: "Tiempo de una llamada a la IA" },
   "Tempo de uma chamada à IA por dia (segundos)": { es: "Tiempo de una llamada a la IA por día (segundos)" },
   "Quanto gastou por dia (US$)": { es: "Cuánto gastaste por día (US$)" },
