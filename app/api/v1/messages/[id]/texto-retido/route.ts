@@ -11,7 +11,12 @@
  *
  * ═══ A ordem das cercas, e por que ela importa ═════════════════════════════
  *
- *   1. `requireRole("agent")` — quem não vê a conversa não chega ao texto.
+ *   1. `requireRole("viewer")` — o piso é o MENOR papel humano, porque quem
+ *      decide quais perfis revelam é a lista da organização (passo 2), e
+ *      "Somente leitura" é um perfil que a tela deixa marcar. Um piso maior
+ *      tornaria essa marca letra morta e calaria a trilha do clique negado.
+ *      Quem não vê a conversa não chega ao texto pela RLS do client de sessão
+ *      (a linha não vem e a resposta é o 409 mudo).
  *   2. Ler `organizations.settings` e conferir o PERFIL autorizado. Nega antes
  *      de qualquer leitura de conteúdo. O 403 não carrega texto — nem no corpo,
  *      nem em mensagem de erro.
@@ -75,7 +80,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   const support = await requireSupportWrite();
   if (support) return support;
 
-  const authz = await requireRole("agent", { requestId, resource: "messages" });
+  const authz = await requireRole("viewer", { requestId, resource: "messages" });
   if (!authz.ok) return authz.response;
   const { user, org } = authz;
   const t = (texto: string) => traduzir(texto, user.idioma ?? "pt-BR");

@@ -20,13 +20,22 @@ vi.mock("@/lib/impersonate/support", () => ({
   requireSupportWrite: async () => state.bloqueioDeSuporte,
 }));
 
-vi.mock("@/lib/auth/require-role", () => ({
-  requireRole: async () => ({
-    ok: true,
-    user: { id: "usuario-1", idioma: "pt-BR" },
-    org: { orgId: "org-1", role: state.role },
-  }),
-}));
+// O dublê RESPEITA o papel mínimo pedido pela rota: um dublê que aprovava
+// qualquer papel escondeu que o piso "agent" deixava o perfil "Somente leitura"
+// marcável na tela e sem efeito — o viewer levava 403 antes da lista.
+vi.mock("@/lib/auth/require-role", async () => {
+  const { ROLE_RANK } = await import("@/lib/auth/types");
+  return {
+    requireRole: async (min: keyof typeof ROLE_RANK) =>
+      (ROLE_RANK[state.role as keyof typeof ROLE_RANK] ?? 0) >= ROLE_RANK[min]
+        ? {
+            ok: true,
+            user: { id: "usuario-1", idioma: "pt-BR" },
+            org: { orgId: "org-1", role: state.role },
+          }
+        : { ok: false, response: new Response(null, { status: 403 }) },
+  };
+});
 
 vi.mock("@/lib/audit", () => ({
   audit: async (entrada: Record<string, unknown>) => {
@@ -135,6 +144,34 @@ describe("sem permissão", () => {
     const bruto = await res.text();
     expect(bruto).not.toContain(TEXTO_FICTICIO);
     expect(bruto.toLowerCase()).toContain("permissão");
+  });
+});
+
+describe("perfil Somente leitura (viewer)", () => {
+  const ultima = () => state.audit[state.audit.length - 1] ?? {};
+
+  it("viewer marcado na lista recebe o texto, e o clique é auditado como revelado", async () => {
+    state.role = "viewer";
+    state.settings = { texto_retido: { perfis: ["viewer"] } };
+
+    const res = await POST(new NextRequest(url, { method: "POST" }), ctx);
+
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { data?: { texto?: string } }).data?.texto).toBe(TEXTO_FICTICIO);
+    expect(ultima().action).toBe("message.retained_text_revealed");
+    expect(ultima().metadata).toMatchObject({ role: "viewer", result: "revelado" });
+  });
+
+  it("viewer fora da lista é negado SEM o texto, e o clique negado fica na trilha", async () => {
+    state.role = "viewer";
+    state.settings = { texto_retido: { perfis: ["admin"] } };
+
+    const res = await POST(new NextRequest(url, { method: "POST" }), ctx);
+
+    expect(res.status).toBe(403);
+    expect(await res.text()).not.toContain(TEXTO_FICTICIO);
+    expect(ultima().action).toBe("message.retained_text_denied");
+    expect(ultima().metadata).toMatchObject({ role: "viewer", result: "negado" });
   });
 });
 
