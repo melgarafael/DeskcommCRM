@@ -142,6 +142,8 @@ describe("MessageBubble — links no corpo (#4576)", () => {
     const botao = screen.getByRole("button", { name: "Ir para a mensagem citada" });
     expect(botao.querySelector("a")).toBeNull();
     expect(botao).toHaveTextContent(url);
+    // O nome é a ação; o trecho citado chega ao leitor de tela como descrição.
+    expect(botao).toHaveAccessibleDescription(expect.stringContaining(url));
     unmount();
 
     // Sem para onde ir, a citação não é botão e o endereço continua link (#4582).

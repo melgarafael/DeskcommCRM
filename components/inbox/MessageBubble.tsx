@@ -5,7 +5,7 @@ import { format } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
 import { ArrowBendUpLeft, ArrowBendUpRight, CalendarX, CaretDown, Check, Checks, Clock, DownloadSimple, FileText, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
 import { mediaDownloadSrc } from "@/components/inbox/media/media-utils";
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -203,10 +203,21 @@ function CitacaoDaBolha({
   className?: string;
   children: ReactNode;
 }) {
+  // O aria-label dá o nome da AÇÃO e apaga o conteúdo do nome acessível:
+  // o trecho citado volta ao leitor de tela como descrição do botão.
+  const idDoTrecho = useId();
   if (!aoTocar) return <div className={className}>{children}</div>;
   return (
-    <button type="button" onClick={aoTocar} aria-label={rotulo} className={className}>
-      {children}
+    <button
+      type="button"
+      onClick={aoTocar}
+      aria-label={rotulo}
+      aria-describedby={idDoTrecho}
+      className={className}
+    >
+      <span id={idDoTrecho} className="contents">
+        {children}
+      </span>
     </button>
   );
 }
