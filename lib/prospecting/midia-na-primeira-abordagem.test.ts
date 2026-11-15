@@ -435,7 +435,9 @@ describe("teto diário de mídia por número (doc 358 › 2A)", () => {
     for (const envio of envios) expect(envio.type).toBe("text");
     expect(envios[0]!.body, "a saída não está na 1ª bolha").toContain("responda PARAR");
     // Não trava: nem o candidato falha, nem a campanha pausa.
-    expect(sqls.some((q) => q.sql.includes("set status='failed'"))).toBe(false);
+    // (A varredura de `sending` antigos do tick também diz `status='failed'`; a
+    // falha DESTE candidato é a que leva o motivo em `$3`.)
+    expect(sqls.some((q) => q.sql.includes("set status='failed',error=$3"))).toBe(false);
     expect(sqls.some((q) => q.sql.includes("status='paused'"))).toBe(false);
     // O rastro: a trilha da abordagem diz que a mídia foi omitida pelo teto.
     expect(mocks.audit.mock.calls[0]?.[0]).toMatchObject({
