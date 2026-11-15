@@ -76,7 +76,7 @@ describe("máscara do payload da conversa", () => {
   };
 
   it("apagada pelo contato: o corpo não sai e o sinal de texto retido fica", () => {
-    const mascarada = mascararTextoRetido(apagadaPeloContato);
+    const mascarada = mascararTextoRetido(apagadaPeloContato, true);
     expect(mascarada.body).toBeNull();
     expect(mascarada.texto_retido).toBe(true);
     expect(JSON.stringify(mascarada)).not.toContain("texto fictício");
@@ -87,25 +87,34 @@ describe("máscara do payload da conversa", () => {
       ...apagadaPeloContato,
       body: null,
       media_derived_text: "áudio transcrito fictício",
-    });
+    }, true);
     expect(mascarada.media_derived_text).toBeNull();
-    expect(mascarada.texto_retido).toBe(true);
+    // A rota revela o CORPO, não a transcrição: prometer o botão aqui era
+    // prometer um clique que sempre responde "Texto não disponível".
+    expect(mascarada.texto_retido).toBeUndefined();
+  });
+
+  it("porta DESLIGADA (lista vazia): mascara igual e NÃO promete botão", () => {
+    const mascarada = mascararTextoRetido(apagadaPeloContato, false);
+    expect(mascarada.body).toBeNull();
+    expect(mascarada.texto_retido).toBeUndefined();
+    expect(JSON.stringify(mascarada)).not.toContain("texto fictício");
   });
 
   it("sem corpo restante: mascara e NÃO promete botão", () => {
-    const mascarada = mascararTextoRetido({ ...apagadaPeloContato, body: "   " });
+    const mascarada = mascararTextoRetido({ ...apagadaPeloContato, body: "   " }, true);
     expect(mascarada.body).toBeNull();
     expect(mascarada.texto_retido).toBeUndefined();
   });
 
   it("apagada pelo ATENDENTE mantém o corpo (a régua do balão não muda)", () => {
-    const mascarada = mascararTextoRetido({ ...apagadaPeloContato, direction: "outbound" });
+    const mascarada = mascararTextoRetido({ ...apagadaPeloContato, direction: "outbound" }, true);
     expect(mascarada.body).toBe("texto fictício que o contato apagou");
     expect(mascarada.texto_retido).toBeUndefined();
   });
 
   it("mensagem viva passa intacta", () => {
     const viva = { direction: "inbound", revoked_at: null, body: "oi" };
-    expect(mascararTextoRetido(viva)).toEqual(viva);
+    expect(mascararTextoRetido(viva, true)).toEqual(viva);
   });
 });

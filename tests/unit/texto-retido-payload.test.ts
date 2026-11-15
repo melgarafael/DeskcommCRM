@@ -18,8 +18,9 @@ import type { Message } from "@/lib/types/messaging";
  *
  * ─── O que passa a valer ───────────────────────────────────────────────────
  *
- *   • apagada pelo CONTATO  → `body: null`, `media_derived_text: null` e
- *     `texto_retido: true` (o sinal que liga o botão, sem conteúdo);
+ *   • apagada pelo CONTATO  → `body: null`, `media_derived_text: null` e,
+ *     SÓ se a organização autorizou algum perfil, `texto_retido: true` (o sinal
+ *     que liga o botão, sem conteúdo);
  *   • apagada pelo ATENDENTE → corpo intacto (a régua do balão não muda);
  *   • mensagem viva          → intacta.
  *
@@ -37,7 +38,10 @@ const CTX = {
 /** Texto FICTÍCIO — nenhum conteúdo real de cliente entra em teste. */
 const TEXTO_FICTICIO = "combinado fictício de teste, 3 caixas";
 
-function cliente(linhas: Array<Partial<Message>>): SupabaseClient {
+/** As configurações da organização com a porta LIGADA (um perfil autorizado). */
+const PORTA_LIGADA = { texto_retido: { perfis: ["manager"] } };
+
+function cliente(linhas: Array<Partial<Message>>, settings: unknown = PORTA_LIGADA): SupabaseClient {
   const tabela = (nome: string) => {
     const q: Record<string, unknown> = {};
     const devolve = () =>
@@ -45,7 +49,9 @@ function cliente(linhas: Array<Partial<Message>>): SupabaseClient {
         ? linhas
         : nome === "conversations"
           ? [{ contact_id: "contato-1" }]
-          : [{ is_personal: false }];
+          : nome === "organizations"
+            ? [{ settings }]
+            : [{ is_personal: false }];
     for (const metodo of ["select", "eq", "order", "limit", "or"]) {
       q[metodo] = () => q;
     }
@@ -98,6 +104,16 @@ describe("apagada pelo contato não entrega o corpo", () => {
     expect(r.messages).toHaveLength(1);
     expect(r.messages[0]!.body).toBeNull();
     expect(r.messages[0]!.texto_retido).toBe(true);
+    expect(JSON.stringify(r)).not.toContain("combinado fictício");
+  });
+
+  it("lista de perfis VAZIA: o corpo não sai e o sinal do botão também não", async () => {
+    const apagada = mensagem({ revoked_at: "2026-11-10T12:05:00.000Z" });
+
+    const r = await listMessagesHandler(cliente([apagada], {}), CTX, CONV, { limit: 50 });
+
+    expect(r.messages[0]!.body).toBeNull();
+    expect(r.messages[0]!.texto_retido).toBeUndefined();
     expect(JSON.stringify(r)).not.toContain("combinado fictício");
   });
 

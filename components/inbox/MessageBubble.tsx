@@ -743,8 +743,12 @@ export function MessageBubble({
             )}
             {/* Apagada pelo CONTATO: o corpo não vem no payload (#4500). Quem
                 decide se ele aparece é o servidor, ao clique — e o aviso de
-                exclusão CONTINUA acima, porque a mensagem segue apagada. */}
-            {!textoApagadoVisivel && <TextoRetidoDaMensagem mensagemId={message.id} />}
+                exclusão CONTINUA acima, porque a mensagem segue apagada. O
+                botão só existe com `texto_retido`: o servidor só manda o sinal
+                quando há corpo guardado E a empresa autorizou algum perfil. */}
+            {!textoApagadoVisivel && message.texto_retido === true && (
+              <TextoRetidoDaMensagem mensagemId={message.id} />
+            )}
           </div>
         ) : ocultaNoCrm ? (
           <p className="whitespace-pre-wrap wrap-anywhere italic leading-snug opacity-60">

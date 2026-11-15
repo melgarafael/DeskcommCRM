@@ -113,10 +113,16 @@ type MensagemMascaravel = {
  * service role). Um mascaramento no componente esconderia o balão e deixaria o
  * texto no JSON; um só no handler deixaria a próxima porta repetir o esquecimento.
  *
- * O que a linha DEVOLVE no lugar: `body: null`, a transcrição de mídia também
- * (é texto derivado do mesmo conteúdo) e `texto_retido: true` quando havia algo
- * retido. O booleano é o que deixa o botão "Ver texto retido" aparecer sem que o
- * navegador receba uma vírgula do texto.
+ * O que a linha DEVOLVE no lugar: `body: null` e a transcrição de mídia também
+ * (é texto derivado do mesmo conteúdo) — SEMPRE, com ou sem porta ligada.
+ *
+ * `texto_retido: true` é o sinal que faz o botão "Ver texto retido" aparecer, e
+ * só vai quando as duas coisas valem:
+ *   • há CORPO retido — a rota revela `body`, não a transcrição; num áudio
+ *     transcrito o botão responderia sempre "Texto não disponível";
+ *   • `portaLigada` — a organização autorizou ao menos um perfil. Com a lista
+ *     vazia (o padrão), o botão só negaria e gravaria uma linha de auditoria por
+ *     clique, em toda instalação que nunca pediu a porta.
  *
  * A apagada pelo ATENDENTE não é tocada: a régua de
  * `textoDaApagadaApareceNaInbox` mostra o corpo dela à equipe, e mascarar aqui
@@ -124,10 +130,11 @@ type MensagemMascaravel = {
  */
 export function mascararTextoRetido<T extends MensagemMascaravel>(
   mensagem: T,
+  portaLigada: boolean,
 ): T & { texto_retido?: boolean } {
   if (mensagem.revoked_at == null || mensagem.direction !== "inbound") return mensagem;
 
-  const retido = Boolean(mensagem.body?.trim() || mensagem.media_derived_text?.trim());
+  const retido = portaLigada && Boolean(mensagem.body?.trim());
   const mascarada: T & { texto_retido?: boolean } = {
     ...mensagem,
     body: null,
