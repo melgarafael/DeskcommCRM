@@ -148,7 +148,8 @@ function consulta(tabela: string) {
   for (const m of ["select", "eq", "is", "in", "order", "limit", "neq", "gte", "lte", "not"]) {
     q[m] = (...args: unknown[]) => {
       if (tabela === "crm_leads" && m === "eq") filtrosDeLeads.push([args[0] as string, args[1]]);
-      if (tabela === "conversations" && m === "eq") filtrosDaConversa.push([args[0] as string, args[1]]);
+      if (tabela === "conversations" && (m === "eq" || m === "in"))
+        filtrosDaConversa.push([m === "in" ? `${String(args[0])}:in` : (args[0] as string), args[1]]);
       if (tabela === "prospecting_candidates" && m === "eq") filtrosDaAbordagem.push([args[0] as string, args[1]]);
       if (m === "eq" && args[0] === "id") idFiltrado = args[1];
       if (m === "in" && args[0] === "id") lista = true;
@@ -313,12 +314,10 @@ describe("na conversa de prospecção", () => {
     await rodar();
     expect(leiturasDaConversa.length).toBeGreaterThan(0);
     for (const filtros of leiturasDaConversa) {
-      expect(filtros).toEqual(
-        expect.arrayContaining([
-          ["organization_id", "org-1"],
-          ["id", "conversa-1"],
-        ]),
-      );
+      expect(filtros).toContainEqual(["organization_id", "org-1"]);
+      // A conferência das conversas das OUTRAS inscrições (`encerrar-pela-recusa.ts`) lê
+      // em lista; a da frase lê a própria conversa.
+      if (!filtros.some(([campo]) => campo === "id:in")) expect(filtros).toContainEqual(["id", "conversa-1"]);
     }
   });
 
