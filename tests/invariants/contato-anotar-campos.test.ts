@@ -1,5 +1,5 @@
 /**
- * `fn_contato_anotar_campos` (migration 9397) — o diagnóstico que o agente grava
+ * `fn_contato_anotar_campos` (migration 9398) — o diagnóstico que o agente grava
  * na ficha não apaga os outros campos do contato.
  *
  * O teste unitário (`tests/unit/diagnostico-pela-ia.test.tsx`) prova o handler

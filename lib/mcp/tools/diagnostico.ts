@@ -23,7 +23,7 @@
  * O `PATCH /api/v1/contacts/:id` substitui `custom_fields` inteiro, e ler para
  * gravar depois (como a aba faz) apaga o que outro caminho gravou no meio. Aqui
  * a escrita é `custom_fields || pedaço` dentro de UMA instrução
- * (`fn_contato_anotar_campos`, migration 9397): os `link_*`, os campos da
+ * (`fn_contato_anotar_campos`, migration 9398): os `link_*`, os campos da
  * organização e as observações da equipe nem passam pelo aplicativo.
  *
  * ── Cercas ──────────────────────────────────────────────────────────────────
