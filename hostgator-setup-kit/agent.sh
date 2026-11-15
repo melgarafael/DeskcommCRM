@@ -505,6 +505,24 @@ if [ -n "$ALVO" ] && [ "$ALVO" != "$CURRENT_TAG" ]; then
   is_already_in_head "$ALVO" && CONTIDA=0 || CONTIDA=$?
   [ "$CONTIDA" = 0 ] && VOLTA_NO_TEMPO=1
 fi
+# Volta pedida pelo app só para a versão de onde esta instalação veio. O alvo
+# chega pela rota, e quem consegue escrever no canal host-app não pode, com
+# isso, mandar o host reinstalar uma versão antiga qualquer (com o baseline e as
+# funções dela). A última ida para frente gravou a origem (update.sh); sem ela,
+# ou com alvo diferente, o run fecha recusado e o caminho pelo terminal segue
+# inteiro para quem tem acesso ao servidor.
+if [ -n "$VOLTA_NO_TEMPO" ]; then
+  ORIGEM_ARQ="${PROJECT_DIR}/${ORIGEM_DA_ATUALIZACAO_ARQUIVO:-.update-de-onde-vim}"
+  ORIGEM=""
+  [ -f "$ORIGEM_ARQ" ] && ORIGEM="$(head -n1 "$ORIGEM_ARQ" 2>/dev/null || true)"
+  [[ "$ORIGEM" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] || ORIGEM=""
+  if [ -z "$ORIGEM" ] || [ "${ALVO#v}" != "${ORIGEM#v}" ]; then
+    log_err "pedido de volta recusado: ${ALVO} não é a versão de onde esta instalação veio"
+    MOTIVO="A volta pela tela só vai para a versão de onde esta instalação veio${ORIGEM:+ ($ORIGEM)}. Para outra versão, rode no servidor: bash hostgator-setup-kit/update.sh --to ${ALVO} --force"
+    post "{\"kind\":\"run_result\",\"run_id\":\"${RUN_ID}\",\"status\":\"failed\",\"log_tail\":\"${MOTIVO}\"}" >/dev/null || true
+    exit 0
+  fi
+fi
 if [ -n "$VOLTA_NO_TEMPO" ] || [ -n "$FORCA_PEDIDA" ]; then UPDATE_ARGS+=(--force); fi
 
 # Cada execução do agente começa sem medição nenhuma do banco: o arquivo da
