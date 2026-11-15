@@ -5,6 +5,9 @@ import { redirect } from "next/navigation";
 
 import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { invalidarUsuario } from "@/lib/auth/cache-curto";
+import { logger } from "@/lib/logger";
 import { resetPasswordSchema, type ResetPasswordInput } from "@/lib/auth/schemas";
 import { audit } from "@/lib/audit";
 import { mfaBloqueadoPorFalhas, registrarFalhaDeMfa } from "@/lib/auth/rate-limit";
@@ -100,6 +103,8 @@ export async function updatePassword(
     return { ok: false, error: "update_failed" };
   }
 
+  await limparSenhaProvisoria(supabase, user.id, requestId);
+
   await audit({
     action: "auth.password_reset_completed",
     actorUserId: user.id,
@@ -111,4 +116,52 @@ export async function updatePassword(
 
   await supabase.auth.signOut();
   redirect("/login?reset=success");
+}
+
+/**
+ * A pessoa acabou de escolher a própria senha, então a senha provisória
+ * (#3876) deixou de valer: a marca sai, a mesma garantia da troca do primeiro
+ * acesso. Sem isto, quem recuperou a senha ainda passava pela tela de troca.
+ *
+ * A leitura é com a sessão (a RLS mostra à pessoa os próprios vínculos); a
+ * escrita é com o cliente de serviço, porque a sessão não escreve a marca
+ * (gatilho da migration 9381). A senha nova já valeu: uma falha aqui é
+ * registrada e não desfaz a recuperação — o pior caso é uma troca a mais.
+ */
+async function limparSenhaProvisoria(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  requestId: string | null,
+): Promise<void> {
+  const { data: marcados, error: leErr } = await supabase
+    .from("user_organizations")
+    .select("organization_id")
+    .eq("user_id", userId)
+    .eq("senha_provisoria", true);
+  const orgs = (marcados ?? []).map((v) => v.organization_id as string);
+  if (leErr || orgs.length === 0) {
+    if (leErr) {
+      logger.error("recuperação: marca da senha provisória não pôde ser lida", {
+        user_id: userId,
+        request_id: requestId,
+        code: leErr.code,
+      });
+    }
+    return;
+  }
+  const { error } = await createAdminClient()
+    .from("user_organizations")
+    .update({ senha_provisoria: false })
+    .in("organization_id", orgs)
+    .eq("user_id", userId)
+    .eq("senha_provisoria", true);
+  if (error) {
+    logger.error("recuperação: senha trocada, mas a marca da senha provisória não caiu", {
+      user_id: userId,
+      request_id: requestId,
+      code: error.code,
+    });
+    return;
+  }
+  invalidarUsuario(userId);
 }
