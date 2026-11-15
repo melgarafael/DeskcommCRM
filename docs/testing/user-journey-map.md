@@ -701,7 +701,7 @@ divide o servidor. Só aparece exercitando o produto pela tela.
 Contexto do código: tela Configurações › Aparência (`app/app/settings/aparencia`),
 catálogo em `lib/aparencia/catalogo.ts`, CSS escopado por `[data-aparencia="id"]`
 (`lib/aparencia/css.ts` + `app/app/aparencia.css`), gravação por
-`fn_definir_aparencia_da_organizacao` (migration 9364). Spec:
+`fn_definir_aparencia_da_organizacao` (migration 9388). Spec:
 `tests/e2e/aparencia-templates.spec.ts`. Só estética: nenhuma rota, regra ou dado
 muda. `[P1]` porque quem nunca abre a tela vê o sistema de sempre.
 

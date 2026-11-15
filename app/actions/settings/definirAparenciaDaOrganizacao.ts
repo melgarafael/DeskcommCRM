@@ -9,7 +9,7 @@
  * daqui muda rota, permissão, dado ou comportamento.
  *
  * ⚠️ PELO CLIENT DA SESSÃO, E NÃO PELO ADMIN CLIENT. Quem decide é
- * `fn_definir_aparencia_da_organizacao` (migration 9364), que confere papel,
+ * `fn_definir_aparencia_da_organizacao` (migration 9388), que confere papel,
  * modo suporte e segundo fator pelo `auth.uid()` e grava com `jsonb_set` só a
  * chave `aparencia` — sem disputar `settings` com os outros escritores. A
  * conferência de papel daqui só evita chamar o banco à toa; a autoridade é a

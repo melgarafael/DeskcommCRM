@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import pg from "pg";
 
 /**
- * APARÊNCIA DA ORGANIZAÇÃO (migration 9364) — `fn_definir_aparencia_da_organizacao`.
+ * APARÊNCIA DA ORGANIZAÇÃO (migration 9388) — `fn_definir_aparencia_da_organizacao`.
  *
  * Invariante de banco porque quem decide é o banco: a função confere papel,
  * suporte e segundo fator pelo `auth.uid()` e grava só a chave `aparencia` de
