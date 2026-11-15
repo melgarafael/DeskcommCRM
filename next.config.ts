@@ -118,6 +118,20 @@ const nextConfig: NextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "X-Frame-Options", value: "DENY" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          // O Cloudflare na frente não manda HSTS (medido no domínio real): quem
+          // responde pelo transporte é a origem. Sem isto, a primeira visita em
+          // http fica em http — e cookie de sessão atravessa rede hostil em claro.
+          { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
+          // CSP curta de propósito: `frame-ancestors` repete o DENY para navegador
+          // que só entende CSP, `base-uri` impede tag injetada de mudar a base dos
+          // links relativos e `form-action` impede formulário forjado para fora.
+          // `script-src`/`style-src` ficam de fora: o Next injeta bootstrap inline e
+          // o app abre WebSocket — política sem nonce quebraria a tela, e política
+          // que quebra tela acaba desligada por quem opera.
+          {
+            key: "Content-Security-Policy",
+            value: "frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+          },
           // microphone=(self): o gravador de voz do composer (PTT estilo WhatsApp)
           // usa getUserMedia({audio}); microphone=() bloquearia em TODA origem,
           // inclusive a própria — daria "microphone is not allowed in this document".
