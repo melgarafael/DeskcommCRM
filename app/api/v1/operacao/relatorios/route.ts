@@ -19,7 +19,7 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { logger } from "@/lib/logger";
-import { resolverDia } from "@/lib/operacao/ler-para-a-sessao";
+import { resolverDia } from "@/lib/operacao/regras";
 import { contextoDaOrganizacao, gerarRelatorioDiario } from "@/lib/operacao/relatorio-diario";
 import { createAdminClient } from "@/lib/supabase/admin";
 

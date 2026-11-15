@@ -65,6 +65,17 @@ export function limitesDoDia(dia: string, fuso: string): { inicio: Date; fim: Da
   };
 }
 
+export type DiaPedido = { ok: true; dia: string } | { ok: false; motivo: "dia_invalido" | "dia_no_futuro" };
+
+/** O dia pedido (ou hoje, no fuso). Dia futuro é recusado: não há o que mostrar. */
+export function resolverDia(bruto: string | null | undefined, fuso: string, agora = new Date()): DiaPedido {
+  const hoje = diaNoFuso(agora, fuso);
+  if (!bruto) return { ok: true, dia: hoje };
+  if (!diaValido(bruto)) return { ok: false, motivo: "dia_invalido" };
+  if (bruto > hoje) return { ok: false, motivo: "dia_no_futuro" };
+  return { ok: true, dia: bruto };
+}
+
 /** A hora de parede (0..23) do instante no fuso. */
 export function horaNoFuso(instante: Date, fuso: string): number {
   return partesNoFuso(instante, fusoUtilizavel(fuso)).hora;

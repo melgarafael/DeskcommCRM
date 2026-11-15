@@ -12,20 +12,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 import { montarOperacaoDoDia, nomesPelaFuncao } from "./operacao-do-dia";
-import { diaNoFuso, diaValido } from "./regras";
+import { diaNoFuso, resolverDia } from "./regras";
 import { contextoDaOrganizacao } from "./relatorio-diario";
 import type { OperacaoDoDia } from "./tipos";
 
-export type DiaPedido = { ok: true; dia: string } | { ok: false; motivo: "dia_invalido" | "dia_no_futuro" };
-
-/** O dia pedido (ou hoje, no fuso). Dia futuro é recusado: não há o que mostrar. */
-export function resolverDia(bruto: string | null | undefined, fuso: string, agora = new Date()): DiaPedido {
-  const hoje = diaNoFuso(agora, fuso);
-  if (!bruto) return { ok: true, dia: hoje };
-  if (!diaValido(bruto)) return { ok: false, motivo: "dia_invalido" };
-  if (bruto > hoje) return { ok: false, motivo: "dia_no_futuro" };
-  return { ok: true, dia: bruto };
-}
 
 export async function lerOperacaoDaSessao(
   orgId: string,
