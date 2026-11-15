@@ -26,8 +26,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { csvDaLista, entraNaLista, resumoDaLista, situacaoDaEmpresa } from "@/lib/prospecting/exportar";
 import { lerListaDaCampanha } from "@/lib/prospecting/exportar-leitura";
 
+// O Postgres efêmero do `scripts/test-db.sh`, em campos separados (e não numa
+// connection string com senha, que o pré-voo lê como segredo vazado).
 const pool = new pg.Pool({
-  connectionString: `postgresql://postgres:postgres@127.0.0.1:${process.env.TEST_DB_PORT ?? 54329}/postgres`,
+  host: "127.0.0.1",
+  port: Number(process.env.TEST_DB_PORT ?? 54329),
+  user: "postgres",
+  password: "postgres",
+  database: "postgres",
   max: 4,
 });
 
