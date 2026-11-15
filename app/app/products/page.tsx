@@ -15,7 +15,7 @@ import {
 } from "@/lib/catalogo/busca-da-tela";
 import { apresentacaoDoCatalogoLigada } from "@/lib/catalogo/apresentacao-ligada";
 import { BUCKET_DAS_FOTOS, fotoPertenceAoProduto } from "@/lib/catalogo/fotos";
-import { resumoDaFonte } from "@/lib/catalogo/fonte-do-feed";
+import { fonteDoFeedNaTela } from "@/lib/catalogo/fonte-do-feed";
 import { tagDeIdioma } from "@/lib/i18n/datas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { moduloLigado } from "@/lib/instalacao/modulos";
@@ -25,7 +25,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 import { ProdutosClient } from "./_client";
-import { FonteDoFeed, type FonteDoFeedNaTela } from "./_fonte-do-feed";
+import { FonteDoFeed } from "./_fonte-do-feed";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Produtos" };
@@ -134,17 +134,12 @@ export default async function ProdutosPage({
       .eq("organization_id", activeOrg.orgId)
       .maybeSingle();
     if (erroDaFonte) throw new Error(`Não consegui ler a fonte do catálogo: ${erroDaFonte.message}`);
-    const fonte: FonteDoFeedNaTela | null = linha
-      ? {
-          url: linha.url,
-          formato: linha.formato === "csv" ? "csv" : "json",
-          ultimaLeitura: linha.ultima_leitura_em
-            ? new Date(linha.ultima_leitura_em).toLocaleString(tagDeIdioma(user.idioma))
-            : null,
-          resumo: resumoDaFonte(linha.ultimo_resumo),
-          falhasSeguidas: linha.falhas_seguidas,
-          ultimoErro: linha.ultimo_erro,
-        }
+    // A URL inteira (que pode levar token) só para quem pode editar (`manager`+).
+    const fonte = linha
+      ? fonteDoFeedNaTela(linha, {
+          podeVerUrl: podeEditar,
+          formatarData: (iso) => new Date(iso).toLocaleString(tagDeIdioma(user.idioma)),
+        })
       : null;
     fonteDoFeed = <FonteDoFeed fonte={fonte} podeEditar={podeEditar} />;
   }

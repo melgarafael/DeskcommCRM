@@ -8,18 +8,7 @@ import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/hooks/i18n/useT";
 import { apiClient } from "@/lib/api/client";
-import type { ResumoDaFonte } from "@/lib/catalogo/fonte-do-feed";
-
-/** O que a tela sabe da fonte desta empresa — montado no servidor (`page.tsx`). */
-export interface FonteDoFeedNaTela {
-  url: string;
-  formato: "json" | "csv";
-  /** Já formatada no idioma de quem lê; `null` = nunca leu. */
-  ultimaLeitura: string | null;
-  resumo: ResumoDaFonte | null;
-  falhasSeguidas: number;
-  ultimoErro: string | null;
-}
+import type { FonteDoFeedNaTela } from "@/lib/catalogo/fonte-do-feed";
 
 interface PlanoConferido {
   criar: number;
@@ -27,6 +16,8 @@ interface PlanoConferido {
   desativar: number;
   inalterados: number;
   erros: number;
+  /** A trava da desativação recusou a rodada: "Sincronizar" fica desligado. */
+  recusa: string | null;
 }
 
 /**
@@ -50,12 +41,12 @@ export function FonteDoFeed({ fonte, podeEditar }: { fonte: FonteDoFeedNaTela | 
   async function enviar(dryRun: boolean) {
     setOcupado(true);
     try {
-      const corpo = await apiClient.post<{ data: { resumo: PlanoConferido & { criados?: number; atualizados?: number; desativados?: number } } }>(
+      const corpo = await apiClient.post<{ data: { resumo: Omit<PlanoConferido, "recusa">; recusa?: string | null } }>(
         "/api/v1/products/feed",
         { url: url.trim(), formato, dry_run: dryRun },
       );
       if (dryRun) {
-        setConferido(corpo.data.resumo);
+        setConferido({ ...corpo.data.resumo, recusa: corpo.data.recusa ?? null });
       } else {
         setConferido(null);
         toast.success(t("Catálogo sincronizado com o feed."));
@@ -142,7 +133,7 @@ export function FonteDoFeed({ fonte, podeEditar }: { fonte: FonteDoFeedNaTela | 
           >
             {t("Conferir")}
           </Button>
-          <Button disabled={ocupado || conferido === null} onClick={() => void enviar(false)} data-testid="sincronizar-feed">
+          <Button disabled={ocupado || conferido === null || conferido.recusa !== null} onClick={() => void enviar(false)} data-testid="sincronizar-feed">
             {t("Sincronizar")}
           </Button>
         </div>
@@ -153,6 +144,11 @@ export function FonteDoFeed({ fonte, podeEditar }: { fonte: FonteDoFeedNaTela | 
           {t("Se sincronizar agora:")} {conferido.criar} {t("novos")} · {conferido.atualizar} {t("atualizados")} ·{" "}
           {conferido.desativar} {t("desativados")} · {conferido.inalterados} {t("sem mudança")} · {conferido.erros}{" "}
           {t("com erro")}
+        </p>
+      ) : null}
+      {conferido?.recusa ? (
+        <p className="mt-2 rounded-md bg-destructive/10 p-2 text-destructive" role="alert" data-testid="recusa-do-feed">
+          {t("Esta leitura não será aplicada:")} {conferido.recusa}
         </p>
       ) : null}
     </section>

@@ -273,3 +273,29 @@ describe("POST /api/v1/products/feed — módulo `catalogo_por_feed` desligado (
     expect(resolvido?.valor).toMatchObject({ status: "resolved" });
   });
 });
+
+describe("POST /api/v1/products/feed — o teto proporcional", () => {
+  const muitos = () =>
+    Array.from({ length: 12 }, (_, i) => ({ ...existente, id: `p-${i}`, id_externo: `SKU-${i}`, nome: `Item ${i}` }));
+
+  it("dry_run devolve a recusa para a tela mostrar", async () => {
+    estado.produtos = muitos();
+    const { POST } = await import("./route");
+
+    const res = await POST(pedido({ itens: [{ id: "SKU-0", nome: "Item 0", preco: "1.000,00" }] }));
+    const corpo = (await res.json()) as { data: { recusa: string | null } };
+
+    expect(res.status).toBe(200);
+    expect(corpo.data.recusa).toContain("11 de 12");
+  });
+
+  it("aplicar a rodada recusada responde 422 e não escreve nada", async () => {
+    estado.produtos = muitos();
+    const { POST } = await import("./route");
+
+    const res = await POST(pedido({ itens: [{ id: "SKU-0", nome: "Item 0", preco: "1.000,00" }], dry_run: false }));
+
+    expect(res.status).toBe(422);
+    expect(estado.escritas).toEqual([]);
+  });
+});

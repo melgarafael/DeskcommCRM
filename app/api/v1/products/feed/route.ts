@@ -189,9 +189,15 @@ export async function POST(req: NextRequest): Promise<Response> {
           inalterados: plano.inalterados,
           errosPorItem: plano.errosPorItem,
         },
+        recusa: plano.recusa,
       },
       { requestId },
     );
+  }
+
+  // A mesma trava do cron: a rodada recusada não aplica nada, nem pela tela.
+  if (plano.recusa) {
+    return fail("validation_failed", plano.recusa, 422, { requestId, details: { feed: [plano.recusa] } });
   }
 
   const moeda = await moedaDaOrganizacao(supabase, orgId);

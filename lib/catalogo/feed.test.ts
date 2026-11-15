@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  MINIMO_PARA_O_TETO,
   type ProdutoDoCatalogo,
   planejarFeed,
   resumoDoPlano,
@@ -247,7 +248,7 @@ describe("planejarFeed: o plano da rodada", () => {
     expect(resultado.ok).toBe(true);
     if (!resultado.ok) return;
     expect(resultado.plano.desativar).toHaveLength(0);
-    expect(resultado.plano.errosPorItem[0]!.motivo).toContain("nenhum produto foi desativado");
+    expect(resultado.plano.recusa).toContain("nenhum produto foi desativado");
   });
 
   it("feed em que NENHUMA linha é reconhecível (coluna de id renomeada) também não desativa nada", () => {
@@ -272,5 +273,34 @@ describe("planejarFeed: o plano da rodada", () => {
     expect(resultado.ok).toBe(true);
     if (!resultado.ok) return;
     expect(resultado.plano.desativar.map((p) => p.id)).toEqual(["p-sumiu"]);
+  });
+
+  /** O TETO PROPORCIONAL: mais da metade dos ativos da fonte fora do feed = feed quebrado. */
+  const catalogo = (n: number) =>
+    Array.from({ length: n }, (_, i) => existente({ id: `p-${i}`, id_externo: `SKU-${i}`, nome: `Item ${i}` }));
+  const feedCom = (n: number) => feedDe(Array.from({ length: n }, (_, i) => ({ id: `SKU-${i}`, nome: `Item ${i}`, preco: "1.000,00" })));
+
+  it("feed que desativaria MAIS da metade (6 de 10) é recusado inteiro e não desativa nada", () => {
+    expect(MINIMO_PARA_O_TETO).toBe(10);
+    const resultado = planejarFeed({ conteudo: feedCom(4), formato: "json", existentes: catalogo(10) });
+
+    expect(resultado.ok).toBe(true);
+    if (!resultado.ok) return;
+    expect(resultado.plano.desativar).toHaveLength(0);
+    expect(resultado.plano.recusa).toContain("6 de 10");
+  });
+
+  it("controle: EXATAMENTE a metade (5 de 10) ainda desativa", () => {
+    const resultado = planejarFeed({ conteudo: feedCom(5), formato: "json", existentes: catalogo(10) });
+
+    expect(resultado.ok && resultado.plano.recusa).toBe(null);
+    expect(resultado.ok && resultado.plano.desativar).toHaveLength(5);
+  });
+
+  it("abaixo do mínimo (3 de 4 ativos) a regra não vale: desativa", () => {
+    const resultado = planejarFeed({ conteudo: feedCom(1), formato: "json", existentes: catalogo(4) });
+
+    expect(resultado.ok && resultado.plano.recusa).toBe(null);
+    expect(resultado.ok && resultado.plano.desativar).toHaveLength(3);
   });
 });

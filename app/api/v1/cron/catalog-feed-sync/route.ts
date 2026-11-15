@@ -184,6 +184,9 @@ export async function sincronizarFontes(
         existentes,
         mapeamento: fonte.mapeamento ?? {},
       });
+      // Trava da desativação (feed sem item reconhecível, ou mais da metade fora
+      // de linha): nada é aplicado e a rodada é FALHA — conta para o aviso.
+      if (plano.recusa) throw new Error(plano.recusa);
       const contagem = resumoDoPlano(plano);
 
       const moeda = await moedaDaOrganizacao(admin, fonte.organization_id);

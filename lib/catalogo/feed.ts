@@ -159,7 +159,25 @@ export interface PlanoDaRodada {
   desativar: ProdutoParaDesativar[];
   inalterados: number;
   errosPorItem: ErroDoItem[];
+  /**
+   * A rodada INTEIRA recusada pelas travas da desativação (feed sem nenhum item
+   * reconhecível, ou que desativaria mais da metade do que veio desta fonte).
+   * `null` = pode aplicar. Com recusa, `desativar` vem vazio, e quem aplica não
+   * aplica nada: o cron conta como falha (e para o aviso da Central), a rota
+   * responde 422 e o "Conferir" da tela mostra o motivo.
+   */
+  recusa: string | null;
 }
+
+/**
+ * O TETO PROPORCIONAL: uma leitura que desativaria MAIS DA METADE dos produtos
+ * ativos vindos desta fonte é recusada inteira. Abaixo de `MINIMO_PARA_O_TETO`
+ * ativos a regra não vale — num catálogo de 4 itens, tirar 3 de linha é
+ * plausível; num de 400, tirar 300 é feed quebrado (paginação cortada, filtro
+ * trocado no ERP). Quem quer mesmo desativar a maior parte faz pela tela de
+ * Produtos, e a rodada seguinte já os encontra desativados.
+ */
+export const MINIMO_PARA_O_TETO = 10;
 
 export interface ResumoDoPlano {
   criar: number;
@@ -389,7 +407,7 @@ export function planejarRodada(registros: readonly unknown[], opcoes: OpcoesDoPl
     porChave.set(chaveDoIdExterno(produto.id_externo), produto);
   }
 
-  const plano: PlanoDaRodada = { criar: [], atualizar: [], desativar: [], inalterados: 0, errosPorItem: [] };
+  const plano: PlanoDaRodada = { criar: [], atualizar: [], desativar: [], inalterados: 0, errosPorItem: [], recusa: null };
   /**
    * Todo id que o feed TROUXE, mesmo o do item recusado por preço ilegível: o
    * produto continua no feed, então desativá-lo seria mentir sobre o estoque.
@@ -537,25 +555,30 @@ export function planejarRodada(registros: readonly unknown[], opcoes: OpcoesDoPl
   // Só o que é DESTA fonte e está ATIVO: produto manual (`id_externo` nulo) não
   // é do feed, e o que já está desativado não tem o que desativar de novo.
   //
-  // A TRAVA: feed que não trouxe NENHUM item reconhecível (`[]` válido, ou toda
-  // linha recusada porque o sistema da revenda trocou o nome da coluna) não
-  // desativa nada. Sem ela, um feed vazio na rodada automática apagava o
-  // catálogo inteiro da vista do agente, sem ninguém clicar e sem ninguém ver.
-  // ponytail: trava só no caso "nenhum item"; um feed que perdeu metade dos
-  // itens ainda desativa a metade — teto proporcional se isso aparecer medido.
+  // DUAS TRAVAS, as duas recusam a rodada inteira (ver `recusa`). Sem elas, um
+  // feed quebrado na rodada automática tirava o catálogo da vista do agente,
+  // sem ninguém clicar e sem ninguém ver:
+  //  1. feed sem NENHUM item reconhecível (`[]` válido, ou toda linha recusada
+  //     porque o sistema da revenda trocou o nome da coluna);
+  //  2. o TETO PROPORCIONAL (`MINIMO_PARA_O_TETO`): mais da metade dos ativos.
+  const ativos = [...porChave.values()].filter((produto) => produto.ativo);
   if (vistosNoFeed.size === 0) {
-    if ([...porChave.values()].some((produto) => produto.ativo)) {
-      plano.errosPorItem.push({
-        referencia: "feed",
-        motivo: t("o feed não trouxe nenhum item reconhecível — nenhum produto foi desativado"),
-      });
+    if (ativos.length > 0) {
+      plano.recusa = t("o feed não trouxe nenhum item reconhecível — nenhum produto foi desativado");
     }
     return plano;
   }
-  for (const produto of porChave.values()) {
-    if (!produto.ativo) continue;
+  for (const produto of ativos) {
     if (vistosNoFeed.has(chaveDoIdExterno(produto.id_externo!))) continue;
     plano.desativar.push({ id: produto.id, id_externo: produto.id_externo!, nome: produto.nome });
+  }
+  if (ativos.length >= MINIMO_PARA_O_TETO && plano.desativar.length * 2 > ativos.length) {
+    plano.recusa = t(
+      "o feed desativaria {quantidade} de {total} produtos ativos, mais da metade — nada foi aplicado. Confira o feed; para tirar esses produtos de linha, desative-os na tela de Produtos",
+    )
+      .replace("{quantidade}", String(plano.desativar.length))
+      .replace("{total}", String(ativos.length));
+    plano.desativar = [];
   }
 
   return plano;

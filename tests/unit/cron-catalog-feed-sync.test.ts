@@ -321,3 +321,38 @@ describe("catalog-feed-sync — falha repetida não fica muda", () => {
     expect(resolvido?.valor).toMatchObject({ status: "resolved" });
   });
 });
+
+describe("catalog-feed-sync — o teto proporcional é FALHA da rodada", () => {
+  it("feed que tiraria mais da metade de linha: nada é escrito no catálogo, e a falha conta para o aviso", async () => {
+    estado.fontes = [
+      { id: "f-1", organization_id: ORG_ID, url: "https://revenda.example/feed.json", formato: "json", mapeamento: {}, falhas_seguidas: 2 },
+    ];
+    estado.produtos = Array.from({ length: 12 }, (_, i) => ({
+      id: `p-${i}`,
+      id_externo: `SKU-${i}`,
+      nome: `Item ${i}`,
+      descricao: null,
+      preco_cents: 100_000,
+      fotos: null,
+      quantidade: 0,
+      ativo: true,
+    }));
+    // Só 2 dos 12 continuam no feed: 10 sairiam de linha.
+    vi.mocked(buscarFeedDaUrl).mockResolvedValue({
+      ok: true,
+      texto: JSON.stringify([
+        { id: "SKU-0", nome: "Item 0", preco: "1.000,00" },
+        { id: "SKU-1", nome: "Item 1", preco: "1.000,00" },
+      ]),
+    });
+    const { sincronizarFontes } = await import("@/app/api/v1/cron/catalog-feed-sync/route");
+
+    const [resultado] = (await sincronizarFontes(clienteFalso as never))!;
+
+    expect(resultado!.falhou).toContain("10 de 12");
+    expect(estado.escritas.filter((e) => e.tabela === "catalog_products")).toEqual([]);
+    const rastro = estado.escritas.find((e) => e.tabela === "catalog_feed_sources" && e.tipo === "update");
+    expect(rastro?.valor).toMatchObject({ falhas_seguidas: 3 });
+    expect(estado.escritas.some((e) => e.tabela === "agent_inbox_items" && e.tipo === "insert")).toBe(true);
+  });
+});

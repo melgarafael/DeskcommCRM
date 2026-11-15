@@ -14081,6 +14081,10 @@ export const DICIONARIO: Traducoes = {
   "o feed não trouxe nenhum item reconhecível — nenhum produto foi desativado": {
     es: "el feed no trajo ningún artículo reconocible — ningún producto fue desactivado",
   },
+  "o feed desativaria {quantidade} de {total} produtos ativos, mais da metade — nada foi aplicado. Confira o feed; para tirar esses produtos de linha, desative-os na tela de Produtos": {
+    es: "el feed desactivaría {quantidade} de {total} productos activos, más de la mitad — no se aplicó nada. Revise el feed; para retirar esos productos, desactívelos en la pantalla de Productos",
+  },
+  "Esta leitura não será aplicada:": { es: "Esta lectura no se aplicará:" },
   // O módulo opcional `catalogo_por_feed` (doc 322, A; PR #4179): a linha em
   // /admin/sistema, o texto em Recursos opcionais e a seção da tela de Produtos.
   "Catálogo sincronizado por feed": { es: "Catálogo sincronizado por feed" },
