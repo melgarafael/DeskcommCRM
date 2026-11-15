@@ -4626,6 +4626,54 @@ export type Database = {
           },
         ];
       };
+      catalog_feed_sources: {
+        Row: {
+          ativo: boolean;
+          created_at: string;
+          formato: string;
+          id: string;
+          mapeamento: Json;
+          organization_id: string;
+          ultima_leitura_em: string | null;
+          ultimo_resumo: Json | null;
+          updated_at: string;
+          url: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          ativo?: boolean;
+          created_at?: string;
+          formato?: string;
+          id?: string;
+          mapeamento?: Json;
+          organization_id: string;
+          ultima_leitura_em?: string | null;
+          ultimo_resumo?: Json | null;
+          updated_at?: string;
+          url: string;
+        };
+        Update: {
+          ativo?: boolean;
+          created_at?: string;
+          formato?: string;
+          id?: string;
+          mapeamento?: Json;
+          organization_id?: string;
+          ultima_leitura_em?: string | null;
+          ultimo_resumo?: Json | null;
+          updated_at?: string;
+          url?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "catalog_feed_sources_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       catalog_product_presentations: {
         Row: {
           audio_mime: string | null;
@@ -4705,6 +4753,7 @@ export type Database = {
           descricao: string | null;
           fotos: string[];
           id: string;
+          id_externo: string;
           imagem_url: string | null;
           marca: string | null;
           moeda: string;
@@ -4727,6 +4776,7 @@ export type Database = {
           descricao?: string | null;
           fotos?: string[];
           id?: string;
+          id_externo?: string;
           imagem_url?: string | null;
           marca?: string | null;
           moeda?: string;
@@ -4748,6 +4798,7 @@ export type Database = {
           descricao?: string | null;
           fotos?: string[];
           id?: string;
+          id_externo?: string;
           imagem_url?: string | null;
           marca?: string | null;
           moeda?: string;
