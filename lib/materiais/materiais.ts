@@ -30,6 +30,7 @@
  * extensão conhecida, o material é RECUSADO — nunca rebaixado.
  */
 import { classificarMidiaComLegenda, type TipoDeMidiaComLegenda } from '@/lib/messaging/media/midia-com-legenda';
+import { nomeDeArquivoSeguro } from '@/lib/messaging/media/nome-para-envio';
 import { MAX_MEDIA_BYTES } from '@/lib/messaging/media/types';
 
 /** O bucket PRIVADO dos materiais (migration 9222). */
@@ -74,6 +75,20 @@ export function materialPertenceAOrganizacao(caminho: string, orgId: string): bo
 export function nomeDoMaterialNaConversa(caminho: string): string {
   const base = caminho.split('/').pop() ?? '';
   return `${PREFIXO_DO_MATERIAL_NA_CONVERSA}${base}`;
+}
+
+/**
+ * O nome com que o CLIENTE recebe o arquivo: o nome que a empresa deu ao
+ * material, com a extensão do arquivo guardado. Sem ele o WhatsApp mostraria o
+ * basename da cópia, `material-<uuid>.pdf` — o defeito que o #4457 tirou do
+ * envio do Inbox. A barra vira hífen antes da guarda, que só guarda o último
+ * segmento: "Tabela 2026/2027" não pode virar "2027.pdf".
+ */
+export function nomeDoMaterialParaOCliente(nome: string, caminho: string): string | null {
+  const extensao = /\.[a-z0-9]{1,8}$/i.exec(caminho)?.[0] ?? '';
+  const base = nome.replace(/[\\/]+/g, '-').trim();
+  const comExtensao = base.toLowerCase().endsWith(extensao.toLowerCase()) ? base : `${base}${extensao}`;
+  return nomeDeArquivoSeguro(comExtensao);
 }
 
 /** O destino da cópia: `whatsapp-media/<org>/<conversa>/material-<arquivo>`. */

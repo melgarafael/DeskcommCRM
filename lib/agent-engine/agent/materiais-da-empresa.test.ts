@@ -11,6 +11,7 @@ import {
   materialCompativelComCanal,
   materialPertenceAOrganizacao,
   nomeDoMaterialNaConversa,
+  nomeDoMaterialParaOCliente,
   tipoDeMaterial,
   TAMANHO_MAXIMO_DO_MATERIAL,
 } from "@/lib/materiais/materiais";
@@ -174,6 +175,20 @@ describe("nomeDoMaterialNaConversa — o nome é determinístico", () => {
   });
 });
 
+describe("nomeDoMaterialParaOCliente — o cliente vê o nome da empresa, não o do bucket", () => {
+  it("nome do material + a extensão do arquivo guardado", () => {
+    expect(nomeDoMaterialParaOCliente("Catálogo 2026", CAMINHO)).toBe("Catálogo 2026.pdf");
+  });
+
+  it("não duplica a extensão que o nome já traz", () => {
+    expect(nomeDoMaterialParaOCliente("tabela.PDF", CAMINHO)).toBe("tabela.PDF");
+  });
+
+  it("barra vira hífen: o nome não é cortado no último segmento", () => {
+    expect(nomeDoMaterialParaOCliente("Tabela 2026/2027", CAMINHO)).toBe("Tabela 2026-2027.pdf");
+  });
+});
+
 describe("listarMateriaisDoAgente — só ativo, permitido e compatível com o canal", () => {
   const linhas = [
     { ...MATERIAL_PRONTO, quando_enviar: "quando pedirem o catálogo" },
@@ -264,6 +279,7 @@ describe("prepararMaterialDaEmpresa — o caminho feliz", () => {
         storagePath: `${ORG}/${CONVERSA}/material-11111111-2222-4333-8444-555555555555.pdf`,
         mime: "application/pdf",
         type: "document",
+        filename: "Catálogo 2026.pdf",
       },
       material: { id: MATERIAL, nome: "Catálogo 2026" },
       legenda: "Segue o catálogo completo.",
@@ -413,6 +429,19 @@ describe("corpoDoEnvio — o material chega ao handler como DOCUMENTO", () => {
       body: "Segue o catálogo",
       metadata: { idempotency_key: "k", material_id: MATERIAL },
     });
+  });
+
+  it("o nome do documento chega ao handler como `media_filename`", () => {
+    const corpo = corpoDoEnvio(
+      {
+        ...base,
+        body: "",
+        media: { storagePath: "m.pdf", mime: "application/pdf", type: "document", filename: "Catálogo 2026.pdf" },
+        materialId: MATERIAL,
+      },
+      "k",
+    );
+    expect(corpo).toMatchObject({ media_filename: "Catálogo 2026.pdf" });
   });
 
   it("sem legenda, o documento vai SEM body", () => {

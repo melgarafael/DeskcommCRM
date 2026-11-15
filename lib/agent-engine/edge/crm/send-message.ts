@@ -116,6 +116,8 @@ export interface SendMessageInput {
         kind?: 'audio' | 'image';
         /** Ausente = imagem (foto do produto). Ver `ChannelSendInput` no contrato do canal. */
         type?: TipoDeMidiaComLegenda;
+        /** Nome do documento para o cliente; ausente = o basename do arquivo. */
+        filename?: string;
       }
     | { url: string; mime: string; type: TipoDeMidiaComLegenda };
   /**
@@ -169,6 +171,7 @@ export function corpoDoEnvio(
               type: input.media.type ?? input.media.kind ?? 'image',
               media_storage_path: input.media.storagePath,
               media_mime: input.media.mime,
+              ...(input.media.filename ? { media_filename: input.media.filename } : {}),
             }
         : { type: 'text' as const }),
     // Foto sem legenda vai sem `body`: o schema do envio pede corpo não vazio.

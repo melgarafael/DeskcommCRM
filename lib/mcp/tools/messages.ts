@@ -243,6 +243,7 @@ export const crmSendMaterial: McpToolDefinition<typeof materialInputShape> = {
         type: preparado.anexo.type,
         media_storage_path: preparado.anexo.storagePath,
         media_mime: preparado.anexo.mime,
+        ...(preparado.anexo.filename ? { media_filename: preparado.anexo.filename } : {}),
         ...(input.body ? { body: input.body } : {}),
         // O id no metadata é o que faz o freio de reenvio contar esta saída.
         metadata: { material_id: preparado.material.id },

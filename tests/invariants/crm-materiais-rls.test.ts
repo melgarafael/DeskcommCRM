@@ -1,4 +1,10 @@
-import { describe, expect, it } from "vitest";
+import pg from "pg";
+import { afterAll, describe, expect, it, vi } from "vitest";
+
+import {
+  listarMateriaisDoAgente,
+  prepararMaterialDaEmpresa,
+} from "@/lib/agent-engine/agent/materiais-da-empresa";
 
 import { DOCUMENT_MIMES } from "@/lib/messaging/media/upload-validation";
 import { BUCKET_DOS_MATERIAIS, TAMANHO_MAXIMO_DO_MATERIAL } from "@/lib/materiais/materiais";
@@ -255,5 +261,59 @@ describe("o banco prende o que o TypeScript também confere", () => {
               and c.relrowsecurity = false;`),
     );
     expect(sem).toBe("NENHUMA");
+  });
+});
+
+/**
+ * O ID QUE O MODELO DEVOLVE NÃO É AUTORIDADE (#4145).
+ *
+ * O turno do agente e o `crm_send_material` leem pelo pool do servidor — sem
+ * RLS. Entre o material da org B e a conversa da org A só há o `organization_id`
+ * que o PREPARO põe na query, vindo do job/token, nunca do argumento do modelo.
+ * Os casos acima medem a RLS; estes medem a query de verdade contra o Postgres,
+ * como o servidor a executa: o id da org B, pedido em nome da org A, não é
+ * achado e nada é copiado. O positivo impede o verde por vácuo.
+ */
+describe("o preparo do envio só acha material da PRÓPRIA organização", () => {
+  const pool = new pg.Pool({
+    connectionString: `postgresql://postgres:postgres@127.0.0.1:${process.env.TEST_DB_PORT ?? 54329}/postgres`,
+    max: 2,
+  });
+  afterAll(() => pool.end());
+  const CONVERSA_A = "c4a7e012-3333-4000-8000-00000000000a";
+
+  it("a lista oferecida ao agente A não contém o material da org B", async () => {
+    const lista = await listarMateriaisDoAgente(pool, { tenantId: ORG_A, agentId: AGENTE_A, canal: "whatsapp" });
+    expect(lista.map((m) => m.id)).toEqual([MATERIAL_A]);
+  });
+
+  it.each([
+    ["no turno do agente A", AGENTE_A],
+    ["por token, sem agente", null],
+  ])("id da org B pedido em nome da org A (%s): não achado, nada copiado", async (_caso, agentId) => {
+    const copiar = vi.fn(async () => true);
+    const r = await prepararMaterialDaEmpresa(pool, copiar, {
+      tenantId: ORG_A,
+      agentId,
+      conversationId: CONVERSA_A,
+      materialId: MATERIAL_B,
+      canal: "whatsapp",
+      clientePediu: true,
+    });
+    expect(r).toMatchObject({ ok: false, code: "material_nao_encontrado" });
+    expect(copiar).not.toHaveBeenCalled();
+  });
+
+  it("controle positivo: o material da própria org sai para a pasta da conversa dela", async () => {
+    const copiar = vi.fn(async () => true);
+    const r = await prepararMaterialDaEmpresa(pool, copiar, {
+      tenantId: ORG_A,
+      agentId: AGENTE_A,
+      conversationId: CONVERSA_A,
+      materialId: MATERIAL_A,
+      canal: "whatsapp",
+    });
+    expect(r).toMatchObject({ ok: true, material: { id: MATERIAL_A } });
+    expect(copiar).toHaveBeenCalledWith(ARQUIVO_A, expect.stringMatching(new RegExp(`^${ORG_A}/${CONVERSA_A}/material-`)));
   });
 });

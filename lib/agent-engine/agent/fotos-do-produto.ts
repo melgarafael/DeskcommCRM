@@ -55,6 +55,8 @@ export interface FotoParaEnvio {
    * foto.
    */
   type?: TipoDeMidiaComLegenda;
+  /** Nome do documento para o cliente (material da empresa); foto não declara. */
+  filename?: string;
 }
 
 /**

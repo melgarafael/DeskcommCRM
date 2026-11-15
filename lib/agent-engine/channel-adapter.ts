@@ -87,6 +87,8 @@ export interface ChannelSendInput {
          * antigo, recompilado, continua enviando foto como foto.
          */
         type?: TipoDeMidiaComLegenda;
+        /** Nome do documento para o cliente; ausente = o basename do arquivo. */
+        filename?: string;
       }
     | { url: string; mime: string; type: TipoDeMidiaComLegenda };
   /**

@@ -31,6 +31,7 @@ import {
   materialCompativelComCanal,
   materialPertenceAOrganizacao,
   motivoIncompativelComCanal,
+  nomeDoMaterialParaOCliente,
   tamanhoLegivel,
   TAMANHO_MAXIMO_DO_MATERIAL,
   tipoDeMaterial,
@@ -61,6 +62,8 @@ export interface AnexoDeMaterial {
   storagePath: string;
   mime: string;
   type: TipoDeMaterial;
+  /** O nome que o cliente vê no documento (`nomeDoMaterialParaOCliente`). */
+  filename?: string;
 }
 
 export type MaterialPreparado =
@@ -365,9 +368,15 @@ export async function prepararMaterialDaEmpresa(
     };
   }
 
+  const filename = nomeDoMaterialParaOCliente(material.nome, material.storage_path);
   return {
     ok: true,
-    anexo: { storagePath: destino, mime: tipo.mime, type: tipo.type },
+    anexo: {
+      storagePath: destino,
+      mime: tipo.mime,
+      type: tipo.type,
+      ...(filename ? { filename } : {}),
+    },
     material: { id: material.id, nome: material.nome },
     legenda: (material.legenda ?? '').trim(),
   };
