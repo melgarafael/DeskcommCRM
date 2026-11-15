@@ -42,7 +42,9 @@ export const followupGatilhoLeadHandler: EventHandler = {
         detail:
           `armados=${summary.pointers_armados} enrolled=${summary.enrolled} ` +
           `origem_obsoleta=${summary.skipped_stale_origin ?? 0} ja_vivo=${summary.skipped_existing} gate=${summary.pointers_barrados_pelo_gate} ` +
-          `parado_no_assistido=${summary.parados_no_assistido ?? 0} sem_contato=${summary.sem_contato} planilha=${summary.vindos_de_planilha}`,
+          `parado_no_assistido=${summary.parados_no_assistido ?? 0} sem_contato=${summary.sem_contato} planilha=${summary.vindos_de_planilha} ` +
+          // #4587: o negócio barrado pelo filtro de funil/etiqueta não some calado.
+          `fora_do_filtro=${summary.fora_do_filtro ?? 0}`,
       };
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);

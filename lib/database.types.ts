@@ -788,10 +788,12 @@ export type Database = {
           error_message: string | null;
           id: string;
           inbound_message_id: string | null;
+          input_text: string | null;
           is_dry_run: boolean;
           latency_ms: number | null;
           organization_id: string;
           outbound_message_id: string | null;
+          output_text: string | null;
           started_at: string;
           status: string;
           steps_count: number;
@@ -814,10 +816,12 @@ export type Database = {
           error_message?: string | null;
           id?: string;
           inbound_message_id?: string | null;
+          input_text?: string | null;
           is_dry_run?: boolean;
           latency_ms?: number | null;
           organization_id: string;
           outbound_message_id?: string | null;
+          output_text?: string | null;
           started_at?: string;
           status?: string;
           steps_count?: number;
@@ -839,10 +843,12 @@ export type Database = {
           error_message?: string | null;
           id?: string;
           inbound_message_id?: string | null;
+          input_text?: string | null;
           is_dry_run?: boolean;
           latency_ms?: number | null;
           organization_id?: string;
           outbound_message_id?: string | null;
+          output_text?: string | null;
           started_at?: string;
           status?: string;
           steps_count?: number;
@@ -6510,6 +6516,7 @@ export type Database = {
       conversations: {
         Row: {
           active_agent_set_at: string | null;
+          active_agent_transfer_at: string | null;
           active_ai_agent_id: string | null;
           active_intent: string | null;
           assigned_at: string | null;
@@ -6560,6 +6567,7 @@ export type Database = {
         ComputedFields: "comando_da_conversa" | "automatico_da_conversa" | "tags_do_contato";
         Insert: {
           active_agent_set_at?: string | null;
+          active_agent_transfer_at?: string | null;
           active_ai_agent_id?: string | null;
           active_intent?: string | null;
           assigned_at?: string | null;
@@ -6606,6 +6614,7 @@ export type Database = {
         };
         Update: {
           active_agent_set_at?: string | null;
+          active_agent_transfer_at?: string | null;
           active_ai_agent_id?: string | null;
           active_intent?: string | null;
           assigned_at?: string | null;
@@ -10590,6 +10599,7 @@ export type Database = {
           partes_de_midia: number | null;
           passos: number | null;
           prefixo_hash: string | null;
+          preview_run_id: string | null;
           provider: string;
           purpose: string;
           status: string;
@@ -10622,6 +10632,7 @@ export type Database = {
           partes_de_midia?: number | null;
           passos?: number | null;
           prefixo_hash?: string | null;
+          preview_run_id?: string | null;
           provider: string;
           purpose?: string;
           status?: string;
@@ -10653,6 +10664,7 @@ export type Database = {
           partes_de_midia?: number | null;
           passos?: number | null;
           prefixo_hash?: string | null;
+          preview_run_id?: string | null;
           provider?: string;
           purpose?: string;
           status?: string;
@@ -13137,6 +13149,7 @@ export type Database = {
           id: string;
           organization_id: string;
           p256dh: string;
+          tipos_calados: string[];
           updated_at: string;
           user_id: string;
         };
@@ -13148,6 +13161,7 @@ export type Database = {
           id?: string;
           organization_id: string;
           p256dh: string;
+          tipos_calados?: string[];
           updated_at?: string;
           user_id: string;
         };
@@ -13158,6 +13172,7 @@ export type Database = {
           id?: string;
           organization_id?: string;
           p256dh?: string;
+          tipos_calados?: string[];
           updated_at?: string;
           user_id?: string;
         };
@@ -14942,6 +14957,29 @@ export type Database = {
           },
         ];
       };
+      calendar_service_google_push_queue: {
+        Row: {
+          ends_at: string;
+          google_conflict: Json | null;
+          google_event_id: string | null;
+          google_next_attempt_at: string;
+          id: string;
+          needs_google_push: boolean | null;
+          organization_id: string;
+          owner_user_id: string | null;
+          status: string;
+        };
+        ComputedFields: never;
+        Relationships: [
+          {
+            foreignKeyName: "calendar_appointments_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       external_db_connections_safe: {
         Row: {
           created_at: string;
@@ -15093,6 +15131,33 @@ export type Database = {
         Returns: Json;
       };
 
+      fn_enqueue_historico_analise: {
+        Args: { p_importacao: string; p_limite: number; p_org: string };
+        Returns: number;
+      };
+      fn_historico_analise_candidatos: {
+        Args: { p_importacao: string; p_org: string };
+        Returns: {
+          caracteres: number;
+          contact_id: string;
+          conversation_id: string;
+          job_status: string;
+          motivo: string;
+          ultima_mensagem_em: string;
+        }[];
+      };
+      fn_historico_analise_motivo_para_pular: {
+        Args: { p_contato: string; p_importacao: string; p_org: string };
+        Returns: string;
+      };
+      fn_previa_historico_analise: {
+        Args: { p_importacao: string; p_limite: number; p_org: string };
+        Returns: Json;
+      };
+      fn_resumo_historico_analise: {
+        Args: { p_importacao: string; p_org: string };
+        Returns: Json;
+      };
       activate_kb_version: {
         Args: { p_agent_id: string; p_version_id: string };
         Returns: undefined;
@@ -15522,6 +15587,7 @@ export type Database = {
         };
         Returns: {
           active_agent_set_at: string | null;
+          active_agent_transfer_at: string | null;
           active_ai_agent_id: string | null;
           active_intent: string | null;
           assigned_at: string | null;
@@ -16381,6 +16447,7 @@ export type Database = {
         Args: { p_conversation: string; p_expected?: number; p_org: string; p_status: string };
         Returns: {
           active_agent_set_at: string | null;
+          active_agent_transfer_at: string | null;
           active_ai_agent_id: string | null;
           active_intent: string | null;
           assigned_at: string | null;

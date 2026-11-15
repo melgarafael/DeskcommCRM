@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
+import userEvent from "@testing-library/user-event";
 
 /**
  * Tela da Prospecção (ORDEM A): o contador do "Verificar agora" (A4), o erro da
@@ -799,41 +800,255 @@ describe("voz e vocabulário à vista (issue #4360)", () => {
 });
 
 /**
- * A LISTA DE VOLTA (issue #4360, parte 1).
+ * A LISTA DE VOLTA (issue #4360), agora com as duas listas.
  *
- * O link do arquivo carrega a contagem do que ele leva — e a contagem sai da
- * MESMA régua do servidor (`naoAbordada`, `lib/prospecting/exportar.ts`), não
- * de um `filter` escrito de novo aqui. Quem já foi abordado fica fora do
- * arquivo: a campanha nova recusaria essa empresa ("Contato já existe no CRM")
- * e o download prometeria uma reimportação que não acontece.
+ * REVISTO DE PROPÓSITO. A versão anterior deste bloco travava "só empresa
+ * abordada não gera link": era a decisão da #4360 (o arquivo levava só as não
+ * abordadas), e foi ela que deixou a campanha CONCLUÍDA sem saída — justamente
+ * a que se quer reaproveitar para outra oferta. Agora o botão aparece em
+ * qualquer campanha com empresas, e abre um menu com "Só as não abordadas (N)"
+ * e "Todas (M)".
+ *
+ * Os números vêm do SERVIDOR (`?resumo=1`), da mesma régua do arquivo: quem
+ * pediu para parar é achado também pelo telefone, e esse vínculo não está na
+ * lista de candidatos da tela. Por isso o resumo abaixo NÃO é o que um `filter`
+ * nos candidatos daria — se a tela contasse sozinha, o teste ficaria vermelho.
  */
 describe("baixar a lista da campanha (issue #4360)", () => {
-  it("o link aponta para o CSV da campanha e diz quantas ainda não foram abordadas", async () => {
+  const RESUMO_URL = `/api/v1/prospecting/${COMPLETA}/exportar?resumo=1`;
+  /** A única promessa escrita na tela de que quem pediu para parar não sai no arquivo. */
+  const FRASE_DO_CARTAO =
+    "Baixar lista tem duas opções: só as empresas que ainda não foram abordadas, ou todas, com a situação de cada uma. Quem pediu para parar, contatos pessoais e quem teve os dados apagados ficam fora das duas listas.";
+
+  function comResumo(estado: unknown, resumo: unknown): (url: string) => Promise<unknown> {
+    return async (url: string) => (url === RESUMO_URL ? { data: resumo } : { data: estado });
+  }
+
+  async function abrirMenu() {
+    const user = userEvent.setup({ delay: null });
     openPage();
     fireEvent.click(await screen.findByRole("button", { name: /Clínicas de estética/ }));
-    const link = await screen.findByTestId("baixar-lista");
-    expect(link).toHaveAttribute("href", `/api/v1/prospecting/${COMPLETA}/exportar`);
-    expect(link).toHaveTextContent("Baixar lista (5)");
+    await user.click(await screen.findByTestId("baixar-lista"));
+    return user;
+  }
+
+  it("campanha concluída: 'Todas (M)' baixa a lista inteira, e a tela diz quantas ficaram de fora", async () => {
+    const base = fixture();
+    const concluida = {
+      ...base,
+      campaigns: base.campaigns.map((c) => (c.id === COMPLETA ? { ...c, status: "completed" } : c)),
+      candidates: ["c1", "c2", "c3"].map((id) => ({
+        ...candidato(id, COMPLETA, empresa(`Abordada ${id}`, "https://a.test/", null)),
+        status: "sent",
+        attempted_at: "2026-11-01T12:00:00.000Z",
+        progress: "sent",
+      })),
+    };
+    api.get.mockImplementation(
+      comResumo(concluida, {
+        total: 3,
+        nao_abordadas: 0,
+        todas: 2,
+        fora_da_lista: { dados_apagados: 0, pediu_para_parar: 1, ficha_pessoal: 0 },
+        truncada: false,
+      }),
+    );
+    await abrirMenu();
+
+    const todas = await screen.findByRole("menuitem", { name: "Todas (2)" });
+    expect(todas).toHaveAttribute("href", `/api/v1/prospecting/${COMPLETA}/exportar?quem=todas`);
+    // Nada para abordar: o item existe, diz zero e não vira link de arquivo vazio.
+    const soNaoAbordadas = screen.getByRole("menuitem", { name: "Só as não abordadas (0)" });
+    expect(soNaoAbordadas).toHaveAttribute("aria-disabled", "true");
+    expect(soNaoAbordadas).not.toHaveAttribute("href");
+    expect(screen.getByTestId("baixar-lista-fora")).toHaveTextContent(
+      "1 empresa fica fora das duas listas porque pediu para parar, é contato pessoal ou teve os dados apagados.",
+    );
+    expect(api.get).toHaveBeenCalledWith(RESUMO_URL);
+    // Na concluída a frase continua prometendo o que o arquivo cumpre.
+    expect(screen.getByText(FRASE_DO_CARTAO)).toBeInTheDocument();
   });
 
-  it("só empresa abordada não gera link: não há lista para baixar", async () => {
-    const base = fixture();
-    api.get.mockImplementation(async () => ({
-      data: {
-        ...base,
-        candidates: [
-          {
-            ...candidato("c1", COMPLETA, empresa("Já abordada", "https://a.test/", null)),
-            status: "sent",
-            attempted_at: "2026-11-01T12:00:00.000Z",
-            progress: "replied",
-          },
-        ],
-      },
-    }));
+  it("os números do menu são os do servidor, não um filtro dos candidatos da tela", async () => {
+    // A tela tem 5 não abordadas na COMPLETA; o servidor achou 2 que pediram
+    // para parar pelo telefone. O menu mostra o que o arquivo leva.
+    api.get.mockImplementation(
+      comResumo(fixture(), {
+        total: 5,
+        nao_abordadas: 3,
+        todas: 3,
+        fora_da_lista: { dados_apagados: 0, pediu_para_parar: 2, ficha_pessoal: 0 },
+        truncada: false,
+      }),
+    );
+    await abrirMenu();
+
+    const naoAbordadas = await screen.findByRole("menuitem", { name: "Só as não abordadas (3)" });
+    expect(naoAbordadas).toHaveAttribute(
+      "href",
+      `/api/v1/prospecting/${COMPLETA}/exportar?quem=nao_abordadas`,
+    );
+    expect(screen.getByRole("menuitem", { name: "Todas (3)" })).toBeVisible();
+    expect(screen.getByTestId("baixar-lista-fora")).toHaveTextContent(
+      "2 empresas ficam fora das duas listas porque pediram para parar, são contatos pessoais ou tiveram os dados apagados.",
+    );
+  });
+
+  it("a contagem só é pedida quando o menu abre", async () => {
     openPage();
     fireEvent.click(await screen.findByRole("button", { name: /Clínicas de estética/ }));
-    expect(await screen.findByText(/nenhuma empresa ainda pode ser abordada/i)).toBeVisible();
+    expect(await screen.findByTestId("baixar-lista")).toHaveTextContent("Baixar lista");
+    expect(api.get).not.toHaveBeenCalledWith(RESUMO_URL);
+  });
+
+  it("sem conseguir contar, o menu avisa e nenhum dos dois vira link de arquivo", async () => {
+    api.get.mockImplementation(async (url: string) => {
+      if (url === RESUMO_URL) throw new Error("falhou");
+      return { data: fixture() };
+    });
+    await abrirMenu();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Não foi possível contar as empresas. Feche e abra o menu para tentar de novo.",
+    );
+    // Sem a contagem ninguém sabe se há o que baixar: um `<a download>` ali
+    // salvaria o corpo da recusa (422) como se fosse a planilha.
+    for (const nome of ["Todas", "Só as não abordadas"]) {
+      const item = screen.getByRole("menuitem", { name: nome });
+      expect(item).toHaveAttribute("aria-disabled", "true");
+      expect(item).not.toHaveAttribute("href");
+    }
+  });
+
+  it("enquanto conta, os dois itens esperam desabilitados", async () => {
+    api.get.mockImplementation(async (url: string) => {
+      if (url === RESUMO_URL) return new Promise(() => {});
+      return { data: fixture() };
+    });
+    await abrirMenu();
+    expect(await screen.findByText("Contando as empresas…")).toBeVisible();
+    for (const nome of ["Todas", "Só as não abordadas"]) {
+      const item = screen.getByRole("menuitem", { name: nome });
+      expect(item).toHaveAttribute("aria-disabled", "true");
+      expect(item).not.toHaveAttribute("href");
+    }
+  });
+
+  /** Cada pedido do resumo fica pendurado até o teste decidir o que ele devolve. */
+  function resumoNaMao() {
+    const pedidos: { resolver: (r: unknown) => void; falhar: (e: Error) => void }[] = [];
+    api.get.mockImplementation(async (url: string) => {
+      if (url !== RESUMO_URL) return { data: fixture() };
+      return new Promise((resolve, reject) => {
+        pedidos.push({ resolver: (r) => resolve({ data: r }), falhar: reject });
+      });
+    });
+    return pedidos;
+  }
+
+  function pedido<T>(pedidos: T[], i: number): T {
+    const p = pedidos[i];
+    if (!p) throw new Error(`o pedido ${i + 1} do resumo não chegou`);
+    return p;
+  }
+
+  const TRES_NAO_ABORDADAS = {
+    total: 5,
+    nao_abordadas: 3,
+    todas: 5,
+    fora_da_lista: { dados_apagados: 0, pediu_para_parar: 0, ficha_pessoal: 0 },
+    truncada: false,
+  };
+
+  async function fecharEReabrir(user: ReturnType<typeof userEvent.setup>) {
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("menuitem")).toBeNull());
+    await user.click(screen.getByTestId("baixar-lista"));
+  }
+
+  it("ao reabrir, a contagem da abertura anterior não vira link enquanto conta de novo", async () => {
+    const pedidos = resumoNaMao();
+    const user = await abrirMenu();
+    await waitFor(() => expect(pedidos).toHaveLength(1));
+    pedido(pedidos, 0).resolver(TRES_NAO_ABORDADAS);
+    expect(await screen.findByRole("menuitem", { name: "Só as não abordadas (3)" })).toHaveAttribute(
+      "href",
+    );
+
+    // Fechado o menu, o worker aborda as 3. Reaberto, o (3) antigo não pode baixar.
+    await fecharEReabrir(user);
+    await waitFor(() => expect(pedidos).toHaveLength(2));
+    expect(await screen.findByText("Contando as empresas…")).toBeVisible();
+    for (const nome of ["Todas", "Só as não abordadas"]) {
+      const item = screen.getByRole("menuitem", { name: nome });
+      expect(item).toHaveAttribute("aria-disabled", "true");
+      expect(item).not.toHaveAttribute("href");
+    }
+
+    pedido(pedidos, 1).resolver({ ...TRES_NAO_ABORDADAS, nao_abordadas: 0 });
+    const soNaoAbordadas = await screen.findByRole("menuitem", { name: "Só as não abordadas (0)" });
+    expect(soNaoAbordadas).toHaveAttribute("aria-disabled", "true");
+    expect(soNaoAbordadas).not.toHaveAttribute("href");
+    expect(screen.queryByText("Contando as empresas…")).toBeNull();
+  });
+
+  it("ao reabrir, se a nova contagem falha, o número antigo não fica clicável ao lado do aviso", async () => {
+    const pedidos = resumoNaMao();
+    const user = await abrirMenu();
+    await waitFor(() => expect(pedidos).toHaveLength(1));
+    pedido(pedidos, 0).resolver(TRES_NAO_ABORDADAS);
+    await screen.findByRole("menuitem", { name: "Só as não abordadas (3)" });
+
+    await fecharEReabrir(user);
+    await waitFor(() => expect(pedidos).toHaveLength(2));
+    pedido(pedidos, 1).falhar(new Error("falhou"));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Não foi possível contar as empresas. Feche e abra o menu para tentar de novo.",
+    );
+    for (const nome of ["Todas", "Só as não abordadas"]) {
+      const item = screen.getByRole("menuitem", { name: nome });
+      expect(item).toHaveAttribute("aria-disabled", "true");
+      expect(item).not.toHaveAttribute("href");
+    }
+  });
+
+  it("depois de uma falha, reabrir mostra só 'Contando', sem o aviso de erro junto", async () => {
+    // Contou, depois falhou: o react-query guarda a contagem velha E o erro, e
+    // o erro continua de pé durante a contagem seguinte.
+    const pedidos = resumoNaMao();
+    const user = await abrirMenu();
+    await waitFor(() => expect(pedidos).toHaveLength(1));
+    pedido(pedidos, 0).resolver(TRES_NAO_ABORDADAS);
+    await screen.findByRole("menuitem", { name: "Só as não abordadas (3)" });
+    await fecharEReabrir(user);
+    await waitFor(() => expect(pedidos).toHaveLength(2));
+    pedido(pedidos, 1).falhar(new Error("falhou"));
+    await screen.findByRole("alert");
+
+    await fecharEReabrir(user);
+    await waitFor(() => expect(pedidos).toHaveLength(3));
+    expect(await screen.findByText("Contando as empresas…")).toBeVisible();
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    pedido(pedidos, 2).resolver(TRES_NAO_ABORDADAS);
+    expect(await screen.findByRole("menuitem", { name: "Só as não abordadas (3)" })).toHaveAttribute(
+      "href",
+      `/api/v1/prospecting/${COMPLETA}/exportar?quem=nao_abordadas`,
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("a frase sob o cartão promete que quem pediu para parar não entra no arquivo", async () => {
+    openPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Clínicas de estética/ }));
+    expect(await screen.findByText(FRASE_DO_CARTAO)).toBeVisible();
+  });
+
+  it("campanha sem nenhuma empresa não mostra o botão nem a frase", async () => {
+    api.get.mockImplementation(async () => ({ data: { ...fixture(), candidates: [] } }));
+    openPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Clínicas de estética/ }));
+    await screen.findByRole("heading", { name: "Clínicas de estética" });
     expect(screen.queryByTestId("baixar-lista")).toBeNull();
+    expect(screen.queryByText(FRASE_DO_CARTAO)).toBeNull();
   });
 });

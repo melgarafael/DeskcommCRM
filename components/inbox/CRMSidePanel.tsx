@@ -1,5 +1,6 @@
 "use client";
 
+import { BotaoMarcarSemInteresse } from "@/components/contacts/BotaoMarcarSemInteresse";
 import { CartaoDaCarteira } from "@/components/contacts/CartaoDaCarteira";
 import { RoteirosDoContato } from "@/components/contacts/RoteirosDoContato";
 import { AcervoSearch } from "./AcervoSearch";
@@ -8,6 +9,7 @@ import { AnuncioDoContato, type AnuncioDeOrigem, type AnuncioMaisRecente } from 
 import { UltimasComprasDoContato } from "@/components/contacts/UltimasCompras";
 import type { ProspectEnrichment } from "@/lib/prospecting/schema";
 import type { PersonalizacaoProspeccao } from "@/lib/prospecting/personalizar";
+import type { SituacaoDaRecusaDeOfertas } from "@/lib/lgpd/sem-interesse";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { roleAtLeast } from "@/lib/auth/types";
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
@@ -24,7 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
-import { Tag, Receipt, Users, ArrowRight, CaretDoubleLeft, CaretDoubleRight } from "@/lib/ui/icons";
+import { Tag, Receipt, Users, ArrowRight, CaretDoubleLeft, CaretDoubleRight, CalendarCheck } from "@/lib/ui/icons";
 import { apiClient } from "@/lib/api/client";
 import { toast } from "sonner";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
@@ -36,6 +38,7 @@ import { MOEDA_PADRAO, formatValorDoNegocio, simboloDaMoeda } from "@/lib/money"
 import { ConversationTagsEditor } from "./ConversationTagsEditor";
 import { ContactTagsEditor } from "./ContactTagsEditor";
 import { TarefasDaDemanda } from "./TarefasDaDemanda";
+import { NovaTarefaDaConversa } from "./NovaTarefaDaConversa";
 import { FollowupDoContato } from "./FollowupDoContato";
 import { DialogoDosModulos } from "./DialogoDosModulos";
 import {
@@ -962,6 +965,9 @@ export function CRMSidePanel({
   // botão "abrir o material de origem" no trecho é ESTA, e não a da busca: o
   // painel mostra o nome da fonte a quem só pergunta, e o link a quem abre.
   const podeAbrirAcervo = (user.is_platform_admin && !user.support) || roleAtLeast(activeOrg?.role, "manager");
+  // "MARCAR SEM INTERESSE" (decisão D3): `agent`+, o piso que o
+  // `POST /api/v1/contacts/[id]/sem-interesse` cobra — a mesma régua da ficha.
+  const podeMarcarSemInteresse = (user.is_platform_admin && !user.support) || roleAtLeast(activeOrg?.role, "agent");
   const localeDaData = useLocaleDeData();
   const t = useT();
   const contact = conversation?.contacts ?? null;
@@ -985,6 +991,10 @@ export function CRMSidePanel({
   const [fatos, setFatos] = useState<Array<{ id: string; headline: string; body: string }>>([]);
   const [historico, setHistorico] = useState<Array<{ id: string; desfecho: string; fechada_em: string }>>([]);
   const [anuncios, setAnuncios] = useState<{ origem: AnuncioDeOrigem | null; recente: AnuncioMaisRecente | null }>({ origem: null, recente: null });
+  // A recusa de ofertas, decidida no servidor (`crm-summary`). `undefined` = ainda não
+  // lida (ou a leitura falhou): nesse estado o botão NÃO aparece, para não oferecer
+  // gravar uma recusa por cima de outra que a tela não conseguiu ver.
+  const [recusaDeOfertas, setRecusaDeOfertas] = useState<SituacaoDaRecusaDeOfertas | undefined>(undefined);
   const [summaryContactId, setSummaryContactId] = useState<string | null>(null);
   /**
    * O TERCEIRO ESTADO. Antes existiam dois — carregando e "tem N itens" — e a
@@ -1013,6 +1023,7 @@ export function CRMSidePanel({
 
   const [tagEditorOpen, setTagEditorOpen] = useState(false);
   const [leadDialogOpen, setLeadDialogOpen] = useState(false);
+  const [tarefaDialogOpen, setTarefaDialogOpen] = useState(false);
   const [leadAtivoId, setLeadAtivoId] = useState<string | null>(null);
   const defaultPipeline = useDefaultPipeline(leadDialogOpen);
 
@@ -1058,6 +1069,7 @@ export function CRMSidePanel({
             historico?: Array<{ id: string; desfecho: string; fechada_em: string }>;
             anuncio_de_origem?: AnuncioDeOrigem | null;
             anuncio_mais_recente?: AnuncioMaisRecente | null;
+            recusa_de_ofertas?: SituacaoDaRecusaDeOfertas;
           };
         }>(`/api/v1/contacts/${contactId}/crm-summary`);
         if (cancelled) return;
@@ -1087,6 +1099,7 @@ export function CRMSidePanel({
         setDemandas(r.data.demandas ?? []);
         setFatos(r.data.fatos ?? []); setHistorico(r.data.historico ?? []);
         setAnuncios({ origem: r.data.anuncio_de_origem ?? null, recente: r.data.anuncio_mais_recente ?? null });
+        setRecusaDeOfertas(r.data.recusa_de_ofertas);
       } catch {
         if (cancelled) return;
         // Falha NÃO vira lista vazia. Os dados ficam `null` e o painel diz que
@@ -1098,6 +1111,7 @@ export function CRMSidePanel({
         setDemandas(null);
         setFatos([]); setHistorico([]);
         setAnuncios({ origem: null, recente: null });
+        setRecusaDeOfertas(undefined);
       }
     }
 
@@ -1228,6 +1242,9 @@ export function CRMSidePanel({
             {contact?.contact_type === "fornecedor" && (
               <Badge variant="secondary">{t("Fornecedor")}</Badge>
             )}
+            {summaryContactId === contactId && recusaDeOfertas === "sem_interesse" && (
+              <Badge variant="secondary">{t("Sem interesse em ofertas")}</Badge>
+            )}
           </div>
           {contact?.phone_number && (
             <div className="text-xs text-muted-foreground">{phoneForDisplay(contact.phone_number)}</div>
@@ -1255,6 +1272,29 @@ export function CRMSidePanel({
               <Users size={12} className="mr-1" weight="regular" aria-hidden />
               {leadDialogOpen && defaultPipeline.isLoading ? t("Carregando…") : t("Novo negócio")}
             </Button>
+            {contactId && podeCriarTarefa && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-11 px-2 text-xs lg:h-7"
+                disabled={readonly}
+                onClick={() => setTarefaDialogOpen(true)}
+              >
+                <CalendarCheck size={12} className="mr-1" weight="regular" aria-hidden />
+                {t("Nova tarefa")}
+              </Button>
+            )}
+            {/*
+              "MARCAR SEM INTERESSE" (decisão D3): o "não" que chegou por áudio, ligação ou
+              outra conversa, marcado sem sair do Inbox. O mesmo componente da ficha (o
+              texto da confirmação não diverge). Só com a recusa LIDA e ausente: com
+              recusa de qualquer origem, ou sem conseguir ler, o botão não aparece.
+              Depois de marcar, o painel relê o resumo (o negócio foi para Perdido).
+            */}
+            {contactId && !readonly && podeMarcarSemInteresse && !contact?.is_anonymized &&
+              summaryContactId === contactId && !erro && recusaDeOfertas === null && (
+                <BotaoMarcarSemInteresse contactId={contactId} compacto onMarcado={recarregar} />
+              )}
             {contactId && (
               <Button asChild size="sm" variant="ghost" className="h-11 px-2 text-xs lg:h-7">
                 <Link href={`/app/contacts/${contactId}`}>
@@ -1411,8 +1451,8 @@ export function CRMSidePanel({
     ),
 
     /* A TAREFA DO ATENDIMENTO (#2818): fica logo DEPOIS da demanda porque é
-       dela que a tarefa pende — a seção só se desenha com demanda vigente no
-       canal, e traz o PRÓPRIO divisor. Só a demanda vigente AINDA ABERTA
+       dela que a tarefa pende — e traz o PRÓPRIO divisor. Sem demanda vigente,
+       a seção mostra as tarefas abertas do contato (#4630). Só a demanda vigente AINDA ABERTA
        (`current_demanda_id` continua apontando depois de "Encerrar demanda"). */
     tarefas: (
       <TarefasDaDemanda
@@ -1638,6 +1678,16 @@ export function CRMSidePanel({
             setLeadAtivoId(null);
             recarregar();
           }}
+        />
+      )}
+
+      {contactId && tarefaDialogOpen && (
+        <NovaTarefaDaConversa
+          contactId={contactId}
+          leadId={negocioAtivoId ?? null}
+          demandaId={demandas?.find((d) => d.id === conversation.current_demanda_id)?.id ?? null}
+          responsavelPadrao={user.id}
+          aoFechar={() => setTarefaDialogOpen(false)}
         />
       )}
 

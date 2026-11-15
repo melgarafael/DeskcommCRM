@@ -23,6 +23,7 @@ import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto
 
 import { z } from "zod";
 
+import type { Moeda } from "@/lib/cobranca/vocabulario";
 import { logger } from "@/lib/logger";
 
 import {
@@ -230,9 +231,19 @@ function pagouAssinaturaEncerrada(pagas: FaturaDaStripe[], assinaturas: Assinatu
   return dona !== undefined && TERMINAIS.has(dona.status) && pagaEm !== null && fim !== null && pagaEm > fim;
 }
 
+/**
+ * O idioma da página de pagamento: real fica em português, como sempre; dólar e
+ * euro deixam a Stripe escolher pelo navegador de quem paga, que é quem a moeda
+ * diz estar fora do Brasil.
+ */
+function idiomaDoCheckout(moeda: Moeda): "pt-BR" | "auto" {
+  return moeda === "BRL" ? "pt-BR" : "auto";
+}
+
 function precoRecorrente(plano: PlanoParaProvedor, produto: string) {
   return {
-    currency: "brl",
+    // A moeda é a do plano (migration 9332): a Stripe recebe o código ISO em minúsculas.
+    currency: plano.moeda.toLowerCase(),
     unit_amount: plano.precoCents,
     recurring: { interval: plano.intervalo === "ano" ? "year" : "month" },
     product: produto,
@@ -457,7 +468,7 @@ export function criarAdaptadorStripe(dep: DependenciasDaStripe): AdaptadorDeCobr
           metadata: metadados,
           success_url: sucesso.toString(),
           cancel_url: p.urlDeVolta,
-          locale: "pt-BR",
+          locale: idiomaDoCheckout(p.plano.moeda),
         },
         `${p.chaveIdempotencia}:checkout`,
       ),
@@ -480,11 +491,11 @@ export function criarAdaptadorStripe(dep: DependenciasDaStripe): AdaptadorDeCobr
         mode: "payment",
         customer: p.clienteRef,
         client_reference_id: orgId,
-        line_items: [{ price_data: { currency: "brl", unit_amount: p.valorCents, product: produto }, quantity: 1 }],
+        line_items: [{ price_data: { currency: p.plano.moeda.toLowerCase(), unit_amount: p.valorCents, product: produto }, quantity: 1 }],
         metadata: { organization_id: orgId, plano_id: p.plano.id, tipo: "ajuste_proporcional" },
         success_url: sucesso.toString(),
         cancel_url: p.urlDeVolta,
-        locale: "pt-BR",
+        locale: idiomaDoCheckout(p.plano.moeda),
       },
       `ajuste:${orgId}:${p.chaveIdempotencia}`),
     );

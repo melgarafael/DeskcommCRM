@@ -303,6 +303,13 @@ import {
 } from '@/lib/escalacao/briefing-da-passagem';
 import { diffCheckpoint } from '@/lib/leads/checkpoint-diff';
 import { CORRECAO_DO_TURNO_MUDO, PASSOS_DA_CORRECAO, turnoMudoPedeCorrecao } from './turno-mudo';
+// #4590 — o teto de respostas por CONVERSA e os seus defaults (N/W). Fica em
+// `agent/` porque a conta é do atendimento; a cadeia só sabe aplicá-la.
+import {
+  CODIGO_DO_TETO_DE_RESPOSTAS,
+  avisarEquipeDoTetoDeRespostas,
+  knobsDoTetoDeRespostas,
+} from './teto-de-respostas';
 import {
   desfechoSemCandidato,
   previaPedeCorrecaoDoTurnoMudo,
@@ -1588,6 +1595,13 @@ export interface InboundTurnKnobs {
    * testes que não exercitam o teto o omitem sem custo.
    */
   maxSendsPerTurn?: number;
+  /**
+   * #4590 — N respostas automáticas por CONVERSA dentro de W minutos
+   * (TETO_DE_RESPOSTAS_POR_CONVERSA / TETO_DE_RESPOSTAS_JANELA_MIN). Ausente =
+   * os defaults de `agent/teto-de-respostas.ts` (20 em 60 min) — main.ts sempre
+   * preenche pelo env; testes que não exercitam o teto o omitem sem custo.
+   */
+  tetoDeRespostas?: { porConversa: number; janelaMinutos: number };
   /** atraso do reagendamento em veto/queued herdado da F2-06 (SEND_QUEUED_RETRY_MS) */
   queuedRetryDelayMs: number;
   /**
@@ -5059,6 +5073,10 @@ async function executarTurnoDoAgente(
               },
             });
           };
+          // #4590 — este turno RESPONDE a alguém que escreveu? É o que decide a
+          // janela (`resposta*`) e é o que arma o teto de respostas por conversa:
+          // follow-up é retomada e não entra nessa conta.
+          const eResposta = eTurnoDeResposta(liveJob());
           // Args reusados EXATAMENTE (mesmo objeto) no re-run do fail-safe abaixo — só
           // hasOpenCase/openedCaseThisTurn mudam depois do auto-abre-caso.
           const beforeSendArgs = {
@@ -5074,7 +5092,20 @@ async function executarTurnoDoAgente(
             // `inbound_turn`/`case_reply_turn` respondem a quem escreveu e leem a
             // janela de RESPOSTA (0495). `followup_turn` retoma conversa parada e
             // continua na janela de DISPARO.
-            resposta: eTurnoDeResposta(liveJob()),
+            resposta: eResposta,
+            // #4590 — TETO DE RESPOSTAS POR CONVERSA (N em W minutos). Arma só onde
+            // o defeito nasceu: resposta automática a mensagem recebida, em produção.
+            // Prévia não arma (o Testar não entrega nada ao cliente; um teto ali
+            // esconderia justamente a resposta que o dono está testando) e follow-up
+            // também não — ali não houve mensagem recebida agora.
+            ...(eResposta && !preview
+              ? {
+                  tetoDeRespostas: {
+                    conversationId: input.conversationId,
+                    ...knobsDoTetoDeRespostas(deps.knobs.tetoDeRespostas),
+                  },
+                }
+              : {}),
             // ponytail: channel_sessions.daily_message_limit do CRM ainda não é lido
             // no runtime — null cai nos degraus de warm-up (conservadores). Injetar
             // aqui quando o drain expuser o limite da sessão.
@@ -5422,6 +5453,16 @@ async function executarTurnoDoAgente(
               chain.nextAllowedAt !== undefined
             ) {
               pacingCapVeto = { code: chain.code, nextAllowedAt: chain.nextAllowedAt };
+            }
+            // #4590 — o teto calou a conversa: a equipe é avisada na Central, um
+            // aviso aberto por conversa (dedupe no repositório). Nunca lança.
+            if (chain.code === CODIGO_DO_TETO_DE_RESPOSTAS && !preview) {
+              await avisarEquipeDoTetoDeRespostas(pool, {
+                organizationId: tenantId,
+                conversationId: input.conversationId,
+                ...knobsDoTetoDeRespostas(deps.knobs.tetoDeRespostas),
+                log: runLog,
+              });
             }
             if (VETOS_IRREVOGAVEIS.has(chain.code)) vetoIrrevogavel = true;
             // Erro de ENSINO pt-br (mesmo shape de get_lead_context/breaker): o
@@ -6790,6 +6831,9 @@ async function executarTurnoDoAgente(
         // lia `ai_agent_runs`, tabela que motor nenhum vivo escreve, e dizia
         // "Nenhuma execução ainda" com o agente respondendo no WhatsApp.
         agentId: agentConfig?.agentId ?? null,
+        // #4426: na prévia, o run que guarda a pergunta e a resposta do teste.
+        // É o que liga esta linha de custo ao texto que a aba "Execuções" mostra.
+        previewRunId: preview?.runId ?? null,
         // O follow-up é o mesmo turno com o próprio ponto — e por isso com o
         // próprio binding (o seam o lê por `purpose`) e a própria linha de custo.
         // Literais no próprio `purpose:`, de propósito: é aqui que a cerca de
@@ -6966,6 +7010,7 @@ async function executarTurnoDoAgente(
           leadId: leadId || null,
           jobId: job?.id,
           agentId: agentConfig?.agentId ?? null,
+          previewRunId: preview?.runId ?? null,
           purpose: preview ? 'agent_preview' : 'agent_turn',
           system,
           messages: [...openingMessages, ...turn.result.responseMessages, pedidoDeCorrecao],

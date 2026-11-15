@@ -78,6 +78,14 @@ import { detectarAfirmacaoDeRegistro } from './registro-sem-efeito';
 import type { EfeitoDasEscrituras, LeituraDoEfeito } from '@/lib/ai/runtime/efeito-das-escritas';
 import { detectarVazamentoInterno, renderVetoDeVazamento } from './vazamento-interno';
 import { detectarAfirmacaoClinica, renderVetoDeAfirmacaoClinica } from './afirmacao-clinica';
+// Teto de respostas automáticas por CONVERSA (#4590). Mora em `agent/` porque a
+// conta é por atendimento, não por número: pacing e spinning já medem o número.
+import {
+  CODIGO_DO_TETO_DE_RESPOSTAS,
+  carregarRespostasDaConversa,
+  tetoDeRespostasGate,
+} from '../agent/teto-de-respostas';
+import type { RespostasDaConversa, TetoDeRespostasArmado } from '../agent/teto-de-respostas';
 // Módulo PURO de propósito (`capabilities`, não `index`): o seam não arrasta o
 // adapter — e com ele o cliente HTTP do canal — para dentro do worker.
 import { capabilitiesOf, DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
@@ -171,6 +179,22 @@ export interface GateContext {
     knobs: SpinningKnobs;
     window: RecentCopy[];
   };
+  /**
+   * Teto de respostas automáticas por CONVERSA numa janela (#4590) — o único
+   * gate que conta QUANTAS respostas este atendimento já recebeu.
+   *
+   * **OPCIONAL, e ausente = DESARMADO**, pela mesma razão do
+   * `internalVocabularyEnforced`: só o `send_message` do turno de entrada arma
+   * (`RunBeforeSendArgs.tetoDeRespostas`), e o veto ali volta ao modelo como
+   * erro instrutivo. Armar por default faria todo caminho determinístico
+   * (follow-up, template, resposta aprovada) herdar um veto de contagem que ele
+   * não pediu — e ali veto é drop silencioso.
+   *
+   * `naJanela: null` = o teto ESTAVA armado e a leitura da contagem falhou: o
+   * gate passa com `skipped: 'nao_conferido'`, que é o fail-open-com-registro
+   * da doutrina. Não confundir com o campo ausente.
+   */
+  tetoDeRespostas?: RespostasDaConversa;
   /**
    * Tabela de preços/promessas versionada da org (F4-01), carregada por ponteiro
    * sob o lock. null = org não fiscaliza promessa (gate no-op).
@@ -410,18 +434,26 @@ export interface Gate {
 export type MotivoDoStop = 'contato_bloqueado' | 'contato_interno' | 'atendimento_com_humano';
 
 /**
- * Os códigos de veto que mandam PARAR, não reescrever: o gate `stop` (regra dura nº 2) e o
- * `lgpd`. Reescrever o texto não muda o veredito deles, e o `reason` de cada um diz "encerre o
- * turno sem tentar de novo". Quem decide se vale pedir outra tentativa ao modelo (a correção do
- * turno mudo, `turno-mudo.ts`) consulta esta lista — e não a da cadeia inteira, porque os vetos
- * de ENSINO (agenda_stall, promessa…) são exatamente os que uma nova tentativa conserta.
+ * Os códigos de veto que mandam PARAR, não reescrever: o gate `stop` (regra dura nº 2), o
+ * `lgpd` e o `teto_de_respostas` (#4590). Reescrever o texto não muda o veredito deles, e o
+ * `reason` de cada um diz "encerre o turno sem tentar de novo". Quem decide se vale pedir outra
+ * tentativa ao modelo (a correção do turno mudo, `turno-mudo.ts`) consulta esta lista — e não a
+ * da cadeia inteira, porque os vetos de ENSINO (agenda_stall, promessa…) são exatamente os que
+ * uma nova tentativa conserta.
+ *
+ * O teto entra aqui por um motivo diferente dos outros dois: ele não proíbe o CONTEÚDO (a
+ * mensagem é legítima), proíbe a próxima da fila. Mandar o modelo reescrever gastaria uma
+ * chamada de modelo para ouvir o mesmo veto — a contagem não muda com o texto.
  */
-export const VETOS_IRREVOGAVEIS: ReadonlySet<string> = new Set<MotivoDoStop | 'lgpd_anonymized' | 'lgpd_missing_legal_basis'>([
+export const VETOS_IRREVOGAVEIS: ReadonlySet<string> = new Set<
+  MotivoDoStop | 'lgpd_anonymized' | 'lgpd_missing_legal_basis' | typeof CODIGO_DO_TETO_DE_RESPOSTAS
+>([
   'contato_bloqueado',
   'contato_interno',
   'atendimento_com_humano',
   'lgpd_anonymized',
   'lgpd_missing_legal_basis',
+  CODIGO_DO_TETO_DE_RESPOSTAS,
 ]);
 
 /** Gate 1 — STOP/opt-out/força-humano: veto IRREVOGÁVEL (regra dura nº 2), 1ª linha. */
@@ -1305,7 +1337,11 @@ const spinningGate: Gate = {
 // dia+horário escrito ao cliente só sai se uma ferramenta de agenda o devolveu neste turno.
 // v13: insere `concessaoSemLastroGate` entre `promise` e `semantic_promise` — valor afirmado
 // como condição da empresa que só aparece do lado do cliente. Desarmado por default.
-export const BEFORE_SEND_CHAIN_VERSION = 13;
+// v14 (#4590): insere `tetoDeRespostasGate` entre `messaging_window` e `spinning` — N respostas
+// automáticas por CONVERSA numa janela. Fecha o pingue-pongue entre dois robôs (216 respostas em
+// 1 h para o mesmo contato), que nenhum gate de conteúdo pega porque cada resposta isolada é
+// legítima. Armado só pelo turno de entrada; disparo e follow-up não entram na conta.
+export const BEFORE_SEND_CHAIN_VERSION = 14;
 
 /**
  * Gate 6.3 — CONFERÊNCIA DE FATO (#2231): a afirmação de FATO da resposta
@@ -1345,6 +1381,8 @@ export const factualClaimGate: Gate = {
  *   (1) stop/opt-out/force_human — irrevogável, 1ª linha (regra dura nº 2);
  *   (2) lgpd — anonimização/base legal de prospecção, veto de conformidade HARD (F4-09);
  *   (3) pacing — janela/throttle/warm-up/caps anti-ban (F2-11);
+ *   (3.5) teto_de_respostas — N respostas automáticas na MESMA conversa dentro de W
+ *         minutos (#4590): responde a quem escreveu, mas não 216 vezes por hora;
  *   (4) spinning — template idêntico em massa (F2-12);
  *   (5) promise — validação determinística de preço/desconto/parcelamento (F4-01);
  *   (5.5) concessao_sem_lastro — valor ou concessão afirmados como condição que só o cliente trouxe;
@@ -1369,6 +1407,7 @@ export const BEFORE_SEND_GATES: readonly Gate[] = [
   lgpdGate,
   pacingGate,
   messagingWindowGate,
+  tetoDeRespostasGate,
   spinningGate,
   promiseGate,
   concessaoSemLastroGate,
@@ -1449,6 +1488,19 @@ export interface RunBeforeSendArgs {
    * todo chamador anterior à 0495 no comportamento antigo.
    */
   resposta?: boolean;
+  /**
+   * Arma o `tetoDeRespostasGate` (#4590): N respostas automáticas por CONVERSA
+   * dentro de W minutos, com a conversa junto — o par inteiro num objeto só para
+   * que não exista tentativa "armada" sem saber de que atendimento se conta.
+   *
+   * AUSENTE (default) = no-op. Só o `send_message` do turno de entrada passa
+   * isto (`inbound-turn.ts`; ver `GateContext.tetoDeRespostas`). Disparo de
+   * prospecção não atravessa esta cadeia, e follow-up é retomada — não resposta.
+   *
+   * A contagem é lida SOB o lock do número (como o estado de pacing/spinning):
+   * é o que faz a tentativa enxergar a resposta que o job anterior efetivou.
+   */
+  tetoDeRespostas?: TetoDeRespostasArmado;
   now: Date;
   /** injeções de teste (jitter determinístico + espera sem relógio real). */
   rng?: () => number;
@@ -1814,6 +1866,19 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       args.channelSessionId,
       spinningKnobs.windowSize,
     );
+    // #4590 — a contagem de respostas desta CONVERSA, lida sob o MESMO lock do
+    // número: é o que a faz enxergar as respostas que o job anterior commitou.
+    // A leitura nunca lança (`carregarRespostasDaConversa` engole e devolve
+    // `naJanela: null`), então uma trava auxiliar não derruba o turno.
+    const respostasDaConversa =
+      args.tetoDeRespostas !== undefined
+        ? await carregarRespostasDaConversa(client, {
+            organizationId: args.tenantId,
+            armado: args.tetoDeRespostas,
+            now: args.now,
+            log: args.log,
+          })
+        : undefined;
     // org de fonte confiável (RunBeforeSendArgs.tenantId = organization_id do row do job) — regra dura nº 1.
     const promise = await loadPromiseTable(client, args.tenantId);
     // Disclosure (F4-05): template por ponteiro da org + detecção de 1º outbound via
@@ -1850,6 +1915,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
         ...(args.resposta !== undefined ? { resposta: args.resposta } : {}),
       },
       spinning: { knobs: spinningKnobs, window },
+      ...(respostasDaConversa !== undefined ? { tetoDeRespostas: respostasDaConversa } : {}),
       ...(args.enforceSpinning === false ? { spinningEnforced: false as const } : {}),
       promise: {
         table: promise?.table ?? null,

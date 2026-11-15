@@ -28,6 +28,7 @@ const ORDEM_ESPERADA = [
   "lgpd",
   "pacing",
   "messaging_window",
+  "teto_de_respostas",
   "spinning",
   "promise",
   "concessao_sem_lastro",
@@ -62,6 +63,16 @@ describe("forma da cadeia before_send", () => {
     expect(nomes.indexOf("messaging_window")).toBe(nomes.indexOf("pacing") + 1);
   });
 
+  it("o teto de respostas por conversa roda depois da janela e antes do spinning (#4590)", () => {
+    // A janela da plataforma decide se o envio é permitido; o teto por conversa
+    // conta quantas respostas ESTE atendimento já teve; o spinning julga a cópia
+    // contra o histórico do NÚMERO. Nesta ordem, o gate mais barato (um count por
+    // conversa, já lido sob o lock) barra antes do que carrega a janela de cópias.
+    const nomes = BEFORE_SEND_GATES.map((g) => g.name);
+    expect(nomes.indexOf("teto_de_respostas")).toBe(nomes.indexOf("messaging_window") + 1);
+    expect(nomes.indexOf("teto_de_respostas")).toBeLessThan(nomes.indexOf("spinning"));
+  });
+
   it("lgpd vem antes de qualquer gate que gaste recurso", () => {
     const nomes = BEFORE_SEND_GATES.map((g) => g.name);
     expect(nomes.indexOf("lgpd")).toBeLessThan(nomes.indexOf("pacing"));
@@ -71,8 +82,8 @@ describe("forma da cadeia before_send", () => {
     // O par (tamanho, versão) é o que amarra os dois. Acrescentar um gate sem
     // bumpar deixa o trace de auditoria mentindo sobre qual cadeia rodou — e o
     // trace é justamente a prova que as Fases 0–2 usam para dizer "não regrediu".
-    expect(BEFORE_SEND_GATES).toHaveLength(17);
-    expect(BEFORE_SEND_CHAIN_VERSION).toBe(13);
+    expect(BEFORE_SEND_GATES).toHaveLength(18);
+    expect(BEFORE_SEND_CHAIN_VERSION).toBe(14);
   });
 
   it("internal_vocabulary roda ANTES do disclosure — inspeciona o texto do modelo, não o emendado", () => {
