@@ -353,6 +353,49 @@ describe("criarPegadaDoCandidato", () => {
     });
   });
 
+  // A organização que já tem campo de CONTATO `segmento` (aqui, com padrão de lista
+  // fechada): o createContactHandler conferiria a categoria do Maps contra esse padrão e
+  // recusaria com 422, e a campanha não abordaria ninguém. O segmento fica de fora; os
+  // links seguem.
+  it("⭐ organização com campo de contato `segmento` próprio: a categoria não é copiada", async () => {
+    const { db } = bancoFalso();
+    const settings = {
+      fields: [
+        {
+          key: "segmento",
+          label: "Segmento",
+          type: "text",
+          escopo: "contato",
+          padrao: "^(Varejo|Serviços|Indústria)$",
+        },
+      ],
+    };
+    const ordem = vi.fn(async () => ({ data: [{ settings }], error: null }));
+    const admin = { from: vi.fn(() => ({ select: () => ({ eq: () => ({ order: ordem }) }) })) };
+    await criarPegadaDoCandidato(
+      db,
+      admin as never,
+      ORG,
+      campanha,
+      configOnSend,
+      candidato(1, {
+        data: {
+          name: "Clínica 1",
+          key: "place-1",
+          category: "Dentista",
+          maps_url: "https://maps.app.goo.gl/clinica1",
+          socials: [],
+        },
+      }),
+      null,
+    );
+    expect(admin.from).toHaveBeenCalledWith("crm_pipelines");
+    expect(ordem).toHaveBeenCalled();
+    expect(m.contato.mock.calls[0]?.[2].custom_fields).toEqual({
+      link_google_meu_negocio: "https://maps.app.goo.gl/clinica1",
+    });
+  });
+
   // Spec 26 §3.2/§7.1: contato REAPROVEITADO não é tocado na abordagem. Não recria o contato
   // e não recebe update de links; ficha que já existe só se completa pelo botão.
   it("contato reaproveitado: não recria o contato e não recebe update de links na abordagem (spec 26 §7.1)", async () => {

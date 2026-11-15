@@ -8,7 +8,9 @@ import {
   cnpjInvalido,
   diagnosticoVazio,
   escritoPelaIA,
+  gravacaoDaAba,
   lerDiagnostico,
+  podeEditarDiagnostico,
   segmentoDoContatoNovo,
   textosDoDiagnostico,
   type TextosDoDiagnostico,
@@ -202,5 +204,100 @@ describe("segmentoDoContatoNovo — a categoria da prospecção vira segmento", 
 
   it("categoria longa é cortada no teto, não descartada", () => {
     expect(segmentoDoContatoNovo("a".repeat(500)).segmento).toHaveLength(120);
+  });
+});
+
+describe("segmentoDoContatoNovo — o campo próprio da organização manda", () => {
+  it("⭐ a organização tem campo de contato `segmento`: a categoria do Maps não entra", () => {
+    expect(segmentoDoContatoNovo("Dentista", ["convenio", "segmento"])).toEqual({});
+  });
+
+  it("campos de outros nomes não mudam nada", () => {
+    expect(segmentoDoContatoNovo("Dentista", ["convenio", "segmento_antigo"])).toEqual({
+      segmento: "Dentista",
+    });
+  });
+});
+
+describe("podeEditarDiagnostico — quem edita a aba", () => {
+  const vivo = { is_anonymized: false };
+  const comum = { support: null };
+
+  it("⭐ atendente e acima editam", () => {
+    expect(podeEditarDiagnostico(vivo, comum, "agent")).toBe(true);
+    expect(podeEditarDiagnostico(vivo, comum, "manager")).toBe(true);
+    expect(podeEditarDiagnostico(vivo, comum, "admin")).toBe(true);
+  });
+
+  it("⭐ quem só lê (viewer), sem papel ou com papel desconhecido, não edita", () => {
+    expect(podeEditarDiagnostico(vivo, comum, "viewer")).toBe(false);
+    expect(podeEditarDiagnostico(vivo, comum, undefined)).toBe(false);
+    expect(podeEditarDiagnostico(vivo, comum, "dono")).toBe(false);
+  });
+
+  it("⭐ contato anonimizado não é editável, nem por quem administra", () => {
+    expect(podeEditarDiagnostico({ is_anonymized: true }, comum, "admin")).toBe(false);
+  });
+
+  it("⭐ suporte só-leitura não edita, mesmo com papel de administrador", () => {
+    expect(
+      podeEditarDiagnostico(vivo, { support: { access_mode: "support_readonly" } }, "admin"),
+    ).toBe(false);
+  });
+});
+
+describe("gravacaoDaAba — a diferença aplicada sobre a ficha RELIDA", () => {
+  const inicial = { ...VAZIO };
+
+  it("⭐ o que outro caminho gravou depois da leitura sobrevive", () => {
+    // A aba abriu sem site e sem diagnóstico. Enquanto a pessoa escrevia, o
+    // "Completar fichas" gravou link_site e a IA gravou o diagnóstico.
+    const relido = {
+      link_site: "exemplo.com.br",
+      diag_resumo: "Texto da IA.",
+      diag_por: autoriaDoAgente(AGENTE),
+      convenio: "Unimed",
+    };
+    const novo = gravacaoDaAba(relido, {
+      inicial,
+      editado: { ...inicial, observacoes: "Ligar depois das 14h." },
+      linksIniciais: {},
+      linksEditados: {},
+      autor: autoriaDoUsuario(USUARIO),
+      agora: AGORA,
+    });
+    expect(novo).toEqual({ ...relido, diag_observacoes: "Ligar depois das 14h." });
+  });
+
+  it("⭐ editar um link não apaga o link_* ilegível que já estava lá", () => {
+    const relido = { link_site: 42, convenio: "Unimed" };
+    const novo = gravacaoDaAba(relido, {
+      inicial,
+      editado: inicial,
+      linksIniciais: {},
+      linksEditados: { bio: "paginadelinks.exemplo.com/loja" },
+      autor: autoriaDoUsuario(USUARIO),
+      agora: AGORA,
+    });
+    expect(novo).toEqual({ ...relido, link_bio: "paginadelinks.exemplo.com/loja" });
+  });
+
+  it("na mesma chave vale a gravação desta pessoa", () => {
+    const novo = gravacaoDaAba(
+      { diag_resumo: "Texto da IA.", diag_por: autoriaDoAgente(AGENTE) },
+      {
+        inicial,
+        editado: { ...inicial, resumo: "Texto da equipe." },
+        linksIniciais: {},
+        linksEditados: {},
+        autor: autoriaDoUsuario(USUARIO),
+        agora: AGORA,
+      },
+    );
+    expect(novo).toEqual({
+      diag_resumo: "Texto da equipe.",
+      diag_por: autoriaDoUsuario(USUARIO),
+      diag_em: AGORA.toISOString(),
+    });
   });
 });

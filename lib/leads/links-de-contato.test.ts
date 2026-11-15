@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   aplicarLinks,
+  aplicarLinksAlterados,
   chaveDoLink,
   lerLinks,
   linksParaExibir,
@@ -135,6 +136,37 @@ describe("aplicarLinks — o objeto completo que o PATCH vai trocar", () => {
 
   it("aceita custom_fields ausente", () => {
     expect(aplicarLinks(null, { site: "exemplo.com.br" })).toEqual({ link_site: "exemplo.com.br" });
+  });
+});
+
+describe("aplicarLinksAlterados — só o link que a pessoa mudou", () => {
+  it("⭐ editar um link não apaga o link_* que a tela não soube ler", () => {
+    const antes = { link_site: 42, link_youtube: { de: "integração" }, convenio: "Unimed" };
+    const novo = aplicarLinksAlterados(antes, {}, { bio: "paginadelinks.exemplo.com/loja" });
+    expect(novo).toEqual({ ...antes, link_bio: "paginadelinks.exemplo.com/loja" });
+  });
+
+  it("⭐ o link gravado por outra pessoa depois da leitura sobrevive", () => {
+    // A tela leu sem site; enquanto isso o "Completar fichas" gravou link_site.
+    const relido = { link_site: "exemplo.com.br" };
+    const novo = aplicarLinksAlterados(relido, {}, { instagram: "instagram.com/loja" });
+    expect(novo).toEqual({ link_site: "exemplo.com.br", link_instagram: "instagram.com/loja" });
+  });
+
+  it("apagar o texto apaga a chave", () => {
+    const novo = aplicarLinksAlterados(
+      { link_bio: "antigo.exemplo.com", convenio: "Unimed" },
+      { bio: "antigo.exemplo.com" },
+      { bio: "  " },
+    );
+    expect(novo).toEqual({ convenio: "Unimed" });
+  });
+
+  it("nada mudou: devolve o objeto como estava", () => {
+    const antes = { link_site: "exemplo.com.br", link_bio: 7 };
+    expect(aplicarLinksAlterados(antes, { site: "exemplo.com.br" }, { site: " exemplo.com.br " })).toEqual(
+      antes,
+    );
   });
 });
 

@@ -37,6 +37,7 @@ import { vereditoPuro } from "./site-classify";
 import { linksDoCandidato } from "./links-do-candidato";
 import { aplicarLinks } from "@/lib/leads/links-de-contato";
 import { segmentoDoContatoNovo } from "@/lib/contacts/diagnostico-do-contato";
+import { defsDoPadraoDaOrg } from "@/lib/leads/padrao-do-campo";
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
 import { motivoSemWhatsapp } from "./whatsapp";
 import { idiomaDaOrganizacao } from "./idioma";
@@ -896,12 +897,25 @@ export async function marcarEtiquetasDaCampanha(
  * (`lib/contacts/diagnostico-do-contato.ts`). Fail-open: o mapeador não deveria lançar,
  * mas se algo escapar o contato nasce sem esses campos e a criação segue. Devolve
  * `undefined` quando não há nada, para não mandar `custom_fields` vazio.
+ *
+ * O segmento só entra se a organização NÃO tem campo de contato próprio chamado
+ * `segmento`: o `createContactHandler` confere o `custom_fields` contra o padrão desses
+ * campos e recusa com 422, e uma categoria do Maps fora do padrão derrubaria a criação
+ * de todo contato da campanha. A leitura das definições só acontece quando há
+ * categoria, e é fail-open (`defsDoPadraoDaOrg` devolve lista vazia se falhar).
  */
-function linksParaContatoNovo(p: Candidate): Record<string, unknown> | undefined {
+async function camposDoContatoNovo(
+  admin: SupabaseClient,
+  org: string,
+  p: Candidate,
+): Promise<Record<string, unknown> | undefined> {
   try {
+    const chavesDaOrganizacao = p.data.category?.trim()
+      ? (await defsDoPadraoDaOrg(admin, org, "contato")).map((def) => def.key)
+      : [];
     const campos = {
       ...aplicarLinks({}, linksDoCandidato(p.data)),
-      ...segmentoDoContatoNovo(p.data.category),
+      ...segmentoDoContatoNovo(p.data.category, chavesDaOrganizacao),
     };
     return Object.keys(campos).length > 0 ? campos : undefined;
   } catch (error) {
@@ -979,7 +993,7 @@ export async function criarPegadaDoCandidato(
   });
   let contactId = contatoDaCampanha ?? p.contact_id;
   if (!contactId) {
-    const linksDoNovo = linksParaContatoNovo(p);
+    const linksDoNovo = await camposDoContatoNovo(admin, org, p);
     // Porta `prospeccao`: a conversa abre logo abaixo, no canal da CAMPANHA. Pela
     // porta `manual` o cadastro abria antes outra, no telefone mais antigo da
     // organização, e cada empresa abordada aparecia duas vezes na caixa.

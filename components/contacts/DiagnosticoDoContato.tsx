@@ -14,12 +14,14 @@ import { ListaDeLinks } from "@/components/contacts/ListaDeLinks";
 import { useUpdateContact } from "@/hooks/contacts/useUpdateContact";
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
+import { showApiError } from "@/components/feedback/ApiErrorToast";
+import { apiClient } from "@/lib/api/client";
 import {
-  aplicarDiagnostico,
   autoriaDoUsuario,
   cnpjInvalido,
   diagnosticoVazio,
   escritoPelaIA,
+  gravacaoDaAba,
   lerDiagnostico,
   TETO_DO_DIAGNOSTICO,
   textosDoDiagnostico,
@@ -27,7 +29,6 @@ import {
   type TextosDoDiagnostico,
 } from "@/lib/contacts/diagnostico-do-contato";
 import {
-  aplicarLinks,
   EXEMPLO_DE_LINK,
   lerLinks,
   linksParaExibir,
@@ -53,11 +54,14 @@ interface Props {
  * Nada aqui lê `custom_fields` pelo nome da chave: a leitura e a escrita são
  * do esquema central (`lib/contacts/diagnostico-do-contato.ts`) e dos links
  * (`lib/leads/links-de-contato.ts`). O PATCH SUBSTITUI o `custom_fields`
- * inteiro, então o que vai no corpo é o objeto completo: os campos da
- * organização que esta aba não mostra voltam como estavam.
+ * inteiro e não confere versão, então salvar RELÊ a ficha antes e manda o
+ * objeto relido com só as chaves que a pessoa mudou (`gravacaoDaAba`): o que
+ * outro caminho gravou enquanto ela escrevia, e os campos da organização que
+ * esta aba não mostra, voltam como estão no servidor.
  *
- * O formulário é montado de novo quando o contato muda (`key` no pai), para
- * nunca salvar por cima de uma versão que a tela não leu.
+ * A `key` no pai remonta o formulário quando a TELA relê o contato (depois de
+ * salvar, por exemplo). Ela não protege contra gravação concorrente: quem
+ * protege é a releitura no `salvar`.
  */
 export function DiagnosticoDoContato({ contato, podeEditar, usuarioId }: Props) {
   const t = useT();
@@ -142,6 +146,8 @@ function FormularioDoDiagnostico({ contato, usuarioId }: { contato: Contact; usu
   // O erro só aparece DEPOIS da primeira tentativa de salvar, como no
   // formulário de links do funil: CNPJ pela metade não é erro de quem digita.
   const [tentouSalvar, setTentouSalvar] = useState(false);
+  const [relendo, setRelendo] = useState(false);
+  const ocupado = relendo || atualizar.isPending;
   const linksInvalidos = new Set<TipoDeLink>(tiposInvalidos(links));
   const cnpjRecusado = cnpjInvalido(textos.cnpj);
 
@@ -160,19 +166,32 @@ function FormularioDoDiagnostico({ contato, usuarioId }: { contato: Contact; usu
       toast.error(t("Confira os links marcados: só endereços http(s) valem."));
       return;
     }
-    // Os links só entram se a pessoa mexeu neles: um valor gravado por outro
-    // caminho que esta tela não sabe ler continua como estava.
-    const mexeuNosLinks = TIPOS_DE_LINK.some(
-      ({ id }) => (links[id] ?? "").trim() !== (linksIniciais[id] ?? "").trim(),
-    );
-    const comLinks = mexeuNosLinks ? aplicarLinks(contato.custom_fields, links) : contato.custom_fields;
+    setRelendo(true);
     try {
+      // A ficha RELIDA agora, não a cópia de quando a aba abriu: o PATCH troca
+      // o objeto inteiro, e o que outra pessoa (ou a campanha) gravou nesse
+      // meio-tempo não pode sumir. Só as chaves que esta pessoa mudou são tocadas.
+      let relido: Contact;
+      try {
+        relido = (await apiClient.get<{ data: Contact }>(`/api/v1/contacts/${contato.id}`)).data;
+      } catch (err) {
+        showApiError(err);
+        return;
+      }
       await atualizar.mutateAsync({
-        custom_fields: aplicarDiagnostico(comLinks, inicial, textos, autoriaDoUsuario(usuarioId)),
+        custom_fields: gravacaoDaAba(relido.custom_fields, {
+          inicial,
+          editado: textos,
+          linksIniciais,
+          linksEditados: links,
+          autor: autoriaDoUsuario(usuarioId),
+        }),
       });
       toast.success(t("Diagnóstico salvo."));
     } catch {
       // `useUpdateContact` já mostra o erro da API.
+    } finally {
+      setRelendo(false);
     }
   }
 
@@ -268,8 +287,8 @@ function FormularioDoDiagnostico({ contato, usuarioId }: { contato: Contact; usu
           })}
         </div>
       </fieldset>
-      <Button type="submit" size="sm" disabled={atualizar.isPending}>
-        {atualizar.isPending ? t("Salvando…") : t("Salvar diagnóstico")}
+      <Button type="submit" size="sm" disabled={ocupado}>
+        {ocupado ? t("Salvando…") : t("Salvar diagnóstico")}
       </Button>
     </form>
   );

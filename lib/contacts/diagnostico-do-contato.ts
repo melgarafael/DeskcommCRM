@@ -40,7 +40,9 @@
  */
 import { z } from "zod";
 
+import { ROLE_RANK, type Role } from "@/lib/auth/types";
 import { formatCnpj, normalizeCnpj } from "@/lib/crm-b2b/normalize";
+import { aplicarLinksAlterados, type LinksDoContato } from "@/lib/leads/links-de-contato";
 
 export const CHAVES_DO_DIAGNOSTICO = {
   segmento: "segmento",
@@ -251,10 +253,75 @@ export function aplicarDiagnostico(
  * O segmento com que o contato NASCE pela prospecção: a categoria do Google
  * Maps (ou da planilha). Só para contato novo — a ficha que já existe não é
  * tocada, pela mesma decisão dos links (spec 26 §7.1).
+ *
+ * `chavesDaOrganizacao` são as chaves dos campos de CONTATO que a organização
+ * declarou nos funis (`defsDoPadraoDaOrg(..., "contato")`). Se uma delas é
+ * `segmento`, o campo é DELA, com o tipo, as opções e o padrão que ela
+ * escolheu: a categoria do Maps não entra. Sem isto, um campo `segmento` com
+ * padrão (`^(Varejo|Serviços)$`) recusava a criação do contato com 422, e a
+ * primeira mensagem da campanha não saía para ninguém.
  */
-export function segmentoDoContatoNovo(categoria: string | null | undefined): Record<string, string> {
+export function segmentoDoContatoNovo(
+  categoria: string | null | undefined,
+  chavesDaOrganizacao: Iterable<string> = [],
+): Record<string, string> {
+  for (const chave of chavesDaOrganizacao) {
+    if (chave === CHAVES_DO_DIAGNOSTICO.segmento) return {};
+  }
   // A categoria vem de terceiro e pode passar do teto: cortar é melhor que perder.
   const cortada = (categoria ?? "").trim().slice(0, TETO_DO_DIAGNOSTICO.segmento);
   const lido = diagnosticoSchema.shape.segmento.safeParse(cortada);
   return lido.success && lido.data ? { [CHAVES_DO_DIAGNOSTICO.segmento]: lido.data } : {};
+}
+
+/**
+ * Quem EDITA a aba Diagnóstico; os demais só leem. Atendente (`agent`) ou
+ * acima, fora do suporte só-leitura e com o contato não anonimizado — o mesmo
+ * piso do `PATCH /api/v1/contacts/:id` (`requireRole("agent")`,
+ * `requireSupportWrite`, 403 do anonimizado). A API é a cerca do dado; esta é
+ * a da tela: sem ela, quem só lê veria o formulário e levaria 403 ao salvar.
+ */
+export function podeEditarDiagnostico(
+  contato: { is_anonymized?: boolean | null },
+  usuario: { support?: { access_mode?: string | null } | null },
+  papel: string | null | undefined,
+): boolean {
+  if (contato.is_anonymized) return false;
+  if (usuario.support?.access_mode === "support_readonly") return false;
+  const rank = papel ? (ROLE_RANK[papel as Role] ?? 0) : 0;
+  return rank >= ROLE_RANK.agent;
+}
+
+export interface EdicaoDaAba {
+  inicial: TextosDoDiagnostico;
+  editado: TextosDoDiagnostico;
+  linksIniciais: LinksDoContato;
+  linksEditados: LinksDoContato;
+  autor: string;
+  agora?: Date;
+}
+
+/**
+ * O corpo do PATCH da aba: a DIFERENÇA entre o que a tela leu e o que a pessoa
+ * deixou no formulário, aplicada sobre o `custom_fields` RELIDO na hora de
+ * salvar (`relido`), e não sobre a cópia de quando a aba abriu.
+ *
+ * O PATCH substitui o objeto inteiro e não confere versão. Partir da cópia
+ * antiga desfazia em silêncio o que outro caminho gravou nesse meio-tempo (o
+ * "Completar fichas" da campanha, uma proposta de dado aprovada, o Editar
+ * contato em outra aba). Relendo antes e tocando só nas chaves que a pessoa
+ * mudou, o que ela não tocou fica como está no servidor. Na MESMA chave, vale
+ * a gravação desta pessoa, a mais recente.
+ *
+ * O que isto NÃO fecha: entre a releitura e o PATCH sobra uma ida e volta à
+ * API. Uma gravação que caia exatamente nesse intervalo ainda é desfeita.
+ * Fechar de vez exige merge no servidor (uma função no molde de
+ * `fn_lead_anotar_campos`) ou conferência de versão no PATCH.
+ */
+export function gravacaoDaAba(
+  relido: Record<string, unknown> | null | undefined,
+  edicao: EdicaoDaAba,
+): Record<string, unknown> {
+  const comLinks = aplicarLinksAlterados(relido, edicao.linksIniciais, edicao.linksEditados);
+  return aplicarDiagnostico(comLinks, edicao.inicial, edicao.editado, edicao.autor, edicao.agora);
 }

@@ -60,6 +60,7 @@ import { AcessosMcpDoContato } from "@/components/contacts/AcessosMcpDoContato";
 import { PessoaDoContato } from "@/components/crm-b2b/PessoaDoContato";
 import { linksParaExibir } from "@/lib/leads/links-de-contato";
 import { DiagnosticoDoContato } from "@/components/contacts/DiagnosticoDoContato";
+import { podeEditarDiagnostico } from "@/lib/contacts/diagnostico-do-contato";
 
 interface Props {
   contactId: string;
@@ -639,12 +640,7 @@ export function ContactDetailClient({
             key={contact.updated_at}
             contato={contact}
             usuarioId={user.id}
-            podeEditar={Boolean(
-              !contact.is_anonymized &&
-                user.support?.access_mode !== "support_readonly" &&
-                activeOrg &&
-                ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent,
-            )}
+            podeEditar={podeEditarDiagnostico(contact, user, activeOrg?.role)}
           />
         </TabsContent>
 

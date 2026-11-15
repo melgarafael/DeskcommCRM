@@ -18,9 +18,14 @@ vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 vi.mock("@/hooks/i18n/useLocaleDeData", () => ({ useLocaleDeData: () => undefined }));
 vi.mock("@/hooks/contacts/useUpdateContact", () => ({ useUpdateContact: () => useUpdate }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
-const { mutateAsync, useUpdate } = vi.hoisted(() => ({
+vi.mock("@/components/feedback/ApiErrorToast", () => ({ showApiError: vi.fn() }));
+// Salvar RELÊ a ficha antes do PATCH. Por padrão a releitura devolve o mesmo
+// contato que a tela pintou; o caso da gravação concorrente troca o retorno.
+vi.mock("@/lib/api/client", () => ({ apiClient: { get: getContato } }));
+const { mutateAsync, useUpdate, getContato } = vi.hoisted(() => ({
   mutateAsync: vi.fn(),
   useUpdate: { mutateAsync: vi.fn(), isPending: false },
+  getContato: vi.fn(),
 }));
 
 const USUARIO = "22222222-2222-4222-8222-222222222222";
@@ -37,6 +42,7 @@ function contato(custom_fields: Record<string, unknown>): Contact {
 }
 
 function pintar(c: Contact, podeEditar = true) {
+  getContato.mockResolvedValue({ data: c });
   render(<DiagnosticoDoContato contato={c} podeEditar={podeEditar} usuarioId={USUARIO} />);
 }
 
@@ -139,5 +145,59 @@ describe("quem não pode editar só lê", () => {
   it("sem nada preenchido, diz isso", () => {
     pintar(contato({ convenio: "Unimed" }), false);
     expect(screen.getByText("Nada preenchido ainda.")).toBeTruthy();
+  });
+});
+
+describe("salvar relê a ficha: o que outro caminho gravou não some", () => {
+  it("⭐ link e diagnóstico gravados por outro caminho depois da leitura sobrevivem", async () => {
+    const user = userEvent.setup();
+    pintar(contato({ convenio: "Unimed" }));
+    // Enquanto a pessoa escrevia, o "Completar fichas" gravou o site e a IA
+    // gravou o diagnóstico. A releitura do salvar já vê os dois.
+    getContato.mockResolvedValue({
+      data: contato({
+        convenio: "Unimed",
+        link_site: "exemplo.com.br",
+        diag_resumo: "Texto da IA.",
+        diag_por: `agente:${AGENTE}`,
+      }),
+    });
+
+    await user.type(screen.getByLabelText("Observações da equipe"), "Ligar depois das 14h.");
+    await user.click(screen.getByRole("button", { name: "Salvar diagnóstico" }));
+
+    expect(getContato).toHaveBeenCalledWith("/api/v1/contacts/33333333-3333-4333-8333-333333333333");
+    expect(corpo()).toEqual({
+      convenio: "Unimed",
+      link_site: "exemplo.com.br",
+      diag_resumo: "Texto da IA.",
+      diag_por: `agente:${AGENTE}`,
+      diag_observacoes: "Ligar depois das 14h.",
+    });
+  });
+
+  it("⭐ editar um link não apaga outro link que a tela não sabe ler", async () => {
+    const user = userEvent.setup();
+    pintar(contato({ link_site: 42, convenio: "Unimed" }));
+
+    await user.type(screen.getByLabelText("Link na bio"), "paginadelinks.exemplo.com/loja");
+    await user.click(screen.getByRole("button", { name: "Salvar diagnóstico" }));
+
+    expect(corpo()).toEqual({
+      link_site: 42,
+      convenio: "Unimed",
+      link_bio: "paginadelinks.exemplo.com/loja",
+    });
+  });
+
+  it("a releitura falhou: nada é gravado", async () => {
+    const user = userEvent.setup();
+    pintar(contato({}));
+    getContato.mockRejectedValue(new Error("rede"));
+
+    await user.type(screen.getByLabelText("Segmento"), "Padaria");
+    await user.click(screen.getByRole("button", { name: "Salvar diagnóstico" }));
+
+    expect(mutateAsync).not.toHaveBeenCalled();
   });
 });
