@@ -140,6 +140,11 @@ begin
 
   -- Tira inclusive o TRUNCATE do default ACL. Só o servidor escreve; a sessão lê,
   -- e só a gestão da própria organização. A credencial nem a sessão lê.
+  -- `create policy <nome>` e `on public.<tabela>` em LINHAS SEPARADAS, de
+  -- propósito, como em cadências: o update.sh até a v1.63.0 lê do TEXTO do
+  -- baseline toda `create policy … on public.…` de uma linha e cobra que exista no
+  -- banco — e estas só existem onde o módulo foi instalado (#1909). Juntar as duas
+  -- linhas trava a atualização dessas instalações.
   revoke all on public.amigo_connections, public.amigo_credentials, public.amigo_patient_links,
     public.amigo_appointment_links, public.amigo_operations from public, anon, authenticated, service_role;
   grant select, insert, update, delete on public.amigo_connections, public.amigo_credentials,
@@ -147,23 +152,27 @@ begin
   grant select on public.amigo_connections, public.amigo_patient_links,
     public.amigo_appointment_links, public.amigo_operations to authenticated;
 
-  drop policy if exists tenant_isolation_amigo_connections_select on public.amigo_connections;
-  create policy tenant_isolation_amigo_connections_select on public.amigo_connections
+  drop policy if exists amigo_connections_select on public.amigo_connections;
+  create policy amigo_connections_select
+    on public.amigo_connections
     for select to authenticated using (
       organization_id in (select public.fn_user_org_ids())
       and public.fn_role_at_least(organization_id, 'manager'));
-  drop policy if exists tenant_isolation_amigo_patient_links_select on public.amigo_patient_links;
-  create policy tenant_isolation_amigo_patient_links_select on public.amigo_patient_links
+  drop policy if exists amigo_patient_links_select on public.amigo_patient_links;
+  create policy amigo_patient_links_select
+    on public.amigo_patient_links
     for select to authenticated using (
       organization_id in (select public.fn_user_org_ids())
       and public.fn_role_at_least(organization_id, 'manager'));
-  drop policy if exists tenant_isolation_amigo_appointment_links_select on public.amigo_appointment_links;
-  create policy tenant_isolation_amigo_appointment_links_select on public.amigo_appointment_links
+  drop policy if exists amigo_appointment_links_select on public.amigo_appointment_links;
+  create policy amigo_appointment_links_select
+    on public.amigo_appointment_links
     for select to authenticated using (
       organization_id in (select public.fn_user_org_ids())
       and public.fn_role_at_least(organization_id, 'manager'));
-  drop policy if exists tenant_isolation_amigo_operations_select on public.amigo_operations;
-  create policy tenant_isolation_amigo_operations_select on public.amigo_operations
+  drop policy if exists amigo_operations_select on public.amigo_operations;
+  create policy amigo_operations_select
+    on public.amigo_operations
     for select to authenticated using (
       organization_id in (select public.fn_user_org_ids())
       and public.fn_role_at_least(organization_id, 'manager'));

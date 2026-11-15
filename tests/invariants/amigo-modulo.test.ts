@@ -56,7 +56,7 @@ describe("Amigo optional SQL and tenant boundaries", () => {
     expect(sql(`delete from public.modulos_instalados where modulo='amigo'; set local role service_role; ${denied(`perform public.fn_amigo_save_config('${a}','${admin}','{}',null)`, "22023")}`)).toBe("ok");
   });
   it("LGPD: anonimizar o contato apaga o vínculo dele e redige o espelho; a outra organização fica intacta", () => {
-    expect(sql(`update public.contacts set is_anonymized=true where id='${contactA}';
+    expect(sql(`update public.contacts set is_anonymized=true, anonymized_at=now() where id='${contactA}';
       select (not exists(select 1 from public.amigo_patient_links where contact_id='${contactA}'))
         and (select remote_data='{}'::jsonb from public.amigo_appointment_links where organization_id='${a}')
         and (select remote_data='{"private":"b"}'::jsonb from public.amigo_appointment_links where organization_id='${b}')
@@ -65,7 +65,7 @@ describe("Amigo optional SQL and tenant boundaries", () => {
   it("LGPD: o recibo de operação do paciente anonimizado é redigido, o de outro paciente não", () => {
     const op = (key: string, ctx: string) => `insert into public.amigo_operations(organization_id,connection_id,key,request_hash,operation,state,target_id,result,request_context) values ('${a}','${ca}','${key}','h','attendance_create','confirmed','t-${key}','{"data":{"name":"Fulana"}}','${ctx}')`;
     expect(sql(`${op("k1", '{"patient_id":1}')}; ${op("k2", '{"patient_id":2}')};
-      update public.contacts set is_anonymized=true where id='${contactA}';
+      update public.contacts set is_anonymized=true, anonymized_at=now() where id='${contactA}';
       select (select result='{"redacted":true}'::jsonb and request_context='{}'::jsonb from public.amigo_operations where key='k1')
         and (select result->'data'->>'name'='Fulana' from public.amigo_operations where key='k2');`)).toBe("t");
   });
@@ -84,6 +84,10 @@ describe("Amigo optional SQL and tenant boundaries", () => {
     expect(sql(asUser(agent, "select count(*) from public.amigo_connections;"))).toBe("0");
     expect(sql(asUser(agent, "select count(*) from public.amigo_appointment_links;"))).toBe("0");
     expect(sql(asUser(manager, `select count(*) from public.amigo_patient_links where organization_id='${b}';`))).toBe("0");
+    // Recibos: a gestão de A lê o de A (contagem positiva antes da recusa) e nunca o de B.
+    const ops = `insert into public.amigo_operations(organization_id,connection_id,key,request_hash,operation,target_id) values ('${a}','${ca}','ka','h','places','t-a'),('${b}','${cb}','kb','h','places','t-b');`;
+    expect(sql(`${ops} ${asUser(manager, "select count(*) from public.amigo_operations;")}`)).toBe("1");
+    expect(sql(`${ops} ${asUser(manager, `select count(*) from public.amigo_operations where organization_id='${b}';`)}`)).toBe("0");
   });
   it("authenticated admin cannot write through PostgREST tables or privileged RPC", () => {
     expect(sql(asUser(admin, denied(`update public.amigo_connections set active=false where organization_id='${a}'`)))).toBe("ok");
