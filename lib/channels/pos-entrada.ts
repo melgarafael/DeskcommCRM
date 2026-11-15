@@ -561,7 +561,11 @@ async function aplicarSemInteresseDaProspeccao(admin: Admin, entrada: EntradaDeM
       organization_id: entrada.organizationId,
       conversation_id: entrada.conversationId,
       origem: entrada.origem,
-      ...(r.gravado ? { gravado: true, negocios_fechados: r.negociosFechados } : { gravado: false, motivo: r.motivo }),
+      gravado: r.gravado,
+      ...(r.gravado ? {} : { motivo: r.motivo }),
+      ...("negociosFechados" in r
+        ? { negocios_fechados: r.negociosFechados, followups_encerrados: r.followupsEncerrados }
+        : {}),
     });
   } catch (err) {
     logger.error("pos-entrada: 'sem interesse' NAO gravado — o contato segue elegível a ofertas", {

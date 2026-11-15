@@ -17,7 +17,7 @@ type Context = { params: Promise<{ id: string }> };
  * "NÃO TEM INTERESSE" pela ficha do contato (decisão D3).
  *
  * POST grava a recusa de marketing com o motivo "sem interesse" e encerra o negócio
- * aberto da prospecção; DELETE desfaz a recusa (aba LGPD). A regra e os efeitos moram
+ * aberto e o follow-up da prospecção; DELETE desfaz a recusa (aba LGPD). A regra e os efeitos moram
  * em `lib/lgpd/registrar-sem-interesse.ts`, a mesma que a conversa de prospecção usa.
  *
  * ## Por que papéis diferentes
@@ -52,7 +52,10 @@ export async function POST(_req: NextRequest, ctx: Context): Promise<Response> {
     requestId,
   });
   if (r.gravado) {
-    return ok({ gravado: true, negocios_fechados: r.negociosFechados }, { requestId });
+    return ok(
+      { gravado: true, negocios_fechados: r.negociosFechados, followups_encerrados: r.followupsEncerrados },
+      { requestId },
+    );
   }
   if (r.motivo === "nao_encontrado") return fail("not_found", t("Contato não encontrado."), 404, { requestId });
   if (r.motivo === "anonimizado") {
@@ -62,8 +65,12 @@ export async function POST(_req: NextRequest, ctx: Context): Promise<Response> {
     });
   }
   if (r.motivo === "ja_recusado") {
-    // Idempotente: a recusa já existe, e é ela que vale.
-    return ok({ gravado: false, negocios_fechados: 0 }, { requestId });
+    // Idempotente: a recusa já existe, e é ela que vale. O que ela alcança é encerrado
+    // de novo (o fechamento da primeira vez pode ter falhado).
+    return ok(
+      { gravado: false, negocios_fechados: r.negociosFechados, followups_encerrados: r.followupsEncerrados },
+      { requestId },
+    );
   }
   return fail("internal_error", t("Não foi possível registrar que o contato não tem interesse."), 500, {
     requestId,

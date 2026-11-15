@@ -22,10 +22,13 @@
  *   "fora da prospecção" fica vermelho (a recusa é gravada no atendimento comum).
  * - Tirar a chamada `aplicarSemInteresseDaProspeccao` da entrada: os casos 1-3 ficam
  *   vermelhos.
+ * - Tirar o passo "sem-interesse" de `aplicarEfeitosDaRecuperacao`: o caso da
+ *   recuperação fica vermelho.
+ * - Tirar o `.eq("organization_id")` da leitura da conversa: o caso da cerca fica vermelho.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { EntradaDeMensagem } from "@/lib/channels/pos-entrada";
+import type { EntradaDaRecuperacao, EntradaDeMensagem } from "@/lib/channels/pos-entrada";
 import { contactMayBeProspected } from "@/lib/prospecting/guard";
 import { recusouMarketing } from "@/lib/campanhas/elegibilidade";
 
@@ -58,6 +61,8 @@ interface Cena {
 let cena: Cena;
 let updatesDeContato: Array<Record<string, unknown>>;
 let filtrosDeLeads: Array<[string, unknown]>;
+/** Os filtros `.eq` de CADA leitura de `conversations`. */
+let leiturasDaConversa: Array<Array<[string, unknown]>>;
 
 /** Builder encadeável do PostgREST: o efeito acontece no `await` ou no `maybeSingle`. */
 function consulta(tabela: string) {
@@ -67,6 +72,8 @@ function consulta(tabela: string) {
       if (tabela === "contacts") {
         updatesDeContato.push(patch);
         if (patch.consent) cena.consent = patch.consent as Record<string, unknown>;
+        // A gravação da recusa confere a linha alterada (`.select("id")`).
+        return { data: [{ id: "contato-1" }], error: null };
       }
       return { data: null, error: null };
     }
@@ -80,9 +87,12 @@ function consulta(tabela: string) {
   };
   const q: Record<string, unknown> = {};
   const encadeia = () => q;
+  const filtrosDaConversa: Array<[string, unknown]> = [];
+  if (tabela === "conversations") leiturasDaConversa.push(filtrosDaConversa);
   for (const m of ["select", "eq", "is", "in", "order", "limit", "neq", "gte", "lte", "not"]) {
     q[m] = (...args: unknown[]) => {
       if (tabela === "crm_leads" && m === "eq") filtrosDeLeads.push([args[0] as string, args[1]]);
+      if (tabela === "conversations" && m === "eq") filtrosDaConversa.push([args[0] as string, args[1]]);
       return encadeia();
     };
   }
@@ -139,6 +149,7 @@ beforeEach(() => {
   };
   updatesDeContato = [];
   filtrosDeLeads = [];
+  leiturasDaConversa = [];
   audit.mockClear();
   encerraDemanda.mockClear();
 });
@@ -222,6 +233,25 @@ describe("na conversa de prospecção", () => {
     );
   });
 
+  it("toda leitura da conversa leva a cerca da organização e o id da conversa", async () => {
+    await rodar();
+    expect(leiturasDaConversa.length).toBeGreaterThan(0);
+    for (const filtros of leiturasDaConversa) {
+      expect(filtros).toEqual(
+        expect.arrayContaining([
+          ["organization_id", "org-1"],
+          ["id", "conversa-1"],
+        ]),
+      );
+    }
+  });
+
+  it("frase de cliente escolhendo não grava nem fecha o negócio", async () => {
+    await rodar({ texto: "Não tenho interesse no plano mensal, quero o anual" });
+    expect(cena.consent.marketing).toBeUndefined();
+    expect(encerraDemanda).not.toHaveBeenCalled();
+  });
+
   it("a mensagem comum não grava nada", async () => {
     await rodar({ texto: "Oi! Qual o horário de vocês?" });
     expect(cena.consent.marketing).toBeUndefined();
@@ -250,5 +280,29 @@ describe("o PARAR continua sendo outra regra", () => {
     await rodar({ texto: "não tenho interesse, quero parar de receber mensagens" });
     expect(updatesDeContato.some((u) => u.is_blocked === true)).toBe(true);
     expect(cena.consent.marketing).toBeUndefined();
+  });
+});
+
+describe("a mensagem recuperada de uma queda (aplicarEfeitosDaRecuperacao)", () => {
+  async function recuperar(over: Partial<EntradaDaRecuperacao> = {}) {
+    const { aplicarEfeitosDaRecuperacao } = await import("@/lib/channels/pos-entrada");
+    await aplicarEfeitosDaRecuperacao(admin, {
+      ...ENTRADA,
+      enviadaEm: "2026-11-14T10:00:00.000Z",
+      previa: ENTRADA.texto ?? "",
+      ...over,
+    });
+  }
+
+  it("a mesma frase, reprocessada pela recuperação, grava a recusa", async () => {
+    await recuperar();
+    expect(cena.consent.marketing).toMatchObject({ granted: false, motivo: "sem_interesse" });
+    expect(contactMayBeProspected({ ...CONTATO_DA_GUARDA, consent: cena.consent })).toBe(false);
+  });
+
+  it("PARAR já tratado (optOutJaTratado): nada é gravado pelo 'sem interesse'", async () => {
+    await recuperar({ texto: "não tenho interesse, quero parar de receber mensagens", optOutJaTratado: true });
+    expect(cena.consent.marketing).toBeUndefined();
+    expect(updatesDeContato).toEqual([]);
   });
 });

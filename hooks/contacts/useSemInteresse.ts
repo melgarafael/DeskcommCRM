@@ -13,7 +13,7 @@ export function useMarcarSemInteresse(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () =>
-      apiClient.post<{ data: { gravado: boolean; negocios_fechados: number } }>(
+      apiClient.post<{ data: { gravado: boolean; negocios_fechados: number; followups_encerrados: number } }>(
         `/api/v1/contacts/${id}/sem-interesse`,
         {},
       ),
