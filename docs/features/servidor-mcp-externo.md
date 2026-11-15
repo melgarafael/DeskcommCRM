@@ -55,16 +55,22 @@ fora são decisões diferentes, e a segunda é uma lista, não uma chave:
 
 ```
 organizations.settings.mcp_externo_escrita = {
-  "organizacao": ["cancelar_reserva"],                 // vale para toda conexão
-  "conexoes": { "compartilhado": ["criar_agendamento"] } // por conexão
+  "conexoes": { "compartilhado": ["criar_agendamento"] }
 }
 ```
 
-A conexão do servidor compartilhado da organização é `compartilhado`; a de um
-servidor do agente é o id dele em `ai_agent_mcp_servers`. O turno usa a **união**
-das duas listas para aquela conexão (`escrita-liberada.ts`). A tela do servidor
-externo (admin) tem os dois campos; o botão "Testar conexão" mostra os nomes que
-o servidor anuncia, que são os nomes a escrever na lista.
+A liberação vale **estritamente por conexão**: um nome liberado numa conexão não
+vale em outra (`escrita-liberada.ts`). A conexão do servidor compartilhado da
+organização é `compartilhado`; a de um servidor do agente é o id dele em
+`ai_agent_mcp_servers`. Não há lista "para toda conexão": uma chave
+`organizacao` gravada por versão anterior é ignorada.
+
+A tela do servidor externo (admin) tem **um campo**, o da conexão
+`compartilhado`, e abre com a lista já gravada — trocar só o endereço ou a chave
+não apaga as liberações. O botão "Testar conexão" mostra os nomes que o
+servidor anuncia, que são os nomes a escrever na lista. Ainda não há tela que
+grave a lista de um servidor do agente (`conexoes.<id>`); sem essa lista, ele
+não escreve.
 
 Regras:
 
