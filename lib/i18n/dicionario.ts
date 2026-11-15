@@ -16920,6 +16920,28 @@ export const DICIONARIO: Traducoes = {
   // (Instagram, Facebook…) não mudam de idioma e ficam de fora.
   Site: { es: "Sitio web" },
   "Google Meu Negócio": { es: "Google Mi Negocio" },
+  "Link na bio": { es: "Enlace en la bio" },
+  // ─── Aba Diagnóstico da ficha (components/contacts/DiagnosticoDoContato.tsx) ───
+  "Diagnóstico da empresa": { es: "Diagnóstico de la empresa" },
+  "Escrito pela IA": { es: "Escrito por la IA" },
+  "Nada preenchido ainda.": { es: "Nada completado todavía." },
+  Segmento: { es: "Segmento" },
+  "Oferta sugerida": { es: "Oferta sugerida" },
+  "Observações da equipe": { es: "Observaciones del equipo" },
+  "Revise antes de usar. O selo da IA sai quando você salva uma mudança no diagnóstico ou na oferta.": {
+    es: "Revisa antes de usar. El sello de la IA desaparece cuando guardas un cambio en el diagnóstico o en la oferta.",
+  },
+  "O CNPJ digitado não é válido. Confira e salve de novo.": {
+    es: "El CNPJ ingresado no es válido. Revísalo y guarda de nuevo.",
+  },
+  "CNPJ inválido.": { es: "CNPJ inválido." },
+  "Diagnóstico salvo.": { es: "Diagnóstico guardado." },
+  "Ex.: clínica odontológica": { es: "Ej.: clínica odontológica" },
+  "O que a empresa faz, o que falta e onde podemos ajudar": {
+    es: "Qué hace la empresa, qué le falta y dónde podemos ayudar",
+  },
+  "O que oferecer e por quê": { es: "Qué ofrecer y por qué" },
+  "Salvar diagnóstico": { es: "Guardar diagnóstico" },
   // ─── Agenda dos colegas (components/agenda/AgendaDosColegas.tsx) ───────────
   // A opção por organização da migration 0343 (issue #978). As frases de recusa
   // são as que `ClientePelaAgenda` já usa ("Sua sessão expirou…", "Nenhuma
