@@ -67,8 +67,8 @@ export async function descartarFollowupObsoleto(
             log,
           );
           if (rastro.falhou) {
-            // As duas escritas ESTOURARAM: o descarte vale, mas o silêncio
-            // voltaria. O log é a última testemunha — por isso é `warn` e
+            // Uma das escritas ESTOUROU (`falhou` é `!aviso.ok || !linha.ok`):
+            // o descarte vale, mas o rastro ficou pela metade ou some. O log é a última testemunha — por isso é `warn` e
             // nomeia o job. Aviso deduplicado e ficha sem negócio aberto NÃO
             // entram aqui: são o desfecho normal, não falha.
             log.warn("followup_descartado_sem_rastro", {
