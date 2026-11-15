@@ -1286,6 +1286,17 @@ export const crmSetAppointmentStatus: McpToolDefinition<typeof statusDoCompromis
   requiresScope: "mcp:write",
   handler: async (input, ctx) =>
     semDerrubarOTurno("registrado", async () => {
+      // Sem `tokenScopes` quem chama é o agente da casa, não uma integração: a
+      // exceção `desfechoPorToken` é do token, e o agente segue a regra de
+      // `crm_set_appointment_outcome` — a presença pede confirmação humana.
+      if (ctx.tokenScopes === undefined) {
+        return {
+          registrado: false,
+          requer_confirmacao_humana: true,
+          orientacao: "Peça à equipe para abrir o compromisso na Agenda e confirmar a presença.",
+          href: `/app/agenda?compromisso=${input.appointment_id}`,
+        };
+      }
       exigeEscopoDoTokenDeIntegracao(ctx, ESCOPO_DESFECHO_DA_AGENDA);
       const r = await alterarAgendamentoHandler(
         ctx.supabase,
