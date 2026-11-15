@@ -652,6 +652,48 @@ export async function resolveTurnAgent(
       return comRastroDoPublico(await resolveFallback('no_match', null));
     }
 
+    /**
+     * Os fatos do CRM do contato (#3917), lidos no TURNO e não dentro do
+     * classificador, e UMA vez por turno: os dois caminhos que decidem (a IA de
+     * sempre e o Jev) recebem o mesmo bloco. Antes, o Jev — que decide sozinho
+     * em `sob_demanda` — perguntava só com o texto, então a cliente com viagem
+     * fechada voltava para vendas sempre que a escolha dele valia.
+     *
+     * A leitura é PREGUIÇOSA (`??=`): só acontece quando alguém a pede, e quem
+     * pede é a classificação ou a montagem da pergunta ao Jev. Turno com a
+     * tarefa desligada, ou com a mensagem vazia, não paga consulta nenhuma.
+     *
+     * O log leva CONTAGENS, nunca a lista: funil/etapa/etiqueta são config da
+     * empresa e podem ir para o prompt, mas o rastro do turno não carrega dado
+     * do contato (`fields` do logger, disciplina do #3722). Falha da leitura
+     * não muda o roteamento — vira uma linha de aviso com o motivo.
+     */
+    let leituraDosFatos: Promise<LeituraDosFatosDoCrm> | null = null;
+    const fatosDoTurno = (): Promise<LeituraDosFatosDoCrm> => {
+      leituraDosFatos ??= (async () => {
+        const leitura = await _carregarFatosDoCrm(db, input.tenantId, input.leadId);
+        if (leitura.motivo !== null) {
+          deps.log.warn('classificador: sem fatos do CRM — turno classifica só com o texto (#3917)', {
+            tenantId: input.tenantId,
+            conversationId: input.conversationId,
+            contactId: input.leadId,
+            motivo: leitura.motivo,
+          });
+        } else if (temFatosDoCrm(leitura.fatos)) {
+          deps.log.info('classificador: fatos do CRM do contato no contexto (#3917)', {
+            tenantId: input.tenantId,
+            conversationId: input.conversationId,
+            contactId: input.leadId,
+            funis: leitura.fatos.funis.length,
+            etapas: leitura.fatos.funis.reduce((total, f) => total + f.etapas.length, 0),
+            etiquetas: leitura.fatos.etiquetas.length,
+          });
+        }
+        return leitura;
+      })();
+      return leituraDosFatos;
+    };
+
     // O Jev pergunta o mesmo (onda 2 do Jev, bloco 2.2): só a mensagem, sem o
     // contexto (R4) — o histórico do Jev espera a TypeSafe (DEC-012, escolha 2).
     // A janela do roteador vale só para a IA de sempre. Observando, o turno não
@@ -667,6 +709,10 @@ export async function resolveTurnAgent(
         membros: router.members,
         contactId: input.leadId,
         jobId: input.jobId,
+        // Os MESMOS fatos da IA de sempre (#3917), sem segunda leitura: a
+        // consulta é a memoizada acima, e a pergunta ao Jev só a pede quando
+        // vai de fato ser montada.
+        fatosDoCrmDoTurno: () => fatosDoTurno().then((l) => l.fatos),
       },
       deps.jev,
     );
@@ -675,39 +721,8 @@ export async function resolveTurnAgent(
     // Sob demanda, só há esta chamada se o Jev não trouxer intenção confiável.
     const modo = await (jev.modo ?? Promise.resolve('comparacao'));
     const estadoLido = await jev.estado;
-    /**
-     * Os fatos do CRM do contato (#3917), lidos no TURNO e não dentro do
-     * classificador: a consulta só acontece quando há mensagem inbound e um
-     * roteador de verdade, e quem já decidiu (Jev confiável) não a paga.
-     *
-     * O log leva CONTAGENS, nunca a lista: funil/etapa/etiqueta são config da
-     * empresa e podem ir para o prompt, mas o rastro do turno não carrega dado
-     * do contato (`fields` do logger, disciplina do #3722). Falha da leitura
-     * não muda o roteamento — vira uma linha de aviso com o motivo.
-     */
-    const fatosParaOClassificador = async (): Promise<LeituraDosFatosDoCrm> => {
-      const leitura = await _carregarFatosDoCrm(db, input.tenantId, input.leadId);
-      if (leitura.motivo !== null) {
-        deps.log.warn('classificador: sem fatos do CRM — turno classifica só com o texto (#3917)', {
-          tenantId: input.tenantId,
-          conversationId: input.conversationId,
-          contactId: input.leadId,
-          motivo: leitura.motivo,
-        });
-      } else if (temFatosDoCrm(leitura.fatos)) {
-        deps.log.info('classificador: fatos do CRM do contato no contexto (#3917)', {
-          tenantId: input.tenantId,
-          conversationId: input.conversationId,
-          contactId: input.leadId,
-          funis: leitura.fatos.funis.length,
-          etapas: leitura.fatos.funis.reduce((total, f) => total + f.etapas.length, 0),
-          etiquetas: leitura.fatos.etiquetas.length,
-        });
-      }
-      return leitura;
-    };
     const classificar = async () => {
-      const leitura = await fatosParaOClassificador();
+      const leitura = await fatosDoTurno();
       return _classifyIntent(
         db, llmCfg,
         { tenantId: input.tenantId, leadId: input.leadId, jobId: input.jobId, router, signal: input.signal!, recentMessages, fatosDoCrm: leitura.fatos },

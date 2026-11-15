@@ -7,7 +7,7 @@
  * para o operador. Sem este teste o campo viaja do banco até aqui sem ninguém
  * conferir a última ponta — e a prévia volta a cortar calada.
  */
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { NovaCampanha } from "./_client";
@@ -61,5 +61,33 @@ describe("prévia da nova campanha: o aviso do teto de 20.000", () => {
   it("recorte inteiro: nenhum aviso — o campo não vira ruído", () => {
     render(<NovaCampanha />);
     expect(screen.queryByText(AVISO)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Doc 305 (A): a opção "E-mail" segue o módulo `campanha_por_email`, desligado
+ * de fábrica. A página lê a chave e a entrega em `emailLigado`; sem ela a tela
+ * é a de antes, só WhatsApp. A recusa do servidor é medida em
+ * `lib/campanhas/conteudo-do-canal.test.ts`.
+ */
+describe("nova campanha: a opção E-mail segue o módulo campanha_por_email", () => {
+  it("desligado (o padrão): não há escolha de canal nem campo de assunto", () => {
+    render(<NovaCampanha />);
+    expect(screen.queryByRole("radio", { name: "E-mail" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Por onde a campanha fala")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Assunto do e-mail")).not.toBeInTheDocument();
+    // O número continua onde sempre esteve.
+    expect(screen.getByLabelText("Enviar pelo número")).toBeInTheDocument();
+  });
+
+  it("ligado: a opção aparece, e escolhê-la troca o número pelo assunto", () => {
+    render(<NovaCampanha emailLigado />);
+    const radio = screen.getByRole("radio", { name: "E-mail" });
+    expect(radio).not.toBeChecked();
+    expect(screen.queryByLabelText("Assunto do e-mail")).not.toBeInTheDocument();
+
+    fireEvent.click(radio);
+    expect(screen.getByLabelText("Assunto do e-mail")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Enviar pelo número")).not.toBeInTheDocument();
   });
 });

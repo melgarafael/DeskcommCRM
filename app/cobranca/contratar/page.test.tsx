@@ -32,7 +32,7 @@ beforeEach(() => {
     : q.tabela === "cobranca_assinaturas"
       ? { plano_id: PLANO, estado: h.cancelada ? "cancelada" : h.paid ? "ativa" : "trial", pagamento_inicial_pendente: h.first, periodo_pago_desde: h.paid ? new Date().toISOString() : null, provedor: null, provedor_cliente_id: h.clienteId, checkout_url: h.checkoutUrl }
       : q.tabela === "cobranca_planos"
-        ? { id: PLANO, nome: "Plano anual", preco_cents: 1152000, intervalo: "ano" }
+        ? { id: PLANO, nome: "Plano anual", preco_cents: 1152000, moeda: "BRL", intervalo: "ano" }
         : h.intent ? [{ id: ORG, created_at: new Date(Date.now() - 1000).toISOString(), metadata: { contratacao: recibo } }] : null }));
 });
 const montar = async (params = {}) => render(await Page({ searchParams: Promise.resolve(params) }));

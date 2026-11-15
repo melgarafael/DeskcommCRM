@@ -22,7 +22,7 @@ import { limiteDoProvedorPorOrg, recusaDoProvedor } from "@/lib/cobranca/falhas"
 import { adaptador, modoDoProvedor } from "@/lib/cobranca/provedores";
 import { ErroDoProvedor } from "@/lib/cobranca/provedores/contrato";
 import { desistirDoAjuste } from "@/lib/cobranca/troca";
-import type { EstadoDaAssinatura, Intervalo, ProvedorDeCobranca } from "@/lib/cobranca/vocabulario";
+import type { EstadoDaAssinatura, Intervalo, Moeda, ProvedorDeCobranca } from "@/lib/cobranca/vocabulario";
 import { logger } from "@/lib/logger";
 
 const RESERVA_MS = 2 * 60_000;
@@ -236,11 +236,11 @@ async function gerarCheckout(
   }
   const [org, plano] = await Promise.all([
     admin.from("organizations").select("legal_name, display_name").eq("id", orgId).maybeSingle(),
-    admin.from("cobranca_planos").select("id, nome, preco_cents, intervalo").eq("id", lida.plano_id).maybeSingle(),
+    admin.from("cobranca_planos").select("id, nome, preco_cents, moeda, intervalo").eq("id", lida.plano_id).maybeSingle(),
   ]);
   if (org.error || plano.error || !plano.data) throw new Error("cobranca: empresa ou plano ilegível no checkout");
   const nomes = org.data as { legal_name: string | null; display_name: string } | null;
-  const p = plano.data as { id: string; nome: string; preco_cents: number; intervalo: Intervalo };
+  const p = plano.data as { id: string; nome: string; preco_cents: number; moeda: Moeda; intervalo: Intervalo };
   const clienteRef =
     lida.provedor_cliente_id ??
     (await ad.garantirCliente({ id: orgId, nome: nomes?.legal_name || nomes?.display_name || orgId, email: quem.email, documento: quem.documento }));
@@ -262,7 +262,7 @@ async function gerarCheckout(
   const inicio = await ad.iniciarAssinatura({
     clienteRef,
     orgId,
-    plano: { id: p.id, nome: p.nome, precoCents: p.preco_cents, intervalo: p.intervalo },
+    plano: { id: p.id, nome: p.nome, precoCents: p.preco_cents, moeda: p.moeda, intervalo: p.intervalo },
     trialAte: lida.estado === "trial" && lida.trial_ate ? new Date(lida.trial_ate) : null,
     urlDeVolta: quem.urlDeVolta,
     chaveIdempotencia: quem.chaveIdempotencia,

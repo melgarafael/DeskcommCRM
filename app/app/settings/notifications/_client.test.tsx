@@ -184,9 +184,23 @@ describe("o interruptor de Push de mensagem liga e desliga a inscrição do apar
     });
   }
 
-  it("desligar encerra o push deste aparelho", async () => {
+  it("desligar só o de mensagem NÃO encerra o aparelho: regrava a inscrição com o tipo calado", async () => {
     const container = montar();
     await clicar(container, "Nova mensagem via push");
+    expect(pushClient.encerrarPushDesteAparelho).not.toHaveBeenCalled();
+    expect(pushClient.syncPushSubscription).toHaveBeenCalledTimes(1);
+    expect(prefs.tiposCalados(prefs.lerPrefs())).toEqual(["message"]);
+  });
+
+  it("desligar o ÚLTIMO push ligado encerra o push deste aparelho", async () => {
+    window.localStorage.setItem(
+      CHAVE,
+      JSON.stringify(
+        Object.fromEntries(prefs.NOTIFY_UI_CATEGORIES.map((c) => [c, { in_app: true, push: c === "lead_assigned" }])),
+      ),
+    );
+    const container = montar();
+    await clicar(container, "Lead atribuído a você via push");
     expect(pushClient.encerrarPushDesteAparelho).toHaveBeenCalledTimes(1);
     expect(pushClient.syncPushSubscription).not.toHaveBeenCalled();
   });
@@ -347,25 +361,34 @@ describe("o interruptor de Push de mensagem liga e desliga a inscrição do apar
     expect(container.innerHTML).toContain('data-testid="alerts-toggle"');
   });
 
-  it("outras categorias e o in-app não mexem na inscrição", async () => {
+  it("o in-app não mexe na inscrição; o push de outro tipo regrava os tipos calados", async () => {
     const container = montar();
-    await clicar(container, "Lead ganho via push");
     await clicar(container, "Nova mensagem via in_app");
-    expect(pushClient.encerrarPushDesteAparelho).not.toHaveBeenCalled();
     expect(pushClient.syncPushSubscription).not.toHaveBeenCalled();
+    await clicar(container, "Lead ganho via push");
+    expect(pushClient.encerrarPushDesteAparelho).not.toHaveBeenCalled();
+    expect(pushClient.syncPushSubscription).toHaveBeenCalledTimes(1);
   });
 
-  // A inscrição é do aparelho e o servidor não separa categorias: sem ela,
-  // nenhum push chega. A tela não pode mostrar os outros como ligados.
-  it("com o push de mensagem desligado, os outros pushes aparecem desligados e travados, com o porquê", () => {
+  // Até 09/11/2026 o push de mensagem era o interruptor do aparelho, e quem só
+  // queria "Lead atribuído a você" não conseguia: desligar mensagem travava os outros.
+  it("com o push de mensagem desligado, os outros pushes seguem ligados e mexíveis, com o porquê", () => {
     window.localStorage.setItem(CHAVE, JSON.stringify({ message: { in_app: true, push: false } }));
     const container = montar();
-    const lead = container.querySelector('[aria-label="Lead ganho via push"]') as HTMLButtonElement;
-    expect(lead.getAttribute("aria-checked")).toBe("false");
-    expect(lead.disabled).toBe(true);
+    const lead = container.querySelector('[aria-label="Lead atribuído a você via push"]') as HTMLButtonElement;
+    expect(lead.getAttribute("aria-checked")).toBe("true");
+    expect(lead.disabled).toBe(false);
     expect(container.textContent).toContain(
-      "Desligar o push de mensagem desliga todos os avisos deste aparelho fora do app.",
+      "Cada aviso liga e desliga sozinho no Push. Desligar todos encerra os avisos deste aparelho fora do app.",
     );
+  });
+
+  it("passagem e etapa que avisa têm Push próprio e nenhum interruptor In-app", () => {
+    const container = montar();
+    for (const rotulo of ["A IA passou uma conversa para a equipe", "Negócio entrou numa etapa que avisa"]) {
+      expect(container.querySelector(`[aria-label="${rotulo} via push"]`)).not.toBeNull();
+      expect(container.querySelector(`[aria-label="${rotulo} via in_app"]`)).toBeNull();
+    }
   });
 
   it("com o push de mensagem ligado, os outros pushes seguem a própria preferência (controle)", () => {
