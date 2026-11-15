@@ -19,14 +19,27 @@
  *
  * ═══ O que fica de fora, de propósito ═══
  *
+ * A régua erra para o lado de NÃO gravar. O falso positivo fecha como Perdido, sem
+ * ninguém ver, o negócio de quem estava comprando; o falso negativo só deixa o "não"
+ * para a equipe registrar pelo botão da ficha ou da conversa.
+ *
  * - "não quero" sozinho: "não quero pagar caro" e "não quero perder a vaga" são
  *   cliente interessado.
- * - a CONDIÇÃO ("se eu não tiver interesse…", "caso não tenha interesse") e a dupla
- *   negação ("não é que não tenho interesse");
+ * - a CONDIÇÃO ("se eu não tiver interesse…", "se for caro, não tenho interesse") e a
+ *   dupla negação ("não é que não tenho interesse");
+ * - a NEGAÇÃO CITADA ("quem disse que não tenho interesse?", "eu não disse que não
+ *   tenho interesse");
+ * - o COMPLEMENTO que escolhe ("não tenho interesse no plano mensal", "não me
+ *   interessa o preço"). Só vale o complemento que aponta para a oferta inteira
+ *   ("nisso", "no serviço de vocês", "em contratar");
+ * - o SINAL DE INTERESSE em qualquer ponto da mensagem ("quero", "quanto fica", "me
+ *   manda o preço", "claro que");
  * - o CONTRASTE que aponta para outra coisa ("não tenho interesse nesse, mas tem
  *   outro?"). O contraste com agradecimento ("não tenho interesse, mas obrigado")
  *   continua sendo recusa;
- * - a PERGUNTA na terceira pessoa ("vocês não têm interesse em…?").
+ * - a PERGUNTA, em qualquer pessoa ("não tenho interesse? claro que tenho!",
+ *   "vocês não têm interesse em…?"). A única pergunta que acompanha a recusa é a da
+ *   origem do número ("não tenho interesse, quem te passou meu número?").
  *
  * O vocabulário fica num arquivo próprio para que mexer nele nunca mude o PARAR.
  */
@@ -51,8 +64,70 @@ const FRASES_DE_SEM_INTERESSE: readonly RegExp[] = [
   /\bno\s+(?:estoy|estamos)\s+interesad[oa]s?\b/u,
 ];
 
-/** O que vem ANTES e desfaz a recusa: condição e dupla negação. */
-const ANTES_QUE_DESFAZ = /(?:\b(?:se|caso|si)\s+(?:eu\s+|yo\s+|a\s+gente\s+)?|\b(?:nao\s+e|no\s+es)\s+que\s+(?:eu\s+|yo\s+)?)$/u;
+/** O que vem COLADO antes e desfaz a recusa: condição, dupla negação e negação citada. */
+const ANTES_QUE_DESFAZ = new RegExp(
+  "(?:" +
+  [
+    // condição: "se eu não tenho interesse", "caso não tenha"
+    String.raw`\b(?:se|caso|si)\s+(?:eu\s+|yo\s+|a\s+gente\s+)?`,
+    // dupla negação: "não é que não tenho interesse"
+    String.raw`\b(?:nao\s+e|no\s+es)\s+que\s+(?:eu\s+|yo\s+)?`,
+    // negação citada: "quem disse que", "eu não disse que", "você acha que"
+    String.raw`\b(?:quem\s+(?:te\s+|lhe\s+)?(?:disse|falou)|(?:nao|nunca)\s+(?:disse|falei|falou)|acha|acham|achou|pensa|pensam|pensou|quien\s+dijo|(?:no|nunca)\s+dije)\s+que\s+(?:eu\s+|yo\s+|a\s+gente\s+|nos\s+)?`,
+  ]
+    .map((p) => `(?:${p})`)
+    .join("|") +
+    ")$",
+  "u",
+);
+
+/** A condição na mesma oração, antes da frase: "se for caro, não tenho interesse". */
+const CONDICAO_NA_ORACAO =
+  /\b(?:se|caso|si)\s+(?:for|forem|fosse|tiver|tivesse|custar|der|precisar|eu|a\s+gente|nao|es|fuera)\b[^.!?\n]*$/u;
+
+/** O tempo da recusa não é complemento: "não tenho interesse no momento". */
+const TEMPO_DA_RECUSA =
+  /^\s*(?:mais\s+)?(?:no\s+momento|neste\s+momento|nesse\s+momento|por\s+enquanto|por\s+ora|agora|hoje|ainda|en\s+este\s+momento|por\s+ahora|ahora)\b/u;
+
+/** Um complemento logo depois da frase: o QUE não interessa. */
+const COMPLEMENTO =
+  /^\s*(?:em|no|na|nos|nas|num|numa|nesse|nessa|neste|nesta|nesses|nessas|nisso|nisto|o|a|os|as|de|do|da|dos|das|desse|dessa|disso|disto|pelo|pela|por|pra|para|en|el|la|los|las|lo|ese|esa|eso|esto|esta|este|se|caso|si)\b/u;
+
+/** O complemento que aponta para a oferta INTEIRA, não para uma escolha dentro dela. */
+const COMPLEMENTO_DA_OFERTA = new RegExp(
+  "^\\s*(?:" +
+    [
+      String.raw`(?:em\s+)?(?:nisso|nisto|disso|disto|nada|nenhum[a]?)\b`,
+      String.raw`(?:no|na|nos|nas|do|da|dos|das|pelo|pela)\s+(?:(?:seu|sua|seus|suas|teu|tua|vosso)\s+)?(?:servicos?|produtos?|propostas?|ofertas?|trabalhos?|assunto|contato)\b`,
+      String.raw`(?:nesse|nessa|neste|nesta|desse|dessa|deste|desta)\s+(?:servico|produto|proposta|oferta|assunto|tipo\s+de\s+servico)\b`,
+      String.raw`em\s+(?:contratar|conhecer|saber\s+mais|receber|ouvir|falar|conversar|participar)\b`,
+      String.raw`en\s+(?:eso|esto|nada)\b`,
+      String.raw`(?:eso|esto)\b`,
+    ].join("|") +
+    ")",
+  "u",
+);
+
+/** Sinal de que a pessoa quer comprar, em qualquer ponto da mensagem. */
+const SINAL_DE_INTERESSE = new RegExp(
+  String.raw`\b(?:` +
+    [
+      "quero|queria|gostaria|prefiro|preferia|quiero|quisiera|prefiero",
+      String.raw`me\s+(?:manda|mande|passa|passe|envia|envie|fala|diz)`,
+      String.raw`quanto|quantos|cuanto|qual\s+(?:o|a|e|seria|sao)|cual`,
+      "precos?|valor|valores|orcamento|precio|presupuesto",
+      String.raw`claro\s+que|tem\s+(?:outr[oa]s?|algum[a]?)|vou\s+(?:querer|pagar|levar|fechar|contratar|pegar|ficar)`,
+    ].join("|") +
+    String.raw`)\b`,
+  "u",
+);
+
+/** "não quero" é recusa, não sinal de interesse: sai antes de procurar o sinal. */
+const NEGACAO_DO_QUERER = /\b(?:nao|no)\s+(?:quero|queria|gostaria|quiero|quisiera)\b/gu;
+
+/** A pergunta que acompanha a recusa: de onde veio o número. */
+const PERGUNTA_DA_ORIGEM =
+  /\b(?:quem\s+(?:te\s+|lhe\s+|vos\s+)?(?:passou|deu|indicou|forneceu)|de\s+onde|como\s+(?:voce|vc|voces|vcs)\s+(?:conseguiu|conseguiram|pegou|pegaram|achou|tem|teve)|onde\s+(?:voce|vc|voces|vcs)\s+(?:conseguiu|pegou|achou)|quien\s+te\s+(?:dio|paso)|de\s+donde)\b[^?]*\b(?:numero|contato|telefone|whats(?:app)?|zap)\b/u;
 
 /** O contraste que aponta para outra oferta. */
 const CONTRASTE = /\b(?:mas|porem|so\s+que|contudo|entretanto|pero|sino)\b/u;
@@ -70,21 +145,26 @@ export function ehFraseDeSemInteresse(texto: string | null | undefined): boolean
   const normalizado = normalizarTexto(texto).replace(/\s+/gu, " ").trim();
   if (!normalizado) return false;
 
+  // O sinal de interesse vale em qualquer ponto: "quero o anual. não tenho interesse no
+  // mensal" é escolha, não recusa.
+  if (SINAL_DE_INTERESSE.test(normalizado.replace(NEGACAO_DO_QUERER, " "))) return false;
+
   for (const padrao of FRASES_DE_SEM_INTERESSE) {
     const achado = padrao.exec(normalizado);
     if (!achado) continue;
     const antes = normalizado.slice(0, achado.index);
-    if (ANTES_QUE_DESFAZ.test(antes)) continue;
+    if (ANTES_QUE_DESFAZ.test(antes) || CONDICAO_NA_ORACAO.test(antes)) continue;
 
     const depois = normalizado.slice(achado.index + achado[0].length);
     if (CONTRASTE.test(depois) && !CONTRASTE_DE_AGRADECIMENTO.test(depois)) continue;
 
-    // A pergunta só desfaz na terceira pessoa ("vocês não têm interesse em…?"): quem
-    // escreve "não tenho interesse, quem te passou meu número?" recusou e perguntou.
-    if (/\bnao\s+(?:tem|teria)\b/u.test(achado[0])) {
-      const frase = depois.split(/[.!\n]/u)[0] ?? "";
-      if (frase.includes("?")) continue;
-    }
+    // A pergunta, em qualquer pessoa, desfaz — menos a da origem do número.
+    if (depois.includes("?") && !PERGUNTA_DA_ORIGEM.test(depois)) continue;
+
+    // O complemento decide: o tempo ("no momento") não é complemento; o que aponta para
+    // a oferta inteira ("nisso", "no serviço") é recusa; qualquer outro é escolha.
+    const semTempo = depois.replace(TEMPO_DA_RECUSA, "");
+    if (COMPLEMENTO.test(semTempo) && !COMPLEMENTO_DA_OFERTA.test(semTempo)) continue;
     return true;
   }
   return false;

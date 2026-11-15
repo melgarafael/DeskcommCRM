@@ -26,6 +26,13 @@ describe("ehFraseDeSemInteresse", () => {
     "Não tenho interesse, mas obrigado pelo contato",
     "não tenho interesse. quem te passou meu número?",
     "Bom dia. Não temos interesse.",
+    "Não tenho interesse no serviço de vocês",
+    "não tenho interesse em contratar, obrigado",
+    "Por enquanto não tenho interesse",
+    "Não tenho interesse agora, valeu",
+    "não quero, não tenho interesse",
+    "Não tenho interesse, de onde vocês tiraram meu número?",
+    "Não estou interessado, já tenho site",
     // espanhol
     "No tengo interés",
     "no me interesa, gracias",
@@ -51,6 +58,28 @@ describe("ehFraseDeSemInteresse", () => {
     "No me interesa ese plan, pero sí el otro",
   ])("NÃO é recusa: %s", (frase) => {
     expect(ehFraseDeSemInteresse(frase)).toBe(false);
+  });
+
+  // Achado de revisão: as frases de cliente INTERESSADO que a primeira régua gravava
+  // como recusa. Numa conversa de prospecção, cada uma fechava o negócio como Perdido.
+  it.each([
+    "Não tenho interesse no plano mensal, quero o anual",
+    "não tenho interesse em parcelar, vou pagar à vista",
+    "Não estou interessado em pagar caro, qual o valor?",
+    "Não me interessa o preço, quero qualidade",
+    "Quem disse que não tenho interesse?",
+    "Não tenho interesse? Claro que tenho! Me manda o preço",
+    "Eu não disse que não tenho interesse",
+    "Não tenho interesse em fidelidade, quero avulso. Quanto fica?",
+    // vizinhas das de cima
+    "Não tenho interesse no plano mensal",
+    "Se for caro, não tenho interesse",
+    "Você acha que não tenho interesse?",
+    "Quero o anual. Não tenho interesse no mensal",
+    "Não tenho interesse. Vocês fazem entrega?",
+  ])("cliente escolhendo, NÃO é recusa: %s", (frase) => {
+    expect(ehFraseDeSemInteresse(frase)).toBe(false);
+    expect(ehPedidoDeOptOut(frase)).toBe(false);
   });
 
   it("nulo e vazio não casam", () => {
