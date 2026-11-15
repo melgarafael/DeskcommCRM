@@ -2,7 +2,8 @@
 
 > Contrato portável para **qualquer** agente de código (Codex, Cursor, OpenCode, Antigravity, Copilot).
 > Este arquivo é o núcleo. A **doutrina completa e não-negociável vive em [`CLAUDE.md`](CLAUDE.md)** —
-> leia-o antes de tocar em código. O mapa de toda a documentação está em [`docs/index.md`](docs/index.md).
+> leia-o antes de tocar em código. Seções longas dele (testes, migrations, auditoria, WAHA, QA visual)
+> têm o texto integral em [`docs/doctrine/`](docs/doctrine/); lá vale o integral sobre o resumo. O mapa de toda a documentação está em [`docs/index.md`](docs/index.md).
 > Precedência quando dois documentos discordam: `CLAUDE.md` > `docs/specs/` > `docs/prd/` >
 > `HANDOFF-*.md` > `README.md`.
 

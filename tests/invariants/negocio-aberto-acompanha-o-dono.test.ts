@@ -15,11 +15,12 @@
  * ─── A regra (doc 178, letra B; doc 267 A, revista no doc 328 (A+ estreito, #4371)) ─
  *
  *   · TRANSFERIR leva o negócio aberto do contato, dentro da permissão de quem
- *     clicou (a mesma de `crm_leads_update`), com a exceção do #4371: quando
- *     quem transfere é o DONO ATUAL do card, o card vai junto mesmo para role
- *     `agent` na visibilidade padrão — ele está entregando o próprio
- *     atendimento de propósito (caminho 1); gestor leva; o servidor (MCP,
- *     automação) leva (caminho 2);
+ *     clicou (a mesma de `crm_leads_update`), com a exceção do #4371 (que a
+ *     #4312 reafirma ao redefinir a função): quando quem transfere é o DONO
+ *     ATUAL do card, o card vai junto mesmo para role `agent` na visibilidade
+ *     padrão — ele está entregando o próprio atendimento de propósito (caminho
+ *     1); gestor leva; o servidor (MCP, automação) leva (caminho 2); e quem NÃO
+ *     é dono do card continua sem tomá-lo nem entregá-lo ("lado oposto (e)");
  *   · Assumir, Iniciar conversa, a fila automática e a passagem só dão dono a
  *     negócio SEM responsável — nunca tiram de um colega (caminho 3, fila).
  *
@@ -491,7 +492,7 @@ afterAll(() => {
 });
 
 describe("#4019 — o negócio aberto acompanha o dono da conversa", () => {
-  it("caminho 1: atendente transfere em own_and_unassigned — #4371: o DONO do card transfere e o card vai junto", () => {
+  it("caminho 1: atendente transfere em own_and_unassigned — #4371/#4312: o DONO do card transfere e o card vai junto", () => {
     expect(donoDaConversa(CONV.atendenteTransfere)).toBe(A);
     expect(donoDoNegocio(NEG.atendenteTransfere)).toBe(A);
 
@@ -508,7 +509,9 @@ describe("#4019 — o negócio aberto acompanha o dono da conversa", () => {
     // #4371: na visibilidade padrão, `fn_can_view_lead(A → B)` é falso e o card
     // ficava com quem saiu — a colega não achava o negócio no filtro
     // "Responsável". Quem entrega o atendimento do PRÓPRIO card de propósito não
-    // precisa enxergar o destino: o card acompanha.
+    // precisa enxergar o destino: o card acompanha. A #4312 reafirma a exceção
+    // ao redefinir `fn_conversation_assign` — e o limite, card de outra pessoa
+    // não é levado, segue provado em "lado oposto (e)".
     expect(donoDoNegocio(NEG.atendenteTransfere)).toBe(B);
   });
 

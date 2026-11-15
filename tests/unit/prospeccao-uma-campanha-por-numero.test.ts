@@ -34,6 +34,8 @@ vi.mock("@/lib/ai/elegibilidade/consulta-pre-go-live", () => ({
 vi.mock("@/lib/prospecting/guard", () => ({
   assertProspectingDelivery: mocks.guard,
   assertProspectingContinuation: mocks.continuation,
+  // A leitura das marcas ANTES da vaga: aqui o contato é sempre limpo.
+  vetoDoContatoAntesDaVaga: vi.fn().mockResolvedValue(null),
 }));
 vi.mock("@/lib/agent-engine/pacing/store", () => ({
   loadChannelKnobs: mocks.knobs,
