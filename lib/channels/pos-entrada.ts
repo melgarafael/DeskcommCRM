@@ -42,6 +42,7 @@ import { audit } from "@/lib/audit";
 import { idsDosCanaisDesativados } from "@/lib/channels/desativado";
 import { encerraDemanda } from "@/lib/leads/encerramento";
 import { garantirLeadDaConversa } from "@/lib/leads/nascimento-do-lead";
+import type { AtribuicaoDeAnuncio } from "@/lib/leads/atribuicao-de-anuncio";
 import type { CanonicalLostReason } from "@/lib/schemas/leads";
 import {
   ehAPrimeiraMensagemDoContato,
@@ -50,6 +51,7 @@ import {
 } from "@/lib/leads/origem-do-site";
 import { logger } from "@/lib/logger";
 import { PADRAO_DO_REF } from "@/lib/plataformas-de-anuncio/captura-de-clique";
+import { extrairEEstamparAtribuicaoGoogle } from "@/lib/plataformas-de-anuncio/google/atribuicao";
 import { casarClickRef } from "@/lib/plataformas-de-anuncio/meta/captura-de-clique";
 import { casarOrigemPorHorario } from "@/lib/leads/origem-por-horario";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -189,8 +191,8 @@ export async function aplicarEfeitosPosEntrada(
   // mensagem que não é dele) devolve `null`, e tudo abaixo roda como sempre.
   if (await desviadaPorModulo(admin, entrada)) return;
 
-  await guardarOrigemDaPagina(admin, entrada);
-  await abrirDemanda(admin, entrada);
+  const atribuicaoDaMensagem = await guardarOrigemDaPagina(admin, entrada);
+  await abrirDemanda(admin, entrada, atribuicaoDaMensagem);
   await avaliarCampanha(admin, entrada);
   const sinal = {
     organizationId: entrada.organizationId,
@@ -867,7 +869,11 @@ async function encerrarDemandasAbertasDeQuemPediuParar(
  * `garantirLeadDaConversa` é idempotente por contato e já recusa contato
  * bloqueado — por isso o passo 1 vem antes.
  */
-async function abrirDemanda(admin: Admin, entrada: EntradaDeMensagem): Promise<void> {
+async function abrirDemanda(
+  admin: Admin,
+  entrada: EntradaDeMensagem,
+  atribuicaoDaMensagem?: AtribuicaoDeAnuncio | void,
+): Promise<void> {
   // Sem ID retornado pelo INSERT, ainda tentamos abrir a demanda pelo caminho
   // legado. A prova CTWA exige um ID persistido e não nasce desta alternativa.
   try {
@@ -878,6 +884,7 @@ async function abrirDemanda(admin: Admin, entrada: EntradaDeMensagem): Promise<v
       messageId: entrada.messageId,
       nomeDoContato: entrada.nomeDoContato,
       origem: origemDoNegocioPeloCanal(entrada.canal),
+      ...(atribuicaoDaMensagem ? { atribuicaoDaMensagem } : {}),
     });
 
     // Os DOIS desfechos viram log. Sem a linha do "não criou", o silêncio de
@@ -991,7 +998,27 @@ async function pedirDespachoDoAgente(admin: Admin, entrada: EntradaDeMensagem): 
  * O `[dk1:]` é tentado PRIMEIRO porque é o que não custa consulta nenhuma: ele
  * se resolve no texto. O ref só vai ao banco quando o texto não trouxe UTM.
  */
-async function guardarOrigemDaPagina(admin: Admin, entrada: EntradaDeMensagem): Promise<void> {
+async function guardarOrigemDaPagina(
+  admin: Admin,
+  entrada: EntradaDeMensagem,
+): Promise<AtribuicaoDeAnuncio | void> {
+  // O Google também usa [ref:] e precisa atravessar TODOS os canais antes do
+  // nascimento do card. Preserva a regra já existente: contato importado ou
+  // antigo ainda sem atribuição pode reivindicar o clique; a RPC continua
+  // protegendo o primeiro toque e o recibo continua de consumo único.
+  if ((!entrada.canal || entrada.canal === "whatsapp") && PADRAO_DO_REF.test(entrada.texto ?? "")) {
+    try {
+      const atribuicao = await extrairEEstamparAtribuicaoGoogle(
+        admin, entrada.organizationId, entrada.contactId, entrada.texto,
+      );
+      if (atribuicao) return atribuicao;
+    } catch (erro) {
+      logger.error("pos-entrada: atribuição do clique falhou (a mensagem entra assim mesmo)", {
+        contactId: entrada.contactId,
+        error: erro instanceof Error ? erro.message.slice(0, 160) : "desconhecido",
+      });
+    }
+  }
   const achada = extrairOrigemDaPagina(entrada.texto);
   // O ref não é lido no banco aqui: a leitura CONSOME o clique, e consumir um
   // clique fora da primeira mensagem o queimaria sem estampar ninguém.

@@ -72,6 +72,7 @@ import { decidirPelaVenda, lerVendaAnterior } from "./cliente-pela-venda";
 import { reabrirPerdidoRecente } from "./reabrir-perdido";
 import { emitLeadActivity } from "./activity-emitter";
 import { removerProvaMetaLeadSubmitted } from "./prova-meta-lead-submitted";
+import { metadadosDaAtribuicao, type AtribuicaoDeAnuncio } from "./atribuicao-de-anuncio";
 
 /**
  * O rótulo que aparece no card do funil quando o lead nasceu de um clique em
@@ -150,6 +151,8 @@ export interface DadosDoNascimento {
   nomeDoContato: string | null;
   /** Rotulo/source/motivo do canal de origem -- default preserva o WhatsApp. */
   origem?: OrigemDoNascimento;
+  /** Clique provado desta mensagem; só afeta o card NOVO, nunca o primeiro toque. */
+  atribuicaoDaMensagem?: AtribuicaoDeAnuncio;
 }
 
 /**
@@ -595,7 +598,11 @@ export async function garantirLeadDaConversa(
   // (DIRC-D): a origem que importa é a de QUANDO O NEGÓCIO NASCEU, e o
   // contato pode ganhar conversas/leads futuros por outros canais sem que
   // isso reescreva a origem deste.
-  const rotuloDeAnuncio = contato?.source ? ROTULO_DE_ANUNCIO[contato.source] : undefined;
+  const sourceDeOrigem = dados.atribuicaoDaMensagem?.plataforma ?? contato?.source;
+  const metadataDeOrigem = dados.atribuicaoDaMensagem
+    ? metadadosDaAtribuicao(dados.atribuicaoDaMensagem)
+    : (contato?.source_metadata ?? {});
+  const rotuloDeAnuncio = sourceDeOrigem ? ROTULO_DE_ANUNCIO[sourceDeOrigem] : undefined;
 
   // A origem da CAMPANHA vence a do anúncio: esta conversa nasceu porque NÓS
   // falamos com a pessoa. O anúncio que a trouxe meses atrás continua no
@@ -625,9 +632,9 @@ export async function garantirLeadDaConversa(
       // A campanha ganha: quem montou a lista sabe de onde o card veio. Sem ela,
       // vale a regra do upstream — anúncio mantém a origem do contato, e o resto
       // usa `origem.source`.
-      p_source: marca ? marca.source : rotuloDeAnuncio ? contato!.source : origem.source,
+      p_source: marca ? marca.source : rotuloDeAnuncio ? sourceDeOrigem : origem.source,
       p_source_metadata: removerProvaMetaLeadSubmitted(
-        marca ? marca.source_metadata : rotuloDeAnuncio ? (contato!.source_metadata ?? {}) : {},
+        marca ? marca.source_metadata : rotuloDeAnuncio ? metadataDeOrigem : {},
       ),
       // O ponto ao lado do título só acende se a organização cadastrar este
       // rótulo em `crm_pipelines.settings.canonical_tags` (Configurações do
