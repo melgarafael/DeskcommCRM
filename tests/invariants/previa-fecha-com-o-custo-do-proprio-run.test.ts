@@ -116,11 +116,12 @@ describe("a soma do run de prévia, medida no Postgres (#4664)", () => {
     expect(alheio).toEqual({ tokens_in: 5001, tokens_out: 501, cost_cents: 42 });
 
     // O total de tudo que existe na organização, no mesmo segundo, é 14.851
-    // tokens e 155,00 de custo. Nenhum dos dois runs pode ter esse número.
+    // tokens e 156,00 de custo (o nulo não entra em nenhuma das somas). Nenhum
+    // dos runs pode ter esse número.
     for (const run of [runA, runB, runAlheio]) {
       const soma = await somarCustoDoRunDePrevia(pool, org, run);
       expect(soma?.tokens_in).not.toBe(14_851);
-      expect(soma?.cost_cents).not.toBe(155);
+      expect(soma?.cost_cents).not.toBe(156);
     }
   });
 });
