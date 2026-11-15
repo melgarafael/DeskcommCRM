@@ -230,7 +230,33 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (erroConversa) return fail("internal_error", erroConversa.message, 500, { requestId });
   if (!conversa) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
 
-  if (!isServiceRoleConfigured()) return ok({ numero: null }, { requestId });
+  if (!isServiceRoleConfigured()) return ok({ numero: null, negocio: null }, { requestId });
+
+  // #4312: a prévia do NEGÓCIO aberto — se ele acompanha a transferência e, se
+  // não acompanha, com quem ele fica. Vem pela SESSÃO de quem pergunta, e não
+  // pelo admin: a resposta depende da permissão dele (o dono do card entrega o
+  // que é dele; quem não é dono não leva). A regra é a da própria
+  // `fn_conversation_assign`, na mesma função — o aviso e o efeito não divergem,
+  // como já vale para o número.
+  const { data: previaNegocio, error: erroNegocio } = await supabase.rpc(
+    "fn_previa_do_negocio_na_transferencia",
+    {
+      p_organization_id: orgId,
+      p_conversation_id: id,
+      p_to_user_id: parsed.data.to_user_id,
+    },
+  );
+  if (erroNegocio) return fail("internal_error", erroNegocio.message, 500, { requestId });
+  const linhaNegocio = (
+    previaNegocio as Array<{ tem_negocio: boolean; leva: boolean; dono_user_id: string | null }> | null
+  )?.[0];
+  // `null` quando o contato não tem exatamente um negócio aberto (zero, ou mais
+  // de um — que a transferência também não toca): sem nada a dizer, o diálogo
+  // não diz nada.
+  const negocio =
+    linhaNegocio?.tem_negocio === true
+      ? { leva: linhaNegocio.leva, dono_user_id: linhaNegocio.dono_user_id }
+      : null;
 
   const admin = createAdminClient();
   const { data: numeroId, error: erroNumero } = await admin.rpc("fn_numero_da_transferencia", {
@@ -239,7 +265,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     p_to_user_id: parsed.data.to_user_id,
   });
   if (erroNumero) return fail("internal_error", erroNumero.message, 500, { requestId });
-  if (!numeroId) return ok({ numero: null }, { requestId });
+  if (!numeroId) return ok({ numero: null, negocio }, { requestId });
 
   const { data: sessao, error: erroSessao } = await admin
     .from("channel_sessions")
@@ -257,6 +283,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
         display_name: linha?.display_name ?? null,
         phone_number: linha?.phone_number ?? null,
       },
+      negocio,
     },
     { requestId },
   );
