@@ -109,7 +109,14 @@ function banco(anexos: Linha[], opts: { erroNoInsert?: { code: string; message: 
     return b;
   }
 
-  return { client: { from } as never, inseridos, tabelas };
+  // `tabelas` volta tipado com a tabela que o teste inspeciona: com
+  // `noUncheckedIndexedAccess` um `Record<string, Linha[]>` daria
+  // `Linha[] | undefined` em cada leitura.
+  return {
+    client: { from } as never,
+    inseridos,
+    tabelas: tabelas as { crm_lead_attachments: Linha[] },
+  };
 }
 
 function copiador(erro?: string) {
