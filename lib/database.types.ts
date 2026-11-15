@@ -6516,6 +6516,7 @@ export type Database = {
       conversations: {
         Row: {
           active_agent_set_at: string | null;
+          active_agent_transfer_at: string | null;
           active_ai_agent_id: string | null;
           active_intent: string | null;
           assigned_at: string | null;
@@ -6566,6 +6567,7 @@ export type Database = {
         ComputedFields: "comando_da_conversa" | "automatico_da_conversa" | "tags_do_contato";
         Insert: {
           active_agent_set_at?: string | null;
+          active_agent_transfer_at?: string | null;
           active_ai_agent_id?: string | null;
           active_intent?: string | null;
           assigned_at?: string | null;
@@ -6612,6 +6614,7 @@ export type Database = {
         };
         Update: {
           active_agent_set_at?: string | null;
+          active_agent_transfer_at?: string | null;
           active_ai_agent_id?: string | null;
           active_intent?: string | null;
           assigned_at?: string | null;
@@ -15561,6 +15564,7 @@ export type Database = {
         };
         Returns: {
           active_agent_set_at: string | null;
+          active_agent_transfer_at: string | null;
           active_ai_agent_id: string | null;
           active_intent: string | null;
           assigned_at: string | null;
@@ -16420,6 +16424,7 @@ export type Database = {
         Args: { p_conversation: string; p_expected?: number; p_org: string; p_status: string };
         Returns: {
           active_agent_set_at: string | null;
+          active_agent_transfer_at: string | null;
           active_ai_agent_id: string | null;
           active_intent: string | null;
           assigned_at: string | null;
