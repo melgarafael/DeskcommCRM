@@ -65,7 +65,10 @@ test("módulo amigo: instalar, abrir pela porta do hub, salvar o token sem que e
 
   // 1. sem o módulo
   const antes = await page.goto("/app/integrations/amigo");
-  expect(antes?.status()).toBe(404);
+  // A página já começou a ser enviada quando o notFound() dispara: o Next devolve 200
+  // com a tela de 404. O que o leigo vê é a tela, e é ela que se confere.
+  expect(antes).not.toBeNull();
+  await expect(page.getByRole("heading", { name: /404/ })).toBeVisible();
   await foto(page, "01-sem-modulo-tela-404");
   await page.goto("/app/crm");
   await expect(page.locator(PORTA_DO_HUB)).toHaveCount(0);
@@ -116,7 +119,10 @@ test("módulo amigo: instalar, abrir pela porta do hub, salvar o token sem que e
   // 6. desligar → some
   await sql("update public.modulos_instalados set estado='suspenso', motivo_suspensao='prova de tela #4687' where modulo='amigo'");
   const depois = await page.goto("/app/integrations/amigo");
-  expect(depois?.status()).toBe(404);
+  // A página já começou a ser enviada quando o notFound() dispara: o Next devolve 200
+  // com a tela de 404. O que o leigo vê é a tela, e é ela que se confere.
+  expect(depois).not.toBeNull();
+  await expect(page.getByRole("heading", { name: /404/ })).toBeVisible();
   await foto(page, "10-desligado-tela-404");
   await page.goto("/app/crm");
   await expect(page.locator(PORTA_DO_HUB)).toHaveCount(0);
