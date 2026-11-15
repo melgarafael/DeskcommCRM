@@ -83609,8 +83609,8 @@ comment on index public.idx_conversations_fila_espera is
 notify pgrst, 'reload schema';
 
 
--- ---- campos personalizados do contato mesclados no banco (migration 9393) ----
--- Espelho de supabase/migrations/20261115145203_9393_contato_anotar_campos.sql.
+-- ---- campos personalizados do contato mesclados no banco (migration 9395) ----
+-- Espelho de supabase/migrations/20261115171059_9395_contato_anotar_campos.sql.
 -- CAMPOS PERSONALIZADOS DO CONTATO MESCLADOS NO BANCO
 --
 -- Por que uma função, e não o PATCH da ficha: o `PATCH /api/v1/contacts/:id`
