@@ -70,7 +70,7 @@ function resolver(raiz: string, arquivo: string, especificador: string): string 
   else if (especificador.startsWith(".")) base = join(dirname(arquivo), especificador);
   else return null;
   const candidato = EXTENSOES.map((ext) => base + ext).find(
-    (c) => /\.tsx?$/.test(c) && existsSync(c) && statSync(c).isFile(),
+    (c) => /\.(tsx?|json)$/.test(c) && existsSync(c) && statSync(c).isFile(),
   );
   return candidato ?? null;
 }
@@ -82,6 +82,14 @@ function classificador(raiz: string): (arquivo: string) => boolean {
   const classificar = (arquivo: string): boolean => {
     const conhecido = memo.get(arquivo);
     if (conhecido !== undefined) return conhecido;
+    // JSON é dado: não importa nada nem roda no browser. Varrê-lo atrás de
+    // `window`/`navigator` acusaria a frase traduzida ("time window"), e o
+    // catálogo de idioma (`lib/i18n/traducoes/en.json`) tiraria o gate de i18n
+    // da seleção.
+    if (arquivo.endsWith(".json")) {
+      memo.set(arquivo, true);
+      return true;
+    }
     memo.set(arquivo, false);
     const fonte = readFileSync(arquivo, "utf-8");
     const resultado =

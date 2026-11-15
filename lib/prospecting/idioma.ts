@@ -40,4 +40,5 @@ export async function idiomaDaOrganizacao(
 export const IDIOMA_DA_CONVERSA: Record<Idioma, string> = {
   "pt-BR": "português do Brasil",
   es: "espanhol",
+  en: "inglês",
 };

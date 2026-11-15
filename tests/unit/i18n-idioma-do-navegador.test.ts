@@ -13,7 +13,9 @@ describe("idiomaDelNavegador", () => {
   });
 
   it("usa o primeiro idioma servido na ordem do navegador", () => {
-    expect(idiomaDelNavegador(["en-US", "es-AR"])).toBe("es");
+    expect(idiomaDelNavegador(["fr-FR", "es-AR"])).toBe("es");
+    // O inglês é servido desde que foi promovido a `completo`: `en-US` cai em `en`.
+    expect(idiomaDelNavegador(["en-US", "es-AR"])).toBe("en");
   });
 
   it("cai no padrão sem idioma servido ou com lista vazia", () => {

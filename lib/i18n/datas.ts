@@ -1,4 +1,4 @@
-import { es, ptBR } from "date-fns/locale";
+import { enUS, es, ptBR } from "date-fns/locale";
 import type { Locale } from "date-fns";
 
 import { IDIOMA_PADRAO, type Idioma } from "./idiomas";
@@ -35,6 +35,9 @@ import { idiomaVisivelPorCodigo } from "./registro";
 const LOCALE_DE_DATA: Record<Idioma, Locale> = {
   "pt-BR": ptBR,
   es,
+  // `enUS` porque o date-fns não tem um `en` neutro; a tag BCP-47 segue `en`,
+  // então `Intl` resolve número e data nativa pela região de quem lê.
+  en: enUS,
 };
 
 /** O `Locale` do date-fns para quem está lendo. */

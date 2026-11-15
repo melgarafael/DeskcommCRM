@@ -44,7 +44,7 @@ describe("(b) precedência: destinatário vence organização, organização ven
 
 describe("(c) locale desconhecido ou lixo não quebra — e sai pt-BR", () => {
   it("um locale que o produto não serve cai no padrão, sem lançar", () => {
-    for (const lixo of ["xx-YY", "klingon", "en-GB", "es_ES", "??", "  "]) {
+    for (const lixo of ["xx-YY", "klingon", "fr-FR", "es_ES", "??", "  "]) {
       expect(() => idiomaDoEmail({ destinatario: lixo }), `lançou com ${lixo}`).not.toThrow();
       expect(idiomaDoEmail({ destinatario: lixo }), `não caiu no padrão com ${lixo}`).toBe("pt-BR");
     }
@@ -64,13 +64,11 @@ describe("(c) locale desconhecido ou lixo não quebra — e sai pt-BR", () => {
     expect(idiomaDoEmail({ destinatario: "xx-YY", organizacao: "es" })).toBe("es");
   });
 
-  it("`en` hoje é idioma em construção: degrada para pt-BR em vez de inventar texto", () => {
-    // Medido em `lib/i18n/registro.ts`: `en` está em `em_construcao`, e o
-    // catálogo (`lib/i18n/traducoes/en.json`) NÃO é importado — `catalogos.ts`
-    // só carrega idioma visível. Servir e-mail em inglês exigiria promover o
-    // idioma na interface inteira; no dia em que isso acontecer, os moldes já
-    // seguem o dicionário sem tocar em molde nenhum.
-    expect(idiomaDoEmail({ destinatario: "en" })).toBe("pt-BR");
+  it("`en` é servido desde que foi promovido a `completo`, e a variante regional casa pelo primário", () => {
+    // Os moldes seguem o dicionário: promover o idioma no registro bastou para
+    // o e-mail sair em inglês, sem tocar em molde nenhum.
+    expect(idiomaDoEmail({ destinatario: "en" })).toBe("en");
+    expect(idiomaDoEmail({ destinatario: "en-GB" })).toBe("en");
   });
 });
 
@@ -89,7 +87,7 @@ describe("APP_LOCALE da instalação", () => {
     expect(idiomaDaInstalacao()).toBe("pt-BR");
     vi.stubEnv("APP_LOCALE", "2");
     expect(idiomaDaInstalacao()).toBe("pt-BR");
-    vi.stubEnv("APP_LOCALE", "en");
+    vi.stubEnv("APP_LOCALE", "fr");
     expect(idiomaDaInstalacao()).toBe("pt-BR");
   });
 });

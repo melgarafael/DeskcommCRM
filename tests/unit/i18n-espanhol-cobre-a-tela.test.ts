@@ -658,9 +658,14 @@ const COMO_CONSERTAR_NO_CATALOGO =
 
 describe.each(COMPLETOS_ALEM_DO_ESPANHOL)("toda chave usada na tela tem %s", (idioma) => {
   const tem = temTraducao(idioma);
+  // A varredura do AST roda na coleta, como a do espanhol acima: dentro do
+  // `it` ela passa do tempo-limite por caso numa máquina mais lenta, e o
+  // vermelho diria "tempo esgotado" em vez de listar a frase que falta.
+  const usadas = [...chavesUsadas().entries()];
+  const varredura = varrerChavesDeI18n(AREAS_DE_PRODUTO);
 
   it("nenhuma chamada t() cai no português por falta de tradução", () => {
-    const sem = [...chavesUsadas().entries()]
+    const sem = usadas
       .filter(([chave]) => !tem(chave))
       .map(([chave, onde]) => `${onde[0]} → t(${JSON.stringify(chave)})`);
     expect(
@@ -670,7 +675,7 @@ describe.each(COMPLETOS_ALEM_DO_ESPANHOL)("toda chave usada na tela tem %s", (id
   });
 
   it("nenhum valor de chave dinâmica cai no português", () => {
-    const buracos = buracosDeEspanhol(varrerChavesDeI18n(AREAS_DE_PRODUTO), tem).map(
+    const buracos = buracosDeEspanhol(varredura, tem).map(
       (b) => `${b.locais.join(" ")} → ${JSON.stringify(b.chave)}\n      ${b.procedencia}`,
     );
     expect(
