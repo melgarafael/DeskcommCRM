@@ -4,6 +4,7 @@ import { insertInboxItem, type InboxItemRow } from "@/lib/agent-engine/db/reposi
 import { copyDoRetornoDescartado } from "@/lib/ai/agent-inbox-copy";
 import { partesNoFuso } from "@/lib/agenda/fuso";
 import type { Logger } from "@/lib/agent-engine/obs/logger";
+import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { emitAgentActivityForContact } from "@/lib/leads/agent-activity";
 
 /**
@@ -95,11 +96,15 @@ async function dadosDoAviso(
   contactId: string,
 ): Promise<{ contato: string; negocio: string | null; fuso: string } | null> {
   const { rows } = await db.query<{
+    name: string | null;
     display_name: string | null;
+    phone_number: string | null;
     timezone: string | null;
     negocio: string | null;
   }>(
-    `select c.display_name,
+    `select c.name,
+            c.display_name,
+            c.phone_number,
             o.timezone,
             (select l.title
                from crm_leads l
@@ -116,7 +121,11 @@ async function dadosDoAviso(
   const linha = rows[0];
   if (!linha) return null;
   return {
-    contato: linha.display_name?.trim() || "o contato",
+    contato: rotuloDoContato({
+      name: linha.name,
+      display_name: linha.display_name,
+      phone_number: linha.phone_number,
+    }),
     negocio: linha.negocio?.trim() || null,
     fuso: linha.timezone || "America/Sao_Paulo",
   };
