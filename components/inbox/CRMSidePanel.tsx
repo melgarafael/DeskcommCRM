@@ -1243,7 +1243,7 @@ export function CRMSidePanel({
               <Badge variant="secondary">{t("Fornecedor")}</Badge>
             )}
             {summaryContactId === contactId && recusaDeOfertas === "sem_interesse" && (
-              <Badge variant="secondary">{t("Sem interesse")}</Badge>
+              <Badge variant="secondary">{t("Sem interesse em ofertas")}</Badge>
             )}
           </div>
           {contact?.phone_number && (

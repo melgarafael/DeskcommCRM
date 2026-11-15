@@ -180,7 +180,7 @@ describe("painel da conversa · sem interesse", () => {
     cenario.recusa = "sem_interesse";
     montar();
     await esperarResumo();
-    expect(within(screen.getByTestId("inbox-contato")).getByText("Sem interesse")).toBeInTheDocument();
+    expect(within(screen.getByTestId("inbox-contato")).getByText("Sem interesse em ofertas")).toBeInTheDocument();
     expect(screen.queryByTestId("marcar-sem-interesse")).toBeNull();
   });
 
@@ -189,7 +189,7 @@ describe("painel da conversa · sem interesse", () => {
     montar();
     await esperarResumo();
     expect(screen.queryByTestId("marcar-sem-interesse")).toBeNull();
-    expect(screen.queryByText("Sem interesse")).toBeNull();
+    expect(screen.queryByText("Sem interesse em ofertas")).toBeNull();
   });
 
   it("resumo em erro: o botão não aparece (a tela não conseguiu ver a recusa)", async () => {

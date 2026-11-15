@@ -114,7 +114,7 @@ describe("ficha · sem interesse", () => {
 
   it("com a recusa gravada: selo no cabeçalho, sem botão, e o desfazer na aba LGPD", async () => {
     abrirFicha(RECUSA);
-    expect(screen.getByText("Sem interesse")).toBeInTheDocument();
+    expect(screen.getByText("Sem interesse em ofertas")).toBeInTheDocument();
     expect(screen.queryByTestId("marcar-sem-interesse")).toBeNull();
 
     await userEvent.click(screen.getByRole("tab", { name: "LGPD" }));
@@ -132,7 +132,7 @@ describe("ficha · sem interesse", () => {
   it("recusa vinda da captação: nem botão por cima, nem desfazer por aqui", async () => {
     abrirFicha({ marketing: { declined_at: "2026-02-01T00:00:00Z" } });
     expect(screen.queryByTestId("marcar-sem-interesse")).toBeNull();
-    expect(screen.queryByText("Sem interesse")).toBeNull();
+    expect(screen.queryByText("Sem interesse em ofertas")).toBeNull();
     await userEvent.click(screen.getByRole("tab", { name: "LGPD" }));
     expect(screen.queryByTestId("recusa-de-ofertas")).toBeNull();
   });
@@ -140,7 +140,7 @@ describe("ficha · sem interesse", () => {
   it("gerente não chega ao desfazer: a aba LGPD é só de administrador", () => {
     papel.atual = "manager";
     abrirFicha(RECUSA);
-    expect(screen.getByText("Sem interesse")).toBeInTheDocument();
+    expect(screen.getByText("Sem interesse em ofertas")).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "LGPD" })).toBeNull();
     expect(screen.queryByTestId("desfazer-sem-interesse")).toBeNull();
   });

@@ -12979,7 +12979,9 @@ export const DICIONARIO: Traducoes = {
   "Este contato está marcado como sempre atendimento humano. Para a IA voltar a atendê-lo, remova a marca na ficha do contato.": { es: "Este contacto está marcado como siempre atención humana. Para que la IA vuelva a atenderlo, quita la marca en la ficha del contacto." },
   "Não foi possível conferir o contato desta conversa — nada foi alterado. Tente de novo.": { es: "No fue posible verificar el contacto de esta conversación — no se cambió nada. Inténtalo de nuevo." },
   // Decisão D3 — "não tem interesse" como recusa de ofertas, pela ficha e pela prospecção.
-  "Sem interesse": { es: "Sin interés" },
+  // Não é "Sem interesse" sozinho: essa é a classe padrão do nó de classificação do
+  // follow-up, que é dado do usuário e fica FORA do dicionário (nodeVisuals.test.ts).
+  "Sem interesse em ofertas": { es: "Sin interés en ofertas" },
   "Marcar sem interesse": { es: "Marcar sin interés" },
   "Marcar este contato como sem interesse?": { es: "¿Marcar este contacto como sin interés?" },
   "O contato sai da prospecção e das campanhas. Os negócios da prospecção que ainda estão abertos vão para Perdido, e o follow-up da prospecção é encerrado. A conversa não é bloqueada: a equipe continua respondendo normalmente. Só um administrador desfaz, na aba LGPD.": { es: "El contacto sale de la prospección y de las campañas. Los negocios de la prospección que siguen abiertos pasan a Perdido, y el seguimiento de la prospección se finaliza. La conversación no se bloquea: el equipo sigue respondiendo con normalidad. Solo un administrador lo deshace, en la pestaña LGPD." },

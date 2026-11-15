@@ -243,7 +243,7 @@ export function ContactDetailClient({
                 "Bloqueado" e do "Pessoal" — a devolução não a apaga, então o selo
                 continua a verdade mesmo quando a conversa já voltou ao automático. */}
             {contact.ai_opt_out && <Badge variant="secondary">{t("Sempre atendimento humano")}</Badge>}
-            {semInteresse && <Badge variant="secondary">{t("Sem interesse")}</Badge>}
+            {semInteresse && <Badge variant="secondary">{t("Sem interesse em ofertas")}</Badge>}
             {contact.is_anonymized && <Badge variant="destructive">{t("Anonimizado")}</Badge>}
           </div>
         </div>
