@@ -14,7 +14,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * dreno (`status='pending'` E `event_type in (handlers)`) nunca o selecionava e
  * nenhuma regra reagia a "o valor foi preenchido", "a data prevista mudou".
  *
- * Sem a migration da 1749, o PRIMEIRO caso deste arquivo reprova aqui:
+ * Sem a migration 9383, o PRIMEIRO caso deste arquivo reprova aqui:
  *
  *   expect(row(status)).toBe("pending")   // ← era "done"
  *
@@ -36,7 +36,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  *   D. o motor só aceita `lead.updated` como gatilho porque ele está em
  *      `ENTIDADE_ESPERADA_POR_GATILHO` com `crm_lead` — o mesmo `entity_kind`
  *      que o handler grava (sem isso o evento era descartado com
- *      `entity_kind_mismatch`, sem erro nenhum).
+ *      `entity_kind_mismatch`, sem erro nenhum);
+ *   E. salvar sem mudar nada não emite o evento (nenhuma regra acorda);
+ *   F. a edição carimbada `rule:<id>` (a de uma ação do motor) entra no log e
+ *      NÃO dispara regra — o anti-laço que os gatilhos irmãos já usam.
  *
  * ## O que este arquivo NÃO mede
  *
@@ -44,7 +47,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  *    evento (uma consulta de regras) não foi medido em produção;
  *  - a TELA: o `RuleEditor` é coberto por `lib/schemas/webhooks.test.ts` (o par
  *    gatilho × condição) e pelo teste de i18n, não por este harness;
- *  - o caminho `caused_by_rule` (anti-laço) já tem invariante próprio.
+ *  - o anti-laço além do carimbo `rule:` que este arquivo exercita (o
+ *    `caused_by_rule` em metadata tem invariante próprio).
  *
  * ## Por que o dublê e não PostgREST
  *
@@ -443,7 +447,7 @@ describe("lead.updated é gatilho de verdade (#1749)", () => {
     const evento = ultimoEventoLeadUpdated();
     expect(evento).toBeTruthy();
 
-    // ⭐ O RED do PR: antes da migration da 1749 esta linha nascia `done`
+    // ⭐ O RED do PR: antes da migration 9383 esta linha nascia `done`
     // (fn_event_log_e_registro devolvia true para 'lead.updated') e o dreno
     // nunca a selecionava.
     expect(
@@ -510,6 +514,47 @@ describe("lead.updated é gatilho de verdade (#1749)", () => {
     for (const campo of payload.fields as string[]) {
       expect(campo).toMatch(/^[a-z][a-z0-9_]*$/);
     }
+  });
+
+  it("salvar sem mudar nada não emite o evento — nenhuma regra acorda", async () => {
+    // O caso 1 gravou esta data; reenviá-la é o "abrir o dossiê e clicar Salvar".
+    const contar = () =>
+      Number(
+        lastLine(
+          sql(
+            `select count(*) from public.event_log
+              where event_type = 'lead.updated' and organization_id = ${sqlString(ORG)};`,
+          ),
+        ),
+      );
+    const eventosAntes = contar();
+    const execucoesAntes = execucoesDaRegra(RULE).length;
+
+    await updateLeadHandler(fakeAdmin(), ctx, LEAD, { expected_close_date: "2027-03-15" });
+    await drenar();
+
+    expect(contar(), "um PATCH sem mudança emitiu lead.updated").toBe(eventosAntes);
+    expect(execucoesDaRegra(RULE).length).toBe(execucoesAntes);
+  });
+
+  it("a edição feita por uma regra não dispara regra de novo (anti-laço `rule:`)", async () => {
+    // Toda ação do motor que escreve no negócio carimba `requestId: rule:<id>`
+    // (create-or-move-lead, send-whatsapp…), e o `updateLeadHandler` copia esse
+    // carimbo para `metadata.request_id`. É o mesmo veto que o motor já aplica
+    // aos outros gatilhos (`runAutomationForEvent`): sem ele, "data mudou →
+    // ação que mexe na data" se realimentaria sem fim.
+    const execucoesAntes = execucoesDaRegra(RULE).length;
+
+    await updateLeadHandler(fakeAdmin(), { ...ctx, requestId: `rule:${RULE}` }, LEAD, {
+      expected_close_date: "2027-04-20",
+    });
+    const evento = ultimoEventoLeadUpdated();
+    expect(estadoDoEvento(evento).payload.fields).toEqual(["expected_close_date"]);
+
+    await drenar();
+
+    expect(estadoDoEvento(evento).status, "o evento da regra ficou na fila").toBe("done");
+    expect(execucoesDaRegra(RULE).length, "a edição da própria regra disparou a regra").toBe(execucoesAntes);
   });
 
   it("o tipo não é registro: `fn_event_log_e_registro('lead.updated')` é falso", () => {

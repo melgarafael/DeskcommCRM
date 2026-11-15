@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { FatosDoContato } from "@/lib/automation/fatos-do-contato";
+import type { UpdateLeadInput } from "@/lib/schemas/leads";
 
 /**
  * Condições do motor de regras: filtros de campo combinados por grupos `all`
@@ -79,6 +80,36 @@ export const OPERADORES_SEM_VALOR: ReadonlySet<ConditionOp> = new Set<ConditionO
 export const CAMPO_DOS_CAMPOS_ALTERADOS = "event.fields";
 
 /**
+ * OS NOMES QUE PODEM APARECER EM `event.fields` — e como a tela os chama.
+ *
+ * `fields` sai de `camposAlterados` sobre o `patch` do `updateLeadHandler`, cujas
+ * chaves são as do `updateLeadSchema` (os derivados `updated_at`, `assigned_at` e
+ * `owner_kind` ficam de fora lá). O `Record` sobre `keyof UpdateLeadInput` é a
+ * amarra: campo novo no PATCH do negócio quebra o typecheck aqui até ganhar nome
+ * — sem ela, a condição "foi alterado" aceitaria texto livre e um nome errado
+ * (`data_prevista`) deixaria a regra salva sem nunca disparar.
+ */
+export const CAMPOS_ALTERAVEIS_DO_NEGOCIO: Record<keyof UpdateLeadInput, string> = {
+  title: "Título",
+  description: "Descrição",
+  contact_id: "Contato",
+  value_cents: "Valor",
+  recurring_value_cents: "Valor recorrente",
+  recurring_period: "Periodicidade",
+  recurring_months: "Duração (meses)",
+  currency: "Moeda",
+  owner_user_id: "Responsável",
+  owner_agent_id: "Agente responsável",
+  expected_close_date: "Data prevista de fechamento",
+  tags: "Tags",
+  custom_fields: "Campos personalizados",
+};
+
+function ehCampoAlteravelDoNegocio(nome: string): boolean {
+  return Object.hasOwn(CAMPOS_ALTERAVEIS_DO_NEGOCIO, nome);
+}
+
+/**
  * As recusas da condição "foi alterado" — as mesmas frases na tela e na porta.
  *
  * A condição só faz sentido com a lista de nomes do `lead.updated`: em qualquer
@@ -90,7 +121,8 @@ export const RECUSAS_DA_CONDICAO_DO_CAMPO_ALTERADO = {
   campo:
     "A condição “foi alterado” lê a lista de campos do evento " +
     `(\`${CAMPO_DOS_CAMPOS_ALTERADOS}\`): use esse campo.`,
-  semCampo: "Diga qual campo precisa ter sido alterado (ex.: expected_close_date).",
+  semCampo: "Escolha qual campo do negócio precisa ter sido alterado.",
+  campoDesconhecido: "Este campo não existe no negócio: escolha um campo da lista.",
 } as const;
 
 /**
@@ -112,6 +144,7 @@ export function validarCondicaoDoCampoAlterado(cond: {
     return RECUSAS_DA_CONDICAO_DO_CAMPO_ALTERADO.campo;
   }
   if (cond.value.trim() === "") return RECUSAS_DA_CONDICAO_DO_CAMPO_ALTERADO.semCampo;
+  if (!ehCampoAlteravelDoNegocio(cond.value.trim())) return RECUSAS_DA_CONDICAO_DO_CAMPO_ALTERADO.campoDesconhecido;
   return null;
 }
 
@@ -485,6 +518,9 @@ export function validarCondicaoDoContato(cond: {
  * (trocar de campo não pode apagar um "não" que já estava escrito).
  */
 export function valorPadraoDoCampo(campo: string, valorAtual: string): string | null {
+  // "Foi alterado" nasce sem campo escolhido: o valor de outra condição (ex.:
+  // "aprovado") não é nome de campo e seria recusado na hora de salvar.
+  if (campo === CAMPO_DOS_CAMPOS_ALTERADOS) return ehCampoAlteravelDoNegocio(valorAtual) ? valorAtual : "";
   if (!ehCampoDoContato(campo)) return null;
   return validarCondicaoDoContato({ field: campo, op: "eq", value: valorAtual }) === null
     ? valorAtual

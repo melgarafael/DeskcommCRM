@@ -47,6 +47,8 @@ import {
   horasDoIntervaloNaConfig,
 } from "@/lib/automation/limite-por-contato";
 import {
+  CAMPO_DOS_CAMPOS_ALTERADOS,
+  CAMPOS_ALTERAVEIS_DO_NEGOCIO,
   CONDICOES_DO_CONTATO,
   OPERADORES_SEM_VALOR,
   valorPadraoDoCampo,
@@ -1049,7 +1051,12 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {(Object.keys(OP_LABELS) as Op[]).map((op) => (
+                        {/* "Foi alterado" só existe sobre a lista de campos do
+                            evento, e essa linha só aceita ele: oferecer o par
+                            errado seria oferecer a regra que a porta recusa. */}
+                        {(Object.keys(OP_LABELS) as Op[])
+                          .filter((op) => (op === "campo_alterado") === (cond.field === CAMPO_DOS_CAMPOS_ALTERADOS))
+                          .map((op) => (
                           <SelectItem key={op} value={op}>
                             {/* Em campo de lista, `contains` é pertinência: o
                                 rótulo diz o que o motor faz. No modo avançado
@@ -1071,6 +1078,19 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                         valor={cond.value}
                         onChange={(v) => updateCondition(idx, { value: v })}
                       />
+                    ) : cond.op === "campo_alterado" ? (
+                      <Select value={cond.value} onValueChange={(v) => updateCondition(idx, { value: v })}>
+                        <SelectTrigger className="flex-1 basis-40" aria-label={t("Campo do negócio")}>
+                          <SelectValue placeholder={t("Escolha o campo")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(CAMPOS_ALTERAVEIS_DO_NEGOCIO).map(([nome, rotulo]) => (
+                            <SelectItem key={nome} value={nome}>
+                              {t(rotulo)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     ) : (
                       <Input
                         className="flex-1 basis-40"
