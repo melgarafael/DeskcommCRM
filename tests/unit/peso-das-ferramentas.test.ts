@@ -71,7 +71,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_consultar_receita": { tokens: 403, motivo: BASE },
   "crm_list_privacy_requests": { tokens: 248, motivo: BASE },
   "crm_get_prospecting_site_audit": { tokens: 220, motivo: BASE },
-  "crm_list_stages": { tokens: 255, motivo: BASE },
+  "crm_list_stages": { tokens: 312, motivo: "+57 de description e agent_stage_hint no retorno (#4319, recorte do #3915): o Operador precisa do CRITÉRIO da etapa para decidir para onde mover o card" },
   "crm_list_tags": { tokens: 111, motivo: BASE },
   "crm_list_message_templates": { tokens: 146, motivo: BASE },
   "crm_render_message_template": { tokens: 597, motivo: BASE },
@@ -155,9 +155,9 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +638 com o material da empresa (#4129): 231 do `send_message` (o `material_id`
 // e a sua descrição) e 407 da capacidade de wire `crm_send_material`, que entra
 // no catálogo lido pelo integrador.
-// O total é MEDIDO no merge com a main (31305 = 30667 medidos nela + 638 deste
-// PR), não somado à mão: a descrição do `send_message` mudou dos dois lados.
-const TETO_TOTAL = 31305;
+// O total é MEDIDO no merge com a main (31362 = 30724 medidos nela + 638 deste
+// PR, remedido em 2026-11-14), não somado à mão.
+const TETO_TOTAL = 31362;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

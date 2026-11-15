@@ -135,13 +135,22 @@ describe("#2729 — cada recebida do grupo chega ao modelo com quem a escreveu",
       { name: DONA.name, phone: DONA.phone },
       { name: CLIENTE.name, phone: CLIENTE.phone },
     ]);
+    // A enviada não tem PARTICIPANTE de grupo — quem falou ali não é a dona nem o
+    // cliente. Desde a #4580 ela tem AUTOR, que é outra pergunta e agora tem
+    // resposta: esta linha saiu do celular de alguém da equipe (`external_device`),
+    // e o rótulo é o mesmo da tela. O que o caso vigia continua vigiado: nenhum
+    // participante do grupo é colado numa fala que não foi dele.
     const enviada = ctx.messages.find((m) => m.direction === "outbound");
     expect(enviada).toBeDefined();
-    expect(enviada).not.toHaveProperty("sender");
+    expect(enviada!.sender).toEqual({ name: "Celular", phone: null });
   });
 
-  it("controle 1:1: nenhuma mensagem carrega participante — o autor é o contato da ficha", async () => {
+  it("controle 1:1: a recebida não carrega participante — o autor é o contato da ficha", async () => {
     const ctx = await cenario(false);
-    expect(ctx.messages.every((m) => !("sender" in m))).toBe(true);
+    const recebidas = ctx.messages.filter((m) => m.direction === "inbound");
+    expect(recebidas.every((m) => !("sender" in m))).toBe(true);
+    // A enviada também tem autor aqui, e é o mesmo rótulo da tela (#4580).
+    const enviada = ctx.messages.find((m) => m.direction === "outbound");
+    expect(enviada!.sender).toEqual({ name: "Celular", phone: null });
   });
 });

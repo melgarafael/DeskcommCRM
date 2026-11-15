@@ -330,6 +330,14 @@ describe("opt-out", () => {
     "preciso sair mais cedo da consulta",
     "quero parar o tratamento por enquanto",
     "dá pra parar o sangramento em casa?",
+    // #4579 — no atendimento, "cancelar" sozinho é a resposta a um menu
+    // ("confirmar, remarcar ou cancelar?") e "cancelar a inscrição" é a
+    // matrícula do curso. Nenhuma das duas pode gravar `is_blocked` na
+    // ingestão nem marcar negócio como perdido.
+    "cancelar",
+    "Cancelar.",
+    "quero cancelar a inscrição",
+    "posso cancelar a inscrição e voltar depois?",
   ])("NÃO bloqueia quem usa a palavra falando de outra coisa: %s", async (texto) => {
     // A palavra ISOLADA não é o sinal — a INTENÇÃO de parar de receber mensagem é.
     // Medido numa clínica: "tem como parar a dor?" bloqueava o paciente na ingestão,
@@ -338,6 +346,9 @@ describe("opt-out", () => {
     expect(sequencia, `bloqueou "${texto}", que não é pedido de descadastro`).not.toContain(
       "update:contacts",
     );
+    expect(sequencia, `encerrou demandas de "${texto}", que não é pedido de descadastro`).not.toContain(
+      "encerra:lead-a",
+    );
   });
 
   it.each([
@@ -345,7 +356,7 @@ describe("opt-out", () => {
     "para de me mandar isso",
     "não quero mais receber nada de vocês",
     "me tira dessa lista",
-    "quero cancelar a inscrição",
+    "quero cancelar a inscrição das mensagens",
   ])("bloqueia o pedido de descadastro escrito por extenso: %s", async (texto) => {
     // O outro lado do mesmo defeito: a regex antiga só via a palavra solta, então
     // "não quero mais receber" — opt-out inequívoco — passava batido.
