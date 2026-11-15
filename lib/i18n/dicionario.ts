@@ -737,6 +737,13 @@ export const DICIONARIO: Traducoes = {
   // Vínculos pessoa ↔ empresa e contato ↔ pessoa pela tela (issue #3198).
   "Adicionar a uma empresa": { es: "Agregar a una empresa" },
   "Adicionar pessoa": { es: "Agregar persona" },
+  "Adicionar pessoa com contato": { es: "Agregar persona con contacto" },
+  "Empresa criada — quem fala por ela?": { es: "Empresa creada — ¿quién habla por ella?" },
+  "Pular por agora": { es: "Omitir por ahora" },
+  "Telefone / WhatsApp": { es: "Teléfono / WhatsApp" },
+  "Sem telefone nem e-mail, só a pessoa é cadastrada, ligada à empresa.": {
+    es: "Sin teléfono ni correo, solo se registra la persona, vinculada a la empresa.",
+  },
   "Buscar contato por nome ou telefone": { es: "Buscar contacto por nombre o teléfono" },
   "Buscar empresa por nome ou CNPJ": { es: "Buscar empresa por nombre o CNPJ" },
   "Buscar pessoa por nome ou e-mail": { es: "Buscar persona por nombre o correo" },
@@ -4537,6 +4544,10 @@ export const DICIONARIO: Traducoes = {
     {
       es: "Necesita una credencial de ElevenLabs registrada y una voz elegida en Agente de IA → Proveedores. Sin los dos, el agente sigue respondiendo en texto — activar esto no rompe nada.",
     },
+  "O canal escolhido não recebe nota de voz da IA (redes sociais como Instagram e Facebook). Nele, o agente responde em texto.":
+    {
+      es: "El canal elegido no recibe notas de voz de la IA (redes sociales como Instagram y Facebook). En él, el agente responde con texto.",
+    },
   "Quando falar": { es: "Cuándo hablar" },
   "Voz deste agente": { es: "Voz de este agente" },
   "Qual voz este agente usa": { es: "Qué voz usa este agente" },
@@ -4764,6 +4775,22 @@ export const DICIONARIO: Traducoes = {
   inativo: { es: "inactivo" },
   "Excluir roteador": { es: "Eliminar enrutador" },
   "Identificação": { es: "Identificación" },
+  // #4363 — a passagem automática do roteador agora fala com o CLIENTE: a frase
+  // é do dono do roteador, e a tela que a edita é esta.
+  "Mensagem de passagem ao cliente": { es: "Mensaje de traspaso al cliente" },
+  "Sai uma vez, para o cliente, quando a intenção da mensagem dele leva a conversa para outro agente do roteador. Escreva no idioma em que vocês atendem.": {
+    es: "Se envía una vez al cliente, cuando la intención de su mensaje lleva la conversación a otro agente del enrutador. Escríbala en el idioma en que atienden.",
+  },
+  "Frase enviada na troca": { es: "Frase enviada en el traspaso" },
+  "Ex.: Você está falando agora com o time de suporte. Já passei o seu caso para eles.": {
+    es: "Ej.: Ahora está hablando con el equipo de soporte. Ya les pasé su caso.",
+  },
+  "Desligada: o agente novo se apresenta com as palavras dele.": {
+    es: "Desactivada: el agente nuevo se presenta con sus propias palabras.",
+  },
+  "Ligada: o cliente recebe esta frase uma vez, antes da resposta do agente novo.": {
+    es: "Activada: el cliente recibe esta frase una vez, antes de la respuesta del agente nuevo.",
+  },
   "O número não pode ser trocado depois de criado — crie outro roteador para um número diferente.": {
     es: "El número no se puede cambiar una vez creado el enrutador. Para usar otro número, crea otro enrutador.",
   },
