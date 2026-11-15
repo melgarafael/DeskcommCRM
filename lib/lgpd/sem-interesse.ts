@@ -62,6 +62,47 @@ export function ehRecusaSemInteresse(consent: unknown): boolean {
   return marketing.motivo === MOTIVO_SEM_INTERESSE;
 }
 
+/** A recusa "sem interesse" como a tela a lê. A forma gravada só é conhecida aqui. */
+export interface RecusaSemInteresse {
+  /** ISO-8601, ou `null` quando a data gravada não é legível. */
+  declinedAt: string | null;
+  origem: OrigemDoSemInteresse;
+}
+
+/**
+ * Lê a recusa "sem interesse" do `consent`, ou `null` quando ela não existe. A ficha e o
+ * nascimento do card leem por aqui, e nunca o caminho do jsonb direto (anti-pattern 6).
+ */
+export function lerRecusaSemInteresse(consent: unknown): RecusaSemInteresse | null {
+  if (!ehRecusaSemInteresse(consent)) return null;
+  const marketing = comoObjeto(comoObjeto(consent).marketing);
+  const data = typeof marketing.declined_at === "string" ? marketing.declined_at : null;
+  return {
+    declinedAt: data && !Number.isNaN(Date.parse(data)) ? data : null,
+    origem: marketing.origem === "conversa_de_prospeccao" ? "conversa_de_prospeccao" : "ficha",
+  };
+}
+
+/**
+ * Quanto tempo depois da recusa a conversa da prospecção NÃO ganha card novo.
+ *
+ * É a janela da despedida: o "ok, obrigado" que vem logo depois do "não tenho
+ * interesse" (o #4076 mediu despedidas até 85 minutos depois do fechamento). Passada
+ * a janela, quem volta para comprar na MESMA conversa abre negócio como qualquer um.
+ * A recusa de ofertas continua valendo: ela barra a prospecção e as Campanhas, não o
+ * atendimento.
+ */
+export const JANELA_SEM_CARD_DEPOIS_DA_RECUSA_MS = 6 * 60 * 60 * 1000;
+
+/** A recusa "sem interesse" foi gravada dentro da janela da despedida? */
+export function recusaSemInteresseRecente(consent: unknown, agoraMs: number): boolean {
+  const recusa = lerRecusaSemInteresse(consent);
+  if (!recusa?.declinedAt) return false;
+  const idade = agoraMs - Date.parse(recusa.declinedAt);
+  // Um minuto de folga para trás: o relógio de quem gravou e o de quem lê podem divergir.
+  return idade > -60_000 && idade < JANELA_SEM_CARD_DEPOIS_DA_RECUSA_MS;
+}
+
 /**
  * O `consent` com a recusa "sem interesse" em `marketing`, ou `null` quando já existe
  * uma recusa de marketing (de qualquer origem): reescrevê-la apagaria a data e a origem

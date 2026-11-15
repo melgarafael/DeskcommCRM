@@ -6,7 +6,10 @@ import {
   consentComSemInteresse,
   consentSemASemInteresse,
   ehRecusaSemInteresse,
+  JANELA_SEM_CARD_DEPOIS_DA_RECUSA_MS,
+  lerRecusaSemInteresse,
   motivoDePerdaSemInteresse,
+  recusaSemInteresseRecente,
 } from "@/lib/lgpd/sem-interesse";
 import { deriveLgpdFromContact } from "@/lib/agent-engine/guardrails/lgpd/legal-basis";
 
@@ -94,5 +97,43 @@ describe("campanhaDeProspeccaoDaConversa", () => {
     expect(campanhaDeProspeccaoDaConversa({ prospecting_campaign_id: 7 })).toBeNull();
     expect(campanhaDeProspeccaoDaConversa({})).toBeNull();
     expect(campanhaDeProspeccaoDaConversa(null)).toBeNull();
+  });
+});
+
+describe("lerRecusaSemInteresse — o leitor da forma gravada", () => {
+  it("devolve a data e a origem da recusa gravada por aqui", () => {
+    const consent = consentComSemInteresse({}, { agora: AGORA, origem: "conversa_de_prospeccao" });
+    expect(lerRecusaSemInteresse(consent)).toEqual({ declinedAt: AGORA, origem: "conversa_de_prospeccao" });
+  });
+
+  it("a recusa que veio da captação não é a 'sem interesse'", () => {
+    expect(lerRecusaSemInteresse({ marketing: { granted: false, declined_at: AGORA } })).toBeNull();
+    expect(lerRecusaSemInteresse({})).toBeNull();
+    expect(lerRecusaSemInteresse(null)).toBeNull();
+  });
+
+  it("data ilegível vira null, e a origem desconhecida vira 'ficha'", () => {
+    const consent = { marketing: { granted: false, declined_at: "ontem", motivo: "sem_interesse", origem: "x" } };
+    expect(lerRecusaSemInteresse(consent)).toEqual({ declinedAt: null, origem: "ficha" });
+  });
+});
+
+describe("recusaSemInteresseRecente — a janela da despedida", () => {
+  const agora = Date.parse(AGORA);
+  const consentDe = (msAtras: number) =>
+    consentComSemInteresse({}, { agora: new Date(agora - msAtras).toISOString(), origem: "conversa_de_prospeccao" });
+
+  it("dentro da janela, sim; passada a janela, não", () => {
+    expect(recusaSemInteresseRecente(consentDe(60 * 1000), agora)).toBe(true);
+    expect(recusaSemInteresseRecente(consentDe(JANELA_SEM_CARD_DEPOIS_DA_RECUSA_MS - 1000), agora)).toBe(true);
+    expect(recusaSemInteresseRecente(consentDe(JANELA_SEM_CARD_DEPOIS_DA_RECUSA_MS), agora)).toBe(false);
+    expect(recusaSemInteresseRecente(consentDe(20 * 24 * 60 * 60 * 1000), agora)).toBe(false);
+  });
+
+  it("sem recusa, ou com data ilegível, não trava", () => {
+    expect(recusaSemInteresseRecente({}, agora)).toBe(false);
+    expect(
+      recusaSemInteresseRecente({ marketing: { granted: false, declined_at: "x", motivo: "sem_interesse" } }, agora),
+    ).toBe(false);
   });
 });

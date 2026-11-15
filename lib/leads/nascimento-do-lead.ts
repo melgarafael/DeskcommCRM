@@ -61,7 +61,7 @@ import { ORIGEM_DO_WHATSAPP } from "@/lib/channels/origem-do-negocio";
 import { lerRegrasDeCliente } from "@/lib/contacts/regras-de-cliente";
 import { ehContatoInterno, lerTagsInternas } from "@/lib/contacts/tags-internas";
 import { ehContatoDaEquipe, lerTagsDaEquipe } from "@/lib/contacts/tags-da-equipe";
-import { campanhaDeProspeccaoDaConversa, ehRecusaSemInteresse } from "@/lib/lgpd/sem-interesse";
+import { campanhaDeProspeccaoDaConversa, recusaSemInteresseRecente } from "@/lib/lgpd/sem-interesse";
 import {
   ehIdentificadorTecnico,
   rotuloDoContato,
@@ -121,7 +121,7 @@ export type MotivoSemLead =
   | "contato_pessoal" // marcado como pessoal (spec 21): não é oportunidade, nunca nasce
   | "contato_interno" // #2353: equipe/sócio/família/fornecedor — tag interna, não é negócio
   | "contato_da_equipe" // #3534: equipe que CONTINUA sendo atendida — não é captação
-  | "sem_interesse_na_prospeccao" // D3: disse "não tenho interesse" na conversa da prospecção
+  | "sem_interesse_na_prospeccao" // D3: acabou de dizer "não tenho interesse" na conversa da prospecção
   | "sem_funil_de_entrada" // a organização não tem funil padrão — falha de configuração, visível
   | "sem_etapa" // o funil existe e não tem etapa utilizável
   | "pos_venda" // #3644: comprou dentro da janela de pós-venda — a conversa não é demanda
@@ -428,13 +428,15 @@ export async function garantirLeadDaConversa(
       return { criado: false, motivo: "contato_da_equipe" };
   }
 
-  // 1d · D3 · quem disse "não tenho interesse" NA PROSPECÇÃO não ganha card novo na
-  // mesma conversa. Sem isto, a mensagem que gravou a recusa (ou o "ok, obrigado" que
-  // vem depois) faria nascer — ou reabrir, pelo passo 3c — o negócio que a recusa
-  // acabou de encerrar. A conversa só é lida quando a recusa existe: o caminho comum
-  // não paga consulta a mais. Fora da conversa de prospecção, nada muda: quem recusou
-  // ofertas e volta para comprar abre negócio como sempre.
-  if (ehRecusaSemInteresse((contato as { consent?: unknown } | null)?.consent)) {
+  // 1d · D3 · quem ACABOU de dizer "não tenho interesse" NA PROSPECÇÃO não ganha card
+  // novo na mesma conversa. Sem isto, a mensagem que gravou a recusa (ou o "ok,
+  // obrigado" que vem depois) faria nascer — ou reabrir, pelo passo 3c — o negócio que
+  // a recusa acabou de encerrar. A trava vale só na janela da despedida
+  // (`JANELA_SEM_CARD_DEPOIS_DA_RECUSA_MS`): a conversa do WhatsApp é a mesma para
+  // sempre e o `prospecting_campaign_id` não sai dela, e uma trava sem prazo deixaria
+  // sem card quem volta semanas depois para comprar. A conversa só é lida quando a
+  // recusa é recente: o caminho comum não paga consulta a mais.
+  if (recusaSemInteresseRecente((contato as { consent?: unknown } | null)?.consent, Date.now())) {
     const { data: conversa } = await db
       .from("conversations")
       .select("metadata")
