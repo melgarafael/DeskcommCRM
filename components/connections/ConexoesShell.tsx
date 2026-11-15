@@ -126,7 +126,10 @@ export function ConexoesShell({
       )}
 
       <TabsContent value="numeros" className="mt-0">
-        <ConnectionsClient wahaConfigured={wahaConfigured} />
+        {/* `?qr=<id>` abre o pareamento direto: é o destino da faixa de conexão
+            caída quando o estado é SCAN_QR_CODE — o clique que diz "Escanear o
+            QR" tem que mostrar o QR, não a lista. */}
+        <ConnectionsClient wahaConfigured={wahaConfigured} qrInicial={params.get("qr") ?? undefined} />
       </TabsContent>
 
       <TabsContent value="telefonia" className="mt-0">
