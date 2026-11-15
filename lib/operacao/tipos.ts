@@ -1,26 +1,36 @@
 /**
  * O FORMATO da Operação do dia — o mesmo que a tela desenha e o relatório
- * diário congela em `relatorios_operacao_diarios.conteudo`.
+ * diário guarda em `relatorios_operacao_diarios.conteudo`.
  *
- * `versao` existe porque o relatório é guardado: a tela de um relatório antigo
- * tem de continuar abrindo depois que este formato ganhar um campo. Campo novo
- * entra OPCIONAL; mudar o sentido de um campo existente é `versao: 2`.
+ * ─── O que é FATO e o que é DADO PESSOAL ────────────────────────────────────
+ *
+ * Os campos marcados "pessoal" (nome, telefone, @, prévia de mensagem, resumo,
+ * título de tarefa ou de negócio, motivo escrito, mensagem de erro, nome de
+ * quem atende) só existem na leitura AO VIVO. O relatório guardado passa por
+ * `congelar` (`conteudo.ts`), que tira essas chaves: a cascata de anonimização
+ * da LGPD não alcança um jsonb guardado, então ele não pode ter o que ela
+ * precisaria apagar. A tela do relatório os resolve de novo, na hora, pela RLS
+ * da sessão (`hidratar`) — e um contato anonimizado aparece anonimizado.
+ *
+ * `versao` existe porque o relatório é guardado: campo novo entra OPCIONAL;
+ * mudar o sentido de um campo existente é `versao: 2`.
  *
  * Arquivo sem import de propósito: é lido pelo componente cliente.
  */
 
 export interface ContatoDaLinha {
   contact_id: string | null;
-  /** Nome de gente (`name` → `display_name`); `null` = não registrado. */
-  nome: string | null;
-  /** Telefone (`contacts.phone_number`); `null` em canal sem telefone (Instagram). */
-  telefone: string | null;
-  /** Identidade social (`contacts.social_identity` — o @ no Instagram, por exemplo). */
-  identidade: string | null;
+  /** Pessoal. Nome de gente (`name` → `display_name`); `null` = não registrado. */
+  nome?: string | null;
+  /** Pessoal. `contacts.phone_number`; `null` em canal sem telefone (Instagram). */
+  telefone?: string | null;
+  /** Pessoal. `contacts.social_identity` (o @ no Instagram, por exemplo). */
+  identidade?: string | null;
 }
 
 export interface ProximaAcao {
-  titulo: string;
+  /** Pessoal (texto livre da tarefa). */
+  titulo?: string | null;
   /** `crm_tasks.due_date`; `null` = tarefa sem prazo. */
   vence_em: string | null;
 }
@@ -30,20 +40,22 @@ export interface LinhaDeConversa {
   contato: ContatoDaLinha;
   /** `conversations.channel`: whatsapp | instagram | facebook | telegram. */
   canal: string;
-  /** Rótulo do número/conta (`channel_sessions.display_name` → telefone → sessão). */
+  /** Rótulo do NOSSO número/conta (`channel_sessions.display_name` → telefone). Não é dado do contato. */
   numero: string | null;
-  /** Resumo da passagem para a equipe, quando houve; senão a prévia da última mensagem. */
-  resumo: string | null;
-  resumo_origem: "passagem" | "ultima_mensagem" | null;
+  /** Pessoal. Resumo da passagem para a equipe, quando houve; senão a prévia da última mensagem. */
+  resumo?: string | null;
+  resumo_origem?: "passagem" | "ultima_mensagem" | null;
   /** `conversations.status`. */
   status: string;
   /** `conversations.comando_da_conversa`: humano | automatico | aguardando | encerrada | ninguem. */
   comando: string | null;
-  /** Motivo da última passagem (`conversations.last_handoff_reason`). */
-  motivo_da_passagem: string | null;
+  /** Código do motivo da última passagem (`passagens_de_atendimento.motivo_codigo`). */
+  motivo_codigo: string | null;
   proxima_acao: ProximaAcao | null;
-  /** Quem é o dono (`assigned_to_user_name`), "ia" quando a IA tem a conversa, `null` = ninguém. */
-  responsavel: string | null;
+  /** `conversations.assigned_to_user_id`. */
+  responsavel_user_id: string | null;
+  /** Pessoal (nome de quem atende): resolvido na leitura. */
+  responsavel?: string | null;
   responsavel_tipo: "pessoa" | "ia" | null;
   ultima_atividade_em: string | null;
   /** Desde quando o cliente espera resposta; `null` quando a última palavra é nossa. */
@@ -55,7 +67,8 @@ export interface LinhaDeConversa {
 
 export interface LinhaDeNegocio {
   lead_id: string;
-  titulo: string;
+  /** Pessoal (o título do negócio costuma levar o nome do cliente). */
+  titulo?: string | null;
   contato: ContatoDaLinha;
   /** Conversa mais recente do contato — o link da linha. `null` = contato sem conversa. */
   conversation_id: string | null;
@@ -64,8 +77,12 @@ export interface LinhaDeNegocio {
   /** `value_cents` só quando registrado; `null` = não registrado (nunca zero inventado). */
   valor_cents: number | null;
   moeda: string | null;
-  motivo_da_perda: string | null;
-  responsavel: string | null;
+  /** Pessoal (texto livre). */
+  motivo_da_perda?: string | null;
+  /** `crm_leads.owner_user_id`. */
+  responsavel_user_id: string | null;
+  /** Pessoal (nome do dono): resolvido na leitura. */
+  responsavel?: string | null;
   /** Quando fechou (ganho/perdido) ou quando entrou na etapa atual. */
   quando: string | null;
 }
@@ -76,7 +93,8 @@ export interface FalhaDeMensagem {
   contato: ContatoDaLinha;
   status: "failed" | "sending";
   codigo: string | null;
-  erro: string | null;
+  /** Pessoal (a mensagem do provedor pode trazer o número do contato). */
+  erro?: string | null;
   quando: string;
 }
 
@@ -85,7 +103,8 @@ export interface FalhaDaIa {
   conversation_id: string | null;
   contato: ContatoDaLinha;
   codigo: string | null;
-  erro: string | null;
+  /** Pessoal (pode citar o que o cliente escreveu). */
+  erro?: string | null;
   quando: string;
 }
 
@@ -101,7 +120,8 @@ export interface CanalForaDoAr {
 export interface AvisoAberto {
   id: string;
   kind: string;
-  titulo: string;
+  /** Pessoal (o título de um aviso pode citar o cliente); a tela usa o rótulo do `kind`. */
+  titulo?: string | null;
   severidade: string;
   quando: string;
 }

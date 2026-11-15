@@ -12,8 +12,12 @@
  *     REGERAR: `on conflict do update`. Repetir o clique substitui o conteúdo
  *     do dia, nunca duplica.
  *
- * O conteúdo é o MESMO formato da tela (`OperacaoDoDia`), e o texto é
- * `textoDoRelatorio` sobre ele. Nada é recalculado na leitura.
+ * O conteúdo é o formato da tela (`OperacaoDoDia`) passado por `congelar`:
+ * só fatos (ids, canal, situação, etiquetas, instantes, códigos, termos e
+ * produtos da busca), NUNCA nome, telefone, @, prévia ou resumo — a cascata de
+ * anonimização da LGPD não alcança um jsonb guardado. Não há coluna de texto:
+ * o texto do relatório é montado na leitura (`textoDoRelatorio` sobre o
+ * conteúdo `hidratar`-ado), com o nome que o contato tem AGORA.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -23,7 +27,7 @@ import { fusoUtilizavel } from "@/lib/tempo/fusos";
 
 import { montarOperacaoDoDia, nomesPelaFuncao } from "./operacao-do-dia";
 import { type ConfiguracaoDaOperacao, lerConfiguracao } from "./regras";
-import { textoDoRelatorio } from "./texto-do-relatorio";
+import { congelar } from "./conteudo";
 import type { OperacaoDoDia } from "./tipos";
 
 export const TABELA_DOS_RELATORIOS = "relatorios_operacao_diarios";
@@ -83,15 +87,13 @@ export async function gerarRelatorioDiario(input: {
     agora,
     nomesDaEquipe: nomesPelaFuncao(admin, orgId),
   });
-  const texto = textoDoRelatorio(conteudo, { idioma: ctx.idioma, baseUrl: urlPublicaDoApp(), geradoEm: agora });
   const linha = {
     organization_id: orgId,
     dia,
     fuso: ctx.fuso,
     gerado_em: agora.toISOString(),
     gerado_por: input.geradoPor,
-    conteudo,
-    texto,
+    conteudo: congelar(conteudo),
   };
   const { data, error } = await admin
     // O nome LITERAL, e não a constante: tests/invariants/on-conflict-aponta-para-constraint-real.test.ts

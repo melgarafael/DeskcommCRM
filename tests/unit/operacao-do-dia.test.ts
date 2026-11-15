@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { sobreporAnonimizados, idsDeContatoDoConteudo, lerConteudo } from "@/lib/operacao/conteudo";
+import { CHAVES_PESSOAIS, congelar, hidratar, lerConteudo, type LeitorAoVivo } from "@/lib/operacao/conteudo";
 import {
   decisaoDoCron,
   diaNoFuso,
@@ -252,8 +252,9 @@ function linha(parcial: Partial<LinhaDeConversa>): LinhaDeConversa {
     resumo_origem: null,
     status: "open",
     comando: "humano",
-    motivo_da_passagem: null,
+    motivo_codigo: null,
     proxima_acao: null,
+    responsavel_user_id: null,
     responsavel: null,
     responsavel_tipo: null,
     ultima_atividade_em: "2026-11-15T15:00:00Z",
@@ -361,14 +362,128 @@ describe("o conteúdo congelado, na volta", () => {
     expect(lerConteudo({ ...conteudo(), versao: 2 })).toBeNull();
     expect(lerConteudo("x")).toBeNull();
   });
+});
 
-  it("contato anonimizado depois da geração aparece anonimizado, sem telefone nem @", () => {
-    const c = conteudo({ produtos: [linha({})], projetos: [linha({ contato: { contact_id: "k9", nome: "Outro", telefone: "1", identidade: null } })] });
-    expect(idsDeContatoDoConteudo(c).sort()).toEqual(["k1", "k9"]);
-    const sobreposto = sobreporAnonimizados(c, [{ id: "k1", nome: "Cliente Anonimizado #7" }]);
-    expect(sobreposto.produtos[0]!.contato).toEqual({ contact_id: "k1", nome: "Cliente Anonimizado #7", telefone: null, identidade: null });
-    expect(sobreposto.projetos[0]!.contato.nome).toBe("Outro");
-    // O original não é mexido.
-    expect(c.produtos[0]!.contato.nome).toBe("Rana");
+/** Todas as chaves de um valor, em qualquer profundidade. */
+function chavesProfundas(v: unknown, out = new Set<string>()): Set<string> {
+  if (Array.isArray(v)) for (const x of v) chavesProfundas(x, out);
+  else if (v && typeof v === "object") {
+    for (const [k, x] of Object.entries(v)) {
+      out.add(k);
+      chavesProfundas(x, out);
+    }
+  }
+  return out;
+}
+
+describe("LGPD: o relatório guardado não tem dado pessoal, e a leitura resolve ao vivo", () => {
+  const completo = () =>
+    conteudo({
+      aguardando: [
+        linha({
+          resumo: "Quer 40 vasos para o restaurante da Rua X",
+          resumo_origem: "passagem",
+          responsavel_user_id: "u1",
+          responsavel: "Maya",
+          responsavel_tipo: "pessoa",
+          proxima_acao: { titulo: "Ligar para a Rana", vence_em: "2026-11-17T09:00:00Z" },
+          motivo_codigo: "pedido_de_humano",
+        }),
+      ],
+      produtos: [linha({ produtos: { termos: ["árvore"], encontrados: ["Ficus 2m"] } })],
+      funil: {
+        ganhos: [],
+        perdidos: [
+          {
+            lead_id: "L1",
+            titulo: "Rana — projeto",
+            contato: { contact_id: "k1", nome: "Rana", telefone: "+96170000000", identidade: "@rana" },
+            conversation_id: "c0000000-0000-4000-8000-000000000001",
+            etapa: "Proposta",
+            status: "lost",
+            valor_cents: null,
+            moeda: null,
+            motivo_da_perda: "Rana achou caro",
+            responsavel_user_id: "u1",
+            responsavel: "Maya",
+            quando: "2026-11-15T12:00:00Z",
+          },
+        ],
+        em_proposta: [],
+        mudaram_de_etapa: 2,
+      },
+      falhas: {
+        mensagens: [
+          {
+            message_id: "m1",
+            conversation_id: "c0000000-0000-4000-8000-000000000001",
+            contato: { contact_id: "k1", nome: "Rana", telefone: "+96170000000", identidade: null },
+            status: "failed",
+            codigo: "waha_400",
+            erro: "chat 96170000000@c.us not found",
+            quando: "2026-11-15T12:00:00Z",
+          },
+        ],
+        execucoes_da_ia: [],
+        canais: [],
+        avisos: [{ id: "a1", kind: "message_send_stuck", titulo: "Mensagem para Rana presa", severidade: "warn", quando: "2026-11-15T12:00:00Z" }],
+      },
+    });
+
+  it("o jsonb guardado não tem chave de nome, telefone, @, prévia, resumo, título, motivo escrito nem erro", () => {
+    const guardado = JSON.parse(JSON.stringify(congelar(completo())));
+    const chaves = chavesProfundas(guardado);
+    for (const proibida of [...CHAVES_PESSOAIS, "last_message_preview", "body", "phone_number", "display_name", "name"]) {
+      expect(chaves.has(proibida), `chave pessoal no jsonb: ${proibida}`).toBe(false);
+    }
+    const texto = JSON.stringify(guardado);
+    for (const pessoal of ["Rana", "+96170000000", "@rana", "restaurante", "Maya", "achou caro", "96170000000"]) {
+      expect(texto.includes(pessoal), `dado pessoal no jsonb: ${pessoal}`).toBe(false);
+    }
+    // Os fatos ficam: ids, termos e produtos, código, situação, instantes.
+    expect(guardado.aguardando[0].contato).toEqual({ contact_id: "k1" });
+    expect(guardado.aguardando[0].responsavel_user_id).toBe("u1");
+    expect(guardado.aguardando[0].motivo_codigo).toBe("pedido_de_humano");
+    expect(guardado.aguardando[0].proxima_acao).toEqual({ vence_em: "2026-11-17T09:00:00Z" });
+    expect(guardado.produtos[0].produtos).toEqual({ termos: ["árvore"], encontrados: ["Ficus 2m"] });
+    expect(guardado.falhas.mensagens[0].codigo).toBe("waha_400");
+    expect(lerConteudo(guardado)).not.toBeNull();
+  });
+
+  function leitor(contatos: Record<string, { nome: string | null; telefone: string | null; identidade: string | null }>): LeitorAoVivo {
+    return {
+      contatos: async (ids) => new Map(ids.filter((id) => contatos[id]).map((id) => [id, contatos[id]!])),
+      conversas: async (ids) => new Map(ids.map((id) => [id, { previa: null, responsavel: "Maya" }])),
+      passagens: async () => new Map(),
+      tarefas: async (ids) => new Map(ids.map((id) => [id, "Ligar de volta"])),
+      negocios: async (ids) => new Map(ids.map((id) => [id, { titulo: "Projeto restaurante", motivo_da_perda: null }])),
+      nomes: async (ids) => new Map(ids.map((id) => [id, "Maya"])),
+    };
+  }
+
+  it("a tela do relatório resolve o pessoal AO VIVO: depois da anonimização, mostra o contato anonimizado", async () => {
+    const guardado = lerConteudo(JSON.parse(JSON.stringify(congelar(completo()))))!;
+
+    const antes = await hidratar(guardado, leitor({ k1: { nome: "Rana", telefone: "+96170000000", identidade: null } }));
+    expect(antes.aguardando[0]!.contato.nome).toBe("Rana");
+    expect(antes.aguardando[0]!.proxima_acao).toEqual({ titulo: "Ligar de volta", vence_em: "2026-11-17T09:00:00Z" });
+    expect(antes.funil.perdidos[0]!.responsavel).toBe("Maya");
+
+    // A cascata da LGPD reescreveu a linha de `contacts`: o mesmo relatório, lido de novo.
+    const depois = await hidratar(guardado, leitor({ k1: { nome: "Cliente Anonimizado #3", telefone: null, identidade: null } }));
+    for (const l of [depois.aguardando[0]!, depois.produtos[0]!]) {
+      expect(l.contato).toEqual({ contact_id: "k1", nome: "Cliente Anonimizado #3", telefone: null, identidade: null });
+    }
+    expect(depois.falhas.mensagens[0]!.contato.nome).toBe("Cliente Anonimizado #3");
+    const texto = textoDoRelatorio(depois, { idioma: "pt-BR", baseUrl: "https://x.test", geradoEm: new Date(guardado.lido_em) });
+    expect(texto).toContain("Cliente Anonimizado #3");
+    expect(texto).not.toContain("Rana");
+    expect(texto).not.toContain("+96170000000");
+  });
+
+  it("contato que a leitura não alcança (apagado ou fora do escopo) diz não registrado", async () => {
+    const guardado = congelar(completo());
+    const lido = await hidratar(guardado, leitor({}));
+    expect(lido.aguardando[0]!.contato).toEqual({ contact_id: "k1", nome: null, telefone: null, identidade: null });
   });
 });

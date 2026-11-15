@@ -127,12 +127,12 @@ function TabelaDeConversas({
                 {l.comando && l.comando in ROTULO_DO_COMANDO
                   ? t(ROTULO_DO_COMANDO[l.comando as keyof typeof ROTULO_DO_COMANDO])
                   : l.status}
-                {l.motivo_da_passagem && <div className="text-text-muted">{l.motivo_da_passagem}</div>}
+                {l.motivo_codigo && <div className="text-text-muted">{l.motivo_codigo}</div>}
               </td>
               <td className="px-3 py-2 text-xs">
                 {l.proxima_acao ? (
                   <>
-                    <div>{l.proxima_acao.titulo}</div>
+                    <div>{l.proxima_acao.titulo ?? nr}</div>
                     {l.proxima_acao.vence_em && (
                       <div className="text-text-muted">
                         {t("vence")} {l.proxima_acao.vence_em.slice(0, 10)}
@@ -188,7 +188,7 @@ function TabelaDeNegocios({ linhas, perdidos = false }: { linhas: LinhaDeNegocio
           <tr key={n.lead_id} className="align-top">
             <td className="max-w-[16rem] px-3 py-2">
               <Link href={`/app/leads/${n.lead_id}`} className="font-medium hover:underline">
-                {n.titulo}
+                {n.titulo ?? nr}
               </Link>
             </td>
             <td className="max-w-[14rem] px-3 py-2">

@@ -6,9 +6,13 @@ import { SecoesDaOperacao } from "@/components/operacao/SecoesDaOperacao";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
-import { idsDeContatoDoConteudo, lerConteudo, sobreporAnonimizados } from "@/lib/operacao/conteudo";
+import { hidratar, lerConteudo } from "@/lib/operacao/conteudo";
+import { leitorDoBanco } from "@/lib/operacao/hidratar-do-banco";
+import { nomesPelaFuncao } from "@/lib/operacao/operacao-do-dia";
 import { diaValido, horaCurtaNoFuso } from "@/lib/operacao/regras";
-import { TABELA_DOS_RELATORIOS } from "@/lib/operacao/relatorio-diario";
+import { contextoDaOrganizacao, TABELA_DOS_RELATORIOS, urlPublicaDoApp } from "@/lib/operacao/relatorio-diario";
+import { textoDoRelatorio } from "@/lib/operacao/texto-do-relatorio";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -16,8 +20,12 @@ export const metadata: Metadata = { title: "Relatório do dia" };
 
 /**
  * Um relatório diário salvo, desenhado pelo MESMO componente da tela ao vivo,
- * com a espera medida contra a hora em que ele foi gerado. Os links abrem a
- * conversa no Inbox. Contato anonimizado depois da geração aparece anonimizado.
+ * com a espera medida contra a hora em que ele foi gerado.
+ *
+ * O banco guarda só fatos (`congelar`). Nome, telefone, @, resumo, título da
+ * tarefa e do negócio são lidos AGORA (`hidratar` + `leitorDoBanco`), pelo
+ * client da sessão: um contato anonimizado depois da geração aparece
+ * anonimizado, e o texto do relatório é montado aqui com o mesmo conteúdo.
  */
 export default async function RelatorioDoDiaPage({ params }: { params: Promise<{ dia: string }> }) {
   const user = await requireAuth();
@@ -31,28 +39,23 @@ export default async function RelatorioDoDiaPage({ params }: { params: Promise<{
   const db = await createClient();
   const { data } = await db
     .from(TABELA_DOS_RELATORIOS)
-    .select("dia, fuso, gerado_em, gerado_por, conteudo, texto")
+    .select("dia, fuso, gerado_em, gerado_por, conteudo")
     .eq("organization_id", activeOrg.orgId)
     .eq("dia", dia)
     .maybeSingle();
   if (!data) notFound();
-  const linha = data as { dia: string; fuso: string; gerado_em: string; gerado_por: string; conteudo: unknown; texto: string };
-  let conteudo = lerConteudo(linha.conteudo);
-
-  if (conteudo) {
-    const ids = idsDeContatoDoConteudo(conteudo);
-    const anonimizados: Array<{ id: string; nome: string | null }> = [];
-    for (let i = 0; i < ids.length; i += 200) {
-      const { data: contatos } = await db
-        .from("contacts")
-        .select("id, name")
-        .eq("organization_id", activeOrg.orgId)
-        .eq("is_anonymized", true)
-        .in("id", ids.slice(i, i + 200));
-      for (const c of (contatos ?? []) as Array<{ id: string; name: string | null }>) anonimizados.push({ id: c.id, nome: c.name });
-    }
-    conteudo = sobreporAnonimizados(conteudo, anonimizados);
-  }
+  const linha = data as { dia: string; fuso: string; gerado_em: string; gerado_por: string; conteudo: unknown };
+  const guardado = lerConteudo(linha.conteudo);
+  const conteudo = guardado
+    ? await hidratar(
+        guardado,
+        leitorDoBanco(db, activeOrg.orgId, nomesPelaFuncao(createAdminClient(), activeOrg.orgId)),
+      )
+    : null;
+  const ctx = await contextoDaOrganizacao(db, activeOrg.orgId);
+  const texto = conteudo
+    ? textoDoRelatorio(conteudo, { idioma: ctx.idioma, baseUrl: urlPublicaDoApp(), geradoEm: new Date(linha.gerado_em) })
+    : null;
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto p-4 md:p-6">
@@ -73,12 +76,16 @@ export default async function RelatorioDoDiaPage({ params }: { params: Promise<{
       {conteudo ? (
         <SecoesDaOperacao operacao={conteudo} referencia={linha.gerado_em} />
       ) : (
-        <p className="text-sm text-text-muted">{t("Este relatório foi salvo num formato que esta versão não sabe desenhar. O texto abaixo continua valendo.")}</p>
+        <p className="text-sm text-text-muted">{t("Este relatório foi salvo num formato que esta versão não sabe desenhar.")}</p>
       )}
-      <details className="rounded-lg border border-border bg-surface p-4">
-        <summary className="cursor-pointer text-sm font-semibold">{t("Texto do relatório")}</summary>
-        <pre className="mt-3 whitespace-pre-wrap break-words text-xs">{linha.texto}</pre>
-      </details>
+      {texto && (
+        <details className="rounded-lg border border-border bg-surface p-4">
+          <summary className="cursor-pointer text-sm font-semibold">{t("Texto do relatório")}</summary>
+          <pre className="mt-3 whitespace-pre-wrap break-words text-xs" data-testid="relatorio-texto">
+            {texto}
+          </pre>
+        </details>
+      )}
     </div>
   );
 }

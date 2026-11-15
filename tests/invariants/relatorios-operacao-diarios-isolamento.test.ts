@@ -31,10 +31,10 @@ beforeAll(() => {
       ('${MANAGER_B}','${ORG_B}','manager',now()),
       ('${AGENT_A}','${ORG_A}','agent',now()),
       ('${ADMIN_A}','${ORG_A}','admin',now());
-    insert into relatorios_operacao_diarios(organization_id,dia,fuso,gerado_por,conteudo,texto) values
-      ('${ORG_A}','2026-11-14','Asia/Beirut','cron','{"versao":1}','A'),
-      ('${ORG_A}','2026-11-15','Asia/Beirut','usuario','{"versao":1}','A'),
-      ('${ORG_B}','2026-11-15','UTC','cron','{"versao":1}','B');
+    insert into relatorios_operacao_diarios(organization_id,dia,fuso,gerado_por,conteudo) values
+      ('${ORG_A}','2026-11-14','Asia/Beirut','cron','{"versao":1,"de":"A"}'),
+      ('${ORG_A}','2026-11-15','Asia/Beirut','usuario','{"versao":1,"de":"A"}'),
+      ('${ORG_B}','2026-11-15','UTC','cron','{"versao":1,"de":"B"}');
   `);
 });
 
@@ -77,19 +77,28 @@ describe("relatorios_operacao_diarios: isolamento entre organizações", () => {
 
   it("um dia por organização: o segundo insert do cron (on conflict do nothing) não duplica", () => {
     const out = sql(`
-      insert into relatorios_operacao_diarios(organization_id,dia,fuso,gerado_por,conteudo,texto)
-      values ('${ORG_A}','2026-11-15','Asia/Beirut','cron','{"versao":1}','de novo')
+      insert into relatorios_operacao_diarios(organization_id,dia,fuso,gerado_por,conteudo)
+      values ('${ORG_A}','2026-11-15','Asia/Beirut','cron','{"versao":1,"de":"de novo"}')
       on conflict (organization_id, dia) do nothing;
-      select count(*) || ':' || max(texto) from relatorios_operacao_diarios where organization_id='${ORG_A}' and dia='2026-11-15';
+      select count(*) || ':' || max(conteudo->>'de') from relatorios_operacao_diarios where organization_id='${ORG_A}' and dia='2026-11-15';
     `);
     expect(out.split("\n").at(-1)).toBe("1:A");
+  });
+
+  it("LGPD: a tabela não tem coluna de texto livre — só o jsonb de fatos e metadados", () => {
+    const out = sql(`
+      select string_agg(column_name, ',' order by column_name)
+        from information_schema.columns
+       where table_schema='public' and table_name='relatorios_operacao_diarios';
+    `);
+    expect(out.split("\n").at(-1)).toBe("conteudo,dia,fuso,gerado_em,gerado_por,id,organization_id");
   });
 
   it("gerado_por fora do vocabulário é recusado pelo CHECK", () => {
     const out = sql(`do $t$
       begin
-        insert into relatorios_operacao_diarios(organization_id,dia,fuso,gerado_por,conteudo,texto)
-        values ('${ORG_B}','2026-11-10','UTC','robo','{}','x');
+        insert into relatorios_operacao_diarios(organization_id,dia,fuso,gerado_por,conteudo)
+        values ('${ORG_B}','2026-11-10','UTC','robo','{}');
         raise exception 'gerado_por inválido foi aceito';
       exception when check_violation then null;
       end $t$;

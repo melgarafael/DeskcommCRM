@@ -13428,7 +13428,6 @@ export type Database = {
           gerado_por: string;
           id: string;
           organization_id: string;
-          texto: string;
         };
         ComputedFields: never;
         Insert: {
@@ -13439,7 +13438,6 @@ export type Database = {
           gerado_por: string;
           id?: string;
           organization_id: string;
-          texto: string;
         };
         Update: {
           conteudo?: Json;
@@ -13449,7 +13447,6 @@ export type Database = {
           gerado_por?: string;
           id?: string;
           organization_id?: string;
-          texto?: string;
         };
         Relationships: [
           {

@@ -9,6 +9,7 @@
  * Campo vazio sai como "não registrado", nunca omitido em silêncio: quem lê o
  * relatório precisa distinguir "não tem" de "ninguém anotou".
  */
+import { kindLabel } from "@/lib/ai/agent-inbox-copy";
 import { rotuloDoEstadoDoCanal } from "@/lib/channels/estado";
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
@@ -81,7 +82,8 @@ export function textoDoRelatorio(
       `${nomeDaRede(l.canal)}${l.numero ? ` (${l.numero})` : ""}`,
       espera !== null ? `${t("esperando há")} ${duracaoCurta(espera)}` : null,
       `${t("responsável")}: ${l.responsavel_tipo === "ia" ? t("IA") : (l.responsavel ?? nr)}`,
-      `${t("próxima ação")}: ${l.proxima_acao ? l.proxima_acao.titulo + (l.proxima_acao.vence_em ? ` (${t("vence")} ${l.proxima_acao.vence_em.slice(0, 10)})` : "") : nr}`,
+      `${t("próxima ação")}: ${l.proxima_acao ? (l.proxima_acao.titulo ?? nr) + (l.proxima_acao.vence_em ? ` (${t("vence")} ${l.proxima_acao.vence_em.slice(0, 10)})` : "") : nr}`,
+      l.motivo_codigo ? `${t("motivo da passagem")}: ${l.motivo_codigo}` : null,
       l.ultima_atividade_em ? `${t("última atividade")} ${horaCurtaNoFuso(l.ultima_atividade_em, fuso)}` : null,
     ].filter((p): p is string => !!p);
     const out = [`- ${cabeca.join(" · ")}`];
@@ -111,7 +113,7 @@ export function textoDoRelatorio(
   const linhaDeNegocio = (n: LinhaDeNegocio) => {
     const valor = valorFormatado(n.valor_cents, n.moeda, opcoes.idioma) ?? nr;
     const partes = [
-      n.titulo,
+      n.titulo ?? nr,
       identificacaoDoContato(n.contato, t),
       `${t("etapa")}: ${n.etapa ?? nr}`,
       `${t("valor")}: ${valor}`,
@@ -154,7 +156,7 @@ export function textoDoRelatorio(
   linhas.push(`- ${t("Canais fora do ar agora")}: ${f.canais.length}`);
   for (const c of f.canais) linhas.push(`  · ${c.numero ?? nr} · ${c.provedor} · ${rotuloDoEstadoDoCanal(c.status, t)}${c.motivo ? ` · ${c.motivo}` : ""}`);
   linhas.push(`- ${t("Avisos abertos na Central")}: ${f.avisos.length}`);
-  for (const a of f.avisos.slice(0, 20)) linhas.push(`  · ${a.titulo}`);
+  for (const a of f.avisos.slice(0, 20)) linhas.push(`  · ${kindLabel(a.kind, t)}`);
 
   if (conteudo.truncado.length > 0) {
     linhas.push("");

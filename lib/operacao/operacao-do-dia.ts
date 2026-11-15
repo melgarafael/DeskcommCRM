@@ -88,7 +88,7 @@ export const AVISOS_DE_FALHA = [
 const COLUNAS_DA_CONVERSA =
   "id, contact_id, channel, channel_session_id, status, comando_da_conversa, is_group, tags, " +
   "last_inbound_at, last_outbound_at, last_message_at, awaiting_since, bot_silenced_until, " +
-  "assigned_to_user_id, assigned_to_user_name, assignee_kind, last_handoff_reason, last_message_preview, created_at";
+  "assigned_to_user_id, assigned_to_user_name, assignee_kind, last_message_preview, created_at";
 
 interface ConversaLida {
   id: string;
@@ -107,7 +107,6 @@ interface ConversaLida {
   assigned_to_user_id: string | null;
   assigned_to_user_name: string | null;
   assignee_kind: string | null;
-  last_handoff_reason: string | null;
   last_message_preview: string | null;
   created_at: string;
 }
@@ -487,19 +486,21 @@ export async function montarOperacaoDoDia(entrada: EntradaDaOperacao): Promise<O
 
   // O resumo da passagem mais recente de cada conversa (a mais nova vem primeiro).
   const resumoDaPassagem = new Map<string, string>();
+  const motivoDaPassagem = new Map<string, string>();
   for (const lote of pedacos([...conhecidas.keys()])) {
-    const passagens = exigir<Array<{ conversation_id: string; title: string | null; body: string }>>(
+    const passagens = exigir<Array<{ conversation_id: string; title: string | null; body: string; motivo_codigo: string | null }>>(
       "passagens",
       await db
         .from("passagens_de_atendimento")
-        .select("conversation_id, title, body")
+        .select("conversation_id, title, body, motivo_codigo")
         .eq("organization_id", orgId)
         .in("conversation_id", lote)
         .order("criado_em", { ascending: false })
         .limit(1000),
     );
     for (const p of passagens) {
-      if (resumoDaPassagem.has(p.conversation_id)) continue;
+      if (resumoDaPassagem.has(p.conversation_id) || motivoDaPassagem.has(p.conversation_id)) continue;
+      if (p.motivo_codigo) motivoDaPassagem.set(p.conversation_id, p.motivo_codigo);
       const texto = [p.title, p.body].filter((s) => s && s.trim() !== "").join(" — ").trim();
       if (texto !== "") resumoDaPassagem.set(p.conversation_id, texto.slice(0, 400));
     }
@@ -573,9 +574,10 @@ export async function montarOperacaoDoDia(entrada: EntradaDaOperacao): Promise<O
       resumo_origem: passagem ? "passagem" : previa ? "ultima_mensagem" : null,
       status: c.status,
       comando: c.comando_da_conversa,
-      motivo_da_passagem: c.last_handoff_reason?.trim() || null,
+      motivo_codigo: motivoDaPassagem.get(c.id) ?? null,
       proxima_acao: proximaTarefa.get(c.contact_id) ?? null,
-      responsavel: c.assigned_to_user_id ? pessoa : ia ? "ia" : null,
+      responsavel_user_id: c.assigned_to_user_id,
+      responsavel: c.assigned_to_user_id ? pessoa : null,
       responsavel_tipo: c.assigned_to_user_id ? "pessoa" : ia ? "ia" : null,
       ultima_atividade_em: c.last_message_at,
       esperando_desde: clienteFalouPorUltimo(c) || c.comando_da_conversa === "aguardando" ? esperandoDesde(c) : null,
@@ -613,6 +615,7 @@ export async function montarOperacaoDoDia(entrada: EntradaDaOperacao): Promise<O
     valor_cents: typeof n.value_cents === "number" ? n.value_cents : null,
     moeda: typeof n.value_cents === "number" ? n.currency : null,
     motivo_da_perda: n.lost_reason?.trim() || null,
+    responsavel_user_id: n.owner_user_id,
     responsavel: n.owner_user_id ? (nomes.get(n.owner_user_id) ?? null) : null,
     quando: n.status === "open" ? n.stage_changed_at : n.closed_at,
   });
