@@ -21,6 +21,7 @@ import { logger } from "@/lib/logger";
 import { criarClickRef as criarClickRefNaTabela, type ClickRefCriado } from "../captura-de-clique";
 
 import { lerIdentificadoresGoogle, type IdentificadoresGoogle } from "./identificadores";
+import { normalizarMetadadosGoogle, type MetadadosDaCampanhaGoogle } from "./metadados-da-campanha";
 
 export type { ClickRefCriado };
 
@@ -37,11 +38,14 @@ export async function criarClickRef(
     gclid: ids.gclid ?? null,
     gbraid: ids.gbraid ?? null,
     wbraid: ids.wbraid ?? null,
-    query_raw: queryRaw,
+    query_raw: { ...normalizarMetadadosGoogle(queryRaw), ...ids },
   });
 }
 
-export type ClickRefCasado = IdentificadoresGoogle;
+export type ClickRefCasado = IdentificadoresGoogle & {
+  /** Só a projeção permitida do recibo; dados arbitrários antigos não atravessam. */
+  queryRaw?: MetadadosDaCampanhaGoogle;
+};
 
 /**
  * Casa um token com um contato — a UPDATE condicional que garante que um
@@ -61,7 +65,7 @@ export async function casarClickRef(
     .eq("organization_id", organizationId)
     .eq("token", token)
     .is("matched_at", null)
-    .select("gclid, gbraid, wbraid")
+    .select("gclid, gbraid, wbraid, query_raw")
     .maybeSingle();
 
   if (error) {
@@ -73,7 +77,10 @@ export async function casarClickRef(
     return null;
   }
   if (!data) return null;
-  return lerIdentificadoresGoogle(
+  const ids = lerIdentificadoresGoogle(
     Object.fromEntries(Object.entries(data).filter(([, v]) => v != null)),
   );
+  if (!ids) return null;
+  const queryRaw = normalizarMetadadosGoogle(data.query_raw);
+  return { ...ids, ...(Object.keys(queryRaw).length ? { queryRaw } : {}) };
 }

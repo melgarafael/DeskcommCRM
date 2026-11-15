@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { runInContext } from "node:vm";
 import { JSDOM } from "jsdom";
 import { afterEach, describe, expect, it } from "vitest";
+import { CHAVES_DE_CAPTURA_GOOGLE } from "@/lib/plataformas-de-anuncio/google/metadados-da-campanha";
 
 const source = readFileSync("public/rastreio/v1.js", "utf8");
 const windows: JSDOM[] = [];
@@ -39,6 +40,37 @@ afterEach(() => {
 });
 
 describe("script público do site", () => {
+  it("a lista da página acompanha as chaves de campanha que o servidor aceita", () => {
+    for (const chave of CHAVES_DE_CAPTURA_GOOGLE) expect(source).toContain(`"${chave}"`);
+  });
+  it("preserva IDs decimais longos e rótulos, descarta macros e dados privados", () => {
+    const { link, window, key } = site(`?${new URLSearchParams({
+      gclid: "click-real",
+      campaignid: "90071992547409930001",
+      adgroupid: "456",
+      ad_id: "789",
+      google_customer_id: "1234567890",
+      utm_campaign: "Pesquisa Rio",
+      utm_adset: "Grupo Barra",
+      utm_ad: "Anúncio A",
+      creative: "{creative}",
+      customerid: "gclid-nao-e-conta",
+      utm_content: "https://site.example/privado",
+      phone: "privado",
+    })}`);
+    expect(Object.fromEntries(new URL(link.href).searchParams)).toEqual({
+      gclid: "click-real",
+      campaignid: "90071992547409930001",
+      adgroupid: "456",
+      ad_id: "789",
+      google_customer_id: "1234567890",
+      utm_campaign: "Pesquisa Rio",
+      utm_adset: "Grupo Barra",
+      utm_ad: "Anúncio A",
+    });
+    expect(window.sessionStorage.getItem(key)).not.toContain("privado");
+    expect(window.sessionStorage.getItem(key)).not.toContain("{creative}");
+  });
   it.each(["gclid", "gbraid", "wbraid"])(
     "preserva %s, filtra parâmetros e só muda o número configurado",
     (name) => {
@@ -63,6 +95,14 @@ describe("script público do site", () => {
     const next = site("catalogo", first.window.sessionStorage.getItem(first.key)!);
     expect(next.link.href).toContain("/anuncios/meta/loja?");
     expect(new URL(next.link.href).searchParams.get("utm_adset")).toBe("grupo");
+  });
+  it("parâmetro genérico de conta numa página comum não troca a origem da sessão", () => {
+    const { link } = site("?customer_id=1234567890", JSON.stringify({ gclid: "clique-anterior", utm_campaign: "Anterior" }));
+    expect(Object.fromEntries(new URL(link.href).searchParams)).toEqual({ gclid: "clique-anterior", utm_campaign: "Anterior" });
+  });
+  it("UTM não Google mantém a truncagem anterior", () => {
+    const { link } = site(`?utm_campaign=${"a".repeat(201)}`);
+    expect(new URL(link.href).searchParams.get("utm_campaign")).toBe("a".repeat(200));
   });
   it("não mistura campanhas novas com um clique antigo", () => {
     const { link } = site(
