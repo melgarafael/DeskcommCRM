@@ -3,6 +3,9 @@ import { z } from "zod";
 import type { SiteEnrichment } from "@/lib/prospecting/site-classify";
 import type { PreviaSalva } from "@/lib/prospecting/previa";
 import {
+  problemaNaMidiaDaAbordagem,
+} from "@/lib/prospecting/midia-da-abordagem";
+import {
   problemaNoTextoDaSaida,
   TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA,
 } from "@/lib/prospecting/rodape-de-saida";
@@ -168,6 +171,30 @@ export const campaignConfigSchema = z
     // configuração, e uma chave desconhecida faria a campanha arquivada ser
     // recusada pelo próprio código que a gravou.
     arquivada_em: z.string().datetime().optional(),
+    // A MÍDIA FIXA DA PRIMEIRA ABORDAGEM (#4581) — imagem, vídeo ou PDF que sai
+    // JUNTO da primeira mensagem, igual para todos os candidatos da campanha.
+    //
+    // É uma REFERÊNCIA a arquivo que já existe no produto (`storage_path` no
+    // bucket `whatsapp-media`, sob `{org}/`), com o mime e o tamanho que a rota
+    // de upload gravou — nada de upload novo nesta fatia, e nada escolhido pela
+    // IA. Sem `.default()`: campanha gravada antes desta chave existir continua
+    // SEM a chave, e o envio dela segue byte a byte como antes.
+    //
+    // Aqui ficam as regras que não dependem da organização: tipo (imagem, vídeo
+    // ou PDF) e tamanho do tipo. A POSSE do caminho — o arquivo tem de ser desta
+    // organização — é conferida onde a organização é conhecida (`validateConfig`).
+    midia_da_abordagem: z
+      .object({
+        storage_path: z.string().trim().min(1).max(500),
+        media_mime: z.string().trim().min(3).max(120),
+        media_size_bytes: z.number().int().positive(),
+      })
+      .strict()
+      .superRefine((midia, ctx) => {
+        const motivo = problemaNaMidiaDaAbordagem(midia);
+        if (motivo) ctx.addIssue({ code: z.ZodIssueCode.custom, message: motivo });
+      })
+      .optional(),
     // CARIMBO DA ÚLTIMA EDIÇÃO DO TEXTO (#4570, doc 358 › 1A). Gravado só por
     // `editBriefing`. A prévia guarda o carimbo com que nasceu e o envio só usa a
     // que tem o carimbo atual (`previaDoAgente`). Ausente = nunca editada.
