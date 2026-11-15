@@ -40,6 +40,7 @@ import { camposDoFunil, camposPorEscopo, settingsDoEmbed } from "@/lib/leads/cam
 import { motivosDoFunil } from "@/lib/leads/motivos-de-perda-do-funil";
 import { createClient } from "@/lib/supabase/server";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
+import { situacaoDaRecusaDeOfertas } from "@/lib/lgpd/sem-interesse";
 
 export const dynamic = "force-dynamic";
 
@@ -97,7 +98,7 @@ export async function GET(
   }
 
   const { data: contactScope, error: scopeError } = await supabase.from("contacts")
-    .select("organization_id, is_anonymized, source_metadata").eq("id", contactId).maybeSingle();
+    .select("organization_id, is_anonymized, source_metadata, consent").eq("id", contactId).maybeSingle();
   if (scopeError) return fail("internal_error", scopeError.message, 500, { requestId });
   if (!contactScope) return fail("not_found", "Contato não encontrado.", 404, { requestId });
   // Candidates are worker-only. Authorize the contact through RLS first, then
@@ -272,6 +273,7 @@ export async function GET(
       demandas: demandas.data ?? [],
       fatos: fatos.data ?? [], historico: historico.data ?? [],
       ...anuncios,
+      recusa_de_ofertas: situacaoDaRecusaDeOfertas(contactScope.consent),
     },
     { requestId },
   );

@@ -426,6 +426,22 @@ export function AgentEditor({ agentId, initialData, readOnly = false }: Props) {
                   "1,0 é a velocidade padrão do modelo — abaixo disso fala mais devagar, acima fala mais rápido. Vale a partir da próxima ligação.",
                 )}
               </p>
+              <div className="space-y-1 border-t pt-4">
+                <div className="flex items-center gap-3">
+                  <Switch
+                    id="agenda_na_ligacao"
+                    checked={formState.config.agenda_na_ligacao}
+                    onCheckedChange={(v) => patchConfig({ agenda_na_ligacao: v })}
+                    disabled={disabled}
+                  />
+                  <Label htmlFor="agenda_na_ligacao">{t("Marcar e remarcar horários na ligação")}</Label>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "Ligado, o agente consulta a agenda e marca ou remarca horários enquanto fala com o cliente. Antes de gravar, ele lê o dia e a hora e só marca depois que a pessoa disser sim. Vale só quando o número de quem ligou está no cadastro. Desligado, o agente não mexe na agenda.",
+                  )}
+                </p>
+              </div>
             </Card>
           </TabsContent>
         )}

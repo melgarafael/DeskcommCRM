@@ -2,7 +2,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET  — chave VAPID pública (ou enabled=false se o operador não configurou) e a
  *        opção da empresa para a tela bloqueada, que a bandeja do app aberto aplica.
- * PUT  — grava a inscrição deste navegador.
+ * PUT  — grava a inscrição deste navegador e os tipos de aviso que ele calou.
  * DELETE — remove a inscrição pelo endpoint.
  */
 import { randomUUID } from "node:crypto";
@@ -18,6 +18,7 @@ import { lerTelaBloqueada } from "@/lib/notifications/tela-bloqueada";
 import { vapidPronto, vapidPublica } from "@/lib/notifications/vapid";
 import { ehServicoDePushConhecido } from "@/lib/notifications/servicos-de-push";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { NOTIFY_UI_CATEGORIES } from "@/lib/notifications/prefs";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,8 @@ const subSchema = z.object({
     p256dh: z.string().min(1),
     auth: z.string().min(1),
   }),
+  // Ausente = navegador de antes desta versão: grava vazio, que é "recebe todos".
+  tipos_calados: z.array(z.enum(NOTIFY_UI_CATEGORIES)).max(NOTIFY_UI_CATEGORIES.length).optional(),
 });
 
 export async function GET(): Promise<Response> {
@@ -72,6 +75,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
       endpoint: parsed.data.endpoint,
       p256dh: parsed.data.keys.p256dh,
       auth: parsed.data.keys.auth,
+      tipos_calados: [...new Set(parsed.data.tipos_calados ?? [])],
       updated_at: new Date().toISOString(),
     } as never,
     { onConflict: "endpoint" },
@@ -90,7 +94,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
     organizationId: org.orgId,
     resourceType: "push_subscription",
     requestId,
-    metadata: { channel: "web_push" },
+    metadata: { channel: "web_push", tipos_calados: [...new Set(parsed.data.tipos_calados ?? [])] },
   });
 
   return ok({ ok: true }, { requestId });
