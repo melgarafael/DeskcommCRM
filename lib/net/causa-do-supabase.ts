@@ -119,8 +119,15 @@ export function mensagemDaCausa(causa: CausaDoSupabase, detalhe: string, timeout
       return `postgrest_sem_schema_cache: o PostgREST não carregou o schema cache (${detalhe}) — compute insuficiente no plano free. Reinicie o projeto no Supabase (Restart project).`;
     case "projeto_sem_resposta_na_origem":
       return `projeto_sem_resposta_na_origem (${detalhe}): o Cloudflare não alcançou a origem — o projeto Supabase está fora, não é a VPS. Reinicie o projeto (Restart project).`;
-    case "banco_inacessivel":
-      return `banco_inacessivel (${detalhe}): não chegamos ao PostgREST — confira endereço, DNS e rede ANTES de reiniciar o projeto.`;
+    case "banco_inacessivel": {
+      // Caso medido (13/11): o `<ref>.supabase.co` parou de resolver com o
+      // projeto pausado/apagado. Reiniciar não existe para projeto pausado.
+      const projetoSumiu =
+        detalhe === "endereco_nao_resolve"
+          ? " Se o endereço é *.supabase.co, o projeto pode estar pausado ou apagado — confira no painel (Restore project)."
+          : "";
+      return `banco_inacessivel (${detalhe}): não chegamos ao PostgREST — confira endereço, DNS e rede ANTES de reiniciar o projeto.${projetoSumiu}`;
+    }
     case "lentidao_generica":
       return `lentidao_generica: o banco não respondeu em ${timeoutMs} ms e não houve erro do PostgREST no corpo — não dá para separar schema cache de sobrecarga sem resposta; comece pelo painel do Supabase (o projeto está no ar?).`;
   }

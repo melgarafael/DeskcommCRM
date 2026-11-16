@@ -7,6 +7,26 @@ consultas a `pg_stat_activity`, `pg_settings` e `pg_stat_statements`. Este guia 
 o passo anterior a qualquer uma delas: **de que pasta** rodar, **com que cliente**
 e **de onde tirar a connection string**.
 
+## Antes do `psql`: o endereço do projeto resolve?
+
+Se o `/api/v1/health` traz `causa: banco_inacessivel` com
+`reason: endereco_nao_resolve`, e o `SUPABASE_URL` do `.env` é
+`<ref>.supabase.co`, o `psql` deste guia provavelmente não vai ajudar: ele
+também precisa chegar ao projeto.
+
+Numa instalação medida (13/11), o nome `<ref>.supabase.co` deixou de resolver no
+DNS e a conexão direta respondeu "projeto não encontrado". A explicação provável,
+não medida em geral, é o projeto ter sido **pausado** (o plano free pausa por
+inatividade ou por cobrança) ou **apagado**. O passo é abrir o painel do Supabase:
+
+- o projeto aparece como **Paused** → **Restore project**;
+- o projeto não aparece mais na lista → ele foi apagado, e o banco precisa ser
+  recriado ou restaurado de backup.
+
+O resto da recuperação está em
+[`supabase-sem-memoria-no-free.md`](./supabase-sem-memoria-no-free.md#recuperação).
+Se o nome resolve e o health ainda diz `banco_inacessivel`, siga os passos abaixo.
+
 ## Por que o copia-e-cola não funciona de primeira
 
 - **`docker compose` só encontra o arquivo de dentro da pasta da instalação.**

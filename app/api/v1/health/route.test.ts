@@ -285,6 +285,12 @@ describe("GET /api/v1/health — a causa do banco, com o runbook que cada uma pe
     // quem está com o projeto sem memória conferir DNS.
     expect(RUNBOOK_DA_CAUSA.postgrest_sem_schema_cache).toBe(RUNBOOKS.semMemoriaNoFree);
     expect(RUNBOOK_DA_CAUSA.banco_inacessivel).not.toBe(RUNBOOKS.semMemoriaNoFree);
+    // `banco_inacessivel` inclui o nome `*.supabase.co` que deixou de resolver
+    // (projeto pausado ou apagado, medido em 13/11). Quem não tem o segredo vê
+    // só `reason`/`causa`/`runbook`, então o caminho até o Restore mora no doc.
+    const testarOBanco = readFileSync(path.join(raiz, RUNBOOKS.testarOBancoNaVps), "utf8");
+    expect(testarOBanco).toContain("endereco_nao_resolve");
+    expect(testarOBanco).toContain("Restore project");
     // E o cruzamento é mútuo: cada runbook cita o outro pelo nome, porque quem
     // cai no documento errado precisa do caminho de volta.
     const semMemoria = readFileSync(path.join(raiz, RUNBOOKS.semMemoriaNoFree), "utf8");

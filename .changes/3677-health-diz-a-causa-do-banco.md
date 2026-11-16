@@ -25,4 +25,8 @@ inacessível — e esse NÃO manda para o runbook de memória; tempo esgotado se
 status nem corpo é lentidão genérica, e o health diz que não dá para separar em
 vez de inventar schema cache.
 
+Um endereço `*.supabase.co` que deixou de resolver cai em `banco_inacessivel`,
+e o runbook apontado começa por conferir no painel se o projeto foi pausado ou
+apagado (projeto pausado volta com **Restore project**).
+
 Contribuição de @webtecnica (#3677).
