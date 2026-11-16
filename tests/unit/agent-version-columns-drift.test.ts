@@ -21,9 +21,10 @@ const ROOT = process.cwd();
 /** Todo arquivo que carrega uma cópia da lista de colunas de versão. */
 const FILES_WITH_VERSION_COLUMNS = [
   // A cópia das server actions do editor mudou de casa: salvar rascunho,
-  // publicar e reverter moram em lib/ai/agents/edicao.ts, compartilhados com o
-  // MCP do CRM (editar o agente pelo ChatGPT). A cerca vigia onde a lista mora.
-  "lib/ai/agents/edicao.ts",
+  // publicar e reverter moram em lib/ai/agents/edicao.ts (compartilhados com o
+  // MCP do CRM), e a LISTA que eles usam mora em lib/ai/agents/linha-da-versao.ts
+  // — `edicao.ts` só a reexporta. A cerca vigia onde a lista é ESCRITA.
+  "lib/ai/agents/linha-da-versao.ts",
   "app/app/ai/agents/[id]/page.tsx",
   "app/api/v1/ai/agents/route.ts",
   "app/api/v1/ai/agents/[id]/versions/route.ts",
