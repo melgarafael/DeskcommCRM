@@ -47,7 +47,7 @@ const AGENTE_OWN = "9e5c1000-0000-4000-8000-000000000003"; // agent de ORG_OWN (
 const AGENTE_FILA = "9e5c1000-0000-4000-8000-000000000004"; // agent de ORG_FILA (own_and_unassigned)
 const REVOGADO = "9e5c1000-0000-4000-8000-000000000005"; // vínculo revogado em ORG_OWN (papel nulo)
 const FORASTEIRO = "9e5c1000-0000-4000-8000-000000000006"; // agent só de ORG_ALHEIA
-const OUTRO = "9e5c1000-0000-4000-8000-000000000007"; // agent nas quatro organizações
+const OUTRO = "9e5c1000-0000-4000-8000-000000000007"; // agent nas seis organizações
 const VIEWER = "9e5c1000-0000-4000-8000-000000000008"; // viewer de ORG_TUDO ('all')
 const VIEWER_OWN = "9e5c1000-0000-4000-8000-00000000000d"; // viewer de ORG_OWN ('own')
 const GERENTE = "9e5c1000-0000-4000-8000-000000000009"; // manager de ORG_OWN ('own')
@@ -66,7 +66,6 @@ const ORGS = [
   { id: ORG_TUDO, settings: `'{"visibility_mode":"all"}'::jsonb` },
   { id: ORG_INVALIDO, settings: `'{"visibility_mode":"invalido"}'::jsonb` },
 ] as const;
-
 
 /** Id determinístico: org é o primeiro grupo, o ordinal é o último. */
 function idLead(org: string, ordinal: number): string {
@@ -354,10 +353,11 @@ const COMBINACOES: Array<{ nome: string; userId: string; esperado: number }> = [
   { nome: "membro com vínculo revogado (papel nulo)", userId: REVOGADO, esperado: 0 },
   { nome: "organização alheia", userId: FORASTEIRO, esperado: 1 },
   { nome: "platform admin em sessão de suporte ativa", userId: SUPORTE, esperado: 17 },
+  { nome: "agent em seis organizações, uma de settings vazio (modo ausente)", userId: OUTRO, esperado: 10 },
 ];
 
 describe("#4323 — escopo de leitura do negócio avaliado uma vez, não por linha", () => {
-  it("as duas formulações concordam linha a linha nas doze combinações", () => {
+  it("as duas formulações concordam linha a linha nas treze combinações", () => {
     for (const { nome, userId } of COMBINACOES) {
       expect({ nome, linhas: negocioPelaPolicy(userId) }).toEqual({
         nome,
