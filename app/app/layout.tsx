@@ -15,11 +15,15 @@ import { ProvedorDeCoresDasEtiquetas } from "@/components/tags/CoresDasEtiquetas
 import { AppShell } from "./_components/AppShell";
 import { EstiloDaMarcaDaOrganizacao } from "./_components/EstiloDaMarcaDaOrganizacao";
 import { EstiloDoTemaDaExtensao } from "./_components/EstiloDoTemaDaExtensao";
+import { EstiloDaAparencia } from "./_components/EstiloDaAparencia";
+import "./aparencia.css";
 import { MfaEnrollGate } from "@/components/auth/MfaEnrollGate";
 import { cssDaMarca, ESCOPO_DA_ORGANIZACAO } from "@/lib/branding/css";
 import { cssDaExtensaoDeTema, linhaBrutaDeTema, temaAplicavel } from "@/lib/extensions/tema";
 import { marcaDaInstalacao } from "@/lib/branding/instalacao";
 import { resolverMarcaDaOrganizacao } from "@/lib/branding/organizacao";
+import { AJUSTES_PADRAO, aparenciaDeSettings, atributosDaAparencia, type Aparencia } from "@/lib/aparencia/ajustes";
+import { cssDaAparenciaDaOrganizacao } from "@/lib/aparencia/css";
 import { env } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -74,6 +78,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // O tema de extensão, se a organização escolheu um. `null` = quem não
   // escolheu — e aí o `EstiloDoTemaDaExtensao` não renderiza nada.
   let cssDoTemaDaExtensao: string | null = null;
+  // A tela Aparência: template e ajustes, do MESMO `settings` lido abaixo.
+  let aparencia: Aparencia = AJUSTES_PADRAO;
+  let cssDaAparencia: string | null = null;
 
   // EPIC-02: gate /app/* on completed onboarding.
   // EPIC-11: gate /app/* on org not being suspended (S-11.08).
@@ -236,6 +243,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       cssDaOrganizacao = cssDaMarca(marca.cor, ESCOPO_DA_ORGANIZACAO).css;
     }
 
+    // A cor que a empresa definiu na tela Marca vence a cor de ação do template.
+    aparencia = aparenciaDeSettings(orgRow?.settings);
+    cssDaAparencia = cssDaAparenciaDaOrganizacao(aparencia, marca.origens.cor === "organizacao");
+
     cssDoTemaDaExtensao = await temaDaExtensao;
 
     // Desce para o menu CAMPO A CAMPO, e só o campo que a organização definiu.
@@ -285,7 +296,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const collapsed = store.get("sidebar_collapsed")?.value === "1";
 
   const impersonating = user.support ? {
-    tenantId: user.support.organization_id, tenantName: user.support.name,
+    agencyId: user.support.agency_id, tenantId: user.support.organization_id, tenantName: user.support.name,
     expiresAt: user.support.expires_at, accessMode: user.support.access_mode,
   } : null;
 
@@ -342,7 +353,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         veria a tela de cadastro de MFA — a PRIMEIRA tela dele — com a cor da
         instalação, e depois o resto do produto com a dele.
       */}
-      <div data-marca-org="" className="contents">
+      <div data-marca-org="" {...atributosDaAparencia(aparencia)} className="contents">
+        <EstiloDaAparencia css={cssDaAparencia} />
         <EstiloDaMarcaDaOrganizacao css={cssDaOrganizacao} />
         <EstiloDoTemaDaExtensao css={cssDoTemaDaExtensao} />
         {/* As faixas medidas: a casca e o Inbox descontam a altura delas. */}
