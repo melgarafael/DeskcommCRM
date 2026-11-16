@@ -16,6 +16,7 @@
 import type { ModuloOpcional } from "@/lib/instalacao/modulos";
 import type { CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
 import { TOOLS_AGENDAMENTO } from "./agendamento";
+import { TOOLS_AMIGO } from "./amigo";
 import { TOOLS_ATENDIMENTO } from "./atendimento";
 import { TOOLS_COMERCIO } from "./comercio";
 import { TOOLS_DADOS_EXTERNOS } from "./dados-externos";
@@ -35,6 +36,7 @@ export { declararTools } from "./tipos";
 
 export const TOOL_CATALOG: ReadonlyArray<McpToolCatalogEntry> = [
   ...TOOLS_AGENDAMENTO,
+  ...TOOLS_AMIGO,
   ...TOOLS_ATENDIMENTO,
   ...TOOLS_ESCALACAO,
   ...TOOLS_FUNIL,
