@@ -69,6 +69,8 @@
  */
 import type pg from 'pg';
 
+import { instanteDoBanco } from '@/lib/tempo/agora';
+
 import { insertInboxItem } from '../db/repository';
 import type { Logger } from '../obs/logger';
 import type { Gate, GateContext, GateVerdict } from '../guardrails/before-send';
@@ -339,18 +341,26 @@ export async function carregarQuadroDoInterlocutor(
     );
     // A consulta vem do mais novo para o mais velho (o índice que existe); a
     // régua lê em ordem cronológica — a cadência depende disso.
-    const amostra: MensagemDaAmostra[] = rows
-      .map((r) => ({
-        direction: r.direction === 'inbound' ? ('inbound' as const) : ('outbound' as const),
+    //
+    // O carimbo passa pela borda canônica (`instanteDoBanco`, a régua ÚNICA do
+    // repo para as duas formas em que a coluna chega: `Date` do driver e string
+    // ISO do PostgREST/jsonb). Um `instanceof Date` local seria uma SEGUNDA régua
+    // para a mesma coluna — e o invariante
+    // `reguas-de-data-veem-o-date-do-driver` cobra exatamente isso. Carimbo
+    // ilegível fica FORA da amostra: inventar cadência com hora inválida seria
+    // pior que não ver a mensagem.
+    const amostra: MensagemDaAmostra[] = [];
+    for (const r of rows) {
+      const instante = instanteDoBanco(r.sent_at);
+      if (instante === null) continue;
+      amostra.push({
+        direction: r.direction === 'inbound' ? 'inbound' : 'outbound',
         body: r.body,
-        // O driver entrega `Date`; o PostgREST/jsonb entrega string ISO. Aceitar
-        // as duas formas aqui é a borda desta leitura — carimbo ilegível não pode
-        // inventar cadência.
-        sentAt: r.sent_at instanceof Date ? r.sent_at : new Date(String(r.sent_at)),
+        sentAt: new Date(instante),
         sentVia: r.sent_via ?? null,
-      }))
-      .filter((m) => !Number.isNaN(m.sentAt.getTime()))
-      .reverse();
+      });
+    }
+    amostra.reverse();
     const { pistas, familias } = avaliarInterlocutor(amostra);
     return {
       naoConferido: false,
