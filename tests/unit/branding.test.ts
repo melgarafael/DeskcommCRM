@@ -1119,6 +1119,20 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "placeholder do campo de base URL de gateway OpenAI-compatible na tela de provedores: amostra do formato aceito.",
   },
+  // Refs #4727: o #4713 abriu um SEGUNDO campo de base URL na mesma tela (o do
+  // serviço de transcrição da própria organização, `modeloLivre`) e o
+  // placeholder dele diz `https://seu-gateway.exemplo/v1`. Medi a natureza:
+  // é amostra de FORMATO no campo em que a organização digita o endereço dela —
+  // não é destino de chamada (o código nunca fala com esse host; o endereço real
+  // vem do binding salvo), não é painel de fornecedor e não é domínio nosso, de
+  // contribuidor nem de cliente. Mesma classe do `mi-gateway.ejemplo.com` do
+  // campo vizinho, e é por isso que `exemplo`/`ejemplo` ficam FORA de
+  // TLDS_RESERVADOS: amostra que chega à tela se declara, não se apaga.
+  "seu-gateway.exemplo": {
+    categoria: "AMOSTRA",
+    motivo:
+      "placeholder do campo de base URL do serviço de transcrição compatível com OpenAI (`app/app/ai/providers/_components/PainelDeProvedores.tsx`, #4713): mostra o FORMATO do endereço que a organização vai digitar. O produto não faz requisição para este host — o endereço que vale é o do binding salvo por ela —, e ele não existe de verdade: é amostra de tela, no mesmo sentido do `mi-gateway.ejemplo.com` do campo vizinho.",
+  },
   "meet.jit.si": {
     categoria: "AMOSTRA",
     motivo:
@@ -1484,6 +1498,12 @@ describe("catraca de host de terceiro no código que embarca", () => {
       // protocolo manda. Entrou aqui porque a régua nova do #914 passou a
       // enxergá-lo, e não porque o produto ganhou host novo.
       "s.whatsapp.net",
+      // Decisão escrita (Refs #4727): amostra de FORMATO no segundo campo de
+      // base URL da tela de provedores, o do serviço de transcrição da própria
+      // organização (#4713). Mesma classe do `mi-gateway.ejemplo.com` acima:
+      // a organização digita o endereço dela, o produto nunca fala com este
+      // host, e o host não existe (`.exemplo` é nome de exemplo, não destino).
+      "seu-gateway.exemplo",
       // Decisão escrita (spec 24, auditoria de site): assinatura de construtor
       // (Google Sites) — nunca chamada, nunca exibida.
       "sites.google.com",
