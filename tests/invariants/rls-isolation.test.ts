@@ -909,6 +909,14 @@ export const TABLES = [
   // leitura é org-scoped E exige o par conversa/organização. A escrita é só do
   // servidor; quem mede isso é `pagamento-recebimentos-escrita-so-do-servidor.test.ts`.
   "pagamento_recebimentos",
+  // ⚠️ As quatro tabelas das agências (migrations 9373–9379, #4034) NÃO entram
+  // nesta lista, pelo mesmo motivo de `cobranca_assinaturas`: a leitura de
+  // `agencia_configuracoes` e `agencia_clientes` só existe para o `admin` direto
+  // de agência habilitada COM o módulo `agencias` ligado, e `agencia_sessoes` e
+  // `agencia_criacoes` não têm policy nenhuma (só o servidor). O `agent` semeado
+  // aqui leria 0 nas duas direções, e o controle positivo falharia por ACERTO. A
+  // prova, com TRÊS organizações (agência, cliente vinculado e cliente sem
+  // vínculo), vive em `tests/invariants/agencias.test.ts`.
 ] as const;
 
 describe("RLS tenant isolation (fn_user_org_ids pattern)", () => {

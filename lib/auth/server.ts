@@ -380,6 +380,31 @@ const suporteDaSessao = cache(
   },
 );
 
+/**
+ * As agências habilitadas que esta pessoa administra (doc 321). A RLS de
+ * `agencia_configuracoes` só devolve linha a admin direto de agência habilitada
+ * COM o módulo `agencias` ligado (`fn_agencia_pode_gerir`): desligado, a mesma
+ * consulta volta vazia, e quem decide é o banco, não esta função. Falha = lista
+ * vazia, e o resto da sessão segue: o módulo opcional não derruba todas as telas
+ * de quem não é agência.
+ */
+async function agenciasQueAdministro(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("agencia_configuracoes")
+    .select("organization_id")
+    .eq("habilitada", true);
+  if (error) {
+    logger.warn("[auth] agências da pessoa: leitura falhou — tratando como nenhuma", {
+      code: error.code,
+      message: error.message,
+    });
+    return [];
+  }
+  return (data ?? []).map((a) => a.organization_id);
+}
+
 export const loadAuthUser = cache(async (): Promise<AuthUser | null> => {
   const {
     supabase,
@@ -434,12 +459,13 @@ export const loadAuthUser = cache(async (): Promise<AuthUser | null> => {
   //
   // A precedência dos erros é a MESMA: falha de permissão estoura primeiro
   // (vem do `Promise.all`) e a do acompanhamento é relançada logo abaixo.
-  const [permissoes, leituraDoSuporte] = await Promise.all([
+  const [permissoes, leituraDoSuporte, agencyOrgIds] = await Promise.all([
     permissoesDoUsuario(user.id, supabase),
     suporteDaSessao(user.id, sessao, supabase).then(
       (contexto) => ({ ok: true as const, contexto }),
       (erro: unknown) => ({ ok: false as const, erro }),
     ),
+    agenciasQueAdministro(supabase),
   ]);
 
   const { paRow, memberships } = permissoes;
@@ -470,6 +496,7 @@ export const loadAuthUser = cache(async (): Promise<AuthUser | null> => {
     locale,
     idioma,
     timezone,
+    agency_org_ids: agencyOrgIds,
     organizations: memberships,
     support,
   };
