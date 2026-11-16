@@ -25043,7 +25043,8 @@ as $$
     'conversation.transferred',
     'whatsapp.chat_id_not_recognized',
     'whatsapp.conversation_mark_failed',
-    -- contato, lead, organização e plataforma ('lead.reopened' saiu na 0534: ele ganhou consumidor)
+    -- contato, lead, organização e plataforma
+    -- ('lead.reopened' saiu na 0534 e 'lead.updated' na 9383: ganharam consumidor)
     'contact.anonymized',
     'contact.created',
     'contact.deleted',
@@ -25054,7 +25055,6 @@ as $$
     'lead.bulk_deleted',
     'lead.bulk_tagged',
     'lead.risk_backlog_seeded',
-    'lead.updated',
     'org.updated',
     'tenant.onboarded',
     'tenant.reactivated',
@@ -78672,6 +78672,256 @@ update storage.buckets
      'text/xml'
    ]
  where id = 'crm-materiais';
+
+-- ---- tabela de valores de negociação: partida e limite por procedimento (migration 9386, #4612) ----
+-- Espelho de supabase/migrations/20261115043147_9386_tabela_de_valores_negociacao.sql.
+-- manifest: Tabela de valores de negociação — por organização, procedimento com código e descrição, valor em US e em reais com valor de PARTIDA e valor LIMITE (a faixa é conferida pelo próprio banco), mais o registro de cada importação por chave do arquivo, para a mesma planilha não gravar duas vezes.
+--
+-- Fatia 1 (issue #4612): IMPORTAR e MODELAR. A conversa de negociação do
+-- agente, o histórico de contrapropostas e a aprovação acima do limite ficam
+-- para as fatias seguintes; nada aqui fala com o agente.
+--
+-- ─── Por que uma tabela, e não o prompt ──────────────────────────────────
+-- Uma tabela de credenciamento tem centenas ou milhares de linhas. No prompt
+-- não cabe (estoura contexto, custa a cada turno) e o modelo erra ao procurar
+-- valor em texto longo. Aqui cada procedimento é uma linha com duas pontas de
+-- preço, e a leitura é por código.
+--
+-- ─── Por que o LIMITE mora no banco e não na tela ────────────────────────
+-- O limite é a informação que não pode vazar para o cliente e que não pode ser
+-- furada por um import errado. Por isso as duas cercas estão no Postgres, e não
+-- só no TypeScript: `faixa_*` recusa limite menor que a partida, `par_*` recusa
+-- uma ponta sem a outra (moeda pela metade), e `algum_valor` recusa a linha que
+-- não tem preço nenhum.
+--
+-- ─── Por que centavos inteiros ───────────────────────────────────────────
+-- O repo guarda dinheiro em centavos (`value_cents`, `teto_ia_usd_cents`), e
+-- comparar `numeric` em ponto flutuante é a classe de defeito que faz
+-- "10,10 + 20,20 != 30,30". US também entra em centésimos: a unidade de
+-- serviço é cotada com duas casas, igual ao real.
+
+create table if not exists public.tabelas_de_valores (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  nome text not null,
+  descricao text,
+  ativa boolean not null default true,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint tabelas_de_valores_nome_check check (btrim(nome) <> ''),
+  -- Alvo da FK composta das filhas: a linha de uma tabela não pode nascer com
+  -- organização diferente da organização da tabela.
+  constraint tabelas_de_valores_id_org_unico unique (id, organization_id)
+);
+
+create index if not exists idx_tabelas_de_valores_org
+  on public.tabelas_de_valores (organization_id, ativa, updated_at desc);
+
+comment on table public.tabelas_de_valores is
+  'Tabela de valores de negociação de uma organização (credenciamento, fornecedores, serviços com tabela). Cada procedimento vive em tabela_de_valores_itens, com valor de partida e valor limite.';
+
+create table if not exists public.tabela_de_valores_itens (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  tabela_id uuid not null,
+  codigo text not null,
+  descricao text not null,
+  -- US (unidade de serviço) e R$ lado a lado: a mesma linha pode ter as duas
+  -- moedas, só uma, ou nenhuma das duas — desde que exista ao menos uma.
+  valor_us_partida_cents bigint,
+  valor_us_limite_cents bigint,
+  valor_brl_partida_cents bigint,
+  valor_brl_limite_cents bigint,
+  unidade text,
+  observacao text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint tabela_de_valores_itens_tabela_fk
+    foreign key (tabela_id, organization_id)
+    references public.tabelas_de_valores (id, organization_id) on delete cascade,
+  constraint tabela_de_valores_itens_codigo_check check (btrim(codigo) <> ''),
+  constraint tabela_de_valores_itens_descricao_check check (btrim(descricao) <> ''),
+  -- FAIXA, moeda por moeda. A partida é o que a empresa oferece; o limite é até
+  -- onde ela aceita ir. Limite abaixo da partida não é desconto, é erro de
+  -- digitação: o import recusa a linha e o banco recusa o INSERT.
+  constraint tabela_de_valores_itens_faixa_us
+    check (valor_us_limite_cents >= valor_us_partida_cents),
+  constraint tabela_de_valores_itens_faixa_brl
+    check (valor_brl_limite_cents >= valor_brl_partida_cents),
+  -- As duas pontas da moeda existem juntas: meia faixa (partida sem limite, ou
+  -- limite sem partida) não se sabe negociar.
+  constraint tabela_de_valores_itens_par_us
+    check ((valor_us_partida_cents is null) = (valor_us_limite_cents is null)),
+  constraint tabela_de_valores_itens_par_brl
+    check ((valor_brl_partida_cents is null) = (valor_brl_limite_cents is null)),
+  constraint tabela_de_valores_itens_algum_valor
+    check (valor_us_partida_cents is not null or valor_brl_partida_cents is not null),
+  constraint tabela_de_valores_itens_nao_negativo
+    check (
+      coalesce(valor_us_partida_cents, 0) >= 0
+      and coalesce(valor_us_limite_cents, 0) >= 0
+      and coalesce(valor_brl_partida_cents, 0) >= 0
+      and coalesce(valor_brl_limite_cents, 0) >= 0
+    ),
+  -- UM procedimento por tabela. É o que faz a mesma planilha importada duas
+  -- vezes não duplicar procedimento, mesmo quando a chave do arquivo não bate
+  -- (arquivo salvo de novo, outra exportação do Excel).
+  constraint tabela_de_valores_itens_codigo_unico unique (tabela_id, codigo)
+);
+
+create index if not exists idx_tabela_de_valores_itens_tabela
+  on public.tabela_de_valores_itens (tabela_id, codigo);
+create index if not exists idx_tabela_de_valores_itens_org
+  on public.tabela_de_valores_itens (organization_id, updated_at desc);
+
+comment on table public.tabela_de_valores_itens is
+  'Procedimento de uma tabela de valores: código, descrição, valor de partida e valor limite em US e em R$. A faixa e a paridade das pontas são constraints; o limite nunca é menor que a partida.';
+
+-- O REGISTRO DE CADA IMPORTAÇÃO, pela chave do arquivo.
+--
+-- Importar a mesma planilha duas vezes é quase sempre o mesmo clique dado duas
+-- vezes (duplo envio, aba recarregada), não duas intenções. A chave é o SHA-256
+-- do arquivo, e o `unique` abaixo é a cerca: o segundo pedido não grava, e a
+-- rota responde "esta planilha já entrou" com as contagens da primeira.
+create table if not exists public.tabela_de_valores_importacoes (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  tabela_id uuid not null,
+  chave_do_arquivo text not null,
+  nome_do_arquivo text,
+  linhas_lidas integer not null default 0,
+  linhas_aceitas integer not null default 0,
+  linhas_recusadas integer not null default 0,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  constraint tabela_de_valores_importacoes_tabela_fk
+    foreign key (tabela_id, organization_id)
+    references public.tabelas_de_valores (id, organization_id) on delete cascade,
+  constraint tabela_de_valores_importacoes_chave_check check (btrim(chave_do_arquivo) <> ''),
+  constraint tabela_de_valores_importacoes_mesmo_arquivo
+    unique (tabela_id, chave_do_arquivo)
+);
+
+create index if not exists idx_tabela_de_valores_importacoes_org
+  on public.tabela_de_valores_importacoes (organization_id, created_at desc);
+
+comment on table public.tabela_de_valores_importacoes is
+  'Uma linha por importação confirmada de planilha: chave SHA-256 do arquivo, nome e as contagens. O unique (tabela_id, chave_do_arquivo) impede a mesma planilha de entrar duas vezes.';
+
+-- ═══ RLS ═══
+-- Leitura da tabela e dos itens pela equipe da própria organização (ou admin de
+-- plataforma). ESCRITA SÓ PELO SERVIDOR (service_role): quem confirma a
+-- importação é a rota, que filtra `organization_id` a partir da autenticação.
+-- O registro de importações nem leitura tem policy — é livro do servidor.
+alter table public.tabelas_de_valores enable row level security;
+alter table public.tabela_de_valores_itens enable row level security;
+alter table public.tabela_de_valores_importacoes enable row level security;
+
+drop policy if exists tenant_isolation_tabelas_de_valores_select on public.tabelas_de_valores;
+create policy tenant_isolation_tabelas_de_valores_select
+  on public.tabelas_de_valores
+  for select to authenticated using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists tenant_isolation_tabela_de_valores_itens_select on public.tabela_de_valores_itens;
+create policy tenant_isolation_tabela_de_valores_itens_select
+  on public.tabela_de_valores_itens
+  for select to authenticated using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+revoke all on public.tabelas_de_valores from anon, authenticated;
+revoke all on public.tabela_de_valores_itens from anon, authenticated;
+revoke all on public.tabela_de_valores_importacoes from public, anon, authenticated;
+grant select on public.tabelas_de_valores to authenticated;
+grant select on public.tabela_de_valores_itens to authenticated;
+grant all on public.tabelas_de_valores to service_role;
+grant all on public.tabela_de_valores_itens to service_role;
+grant all on public.tabela_de_valores_importacoes to service_role;
+
+notify pgrst, 'reload schema';
+
+-- ---- a cópia do anexo do card clonado sabe de qual anexo veio (migration 9387, #4544) ----
+-- Espelho de supabase/migrations/20261115043256_9387_anexo_copiado_do_card_de_origem.sql.
+--
+-- O card criado em outro funil leva os anexos do card de origem, e a cópia ganha
+-- linha PRÓPRIA sob o prefixo do card novo: o schema prende `storage_path` ao
+-- `lead_id` da linha (`crm_lead_attachments_storage_path_check`, bloco da 0731)
+-- e `trg_crm_lead_attachments_caminho_imutavel` o torna imutável, então duas
+-- linhas de cards diferentes não podem apontar para o mesmo objeto — o objeto é
+-- duplicado pelo Storage (`copy`, server-side).
+--
+-- Esta coluna é o VÍNCULO com a linha de origem e a chave da IDEMPOTÊNCIA: sem
+-- ela, repetir a cópia duplicava o anexo, e o ramo de "a continuação já existe"
+-- da automação não repetia nada — uma falha de Storage na primeira execução
+-- deixava o voucher fora do card de pós-venda para sempre.
+--
+-- `on delete set null`: apagar a origem não pode apagar o voucher do pós-venda.
+-- Coluna nova e nula: não há dado antigo que viole o índice abaixo.
+alter table public.crm_lead_attachments
+  add column if not exists clonado_do_attachment_id uuid
+    references public.crm_lead_attachments(id) on delete set null;
+
+comment on column public.crm_lead_attachments.clonado_do_attachment_id is
+  'Anexo do card de ORIGEM que esta linha reproduz (#4544): preenchido só na cópia feita na clonagem para outro funil. Nulo em anexo que subiu direto no card.';
+
+-- Um par (card, anexo de origem) aparece uma vez só. Parcial porque `null` é o
+-- estado normal de todo anexo que subiu direto no card.
+create unique index if not exists crm_lead_attachments_clonado_unico
+  on public.crm_lead_attachments(lead_id, clonado_do_attachment_id)
+  where clonado_do_attachment_id is not null;
+
+-- ═══ As cópias feitas ANTES desta coluna (v1.111.0, #4569) ═══
+--
+-- A cópia de anexos entrou na v1.111.0 sem o vínculo. Sem este passo, a
+-- primeira vez que a automação repusesse anexos numa continuação criada
+-- naquela versão, ela copiaria de novo cada arquivo — a duplicação que esta
+-- migration existe para impedir. Aqui cada cópia antiga é pareada com o anexo
+-- de origem pelo card de origem que o destino declara
+-- (`source_metadata.clonado_de.lead_id`, gravado pelo clone) e pelo arquivo
+-- (`field_key`, `file_name`, `file_size`, `mime_type`).
+--
+-- Um para um: cada cópia recebe no máximo uma origem, e cada origem no máximo
+-- uma cópia por card (`rd`/`ro`), então o índice único acima não é violado.
+-- ponytail: dois anexos IDÊNTICOS (mesmo campo, nome, tamanho e tipo) na mesma
+-- origem: só o primeiro par é ligado, e o outro seria copiado uma vez mais na
+-- reposição. Parear por conteúdo exigiria ler o Storage.
+-- Idempotente: só toca linha com o vínculo nulo, e só liga par ainda livre.
+with destino as materialized (
+  select d.id, d.lead_id, d.organization_id, d.field_key, d.file_name, d.file_size,
+         d.mime_type, d.created_at,
+         (l.source_metadata -> 'clonado_de' ->> 'lead_id')::uuid as origem_lead_id
+    from public.crm_lead_attachments d
+    join public.crm_leads l on l.id = d.lead_id and l.organization_id = d.organization_id
+   where d.clonado_do_attachment_id is null
+     and (l.source_metadata -> 'clonado_de' ->> 'lead_id')
+         ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+),
+par as (
+  select d.id as destino_id, o.id as origem_id, d.lead_id,
+         row_number() over (partition by d.id order by o.created_at, o.id) as rd,
+         row_number() over (partition by d.lead_id, o.id order by d.created_at, d.id) as ro
+    from destino d
+    join public.crm_lead_attachments o
+      on o.organization_id = d.organization_id
+     and o.lead_id = d.origem_lead_id
+     and o.field_key = d.field_key
+     and o.file_name = d.file_name
+     and o.file_size = d.file_size
+     and o.mime_type = d.mime_type
+)
+update public.crm_lead_attachments a
+   set clonado_do_attachment_id = p.origem_id
+  from par p
+ where a.id = p.destino_id
+   and p.rd = 1
+   and p.ro = 1
+   and not exists (
+     select 1 from public.crm_lead_attachments x
+      where x.lead_id = p.lead_id and x.clonado_do_attachment_id = p.origem_id
+   );
 
 -- ---- aparência da organização: template visual e ajustes (migration 9388) ----
 -- A única escritora de `organizations.settings.aparencia` (tela Configurações ›
