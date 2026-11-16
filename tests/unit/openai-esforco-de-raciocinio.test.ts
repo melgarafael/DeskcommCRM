@@ -36,8 +36,13 @@ function interceptarSaida(): { urls: string[]; corpos: Array<Record<string, unkn
   return { urls, corpos };
 }
 
-async function disparar(model: LanguageModel): Promise<void> {
-  await generateText({ model, prompt: "oi", maxRetries: 0 }).catch(() => {});
+async function disparar(
+  model: LanguageModel,
+  providerOptions?: Parameters<typeof generateText>[0]["providerOptions"],
+): Promise<void> {
+  await generateText({ model, prompt: "oi", maxRetries: 0, ...(providerOptions ? { providerOptions } : {}) }).catch(
+    () => {},
+  );
 }
 
 describe("knob ligado: a chamada da OpenAI leva reasoning.effort", () => {
@@ -154,6 +159,23 @@ describe("linha 5: o knob vira o esforço mais rápido que a família aceita", (
     const { corpos } = interceptarSaida();
     await disparar(createDefaultRegistry({ openaiReasoningEffort: null })["openai"]!("sk-de-teste", "gpt-5-nano"));
     expect(corpos[0]?.reasoning).toBeUndefined();
+  });
+});
+
+describe("chamada que já pediu esforço não é sobrescrita pelo knob", () => {
+  // O knob é o padrão da INSTALAÇÃO, não uma ordem por cima de quem pediu: a
+  // opção `reasoning` de `runModelCall` chega ao corpo como `reasoning.effort`
+  // e tem de sobreviver — senão um OPENAI_REASONING_EFFORT=high faz as
+  // classificações, que pedem `none`, voltarem a pensar.
+  it.each([
+    ["gpt-5-nano", "none"],
+    ["gpt-5.4-nano", "minimal"],
+  ] as const)("%s: o effort da chamada (high) vence o knob %s", async (modelo, knob) => {
+    const { corpos } = interceptarSaida();
+    await disparar(createDefaultRegistry({ openaiReasoningEffort: knob })["openai"]!("sk-de-teste", modelo), {
+      openai: { reasoningEffort: "high" },
+    });
+    expect(corpos[0]?.reasoning).toMatchObject({ effort: "high" });
   });
 });
 
