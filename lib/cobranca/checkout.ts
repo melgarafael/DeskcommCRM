@@ -22,7 +22,7 @@ import { limiteDoProvedorPorOrg, recusaDoProvedor } from "@/lib/cobranca/falhas"
 import { adaptador, modoDoProvedor } from "@/lib/cobranca/provedores";
 import { ErroDoProvedor } from "@/lib/cobranca/provedores/contrato";
 import { desistirDoAjuste } from "@/lib/cobranca/troca";
-import type { EstadoDaAssinatura, Intervalo, ProvedorDeCobranca } from "@/lib/cobranca/vocabulario";
+import type { EstadoDaAssinatura, Intervalo, Moeda, ProvedorDeCobranca } from "@/lib/cobranca/vocabulario";
 import { logger } from "@/lib/logger";
 
 const RESERVA_MS = 2 * 60_000;
@@ -60,6 +60,8 @@ export async function gerarLinkDePagamento(
     requestId: string;
     /** O dono da instalação agindo sobre a empresa: o audit registra o bypass de RLS. */
     comoDono: boolean;
+    /** Continuação do cadastro: não cobrar outro plano se ele mudou entre leituras. */
+    planoEsperado?: string;
   },
 ): Promise<ResultadoDoCheckout> {
   const { orgId } = p;
@@ -83,6 +85,9 @@ export async function gerarLinkDePagamento(
   if (error) return recusar(500, "internal_error", "Não foi possível ler a assinatura.");
   const lida = data as Lida | null;
   if (!lida) return recusar(404, "not_found", "Sua empresa não tem plano de cobrança.");
+  if (p.planoEsperado && lida.plano_id !== p.planoEsperado) {
+    return recusar(409, "state_conflict", "O plano mudou. Confira a escolha antes de continuar para o pagamento.");
+  }
 
   const agora = new Date();
   const expira = lida.checkout_expira_em === null ? null : Date.parse(lida.checkout_expira_em);
@@ -117,6 +122,7 @@ export async function gerarLinkDePagamento(
     .from("cobranca_assinaturas")
     .update({ checkout_url: null, checkout_expira_em: reserva, checkout_sessao_id: null })
     .eq("organization_id", orgId)
+    .eq("plano_id", lida.plano_id)
     .or(`checkout_expira_em.is.null,checkout_expira_em.lt."${agora.toISOString()}"`)
     .select("organization_id")
     .maybeSingle();
@@ -165,6 +171,15 @@ export async function gerarLinkDePagamento(
       });
       return recusar(500, "internal_error", "Não foi possível gerar o link de pagamento. Tente de novo em instantes.");
     }
+    // Só metadados técnicos: nunca Error, description, corpo, URL ou credencial.
+    logger.warn("cobranca: checkout recusado pelo provedor", {
+      requestId: p.requestId,
+      organizationId: orgId,
+      provedor,
+      status: e.status,
+      codigo: /^[a-z][a-z0-9_]{0,63}$/i.test(e.codigo) ? e.codigo : "codigo_nao_publicavel",
+      transitorio: e.transitorio,
+    });
     if (e.codigo === "invalid_cpfCnpj") {
       // Dígitos certos e o Asaas recusou (o CNPJ alfanumérico, por exemplo): é o
       // documento, e quem clicou consegue resolver. Nunca o 502 "fale com quem administra".
@@ -221,11 +236,11 @@ async function gerarCheckout(
   }
   const [org, plano] = await Promise.all([
     admin.from("organizations").select("legal_name, display_name").eq("id", orgId).maybeSingle(),
-    admin.from("cobranca_planos").select("id, nome, preco_cents, intervalo").eq("id", lida.plano_id).maybeSingle(),
+    admin.from("cobranca_planos").select("id, nome, preco_cents, moeda, intervalo").eq("id", lida.plano_id).maybeSingle(),
   ]);
   if (org.error || plano.error || !plano.data) throw new Error("cobranca: empresa ou plano ilegível no checkout");
   const nomes = org.data as { legal_name: string | null; display_name: string } | null;
-  const p = plano.data as { id: string; nome: string; preco_cents: number; intervalo: Intervalo };
+  const p = plano.data as { id: string; nome: string; preco_cents: number; moeda: Moeda; intervalo: Intervalo };
   const clienteRef =
     lida.provedor_cliente_id ??
     (await ad.garantirCliente({ id: orgId, nome: nomes?.legal_name || nomes?.display_name || orgId, email: quem.email, documento: quem.documento }));
@@ -247,7 +262,7 @@ async function gerarCheckout(
   const inicio = await ad.iniciarAssinatura({
     clienteRef,
     orgId,
-    plano: { id: p.id, nome: p.nome, precoCents: p.preco_cents, intervalo: p.intervalo },
+    plano: { id: p.id, nome: p.nome, precoCents: p.preco_cents, moeda: p.moeda, intervalo: p.intervalo },
     trialAte: lida.estado === "trial" && lida.trial_ate ? new Date(lida.trial_ate) : null,
     urlDeVolta: quem.urlDeVolta,
     chaveIdempotencia: quem.chaveIdempotencia,

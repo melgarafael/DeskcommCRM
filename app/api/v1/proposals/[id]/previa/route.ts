@@ -2,7 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
-import { fail } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { sePropostasDesligadas } from "@/lib/propostas/porta";
@@ -69,7 +69,7 @@ export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
   // não recusa aqui: o PDF sai com "[a definir]" no lugar do que falta.
   if (!resultado.ok) return fail("validation_failed", resultado.motivo, 422, { requestId });
 
-  return new Response(new Uint8Array(resultado.buffer), {
+  return comIdDaRequisicao(new Response(new Uint8Array(resultado.buffer), {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",
@@ -77,5 +77,5 @@ export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
       "Cache-Control": "no-store",
       "X-Request-Id": requestId,
     },
-  });
+  }), requestId);
 }

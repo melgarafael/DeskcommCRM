@@ -32,10 +32,16 @@ import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { testRunSchema } from "@/lib/ai/agents/validation";
+import {
+  testRunSchema,
+  LIMITE_DO_HISTORICO_EM_MENSAGENS,
+  LIMITE_DO_HISTORICO_EM_CARACTERES,
+} from "@/lib/ai/agents/validation";
+import { perguntaDoTeste, respostaDoTeste } from "@/lib/ai/agents/texto-do-teste";
 import { avaliarRespostaDeTeste } from "@/lib/ai/agents/avaliar-resposta-de-teste";
 import { ehFalhaDoBanco } from "@/lib/ai/agents/falha-do-banco";
 import { testAgentVersion } from "@/lib/agent-engine/agent/sandbox";
+import { codigo } from "@/lib/agent-engine/agent/recibo-do-traco";
 import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -136,6 +142,36 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   } catch {
     return fail("invalid_request", t("Body JSON inválido."), 400, { requestId });
   }
+  /**
+   * #4424 — o histórico do teste é recusado ANTES de qualquer trabalho, com uma
+   * frase legível e 400 (o corpo está semanticamente errado, não malformado em
+   * um campo). Os limites são os mesmos que o schema e o painel usam: sem eles,
+   * cada turno reenviaria a conversa inteira e o custo do teste cresceria sem
+   * teto. `sample_message` não entra na conta — history é só o PASSADO.
+   */
+  const historicoPedido = (raw as { history?: unknown } | null)?.history;
+  if (Array.isArray(historicoPedido)) {
+    const caracteres = historicoPedido.reduce<number>((total, m) => {
+      const corpo =
+        m && typeof m === "object" && "body" in m && typeof m.body === "string"
+          ? m.body.trim().length
+          : 0;
+      return total + corpo;
+    }, 0);
+    if (
+      historicoPedido.length > LIMITE_DO_HISTORICO_EM_MENSAGENS ||
+      caracteres > LIMITE_DO_HISTORICO_EM_CARACTERES
+    ) {
+      return fail(
+        "invalid_request",
+        t(
+          "O histórico da conversa passou do limite: até 30 mensagens e 20.000 caracteres. Recomece a conversa para seguir.",
+        ),
+        400,
+        { requestId },
+      );
+    }
+  }
   const parsed = testRunSchema.safeParse(raw);
   if (!parsed.success) {
     return fail("validation_failed", t("Campos inválidos."), 422, {
@@ -180,6 +216,13 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       outbound_message_id: null,
       status: "running",
       is_dry_run: true,
+      // #4426: a PERGUNTA entra no nascimento da linha. É o que a aba
+      // "Execuções" não tinha: o custo do teste ficava registrado e o que se
+      // perguntou sumia com o próximo teste (`setResult(null)` no painel).
+      // A resposta vem no fechamento, logo abaixo — e se o turno falhar, esta
+      // metade fica: a pergunta que quebrou o teste é justamente a que se quer
+      // reler.
+      input_text: perguntaDoTeste(parsed.data.sample_message),
       started_at: startedAt.toISOString(),
     })
     .select("id")
@@ -198,14 +241,20 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       versionId: vid,
       runId: runRow.id,
       sampleMessage: parsed.data.sample_message,
+      history: parsed.data.history,
       sampleContact: parsed.data.sample_contact,
+      sampleTags: parsed.data.sample_tags,
       channelId: version.channel_session_id,
     });
     const finalText = result.candidates.map((c) => c.body).join("\n\n");
     // #2490 — mídia pendente é teste REPROVADO, mesmo com candidato na mão: o
     // `send_message` que falhou a foto devolveu erro ao modelo, e aprovar a tela
     // com aquela resposta seria exatamente o "passou sem preparar" da issue.
-    const midiaPendente = result.midia.some((m) => m.falha !== undefined);
+    const midiaPendente =
+      result.midia.some((m) => m.falha !== undefined) ||
+      // #4129 — o material da empresa entra na MESMA régua: dry-run com arquivo
+      // não preparado é teste reprovado, nunca "aprovado com pendência".
+      result.materiais.some((m) => m.falha !== undefined);
     resultPayload = {
       run_id: runRow.id,
       status: result.candidates.length && !midiaPendente ? "ok" : "blocked",
@@ -213,6 +262,9 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       final_text: finalText,
       tool_calls: result.proposals,
       ...result,
+      // #4424 — o `erro` de cada ferramenta é texto livre do coletor; a tela
+      // recebe o mesmo vocabulário fechado do leitor do traço (`codigo()`).
+      ferramentas: (result.ferramentas ?? []).map((f) => ({ ...f, erro: codigo(f.erro) })),
       stub: process.env.INTERNAL_AGENT_RUN_STUB === "true",
       guardrails: avaliarRespostaDeTeste(finalText, result.midia),
     };
@@ -227,6 +279,11 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       status: "completed",
       completed_at: new Date().toISOString(),
       latency_ms: Date.now() - startedAt.getTime(),
+      // #4426: a RESPOSTA final, o MESMO texto que o painel mostrou ao vivo.
+      // Antes ela só existia no corpo da resposta HTTP: quem abrisse a linha
+      // depois via tokens, custo e "Sem trace disponível." — o histórico
+      // guardava o preço do teste e não o que ele respondeu.
+      output_text: respostaDoTeste(finalText),
       // `steps_count`, `tokens_in`, `tokens_out` e `cost_cents` seguem em zero
       // de propósito: o turno de prévia não devolve essas contagens à rota, e
       // gravar `candidates.length` no lugar de passos seria um número errado com

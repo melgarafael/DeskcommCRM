@@ -192,7 +192,8 @@ fusão (item B5).
      `fromMe`) daquela conversa. O endereço já está gravado na própria mensagem: o
      `external_id` do recebido traz o chat (`chatIdFromWaMessageId`, usado hoje por
      `enderecoDaMensagem` em `lib/channels/adapters/waha.ts`). Nada novo é guardado. Sem mensagem
-     recebida na conversa → a regra de hoje (`wa_lid`, depois principal).
+     recebida na conversa, ou com o número dela fora da ficha → a regra de hoje (`wa_lid`, depois
+     principal). `@lid` não traz número para comparar e segue valendo.
    - Precisam seguir essa regra, **todos iguais**: `lib/waha/send.ts` (`resolveWahaChatId`),
      `lib/ai/runtime/agent.ts`, `app/api/v1/messages/_handler.ts`, `app/api/v1/messages/[id]/route.ts`,
      `lib/messaging/presenca.ts` e o reenvio de `lib/agent-engine/edge/crm/session-reconciler.ts`
@@ -239,7 +240,9 @@ fusão (item B5).
    extras entram — lidas **antes** de apagar — nos três pontos que hoje usam só o principal
    (C18): apagar candidatos da prospecção, redigir mensagens de grupo e a busca de mensagens de
    grupo da exportação. A exportação do titular inclui os extras com tipo, WhatsApp, rótulo e
-   `lid` (junto das colunas da ficha que `lib/lgpd/export-collector.ts` já exporta).
+   `lid` (junto das colunas da ficha que `lib/lgpd/export-collector.ts` já exporta). A marca de
+   `lgpd_marcas_de_apagamento` também é por telefone: uma linha para o principal e uma para cada
+   extra, gravadas antes de os extras saírem (migration 9241).
 9. **IA.** `crm_get_contact` (`lib/mcp/tools/contacts.ts`) devolve os números com tipo e
    WhatsApp. A ferramenta de proposta de dado (`contact_field_proposals`) **não** ganha telefone
    extra nesta spec.

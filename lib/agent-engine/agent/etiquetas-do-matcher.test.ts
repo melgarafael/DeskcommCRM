@@ -55,6 +55,12 @@ describe('etiquetasParaOMatcher', () => {
     expect(sql).toContain('c.organization_id = cv.organization_id');
   });
 
+  it('(c1) lê só a conversa e o contato: negócio não entra na seleção', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [{ tags: ['odonto'] }] });
+    await etiquetasParaOMatcher(poolCom(query), 'org-1', 'conv-1', comEtiqueta, undefined, logFalso());
+    expect((query.mock.calls[0] as [string, unknown[]])[0]).not.toContain('crm_leads');
+  });
+
   it('(c2) linha sem etiquetas (null) → []', async () => {
     const query = vi.fn().mockResolvedValue({ rows: [{ tags: null }] });
     const out = await etiquetasParaOMatcher(poolCom(query), 'org-1', 'conv-1', comEtiqueta, undefined, logFalso());

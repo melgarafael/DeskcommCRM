@@ -197,3 +197,35 @@ export function fraseDaFalha(codigo: string | null, textoCru: string | null | un
   const cru = (textoCru ?? "").trim();
   return cru === "" ? null : cru.slice(0, 300);
 }
+
+/**
+ * A ESPERA QUE O CANAL PEDIU antes de tentar de novo.
+ *
+ * O provedor intermediado responde `429` com `Retry-After` quando a plataforma
+ * limita a conta (changelog de 25/09/2026; OpenAPI v1.370.0, `sendInboxMessage`:
+ * "Seconds until the upstream quota resets"). O adapter carimba os segundos no
+ * texto do erro (`[espera:30s]`), como já carimba `[plataforma:NNN]`, e quem
+ * reagenda o envio lê daqui — o número atravessa o seam sem que o envio precise
+ * saber de qual canal veio.
+ */
+const MARCA_DE_ESPERA = /\[espera:(\d{1,6})s\]/;
+
+export function marcaDeEspera(segundos: number | null): string {
+  return segundos !== null && Number.isFinite(segundos) && segundos > 0 ? ` [espera:${Math.ceil(segundos)}s]` : "";
+}
+
+/** Em milissegundos; `null` quando o canal não pediu espera nenhuma. */
+export function esperaPedidaPeloCanal(erro: string | null | undefined): number | null {
+  const achado = MARCA_DE_ESPERA.exec(erro ?? "");
+  return achado ? Number(achado[1]) * 1000 : null;
+}
+
+/** `Retry-After` em segundos — número ou data HTTP. `null` quando ausente ou ilegível. */
+export function segundosDoRetryAfter(valor: string | null | undefined, agora: number = Date.now()): number | null {
+  const bruto = (valor ?? "").trim();
+  if (bruto === "") return null;
+  if (/^\d+$/.test(bruto)) return Number(bruto);
+  const quando = Date.parse(bruto);
+  if (Number.isNaN(quando)) return null;
+  return Math.max(0, Math.ceil((quando - agora) / 1000));
+}

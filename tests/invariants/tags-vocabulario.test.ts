@@ -167,6 +167,57 @@ describe("fatia S4 — vocabulário de tags", () => {
     expect(acoes[0]?.config?.tags).toEqual(["vip"]);
   });
 
+  describe("a regra que TIRA a etiqueta (remove_tag)", () => {
+    async function regraQueTira(id: string, etiqueta: string) {
+      await pool.query(
+        `insert into public.automation_rules(id,organization_id,name,trigger_event,actions)
+         values($1,$2,'Regra que tira','message.received',$3::jsonb)
+         on conflict (id) do update set actions = excluded.actions`,
+        [
+          id,
+          GOV_ORG,
+          JSON.stringify([{ type: "remove_tag", config: { tags: [etiqueta], destino: "contato" } }]),
+        ],
+      );
+    }
+    const acoesDa = async (id: string) =>
+      (await pool.query("select actions from public.automation_rules where id = $1", [id])).rows[0]
+        .actions as Array<{ config: { tags: string[]; destino?: string } }>;
+
+    it("renomear reescreve a regra e mantém o destino dela", async () => {
+      const regra = "cccccccc-7777-4000-8000-000000000003";
+      await regraQueTira(regra, "tira-velha");
+
+      const r = await operar(GOV_ORG, "renomear", "tira-velha", "tira-nova");
+
+      expect(Number((r.rows[0].r as { regras: number }).regras)).toBe(1);
+      expect((await acoesDa(regra))[0]?.config).toEqual({ tags: ["tira-nova"], destino: "contato" });
+    });
+
+    it("excluir conta a regra e NÃO a apaga", async () => {
+      const regra = "cccccccc-7777-4000-8000-000000000004";
+      await regraQueTira(regra, "tira-excluir");
+
+      const r = await operar(GOV_ORG, "excluir", "tira-excluir", null);
+
+      expect(Number((r.rows[0].r as { regras: number }).regras)).toBe(1);
+      expect((await acoesDa(regra))[0]?.config.tags).toEqual(["tira-excluir"]);
+    });
+
+    it("a página de etiquetas conta a regra", async () => {
+      await regraQueTira("cccccccc-7777-4000-8000-000000000005", "tira-pagina");
+
+      const r = await actor(GOV_MANAGER, "select public.fn_vocabulario_de_tags_pagina($1,$2) as r", [
+        GOV_ORG,
+        "tira-pagina",
+      ]);
+
+      expect((r.rows[0].r as { items: Array<{ tag: string; em_regras: number }> }).items).toMatchObject([
+        { tag: "tira-pagina", em_regras: 1 },
+      ]);
+    });
+  });
+
   it("viewer é recusado antes de qualquer escrita", async () => {
     await expect(
       actor(GOV_VIEWER, "select public.fn_vocabulario_de_tags_operar($1,$2,$3,$4)", [

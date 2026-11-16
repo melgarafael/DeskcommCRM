@@ -52,6 +52,9 @@ vi.mock("@/lib/api/client", () => ({
     patch: (...args: unknown[]) => patch(...args),
   },
 }));
+// A seção de tarefas do painel (#4630) aparece em toda conversa com contato e tem
+// testes próprios (tarefa-da-demanda-no-inbox, tarefas-da-demanda-no-painel).
+vi.mock("@/components/inbox/TarefasDaDemanda", () => ({ TarefasDaDemanda: () => null }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   // A ficha lê o país da org; o painel, o papel do usuário (podeCriarTarefa).
   useActiveOrg: () => ({ currency: "BRL", country: null, orgId: "org-1" }),
@@ -82,7 +85,7 @@ const CONTATO_FORNECEDOR = {
   email: null,
   email_normalized: null,
   phone_number: null,
-  cpf_hash: null,
+  cpf_available: false,
   birthdate: null,
   is_blocked: false,
   blocked_reason: null,

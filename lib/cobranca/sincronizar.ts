@@ -22,6 +22,7 @@ import type { AuditAction } from "@/lib/audit/actions";
 import { invalidarOrg } from "@/lib/auth/cache-curto";
 import { textoDoAviso, type TextoDoAviso } from "@/lib/cobranca/avisos";
 import { toleranciaDias } from "@/lib/cobranca/configuracao";
+import { primeiroPagamentoPendente } from "@/lib/cobranca/contratacao";
 import { enviarAvisoAosAdmins } from "@/lib/cobranca/emails";
 import { aplicarLeitura } from "@/lib/cobranca/estado";
 import { SEM_TROCA } from "@/lib/cobranca/prorata";
@@ -34,7 +35,7 @@ import {
   type Situacao,
 } from "@/lib/cobranca/provedores/contrato";
 import { decidirRegua, type AcaoDaRegua } from "@/lib/cobranca/regua";
-import type { AvisoDaRegua, ErroDeLeitura, EstadoDaAssinatura } from "@/lib/cobranca/vocabulario";
+import type { AvisoDaRegua, ErroDeLeitura, EstadoDaAssinatura, Moeda } from "@/lib/cobranca/vocabulario";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 import type { TipoDeSuspensao } from "@/lib/organizacao/operante";
@@ -144,12 +145,12 @@ export async function sincronizar(
       const adaptador = (deps.adaptador ?? adaptadorPadrao)(provedor);
       const pagamento = await adaptador.lerPagamentoProporcional(primeira.troca_pagamento_ref);
       if (pagamento === "pago") {
-        const { data: alvo, error: erroAlvo } = await admin.from("cobranca_planos").select("id, nome, preco_cents, intervalo").eq("id", primeira.plano_troca_pendente_id).maybeSingle();
+        const { data: alvo, error: erroAlvo } = await admin.from("cobranca_planos").select("id, nome, preco_cents, moeda, intervalo").eq("id", primeira.plano_troca_pendente_id).maybeSingle();
         if (erroAlvo || !alvo) throw new Error("plano do upgrade proporcional indisponível");
         let precoAtualizado = true;
         try {
           await adaptador.trocarPlano({ assinaturaRef: primeira.provedor_assinatura_id, plano: {
-            id: alvo.id, nome: alvo.nome, precoCents: alvo.preco_cents, intervalo: alvo.intervalo,
+            id: alvo.id, nome: alvo.nome, precoCents: alvo.preco_cents, moeda: alvo.moeda as Moeda, intervalo: alvo.intervalo,
           } });
         } catch (e) {
           // Transitório, ou a mensalidade do período ainda aberta (Asaas): a próxima leitura tenta de novo.
@@ -383,7 +384,7 @@ export async function aplicarRegua(
       ultimoAviso: linha.ultimo_aviso,
       ultimoAvisoEm: emData(linha.ultimo_aviso_em),
       relidaEm: emData(linha.relida_em),
-      entradaPendente: linha.pagamento_inicial_pendente === true,
+      entradaPendente: primeiroPagamentoPendente(linha),
     },
     { status: org.status, suspendedKind: org.suspended_kind },
     agora,

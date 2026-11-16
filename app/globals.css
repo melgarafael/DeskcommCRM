@@ -46,6 +46,18 @@
   --color-border: #e7e3da;
   --color-border-strong: #d2cdbf;
 
+  /* ---- Identidade de canal (#4094) -------------------------------------
+   * A cor da faixa/ícone que marca DE ONDE veio a mensagem (aviso da esquina
+   * e logo da conversa). Token porque a mesma marca precisa ser legível nos
+   * DOIS temas: o tom de marca pensado para fundo claro some no escuro, e um
+   * hex cravado no componente obriga a repetir o par em cada consumidor.
+   * Os quatro passam no piso de componente da WCAG (3:1) contra o --color-bg
+   * do próprio tema — medido em lib/channels/marca-do-canal.test.ts. */
+  --color-canal-whatsapp: #128c4a;
+  --color-canal-instagram: #c13584;
+  --color-canal-messenger: #0866ff;
+  --color-canal-telegram: #0088cc;
+
   /* Accent — Sage (11 stops) */
   --color-accent-50: #f3f6f1;
   --color-accent-100: #e4ebe0;
@@ -272,6 +284,18 @@
   --color-text-subtle: #7d786c;
   --color-border: #e7e3da;
   --color-border-strong: #d2cdbf;
+
+  /* ---- Identidade de canal (#4094) -------------------------------------
+   * A cor da faixa/ícone que marca DE ONDE veio a mensagem (aviso da esquina
+   * e logo da conversa). Token porque a mesma marca precisa ser legível nos
+   * DOIS temas: o tom de marca pensado para fundo claro some no escuro, e um
+   * hex cravado no componente obriga a repetir o par em cada consumidor.
+   * Os quatro passam no piso de componente da WCAG (3:1) contra o --color-bg
+   * do próprio tema — medido em lib/channels/marca-do-canal.test.ts. */
+  --color-canal-whatsapp: #128c4a;
+  --color-canal-instagram: #c13584;
+  --color-canal-messenger: #0866ff;
+  --color-canal-telegram: #0088cc;
   --color-accent: var(--color-accent-600);
   --color-accent-fg: #ffffff;
   --color-accent-soft: var(--color-accent-100);
@@ -354,6 +378,18 @@
   /* Borders (dark) */
   --color-border: #33312a;
   --color-border-strong: #444239;
+
+  /* ---- Identidade de canal (#4094) -------------------------------------
+   * A cor da faixa/ícone que marca DE ONDE veio a mensagem (aviso da esquina
+   * e logo da conversa). Token porque a mesma marca precisa ser legível nos
+   * DOIS temas: o tom de marca pensado para fundo claro some no escuro, e um
+   * hex cravado no componente obriga a repetir o par em cada consumidor.
+   * Os quatro passam no piso de componente da WCAG (3:1) contra o --color-bg
+   * do próprio tema — medido em lib/channels/marca-do-canal.test.ts. */
+  --color-canal-whatsapp: #25d366;
+  --color-canal-instagram: #f472b6;
+  --color-canal-messenger: #60a5fa;
+  --color-canal-telegram: #38bdf8;
 
   /* Accent stays same hex stops; default shifts up for dark contrast */
   --color-accent-50: #f3f6f1;
@@ -1522,6 +1558,30 @@
   .animate-spin {
     animation-duration: 1s !important;
     animation-iteration-count: infinite !important;
+  }
+
+  /* ─── Sobreposto que está FECHANDO: sai da árvore no mesmo quadro ─────────
+
+     `0.01ms` NÃO é instantâneo para o Radix. O `Presence` desmonta a camada
+     quando chega o `animationend`, e o navegador entrega esse evento no QUADRO
+     seguinte. Até lá a camada do `DismissableLayer` segue montada — invisível
+     (`opacity: 0` do `both`) — e segurando `pointer-events: none` no body e
+     `aria-hidden` no resto da página: o fundo do que está atrás não recebe
+     clique nenhum, nem o `elementFromPoint` o enxerga.
+
+     Medido no e2e do #4606 (`e2e-parte (5)`, job 132418618829): o seletor
+     "Tipo da resposta" fechou 17ms antes de a spec amostrar o fundo do canvas,
+     e o `elementFromPoint` devolveu `<html>` — nunca `.react-flow__pane`. A
+     spec reprovou com "o canvas precisa ter fundo exposto para fechar o
+     painel" tendo o canvas visível e vazio na tela.
+
+     Sem nome de animação, o `Presence` desmonta no próprio efeito de layout
+     (`currentAnimationName === "none"` → `UNMOUNT`) e o `pointer-events` do
+     body volta no mesmo quadro. Para quem pediu movimento reduzido nada muda
+     no que se vê: a saída já durava 0.01ms. */
+  .ds-painel[data-state="closed"],
+  .ds-modal[data-state="closed"] {
+    animation: none !important;
   }
 }
 

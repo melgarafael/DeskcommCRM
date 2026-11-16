@@ -1,3 +1,4 @@
+import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { tituloDaAgenda } from "@/lib/agenda/apresentacao";
 import { redirect } from "next/navigation";
 
@@ -11,6 +12,7 @@ import { rotuloDoEstadoDoCanal } from "@/lib/channels/estado";
 import { rotulosDosResponsaveisDaAgenda } from "@/lib/agenda/rotulos-dos-responsaveis";
 import { rotuloDoResponsavel } from "@/lib/agenda/identidade-do-responsavel";
 import { modelosQueOLembreteEnvia } from "@/lib/agenda/lembrete-por-modelo";
+import { COLUNAS_DO_TIPO_DE_AGENDAMENTO } from "@/lib/agenda/consulta";
 
 import { TiposDeAgendamentoClient, type TipoRow } from "./_client";
 
@@ -71,9 +73,7 @@ export default async function TiposDeAgendamentoPage() {
   ] = await Promise.all([
     supabase
       .from("calendar_event_types")
-      .select(
-        "id, name, slug, description, category, duration_minutes, location_kind, location_details, default_owner_user_id, requires_confirmation, is_active, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents, service_enabled, booking_mode, service_capacity",
-      )
+      .select(COLUNAS_DO_TIPO_DE_AGENDAMENTO)
       .eq("organization_id", activeOrg.orgId)
       .order("is_active", { ascending: false })
       .order("name"),
@@ -109,14 +109,13 @@ export default async function TiposDeAgendamentoPage() {
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{tituloDaAgenda(org?.settings) ?? t("Agendamentos")}</h1>
+      <CabecalhoDaSubTela titulo={tituloDaAgenda(org?.settings) ?? t("Agendamentos")} idioma={user.idioma}>
         <p className="mt-1 text-sm text-text-muted">
           {t(
             "O que se pode marcar, quanto dura e quem atende. É isto que a tela de marcar e o agente de IA oferecem ao cliente.",
           )}
         </p>
-      </header>
+      </CabecalhoDaSubTela>
       <TiposDeAgendamentoClient
         tituloDaAgenda={tituloDaAgenda(org?.settings)}
         tiposIniciais={(tipos ?? []) as TipoRow[]}

@@ -44,4 +44,26 @@ describe("statusUpdate", () => {
     const u = statusUpdate(evento({ status: "sent" }), AGORA);
     expect(u).toEqual({ status: "sent", updated_at: AGORA });
   });
+
+  describe("#4316 — a hora da entrega é de uma vez só", () => {
+    it("(a) delivered grava delivered_at e não toca read_at", () => {
+      const u = statusUpdate(evento({ status: "delivered" }), AGORA, { delivered_at: null });
+      expect(u).toMatchObject({ status: "sent", delivered_at: AGORA });
+      expect(u).not.toHaveProperty("read_at");
+    });
+
+    it("(b) read preserva o delivered_at que já estava na linha", () => {
+      const ENTREGUE_ANTES = "2026-09-21T11:59:30.000Z";
+      const u = statusUpdate(evento({ status: "read" }), AGORA, {
+        delivered_at: ENTREGUE_ANTES,
+      });
+      expect(u).toMatchObject({ status: "sent", read_at: AGORA });
+      expect(u.delivered_at).toBeUndefined();
+    });
+
+    it("(c) read sem delivered antes carimba a entrega uma vez", () => {
+      const u = statusUpdate(evento({ status: "read" }), AGORA, { delivered_at: null });
+      expect(u).toMatchObject({ delivered_at: AGORA, read_at: AGORA });
+    });
+  });
 });

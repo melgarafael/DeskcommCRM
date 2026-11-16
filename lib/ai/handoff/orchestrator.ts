@@ -33,7 +33,9 @@ import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
 import { moverLeadParaEtapaDeHandoff } from "@/lib/leads/handoff-stage-move";
+import { camposDoCardDoLead } from "@/lib/leads/campos-do-resumo-da-passagem";
 import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
+import { lerModoIaComDono } from "@/lib/ai/elegibilidade/ia-com-dono";
 import { ttlDaAutorizacaoMs } from "@/lib/ai/elegibilidade/gate";
 
 import { avisarLeadDoCrm, type DesfechoDoAvisoDoCrm } from "./aviso-ao-lead";
@@ -60,6 +62,8 @@ export type HandoffReason =
   | "critical_stage"
   | "legal_mention"
   | "refund_mention"
+  /** A trava de valores e negociação barrou a resposta da IA (Spec 34). */
+  | "restricao_comercial"
   /**
    * O teto de gasto com IA parou o atendimento automático. NÃO é pedido do lead —
    * quem lê `last_handoff_reason` precisa distinguir, porque a primeira frase que
@@ -130,6 +134,7 @@ const MOTIVO_DA_PASSAGEM = {
   legal_mention: "legal_mention",
   refund_mention: "refund_mention",
   orcamento_de_ia: "orcamento_de_ia",
+  restricao_comercial: "restricao_comercial",
 } satisfies Record<HandoffReason, MotivoDaPassagem>;
 
 function motivoDaPassagem(reason: HandoffReason): MotivoDaPassagem {
@@ -191,7 +196,7 @@ export async function triggerHandoff(
     const { data: convNow } = await admin
       .from("conversations")
       .select(
-        "id, organization_id, contact_id, last_handoff_at, last_handoff_reason, last_outbound_at",
+        "id, organization_id, contact_id, last_handoff_at, last_handoff_reason, last_outbound_at, assigned_to_user_id, metadata",
       )
       .eq("id", input.conversationId)
       .eq("organization_id", input.organizationId)
@@ -206,6 +211,8 @@ export async function triggerHandoff(
       organization_id: string;
       last_handoff_at: string | null;
       last_handoff_reason: string | null;
+      assigned_to_user_id: string | null;
+      metadata: unknown;
     };
     const c = convNow as unknown as ConvNowRow;
 
@@ -287,20 +294,31 @@ export async function triggerHandoff(
     // We use 'infinity' (Postgres timestamp special) so any later comparison
     // `bot_silenced_until > now()` is always true. supabase-js sends as text
     // and Postgres parses correctly for timestamptz columns.
+    //
+    // ─── A EXCEÇÃO DO MODO "IA COM O DONO" (#3967) ────────────────────────────
+    //
+    // `pending` significa "na fila, esperando um atendente". Numa conversa que
+    // já TEM dono e está no modo ligado, mandá-la para `pending` é tirá-la da
+    // visão do atendente que a acompanha para colocá-la numa fila que não é
+    // dela — aqui a passagem é "a IA para e o dono assume", não "a conversa
+    // procura alguém". O dono fica, o status fica, o silêncio entra: a IA cala
+    // e a conversa continua exatamente de quem já era.
+    const donoNoModo = lerModoIaComDono(c.metadata) && (c.assigned_to_user_id ?? null) !== null;
     await guard();
     const { error: updErr } = await admin
       .from("conversations")
       .update({
-        status: "pending",
+        ...(donoNoModo ? {} : { status: "pending", status_changed_at: nowIso }),
         bot_silenced_until: SILENCE_INFINITY,
         last_handoff_at: nowIso,
         last_handoff_reason: input.reason,
-        status_changed_at: nowIso,
         // Fase 3 (review T5, finding 4): zera a aderência ao agente do router — se o
         // bot for reativado, o router decide de novo (não reassume por inércia).
         active_ai_agent_id: null,
         active_intent: null,
         active_agent_set_at: null,
+        // #4318: a passagem explícita pendente cai junto, pelo mesmo motivo.
+        active_agent_transfer_at: null,
       })
       .eq("id", input.conversationId)
       .eq("organization_id", input.organizationId);
@@ -440,6 +458,14 @@ export async function triggerHandoff(
       //
       // Dentro do `guard()` que já existe, como os efeitos acima.
       await guard();
+      // #4303 — OS CAMPOS DO CARD NO RESUMO. Quem assume a conversa precisa do
+      // dado que decide a próxima frase (consumo, valor da conta) sem abrir o
+      // negócio. O card é o que a passagem DECLAROU (`leadId`); sem ele este
+      // motor não inventa um "mais recente" do contato — não há turno aqui
+      // para dizer qual card a conversa está tocando, e ler o errado mostraria
+      // dado de outra venda. `camposDoCardDoLead` nunca lança: leitura que
+      // falha devolve `{}` e o resumo sai como o de hoje.
+      const camposDoCard = await camposDoCardDoLead(admin, input.organizationId, input.leadId);
       const briefing = montarBriefingDaPassagem({
         checkpoint: await checkpointDuravel(admin, input.organizationId, contactId),
         pendentesDoCliente: await falasPendentes(
@@ -449,6 +475,7 @@ export async function triggerHandoff(
           (convNow as unknown as { last_outbound_at?: string | null }).last_outbound_at ?? null,
         ),
         ...(input.declarado !== undefined ? { declaradoPeloModelo: input.declarado } : {}),
+        ...(Object.keys(camposDoCard).length > 0 ? { camposColetados: camposDoCard } : {}),
         motivo: {
           codigo: motivoDaPassagem(input.reason),
           texto: input.motivoTexto ?? null,

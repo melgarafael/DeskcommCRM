@@ -26,9 +26,10 @@ import { z } from "zod";
 
 import { documentoDoPagador } from "@/lib/cobranca/documento";
 import { FUSO_PADRAO } from "@/lib/cobranca/fuso";
+import { MOEDAS_DO_ASAAS } from "@/lib/cobranca/vocabulario";
 import { logger } from "@/lib/logger";
 
-import { ErroDoProvedor, type AdaptadorDeCobranca, type Modo, type SinalDoWebhook, type Situacao, type WebhookPreparado } from "./contrato";
+import { ErroDoProvedor, type AdaptadorDeCobranca, type Modo, type PlanoParaProvedor, type SinalDoWebhook, type Situacao, type WebhookPreparado } from "./contrato";
 
 /** A base de cada ambiente. Qual vale sai do prefixo da chave. */
 export const ASAAS_API_BASE = {
@@ -63,10 +64,43 @@ export function modoDaChaveAsaas(chave: string): Modo | null {
   return m[1] === "prod" ? "producao" : "teste";
 }
 
+/**
+ * O Asaas não tem moeda: todo valor é real. Plano em dólar ou euro (migration
+ * 9332) seria cobrado como se fosse real — R$ 500 no lugar de US$ 500. A rota de
+ * planos já recusa criar plano assim com o Asaas conectado; esta é a defesa no
+ * último passo, antes de qualquer chamada ao provedor.
+ */
+function exigirMoedaDoAsaas(plano: PlanoParaProvedor): void {
+  if (!MOEDAS_DO_ASAAS.includes(plano.moeda)) throw new ErroDoProvedor(null, "moeda_nao_suportada", false);
+}
+
 function baseDeLoopback(base: string): boolean {
   if (!URL.canParse(base)) return false;
   const u = new URL(base);
   return (u.protocol === "http:" || u.protocol === "https:") && HOSTS_DE_LOOPBACK.has(u.hostname);
+}
+
+/**
+ * O callback do Asaas para a volta, ou `null` quando o endereço não serve: a
+ * volta automática é conforto, e sem ela a fatura sai igual (ver iniciarAssinatura).
+ */
+function callbackDaVolta(urlDeVolta: string, contraDuble: boolean): { successUrl: string; autoRedirect: true } | null {
+  if (!URL.canParse(urlDeVolta)) return null;
+  const retorno = new URL(urlDeVolta);
+  // http só em loopback contra o dublê do e2e (`baseUrl` só existe lá).
+  const protocoloOk = retorno.protocol === "https:" || (contraDuble && baseDeLoopback(urlDeVolta));
+  if (!protocoloOk || retorno.username || retorno.password || retorno.hash) return null;
+  retorno.searchParams.set("voltou", "1");
+  return { successUrl: retorno.toString(), autoRedirect: true };
+}
+
+/**
+ * 4xx que não é chave inválida nem espera: o Asaas recusou antes de processar.
+ * ponytail: o status e o `code` da recusa por domínio não foram medidos; por isso
+ * vale qualquer 4xx assim — refazer sem callback uma recusa de outra causa só a repete.
+ */
+function recusaSemEfeito(e: unknown): e is ErroDoProvedor {
+  return e instanceof ErroDoProvedor && e.status !== null && e.status >= 400 && e.status < 500 && e.status !== 401 && !e.transitorio;
 }
 
 const corpoDeErro = z.object({ errors: z.array(z.object({ code: z.string().optional() })) });
@@ -218,8 +252,8 @@ const eventoDoAsaas = z.object({
   // Tetos de tamanho: com o token vazado, cada aviso válido vira uma linha no arquivo de avisos.
   id: z.string().min(1).max(100),
   event: z.string().regex(/^[A-Z_]{1,64}$/),
-  payment: z.object({ customer: z.string().nullish() }).nullish(),
-  subscription: z.object({ customer: z.string().nullish() }).nullish(),
+  payment: z.object({ customer: z.string().max(100).nullish() }).nullish(),
+  subscription: z.object({ customer: z.string().max(100).nullish() }).nullish(),
 });
 
 /**
@@ -480,19 +514,27 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
   /**
    * Releitura antes de criar (sem chave de idempotência): uma assinatura ACTIVE
    * do cliente é a de um POST anterior que processou e perdeu a resposta.
-   * `urlDeVolta` e `chaveIdempotencia` não se aplicam: a fatura do Asaas não
-   * expira nem devolve o cliente — a volta é o "Já paguei", que relê.
+   * A fatura não expira. O callback só navega à ponte própria; a confirmação
+   * continua sendo a releitura autenticada, nunca a chegada à URL.
+   *
+   * O callback é MELHOR ESFORÇO: o Asaas exige que o `successUrl` seja do
+   * domínio cadastrado na conta, e a conta que não cadastrou recusa a criação
+   * inteira. Sem ele a fatura sai igual e o "Já paguei" relê o estado — então
+   * endereço que não serve (não-https, com credencial ou fragmento) segue sem
+   * callback, e a recusa 4xx do POST com callback é refeita UMA vez sem ele
+   * (4xx não processou nada; a releitura de ACTIVE acima já cobre o retry).
    */
   async function iniciarAssinatura(
     p: Parameters<AdaptadorDeCobranca["iniciarAssinatura"]>[0],
   ): ReturnType<AdaptadorDeCobranca["iniciarAssinatura"]> {
+    exigirMoedaDoAsaas(p.plano);
+    let callback = callbackDaVolta(p.urlDeVolta, dep.baseUrl !== undefined);
     const orgId = uuidDaOrg(p.orgId);
     const caminho = `/subscriptions?customer=${encodeURIComponent(p.clienteRef)}&status=ACTIVE&limit=10`;
     const ativas = ler(listaDoAsaas(comId), await chamar("GET", caminho)).data.filter((s) => s.deleted !== true);
     const hoje = dataCivilEmSaoPaulo(agora());
     const fimDoTeste = p.trialAte === null ? null : dataCivilEmSaoPaulo(p.trialAte);
-    const assinaturaRef =
-      ativas[0]?.id ??
+    const criar = async () =>
       ler(
         comId,
         await chamar("POST", "/subscriptions", {
@@ -502,20 +544,44 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
           value: p.plano.precoCents / 100,
           cycle: CICLO_DO_INTERVALO[p.plano.intervalo],
           nextDueDate: fimDoTeste !== null && fimDoTeste > hoje ? fimDoTeste : hoje,
+          ...(callback ? { callback } : {}),
           description: p.plano.nome,
           externalReference: orgId,
         }),
       ).id;
+    let assinaturaRef = ativas[0]?.id;
+    if (assinaturaRef === undefined) {
+      try {
+        assinaturaRef = await criar();
+      } catch (e) {
+        if (!(callback && recusaSemEfeito(e))) throw e;
+        logger.warn("cobranca.asaas.callback_nao_aplicado", { status: e.status, codigo: e.codigo, ponto: "assinatura" });
+        callback = null;
+        assinaturaRef = await criar();
+      }
+    }
     const primeira = (await cobrancasDaAssinatura(assinaturaRef)).find((c) => c.status === "PENDING" || c.status === "OVERDUE");
     if (primeira === undefined) throw new ErroDoProvedor(null, "cobranca_ainda_nao_gerada", true);
     const url = linkSeguro(primeira.invoiceUrl);
     if (url === null) throw new ErroDoProvedor(200, "resposta_invalida", false);
+    // Também cobre a primeira fatura de uma assinatura recuperada após retry.
+    // PUT idempotente altera só navegação; não cria cobrança nem marca pagamento.
+    // Falhar aqui não derruba um link válido: a fatura já existe.
+    if (callback) {
+      try {
+        await chamar("PUT", `/payments/${encodeURIComponent(primeira.id)}`, { callback });
+      } catch (e) {
+        if (!(e instanceof ErroDoProvedor)) throw e;
+        logger.warn("cobranca.asaas.callback_nao_aplicado", { status: e.status, codigo: e.codigo, ponto: "fatura" });
+      }
+    }
     // A cobrança é a "sessão" do Asaas: é a id que a troca de plano expira no
     // provedor (#2609) — guardada junto com o link em `checkout_sessao_id`.
     return { url, expiraEm: null, assinaturaRef, sessaoId: primeira.id };
   }
 
   async function iniciarAjusteProporcional(p: Parameters<AdaptadorDeCobranca["iniciarAjusteProporcional"]>[0]) {
+    exigirMoedaDoAsaas(p.plano);
     const externalReference = `upgrade:${uuidDaOrg(p.orgId)}:${p.chaveIdempotencia}`;
     const consulta = new URLSearchParams({ customer: p.clienteRef, externalReference, limit: "10" });
     const existentes = ler(listaDoAsaas(cobrancaDoAsaas), await chamar("GET", `/payments?${consulta}`)).data;
@@ -643,6 +709,7 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
    * todas levam o valor novo.
    */
   async function trocarPlano(p: Parameters<AdaptadorDeCobranca["trocarPlano"]>[0]): Promise<void> {
+    exigirMoedaDoAsaas(p.plano);
     const hoje = dataCivilEmSaoPaulo(agora());
     const cobrancas = await cobrancasDaAssinatura(p.assinaturaRef);
     if (cobrancas.some((c) => c.status === "OVERDUE" || (c.status === "PENDING" && c.dueDate <= hoje))) {

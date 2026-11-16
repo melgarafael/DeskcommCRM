@@ -169,6 +169,7 @@ Crie o funil antes, no menu **"Funis"**, com o botão "Novo funil" (ou "Criar me
 
 - **Mesmo cliente, mesmo item:** se o cliente repetir o interesse no mesmo item e o negócio ainda estiver aberto, **não** nasce outro negócio. O sistema devolve o que já existe e deixa uma nota na linha do tempo: "O cliente voltou a demonstrar interesse em" seguido da referência. Isso vale desde que o funil do interesse seja o mesmo e o agente passe o contato da própria conversa: se você mudar o funil na receita entre um interesse e outro, nasce um negócio novo.
 - **Negócio já ganho ou perdido:** não impede um novo interesse.
+- **Item que não existe:** antes de abrir o negócio, o sistema confere no banco do site se o código existe. Se não existir, o negócio **não** nasce, e o agente é instruído a consultar de novo e a não dizer ao cliente que registrou. Se o banco do site estiver fora do ar nessa hora, o negócio também não nasce: o agente passa a conversa para a equipe.
 
 > **Vale com uma única receita ativa de cada tipo.** Imóveis e veículos, por exemplo, podem ser duas receitas do mesmo tipo ("Conteúdo do WordPress"). Se as duas estiverem ativas com funis diferentes, ou com o mesmo funil em etapas diferentes, o sistema não sabe para qual mandar: **todo** interesse vai para a equipe e nenhum negócio nasce. Deixe uma só receita ativa daquele tipo com destino, ou repita **o mesmo funil e a mesma etapa** nas duas.
 
@@ -272,11 +273,15 @@ As mensagens abaixo são as que o sistema devolve ao agente, ou os avisos que a 
 - **O link do conteúdo pode estar antigo.** O link vem de um campo que o WordPress não atualiza quando o site muda de domínio. Se o site mudou de endereço, o link aponta para o antigo.
 - **Base migrada com campo repetido.** Se o mesmo campo do site estiver gravado duas vezes no mesmo item, o item repete na lista. A receita não remove a repetição.
 - **Sistemas próprios com relacionamento próprio não entram.** Se o seu sistema guarda os dados de um jeito artesanal, sem receita pronta, ele fica fora do que esta versão faz.
+- **A conferência do item só vale quando o agente passa a referência.** Se o agente abrir o negócio escolhendo o funil por conta própria, sem a referência do item, nada confere se o item existe. Isso já aconteceu numa medição, com o banco do site inacessível (issue #4763).
+- **Duas consultas a mais por resposta.** Hoje o agente costuma errar a primeira consulta ("conexão ambígua") mesmo com uma conexão só, e acerta na seguinte. A resposta demora um pouco mais (issue #4763).
 
 ---
 
-## 13. Medido na prática (22/10/2026)
+## 13. Medido na prática (22/10/2026 e 16/11/2026)
 
 Numa imobiliária montada do zero no ambiente de teste, o agente consultou o banco, mostrou os imóveis com código e, quando o cliente disse "tenho interesse", o negócio foi criado no funil e na etapa configurados, com a referência do imóvel — usando o modelo de IA `gpt-5.6-sol`. Com o modelo mais econômico `gpt-5.6-luna`, o agente não chamou a ferramenta de criar negócio e escreveu "já está registrado" sem registrar (4 tentativas). Por isso: para o atendimento que depende de abrir negócio sozinho, prefira um modelo mais forte e confira o funil depois das primeiras conversas.
 
 Depois dessa medição, o sistema passou a barrar a frase "registrei" quando o negócio não foi criado. A trava impede a afirmação falsa, mas não faz o modelo abrir o negócio. A medição acima não foi repetida com ela.
+
+Em 16/11/2026, com o modelo `gpt-6-luna` numa conversa real pelo WhatsApp (medição de @paulolimajr77, no PR #3328), o agente mostrou o imóvel com código. Quando o cliente disse que tinha interesse, ele abriu o negócio no funil e na etapa da receita, com a referência do imóvel, e só depois disse "registrei". Para um código que não existe no site, ele não abriu negócio e respondeu que não encontrou o imóvel. Cada resposta levou de 30 a 32 segundos.

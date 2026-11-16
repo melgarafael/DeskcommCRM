@@ -36,6 +36,8 @@ import { allTools } from "@/lib/mcp/tools";
  */
 
 const BASE = "linha de base, medida quando a cerca nasceu (2026-10-31)";
+/** Módulo opcional `amigo` (#4227): só entram no catálogo com o módulo instalado. */
+const AMIGO = "módulo amigo, fora do catálogo de quem não instalou";
 
 const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_list_event_types": { tokens: 204, motivo: BASE },
@@ -46,12 +48,16 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_propose_contact_field": { tokens: 438, motivo: BASE },
   "crm_list_conversations": { tokens: 283, motivo: BASE },
   "crm_get_conversation": { tokens: 228, motivo: BASE },
-  "crm_get_conversation_history": { tokens: 203, motivo: BASE },
+  "crm_get_conversation_history": {
+    tokens: 240,
+    motivo:
+      "#4077: a descrição passou a dizer que cada mensagem traz o AUTOR (sent_by_user_id e sent_by_user_name) — sem isso a integração não sabia que o campo existia e atribuía a fala ao 'sistema'",
+  },
   "crm_get_queue_status": { tokens: 83, motivo: BASE },
   "crm_list_leads": { tokens: 500, motivo: BASE },
   "crm_get_lead": { tokens: 202, motivo: BASE },
   "crm_list_pipelines": { tokens: 63, motivo: BASE },
-  "crm_get_pipeline_forecast": { tokens: 263, motivo: BASE },
+  "crm_get_pipeline_forecast": { tokens: 281, motivo: "#4322: a descrição passou a dizer que `truncado: true` marca valores parciais quando o funil passa do teto de leitura; sem isso o agente apresenta um recorte como o total" },
   "crm_search_knowledge": { tokens: 250, motivo: BASE },
   "crm_list_knowledge_sources": { tokens: 86, motivo: BASE },
   "crm_list_improvement_proposals": { tokens: 85, motivo: BASE },
@@ -67,7 +73,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_consultar_receita": { tokens: 403, motivo: BASE },
   "crm_list_privacy_requests": { tokens: 248, motivo: BASE },
   "crm_get_prospecting_site_audit": { tokens: 220, motivo: BASE },
-  "crm_list_stages": { tokens: 255, motivo: BASE },
+  "crm_list_stages": { tokens: 312, motivo: "+57 de description e agent_stage_hint no retorno (#4319, recorte do #3915): o Operador precisa do CRITÉRIO da etapa para decidir para onde mover o card" },
   "crm_list_tags": { tokens: 111, motivo: BASE },
   "crm_list_message_templates": { tokens: 146, motivo: BASE },
   "crm_render_message_template": { tokens: 597, motivo: BASE },
@@ -97,6 +103,11 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_retomar_lead": { tokens: 394, motivo: BASE },
   "crm_propose_lead_fields_from_document": { tokens: 583, motivo: BASE },
   "crm_send_whatsapp_message": { tokens: 281, motivo: BASE },
+  // #4129 — capacidade de WIRE que envia o material da empresa como documento.
+  // O peso é quase todo a descrição: é ela que ensina o integrador que o
+  // arquivo NÃO é lido nem resumido. Medido na criação (2026-11-06), sem gordura.
+  "crm_send_material": { tokens: 407, motivo: "material da empresa no caminho de mídia (#4129), medida na criação (2026-11-06)" },
+  "crm_publish_whatsapp_status": { tokens: 464, motivo: "ferramenta nova do módulo opcional status_whatsapp (#3463), medida na criação (2026-11-10); só é oferecida com o módulo ligado" },
   "crm_start_conversation_and_send": { tokens: 593, motivo: BASE },
   "crm_create_conversation_draft": { tokens: 411, motivo: BASE },
   "crm_set_conversation_sector": { tokens: 383, motivo: "capacidade nova (#3881): a triagem da IA escolhe a FILA da conversa; a descrição precisa nomear os setores de exemplo e as recusas, senão o modelo tenta resolver fila com crm_assign_conversation (que é dono, não setor)" },
@@ -119,21 +130,64 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_draft_proposal": { tokens: 1059, motivo: BASE },
   "crm_request_human_handoff": { tokens: 583, motivo: BASE },
   "get_lead_context": { tokens: 46, motivo: BASE },
-  "send_message": { tokens: 191, motivo: "imagem_url (Spec 25 R4): a foto por endereço, com a regra de procedência na descrição" },
+  "send_message": { tokens: 422, motivo: "Medição do merge (#4129 + Spec 25 R4): `material_id` e a descrição do anexo da empresa entram no envio nativo ANTES da `imagem_url`, cujo bloco já estava na main — 422 é o peso real dos dois, não a soma dos dois tetos" },
   "update_lead_state": { tokens: 240, motivo: BASE },
   "schedule_followup": { tokens: 200, motivo: BASE },
   "save_lead_note": { tokens: 229, motivo: BASE },
   "get_lead_note": { tokens: 99, motivo: BASE },
   "search_knowledge": { tokens: 131, motivo: BASE },
+  // #4133: nasceu com o modo `leitura_direta` (índice no contexto + leitura do
+  // documento pelo id). Entra no lugar da busca quando o agente escolhe o modo;
+  // o teto é o da primeira medição, sem gordura.
+  "ler_documento": { tokens: 142, motivo: "ferramenta nova do modo leitura_direta (#4133), medida na criação (2026-11-06)" },
   "request_human_handoff": { tokens: 510, motivo: BASE },
   "read_skill_reference": { tokens: 154, motivo: BASE },
   "open_human_case": { tokens: 384, motivo: BASE },
   "provide_case_update": { tokens: 102, motivo: BASE },
   "send_template": { tokens: 227, motivo: BASE },
   "schedule_followup (com negócio)": { tokens: 314, motivo: BASE },
+  "crm_amigo_attendance_cancel": { tokens: 312, motivo: AMIGO },
+  "crm_amigo_attendance_create": { tokens: 460, motivo: AMIGO },
+  "crm_amigo_attendance_reschedule": { tokens: 595, motivo: AMIGO },
+  "crm_amigo_attendance_status": { tokens: 315, motivo: AMIGO },
+  "crm_amigo_attendances": { tokens: 465, motivo: AMIGO },
+  "crm_amigo_calendar": { tokens: 379, motivo: AMIGO },
+  "crm_amigo_doctor_dates": { tokens: 738, motivo: AMIGO },
+  "crm_amigo_doctors_available": { tokens: 238, motivo: AMIGO },
+  "crm_amigo_doctors": { tokens: 115, motivo: AMIGO },
+  "crm_amigo_events": { tokens: 185, motivo: AMIGO },
+  "crm_amigo_insurance_plans": { tokens: 210, motivo: AMIGO },
+  "crm_amigo_insurance_products": { tokens: 134, motivo: AMIGO },
+  "crm_amigo_insurances": { tokens: 149, motivo: AMIGO },
+  "crm_amigo_link_patient": { tokens: 366, motivo: AMIGO },
+  "crm_amigo_patient_attendances": { tokens: 573, motivo: AMIGO },
+  "crm_amigo_patient_birthdays": { tokens: 140, motivo: AMIGO },
+  "crm_amigo_patient_create": { tokens: 634, motivo: AMIGO },
+  "crm_amigo_patient_doctors": { tokens: 260, motivo: AMIGO },
+  "crm_amigo_patient_get": { tokens: 258, motivo: AMIGO },
+  "crm_amigo_patient_search": { tokens: 284, motivo: AMIGO },
+  "crm_amigo_patient_update": { tokens: 648, motivo: AMIGO },
+  "crm_amigo_places": { tokens: 158, motivo: AMIGO },
+  "crm_amigo_specialties": { tokens: 144, motivo: AMIGO },
 };
 
-const TETO_TOTAL = 30076;
+// 29952 até 2026-11-05; +142 com `ler_documento` (#4133), que só é montada no
+// modo `leitura_direta` — nunca junto de `search_knowledge`; +54 com `imagem_url`
+// no `send_message` (Spec 25 R4, #3276); +464 com `crm_publish_whatsapp_status`
+// (#3463), que só entra no catálogo com o módulo `status_whatsapp` ligado; +37 na
+// descrição de `crm_get_conversation_history`, que passou a dizer o AUTOR da
+// mensagem (#4077).
+// +638 com o material da empresa (#4129): 231 do `send_message` (o `material_id`
+// e a sua descrição) e 407 da capacidade de wire `crm_send_material`, que entra
+// no catálogo lido pelo integrador.
+// O total é MEDIDO no merge com a main (31362 = 30724 medidos nela + 638 deste
+// PR, remedido em 2026-11-14), não somado à mão.
+// +7760 com as 23 ferramentas `crm_amigo_*` (#4227), que só entram no catálogo com
+// o módulo `amigo` instalado. MEDIDO no merge com a main: 39122 = 31362 + 7760
+// (2026-11-16).
+// +65 com `referencia_externa` no `crm_create_lead` (#3328). MEDIDO no merge com a
+// main: 39187 = 39122 + 65 (2026-11-16).
+const TETO_TOTAL = 39187;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

@@ -13,8 +13,10 @@ import { type NextRequest } from "next/server";
 import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { removeCatalogPresentationAudio } from "@/lib/catalogo/apresentacao-no-bucket";
 import { apagarDoBucket } from "@/lib/catalogo/fotos-no-bucket";
 import { guardarFotosPorUrl } from "@/lib/catalogo/fotos-por-url";
+import { capacidadesDaOrganizacao } from "@/lib/organizacao/capacidades";
 import { COLUNAS_DO_PRODUTO, produtoPatchSchema } from "@/lib/schemas/produtos";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -50,6 +52,12 @@ export async function PATCH(
   const { fotos, ...campos } = parsed.data;
 
   const supabase = await createClient();
+  if (
+    campos.capacidade &&
+    !(await capacidadesDaOrganizacao(supabase, authz.org.orgId)).includes("capacidade_do_produto")
+  ) {
+    return fail("validation_failed", t("A capacidade do produto está desligada nesta empresa."), 422, { requestId });
+  }
 
   /**
    * ─── PATCH com `fotos` SUBSTITUI o conjunto, não acrescenta ───────────────
@@ -146,6 +154,14 @@ export async function DELETE(
   const { id } = await params;
 
   const supabase = await createClient();
+  // O FK apaga a configuração, mas Storage não conhece cascata: guarde o
+  // caminho antes do DELETE para não deixar o áudio permanente órfão.
+  const { data: apresentacao } = await supabase
+    .from("catalog_product_presentations")
+    .select("audio_storage_path")
+    .eq("organization_id", authz.org.orgId)
+    .eq("catalog_product_id", id)
+    .maybeSingle();
   const { data, error } = await supabase
     .from("catalog_products")
     .delete()
@@ -158,6 +174,12 @@ export async function DELETE(
   if (!data) return fail("not_found", t("Produto não encontrado."), 404, { requestId });
   // As fotos saem junto: a linha era a única referência a elas.
   await apagarDoBucket(authz.org.orgId, id, (data as { fotos: string[] | null }).fotos ?? [], requestId);
+  await removeCatalogPresentationAudio(
+    authz.org.orgId,
+    id,
+    (apresentacao as { audio_storage_path?: string | null } | null)?.audio_storage_path,
+    requestId,
+  );
 
   await audit({
     organizationId: authz.org.orgId,

@@ -48,6 +48,8 @@ beforeEach(() => {
             percent: 10,
           })),
       };
+    // Os rankings de negócios ganhos (#4280) moram na tela de Faturamento; aqui, sem venda.
+    if (url.startsWith("/api/v1/reports/comercial")) return { data: { sem_dados: true } };
     if (url.startsWith("/api/v1/reports/financeiro?"))
       return {
         data: {

@@ -9,9 +9,11 @@ import { type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { extFromMime, MAX_MEDIA_BYTES } from "@/lib/messaging/media/types";
+import { nomeDeArquivoLimpo } from "@/lib/messaging/media/nome-de-arquivo";
 import { validateOutboundMedia } from "@/lib/messaging/media/upload-validation";
 import { transcodificarNotaDeVoz } from "@/lib/messaging/media/voice-transcode";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -70,15 +72,15 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (convErr) return fail("internal_error", t("Erro ao validar conversa."), 500, { requestId });
   if (!conv) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
 
-  // Guard de DoS: rejeita pelo Content-Length declarado ANTES de bufferizar
-  // o corpo inteiro. 1MB de slack pro overhead de multipart; o check
-  // autoritativo continua o file.size pós-parse (Content-Length pode mentir).
-  const declared = Number(req.headers.get("content-length") ?? 0);
-  if (declared > MAX_MEDIA_BYTES + 1_048_576) {
-    return fail("payload_too_large", t("Arquivo acima de 50MB."), 413, { requestId });
-  }
-
-  const form = await req.formData().catch(() => null);
+  // Guard de DoS: o corpo nunca passa do teto, nem sem Content-Length. 1MB de
+  // slack pro overhead de multipart; o check autoritativo continua o file.size.
+  const corpo = await lerCorpoComTeto(req, MAX_MEDIA_BYTES + 1_048_576, {
+    requestId,
+    idioma: authz.idioma ?? IDIOMA_PADRAO,
+    acimaDoTeto: t("Arquivo acima de 50MB."),
+  });
+  if (!corpo.ok) return corpo.response;
+  const form = await corpo.corpo.formData().catch(() => null);
   const file = form?.get("file");
   if (!(file instanceof File)) {
     return fail("validation_failed", t("Campo 'file' (multipart) obrigatório."), 422, { requestId });
@@ -124,6 +126,12 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   return ok(
     {
       storage_path: storagePath,
+      // O nome como a pessoa o escolheu (#4457). O caminho acima é aleatório de
+      // propósito; sem devolver o original aqui, o envio só tinha o basename
+      // para mandar ao WhatsApp — e o cliente recebia `out-3f9a2b.pdf`. Lido do
+      // `File`, que é a última ponta que ainda o conhece, e passado pela mesma
+      // guarda da ingestão (`nomeDeArquivoLimpo`: sem invisíveis, com teto).
+      media_filename: nomeDeArquivoLimpo(file.name),
       // O mime e o tamanho do arquivo QUE FOI GUARDADO, não os que chegaram.
       // Devolver o original seria mandar o canal buscar um `webm` que já não
       // existe — o mesmo defeito, um passo adiante.

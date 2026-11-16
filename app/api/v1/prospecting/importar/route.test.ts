@@ -10,7 +10,7 @@
  * deixasse de pedir `admin`, o caso do administrador falharia.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { NextRequest } from "next/server";
+import { pedidoComTamanho } from "@/tests/helpers/pedido-com-tamanho";
 
 const deps = vi.hoisted(() => ({
   support: vi.fn(),
@@ -80,7 +80,7 @@ function formulario(opcoes: {
 }
 
 function post(form: FormData, headers: Record<string, string> = {}) {
-  return new NextRequest("http://localhost/api/v1/prospecting/importar", {
+  return pedidoComTamanho("http://localhost/api/v1/prospecting/importar", {
     method: "POST",
     headers,
     body: form,
@@ -132,7 +132,7 @@ beforeEach(() => {
 describe("POST /api/v1/prospecting/importar", () => {
   it("suporte sem permissão de escrita: devolve o 403 dele e não toca em nada", async () => {
     deps.support.mockResolvedValueOnce(new Response(null, { status: 403 }));
-    const res = await POST(post(formulario({})));
+    const res = await POST(await post(formulario({})));
     expect(res.status).toBe(403);
     expect(deps.requireRole).not.toHaveBeenCalled();
     expect(deps.importar).not.toHaveBeenCalled();
@@ -140,7 +140,7 @@ describe("POST /api/v1/prospecting/importar", () => {
 
   it("autenticação que falha devolve a resposta dela", async () => {
     deps.requireRole.mockResolvedValueOnce({ ok: false, response: new Response(null, { status: 401 }) });
-    const res = await POST(post(formulario({})));
+    const res = await POST(await post(formulario({})));
     expect(res.status).toBe(401);
     expect(deps.importar).not.toHaveBeenCalled();
   });
@@ -150,7 +150,7 @@ describe("POST /api/v1/prospecting/importar", () => {
       ok: false,
       response: new Response(null, { status: 403 }),
     }));
-    const res = await POST(post(formulario({})));
+    const res = await POST(await post(formulario({})));
     expect(res.status).toBe(403);
     expect(deps.requireRole).toHaveBeenCalledWith("admin", expect.anything());
   });
@@ -163,35 +163,35 @@ describe("POST /api/v1/prospecting/importar", () => {
       actor: { type: "api_token", id: "tok-1" },
       apiTokenId: "tok-1",
     });
-    const res = await POST(post(formulario({}), { authorization: "Bearer dsk_abc" }));
+    const res = await POST(await post(formulario({}), { authorization: "Bearer dsk_abc" }));
     expect(res.status).toBe(403);
     expect(deps.importar).not.toHaveBeenCalled();
   });
 
   it("sem arquivo: 422", async () => {
-    const res = await POST(post(formulario({ arquivo: null })));
+    const res = await POST(await post(formulario({ arquivo: null })));
     expect(res.status).toBe(422);
     expect(deps.importar).not.toHaveBeenCalled();
   });
 
   it(".pdf: 422", async () => {
-    const res = await POST(post(formulario({ arquivo: { nome: "lista.pdf", conteudo: "%PDF" } })));
+    const res = await POST(await post(formulario({ arquivo: { nome: "lista.pdf", conteudo: "%PDF" } })));
     expect(res.status).toBe(422);
     expect(deps.importar).not.toHaveBeenCalled();
   });
 
   it("arquivo maior que 2 MB: 422 antes de ler o conteúdo", async () => {
     const grande = new Uint8Array(2 * 1024 * 1024 + 1);
-    const res = await POST(post(formulario({ arquivo: { nome: "grande.csv", conteudo: grande } })));
+    const res = await POST(await post(formulario({ arquivo: { nome: "grande.csv", conteudo: grande } })));
     expect(res.status).toBe(422);
     expect(deps.importar).not.toHaveBeenCalled();
   });
 
-  it("corpo declarado grande demais: 422 sem ler o formulário", async () => {
-    const req = post(formulario({}), { "content-length": String(3 * 1024 * 1024) });
+  it("corpo declarado grande demais: 413 sem ler o formulário", async () => {
+    const req = await post(formulario({}), { "content-length": String(3 * 1024 * 1024) });
     const lerFormulario = vi.spyOn(req, "formData");
     const res = await POST(req);
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(413);
     expect(lerFormulario).not.toHaveBeenCalled();
     expect(deps.importar).not.toHaveBeenCalled();
   });
@@ -203,20 +203,20 @@ describe("POST /api/v1/prospecting/importar", () => {
       formulario({ extras: { request_id: "nao-e-uuid" } }),
       formulario({ extras: { avaliar_site: "talvez" } }),
     ]) {
-      const res = await POST(post(form));
+      const res = await POST(await post(form));
       expect(res.status).toBe(422);
     }
     expect(deps.importar).not.toHaveBeenCalled();
   });
 
   it("campo a mais no formulário (organization_id) é 422: nada dele vira organização", async () => {
-    const res = await POST(post(formulario({ extras: { organization_id: ORG_DO_FORMULARIO } })));
+    const res = await POST(await post(formulario({ extras: { organization_id: ORG_DO_FORMULARIO } })));
     expect(res.status).toBe(422);
     expect(deps.importar).not.toHaveBeenCalled();
   });
 
   it("CSV de 3 linhas, 1 sem telefone: 200, a organização é a da AUTENTICAÇÃO e a recusada traz a linha", async () => {
-    const res = await POST(post(formulario({})));
+    const res = await POST(await post(formulario({})));
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("no-store");
     const { data } = await res.json();
@@ -256,12 +256,12 @@ describe("POST /api/v1/prospecting/importar", () => {
   });
 
   it("gerar_previa sem avaliar_site vira false", async () => {
-    await POST(post(formulario({ extras: { avaliar_site: "false", gerar_previa: "true" } })));
+    await POST(await post(formulario({ extras: { avaliar_site: "false", gerar_previa: "true" } })));
     expect(deps.importar.mock.calls[0]![3]).toMatchObject({ avaliar_site: false, gerar_previa: false });
   });
 
   it("audita uma vez, com contagens e SEM o nome do arquivo", async () => {
-    await POST(post(formulario({})));
+    await POST(await post(formulario({})));
     expect(audit).toHaveBeenCalledTimes(1);
     const chamada = vi.mocked(audit).mock.calls[0]![0];
     expect(chamada).toMatchObject({
@@ -297,7 +297,7 @@ describe("POST /api/v1/prospecting/importar", () => {
       resumo: {},
       total_linhas: 2,
     });
-    const res = await POST(post(formulario({})));
+    const res = await POST(await post(formulario({})));
     expect(res.status).toBe(200);
     expect((await res.json()).data.repetida).toBe(true);
     expect(audit).not.toHaveBeenCalled();
@@ -305,7 +305,7 @@ describe("POST /api/v1/prospecting/importar", () => {
 
   it("nenhuma linha válida: 422 com as recusadas em details", async () => {
     const res = await POST(
-      post(
+      await post(
         formulario({
           arquivo: { nome: "vazia.csv", conteudo: "empresa;telefone\nSem Fone;\nOutra;123\n" },
         }),
@@ -327,7 +327,7 @@ describe("POST /api/v1/prospecting/importar", () => {
 
   it("planilha sem coluna de telefone: 422 com as colunas encontradas", async () => {
     const res = await POST(
-      post(formulario({ arquivo: { nome: "x.csv", conteudo: "empresa;cidade\nA Ltda;Rio\n" } })),
+      await post(formulario({ arquivo: { nome: "x.csv", conteudo: "empresa;cidade\nA Ltda;Rio\n" } })),
     );
     expect(res.status).toBe(422);
     expect((await res.json()).error.message).toContain("empresa, cidade");
@@ -336,7 +336,7 @@ describe("POST /api/v1/prospecting/importar", () => {
   it("mais de 500 linhas: 422 e nada é gravado", async () => {
     const linhas = Array.from({ length: 501 }, (_, i) => `Empresa ${i};(11) 9${String(i).padStart(4, "0")}-0000`);
     const res = await POST(
-      post(formulario({ arquivo: { nome: "grande.csv", conteudo: ["empresa;telefone", ...linhas].join("\n") } })),
+      await post(formulario({ arquivo: { nome: "grande.csv", conteudo: ["empresa;telefone", ...linhas].join("\n") } })),
     );
     expect(res.status).toBe(422);
     expect((await res.json()).error.message).toContain("500");
@@ -352,7 +352,7 @@ describe("POST /api/v1/prospecting/importar", () => {
  */
 describe("POST /api/v1/prospecting/importar — prévia", () => {
   it("previa=true confere e devolve as contagens SEM importar nem auditar", async () => {
-    const res = await POST(post(formulario({ extras: { previa: "true" } })));
+    const res = await POST(await post(formulario({ extras: { previa: "true" } })));
     expect(res.status).toBe(200);
     const { data } = await res.json();
     expect(data).toMatchObject({
@@ -375,7 +375,7 @@ describe("POST /api/v1/prospecting/importar — prévia", () => {
           suprimidos: new Set(["+5511999990003"]),
         }),
     );
-    const res = await POST(post(formulario({ extras: { previa: "true" } })));
+    const res = await POST(await post(formulario({ extras: { previa: "true" } })));
     expect(res.status).toBe(200);
     const { data } = await res.json();
     expect(data.entram).toBe(0);
@@ -401,7 +401,7 @@ describe("POST /api/v1/prospecting/importar — prévia", () => {
           suprimidos: new Set(["+5511999990001", "+5511999990003"]),
         }),
     );
-    const res = await POST(post(formulario({})));
+    const res = await POST(await post(formulario({})));
     expect(res.status).toBe(422);
     const body = await res.json();
     expect(body.error.details.recusadas[0].codigo).toBe("suprimido_lgpd");

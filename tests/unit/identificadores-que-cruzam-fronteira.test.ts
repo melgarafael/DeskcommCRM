@@ -186,6 +186,7 @@ const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validado
   // registro acima: UUID v4 de alfabeto ASCII + `.jpg`/`.png` conhecido pela
   // ASSINATURA dos bytes, nunca pelo content-type que o cliente diz.
   { arquivo: "app/api/v1/message-templates/[id]/midias/route.ts", fronteira: "storage.chave-de-objeto" },
+  { arquivo: "app/api/v1/products/[id]/ai-presentation/audio/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/cron/contact-avatars/route.ts", fronteira: "storage.chave-de-objeto" },
   // #3635: o upload do cabeçalho saiu da rota do parceiro para `lib/` quando o
   // canal oficial direto passou a gerenciar modelo pela tela — a lógica é a
@@ -225,10 +226,14 @@ const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validado
   { arquivo: "lib/api/client.ts", fronteira: "api.idempotency-key", papel: "gerador" },
   { arquivo: "lib/api/idempotency.ts", fronteira: "api.idempotency-key", papel: "validador" },
   { arquivo: "lib/extensions/http.ts", fronteira: "api.idempotency-key", papel: "validador" },
+  { arquivo: "app/api/v1/agencia/clientes/route.ts", fronteira: "api.idempotency-key", papel: "validador" },
   { arquivo: "app/api/v1/admin/tenants/route.ts", fronteira: "api.idempotency-key", papel: "validador" },
   { arquivo: "app/api/v1/channel-sessions/route.ts", fronteira: "api.idempotency-key", papel: "validador" },
   { arquivo: "app/api/v1/lgpd/requests/[id]/approve/route.ts", fronteira: "api.idempotency-key", papel: "validador" },
   { arquivo: "app/api/v1/onboarding/whatsapp/session/route.ts", fronteira: "api.idempotency-key", papel: "validador" },
+  // Módulo `amigo` (#4227): a tela gera a chave e a rota de operações a valida.
+  { arquivo: "app/app/integrations/amigo/_api.ts", fronteira: "api.idempotency-key", papel: "gerador" },
+  { arquivo: "app/api/v1/integrations/amigo/execute/route.ts", fronteira: "api.idempotency-key", papel: "validador" },
 ];
 
 describe("todo identificador que cruza fronteira cabe no que o terceiro aceita", () => {

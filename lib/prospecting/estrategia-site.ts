@@ -17,6 +17,7 @@ import {
 } from "@/lib/prospecting/site-classify";
 import type { OfertaDaCampanha } from "./schema";
 import type { PreviaSalva } from "./previa";
+import { sinaisDaEmpresa } from "./sinais-da-empresa";
 export type { OfertaDaCampanha } from "./schema";
 
 export interface ObjecaoComResposta {
@@ -29,6 +30,8 @@ export interface EstrategiaDoLead {
   ganchos: string[];
   objecoes: ObjecaoComResposta[];
   proximoPasso: string;
+  /** Frase da oferta de automação, ao lado do ângulo de site. `null` sem automação na campanha. */
+  complementar: string | null;
 }
 
 export interface EntradaDaEstrategia {
@@ -153,6 +156,35 @@ function juntarProblemas(problemas: string[], t: TradutorDeTexto): string | null
 }
 
 /**
+ * A frase da oferta de automação que vai ao lado do ângulo de site. Sem automação
+ * marcada na campanha, `null`. Com as duas, uma frase só com as duas.
+ */
+function fraseDeAutomacaoComplementar(ofertas: OfertaDaCampanha[], t: TradutorDeTexto): string | null {
+  const crm = ofertas.includes("automacao_crm");
+  const n8n = ofertas.includes("automacao_n8n");
+  if (!ofertas.includes("site")) {
+    if (crm && n8n)
+      return t("O atendimento automatizado responde quem chama fora de hora e as automações tiram o trabalho repetido, sem trocar ninguém da equipe.");
+    if (crm)
+      return t("O atendimento automatizado responde quem chama fora de hora, sem trocar ninguém da equipe.");
+    if (n8n)
+      return t("As automações tiram o trabalho repetido, sem trocar ninguém da equipe.");
+    return null;
+  }
+  if (crm && n8n)
+    return t(
+      "Além do site, o atendimento automatizado responde quem chama fora de hora e as automações tiram o trabalho repetido, sem trocar ninguém da equipe.",
+    );
+  if (crm)
+    return t(
+      "Além do site, o atendimento automatizado responde quem chama fora de hora, sem trocar ninguém da equipe.",
+    );
+  if (n8n)
+    return t("Além do site, as automações tiram o trabalho repetido, sem trocar ninguém da equipe.");
+  return null;
+}
+
+/**
  * Melhor ângulo = auditoria × primeira oferta aplicável ao caso.
  * `ofertas[0]` (primária) decide empates; default `["site"]` = comportamento atual.
  */
@@ -182,6 +214,7 @@ export function montarEstrategia(entrada: EntradaDaEstrategia, t: TradutorDeText
           ? "Aborde sem citar o site. Para ter diagnóstico, rode \"Reanalisar site\" de outra rede ou noutro dia."
           : "Aguardar a reverificação automática; se esgotar as tentativas, o veredito fica \"não medido\" e a abordagem segue sem citar o site.",
       ),
+      complementar: null,
     };
   }
   const vocabulario = vocabularioDoNicho(entrada.nicho, entrada.sobrescritaVocabulario ?? null, t);
@@ -193,9 +226,13 @@ export function montarEstrategia(entrada: EntradaDaEstrategia, t: TradutorDeText
 
   const querAutomacao = ofertas.includes("automacao_crm") || ofertas.includes("automacao_n8n");
   const volumeAlto = (entrada.numAvaliacoes ?? 0) >= 50;
+  // Fora do ramo "Site ok, demanda alta" (ali a automação já é o ângulo), a oferta
+  // de automação vira frase ao lado do ângulo de site, em qualquer classe.
+  let complementar: string | null = querAutomacao ? fraseDeAutomacaoComplementar(ofertas, t) : null;
 
   if (entrada.classe === "site-ok") {
     if (querAutomacao && volumeAlto) {
+      complementar = null;
       cenario = t("Site ok, demanda alta");
       angulo = trocarMarcadores(
         t("Site em ordem e movimento alto: a dor não é vitrine, é atendimento — mensagens sem resposta e {vocabulario} perdido no volume. O ângulo é automação (fila, resposta imediata, follow-up automático), não site."),
@@ -222,6 +259,7 @@ export function montarEstrategia(entrada: EntradaDaEstrategia, t: TradutorDeText
         proximoPasso: t(
           "Prioridade baixa: compete com sem-site e site ruim na fila. Aborde só se a região ou o nicho for estratégico.",
         ),
+        complementar,
       };
     }
   } else if (entrada.classe === "agregador" || entrada.classe === "sem-site") {
@@ -325,7 +363,7 @@ export function montarEstrategia(entrada: EntradaDaEstrategia, t: TradutorDeText
               "Gere a prévia da abordagem, revise com seu tom e envie pelo WhatsApp; ao responder, siga com a estratégia acima. Depois marque como contatado.",
             );
 
-  return { cenario, angulo, ganchos, objecoes: objecoesTraduzidas(objecoes), proximoPasso };
+  return { cenario, angulo, ganchos, objecoes: objecoesTraduzidas(objecoes), proximoPasso, complementar };
 }
 
 /**
@@ -536,10 +574,17 @@ export function instrucaoDeAbordagemFria(
 }
 
 /**
- * Linha a linha para `gerarAbordagemDeFormulario`: os 6 campos que o envio já
- * usava (mesmos valores, mesma ordem) + `Auditoria` e `Detalhe` quando há
- * veredito + `Rascunho de abordagem` quando a tela guardou uma prévia válida.
- * Fonte única — worker e prévia bebem daqui.
+ * Linha a linha para `gerarAbordagemDeFormulario`: a identificação da empresa
+ * (`Empresa`, `Segmento`, `Endereço`, `Site`), **todos** os sinais que a
+ * descoberta já tinha e o prompt não recebia (`Ficha do Google` com nota e
+ * NÚMERO de avaliações, `Redes` com o nome de cada rede, `Telefone` com
+ * celular/fixo) e, quando há veredito medido, `Auditoria` e `Detalhe` +
+ * `Rascunho de abordagem` quando a tela guardou uma prévia válida.
+ *
+ * Fonte única — worker e prévia bebem daqui. Era aqui que o #4459 doía: a
+ * descoberta trazia cinco sinais e o prompt recebia a nota nua, as URLs cruas e
+ * o veredito do site. Numa empresa sem site sobrava "não tem site", e a
+ * mensagem saía igual à da empresa seguinte.
  */
 export function montarDadosDeAbordagem(
   data: {
@@ -548,7 +593,10 @@ export function montarDadosDeAbordagem(
     address: string | null;
     website: string | null;
     rating: number | null;
+    reviews?: number | null;
     socials: string[];
+    phone?: string | null;
+    whatsapp?: { existe: boolean; verificado_em: string } | null;
   },
   site: {
     classe: ClasseDeSite;
@@ -564,8 +612,11 @@ export function montarDadosDeAbordagem(
     Segmento: data.category ?? "",
     Endereço: data.address ?? "",
     Site: data.website ?? "",
-    Avaliação: String(data.rating ?? ""),
-    Redes: data.socials.join(", "),
+    // Cada linha traz a ORIGEM no próprio rótulo (`Ficha do Google`, `Redes`,
+    // `Telefone`) e só existe quando o fato foi coletado — ausência não vira
+    // "sem avaliações", que seria afirmação sobre o mundo, não sobre o nosso
+    // dado (ver `sinais-da-empresa.ts`).
+    ...sinaisDaEmpresa(data),
   };
   // Só o DEFINITIVO E MEDIDO é citável (`citavelNoArgumento`) — e com a data,
   // nunca "agora": o envio pode sair dias depois da medição, e "agora"

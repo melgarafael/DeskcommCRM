@@ -49,7 +49,7 @@ export const TOOLS_FUNIL = declararTools([
     category: "read",
     rotulo: "Ver a previsão do funil",
     explicacao:
-      "Mostra quanto deve entrar e quando: os negócios abertos somados por moeda e por mês, com a chance de fechamento que cada etapa tem, e à parte o que ainda não tem data nem chance definida.",
+      "Mostra quanto deve entrar e quando: os negócios abertos por moeda e por mês, com a chance de fechamento que cada etapa tem — e com o valor único (setup) e a recorrência nova (mensalidade) em parcelas SEPARADAS, nunca somadas. À parte, o que ainda não tem data nem chance definida.",
     oQueToca: "Funil de vendas",
     risco: "seguro",
     // Leitura GERENCIAL (quanto entra e quando), não passo de venda: o agente

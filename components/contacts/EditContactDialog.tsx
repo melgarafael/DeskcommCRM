@@ -25,6 +25,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { normalizarTags } from "@/lib/contacts/tag-normalizada";
+import {
+  CAMPOS_DO_ENDERECO,
+  type EnderecoDoContato,
+} from "@/lib/contacts/endereco-por-cep";
 import { camposQueMudaram, mensagemDaRecusa, recusasDePadrao } from "@/lib/leads/padrao-do-campo";
 import {
   contactPatchSchemaDoPais,
@@ -35,6 +39,8 @@ import {
 import { useUpdateContact } from "@/hooks/contacts/useUpdateContact";
 import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabulary";
 import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
+import { CamposDeEndereco } from "@/components/contacts/CamposDeEndereco";
+
 import { EtiquetasDoContato } from "@/components/contacts/EtiquetasDoContato";
 import { useDefinirCorDaEtiqueta } from "@/hooks/tags/useDefinirCorDaEtiqueta";
 import type { Contact } from "@/lib/types/contacts";
@@ -63,16 +69,6 @@ interface FormShape {
   tags?: string[];
   custom_fields?: Record<string, unknown>;
 }
-
-const CAMPOS_DO_ENDERECO = [
-  "zip_code",
-  "street",
-  "number",
-  "complement",
-  "district",
-  "city",
-  "state",
-] as const;
 
 /** O rótulo de cada tipo, na língua da tela — a chave é o valor da coluna. */
 const ROTULO_DO_TIPO: Record<ContactType, string> = {
@@ -138,6 +134,22 @@ export function EditContactDialog({
   // O valor do `Select` de tipo. `useWatch` (e não `form.watch`) para o
   // componente re-renderizar quando o tipo muda — o gatilho do Radix lê daqui.
   const tipoDeContato = useWatch({ control: form.control, name: "contact_type" }) ?? "cliente";
+  // Os sete campos do endereço como UM objeto — é o que `CamposDeEndereco` lê.
+  // `useWatch` com a lista (e não `form.watch`) para o componente re-renderizar
+  // quando o CEP preenche: `setValue` não redesenha sozinho quem lê o formulário
+  // por referência.
+  const [zipCode, street, number, complement, district, city, state] =
+    useWatch({ control: form.control, name: CAMPOS_DO_ENDERECO }) ?? [];
+  const endereco: EnderecoDoContato = {
+    zip_code: zipCode ?? "",
+    street: street ?? "",
+    number: number ?? "",
+    complement: complement ?? "",
+    district: district ?? "",
+    city: city ?? "",
+    state: state ?? "",
+  };
+
   // A etiqueta que o texto AINDA digitado no campo de etiquetas viraria — o
   // campo avisa pelo `onPendente`, e o `Salvar` inclui isto no payload. Sem
   // isso, quem digita e salva sem Enter perde o texto em silêncio (defeito
@@ -303,37 +315,15 @@ export function EditContactDialog({
             <Label htmlFor="ec-birthdate">{t("Data de nascimento")}</Label>
             <Input id="ec-birthdate" type="date" {...form.register("birthdate")} />
           </div>
-          {/* Endereço (issue 3494) */}
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="ec-zip">{t("CEP")}</Label>
-              <Input id="ec-zip" {...form.register("zip_code")} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ec-state">{t("UF")}</Label>
-              <Input id="ec-state" {...form.register("state")} />
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="ec-street">{t("Logradouro")}</Label>
-              <Input id="ec-street" {...form.register("street")} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ec-number">{t("Número")}</Label>
-              <Input id="ec-number" {...form.register("number")} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ec-complement">{t("Complemento")}</Label>
-              <Input id="ec-complement" {...form.register("complement")} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ec-district">{t("Bairro")}</Label>
-              <Input id="ec-district" {...form.register("district")} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ec-city">{t("Cidade")}</Label>
-              <Input id="ec-city" {...form.register("city")} />
-            </div>
-          </div>
+          {/* Endereço (issue 3494) — os MESMOS campos do cadastro, com o CEP
+              preenchendo logradouro/bairro/cidade/UF (#3494, fatia 2). */}
+          <CamposDeEndereco
+            idPrefix="ec"
+            valores={endereco}
+            onCampo={(campo, valor) => form.setValue(campo, valor, { shouldDirty: true })}
+            consultarCep={perfil.codigo === PAIS_PADRAO}
+            disabled={update.isPending}
+          />
           {/*
             O TIPO DE CONTATO (issue 3005, fatia 1). Não é campo de formulário
             comum (`form.register`): o `Select` do Radix devolve o valor pelo

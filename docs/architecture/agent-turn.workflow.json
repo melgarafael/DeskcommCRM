@@ -248,6 +248,31 @@
       "sublabel": "agent_stage_hint: passo → etapa"
     },
     {
+      "id": "historicoImportado",
+      "lane": "app",
+      "col": 1,
+      "type": "database",
+      "label": "Histórico importado",
+      "sublabel": "importação manual concluída; mensagens antigas nunca disparam o turno ao vivo"
+    },
+    {
+      "id": "history_analysis",
+      "lane": "worker",
+      "col": 2,
+      "type": "backend",
+      "label": "Análise do histórico",
+      "sublabel": "kind: history_analysis · sem adapter de canal nem tools · evidência por message_id",
+      "tag": "history_analysis"
+    },
+    {
+      "id": "historicoAnaliseResultado",
+      "lane": "funil",
+      "col": 3,
+      "type": "database",
+      "label": "Perfil e oportunidade",
+      "sublabel": "lead_checkpoints + lead_state.qualification + crm_lead_scores existentes"
+    },
+    {
       "id": "declaracao",
       "lane": "contrato",
       "col": 5,
@@ -359,7 +384,7 @@
       "col": 4,
       "type": "backend",
       "label": "Comprovantes da agenda",
-      "sublabel": "recibo do turno + estado atual por org/contato; sem bypass",
+      "sublabel": "recibo do turno ou reserva confirmada atual, por org/contato; sem bypass",
       "tag": "conferirRecibosDeAgendamento"
     },
     {
@@ -381,6 +406,20 @@
     }
   ],
   "edges": [
+    {
+      "id": "historico-analysis",
+      "from": "historicoImportado",
+      "to": "history_analysis",
+      "label": "admin confirma a contagem; até 50 por rodada; pula quem recusou IA ou tem estado mais novo",
+      "variant": "dashed"
+    },
+    {
+      "id": "history-analysis-resultado",
+      "from": "history_analysis",
+      "to": "historicoAnaliseResultado",
+      "label": "checkpoint/BANT/score; zero saída ao cliente",
+      "variant": "dashed"
+    },
     {
       "id": "inbound-ingest",
       "from": "inbound",
@@ -757,7 +796,7 @@
       "id": "turn-reply-review",
       "from": "turn",
       "to": "reply_review",
-      "label": "modo assistido ou sugestão humana executa prévia sem efeitos externos",
+      "label": "prévia sem efeitos externos; consulta MCP exige escolha de leitura + readOnlyHint e o mesmo objeto marcado até a policy",
       "route": "drop"
     },
     {
@@ -911,6 +950,17 @@
         "Saída: tool_ids da versão publicada escolhe capacidades; callback_enabled filtra só a criação de retorno",
         "Volta: api_audit_log (mcp.tool_called) → fn_agent_tool_usage → usos, falhas e última vez na aba Capacidades",
         "Sem a volta, ligar uma capacidade era um ato de fé: o log existia desde a Spec 11 e nenhuma tela lia"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Consultas MCP na prévia — #3564, @Denispds",
+      "items": [
+        "Entrada existente: ferramentas escolhidas na versão do agente e servidor MCP da organização; leitura exige classificação do administrador E readOnlyHint do servidor",
+        "pickToolsFromMcp marca o objeto final após seus wrappers; applyPreviewPolicy reconhece essa identidade, sem autorizar escrita, cópia ou nome colidente",
+        "Saída: consulta HTTP pelo SDK → candidata no Testar ou rascunho assistido, sem envio ou efeitos operacionais no cliente",
+        "Volta existente: mcp.tool_called e impedimentos da prévia → operador confere a configuração em Capacidades e no servidor externo; a próxima prévia usa a configuração atual",
+        "Prova composta inprocess: motor, PG17, carregador, SDK e socket reais; provider e fornecedor sintéticos. Não cobre Auth, RLS, PostgREST, rota HTTP, UI ou modelo público; ver o mapa de jornadas"
       ]
     },
     {

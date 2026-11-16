@@ -17,7 +17,7 @@ import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { CONVERSATION_TERMINAL_STATUSES } from "@/lib/schemas";
 import { orgTemAutomatico } from "@/lib/ai/agents/org-tem-automatico";
-import { comandosDaFila } from "@/lib/inbox/comando-da-conversa";
+import { comandosDaFila, comPreFiltroDoComando } from "@/lib/inbox/comando-da-conversa";
 import { aplicarMarcadores, modoDeEtiqueta } from "@/lib/inbox/marcador-da-conversa";
 import { createClient } from "@/lib/supabase/server";
 import { idsDeContatosPessoais } from "../_handler";
@@ -56,6 +56,13 @@ export function filtrosAuxiliaresDaContagem(
   if (canal) filtros.push(["channel_session_id", canal]);
   // O atendente escolhido pelo gerente. Só id de usuário (uuid) entra: qualquer
   // outra coisa seria ignorada em silêncio e a contagem divergiria da lista.
+  // A FILA (#3876): o badge conta a fila ESCOLHIDA, não todas. Sem esta linha o
+  // seletor de fila mostraria "Fila 7" listando 2 — a divergência que este
+  // arquivo existe para impedir, pelo caminho do setor em vez do de canal.
+  const fila = sp.get("sector_id");
+  if (fila && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(fila)) {
+    filtros.push(["sector_id", fila]);
+  }
   const atendente = sp.get("assigned_to");
   if (atendente && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(atendente)) {
     filtros.push(["assigned_to_user_id", atendente]);
@@ -148,6 +155,10 @@ export async function GET(req: NextRequest): Promise<Response> {
   // conjunto de comandos a Fila pede. `undefined` (não deu para saber) segue a
   // convenção da regra: assume que há automático.
   const automaticoDaOrg = await orgTemAutomatico(supabase, org);
+  // O conjunto de comandos que a aba Fila pede sai daqui UMA vez e serve às duas
+  // pontas: o `.in(...)` da contagem e o pré-filtro (#4325), que só vale quando
+  // todos os comandos pedidos são `aguardando`/`automatico`.
+  const comandosFila = comandosDaFila(automaticoDaOrg);
 
   // O badge de "Minhas" precisa contar o MESMO que a aba lista (#2848): a aba
   // passou a trazer as conversas em que eu PARTICIPO (convite é da conversa), e
@@ -180,10 +191,17 @@ export async function GET(req: NextRequest): Promise<Response> {
     // `tests/unit/fila-tem-uma-definicao-so.test.ts` e
     // `tests/invariants/gov-5b-inbox-scope-counts.test.ts`, porque um badge que conta o
     // que a aba não mostra manda o atendente procurar trabalho que não existe.
-    countExact().in("comando_da_conversa", comandosDaFila(automaticoDaOrg)),
+    // O pré-filtro (#4325) vem junto: sem dono e fora do histórico fechado é
+    // condição NECESSÁRIA do comando, então ele não muda o número — só evita
+    // avaliar a função em linha que ela recusaria. Ver
+    // `comPreFiltroDoComando`.
+    comPreFiltroDoComando(
+      countExact().in("comando_da_conversa", comandosFila),
+      comandosFila,
+    ),
     // A aba "Automático". Antes ela pedia `status='ai_handling'`, escrito por UM
     // caminho só em produção — por isso vivia quase vazia.
-    countExact().eq("comando_da_conversa", "automatico"),
+    comPreFiltroDoComando(countExact().eq("comando_da_conversa", "automatico"), "automatico"),
     // Minhas IGNORA o atendente escolhido pelo gerente: a lista da aba pede
     // `assigned_to=me`, que vence a escolha. Com o atendente aqui, o badge
     // contava `eu E ele` (zero) enquanto a aba listava as do gerente.
@@ -219,6 +237,42 @@ export async function GET(req: NextRequest): Promise<Response> {
     countExact().eq("status", "archived"),
   ]);
 
+  // ─── A CONTAGEM POR FILA (#3876) ──────────────────────────────────────────
+  //
+  // O seletor do Inbox mostra cada fila com quantas conversas ela ESPERA — o
+  // mesmo predicado da aba Fila (quem espera gente), recortado por setor. Uma
+  // contagem por fila, e não um `group by`: o PostgREST não agrupa, e contar
+  // relendo linhas de uma página truncada daria número errado — o defeito que
+  // este arquivo já consertou de outros jeitos. `head: true` é exato e não traz
+  // uma linha sequer.
+  //
+  // Sem fila na organização (módulo desligado, ou ninguém criou nenhuma), o
+  // mapa sai vazio e o seletor nem aparece: custo zero para quem não usa setores.
+  // Uma contagem por fila, e o número de filas é escolha humana (a instalação de
+  // referência tem cinco).
+  //
+  // ⚠️ O `sector_id` que já veio na URL sai ANTES: ele é o filtro da TELA, e
+  // mantê-lo aqui pediria `sector_id = A AND sector_id = B`, devolvendo zero em
+  // toda fila menos uma.
+  const semOFiltroDaTela = auxiliares.filter(([coluna]) => coluna !== "sector_id");
+  const { data: filasDaOrg } = await supabase
+    .from("attendant_sectors")
+    .select("id")
+    .eq("organization_id", org);
+  const idsDasFilas = ((filasDaOrg ?? []) as Array<{ id: string }>).map((f) => f.id);
+  const contagensPorFila = await Promise.all(
+    idsDasFilas.map(async (idDaFila) => {
+      const r = await countExact([...semOFiltroDaTela, ["sector_id", idDaFila] as const]).in(
+        "comando_da_conversa",
+        comandosDaFila(automaticoDaOrg),
+      );
+      // Falha de UMA fila não derruba a tela: a contagem dela sai zero, que é
+      // menos ruim que o inbox inteiro sem número. O erro real já vai ao log da
+      // consulta, do lado do supabase-js.
+      return [idDaFila, r.count ?? 0] as const;
+    }),
+  );
+
   const firstErr =
     fila.error ?? automatico.error ?? mine.error ?? all.error ?? closed.error ?? archived.error;
   if (firstErr) {
@@ -238,6 +292,12 @@ export async function GET(req: NextRequest): Promise<Response> {
       all: all.count ?? 0,
       closed: closed.count ?? 0,
       archived: archived.count ?? 0,
+      /**
+       * Quantas conversas ESPERAM gente em cada fila (#3876), por id de setor.
+       * Vem vazio quando a organização não tem fila — e é o que o seletor do
+       * Inbox lê para mostrar o número ao lado do nome, com a cor da fila.
+       */
+      por_fila: Object.fromEntries(contagensPorFila) as Record<string, number>,
     },
     { requestId },
   );

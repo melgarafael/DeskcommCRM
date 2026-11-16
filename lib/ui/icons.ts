@@ -34,6 +34,8 @@ export {
   Clock,
   // marca da instalação (o revendedor troca nome e cor do produto)
   Palette,
+  // aparência da organização (template visual, Configurações › Aparência)
+  PaintBrush,
   // anúncios (Análise → Meta Ads). Megaphone e não outro ChartX: os dois
   // vizinhos do grupo já são gráficos (ChartBar em Desempenho, ChartLineUp em
   // Evolução da IA), e um terceiro gráfico deixaria as três linhas do menu
@@ -104,6 +106,7 @@ export {
   WhatsappLogo,
   InstagramLogo,
   MessengerLogo,
+  TelegramLogo,
   Phone,
   PhoneIncoming,
   PhoneOutgoing,
@@ -161,6 +164,8 @@ export {
   GoogleLogo,
   MapPin,
   ArrowsOutSimple,
+  // Construtor de cadências — mesma família da interface.
+  Hourglass, Lightning, Minus, StopCircle, CheckSquare, ArrowLeft,
   // /admin/modulos: módulo opcional com tabela própria (ADR-0002)
   Stack,
   // atalhos do card (#3487): carrinho do app de pedidos e o link genérico.

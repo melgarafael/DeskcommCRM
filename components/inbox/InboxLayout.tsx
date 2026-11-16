@@ -3,10 +3,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, startTransition } fr
 import { useT } from "@/hooks/i18n/useT";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth, usePermission } from "@/hooks/auth/AuthProvider";
+import { useSectors } from "@/hooks/team/useSectors";
 import { roleAtLeast } from "@/lib/auth/types";
 import { useBulkConversations, type AcaoEmLote } from "@/hooks/inbox/useBulkConversations";
 import { useSelecaoEmLote } from "@/hooks/inbox/useSelecaoEmLote";
 import { estadoDaJanela } from "@/lib/channels/janela";
+import { recusaNotaDeVoz } from "@/lib/channels/capabilities";
 import { motivoDaJanelaFechada, motivoDoContato } from "@/lib/inbox/motivo-do-envio-bloqueado";
 import { composerBloqueadoAteAssumir } from "@/lib/inbox/bloqueio-ate-assumir";
 import { JanelaFechadaAviso } from "@/components/inbox/JanelaFechadaAviso";
@@ -290,6 +292,16 @@ export function InboxLayout({
 }: InboxLayoutProps = {}) {
   const t = useT();
   const { activeOrg, user } = useAuth();
+  /**
+   * AS FILAS DA ORGANIZAÇÃO (#3876) — buscadas AQUI, e não na barra de filtros.
+   *
+   * Setores é módulo opcional (doc 213): desligado, a rota responderia 404 e o
+   * pedido nem sai (`enabled`). A página já tem o `activeOrg` e vive dentro do
+   * `QueryClientProvider`; a barra de filtros recebe a lista pronta e continua
+   * sem consultar o servidor, como sempre foi.
+   */
+  const setoresLigados = (activeOrg?.modulos_ligados ?? []).includes("setores");
+  const { data: filasDaOrganizacao } = useSectors(setoresLigados);
   useParticipacoesRealtime(user.id, activeOrg?.orgId ?? null);
   const supportReadonly = user.support?.access_mode === "support_readonly";
   const orgId = activeOrg?.orgId ?? null;
@@ -464,6 +476,10 @@ export function InboxLayout({
         ? filterValue.search
         : undefined,
       channel_session_id: filterValue.channel_session_id,
+      // A FILA (#3876): o seletor da barra vira o mesmo `sector_id` que a rota
+      // lê. Sem esta linha o controle existiria e a lista não mudaria — a
+      // rotura silenciosa que o schema e a rota já documentam nas duas pontas.
+      sector_id: filterValue.sector_id,
       tag: filterValue.tag,
       tagMode: filterValue.tagMode,
       unread: filterValue.onlyUnread || undefined,
@@ -475,6 +491,7 @@ export function InboxLayout({
       filterValue.assigned_to,
       filterValue.search,
       filterValue.channel_session_id,
+      filterValue.sector_id,
       filterValue.tag,
       filterValue.tagMode,
       filterValue.onlyUnread,
@@ -951,7 +968,11 @@ export function InboxLayout({
         )}
       >
         <BotaoIniciarConversa />
-        <InboxFilters value={filterValue} onChange={setFilterValue} />
+        <InboxFilters
+          value={filterValue}
+          onChange={setFilterValue}
+          filas={filasDaOrganizacao?.data ?? []}
+        />
         {podeAgirEmLote && (
           <BarraDeAcoesEmLote
             quantidade={selecao.quantidade}
@@ -1103,6 +1124,7 @@ export function InboxLayout({
                   nome: selectedConversation.assigned_to_user_name ?? null,
                 }}
                 contatoId={selectedConversation.contacts?.id ?? null}
+                contatoRecusaEnvio={Boolean(selectedConversation.contacts?.is_blocked || selectedConversation.contacts?.is_personal)}
               />
             </div>
             <RetentionNotice conversationId={selectedConversation.id} />
@@ -1130,6 +1152,9 @@ export function InboxLayout({
               key={rascunhoVivo ? `rascunho:${rascunhoVivo.conversationId}` : "composer"}
               ref={composerRef}
               conversationId={selectedConversation.id}
+              agendamentoLigado={
+                Boolean(selectedConversation.contacts?.id && selectedConversation.channel_session_id) && !supportReadonly
+              }
               blockedReason={supportReadonly ? "Acompanhamento somente leitura" : blockedReason}
               janelaFechada={motivoDaJanela}
               disabled={selectedConversation.status === "closed"}
@@ -1158,6 +1183,9 @@ export function InboxLayout({
               // e o botão da faixa abre essa conversa. É a mesma seleção que a
               // faixa do número fora do ar e o cabeçalho já usam.
               onAbrirConversa={handleSelect}
+              // O microfone some no canal que recusa a nota de voz que ele grava
+              // (Instagram/Facebook): a pergunta é à capability, nunca ao provider.
+              recusaNotaDeVoz={recusaNotaDeVoz(selectedConversation.channel_sessions?.provider)}
               // O aviso é DA conversa da URL: trocar de conversa dentro da inbox
               // não pode deixar um texto sugerido no campo de outra pessoa.
               rascunho={rascunhoVivo}

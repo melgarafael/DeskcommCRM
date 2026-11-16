@@ -26,6 +26,9 @@
 //     → tirar `&& !contatoDeOutraConversa` da condição.
 //  8. Negócio de contato pessoal é recusado, sem nota
 //     → tirar o `if (recusaPessoal) return recusaPessoal;`.
+//  9. Item que NÃO existe no banco de origem: o negócio não nasce (prova de
+//     10/11/2026: o agente inventou o código em 2 de 2 turnos)
+//     → tirar a chamada de `conferirItem` em `completarDestinoDoNegocio`.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -37,6 +40,12 @@ vi.mock("@/lib/supabase/admin", () => ({
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/atendimento/origem", () => ({
   observeServiceOrigin: async () => "humano",
+}));
+// A existência do item no banco de origem tem o próprio teste
+// (`item-da-referencia.test.ts`); aqui ela responde "existe", salvo no caso 9.
+const conferirItem = vi.hoisted(() => vi.fn(async () => ({ ok: true }) as const));
+vi.mock("@/lib/external-db/receitas/item-da-referencia", () => ({
+  conferirItemDaReferencia: conferirItem,
 }));
 
 import { crmCreateLead } from "@/lib/mcp/tools/leads";
@@ -244,6 +253,35 @@ describe("crm_create_lead com referencia_externa — as guardas da busca", () =>
     expect(saida.motivo).toBe("contato_pessoal");
     expect(inseridos).toHaveLength(0);
     expect(atividades).toHaveLength(0);
+  });
+});
+
+describe("crm_create_lead com referencia_externa — o item tem de existir", () => {
+  it("item inexistente no banco de origem: recusa, não insere e não anota", async () => {
+    conferirItem.mockResolvedValueOnce({
+      ok: false,
+      motivo: "item_inexistente",
+      mensagem: "o item não existe",
+    } as never);
+    const { cliente, inseridos, atividades } = supabaseCom(null);
+
+    const saida = (await crmCreateLead.handler(ENTRADA, ctxCom(cliente))) as { erro?: string };
+
+    expect(saida.erro).toBe("item_inexistente");
+    expect(inseridos).toHaveLength(0);
+    expect(atividades).toHaveLength(0);
+    expect(conferirItem).toHaveBeenCalledWith(cliente, ORG, REF);
+  });
+
+  it("sem referência, a existência nem é perguntada", async () => {
+    const { cliente } = supabaseCom(null);
+
+    await crmCreateLead.handler(
+      { pipeline_id: PIPELINE, stage_id: ETAPA, title: "Negócio comum" },
+      ctxCom(cliente),
+    );
+
+    expect(conferirItem).not.toHaveBeenCalled();
   });
 });
 

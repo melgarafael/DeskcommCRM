@@ -74,7 +74,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as zlib from "node:zlib";
 
-import { test, expect, type Page, type Locator } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, type Page, type Locator } from "./helpers/test";
 
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
 
@@ -358,9 +358,14 @@ function anotar(nome: string, dado: unknown): void {
   fs.writeFileSync(evidencia(nome), JSON.stringify(dado, null, 2) + "\n", "utf8");
 }
 
-/** O cabeçalho da barra lateral: o primeiro filho do `<aside>` (`h-14`, `border-b`). */
+/**
+ * O cabeçalho da barra lateral (`h-14`, `border-b`): o primeiro `div` do `<aside>`
+ * que tem essas duas classes. Não `aside > div` — a tela Aparência (#4635) pôs um
+ * painel (`data-casca="menu-painel"`) entre o `<aside>` e o conteúdo, e o "primeiro
+ * filho" passou a ser o menu inteiro (720px), sem o cabeçalho ter mudado um pixel.
+ */
 function cabecalhoDaBarra(page: Page): Locator {
-  return page.locator("aside > div").first();
+  return page.locator("aside div.h-14.border-b").first();
 }
 
 async function medirCaixa(alvo: Locator): Promise<Caixa> {
@@ -454,6 +459,7 @@ test.describe("a moldura do logo no tema escuro", () => {
     // que o navegador de quem escolheu escuro e saiu da conta já faz sozinho.
     for (const tema of ["dark", "light"] as const) {
       const contexto = await browser.newContext();
+      contexto.on("page", esperarARevelacaoNasCargas);
       try {
         const pagina = await contexto.newPage();
         await pagina.addInitScript((t) => window.localStorage.setItem("deskcomm-theme", t), tema);
@@ -628,6 +634,7 @@ test.describe("a moldura do logo no tema escuro", () => {
       expect(fundoETransparente((await medirMoldura(logo)).fundo)).toBe(true);
       await page.screenshot({ path: evidencia(`7-barra-${tema}.png`) });
       const contexto = await browser.newContext();
+      contexto.on("page", esperarARevelacaoNasCargas);
       try {
         const fachada = await contexto.newPage();
         await fachada.addInitScript((t) => localStorage.setItem("deskcomm-theme", t), tema);
@@ -682,6 +689,7 @@ test.describe("a moldura do logo no tema escuro", () => {
    */
   test.afterAll(async ({ browser }) => {
     const contexto = await browser.newContext();
+    contexto.on("page", esperarARevelacaoNasCargas);
     try {
       const pagina = await contexto.newPage();
       await loginComTotp(pagina, creds.users.dono!.email, secret());

@@ -17,6 +17,7 @@ import { type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { listaAgendamentos, type AgendamentoListado } from "@/lib/agenda/consulta";
+import { MAXIMO_DE_CONVIDADOS_DA_EQUIPE } from "@/lib/agenda/convidados-da-equipe";
 import { DURACAO_MAXIMA_MIN, DURACAO_MINIMA_MIN } from "@/lib/agenda/duracao-escolhida";
 import { donosDaAgenda } from "@/lib/agenda/donos-da-agenda";
 import { lerOcupacaoExterna } from "@/lib/agenda/ocupacao-externa";
@@ -30,6 +31,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
+import { amigoBookingContextSchema } from "@/lib/amigo/agenda";
 
 import {
   alterarAgendamentoHandler,
@@ -107,7 +109,24 @@ const tituloDoCompromisso = z.preprocess(
     .max(200, { message: "O título do compromisso cabe em até 200 caracteres." }),
 );
 
+/**
+ * OS CONVIDADOS DA EQUIPE (#4006) — ids de membros desta organização.
+ *
+ * `[]` limpa a lista; AUSENTE não mexe. A distinção é a mesma do e-mail do
+ * convidado, e existe pelo mesmo motivo: um PATCH de remarcação não pode
+ * desconvidar a equipe só porque a tela não mandou o campo.
+ *
+ * O teto vem de `lib/agenda/convidados-da-equipe.ts` — a MESMA constante que o
+ * handler aplica. Aqui ele é 422 de schema (o id malformado nem chega ao banco);
+ * lá é a conferência de organização, que o schema não tem como fazer.
+ */
+const convidadosDaEquipe = z
+  .array(z.string().uuid())
+  .max(MAXIMO_DE_CONVIDADOS_DA_EQUIPE)
+  .optional();
+
 const marcarSchema = z.object({
+  amigo: amigoBookingContextSchema.optional(),
   event_type_id: z.string().uuid(),
   starts_at: z.string().datetime({ offset: true }),
   owner_user_id: z.string().uuid().optional(),
@@ -118,6 +137,7 @@ const marcarSchema = z.object({
   description: z.string().max(2000).optional(),
   location_details: z.string().max(300).optional(),
   guest_email: emailDoConvidado.optional(),
+  team_guest_user_ids: convidadosDaEquipe,
   /**
    * A duração DESTE atendimento, em minutos (issue #3709) — ausente, a do tipo.
    *
@@ -129,6 +149,14 @@ const marcarSchema = z.object({
   duration_minutes: z.number().int().min(DURACAO_MINIMA_MIN).max(DURACAO_MAXIMA_MIN).optional(),
   participant_name: z.string().trim().min(1).max(120).optional(),
   participants: z.array(z.string().trim().min(1).max(120)).min(1).max(20).optional(),
+  /**
+   * O LUGAR reservado e quantas pessoas vêm (issue #4029). Ausentes, o serviço
+   * sem lugar continua reservando como antes; num serviço COM lugares a recusa
+   * vem nomeada (`space_required`), nunca uma vaga escolhida em silêncio.
+   * `party_size` presente conta em pessoas na capacidade do serviço também.
+   */
+  space_id: z.string().uuid().optional(),
+  party_size: z.number().int().min(1).max(100000).optional(),
   expected_service_revision: z.number().int().positive().optional(),
 });
 
@@ -147,6 +175,7 @@ const alterarSchema = z
     status: z.enum(["confirmed", "completed", "no_show"]).optional(),
     notes: z.string().max(2000).optional(),
     guest_email: emailDoConvidado.optional(),
+    team_guest_user_ids: convidadosDaEquipe,
     /**
      * O texto que a grade desenha no bloco (#3776). Entra no `.refine` abaixo:
      * sem isso o campo era DESCARTADO em silêncio e o pedido voltava com
@@ -154,6 +183,14 @@ const alterarSchema = z
      * que o cliente tinha mandado um campo.
      */
     title: tituloDoCompromisso.optional(),
+    /**
+     * A duração que a pessoa escolheu (#4450) — a segunda porta do campo da
+     * #3709. Sem esta linha o PATCH DESCARTAVA o número em silêncio: a tela
+     * mandaria a duração, o handler responderia "alterado", e o bloco ficaria
+     * com o comprimento de antes. A faixa é a mesma da criação, e o handler
+     * confere de novo porque a ferramenta MCP o chama sem passar por aqui.
+     */
+    duration_minutes: z.number().int().min(DURACAO_MINIMA_MIN).max(DURACAO_MAXIMA_MIN).optional(),
   })
   .refine(
     (c) =>
@@ -162,7 +199,9 @@ const alterarSchema = z
       c.status !== undefined ||
       c.notes !== undefined ||
       c.guest_email !== undefined ||
-      c.title !== undefined,
+      c.team_guest_user_ids !== undefined ||
+      c.title !== undefined ||
+      c.duration_minutes !== undefined,
     {
       message: "Informe pelo menos um campo para alterar.",
     },

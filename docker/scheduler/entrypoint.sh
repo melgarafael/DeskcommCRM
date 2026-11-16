@@ -75,6 +75,9 @@ CRONS="
 # número: é o cron que dá a cadência base, e o ritmo da campanha e do canal
 # (channel_knobs + pacing_ledger) só sabem torná-la mais lenta.
 * * * * *|45|api/v1/cron/campaign-worker
+# Módulo opcional: não instalado, só lê a lista de módulos e sai, sem tocar nas tabelas dele.
+* * * * *|55|api/v1/cron/cadencia-worker
+* * * * *|50|api/v1/cron/mensagens-agendadas
 */5 * * * *|60|api/v1/cron/webhook-log-retention
 # OAuth por contato dos servidores MCP do agente (migration 9095): revoga no
 # terceiro o acesso cuja conversa encerrou (ou cujo contato foi anonimizado).
@@ -100,11 +103,22 @@ CRONS="
 # antes em avisar entre 30 e 45 minutos antes. Barato: só olha compromisso
 # confirmado, futuro e ainda não avisado.
 */5 * * * *|45|api/v1/cron/agenda-reminder
+# O ROBÔ DO AMIGO (módulo opcional, #4227). Sem webhook do fornecedor, relê a
+# agenda de uma conexão ativa por volta. Com o módulo desligado, a rota sai na
+# primeira linha sem tocar em tabela.
+*/5 * * * *|60|api/v1/cron/amigo-sync
 # O LEMBRETE DE TAREFA. A cada 5 minutos porque a antecedência é escolhida
 # pela PESSOA (15 min, 1 h que é o padrão, ou 1 dia): uma varredura mais lenta
 # transformaria avisar 15 minutos antes em avisar até 20. Barato: só tarefa
 # com prazo na janela, com responsável, e que ainda não virou item da Central.
 */5 * * * *|45|api/v1/cron/task-reminder
+# A TAREFA QUE SE REPETE (#4595). De 10 em 10 minutos, e não de hora em hora: o
+# que ela decide é a hora de PAREDE escolhida pela pessoa — toda segunda às 9h —,
+# e uma varredura horária criaria a ocorrência entre as 9h e as 10h. Barato:
+# um índice parcial sobre as séries, e quem não tem série não chega ao insert.
+# Idempotente pelo índice único (recurrence_source_id, due_date) — duas rodadas
+# juntas gravam uma ocorrência só.
+*/10 * * * *|45|api/v1/cron/task-recurrence
 */15 * * * *|45|api/v1/cron/agenda-expira-pendentes
 */15 * * * *|60|api/v1/cron/risk-watcher
 # O CASO PARADO. De hora em hora, e não a cada 5 minutos: o prazo é de 24h, e
@@ -167,6 +181,14 @@ CRONS="
 # pagar, e a diferença entre nascer às 5h ou às 17h não muda nada para quem paga.
 # Barato: uma consulta por instalação, e quem não tem molde nenhum sai na hora.
 50 5 * * *|60|api/v1/cron/recurring-entries
+# O CATALOGO DA REVENDA. A revenda publica o estoque num feed JSON/CSV; este
+# cron e o que faz o catalogo acompanhar sem ninguem clicar (issue #3587).
+# De 2 em 2 horas: catalogo de loja muda no ritmo do estoque, preco errado por
+# duas horas e recuperavel, e 96 buscas por dia no site da revenda seriam abuso
+# sem ganho. Minuto 25, fora das outras varreduras. Sem fonte ativa, o portao
+# catalogo_do_feed (lib/cron/piso-ocioso.ts) faz a batida sair antes de
+# qualquer leitura no banco.
+25 */2 * * *|120|api/v1/cron/catalog-feed-sync
 "
 
 # CRONTAB_PATH é ponto de injeção do teste (tests/shell/scheduler-entrypoint.test.sh).

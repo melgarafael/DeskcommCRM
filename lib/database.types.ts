@@ -362,6 +362,147 @@ export type Database = {
           },
         ];
       };
+      agencia_clientes: {
+        Row: { agencia_id: string; created_at: string; organization_id: string };
+        ComputedFields: never;
+        Insert: { agencia_id: string; created_at?: string; organization_id: string };
+        Update: { agencia_id?: string; created_at?: string; organization_id?: string };
+        Relationships: [
+          {
+            foreignKeyName: "agencia_clientes_agencia_id_fkey";
+            columns: ["agencia_id"];
+            isOneToOne: false;
+            referencedRelation: "agencia_configuracoes";
+            referencedColumns: ["organization_id"];
+          },
+          {
+            foreignKeyName: "agencia_clientes_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: true;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      agencia_configuracoes: {
+        Row: {
+          clientes_inclusos: boolean;
+          habilitada: boolean;
+          limite_clientes: number;
+          organization_id: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          clientes_inclusos?: boolean;
+          habilitada?: boolean;
+          limite_clientes?: number;
+          organization_id: string;
+        };
+        Update: {
+          clientes_inclusos?: boolean;
+          habilitada?: boolean;
+          limite_clientes?: number;
+          organization_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "agencia_configuracoes_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: true;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      agencia_criacoes: {
+        Row: {
+          actor_user_id: string;
+          chave: string;
+          cliente_id: string;
+          organization_id: string;
+          pedido: NonNullable<Json>;
+        };
+        ComputedFields: never;
+        Insert: {
+          actor_user_id: string;
+          chave: string;
+          cliente_id: string;
+          organization_id: string;
+          pedido: NonNullable<Json>;
+        };
+        Update: {
+          actor_user_id?: string;
+          chave?: string;
+          cliente_id?: string;
+          organization_id?: string;
+          pedido?: NonNullable<Json>;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "agencia_criacoes_cliente_id_fkey";
+            columns: ["cliente_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "agencia_criacoes_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      agencia_sessoes: {
+        Row: {
+          actor_user_id: string;
+          agencia_id: string;
+          auth_session_id: string;
+          created_at: string;
+          ended_at: string | null;
+          expires_at: string;
+          id: string;
+          organization_id: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          actor_user_id: string;
+          agencia_id: string;
+          auth_session_id: string;
+          created_at?: string;
+          ended_at?: string | null;
+          expires_at?: string;
+          id?: string;
+          organization_id: string;
+        };
+        Update: {
+          actor_user_id?: string;
+          agencia_id?: string;
+          auth_session_id?: string;
+          created_at?: string;
+          ended_at?: string | null;
+          expires_at?: string;
+          id?: string;
+          organization_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "agencia_sessoes_agencia_id_fkey";
+            columns: ["agencia_id"];
+            isOneToOne: false;
+            referencedRelation: "agencia_configuracoes";
+            referencedColumns: ["organization_id"];
+          },
+          {
+            foreignKeyName: "agencia_sessoes_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       agent_case_chat_messages: {
         Row: {
           agent_id: string | null;
@@ -788,10 +929,12 @@ export type Database = {
           error_message: string | null;
           id: string;
           inbound_message_id: string | null;
+          input_text: string | null;
           is_dry_run: boolean;
           latency_ms: number | null;
           organization_id: string;
           outbound_message_id: string | null;
+          output_text: string | null;
           started_at: string;
           status: string;
           steps_count: number;
@@ -814,10 +957,12 @@ export type Database = {
           error_message?: string | null;
           id?: string;
           inbound_message_id?: string | null;
+          input_text?: string | null;
           is_dry_run?: boolean;
           latency_ms?: number | null;
           organization_id: string;
           outbound_message_id?: string | null;
+          output_text?: string | null;
           started_at?: string;
           status?: string;
           steps_count?: number;
@@ -839,10 +984,12 @@ export type Database = {
           error_message?: string | null;
           id?: string;
           inbound_message_id?: string | null;
+          input_text?: string | null;
           is_dry_run?: boolean;
           latency_ms?: number | null;
           organization_id?: string;
           outbound_message_id?: string | null;
+          output_text?: string | null;
           started_at?: string;
           status?: string;
           steps_count?: number;
@@ -2036,6 +2183,7 @@ export type Database = {
       };
       ai_router_decisions: {
         Row: {
+          agente_anterior_id: string | null;
           agent_id: string | null;
           confidence: number | null;
           conversation_id: string | null;
@@ -2043,12 +2191,16 @@ export type Database = {
           id: string;
           intent_name: string | null;
           job_id: string | null;
+          motivo: string | null;
           organization_id: string;
+          origem: string;
           outcome: string;
           router_id: string | null;
+          solicitado_por: string | null;
         };
         ComputedFields: never;
         Insert: {
+          agente_anterior_id?: string | null;
           agent_id?: string | null;
           confidence?: number | null;
           conversation_id?: string | null;
@@ -2056,11 +2208,15 @@ export type Database = {
           id?: string;
           intent_name?: string | null;
           job_id?: string | null;
+          motivo?: string | null;
           organization_id: string;
+          origem?: string;
           outcome: string;
           router_id?: string | null;
+          solicitado_por?: string | null;
         };
         Update: {
+          agente_anterior_id?: string | null;
           agent_id?: string | null;
           confidence?: number | null;
           conversation_id?: string | null;
@@ -2068,9 +2224,12 @@ export type Database = {
           id?: string;
           intent_name?: string | null;
           job_id?: string | null;
+          motivo?: string | null;
           organization_id?: string;
+          origem?: string;
           outcome?: string;
           router_id?: string | null;
+          solicitado_por?: string | null;
         };
         Relationships: [
           {
@@ -2199,6 +2358,7 @@ export type Database = {
           is_active: boolean;
           name: string;
           organization_id: string;
+          passagem_ao_cliente: string | null;
           updated_at: string;
         };
         ComputedFields: never;
@@ -2212,6 +2372,7 @@ export type Database = {
           is_active?: boolean;
           name: string;
           organization_id: string;
+          passagem_ao_cliente?: string | null;
           updated_at?: string;
         };
         Update: {
@@ -2224,6 +2385,7 @@ export type Database = {
           is_active?: boolean;
           name?: string;
           organization_id?: string;
+          passagem_ao_cliente?: string | null;
           updated_at?: string;
         };
         Relationships: [
@@ -2891,6 +3053,7 @@ export type Database = {
       };
       calendar_appointments: {
         Row: {
+          authority: string;
           cancellation_reason: string | null;
           cancelled_at: string | null;
           confirmation_next_at: string | null;
@@ -2903,6 +3066,8 @@ export type Database = {
           description: string | null;
           ends_at: string;
           event_type_id: string | null;
+          external_connection_id: string | null;
+          external_status: string | null;
           google_base_projection: Json | null;
           google_calendar_id: string | null;
           google_claim_epoch: number;
@@ -2960,19 +3125,23 @@ export type Database = {
           service_occurrence_id: string | null;
           service_operation_key: string | null;
           service_operation_request: Json | null;
+          service_party_size: number;
           service_publication_mode: string | null;
           service_requires_confirmation: boolean | null;
           service_rule_revision: number | null;
+          service_space_id: string | null;
           source: string;
           starts_at: string;
           starts_at_marked_at: string | null;
           status: string;
+          team_guest_user_ids: string[];
           time_zone: string;
           title: string;
           updated_at: string;
         };
         ComputedFields: never;
         Insert: {
+          authority?: string;
           cancellation_reason?: string | null;
           cancelled_at?: string | null;
           confirmation_next_at?: string | null;
@@ -2985,6 +3154,8 @@ export type Database = {
           description?: string | null;
           ends_at: string;
           event_type_id?: string | null;
+          external_connection_id?: string | null;
+          external_status?: string | null;
           google_base_projection?: Json | null;
           google_calendar_id?: string | null;
           google_claim_epoch?: number;
@@ -3042,18 +3213,22 @@ export type Database = {
           service_occurrence_id?: string | null;
           service_operation_key?: string | null;
           service_operation_request?: Json | null;
+          service_party_size?: number;
           service_publication_mode?: string | null;
           service_requires_confirmation?: boolean | null;
           service_rule_revision?: number | null;
+          service_space_id?: string | null;
           source?: string;
           starts_at: string;
           starts_at_marked_at?: string | null;
           status?: string;
+          team_guest_user_ids?: string[];
           time_zone?: string;
           title: string;
           updated_at?: string;
         };
         Update: {
+          authority?: string;
           cancellation_reason?: string | null;
           cancelled_at?: string | null;
           confirmation_next_at?: string | null;
@@ -3066,6 +3241,8 @@ export type Database = {
           description?: string | null;
           ends_at?: string;
           event_type_id?: string | null;
+          external_connection_id?: string | null;
+          external_status?: string | null;
           google_base_projection?: Json | null;
           google_calendar_id?: string | null;
           google_claim_epoch?: number;
@@ -3130,6 +3307,7 @@ export type Database = {
           starts_at?: string;
           starts_at_marked_at?: string | null;
           status?: string;
+          team_guest_user_ids?: string[];
           time_zone?: string;
           title?: string;
           updated_at?: string;
@@ -3455,9 +3633,13 @@ export type Database = {
           description: string | null;
           destination_calendar_id: string | null;
           duration_minutes: number;
+          external_connection_id: string | null;
+          external_id: string | null;
+          external_provider: string | null;
           id: string;
           is_active: boolean;
           location_details: string | null;
+          levar_dados_do_negocio: boolean;
           location_kind: string;
           minimum_notice_minutes: number;
           name: string;
@@ -3494,9 +3676,13 @@ export type Database = {
           description?: string | null;
           destination_calendar_id?: string | null;
           duration_minutes?: number;
+          external_connection_id?: string | null;
+          external_id?: string | null;
+          external_provider?: string | null;
           id?: string;
           is_active?: boolean;
           location_details?: string | null;
+          levar_dados_do_negocio?: boolean;
           location_kind?: string;
           minimum_notice_minutes?: number;
           name: string;
@@ -3532,9 +3718,13 @@ export type Database = {
           description?: string | null;
           destination_calendar_id?: string | null;
           duration_minutes?: number;
+          external_connection_id?: string | null;
+          external_id?: string | null;
+          external_provider?: string | null;
           id?: string;
           is_active?: boolean;
           location_details?: string | null;
+          levar_dados_do_negocio?: boolean;
           location_kind?: string;
           minimum_notice_minutes?: number;
           name?: string;
@@ -4436,12 +4626,13 @@ export type Database = {
           audience_version: number;
           base_legal: string;
           cancelled_at: string | null;
-          channel_session_id: string;
+          channel_session_id: string | null;
           completed_at: string | null;
           content_version: number;
           created_at: string;
           created_by: string | null;
           description: string | null;
+          email_subject: string | null;
           failed_at: string | null;
           failure_code: string | null;
           failure_detail: string | null;
@@ -4481,12 +4672,13 @@ export type Database = {
           audience_version?: number;
           base_legal: string;
           cancelled_at?: string | null;
-          channel_session_id: string;
+          channel_session_id?: string | null;
           completed_at?: string | null;
           content_version?: number;
           created_at?: string;
           created_by?: string | null;
           description?: string | null;
+          email_subject?: string | null;
           failed_at?: string | null;
           failure_code?: string | null;
           failure_detail?: string | null;
@@ -4525,12 +4717,13 @@ export type Database = {
           audience_version?: number;
           base_legal?: string;
           cancelled_at?: string | null;
-          channel_session_id?: string;
+          channel_session_id?: string | null;
           completed_at?: string | null;
           content_version?: number;
           created_at?: string;
           created_by?: string | null;
           description?: string | null;
+          email_subject?: string | null;
           failed_at?: string | null;
           failure_code?: string | null;
           failure_detail?: string | null;
@@ -4601,9 +4794,131 @@ export type Database = {
           },
         ];
       };
+      catalog_feed_sources: {
+        Row: {
+          ativo: boolean;
+          created_at: string;
+          falhas_seguidas: number;
+          formato: string;
+          id: string;
+          mapeamento: Json;
+          organization_id: string;
+          ultima_leitura_em: string | null;
+          ultimo_erro: string | null;
+          ultimo_resumo: Json | null;
+          updated_at: string;
+          url: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          ativo?: boolean;
+          created_at?: string;
+          falhas_seguidas?: number;
+          formato?: string;
+          id?: string;
+          mapeamento?: Json;
+          organization_id: string;
+          ultima_leitura_em?: string | null;
+          ultimo_erro?: string | null;
+          ultimo_resumo?: Json | null;
+          updated_at?: string;
+          url: string;
+        };
+        Update: {
+          ativo?: boolean;
+          created_at?: string;
+          falhas_seguidas?: number;
+          formato?: string;
+          id?: string;
+          mapeamento?: Json;
+          organization_id?: string;
+          ultima_leitura_em?: string | null;
+          ultimo_erro?: string | null;
+          ultimo_resumo?: Json | null;
+          updated_at?: string;
+          url?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "catalog_feed_sources_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      catalog_product_presentations: {
+        Row: {
+          audio_mime: string | null;
+          audio_size_bytes: number | null;
+          audio_storage_path: string | null;
+          catalog_product_id: string;
+          created_at: string;
+          enabled: boolean;
+          id: string;
+          kind: string;
+          organization_id: string;
+          show_price: boolean;
+          text_content: string | null;
+          title: string | null;
+          updated_at: string;
+          use_catalog_photos: boolean;
+        };
+        ComputedFields: never;
+        Insert: {
+          audio_mime?: string | null;
+          audio_size_bytes?: number | null;
+          audio_storage_path?: string | null;
+          catalog_product_id: string;
+          created_at?: string;
+          enabled?: boolean;
+          id?: string;
+          kind?: string;
+          organization_id: string;
+          show_price?: boolean;
+          text_content?: string | null;
+          title?: string | null;
+          updated_at?: string;
+          use_catalog_photos?: boolean;
+        };
+        Update: {
+          audio_mime?: string | null;
+          audio_size_bytes?: number | null;
+          audio_storage_path?: string | null;
+          catalog_product_id?: string;
+          created_at?: string;
+          enabled?: boolean;
+          id?: string;
+          kind?: string;
+          organization_id?: string;
+          show_price?: boolean;
+          text_content?: string | null;
+          title?: string | null;
+          updated_at?: string;
+          use_catalog_photos?: boolean;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "catalog_product_presentations_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "catalog_product_presentations_product_org_fk";
+            columns: ["organization_id", "catalog_product_id"];
+            isOneToOne: false;
+            referencedRelation: "catalog_products";
+            referencedColumns: ["organization_id", "id"];
+          },
+        ];
+      };
       catalog_products: {
         Row: {
           ativo: boolean;
+          capacidade: string | null;
           categoria: string | null;
           codigo: string;
           controla_estoque: boolean;
@@ -4612,6 +4927,7 @@ export type Database = {
           descricao: string | null;
           fotos: string[];
           id: string;
+          id_externo: string | null;
           imagem_url: string | null;
           marca: string | null;
           moeda: string;
@@ -4625,6 +4941,7 @@ export type Database = {
         ComputedFields: never;
         Insert: {
           ativo?: boolean;
+          capacidade?: string | null;
           categoria?: string | null;
           codigo: string;
           controla_estoque?: boolean;
@@ -4633,6 +4950,7 @@ export type Database = {
           descricao?: string | null;
           fotos?: string[];
           id?: string;
+          id_externo?: string | null;
           imagem_url?: string | null;
           marca?: string | null;
           moeda?: string;
@@ -4645,6 +4963,7 @@ export type Database = {
         };
         Update: {
           ativo?: boolean;
+          capacidade?: string | null;
           categoria?: string | null;
           codigo?: string;
           controla_estoque?: boolean;
@@ -4653,6 +4972,7 @@ export type Database = {
           descricao?: string | null;
           fotos?: string[];
           id?: string;
+          id_externo?: string | null;
           imagem_url?: string | null;
           marca?: string | null;
           moeda?: string;
@@ -4854,6 +5174,7 @@ export type Database = {
       };
       channel_routing_policies: {
         Row: {
+          ai_wait_minutes: number | null;
           channel_session_id: string;
           created_at: string;
           default_assignee_user_id: string | null;
@@ -4864,6 +5185,7 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          ai_wait_minutes?: number | null;
           channel_session_id: string;
           created_at?: string;
           default_assignee_user_id?: string | null;
@@ -4873,6 +5195,7 @@ export type Database = {
           updated_at?: string;
         };
         Update: {
+          ai_wait_minutes?: number | null;
           channel_session_id?: string;
           created_at?: string;
           default_assignee_user_id?: string | null;
@@ -5700,6 +6023,7 @@ export type Database = {
           created_at: string;
           criado_por: string | null;
           ligado: boolean;
+          lembrar_antes: boolean;
           organization_id: string;
           telefone_destino: string | null;
           updated_at: string;
@@ -5712,6 +6036,7 @@ export type Database = {
           created_at?: string;
           criado_por?: string | null;
           ligado?: boolean;
+          lembrar_antes?: boolean;
           organization_id: string;
           telefone_destino?: string | null;
           updated_at?: string;
@@ -5723,6 +6048,7 @@ export type Database = {
           created_at?: string;
           criado_por?: string | null;
           ligado?: boolean;
+          lembrar_antes?: boolean;
           organization_id?: string;
           telefone_destino?: string | null;
           updated_at?: string;
@@ -6029,6 +6355,7 @@ export type Database = {
           name_lookup_at: string | null;
           organization_id: string;
           person_id: string | null;
+          phone_label: string | null;
           phone_lookup_at: string | null;
           phone_number: string | null;
           phone_type: string | null;
@@ -6091,6 +6418,7 @@ export type Database = {
           name_lookup_at?: string | null;
           organization_id: string;
           person_id?: string | null;
+          phone_label?: string | null;
           phone_lookup_at?: string | null;
           phone_number?: string | null;
           phone_type?: string | null;
@@ -6152,6 +6480,7 @@ export type Database = {
           name_lookup_at?: string | null;
           organization_id?: string;
           person_id?: string | null;
+          phone_label?: string | null;
           phone_lookup_at?: string | null;
           phone_number?: string | null;
           phone_type?: string | null;
@@ -6406,6 +6735,7 @@ export type Database = {
       conversations: {
         Row: {
           active_agent_set_at: string | null;
+          active_agent_transfer_at: string | null;
           active_ai_agent_id: string | null;
           active_intent: string | null;
           assigned_at: string | null;
@@ -6450,11 +6780,13 @@ export type Database = {
           usable_for_rag_marked_at: string | null;
           usable_for_rag_marked_by: string | null;
           comando_da_conversa: string | null;
+          automatico_da_conversa: boolean | null;
           tags_do_contato: string[] | null;
         };
-        ComputedFields: "comando_da_conversa" | "tags_do_contato";
+        ComputedFields: "comando_da_conversa" | "automatico_da_conversa" | "tags_do_contato";
         Insert: {
           active_agent_set_at?: string | null;
+          active_agent_transfer_at?: string | null;
           active_ai_agent_id?: string | null;
           active_intent?: string | null;
           assigned_at?: string | null;
@@ -6501,6 +6833,7 @@ export type Database = {
         };
         Update: {
           active_agent_set_at?: string | null;
+          active_agent_transfer_at?: string | null;
           active_ai_agent_id?: string | null;
           active_intent?: string | null;
           assigned_at?: string | null;
@@ -6672,6 +7005,7 @@ export type Database = {
       };
       crm_lead_attachments: {
         Row: {
+          clonado_do_attachment_id: string | null;
           created_at: string;
           created_by: string | null;
           field_key: string;
@@ -6686,6 +7020,7 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          clonado_do_attachment_id?: string | null;
           created_at?: string;
           created_by?: string | null;
           field_key: string;
@@ -6699,6 +7034,7 @@ export type Database = {
           updated_at?: string;
         };
         Update: {
+          clonado_do_attachment_id?: string | null;
           created_at?: string;
           created_by?: string | null;
           field_key?: string;
@@ -6712,6 +7048,13 @@ export type Database = {
           updated_at?: string;
         };
         Relationships: [
+          {
+            foreignKeyName: "crm_lead_attachments_clonado_do_attachment_id_fkey";
+            columns: ["clonado_do_attachment_id"];
+            isOneToOne: false;
+            referencedRelation: "crm_lead_attachments";
+            referencedColumns: ["id"];
+          },
           {
             foreignKeyName: "crm_lead_attachments_lead_id_fkey";
             columns: ["lead_id"];
@@ -7958,6 +8301,7 @@ export type Database = {
           corpo_hash: string | null;
           created_at: string;
           destino: string;
+          degrau_minutos: number | null;
           dia: string | null;
           enviado_em: string | null;
           erro_codigo: string | null;
@@ -7965,6 +8309,7 @@ export type Database = {
           evento: string | null;
           external_id: string | null;
           id: string;
+          inicio_lembrado: string | null;
           organization_id: string;
           status: string;
           tentativas: number;
@@ -7978,6 +8323,7 @@ export type Database = {
           corpo_hash?: string | null;
           created_at?: string;
           destino: string;
+          degrau_minutos?: number | null;
           dia?: string | null;
           enviado_em?: string | null;
           erro_codigo?: string | null;
@@ -7985,6 +8331,7 @@ export type Database = {
           evento?: string | null;
           external_id?: string | null;
           id?: string;
+          inicio_lembrado?: string | null;
           organization_id: string;
           status?: string;
           tentativas?: number;
@@ -7997,6 +8344,7 @@ export type Database = {
           corpo_hash?: string | null;
           created_at?: string;
           destino?: string;
+          degrau_minutos?: number | null;
           dia?: string | null;
           enviado_em?: string | null;
           erro_codigo?: string | null;
@@ -8004,6 +8352,7 @@ export type Database = {
           evento?: string | null;
           external_id?: string | null;
           id?: string;
+          inicio_lembrado?: string | null;
           organization_id?: string;
           status?: string;
           tentativas?: number;
@@ -8063,6 +8412,7 @@ export type Database = {
           organization_id: string;
           status: string;
           tentativas: number;
+          update_event_id: string | null;
           updated_at: string;
         };
         ComputedFields: never;
@@ -8080,6 +8430,7 @@ export type Database = {
           organization_id: string;
           status?: string;
           tentativas?: number;
+          update_event_id?: string | null;
           updated_at?: string;
         };
         Update: {
@@ -8096,6 +8447,7 @@ export type Database = {
           organization_id?: string;
           status?: string;
           tentativas?: number;
+          update_event_id?: string | null;
           updated_at?: string;
         };
         Relationships: [
@@ -10476,6 +10828,7 @@ export type Database = {
           partes_de_midia: number | null;
           passos: number | null;
           prefixo_hash: string | null;
+          preview_run_id: string | null;
           provider: string;
           purpose: string;
           status: string;
@@ -10508,6 +10861,7 @@ export type Database = {
           partes_de_midia?: number | null;
           passos?: number | null;
           prefixo_hash?: string | null;
+          preview_run_id?: string | null;
           provider: string;
           purpose?: string;
           status?: string;
@@ -10539,6 +10893,7 @@ export type Database = {
           partes_de_midia?: number | null;
           passos?: number | null;
           prefixo_hash?: string | null;
+          preview_run_id?: string | null;
           provider?: string;
           purpose?: string;
           status?: string;
@@ -11749,6 +12104,48 @@ export type Database = {
           },
         ];
       };
+      organization_resend_accounts: {
+        Row: {
+          api_key_ciphertext: string;
+          api_key_iv: string;
+          api_key_last4: string;
+          api_key_tag: string;
+          created_at: string;
+          from_email: string;
+          organization_id: string;
+          updated_at: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          api_key_ciphertext: string;
+          api_key_iv: string;
+          api_key_last4: string;
+          api_key_tag: string;
+          created_at?: string;
+          from_email: string;
+          organization_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          api_key_ciphertext?: string;
+          api_key_iv?: string;
+          api_key_last4?: string;
+          api_key_tag?: string;
+          created_at?: string;
+          from_email?: string;
+          organization_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "organization_resend_accounts_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: true;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       organizations: {
         Row: {
           cnpj: string | null;
@@ -11897,6 +12294,58 @@ export type Database = {
           },
           {
             foreignKeyName: "outbound_copies_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      ouvidoria_manifestacoes: {
+        Row: {
+          canal: string;
+          contact_id: string | null;
+          created_at: string;
+          id: string;
+          organization_id: string;
+          protocolo: string;
+          status: string;
+          texto: string;
+          updated_at: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          canal: string;
+          contact_id?: string | null;
+          created_at?: string;
+          id?: string;
+          organization_id: string;
+          protocolo: string;
+          status?: string;
+          texto: string;
+          updated_at?: string;
+        };
+        Update: {
+          canal?: string;
+          contact_id?: string | null;
+          created_at?: string;
+          id?: string;
+          organization_id?: string;
+          protocolo?: string;
+          status?: string;
+          texto?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "ouvidoria_manifestacoes_contact_id_fkey";
+            columns: ["contact_id"];
+            isOneToOne: false;
+            referencedRelation: "contacts";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "ouvidoria_manifestacoes_organization_id_fkey";
             columns: ["organization_id"];
             isOneToOne: false;
             referencedRelation: "organizations";
@@ -12929,6 +13378,7 @@ export type Database = {
           id: string;
           organization_id: string;
           p256dh: string;
+          tipos_calados: string[];
           updated_at: string;
           user_id: string;
         };
@@ -12940,6 +13390,7 @@ export type Database = {
           id?: string;
           organization_id: string;
           p256dh: string;
+          tipos_calados?: string[];
           updated_at?: string;
           user_id: string;
         };
@@ -12950,6 +13401,7 @@ export type Database = {
           id?: string;
           organization_id?: string;
           p256dh?: string;
+          tipos_calados?: string[];
           updated_at?: string;
           user_id?: string;
         };
@@ -12972,6 +13424,7 @@ export type Database = {
           created_by_user_id: string | null;
           currency: string;
           day_of_month: number;
+          desativada_pela_perda: boolean;
           direction: string;
           id: string;
           is_active: boolean;
@@ -12988,6 +13441,7 @@ export type Database = {
           created_by_user_id?: string | null;
           currency?: string;
           day_of_month: number;
+          desativada_pela_perda?: boolean;
           direction: string;
           id?: string;
           is_active?: boolean;
@@ -13003,6 +13457,7 @@ export type Database = {
           created_by_user_id?: string | null;
           currency?: string;
           day_of_month?: number;
+          desativada_pela_perda?: boolean;
           direction?: string;
           id?: string;
           is_active?: boolean;
@@ -13700,6 +14155,8 @@ export type Database = {
           provisional_until_handover: boolean;
           revoked_at: string | null;
           role: string;
+          /** Senha definida por quem administra e ainda não trocada (#3876). */
+          senha_provisoria: boolean;
           updated_at: string;
           user_id: string;
           /** WhatsApp PESSOAL do membro, E.164 — destino do aviso no modo `responsavel` (#3803). */
@@ -13718,6 +14175,7 @@ export type Database = {
           provisional_until_handover?: boolean;
           revoked_at?: string | null;
           role: string;
+          senha_provisoria?: boolean;
           updated_at?: string;
           user_id: string;
           whatsapp_e164?: string | null;
@@ -13734,6 +14192,7 @@ export type Database = {
           provisional_until_handover?: boolean;
           revoked_at?: string | null;
           role?: string;
+          senha_provisoria?: boolean;
           updated_at?: string;
           user_id?: string;
           whatsapp_e164?: string | null;
@@ -14734,6 +15193,29 @@ export type Database = {
           },
         ];
       };
+      calendar_service_google_push_queue: {
+        Row: {
+          ends_at: string;
+          google_conflict: Json | null;
+          google_event_id: string | null;
+          google_next_attempt_at: string;
+          id: string;
+          needs_google_push: boolean | null;
+          organization_id: string;
+          owner_user_id: string | null;
+          status: string;
+        };
+        ComputedFields: never;
+        Relationships: [
+          {
+            foreignKeyName: "calendar_appointments_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       external_db_connections_safe: {
         Row: {
           created_at: string;
@@ -14880,6 +15362,38 @@ export type Database = {
       };
     };
     Functions: {
+      fn_create_contact_for_lead: {
+        Args: { p_organization_id: string; p_lead_id: string; p_contact: Json };
+        Returns: Json;
+      };
+
+      fn_enqueue_historico_analise: {
+        Args: { p_importacao: string; p_limite: number; p_org: string };
+        Returns: number;
+      };
+      fn_historico_analise_candidatos: {
+        Args: { p_importacao: string; p_org: string };
+        Returns: {
+          caracteres: number;
+          contact_id: string;
+          conversation_id: string;
+          job_status: string;
+          motivo: string;
+          ultima_mensagem_em: string;
+        }[];
+      };
+      fn_historico_analise_motivo_para_pular: {
+        Args: { p_contato: string; p_importacao: string; p_org: string };
+        Returns: string;
+      };
+      fn_previa_historico_analise: {
+        Args: { p_importacao: string; p_limite: number; p_org: string };
+        Returns: Json;
+      };
+      fn_resumo_historico_analise: {
+        Args: { p_importacao: string; p_org: string };
+        Returns: Json;
+      };
       activate_kb_version: {
         Args: { p_agent_id: string; p_version_id: string };
         Returns: undefined;
@@ -14931,6 +15445,23 @@ export type Database = {
         Args: { p_from: string; p_limit?: number; p_org: string; p_to: string; p_tz?: string };
         Returns: Json;
       };
+      fn_agencia_abrir_cliente: {
+        Args: { p_agencia: string; p_cliente: string };
+        Returns: string;
+      };
+      fn_agencia_autoridade: {
+        Args: { p_actor: string; p_agencia: string };
+        Returns: boolean;
+      };
+      fn_agencia_criar_cliente: {
+        Args: { p_agencia: string; p_chave: string; p_nome: string; p_slug: string };
+        Returns: Json;
+      };
+      fn_agencia_encerrar_sessao: {
+        Args: Record<PropertyKey, never>;
+        Returns: Json;
+      };
+      fn_agencia_pode_gerir: { Args: { p_agencia: string }; Returns: boolean };
       fn_agenda_conexoes_google_do_dono: {
         Args: { p_org: string; p_owner: string };
         Returns: {
@@ -15167,6 +15698,10 @@ export type Database = {
         Args: { p_assigned_to: string; p_created_by: string; p_org: string };
         Returns: boolean;
       };
+      fn_caso_na_fronteira_atual: {
+        Args: { p_case: string; p_org: string };
+        Returns: boolean;
+      };
       fn_casos_parados_para_lembrar: {
         Args: { p_limite?: number };
         Returns: {
@@ -15297,6 +15832,7 @@ export type Database = {
           p_conversation_id: string;
           p_enforce_expected?: boolean;
           p_expected_assignee?: string;
+          p_negocio_so_sem_dono?: boolean;
           p_organization_id: string;
           p_reason: string;
           p_source_job_id?: string | null;
@@ -15304,6 +15840,7 @@ export type Database = {
         };
         Returns: {
           active_agent_set_at: string | null;
+          active_agent_transfer_at: string | null;
           active_ai_agent_id: string | null;
           active_intent: string | null;
           assigned_at: string | null;
@@ -15380,6 +15917,13 @@ export type Database = {
         };
         Returns: Json;
       };
+      fn_definir_lembrete_do_aviso_de_agendamento: {
+        Args: {
+          p_lembrar: boolean;
+          p_org: string;
+        };
+        Returns: boolean;
+      };
       fn_definir_aviso_de_caso: {
         Args: {
           p_channel: string;
@@ -15410,6 +15954,10 @@ export type Database = {
           p_origem?: string;
         };
         Returns: string;
+      };
+      fn_definir_aparencia_da_organizacao: {
+        Args: { p_aparencia: Json; p_org: string };
+        Returns: Json;
       };
       fn_definir_cliente_pela_agenda: { Args: { p_ligado: boolean; p_org: string }; Returns: Json };
       fn_definir_colegas_podem_mexer_na_agenda: {
@@ -15756,6 +16304,7 @@ export type Database = {
         Returns: Json;
       };
       fn_honorarios_provisionar: { Args: Record<PropertyKey, never>; Returns: undefined };
+      fn_ouvidoria_provisionar: { Args: Record<PropertyKey, never>; Returns: undefined };
       fn_is_platform_admin: { Args: Record<PropertyKey, never>; Returns: boolean };
       fn_is_platform_admin_full: { Args: Record<PropertyKey, never>; Returns: boolean };
       fn_lead_adicionar_etiquetas: {
@@ -15764,6 +16313,15 @@ export type Database = {
       };
       fn_lead_anotar_campos: {
         Args: { p_campos: Json; p_lead: string; p_org: string };
+        Returns: Json;
+      };
+      fn_ler_retorno_de_caso: {
+        Args: {
+          p_case: string;
+          p_config_revision: string;
+          p_event: string;
+          p_org: string;
+        };
         Returns: Json;
       };
       fn_lgpd_anonymize_contact: {
@@ -16111,6 +16669,7 @@ export type Database = {
           p_org: string;
           p_phone_variants: string[];
           p_session: string;
+          p_update_event?: string | null;
         };
         Returns: string;
       };
@@ -16145,6 +16704,7 @@ export type Database = {
         Args: { p_conversation: string; p_expected?: number; p_org: string; p_status: string };
         Returns: {
           active_agent_set_at: string | null;
+          active_agent_transfer_at: string | null;
           active_ai_agent_id: string | null;
           active_intent: string | null;
           assigned_at: string | null;
@@ -16197,6 +16757,10 @@ export type Database = {
         };
       };
       fn_session_mfa_proven: { Args: Record<PropertyKey, never>; Returns: boolean };
+      fn_set_channel_ai_wait: {
+        Args: { p_channel: string; p_minutes: number; p_org: string };
+        Returns: number;
+      };
       fn_set_channel_routing: {
         Args: {
           p_channel: string;

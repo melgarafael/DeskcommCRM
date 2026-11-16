@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "titulo": "A entrada do número oficial responde antes de processar",
+    "pergunta": "Como a mensagem nova do canal intermediado recebe 200 em milissegundos sem depender de o processo sobreviver até o fim da ingestão?",
+    "resumo": "O provedor dá por falha a entrega que não responde em 5 s (medido em 27/10/2026: 368 de 1.304 mensagens em 30 dias com uma tentativa vencida). A rota arquiva o corpo cru, confere assinatura e conta, marca a linha como aceita (valid_signature) e só então responde 200; sem a marca, 503 para o provedor reentregar. A ingestão roda no after() do Next pela mesma função que o cron webhook-replay usa para a linha que ficou received — contêiner reiniciado ou ingestão que falhou. Só mensagem nova (message.received/message.sent) entra por aqui: é o único evento cuja repetição o banco absorve sozinho (unique organization_id+external_id → 23505)."
+  },
+  "lanes": [
+    { "id": "provedor", "label": "Provedor" },
+    { "id": "rota", "label": "Rota (antes da resposta)" },
+    { "id": "depois", "label": "Depois da resposta" },
+    { "id": "dados", "label": "Banco" },
+    { "id": "humano", "label": "O que o humano vê" }
+  ],
+  "mainPath": ["provedor", "rota", "classifica", "arquivo", "aceita", "depois", "ingest", "mensagens"],
+  "nodes": [
+    { "id": "provedor", "lane": "provedor", "col": 1, "type": "external", "label": "webhook do número oficial", "sublabel": "dá por falha a entrega sem resposta em 5 s e reentrega" },
+    { "id": "rota", "lane": "rota", "col": 2, "type": "route", "label": "_entrada-do-canal.ts", "sublabel": "channel/[token] e canal-da-instalacao · arquivo, assinatura e conta, síncronos" },
+    { "id": "classifica", "lane": "rota", "col": 3, "type": "regra", "label": "processaDepoisDeResponder", "sublabel": "lib/channels/inbound.ts · puro · só message.received/message.sent do canal intermediado" },
+    { "id": "aceita", "lane": "rota", "col": 4, "type": "regra", "label": "aceitarEntrada", "sublabel": "lib/channels/entrada-aceita.ts · valid_signature = true na linha · sem a marca, 503 + Retry-After" },
+    { "id": "depois", "lane": "depois", "col": 4, "type": "worker", "label": "after() → processarDepoisDaResposta", "sublabel": "1ª tentativa; falhou: attempts = 1 e error_message, a linha fica received" },
+    { "id": "replay", "lane": "depois", "col": 5, "type": "worker", "label": "cron webhook-replay → reprocessarEntradasAceitas", "sublabel": "received + aceita · 5 min < idade < 6 h · toma a linha (attempts n → n+1) · 20 s por rodada" },
+    { "id": "ingest", "lane": "depois", "col": 5, "type": "worker", "label": "processarEntradaAceita → processarEventoAceito", "sublabel": "a MESMA ingestão da resposta síncrona, sem reconferir a assinatura (a marca é a prova)" },
+    { "id": "arquivo", "lane": "dados", "col": 3, "type": "tabela", "label": "webhook_events_log", "sublabel": "received+aceita = pendente · processed · error (contrato) · dead (desistiu)" },
+    { "id": "mensagens", "lane": "dados", "col": 6, "type": "tabela", "label": "messages", "sublabel": "unique (organization_id, external_id): a repetição vira 23505 → duplicate" },
+    { "id": "central", "lane": "humano", "col": 6, "type": "frontend", "label": "Central de avisos", "sublabel": "event_dead «Uma mensagem do número oficial não entrou no CRM» ou, quando entrou e passou da janela sem o pedido de despacho, «ficou sem atendimento» · um aberto por organização e por título" },
+    { "id": "auditoria", "lane": "humano", "col": 5, "type": "tabela", "label": "api_audit_log", "sublabel": "webhook.replay_run, só quando a rodada processou ou desistiu de algo" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "provedor", "to": "rota", "label": "POST assinado" },
+    { "id": "e2", "from": "rota", "to": "arquivo", "label": "abrirArquivoDoWebhook: o corpo cru ANTES de qualquer conferência" },
+    { "id": "e3", "from": "rota", "to": "classifica", "label": "depois de assinatura e conta: responde antes?" },
+    { "id": "e4", "from": "classifica", "to": "aceita", "label": "mensagem nova do canal intermediado" },
+    { "id": "e5", "from": "aceita", "to": "arquivo", "label": "UPDATE valid_signature = true onde status = received" },
+    { "id": "e6", "from": "aceita", "to": "provedor", "label": "200 accepted — ou 503 quando o arquivo não gravou ou não marcou" },
+    { "id": "e7", "from": "aceita", "to": "depois", "label": "after() agendado antes do return" },
+    { "id": "e8", "from": "depois", "to": "ingest", "label": "1ª tentativa" },
+    { "id": "e9", "from": "replay", "to": "arquivo", "label": "lê as aceitas pendentes e toma a linha com UPDATE condicional" },
+    { "id": "e10", "from": "replay", "to": "ingest", "label": "mesma função, mesma sessão (arquivada → dead sem aviso)" },
+    { "id": "e11", "from": "ingest", "to": "mensagens", "label": "ingestão do canal; a segunda vez é duplicate, e no reprocessamento o duplicate sem pedido de despacho retoma carimbo e efeitos" },
+    { "id": "e12", "from": "ingest", "to": "arquivo", "label": "fecha processed / error; falha deixa received" },
+    { "id": "e13", "from": "replay", "to": "central", "label": "no teto de tentativas, ou passada a janela de 6 h: dead + aviso (laço de retorno), com o pedido de sair gravado antes" },
+    { "id": "e14", "from": "replay", "to": "auditoria", "label": "rodada com efeito audita; rodada vazia não" }
+  ],
+  "cards": [
+    { "titulo": "O arquivo é a caixa de entrada durável", "texto": "200 só sai com a linha gravada E marcada como aceita. Sem isso, um processo que morresse depois do 200 perderia a mensagem: o provedor não reentrega o que recebeu 200. Por isso a falha do arquivo, que antes era só um warn, virou 503 nesta entrada." },
+    { "titulo": "Por que só mensagem nova", "texto": "Estado do número, revisão de modelo, edição e desfecho de envio dependem de ordem: reprocessados minutos depois, sobrescreveriam o estado mais novo com o mais velho. Continuam respondendo depois de processar, como antes, e não entram no reprocessamento." },
+    { "titulo": "O laço de retorno (invariante 7)", "texto": "Falha da ingestão não some: erro de banco lança, a linha fica received com attempts e error_message, o cron tenta de novo a cada minuto e, no teto (20), marca dead e abre UM aviso na Central para a organização, que manda conferir as conversas no painel do provedor. A mensagem gravada cuja ingestão parou no meio é retomada: sem ai_agent.dispatch_requested dela, o reprocessamento roda os efeitos, e o carimbo só soma a não lida se a conversa ainda não chegou à hora da mensagem. A linha aceita que passa de 6 h não é ingerida (a IA responderia mensagem velha): vira dead com o mesmo aviso, ou fecha se a mensagem já está no CRM: com o pedido de despacho, sem repetir nada; sem ele, rodam os efeitos sem a IA, opt-out incluído, e abre o aviso de mensagem sem atendimento. Linha com corpo legível só morre depois de gravar o pedido de sair." },
+    { "titulo": "Não-ligações declaradas", "texto": "O canal de redes sociais divide a rota e ficou síncrono: o arquivo dele não grava (o CHECK de webhook_events_log.provider não conhece o valor), e sem arquivo não há o que reprocessar. Saída duplicada não é retomada: não dá para separá-la do eco do nosso envio. Limitação conhecida: edição, apagamento ou desfecho que chega enquanto a mensagem ainda está pendente, parada antes do INSERT, não acha linha, responde 200 e se perde, e o reprocessamento insere depois o texto original. A precondição é estreita, e pedir reentrega por 503 dependeria da cadência do provedor, que não foi medida." }
+  ]
+}

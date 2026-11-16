@@ -28,7 +28,7 @@
 import type pg from 'pg';
 
 import { canonicalWahaExternalId, chatIdFromWaMessageId, parseWahaMessageId, wahaEchoExternalIds } from '@/lib/waha/message-id';
-import { chatIndividualDaMensagem } from '@/lib/waha/ultima-recebida';
+import { chatIndividualDaMensagem, chatSegueNaFicha } from '@/lib/waha/ultima-recebida';
 import { lerNumerosDeTeste, numeroPodeTestar, preGoLiveAtivo } from '@/lib/ai/elegibilidade/pre-go-live';
 import { canalDesativado } from '@/lib/channels/desativado';
 
@@ -229,10 +229,9 @@ async function ultimaRecebidaDaFicha(
 ): Promise<string | null> {
   if (m.is_group || !m.contact_id) return null;
   try {
-    const { rows: extras } = await pool.query(
-      `select 1 from contact_phones
-       where organization_id = $1 and contact_id = $2
-       limit 1`,
+    const { rows: extras } = await pool.query<{ phone_number: string }>(
+      `select phone_number from contact_phones
+       where organization_id = $1 and contact_id = $2`,
       [m.organization_id, m.contact_id],
     );
     if (extras.length === 0) return null;
@@ -246,7 +245,9 @@ async function ultimaRecebidaDaFicha(
     );
     const externalId = recebidas[0]?.external_id;
     if (!externalId) return null;
-    return chatIndividualDaMensagem(chatIdFromWaMessageId(externalId));
+    const chat = chatIndividualDaMensagem(chatIdFromWaMessageId(externalId));
+    if (!chat) return null;
+    return chatSegueNaFicha(chat, [m.phone_number, ...extras.map((e) => e.phone_number)]) ? chat : null;
   } catch (err) {
     // Só a organização no log: o chat e o contato carregam telefone.
     log.warn('watchdog: endereço da última recebida indisponível; segue pela regra de hoje', {

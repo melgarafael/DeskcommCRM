@@ -45,6 +45,7 @@ import {
 } from "@/hooks/inbox/useMessageTemplates";
 import { secoesDeRespostas } from "@/lib/templates/grupos";
 import { TemplateFormDialog } from "./TemplateFormDialog";
+import { ExportarRespostasButton, ImportarRespostasDialog } from "./BlueprintDeRespostas";
 import { ListaDeRespostas, chaveDaSecao } from "./ListaDeRespostas";
 
 const TEMPLATES_KEY = CHAVE_DOS_TEMPLATES;
@@ -337,6 +338,14 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
           >
             <Plus /> {t("Novo grupo")}
           </Button>
+        )}
+        {/* O blueprint (#1995): levar as COMPARTILHADAS para outra organização.
+            As duas rotas pedem `manager+` — o mesmo `canShare` do grupo. */}
+        {canShare && (
+          <>
+            <ExportarRespostasButton />
+            <ImportarRespostasDialog />
+          </>
         )}
       </div>
       {!templates?.length ? (

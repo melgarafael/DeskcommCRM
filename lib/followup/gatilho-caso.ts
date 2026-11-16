@@ -57,6 +57,7 @@ import type { EventRow } from "@/lib/event-log/dispatcher";
 import { flowGraphSchema } from "./graph-schema";
 import { triggerConfigSchema } from "./api-schemas";
 import {
+  canalDaConversaSupabase,
   decidirAgenteDoEnrollmentAutomatico,
   noDeGatilhoDoGrafo,
   type FollowupGateDb,
@@ -94,6 +95,16 @@ export interface GatilhoCasoDb {
   carregaPointersDeCaso(orgId: string): Promise<PointerDeCaso[]>;
   /** Fallback: o payload do trigger já traz `contact_id`; isto só roda se faltar. */
   carregaContatoDaConversa(orgId: string, conversationId: string): Promise<string | null>;
+  /**
+   * Canal (`conversations.channel_session_id`) da conversa do CASO — o número em
+   * que a persona vai falar (#3852). `null` = desconhecido, e a decisão do
+   * agente volta a ser por organização (comportamento de sempre).
+   *
+   * OPCIONAL pela mesma razão dos métodos opcionais do silence-sweep: os dublês
+   * dos testes implementam só o que medem, e a ausência não pode quebrar a
+   * chamada.
+   */
+  carregaCanalDaConversa?(orgId: string, conversationId: string): Promise<string | null>;
   carregaNoDeGatilho(orgId: string, versionId: string): Promise<NoDeGatilho | null>;
   insereEnrollment(input: {
     source_case_id?: string | null;
@@ -252,6 +263,10 @@ export async function aplicaGatilhoDeCaso(
     return summary;
   }
 
+  // #3852: o caso aconteceu numa conversa, e essa conversa tem UM número. Sem
+  // ele, o fluxo do agente A escrevia com a persona dele no número do agente B.
+  const canalConversa = (await deps.db.carregaCanalDaConversa?.(row.organization_id, conversationId)) ?? null;
+
   for (const pointer of armados) {
     const noDeGatilho = await deps.db.carregaNoDeGatilho(row.organization_id, pointer.active_version_id);
     if (!noDeGatilho) continue;
@@ -260,6 +275,7 @@ export async function aplicaGatilhoDeCaso(
       row.organization_id,
       pointer.id,
       noDeGatilho.pedeAgente,
+      canalConversa,
     );
     if (barrado) {
       summary.pointers_barrados_pelo_gate++;
@@ -353,6 +369,11 @@ export function createSupabaseGatilhoCasoDb(admin: SupabaseClient): GatilhoCasoD
         .maybeSingle();
       if (error) throw new Error(error.message);
       return data?.contact_id ?? null;
+    },
+
+    carregaCanalDaConversa(orgId, conversationId) {
+      // A leitura é a MESMA do gate — uma régua, um lugar (#3852).
+      return canalDaConversaSupabase(admin, orgId, conversationId);
     },
 
     async carregaNoDeGatilho(orgId, versionId) {

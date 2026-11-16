@@ -112,6 +112,12 @@ export interface ConversationsFilters {
   unread?: boolean;
   channel_session_id?: string;
   /**
+   * A FILA (#3876): só as conversas classificadas neste setor. O `set` da
+   * serialização é a metade que o typecheck não pega — campo no tipo sem a linha
+   * do `qs.set` faz o seletor mudar de valor e a lista não mudar.
+   */
+  sector_id?: string;
+  /**
    * A etiqueta, ou VÁRIAS (#1274).
    *
    * `string` continua aceito porque é o que o resto da tela (e qualquer chamada
@@ -191,6 +197,8 @@ export function useConversationsRealtime(
       if (filters.search) qs.set("search", filters.search);
       if (filters.unread) qs.set("unread", "true");
       if (filters.channel_session_id) qs.set("channel_session_id", filters.channel_session_id);
+      // A FILA (#3876) — ver o comentário do campo em `ConversationsFilters`.
+      if (filters.sector_id) qs.set("sector_id", filters.sector_id);
       // `append`, e não `set` (#1274): o filtro aceita várias etiquetas e cada
       // uma viaja como um `tag` repetido — que é o que a rota lê com `getAll`.
       for (const marcador of marcadoresEscolhidos(

@@ -42,6 +42,10 @@ import { criarDepsDeAgenda, sincronizarAgendaDoCelular } from "@/lib/contacts/ag
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  classificarFalhaDaAgenda,
+  type MotivoDaFalhaDaAgenda,
+} from "@/lib/channels/agenda-do-aparelho-falha";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +59,48 @@ const corpoSchema = z.object({
    */
   offset: z.number().int().min(0).max(100_000_000).default(0),
 });
+
+/**
+ * O QUE CADA MOTIVO DE FALHA DIZ AO OPERADOR (#4102).
+ *
+ * A frase é a parte visível do diagnóstico, e é por isso que ela muda por
+ * motivo: um 400 em `contacts/all` significa store desligado e só destrava
+ * ligando a opção (dizer "não respondeu" mandava a pessoa conferir uma conexão
+ * que estava boa — o dano do relato); um timeout de verdade pede olhar a
+ * conexão; um 5xx é do servidor do canal e pede esperar; 401/403 é sessão
+ * inválida e pede reconectar.
+ *
+ * O status do provedor NUNCA aparece na frase — ele fica no log, com `causa`.
+ */
+const RESPOSTA_POR_MOTIVO: Record<MotivoDaFalhaDaAgenda, { status: number; code: string; mensagem: string }> = {
+  acervo_desligado: {
+    status: 409,
+    code: "channel_acervo_desligado",
+    mensagem:
+      "A agenda do celular não pode ser lida: ligue a opção 'Guardar o histórico anterior à vinculação' em Conexões e conecte o número de novo. Sem essa opção o aparelho não entrega a agenda.",
+  },
+  sessao_recusada: {
+    status: 502,
+    code: "channel_session_rejected",
+    mensagem: "O WhatsApp recusou a sessão deste número. Reconecte-o em Conexões e tente de novo.",
+  },
+  // A frase do timeout é a MESMA de antes de propósito: aqui ela está certa.
+  sem_resposta: {
+    status: 504,
+    code: "channel_timeout",
+    mensagem: "O WhatsApp deste número não respondeu. Confira se ele está conectado e tente de novo.",
+  },
+  servidor: {
+    status: 502,
+    code: "channel_unavailable",
+    mensagem: "O serviço do WhatsApp deste número falhou. Tente de novo em instantes.",
+  },
+  indisponivel: {
+    status: 502,
+    code: "channel_unavailable",
+    mensagem: "Não foi possível ler a agenda do celular agora. Tente de novo em instantes.",
+  },
+};
 
 export async function POST(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
@@ -141,19 +187,21 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
     return ok(resumo, { requestId });
   } catch (err) {
-    // O transporte (fora do ar, sem configuração, teto estourado) vira a MESMA
-    // frase de saída da rota de grupos — aponta para a conexão e nunca vaza
-    // status/corpo do provedor (mesma doutrina do cabeçalho do cliente do
-    // transporte: o erro de lá carrega só o status HTTP).
-    logger.warn("sync-agenda: o transporte do canal não respondeu", {
+    // A leitura pode falhar por motivos que NÃO são a mesma coisa: store da
+    // sessão desligado (400 — pede ligar uma opção), sessão inválida (401/403),
+    // servidor do canal (5xx), relógio/rede (timeout) ou o que não se sabe.
+    // Cada um tem a sua frase; antes, todos viravam "o WhatsApp não respondeu",
+    // e quem estava conectado ia conferir uma conexão que estava boa (#4102).
+    const falha = classificarFalhaDaAgenda(err);
+    // A causa técnica — o status que o transporte devolveu (`contacts_all_400`)
+    // — fica AQUI, para diagnóstico: a tela mostra o motivo em português, o log
+    // guarda o que o transporte respondeu.
+    logger.warn("sync-agenda: a leitura da agenda falhou", {
       requestId,
-      causa: err instanceof Error ? err.message.slice(0, 160) : String(err),
+      motivo: falha.motivo,
+      causa: falha.causa.slice(0, 160),
     });
-    return fail(
-      "channel_unavailable",
-      "O WhatsApp deste número não respondeu. Confira se ele está conectado e tente de novo.",
-      502,
-      { requestId },
-    );
+    const resposta = RESPOSTA_POR_MOTIVO[falha.motivo];
+    return fail(resposta.code, resposta.mensagem, resposta.status, { requestId });
   }
 }

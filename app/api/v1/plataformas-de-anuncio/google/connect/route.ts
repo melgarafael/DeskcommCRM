@@ -32,12 +32,13 @@ import { CAMINHO_DO_CALLBACK, configuracaoDoGoogleAds } from "@/lib/plataformas-
 import { emitirEstado } from "@/lib/plataformas-de-anuncio/google/estado";
 import { montarUrlDeConsentimento } from "@/lib/plataformas-de-anuncio/google/oauth";
 import { cookieSecure } from "@/lib/supabase/cookie-secure";
+import { comIdDaRequisicao } from "@/lib/api/wrappers";
 
 export const dynamic = "force-dynamic";
 
-function voltarComErro(codigo: string): NextResponse {
+function voltarComErro(codigo: string, req: NextRequest): NextResponse {
   const base = env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-  return NextResponse.redirect(new URL(`/app/settings/conversoes?erro=${codigo}`, base));
+  return comIdDaRequisicao(NextResponse.redirect(new URL(`/app/settings/conversoes?erro=${codigo}`, base)), req);
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
@@ -52,13 +53,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const escolha = z
     .enum(["google_ads", "data_manager"])
     .safeParse(new URL(req.url).searchParams.get("api") ?? "data_manager");
-  if (!escolha.success) return voltarComErro("estado_invalido");
+  if (!escolha.success) return voltarComErro("estado_invalido", req);
   const api = escolha.data;
   const app = configuracaoDoGoogleAds(api);
   if (!app) {
     // Não audita: não houve tentativa de conectar nada, e a instalação sem
     // chave não é um evento da organização — mesma régua do irmão da Agenda.
-    return voltarComErro("google_ads_nao_configurado");
+    return voltarComErro("google_ads_nao_configurado", req);
   }
 
   // O nonce nasce aqui porque é usado duas vezes: dentro do `state` e na
@@ -72,13 +73,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       { segredo: env.INTERNAL_SECRET, agora: new Date(), nonce },
     );
   } catch {
-    return voltarComErro("estado_invalido");
+    return voltarComErro("estado_invalido", req);
   }
 
   // Com developer token, a mesma autorização libera criar ações de conversão e
   // ler campanhas pela API do Google Ads (0436).
   const incluirGoogleAds = Boolean(env.GOOGLE_ADS_DEVELOPER_TOKEN?.trim());
-  const resposta = NextResponse.redirect(montarUrlDeConsentimento(app, { state, api, incluirGoogleAds }));
+  const resposta = comIdDaRequisicao(NextResponse.redirect(montarUrlDeConsentimento(app, { state, api, incluirGoogleAds })), requestId);
   // `lax` e `cookieSecure()` pelos mesmos motivos do connect da Agenda: strict
   // não viaja na volta do Google, e `secure: true` literal perderia o cookie em
   // instalação servida por http.

@@ -17,26 +17,14 @@ import type {
   PatchConversationInput,
 } from "@/lib/schemas";
 import type { Conversation } from "@/lib/types/messaging";
-import { normalizarTermoDeBusca, termoSemAcento } from "@/lib/inbox/termo-de-busca";
-import { ORDEM_DA_ESPERA, ehAFila } from "@/lib/inbox/comando-da-conversa";
+import { normalizarTermoDeBusca, termoSemAcento, termoSeguroParaOr } from "@/lib/inbox/termo-de-busca";
+import { ORDEM_DA_ESPERA, ehAFila, comPreFiltroDoComando } from "@/lib/inbox/comando-da-conversa";
 import { aplicarMarcadores } from "@/lib/inbox/marcador-da-conversa";
 import { exigirControleDaConversa } from "@/lib/inbox/controle-da-conversa";
 
-/**
- * Prepara o termo digitado para viajar dentro de um `or=` do PostgREST.
- *
- * Exportada para ser testável: o defeito que ela impede é de SINTAXE, e sintaxe
- * se verifica sem subir banco. O comportamento contra o PostgREST de verdade
- * está em `tests/e2e/`.
- */
-export function termoSeguroParaOr(bruto: string): string {
-  return bruto
-    .trim()
-    // curingas do `ilike` (Postgres)
-    .replace(/[%_]/g, (m) => `\\${m}`)
-    // gramática do `or=` (PostgREST) — viram o próprio curinga
-    .replace(/[,()]/g, "*");
-}
+// O escape da gramática do `or=` mora na régua única (`lib/inbox/termo-de-busca`);
+// continua exportado daqui porque é daqui que os testes o leem desde a #3918.
+export { termoSeguroParaOr };
 
 type SB = SupabaseClient;
 
@@ -90,9 +78,10 @@ const SELECT_COLS = `
   status_changed_at, service_revision, service_closed_at, service_started_at, current_demanda_id, assigned_to_user_id, assigned_to_user_name, assignee_kind, assigned_at, last_inbound_at, awaiting_since,
   last_outbound_at, last_message_at, last_message_preview,
   unread_count_for_assignee, is_group, group_chat_id, tags, metadata,
-  snooze_until, created_at, updated_at,
+  snooze_until, sector_id, created_at, updated_at,
   bot_silenced_until, last_handoff_at, last_handoff_reason,
   comando_da_conversa,
+  automatico_da_conversa,
   usable_for_rag,
   contacts:contact_id (id, display_name, name, address_book_name, phone_number, is_anonymized, tags, is_blocked, is_personal, contact_type, avatar_storage_path, force_human),
   channel_sessions:channel_session_id (phone_number, display_name, provider, social_platform:metadata->>social_platform)
@@ -226,7 +215,13 @@ export async function listConversationsHandler(
   // o cursor de paginação continuar valendo: filtrar depois de paginar devolveria
   // páginas curtas e um "carregar mais" que às vezes não traz nada.
   if (q.comando && q.comando.length > 0) {
-    query = query.in("comando_da_conversa", q.comando);
+    // O PRÉ-FILTRO (#4325): quando o comando pedido é subconjunto de
+    // {aguardando, automatico}, as duas condições que a função já exige
+    // (sem dono, status fora do histórico fechado) vão também para o `WHERE`.
+    // Elas NÃO substituem `comando_da_conversa` — só reduzem as linhas que ela
+    // avalia, que hoje são todas as da organização. Comando fora do conjunto
+    // devolve a consulta intacta.
+    query = comPreFiltroDoComando(query.in("comando_da_conversa", q.comando), q.comando);
   }
   // Depois do `status` de propósito: pedir um status terminal E `exclude_finished`
   // é contradição, e a resposta certa para uma contradição é lista vazia — não
@@ -234,7 +229,11 @@ export async function listConversationsHandler(
   if (q.exclude_finished) {
     query = query.not("status", "in", `(${CONVERSATION_TERMINAL_STATUSES.join(",")})`);
   }
+  if (q.closed_since) query = query.gte("service_closed_at", q.closed_since);
   if (q.channel_session_id) query = query.eq("channel_session_id", q.channel_session_id);
+  // A FILA (#3876). Igualdade numa coluna que existe desde a 9062 — sem `or=`,
+  // sem junção: a lista que o seletor de fila do Inbox mostra é esta.
+  if (q.sector_id) query = query.eq("sector_id", q.sector_id);
   // Canal desativado nunca entra na inbox (quarentena): exclui as conversas
   // dele aqui e nos badges, mantendo o acesso direto por id para auditoria e
   // suporte. Reativou, reaparecem sem reimportar nada.

@@ -35,6 +35,15 @@ vi.mock("@/components/kanban/ContatoDoNegocio", () => ({ ContatoDoNegocio: () =>
 vi.mock("@/components/kanban/TarefasDoNegocio", () => ({ TarefasDoNegocio: () => null }));
 vi.mock("@/components/kanban/PropostasDoNegocio", () => ({ PropostasDoNegocio: () => null }));
 vi.mock("@/components/kanban/ConversaNoDossie", () => ({ ConversaNoDossie: () => null }));
+// O dossiê lê as pessoas relacionadas para decidir se a seção dos números
+// existe (#3669), e o hook é react-query; este arquivo não monta
+// `QueryClientProvider`. Lista vazia = negócio de um número só, a seção não
+// entra (ela tem teste próprio, `dossie-dos-numeros.test.tsx`). Mesmo dublê de
+// `components/kanban/LeadDossier.test.tsx`.
+vi.mock("@/hooks/leads/useContatosRelacionados", () => ({
+  chaveDosContatosRelacionados: (leadId: string | null) => ["contatos-relacionados", leadId],
+  useContatosRelacionados: () => ({ data: { data: [] }, isLoading: false, isError: false }),
+}));
 vi.mock("@/components/kanban/ScoreSlot", () => ({ ScoreSlot: () => null }));
 vi.mock("@/components/kanban/OwnerBadge", () => ({ OwnerBadge: () => null }));
 vi.mock("@/components/kanban/LeadTimeline", () => ({ LeadTimeline: () => null }));

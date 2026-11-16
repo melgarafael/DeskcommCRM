@@ -34,4 +34,29 @@ describe("política por canal HTTP",()=>{
   expect((await PATCH(req({channel_session_id:channel,user_ids:[],distribution_mode:null,default_assignee_user_id:null}))).status).toBe(200);
   expect(rpc).toHaveBeenCalledWith("fn_set_channel_routing",{p_org:org,p_channel:channel,p_users:[],p_reset:false,p_mode:null,p_default_assignee:null});
  });
+ it("espera pela IA OMITIDA não chama a segunda RPC: a tela antiga não desliga ninguém (#3966)",async()=>{
+  expect((await PATCH(req())).status).toBe(200);
+  expect(rpc).toHaveBeenCalledTimes(1);
+  expect(rpc).not.toHaveBeenCalledWith("fn_set_channel_ai_wait",expect.anything());
+ });
+ it("espera pela IA informada é gravada DEPOIS da regra do número, e nula desliga (#3966)",async()=>{
+  const r=await PATCH(req({channel_session_id:channel,user_ids:[],ai_wait_minutes:60}));
+  expect(r.status).toBe(200);
+  expect(rpc.mock.calls.map((c)=>c[0])).toEqual(["fn_set_channel_routing","fn_set_channel_ai_wait"]);
+  expect(rpc).toHaveBeenLastCalledWith("fn_set_channel_ai_wait",{p_org:org,p_channel:channel,p_minutes:60});
+  expect((await r.json()).data.ai_wait_minutes).toBe(60);
+  rpc.mockClear();
+  expect((await PATCH(req({channel_session_id:channel,user_ids:[],ai_wait_minutes:null}))).status).toBe(200);
+  expect(rpc).toHaveBeenLastCalledWith("fn_set_channel_ai_wait",{p_org:org,p_channel:channel,p_minutes:null});
+ });
+ it("prazo fora da faixa é recusado antes de qualquer RPC, e o reset não grava espera (#3966)",async()=>{
+  expect((await PATCH(req({channel_session_id:channel,user_ids:[],ai_wait_minutes:5}))).status).toBe(422);
+  expect(rpc).not.toHaveBeenCalled();
+  expect((await PATCH(req({channel_session_id:channel,user_ids:[],reset:true,ai_wait_minutes:60}))).status).toBe(200);
+  expect(rpc).toHaveBeenCalledTimes(1);
+ });
+ it("falha ao gravar a espera não vira sucesso (#3966)",async()=>{
+  rpc.mockResolvedValueOnce({data:{mode:"restricted_empty",user_ids:[]},error:null}).mockResolvedValueOnce({data:null,error:{code:"22023"}});
+  expect((await PATCH(req({channel_session_id:channel,user_ids:[],ai_wait_minutes:60}))).status).toBe(422);
+ });
 });

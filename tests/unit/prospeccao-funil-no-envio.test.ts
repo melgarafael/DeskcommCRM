@@ -236,6 +236,23 @@ describe("triarCandidato", () => {
     expect(dono?.params).toEqual([ORG, "alheio", CAMPANHA, "place-1"]);
   });
 
+  it("`contact_id` preenchido não é passe livre: se o telefone acha OUTRO contato, pula", async () => {
+    // A candidata já carrega um contato (o da pegada desta campanha), mas o
+    // telefone agora pertence a um atendimento alheio. Antes bastava o
+    // `contact_id` vir preenchido para seguir para a abordagem fria.
+    const { db } = bancoFalso({ contatosConhecidos: [{ id: "alheio" }] });
+    expect(
+      await triarCandidato(db, ORG, CAMPANHA, candidato(1, { contact_id: CONTATO })),
+    ).toEqual({ motivo: "Contato já existe no CRM; atendimento preservado." });
+  });
+
+  it("controle: `contact_id` preenchido e o telefone acha o MESMO contato, segue com ele", async () => {
+    const { db } = bancoFalso({ contatosConhecidos: [{ id: CONTATO }] });
+    expect(
+      await triarCandidato(db, ORG, CAMPANHA, candidato(1, { contact_id: CONTATO })),
+    ).toEqual({ contatoDaCampanha: CONTATO });
+  });
+
   it("sem telefone: pula, e nem consulta o CRM", async () => {
     const { db, chamadas } = bancoFalso();
     expect(await triarCandidato(db, ORG, CAMPANHA, candidato(1, { phone: null }))).toEqual({
@@ -269,6 +286,17 @@ describe("criarPegadaDoCandidato", () => {
     });
     expect(m.fronteira).toHaveBeenCalledWith({}, ORG, CONTATO, configOnSend.channel_session_id);
     expect(linha).toMatchObject({ status: "queued", conversation_id: CONVERSA });
+  });
+
+  it("o cadastro do contato vai pela porta `prospeccao`: a ÚNICA conversa é a do canal da campanha", async () => {
+    // Pela porta `manual` o cadastro abria outra conversa no telefone mais
+    // antigo da org, antes da `beginServiceAtOrigin` abrir a da campanha.
+    const { db } = bancoFalso();
+    await criarPegadaDoCandidato(db, {} as never, ORG, campanha, configOnSend, candidato(1), null);
+
+    expect(m.contato.mock.calls[0]?.[4]).toEqual({ porta: "prospeccao" });
+    expect(m.fronteira).toHaveBeenCalledTimes(1);
+    expect(m.fronteira).toHaveBeenCalledWith({}, ORG, CONTATO, configOnSend.channel_session_id);
   });
 
   it("idempotente: contato da campanha e negócio que já existem não são criados de novo", async () => {
@@ -311,6 +339,76 @@ describe("criarPegadaDoCandidato", () => {
     expect(m.contato.mock.calls[0]?.[2].custom_fields).toEqual({
       link_facebook: "https://www.facebook.com/clinica1",
       link_instagram: "https://www.instagram.com/clinica1/",
+      link_google_meu_negocio: "https://maps.app.goo.gl/clinica1",
+    });
+  });
+
+  // A aba Diagnóstico da ficha: a categoria da busca vira o `segmento` do contato NOVO,
+  // ao lado dos links, pelo esquema central (lib/contacts/diagnostico-do-contato.ts).
+  it("contato novo nasce com o segmento copiado da categoria da busca", async () => {
+    const { db } = bancoFalso();
+    await criarPegadaDoCandidato(
+      db,
+      {} as never,
+      ORG,
+      campanha,
+      configOnSend,
+      candidato(1, {
+        data: {
+          name: "Clínica 1",
+          key: "place-1",
+          category: " Dentista ",
+          maps_url: "https://maps.app.goo.gl/clinica1",
+          socials: [],
+        },
+      }),
+      null,
+    );
+    expect(m.contato.mock.calls[0]?.[2].custom_fields).toEqual({
+      link_google_meu_negocio: "https://maps.app.goo.gl/clinica1",
+      segmento: "Dentista",
+    });
+  });
+
+  // A organização que já tem campo de CONTATO `segmento` (aqui, com padrão de lista
+  // fechada): o createContactHandler conferiria a categoria do Maps contra esse padrão e
+  // recusaria com 422, e a campanha não abordaria ninguém. O segmento fica de fora; os
+  // links seguem.
+  it("⭐ organização com campo de contato `segmento` próprio: a categoria não é copiada", async () => {
+    const { db } = bancoFalso();
+    const settings = {
+      fields: [
+        {
+          key: "segmento",
+          label: "Segmento",
+          type: "text",
+          escopo: "contato",
+          padrao: "^(Varejo|Serviços|Indústria)$",
+        },
+      ],
+    };
+    const ordem = vi.fn(async () => ({ data: [{ settings }], error: null }));
+    const admin = { from: vi.fn(() => ({ select: () => ({ eq: () => ({ order: ordem }) }) })) };
+    await criarPegadaDoCandidato(
+      db,
+      admin as never,
+      ORG,
+      campanha,
+      configOnSend,
+      candidato(1, {
+        data: {
+          name: "Clínica 1",
+          key: "place-1",
+          category: "Dentista",
+          maps_url: "https://maps.app.goo.gl/clinica1",
+          socials: [],
+        },
+      }),
+      null,
+    );
+    expect(admin.from).toHaveBeenCalledWith("crm_pipelines");
+    expect(ordem).toHaveBeenCalled();
+    expect(m.contato.mock.calls[0]?.[2].custom_fields).toEqual({
       link_google_meu_negocio: "https://maps.app.goo.gl/clinica1",
     });
   });

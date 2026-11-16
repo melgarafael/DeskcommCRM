@@ -39,6 +39,14 @@ export interface StageRow {
    * configuração, o estado que o radar trata como padrão de 24 h.
    */
   expected_duration_hours: number | null;
+  /**
+   * Chance de fechamento calibrada pela tela de Funis (#2999) e o aviso de
+   * equipe da etapa. Opcionais no dublê porque a etapa anterior a essas colunas
+   * (migration 0426/0440) é `null`/desligada — e é o estado que o caso de
+   * "campo vazio depois de salvar" precisa distinguir de "coluna não lida".
+   */
+  win_probability?: number | null;
+  avisar_na_central?: boolean;
 }
 
 /**
@@ -118,6 +126,18 @@ export interface LeadRow {
   value_cents?: number;
   currency?: string;
   custom_fields?: Record<string, unknown> | null;
+  /**
+   * Fatia 1 do #3945 — as colunas do DONO e da recorrência, que o card desenha e
+   * a rota do quadro entrega no `select("*")`. Declaradas aqui (e não num `as`
+   * no teste) para o caso do payload medir o handler: sem elas, o dublê apagaria
+   * justamente os campos cuja entrega o teste prova.
+   */
+  owner_kind?: "user" | "ai" | null;
+  owner_user_id?: string | null;
+  owner_agent_id?: string | null;
+  recurring_value_cents?: number | null;
+  recurring_period?: string | null;
+  tags?: string[];
 }
 
 export function negocio(id: string, stageId: string, over: Partial<LeadRow> = {}): LeadRow {
@@ -168,6 +188,8 @@ export interface Escrita {
   /** O corpo como a rota o mandou: linha no update/insert simples, ARRAY no insert multi-linha. */
   patch: Record<string, unknown> | Record<string, unknown>[];
   filtros: Array<[string, unknown]>;
+  /** Cabeçalhos da requisição (`setHeader`) — o gatilho do banco os lê em `request.headers`. */
+  cabecalhos?: Record<string, string>;
 }
 
 export interface DbOpts {
@@ -187,6 +209,12 @@ export interface DbOpts {
    * precisa declarar que ele existe e de quem é.
    */
   contacts?: Array<Record<string, unknown>>;
+  /**
+   * Conversas — a última mensagem do card sai delas (fatia 1 do #3945): a rota
+   * do quadro lê `last_message_preview`/`last_message_at` por contato. Sem esta
+   * fonte, o caso do card mediria um quadro em que ninguém nunca escreveu.
+   */
+  conversations?: Array<Record<string, unknown>>;
   /** Erro do banco na n-ésima escrita (1-based), como o PostgREST devolveria. */
   writeError?: (n: number, table: string) => { code: string; message: string } | null;
   /** Erro do banco numa LEITURA, decidido pela tabela e pelos filtros `eq` dela. */
@@ -213,6 +241,33 @@ export interface DbOpts {
    * `null` = sem sessão, que é o 401 do quadro.
    */
   user?: { id: string } | null;
+  /**
+   * As manifestações da ouvidoria (#3611) e o `settings` jsonb de cada
+   * organização. Tabelas de fora do funil entram por aqui para os testes do
+   * módulo medirem o próprio código sem um segundo dublê — dois dublês da mesma
+   * tabela divergem no primeiro ajuste.
+   */
+  manifestacoes?: Linha[];
+  organizationSettings?: Record<string, unknown> | null;
+  /**
+   * As CONVERSAS (#3611, fatia 2): `channel` decide se o canal é o do fluxo e
+   * `metadata` é onde o rascunho da manifestação mora. Sem elas, o dublê devolve
+   * conversa inexistente — que é o caso de "a ingestão não sabe de quem é a
+   * mensagem", e não o caso comum.
+   */
+  conversas?: Linha[];
+  /**
+   * `crm_tasks` — o selo de tarefas do card do quadro (#4321). É a tabela que
+   * cresce COM O FILHO (uma dúzia de tarefas por negócio), então é ela que
+   * mede se a leitura por lote prova o próprio fim em vez de aceitar o corte
+   * de `max_rows`.
+   */
+  tasks?: Linha[];
+  /**
+   * `crm_lead_attachments` — o anexo dos campos `file` do funil (#2829), lido
+   * pelo mesmo caminho das tarefas e pelo mesmo motivo.
+   */
+  attachments?: Linha[];
 }
 
 type Linha = Record<string, unknown>;
@@ -251,15 +306,20 @@ export interface Registro {
   /** As tabelas DEPOIS das escritas — é aqui que se confere que os negócios andaram. */
   tabelas: {
     crm_pipelines: Linha[];
+    crm_tasks: Linha[];
+    crm_lead_attachments: Linha[];
     crm_stages: Linha[];
     crm_leads: Linha[];
     crm_lead_activities: Linha[];
     webhook_sources: Linha[];
     automation_rules: Linha[];
     contacts: Linha[];
+    conversations: Linha[];
     followup_flow_pointers: Linha[];
     followup_flow_versions: Linha[];
     ai_agent_versions: Linha[];
+    organizations: Linha[];
+    ouvidoria_manifestacoes: Linha[];
   };
 }
 
@@ -317,14 +377,28 @@ export function makeDb(opts: DbOpts = {}): Registro {
         { id: PIPE, name: "Pedidos", organization_id: opts.pipelineOrg ?? ORG_ID },
       ]) as unknown as Linha[],
       crm_stages: (opts.stages ?? []) as unknown as Linha[],
+      crm_tasks: (opts.tasks ?? []) as unknown as Linha[],
+      crm_lead_attachments: (opts.attachments ?? []) as unknown as Linha[],
       crm_leads: (opts.leads ?? []) as unknown as Linha[],
       crm_lead_activities: [],
       webhook_sources: (opts.webhookSources ?? []) as Linha[],
       automation_rules: (opts.automationRules ?? []) as Linha[],
       contacts: (opts.contacts ?? []) as Linha[],
+      // UMA tabela, duas portas de entrada: `conversations` (a última mensagem
+      // do card, #3945) e `conversas` (o canal e o `metadata` da ouvidoria,
+      // #3611, fatia 2). Cada PR declarou a sua chave e o merge deixou duas
+      // propriedades com o mesmo nome — a segunda apagava a primeira.
+      conversations: [...(opts.conversations ?? []), ...(opts.conversas ?? [])] as Linha[],
       followup_flow_pointers: (opts.pointers ?? []) as Linha[],
       followup_flow_versions: (opts.flowVersions ?? []) as Linha[],
       ai_agent_versions: (opts.agentVersions ?? []) as Linha[],
+      // O `settings` jsonb por organização (#3611): a leitura da ativação da
+      // ouvidoria é `.from("organizations").select("settings").eq("id", org)`.
+      organizations: [
+        { id: ORG_ID, settings: opts.organizationSettings ?? null },
+        { id: OUTRA_ORG, settings: opts.organizationSettings ?? null },
+      ],
+      ouvidoria_manifestacoes: (opts.manifestacoes ?? []) as Linha[],
     },
   };
   const tables = registro.tabelas as unknown as Record<string, Linha[] | undefined>;
@@ -340,6 +414,13 @@ export function makeDb(opts: DbOpts = {}): Registro {
      * Postgres é ISO-8601 em UTC, e ISO ordena lexicograficamente.
      */
     const intervalos: Array<{ coluna: string; op: "gte" | "lte"; valor: string }> = [];
+    /**
+     * Os `.not(...)` encadeados — o caso real é o `next_action IS NOT NULL` da
+     * leitura de `lead_state` no quadro. Ausente do dublê até a fatia 1 do
+     * #3945: sem ela, medir o payload com lead que TEM contato estourava no
+     * dublê antes de chegar ao card.
+     */
+    const exclusoes: Array<{ coluna: string; op: "is" | "eq"; valor: unknown }> = [];
     const pertinencias: Array<[string, unknown[]]> = [];
     const negacoes: Array<[string, unknown]> = [];
     const disjuncoes: Clausula[][] = [];
@@ -358,6 +439,7 @@ export function makeDb(opts: DbOpts = {}): Registro {
     let contar = false;
     let head = false;
     let apagar = false;
+    const cabecalhos: Record<string, string> = {};
     let teto: number | null = null;
     let desde = 0;
 
@@ -375,6 +457,17 @@ export function makeDb(opts: DbOpts = {}): Registro {
         // filtros — a mesma combinação do PostgREST.
         .filter((r) =>
           disjuncoes.every((clausulas) => clausulas.some((clausula) => casa(r, clausula))),
+        )
+        // `NOT (col IS NULL)` mantém só quem tem valor; `NOT (col = v)` segue o
+        // SQL e NÃO inclui o NULL (comparação com NULL não é verdadeira).
+        .filter((r) =>
+          exclusoes.every(({ coluna, op, valor }) => {
+            const v = valorDaColuna(r, coluna);
+            if (op === "is") {
+              return valor === null ? v !== null && v !== undefined : v !== valor;
+            }
+            return v !== null && v !== undefined && v !== valor;
+          }),
         )
         .filter((r) =>
           intervalos.every(({ coluna, op, valor }) => {
@@ -439,7 +532,13 @@ export function makeDb(opts: DbOpts = {}): Registro {
       aplica: () => void,
     ): Promise<{ data: unknown; error: unknown; count: number | null }> {
       const i = nEscrita++;
-      registro.escritas.push({ tipo, table, patch: corpo, filtros: [...filtros] });
+      registro.escritas.push({
+        tipo,
+        table,
+        patch: corpo,
+        filtros: [...filtros],
+        ...(Object.keys(cabecalhos).length ? { cabecalhos: { ...cabecalhos } } : {}),
+      });
       registro.eventos.push(`start:${table}:${i}`);
       // Folga real: sem ela, escritas disparadas em paralelo teriam o mesmo
       // intercalamento de um laço sequencial e o teste de ordem não mediria nada.
@@ -480,6 +579,11 @@ export function makeDb(opts: DbOpts = {}): Registro {
         const linhas = (Array.isArray(nova) ? nova : [nova]).map((l, k) => ({
           id: `novo-${nEscrita + 1}-${k}`,
           ...l,
+          // O PostgREST devolve a linha COMO O BANCO a guardou: `created_at` tem
+          // `default now()` em toda tabela do repo e quem lê a linha recém-inserida
+          // espera o campo. Sem este default o teste da manifestação (#3611)
+          // receberia `created_at: undefined` e mediria o dublê, não o serviço.
+          created_at: l.created_at ?? new Date().toISOString(),
         }));
         const r = await escreve("insert", nova, () => {
           (tables[table] ??= []).push(...linhas);
@@ -517,6 +621,10 @@ export function makeDb(opts: DbOpts = {}): Registro {
         apagar = true;
         return b;
       },
+      setHeader: (nome: string, valor: string) => {
+        cabecalhos[nome] = valor;
+        return b;
+      },
       eq: (c: string, v: unknown) => {
         filtros.push([c, v]);
         return b;
@@ -551,6 +659,14 @@ export function makeDb(opts: DbOpts = {}): Registro {
        */
       neq: (c: string, v: unknown) => {
         negacoes.push([c, v]);
+        return b;
+      },
+      /** `.not(col, "is"|"eq", v)` — a negação do `.is`/`.eq`, como no PostgREST. */
+      not: (c: string, op: string, v: unknown) => {
+        if (op !== "is" && op !== "eq") {
+          throw new Error(`dublê: .not(${c}, "${op}", ...) não suportado`);
+        }
+        exclusoes.push({ coluna: c, op, valor: v });
         return b;
       },
       limit: (n: number) => {

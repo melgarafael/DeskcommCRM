@@ -64,6 +64,7 @@
 import type pg from "pg";
 
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import { CANAIS_QUE_RESPONDEM_ANTES } from "@/lib/channels/capabilities";
 import { logger } from "@/lib/logger";
 
 /** Os recursos cujo cron pode ficar ocioso sem que a organização perca nada. */
@@ -89,6 +90,8 @@ export const RECURSOS_DO_CRON = [
   "mcp_a_revogar",
   "lembrete_de_tarefa",
   "lembrete_de_agenda",
+  "roteamento",
+  "catalogo_do_feed",
 ] as const;
 export type RecursoDoCron = (typeof RECURSOS_DO_CRON)[number];
 
@@ -140,7 +143,14 @@ const TETO_DA_LEITURA_MS = 2_000;
  * - os seis do #3694 são a condição EXATA da consulta que cada rota faz, ou um
  *   superconjunto dela: `webhook_events_log` sem o corte de espera de 2 min (a
  *   linha recém-arquivada nunca fica invisível) e sem o filtro de provider (o
- *   nome dele não sai de lib/channels/; mais largo é o lado seguro); `followup_enrollments` com o
+ *   nome dele não sai de lib/channels/; mais largo é o lado seguro) — nas DUAS
+ *   filas do replay: a transitória do canal por QR e a entrada aceita que
+ *   respondeu antes de processar (`received` com `valid_signature`, na janela de
+ *   6 h de `reprocessar-entradas-aceitas.ts`, sem o corte de 5 min). Esta segunda
+ *   filtra o provider, pelo parâmetro `$1` (`CANAIS_QUE_RESPONDEM_ANTES`, sem
+ *   escrever o nome): a captação por webhook e a loja também gravam `received`
+ *   com assinatura válida e nunca fecham a linha, e sem o filtro o replay
+ *   rodaria a cada minuto por 6 h depois de cada lead; `followup_enrollments` com o
  *   mesmo filtro da CTE de `fn_claim_due_followup_enrollments` (status vivo,
  *   vencido, sem lease, organização `active` — o teste do portão compara os
  *   dois); pointer `active` (o que `runSilenceSweep` varre); `followup_turn`
@@ -160,7 +170,11 @@ const TETO_DA_LEITURA_MS = 2_000;
  * com trabalho na fila é o defeito que este arquivo existe para não ter:
  *
  * - `mensagem_presa`: `sending` acima de 3 min, contra o corte de 5 min da rota
- *   (`STUCK_AFTER_MS`) — a folga cobre o relógio do portão e o da rodada;
+ *   (`STUCK_AFTER_MS`) — a folga cobre o relógio do portão e o da rodada. E
+ *   `queued` entre 10 min e 25 h, contra os 15 min e as 24 h da espera esquecida
+ *   (`avisarEsperaEsquecida`), sem o filtro de conexão de pé e sem o prazo por
+ *   motivo, que a rodada aplica depois: a mensagem mais velha que a janela não
+ *   acorda o cron, e por isso a instalação parada volta a dormir sozinha;
  * - `ligacao_presa`: `starting`/`ringing` acima de 3 min, contra o corte de 5 min
  *   da rota (`STUCK_CALL_AFTER_MS`), pela mesma folga da `mensagem_presa`;
  * - `lembrete_de_tarefa`: a janela de ±1 dia de `janelaDaVarredura`, sem o
@@ -174,6 +188,18 @@ const TETO_DA_LEITURA_MS = 2_000;
  *   em `organizations`);
  * - `canal_vigiado`, `fila_de_soneca`, `redacao_de_storage`: a condição exata
  *   da consulta da rodada.
+ *
+ * ─── O ROTEAMENTO (#3878) ──────────────────────────────────────────────────
+ *
+ * `routing-worker` era a última rota de MINUTO A MINUTO sem saída barata: cada
+ * batida fazia duas leituras no PostgREST contra `event_log` (a varredura de
+ * `processing` preso e a de `pending`) e, ociosa, recebia dois vazios. O sinal
+ * `roteamento` é a UNIÃO EXATA dessas duas varreduras: `pending` com
+ * `next_attempt_at` vencido, ou `processing` acima da janela de 5 min de
+ * `PROCESSING_STALE_MS` (`lib/routing/worker.ts`). Diferente dos outros sinais,
+ * aqui não há "mais largo que a rodada": é o mesmo predicado, porque alargar
+ * manteria a rota acordada para sempre — o `processing` de um handler normal é
+ * trabalho de OUTRO consumidor, e é justamente o que a rodada também ignora.
  *
  * Duas rodadas fazem MAIS do que a consulta principal, e o portão cobre as duas
  * (medido em `tests/invariants/piso-ocioso-retrato.test.ts`):
@@ -220,9 +246,16 @@ select
         or (google_event_id is not null and google_conflict is null)
         or google_conflict -> 'resolution' is not null
   ) as agenda_google_push,
-  exists (
-    select 1 from webhook_events_log
-     where status = 'error' and error_message like 'transitoria:%'
+  (
+    exists (
+      select 1 from webhook_events_log
+       where status = 'error' and error_message like 'transitoria:%'
+    )
+    or exists (
+      select 1 from webhook_events_log
+       where status = 'received' and valid_signature
+         and provider = any($1::text[])
+    )
   ) as webhook_replay,
   exists (
     select 1 from followup_enrollments e
@@ -248,10 +281,18 @@ select
     select 1 from conversations
      where snooze_until is not null and snooze_until <= now()
   ) as fila_de_soneca,
-  exists (
-    select 1 from messages
-     where direction = 'outbound' and status = 'sending'
-       and created_at < now() - interval '3 minutes'
+  (
+    exists (
+      select 1 from messages
+       where direction = 'outbound' and status = 'sending'
+         and created_at < now() - interval '3 minutes'
+    )
+    or exists (
+      select 1 from messages
+       where direction = 'outbound' and status = 'queued'
+         and created_at < now() - interval '10 minutes'
+         and created_at > now() - interval '25 hours'
+    )
   ) as mensagem_presa,
   exists (
     select 1 from voice_calls
@@ -295,7 +336,18 @@ select
   ) or exists (
     select 1 from agent_inbox_items
      where ref_kind = 'agenda_reminder_sender' and status = 'open'
-  ) as lembrete_de_agenda
+  ) as lembrete_de_agenda,
+  exists (
+    select 1 from event_log
+     where event_type = 'conversation.routing_requested'
+       and (
+         (status = 'pending' and (next_attempt_at is null or next_attempt_at <= now()))
+         or (status = 'processing' and updated_at <= now() - interval '5 minutes')
+       )
+  ) as roteamento,
+  exists (
+    select 1 from catalog_feed_sources where ativo = true
+  ) as catalogo_do_feed
 `;
 
 type Retrato = { emUso: Record<RecursoDoCron, boolean>; ate: number };
@@ -346,7 +398,7 @@ async function lerRetrato(db?: BancoDoPortao): Promise<Record<RecursoDoCron, boo
   try {
     const banco = db ?? getRequestPool();
     const { rows } = await comTeto(
-      Promise.resolve(banco.query(SQL_DO_RETRATO)) as Promise<{ rows: unknown[] }>,
+      Promise.resolve(banco.query(SQL_DO_RETRATO, [[...CANAIS_QUE_RESPONDEM_ANTES]])) as Promise<{ rows: unknown[] }>,
       TETO_DA_LEITURA_MS,
     );
     return retratoCompleto(rows[0] as Record<string, unknown> | undefined);

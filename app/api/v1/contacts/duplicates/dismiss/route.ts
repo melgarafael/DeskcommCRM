@@ -6,8 +6,8 @@
  * `nao_sao_a_mesma`) gravada por `dispensarParDeContatos`, sob trava: dispensar de
  * novo, ou com o par invertido, não grava segunda linha.
  *
- * Só par de nome se dispensa. Mesmo telefone ou mesmo e-mail é `par_forte` (422):
- * a sugestão forte não some por clique — junta-se as fichas.
+ * Só par de nome se dispensa. Mesmo telefone, mesmo e-mail ou mesmo CPF é
+ * `par_forte` (422): a sugestão forte não some por clique — junta-se as fichas.
  *
  * Esta rota é a porta: autoriza, valida, chama, audita. Mesmo papel da fusão
  * (`manager`), mesmo `requireSupportWrite` antes do efeito. A organização é a da
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
     return fail(
       "not_dismissable",
-      "Mesmo telefone ou mesmo e-mail não se dispensa: junte as fichas.",
+      "Mesmo telefone, mesmo e-mail, mesmo CPF ou a mesma conta de WhatsApp não se dispensa: junte as fichas.",
       422,
       { requestId },
     );

@@ -37,6 +37,11 @@ export function DestinoDoInteresse({ valor, onChange }: Props) {
   const funis = useFunis();
   const etapas = useEtapas(funilEscolhido || null);
   const etapasAbertas = (etapas.data ?? []).filter((e) => !e.is_won && !e.is_lost);
+  // O funil salvo pode ter sido arquivado depois (a lista só traz os vivos). Sem
+  // isto o seletor exibia "Sem funil" enquanto o banco guardava o arquivado, e
+  // salvar dava 422 — medido na prova de tela do #3328.
+  const funilArquivado =
+    funilEscolhido !== "" && funis.data !== undefined && !funis.data.some((f) => f.id === funilEscolhido);
 
   return (
     <div className="col-span-1 md:col-span-4 rounded-md border border-border p-3" data-testid="destino-do-interesse">
@@ -62,6 +67,11 @@ export function DestinoDoInteresse({ valor, onChange }: Props) {
             className="mt-1 block w-full rounded-md border bg-background p-2 text-sm"
           >
             <option value="">{t("Sem funil (passar para a equipe)")}</option>
+            {funilArquivado ? (
+              <option value={funilEscolhido} disabled>
+                {t("Funil arquivado")}
+              </option>
+            ) : null}
             {(funis.data ?? []).map((f) => (
               <option key={f.id} value={f.id}>
                 {f.name}
@@ -75,7 +85,7 @@ export function DestinoDoInteresse({ valor, onChange }: Props) {
           </Label>
           <select
             id={idEtapa}
-            disabled={!funilEscolhido}
+            disabled={!funilEscolhido || funilArquivado}
             value={valor && valor.pipeline_id === funilEscolhido ? valor.stage_id : ""}
             onChange={(e) =>
               onChange(e.target.value ? { pipeline_id: funilEscolhido, stage_id: e.target.value } : null)
@@ -91,7 +101,11 @@ export function DestinoDoInteresse({ valor, onChange }: Props) {
           </select>
         </div>
       </div>
-      {funilEscolhido && !valor ? (
+      {funilArquivado ? (
+        <p className="mt-2 text-xs text-amber-600">
+          {t("O funil escolhido foi arquivado. Escolha outro funil, ou «Sem funil», e salve.")}
+        </p>
+      ) : funilEscolhido && !valor ? (
         <p className="mt-2 text-xs text-amber-600">
           {t("Falta escolher a etapa: sem ela, o interesse continua indo para a equipe.")}
         </p>

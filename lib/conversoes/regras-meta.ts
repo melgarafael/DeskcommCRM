@@ -39,11 +39,22 @@ export const VALORES_DE_EVENTO_DA_META = EVENTOS_DA_META.map((e) => e.valor) as 
  * recorte de `EVENTOS_DA_META`. Mora aqui, e não no envio, para o texto da
  * pendência (`MOTIVO_LEGIVEL.evento_fora_do_canal`) listar a MESMA coisa que o
  * envio aceita, com os rótulos da tela.
+ *
+ * `QualifiedLead` e `ViewContent` ficaram de fora até 27/10/2026, e eram
+ * justamente o que a tela sugere para etapa de qualificação. O provedor passou
+ * a aceitá-los em `POST /v1/whatsapp/conversions` (changelog de 23/10/2026; a
+ * lista do OpenAPI v1.370.0 é `LeadSubmitted, QualifiedLead, Purchase,
+ * AddToCart, InitiateCheckout, ViewContent, OrderCreated, OrderCanceled,
+ * OrderReturned`). Hoje o recorte é a lista inteira da tela; ele continua
+ * existindo porque um evento novo em `EVENTOS_DA_META` não sai pelo canal só
+ * por estar ali — e a tela tem de avisar no ato quando não sair.
  */
 export const EVENTOS_DE_ETAPA_NO_CANAL = [
   "InitiateCheckout",
   "LeadSubmitted",
   "AddToCart",
+  "QualifiedLead",
+  "ViewContent",
 ] as const satisfies readonly (ChannelConversionInput["event"] & EventoDaMeta)[];
 
 /**
@@ -84,12 +95,12 @@ export function rotuloDoEventoDaMeta(valor: string): string {
  * sugestão, e nunca se sugere evento para etapa de ganho (a compra já vai).
  *
  * Leva o CANAL em conta (#2890): sem conexão direta da Meta, o único caminho
- * de saída do evento é o canal da conversa, e o canal não repassa
- * `QualifiedLead`. Sugeri-lo ali era a tela recomendar e, no mesmo instante, o
- * aviso do #2839 dizer que a recomendação não tem saída. Sem conexão direta,
- * etapa de qualificação fica sem sugestão — o estado inicial cai no fallback
- * do componente, que é um evento do canal. Os demais nomes já são eventos que
- * o canal repassa, então valem nos dois casos.
+ * de saída do evento é o canal da conversa. Enquanto o canal não repassava
+ * `QualifiedLead`, sugeri-lo ali era a tela recomendar e, no mesmo instante, o
+ * aviso do #2839 dizer que a recomendação não tem saída — por isso a regra
+ * pergunta `eventoDaEtapaTemSaida`, e não uma lista própria. Desde que o canal
+ * repassa `QualifiedLead` (27/10/2026), etapa de qualificação o recebe também
+ * sem conexão direta.
  */
 export function eventoRecomendadoParaMeta(
   nomeDaEtapa: string,
@@ -99,7 +110,7 @@ export function eventoRecomendadoParaMeta(
   if (/orcament|proposta|cotac/.test(nome)) return "InitiateCheckout";
   if (/agend|consulta|visita|reuniao/.test(nome)) return "LeadSubmitted";
   if (/qualific|interess|diagnost/.test(nome)) {
-    return conexaoDiretaConfigurada ? "QualifiedLead" : null;
+    return eventoDaEtapaTemSaida("QualifiedLead", conexaoDiretaConfigurada) ? "QualifiedLead" : null;
   }
   return null;
 }

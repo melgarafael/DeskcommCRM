@@ -19,7 +19,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 
-import { test, expect, type BrowserContext, type Page } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, type BrowserContext, type Page } from "./helpers/test";
 import {
   assinaturaDe, criarPessoa, db, drenarAte, entrar, fotografarChaves, inserir, restaurarChaves, type FotoDasChaves,
 } from "./helpers/cobranca";
@@ -179,6 +179,7 @@ test("[P0] o dono gera o link de pagamento pelo card do tenant (Asaas) e a empre
 
     // ── 5. A empresa entra e vê o MESMO link ────────────────────────────────
     const ctxB = await browser.newContext();
+    ctxB.on("page", esperarARevelacaoNasCargas);
     contextos.push(ctxB);
     const pB = await ctxB.newPage();
     pB.setDefaultTimeout(20_000);

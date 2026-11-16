@@ -5,6 +5,9 @@ import { execucaoDoServico, reciboDoServico, rpcDoServico } from "@/lib/agenda/s
 import { createAdminClient } from "@/lib/supabase/admin";
 import { randomUUID } from "node:crypto";
 import type { Json } from "@/lib/database.types";
+import { AUTORIDADE_LOCAL, RECUSA_DE_AUTORIDADE_EXTERNA, RECUSA_DE_TIPO_EXTERNO } from "@/lib/agenda/autoridade";
+import { agendaAuthority, changeAmigoAppointment, createAmigoAppointment, type AmigoBookingContext } from "@/lib/amigo/agenda";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 /**
  * A REGRA de marcar, remarcar e cancelar — fora da rota, de propósito.
  *
@@ -34,11 +37,13 @@ import {
   type TipoDoAtendimento,
 } from "@/lib/agenda/aviso-do-compromisso";
 import { coletaOQueOcupa, horariosLivresDaOrg } from "@/lib/agenda/consulta";
+import { normalizarConvidadosDaEquipe, separarConvidadosDaEquipe } from "@/lib/agenda/convidados-da-equipe";
 import {
   DURACAO_MAXIMA_MIN,
   DURACAO_MINIMA_MIN,
   duracaoEscolhidaValida,
 } from "@/lib/agenda/duracao-escolhida";
+import { aposVagaLiberada, fecharEncaixeConfirmado } from "@/lib/agenda/encaixe-supabase";
 import { colide } from "@/lib/agenda/horarios-livres";
 import {
   atividadeDaTransicao,
@@ -67,16 +72,68 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 type SB = SupabaseClient;
 
+/**
+ * OS CONVIDADOS DA EQUIPE, CONFERIDOS ANTES DE GRAVAR (#4006).
+ *
+ * A coluna é `uuid[]` e array não aceita FK: sem esta função, um id de outra
+ * organização (ou de quem saiu da empresa mês passado) gravaria sem erro e o
+ * worker de publicação o resolveria em silêncio — nenhum convite, nenhuma
+ * mensagem, o compromisso salvo e a pessoa sem ver nada. É exatamente o defeito
+ * que a issue descreve.
+ *
+ * Devolve os ids já normalizados (sem repetidos, com teto) e RECUSA o resto com
+ * 422 nomeando quem ficou de fora: a tela precisa poder dizer o que aconteceu, e
+ * "400 sem explicação" faria a pessoa tentar de novo com a mesma lista.
+ *
+ * `revoked_at is null` é a mesma régua de `usePessoasDaAgenda` — quem saiu da
+ * equipe não aparece no seletor e não vira convidado por um id antigo que
+ * estivesse salvo na tela de alguém.
+ */
+async function convidadosDaEquipeConferidos(
+  supabase: SB,
+  ctx: { organization_id: string; requestId: string },
+  ids: readonly string[] | null | undefined,
+): Promise<string[]> {
+  const pedidos = normalizarConvidadosDaEquipe(ids);
+  if (!pedidos.length) return [];
+  const { data, error } = await supabase
+    .from("user_organizations")
+    .select("user_id")
+    .eq("organization_id", ctx.organization_id)
+    .in("user_id", pedidos)
+    .is("revoked_at", null);
+  if (error) throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
+  const { aceitos, recusados } = separarConvidadosDaEquipe(
+    pedidos,
+    new Set(((data ?? []) as Array<{ user_id: string }>).map((m) => String(m.user_id).toLowerCase())),
+  );
+  if (recusados.length) {
+    throw new ApiError(
+      422,
+      "convidado_fora_da_organizacao",
+      undefined,
+      ctx.requestId,
+      `Estas pessoas não fazem parte da equipe desta organização: ${recusados.join(", ")}. Tire-as da lista de convidados para salvar o compromisso.`,
+    );
+  }
+  return aceitos;
+}
+
+
 /** A recusa da coleta vira código de wire — um mapa, não `if` espalhado. */
 const CODIGO_DA_RECUSA = {
   tipo_desconhecido: { status: 404, code: "not_found" },
   tipo_desativado: { status: 422, code: "agenda_tipo_desativado" },
+  tipo_de_sistema_externo: { status: 422, code: "agenda_tipo_de_sistema_externo" },
+  amigo_context_required: { status: 422, code: "agenda_amigo_context_required" },
   sem_responsavel: { status: 422, code: "agenda_sem_responsavel" },
   jornada_mal_configurada: { status: 422, code: "agenda_disponibilidade_invalida" },
   erro_interno: { status: 500, code: "internal_error" },
 } as const;
 
 export interface MarcarInput {
+  /** Só com o módulo `amigo` ligado e a agenda da organização no Amigo. */
+  amigo?: AmigoBookingContext;
   event_type_id: string;
   starts_at: string;
   owner_user_id?: string;
@@ -106,6 +163,19 @@ export interface MarcarInput {
    * é o worker de push.
    */
   guest_email?: string;
+  /**
+   * Convidados da EQUIPE (#4006) — ids de membros ATIVOS desta organização.
+   *
+   * Vai além do responsável (`owner_user_id`, dono do evento no Google) e do
+   * e-mail digitado: quem entra aqui passa a ver o compromisso na PRÓPRIA agenda,
+   * no Google e no CRM. O convidado NÃO vira responsável — carteira, distribuição
+   * e métricas continuam no dono (ver `calendar_appointments.team_guest_user_ids`).
+   *
+   * `[]` limpa a lista (desconvida a equipe); ausente não mexe. Id que não é
+   * membro ativo desta organização é RECUSA com 422, não descarte silencioso:
+   * a tela diria "salvo" e o convite nunca existiria.
+   */
+  team_guest_user_ids?: string[];
   participant_name?: string;
   participants?: string[];
   /**
@@ -122,6 +192,15 @@ export interface MarcarInput {
    * continua sendo o do tipo.
    */
   duration_minutes?: number;
+  /**
+   * O lugar reservado e quantas pessoas vêm (issue #4029). O serviço com
+   * lugares recusa sem `space_id` (`space_required`) em vez de escolher a mesa
+   * pelo cliente; o serviço sem lugar recusa um `space_id` (`space_not_eligible`).
+   * `party_size` conta em PESSOAS também na capacidade do serviço, com ou sem
+   * lugar: ausente, a reserva vale uma pessoa, como antes.
+   */
+  space_id?: string;
+  party_size?: number;
   expected_service_revision?: number;
 }
 
@@ -135,11 +214,28 @@ export interface AlterarInput {
   notes?: string;
   /** Igual ao de `MarcarInput`: `""` desconvida, ausente não mexe. */
   guest_email?: string;
+  /** Igual ao de `MarcarInput`: `[]` desconvidava a equipe, ausente não mexe. */
+  team_guest_user_ids?: string[];
   /**
    * O texto do bloco na grade (#3776). Ausente não mexe; vazio é RECUSA — a
    * régua da edição, e o porquê, estão em `tituloDoCompromisso` na rota.
    */
   title?: string;
+  /**
+   * A duração NOVA deste compromisso, em minutos — a SEGUNDA porta do mesmo
+   * campo da #3709 (#4450).
+   *
+   * ⚠️ A DURAÇÃO É O COMPRIMENTO DO BLOCO (`ends_at`), não uma coluna: mudá-la
+   * é reescrever o fim a partir do início que o compromisso já tem. Ausente NÃO
+   * MEXE — é o que mantém byte a byte o PATCH do cliente antigo, que não conhece
+   * o campo, e o de quem só está remarcando: o comprimento que o bloco já tem
+   * viaja com ele.
+   *
+   * A faixa é a MESMA da criação (`lib/agenda/duracao-escolhida.ts`), e num
+   * serviço a recusa é a mesma (`agenda_duracao_do_servico`): ali o comprimento
+   * é o da agenda publicada, com capacidade e ocorrência.
+   */
+  duration_minutes?: number;
 }
 
 export interface CancelarInput {
@@ -287,6 +383,19 @@ export async function marcarAgendamentoHandler(
   ctx: HandlerCtx,
   input: MarcarInput,
 ): Promise<Record<string, unknown>> {
+  // Módulo `amigo` ligado e conexão ativa: a agenda da organização é o Amigo, e
+  // marcar é marcar lá (etapa 2 do #4227). `agendaAuthority` devolve `local`
+  // com o módulo desligado, e então nada abaixo muda.
+  const autoridade = await agendaAuthority(supabase, ctx.organization_id);
+  if (autoridade.provider === "amigo" && autoridade.connection) {
+    await guardServiceEffect();
+    return createAmigoAppointment(supabase, ctx, input, autoridade.connection);
+  }
+  // Seleção do Amigo numa agenda local seria ignorada em silêncio, e quem pediu
+  // acharia que marcou lá.
+  if (input.amigo) {
+    throw new ApiError(422, "agenda_amigo_context_required", undefined, ctx.requestId, "A agenda desta organização não está no Amigo. Marque pela agenda local, sem a seleção do Amigo.");
+  }
   const chave =
     ctx.idempotencyKey ??
     (ctx.sourceJobId ? `agent-job:${ctx.sourceJobId}:${hashDoCorpo(input)}` : null);
@@ -358,7 +467,7 @@ async function executarCriacaoDeAgendamento(
   const { data: tipo, error: erroTipo } = await supabase
     .from("calendar_event_types")
     .select(
-      "id, name, is_active, duration_minutes, default_owner_user_id, requires_confirmation, location_kind, location_details, service_enabled",
+      "id, name, is_active, duration_minutes, default_owner_user_id, requires_confirmation, location_kind, location_details, service_enabled, external_provider",
     )
     .eq("organization_id", ctx.organization_id)
     .eq("id", input.event_type_id)
@@ -366,6 +475,9 @@ async function executarCriacaoDeAgendamento(
   if (erroTipo) throw new ApiError(500, "internal_error", undefined, ctx.requestId, erroTipo.message);
   if (!tipo) {
     throw new ApiError(404, "not_found", undefined, ctx.requestId, "Tipo de agendamento não encontrado.");
+  }
+  if (tipo.external_provider) {
+    throw new ApiError(422, "agenda_tipo_de_sistema_externo", undefined, ctx.requestId, RECUSA_DE_TIPO_EXTERNO);
   }
   if (!tipo.is_active) {
     throw new ApiError(422, "agenda_tipo_desativado", undefined, ctx.requestId, `"${tipo.name}" está desativado.`);
@@ -384,6 +496,18 @@ async function executarCriacaoDeAgendamento(
         undefined,
         ctx.requestId,
         "Neste serviço a duração é definida na agenda do serviço e não pode ser trocada na marcação.",
+      );
+    }
+    // A reserva de serviço não grava `team_guest_user_ids` (`fn_calendar_service_book`
+    // lista as colunas uma a uma): sem esta recusa a equipe marcada sumiria com um
+    // 201, e um id de fora da organização nem chegaria a ser conferido (#4006).
+    if (input.team_guest_user_ids?.length) {
+      throw new ApiError(
+        422,
+        "agenda_equipe_no_servico",
+        undefined,
+        ctx.requestId,
+        "Neste serviço não dá para convidar a equipe na marcação.",
       );
     }
     // Refresh de servidor explícito. A mutação humana abaixo continua pela sessão e pelo escritor nativo.
@@ -505,6 +629,11 @@ async function executarCriacaoDeAgendamento(
     booking_claim:booking.claim,authorized_by:{kind:ctx.actor.type,id:ctx.actor.id} } : {state:"none"};
   // A consulta pode esperar rede. Revalidar o turno depois dela, antes da escrita.
   await guardServiceEffect();
+  const convidadosDaEquipe = await convidadosDaEquipeConferidos(
+    supabase,
+    ctx,
+    input.team_guest_user_ids,
+  );
   const { data: criado, error: erroInsert } = await supabase
     .from("calendar_appointments")
     .insert({
@@ -532,6 +661,9 @@ async function executarCriacaoDeAgendamento(
       // tela), e string vazia gravada seria um convidado sem e-mail — que faz o
       // Google recusar o EVENTO INTEIRO, não só o convidado.
       guest_email: input.guest_email || null,
+      // Sempre um array: a coluna é `not null default '{}'`, e mandar `null`
+      // seria trocar o default por ausência em toda marcação sem equipe.
+      team_guest_user_ids: convidadosDaEquipe,
       created_by_kind: autorParaCriacao(ctx.actor),
       created_by_user_id: ctx.actor.type === "user" ? ctx.actor.id : null,
       source: ctx.actor.type === "user" ? "ui" : "mcp",
@@ -601,11 +733,16 @@ export async function alterarAgendamentoHandler(
     "status",
     "time_zone",
     "service_occurrence_id",
-  ]);
-
-  await exigeDonoDoCompromisso(supabase, ctx, atual);
+  ], { caminhoDoModulo: true });
 
   if (input.revision !== undefined && input.revision !== Number(atual.revision)) throw new ApiError(409,"conflict",undefined,ctx.requestId,"O compromisso mudou. Recarregue antes de confirmar.");
+  // Espelho de uma consulta do Amigo, com o módulo ligado: remarcar ou confirmar
+  // é feito lá, e a linha daqui é reescrita pela resposta. Sem dono local.
+  if (atual.authority === "amigo") {
+    await guardServiceEffect();
+    return changeAmigoAppointment(supabase, ctx, atual, { ...input }, "change");
+  }
+  await exigeDonoDoCompromisso(supabase, ctx, atual);
   if (atual.status === "cancelled") {
     throw new ApiError(
       422,
@@ -651,18 +788,67 @@ export async function alterarAgendamentoHandler(
   // gerada `needs_google_push` (migration 0225), que compara a revisão
   // publicável com o último aceite; notes e metadata não criam intenção.
   if (input.guest_email !== undefined) mudanca.guest_email = input.guest_email || null;
+  // Mesma régua da criação: id fora da organização é RECUSA, e `[]` desconvidava
+  // a equipe (o "tirar todo mundo" é uma edição legítima, não um campo vazio).
+  if (input.team_guest_user_ids !== undefined) {
+    mudanca.team_guest_user_ids = await convidadosDaEquipeConferidos(
+      supabase,
+      ctx,
+      input.team_guest_user_ids,
+    );
+  }
   let transicao: Transicao | null = null;
 
-  if (input.starts_at) {
-    const novoInicio = new Date(input.starts_at);
+  /**
+   * A DURAÇÃO NOVA (#4450) — a MESMA régua da criação.
+   *
+   * Fora de 5…1440 é recusa NOMEADA, não troca silenciosa pelo molde: quem
+   * digitou 3 ou 5000 minutos precisa saber que não mudou o que pediu. A
+   * conferência vem antes de qualquer leitura ou escrita.
+   */
+  if (input.duration_minutes !== undefined && !duracaoEscolhidaValida(input.duration_minutes)) {
+    throw new ApiError(
+      422,
+      "agenda_duracao_invalida",
+      undefined,
+      ctx.requestId,
+      `A duração precisa ser um número inteiro de minutos entre ${DURACAO_MINIMA_MIN} e ${DURACAO_MAXIMA_MIN}.`,
+    );
+  }
+
+  /**
+   * REMARCAR (início novo) E MUDAR O TEMPO (duração nova) SÃO A MESMA PERGUNTA:
+   * quanto do horário este compromisso ocupa, a partir de quando.
+   *
+   * `duration_minutes` AUSENTE não é zero nem o molde — é o comprimento que o
+   * bloco JÁ TEM (`duracaoDoBloco`). É o que mantém idêntico o PATCH do cliente
+   * antigo, que não conhece o campo, e o de quem só remarcou: o comprimento
+   * viaja com o horário.
+   */
+  if (input.starts_at || input.duration_minutes !== undefined) {
+    const novoInicio = input.starts_at ? new Date(input.starts_at) : new Date(atual.starts_at as string);
     const { data: tipo } = await supabase
       .from("calendar_event_types")
-      .select("id, duration_minutes")
+      .select("id, duration_minutes, service_enabled")
       .eq("organization_id", ctx.organization_id)
       .eq("id", (atual.event_type_id as string | null) ?? "")
       .maybeSingle();
     if (!tipo) {
       throw new ApiError(404, "not_found", undefined, ctx.requestId, "O tipo deste agendamento não existe mais.");
+    }
+
+    // Num SERVIÇO o comprimento é o da agenda publicada — a MESMA recusa da
+    // criação. Não é zelo: `fn_appointment_change_core` recalcula `ends_at` pelo
+    // `service_fact` quando há ocorrência, então aceitar aqui seria devolver
+    // "mudou" para um valor que o banco descartou em silêncio.
+    if (input.duration_minutes !== undefined && (tipo.service_enabled || atual.service_occurrence_id)) {
+      throw new ApiError(
+        422,
+        "agenda_duracao_do_servico",
+        undefined,
+        ctx.requestId,
+        "Neste serviço a duração é definida na agenda do serviço e não muda pelo compromisso.",
+      );
     }
 
     /**
@@ -674,41 +860,50 @@ export async function alterarAgendamentoHandler(
      * zero (issue #3709). Um intervalo ilegível (linha antiga, fim antes do
      * começo) cai no molde, que é o comportamento anterior.
      */
-    const duracaoDoBlocoMin = duracaoDoBloco(
+    const duracaoAtualMin = duracaoDoBloco(
       atual.starts_at as string,
       atual.ends_at as string | null,
       Number(tipo.duration_minutes),
     );
+    // A escolha da tela vence o que o bloco tinha; ausente, o bloco é a régua.
+    const duracaoDoBlocoMin = input.duration_minutes ?? duracaoAtualMin;
     const novoFim = new Date(novoInicio.getTime() + duracaoDoBlocoMin * 60_000);
 
     // ⚠️ O PRÓPRIO COMPROMISSO OCUPA O HORÁRIO DELE. Remarcar para o mesmo
-    // instante é no-op — sem esta guarda ele se veria como conflito e recusaria
-    // a si mesmo.
+    // instante, com o mesmo comprimento, é no-op — sem esta guarda ele se veria
+    // como conflito e recusaria a si mesmo.
     const mesmoHorario = new Date(atual.starts_at as string).getTime() === novoInicio.getTime();
-    if (!mesmoHorario) {
+    const mesmaDuracao = duracaoDoBlocoMin === duracaoAtualMin;
+    if (!mesmoHorario || !mesmaDuracao) {
       // REMARCAR segue a mesma assimetria de marcar (`exigeHorarioLivre`): a
       // pessoa que combinou o encaixe por fora da grade precisa poder movê-lo
       // também, senão o compromisso nasce possível e fica preso.
       if (atual.service_occurrence_id) {
         await atualizarFontesDoServico(ctx.actor.type === "user" ? createAdminClient() : supabase, ctx.organization_id, tipo.id, atual.owner_user_id as string | null);
-        mudanca.starts_at = novoInicio.toISOString();
+        if (input.starts_at) mudanca.starts_at = novoInicio.toISOString();
       } else {
       const consulta = await exigeHorarioLivre(supabase, ctx, {
         eventTypeId: tipo.id,
         donoId: atual.owner_user_id as string,
         inicio: novoInicio,
         fim: novoFim,
-        // A grade confere o tamanho do bloco que ESTE compromisso tem, não o do
-        // molde — senão remarcar um atendimento de 90 minutos passaria por cima
-        // de outro de 30 (issue #3709).
+        // A grade confere o tamanho do bloco que ESTE compromisso passa a ter —
+        // a duração nova, quando veio; senão, a que ele já tinha. Conferir o
+        // molde deixaria remarcar um atendimento de 90 minutos por cima de outro
+        // de 30 (issue #3709), e mudar o tempo sem conferir marcaria 90 em cima
+        // de um bloco de 30 (#4450).
         duracaoMin: duracaoDoBlocoMin,
         ignorarAgendamentoId: atual.id as string,
       });
-      mudanca.starts_at = novoInicio.toISOString();
-      mudanca.ends_at = novoFim.toISOString();
-      mudanca.time_zone = consulta.fusoDaRegra;
+      // O INÍCIO só é reescrito quando o pedido trouxe início: mudar só o tempo
+      // não é remarcação.
+      if (input.starts_at) {
+        mudanca.starts_at = novoInicio.toISOString();
+        mudanca.time_zone = consulta.fusoDaRegra;
       }
-      transicao = "rescheduled";
+      mudanca.ends_at = novoFim.toISOString();
+      }
+      if (input.starts_at) transicao = "rescheduled";
     }
   }
 
@@ -774,6 +969,12 @@ export async function alterarAgendamentoHandler(
 
   }
 
+  // A vaga segurada da lista de espera pode ser confirmada por qualquer porta da
+  // agenda (tela, `crm_confirm_appointment`): a inscrição fecha aqui, numa só.
+  if (String(salvo.status ?? "") === "confirmed" && String(atual.status) !== "confirmed") {
+    await fecharEncaixeConfirmado({ organizationId: ctx.organization_id, appointmentId: input.id });
+  }
+
   if (!transicao) void audit({action:"agenda.appointment_updated",actorUserId:ctx.actor.type==="user"?ctx.actor.id:null,
     organizationId:ctx.organization_id,resourceType:"calendar_appointment",resourceId:input.id,requestId:ctx.requestId,
     metadata:{revision:salvo.revision,confirmation_next_at:salvo.confirmation_next_at}});
@@ -806,13 +1007,16 @@ export async function cancelarAgendamentoHandler(
     "event_type_id",
     "status",
     "time_zone",
-  ]);
-
-  await exigeDonoDoCompromisso(supabase, ctx, atual);
+  ], { caminhoDoModulo: true });
 
   // Idempotente: cancelar o que já está cancelado devolve o estado, não erro —
   // quem chamou queria o compromisso desmarcado, e ele está.
   if (input.revision !== undefined && input.revision !== Number(atual.revision)) throw new ApiError(409,"conflict",undefined,ctx.requestId,"O compromisso mudou. Recarregue antes de confirmar.");
+  if (atual.authority === "amigo") {
+    await guardServiceEffect();
+    return changeAmigoAppointment(supabase, ctx, atual, { ...input }, "cancel");
+  }
+  await exigeDonoDoCompromisso(supabase, ctx, atual);
   if (atual.status === "cancelled") {
     return { id: atual.id, status: "cancelled", ja_estava: true };
   }
@@ -839,6 +1043,14 @@ export async function cancelarAgendamentoHandler(
     resourceId: atual.id as string,
     requestId: ctx.requestId,
     metadata: { reason: input.reason },
+  });
+
+  // A vaga abriu: com o módulo de lista de espera ligado, ela passa adiante agora,
+  // e não numa varredura minutos depois. `aposVagaLiberada` não lança.
+  await aposVagaLiberada({
+    organizationId: ctx.organization_id,
+    appointmentId: atual.id as string,
+    agora: new Date(),
   });
 
   return salvo as Record<string, unknown>;
@@ -887,10 +1099,11 @@ async function exigeAgendamento(
   ctx: HandlerCtx,
   id: string,
   colunas: string[],
+  opcoes: { caminhoDoModulo?: boolean } = {},
 ): Promise<Record<string, unknown>> {
   const { data, error } = await supabase
     .from("calendar_appointments")
-    .select([...new Set([...colunas, "service_occurrence_id", "service_block"])].join(", "))
+    .select([...new Set([...colunas, "service_occurrence_id", "service_block", "authority", "external_status", "external_connection_id"])].join(", "))
     .eq("organization_id", ctx.organization_id)
     .eq("id", id)
     .maybeSingle();
@@ -900,6 +1113,19 @@ async function exigeAgendamento(
   }
   const row = data as unknown as Record<string, unknown>;
   if (row.service_block) throw new ApiError(403, "forbidden", undefined, ctx.requestId, "Gerencie este bloqueio em Configurações da Agenda, com seu alcance explícito.");
+  // Autoridade de fora (migration 9392): a linha daqui é espelho, e remarcar ou
+  // cancelar por aqui divergiria do sistema que manda. Com o módulo `amigo`
+  // ligado, quem pediu `caminhoDoModulo` (remarcar e cancelar) recebe a linha e
+  // segue pelo Amigo; sem o módulo, ou de outro provedor, a recusa fica. A coluna
+  // é `not null default 'local'`: ausente, só num retrato que não a leu.
+  if (
+    opcoes.caminhoDoModulo &&
+    row.authority === "amigo" &&
+    (await moduloLigado(createAdminClient(), "amigo"))
+  ) {
+    return row;
+  }
+  if (row.authority != null && row.authority !== AUTORIDADE_LOCAL) throw new ApiError(409, "agenda_autoridade_externa", undefined, ctx.requestId, RECUSA_DE_AUTORIDADE_EXTERNA);
   return row;
 }
 

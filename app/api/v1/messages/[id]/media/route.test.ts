@@ -12,9 +12,13 @@
  *  (A) `?baixar=1` + nome guardado → a URL assinada sai com `download`, que é
  *      o que faz o Storage responder `Content-Disposition: attachment` com o
  *      nome. Sem o terceiro argumento, o Storage devolve o basename canônico.
- *  (B) `?baixar=1` SEM nome guardado → NENHUM nome é inventado: a assinatura
- *      continua sem opções de download. Anexo antigo (ou canal que não manda
- *      `filename`) não vira `documento.pdf` na cara do atendente.
+ *  (B) `?baixar=1` SEM nome guardado → a rota dá um nome com tipo, data, hora
+ *      e o começo do id (`nomeParaBaixar`), e o arquivo é BAIXADO. Até
+ *      09/11/2026 este item dizia o contrário ("nenhum nome é inventado"), e era
+ *      por isso que a foto não tinha download: a API oficial só manda nome em
+ *      documento, e sem nome o navegador abria a foto em vez de salvá-la.
+ *      O que continua valendo: o rótulo da TELA não ganha nome inventado —
+ *      isto é só o nome do arquivo salvo.
  *  (C) sem `?baixar=1` → a rota segue 302 como sempre: o cartão abre o PDF em
  *      aba nova, e o preview não é sequestrado pelo download.
  *  (D) janela do worker (bytes ainda não persistidos) → o proxy devolve
@@ -75,6 +79,7 @@ type Linha = {
   media_storage_path: string | null;
   metadata: Record<string, unknown> | null;
   channel_session_id: string | null;
+  sent_at?: string | null;
 };
 
 /** O que foi pedido ao Storage — o único lugar onde o nome pode virar download. */
@@ -189,21 +194,30 @@ describe("?baixar=1 com nome original guardado", () => {
 });
 
 describe("?baixar=1 sem nome original", () => {
-  it("não inventa nome: assina sem `download`, como hoje", async () => {
-    MENSAGENS = [linha({ metadata: null })];
+  it("[DISCRIMINA] a FOTO (a API oficial não manda nome) é baixada com nome de tipo, data e hora", async () => {
+    MENSAGENS = [
+      linha({
+        metadata: null,
+        media_mime: "image/jpeg",
+        media_storage_path: `${ORG_ID}/conv/${MENSAGEM}.jpg`,
+        sent_at: "2026-11-09T17:14:30.000Z",
+      }),
+    ];
 
     const res = await GET(new NextRequest(url("?baixar=1")), PARAMS);
 
     expect(res.status).toBe(302);
-    expect(ASSINATURAS[0]?.opcoes).toBeUndefined();
+    // O dublê não tem `organizations.timezone`: vale o fuso padrão do produto
+    // (America/Sao_Paulo), que é 14h14 para 17h14 UTC.
+    expect(ASSINATURAS[0]?.opcoes).toEqual({ download: "foto-2026-11-09-14h14-555555.jpg" });
   });
 
-  it("metadata sem a chave (anexo antigo) também não vira nome", async () => {
+  it("documento antigo sem nome guardado também é baixado, como `arquivo-…`", async () => {
     MENSAGENS = [linha({ metadata: { raw_type: "document" } })];
 
     await GET(new NextRequest(url("?baixar=1")), PARAMS);
 
-    expect(ASSINATURAS[0]?.opcoes).toBeUndefined();
+    expect(ASSINATURAS[0]?.opcoes).toEqual({ download: "arquivo-555555.xlsx" });
   });
 });
 
@@ -247,12 +261,20 @@ describe("janela do worker (bytes ainda no canal)", () => {
     expect(cd).toContain(`filename*=UTF-8''${encodeURIComponent("Relatório Ção.xlsx")}`);
   });
 
-  it("sem nome original, o proxy não inventa Content-Disposition", async () => {
+  it("sem nome original, o proxy também manda baixar, com o nome montado", async () => {
     semBytes({ raw_type: "document" });
 
     const res = await GET(new NextRequest(url("?baixar=1")), PARAMS);
 
     expect(res.status).toBe(200);
+    expect(res.headers.get("content-disposition")).toContain('filename="arquivo-555555.xlsx"');
+  });
+
+  it("sem ?baixar=1, o proxy segue sem Content-Disposition (o preview não vira download)", async () => {
+    semBytes({ media_filename: "Relatório Ção.xlsx" });
+
+    const res = await GET(new NextRequest(url()), PARAMS);
+
     expect(res.headers.get("content-disposition")).toBeNull();
   });
 });
@@ -298,9 +320,9 @@ describe("o nome atravessa o SDK instalado sem codificação duplicada", () => {
     expect(destino.searchParams.get("token")).toBe(token);
   });
 
-  it("download sem nome continua sem nome inventado", async () => {
+  it("download sem nome sai com o nome montado, pelo SDK de verdade", async () => {
     usarSdkReal(null);
     const res = await GET(new NextRequest(url("?baixar=1")), PARAMS);
-    expect(new URL(res.headers.get("location")!).searchParams.has("download")).toBe(false);
+    expect(new URL(res.headers.get("location")!).searchParams.get("download")).toBe("arquivo-555555.xlsx");
   });
 });

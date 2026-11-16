@@ -10,6 +10,8 @@
 import { z } from "zod";
 
 import { normalizarTag, normalizarTags } from "@/lib/contacts/tag-normalizada";
+import { traduzir } from "@/lib/i18n/dicionario";
+import type { Idioma } from "@/lib/i18n/idiomas";
 import {
   MAXIMO_DE_ETIQUETAS_NO_FILTRO,
   MODOS_DE_ETIQUETA,
@@ -94,10 +96,55 @@ export const contactCreateSchema = z.object({
 });
 export type ContactCreate = z.infer<typeof contactCreateSchema>;
 
+/**
+ * Tipo e WhatsApp de um número (Spec 31, B2). Os mesmos vocabulários do banco
+ * (`contacts_phone_type_check`, `contacts_phone_whatsapp_check`, e os da tabela
+ * `contact_phones`): uma palavra a mais aqui seria `23514` na gravação.
+ */
+export const TIPOS_DE_TELEFONE = ["fixo", "celular", "outro"] as const;
+export const WHATSAPP_DO_TELEFONE = ["sim", "nao", "nao_sei"] as const;
+export const telefoneTipoSchema = z.enum(TIPOS_DE_TELEFONE);
+export const telefoneWhatsappSchema = z.enum(WHATSAPP_DO_TELEFONE);
+export type TelefoneTipo = z.infer<typeof telefoneTipoSchema>;
+export type TelefoneWhatsapp = z.infer<typeof telefoneWhatsappSchema>;
+
 export const contactPatchSchema = contactCreateSchema.partial().extend({
   source: z.string().min(1).optional(),
+  // Tipo e WhatsApp do telefone PRINCIPAL. Ausente = a coluna fica como está.
+  phone_type: telefoneTipoSchema.optional(),
+  phone_whatsapp: telefoneWhatsappSchema.optional(),
 });
 export type ContactPatch = z.infer<typeof contactPatchSchema>;
+
+/**
+ * Telefone extra da ficha (Spec 31, B2): `POST /api/v1/contacts/{id}/phones`.
+ * O número passa pela MESMA leitura do canal (`normalizePhoneBR`, na rota), e
+ * não por esta régua de formato: quem recusa o número inválido é a rota, com
+ * `invalid_phone` (422), que é o código que a tela mostra.
+ */
+export const telefoneExtraCreateSchema = z.object({
+  phone_number: z.string().trim().min(1).max(40),
+  type: telefoneTipoSchema.optional(),
+  whatsapp: telefoneWhatsappSchema.optional(),
+  label: z.string().trim().max(60).optional(),
+});
+export type TelefoneExtraCreate = z.infer<typeof telefoneExtraCreateSchema>;
+
+/**
+ * `PATCH /api/v1/contacts/{id}/phones/{phoneId}`: pelo menos um campo. O número
+ * do extra não muda aqui (para trocar, remove-se e adiciona-se). `label: null`
+ * ou `""` apaga o rótulo.
+ */
+export const telefoneExtraPatchSchema = z
+  .object({
+    type: telefoneTipoSchema.optional(),
+    whatsapp: telefoneWhatsappSchema.optional(),
+    label: z.string().trim().max(60).nullable().optional(),
+  })
+  .refine((valor) => Object.values(valor).some((v) => v !== undefined), {
+    message: "Informe ao menos um campo para atualizar.",
+  });
+export type TelefoneExtraPatch = z.infer<typeof telefoneExtraPatchSchema>;
 
 /**
  * O documento do titular vem do PERFIL DO PAÍS da organização (issue #1033).
@@ -213,22 +260,38 @@ function normalizarTelefoneBR(valor: string): string {
  * do E.164 do perfil (sem o `+55`), em vez de escrito à mão: um exemplo
  * cravado envelhece calado no dia em que o perfil mudar.
  */
-function mensagemDoTelefone(perfil: PerfilDoPais): string {
+export function mensagemDoTelefone(perfil: PerfilDoPais, idioma: Idioma = "pt-BR"): string {
+  // #4242, item 1: a frase é a MESMA nos dois lados (schema e API), e passa pelo
+  // dicionário para a interface de quem opera em espanhol não receber português.
   if (perfil.codigo !== PAIS_PADRAO) {
-    return `Telefone deve estar em formato E.164 (${perfil.telefoneExemplo})`;
+    return traduzir("Telefone deve estar em formato E.164 ({exemplo})", idioma).replace(
+      "{exemplo}",
+      perfil.telefoneExemplo,
+    );
   }
   const exemploNacional = perfil.telefoneExemplo.replace(/^\+55/, "");
-  return `Telefone deve ter DDD + número (ex.: ${exemploNacional}) ou o formato E.164 (${perfil.telefoneExemplo})`;
+  return traduzir(
+    "Telefone deve ter DDD + número (ex.: {exemplo}) ou o formato E.164 ({exemploE164})",
+    idioma,
+  )
+    .replace("{exemplo}", exemploNacional)
+    .replace("{exemploE164}", perfil.telefoneExemplo);
 }
 
-/** O mesmo, para o PATCH (`app/api/v1/contacts/[id]/route.ts`). */
+/**
+ * O mesmo, para o PATCH (`app/api/v1/contacts/[id]/route.ts`).
+ *
+ * `null` é aceito SÓ aqui (Spec 31, B2): é o pedido de apagar o telefone
+ * principal, que o handler recusa com `primary_phone_has_extras` quando a ficha
+ * tem extra. A string vazia continua recusada, como sempre.
+ */
 export function contactPatchSchemaDoPais(perfil: PerfilDoPais) {
   return contactPatchSchema.extend({
     cpf: z
       .string()
       .refine(perfil.documento.valida, perfil.documento.mensagemInvalido)
       .optional(),
-    phone_number: telefoneDoPais(perfil),
+    phone_number: telefoneDoPais(perfil).or(z.null()),
   });
 }
 

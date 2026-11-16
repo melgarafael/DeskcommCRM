@@ -679,6 +679,71 @@ describe("DELETE /api/v1/pipelines/[id]/stages/[stageId]", () => {
   });
 });
 
+/**
+ * O CICLO QUE A TELA FAZ: salvar e recarregar (#2999).
+ *
+ * A tela de Funis › Etapas não usa o corpo do PATCH como cache: depois de
+ * salvar ela RELÊ (`useStages` invalida `chaveDoFunil`). Então o defeito da
+ * issue só aparece no ciclo inteiro — o PATCH grava, o GET devolve. Um teste
+ * que olhasse só a escrita passaria com a leitura sem `win_probability`, e o
+ * campo voltaria vazio na tela.
+ *
+ * É também o que prova a metade de cá do aceite: o corpo do PATCH tem de
+ * carregar os dois campos, senão o cache que a tela usa (`agent-mapping`)
+ * receberia uma etapa sem eles no caminho de quem reaproveita a resposta.
+ */
+describe("ciclo salvar → recarregar a etapa (#2999)", () => {
+  const urlDoFunil = `http://localhost/api/v1/pipelines/${PIPE}/stages`;
+  const ctxDoFunil = { params: Promise.resolve({ id: PIPE }) };
+
+  it("25% com o aviso ligado sobrevive ao GET depois do PATCH", async () => {
+    authOk();
+    // Estado de FÁBRICA da etapa: calibração nula e aviso desligado, como a
+    // coluna nasce depois da migration — `null` de verdade, não coluna ausente.
+    makeDb({
+      stages: funil().map((e) => ({ ...e, win_probability: null, avisar_na_central: false })),
+    });
+    const { GET } = await import("../route");
+    const { PATCH } = await import("./route");
+
+    const antes = await GET(new NextRequest(urlDoFunil, { method: "GET" }), ctxDoFunil);
+    const corpoAntes = (await antes.json()) as {
+      data: Array<{ id: string; win_probability: number | null; avisar_na_central: boolean }>;
+    };
+    const e2Antes = corpoAntes.data.find((e) => e.id === "e2");
+    // Estado de fábrica: sem calibração e sem aviso — `null`, não `undefined`.
+    expect(e2Antes?.win_probability).toBeNull();
+    expect(e2Antes?.avisar_na_central).toBe(false);
+
+    const res = await PATCH(
+      reqPatch({ win_probability: 25, avisar_na_central: true }),
+      ctx("e2"),
+    );
+    expect(res.status).toBe(200);
+
+    // O corpo do PATCH já traz a etapa completa com os dois campos.
+    const corpoDoPatch = (await res.json()) as {
+      data: { etapas: Array<{ id: string; win_probability: number | null; avisar_na_central: boolean }> };
+    };
+    const e2DoPatch = corpoDoPatch.data.etapas.find((e) => e.id === "e2");
+    expect(e2DoPatch?.win_probability).toBe(25);
+    expect(e2DoPatch?.avisar_na_central).toBe(true);
+
+    // E o GET que a tela faz em seguida — o caminho do cache do SWR — devolve o
+    // mesmo. É este passo que reprova quando o `select()` perde a coluna.
+    const depois = await GET(new NextRequest(urlDoFunil, { method: "GET" }), ctxDoFunil);
+    const corpoDepois = (await depois.json()) as {
+      data: Array<{ id: string; win_probability: number | null; avisar_na_central: boolean }>;
+    };
+    const e2Depois = corpoDepois.data.find((e) => e.id === "e2");
+    expect(e2Depois?.win_probability).toBe(25);
+    expect(e2Depois?.avisar_na_central).toBe(true);
+    // E as outras etapas seguem no estado delas: nada de herdar o valor salvo.
+    const e1Depois = corpoDepois.data.find((e) => e.id === "e1");
+    expect(e1Depois?.win_probability).toBeNull();
+  });
+});
+
 // Este teste isola o handler; autoridade de suporte é exercitada na suíte própria.
 vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/impersonate/support")>(),

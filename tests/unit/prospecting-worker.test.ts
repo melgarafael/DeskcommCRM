@@ -39,6 +39,8 @@ vi.mock("@/lib/prospecting/guard", () => ({
   // cenário de verdade (guarda REAL + handler carimbando) mora em
   // `lib/prospecting/prospeccao-bolhas-com-guarda-real.test.ts`.
   assertProspectingContinuation: mocks.continuation,
+  // A leitura das marcas ANTES da vaga: aqui o contato é sempre limpo.
+  vetoDoContatoAntesDaVaga: vi.fn().mockResolvedValue(null),
 }));
 vi.mock("@/lib/agent-engine/pacing/store", () => ({
   loadChannelKnobs: mocks.knobs,
@@ -762,6 +764,25 @@ describe("tick da prospecção × organização que para no meio do envio", () =
     expect(gravou(db, "update prospecting_candidates set status='queued'")).toBe(true);
   });
 
+  it("\"sempre atendimento humano\" (`autorizou:false`): NÃO envia, marca só a empresa e a campanha segue", async () => {
+    // `autorizarContatoParaIA` devolve `{ok:true, autorizou:false}` quando o
+    // contato tem `ai_opt_out`: o update casa 0 linhas. Só olhar `ok` mandava a
+    // abordagem a quem a operação trancou.
+    const { db, rodar } = tickComEnvioQueFalha(new Error("não devia chegar ao envio"));
+    // A rejeição de uso único do ajudante não pode sobrar para o caso seguinte:
+    // aqui o envio NÃO deve acontecer, então ela nunca seria consumida.
+    mocks.send.mockReset();
+    mocks.send.mockResolvedValue({ status: "sent" });
+    mocks.authorize.mockResolvedValue({ ok: true, autorizou: false });
+    await rodar();
+    expect(mocks.send).not.toHaveBeenCalled();
+    expect(gravou(db, "status='paused'")).toBe(false);
+    const falhou = db.query.mock.calls.find(([sql]) =>
+      String(sql).startsWith("update prospecting_candidates set status='failed',error=$3"),
+    ) as unknown[] | undefined;
+    expect((falhou?.[1] as unknown[] | undefined)?.[2]).toBe("A IA não pode atender este contato.");
+  });
+
   it("controle: falha inesperada do envio continua pausando a campanha e marcando o candidato failed", async () => {
     const { db, rodar } = tickComEnvioQueFalha(new Error("provedor fora do ar"));
     await rodar();
@@ -867,6 +888,73 @@ describe("funil só no envio: a checagem do canal vem ANTES de criar qualquer co
     });
     const checagem = mocks.preflight.mock.invocationCallOrder[0] ?? Infinity;
     expect(checagem).toBeLessThan(mocks.prepare.mock.invocationCallOrder[0] ?? 0);
+  });
+});
+
+/**
+ * #4170 — A PAUSA DA PROSPECÇÃO FALA HUMANO NO PONTO ONDE O MOTIVO É GRAVADO.
+ *
+ * O que se mede aqui é o TEXTO que vai para `prospecting_campaigns.error` e,
+ * por ele, para o cartão da campanha. Só o teste da frase (no módulo do mapa)
+ * não bastaria: se o worker voltar a interpolar o motivo cru, a tela volta ao
+ * defeito da issue e nenhum teste ficaria vermelho. É este caso que cai na
+ * sabotagem registrada em /tmp/dk-g721-sabot.log.
+ */
+describe("#4170: a recusa do canal pausa a campanha com texto de gente", () => {
+  const naFila = {
+    id: "candidate",
+    contact_id: null,
+    lead_id: null,
+    conversation_id: null,
+    service_boundary: null,
+    message_id: "stable-message",
+    phone: "+551****0000",
+    data: { name: "Example", socials: [] },
+  };
+
+  it("fora da lista de teste: diz modo de teste e onde liberar, e NÃO mostra o código", async () => {
+    mocks.preflight.mockResolvedValue({ permite: false, motivo: "fora_da_lista_de_teste" });
+    let erro: unknown;
+    try {
+      await sendNextCandidate(
+        {} as never,
+        database(undefined, naFila) as never,
+        {} as never,
+        campaign,
+      );
+    } catch (e) {
+      erro = e;
+    }
+    expect(erro).toBeInstanceOf(ProspectingError);
+    const mensagem = (erro as ProspectingError).message;
+    expect(mensagem).toContain("modo de teste");
+    expect(mensagem).toContain("só fala com os números da lista de teste");
+    expect(mensagem).toContain("Configurar acesso da IA");
+    expect(mensagem).toContain("Liberar atendimento ao público");
+    expect(mensagem, "o código interno não é texto de tela").not.toContain(
+      "fora_da_lista_de_teste",
+    );
+  });
+
+  it("motivo desconhecido: o código cru continua (controle negativo, sem frase inventada)", async () => {
+    mocks.preflight.mockResolvedValue({
+      permite: false,
+      motivo: "telefone fora da lista liberada",
+    });
+    await expect(
+      sendNextCandidate({} as never, database(undefined, naFila) as never, {} as never, campaign),
+    ).rejects.toThrow("O canal ainda não permite esta abordagem: telefone fora da lista liberada.");
+  });
+
+  it("preflight que permite: nada muda — o envio acontece e a campanha não pausa", async () => {
+    mocks.preflight.mockResolvedValue({ permite: true, motivo: "numero_de_teste" });
+    const db = database();
+    await sendNextCandidate({} as never, db as never, {} as never, campaign);
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+    expect(
+      db.query.mock.calls.some(([q]) => String(q).includes("set status='paused'")),
+      "campanha pausada sem recusa",
+    ).toBe(false);
   });
 });
 

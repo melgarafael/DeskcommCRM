@@ -21,10 +21,34 @@ describe("capacidadesLigadas — só o booleano true liga", () => {
       expect(capacidadesLigadas(s, ["propostas"]), JSON.stringify(s)).toEqual([]);
     }
   });
+  it("a capacidade do produto liga só com settings.catalogo.capacidade === true, sem módulo", () => {
+    expect(capacidadesLigadas({ catalogo: { capacidade: true } }, [])).toEqual(["capacidade_do_produto"]);
+    for (const s of [{ catalogo: { capacidade: false } }, { catalogo: { capacidade: "true" } }, { catalogo: true }, {}, null]) {
+      expect(capacidadesLigadas(s, []), JSON.stringify(s)).toEqual([]);
+    }
+  });
   // Doc 79: com a chave da INSTALAÇÃO desligada, a da empresa não liga nada.
   it("módulo da instalação desligado: a empresa ligada não conta", () => {
     expect(capacidadesLigadas({ proposals: { enabled: true } }, [])).toEqual([]);
     expect(capacidadesLigadas({ proposals: { enabled: true } }, ["banco_externo"])).toEqual([]);
+  });
+});
+
+describe("capacidadesLigadas — apresentação do catálogo", () => {
+  it("settings.catalogo.apresentacao === true liga, sem depender de módulo da instalação", () => {
+    expect(capacidadesLigadas({ catalogo: { apresentacao: true } }, [])).toEqual(["apresentacao_do_catalogo"]);
+  });
+  it("nasce desligada: ausente, false, string e lixo não ligam", () => {
+    for (const s of [
+      {},
+      null,
+      { catalogo: {} },
+      { catalogo: { apresentacao: false } },
+      { catalogo: { apresentacao: "true" } },
+      { catalogo: "ligado" },
+    ]) {
+      expect(capacidadesLigadas(s, []), JSON.stringify(s)).toEqual([]);
+    }
   });
 });
 

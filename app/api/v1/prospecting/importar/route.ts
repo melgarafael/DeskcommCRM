@@ -3,6 +3,7 @@ import { type NextRequest } from "next/server";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { audit } from "@/lib/audit";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import {
@@ -49,17 +50,16 @@ export async function POST(req: NextRequest) {
     return fail("forbidden", "Importar planilha exige a tela.", 403, { requestId, headers });
   const org = auth.organizationId;
 
-  // `formData()` lê o corpo inteiro para a memória: o tamanho declarado é conferido antes.
   // A folga cobre o envelope multipart e os campos de texto além do arquivo.
-  const declarado = Number(req.headers.get("content-length") ?? "0");
-  if (declarado > IMPORT_MAX_BYTES + 64 * 1024)
-    return fail("validation_failed", "Arquivo grande demais (máximo de 2 MB).", 422, {
-      requestId,
-      headers,
-    });
+  const corpo = await lerCorpoComTeto(req, IMPORT_MAX_BYTES + 64 * 1024, {
+    requestId,
+    headers,
+    acimaDoTeto: "Arquivo grande demais (máximo de 2 MB).",
+  });
+  if (!corpo.ok) return corpo.response;
   let form: FormData;
   try {
-    form = await req.formData();
+    form = await corpo.corpo.formData();
   } catch {
     return fail("validation_failed", "Envie o formulário com o arquivo da planilha.", 422, {
       requestId,
@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
       requestId,
       headers,
     });
-  // O `content-length` pode faltar (envio em partes): o arquivo é conferido de novo aqui.
+  // O arquivo é conferido sem a folga do envelope.
   if (file.size > IMPORT_MAX_BYTES)
     return fail("validation_failed", "Arquivo grande demais (máximo de 2 MB).", 422, {
       requestId,

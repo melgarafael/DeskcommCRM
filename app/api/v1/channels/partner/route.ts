@@ -86,6 +86,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       phone_number: conectado ? sessao.phoneNumber : null,
       display_name: conectado ? sessao.displayName : null,
       status: conectado ? sessao.status : null,
+      // O defeito de um número de pé (não recebe, envio restrito): a tela o diz
+      // no cartão. Código estável, nunca texto do provedor.
+      status_reason: conectado ? sessao.statusReason : null,
       // Existe, não qual é.
       has_api_key: conectado ? sessao.hasApiKey : false,
       /** Endpoint base do parceiro — para o operador reaproveitar em outro sistema. */

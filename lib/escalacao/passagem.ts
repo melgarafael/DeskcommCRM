@@ -95,6 +95,10 @@ export const MOTIVOS_DA_PASSAGEM = [
   // pediu uma pessoa — mentir no rótulo faria quem assume abrir com um
   // agradecimento que ninguém pediu. Par da migration 0693.
   "verificacao_manual",
+  // A trava de valores e negociação barrou a resposta da IA (Spec 34). Distinto de
+  // `low_confidence` porque o assistente não "teve pouca confiança": foi uma regra
+  // da organização que o impediu de falar — e quem assume precisa ler isso.
+  "restricao_comercial",
 ] as const;
 export type MotivoDaPassagem = (typeof MOTIVOS_DA_PASSAGEM)[number];
 
@@ -140,6 +144,7 @@ export const FRASE_DO_MOTIVO = {
   refund_mention: "A conversa tocou em reembolso",
   caso_escalado: "Uma pessoa da equipe escalou um atendimento",
   verificacao_manual: "Um fluxo automático coletou dados e passou a conversa para verificação humana",
+  restricao_comercial: "A trava de valores e negociação barrou a resposta",
 } satisfies Record<MotivoDaPassagem, string>;
 
 /**

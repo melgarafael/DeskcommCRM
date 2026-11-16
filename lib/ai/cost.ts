@@ -21,6 +21,7 @@
 
 import { costCentsComVirada } from "@/lib/agent-engine/edge/llm/pricing";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { multiplicadorDoDegrau } from "@/lib/ai/custo-escalonado";
 
 interface PricingRow {
   model: string;
@@ -135,6 +136,14 @@ async function precoDoCatalogo(
  * é o mesmo, e o sinal de gasto incompleto acende.
  */
 export async function computeCost(input: ComputeCostInput): Promise<number | null> {
+  // Degrau do Haiku 5.5 (#4123): acima de 100 mil tokens de ENTRADA a chamada
+  // inteira (entrada, saída e cache) custa 5×. A regra mora num lugar só
+  // (`lib/ai/custo-escalonado.ts`) e é a MESMA que o runtime nativo aplica em
+  // `computeCostCents` — as duas rotas de custo do repo não podem divergir.
+  // Aplicada no fim, sobre o centavo fracionado: nenhuma parcela é arredondada.
+  const comDegrau = (cents: number) =>
+    cents * multiplicadorDoDegrau(input.model, input.promptTokens);
+
   // Ids com promoção datada guardam no catálogo a tarifa posterior à promo
   // (0649, 0703). O gasto gravado em llm_calls tem de seguir `costCents`
   // (promo estritamente antes do corte). Outro modelo segue a linha de ai_pricing.
@@ -146,7 +155,7 @@ export async function computeCost(input: ComputeCostInput): Promise<number | nul
     },
     input.em ?? new Date(),
   );
-  if (pelaVirada !== null) return pelaVirada;
+  if (pelaVirada !== null) return comDegrau(pelaVirada);
 
   const pricing = await loadPricing();
   const row = pricing.get(input.model);
@@ -159,7 +168,7 @@ export async function computeCost(input: ComputeCostInput): Promise<number | nul
     const cents =
       ((input.promptTokens ?? 0) * doCatalogo.prompt) / 1_000_000 +
       ((input.completionTokens ?? 0) * doCatalogo.completion) / 1_000_000;
-    return cents;
+    return comDegrau(cents);
   }
 
   // Linha sem taxa nenhuma não é preço: é a mesma ausência do catálogo.
@@ -183,7 +192,7 @@ export async function computeCost(input: ComputeCostInput): Promise<number | nul
     (completionTokens * completionRate) / 1_000_000 +
     (embeddingTokens * embeddingRate) / 1_000_000;
 
-  return cents;
+  return comDegrau(cents);
 }
 
 /** Test-only: drop the in-memory pricing cache. */

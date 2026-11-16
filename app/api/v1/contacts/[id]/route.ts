@@ -38,7 +38,9 @@ async function telefonesDaFicha(
 ): Promise<{
   phone_type: string | null;
   phone_whatsapp: string | null;
+  phone_label: string | null;
   additional_phones: Array<{
+    id: string;
     phone_number: string;
     type: string;
     whatsapp: string;
@@ -49,13 +51,13 @@ async function telefonesDaFicha(
 }> {
   const { data: principal, error: errPrincipal } = await supabase
     .from("contacts")
-    .select("phone_type, phone_whatsapp")
+    .select("phone_type, phone_whatsapp, phone_label")
     .eq("organization_id", organizationId)
     .eq("id", contactId)
     .maybeSingle();
   const { data: extras, error: errExtras } = await supabase
     .from("contact_phones")
-    .select("phone_number, tipo, whatsapp, rotulo, origem, created_at")
+    .select("id, phone_number, tipo, whatsapp, rotulo, origem, created_at")
     .eq("organization_id", organizationId)
     .eq("contact_id", contactId)
     .order("created_at", { ascending: true });
@@ -64,7 +66,10 @@ async function telefonesDaFicha(
   return {
     phone_type: principal?.phone_type ?? null,
     phone_whatsapp: principal?.phone_whatsapp ?? null,
+    phone_label: principal?.phone_label ?? null,
     additional_phones: (extras ?? []).map((e) => ({
+      // O id é o endereço das rotas de editar, remover e tornar principal.
+      id: e.id,
       phone_number: e.phone_number,
       type: e.tipo,
       whatsapp: e.whatsapp,

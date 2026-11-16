@@ -1577,6 +1577,11 @@ restaurar_versao_anterior() {  # → 0 sempre (rollback que falha não mata a vo
 # que o sistema voltou atrás sozinho.
 VIGIA_ARQUIVO=".update-vigia"
 VIGIA_FALHAS_ARQUIVO=".update-vigia-falhas"
+# De qual versão a última atualização PARA FRENTE saiu. É o único alvo de volta
+# que o agente aceita do app: o alvo de um pedido de volta chega pela rota, e o
+# host não recua para onde a rota mandar. Voltar para outra versão anterior
+# continua possível, mas só pelo terminal (update.sh --to <versão> --force).
+ORIGEM_DA_ATUALIZACAO_ARQUIVO=".update-de-onde-vim"
 # Janela de 2 horas = 24 ciclos de cron. Folgada de propósito: uma atualização
 # que derruba o app costuma derrubar na largada (primeiros requests, cron que
 # roda pela primeira vez na versão nova), e o rollback só devolve versão — o
@@ -1982,10 +1987,69 @@ resposta_sim() {
 # passava como saudável, desde que qualquer outro check estivesse de pé. Quem
 # decide é o app, no Node que já está sendo invocado; o shell não repete a
 # regra dele.
+# app_health_probe [prazo_s] — `0`/ausente = sem prazo, como sempre foi.
+#
+# O prazo existe porque `docker exec` trava pelo mesmo motivo do `docker ps`
+# (#1955: resolver do Docker saturado) e era o segundo ponto em que o
+# healthcheck ficava sem resposta. `timeout` só executa BINÁRIOS e `dc()` é
+# função de shell, então o caminho COM prazo sai como
+# `docker compose $(dc_files) exec` — o idioma que o resto deste arquivo já usa
+# (:1407, :1744) e que carrega o mesmo conjunto de overlays, coberto pelo
+# test-validators.sh. Quem não pede prazo continua passando por `dc()`.
 app_health_probe() {
-  dc exec -T app node -e \
-    "fetch('http://127.0.0.1:3000/api/v1/health').then(r=>r.json()).then(j=>{console.log((j&&j.data&&j.data.status)||'sem_status');console.log(JSON.stringify(j))}).catch(()=>process.exit(1))" \
-    2>/dev/null || echo ''
+  local prazo="${1:-0}" sonda
+  sonda="fetch('http://127.0.0.1:3000/api/v1/health').then(r=>r.json()).then(j=>{console.log((j&&j.data&&j.data.status)||'sem_status');console.log(JSON.stringify(j))}).catch(()=>process.exit(1))"
+  if [ "$prazo" = "0" ]; then
+    dc exec -T app node -e "$sonda" 2>/dev/null || echo ''
+  else
+    com_prazo "$prazo" docker compose $(dc_files) exec -T app node -e "$sonda" 2>/dev/null || echo ''
+  fi
+}
+
+# relatar_saude_do_app <saída de app_health_probe> — imprime o veredito e devolve
+# 0 SÓ quando o status GERAL é `healthy`. Qualquer outra coisa reprova.
+#
+# É o irmão rigoroso do wait_app_healthy, e a diferença é de propósito: lá
+# `degraded` passa porque, durante a instalação, ele costuma dizer "serviço
+# OPCIONAL ainda não configurado" e recusar reprovaria um CRM de pé. Aqui quem
+# lê é o dono — e um cron: "saudável" é uma AFIRMAÇÃO, e `degraded` quer dizer
+# que alguma coisa do produto não está funcionando (WhatsApp fora, por
+# exemplo). Dizer "✓ app saudável" nesses estados era o defeito do #4087: o
+# healthcheck procurava o `ok` dos CHECKS no JSON cru e aprovava um app com o
+# BANCO FORA, porque `checks.redis.status` também é `ok`.
+#
+# Falha FECHADA: corpo vazio, JSON inválido (HTML de proxy, por exemplo) ou
+# status fora do vocabulário (`sem_status`) reprovam. Um healthcheck que aprova
+# o que não entendeu é pior do que um que grita.
+relatar_saude_do_app() {
+  local saida="${1:-}" status corpo
+  # Sem pipe para `head`/`tail`: com `set -o pipefail`, o SIGPIPE do printf num
+  # corpo grande derrubaria o script (mesma família do pipe que matou o
+  # supabase-provision.sh). Expansão de parâmetro não abre processo nenhum.
+  case "$saida" in
+    *$'\n'*) status="${saida%%$'\n'*}"; corpo="${saida#*$'\n'}" ;;
+    *)       status="$saida";            corpo='' ;;
+  esac
+  status="${status%$'\r'}"
+  case "$status" in
+    healthy)
+      c_grn "✓ app saudável (status geral: healthy)"
+      return 0 ;;
+    degraded)
+      c_ylw "⚠ app DEGRADADO (status geral: degraded) — algum subsistema não está funcionando;"
+      c_ylw "  o JSON acima diz qual. Isto NÃO é 'saudável'."
+      return 1 ;;
+    unhealthy)
+      c_red "⛔ app NÃO está saudável (status geral: unhealthy) — algum subsistema está fora;"
+      c_red "  o JSON acima diz qual. Logs: docker compose logs --tail=50 app worker"
+      return 1 ;;
+    *)
+      c_red "⛔ não deu para saber a saúde do app (status geral: ${status:-vazio})."
+      if [ -n "$corpo" ]; then
+        c_dim "  resposta: ${corpo:0:200}"
+      fi
+      return 1 ;;
+  esac
 }
 
 # wait_app_healthy [tentativas] [intervalo_s] — 0 quando o app se declara
@@ -3034,7 +3098,26 @@ setup_event_log_drain_cron() {
   # que traz este conserto: o `update.sh` faz `source` deste arquivo ANTES do
   # `git checkout` da tag, então no update que o traz quem roda aqui ainda é a
   # versão anterior desta função.
-  local cron_line="* * * * * curl -fsS -H @\"${cabecalho}\" \"${url_drain}\" >/dev/null 2>&1 ${marcador}"
+  # ── A LINHA DO HOST É VIGIA, NÃO O SEGUNDO DRENO (#2235) ──────────────────
+  #
+  # Até aqui esta linha era `* * * * * curl … event-log-drain`, e o `scheduler`
+  # do compose faz a MESMA chamada no mesmo minuto. Numa instalação do kit os
+  # dois rodavam juntos: a issue #2235 mediu ~62% das chamadas `service_role` ao
+  # PostgREST na `event_log`, com o sistema parado e ninguém usando o produto.
+  #
+  # A redundância tem valor (scheduler caído não pode parar automação, webhook
+  # nem derivação de mídia), então ela não é removida — é rebaixada: de 15 em 15
+  # minutos, e o script só dispara o dreno quando o contêiner `scheduler` desta
+  # instalação NÃO está rodando. Instalação saudável: ~4 chamadas/hora em vez de
+  # 60; scheduler fora do ar: o dreno continua chegando, com atraso de até 15
+  # min (o produto já vive com 1 min de cadência e handlers idempotentes).
+  #
+  # O nome do projeto compose entra como argumento porque o filtro do `docker ps`
+  # é por rótulo: sem ele, duas instalações na mesma VPS (caso previsto em
+  # `cron_tag`) fariam o scheduler de uma calar o vigia da outra.
+  local vigia="${PROJECT_DIR:-$PWD}/hostgator-setup-kit/drain-watchdog.sh"
+  local projeto; projeto="$(nome_do_projeto_atual)"
+  local cron_line="*/15 * * * * \"${vigia}\" \"${url_drain}\" \"${cabecalho}\" \"${projeto}\" ${marcador}"
   # ⚠️ `|| true` OBRIGATÓRIO, e não é defensividade: `crontab -l` sai com status
   # 1 (sem stdout, só um aviso no stderr) quando o usuário NUNCA teve crontab —
   # o caso NORMAL de uma VPS recém-provisionada, que é o caso normal de quem
@@ -3068,7 +3151,7 @@ setup_event_log_drain_cron() {
   # Stdin vazio para o `cron_merge` é exatamente o que "sem crontab prévio" deve
   # produzir — o comportamento não muda, só o status.
   ( { crontab -l 2>/dev/null || true; } | cron_merge "$marcador" "$url_drain" "$cron_line" ) | crontab -
-  c_grn "$(t "✓ automações ativas (cron do event-log-drain, a cada minuto)")"
+  c_grn "$(t "✓ automações ativas (vigia do event-log-drain; quem drena é o contêiner scheduler)")"
 
   if [ "$first_time" = 1 ]; then
     # 1ª ativação do cron (inclusive numa instalação já existente que nunca

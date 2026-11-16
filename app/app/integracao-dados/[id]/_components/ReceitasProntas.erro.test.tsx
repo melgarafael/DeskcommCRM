@@ -166,4 +166,38 @@ describe("ReceitasProntas — o 422 da gravação", () => {
     expect(texto).toContain("Valores a esconder");
     expect(texto).not.toContain("esconder.valores");
   });
+
+  it("o destino do interesse recusado mostra o nome do quadro (não o caminho cru)", async () => {
+    mockUseReceitas.mockReturnValue({
+      data: { receitas: [INSTANCIA_WORDPRESS] },
+      isError: false,
+      refetch: vi.fn(),
+    });
+    mockSalvar.mockRejectedValueOnce(
+      new ApiError(
+        422,
+        "validation_failed",
+        { fieldErrors: { destino_do_interesse: ["Escolha um funil e uma etapa ativos."] } },
+        "req-1",
+        "O funil ou a etapa escolhidos para o interesse do cliente não existem ou não estão ativos.",
+      ),
+    );
+
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <ReceitasProntas connectionId="conn-1" motor="mysql" canWrite={true} />
+      </QueryClientProvider>,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Editar/i })!);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Salvar/i })!);
+    });
+
+    const texto = vi.mocked(toast.error).mock.calls[0]![0] as string;
+    expect(texto).toContain("Para onde vai o interesse do cliente");
+    expect(texto).not.toContain("destino_do_interesse");
+  });
 });

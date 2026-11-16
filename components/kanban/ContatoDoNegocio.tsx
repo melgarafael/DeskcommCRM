@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { NewContactDialog } from "@/components/contacts/NewContactDialog";
+import { dadosDoCardParaContato } from "@/lib/leads/dados-do-card-para-contato";
+import type { Lead } from "@/lib/types/leads";
 import { useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -48,6 +51,13 @@ interface Props {
    * `useContatosRelacionados` segura a chamada sem `leadId`.
    */
   leadId?: string | null;
+  lead?: Lead;
+  /**
+   * Vem do pai (`LeadDossier`, que já lê `usePermission`) em vez de ser lida
+   * aqui: assim o componente segue renderizando sem `AuthProvider`, como os
+   * testes do dossiê o montam. Ausente = sem o botão "Criar contato".
+   */
+  podeCriarContato?: boolean;
 }
 
 /**
@@ -90,7 +100,16 @@ interface Props {
  * desvinculado por esta tela. É o que permite desfazer sem inventar estado no
  * pai.
  */
-export function ContatoDoNegocio({ contactId, pipelineId, leadId }: Props) {
+export function ContatoDoNegocio({
+  contactId,
+  pipelineId,
+  leadId,
+  lead,
+  podeCriarContato = false,
+}: Props) {
+  const t = useT();
+  const qc = useQueryClient();
+  const [criando, setCriando] = useState(false);
   const [vinculo, setVinculo] = useState<string | null | undefined>(undefined);
   const efetivo = vinculo !== undefined ? vinculo : contactId;
   return (
@@ -108,6 +127,30 @@ export function ContatoDoNegocio({ contactId, pipelineId, leadId }: Props) {
           pipelineId={pipelineId}
           onVinculado={(id) => setVinculo(id)}
         />
+      )}
+      {!efetivo && lead && leadId === lead.id && podeCriarContato && (
+        <>
+          <Button type="button" size="sm" variant="outline" onClick={() => setCriando(true)}>
+            {t("Criar contato")}
+          </Button>
+          {criando && (
+            <NewContactDialog
+              key={lead.id}
+              open
+              onOpenChange={setCriando}
+              leadId={lead.id}
+              nomeInicial={lead.title}
+              dadosIniciais={dadosDoCardParaContato(lead)}
+              referenciaDoCard={lead.description}
+              permitirIniciarConversa={false}
+              onCriado={(c) => {
+                setVinculo(c.id);
+                void qc.invalidateQueries({ queryKey: chaveDoQuadro(pipelineId) });
+                void qc.invalidateQueries({ queryKey: chaveDosContatosRelacionados(lead.id) });
+              }}
+            />
+          )}
+        </>
       )}
       <PessoasRelacionadas leadId={leadId ?? null} />
     </>

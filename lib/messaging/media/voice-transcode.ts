@@ -41,6 +41,10 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { MAX_VOICE_BYTES, VOICE_MIME } from "@/lib/messaging/media/voice-constants";
+
+export { MAX_VOICE_BYTES, VOICE_MIME } from "@/lib/messaging/media/voice-constants";
+
 /**
  * O que o WhatsApp aceita como nota de voz.
  *
@@ -55,11 +59,6 @@ import { join } from "node:path";
  * não passa por aqui, e a nota de voz dele sempre chegou. Esta é literalmente a
  * mesma string que o browser usa quando sabe gravar ogg.
  */
-export const VOICE_MIME = "audio/ogg;codecs=opus";
-
-/** Teto de segurança: nota de voz é curta, e acima disto é outra coisa. */
-const MAX_BYTES = 16 * 1024 * 1024;
-
 /**
  * Teto da conversão para TOCAR (F2): é CPU da VPS a cada toque, e 5MB de opus
  * já são ~25 min de voz. Acima disso o aparelho mostra "indisponível" com a
@@ -172,7 +171,7 @@ export async function transcodificarNotaDeVoz(
   if (!precisaTranscodificar(input.mime, input.notaDeVoz)) {
     return { buffer: input.buffer, mime: input.mime, convertido: false };
   }
-  if (input.buffer.length > MAX_BYTES) {
+  if (input.buffer.length > MAX_VOICE_BYTES) {
     return { buffer: input.buffer, mime: input.mime, convertido: false };
   }
 

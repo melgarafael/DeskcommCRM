@@ -1600,3 +1600,191 @@ describe("a janela do negócio perdido que volta (#4076)", () => {
     ).toHaveLength(1);
   });
 });
+
+/**
+ * O INTERRUPTOR "MOSTRAR NO RESUMO DA PASSAGEM" (issue #4303).
+ *
+ * O resumo que a pessoa lê ao assumir a conversa não mostrava os campos do
+ * CARD — consumo em kWh, valor da conta. A opção é POR CAMPO e nasce
+ * DESLIGADA; desmarcar APAGA a chave, como `multiple`, porque a definição é
+ * jsonb e nenhum funil que já existe pode mudar de comportamento ao abrir
+ * esta tela.
+ */
+describe("mostrar no resumo da passagem (#4303)", () => {
+  const FUNIL_DO_RESUMO: PipelineRow = {
+    id: "66666666-6666-4666-8666-666666666666",
+    name: "Energia",
+    slug: "energia",
+    vocabulary: null,
+    settings: {
+      fields: [{ key: "consumo_kwh", label: "Consumo (kWh)", type: "number" }],
+    },
+  };
+  const FUNIL_DO_RESUMO_LIGADO: PipelineRow = {
+    ...FUNIL_DO_RESUMO,
+    settings: {
+      fields: [
+        {
+          key: "consumo_kwh",
+          label: "Consumo (kWh)",
+          type: "number",
+          mostrar_no_resumo_da_passagem: true,
+        },
+      ],
+    },
+  };
+
+  const tela = (p: PipelineRow) => {
+    render(<PipelinesClient pipelines={[p]} podeEditarConfig />);
+    abrirEditores();
+  };
+  const patchSalvo = () => vi.mocked(updatePipelineConfig).mock.calls.at(-1)![1];
+
+  beforeEach(() => vi.mocked(updatePipelineConfig).mockClear());
+
+  it("vem DESLIGADO — o funil de hoje não muda de comportamento", () => {
+    tela(FUNIL_DO_RESUMO);
+    expect(
+      screen.getByLabelText("Mostrar no resumo da passagem — Consumo (kWh)"),
+    ).not.toBeChecked();
+  });
+
+  it("marcar grava a opção no campo", () => {
+    tela(FUNIL_DO_RESUMO);
+    fireEvent.click(screen.getByLabelText("Mostrar no resumo da passagem — Consumo (kWh)"));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar vocabulário e campos" }));
+
+    expect(patchSalvo().fields?.[0]?.mostrar_no_resumo_da_passagem).toBe(true);
+  });
+
+  it("desmarcar APAGA a chave — o jsonb não guarda opção morta", () => {
+    tela(FUNIL_DO_RESUMO_LIGADO);
+    const caixa = screen.getByLabelText("Mostrar no resumo da passagem — Consumo (kWh)");
+    expect(caixa).toBeChecked();
+
+    fireEvent.click(caixa);
+    fireEvent.click(screen.getByRole("button", { name: "Salvar vocabulário e campos" }));
+
+    expect(patchSalvo().fields?.[0]).not.toHaveProperty("mostrar_no_resumo_da_passagem");
+  });
+
+  it("campo do CONTATO não oferece o interruptor — o valor dele não está no card", () => {
+    tela({
+      ...FUNIL_DO_RESUMO,
+      settings: { fields: [{ key: "cpf", label: "CPF", type: "text", escopo: "contato" }] },
+    });
+    expect(screen.queryByLabelText("Mostrar no resumo da passagem — CPF")).toBeNull();
+  });
+});
+
+/**
+ * AS CATEGORIAS DE PERDA SÃO DO FUNIL, NÃO DO CÓDIGO (#4437).
+ *
+ * Dois defeitos, na mesma tela:
+ *  - a lista de opções era `CATEGORIAS_DE_PERDA` (fixa no código) somada à
+ *    categoria atual do motivo — a organização não criava "Operacional" nem
+ *    escondia "Mérito", e a categoria fora da lista só existia no motivo que já
+ *    a tinha;
+ *  - a categoria era buscada pelo TEXTO do motivo ao salvar, então renomear o
+ *    motivo na caixa a apagava. O caso real do "Risco" gravado à mão antes
+ *    desta tela existir é o controle de todos os casos abaixo.
+ */
+describe("categorias de perda do funil (#4437)", () => {
+  const FUNIL_DA_LOJA: PipelineRow = {
+    id: "55555555-5555-4555-8555-555555555555",
+    name: "Loja",
+    slug: "loja",
+    vocabulary: null,
+    settings: {
+      // O banco real da issue: dois motivos administrativos sem categoria e o
+      // "Possível fraude" com "Risco" gravado à mão, fora da lista de fábrica.
+      lost_reasons: ["É fornecedor", "Card duplicado", { label: "Possível fraude", categoria: "Risco" }],
+    },
+  };
+  const FUNIL_DA_LOJA_DECLARADO: PipelineRow = {
+    ...FUNIL_DA_LOJA,
+    settings: {
+      ...FUNIL_DA_LOJA.settings,
+      lost_reason_categories: ["Cliente", "Risco", "Operacional"],
+    },
+  };
+
+  const tela = (p: PipelineRow) => {
+    render(<PipelinesClient pipelines={[p]} podeEditarConfig />);
+    abrirEditores();
+  };
+  const patchSalvo = () => vi.mocked(updatePipelineConfig).mock.calls.at(-1)![1];
+  const motivos = () => screen.getByLabelText("Motivos de perda") as HTMLInputElement;
+  const salvar = () =>
+    fireEvent.click(screen.getByRole("button", { name: "Salvar vocabulário e campos" }));
+
+  beforeEach(() => vi.mocked(updatePipelineConfig).mockClear());
+
+  it("funil que nunca declarou abre com as cinco de FÁBRICA e com a que já está em uso", () => {
+    tela(FUNIL_DA_LOJA);
+    for (const categoria of ["Cliente", "Concorrência", "Mérito", "Nós", "Ausência", "Risco"]) {
+      expect(screen.getByTestId(`categoria-${categoria}`)).toBeInTheDocument();
+    }
+    // A consequência de esconder fica à vista: o "Risco" está em uso.
+    expect(screen.getByTestId("categoria-Risco").textContent).toContain("em uso: 1");
+  });
+
+  it("o menu do motivo oferece as categorias DO FUNIL, não a lista fixa", async () => {
+    tela(FUNIL_DA_LOJA_DECLARADO);
+
+    await userEvent.click(screen.getByLabelText("Categoria do motivo É fornecedor"));
+
+    expect(screen.getByRole("option", { name: "Operacional" })).toBeInTheDocument();
+    // "Mérito" não está na lista DESTE funil: oferecê-la seria voltar ao código.
+    expect(screen.queryByRole("option", { name: "Mérito" })).toBeNull();
+  });
+
+  it("renomear o motivo na caixa MANTÉM a categoria dele", () => {
+    tela(FUNIL_DA_LOJA_DECLARADO);
+
+    fireEvent.change(motivos(), { target: { value: "É fornecedor, Fraude confirmada" } });
+    salvar();
+
+    expect(patchSalvo().lost_reasons).toEqual([
+      "É fornecedor",
+      { label: "Fraude confirmada", categoria: "Risco" },
+    ]);
+  });
+
+  it("esconder categoria tira do menu sem apagar o vínculo de quem já a usa", () => {
+    tela(FUNIL_DA_LOJA_DECLARADO);
+
+    fireEvent.click(screen.getByLabelText("Esconder categoria Risco"));
+    salvar();
+
+    const patch = patchSalvo();
+    expect(patch.lost_reason_categories).toEqual(["Cliente", "Operacional"]);
+    // O motivo continua "Risco": esconder a categoria é não oferecê-la aos
+    // outros motivos, não reescrever o dado de quem já a tinha.
+    expect(patch.lost_reasons).toContainEqual({ label: "Possível fraude", categoria: "Risco" });
+  });
+
+  it("acrescentar categoria grava a lista do funil", () => {
+    tela(FUNIL_DA_LOJA_DECLARADO);
+
+    const nova = screen.getByLabelText("Nova categoria") as HTMLInputElement;
+    fireEvent.change(nova, { target: { value: "Fraude" } });
+    fireEvent.click(screen.getByRole("button", { name: "Acrescentar" }));
+    salvar();
+
+    expect(patchSalvo().lost_reason_categories).toEqual([
+      "Cliente",
+      "Risco",
+      "Operacional",
+      "Fraude",
+    ]);
+  });
+
+  it("salvar sem tocar nas categorias NÃO reescreve a lista do funil", () => {
+    tela(FUNIL_DA_LOJA_DECLARADO);
+    salvar();
+    // Funil que não declarou nada continua sem a chave: a fábrica + o que os
+    // motivos usam já respondem, e gravar a lista aqui criaria dado à toa.
+    expect(patchSalvo()).not.toHaveProperty("lost_reason_categories");
+  });
+});

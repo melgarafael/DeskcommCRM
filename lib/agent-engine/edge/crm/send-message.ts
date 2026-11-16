@@ -102,21 +102,38 @@ export interface SendMessageInput {
   /**
    * Presente = o envio sai como MÍDIA e o `body` é a LEGENDA.
    *
-   * Duas procedências, um caminho só (o handler de envio): `storagePath` é a imagem
+   * Duas procedências, um caminho só (o handler de envio): `storagePath` é a imagem ou o áudio
    * que já mora na pasta da conversa (`whatsapp-media/...`, foto de produto — assinada
    * curta por quem conhece o provider), e `url` é a mídia de um passo automático
    * (#2734, ampliada pelo #2972 para áudio, vídeo e documento), que o operador
    * aponta direto e o handler confere antes de buscar.
    */
   media?:
-    | { storagePath: string; mime: string }
+    | {
+        storagePath: string;
+        mime: string;
+        /** Áudio × imagem do arquivo já no Storage (catálogo). Ausente = imagem. */
+        kind?: 'audio' | 'image';
+        /** Ausente = imagem (foto do produto). Ver `ChannelSendInput` no contrato do canal. */
+        type?: TipoDeMidiaComLegenda;
+        /** Nome do documento para o cliente; ausente = o basename do arquivo. */
+        filename?: string;
+      }
     | { url: string; mime: string; type: TipoDeMidiaComLegenda };
+  /**
+   * O material da empresa que ESTA mensagem carrega (#4129), quando houver.
+   *
+   * Vai para o `metadata` da linha: é por ele que a conversa sabe o que já
+   * recebeu (freio de 7 dias/3 em 24 h) e que a timeline mostra o documento da
+   * IA sem depender de cruzar o caminho do Storage.
+   */
+  materialId?: string;
 }
 
 /**
- * O corpo que o handler de mensagens recebe: texto, template ou imagem da
+ * O corpo que o handler de mensagens recebe: texto, template ou mídia da
  * conversa. Exportado para o teste — o tipo decide o caminho no handler, e um
- * `type` errado manda a foto como texto sem ninguém ver.
+ * `type` errado degrada áudio ou imagem sem ninguém ver.
  */
 export function corpoDoEnvio(
   input: SendMessageInput,
@@ -146,14 +163,23 @@ export function corpoDoEnvio(
               media_mime: input.media.mime,
             }
           : {
-              type: 'image' as const,
+              // Material da empresa (#4129) é documento; foto de produto não
+              // declara `type` e continua saindo como imagem. O `type` errado
+              // manda o PDF como foto — e o WhatsApp não entrega. `kind` é a
+              // marca do áudio/imagem do catálogo (apresentação); os dois
+              // convivem e `type` tem precedência por ser o mais específico.
+              type: input.media.type ?? input.media.kind ?? 'image',
               media_storage_path: input.media.storagePath,
               media_mime: input.media.mime,
+              ...(input.media.filename ? { media_filename: input.media.filename } : {}),
             }
         : { type: 'text' as const }),
     // Foto sem legenda vai sem `body`: o schema do envio pede corpo não vazio.
     ...(input.body !== '' || !input.media ? { body: input.body } : {}),
-    metadata: { idempotency_key: idempotencyKey },
+    metadata: {
+      idempotency_key: idempotencyKey,
+      ...(input.materialId ? { material_id: input.materialId } : {}),
+    },
   };
 }
 

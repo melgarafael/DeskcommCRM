@@ -22,6 +22,7 @@ import { ehReferenciaExterna } from "@/lib/leads/referencia-externa";
 import type { DestinoDoInteresse } from "./destino-do-interesse";
 import { nomesDoDestinoValido } from "./destino-no-banco";
 import { lerReceitasDoBanco } from "./instancias";
+import { conferirItemDaReferencia } from "./item-da-referencia";
 
 export type DestinoPelaReferencia =
   | { ok: true; destino: DestinoDoInteresse }
@@ -55,7 +56,8 @@ export async function destinoPelaReferencia(
     return {
       ok: false,
       motivo: "referencia_invalida",
-      mensagem: "a referência do item deve ter o formato <receita>:<id> (ex.: wordpress-conteudo:4821).",
+      mensagem:
+        "a referência do item deve ter o formato <receita>:<id>, com o id de uma linha que crm_consultar_receita devolveu.",
     };
   }
   const receita = receitaDaReferencia(referencia);
@@ -112,6 +114,10 @@ export async function destinoPelaReferencia(
  * argumento ausente.
  *
  * Funil e etapa informados pelo chamador nunca são trocados.
+ *
+ * Com `referencia_externa`, o item TEM de existir no banco de origem, com ou sem
+ * funil informado: a forma da referência não prova nada (o agente inventou o
+ * código em 2 de 2 turnos reais, ver `item-da-referencia.ts`).
  */
 export async function completarDestinoDoNegocio(
   admin: SupabaseClient,
@@ -120,7 +126,7 @@ export async function completarDestinoDoNegocio(
 ): Promise<{ ok: true } | { ok: false; resposta: Record<string, unknown> }> {
   const temFunil = typeof args.pipeline_id === "string" && args.pipeline_id !== "";
   const temEtapa = typeof args.stage_id === "string" && args.stage_id !== "";
-  if (temFunil && temEtapa) return { ok: true };
+  if (temFunil && temEtapa) return conferirItem(admin, organizationId, args.referencia_externa);
 
   if (temFunil !== temEtapa) {
     return {
@@ -146,7 +152,22 @@ export async function completarDestinoDoNegocio(
   if (!achado.ok) {
     return { ok: false, resposta: { erro: achado.motivo, mensagem: achado.mensagem } };
   }
+  const item = await conferirItem(admin, organizationId, args.referencia_externa);
+  if (!item.ok) return item;
   args.pipeline_id = achado.destino.pipeline_id;
   args.stage_id = achado.destino.stage_id;
   return { ok: true };
+}
+
+// ponytail: no turno do agente o wrapper e o handler chamam `completarDestinoDoNegocio`,
+// então o item é conferido duas vezes (uma leitura de 1 linha cada); juntar
+// as duas chamadas só se a latência do banco de origem pesar.
+async function conferirItem(
+  admin: SupabaseClient,
+  organizationId: string,
+  referencia: unknown,
+): Promise<{ ok: true } | { ok: false; resposta: Record<string, unknown> }> {
+  if (referencia === undefined) return { ok: true };
+  const item = await conferirItemDaReferencia(admin, organizationId, String(referencia));
+  return item.ok ? item : { ok: false, resposta: { erro: item.motivo, mensagem: item.mensagem } };
 }

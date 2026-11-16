@@ -4,7 +4,8 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { DICIONARIO } from "@/lib/i18n/dicionario";
-import { MODULOS_OPCIONAIS } from "@/lib/instalacao/modulos";
+import { MODULOS_AINDA_NAO_LIGAVEIS, MODULOS_OPCIONAIS, MODULOS_OPCIONAIS_POR_FLAG, type ModuloOpcional } from "@/lib/instalacao/modulos";
+import { moduloDoCatalogo } from "@/lib/modulos/catalogo";
 import { NAV_CATALOG, type NavMetadata } from "@/lib/navigation/catalogo";
 import { CAPACIDADES_DA_ORGANIZACAO } from "@/lib/organizacao/capacidades";
 import {
@@ -29,20 +30,31 @@ import {
  */
 
 const PORTAS = NAV_CATALOG as readonly NavMetadata[];
+const porFlag = (m: ModuloOpcional) => (MODULOS_OPCIONAIS_POR_FLAG as readonly ModuloOpcional[]).includes(m);
 const MODULOS_NO_CATALOGO = new Set(RECURSOS_OPCIONAIS.flatMap((r) => (r.modulo ? [r.modulo] : [])));
 const CAPACIDADES_NO_CATALOGO = new Set(
   RECURSOS_OPCIONAIS.flatMap((r) => (r.capacidade ? [r.capacidade] : [])),
 );
 
 describe("o catálogo de recursos opcionais não deixa recurso de fora", () => {
-  it("todo módulo de MODULOS_OPCIONAIS tem a sua linha, com nome e o que faz", () => {
+  it("todo módulo de MODULOS_OPCIONAIS que se liga ou se instala tem a sua linha, com nome e o que faz", () => {
     const semLinha = MODULOS_OPCIONAIS.filter(
-      (m) => !RECURSOS_OPCIONAIS.some((r) => r.nivel === "instalacao" && r.modulo === m && r.nome && r.oQueFaz),
+      (m) =>
+        (porFlag(m) || moduloDoCatalogo(m)) &&
+        !RECURSOS_OPCIONAIS.some((r) => r.nivel === "instalacao" && r.modulo === m && r.nome && r.oQueFaz),
     );
     expect(
       semLinha,
       `Módulo sem linha em lib/recursos-opcionais/catalogo.ts (TEXTO_DO_MODULO):\n  ${semLinha.join("\n  ")}`,
     ).toEqual([]);
+  });
+
+  // #3625: módulo de tabela que ainda não está em CATALOGO_DE_MODULOS não se instala,
+  // então não ganha linha que mande para /admin/modulos (primeira impressão quebrada).
+  it("módulo de tabela fora de CATALOGO_DE_MODULOS não gera linha", () => {
+    const foraDoCatalogo = MODULOS_OPCIONAIS.filter((m) => !porFlag(m) && !moduloDoCatalogo(m));
+    const comLinha = foraDoCatalogo.filter((m) => RECURSOS_OPCIONAIS.some((r) => r.modulo === m));
+    expect(comLinha, `Linha para módulo que /admin/modulos não oferece:\n  ${comLinha.join("\n  ")}`).toEqual([]);
   });
 
   it("toda porta do menu condicionada a módulo ou capacidade está no catálogo", () => {
@@ -162,6 +174,10 @@ describe("o estado nunca lança e nunca inventa 'desligado'", () => {
     // Ausente = ligada; só o `false` explícito desliga (régua do banco).
     expect(estadoDoRecurso(acha("colegas_mexem_na_agenda"), ligadas)).toBe("desligado");
     expect(estadoDoRecurso(acha("colegas_mexem_na_agenda"), vazio)).toBe("ligado");
+    expect(estadoDoRecurso(acha("capacidade_do_produto"), vazio)).toBe("desligado");
+    expect(
+      estadoDoRecurso(acha("capacidade_do_produto"), { ...vazio, settings: { catalogo: { capacidade: true } } }),
+    ).toBe("ligado");
     expect(estadoDoRecurso(acha("conversa_fica_com_quem_atendeu"), vazio)).toBe("desligado");
   });
 
@@ -195,6 +211,16 @@ describe("o que é só de quem administra o servidor não aparece para a empresa
     // Controle: a lista não ficou vazia por acidente.
     expect(daEmpresa).toContain("banco_externo");
     expect(RECURSOS_OPCIONAIS.find((r) => r.modulo === "cobranca")?.href).toBe("/admin/sistema");
+  });
+
+  it("módulo que ainda não se liga não aparece para a empresa (doc 305: campanha por e-mail sem envio)", () => {
+    // A catraca: enquanto não existir o envio com descadastro, ninguém liga a
+    // campanha por e-mail pela tela. Tirar o nome desta lista é a decisão de
+    // abrir a opção para todos, e tem de ser deliberada.
+    expect(MODULOS_AINDA_NAO_LIGAVEIS).toContain("campanha_por_email");
+    expect(MODULOS_DA_EMPRESA.map((r) => r.modulo)).not.toContain("campanha_por_email");
+    // O catálogo do dono do servidor segue com a linha, dizendo que ainda não liga.
+    expect(RECURSOS_OPCIONAIS.some((r) => r.modulo === "campanha_por_email")).toBe(true);
   });
 
   it("a tela da empresa lista os módulos por MODULOS_DA_EMPRESA", () => {

@@ -1,6 +1,6 @@
 /**
- * Baixa a imagem de `imagem_url` com a rede do CRM e confere o que chegou (Spec 25 R4,
- * opção A). Quem guarda e manda ao canal é o turno: o gateway nunca vê a URL da fonte.
+ * Baixa a imagem de `imagem_url` com a rede do CRM e confere o que chegou (Spec 25 R4).
+ * Quem guarda e manda ao canal é o turno: o gateway nunca vê a URL da fonte.
  *
  * Ordem, e cada passo recusa antes do próximo:
  *  1. forma da URL e extensão (`formatoDeImagemPorUrl`) e guarda textual de saída

@@ -36,6 +36,8 @@
  */
 import { z } from 'zod';
 
+import { falaDoMotor, type Idioma } from './idioma-do-turno';
+
 /**
  * Uma intenção lida da conversa. `evidencia` não é burocracia: sem ela o campo
  * aceita invenção, e a mesma disciplina já vale para `update_lead_state`
@@ -99,6 +101,17 @@ export const DECLARACAO_INSTRUCTION =
   'inclusive "vou verificar e te aviso" — com o prazo quando houver combinado um. ' +
   'Se o turno não teve nem intenção nem promessa, mande "nada_a_declarar": true e as duas listas vazias. ' +
   'Nunca invente: sem trecho que sustente, não declare.';
+
+/**
+ * A mesma instrução no idioma da organização (#4260, item 1).
+ *
+ * As CHAVES do JSON não mudam de língua: `intencoes`, `promessas` e
+ * `nada_a_declarar` são lidas por `declaracaoDoTurnoSchema` — traduzir a chave
+ * mudaria o contrato, não o idioma. `pt-BR` devolve a constante acima.
+ */
+export function instrucaoDeDeclaracao(idioma: Idioma = 'pt-BR'): string {
+  return falaDoMotor(DECLARACAO_INSTRUCTION, idioma);
+}
 
 /**
  * A declaração vista por um HUMANO que vai assumir a conversa.

@@ -1,12 +1,14 @@
 "use client";
 import { ehAFila } from "@/lib/inbox/comando-da-conversa";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useCallback } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import type { InfiniteData, UseInfiniteQueryResult } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Check } from "@/lib/ui/icons";
 import { useChannelSessions } from "@/hooks/channels/useChannelSessions";
+import { useConversasComMencao } from "@/hooks/inbox/useConversasComMencao";
+import { desmarcarConversaMencionada } from "@/lib/notifications/mencao-na-lista";
 
 import { useAutomaticoAtivo } from "@/hooks/ai/useAutomaticoAtivo";
 import { useMarcarComoExemplo } from "@/hooks/inbox/useMarcarComoExemplo";
@@ -15,6 +17,7 @@ import { ConversationListItem } from "./ConversationListItem";
 import { EmptyInbox } from "@/components/empty";
 import { EmptyPorFiltro } from "./EmptyPorFiltro";
 import { filtrosAuxiliaresAtivos } from "@/lib/inbox/filtros-ativos";
+import { textoDaFalhaDaLista } from "@/lib/inbox/falha-da-lista";
 import type {
   ConversationsFilters,
   ConversationWithContact,
@@ -64,6 +67,21 @@ export function ConversationList({
   podeMarcarExemplo = false,
 }: Props) {
   const t = useT();
+  /**
+   * As conversas com menção pendente (#2372).
+   *
+   * Uma assinatura só para a lista inteira (não um hook por linha): a marca
+   * nasce do listener de notas do AppShell e vale para todas as linhas. Abrir a
+   * conversa é o que a CONSOME — por isso o clique passa por `abrirConversa`.
+   */
+  const mencionadas = useConversasComMencao();
+  const abrirConversa = useCallback(
+    (id: string) => {
+      desmarcarConversaMencionada(id);
+      onSelect(id);
+    },
+    [onSelect],
+  );
   // Só mostra POR ONDE a conversa entrou quando há mais de um número. Com um
   // só, o rótulo seria a mesma palavra em toda linha — ruído que ensina o olho
   // a ignorar a área onde vivem os avisos que importam.
@@ -174,17 +192,26 @@ export function ConversationList({
   // rede por uma caixa de entrada vazia — e o `queryFn` do hook já disparou o
   // toast com o motivo cru. Sem dado nenhum (primeira carga), o erro continua
   // sendo tudo o que existe para mostrar, com o botão de tentar de novo.
+  //
+  // E ele DIZ QUAL FOI (#4508): tempo esgotado, servidor fora, sessão caída e
+  // pedido recusado pedem ações diferentes de quem está atendendo. A frase sai
+  // de `textoDaFalhaDaLista`, cuja régua é a mesma da retentativa — antes daqui
+  // todo mundo caía em "Erro ao carregar conversas", e o operador só descobria
+  // que era timeout recarregando a página e perdendo filtro e conversa aberta.
   if (q.isError && q.data === undefined) {
     return (
-      <div className="p-4 text-center text-sm text-muted-foreground">
-        <p>{t("Erro ao carregar conversas.")}</p>
+      <div className="space-y-2 p-4 text-center text-sm text-muted-foreground" role="alert">
+        <p className="text-foreground">{textoDaFalhaDaLista(q.error, t)}</p>
+        {/* A frase que impede a leitura de "perdi os dados" — o banco continua
+            com tudo, é a LEITURA que não voltou. */}
+        <p>{t("As conversas continuam salvas. Nada foi perdido.")}</p>
         <Button
           size="sm"
           variant="outline"
           className="mt-2"
           onClick={() => q.refetch()}
         >
-          Tentar novamente
+          {t("Tentar novamente")}
         </Button>
       </div>
     );
@@ -253,7 +280,8 @@ export function ConversationList({
             key={c.id}
             conversation={c}
             isSelected={c.id === selectedId}
-            onSelect={onSelect}
+            onSelect={abrirConversa}
+            mencionado={mencionadas.has(c.id)}
             queuePosition={isQueue ? i + 1 : undefined}
             mostrarCanal={maisDeUmCanal}
             mostrarAtendente={mostrarAtendente}

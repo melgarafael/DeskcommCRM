@@ -31,7 +31,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
-import { ArrowRight, CaretLeft, Info, Plus, Trash } from "@/lib/ui/icons";
+import { ArrowRight, CaretLeft, Info, Plus, Trash, Warning } from "@/lib/ui/icons";
 import { randomId } from "@/lib/random-id";
 import { useAuth, usePermission } from "@/hooks/auth/AuthProvider";
 import {
@@ -40,6 +40,7 @@ import {
   useDeleteRouter,
   useSaveMembers,
   useTestRouter,
+  useEstagiosDoFunil,
   type RouterDetailState,
   type RouterMemberInput,
   type RouterTestResult,
@@ -48,8 +49,9 @@ import type { ClassifierModelOption } from "@/lib/ai/classifier-models";
 import type { ChannelSessionLite } from "../../agents/[id]/_components/AgentForm";
 import { useFollowupFlows } from "@/hooks/followup/useFollowupFlows";
 // #2155 — funil/etapa de DESTINO da intenção: o card vai para o funil do produto.
-import { usePipelines, usePipelineStages } from "@/hooks/webhooks/useWebhookSources";
+import { usePipelines } from "@/hooks/webhooks/useWebhookSources";
 import { useT } from "@/hooks/i18n/useT";
+import type { NumeroSemRoteador } from "../estado-dos-numeros";
 
 interface AgentLite {
   id: string;
@@ -63,6 +65,19 @@ interface Props {
   channelSessions: ChannelSessionLite[];
   /** Só os modelos que esta organização consegue usar — ver lib/ai/classifier-models. */
   classifierModels: ClassifierModelOption[];
+  /**
+   * #4340 — o `channel_session` deste roteador saiu da lista de canais
+   * oferecíveis (arquivado/removido). O selo passa a dizer "inativo" e a tela
+   * diz o motivo. O `is_active` do formulário continua o GRAVADO: salvar outra
+   * coisa não pode desativar o roteador sem o operador ter escolhido.
+   */
+  numeroRemovido?: boolean;
+  /**
+   * #4340 — números vivos desta empresa que ainda não têm roteador: os destinos
+   * possíveis da ação "mover o roteador para o número novo". Vazio = nenhum
+   * número livre (a tela mantém só o aviso).
+   */
+  numerosLivres?: NumeroSemRoteador[];
 }
 
 interface DraftMember extends RouterMemberInput {
@@ -120,6 +135,8 @@ export function RouterEditorClient({
   agents,
   channelSessions,
   classifierModels,
+  numeroRemovido = false,
+  numerosLivres = [],
 }: Props) {
   const t = useT();
   const nextRouter = useNextRouter();
@@ -140,6 +157,12 @@ export function RouterEditorClient({
     JSON.stringify(senderRoutes) !== JSON.stringify(router.config?.sender_routes ?? []);
   const [name, setName] = React.useState(router.name);
   const [isActive, setIsActive] = React.useState(router.is_active);
+  // #4363 — a frase que o CLIENTE lê quando o classificador troca quem atende.
+  // `""` = desligada (o padrão): a tela não precisa de um switch só para isto —
+  // campo vazio é a ausência da frase, e o PATCH grava `null`.
+  const [passagemAoCliente, setPassagemAoCliente] = React.useState(
+    router.passagem_ao_cliente ?? "",
+  );
   const [fallbackAgentId, setFallbackAgentId] = React.useState(router.fallback_agent_id ?? "");
   // Uma chave só para os dois campos: escolher modelo sem levar o provedor junto
   // manda o id para o provedor da ORG, e a classificação falha sempre.
@@ -164,7 +187,9 @@ export function RouterEditorClient({
   // `initialData`, o React Query o tratava como dado fresco (staleTime de 30 s,
   // sem refetch em foco) e o GET nunca acontecia ao abrir a tela: o seletor
   // ficava em "Sem destino" mesmo com a API devolvendo o funil gravado. Por
-  // isso o hook agora usa `placeholderData` (hooks/ai/useRouters.ts).
+  // isso o hook agora usa `placeholderData` (hooks/ai/useRouters.ts). O segundo
+  // pedaço do #2569 — o DESENHO não esperar as listas para mostrar o destino que
+  // já está no draft — está em `DestinoDoCard`.
   const prevMembers = React.useRef(members);
   React.useEffect(() => {
     const anterior = prevMembers.current;
@@ -179,6 +204,12 @@ export function RouterEditorClient({
   }, [members]);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [testMessage, setTestMessage] = React.useState("");
+  // #4340 — destino da ação de mover. Com um número só livre, ele já vem
+  // escolhido: o caso comum (o número novo ÚNICO) vira um clique.
+  const [novoNumero, setNovoNumero] = React.useState(
+    numerosLivres.length === 1 ? numerosLivres[0]!.id : "",
+  );
+  const [movendoNumero, setMovendoNumero] = React.useState(false);
 
   const updateRouter = useUpdateRouter(routerId);
   const deleteRouter = useDeleteRouter();
@@ -204,6 +235,7 @@ export function RouterEditorClient({
         typeof router.config?.context_message_count === "number"
           ? router.config.context_message_count
           : 4,
+      passagemAoCliente: router.passagem_ao_cliente ?? "",
       members: members.map(camposDoMembro),
     }),
     [router, members],
@@ -218,6 +250,7 @@ export function RouterEditorClient({
     fallbackAgentId !== baseline.fallbackAgentId ||
     classifier !== baseline.classifier ||
     contextMessageCount !== baseline.contextMessageCount ||
+    passagemAoCliente !== baseline.passagemAoCliente ||
     JSON.stringify(currentMembers) !== JSON.stringify(baseline.members);
 
   const memberErrors = draftMembers.map((m) => {
@@ -278,13 +311,17 @@ export function RouterEditorClient({
         isActive !== baseline.isActive ||
         fallbackAgentId !== baseline.fallbackAgentId ||
         classifier !== baseline.classifier ||
-        contextMessageCount !== baseline.contextMessageCount
+        contextMessageCount !== baseline.contextMessageCount ||
+        passagemAoCliente !== baseline.passagemAoCliente
       ) {
         const [provider, modelId] = classifier.split("::");
         await updateRouter.mutateAsync({
           name,
           is_active: isActive,
           fallback_agent_id: fallbackAgentId || null,
+          // #4363 — campo vazio DESLIGA a frase (o PATCH grava `null`), que é o
+          // padrão do produto e o comportamento de antes desta mudança.
+          passagem_ao_cliente: passagemAoCliente.trim() === "" ? null : passagemAoCliente.trim(),
           // O PATCH mescla `config` com a existente, então mandar só estes dois
           // campos preserva sticky/min_confidence.
           config: {
@@ -302,6 +339,29 @@ export function RouterEditorClient({
       toast.success(t("Roteador salvo."));
     } catch (err) {
       showApiError(err);
+    }
+  }
+
+  /**
+   * #4340 — o gesto que faz o roteador acompanhar a troca de número. O PATCH
+   * leva `channel_session_id` e a rota aplica a régua (só sai de número
+   * removido / só entra em número vivo e sem roteador) e a auditoria "de X
+   * para Y". Aqui não há regra: só o pedido e o desfecho.
+   */
+  async function handleMoverParaNumero() {
+    if (!novoNumero) return;
+    setMovendoNumero(true);
+    try {
+      await updateRouter.mutateAsync({ channel_session_id: novoNumero });
+      toast.success(t("Roteador movido para o número novo."));
+      setNovoNumero("");
+      // O aviso de número removido e os números livres vêm do SSR (page.tsx);
+      // invalidar o React Query não os recalcula.
+      nextRouter.refresh();
+    } catch (err) {
+      showApiError(err);
+    } finally {
+      setMovendoNumero(false);
     }
   }
 
@@ -330,8 +390,13 @@ export function RouterEditorClient({
           >
             <CaretLeft size={14} aria-hidden /> {t("Roteadores")}
           </Link>
-          <Badge variant={router.is_active ? "success" : "neutral"} className="text-xs">
-            {router.is_active ? t("ativo") : t("inativo")}
+          {/* Estado EFETIVO: número removido não roteia, diga o que disser a linha. */}
+          <Badge
+            variant={router.is_active && !numeroRemovido ? "success" : "neutral"}
+            className="text-xs"
+            data-testid="estado-do-roteador"
+          >
+            {router.is_active && !numeroRemovido ? t("ativo") : t("inativo")}
           </Badge>
         </div>
         {canManage && (
@@ -345,6 +410,54 @@ export function RouterEditorClient({
           </Button>
         )}
       </div>
+
+      {numeroRemovido && (
+        <Card
+          className="flex flex-col gap-1 border-amber-500/40 bg-amber-500/5 p-4"
+          data-testid="numero-removido"
+        >
+          <p className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-400">
+            <Warning size={16} aria-hidden /> {t("Este roteador aponta para um número removido")}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Nenhuma conversa chega neste roteador: o número foi removido do WhatsApp. Mova o roteador para o número novo para as conversas voltarem a ser classificadas — sem isso, elas caem no agente principal do número, sem decisão de intenção.",
+            )}
+          </p>
+          {canManage && numerosLivres.length > 0 ? (
+            <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
+              <div className="w-full space-y-1 sm:max-w-xs">
+                <Label htmlFor="router-novo-numero">{t("Número novo")}</Label>
+                <Select value={novoNumero || undefined} onValueChange={setNovoNumero}>
+                  <SelectTrigger id="router-novo-numero">
+                    <SelectValue placeholder={t("Selecione um número")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {numerosLivres.map((numero) => (
+                      <SelectItem key={numero.id} value={numero.id}>
+                        {numero.rotulo}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                type="button"
+                onClick={handleMoverParaNumero}
+                disabled={!novoNumero || movendoNumero || updateRouter.isPending}
+                data-testid="mover-roteador-de-numero"
+              >
+                <ArrowRight /> {t("Mover roteador para este número")}
+              </Button>
+            </div>
+          ) : null}
+          {canManage && numerosLivres.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              {t("Nenhum número livre para mover: conecte o número novo em Canais.")}
+            </p>
+          ) : null}
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="space-y-4">
@@ -385,6 +498,32 @@ export function RouterEditorClient({
                   ? t("Ativo — está roteando as conversas deste número")
                   : t("Inativo — não roteia nada")}
               </Label>
+            </div>
+          </Card>
+
+          <Card className="space-y-3 p-4">
+            <h3 className="text-sm font-medium">{t("Mensagem de passagem ao cliente")}</h3>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Sai uma vez, para o cliente, quando a intenção da mensagem dele leva a conversa para outro agente do roteador. Escreva no idioma em que vocês atendem.",
+              )}
+            </p>
+            <div className="space-y-1">
+              <Label htmlFor="router-passagem">{t("Frase enviada na troca")}</Label>
+              <Textarea
+                id="router-passagem"
+                value={passagemAoCliente}
+                onChange={(e) => setPassagemAoCliente(e.target.value)}
+                disabled={!canManage}
+                maxLength={1200}
+                rows={3}
+                placeholder={t("Ex.: Você está falando agora com o time de suporte. Já passei o seu caso para eles.")}
+              />
+              <p className="text-xs text-muted-foreground">
+                {passagemAoCliente.trim() === ""
+                  ? t("Desligada: o agente novo se apresenta com as palavras dele.")
+                  : t("Ligada: o cliente recebe esta frase uma vez, antes da resposta do agente novo.")}
+              </p>
             </div>
           </Card>
 
@@ -663,8 +802,27 @@ function DestinoDoCard({
   const t = useT();
   const { data: pipelinesRes } = usePipelines();
   const pipelines = pipelinesRes?.data ?? [];
-  const { data: boardRes } = usePipelineStages(pipelineId);
-  const stages = boardRes?.data?.stages ?? [];
+  // #2569 — as etapas vêm da rota LEVE do funil, não do quadro inteiro: o seletor
+  // de etapa é uma pergunta de configuração e não pode esperar (nem depender)
+  // do payload de leads/anexos/tarefas do Kanban.
+  const { data: estagiosDoFunil } = useEstagiosDoFunil(pipelineId);
+  const stages = estagiosDoFunil ?? [];
+  /**
+   * #2569 — o id gravado manda; o NOME é o que a lista de funis/etapas traz
+   * depois. Enquanto ela não volta (ou se o funil gravado já foi arquivado e
+   * saiu da lista), o gatilho NÃO pode ficar vazio nem cair no "Sem destino":
+   * as duas leituras dizem que a intenção não tem destino, que é exatamente o
+   * relato da issue. O gatilho diz que há destino e o nome chega no lugar
+   * quando a lista chega.
+   */
+  const rotuloDoFunil =
+    pipelineId === null
+      ? undefined
+      : (pipelines.find((pl) => pl.id === pipelineId)?.name ?? t("Funil selecionado"));
+  const rotuloDaEtapa =
+    stageId === null
+      ? t("Primeira etapa aberta")
+      : (stages.find((st) => st.id === stageId)?.name ?? t("Etapa selecionada"));
   return (
     <div className="flex flex-wrap items-end gap-2" data-testid="seletor-de-destino">
       <div className="min-w-48 flex-1 space-y-1">
@@ -682,7 +840,7 @@ function DestinoDoCard({
           disabled={disabled}
         >
           <SelectTrigger aria-label={t("Funil de destino (opcional)")}>
-            <SelectValue placeholder={t("Sem destino — só escolher o agente")} />
+            <SelectValue placeholder={t("Sem destino — só escolher o agente")}>{rotuloDoFunil}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={NONE}>{t("Sem destino — só escolher o agente")}</SelectItem>
@@ -694,7 +852,7 @@ function DestinoDoCard({
           </SelectContent>
         </Select>
       </div>
-      {pipelineId !== null && stages.length > 0 && (
+      {pipelineId !== null && (
         <div className="min-w-40 flex-1 space-y-1">
           <Label>{t("Etapa de destino")}</Label>
           <Select
@@ -703,7 +861,7 @@ function DestinoDoCard({
             disabled={disabled}
           >
             <SelectTrigger aria-label={t("Etapa de destino")}>
-              <SelectValue placeholder={t("Primeira etapa aberta")} />
+              <SelectValue placeholder={t("Primeira etapa aberta")}>{rotuloDaEtapa}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={AUTO}>{t("Primeira etapa aberta")}</SelectItem>
