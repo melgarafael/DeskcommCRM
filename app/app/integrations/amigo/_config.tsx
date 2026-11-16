@@ -1,5 +1,6 @@
 "use client";
 import { useT } from "@/hooks/i18n/useT";
+import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import {
   agentOperationOptions,
   agentOperations,
@@ -23,6 +24,7 @@ export function AmigoConfig({
   onChange: (value: AmigoSafeConfig) => void;
 }) {
   const t = useT();
+  const tagDoIdioma = useTagDeIdioma();
   const [token, setToken] = useState("");
   const [tested, setTested] = useState(false);
   const [places, setPlaces] = useState<Named[] | null>(null);
@@ -158,7 +160,7 @@ export function AmigoConfig({
             <dt className="text-muted-foreground">{t("Validado em")}</dt>
             <dd>
               {config.validated_at
-                ? new Date(config.validated_at).toLocaleString("pt-BR", {
+                ? new Date(config.validated_at).toLocaleString(tagDoIdioma, {
                     timeZone: config.timezone,
                   })
                 : t("Ainda não validado")}

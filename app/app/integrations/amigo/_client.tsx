@@ -1,5 +1,6 @@
 "use client";
 import { useT } from "@/hooks/i18n/useT";
+import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useCallback, useState, useLayoutEffect } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,7 @@ export function AmigoClient({
   initialContactId?: string;
 }) {
   const t = useT();
+  const tagDoIdioma = useTagDeIdioma();
   const [config, setConfig] = useState(initialConfig);
   useLayoutEffect(() => pinAmigoConnection(config.connection_id), [config.connection_id]);
   const [tab, setTab] = useState<Tab>(initialTab);
@@ -69,7 +71,7 @@ export function AmigoClient({
             <span>
               {t("Última sincronização:")}{" "}
               {config.last_sync_at
-                ? new Date(config.last_sync_at).toLocaleString("pt-BR", {
+                ? new Date(config.last_sync_at).toLocaleString(tagDoIdioma, {
                     timeZone: config.timezone,
                   })
                 : t("Ainda não realizada")}
