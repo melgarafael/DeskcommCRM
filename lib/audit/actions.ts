@@ -85,6 +85,14 @@ export const AUDIT_ACTIONS = [
   // A cascata retomando o que uma execução interrompida não terminou (#310).
   "lgpd.anonymize_catchup",
   "member.invited",
+  // A pessoa foi CRIADA por quem administra, com senha definida por ele
+  // (#3876) — não convidada. `member.invited` não serve: ali ninguém tinha
+  // conta e o e-mail era a prova; aqui a conta nasceu pronta e a trilha
+  // precisa responder "quem criou esta pessoa, com qual papel, e quando".
+  "member.created",
+  // A criação acima recusada pelo GoTrue (#3876). Gravado sem organização: o
+  // motivo real fica na auditoria do dono da instalação.
+  "member.create_refused",
   "team.interface_changed",
   /**
    * A EMPRESA trocou as portas que mostra (issue #1341, migration 0367). É o
@@ -190,6 +198,17 @@ export const AUDIT_ACTIONS = [
   "message.revoked_in_channel",
   "message.hidden_in_crm",
   "message.restored_in_crm",
+  // O TEXTO RETIDO DE UMA APAGADA PELO CONTATO (#4500), por clique em "Ver
+  // texto retido" (`api/v1/messages/[id]/texto-retido`). Três resultados, três
+  // códigos: revelado, NEGADO (perfil não autorizado — o caso que mais precisa
+  // de rastro, porque é tentativa de leitura de conteúdo alheio) e INDISPONÍVEL
+  // (a linha não guarda mais texto, ou não é uma apagada pelo contato). O
+  // metadata leva organização, conversa, mensagem, perfil e resultado — e
+  // NUNCA o texto: `api_audit_log` é append-only e não alcança a cascata de
+  // anonimização da LGPD.
+  "message.retained_text_revealed",
+  "message.retained_text_denied",
+  "message.retained_text_unavailable",
   // Uma rodada do cron `recover-stuck-messages` que de fato marcou mensagem
   // como falha (rodada vazia não vira linha — varredura não é mutação).
   "message.recover_stuck_run",
@@ -500,6 +519,12 @@ export const AUDIT_ACTIONS = [
   "auth.password_reset_request_failed",
   "auth.password_reset_completed",
   "auth.password_reset_failed",
+  // A troca OBRIGATÓRIA do primeiro acesso (#3876). Distinta de
+  // `auth.password_reset_completed`: ali a pessoa voltou por "esqueci a senha";
+  // aqui ela cumpriu a obrigação que o vínculo impunha — e a pergunta de
+  // auditoria é "quando a senha provisória deixou de valer".
+  "auth.password_change_completed",
+  "auth.password_change_failed",
   "tenant.created_by_signup",
   "tenant.created_by_recovery",
   "conversation.snoozed",
@@ -879,6 +904,8 @@ export const AUDIT_ACTIONS = [
   "catalog_product.ai_presentation_updated",
   "catalog_product.ai_presentation_audio_uploaded",
   "catalog_product.ai_presentation_audio_removed",
+  /** A rodada da fonte de catálogo (#3587, fatia 2) — cria, atualiza e desativa em lote. */
+  "catalog_products.synced_from_feed",
 
   // As tarefas do CRM (migration 0210). Tarefa é combinado de trabalho entre
   // pessoas do time — quem a criou, quem mudou o prazo e quem a apagou é
@@ -1221,6 +1248,7 @@ export const AUDIT_ACTIONS = [
   "companies.deleted",
   "companies.enriched",
   "people.created",
+  "people.deleted",
   "people.updated",
   "company_people.linked",
   "company_people.updated",
@@ -1316,6 +1344,13 @@ export const AUDIT_ACTIONS = [
   // empresa (e religá-lo) ficaria sem rastro — e é ele que decide se alguma
   // regra consulta o modelo.
   "settings.automation_ai_decide_updated",
+
+  // Quem pode revelar o texto de uma mensagem apagada pelo contato (#4500):
+  // a lista `organizations.settings.texto_retido.perfis` mudou pela tela
+  // Configurações → Organização → Permissões. Metadata com `de` e `para` (só
+  // papéis, nunca conteúdo). Sem esta linha, conceder a alguém a leitura de
+  // conteúdo retido ficaria sem rastro de QUEM autorizou.
+  "settings.retained_text_profiles_updated",
 
   // A entrada automática no funil (#3603): o interruptor
   // `organizations.settings.entrada_automatica_no_funil.ativa` foi ligado ou
@@ -1497,6 +1532,9 @@ export const AUDIT_ACTIONS = [
   // sugestão, e quando". A fila guarda o usuário, mas a trilha é o rastro que a
   // organização consulta, e só ela tem o mesmo formato das outras ações de contato.
   "contact.duplicate_dismissed",
+  "agency.client_created",
+  "agency.session_started",
+  "agency.session_ended",
   // O admin mudou o limite em tokens acima do qual a tela Memória da IA avisa
   // que a memória pesa (`settings.memoria_da_ia`); metadata com o anterior e o novo.
   "ai.org_memory_weight_limit_updated",

@@ -144,4 +144,30 @@ describe("ChatThread: busca nas mensagens carregadas", () => {
     expect(screen.queryByRole("status")).toBeNull();
     expect(container.querySelectorAll('[data-testid="message-bubble"]').length).toBeGreaterThan(0);
   });
+
+  it("acha a mensagem com acento digitando SEM acento — e com acento também (#4411)", () => {
+    estado.mensagens = [
+      msg("m-1", "Pode mandar o orçamento?"),
+      msg("m-2", "Orçamento enviado, chefe"),
+      msg("m-3", "boleto em anexo"),
+    ];
+
+    // O defeito: `toLocaleLowerCase` dobra caixa, não acento — `orcamento` não
+    // achava "orçamento". As duas grafias têm de devolver o MESMO conjunto.
+    const { container: semAcento } = render(
+      <ChatThread conversationId="c-1" searchTerm="orcamento" />,
+      { wrapper },
+    );
+    const achadasSemAcento = marcadas(semAcento);
+    expect(achadasSemAcento).toHaveLength(2);
+    expect(achadasSemAcento[0]).toContain("Pode mandar o orçamento?");
+
+    // Quem digita COM acento continua achando o que já achava: o conserto não
+    // pode trocar um buraco por outro.
+    const { container: comAcento } = render(
+      <ChatThread conversationId="c-1" searchTerm="orçamento" />,
+      { wrapper },
+    );
+    expect(marcadas(comAcento)).toEqual(achadasSemAcento);
+  });
 });

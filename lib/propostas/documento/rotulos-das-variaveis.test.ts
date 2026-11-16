@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { MODELOS_BASE } from "../modelos/catalogo-base";
 import { extrairVariaveis } from "./variaveis";
-import { ROTULO_DA_VARIAVEL, ondePreencher, rotuloDaVariavel } from "./rotulos-das-variaveis";
+import { ROTULO_DA_VARIAVEL, ondePreencher, rotuloDaVariavel, rotulosDoNegocio } from "./rotulos-das-variaveis";
 
 describe("rótulos das variáveis", () => {
   it("toda variável usada pelos modelos da plataforma tem nome legível (varre, não lista)", () => {
@@ -35,5 +35,14 @@ describe("rótulos das variáveis", () => {
     expect(ondePreencher("commercial_terms.validity_days")).toBe("sistema");
     expect(ondePreencher("approval.date")).toBe("sistema");
     expect(ondePreencher("numero")).toBe("sistema");
+  });
+
+  it("campo do funil homônimo de variável fixa não troca o rótulo dela no editor (doc 343)", () => {
+    const rotulos = rotulosDoNegocio([
+      { key: "titulo", label: "Título do anúncio" },
+      { key: "endereco_do_imovel", label: "Endereço do imóvel" },
+    ]);
+    expect(rotulos["lead.titulo"]).toBe("Título do negócio");
+    expect(rotulos["lead.endereco_do_imovel"]).toBe("Endereço do imóvel");
   });
 });

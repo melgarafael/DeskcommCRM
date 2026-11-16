@@ -22,6 +22,8 @@ import {
   RAZAO_NAO_SELECIONADA,
   OFERTAS_DA_CAMPANHA,
   ROTULOS_DAS_OFERTAS,
+  TAMANHO_MAXIMO_DO_BRIEFING,
+  TAMANHO_MINIMO_DO_BRIEFING,
   campaignConfigSchema,
   etiquetasDoNicho,
   problemaNasEtiquetas,
@@ -32,7 +34,9 @@ import {
 import { normalizarTags } from "@/lib/contacts/tag-normalizada";
 import { ProspectingAgentBuilder, type CreatedProspectingAgent } from "./_create-agent";
 import { AuditoriaDoCandidato, type PreviaDaAbordagem } from "./_auditoria-site";
+import { BaixarLista } from "./_baixar-lista";
 import type { ProspectingAgentSetupInput } from "@/lib/prospecting/agent-setup-schema";
+import { TETO_DIARIO_DE_MIDIA_POR_NUMERO } from "@/lib/prospecting/midia-da-abordagem";
 import type { PersonalizacaoProspeccao } from "@/lib/prospecting/personalizar";
 import {
   pontuarCandidato,
@@ -41,7 +45,6 @@ import {
 import { precisaDeRede, siteEfetivo } from "@/lib/prospecting/site-efetivo";
 import { arquivadaEm, campanhasVisiveis } from "@/lib/prospecting/arquivamento";
 import { opcoesDoPreparo } from "@/lib/prospecting/opcoes-do-preparo";
-import { naoAbordada } from "@/lib/prospecting/exportar";
 import { previaPorGerar, previaValida } from "@/lib/prospecting/previa";
 
 /** Uma linha que a importação recusou — o número é o da planilha (1 = cabeçalho). */
@@ -360,6 +363,15 @@ export function ProspectingClient() {
     daily_limit: number;
     interval_minutes: number;
   } | null>(null);
+  // Edição da instrução e dos critérios de uma campanha PAUSADA (#4570). Uma campanha por
+  // vez, e a confirmação é da TELA porque o texto vale para as próximas abordagens.
+  const [briefing, setBriefing] = useState<{
+    campaignId: string;
+    instruction: string;
+    qualification: string;
+    ofertas: OfertaDaCampanha[];
+  } | null>(null);
+  const [confirmandoBriefing, setConfirmandoBriefing] = useState(false);
   const campaign = data?.campaigns.find((c) => c.id === selected) ?? data?.campaigns[0];
   // #4359: a lista principal e o filtro das arquivadas são as duas metades do MESMO
   // conjunto. Uma campanha arquivada sai da principal e aparece no filtro — nunca
@@ -444,13 +456,6 @@ export function ProspectingClient() {
     );
   }
   const candidates = data?.candidates.filter((c) => c.campaign_id === campaign?.id) ?? [];
-  /**
-   * Quantas empresas desta campanha ainda podem ser abordadas (#4360) — e por
-   * isso quantas o "Baixar lista" leva. A régua é a do SERVIDOR
-   * (`naoAbordada`): um `filter` escrito de novo aqui faria o botão prometer um
-   * número que o arquivo não entrega.
-   */
-  const naoAbordadas = candidates.filter(naoAbordada).length;
   // `message` pode ser uma função que lê a resposta (o envelope `{ data }`): só o
   // "Completar fichas" precisa dela. Texto fixo segue igual para os outros botões.
   async function perform(body: unknown, message: string | ((resposta: unknown) => string)) {
@@ -544,6 +549,46 @@ export function ProspectingClient() {
       t("Ritmo atualizado. A campanha continua pausada."),
     );
     if (salvou) setRitmo(null);
+  }
+  function alternarEdicaoDaInstrucao(c: Campaign) {
+    if (!c.config) return;
+    setConfirmandoBriefing(false);
+    setBriefing((atual) =>
+      atual?.campaignId === c.id
+        ? null
+        : {
+            campaignId: c.id,
+            instruction: c.config?.instruction ?? "",
+            qualification: c.config?.qualification ?? "",
+            ofertas: c.config?.ofertas ?? ["site"],
+          },
+    );
+  }
+  // O mesmo piso do `start` — o servidor recusa abaixo disso, e a tela não deve
+  // deixar a pessoa descobrir isso por um 422 depois de digitar.
+  const briefingValido =
+    !!briefing &&
+    briefing.instruction.trim().length >= TAMANHO_MINIMO_DO_BRIEFING &&
+    briefing.instruction.trim().length <= TAMANHO_MAXIMO_DO_BRIEFING &&
+    briefing.qualification.trim().length >= TAMANHO_MINIMO_DO_BRIEFING &&
+    briefing.qualification.trim().length <= TAMANHO_MAXIMO_DO_BRIEFING &&
+    briefing.ofertas.length >= 1;
+  async function salvarBriefing() {
+    if (!briefing || !briefingValido) return;
+    const salvou = await perform(
+      {
+        action: "edit_briefing",
+        id: briefing.campaignId,
+        instruction: briefing.instruction.trim(),
+        qualification: briefing.qualification.trim(),
+        ofertas: briefing.ofertas,
+      },
+      t("Instrução e critérios atualizados. A campanha continua pausada."),
+    );
+    if (salvou) {
+      setBriefing(null);
+      setConfirmandoBriefing(false);
+    }
   }
   // O modelo é gerado aqui, no navegador: `;` e BOM UTF-8 para o Excel em português abrir
   // com acento e em colunas.
@@ -1391,22 +1436,14 @@ export function ProspectingClient() {
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant="outline">{t(labels[campaign.status] ?? campaign.status)}</Badge>
                     {/*
-                      A LISTA DE VOLTA (#4360). Link direto para o CSV — a rota
-                      responde `attachment`, então o navegador baixa em vez de
-                      navegar. `download` no <a> dá o nome do arquivo também em
-                      quem ignora o `Content-Disposition`.
+                      A LISTA DE VOLTA (#4360), agora com as duas listas: só as
+                      não abordadas ou a campanha inteira, com a situação de
+                      cada empresa. Aparece em QUALQUER status — a campanha
+                      concluída é a que mais se quer reaproveitar, e com a
+                      lista só das não abordadas o botão sumia justamente nela.
+                      A contagem é do servidor (`_baixar-lista.tsx`).
                     */}
-                    {naoAbordadas > 0 && (
-                      <Button variant="outline" size="sm" asChild>
-                        <a
-                          data-testid="baixar-lista"
-                          download
-                          href={`/api/v1/prospecting/${campaign.id}/exportar`}
-                        >
-                          {`${t("Baixar lista")} (${naoAbordadas})`}
-                        </a>
-                      </Button>
-                    )}
+                    {candidates.length > 0 && <BaixarLista campaignId={campaign.id} />}
                     {/* #4359: o cartão aberto de uma campanha arquivada continua
                         acessível (a lista principal é que a esconde). */}
                     {arquivadaEm(campaign.config) !== null && (
@@ -1456,13 +1493,22 @@ export function ProspectingClient() {
                     {t("resultados repetidos ou indisponíveis foram desconsiderados.")}
                   </p>
                 )}
-                <p className="mt-3 text-xs text-muted-foreground">
-                  {naoAbordadas > 0
-                    ? t("Baixar lista leva só as empresas que ainda não foram abordadas.")
-                    : t(
-                        "Nenhuma empresa ainda pode ser abordada nesta campanha: não há lista para baixar.",
-                      )}
-                </p>
+                {/* Doc 358 › 2A: o mesmo arquivo para muitos números frios pesa no
+                    bloqueio. Quem configurou a mídia precisa ler isto na campanha. */}
+                {configCompleta?.midia_da_abordagem && (
+                  <p role="note" className="mt-3 rounded-md bg-muted/40 p-3 text-sm">
+                    {t(
+                      "Atenção: esta campanha manda o mesmo arquivo junto da primeira mensagem. Quando muita gente que não conhece você recebe o mesmo arquivo, aumenta o risco de o WhatsApp bloquear o seu número. Por segurança, cada número manda o arquivo em no máximo {teto} abordagens por dia; depois disso, as abordagens do dia saem só com o texto.",
+                    ).replace("{teto}", String(TETO_DIARIO_DE_MIDIA_POR_NUMERO))}
+                  </p>
+                )}
+                {candidates.length > 0 && (
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    {t(
+                      "Baixar lista tem duas opções: só as empresas que ainda não foram abordadas, ou todas, com a situação de cada uma. Quem pediu para parar, contatos pessoais e quem teve os dados apagados ficam fora das duas listas.",
+                    )}
+                  </p>
+                )}
                 {configCompleta && (
                   <>
                     <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
@@ -1492,6 +1538,16 @@ export function ProspectingClient() {
                             onClick={() => alternarEdicaoDoRitmo(campaign)}
                           >
                             {t("Editar ritmo")}
+                          </Button>
+                          {/* #4570: instrução, critérios e ofertas são lidos a cada
+                              turno; com a campanha parada dá para corrigir o texto
+                              sem criar outra campanha e sem perder a lista. */}
+                          <Button
+                            variant="outline"
+                            disabled={busy}
+                            onClick={() => alternarEdicaoDaInstrucao(campaign)}
+                          >
+                            {t("Editar instrução e critérios")}
                           </Button>
                           {/* #4359: campanha arquivada NÃO retoma por aqui — retomar
                               a deixaria invisível e enviando, o pior desfecho. O
@@ -1578,6 +1634,121 @@ export function ProspectingClient() {
                             {t("Cancelar")}
                           </Button>
                         </div>
+                      </form>
+                    )}
+                    {campaign.status === "paused" && briefing?.campaignId === campaign.id && (
+                      <form
+                        className="mt-4 space-y-3 rounded-md border p-4"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          if (!confirmandoBriefing) return;
+                          void salvarBriefing();
+                        }}
+                      >
+                        <div>
+                          <Label htmlFor="prospecting-edit-instruction">
+                            {t("O que a IA deve oferecer e como iniciar")}
+                          </Label>
+                          <Textarea
+                            id="prospecting-edit-instruction"
+                            value={briefing.instruction}
+                            onChange={(e) =>
+                              setBriefing({ ...briefing, instruction: e.target.value })
+                            }
+                            required
+                            minLength={TAMANHO_MINIMO_DO_BRIEFING}
+                            maxLength={TAMANHO_MAXIMO_DO_BRIEFING}
+                            className="mt-1"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="prospecting-edit-qualification">
+                            {t("Quando considerar o cliente qualificado")}
+                          </Label>
+                          <Textarea
+                            id="prospecting-edit-qualification"
+                            value={briefing.qualification}
+                            onChange={(e) =>
+                              setBriefing({ ...briefing, qualification: e.target.value })
+                            }
+                            required
+                            minLength={TAMANHO_MINIMO_DO_BRIEFING}
+                            maxLength={TAMANHO_MAXIMO_DO_BRIEFING}
+                            className="mt-1"
+                          />
+                        </div>
+                        <fieldset className="space-y-2">
+                          <legend className="text-sm font-medium">
+                            {t("O que esta campanha vende")}
+                          </legend>
+                          {OFERTAS_DA_CAMPANHA.map(
+                            (valor) => [valor, t(ROTULOS_DAS_OFERTAS[valor])] as const,
+                          ).map(([valor, rotulo]) => (
+                            <label key={valor} className="flex items-start gap-2 text-sm">
+                              <input
+                                type="checkbox"
+                                className="mt-1"
+                                checked={briefing.ofertas.includes(valor)}
+                                disabled={busy}
+                                onChange={() => {
+                                  const ligadas = briefing.ofertas.includes(valor)
+                                    ? briefing.ofertas.filter((o) => o !== valor)
+                                    : [...briefing.ofertas, valor];
+                                  // Pelo menos uma: desmarcar a última não vale.
+                                  if (ligadas.length === 0) return;
+                                  setBriefing({ ...briefing, ofertas: ligadas });
+                                }}
+                              />
+                              <span>{rotulo}</span>
+                            </label>
+                          ))}
+                        </fieldset>
+                        <p className="text-xs text-muted-foreground">
+                          {t(
+                            "Vale só para as empresas que ainda não foram abordadas. Quem já recebeu a primeira mensagem continua a conversa com o texto com que ela começou, e as prévias de quem está na fila são refeitas com o texto novo.",
+                          )}
+                        </p>
+                        {confirmandoBriefing ? (
+                          <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted p-3">
+                            <span className="text-xs">
+                              {t(
+                                "Confirmar a troca do texto desta campanha? Quem já foi abordado não recebe nada de novo por causa disso.",
+                              )}
+                            </span>
+                            <Button type="submit" disabled={busy || !briefingValido}>
+                              {t("Confirmar alteração")}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() => setConfirmandoBriefing(false)}
+                            >
+                              {t("Cancelar")}
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              disabled={busy || !briefingValido}
+                              onClick={() => setConfirmandoBriefing(true)}
+                            >
+                              {t("Salvar instrução e critérios")}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() => {
+                                setBriefing(null);
+                                setConfirmandoBriefing(false);
+                              }}
+                            >
+                              {t("Cancelar")}
+                            </Button>
+                          </div>
+                        )}
                       </form>
                     )}
                   </>
