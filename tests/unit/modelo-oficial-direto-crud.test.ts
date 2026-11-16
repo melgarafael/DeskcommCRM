@@ -624,6 +624,13 @@ describe("canal oficial direto — admin obrigatório e recusa legível da plata
 
     expect(res.status).toBe(403);
     await expect(res.json()).resolves.toMatchObject({ error: { code: "forbidden_role" } });
+    // E o papel exigido é `admin`, não "algum papel": um `orgOrFail` trocado por
+    // `agent` deixaria um convidado criar modelo na conta da empresa, e o 403
+    // acima continuaria verde porque o dublê nega qualquer papel.
+    expect(h.role).toHaveBeenCalledWith(
+      "admin",
+      expect.objectContaining({ resource: "channels_templates" }),
+    );
     // A prova que importa: o corpo era VÁLIDO e mesmo assim nada saiu daqui.
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(h.sync).not.toHaveBeenCalled();
