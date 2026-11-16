@@ -4628,7 +4628,7 @@ async function executarTurnoDoAgente(
               // Uma mensagem física só: ela é o envio inteiro. Marcar mantém o
               // `send_ledger` coerente no turno em que também houve um
               // `send_message` — linha sem marca de um job misto cairia na régua
-              // anterior e voltaria a atravessar o envio seguinte (#4370, 9406).
+              // anterior e voltaria a atravessar o envio seguinte (#4370, 9407).
               envioSeq: seq,
               conversationId: input.conversationId,
               body: finalBody,
@@ -5032,7 +5032,7 @@ async function executarTurnoDoAgente(
           // e foto com legenda continua sendo foto. `vozParaEsteTurno` já veio
           // resolvida (credencial + voice_id); `null` = toda razão de não falar, e
           // aí esta função devolve `null` e o texto segue em bolhas.
-          // `envioSeqDoEnvio` (#4370, migration 9406): a nota de voz é UMA
+          // `envioSeqDoEnvio` (#4370, migration 9407): a nota de voz é UMA
           // mensagem física, mas ela pertence ao envio do `send_message` que a
           // pediu — a fronteira vai junto para o ledger, senão o reprocesso desta
           // bolha cai na régua antiga (`seq >= $3`) sozinho, misturando turno.
@@ -5214,7 +5214,7 @@ async function executarTurnoDoAgente(
                 // número, e o call site estava cravando `1200 + rand*800` ignorando-a.
                 (pacingDoTurno?.knobs.throttleMs ?? 1200) +
                 Math.floor(Math.random() * (pacingDoTurno?.knobs.jitterMaxMs ?? 800));
-              // A FRONTEIRA do envio (#4370, migration 9406): o `seq` da 1ª bolha
+              // A FRONTEIRA do envio (#4370, migration 9407): o `seq` da 1ª bolha
               // que este `send_message` vai emitir. `seq` ainda não avançou (quem
               // avança é o `enviar` abaixo, uma vez por mensagem física), então
               // `seq + 1` é exatamente a primeira bolha — e é o MESMO número que a
@@ -7187,7 +7187,7 @@ async function executarTurnoDoAgente(
                   agentOperation,
                   seq,
                   // Uma mensagem física só: ela é o envio inteiro (ver o irmão
-                  // acima, no envio de template) — #4370, migration 9406.
+                  // acima, no envio de template) — #4370, migration 9407.
                   envioSeq: seq,
                   conversationId: input.conversationId,
                   body: finalBody,

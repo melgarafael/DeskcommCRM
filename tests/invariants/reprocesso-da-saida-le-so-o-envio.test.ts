@@ -110,7 +110,7 @@ beforeAll(async () => {
  * Escreve UM envio no ledger pela porta de produção (`pgSendLedger`), com as
  * bolhas na ordem em que o turno as emitiu.
  *
- * `comFronteira: false` grava como a linha era ANTES da 9406: sem `envio_seq`.
+ * `comFronteira: false` grava como a linha era ANTES da 9407: sem `envio_seq`.
  * É o que prova o recuo para a régua anterior.
  */
 async function escreveEnvio(opcoes: {

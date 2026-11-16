@@ -1,6 +1,6 @@
 -- manifest: **O `send_ledger` passa a guardar ONDE cada ENVIO começa (#4370).** `send_ledger.envio_seq smallint` = o `seq` da PRIMEIRA mensagem física do envio (`send_message` do turno) a que a linha pertence; as bolhas do envio levam o mesmo número. A consulta do reprocesso (`SQL_MENSAGEM_GUARDADA`) filtra por ele em vez de `seq >= $3`, que é o contador do TURNO inteiro e por isso concatenava o envio seguinte. Nulo em toda linha gravada antes desta migration e em todo caminho que não é o turno da prospecção (follow-up de mensagem única, voz, apresentação) — a consulta cai no comportamento anterior para essas linhas. Só acrescenta coluna: nenhum envio muda, e `unique (job_id, seq)` fica como está. Idempotente; espelho no apêndice do `supabase/baseline.sql`, antes da VARREDURA anon (0116).
 -- ============================================================================
--- 9406 — O LEDGER DO ENVIO PRECISA SABER ONDE O ENVIO TERMINA.
+-- 9407 — O LEDGER DO ENVIO PRECISA SABER ONDE O ENVIO TERMINA.
 --
 -- ## O defeito que esta coluna fecha
 --
@@ -64,9 +64,9 @@ alter table public.send_ledger
   add column if not exists envio_seq smallint;
 
 comment on column public.send_ledger.envio_seq is
-  'Migration 9406. O `seq` da PRIMEIRA mensagem física do ENVIO a que esta '
+  'Migration 9407. O `seq` da PRIMEIRA mensagem física do ENVIO a que esta '
   'linha pertence (#4370). O `seq` sozinho é o contador do TURNO inteiro e '
   'não separa dois envios do mesmo job; o reprocesso da saída configurável '
   'lê as bolhas por `envio_seq = <1ª bolha do envio>`. NULL = linha gravada '
-  'antes da 9406 (a consulta cai na régua anterior, `seq >= $3`) ou envio de '
+  'antes da 9407 (a consulta cai na régua anterior, `seq >= $3`) ou envio de '
   'mensagem única fora do turno da prospecção.';

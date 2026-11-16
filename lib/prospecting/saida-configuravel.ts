@@ -138,7 +138,7 @@ export const SQL_AMARRAR_RESERVA_A_MENSAGEM = `
  *
  * `$3` é o `seq` da PRIMEIRA bolha do envio — a âncora que o chamador já manda
  * (`mensagem.seq`) e que o escritor do ledger grava em `envio_seq` de TODAS as
- * bolhas do mesmo `send_message` (migration 9406).
+ * bolhas do mesmo `send_message` (migration 9407).
  *
  * Por que não `seq >= $3`: `seq` é o contador do TURNO (`let seq` no run de
  * `inbound-turn.ts`, +1 por mensagem física), então ele continua crescendo
@@ -151,7 +151,7 @@ export const SQL_AMARRAR_RESERVA_A_MENSAGEM = `
  *   - saída no 2º envio: o 1º passa a "achar" a frase do 2º, e o PARAR aparece
  *     duas vezes.
  *
- * A linha ANTIGA (sem `envio_seq`, gravada antes da 9406) não tem como dizer
+ * A linha ANTIGA (sem `envio_seq`, gravada antes da 9407) não tem como dizer
  * onde o envio termina — a informação não existia —, então ela cai na régua
  * anterior. Isso está escrito no PR e preso por teste; é o comportamento de
  * antes, não um novo.

@@ -19,7 +19,7 @@ export type SendOutcome =
  * `seq` é o contador do TURNO (quem manda no `channel.send` é quem sabe o
  * número), e `(jobId, seq)` é a identidade exactly-once da linha.
  *
- * `envioSeq` (migration 9406) é a FRONTEIRA do envio: o `seq` da primeira
+ * `envioSeq` (migration 9407) é a FRONTEIRA do envio: o `seq` da primeira
  * bolha do `send_message` a que esta linha pertence. O `seq` sozinho não separa
  * dois envios do mesmo job — ele cresce entre eles —, e o reprocesso da saída
  * configurável precisa das bolhas DESTE envio, não do turno (#4370, medido pelo
@@ -181,7 +181,7 @@ export function pgSendLedger(db: Queryable): LedgerStore {
   return {
     async create(i, hash) {
       const { rows } = await db.query<{ id: string }>(
-        // `envio_seq` na ESCRITA (#4370, migration 9406): a fronteira do envio
+        // `envio_seq` na ESCRITA (#4370, migration 9407): a fronteira do envio
         // tem de estar na linha antes do envio sair. Gravá-la depois deixaria o
         // envio interrompido por crash — justamente o que o reprocesso atende —
         // sem a marca, e o reprocesso voltaria a ler o turno inteiro.
