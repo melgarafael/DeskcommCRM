@@ -35,13 +35,39 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { cookieSecure } from "@/lib/supabase/cookie-secure";
 import { encryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { comIdDaRequisicao } from "@/lib/api/wrappers";
+import { respostaDePonte } from "@/lib/auth/ponte-de-volta";
+import { marcaDaSaida } from "@/lib/branding/saida";
 
 export const dynamic = "force-dynamic";
 
-function voltar(base: string, params: Record<string, string>, req: NextRequest): NextResponse {
+/**
+ * A volta para `/app/settings/conversoes` — por PONTE, não por 302 (issue #4335).
+ *
+ * Esta rota é o retorno de um consentimento do Google: a cadeia de navegação
+ * começou em `accounts.google.com` e o cookie de sessão do produto é
+ * `sameSite: "strict"`, que o navegador NÃO manda num initiator cross-site. Um
+ * 302 daqui não rompe a cadeia: o salto seguinte continua cross-site, o
+ * `proxy.ts` não enxerga usuário e manda a pessoa para `/login?next=…` — com a
+ * conexão já gravada e sem nunca ver a tela de conversões. É a mesma classe da
+ * #1646 (a volta da entrada com Google) e do irmão `agenda/google/callback`.
+ *
+ * A ponte devolve um documento same-origin com 200; o `location.replace` de
+ * dentro dele é disparado por um documento NOSSO, e o cookie Strict viaja. O
+ * `Set-Cookie` de limpeza do vínculo funciona igual num 200.
+ */
+async function voltar(base: string, params: Record<string, string>, req: NextRequest): Promise<NextResponse> {
   const url = new URL("/app/settings/conversoes", base || "http://localhost:3000");
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  const resposta = comIdDaRequisicao(NextResponse.redirect(url), req);
+  const marca = await marcaDaSaida(null);
+  const ponte = respostaDePonte(
+    `${url.pathname}${url.search}`,
+    marca.nome,
+    "Voltando para as suas conversões…",
+  );
+  const resposta = comIdDaRequisicao(
+    new NextResponse(ponte.body, { status: ponte.status, headers: ponte.headers }),
+    req,
+  );
   // Toda saída passa por aqui: o vínculo morre com o fluxo, sucesso ou erro.
   resposta.cookies.set(NOME_DO_VINCULO, "", {
     httpOnly: true,
@@ -59,7 +85,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   // 1. Cancelamento não é erro.
   if (url.searchParams.get("error")) {
-    return voltar(base, { erro: "cancelado" }, req);
+    return await voltar(base, { erro: "cancelado" }, req);
   }
 
   // 2. `state` antes do `code`. Sob `try`: a rota é pública e
@@ -74,9 +100,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     logger.error("[plataformas-de-anuncio.google.callback] state não verificável", {
       motivo: erro instanceof Error ? erro.message : String(erro),
     });
-    return voltar(base, { erro: "estado_invalido" }, req);
+    return await voltar(base, { erro: "estado_invalido" }, req);
   }
-  if (!estado) return voltar(base, { erro: "estado_invalido" }, req);
+  if (!estado) return await voltar(base, { erro: "estado_invalido" }, req);
 
   // O navegador que volta é o que saiu. Antes da queima do nonce: queimar
   // primeiro daria a quem tem um `state` vazado como derrubar a volta legítima.
@@ -84,17 +110,17 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     logger.warn("[plataformas-de-anuncio.google.callback] vínculo do navegador não confere", {
       organizationId: estado.organizationId,
     });
-    return voltar(base, { erro: "estado_invalido" }, req);
+    return await voltar(base, { erro: "estado_invalido" }, req);
   }
 
   const code = url.searchParams.get("code");
-  if (!code) return voltar(base, { erro: "sem_codigo" }, req);
+  if (!code) return await voltar(base, { erro: "sem_codigo" }, req);
 
   const app = configuracaoDoGoogleAds(estado.api);
-  if (!app) return voltar(base, { erro: "google_ads_nao_configurado" }, req);
+  if (!app) return await voltar(base, { erro: "google_ads_nao_configurado" }, req);
 
   if (!(await supportCallbackWriteAllowed(estado.organizationId, estado.userId, estado.authSessionId))) {
-    return voltar(base, { erro: "estado_invalido" }, req);
+    return await voltar(base, { erro: "estado_invalido" }, req);
   }
 
   const admin = createAdminClient();
@@ -111,7 +137,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     user_id: estado.userId,
     expira_em: new Date(estado.expiraEmMs).toISOString(),
   });
-  if (erroDoNonce) return voltar(base, { erro: "estado_invalido" }, req);
+  if (erroDoNonce) return await voltar(base, { erro: "estado_invalido" }, req);
 
   // 3. Troca — só depois do state confirmado e queimado.
   const leitura = await trocarCodigoPorToken(app, code, { agora: new Date() });
@@ -121,18 +147,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       motivo: leitura.motivo,
       detalhe: leitura.detalhe.slice(0, 300),
     });
-    return voltar(base, { erro: "troca_falhou" }, req);
+    return await voltar(base, { erro: "troca_falhou" }, req);
   }
   if (!leitura.token.refresh_token) {
     // Reconexão sem `prompt=consent` ter funcionado (extremamente raro, já que
     // sempre pedimos): sem refresh token não há o que gravar — a conexão
     // funcionaria por uma hora e morreria calada.
-    return voltar(base, { erro: "sem_refresh_token" }, req);
+    return await voltar(base, { erro: "sem_refresh_token" }, req);
   }
 
   // 4. Cifra antes do upsert.
   const cifrado = await encryptWebhookSecret(admin, leitura.token.refresh_token);
-  if (!cifrado) return voltar(base, { erro: "cifra_indisponivel" }, req);
+  if (!cifrado) return await voltar(base, { erro: "cifra_indisponivel" }, req);
 
   const { error } = await admin.from("ad_platform_connections").upsert(
     {
@@ -149,7 +175,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       organizationId: estado.organizationId,
       detalhe: error.message,
     });
-    return voltar(base, { erro: "erro_ao_gravar" }, req);
+    return await voltar(base, { erro: "erro_ao_gravar" }, req);
   }
 
   await audit({
@@ -161,5 +187,5 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     metadata: { platform: "google_ads" },
   });
 
-  return voltar(base, { ok: "1" }, req);
+  return await voltar(base, { ok: "1" }, req);
 }
