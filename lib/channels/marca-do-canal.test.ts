@@ -17,12 +17,12 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { PISOS, razaoDeContraste } from "@/lib/branding/contraste";
-import { marcaDoCanal, rotuloAcessivelDoCanal } from "@/lib/channels/marca-do-canal";
-import { channelBrand } from "@/lib/channels/presentation";
+import { CANAIS_NA_PALETA, descricaoComCanal, marcaDoCanal, rotuloAcessivelDoCanal } from "@/lib/channels/marca-do-canal";
+import { channelBrand, channelBrandDoAviso } from "@/lib/channels/presentation";
 
 const CSS = fs.readFileSync(path.join(process.cwd(), "app/globals.css"), "utf8");
 
-const CANAIS = ["whatsapp", "instagram", "messenger", "telegram"] as const;
+const CANAIS = ["whatsapp", "instagram", "messenger", "telegram", "email", "api_oficial"] as const;
 
 /** Lê o bloco cujo seletor está SOZINHO na linha — `includes` pegaria variantes. */
 function blocoDe(seletor: string): Map<string, string> {
@@ -78,6 +78,47 @@ describe("marcaDoCanal", () => {
       "telegram",
     );
     expect(channelBrand({ provider: "zernio_social", social_platform: "tiktok" })).toBe("unknown");
+  });
+});
+
+describe("channelBrandDoAviso", () => {
+  it("o número da API oficial sai como cano próprio no aviso; o logo da lista segue a rede", () => {
+    const oficial = { provider: "meta_cloud", social_platform: null };
+    expect(channelBrandDoAviso(oficial)).toBe("api_oficial");
+    // A lista de conversas continua dizendo "WhatsApp": ali se procura a
+    // conversa, não o cano.
+    expect(channelBrand(oficial)).toBe("whatsapp");
+    expect(channelBrandDoAviso({ provider: "waha" })).toBe("whatsapp");
+    expect(channelBrandDoAviso({ provider: "zernio_social", social_platform: "telegram" })).toBe("telegram");
+    expect(channelBrandDoAviso({ provider: "email" })).toBe("email");
+    expect(channelBrandDoAviso(null)).toBe("unknown");
+  });
+});
+
+describe("a paleta nomeada", () => {
+  it("cobre as origens do pedido e tem um neutro para o resto", () => {
+    // A paleta é curta e NOMEADA: a tela de Configurações e o aviso leem a
+    // mesma tabela — sem hex solto em componente.
+    expect([...CANAIS_NA_PALETA]).toEqual([
+      "whatsapp",
+      "telegram",
+      "instagram",
+      "email",
+      "api_oficial",
+      "messenger",
+    ]);
+    for (const canal of CANAIS_NA_PALETA) {
+      expect(marcaDoCanal(canal).cor).toMatch(/^var\(--color-canal-[a-z-]+\)$/);
+      expect(marcaDoCanal(canal).rotulo).not.toBe("Canal");
+    }
+    expect(marcaDoCanal("orkut").cor).toBe("var(--color-text-muted)");
+  });
+
+  it("o corpo do aviso nomeia o canal em texto; sem canal, não inventa prefixo", () => {
+    expect(descricaoComCanal("Foto", "whatsapp", "pt-BR")).toBe("WhatsApp · Foto");
+    expect(descricaoComCanal("Foto", "telegram", "es")).toBe("Telegram · Foto");
+    expect(descricaoComCanal("Foto", "orkut", "pt-BR")).toBe("Foto");
+    expect(descricaoComCanal("", "whatsapp", "pt-BR")).toBe("WhatsApp");
   });
 });
 

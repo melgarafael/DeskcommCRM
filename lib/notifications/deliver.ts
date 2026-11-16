@@ -1,5 +1,6 @@
 import { toast } from "sonner";
 
+import { descricaoComCanal } from "@/lib/channels/marca-do-canal";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { idiomaAtual } from "@/lib/i18n/IdiomaProvider";
 import { aderecosDoAviso } from "@/lib/notifications/marca-do-aviso";
@@ -25,6 +26,12 @@ export interface EntregarAvisoInput {
    * portanto não ganha marca — os toasts existentes seguem idênticos (#4094).
    */
   canal?: string;
+  /**
+   * A empresa quer o aviso na cor do canal? Ausente = sim (o padrão desde a
+   * #4094). Quem sabe a resposta é a rota `aviso-de-mensagem`, que a devolve
+   * junto com `canal`; um produtor que não a tem não muda o que já existia.
+   */
+  corPorCanal?: boolean;
   /** A opção da empresa, quando o produtor já a tem; senão é lida do servidor. */
   conteudo?: ConteudoNaTelaBloqueada;
 }
@@ -61,7 +68,9 @@ export function entregarAviso(input: EntregarAvisoInput): void {
     // produtor declarou de onde veio: `aderecosDoAviso` devolve `null` para os
     // outros avisos, e o toast sai como sempre saiu (#4094).
     toast(title, {
-      description: body,
+      // A cor nunca é o único sinal: o nome da rede abre o corpo do aviso
+      // ("WhatsApp · Foto"), em texto, para quem não distingue a faixa.
+      description: input.canal == null ? body : descricaoComCanal(body, input.canal, idioma),
       action: href
         ? {
             label: traduzir("Abrir conversa", idioma),
@@ -70,7 +79,7 @@ export function entregarAviso(input: EntregarAvisoInput): void {
             },
           }
         : undefined,
-      ...(aderecosDoAviso(input.canal) ?? {}),
+      ...(aderecosDoAviso(input.canal, input.corPorCanal !== false) ?? {}),
     });
   }
   if (canalLigado(input.category, "push")) {

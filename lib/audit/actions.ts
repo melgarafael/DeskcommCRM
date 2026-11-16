@@ -1472,6 +1472,9 @@ export const AUDIT_ACTIONS = [
   // O admin mudou o que os avisos do celular mostram com a tela bloqueada
   // (`settings.notificacoes`); metadata com o valor anterior e o novo.
   "notificacoes.tela_bloqueada_alterada",
+  // A empresa ligou/desligou a cor por canal no aviso de mensagem nova
+  // (`settings.notificacoes.cor_por_canal`, #4094); metadata com anterior/novo.
+  "notificacoes.cor_por_canal_alterada",
   // Inscrição de push removida no servidor: desligar os alertas, sair, ou
   // "sair de todos os dispositivos" (metadata.escopo diz qual).
   "notification_prefs.push_subscription_removed",

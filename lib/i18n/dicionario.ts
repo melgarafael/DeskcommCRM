@@ -21852,6 +21852,17 @@ export const DICIONARIO: Traducoes = {
   "Mensagem citada": { es: "Mensaje citado" },
   "Toque para carregar a original": { es: "Toque para cargar el original" },
   "A mensagem original não está mais na conversa.": { es: "El mensaje original ya no está en la conversación." },
+  // ---- Cor por canal no aviso de mensagem nova (#4094) --------------------
+  // Nomes de rede não se traduzem (WhatsApp é WhatsApp em espanhol); entram no
+  // dicionário assim mesmo porque a paleta de Configurações os lê por `t()`.
+  Telegram: { es: "Telegram" },
+  Instagram: { es: "Instagram" },
+  Messenger: { es: "Messenger" },
+  "Cor por canal no aviso de mensagem": { es: "Color por canal en el aviso de mensaje" },
+  "Com a cor ligada, o aviso de mensagem nova mostra uma faixa e o logo da rede na cor dela — WhatsApp verde, Telegram azul —, e o nome do canal abre o texto. Desligada, o aviso volta ao neutro de sempre.": {
+    es: "Con el color activado, el aviso de mensaje nuevo muestra una franja y el logo de la red en su color — WhatsApp verde, Telegram azul —, y el nombre del canal abre el texto. Desactivado, el aviso vuelve al neutro de siempre.",
+  },
+  "Demais canais: neutro": { es: "Demás canales: neutro" },
 };
 
 /**

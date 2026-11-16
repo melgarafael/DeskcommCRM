@@ -23,10 +23,15 @@ import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
-import { InstagramLogo, MessengerLogo, TelegramLogo, WhatsappLogo } from "@/lib/ui/icons";
+import { EnvelopeSimple, InstagramLogo, MessengerLogo, PlugsConnected, TelegramLogo, WhatsappLogo } from "@/lib/ui/icons";
 
-/** As redes que o produto sabe desenhar. Rede nova entra aqui E em `channelBrand`. */
-export type CanalConhecido = "whatsapp" | "instagram" | "messenger" | "telegram";
+/**
+ * As origens que o produto sabe desenhar. Rede nova entra aqui E em
+ * `channelBrand`; a API oficial entra como origem própria porque a pessoa
+ * distingue "meu número por QR" de "meu número pela API oficial" ao bater o
+ * olho — é a mesma rede, dois canos (ver `channelBrandDoAviso`).
+ */
+export type CanalConhecido = "whatsapp" | "instagram" | "messenger" | "telegram" | "email" | "api_oficial";
 
 export interface MarcaDeCanal {
   /** `unknown` é o fallback: sem ícone, cor neutra, rótulo genérico. */
@@ -37,6 +42,20 @@ export interface MarcaDeCanal {
   cor: string;
   Icone: PhosphorIcon | null;
 }
+
+/**
+ * A ordem em que a paleta aparece em Configurações › Notificações: as redes que
+ * mais chegam primeiro, o resto depois. A cor é a mesma da faixa do aviso — a
+ * tela que escolhe mostra o que vai ver.
+ */
+export const CANAIS_NA_PALETA: readonly CanalConhecido[] = [
+  "whatsapp",
+  "telegram",
+  "instagram",
+  "email",
+  "api_oficial",
+  "messenger",
+];
 
 const MARCAS: Record<CanalConhecido, MarcaDeCanal> = {
   whatsapp: {
@@ -62,6 +81,23 @@ const MARCAS: Record<CanalConhecido, MarcaDeCanal> = {
     rotulo: "Telegram",
     cor: "var(--color-canal-telegram)",
     Icone: TelegramLogo,
+  },
+  email: {
+    id: "email",
+    rotulo: "E-mail",
+    cor: "var(--color-canal-email)",
+    Icone: EnvelopeSimple,
+  },
+  /**
+   * O número conectado pela API oficial da Meta. A REDE é a mesma do WhatsApp,
+   * mas o cano é outro — e é o cano que a pessoa procura quando o aviso toca
+   * fora do horário da campanha, não do atendimento.
+   */
+  api_oficial: {
+    id: "api_oficial",
+    rotulo: "API oficial",
+    cor: "var(--color-canal-api-oficial)",
+    Icone: PlugsConnected,
   },
 };
 
@@ -95,4 +131,19 @@ export function rotuloAcessivelDoCanal(marca: MarcaDeCanal, idioma: Idioma): str
   const nome = traduzir(marca.rotulo, idioma);
   if (marca.id === "unknown") return nome;
   return `${traduzir("Canal", idioma)}: ${nome}`;
+}
+
+/**
+ * O corpo do aviso com o nome do canal na FRENTE ("WhatsApp · Foto").
+ *
+ * Cor não é o único sinal (WCAG 1.4.1): quem é daltônico, quem está no sol e
+ * quem ouve a tela precisa da mesma informação em palavra. O prefixo some
+ * quando o canal não é conhecido — "Canal · Foto" não informa nada e só
+ * empurraria a prévia para fora do toast.
+ */
+export function descricaoComCanal(body: string, canal: string | null | undefined, idioma: Idioma): string {
+  const marca = marcaDoCanal(canal);
+  if (marca.id === "unknown") return body;
+  const nome = traduzir(marca.rotulo, idioma);
+  return body ? `${nome} · ${body}` : nome;
 }
