@@ -157,6 +157,12 @@ export function RouterEditorClient({
     JSON.stringify(senderRoutes) !== JSON.stringify(router.config?.sender_routes ?? []);
   const [name, setName] = React.useState(router.name);
   const [isActive, setIsActive] = React.useState(router.is_active);
+  // #4363 — a frase que o CLIENTE lê quando o classificador troca quem atende.
+  // `""` = desligada (o padrão): a tela não precisa de um switch só para isto —
+  // campo vazio é a ausência da frase, e o PATCH grava `null`.
+  const [passagemAoCliente, setPassagemAoCliente] = React.useState(
+    router.passagem_ao_cliente ?? "",
+  );
   const [fallbackAgentId, setFallbackAgentId] = React.useState(router.fallback_agent_id ?? "");
   // Uma chave só para os dois campos: escolher modelo sem levar o provedor junto
   // manda o id para o provedor da ORG, e a classificação falha sempre.
@@ -229,6 +235,7 @@ export function RouterEditorClient({
         typeof router.config?.context_message_count === "number"
           ? router.config.context_message_count
           : 4,
+      passagemAoCliente: router.passagem_ao_cliente ?? "",
       members: members.map(camposDoMembro),
     }),
     [router, members],
@@ -243,6 +250,7 @@ export function RouterEditorClient({
     fallbackAgentId !== baseline.fallbackAgentId ||
     classifier !== baseline.classifier ||
     contextMessageCount !== baseline.contextMessageCount ||
+    passagemAoCliente !== baseline.passagemAoCliente ||
     JSON.stringify(currentMembers) !== JSON.stringify(baseline.members);
 
   const memberErrors = draftMembers.map((m) => {
@@ -303,13 +311,17 @@ export function RouterEditorClient({
         isActive !== baseline.isActive ||
         fallbackAgentId !== baseline.fallbackAgentId ||
         classifier !== baseline.classifier ||
-        contextMessageCount !== baseline.contextMessageCount
+        contextMessageCount !== baseline.contextMessageCount ||
+        passagemAoCliente !== baseline.passagemAoCliente
       ) {
         const [provider, modelId] = classifier.split("::");
         await updateRouter.mutateAsync({
           name,
           is_active: isActive,
           fallback_agent_id: fallbackAgentId || null,
+          // #4363 — campo vazio DESLIGA a frase (o PATCH grava `null`), que é o
+          // padrão do produto e o comportamento de antes desta mudança.
+          passagem_ao_cliente: passagemAoCliente.trim() === "" ? null : passagemAoCliente.trim(),
           // O PATCH mescla `config` com a existente, então mandar só estes dois
           // campos preserva sticky/min_confidence.
           config: {
@@ -486,6 +498,32 @@ export function RouterEditorClient({
                   ? t("Ativo — está roteando as conversas deste número")
                   : t("Inativo — não roteia nada")}
               </Label>
+            </div>
+          </Card>
+
+          <Card className="space-y-3 p-4">
+            <h3 className="text-sm font-medium">{t("Mensagem de passagem ao cliente")}</h3>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Sai uma vez, para o cliente, quando a intenção da mensagem dele leva a conversa para outro agente do roteador. Escreva no idioma em que vocês atendem.",
+              )}
+            </p>
+            <div className="space-y-1">
+              <Label htmlFor="router-passagem">{t("Frase enviada na troca")}</Label>
+              <Textarea
+                id="router-passagem"
+                value={passagemAoCliente}
+                onChange={(e) => setPassagemAoCliente(e.target.value)}
+                disabled={!canManage}
+                maxLength={1200}
+                rows={3}
+                placeholder={t("Ex.: Você está falando agora com o time de suporte. Já passei o seu caso para eles.")}
+              />
+              <p className="text-xs text-muted-foreground">
+                {passagemAoCliente.trim() === ""
+                  ? t("Desligada: o agente novo se apresenta com as palavras dele.")
+                  : t("Ligada: o cliente recebe esta frase uma vez, antes da resposta do agente novo.")}
+              </p>
             </div>
           </Card>
 
