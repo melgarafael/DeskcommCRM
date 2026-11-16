@@ -202,6 +202,9 @@ beforeEach(() => {
     proposals: [],
     trace: [],
     midia: [],
+    // #4129 — o material da empresa entra na mesma régua da mídia; a rota lê
+    // `result.materiais.some(...)`, então o dublê precisa da lista (vazia).
+    materiais: [],
   });
 });
 
@@ -239,6 +242,15 @@ describe("o fechamento do teste soma o custo do PRÓPRIO run (#4664)", () => {
     // A chave da consulta é o run — organização e id, os dois parâmetros.
     expect(pool.consultas).toHaveLength(1);
     expect(pool.consultas[0]?.params).toEqual([ORG, RUN_A]);
+    // O outro lado do elo: a rota precisa ENTREGAR o id do run ao motor da
+    // prévia — é ele que vira `llm_calls.preview_run_id` no INSERT da chamada.
+    // Sem esta metade, a soma acima não tem o que somar: o run fecharia em zero
+    // e o defeito do #4664 voltaria com outra roupa.
+    expect(mocks.preview).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ runId: RUN_A }),
+    );
   });
 
   it("dois testes simultâneos do mesmo agente não se misturam", async () => {
@@ -286,6 +298,12 @@ describe("o fechamento do teste soma o custo do PRÓPRIO run (#4664)", () => {
       expect(fechamento["tokens_in"]).not.toBe(850);
       expect(fechamento["cost_cents"]).not.toBe(15);
     }
+    // E cada execução levou o SEU id para o motor: os dois ids aparecem, um por
+    // chamada — nenhum POST roda com o run do outro.
+    const idsEntregues = mocks.preview.mock.calls
+      .map((c) => (c[2] as { runId?: string }).runId)
+      .sort();
+    expect(idsEntregues).toEqual([RUN_A, RUN_B].sort());
   });
 
   it("run sem chamada nenhuma fecha em ZERO, sem estourar", async () => {
