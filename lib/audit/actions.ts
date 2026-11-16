@@ -1631,6 +1631,11 @@ export const AUDIT_ACTIONS = [
   // A configuração da Operação do dia (etiquetas, etapas de proposta, hora do
   // relatório). Metadata leva o antes e o depois do bloco `operacao_do_dia`.
   "settings.operacao_do_dia_updated",
+  // Tabela de valores de negociação (#4612): criar a tabela e importar a
+  // planilha que o agente vai usar para negociar preço. Metadata da importação
+  // leva só contagens e a chave do arquivo — nunca preço de linha.
+  "tabela_de_valores.criada",
+  "tabela_de_valores.importada",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
