@@ -16,7 +16,8 @@
  *      parte dos softphones, e um marcador sem valor que virasse string vazia
  *      abriria o app de pedidos do cliente errado. Por isso o telefone é
  *      reduzido a `+` e dígitos, cada valor interpolado passa por
- *      `encodeURIComponent`, e marcador sem dado faz o botão NÃO aparecer.
+ *      `encodeURIComponent`, e marcador sem dado faz o botão NÃO ABRIR — ele
+ *      fica na faixa, desabilitado, dizendo qual campo falta.
  *
  * Os três exemplos do fim (`Ligar`, `Tirar pedido`, `Segunda via`) são o que a
  * issue pede como prova: o mesmo cenário que o vendedor descreveu, com o href
@@ -30,6 +31,8 @@ import {
   atalhosDoFunil,
   atalhosParaExibir,
   esquemaDoModelo,
+  itensDoAtalho,
+  marcadoresFaltantes,
   marcadoresDoModelo,
   motivoDaRecusaDoModelo,
   modeloAceito,
@@ -473,5 +476,63 @@ describe("discagem sem o código do país (#3487, 2ª fatia)", () => {
     // leitura — senão o jsonb antigo mudaria de forma ao ser lido e regravado.
     expect(atalhosDoFunil({ atalhos: [LIGAR] })[0]).toEqual(LIGAR);
     expect(atalhosDoFunil({ atalhos: [{ ...LIGAR, discagem: "xx" }] })[0]).toEqual(LIGAR);
+  });
+});
+
+describe("o atalho que existe e não abre — o motivo, não o silêncio", () => {
+  it("`marcadoresFaltantes` diz QUAIS campos faltam, e só eles", () => {
+    // O negócio tem `erp_id`; o contato do dublê não tem telefone.
+    expect(marcadoresFaltantes("tel:{{telefone}}", { lead: { campos: { erp_id: "X" } } })).toEqual([
+      "telefone",
+    ]);
+    expect(
+      marcadoresFaltantes("https://x.exemplo.com/?c={{erp_id}}&t={{telefone}}", DADOS),
+    ).toEqual([]);
+    // Modelo com o mesmo marcador duas vezes não repete a queixa.
+    expect(marcadoresFaltantes("https://x.exemplo.com/?a={{nome}}&b={{ nome }}", {})).toEqual([
+      "nome",
+    ]);
+  });
+
+  it("`itensDoAtalho` separa os que abrem dos que explicam, na ordem gravada", () => {
+    const itens = itensDoAtalho(
+      [
+        atalho({ rotulo: "Ligar", icone: "telefone", url: "tel:{{telefone}}" }),
+        atalho({ rotulo: "Pedido", icone: "carrinho", url: "https://p.exemplo.com/?c={{erp_id}}" }),
+        atalho({ rotulo: "Sem dado", icone: "link", url: "https://p.exemplo.com/?c={{nao_existe}}" }),
+      ],
+      { telefone: "+55 11 98888-7777", lead: { campos: { erp_id: "ERP-1" } } },
+    );
+
+    expect(itens.map((i) => [i.rotulo, i.disponivel])).toEqual([
+      ["Ligar", true],
+      ["Pedido", true],
+      ["Sem dado", false],
+    ]);
+    const semDado = itens[2];
+    expect(semDado.disponivel).toBe(false);
+    if (!semDado.disponivel) {
+      expect(semDado.motivo).toBe("dado");
+      expect(semDado.faltando).toEqual(["nao_existe"]);
+    }
+  });
+
+  it("modelo recusado é `endereco`, nunca `dado` — não há campo que conserte `javascript:`", () => {
+    const [item] = itensDoAtalho(
+      [atalho({ url: "javascript:alert({{erp_id}})" })],
+      { lead: { campos: { erp_id: "ERP-1" } } },
+    );
+    expect(item?.disponivel).toBe(false);
+    if (item && !item.disponivel) {
+      expect(item.motivo).toBe("endereco");
+      expect(item.faltando).toEqual([]);
+    }
+    // E continua fora do recorte que só devolve o que abre.
+    expect(atalhosParaExibir([atalho({ url: "javascript:alert(1)" })], DADOS)).toEqual([]);
+  });
+
+  it("atalho sem forma (rótulo vazio, ícone inventado) não vira botão mudo", () => {
+    expect(itensDoAtalho([{ rotulo: "", icone: "link", url: "tel:{{telefone}}" }], DADOS)).toEqual([]);
+    expect(itensDoAtalho([{ rotulo: "X", icone: "foguete", url: "tel:{{telefone}}" }], DADOS)).toEqual([]);
   });
 });

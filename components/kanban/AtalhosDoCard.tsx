@@ -7,7 +7,7 @@ import { useContact } from "@/hooks/contacts/useContact";
 import { useT } from "@/hooks/i18n/useT";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import {
-  atalhosParaExibir,
+  itensDoAtalho,
   type DadosDoAtalho,
   type IconeDeAtalho,
 } from "@/lib/leads/atalhos-do-card";
@@ -31,18 +31,20 @@ import {
  * ─── O que esta tela NÃO faz ────────────────────────────────────────────────
  *
  * Não valida esquema e não decide nada sobre segurança: quem faz isso é
- * `atalhosParaExibir` (`lib/leads/atalhos-do-card.ts`), a MESMA régua que a
+ * `itensDoAtalho` (`lib/leads/atalhos-do-card.ts`), a MESMA régua que a
  * gravação usa. Aqui só se desenha o que voltou de lá — e o que voltou de lá já
  * passou pela allowlist de esquema, pela codificação de cada valor e pela
  * resolução de todos os marcadores.
  *
- * ─── Sem dado, sem botão ────────────────────────────────────────────────────
+ * ─── Sem dado, o botão FICA — desabilitado e explicado ──────────────────────
  *
- * Botão desabilitado seria pior que botão nenhum: a faixa mostraria um "Ligar"
- * cinza para quem não tem telefone, e o operador clicaria nele procurando o
- * motivo. A issue é explícita — sem o dado, o botão NÃO aparece — e é por isso
- * que a lista é filtrada antes de qualquer renderização: quando nenhum atalho
- * sobra, o componente devolve `null` e a faixa não existe.
+ * A issue #3487 é literal: "variável sem valor deixa o botão desabilitado, com
+ * a dica 'falta o campo X'". É também a régua do resto do produto
+ * (`AbrirConversaDoLead`): botão que some faz o operador concluir que o atalho
+ * nunca foi configurado, e o chamado chega em quem configurou o funil. O que
+ * NÃO existe é `<a href>` sem todos os marcadores resolvidos: quando nenhum
+ * atalho abre, a faixa ainda aparece com os botões desabilitados; quando não há
+ * atalho CONFIGURADO, o componente devolve `null` e a faixa não existe.
  *
  * ─── O contato só é buscado quando há atalho ────────────────────────────────
  *
@@ -113,7 +115,7 @@ function ComContato({ atalhos, lead, contactId }: Props) {
     [contato, lead],
   );
 
-  const visiveis = useMemo(() => atalhosParaExibir(atalhos, dados), [atalhos, dados]);
+  const visiveis = useMemo(() => itensDoAtalho(atalhos, dados), [atalhos, dados]);
   if (visiveis.length === 0) return null;
 
   return (
@@ -124,6 +126,39 @@ function ComContato({ atalhos, lead, contactId }: Props) {
     >
       {visiveis.map((atalho) => {
         const Icone = ICONE_DO_ATALHO[atalho.icone];
+        if (!atalho.disponivel) {
+          /**
+           * BOTÃO QUE NÃO ABRE, DIZENDO POR QUÊ (issue #3487).
+           *
+           * Some o `<a>` — não existe href, então não existe link quebrado nem
+           * `tel:` sem número — mas o botão FICA, desabilitado, com o motivo ao
+           * lado do rótulo. A régua é a mesma de `AbrirConversaDoLead`: o
+           * motivo invisível é o que faz o operador achar que o sistema
+           * quebrou, ou que o atalho nunca foi configurado.
+           */
+          const motivo =
+            atalho.motivo === "endereco"
+              ? t("O endereço deste atalho não é aceito.")
+              : t("Falta o campo {campos}").replace("{campos}", atalho.faltando.join(", "));
+          return (
+            <li key={`${atalho.rotulo}-indisponivel`}>
+              <button
+                type="button"
+                disabled
+                title={motivo}
+                aria-disabled="true"
+                data-atalho-indisponivel={atalho.icone}
+                className="inline-flex max-w-full cursor-not-allowed items-center gap-1 rounded-md border border-dashed border-border px-2 py-1 text-xs text-text-muted opacity-70"
+              >
+                <Icone size={12} weight="regular" aria-hidden className="shrink-0" />
+                <span className="truncate">{atalho.rotulo}</span>
+                <span className="truncate text-[11px]" data-motivo>
+                  {motivo}
+                </span>
+              </button>
+            </li>
+          );
+        }
         return (
           <li key={`${atalho.rotulo}-${atalho.href}`}>
             <a

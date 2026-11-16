@@ -101,13 +101,17 @@ describe("AtalhosDoNegocio — a faixa de botões do card", () => {
         contactId="contato-1"
       />,
     );
+    // O atalho FOI configurado, então a faixa existe — mas sem `<a href>`:
+    // o que se desenha é um botão desabilitado dizendo que o endereço não é
+    // aceito. Um link ausente é a garantia; o botão é a explicação.
     expect(container.querySelector("a")).toBeNull();
-    expect(screen.queryByTestId("atalhos-do-negocio")).toBeNull();
+    expect(screen.getByTestId("atalhos-do-negocio")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Armadilha/ })).toBeDisabled();
   });
 
-  it("botão sem o dado NÃO aparece — nem desabilitado, nem vazio", () => {
-    // Contato sem telefone: `Ligar` some; `Tirar pedido` fica, porque o ERP está
-    // no negócio.
+  it("sem telefone, `Ligar` não vira link — fica desabilitado com o motivo", () => {
+    // Contato sem telefone: `Ligar` não abre (não existe `tel:` sem número) e
+    // `Tirar pedido` abre normalmente, porque o ERP está no negócio.
     contato.atual = {
       id: "contato-1",
       name: "Maria Silva",
@@ -119,10 +123,11 @@ describe("AtalhosDoNegocio — a faixa de botões do card", () => {
     render(<AtalhosDoNegocio atalhos={ATALHOS} lead={NEGOCIO} contactId="contato-1" />);
 
     expect(screen.queryByRole("link", { name: /Ligar/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /Ligar/ })).toBeDisabled();
     expect(screen.getByRole("link", { name: /Tirar pedido/ })).toBeInTheDocument();
   });
 
-  it("sem NENHUM dado resolvível, a faixa não existe no DOM", () => {
+  it("sem NENHUM dado resolvível, nenhum link nasce — só botões explicados", () => {
     contato.atual = {
       id: "contato-1",
       name: null,
@@ -134,8 +139,10 @@ describe("AtalhosDoNegocio — a faixa de botões do card", () => {
     const { container } = render(
       <AtalhosDoNegocio atalhos={ATALHOS} lead={null} contactId="contato-1" />,
     );
+    // A faixa existe (há atalho configurado) e não tem um único `<a href>`.
     expect(container.querySelector("a")).toBeNull();
-    expect(container.innerHTML).toBe("");
+    expect(screen.getByTestId("atalhos-do-negocio")).toBeInTheDocument();
+    expect(screen.getAllByRole("button")).toHaveLength(2);
   });
 
   it("funil sem atalho não busca contato nem desenha nada", () => {
@@ -146,7 +153,7 @@ describe("AtalhosDoNegocio — a faixa de botões do card", () => {
     expect(container.innerHTML).toBe("");
   });
 
-  it("`{{documento}}` vem do campo do contato; sem ele o botão não aparece", () => {
+  it("`{{documento}}` vem do campo do contato; sem ele o botão não abre", () => {
     comContato({ cpf: "123.456.789-09" });
     const boleto = [
       { rotulo: "Segunda via", icone: "boleto" as const, url: "https://fin.exemplo.com/?doc={{documento}}" },

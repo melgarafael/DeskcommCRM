@@ -21152,6 +21152,9 @@ export const DICIONARIO: Traducoes = {
     es: "El dominio tiene que ser fijo: usa marcadores solo después de la primera /.",
   },
   "O limite é de seis atalhos por funil.": { es: "El límite es de seis accesos por embudo." },
+  // O motivo do botão que NÃO abre (#3487): o atalho existe, o dado é que falta.
+  "Falta o campo {campos}": { es: "Falta el campo {campos}" },
+  "O endereço deste atalho não é aceito.": { es: "La dirección de este acceso no es válida." },
   // A FORMA do telefone (2ª fatia da #3487): só aparece no atalho `tel:`.
   "Discagem do atalho": { es: "Marcación del acceso" },
   "Com o código do país": { es: "Con el código de país" },
