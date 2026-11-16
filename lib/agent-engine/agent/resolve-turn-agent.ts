@@ -172,6 +172,13 @@ export interface TurnAgentResolution {
    * (`avisarClienteDaTrocaDeAgente`).
    */
   passagemAoClienteDoRouter?: string;
+  /**
+   * #4750 — o TERCEIRO modo: `config.passagem_silenciosa` ligado. Presente SÓ
+   * no turno da troca, como a frase, e o turno o consulta para (1) não enviar
+   * NADA ao cliente e (2) pedir ao agente novo a continuidade sem apresentação.
+   * Ausente = o comportamento de antes.
+   */
+  passagemSilenciosaDoRouter?: boolean;
 }
 
 export interface ResolveTurnAgentDeps {
@@ -676,6 +683,13 @@ export async function resolveTurnAgent(
         outcome === 'reclassified' && input.stickyAgentId !== null
           ? router.passagemAoCliente
           : undefined;
+      // #4750 — o TERCEIRO modo, do mesmo turno: silencioso não envia nada e
+      // muda a instrução do bloco. Presente SÓ na troca, como a frase (_e o
+      // silêncio vence a frase_: ver `textoDaPassagemAoCliente`).
+      const passagemSilenciosaDoRouter =
+        outcome === 'reclassified' && input.stickyAgentId !== null
+          ? router.passagemSilenciosa === true
+          : undefined;
       return {
         config,
         routerId: router.id,
@@ -686,6 +700,7 @@ export async function resolveTurnAgent(
         ...(passagemAoClienteDoRouter !== undefined && passagemAoClienteDoRouter !== null
           ? { passagemAoClienteDoRouter }
           : {}),
+        ...(passagemSilenciosaDoRouter !== undefined ? { passagemSilenciosaDoRouter } : {}),
         // Só a intenção casada AGORA começa roteiro. Sticky é o mesmo assunto da
         // conversa em curso: devolvê-lo recomeçaria o roteiro a cada turno — e,
         // depois de concluído, de novo, para sempre.
