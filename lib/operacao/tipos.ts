@@ -61,8 +61,12 @@ export interface LinhaDeConversa {
   /** Desde quando o cliente espera resposta; `null` quando a última palavra é nossa. */
   esperando_desde: string | null;
   tags: string[];
-  /** Só nas linhas de produto: o que a busca da IA registrou na conversa naquele dia. */
-  produtos?: { termos: string[]; encontrados: string[] };
+  /**
+   * Só nas linhas de produto: o que a busca da IA registrou na conversa naquele
+   * dia. `termos` é o que o cliente escreveu — só na leitura ao vivo, nunca no
+   * relatório guardado; `encontrados` são nomes do catálogo.
+   */
+  produtos?: { termos?: string[]; encontrados: string[] };
 }
 
 export interface LinhaDeNegocio {
@@ -166,6 +170,12 @@ export interface OperacaoDoDia {
     canais: CanalForaDoAr[];
     avisos: AvisoAberto[];
   };
+  /**
+   * Leituras AO VIVO que falharam ao hidratar um relatório guardado
+   * (`hidratar`): os campos pessoais delas ficam ausentes e a tela diz "não foi
+   * possível ler agora", que é diferente de "não registrado".
+   */
+  leitura_falhou?: Array<"contatos" | "conversas" | "passagens" | "tarefas" | "negocios" | "nomes">;
   /** Seções que bateram no teto de linhas: a lista mostrada não é a inteira. */
   truncado: string[];
 }

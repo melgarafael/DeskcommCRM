@@ -28,6 +28,7 @@ import { logger } from "@/lib/logger";
 
 import {
   clienteFalouPorUltimo,
+  corteDoDia,
   type ConfiguracaoDaOperacao,
   esperaUmaPessoa,
   esperandoDesde,
@@ -204,6 +205,11 @@ export async function montarOperacaoDoDia(entrada: EntradaDaOperacao): Promise<O
   const ini = inicio.toISOString();
   const fimIso = fim.toISOString();
   const truncado: string[] = [];
+  // O ESTADO DO MOMENTO (quem espera, o que está em proposta, mensagens presas,
+  // canais fora do ar, avisos abertos) é o de AGORA, não o do dia. Só se lê numa
+  // leitura feita DENTRO do dia; num dia que já acabou as seções saem vazias e a
+  // tela diz por quê (`corteDoDia`, a mesma régua).
+  const estadoDoMomento = corteDoDia({ inicio: ini, fim: fimIso, lido_em: agora.toISOString() }).estadoDoMomento;
   const tetado = (secao: string, n: number, teto = TETO_POR_SECAO) => {
     if (n >= teto) truncado.push(secao);
   };
@@ -231,7 +237,7 @@ export async function montarOperacaoDoDia(entrada: EntradaDaOperacao): Promise<O
   }
 
   // ── 2. Quem espera uma pessoa AGORA ──
-  const candidatasDeEspera = exigir<ConversaLida[]>(
+  const candidatasDeEspera: ConversaLida[] = !estadoDoMomento ? [] : exigir<ConversaLida[]>(
     "aguardando",
     await db
       .from("conversations")
@@ -347,7 +353,7 @@ export async function montarOperacaoDoDia(entrada: EntradaDaOperacao): Promise<O
   const nomeDaEtapa = new Map(etapas.map((e) => [e.id, e.name]));
   const etapasDeProposta = etapas.filter((e) => etapaEhDeProposta(e.name, config.etapas_de_proposta)).map((e) => e.id);
   let emProposta: NegocioLido[] = [];
-  if (etapasDeProposta.length > 0) {
+  if (estadoDoMomento && etapasDeProposta.length > 0) {
     emProposta = exigir<NegocioLido[]>(
       "negócios em proposta",
       await db
@@ -393,7 +399,7 @@ export async function montarOperacaoDoDia(entrada: EntradaDaOperacao): Promise<O
       .order("created_at", { ascending: false })
       .limit(TETO_POR_SECAO),
   );
-  const presas = exigir<MensagemLida[]>(
+  const presas: MensagemLida[] = !estadoDoMomento ? [] : exigir<MensagemLida[]>(
     "mensagens presas",
     await db
       .from("messages")
@@ -424,7 +430,7 @@ export async function montarOperacaoDoDia(entrada: EntradaDaOperacao): Promise<O
   );
   tetado("execucoes_da_ia", execucoesComErro.length);
 
-  const sessoesForaDoAr = exigir<SessaoLida[]>(
+  const sessoesForaDoAr: SessaoLida[] = !estadoDoMomento ? [] : exigir<SessaoLida[]>(
     "canais fora do ar",
     await db
       .from("channel_sessions")
@@ -435,7 +441,8 @@ export async function montarOperacaoDoDia(entrada: EntradaDaOperacao): Promise<O
       .limit(TETO_POR_SECAO),
   );
 
-  const avisosLidos = exigir<Array<{ id: string; kind: string; title: string; severity: string; created_at: string }>>(
+  type AvisoLido = { id: string; kind: string; title: string; severity: string; created_at: string };
+  const avisosLidos: AvisoLido[] = !estadoDoMomento ? [] : exigir<AvisoLido[]>(
     "avisos abertos",
     await db
       .from("agent_inbox_items")

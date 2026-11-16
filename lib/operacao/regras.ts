@@ -350,25 +350,106 @@ export function juntarProdutos(a: ProdutosPedidos, b: ProdutosPedidos): Produtos
 
 // ─── QUANDO O CRON GERA O RELATÓRIO ─────────────────────────────────────────
 
-export type DecisaoDoCron =
-  | { gerar: true; dia: string }
-  | { gerar: false; motivo: "desligado" | "antes_da_hora" | "ja_existe" };
+/** O que já está gravado para um dia: quem gerou e quando. */
+export interface RelatorioExistente {
+  gerado_por: "cron" | "usuario";
+  gerado_em: string;
+}
 
 /**
- * O cron roda a cada 15 min. Gera quando o relatório está ligado, a hora local
- * já passou da hora marcada e ainda não há linha para o dia LOCAL. A unicidade
- * `(organization_id, dia)` no banco é o que segura a corrida — esta decisão
- * só evita trabalho à toa.
+ * Uma geração que o cron deve fazer.
+ *
+ *   - `dia_perdido`: o dia local ANTERIOR ficou sem relatório (a instalação
+ *     estava parada na hora, ou o cron falhou). Ele é gerado agora, já fechado
+ *     — dia inteiro —, e só se ainda não existe linha (`on conflict do nothing`).
+ *   - `hora_marcada`: hoje, a partir da hora marcada, sem linha.
+ *   - `refazer_apos_manual`: hoje já tem linha, mas foi o botão "Gerar agora"
+ *     ANTES da hora marcada. O manual não cancela o automático: o cron regera
+ *     uma vez, por cima, e a linha passa a `gerado_por = 'cron'` — não há laço,
+ *     porque a condição deixa de valer.
+ */
+export interface AcaoDoCron {
+  dia: string;
+  motivo: "dia_perdido" | "hora_marcada" | "refazer_apos_manual";
+  /** Para `refazer_apos_manual`: só sobrescreve a linha manual gravada antes deste instante. */
+  substituirManualAntesDe?: string;
+}
+
+export type DecisaoDoCron =
+  | { acoes: AcaoDoCron[]; motivo?: undefined }
+  | { acoes: []; motivo: "desligado" | "antes_da_hora" | "ja_existe" };
+
+/** O dia de calendário anterior. */
+export function diaAnterior(dia: string): string {
+  const m = DIA_ISO.exec(dia);
+  if (!m) throw new Error(`dia inválido: ${dia}`);
+  return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) - 1)).toISOString().slice(0, 10);
+}
+
+/** O instante da hora marcada, num dia, no fuso da organização. */
+export function instanteDaHoraMarcada(dia: string, hora: number, fuso: string): Date {
+  const [ano, mes, d] = dia.split("-").map(Number) as [number, number, number];
+  return instanteDe({ ano, mes, dia: d, hora }, fusoUtilizavel(fuso));
+}
+
+/**
+ * O cron roda a cada 15 min e decide, por organização, o que gerar AGORA.
+ * A unicidade `(organization_id, dia)` no banco é o que segura a corrida — esta
+ * decisão só evita trabalho à toa.
+ *
+ * `existentes` traz as linhas de HOJE e de ONTEM (dias locais). `criadaEm` é a
+ * criação da organização: o dia anterior só é recuperado se a organização já
+ * existia nele — uma instalação nova não ganha o relatório de um dia em que
+ * não operava.
  */
 export function decisaoDoCron(input: {
   agora: Date;
   fuso: string;
   config: ConfiguracaoDaOperacao["relatorio"];
-  diasJaGerados: ReadonlySet<string>;
+  existentes: ReadonlyMap<string, RelatorioExistente>;
+  criadaEm?: string | null;
 }): DecisaoDoCron {
-  if (!input.config.ligado) return { gerar: false, motivo: "desligado" };
-  if (horaNoFuso(input.agora, input.fuso) < input.config.hora) return { gerar: false, motivo: "antes_da_hora" };
-  const dia = diaNoFuso(input.agora, input.fuso);
-  if (input.diasJaGerados.has(dia)) return { gerar: false, motivo: "ja_existe" };
-  return { gerar: true, dia };
+  if (!input.config.ligado) return { acoes: [], motivo: "desligado" };
+  const acoes: AcaoDoCron[] = [];
+  const hoje = diaNoFuso(input.agora, input.fuso);
+  const ontem = diaAnterior(hoje);
+
+  const fimDeOntem = limitesDoDia(ontem, input.fuso).fim;
+  const existiaOntem = !input.criadaEm || new Date(input.criadaEm).getTime() < fimDeOntem.getTime();
+  if (existiaOntem && !input.existentes.has(ontem)) acoes.push({ dia: ontem, motivo: "dia_perdido" });
+
+  const marcada = instanteDaHoraMarcada(hoje, input.config.hora, input.fuso);
+  if (input.agora.getTime() >= marcada.getTime()) {
+    const deHoje = input.existentes.get(hoje);
+    if (!deHoje) acoes.push({ dia: hoje, motivo: "hora_marcada" });
+    else if (deHoje.gerado_por === "usuario" && new Date(deHoje.gerado_em).getTime() < marcada.getTime()) {
+      acoes.push({ dia: hoje, motivo: "refazer_apos_manual", substituirManualAntesDe: marcada.toISOString() });
+    }
+  }
+
+  if (acoes.length > 0) return { acoes };
+  return { acoes: [], motivo: input.agora.getTime() < marcada.getTime() ? "antes_da_hora" : "ja_existe" };
+}
+
+// ─── O CORTE DO DIA E O ESTADO DO MOMENTO ───────────────────────────────────
+
+/**
+ * Até onde a leitura alcançou o dia. Uma leitura feita DEPOIS do fim do dia
+ * (um dia passado, o relatório de recuperação) cobre o dia inteiro; feita
+ * dentro dele, vai de 00:00 até o instante da leitura.
+ *
+ * É também a régua do ESTADO DO MOMENTO: quem espera uma pessoa, o que está em
+ * proposta, as mensagens presas, os canais fora do ar e os avisos abertos são
+ * o estado de AGORA, não do dia. Eles só fazem sentido numa leitura feita
+ * DENTRO do dia — num dia que já acabou, mostrar o estado de hoje como se fosse
+ * o daquele dia seria mentira.
+ */
+export function corteDoDia(c: { inicio: string; fim: string; lido_em: string }): {
+  diaInteiro: boolean;
+  ate: string;
+  estadoDoMomento: boolean;
+} {
+  const lido = new Date(c.lido_em).getTime();
+  const diaInteiro = lido >= new Date(c.fim).getTime();
+  return { diaInteiro, ate: diaInteiro ? c.fim : c.lido_em, estadoDoMomento: !diaInteiro };
 }

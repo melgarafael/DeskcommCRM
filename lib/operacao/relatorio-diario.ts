@@ -72,6 +72,13 @@ export async function gerarRelatorioDiario(input: {
   geradoPor: "cron" | "usuario";
   /** `true` regera o dia (on conflict do update); `false` só cria (on conflict do nothing). */
   substituir: boolean;
+  /**
+   * Regerar por cima de uma linha MANUAL gravada antes deste instante (a hora
+   * marcada de hoje): `update` condicionado a `gerado_por = 'usuario'` e
+   * `gerado_em <` o instante. Se alguém regerou depois da hora, ou outra rodada
+   * já regerou, o update não acha linha e nada é gravado — sem laço.
+   */
+  substituirManualAntesDe?: string;
   contexto?: ContextoDaOrganizacao;
   agora?: Date;
 }): Promise<RelatorioGerado> {
@@ -95,6 +102,19 @@ export async function gerarRelatorioDiario(input: {
     gerado_por: input.geradoPor,
     conteudo: congelar(conteudo),
   };
+  if (input.substituirManualAntesDe) {
+    const { data, error } = await admin
+      .from("relatorios_operacao_diarios")
+      .update({ gerado_em: linha.gerado_em, gerado_por: linha.gerado_por, fuso: linha.fuso, conteudo: linha.conteudo })
+      .eq("organization_id", orgId)
+      .eq("dia", dia)
+      .eq("gerado_por", "usuario")
+      .lt("gerado_em", input.substituirManualAntesDe)
+      .select("id");
+    if (error) throw new Error(`relatório não regerado: ${error.message}`);
+    const gravadas = (data ?? []) as Array<{ id: string }>;
+    return { gravou: gravadas.length > 0, id: gravadas[0]?.id ?? null, conteudo };
+  }
   const { data, error } = await admin
     // O nome LITERAL, e não a constante: tests/invariants/on-conflict-aponta-para-constraint-real.test.ts
     // acha a tabela do upsert pelo `.from("...")` mais próximo.

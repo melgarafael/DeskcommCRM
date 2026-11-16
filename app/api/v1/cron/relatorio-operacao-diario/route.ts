@@ -4,22 +4,30 @@
  * ═══ POR QUE DE QUINZE EM QUINZE MINUTOS ═══
  *
  * "21h" é a hora local de cada organização (`settings.operacao_do_dia.relatorio.hora`,
- * padrão 21), no fuso dela (`organizations.timezone`). A rodada gera para quem
- * já passou da hora e ainda não tem linha para o dia LOCAL de hoje
- * (`decisaoDoCron`). Se a instalação estava parada às 21h, o relatório sai na
- * primeira rodada depois — e não amanhã.
+ * padrão 21), no fuso dela (`organizations.timezone`). Cada rodada pergunta a
+ * `decisaoDoCron`, por organização, três coisas:
+ *
+ *   - ONTEM ficou sem relatório? (a instalação estava parada na hora, ou a
+ *     rodada falhou) — gera agora o dia de ontem, já fechado: DIA INTEIRO, sem
+ *     o estado do momento. Não espera a hora de hoje: o dia perdido sai na
+ *     primeira rodada em que a instalação estiver de pé.
+ *   - Hoje já passou da hora e não tem linha? — gera o de hoje.
+ *   - Hoje tem linha, mas do botão "Gerar agora" ANTES da hora? — regera uma
+ *     vez por cima (a linha passa a `gerado_por = 'cron'`, e a condição deixa
+ *     de valer: sem laço). O manual não cancela o automático.
  *
  * ═══ IDEMPOTENTE ═══
  *
- * `insert ... on conflict (organization_id, dia) do nothing`: duas rodadas
- * sobrepostas, uma réplica a mais ou um reenvio geram UMA linha. Quem chegou
- * depois volta `gravou: false` e não audita.
+ * Criar é `insert ... on conflict (organization_id, dia) do nothing`; regerar
+ * por cima do manual é um `update` condicionado à linha AINDA ser manual e de
+ * antes da hora. Duas rodadas sobrepostas, uma réplica a mais ou um reenvio
+ * gravam UMA vez — quem chega depois volta `gravou: false` e não audita.
  *
  * ═══ AUDITORIA SÓ QUANDO HOUVE EFEITO ═══
  *
- * A rodada que não gerou nada (a maioria: 95 de cada 96 batidas do dia) não
- * escreve linha. Cada relatório CRIADO deixa uma `operacao.relatorio_gerado`,
- * com o dia e as contagens — nunca nome de contato.
+ * A rodada que não gerou nada não escreve linha. Cada relatório GRAVADO deixa
+ * uma `operacao.relatorio_gerado`, com o dia, o motivo e as contagens — nunca
+ * nome de contato.
  */
 import { randomUUID } from "node:crypto";
 
@@ -30,7 +38,7 @@ import { audit } from "@/lib/audit";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 import { logger } from "@/lib/logger";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
-import { decisaoDoCron, diaNoFuso, lerConfiguracao } from "@/lib/operacao/regras";
+import { decisaoDoCron, diaAnterior, diaNoFuso, lerConfiguracao, type RelatorioExistente } from "@/lib/operacao/regras";
 import { gerarRelatorioDiario, TABELA_DOS_RELATORIOS } from "@/lib/operacao/relatorio-diario";
 import { ehOperante, STATUS_OPERANTE } from "@/lib/organizacao/operante";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -52,7 +60,7 @@ async function handle(req: NextRequest): Promise<Response> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("organizations")
-    .select("id, status, timezone, locale, settings")
+    .select("id, status, timezone, locale, settings, created_at")
     .eq("status", STATUS_OPERANTE)
     .order("id", { ascending: true })
     .limit(TETO_DE_ORGANIZACOES);
@@ -69,26 +77,29 @@ async function handle(req: NextRequest): Promise<Response> {
     timezone: string | null;
     locale: string | null;
     settings: unknown;
+    created_at: string | null;
   }>)
     .filter((o) => ehOperante(o.status))
     .map((o) => {
       const fuso = fusoUtilizavel(o.timezone);
+      const hoje = diaNoFuso(agora, fuso);
       return {
         id: o.id,
+        criadaEm: o.created_at,
         contexto: { fuso, idioma: normalizarIdioma(o.locale), config: lerConfiguracao(o.settings) },
-        diaLocal: diaNoFuso(agora, fuso),
+        dias: [hoje, diaAnterior(hoje)],
       };
     });
 
-  // Os relatórios que já existem para o dia local de cada organização.
-  const jaGerados = new Map<string, Set<string>>();
+  // Os relatórios que já existem para HOJE e ONTEM (dias locais) de cada organização.
+  const existentes = new Map<string, Map<string, RelatorioExistente>>();
   const ligadas = orgs.filter((o) => o.contexto.config.relatorio.ligado);
   for (let i = 0; i < ligadas.length; i += 200) {
     const lote = ligadas.slice(i, i + 200);
-    const dias = [...new Set(lote.map((o) => o.diaLocal))];
-    const { data: existentes, error: erroExistentes } = await admin
+    const dias = [...new Set(lote.flatMap((o) => o.dias))];
+    const { data: linhas, error: erroExistentes } = await admin
       .from(TABELA_DOS_RELATORIOS)
-      .select("organization_id, dia")
+      .select("organization_id, dia, gerado_por, gerado_em")
       .in("organization_id", lote.map((o) => o.id))
       .in("dia", dias);
     if (erroExistentes) {
@@ -98,14 +109,14 @@ async function handle(req: NextRequest): Promise<Response> {
       });
       return fail("internal_error", "Falha ao ler relatórios.", 500, { requestId });
     }
-    for (const r of (existentes ?? []) as Array<{ organization_id: string; dia: string }>) {
-      const set = jaGerados.get(r.organization_id) ?? new Set<string>();
-      set.add(r.dia);
-      jaGerados.set(r.organization_id, set);
+    for (const r of (linhas ?? []) as Array<{ organization_id: string; dia: string } & RelatorioExistente>) {
+      const porDia = existentes.get(r.organization_id) ?? new Map<string, RelatorioExistente>();
+      porDia.set(r.dia, { gerado_por: r.gerado_por, gerado_em: r.gerado_em });
+      existentes.set(r.organization_id, porDia);
     }
   }
 
-  let criados = 0;
+  let gravados = 0;
   let tentativas = 0;
   const desfechos: Record<string, number> = {};
   const contar = (chave: string) => {
@@ -117,61 +128,68 @@ async function handle(req: NextRequest): Promise<Response> {
       agora,
       fuso: org.contexto.fuso,
       config: org.contexto.config.relatorio,
-      diasJaGerados: jaGerados.get(org.id) ?? new Set(),
+      existentes: existentes.get(org.id) ?? new Map(),
+      criadaEm: org.criadaEm,
     });
-    if (!decisao.gerar) {
+    if (decisao.motivo) {
       contar(decisao.motivo);
       continue;
     }
-    if (tentativas >= TETO_DE_GERACOES) {
-      contar("adiado_pelo_teto");
-      continue;
-    }
-    tentativas += 1;
-    try {
-      const r = await gerarRelatorioDiario({
-        admin,
-        orgId: org.id,
-        dia: decisao.dia,
-        geradoPor: "cron",
-        substituir: false,
-        contexto: org.contexto,
-        agora,
-      });
-      if (r.gravou) {
-        criados += 1;
-        contar("criado");
-        void audit({
-          action: "operacao.relatorio_gerado",
-          organizationId: org.id,
-          actorUserId: null,
-          bypassedRls: true,
-          resourceType: "relatorio_operacao_diario",
-          resourceId: r.id,
-          requestId,
-          metadata: {
-            dia: decisao.dia,
-            gerado_por: "cron",
-            novas: r.conteudo.contadores.novas.total,
-            com_entrada: r.conteudo.contadores.com_entrada.total,
-            aguardando: r.conteudo.aguardando.length,
-          },
-        });
-      } else {
-        contar("ja_gravado_por_outra_rodada");
+    for (const acao of decisao.acoes) {
+      if (tentativas >= TETO_DE_GERACOES) {
+        contar("adiado_pelo_teto");
+        continue;
       }
-    } catch (err) {
-      // Uma organização com defeito não pode derrubar o relatório das outras.
-      contar("erro");
-      logger.error("[relatorio-operacao-diario] geração falhou", {
-        organization_id: org.id,
-        error: err instanceof Error ? err.message : String(err),
-        requestId,
-      });
+      tentativas += 1;
+      try {
+        const r = await gerarRelatorioDiario({
+          admin,
+          orgId: org.id,
+          dia: acao.dia,
+          geradoPor: "cron",
+          substituir: false,
+          ...(acao.substituirManualAntesDe ? { substituirManualAntesDe: acao.substituirManualAntesDe } : {}),
+          contexto: org.contexto,
+          agora,
+        });
+        if (r.gravou) {
+          gravados += 1;
+          contar(acao.motivo);
+          void audit({
+            action: "operacao.relatorio_gerado",
+            organizationId: org.id,
+            actorUserId: null,
+            bypassedRls: true,
+            resourceType: "relatorio_operacao_diario",
+            resourceId: r.id,
+            requestId,
+            metadata: {
+              dia: acao.dia,
+              gerado_por: "cron",
+              motivo: acao.motivo,
+              novas: r.conteudo.contadores.novas.total,
+              com_entrada: r.conteudo.contadores.com_entrada.total,
+              aguardando: r.conteudo.aguardando.length,
+            },
+          });
+        } else {
+          contar(`${acao.motivo}:ja_gravado_por_outra_rodada`);
+        }
+      } catch (err) {
+        // Uma organização com defeito não pode derrubar o relatório das outras.
+        contar("erro");
+        logger.error("[relatorio-operacao-diario] geração falhou", {
+          organization_id: org.id,
+          dia: acao.dia,
+          motivo: acao.motivo,
+          error: err instanceof Error ? err.message : String(err),
+          requestId,
+        });
+      }
     }
   }
 
-  return ok({ organizacoes: orgs.length, criados, desfechos }, { requestId });
+  return ok({ organizacoes: orgs.length, gravados, desfechos }, { requestId });
 }
 
 export const GET = handle;

@@ -11,7 +11,8 @@
  * telefone, @, prévia da mensagem, resumo da passagem, título de tarefa e de
  * negócio, motivo escrito, mensagem de erro, nome de quem atende, título de
  * aviso. Ficam os ids, o canal, a situação, as etiquetas, os instantes, os
- * códigos e os termos/produtos da busca da IA.
+ * códigos e os NOMES dos produtos que a busca da IA achou (o termo que o
+ * cliente escreveu é texto dele e também sai).
  *
  * `hidratar` faz o caminho de volta NA HORA DE LER, pelo leitor que a tela
  * entrega (o client da sessão, sob RLS). Um contato anonimizado depois da
@@ -38,6 +39,7 @@ export const CHAVES_PESSOAIS = [
   "motivo_da_perda",
   "responsavel",
   "erro",
+  "termos",
 ] as const;
 
 const contatoCongelado = (c: ContatoDaLinha): ContatoDaLinha => ({ contact_id: c.contact_id });
@@ -58,7 +60,9 @@ function conversaCongelada(l: LinhaDeConversa): LinhaDeConversa {
     esperando_desde: l.esperando_desde,
     tags: [...l.tags],
   };
-  if (l.produtos) out.produtos = { termos: [...l.produtos.termos], encontrados: [...l.produtos.encontrados] };
+  // Só os NOMES de produto (dado do catálogo). O TERMO buscado é o que o cliente
+  // escreveu — texto dele — e não vai para o jsonb guardado.
+  if (l.produtos) out.produtos = { encontrados: [...l.produtos.encontrados] };
   return out;
 }
 
@@ -167,6 +171,15 @@ export interface LeitorAoVivo {
 
 const unicos = (xs: Array<string | null | undefined>) => [...new Set(xs.filter((x): x is string => !!x))];
 
+/**
+ * O que não deu para ler AGORA. Distinto de "não registrado": `null` num campo
+ * pessoal quer dizer "o banco respondeu e não há" (contato apagado, sem nome);
+ * o campo AUSENTE (`undefined`) com a leitura listada aqui quer dizer "o banco
+ * não respondeu" — e a tela diz "não foi possível ler agora", nunca "não
+ * registrado". Uma falha de leitura não pode se passar por dado vazio.
+ */
+export type LeituraAoVivo = "contatos" | "conversas" | "passagens" | "tarefas" | "negocios" | "nomes";
+
 /** Preenche o pessoal de um conteúdo guardado com o que o banco diz AGORA. */
 export async function hidratar(c: OperacaoDoDia, leitor: LeitorAoVivo): Promise<OperacaoDoDia> {
   const conversas = [...c.aguardando, ...c.projetos, ...c.reclamacoes, ...c.produtos];
@@ -178,42 +191,61 @@ export async function hidratar(c: OperacaoDoDia, leitor: LeitorAoVivo): Promise<
     ...c.falhas.execucoes_da_ia.map((r) => r.contato),
   ];
   const idsDeConversa = unicos(conversas.map((l) => l.conversation_id));
+  const falhou: LeituraAoVivo[] = [];
+  async function ler<T>(nome: LeituraAoVivo, p: () => Promise<Map<string, T>>): Promise<Map<string, T> | null> {
+    try {
+      return await p();
+    } catch {
+      falhou.push(nome);
+      return null;
+    }
+  }
   const [contatos, convs, passagens, tarefas, negs, nomes] = await Promise.all([
-    leitor.contatos(unicos(todosOsContatos.map((x) => x.contact_id))),
-    leitor.conversas(idsDeConversa),
-    leitor.passagens(idsDeConversa),
-    leitor.tarefas(unicos(conversas.filter((l) => l.proxima_acao).map((l) => l.contato.contact_id))),
-    leitor.negocios(unicos(negocios.map((n) => n.lead_id))),
-    leitor.nomes(unicos(negocios.map((n) => n.responsavel_user_id))),
+    ler("contatos", () => leitor.contatos(unicos(todosOsContatos.map((x) => x.contact_id)))),
+    ler("conversas", () => leitor.conversas(idsDeConversa)),
+    ler("passagens", () => leitor.passagens(idsDeConversa)),
+    ler("tarefas", () => leitor.tarefas(unicos(conversas.filter((l) => l.proxima_acao).map((l) => l.contato.contact_id)))),
+    ler("negocios", () => leitor.negocios(unicos(negocios.map((n) => n.lead_id)))),
+    ler("nomes", () => leitor.nomes(unicos(negocios.map((n) => n.responsavel_user_id)))),
   ]);
 
+  // Mapa nulo = a leitura falhou: o campo fica AUSENTE (não `null`).
   const contato = (x: ContatoDaLinha): ContatoDaLinha => {
+    if (!contatos) return { contact_id: x.contact_id };
     const atual = x.contact_id ? contatos.get(x.contact_id) : undefined;
     return { contact_id: x.contact_id, nome: atual?.nome ?? null, telefone: atual?.telefone ?? null, identidade: atual?.identidade ?? null };
   };
   const conversa = (l: LinhaDeConversa): LinhaDeConversa => {
-    const passagem = passagens.get(l.conversation_id) ?? null;
-    const previa = convs.get(l.conversation_id)?.previa ?? null;
-    const titulo = l.contato.contact_id ? (tarefas.get(l.contato.contact_id) ?? null) : null;
-    return {
-      ...l,
-      contato: contato(l.contato),
-      resumo: passagem ?? previa,
-      resumo_origem: passagem ? "passagem" : previa ? "ultima_mensagem" : null,
-      proxima_acao: l.proxima_acao ? { titulo, vence_em: l.proxima_acao.vence_em } : null,
-      responsavel: l.responsavel_user_id ? (convs.get(l.conversation_id)?.responsavel ?? null) : null,
-    };
+    const out: LinhaDeConversa = { ...l, contato: contato(l.contato) };
+    if (passagens && convs) {
+      const passagem = passagens.get(l.conversation_id) ?? null;
+      const previa = convs.get(l.conversation_id)?.previa ?? null;
+      out.resumo = passagem ?? previa;
+      out.resumo_origem = passagem ? "passagem" : previa ? "ultima_mensagem" : null;
+    }
+    if (l.proxima_acao) {
+      out.proxima_acao = tarefas
+        ? { titulo: l.contato.contact_id ? (tarefas.get(l.contato.contact_id) ?? null) : null, vence_em: l.proxima_acao.vence_em }
+        : { vence_em: l.proxima_acao.vence_em };
+    }
+    if (!l.responsavel_user_id) out.responsavel = null;
+    else if (convs) out.responsavel = convs.get(l.conversation_id)?.responsavel ?? null;
+    return out;
   };
-  const negocio = (n: LinhaDeNegocio): LinhaDeNegocio => ({
-    ...n,
-    contato: contato(n.contato),
-    titulo: negs.get(n.lead_id)?.titulo ?? null,
-    motivo_da_perda: negs.get(n.lead_id)?.motivo_da_perda ?? null,
-    responsavel: n.responsavel_user_id ? (nomes.get(n.responsavel_user_id) ?? null) : null,
-  });
+  const negocio = (n: LinhaDeNegocio): LinhaDeNegocio => {
+    const out: LinhaDeNegocio = { ...n, contato: contato(n.contato) };
+    if (negs) {
+      out.titulo = negs.get(n.lead_id)?.titulo ?? null;
+      out.motivo_da_perda = negs.get(n.lead_id)?.motivo_da_perda ?? null;
+    }
+    if (!n.responsavel_user_id) out.responsavel = null;
+    else if (nomes) out.responsavel = nomes.get(n.responsavel_user_id) ?? null;
+    return out;
+  };
 
   return {
     ...c,
+    ...(falhou.length > 0 ? { leitura_falhou: falhou } : {}),
     aguardando: c.aguardando.map(conversa),
     projetos: c.projetos.map(conversa),
     reclamacoes: c.reclamacoes.map(conversa),

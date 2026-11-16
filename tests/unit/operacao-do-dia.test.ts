@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import { CHAVES_PESSOAIS, congelar, hidratar, lerConteudo, type LeitorAoVivo } from "@/lib/operacao/conteudo";
 import {
+  corteDoDia,
   decisaoDoCron,
   diaNoFuso,
   diaValido,
@@ -23,6 +24,7 @@ import {
   limitesDoDia,
   minutosDeEspera,
   produtosDasChamadas,
+  type RelatorioExistente,
   resolverDia,
   secoesDaConversa,
   TAGS_PADRAO,
@@ -203,42 +205,116 @@ describe("o que a busca de produtos da IA deixou registrado", () => {
 
 describe("quando o cron gera o relatório", () => {
   const config = { ligado: true, hora: 21 };
-  // 19:10Z = 21:10 em Beirute no inverno.
+  // 19:10Z = 21:10 em Beirute no inverno; 18:50Z = 20:50.
   const depois = new Date("2026-11-15T19:10:00Z");
   const antes = new Date("2026-11-15T18:50:00Z");
+  type Linha = [string, RelatorioExistente];
+  const cron = (dia: string, gerado_em = `${dia}T19:00:00Z`): Linha => [dia, { gerado_por: "cron", gerado_em }];
+  const manual = (dia: string, gerado_em: string): Linha => [dia, { gerado_por: "usuario", gerado_em }];
+  const ontemFeito = cron("2026-11-14");
 
   it("gera depois da hora local, para o dia LOCAL", () => {
-    expect(decisaoDoCron({ agora: depois, fuso: BEIRUTE, config, diasJaGerados: new Set() })).toEqual({
-      gerar: true,
-      dia: "2026-11-15",
+    expect(decisaoDoCron({ agora: depois, fuso: BEIRUTE, config, existentes: new Map([ontemFeito]) })).toEqual({
+      acoes: [{ dia: "2026-11-15", motivo: "hora_marcada" }],
     });
   });
 
-  it("não gera antes da hora, nem desligado, nem se o dia já tem linha", () => {
-    expect(decisaoDoCron({ agora: antes, fuso: BEIRUTE, config, diasJaGerados: new Set() })).toEqual({
-      gerar: false,
+  it("não gera antes da hora, nem desligado, nem se o dia já tem linha do cron", () => {
+    expect(decisaoDoCron({ agora: antes, fuso: BEIRUTE, config, existentes: new Map([ontemFeito]) })).toEqual({
+      acoes: [],
       motivo: "antes_da_hora",
     });
-    expect(decisaoDoCron({ agora: depois, fuso: BEIRUTE, config: { ligado: false, hora: 21 }, diasJaGerados: new Set() })).toEqual({
-      gerar: false,
-      motivo: "desligado",
+    expect(
+      decisaoDoCron({ agora: depois, fuso: BEIRUTE, config: { ligado: false, hora: 21 }, existentes: new Map() }),
+    ).toEqual({ acoes: [], motivo: "desligado" });
+    expect(
+      decisaoDoCron({ agora: depois, fuso: BEIRUTE, config, existentes: new Map([ontemFeito, cron("2026-11-15", "2026-11-15T19:05:00Z")]) }),
+    ).toEqual({ acoes: [], motivo: "ja_existe" });
+  });
+
+  it("DIA PERDIDO: ontem sem linha é gerado já, mesmo antes da hora de hoje — o dia inteiro", () => {
+    expect(decisaoDoCron({ agora: antes, fuso: BEIRUTE, config, existentes: new Map() })).toEqual({
+      acoes: [{ dia: "2026-11-14", motivo: "dia_perdido" }],
     });
-    expect(decisaoDoCron({ agora: depois, fuso: BEIRUTE, config, diasJaGerados: new Set(["2026-11-15"]) })).toEqual({
-      gerar: false,
-      motivo: "ja_existe",
+    // Depois da hora, os dois: o perdido e o de hoje.
+    expect(decisaoDoCron({ agora: depois, fuso: BEIRUTE, config, existentes: new Map() })).toEqual({
+      acoes: [
+        { dia: "2026-11-14", motivo: "dia_perdido" },
+        { dia: "2026-11-15", motivo: "hora_marcada" },
+      ],
     });
   });
 
-  it("a linha de ontem não segura o relatório de hoje (repetir a rodada é idempotente pelo dia)", () => {
-    expect(decisaoDoCron({ agora: depois, fuso: BEIRUTE, config, diasJaGerados: new Set(["2026-11-14"]) }).gerar).toBe(true);
+  it("organização criada depois do fim de ontem não ganha o relatório de um dia em que não operava", () => {
+    // Fim de 14/11 em Beirute = 2026-11-14T22:00Z.
+    expect(
+      decisaoDoCron({ agora: antes, fuso: BEIRUTE, config, existentes: new Map(), criadaEm: "2026-11-15T08:00:00Z" }),
+    ).toEqual({ acoes: [], motivo: "antes_da_hora" });
+    expect(
+      decisaoDoCron({ agora: antes, fuso: BEIRUTE, config, existentes: new Map(), criadaEm: "2026-11-14T08:00:00Z" }).acoes,
+    ).toEqual([{ dia: "2026-11-14", motivo: "dia_perdido" }]);
   });
 
-  it("depois da meia-noite local, o dia novo ainda está antes da hora", () => {
+  it("'Gerar agora' ANTES da hora não cancela o automático: o cron regera uma vez, condicionado", () => {
+    const cedo = manual("2026-11-15", "2026-11-15T10:00:00Z"); // 12:00 em Beirute
+    expect(decisaoDoCron({ agora: depois, fuso: BEIRUTE, config, existentes: new Map([ontemFeito, cedo]) })).toEqual({
+      acoes: [
+        { dia: "2026-11-15", motivo: "refazer_apos_manual", substituirManualAntesDe: "2026-11-15T19:00:00.000Z" },
+      ],
+    });
+    // Antes da hora, o manual fica como está.
+    expect(decisaoDoCron({ agora: antes, fuso: BEIRUTE, config, existentes: new Map([ontemFeito, cedo]) }).acoes).toEqual([]);
+  });
+
+  it("sem laço: depois de regerada (cron) ou se o manual foi DEPOIS da hora, nada a fazer", () => {
+    const regerado = cron("2026-11-15", "2026-11-15T19:10:00Z");
+    expect(decisaoDoCron({ agora: depois, fuso: BEIRUTE, config, existentes: new Map([ontemFeito, regerado]) }).acoes).toEqual([]);
+    const tarde = manual("2026-11-15", "2026-11-15T19:05:00Z"); // 21:05 em Beirute, depois da hora
+    expect(decisaoDoCron({ agora: depois, fuso: BEIRUTE, config, existentes: new Map([ontemFeito, tarde]) }).acoes).toEqual([]);
+  });
+
+  it("depois da meia-noite local, o dia novo ainda está antes da hora (e o de ontem já existe)", () => {
     // 22:30Z = 00:30 do dia 16 em Beirute.
-    expect(decisaoDoCron({ agora: new Date("2026-11-15T22:30:00Z"), fuso: BEIRUTE, config, diasJaGerados: new Set() })).toEqual({
-      gerar: false,
-      motivo: "antes_da_hora",
+    expect(
+      decisaoDoCron({
+        agora: new Date("2026-11-15T22:30:00Z"),
+        fuso: BEIRUTE,
+        config,
+        existentes: new Map([cron("2026-11-15")]),
+      }),
+    ).toEqual({ acoes: [], motivo: "antes_da_hora" });
+  });
+});
+
+describe("o corte do dia e o estado do momento", () => {
+  const dia = { inicio: "2026-11-14T22:00:00.000Z", fim: "2026-11-15T22:00:00.000Z" };
+
+  it("leitura dentro do dia: de 00:00 até a hora da leitura, com o estado do momento", () => {
+    expect(corteDoDia({ ...dia, lido_em: "2026-11-15T19:00:00.000Z" })).toEqual({
+      diaInteiro: false,
+      ate: "2026-11-15T19:00:00.000Z",
+      estadoDoMomento: true,
     });
+  });
+
+  it("leitura depois do dia (dia passado, dia perdido): dia inteiro, SEM o estado do momento", () => {
+    expect(corteDoDia({ ...dia, lido_em: "2026-11-16T06:00:00.000Z" })).toEqual({
+      diaInteiro: true,
+      ate: dia.fim,
+      estadoDoMomento: false,
+    });
+  });
+
+  it("o texto declara o corte e omite o estado do momento num dia que já acabou", () => {
+    const passado = conteudo({ lido_em: "2026-11-16T06:00:00.000Z" });
+    const texto = textoDoRelatorio(passado, { idioma: "pt-BR", baseUrl: "https://x.test", geradoEm: new Date(passado.lido_em) });
+    expect(texto).toContain("dia inteiro");
+    expect(texto).toContain("Aguardando uma pessoa: Estado do momento — só no dia de hoje.");
+    expect(texto).not.toContain("Aguardando uma pessoa (no momento da geração)");
+    const hoje = conteudo({ lido_em: "2026-11-15T19:00:00.000Z" });
+    const deHoje = textoDoRelatorio(hoje, { idioma: "pt-BR", baseUrl: "https://x.test", geradoEm: new Date(hoje.lido_em) });
+    expect(deHoje).toContain("de 00:00 até 21:00");
+    expect(deHoje).toContain("Aguardando uma pessoa (no momento da geração)");
   });
 });
 
@@ -437,7 +513,7 @@ describe("LGPD: o relatório guardado não tem dado pessoal, e a leitura resolve
       expect(chaves.has(proibida), `chave pessoal no jsonb: ${proibida}`).toBe(false);
     }
     const texto = JSON.stringify(guardado);
-    for (const pessoal of ["Rana", "+96170000000", "@rana", "restaurante", "Maya", "achou caro", "96170000000"]) {
+    for (const pessoal of ["Rana", "+96170000000", "@rana", "restaurante", "Maya", "achou caro", "96170000000", "árvore"]) {
       expect(texto.includes(pessoal), `dado pessoal no jsonb: ${pessoal}`).toBe(false);
     }
     // Os fatos ficam: ids, termos e produtos, código, situação, instantes.
@@ -445,7 +521,8 @@ describe("LGPD: o relatório guardado não tem dado pessoal, e a leitura resolve
     expect(guardado.aguardando[0].responsavel_user_id).toBe("u1");
     expect(guardado.aguardando[0].motivo_codigo).toBe("pedido_de_humano");
     expect(guardado.aguardando[0].proxima_acao).toEqual({ vence_em: "2026-11-17T09:00:00Z" });
-    expect(guardado.produtos[0].produtos).toEqual({ termos: ["árvore"], encontrados: ["Ficus 2m"] });
+    // O NOME do produto (catálogo) fica; o TERMO que o cliente escreveu, não.
+    expect(guardado.produtos[0].produtos).toEqual({ encontrados: ["Ficus 2m"] });
     expect(guardado.falhas.mensagens[0].codigo).toBe("waha_400");
     expect(lerConteudo(guardado)).not.toBeNull();
   });
@@ -485,5 +562,48 @@ describe("LGPD: o relatório guardado não tem dado pessoal, e a leitura resolve
     const guardado = congelar(completo());
     const lido = await hidratar(guardado, leitor({}));
     expect(lido.aguardando[0]!.contato).toEqual({ contact_id: "k1", nome: null, telefone: null, identidade: null });
+  });
+
+  it("FALHA de leitura do banco não se passa por contato apagado: a tela diz que não deu para ler", async () => {
+    const guardado = lerConteudo(JSON.parse(JSON.stringify(congelar(completo()))))!;
+    const quebrado: LeitorAoVivo = {
+      ...leitor({ k1: { nome: "Rana", telefone: null, identidade: null } }),
+      contatos: async () => {
+        throw new Error("connection reset");
+      },
+    };
+    const lido = await hidratar(guardado, quebrado);
+    expect(lido.leitura_falhou).toEqual(["contatos"]);
+    // Campo AUSENTE (não null): é o que separa "não li" de "não há".
+    expect(lido.aguardando[0]!.contato).toEqual({ contact_id: "k1" });
+    expect(lido.aguardando[0]!.contato.nome).toBeUndefined();
+    const texto = textoDoRelatorio(lido, { idioma: "pt-BR", baseUrl: "https://x.test", geradoEm: new Date(guardado.lido_em) });
+    expect(texto).toContain("não foi possível ler agora");
+    expect(texto).toContain("Não foi possível ler agora os nomes e resumos deste relatório.");
+    // O que leu bem continua: a tarefa veio do leitor que respondeu.
+    expect(lido.aguardando[0]!.proxima_acao?.titulo).toBe("Ligar de volta");
+    // E o leitor sadio não marca falha nenhuma.
+    expect((await hidratar(guardado, leitor({}))).leitura_falhou).toBeUndefined();
+  });
+});
+
+describe("o leitor ao vivo do banco não engole erro", () => {
+  /** Um client de mentira cuja consulta, encadeada como for, termina em erro. */
+  function dbComErro(): never {
+    const resposta = Promise.resolve({ data: null, error: { message: "timeout" } });
+    const cadeia: Record<string, unknown> = {};
+    for (const m of ["select", "eq", "in", "order", "limit"]) cadeia[m] = () => cadeia;
+    cadeia.then = resposta.then.bind(resposta);
+    return { from: () => cadeia } as never;
+  }
+
+  it("erro do banco LANÇA (não vira mapa vazio, que se leria como contato apagado)", async () => {
+    const { leitorDoBanco } = await import("@/lib/operacao/hidratar-do-banco");
+    const l = leitorDoBanco(dbComErro(), "org");
+    await expect(l.contatos(["k1"])).rejects.toThrow("timeout");
+    await expect(l.conversas(["c1"])).rejects.toThrow("timeout");
+    await expect(l.passagens(["c1"])).rejects.toThrow("timeout");
+    await expect(l.tarefas(["k1"])).rejects.toThrow("timeout");
+    await expect(l.negocios(["L1"])).rejects.toThrow("timeout");
   });
 });

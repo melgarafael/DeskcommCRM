@@ -74,7 +74,7 @@ export default async function RelatorioDoDiaPage({ params }: { params: Promise<{
         </Link>
       </header>
       {conteudo ? (
-        <SecoesDaOperacao operacao={conteudo} referencia={linha.gerado_em} />
+        <SecoesDaOperacao operacao={conteudo} referencia={linha.gerado_em} modo="relatorio" />
       ) : (
         <p className="text-sm text-text-muted">{t("Este relatório foi salvo num formato que esta versão não sabe desenhar.")}</p>
       )}
