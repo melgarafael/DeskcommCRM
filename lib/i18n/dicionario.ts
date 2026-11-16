@@ -1365,7 +1365,9 @@ export const DICIONARIO: Traducoes = {
   "Aceita .csv ou .xlsx (primeira aba), até 500 empresas. Colunas obrigatórias: nome da empresa e telefone. Quem já é contato do CRM não é abordado. Nenhuma abordagem começa nesta etapa.": { es: "Acepta .csv o .xlsx (primera hoja), hasta 500 empresas. Columnas obligatorias: nombre de la empresa y teléfono. Quien ya es contacto del CRM no recibe abordaje. Ningún abordaje comienza en esta etapa." },
   "Baixar modelo": { es: "Descargar modelo" },
   // #4459 parte 2 — as colunas opcionais da planilha e o aviso do que pode virar fato.
-  "Colunas opcionais: diagnóstico, oferta e contexto.": { es: "Columnas opcionales: diagnóstico, oferta y contexto." },
+  "Colunas opcionais, com o que a sua equipe já sabe de cada empresa: Diagnóstico, Oferta (o que oferecer) e Contexto.": {
+    es: "Columnas opcionales, con lo que tu equipo ya sabe de cada empresa: Diagnóstico, Oferta (qué ofrecer) y Contexto.",
+  },
   'O que você escrever em Contexto (uma indicação, um encontro, uma conversa) e em Diagnóstico (o que qualquer um vê de fora, como site, Google e redes) pode aparecer na primeira mensagem como fato. Escreva só o que é verdade. Recados para a equipe, como "falar com calma", não aparecem na mensagem. Não escreva CPF nem telefone de pessoas.': { es: 'Lo que escribas en Contexto (una recomendación, un encuentro, una conversación) y en Diagnóstico (lo que cualquiera ve desde afuera, como el sitio, Google y las redes) puede aparecer en el primer mensaje como un hecho. Escribe solo lo que es verdad. Los recados para el equipo, como "hablar con calma", no aparecen en el mensaje. No escribas CPF ni teléfonos de personas.' },
   // #4360 — a lista da campanha de volta em CSV: só as não abordadas ou todas,
   // com a situação de cada empresa (a situação sai no idioma da organização).

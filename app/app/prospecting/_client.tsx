@@ -596,7 +596,7 @@ export function ProspectingClient() {
     const modelo =
       "\uFEFFempresa;telefone;site;segmento;cidade;email;instagram;diagnostico;oferta;contexto\r\n" +
       "Padaria Exemplo;(11) 90000-0000;https://www.example.com;padaria;São Paulo;contato@example.com;https://instagram.com/exemplo;" +
-      "Site sem horário de funcionamento, nota 4,8 no Google;Site com cardápio e pedidos pelo WhatsApp;Indicação da Ana, cliente da padaria\r\n";
+      "O site não mostra o cardápio nem o horário de funcionamento;Site com cardápio e pedidos pelo WhatsApp;Indicação da Ana, nossa cliente, que compra na padaria\r\n";
     const url = URL.createObjectURL(new Blob([modelo], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a");
     a.href = url;
@@ -1296,7 +1296,7 @@ export function ProspectingClient() {
               {/* As três colunas opcionais viram dado da 1ª mensagem e a aba Diagnóstico do
                   contato (lib/prospecting/contexto-da-equipe.ts): o aviso diz o que pode virar fato. */}
               <p className="text-xs text-muted-foreground">
-                {t("Colunas opcionais: diagnóstico, oferta e contexto.")}{" "}
+                {t("Colunas opcionais, com o que a sua equipe já sabe de cada empresa: Diagnóstico, Oferta (o que oferecer) e Contexto.")}{" "}
                 {t(
                   'O que você escrever em Contexto (uma indicação, um encontro, uma conversa) e em Diagnóstico (o que qualquer um vê de fora, como site, Google e redes) pode aparecer na primeira mensagem como fato. Escreva só o que é verdade. Recados para a equipe, como "falar com calma", não aparecem na mensagem. Não escreva CPF nem telefone de pessoas.',
                 )}
