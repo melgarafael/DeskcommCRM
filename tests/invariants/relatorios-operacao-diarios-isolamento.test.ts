@@ -3,18 +3,18 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { countAs, sql, writeCountAs } from "./gov-helpers";
 
 /**
- * Prova da migration 9395 (`relatorios_operacao_diarios`): o relatório de uma
+ * Prova da migration 9400 (`relatorios_operacao_diarios`): o relatório de uma
  * organização não aparece para a outra, só manager ou acima o lê (ele reúne as
  * conversas da equipe inteira), a sessão não escreve, e a unicidade
  * `(organization_id, dia)` é o que segura o cron idempotente. Identificadores
  * exclusivos desta fixture.
  */
-const ORG_A = "c9395000-0000-4000-8000-000000000001";
-const ORG_B = "c9395000-0000-4000-8000-000000000002";
-const MANAGER_A = "c9395000-1111-4000-8000-000000000001";
-const MANAGER_B = "c9395000-1111-4000-8000-000000000002";
-const AGENT_A = "c9395000-1111-4000-8000-000000000003";
-const ADMIN_A = "c9395000-1111-4000-8000-000000000004";
+const ORG_A = "c9400000-0000-4000-8000-000000000001";
+const ORG_B = "c9400000-0000-4000-8000-000000000002";
+const MANAGER_A = "c9400000-1111-4000-8000-000000000001";
+const MANAGER_B = "c9400000-1111-4000-8000-000000000002";
+const AGENT_A = "c9400000-1111-4000-8000-000000000003";
+const ADMIN_A = "c9400000-1111-4000-8000-000000000004";
 
 beforeAll(() => {
   sql(`
@@ -24,8 +24,8 @@ beforeAll(() => {
       ('${AGENT_A}','relatorio-atendente-a@invariant.test'),
       ('${ADMIN_A}','relatorio-admin-a@invariant.test');
     insert into organizations(id,slug,legal_name,display_name) values
-      ('${ORG_A}','relatorio-9395-a','Relatório sintético A','Relatório A'),
-      ('${ORG_B}','relatorio-9395-b','Relatório sintético B','Relatório B');
+      ('${ORG_A}','relatorio-9400-a','Relatório sintético A','Relatório A'),
+      ('${ORG_B}','relatorio-9400-b','Relatório sintético B','Relatório B');
     insert into user_organizations(user_id,organization_id,role,accepted_at) values
       ('${MANAGER_A}','${ORG_A}','manager',now()),
       ('${MANAGER_B}','${ORG_B}','manager',now()),
@@ -107,12 +107,12 @@ describe("relatorios_operacao_diarios: isolamento entre organizações", () => {
   });
 
   it("conversa NOVA é a que não tinha mensagem do cliente antes do dia; grupo e outra organização ficam de fora", () => {
-    const SESSAO = "c9395000-2222-4000-8000-000000000001";
-    const [K1, K2, K3] = ["1", "2", "3"].map((n) => `c9395000-3333-4000-8000-00000000000${n}`);
-    const [C1, C2, C3] = ["1", "2", "3"].map((n) => `c9395000-4444-4000-8000-00000000000${n}`);
+    const SESSAO = "c9400000-2222-4000-8000-000000000001";
+    const [K1, K2, K3] = ["1", "2", "3"].map((n) => `c9400000-3333-4000-8000-00000000000${n}`);
+    const [C1, C2, C3] = ["1", "2", "3"].map((n) => `c9400000-4444-4000-8000-00000000000${n}`);
     sql(`
       insert into channel_sessions (id, organization_id, waha_session_name, webhook_secret_encrypted)
-        values ('${SESSAO}', '${ORG_A}', 'relatorio-9395-a', '\\x00'::bytea);
+        values ('${SESSAO}', '${ORG_A}', 'relatorio-9400-a', '\\x00'::bytea);
       insert into contacts (id, organization_id, display_name) values
         ('${K1}','${ORG_A}','Antiga'), ('${K2}','${ORG_A}','Nova'), ('${K3}','${ORG_A}','Grupo');
       insert into conversations (id, organization_id, contact_id, channel_session_id, status, channel, is_group) values

@@ -79508,10 +79508,10 @@ create trigger trg_contacts_fusao_e_anonimizacao_so_pelo_servidor_ao_criar
 revoke all on table public.storage_redaction_queue from authenticated;
 grant select on table public.storage_redaction_queue to authenticated;
 
--- ---- relatórios da Operação do dia + conversas com entrada (migration 9395) ----
+-- ---- relatórios da Operação do dia + conversas com entrada (migration 9400) ----
 -- (Antes da VARREDURA anon, e não no fim do arquivo: o bloco cria função, e
 -- tests/unit/varredura-anon-e-o-ultimo-bloco.test.ts proíbe função depois dela.)
--- Espelho de supabase/migrations/20261115120000_9395_relatorios_operacao_diarios.sql.
+-- Espelho de supabase/migrations/20261116090000_9400_relatorios_operacao_diarios.sql.
 -- ═══ O RELATÓRIO DIÁRIO DA OPERAÇÃO ═══
 --
 -- Uma linha por organização e dia LOCAL (o fuso da organização decide o dia).
