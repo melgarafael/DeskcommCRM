@@ -191,11 +191,17 @@ describe("a leitura da planilha", () => {
 
   it("as formas longas e as de espanhol também são lidas", () => {
     const p = ler(
-      ["Diagnóstico da equipe", "Oferta sugerida pela equipe", "Observaciones"],
+      ["Diagnóstico da equipe", "Oferta sugerida pela equipe", "Contexto da equipe"],
       ["A", "B", "C"],
     );
     expect(p.contexto_da_equipe).toEqual({ diagnostico: "A", oferta: "B", contexto: "C" });
-    expect(ler(["Observação"], ["Cliente antigo."]).contexto_da_equipe).toEqual({ contexto: "Cliente antigo." });
+    expect(ler(["O que sabemos"], ["Cliente antigo."]).contexto_da_equipe).toEqual({ contexto: "Cliente antigo." });
+  });
+
+  it("a coluna 'observação' NÃO vira contexto: nota interna de planilha antiga não vai para a IA", () => {
+    for (const titulo of ["Observação", "Observações", "Observaciones"]) {
+      expect(ler([titulo], ["Devendo desde março."])).not.toHaveProperty("contexto_da_equipe");
+    }
   });
 
   it("colunas vazias ou só de espaço não criam a chave", () => {

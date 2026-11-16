@@ -142,7 +142,7 @@ inclui formas em espanhol):
 | `socials` | instagram, facebook, linkedin, redes | não (só `http(s)` via `safePublicLink`) |
 | `contexto_da_equipe.diagnostico` | diagnóstico, diagnóstico da equipe | não (#4459 parte 2) |
 | `contexto_da_equipe.oferta` | oferta, oferta sugerida, oferta sugerida pela equipe | não (#4459 parte 2) |
-| `contexto_da_equipe.contexto` | contexto, contexto da equipe, observação, observações, o que sabemos, observación, observaciones | não (#4459 parte 2) |
+| `contexto_da_equipe.contexto` | contexto, contexto da equipe, o que sabemos ("observação" fica de fora: é o nome comum de nota interna) | não (#4459 parte 2) |
 
 As três colunas da equipe (`lib/prospecting/contexto-da-equipe.ts`) viram texto de uma linha só (toda quebra de linha vira espaço) e são cortadas no teto da aba Diagnóstico, em fim de frase ou de palavra. Na importação, `importarPlanilha` carimba `por` (`usuario:<id>` da sessão) e `em`. Elas vão à primeira mensagem como dado, dentro da cerca de nonce, e à aba Diagnóstico do contato novo.
 

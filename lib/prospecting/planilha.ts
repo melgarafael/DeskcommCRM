@@ -46,15 +46,10 @@ const COLUNAS: Record<Campo, readonly string[]> = {
   // Em espanhol, "diagnóstico", "oferta" e "contexto" se escrevem igual.
   diagnostico: ["diagnostico", "diagnostico da equipe"],
   oferta: ["oferta", "oferta sugerida", "oferta sugerida pela equipe"],
-  contexto: [
-    "contexto",
-    "contexto da equipe",
-    "observacao",
-    "observacoes",
-    "o que sabemos",
-    "observacion",
-    "observaciones",
-  ],
+  // "observação" fica de FORA de propósito: é o nome mais comum de coluna de nota
+  // interna, e uma planilha antiga passaria a mandar essas notas para a IA dizer ao
+  // cliente como fato. Quem usa esse nome vê a coluna em "colunas ignoradas".
+  contexto: ["contexto", "contexto da equipe", "o que sabemos"],
 };
 
 /** Campos que aceitam mais de uma coluna (nos demais vale só a primeira). */
