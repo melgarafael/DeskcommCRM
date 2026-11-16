@@ -99,10 +99,18 @@ comment on column public.crm_tasks.prazo_motivo is
 -- derrubaria toda gravação de `custom_fields`. A função degrada para o padrão
 -- do produto em vez de lançar — a mesma decisão de `fusoUtilizavel`
 -- (`lib/tempo/fusos.ts`), que é quem valida do lado do TypeScript.
+--
+-- `set search_path` na PRÓPRIA definição, e não um `alter function` depois: um
+-- `create or replace function` posterior, sem a cláusula, apagaria a anterior e
+-- o aviso `function_search_path_mutable` voltaria em silêncio
+-- (`tests/invariants/avisos-do-security-advisor.test.ts`). Vazio basta: esta
+-- função só toca `pg_catalog` (`pg_timezone_names`, `btrim`, `coalesce`) e é
+-- chamada daqui por nome qualificado (`public.fn_prazo_do_campo`).
 create or replace function public.fn_fuso_valido(p_fuso text)
 returns text
 language sql
 stable
+set search_path = ''
 as $$
   select coalesce(
     (select name from pg_timezone_names where name = btrim(p_fuso)),
@@ -115,6 +123,10 @@ $$;
 -- não atravessa fuso nem horário de verão. O `at time zone` converte a hora de
 -- parede (09:00 daquele dia, naquele fuso) no instante — e é ele que faz o dia
 -- 21 de outubro em São Paulo valer 12:00Z, com ou sem horário de verão.
+--
+-- Mesma razão da `fn_fuso_valido`: a cláusula mora na definição. Vazio basta —
+-- tudo o que o corpo usa é `pg_catalog` (`coalesce`, `time`, `at time zone`) e a
+-- outra função entra qualificada.
 create or replace function public.fn_prazo_do_campo(
   p_dia date,
   p_dias integer,
@@ -123,6 +135,7 @@ create or replace function public.fn_prazo_do_campo(
 returns timestamptz
 language sql
 stable
+set search_path = ''
 as $$
   select (((p_dia + coalesce(p_dias, 0))::timestamp + time '09:00')
     at time zone public.fn_fuso_valido(p_fuso))

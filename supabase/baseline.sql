@@ -77213,9 +77213,23 @@ begin
   return new;
 end;
 $$;
+revoke execute on function public.fn_guard_vinculo_de_clone_do_lead() from public, anon, authenticated;
+grant execute on function public.fn_guard_vinculo_de_clone_do_lead() to service_role;
+drop trigger if exists trg_guard_vinculo_de_clone_do_lead on public.crm_leads;
+create trigger trg_guard_vinculo_de_clone_do_lead before insert or update of source_metadata
+  on public.crm_leads for each row execute function public.fn_guard_vinculo_de_clone_do_lead();
+
 -- ---- o prazo do plano recalculado quando a data do card muda (migration 9404, #4717) ----
 -- Espelho da 9404. Fica junto dos outros gatilhos de `crm_leads` e DEPOIS de
 -- todas as tabelas que ele lê (`organizations`, `crm_leads`, `crm_tasks`).
+--
+-- O lugar é DEPOIS do bloco da 9389 INTEIRO — gatilho incluído —, e não entre a
+-- função e o gatilho dela: o invariante `vinculo-de-clone-so-do-servidor`
+-- compara o texto que vai de `create or replace function
+-- public.fn_guard_vinculo_de_clone_do_lead` até o `execute function ...` do
+-- gatilho com o da migration, byte a byte. Um bloco alheio no meio daquele
+-- trecho muda o texto e reprova a cerca — sem que nada de segurança tenha
+-- mudado. Qualquer apêndice novo entra abaixo do fecho do bloco anterior.
 --
 -- `fn_prazo_do_campo` é a ÚNICA implementação da conta "dia do campo + N dias,
 -- às 09:00 no fuso da organização": a aplicação do plano
@@ -77224,6 +77238,7 @@ create or replace function public.fn_fuso_valido(p_fuso text)
 returns text
 language sql
 stable
+set search_path = ''
 as $$
   select coalesce(
     (select name from pg_timezone_names where name = btrim(p_fuso)),
@@ -77239,6 +77254,7 @@ create or replace function public.fn_prazo_do_campo(
 returns timestamptz
 language sql
 stable
+set search_path = ''
 as $$
   select (((p_dia + coalesce(p_dias, 0))::timestamp + time '09:00')
     at time zone public.fn_fuso_valido(p_fuso))
@@ -77330,12 +77346,6 @@ create trigger crm_leads_recalcula_prazos_do_plano
   for each row
   when (old.custom_fields is distinct from new.custom_fields)
   execute function public.fn_recalcular_prazos_do_plano();
-
-revoke execute on function public.fn_guard_vinculo_de_clone_do_lead() from public, anon, authenticated;
-grant execute on function public.fn_guard_vinculo_de_clone_do_lead() to service_role;
-drop trigger if exists trg_guard_vinculo_de_clone_do_lead on public.crm_leads;
-create trigger trg_guard_vinculo_de_clone_do_lead before insert or update of source_metadata
-  on public.crm_leads for each row execute function public.fn_guard_vinculo_de_clone_do_lead();
 
 -- ---- a fila do push drena: o que já terminou sai, o que falta fazer fica (migration 9358, #4448) ----
 -- Espelho da 9358 (o porquê inteiro está no cabeçalho dela). Fica ACIMA da
