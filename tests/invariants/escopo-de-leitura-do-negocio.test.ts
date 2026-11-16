@@ -49,6 +49,7 @@ const REVOGADO = "9e5c1000-0000-4000-8000-000000000005"; // vínculo revogado em
 const FORASTEIRO = "9e5c1000-0000-4000-8000-000000000006"; // agent só de ORG_ALHEIA
 const OUTRO = "9e5c1000-0000-4000-8000-000000000007"; // agent nas quatro organizações
 const VIEWER = "9e5c1000-0000-4000-8000-000000000008"; // viewer de ORG_TUDO ('all')
+const VIEWER_OWN = "9e5c1000-0000-4000-8000-00000000000d"; // viewer de ORG_OWN ('own')
 const GERENTE = "9e5c1000-0000-4000-8000-000000000009"; // manager de ORG_OWN ('own')
 const AGENTE_TUDO = "9e5c1000-0000-4000-8000-00000000000a"; // agent de ORG_TUDO ('all')
 const AGENTE_INVALIDO = "9e5c1000-0000-4000-8000-00000000000b"; // agent de ORG_INVALIDO
@@ -139,6 +140,7 @@ beforeAll(() => {
     GERENTE,
     AGENTE_TUDO,
     AGENTE_INVALIDO,
+    VIEWER_OWN,
     SUPORTE,
   ]
     .map((u, i) => `('${u}', 'pessoa${i + 1}@s9e5c.test')`)
@@ -156,6 +158,7 @@ beforeAll(() => {
     `('${OUTRO}', '${ORG_ALHEIA}', 'agent', now())`,
     `('${OUTRO}', '${ORG_PADRAO}', 'agent', now())`,
     `('${VIEWER}', '${ORG_TUDO}', 'viewer', now())`,
+    `('${VIEWER_OWN}', '${ORG_OWN}', 'viewer', now())`,
     `('${AGENTE_TUDO}', '${ORG_TUDO}', 'agent', now())`,
     `('${OUTRO}', '${ORG_TUDO}', 'agent', now())`,
     `('${GERENTE}', '${ORG_OWN}', 'manager', now())`,
@@ -343,6 +346,7 @@ const COMBINACOES: Array<{ nome: string; userId: string; esperado: number }> = [
   { nome: "admin da organização", userId: ADMIN, esperado: 3 },
   { nome: "manager da organização em visibility_mode = own", userId: GERENTE, esperado: 3 },
   { nome: "viewer em visibility_mode = all", userId: VIEWER, esperado: 3 },
+  { nome: "viewer da organização em visibility_mode = own", userId: VIEWER_OWN, esperado: 3 },
   { nome: "agent em visibility_mode = all", userId: AGENTE_TUDO, esperado: 3 },
   { nome: "agent em visibility_mode = own", userId: AGENTE_OWN, esperado: 1 },
   { nome: "agent em visibility_mode = own_and_unassigned", userId: AGENTE_FILA, esperado: 2 },
@@ -353,7 +357,7 @@ const COMBINACOES: Array<{ nome: string; userId: string; esperado: number }> = [
 ];
 
 describe("#4323 — escopo de leitura do negócio avaliado uma vez, não por linha", () => {
-  it("as duas formulações concordam linha a linha nas onze combinações", () => {
+  it("as duas formulações concordam linha a linha nas doze combinações", () => {
     for (const { nome, userId } of COMBINACOES) {
       expect({ nome, linhas: negocioPelaPolicy(userId) }).toEqual({
         nome,
