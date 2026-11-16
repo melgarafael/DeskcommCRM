@@ -32,7 +32,8 @@ export type ChannelProvider =
   | "telegram"
   /**
    * SMS (#4415). O provider é o FORNECEDOR (como `waha` e `datafy`), não o
-   * canal: a conversa que ele abre é `channel = 'sms'`, e um segundo
+   * canal: a conversa que ele abre é do canal sms (sem aspas aqui: o teste
+   * de vocabulário lê as aspas deste bloco como provider), e um segundo
    * fornecedor de SMS entra depois como outra linha, sem renomear nada. O
    * endereço é o telefone, então ele está em `PROVIDERS_DE_TELEFONE` e o
    * contato é o mesmo do WhatsApp. Ver `./adapters/twilio.ts`.

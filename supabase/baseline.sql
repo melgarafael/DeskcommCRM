@@ -79179,6 +79179,36 @@ revoke all on public.calendar_service_google_push_queue from public,anon,authent
 grant select on public.calendar_service_google_push_queue to service_role;
 notify pgrst, 'reload schema';
 
+-- ---- canal de SMS: o canal da conversa vem da conexão (migration 9364, #4415) ----
+-- A PRIMEIRA metade do espelho da 9364: a função fica antes da VARREDURA anon,
+-- que proíbe create function depois dela. É a ÚLTIMA definição de
+-- `fn_upsert_wa_conversation` no arquivo, e é a que o banco instala; a do dump
+-- gravava 'whatsapp' fixo. `create or replace` preserva dono e grants. A outra
+-- metade (índice e comentários) fica no fim do arquivo, no bloco do canal de SMS.
+create or replace function public.fn_upsert_wa_conversation(
+  p_org uuid, p_contact uuid, p_session uuid
+) returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  v_id uuid;
+  v_canal text;
+begin
+  -- O canal da conversa vem da CONEXÃO (#4415): numa conexão de SMS a conversa
+  -- nasce 'sms', em qualquer caminho que a abra (SMS recebido, automação,
+  -- lembrete da agenda, envio por telefone, campanha). Antes era 'whatsapp' fixo.
+  -- Conexão de outra organização ou inexistente cai no padrão de sempre.
+  select case when s.provider = 'twilio' then 'sms' else 'whatsapp' end
+    into v_canal
+    from public.channel_sessions s
+   where s.id = p_session and s.organization_id = p_org;
+
+  insert into public.conversations (organization_id, contact_id, channel_session_id, channel, status, is_group, unread_count_for_assignee, metadata)
+  values (p_org, p_contact, p_session, coalesce(v_canal, 'whatsapp'), 'open', false, 0, '{}'::jsonb)
+  on conflict (organization_id, contact_id, channel_session_id) where is_group = false
+  do update set updated_at = now()
+  returning id into v_id;
+  return v_id;
+end; $$;
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.
@@ -80013,36 +80043,6 @@ create trigger trg_contacts_fusao_e_anonimizacao_so_pelo_servidor_ao_criar
 -- Todo escritor da fila de remoção de arquivos é do servidor: a sessão só lê.
 revoke all on table public.storage_redaction_queue from authenticated;
 grant select on table public.storage_redaction_queue to authenticated;
-
--- ---- canal de SMS: o canal da conversa vem da conexão (migration 9364, #4415) ----
--- A PRIMEIRA metade do espelho da 9364: a função fica antes da VARREDURA anon,
--- que proíbe create function depois dela. É a ÚLTIMA definição de
--- `fn_upsert_wa_conversation` no arquivo, e é a que o banco instala; a do dump
--- gravava 'whatsapp' fixo. `create or replace` preserva dono e grants. A outra
--- metade (índice e comentários) fica no fim do arquivo, no bloco do canal de SMS.
-create or replace function public.fn_upsert_wa_conversation(
-  p_org uuid, p_contact uuid, p_session uuid
-) returns uuid language plpgsql security definer set search_path = public as $$
-declare
-  v_id uuid;
-  v_canal text;
-begin
-  -- O canal da conversa vem da CONEXÃO (#4415): numa conexão de SMS a conversa
-  -- nasce 'sms', em qualquer caminho que a abra (SMS recebido, automação,
-  -- lembrete da agenda, envio por telefone, campanha). Antes era 'whatsapp' fixo.
-  -- Conexão de outra organização ou inexistente cai no padrão de sempre.
-  select case when s.provider = 'twilio' then 'sms' else 'whatsapp' end
-    into v_canal
-    from public.channel_sessions s
-   where s.id = p_session and s.organization_id = p_org;
-
-  insert into public.conversations (organization_id, contact_id, channel_session_id, channel, status, is_group, unread_count_for_assignee, metadata)
-  values (p_org, p_contact, p_session, coalesce(v_canal, 'whatsapp'), 'open', false, 0, '{}'::jsonb)
-  on conflict (organization_id, contact_id, channel_session_id) where is_group = false
-  do update set updated_at = now()
-  returning id into v_id;
-  return v_id;
-end; $$;
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
