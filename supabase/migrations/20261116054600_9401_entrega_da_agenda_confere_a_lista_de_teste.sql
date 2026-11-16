@@ -1,6 +1,6 @@
 -- manifest: **A entrega automática do link de reunião passa a conferir a lista de teste do canal (issue #4701).** `fn_meet_delivery_policy` devolvia `ai_gate` mas não o MODO do gate nem a lista: `lib/agenda/meet-delivery.ts` (`requirePolicy`) montava a elegibilidade sem `ai_gate_mode`, sem `ai_test_phone_numbers` e sem o telefone do contato, então `preGoLiveAtivo` saía sempre `false` e a decisão caía no allowlist comum — contato FORA da lista, autorizado por campanha (`ai_authorized_at` fresco), recebia o link de um canal ainda fechado ao público. Agora a política devolve os três campos (o join com `contacts` e `channel_sessions` já existia, só não os projetava) e o `requirePolicy` os entrega à MESMA régua dos outros caminhos (`decidirElegibilidade`/`montarEstadoDeElegibilidade`). `fn_meet_delivery_settle` aceita o motivo `fora_da_lista_de_teste` — sem ele a recusa nova estouraria `meet_reason_invalid`, o settle cairia no `retry` e a entrega terminaria `failed` em vez de `blocked`. Corpos copiados da ÚLTIMA definição no baseline (0676), só com essas diferenças. Gate: `tests/unit/meet-delivery-lista-de-teste-do-canal.test.ts`.
 
--- ---- a entrega da agenda confere a lista de teste do canal (migration 9400) ----
+-- ---- a entrega da agenda confere a lista de teste do canal (migration 9401) ----
 -- O pré-go-live é uma especialização do gate `allowlist` (`lib/ai/elegibilidade/
 -- pre-go-live.ts`): só os números escolhidos para teste podem passar, e o carimbo
 -- `contacts.ai_authorized_at` — que campanha, automação e webhook escrevem — NÃO

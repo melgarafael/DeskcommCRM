@@ -51,7 +51,7 @@ function politica(over: Record<string, unknown> = {}) {
     ai_authorized_at: null,
     assignee_kind: "ai",
     bot_silenced_until: null,
-    // Campos que a política passou a devolver na 9399 (#4701).
+    // Campos que a política passou a devolver na 9401 (#4701).
     ai_gate_mode: null,
     ai_test_phone_numbers: [],
     contact_phone_number: NUMERO_DE_FORA,
