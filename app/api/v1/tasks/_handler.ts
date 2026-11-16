@@ -27,11 +27,13 @@ import { audit } from "@/lib/audit";
 import { comIdempotencia, hashDoCorpo } from "@/lib/api/idempotency";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { ApiError } from "@/lib/api/types";
+import { fusoDaOrganizacao } from "@/lib/automation/cron-de-data";
 import { portaDaAplicacao } from "@/lib/db";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { registraAtividadeDaTarefa } from "@/lib/tarefas/atividade";
 import { conferirDemanda } from "@/lib/tarefas/demanda";
+import { normalizarRegra, proximaOcorrencia, regraParaGravar } from "@/lib/tarefas/recorrencia";
 import { conferirResponsavel } from "@/lib/tarefas/responsavel";
 import {
   SITUACOES_ABERTAS_DA_TAREFA,
@@ -42,12 +44,24 @@ import {
 
 type SB = SupabaseClient;
 
+/**
+ * A regra da série como a TELA e a rota a mandam (#4595): `ativa` é OPCIONAL
+ * aqui, porque ausente vale como ligada — quem preenche o campo é
+ * `regraParaGravar`, na hora de gravar. Usar `RegraDeRecorrencia` (a forma que o
+ * banco GUARDA) no tipo de entrada recusaria o corpo que a própria tela manda.
+ */
+export type RegraDeRecorrenciaRecebida = {
+  dias: number[];
+  hora: number;
+  ativa?: boolean;
+};
+
 /** O teto da lista — e o máximo que `?limite=` aceita. */
 export const LIMITE_MAXIMO_DA_LISTA = 500;
 
 /** As colunas que a tela lê. Explícitas para o `select *` não vazar coluna nova. */
 const COLUNAS =
-  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, created_at, updated_at, lead:crm_leads(id, title)";
+  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, recurrence, created_at, updated_at, lead:crm_leads(id, title)";
 
 /**
  * Com o filtro de funil o `lead` vira INNER JOIN: o PostgREST só filtra pela
@@ -89,6 +103,11 @@ export interface CriacaoDaTarefa {
   contact_id?: string | null;
   demanda_id?: string | null;
   assigned_to?: string | null;
+  /**
+   * A SÉRIE (#4595). Ausente/nula = tarefa avulsa, exatamente como antes.
+   * `dias` é dia da semana no fuso da ORGANIZAÇÃO e `hora` é hora de parede.
+   */
+  recurrence?: RegraDeRecorrenciaRecebida | null;
 }
 
 export interface EdicaoDaTarefa {
@@ -102,6 +121,11 @@ export interface EdicaoDaTarefa {
   contact_id?: string | null;
   demanda_id?: string | null;
   assigned_to?: string | null;
+  /**
+   * A SÉRIE (#4595). `null` DESLIGA a repetição — a série para de gerar e as
+   * ocorrências que já nasceram continuam na lista, como história.
+   */
+  recurrence?: RegraDeRecorrenciaRecebida | null;
 }
 
 /** Quem assina o audit: pessoa, ou a linha do token quando não há pessoa. */
@@ -252,10 +276,51 @@ export async function criarTarefaHandler(
   const executar = async (): Promise<{ task: Tarefa }> => {
     await confereVinculos(ctx, input);
 
+    // ═══ A SÉRIE QUE SE REPETE (#4595) ═══
+    //
+    // A regra vira o JSON normalizado que a varredura lê (`dias` filtrados e
+    // ordenados, `hora` inteira, `ativa` explícita). E, quando a pessoa não
+    // escolheu data, a PRIMEIRA ocorrência já nasce calculada no fuso da
+    // organização: deixar para o primeiro cron faria a tarefa aparecer sem prazo
+    // por até dez minutos — tempo de sobra para a pessoa concluir que não salvou.
+    //
+    // A conta mora AQUI, e não na rota: rota e tool chamam esta função (#4516) e
+    // série que só nasce pelo caminho da tela seria a integração de novo com
+    // metade do comportamento.
+    //
+    // O fuso é o da ORGANIZAÇÃO, e `instanteDe` (dentro de `proximaOcorrencia`) é
+    // quem converte hora de parede em instante. Calcular em UTC colocaria a
+    // ligação das 9h às 6h de Brasília.
+    let recurrence: ReturnType<typeof regraParaGravar> | null = null;
+    let dueDate = input.due_date ?? null;
+    if (input.recurrence) {
+      const regra = normalizarRegra(input.recurrence);
+      if (!regra) {
+        throw new ApiError(
+          422,
+          "validation_failed",
+          undefined,
+          ctx.requestId,
+          "Escolha pelo menos um dia da semana e um horário.",
+        );
+      }
+      recurrence = regraParaGravar(regra);
+      if (!dueDate) {
+        const [organizacao] = await portaDaAplicacao().query<{ timezone: string | null }>(
+          "select timezone from organizations where id = $1 limit 1",
+          [ctx.organization_id],
+        );
+        const proxima = proximaOcorrencia(regra, new Date(), fusoDaOrganizacao(organizacao?.timezone));
+        dueDate = proxima ? proxima.toISOString() : null;
+      }
+    }
+
     const { data, error } = await supabase
       .from("crm_tasks")
       .insert({
         ...input,
+        due_date: dueDate,
+        recurrence,
         organization_id: ctx.organization_id,
         created_by: pessoaDoAtor(ctx.actor),
       })
@@ -346,6 +411,31 @@ export async function editarTarefaHandler(
   const { id, ...campos } = input;
   await confereVinculos(ctx, campos);
 
+  // ═══ A SÉRIE: desligar é gravar `null` (#4595) ═══
+  //
+  // A tela manda a regra inteira de volta quando a pessoa muda dias ou hora, e
+  // `null` quando ela desmarca "repetir". Normalizar aqui é o que impede o JSON
+  // torto de chegar ao banco: dia fora de 0–6 ou lista vazia é recusa nomeada,
+  // não série que nunca gera. Vale para a tela e para o token — a regra é uma.
+  const alteracao: Record<string, unknown> = { ...campos };
+  if (input.recurrence !== undefined) {
+    if (input.recurrence === null) {
+      alteracao.recurrence = null;
+    } else {
+      const regra = normalizarRegra(input.recurrence);
+      if (!regra) {
+        throw new ApiError(
+          422,
+          "validation_failed",
+          undefined,
+          ctx.requestId,
+          "Escolha pelo menos um dia da semana e um horário.",
+        );
+      }
+      alteracao.recurrence = regraParaGravar(regra);
+    }
+  }
+
   // A situação ANTES da edição decide se esta é a vez em que a tarefa fechou.
   // Sem ler antes, marcar "concluída" duas vezes emitiria duas linhas na
   // timeline do negócio — e a segunda seria mentira.
@@ -364,7 +454,7 @@ export async function editarTarefaHandler(
 
   const { data, error } = await supabase
     .from("crm_tasks")
-    .update(campos)
+    .update(alteracao)
     .eq("id", id)
     .eq("organization_id", ctx.organization_id)
     .select(COLUNAS)

@@ -28,6 +28,7 @@ import { ApiError } from "@/lib/api/types";
 import { fail, ok } from "@/lib/api/wrappers";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { regraDeRecorrenciaSchema } from "@/lib/tarefas/recorrencia";
 import { PRIORIDADES_DA_TAREFA, SITUACOES_DA_TAREFA } from "@/lib/tarefas/tipos";
 
 import { editarTarefaHandler, excluirTarefaHandler } from "../_handler";
@@ -46,6 +47,11 @@ const edicaoSchema = z
     /** Vincular (`<uuid>`) e desvincular (`null`) a demanda do atendimento (#2818). */
     demanda_id: z.string().uuid().nullable().optional(),
     assigned_to: z.string().uuid().nullable().optional(),
+    /**
+     * A SÉRIE (#4595). `null` DESLIGA a repetição — a série para de gerar e as
+     * ocorrências que já nasceram continuam na lista, como história.
+     */
+    recurrence: regraDeRecorrenciaSchema.nullable().optional(),
   })
   // PATCH vazio gravaria só o `updated_at` e devolveria 200: a tela diria
   // "salvo" sobre uma edição que não existiu.
