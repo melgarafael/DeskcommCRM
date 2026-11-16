@@ -6,6 +6,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { randomUUID } from "node:crypto";
 import type { Json } from "@/lib/database.types";
 import { AUTORIDADE_LOCAL, RECUSA_DE_AUTORIDADE_EXTERNA, RECUSA_DE_TIPO_EXTERNO } from "@/lib/agenda/autoridade";
+import { agendaAuthority, changeAmigoAppointment, createAmigoAppointment, type AmigoBookingContext } from "@/lib/amigo/agenda";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 /**
  * A REGRA de marcar, remarcar e cancelar — fora da rota, de propósito.
  *
@@ -123,12 +125,15 @@ const CODIGO_DA_RECUSA = {
   tipo_desconhecido: { status: 404, code: "not_found" },
   tipo_desativado: { status: 422, code: "agenda_tipo_desativado" },
   tipo_de_sistema_externo: { status: 422, code: "agenda_tipo_de_sistema_externo" },
+  amigo_context_required: { status: 422, code: "agenda_amigo_context_required" },
   sem_responsavel: { status: 422, code: "agenda_sem_responsavel" },
   jornada_mal_configurada: { status: 422, code: "agenda_disponibilidade_invalida" },
   erro_interno: { status: 500, code: "internal_error" },
 } as const;
 
 export interface MarcarInput {
+  /** Só com o módulo `amigo` ligado e a agenda da organização no Amigo. */
+  amigo?: AmigoBookingContext;
   event_type_id: string;
   starts_at: string;
   owner_user_id?: string;
@@ -378,6 +383,19 @@ export async function marcarAgendamentoHandler(
   ctx: HandlerCtx,
   input: MarcarInput,
 ): Promise<Record<string, unknown>> {
+  // Módulo `amigo` ligado e conexão ativa: a agenda da organização é o Amigo, e
+  // marcar é marcar lá (etapa 2 do #4227). `agendaAuthority` devolve `local`
+  // com o módulo desligado, e então nada abaixo muda.
+  const autoridade = await agendaAuthority(supabase, ctx.organization_id);
+  if (autoridade.provider === "amigo" && autoridade.connection) {
+    await guardServiceEffect();
+    return createAmigoAppointment(supabase, ctx, input, autoridade.connection);
+  }
+  // Seleção do Amigo numa agenda local seria ignorada em silêncio, e quem pediu
+  // acharia que marcou lá.
+  if (input.amigo) {
+    throw new ApiError(422, "agenda_amigo_context_required", undefined, ctx.requestId, "A agenda desta organização não está no Amigo. Marque pela agenda local, sem a seleção do Amigo.");
+  }
   const chave =
     ctx.idempotencyKey ??
     (ctx.sourceJobId ? `agent-job:${ctx.sourceJobId}:${hashDoCorpo(input)}` : null);
@@ -715,11 +733,16 @@ export async function alterarAgendamentoHandler(
     "status",
     "time_zone",
     "service_occurrence_id",
-  ]);
-
-  await exigeDonoDoCompromisso(supabase, ctx, atual);
+  ], { caminhoDoModulo: true });
 
   if (input.revision !== undefined && input.revision !== Number(atual.revision)) throw new ApiError(409,"conflict",undefined,ctx.requestId,"O compromisso mudou. Recarregue antes de confirmar.");
+  // Espelho de uma consulta do Amigo, com o módulo ligado: remarcar ou confirmar
+  // é feito lá, e a linha daqui é reescrita pela resposta. Sem dono local.
+  if (atual.authority === "amigo") {
+    await guardServiceEffect();
+    return changeAmigoAppointment(supabase, ctx, atual, { ...input }, "change");
+  }
+  await exigeDonoDoCompromisso(supabase, ctx, atual);
   if (atual.status === "cancelled") {
     throw new ApiError(
       422,
@@ -984,13 +1007,16 @@ export async function cancelarAgendamentoHandler(
     "event_type_id",
     "status",
     "time_zone",
-  ]);
-
-  await exigeDonoDoCompromisso(supabase, ctx, atual);
+  ], { caminhoDoModulo: true });
 
   // Idempotente: cancelar o que já está cancelado devolve o estado, não erro —
   // quem chamou queria o compromisso desmarcado, e ele está.
   if (input.revision !== undefined && input.revision !== Number(atual.revision)) throw new ApiError(409,"conflict",undefined,ctx.requestId,"O compromisso mudou. Recarregue antes de confirmar.");
+  if (atual.authority === "amigo") {
+    await guardServiceEffect();
+    return changeAmigoAppointment(supabase, ctx, atual, { ...input }, "cancel");
+  }
+  await exigeDonoDoCompromisso(supabase, ctx, atual);
   if (atual.status === "cancelled") {
     return { id: atual.id, status: "cancelled", ja_estava: true };
   }
@@ -1073,10 +1099,11 @@ async function exigeAgendamento(
   ctx: HandlerCtx,
   id: string,
   colunas: string[],
+  opcoes: { caminhoDoModulo?: boolean } = {},
 ): Promise<Record<string, unknown>> {
   const { data, error } = await supabase
     .from("calendar_appointments")
-    .select([...new Set([...colunas, "service_occurrence_id", "service_block", "authority"])].join(", "))
+    .select([...new Set([...colunas, "service_occurrence_id", "service_block", "authority", "external_status", "external_connection_id"])].join(", "))
     .eq("organization_id", ctx.organization_id)
     .eq("id", id)
     .maybeSingle();
@@ -1087,9 +1114,17 @@ async function exigeAgendamento(
   const row = data as unknown as Record<string, unknown>;
   if (row.service_block) throw new ApiError(403, "forbidden", undefined, ctx.requestId, "Gerencie este bloqueio em Configurações da Agenda, com seu alcance explícito.");
   // Autoridade de fora (migration 9392): a linha daqui é espelho, e remarcar ou
-  // cancelar por aqui divergiria do sistema que manda. A etapa 2 do #4227 troca
-  // esta recusa pelo caminho do módulo que integra esse sistema. A coluna é
-  // `not null default 'local'`: ausente, só num retrato que não a leu.
+  // cancelar por aqui divergiria do sistema que manda. Com o módulo `amigo`
+  // ligado, quem pediu `caminhoDoModulo` (remarcar e cancelar) recebe a linha e
+  // segue pelo Amigo; sem o módulo, ou de outro provedor, a recusa fica. A coluna
+  // é `not null default 'local'`: ausente, só num retrato que não a leu.
+  if (
+    opcoes.caminhoDoModulo &&
+    row.authority === "amigo" &&
+    (await moduloLigado(createAdminClient(), "amigo"))
+  ) {
+    return row;
+  }
   if (row.authority != null && row.authority !== AUTORIDADE_LOCAL) throw new ApiError(409, "agenda_autoridade_externa", undefined, ctx.requestId, RECUSA_DE_AUTORIDADE_EXTERNA);
   return row;
 }

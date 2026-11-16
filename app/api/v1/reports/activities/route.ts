@@ -19,16 +19,24 @@
  * não é legível por `authenticated`, e sem ele o ranking de quem trabalhou seria
  * uma lista de UUIDs. Mesmo padrão de `/api/v1/metrics/attendants`.
  *
+ * ## Sessão OU token (Spec 33, R3)
+ *
+ * `resolveAuthDual`: com `Authorization: Bearer dsk_…` o cliente é o de serviço
+ * (sem RLS por atendente), a organização vem da LINHA do token e `p_org` e cada
+ * `.from(...)` filtram `organization_id` à mão. O token vê a organização
+ * inteira, então exige papel `manager`; a sessão segue com o piso `viewer`.
+ *
  * ## Read-only ⇒ sem audit
  *
  * Não há mutação; a doutrina de audit cobre POST/PATCH/DELETE.
  */
 import { randomUUID } from "node:crypto";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import type { PipelineVocabulary } from "@/lib/kanban/types";
 import {
   fusoValido,
@@ -38,7 +46,6 @@ import {
   type RelatorioBruto,
 } from "@/lib/reports/atividades";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -74,9 +81,17 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   // Piso `viewer`: é leitura, e quem restringe por atendente é a RLS, não o
   // papel. Um piso mais alto esconderia da pessoa as atividades dela mesma.
-  const authz = await requireRole("viewer", { requestId, resource: "reports" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "reports",
+    role: "viewer",
+    scope: "mcp:read",
+    tokenRole: "manager",
+  });
   if (!authz.ok) return authz.response;
-  const { org: activeOrg } = authz;
+  // Está em PUBLIC_PATHS: o teto do token é a única contagem das chamadas dele.
+  const teto = await tetoDeEscritaDoToken(authz, "reports", requestId);
+  if (teto) return teto;
 
   const url = new URL(req.url);
   const parsed = querySchema.safeParse({
@@ -92,9 +107,9 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const { de, ate } = janelaDoPeriodo(parsed.data.days, new Date());
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data, error } = await supabase.rpc("fn_activity_report", {
-    p_org: activeOrg.orgId,
+    p_org: authz.organizationId,
     p_from: de.toISOString(),
     p_to: ate.toISOString(),
     p_tz: parsed.data.tz,
@@ -111,7 +126,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     items_truncated: false,
   }) as unknown as RelatorioBruto;
 
-  const nomes = await resolveNomes(supabase, activeOrg.orgId, bruto);
+  const nomes = await resolveNomes(supabase, authz.organizationId, bruto);
 
   // O vocabulário do funil PADRÃO da organização. O relatório é org-wide, então
   // não há um funil a que ele pertença — e o padrão é o que a organização
@@ -120,7 +135,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const { data: funil } = await supabase
     .from("crm_pipelines")
     .select("vocabulary")
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("is_default", true)
     .maybeSingle();
 
@@ -141,7 +156,7 @@ export async function GET(req: NextRequest): Promise<Response> {
  * `actorName` cai no rótulo genérico e a linha continua honesta.
  */
 async function resolveNomes(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: SupabaseClient,
   orgId: string,
   bruto: RelatorioBruto,
 ): Promise<NomesConhecidos> {

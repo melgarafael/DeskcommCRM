@@ -138,6 +138,10 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     nome: "Lista de espera da agenda",
     oQueFaz: "Quando um horário abre, a vaga é oferecida a uma pessoa por vez, entre quem aceitou ser avisado.",
   },
+  amigo: {
+    nome: "Amigo (sistema de clínicas)",
+    oQueFaz: "A agenda passa a usar o sistema de clínicas Amigo: pacientes, vagas e consultas vêm de lá, e a IA marca pelo Amigo.",
+  },
   ouvidoria: {
     nome: "Ouvidoria",
     oQueFaz: "Reclamações, denúncias, elogios e sugestões com protocolo próprio, lidas só por administradores e fora do funil.",
