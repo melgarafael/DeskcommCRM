@@ -461,7 +461,7 @@ describe("crm_get_lead / crm_list_leads — governança + shape", () => {
 // pessoa, por token. A marca só pode apertar o primeiro — e o controle
 // positivo (fora do turno a chave VEM) é a metade que impede o conserto de
 // virar perda de dado para quem usa a API à mão.
-describe("crm_get_lead — só o campo marcado \"A IA pode ler\" chega ao turno (#4669)", () => {
+describe("crm_get_lead / crm_list_leads — só o campo marcado \"A IA pode ler\" chega ao turno (#4669)", () => {
   const CONTATO = "c0000000-0000-4000-8000-0000000000aa";
   const FUNIL: Record<string, unknown> = {
     fields: [
@@ -529,5 +529,26 @@ describe("crm_get_lead — só o campo marcado \"A IA pode ler\" chega ao turno 
     expect(res.lead.custom_fields).toEqual({});
     // O resto do lead continua no payload: o filtro é do campo, não do negócio.
     expect(res.lead.title).toBe("Pedido #1");
+  });
+
+  // A lista é o mesmo `custom_fields` no mesmo turno: recortar só o get deixava
+  // o modelo ler pela lista a chave que o funil desmarcou.
+  it("crm_list_leads no turno: a chave desmarcada não vem", async () => {
+    const res = (await crmListLeads.handler(
+      { limit: 20 } as Parameters<typeof crmListLeads.handler>[0],
+      makeCtx(resolverComFunil(FUNIL), { contatoDoTurno: CONTATO, role: "ai_operator" }),
+    )) as { leads: Array<Record<string, unknown>> };
+
+    expect(res.leads).toHaveLength(1);
+    expect(res.leads[0]?.custom_fields).toEqual({ documento: "cnh-digital.pdf" });
+  });
+
+  it("crm_list_leads fora do turno: a ficha volta inteira", async () => {
+    const res = (await crmListLeads.handler(
+      { limit: 20 } as Parameters<typeof crmListLeads.handler>[0],
+      makeCtx(resolverComFunil(FUNIL)),
+    )) as { leads: Array<Record<string, unknown>> };
+
+    expect(res.leads[0]?.custom_fields).toEqual(CUSTOM);
   });
 });

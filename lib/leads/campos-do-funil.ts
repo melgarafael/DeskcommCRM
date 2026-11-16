@@ -41,8 +41,9 @@ export function camposPorEscopo(
  * Só o `true` EXPLÍCITO libera. A ausência da marca — toda definição que já
  * existe, e o que a tela grava quando a caixa está desmarcada — é DESMARCADO:
  * o valor fica no card e não vai ao modelo. A régua mora aqui, e não em cada
- * caminho, porque são dois (`negocio-do-followup.ts` e `crm_get_lead`) e duas
- * cópias divergiriam no dia em que uma delas mudasse.
+ * caminho, porque são vários (`negocio-do-followup.ts` e toda resposta de
+ * negócio no turno, em `lib/mcp/tools/leads.ts`) e cópias divergiriam no dia em
+ * que uma delas mudasse.
  */
 export function campoLiberadoParaIa(
   campo: Pick<CustomFieldDef, "ia_pode_ler">,
@@ -59,8 +60,8 @@ export function camposLiberadosParaIa(
 }
 
 /**
- * O recorte de `custom_fields` que a IA pode ler (issue #4669) — o que o
- * `crm_get_lead` devolve DENTRO de um turno de agente.
+ * O recorte de `custom_fields` que a IA pode ler (issue #4669) — o que as
+ * ferramentas de negócio devolvem DENTRO de um turno de agente.
  *
  * Chave que o funil não declara não tem marca, e sem marca não há autorização:
  * fica de fora, igual à leitura do bloco do follow-up ("sem rótulo não há como
