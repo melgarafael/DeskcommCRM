@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { createClient } from "@supabase/supabase-js";
-import { test, expect } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect } from "./helpers/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 import { lerCreds, loginComoDono } from "./helpers/login-admin";
 import { afirmarDonoDoServidor } from "./utils/precondicao";
@@ -22,6 +22,7 @@ test("agência cria cliente, entra, volta e perde delegação quando desabilitad
   let agency = "";
   let actor = "";
   const operator = await browser.newContext({ baseURL: testInfo.project.use.baseURL });
+  operator.on("page", esperarARevelacaoNasCargas);
   const clientIds: string[] = [];
   // Doc 321 (1A): o módulo nasce desligado. Guarda o estado de antes para devolvê-lo.
   const antes = await db.from("platform_config").select("valor").eq("chave", "MODULO_AGENCIAS").maybeSingle();

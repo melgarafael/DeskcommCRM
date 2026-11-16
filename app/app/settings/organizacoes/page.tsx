@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -10,5 +11,12 @@ export default async function OrganizacoesDaAgenciaPage() {
   const org = await resolveActiveOrg(user);
   if (!org || user.support || !(user.agency_org_ids ?? []).includes(org.orgId))
     redirect("/app/settings");
-  return <ClientesDaAgencia />;
+  return (
+    <>
+      <div className="px-6 pt-6">
+        <CabecalhoDaSubTela idioma={user.idioma} />
+      </div>
+      <ClientesDaAgencia />
+    </>
+  );
 }
