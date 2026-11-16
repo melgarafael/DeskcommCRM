@@ -189,6 +189,7 @@ export async function PATCH(
       "channel_session_id",
       "channel_session_ids",
       "message_mode",
+      "email_subject",
       "provider_template_name",
       "provider_template_language",
       "provider_template_variables",
@@ -216,6 +217,7 @@ export async function PATCH(
       modoDoCanal: canal.modo,
       pedido: {
         message_mode: entrada.message_mode,
+        email_subject: antigo(entrada.email_subject, campanha.email_subject),
         provider_template_name: antigo(entrada.provider_template_name, campanha.provider_template_name),
         provider_template_language: antigo(entrada.provider_template_language, campanha.provider_template_language),
         provider_template_variables:
@@ -228,10 +230,17 @@ export async function PATCH(
     }
     Object.assign(mudanca, decisao.colunas);
     if (decisao.modo === "template") mudanca.message_body = null;
-    // Trocar o modelo ou o mapa é trocar o texto: sobe a versão do conteúdo.
+    // No e-mail, o corpo gravado é o que a conferência aparou — a mesma função
+    // que a tela usa (`conferirConteudoDeEmail`).
+    if (decisao.conteudoDeEmail) mudanca.message_body = decisao.conteudoDeEmail.corpo;
+    // Trocar o modelo, o mapa, o assunto ou o corpo do e-mail é trocar o texto:
+    // sobe a versão do conteúdo.
     const mudouOModelo =
       decisao.colunas.provider_template_name !== campanha.provider_template_name ||
       decisao.colunas.provider_template_language !== campanha.provider_template_language ||
+      decisao.colunas.email_subject !== campanha.email_subject ||
+      (decisao.conteudoDeEmail !== undefined &&
+        decisao.conteudoDeEmail.corpo !== (campanha.message_body ?? "").trim()) ||
       JSON.stringify(decisao.colunas.provider_template_variables) !==
         JSON.stringify(campanha.provider_template_variables ?? {});
     if (mudouOModelo && mudanca.content_version === undefined) {
@@ -245,7 +254,8 @@ export async function PATCH(
   // existe). O broadcast pede ainda o número que o faz e variáveis de texto fixo
   // — e por isso a decisão roda também quando o modelo ou o mapa mudam.
   if (entrada.velocidade !== undefined || tocaConteudo) {
-    const canalAlvo = (mudanca.channel_session_id as string | undefined) ?? campanha.channel_session_id;
+    const canalAlvo =
+      (mudanca.channel_session_id as string | null | undefined) ?? campanha.channel_session_id;
     const canal = await lerModoDoCanal(supabase, authz.org.orgId, canalAlvo);
     const variaveis = variaveisDaCampanhaSchema.safeParse(
       mudanca.provider_template_variables ?? campanha.provider_template_variables ?? {},
@@ -253,7 +263,10 @@ export async function PATCH(
     const velocidade = decidirVelocidade({
       pedida: entrada.velocidade,
       atual: ehVelocidadeDaCampanha(campanha.velocidade) ? campanha.velocidade : "gradual",
-      modo: (mudanca.message_mode ?? campanha.message_mode) === "template" ? "template" : "text",
+      modo: (() => {
+        const modo = mudanca.message_mode ?? campanha.message_mode;
+        return modo === "template" ? "template" : modo === "email" ? "email" : "text";
+      })(),
       transmissao: canal.existe && canal.transmissao,
       variaveis: variaveis.success ? variaveis.data : {},
     });

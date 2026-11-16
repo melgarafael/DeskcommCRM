@@ -10,7 +10,7 @@ import { createClient } from "@/lib/supabase/server";
 import { idiomaDoVisitante } from "@/lib/i18n/idiomaAnonimo";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { lerCadastroNaTela, planoInicialDoSeletor } from "@/lib/cobranca/cadastro";
+import { lerCadastroNaTela, planoInicialDoSeletor, planosNaMoedaDoLink } from "@/lib/cobranca/cadastro";
 import { selecionarPlanoDoLink } from "@/lib/cobranca/selecao-do-link";
 import { tituloDaTelaPublica } from "@/lib/i18n/titulo-da-tela-publica";
 
@@ -42,9 +42,9 @@ export const generateMetadata = () => tituloDaTelaPublica((t) => t("Criar conta"
 export default async function SignupPage({
   searchParams,
 }: {
-  searchParams: Promise<{ invite?: string; plano?: string | string[] }>;
+  searchParams: Promise<{ invite?: string; plano?: string | string[]; moeda?: string | string[] }>;
 }) {
-  const { invite, plano } = await searchParams;
+  const { invite, plano, moeda } = await searchParams;
   const payload = invite ? verifyInviteToken(invite) : null;
   const convite = invite && payload ? { token: invite, email: payload.email } : undefined;
   const conviteExpirado = Boolean(invite) && !payload;
@@ -67,7 +67,9 @@ export default async function SignupPage({
   // Google fica (doc 146, opção B). O critério é o de `lib/cobranca/cadastro.ts`,
   // o mesmo do gatilho. Leitura que falha não esconde nada: quem recusa é a action.
   const cadastro = convite ? null : await lerCadastroNaTela(createAdminClient());
-  const planos = cadastro?.oferecidos ?? [];
+  // Migration 9332: o link escolhe a moeda (`?moeda=`, ou a do `?plano=`), e o
+  // seletor mostra só os planos nela. Sem pedido, a lista inteira, como sempre.
+  const planos = planosNaMoedaDoLink(cadastro?.oferecidos ?? [], { moeda, plano });
   const selecao = selecionarPlanoDoLink(
     plano,
     planos,

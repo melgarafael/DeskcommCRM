@@ -18,6 +18,7 @@ import { audit } from "@/lib/audit";
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
 import { roleAtLeast } from "@/lib/auth/types";
+import { ehRecusaSemInteresse } from "@/lib/lgpd/sem-interesse";
 import { canonicalPhoneBR, phoneLookupVariants } from "@/lib/channels/phone-variants";
 import { encontrarContatoPorTelefone } from "@/lib/channels/contato-por-telefone";
 import {
@@ -113,6 +114,7 @@ function decodeCursor(raw: string): CursorPayload | null {
     if (typeof parsed.id !== "string") return null;
     // Cursores legados (só created_at) ou do formato anterior (last_activity_at).
     const sort = parsed.sort ?? parsed.last_activity_at ?? parsed.created_at ?? null;
+    if (sort !== null && typeof sort !== "string") return null;
     return { sort, id: parsed.id };
   } catch {
     return null;
@@ -356,8 +358,13 @@ export async function listContactsHandler(
       );
     }
     const op = asc ? "gt" : "lt";
-    if (c.sort) {
-      query = query.or(`${sortCol}.${op}.${c.sort},and(${sortCol}.eq.${c.sort},id.${op}.${c.id})`);
+    if (c.sort !== null) {
+      // O NULL vem depois dos valores nos dois sentidos. O valor pode ser
+      // vazio ou conter pontuação da gramática do PostgREST.
+      const valor = `"${c.sort.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+      query = query.or(
+        `${sortCol}.${op}.${valor},and(${sortCol}.eq.${valor},id.${op}.${c.id}),${sortCol}.is.null`,
+      );
     } else {
       // Página na região de sort NULL (nulls last): pagina só por id.
       query = query.is(sortCol, null);
@@ -978,6 +985,27 @@ export async function patchContactHandler(
       string,
       unknown
     >;
+    // A recusa "sem interesse" (decisão D3) só se desfaz pela porta dela: o DELETE de
+    // `/api/v1/contacts/[id]/sem-interesse`, que exige administrador e audita
+    // `recusa_desfeita`. Sem esta trava, o PATCH (papel `agent`) trocava `marketing` por
+    // cima e devolvia o contato à prospecção e às Campanhas sem rastro. Reenviar a
+    // MESMA recusa (o editor que manda o objeto que leu) passa.
+    if (
+      "marketing" in input.consent &&
+      ehRecusaSemInteresse(anterior) &&
+      JSON.stringify(input.consent.marketing) !== JSON.stringify(anterior.marketing)
+    ) {
+      throw new ApiError(
+        409,
+        "state_conflict",
+        { campo: "consent.marketing" },
+        ctx.requestId,
+        traduzir(
+          "Este contato disse que não tem interesse. Só um administrador desfaz essa recusa, na aba LGPD da ficha do contato.",
+          ctx.idioma ?? "pt-BR",
+        ),
+      );
+    }
     patch.consent = { ...anterior, ...input.consent };
   }
   if (input.cpf !== undefined) {

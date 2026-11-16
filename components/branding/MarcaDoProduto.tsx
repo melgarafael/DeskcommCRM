@@ -54,7 +54,7 @@ export function SimboloDoProduto({ nome, className, decorativo = false }: Props)
       className={cn("shrink-0", className)}
       {...acessibilidade(nome, decorativo)}
     >
-      <g className={SIMBOLO_CLARO_ESCURO} transform={SIMBOLO.transform}>
+      <g data-marca-parte="simbolo" className={SIMBOLO_CLARO_ESCURO} transform={SIMBOLO.transform}>
         <path d={SIMBOLO.d} />
         <rect {...SIMBOLO.modulo} />
       </g>
@@ -70,16 +70,16 @@ export function LogotipoDoProduto({ nome, className, decorativo = false }: Props
       className={cn("shrink-0", className)}
       {...acessibilidade(nome, decorativo)}
     >
-      <g className={SIMBOLO_CLARO_ESCURO} transform={LOGOTIPO.simbolo.transform}>
+      <g data-marca-parte="simbolo" className={SIMBOLO_CLARO_ESCURO} transform={LOGOTIPO.simbolo.transform}>
         <path d={LOGOTIPO.simbolo.d} />
         <rect {...LOGOTIPO.simbolo.modulo} />
       </g>
-      <g className={NOME_CLARO_ESCURO}>
+      <g data-marca-parte="nome" className={NOME_CLARO_ESCURO}>
         {LOGOTIPO.nome.map((g) => (
           <path key={g.transform} transform={g.transform} d={g.d} />
         ))}
       </g>
-      <g className={SUFIXO_CLARO_ESCURO}>
+      <g data-marca-parte="sufixo" className={SUFIXO_CLARO_ESCURO}>
         {LOGOTIPO.sufixo.map((g) => (
           <path key={g.transform} transform={g.transform} d={g.d} />
         ))}

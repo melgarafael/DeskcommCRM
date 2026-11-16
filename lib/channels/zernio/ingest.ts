@@ -35,7 +35,6 @@ import { emitirTelefoneGanho } from "@/lib/contacts/telefone-ganho";
 import { extrairAtribuicaoMeta } from "@/lib/channels/atribuicao-de-anuncio-oficial";
 import { estamparAtribuicaoDoContato, metadataDoAnuncio } from "@/lib/leads/atribuicao-de-anuncio";
 import { ancoraCtwaDaMensagem } from "@/lib/leads/prova-meta-lead-submitted";
-import { extrairEEstamparAtribuicaoGoogle } from "@/lib/plataformas-de-anuncio/google/atribuicao";
 import {
   pausarIaPorAtendimentoManual,
   type FalhaDaPausa,
@@ -562,11 +561,6 @@ async function efeitosDaEntrada(
   // contato ainda não tem `ad_platform`.
   const atribuicao = extrairAtribuicaoMeta(msg.referral);
   if (atribuicao) await estamparAtribuicaoDoContato(admin, input.organizationId, contactId, atribuicao);
-
-  // Irmão do bloco acima, para o Google: o dado não vem no `referral` (que é
-  // exclusivo da Meta), vem no PRÓPRIO texto da mensagem — ver o cabeçalho de
-  // `lib/plataformas-de-anuncio/google/atribuicao.ts`. Best-effort, mesma postura.
-  await extrairEEstamparAtribuicaoGoogle(admin, input.organizationId, contactId, msg.text);
 
   await aplicarEfeitosPosEntrada(admin, {
     organizationId: input.organizationId,

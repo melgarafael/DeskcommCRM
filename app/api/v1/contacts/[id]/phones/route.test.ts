@@ -167,7 +167,7 @@ describe("POST /api/v1/contacts/[id]/phones", () => {
       fakeSupabase({
         organizations: { data: { country: "PT" } },
         "contacts.select": { data: FICHA_SEM_PRINCIPAL },
-        "contacts.update": { data: null, error: null },
+        "contacts.update": { data: { id: CONTATO } },
       }) as never,
     );
     const { POST } = await import("./route");
@@ -199,7 +199,12 @@ describe("POST /api/v1/contacts/[id]/phones", () => {
 
   it("ficha SEM principal → grava o principal e devolve became_primary: true", async () => {
     vi.mocked(createClient).mockResolvedValue(
-      fakeSupabase({ "contacts.select": { data: FICHA_SEM_PRINCIPAL } }) as never,
+      fakeSupabase({
+        "contacts.select": { data: FICHA_SEM_PRINCIPAL },
+        // O update condicional devolve a linha que ele gravou; sem linha, o
+        // número entra como extra (a corrida do item 4).
+        "contacts.update": { data: { id: CONTATO } },
+      }) as never,
     );
     const { POST } = await import("./route");
 
@@ -217,6 +222,24 @@ describe("POST /api/v1/contacts/[id]/phones", () => {
     expect(vi.mocked(audit)).toHaveBeenCalledWith(
       expect.objectContaining({ action: "contact.primary_phone_changed" }),
     );
+  });
+
+  it("ficha SEM principal: o rótulo digitado vai para o principal (phone_label), não some", async () => {
+    // Medido na prova de tela do #4249: o primeiro número de uma ficha vazia
+    // virava principal e o rótulo "pessoal" terminava com phone_label null.
+    vi.mocked(createClient).mockResolvedValue(
+      fakeSupabase({
+        "contacts.select": { data: FICHA_SEM_PRINCIPAL },
+        "contacts.update": { data: { id: CONTATO } },
+      }) as never,
+    );
+    const { POST } = await import("./route");
+
+    const res = await POST(reqPost({ phone_number: "11 99999-8888", label: "pessoal" }), CONTEXTO);
+
+    expect(res.status).toBe(200);
+    const atualizacao = chamadas.find((c) => c.tabela === "contacts" && c.op === "update");
+    expect(atualizacao?.valores).toMatchObject({ phone_number: "+5511999998888", phone_label: "pessoal" });
   });
 
   it("ficha COM principal → insere extra com origem manual, 201, sem wa_lid na resposta", async () => {
@@ -263,6 +286,55 @@ describe("POST /api/v1/contacts/[id]/phones", () => {
     expect(vi.mocked(audit)).toHaveBeenCalledWith(
       expect.objectContaining({ action: "contact.extra_phone_added" }),
     );
+  });
+
+  it("dois POST ao mesmo tempo numa ficha sem principal: o perdedor vira extra, sem sobrescrever (#4242, item 4)", async () => {
+    // A ficha nasceu sem principal e o OUTRO pedido gravou primeiro: o update
+    // deste, condicionado a `phone_number is null`, não casa mais nenhuma linha.
+    vi.mocked(createClient).mockResolvedValue(
+      fakeSupabase({
+        "contacts.select": { data: FICHA_SEM_PRINCIPAL },
+        "contacts.update": { data: null, error: null },
+        "contact_phones.insert": { data: EXTRA_CRIADO, error: null },
+      }) as never,
+    );
+    const { POST } = await import("./route");
+
+    const res = await POST(reqPost({ phone_number: "11 97777-6666" }), CONTEXTO);
+
+    expect(res.status).toBe(201);
+    const atualizacao = chamadas.find((c) => c.tabela === "contacts" && c.op === "update");
+    // Sabotagem: tirar o `.is("phone_number", null)` deixa o segundo pedido
+    // gravar por cima do primeiro, e é esse filtro que este caso prova.
+    expect(atualizacao?.filtros).toContainEqual(["phone_number", null]);
+    expect(chamadas.some((c) => c.tabela === "contact_phones" && c.op === "insert")).toBe(true);
+    // O principal do outro pedido não é tocado: nenhum update sobrou depois.
+    expect(chamadas.filter((c) => c.tabela === "contacts" && c.op === "update")).toHaveLength(1);
+  });
+
+  it("organização fora do Brasil: a recusa ensina o formato do país, no idioma de quem opera (#4242, item 1)", async () => {
+    vi.mocked(requireRole).mockResolvedValue({
+      ok: true,
+      user: { id: USER, idioma: "es" },
+      org: { orgId: ORG },
+    } as never);
+    vi.mocked(createClient).mockResolvedValue(
+      fakeSupabase({
+        organizations: { data: { country: "PT" } },
+        "contacts.select": { data: FICHA_SEM_PRINCIPAL },
+      }) as never,
+    );
+    const { POST } = await import("./route");
+
+    const res = await POST(reqPost({ phone_number: "912345678" }), CONTEXTO);
+    const corpo = (await res.json()) as { error: { code: string; message: string } };
+
+    expect(res.status).toBe(422);
+    expect(corpo.error.code).toBe("invalid_phone");
+    // A frase vem da API, traduzida pela chave do dicionário, e o exemplo é o do
+    // PAÍS da organização — não há "confira o DDD" para quem está em Portugal.
+    expect(corpo.error.message).toMatch(/^El teléfono debe estar en formato E\.164 \(\+351/);
+    expect(corpo.error.message).not.toContain("DDD");
   });
 
   it("papel viewer → 403, e nada é gravado", async () => {

@@ -16,6 +16,7 @@ import type {
   ItemDeDataDoNegocio,
   JanelaDeDias,
 } from "@/lib/agenda/datas-dos-negocios";
+import { escolhaPadraoDaCamada, type EscolhaDaCamada } from "@/lib/agenda/preferencia-da-camada";
 import { cn } from "@/lib/utils";
 
 /**
@@ -35,11 +36,16 @@ import { cn } from "@/lib/utils";
  *
  * Quais campos entram por padrão: NENHUM, decisão de produto de 29/10 para esta
  * primeira fatia. A camada nasce desligada, e ligada não escolhe campo por
- * heurística de nome (`data_inicio`, `data_fim`) — pede a escolha na tela. A
- * escolha vale nesta tela e não é gravada; a configuração pelo administrador
- * segue na #3221. Quem não quer a camada
- * não paga por ela: desligada, o componente não busca nada e não desenha item
- * nenhum, só o próprio interruptor.
+ * heurística de nome (`data_inicio`, `data_fim`) — pede a escolha na tela.
+ *
+ * ─── A escolha é lembrada (#4436, item 1) ──────────────────────────────────
+ *
+ * A escolha da pessoa — ligada, funil, campo e campo-fim — chega em
+ * `escolhaInicial`, lida no servidor do `raw_user_meta_data` dela por
+ * `lerEscolhaDaCamada` (que já devolve o padrão para funil arquivado ou campo
+ * que sumiu), e cada mudança volta inteira por `aoEscolher`. Quem não quer a
+ * camada não paga por ela: desligada, o componente não busca nada e não desenha
+ * item nenhum, só o próprio interruptor.
  *
  * ─── Onde o recorte vem ────────────────────────────────────────────────────
  *
@@ -77,6 +83,21 @@ interface Props {
   funis: FunilComDatas[];
   /** O recorte desenhado na grade, em `YYYY-MM-DD` do fuso da organização. */
   janela: JanelaDeDias;
+  /**
+   * A escolha que a pessoa deixou (#4436), lida no servidor do
+   * `raw_user_meta_data` dela e JÁ saneada contra `funis` — funil arquivado ou
+   * campo que sumiu chegam aqui como padrão, nunca como escolha quebrada.
+   *
+   * Ausente é o mesmo que `escolhaPadraoDaCamada()`: a camada desligada, que é o
+   * estado de quem nunca escolheu.
+   */
+  escolhaInicial?: EscolhaDaCamada;
+  /**
+   * Grava a escolha inteira a cada mudança. A Agenda passa a action que escreve
+   * no metadata da pessoa; ausente, a escolha vale só esta visita — é assim que
+   * os testes de desenho montam a camada, sem servidor.
+   */
+  aoEscolher?: (escolha: EscolhaDaCamada) => void;
 }
 
 /** `YYYY-MM-DD` → `Date` no calendário local, ao meio-dia. */
@@ -88,14 +109,25 @@ function diaLocal(chave: string): Date {
   return new Date(ano!, mes! - 1, dia!, 12, 0, 0);
 }
 
-export function CamadaDatasDosNegocios({ funis, janela }: Props) {
+export function CamadaDatasDosNegocios({ funis, janela, escolhaInicial, aoEscolher }: Props) {
   const t = useT();
   const tag = useTagDeIdioma();
 
-  const [ligada, setLigada] = React.useState(false);
-  const [funilEscolhido, setFunilEscolhido] = React.useState<string | null>(null);
-  const [campoEscolhido, setCampoEscolhido] = React.useState<string | null>(null);
-  const [campoFimEscolhido, setCampoFimEscolhido] = React.useState<string | null>(null);
+  /**
+   * A escolha de abertura é a GRAVADA (#4436), não o padrão.
+   *
+   * `useState` só usa o primeiro valor: a prop é a semente da visita e o estado
+   * passa a ser da tela a partir do primeiro gesto. Isso é o que faz a camada
+   * voltar como a pessoa deixou — e o que permite desligá-la sem que o próximo
+   * render a religue.
+   */
+  const escolhaDeAbertura = escolhaInicial ?? escolhaPadraoDaCamada();
+  const [ligada, setLigada] = React.useState(escolhaDeAbertura.ligada);
+  const [funilEscolhido, setFunilEscolhido] = React.useState<string | null>(escolhaDeAbertura.funilId);
+  const [campoEscolhido, setCampoEscolhido] = React.useState<string | null>(escolhaDeAbertura.campo);
+  const [campoFimEscolhido, setCampoFimEscolhido] = React.useState<string | null>(
+    escolhaDeAbertura.campoFim,
+  );
   /**
    * A RESPOSTA é carimbada com a chave da pergunta que a produziu.
    *
@@ -143,6 +175,12 @@ export function CamadaDatasDosNegocios({ funis, janela }: Props) {
 
   const funilId = ligada ? (funil?.id ?? null) : null;
   const campoDaBusca = funilId ? campo : null;
+  /**
+   * O funil que a tela mostra. É ele que se grava mesmo com a camada DESLIGADA:
+   * quem desliga para espiar a grade sem a camada e religa depois espera
+   * reencontrar o mesmo funil, e não o primeiro da lista.
+   */
+  const funilDaEscolha = funil?.id ?? null;
 
   /**
    * A consulta depende de PRIMITIVOS, e não de um objeto montado no render.
@@ -209,6 +247,29 @@ export function CamadaDatasDosNegocios({ funis, janela }: Props) {
 
     return () => controle.abort();
   }, [chaveDaConsulta, funilId, campoDaBusca, campoFim, janela.de, janela.ate]);
+
+  /**
+   * A ESCOLHA VAI PARA O SERVIDOR A CADA MUDANÇA (#4436, item 1).
+   *
+   * Um efeito, e não uma chamada dentro de cada `onValueChange`: os quatro
+   * gestos da camada (ligar, funil, campo, campo-fim) mudam a MESMA escolha, e
+   * um deles — o `campo_nao_e_data` da resposta — é uma mudança de estado que
+   * nasce FORA do clique. Aqui as três passam pelo mesmo gravador, e o que se
+   * grava é sempre o objeto completo (o gravador regrava o objeto inteiro).
+   *
+   * A PRIMEIRA pintura não grava: ela é o que a pessoa deixou, não uma escolha
+   * nova — gravar ali reescreveria a preferência com o valor do primeiro render
+   * toda vez que a Agenda abrisse.
+   */
+  const jaGravou = React.useRef(false);
+  React.useEffect(() => {
+    if (!jaGravou.current) {
+      jaGravou.current = true;
+      return;
+    }
+    if (!aoEscolher) return;
+    aoEscolher({ ligada, funilId: funilDaEscolha, campo, campoFim });
+  }, [aoEscolher, ligada, funilDaEscolha, campo, campoFim]);
 
   // Sem funil com campo de data não há camada a oferecer: a tela fica EXATAMENTE
   // como era antes desta entrega — nem o interruptor aparece.

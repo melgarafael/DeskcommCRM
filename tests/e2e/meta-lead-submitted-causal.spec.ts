@@ -25,7 +25,7 @@ import { collectExportData } from "@/lib/lgpd/export-collector";
 
 import { credenciaisSupabaseDeTeste, destinoEhLocal } from "../../scripts/lib/env-de-teste";
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
-import { expect, test, type APIRequestContext } from "./helpers/test";
+import { esperarARevelacao, expect, test, type APIRequestContext } from "./helpers/test";
 
 const GRAPH_BASE = "http://127.0.0.1:3995";
 const DATASET_ID = `qa-dataset-${randomUUID()}`;
@@ -732,7 +732,16 @@ test.describe("LeadSubmitted causal pelo webhook WAHA", () => {
     const chave = page.getByRole("switch", { name: "Enviar LeadSubmitted por clique CTWA à Meta" });
     await expect(chave).toBeChecked();
     await page.getByRole("link", { name: "Histórico de envios", exact: true }).click();
-    const historico = page.getByTestId("historico-de-cliques-ctwa");
+    // Mesmo defeito, dois consertos (#1374, #884): o locator escopado no <main>
+    // é o da main e fica — ao trocar de aba pelo link, a resposta em streaming
+    // pode deixar por um instante uma cópia ESCONDIDA da seção fora do <main>, e
+    // sem o escopo o strict mode acha duas seções. A espera da revelação e a
+    // contagem continuam porque não são conserto duplicado: a contagem é o que
+    // prova UMA cópia no <main> (e não um `.first()`); se a tela voltar a montar
+    // dois painéis de verdade, ela reprova.
+    await esperarARevelacao(page);
+    const historico = page.getByRole("main").getByTestId("historico-de-cliques-ctwa");
+    await expect(historico).toHaveCount(1);
     await expect(historico).toBeVisible();
     const linha = historico.locator("li").filter({ hasText: eventId });
     await expect(linha).toHaveCount(1);
@@ -748,6 +757,8 @@ test.describe("LeadSubmitted causal pelo webhook WAHA", () => {
     await page.reload();
     await expect(chave).not.toBeChecked();
     await page.getByRole("link", { name: "Histórico de envios", exact: true }).click();
+    await esperarARevelacao(page);
+    await expect(historico).toHaveCount(1);
     await expect(historico).toBeVisible();
     await expect(historico.locator("li").filter({ hasText: eventId })).toHaveCount(1);
     await page.screenshot({ path: "evidence/ctwa-3128/envio-desligado-conserva-historico.png", fullPage: true });
