@@ -1,0 +1,11 @@
+.shell { color: #172f30; background: #f6f8f7; font-family: inherit; min-height: 100%; padding: clamp(16px, 3vw, 42px); }
+.shell > div, .cabecalho { max-width: 1220px; margin-inline: auto; }
+.cabecalho h1 { margin: 8px 0 17px; font-weight: 650; font-size: clamp(30px, 3vw, 42px); letter-spacing: -.047em; line-height: 1.12; }
+.caminho { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 13px; color: #536968; }
+.caminho span { color: #93a49e; }
+.nav { display: flex; gap: clamp(13px, 3vw, 28px); border-bottom: 1px solid #d5dfdb; margin-bottom: 23px; }
+.nav button { background: transparent; cursor: pointer; font: inherit; font-size: 14px; font-weight: 600; color: #526864; padding: 10px 0 12px; border: 0; border-bottom: 3px solid transparent; }
+.nav button[aria-pressed="true"] { color: #07685c; border-bottom-color: #08846f; }
+.nav button:hover { color: #075e51; }
+.nav button:focus-visible { outline: 2px solid #07866e; outline-offset: 2px; }
+@media(max-width: 480px) { .shell { padding: 16px 12px; } .nav { margin-bottom: 14px; } }
