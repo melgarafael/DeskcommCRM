@@ -347,6 +347,9 @@ function wrapMcpTool(
           campos: higiene.descartados.join(","),
         });
       }
+      // O registro de uma criação de negócio que seguiu sem item conferido
+      // (#4763, item 2): vira o `motivo` da auditoria desta chamada.
+      let motivoDoNegocioAMao: string | null = null;
       try {
         ensureScope(input.auth.scopes, def.requiresScope);
         ensureRole(input.auth.role, def.requiresRole);
@@ -394,11 +397,19 @@ function wrapMcpTool(
         // nada muda: o handler recusa a ausência). Completado
         // AQUI, antes do escopo de funil logo abaixo: a guarda julga o funil que vai
         // ser escrito, e com o argumento ausente ela recusaria sempre.
-        if (def.name === "crm_create_lead" && typeof argsRecord.referencia_externa === "string") {
+        //
+        // #4763, item 2: a guarda roda em TODA criação, com ou sem referência. Com
+        // o funil à mão e sem referência era aqui que o item deixava de ser
+        // olhado — a chamada passava direto para o escopo de funil, e o negócio
+        // "Casa com piscina — AU-9999" nasceu de um item que não existe. Quem
+        // decide se há item a conferir é a guarda (o funil que é destino de
+        // receita ativa, num turno de conversa, exige a referência).
+        if (def.name === "crm_create_lead") {
           const completo = await completarDestinoDoNegocio(
             input.supabase,
             input.ctx.organizationId,
             argsRecord,
+            { turnoComContato: !!input.contatoDoTurno },
           );
           if (!completo.ok) {
             void auditMcpToolCall({
@@ -412,6 +423,7 @@ function wrapMcpTool(
             anotarEfeito("falhou");
             return completo.resposta;
           }
+          if (completo.declaracao !== undefined) motivoDoNegocioAMao = completo.declaracao;
         }
 
         // ── DE QUEM É O REGISTRO QUE ESTA ESCRITA ALCANÇA — do contato do turno
@@ -679,6 +691,12 @@ function wrapMcpTool(
             ? desfechoExterno("ok")
             : { desfecho: "sem_resultado" as const, motivo: motivoDoVazio }),
           ...(termoBuscado === null ? {} : { termo: termoBuscado }),
+          // #4763, item 2: o negócio que nasceu sem item conferido deixa o
+          // registro na trilha. `success` continua verdadeiro — o negócio
+          // existe; o que o motivo diz é que ele não veio de um item olhado.
+          ...(motivoDoNegocioAMao === null || motivoDoVazio !== null
+            ? {}
+            : { motivo: motivoDoNegocioAMao }),
         });
         // O MESMO critério do audit: vazio declarado não é efeito (#484).
         anotarEfeito(motivoDoVazio === null ? "produziu_efeito" : "falhou");
