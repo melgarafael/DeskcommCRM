@@ -499,7 +499,8 @@ describe("a linha do tempo de todos os números (#3669)", () => {
     estado.ligacoes = [ligacao("call-principal", estado.principal, "2026-11-03T09:00:00.000Z")];
 
     const { corpo } = await pergunta();
-    const [daLigacao, daConversa] = corpo.data!.linha_do_tempo;
+    // 11-04 vem antes de 11-03: a conversa é o primeiro item do fio.
+    const [daConversa, daLigacao] = corpo.data!.linha_do_tempo;
 
     expect(daConversa).toMatchObject({
       contact_id: estado.segundo,
@@ -581,6 +582,8 @@ describe("a linha do tempo de todos os números (#3669)", () => {
     const origens = corpo.data!.linha_do_tempo.map((i) => i.contact_id);
     expect(origens).not.toContain(estado.intruso);
     expect(new Set(origens)).toEqual(new Set([estado.segundo]));
+    // Nem a pessoa entra na lista de números do negócio.
+    expect(corpo.data!.numeros.map((n) => n.contact_id)).toEqual([estado.principal, estado.segundo]);
     // Nem o id dela chega a ser consultado — a cerca é antes da consulta.
     for (const filtro of estado.filtros.filter((f) => f.metodo === "in" && f.coluna === "contact_id")) {
       expect(filtro.valor).not.toContain(estado.intruso);
