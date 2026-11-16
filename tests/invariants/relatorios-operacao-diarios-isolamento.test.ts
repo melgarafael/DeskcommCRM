@@ -15,6 +15,7 @@ const MANAGER_A = "c9400000-1111-4000-8000-000000000001";
 const MANAGER_B = "c9400000-1111-4000-8000-000000000002";
 const AGENT_A = "c9400000-1111-4000-8000-000000000003";
 const ADMIN_A = "c9400000-1111-4000-8000-000000000004";
+const VIEWER_A = "c9400000-1111-4000-8000-000000000005";
 
 beforeAll(() => {
   sql(`
@@ -22,7 +23,8 @@ beforeAll(() => {
       ('${MANAGER_A}','relatorio-gestor-a@invariant.test'),
       ('${MANAGER_B}','relatorio-gestor-b@invariant.test'),
       ('${AGENT_A}','relatorio-atendente-a@invariant.test'),
-      ('${ADMIN_A}','relatorio-admin-a@invariant.test');
+      ('${ADMIN_A}','relatorio-admin-a@invariant.test'),
+      ('${VIEWER_A}','relatorio-viewer-a@invariant.test');
     insert into organizations(id,slug,legal_name,display_name) values
       ('${ORG_A}','relatorio-9400-a','Relatório sintético A','Relatório A'),
       ('${ORG_B}','relatorio-9400-b','Relatório sintético B','Relatório B');
@@ -30,7 +32,8 @@ beforeAll(() => {
       ('${MANAGER_A}','${ORG_A}','manager',now()),
       ('${MANAGER_B}','${ORG_B}','manager',now()),
       ('${AGENT_A}','${ORG_A}','agent',now()),
-      ('${ADMIN_A}','${ORG_A}','admin',now());
+      ('${ADMIN_A}','${ORG_A}','admin',now()),
+      ('${VIEWER_A}','${ORG_A}','viewer',now());
     insert into relatorios_operacao_diarios(organization_id,dia,fuso,gerado_por,conteudo) values
       ('${ORG_A}','2026-11-14','Asia/Beirut','cron','{"versao":1,"de":"A"}'),
       ('${ORG_A}','2026-11-15','Asia/Beirut','usuario','{"versao":1,"de":"A"}'),
@@ -51,6 +54,13 @@ describe("relatorios_operacao_diarios: isolamento entre organizações", () => {
 
   it("atendente (agent) não lê o relatório da equipe, nem da própria organização", () => {
     expect(countAs(AGENT_A, `select count(*) from relatorios_operacao_diarios`)).toBe(0);
+  });
+
+  it("quem só lê (viewer) não lê o relatório guardado, nem pelo dia nem pela tabela inteira", () => {
+    expect(countAs(VIEWER_A, `select count(*) from relatorios_operacao_diarios`)).toBe(0);
+    expect(countAs(VIEWER_A, `select count(*) from relatorios_operacao_diarios where organization_id='${ORG_A}' and dia='2026-11-15'`)).toBe(0);
+    // Controle positivo da MESMA linha: o gestor da organização a lê.
+    expect(countAs(MANAGER_A, `select count(*) from relatorios_operacao_diarios where organization_id='${ORG_A}' and dia='2026-11-15'`)).toBe(1);
   });
 
   it("a sessão não escreve: sem GRANT de INSERT/UPDATE/DELETE para authenticated", () => {

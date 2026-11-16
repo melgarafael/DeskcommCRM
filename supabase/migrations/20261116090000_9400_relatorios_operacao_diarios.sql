@@ -35,12 +35,18 @@ create table if not exists public.relatorios_operacao_diarios (
 alter table public.relatorios_operacao_diarios drop column if exists texto;
 
 comment on table public.relatorios_operacao_diarios is
-  'Relatório diário da Operação do dia: uma linha por organização e dia local, com SÓ fatos não pessoais em conteudo (ids, canal, situação, etiquetas, instantes, códigos, termos de produto). Nome, telefone e resumo são lidos ao vivo na tela. Quem escreve é o servidor (cron relatorio-operacao-diario e o botão Gerar agora); a sessão só lê, com papel manager ou acima.';
+  'Relatório diário da Operação do dia: uma linha por organização e dia local, com SÓ fatos não pessoais em conteudo (ids, canal, situação, etiquetas, instantes, códigos, nomes de produto do catálogo). Nome, telefone e resumo são lidos ao vivo na tela. Quem escreve é o servidor (cron relatorio-operacao-diario e o botão Gerar agora); a sessão só lê, com papel manager ou acima.';
 
-alter table public.relatorios_operacao_diarios
-  drop constraint if exists relatorios_operacao_diarios_gerado_por_check;
-alter table public.relatorios_operacao_diarios
-  add constraint relatorios_operacao_diarios_gerado_por_check check (gerado_por in ('cron', 'usuario'));
+-- O drop e o add num bloco só: um bloco DO é uma instrução, então o `update.sh`
+-- (que reaplica o baseline sem ON_ERROR_STOP) nunca deixa a tabela entre as
+-- duas, sem a constraint.
+do $$
+begin
+  alter table public.relatorios_operacao_diarios
+    drop constraint if exists relatorios_operacao_diarios_gerado_por_check;
+  alter table public.relatorios_operacao_diarios
+    add constraint relatorios_operacao_diarios_gerado_por_check check (gerado_por in ('cron', 'usuario'));
+end $$;
 
 -- ⚠️ É A IDEMPOTÊNCIA DO CRON, não otimização. Dados duplicados (impossíveis
 -- enquanto a tabela nasceu com a constraint) seriam podados antes de criá-la.
