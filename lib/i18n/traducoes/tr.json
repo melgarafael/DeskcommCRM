@@ -11463,5 +11463,7 @@
   "Abrir essa campanha": "O kampanyayı aç",
   "Cada aviso liga e desliga sozinho no Push. Desligar todos encerra os avisos deste aparelho fora do app.": "Her bildirim Push'ta ayrı ayrı açılıp kapanır. Hepsini kapatmak, bu cihazın uygulama dışındaki bildirimlerini sonlandırır.",
   "Negócio entrou numa etapa que avisa": "Fırsat bildirim veren bir aşamaya girdi",
-  "Dentro do app, este aviso aparece na Central de avisos.": "Uygulama içinde bu bildirim Bildirim Merkezi'nde görünür."
+  "Dentro do app, este aviso aparece na Central de avisos.": "Uygulama içinde bu bildirim Bildirim Merkezi'nde görünür.",
+  "{n} dias": "{n} gün",
+  "Etapa {atual} de {total}": "Aşama {atual} / {total}"
 }
