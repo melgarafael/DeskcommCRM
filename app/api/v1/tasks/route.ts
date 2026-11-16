@@ -44,6 +44,7 @@ import { ApiError } from "@/lib/api/types";
 import { fail, ok } from "@/lib/api/wrappers";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { regraDeRecorrenciaSchema } from "@/lib/tarefas/recorrencia";
 import { PRIORIDADES_DA_TAREFA, SITUACOES_DA_TAREFA } from "@/lib/tarefas/tipos";
 
 import { LIMITE_MAXIMO_DA_LISTA, criarTarefaHandler, listarTarefasHandler } from "./_handler";
@@ -63,6 +64,15 @@ const criacaoSchema = z.object({
   // Opcional como os outros dois — a tarefa avulsa é caso real.
   demanda_id: z.string().uuid().nullable().optional(),
   assigned_to: z.string().uuid().nullable().optional(),
+  /**
+   * A SÉRIE (#4595). Ausente/nula = tarefa avulsa, exatamente como antes.
+   * `dias` é dia da semana no fuso da ORGANIZAÇÃO e `hora` é hora de parede.
+   *
+   * A regra é VALIDADA aqui (forma) e DECIDIDA em `_handler.ts` — a mesma
+   * função que a tool chama, pelo motivo do #4516: o token e a tela não podem
+   * ter duas regras de série.
+   */
+  recurrence: regraDeRecorrenciaSchema.nullable().optional(),
 });
 
 const listaSchema = z.object({

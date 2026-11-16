@@ -218,8 +218,10 @@ import { composeSystemPrompt, loadOrgMemory, memoriaEscritaPorPessoas, renderOrg
 import {
   loadConversationAgentConfig,
   matchesHandoffKeyword,
+  overrideLlmDoAgente,
   type PublishedAgentConfig,
 } from './agent-config';
+import { reservaDeModeloDaVersao } from './reserva-do-modelo-da-versao';
 import { garantirPerguntaDoRoteiro, perguntaDoRoteiroPodeSair, prepararRoteiroDoTurno } from './roteiro-no-turno';
 import { validarRespostaDoFluxo } from './flow-validate';
 import { moduloLigadoComMemo } from '@/lib/instalacao/modulos';
@@ -233,7 +235,13 @@ import { adiadoPorJanela } from '../pacing/adiados-da-janela';
 import { loadChannelKnobs } from '../pacing/store';
 import { avisarJanelaFechada, resolverAvisoDeJanela } from '../pacing/aviso-de-janela';
 import { resolveConversationTurn, type TurnAgentResolution } from './resolve-turn-agent';
-import { idiomaDaOrganizacaoDoTurno, montarBlocoDePassagemDoRoteador } from './passagem-do-roteador';
+import {
+  SEQ_DA_PASSAGEM_AO_CLIENTE,
+  avisarClienteDaTrocaDeAgente,
+  idiomaDaOrganizacaoDoTurno,
+  montarBlocoDePassagemDoRoteador,
+  textoDaPassagemAoCliente,
+} from './passagem-do-roteador';
 import { ferramentaDePassagemEntreAgentes } from './transferir-agente';
 import {
   hasOpenCaseForContact,
@@ -301,6 +309,13 @@ import {
 } from '@/lib/escalacao/briefing-da-passagem';
 import { diffCheckpoint } from '@/lib/leads/checkpoint-diff';
 import { CORRECAO_DO_TURNO_MUDO, PASSOS_DA_CORRECAO, turnoMudoPedeCorrecao } from './turno-mudo';
+// #4590 — o teto de respostas por CONVERSA e os seus defaults (N/W). Fica em
+// `agent/` porque a conta é do atendimento; a cadeia só sabe aplicá-la.
+import {
+  CODIGO_DO_TETO_DE_RESPOSTAS,
+  avisarEquipeDoTetoDeRespostas,
+  knobsDoTetoDeRespostas,
+} from './teto-de-respostas';
 import {
   desfechoSemCandidato,
   previaPedeCorrecaoDoTurnoMudo,
@@ -1586,6 +1601,13 @@ export interface InboundTurnKnobs {
    * testes que não exercitam o teto o omitem sem custo.
    */
   maxSendsPerTurn?: number;
+  /**
+   * #4590 — N respostas automáticas por CONVERSA dentro de W minutos
+   * (TETO_DE_RESPOSTAS_POR_CONVERSA / TETO_DE_RESPOSTAS_JANELA_MIN). Ausente =
+   * os defaults de `agent/teto-de-respostas.ts` (20 em 60 min) — main.ts sempre
+   * preenche pelo env; testes que não exercitam o teto o omitem sem custo.
+   */
+  tetoDeRespostas?: { porConversa: number; janelaMinutos: number };
   /** atraso do reagendamento em veto/queued herdado da F2-06 (SEND_QUEUED_RETRY_MS) */
   queuedRetryDelayMs: number;
   /**
@@ -5057,6 +5079,10 @@ async function executarTurnoDoAgente(
               },
             });
           };
+          // #4590 — este turno RESPONDE a alguém que escreveu? É o que decide a
+          // janela (`resposta*`) e é o que arma o teto de respostas por conversa:
+          // follow-up é retomada e não entra nessa conta.
+          const eResposta = eTurnoDeResposta(liveJob());
           // Args reusados EXATAMENTE (mesmo objeto) no re-run do fail-safe abaixo — só
           // hasOpenCase/openedCaseThisTurn mudam depois do auto-abre-caso.
           const beforeSendArgs = {
@@ -5072,7 +5098,20 @@ async function executarTurnoDoAgente(
             // `inbound_turn`/`case_reply_turn` respondem a quem escreveu e leem a
             // janela de RESPOSTA (0495). `followup_turn` retoma conversa parada e
             // continua na janela de DISPARO.
-            resposta: eTurnoDeResposta(liveJob()),
+            resposta: eResposta,
+            // #4590 — TETO DE RESPOSTAS POR CONVERSA (N em W minutos). Arma só onde
+            // o defeito nasceu: resposta automática a mensagem recebida, em produção.
+            // Prévia não arma (o Testar não entrega nada ao cliente; um teto ali
+            // esconderia justamente a resposta que o dono está testando) e follow-up
+            // também não — ali não houve mensagem recebida agora.
+            ...(eResposta && !preview
+              ? {
+                  tetoDeRespostas: {
+                    conversationId: input.conversationId,
+                    ...knobsDoTetoDeRespostas(deps.knobs.tetoDeRespostas),
+                  },
+                }
+              : {}),
             // ponytail: channel_sessions.daily_message_limit do CRM ainda não é lido
             // no runtime — null cai nos degraus de warm-up (conservadores). Injetar
             // aqui quando o drain expuser o limite da sessão.
@@ -5420,6 +5459,16 @@ async function executarTurnoDoAgente(
               chain.nextAllowedAt !== undefined
             ) {
               pacingCapVeto = { code: chain.code, nextAllowedAt: chain.nextAllowedAt };
+            }
+            // #4590 — o teto calou a conversa: a equipe é avisada na Central, um
+            // aviso aberto por conversa (dedupe no repositório). Nunca lança.
+            if (chain.code === CODIGO_DO_TETO_DE_RESPOSTAS && !preview) {
+              await avisarEquipeDoTetoDeRespostas(pool, {
+                organizationId: tenantId,
+                conversationId: input.conversationId,
+                ...knobsDoTetoDeRespostas(deps.knobs.tetoDeRespostas),
+                log: runLog,
+              });
             }
             if (VETOS_IRREVOGAVEIS.has(chain.code)) vetoIrrevogavel = true;
             // Erro de ENSINO pt-br (mesmo shape de get_lead_context/breaker): o
@@ -6587,12 +6636,79 @@ async function executarTurnoDoAgente(
     // no turno da troca (`reclassified`) — nos demais o bloco é '' e nem a
     // leitura do locale acontece.
     const passagemRecebida = 'passagemRecebida' in routed ? (routed.passagemRecebida ?? null) : null;
+    // #4363 — a OUTRA metade da troca automática: a frase que o CLIENTE lê, do
+    // dono do roteador (`ai_routers.passagem_ao_cliente`, 9367). Sai ANTES do
+    // modelo, no mesmo ponto em que o desfecho é conhecido, e uma vez só neste
+    // turno. Desligada (o padrão), NADA é enviado e o bloco abaixo continua
+    // mandando o agente novo se apresentar — o comportamento de antes.
+    const trocaQuePedeAviso = {
+      outcome: routed.outcome,
+      // `in`: o campo só existe no turno da troca; ausente = desligado.
+      textoConfigurado: 'passagemAoClienteDoRouter' in routed ? routed.passagemAoClienteDoRouter : null,
+      agenteAnteriorId: passagemRecebida?.agenteAnteriorId ?? null,
+      agenteNovoId: routed.config?.agentId ?? null,
+    };
+    let clienteAvisadoDaTroca = false;
+    if (textoDaPassagemAoCliente(trocaQuePedeAviso) !== null) {
+      const desfechoDoAviso = await avisarClienteDaTrocaDeAgente(
+        {
+          log: runLog,
+          // A MESMA cadeia de guardrails de tudo que sai daqui. `seq` próprio
+          // (negativo) porque este aviso não é uma fala do modelo — ver
+          // `SEQ_DA_PASSAGEM_AO_CLIENTE`.
+          enviar: async (texto) => {
+            const chain = await runBeforeSend({
+              pool,
+              log: runLog,
+              agentOperation,
+              tenantId,
+              leadId,
+              jobId: liveJob().id,
+              channelSessionId: input.channelSessionId,
+              body: texto,
+              optedOutThisTurn,
+              resposta: eTurnoDeResposta(liveJob()),
+              crmDailyLimit: null,
+              now: clock(),
+              ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
+              ...(lgpd !== undefined ? { lgpd } : {}),
+              ...(routed.config?.agentId != null ? { agentId: routed.config.agentId } : {}),
+              ...(deps.knobs.disclosureMode !== undefined
+                ? { disclosureMode: deps.knobs.disclosureMode }
+                : {}),
+              // Texto fixo do dono do roteador, não do modelo: a restrição
+              // comercial (#2877) não o julga, e o spinning não é dele — as
+              // mesmas duas escolhas do aviso de escalação.
+              enforceCommercialRestriction: false,
+              enforceSpinning: false,
+              send: (finalBody: string) =>
+                liveChannel().send({
+                  tenantId,
+                  leadId,
+                  jobId: liveJob().id,
+                  jobClaim: claimOfJob(liveJob()),
+                  agentOperation,
+                  seq: SEQ_DA_PASSAGEM_AO_CLIENTE,
+                  conversationId: input.conversationId,
+                  body: finalBody,
+                }),
+            });
+            return chain.status === 'vetoed' ? 'blocked' : chain.outcome.kind;
+          },
+        },
+        trocaQuePedeAviso,
+      );
+      clienteAvisadoDaTroca = desfechoDoAviso.enviado;
+    }
     const passagemBlock =
       passagemRecebida === null
         ? ''
         : montarBlocoDePassagemDoRoteador(
             passagemRecebida,
             await idiomaDaOrganizacaoDoTurno(pool, tenantId, runLog),
+            // Avisado o cliente, o agente novo NÃO repete o aviso: é o que
+            // impede duas mensagens de passagem na mesma troca.
+            clienteAvisadoDaTroca,
           );
     const openingBase = input.buildOpening({
       previous: effectivePrevious,
@@ -6804,10 +6920,7 @@ async function executarTurnoDoAgente(
         ...(agentConfig !== null
           ? {
               model: agentConfig.model,
-              llmOverride: {
-                provider: agentConfig.provider,
-                credentialId: agentConfig.credentialId,
-              },
+              llmOverride: overrideLlmDoAgente(agentConfig, reservaDeModeloDaVersao(agentConfig)),
             }
           : {}),
       },
@@ -6982,10 +7095,7 @@ async function executarTurnoDoAgente(
           ...(agentConfig !== null
             ? {
                 model: agentConfig.model,
-                llmOverride: {
-                  provider: agentConfig.provider,
-                  credentialId: agentConfig.credentialId,
-                },
+                llmOverride: overrideLlmDoAgente(agentConfig, reservaDeModeloDaVersao(agentConfig)),
               }
             : {}),
         },
@@ -7281,10 +7391,7 @@ async function executarTurnoDoAgente(
           ...(agentConfig !== null
             ? {
                 model: agentConfig.model,
-                llmOverride: {
-                  provider: agentConfig.provider,
-                  credentialId: agentConfig.credentialId,
-                },
+                llmOverride: overrideLlmDoAgente(agentConfig, reservaDeModeloDaVersao(agentConfig)),
               }
             : {}),
           ...(reservaDeFormato ? { reservaDeFormato } : {}),
