@@ -1,5 +1,5 @@
 ---
-impacto: muda_comportamento
+impacto: nada_mudou
 secao: corrigido
 titulo: O endereço do contato entra na busca e na exportação
 ---

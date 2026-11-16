@@ -233,7 +233,16 @@ describe("busca de contatos: o termo é normalizado pela régua do repo (#1835, 
       // aninharia, e cada vírgula restante tem de ser a que o handler pôs.
       expect(filtro).not.toMatch(/[()]/);
       const colunas = filtro.split(",").map((cond) => cond.split(".")[0]);
-      expect(colunas).toEqual(["busca_sem_acento", "email", "phone_number"]);
+      // A lista é a das PORTAS da busca, e o endereço é uma delas desde a #3494:
+      // `endereco_sem_acento` (coluna gerada da 9403) entra no mesmo `or=` do
+      // nome, e-mail e telefone. Ela é a quarta condição e a última do OR, na
+      // ordem em que o handler as monta.
+      expect(colunas).toEqual([
+        "busca_sem_acento",
+        "email",
+        "phone_number",
+        "endereco_sem_acento",
+      ]);
       // O recorte por organização é parâmetro PRÓPRIO da query (E com o `or=`):
       // é ele que segura o caminho de service role (Bearer e MCP).
       expect(igualdades).toContainEqual(["organization_id", ORG]);
@@ -377,7 +386,14 @@ describe("busca de contatos: as outras portas continuam de pé", () => {
       expect(execucoes, JSON.stringify(ch)).toBe(1);
       expect(filtro, JSON.stringify(ch)).not.toMatch(/[()]/);
       const colunas = filtro.split(",").map((cond) => cond.split(".")[0]);
-      expect(colunas, JSON.stringify(ch)).toEqual(["busca_sem_acento", "email", "phone_number"]);
+      // Mesmas quatro portas do caso malicioso acima — o endereço é a quarta
+      // desde a #3494 —, aqui medida caractere a caractere.
+      expect(colunas, JSON.stringify(ch)).toEqual([
+        "busca_sem_acento",
+        "email",
+        "phone_number",
+        "endereco_sem_acento",
+      ]);
     }
   });
 });
