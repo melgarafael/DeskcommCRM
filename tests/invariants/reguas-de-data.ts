@@ -251,7 +251,7 @@ export function reguasDeData(pool: pg.Pool): ReguaDeData[] {
     },
     {
       nome: "dataDaAbordagem",
-      onde: "lib/prospecting/exportar.ts:284",
+      onde: "lib/prospecting/exportar.ts:288",
       // `prospecting_candidates.attempted_at` (timestamptz) e o `created_at` da
       // trilha `prospecting.approach_sent`: é a coluna `abordada_em` do arquivo
       // da campanha (#4632). Recusar o `Date` do driver deixaria a data da
@@ -260,7 +260,8 @@ export function reguasDeData(pool: pg.Pool): ReguaDeData[] {
       // bem formado. O dia civil é o de `CHEGADA` (2026-11-04), não outro.
       entrada: "valor",
       exercitar: (valorCru) =>
-        dataDaAbordagem({ data: {}, attempted_at: valorCru as string | Date }) === "2026-11-04",
+        dataDaAbordagem({ data: {}, attempted_at: valorCru as string | Date }, "America/Sao_Paulo") ===
+        "2026-11-04",
     },
   ];
 }

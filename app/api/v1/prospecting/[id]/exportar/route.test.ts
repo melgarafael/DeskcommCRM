@@ -88,7 +88,7 @@ function banco(opcoes: {
       return { rows: opcoes.contatos ?? [] };
     }
     if (/from organizations/.test(sql)) {
-      return { rows: [{ locale: opcoes.locale ?? null }] };
+      return { rows: [{ locale: opcoes.locale ?? null, timezone: null }] };
     }
     return { rows: [] };
   });

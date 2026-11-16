@@ -107,6 +107,7 @@ function banco(opcoes: {
   candidatos?: unknown[];
   contatos?: unknown[];
   trilha?: unknown[];
+  fuso?: string | null;
 }) {
   const consultas: Consulta[] = [];
   const query = vi.fn(async (sql: string, params: unknown[] = []) => {
@@ -117,7 +118,7 @@ function banco(opcoes: {
     if (/from prospecting_candidates/.test(sql)) return { rows: opcoes.candidatos ?? [] };
     if (/from contacts c/.test(sql)) return { rows: opcoes.contatos ?? [] };
     if (/from api_audit_log/.test(sql)) return { rows: opcoes.trilha ?? [] };
-    if (/from organizations/.test(sql)) return { rows: [{ locale: null }] };
+    if (/from organizations/.test(sql)) return { rows: [{ locale: null, timezone: opcoes.fuso ?? null }] };
     return { rows: [] };
   });
   return { query, consultas };
@@ -193,6 +194,27 @@ describe("exportar a lista da campanha incluindo as empresas já abordadas", () 
     const naoAbordada = linhas.find((l) => l.includes("Padaria Nova"))!;
     expect(naoAbordada).toContain("não abordada");
     expect(naoAbordada.trimEnd().endsWith(";;")).toBe(true);
+  });
+
+  // 00:30 de 04/11 em UTC é 21:30 de 03/11 em São Paulo e 00:30 de 04/11 em
+  // Lisboa: o dia que a pessoa viveu depende do fuso da ORGANIZAÇÃO, e Lisboa
+  // prova que a rota o lê, em vez de cair no padrão do produto.
+  it.each([
+    ["America/Sao_Paulo", "2026-11-03"],
+    ["Europe/Lisbon", "2026-11-04"],
+  ])("abordada_em é o dia no fuso da organização (%s), não o de UTC", async (fuso, dia) => {
+    fake = banco({
+      campanha: { id: CAMPANHA, name: "Clínicas — site" },
+      candidatos: [{ ...ABORDADA, attempted_at: "2026-11-04T00:30:00.000Z", contact_id: null }],
+      contatos: [],
+      trilha: [],
+      fuso,
+    });
+    deps.pool.mockReturnValue({ query: fake.query });
+
+    const linhas = linhasDoCsv(await (await GET(pedido("?quem=todas"), contexto)).text());
+    const abordada = linhas.find((l) => l.includes("Clínica Já Abordada"))!;
+    expect(abordada).toContain(`;${dia};`);
   });
 
   it("campanha com todas as empresas já abordadas ainda exporta", async () => {

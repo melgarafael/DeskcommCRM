@@ -63,6 +63,7 @@
 
 import { phoneLookupVariants } from "@/lib/channels/phone-variants";
 import { recusaRegistrada } from "@/lib/lgpd/recusa-registrada";
+import { dataIsoNoFuso } from "@/lib/propostas/data-no-fuso";
 
 /**
  * As marcas de um contato do CRM que tiram a empresa do arquivo
@@ -280,13 +281,16 @@ export function foiAbordada(c: CandidatoDaLista): boolean {
  * `AAAA-MM-DD` (ou vazio). Data ISO e não `dd/mm/aaaa`: o arquivo é lido por
  * planilha e por script, e a data ambígua é a que faz alguém achar que a
  * abordagem foi em janeiro quando foi em dezembro.
+ *
+ * O dia é o do FUSO da organização, não o de UTC: `toISOString()` punha uma
+ * abordagem das 21:30 de Brasília no dia seguinte.
  */
-export function dataDaAbordagem(c: CandidatoDaLista): string {
+export function dataDaAbordagem(c: CandidatoDaLista, fuso: string): string {
   const marca = c.abordagem?.em ?? c.attempted_at;
   if (marca == null) return "";
   const data = marca instanceof Date ? marca : new Date(marca);
   if (Number.isNaN(data.getTime())) return "";
-  return data.toISOString().slice(0, 10);
+  return dataIsoNoFuso(data, fuso);
 }
 
 /**
@@ -453,6 +457,8 @@ export function csvDaLista(
     comAbordagem?: boolean;
     /** O nome da campanha exportada: a campanha da abordagem quando a trilha não tem a passagem. */
     nomeDaCampanha?: string;
+    /** O fuso IANA da organização: o dia de `abordada_em`. Sem ele, o padrão do produto. */
+    fuso?: string;
     /**
      * A situação no idioma de quem vai ler a planilha. A rota passa o idioma da
      * organização; o padrão é o português, como os nomes das colunas.
@@ -463,6 +469,7 @@ export function csvDaLista(
   const comSituacao = opcoes.comSituacao === true;
   const comAbordagem = opcoes.comAbordagem === true;
   const nomeDaCampanha = opcoes.nomeDaCampanha ?? "";
+  const fuso = opcoes.fuso ?? "";
   const rotulo = opcoes.rotuloDaSituacao ?? ((s: SituacaoDaEmpresa) => s);
   const cabecalho = [
     ...COLUNAS_DA_LISTA,
@@ -475,7 +482,7 @@ export function csvDaLista(
       [
         ...valoresDaEmpresa(c),
         ...(comSituacao ? [rotulo(situacaoDaEmpresa(c))] : []),
-        ...(comAbordagem ? [dataDaAbordagem(c), campanhaDaAbordagem(c, nomeDaCampanha)] : []),
+        ...(comAbordagem ? [dataDaAbordagem(c, fuso), campanhaDaAbordagem(c, nomeDaCampanha)] : []),
       ]
         .map(celula)
         .join(SEPARADOR),

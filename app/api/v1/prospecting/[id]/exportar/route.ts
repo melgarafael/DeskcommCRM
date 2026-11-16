@@ -56,6 +56,7 @@
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
+import { fusoDaOrganizacao } from "@/lib/agent-engine/agent/fuso-da-org";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { comIdDaRequisicao, fail, ok } from "@/lib/api/wrappers";
@@ -178,6 +179,9 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // manda para fora (`lib/prospecting/idioma.ts`); os nomes das colunas ficam
   // como o importador os reconhece.
   const idioma: Idioma = quem === "todas" ? await idiomaDaOrganizacao(db, org) : "pt-BR";
+  // O dia de `abordada_em` é o do fuso da organização: em UTC, a abordagem das
+  // 21:30 de Brasília saía com a data do dia seguinte.
+  const fuso = quem === "todas" ? await fusoDaOrganizacao(db, org) : undefined;
   const csv = csvDaLista(saem, {
     comSituacao: quem === "todas",
     // A marca do que já foi tentado só acompanha a lista que inclui as
@@ -185,6 +189,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     // engordaria o arquivo.
     comAbordagem: quem === "todas",
     nomeDaCampanha: campanha.name,
+    fuso,
     rotuloDaSituacao: (s) => traduzir(s, idioma),
   });
 
