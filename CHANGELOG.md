@@ -105,10 +105,12 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 - **O atendente cadastra empresa, pessoa e contato num só passo** Na página da empresa há um novo botão, "Adicionar pessoa com contato": uma tela só pede nome, cargo, telefone e e-mail, e o sistema cria a pessoa, cria o contato e liga tudo à empresa. Se algo falhar, o que já foi gravado é desfeito. Ao criar uma empresa nova, o próprio diálogo passa ao segundo passo, "Empresa criada — quem fala por ela?", com o mesmo formulário e a opção "Pular por agora"; só depois abre a página da empresa. Erros de telefone e e-mail aparecem com a frase do campo. Criar empresa, pessoa e o vínculo entre elas, antes restritos a Gerente, passam a valer para o Atendente, inclusive pelo botão "Criar pessoa" da tela do contato; apagar empresa, pessoa e vínculo continua só com o Gerente. Crédito: @xofrd.
 
 - **Cada receita do banco externo diz para qual funil vai o interesse do cliente** Na tela da receita do banco externo, o administrador escolhe o funil e a etapa onde nasce o negócio quando o cliente se interessa por um item (um imóvel, um produto). O agente recebe essa escolha junto com o resultado da busca e abre o negócio ali, com a referência do item. Se nada for escolhido, ou se o funil escolhido for apagado ou arquivado depois, o sistema recusa abrir o negócio e orienta o agente a passar a conversa para a equipe, que recebe o aviso de sempre na Central. O sistema recusa gravar um funil ou etapa que não existam ou estejam arquivados, e uma etapa de ganho ou de perda não é oferecida.
+  Contribuição de @paulolimajr77 (#3328), série do banco externo (Spec 25).
 
 - **O negócio criado pelo agente guarda qual item do banco externo o cliente escolheu** Quando o cliente diz que tem interesse em um item que o agente achou no banco externo (um imóvel, um produto), o negócio criado no funil passa a levar a referência desse item, na descrição e num campo próprio, para o vendedor continuar de onde o robô parou. Se o mesmo cliente repetir o interesse no mesmo item, o sistema não abre outro negócio: devolve o que já está aberto e deixa uma nota na linha do tempo. Um negócio já ganho ou perdido não impede um novo interesse.
 
   O funil e a etapa do negócio saem da receita do item: o agente só informa o código do item, e a organização escolhe o destino uma vez, na tela de receitas. Antes de abrir o negócio, o sistema confere no banco externo que o item existe. Se o código não corresponder a nenhum item, o negócio não é aberto, e o agente é orientado a consultar de novo em vez de dizer ao cliente que registrou o interesse.
+  Contribuição de @paulolimajr77 (#3328), série do banco externo (Spec 25).
 
 - **Leitura e análise aceitam o token de integração** Rotas de anúncios, auditoria, importações, métricas, relatórios, canais
   (sessões), voz, mensagens e módulos passam a aceitar o Bearer `dsk_...` de
@@ -138,6 +140,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   `chamadas_cacheaveis`, `input_tokens_cacheaveis` e `cache_read_tokens_cacheaveis`,
   e o cartão divide por eles. Os totais de custo, tokens e latência continuam sendo
   de todas as chamadas — só a taxa de cache mudou de régua.
+  Contribuição de @webtecnica (#4585), a partir da issue #4362.
 
 - **O anexo levado ao card em outro funil não duplica e volta se a primeira cópia falhou** Quando um negócio ganho abre a continuação em outro funil, os anexos do card de origem já iam junto. Rodar de novo duplicava os arquivos. Pior: se a primeira cópia falhasse (o armazenamento de arquivos fora por um instante), o anexo ficava fora do card novo para sempre. Agora cada cópia sabe de qual anexo veio. Repetir não duplica, e uma nova execução repõe o que faltou. Apagar o anexo de origem não apaga a cópia. Nenhuma ação é necessária na atualização.
 
@@ -175,10 +178,13 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   Contribuição de @webtecnica (#4665).
 
 - **O WhatsApp por QR preserva a origem do Google Ads no contato** Quando a mensagem traz a referência de um clique do Google Ads, o contato pode receber a origem mesmo se estiver marcado como pessoal, se um módulo assumir o atendimento ou se a conversa não for criada. Se a mesma mensagem abrir um negócio, ele recebe os dados daquele clique. A origem inicial do contato continua preservada.
+  Contribuição de @SerusoNakamoto (#4715).
 
 - **No Instagram e no Facebook, o Inbox não oferece mais o botão de gravar áudio** O botão de microfone da caixa de resposta aparecia em toda conversa, inclusive nas de Instagram e Facebook. Ali o áudio gravado sai num formato que a Meta não aceita em mensagem direta, então a gravação subia e a mensagem terminava como falhada. Agora, nas conversas desses canais, o microfone não aparece e o lugar dele fica com o botão de enviar texto. Anexar um arquivo de áudio pelo "+" continua disponível. Nos números de WhatsApp nada muda.
+  Contribuição de @lebaneseforas-byte (#4702).
 
 - **No Instagram e no Facebook, o agente com nota de voz ligada responde em texto em vez de deixar áudios falhados** Um agente com "Enviar nota de voz" ligado, atendendo uma conversa de Instagram ou Facebook, gerava a nota de voz e o provedor a recusava (HTTP 400) em toda tentativa: cada nova tentativa do atendimento deixava mais um áudio falhado na conversa, e o cliente ficava sem resposta. A Meta não aceita em mensagem direta os formatos de áudio que o agente produz. Agora, nesses canais, o agente responde em texto desde a primeira vez, sem gastar com a síntese de voz, e a tela do agente avisa, ao lado da chave de voz, que no canal escolhido a resposta sai em texto. Nos números de WhatsApp nada muda. O robô do Telegram, que ainda não envia áudio, passa pela mesma regra.
+  Contribuição de @lebaneseforas-byte (#4699).
 
 ## [1.113.0] — 2026-11-15
 
