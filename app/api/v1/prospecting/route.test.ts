@@ -91,6 +91,17 @@ describe("POST /api/v1/prospecting por token", () => {
     ["resume", { action: "resume", id: ID }],
     // Spec 27: trocar as etiquetas de contato de uma campanha segue a régua do ritmo — fechada ao token.
     ["adjust_tags", { action: "adjust_tags", id: ID, contact_tags: ["estetica"] }],
+    // #4570: editar o texto da campanha também é ato de quem está na tela.
+    [
+      "edit_briefing",
+      {
+        action: "edit_briefing",
+        id: ID,
+        instruction: "Ofereça uma auditoria gratuita do site.",
+        qualification: "Confirmou que recebe pedidos pelo WhatsApp.",
+        ofertas: ["site"],
+      },
+    ],
     ["completar_fichas", { action: "completar_fichas", id: ID }],
     // #4359: arquivar ESCONDE uma campanha da lista. Por token, esconderia uma
     // campanha que a pessoa nunca abriu — o gesto é de quem lê a tela.

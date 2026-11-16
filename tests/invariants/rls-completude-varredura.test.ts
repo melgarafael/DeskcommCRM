@@ -79,6 +79,10 @@ interface Excecao {
  * linhas da OUTRA organização, não uma leitura como superusuário.
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
+  { tabela: "agencia_clientes", razao: "tests/invariants/agencias.test.ts — JWT authenticated: o cliente não lê o vínculo com a agência (count 0) e, com o módulo desligado, nenhuma policy devolve linha (1 → 0, com controle positivo); a agência só lê/edita o cliente vinculado e nunca a organização irmã." },
+  { tabela: "agencia_configuracoes", razao: "tests/invariants/agencias.test.ts — JWT authenticated: com o módulo desligado a configuração da agência some (1 → 0, controle positivo), e a agência não altera a própria autorização nem o limite via PostgREST (42501)." },
+  { tabela: "agencia_sessoes", razao: "tests/invariants/agencias.test.ts — sem GRANT a authenticated: a leitura pela sessão autenticada, inclusive da própria agência, é recusada (42501); controle positivo: a sessão aberta existe para o servidor." },
+  { tabela: "agencia_criacoes", razao: "tests/invariants/agencias.test.ts — sem GRANT a authenticated: a leitura pela sessão autenticada é recusada (42501); o recibo só é escrito/lido pelo servidor." },
   { tabela: "catalog_product_presentations", razao: "tests/invariants/catalogo-apresentacoes-isolamento.test.ts — duas organizações por JWT authenticated: manager nos dois sentidos e agent leem apenas a própria apresentação; UPDATE local de manager positivo, agent e manager vizinho sem efeito; CHECK de ownership do áudio com controle positivo e negativo." },
   {
     tabela: "ouvidoria_manifestacoes",

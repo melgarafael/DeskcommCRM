@@ -191,6 +191,20 @@ describe("MessageBubble — ações sobre mensagem própria", () => {
     expect(screen.getByTestId("message-bubble").className).toContain("bg-muted/60");
   });
 
+  // #4500: o servidor só manda `texto_retido` quando há corpo guardado E a
+  // empresa autorizou algum perfil. Sem o sinal, o botão não existe — senão toda
+  // instalação ganharia um botão que sempre nega e audita cada clique.
+  it("apagada pelo CONTATO sem o sinal de texto retido: nenhum botão de revelar", () => {
+    render(<MessageBubble message={msg({ direction: "inbound", revoked_at: "2026-09-24T11:00:00Z", body: null })} />);
+    expect(screen.getByText("Esta mensagem foi apagada pelo contato")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Ver texto retido" })).not.toBeInTheDocument();
+  });
+
+  it("apagada pelo CONTATO com o sinal de texto retido: o botão aparece", () => {
+    render(<MessageBubble message={msg({ direction: "inbound", revoked_at: "2026-09-24T11:00:00Z", body: null, texto_retido: true })} />);
+    expect(screen.getByRole("button", { name: "Ver texto retido" })).toBeInTheDocument();
+  });
+
   it("põe o menu dentro da bolha sem ocupar uma coluna ao lado", () => {
     const { container } = render(<MessageBubble message={msg({ external_id: "ABC" })} onApagar={vi.fn(async () => undefined)} />);
     const bolha = screen.getByTestId("message-bubble");
