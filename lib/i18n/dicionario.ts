@@ -20512,6 +20512,9 @@ export const DICIONARIO: Traducoes = {
   "Mostrar quem mandou e a mensagem": { es: "Mostrar quién lo envió y el mensaje" },
   "Aparecem o nome, a foto e o começo da mensagem.": { es: "Aparecen el nombre, la foto y el comienzo del mensaje." },
   "Quem decide é um administrador.": { es: "Quien decide es un administrador." },
+  "Só um administrador liga ou desliga a cor do aviso.": {
+    es: "Solo un administrador activa o desactiva el color del aviso.",
+  },
   "Cada aviso liga e desliga sozinho no Push. Desligar todos encerra os avisos deste aparelho fora do app.": {
     es: "Cada aviso se activa y desactiva por separado en el Push. Desactivarlos todos termina los avisos de este dispositivo fuera de la app.",
   },

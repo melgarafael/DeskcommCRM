@@ -1,5 +1,6 @@
-impacto: melhoria
-secao: melhorado
+---
+impacto: capacidade_nova
+secao: adicionado
 titulo: O aviso de mensagem nova pode sair na cor de cada canal — e a empresa escolhe
 ---
 

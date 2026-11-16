@@ -105,7 +105,16 @@ export function EscolhaDaCorPorCanal({
       </ul>
 
       {!podeEditar ? (
-        <p className="mt-3 text-xs text-muted-foreground">{t("Quem decide é um administrador.")}</p>
+        // Texto PRÓPRIO, e não o "Quem decide é um administrador." da seção
+        // vizinha: as duas cartas vivem na MESMA tela e, com a frase repetida
+        // ao pé da letra, o nome acessível das duas fica ambíguo — quem lê a
+        // tela não sabe a qual carta o aviso pertence, e um seletor por texto
+        // passou a casar com dois parágrafos (spec do aviso com a tela
+        // bloqueada, `notificacoes-tela-bloqueada.spec.ts`). A frase diz o que
+        // ESTA carta decide (#4094).
+        <p className="mt-3 text-xs text-muted-foreground">
+          {t("Só um administrador liga ou desliga a cor do aviso.")}
+        </p>
       ) : null}
     </Card>
   );
