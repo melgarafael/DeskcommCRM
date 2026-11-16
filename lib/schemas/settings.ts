@@ -1213,6 +1213,32 @@ export function ouvidoriaLigada(settings: unknown): boolean {
 }
 
 /**
+ * A RECORRÊNCIA DO NEGÓCIO GANHO (#3602, doc 312 = A) —
+ * `settings.financeiro.recorrencia_no_ganho`.
+ *
+ * Ligada, ganhar um negócio com `recurring_value_cents` cria o molde mensal no
+ * financeiro (`lib/financeiro/recorrencia-do-negocio.ts`). Desligada de
+ * fábrica: cobrança automática não liga sozinha em quem atualiza. Só o `true`
+ * EXPLÍCITO liga (a régua de `ouvidoriaLigada`); ausente, `"true"` ou lixo é
+ * desligado. Nunca lança: roda no fecho do negócio.
+ *
+ * ponytail: ainda sem porta de escrita — o interruptor na tela chega com o
+ * #4264, quando todas as portas de ganho e de perda passarem pela mesma regra.
+ */
+export function recorrenciaNoGanhoLigada(settings: unknown): boolean {
+  const raiz =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)
+      : undefined;
+  const financeiro = raiz?.financeiro;
+  return (
+    !!financeiro &&
+    typeof financeiro === "object" &&
+    (financeiro as Record<string, unknown>).recorrencia_no_ganho === true
+  );
+}
+
+/**
  * A ENTRADA AUTOMÁTICA NO FUNIL (#3603, fatia 1) — `settings.entrada_automatica_no_funil`.
  *
  * Um interruptor, e só isso: `{ ativa: boolean }`. Ligado, a conversa que o

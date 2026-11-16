@@ -35,7 +35,7 @@ function opcaoDePessoa(linha: Record<string, unknown>): Opcao {
  * é montado — nenhum botão, nenhum campo, nenhuma chamada.
  *
  * `podeEditar` segue o piso do PATCH contacts/:id/person (`agent`);
- * `podeCriarPessoa`, o do POST /api/v1/people (`manager`).
+ * `podeCriarPessoa`, o do POST /api/v1/people (`agent`, migration 9370).
  */
 export function PessoaDoContato({
   contactId,
