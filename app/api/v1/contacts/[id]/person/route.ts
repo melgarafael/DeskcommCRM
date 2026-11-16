@@ -2,17 +2,20 @@ import { type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { requireRole } from "@/lib/auth/require-role";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import {
   getContactPersonHandler,
   linkContactToPersonHandler,
 } from "@/lib/crm-b2b/people-handler";
 import {
+  ctxFromAuthz,
   handleRouteError,
   ok,
   requestIdOf,
   seModuloB2bDesligado,
 } from "@/lib/crm-b2b/route-helpers";
+import { createClient } from "@/lib/supabase/server";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 export const dynamic = "force-dynamic";
 
