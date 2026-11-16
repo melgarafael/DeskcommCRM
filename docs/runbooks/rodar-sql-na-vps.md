@@ -1,6 +1,6 @@
 # Rodar SQL na instalação — a pasta, a connection string e o `psql` que a VPS não tem
 
-Os runbooks de banco ([`supabase-compute-insuficiente-free.md`](./supabase-compute-insuficiente-free.md),
+Os runbooks de banco ([`supabase-sem-memoria-no-free.md`](./supabase-sem-memoria-no-free.md),
 [`custo-e-cota-do-supabase.md`](./custo-e-cota-do-supabase.md),
 [`postgrest-replay-do-gateway.md`](./postgrest-replay-do-gateway.md)) pedem
 consultas a `pg_stat_activity`, `pg_settings` e `pg_stat_statements`. Este guia é
