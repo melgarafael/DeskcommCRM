@@ -62,8 +62,7 @@ function msg(over: Partial<Message> = {}): Message {
 }
 
 describe("menu do balão — responder a uma mensagem apagada", () => {
-  it("não oferece 'Responder a esta mensagem' para a apagada", async () => {
-    const user = userEvent.setup();
+  it("não oferece 'Responder a esta mensagem' para a apagada", () => {
     const onResponder = vi.fn();
     render(
       <MessageBubble

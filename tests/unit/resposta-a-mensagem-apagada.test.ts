@@ -89,14 +89,12 @@ function duble(mensagensIniciais: Array<Record<string, unknown>>) {
 
 /** Um dublê novo por chamada, com `fetch` dublado no mesmo passo. */
 let ultimoFetch: ReturnType<typeof vi.fn>;
-let ultimoDuble: ReturnType<typeof duble>;
 function dubleComFetch(mensagensIniciais: Array<Record<string, unknown>> = []) {
   const d = duble(mensagensIniciais);
   vi.stubEnv("WAHA_API_BASE_URL", WAHA_BASE);
   vi.stubEnv("WAHA_API_KEY", "hash123");
   ultimoFetch = vi.fn(async () => Response.json({ id: { _serialized: "MSG-1" } }));
   vi.stubGlobal("fetch", ultimoFetch);
-  ultimoDuble = d;
   return d;
 }
 
