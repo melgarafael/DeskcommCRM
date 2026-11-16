@@ -102,6 +102,10 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_propose_lead_fields_from_document": { tokens: 583, motivo: BASE },
   "crm_save_lead_diagnosis": { tokens: 353, motivo: "capacidade nova (#4632, decisão D7): o agente qualificador grava o diagnóstico da empresa na ficha; a descrição diz QUANDO usar (o que ele concluiu da empresa, só do contato da conversa), que grava DIRETO com o selo e que não serve para dado pessoal nem para copiar a fala do cliente" },
   "crm_send_whatsapp_message": { tokens: 281, motivo: BASE },
+  // #4129 — capacidade de WIRE que envia o material da empresa como documento.
+  // O peso é quase todo a descrição: é ela que ensina o integrador que o
+  // arquivo NÃO é lido nem resumido. Medido na criação (2026-11-06), sem gordura.
+  "crm_send_material": { tokens: 407, motivo: "material da empresa no caminho de mídia (#4129), medida na criação (2026-11-06)" },
   "crm_publish_whatsapp_status": { tokens: 464, motivo: "ferramenta nova do módulo opcional status_whatsapp (#3463), medida na criação (2026-11-10); só é oferecida com o módulo ligado" },
   "crm_start_conversation_and_send": { tokens: 593, motivo: BASE },
   "crm_create_conversation_draft": { tokens: 411, motivo: BASE },
@@ -125,7 +129,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_draft_proposal": { tokens: 1059, motivo: BASE },
   "crm_request_human_handoff": { tokens: 583, motivo: BASE },
   "get_lead_context": { tokens: 46, motivo: BASE },
-  "send_message": { tokens: 191, motivo: "imagem_url (Spec 25 R4): a foto por endereço, com a regra de procedência na descrição" },
+  "send_message": { tokens: 422, motivo: "Medição do merge (#4129 + Spec 25 R4): `material_id` e a descrição do anexo da empresa entram no envio nativo ANTES da `imagem_url`, cujo bloco já estava na main — 422 é o peso real dos dois, não a soma dos dois tetos" },
   "update_lead_state": { tokens: 240, motivo: BASE },
   "schedule_followup": { tokens: 200, motivo: BASE },
   "save_lead_note": { tokens: 229, motivo: BASE },
@@ -148,9 +152,15 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // no `send_message` (Spec 25 R4, #3276); +464 com `crm_publish_whatsapp_status`
 // (#3463), que só entra no catálogo com o módulo `status_whatsapp` ligado; +37 na
 // descrição de `crm_get_conversation_history`, que passou a dizer o AUTOR da
-// mensagem (#4077); +353 com `crm_save_lead_diagnosis` (#4632), o diagnóstico
-// da empresa gravado na ficha pelo agente da prospecção.
-const TETO_TOTAL = 31077;
+// mensagem (#4077).
+// +638 com o material da empresa (#4129): 231 do `send_message` (o `material_id`
+// e a sua descrição) e 407 da capacidade de wire `crm_send_material`, que entra
+// no catálogo lido pelo integrador.
+// +353 com `crm_save_lead_diagnosis` (#4632), o diagnóstico da empresa gravado
+// na ficha pelo agente da prospecção.
+// O total é MEDIDO no merge com a main (31715 = 31362 medidos nela + 353 deste
+// PR), não somado à mão.
+const TETO_TOTAL = 31715;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
