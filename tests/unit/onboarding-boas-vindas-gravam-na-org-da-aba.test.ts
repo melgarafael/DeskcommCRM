@@ -253,4 +253,18 @@ describe("onboarding/welcome: boas-vindas gravam na organização da aba, não n
     expect(r).toEqual({ ok: false, error: "forbidden" });
     expect(updates).toEqual([]);
   });
+
+  it("sessão de agência (#4034) é recusada mesmo com a org ativa sendo o cliente aberto", async () => {
+    // Mesmo com vínculo direto em B (o caso que, sem a guarda, GRAVARIA em B), a
+    // sessão de agência aberta em B não passa: é a mesma porta de
+    // `sendOnboardingInvites`, que emitiria convite permanente no cliente.
+    mundo.membros = [mB];
+    mundo.support = { organization_id: ORG_B, agency_id: ORG_A, name: "Org B", status: "active", access_mode: "full" };
+    montarBanco();
+
+    const r = await acceptWelcome(formulario(ORG_B));
+
+    expect(r).toEqual({ ok: false, error: "forbidden" });
+    expect(updates).toEqual([]);
+  });
 });

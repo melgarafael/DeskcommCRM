@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { podeCriarPessoaComSenha } from "@/lib/auth/criar-pessoa-com-senha";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { ROLE_RANK } from "@/lib/auth/types";
@@ -52,6 +53,8 @@ export default async function TeamPage({
   const activeOrg = await resolveActiveOrg(user);
   const isAdmin = !!activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
   const isManager = !!activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
+  // A porta de "criar com senha" só aparece onde a rota aceitaria (doc 310 A).
+  const criaComSenha = isAdmin && (await podeCriarPessoaComSenha(user, createAdminClient()));
 
   return (
     <div className="flex h-full flex-col gap-6 md:p-6">
@@ -63,9 +66,19 @@ export default async function TeamPage({
           </p>
         </div>
         {isAdmin ? (
-          <Button asChild className="shrink-0">
-            <Link href="/app/team/invite">{t("Convidar membros")}</Link>
-          </Button>
+          // DUAS portas para a mesma pergunta ("quem entra na equipe"), lado a
+          // lado e com peso diferente: convidar é o caminho de sempre; criar com
+          // senha é o que funciona sem SMTP nem caixa postal (#3876).
+          <div className="flex shrink-0 flex-wrap gap-2">
+            {criaComSenha ? (
+              <Button asChild variant="outline">
+                <Link href="/app/team/novo">{t("Criar usuário com senha")}</Link>
+              </Button>
+            ) : null}
+            <Button asChild>
+              <Link href="/app/team/invite">{t("Convidar membros")}</Link>
+            </Button>
+          </div>
         ) : null}
       </header>
 
