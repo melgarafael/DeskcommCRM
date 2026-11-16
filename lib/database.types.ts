@@ -2217,6 +2217,7 @@ export type Database = {
           is_active: boolean;
           name: string;
           organization_id: string;
+          passagem_ao_cliente: string | null;
           updated_at: string;
         };
         ComputedFields: never;
@@ -2230,6 +2231,7 @@ export type Database = {
           is_active?: boolean;
           name: string;
           organization_id: string;
+          passagem_ao_cliente?: string | null;
           updated_at?: string;
         };
         Update: {
@@ -2242,6 +2244,7 @@ export type Database = {
           is_active?: boolean;
           name?: string;
           organization_id?: string;
+          passagem_ao_cliente?: string | null;
           updated_at?: string;
         };
         Relationships: [
@@ -13195,6 +13198,7 @@ export type Database = {
           created_by_user_id: string | null;
           currency: string;
           day_of_month: number;
+          desativada_pela_perda: boolean;
           direction: string;
           id: string;
           is_active: boolean;
@@ -13211,6 +13215,7 @@ export type Database = {
           created_by_user_id?: string | null;
           currency?: string;
           day_of_month: number;
+          desativada_pela_perda?: boolean;
           direction: string;
           id?: string;
           is_active?: boolean;
@@ -13226,6 +13231,7 @@ export type Database = {
           created_by_user_id?: string | null;
           currency?: string;
           day_of_month?: number;
+          desativada_pela_perda?: boolean;
           direction?: string;
           id?: string;
           is_active?: boolean;

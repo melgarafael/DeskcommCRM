@@ -80,6 +80,8 @@ export function vetoReason(gate: string, code: string, trecho?: string | null): 
       "Não enviei: a mensagem usava termos internos do sistema que o cliente não deve ler",
     near_dup:
       "Não enviei: o agente ia repetir quase a mesma mensagem que já foi enviada nesta conversa",
+    teto_de_respostas:
+      "Não enviei: esta conversa já recebeu muitas respostas automáticas em pouco tempo — pode ser um robô do outro lado; a equipe foi avisada na Central",
   };
   return porGate[gate] ?? `Não enviei: bloqueado pela regra "${gate}" (${code})`;
 }
