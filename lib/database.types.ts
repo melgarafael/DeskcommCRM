@@ -3053,6 +3053,7 @@ export type Database = {
       };
       calendar_appointments: {
         Row: {
+          authority: string;
           cancellation_reason: string | null;
           cancelled_at: string | null;
           confirmation_next_at: string | null;
@@ -3065,6 +3066,8 @@ export type Database = {
           description: string | null;
           ends_at: string;
           event_type_id: string | null;
+          external_connection_id: string | null;
+          external_status: string | null;
           google_base_projection: Json | null;
           google_calendar_id: string | null;
           google_claim_epoch: number;
@@ -3138,6 +3141,7 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          authority?: string;
           cancellation_reason?: string | null;
           cancelled_at?: string | null;
           confirmation_next_at?: string | null;
@@ -3150,6 +3154,8 @@ export type Database = {
           description?: string | null;
           ends_at: string;
           event_type_id?: string | null;
+          external_connection_id?: string | null;
+          external_status?: string | null;
           google_base_projection?: Json | null;
           google_calendar_id?: string | null;
           google_claim_epoch?: number;
@@ -3222,6 +3228,7 @@ export type Database = {
           updated_at?: string;
         };
         Update: {
+          authority?: string;
           cancellation_reason?: string | null;
           cancelled_at?: string | null;
           confirmation_next_at?: string | null;
@@ -3234,6 +3241,8 @@ export type Database = {
           description?: string | null;
           ends_at?: string;
           event_type_id?: string | null;
+          external_connection_id?: string | null;
+          external_status?: string | null;
           google_base_projection?: Json | null;
           google_calendar_id?: string | null;
           google_claim_epoch?: number;
@@ -3624,6 +3633,9 @@ export type Database = {
           description: string | null;
           destination_calendar_id: string | null;
           duration_minutes: number;
+          external_connection_id: string | null;
+          external_id: string | null;
+          external_provider: string | null;
           id: string;
           is_active: boolean;
           location_details: string | null;
@@ -3664,6 +3676,9 @@ export type Database = {
           description?: string | null;
           destination_calendar_id?: string | null;
           duration_minutes?: number;
+          external_connection_id?: string | null;
+          external_id?: string | null;
+          external_provider?: string | null;
           id?: string;
           is_active?: boolean;
           location_details?: string | null;
@@ -3703,6 +3718,9 @@ export type Database = {
           description?: string | null;
           destination_calendar_id?: string | null;
           duration_minutes?: number;
+          external_connection_id?: string | null;
+          external_id?: string | null;
+          external_provider?: string | null;
           id?: string;
           is_active?: boolean;
           location_details?: string | null;
