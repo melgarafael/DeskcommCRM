@@ -30,6 +30,9 @@
 -- recusaria a linha e a entrada do SMS ficaria sem o único registro do que o
 -- fornecedor mandou. `conversations_channel_check` ganha `sms`.
 --
+-- As listas são as da main com o canal do Telegram (migration 9342, #3440)
+-- mais o SMS: recriar o CHECK sem um valor que já existe derrubaria o outro canal.
+--
 -- Alargamento puro nos quatro: um CHECK que aceita mais valores não é violado
 -- por linha que já passava pelo antigo, então não há backfill antes.
 --
@@ -53,7 +56,7 @@ alter table public.channel_sessions
 
 alter table public.channel_sessions
   add constraint channel_sessions_provider_check
-    check (provider in ('waha', 'meta_cloud', 'zernio', 'zernio_social', 'wacalls', 'datafy', 'twilio'));
+    check (provider in ('waha', 'meta_cloud', 'zernio', 'zernio_social', 'wacalls', 'datafy', 'telegram', 'twilio'));
 
 alter table public.channel_sessions
   drop constraint if exists channel_sessions_provider_ref_check;
@@ -65,6 +68,7 @@ alter table public.channel_sessions
     (provider in ('zernio', 'zernio_social') and zernio_account_id is not null) or
     (provider = 'wacalls' and wacalls_session_id is not null) or
     (provider = 'datafy' and datafy_phone_number_id is not null) or
+    (provider = 'telegram' and telegram_bot_id is not null) or
     (provider = 'twilio' and twilio_phone_number_sid is not null)
   );
 
@@ -73,7 +77,7 @@ alter table public.webhook_events_log
 
 alter table public.webhook_events_log
   add constraint webhook_events_log_provider_check check (provider in (
-    'waha', 'nuvemshop', 'generic', 'meta_cloud', 'zernio', 'datafy', 'twilio',
+    'waha', 'nuvemshop', 'generic', 'meta_cloud', 'zernio', 'datafy', 'telegram', 'twilio',
     'stripe', 'asaas'
   ));
 
@@ -82,7 +86,7 @@ alter table public.conversations
 
 alter table public.conversations
   add constraint conversations_channel_check
-    check (channel in ('whatsapp', 'instagram', 'facebook', 'sms'));
+    check (channel in ('whatsapp', 'instagram', 'facebook', 'telegram', 'sms'));
 
 create unique index if not exists channel_sessions_twilio_phone_number_sid_ativo_unique
   on public.channel_sessions (twilio_phone_number_sid)

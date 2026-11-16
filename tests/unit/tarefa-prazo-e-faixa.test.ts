@@ -15,6 +15,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   agrupaPorPrazo,
+  calcularUrgenciaDoPrazo,
   diaLocalDoPrazo,
   estaAtrasada,
   estaEncerrada,
@@ -40,6 +41,8 @@ function tarefa(p: Partial<Tarefa>): Tarefa {
     demanda_id: null,
     assigned_to: null,
     created_by: null,
+    // A série (#4595): nula = tarefa avulsa, que é o caso de todo o histórico.
+    recurrence: null,
     created_at: AGORA.toISOString(),
     updated_at: AGORA.toISOString(),
     ...p,
@@ -164,5 +167,49 @@ describe("alternar a caixa da lista (#2549)", () => {
       const reabriu = proximo === "pending";
       expect(reabriu).toBe(estaEncerrada({ status }));
     }
+  });
+});
+
+describe("farol preventivo de prazos (calcularUrgenciaDoPrazo)", () => {
+  it("sem prazo ou encerrada retorna 'normal'", () => {
+    expect(calcularUrgenciaDoPrazo(tarefa({ due_date: null }), AGORA)).toBe("normal");
+    expect(calcularUrgenciaDoPrazo(tarefa({ due_date: local(2026, 9, 1, 10), status: "done" }), AGORA)).toBe("normal");
+    expect(calcularUrgenciaDoPrazo(tarefa({ due_date: local(2026, 9, 1, 10), status: "cancelled" }), AGORA)).toBe("normal");
+  });
+
+  it("prazo vencido retorna 'atrasada'", () => {
+    expect(calcularUrgenciaDoPrazo(tarefa({ due_date: local(2026, 9, 1, 10) }), AGORA)).toBe("atrasada");
+  });
+
+  it("prazo em até 24h úteis retorna 'vence_hoje'", () => {
+    // AGORA = 2026-09-02 10:00 (quarta). Mesma quarta às 18:00 (8h úteis)
+    expect(calcularUrgenciaDoPrazo(tarefa({ due_date: local(2026, 9, 2, 18) }), AGORA)).toBe("vence_hoje");
+  });
+
+  it("prazo entre 24h e 48h úteis retorna 'atencao_48h'", () => {
+    // Quinta-feira às 18:00 (32h úteis)
+    expect(calcularUrgenciaDoPrazo(tarefa({ due_date: local(2026, 9, 3, 18) }), AGORA)).toBe("atencao_48h");
+  });
+
+  it("prazo além de 48h úteis retorna 'normal'", () => {
+    // Segunda-feira da próxima semana
+    expect(calcularUrgenciaDoPrazo(tarefa({ due_date: local(2026, 9, 7, 10) }), AGORA)).toBe("normal");
+  });
+
+  it("proteção de fim de semana: sexta-feira à tarde alertando para segunda de manhã", () => {
+    // Sexta-feira 16h (2026-09-04 16:00)
+    const sexta16h = new Date(2026, 8, 4, 16, 0, 0);
+    // Segunda-feira 10h (2026-09-07 10:00)
+    const segunda10h = local(2026, 9, 7, 10, 0);
+
+    // Com padrão Seg-Sex: fim de semana é ignorado, restam 18h úteis -> 'vence_hoje'
+    expect(
+      calcularUrgenciaDoPrazo(tarefa({ due_date: segunda10h }), sexta16h, { diasUteis: [1, 2, 3, 4, 5] }),
+    ).toBe("vence_hoje");
+
+    // Se a empresa trabalha sábado: restam 42h úteis -> 'atencao_48h'
+    expect(
+      calcularUrgenciaDoPrazo(tarefa({ due_date: segunda10h }), sexta16h, { diasUteis: [1, 2, 3, 4, 5, 6] }),
+    ).toBe("atencao_48h");
   });
 });

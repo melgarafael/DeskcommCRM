@@ -4,6 +4,7 @@ import {
   resolveActiveOrg,
   exigenciaDeMfa,
 } from "@/lib/auth/server";
+import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { empresaExigeMfa, politicaDaEmpresa, type PapelMinimoDeMfa } from "@/lib/auth/politica-mfa";
 import { listarDispositivosConfiaveis } from "@/lib/auth/dispositivo-confiavel";
@@ -76,15 +77,14 @@ export default async function SecurityPage() {
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{traduzir("Segurança", idioma)}</h1>
+      <CabecalhoDaSubTela titulo={traduzir("Segurança", idioma)} idioma={idioma}>
         <p className="text-sm text-muted-foreground">
           {traduzir(
             "A verificação em duas etapas da sua conta, os códigos de recuperação e as sessões abertas.",
             idioma,
           )}
         </p>
-      </header>
+      </CabecalhoDaSubTela>
 
       <SecurityClient
         mfaEnrolled={enrolled}

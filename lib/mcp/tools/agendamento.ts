@@ -136,6 +136,13 @@ export const crmListEventTypes: McpToolDefinition<typeof tiposShape> = {
         // Traduzido: `in_person` é vocabulário de banco e o modelo repassa o que
         // recebe. `rotuloDoLocal` é o MESMO tradutor que a tela usa.
         onde: rotuloDoLocal(t.localKind, t.localDetalhes) ?? null,
+        // O preço que a RECEPÇÃO cobra por este tipo, em CENTAVOS e cru: é a
+        // MESMA coluna (`calendar_event_types.default_price_cents`) que a
+        // comanda lê para sugerir o valor. Formatar em reais aqui faria o
+        // modelo repassar o texto formatado e errar a conta em qualquer
+        // reajuste; `null` é "a clínica não definiu preço", e zero seria um
+        // preço — grátis — que ninguém cadastrou.
+        preco_padrao_cents: t.precoPadraoCents ?? null,
         precisa_confirmacao: t.precisaConfirmacao,
         ...(t.servico ? { servico: t.servico } : {}),
       })),
@@ -616,6 +623,10 @@ const ENSINO_POR_CODIGO: Record<string, string> = {
     "esse atendimento ainda não tem responsável definido. Não invente horários: avise que alguém da equipe confirma.",
   agenda_disponibilidade_invalida:
     "não consigo ler a agenda desse atendente agora. Não ofereça horários e não diga que está sem vaga — avise que alguém da equipe confirma.",
+  agenda_autoridade_externa:
+    "esse compromisso é gerido em outro sistema da equipe e não se muda por aqui. Não tente de novo: avise que alguém da equipe confirma.",
+  agenda_tipo_de_sistema_externo:
+    "esse atendimento é marcado pela equipe em outro sistema. Não ofereça horários: avise que alguém da equipe confirma.",
   agenda_ja_cancelado:
     "esse compromisso já estava desmarcado. Não é erro: siga sem desmarcar de novo.",
   agenda_ainda_nao_aconteceu:

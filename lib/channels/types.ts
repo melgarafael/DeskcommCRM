@@ -24,6 +24,13 @@ export type ChannelProvider =
   | "wacalls"
   | "datafy"
   /**
+   * Bot do Telegram, o do @BotFather (#3440). Entra com o TIPO, e não como uma
+   * variação de um dos canais de WhatsApp, porque o endereço dele não é
+   * telefone: é o `chat_id` que o próprio bot recebe no update. Ver
+   * `./adapters/telegram.ts` e a ausência dele em `PROVIDERS_DE_TELEFONE`.
+   */
+  | "telegram"
+  /**
    * SMS (#4415). O provider é o FORNECEDOR (como `waha` e `datafy`), não o
    * canal: a conversa que ele abre é `channel = 'sms'`, e um segundo
    * fornecedor de SMS entra depois como outra linha, sem renomear nada. O
@@ -70,8 +77,15 @@ export interface ChannelCapabilities {
   banRisk: boolean;
   /** Intervalo mínimo imposto PELA PLATAFORMA entre msgs ao mesmo destinatário (ms). */
   minIntervalMs: number | null;
-  /** 'server-convert' = o canal converte áudio; 'opus-only' = precisamos entregar ogg/opus. */
-  voiceNote: "server-convert" | "opus-only";
+  /**
+   * O que o canal faz com a NOTA DE VOZ que sai daqui:
+   *   - 'server-convert' = o canal converte áudio (recebe mp3);
+   *   - 'opus-only' = precisamos entregar ogg/opus mono;
+   *   - 'none' = este canal não entrega nota de voz nossa — o agente responde
+   *     em texto, e a tela do agente diz isso. Existe para não mentir com um
+   *     dos dois de cima num canal onde todo envio de áudio é recusado.
+   */
+  voiceNote: "server-convert" | "opus-only" | "none";
   groups: "full" | "limited" | "none";
   /** Mensagem entregue gera custo → decisões de envio precisam considerar orçamento. */
   costPerMessage: boolean;

@@ -145,6 +145,7 @@ import { IDIOMA_PADRAO, normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { AUTORIDADE_LOCAL } from "@/lib/agenda/autoridade";
 import { resolverRemetenteDoLembrete, type CanalDoLembrete } from "@/lib/agenda/remetente-do-lembrete";
 import {
   lerModeloDoLembrete,
@@ -602,6 +603,10 @@ async function handle(req: NextRequest): Promise<Response> {
         "calendar_event_types!inner(name, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_template_name, reminder_body, reminder_bodies, location_details), organizations:organization_id!inner(status)",
     )
     .eq("status", "confirmed")
+    // Compromisso de um sistema externo (9392) só recebe lembrete quando o
+    // módulo dele confere o estado lá antes — etapa 2 do #4227. Sai no banco,
+    // antes do `limit`, para não ocupar a janela da varredura.
+    .eq("authority", AUTORIDADE_LOCAL)
     // Org parada sai no banco, ANTES do `limit`: filtrar só em memória a deixaria
     // ocupar a janela da varredura enquanto a org segue parada.
     .eq("organizations.status", STATUS_OPERANTE)

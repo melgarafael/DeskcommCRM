@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "diagram_type": "fluxo",
+  "meta": {
+    "titulo": "Organizações administradas por agências",
+    "pergunta": "Como delegar a gestão sem conceder administração global?",
+    "resumo": "Autoridade direta da agência, cota transacional, sessão revogável e auditoria real."
+  },
+  "lanes": [
+    {
+      "id": "tela",
+      "label": "Interface"
+    },
+    {
+      "id": "servidor",
+      "label": "Autorização"
+    },
+    {
+      "id": "dados",
+      "label": "Dados"
+    }
+  ],
+  "mainPath": [
+    "plataforma",
+    "agencia",
+    "criacao",
+    "sessao",
+    "cliente"
+  ],
+  "nodes": [
+    {
+      "id": "plataforma",
+      "lane": "tela",
+      "col": 0,
+      "type": "frontend",
+      "label": "Configuração global",
+      "sublabel": "Habilitação, cota e acordo comercial"
+    },
+    {
+      "id": "agencia",
+      "lane": "tela",
+      "col": 1,
+      "type": "frontend",
+      "label": "Organizações clientes",
+      "sublabel": "Seletor do topo e Configurações"
+    },
+    {
+      "id": "criacao",
+      "lane": "servidor",
+      "col": 2,
+      "type": "api",
+      "label": "fn_agencia_criar_cliente",
+      "sublabel": "Autorização, idempotência e cota em transação"
+    },
+    {
+      "id": "sessao",
+      "lane": "servidor",
+      "col": 3,
+      "type": "api",
+      "label": "fn_support_context",
+      "sublabel": "Papel delegado revogável; preserva suporte global"
+    },
+    {
+      "id": "cliente",
+      "lane": "tela",
+      "col": 4,
+      "type": "frontend",
+      "label": "Aplicativo do cliente",
+      "sublabel": "CRM normal com RLS e marca da organização"
+    },
+    {
+      "id": "audit",
+      "lane": "dados",
+      "col": 4,
+      "type": "tabela",
+      "label": "api_audit_log",
+      "sublabel": "Pessoa real, agência, cliente e sessão"
+    },
+    {
+      "id": "config",
+      "lane": "dados",
+      "col": 1,
+      "type": "tabela",
+      "label": "agencia_configuracoes / agencia_clientes",
+      "sublabel": "FK, hierarquia e autorização protegidas"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e0",
+      "from": "plataforma",
+      "to": "config",
+      "label": "salva autorização"
+    },
+    {
+      "id": "e1",
+      "from": "config",
+      "to": "agencia",
+      "label": "revela porta aos admins diretos"
+    },
+    {
+      "id": "e2",
+      "from": "agencia",
+      "to": "criacao",
+      "label": "criação autenticada"
+    },
+    {
+      "id": "e3",
+      "from": "criacao",
+      "to": "config",
+      "label": "serializa e valida cota"
+    },
+    {
+      "id": "e4",
+      "from": "criacao",
+      "to": "agencia",
+      "label": "cliente criado ou erro explícito"
+    },
+    {
+      "id": "e5",
+      "from": "agencia",
+      "to": "sessao",
+      "label": "abre cliente vinculado"
+    },
+    {
+      "id": "e6",
+      "from": "config",
+      "to": "sessao",
+      "label": "revalida autoridade"
+    },
+    {
+      "id": "e7",
+      "from": "sessao",
+      "to": "cliente",
+      "label": "papel sob RLS"
+    },
+    {
+      "id": "e8",
+      "from": "cliente",
+      "to": "agencia",
+      "label": "encerra e volta"
+    },
+    {
+      "id": "e9",
+      "from": "criacao",
+      "to": "audit",
+      "label": "registra criação"
+    },
+    {
+      "id": "e10",
+      "from": "cliente",
+      "to": "audit",
+      "label": "registra ator delegado"
+    },
+    {
+      "id": "e11",
+      "from": "audit",
+      "to": "cliente",
+      "label": "histórico visível"
+    }
+  ],
+  "cards": [
+    {
+      "titulo": "Revogação",
+      "texto": "Rebaixar o admin ou desabilitar a agência retira a delegação; vínculo direto legítimo continua independente."
+    }
+  ]
+}

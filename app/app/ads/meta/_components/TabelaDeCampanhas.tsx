@@ -163,6 +163,18 @@ export function TabelaDeCampanhas({ linhas, moeda, avisos }: Props) {
     () => ordenarCampanhas(linhas, criterio),
     [linhas, criterio],
   );
+
+  /**
+   * "Só ativas" (#4412) recorta a lista JÁ ORDENADA: o filtro não mexe na
+   * ordem, então marcar a caixa mantém o que o seletor escolheu. Desmarcada por
+   * padrão, e sem memória entre visitas — guardar a escolha é outra fatia.
+   */
+  const [soAtivas, setSoAtivas] = useState(false);
+  const linhasVisiveis = useMemo(
+    () =>
+      soAtivas ? linhasOrdenadas.filter((linha) => linha.status === "ACTIVE") : linhasOrdenadas,
+    [linhasOrdenadas, soAtivas],
+  );
   /** Troca e grava no mesmo gesto: a escolha vale já e sobrevive ao próximo F5. */
   function trocarCriterio(novo: CriterioDeOrdenacao) {
     setCriterio(novo);
@@ -247,6 +259,15 @@ export function TabelaDeCampanhas({ linhas, moeda, avisos }: Props) {
         tela justamente em tela estreita, que é onde ele mais importa.
       */}
       <div className="flex items-center justify-end gap-2">
+        <label className="mr-2 flex items-center gap-2 text-sm text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={soAtivas}
+            onChange={(evento) => setSoAtivas(evento.target.checked)}
+            className="size-4 accent-[var(--color-accent)]"
+          />
+          {t("Só ativas")}
+        </label>
         <label htmlFor="ordem-das-campanhas" className="text-sm text-muted-foreground">
           {t("Ordenar por")}
         </label>
@@ -271,22 +292,32 @@ export function TabelaDeCampanhas({ linhas, moeda, avisos }: Props) {
         São 16 colunas; em telas estreitas a tabela rola dentro do próprio quadro e
         a página segue parada, que é o combinado do produto para conteúdo largo.
       */}
-      <div className="overflow-x-auto rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="sticky left-0 z-10 bg-bg">{t("Campanha")}</TableHead>
-              <TableHead>{t("Status")}</TableHead>
-              <TableHead>{t("Veiculação")}</TableHead>
-              <TableHead>{t("Início")}</TableHead>
-              <TableHead className="text-right">{t("Resultado")}</TableHead>
-              <TableHead className="text-right">{t("Custo por Resultado")}</TableHead>
-              <TableHead className="text-right">{t("Valor Gasto")}</TableHead>
-              <TableHead className="text-right">{t("Impressões")}</TableHead>
-              <TableHead className="text-right">{t("Alcance")}</TableHead>
-              <TableHead className="text-right">{t("CPM")}</TableHead>
-              <TableHead className="text-right">{t("CTR")}</TableHead>
-              {/*
+      {linhasVisiveis.length === 0 ? (
+        /*
+          O filtro esvaziou a tabela, mas a conta TEM campanhas no período: a
+          frase diz isso, para ninguém confundir com conta vazia — e os controles
+          seguem acima, para desmarcar a caixa ali mesmo.
+        */
+        <p className="rounded-md border p-4 text-sm text-muted-foreground">
+          {t("Nenhuma campanha ativa neste período.")}
+        </p>
+      ) : (
+        <div className="overflow-x-auto rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="sticky left-0 z-10 bg-bg">{t("Campanha")}</TableHead>
+                <TableHead>{t("Status")}</TableHead>
+                <TableHead>{t("Veiculação")}</TableHead>
+                <TableHead>{t("Início")}</TableHead>
+                <TableHead className="text-right">{t("Resultado")}</TableHead>
+                <TableHead className="text-right">{t("Custo por Resultado")}</TableHead>
+                <TableHead className="text-right">{t("Valor Gasto")}</TableHead>
+                <TableHead className="text-right">{t("Impressões")}</TableHead>
+                <TableHead className="text-right">{t("Alcance")}</TableHead>
+                <TableHead className="text-right">{t("CPM")}</TableHead>
+                <TableHead className="text-right">{t("CTR")}</TableHead>
+                {/*
                 Coluna nova, logo depois do CTR — e a ÚNICA das duas derivadas que
                 fica sem o numerador escrito no rótulo. Não é inconsistência: o
                 Hook Rate precisa avisar que o numerador dele diverge do de
@@ -299,91 +330,94 @@ export function TabelaDeCampanhas({ linhas, moeda, avisos }: Props) {
                 campanha de mensagem): coluna que aparece e some conforme o
                 período faz a tabela pular, e "—" já diz o que precisa dizer.
               */}
-              <TableHead
-                className="text-right"
-                title={t("Visualizações da página ÷ cliques no link")}
-              >
-                {t("Connect rate")}
-              </TableHead>
-              <TableHead className="text-right">{t("Frequência")}</TableHead>
-              <TableHead className="text-right">{t("CPC")}</TableHead>
-              {/*
+                <TableHead
+                  className="text-right"
+                  title={t("Visualizações da página ÷ cliques no link")}
+                >
+                  {t("Connect rate")}
+                </TableHead>
+                <TableHead className="text-right">{t("Frequência")}</TableHead>
+                <TableHead className="text-right">{t("CPC")}</TableHead>
+                {/*
                 O rótulo diz o numerador de propósito. O Hook Rate de mercado usa
                 reproduções de 3 segundos, e esse campo FOI REMOVIDO da v22.0 —
                 sobrou o total de reproduções, que dá um número maior. Uma coluna
                 "Hook Rate" pelada não bateria com o Gerenciador e não explicaria
                 por quê; com o numerador escrito, bate a conta na hora.
               */}
-              <TableHead className="text-right" title={t("Reproduções de vídeo ÷ impressões")}>
-                {t("Hook Rate")}
-                <span className="ml-1 font-normal text-muted-foreground">{t("(reproduções)")}</span>
-              </TableHead>
-              <TableHead className="text-right">{t("ThruPlays")}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {linhasOrdenadas.map((linha) => {
-              const rotulo = rotuloDoIndicador(linha.resultado.indicador);
-              return (
-                <TableRow key={linha.campanhaId}>
-                  <TableCell className="sticky left-0 z-10 max-w-[9rem] bg-bg font-medium md:max-w-[22rem]">
-                    <span
-                      className="block max-w-[9rem] truncate md:max-w-[22rem]"
-                      title={linha.nome}
-                    >
-                      {linha.nome}
-                    </span>
-                  </TableCell>
-                  <TableCell>{estado(linha.status)}</TableCell>
-                  <TableCell>{estado(linha.veiculacao)}</TableCell>
-                  <TableCell className="whitespace-nowrap">{inicio(linha.iniciadaEm)}</TableCell>
-                  <TableCell className="text-right">
-                    <Numero valor={linha.resultado.valor} />
-                    {/*
+                <TableHead className="text-right" title={t("Reproduções de vídeo ÷ impressões")}>
+                  {t("Hook Rate")}
+                  <span className="ml-1 font-normal text-muted-foreground">
+                    {t("(reproduções)")}
+                  </span>
+                </TableHead>
+                <TableHead className="text-right">{t("ThruPlays")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {linhasVisiveis.map((linha) => {
+                const rotulo = rotuloDoIndicador(linha.resultado.indicador);
+                return (
+                  <TableRow key={linha.campanhaId}>
+                    <TableCell className="sticky left-0 z-10 max-w-[9rem] bg-bg font-medium md:max-w-[22rem]">
+                      <span
+                        className="block max-w-[9rem] truncate md:max-w-[22rem]"
+                        title={linha.nome}
+                      >
+                        {linha.nome}
+                      </span>
+                    </TableCell>
+                    <TableCell>{estado(linha.status)}</TableCell>
+                    <TableCell>{estado(linha.veiculacao)}</TableCell>
+                    <TableCell className="whitespace-nowrap">{inicio(linha.iniciadaEm)}</TableCell>
+                    <TableCell className="text-right">
+                      <Numero valor={linha.resultado.valor} />
+                      {/*
                       O rótulo do indicador viaja com o número. "15" sozinho não
                       diz se são conversas, cadastros ou compras — e a tabela
                       mistura objetivos, então a mesma coluna significa coisas
                       diferentes em linhas vizinhas.
                     */}
-                    {rotulo && (
-                      <span className="block text-xs font-normal text-muted-foreground">
-                        {t(rotulo)}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {dinheiro(linha.resultado.custoPorResultado)}
-                  </TableCell>
-                  <TableCell className="text-right">{dinheiro(linha.gasto)}</TableCell>
-                  <TableCell className="text-right">
-                    <Numero valor={linha.impressoes} />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Numero valor={linha.alcance} />
-                  </TableCell>
-                  <TableCell className="text-right">{dinheiro(linha.cpm)}</TableCell>
-                  <TableCell className="text-right">
-                    <Percentual valor={linha.ctr} />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Percentual valor={linha.connectRate} titulo={ressalvaDoConnectRate} />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Numero valor={linha.frequencia} casas={2} />
-                  </TableCell>
-                  <TableCell className="text-right">{dinheiro(linha.cpc)}</TableCell>
-                  <TableCell className="text-right">
-                    <Percentual valor={linha.hookRate} />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Numero valor={linha.thruPlays} />
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </div>
+                      {rotulo && (
+                        <span className="block text-xs font-normal text-muted-foreground">
+                          {t(rotulo)}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {dinheiro(linha.resultado.custoPorResultado)}
+                    </TableCell>
+                    <TableCell className="text-right">{dinheiro(linha.gasto)}</TableCell>
+                    <TableCell className="text-right">
+                      <Numero valor={linha.impressoes} />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Numero valor={linha.alcance} />
+                    </TableCell>
+                    <TableCell className="text-right">{dinheiro(linha.cpm)}</TableCell>
+                    <TableCell className="text-right">
+                      <Percentual valor={linha.ctr} />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Percentual valor={linha.connectRate} titulo={ressalvaDoConnectRate} />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Numero valor={linha.frequencia} casas={2} />
+                    </TableCell>
+                    <TableCell className="text-right">{dinheiro(linha.cpc)}</TableCell>
+                    <TableCell className="text-right">
+                      <Percentual valor={linha.hookRate} />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Numero valor={linha.thruPlays} />
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
     </div>
   );
 }

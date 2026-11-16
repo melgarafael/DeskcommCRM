@@ -26,9 +26,10 @@ import { z } from "zod";
 
 import { documentoDoPagador } from "@/lib/cobranca/documento";
 import { FUSO_PADRAO } from "@/lib/cobranca/fuso";
+import { MOEDAS_DO_ASAAS } from "@/lib/cobranca/vocabulario";
 import { logger } from "@/lib/logger";
 
-import { ErroDoProvedor, type AdaptadorDeCobranca, type Modo, type SinalDoWebhook, type Situacao, type WebhookPreparado } from "./contrato";
+import { ErroDoProvedor, type AdaptadorDeCobranca, type Modo, type PlanoParaProvedor, type SinalDoWebhook, type Situacao, type WebhookPreparado } from "./contrato";
 
 /** A base de cada ambiente. Qual vale sai do prefixo da chave. */
 export const ASAAS_API_BASE = {
@@ -61,6 +62,16 @@ export function modoDaChaveAsaas(chave: string): Modo | null {
   const m = PREFIXO_DA_CHAVE.exec(chave);
   if (!m) return null;
   return m[1] === "prod" ? "producao" : "teste";
+}
+
+/**
+ * O Asaas não tem moeda: todo valor é real. Plano em dólar ou euro (migration
+ * 9332) seria cobrado como se fosse real — R$ 500 no lugar de US$ 500. A rota de
+ * planos já recusa criar plano assim com o Asaas conectado; esta é a defesa no
+ * último passo, antes de qualquer chamada ao provedor.
+ */
+function exigirMoedaDoAsaas(plano: PlanoParaProvedor): void {
+  if (!MOEDAS_DO_ASAAS.includes(plano.moeda)) throw new ErroDoProvedor(null, "moeda_nao_suportada", false);
 }
 
 function baseDeLoopback(base: string): boolean {
@@ -516,6 +527,7 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
   async function iniciarAssinatura(
     p: Parameters<AdaptadorDeCobranca["iniciarAssinatura"]>[0],
   ): ReturnType<AdaptadorDeCobranca["iniciarAssinatura"]> {
+    exigirMoedaDoAsaas(p.plano);
     let callback = callbackDaVolta(p.urlDeVolta, dep.baseUrl !== undefined);
     const orgId = uuidDaOrg(p.orgId);
     const caminho = `/subscriptions?customer=${encodeURIComponent(p.clienteRef)}&status=ACTIVE&limit=10`;
@@ -569,6 +581,7 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
   }
 
   async function iniciarAjusteProporcional(p: Parameters<AdaptadorDeCobranca["iniciarAjusteProporcional"]>[0]) {
+    exigirMoedaDoAsaas(p.plano);
     const externalReference = `upgrade:${uuidDaOrg(p.orgId)}:${p.chaveIdempotencia}`;
     const consulta = new URLSearchParams({ customer: p.clienteRef, externalReference, limit: "10" });
     const existentes = ler(listaDoAsaas(cobrancaDoAsaas), await chamar("GET", `/payments?${consulta}`)).data;
@@ -696,6 +709,7 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
    * todas levam o valor novo.
    */
   async function trocarPlano(p: Parameters<AdaptadorDeCobranca["trocarPlano"]>[0]): Promise<void> {
+    exigirMoedaDoAsaas(p.plano);
     const hoje = dataCivilEmSaoPaulo(agora());
     const cobrancas = await cobrancasDaAssinatura(p.assinaturaRef);
     if (cobrancas.some((c) => c.status === "OVERDUE" || (c.status === "PENDING" && c.dueDate <= hoje))) {

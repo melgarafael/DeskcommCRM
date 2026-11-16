@@ -27,6 +27,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser, mfaEmDivida } from "@/lib/auth/server";
 import { orgAtivaDaApi, requireRole } from "@/lib/auth/require-role";
 import { CHANNEL_PROVIDER_SOCIAL, CHANNEL_PROVIDER_WAHA } from "@/lib/channels/capabilities";
+import { BOT_CHANNEL_PROVIDER, desligarRoboNoFornecedor } from "@/lib/channels/bot/connect";
 import { PARTNER_CHANNEL_PROVIDER, desfazerNoProvedor } from "@/lib/channels/connect";
 import { resolverSaudeDaConexaoRemovida } from "@/lib/channels/health";
 import { sincronizarAvisoDePausa } from "@/lib/channels/central-de-pausa";
@@ -371,6 +372,7 @@ export async function DELETE(
    */
   let socialWebhook: "apagada" | "sem_integracao" | "falhou" | "nao_social" = "nao_social";
   let parceiro: "desfeito" | "nada_a_desfazer" | "sem_credencial" | "falhou" | "nao_parceiro" = "nao_parceiro";
+  let robo: "desfeito" | "sem_credencial" | "falhou" | "nao_robo" = "nao_robo";
   /** O que terminou sendo a devolução do recebimento do número de SMS (#4415). Vai para a auditoria. */
   let recebimentoSms: "desfeito" | "sem_credencial" | "falhou" | "nao_sms" = "nao_sms";
 
@@ -452,6 +454,22 @@ export async function DELETE(
     } catch (err) {
       recebimentoSms = "falhou";
       logger.warn("Falha ao devolver o recebimento do número de SMS", {
+        requestId,
+        channel_session_id: id,
+        organization_id: activeOrg.orgId,
+        erro: err instanceof Error ? err.message : String(err),
+      });
+    }
+    patch.webhook_path_token = randomUUID().replace(/-/g, "");
+  } else if (session.provider === BOT_CHANNEL_PROVIDER) {
+    // O robô de mensagens (#3486): o webhook dele aponta para esta instalação.
+    // Apaga lá ANTES do patch, que gira o token do caminho; best-effort como o
+    // ramo social, porque o robô é da conta da empresa.
+    try {
+      robo = await desligarRoboNoFornecedor(createAdminClient(), activeOrg.orgId, id);
+    } catch (err) {
+      robo = "falhou";
+      logger.warn("Falha ao apagar o webhook do robô no fornecedor", {
         requestId,
         channel_session_id: id,
         organization_id: activeOrg.orgId,
@@ -664,6 +682,7 @@ export async function DELETE(
       recebimento_sms: recebimentoSms,
       social_webhook: socialWebhook,
       parceiro,
+      robo,
       ...impact.history,
       ...impact.configuration,
     },
