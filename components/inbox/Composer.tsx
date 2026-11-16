@@ -179,6 +179,14 @@ interface Props {
    * e o botão leva direto para lá.
    */
   onAbrirConversa?: (id: string) => void;
+  /**
+   * O canal desta conversa recusa a nota de voz que o gravador produz
+   * (`recusaNotaDeVoz` de `lib/channels/capabilities`). Com `true` o microfone
+   * não aparece e o lugar dele fica com o Enviar desabilitado — sem isso o
+   * atendente grava no Instagram, o áudio sobe e a bolha termina `failed`.
+   * Vem de fora porque é o `InboxLayout` que conhece o canal da conversa.
+   */
+  recusaNotaDeVoz?: boolean;
 }
 
 export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
@@ -201,6 +209,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     rascunho = null,
     usuarioId = null,
     onAbrirConversa,
+    recusaNotaDeVoz = false,
   },
   ref,
 ) {
@@ -1371,7 +1380,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               onAbertoChange={setAgendaAberta}
             />
           ) : null}
-          {text.trim() || mode === "note" ? (
+          {text.trim() || mode === "note" || recusaNotaDeVoz ? (
             <Button
               type="button"
               size="icon"

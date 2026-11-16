@@ -364,6 +364,17 @@ beforeAll(() => {
             values (v_org, 'RLS-' || v_org::text, 'Produto de invariante', 100);
         end if;
 
+        -- 9222 (#3587, fatia 2): a fonte do catálogo sincronizado. Guarda a URL
+        -- que o SERVIDOR busca e o mapeamento de campos — vazar a linha entrega
+        -- ao vizinho para onde a instalação faz requisição, que é metade do
+        -- caminho para o ERP dele. UMA linha por organização (índice único em
+        -- organization_id): o if not exists também é a idempotência das duas
+        -- passadas do seed.
+        if not exists (select 1 from public.catalog_feed_sources where organization_id = v_org) then
+          insert into public.catalog_feed_sources (organization_id, url)
+            values (v_org, 'https://rls-invariant.exemplo.test/feed.json');
+        end if;
+
         -- crm_tasks (migration 0210): o que o time combinou fazer, com prazo.
         -- Entra COM o vínculo de lead porque a tarefa presa a um negócio é o
         -- caso que cruza duas tabelas tenant-aware — se a policy vazasse, o
@@ -677,6 +688,23 @@ beforeAll(() => {
                   encode(sha256(convert_to('rls-invariant-' || v_org::text, 'UTF8')), 'hex'), 15000, 'pendente');
         end if;
 
+        -- migration 9386 (#4612) -- a tabela de valores de negociacao e um
+        -- procedimento dela, com partida e limite. Leitura org-scoped sem gate de
+        -- papel (quem negocia precisa do preco); a escrita nao e concedida a
+        -- authenticated (medido em tabela-de-valores-negociacao.test.ts).
+        if not exists (select 1 from public.tabelas_de_valores where organization_id = v_org) then
+          insert into public.tabelas_de_valores (organization_id, nome)
+          values (v_org, 'RLS invariant');
+        end if;
+        if not exists (select 1 from public.tabela_de_valores_itens where organization_id = v_org) then
+          insert into public.tabela_de_valores_itens
+            (organization_id, tabela_id, codigo, descricao, valor_brl_partida_cents, valor_brl_limite_cents)
+          select v_org, t.id, '1010', 'RLS invariant', 10000, 15000
+            from public.tabelas_de_valores t
+           where t.organization_id = v_org
+           limit 1;
+        end if;
+
         -- migration 9336 (#3118) -- a mensagem agendada da conversa semeada.
         if not exists (select 1 from public.mensagens_agendadas where organization_id = v_org) then
           insert into public.mensagens_agendadas
@@ -730,6 +758,13 @@ export const TABLES = [
   // exige `manager` — esse segundo eixo é medido em
   // `tests/invariants/catalogo-so-gestor-muda-preco.test.ts`, não aqui.
   "catalog_products",
+  // migration 9222 (#3587, fatia 2) — a fonte do catálogo sincronizado: a URL
+  // do feed da revenda e o mapeamento de campos. A LEITURA é org-scoped sem
+  // gate de papel (o `agent` semeado é controle positivo legítimo: a tela de
+  // catálogo mostra a fonte para quem atende); a ESCRITA exige `manager`, e
+  // esse segundo eixo NÃO é medido aqui — mesmo eixo separado de
+  // `catalog_products` acima.
+  "catalog_feed_sources",
   // migration 0210 — as tarefas do CRM. A leitura é org-scoped sem gate de papel
   // (o `viewer` precisa ver o que o time combinou); a ESCRITA exige `agent`, e
   // esse segundo eixo NÃO é medido aqui — o usuário semeado é `agent`, então o
@@ -909,6 +944,22 @@ export const TABLES = [
   // leitura é org-scoped E exige o par conversa/organização. A escrita é só do
   // servidor; quem mede isso é `pagamento-recebimentos-escrita-so-do-servidor.test.ts`.
   "pagamento_recebimentos",
+  // migration 9386 (#4612, fatia 1) — a tabela de valores de negociação e os
+  // procedimentos dela. Vazar a linha entrega ao vizinho o preço de partida E o
+  // LIMITE até onde a outra empresa aceita ir — o número que ela negocia para
+  // esconder. A LEITURA é org-scoped sem gate de papel (o `agent` semeado é
+  // controle positivo legítimo); a ESCRITA é só do servidor, e a recusa a
+  // `authenticated` é medida em `tabela-de-valores-negociacao.test.ts`.
+  "tabelas_de_valores",
+  "tabela_de_valores_itens",
+  // ⚠️ As quatro tabelas das agências (migrations 9373–9379, #4034) NÃO entram
+  // nesta lista, pelo mesmo motivo de `cobranca_assinaturas`: a leitura de
+  // `agencia_configuracoes` e `agencia_clientes` só existe para o `admin` direto
+  // de agência habilitada COM o módulo `agencias` ligado, e `agencia_sessoes` e
+  // `agencia_criacoes` não têm policy nenhuma (só o servidor). O `agent` semeado
+  // aqui leria 0 nas duas direções, e o controle positivo falharia por ACERTO. A
+  // prova, com TRÊS organizações (agência, cliente vinculado e cliente sem
+  // vínculo), vive em `tests/invariants/agencias.test.ts`.
 ] as const;
 
 describe("RLS tenant isolation (fn_user_org_ids pattern)", () => {

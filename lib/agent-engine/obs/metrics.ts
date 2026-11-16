@@ -22,6 +22,7 @@
  */
 import type pg from 'pg';
 
+import { MIN_TOKENS_DE_ENTRADA_PARA_CACHE } from '../../ai/cache-de-prompt';
 import { sessionHealthMetrics, type SessionHealthMetric } from '../edge/crm/session-watchdog';
 import type { JobRow, Queryable } from '../queue/queue';
 
@@ -33,8 +34,12 @@ export const CACHE_RATIO_METRIC = 'run_cache_read_ratio';
  * cacheia (é o caso dos classificadores), então ela não pode entrar nem no
  * numerador nem no denominador da razão — somá-la afunda o número e faz o aviso
  * disparar sem que exista defeito de prefixo (#4362).
+ *
+ * O número vem de `lib/ai/cache-de-prompt.ts`, a régua única: a tela Uso de IA
+ * corta pelo mesmo valor (`fn_uso_de_ia`). O nome antigo fica porque é o que os
+ * testes e o invariante do Postgres importam.
  */
-export const CACHEABLE_INPUT_TOKENS_MIN = 1024;
+export const CACHEABLE_INPUT_TOKENS_MIN = MIN_TOKENS_DE_ENTRADA_PARA_CACHE;
 
 /** espera do job na fila até o claim (inclui debounce) — ver recordRunMetrics */
 export const QUEUE_WAIT_METRIC = 'run_queue_wait_ms';
