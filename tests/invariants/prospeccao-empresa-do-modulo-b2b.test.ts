@@ -85,9 +85,17 @@ async function semearCandidato(opts: {
   );
 }
 
+/**
+ * Conta com a coluna ALIASADA (`as n`). Sem o alias o Postgres nomeia a coluna
+ * `count`, `rows[0].n` fica `undefined` e o `?? 0` transforma qualquer contagem
+ * em zero — foi assim que o caso 3 passou a acusar "empresa não criada" com a
+ * empresa criada. Contagem que não devolve a coluna agora explode.
+ */
 async function conta(sql: string, args: unknown[] = []): Promise<number> {
   const { rows } = await pool.query<{ n: string }>(sql, args);
-  return Number(rows[0]?.n ?? 0);
+  const n = rows[0]?.n;
+  if (n === undefined) throw new Error(`contagem sem a coluna n: ${sql}`);
+  return Number(n);
 }
 
 beforeEach(async () => {
@@ -139,14 +147,14 @@ describe("prospecção × módulo Empresas e pessoas (#3198, fatia 2)", () => {
     }
 
     expect(devolvidos).toEqual([null, null, null]);
-    expect(await conta("select count(*) from companies where organization_id = $1", [ORG_A])).toBe(
+    expect(await conta("select count(*) as n from companies where organization_id = $1", [ORG_A])).toBe(
       0,
     );
 
     // E o mesmo com a chave EXPLÍCITA em `desligado`: só `ligado` liga.
     await ligarModulo("desligado");
     expect(await empresaDoCandidato(client, ORG_A, negocio("desligado-4"))).toBeNull();
-    expect(await conta("select count(*) from companies where organization_id = $1", [ORG_A])).toBe(
+    expect(await conta("select count(*) as n from companies where organization_id = $1", [ORG_A])).toBe(
       0,
     );
   });
@@ -194,14 +202,17 @@ describe("prospecção × módulo Empresas e pessoas (#3198, fatia 2)", () => {
     expect(contato.rows[0].company_id).toBe(empresaId);
 
     // E sem pessoa sintética "Recepção": o vínculo é com a EMPRESA (decisão 1).
-    expect(await conta("select count(*) from people where organization_id = $1", [ORG_A])).toBe(0);
+    expect(await conta("select count(*) as n from people where organization_id = $1", [ORG_A])).toBe(0);
   });
 
   it("3. dois candidatos com o mesmo place_id na mesma organização reaproveitam a mesma empresa", async () => {
     await ligarModulo("ligado");
-    const { client } = meetPgSupabase(pool);
+    const { client, errors: errosDaPonte } = meetPgSupabase(pool);
 
     const primeira = await empresaDoCandidato(client, ORG_A, negocio("mesma-casa"));
+    // A ponte guarda o erro que engoliu; sem esta linha, "empresa não criada"
+    // poderia ser falha do INSTRUMENTO passando por defeito do produto.
+    expect(errosDaPonte).toEqual([]);
     // O segundo candidato do MESMO negócio chega com o site ainda por preencher:
     // o reaproveitamento completa o campo vazio, sem duplicar empresa.
     const segunda = await empresaDoCandidato(
@@ -211,7 +222,7 @@ describe("prospecção × módulo Empresas e pessoas (#3198, fatia 2)", () => {
     );
 
     expect(segunda).toBe(primeira);
-    expect(await conta("select count(*) from companies where organization_id = $1", [ORG_A])).toBe(
+    expect(await conta("select count(*) as n from companies where organization_id = $1", [ORG_A])).toBe(
       1,
     );
     const { rows } = await pool.query("select website, maps_url from companies where id = $1", [
@@ -275,7 +286,7 @@ describe("prospecção × módulo Empresas e pessoas (#3198, fatia 2)", () => {
       "select public.fn_expurgar_prospeccao_vencida(365, 1000) as n",
     );
     expect(Number(apagadas.rows[0]?.n ?? 0)).toBeGreaterThanOrEqual(1);
-    expect(await conta("select count(*) from prospecting_candidates where id = $1", [candidatoId])).toBe(
+    expect(await conta("select count(*) as n from prospecting_candidates where id = $1", [candidatoId])).toBe(
       0,
     );
 
