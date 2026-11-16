@@ -131,6 +131,46 @@ describe("o CSV de contatos", () => {
     expect(semNascimento.contato.birthdate).toBeUndefined();
   });
 
+  it("⭐ leva o endereço da ficha até o CSV que a importação lê (#3494)", async () => {
+    devolvePaginas([
+      contato(1, {
+        zip_code: "80000-000",
+        street: "Rua XV de Novembro",
+        number: "120",
+        complement: "apto 42",
+        district: "Centro",
+        city: "Curitiba",
+        state: "PR",
+      }),
+    ]);
+
+    const res = await chamar();
+    const linhas = parseCsv(await res.text());
+    const { indices } = mapHeader(linhas[0]!);
+
+    expect(indices).toMatchObject({
+      zip_code: expect.any(Number),
+      street: expect.any(Number),
+      number: expect.any(Number),
+      complement: expect.any(Number),
+      district: expect.any(Number),
+      city: expect.any(Number),
+      state: expect.any(Number),
+    });
+    expect(mapLinha(linhas[1]!, indices)).toMatchObject({
+      contato: {
+        zip_code: "80000-000",
+        street: "Rua XV de Novembro",
+        number: "120",
+        complement: "apto 42",
+        district: "Centro",
+        city: "Curitiba",
+        state: "PR",
+      },
+      motivo: null,
+    });
+  });
+
   it("⭐ sai com o envelope do export que já existe: Content-Type próprio + attachment datado", async () => {
     devolvePaginas([contato(1), contato(2)]);
 
@@ -151,7 +191,9 @@ describe("o CSV de contatos", () => {
     expect([bytes[0], bytes[1], bytes[2]]).toEqual([0xef, 0xbb, 0xbf]);
 
     const linhas = new TextDecoder().decode(bytes).replace(/^\uFEFF/, "").split("\n");
-    expect(linhas[0]).toBe("name,display_name,email,phone_number,cpf,birthdate,tags");
+    expect(linhas[0]).toBe(
+      "name,display_name,email,phone_number,cpf,birthdate,tags,zip_code,street,number,complement,district,city,state",
+    );
     expect(linhas).toHaveLength(4); // cabeçalho + 2 dados + quebra final
     expect(linhas[1]).toContain("Contato 000001");
   });

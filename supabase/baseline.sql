@@ -68400,6 +68400,23 @@ alter table public.contacts
 
 notify pgrst, 'reload schema';
 
+-- ---- busca de contatos pelo endereço (migration 9403, #3494) ----
+-- A coluna gerada que a busca usa para achar a pessoa pela RUA/BAIRRO/CIDADE,
+-- na mesma forma da `busca_sem_acento` acima. Número, complemento e UF ficam
+-- fora de propósito (ruído em busca textual); o CEP entra pela rota de 8
+-- dígitos no handler. Cabeçalho completo na migration 9403.
+alter table public.contacts
+  add column if not exists endereco_sem_acento text
+  generated always as (
+    lower(public.f_unaccent(
+      coalesce(street, '') || ' ' || coalesce(district, '') || ' ' || coalesce(city, '')
+    ))
+  ) stored;
+
+create index if not exists idx_contacts_endereco_sem_acento_trgm
+  on public.contacts using gin (endereco_sem_acento public.gin_trgm_ops);
+
+
 -- ---- o molde de IA das empresas novas: as funções e o gatilho (migration 9096) ----
 --
 -- A PRIMEIRA metade da 9096, aqui porque cria FUNÇÃO e a VARREDURA anon (logo
