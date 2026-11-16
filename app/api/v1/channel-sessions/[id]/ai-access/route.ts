@@ -9,6 +9,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { CHANNEL_PROVIDER_SOCIAL } from "@/lib/channels/capabilities";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { extractBearer } from "@/lib/mcp/auth";
 import {
@@ -151,7 +152,7 @@ export async function PATCH(req: NextRequest, { params }: Context): Promise<Resp
       .is("archived_at", null).maybeSingle();
     if (erroDoCanal) return fail("internal_error", "Não foi possível carregar o canal.", 500, { requestId });
     if (!canal) return fail("not_found", "Canal não encontrado.", 404, { requestId });
-    if (canal.provider !== "zernio_social") {
+    if (canal.provider !== CHANNEL_PROVIDER_SOCIAL) {
       return fail("testador_social_recusado", `Este canal não é de rede social; a identidade ${test_social_identities[0]} não pode ser testadora aqui.`, 422, { requestId });
     }
     const gravadas = lerIdentidadesSociaisDeTeste(canal.metadata);

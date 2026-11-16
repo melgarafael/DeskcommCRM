@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
 import { fail } from "@/lib/api/wrappers";
+import { CHANNEL_PROVIDER_SOCIAL, DEFAULT_CHANNEL_PROVIDER } from "@/lib/channels/capabilities";
 import { GET, PATCH } from "./route";
 
 vi.mock("@/lib/auth/server", () => ({ loadAuthUser: vi.fn() }));
@@ -18,7 +19,7 @@ const testador = "instagram:6af9e0ef28984e27de07bef4:1011223655361506";
 const antigo = "instagram:6af9e0ef28984e27de07bef4:2222";
 const filters: Record<string, unknown> = {};
 const rpc = vi.fn();
-const row = { id: canal, organization_id: org, archived_at: null, provider: "zernio_social", metadata: { ai_gate: "allowlist", ai_gate_mode: "pre_go_live", ai_test_phone_numbers: [telefone], ai_test_social_identities: [testador, antigo, "lixo"], segredo_do_transporte: "nao-expor" } };
+const row = { id: canal, organization_id: org, archived_at: null, provider: CHANNEL_PROVIDER_SOCIAL, metadata: { ai_gate: "allowlist", ai_gate_mode: "pre_go_live", ai_test_phone_numbers: [telefone], ai_test_social_identities: [testador, antigo, "lixo"], segredo_do_transporte: "nao-expor" } };
 /** Conversas do canal e fichas, como o embed `contacts:contact_id!inner(...)` as devolve. */
 const conversas = [
   { contacts: { social_identity: testador, display_name: "WB", name: null } },
@@ -35,7 +36,7 @@ beforeEach(() => {
   vi.mocked(loadAuthUser).mockResolvedValue(null);
   for (const k of Object.keys(filters)) delete filters[k];
   lidos.length = 0;
-  row.provider = "zernio_social";
+  row.provider = CHANNEL_PROVIDER_SOCIAL;
   row.metadata.ai_test_social_identities = [testador, antigo, "lixo"];
   vi.mocked(requireRole).mockResolvedValue({ ok: true, user: { id: org }, org: { orgId: org, role: "admin" } } as Awaited<ReturnType<typeof requireRole>>);
   const query = {
@@ -151,7 +152,7 @@ describe("configuração de acesso da IA", () => {
       expect(rpc).not.toHaveBeenCalled();
     });
     it("recusa lista social num canal de WhatsApp", async () => {
-      row.provider = "waha";
+      row.provider = DEFAULT_CHANNEL_PROVIDER;
       const response = await PATCH(social([testador]), context());
       expect(response.status).toBe(422);
       expect((await response.json()).error.code).toBe("testador_social_recusado");
@@ -170,7 +171,7 @@ describe("configuração de acesso da IA", () => {
       expect(rpc).toHaveBeenCalledWith("fn_configurar_pre_go_live_canal", expect.objectContaining({ p_identidades: [testador, antigo] }));
     });
     it("remover é sempre permitido, até num canal que não é de rede social", async () => {
-      row.provider = "waha";
+      row.provider = DEFAULT_CHANNEL_PROVIDER;
       const response = await PATCH(social([]), context());
       expect(response.status).toBe(200);
       expect(rpc).toHaveBeenCalledWith("fn_configurar_pre_go_live_canal", expect.objectContaining({ p_identidades: [] }));
