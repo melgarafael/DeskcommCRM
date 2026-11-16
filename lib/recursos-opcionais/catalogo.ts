@@ -204,6 +204,14 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
   revisao_por_km: {
     nome: "Revisão por quilometragem",
     oQueFaz: "O km informado no negócio vira a data prevista da próxima revisão, no campo de data que o funil escolheu.",
+  },  agencias: {
+    nome: "Agências administram clientes",
+    oQueFaz: "Uma empresa-agência cria as empresas dos clientes dela e entra nelas para administrar, sem login separado em cada uma; tudo o que faz lá fica registrado com o nome da agência.",
+  },
+  catalogo_por_feed: {
+    nome: "Catálogo sincronizado por feed",
+    oQueFaz:
+      "O catálogo acompanha sozinho o feed que o sistema de estoque da revenda publica: a cada 2 horas cria, atualiza e desativa produtos, sem apagar nenhum.",
   },
 };
 

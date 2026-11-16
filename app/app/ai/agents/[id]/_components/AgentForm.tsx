@@ -1565,6 +1565,13 @@ export function AgentForm(props: Props) {
                 "Precisa de uma credencial do ElevenLabs cadastrada e de uma voz escolhida em Agente de IA → Provedores. Sem os dois, o agente continua respondendo em texto — ligar aqui não quebra nada.",
               )}
             </p>
+            {form.voz_enabled && channelSession?.enviaNotaDeVoz === false ? (
+              <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="voz-canal-sem-nota">
+                {t(
+                  "O canal escolhido não recebe nota de voz da IA (redes sociais como Instagram e Facebook). Nele, o agente responde em texto.",
+                )}
+              </p>
+            ) : null}
             {form.voz_enabled ? (
               <div className="space-y-1">
                 <Label htmlFor="voz_quando">{t("Quando falar")}</Label>
