@@ -200,3 +200,24 @@ describe("filtrar preserva a seleção múltipla e o modo E/OU (#2498)", () => {
     expect(screen.getByRole("menu")).toBeInTheDocument();
   });
 });
+
+describe("a busca do seletor ignora ACENTO (#4410)", () => {
+  it("`orcamento` acha 'Orçamento enviado', e `orçamento` também", async () => {
+    // O vocabulário é o que a organização tem de verdade: a etiqueta com acento
+    // é o caso medido na issue. `toLocaleLowerCase` a esconderia de quem digita
+    // sem acento — e é o atendente quem digita rápido, no meio do expediente.
+    tagsRef.current = ["Orçamento enviado", "vip"];
+
+    const { user, campo } = await campoDeBuscaAberto();
+    await user.type(campo, "orcamento");
+    expect(screen.getByRole("menuitemcheckbox", { name: /Orçamento enviado/ })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitemcheckbox", { name: /vip/ })).not.toBeInTheDocument();
+
+    // Limpar e digitar COM acento tem de devolver o MESMO resultado: o conserto
+    // não pode ter trocado um buraco por outro.
+    await user.clear(campo);
+    await user.type(campo, "orçamento");
+    expect(screen.getByRole("menuitemcheckbox", { name: /Orçamento enviado/ })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitemcheckbox", { name: /vip/ })).not.toBeInTheDocument();
+  });
+});

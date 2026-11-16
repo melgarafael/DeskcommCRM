@@ -125,6 +125,8 @@ export async function gerarPreviaDoCandidato(
     baseada_em: chaveDaAuditoria(linha.data) ?? `${site.classe}@derivado`,
     gerada_em: new Date().toISOString(),
     agente_id: cfg.data.agent_id,
+    // O carimbo do texto com que a prévia foi escrita (#4570): o envio só a usa se ainda for o atual.
+    ...(cfg.data.briefing_editado_em ? { briefing_editado_em: cfg.data.briefing_editado_em } : {}),
   };
   return { ok: true, texto: gerado.texto, previa, estrategia, score };
 }
