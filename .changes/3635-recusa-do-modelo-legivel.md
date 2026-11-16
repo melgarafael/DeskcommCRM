@@ -1,5 +1,5 @@
 ---
-impacto: correcao
+impacto: nada_mudou
 secao: corrigido
 titulo: A recusa do modelo no canal oficial direto diz o que corrigir, em vez de "erro do servidor"
 ---
