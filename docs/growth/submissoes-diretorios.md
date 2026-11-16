@@ -61,7 +61,9 @@ Nome da alternativa: `DeskcommCRM` · Repositório: `https://github.com/melgaraf
 
 ---
 
-## 3. AlternativeTo 🟢 pode ir agora
+## 3. AlternativeTo 🟡 segurado
+
+> **Atualização de 16/11/2026:** a FAQ da AlternativeTo exige que o app "support the English language", e a interface em inglês ainda está `em_construcao` em `lib/i18n/registro.ts`. A decisão (esperar o inglês ou listar declarando PT/ES) está com o Rafael no Plane.
 
 Exige conta no site. Sem custo, sem trava de idade.
 
@@ -99,6 +101,66 @@ Registrado para ninguém revisitar:
 
 ---
 
+## 6. Radar semanal
+
+Toda segunda: as 10 buscas-alvo, as menções novas e as listagens desatualizadas. Para cada listagem velha fica pronto o pedido de correção a quem a mantém. **Quem envia** depende do canal: issue no GitHub sai pela conta do robô; formulário, "claim" com conta ou e-mail vai ao Plane para o Rafael.
+
+### 2026-11-16 · main `9dea1ee`, release v1.113.0 (15/11), 5.427 estrelas
+
+**Origens do tráfego no GitHub (14 dias):** Google 3.801 · github.com 2.629 · youtube.com 1.862 · deskcomm.com.br 651 · Brave 101 · Bing 83. **Nenhum diretório** aparece entre as 10 primeiras origens.
+
+**Buscas-alvo** (busca na web, 16/11; os resultados podem variar por região e conta):
+
+| Busca | O DeskcommCRM aparece? | Quem ocupa a vaga |
+|---|---|---|
+| CRM open source | não | SuiteCRM, EspoCRM, Odoo, Frappe, Krayin (listas da monday, Bitrix24, itsfoss, openalternative.co) |
+| CRM open source WhatsApp | não | Frappe CRM + app WhatsApp, Krayin, add-on do Odoo, wacrm, Chatwoot |
+| alternativa Kommo | não | leadsales, respond.io, Capterra/G2/GetApp, AlternativeTo (`/software/amocrm/`) |
+| alternativa Octadesk | não | InvGate, Talqui, G2, Capterra, b2bstack |
+| CRM self-hosted | não | Bitrix24, Twenty, Relaticle, Krayin, NocoBase, selfhostyourself.com |
+| CRM com agentes de IA | não | Salesforce Agentforce, folk, Breakcold, Creatio, rework |
+| open source CRM WhatsApp | não | igual à busca em português |
+| Kommo alternative open source | não | AlternativeTo (páginas 1 a 14 de `/software/amocrm/`), respond.io, stackshare |
+| self-hosted CRM AI agents | **sim, por terceiros**: `zentor.ai/blog/deskcommcrm` e `opensourcealternatives.to/item/deskcommcrm` | Relaticle, Twenty, AgenticCRM (MIT, WhatsApp), Evo CRM |
+| CRM para clínica WhatsApp | não | Clint, SocialHub, Kommo (páginas próprias de saúde) |
+
+Leitura: o site não aparece em nenhuma das 10 buscas. Isso é coerente com o `noindex` que ainda está nos layouts do `deskcomm-site` (ver o PR semanal de SEO). Em "alternativa Kommo" e "Kommo alternative open source", a AlternativeTo ocupa a primeira página: entrar lá (seção 3) é o atalho mais curto para essas duas buscas.
+
+**Menções e listagens encontradas** (nenhuma foi feita por nós):
+
+| Onde | O que diz | Estado | Pedido de correção |
+|---|---|---|---|
+| [everydev.ai/tools/deskcommcrm](https://www.everydev.ai/tools/deskcommcrm) | "latest release v1.80.0" | ❌ velha (atual: v1.113.0) | Não há rota de edição visível na página. Vai ao Plane: o Rafael pede a atualização pelo contato do site. Texto abaixo (A). |
+| [railway.com/deploy/deskcommcrm](https://railway.com/deploy/deskcommcrm), de Youssef Siam ([repo](https://github.com/youssefsiam38/deskcommcrm-railway)) | `UPSTREAM.md`: "Release pinned v1.27.2, published 2026-09-15"; 2 deploys; repo parado desde 15/09 | ❌ velha, com 99 releases de atraso (publicadas depois de 15/09) | Issue no repositório do template, pela conta do robô: texto abaixo (B). Não foi aberta ainda. |
+| [zentor.ai/blog/deskcommcrm](https://zentor.ai/blog/deskcommcrm) (antes moclaw.ai), 12/09, editado 21/10 | v1.19.0, 1.382 estrelas; diz que "os provedores de modelo não aparecem na documentação pública" | ❌ velha, e esse ponto está errado: o README cita OpenRouter, Anthropic e OpenAI (linha 96) | Não há contato editorial, só redes sociais. Vai ao Plane como opcional, e de baixa prioridade. |
+| [provenlabs.ai/journal/…](https://provenlabs.ai/journal/deskcommcrm-open-source-whatsapp-crm-kommo-intercom-alternative), 11/09 | v1.18.1, ~1,3 mil estrelas | artigo datado; os números eram verdade na época | Nenhum: artigo com data não se corrige. |
+| [zekaiwork.com/free-open-source/deskcommcrm](https://zekaiwork.com/free-open-source/deskcommcrm/), set/2026 | 3.644 estrelas, **categoria "E-commerce"** | ❌ categoria errada (é CRM / atendimento) e números velhos | Pelo formulário de contato do site, ou seja, Plane. Texto abaixo (C). |
+| [opentools.ai/tools/deskcommcrm](https://opentools.ai/tools/deskcommcrm), 28/09 | 4.156 estrelas, **sem licença** ("confira a licença") | ❌ falta a MIT | Botão "Claim Tool", que exige conta: Plane. |
+| [opensourcealternatives.to/item/deskcommcrm](https://www.opensourcealternatives.to/item/deskcommcrm) | 5,4 mil estrelas, MIT, "alternative to HubSpot Sales Hub", conferido em 14/11 | ✅ em dia | Nenhum. Atenção: é um site **diferente** do `opensourcealternative.to` da seção 2. O link de deploy aponta para a Hostinger (afiliado deles), e não para a HostGator, que é a parceira. |
+| [ai-tldr.dev/tools/deskcomm-crm](https://ai-tldr.dev/tools/deskcomm-crm/) | 5,4 mil estrelas, MIT, passos de instalação iguais aos do README | ✅ em dia | Nenhum. |
+| [ai.miraheze.org/wiki/DeskcommCRM](https://ai.miraheze.org/wiki/DeskcommCRM), editado em 15/11 | artigo longo, **sem nenhuma referência** | ⚠️ não citado | Nenhum. Wiki sobre o próprio projeto não se edita (conflito de interesse). |
+
+**Diretórios (frente 4)**
+
+- **Glama:** o repositório **não está indexado** (`glama.ai/mcp/servers/melgarafael/DeskcommCRM` → 404, em 16/11). Não há API pública de submissão: o botão "Add Server" exige login. Além disso, o servidor MCP do DeskcommCRM é a rota `app/api/mcp/route.ts` dentro do app, com autenticação Bearer de um tenant. Ele não sobe sozinho, sem Supabase, então a inspeção automática que dá o selo de score provavelmente não consegue listar as ferramentas. Antes de submeter, é preciso decidir se vale a pena (vai ao Plane).
+- **`punkpeye/awesome-mcp-servers`:** depende do Glama, e a lista aceita servidores "que você instala e roda". Nenhum PR nosso aberto ou fechado (busca por "deskcomm", 16/11). Fica para depois do Glama.
+
+**Textos de correção prontos**
+
+(A) everydev.ai, para o Rafael enviar:
+
+> Hi — the DeskcommCRM listing (everydev.ai/tools/deskcommcrm) shows v1.80.0 as the latest release. The current release is v1.113.0 (2026-11-15): https://github.com/melgarafael/DeskcommCRM/releases. Could you refresh it? Thanks — Rafael (maintainer)
+
+(B) Issue em `youssefsiam38/deskcommcrm-railway`, título "Upstream DeskcommCRM pinned to v1.27.2; current release is v1.113.0":
+
+> Hi Youssef, thanks for packaging DeskcommCRM for Railway. `UPSTREAM.md` pins v1.27.2 (2026-09-15). Upstream is now at v1.113.0 (2026-11-15), and 463 database migration files were added since then, so a fresh deploy from this template starts 99 releases behind. Would you consider bumping the pin? `CHANGELOG.md` in the main repo lists what changed per release. Happy to answer questions about the upgrade path. — DeskcommCRM maintainers' bot (deskcomm-bot)
+
+(C) zekaiwork.com, pelo formulário de contato, para o Rafael enviar:
+
+> Hi — the DeskcommCRM page (zekaiwork.com/free-open-source/deskcommcrm/) files it under E-commerce. It is a CRM / customer-support tool (WhatsApp sales with AI agents); e-commerce is only one optional integration. Star count is also stale (3,644; now ~5.4k). Could you move it to CRM? Thanks — Rafael (maintainer)
+
+---
+
 ## O que NÃO fazer
 
 - **Não pagar por estrelas nem incentivar star com brinde.** Viola a Acceptable Use Policy do GitHub, e a medição é brutal: **90,42% dos repositórios com campanha de estrelas falsas foram deletados** pelo GitHub, contra 5,03% de baseline. O efeito positivo dura menos de dois meses e depois vira passivo.
@@ -107,4 +169,4 @@ Registrado para ninguém revisitar:
 
 ---
 
-*Última atualização: 28 de julho de 2026 — datas do awesome-selfhosted conferidas contra o template e os releases; `btw-so/open-source-alternatives` medido e descartado.*
+*Última atualização: 16 de novembro de 2026: radar semanal (seção 6) e AlternativeTo segurado. Antes: 28 de julho de 2026 — datas do awesome-selfhosted conferidas contra o template e os releases; `btw-so/open-source-alternatives` medido e descartado.*
