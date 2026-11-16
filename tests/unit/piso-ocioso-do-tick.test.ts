@@ -35,7 +35,7 @@ const h = vi.hoisted(() => ({
   prospeccao: vi.fn(async () => ({ rodada: "prospeccao" })),
   campanha: vi.fn(async () => ({ enviadas: 0, pulados: 0, concluidas: 0, promovidas: 0 })),
   historico: vi.fn(async () => ({ status: "concluida", gravadas: 0 })),
-  auditar: vi.fn(async () => undefined),
+  auditar: vi.fn(async (_entrada: Record<string, unknown>) => undefined),
   enviarAgendadas: vi.fn(async () => ({ processadas: 0, encaminhadas: 0, falhas: 0, canceladas: 0, esperando: 0 })),
 }));
 
@@ -154,7 +154,7 @@ describe("(b) recurso ligado: caracterização — a rota faz exatamente o que f
     // rodada que mexeu em inscrição continua auditando (não é mutação silenciosa).
     expect(res.body.data).toMatchObject({ processadas: 2, emailsEnviados: 1, concluidas: 1 });
     expect(h.auditar).toHaveBeenCalledOnce();
-    expect(h.auditar.mock.calls[0][0]).toMatchObject({ action: "cron.cadencia_worker", bypassedRls: true });
+    expect(h.auditar.mock.calls[0]?.[0]).toMatchObject({ action: "cron.cadencia_worker", bypassedRls: true });
   });
 
   it("cadencia ligada e rodada vazia: responde 200 e não audita (mesmo critério de antes)", async () => {
