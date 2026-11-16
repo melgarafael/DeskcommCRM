@@ -123,7 +123,7 @@ export function permitidos(
 ): NavMetadata[] {
   return (NAV_CATALOG as readonly NavMetadata[]).filter(
     (d) =>
-      canSee(d, platform, role) &&
+      !d.agenciaOnly && canSee(d, platform, role) &&
       (!modulos || !d.modulo || modulos.includes(d.modulo)) &&
       (!capacidades || !d.capacidade || capacidades.includes(d.capacidade)),
   );
