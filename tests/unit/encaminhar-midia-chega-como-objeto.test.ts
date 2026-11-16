@@ -22,6 +22,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { HandlerCtx } from "@/lib/api/handlers/types";
+import type * as GuardaDeIp from "@/lib/automation/outbound-ip";
 import { encaminharMensagem } from "@/lib/inbox/encaminhar-mensagem";
 import { colunasDoSelect, criarDubleDoHandler } from "@/tests/helpers/duble-do-handler";
 
@@ -67,7 +68,7 @@ const { HOST_PUBLICO } = vi.hoisted(() => ({ HOST_PUBLICO: "cdn.exemplo.com" }))
 // Só o DNS do host público do teste é dublado: a guarda anti-SSRF continua
 // real para todo o resto (localhost e `meta-media:` caem antes do DNS).
 vi.mock("@/lib/automation/outbound-ip", async (importOriginal) => {
-  const real = await importOriginal<typeof import("@/lib/automation/outbound-ip")>();
+  const real = await importOriginal<typeof GuardaDeIp>();
   return {
     ...real,
     assertDestinoResolvidoSeguro: async (host: string) =>
