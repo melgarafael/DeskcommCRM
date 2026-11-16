@@ -1,5 +1,5 @@
 ---
-impacto: recurso_novo
+impacto: capacidade_nova
 secao: adicionado
 titulo: O prazo de um passo do plano pode contar de um campo de data do card, e as tarefas abertas acompanham a mudança da data
 ---

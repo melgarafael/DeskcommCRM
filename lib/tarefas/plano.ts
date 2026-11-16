@@ -73,6 +73,13 @@ export interface PassoDePlano {
    * Relativo sempre — data solta no plano envelhece no dia seguinte.
    */
   prazo: PrazoDoPasso;
+  /**
+   * Formato ANTIGO do prazo: N dias a partir da aplicação. Continua aceito na
+   * LEITURA de `settings` gravado antes do #4717 item 4, e o schema normaliza
+   * para `prazo` — quem grava usa `prazo`. A tela lê este campo para abrir um
+   * plano antigo no seletor sem quebrar (`prazoNaTela`).
+   */
+  vence_em_dias?: number;
   prioridade: PrioridadeDaTarefa;
   atribuir_a: AtribuicaoDaTarefa;
 }

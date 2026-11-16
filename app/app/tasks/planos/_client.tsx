@@ -74,6 +74,18 @@ function novoPasso(): PassoDePlano {
 }
 
 /**
+ * O passo como a TELA o entende, inclusive o plano gravado ANTES do modo novo.
+ *
+ * `settings` antigo tem `vence_em_dias` e nenhum `prazo`; normalizar na LEITURA
+ * (em vez de confiar no formato) é o que deixa a tela abrir plano antigo sem
+ * quebrar — e o passo legado continua sendo gravado igual, porque o schema do
+ * servidor aceita as duas formas.
+ */
+function prazoNaTela(passo: PassoDePlano): PassoDePlano["prazo"] {
+  return passo.prazo ?? { modo: "dias_a_partir_de_hoje", dias: passo.vence_em_dias ?? 0 };
+}
+
+/**
  * O prazo de um passo em UMA linha, para o resumo do plano.
  *
  * Campo de data aparece pelo NOME da chave porque é isso que o operador digita
@@ -149,17 +161,19 @@ export function PlanosDeTarefa() {
       setErro(t("Escreva o título de todos os passos."));
       return;
     }
-    const prazoTorto = rascunho.passos.findIndex(
-      (p) =>
-        !Number.isInteger(p.prazo.dias) ||
-        Math.abs(p.prazo.dias) > LIMITES_DO_PLANO.venceEmDias ||
-        (p.prazo.modo === "dias_a_partir_de_hoje" && p.prazo.dias < 0) ||
-        (p.prazo.modo === "campo_de_data" && p.prazo.campo.trim() === ""),
-    );
+    const prazoTorto = rascunho.passos.findIndex((p) => {
+      const prazo = prazoNaTela(p);
+      return (
+        !Number.isInteger(prazo.dias) ||
+        Math.abs(prazo.dias) > LIMITES_DO_PLANO.venceEmDias ||
+        (prazo.modo === "dias_a_partir_de_hoje" && prazo.dias < 0) ||
+        (prazo.modo === "campo_de_data" && prazo.campo.trim() === "")
+      );
+    });
     if (prazoTorto >= 0) {
       const passo = rascunho.passos[prazoTorto];
       setErro(
-        passo?.prazo.modo === "campo_de_data"
+        passo && prazoNaTela(passo).modo === "campo_de_data"
           ? t("O passo {p} precisa da chave do campo de data do card.").replace(
               "{p}",
               String(prazoTorto + 1),
@@ -271,7 +285,11 @@ export function PlanosDeTarefa() {
                 variant="ghost"
                 onClick={() => {
                   setErro(null);
-                  setRascunho({ ...plano, descricao: plano.descricao, passos: plano.passos.map((p) => ({ ...p })) });
+                  setRascunho({
+                    ...plano,
+                    descricao: plano.descricao,
+                    passos: plano.passos.map((p) => ({ ...p, prazo: prazoNaTela(p) })),
+                  });
                 }}
               >
                 {t("Editar")}
@@ -284,7 +302,7 @@ export function PlanosDeTarefa() {
           <ol className="space-y-1 text-sm text-muted-foreground">
             {plano.passos.map((passo) => (
               <li key={passo.ordem}>
-                {passo.ordem}. {passo.titulo} — {resumoDoPrazo(t, passo.prazo)}
+                {passo.ordem}. {passo.titulo} — {resumoDoPrazo(t, prazoNaTela(passo))}
               </li>
             ))}
           </ol>
@@ -309,6 +327,11 @@ function Editor({
 }) {
   const t = useT();
   const { data: members } = useAssignableMembers(true);
+
+  // O editor nunca lê `passo.prazo` cru: o plano pode ter vindo do servidor no
+  // formato antigo (`vence_em_dias`, sem `prazo`), e o seletor precisa abrir no
+  // modo de sempre em vez de estourar.
+  const passos = plano.passos.map((p) => ({ ...p, prazo: prazoNaTela(p) }));
 
   function mudarPasso(indice: number, campo: Partial<PassoDePlano>) {
     onChange({
@@ -346,7 +369,7 @@ function Editor({
 
       <div className="space-y-3">
         <h3 className="text-sm font-medium">{t("Passos do plano")}</h3>
-        {plano.passos.map((passo, indice) => (
+        {passos.map((passo, indice) => (
           <div key={indice} className="space-y-2 rounded-md border p-3">
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm font-medium">
