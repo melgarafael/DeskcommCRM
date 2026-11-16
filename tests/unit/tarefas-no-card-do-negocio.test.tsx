@@ -77,6 +77,7 @@ function tarefa(resto: Partial<Tarefa> = {}): Tarefa {
     demanda_id: null,
     assigned_to: null,
     created_by: EU,
+    recurrence: null,
     created_at: "2026-10-01T12:00:00Z",
     updated_at: "2026-10-01T12:00:00Z",
     ...resto,
