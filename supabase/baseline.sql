@@ -78644,6 +78644,35 @@ create trigger trg_catalog_feed_sources_updated_at
 comment on table public.catalog_feed_sources is
   'A fonte do catálogo sincronizado (issue #3587): a URL do feed que a revenda publica, o formato e o mapeamento de campos. UMA por organização. O cron `catalog-feed-sync` lê as ativas; item que sai do feed vira `ativo = false`, nunca DELETE.';
 
+-- ---- o bucket do material aceita XML como o upload do Inbox (migration 9356) ----
+-- A 9222 congelou no bucket a lista de `DOCUMENT_MIMES` de 06/11. Em 10/11 a main
+-- acrescentou `application/xml` e `text/xml` a essa lista (617635a5f7) e o
+-- espelho do bucket ficou para trás: o Inbox aceitava o XML do cliente e o
+-- Storage recusava o material, antes de qualquer código rodar.
+-- `tests/invariants/crm-materiais-rls.test.ts:192` compara as duas listas.
+-- `update`, e não `insert ... on conflict`: o bucket já existe em quem aplicou a
+-- 9222; o que falta é a MIME list. Mesmo molde da 0310 (`ai-policy` + CSV).
+update storage.buckets
+   set allowed_mime_types = array[
+     'image/jpeg',
+     'image/png',
+     'image/webp',
+     'image/gif',
+     'application/pdf',
+     'application/msword',
+     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+     'application/vnd.ms-excel',
+     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+     'application/vnd.ms-powerpoint',
+     'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+     'text/plain',
+     'text/csv',
+     'application/zip',
+     'application/xml',
+     'text/xml'
+   ]
+ where id = 'crm-materiais';
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.
@@ -84801,35 +84830,6 @@ comment on column public.push_subscriptions.tipos_calados is
   'Tipos de aviso que este aparelho não quer receber no celular (NOTIFY_UI_CATEGORIES). Vazio = recebe todos.';
 
 notify pgrst, 'reload schema';
-
--- ---- o bucket do material aceita XML como o upload do Inbox (migration 9356) ----
--- A 9222 congelou no bucket a lista de `DOCUMENT_MIMES` de 06/11. Em 10/11 a main
--- acrescentou `application/xml` e `text/xml` a essa lista (617635a5f7) e o
--- espelho do bucket ficou para trás: o Inbox aceitava o XML do cliente e o
--- Storage recusava o material, antes de qualquer código rodar.
--- `tests/invariants/crm-materiais-rls.test.ts:192` compara as duas listas.
--- `update`, e não `insert ... on conflict`: o bucket já existe em quem aplicou a
--- 9222; o que falta é a MIME list. Mesmo molde da 0310 (`ai-policy` + CSV).
-update storage.buckets
-   set allowed_mime_types = array[
-     'image/jpeg',
-     'image/png',
-     'image/webp',
-     'image/gif',
-     'application/pdf',
-     'application/msword',
-     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-     'application/vnd.ms-excel',
-     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-     'application/vnd.ms-powerpoint',
-     'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-     'text/plain',
-     'text/csv',
-     'application/zip',
-     'application/xml',
-     'text/xml'
-   ]
- where id = 'crm-materiais';
 
 -- ---- anonimizar alcança as fichas fundidas: as que já ficaram para trás (migration 9243) ----
 -- A segunda metade da 9243. Fica no fim porque a cascata e os gatilhos que ela
