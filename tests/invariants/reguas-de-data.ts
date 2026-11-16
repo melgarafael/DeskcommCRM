@@ -260,7 +260,7 @@ export function reguasDeData(pool: pg.Pool): ReguaDeData[] {
       // bem formado. O dia civil é o de `CHEGADA` (2026-11-04), não outro.
       entrada: "valor",
       exercitar: (valorCru) =>
-        dataDaAbordagem({ attempted_at: valorCru as string | Date }) === "2026-11-04",
+        dataDaAbordagem({ data: {}, attempted_at: valorCru as string | Date }) === "2026-11-04",
     },
   ];
 }
