@@ -34,6 +34,10 @@ import {
   useMarkAlwaysHumanContact,
   useUnmarkAlwaysHumanContact,
 } from "@/hooks/contacts/useAlwaysHumanContact";
+import { useDesfazerSemInteresse } from "@/hooks/contacts/useSemInteresse";
+import { BotaoMarcarSemInteresse } from "@/components/contacts/BotaoMarcarSemInteresse";
+import { recusaRegistrada } from "@/lib/lgpd/recusa-registrada";
+import { lerRecusaSemInteresse } from "@/lib/lgpd/sem-interesse";
 import { useHierarquiaDoAnuncio } from "@/hooks/contacts/useHierarquiaDoAnuncio";
 import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabulary";
 import { useAuth } from "@/hooks/auth/AuthProvider";
@@ -112,6 +116,9 @@ export function ContactDetailClient({
   // efeito que o Inbox enxerga.
   const marcarSempreHumano = useMarkAlwaysHumanContact(contactId);
   const desmarcarSempreHumano = useUnmarkAlwaysHumanContact(contactId);
+  // "Não tem interesse" (decisão D3): o desfazer da aba LGPD. O marcar mora em
+  // `BotaoMarcarSemInteresse`, o mesmo do painel da conversa.
+  const desfazerSemInteresse = useDesfazerSemInteresse(contactId);
 
   /*
     Pede o nome da campanha SÓ quando há um anúncio e ainda não há nome.
@@ -164,6 +171,18 @@ export function ContactDetailClient({
   // uma das DUAS que ignoravam o telefone: contato com número e sem nome
   // aparecia como "Sem nome" aqui e com o número no inbox.
   const displayName = rotuloParaAEquipe(contact, t);
+
+  // A recusa de ofertas, lida do `consent` com a MESMA régua das guardas de envio
+  // (`recusaRegistrada`). O botão some quando já há recusa de qualquer origem: gravar
+  // outra por cima apagaria a data e a origem da primeira.
+  // A forma gravada é lida pelo módulo que a grava (`lerRecusaSemInteresse`), nunca pelo
+  // caminho do jsonb aqui na tela.
+  const recusaDeOfertas = lerRecusaSemInteresse(contact.consent);
+  const semInteresse = recusaDeOfertas !== null;
+  const recusouOfertas = recusaRegistrada(contact.consent, "marketing");
+  const podeMarcarSemInteresse =
+    (user.is_platform_admin && !user.support) ||
+    Boolean(activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent);
 
   // Os quatro níveis que quem opera tráfego lê. O jsonb já os recebia dos dois
   // caminhos de entrada — site e clique-para-WhatsApp — e nenhuma tela o abria.
@@ -226,6 +245,7 @@ export function ContactDetailClient({
                 "Bloqueado" e do "Pessoal" — a devolução não a apaga, então o selo
                 continua a verdade mesmo quando a conversa já voltou ao automático. */}
             {contact.ai_opt_out && <Badge variant="secondary">{t("Sempre atendimento humano")}</Badge>}
+            {semInteresse && <Badge variant="secondary">{t("Sem interesse em ofertas")}</Badge>}
             {contact.is_anonymized && <Badge variant="destructive">{t("Anonimizado")}</Badge>}
           </div>
         </div>
@@ -364,6 +384,9 @@ export function ContactDetailClient({
                 </span>
               </Button>
             )}
+            {/* SEM INTERESSE (decisão D3): quem ouviu o "não" registra. Confirma antes,
+                porque só um administrador desfaz (aba LGPD). Não bloqueia o contato. */}
+            {!recusouOfertas && podeMarcarSemInteresse && <BotaoMarcarSemInteresse contactId={contactId} />}
             <DialButton contactId={contactId} hasPhone={!!contact.phone_number} />
             {podeJuntar && (
               <Button
@@ -555,7 +578,7 @@ export function ContactDetailClient({
                 )}
                 podeCriarPessoa={Boolean(
                   (user.is_platform_admin && !user.support) ||
-                    (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager),
+                    (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent),
                 )}
                 nomeSugerido={nomeDoContato(contact) ?? ""}
               />
@@ -620,6 +643,56 @@ export function ContactDetailClient({
           <TabsContent value="lgpd" className="mt-4 space-y-4">
             {/* Acessos OAuth do contato a servidores MCP externos (9095). */}
             {acessosMcp && <AcessosMcpDoContato contactId={contactId} />}
+            {/* A volta da recusa "sem interesse" (decisão D3). Só a que o produto gravou:
+                a revogação vinda da captação não se desfaz por aqui. */}
+            {semInteresse && (
+              <Card className="space-y-4 p-4" data-testid="recusa-de-ofertas">
+                <div>
+                  <h2 className="text-lg font-semibold">{t("Recusa de ofertas")}</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {/* Sem data legível (`declinedAt: null`), a frase perde o "em" e a vírgula:
+                        "Recusa registrada pela equipe.", nunca "Recusa registrada em, pela equipe." */}
+                    {recusaDeOfertas?.declinedAt
+                      ? `${t("Recusa registrada em")} ${format(new Date(recusaDeOfertas.declinedAt), "dd/MM/yyyy", { locale: localeDaData })}, `
+                      : `${t("Recusa registrada")} `}
+                    {recusaDeOfertas?.origem === "conversa_de_prospeccao"
+                      ? t("na conversa da prospecção")
+                      : t("pela equipe")}
+                    {". "}
+                    {t("Este contato disse que não tem interesse e não entra em prospecção nem em campanhas.")}
+                  </p>
+                </div>
+                {/* Só administrador desfaz (a rota cobra `requireRole("admin")`): a aba
+                    LGPD inteira já só aparece para `isAdmin`. */}
+                {!contact.is_anonymized && user.support?.access_mode !== "support_readonly" && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="outline"
+                        disabled={desfazerSemInteresse.isPending}
+                        data-testid="desfazer-sem-interesse"
+                      >
+                        {t("Desfazer recusa")}
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>{t("Desfazer a recusa de ofertas?")}</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          {t("O contato volta a poder entrar em prospecção e campanhas. O que a recusa encerrou não volta: os negócios que ela levou para Perdido continuam lá e o follow-up não recomeça. A ação fica registrada na auditoria em seu nome.")}
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => desfazerSemInteresse.mutate()}>
+                          {t("Desfazer recusa")}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
+              </Card>
+            )}
             <Card className="space-y-4 p-4">
               <div>
                 <h2 className="text-lg font-semibold">{t("Direito ao esquecimento (LGPD)")}</h2>

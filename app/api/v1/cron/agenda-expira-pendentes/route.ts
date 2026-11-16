@@ -55,6 +55,7 @@ import { agendaSettingsSchema } from "@/lib/schemas/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { aposVagaLiberada, varrerOfertasVencidas } from "@/lib/agenda/encaixe-supabase";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { AUTORIDADE_LOCAL } from "@/lib/agenda/autoridade";
 
 export const dynamic = "force-dynamic";
 
@@ -82,6 +83,8 @@ async function handle(req: NextRequest): Promise<Response> {
     .from("calendar_appointments")
     .select("id, organization_id, created_at, starts_at")
     .eq("status", "pending")
+    // Pendente de um sistema externo (9392) expira lá, não aqui.
+    .eq("authority", AUTORIDADE_LOCAL)
     .order("created_at", { ascending: true })
     .limit(LIMITE_DA_VARREDURA);
 
@@ -144,6 +147,7 @@ async function handle(req: NextRequest): Promise<Response> {
     .update(patchDeExpiracao(agora))
     .in("id", expirados)
     .eq("status", "pending")
+    .eq("authority", AUTORIDADE_LOCAL)
     .select("id");
 
   if (erroUpdate) {

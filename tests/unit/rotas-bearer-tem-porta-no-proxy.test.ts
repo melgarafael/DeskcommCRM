@@ -31,6 +31,13 @@ const BASE = path.join(RAIZ, "app/api/v1");
 export const SO_SESSAO_POR_DESENHO: Record<string, string> = {
   "app/api/v1/prospecting/importar/route.ts":
     "recusa token de propósito (403), como reanalisar_site; ver o comentário da rota",
+  // Tabela de valores de negociação (#4612, fatia 1): a tabela é cadastro de
+  // tela, e o token `dsk_…` recusa a escrita com 403 logo no handler. A porta
+  // que o agente vai usar é a ferramenta da fatia 2, com escopo próprio.
+  "app/api/v1/tabelas-de-valores/route.ts":
+    "fatia 1 só de tela: a escrita recusa token com 403 no handler e a leitura fica atrás do proxy; a do agente vem por ferramenta própria",
+  "app/api/v1/tabelas-de-valores/[id]/importar/route.ts":
+    "importar planilha exige a tela (403 para token), como a importação de prospecção",
 };
 
 const UUID_DE_AMOSTRA = "00000000-0000-4000-8000-000000000000";

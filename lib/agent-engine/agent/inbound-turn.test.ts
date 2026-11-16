@@ -34,6 +34,7 @@ import {
   TRANSPARENCIA_SYSTEM_BLOCK,
   blocoDoModoDePrevia,
   blocosDeAgendaResidentes,
+  blocosDeInteresseExternoResidentes,
   blocosDoSistemaDoTurno,
   type BlocosDoSistemaDoTurno,
 } from './inbound-turn';
@@ -191,6 +192,27 @@ describe('o que muda por turno fica no FIM (#4668)', () => {
       prompt,
       blocoDoModoDePrevia('sandbox'),
       BLOCO_DA_RESPOSTA_FALADA,
+    ]);
+  });
+
+  it('o interesse no banco externo (#3328) entra na faixa por-agente, antes do prompt', () => {
+    const toolIds = ['crm_consultar_receita', 'crm_create_lead'];
+    const blocos = blocosDoSistemaDoTurno({
+      promptDoAgente: 'P',
+      casosLigados: false,
+      toolIds,
+      previewKind: 'sandbox',
+      idioma: 'pt-BR',
+      blocoDaVoz: null,
+    });
+    expect(blocosDeInteresseExternoResidentes(toolIds)).toHaveLength(1);
+    expect(blocos).toEqual([
+      TRANSPARENCIA_SYSTEM_BLOCK,
+      AUTORIA_SYSTEM_BLOCK,
+      diretivaDeIdioma('pt-BR'),
+      ...blocosDeInteresseExternoResidentes(toolIds),
+      'P',
+      blocoDoModoDePrevia('sandbox'),
     ]);
   });
 

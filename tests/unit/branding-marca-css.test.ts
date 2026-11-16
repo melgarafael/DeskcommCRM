@@ -326,6 +326,10 @@ describe("guardas de mecanismo", () => {
         const escopo = chamada.split(",")[1]?.trim().replace(/\)$/, "");
         if (escopo === undefined) continue;
         if (escopo === "ESCOPO_DA_INSTALACAO" || escopo === "ESCOPO_DA_ORGANIZACAO") continue;
+        // O template da tela Aparência passa um `EscopoDeAparencia`: um tipo com
+        // marca que só nasce em `escopoDeAparencia` (`lib/branding/css.ts`), com
+        // atributo fixo e id validado. Aceito SÓ neste arquivo, onde ele é montado.
+        if (alvo === "lib/aparencia/css.ts" && escopo === "escopo") continue;
         forasteiros.push(`${alvo}: ${chamada}`);
       }
     }
@@ -356,7 +360,9 @@ describe("guardas de mecanismo", () => {
     // para a página, e nenhum pixel muda. Falha sem sintoma, do tipo que se
     // descobre pelo cliente reclamando que "a cor não funciona".
     const layout = fs.readFileSync(path.join(RAIZ, "app/app/layout.tsx"), "utf8");
-    expect(layout).toMatch(/<div data-marca-org="" className="contents">/);
+    // Os atributos de aparência (`atributosDaAparencia`) entram no MESMO marcador:
+    // o template escolhido na tela Aparência é escopado por ele.
+    expect(layout).toMatch(/<div data-marca-org=""[^>]*className="contents">/);
     // `contents` porque o elemento não pode gerar caixa: com uma div normal, o
     // shell (`flex min-h-screen`) passaria a ter um ancestral a mais no box tree
     // e a altura de tela inteira deixaria de valer.
