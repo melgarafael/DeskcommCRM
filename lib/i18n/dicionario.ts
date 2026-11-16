@@ -38,12 +38,14 @@ import type { Idioma } from "./idiomas";
 import { TEXTOS_AGENDA_CONFIGURACAO } from "./agenda-configuracao";
 import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
 import { TEXTOS_CONTRATACAO } from "./contratacao";
+import { TEXTOS_TABELA_DE_VALORES } from "./tabela-de-valores";
 
 /** `pt-BR` não aparece: é a chave. Só o que DIFERE precisa de linha. */
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
   ...TEXTOS_CONTRATACAO,
+  ...TEXTOS_TABELA_DE_VALORES,
   ...TEXTOS_CADENCIAS_ORIGINAIS,
   ...TEXTOS_CADENCIAS,
   "Grupo de anúncios": { es: "Grupo de anuncios" },
@@ -92,6 +94,27 @@ export const DICIONARIO: Traducoes = {
   "Envios de todos os clientes": { es: "Envíos de todos los clientes" },
   "Nenhum envio agendado nas conversas que você enxerga.": { es: "Ningún envío programado en las conversaciones que puedes ver." },
   "Não consegui carregar os envios.": { es: "No pude cargar los envíos." },
+  "Administrando cliente da agência": { es: "Administrando cliente de la agencia" },
+  "Voltar à agência": { es: "Volver a la agencia" },
+  "Organizações clientes": { es: "Organizaciones clientes" },
+  "Crie e administre os clientes da sua agência.": { es: "Crea y administra los clientes de tu agencia." },
+  "Carregando organizações…": { es: "Cargando organizaciones…" },
+  "Não foi possível carregar as organizações.": { es: "No se pudieron cargar las organizaciones." },
+  "Criar organização cliente": { es: "Crear organización cliente" },
+  "Identificador": { es: "Identificador" },
+  "Limite atingido. Solicite um aumento ao administrador da plataforma.": { es: "Límite alcanzado. Solicita un aumento al administrador de la plataforma." },
+  "Abrir organização": { es: "Abrir organización" },
+  "Indisponível": { es: "No disponible" },
+  "Reduzir o limite preserva os clientes existentes. Organizações suspensas continuam contando.": { es: "Reducir el límite conserva los clientes existentes. Las organizaciones suspendidas siguen contando." },
+  "Limite de organizações clientes": { es: "Límite de organizaciones clientes" },
+  "Permitir que esta agência administre organizações clientes": { es: "Permitir que esta agencia administre organizaciones clientes" },
+  "Organizações vinculadas": { es: "Organizaciones vinculadas" },
+  "Incluir clientes no acordo comercial da agência": { es: "Incluir clientes en el acuerdo comercial de la agencia" },
+  "Autoriza criar clientes sem assinatura individual, mesmo com cobrança ativa. Valores e porcentagens são negociados separadamente; não há cobrança automática por cliente.": { es: "Autoriza crear clientes sin suscripción individual, incluso con cobros activos. Los importes y porcentajes se negocian por separado; no hay cobro automático por cliente." },
+  "Gestão de organizações clientes": { es: "Gestión de organizaciones clientes" },
+  "Não foi possível salvar a configuração de agência.": { es: "No se pudo guardar la configuración de agencia." },
+  "Configuração de agência salva.": { es: "Configuración de agencia guardada." },
+  "Informe um limite inteiro entre 0 e 10000.": { es: "Indica un límite entero entre 0 y 10000." },
   "Custo AI / dia (US$)": { es: "Costo IA / día (US$)" },
   "chamadas sem preço": { es: "llamadas sin precio" },
   "A empresa ativa mudou. Recarregue a página antes de continuar.": { es: "La empresa activa cambió. Recarga la página antes de continuar." },
@@ -3860,6 +3883,24 @@ export const DICIONARIO: Traducoes = {
   "maior ou igual a": { es: "mayor o igual a" },
   "menor que": { es: "menor que" },
   "menor ou igual a": { es: "menor o igual a" },
+  // #1749 — o operador "foi alterado" e o campo de condição que o acompanha.
+  "foi alterado": { es: "fue modificado" },
+  "Nome do campo alterado": { es: "Nombre del campo modificado" },
+  // #1749 — os campos do negócio que a condição "foi alterado" oferece (os
+  // demais já estão no dicionário) e as recusas dela.
+  "Valor recorrente": { es: "Valor recurrente" },
+  Periodicidade: { es: "Periodicidad" },
+  "Agente responsável": { es: "Agente responsable" },
+  "Data prevista de fechamento": { es: "Fecha prevista de cierre" },
+  "A condição “foi alterado” lê a lista de campos do evento (`event.fields`): use esse campo.": {
+    es: "La condición «fue modificado» lee la lista de campos del evento (`event.fields`): usa ese campo.",
+  },
+  "Escolha qual campo do negócio precisa ter sido alterado.": {
+    es: "Elige qué campo del negocio debe haber sido modificado.",
+  },
+  "Este campo não existe no negócio: escolha um campo da lista.": {
+    es: "Este campo no existe en el negocio: elige un campo de la lista.",
+  },
   "Combinar as condições por": { es: "Combinar las condiciones por" },
   "Esta automação combina as condições por um grupo (qualquer uma, ou um grupo dentro de outro). Este desenho não edita esse grupo: ele é gravado como está.":
     {
@@ -7976,6 +8017,12 @@ export const DICIONARIO: Traducoes = {
   "Quando um contato ganhar uma tag": { es: "Cuando un contacto reciba una etiqueta" },
   // #2812 — o gatilho de ficha SEM número que recebe um.
   "Quando um contato ganhar um telefone": { es: "Cuando un contacto reciba un teléfono" },
+  // #1749 — o gatilho de "negócio alterado" e a recusa da condição que só ele
+  // aceita.
+  "Quando um negócio for alterado": { es: "Cuando se modifique un negocio" },
+  "A condição “foi alterado” só existe no gatilho “negócio alterado” (quando um negócio for editado): troque o gatilho ou escolha outro operador.": {
+    es: "La condición «fue modificado» solo existe en el disparador «negocio modificado» (cuando se edita un negocio): cambia el disparador o elige otro operador.",
+  },
   "alterado pelo assistente": { es: "cambiado por el asistente" },
   "alterado automaticamente pelo sistema": { es: "cambiado automáticamente por el sistema" },
   é: { es: "es" },
@@ -11550,6 +11597,67 @@ export const DICIONARIO: Traducoes = {
   },
   "Falhas": { es: "Fallas" },
   "Resultados aparecerão aqui após o envio.": { es: "Los resultados aparecerán aquí después del envío." },
+
+  // ─── #3876: criar a pessoa SEM convite (senha provisória gerada pelo servidor) ───
+  "Criar usuário com senha": { es: "Crear usuario con contraseña" },
+  "A conta já nasce pronta, com uma senha provisória que aparece uma vez ao criar. No primeiro acesso a pessoa precisa escolher uma senha própria. Nenhum e-mail é enviado.": {
+    es: "La cuenta ya nace lista, con una contraseña provisional que aparece una sola vez al crearla. En el primer acceso la persona debe elegir una contraseña propia. No se envía ningún correo.",
+  },
+  "Diferente do convite, aqui a conta já existe ao fim do formulário — sem depender de e-mail, SMTP ou de a pessoa clicar num link.": {
+    es: "A diferencia de la invitación, aquí la cuenta ya existe al terminar el formulario, sin depender de correo, SMTP ni de que la persona haga clic en un enlace.",
+  },
+  "Senha provisória": { es: "Contraseña provisional" },
+  "Esta senha aparece só agora. Ao sair desta tela ela não pode ser vista de novo.": {
+    es: "Esta contraseña aparece solo ahora. Al salir de esta pantalla no se puede volver a ver.",
+  },
+  "Senha copiada.": { es: "Contraseña copiada." },
+  "Não consegui copiar — selecione e copie a senha manualmente.": {
+    es: "No pude copiar: selecciona y copia la contraseña manualmente.",
+  },
+  "Criar usuário": { es: "Crear usuario" },
+  // "Criando…" já existe no bloco de cadastro — a chave é a mesma frase.
+  "Usuário criado": { es: "Usuario creado" },
+  "Usuário criado. Entregue o e-mail e a senha para a pessoa.": {
+    es: "Usuario creado. Entrega el correo y la contraseña a la persona.",
+  },
+  "Nenhum e-mail foi enviado. Entregue o e-mail e a senha provisória para a pessoa; ela escolhe a senha dela no primeiro acesso.": {
+    es: "No se envió ningún correo. Entrega el correo y la contraseña provisional a la persona; ella elige su contraseña en el primer acceso.",
+  },
+  "Este e-mail já é a sua conta.": { es: "Este correo ya es tu cuenta." },
+  "Não foi possível criar a conta. Se a pessoa já usa esta instalação, convide-a por e-mail.": {
+    es: "No se pudo crear la cuenta. Si la persona ya usa esta instalación, invítala por correo.",
+  },
+  "Nesta instalação, pessoas novas entram por convite. Use Convidar membros.": {
+    es: "En esta instalación, las personas nuevas entran por invitación. Usa Invitar miembros.",
+  },
+  "Muitas contas criadas em pouco tempo. Tente de novo mais tarde.": {
+    es: "Demasiadas cuentas creadas en poco tiempo. Inténtalo de nuevo más tarde.",
+  },
+  "Não foi possível incluir a pessoa na equipe.": {
+    es: "No se pudo incluir a la persona en el equipo.",
+  },
+
+  // ─── #3876: a troca obrigatória do primeiro acesso (/trocar-senha) ───
+  "Trocar senha": { es: "Cambiar contraseña" },
+  "Sua senha foi definida por quem administra a empresa. Escolha uma senha só sua para continuar.": {
+    es: "Tu contraseña fue definida por quien administra la empresa. Elige una contraseña solo tuya para continuar.",
+  },
+  "Sua senha foi definida por quem administra a empresa. Troque-a para continuar.": {
+    es: "Tu contraseña fue definida por quien administra la empresa. Cámbiala para continuar.",
+  },
+  "Trocar senha e entrar": { es: "Cambiar contraseña y entrar" },
+  "A senha nova precisa ser diferente da que você usou para entrar.": {
+    es: "La nueva contraseña debe ser diferente de la que usaste para entrar.",
+  },
+  "Sua senha já foi trocada. Entre novamente com a senha nova.": {
+    es: "Tu contraseña ya fue cambiada. Vuelve a entrar con la nueva.",
+  },
+  "Sua sessão expirou. Entre novamente com a senha que você recebeu.": {
+    es: "Tu sesión expiró. Vuelve a entrar con la contraseña que recibiste.",
+  },
+  "Não foi possível trocar a senha agora. Tente novamente.": {
+    es: "No se pudo cambiar la contraseña ahora. Inténtalo de nuevo.",
+  },
   "Erro ao carregar membros.": { es: "Error al cargar miembros." },
   "Nenhum membro ativo.": { es: "No hay miembros activos." },
   "Membro": { es: "Miembro" },
@@ -14254,6 +14362,65 @@ export const DICIONARIO: Traducoes = {
   "o link redireciona vezes demais: {url}": { es: "el enlace redirige demasiadas veces: {url}" },
   "não consegui guardar a foto: {url}": { es: "no pude guardar la foto: {url}" },
 
+  // ─── lib/catalogo/feed.ts — o feed sincronizado (#3587, fatia 2) ───────────
+  // Os motivos de recusa por item do feed. A frase é a chave INTEIRA, com o
+  // valor como placeholder dentro dela: traduzida aos pedaços, cada trecho novo
+  // seria mais uma chave que pode faltar.
+  "o item traz {quantidade} fotos — o produto aceita até {limite}": {
+    es: "el artículo trae {quantidade} fotos — el producto acepta hasta {limite}",
+  },
+  "o item do feed não é um objeto": { es: "el artículo del feed no es un objeto" },
+  "item sem id externo — o feed precisa de uma coluna de identificação": {
+    es: "artículo sin id externo — el feed necesita una columna de identificación",
+  },
+  'id externo repetido no feed ("{id}") — só o primeiro vale': {
+    es: 'id externo repetido en el feed ("{id}") — solo el primero vale',
+  },
+  "item sem nome do produto": { es: "artículo sin nombre de producto" },
+  'preço não reconhecido ("{valor}") — escreva assim: 5.499,00': {
+    es: 'precio no reconocido ("{valor}") — escríbelo así: 5.499,00',
+  },
+  'quantidade inválida ("{valor}") — use um número inteiro': {
+    es: 'cantidad no válida ("{valor}") — usa un número entero',
+  },
+  "o feed não trouxe nenhum item reconhecível — nenhum produto foi desativado": {
+    es: "el feed no trajo ningún artículo reconocible — ningún producto fue desactivado",
+  },
+  "o feed desativaria {quantidade} de {total} produtos ativos, mais da metade — nada foi aplicado. Confira o feed; para tirar esses produtos de linha, desative-os na tela de Produtos": {
+    es: "el feed desactivaría {quantidade} de {total} productos activos, más de la mitad — no se aplicó nada. Revise el feed; para retirar esos productos, desactívelos en la pantalla de Productos",
+  },
+  "Esta leitura não será aplicada:": { es: "Esta lectura no se aplicará:" },
+  // O módulo opcional `catalogo_por_feed` (doc 322, A; PR #4179): a linha em
+  // /admin/sistema, o texto em Recursos opcionais e a seção da tela de Produtos.
+  "Catálogo sincronizado por feed": { es: "Catálogo sincronizado por feed" },
+  "Ligado, a tela de Produtos de cada empresa ganha a seção Catálogo por feed, onde se cadastra o endereço do feed que o sistema de estoque da revenda publica. A cada 2 horas o servidor busca esse endereço, cria o produto novo, atualiza preço e estoque do que mudou e desativa o que saiu do feed, sem apagar nada. Desligado, a seção some, nenhum feed é buscado e nada no catálogo muda; os endereços já cadastrados ficam guardados.": {
+    es: "Activado, la pantalla de Productos de cada empresa gana la sección Catálogo por feed, donde se registra la dirección del feed que publica el sistema de inventario del revendedor. Cada 2 horas el servidor busca esa dirección, crea el producto nuevo, actualiza precio e inventario de lo que cambió y desactiva lo que salió del feed, sin borrar nada. Desactivado, la sección desaparece, no se busca ningún feed y nada cambia en el catálogo; las direcciones ya registradas quedan guardadas.",
+  },
+  "Não cria porta no menu do CRM: ele libera uma seção na tela de Produtos, em": {
+    es: "No crea entrada en el menú del CRM: habilita una sección en la pantalla de Productos, en",
+  },
+  "O catálogo acompanha sozinho o feed que o sistema de estoque da revenda publica: a cada 2 horas cria, atualiza e desativa produtos, sem apagar nenhum.": {
+    es: "El catálogo sigue solo el feed que publica el sistema de inventario del revendedor: cada 2 horas crea, actualiza y desactiva productos, sin borrar ninguno.",
+  },
+  "Catálogo por feed": { es: "Catálogo por feed" },
+  "O sistema de estoque da revenda publica a lista de produtos num endereço, e o catálogo acompanha sozinho a cada 2 horas. Produto que sai do feed é desativado, nunca apagado.": {
+    es: "El sistema de inventario del revendedor publica la lista de productos en una dirección, y el catálogo la sigue solo cada 2 horas. El producto que sale del feed se desactiva, nunca se borra.",
+  },
+  "Catálogo sincronizado com o feed.": { es: "Catálogo sincronizado con el feed." },
+  "Endereço:": { es: "Dirección:" },
+  "Última leitura:": { es: "Última lectura:" },
+  "ainda não leu": { es: "todavía no leyó" },
+  "desativados": { es: "desactivados" },
+  "sem mudança": { es: "sin cambios" },
+  "A leitura do feed falhou {n} vez(es) seguida(s). Nada foi desativado por causa disso.": {
+    es: "La lectura del feed falló {n} vez/veces seguidas. Nada fue desactivado por eso.",
+  },
+  "Último motivo:": { es: "Último motivo:" },
+  "Nenhum feed cadastrado nesta empresa.": { es: "Ningún feed registrado en esta empresa." },
+  "Endereço do feed": { es: "Dirección del feed" },
+  "Formato do feed": { es: "Formato del feed" },
+  "Se sincronizar agora:": { es: "Si sincroniza ahora:" },
+
   // ─── Análise → Meta Ads e Configurações → Meta Ads (0214) ───
   //
   // ⚠️ Boa parte deste bloco o teste `i18n-espanhol-cobre-a-tela` NÃO cobre, e
@@ -14550,6 +14717,17 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível carregar as tarefas.": { es: "No se pudieron cargar las tareas." },
   "Nova tarefa": { es: "Nueva tarea" },
   "Ninguém": { es: "Nadie" },
+  // A tarefa que se repete (#4595): o seletor de dias e a hora da série.
+  "Repetir toda semana": { es: "Repetir cada semana" },
+  "A tarefa volta nos dias escolhidos, no horário acima, no fuso da empresa.": {
+    es: "La tarea vuelve los días elegidos, en el horario de arriba, en la zona horaria de la empresa.",
+  },
+  "Escolha ao menos um dia da semana para a tarefa se repetir.": {
+    es: "Elige al menos un día de la semana para que la tarea se repita.",
+  },
+  "Escolha pelo menos um dia da semana e um horário.": {
+    es: "Elige al menos un día de la semana y un horario.",
+  },
   "Membro sem nome": { es: "Miembro sin nombre" },
   "Fora da equipe": { es: "Fuera del equipo" },
   "O responsável escolhido não faz parte da equipe.": { es: "El responsable elegido no forma parte del equipo." },
@@ -20763,6 +20941,12 @@ export const DICIONARIO: Traducoes = {
   "O km informado no negócio vira a data prevista da próxima revisão, no campo de data que o funil escolheu.": { es: "El kilometraje informado en el negocio se convierte en la fecha prevista de la próxima revisión, en el campo de fecha que eligió el embudo." },
   "Ligado, o funil que declarar a régua de revisão por quilometragem passa a calcular a data prevista da próxima revisão quando o km do negócio é informado, pelo card, pela API, pelo MCP ou pela resposta do roteiro, e grava essa data no campo de data que o funil escolheu. Desligado, o km continua sendo gravado e nenhuma data é calculada; as datas já gravadas ficam como estão.": { es: "Activado, el embudo que declare la regla de revisión por kilometraje pasa a calcular la fecha prevista de la próxima revisión cuando se informa el kilometraje del negocio, por la tarjeta, la API, el MCP o la respuesta del guion, y guarda esa fecha en el campo de fecha que eligió el embudo. Desactivado, el kilometraje se sigue guardando y no se calcula ninguna fecha; las fechas ya guardadas quedan como están." },
   "Não cria porta no menu do CRM: a régua é declarada por funil, em pipelines.settings.revisao_por_km, e ainda não há tela para declará-la.": { es: "No crea entrada en el menú del CRM: la regla se declara por embudo, en pipelines.settings.revisao_por_km, y todavía no hay pantalla para declararla." },
+  // O módulo opcional das agências (doc 321, adaptação do #4034) em /admin/sistema e em Recursos opcionais.
+  "Agências administram clientes": { es: "Agencias administran clientes" },
+  "Uma empresa-agência cria as empresas dos clientes dela e entra nelas para administrar, sem login separado em cada uma; tudo o que faz lá fica registrado com o nome da agência.": { es: "Una empresa agencia crea las empresas de sus clientes y entra en ellas para administrarlas, sin un inicio de sesión separado en cada una; todo lo que hace allí queda registrado con el nombre de la agencia." },
+  "Ligado, a empresa que você habilitar como agência, no painel dela em Empresas, cria as empresas dos clientes dela e entra nelas para administrar, por até uma hora de cada vez e sempre com o nome da agência na auditoria. Só quem é administrador da agência entra, e só nas empresas que a própria agência criou. Desligado, ninguém entra pela agência, as telas somem e as sessões abertas param na hora; as empresas criadas e os vínculos ficam guardados.": { es: "Activado, la empresa que habilites como agencia, en su panel en Empresas, crea las empresas de sus clientes y entra en ellas para administrarlas, hasta una hora cada vez y siempre con el nombre de la agencia en la auditoría. Solo entra quien es administrador de la agencia, y solo en las empresas que la propia agencia creó. Desactivado, nadie entra por la agencia, las pantallas desaparecen y las sesiones abiertas se detienen en el acto; las empresas creadas y los vínculos quedan guardados." },
+  "Não cria porta no menu do CRM: a empresa habilitada como agência ganha a tela Organizações clientes, em": { es: "No crea entrada en el menú del CRM: la empresa habilitada como agencia recibe la pantalla Organizaciones clientes, en" },
+  "A gestão de agências está desligada nesta instalação.": { es: "La gestión de agencias está desactivada en esta instalación." },
   // #3509: as recusas da rota que registra o recebimento na conversa.
   "Pedido inválido.": { es: "Solicitud inválida." },
   "Esta instalação não tem um endereço público https para receber o aviso de pagamento.": { es: "Esta instalación no tiene una dirección pública https para recibir el aviso de pago." },
