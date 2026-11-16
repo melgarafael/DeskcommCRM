@@ -122,6 +122,15 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   // Consulta E marca numa chamada só (issue #831): o `contact_id` é OBRIGATÓRIO
   // como no marcar puro (DECISÃO 27), então o alvo resolve de verdade.
   crm_find_and_book_appointment: "funil_vem_do_contato",
+  // Módulo `amigo` (#4227): toda escrita no Amigo pelo turno leva o `contact_id`
+  // do atendimento (a ponte de escopo recusa sem ele), como o marcar da agenda.
+  crm_amigo_patient_create: "funil_vem_do_contato",
+  crm_amigo_patient_update: "funil_vem_do_contato",
+  crm_amigo_link_patient: "funil_vem_do_contato",
+  crm_amigo_attendance_create: "funil_vem_do_contato",
+  crm_amigo_attendance_cancel: "funil_vem_do_contato",
+  crm_amigo_attendance_status: "funil_vem_do_contato",
+  crm_amigo_attendance_reschedule: "funil_vem_do_contato",
   crm_reschedule_appointment: "sem_funil",
   crm_cancel_appointment: "sem_funil",
   // Mesmo argumento das duas acima, e pela mesma razão: operam por
