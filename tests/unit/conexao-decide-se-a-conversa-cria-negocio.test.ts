@@ -20,7 +20,8 @@
  *      na desligada não cria card e registra o motivo; a que chega na ligada
  *      cria como hoje;
  *   2. o CONTROLE da instalação antiga: sem a chave (conversa sem a relação, ou
- *      banco sem a migration) o comportamento é o de hoje;
+ *      banco sem a migration) o comportamento é o de hoje — e o DDL da coluna
+ *      nasce `default true`, que é o que faz a atualização ser invisível;
  *   3. organização B não lê a chave da A — e a consulta leva a organização no
  *      filtro, que é o que impede o vazamento;
  *   4. falha de leitura NÃO cria o card nesta mensagem (a próxima tenta de novo:
@@ -30,7 +31,7 @@
  * Comando:
  *     pnpm vitest run tests/unit/conexao-decide-se-a-conversa-cria-negocio.test.ts
  */
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -266,6 +267,33 @@ describe("#4670 · o que NÃO podia mudar", () => {
     // número não abre negócio — ele não conseguiu perguntar.
     expect(r).toMatchObject({ criado: false, motivo: "erro" });
     expect(c.nascimentos).toBe(0);
+  });
+
+  it("CONTROLE: a coluna nasce LIGADA na migration e no espelho do baseline", () => {
+    // O mock acima prova o ramo de leitura; ESTE caso prova o DDL, que é o que faz
+    // a instalação antiga seguir como hoje sem abrir tela nenhuma: `default true`.
+    // Inverter o default (nascendo desligado) derruba este caso — e só ele.
+    const migrations = readdirSync(join(process.cwd(), "supabase", "migrations")).filter((n) =>
+      n.endsWith("_conexao_decide_se_a_conversa_cria_negocio.sql"),
+    );
+    expect(migrations, "a migration da #4670 tem de existir, e uma só").toHaveLength(1);
+    const [arquivo] = migrations;
+    if (!arquivo) throw new Error("migration da #4670 não encontrada");
+
+    const declaracao = /add column if not exists conversa_nova_cria_negocio boolean not null default true;/;
+    const migration = readFileSync(join(process.cwd(), "supabase", "migrations", arquivo), "utf8");
+    expect(migration).toMatch(declaracao);
+
+    // O espelho só pode ficar FORA da janela do invariante `lgpd-alcanca-fichas-fundidas`
+    // (entre a cascata da 9243 e a VARREDURA anon): aquele trecho é comparado por
+    // igualdade contra a migration da 9243.
+    const baseline = readFileSync(join(process.cwd(), "supabase", "baseline.sql"), "utf8");
+    expect(baseline).toMatch(declaracao);
+    const janelaInicio = baseline.indexOf("-- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243)");
+    const janelaFim = baseline.indexOf("-- ---- VARREDURA anon:");
+    const posicao = baseline.indexOf("add column if not exists conversa_nova_cria_negocio");
+    expect(posicao, "o espelho tem de estar no baseline").toBeGreaterThan(-1);
+    expect(posicao < janelaInicio || posicao > janelaFim, "espelho FORA da janela do invariante").toBe(true);
   });
 
   it("a criação à mão não conhece a chave: `crm_create_lead` e o botão da tela seguem iguais", () => {
