@@ -103,6 +103,10 @@ CRONS="
 # antes em avisar entre 30 e 45 minutos antes. Barato: só olha compromisso
 # confirmado, futuro e ainda não avisado.
 */5 * * * *|45|api/v1/cron/agenda-reminder
+# O ROBÔ DO AMIGO (módulo opcional, #4227). Sem webhook do fornecedor, relê a
+# agenda de uma conexão ativa por volta. Com o módulo desligado, a rota sai na
+# primeira linha sem tocar em tabela.
+*/5 * * * *|60|api/v1/cron/amigo-sync
 # O LEMBRETE DE TAREFA. A cada 5 minutos porque a antecedência é escolhida
 # pela PESSOA (15 min, 1 h que é o padrão, ou 1 dia): uma varredura mais lenta
 # transformaria avisar 15 minutos antes em avisar até 20. Barato: só tarefa
@@ -177,6 +181,14 @@ CRONS="
 # pagar, e a diferença entre nascer às 5h ou às 17h não muda nada para quem paga.
 # Barato: uma consulta por instalação, e quem não tem molde nenhum sai na hora.
 50 5 * * *|60|api/v1/cron/recurring-entries
+# O CATALOGO DA REVENDA. A revenda publica o estoque num feed JSON/CSV; este
+# cron e o que faz o catalogo acompanhar sem ninguem clicar (issue #3587).
+# De 2 em 2 horas: catalogo de loja muda no ritmo do estoque, preco errado por
+# duas horas e recuperavel, e 96 buscas por dia no site da revenda seriam abuso
+# sem ganho. Minuto 25, fora das outras varreduras. Sem fonte ativa, o portao
+# catalogo_do_feed (lib/cron/piso-ocioso.ts) faz a batida sair antes de
+# qualquer leitura no banco.
+25 */2 * * *|120|api/v1/cron/catalog-feed-sync
 "
 
 # CRONTAB_PATH é ponto de injeção do teste (tests/shell/scheduler-entrypoint.test.sh).

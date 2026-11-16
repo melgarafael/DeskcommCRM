@@ -3053,6 +3053,7 @@ export type Database = {
       };
       calendar_appointments: {
         Row: {
+          authority: string;
           cancellation_reason: string | null;
           cancelled_at: string | null;
           confirmation_next_at: string | null;
@@ -3065,6 +3066,8 @@ export type Database = {
           description: string | null;
           ends_at: string;
           event_type_id: string | null;
+          external_connection_id: string | null;
+          external_status: string | null;
           google_base_projection: Json | null;
           google_calendar_id: string | null;
           google_claim_epoch: number;
@@ -3138,6 +3141,7 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          authority?: string;
           cancellation_reason?: string | null;
           cancelled_at?: string | null;
           confirmation_next_at?: string | null;
@@ -3150,6 +3154,8 @@ export type Database = {
           description?: string | null;
           ends_at: string;
           event_type_id?: string | null;
+          external_connection_id?: string | null;
+          external_status?: string | null;
           google_base_projection?: Json | null;
           google_calendar_id?: string | null;
           google_claim_epoch?: number;
@@ -3222,6 +3228,7 @@ export type Database = {
           updated_at?: string;
         };
         Update: {
+          authority?: string;
           cancellation_reason?: string | null;
           cancelled_at?: string | null;
           confirmation_next_at?: string | null;
@@ -3234,6 +3241,8 @@ export type Database = {
           description?: string | null;
           ends_at?: string;
           event_type_id?: string | null;
+          external_connection_id?: string | null;
+          external_status?: string | null;
           google_base_projection?: Json | null;
           google_calendar_id?: string | null;
           google_claim_epoch?: number;
@@ -3624,6 +3633,9 @@ export type Database = {
           description: string | null;
           destination_calendar_id: string | null;
           duration_minutes: number;
+          external_connection_id: string | null;
+          external_id: string | null;
+          external_provider: string | null;
           id: string;
           is_active: boolean;
           location_details: string | null;
@@ -3664,6 +3676,9 @@ export type Database = {
           description?: string | null;
           destination_calendar_id?: string | null;
           duration_minutes?: number;
+          external_connection_id?: string | null;
+          external_id?: string | null;
+          external_provider?: string | null;
           id?: string;
           is_active?: boolean;
           location_details?: string | null;
@@ -3703,6 +3718,9 @@ export type Database = {
           description?: string | null;
           destination_calendar_id?: string | null;
           duration_minutes?: number;
+          external_connection_id?: string | null;
+          external_id?: string | null;
+          external_provider?: string | null;
           id?: string;
           is_active?: boolean;
           location_details?: string | null;
@@ -4776,6 +4794,60 @@ export type Database = {
           },
         ];
       };
+      catalog_feed_sources: {
+        Row: {
+          ativo: boolean;
+          created_at: string;
+          falhas_seguidas: number;
+          formato: string;
+          id: string;
+          mapeamento: Json;
+          organization_id: string;
+          ultima_leitura_em: string | null;
+          ultimo_erro: string | null;
+          ultimo_resumo: Json | null;
+          updated_at: string;
+          url: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          ativo?: boolean;
+          created_at?: string;
+          falhas_seguidas?: number;
+          formato?: string;
+          id?: string;
+          mapeamento?: Json;
+          organization_id: string;
+          ultima_leitura_em?: string | null;
+          ultimo_erro?: string | null;
+          ultimo_resumo?: Json | null;
+          updated_at?: string;
+          url: string;
+        };
+        Update: {
+          ativo?: boolean;
+          created_at?: string;
+          falhas_seguidas?: number;
+          formato?: string;
+          id?: string;
+          mapeamento?: Json;
+          organization_id?: string;
+          ultima_leitura_em?: string | null;
+          ultimo_erro?: string | null;
+          ultimo_resumo?: Json | null;
+          updated_at?: string;
+          url?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "catalog_feed_sources_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       catalog_product_presentations: {
         Row: {
           audio_mime: string | null;
@@ -4855,6 +4927,7 @@ export type Database = {
           descricao: string | null;
           fotos: string[];
           id: string;
+          id_externo: string | null;
           imagem_url: string | null;
           marca: string | null;
           moeda: string;
@@ -4877,6 +4950,7 @@ export type Database = {
           descricao?: string | null;
           fotos?: string[];
           id?: string;
+          id_externo?: string | null;
           imagem_url?: string | null;
           marca?: string | null;
           moeda?: string;
@@ -4898,6 +4972,7 @@ export type Database = {
           descricao?: string | null;
           fotos?: string[];
           id?: string;
+          id_externo?: string | null;
           imagem_url?: string | null;
           marca?: string | null;
           moeda?: string;
@@ -6930,6 +7005,7 @@ export type Database = {
       };
       crm_lead_attachments: {
         Row: {
+          clonado_do_attachment_id: string | null;
           created_at: string;
           created_by: string | null;
           field_key: string;
@@ -6944,6 +7020,7 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          clonado_do_attachment_id?: string | null;
           created_at?: string;
           created_by?: string | null;
           field_key: string;
@@ -6957,6 +7034,7 @@ export type Database = {
           updated_at?: string;
         };
         Update: {
+          clonado_do_attachment_id?: string | null;
           created_at?: string;
           created_by?: string | null;
           field_key?: string;
@@ -6970,6 +7048,13 @@ export type Database = {
           updated_at?: string;
         };
         Relationships: [
+          {
+            foreignKeyName: "crm_lead_attachments_clonado_do_attachment_id_fkey";
+            columns: ["clonado_do_attachment_id"];
+            isOneToOne: false;
+            referencedRelation: "crm_lead_attachments";
+            referencedColumns: ["id"];
+          },
           {
             foreignKeyName: "crm_lead_attachments_lead_id_fkey";
             columns: ["lead_id"];
@@ -14070,6 +14155,8 @@ export type Database = {
           provisional_until_handover: boolean;
           revoked_at: string | null;
           role: string;
+          /** Senha definida por quem administra e ainda não trocada (#3876). */
+          senha_provisoria: boolean;
           updated_at: string;
           user_id: string;
           /** WhatsApp PESSOAL do membro, E.164 — destino do aviso no modo `responsavel` (#3803). */
@@ -14088,6 +14175,7 @@ export type Database = {
           provisional_until_handover?: boolean;
           revoked_at?: string | null;
           role: string;
+          senha_provisoria?: boolean;
           updated_at?: string;
           user_id: string;
           whatsapp_e164?: string | null;
@@ -14104,6 +14192,7 @@ export type Database = {
           provisional_until_handover?: boolean;
           revoked_at?: string | null;
           role?: string;
+          senha_provisoria?: boolean;
           updated_at?: string;
           user_id?: string;
           whatsapp_e164?: string | null;
@@ -15865,6 +15954,10 @@ export type Database = {
           p_origem?: string;
         };
         Returns: string;
+      };
+      fn_definir_aparencia_da_organizacao: {
+        Args: { p_aparencia: Json; p_org: string };
+        Returns: Json;
       };
       fn_definir_cliente_pela_agenda: { Args: { p_ligado: boolean; p_org: string }; Returns: Json };
       fn_definir_colegas_podem_mexer_na_agenda: {
