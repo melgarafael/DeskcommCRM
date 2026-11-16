@@ -1,8 +1,10 @@
+import { configuracaoAgenciaSchema } from "@/lib/agencias/configuracao";
 import { z } from "zod";
 import { interfaceSettingsSchema, interfaceTemDestino } from "@/lib/navigation/interface";
 
 /** Mesmo vocabulário no formulário e no limite HTTP. */
 export const tenantCreationFields = {
+  agencia: configuracaoAgenciaSchema.optional(),
   display_name: z.string().trim().min(2).max(120),
   slug: z
     .string()

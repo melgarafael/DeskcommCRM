@@ -184,6 +184,7 @@ export interface UserOrgMembership {
 }
 
 export interface AuthUser {
+  agency_org_ids?: string[];
   support?: import("@/lib/impersonate/support").SupportContext | null;
   id: string;
   email: string;
