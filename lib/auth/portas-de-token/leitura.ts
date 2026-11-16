@@ -29,8 +29,9 @@ export const MODELOS_DA_LEITURA: readonly ModeloDePorta[] = [
   // Escopo `mcp:read` nos GET e `mcp:write` no PATCH de `metrics/atrito`. Papel da
   // sessão: agent em `attendants`, `serie`, `atrito` GET, `channels`, `funil` e
   // `metas` GET; manager em `lost` e no PATCH de `atrito`; viewer em `reports/*`. Papel
-  // do TOKEN: igual ao da sessão, exceto `atrito` GET, `channels`, `funil`,
-  // `metas` e `reports/activities`, que exigem `manager` (`tokenRole`): o token lê a
+  // do TOKEN: igual ao da sessão, exceto `attendants`, `serie`, `atrito` GET,
+  // `channels`, `funil`, `metas` e `reports/activities`, que exigem `manager`
+  // (`tokenRole`): o token lê a
   // organização inteira, e na sessão um agent só vê as conversas dele. Nenhuma
   // tool MCP faz estas ações, então não há `tokenRole` por causa de tool.
   "/api/v1/metrics/atrito",
