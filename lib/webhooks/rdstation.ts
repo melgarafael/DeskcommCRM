@@ -241,7 +241,7 @@ export function camposDoFormularioDoRd(payload: unknown): Record<string, unknown
  * ─── As respostas do formulário ──────────────────────────────────────────────
  *
  * Até aqui só a identidade e os `rd_*` chegavam ao card; as respostas do
- * formulário (capital disponível, cidade de interesse, o aceite da política)
+ * formulário (orçamento, cidade preferida, o aceite da política)
  * ficavam no envelope e se perdiam. Agora elas saem achatadas
  * (`camposDoFormularioDoRd`) e passam pelo MESMO `mapInboundPayload` de um envio
  * plano, com o `field_map` da fonte: mesma regra de chave, mesma ida de `utm_*`

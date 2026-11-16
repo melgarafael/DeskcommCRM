@@ -299,18 +299,18 @@ describe("respostas do formulário do envelope do RD", () => {
 
   /** As respostas que o mesmo formulário mandaria num envio plano. */
   const RESPOSTAS = {
-    "Capital Disponível": "R$ 150.000,00",
-    "UF/Cidade de interesse": "SP / Campinas",
-    cf_marca_de_interesse: "Marca Exemplo",
+    "Orçamento Disponível": "R$ 150.000,00",
+    "Cidade/Estado preferido": "Cidade Exemplo / UF",
+    cf_produto_de_interesse: "Produto Exemplo",
     "Aceito a política de privacidade": "true",
     utm_source: "facebook",
   };
 
   it("as respostas chegam ao card com a chave original (acentos e espaços inclusive)", () => {
     const m = mapRdStationPayload(envelopeComRespostas(RESPOSTAS));
-    expect(m.custom_fields["Capital Disponível"]).toBe("R$ 150.000,00");
-    expect(m.custom_fields["UF/Cidade de interesse"]).toBe("SP / Campinas");
-    expect(m.custom_fields.cf_marca_de_interesse).toBe("Marca Exemplo");
+    expect(m.custom_fields["Orçamento Disponível"]).toBe("R$ 150.000,00");
+    expect(m.custom_fields["Cidade/Estado preferido"]).toBe("Cidade Exemplo / UF");
+    expect(m.custom_fields.cf_produto_de_interesse).toBe("Produto Exemplo");
     expect(m.custom_fields["Aceito a política de privacidade"]).toBe("true");
     // e os metadados do RD seguem lá
     expect(m.custom_fields.rd_lead_id).toBe("9999999999");

@@ -29,7 +29,7 @@ const FONTE = {
   default_stage_id: "stage-1",
   field_map: { email: ["E-mail corporativo"] },
   form_fields: [
-    { key: "cf_capital", label: "Capital disponível", type: "currency", required: false },
+    { key: "cf_orcamento", label: "Orçamento disponível", type: "currency", required: false },
     { key: "cf_unidades", label: "Unidades", type: "number", required: false },
   ],
   redirect_to: null,
@@ -70,9 +70,9 @@ const EVENTO = "44444444-4444-4444-8444-444444444444";
 
 /** As respostas do formulário — fictícias. */
 const RESPOSTAS = {
-  cf_capital: "R$ 150.000,00",
+  cf_orcamento: "R$ 150.000,00",
   cf_unidades: "2",
-  "UF/Cidade de interesse": "SP / Campinas",
+  "Cidade/Estado preferido": "Cidade Exemplo / UF",
   "Aceito a política de privacidade": "true",
   "E-mail corporativo": "contato@example.com",
   utm_source: "facebook",
@@ -156,9 +156,9 @@ describe("respostas do formulário do RD Station chegam ao card", () => {
     );
     expect(semRd).toEqual(doPlano.custom_fields);
     // a tipagem da fonte valeu: moeda BRL e número viraram número
-    expect(doRd.custom_fields.cf_capital).toBe(150000);
+    expect(doRd.custom_fields.cf_orcamento).toBe(150000);
     expect(doRd.custom_fields.cf_unidades).toBe(2);
-    expect(doRd.custom_fields["UF/Cidade de interesse"]).toBe("SP / Campinas");
+    expect(doRd.custom_fields["Cidade/Estado preferido"]).toBe("Cidade Exemplo / UF");
     expect(doRd.custom_fields["Aceito a política de privacidade"]).toBe("true");
     // o field_map consumiu o alias, como no plano
     expect(doRd.custom_fields).not.toHaveProperty("E-mail corporativo");
@@ -219,8 +219,8 @@ describe("respostas do formulário do RD Station chegam ao card", () => {
     );
     expect(criado, "captação criada não registrada").toBeDefined();
     const fields = (criado![1] as { fields: Record<string, unknown> }).fields;
-    expect(fields["UF/Cidade de interesse"]).toBe("SP / Campinas");
-    expect(fields.cf_capital).toBe(150000);
+    expect(fields["Cidade/Estado preferido"]).toBe("Cidade Exemplo / UF");
+    expect(fields.cf_orcamento).toBe(150000);
     expect(fields).not.toHaveProperty("token_rdstation");
   });
 });
