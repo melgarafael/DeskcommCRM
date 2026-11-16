@@ -106,10 +106,10 @@ export async function sincronizarAvisoDePausa(
 
     // Linha ausente = excluída (hard delete). O item não pode ficar apontando
     // para uma linha que a tela já não carrega.
-    // A Central mostra o texto como foi gravado. Quem opera o clique pode
-    // trazer o idioma dele; sem ele (cron, arquivamento), vale o da organização.
-    const idiomaDoTexto = async (): Promise<Idioma> =>
-      contexto.idioma ?? (await idiomaDoAviso(db, canal.organization_id));
+    // A Central mostra o texto como foi gravado e o time inteiro o lê: título e
+    // corpo saem no idioma da ORGANIZAÇÃO. O idioma de quem clicou
+    // (`contexto.idioma`) vale só para o horário.
+    const idiomaDoTexto = (): Promise<Idioma> => idiomaDoAviso(db, canal.organization_id);
 
     if (!linha) {
       if (!item) return "sem_mudanca";
@@ -123,7 +123,8 @@ export async function sincronizarAvisoDePausa(
     const decisao = avaliarAvisoDePausa(linha as CanalAvaliado, item, {
       autor: contexto.autor,
       agora,
-      idioma: vaiEscrever ? await idiomaDoTexto() : contexto.idioma,
+      idioma: vaiEscrever ? await idiomaDoTexto() : undefined,
+      idiomaDaData: contexto.idioma,
     });
 
     if (decisao.acao === "nada") return "sem_mudanca";

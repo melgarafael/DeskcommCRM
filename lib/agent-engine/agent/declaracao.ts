@@ -34,6 +34,7 @@
  * Por isso o campo é OPCIONAL no Zod e a coluna é NULLABLE: o "não sei" tem
  * representação própria, em vez de pegar carona no valor vazio.
  */
+import { preencher } from '@/lib/i18n/idioma-do-aviso';
 import { traduzir } from '@/lib/i18n/dicionario';
 import { z } from 'zod';
 
@@ -129,7 +130,7 @@ export function renderDeclaracaoParaHumano(declaracao: DeclaracaoDoTurno | null,
   if (declaracao === null) return '';
   // Os rótulos seguem o idioma da organização (o texto é gravado e mostrado
   // como veio); o conteúdo é o que a IA escreveu e entra depois, por função.
-  const rotulo = (chave: string, texto: string): string => traduzir(chave, idioma).replace('{texto}', () => texto);
+  const rotulo = (chave: string, texto: string): string => preencher(traduzir(chave, idioma), { texto });
   const linhas: string[] = [];
   if (declaracao.intencoes.length > 0) {
     linhas.push(rotulo('O que a pessoa quer: {texto}', declaracao.intencoes.map((i) => i.o_que).join('; ')));
@@ -142,7 +143,7 @@ export function renderDeclaracaoParaHumano(declaracao: DeclaracaoDoTurno | null,
         'Prometido a ela: {texto}',
         declaracao.promessas
           .map((p) =>
-            p.prazo === null ? p.o_que : traduzir('{o_que} (até {prazo})', idioma).replace('{o_que}', () => p.o_que).replace('{prazo}', () => String(p.prazo)),
+            p.prazo === null ? p.o_que : preencher(traduzir('{o_que} (até {prazo})', idioma), { o_que: p.o_que, prazo: String(p.prazo) }),
           )
           .join('; '),
       ),

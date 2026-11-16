@@ -52,7 +52,7 @@ export async function idiomaDoAviso(
  * padrões especiais (`$&`, `$1`) que um valor com `$` ativaria.
  */
 export function preencher(texto: string, valores: Readonly<Record<string, string | number>>): string {
-  return texto.replace(/\{([a-z_]+)\}/g, (marcador, nome: string) =>
+  return texto.replace(/\{([A-Za-z_]+)\}/g, (marcador, nome: string) =>
     Object.hasOwn(valores, nome) ? String(valores[nome]) : marcador,
   );
 }

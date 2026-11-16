@@ -93,11 +93,16 @@ export interface ContextoDaPausa {
   /** Relógio: fake no teste, real na rota. */
   agora: Date;
   /**
-   * O idioma de quem está operando. O item é LINHA GRAVADA — a Central mostra
-   * como veio —, então é na escrita que o horário ganha o idioma de quem vai
-   * ler, pela MESMA camada de todo o resto (`lib/i18n/datas.ts`).
+   * O idioma da ORGANIZAÇÃO — o do título e do corpo. O item é LINHA GRAVADA
+   * que o time inteiro lê (a Central mostra como veio), então o texto não pode
+   * seguir quem clicou.
    */
   idioma?: Idioma;
+  /**
+   * O idioma de quem está operando — só para o HORÁRIO, pela MESMA camada de
+   * todo o resto (`lib/i18n/datas.ts`). Ausente, vale `idioma`.
+   */
+  idiomaDaData?: Idioma;
 }
 
 /** O motivo vira frase — sem isto, quem lê o corpo vê um identificador cru. */
@@ -152,7 +157,7 @@ export function corpoDoAvisoDePausa(
   return (
     preencher(traduzir("«{canal}» está pausado desde {quando} — quem pausou foi {autor}.", idioma), {
       canal: rotulo,
-      quando: momentoDaPausa(contexto.agora, contexto.idioma),
+      quando: momentoDaPausa(contexto.agora, contexto.idiomaDaData ?? contexto.idioma),
       autor,
     }) +
     "\n\n" +

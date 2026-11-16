@@ -1,3 +1,4 @@
+import { preencher } from "@/lib/i18n/idioma-do-aviso";
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
 
@@ -75,12 +76,10 @@ function motivo(
   proximaAcao: string | null,
   idioma: Idioma,
 ): string {
-  // O rótulo passa pelo dicionário; o que a IA escreveu entra DEPOIS, por
-  // função, para um `{texto}` dentro do próprio conteúdo nunca ser lido como marcador.
+  // O rótulo passa pelo dicionário; o que a IA escreveu entra DEPOIS, numa
+  // passada só (`preencher`): um `{texto}` dentro do conteúdo nunca é marcador.
   const rotulo = (chave: string, valores: { n?: number; texto: string }): string =>
-    traduzir(chave, idioma)
-      .replace("{n}", () => String(valores.n ?? ""))
-      .replace("{texto}", () => valores.texto);
+    preencher(traduzir(chave, idioma), { n: String(valores.n ?? ""), texto: valores.texto });
   const partes: string[] = [];
   if (objecoes.length === 1) partes.push(rotulo("Nova objeção: {texto}", { texto: objecoes[0] ?? "" }));
   else if (objecoes.length > 1)

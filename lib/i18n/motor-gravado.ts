@@ -99,4 +99,9 @@ export const TEXTOS_DO_MOTOR_GRAVADO = {
   "sem resposta há muito tempo": { es: "sin respuesta desde hace mucho" },
   "limitado a {n}": { es: "limitado a {n}" },
   "sem parcelas relevantes além da base": { es: "sin factores relevantes además de la base" },
+
+  // lib/wacalls/events-bridge.ts — a atividade da ligação na linha do tempo.
+  "Chamada de voz atendida": { es: "Llamada de voz atendida" },
+  "Chamada de voz perdida — {motivo}": { es: "Llamada de voz perdida — {motivo}" },
+  "Chamada de voz sem resposta — {motivo}": { es: "Llamada de voz sin respuesta — {motivo}" },
 } as const;

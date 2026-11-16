@@ -14,6 +14,7 @@
  * banco fora / escrita falha são incidente — os dois últimos abrem item no caller.
  */
 import { traduzir } from '@/lib/i18n/dicionario';
+import { preencher } from '@/lib/i18n/idioma-do-aviso';
 import type { Idioma } from '@/lib/i18n/idiomas';
 import { sincronizaEstagioDoAgente } from '@/lib/leads/agent-stage-sync';
 import { insertInboxItem, type InboxDedupe } from '../../db/repository';
@@ -147,13 +148,12 @@ function etapaComoOChamadorLe(etapaDoFunil: string | undefined, idioma: Idioma =
 /**
  * O texto do aviso no idioma da ORGANIZAÇÃO: a Central mostra título e corpo como
  * foram gravados (nunca passam por `t()`), então a tradução acontece aqui. Os
- * valores (nome da etapa, detalhe) entram DEPOIS, por função — um `{detalhe}`
- * dentro do próprio dado nunca é lido como marcador. `pt-BR` sai byte a byte.
+ * valores (nome da etapa, detalhe) entram DEPOIS, numa passada só (`preencher`):
+ * o nome da etapa é digitado pelo usuário, e um `{detalhe}` dentro dele não pode
+ * ser trocado pelo valor seguinte. `pt-BR` sai byte a byte.
  */
 function textoDoAviso(traduzido: string, valores: Record<string, string> = {}): string {
-  let saida = traduzido;
-  for (const [nome, valor] of Object.entries(valores)) saida = saida.replace(`{${nome}}`, () => valor);
-  return saida;
+  return preencher(traduzido, valores);
 }
 
 /** O detalhe FIXO do sync (as duas recusas de escopo) no idioma; outro detalhe volta como veio. */
