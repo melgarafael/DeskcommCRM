@@ -170,6 +170,7 @@ describe("ondeOModuloAparece: a tela pode dizer o que ligar vai mudar", () => {
       "campanha_por_email",
       "revisao_por_km",
       "agencias",
+      "catalogo_por_feed",
     ]);
   });
 });
