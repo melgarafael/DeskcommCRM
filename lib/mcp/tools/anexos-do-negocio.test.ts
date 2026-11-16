@@ -181,7 +181,8 @@ describe("crm_list_lead_attachments — o documento do card", () => {
     )) as { anexo: Record<string, unknown> };
 
     expect(r.anexo.legivel_como_texto).toBe(true);
-    expect(r.anexo.conteudo).toBe("DeskcommCRM RAG fixture");
+    // O texto sai do PDF de verdade (fixture do repo), não de um mock de extração.
+    expect(r.anexo.conteudo).toMatch(/RAG fixture/);
     expect(r.anexo.motivo).toBeNull();
     // Baixou do bucket dos anexos, pelo caminho que o negócio possui.
     expect(baixar).toHaveBeenCalledWith(caminhoDoAnexo(ORG, LEAD, ANEXO));

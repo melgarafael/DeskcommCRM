@@ -79,8 +79,24 @@ import { entraPorPacote, type ToolBundle, type ToolRisk } from "./pacotes";
  * argumento (a heurística de degradação) que ninguém mediu, que é exatamente o
  * que o bloco ⚠️ acima diz. O dia em que o `evoluir` exigir 28, o passo volta a
  * ser ele.
+ *
+ * ═══ 27 → 29: os documentos do negócio entraram no pacote `vender` ════════════
+ *
+ * As duas capacidades de leitura do anexo do card (`crm_list_lead_attachments` e
+ * `crm_get_lead_attachment`, #4544 item 2) entraram no `vender`, que é o default
+ * do onboarding. A medição de novo, a partir do agente que nasce:
+ *
+ *  - evoluir passou de 27 — o menor, era ele que 27 atendia — para 29;
+ *  - reter 34, escalar 38, atender 41, organizar 44.
+ *
+ * É exatamente o caso previsto no parágrafo acima: o `evoluir` passou a exigir
+ * mais que 27, e o passo volta a ser ele. 29 é o MENOR que resolve — com 27
+ * nenhum segundo pacote cabe e o agente novo fica preso no beco do D3.
+ *
+ * Não se sobe além disso aqui: o PR #4534 (aberto, nosso) mede outro degrau e
+ * leva o teto a 31 — na união o maior vence, e as duas jornadas seguem cabendo.
  */
-export const TETO_TOOLS_POR_AGENTE = 27;
+export const TETO_TOOLS_POR_AGENTE = 29;
 
 /** O mínimo que a regra precisa saber de uma capacidade. */
 export interface CapacidadeSelecionavel {
