@@ -91,8 +91,8 @@ const LEADS: Lead[] = [
   { id: idLead(ORG_PADRAO, 2), org: ORG_PADRAO, owner: OUTRO },
   // `visibility_mode = 'all'`: aqui quem vê a organização inteira é o MODO, não
   // o papel — viewer e agent entram pela coluna `org_wide_read` do conjunto.
-  { id: idLead(ORG_TUDO, 1), org: ORG_TUDO, owner: VIEWER },
-  { id: idLead(ORG_TUDO, 2), org: ORG_TUDO, owner: AGENTE_TUDO },
+  { id: idLead(ORG_TUDO, 1), org: ORG_TUDO, owner: AGENTE_TUDO },
+  { id: idLead(ORG_TUDO, 2), org: ORG_TUDO, owner: OUTRO },
   { id: idLead(ORG_TUDO, 3), org: ORG_TUDO, owner: null },
   // Modo INVÁLIDO: cai no `else false` da escada antiga e, na nova, em nenhuma
   // das duas colunas — só o dono enxerga.
@@ -157,6 +157,7 @@ beforeAll(() => {
     `('${OUTRO}', '${ORG_PADRAO}', 'agent', now())`,
     `('${VIEWER}', '${ORG_TUDO}', 'viewer', now())`,
     `('${AGENTE_TUDO}', '${ORG_TUDO}', 'agent', now())`,
+    `('${OUTRO}', '${ORG_TUDO}', 'agent', now())`,
     `('${GERENTE}', '${ORG_OWN}', 'manager', now())`,
     `('${AGENTE_INVALIDO}', '${ORG_INVALIDO}', 'agent', now())`,
     `('${OUTRO}', '${ORG_INVALIDO}', 'agent', now())`,
