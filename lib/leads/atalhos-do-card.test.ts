@@ -510,11 +510,15 @@ describe("o atalho que existe e não abre — o motivo, não o silêncio", () =>
       ["Sem dado", false],
     ]);
     const semDado = itens[2];
-    expect(semDado.disponivel).toBe(false);
-    if (!semDado.disponivel) {
-      expect(semDado.motivo).toBe("dado");
-      expect(semDado.faltando).toEqual(["nao_existe"]);
+    // `itens[2]` é `ItemDoAtalho | undefined` (`noUncheckedIndexedAccess`): a
+    // guarda tem de ser do OBJETO antes de julgar a união. Sem ela, checar
+    // `disponivel` não tira o `undefined` nem separa os dois braços, e o teste
+    // deixa de provar o que diz provar — é o que o typecheck cobrava aqui.
+    if (!semDado || semDado.disponivel) {
+      throw new Error(`o atalho sem dado tinha de estar na faixa, desabilitado: ${JSON.stringify(semDado)}`);
     }
+    expect(semDado.motivo).toBe("dado");
+    expect(semDado.faltando).toEqual(["nao_existe"]);
   });
 
   it("modelo recusado é `endereco`, nunca `dado` — não há campo que conserte `javascript:`", () => {
