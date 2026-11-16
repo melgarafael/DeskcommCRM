@@ -5862,11 +5862,13 @@ export type Database = {
           legal_nature: string | null;
           main_cnae_code: string | null;
           main_cnae_description: string | null;
+          maps_url: string | null;
           normalized_cnpj: string | null;
           number: string | null;
           opened_at: string | null;
           organization_id: string;
           phone: string | null;
+          place_id: string | null;
           registration_status: string | null;
           secondary_cnaes: NonNullable<Json>;
           share_capital: number | null;
@@ -5874,6 +5876,7 @@ export type Database = {
           street: string | null;
           trade_name: string | null;
           updated_at: string;
+          website: string | null;
           zip_code: string | null;
         };
         ComputedFields: never;
@@ -5895,11 +5898,13 @@ export type Database = {
           legal_nature?: string | null;
           main_cnae_code?: string | null;
           main_cnae_description?: string | null;
+          maps_url?: string | null;
           normalized_cnpj?: string | null;
           number?: string | null;
           opened_at?: string | null;
           organization_id: string;
           phone?: string | null;
+          place_id?: string | null;
           registration_status?: string | null;
           secondary_cnaes?: NonNullable<Json>;
           share_capital?: number | null;
@@ -5907,6 +5912,7 @@ export type Database = {
           street?: string | null;
           trade_name?: string | null;
           updated_at?: string;
+          website?: string | null;
           zip_code?: string | null;
         };
         Update: {
@@ -5927,11 +5933,13 @@ export type Database = {
           legal_nature?: string | null;
           main_cnae_code?: string | null;
           main_cnae_description?: string | null;
+          maps_url?: string | null;
           normalized_cnpj?: string | null;
           number?: string | null;
           opened_at?: string | null;
           organization_id?: string;
           phone?: string | null;
+          place_id?: string | null;
           registration_status?: string | null;
           secondary_cnaes?: NonNullable<Json>;
           share_capital?: number | null;
@@ -5939,6 +5947,7 @@ export type Database = {
           street?: string | null;
           trade_name?: string | null;
           updated_at?: string;
+          website?: string | null;
           zip_code?: string | null;
         };
         Relationships: [
@@ -6330,6 +6339,7 @@ export type Database = {
           carteira_user_id: string | null;
           client_recognized_at: string | null;
           client_tag_by_system: string | null;
+          company_id: string | null;
           consent: NonNullable<Json>;
           contact_type: string;
           cpf_encrypted: string | null;
@@ -6393,6 +6403,7 @@ export type Database = {
           carteira_user_id?: string | null;
           client_recognized_at?: string | null;
           client_tag_by_system?: string | null;
+          company_id?: string | null;
           consent?: NonNullable<Json>;
           contact_type?: string;
           cpf_encrypted?: string | null;
@@ -6455,6 +6466,7 @@ export type Database = {
           carteira_user_id?: string | null;
           client_recognized_at?: string | null;
           client_tag_by_system?: string | null;
+          company_id?: string | null;
           consent?: NonNullable<Json>;
           contact_type?: string;
           cpf_encrypted?: string | null;
@@ -6494,6 +6506,13 @@ export type Database = {
           wa_lid?: never;
         };
         Relationships: [
+          {
+            foreignKeyName: "contacts_company_id_fkey";
+            columns: ["company_id"];
+            isOneToOne: false;
+            referencedRelation: "companies";
+            referencedColumns: ["id"];
+          },
           {
             foreignKeyName: "contacts_is_merged_into_fkey";
             columns: ["is_merged_into"];

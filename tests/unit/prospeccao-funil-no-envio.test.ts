@@ -790,3 +790,81 @@ describe("sem WhatsApp (lib/prospecting/whatsapp.ts): o produto tira, e o motivo
     },
   );
 });
+
+describe("módulo Empresas e pessoas (#3198, fatia 2): o modo DESLIGADO é o de hoje", () => {
+  const EMPRESA = uuid(900);
+
+  /**
+   * O dublê do admin devolve a `platform_config` com ou sem a chave do módulo, e
+   * uma empresa "nova" quando a prospecção insere. `modulosLigados` também lê
+   * `modulos_instalados` — fora do escopo desta fatia, vazio nos dois modos.
+   */
+  function adminComModulo(ligado: boolean) {
+    const tabelas: string[] = [];
+    const query = (tabela: string) => {
+      tabelas.push(tabela);
+      const fim = {
+        data:
+          tabela === "platform_config" && ligado
+            ? [{ chave: "MODULO_CRM_B2B", valor: "ligado" }]
+            : [],
+        error: null,
+      };
+      const q = {
+        select: () => q,
+        insert: () => q,
+        update: () => q,
+        delete: () => q,
+        eq: () => q,
+        in: () => q,
+        is: () => q,
+        limit: () => q,
+        order: () => q,
+        // Nenhuma empresa existe ainda: o caminho é o de criação.
+        maybeSingle: async () => ({ data: null, error: null }),
+        single: async () => ({ data: { id: EMPRESA }, error: null }),
+        then: (ok: (v: unknown) => unknown, erro?: (e: unknown) => unknown) =>
+          Promise.resolve(fim).then(ok, erro),
+      };
+      return q;
+    };
+    return { admin: { from: query } as never, tabelas };
+  }
+
+  it("desligado: contato, negócio e conversa nascem como hoje, e NENHUMA tabela do módulo é tocada", async () => {
+    const { db, chamadas } = bancoFalso();
+    const { admin, tabelas } = adminComModulo(false);
+
+    const linha = await criarPegadaDoCandidato(
+      db,
+      admin,
+      ORG,
+      campanha,
+      configOnSend,
+      candidato(1),
+      null,
+    );
+
+    // A pegada de sempre: contato (com a base legal), negócio e conversa.
+    expect(m.contato).toHaveBeenCalledTimes(1);
+    expect(m.negocio).toHaveBeenCalledTimes(1);
+    expect(m.fronteira).toHaveBeenCalledTimes(1);
+    expect(linha).toMatchObject({ status: "queued", conversation_id: CONVERSA });
+
+    // Nada de empresa: nem leitura, nem escrita. E o contato não é reescrito.
+    expect(tabelas).not.toContain("companies");
+    expect(gravou(chamadas, "update contacts set company_id")).toBe(false);
+  });
+
+  it("ligado: a mesma pegada, mais a empresa — o contato nasce com company_id", async () => {
+    const { db, chamadas } = bancoFalso();
+    const { admin, tabelas } = adminComModulo(true);
+
+    await criarPegadaDoCandidato(db, admin, ORG, campanha, configOnSend, candidato(1), null);
+
+    expect(tabelas).toContain("companies");
+    expect(gravou(chamadas, "update contacts set company_id")).toBe(true);
+    const vinculo = chamadas.find((c) => c.sql.includes("update contacts set company_id"));
+    expect(vinculo?.params).toEqual([ORG, CONTATO, EMPRESA]);
+  });
+});
