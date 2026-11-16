@@ -97,7 +97,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_cancel_appointment": { tokens: 275, motivo: BASE },
   "crm_confirm_appointment": { tokens: 318, motivo: BASE },
   "crm_set_appointment_outcome": { tokens: 263, motivo: BASE },
-  "crm_create_lead": { tokens: 933, motivo: BASE },
+  "crm_create_lead": { tokens: 1003, motivo: "referencia_externa (Spec 25 R5): +70 do item escolhido e do funil opcional; a forma é conferida por refine, sem padrão no esquema" },
   "crm_update_lead": { tokens: 817, motivo: BASE },
   "crm_move_lead_stage": { tokens: 380, motivo: BASE },
   "crm_retomar_lead": { tokens: 394, motivo: BASE },
@@ -185,7 +185,9 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +7760 com as 23 ferramentas `crm_amigo_*` (#4227), que só entram no catálogo com
 // o módulo `amigo` instalado. MEDIDO no merge com a main: 39122 = 31362 + 7760
 // (2026-11-16).
-const TETO_TOTAL = 39122;
+// +65 com `referencia_externa` no `crm_create_lead` (#3328). MEDIDO no merge com a
+// main: 39187 = 39122 + 65 (2026-11-16).
+const TETO_TOTAL = 39187;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
