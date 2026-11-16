@@ -1314,18 +1314,23 @@ export async function updateLeadHandler(
     });
   }
 
-  await supabase
-    .rpc("emit_event", {
-      p_event_type: "lead.updated",
-      p_entity_kind: "crm_lead",
-      p_entity_id: leadId,
-      p_payload: { fields },
-      p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
-      p_organization_id: existing.organization_id,
-    })
-    .then(({ error }) => {
-      if (error) console.error("[lead.update] emit_event failed", error.message);
-    });
+  // A mesma guarda da timeline, agora também no barramento: desde a #1749 o
+  // `lead.updated` é gatilho de automação, e clicar Salvar sem mexer em nada
+  // dispararia toda regra "quando um negócio for alterado" sem condição.
+  if (fields.length > 0) {
+    await supabase
+      .rpc("emit_event", {
+        p_event_type: "lead.updated",
+        p_entity_kind: "crm_lead",
+        p_entity_id: leadId,
+        p_payload: { fields },
+        p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
+        p_organization_id: existing.organization_id,
+      })
+      .then(({ error }) => {
+        if (error) console.error("[lead.update] emit_event failed", error.message);
+      });
+  }
 
   if (input.tags !== undefined) {
     const prevTags: string[] = (existing as { tags?: string[] }).tags ?? [];
