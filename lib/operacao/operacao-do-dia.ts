@@ -23,6 +23,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { STATUS_ENCERRADOS_LISTA } from "@/lib/inbox/comando-da-conversa";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
+import { nomeDoCanal } from "@/lib/channels/estado";
 import { logger } from "@/lib/logger";
 
 import {
@@ -123,7 +124,6 @@ interface SessaoLida {
   id: string;
   display_name: string | null;
   phone_number: string | null;
-  waha_session_name: string | null;
   provider: string;
   status: string;
   status_reason: string | null;
@@ -183,9 +183,9 @@ function contarCanal(c: ContagemPorCanal, canal: string): void {
 
 function rotuloDoNumero(s: SessaoLida | undefined): string | null {
   if (!s) return null;
-  // Sem `waha_session_name`: é o identificador de transporte (`org_2dd5e6ea`),
-  // não o nome do número — a mesma regra de `nomeDoCanal` (lib/channels/estado.ts).
-  return s.display_name?.trim() || s.phone_number?.trim() || null;
+  // O nome do número, nunca o identificador de transporte da sessão — a mesma
+  // regra de `nomeDoCanal` (lib/channels/estado.ts), que é quem decide.
+  return nomeDoCanal(s);
 }
 
 function contatoDaLinha(id: string | null, c: ContatoLido | undefined): ContatoDaLinha {
@@ -428,7 +428,7 @@ export async function montarOperacaoDoDia(entrada: EntradaDaOperacao): Promise<O
     "canais fora do ar",
     await db
       .from("channel_sessions")
-      .select("id, display_name, phone_number, waha_session_name, provider, status, status_reason, last_status_change_at")
+      .select("id, display_name, phone_number, provider, status, status_reason, last_status_change_at")
       .eq("organization_id", orgId)
       .is("archived_at", null)
       .neq("status", "WORKING")
@@ -477,7 +477,7 @@ export async function montarOperacaoDoDia(entrada: EntradaDaOperacao): Promise<O
       "números",
       await db
         .from("channel_sessions")
-        .select("id, display_name, phone_number, waha_session_name, provider, status, status_reason, last_status_change_at")
+        .select("id, display_name, phone_number, provider, status, status_reason, last_status_change_at")
         .eq("organization_id", orgId)
         .in("id", lote),
     );
