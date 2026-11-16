@@ -36,6 +36,7 @@ import { isMediaPathInOrganization } from "@/lib/messaging/media/upload-validati
 import { MARCADOR_NAO_LIDA, TIPOS_DERIVAVEIS } from "@/lib/messaging/media/derivable";
 import { deriveVideoText } from "@/lib/messaging/media/video-derive";
 import {
+  PROVEDOR_DE_SERVICO_COMPATIVEL,
   decidirTranscricao,
   type DecisaoDeTranscricao,
   type OrigemDaTranscricao,
@@ -406,11 +407,51 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
           return null;
         }
       },
+      // Degrau 0b (#4713): o serviço compatível com OpenAI ESCOLHIDO pela
+      // organização. O endereço, o modelo e o idioma são do BINDING do ponto; a
+      // chave é a credencial `custom` da própria organização — o mesmo caminho
+      // que ela já usa para conversar com o gateway dela. Escolha incompleta
+      // (sem endereço ou sem modelo) NÃO chama nada: a escada registra a recusa
+      // e segue; aqui só se entrega o que está gravado.
+      servicoCompativelEscolhido: async () => {
+        if (!precisaTranscricao) return null;
+        const binding = await lerBindingDoPonto(admin, row.organization_id, "transcricao_de_audio");
+        if (binding?.provider !== PROVEDOR_DE_SERVICO_COMPATIVEL) return null;
+        try {
+          const cfg = await resolveOrgLlmConfig(derivePool(), llmCfg, row.organization_id, {
+            provider: PROVEDOR_DE_SERVICO_COMPATIVEL,
+            credentialId: binding.credential_id,
+          });
+          // Endereço próprio exige chave própria (decisão 22-a do produto):
+          // com `base_url` da organização e chave da instalação, a leitura é
+          // recusada em vez de mandar a chave de todas as empresas para o
+          // endereço de uma. A recusa cai na escada, com motivo.
+          if (cfg.origemDaChave !== "credencial_da_organizacao") return null;
+          return {
+            apiKey: cfg.apiKey,
+            baseUrl: binding.base_url,
+            modelId: binding.model_id,
+            languages: binding.languages,
+          };
+        } catch (err) {
+          logger.warn(
+            "[media-derive] serviço compatível com OpenAI escolhido para transcrever, sem credencial utilizável; seguindo a escada",
+            {
+              organization_id: row.organization_id,
+              error: err instanceof Error ? err.message : String(err),
+            },
+          );
+          return null;
+        }
+      },
     });
     logger.info("[media-derive] transcrição resolvida", {
       organization_id: row.organization_id,
       origem: decisao.origem,
       motivo: decisao.motivo,
+      // Escolhas que existiam e não puderam ser cumpridas (#4713) — a diferença
+      // entre "a organização não escolheu nada" e "escolheu e ficou incompleto".
+      recusas: decisao.recusas,
     });
 
     // ─── `nada` é uma RESPOSTA, não um silêncio ─────────────────────────────
@@ -626,10 +667,12 @@ async function lerBindingDoPonto(
   model_id: string;
   credential_id: string | null;
   base_url: string | null;
+  /** Idioma do ponto (#4713); nulo/vazio = o serviço detecta sozinho. */
+  languages: string[] | null;
 } | null> {
   const { data, error } = await admin
     .from("ai_purpose_bindings")
-    .select("provider, model_id, credential_id, base_url")
+    .select("provider, model_id, credential_id, base_url, languages")
     .eq("organization_id", organizationId)
     .eq("purpose", purpose)
     .eq("is_enabled", true)
@@ -648,6 +691,7 @@ async function lerBindingDoPonto(
       model_id: string;
       credential_id: string | null;
       base_url: string | null;
+      languages: string[] | null;
     } | null) ?? null
   );
 }

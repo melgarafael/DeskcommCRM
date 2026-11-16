@@ -1971,6 +1971,7 @@ export type Database = {
           credential_id: string | null;
           id: string;
           is_enabled: boolean;
+          languages: string[] | null;
           model_id: string;
           organization_id: string;
           provider: string;
@@ -1984,6 +1985,7 @@ export type Database = {
           credential_id?: string | null;
           id?: string;
           is_enabled?: boolean;
+          languages?: string[] | null;
           model_id: string;
           organization_id: string;
           provider: string;
@@ -1996,6 +1998,7 @@ export type Database = {
           credential_id?: string | null;
           id?: string;
           is_enabled?: boolean;
+          languages?: string[] | null;
           model_id?: string;
           organization_id?: string;
           provider?: string;

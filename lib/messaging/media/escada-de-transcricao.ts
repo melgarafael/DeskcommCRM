@@ -13,13 +13,21 @@
  * `null` legítimo no fim que o chamador grava como `failed` + motivo — nunca
  * silêncio, nunca nulo.
  *
- *  0. **ElevenLabs Scribe escolhido pela organização** — a única escolha que o
+ *  0. **ElevenLabs Scribe escolhido pela organização** — uma das escolhas que o
  *     painel oferece neste ponto (menu de `transcricao_de_audio` em
- *     `lib/ai/pontos/registro.ts`; o outro item é "Automático", a escada daqui
- *     para baixo). Vem antes de tudo porque é escolha EXPLÍCITA de quem
- *     administra a organização, para ESTE ponto. Sem chave do ElevenLabs
- *     utilizável o degrau não existe e a escada segue — nunca um áudio mudo
- *     por causa de uma escolha que não pode ser cumprida.
+ *     `lib/ai/pontos/registro.ts`; os outros itens são "Automático", a escada
+ *     daqui para baixo, e o serviço compatível com OpenAI do degrau 0b). Vem
+ *     antes de tudo porque é escolha EXPLÍCITA de quem administra a
+ *     organização, para ESTE ponto. Sem chave do ElevenLabs utilizável o degrau
+ *     não existe e a escada segue — nunca um áudio mudo por causa de uma
+ *     escolha que não pode ser cumprida.
+ *  0b. **Serviço compatível com OpenAI escolhido pela organização** (#4713) —
+ *     o segundo item do mesmo menu, e o degrau que faz a escolha da organização
+ *     VENCER o `.env` da instalação. Endereço (`base_url`), modelo e chave são
+ *     da organização: a chave vem da credencial `custom` que ela já cadastra,
+ *     e o idioma é o dela, opcional. Escolha INCOMPLETA (sem endereço ou sem
+ *     modelo) não chama serviço nenhum pela metade: a escada registra a recusa
+ *     legível em `decisao.recusas` e segue para o degrau seguinte.
  *  1. **Serviço de transcrição da instalação** (`TRANSCRIPTION_API_KEY`) — a
  *     escolha EXPLÍCITA de transcrição do `.env`. Ignorá-la em silêncio para
  *     falar com o modelo de conversa seria trocar o fornecedor de quem já
@@ -122,6 +130,8 @@ export interface AnuncioDaTranscricao {
 export const MOTIVOS_DA_TRANSCRICAO = {
   elevenlabsEscolhido:
     "a organização escolheu o ElevenLabs (Scribe) para ouvir os áudios, com a chave do ElevenLabs dela",
+  servicoDaOrganizacao:
+    "a organização escolheu o serviço compatível com OpenAI deste ponto, e ele ouve os áudios com o endereço, o modelo e a chave dela",
   servicoDaInstalacao:
     "o serviço de transcrição configurado nesta instalação (TRANSCRIPTION_API_KEY) é o que ouve os áudios",
   chaveOpenai: "a chave OpenAI desta organização ou instalação usa o padrão de transcrição de sempre",
@@ -137,6 +147,55 @@ export const MOTIVOS_DA_TRANSCRICAO = {
 } as const;
 
 /**
+ * A RECUSA LEGÍVEL DE UMA ESCOLHA INCOMPLETA (#4713).
+ *
+ * O menu do ponto grava `provider: "custom"` + `base_url` + modelo. Se algum
+ * desses campos faltar (endereço vazio, modelo vazio), o degrau 0b NÃO pode
+ * chamar o serviço pela metade — `/v1/audio/transcriptions` sem `base_url` iria
+ * para a OpenAI com a chave de outro gateway, e sem modelo iria com `whisper-1`
+ * para um serviço que talvez não o tenha. Então a escolha é RECUSADA com a
+ * frase abaixo, registrada em `decisao.recusas`, e a escada segue para o
+ * degrau seguinte: o áudio continua sendo transcrito por quem já transcrevia.
+ *
+ * As frases são fixas (sem interpolar valor) pelo mesmo motivo dos motivos:
+ * `t()` na tela casa a frase inteira, e o log do worker carrega a organização.
+ */
+export const RECUSAS_DA_TRANSCRICAO = {
+  servicoSemEndereco:
+    "a organização escolheu um serviço compatível com OpenAI para ouvir os áudios, mas o endereço (base URL) do serviço não está preenchido — a escolha não foi usada e a escada seguiu",
+  servicoSemModelo:
+    "a organização escolheu um serviço compatível com OpenAI para ouvir os áudios, mas o modelo do serviço não está preenchido — a escolha não foi usada e a escada seguiu",
+} as const;
+
+/**
+ * O degrau 0b, já LIDO da organização por quem tem o banco (#4713).
+ *
+ * A chave chega resolvida porque quem chama é quem sabe decifrar a credencial
+ * (`resolveOrgLlmConfig`); a escada não fala com o banco.
+ */
+export interface ServicoCompativelDaOrganizacao {
+  apiKey: string;
+  /** Endereço do serviço. Vazio/nulo = escolha incompleta (ver `RECUSAS_DA_TRANSCRICAO`). */
+  baseUrl: string | null;
+  /** Modelo do serviço no endereço (ex.: `whisper-large-v3`). Vazio/nulo = escolha incompleta. */
+  modelId: string | null;
+  /**
+   * Idiomas esperados no áudio, DA ORGANIZAÇÃO. Vazio = o serviço detecta
+   * sozinho — NÃO herda `TRANSCRIPTION_LANGUAGES`, que foi escrito para o
+   * serviço da instalação (#4713).
+   */
+  languages?: readonly string[] | null;
+}
+
+/** Lista tolerante de idiomas, a mesma régua de `TRANSCRIPTION_LANGUAGES`. */
+export function idiomasDoServicoDaOrganizacao(bruto: readonly string[] | null | undefined): string[] {
+  return (bruto ?? [])
+    .map((x) => (x ?? "").trim().toLowerCase())
+    .filter((x) => /^[a-z]{2,3}$/.test(x));
+}
+
+
+/**
  * O modelo que a OpenRouter transcreve no degrau 3 (#3382), no formato
  * `familia/modelo` que o catálogo dela exige — `whisper-1`, o default dos
  * degraus OpenAI-compatíveis, não existe lá. `openai/whisper-large-v3` é o id
@@ -148,6 +207,14 @@ export const MOTIVOS_DA_TRANSCRICAO = {
  * trocaria um modelo que funciona por um id que o catálogo dela não tem.
  */
 export const MODELO_DE_TRANSCRICACAO_OPENROUTER = "openai/whisper-large-v3";
+
+/**
+ * O provedor do degrau 0b (#4713): o `custom` de `lib/ai/pontos/provedores.ts`
+ * ("Provedor personalizado (compatível com OpenAI)"). É o MESMO id que o
+ * binding do ponto grava e que a credencial da organização usa — um lugar só
+ * para os três lados que precisam concordar.
+ */
+export const PROVEDOR_DE_SERVICO_COMPATIVEL = "custom";
 /** Multipart oficial: 25 MB. O teto global do Storage continua 50 MiB. */
 export const LIMITE_MULTIPART_OPENROUTER_BYTES = 25_000_000;
 
@@ -168,8 +235,16 @@ export interface DecisaoDeTranscricao {
    * o operador vê `failed` e não sabe o que fazer a seguir.
    */
   motivo: string;
-  /** O anúncio fiel do degrau escolhido — a tela repassa ao resolvedor. */
+  /** O anúncio fiel do degrau escolhido — a tela repassa ao resolvido. */
   anuncio: AnuncioDaTranscricao;
+  /**
+   * Escolhas que EXISTIAM e não puderam ser cumpridas (#4713), na ordem em que
+   * a escada as encontrou. Hoje só o degrau 0b alimenta esta lista: escolha
+   * incompleta recusa com motivo legível e cai, em vez de chamar um serviço
+   * pela metade em silêncio. O worker loga; a rota do painel mostra ao lado do
+   * ponto.
+   */
+  recusas: string[];
 }
 
 
@@ -259,8 +334,19 @@ export async function decidirTranscricao(entrada: {
    * não escolheu, ou escolheu sem chave utilizável.
    */
   elevenlabsEscolhido?: () => Promise<{ apiKey: string; modelId: string } | null>;
+  /**
+   * Degrau 0b (#4713). Thunk como os outros: só quem tem o binding do ponto
+   * sabe se a organização escolheu o serviço compatível com OpenAI, e a chave
+   * só é DECIFRADA nesse caso. `null` = não escolheu.
+   *
+   * O que vier daqui é VALIDADO na escada (endereço e modelo): escolha
+   * incompleta vira recusa legível em `decisao.recusas` e a escada segue.
+   */
+  servicoCompativelEscolhido?: () => Promise<ServicoCompativelDaOrganizacao | null>;
 }): Promise<DecisaoDeTranscricao> {
   const idiomas = entrada.idiomas ?? idiomasDaTranscricao(env.TRANSCRIPTION_LANGUAGES);
+  /** Escolhas que existiam e não puderam ser cumpridas — ver `DecisaoDeTranscricao.recusas`. */
+  const recusas: string[] = [];
 
   // 0 · ElevenLabs Scribe escolhido no painel — escolha explícita para o ponto.
   const scribe = entrada.elevenlabsEscolhido ? await entrada.elevenlabsEscolhido() : null;
@@ -270,7 +356,44 @@ export async function decidirTranscricao(entrada: {
       transcriber: elevenLabsTranscriptionProvider({ apiKey: scribe.apiKey, model: scribe.modelId }),
       motivo: MOTIVOS_DA_TRANSCRICAO.elevenlabsEscolhido,
       anuncio: { provider: "elevenlabs", modelId: scribe.modelId },
+      recusas,
     };
+  }
+
+  // 0b · Serviço compatível com OpenAI ESCOLHIDO PELA ORGANIZAÇÃO (#4713) —
+  //      o degrau que faz a escolha dela vencer o `.env` da instalação. Fica
+  //      ANTES do degrau 1 de propósito: o `.env` é o padrão de quem não
+  //      escolheu nada, não um veto a quem escolheu.
+  const escolhido = entrada.servicoCompativelEscolhido
+    ? await entrada.servicoCompativelEscolhido()
+    : null;
+  if (escolhido) {
+    const baseUrl = (escolhido.baseUrl ?? "").trim();
+    const modelo = (escolhido.modelId ?? "").trim();
+    if (baseUrl === "") {
+      // Nunca chamar pela metade: sem endereço, o pedido iria para a OpenAI
+      // com a chave de outro gateway.
+      recusas.push(RECUSAS_DA_TRANSCRICAO.servicoSemEndereco);
+    } else if (modelo === "") {
+      recusas.push(RECUSAS_DA_TRANSCRICAO.servicoSemModelo);
+    } else {
+      return {
+        origem: "servico_compativel_da_organizacao",
+        transcriber: apiTranscriptionProvider({
+          apiKey: escolhido.apiKey,
+          baseUrl,
+          model: modelo,
+          // Idioma da ORGANIZAÇÃO, não o da instalação: `TRANSCRIPTION_LANGUAGES`
+          // foi escrito para o serviço do `.env` (#4713). Vazio = o serviço
+          // detecta sozinho, que é o comportamento documentado de
+          // `TranscriptionCreds.languages`.
+          languages: idiomasDoServicoDaOrganizacao(escolhido.languages),
+        }),
+        motivo: MOTIVOS_DA_TRANSCRICAO.servicoDaOrganizacao,
+        anuncio: { provider: "custom", modelId: modelo },
+        recusas,
+      };
+    }
   }
 
   // 1 · Serviço de transcrição da instalação — escolha explícita.
@@ -294,6 +417,7 @@ export async function decidirTranscricao(entrada: {
       }),
       motivo: MOTIVOS_DA_TRANSCRICAO.servicoDaInstalacao,
       anuncio: { provider: "openai", modelId: modelo },
+      recusas,
     };
   }
 
@@ -315,6 +439,7 @@ export async function decidirTranscricao(entrada: {
       }),
       motivo: MOTIVOS_DA_TRANSCRICAO.chaveOpenai,
       anuncio: { provider: "openai", modelId: modelo },
+      recusas,
     };
   }
 
@@ -347,6 +472,7 @@ export async function decidirTranscricao(entrada: {
       // É ESTE anúncio — e não `whisper-1` — que a tela mostra: o provedor é
       // o da conversa, e o modelo é o do serviço de transcrição deles.
       anuncio: { provider: "openrouter", modelId: MODELO_DE_TRANSCRICACAO_OPENROUTER },
+      recusas,
     };
   }
 
@@ -369,6 +495,7 @@ export async function decidirTranscricao(entrada: {
       // É ESTE anúncio — e não `whisper-1` — que a tela precisa mostrar quando
       // a organização não tem chave OpenAI (#2190).
       anuncio: { provider: conversa.provider, modelId: conversa.modelId },
+      recusas,
     };
   }
 
@@ -389,5 +516,6 @@ export async function decidirTranscricao(entrada: {
     // provedor para transcrever — anunciar um MODELO aqui é que recriaria, na
     // tela, a mentira que a #2190 veio matar.
     anuncio: { provider: conversa?.provider ?? "", modelId: null },
+    recusas,
   };
 }
