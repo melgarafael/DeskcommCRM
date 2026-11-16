@@ -11,6 +11,8 @@ import { logger } from "@/lib/logger";
 import { resetPasswordSchema, type ResetPasswordInput } from "@/lib/auth/schemas";
 import { audit } from "@/lib/audit";
 import { mfaBloqueadoPorFalhas, registrarFalhaDeMfa } from "@/lib/auth/rate-limit";
+import { loadAuthUser } from "@/lib/auth/server";
+import { permanentAccessError } from "@/lib/impersonate/support";
 
 export type UpdatePasswordResult = {
   ok: false;
@@ -133,6 +135,9 @@ async function limparSenhaProvisoria(
   userId: string,
   requestId: string | null,
 ): Promise<void> {
+  // A marca mora no vínculo, e vínculo não se escreve em acompanhamento (a regra
+  // é uma só, `permanentAccessError`). Quem acompanha não tem vínculo marcado.
+  if (permanentAccessError((await loadAuthUser())?.support)) return;
   const { data: marcados, error: leErr } = await supabase
     .from("user_organizations")
     .select("organization_id")

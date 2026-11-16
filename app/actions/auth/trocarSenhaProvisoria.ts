@@ -9,6 +9,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { resetPasswordSchema, type ResetPasswordInput } from "@/lib/auth/schemas";
 import { invalidarUsuario } from "@/lib/auth/cache-curto";
 import { loadAuthUser } from "@/lib/auth/server";
+import { permanentAccessError } from "@/lib/impersonate/support";
 import { organizacoesComSenhaProvisoria } from "@/lib/auth/senha-provisoria";
 import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
@@ -62,6 +63,9 @@ export async function trocarSenhaProvisoria(
   // lista de vínculos que ele já resolve, com a MESMA leitura que o gate usa.
   const user = await loadAuthUser();
   if (!user) return { ok: false, error: "session_expired" };
+  // Vínculo não se escreve em acompanhamento (`permanentAccessError`, a regra
+  // única); quem acompanha não tem senha provisória nesta organização.
+  if (permanentAccessError(user.support)) return { ok: false, error: "not_required" };
 
   const orgs = organizacoesComSenhaProvisoria(user);
   // Já trocou (dois cliques, ou aba velha): não é erro, e não reescreve a

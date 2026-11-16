@@ -82,6 +82,8 @@ vi.mock("@/lib/supabase/admin", () => ({
   }),
 }));
 vi.mock("@/lib/auth/cache-curto", () => ({ invalidarUsuario: m.invalidar }));
+// Recuperação comum, sem acompanhamento: a regra `permanentAccessError` deixa passar.
+vi.mock("@/lib/auth/server", () => ({ loadAuthUser: async () => ({ support: null }) }));
 vi.mock("@/lib/logger", () => ({ logger: { error: m.logErro, warn: vi.fn(), info: vi.fn() } }));
 
 const { updatePassword } = await import("./updatePassword");
