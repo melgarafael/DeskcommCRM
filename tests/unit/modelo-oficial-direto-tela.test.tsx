@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type * as Auth from "@/hooks/auth/AuthProvider";
 
@@ -103,6 +103,14 @@ vi.mock("@/hooks/channels/useTemplates", () => ({
 
 import { TemplatesClient } from "@/components/connections/TemplatesClient";
 import { ApiError } from "@/lib/api/types";
+
+beforeAll(() => {
+  // O `abrirEdicao` agenda a rolagem do formulário num `requestAnimationFrame`;
+  // o jsdom não implementa `scrollIntoView` e a chamada estoura DEPOIS do caso
+  // terminar — vira "Unhandled Error" e reprova a fatia inteira sem nenhum
+  // teste vermelho. Mesmo remédio dos outros testes que rolam a tela.
+  Element.prototype.scrollIntoView ??= () => {};
+});
 
 // Cada caso mede a PRÓPRIA chamada: sem isto, o `calls[0]` de um caso é a
 // chamada do anterior e a asserção passa (ou falha) pelo motivo errado.
