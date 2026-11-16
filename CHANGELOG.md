@@ -8,6 +8,178 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.114.0] — 2026-11-16
+
+### Adicionado
+
+- **Equipe pode criar uma pessoa com senha provisória, sem depender de convite por e-mail** Na tela de Equipe apareceu "Criar usuário com senha": nome, e-mail e papel. A
+  conta já nasce pronta e confirmada, com uma senha provisória gerada pelo sistema
+  e mostrada uma única vez, logo depois de criar. Nenhum e-mail é enviado, então o
+  caminho funciona em instalação sem SMTP.
+
+  A pessoa entra com a senha provisória e precisa escolher uma senha própria no
+  primeiro acesso. Até trocar, ela só vê a tela de troca, e o servidor recusa as
+  rotas de API.
+
+  A criação tem limites de segurança. Ela só aparece para o dono da instalação, ou
+  para o administrador da empresa quando a instalação tem uma empresa só. Numa
+  instalação com várias empresas, o administrador de empresa continua usando o
+  convite por e-mail. Há também um limite de tentativas por empresa. O convite
+  continua igual: quem entra por convite não passa pela troca obrigatória. Nenhuma
+  ação é necessária na atualização.
+
+  Contribuição de @webtecnica (#4120), a partir da issue #3876.
+
+- **Agências podem administrar as empresas dos clientes, como recurso opcional desligado de fábrica** A administração da plataforma pode habilitar uma agência, definir sua cota e autorizar clientes incluídos no acordo comercial. Administradores da agência encontram seus clientes no seletor de organizações e em Configurações, podem criar e abrir cada operação e voltar à agência. A delegação preserva a identidade na auditoria e perde acesso quando a autorização é revogada, sem conceder administração global. Cobrança por porcentagem e permissões detalhadas por função não fazem parte desta etapa. O recurso vem desligado: quem administra o servidor liga em Administração › Recursos opcionais e depois habilita cada agência no painel da empresa; desligado, nenhuma tela de agência aparece e nenhuma sessão de agência vale. Crédito: @micaelecamily8-cyber.
+
+- **O agente de IA envia o material cadastrado da empresa, como documento, na conversa** O agente de IA passa a enviar na conversa um material que a empresa cadastrou (catálogo em PDF, tabela de preços, ficha técnica), quando a conversa pede. O arquivo sai como documento, com o nome que a empresa deu ao material, pelo mesmo caminho das outras mídias: aparece na conversa como as demais mensagens da IA, respeita o ritmo de envio do número e não chega a contato que bloqueou o atendimento.
+
+  O agente só envia material da própria empresa e da lista dele. Por iniciativa própria, não repete o mesmo material na mesma conversa em 7 dias; se o cliente pedir de novo, reenvia, até 3 vezes em 24 horas. O material é enviado, não lido: ele não entra na base de conhecimento do agente.
+
+  Quem integra pelo MCP ganha a ferramenta `crm_send_material`, que envia um material ativo da empresa numa conversa pelo mesmo caminho. A tela de cadastro de materiais ainda não faz parte desta versão.
+
+  Crédito: @webtecnica, que escreveu o envio do material (#4145).
+
+- **Catálogo sincronizado pelo feed da revenda, como módulo opcional desligado de fábrica** Quem administra o servidor pode ligar, em Recursos opcionais, o módulo Catálogo sincronizado por feed. Ligado, a tela de Produtos de cada empresa ganha a seção Catálogo por feed: a pessoa cola o endereço do feed (JSON ou CSV) que o sistema de estoque da revenda publica, confere o que vai mudar e sincroniza. A partir daí, a cada 2 horas o servidor busca o feed, cria o produto novo, atualiza preço e estoque do que mudou e desativa o que saiu do feed, sem apagar nenhum produto. Um feed vazio, ou sem nenhum item reconhecível, não desativa nada.
+
+  A seção mostra a última leitura e o que ela fez. Quando a leitura falha três vezes seguidas, abre um aviso na Central, que some sozinho na primeira leitura que der certo.
+
+  Desligado, que é o padrão, nada muda: a seção não aparece, a rota responde como inexistente e nenhum feed é buscado, nem o de uma empresa que tenha cadastrado o endereço antes de o módulo ser desligado. Nenhuma ação é pedida a quem opera a instalação.
+
+  Crédito: @webtecnica, que escreveu a sincronização (#4179, issue #3587).
+
+- **Automação nova "Quando um negócio for alterado", com condição pelo campo que mudou** Até aqui, editar um negócio não disparava nenhuma automação: não havia como montar "quando a data prevista mudar, avise o responsável" ou "quando o valor for preenchido, mova para a próxima etapa".
+
+  Agora, em Automações, o gatilho "Quando um negócio for alterado" dispara quando os dados do negócio são editados (mudar de etapa continua sendo o gatilho de etapa). Na condição "Nome do campo alterado · foi alterado", você escolhe numa lista qual campo precisa ter mudado (título, valor, data prevista de fechamento, responsável, tags, campos personalizados e os demais do negócio). Salvar o negócio sem mudar nada não dispara a automação, e a alteração feita por outra automação também não dispara, para uma regra não ficar disparando a si mesma.
+
+  As edições feitas antes da atualização não disparam regra nenhuma.
+
+  Contribuição de @webtecnica, a partir da issue #1749 (#4216).
+
+- **Módulo opcional Amigo — a agenda da clínica no sistema Amigo** Novo módulo opcional, desligado de fábrica: **Amigo (sistema de clínicas)**. Quem administra a instalação o instala em Administração › Módulos; sem instalar, nada muda e nenhuma tela, rota, ferramenta da IA ou robô do Amigo existe.
+
+  Instalado, cada empresa cadastra o próprio token do Amigo (guardado cifrado), testa, escolhe a unidade e o fuso e ativa o Amigo como agenda principal. Pacientes, convênios, profissionais, vagas e consultas vêm de lá, nas telas e nas ferramentas da IA. A IA marca, remarca e cancela pelo Amigo e só confirma ao paciente o que o Amigo confirmou. A escolha do paciente é explícita quando um telefone serve a mais de uma pessoa. Um robô relê a agenda a cada 5 minutos. O lembrete de consulta do Amigo nasce desligado e, ligado, só sai depois de conferir a consulta lá. Anonimizar um contato desfaz o vínculo dele com o paciente.
+
+  Nenhuma ação é necessária na atualização.
+
+  Contribuição de @jadsonlsouza (#4227).
+
+- **O negócio ganho já sabe criar a cobrança mensal no financeiro, com a opção desligada** Um negócio com valor mensal declarado agora pode virar, ao ser ganho, a cobrança recorrente do módulo financeiro, ligada a esse negócio. A cobrança respeita o número de meses do contrato: um contrato de 12 meses gera 12 contas a receber e para. Se o negócio for perdido, a cobrança dele é desativada. Se for ganho de novo, a mesma cobrança volta a valer, sem criar outra.
+
+  A opção nasce **desligada** e, nesta versão, ainda não aparece em nenhuma tela: o interruptor chega na próxima etapa, junto com o arrasto do quadro e os botões Ganhar e Perder. Nada muda para quem atualiza, e nenhuma ação é necessária.
+
+  Contribuição de @webtecnica (#4256, issue #3602).
+
+- **A troca automática de agente avisa o cliente, com a frase do roteador** Quando o classificador do roteador troca quem atende — o cliente escreve algo da intenção de outro agente e a próxima resposta já vem dele —, o cliente agora pode receber uma frase avisando da passagem. A frase é escrita por vocês, na tela do roteador (campo "Mensagem de passagem ao cliente"), e sai uma vez só, antes da resposta do agente novo, no idioma em que vocês atendem.
+
+  Vem **desligada**: com o campo vazio, nada muda — a troca continua silenciosa e o agente novo se apresenta com as palavras dele. Ligada, o agente novo é instruído a não repetir o aviso, para o cliente não ler duas passagens na mesma troca.
+
+  O aviso sai pela mesma cadeia de guardrails de tudo o que o produto envia (opt-out, janela de mensagem, limites do número): se a cadeia vetar, a conversa troca de agente do mesmo jeito e o agente novo se apresenta, como hoje.
+
+  A passagem explícita — o agente passando a conversa por decisão própria — não usa esta frase: lá quem avisa o cliente é o próprio agente, na resposta dele. Continua exatamente como era.
+
+  Crédito: @webtecnica.
+
+- **Tarefa que se repete sozinha por dia da semana e hora** Ao criar ou editar uma tarefa, dá para marcar os dias da semana e a hora em que ela se repete, como "toda segunda às 9h, ligar para a carteira". A cada 10 minutos o agendador cria a ocorrência da vez, no fuso da organização, e nunca duas para o mesmo horário. Desligar a repetição para as próximas sem apagar as que já nasceram. Tarefa sem repetição fica exatamente como era. Nada a fazer na atualização: a linha nova do agendador chega com a imagem.
+
+  Contribuição de @webtecnica (#4618).
+
+- **A versão do agente pode ter um modelo de reserva, de qualquer provedor cadastrado** Até aqui, só o provedor por assinatura tinha reserva. Com um provedor personalizado, a OpenRouter ou a DeepSeek, cota estourada, servidor fora do ar ou tempo esgotado derrubavam a resposta, e o cliente ficava sem retorno. Agora a versão do agente guarda um provedor e um modelo de reserva, vazios de fábrica. Quando a chamada principal falha por um desses três motivos, a reserva tenta UMA vez. Erro do próprio pedido, credencial recusada ou modelo fora da lista que a empresa liberou não caem para a reserva, e a reserva fala com o endereço do próprio provedor. A aba Execuções mostra quando a resposta veio da reserva. Quem não configura nada não vê diferença. A tela para preencher a reserva vem numa próxima entrega.
+
+  Contribuição de @webtecnica (#4617).
+
+- **Tabela de valores de negociação: partida e limite por procedimento, importados de planilha** O banco passa a guardar uma tabela de valores por organização — procedimento com
+  código, descrição, valor em US e em reais, com valor de **partida** e valor
+  **limite** em cada moeda. A importação lê `.csv`/`.xlsx`, devolve a **prévia** do
+  que entra e do que não entra (com o motivo e o número da linha de cada recusa) e
+  só grava depois da confirmação; a mesma planilha confirmada duas vezes não entra
+  de novo, e procedimento repetido não duplica.
+
+  Nada muda na tela nesta versão: ainda não há onde abrir a tabela, e o agente
+  ainda não negocia com ela. A conversa de negociação, o histórico de
+  contrapropostas e a aprovação acima do limite vêm depois.
+  Contribuição de @webtecnica (#4643).
+
+- **A empresa escolhe o visual do sistema entre dez templates** Em Configurações › Aparência, quem administra a empresa escolhe um entre dez templates visuais (Obsidiana, Aurora, Safira, Carbono, Mármore, Coral, Néon, Lavanda, Ártico e Vinho). Cada um muda o fundo, o menu lateral, a tipografia, as cores, os cantos e as sombras, no modo claro e no escuro. O botão Visualizar mostra o sistema inteiro com o template antes de aplicar, e só quem está olhando vê a prévia. Por cima do template dá para ajustar a cor secundária, a fonte, o arredondamento, a densidade e a intensidade dos efeitos. O nome, a cor principal e o logo continuam na tela Marca: a cor definida ali vence a do template, e trocar de template não apaga nada dela. Se a empresa não definiu cor própria na tela Marca, a cor de ação do template substitui, para aquela empresa, a cor da instalação. É só aparência: nenhuma tela, regra, permissão ou dado muda, e quem não escolher nada continua vendo o sistema exatamente como antes. A atualização não pede nenhuma ação de quem opera a instalação. Contribuição de @Lucas-BritoDev.
+
+- **O atendente cadastra empresa, pessoa e contato num só passo** Na página da empresa há um novo botão, "Adicionar pessoa com contato": uma tela só pede nome, cargo, telefone e e-mail, e o sistema cria a pessoa, cria o contato e liga tudo à empresa. Se algo falhar, o que já foi gravado é desfeito. Ao criar uma empresa nova, o próprio diálogo passa ao segundo passo, "Empresa criada — quem fala por ela?", com o mesmo formulário e a opção "Pular por agora"; só depois abre a página da empresa. Erros de telefone e e-mail aparecem com a frase do campo. Criar empresa, pessoa e o vínculo entre elas, antes restritos a Gerente, passam a valer para o Atendente, inclusive pelo botão "Criar pessoa" da tela do contato; apagar empresa, pessoa e vínculo continua só com o Gerente. Crédito: @xofrd.
+
+- **Cada receita do banco externo diz para qual funil vai o interesse do cliente** Na tela da receita do banco externo, o administrador escolhe o funil e a etapa onde nasce o negócio quando o cliente se interessa por um item (um imóvel, um produto). O agente recebe essa escolha junto com o resultado da busca e abre o negócio ali, com a referência do item. Se nada for escolhido, ou se o funil escolhido for apagado ou arquivado depois, o sistema recusa abrir o negócio e orienta o agente a passar a conversa para a equipe, que recebe o aviso de sempre na Central. O sistema recusa gravar um funil ou etapa que não existam ou estejam arquivados, e uma etapa de ganho ou de perda não é oferecida.
+
+- **O negócio criado pelo agente guarda qual item do banco externo o cliente escolheu** Quando o cliente diz que tem interesse em um item que o agente achou no banco externo (um imóvel, um produto), o negócio criado no funil passa a levar a referência desse item, na descrição e num campo próprio, para o vendedor continuar de onde o robô parou. Se o mesmo cliente repetir o interesse no mesmo item, o sistema não abre outro negócio: devolve o que já está aberto e deixa uma nota na linha do tempo. Um negócio já ganho ou perdido não impede um novo interesse.
+
+  O funil e a etapa do negócio saem da receita do item: o agente só informa o código do item, e a organização escolhe o destino uma vez, na tela de receitas. Antes de abrir o negócio, o sistema confere no banco externo que o item existe. Se o código não corresponder a nenhum item, o negócio não é aberto, e o agente é orientado a consultar de novo em vez de dizer ao cliente que registrou o interesse.
+
+- **Leitura e análise aceitam o token de integração** Rotas de anúncios, auditoria, importações, métricas, relatórios, canais
+  (sessões), voz, mensagens e módulos passam a aceitar o Bearer `dsk_...` de
+  integração, além da sessão de navegador. A organização sai da linha do token,
+  nunca do corpo, da query ou do caminho enviado pelo cliente. A sessão segue
+  como era. Contribuição de @paulolimajr77 (Spec 33, fatia 1 de 9).
+
+  O token precisa de `mcp:read` para ler e de `mcp:write` nas três escritas que
+  entram aqui: importar planilha (`POST /api/v1/imports`), ocultar ou restaurar
+  mensagem (`POST`/`DELETE /api/v1/messages/[id]/hide`) e mudar a régua de
+  abandono (`PATCH /api/v1/metrics/atrito`). O papel exigido do token é o da
+  sessão, exceto onde a sessão de um atendente vê só o que é dele: métricas por
+  atendente, série de ganhos, atrito, canais, funil, metas e relatório de
+  atividades pedem token de papel `manager`, porque o token lê a organização
+  inteira. Cada chamada pelo token conta no teto por token e por organização.
+
+### Corrigido
+
+- **A taxa de cache da tela Uso de IA conta só as chamadas que podem cachear** A tela dividia o cache lido pelos tokens de entrada de todas as chamadas do
+  período. Chamada com menos de 1.024 tokens de entrada nunca vai para cache (os
+  classificadores, a conferência de campo, as extrações curtas), então ela entrava
+  no denominador sem chance de entrar no numerador e puxava a taxa para baixo — no
+  caso medido na issue, 8,2% no total contra 50,0% só nas chamadas cacheáveis.
+
+  A taxa passa a usar o mesmo corte do aviso "cache hit de prompt abaixo do alvo"
+  (`lib/ai/cache-de-prompt.ts`): a função `fn_uso_de_ia` devolve também
+  `chamadas_cacheaveis`, `input_tokens_cacheaveis` e `cache_read_tokens_cacheaveis`,
+  e o cartão divide por eles. Os totais de custo, tokens e latência continuam sendo
+  de todas as chamadas — só a taxa de cache mudou de régua.
+
+- **O anexo levado ao card em outro funil não duplica e volta se a primeira cópia falhou** Quando um negócio ganho abre a continuação em outro funil, os anexos do card de origem já iam junto. Rodar de novo duplicava os arquivos. Pior: se a primeira cópia falhasse (o armazenamento de arquivos fora por um instante), o anexo ficava fora do card novo para sempre. Agora cada cópia sabe de qual anexo veio. Repetir não duplica, e uma nova execução repõe o que faltou. Apagar o anexo de origem não apaga a cópia. Nenhuma ação é necessária na atualização.
+
+  Contribuição de @webtecnica (#4646).
+
+- **A IA para de responder a conversa que virou pingue-pongue, e a equipe é avisada** Numa instalação, o contato do outro lado era o atendimento automático de um banco, e os dois robôs conversaram sozinhos: 216 respostas em uma hora para o mesmo contato. Nenhuma trava barrava, porque cada resposta, sozinha, era legítima. Agora, quando a mesma conversa já recebeu 20 mensagens da IA em 60 minutos, a próxima resposta automática não sai. Cada bolha e cada foto contam. Ao mesmo tempo, abre um aviso na Central para aquela conversa, com o botão que leva até ela, para a equipe ver se do outro lado é um robô ou um cliente. Enquanto esse aviso estiver aberto, a mesma conversa não abre outro. Na linha do tempo do contato, o motivo aparece em português. Mensagens de follow-up e o Testar do agente não entram nessa conta. Os números se ajustam pelas variáveis opcionais `TETO_DE_RESPOSTAS_POR_CONVERSA` e `TETO_DE_RESPOSTAS_JANELA_MIN`. Não é preciso mexer no `.env` para atualizar.
+
+  Contribuição de @webtecnica (#4611, #4590).
+
+- **O anexo do card criado em outro funil não duplica, e a automação repõe o que faltou** Quando um negócio ganho abria o card de pós-venda em outro funil, os anexos da
+  origem (o voucher, a apólice) eram copiados uma vez só. Se o armazenamento de
+  arquivos falhasse naquele instante, o card novo ficava sem o documento para
+  sempre: a regra rodava de novo, via que o card já existia e não tentava copiar.
+  E, quando a cópia era repetida, o mesmo anexo entrava duas vezes.
+
+  Agora cada cópia guarda de qual anexo da origem ela veio. A regra que encontra o
+  card já criado volta a copiar só o que falta, e o que já está lá não entra de
+  novo, nem quando duas execuções correm ao mesmo tempo. Essa reposição só acontece
+  quando o card novo tem o mesmo responsável do card de origem: assim ninguém passa
+  a ver um documento que não via. Apagar o anexo da origem não apaga a cópia do
+  card novo. As cópias feitas antes desta versão são reconhecidas na atualização e
+  também não entram de novo. Nenhuma ação é necessária na atualização.
+  Contribuição de @webtecnica (#4646).
+
+- **Quem liga o esforço de raciocínio da OpenAI volta a receber resposta no GPT-5 e na linha 5.1 a 5.6** Com `OPENAI_REASONING_EFFORT` ligado, o valor escolhido era enviado como estava para o GPT-5, o GPT-5 Mini e o GPT-5 Nano, que não aceitam `none`, e `minimal` ia assim para toda a linha GPT-5.1 a 5.6, que não aceita esse valor. A OpenAI recusava a chamada e o agente não respondia — no turno, no rascunho e no fechamento.
+
+  Agora o pedido de velocidade vira o esforço mais rápido que cada família aceita: `minimal` no GPT-5, no GPT-5 Mini e no GPT-5 Nano, e `none` do GPT-5.1 ao GPT-5.6. Os valores que o modelo já aceitava continuam passando intactos, e o comportamento da linha GPT-6 não muda. Nenhuma ação é necessária na atualização.
+
+  Contribuição de @webtecnica (#4673).
+
+- **Repetir a condição padrão escrita na base de conhecimento não é mais vetado como promessa, e o veredito é o mesmo a cada execução** O guardrail de promessa classificava a mensagem com a lista de quando NÃO havia evidência, mesmo quando a base de conhecimento tinha exatamente a condição citada. O agente que apenas repetia a política escrita pela empresa — frete grátis acima de um valor, prazo padrão de entrega, isenção já prevista — era barrado e precisava reescrever a própria política para conseguir responder. Agora o revisor recebe esses trechos como evidência e a instrução diz, com todas as letras, que repetir a condição registrada é informar a política, não prometer; o veto continua para o compromisso que a evidência não sustenta (ampliar limite, dispensar requisito, prometer prazo ou vaga fora do registrado).
+
+  A mesma mensagem com as mesmas evidências também podia sair vetada numa execução e aprovada na outra, porque a chamada herdava a temperatura configurada para redação e não guardava o veredito. A classificação passou a usar temperatura 0 e a reaproveitar o veredito do turno para o mesmo texto com as mesmas evidências. Nenhuma ação é necessária na atualização.
+
+  Contribuição de @webtecnica (#4665).
+
+- **O WhatsApp por QR preserva a origem do Google Ads no contato** Quando a mensagem traz a referência de um clique do Google Ads, o contato pode receber a origem mesmo se estiver marcado como pessoal, se um módulo assumir o atendimento ou se a conversa não for criada. Se a mesma mensagem abrir um negócio, ele recebe os dados daquele clique. A origem inicial do contato continua preservada.
+
+- **No Instagram e no Facebook, o Inbox não oferece mais o botão de gravar áudio** O botão de microfone da caixa de resposta aparecia em toda conversa, inclusive nas de Instagram e Facebook. Ali o áudio gravado sai num formato que a Meta não aceita em mensagem direta, então a gravação subia e a mensagem terminava como falhada. Agora, nas conversas desses canais, o microfone não aparece e o lugar dele fica com o botão de enviar texto. Anexar um arquivo de áudio pelo "+" continua disponível. Nos números de WhatsApp nada muda.
+
+- **No Instagram e no Facebook, o agente com nota de voz ligada responde em texto em vez de deixar áudios falhados** Um agente com "Enviar nota de voz" ligado, atendendo uma conversa de Instagram ou Facebook, gerava a nota de voz e o provedor a recusava (HTTP 400) em toda tentativa: cada nova tentativa do atendimento deixava mais um áudio falhado na conversa, e o cliente ficava sem resposta. A Meta não aceita em mensagem direta os formatos de áudio que o agente produz. Agora, nesses canais, o agente responde em texto desde a primeira vez, sem gastar com a síntese de voz, e a tela do agente avisa, ao lado da chave de voz, que no canal escolhido a resposta sai em texto. Nos números de WhatsApp nada muda. O robô do Telegram, que ainda não envia áudio, passa pela mesma regra.
+
 ## [1.113.0] — 2026-11-15
 
 ### ⚠️ Requer atenção
@@ -16682,7 +16854,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.113.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.114.0...HEAD
+[1.114.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.113.0...v1.114.0
 [1.113.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.112.0...v1.113.0
 [1.112.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.111.0...v1.112.0
 [1.111.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.110.0...v1.111.0
