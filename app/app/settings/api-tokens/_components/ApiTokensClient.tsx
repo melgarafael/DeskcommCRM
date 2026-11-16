@@ -89,10 +89,13 @@ const SCOPES: { id: string; label: string }[] = [
   // distingue "marcar reunião" de "declarar quem faltou". Sem esta linha o
   // escopo existiria na rota e ninguém conseguiria concedê-lo — o mesmo defeito
   // que o #1613 e o #2052 fecharam nos escopos vizinhos.
+  // O rótulo nomeia as DUAS caixas que a rota também cobra (`mcp:write` e o
+  // papel de gerente, em `despachar` de app/api/v1/agenda/agendamentos/route.ts):
+  // na prova pela tela do #4523, quem marcou só esta recebeu 403 sem saber por quê.
   {
     id: "agenda:attendance",
     label:
-      "Marcar comparecimento na agenda (Realizado / Não compareceu) depois do horário, sem abrir a tela",
+      "Marcar comparecimento na agenda (Realizado / Não compareceu) depois do horário, sem abrir a tela (exige também AGIR no CRM e tratar o token como gerente)",
   },
   { id: "audit:read", label: "Ler o log de auditoria" },
 ];

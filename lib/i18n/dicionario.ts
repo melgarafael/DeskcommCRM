@@ -2033,6 +2033,7 @@ export const DICIONARIO: Traducoes = {
   "Compareceu": { es: "Asistió" },
   "Compromisso pessoal, sem cliente vinculado.": { es: "Cita personal, sin cliente vinculado." },
   "Presença registrada pela equipe": { es: "Asistencia registrada por el equipo" },
+  "Presença registrada por uma integração (token de API)": { es: "Asistencia registrada por una integración (token de API)" },
   "O horário sozinho não confirma falta. A equipe precisa registrar o que aconteceu.": { es: "La hora por sí sola no confirma una ausencia. El equipo debe registrar lo ocurrido." },
   "Falta confirmada. O resultado da recuperação ainda não está disponível.": { es: "Ausencia confirmada. El resultado de la recuperación todavía no está disponible." },
   "O compromisso mudou ou a alteração não foi concluída. Revise os dados antes de decidir novamente.": {es:"La cita cambió o la modificación no se completó. Revisa los datos antes de decidir de nuevo."},
@@ -8626,8 +8627,8 @@ export const DICIONARIO: Traducoes = {
   "Agentes de IA podem AGIR no CRM (MCP)": {
     es: "Los agentes de IA pueden ACTUAR en el CRM (MCP)",
   },
-  "Marcar comparecimento na agenda (Realizado / Não compareceu) depois do horário, sem abrir a tela": {
-    es: "Marcar asistencia en la agenda (Realizado / No vino) después del horario, sin abrir la pantalla",
+  "Marcar comparecimento na agenda (Realizado / Não compareceu) depois do horário, sem abrir a tela (exige também AGIR no CRM e tratar o token como gerente)": {
+    es: "Marcar asistencia en la agenda (Realizado / No vino) después del horario, sin abrir la pantalla (también exige ACTUAR en el CRM y tratar el token como gerente)",
   },
   "Tratar o token como gerente (necessário p/ criar e atribuir)": {
     es: "Tratar el token como gerente (necesario para crear y asignar)",

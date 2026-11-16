@@ -58,6 +58,7 @@ vi.mock("@/lib/mcp/auth", async () => {
 
 const { validateBearerToken, deriveActor } = await import("@/lib/mcp/auth");
 const { PATCH } = await import("./route");
+const { audit } = await import("@/lib/audit");
 
 const ORG = "aaaaaaaa-0000-4000-8000-00000000000a";
 const OUTRA_ORG = "bbbbbbbb-0000-4000-8000-00000000000b";
@@ -285,6 +286,18 @@ describe("#4515 — token marca comparecimento na agenda", () => {
       "o id do token não chegou ao RPC: a linha não guarda QUAL integração registrou, e o audit fica sendo a única testemunha",
     ).toBe(TOKEN);
     expect(dados.outcome_api_token_id, "o desfecho voltou sem o token que o registrou").toBe(TOKEN);
+    // A mutação audita QUAL token agiu, e não uma pessoa: sem isto o log diria
+    // que ninguém registrou, e "a integração marcou" some do único lugar que
+    // guarda o histórico da ação.
+    expect(vi.mocked(audit)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "agenda.appointment_outcome_recorded",
+        actorApiTokenId: TOKEN,
+        actorUserId: null,
+        organizationId: ORG,
+        resourceId: AGENDAMENTO,
+      }),
+    );
   });
 
   it("o token marca NÃO COMPARECEU e o caminho do gatilho `appointment_no_show` é o mesmo da tela", async () => {
