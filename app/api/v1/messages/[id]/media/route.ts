@@ -372,6 +372,9 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       resource: "messages",
       role: "viewer",
       scope: "mcp:read",
+      // O token lê a mídia de qualquer conversa da organização; na sessão a
+      // leitura acompanha as conversas que a pessoa vê.
+      tokenRole: "manager",
     });
     if (!authz.ok) return authz.response;
     const teto = await tetoDeEscritaDoToken(authz, "messages_media", requestId);

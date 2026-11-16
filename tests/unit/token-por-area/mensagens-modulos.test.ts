@@ -92,6 +92,8 @@ type Caso = {
   receita: Receita;
   /** Papel que a rota passa a `resolveAuthDual` (ver a rota). */
   papel: Papel;
+  /** o papel exigido do TOKEN (`tokenRole` da rota), quando maior que o da sessão */
+  papelDoToken?: Papel;
   escopo: Escopo;
   /** Status de sucesso do token de A e da sessão. */
   sucesso: number;
@@ -249,6 +251,7 @@ const CASOS: Caso[] = [
     linhas: MENSAGENS,
     receita: "B",
     papel: "viewer",
+    papelDoToken: "manager",
     escopo: "mcp:read",
     sucesso: 302,
     soDeA: [ORG_A],
@@ -398,13 +401,14 @@ function sessaoPortaoOk(c: Caso): void {
 
 for (const c of CASOS) {
   const rotulo = `${c.metodo} ${c.caminho.split("?")[0]}`;
-  const abaixo = umDegrauAbaixo(c.papel);
+  const papelDoToken = c.papelDoToken ?? c.papel;
+  const abaixo = umDegrauAbaixo(papelDoToken);
 
   describe(`token por área — ${rotulo}`, () => {
     it(`${rotulo}: token de A alcança o recurso de A`, async () => {
       const f = falsoDe(ORG_A, c.linhas);
       vi.mocked(createAdminClient).mockReturnValue(f.cliente as never);
-      emitirTokens({ scopes: [c.escopo], role: c.papel });
+      emitirTokens({ scopes: [c.escopo], role: papelDoToken });
 
       const res = await c.executar(requisicao(c, comToken("A")));
       const texto = await ler(res);
@@ -430,7 +434,7 @@ for (const c of CASOS) {
     it(`${rotulo}: token de B não alcança o recurso de A`, async () => {
       const f = falsoDe(ORG_B, c.linhas);
       vi.mocked(createAdminClient).mockReturnValue(f.cliente as never);
-      emitirTokens({ scopes: [c.escopo], role: c.papel });
+      emitirTokens({ scopes: [c.escopo], role: papelDoToken });
 
       const res = await c.executar(requisicao(c, comToken("B")));
       const texto = await ler(res);
@@ -448,7 +452,7 @@ for (const c of CASOS) {
       const f = falsoDe(ORG_A, c.linhas);
       vi.mocked(createAdminClient).mockReturnValue(f.cliente as never);
       const outro: Escopo = c.escopo === "mcp:read" ? "mcp:write" : "mcp:read";
-      emitirTokens({ scopes: [outro], role: c.papel });
+      emitirTokens({ scopes: [outro], role: papelDoToken });
 
       const res = await c.executar(requisicao(c, comToken("A")));
 
@@ -473,7 +477,7 @@ for (const c of CASOS) {
     it(`${rotulo}: acima do teto do token → 429`, async () => {
       const f = falsoDe(ORG_A, c.linhas);
       vi.mocked(createAdminClient).mockReturnValue(f.cliente as never);
-      emitirTokens({ scopes: [c.escopo], role: c.papel });
+      emitirTokens({ scopes: [c.escopo], role: papelDoToken });
       vi.mocked(checkRateLimit).mockResolvedValue({ allowed: false } as never);
 
       const res = await c.executar(requisicao(c, comToken("A")));
