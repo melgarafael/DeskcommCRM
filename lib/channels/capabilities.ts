@@ -406,7 +406,18 @@ export function transportaMensagem(provider: string | null | undefined): boolean
  */
 export function recusaNotaDeVoz(provider: string | null | undefined): boolean {
   if (!transportaMensagem(provider)) return false;
-  return CHANNEL_CAPABILITIES[provider as ProviderDeMensagem].voiceNote === "none";
+  return recusaOGravadorDoInbox(CHANNEL_CAPABILITIES[provider as ProviderDeMensagem].voiceNote);
+}
+
+/**
+ * A nota de voz do canal recusa o ogg/opus que o gravador do Inbox produz?
+ *
+ * `none` recusa tudo; `wav-only` (a DM do Instagram, que aceita o WAV do
+ * agente) recusa o ogg/opus — o agente fala lá porque sintetiza em WAV, o
+ * gravador não. Os outros dois aceitam: um converte, o outro exige opus.
+ */
+export function recusaOGravadorDoInbox(nota: NotaDeVoz): boolean {
+  return nota === "none" || nota === "wav-only";
 }
 
 /**
