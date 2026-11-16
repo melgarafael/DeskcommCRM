@@ -280,6 +280,11 @@ describe("GET /api/v1/health — a causa do banco, com o runbook que cada uma pe
       // Renomear o doc sem mexer no código reprova AQUI — que é o ponto.
       expect(() => readFileSync(path.join(raiz, caminho), "utf8"), `${causa} -> ${caminho}`).not.toThrow();
     }
+    // O ponteiro tem de ser o doc do MECANISMO CERTO, não só um doc que existe:
+    // `rodar-sql-na-vps.md` existe, e apontar o schema cache para ele mandaria
+    // quem está com o projeto sem memória conferir DNS.
+    expect(RUNBOOK_DA_CAUSA.postgrest_sem_schema_cache).toBe(RUNBOOKS.semMemoriaNoFree);
+    expect(RUNBOOK_DA_CAUSA.banco_inacessivel).not.toBe(RUNBOOKS.semMemoriaNoFree);
     // E o cruzamento é mútuo: cada runbook cita o outro pelo nome, porque quem
     // cai no documento errado precisa do caminho de volta.
     const semMemoria = readFileSync(path.join(raiz, RUNBOOKS.semMemoriaNoFree), "utf8");
