@@ -17,6 +17,9 @@ import type pg from 'pg';
 import { phoneLookupVariants } from '@/lib/channels/phone-variants';
 import { emitAgentActivityForContact } from '@/lib/leads/agent-activity';
 import { motivoDaChamadaEmPortugues } from '@/lib/wacalls/motivo-da-chamada';
+import { traduzir } from '@/lib/i18n/dicionario';
+import { preencher } from '@/lib/i18n/idioma-do-aviso';
+import { fatosDaOrganizacao } from '../agent-engine/agent/fatos-da-organizacao';
 
 import type { Logger } from '../agent-engine/obs/logger';
 
@@ -444,13 +447,16 @@ async function handleCallEnded(
     });
   }
   if (!atendida && recebida && !bloqueado) {
+    // A Central mostra o texto como foi gravado: o aviso nasce no idioma da
+    // organização. `fatosDaOrganizacao` nunca lança — no pior caso, português.
+    const { idioma } = await fatosDaOrganizacao(pool, sess.organizationId);
     await pool.query(
       `insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
        values ($1, 'voice_call_missed', 'warn', $2, $3, $4, $5)`,
       [
         sess.organizationId,
-        `Chamada perdida de ${row.peer_phone}`,
-        motivoDaChamadaEmPortugues(ev.reason),
+        preencher(traduzir('Chamada perdida de {telefone}', idioma), { telefone: row.peer_phone }),
+        motivoDaChamadaEmPortugues(ev.reason, idioma),
         row.contact_id ? 'contact' : null,
         row.contact_id,
       ],

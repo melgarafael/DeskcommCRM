@@ -41,6 +41,8 @@
 import { canalDesativado } from "@/lib/channels/desativado";
 import { nomeDoCanal } from "@/lib/channels/estado";
 import { tagDeIdioma } from "@/lib/i18n/datas";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { preencher } from "@/lib/i18n/idioma-do-aviso";
 import type { Idioma } from "@/lib/i18n/idiomas";
 import { FUSO_PADRAO } from "@/lib/tempo/fusos";
 
@@ -109,6 +111,13 @@ export const TITULO_DO_AVISO_DE_PAUSA =
   "Este canal está pausado — não recebe nem envia mensagens";
 
 /**
+ * O autor que a janela de manutenção agendada assina. Exportado para o cron
+ * passar ESTA constante: o corpo a reconhece e a escreve no idioma do aviso —
+ * o autor humano (nome ou e-mail) é dado e entra como veio.
+ */
+export const AUTOR_DA_JANELA_AGENDADA = "a janela de manutenção agendada";
+
+/**
  * O horário no fuso que a interface já usa (`FUSO_PADRAO`) e no idioma de quem
  * vai ler. Relógio entra como parâmetro em toda a regra: com `agora` fake o
  * teste é determinístico, sem depender do relógio da máquina que roda a suíte.
@@ -135,11 +144,22 @@ export function corpoDoAvisoDePausa(
   contexto: ContextoDaPausa,
 ): string {
   const rotulo = nomeDoCanal(canal);
+  const idioma = contexto.idioma ?? "pt-BR";
+  const autor =
+    contexto.autor === AUTOR_DA_JANELA_AGENDADA
+      ? traduzir("a janela de manutenção agendada", idioma)
+      : contexto.autor;
   return (
-    `«${rotulo}» está pausado desde ` +
-    `${momentoDaPausa(contexto.agora, contexto.idioma)} — quem pausou foi ${contexto.autor}.\n\n` +
-    "Enquanto a pausa durar, as mensagens não entram nem saem por este canal. " +
-    "Para voltar, retome a pausa em Conexões."
+    preencher(traduzir("«{canal}» está pausado desde {quando} — quem pausou foi {autor}.", idioma), {
+      canal: rotulo,
+      quando: momentoDaPausa(contexto.agora, contexto.idioma),
+      autor,
+    }) +
+    "\n\n" +
+    traduzir(
+      "Enquanto a pausa durar, as mensagens não entram nem saem por este canal. Para voltar, retome a pausa em Conexões.",
+      idioma,
+    )
   );
 }
 
@@ -157,12 +177,12 @@ export function avaliarAvisoDePausa(
   contexto: ContextoDaPausa,
 ): DecisaoDeAvisoDePausa {
   if (canal.archived_at !== null) {
-    return item ? resolver(item, "canal_arquivado") : { acao: "nada" };
+    return item ? resolver(item, "canal_arquivado", contexto.idioma) : { acao: "nada" };
   }
   if (!canalDesativado(canal.metadata)) {
-    return item ? resolver(item, "reativado") : { acao: "nada" };
+    return item ? resolver(item, "reativado", contexto.idioma) : { acao: "nada" };
   }
-  const titulo = TITULO_DO_AVISO_DE_PAUSA;
+  const titulo = traduzir("Este canal está pausado — não recebe nem envia mensagens", contexto.idioma ?? "pt-BR");
   const corpo = corpoDoAvisoDePausa(canal, contexto);
   if (item) return { acao: "atualizar", item, titulo, corpo };
   return { acao: "abrir", titulo, corpo };
@@ -172,9 +192,12 @@ export function avaliarAvisoDePausa(
 function resolver(
   item: ItemDePausaAberto,
   motivo: MotivoDaResolucaoDePausa,
+  idioma: Idioma = "pt-BR",
 ): DecisaoDeAvisoDePausa {
   const anterior = (item.body ?? "").trim();
-  const linha = `Resolvido pelo sistema: ${MOTIVO_LEGIVEL[motivo]}.`;
+  const linha = preencher(traduzir("Resolvido pelo sistema: {motivo}.", idioma), {
+    motivo: traduzir(MOTIVO_LEGIVEL[motivo], idioma),
+  });
   return {
     acao: "resolver",
     item,

@@ -28,6 +28,10 @@ import { sincronizarAvisoDaAssinatura } from '@/lib/ai/credenciais/aviso-da-assi
 import { renovarAssinaturaNoTurno, lerLoginCodex } from '@/lib/ai/credenciais/login-codex';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { PONTO_POR_ID } from '@/lib/ai/pontos/registro';
+import { traduzir } from '@/lib/i18n/dicionario';
+import { preencher } from '@/lib/i18n/idioma-do-aviso';
+import { IDIOMA_PADRAO, type Idioma } from '@/lib/i18n/idiomas';
+import { fatosDaOrganizacao } from '../../agent/fatos-da-organizacao';
 // O par (provedor, modelo) é a mesma régua em TODOS os caminhos de execução:
 // este seam, a resolução dos pontos, a mídia, o embedding e o runtime do agente
 // importam daqui — não cada um a sua (issue #2377).
@@ -48,16 +52,16 @@ import {
   type OrigemDaChaveLlm,
 } from './credentials';
 import {
-  AVISO_CORPO,
-  AVISO_TITULO,
-  BLOQUEIO_TITULO,
-  CORPO_TETO_DO_PLANO,
+  corpoDoAvisoDeGasto,
   corpoDoBloqueio,
+  corpoDoTetoDoPlano,
   decidirOrcamento,
   decidirTetoDoPlano,
   lerTetoDoPlano,
   MOTIVO_TETO_DO_PLANO,
-  TITULO_TETO_DO_PLANO,
+  tituloDoAvisoDeGasto,
+  tituloDoBloqueio,
+  tituloDoTetoDoPlano,
   normalizarModoDeOrcamento,
   LIMIAR_PADRAO_PCT,
   SQL_ORCAMENTO,
@@ -167,6 +171,41 @@ export const TITULO_ENDERECO_SEM_CHAVE_DA_EMPRESA =
 export const TITULO_ENDERECO_SEM_CHAVE_PRAZO =
   `A IA vai deixar de usar o endereço próprio desta empresa sem a chave dela em ${prazoLegivel()}`;
 
+/**
+ * Os dois títulos no idioma da ORGANIZAÇÃO — a Central mostra o item como foi
+ * gravado. `pt-BR` devolve as constantes acima, byte a byte; a dedup por título
+ * continua estável porque o idioma de uma organização não muda entre chamadas.
+ */
+function tituloDoEnderecoSemChave(degrau: 'avisa' | 'recusa', idioma: Idioma): string {
+  return degrau === 'recusa'
+    ? traduzir('A IA recusou usar o endereço próprio desta empresa sem a chave dela', idioma)
+    : preencher(traduzir('A IA vai deixar de usar o endereço próprio desta empresa sem a chave dela em {data}', idioma), {
+        data: prazoLegivel(),
+      });
+}
+
+/**
+ * O idioma da organização para os itens que o gate grava, com memo curto: o
+ * statement do orçamento recebe título e corpo do aviso por parâmetro em TODA
+ * chamada com orçamento ligado, e uma leitura a mais por chamada de IA seria
+ * custo sem motivo. Nunca lança (`fatosDaOrganizacao` cai em `pt-BR`).
+ */
+const MEMO_DO_IDIOMA_MS = 60_000;
+const memoDoIdioma = new Map<string, { idioma: Idioma; ate: number }>();
+async function idiomaDoGate(db: pg.Pool, organizationId: string): Promise<Idioma> {
+  const agora = Date.now();
+  const guardado = memoDoIdioma.get(organizationId);
+  if (guardado && guardado.ate > agora) return guardado.idioma;
+  let idioma: Idioma = IDIOMA_PADRAO;
+  try {
+    idioma = (await fatosDaOrganizacao(db, organizationId)).idioma;
+  } catch {
+    idioma = IDIOMA_PADRAO;
+  }
+  memoDoIdioma.set(organizationId, { idioma, ate: agora + MEMO_DO_IDIOMA_MS });
+  return idioma;
+}
+
 /** O corpo do aviso — só o HOST do endereço, nunca a URL inteira. */
 export function corpoDoAvisoDeEnderecoSemChave(d: {
   purpose: string;
@@ -174,30 +213,45 @@ export function corpoDoAvisoDeEnderecoSemChave(d: {
   baseUrl: string;
   /** `avisa` antes do prazo (a chamada seguiu), `recusa` depois dele. */
   degrau: 'avisa' | 'recusa';
+  /** O idioma da organização; `pt-BR` (o padrão) é o texto de antes, byte a byte. */
+  idioma?: Idioma;
 }): string {
+  const idioma = d.idioma ?? IDIOMA_PADRAO;
   const ponto = PONTO_POR_ID.get(d.purpose)?.rotulo ?? d.purpose;
   // Só o host: uma URL pode carregar usuário e senha (`https://u:s@host`) ou um
   // token na query, e este corpo é lido por qualquer pessoa da equipe.
-  let destino = 'um endereço próprio';
+  let destino = traduzir('um endereço próprio', idioma);
   try {
-    destino = `um endereço próprio (${new URL(d.baseUrl).host})`;
+    destino = preencher(traduzir('um endereço próprio ({host})', idioma), { host: new URL(d.baseUrl).host });
   } catch {
     // Endereço que nem é URL: o aviso segue sem o host, que é detalhe.
   }
   return (
-    `O ponto "${ponto}" está configurado em Agente de IA › Provedores para ${destino}, ` +
-    `mas esta empresa não tem chave de ${d.provider} cadastrada e validada. ` +
-    `A chave de IA da instalação — a que paga a conta de todas as empresas deste servidor — ` +
-    `não é enviada a um endereço escolhido por uma empresa. ` +
+    preencher(
+      traduzir(
+        'O ponto "{ponto}" está configurado em Agente de IA › Provedores para {destino}, mas esta empresa não tem chave de {provedor} cadastrada e validada. A chave de IA da instalação — a que paga a conta de todas as empresas deste servidor — não é enviada a um endereço escolhido por uma empresa.',
+        idioma,
+      ),
+      { ponto, destino, provedor: d.provider },
+    ) +
+    ' ' +
     (d.degrau === 'recusa'
-      ? `A chamada foi recusada antes de sair. Enquanto isso não for corrigido, as chamadas desse ponto ` +
-        `continuam recusadas; quando o ponto faz parte do atendimento, o agente deixa de responder aos ` +
-        `clientes desta empresa. `
-      : `A chamada SEGUIU desta vez, mas isso tem prazo: a partir de ${prazoLegivel()} ela passa a ser ` +
-        `recusada, e quando o ponto faz parte do atendimento o agente deixa de responder aos clientes ` +
-        `desta empresa. Corrija antes dessa data. `) +
-    `Para resolver: cadastre a chave da empresa em Agente de IA › Provedores, ` +
-    `ou tire o endereço próprio para voltar ao provedor padrão da instalação.`
+      ? traduzir(
+          'A chamada foi recusada antes de sair. Enquanto isso não for corrigido, as chamadas desse ponto continuam recusadas; quando o ponto faz parte do atendimento, o agente deixa de responder aos clientes desta empresa.',
+          idioma,
+        )
+      : preencher(
+          traduzir(
+            'A chamada SEGUIU desta vez, mas isso tem prazo: a partir de {data} ela passa a ser recusada, e quando o ponto faz parte do atendimento o agente deixa de responder aos clientes desta empresa. Corrija antes dessa data.',
+            idioma,
+          ),
+          { data: prazoLegivel() },
+        )) +
+    ' ' +
+    traduzir(
+      'Para resolver: cadastre a chave da empresa em Agente de IA › Provedores, ou tire o endereço próprio para voltar ao provedor padrão da instalação.',
+      idioma,
+    )
   );
 }
 
@@ -508,10 +562,11 @@ export async function aplicarOrcamento(d: EntradaDoGate): Promise<void> {
         chave: d.chave,
       }).acao === 'bloquear'
     ) {
+      const idioma = await idiomaDoGate(d.db, d.organizationId);
       await recusarPorTeto(d, {
         refKind: 'plano',
-        titulo: TITULO_TETO_DO_PLANO,
-        corpo: CORPO_TETO_DO_PLANO,
+        titulo: tituloDoTetoDoPlano(idioma),
+        corpo: corpoDoTetoDoPlano(idioma),
         erro: new LlmBudgetExceededError(MOTIVO_TETO_DO_PLANO),
         gastoCents: plano.gastoUsdCents,
         tetoCents: plano.tetoUsdCents ?? 0,
@@ -532,12 +587,15 @@ export async function aplicarOrcamento(d: EntradaDoGate): Promise<void> {
     return;
   }
 
+  // O aviso nasce DENTRO do statement (CTE `avisa`), então o texto vai pronto,
+  // no idioma da organização: a Central mostra o item como foi gravado.
+  const idioma = await idiomaDoGate(d.db, d.organizationId);
   let linha: LinhaDoOrcamento | undefined;
   try {
     const { rows } = await d.db.query<LinhaDoOrcamento>(SQL_ORCAMENTO, [
       d.organizationId,
-      AVISO_TITULO,
-      AVISO_CORPO,
+      tituloDoAvisoDeGasto(idioma),
+      corpoDoAvisoDeGasto(idioma),
     ]);
     linha = rows[0];
   } catch (err) {
@@ -585,8 +643,8 @@ export async function aplicarOrcamento(d: EntradaDoGate): Promise<void> {
 
   await recusarPorTeto(d, {
     refKind: 'ai_budget',
-    titulo: BLOQUEIO_TITULO,
-    corpo: corpoDoBloqueio(gastoCents, tetoCents),
+    titulo: tituloDoBloqueio(idioma),
+    corpo: corpoDoBloqueio(gastoCents, tetoCents, idioma),
     erro: new LlmBudgetExceededError(),
     gastoCents,
     tetoCents,
@@ -706,6 +764,7 @@ async function registrarRecusaDeEnderecoSemChave(d: {
   };
 
   try {
+    const idioma = await idiomaDoGate(d.db, d.input.tenantId);
     await d.db.query(
       `insert into agent_inbox_items (organization_id, kind, severity, title, body)
        select $1, 'other', 'critical', $2, $3
@@ -715,12 +774,13 @@ async function registrarRecusaDeEnderecoSemChave(d: {
        )`,
       [
         d.input.tenantId,
-        d.degrau === 'recusa' ? TITULO_ENDERECO_SEM_CHAVE_DA_EMPRESA : TITULO_ENDERECO_SEM_CHAVE_PRAZO,
+        tituloDoEnderecoSemChave(d.degrau, idioma),
         corpoDoAvisoDeEnderecoSemChave({
           purpose: d.purpose,
           provider: d.provider,
           baseUrl: d.baseUrl,
           degrau: d.degrau,
+          idioma,
         }),
       ],
     );
