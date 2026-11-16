@@ -17194,6 +17194,7 @@ export const DICIONARIO: Traducoes = {
   "Nenhuma conversa ou ligação nos outros números ainda.": {
     es: "Todavía no hay conversaciones ni llamadas en los otros números.",
   },
+  "Cursor de paginação inválido.": { es: "Cursor de paginación inválido." },
   // "Recebida" já existe mais abaixo (veio pela main, com o mesmo espanhol):
   // repetir a chave aqui é TS1117.
   Feita: { es: "Realizada" },
