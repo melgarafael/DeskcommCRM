@@ -34,14 +34,14 @@
  *
  *  1. **pelo menos 3 pistas** na amostra — um menu sozinho nunca conta;
  *  2. **pelo menos 2 famílias distintas** de sinal (`menu`, `repeticao`,
- *     `molde`, `cadencia`, `molde_da_ia`) — o mesmo menu repetido duas vezes já
- *     é anormal, mas ainda pode ser reenvio de rede; exige-se outra família
+ *     `molde`, `cadencia`, `molde_da_ia`) — um menu repetido já é anormal, mas
+ *     ainda pode ser reenvio de rede; exige-se outra família
  *     (molde/repetição/cadência) para afirmar que é um programa.
  *
  * As cinco famílias, cada uma ancorada num sinal que o autor da issue mediu:
  *
  *  - `menu` — menu numerado (`1 - …` + `2 - …`) ou "digite/responda/escolha N";
- *  - `repeticao` — a MESMA mensagem recebida duas vezes (texto idêntico depois
+ *  - `repeticao` — a MESMA mensagem recebida TRÊS vezes (texto idêntico depois
  *    de normalizar), com mínimo de 12 caracteres para "ok" não contar;
  *  - `molde` — 3+ mensagens recebidas com o mesmo começo (4 primeiras palavras)
  *    e tamanho parecido: é o "sempre com o mesmo molde" do relato;
@@ -94,6 +94,16 @@ export const MINIMO_DE_FAMILIAS = 2;
 
 /** Abaixo disto o texto é curto demais para "repetir" significar algo ("ok", "sim"). */
 export const MINIMO_PARA_REPETICAO = 12;
+/**
+ * Quantas vezes o MESMO texto precisa aparecer para contar como repetição.
+ *
+ * Três, não duas: uma duplicata pode ser reenvio de webhook, retry de rede ou
+ * a mesma mensagem entregue duas vezes — e um turno de teste que reusa a mesma
+ * fixture também produz exatamente duas. É a TERCEIRA que não se explica por
+ * acidente. Este é o mínimo que evita o falso positivo mais barato de todos, e
+ * o resto da régua (2 famílias) continua valendo.
+ */
+export const MINIMO_DE_REPETICOES = 3;
 
 /** Abaixo disto o texto é curto demais para ter MOLDE (3+ saudações não são template). */
 export const MINIMO_PARA_MOLDE = 24;
@@ -220,7 +230,7 @@ export function avaliarInterlocutor(
     porTexto.set(t, lista);
   });
   for (const indices of porTexto.values()) {
-    if (indices.length >= 2) {
+    if (indices.length >= MINIMO_DE_REPETICOES) {
       familias.add('repeticao');
       indices.forEach((i) => suspeitas.add(i));
     }

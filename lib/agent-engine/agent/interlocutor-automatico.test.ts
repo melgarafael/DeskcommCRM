@@ -196,7 +196,7 @@ describe("menu repetido + respostas da IA no mesmo molde", () => {
       gate: "interlocutor_automatico",
       verdict: "veto",
       code: CODIGO_DO_INTERLOCUTOR_AUTOMATICO,
-      detail: { pistas: 3, familias: "repeticao,menu,molde_da_ia", recebidas: 2 },
+      detail: { pistas: 3, familias: "menu,molde_da_ia", recebidas: 2 },
     });
   });
 
@@ -223,6 +223,34 @@ describe("um menu sozinho não pode calar uma loja", () => {
     const r = await resultado;
 
     expect(r.status).toBe("sent");
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("a MESMA mensagem só duas vezes é reenvio, não robô — repetição exige três", () => {
+    const amostra = [
+      recebida("segue o comprovante do pix que eu acabei de mandar", new Date(COMECO.getTime() - 600_000)),
+      recebida("segue o comprovante do pix que eu acabei de mandar", new Date(COMECO.getTime() - 540_000)),
+    ];
+    const { pistas, familias } = avaliarInterlocutor(amostra);
+    expect(pistas).toBe(0);
+    expect(familias).toEqual([]);
+  });
+
+  it("o turno sintético reusa a MESMA fixture em segundos e não pode ser barrado", async () => {
+    // Lição medida no e2e `qa-l12-funil › próxima ação`: a fixture entrega o
+    // mesmo corpo JSON mais de uma vez, em segundos. Isso não é URA — e o turno
+    // precisa enviar.
+    const mesmo = JSON.stringify({ next_action: "Responder o cliente" });
+    const b = bancada({
+      amostra: [
+        recebida(mesmo, new Date(COMECO.getTime() - 6_000)),
+        recebida(JSON.stringify({ next_action: "Enviar o orçamento até sexta" }), new Date(COMECO.getTime() - 4_000)),
+        recebida(mesmo, new Date(COMECO.getTime() - 2_000)),
+        recebida(JSON.stringify({ next_action: null }), new Date(COMECO.getTime() - 1_000)),
+      ],
+    });
+    const { resultado, send } = tentaEnviar(b, COMECO, "Obrigado. Confirmação 1234.");
+    expect((await resultado).status).toBe("sent");
     expect(send).toHaveBeenCalledTimes(1);
   });
 
