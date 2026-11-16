@@ -325,12 +325,19 @@ export function MessageBubble({
   // Encaminhar vale para qualquer mensagem com conteúdo — recebida ou enviada.
   // Só não se encaminha o que foi apagado: o conteúdo saiu do ar de propósito.
   const podeEncaminhar = Boolean(onEncaminhar) && !apagada;
+  // RESPONDER CITANDO (#4787): a citação é o CONTEÚDO da mensagem num segundo
+  // lugar da tela — e, no envio, uma referência que sai para a plataforma. Se a
+  // linha foi apagada, citá-la é (a) mostrar de volta o que saiu do ar e (b)
+  // mandar ao canal um id que não existe mais lá. A régua é a MESMA régua de
+  // Encaminhar/Reagir/Baixar: o que foi apagado não ganha atalho de volta.
+  // O servidor recusa de novo (`citacao_apagada`) — aqui é a tela que não oferece.
+  const podeResponder = Boolean(onResponder) && !apagada;
   const podeReagir = Boolean(onReagir) && !apagada && !ocultaNoCrm;
   // Baixar vale para toda mídia que a tela mostra (foto, vídeo, áudio, documento,
   // figurinha). Não para a apagada nem para a oculta: o conteúdo saiu de cena de
   // propósito, e o menu não deve ser o atalho de volta a ele.
   const podeBaixar = hasMedia && !apagada && !ocultaNoCrm;
-  const temMenu = Boolean(onResponder || podeEncaminhar || podeBaixar || (podeEditar && onEditar) || podeApagar || podeOcultar || podeReagir);
+  const temMenu = Boolean(podeResponder || podeEncaminhar || podeBaixar || (podeEditar && onEditar) || podeApagar || podeOcultar || podeReagir);
   const cartaoDeDocumentoVisivel = hasMedia && message.type === "document"
     && !editando && !apagada && !ocultaNoCrm;
   const reenvio = onReenviar
@@ -565,8 +572,8 @@ export function MessageBubble({
                 editorRef.current?.querySelector("textarea")?.focus({ preventScroll: true });
                 editorRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest", inline: "nearest" });
               }}>
-              {onResponder && (
-                <DropdownMenuItem onSelect={() => onResponder(message)}>
+              {podeResponder && (
+                <DropdownMenuItem onSelect={() => onResponder?.(message)}>
                   <ArrowBendUpLeft size={16} aria-hidden />{t("Responder a esta mensagem")}
                 </DropdownMenuItem>
               )}
