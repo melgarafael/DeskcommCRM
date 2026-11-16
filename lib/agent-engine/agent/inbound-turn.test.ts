@@ -13,6 +13,8 @@
  *      tamanho do playbook;
  *   2. o bloco por-turno (prévia, voz) vem depois de TODOS os fixos e do prompt
  *      do agente — nada volátil entra antes do breakpoint;
+ *   2b. a diretiva de idioma é o ÚLTIMO bloco, em toda combinação: o texto dela
+ *      fala das "regras acima", e ela corrige a língua por ser a última;
  *   3. o controle negativo: na ordem antiga (prompt na frente) o prefixo comum
  *      cai a zero. Sem ele, um teste que só olhasse "os dois começam igual"
  *      passaria com qualquer ordem em que os dois textos coincidissem por acaso.
@@ -46,11 +48,10 @@ import { BLOCO_DA_RESPOSTA_FALADA } from './voz-do-turno';
 const FERRAMENTAS = ['crm_find_free_slots', 'crm_list_event_types', 'crm_book_appointment'];
 
 /** O pedaço do `system` que é igual para todo agente desta instalação. */
-function prefixoDaPlataforma(idioma: 'pt-BR' | 'es' = 'pt-BR'): string {
+function prefixoDaPlataforma(): string {
   return [
     TRANSPARENCIA_SYSTEM_BLOCK,
     AUTORIA_SYSTEM_BLOCK,
-    diretivaDeIdioma(idioma),
     CASES_SYSTEM_BLOCK,
     ...blocosDeAgendaResidentes(FERRAMENTAS),
   ].join('\n\n');
@@ -168,11 +169,37 @@ describe('o que muda por turno fica no FIM (#4668)', () => {
     // Por-turno depois do prompt do agente (que é a última faixa por-agente).
     expect(posicaoPrevia).toBeGreaterThan(posicaoPrompt);
     expect(posicaoVoz).toBeGreaterThan(posicaoPrompt);
-    // E são os DOIS últimos blocos, nesta ordem.
-    expect(blocos.slice(-2)).toEqual([blocoDoModoDePrevia('assisted'), BLOCO_DA_RESPOSTA_FALADA]);
+    // E são os últimos blocos, nesta ordem — só a diretiva de idioma vem depois.
+    expect(blocos.slice(-3)).toEqual([
+      blocoDoModoDePrevia('assisted'),
+      BLOCO_DA_RESPOSTA_FALADA,
+      diretivaDeIdioma('pt-BR'),
+    ]);
   });
 
-  it('a ordem completa: plataforma → organização → agente → turno', () => {
+  it('a diretiva de idioma é o ÚLTIMO bloco em toda combinação de prévia, voz, casos e ferramentas', () => {
+    // O texto dela diz "mesmo que as regras ACIMA estejam em português", e é
+    // por ser a última instrução lida que ela corrige a língua da resposta
+    // (`idioma-do-turno.ts`). Antes de qualquer outro bloco, ela mentiria.
+    for (const idioma of ['pt-BR', 'es'] as const)
+      for (const previewKind of [null, 'sandbox', 'assisted'] as const)
+        for (const blocoDaVoz of [null, BLOCO_DA_RESPOSTA_FALADA])
+          for (const casosLigados of [false, true])
+            for (const toolIds of [[], FERRAMENTAS, ['crm_consultar_receita']]) {
+              const blocos = blocosDoSistemaDoTurno({
+                promptDoAgente: 'P',
+                casosLigados,
+                toolIds,
+                previewKind,
+                idioma,
+                blocoDaVoz,
+              });
+              expect(blocos.at(-1)).toBe(diretivaDeIdioma(idioma));
+              expect(blocos.filter((b) => b === diretivaDeIdioma(idioma))).toHaveLength(1);
+            }
+  });
+
+  it('a ordem completa: plataforma → agente → turno → diretiva de idioma', () => {
     const prompt = composeSystemPrompt({ playbookPrompt: CLARA, orgMemoryBlock: '', skillIndex: '' });
     const blocos = blocosDoSistemaDoTurno({
       promptDoAgente: prompt,
@@ -186,12 +213,12 @@ describe('o que muda por turno fica no FIM (#4668)', () => {
     expect(blocos).toEqual([
       TRANSPARENCIA_SYSTEM_BLOCK,
       AUTORIA_SYSTEM_BLOCK,
-      diretivaDeIdioma('es'),
       CASES_SYSTEM_BLOCK,
       ...blocosDeAgendaResidentes(FERRAMENTAS),
       prompt,
       blocoDoModoDePrevia('sandbox'),
       BLOCO_DA_RESPOSTA_FALADA,
+      diretivaDeIdioma('es'),
     ]);
   });
 
@@ -209,10 +236,10 @@ describe('o que muda por turno fica no FIM (#4668)', () => {
     expect(blocos).toEqual([
       TRANSPARENCIA_SYSTEM_BLOCK,
       AUTORIA_SYSTEM_BLOCK,
-      diretivaDeIdioma('pt-BR'),
       ...blocosDeInteresseExternoResidentes(toolIds),
       'P',
       blocoDoModoDePrevia('sandbox'),
+      diretivaDeIdioma('pt-BR'),
     ]);
   });
 
@@ -225,7 +252,7 @@ describe('o que muda por turno fica no FIM (#4668)', () => {
       idioma: 'pt-BR',
       blocoDaVoz: null,
     });
-    expect(blocos).toEqual([TRANSPARENCIA_SYSTEM_BLOCK, AUTORIA_SYSTEM_BLOCK, diretivaDeIdioma('pt-BR'), 'P']);
+    expect(blocos).toEqual([TRANSPARENCIA_SYSTEM_BLOCK, AUTORIA_SYSTEM_BLOCK, 'P', diretivaDeIdioma('pt-BR')]);
   });
 });
 

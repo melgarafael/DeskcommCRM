@@ -1576,26 +1576,31 @@ export interface BlocosDoSistemaDoTurno {
  *
  *   1. fixo da plataforma (`BLOCOS_FIXOS_DA_PLATAFORMA`): mesmos bytes em toda
  *      instalação;
- *   2. fixo da organização (diretiva de idioma): muda com o `locale` da org,
- *      nunca com o agente;
- *   3. por-agente, do mais estável ao menos: o que a TELA habilita (casos,
+ *   2. por-agente, do mais estável ao menos: o que a TELA habilita (casos,
  *      agenda, interesse no banco externo) muda quando o dono mexe nas ferramentas; o prompt muda quando ele
  *      reescreve o texto, e aí só invalida daqui para baixo;
- *   4. por-turno (prévia, voz): tudo o que pode mudar entre dois turnos do MESMO
+ *   3. por-turno (prévia, voz): tudo o que pode mudar entre dois turnos do MESMO
  *      agente fica no fim.
+ *
+ * A diretiva de idioma é a EXCEÇÃO, e fecha o `system`: o texto dela diz "mesmo
+ * que as regras ACIMA estejam em português" e ela corrige a língua da resposta
+ * justamente por ser a última instrução que o modelo lê (`idioma-do-turno.ts`).
+ * Na frente ela mentiria sobre o que está acima dela. É curta: o que ela custa ao
+ * cache é só ela mesma.
  *
  * A regra que este arquivo não pode perder: bloco novo entra na faixa dele, e
  * nada volátil (relógio, lead, contador) entra aqui — o por-turno tem sufixo
  * próprio, depois do breakpoint.
  */
 export function blocosDoSistemaDoTurno(input: BlocosDoSistemaDoTurno): string[] {
-  const blocos: string[] = [...BLOCOS_FIXOS_DA_PLATAFORMA, diretivaDeIdioma(input.idioma)];
+  const blocos: string[] = [...BLOCOS_FIXOS_DA_PLATAFORMA];
   if (input.casosLigados) blocos.push(CASES_SYSTEM_BLOCK);
   blocos.push(...blocosDeAgendaResidentes(input.toolIds));
   blocos.push(...blocosDeInteresseExternoResidentes(input.toolIds));
   blocos.push(input.promptDoAgente);
   if (input.previewKind !== null) blocos.push(blocoDoModoDePrevia(input.previewKind));
   if (input.blocoDaVoz !== null) blocos.push(input.blocoDaVoz);
+  blocos.push(diretivaDeIdioma(input.idioma));
   return blocos;
 }
 
@@ -3502,7 +3507,8 @@ async function executarTurnoDoAgente(
   // modelo escrevia como sempre — três bolhas, lista e sigla — e a síntese lia
   // tudo numa nota de 35 segundos (medido numa instalação real em 03/11/2026, número
   // oficial). Por isso o `system` só é montado DEPOIS de a voz ser resolvida, e
-  // o bloco vai NO FIM: o prefixo dos turnos em texto continua o mesmo.
+  // o bloco vai no fim (só a diretiva de idioma vem depois): o prefixo dos
+  // turnos em texto continua o mesmo.
   const blocoDaVoz = blocoDaRespostaFalada(vozParaEsteTurno);
   const blocosResidentes = blocosDoSistemaDoTurno({
     promptDoAgente: systemWithMemory,

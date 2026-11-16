@@ -54,18 +54,18 @@ const TODAS_AS_FERRAMENTAS_DE_AGENDA = [
 
 /**
  * Os blocos residentes na ORDEM da montagem — a mesma sequência de
- * `blocosDoSistemaDoTurno` (#4668): plataforma, diretiva de idioma, casos,
- * agenda, prompt+memória do agente, prévia. Em `pt-BR` são a chave:
+ * `blocosDoSistemaDoTurno` (#4668): plataforma, casos, agenda,
+ * prompt+memória do agente, prévia e, por último, a diretiva de idioma. Em `pt-BR` são a chave:
  * `blocosNoIdioma` devolve a lista como está.
  */
 const BLOCOS_RESIDENTES_PT = [
   TRANSPARENCIA_SYSTEM_BLOCK,
   AUTORIA_SYSTEM_BLOCK,
-  diretivaDeIdioma("pt-BR"),
   CASES_SYSTEM_BLOCK,
   ...blocosDeAgendaResidentes(TODAS_AS_FERRAMENTAS_DE_AGENDA),
   "Memória da organização.",
   blocoDoModoDePrevia("sandbox"),
+  diretivaDeIdioma("pt-BR"),
 ];
 
 /** O que o turno injeta de prosa fixa — na ordem, exatamente como o turno monta. */
@@ -134,15 +134,15 @@ describe("o system do turno no idioma da organização", () => {
     expect(residentes).toEqual([
       TRANSPARENCIA_SYSTEM_BLOCK,
       AUTORIA_SYSTEM_BLOCK,
-      diretivaDeIdioma("pt-BR"),
       CASES_SYSTEM_BLOCK,
       ...blocosDeAgendaResidentes(TODAS_AS_FERRAMENTAS_DE_AGENDA),
       "Memória da organização.",
       blocoDoModoDePrevia("sandbox"),
+      diretivaDeIdioma("pt-BR"),
     ]);
   });
 
-  it("o turno monta na ordem plataforma → org → agente → turno, e a diretiva vem ANTES do agente (#4668)", () => {
+  it("o turno monta na ordem plataforma → agente → turno, e a diretiva de idioma fecha o system (#4668)", () => {
     const blocos = blocosDoSistemaDoTurno({
       promptDoAgente: "Memória da organização.",
       casosLigados: true,
