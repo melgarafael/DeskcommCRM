@@ -122,3 +122,7 @@ implementação, com a peça já meio pronta.
 - `atendimento-comercial.architecture.json`: entrada, veto, briefing e configuração de atendimento comercial exclusivamente humano.
 
 `cadencias.architecture.json`: módulo oficial opcional do PR#1738; vitrine, decisão da empresa, fila, transporte, consentimento, descadastro e LGPD. Contrato em `docs/modulos/cadencias.md`.
+
+### Módulo opcional Amigo
+
+`amigo-api.architecture.json` liga a configuração e os formulários às ferramentas de IA, aos recibos duráveis, à projeção no CRM, à sincronização e à revalidação de lembretes — tudo atrás do módulo `amigo` (ADR-0002). Operação e limitações em [Amigo](../amigo-api.md).
