@@ -22,6 +22,12 @@ describe("vetoReason — a frase da linha 'Não enviei'", () => {
     expect(vetoReason("stop", "atendimento_com_humano")).toBe("Não enviei: a conversa está com a equipe");
   });
 
+  it("teto de respostas explica em português e diz que a equipe foi avisada (#4590)", () => {
+    expect(vetoReason("teto_de_respostas", "teto_de_respostas")).toBe(
+      "Não enviei: esta conversa já recebeu muitas respostas automáticas em pouco tempo — pode ser um robô do outro lado; a equipe foi avisada na Central",
+    );
+  });
+
   it("os outros motivos seguem como eram", () => {
     expect(vetoReason("stop", "opted_out")).toBe("Não enviei: o contato pediu para parar de receber mensagens");
     expect(vetoReason("gate_novo", "cod_x")).toBe('Não enviei: bloqueado pela regra "gate_novo" (cod_x)');

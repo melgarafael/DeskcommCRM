@@ -92,6 +92,27 @@ export const DICIONARIO: Traducoes = {
   "Envios de todos os clientes": { es: "Envíos de todos los clientes" },
   "Nenhum envio agendado nas conversas que você enxerga.": { es: "Ningún envío programado en las conversaciones que puedes ver." },
   "Não consegui carregar os envios.": { es: "No pude cargar los envíos." },
+  "Administrando cliente da agência": { es: "Administrando cliente de la agencia" },
+  "Voltar à agência": { es: "Volver a la agencia" },
+  "Organizações clientes": { es: "Organizaciones clientes" },
+  "Crie e administre os clientes da sua agência.": { es: "Crea y administra los clientes de tu agencia." },
+  "Carregando organizações…": { es: "Cargando organizaciones…" },
+  "Não foi possível carregar as organizações.": { es: "No se pudieron cargar las organizaciones." },
+  "Criar organização cliente": { es: "Crear organización cliente" },
+  "Identificador": { es: "Identificador" },
+  "Limite atingido. Solicite um aumento ao administrador da plataforma.": { es: "Límite alcanzado. Solicita un aumento al administrador de la plataforma." },
+  "Abrir organização": { es: "Abrir organización" },
+  "Indisponível": { es: "No disponible" },
+  "Reduzir o limite preserva os clientes existentes. Organizações suspensas continuam contando.": { es: "Reducir el límite conserva los clientes existentes. Las organizaciones suspendidas siguen contando." },
+  "Limite de organizações clientes": { es: "Límite de organizaciones clientes" },
+  "Permitir que esta agência administre organizações clientes": { es: "Permitir que esta agencia administre organizaciones clientes" },
+  "Organizações vinculadas": { es: "Organizaciones vinculadas" },
+  "Incluir clientes no acordo comercial da agência": { es: "Incluir clientes en el acuerdo comercial de la agencia" },
+  "Autoriza criar clientes sem assinatura individual, mesmo com cobrança ativa. Valores e porcentagens são negociados separadamente; não há cobrança automática por cliente.": { es: "Autoriza crear clientes sin suscripción individual, incluso con cobros activos. Los importes y porcentajes se negocian por separado; no hay cobro automático por cliente." },
+  "Gestão de organizações clientes": { es: "Gestión de organizaciones clientes" },
+  "Não foi possível salvar a configuração de agência.": { es: "No se pudo guardar la configuración de agencia." },
+  "Configuração de agência salva.": { es: "Configuración de agencia guardada." },
+  "Informe um limite inteiro entre 0 e 10000.": { es: "Indica un límite entero entre 0 y 10000." },
   "Custo AI / dia (US$)": { es: "Costo IA / día (US$)" },
   "chamadas sem preço": { es: "llamadas sin precio" },
   "A empresa ativa mudou. Recarregue a página antes de continuar.": { es: "La empresa activa cambió. Recarga la página antes de continuar." },
@@ -737,6 +758,13 @@ export const DICIONARIO: Traducoes = {
   // Vínculos pessoa ↔ empresa e contato ↔ pessoa pela tela (issue #3198).
   "Adicionar a uma empresa": { es: "Agregar a una empresa" },
   "Adicionar pessoa": { es: "Agregar persona" },
+  "Adicionar pessoa com contato": { es: "Agregar persona con contacto" },
+  "Empresa criada — quem fala por ela?": { es: "Empresa creada — ¿quién habla por ella?" },
+  "Pular por agora": { es: "Omitir por ahora" },
+  "Telefone / WhatsApp": { es: "Teléfono / WhatsApp" },
+  "Sem telefone nem e-mail, só a pessoa é cadastrada, ligada à empresa.": {
+    es: "Sin teléfono ni correo, solo se registra la persona, vinculada a la empresa.",
+  },
   "Buscar contato por nome ou telefone": { es: "Buscar contacto por nombre o teléfono" },
   "Buscar empresa por nome ou CNPJ": { es: "Buscar empresa por nombre o CNPJ" },
   "Buscar pessoa por nome ou e-mail": { es: "Buscar persona por nombre o correo" },
@@ -4537,6 +4565,10 @@ export const DICIONARIO: Traducoes = {
     {
       es: "Necesita una credencial de ElevenLabs registrada y una voz elegida en Agente de IA → Proveedores. Sin los dos, el agente sigue respondiendo en texto — activar esto no rompe nada.",
     },
+  "O canal escolhido não recebe nota de voz da IA (redes sociais como Instagram e Facebook). Nele, o agente responde em texto.":
+    {
+      es: "El canal elegido no recibe notas de voz de la IA (redes sociales como Instagram y Facebook). En él, el agente responde con texto.",
+    },
   "Quando falar": { es: "Cuándo hablar" },
   "Voz deste agente": { es: "Voz de este agente" },
   "Qual voz este agente usa": { es: "Qué voz usa este agente" },
@@ -4764,6 +4796,22 @@ export const DICIONARIO: Traducoes = {
   inativo: { es: "inactivo" },
   "Excluir roteador": { es: "Eliminar enrutador" },
   "Identificação": { es: "Identificación" },
+  // #4363 — a passagem automática do roteador agora fala com o CLIENTE: a frase
+  // é do dono do roteador, e a tela que a edita é esta.
+  "Mensagem de passagem ao cliente": { es: "Mensaje de traspaso al cliente" },
+  "Sai uma vez, para o cliente, quando a intenção da mensagem dele leva a conversa para outro agente do roteador. Escreva no idioma em que vocês atendem.": {
+    es: "Se envía una vez al cliente, cuando la intención de su mensaje lleva la conversación a otro agente del enrutador. Escríbala en el idioma en que atienden.",
+  },
+  "Frase enviada na troca": { es: "Frase enviada en el traspaso" },
+  "Ex.: Você está falando agora com o time de suporte. Já passei o seu caso para eles.": {
+    es: "Ej.: Ahora está hablando con el equipo de soporte. Ya les pasé su caso.",
+  },
+  "Desligada: o agente novo se apresenta com as palavras dele.": {
+    es: "Desactivada: el agente nuevo se presenta con sus propias palabras.",
+  },
+  "Ligada: o cliente recebe esta frase uma vez, antes da resposta do agente novo.": {
+    es: "Activada: el cliente recibe esta frase una vez, antes de la respuesta del agente nuevo.",
+  },
   "O número não pode ser trocado depois de criado — crie outro roteador para um número diferente.": {
     es: "El número no se puede cambiar una vez creado el enrutador. Para usar otro número, crea otro enrutador.",
   },
@@ -5010,7 +5058,12 @@ export const DICIONARIO: Traducoes = {
   "sem turnos no período": { es: "sin turnos en el período" },
   "conta só os turnos que a fila ainda guarda (padrão: 90 dias)": { es: "cuenta solo los turnos que la cola aún guarda (predeterminado: 90 días)" },
   "Taxa de cache": { es: "Tasa de caché" },
-  "do texto enviado à IA veio do cache, que custa bem menos": { es: "del texto enviado a la IA vino de la caché, que cuesta mucho menos" },
+  "do texto das chamadas que o provedor guarda em cache (entrada ≥ 1.024 tokens); as menores ficam fora da conta": {
+    es: "del texto de las llamadas que el proveedor guarda en caché (entrada ≥ 1.024 tokens); las menores quedan fuera de la cuenta",
+  },
+  "nenhuma chamada no período passa do tamanho que o provedor guarda em cache": {
+    es: "ninguna llamada del período supera el tamaño que el proveedor guarda en caché",
+  },
   "Tempo de uma chamada à IA": { es: "Tiempo de una llamada a la IA" },
   "Tempo de uma chamada à IA por dia (segundos)": { es: "Tiempo de una llamada a la IA por día (segundos)" },
   "Quanto gastou por dia (US$)": { es: "Cuánto gastaste por día (US$)" },
@@ -5857,6 +5910,9 @@ export const DICIONARIO: Traducoes = {
   },
   "O modelo econômico não respondeu; a chamada foi repetida no modelo de antes, e o resultado dessa repetição aparece numa linha própria.": {
     es: "El modelo económico no respondió; la llamada se repitió con el modelo anterior, y el resultado de esa repetición aparece en una línea propia.",
+  },
+  "O modelo principal não estava disponível (cota, servidor ou tempo esgotado); a reserva configurada no agente respondeu esta chamada.": {
+    es: "El modelo principal no estaba disponible (cuota, servidor o tiempo agotado); la reserva configurada en el agente respondió esta llamada.",
   },
   "O modelo escolhido para este ponto devolveu o resultado fora do formato duas vezes; a chamada foi repetida no modelo do agente.": {
     es: "El modelo elegido para este punto devolvió el resultado fuera del formato dos veces; la llamada se repitió con el modelo del agente.",
@@ -14515,6 +14571,17 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível carregar as tarefas.": { es: "No se pudieron cargar las tareas." },
   "Nova tarefa": { es: "Nueva tarea" },
   "Ninguém": { es: "Nadie" },
+  // A tarefa que se repete (#4595): o seletor de dias e a hora da série.
+  "Repetir toda semana": { es: "Repetir cada semana" },
+  "A tarefa volta nos dias escolhidos, no horário acima, no fuso da empresa.": {
+    es: "La tarea vuelve los días elegidos, en el horario de arriba, en la zona horaria de la empresa.",
+  },
+  "Escolha ao menos um dia da semana para a tarefa se repetir.": {
+    es: "Elige al menos un día de la semana para que la tarea se repita.",
+  },
+  "Escolha pelo menos um dia da semana e um horário.": {
+    es: "Elige al menos un día de la semana y un horario.",
+  },
   "Membro sem nome": { es: "Miembro sin nombre" },
   "Fora da equipe": { es: "Fuera del equipo" },
   "O responsável escolhido não faz parte da equipe.": { es: "El responsable elegido no forma parte del equipo." },
@@ -20728,6 +20795,12 @@ export const DICIONARIO: Traducoes = {
   "O km informado no negócio vira a data prevista da próxima revisão, no campo de data que o funil escolheu.": { es: "El kilometraje informado en el negocio se convierte en la fecha prevista de la próxima revisión, en el campo de fecha que eligió el embudo." },
   "Ligado, o funil que declarar a régua de revisão por quilometragem passa a calcular a data prevista da próxima revisão quando o km do negócio é informado, pelo card, pela API, pelo MCP ou pela resposta do roteiro, e grava essa data no campo de data que o funil escolheu. Desligado, o km continua sendo gravado e nenhuma data é calculada; as datas já gravadas ficam como estão.": { es: "Activado, el embudo que declare la regla de revisión por kilometraje pasa a calcular la fecha prevista de la próxima revisión cuando se informa el kilometraje del negocio, por la tarjeta, la API, el MCP o la respuesta del guion, y guarda esa fecha en el campo de fecha que eligió el embudo. Desactivado, el kilometraje se sigue guardando y no se calcula ninguna fecha; las fechas ya guardadas quedan como están." },
   "Não cria porta no menu do CRM: a régua é declarada por funil, em pipelines.settings.revisao_por_km, e ainda não há tela para declará-la.": { es: "No crea entrada en el menú del CRM: la regla se declara por embudo, en pipelines.settings.revisao_por_km, y todavía no hay pantalla para declararla." },
+  // O módulo opcional das agências (doc 321, adaptação do #4034) em /admin/sistema e em Recursos opcionais.
+  "Agências administram clientes": { es: "Agencias administran clientes" },
+  "Uma empresa-agência cria as empresas dos clientes dela e entra nelas para administrar, sem login separado em cada uma; tudo o que faz lá fica registrado com o nome da agência.": { es: "Una empresa agencia crea las empresas de sus clientes y entra en ellas para administrarlas, sin un inicio de sesión separado en cada una; todo lo que hace allí queda registrado con el nombre de la agencia." },
+  "Ligado, a empresa que você habilitar como agência, no painel dela em Empresas, cria as empresas dos clientes dela e entra nelas para administrar, por até uma hora de cada vez e sempre com o nome da agência na auditoria. Só quem é administrador da agência entra, e só nas empresas que a própria agência criou. Desligado, ninguém entra pela agência, as telas somem e as sessões abertas param na hora; as empresas criadas e os vínculos ficam guardados.": { es: "Activado, la empresa que habilites como agencia, en su panel en Empresas, crea las empresas de sus clientes y entra en ellas para administrarlas, hasta una hora cada vez y siempre con el nombre de la agencia en la auditoría. Solo entra quien es administrador de la agencia, y solo en las empresas que la propia agencia creó. Desactivado, nadie entra por la agencia, las pantallas desaparecen y las sesiones abiertas se detienen en el acto; las empresas creadas y los vínculos quedan guardados." },
+  "Não cria porta no menu do CRM: a empresa habilitada como agência ganha a tela Organizações clientes, em": { es: "No crea entrada en el menú del CRM: la empresa habilitada como agencia recibe la pantalla Organizaciones clientes, en" },
+  "A gestão de agências está desligada nesta instalação.": { es: "La gestión de agencias está desactivada en esta instalación." },
   // #3509: as recusas da rota que registra o recebimento na conversa.
   "Pedido inválido.": { es: "Solicitud inválida." },
   "Esta instalação não tem um endereço público https para receber o aviso de pagamento.": { es: "Esta instalación no tiene una dirección pública https para recibir el aviso de pago." },
