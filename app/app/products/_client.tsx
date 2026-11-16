@@ -228,6 +228,7 @@ export function ProdutosClient({
   podeEditar,
   capacidadeLigada = false,
   apresentacaoLigada = false,
+  fonteDoFeed = null,
   textos,
 }: {
   /** A página atual, já filtrada no servidor (ver `lib/catalogo/busca-da-tela.ts`). */
@@ -242,6 +243,8 @@ export function ProdutosClient({
   /** A chave da empresa (`capacidade_do_produto`). Desligada, o campo não aparece. */
   capacidadeLigada?: boolean;
   apresentacaoLigada?: boolean;
+  /** A seção do módulo `catalogo_por_feed`; `null` com o módulo desligado. */
+  fonteDoFeed?: React.ReactNode;
   textos: Textos;
 }) {
   const t = useT();
@@ -352,6 +355,8 @@ export function ProdutosClient({
         <h1 className="text-2xl font-semibold">{textos.titulo}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{textos.subtitulo}</p>
       </header>
+
+      {fonteDoFeed}
 
       <div className="mb-4 flex items-center gap-3">
         <input

@@ -6,7 +6,7 @@ import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { apiClient } from "@/lib/api/client";
 import { GATILHO_DE_DATA_DO_FUNIL } from "@/lib/automation/gatilho-de-data-do-funil";
 import { GATILHO_ETAPA_PARADA, GATILHO_SILENCIO } from "@/lib/automation/gatilhos-de-tempo";
-import { OPERADORES_SEM_VALOR } from "@/lib/automation/conditions";
+import { OPERADORES_SEM_VALOR, rotuloDoCampoAlterado } from "@/lib/automation/conditions";
 import { CAMPOS_DE_ETIQUETA_GOOGLE_ADS, ROTULOS_DE_ETIQUETA_GOOGLE_ADS } from "@/lib/automation/etiquetas-google-ads";
 import type { DadosDaCaixa, ExtrasDaTela, TipoDeCaixa } from "@/lib/automation/desenho-da-regra";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
@@ -249,7 +249,9 @@ function DescricaoDasCondicoes({ dados, evento }: { dados: Extract<DadosDaCaixa,
       ? (quadro?.data?.stages.find((s) => s.id === primeira.value)?.name ?? primeira.value)
       : campo?.kind === "sim_nao"
         ? valorDaCondicaoNaTela(primeira.value, t)
-        : primeira.value;
+        : primeira.op === "campo_alterado"
+          ? t(rotuloDoCampoAlterado(primeira.value))
+          : primeira.value;
   // `esta vazio`/`esta preenchido` não pedem valor: a frase termina no operador,
   // sem o trecho do valor — montá-lo dizia « Nome do lead está vazio “” » (#2727).
   const alvo = `${campo ? t(campo.label) : primeira.field} ${op}`;

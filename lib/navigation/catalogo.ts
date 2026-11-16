@@ -33,6 +33,7 @@ export interface NavGroup {
 }
 
 export interface NavMetadata {
+  agenciaOnly?: boolean;
   href: string;
   label: string;
   /** Aparece no card do hub e é texto buscável no ⌘K. Nunca vazio. */
@@ -147,6 +148,7 @@ export function sobeAoMenuLateral(
  * fechada e por isso não vira `minRole`.
  */
 export const NAV_CATALOG = [
+  { href: "/app/settings/organizacoes", label: "Organizações clientes", description: "Crie e administre os clientes da sua agência.", icon: "Buildings", group: "organizacao", section: "Empresa", minRole: "admin", agenciaOnly: true },
   {
     // SEM `sidebar: true`, e a razão não tem nada a ver com a qualidade desta
     // tela: o menu lateral está no limite medido. Com ela, seriam 20 portas, e
@@ -1172,6 +1174,17 @@ export const NAV_CATALOG = [
     // SEM `sidebar`: fica só no hub. Trocar a marca é tarefa de uma vez, e
     // agrupar o menu já o fez crescer — duas telas a mais estouraram a dobra em
     // 900px, medido pelo e2e `navegacao.spec.ts`.
+  },
+  {
+    href: "/app/settings/aparencia",
+    label: "Aparência",
+    description: "O template visual do sistema: fundo, menu, tipografia, cantos e densidade.",
+    icon: "PaintBrush",
+    group: "organizacao",
+    section: "Sua empresa",
+    // `admin`, como a Marca: o visual é identidade da empresa e vale para todos.
+    // SEM `sidebar` pelo mesmo motivo da linha de cima — a dobra de 900px.
+    minRole: "admin",
   },
   {
     href: "/app/settings/billing",

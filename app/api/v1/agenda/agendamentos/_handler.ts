@@ -5,6 +5,7 @@ import { execucaoDoServico, reciboDoServico, rpcDoServico } from "@/lib/agenda/s
 import { createAdminClient } from "@/lib/supabase/admin";
 import { randomUUID } from "node:crypto";
 import type { Json } from "@/lib/database.types";
+import { AUTORIDADE_LOCAL, RECUSA_DE_AUTORIDADE_EXTERNA, RECUSA_DE_TIPO_EXTERNO } from "@/lib/agenda/autoridade";
 /**
  * A REGRA de marcar, remarcar e cancelar — fora da rota, de propósito.
  *
@@ -121,6 +122,7 @@ async function convidadosDaEquipeConferidos(
 const CODIGO_DA_RECUSA = {
   tipo_desconhecido: { status: 404, code: "not_found" },
   tipo_desativado: { status: 422, code: "agenda_tipo_desativado" },
+  tipo_de_sistema_externo: { status: 422, code: "agenda_tipo_de_sistema_externo" },
   sem_responsavel: { status: 422, code: "agenda_sem_responsavel" },
   jornada_mal_configurada: { status: 422, code: "agenda_disponibilidade_invalida" },
   erro_interno: { status: 500, code: "internal_error" },
@@ -447,7 +449,7 @@ async function executarCriacaoDeAgendamento(
   const { data: tipo, error: erroTipo } = await supabase
     .from("calendar_event_types")
     .select(
-      "id, name, is_active, duration_minutes, default_owner_user_id, requires_confirmation, location_kind, location_details, service_enabled",
+      "id, name, is_active, duration_minutes, default_owner_user_id, requires_confirmation, location_kind, location_details, service_enabled, external_provider",
     )
     .eq("organization_id", ctx.organization_id)
     .eq("id", input.event_type_id)
@@ -455,6 +457,9 @@ async function executarCriacaoDeAgendamento(
   if (erroTipo) throw new ApiError(500, "internal_error", undefined, ctx.requestId, erroTipo.message);
   if (!tipo) {
     throw new ApiError(404, "not_found", undefined, ctx.requestId, "Tipo de agendamento não encontrado.");
+  }
+  if (tipo.external_provider) {
+    throw new ApiError(422, "agenda_tipo_de_sistema_externo", undefined, ctx.requestId, RECUSA_DE_TIPO_EXTERNO);
   }
   if (!tipo.is_active) {
     throw new ApiError(422, "agenda_tipo_desativado", undefined, ctx.requestId, `"${tipo.name}" está desativado.`);
@@ -1071,7 +1076,7 @@ async function exigeAgendamento(
 ): Promise<Record<string, unknown>> {
   const { data, error } = await supabase
     .from("calendar_appointments")
-    .select([...new Set([...colunas, "service_occurrence_id", "service_block"])].join(", "))
+    .select([...new Set([...colunas, "service_occurrence_id", "service_block", "authority"])].join(", "))
     .eq("organization_id", ctx.organization_id)
     .eq("id", id)
     .maybeSingle();
@@ -1081,6 +1086,11 @@ async function exigeAgendamento(
   }
   const row = data as unknown as Record<string, unknown>;
   if (row.service_block) throw new ApiError(403, "forbidden", undefined, ctx.requestId, "Gerencie este bloqueio em Configurações da Agenda, com seu alcance explícito.");
+  // Autoridade de fora (migration 9392): a linha daqui é espelho, e remarcar ou
+  // cancelar por aqui divergiria do sistema que manda. A etapa 2 do #4227 troca
+  // esta recusa pelo caminho do módulo que integra esse sistema. A coluna é
+  // `not null default 'local'`: ausente, só num retrato que não a leu.
+  if (row.authority != null && row.authority !== AUTORIDADE_LOCAL) throw new ApiError(409, "agenda_autoridade_externa", undefined, ctx.requestId, RECUSA_DE_AUTORIDADE_EXTERNA);
   return row;
 }
 
