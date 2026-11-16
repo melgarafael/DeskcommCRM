@@ -425,6 +425,15 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
     foraDoMenu: "Não cria porta no menu do CRM: a empresa habilitada como agência ganha a tela Organizações clientes, em",
     painelEm: "/app/settings/organizacoes",
   },
+  {
+    modulo: "catalogo_por_feed",
+    id: "modulo-catalogo-por-feed",
+    rotulo: "Catálogo sincronizado por feed",
+    descricao:
+      "Ligado, a tela de Produtos de cada empresa ganha a seção Catálogo por feed, onde se cadastra o endereço do feed que o sistema de estoque da revenda publica. A cada 2 horas o servidor busca esse endereço, cria o produto novo, atualiza preço e estoque do que mudou e desativa o que saiu do feed, sem apagar nada. Desligado, a seção some, nenhum feed é buscado e nada no catálogo muda; os endereços já cadastrados ficam guardados.",
+    foraDoMenu: "Não cria porta no menu do CRM: ele libera uma seção na tela de Produtos, em",
+    painelEm: "/app/products",
+  },
 ];
 
 /**

@@ -233,6 +233,16 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "meetAbertoLigado (lib/schemas/settings.ts), sem nenhuma exposição.",
   },
   {
+    fn: "fn_definir_aparencia_da_organizacao(uuid,jsonb)",
+    razao:
+      "app/actions/settings/definirAparenciaDaOrganizacao.ts chama com createClient da sessão; " +
+      "auth.uid() exige admin da própria organização, suporte de escrita e MFA comprovado " +
+      "antes de gravar. Só escreve a chave settings.aparencia (jsonb_set), com forma validada " +
+      "(chaves conhecidas, texto curto em minúsculas, cor #rrggbb). " +
+      "tests/invariants/aparencia-da-organizacao.test.ts prova admin próprio, negação de " +
+      "manager/agent/viewer, admin de outra organização, anon, aal1 com fator e forma inválida.",
+  },
+  {
     fn: "fn_definir_cliente_pela_agenda(uuid,boolean)",
     razao:
       "app/actions/settings/definirClientePelaAgenda.ts chama com createClient da sessão; " +
