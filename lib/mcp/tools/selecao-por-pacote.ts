@@ -80,23 +80,24 @@ import { entraPorPacote, type ToolBundle, type ToolRisk } from "./pacotes";
  * que o bloco ⚠️ acima diz. O dia em que o `evoluir` exigir 28, o passo volta a
  * ser ele.
  *
- * ═══ 27 → 29: os documentos do negócio entraram no pacote `vender` ════════════
+ * ═══ Continua 27: o documento do negócio foi para o `reter`, não para o default ═
  *
  * As duas capacidades de leitura do anexo do card (`crm_list_lead_attachments` e
- * `crm_get_lead_attachment`, #4544 item 2) entraram no `vender`, que é o default
- * do onboarding. A medição de novo, a partir do agente que nasce:
+ * `crm_get_lead_attachment`, #4544 item 2) nasceram com `pacotes: ["vender"]`,
+ * que é o default do onboarding, e a medição a partir do agente que nasce
+ * mostrou o que este comentário já previa: o `evoluir` — o menor segundo pacote
+ * — subia de 27 para 29 e NENHUM segundo pacote cabia no teto 27. Era o beco do
+ * D3 de novo, e o passo "natural" seria 29.
  *
- *  - evoluir passou de 27 — o menor, era ele que 27 atendia — para 29;
- *  - reter 34, escalar 38, atender 41, organizar 44.
- *
- * É exatamente o caso previsto no parágrafo acima: o `evoluir` passou a exigir
- * mais que 27, e o passo volta a ser ele. 29 é o MENOR que resolve — com 27
- * nenhum segundo pacote cabe e o agente novo fica preso no beco do D3.
- *
- * Não se sobe além disso aqui: o PR #4534 (aberto, nosso) mede outro degrau e
- * leva o teto a 31 — na união o maior vence, e as duas jornadas seguem cabendo.
+ * Não se subiu o teto. O `vender` é o default que TODO agente novo paga, e o
+ * mesmo número está sendo movido pelo #4534 (aberto, nosso, leva a 31): duas
+ * mudanças do mesmo teto em PRs diferentes são conflito e disputa de produto.
+ * A saída foi de PACOTE, não de constante: as duas foram para o `reter`, ao lado
+ * do `crm_propose_lead_fields_from_document`, que consome o id que a listagem
+ * devolve. Medido depois da mudança: onboarding 22 (era 24), evoluir 27 (voltou
+ * ao valor que 27 atende), reter 34.
  */
-export const TETO_TOOLS_POR_AGENTE = 29;
+export const TETO_TOOLS_POR_AGENTE = 27;
 
 /** O mínimo que a regra precisa saber de uma capacidade. */
 export interface CapacidadeSelecionavel {
