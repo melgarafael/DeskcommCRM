@@ -289,8 +289,12 @@ run_update --to v1.1.0
 check "a atualização termina com sucesso" test "$RC" -eq 0
 check ".env aponta para a imagem da versão instalada" grep -q "^APP_IMAGE=${NS}/deskcommcrm:1.1.0$" .env
 check "a chave APP_IMAGE não duplicou" test "$(grep -c '^APP_IMAGE=' .env)" -eq 1
+# A ida para frente guarda de onde saiu: é o único alvo de volta que o agente
+# do host aceita do app (agent.sh). A reinstalação da mesma versão não regrava.
+check "a ida para frente grava a versão de onde saiu" grep -qx 'v0.9.0' .update-de-onde-vim
 run_update --to v1.1.0 --force
 check "segunda execução também não duplica" test "$(grep -c '^APP_IMAGE=' .env)" -eq 1
+check "reinstalar a mesma versão não troca a origem gravada" grep -qx 'v0.9.0' .update-de-onde-vim
 check "as outras chaves do .env sobreviveram" grep -q '^INTERNAL_SECRET=segredo$' .env
 check "a política de pull vira 'missing' — a tag é imutável, e 'always' derrubaria o CRM se o GHCR caísse" \
   grep -q '^APP_PULL_POLICY=missing$' .env

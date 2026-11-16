@@ -22,6 +22,18 @@ describe("OwnerBadge", () => {
     expect(screen.getByText("?")).toBeInTheDocument();
   });
 
+  it("responsável que saiu da equipe: o nome fica e o rótulo avisa (#4265)", () => {
+    render(<OwnerBadge ownerKind="user" ownerName="Maria Silva" foraDaEquipe />);
+    expect(screen.getByText("Maria Silva · Fora da equipe")).toBeInTheDocument();
+    expect(screen.getByLabelText("Responsável: Maria Silva · Fora da equipe")).toBeInTheDocument();
+  });
+
+  it("saiu da equipe sem nome: rótulo genérico + aviso, nunca quebra", () => {
+    render(<OwnerBadge ownerKind="user" ownerName={null} foraDaEquipe />);
+    expect(screen.getByText("Responsável · Fora da equipe")).toBeInTheDocument();
+    expect(screen.getByText("?")).toBeInTheDocument();
+  });
+
   it("mostra 'Sem responsável' quando não há dono", () => {
     render(<OwnerBadge ownerKind={null} ownerName={null} />);
     expect(screen.getByLabelText("Sem responsável")).toBeInTheDocument();

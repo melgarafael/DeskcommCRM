@@ -79,6 +79,10 @@ interface Excecao {
  * linhas da OUTRA organização, não uma leitura como superusuário.
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
+  { tabela: "agencia_clientes", razao: "tests/invariants/agencias.test.ts — JWT authenticated: o cliente não lê o vínculo com a agência (count 0) e, com o módulo desligado, nenhuma policy devolve linha (1 → 0, com controle positivo); a agência só lê/edita o cliente vinculado e nunca a organização irmã." },
+  { tabela: "agencia_configuracoes", razao: "tests/invariants/agencias.test.ts — JWT authenticated: com o módulo desligado a configuração da agência some (1 → 0, controle positivo), e a agência não altera a própria autorização nem o limite via PostgREST (42501)." },
+  { tabela: "agencia_sessoes", razao: "tests/invariants/agencias.test.ts — sem GRANT a authenticated: a leitura pela sessão autenticada, inclusive da própria agência, é recusada (42501); controle positivo: a sessão aberta existe para o servidor." },
+  { tabela: "agencia_criacoes", razao: "tests/invariants/agencias.test.ts — sem GRANT a authenticated: a leitura pela sessão autenticada é recusada (42501); o recibo só é escrito/lido pelo servidor." },
   { tabela: "catalog_product_presentations", razao: "tests/invariants/catalogo-apresentacoes-isolamento.test.ts — duas organizações por JWT authenticated: manager nos dois sentidos e agent leem apenas a própria apresentação; UPDATE local de manager positivo, agent e manager vizinho sem efeito; CHECK de ownership do áudio com controle positivo e negativo." },
   {
     tabela: "ouvidoria_manifestacoes",
@@ -433,6 +437,18 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "segredo em bytea com o last4 de 4 caracteres. Guarda a chave Resend que ESCREVE " +
       "e-mail com o domínio do cliente — a correção \"natural\" de TABLES (policy de " +
       "tenant) a exporia pelo PostgREST.",
+  },
+  {
+    tabela: "satisfacao_do_atendimento",
+    razao:
+      "tests/invariants/satisfacao-do-atendimento.test.ts — \"só manager lê a " +
+      "nota — agent e vizinho leem ZERO linhas\" (migration 9352, #4023): " +
+      "`countAs` com JWT real de `manager` lê as linhas da própria " +
+      "organização, o `agent` da mesma organização lê ZERO e o admin da " +
+      "organização vizinha lê ZERO. Fica fora de TABLES de propósito: a " +
+      "policy de leitura é `manager`+ (`satisfacao_so_quem_gerencia_select`) " +
+      "e o usuário semeado em rls-isolation.test.ts é `agent` — o controle " +
+      "positivo falharia por ACERTO ali.",
   },
 ];
 

@@ -416,6 +416,15 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
       "Ligado, o funil que declarar a régua de revisão por quilometragem passa a calcular a data prevista da próxima revisão quando o km do negócio é informado, pelo card, pela API, pelo MCP ou pela resposta do roteiro, e grava essa data no campo de data que o funil escolheu. Desligado, o km continua sendo gravado e nenhuma data é calculada; as datas já gravadas ficam como estão.",
     foraDoMenu: "Não cria porta no menu do CRM: a régua é declarada por funil, em pipelines.settings.revisao_por_km, e ainda não há tela para declará-la.",
   },
+  {
+    modulo: "agencias",
+    id: "modulo-agencias",
+    rotulo: "Agências administram clientes",
+    descricao:
+      "Ligado, a empresa que você habilitar como agência, no painel dela em Empresas, cria as empresas dos clientes dela e entra nelas para administrar, por até uma hora de cada vez e sempre com o nome da agência na auditoria. Só quem é administrador da agência entra, e só nas empresas que a própria agência criou. Desligado, ninguém entra pela agência, as telas somem e as sessões abertas param na hora; as empresas criadas e os vínculos ficam guardados.",
+    foraDoMenu: "Não cria porta no menu do CRM: a empresa habilitada como agência ganha a tela Organizações clientes, em",
+    painelEm: "/app/settings/organizacoes",
+  },
 ];
 
 /**
