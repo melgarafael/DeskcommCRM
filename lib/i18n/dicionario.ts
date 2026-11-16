@@ -737,6 +737,13 @@ export const DICIONARIO: Traducoes = {
   // Vínculos pessoa ↔ empresa e contato ↔ pessoa pela tela (issue #3198).
   "Adicionar a uma empresa": { es: "Agregar a una empresa" },
   "Adicionar pessoa": { es: "Agregar persona" },
+  "Adicionar pessoa com contato": { es: "Agregar persona con contacto" },
+  "Empresa criada — quem fala por ela?": { es: "Empresa creada — ¿quién habla por ella?" },
+  "Pular por agora": { es: "Omitir por ahora" },
+  "Telefone / WhatsApp": { es: "Teléfono / WhatsApp" },
+  "Sem telefone nem e-mail, só a pessoa é cadastrada, ligada à empresa.": {
+    es: "Sin teléfono ni correo, solo se registra la persona, vinculada a la empresa.",
+  },
   "Buscar contato por nome ou telefone": { es: "Buscar contacto por nombre o teléfono" },
   "Buscar empresa por nome ou CNPJ": { es: "Buscar empresa por nombre o CNPJ" },
   "Buscar pessoa por nome ou e-mail": { es: "Buscar persona por nombre o correo" },
@@ -4537,6 +4544,10 @@ export const DICIONARIO: Traducoes = {
     {
       es: "Necesita una credencial de ElevenLabs registrada y una voz elegida en Agente de IA → Proveedores. Sin los dos, el agente sigue respondiendo en texto — activar esto no rompe nada.",
     },
+  "O canal escolhido não recebe nota de voz da IA (redes sociais como Instagram e Facebook). Nele, o agente responde em texto.":
+    {
+      es: "El canal elegido no recibe notas de voz de la IA (redes sociales como Instagram y Facebook). En él, el agente responde con texto.",
+    },
   "Quando falar": { es: "Cuándo hablar" },
   "Voz deste agente": { es: "Voz de este agente" },
   "Qual voz este agente usa": { es: "Qué voz usa este agente" },
@@ -4764,6 +4775,22 @@ export const DICIONARIO: Traducoes = {
   inativo: { es: "inactivo" },
   "Excluir roteador": { es: "Eliminar enrutador" },
   "Identificação": { es: "Identificación" },
+  // #4363 — a passagem automática do roteador agora fala com o CLIENTE: a frase
+  // é do dono do roteador, e a tela que a edita é esta.
+  "Mensagem de passagem ao cliente": { es: "Mensaje de traspaso al cliente" },
+  "Sai uma vez, para o cliente, quando a intenção da mensagem dele leva a conversa para outro agente do roteador. Escreva no idioma em que vocês atendem.": {
+    es: "Se envía una vez al cliente, cuando la intención de su mensaje lleva la conversación a otro agente del enrutador. Escríbala en el idioma en que atienden.",
+  },
+  "Frase enviada na troca": { es: "Frase enviada en el traspaso" },
+  "Ex.: Você está falando agora com o time de suporte. Já passei o seu caso para eles.": {
+    es: "Ej.: Ahora está hablando con el equipo de soporte. Ya les pasé su caso.",
+  },
+  "Desligada: o agente novo se apresenta com as palavras dele.": {
+    es: "Desactivada: el agente nuevo se presenta con sus propias palabras.",
+  },
+  "Ligada: o cliente recebe esta frase uma vez, antes da resposta do agente novo.": {
+    es: "Activada: el cliente recibe esta frase una vez, antes de la respuesta del agente nuevo.",
+  },
   "O número não pode ser trocado depois de criado — crie outro roteador para um número diferente.": {
     es: "El número no se puede cambiar una vez creado el enrutador. Para usar otro número, crea otro enrutador.",
   },
@@ -5010,7 +5037,12 @@ export const DICIONARIO: Traducoes = {
   "sem turnos no período": { es: "sin turnos en el período" },
   "conta só os turnos que a fila ainda guarda (padrão: 90 dias)": { es: "cuenta solo los turnos que la cola aún guarda (predeterminado: 90 días)" },
   "Taxa de cache": { es: "Tasa de caché" },
-  "do texto enviado à IA veio do cache, que custa bem menos": { es: "del texto enviado a la IA vino de la caché, que cuesta mucho menos" },
+  "do texto das chamadas que o provedor guarda em cache (entrada ≥ 1.024 tokens); as menores ficam fora da conta": {
+    es: "del texto de las llamadas que el proveedor guarda en caché (entrada ≥ 1.024 tokens); las menores quedan fuera de la cuenta",
+  },
+  "nenhuma chamada no período passa do tamanho que o provedor guarda em cache": {
+    es: "ninguna llamada del período supera el tamaño que el proveedor guarda en caché",
+  },
   "Tempo de uma chamada à IA": { es: "Tiempo de una llamada a la IA" },
   "Tempo de uma chamada à IA por dia (segundos)": { es: "Tiempo de una llamada a la IA por día (segundos)" },
   "Quanto gastou por dia (US$)": { es: "Cuánto gastaste por día (US$)" },
@@ -5857,6 +5889,9 @@ export const DICIONARIO: Traducoes = {
   },
   "O modelo econômico não respondeu; a chamada foi repetida no modelo de antes, e o resultado dessa repetição aparece numa linha própria.": {
     es: "El modelo económico no respondió; la llamada se repitió con el modelo anterior, y el resultado de esa repetición aparece en una línea propia.",
+  },
+  "O modelo principal não estava disponível (cota, servidor ou tempo esgotado); a reserva configurada no agente respondeu esta chamada.": {
+    es: "El modelo principal no estaba disponible (cuota, servidor o tiempo agotado); la reserva configurada en el agente respondió esta llamada.",
   },
   "O modelo escolhido para este ponto devolveu o resultado fora do formato duas vezes; a chamada foi repetida no modelo do agente.": {
     es: "El modelo elegido para este punto devolvió el resultado fuera del formato dos veces; la llamada se repitió con el modelo del agente.",
@@ -14515,6 +14550,17 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível carregar as tarefas.": { es: "No se pudieron cargar las tareas." },
   "Nova tarefa": { es: "Nueva tarea" },
   "Ninguém": { es: "Nadie" },
+  // A tarefa que se repete (#4595): o seletor de dias e a hora da série.
+  "Repetir toda semana": { es: "Repetir cada semana" },
+  "A tarefa volta nos dias escolhidos, no horário acima, no fuso da empresa.": {
+    es: "La tarea vuelve los días elegidos, en el horario de arriba, en la zona horaria de la empresa.",
+  },
+  "Escolha ao menos um dia da semana para a tarefa se repetir.": {
+    es: "Elige al menos un día de la semana para que la tarea se repita.",
+  },
+  "Escolha pelo menos um dia da semana e um horário.": {
+    es: "Elige al menos un día de la semana y un horario.",
+  },
   "Membro sem nome": { es: "Miembro sin nombre" },
   "Fora da equipe": { es: "Fuera del equipo" },
   "O responsável escolhido não faz parte da equipe.": { es: "El responsable elegido no forma parte del equipo." },
