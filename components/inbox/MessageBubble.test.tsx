@@ -773,8 +773,9 @@ describe("MessageBubble — mensagem que falhou", () => {
  *
  * O corpo que veio do WhatsApp fica cru no banco (`@75235009282237`); quem
  * resolve é a tela, pela lista `metadata.mentions`. O que se mede aqui é a
- * EXIBIÇÃO: nome para quem está no CRM, número para quem não está, e cada
- * ocorrência pelo próprio LID.
+ * EXIBIÇÃO: nome do contato quando está no CRM, nome do participante do
+ * `group_sender` quando não está, palavra do dicionário quando não há nome
+ * nenhum — e cada ocorrência pelo próprio LID. O LID cru não aparece.
  */
 describe("MessageBubble — menções de grupo (#3566)", () => {
   it("menção a contato do CRM aparece com o NOME", () => {
@@ -791,7 +792,24 @@ describe("MessageBubble — menções de grupo (#3566)", () => {
     expect(screen.queryByText(/75235009282237/)).toBeNull();
   });
 
-  it("menção a desconhecido continua com o número — o comportamento de hoje", () => {
+  it("menção a desconhecido cai para o nome do participante do grupo (`group_sender`)", () => {
+    render(
+      <MessageBubble
+        message={msg({
+          direction: "inbound",
+          body: "oi @99887766554433",
+          metadata: {
+            mentions: [{ lid: "99887766554433", phone: null, name: null }],
+            group_sender: { name: "João do Grupo", phone: null, lid: "11111111111111" },
+          },
+        })}
+      />,
+    );
+    expect(screen.getByText("oi @João do Grupo")).toBeInTheDocument();
+    expect(screen.queryByText(/99887766554433/)).toBeNull();
+  });
+
+  it("sem contato e sem participante a bolha mostra a palavra do dicionário, não dígitos", () => {
     render(
       <MessageBubble
         message={msg({
@@ -801,7 +819,8 @@ describe("MessageBubble — menções de grupo (#3566)", () => {
         })}
       />,
     );
-    expect(screen.getByText("oi @99887766554433")).toBeInTheDocument();
+    expect(screen.getByText("oi @Participante")).toBeInTheDocument();
+    expect(screen.queryByText(/99887766554433/)).toBeNull();
   });
 
   it("duas menções no mesmo texto saem cada uma com o seu nome", () => {

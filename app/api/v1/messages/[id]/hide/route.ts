@@ -9,6 +9,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { lerMencoesDeGrupo, textoComMencoesResolvidas } from "@/lib/messaging/mencoes-de-grupo";
+import { lerRemetenteDeGrupo } from "@/lib/messaging/remetente-de-grupo";
 import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
 import { createClient } from "@/lib/supabase/server";
 
@@ -59,7 +60,11 @@ async function alterar(req: NextRequest, ctx: Ctx, ocultar: boolean): Promise<Re
     // cru (`@<lid>`) faria o compare-and-set não achar a linha — a rota responde
     // 200 e a lista segue mostrando o texto que o gestor acabou de ocultar.
     const antigoPreview = previaDaMensagem(
-      textoComMencoesResolvidas(message.body, lerMencoesDeGrupo(message.metadata)),
+      textoComMencoesResolvidas(message.body, lerMencoesDeGrupo(message.metadata), {
+        // Mesma ORDEM da ingestão e da bolha (#3566): contato → participante do
+        // `group_sender` → palavra do dicionário.
+        nomeDoParticipante: lerRemetenteDeGrupo(message.metadata)?.name ?? null,
+      }),
       message.type,
     );
     await supabase.from("conversations").update({

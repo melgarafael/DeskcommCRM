@@ -105,8 +105,9 @@ export interface IngestDeGrupoDb {
    * grafias do nono dígito — a régua do `uniq_contacts_org_wa_lid` e do
    * `CONTATO_DO_PEER` (`lib/wacalls/events-bridge.ts`).
    *
-   * Não acha: devolve a menção como veio (sem nome), e a tela mostra o número —
-   * o comportamento de hoje, que é melhor do que inventar um nome.
+   * Não acha: devolve a menção como veio (sem nome). A exibição então cai para
+   * o `name` do `group_sender` e, sem nenhum nome, para a palavra do dicionário
+   * (`textoComMencoesResolvidas`) — o LID cru não vai à tela.
    */
   rotulosDasMencoes(org: string, mencoes: RemetenteDeGrupo[]): Promise<RemetenteDeGrupo[]>;
   /**
@@ -219,9 +220,15 @@ export async function gravarMensagemDeGrupo(
   // #3566 — e a MENÇÃO sai com o nome também aqui: a lista da Inbox mostra esta
   // coluna, e ela era montada do corpo cru (`@<lid>`), então a resolução da
   // bolha não chegava à lista nem à busca por conteúdo (`ilike` nesta coluna).
-  // A régua é a MESMA da bolha (`textoComMencoesResolvidas`), e o rótulo já foi
-  // resolvido acima: sem menção — ou sem nome — o texto sai idêntico.
-  const preview = previaDaMensagem(textoComMencoesResolvidas(e.body, mencoes), e.type);
+  // A régua é a MESMA da bolha (`textoComMencoesResolvidas`), com a MESMA ordem:
+  // contato do CRM → `name` do `group_sender` → palavra de reserva. A prévia é
+  // desnormalizada e não conhece idioma de tela, então a palavra sai em pt.
+  const preview = previaDaMensagem(
+    textoComMencoesResolvidas(e.body, mencoes, {
+      nomeDoParticipante: remetente?.success ? remetente.data.name : null,
+    }),
+    e.type,
+  );
   await db.marcarConversa(e.organizationId, conversationId, preview, e.sentAt, e.direction);
   // ── #2729 — a chave POR GRUPO, por último ────────────────────────────────
   //

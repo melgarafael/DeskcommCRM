@@ -19,7 +19,11 @@ import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Message } from "@/lib/types/messaging";
 import type { ReacaoNoBalao } from "@/lib/inbox/reacoes-no-fio";
-import { lerMencoesDeGrupo, textoComMencoesResolvidas } from "@/lib/messaging/mencoes-de-grupo";
+import {
+  lerMencoesDeGrupo,
+  PALAVRA_DE_MENCAO_DESCONHECIDA,
+  textoComMencoesResolvidas,
+} from "@/lib/messaging/mencoes-de-grupo";
 import { lerRemetenteDeGrupo, rotuloDoRemetente } from "@/lib/messaging/remetente-de-grupo";
 import { motivoDaFalhaDaMensagem } from "@/lib/inbox/motivo-da-falha";
 import { primeiroNomeDeQuemEnviou } from "@/lib/inbox/nome-no-balao";
@@ -442,10 +446,18 @@ export function MessageBubble({
   // e `metadata.mentions` guarda quem é cada identificador. O corpo GRAVADO
   // continua cru (é o dado do provedor, auditável); a troca acontece aqui, por
   // ocorrência e pelo PRÓPRIO lid — menção repetida resolve cada uma pelo seu, e
-  // dois contatos chamados "João" não trocam de lugar. Sem menção conhecida, o
-  // texto sai idêntico (o número que já estava lá é a informação disponível).
+  // dois contatos chamados "João" não trocam de lugar. Quem não está no CRM cai
+  // para o nome do participante do `group_sender`; sem nome nenhum, sai com a
+  // palavra do dicionário — o LID cru não aparece.
   const mencoes = lerMencoesDeGrupo(message.metadata);
-  const corpo = textoComMencoesResolvidas(message.body, mencoes) ?? "";
+  // A ORDEM da resolução (#3566) mora na função, uma vez só: contato do CRM →
+  // `name` do `group_sender` (o participante que o webhook identificou) →
+  // palavra do dicionário. O LID cru não chega à tela em nenhum dos três casos.
+  const corpo =
+    textoComMencoesResolvidas(message.body, mencoes, {
+      nomeDoParticipante: remetente?.name ?? null,
+      palavraDesconhecida: t(PALAVRA_DE_MENCAO_DESCONHECIDA),
+    }) ?? "";
   // O anúncio que gerou ESTA mensagem (a ingestão grava em `metadata.anuncio`
   // a mensagem nascida de um clique). Só na recebida: é o cliente que chega
   // pelo anúncio, como o WhatsApp mostra no celular.
