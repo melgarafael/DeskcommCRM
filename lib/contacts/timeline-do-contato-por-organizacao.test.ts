@@ -33,6 +33,15 @@ import { GET } from "@/app/api/v1/contacts/[id]/timeline/route";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/auth/server", () => ({ loadAuthUser: vi.fn(async () => ({ idioma: "pt-BR" })) }));
+// Spec 33 (R2): a rota passou a resolver a organização ativa pela sessão (`orgAtivaDaApi`)
+// antes de consultar. O id é o mesmo `ORG` abaixo, escrito aqui porque o `vi.mock` sobe para o topo.
+vi.mock("@/lib/auth/require-role", async (original) => ({
+  ...(await original<typeof import("@/lib/auth/require-role")>()),
+  orgAtivaDaApi: vi.fn(async () => ({
+    ok: true,
+    org: { orgId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Org", role: "viewer" },
+  })),
+}));
 vi.mock("@/lib/users/nome-do-atendente", () => ({
   nomesDosAtendentes: vi.fn(async () => new Map<string, string>()),
 }));
