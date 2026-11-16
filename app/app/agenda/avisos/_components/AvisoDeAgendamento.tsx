@@ -64,11 +64,25 @@ const TITULO_DO_EVENTO: Record<string, string> = {
   "appointment.cancelled": "Cancelado",
 };
 
+/** O título de uma entrega na lista — o lembrete antes do horário (9326) não tem evento. */
+function tituloDaEntrega(tipo: string, evento: string | null): string {
+  if (tipo === "resumo") return "Resumo do dia";
+  if (tipo === "lembrete") return "Lembrete antes do horário";
+  return TITULO_DO_EVENTO[evento ?? ""] ?? "Aviso";
+}
+
 type Rascunho = RascunhoDoAvisoDeAgendamento;
 
 function rascunhoDoEstado(estado: EstadoDaTelaDoAvisoDeAgendamento): Rascunho {
   if (!estado.config) {
-    return { usaNumeroDoCaso: estado.aviso_de_caso !== null, canal: "", telefone: "", grupo: SEM_GRUPO, ligado: false };
+    return {
+      usaNumeroDoCaso: estado.aviso_de_caso !== null,
+      canal: "",
+      telefone: "",
+      grupo: SEM_GRUPO,
+      ligado: false,
+      lembrarAntes: false,
+    };
   }
   return {
     usaNumeroDoCaso: estado.config.usa_numero_do_aviso_de_caso,
@@ -76,6 +90,7 @@ function rascunhoDoEstado(estado: EstadoDaTelaDoAvisoDeAgendamento): Rascunho {
     telefone: estado.config.telefone ?? "",
     grupo: estado.config.grupo ?? SEM_GRUPO,
     ligado: estado.config.ligado,
+    lembrarAntes: estado.config.lembrar_antes === true,
   };
 }
 
@@ -152,6 +167,7 @@ function FormularioDoAviso({ estado }: { estado: EstadoDaTelaDoAvisoDeAgendament
         ...(usaCaso ? {} : { channel_session_id: rascunho.canal, telefone: rascunho.telefone }),
         grupo: rascunho.grupo === SEM_GRUPO ? null : rascunho.grupo,
         ligado: rascunho.ligado,
+        lembrar_antes: rascunho.ligado ? rascunho.lembrarAntes === true : false,
         ...(confirma ? { confirma_contato: true } : {}),
       });
       setConfirmarContato(null);
@@ -334,6 +350,29 @@ function FormularioDoAviso({ estado }: { estado: EstadoDaTelaDoAvisoDeAgendament
         </div>
       </div>
 
+      <div className="flex items-start gap-3 rounded-lg border p-3" data-testid="lembrar-antes-do-horario">
+        <Switch
+          id="lembrar-antes"
+          checked={rascunho.ligado && rascunho.lembrarAntes === true}
+          disabled={!rascunho.ligado}
+          onCheckedChange={(v) => setRascunho((r) => ({ ...r, lembrarAntes: v }))}
+          aria-label={t("Também me lembrar antes de cada horário")}
+        />
+        <div className="space-y-1">
+          <Label htmlFor="lembrar-antes" className="text-sm font-medium">
+            {t("Também me lembrar antes de cada horário")}
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Nos mesmos horários do lembrete do cliente, definidos em cada tipo de atendimento (por exemplo, 1 dia e 1 hora antes). Se a reunião for pelo Google Meet, o link vai junto.",
+            )}
+          </p>
+          {!rascunho.ligado ? (
+            <p className="text-xs text-muted-foreground">{t("Ligue os avisos de agendamento acima para usar esta opção.")}</p>
+          ) : null}
+        </div>
+      </div>
+
       {confirmarContato ? (
         <div
           className="flex flex-col gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3"
@@ -409,7 +448,7 @@ function EntregasDoAviso({ estado }: { estado: EstadoDaTelaDoAvisoDeAgendamento 
           {estado.entregas.map((e) => {
             const quando = new Date(e.enviado_em ?? e.created_at);
             const titulo =
-              e.tipo === "resumo" ? t("Resumo do dia") : t(TITULO_DO_EVENTO[e.evento ?? ""] ?? "Aviso");
+              t(tituloDaEntrega(e.tipo, e.evento));
             const status = t(FRASE_DO_STATUS_DE_AGENDAMENTO[e.status as StatusDaEntregaDeAgendamento] ?? "Aviso");
             const erro =
               e.erro_codigo && e.erro_codigo in FRASE_DO_ERRO_DO_AVISO

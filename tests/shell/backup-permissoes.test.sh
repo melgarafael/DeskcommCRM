@@ -37,6 +37,8 @@ modo_e() {  # modo_e <arquivo> <modo esperado>
   local m; m="$(modo "$1")"
   [ "$m" = "$2" ] || { printf '    %s: esperado %s, veio %s\n' "${1##*/}" "$2" "$m"; return 1; }
 }
+tar_legivel() { tar -tzf "$1" >/dev/null; }
+nao_contem() { ! grep -qF -- "$2" "$1"; }
 
 # ── Dublê de docker ──────────────────────────────────────────────────────────
 export SESSOES="$WORK/volume-waha"
@@ -55,8 +57,22 @@ while [ $# -gt 0 ]; do
     -e|--network) shift 2 ;;
     -v) case "$2" in *:ro) ;; *) echo "dublê: montagem gravável '$2' — o que o contêiner (root) grava ali nasce root:root, ilegível para quem chamou sem ser root" >&2; exit 1 ;; esac
         m="${2%:ro}"; destino="${m##*:}"; origem="${m%:*}"
-        case "$origem" in /*) ;; *) origem="$SESSOES" ;; esac   # volume nomeado
+        case "$origem" in
+          "$STORAGE_DIR") mkdir -p "$origem" ;; # -v cria a origem ausente no host
+          /*) ;;
+          *) origem="$SESSOES" ;; # volume nomeado
+        esac
         monta["$destino"]="$origem"; shift 2 ;;
+    --mount)
+        case "$2" in
+          type=bind,\"source=*\",target=/data,readonly) ;;
+          *) echo "dublê: montagem dos anexos inválida ou gravável" >&2; exit 125 ;;
+        esac
+        origem="${2#type=bind,\"source=}"
+        origem="${origem%\",target=/data,readonly}"
+        origem="${origem//\"\"/\"}"
+        [ -d "$origem" ] || { echo "bind source path does not exist: $origem" >&2; exit 125; }
+        monta[/data]="$origem"; shift 2 ;;
     *) break ;;
   esac
 done
@@ -73,9 +89,10 @@ chmod +x "$WORK/bin/docker"
 PATH="$WORK/bin:$PATH"
 
 # Uma instalação single-server falsa: os três tipos de arquivo saem num backup só.
-PROJ="$WORK/root/DeskcommCRM"
-mkdir -p "$PROJ/.runtime/supabase/volumes/storage/stub"
-printf 'foto' > "$PROJ/.runtime/supabase/volumes/storage/stub/anexo.jpg"
+PROJ="$WORK/root/Deskcomm CRM, cliente"
+export STORAGE_DIR="$PROJ/.runtime/supabase/volumes/storage"
+mkdir -p "$STORAGE_DIR/stub"
+printf 'foto' > "$STORAGE_DIR/stub/anexo.jpg"
 : > "$PROJ/docker-compose.prod.yml"
 printf '%s\n' 'SINGLE_SERVER="1"' 'SUPABASE_DB_URL="postgresql://postgres:x@supabase-db:5432/postgres"' > "$PROJ/.env"
 
@@ -113,6 +130,21 @@ check "o backup termina bem" test "$rc" -eq 0
 check "e avisa que a pasta ficou como estava" grep -q "não consegui fechar a pasta" "$WORK/saida-chmod.txt"
 arq="$(ls "$PROJ"/backups/waha-*.tgz 2>/dev/null | head -1 || true)"
 if [ -n "$arq" ]; then check "a sessão do WhatsApp sai 600 mesmo assim" modo_e "$arq" 600; else check "waha-*.tgz existe" false; fi
+
+echo 'origem dos anexos em uma instalação single-server:'
+mv "$STORAGE_DIR" "$WORK/storage-com-anexo"
+mkdir "$STORAGE_DIR"
+( cd "$PROJ" && BACKUP_DIR="$WORK/backup-vazio" bash "$KIT_DIR/backup.sh" ) > "$WORK/saida-vazio.txt" 2>&1; rc=$?
+check 'Storage existente e vazio: o backup termina bem' test "$rc" -eq 0
+check 'Storage existente e vazio: o arquivo é um tar legível' tar_legivel "$WORK"/backup-vazio/storage-*.tgz
+
+rmdir "$STORAGE_DIR"
+( cd "$PROJ" && BACKUP_DIR="$WORK/backup-sem-storage" bash "$KIT_DIR/backup.sh" ) > "$WORK/saida-sem-storage.txt" 2>&1; rc=$?
+check 'Storage ausente: o backup sai com erro' test "$rc" -ne 0
+check 'Storage ausente: o backup não cria a origem vazia' test ! -e "$STORAGE_DIR"
+check 'Storage ausente: o backup não publica snapshot dos anexos' test -z "$(find "$WORK/backup-sem-storage" -name '*storage-*.tgz*' -print)"
+check 'Storage ausente: explica que o backup está incompleto' grep -qF 'este backup NÃO está completo' "$WORK/saida-sem-storage.txt"
+check 'Storage ausente: não anuncia conclusão' nao_contem "$WORK/saida-sem-storage.txt" 'backup concluído'
 
 # O outro backup do repositório: scripts/backup-db.sh (o "Backup diário" do
 # docs/deploy-selfhost) chama o pg_dump do host, e o dump seguia o umask de

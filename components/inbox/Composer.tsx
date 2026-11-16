@@ -63,9 +63,20 @@ import { BarraDeRecursos } from "@/components/inbox/composer/BarraDeRecursos";
 import { type Recurso } from "@/lib/inbox/recursos";
 import { lerRespostaRapidaGravada } from "@/lib/inbox/resposta-rapida";
 import type { Message } from "@/lib/types/messaging";
+import { MensagensAgendadasBotao } from "./MensagensAgendadas";
 
 export interface ComposerHandle {
   focus: () => void;
+}
+
+/**
+ * #3687 — o instante do envio do lado de quem atende: o fuso do NAVEGADOR é o do
+ * canal que a pessoa está olhando, e é ele que faz `{{saudacao}}` sair igual à
+ * campanha. A resposta é inserida e enviada em seguida; o operador vê o texto
+ * resolvido antes de apertar.
+ */
+function instanteDoCompositor(): { instante: Date; fuso: string } {
+  return { instante: new Date(), fuso: Intl.DateTimeFormat().resolvedOptions().timeZone };
 }
 
 /**
@@ -93,6 +104,8 @@ function avisoDeRascunhoIndisponivel(motivo: MotivoDeRecusa, t: (texto: string) 
 
 interface Props {
   conversationId: string;
+  /** Liga as mensagens agendadas: botão ao lado do Enviar, ou item do "+" abaixo de `sm` (a conversa tem contato e número). */
+  agendamentoLigado?: boolean;
   initialDraft?: string;
   initialMode?: "reply" | "note";
   onDraftChange?: (text: string, mode: "reply" | "note") => void;
@@ -166,11 +179,20 @@ interface Props {
    * e o botão leva direto para lá.
    */
   onAbrirConversa?: (id: string) => void;
+  /**
+   * O canal desta conversa recusa a nota de voz que o gravador produz
+   * (`recusaNotaDeVoz` de `lib/channels/capabilities`). Com `true` o microfone
+   * não aparece e o lugar dele fica com o Enviar desabilitado — sem isso o
+   * atendente grava no Instagram, o áudio sobe e a bolha termina `failed`.
+   * Vem de fora porque é o `InboxLayout` que conhece o canal da conversa.
+   */
+  recusaNotaDeVoz?: boolean;
 }
 
 export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   {
     conversationId,
+    agendamentoLigado = false,
     initialDraft = "",
     initialMode = "reply",
     active = true,
@@ -187,6 +209,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     rascunho = null,
     usuarioId = null,
     onAbrirConversa,
+    recusaNotaDeVoz = false,
   },
   ref,
 ) {
@@ -243,6 +266,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    */
   const [pendingEm, setPendingEm] = useState<"reply" | "note">("reply");
   const [contactPickerOpen, setContactPickerOpen] = useState(false);
+  const [agendaAberta, setAgendaAberta] = useState(false);
   const [menuDismissed, setMenuDismissed] = useState(false);
   const [mode, setMode] = useState<"reply" | "note">(initialMode);
   /**
@@ -528,7 +552,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     // RESPOSTA passa por aqui: a nota interna não vai ao cliente e continua
     // levando o texto como escrito (fronteira do `janelaFechada`, #2744).
     const corpo =
-      mode === "note" ? embutirMencoes(legivel, mencoes) : interpolateTemplate(legivel, contato);
+      mode === "note"
+        ? embutirMencoes(legivel, mencoes)
+        : interpolateTemplate(legivel, contato, instanteDoCompositor());
 
     setText("");
     // #4148: o clique no "Enviar" deixa o foco no BOTÃO, e este mesmo commit o
@@ -727,7 +753,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
       return;
     }
 
-    const payload = payloadDeUso(template, contato);
+    const payload = payloadDeUso(template, contato, instanteDoCompositor());
     setMenuDismissed(true);
 
     // O contato sem `name` NEM `display_name` (#2744): o `{{nome}}` sobrevive
@@ -836,6 +862,10 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             type: uploaded.kind,
             body: legenda,
             media_storage_path: uploaded.storage_path,
+            // O nome que a pessoa escolheu (#4457): o path no bucket é
+            // `out-<uuid>`, e é este campo que vira o `filename` do documento
+            // no WhatsApp e o rótulo do balão.
+            media_filename: uploaded.media_filename ?? undefined,
             media_mime: uploaded.media_mime,
             media_size_bytes: uploaded.media_size_bytes,
           },
@@ -1215,7 +1245,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             usuarioId={usuarioId}
           />
         )}
-        <div className="flex items-end gap-2">
+        {/* `@container`: o botão de mensagens agendadas decide pela largura
+            DESTA linha, não da janela. A 1280px com o painel do contato aberto
+            a coluna é tão estreita quanto no celular, e um breakpoint de tela
+            não enxerga isso. */}
+        <div className="@container flex items-end gap-2">
           {/* O "+" existe nos DOIS modos desde a F3 da #1863: em "Nota interna"
               ele abre o mesmo menu, com as DUAS primeiras opções — foto/vídeo e
               documento — porque a nota passou a aceitar anexo. A terceira
@@ -1229,6 +1263,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             disabled={respostaBarrada}
             onPick={escolherArquivos}
             onPickContact={mode === "reply" ? () => setContactPickerOpen(true) : undefined}
+            onAgendar={agendamentoLigado && mode === "reply" ? () => setAgendaAberta(true) : undefined}
           />
           <EmojiButton
             disabled={isDisabled}
@@ -1337,7 +1372,15 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             disabled={mode === "note" ? isDisabled : respostaBarrada}
             aria-label={t("Mensagem")}
           />
-          {text.trim() || mode === "note" ? (
+          {agendamentoLigado && mode === "reply" ? (
+            <MensagensAgendadasBotao
+              conversationId={conversationId}
+              textoInicial={text}
+              aberto={agendaAberta}
+              onAbertoChange={setAgendaAberta}
+            />
+          ) : null}
+          {text.trim() || mode === "note" || recusaNotaDeVoz ? (
             <Button
               type="button"
               size="icon"

@@ -1,4 +1,5 @@
 "use client";
+import type { ConfiguracaoAgencia } from "@/lib/agencias/configuracao";
 import type { InterfaceSettings } from "@/lib/navigation/interface";
 import { useRef } from "react";
 import { createTenantSchema } from "@/lib/schemas/tenant-creation";
@@ -19,6 +20,8 @@ export interface CreateTenantPayload {
   plano_id?: string;
   owner_email: string;
   owner_interface_settings?: InterfaceSettings;
+  /** Só com o módulo `agencias` ligado (doc 321). */
+  agencia?: ConfiguracaoAgencia;
 }
 
 export interface CreateTenantResponse {

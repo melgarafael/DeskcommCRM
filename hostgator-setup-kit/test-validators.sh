@@ -1208,8 +1208,16 @@ TMP_CRON="$(mktemp -d)"
     '! grep -qF "segredo-novo-9f8e7d" "$TMP_CRON/crontab"'
   checa "a linha legada, com o segredo velho, foi substituída" \
     '! grep -qF "segredo-velho-a1b2c3" "$TMP_CRON/crontab"'
-  checa "a linha lê o cabeçalho do arquivo" \
-    'grep -F "$URL" "$TMP_CRON/crontab" | grep -qF -- "-H @\"$CAB\""'
+  # Desde a #2235 a linha do host não carrega mais o `curl`: ela chama o VIGIA
+  # (`hostgator-setup-kit/drain-watchdog.sh`), que só dispara o dreno quando o
+  # contêiner `scheduler` desta instalação não está de pé. O segredo continua
+  # fora da linha — quem lê o cabeçalho passou a ser o script, e as duas metades
+  # são cobradas separadamente para o segredo não voltar para o crontab por
+  # ninguém ter olhado o outro lado.
+  checa "a linha chama o vigia do dreno (e não um curl solto)" \
+    'grep -F "$URL" "$TMP_CRON/crontab" | grep -qF "drain-watchdog.sh" && ! grep -F "$URL" "$TMP_CRON/crontab" | grep -q "curl "'
+  checa "o vigia lê o cabeçalho do arquivo" \
+    'grep -qF -- "-H @\"\$cabecalho\"" ./drain-watchdog.sh' 
   checa "o arquivo tem o cabeçalho que a rota espera" \
     '[ "$(cat "$CAB")" = "Authorization: Bearer segredo-novo-9f8e7d" ]'
   # `stat -c` é GNU; no macOS o equivalente é `stat -f '%Lp'` (mesma forma usada mais

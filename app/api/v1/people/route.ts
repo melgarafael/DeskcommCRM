@@ -49,14 +49,14 @@ async function listarPeloToken(req: NextRequest, requestId: string): Promise<Res
 }
 
 /**
- * Com Bearer: `mcp:write` e papel `manager`, o da sessão. A empresa do corpo (se
+ * Com Bearer: `mcp:write` e papel `agent`, o da sessão (a main abriu esta criação ao atendente em 0dc412c6d). A empresa do corpo (se
  * houver) tem de ser da organização do token.
  */
 async function criarPeloToken(req: NextRequest, requestId: string): Promise<Response> {
   const authz = await resolveAuthDual(req, {
     requestId,
     resource: "people",
-    role: "manager",
+    role: "agent",
     scope: "mcp:write",
   });
   if (!authz.ok) return authz.response;
@@ -112,7 +112,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
   if (extractBearer(req.headers.get("authorization"))) return criarPeloToken(req, requestId);
-  const authz = await requireRole("manager", { requestId, resource: "people" });
+  const authz = await requireRole("agent", { requestId, resource: "people" });
   if (!authz.ok) return authz.response;
 
   try {

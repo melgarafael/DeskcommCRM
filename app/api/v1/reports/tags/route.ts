@@ -153,6 +153,8 @@ export async function GET(req: NextRequest): Promise<Response> {
     resource: "reports",
     role: "viewer",
     scope: "mcp:read",
+    // O token lê a organização inteira; na sessão a RLS restringe por atendente.
+    tokenRole: "manager",
   });
   if (!authz.ok) return authz.response;
   // Está em PUBLIC_PATHS: o teto do token é a única contagem das chamadas dele.

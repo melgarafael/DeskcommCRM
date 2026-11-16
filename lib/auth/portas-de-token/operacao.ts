@@ -145,5 +145,4 @@ export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
   "/api/v1/people/[id]",
   "/api/v1/phone-numbers",
   "/api/v1/phone-numbers/[id]",
-
 ];

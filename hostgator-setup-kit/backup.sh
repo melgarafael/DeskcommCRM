@@ -116,7 +116,11 @@ fi
 if [ "${SINGLE_SERVER:-0}" = "1" ]; then
   step "Arquivos anexados (Storage) → $BACKUP_DIR/storage-$ts.tgz"
   parcial_st="$BACKUP_DIR/.storage-$ts.tgz.parcial"
-  if ! docker run --rm -v "$(dir_do_supabase)/volumes/storage:/data:ro" alpine:3.20 \
+  origem_storage="$(dir_do_supabase)/volumes/storage"
+  # -v cria a origem ausente e o tar arquiva uma pasta vazia com sucesso.
+  # --mount recusa a origem ausente. O campo source entre aspas é CSV.
+  if ! docker run --rm \
+       --mount "type=bind,\"source=${origem_storage//\"/\"\"}\",target=/data,readonly" alpine:3.20 \
        tar czf - -C /data . > "$parcial_st"; then
     rm -f "$parcial_st"
     die "Não consegui salvar os arquivos anexados: este backup NÃO está completo."

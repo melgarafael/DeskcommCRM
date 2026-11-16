@@ -652,9 +652,29 @@ jobs:
     # 30 → 45 em 10/11/2026 (doc de decisão 302): cortada por relógio aos 30 min
     # no pg15 e no pg17, também na `main`. Razão inteira em
     # tests/unit/preambulo-do-ci-nao-come-o-relogio.test.ts (TETOS).
-    # Executor próprio para trabalho nosso quando EXECUTOR_PROPRIO=ligado; o
-    # porquê e a guarda contra fork: comentário do e2e-parte no e2e.yml.
-    runs-on: ${{ vars.EXECUTOR_PROPRIO == 'ligado' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && 'deskcomm-proprio' || 'ubuntu-latest' }}
+    # RUNNERS PRÓPRIOS (VPS `deskcomm-vps`, aprovados pelo dono em 12/11/2026).
+    # Por quê: a fila do Actions (teto de jobs simultâneos) segura esta matriz,
+    # que é a perna mais longa do CI. Dois runners numa VPS dedicada
+    # (`vps-devops-1` e `-2`, rótulos `self-hosted, deskcomm-vps`) tiram as duas
+    # majors dessa fila.
+    # A expressão é só ROTEAMENTO: manda para lá push (a `main`) e PR de branch
+    # deste repositório, nunca de bot, e só com a variável de repositório
+    # `RUNNER_PROPRIO=ligado`. Todo o resto — fork, dependabot, dispatch, variável
+    # ausente — fica no `ubuntu-latest`. A TRAVA não mora aqui: num PR de fork o
+    # GitHub roda o ci.yml do fork, que pode reescrever este `runs-on`. Quem
+    # recusa fork e bot é o gancho de entrada no host
+    # (infra/executor-proprio/so-o-que-e-nosso.sh; ver o README de lá).
+    # Dois jobs no MESMO host dividem o daemon Docker e o usuário: porta e nome
+    # de contêiner já são únicos nos scripts (porta do daemon, `$$`), o HOME é
+    # do job (passo abaixo) e a limpeza no fim é `always()` aqui e no gancho de
+    # saída do host (infra/executor-proprio/limpa-depois.sh).
+    # RISCO: se os dois runners caírem, estas pernas ESPERAM na fila (até o
+    # GitHub desistir, ~24h) em vez de falhar — e o check `invariants` espera junto.
+    # COMO DESLIGAR, sem PR: `gh variable set RUNNER_PROPRIO --body desligado`
+    # (vale para os jobs NOVOS; os que já estão na fila do runner próprio têm de
+    # ser cancelados e reexecutados). Para desfazer de vez: `runs-on: ubuntu-latest`
+    # aqui e ajustar tests/unit/executor-proprio-so-roda-o-que-e-nosso.test.ts.
+    runs-on: ${{ vars.RUNNER_PROPRIO == 'ligado' && !endsWith(github.actor, '[bot]') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","deskcomm-vps"]') || 'ubuntu-latest' }}
     needs: [invariants-alcance]
     concurrency:
       group: ${{ github.workflow }}-invariants-majors-pg${{ matrix.pg }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt != '1' && format('-reentrada-{0}', github.sha) || '' }}
@@ -675,6 +695,24 @@ jobs:
       TEST_DB_IMAGE: pgvector/pgvector:pg${{ matrix.pg }}
     steps:
       - uses: actions/checkout@v7
+
+      # Os dois runners da VPS rodam como o MESMO usuário, e as duas majors
+      # começam no mesmo instante: com o HOME comum, o pnpm/action-setup
+      # instalaria o pnpm em `~/setup-pnpm` e o cache restauraria `~/.npm` e o
+      # store do pnpm nos MESMOS diretórios, ao mesmo tempo. O HOME vai para o
+      # RUNNER_TEMP, que é do job e que os ganchos do host esvaziam: tira o
+      # caminho ACIDENTAL de um job herdar cache do anterior. Não é barreira — o
+      # runner está no grupo `docker` (equivale a root no host); o risco inteiro
+      # está em infra/executor-proprio/README.md.
+      # Custo: cache frio a cada job, pago no teto de 5 min do preâmbulo.
+      - name: HOME próprio deste job (só no runner próprio)
+        if: runner.environment == 'self-hosted'
+        run: |
+          set -euo pipefail
+          casa="$RUNNER_TEMP/home"
+          mkdir -p "$casa"
+          echo "HOME=$casa" >> "$GITHUB_ENV"
+          echo "HOME=$casa"
 
       - uses: ./.github/actions/preparar-node
         # O teto do preâmbulo mora aqui porque passo de composite action não
@@ -697,6 +735,18 @@ jobs:
       # ele passa a ser gate, nas duas majors, pela mesma variável de imagem.
       - name: update.sh sobre banco COM DADOS (pg${{ matrix.pg }})
         run: pnpm test:db:update
+
+      # No runner próprio o que sobra fica no disco e na RAM para o próximo job.
+      # O trap dos scripts cobre a saída normal; job cancelado ou cortado por
+      # relógio pode matar o shell antes dele. Os dois scripts rotulam o
+      # contêiner com `deskcomm.worktree=<checkout>`, e o checkout é deste
+      # runner (cada runner roda um job por vez): o filtro não alcança o
+      # contêiner vivo do outro runner.
+      - name: Remover contêineres de banco deste job (só no runner próprio)
+        if: always() && runner.environment == 'self-hosted'
+        run: |
+          ids="$(docker ps -aq --filter "label=deskcomm.worktree=$GITHUB_WORKSPACE")"
+          [ -z "$ids" ] || docker rm -fv $ids
 
   # O NOME DESTE JOB É O CHECK OBRIGATÓRIO, e é por isso que ele existe — mesmo
   # padrão do `e2e` em e2e.yml e do `imagens-ok` em publish-image.yml.
