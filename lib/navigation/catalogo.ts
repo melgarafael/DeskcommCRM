@@ -1176,6 +1176,17 @@ export const NAV_CATALOG = [
     // 900px, medido pelo e2e `navegacao.spec.ts`.
   },
   {
+    href: "/app/settings/aparencia",
+    label: "Aparência",
+    description: "O template visual do sistema: fundo, menu, tipografia, cantos e densidade.",
+    icon: "PaintBrush",
+    group: "organizacao",
+    section: "Sua empresa",
+    // `admin`, como a Marca: o visual é identidade da empresa e vale para todos.
+    // SEM `sidebar` pelo mesmo motivo da linha de cima — a dobra de 900px.
+    minRole: "admin",
+  },
+  {
     href: "/app/settings/billing",
     // Spec da cobrança §9: as mensagens de limite e a Central mandam para
     // "Configurações › Plano e cobrança" — o item precisa ter esse nome.

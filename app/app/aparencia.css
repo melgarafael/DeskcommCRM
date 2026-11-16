@@ -1,0 +1,240 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   APARÊNCIA — o que consome os tokens de template e os ajustes da empresa.
+
+   TODA regra daqui exige um atributo de aparência no marcador `[data-marca-org]`
+   (`app/app/layout.tsx`). Organização que nunca escolheu template nem ajuste
+   não carrega atributo nenhum (`atributosDaAparencia` devolve `{}`), nenhuma
+   regra casa, e o `/app` dela é exatamente o de hoje.
+
+   Os VALORES moram em `lib/aparencia/catalogo.ts` (gerados por
+   `lib/aparencia/css.ts`, escopados pelo id do template). Este arquivo só diz
+   ONDE cada token é usado — menu lateral, barra do topo, painel de conteúdo e
+   fundo da casca —, pelos ganchos `data-casca` que a casca expõe.
+
+   Especificidade, de propósito:
+     template (claro)   body:has([data-aparencia="x"])                 0,1,1
+     template (escuro)  [data-theme="dark"] body:has(...)               0,2,1
+     ajuste da empresa  :root body:has([data-marca-org][data-aparencia-…])  0,3,1
+   O ajuste da empresa vence o template nos dois modos sem depender da ordem
+   em que os <style> aparecem no documento.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* ── Tipografia ──────────────────────────────────────────────────────────── */
+
+body:has([data-marca-org][data-aparencia]),
+body:has([data-marca-org][data-aparencia-fonte]) {
+  font-family: var(--aparencia-fonte-texto);
+}
+
+/* Fora do menu: os rótulos de grupo do menu lateral também são `h2`, e lá a
+   fonte de título (uma serifa, em alguns templates) atrapalharia a leitura. */
+body:has([data-marca-org][data-aparencia]) :is(h1, h2, h3):not([data-casca="menu"] *),
+body:has([data-marca-org][data-aparencia-fonte]) :is(h1, h2, h3):not([data-casca="menu"] *) {
+  font-family: var(--aparencia-fonte-titulo, var(--aparencia-fonte-texto));
+  letter-spacing: var(--aparencia-titulo-espaco, normal);
+}
+
+/* Só o título da página leva o peso do template: h2/h3 vivem dentro de cartões
+   e formulários, onde um peso 300 (Ártico) perderia a hierarquia. */
+body:has([data-marca-org][data-aparencia]) h1 {
+  font-weight: var(--aparencia-titulo-peso);
+}
+
+:root body:has([data-marca-org][data-aparencia-fonte="atkinson"]) {
+  --aparencia-fonte-texto: var(--font-atkinson), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --aparencia-fonte-titulo: var(--aparencia-fonte-texto);
+}
+:root body:has([data-marca-org][data-aparencia-fonte="manrope"]) {
+  --aparencia-fonte-texto: var(--fonte-manrope), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --aparencia-fonte-titulo: var(--aparencia-fonte-texto);
+}
+:root body:has([data-marca-org][data-aparencia-fonte="jakarta"]) {
+  --aparencia-fonte-texto: var(--fonte-jakarta), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --aparencia-fonte-titulo: var(--aparencia-fonte-texto);
+}
+:root body:has([data-marca-org][data-aparencia-fonte="plex"]) {
+  --aparencia-fonte-texto: var(--fonte-plex), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --aparencia-fonte-titulo: var(--aparencia-fonte-texto);
+}
+:root body:has([data-marca-org][data-aparencia-fonte="bricolage"]) {
+  --aparencia-fonte-texto: var(--fonte-bricolage), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --aparencia-fonte-titulo: var(--aparencia-fonte-texto);
+}
+:root body:has([data-marca-org][data-aparencia-fonte="source-serif"]) {
+  --aparencia-fonte-texto: var(--fonte-source-serif), ui-serif, Georgia, "Times New Roman", serif;
+  --aparencia-fonte-titulo: var(--aparencia-fonte-texto);
+}
+:root body:has([data-marca-org][data-aparencia-fonte="fraunces"]) {
+  --aparencia-fonte-texto: var(--fonte-fraunces), ui-serif, Georgia, "Times New Roman", serif;
+  --aparencia-fonte-titulo: var(--aparencia-fonte-texto);
+}
+:root body:has([data-marca-org][data-aparencia-fonte="jetbrains-mono"]) {
+  --aparencia-fonte-texto: var(--fonte-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --aparencia-fonte-titulo: var(--aparencia-fonte-texto);
+}
+
+/* ── Arredondamento ──────────────────────────────────────────────────────── */
+
+:root body:has([data-marca-org][data-aparencia-raio="compacto"]) {
+  --radius-sm: 3px;
+  --radius-md: 5px;
+  --radius-lg: 7px;
+  --radius-xl: 10px;
+  --aparencia-menu-raio-item: 5px;
+}
+:root body:has([data-marca-org][data-aparencia-raio="medio"]) {
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --aparencia-menu-raio-item: 10px;
+}
+:root body:has([data-marca-org][data-aparencia-raio="arredondado"]) {
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --radius-xl: 28px;
+  --aparencia-menu-raio-item: 999px;
+}
+
+/* ── Densidade ───────────────────────────────────────────────────────────── */
+
+/* Só as paradas de 4 a 32px. Larguras e alturas da casca (`w-60`, `h-14`) saem
+   do multiplicador `--spacing`, que fica intocado — o menu não estreita e as
+   telas que calculam altura (`InboxLayout`) descontam o MESMO `--space-6` que
+   o `<main>` usa de padding, então a conta continua fechando. */
+:root body:has([data-marca-org][data-aparencia-densidade="compacta"]) {
+  --space-1: 3px;
+  --space-2: 6px;
+  --space-3: 9px;
+  --space-4: 12px;
+  --space-5: 15px;
+  --space-6: 18px;
+  --space-8: 24px;
+}
+
+/* ── Intensidade dos efeitos ─────────────────────────────────────────────── */
+
+:root body:has([data-marca-org][data-aparencia-efeitos="sutil"]) {
+  --aparencia-casca: var(--aparencia-casca-sutil);
+  --aparencia-menu-desfoque: 10px;
+  --aparencia-menu-brilho: none;
+}
+
+:root body:has([data-marca-org][data-aparencia-efeitos="desligado"]) {
+  --aparencia-casca: var(--color-bg);
+  --aparencia-conteudo: var(--color-bg);
+  --aparencia-conteudo-sombra: none;
+  --aparencia-topo: var(--color-bg);
+  --aparencia-menu-fundo: var(--aparencia-menu-fundo-solido);
+  --aparencia-menu-ativo-fundo: var(--aparencia-menu-ativo-fundo-solido);
+  --aparencia-menu-desfoque: 0px;
+  --aparencia-menu-brilho: none;
+}
+
+/* Quem pediu ao sistema menos transparência recebe o vidro como cor sólida,
+   seja qual for a intensidade escolhida pela empresa. */
+@media (prefers-reduced-transparency: reduce) {
+  :root body:has([data-marca-org][data-aparencia]) {
+    --aparencia-menu-fundo: var(--aparencia-menu-fundo-solido);
+    --aparencia-menu-desfoque: 0px;
+  }
+}
+
+/* ── Casca: fundo, menu lateral, topo e conteúdo ─────────────────────────── */
+
+body:has([data-marca-org][data-aparencia]) [data-casca="raiz"] {
+  background: var(--aparencia-casca);
+}
+
+/* O `<aside>` continua sticky e com a mesma altura; o recuo vira padding DELE,
+   e o painel de dentro desenha o menu. Assim o menu flutua sem que a casca
+   ganhe um pixel de altura. */
+body:has([data-marca-org][data-aparencia]) [data-casca-lugar="lateral"] {
+  background: transparent;
+  border-right-color: var(--aparencia-menu-divisa);
+  padding: var(--aparencia-menu-recuo-y) 0 var(--aparencia-menu-recuo-y) var(--aparencia-menu-recuo-x);
+}
+
+body:has([data-marca-org][data-aparencia]) [data-casca="menu-painel"] {
+  background: var(--aparencia-menu-fundo);
+  border: var(--aparencia-menu-contorno);
+  border-radius: var(--aparencia-menu-raio);
+  -webkit-backdrop-filter: blur(var(--aparencia-menu-desfoque)) saturate(1.3);
+  backdrop-filter: blur(var(--aparencia-menu-desfoque)) saturate(1.3);
+}
+
+body:has([data-marca-org][data-aparencia]) [data-casca="menu"][data-casca-movel] {
+  background: var(--aparencia-menu-fundo-solido);
+}
+
+/* Dentro do menu, os tokens de texto e borda passam a ser os do menu: os
+   componentes de lá (rótulo de grupo, divisórias, botão de recolher) já leem
+   `--color-text*` e `--color-border`, e herdam a troca sem ser editados. */
+body:has([data-marca-org][data-aparencia]) [data-casca="menu"] {
+  --color-text: var(--aparencia-menu-texto);
+  --color-text-muted: var(--aparencia-menu-texto-suave);
+  --color-border: var(--aparencia-menu-borda);
+  color: var(--aparencia-menu-texto);
+}
+
+/* O logotipo do PRODUTO (quando ninguém subiu logo) acompanha o texto do menu:
+   as cores dele são cravadas para o fundo de fábrica e sumiriam num menu
+   escuro de template claro. O logo enviado pela empresa é tratado pelo CSS do
+   template (`regrasDoLogo`, em `lib/aparencia/css.ts`). */
+body:has([data-marca-org][data-aparencia]) [data-casca="menu"] :is([data-marca-parte="nome"], [data-marca-parte="simbolo"]) {
+  fill: var(--aparencia-menu-texto);
+}
+body:has([data-marca-org][data-aparencia]) [data-casca="menu"] [data-marca-parte="sufixo"] {
+  fill: var(--aparencia-menu-texto-suave);
+}
+
+/* O esqueleto de carregamento lê a escala neutra de FÁBRICA, que nenhum
+   template troca; aqui ele passa a usar as superfícies do template. */
+body:has([data-marca-org][data-aparencia]) .ds-esqueleto {
+  --ds-esqueleto-corpo: var(--color-surface-elevated);
+  --ds-esqueleto-brilho: var(--color-border-strong);
+}
+
+body:has([data-marca-org][data-aparencia]) [data-casca="menu"] a {
+  border-radius: var(--aparencia-menu-raio-item);
+  color: var(--aparencia-menu-texto);
+}
+
+body:has([data-marca-org][data-aparencia]) [data-casca="menu"] a:not([aria-current="page"]):hover {
+  background: color-mix(in srgb, var(--aparencia-menu-texto) 9%, transparent);
+}
+
+body:has([data-marca-org][data-aparencia]) [data-casca="menu"] a[aria-current="page"] {
+  background: var(--aparencia-menu-ativo-fundo);
+  color: var(--aparencia-menu-ativo-texto);
+  box-shadow: var(--aparencia-menu-brilho);
+}
+
+body:has([data-marca-org][data-aparencia]) [data-casca="menu"] a[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 6px;
+  bottom: 6px;
+  width: var(--aparencia-menu-indicador-largura);
+  border-radius: 0 3px 3px 0;
+  background: var(--aparencia-menu-indicador);
+  pointer-events: none;
+}
+
+body:has([data-marca-org][data-aparencia]) [data-casca="topo"] {
+  background: var(--aparencia-topo);
+}
+
+/* O painel de conteúdo só se separa do fundo a partir de `md`, onde o menu
+   lateral aparece. O respiro é SÓ à esquerda: telas como Inbox e Funil
+   calculam a altura a partir de `100dvh`, e respiro vertical as faria rolar. */
+@media (min-width: 768px) {
+  body:has([data-marca-org][data-aparencia]) [data-casca="conteudo"] {
+    margin-left: var(--aparencia-conteudo-respiro);
+    background: var(--aparencia-conteudo);
+    border-radius: var(--aparencia-conteudo-raio) 0 0 var(--aparencia-conteudo-raio);
+    box-shadow: var(--aparencia-conteudo-sombra);
+  }
+}
