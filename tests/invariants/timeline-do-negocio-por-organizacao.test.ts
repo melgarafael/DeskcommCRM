@@ -80,8 +80,8 @@ const ATIVIDADE_INTRUSA = ativ(90);
 /** Três atividades da empresa A no negócio "normal". */
 const ATIVIDADES_A2 = [11, 12, 13].map(ativ);
 
-function instante(minuto: number, segundo = 0): string {
-  return `2026-01-01T10:${String(minuto).padStart(2, "0")}:${String(segundo).padStart(2, "0")}.000+00:00`;
+function instante(minuto: number, segundo = 0, hora = 10): string {
+  return `2026-01-01T${String(hora).padStart(2, "0")}:${String(minuto).padStart(2, "0")}:${String(segundo).padStart(2, "0")}.000+00:00`;
 }
 
 // ---------------------------------------------------------------- tradutor ---
@@ -202,9 +202,10 @@ beforeAll(() => {
       (id, i) =>
         `('${id}', '${ORG_A}', '${LEAD_A}', '${CONTATO_A}', 'crm', 'nota', '${instante(i + 1)}', 'user')`,
     ),
+    // Relógio próprio (09h) para que o negócio "normal" não empate com o alvo.
     ...ATIVIDADES_A2.map(
       (id, i) =>
-        `('${id}', '${ORG_A}', '${LEAD_A2}', '${CONTATO_A}', 'crm', 'nota', '${instante(i + 1)}', 'user')`,
+        `('${id}', '${ORG_A}', '${LEAD_A2}', '${CONTATO_A}', 'crm', 'nota', '${instante(i + 1, 0, 9)}', 'user')`,
     ),
   ].join(",\n      ");
 
@@ -330,6 +331,41 @@ describe("#4324 — a linha do tempo do negócio diz de qual empresa é", () => 
     expect(vistas).toEqual([...ATIVIDADES_A].reverse());
     expect(new Set(vistas).size).toBe(vistas.length);
     expect(vistas).not.toContain(ATIVIDADE_INTRUSA);
+  });
+
+  /**
+   * (b2) O cursor carrega o eixo da empresa POR CONTA PRÓPRIA.
+   *
+   * Medido, e é uma sutileza que muda o que se pode afirmar: a rota chama
+   * `.or()` duas vezes, e o `supabase-js` faz `searchParams.append`
+   * (`PostgrestFilterBuilder.ts:2063`) — os dois grupos viram `or=` repetidos,
+   * que o PostgREST CONJUNTA. Logo, tirar `organization_id` do cursor não muda
+   * as linhas da paginação, porque o filtro da página já cerca a empresa. O que
+   * se pode prender do cursor é o que o código dele afirma: ele é suficiente
+   * sozinho. Aqui ele roda SOZINHO — sem o filtro da página — e ainda assim não
+   * devolve linha de outra empresa. Sem o eixo, a intrusa aparece.
+   */
+  it("(b2) o cursor carrega o eixo da empresa por conta própria", () => {
+    const cursor: Cursor = {
+      performed_at: instante(4),
+      id: ATIVIDADES_A[3] as string,
+    };
+
+    const soComOCursor = consultar([filtroDoCursor(ORG_A, cursor)], 50).map((l) => l.id);
+
+    // Tudo o que é da empresa A e está depois do cursor — inclusive as três do
+    // negócio A2, que o cursor sozinho não tem por que separar (quem separa o
+    // dossiê é o filtro da página). O que NÃO pode estar aqui é a linha da
+    // empresa B, e é ela que aparece quando o eixo é tirado do cursor.
+    expect(soComOCursor).toEqual([
+      ATIVIDADES_A[2] as string,
+      ATIVIDADES_A[1] as string,
+      ATIVIDADES_A[0] as string,
+      ATIVIDADES_A2[2] as string,
+      ATIVIDADES_A2[1] as string,
+      ATIVIDADES_A2[0] as string,
+    ]);
+    expect(soComOCursor).not.toContain(ATIVIDADE_INTRUSA);
   });
 
   /**
