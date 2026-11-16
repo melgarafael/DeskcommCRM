@@ -82,6 +82,7 @@ export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
   "/api/v1/campaigns/[id]/recipients",
   "/api/v1/campaigns/modelos",
   "/api/v1/campaigns/preview",
+
   // EMPRESAS, PESSOAS, VÍNCULOS E NÚMEROS DE VOZ (R2, tarefa 7). Quem autentica é a
   // própria rota, por `resolveAuthDual` (sessão OU Bearer `dsk_…`, a organização
   // vinda da linha do token): `mcp:read` no GET e `mcp:write` na escrita, com o
