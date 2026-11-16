@@ -32,7 +32,7 @@ import { PONTO_POR_ID } from '@/lib/ai/pontos/registro';
 // este seam, a resolução dos pontos, a mídia, o embedding e o runtime do agente
 // importam daqui — não cada um a sua (issue #2377).
 import { ParProvedorModeloInvalidoError, validarParProvedorModelo } from '@/lib/ai/par-provedor-modelo';
-import { decidirQuedaDoProvedor } from '@/lib/ai/pontos/reserva-da-assinatura';
+import { decidirQuedaDoProvedor, decidirQuedaDoModeloDeReserva } from '@/lib/ai/pontos/reserva-da-assinatura';
 import { scrubMessage } from '@/lib/sentry/scrub';
 import { identificarConteudoBloqueado } from './conteudo-bloqueado';
 
@@ -997,7 +997,11 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // do operador cadastrado como `openrouter` poderia devolver `usage.cost` 0 e
   // furar o teto mensal e a cota do plano.
   let baseUrlDaChamadaEfetiva: string | undefined;
-  const chamarCom = async (cfgUsada: OrgLlmConfig, fabrica: (typeof factory)) => {
+  const chamarCom = async (
+    cfgUsada: OrgLlmConfig,
+    fabrica: (typeof factory),
+    opcoes: { soOEnderecoDaCredencial?: boolean } = {},
+  ) => {
     // `decisao.baseUrl` só é preenchido quando o painel apontou um endpoint
     // (gateway OpenAI-compatível, ou modelo local). Providers canônicos
     // ignoram o terceiro argumento e vão ao endpoint intrínseco.
@@ -1006,7 +1010,11 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     // publicado nele alcança o mesmo gateway que a tela testou ao salvar.
     // A MESMA constante decide o cache na fábrica, o corpo da resposta abaixo e
     // o custo informado: as decisões sobre "é a OpenRouter oficial?" não podem divergir.
-    const baseUrlDaChamada = decisao.baseUrl ?? cfgUsada.baseUrl ?? undefined;
+    // A reserva de modelo fala com o endereço do PRÓPRIO provedor: o endereço
+    // do ponto pertence ao principal, e é dele que a reserva está fugindo.
+    const baseUrlDaChamada = opcoes.soOEnderecoDaCredencial
+      ? (cfgUsada.baseUrl ?? undefined)
+      : (decisao.baseUrl ?? cfgUsada.baseUrl ?? undefined);
     baseUrlDaChamadaEfetiva = baseUrlDaChamada;
     const opcoesBase = {
       // O 4º argumento só é lido pela fábrica `openrouter`, com o knob ligado. A
@@ -1320,6 +1328,89 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   };
 
   /**
+   * A RESERVA DE MODELO CONFIGURADA (#4600) — o degrau que não depende de qual é
+   * o provedor principal.
+   *
+   * A reserva da assinatura acima só existe para UM provedor. Com provedor
+   * personalizado, OpenRouter, DeepSeek e afins, cota estourada (429), 5xx ou
+   * tempo esgotado derrubavam o turno e o cliente ficava sem resposta até a cota
+   * voltar. Aqui a reserva é o par (provedor, modelo) que a versão publicada do
+   * agente aponta — de qualquer provedor já cadastrado na instalação.
+   *
+   * Três freios, e todos antes de gastar a segunda chamada:
+   *  - desligado por padrão (sem configuração, `decidir…` devolve `null`);
+   *  - só cota, servidor e tempo esgotado — erro de pedido (400/422) e credencial
+   *    recusada (401/403) NÃO caem, porque o mesmo corpo seria recusado de novo;
+   *  - UMA tentativa: chamada daqui só existe no catch da chamada principal, e a
+   *    política recusa a segunda por construção (`jaCaiuParaAReserva`).
+   *
+   * Falhou a reserva também? O erro ORIGINAL é o que sobe — e a linha de
+   * `llm_calls` grava o provedor/modelo que falhou por último com origem
+   * `reserva_do_modelo`, que é o que explica a troca na aba Execuções.
+   */
+  const chamarNaReservaDoModelo = async (
+    falha: unknown,
+  ): Promise<Awaited<ReturnType<typeof generateText>>> => {
+    // Abort não é indisponibilidade: a pessoa cancelou, ou o worker parou.
+    if (input.abortSignal?.aborted) throw falha;
+    const { http_status: status, error_message: detalhe } = normalizarErro(falha);
+    const decisaoDaReserva = decidirQuedaDoModeloDeReserva({
+      reserva: input.llmOverride?.reservaDeModelo ?? null,
+      status,
+      detalhe,
+      // Esta função é chamada UMA vez, no catch da chamada principal: não há
+      // laço, e a política recusa a segunda tentativa se alguém a chamar de novo.
+      jaCaiuParaAReserva: false,
+    });
+    if (decisaoDaReserva === null) throw falha;
+    const fabricaDaReservaDoModelo = registry[decisaoDaReserva.provedorDeReserva];
+    // Sem fábrica para a reserva (registry de teste, provedor removido): o erro
+    // original é o que interessa, e ele não muda de mão.
+    if (fabricaDaReservaDoModelo === undefined) throw falha;
+    const parDaReserva = validarParProvedorModelo(
+      decisaoDaReserva.provedorDeReserva,
+      decisaoDaReserva.modeloDeReserva,
+    );
+    if (!parDaReserva.valido) throw falha;
+    let configDaReserva: OrgLlmConfig;
+    try {
+      configDaReserva = await resolveOrgLlmConfig(db, cfg, input.tenantId, {
+        provider: decisaoDaReserva.provedorDeReserva,
+        credentialId: null,
+      });
+    } catch {
+      // O provedor da reserva existe na configuração e não tem chave (revogou no
+      // meio do turno). Errar com o erro ORIGINAL é dizer a verdade ao operador.
+      throw falha;
+    }
+    // A mesma conferência que o principal passou: modelo fora da lista que a
+    // empresa liberou não é chamado, nem como reserva.
+    if (
+      configDaReserva.enabledModels.length > 0 &&
+      !configDaReserva.enabledModels.includes(decisaoDaReserva.modeloDeReserva)
+    ) {
+      throw falha;
+    }
+    // A troca ANTES da nova tentativa: se a reserva também falhar, a linha de
+    // `llm_calls` grava o provedor/modelo que de fato falhou por último.
+    config = configDaReserva;
+    model = decisaoDaReserva.modeloDeReserva;
+    origem = 'reserva_do_modelo';
+    await gateDeOrcamento(configDaReserva);
+    deps.log?.warn('llm: modelo principal indisponível — chamada caiu na reserva de modelo', {
+      organization_id: input.tenantId,
+      purpose,
+      provider: configDaReserva.provider,
+      modelo_principal: modeloDecidido,
+      modelo_de_reserva: decisaoDaReserva.modeloDeReserva,
+      motivo: decisaoDaReserva.motivo,
+      origem_da_escolha: origem,
+    });
+    startedAt = Date.now();
+    return chamarCom(configDaReserva, fabricaDaReservaDoModelo, { soOEnderecoDaCredencial: true });
+  };
+
+  /**
    * O ERRO ORIGINAL DA ASSINATURA, preservado para o registro (#4610).
    *
    * A queda troca `config` pela reserva e a falha que sobe é a DELA. Sem
@@ -1356,31 +1447,38 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
         config.provider === PROVEDOR_POR_ASSINATURA
           ? await chamarComRenovacaoNo401(config, factory)
           : await chamarCom(config, factory);
-    } catch (falhaDaAssinatura) {
-      const reserva = await reservaParaAFalha(falhaDaAssinatura);
-      if (reserva === null) throw falhaDaAssinatura;
-      const fabricaDaReserva = registry[reserva.provider];
+    } catch (falhaDoPrincipal) {
+      const reserva = await reservaParaAFalha(falhaDoPrincipal);
+      const fabricaDaReserva = reserva === null ? undefined : registry[reserva.provider];
       // Sem fábrica para a reserva (registry de teste, provedor removido):
-      // o erro original é o que interessa, e ele não muda de mão.
-      if (fabricaDaReserva === undefined) throw falhaDaAssinatura;
-      // A troca ANTES da nova tentativa: se a reserva também falhar, a linha de
-      // `llm_calls` grava o provedor que de fato falhou por último, e não o que
-      // a chamada começou a falar.
-      config = reserva;
-      await gateDeOrcamento(reserva);
-      erroDaAssinatura = normalizarErro(falhaDaAssinatura);
-      deps.log?.warn('llm: assinatura indisponível — chamada caiu na reserva', {
-        organization_id: input.tenantId,
-        purpose,
-        provider: reserva.provider,
-        model,
-        origem_da_escolha: decisao.origem,
-        // Os dois lados do aviso: QUEM caiu, com status e mensagem (redigida),
-        // e QUEM assumiu. Só o segundo existia — e é por isso que o aviso
-        // apontava para o lugar errado.
-        ...camposDaAssinaturaQueCaiu(),
-      });
-      result = await chamarCom(reserva, fabricaDaReserva);
+      // o erro original é o que interessa, e ele não muda de mão. Nesse caso a
+      // reserva CONFIGURADA ainda pode atender — mas nunca as duas.
+      if (reserva !== null && fabricaDaReserva !== undefined) {
+        // A troca ANTES da nova tentativa: se a reserva também falhar, a linha de
+        // `llm_calls` grava o provedor que de fato falhou por último, e não o que
+        // a chamada começou a falar.
+        config = reserva;
+        await gateDeOrcamento(reserva);
+        // #4610: a queda troca `config` pela reserva e a falha que sobe é a DELA;
+        // o erro ORIGINAL da assinatura fica guardado para o registro.
+        erroDaAssinatura = normalizarErro(falhaDoPrincipal);
+        deps.log?.warn('llm: assinatura indisponível — chamada caiu na reserva', {
+          organization_id: input.tenantId,
+          purpose,
+          provider: reserva.provider,
+          model,
+          origem_da_escolha: decisao.origem,
+          // Os dois lados do aviso: QUEM caiu, com status e mensagem (redigida),
+          // e QUEM assumiu. Só o segundo existia — e é por isso que o aviso
+          // apontava para o lugar errado.
+          ...camposDaAssinaturaQueCaiu(),
+        });
+        result = await chamarCom(reserva, fabricaDaReserva);
+      } else {
+        // #4600: a assinatura não tem para onde cair, ou não é ela quem falhou.
+        // A reserva configurada é o único degrau — e é UMA tentativa.
+        result = await chamarNaReservaDoModelo(falhaDoPrincipal);
+      }
     }
   } catch (err) {
     err = identificarConteudoBloqueado(err) ?? err;
@@ -1671,6 +1769,35 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
  * "por que o funcionário não responde" teria uma classificação própria, e as
  * duas telas dariam nomes diferentes ao mesmo erro do provedor.
  */
+/**
+ * O status HTTP de uma falha do provedor, inclusive quando ela chega EMBRULHADA.
+ *
+ * O `generateText` tenta de novo sozinho (`maxRetries`, padrão 2) as falhas
+ * retentáveis — justamente 429 e 5xx — e, ao desistir, lança um `RetryError`
+ * SEM `statusCode`: o status mora em `lastError` (e em `errors[]`). Ler só o
+ * topo devolvia `null` para cota e provedor fora, e com isso a reserva de
+ * modelo configurada nunca assumia nesses dois casos (prova de tela do #4617)
+ * e a tela de Execuções mostrava 503 como "erro desconhecido".
+ */
+function statusHttpDoErro(err: unknown, profundidade = 0): number | null {
+  if (!err || typeof err !== 'object' || profundidade > 3) return null;
+  const e = err as {
+    statusCode?: unknown;
+    status?: unknown;
+    lastError?: unknown;
+    errors?: unknown;
+    cause?: unknown;
+  };
+  if (typeof e.statusCode === 'number') return e.statusCode;
+  if (typeof e.status === 'number') return e.status;
+  if (e.lastError) return statusHttpDoErro(e.lastError, profundidade + 1);
+  if (Array.isArray(e.errors) && e.errors.length > 0) {
+    return statusHttpDoErro(e.errors[e.errors.length - 1], profundidade + 1);
+  }
+  if (e.cause) return statusHttpDoErro(e.cause, profundidade + 1);
+  return null;
+}
+
 export function normalizarErro(err: unknown): {
   error_code: string;
   error_message: string;
@@ -1679,10 +1806,7 @@ export function normalizarErro(err: unknown): {
   const bloqueio = identificarConteudoBloqueado(err);
   if (bloqueio) return { error_code: 'conteudo_bloqueado', error_message: bloqueio.message, http_status: bloqueio.statusCode ?? null };
   const bruto = err instanceof Error ? err.message : String(err);
-  const status =
-    (err as { statusCode?: number; status?: number })?.statusCode ??
-    (err as { statusCode?: number; status?: number })?.status ??
-    null;
+  const status = statusHttpDoErro(err);
 
   // O único erro deste seam que NÃO vem do provedor: a recusa é NOSSA, e é
   // deliberada. Casada pela CLASSE e não por regex, porque aqui não há três
