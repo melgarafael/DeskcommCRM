@@ -20,7 +20,10 @@ const ROOT = process.cwd();
 
 /** Todo arquivo que carrega uma cópia da lista de colunas de versão. */
 const FILES_WITH_VERSION_COLUMNS = [
-  "app/app/ai/agents/[id]/_actions.ts",
+  // A cópia das server actions do editor mudou de casa: salvar rascunho,
+  // publicar e reverter moram em lib/ai/agents/edicao.ts, compartilhados com o
+  // MCP do CRM (editar o agente pelo ChatGPT). A cerca vigia onde a lista mora.
+  "lib/ai/agents/edicao.ts",
   "app/app/ai/agents/[id]/page.tsx",
   "app/api/v1/ai/agents/route.ts",
   "app/api/v1/ai/agents/[id]/versions/route.ts",
@@ -413,7 +416,8 @@ describe("todo INSERT de versão leva todas as chaves de versionShapeSchema", ()
     for (const esperado of [
       "app/api/v1/ai/agents/route.ts",
       "app/api/v1/ai/agents/[id]/versions/route.ts",
-      "app/app/ai/agents/[id]/_actions.ts",
+      // O INSERT do rascunho e o do reverter saíram de `_actions.ts` (ver acima).
+      "lib/ai/agents/edicao.ts",
       "lib/ai/agents/duplicate.ts",
       "lib/ai/apply-proposal.ts",
       ...Object.keys(INSERTS_FORA_DA_COBRANCA),

@@ -98,6 +98,15 @@ import {
   crmProposeReactivation,
 } from "./retencao";
 import { crmDraftProposal, crmPrepararProposta } from "./propostas";
+import {
+  crmGetAiAgentTurn,
+  crmGetAiAgentVersion,
+  crmListAiAgents,
+  crmPublishAiAgentVersion,
+  crmRollbackAiAgent,
+  crmSaveAiAgentDraft,
+  crmTestAiAgentVersion,
+} from "./agentes";
 
 // Cast via `unknown` porque McpToolDefinition<TInput> nao e covariante
 // em TInput (handler usa TInput em posicao contravariante). Coletar
@@ -152,6 +161,10 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmListAvailableAttendants,
   crmListHumanCases,
   crmGetHumanCase,
+  // read — editar os assistentes de IA (só admin; ver `./agentes.ts`)
+  crmListAiAgents,
+  crmGetAiAgentVersion,
+  crmGetAiAgentTurn,
   // write
   // A que consulta E marca numa chamada só vem primeiro: quando o cliente já deu
   // dia e hora, é o caminho curto, e é o que evita o turno morrer no meio (#831).
@@ -196,6 +209,11 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmCloseHumanCase,
   crmResumeAiAttendance,
   crmDraftProposal,
+  // write — editar os assistentes de IA: rascunho, teste, publicar, reverter
+  crmSaveAiAgentDraft,
+  crmTestAiAgentVersion,
+  crmPublishAiAgentVersion,
+  crmRollbackAiAgent,
   // handoff (special)
   crmRequestHumanHandoff,
 ] as unknown as ReadonlyArray<McpToolDefinition>;

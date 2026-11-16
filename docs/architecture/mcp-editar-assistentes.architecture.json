@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "titulo": "Editar os assistentes de IA pelo MCP (ChatGPT)",
+  "descricao": "O administrador corrige, por um aplicativo conectado ao MCP do CRM, como o assistente responde: lê as instruções e o traço de uma resposta, grava a correção num rascunho (um ou vários assistentes), testa na prévia, publica e reverte. As regras são as da tela do assistente, extraídas para lib/ai/agents/edicao.ts e teste-da-versao.ts.",
+  "lanes": [
+    { "id": "cliente", "label": "Aplicativo conectado (ChatGPT)" },
+    { "id": "mcp", "label": "Ferramentas MCP (só admin)" },
+    { "id": "regras", "label": "Regras compartilhadas com a tela" },
+    { "id": "dados", "label": "Banco" },
+    { "id": "tela", "label": "Tela do assistente" }
+  ],
+  "mainPath": ["chatgpt", "turno", "rascunho", "edicao", "versoes", "testar", "teste", "publicar", "agentes"],
+  "nodes": [
+    { "id": "chatgpt", "lane": "cliente", "label": "ChatGPT · @Neon Jungle CRM", "sublabel": "OAuth: mcp:write + role:admin", "type": "external", "dot": "gray" },
+    { "id": "listar", "lane": "mcp", "label": "crm_list_ai_agents / crm_get_ai_agent_version", "sublabel": "publicada, rascunho, instruções", "type": "api", "dot": "blue" },
+    { "id": "turno", "lane": "mcp", "label": "crm_get_ai_agent_turn", "sublabel": "versão usada, ferramentas, interrupções", "type": "api", "dot": "blue" },
+    { "id": "rascunho", "lane": "mcp", "label": "crm_save_ai_agent_draft", "sublabel": "troca exata / anexar / texto inteiro · vários assistentes", "type": "api", "dot": "blue" },
+    { "id": "testar", "lane": "mcp", "label": "crm_test_ai_agent_version", "sublabel": "prévia, nada é enviado", "type": "api", "dot": "blue" },
+    { "id": "publicar", "lane": "mcp", "label": "crm_publish_ai_agent_version / crm_rollback_ai_agent", "sublabel": "critico → destructiveHint", "type": "api", "dot": "red" },
+    { "id": "edicao", "lane": "regras", "label": "lib/ai/agents/edicao.ts", "sublabel": "rascunho vigente, escopo, publicar, reverter, auditoria", "type": "lib", "dot": "green" },
+    { "id": "teste", "lane": "regras", "label": "lib/ai/agents/teste-da-versao.ts", "sublabel": "ai_agent_runs is_dry_run + sandbox", "type": "lib", "dot": "green" },
+    { "id": "versoes", "lane": "dados", "label": "ai_agent_versions", "sublabel": "draft / published / superseded", "type": "table", "dot": "sky" },
+    { "id": "agentes", "lane": "dados", "label": "ai_agents.published_version_id", "sublabel": "o ponteiro que o motor executa", "type": "table", "dot": "sky" },
+    { "id": "tracos", "lane": "dados", "label": "agent_turn_traces + messages", "sublabel": "o que o turno real fez", "type": "table", "dot": "sky" },
+    { "id": "audit", "lane": "dados", "label": "api_audit_log", "sublabel": "ai_agent.version_* / published / reverted / tested · actor_api_token_id", "type": "table", "dot": "sky" },
+    { "id": "acoes", "lane": "tela", "label": "app/app/ai/agents/[id]/_actions.ts", "sublabel": "Salvar rascunho, Publicar, Reverter", "type": "api", "dot": "green" },
+    { "id": "picker", "lane": "tela", "label": "ToolPicker", "sublabel": "capacidades só do administrador: não marcáveis, com motivo", "type": "ui", "dot": "green" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "chatgpt", "to": "listar", "label": "ler" },
+    { "id": "e2", "from": "chatgpt", "to": "turno", "label": "por que respondeu assim" },
+    { "id": "e3", "from": "turno", "to": "tracos", "label": "select por conversa" },
+    { "id": "e4", "from": "chatgpt", "to": "rascunho", "label": "corrigir" },
+    { "id": "e5", "from": "rascunho", "to": "edicao", "label": "salvarRascunhoDaVersao" },
+    { "id": "e6", "from": "edicao", "to": "versoes", "label": "PATCH rascunho vigente ou INSERT" },
+    { "id": "e7", "from": "chatgpt", "to": "testar", "label": "testar" },
+    { "id": "e8", "from": "testar", "to": "teste", "label": "testarVersaoDoAgente" },
+    { "id": "e9", "from": "chatgpt", "to": "publicar", "label": "confirmado pelo dono" },
+    { "id": "e10", "from": "publicar", "to": "edicao", "label": "publicarVersao / reverterParaVersao" },
+    { "id": "e11", "from": "edicao", "to": "agentes", "label": "fn_publish_ai_agent_version" },
+    { "id": "e12", "from": "edicao", "to": "audit", "label": "quem e quando" },
+    { "id": "e13", "from": "teste", "to": "audit", "label": "ai_agent.tested" },
+    { "id": "e14", "from": "acoes", "to": "edicao", "label": "a mesma regra" },
+    { "id": "e15", "from": "listar", "to": "versoes", "label": "escolherVersoesDaTela" },
+    { "id": "e16", "from": "picker", "to": "rascunho", "label": "não oferece ao assistente" }
+  ]
+}
