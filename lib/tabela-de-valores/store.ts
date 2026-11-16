@@ -182,6 +182,27 @@ export async function previaDaPlanilha(
  * confirmada para esta tabela, e `ja_existe` quando o código já estava lá por
  * outro caminho. Nunca sobrescreve preço: `do nothing` é deliberado.
  */
+/**
+ * A planilha (mesmos bytes) já entrou nesta tabela? A rota pergunta isto ANTES
+ * de recusar "nenhuma linha pode entrar": depois de uma confirmação, a prévia
+ * dos mesmos bytes nunca tem linha nova (todas viram `ja_existe_na_tabela`), e
+ * sem esta pergunta o `repetida: true` de `importarTabelaDeValores` nunca era
+ * alcançado pela tela, que mostrava um 422 em vez de "esta planilha já entrou".
+ */
+export async function arquivoJaImportado(
+  pool: pg.Pool,
+  org: string,
+  tabelaId: string,
+  chaveDoArquivo: string,
+): Promise<boolean> {
+  const { rows } = await pool.query(
+    "select 1 from tabela_de_valores_importacoes " +
+      "where organization_id=$1 and tabela_id=$2 and chave_do_arquivo=$3 limit 1",
+    [org, tabelaId, chaveDoArquivo],
+  );
+  return rows.length > 0;
+}
+
 export async function importarTabelaDeValores(
   pool: pg.Pool,
   org: string,

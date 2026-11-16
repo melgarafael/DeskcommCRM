@@ -18,6 +18,7 @@ import {
 import { chaveDoArquivo } from "@/lib/tabela-de-valores/importacao";
 import { lerPlanilhaDaTabelaDeValores } from "@/lib/tabela-de-valores/planilha";
 import {
+  arquivoJaImportado,
   buscarTabelaDeValores,
   importarTabelaDeValores,
   previaDaPlanilha,
@@ -151,7 +152,10 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       { requestId, headers },
     );
 
-  if (previa.entram.length === 0)
+  // A mesma planilha de novo: nenhuma linha "entra" (todas já existem), mas o
+  // desfecho certo é `repetida: true`, que `importarTabelaDeValores` devolve sem
+  // gravar. Só recusa com 422 a planilha NOVA em que nada pode entrar.
+  if (previa.entram.length === 0 && !(await arquivoJaImportado(pool, org, tabelaId, chave)))
     return fail(
       "validation_failed",
       t("Nenhuma linha da planilha pode entrar: confira o motivo de cada linha recusada."),
