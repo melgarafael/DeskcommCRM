@@ -23,7 +23,30 @@ const m = vi.hoisted(() => ({
   getUser: vi.fn(),
   updateUser: vi.fn(),
   getAal: vi.fn(),
+  signOut: vi.fn(async () => ({ error: null })),
+  /** Vínculos marcados que a sessão enxerga (#3876). */
+  marcados: [] as Array<{ organization_id: string }>,
+  adminUpdate: vi.fn(),
+  adminIn: vi.fn(),
+  adminEq: vi.fn(),
+  adminErro: null as null | { code: string },
+  invalidar: vi.fn(),
+  logErro: vi.fn(),
 }));
+
+/** Cadeia do PostgREST que se resolve no `await` com o resultado dado. */
+function cadeia(resultado: () => unknown, espioes: Record<string, (...a: unknown[]) => void> = {}) {
+  const c: Record<string, unknown> = {
+    then: (ok: (v: unknown) => void) => ok(resultado()),
+  };
+  for (const metodo of ["select", "update", "in", "eq"]) {
+    c[metodo] = (...args: unknown[]) => {
+      espioes[metodo]?.(...args);
+      return c;
+    };
+  }
+  return c;
+}
 
 vi.mock("next/headers", () => ({
   headers: async () => new Headers({ "x-request-id": "req-4313" }),
@@ -42,10 +65,26 @@ vi.mock("@/lib/supabase/server", () => ({
         getUser: m.getUser,
         updateUser: m.updateUser,
         mfa: { getAuthenticatorAssuranceLevel: m.getAal },
+        signOut: m.signOut,
       },
+      from: () => cadeia(() => ({ data: m.marcados, error: null })),
     };
   },
 }));
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: () => ({
+    from: () =>
+      cadeia(() => ({ data: null, error: m.adminErro }), {
+        update: m.adminUpdate,
+        in: m.adminIn,
+        eq: m.adminEq,
+      }),
+  }),
+}));
+vi.mock("@/lib/auth/cache-curto", () => ({ invalidarUsuario: m.invalidar }));
+// Recuperação comum, sem acompanhamento: a regra `permanentAccessError` deixa passar.
+vi.mock("@/lib/auth/server", () => ({ loadAuthUser: async () => ({ support: null }) }));
+vi.mock("@/lib/logger", () => ({ logger: { error: m.logErro, warn: vi.fn(), info: vi.fn() } }));
 
 const { updatePassword } = await import("./updatePassword");
 
@@ -62,6 +101,45 @@ beforeEach(() => {
   m.getUser.mockResolvedValue({ data: { user: { id: "u-ana" } }, error: null });
   m.getAal.mockResolvedValue({ data: { currentLevel: "aal1", nextLevel: "aal1" } });
   m.updateUser.mockResolvedValue({ data: { user: { id: "u-ana" } }, error: null });
+  m.marcados = [];
+  m.adminErro = null;
+});
+
+describe("updatePassword — recuperação desliga a senha provisória (#3876)", () => {
+  const SENHA = "Nova-senha-1";
+
+  it("quem tinha a marca sai dela: escrita pelo servidor, só nos vínculos da própria pessoa", async () => {
+    m.marcados = [{ organization_id: "org-a" }];
+    await updatePassword({ password: SENHA, password_confirm: SENHA });
+
+    expect(m.adminUpdate).toHaveBeenCalledWith({ senha_provisoria: false });
+    expect(m.adminIn).toHaveBeenCalledWith("organization_id", ["org-a"]);
+    expect(m.adminEq).toHaveBeenCalledWith("user_id", "u-ana");
+    expect(m.invalidar).toHaveBeenCalledWith("u-ana");
+    expect(m.redirect).toHaveBeenCalledWith("/login?reset=success");
+  });
+
+  it("sem marca, nada é escrito", async () => {
+    await updatePassword({ password: SENHA, password_confirm: SENHA });
+    expect(m.adminUpdate).not.toHaveBeenCalled();
+    expect(m.redirect).toHaveBeenCalledWith("/login?reset=success");
+  });
+
+  it("falha ao limpar é registrada e não desfaz a recuperação", async () => {
+    m.marcados = [{ organization_id: "org-a" }];
+    m.adminErro = { code: "XX000" };
+    await updatePassword({ password: SENHA, password_confirm: SENHA });
+    expect(m.logErro).toHaveBeenCalled();
+    expect(m.invalidar).not.toHaveBeenCalled();
+    expect(m.redirect).toHaveBeenCalledWith("/login?reset=success");
+  });
+
+  it("senha recusada pelo GoTrue não mexe na marca", async () => {
+    m.marcados = [{ organization_id: "org-a" }];
+    m.updateUser.mockResolvedValueOnce({ data: null, error: { message: "boom" } });
+    await updatePassword({ password: SENHA, password_confirm: SENHA });
+    expect(m.adminUpdate).not.toHaveBeenCalled();
+  });
 });
 
 describe("updatePassword — teto de 72 bytes (issue #4313)", () => {
