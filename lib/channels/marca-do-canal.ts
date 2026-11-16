@@ -31,7 +31,7 @@ import { EnvelopeSimple, InstagramLogo, MessengerLogo, PlugsConnected, TelegramL
  * distingue "meu número por QR" de "meu número pela API oficial" ao bater o
  * olho — é a mesma rede, dois canos (ver `channelBrandDoAviso`).
  */
-export type CanalConhecido = "whatsapp" | "instagram" | "messenger" | "telegram" | "email" | "api_oficial";
+export type CanalConhecido = "whatsapp" | "instagram" | "messenger" | "telegram" | "email" | "api-oficial";
 
 export interface MarcaDeCanal {
   /** `unknown` é o fallback: sem ícone, cor neutra, rótulo genérico. */
@@ -53,7 +53,7 @@ export const CANAIS_NA_PALETA: readonly CanalConhecido[] = [
   "telegram",
   "instagram",
   "email",
-  "api_oficial",
+  "api-oficial",
   "messenger",
 ];
 
@@ -93,8 +93,8 @@ const MARCAS: Record<CanalConhecido, MarcaDeCanal> = {
    * mas o cano é outro — e é o cano que a pessoa procura quando o aviso toca
    * fora do horário da campanha, não do atendimento.
    */
-  api_oficial: {
-    id: "api_oficial",
+  "api-oficial": {
+    id: "api-oficial",
     rotulo: "API oficial",
     cor: "var(--color-canal-api-oficial)",
     Icone: PlugsConnected,

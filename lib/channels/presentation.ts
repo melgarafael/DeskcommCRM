@@ -30,7 +30,7 @@ export function channelBrand(
  *
  * Mesma regra de `channelBrand` — a marca é da rede, não do fornecedor — com
  * UMA exceção declarada: o número conectado pela API oficial da Meta sai como
- * `api_oficial`. Para quem atende, "chegou pelo WhatsApp do meu chip" e
+ * `api-oficial`. Para quem atende, "chegou pelo WhatsApp do meu chip" e
  * "chegou pela API oficial" são dois canos com donos e janelas diferentes, e o
  * aviso existe para dizer isso sem abrir a conversa. O logo da lista de
  * conversas continua na rede (`channelBrand`), porque ali o que se procura é
@@ -40,6 +40,6 @@ export function channelBrandDoAviso(
   session?: { provider?: string | null; social_platform?: string | null } | null,
 ) {
   const rede = channelBrand(session);
-  if (rede === "whatsapp" && session?.provider === "meta_cloud") return "api_oficial";
+  if (rede === "whatsapp" && session?.provider === "meta_cloud") return "api-oficial";
   return rede;
 }

@@ -22,7 +22,7 @@ import { channelBrand, channelBrandDoAviso } from "@/lib/channels/presentation";
 
 const CSS = fs.readFileSync(path.join(process.cwd(), "app/globals.css"), "utf8");
 
-const CANAIS = ["whatsapp", "instagram", "messenger", "telegram", "email", "api_oficial"] as const;
+const CANAIS = ["whatsapp", "instagram", "messenger", "telegram", "email", "api-oficial"] as const;
 
 /** Lê o bloco cujo seletor está SOZINHO na linha — `includes` pegaria variantes. */
 function blocoDe(seletor: string): Map<string, string> {
@@ -84,7 +84,7 @@ describe("marcaDoCanal", () => {
 describe("channelBrandDoAviso", () => {
   it("o número da API oficial sai como cano próprio no aviso; o logo da lista segue a rede", () => {
     const oficial = { provider: "meta_cloud", social_platform: null };
-    expect(channelBrandDoAviso(oficial)).toBe("api_oficial");
+    expect(channelBrandDoAviso(oficial)).toBe("api-oficial");
     // A lista de conversas continua dizendo "WhatsApp": ali se procura a
     // conversa, não o cano.
     expect(channelBrand(oficial)).toBe("whatsapp");
@@ -104,7 +104,7 @@ describe("a paleta nomeada", () => {
       "telegram",
       "instagram",
       "email",
-      "api_oficial",
+      "api-oficial",
       "messenger",
     ]);
     for (const canal of CANAIS_NA_PALETA) {
