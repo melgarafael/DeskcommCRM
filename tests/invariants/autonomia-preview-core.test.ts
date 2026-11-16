@@ -16,6 +16,11 @@ import { createFakeRegistry } from "@/lib/agent-engine/edge/llm/providers";
 import { createLogger } from "@/lib/agent-engine/obs/logger";
 import { loadEnv } from "@/lib/agent-engine/env";
 import { turnKnobsFromEnv } from "@/lib/agent-engine/agent/turn-knobs";
+const fonteDoTeste = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/mcp/servidor-externo/consulta-obrigatoria", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/mcp/servidor-externo/consulta-obrigatoria")>(),
+  consultarFonteObrigatoria: fonteDoTeste,
+}));
 const pool = new pg.Pool({
   connectionString: `postgresql://postgres:postgres@127.0.0.1:${process.env.TEST_DB_PORT ?? 54329}/postgres`,
   max: 6,
@@ -204,6 +209,30 @@ it("sandbox percorre flush, compaction, RAG, loop e fechamento com zero mutaçã
       ])
     ).rows,
   ).toEqual([{ job_id: null }]);
+});
+it.each(["confirmado", "divergente", "revogado"])("fonte obrigatória no runtime: %s, sem efeitos no contato", async (caso) => {
+  const f = await replyFixture(pool);
+  const agent = (await loadAgentVersionConfig(pool, f.org, f.agent, f.version))!;
+  agent.consultaObrigatoriaTool = "consultar_dados_cliente";
+  agent.mcpExternoNoAtendimento = true;
+  const fonte = { consultado_em: new Date().toISOString(), respostas_permitidas: [caso === "divergente" ? "A entrega é 31/12/2026." : "O atendimento começa às nove horas."] };
+  fonteDoTeste.mockReset();
+  if (caso === "revogado") fonteDoTeste.mockResolvedValueOnce(fonte).mockResolvedValue(null);
+  else fonteDoTeste.mockResolvedValue(fonte);
+  const result = newPreviewResult();
+  const d = deps([]); delete d.knobs.compaction;
+  const before = await clientState(f.org);
+  await runAgentPreview(d, pool, {
+    kind: "sandbox", organizationId: f.org, runId: randomUUID(), agent,
+    contactId: f.contact, channelId: f.channel,
+    context: scenarioContext([{ direction: "inbound", body: "Qual o horário?", sent_at: "2026-09-07T14:00:00Z" }]),
+    result,
+  });
+  expect(await clientState(f.org)).toEqual(before);
+  expect(result.proposals.some((p) => p.tool === "save_lead_note")).toBe(false);
+  expect(fonteDoTeste.mock.calls.length).toBeGreaterThanOrEqual(2);
+  expect(result.candidates).toHaveLength(caso === "confirmado" ? 1 : 0);
+  if (caso !== "confirmado") expect(result.impediments.some((i) => i.code === "fonte_obrigatoria")).toBe(true);
 });
 it("assistência sob demanda instala fronteira original antes de ler checkpoint", async () => {
   const f = await replyFixture(pool);

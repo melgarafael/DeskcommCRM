@@ -29,21 +29,62 @@ const VERSION = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const RUN = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 
 /** Dublê fechado: qualquer escrita fora de ai_agent_runs lança erro. */
-function bancoDaRota(orgDaVersao: string) {
+function bancoDaRota(orgDaVersao: string, orgDoContato = ORG) {
   const inserts: Array<Record<string, unknown>> = [];
   const updates: Array<{ dados: Record<string, unknown>; filtros: Record<string, unknown> }> = [];
   const leituras: Array<Record<string, unknown>> = [];
   const admin = {
     from(table: string) {
+      if (table === "contacts") {
+        const filtros: Record<string, unknown> = {};
+        const q = {
+          select: () => q,
+          eq: (k: string, v: unknown) => {
+            filtros[k] = v;
+            return q;
+          },
+          maybeSingle: async () => ({
+            data:
+              filtros.organization_id === orgDoContato && filtros.id === RUN
+                ? {
+                    id: RUN,
+                    name: "Contato do banco",
+                    phone_number: "5511999990000",
+                    is_blocked: false,
+                    is_anonymized: false,
+                    kind: "person",
+                  }
+                : null,
+            error: null,
+          }),
+        };
+        return q;
+      }
       if (table === "ai_agent_versions") {
         const filtros: Record<string, unknown> = {};
         const consulta = {
           select: () => consulta,
-          eq(coluna: string, valor: unknown) { filtros[coluna] = valor; return consulta; },
+          eq(coluna: string, valor: unknown) {
+            filtros[coluna] = valor;
+            return consulta;
+          },
           async maybeSingle() {
             leituras.push({ ...filtros });
-            const achou = filtros.id === VERSION && filtros.agent_id === AGENT && filtros.organization_id === orgDaVersao;
-            return { data: achou ? { id: VERSION, agent_id: AGENT, organization_id: orgDaVersao, channel_session_id: null } : null, error: null };
+            const achou =
+              filtros.id === VERSION &&
+              filtros.agent_id === AGENT &&
+              filtros.organization_id === orgDaVersao;
+            return {
+              data: achou
+                ? {
+                    id: VERSION,
+                    agent_id: AGENT,
+                    organization_id: orgDaVersao,
+                    channel_session_id: null,
+                  }
+                : null,
+              error: null,
+            };
           },
         };
         return consulta;
@@ -57,7 +98,10 @@ function bancoDaRota(orgDaVersao: string) {
         update(dados: Record<string, unknown>) {
           const filtros: Record<string, unknown> = {};
           const consulta = {
-            eq(coluna: string, valor: unknown) { filtros[coluna] = valor; return consulta; },
+            eq(coluna: string, valor: unknown) {
+              filtros[coluna] = valor;
+              return consulta;
+            },
             then(resolve: (v: { error: null }) => void) {
               updates.push({ dados, filtros: { ...filtros } });
               resolve({ error: null });
@@ -71,10 +115,11 @@ function bancoDaRota(orgDaVersao: string) {
   return { admin, inserts, updates, leituras };
 }
 
-function requisicao() {
+function requisicao(extra = {}) {
   return new NextRequest("http://localhost/api/v1/ai/agents/test", {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ sample_message: "Mensagem de teste" }),
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ sample_message: "Mensagem de teste", ...extra }),
   });
 }
 const ctx = { params: Promise.resolve({ id: AGENT, vid: VERSION }) };
@@ -83,7 +128,8 @@ describe("POST de teste do agente: isolamento e efeitos explícitos", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.requireRole.mockResolvedValue({
-      ok: true, user: { id: "ffffffff-ffff-4fff-8fff-ffffffffffff", idioma: "pt-BR" },
+      ok: true,
+      user: { id: "ffffffff-ffff-4fff-8fff-ffffffffffff", idioma: "pt-BR" },
       org: { orgId: ORG, role: "admin" },
     });
     // #2490: o resultado do motor traz `midia` (a preparação das fotos do
@@ -99,6 +145,30 @@ describe("POST de teste do agente: isolamento e efeitos explícitos", () => {
     });
   });
 
+  it("recusa contato de outra organização antes de criar run ou chamar modelo", async () => {
+    const db = bancoDaRota(ORG, OUTRA_ORG);
+    mocks.admin.mockReturnValue(db.admin);
+    expect((await POST(requisicao({ contact_id: RUN }), ctx)).status).toBe(404);
+    expect(db.inserts).toHaveLength(0);
+    expect(mocks.preview).not.toHaveBeenCalled();
+  });
+  it("usa contato do banco somente na prévia e registra o run como dry-run", async () => {
+    const db = bancoDaRota(ORG);
+    mocks.admin.mockReturnValue(db.admin);
+    expect((await POST(requisicao({ contact_id: RUN }), ctx)).status).toBe(200);
+    expect(db.inserts[0]).toMatchObject({
+      contact_id: RUN,
+      is_dry_run: true,
+      conversation_id: null,
+    });
+    expect(mocks.preview).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({
+        authorizedContact: { id: RUN, name: "Contato do banco", phone_number: "5511999990000" },
+      }),
+    );
+  });
   it("recusa versão de outra organização antes de criar run ou chamar modelo", async () => {
     const db = bancoDaRota(OUTRA_ORG);
     mocks.admin.mockReturnValue(db.admin);
@@ -116,17 +186,38 @@ describe("POST de teste do agente: isolamento e efeitos explícitos", () => {
     const resposta = await POST(requisicao(), ctx);
     expect(resposta.status).toBe(200);
     expect(db.leituras).toEqual([{ id: VERSION, organization_id: ORG, agent_id: AGENT }]);
-    expect(db.inserts).toEqual([expect.objectContaining({
-      organization_id: ORG, agent_id: AGENT, agent_version_id: VERSION,
-      is_dry_run: true, conversation_id: null, contact_id: null,
-      inbound_message_id: null, outbound_message_id: null, status: "running",
-    })]);
-    expect(db.updates).toEqual([{ dados: expect.objectContaining({ status: "completed" }), filtros: { organization_id: ORG, id: RUN } }]);
+    expect(db.inserts).toEqual([
+      expect.objectContaining({
+        organization_id: ORG,
+        agent_id: AGENT,
+        agent_version_id: VERSION,
+        is_dry_run: true,
+        conversation_id: null,
+        contact_id: null,
+        inbound_message_id: null,
+        outbound_message_id: null,
+        status: "running",
+      }),
+    ]);
+    expect(db.updates).toEqual([
+      {
+        dados: expect.objectContaining({ status: "completed" }),
+        filtros: { organization_id: ORG, id: RUN },
+      },
+    ]);
     expect(mocks.preview).toHaveBeenCalledOnce();
-    expect(mocks.preview).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.objectContaining({
-      organizationId: ORG, agentId: AGENT, versionId: VERSION, runId: RUN,
-      sampleMessage: "Mensagem de teste", channelId: null,
-    }));
+    expect(mocks.preview).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({
+        organizationId: ORG,
+        agentId: AGENT,
+        versionId: VERSION,
+        runId: RUN,
+        sampleMessage: "Mensagem de teste",
+        channelId: null,
+      }),
+    );
   });
 
   it("candidato com a mídia pendente sai como teste BLOQUEADO (#2490)", async () => {
@@ -136,17 +227,25 @@ describe("POST de teste do agente: isolamento e efeitos explícitos", () => {
       candidates: [{ body: "Segue a foto" }],
       proposals: [],
       trace: [],
-      midia: [{
-        codigo: "IP15", produtoResolvido: true, fotosCadastradas: 1, fotosPreparadas: 0, anexos: [],
-        falha: { code: "midia_nao_preparada", message: "x" },
-      }],
+      midia: [
+        {
+          codigo: "IP15",
+          produtoResolvido: true,
+          fotosCadastradas: 1,
+          fotosPreparadas: 0,
+          anexos: [],
+          falha: { code: "midia_nao_preparada", message: "x" },
+        },
+      ],
       materiais: [],
     });
     const db = bancoDaRota(ORG);
     mocks.admin.mockReturnValue(db.admin);
     const resposta = await POST(requisicao(), ctx);
     expect(resposta.status).toBe(200);
-    const { data } = (await resposta.json()) as { data: { status: string; guardrails: { passou: boolean } } };
+    const { data } = (await resposta.json()) as {
+      data: { status: string; guardrails: { passou: boolean } };
+    };
     expect(data.status).toBe("blocked");
     expect(data.guardrails.passou).toBe(false);
   });
@@ -159,12 +258,14 @@ describe("POST de teste do agente: isolamento e efeitos explícitos", () => {
       proposals: [],
       trace: [],
       midia: [],
-      materiais: [{
-        materialId: "11111111-2222-4333-8444-555555555555",
-        nome: null,
-        anexo: null,
-        falha: { code: "material_nao_copiado", message: "x" },
-      }],
+      materiais: [
+        {
+          materialId: "11111111-2222-4333-8444-555555555555",
+          nome: null,
+          anexo: null,
+          falha: { code: "material_nao_copiado", message: "x" },
+        },
+      ],
     });
     const db = bancoDaRota(ORG);
     mocks.admin.mockReturnValue(db.admin);

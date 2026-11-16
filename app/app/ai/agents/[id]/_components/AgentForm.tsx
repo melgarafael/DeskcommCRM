@@ -1908,6 +1908,7 @@ export function AgentForm(props: Props) {
             <ServidorExternoNoAtendimento
               agentId={props.agent.id}
               inicial={(props.agent.config ?? {}).mcp_externo_no_atendimento}
+              consultaInicial={(props.agent.config ?? {}).consulta_obrigatoria_tool}
               toolIds={form.tool_ids}
               onChangeToolIds={(ids) => patch({ tool_ids: ids })}
               disabled={disabled}

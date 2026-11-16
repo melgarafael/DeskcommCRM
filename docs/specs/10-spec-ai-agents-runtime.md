@@ -491,6 +491,33 @@ Resposta:
 }
 ```
 
+#### Consulta verificada no Testar
+
+O POST `/api/v1/ai/agents/:id/versions/:vid/test` aceita `contact_id` opcional,
+mutuamente exclusivo com `sample_contact`. O guard admin resolve a organização
+da sessão/token e relê esse contato filtrando id e organização. Contato ausente,
+de outra organização, bloqueado, anonimizado ou grupo é recusado antes de criar
+o run ou chamar o modelo. Nome/telefone do corpo nunca autorizam a identidade.
+Sem `contact_id`, a prévia permanece um cenário sem identidade cadastral.
+
+`required_source_tool`, opcional, exige contato selecionado e uma ferramenta
+`mcp_externo:leitura:<nome>` escolhida na versão. É uma simulação explícita apenas
+daquela execução: não altera `ai_agents.config` nem publica versão. O resultado
+mostra esse aviso, e a auditoria registra contato e fonte utilizados. A prévia
+relê a fonte com a identidade resolvida no servidor; a marca de leitura precisa
+também da declaração do servidor externo. Nenhuma operação de envio é executada.
+
+A configuração de atendimento `ai_agents.config.consulta_obrigatoria_tool` é
+opt-in e imediata, com superfície no cartão de servidor externo. Nesse modo,
+o executor consulta a fonte antes da resposta e de cada tentativa de envio;
+só aceita uma frase exata da fonte fresca (até 30 segundos) ou a resposta de
+informação não confirmada. Templates, mídia e outras operações automáticas não
+podem contornar a regra; casos internos da equipe continuam disponíveis. O papel
+Operador não executa ações nesse modo. Desligado, mantém o comportamento anterior.
+
+O painel permite testar o rascunho com a regra simulada antes de ativar essa
+configuração no atendimento. A publicação da versão é uma decisão separada.
+
 #### Follow-up configurado por versão
 
 `ai_agent_versions.followup` é a configuração JSONB versionada. `enabled` e
