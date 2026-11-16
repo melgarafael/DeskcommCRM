@@ -241,16 +241,16 @@ describe("triarCandidato", () => {
     // telefone agora pertence a um atendimento alheio. Antes bastava o
     // `contact_id` vir preenchido para seguir para a abordagem fria.
     const { db } = bancoFalso({ contatosConhecidos: [{ id: "alheio" }] });
-    expect(
-      await triarCandidato(db, ORG, CAMPANHA, candidato(1, { contact_id: CONTATO })),
-    ).toEqual({ motivo: "Contato já existe no CRM; atendimento preservado." });
+    expect(await triarCandidato(db, ORG, CAMPANHA, candidato(1, { contact_id: CONTATO }))).toEqual({
+      motivo: "Contato já existe no CRM; atendimento preservado.",
+    });
   });
 
   it("controle: `contact_id` preenchido e o telefone acha o MESMO contato, segue com ele", async () => {
     const { db } = bancoFalso({ contatosConhecidos: [{ id: CONTATO }] });
-    expect(
-      await triarCandidato(db, ORG, CAMPANHA, candidato(1, { contact_id: CONTATO })),
-    ).toEqual({ contatoDaCampanha: CONTATO });
+    expect(await triarCandidato(db, ORG, CAMPANHA, candidato(1, { contact_id: CONTATO }))).toEqual({
+      contatoDaCampanha: CONTATO,
+    });
   });
 
   it("sem telefone: pula, e nem consulta o CRM", async () => {
@@ -566,14 +566,19 @@ describe("prepararCandidatoNoEnvio: os casos de borda que o revisor cego apontou
  */
 type Chamada = { table: string; data: Record<string, unknown> };
 function adminDoMotor(opcoes: { regras: unknown[]; negocio: Record<string, unknown> | null }) {
-  const registro: { inserts: Chamada[]; updates: Chamada[]; rpcs: { fn: string; args: Record<string, unknown> }[] } = {
+  const registro: {
+    inserts: Chamada[];
+    updates: Chamada[];
+    rpcs: { fn: string; args: Record<string, unknown> }[];
+  } = {
     inserts: [],
     updates: [],
     rpcs: [],
   };
 
   const listar = (table: string, mode: string, data: Record<string, unknown> | null) => {
-    if (table === "automation_rules" && mode === "select") return { data: opcoes.regras, error: null };
+    if (table === "automation_rules" && mode === "select")
+      return { data: opcoes.regras, error: null };
     if (mode === "insert") {
       registro.inserts.push({ table, data: data ?? {} });
       return { error: null };
@@ -590,7 +595,8 @@ function adminDoMotor(opcoes: { regras: unknown[]; negocio: Record<string, unkno
       registro.inserts.push({ table, data: data ?? {} });
       return { data: { id: "run-1" }, error: null };
     }
-    if (table === "automation_rules" && mode === "select") return { data: { run_count: 0 }, error: null };
+    if (table === "automation_rules" && mode === "select")
+      return { data: { run_count: 0 }, error: null };
     if (table === "crm_leads" && mode === "select") return { data: opcoes.negocio, error: null };
     return { data: null, error: null };
   };
@@ -624,7 +630,9 @@ function adminDoMotor(opcoes: { regras: unknown[]; negocio: Record<string, unkno
       // `RETURNING` devolveria é o que a ação usa para saber se houve escrita.
       if (fn === "fn_lead_adicionar_etiquetas") {
         const antes = (opcoes.negocio?.tags as string[] | undefined) ?? [];
-        const adicionadas = [...new Set(args.p_etiquetas as string[])].filter((t) => !antes.includes(t));
+        const adicionadas = [...new Set(args.p_etiquetas as string[])].filter(
+          (t) => !antes.includes(t),
+        );
         return { data: { tags: [...antes, ...adicionadas], adicionadas }, error: null };
       }
       return { data: null, error: null };
@@ -734,7 +742,10 @@ describe("o negócio que a campanha abre: a regra de `lead.created` RODA (#3072)
     });
     // O carimbo EXATO que a ação de regra escreve (`create-or-move-lead.ts`,
     // `send-ai-message.ts`, `send-whatsapp.ts`): `rule:<uuid da regra>`.
-    const resultado = await runAutomationForEvent(motor.admin, eventoDoNegocio({ request_id: `rule:${REGRA}` }));
+    const resultado = await runAutomationForEvent(
+      motor.admin,
+      eventoDoNegocio({ request_id: `rule:${REGRA}` }),
+    );
 
     expect(resultado).toEqual({
       consumer_key: AUTOMATION_CONSUMER_KEY,

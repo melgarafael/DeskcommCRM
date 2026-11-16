@@ -147,16 +147,16 @@ describe("prospecção × módulo Empresas e pessoas (#3198, fatia 2)", () => {
     }
 
     expect(devolvidos).toEqual([null, null, null]);
-    expect(await conta("select count(*) as n from companies where organization_id = $1", [ORG_A])).toBe(
-      0,
-    );
+    expect(
+      await conta("select count(*) as n from companies where organization_id = $1", [ORG_A]),
+    ).toBe(0);
 
     // E o mesmo com a chave EXPLÍCITA em `desligado`: só `ligado` liga.
     await ligarModulo("desligado");
     expect(await empresaDoCandidato(client, ORG_A, negocio("desligado-4"))).toBeNull();
-    expect(await conta("select count(*) as n from companies where organization_id = $1", [ORG_A])).toBe(
-      0,
-    );
+    expect(
+      await conta("select count(*) as n from companies where organization_id = $1", [ORG_A]),
+    ).toBe(0);
   });
 
   it("2. módulo ligado: a empresa nasce com site, Maps e place_id, e o contato nasce ligado a ela", async () => {
@@ -202,7 +202,9 @@ describe("prospecção × módulo Empresas e pessoas (#3198, fatia 2)", () => {
     expect(contato.rows[0].company_id).toBe(empresaId);
 
     // E sem pessoa sintética "Recepção": o vínculo é com a EMPRESA (decisão 1).
-    expect(await conta("select count(*) as n from people where organization_id = $1", [ORG_A])).toBe(0);
+    expect(
+      await conta("select count(*) as n from people where organization_id = $1", [ORG_A]),
+    ).toBe(0);
   });
 
   it("3. dois candidatos com o mesmo place_id na mesma organização reaproveitam a mesma empresa", async () => {
@@ -222,9 +224,9 @@ describe("prospecção × módulo Empresas e pessoas (#3198, fatia 2)", () => {
     );
 
     expect(segunda).toBe(primeira);
-    expect(await conta("select count(*) as n from companies where organization_id = $1", [ORG_A])).toBe(
-      1,
-    );
+    expect(
+      await conta("select count(*) as n from companies where organization_id = $1", [ORG_A]),
+    ).toBe(1);
     const { rows } = await pool.query("select website, maps_url from companies where id = $1", [
       primeira,
     ]);
@@ -286,9 +288,9 @@ describe("prospecção × módulo Empresas e pessoas (#3198, fatia 2)", () => {
       "select public.fn_expurgar_prospeccao_vencida(365, 1000) as n",
     );
     expect(Number(apagadas.rows[0]?.n ?? 0)).toBeGreaterThanOrEqual(1);
-    expect(await conta("select count(*) as n from prospecting_candidates where id = $1", [candidatoId])).toBe(
-      0,
-    );
+    expect(
+      await conta("select count(*) as n from prospecting_candidates where id = $1", [candidatoId]),
+    ).toBe(0);
 
     // O que agora mora na Empresa sobrevive à linha que sumiu — o motivo pelo
     // qual o autor rejeitou a opção "só o place_id apontando para a prospecção".
