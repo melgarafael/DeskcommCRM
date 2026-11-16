@@ -316,6 +316,13 @@ import {
   avisarEquipeDoTetoDeRespostas,
   knobsDoTetoDeRespostas,
 } from './teto-de-respostas';
+// #4590 item 2 — reconhecer o outro lado como atendimento automático. Mesmo
+// caminho de armar e mesmo ponto de aplicar os efeitos do veto que o teto.
+import {
+  CODIGO_DO_INTERLOCUTOR_AUTOMATICO,
+  silenciarConversaPorInterlocutorAutomatico,
+  type FamiliaDePista,
+} from './interlocutor-automatico';
 import {
   desfechoSemCandidato,
   previaPedeCorrecaoDoTurnoMudo,
@@ -5110,6 +5117,10 @@ async function executarTurnoDoAgente(
                     conversationId: input.conversationId,
                     ...knobsDoTetoDeRespostas(deps.knobs.tetoDeRespostas),
                   },
+                  // #4590 item 2 — o MESMO armamento do teto e pela mesma razão:
+                  // só existe interlocutor a julgar quando o turno responde a uma
+                  // mensagem recebida. A amostra é da conversa; o gate lê sob o lock.
+                  interlocutorAutomatico: { conversationId: input.conversationId },
                 }
               : {}),
             // ponytail: channel_sessions.daily_message_limit do CRM ainda não é lido
@@ -5467,6 +5478,24 @@ async function executarTurnoDoAgente(
                 organizationId: tenantId,
                 conversationId: input.conversationId,
                 ...knobsDoTetoDeRespostas(deps.knobs.tetoDeRespostas),
+                log: runLog,
+              });
+            }
+            // #4590 item 2 — do outro lado parece atendimento automático: aviso na
+            // Central e, SÓ depois dele, o silêncio da conversa. A função nunca
+            // lança e não silencia quando o aviso não gravou.
+            if (chain.code === CODIGO_DO_INTERLOCUTOR_AUTOMATICO && !preview) {
+              const detalhe = chain.trace.find(
+                (t) => t.code === CODIGO_DO_INTERLOCUTOR_AUTOMATICO,
+              )?.detail;
+              await silenciarConversaPorInterlocutorAutomatico(pool, {
+                organizationId: tenantId,
+                conversationId: input.conversationId,
+                pistas: Number(detalhe?.pistas ?? 0),
+                familias:
+                  typeof detalhe?.familias === 'string' && detalhe.familias.length > 0
+                    ? (detalhe.familias.split(',') as FamiliaDePista[])
+                    : [],
                 log: runLog,
               });
             }
