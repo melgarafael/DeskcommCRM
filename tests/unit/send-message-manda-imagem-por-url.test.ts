@@ -68,7 +68,11 @@ describe("validação e guarda da foto por URL — antes da cadeia e nunca na pr
     expect(envolve).toBeGreaterThan(FONTE.indexOf("rawTools[name] = mcpTool;"));
     expect(envolve).toBeLessThan(FONTE.indexOf("applyPreviewPolicy("));
     expect(FONTE.slice(envolve, envolve + 600)).toContain("procedenciaDeImagens.registrar(resultado, args[0]);");
-    expect(FONTE).toContain("procedenciaDeImagens.viu,\n          )\n        : rawTools;");
+    // A procedência entra como argumento do `applyPreviewPolicy`, logo depois do
+    // conferidor de fatos. O #4129 acrescentou um slot DEPOIS dela (o preparo do
+    // material da empresa), então ela deixou de ser a última linha da chamada —
+    // o que a asserção prende é a POSIÇÃO dela na cadeia, não o fim do arquivo.
+    expect(FONTE).toContain("conferirAfirmacoes,\n            procedenciaDeImagens.viu,");
   });
 
   it("a foto é guardada na conversa com o tenant do turno antes de sair", () => {
@@ -102,7 +106,11 @@ describe("entrega — o canal recebe só storagePath, de DENTRO do send do guard
 
   it("a foto sai de dentro do send (com o corpo que a cadeia aprovou) e obedece restantes()", () => {
     const send = corpoDoSend.slice(corpoDoSend.indexOf("send: (finalBody: string) =>"));
-    expect(send).toContain("enviarComFotos(finalBody, fotosDoProduto, {");
+    // #4129 — a MESMA `enviarComFotos` do produto, com o material da empresa
+    // como alternativa ÚNICA (as duas listas competem pela legenda): o anexo
+    // escolhido continua saindo de dentro do `send`, nunca fora dele.
+    expect(send).toContain("enviarComFotos(");
+    expect(send).toContain("anexoDoMaterial !== null ? [anexoDoMaterial] : fotosDoProduto,");
     expect(send).toContain("restantes: () => maxSendsPerTurn - seq,");
   });
 
