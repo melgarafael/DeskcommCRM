@@ -118,7 +118,7 @@ export async function resolverAvisoDeRevisaoSeProntaOuEncerrada(
       const { data } = await supabase
         .from("crm_proposals")
         .select(
-          "template_slug, pricing_status, secoes_editadas, briefing_json, total_cents, moeda, prazo_dias_uteis, valid_until, created_at, contact_id",
+          "template_slug, lead_id, pricing_status, secoes_editadas, briefing_json, total_cents, moeda, prazo_dias_uteis, valid_until, created_at, contact_id",
         )
         .eq("organization_id", organizationId)
         .eq("id", propostaId)

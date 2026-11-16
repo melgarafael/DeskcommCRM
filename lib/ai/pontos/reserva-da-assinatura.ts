@@ -57,8 +57,9 @@
  * status não basta (um 400 que diz "usage limit" é `limite_de_uso`), e toda
  * falha da assinatura sem reserva vira `passar_para_humano` — inclusive o
  * `erro_de_pedido`, que continua NÃO caindo para a reserva (o mesmo corpo seria
- * recusado de novo lá). Reserva para outro provedor, aviso na tela e
- * auto-renovação da janela continuam fora deste módulo.
+ * recusado de novo lá). Aviso na tela e auto-renovação da janela continuam fora
+ * deste módulo; a reserva para OUTRO provedor, configurada, entra mais abaixo
+ * (#4600) — sem tocar em nenhuma linha da política acima.
  *
  * `passar_para_humano` é a DECISÃO; quem a executa ainda não existe:
  * `run-model-call` só age em `tentar_reserva` e relança o resto (#3371 segue
@@ -256,4 +257,116 @@ export function decidirQuedaDoProvedor(entrada: {
     motivo: classificarFalhaDaAssinatura(entrada.status, entrada.detalhe),
     temChaveDeReserva: entrada.temChaveDeReserva,
   });
+}
+
+/**
+ * ─── A RESERVA DE MODELO CONFIGURÁVEL (#4600) ────────────────────────────────
+ *
+ * A política acima só sabe cair de UM provedor para outro FIXO: o da assinatura.
+ * Com provedor personalizado, OpenRouter, DeepSeek e afins não havia degrau
+ * nenhum — cota estourada (429), 5xx ou tempo esgotado derrubavam o turno e o
+ * cliente ficava sem resposta até a cota voltar.
+ *
+ * O que muda: a reserva deixa de ser um mapa fixo e passa a ser CONFIGURAÇÃO —
+ * a versão publicada do agente aponta um par (provedor, modelo) de reserva, de
+ * qualquer provedor já cadastrado na instalação. Quem NÃO configura nada não
+ * ganha degrau nenhum: `reserva` ausente devolve `null` e o desfecho é o de hoje,
+ * byte a byte — inclusive o caminho da assinatura, que continua sendo o primeiro
+ * tentado, com a política de `decidirQuedaDoProvedor` intacta acima.
+ *
+ * A régua é mais ESTREITA que a da assinatura, de propósito: só `cota` (429),
+ * `falha_do_provedor` (5xx) e `tempo_esgotado` (sem resposta, com sinal de
+ * timeout). Erro de pedido (400/422) NUNCA cai — o mesmo corpo seria recusado de
+ * novo na reserva, gastando duas chamadas para colher dois erros e escondendo de
+ * quem opera que o defeito é nosso. Credencial recusada (401/403) também não
+ * cai: é configuração de chave, não indisponibilidade do provedor.
+ *
+ * E é UMA tentativa: `jaCaiuParaAReserva` fecha a porta da segunda. Não há laço
+ * neste arquivo, e a função recusa a segunda tentativa mesmo que um chamador
+ * futuro tente fazê-la.
+ */
+
+/** O degrau configurado: qualquer provedor cadastrado, com o modelo dele. */
+export interface ReservaDeModeloConfigurada {
+  provider: string;
+  model: string;
+}
+
+/** Por que a chamada principal caiu — só os três que não são culpa do pedido. */
+export type MotivoDaQuedaDoModelo = "cota" | "falha_do_provedor" | "tempo_esgotado";
+
+/** A reserva configurada existe e vai atender a chamada — uma vez. */
+export interface QuedaParaAReservaDoModelo {
+  acao: "tentar_reserva_do_modelo";
+  provedorDeReserva: string;
+  modeloDeReserva: string;
+  motivo: MotivoDaQuedaDoModelo;
+}
+
+/**
+ * Sinais de TEMPO ESGOTADO na mensagem do erro. Só valem quando não houve
+ * resposta (status nulo): com status, o número já decide. Comparados em caixa
+ * baixa.
+ */
+const SINAIS_DE_TEMPO_ESGOTADO: readonly RegExp[] = [
+  /timed? ?out/, // timeout / timed out / time out
+  /etimedout/,
+  /deadline exceeded/,
+  /aborted due to timeout/,
+];
+
+/** A mensagem do erro diz que o tempo esgotou? (status nulo, sem resposta.) */
+export function estourouOTempo(detalhe?: string | null): boolean {
+  const texto = (detalhe ?? "").toLowerCase();
+  return SINAIS_DE_TEMPO_ESGOTADO.some((sinal) => sinal.test(texto));
+}
+
+/**
+ * Traduz o desfecho da chamada principal em motivo de queda para a reserva
+ * CONFIGURADA. Devolve `null` para tudo que não está na régua — e é essa
+ * estreiteza que impede o corpo recusado de viajar para outra credencial.
+ */
+export function classificarFalhaDaReservaDoModelo(entrada: {
+  status: number | null;
+  detalhe?: string | null;
+}): MotivoDaQuedaDoModelo | null {
+  const { status } = entrada;
+  // Sem resposta: só o TEMPO ESGOTADO justifica a reserva. Conexão recusada ou
+  // DNS não dizem nada sobre o outro provedor — cair por qualquer coisa fora da
+  // régua seria inventar degrau.
+  if (status === null) return estourouOTempo(entrada.detalhe) ? "tempo_esgotado" : null;
+  if (status === 429) return "cota";
+  if (status >= 500) return "falha_do_provedor";
+  // 400/401/402/403/404/422: o pedido ou a credencial. Não cai.
+  return null;
+}
+
+/**
+ * A decisão da reserva configurada, em uma função pura: existe reserva, o
+ * motivo está na régua e ainda não se caiu → devolve a tentativa; qualquer
+ * outra combinação → `null`, e quem chamou segue com o desfecho de hoje.
+ */
+export function decidirQuedaDoModeloDeReserva(entrada: {
+  reserva: ReservaDeModeloConfigurada | null | undefined;
+  status: number | null;
+  detalhe?: string | null;
+  jaCaiuParaAReserva: boolean;
+}): QuedaParaAReservaDoModelo | null {
+  const reserva = entrada.reserva;
+  // Desligado por padrão: sem configuração, o comportamento é o de hoje.
+  if (reserva === null || reserva === undefined) return null;
+  if (reserva.provider.trim() === "" || reserva.model.trim() === "") return null;
+  // UMA tentativa, sem laço.
+  if (entrada.jaCaiuParaAReserva) return null;
+  const motivo = classificarFalhaDaReservaDoModelo({
+    status: entrada.status,
+    detalhe: entrada.detalhe,
+  });
+  if (motivo === null) return null;
+  return {
+    acao: "tentar_reserva_do_modelo",
+    provedorDeReserva: reserva.provider,
+    modeloDeReserva: reserva.model,
+    motivo,
+  };
 }
