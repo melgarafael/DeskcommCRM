@@ -392,6 +392,24 @@ export function transportaMensagem(provider: string | null | undefined): boolean
 }
 
 /**
+ * O canal SABIDAMENTE recusa a nota de voz que o gravador do Inbox produz?
+ *
+ * É o lado humano do `voiceNote: "none"`: o agente já responde em texto nesses
+ * canais, e o atendente não pode ganhar um microfone que grava, sobe e termina
+ * numa bolha `failed`. O gravador sobe ogg/opus (ver
+ * `lib/messaging/media/voice-transcode.ts`), e a DM do Instagram só aceita
+ * aac, m4a, wav e mp4.
+ *
+ * Responde `true` SÓ para um canal conhecido que declarou `none`. Provider
+ * ausente ou mais novo que este build fica com o microfone, como sempre esteve:
+ * esconder um botão que funciona por não saber o canal é o erro mais caro aqui.
+ */
+export function recusaNotaDeVoz(provider: string | null | undefined): boolean {
+  if (!transportaMensagem(provider)) return false;
+  return CHANNEL_CAPABILITIES[provider as ProviderDeMensagem].voiceNote === "none";
+}
+
+/**
  * Os providers que ESTE código conhece e que, sabidamente, não conversam.
  *
  * A diferença para `!transportaMensagem(p)` é a que separa "categoria" de

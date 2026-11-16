@@ -85,6 +85,14 @@ export const AUDIT_ACTIONS = [
   // A cascata retomando o que uma execução interrompida não terminou (#310).
   "lgpd.anonymize_catchup",
   "member.invited",
+  // A pessoa foi CRIADA por quem administra, com senha definida por ele
+  // (#3876) — não convidada. `member.invited` não serve: ali ninguém tinha
+  // conta e o e-mail era a prova; aqui a conta nasceu pronta e a trilha
+  // precisa responder "quem criou esta pessoa, com qual papel, e quando".
+  "member.created",
+  // A criação acima recusada pelo GoTrue (#3876). Gravado sem organização: o
+  // motivo real fica na auditoria do dono da instalação.
+  "member.create_refused",
   "team.interface_changed",
   /**
    * A EMPRESA trocou as portas que mostra (issue #1341, migration 0367). É o
@@ -511,6 +519,12 @@ export const AUDIT_ACTIONS = [
   "auth.password_reset_request_failed",
   "auth.password_reset_completed",
   "auth.password_reset_failed",
+  // A troca OBRIGATÓRIA do primeiro acesso (#3876). Distinta de
+  // `auth.password_reset_completed`: ali a pessoa voltou por "esqueci a senha";
+  // aqui ela cumpriu a obrigação que o vínculo impunha — e a pergunta de
+  // auditoria é "quando a senha provisória deixou de valer".
+  "auth.password_change_completed",
+  "auth.password_change_failed",
   "tenant.created_by_signup",
   "tenant.created_by_recovery",
   "conversation.snoozed",
@@ -884,6 +898,8 @@ export const AUDIT_ACTIONS = [
   "catalog_product.ai_presentation_updated",
   "catalog_product.ai_presentation_audio_uploaded",
   "catalog_product.ai_presentation_audio_removed",
+  /** A rodada da fonte de catálogo (#3587, fatia 2) — cria, atualiza e desativa em lote. */
+  "catalog_products.synced_from_feed",
 
   // As tarefas do CRM (migration 0210). Tarefa é combinado de trabalho entre
   // pessoas do time — quem a criou, quem mudou o prazo e quem a apagou é
@@ -1510,6 +1526,9 @@ export const AUDIT_ACTIONS = [
   // sugestão, e quando". A fila guarda o usuário, mas a trilha é o rastro que a
   // organização consulta, e só ela tem o mesmo formato das outras ações de contato.
   "contact.duplicate_dismissed",
+  "agency.client_created",
+  "agency.session_started",
+  "agency.session_ended",
   // O admin mudou o limite em tokens acima do qual a tela Memória da IA avisa
   // que a memória pesa (`settings.memoria_da_ia`); metadata com o anterior e o novo.
   "ai.org_memory_weight_limit_updated",
