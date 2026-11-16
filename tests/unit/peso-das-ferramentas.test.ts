@@ -176,8 +176,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // no `send_message` (Spec 25 R4, #3276); +464 com `crm_publish_whatsapp_status`
 // (#3463), que só entra no catálogo com o módulo `status_whatsapp` ligado; +37 na
 // descrição de `crm_get_conversation_history`, que passou a dizer o AUTOR da
-// mensagem (#4077); +70 com `referencia_externa` no `crm_create_lead` (Spec 25 R5,
-// #3328).
+// mensagem (#4077).
 // +638 com o material da empresa (#4129): 231 do `send_message` (o `material_id`
 // e a sua descrição) e 407 da capacidade de wire `crm_send_material`, que entra
 // no catálogo lido pelo integrador.
@@ -186,8 +185,9 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +7760 com as 23 ferramentas `crm_amigo_*` (#4227), que só entram no catálogo com
 // o módulo `amigo` instalado. MEDIDO no merge com a main: 39122 = 31362 + 7760
 // (2026-11-16).
-// +70 do #3328: MEDIR no merge (placeholder)
-const TETO_TOTAL = 39192;
+// +65 com `referencia_externa` no `crm_create_lead` (#3328). MEDIDO no merge com a
+// main: 39187 = 39122 + 65 (2026-11-16).
+const TETO_TOTAL = 39187;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
