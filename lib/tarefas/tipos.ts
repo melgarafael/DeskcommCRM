@@ -55,6 +55,23 @@ export interface NegocioDaTarefa {
   title: string;
 }
 
+/**
+ * A REGRA da tarefa que se repete (#4595) — o que `crm_tasks.recurrence` guarda.
+ *
+ * `dias` é dia da semana LOCAL da organização, domingo = 0 (a régua de
+ * `diaDaSemanaLocal` e do `dow` da jornada); `hora` é hora de PAREDE da
+ * organização, 0–23. Nada de instante aqui: quem vira instante é
+ * `proximaOcorrencia` (`lib/tarefas/recorrencia.ts`), com o fuso da org.
+ *
+ * `ativa` é o interruptor da SÉRIE: desligada, ela para de gerar e não apaga o
+ * que já nasceu — as ocorrências passadas continuam sendo história.
+ */
+export interface RegraDeRecorrencia {
+  dias: number[];
+  hora: number;
+  ativa: boolean;
+}
+
 /** Uma linha de `crm_tasks`, como a API a devolve. */
 export interface Tarefa {
   id: string;
@@ -75,6 +92,11 @@ export interface Tarefa {
   demanda_id: string | null;
   assigned_to: string | null;
   created_by: string | null;
+  /**
+   * A regra da SÉRIE (#4595). Nula = tarefa avulsa ou ocorrência já gerada —
+   * quem repete é a linha que carrega a regra, não cada ocorrência.
+   */
+  recurrence: RegraDeRecorrencia | null;
   created_at: string;
   updated_at: string;
   /**
@@ -96,6 +118,11 @@ export interface NovaTarefa {
   /** A demanda do atendimento a que a tarefa fica presa (#2818). */
   demanda_id?: string | null;
   assigned_to?: string | null;
+  /**
+   * A regra da série (#4595). Presente = a tarefa criada é a SÉRIE e passa a
+   * gerar ocorrências; `null` (ou ausente) = tarefa avulsa, como hoje.
+   */
+  recurrence?: RegraDeRecorrencia | null;
 }
 
 export type EdicaoDaTarefa = Partial<NovaTarefa>;

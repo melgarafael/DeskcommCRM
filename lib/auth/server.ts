@@ -22,6 +22,7 @@ import { cookies, headers } from "next/headers";
 import { agindoPeloPoderDePlataforma } from "@/lib/auth/poder-de-plataforma";
 import { redirect } from "next/navigation";
 import { safeNext } from "@/lib/auth/safe-next";
+import { senhaProvisoriaPendente } from "@/lib/auth/senha-provisoria";
 import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -42,6 +43,8 @@ interface RawMembershipRow {
   interface_settings?: unknown;
   organization_id: string;
   role: string;
+  /** #3876: senha definida por quem administra, ainda não trocada. */
+  senha_provisoria?: boolean | null;
   /** Só para ORDENAR — a lista decide qual organização fica ativa sem cookie. */
   accepted_at?: string | null;
   organizations: OrgJoin | OrgJoin[] | null;
@@ -237,7 +240,7 @@ async function lerPermissoes(
           // issue #1341 acabou de engordar), e o alias traz só as portas da EMPRESA.
           // `timezone` veio do main (fuso da organização nas listas, #1290) e convive
           // com o alias: um embed por relação, sem renomear o que já existia.
-          "organization_id, role, interface_settings, accepted_at, organizations!user_organizations_organization_id_fkey(display_name, locale, timezone, currency, country, status, suspended_kind), interface_da_empresa:organizations!user_organizations_organization_id_fkey(interface_settings)",
+          "organization_id, role, interface_settings, senha_provisoria, accepted_at, organizations!user_organizations_organization_id_fkey(display_name, locale, timezone, currency, country, status, suspended_kind), interface_da_empresa:organizations!user_organizations_organization_id_fkey(interface_settings)",
         )
         .eq("user_id", userId)
         .is("revoked_at", null)
@@ -302,6 +305,10 @@ async function lerPermissoes(
       country: org?.country ?? null,
       org_status: org?.status ?? null,
       suspended_kind: org?.suspended_kind ?? null,
+      // #3876: só `true` obriga a troca. Nulo (linha anterior a qualquer
+      // escrita nova, ou payload sem a coluna) é "não deve nada" — o passado,
+      // inclusive todo convite, continua exatamente como era.
+      senha_provisoria: row.senha_provisoria === true,
     };
   });
 
@@ -380,6 +387,31 @@ const suporteDaSessao = cache(
   },
 );
 
+/**
+ * As agências habilitadas que esta pessoa administra (doc 321). A RLS de
+ * `agencia_configuracoes` só devolve linha a admin direto de agência habilitada
+ * COM o módulo `agencias` ligado (`fn_agencia_pode_gerir`): desligado, a mesma
+ * consulta volta vazia, e quem decide é o banco, não esta função. Falha = lista
+ * vazia, e o resto da sessão segue: o módulo opcional não derruba todas as telas
+ * de quem não é agência.
+ */
+async function agenciasQueAdministro(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("agencia_configuracoes")
+    .select("organization_id")
+    .eq("habilitada", true);
+  if (error) {
+    logger.warn("[auth] agências da pessoa: leitura falhou — tratando como nenhuma", {
+      code: error.code,
+      message: error.message,
+    });
+    return [];
+  }
+  return (data ?? []).map((a) => a.organization_id);
+}
+
 export const loadAuthUser = cache(async (): Promise<AuthUser | null> => {
   const {
     supabase,
@@ -434,12 +466,13 @@ export const loadAuthUser = cache(async (): Promise<AuthUser | null> => {
   //
   // A precedência dos erros é a MESMA: falha de permissão estoura primeiro
   // (vem do `Promise.all`) e a do acompanhamento é relançada logo abaixo.
-  const [permissoes, leituraDoSuporte] = await Promise.all([
+  const [permissoes, leituraDoSuporte, agencyOrgIds] = await Promise.all([
     permissoesDoUsuario(user.id, supabase),
     suporteDaSessao(user.id, sessao, supabase).then(
       (contexto) => ({ ok: true as const, contexto }),
       (erro: unknown) => ({ ok: false as const, erro }),
     ),
+    agenciasQueAdministro(supabase),
   ]);
 
   const { paRow, memberships } = permissoes;
@@ -470,6 +503,7 @@ export const loadAuthUser = cache(async (): Promise<AuthUser | null> => {
     locale,
     idioma,
     timezone,
+    agency_org_ids: agencyOrgIds,
     organizations: memberships,
     support,
   };
@@ -571,6 +605,10 @@ export const orgAtivaSemPortao = cache(async (authUser: AuthUser): Promise<Activ
  */
 export const resolveActiveOrg = cache(async (authUser: AuthUser): Promise<ActiveOrg | null> => {
   const org = await orgAtivaSemPortao(authUser);
+  // #3876: com a senha provisória de pé, a única tela é a troca — antes de
+  // onboarding, cobrança ou MFA. Aqui, e não só no layout de `/app`, para
+  // valer também nas Server Actions que resolvem a org por este portão.
+  if (org && senhaProvisoriaPendente(authUser)) redirect("/trocar-senha");
   if (org && !ehOperante(org.org_status)) redirect("/account-suspended");
   return org;
 });

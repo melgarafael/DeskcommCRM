@@ -60,6 +60,10 @@ export const ApiErrorCodes = {
   agenda_sem_responsavel: "agenda_sem_responsavel",
   agenda_disponibilidade_invalida: "agenda_disponibilidade_invalida",
   agenda_ja_cancelado: "agenda_ja_cancelado",
+  // Migration 9392 (#4227): o compromisso ou o tipo é de um sistema externo
+  // integrado, que é quem marca, remarca e cancela.
+  agenda_autoridade_externa: "agenda_autoridade_externa",
+  agenda_tipo_de_sistema_externo: "agenda_tipo_de_sistema_externo",
   agenda_listagem_sem_recorte: "agenda_listagem_sem_recorte",
   // Código PRÓPRIO, e não o `unprocessable_entity` genérico: quem recebe isto
   // precisa saber que o `lead_id` mandado não é um negócio do funil (é quase

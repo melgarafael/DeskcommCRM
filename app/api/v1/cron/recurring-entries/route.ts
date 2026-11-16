@@ -44,6 +44,15 @@ export function competenciaDoMes(ano: number, mes: number, diaDoMes: number): st
   return `${ano}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
 }
 
+/**
+ * A competência ainda cabe no contrato? `ends_on` nulo = sem prazo (todo molde
+ * digitado à mão); com data, a competência posterior a ela não nasce. Datas
+ * ISO `YYYY-MM-DD` comparam como texto.
+ */
+export function dentroDoPrazo(competencia: string, endsOn: string | null | undefined): boolean {
+  return !endsOn || competencia <= endsOn;
+}
+
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
@@ -59,7 +68,7 @@ async function handle(req: NextRequest): Promise<Response> {
   const { data: moldes, error } = await admin
     .from("recurring_entries")
     .select(
-      "id, organization_id, account_id, account_plan_id, direction, amount_cents, currency, name, day_of_month",
+      "id, organization_id, account_id, account_plan_id, direction, amount_cents, currency, name, day_of_month, ends_on",
     )
     .eq("is_active", true);
 
@@ -79,6 +88,9 @@ async function handle(req: NextRequest): Promise<Response> {
     // contas do mês inteiro e a tela de pendências viraria uma lista de coisas
     // que ainda não venceram.
     if (competencia > agora.toISOString().slice(0, 10)) continue;
+    // O contrato acabou (`ends_on`, gravado pelo ganho do negócio a partir de
+    // `recurring_months`): a competência depois do último mês não nasce.
+    if (!dentroDoPrazo(competencia, molde.ends_on as string | null)) continue;
 
     const { error: erroInsert } = await admin.from("financial_entries").insert({
       organization_id: molde.organization_id,

@@ -79,6 +79,11 @@ interface Excecao {
  * linhas da OUTRA organização, não uma leitura como superusuário.
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
+  { tabela: "tabela_de_valores_importacoes", razao: "tests/invariants/tabela-de-valores-negociacao.test.ts (migration 9386, #4612) — livro exclusivo do servidor: RLS ligada e NENHUMA policy; membro da própria organização com JWT authenticated recebe permission denied (com controle positivo da mesma sessão lendo tabelas_de_valores); escrita direta de authenticated recusada nas três tabelas da tabela de valores." },
+  { tabela: "agencia_clientes", razao: "tests/invariants/agencias.test.ts — JWT authenticated: o cliente não lê o vínculo com a agência (count 0) e, com o módulo desligado, nenhuma policy devolve linha (1 → 0, com controle positivo); a agência só lê/edita o cliente vinculado e nunca a organização irmã." },
+  { tabela: "agencia_configuracoes", razao: "tests/invariants/agencias.test.ts — JWT authenticated: com o módulo desligado a configuração da agência some (1 → 0, controle positivo), e a agência não altera a própria autorização nem o limite via PostgREST (42501)." },
+  { tabela: "agencia_sessoes", razao: "tests/invariants/agencias.test.ts — sem GRANT a authenticated: a leitura pela sessão autenticada, inclusive da própria agência, é recusada (42501); controle positivo: a sessão aberta existe para o servidor." },
+  { tabela: "agencia_criacoes", razao: "tests/invariants/agencias.test.ts — sem GRANT a authenticated: a leitura pela sessão autenticada é recusada (42501); o recibo só é escrito/lido pelo servidor." },
   { tabela: "catalog_product_presentations", razao: "tests/invariants/catalogo-apresentacoes-isolamento.test.ts — duas organizações por JWT authenticated: manager nos dois sentidos e agent leem apenas a própria apresentação; UPDATE local de manager positivo, agent e manager vizinho sem efeito; CHECK de ownership do áudio com controle positivo e negativo." },
   {
     tabela: "ouvidoria_manifestacoes",
@@ -420,6 +425,27 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "aviso é conteúdo escrito em nome do cliente e só o servidor (a rota " +
       "`app/api/v1/avisos`, com admin client) lê e grava. Migration 9059, " +
       "issue #1418.",
+  },
+  {
+    tabela: "crm_materiais",
+    razao:
+      "tests/invariants/crm-materiais-rls.test.ts (migration 9222, #4129) — dois " +
+      "tenants reais por JWT `authenticated` nas DUAS direções: membro da org A lê " +
+      "o material de A e ZERO de B, e o contrário; controle positivo com as duas " +
+      "linhas semeadas, para o verde não vir de vácuo. A escrita direta por " +
+      "authenticated é recusada (só o service_role grava), anon sem privilégio, e " +
+      "o CHECK prende `storage_path` ao prefixo da organização. Fica fora de " +
+      "TABLES porque o arquivo também mede o BUCKET (`crm-materiais` privado, sem " +
+      "policy em storage.objects) no mesmo molde do `catalog-photos`.",
+  },
+  {
+    tabela: "crm_materiais_do_agente",
+    razao:
+      "tests/invariants/crm-materiais-rls.test.ts (migration 9222, #4129) — " +
+      "isolamento cross-org por JWT nas duas direções, com leitura positiva local " +
+      "e zero do vizinho; a ligação agente↔material é recusada pelo gatilho " +
+      "`fn_crm_materiais_do_agente_da_mesma_org` quando qualquer um dos dois é de " +
+      "outra organização, e authenticated não insere nem apaga.",
   },
   {
     tabela: "organization_resend_accounts",

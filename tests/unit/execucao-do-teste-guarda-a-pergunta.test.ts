@@ -226,6 +226,10 @@ describe("POST /test — a pergunta e a resposta ficam gravadas (#4426)", () => 
       proposals: [],
       trace: [],
       midia: [],
+      // #4129 acrescentou `materiais` ao resultado do sandbox e a rota passou a
+      // reprovar o teste quando algum material falha — o dublê tem de trazer o
+      // campo, senão a rota estoura em `undefined.some` e devolve 422.
+      materiais: [],
     });
   });
 

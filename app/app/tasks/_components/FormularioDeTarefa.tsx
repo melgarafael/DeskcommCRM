@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useUser } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
@@ -57,6 +58,36 @@ interface Props {
 
 /** O valor do "ninguém" no Select — o Radix não aceita item com valor vazio. */
 const NINGUEM = "__ninguem__";
+
+/**
+ * Um dia da semana no seletor da série (#4595).
+ *
+ * O rótulo chega JÁ traduzido — `t()` é de quem conhece o idioma, e um
+ * `t(rotulo)` aqui seria chave montada em runtime, que o gate de espanhol
+ * recusa. Este componente só desenha; a regra de marcar/desmarcar fica no
+ * formulário, que é quem conhece o estado.
+ */
+function BotaoDeDia({
+  rotulo,
+  marcado,
+  aoClicar,
+}: {
+  rotulo: string;
+  marcado: boolean;
+  aoClicar: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant={marcado ? "primary" : "outline"}
+      aria-pressed={marcado}
+      onClick={aoClicar}
+    >
+      {rotulo}
+    </Button>
+  );
+}
 
 /**
  * ISO → os dois campos que a pessoa preenche, no fuso DELA.
@@ -110,6 +141,20 @@ export function FormularioDeTarefa({
   const [responsavel, setResponsavel] = useState<string>(responsavelInicial);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  // ═══ A TAREFA QUE SE REPETE (#4595) ═══
+  //
+  // `diasDaSerie` é dia da semana LOCAL (domingo = 0, a mesma régua do banco) e
+  // a HORA da série é o campo "Horário" acima: a pessoa já escolheu a hora da
+  // tarefa, e pedir a mesma hora outra vez seria um campo a mais para errar.
+  const regraDaTarefa = tarefa?.recurrence ?? null;
+  const [repetir, setRepetir] = useState(Boolean(regraDaTarefa?.ativa));
+  const [diasDaSerie, setDiasDaSerie] = useState<number[]>(regraDaTarefa?.dias ?? []);
+
+  function alternarDia(dia: number) {
+    setDiasDaSerie((atuais) =>
+      atuais.includes(dia) ? atuais.filter((d) => d !== dia) : [...atuais, dia].sort((a, b) => a - b),
+    );
+  }
 
   async function enviar(e: React.FormEvent) {
     e.preventDefault();
@@ -122,6 +167,13 @@ export function FormularioDeTarefa({
     // ninguém ter pedido.
     const prazo = dia ? new Date(`${dia}T${hora || "00:00"}:00`).toISOString() : null;
 
+    // Série sem dia escolhido não gera nada — recusar aqui é melhor que gravar
+    // uma tarefa que a pessoa acredita que vai voltar na semana que vem.
+    if (repetir && diasDaSerie.length === 0) {
+      setErro(t("Escolha ao menos um dia da semana para a tarefa se repetir."));
+      return;
+    }
+
     setSalvando(true);
     setErro(null);
     try {
@@ -131,6 +183,14 @@ export function FormularioDeTarefa({
         due_date: prazo,
         priority: prioridade,
         status: situacao,
+        // `null` DESLIGA a série: a tarefa que repetia para de gerar e as
+        // ocorrências que já nasceram continuam na lista. Na criação, sem
+        // repetição o campo nem viaja — tarefa avulsa é o caso de hoje.
+        ...(repetir
+          ? { recurrence: { dias: diasDaSerie, hora: Number((hora || "09:00").slice(0, 2)), ativa: true } }
+          : editando && regraDaTarefa
+            ? { recurrence: null }
+            : {}),
         lead_id: tarefa?.lead_id ?? leadId ?? null,
         contact_id: tarefa?.contact_id ?? contactId ?? null,
         // A demanda só viaja em CRIAÇÃO. Ao editar uma tarefa existente,
@@ -205,6 +265,35 @@ export function FormularioDeTarefa({
                 onChange={(e) => setHora(e.target.value)}
               />
             </div>
+          </div>
+
+          {/* ═══ A TAREFA QUE SE REPETE (#4595) ═══
+              A hora da série é o campo "Horário" acima: quem escolhe "toda
+              segunda às 9h" já digitou as 9h ali, e um segundo campo de hora
+              seria mais um lugar para divergir. Os dias são os do relógio da
+              EMPRESA (o servidor converte com o fuso da organização), e nenhum
+              dia marcado é recusado no envio, não silenciado aqui. */}
+          <div className="space-y-2 rounded-md border border-border p-3">
+            <div className="flex items-center gap-2">
+              <Switch id="tarefa-repetir" checked={repetir} onCheckedChange={setRepetir} />
+              <Label htmlFor="tarefa-repetir">{t("Repetir toda semana")}</Label>
+            </div>
+            {repetir ? (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  {t("A tarefa volta nos dias escolhidos, no horário acima, no fuso da empresa.")}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  <BotaoDeDia rotulo={t("Dom")} marcado={diasDaSerie.includes(0)} aoClicar={() => alternarDia(0)} />
+                  <BotaoDeDia rotulo={t("Seg")} marcado={diasDaSerie.includes(1)} aoClicar={() => alternarDia(1)} />
+                  <BotaoDeDia rotulo={t("Ter")} marcado={diasDaSerie.includes(2)} aoClicar={() => alternarDia(2)} />
+                  <BotaoDeDia rotulo={t("Qua")} marcado={diasDaSerie.includes(3)} aoClicar={() => alternarDia(3)} />
+                  <BotaoDeDia rotulo={t("Qui")} marcado={diasDaSerie.includes(4)} aoClicar={() => alternarDia(4)} />
+                  <BotaoDeDia rotulo={t("Sex")} marcado={diasDaSerie.includes(5)} aoClicar={() => alternarDia(5)} />
+                  <BotaoDeDia rotulo={t("Sáb")} marcado={diasDaSerie.includes(6)} aoClicar={() => alternarDia(6)} />
+                </div>
+              </>
+            ) : null}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
