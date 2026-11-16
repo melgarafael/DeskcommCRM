@@ -31,6 +31,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
+import { amigoBookingContextSchema } from "@/lib/amigo/agenda";
 
 import {
   alterarAgendamentoHandler,
@@ -125,6 +126,7 @@ const convidadosDaEquipe = z
   .optional();
 
 const marcarSchema = z.object({
+  amigo: amigoBookingContextSchema.optional(),
   event_type_id: z.string().uuid(),
   starts_at: z.string().datetime({ offset: true }),
   owner_user_id: z.string().uuid().optional(),
