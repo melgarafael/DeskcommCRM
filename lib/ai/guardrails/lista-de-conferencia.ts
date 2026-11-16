@@ -133,7 +133,7 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
     nome: "interlocutor_automatico",
     rotulo: "Reconhecer atendimento automático do outro lado",
     oQueProtege:
-      "Quando as mensagens recebidas têm cara de robô (menu numerado repetido, a mesma mensagem duas vezes, sempre o mesmo molde ou respostas em segundos), a IA não responde e a conversa é silenciada, com aviso na Central para uma pessoa conferir. É a outra metade do caso de 216 respostas em uma hora: o teto corta a contagem, esta conferência reconhece o robô.",
+      "Quando as mensagens recebidas têm cara de robô (menu numerado repetido, a mesma mensagem repetida três vezes, sempre o mesmo molde ou respostas em segundos), a IA não responde e a conversa é silenciada, com aviso na Central para uma pessoa conferir. É a outra metade do caso de 216 respostas em uma hora: o teto corta a contagem, esta conferência reconhece o robô.",
     escolha: null,
     porQueNaoSeDesliga:
       "Conversa entre robôs queima cota do modelo e é risco de bloqueio do seu número. O que se ajusta é o contato na conversa — \"Devolver ao automático\" desfaz o silêncio quando do outro lado era um cliente.",
