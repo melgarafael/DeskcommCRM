@@ -1,13 +1,16 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
 import { audit } from "@/lib/audit";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
+import { extractBearer } from "@/lib/mcp/auth";
 import {
   aiAccessUpdateSchema, ehIdentidadeSocialDeTeste, lerIdentidadesSociaisDeTeste,
   lerModoDeAcessoDaIa, lerNumerosDeTeste,
@@ -36,12 +39,12 @@ interface LinhaDeConversa {
  * pede (`?candidatos=sociais`) paga a leitura: o painel de WhatsApp não pede.
  */
 async function candidatosSociais(
-  admin: ReturnType<typeof createAdminClient>,
+  db: SupabaseClient,
   orgId: string,
   canalId: string,
   naLista: readonly string[],
 ): Promise<CandidatoSocial[] | null> {
-  const { data, error } = await admin.from("conversations")
+  const { data, error } = await db.from("conversations")
     .select("contacts:contact_id!inner(social_identity, display_name, name)")
     .eq("organization_id", orgId).eq("channel_session_id", canalId)
     .not("contacts.social_identity", "is", null)
@@ -61,7 +64,7 @@ async function candidatosSociais(
 
   const faltam = naLista.filter((i) => !porIdentidade.has(i));
   if (faltam.length > 0) {
-    const { data: contatos, error: erroDosContatos } = await admin.from("contacts")
+    const { data: contatos, error: erroDosContatos } = await db.from("contacts")
       .select("social_identity, display_name, name")
       .eq("organization_id", orgId).in("social_identity", faltam).is("is_merged_into", null);
     if (erroDosContatos) return null;
@@ -76,13 +79,43 @@ async function candidatosSociais(
 /** Só administradores podem ler os testadores ou mudar o alcance da IA. */
 export async function GET(req: NextRequest, { params }: Context): Promise<Response> {
   const requestId = randomUUID();
+
+  // DOIS PORTÕES, UM CORPO (Spec 33, R3). O token `dsk_…` (escopo `mcp:read`,
+  // papel admin) entra por `resolveAuthDual`; a sessão segue pelo `requireRole`
+  // de sempre. A organização vem da linha do token ou da sessão, nunca do path.
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "channel_sessions",
+      role: "admin",
+      scope: "mcp:read",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "channel_sessions", requestId);
+    if (teto) return teto;
+    return lerAiAccess(authz.supabase, authz.organizationId, (await params).id, querCandidatos(req), requestId);
+  }
+
   const auth = await requireRole("admin", { requestId, resource: "channel_sessions", allowPlatformAdmin: "leitura" });
   if (!auth.ok) return auth.response;
-  const { id } = await params;
+  return lerAiAccess(createAdminClient(), auth.org.orgId, (await params).id, querCandidatos(req), requestId);
+}
+
+/** Só quem pede (`?candidatos=sociais`) paga a leitura dos contatos do canal. */
+function querCandidatos(req: NextRequest): boolean {
+  return req.nextUrl?.searchParams.get("candidatos") === "sociais";
+}
+
+async function lerAiAccess(
+  db: SupabaseClient,
+  organizationId: string,
+  id: string,
+  candidatos: boolean,
+  requestId: string,
+): Promise<Response> {
   if (!z.uuid().safeParse(id).success) return fail("validation_failed", "Canal inválido.", 422, { requestId });
-  const admin = createAdminClient();
-  const { data, error } = await admin.from("channel_sessions")
-    .select("metadata").eq("organization_id", auth.org.orgId).eq("id", id)
+  const { data, error } = await db.from("channel_sessions")
+    .select("metadata").eq("organization_id", organizationId).eq("id", id)
     .is("archived_at", null).maybeSingle();
   if (error) return fail("internal_error", "Não foi possível carregar o acesso da IA.", 500, { requestId });
   if (!data) return fail("not_found", "Canal não encontrado.", 404, { requestId });
@@ -92,10 +125,10 @@ export async function GET(req: NextRequest, { params }: Context): Promise<Respon
     test_phone_numbers: lerNumerosDeTeste(data.metadata),
     test_social_identities: testSocialIdentities,
   };
-  if (req.nextUrl?.searchParams.get("candidatos") !== "sociais") return ok(base, { requestId });
-  const candidatos = await candidatosSociais(admin, auth.org.orgId, id, testSocialIdentities);
-  if (candidatos === null) return fail("internal_error", "Não foi possível carregar os contatos deste canal.", 500, { requestId });
-  return ok({ ...base, social_candidates: candidatos }, { requestId });
+  if (!candidatos) return ok(base, { requestId });
+  const sociais = await candidatosSociais(db, organizationId, id, testSocialIdentities);
+  if (sociais === null) return fail("internal_error", "Não foi possível carregar os contatos deste canal.", 500, { requestId });
+  return ok({ ...base, social_candidates: sociais }, { requestId });
 }
 
 export async function PATCH(req: NextRequest, { params }: Context): Promise<Response> {

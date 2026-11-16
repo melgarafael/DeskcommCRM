@@ -5,28 +5,35 @@ import { z } from "zod";
 
 import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { lerMencoesDeGrupo, textoComMencoesResolvidas } from "@/lib/messaging/mencoes-de-grupo";
 import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
-import { createClient } from "@/lib/supabase/server";
 
 interface Ctx { params: Promise<{ id: string }> }
 
 async function alterar(req: NextRequest, ctx: Ctx, ocultar: boolean): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "messages" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "messages",
+    role: "manager",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "messages_hide", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   const { id } = await ctx.params;
   if (!z.string().uuid().safeParse(id).success) {
     return fail("validation_failed", t("Dados inválidos."), 422, { requestId });
   }
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data: message, error } = await supabase.from("messages")
     .select("id, organization_id, conversation_id, direction, body, type, metadata, revoked_at")
-    .eq("id", id).eq("organization_id", authz.org.orgId).maybeSingle();
+    .eq("id", id).eq("organization_id", authz.organizationId).maybeSingle();
   if (error) return fail("internal_error", t("Erro ao buscar mensagem."), 500, { requestId });
   if (!message) return fail("not_found", t("Mensagem não encontrada."), 404, { requestId });
   if (message.direction !== "inbound" || message.revoked_at) {
@@ -36,13 +43,13 @@ async function alterar(req: NextRequest, ctx: Ctx, ocultar: boolean): Promise<Re
   const metadata = { ...anterior };
   if (ocultar) {
     metadata.crm_hidden_at = new Date().toISOString();
-    metadata.crm_hidden_by = authz.user.id;
+    metadata.crm_hidden_by = authz.actor.type === "user" ? authz.actor.id : null;
   } else {
     delete metadata.crm_hidden_at;
     delete metadata.crm_hidden_by;
   }
   const { data: updated, error: updateError } = await supabase.from("messages")
-    .update({ metadata }).eq("id", id).eq("organization_id", authz.org.orgId)
+    .update({ metadata }).eq("id", id).eq("organization_id", authz.organizationId)
     .select("id, metadata").maybeSingle();
   if (updateError || !updated) {
     return fail("internal_error", t("Não foi possível atualizar a mensagem."), 500, { requestId });
@@ -51,7 +58,7 @@ async function alterar(req: NextRequest, ctx: Ctx, ocultar: boolean): Promise<Re
   // O preview desnormalizado no painel lateral não pode continuar expondo o
   // texto oculto. Só o alteramos se esta ainda for a última mensagem da conversa.
   const { data: latest } = await supabase.from("messages").select("id")
-    .eq("organization_id", authz.org.orgId).eq("conversation_id", message.conversation_id)
+    .eq("organization_id", authz.organizationId).eq("conversation_id", message.conversation_id)
     .order("sent_at", { ascending: false }).limit(1).maybeSingle();
   if (latest?.id === id) {
     // A régua do filtro é a MESMA que gravou a coluna: em grupo, a ingestão grava
@@ -64,12 +71,14 @@ async function alterar(req: NextRequest, ctx: Ctx, ocultar: boolean): Promise<Re
     );
     await supabase.from("conversations").update({
       last_message_preview: ocultar ? "Mensagem ocultada no CRM" : antigoPreview,
-    }).eq("id", message.conversation_id).eq("organization_id", authz.org.orgId)
+    }).eq("id", message.conversation_id).eq("organization_id", authz.organizationId)
       .eq("last_message_preview", ocultar ? antigoPreview : "Mensagem ocultada no CRM");
   }
   await audit({
     action: ocultar ? "message.hidden_in_crm" : "message.restored_in_crm",
-    actorUserId: authz.user.id, organizationId: authz.org.orgId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "message", resourceId: id, requestId,
     metadata: { conversation_id: message.conversation_id },
   });
