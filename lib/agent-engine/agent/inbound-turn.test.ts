@@ -178,9 +178,9 @@ describe('o que muda por turno fica no FIM (#4668)', () => {
   });
 
   it('a diretiva de idioma é o ÚLTIMO bloco em toda combinação de prévia, voz, casos e ferramentas', () => {
-    // O texto dela diz "mesmo que as regras ACIMA estejam em português", e é
-    // por ser a última instrução lida que ela corrige a língua da resposta
-    // (`idioma-do-turno.ts`). Antes de qualquer outro bloco, ela mentiria.
+    // O texto dela diz "mesmo que as regras ACIMA estejam em português": só é
+    // verdade se todo o resto estiver acima. Antes de qualquer outro bloco, ela
+    // mentiria.
     for (const idioma of ['pt-BR', 'es'] as const)
       for (const previewKind of [null, 'sandbox', 'assisted'] as const)
         for (const blocoDaVoz of [null, BLOCO_DA_RESPOSTA_FALADA])

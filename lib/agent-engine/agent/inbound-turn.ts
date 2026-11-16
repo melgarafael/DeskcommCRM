@@ -1583,9 +1583,9 @@ export interface BlocosDoSistemaDoTurno {
  *      agente fica no fim.
  *
  * A diretiva de idioma é a EXCEÇÃO, e fecha o `system`: o texto dela diz "mesmo
- * que as regras ACIMA estejam em português" e ela corrige a língua da resposta
- * justamente por ser a última instrução que o modelo lê (`idioma-do-turno.ts`).
- * Na frente ela mentiria sobre o que está acima dela. É curta: o que ela custa ao
+ * que as regras ACIMA estejam em português", e isso só é verdade se tudo o mais
+ * estiver acima dela. Na frente ela mentiria sobre o que está acima dela. É também
+ * a posição que ela já tinha antes desta reordenação. É curta: o que ela custa ao
  * cache é só ela mesma.
  *
  * A regra que este arquivo não pode perder: bloco novo entra na faixa dele, e
