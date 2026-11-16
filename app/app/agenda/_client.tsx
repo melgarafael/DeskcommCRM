@@ -34,6 +34,8 @@ import { ancoraAoFecharPainel } from "@/lib/agenda/ancora-depois-de-marcar";
 import { ancoraLocalDoDia } from "@/lib/agenda/semana-semente";
 import { dataDeParede, diaLocalISO, partesNoFuso } from "@/lib/agenda/fuso";
 import { janelaDoMesVisivel } from "@/lib/agenda/janela-do-mes-visivel";
+import type { EscolhaDaCamada } from "@/lib/agenda/preferencia-da-camada";
+import { definirCamadaDatasDosNegocios } from "@/app/actions/settings/definirCamadaDatasDosNegocios";
 import { quadroDisponivel } from "@/lib/agenda/quadro-por-profissional";
 import { diasDoRecorte, recorteDaGrade as recorteDaGradeDe } from "@/lib/agenda/recorte-da-grade";
 import { resolverResponsavelDoPainel } from "@/lib/agenda/responsavel-do-painel";
@@ -105,6 +107,7 @@ export function AgendaClient({
   agendamentosIniciais,
   podeMarcar,
   funisComDatas,
+  escolhaDaCamada,
 }: {
   tituloDaAgenda?: string | null;
   /**
@@ -166,6 +169,14 @@ export function AgendaClient({
    * vazia — a camada não aparece e a tela fica idêntica à de antes.
    */
   funisComDatas?: FunilComDatas[];
+  /**
+   * A escolha da camada "Datas dos negócios" que a pessoa deixou (#4436).
+   *
+   * Lida no servidor do `raw_user_meta_data` dela e já saneada contra
+   * `funisComDatas` — funil arquivado e campo que sumiu chegam como padrão.
+   * Ausente é o mesmo que "nunca escolheu": a camada desligada.
+   */
+  escolhaDaCamada?: EscolhaDaCamada;
 }) {
   const localeDaData = useLocaleDeData();
   const t = useT();
@@ -241,6 +252,21 @@ export function AgendaClient({
     setEquipeAoAbrir([]);
     setMarcando(true);
   }, [reiniciarVinculo]);
+  /**
+   * GRAVAR A ESCOLHA DA CAMADA "DATAS DOS NEGÓCIOS" (#4436).
+   *
+   * `useCallback` sem dependências, e não uma função nova a cada render: a
+   * camada grava num EFEITO que tem `aoEscolher` nas dependências, e uma função
+   * nova a cada repintura da Agenda regravaria a mesma escolha em toda
+   * navegação de semana.
+   *
+   * Falha de gravação NÃO interrompe a escolha na tela: a camada continua como
+   * a pessoa a deixou nesta visita, e o próximo gesto grava de novo. Erro de
+   * preferência não pode virar bloqueio de uso da Agenda.
+   */
+  const gravarEscolhaDaCamada = React.useCallback((escolha: EscolhaDaCamada) => {
+    void definirCamadaDatasDosNegocios(escolha);
+  }, []);
   // O horário que veio de um CLIQUE NA GRADE. Preenchido, o painel abre já em
   // "confirmando" naquele instante; vazio, ele abre pedindo o dia, como sempre.
   const [horarioEscolhido, setHorarioEscolhido] = React.useState<HorarioLivre | null>(null);
@@ -249,6 +275,13 @@ export function AgendaClient({
   // coisas para manter em sincronia. Quando `remarcandoId` está preenchido, a
   // confirmação vira PATCH em vez de POST.
   const [remarcandoId, setRemarcandoId] = React.useState<string | null>(null);
+  // O TIPO DO COMPROMISSO REMARCADO (prova de tela do #4507). Remarcar é sobre
+  // AQUELE compromisso: painel, horários, campo de duração e PATCH seguem o tipo
+  // dele, não o que estiver selecionado na grade — com "Atendimento" na grade,
+  // remarcar uma "Aula Coletiva" mandava `duration_minutes` e levava 422
+  // `agenda_duracao_do_servico`. Só é lido com `remarcandoId` preenchido, e
+  // `onRemarcar` grava os dois juntos, então não precisa ser limpo ao fechar.
+  const [tipoDaRemarcacaoId, setTipoDaRemarcacaoId] = React.useState<string | null>(null);
   // CANCELAR pede motivo, e o motivo é obrigatório na rota. Não é burocracia: é
   // o que a equipe lê ao ver o horário vago.
   const [cancelandoId, setCancelandoId] = React.useState<string | null>(null);
@@ -315,7 +348,11 @@ export function AgendaClient({
   const [tipoId, setTipoId] = React.useState<string | null>(
     () => busca.get("tipo") ?? tiposIniciais[0]?.id ?? null,
   );
-  const tipo = tiposIniciais.find((t) => t.id === tipoId) ?? tiposIniciais[0] ?? null;
+  const tipoSelecionado = tiposIniciais.find((t) => t.id === tipoId) ?? tiposIniciais[0] ?? null;
+  // ponytail: tipo inativo (fora de `tiposIniciais`) cai no selecionado, como antes.
+  const tipo =
+    (remarcandoId ? tiposIniciais.find((t) => t.id === tipoDaRemarcacaoId) : undefined) ??
+    tipoSelecionado;
   /**
    * ESCOLHER O TIPO GRAVA NA URL — a outra metade do `useState` acima.
    *
@@ -565,12 +602,14 @@ export function AgendaClient({
           ate: janelaDeBusca.ate,
           // A DURAÇÃO ENTRA NA CONSULTA (#3709): quem decide o que está livre é
           // o motor, no servidor, e ele precisa saber quanto tempo cada slot
-          // exige. Remarcando, é o comprimento do bloco que vai ser movido;
-          // marcando, é a escolha da tela (ou o padrão do serviço). Sem isso a
-          // lista e a escrita discordariam sobre o mesmo horário.
+          // exige. É SEMPRE a duração escolhida no painel, marcando ou
+          // remarcando (#4450): ao remarcar, o painel já a anuncia com o
+          // comprimento do bloco como padrão, e quem digita outro número tem de
+          // ver a lista recalculada para ELE — é esse número que o PATCH leva.
+          // Sem isso a lista e a escrita discordariam sobre o mesmo horário.
           duracao_minutos: tipo.servico
             ? undefined
-            : (duracaoDoCompromisso ?? duracaoEscolhida ?? tipo.duracaoMin),
+            : (duracaoEscolhida ?? duracaoDoCompromisso ?? tipo.duracaoMin),
         }
       : null,
   );
@@ -859,7 +898,12 @@ export function AgendaClient({
         `null` — nesse caso a tela não muda um byte em relação à de antes desta
         entrega.
       */}
-      <CamadaDatasDosNegocios funis={funisComDatas ?? []} janela={janelaDaCamada} />
+      <CamadaDatasDosNegocios
+        funis={funisComDatas ?? []}
+        janela={janelaDaCamada}
+        escolhaInicial={escolhaDaCamada}
+        aoEscolher={gravarEscolhaDaCamada}
+      />
 
       {/*
         O HISTÓRICO na tela do produto, e não só na vitrine. Ele aparece mesmo
@@ -1189,15 +1233,20 @@ export function AgendaClient({
                 tipoId={tipo.id}
                 duracaoMin={duracaoDoCompromisso ?? tipo.duracaoMin}
                 /*
-                  A DURAÇÃO É ESCOLHIDA AQUI, E SÓ AQUI (issue #3709).
+                  A DURAÇÃO É ESCOLHIDA AQUI — na marcação E na remarcação
+                  (issues #3709 e #4450).
 
-                  Desligada em dois casos: num serviço, quem manda no comprimento
-                  é a agenda publicada (com capacidade e ocorrência) e a rota
-                  recusa `agenda_duracao_do_servico`; numa remarcação, o PATCH
-                  move o bloco e PRESERVA o comprimento que ele já tem. Nos dois,
-                  oferecer o campo seria oferecer um caminho que não existe.
+                  O padrão é `duracaoDoCompromisso` (o comprimento que o bloco
+                  já tem) na remarcação e o molde do tipo na marcação; a pessoa
+                  muda se este atendimento precisar de mais ou menos tempo, e o
+                  PATCH leva o número junto.
+
+                  Desligada num caso só: num SERVIÇO, quem manda no comprimento é
+                  a agenda publicada (com capacidade e ocorrência) e a rota
+                  recusa `agenda_duracao_do_servico`. Ali o campo seria um
+                  caminho que não existe.
                 */
-                permiteEscolherDuracao={!remarcandoId && !tipo.servico}
+                permiteEscolherDuracao={!tipo.servico}
                 onDuracaoMudar={setDuracaoEscolhida}
                 // O LOCAL e o FUSO de verdade, que a tela tinha e não passava.
                 //
@@ -1270,6 +1319,11 @@ export function AgendaClient({
                         id: remarcandoId,
                         revision: agendamentos.find((a) => a.id === remarcandoId)?.revision,
                         starts_at: instante,
+                        // ⚠️ A DURAÇÃO VAI JUNTO (#4450). O PATCH a preservava
+                        // e a tela a escondia: dava para remarcar, não para
+                        // corrigir o tempo. Num serviço ela NÃO vai (é a agenda
+                        // publicada que manda; a rota recusa).
+                        duration_minutes: tipo.servico ? undefined : duracaoDoAtendimento,
                         guest_email: convidado,
                         // SÓ A DIFERENÇA (#4006): `undefined` não mexe na lista,
                         // `[]` tira todo mundo. Sem o diff, o `starts_at` que
@@ -1491,6 +1545,7 @@ export function AgendaClient({
           const equipe = alvo?.convidadosDaEquipe ?? [];
           setEquipeAoAbrir(equipe);
           setConvidadosDaEquipe(equipe);
+          setTipoDaRemarcacaoId(alvo?.tipoId ?? null);
           setRemarcandoId(id);
           setMarcando(true);
         }}
@@ -1575,7 +1630,7 @@ export function AgendaClient({
         fechamentos={fechamentosDaGrade}
         recorte={recorteDaGrade}
         tipos={tiposIniciais.map((t) => ({ id: t.id, nome: t.nome, duracaoMin: t.duracaoMin }))}
-        tipo={tipo ? { id: tipo.id, duracaoMin: tipo.duracaoMin } : null}
+        tipo={tipoSelecionado ? { id: tipoSelecionado.id, duracaoMin: tipoSelecionado.duracaoMin } : null}
         // O filtro governa também a disponibilidade que a grade pinta (#4186):
         // com a Ana isolada, os blocos "livres" são os da jornada dela.
         donoId={isolada}
@@ -1629,7 +1684,7 @@ export function AgendaClient({
            primeiro (#1657). */
         onAbrirAgendamento={(id) => {
           const parametros = new URLSearchParams();
-          if (tipo) parametros.set("tipo", tipo.id);
+          if (tipoSelecionado) parametros.set("tipo", tipoSelecionado.id);
           parametros.set("compromisso", id);
           router.push(`/app/agenda?${parametros.toString()}`);
         }}

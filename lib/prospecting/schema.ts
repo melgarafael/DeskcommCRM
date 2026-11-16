@@ -2,6 +2,13 @@ import { z } from "zod";
 
 import type { SiteEnrichment } from "@/lib/prospecting/site-classify";
 import type { PreviaSalva } from "@/lib/prospecting/previa";
+import {
+  problemaNaMidiaDaAbordagem,
+} from "@/lib/prospecting/midia-da-abordagem";
+import {
+  problemaNoTextoDaSaida,
+  TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA,
+} from "@/lib/prospecting/rodape-de-saida";
 import { normalizarTags, TAMANHO_MAXIMO_DA_TAG } from "@/lib/contacts/tag-normalizada";
 
 /**
@@ -14,6 +21,15 @@ import { normalizarTags, TAMANHO_MAXIMO_DA_TAG } from "@/lib/contacts/tag-normal
 const LIMITE_DIARIO = z.number().int().min(1).max(50);
 const INTERVALO_MINUTOS = z.number().int().min(5).max(1440);
 
+/**
+ * O tamanho do texto que a campanha leva para cada conversa — instrução e
+ * critérios. Fonte única: o `start` e a edição de uma campanha pausada
+ * (`edit_briefing`) recusam os mesmos valores. Um mínimo de 10 caracteres é o
+ * que impede o "ok" salvo como instrução de abordagem.
+ */
+export const TAMANHO_MINIMO_DO_BRIEFING = 10;
+export const TAMANHO_MAXIMO_DO_BRIEFING = 2000;
+
 /** O que a campanha vende, em prioridade. Default = comportamento atual. */
 export const OFERTAS_DA_CAMPANHA = ["site", "automacao_crm", "automacao_n8n"] as const;
 export const ofertasDaCampanhaSchema = z
@@ -21,6 +37,29 @@ export const ofertasDaCampanhaSchema = z
   .min(1)
   .max(3)
   .default(["site"]);
+
+/**
+ * O que se edita numa campanha já iniciada e pausada: o texto e as ofertas.
+ * Mora aqui, e não dentro do schema da rota, para o servidor e a tela usarem a
+ * MESMA régua de tamanho que o `start` usa.
+ */
+export const briefingDaCampanhaSchema = z
+  .object({
+    instruction: z
+      .string()
+      .trim()
+      .min(TAMANHO_MINIMO_DO_BRIEFING)
+      .max(TAMANHO_MAXIMO_DO_BRIEFING),
+    qualification: z
+      .string()
+      .trim()
+      .min(TAMANHO_MINIMO_DO_BRIEFING)
+      .max(TAMANHO_MAXIMO_DO_BRIEFING),
+    // Sem `.default()`: numa EDIÇÃO, oferta omitida não pode voltar silenciosamente
+    // para "site" e trocar o que a campanha vende sem ninguém pedir.
+    ofertas: z.array(z.enum(OFERTAS_DA_CAMPANHA)).min(1).max(3),
+  })
+  .strict();
 export type OfertaDaCampanha = (typeof OFERTAS_DA_CAMPANHA)[number];
 
 /**
@@ -73,8 +112,16 @@ export const campaignConfigSchema = z
     pipeline_id: z.string().uuid(),
     stage_id: z.string().uuid(),
     qualified_stage_id: z.string().uuid(),
-    instruction: z.string().trim().min(10).max(2000),
-    qualification: z.string().trim().min(10).max(2000),
+    instruction: z
+      .string()
+      .trim()
+      .min(TAMANHO_MINIMO_DO_BRIEFING)
+      .max(TAMANHO_MAXIMO_DO_BRIEFING),
+    qualification: z
+      .string()
+      .trim()
+      .min(TAMANHO_MINIMO_DO_BRIEFING)
+      .max(TAMANHO_MAXIMO_DO_BRIEFING),
     ofertas: ofertasDaCampanhaSchema,
     daily_limit: LIMITE_DIARIO.default(10),
     interval_minutes: INTERVALO_MINUTOS.default(15),
@@ -92,8 +139,66 @@ export const campaignConfigSchema = z
     // O padrão é `first_message`: configuração gravada antes desta chave existir segue
     // igual, sem ninguém editar nada.
     exit_offer: z.enum(["first_message", "second_message"]).default("first_message"),
+    // TEXTO PRÓPRIO DA SAÍDA (#4370) — opcional, escrito pelo DONO da campanha e
+    // nunca pelo modelo: a mesma redação sai em todos os envios e é auditável.
+    // Vazio/ausente = a frase padrão de `rodape-de-saida.ts`, byte por byte.
+    //
+    // Aqui ficam as regras que NÃO dependem do idioma da instalação (o locale
+    // mora em `organizations`, não neste `config`): tamanho, sem link, e com
+    // alguma palavra que a saída oferece — sem ela, a pessoa responde "é só me
+    // avisar" para um detector que não reconhece isso, e continua recebendo. A
+    // exigência da palavra NO IDIOMA é feita onde o locale é conhecido:
+    // `validateConfig` (servidor) e o formulário da campanha.
+    texto_da_saida: z
+      .string()
+      .trim()
+      .max(
+        TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA,
+        `O texto da opção de parar tem até ${TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA} caracteres.`,
+      )
+      .refine((texto) => problemaNoTextoDaSaida(texto) === null, {
+        message:
+          "O texto da opção de parar precisa conter a palavra que a pessoa responde para sair (PARAR, BAJA ou STOP) e não pode ter link.",
+      })
+      .optional(),
     // Etiquetas do contato na abordagem (spec 27). Ausente = a campanha não etiqueta ninguém.
     contact_tags: contactTagsSchema.optional(),
+    // MARCADOR DE ARQUIVAMENTO (#4359): quando presente, a campanha saiu da lista
+    // principal SEM perder nada — nenhum negócio, conversa, candidato ou custo é
+    // apagado. Mora na `config` (jsonb) porque arquivar é estado de TELA, não um
+    // passo do funil, e não precisa de coluna nova. O schema precisa CONHECÊ-LO:
+    // o envio, a prévia e a retomada fazem `parse` estrito desta mesma
+    // configuração, e uma chave desconhecida faria a campanha arquivada ser
+    // recusada pelo próprio código que a gravou.
+    arquivada_em: z.string().datetime().optional(),
+    // A MÍDIA FIXA DA PRIMEIRA ABORDAGEM (#4581) — imagem, vídeo ou PDF que sai
+    // JUNTO da primeira mensagem, igual para todos os candidatos da campanha.
+    //
+    // É uma REFERÊNCIA a arquivo que já existe no produto (`storage_path` no
+    // bucket `whatsapp-media`, sob `{org}/`), com o mime e o tamanho que a rota
+    // de upload gravou — nada de upload novo nesta fatia, e nada escolhido pela
+    // IA. Sem `.default()`: campanha gravada antes desta chave existir continua
+    // SEM a chave, e o envio dela segue byte a byte como antes.
+    //
+    // Aqui ficam as regras que não dependem da organização: tipo (imagem, vídeo
+    // ou PDF) e tamanho do tipo. A POSSE do caminho — o arquivo tem de ser desta
+    // organização — é conferida onde a organização é conhecida (`validateConfig`).
+    midia_da_abordagem: z
+      .object({
+        storage_path: z.string().trim().min(1).max(500),
+        media_mime: z.string().trim().min(3).max(120),
+        media_size_bytes: z.number().int().positive(),
+      })
+      .strict()
+      .superRefine((midia, ctx) => {
+        const motivo = problemaNaMidiaDaAbordagem(midia);
+        if (motivo) ctx.addIssue({ code: z.ZodIssueCode.custom, message: motivo });
+      })
+      .optional(),
+    // CARIMBO DA ÚLTIMA EDIÇÃO DO TEXTO (#4570, doc 358 › 1A). Gravado só por
+    // `editBriefing`. A prévia guarda o carimbo com que nasceu e o envio só usa a
+    // que tem o carimbo atual (`previaDoAgente`). Ausente = nunca editada.
+    briefing_editado_em: z.string().datetime().optional(),
   })
   .strict();
 export const searchSchema = z
@@ -162,6 +267,20 @@ export const prospectingInputSchema = z.discriminatedUnion("action", [
     })
     .strict(),
   z.object({ action: z.literal("discard_unselected"), id: z.string().uuid() }).strict(),
+  // Editar a INSTRUÇÃO, os CRITÉRIOS e as OFERTAS de uma campanha já iniciada (#4570).
+  // Mesma régua de `adjust_pace`/`adjust_tags`: só com a campanha pausada — o texto
+  // entra em cada turno novo e trocá-lo no meio de uma abordagem seria trocar a régua
+  // no meio da medida. Só vale para as próximas conversas: o histórico já trocado
+  // não é reescrito. Estrito: conexão, agente, funil e base legal seguem fechados.
+  z
+    .object({
+      action: z.literal("edit_briefing"),
+      id: z.string().uuid(),
+      instruction: briefingDaCampanhaSchema.shape.instruction,
+      qualification: briefingDaCampanhaSchema.shape.qualification,
+      ofertas: briefingDaCampanhaSchema.shape.ofertas,
+    })
+    .strict(),
   // Reanálise manual da auditoria (spec 24): reescreve `data.site` na hora.
   // Fechada a token (fora de ACOES_ABERTAS_AO_TOKEN): exige sessão.
   z
@@ -188,9 +307,18 @@ export const prospectingInputSchema = z.discriminatedUnion("action", [
   // da campanha o link que falta (o que a pessoa digitou fica). Fechada a token:
   // escreve no CRM, e quem decide é uma pessoa com sessão.
   z.object({ action: z.literal("completar_fichas"), id: z.string().uuid() }).strict(),
+  // ARQUIVAR (#4359): tira a campanha que falhou ou veio zerada da lista principal,
+  // SEM apagar nada do que ela já criou. Idempotente, porque o botão pode ser
+  // clicado duas vezes. Fechada a token (fora de ACOES_ABERTAS_AO_TOKEN): esconder
+  // uma campanha é gesto de quem está lendo a lista — por token esconderia uma
+  // campanha que a pessoa nunca abriu.
+  z.object({ action: z.literal("arquivar"), id: z.string().uuid() }).strict(),
+  z.object({ action: z.literal("desarquivar"), id: z.string().uuid() }).strict(),
 ]);
 export type CampaignConfig = z.infer<typeof campaignConfigSchema>;
 export type CampaignPace = Pick<CampaignConfig, "daily_limit" | "interval_minutes">;
+/** O pedaço da configuração que se edita com a campanha iniciada e pausada (#4570). */
+export type CampaignBriefing = Pick<CampaignConfig, "instruction" | "qualification" | "ofertas">;
 export type SearchInput = z.infer<typeof searchSchema>;
 /**
  * O que a campanha importada de planilha guarda em `prospecting_campaigns.search` (jsonb).
@@ -286,6 +414,13 @@ export interface Prospect {
    * conexão capaz de conferir); `existe: false` tira a empresa da abordagem.
    */
   whatsapp?: VereditoWhatsapp | null;
+  /**
+   * O texto com que a abordagem COMEÇOU (#4570, doc 358 › 1A), gravado por
+   * `editBriefing` em quem já foi abordado quando a campanha é editada. O turno
+   * (`context.ts`) lê este antes da `config`. Ausente = a campanha não foi
+   * editada desde a abordagem, e a `config` ainda é o texto com que ela começou.
+   */
+  briefing?: Partial<CampaignBriefing> | null;
 }
 
 /**

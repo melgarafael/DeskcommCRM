@@ -47,8 +47,11 @@ import {
   horasDoIntervaloNaConfig,
 } from "@/lib/automation/limite-por-contato";
 import {
+  CAMPOS_ALTERAVEIS_DO_NEGOCIO,
   CONDICOES_DO_CONTATO,
   OPERADORES_SEM_VALOR,
+  operadorCabeNoCampo,
+  rotuloDoCampoAlterado,
   valorPadraoDoCampo,
   type ConditionNode,
   type ConditionOp,
@@ -61,8 +64,15 @@ import {
   type AutomationRuleRow,
 } from "@/hooks/webhooks/useAutomationRules";
 import { usePipelines, usePipelineStages, useWebhookSources } from "@/hooks/webhooks/useWebhookSources";
-import { TRIGGER_LABELS, ACTION_LABELS, acaoOferecida, type TriggerEvent, type ActionType } from "./labels";
-import { useModulosLigados } from "@/hooks/auth/AuthProvider";
+import {
+  TRIGGER_LABELS,
+  ACTION_LABELS,
+  acaoOferecida,
+  gatilhoOferecido,
+  type TriggerEvent,
+  type ActionType,
+} from "./labels";
+import { useCapacidadesLigadas, useModulosLigados } from "@/hooks/auth/AuthProvider";
 import { ActionConfigForm, defaultActionConfig, type ActionItem } from "./ActionConfigForm";
 import { EtapaDeQualquerFunil } from "./EtapaDeQualquerFunil";
 import { ValorDaCondicaoDoContato } from "./CondicaoDoContato";
@@ -213,6 +223,17 @@ export const CURATED_FIELDS: Record<TriggerEvent, CuratedField[]> = {
   // funil (via etapa/tags) e tags do contato.
   "lead.silent_for": LEAD_FIELDS,
   "lead.stage_stale": [...LEAD_FIELDS, STAGE_FIELD],
+  // #1749 — "negócio alterado". A condição própria do gatilho é "o campo X está
+  // entre os nomes que a edição mudou"; os VALORES do negócio nunca viajam no
+  // evento, e para filtrar pelo valor ATUAL valem os campos do lead (hidratados
+  // no contexto), como em qualquer gatilho de negócio.
+  "lead.updated": [
+    { value: "event.fields", label: "Nome do campo alterado", op: "campo_alterado" },
+    ...LEAD_FIELDS,
+  ],
+  // #4365 — as condições são as do CONTATO: quem monta a regra quer filtrar
+  // QUEM ligou (tags, nome), e o fato em si (a ligação perdida) já é o gatilho.
+  "voice_call.missed": CONTACT_FIELDS,
 };
 
 export const OP_LABELS: Record<Op, string> = {
@@ -226,6 +247,10 @@ export const OP_LABELS: Record<Op, string> = {
   gte: "maior ou igual a",
   lt: "menor que",
   lte: "menor ou igual a",
+  // #1749 — o operador pergunta ao EVENTO quais campos a edição mudou; o valor
+  // da condição é o NOME do campo (ex.: `expected_close_date`), nunca o valor
+  // dele. Só existe no gatilho "negócio alterado" — a porta recusa nos outros.
+  campo_alterado: "foi alterado",
 };
 
 /**
@@ -294,6 +319,7 @@ const QUALQUER_FONTE = "__qualquer_fonte__";
 export function RuleEditor({ open, onOpenChange, rule }: Props) {
   const t = useT();
   const modulosLigados = useModulosLigados();
+  const capacidadesLigadas = useCapacidadesLigadas();
   const isEdit = !!rule;
   const [name, setName] = React.useState("");
   const [triggerEvent, setTriggerEvent] = React.useState<TriggerEvent | "">("");
@@ -628,7 +654,7 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                 <SelectValue placeholder={t("Escolha o gatilho")} />
               </SelectTrigger>
               <SelectContent>
-                {TRIGGER_EVENTS.map((ev) => (
+                {TRIGGER_EVENTS.filter((ev) => gatilhoOferecido(ev, capacidadesLigadas, triggerEvent)).map((ev) => (
                   <SelectItem key={ev} value={ev}>
                     {t(TRIGGER_LABELS[ev])}
                   </SelectItem>
@@ -1026,7 +1052,9 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {(Object.keys(OP_LABELS) as Op[]).map((op) => (
+                        {(Object.keys(OP_LABELS) as Op[])
+                          .filter((op) => operadorCabeNoCampo(op, cond.field))
+                          .map((op) => (
                           <SelectItem key={op} value={op}>
                             {/* Em campo de lista, `contains` é pertinência: o
                                 rótulo diz o que o motor faz. No modo avançado
@@ -1048,6 +1076,19 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                         valor={cond.value}
                         onChange={(v) => updateCondition(idx, { value: v })}
                       />
+                    ) : cond.op === "campo_alterado" ? (
+                      <Select value={cond.value} onValueChange={(v) => updateCondition(idx, { value: v })}>
+                        <SelectTrigger className="flex-1 basis-40" aria-label={t("Campo do negócio")}>
+                          <SelectValue placeholder={t("Escolha o campo")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.keys(CAMPOS_ALTERAVEIS_DO_NEGOCIO).map((nome) => (
+                            <SelectItem key={nome} value={nome}>
+                              {t(rotuloDoCampoAlterado(nome))}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     ) : (
                       <Input
                         className="flex-1 basis-40"

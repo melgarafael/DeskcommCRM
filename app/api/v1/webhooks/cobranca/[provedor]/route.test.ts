@@ -34,6 +34,8 @@ interface Mundo {
   statusExistente: string;
   dona: { organization_id: string } | null;
   erroDona: boolean;
+  /** A leitura da empresa LANÇA (rede/fetch abortado), em vez de devolver erro. */
+  lancaDona: boolean;
   emit: Resposta;
 }
 let m: Mundo;
@@ -45,7 +47,10 @@ function responder(c: Cadeia): Resposta {
     if (op === "select") return { data: { id: "linha-1", status: m.statusExistente } };
     return { data: null };
   }
-  if (c.tabela === "cobranca_assinaturas") return m.erroDona ? { error: { code: "08000", message: "sem banco" } } : { data: m.dona };
+  if (c.tabela === "cobranca_assinaturas") {
+    if (m.lancaDona) throw new TypeError("fetch failed");
+    return m.erroDona ? { error: { code: "08000", message: "sem banco" } } : { data: m.dona };
+  }
   return {};
 }
 
@@ -75,7 +80,7 @@ beforeEach(() => {
   h.sinal = { eventoId: "evt_1", tipo: "invoice.paid", clienteRef: "cus_1" };
   h.permitido = true;
   h.baldes = [];
-  m = { duplicado: false, statusExistente: "received", dona: { organization_id: ORG }, erroDona: false, emit: { data: "ev-1" } };
+  m = { duplicado: false, statusExistente: "received", dona: { organization_id: ORG }, erroDona: false, lancaDona: false, emit: { data: "ev-1" } };
   h.banco = bancoFalso(responder, () => m.emit);
 });
 
@@ -151,6 +156,26 @@ describe("webhook da cobrança", () => {
       status: "received", error_message: "falha_ao_identificar_empresa",
     });
     expect(h.erro).toHaveBeenCalledWith("cobranca.empresa_nao_identificada", { provedor: "stripe", codigo: "08000" });
+    expect(emits()).toEqual([]);
+  });
+
+  it("⭐ a leitura da empresa LANÇA: 500, mas o ponteiro fica gravado (o aviso não se perde) — #3870", async () => {
+    // Sem o `catch`, a exceção subia e o 500 saía sem linha nenhuma: a
+    // reentrega do provedor era a única esperança de rastro.
+    m.lancaDona = true;
+    expect((await pedido()).status).toBe(500);
+    expect(gravado()).toMatchObject({
+      organization_id: null,
+      provider: "stripe",
+      valid_signature: true,
+      external_id: "evt_1",
+      status: "received",
+      error_message: "falha_ao_identificar_empresa",
+    });
+    expect(h.erro).toHaveBeenCalledWith("cobranca.leitura_da_empresa_falhou", {
+      provedor: "stripe",
+      motivo: "TypeError",
+    });
     expect(emits()).toEqual([]);
   });
 

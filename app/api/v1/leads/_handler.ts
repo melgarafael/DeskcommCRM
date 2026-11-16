@@ -1,6 +1,9 @@
+import { escritaComMarca, marcaDoAssistido } from "@/lib/automation/parada-no-assistido";
 import { guardServiceEffect } from "@/lib/atendimento/fronteira-server";
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { armarProximaRevisaoNoCard } from "@/lib/revisao-por-km/no-card";
+import { logger } from "@/lib/logger";
 import { idsDeContatosPessoais } from "@/app/api/v1/conversations/_handler";
 /**
  * Core handlers para /api/v1/leads.
@@ -51,6 +54,10 @@ import {
 import { ORIGEM_DA_PLANILHA } from "@/lib/leads/planilha";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
+import {
+  desativaRecorrenciaDoNegocio,
+  recorrenciaDoNegocio,
+} from "@/lib/financeiro/recorrencia-do-negocio";
 import {
   decideMotivoDaPerda,
   recusaDeMotivoDaPerdaPeloBanco,
@@ -306,7 +313,8 @@ function actorAuditPayload(actor: Actor): {
   if (actor.type === "webhook_source") {
     return {
       actorUserId: null,
-      metadataActor: { actor_type: "webhook_source", actor_id: actor.id },
+      // A marca HERDADA (doc 301 = B): a regra rodou por causa da IA no assistido.
+      metadataActor: { actor_type: "webhook_source", actor_id: actor.id, ...marcaDoAssistido(actor) },
     };
   }
   // TOKEN DE SERVIDOR é caso próprio, e não o `else` de `ai_agent`: sem esta
@@ -325,6 +333,8 @@ function actorAuditPayload(actor: Actor): {
       actor_type: "ai_agent",
       actor_id: actor.id,
       ...(actor.api_token_id ? { actor_api_token_id: actor.api_token_id } : {}),
+      // Doc 301 = B: a ação da IA no assistido segura a automação que fala com o cliente.
+      ...marcaDoAssistido(actor),
     },
   };
 }
@@ -989,25 +999,31 @@ export async function updateLeadHandler(
   // Escopo `negocio` (#2852): o valor de um campo do CONTATO mora em
   // `contacts.custom_fields`, e o padrão dele é julgado na ficha do contato.
   // `settingsDoFunil` é fail-open: funil ilegível = lista vazia = grava como hoje.
+  //
+  // A variável vive FORA do bloco porque a revisão por quilometragem (#4376), no
+  // fim do handler, precisa dos mesmos `settings` — o funil que declara a régua
+  // é o mesmo que declara os campos. Ler duas vezes seria uma consulta a mais
+  // por PATCH, e a segunda leitura poderia ver outra versão do funil.
+  let settingsDaEdicao: unknown;
   if (input.custom_fields && Object.keys(input.custom_fields).length > 0) {
     const alterados = camposQueMudaram(
       input.custom_fields,
       (existing as { custom_fields?: unknown }).custom_fields,
     );
     if (Object.keys(alterados).length > 0) {
-      const settingsDoEdicao = await settingsDoFunil(supabase, existing.pipeline_id);
+      settingsDaEdicao = await settingsDoFunil(supabase, existing.pipeline_id);
       // ── A OPÇÃO (#3508) — a mesma régua da criação, no MESMO recorte ──────
       //
       // Só o que MUDOU é julgado (ver o bloco acima), e o que casa vira o
       // `value` da opção. O que não casa: 422 aqui, e `manterForaDaLista` na
       // captação. Roda ANTES do padrão porque o padrão tem de julgar o valor que
       // será gravado, não o texto que chegou.
-      const { mudados } = canonizaOpcoesDoFunil(settingsDoEdicao, alterados, ctx, opcoes);
+      const { mudados } = canonizaOpcoesDoFunil(settingsDaEdicao, alterados, ctx, opcoes);
       if (Object.keys(mudados).length > 0) {
         input = { ...input, custom_fields: { ...input.custom_fields, ...mudados } };
       }
       const recusas = recusasDePadrao(
-        defsDoPadraoDoFunil(settingsDoEdicao, "negocio"),
+        defsDoPadraoDoFunil(settingsDaEdicao, "negocio"),
         // O `value` canônico já aplicado é o que a próxima régua lê.
         camposQueMudaram(input.custom_fields, (existing as { custom_fields?: unknown }).custom_fields),
         testaComPrazo,
@@ -1103,13 +1119,17 @@ export async function updateLeadHandler(
     ? ctx.serviceOrigin ?? await observeServiceOrigin(createAdminClient(), ctx.organization_id, input.contact_id ?? existing.contact_id)
     : null;
   await guardServiceEffect();
-  const { data: updated, error: updErr } = await supabase
-    .from("crm_leads")
-    .update(patch)
-    .eq("organization_id", ctx.organization_id)
-    .eq("id", leadId)
-    .select(LEAD_COLS)
-    .maybeSingle();
+  // Doc 301 = B: a troca de responsável vira `lead.assigned` pelo GATILHO, e o
+  // gatilho só vê a marca do assistido pelo cabeçalho (`escritaComMarca`).
+  const { data: updated, error: updErr } = await escritaComMarca(
+    supabase
+      .from("crm_leads")
+      .update(patch)
+      .eq("organization_id", ctx.organization_id)
+      .eq("id", leadId)
+      .select(LEAD_COLS),
+    ctx.actor,
+  ).maybeSingle();
 
   const recusaNoUpdate = recusaDaGuardaDoBanco(ctx, updErr);
   if (recusaNoUpdate) throw recusaNoUpdate;
@@ -1140,8 +1160,74 @@ export async function updateLeadHandler(
     }
     // A resposta é o que EXISTE no banco, não o que esta requisição mandou: sob
     // concorrência as duas coisas diferem, e é a do banco que vale.
-    (updated as Record<string, unknown>).custom_fields =
-      (mesclados as Record<string, unknown> | null) ?? {};
+    const camposMesclados = (mesclados as Record<string, unknown> | null) ?? {};
+    (updated as Record<string, unknown>).custom_fields = camposMesclados;
+
+    // ── A REVISÃO POR QUILOMETRAGEM (#4376) ────────────────────────────────
+    //
+    // O km que chegou pelo card (tela, API, MCP, webhook de entrada) vira a
+    // DATA PREVISTA da próxima revisão, gravada pelo mesmo `fn_lead_anotar_campos`
+    // — e o gatilho `lead.date_field_due` (#989) rearma sozinho porque a chave
+    // de disparo leva o valor da data (#1540).
+    //
+    // Roda DEPOIS da escrita do km, e só quando o funil declarou a régua
+    // (`pipelines.settings.revisao_por_km`) E a instalação ligou o módulo
+    // opcional `revisao_por_km` — o portão mora dentro do módulo
+    // (`lib/revisao-por-km/no-card.ts`), não aqui. A conta em si mora em
+    // `lib/revisao-por-km/conta.ts`; aqui é só a porta, no fuso da organização.
+    // Falha aqui NÃO derruba o PATCH: o km já está gravado, e a projeção é
+    // consequência — o log diz que ela não saiu.
+    if (settingsDaEdicao !== undefined) {
+      try {
+        const settingsDaLoja =
+          settingsDaEdicao !== null && typeof settingsDaEdicao === "object" && !Array.isArray(settingsDaEdicao)
+            ? (settingsDaEdicao as Record<string, unknown>)
+            : null;
+        const armacao = await armarProximaRevisaoNoCard({
+          settings: settingsDaLoja,
+          camposAnteriores:
+            existing.custom_fields &&
+            typeof existing.custom_fields === "object" &&
+            !Array.isArray(existing.custom_fields)
+              ? (existing.custom_fields as Record<string, unknown>)
+              : {},
+          campos: camposMesclados,
+          portas: {
+            fusoDaOrganizacao: async () => {
+              const { data } = await createAdminClient()
+                .from("organizations")
+                .select("timezone")
+                .eq("id", ctx.organization_id)
+                .maybeSingle();
+              return (data as { timezone?: string | null } | null)?.timezone ?? null;
+            },
+            gravarCampos: async (campos) => {
+              const { data, error } = await createAdminClient().rpc("fn_lead_anotar_campos", {
+                p_org: ctx.organization_id,
+                p_lead: leadId,
+                p_campos: campos,
+              });
+              if (error) return false;
+              return data !== null && data !== undefined;
+            },
+          },
+        });
+        if (armacao.status === "falhou") {
+          logger.warn("[leads.update] revisão por km não foi armada", {
+            organization_id: ctx.organization_id,
+            lead_id: leadId,
+            motivo: armacao.motivo,
+            detalhe: armacao.detalhe,
+          });
+        }
+      } catch (erro) {
+        logger.warn("[leads.update] revisão por km falhou", {
+          organization_id: ctx.organization_id,
+          lead_id: leadId,
+          error: erro instanceof Error ? erro.message : String(erro),
+        });
+      }
+    }
   }
 
   const a = actorAuditPayload(ctx.actor);
@@ -1228,18 +1314,23 @@ export async function updateLeadHandler(
     });
   }
 
-  await supabase
-    .rpc("emit_event", {
-      p_event_type: "lead.updated",
-      p_entity_kind: "crm_lead",
-      p_entity_id: leadId,
-      p_payload: { fields },
-      p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
-      p_organization_id: existing.organization_id,
-    })
-    .then(({ error }) => {
-      if (error) console.error("[lead.update] emit_event failed", error.message);
-    });
+  // A mesma guarda da timeline, agora também no barramento: desde a #1749 o
+  // `lead.updated` é gatilho de automação, e clicar Salvar sem mexer em nada
+  // dispararia toda regra "quando um negócio for alterado" sem condição.
+  if (fields.length > 0) {
+    await supabase
+      .rpc("emit_event", {
+        p_event_type: "lead.updated",
+        p_entity_kind: "crm_lead",
+        p_entity_id: leadId,
+        p_payload: { fields },
+        p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
+        p_organization_id: existing.organization_id,
+      })
+      .then(({ error }) => {
+        if (error) console.error("[lead.update] emit_event failed", error.message);
+      });
+  }
 
   if (input.tags !== undefined) {
     const prevTags: string[] = (existing as { tags?: string[] }).tags ?? [];
@@ -1522,21 +1613,25 @@ export async function moveLeadHandler(
   const serviceOrigin = ctx.serviceOrigin ?? await observeServiceOrigin(createAdminClient(), ctx.organization_id, lead.contact_id);
   const nowIso = new Date().toISOString();
   await guardServiceEffect();
-  const { data: updated, error: updErr } = await supabase
-    .from("crm_leads")
-    .update({
-      stage_id: input.to_stage_id,
-      position_in_stage: position,
-      updated_at: nowIso,
-      ...veredito.patch,
-      ...(stage.is_won && input.won_reason?.trim()
-        ? { won_reason: input.won_reason.trim() }
-        : {}),
-    })
-    .eq("id", leadId)
-    .eq("updated_at", lead.updated_at)
-    .select("*")
-    .maybeSingle();
+  // Doc 301 = B: etapa de ganho/perda vira `lead.won`/`lead.lost` pelo GATILHO,
+  // e o gatilho só vê a marca do assistido pelo cabeçalho (`escritaComMarca`).
+  const { data: updated, error: updErr } = await escritaComMarca(
+    supabase
+      .from("crm_leads")
+      .update({
+        stage_id: input.to_stage_id,
+        position_in_stage: position,
+        updated_at: nowIso,
+        ...veredito.patch,
+        ...(stage.is_won && input.won_reason?.trim()
+          ? { won_reason: input.won_reason.trim() }
+          : {}),
+      })
+      .eq("id", leadId)
+      .eq("updated_at", lead.updated_at)
+      .select("*"),
+    ctx.actor,
+  ).maybeSingle();
 
   if (updErr) {
     // Rede de segurança (#917) — mesma da rota de arrasto: recusa do banco por
@@ -1555,6 +1650,85 @@ export async function moveLeadHandler(
       ctx.requestId,
       traduzir("Lead foi modificado concorrentemente.", ctx.idioma ?? "pt-BR"),
     );
+  }
+
+  // ── O FINANCEIRO DO FECHO (#3602, fatias 3 e 4) ────────────────────────────
+  //
+  // Ganhar com `recurring_value_cents` declarado cria o molde da receita
+  // mensal (`recurring_entries`) ligado a este negócio; perder desativa o molde
+  // DELE. Sem isto, a recorrência do card era só um número na tela: o cron que
+  // gera as contas a receber nunca ficava sabendo dela, e quem vendia "setup +
+  // mensalidade" continuava lançando a mensalidade à mão — até esquecer.
+  //
+  // ── Por que AQUI, e não na rota do quadro ─────────────────────────────────
+  //
+  // Este handler é o escritor de etapa de tudo que NÃO é o arrasto (MCP
+  // `crm_move_lead_stage`, ações de automação, lote, IA). O arrasto e o botão
+  // Ganhar têm rota própria e convergem no mesmo `status = 'won'`; a fatia do
+  // molde nasce aqui, e o arrasto fica de fora desta onda, declarado no PR
+  // (é a próxima fatia, junto com a flag por funil).
+  //
+  // ── Por que admin client ──────────────────────────────────────────────────
+  //
+  // `recurring_entries` é tabela do módulo financeiro e a policy de escrita
+  // exige `manager` na organização: um agente de IA que move o card não tem
+  // esse papel, mas TEM o direito de fechar o negócio. Mesmo desenho do
+  // consumidor de `lead.won` (`comanda-do-ganho.handler.ts`). O isolamento por
+  // empresa não vem do RLS aqui: vem do `organization_id` do PRÓPRIO negócio,
+  // gravado assim nas duas funções (e provado em
+  // `tests/invariants/recorrencia-do-negocio.test.ts`).
+  //
+  // ── Falha BAIXA ───────────────────────────────────────────────────────────
+  //
+  // O card já moveu. Um financeiro que não nasceu vira log e um molde que
+  // alguém cria à mão; derrubar o fecho do negócio por causa dele seria pior.
+  // Não é silêncio: cada desfecho de erro sai no `console.error` com o request.
+  if (!mesmaEtapa && (stage.is_won || stage.is_lost)) {
+    const financeiro = createAdminClient();
+    try {
+      if (stage.is_won) {
+        const valorRecorrente =
+          (lead as { recurring_value_cents?: number | string | null }).recurring_value_cents ?? null;
+        // Sem valor declarado não há receita mensal: nem chega ao banco (o
+        // caminho comum é o ganho de valor único).
+        if (valorRecorrente !== null) {
+          const desfecho = await recorrenciaDoNegocio(financeiro, {
+            organizationId: lead.organization_id,
+            leadId,
+            pipelineId: lead.pipeline_id,
+            valorCents: valorRecorrente,
+            criadoEm: (lead as { created_at?: string | null }).created_at ?? null,
+            meses: (lead as { recurring_months?: number | null }).recurring_months ?? null,
+            userId: ctx.actor.type === "user" ? ctx.actor.id : null,
+          });
+          if (desfecho.estado === "falhou") {
+            console.error("[lead.move] recorrência do negócio falhou", {
+              request_id: ctx.requestId,
+              lead_id: leadId,
+              erro: desfecho.erro,
+            });
+          }
+        }
+      } else {
+        const desfecho = await desativaRecorrenciaDoNegocio(financeiro, {
+          organizationId: lead.organization_id,
+          leadId,
+        });
+        if (desfecho.estado === "falhou") {
+          console.error("[lead.move] desativação da recorrência falhou", {
+            request_id: ctx.requestId,
+            lead_id: leadId,
+            erro: desfecho.erro,
+          });
+        }
+      }
+    } catch (erro) {
+      console.error("[lead.move] financeiro do fecho lançou", {
+        request_id: ctx.requestId,
+        lead_id: leadId,
+        erro: erro instanceof Error ? erro.message : String(erro),
+      });
+    }
   }
 
   const a = actorAuditPayload(ctx.actor);

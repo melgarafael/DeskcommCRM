@@ -18,6 +18,7 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { FILTRO_VAZIO } from "@/lib/campanhas/audiencia";
 import {
+  camposDeGravacao,
   decidirConteudo,
   decidirVelocidade,
   fraseDaRecusa,
@@ -40,7 +41,7 @@ export const dynamic = "force-dynamic";
 const COLUNAS_DA_LISTA =
   "id, name, status, channel_session_id, snapshot_total, snapshot_eligible, snapshot_excluded, " +
   "scheduled_at, started_at, completed_at, cancelled_at, created_at, created_by, " +
-  "pipeline_id, stage_id, agent_id, message_mode, provider_template_name";
+  "pipeline_id, stage_id, agent_id, message_mode, email_subject, provider_template_name";
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
@@ -119,7 +120,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   const supabase = createAdminClient();
   // A conexão é conferida CONTRA A ORGANIZAÇÃO: a FK composta da 0375 recusaria
   // o número de outro tenant, mas a recusa do banco chegaria como erro genérico.
-  const canal = await lerModoDoCanal(supabase, org.orgId, entrada.channel_session_id);
+  // Sem número, o canal é E-MAIL: não há linha a conferir, e o formato vem da
+  // capability do canal (o esquema já recusou número junto com `canal: email`).
+  const canal = await lerModoDoCanal(supabase, org.orgId, entrada.channel_session_id ?? null);
   if (!canal.existe) {
     return fail(
       "campanha_canal_indisponivel",
@@ -128,11 +131,12 @@ export async function POST(req: NextRequest): Promise<Response> {
       { requestId },
     );
   }
-  // O conteúdo segue o que o número aceita: texto livre no QR, modelo aprovado
-  // no oficial (migration 0710). O modelo escolhido é conferido inteiro aqui.
+  // O conteúdo segue o que o canal aceita: texto livre no QR, modelo aprovado no
+  // oficial (migration 0710), assunto + corpo no e-mail (9334). O modelo
+  // escolhido é conferido inteiro aqui, e a conta Resend também.
   const conteudo = await decidirConteudo(supabase, {
     organizationId: org.orgId,
-    channelSessionId: entrada.channel_session_id,
+    channelSessionId: entrada.channel_session_id ?? null,
     extras: entrada.channel_session_ids ?? [],
     modoDoCanal: canal.modo,
     pedido: entrada,
@@ -159,9 +163,10 @@ export async function POST(req: NextRequest): Promise<Response> {
       organization_id: org.orgId,
       name: entrada.name,
       description: entrada.description ?? null,
-      channel_session_id: entrada.channel_session_id,
-      message_body: conteudo.modo === "template" ? null : (entrada.message_body ?? null),
-      ...conteudo.colunas,
+      channel_session_id: entrada.channel_session_id ?? null,
+      // A MESMA decisão que validou vira linha: assunto, modo e corpo saem
+      // juntos daqui (`camposDeGravacao`), sem a rota reescrever o texto.
+      ...camposDeGravacao(conteudo, entrada.message_body),
       base_legal: entrada.base_legal,
       lia_ref: entrada.lia_ref ?? null,
       audience_filter: entrada.audience_filter ?? FILTRO_VAZIO,
@@ -186,7 +191,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const criada = data as unknown as { id: string };
-  if ((entrada.channel_session_ids ?? []).length > 0) {
+  // Campanha de e-mail não tem número (o esquema já recusou `channel_session_ids`
+  // junto com `canal: email`), então o pool só existe no caminho do WhatsApp.
+  if ((entrada.channel_session_ids ?? []).length > 0 && entrada.channel_session_id) {
     // Falha do pool NÃO derruba a criação: a campanha existe e fala pelo número
     // principal. Devolver erro aqui faria o operador achar que nada foi criado
     // e criar de novo.

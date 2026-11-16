@@ -126,6 +126,15 @@ function makeAdmin(rows: Linha[]) {
         filtros.push([k, v]);
         return chain;
       },
+      // `.lte(col, valor)` faz parte do MESMO builder e entra pelo apagamento
+      // pelo contato (#4500): a prévia da conversa só é reescrita quando a
+      // apagada é a ÚLTIMA (`last_message_at <= sent_at`). Este dublê só guarda
+      // linhas de `messages`, então o UPDATE de `conversations` não casa nada —
+      // nenhuma asserção daqui muda de sentido.
+      lte: (k: string, v: unknown) => {
+        filtros.push([k, v]);
+        return chain;
+      },
       limit: () => chain,
       maybeSingle: () => Promise.resolve({ data: null, error: null }),
       // A cadeia é aguardada (thenable): é aqui que o UPDATE acontece.

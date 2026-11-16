@@ -31,6 +31,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
+import { amigoBookingContextSchema } from "@/lib/amigo/agenda";
 
 import {
   alterarAgendamentoHandler,
@@ -125,6 +126,7 @@ const convidadosDaEquipe = z
   .optional();
 
 const marcarSchema = z.object({
+  amigo: amigoBookingContextSchema.optional(),
   event_type_id: z.string().uuid(),
   starts_at: z.string().datetime({ offset: true }),
   owner_user_id: z.string().uuid().optional(),
@@ -181,6 +183,14 @@ const alterarSchema = z
      * que o cliente tinha mandado um campo.
      */
     title: tituloDoCompromisso.optional(),
+    /**
+     * A duração que a pessoa escolheu (#4450) — a segunda porta do campo da
+     * #3709. Sem esta linha o PATCH DESCARTAVA o número em silêncio: a tela
+     * mandaria a duração, o handler responderia "alterado", e o bloco ficaria
+     * com o comprimento de antes. A faixa é a mesma da criação, e o handler
+     * confere de novo porque a ferramenta MCP o chama sem passar por aqui.
+     */
+    duration_minutes: z.number().int().min(DURACAO_MINIMA_MIN).max(DURACAO_MAXIMA_MIN).optional(),
   })
   .refine(
     (c) =>
@@ -190,7 +200,8 @@ const alterarSchema = z
       c.notes !== undefined ||
       c.guest_email !== undefined ||
       c.team_guest_user_ids !== undefined ||
-      c.title !== undefined,
+      c.title !== undefined ||
+      c.duration_minutes !== undefined,
     {
       message: "Informe pelo menos um campo para alterar.",
     },
