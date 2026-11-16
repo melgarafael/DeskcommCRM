@@ -1,5 +1,5 @@
 ---
-impacto: correcao
+impacto: nada_mudou
 secao: corrigido
 titulo: Voz do agente só aparece com credencial do ElevenLabs validada
 ---
@@ -14,4 +14,4 @@ Com credencial, nada muda: a lista é a que a conta do ElevenLabs devolve, com
 nome e idioma de cada voz, e o campo continua aceitando um ID que não esteja na
 lista.
 
-Contribuição de @webtecnica (#4260), a partir da issue #4260.
+Contribuição de @webtecnica (#4735), a partir da issue #4260.
