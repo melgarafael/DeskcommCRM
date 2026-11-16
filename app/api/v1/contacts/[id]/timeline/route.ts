@@ -132,7 +132,6 @@ async function responderTimeline(
     let q = supabase
       .from("crm_lead_activities")
       .select(TIMELINE_COLS)
-      .eq("organization_id", organizationId)
       .order("performed_at", { ascending: false })
       .order("id", { ascending: false })
       .limit(FETCH);
