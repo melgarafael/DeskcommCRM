@@ -151,6 +151,8 @@ describe("condição padrão escrita nas evidências", () => {
     // E o prompt diz, com todas as letras, que repetir essa condição não é promessa.
     const system = systemDoCorpo(corpo);
     expect(system).toContain("REPETIR CONDIÇÃO QUE ESTÁ NAS EVIDÊNCIAS NÃO É PROMESSA");
+    expect(system).toContain("origem 'catalogo' ou 'conhecimento' registra a condição padrão");
+    expect(system).toContain("'servidor_externo' não entra nesta regra");
     expect(system).toContain("frete grátis acima de um valor");
     // O veredito não é reescrito pelo código: continua o do revisor.
     expect(resultado).toMatchObject({ isPromise: false, suspectPhrase: null });

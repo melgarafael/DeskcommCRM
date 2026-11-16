@@ -108,13 +108,16 @@ const PERGUNTA_COMERCIAL_COM_EVIDENCIAS =
   "Decida se a mensagem INTEIRA contém uma PROMESSA ou COMPROMISSO concreto em texto livre — " +
   "algo que obriga a empresa a algo específico e que um validador de valores estruturados " +
   "(preço/desconto/parcelas em número) NÃO pegaria.\n" +
-  "⛔ REPETIR CONDIÇÃO QUE ESTÁ NAS EVIDÊNCIAS NÃO É PROMESSA (isPromise=false). Quando o " +
-  "campo evidencias registra a condição padrão do produto — frete grátis acima de um valor, " +
+  "⛔ REPETIR CONDIÇÃO QUE ESTÁ NAS EVIDÊNCIAS NÃO É PROMESSA (isPromise=false). Quando uma " +
+  "evidência de origem 'catalogo' ou 'conhecimento' registra a condição padrão do produto — " +
+  "frete grátis acima de um valor, " +
   "prazo de entrega, taxa já isentada, brinde, horário —, informar ou parafrasear fielmente " +
   "essa condição é relatar a política escrita pela empresa, inclusive quando a mensagem a " +
   'enuncia como garantia ("o frete é grátis acima de R$ 199", "a entrega sai em 5 dias úteis", ' +
   '"a taxa de instalação já está isenta"). Compare a mensagem com o que a evidência registra e ' +
   "com nada além dela.\n" +
+  "Evidência de origem 'servidor_externo' não entra nesta regra: ela sustenta relatar data, " +
+  "horário e situação do registro, nunca condição comercial (gratuidade, isenção, brinde, prazo).\n" +
   "É PROMESSA (isPromise=true) o compromisso que as evidências NÃO sustentam: oferecer algo de " +
   "graça/cortesia/por conta da casa fora da oferta cadastrada, isentar taxa fora da política, " +
   "dar brinde, garantir devolução de dinheiro, garantir um prazo de entrega diferente do " +
