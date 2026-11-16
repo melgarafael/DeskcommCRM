@@ -230,11 +230,17 @@ describe("(6) reprocesso e reserva no envio fatiado em bolhas", () => {
       enviar,
     );
 
-    // A decisão cobre as bolhas do MESMO envio (`l2.seq >= $3`), na ordem.
+    // A decisão cobre as bolhas do MESMO envio, na ordem. A fronteira é o
+    // `envio_seq` gravado na escrita (#4370, migration 9406): o `seq` é o
+    // contador do TURNO e, sozinho, atravessa o envio seguinte — foi assim que
+    // o mantenedor mediu os cenários B e C. O caso de dois envios no mesmo job
+    // está no invariante `reprocesso-da-saida-le-so-o-envio.test.ts`.
     const consulta = sqls.find(({ sql }) => sql.includes("string_agg"));
     expect(consulta, "a decisão ainda lê uma mensagem física só").toBeDefined();
-    expect(consulta!.sql).toContain("l2.seq >= $3");
+    expect(consulta!.sql).toContain("l2.envio_seq = $3");
     expect(consulta!.sql).toContain("order by l2.seq");
+    // Linha gravada ANTES da 9406 não tem a marca: cai na régua anterior.
+    expect(consulta!.sql).toContain("l2.envio_seq is null and l2.seq >= $3");
 
     // E o corpo desta tentativa volta a ter a saída personalizada.
     expect(String(enviar.mock.calls[0]?.[0])).toBe(

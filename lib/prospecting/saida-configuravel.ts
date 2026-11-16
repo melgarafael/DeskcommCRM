@@ -134,10 +134,39 @@ export const SQL_AMARRAR_RESERVA_A_MENSAGEM = `
 `;
 
 /**
+ * A régua que decide quais linhas do `send_ledger` são DESTE envio (#4370).
+ *
+ * `$3` é o `seq` da PRIMEIRA bolha do envio — a âncora que o chamador já manda
+ * (`mensagem.seq`) e que o escritor do ledger grava em `envio_seq` de TODAS as
+ * bolhas do mesmo `send_message` (migration 9406).
+ *
+ * Por que não `seq >= $3`: `seq` é o contador do TURNO (`let seq` no run de
+ * `inbound-turn.ts`, +1 por mensagem física), então ele continua crescendo
+ * entre duas chamadas de `send_message` do MESMO `job_id`. Filtrando por
+ * `seq >= $3` a concatenação atravessa o envio seguinte, e os dois lados erram:
+ *
+ *   - saída no 1º envio: o texto do 2º entra depois dela, `temSaida` (que olha
+ *     o FIM da concatenação) dá falso, e o reenvio sai sem a frase enquanto
+ *     `exit_offered_at` diz que ela foi oferecida;
+ *   - saída no 2º envio: o 1º passa a "achar" a frase do 2º, e o PARAR aparece
+ *     duas vezes.
+ *
+ * A linha ANTIGA (sem `envio_seq`, gravada antes da 9406) não tem como dizer
+ * onde o envio termina — a informação não existia —, então ela cai na régua
+ * anterior. Isso está escrito no PR e preso por teste; é o comportamento de
+ * antes, não um novo.
+ */
+function reguaDoEnvio(alias: string): string {
+  return `and (${alias}.envio_seq = $3
+                     or (${alias}.envio_seq is null and ${alias}.seq >= $3))`;
+}
+
+/**
  * O que sobrou do envio desta intenção (job, seq) já guardado por uma tentativa
  * anterior: `queued` (o canal a segura e a entrega depois) ou `accepted` (já
  * saiu). A tentativa que a guardou já contou, já reservou e já auditou; esta é
- * reprocesso da MESMA mensagem. Params: ($1 = organization_id, $2 = job_id, $3 = seq).
+ * reprocesso da MESMA mensagem. Params: ($1 = organization_id, $2 = job_id,
+ * $3 = seq da 1ª bolha do envio, $4 = conversation_id).
  *
  * `body` é o envio INTEIRO, e não a mensagem física do `seq` (#4370). Com
  * "Responder em várias mensagens curtas" ligado, quem carrega a saída é a ÚLTIMA
@@ -148,13 +177,18 @@ export const SQL_AMARRAR_RESERVA_A_MENSAGEM = `
  * saída é o último parágrafo, então o fim da concatenação é ele — inclusive
  * quando o teto de caracteres da bolha o picou em duas (aí `temSaida` casa a
  * concatenação, e não cada pedaço).
+ *
+ * E é o envio INTEIRO, não o TURNO inteiro: a fronteira vem de `envio_seq`
+ * (`reguaDoEnvio`), gravada na escrita. A âncora `$3` e o `envio_seq` das linhas
+ * são o mesmo número por construção — é o `seqDoEnvio` de `inbound-turn.ts`.
  */
 export const SQL_MENSAGEM_GUARDADA = `
     select (select string_agg(coalesce(m2.body, ''), ' ' order by l2.seq)
               from public.send_ledger l2
               left join public.messages m2
                 on m2.organization_id = l2.organization_id and m2.id = l2.crm_message_id
-             where l2.organization_id = $1 and l2.job_id = $2 and l2.seq >= $3
+             where l2.organization_id = $1 and l2.job_id = $2
+               ${reguaDoEnvio("l2")}
                and l2.status in ('queued', 'accepted')) as body,
            o.locale,
            -- O texto PRÓPRIO da campanha (#4370) vem junto: o reprocesso tem de
@@ -170,7 +204,8 @@ export const SQL_MENSAGEM_GUARDADA = `
              limit 1) as texto_da_saida
       from public.send_ledger l
       join public.organizations o on o.id = l.organization_id
-     where l.organization_id = $1 and l.job_id = $2 and l.seq >= $3
+     where l.organization_id = $1 and l.job_id = $2
+       ${reguaDoEnvio("l")}
        and l.status in ('queued', 'accepted')
      limit 1
 `;
