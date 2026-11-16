@@ -113,6 +113,18 @@ describe("agências: autorização real no banco", () => {
       ).rowCount,
     ).toBe(0);
   });
+  it("sessões e recibos de criação não são legíveis por sessão autenticada, nem pela própria agência", async () => {
+    await abrir();
+    // Sem GRANT a `authenticated`: a leitura é recusada, não só vazia.
+    await negado("select count(*) from agencia_sessoes where agencia_id=$1", [agencia]);
+    await negado("select count(*) from agencia_criacoes where organization_id=$1", [agencia]);
+    await db.query("reset role");
+    // Controle positivo: a sessão que o `abrir()` gravou existe para o servidor.
+    expect(
+      (await db.query("select count(*)::int n from agencia_sessoes where agencia_id=$1", [agencia]))
+        .rows[0].n,
+    ).toBe(1);
+  });
   it("sessão delegada vencida perde leitura mesmo com a agência habilitada", async () => {
     await abrir();
     await db.query("reset role");
