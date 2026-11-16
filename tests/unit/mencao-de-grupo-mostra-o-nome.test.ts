@@ -10,16 +10,18 @@
  * de quem foi mencionado: `metadata.group_sender` dizia quem ESCREVEU, e quem
  * foi mencionado se perdia.
  *
- * ─── Os TRÊS desfechos da exibição, no mesmo arquivo, de propósito ───────────
+ * ─── Os DOIS desfechos da exibição, no mesmo arquivo, de propósito ───────────
  *
  * 1. **No acervo da empresa** (`contacts.wa_lid` = o LID da menção): o nome do
  *    contato substitui o código na exibição e na prévia da lista.
- * 2. **Fora do acervo**: o nome do participante que o webhook identificou
- *    (`metadata.group_sender.name`) ocupa o lugar do código.
- * 3. **Sem nome nenhum**: a palavra do dicionário ("Participante"). O número
+ * 2. **Fora do acervo**: a palavra do dicionário ("Participante"). O número
  *    bruto NUNCA aparece na tela — era o defeito relatado na issue.
  *
- * Em nenhum dos três o `body` gravado muda: ele continua com `@<lid>`, que é o
+ * O `metadata.group_sender` é o AUTOR da mensagem, não quem foi mencionado, e o
+ * payload não traz nome por menção: o nome do autor NUNCA vira rótulo de menção
+ * (senão "João" marcando Pedro e Ana sairia "@João e @João").
+ *
+ * Em nenhum dos dois o `body` gravado muda: ele continua com `@<lid>`, que é o
  * dado do provedor e o que a auditoria precisa ver.
  *
  * O caminho exercitado é o de PRODUÇÃO: o payload cru do WAHA passa por
@@ -179,10 +181,10 @@ async function ingerir(
     mencoes,
     inseridos,
     previews,
-    // A MESMA chamada que a bolha faz (`MessageBubble`): a lista do metadata e o
-    // nome do participante que o webhook identificou (`group_sender`).
+    // A MESMA chamada que a bolha faz (`MessageBubble`): a lista do metadata e a
+    // palavra de reserva. O `group_sender` (o autor) não entra.
     exibido: textoComMencoesResolvidas(linha.body as string, lerMencoesDeGrupo(linha.metadata), {
-      nomeDoParticipante: remetente?.name ?? null,
+      palavraDesconhecida: "Participante",
     }),
   };
 }
@@ -235,13 +237,13 @@ describe("menção em grupo — LID vira NOME quando o contato está no acervo",
     expect((r.linha.metadata as Record<string, unknown>).mentions).toEqual([
       { lid: LID_CONHECIDO, phone: null, name: null },
     ]);
-    // Sem contato, cai para o participante — nunca para o LID.
-    expect(r.exibido).toBe("Oi @João do Grupo");
+    // Sem contato, cai para a palavra — nunca para o LID nem para o autor.
+    expect(r.exibido).toBe("Oi @Participante");
   });
 });
 
-describe("menção em grupo — fora do acervo, a ordem cai para participante e depois para a palavra", () => {
-  it("(b) o número que NÃO existe no CRM mostra o nome do participante do grupo (`group_sender`)", async () => {
+describe("menção em grupo — fora do acervo, a menção sai como \"Participante\", nunca com o nome do autor", () => {
+  it("(b) o número que NÃO existe no CRM mostra \"Participante\", e o nome do AUTOR (`group_sender`) não aparece", async () => {
     const body = `Fala @${LID_DESCONHECIDO}, tudo certo?`;
     const r = await ingerir(
       [{ name: "Maria Exemplo", display_name: null, phone_number: "+5511988887777", wa_lid: LID_CONHECIDO }],
@@ -256,13 +258,33 @@ describe("menção em grupo — fora do acervo, a ordem cai para participante e 
     ]);
     // O `body` continua cru; quem troca é a leitura.
     expect(r.linha.body).toBe(body);
-    expect(r.exibido).toBe("Fala @João do Grupo, tudo certo?");
+    expect(r.exibido).toBe("Fala @Participante, tudo certo?");
     expect(r.exibido).not.toContain(LID_DESCONHECIDO);
-    // A prévia da lista segue a mesma ordem.
-    expect(r.previews.at(-1)).toBe("Fala @João do Grupo, tudo certo?");
+    // O remetente padrão de `ingerir` é "João do Grupo": ele ESCREVEU, não foi
+    // mencionado, e o nome dele não pode aparecer no lugar da menção.
+    expect(r.exibido).not.toContain("João do Grupo");
+    // A prévia da lista (e a busca por conteúdo, que lê essa coluna) segue a
+    // mesma régua.
+    expect(r.previews.at(-1)).toBe("Fala @Participante, tudo certo?");
+    expect(r.previews.join("\n")).not.toContain("João do Grupo");
   });
 
-  it("(c) sem nome nenhum, a menção não mostra dígitos crus: sai a palavra do dicionário", async () => {
+  it("CONTROLE: o autor menciona DUAS pessoas fora do CRM — nenhuma das duas ganha o nome dele", async () => {
+    const OUTRO_DESCONHECIDO = "55443322110099";
+    const body = `@${LID_DESCONHECIDO} e @${OUTRO_DESCONHECIDO}, podem vir amanhã?`;
+    const r = await ingerir([], body, [LID_DESCONHECIDO, OUTRO_DESCONHECIDO], {
+      name: "João",
+      phone: null,
+      lid: "11111111111111",
+    });
+
+    expect(r.exibido).toBe("@Participante e @Participante, podem vir amanhã?");
+    expect(r.exibido).not.toContain("João");
+    expect(r.previews.at(-1)).toBe("@Participante e @Participante, podem vir amanhã?");
+    expect(r.previews.join("\n")).not.toContain("João");
+  });
+
+  it("(c) sem nome de autor também, a menção não mostra dígitos crus: sai a palavra do dicionário", async () => {
     const body = `Oi @${LID_DESCONHECIDO}`;
     // Payload sem `pushName` e sem `participantAlt`: o webhook não deu nome nenhum.
     const r = await ingerir([], body, [LID_DESCONHECIDO], { name: null, phone: null, lid: null });
@@ -275,8 +297,8 @@ describe("menção em grupo — fora do acervo, a ordem cai para participante e 
     expect((r.linha.metadata as Record<string, unknown>).mentions).toEqual([
       { lid: LID_DESCONHECIDO, phone: null, name: null },
     ]);
-    // O `group_sender` entra sem nome (o schema aceita os três campos nulos): não
-    // há de onde tirar nome, e é isso que obriga a cair na palavra.
+    // O `group_sender` entra sem nome (o schema aceita os três campos nulos); com
+    // ou sem ele, a menção desconhecida cai na palavra.
     const participante = (r.linha.metadata as Record<string, unknown>).group_sender as { name: string | null } | undefined;
     expect(participante?.name ?? null).toBeNull();
   });

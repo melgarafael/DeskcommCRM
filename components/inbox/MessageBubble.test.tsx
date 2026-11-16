@@ -773,9 +773,9 @@ describe("MessageBubble — mensagem que falhou", () => {
  *
  * O corpo que veio do WhatsApp fica cru no banco (`@75235009282237`); quem
  * resolve é a tela, pela lista `metadata.mentions`. O que se mede aqui é a
- * EXIBIÇÃO: nome do contato quando está no CRM, nome do participante do
- * `group_sender` quando não está, palavra do dicionário quando não há nome
- * nenhum — e cada ocorrência pelo próprio LID. O LID cru não aparece.
+ * EXIBIÇÃO: nome do contato quando está no CRM, palavra do dicionário quando
+ * não está — e cada ocorrência pelo próprio LID. O LID cru não aparece, e o
+ * nome do AUTOR (`group_sender`) nunca vira rótulo de menção.
  */
 describe("MessageBubble — menções de grupo (#3566)", () => {
   it("menção a contato do CRM aparece com o NOME", () => {
@@ -792,7 +792,7 @@ describe("MessageBubble — menções de grupo (#3566)", () => {
     expect(screen.queryByText(/75235009282237/)).toBeNull();
   });
 
-  it("menção a desconhecido cai para o nome do participante do grupo (`group_sender`)", () => {
+  it("menção a desconhecido NÃO recebe o nome do autor (`group_sender`)", () => {
     render(
       <MessageBubble
         message={msg({
@@ -805,11 +805,13 @@ describe("MessageBubble — menções de grupo (#3566)", () => {
         })}
       />,
     );
-    expect(screen.getByText("oi @João do Grupo")).toBeInTheDocument();
+    // O `group_sender` é quem ESCREVEU; o mencionado é outra pessoa.
+    expect(screen.getByText("oi @Participante")).toBeInTheDocument();
+    expect(screen.queryByText(/@João do Grupo/)).toBeNull();
     expect(screen.queryByText(/99887766554433/)).toBeNull();
   });
 
-  it("sem contato e sem participante a bolha mostra a palavra do dicionário, não dígitos", () => {
+  it("sem contato no CRM a bolha mostra a palavra do dicionário, não dígitos", () => {
     render(
       <MessageBubble
         message={msg({

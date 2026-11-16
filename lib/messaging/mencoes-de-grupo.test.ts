@@ -21,15 +21,7 @@ describe("textoComMencoesResolvidas — o que a tela mostra", () => {
     );
   });
 
-  it("menção a quem NÃO está no CRM mostra o nome do participante do grupo", () => {
-    // O webhook só traz UM nome de participante (`metadata.group_sender`); ele é
-    // melhor do que o código de 14 dígitos na tela — é a segunda da ordem.
-    expect(
-      textoComMencoesResolvidas("oi @99887766554433", [DESCONHECIDO], { nomeDoParticipante: "João do Grupo" }),
-    ).toBe("oi @João do Grupo");
-  });
-
-  it("sem nome nenhum — nem contato, nem participante — a menção NÃO mostra dígitos crus", () => {
+  it("menção a quem NÃO está no CRM NÃO mostra dígitos crus", () => {
     const exibido = textoComMencoesResolvidas("oi @99887766554433, tudo bem?", [DESCONHECIDO]);
     expect(exibido).toBe("oi @Participante, tudo bem?");
     expect(exibido).not.toMatch(/\d/);
@@ -39,13 +31,10 @@ describe("textoComMencoesResolvidas — o que a tela mostra", () => {
     expect(textoComMencoesResolvidas("@99887766554433", [DESCONHECIDO], { palavraDesconhecida: "Participante" })).toBe(
       "@Participante",
     );
-    // Contato no CRM ganha do participante e da palavra.
-    expect(
-      textoComMencoesResolvidas("@75235009282237", [MARIA], {
-        nomeDoParticipante: "João do Grupo",
-        palavraDesconhecida: "Participante",
-      }),
-    ).toBe("@Maria Exemplo");
+    // Contato no CRM ganha da palavra.
+    expect(textoComMencoesResolvidas("@75235009282237", [MARIA], { palavraDesconhecida: "Participante" })).toBe(
+      "@Maria Exemplo",
+    );
   });
 
   it("menção que chegou como TELEFONE (@5511…) resolve pelo telefone da lista", () => {

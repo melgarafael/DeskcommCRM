@@ -176,7 +176,7 @@ describe("gravarMensagemDeGrupo", () => {
     expect(d.inserirMensagem.mock.calls[0]![0]!.body).toBe("oi @75235009282237, pode vir?");
   });
 
-  it("#3566: menção a quem NÃO está no CRM cai para o participante do `group_sender` — nunca para o LID", async () => {
+  it("#3566: menção a quem NÃO está no CRM sai como \"Participante\" — nunca o LID, nunca o nome do AUTOR", async () => {
     const d = db(ligado());
     await gravarMensagemDeGrupo(
       d,
@@ -185,13 +185,13 @@ describe("gravarMensagemDeGrupo", () => {
         mencoes: [{ name: null, phone: null, lid: "99887766554433" }],
       }),
     );
-    // `entrada()` traz `group_sender: { name: "Maria", ... }`: é o único nome que
-    // o webhook deu, e ele é melhor do que o código na lista da Inbox. O corpo
-    // gravado continua cru (conferido no caso do metadata, acima).
+    // `entrada()` traz `group_sender: { name: "Maria", ... }`, que é quem
+    // ESCREVEU: o nome do autor não pode virar o rótulo de quem foi mencionado.
+    // O corpo gravado continua cru (conferido no caso do metadata, acima).
     expect(d.marcarConversa).toHaveBeenCalledWith(
       ORG,
       "v",
-      "oi @Maria",
+      "oi @Participante",
       "2026-09-23T12:00:00.000Z",
       "inbound",
     );

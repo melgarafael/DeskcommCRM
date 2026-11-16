@@ -446,16 +446,12 @@ export function MessageBubble({
   // e `metadata.mentions` guarda quem é cada identificador. O corpo GRAVADO
   // continua cru (é o dado do provedor, auditável); a troca acontece aqui, por
   // ocorrência e pelo PRÓPRIO lid — menção repetida resolve cada uma pelo seu, e
-  // dois contatos chamados "João" não trocam de lugar. Quem não está no CRM cai
-  // para o nome do participante do `group_sender`; sem nome nenhum, sai com a
-  // palavra do dicionário — o LID cru não aparece.
+  // dois contatos chamados "João" não trocam de lugar. Quem não está no CRM sai
+  // com a palavra do dicionário — o LID cru não aparece. O `remetente` acima é o
+  // AUTOR da mensagem e nunca vira rótulo de menção (#3566).
   const mencoes = lerMencoesDeGrupo(message.metadata);
-  // A ORDEM da resolução (#3566) mora na função, uma vez só: contato do CRM →
-  // `name` do `group_sender` (o participante que o webhook identificou) →
-  // palavra do dicionário. O LID cru não chega à tela em nenhum dos três casos.
   const corpo =
     textoComMencoesResolvidas(message.body, mencoes, {
-      nomeDoParticipante: remetente?.name ?? null,
       palavraDesconhecida: t(PALAVRA_DE_MENCAO_DESCONHECIDA),
     }) ?? "";
   // O anúncio que gerou ESTA mensagem (a ingestão grava em `metadata.anuncio`
