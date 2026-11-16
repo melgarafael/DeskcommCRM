@@ -183,7 +183,8 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // O total é MEDIDO no merge com a main (31362 = 30724 medidos nela + 638 deste
 // PR, remedido em 2026-11-14), não somado à mão.
 // +7760 com as 23 ferramentas `crm_amigo_*` (#4227), que só entram no catálogo com
-// o módulo `amigo` instalado.
+// o módulo `amigo` instalado. MEDIDO no merge com a main: 39122 = 31362 + 7760
+// (2026-11-16).
 const TETO_TOTAL = 39122;
 
 const VARIANTE = "schedule_followup (com negócio)";

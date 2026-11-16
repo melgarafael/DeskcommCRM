@@ -4,6 +4,7 @@ import { requestAmigo } from "./transport";
 import { normalizeAttendance, amigoInstant, projectAttendance } from "./projection";
 import { diaLocalISO } from "@/lib/agenda/fuso";
 import { AmigoDomainError } from "./access";
+import { ehOperante } from "@/lib/organizacao/operante";
 
 /** Small disjoint windows, civil dates in the clinic's timezone. */
 export function syncWindows(now: Date, timezone: string) {
@@ -84,7 +85,7 @@ export async function syncAmigo(organizationId: string, requestId: string) {
     .select("status")
     .eq("id", organizationId)
     .maybeSingle();
-  if (org?.status !== "active")
+  if (!ehOperante(org?.status))
     throw new AmigoDomainError("org_suspended", 403, "Esta clínica está com a operação pausada.");
   // A vez na fila do robô anda a cada TENTATIVA, com sucesso ou não: a conexão
   // que falha volta para o fim, e as outras organizações não ficam sem vez.
