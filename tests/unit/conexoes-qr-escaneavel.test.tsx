@@ -64,6 +64,7 @@ vi.mock("@/hooks/channels/useChannelSessions", async (original) => {
 });
 
 import { ConnectionsClient } from "@/components/connections/ConnectionsClient";
+import { qrDaUrl } from "@/components/connections/ConexoesShell";
 
 function canal(over: Partial<ChannelSession> = {}): ChannelSession {
   return {
@@ -199,5 +200,42 @@ describe("deep-link ?qr=<id> abre o pareamento direto", () => {
     render(wrap(<ConnectionsClient wahaConfigured />));
 
     expect(screen.queryByAltText("QR Code para conectar WhatsApp")).toBeNull();
+  });
+});
+
+describe("?qr= com a Central já aberta (navegação suave, sem remontar)", () => {
+  it("o qrInicial que chega depois da montagem abre o QR", async () => {
+    const { rerender } = render(wrap(<ConnectionsClient wahaConfigured />));
+    rerender(wrap(<ConnectionsClient wahaConfigured qrInicial="canal-1" />));
+
+    expect(await screen.findByAltText("QR Code para conectar WhatsApp")).toBeVisible();
+  });
+
+  it("fechar tira o ?qr= e o segundo clique na faixa abre de novo", async () => {
+    const fechou = vi.fn();
+    const { rerender } = render(
+      wrap(<ConnectionsClient wahaConfigured qrInicial="canal-1" aoFecharQrInicial={fechou} />),
+    );
+    expect(await screen.findByAltText("QR Code para conectar WhatsApp")).toBeVisible();
+
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    await waitFor(() => expect(fechou).toHaveBeenCalledTimes(1));
+
+    // O que a Shell faz ao receber o aviso: a URL perde o ?qr=.
+    rerender(wrap(<ConnectionsClient wahaConfigured aoFecharQrInicial={fechou} />));
+    expect(screen.queryByAltText("QR Code para conectar WhatsApp")).toBeNull();
+
+    rerender(wrap(<ConnectionsClient wahaConfigured qrInicial="canal-1" aoFecharQrInicial={fechou} />));
+    expect(await screen.findByAltText("QR Code para conectar WhatsApp")).toBeVisible();
+  });
+});
+
+describe("o ?qr= só aceita id de canal", () => {
+  it("UUID passa", () => {
+    expect(qrDaUrl("3f2b8c1e-9a4d-4e7f-b6c5-0d1e2f3a4b5c")).toBe("3f2b8c1e-9a4d-4e7f-b6c5-0d1e2f3a4b5c");
+  });
+
+  it.each([null, "", "canal-1", "../x", "3f2b8c1e-9a4d-4e7f-b6c5-0d1e2f3a4b5c/extra"])("%s não abre nada", (v) => {
+    expect(qrDaUrl(v)).toBeUndefined();
   });
 });

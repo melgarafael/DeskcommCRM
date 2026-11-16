@@ -209,6 +209,7 @@ export function frasesDoLoteDePausa(
 export function ConnectionsClient({
   wahaConfigured,
   qrInicial,
+  aoFecharQrInicial,
 }: {
   wahaConfigured: boolean;
   /**
@@ -221,6 +222,8 @@ export function ConnectionsClient({
    * que a sessão está vivendo.
    */
   qrInicial?: string;
+  /** Tira o `?qr=` da URL quando o diálogo fecha, para o próximo clique na faixa abrir de novo. */
+  aoFecharQrInicial?: () => void;
 }) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
@@ -240,6 +243,18 @@ export function ConnectionsClient({
   const [qr, setQr] = useState<{ sessionId: string; title: string } | null>(
     qrInicial ? { sessionId: qrInicial, title: t("Escaneie o QR") } : null,
   );
+  // Com a Central já aberta, o clique na faixa é navegação suave: o componente
+  // continua montado e o inicializador acima não roda de novo. O `?qr=` novo
+  // tem de abrir o diálogo do mesmo jeito (ajuste de estado no render, sem efeito).
+  const [qrInicialVisto, setQrInicialVisto] = useState(qrInicial);
+  if (qrInicial !== qrInicialVisto) {
+    setQrInicialVisto(qrInicial);
+    if (qrInicial) setQr({ sessionId: qrInicial, title: t("Escaneie o QR") });
+  }
+  const fecharQr = useCallback(() => {
+    setQr(null);
+    if (qrInicial) aoFecharQrInicial?.();
+  }, [qrInicial, aoFecharQrInicial]);
   const [antiBanId, setAntiBanId] = useState<string | null>(null);
   const [gruposId, setGruposId] = useState<string | null>(null);
   const [toDelete, setToDelete] = useState<ChannelSession | null>(null);
@@ -432,9 +447,9 @@ export function ConnectionsClient({
 
   const handleConnected = useCallback(() => {
     toast.success(t("WhatsApp conectado!"));
-    setQr(null);
+    fecharQr();
     invalidate();
-  }, [invalidate, t]);
+  }, [fecharQr, invalidate, t]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -806,7 +821,7 @@ export function ConnectionsClient({
           sessionId={qr.sessionId}
           title={qr.title}
           wahaConfigured={wahaConfigured}
-          onClose={() => setQr(null)}
+          onClose={fecharQr}
           onConnected={handleConnected}
           onForcePair={forcePair}
         />
