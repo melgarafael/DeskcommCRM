@@ -20,9 +20,8 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *  - Arquivo enviado (PDF, CSV…): regravar markdown por cima de um PDF trocaria
  *    o arquivo da pessoa por outra coisa. Só `origem: "texto_colado"` com
  *    `ext: "md"` passa.
- *  - `blob_path` fora da pasta da organização: o PATCH aceita `source_metadata`
- *    livre, e esta rota escreve com o cliente admin. Sem a conferência, um
- *    metadado regravado apontaria a escrita para o arquivo de outra empresa.
+ *  - `blob_path` fora da pasta da organização da sessão: esta rota escreve com
+ *    o cliente admin, então só regrava o que está na pasta de quem pediu.
  *  - Arquivado: o indexador ignora material arquivado, e "salvo" sem reindexar
  *    seria uma promessa falsa.
  *

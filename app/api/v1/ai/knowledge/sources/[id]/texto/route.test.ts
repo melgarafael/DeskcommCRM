@@ -198,7 +198,7 @@ describe("PUT /sources/[id]/texto", () => {
     nadaGravado();
   });
 
-  it("blob_path de outra organização (metadado regravado por API): recusa e não escreve", async () => {
+  it("blob_path fora da pasta da organização da sessão: recusa e não escreve", async () => {
     estado.fonte = colado({
       source_metadata: { blob_path: `${OUTRA_ORG}/abc.md`, ext: "md", origem: "texto_colado" },
     });
