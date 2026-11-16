@@ -13,6 +13,7 @@ import { visaoEmVigor } from "@/lib/ai/pontos/capacidade-em-vigor";
 import { PONTO_TRANSCRICAO_DE_AUDIO, PONTO_VISAO_DE_IMAGEM } from "@/lib/ai/pontos/registro";
 import { costCents, type TokenUsage } from "@/lib/agent-engine/edge/llm/pricing";
 import { custoDoModeloForaDoMotor } from "@/lib/agent-engine/edge/llm/pricing-do-catalogo";
+import { decidirCustoDaChamada } from "@/lib/agent-engine/edge/llm/custo-da-chamada";
 import {
   aplicarOrcamento,
   LlmBudgetExceededError,
@@ -1155,9 +1156,21 @@ function custoComCatalogo(
   uso: TokenUsage,
   linhaCom: (cost_cents: number | null) => ChamadaDeMidia,
 ): ChamadaDeMidia | Promise<ChamadaDeMidia> {
-  const doMotor = costCents(model, uso);
-  if (doMotor !== null) return linhaCom(doMotor);
-  return custoDoModeloForaDoMotor(derivePool(), { model, provider, usage: uso, log: logger }).then(linhaCom);
+  const daTabelaDoMotor = costCents(model, uso);
+  // A MESMA função que o seam usa (#4697): a ordem e a marca do custo saem de
+  // `custo-da-chamada.ts`, não de uma segunda cópia aqui.
+  const decidir = (doCatalogoDaInstalacao?: number | null) =>
+    decidirCustoDaChamada({
+      provider,
+      informadoPeloProvedor: undefined,
+      porPassosDoTerra: undefined,
+      daTabelaDoMotor,
+      doCatalogoDaInstalacao,
+    });
+  if (daTabelaDoMotor !== null) return linhaCom(decidir().costCents);
+  return custoDoModeloForaDoMotor(derivePool(), { model, provider, usage: uso, log: logger }).then((doCatalogo) =>
+    linhaCom(decidir(doCatalogo).costCents),
+  );
 }
 
 /**
@@ -1252,9 +1265,16 @@ function comCustoRegistrado(
         // Sem uso e sem tarifa informada, o custo é DESCONHECIDO — nulo, nunca
         // zero (0 diria "grátis" ao painel e ao teto). A #4697 pede que o nulo
         // não seja CALADO: o motivo sai uma vez por (provedor, modelo), como o
-        // aviso de sem-preço do catálogo.
+        // aviso de sem-preço do catálogo. A decisão é a da MESMA regra do seam.
         avisarTarifaDeAudioDesconhecida(ctx.provider, ctx.model);
-        return linhaCom(null);
+        return linhaCom(
+          decidirCustoDaChamada({
+            provider: ctx.provider,
+            informadoPeloProvedor: undefined,
+            porPassosDoTerra: undefined,
+            daTabelaDoMotor: null,
+          }).costCents,
+        );
       });
       return texto;
     },
