@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+import { CampoComVariaveis } from "@/components/variaveis/CampoComVariaveis";
 import {
   Dialog,
   DialogContent,
@@ -405,26 +405,26 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template, gru
             TEXTO (#3009) — deixou de ser obrigatório. Era ele que impedia a
             resposta de SÓ IMAGEM, um dos formatos que a issue pede.
           */}
-          <div className="space-y-2">
-            <Label htmlFor="tpl-body">{t("Mensagem")}</Label>
-            <Textarea
-              id="tpl-body"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder={t("Oi {{primeiro_nome}}, tudo bem?")}
-              maxLength={4096}
-              rows={5}
-            />
-            <p className="text-xs text-muted-foreground">
-              {t("Texto, imagem e áudio são opcionais: preencha o que a resposta leva.")}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {t("Use")} {"{{primeiro_nome}}"} {t("e")} {"{{nome}}"} {t("para personalizar.")}
-            </p>
-              <p className="text-xs text-muted-foreground">
-                {t('Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.')}
-              </p>
-          </div>
+          {/*
+            O CAMPO COM VARIÁVEIS (#3687) — o MESMO componente da automação,
+            do follow-up e da campanha. A lista de variáveis e a prévia saem do
+            catálogo; antes esta tela não oferecia nada e o operador tinha de
+            adivinhar o token.
+          */}
+          <CampoComVariaveis
+            id="tpl-body"
+            rotulo={t("Mensagem")}
+            fonte="inbox"
+            valor={body}
+            onChange={setBody}
+            placeholder={t("Oi {{primeiro_nome}}, tudo bem?")}
+            linhas={5}
+            maxLength={4096}
+            ajuda={t("Texto, imagem e áudio são opcionais: preencha o que a resposta leva.")}
+          />
+          <p className="text-xs text-muted-foreground">
+            {t('Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.')}
+          </p>
           {/*
             AS IMAGENS (#2526) — o operador carrega as dele, sem depender do
             catálogo de produtos. Prévia e remoção existem porque a aprovação é

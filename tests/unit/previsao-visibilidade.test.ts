@@ -51,22 +51,59 @@ function clienteFake(
     if (tabela === "crm_leads" && opcoes.visibilityOwn) {
       linhas = linhas.filter((l) => l.owner_user_id === USER);
     }
+    // Desde a #4322 a previsão lê por `.range()` com `count` exato e filtra o
+    // embed `crm_leads!inner` por coluna pontilhada: o dublê precisa disso.
+    const valorDe = (linha: Linha, coluna: string): unknown => {
+      const [cabeca, ...resto] = coluna.split(".");
+      let atual: unknown = linha[cabeca as string];
+      for (const parte of resto) {
+        atual = (atual as Record<string, unknown> | null | undefined)?.[parte];
+      }
+      return atual;
+    };
+    let contar = false;
+    let faixa: [number, number] | null = null;
+    const ordens: string[] = [];
+    const executar = () => {
+      const ordenadas = [...linhas].sort((a, b) => {
+        for (const col of ordens) {
+          const x = valorDe(a, col) as string | number;
+          const y = valorDe(b, col) as string | number;
+          if (x === y) continue;
+          return x < y ? -1 : 1;
+        }
+        return 0;
+      });
+      const pagina = faixa ? ordenadas.slice(faixa[0], faixa[1] + 1) : ordenadas;
+      return { data: pagina, error: null, count: contar ? ordenadas.length : null };
+    };
     const q: {
-      select: () => typeof q;
-      order: () => typeof q;
+      select: (cols?: string, opts?: { count?: string }) => typeof q;
+      order: (col: string) => typeof q;
+      range: (de: number, ate: number) => typeof q;
       eq: (col: string, valor: unknown) => typeof q;
       maybeSingle: () => Promise<{ data: Linha | null; error: null }>;
       then: (ok?: (v: unknown) => unknown, erro?: (e: unknown) => unknown) => Promise<unknown>;
     } = {
-      select: () => q,
-      order: () => q,
+      select: (_cols, opts) => {
+        contar = opts?.count === "exact";
+        return q;
+      },
+      order: (col) => {
+        ordens.push(col);
+        return q;
+      },
+      range: (de, ate) => {
+        faixa = [de, ate];
+        return q;
+      },
       eq: (col, valor) => {
         filtros.push([col, valor]);
-        linhas = linhas.filter((l) => l[col] === valor);
+        linhas = linhas.filter((l) => valorDe(l, col) === valor);
         return q;
       },
       maybeSingle: async () => ({ data: linhas[0] ?? null, error: null }),
-      then: (ok, erro) => Promise.resolve({ data: linhas, error: null }).then(ok, erro),
+      then: (ok, erro) => Promise.resolve(executar()).then(ok, erro),
     };
     return q;
   };
@@ -270,7 +307,14 @@ describe("GET /api/v1/pipelines/[id]/forecast — visibilidade", () => {
           expected_close_date: "2026-10-10",
         },
       ],
-      crm_lead_scores: [{ lead_id: "meu", organization_id: ORG, ai_probability: 80 }],
+      crm_lead_scores: [
+        {
+          lead_id: "meu",
+          organization_id: ORG,
+          ai_probability: 80,
+          crm_leads: { pipeline_id: PIPE, status: "open" },
+        },
+      ],
     });
     vi.mocked(createClient).mockResolvedValue(sessao.client);
 

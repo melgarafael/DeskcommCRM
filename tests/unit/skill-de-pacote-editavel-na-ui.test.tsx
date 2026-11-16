@@ -178,3 +178,66 @@ describe("a trava que continua de verdade — o teto de linhas", () => {
     expect(salvar.mutate).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * #4458 — a skill importada SEM matcher abre neste editor.
+ *
+ * Antes, `matcher.any_keywords.join(...)` estourava no primeiro render de uma skill
+ * sem palavras-chave (o `SKILL.md` do ecossistema não traz matcher), e o Salvar
+ * exigia uma palavra que a skill não tem. A régua agora é: abre, mostra que ela só
+ * roda pelo roteiro, e salva mantendo o matcher vazio — sem inventar palavra.
+ */
+function skillSemMatcher() {
+  return {
+    data: {
+      name: "reescreve-prosa",
+      description: "Reescreve texto com cara de IA.",
+      body: "# Passo a passo\nReescreva o texto.",
+      matcher: {},
+      version_id: "v1",
+      updated_at: "2026-09-19T00:00:00Z",
+      tem_arquivos_do_pacote: true,
+      arquivos_do_pacote: ["references/tom.md"],
+    },
+    isLoading: false,
+    isError: false,
+    isSuccess: true,
+  };
+}
+
+describe("skill SEM matcher — o editor abre e salva com matcher vazio (#4458)", () => {
+  it("abre sem quebrar, com a caixa de palavras-chave vazia", () => {
+    abrir(skillSemMatcher());
+    const palavras = document.querySelector("#skill-kw") as HTMLInputElement;
+    expect(palavras).not.toBeNull();
+    expect(palavras.value).toBe("");
+    const corpo = document.querySelector("#skill-body") as HTMLTextAreaElement;
+    expect(corpo.value).toContain("Reescreva o texto.");
+  });
+
+  it("diz na tela que ela não entra sozinha: só pelo roteiro, que puxa pelo nome", () => {
+    abrir(skillSemMatcher());
+    expect(screen.getByText(/não entra sozinha na conversa/i)).toBeInTheDocument();
+    expect(screen.getByText(/roteiro de atendimento a puxa pelo nome/i)).toBeInTheDocument();
+  });
+
+  it("salvar não inventa palavra-chave: manda matcher vazio", () => {
+    abrir(skillSemMatcher());
+    const descricao = document.querySelector("#skill-desc") as HTMLInputElement;
+    fireEvent.change(descricao, { target: { value: "Reescreve prosa com voz humana." } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    expect(salvar.mutate).toHaveBeenCalledTimes(1);
+    expect(salvar.mutate).toHaveBeenCalledWith(
+      {
+        name: "catalogo",
+        body: {
+          description: "Reescreve prosa com voz humana.",
+          body: "# Passo a passo\nReescreva o texto.",
+          matcher: {},
+        },
+      },
+      expect.anything(),
+    );
+  });
+});

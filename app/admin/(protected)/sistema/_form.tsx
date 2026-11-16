@@ -391,6 +391,49 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
       "Ligado, a atendente registra numa conversa o valor a cobrar e recebe um endereço de aviso, que ela cola como URL do Webhook ao criar o link de pagamento na InfinitePay. Quando o cliente paga, o aviso marca o recebimento como pago e leva o negócio para a etapa de ganho, se o valor bater com o registrado. Desligado, ninguém registra recebimento e os avisos são recusados; os recebimentos já registrados ficam guardados.",
     foraDoMenu: "Não cria porta no menu do CRM: por enquanto o recebimento é registrado pela API, em /api/v1/conversations/[id]/pagamentos.",
   },
+  {
+    modulo: "canal_bot",
+    id: "modulo-canal-bot",
+    rotulo: "Robô de mensagens (@BotFather)",
+    descricao:
+      "Ligado, cada empresa ganha em Conexões uma aba para conectar um robô criado no @BotFather, colando o token dele. As conversas privadas com o robô chegam ao Inbox e a resposta sai pelo mesmo robô; grupos e campanhas não passam por ele. Desligado, a aba some e ninguém conecta um robô novo; um robô já conectado segue atendendo, e para desconectá-lo basta ligar o módulo de novo.",
+    foraDoMenu: "Não cria porta no menu do CRM: ele libera uma aba em",
+    painelEm: "/app/connections",
+  },
+  {
+    modulo: "campanha_por_email",
+    id: "modulo-campanha-por-email",
+    rotulo: "Campanha por e-mail (em construção)",
+    descricao:
+      "Este interruptor ainda não pode ser ligado: a campanha por e-mail guarda o assunto, o corpo e o público, mas esta versão não envia o e-mail nem tem o descadastro e a lista de quem pediu para não receber. Se ele já estiver ligado, dá para desligar: a opção E-mail some da nova campanha e as campanhas já criadas ficam guardadas.",
+    foraDoMenu: "Não cria porta no menu do CRM: a opção E-mail aparece dentro de Campanhas, ao criar uma nova.",
+  },
+  {
+    modulo: "revisao_por_km",
+    id: "modulo-revisao-por-km",
+    rotulo: "Revisão por quilometragem",
+    descricao:
+      "Ligado, o funil que declarar a régua de revisão por quilometragem passa a calcular a data prevista da próxima revisão quando o km do negócio é informado, pelo card, pela API, pelo MCP ou pela resposta do roteiro, e grava essa data no campo de data que o funil escolheu. Desligado, o km continua sendo gravado e nenhuma data é calculada; as datas já gravadas ficam como estão.",
+    foraDoMenu: "Não cria porta no menu do CRM: a régua é declarada por funil, em pipelines.settings.revisao_por_km, e ainda não há tela para declará-la.",
+  },
+  {
+    modulo: "agencias",
+    id: "modulo-agencias",
+    rotulo: "Agências administram clientes",
+    descricao:
+      "Ligado, a empresa que você habilitar como agência, no painel dela em Empresas, cria as empresas dos clientes dela e entra nelas para administrar, por até uma hora de cada vez e sempre com o nome da agência na auditoria. Só quem é administrador da agência entra, e só nas empresas que a própria agência criou. Desligado, ninguém entra pela agência, as telas somem e as sessões abertas param na hora; as empresas criadas e os vínculos ficam guardados.",
+    foraDoMenu: "Não cria porta no menu do CRM: a empresa habilitada como agência ganha a tela Organizações clientes, em",
+    painelEm: "/app/settings/organizacoes",
+  },
+  {
+    modulo: "catalogo_por_feed",
+    id: "modulo-catalogo-por-feed",
+    rotulo: "Catálogo sincronizado por feed",
+    descricao:
+      "Ligado, a tela de Produtos de cada empresa ganha a seção Catálogo por feed, onde se cadastra o endereço do feed que o sistema de estoque da revenda publica. A cada 2 horas o servidor busca esse endereço, cria o produto novo, atualiza preço e estoque do que mudou e desativa o que saiu do feed, sem apagar nada. Desligado, a seção some, nenhum feed é buscado e nada no catálogo muda; os endereços já cadastrados ficam guardados.",
+    foraDoMenu: "Não cria porta no menu do CRM: ele libera uma seção na tela de Produtos, em",
+    painelEm: "/app/products",
+  },
 ];
 
 /**

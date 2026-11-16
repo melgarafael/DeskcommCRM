@@ -8,7 +8,7 @@
  * manager+ ⇒ org-wide + filtro opcional `owner_user_id`. Piso de rota = agent.
  * org da org ativa (cookie validado), NUNCA do body/query. Read-only ⇒ sem audit.
  *
- * Sessão OU token de servidor `dsk_…` com `mcp:read` e papel agent+ (Spec 33,
+ * Sessão OU token de servidor `dsk_…` com `mcp:read` e papel manager+ (Spec 33,
  * R3). Pelo token não há pessoa nem RLS por atendente: o cliente é o de serviço,
  * a organização vem da LINHA do token e a leitura é a da organização inteira
  * (o `p_owner` da query continua restringindo, dentro dela).
@@ -68,6 +68,8 @@ export async function GET(req: NextRequest): Promise<Response> {
     resource: "metrics",
     role: "agent",
     scope: "mcp:read",
+    // O token lê a organização inteira; na sessão um agent vê só a linha dele.
+    tokenRole: "manager",
   });
   if (!authz.ok) return authz.response;
   // Está em PUBLIC_PATHS: o teto do token é a única contagem das chamadas dele.

@@ -56,6 +56,11 @@
  * podendo atender — quem sabe disso é a equipe, e é por isso que o texto manda
  * confirmar antes de prometer, em vez de afirmar que está fechado.
  *
+ * Quem QUER o feriado como dia fechado liga a opção do agente "não atender em
+ * feriado nacional" (`business_hours.fechado_em_feriado_nacional`, desligada de
+ * fábrica): aí o turno usa `ehFeriadoNacionalNoFuso` para adiar até o próximo
+ * dia útil e o aviso de fora do horário sai (ver `inbound-turn.ts`).
+ *
  * ─── Falha ABERTA ───────────────────────────────────────────────────────────
  *
  * `organizations.timezone` não tem CHECK e o `Intl` lança em fuso torto: fuso
@@ -95,6 +100,19 @@ function diaMesAno(dataIso: string): string {
  */
 function ehFeriadoNacionalBrasileiro(dataIso: string): boolean {
   return isHolidayBR(new Date(`${dataIso}T12:00:00.000Z`));
+}
+
+/**
+ * O dia civil de `instante`, no `fuso`, é feriado nacional brasileiro? É a
+ * régua de `feriadoNacionalNoTurno` para um instante qualquer — a opção "não
+ * atender em feriado nacional" (#3877) precisa olhar além de hoje e amanhã para
+ * achar o próximo dia útil (Carnaval são dois dias seguidos).
+ *
+ * NÃO consulta o país: quem chama só a usa depois de `lerFeriadoDoTurno` ter
+ * dito que o calendário brasileiro vale para a organização.
+ */
+export function ehFeriadoNacionalNoFuso(instante: Date, fuso: string): boolean {
+  return ehFeriadoNacionalBrasileiro(dataIsoNoFuso(instante, fusoValido(fuso) ? fuso : FUSO_PADRAO));
 }
 
 /**

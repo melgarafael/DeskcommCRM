@@ -189,6 +189,15 @@ describe("descreveEvento", () => {
     }
   });
 
+  it("o encerramento pela recusa 'sem interesse' diz o motivo, é do cliente, e tem espanhol e inglês (decisão D3)", () => {
+    const en = JSON.parse(readFileSync("lib/i18n/traducoes/en.json", "utf8")) as Record<string, string>;
+    const r = descreveEvento(evento({ event_type: "cancelled_sem_interesse" }), nos, "pt-BR");
+    expect(r.titulo).toBe("Encerrado porque o cliente disse que não tem interesse");
+    expect(r.autor).toBe("cliente");
+    expect(DICIONARIO[r.titulo]?.es).toBeTruthy();
+    expect(en[r.titulo]).toBeTruthy();
+  });
+
   it("o classificar que espera a resposta diz que ESPERA, e até quando — não parece travado", () => {
     const r = descreveEvento(
       evento({ node_id: "action-1", event_type: EVENTO_CLASSIFICACAO_ESPERANDO, payload: { until: "2026-08-11T12:00:00.000Z" } }),

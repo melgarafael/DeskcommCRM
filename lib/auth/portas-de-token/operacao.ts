@@ -65,7 +65,6 @@ export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
   "/api/v1/conversations/[id]/snooze",
   "/api/v1/conversations/[id]/usable-for-rag",
 
-
   // CAMPANHAS, MODELOS DE TEXTO E EXCLUSÕES (tarefa 6 da R2). Quem autentica é a
   // própria rota, por `resolveAuthDual` (sessão OU Bearer `dsk_…`, a organização
   // vinda da linha do token): `mcp:read` no GET e `mcp:write` na escrita e no
@@ -83,7 +82,6 @@ export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
   "/api/v1/campaigns/[id]/recipients",
   "/api/v1/campaigns/modelos",
   "/api/v1/campaigns/preview",
-
   // EMPRESAS, PESSOAS, VÍNCULOS E NÚMEROS DE VOZ (R2, tarefa 7). Quem autentica é a
   // própria rota, por `resolveAuthDual` (sessão OU Bearer `dsk_…`, a organização
   // vinda da linha do token): `mcp:read` no GET e `mcp:write` na escrita, com o
@@ -100,5 +98,4 @@ export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
   "/api/v1/people/[id]",
   "/api/v1/phone-numbers",
   "/api/v1/phone-numbers/[id]",
-
 ];

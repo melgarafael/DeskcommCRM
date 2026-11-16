@@ -17,26 +17,14 @@ import type {
   PatchConversationInput,
 } from "@/lib/schemas";
 import type { Conversation } from "@/lib/types/messaging";
-import { normalizarTermoDeBusca, termoSemAcento } from "@/lib/inbox/termo-de-busca";
+import { normalizarTermoDeBusca, termoSemAcento, termoSeguroParaOr } from "@/lib/inbox/termo-de-busca";
 import { ORDEM_DA_ESPERA, ehAFila, comPreFiltroDoComando } from "@/lib/inbox/comando-da-conversa";
 import { aplicarMarcadores } from "@/lib/inbox/marcador-da-conversa";
 import { exigirControleDaConversa } from "@/lib/inbox/controle-da-conversa";
 
-/**
- * Prepara o termo digitado para viajar dentro de um `or=` do PostgREST.
- *
- * Exportada para ser testável: o defeito que ela impede é de SINTAXE, e sintaxe
- * se verifica sem subir banco. O comportamento contra o PostgREST de verdade
- * está em `tests/e2e/`.
- */
-export function termoSeguroParaOr(bruto: string): string {
-  return bruto
-    .trim()
-    // curingas do `ilike` (Postgres)
-    .replace(/[%_]/g, (m) => `\\${m}`)
-    // gramática do `or=` (PostgREST) — viram o próprio curinga
-    .replace(/[,()]/g, "*");
-}
+// O escape da gramática do `or=` mora na régua única (`lib/inbox/termo-de-busca`);
+// continua exportado daqui porque é daqui que os testes o leem desde a #3918.
+export { termoSeguroParaOr };
 
 type SB = SupabaseClient;
 
@@ -93,6 +81,7 @@ const SELECT_COLS = `
   snooze_until, sector_id, created_at, updated_at,
   bot_silenced_until, last_handoff_at, last_handoff_reason,
   comando_da_conversa,
+  automatico_da_conversa,
   usable_for_rag,
   contacts:contact_id (id, display_name, name, address_book_name, phone_number, is_anonymized, tags, is_blocked, is_personal, contact_type, avatar_storage_path, force_human),
   channel_sessions:channel_session_id (phone_number, display_name, provider, social_platform:metadata->>social_platform)

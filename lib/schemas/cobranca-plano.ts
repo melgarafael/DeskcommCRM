@@ -1,12 +1,14 @@
 import { z } from "zod";
 
-import { INTERVALOS, RECURSOS, RECURSOS_DO_PLANO, type RecursoDoPlano } from "@/lib/cobranca/vocabulario";
+import { INTERVALOS, MOEDAS, RECURSOS, RECURSOS_DO_PLANO, type RecursoDoPlano } from "@/lib/cobranca/vocabulario";
 
 /**
  * O plano de cobrança da instalação (`cobranca_planos`, spec da cobrança §2.2).
  * São os mesmos limites dos CHECKs da tabela, para a recusa sair com nome antes
  * do banco. A régua é a mesma na rota e no formulário de /admin/cobranca.
- * `moeda` não entra: é BRL, fixada pelo default e pelo CHECK.
+ * `moeda` (migration 9332) entra só na CRIAÇÃO, com BRL como padrão: depois de
+ * criado, o plano não troca de moeda — quem assinou ficaria cobrado noutra
+ * moeda sem ter escolhido, e a Stripe não muda a moeda de um cliente.
  *
  * Os campos de teto NÃO são digitados aqui: saem de `RECURSOS` (vocabulario.ts),
  * que declara a coluna e o piso de cada recurso. Um recurso novo entra no
@@ -31,7 +33,7 @@ const TETOS_OPCIONAIS = Object.fromEntries(
 
 const campos = {
   nome: z.string().trim().min(1).max(60),
-  preco_cents: z.number().int().min(500, "O preço mínimo é R$ 5,00: abaixo disso o boleto não sai."),
+  preco_cents: z.number().int().min(500, "O preço mínimo é 5,00 na moeda do plano: abaixo disso o boleto não sai."),
   intervalo: z.enum(INTERVALOS),
   trial_dias: z.number().int().min(0).max(90),
   padrao_no_cadastro: z.boolean(),
@@ -41,6 +43,7 @@ const campos = {
 export const novoPlanoSchema = z.strictObject({
   nome: campos.nome,
   preco_cents: campos.preco_cents,
+  moeda: z.enum(MOEDAS).optional(),
   intervalo: campos.intervalo,
   trial_dias: campos.trial_dias,
   ...TETOS_OPCIONAIS,
