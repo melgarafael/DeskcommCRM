@@ -14336,6 +14336,65 @@ export const DICIONARIO: Traducoes = {
   "o link redireciona vezes demais: {url}": { es: "el enlace redirige demasiadas veces: {url}" },
   "não consegui guardar a foto: {url}": { es: "no pude guardar la foto: {url}" },
 
+  // ─── lib/catalogo/feed.ts — o feed sincronizado (#3587, fatia 2) ───────────
+  // Os motivos de recusa por item do feed. A frase é a chave INTEIRA, com o
+  // valor como placeholder dentro dela: traduzida aos pedaços, cada trecho novo
+  // seria mais uma chave que pode faltar.
+  "o item traz {quantidade} fotos — o produto aceita até {limite}": {
+    es: "el artículo trae {quantidade} fotos — el producto acepta hasta {limite}",
+  },
+  "o item do feed não é um objeto": { es: "el artículo del feed no es un objeto" },
+  "item sem id externo — o feed precisa de uma coluna de identificação": {
+    es: "artículo sin id externo — el feed necesita una columna de identificación",
+  },
+  'id externo repetido no feed ("{id}") — só o primeiro vale': {
+    es: 'id externo repetido en el feed ("{id}") — solo el primero vale',
+  },
+  "item sem nome do produto": { es: "artículo sin nombre de producto" },
+  'preço não reconhecido ("{valor}") — escreva assim: 5.499,00': {
+    es: 'precio no reconocido ("{valor}") — escríbelo así: 5.499,00',
+  },
+  'quantidade inválida ("{valor}") — use um número inteiro': {
+    es: 'cantidad no válida ("{valor}") — usa un número entero',
+  },
+  "o feed não trouxe nenhum item reconhecível — nenhum produto foi desativado": {
+    es: "el feed no trajo ningún artículo reconocible — ningún producto fue desactivado",
+  },
+  "o feed desativaria {quantidade} de {total} produtos ativos, mais da metade — nada foi aplicado. Confira o feed; para tirar esses produtos de linha, desative-os na tela de Produtos": {
+    es: "el feed desactivaría {quantidade} de {total} productos activos, más de la mitad — no se aplicó nada. Revise el feed; para retirar esos productos, desactívelos en la pantalla de Productos",
+  },
+  "Esta leitura não será aplicada:": { es: "Esta lectura no se aplicará:" },
+  // O módulo opcional `catalogo_por_feed` (doc 322, A; PR #4179): a linha em
+  // /admin/sistema, o texto em Recursos opcionais e a seção da tela de Produtos.
+  "Catálogo sincronizado por feed": { es: "Catálogo sincronizado por feed" },
+  "Ligado, a tela de Produtos de cada empresa ganha a seção Catálogo por feed, onde se cadastra o endereço do feed que o sistema de estoque da revenda publica. A cada 2 horas o servidor busca esse endereço, cria o produto novo, atualiza preço e estoque do que mudou e desativa o que saiu do feed, sem apagar nada. Desligado, a seção some, nenhum feed é buscado e nada no catálogo muda; os endereços já cadastrados ficam guardados.": {
+    es: "Activado, la pantalla de Productos de cada empresa gana la sección Catálogo por feed, donde se registra la dirección del feed que publica el sistema de inventario del revendedor. Cada 2 horas el servidor busca esa dirección, crea el producto nuevo, actualiza precio e inventario de lo que cambió y desactiva lo que salió del feed, sin borrar nada. Desactivado, la sección desaparece, no se busca ningún feed y nada cambia en el catálogo; las direcciones ya registradas quedan guardadas.",
+  },
+  "Não cria porta no menu do CRM: ele libera uma seção na tela de Produtos, em": {
+    es: "No crea entrada en el menú del CRM: habilita una sección en la pantalla de Productos, en",
+  },
+  "O catálogo acompanha sozinho o feed que o sistema de estoque da revenda publica: a cada 2 horas cria, atualiza e desativa produtos, sem apagar nenhum.": {
+    es: "El catálogo sigue solo el feed que publica el sistema de inventario del revendedor: cada 2 horas crea, actualiza y desactiva productos, sin borrar ninguno.",
+  },
+  "Catálogo por feed": { es: "Catálogo por feed" },
+  "O sistema de estoque da revenda publica a lista de produtos num endereço, e o catálogo acompanha sozinho a cada 2 horas. Produto que sai do feed é desativado, nunca apagado.": {
+    es: "El sistema de inventario del revendedor publica la lista de productos en una dirección, y el catálogo la sigue solo cada 2 horas. El producto que sale del feed se desactiva, nunca se borra.",
+  },
+  "Catálogo sincronizado com o feed.": { es: "Catálogo sincronizado con el feed." },
+  "Endereço:": { es: "Dirección:" },
+  "Última leitura:": { es: "Última lectura:" },
+  "ainda não leu": { es: "todavía no leyó" },
+  "desativados": { es: "desactivados" },
+  "sem mudança": { es: "sin cambios" },
+  "A leitura do feed falhou {n} vez(es) seguida(s). Nada foi desativado por causa disso.": {
+    es: "La lectura del feed falló {n} vez/veces seguidas. Nada fue desactivado por eso.",
+  },
+  "Último motivo:": { es: "Último motivo:" },
+  "Nenhum feed cadastrado nesta empresa.": { es: "Ningún feed registrado en esta empresa." },
+  "Endereço do feed": { es: "Dirección del feed" },
+  "Formato do feed": { es: "Formato del feed" },
+  "Se sincronizar agora:": { es: "Si sincroniza ahora:" },
+
   // ─── Análise → Meta Ads e Configurações → Meta Ads (0214) ───
   //
   // ⚠️ Boa parte deste bloco o teste `i18n-espanhol-cobre-a-tela` NÃO cobre, e
