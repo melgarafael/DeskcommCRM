@@ -65,10 +65,32 @@ function novoPasso(): PassoDePlano {
     ordem: 1,
     titulo: "",
     descricao: null,
-    vence_em_dias: 1,
+    // O modo de sempre como padrão: quem não mexer no seletor continua com o
+    // plano que o produto sempre soube aplicar.
+    prazo: { modo: "dias_a_partir_de_hoje", dias: 1 },
     prioridade: "medium",
     atribuir_a: "dono_do_lead",
   };
+}
+
+/**
+ * O prazo de um passo em UMA linha, para o resumo do plano.
+ *
+ * Campo de data aparece pelo NOME da chave porque é isso que o operador digita
+ * e reconhece; o rótulo bonito do campo mora no funil (`pipelines.settings.fields`),
+ * que esta tela não carrega — inventar o rótulo aqui seria mostrar um palpite.
+ */
+function resumoDoPrazo(t: (s: string) => string, prazo: PassoDePlano["prazo"]): string {
+  if (prazo.modo === "dias_a_partir_de_hoje") {
+    return `${t("Vence em (dias)")} ${prazo.dias}`;
+  }
+  const dias = Math.abs(prazo.dias);
+  if (prazo.dias === 0) {
+    return t("Vence no dia do campo «{c}»").replace("{c}", prazo.campo);
+  }
+  return (prazo.dias < 0 ? t("{n} dia(s) antes do campo «{c}»") : t("{n} dia(s) depois do campo «{c}»"))
+    .replace("{n}", String(dias))
+    .replace("{c}", prazo.campo);
 }
 
 export function PlanosDeTarefa() {
@@ -129,12 +151,21 @@ export function PlanosDeTarefa() {
     }
     const prazoTorto = rascunho.passos.findIndex(
       (p) =>
-        !Number.isInteger(p.vence_em_dias) ||
-        p.vence_em_dias < 0 ||
-        p.vence_em_dias > LIMITES_DO_PLANO.venceEmDias,
+        !Number.isInteger(p.prazo.dias) ||
+        Math.abs(p.prazo.dias) > LIMITES_DO_PLANO.venceEmDias ||
+        (p.prazo.modo === "dias_a_partir_de_hoje" && p.prazo.dias < 0) ||
+        (p.prazo.modo === "campo_de_data" && p.prazo.campo.trim() === ""),
     );
     if (prazoTorto >= 0) {
-      setErro(frasePrazoDoPasso(t, prazoTorto + 1));
+      const passo = rascunho.passos[prazoTorto];
+      setErro(
+        passo?.prazo.modo === "campo_de_data"
+          ? t("O passo {p} precisa da chave do campo de data do card.").replace(
+              "{p}",
+              String(prazoTorto + 1),
+            )
+          : frasePrazoDoPasso(t, prazoTorto + 1),
+      );
       return;
     }
     const pronto: PlanoDeTarefas = {
@@ -253,7 +284,7 @@ export function PlanosDeTarefa() {
           <ol className="space-y-1 text-sm text-muted-foreground">
             {plano.passos.map((passo) => (
               <li key={passo.ordem}>
-                {passo.ordem}. {passo.titulo} — {t("Vence em (dias)")} {passo.vence_em_dias}
+                {passo.ordem}. {passo.titulo} — {resumoDoPrazo(t, passo.prazo)}
               </li>
             ))}
           </ol>
@@ -344,16 +375,79 @@ function Editor({
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
+              {/*
+                O PRAZO tem duas réguas (#4717 item 4). A de sempre conta os dias
+                da APLICAÇÃO do plano; a nova conta da DATA DE UM CAMPO do card —
+                é ela que faz "cobrar 7 dias antes da viagem" valer para todo
+                negócio, cada um com a sua data. O passo continua um só: quem lê
+                o JSON vê `prazo.modo` decidindo de onde o número conta.
+              */}
               <div className="space-y-1">
-                <Label htmlFor={`passo-prazo-${indice}`}>{t("Vence em (dias)")}</Label>
+                <Label htmlFor={`passo-modo-${indice}`}>{t("O prazo conta de")}</Label>
+                <Select
+                  value={passo.prazo.modo}
+                  onValueChange={(v) =>
+                    mudarPasso(indice, {
+                      // Trocar de régua ZERA o número: 7 dias antes (-7) e 7
+                      // dias depois (7) são números opostos, e herdar o antigo
+                      // inverteria o prazo sem ninguém pedir.
+                      prazo:
+                        v === "dias_a_partir_de_hoje"
+                          ? { modo: "dias_a_partir_de_hoje", dias: 0 }
+                          : { modo: "campo_de_data", campo: "", dias: 0 },
+                    })
+                  }
+                >
+                  <SelectTrigger id={`passo-modo-${indice}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="dias_a_partir_de_hoje">{t("Do dia em que o plano é aplicado")}</SelectItem>
+                    <SelectItem value="campo_de_data">{t("De um campo de data do card")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {passo.prazo.modo === "campo_de_data" ? (
+                <div className="space-y-1">
+                  <Label htmlFor={`passo-campo-${indice}`}>{t("Campo de data (chave)")}</Label>
+                  <Input
+                    id={`passo-campo-${indice}`}
+                    value={passo.prazo.campo}
+                    onChange={(e) =>
+                      mudarPasso(indice, {
+                        prazo: { modo: "campo_de_data", campo: e.target.value, dias: passo.prazo.dias },
+                      })
+                    }
+                    placeholder="data_da_viagem"
+                    maxLength={LIMITES_DO_PLANO.campoDeData}
+                    aria-describedby={`passo-campo-ajuda-${indice}`}
+                  />
+                  <p id={`passo-campo-ajuda-${indice}`} className="text-xs text-muted-foreground">
+                    {t("A chave do campo de DATA do negócio, como está no funil.")}
+                  </p>
+                </div>
+              ) : null}
+
+              <div className="space-y-1">
+                <Label htmlFor={`passo-prazo-${indice}`}>
+                  {passo.prazo.modo === "campo_de_data" ? t("Dias antes (-) ou depois (+)") : t("Vence em (dias)")}
+                </Label>
                 <Input
                   id={`passo-prazo-${indice}`}
                   type="number"
-                  min={0}
+                  min={passo.prazo.modo === "campo_de_data" ? -LIMITES_DO_PLANO.venceEmDias : 0}
                   max={LIMITES_DO_PLANO.venceEmDias}
                   step={1}
-                  value={passo.vence_em_dias}
-                  onChange={(e) => mudarPasso(indice, { vence_em_dias: Number(e.target.value) })}
+                  value={passo.prazo.dias}
+                  onChange={(e) =>
+                    mudarPasso(indice, {
+                      prazo:
+                        passo.prazo.modo === "campo_de_data"
+                          ? { modo: "campo_de_data", campo: passo.prazo.campo, dias: Number(e.target.value) }
+                          : { modo: "dias_a_partir_de_hoje", dias: Number(e.target.value) },
+                    })
+                  }
                 />
               </div>
 

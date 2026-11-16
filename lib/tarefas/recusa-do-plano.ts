@@ -66,6 +66,14 @@ export function explicarRecusaDoPlano(
         .replace("{n}", String(LIMITES_DO_PLANO.descricaoDoPasso));
     }
     if (campoDoPasso === "vence_em_dias") return frasePrazoDoPasso(t, passo);
+    // O caminho do prazo novo (`0.passos.2.prazo.campo` / `...prazo.dias`) chega
+    // aqui com o 4º pedaço = "prazo": a chave do campo é configuração do passo e
+    // o deslocamento vale de -365 a 365 (negativo = antes da data do card).
+    if (campoDoPasso === "prazo") {
+      return caminho.endsWith(".campo")
+        ? t("O passo {p} precisa da chave do campo de data do card.").replace("{p}", String(passo))
+        : t("O prazo do passo {p} pode ir de -365 a 365 dias.").replace("{p}", String(passo));
+    }
   }
   return null;
 }

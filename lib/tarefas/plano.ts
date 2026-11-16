@@ -50,15 +50,29 @@ import {
 } from "@/lib/tarefas/criar-tarefa";
 import { insereAtividadeDoLead } from "@/lib/tarefas/atividade";
 import { LIMITES_DO_PLANO } from "@/lib/tarefas/limites-do-plano";
+import {
+  MOTIVOS_SEM_PRAZO,
+  camposDoNegocio,
+  prazoDoPasso as prazoNormalizado,
+  prazoDoPassoSchema,
+  resolverPrazoDoCampo,
+  type MotivoSemPrazo,
+  type PrazoDoPasso,
+} from "@/lib/tarefas/prazo-relativo";
 import { PRIORIDADES_DA_TAREFA, type PrioridadeDaTarefa } from "@/lib/tarefas/tipos";
+import { fusoUtilizavel } from "@/lib/tempo/fusos";
 
 /** Um passo, já normalizado: `ordem` SEMPRE preenchida com a posição final. */
 export interface PassoDePlano {
   ordem: number;
   titulo: string;
   descricao: string | null;
-  /** Dias entre a APLICAÇÃO e o prazo da tarefa — relativo, nunca data solta. */
-  vence_em_dias: number;
+  /**
+   * De ONDE o prazo conta: da aplicação (`dias_a_partir_de_hoje`, o modo de
+   * sempre) ou de um campo de data do card (`campo_de_data`, #4717 item 4).
+   * Relativo sempre — data solta no plano envelhece no dia seguinte.
+   */
+  prazo: PrazoDoPasso;
   prioridade: PrioridadeDaTarefa;
   atribuir_a: AtribuicaoDaTarefa;
 }
@@ -79,16 +93,43 @@ export interface PlanoDeTarefas {
  * leitura de todas as outras — `settings` é JSON escrito por gente, não por
  * schema.
  */
-const passoSchema = z.object({
-  ordem: z.number().int().min(1).max(500).optional(),
-  titulo: z.string().trim().min(1).max(LIMITES_DO_PLANO.tituloDoPasso),
-  descricao: z.string().max(LIMITES_DO_PLANO.descricaoDoPasso).nullish(),
-  vence_em_dias: z.number().int().min(0).max(LIMITES_DO_PLANO.venceEmDias),
-  prioridade: z.enum(PRIORIDADES_DA_TAREFA).default("medium"),
-  atribuir_a: z
-    .union([z.literal("dono_do_lead"), z.object({ usuario_id: z.string().uuid() })])
-    .default("dono_do_lead"),
-});
+const passoSchema = z
+  .object({
+    ordem: z.number().int().min(1).max(500).optional(),
+    titulo: z.string().trim().min(1).max(LIMITES_DO_PLANO.tituloDoPasso),
+    descricao: z.string().max(LIMITES_DO_PLANO.descricaoDoPasso).nullish(),
+    /**
+     * O modo de sempre — e o ÚNICO obrigatório até o #4717 item 4.
+     *
+     * Virou opcional porque o passo de campo de data mede o prazo por outro
+     * relógio (a data do card), e exigir `vence_em_dias` junto seria gravar um
+     * número que ninguém lê. Plano antigo continua válido: o campo está lá, e
+     * `prazoDoPasso` o transforma em `{ modo: "dias_a_partir_de_hoje" }`.
+     */
+    vence_em_dias: z.number().int().min(0).max(LIMITES_DO_PLANO.venceEmDias).optional(),
+    /** O prazo relativo a um campo de data do negócio. Ausente = modo de sempre. */
+    prazo: prazoDoPassoSchema.optional(),
+    prioridade: z.enum(PRIORIDADES_DA_TAREFA).default("medium"),
+    atribuir_a: z
+      .union([z.literal("dono_do_lead"), z.object({ usuario_id: z.string().uuid() })])
+      .default("dono_do_lead"),
+  })
+  // Duas recusas, e as duas são de CONFIGURAÇÃO do passo, não do card: o passo
+  // sem prazo nenhum nunca foi aceito, e o modo de campo sem a chave do campo
+  // chegaria à aplicação como "sem prazo para sempre" — indistinguível, na
+  // tela, de um card que só não preencheu o campo.
+  .superRefine((passo, ctx) => {
+    if (passo.prazo?.modo === "campo_de_data" && !passo.prazo.campo) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["prazo", "campo"],
+        message: "passo_sem_campo_de_data",
+      });
+    }
+    if (!passo.prazo && passo.vence_em_dias === undefined) {
+      ctx.addIssue({ code: "custom", path: ["vence_em_dias"], message: "passo_sem_prazo" });
+    }
+  });
 
 export const planoSchema = z.object({
   id: z.string().trim().min(1).max(64),
@@ -146,7 +187,7 @@ export function lePlanosDoSettings(settings: unknown): PlanoDeTarefas[] {
           ordem: indice + 1,
           titulo: passo.titulo,
           descricao: passo.descricao ?? null,
-          vence_em_dias: passo.vence_em_dias,
+          prazo: prazoNormalizado(passo),
           prioridade: passo.prioridade,
           atribuir_a: passo.atribuir_a,
         })),
@@ -199,10 +240,13 @@ export async function aplicarPlanoDeTarefas(
   const { organizationId, leadId, planoId, origem, requestId, agora } = pedido;
   if (!leadId) return { ok: false, codigo: "sem_alvo" };
 
-  let organizacao: { settings?: unknown } | null;
+  let organizacao: { settings?: unknown; timezone?: string | null } | null;
   try {
-    organizacao = await db.queryOne<{ settings?: unknown }>(
-      `select settings
+    // O `timezone` vem na MESMA leitura: o prazo de um passo de campo de data é
+    // dia de calendário do tenant (#4717 item 4), e uma segunda ida ao banco
+    // abriria a janela em que o fuso muda entre a leitura e a conta.
+    organizacao = await db.queryOne<{ settings?: unknown; timezone?: string | null }>(
+      `select settings, timezone
          from organizations
         where id = $1
         limit 1`,
@@ -212,7 +256,9 @@ export async function aplicarPlanoDeTarefas(
     return { ok: false, codigo: "falha", erro: mensagemDoErro(err) };
   }
 
-  const plano = lePlanosDoSettings((organizacao as { settings?: unknown } | null)?.settings).find(
+  const plano = lePlanosDoSettings(
+    (organizacao as { settings?: unknown } | null)?.settings,
+  ).find(
     (p) => p.id === planoId,
   );
   if (!plano) return { ok: false, codigo: "plano_nao_encontrado" };
@@ -249,20 +295,60 @@ export async function aplicarPlanoDeTarefas(
     if (recusa) return { ok: false, codigo: recusa };
   }
 
+  const fuso = fusoUtilizavel(
+    (organizacao as { timezone?: string | null } | null)?.timezone,
+  );
+  const campos = camposDoNegocio(lead.custom_fields);
   const tarefa_ids: string[] = [];
+  /**
+   * Os passos que nasceram SEM prazo, com o campo que faltou.
+   *
+   * Não é log: vai no `payload` da marca e no `reason` da linha do tempo, que é
+   * a tela onde quem abriu o card lê o que aconteceu. Sem isso, a tarefa sem
+   * prazo é indistinguível de uma tarefa criada sem prazo por escolha — e
+   * ninguém vai olhar o campo do card para descobrir o que faltou.
+   */
+  const semPrazo: Array<{ ordem: number; campo: string; motivo: MotivoSemPrazo }> = [];
   for (const passo of plano.passos) {
-    const resultado = await criarTarefaInterna(db, {
+    const comum = {
       organizationId,
       titulo: passo.titulo,
       descricao: passo.descricao,
-      venceEmDias: passo.vence_em_dias,
       atribuirA: passo.atribuir_a,
       prioridade: passo.prioridade,
       leadId,
       origem,
+      plano: {
+        id: plano.id,
+        passo: passo.ordem,
+        campo: passo.prazo.modo === "campo_de_data" ? passo.prazo.campo : null,
+        dias: passo.prazo.dias,
+      },
       ...(requestId ? { requestId } : {}),
       ...(agora ? { agora } : {}),
-    });
+    };
+
+    // O prazo sai de um relógio ou do outro, nunca dos dois: passo de campo de
+    // data NÃO usa `agora` (é justamente o que o modo antigo não sabia fazer).
+    let resultado: Awaited<ReturnType<typeof criarTarefaInterna>>;
+    if (passo.prazo.modo === "campo_de_data") {
+      const resolvido = await resolverPrazoDoCampo(db, {
+        campo: passo.prazo.campo,
+        dias: passo.prazo.dias,
+        campos,
+        fuso,
+      });
+      if (resolvido.motivo) {
+        semPrazo.push({ ordem: passo.ordem, campo: passo.prazo.campo, motivo: resolvido.motivo });
+      }
+      resultado = await criarTarefaInterna(db, {
+        ...comum,
+        venceEm: resolvido.venceEm,
+        prazoMotivo: resolvido.motivo,
+      });
+    } else {
+      resultado = await criarTarefaInterna(db, { ...comum, venceEmDias: passo.prazo.dias });
+    }
     if (!resultado.ok) return { ok: false, codigo: resultado.codigo, erro: resultado.erro };
     tarefa_ids.push(resultado.tarefa_id);
   }
@@ -274,12 +360,23 @@ export async function aplicarPlanoDeTarefas(
     sourceModule: "tarefas",
     sourceId: null,
     actor: { type: "webhook_source", id: origem },
-    reason: `Plano «${plano.nome}» aplicado (${plano.passos.length} tarefas)`,
+    // O motivo de um passo sem prazo entra no MESMO texto que a pessoa lê na
+    // linha do tempo do negócio: campo de data é configuração do funil, não
+    // dado do cliente, e o operador precisa saber QUAL campo preencher para a
+    // tarefa ganhar prazo. O valor do campo NUNCA entra aqui (§9).
+    reason: `Plano «${plano.nome}» aplicado (${plano.passos.length} tarefas)${
+      semPrazo.length > 0
+        ? `; ${semPrazo.length} passo(s) sem prazo: ${semPrazo
+            .map((s) => `«${s.campo}» ${s.motivo === MOTIVOS_SEM_PRAZO.campoInvalido ? "com valor que não é data" : "vazio"}`)
+            .join(", ")}`
+        : ""
+    }`,
     payload: {
       plano_id: plano.id,
       plano_nome: plano.nome,
       passos: plano.passos.length,
       tarefa_ids,
+      ...(semPrazo.length > 0 ? { sem_prazo: semPrazo } : {}),
     },
   });
   // A marca É a idempotência: sem ela, a próxima aplicação duplica o que já
@@ -340,7 +437,7 @@ async function lerNegocioDoPlano(
 ): Promise<{ lead: LeadDoPedido | null; erro?: string }> {
   try {
     const lead = await db.queryOne<LeadDoPedido>(
-      `select id, title, contact_id, owner_user_id
+      `select id, title, contact_id, owner_user_id, custom_fields
          from crm_leads
         where id = $1
           and organization_id = $2
