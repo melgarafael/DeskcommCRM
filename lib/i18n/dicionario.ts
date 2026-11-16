@@ -38,12 +38,14 @@ import type { Idioma } from "./idiomas";
 import { TEXTOS_AGENDA_CONFIGURACAO } from "./agenda-configuracao";
 import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
 import { TEXTOS_CONTRATACAO } from "./contratacao";
+import { TEXTOS_TABELA_DE_VALORES } from "./tabela-de-valores";
 
 /** `pt-BR` não aparece: é a chave. Só o que DIFERE precisa de linha. */
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
   ...TEXTOS_CONTRATACAO,
+  ...TEXTOS_TABELA_DE_VALORES,
   ...TEXTOS_CADENCIAS_ORIGINAIS,
   ...TEXTOS_CADENCIAS,
   "Grupo de anúncios": { es: "Grupo de anuncios" },
@@ -3881,6 +3883,24 @@ export const DICIONARIO: Traducoes = {
   "maior ou igual a": { es: "mayor o igual a" },
   "menor que": { es: "menor que" },
   "menor ou igual a": { es: "menor o igual a" },
+  // #1749 — o operador "foi alterado" e o campo de condição que o acompanha.
+  "foi alterado": { es: "fue modificado" },
+  "Nome do campo alterado": { es: "Nombre del campo modificado" },
+  // #1749 — os campos do negócio que a condição "foi alterado" oferece (os
+  // demais já estão no dicionário) e as recusas dela.
+  "Valor recorrente": { es: "Valor recurrente" },
+  Periodicidade: { es: "Periodicidad" },
+  "Agente responsável": { es: "Agente responsable" },
+  "Data prevista de fechamento": { es: "Fecha prevista de cierre" },
+  "A condição “foi alterado” lê a lista de campos do evento (`event.fields`): use esse campo.": {
+    es: "La condición «fue modificado» lee la lista de campos del evento (`event.fields`): usa ese campo.",
+  },
+  "Escolha qual campo do negócio precisa ter sido alterado.": {
+    es: "Elige qué campo del negocio debe haber sido modificado.",
+  },
+  "Este campo não existe no negócio: escolha um campo da lista.": {
+    es: "Este campo no existe en el negocio: elige un campo de la lista.",
+  },
   "Combinar as condições por": { es: "Combinar las condiciones por" },
   "Esta automação combina as condições por um grupo (qualquer uma, ou um grupo dentro de outro). Este desenho não edita esse grupo: ele é gravado como está.":
     {
@@ -7997,6 +8017,12 @@ export const DICIONARIO: Traducoes = {
   "Quando um contato ganhar uma tag": { es: "Cuando un contacto reciba una etiqueta" },
   // #2812 — o gatilho de ficha SEM número que recebe um.
   "Quando um contato ganhar um telefone": { es: "Cuando un contacto reciba un teléfono" },
+  // #1749 — o gatilho de "negócio alterado" e a recusa da condição que só ele
+  // aceita.
+  "Quando um negócio for alterado": { es: "Cuando se modifique un negocio" },
+  "A condição “foi alterado” só existe no gatilho “negócio alterado” (quando um negócio for editado): troque o gatilho ou escolha outro operador.": {
+    es: "La condición «fue modificado» solo existe en el disparador «negocio modificado» (cuando se edita un negocio): cambia el disparador o elige otro operador.",
+  },
   "alterado pelo assistente": { es: "cambiado por el asistente" },
   "alterado automaticamente pelo sistema": { es: "cambiado automáticamente por el sistema" },
   é: { es: "es" },
