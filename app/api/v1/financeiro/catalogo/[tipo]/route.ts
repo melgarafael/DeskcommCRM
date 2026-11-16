@@ -251,9 +251,12 @@ export async function DELETE(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   // INATIVA. Ver o cabeçalho: o passado não se reescreve.
   const supabase = await createClient();
+  // Na recorrência, desligar pelo catálogo é decisão da equipe: zera a marca de
+  // "desligado pela perda", e o re-ganho do negócio não o religa (#4256).
+  const desliga = e.tipo === "recorrencias" ? { is_active: false, desativada_pela_perda: false } : { is_active: false };
   const { data, error } = await supabase
     .from(e.tabela)
-    .update({ is_active: false })
+    .update(desliga)
     .eq("id", lido.data.id)
     .eq("organization_id", authz.org.orgId)
     .select("id")

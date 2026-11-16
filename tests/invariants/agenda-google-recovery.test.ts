@@ -133,6 +133,9 @@ function pgClient(): SupabaseClient {
         },
         eq: (k: string, v: unknown) => where(k, v),
         lte: (k: string, v: unknown) => where(k, v, "<="),
+        // O recorte de janela da fila (#4448) é `ends_at > ...,` no mesmo idioma
+        // que o `.lte` acima: aqui ele é traduzido, não afrouxado.
+        gt: (k: string, v: unknown) => where(k, v, ">"),
         in: (k: string, vs: readonly unknown[]) => {
           values.push(vs);
           filters.push(`${ident(k)} = any($${values.length})`);

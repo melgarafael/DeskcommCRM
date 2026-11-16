@@ -48,13 +48,22 @@ export function hashNormalized(normalized: string): string {
   return createHash('sha256').update(normalized).digest('hex');
 }
 
-export function decideSpinning(input: SpinningInput): SpinningDecision {
+/**
+ * QUANTAS cópias da janela a candidata repete — a MEDIDA que o gate aplica.
+ *
+ * Extraída do veredito porque a escolha da redação do passo (#4429) precisa da
+ * medida, não do "pode/não pode": entre as redações vence a de MENOR colisão, e
+ * um veto só existe quando nem a menor passa. `0` é também o que devolve uma
+ * cópia isenta pela allowlist — repeti-la é legítimo, então ela não conta como
+ * colisão (o veredito dela é `allow`, e a medida tem de concordar com ele).
+ */
+export function colisoesNaJanela(input: SpinningInput): number {
   const { knobs } = input;
   const normalized = normalizeCopy(input.candidate);
 
   // Allowlist: curtas utilitárias e padrões isentos (ex.: link de pagamento)
   // NUNCA são vetadas — repeti-las é legítimo, não é blast de template.
-  if (isAllowlisted(normalized, knobs)) return { allow: true };
+  if (isAllowlisted(normalized, knobs)) return 0;
 
   // windowSize também é knob AQUI (o store já lê com LIMIT windowSize; o slice é
   // defesa em profundidade e torna a janela um knob provável no pure layer). A
@@ -73,8 +82,18 @@ export function decideSpinning(input: SpinningInput): SpinningDecision {
       matchCount += 1; // quase-idêntica (spin superficial)
     }
   }
+  return matchCount;
+}
+
+export function decideSpinning(input: SpinningInput): SpinningDecision {
+  const { knobs } = input;
+  const matchCount = colisoesNaJanela(input);
 
   if (matchCount >= knobs.repetitionThreshold) {
+    // windowSize também é knob AQUI (o store já lê com LIMIT windowSize; o slice é
+    // defesa em profundidade e torna a janela um knob provável no pure layer). A
+    // janela chega mais-recente-primeiro, então slice(0, N) pega as N mais recentes.
+    const window = input.window.slice(0, knobs.windowSize);
     return {
       allow: false,
       code: 'mass_identical',

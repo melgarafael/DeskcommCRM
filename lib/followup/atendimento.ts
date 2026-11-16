@@ -32,6 +32,8 @@ import {
   type FlowNode,
 } from "./graph-schema";
 import { classificarInbound, type CampoPendenteParaCaptura } from "./captura-do-fluxo";
+import { armarProximaRevisaoPeloFluxo } from "@/lib/revisao-por-km/pelo-fluxo";
+import { logger } from "@/lib/logger";
 import {
   fixarNegocioDoRoteiro,
   lerCandidatosAoNegocio,
@@ -756,7 +758,40 @@ export async function gravarRespostaNoNegocio(
                        and not coalesce(c.is_anonymized, false))`,
     [args.organizationId, args.contactId, args.campo, args.valor, args.leadId],
   );
-  return (r.rowCount ?? 0) > 0;
+  const gravou = (r.rowCount ?? 0) > 0;
+  if (!gravou) return false;
+
+  // ── A REVISÃO POR QUILOMETRAGEM (#4376) ──────────────────────────────────
+  //
+  // A resposta a "quantos km?" pelo WhatsApp cai aqui. Com o km no card
+  // e a data de retirada ao lado, a conta do passo 2 (ritmo → marco de 10 mil →
+  // data prevista) pode ser feita: `lib/revisao-por-km/conta.ts` calcula e
+  // `fn_lead_anotar_campos` grava a data no campo de saída, armando o gatilho
+  // `lead.date_field_due`. A resposta do cliente NÃO depende disso — o km já
+  // está gravado; se a projeção falhar, o log diz e a próxima leitura refaz.
+  try {
+    const armacao = await armarProximaRevisaoPeloFluxo(db, {
+      organizationId: args.organizationId,
+      leadId: args.leadId,
+      campoGravado: args.campo,
+    });
+    if (armacao.status === "falhou") {
+      logger.warn("[followup.atendimento] revisão por km não foi armada", {
+        organization_id: args.organizationId,
+        lead_id: args.leadId,
+        motivo: armacao.motivo,
+        detalhe: armacao.detalhe,
+      });
+    }
+  } catch (erro) {
+    logger.warn("[followup.atendimento] revisão por km falhou", {
+      organization_id: args.organizationId,
+      lead_id: args.leadId,
+      error: erro instanceof Error ? erro.message : String(erro),
+    });
+  }
+
+  return true;
 }
 
 /**

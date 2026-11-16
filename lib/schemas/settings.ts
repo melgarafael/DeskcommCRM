@@ -21,6 +21,10 @@ import {
   TAMANHO_MAXIMO_DO_MODELO,
   TAMANHO_MAXIMO_DO_ROTULO,
 } from "@/lib/leads/atalhos-do-card";
+import {
+  MAX_CARACTERES_DA_CATEGORIA_DE_PERDA,
+  MAX_CATEGORIAS_DE_PERDA,
+} from "@/lib/schemas/leads";
 import { MOEDAS_SERVIDAS } from "@/lib/money";
 
 import { conversationTagSchema } from "./messaging";
@@ -444,6 +448,34 @@ export const pipelineConfigPatchSchema = z.object({
       ]),
     )
     .max(50)
+    .optional(),
+  /**
+   * AS CATEGORIAS DE PERDA DESTE FUNIL (#4437).
+   *
+   * A lista de fábrica (`CATEGORIAS_DE_PERDA`) é o piso de quem nunca declarou
+   * nada — mas ela é do PRODUTO, não do negócio: uma clínica não perde por
+   * "Concorrência" e uma loja precisa de "Risco". Aqui o funil declara as suas,
+   * na ordem em que quer vê-las na tela.
+   *
+   * DOUTRINA DA CHAVE (a mesma de `ocultar_encerrados_dias`):
+   *   - AUSENTE = o funil nunca declarou → vale a lista de fábrica, MAIS as
+   *     categorias que os motivos já usam (é assim que o "Risco" gravado à mão
+   *     no "Possível fraude" continua existindo sem migração de dado);
+   *   - PRESENTE, inclusive `[]` = decisão da organização → vale exatamente o
+   *     que está aqui. `[]` é legítimo: esconder todas é uma escolha, e não
+   *     pode ressuscitar a lista de fábrica.
+   *
+   * Esconder uma categoria é TIRÁ-LA DAQUI, e só isso: o `categoria` gravado em
+   * `lost_reasons` não é tocado, então o motivo que já usava continua agrupado
+   * no relatório e continua mostrando a categoria dele no menu. O que muda é
+   * que ela deixa de ser oferecida para os OUTROS motivos.
+   *
+   * Renomear é trocar o texto na lista; a tela reescreve o `categoria` dos
+   * motivos que usavam o nome antigo, senão o vínculo viraria um rótulo órfão.
+   */
+  lost_reason_categories: z
+    .array(z.string().min(1).max(MAX_CARACTERES_DA_CATEGORIA_DE_PERDA))
+    .max(MAX_CATEGORIAS_DE_PERDA)
     .optional(),
   /**
    * O MOTIVO DE GANHO por funil (issue #1536) — espelho de `lost_reasons`.
@@ -1178,6 +1210,32 @@ export function ouvidoriaDeclarada(settings: unknown): OuvidoriaDaOrganizacao {
 /** Atalho booleano para quem só precisa saber se o módulo aceita registro. */
 export function ouvidoriaLigada(settings: unknown): boolean {
   return ouvidoriaDeclarada(settings).ativa === true;
+}
+
+/**
+ * A RECORRÊNCIA DO NEGÓCIO GANHO (#3602, doc 312 = A) —
+ * `settings.financeiro.recorrencia_no_ganho`.
+ *
+ * Ligada, ganhar um negócio com `recurring_value_cents` cria o molde mensal no
+ * financeiro (`lib/financeiro/recorrencia-do-negocio.ts`). Desligada de
+ * fábrica: cobrança automática não liga sozinha em quem atualiza. Só o `true`
+ * EXPLÍCITO liga (a régua de `ouvidoriaLigada`); ausente, `"true"` ou lixo é
+ * desligado. Nunca lança: roda no fecho do negócio.
+ *
+ * ponytail: ainda sem porta de escrita — o interruptor na tela chega com o
+ * #4264, quando todas as portas de ganho e de perda passarem pela mesma regra.
+ */
+export function recorrenciaNoGanhoLigada(settings: unknown): boolean {
+  const raiz =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)
+      : undefined;
+  const financeiro = raiz?.financeiro;
+  return (
+    !!financeiro &&
+    typeof financeiro === "object" &&
+    (financeiro as Record<string, unknown>).recorrencia_no_ganho === true
+  );
 }
 
 /**

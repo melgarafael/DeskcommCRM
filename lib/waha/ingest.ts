@@ -35,11 +35,11 @@ import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { estamparAtribuicaoDoContato, metadataDoAnuncio } from "@/lib/leads/atribuicao-de-anuncio";
 import { ancoraCtwaDaMensagem } from "@/lib/leads/prova-meta-lead-submitted";
-import { extrairEEstamparAtribuicaoGoogle } from "@/lib/plataformas-de-anuncio/google/atribuicao";
 import { extrairAtribuicaoWaha } from "@/lib/waha/atribuicao-de-anuncio";
 import { criarIngestDeGrupoDb, gravarMensagemDeGrupo } from "@/lib/grupos/ingest";
 import type { RemetenteDeGrupo } from "@/lib/messaging/remetente-de-grupo";
 import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
+import { PREVIA_DA_APAGADA_PELO_CONTATO } from "@/lib/messaging/texto-retido";
 import { corpoDaLocalizacao, lerLocalizacao, type Localizacao } from "@/lib/messaging/localizacao";
 import { semAssinatura } from "@/lib/messaging/assinatura";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -1235,11 +1235,6 @@ async function handleInbound(
   const atribuicao = extrairAtribuicaoWaha(p._data?.message);
   if (atribuicao) await estamparAtribuicaoDoContato(admin, session.organization_id, contactId, atribuicao);
 
-  // Irmão do bloco acima, para o Google: o token vem no PRÓPRIO texto da
-  // mensagem (não há payload de ad-reply equivalente para essa plataforma) —
-  // ver o cabeçalho de `lib/plataformas-de-anuncio/google/atribuicao.ts`. Best-effort.
-  await extrairEEstamparAtribuicaoGoogle(admin, session.organization_id, contactId, texto);
-
   const conversationId = await upsertConversation(admin, session.organization_id, contactId, session.id);
   if (!conversationId) return;
 
@@ -2312,7 +2307,7 @@ async function handleMessageRevoked(
     // trilha dizendo que alguém apagou pelo celular — numa tabela append-only.
     // Pelo mesmo filtro, a reentrega do mesmo evento não duplica a trilha.
     .is("revoked_at", null)
-    .select("id, conversation_id, direction, external_id");
+    .select("id, conversation_id, direction, external_id, sent_at");
   if (erroDoCarimbo) {
     // Sem este ramo o evento "some" em silêncio e a mensagem apagada segue
     // legível como se ninguém tivesse apagado — o modo de falha que este arquivo
@@ -2343,6 +2338,36 @@ async function handleMessageRevoked(
         conteudo_preservado: true,
       },
     });
+
+    // A PRÉVIA DA LISTA NÃO PODE DENUNCIAR O QUE O CONTATO APAGOU (#4500).
+    //
+    // `conversations.last_message_preview` é o que a lista da Inbox MOSTRA e o
+    // que a busca filtra (`ilike`, `app/api/v1/conversations/_handler.ts`). Ela
+    // era gravada com o corpo no ingest e ninguém a mexia no apagamento — então
+    // o texto saía da bolha e continuava na lista e na busca. Mascarar só o
+    // payload da thread deixaria esta porta aberta.
+    //
+    // Só a apagada pelo CONTATO entra: a do atendente segue legível à equipe
+    // (`textoDaApagadaApareceNaInbox`), e trocar a prévia dela seria regressão.
+    // E só quando ela é a ÚLTIMA (`last_message_at` <= `sent_at`): se já veio
+    // mensagem depois, a prévia é o assunto atual e não se toca.
+    if (linha.direction === "inbound") {
+      const { error: erroDaPrevia } = await admin
+        .from("conversations")
+        .update({ last_message_preview: PREVIA_DA_APAGADA_PELO_CONTATO })
+        .eq("id", linha.conversation_id)
+        .eq("organization_id", session.organization_id)
+        .lte("last_message_at", linha.sent_at);
+      if (erroDaPrevia) {
+        // Não derruba o webhook: a linha já está carimbada, e o provedor
+        // reentregaria o evento inteiro sem consertar a prévia.
+        logger.warn("[waha] a prévia da conversa não acompanhou o apagamento", {
+          request_id: requestId,
+          conversation_id: linha.conversation_id,
+          error: erroDaPrevia.message,
+        });
+      }
+    }
   }
 }
 

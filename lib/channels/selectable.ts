@@ -49,6 +49,20 @@ export interface SelectableChannel {
    */
   aceitaMensagemLivre: boolean;
   /**
+   * O canal devolve a venda à Meta pela conversa (capability `reportaConversao`)?
+   * É o que decide se a chave "Enviar vendas pelo canal da conversa" tem o que
+   * acionar. Também de CAPACIDADE, nunca de provedor.
+   */
+  reportaConversao: boolean;
+  /**
+   * A IA consegue responder com NOTA DE VOZ por este canal (capability
+   * `voiceNote` diferente de `none`)? A tela do agente usa para avisar, ao lado
+   * de "Enviar nota de voz", que neste canal a resposta sai em texto — sem isso
+   * o dono liga a voz numa conta de Instagram e não entende por que ela não fala.
+   * Também de CAPACIDADE, nunca de provedor.
+   */
+  enviaNotaDeVoz: boolean;
+  /**
    * Como o acesso da IA está NESTE canal — modo e quantos números de teste estão
    * autorizados. Sem isto, a tela do agente não tinha como saber que o número
    * escolhido está em modo de teste com a lista vazia, que é o estado de fábrica
@@ -98,6 +112,26 @@ function aceitaMensagemLivre(provider: string | null): boolean {
   }
 }
 
+/** Mesma régua de `aceitaMensagemLivre`: provedor desconhecido deste build responde `false`. */
+function reportaConversao(provider: string | null): boolean {
+  if (!transportaMensagem(provider)) return false;
+  try {
+    return capabilitiesOf(provider as ProviderDeMensagem).reportaConversao;
+  } catch {
+    return false;
+  }
+}
+
+/** Mesma régua: provedor desconhecido deste build responde `false` (não promete voz). */
+function enviaNotaDeVoz(provider: string | null): boolean {
+  if (!transportaMensagem(provider)) return false;
+  try {
+    return capabilitiesOf(provider as ProviderDeMensagem).voiceNote !== "none";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Canais ativos da organização, do mais antigo para o mais novo (ordem estável:
  * um dropdown que embaralha a cada render faz o operador clicar no item errado).
@@ -141,6 +175,8 @@ export async function listSelectableChannels(
     status: c.status,
     phone_number: c.phone_number ?? null,
     aceitaMensagemLivre: aceitaMensagemLivre(c.provider),
+    reportaConversao: reportaConversao(c.provider),
+    enviaNotaDeVoz: enviaNotaDeVoz(c.provider),
     acessoDaAi: {
       // O MESMO leitor do runtime (`gate.ts` → `lerModoDeAcessoDaIa`): a tela
       // não pode chamar de "modo de teste" um canal que o motor trata de outro

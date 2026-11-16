@@ -30,8 +30,18 @@ export const SAIDA_OPUS_DA_ELEVENLABS = "opus_48000_32";
 /** O Content-Type com que a nota de voz em opus é guardada e servida ao canal. */
 export const MIME_DA_NOTA_DE_VOZ_OPUS = VOICE_MIME;
 
-/** O formato que o canal da conversa entrega como nota de voz. */
-export function formatoDaVozParaCanal(voiceNote: "server-convert" | "opus-only"): FormatoDaVoz {
+/**
+ * O formato que o canal da conversa entrega como nota de voz — ou `null` quando
+ * o canal não entrega nota de voz nossa (`voiceNote: "none"`, as redes sociais).
+ *
+ * `null` e não um formato "de reserva": sintetizar para um canal que recusa todo
+ * áudio paga a ElevenLabs por uma bolha que falha, e o turno com mensagem
+ * `failed` é re-tentado inteiro pela fila — cada volta, mais uma bolha falhada.
+ */
+export function formatoDaVozParaCanal(
+  voiceNote: "server-convert" | "opus-only" | "none",
+): FormatoDaVoz | null {
+  if (voiceNote === "none") return null;
   return voiceNote === "opus-only" ? "ogg_opus" : "mp3";
 }
 
