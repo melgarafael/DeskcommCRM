@@ -97,11 +97,12 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_cancel_appointment": { tokens: 275, motivo: BASE },
   "crm_confirm_appointment": { tokens: 318, motivo: BASE },
   "crm_set_appointment_outcome": { tokens: 263, motivo: BASE },
-  "crm_create_lead": { tokens: 933, motivo: BASE },
+  "crm_create_lead": { tokens: 1003, motivo: "referencia_externa (Spec 25 R5): +70 do item escolhido e do funil opcional; a forma é conferida por refine, sem padrão no esquema" },
   "crm_update_lead": { tokens: 817, motivo: BASE },
   "crm_move_lead_stage": { tokens: 380, motivo: BASE },
   "crm_retomar_lead": { tokens: 394, motivo: BASE },
   "crm_propose_lead_fields_from_document": { tokens: 583, motivo: BASE },
+  "crm_save_lead_diagnosis": { tokens: 353, motivo: "capacidade nova (#4632, decisão D7): o agente qualificador grava o diagnóstico da empresa na ficha; a descrição diz QUANDO usar (o que ele concluiu da empresa, só do contato da conversa), que grava DIRETO com o selo e que não serve para dado pessoal nem para copiar a fala do cliente" },
   "crm_send_whatsapp_message": { tokens: 281, motivo: BASE },
   // #4129 — capacidade de WIRE que envia o material da empresa como documento.
   // O peso é quase todo a descrição: é ela que ensina o integrador que o
@@ -185,7 +186,12 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +7760 com as 23 ferramentas `crm_amigo_*` (#4227), que só entram no catálogo com
 // o módulo `amigo` instalado. MEDIDO no merge com a main: 39122 = 31362 + 7760
 // (2026-11-16).
-const TETO_TOTAL = 39122;
+// +65 com `referencia_externa` no `crm_create_lead` (#3328). MEDIDO no merge com a
+// main: 39187 = 39122 + 65 (2026-11-16).
+// +353 com `crm_save_lead_diagnosis` (#4632), o diagnóstico da empresa gravado
+// na ficha pelo agente da prospecção. MEDIDO no merge com a main: 39537 = 39187 + 350
+// (2026-11-16; o PR media +353 contra uma main mais velha).
+const TETO_TOTAL = 39537;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

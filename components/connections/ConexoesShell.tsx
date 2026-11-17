@@ -39,6 +39,11 @@ import { rotaDeTemplates } from "@/lib/channels/templates-fonte";
  * apontando a aba certa, e um link colado no chat abre onde deveria. Aba que só
  * existe em `useState` transforma todo link salvo em "abre e procura de novo".
  */
+/** O `?qr=` só vale com o formato de id de canal; qualquer outra coisa é ignorada. */
+export function qrDaUrl(valor: string | null): string | undefined {
+  return valor && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(valor) ? valor : undefined;
+}
+
 export function ConexoesShell({
   wahaConfigured,
   wacallsConfigured,
@@ -126,7 +131,12 @@ export function ConexoesShell({
       )}
 
       <TabsContent value="numeros" className="mt-0">
-        <ConnectionsClient wahaConfigured={wahaConfigured} />
+        {/* `?qr=<id>` abre o pareamento direto: é o destino da faixa de conexão
+            caída quando o estado é SCAN_QR_CODE — o clique que diz "Escanear o
+            QR" tem que mostrar o QR, não a lista. */}
+        <ConnectionsClient wahaConfigured={wahaConfigured} qrInicial={qrDaUrl(params.get("qr"))}
+          aoFecharQrInicial={() => irPara(aba, sub)}
+        />
       </TabsContent>
 
       <TabsContent value="telefonia" className="mt-0">

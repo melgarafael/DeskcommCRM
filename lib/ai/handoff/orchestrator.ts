@@ -478,9 +478,12 @@ export async function triggerHandoff(
         ...(Object.keys(camposDoCard).length > 0 ? { camposColetados: camposDoCard } : {}),
         motivo: {
           codigo: motivoDaPassagem(input.reason),
-          texto: input.motivoTexto ?? null,
+          // Texto fixo do produto (ex.: a restrição comercial da automação) tem
+          // chave no dicionário; texto livre não tem e volta como veio.
+          texto: input.motivoTexto != null ? traduzir(input.motivoTexto, idiomaDaOrg) : null,
           percebidoPeloJev,
         },
+        idioma: idiomaDaOrg,
       });
       const gravou = await registrarPassagem(admin, {
         organizationId: input.organizationId,
