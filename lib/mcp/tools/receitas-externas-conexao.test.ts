@@ -184,6 +184,19 @@ describe("crm_consultar_receita — uma conexão possível não é ambiguidade (
     expect(res.mensagem).toMatch(/desativada/);
   });
 
+  it("conexão ativa de OUTRA empresa não entra na conta nem na lista da recusa", async () => {
+    const DE_OUTRA_ORG = "44444444-4444-4444-8444-444444444444";
+    const duble = dubleDeConexoes([
+      ativa(ATIVA, "Matriz"),
+      { ...ativa(DE_OUTRA_ORG, "Banco de outra empresa"), organization_id: "org-2" },
+    ]);
+    const res = await crmConsultarReceita.handler({ acao: "listar" }, ctxCom(duble));
+
+    expect((res as { erro?: string }).erro).toBeUndefined();
+    expect((res as { conexao?: { id: string } }).conexao?.id).toBe(ATIVA);
+    expect(JSON.stringify(res)).not.toContain(DE_OUTRA_ORG);
+  });
+
   it("com connection_id explícito o comportamento é o de hoje (usa o id, sem listar)", async () => {
     const duble = dubleDeConexoes([ativa(ATIVA, "Matriz")]);
     const res = (await crmConsultarReceita.handler(
