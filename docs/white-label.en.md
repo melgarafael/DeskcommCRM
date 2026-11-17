@@ -1,4 +1,4 @@
-<!-- traduzido-de: docs/white-label.md@1a972883babb -->
+<!-- traduzido-de: docs/white-label.md@120e11feaad1 -->
 
 [🇧🇷 Português](white-label.md) · 🇺🇸 English · [🇪🇸 Español](white-label.es.md)
 
@@ -41,6 +41,8 @@ Example:
 ```
 
 **Color per section of the side menu.** The menu has stable classes meant for this CSS. Every group has `nav-grupo`, and each one also has its own: `nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais`, `nav-grupo-analise` and `nav-grupo-organizacao` (the footer, with Settings and Help). Each destination has its own too: `nav-item-inbox`, `nav-item-kanban`, and so on. These classes are part of the screen contract and do not change between releases; the Tailwind utility classes do.
+
+**Color per section of the content.** Every screen's content container carries `tela-secao` and, when the route is in the navigation registry, the section's class too: `tela-secao-atendimento`, `tela-secao-crm`, `tela-secao-ia`, `tela-secao-canais`, `tela-secao-analise` and `tela-secao-organizacao` — with it, `.tela-secao-crm .rounded-lg { border-top-color: #1d4ed8; }` applies only on CRM screens. A route outside the registry keeps only `tela-secao`.
 
 To color the menu text, target `text-muted-foreground` inside the group, not `rounded-md`. The group title and the links have both, but the item of the open screen only has `rounded-md`: it already has a background in the accent color, and a text color chosen for the menu background can disappear on top of it. Since `text-muted-foreground` comes from Tailwind, check the menu after updating. The color in the example is for the light theme; for the dark one, repeat the rule in the **Dark theme CSS** field with a light color.
 

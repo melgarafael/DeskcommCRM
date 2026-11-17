@@ -59,6 +59,7 @@ import { serializarValor } from "@/lib/external-db/montagem";
 import { diaDoValor } from "@/lib/followup/condicao-por-data";
 import { camposAlterados } from "@/lib/leads/campos-alterados";
 import { diaDoPrazo } from "@/lib/lgpd/sla";
+import { dataDaAbordagem } from "@/lib/prospecting/exportar";
 import { instanteDoBanco } from "@/lib/tempo/agora";
 
 /**
@@ -248,6 +249,20 @@ export function reguasDeData(pool: pg.Pool): ReguaDeData[] {
           new Date(CHEGADA_MS - 3_600_000),
           5 * 60_000,
         ) === false,
+    },
+    {
+      nome: "dataDaAbordagem",
+      onde: "lib/prospecting/exportar.ts:288",
+      // `prospecting_candidates.attempted_at` (timestamptz) e o `created_at` da
+      // trilha `prospecting.approach_sent`: é a coluna `abordada_em` do arquivo
+      // da campanha (#4632). Recusar o `Date` do driver deixaria a data da
+      // abordagem VAZIA justamente na lista que existe para dizer quando a
+      // empresa já foi tentada — e o modo de falha é mudo, porque o CSV continua
+      // bem formado. O dia civil é o de `CHEGADA` (2026-11-04), não outro.
+      entrada: "valor",
+      exercitar: (valorCru) =>
+        dataDaAbordagem({ data: {}, attempted_at: valorCru as string | Date }, "America/Sao_Paulo") ===
+        "2026-11-04",
     },
     {
       nome: "quandoCombinado",
