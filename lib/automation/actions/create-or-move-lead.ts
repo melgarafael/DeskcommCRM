@@ -23,6 +23,9 @@ import {
   type OrigemParaClonar,
 } from "@/lib/leads/clonar-para-funil";
 import { criarCloneNoFunil } from "@/lib/leads/clone-com-anexos";
+// A cópia dos anexos do card de origem — a MESMA dos outros dois caminhos de
+// troca de funil, e idempotente de propósito (#4544).
+import { copiarAnexosDoClone } from "@/lib/leads/anexos-do-clone";
 // MESMA transferência do roteador de intenção (#2155): duas implementações de
 // "trocar de funil" divergiriam na primeira mudança de uma delas.
 import { COLUNAS_DA_ORIGEM, transfereParaOFunil } from "@/lib/leads/transfere-para-o-funil";
@@ -230,11 +233,56 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
           if (continuacao) {
             // As ações seguintes da regra enxergam a MESMA continuação que
             // enxergaram da primeira vez.
+            //
+            // ── A CÓPIA DOS ANEXOS É REPETIDA AQUI (#4544) ────────────────────
+            //
+            // "A continuação já existe" não quer dizer "os anexos já vieram":
+            // uma falha de Storage na primeira execução deixava o voucher fora
+            // do card para SEMPRE, porque este ramo respondia `ja_existia` e
+            // nunca voltava a tentar. `copiarAnexosDoClone` é idempotente — a
+            // linha nova carrega `clonado_do_attachment_id` e o índice único
+            // parcial recusa o par repetido —, então repetir no card que já
+            // existe conserta o que faltou sem duplicar o que já está lá. O
+            // custo é uma leitura por execução; o benefício é o pós-venda não
+            // ficar sem o documento porque o bucket piscou uma vez.
+            //
+            // ── E SÓ NUM CARD COM O MESMO DONO DA ORIGEM ─────────────────────
+            //
+            // Aqui o card de destino NÃO foi criado por esta execução: ele foi
+            // achado por `source_metadata.clonado_de`, e a cópia roda com o
+            // cliente de serviço. Quem enxerga um negócio (e os anexos dele, que
+            // seguem o negócio pai) é decidido pela organização e pelo
+            // `owner_user_id` — `crm_leads_select` não olha mais nada. Com o
+            // MESMO dono, quem vê o destino já via a origem, e a cópia não
+            // entrega documento a ninguém novo. Dono diferente (a continuação
+            // foi reatribuída, ou nasceu sem dono porque o da origem não podia
+            // mais ser dono): a reposição fica de fora e o recibo diz por quê;
+            // a cópia da criação, que é da própria ação, segue intacta.
+            const idDaContinuacao = String((continuacao as { id?: unknown }).id ?? "");
+            const donoDaContinuacao = (continuacao as { owner_user_id?: string | null }).owner_user_id ?? null;
+            const mesmoDono = donoDaContinuacao === (lead.owner_user_id ?? null);
+            const anexos = mesmoDono
+              ? await copiarAnexosDoClone(ctx.admin, {
+                  organizationId: ctx.organizationId,
+                  origemLeadId: lead.id,
+                  destinoLeadId: idDaContinuacao,
+                })
+              : null;
             publicaNoContexto(ctx, continuacao as Record<string, unknown>, contactId);
             return {
               type: "create_or_move_lead",
               status: "success",
-              detail: { ja_existia: String((continuacao as { id?: unknown }).id ?? ""), origem: lead.id },
+              detail: {
+                ja_existia: idDaContinuacao,
+                origem: lead.id,
+                ...(anexos
+                  ? {
+                      anexos: anexos.copiados,
+                      anexos_que_ja_estavam: anexos.jaEstavam,
+                      ...(anexos.falhas > 0 ? { anexos_com_falha: anexos.falhas } : {}),
+                    }
+                  : { anexos_nao_repostos: "dono_diferente" }),
+              },
             };
           }
 

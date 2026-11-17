@@ -90,6 +90,77 @@ describe("requireRole — helper único (spec 13 §4)", () => {
     expect(body.error.code).toBe("forbidden_tenant");
   });
 
+  // #3876 — o gate do primeiro acesso é do SERVIDOR. A tela de troca é o
+  // caminho bonito; esta recusa é o que impede que a senha provisória alcance
+  // qualquer rota /api/v1 chamada direto.
+  describe("gate da senha provisória (#3876)", () => {
+    function sessaoComSenhaProvisoria(role: Role, senhaProvisoria: boolean) {
+      session(role);
+      vi.mocked(loadAuthUser).mockResolvedValue({
+        ...authUserFixture(role),
+        organizations: [
+          {
+            organization_id: ORG_ID,
+            organization_name: "Org",
+            role,
+            org_status: "active",
+            senha_provisoria: senhaProvisoria,
+          },
+        ],
+      });
+    }
+
+    it("recusa 403 password_change_required ANTES de resolver o papel", async () => {
+      sessaoComSenhaProvisoria("admin", true);
+      const res = await requireRole("viewer", { requestId: "req-1", resource: "team" });
+      expect(res.ok).toBe(false);
+      if (res.ok) throw new Error("unreachable");
+      expect(res.response.status).toBe(403);
+      const body = await res.response.json();
+      expect(body.error.code).toBe("password_change_required");
+      expect(body.error.details).toEqual({ organization_id: ORG_ID });
+      // Nada de consulta de papel: quem deve trocar a senha não vê o produto.
+      expect(createClient).not.toHaveBeenCalled();
+      expect(audit).not.toHaveBeenCalled();
+    });
+
+    it("o convidado (sem a marca) atravessa normalmente", async () => {
+      sessaoComSenhaProvisoria("admin", false);
+      const res = await requireRole("viewer");
+      expect(res.ok).toBe(true);
+    });
+
+    it("o atalho de platform admin não pula a troca", async () => {
+      sessaoComSenhaProvisoria("admin", true);
+      vi.mocked(loadAuthUser).mockResolvedValue({
+        ...authUserFixture("admin", true),
+        organizations: [
+          { organization_id: ORG_ID, organization_name: "Org", role: "admin", org_status: "active", senha_provisoria: true },
+        ],
+      });
+      const res = await requireRole("admin", { allowPlatformAdmin: true });
+      expect(res.ok).toBe(false);
+      if (res.ok) throw new Error("unreachable");
+      expect((await res.response.json()).error.code).toBe("password_change_required");
+    });
+
+    it("a rota fora do requireRole (orgAtivaDaApi) recusa igual", async () => {
+      sessaoComSenhaProvisoria("agent", true);
+      const user = await loadAuthUser();
+      const res = await orgAtivaDaApi(user, "req-2");
+      expect(res.ok).toBe(false);
+      if (res.ok) throw new Error("unreachable");
+      expect(res.response.status).toBe(403);
+      expect((await res.response.json()).error.code).toBe("password_change_required");
+    });
+
+    it("orgAtivaDaApi sem a marca devolve a org (controle positivo)", async () => {
+      sessaoComSenhaProvisoria("agent", false);
+      const res = await orgAtivaDaApi(await loadAuthUser(), "req-3");
+      expect(res).toMatchObject({ ok: true, org: { orgId: ORG_ID } });
+    });
+  });
+
   it("nega 403 forbidden_role padronizado + audita authz.denied (sem PII)", async () => {
     session("agent");
     const res = await requireRole("manager", { requestId: "req-1", resource: "team" });
