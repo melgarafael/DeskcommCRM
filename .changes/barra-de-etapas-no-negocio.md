@@ -16,5 +16,10 @@ mesmas regras de sempre: campos obrigatórios, motivo da perda e a proteção co
 edição simultânea. Quem não pode mover só vê a barra. As etapas de ganho e de
 perda não entram na barra, porque têm ações próprias; o seletor de etapa do
 cabeçalho continua no lugar e segue listando todas. Em tela estreita ou em funil
-com muitas etapas, a barra rola na horizontal. Nenhuma ação é necessária na
-atualização.
+com muitas etapas, a barra rola na horizontal.
+
+A mesma barra também aparece no painel da conversa, no Inbox, logo acima do
+seletor "Etapa do funil": quem atende vê onde o negócio está e há quantos dias,
+sem sair da conversa. O clique move pelo mesmo caminho do seletor e segue a
+mesma regra de quem pode mover; ganho e perda continuam só no seletor, onde a
+perda pede o motivo. Nenhuma ação é necessária na atualização.

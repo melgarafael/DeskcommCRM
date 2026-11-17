@@ -48,6 +48,8 @@ import {
 } from "@/lib/inbox/modulos-da-lateral";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import { LoseLeadDialog } from "@/components/kanban/LoseLeadDialog";
+import { BarraDeEtapas } from "@/components/kanban/BarraDeEtapas";
+import { diasNaEtapa } from "@/lib/kanban/barra-de-etapas";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
 import { MoveToOtherPipelineDialog } from "@/components/kanban/MoveToOtherPipelineDialog";
 import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
@@ -97,6 +99,9 @@ interface LeadRow {
   recurring_months?: number | null;
   currency: string | null;
   updated_at: string;
+  /** Entrada na etapa atual e nascimento do negócio: os dias da barra de etapas (`diasNaEtapa`). */
+  stage_changed_at?: string | null;
+  created_at?: string | null;
   pipeline_id: string;
   custom_fields: Record<string, unknown> | null;
   field_defs: CustomFieldDef[];
@@ -524,7 +529,12 @@ function InboxLeadEditor({
           <EtiquetasDoNegocio tags={ativo.tags} />
         </div>
       )}
-      <EtapaDoNegocio key={`etapa-${ativo.id}`} lead={ativo} onMovido={onSalvo} />
+      <EtapaDoNegocio
+        key={`etapa-${ativo.id}`}
+        lead={ativo}
+        onMovido={onSalvo}
+        podeMover={podeLevarParaOutroFunil}
+      />
       <ValorDoNegocio
         key={`valor-${ativo.id}`}
         lead={ativo}
@@ -705,7 +715,21 @@ function ValorDoNegocio({
  * não move direto: ela pede o motivo, então abre o mesmo `LoseLeadDialog` do
  * quadro (issue #2871).
  */
-function EtapaDoNegocio({ lead, onMovido }: { lead: LeadRow; onMovido: () => void }) {
+function EtapaDoNegocio({
+  lead,
+  onMovido,
+  podeMover,
+}: {
+  lead: LeadRow;
+  onMovido: () => void;
+  /**
+   * Quem clica na BARRA DE ETAPAS move o negócio: `pipeline.move_card` (`agent`+),
+   * a mesma régua do quadro e do "Levar para outro funil" deste painel. Abaixo
+   * disso a barra só mostra. O seletor segue como sempre — a rota de mover cobra
+   * o piso no servidor.
+   */
+  podeMover: boolean;
+}) {
   const t = useT();
   const mover = useBulkAction(lead.pipeline_id);
   const [perdendo, setPerdendo] = useState(false);
@@ -729,6 +753,17 @@ function EtapaDoNegocio({ lead, onMovido }: { lead: LeadRow; onMovido: () => voi
 
   return (
     <div className="space-y-1" data-testid="inbox-etapa-do-negocio">
+      {/* A BARRA DE ETAPAS, a mesma do dossiê do quadro: o caminho do negócio
+          no funil, a atual com os dias nela. O clique usa o MESMO `escolher`
+          do seletor abaixo (`/api/v1/leads/bulk`); ganho e perda ficam fora da
+          barra e continuam no seletor, onde a perda pede o motivo. */}
+      <BarraDeEtapas
+        etapaAtual={lead.stage_id}
+        etapas={etapas}
+        podeMover={podeMover && !mover.isPending}
+        onMudar={(stageId) => void escolher(stageId)}
+        dias={diasNaEtapa(lead)}
+      />
       <label className="block text-xs font-medium text-text" htmlFor={`etapa-${lead.id}`}>
         {t("Etapa do funil")}
       </label>
