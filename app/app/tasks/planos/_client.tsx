@@ -36,11 +36,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
+import { usePipelines } from "@/hooks/webhooks/useWebhookSources";
 import { useT } from "@/hooks/i18n/useT";
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
 import { randomId } from "@/lib/random-id";
 import { ArrowBendUpLeft } from "@/lib/ui/icons";
+import { camposDeDataDoNegocio } from "@/lib/leads/campos-do-funil";
 import { LIMITES_DO_PLANO } from "@/lib/tarefas/limites-do-plano";
 import type { PassoDePlano, PlanoDeTarefas } from "@/lib/tarefas/plano";
 import { explicarRecusaDoPlano, frasePrazoDoPasso } from "@/lib/tarefas/recusa-do-plano";
@@ -103,6 +105,30 @@ function resumoDoPrazo(t: (s: string) => string, prazo: PassoDePlano["prazo"]): 
   return (prazo.dias < 0 ? t("{n} dia(s) antes do campo «{c}»") : t("{n} dia(s) depois do campo «{c}»"))
     .replace("{n}", String(dias))
     .replace("{c}", prazo.campo);
+}
+
+/**
+ * Os campos de DATA do negócio de todos os funis, um por chave.
+ *
+ * O plano não é de um funil só, então a lista é a união. A mesma chave em dois
+ * funis é o MESMO campo para o plano (o prazo lê `custom_fields[chave]` do card,
+ * seja qual for o funil), e por isso vira uma opção só, com os funis no rótulo.
+ */
+export function camposDeDataDosFunis(
+  funis: ReadonlyArray<{ name: string; settings?: Record<string, unknown> | null }>,
+): Array<{ chave: string; rotulo: string }> {
+  const porChave = new Map<string, { label: string; funis: string[] }>();
+  for (const funil of funis) {
+    for (const campo of camposDeDataDoNegocio(funil.settings ?? null)) {
+      const visto = porChave.get(campo.key);
+      if (visto) visto.funis.push(funil.name);
+      else porChave.set(campo.key, { label: campo.label, funis: [funil.name] });
+    }
+  }
+  return [...porChave].map(([chave, { label, funis: nomes }]) => ({
+    chave,
+    rotulo: `${label} — ${nomes.join(", ")}`,
+  }));
 }
 
 export function PlanosDeTarefa() {
@@ -174,7 +200,7 @@ export function PlanosDeTarefa() {
       const passo = rascunho.passos[prazoTorto];
       setErro(
         passo && prazoNaTela(passo).modo === "campo_de_data"
-          ? t("O passo {p} precisa da chave do campo de data do card.").replace(
+          ? t("Escolha o campo de data do passo {p}.").replace(
               "{p}",
               String(prazoTorto + 1),
             )
@@ -186,7 +212,18 @@ export function PlanosDeTarefa() {
       ...rascunho,
       nome,
       descricao: rascunho.descricao?.trim() ? rascunho.descricao.trim() : null,
-      passos: rascunho.passos.map((p, i) => ({ ...p, ordem: i + 1 })),
+      // O GET devolve `vence_em_dias` junto do `prazo`, e editar só mexe no
+      // `prazo`: regravar o número velho deixaria no settings dois prazos que
+      // discordam. Ele sai do `prazo` — e some no modo de campo de data.
+      passos: rascunho.passos.map((p, i) => {
+        const prazo = prazoNaTela(p);
+        return {
+          ...p,
+          ordem: i + 1,
+          prazo,
+          vence_em_dias: prazo.modo === "dias_a_partir_de_hoje" ? prazo.dias : undefined,
+        };
+      }),
     };
     const outraVez = planos.some((p) => p.id === pronto.id);
     salvar.mutate(outraVez ? planos.map((p) => (p.id === pronto.id ? pronto : p)) : [...planos, pronto]);
@@ -332,6 +369,8 @@ function Editor({
   // formato antigo (`vence_em_dias`, sem `prazo`), e o seletor precisa abrir no
   // modo de sempre em vez de estourar.
   const passos = plano.passos.map((p) => ({ ...p, prazo: prazoNaTela(p) }));
+  const { data: funisRes, isLoading: carregandoFunis } = usePipelines();
+  const camposDeData = camposDeDataDosFunis(funisRes?.data ?? []);
 
   function mudarPasso(indice: number, campo: Partial<PassoDePlano>) {
     onChange({
@@ -433,22 +472,47 @@ function Editor({
 
               {passo.prazo.modo === "campo_de_data" ? (
                 <div className="space-y-1">
-                  <Label htmlFor={`passo-campo-${indice}`}>{t("Campo de data (chave)")}</Label>
-                  <Input
-                    id={`passo-campo-${indice}`}
+                  <Label htmlFor={`passo-campo-${indice}`}>{t("Campo de data")}</Label>
+                  {/*
+                    Lista, não chave digitada: quem monta o plano não sabe a
+                    chave interna do campo, e uma letra trocada virava tarefa sem
+                    prazo, em silêncio. Os campos são os de DATA do NEGÓCIO de
+                    todos os funis — o plano vale para qualquer card —, como no
+                    editor da ação "Gravar a data do atendimento num campo do negócio".
+                  */}
+                  <Select
                     value={passo.prazo.campo}
-                    onChange={(e) =>
+                    onValueChange={(v) =>
                       mudarPasso(indice, {
-                        prazo: { modo: "campo_de_data", campo: e.target.value, dias: passo.prazo.dias },
+                        prazo: { modo: "campo_de_data", campo: v, dias: passo.prazo.dias },
                       })
                     }
-                    placeholder="data_da_viagem"
-                    maxLength={LIMITES_DO_PLANO.campoDeData}
-                    aria-describedby={`passo-campo-ajuda-${indice}`}
-                  />
-                  <p id={`passo-campo-ajuda-${indice}`} className="text-xs text-muted-foreground">
-                    {t("A chave do campo de DATA do negócio, como está no funil.")}
-                  </p>
+                    disabled={carregandoFunis}
+                  >
+                    <SelectTrigger id={`passo-campo-${indice}`}>
+                      <SelectValue placeholder={t("Escolha o campo")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {camposDeData.map((campo) => (
+                        <SelectItem key={campo.chave} value={campo.chave}>
+                          {campo.rotulo}
+                        </SelectItem>
+                      ))}
+                      {/* Plano gravado pela API com uma chave que nenhum funil declara:
+                          mostrada como é, para a pessoa ver e trocar — sumir com
+                          ela deixaria o seletor vazio sem dizer por quê. */}
+                      {passo.prazo.campo && !camposDeData.some((c) => c.chave === passo.prazo.campo) ? (
+                        <SelectItem value={passo.prazo.campo}>
+                          {t("«{c}» (não está em nenhum funil)").replace("{c}", passo.prazo.campo)}
+                        </SelectItem>
+                      ) : null}
+                    </SelectContent>
+                  </Select>
+                  {!carregandoFunis && camposDeData.length === 0 ? (
+                    <p role="alert" className="text-xs text-destructive">
+                      {t("Nenhum funil tem campo de data do negócio. Crie um nas configurações do funil.")}
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
 

@@ -19028,17 +19028,15 @@ export const DICIONARIO: Traducoes = {
   "O prazo conta de": { es: "El plazo cuenta desde" },
   "Do dia em que o plano é aplicado": { es: "Del día en que se aplica el plan" },
   "De um campo de data do card": { es: "De un campo de fecha de la ficha" },
-  "Campo de data (chave)": { es: "Campo de fecha (clave)" },
-  "A chave do campo de DATA do negócio, como está no funil.": {
-    es: "La clave del campo de FECHA del negocio, tal como está en el embudo.",
+  "«{c}» (não está em nenhum funil)": { es: "«{c}» (no está en ningún embudo)" },
+  "Nenhum funil tem campo de data do negócio. Crie um nas configurações do funil.": {
+    es: "Ningún embudo tiene campo de fecha del negocio. Crea uno en la configuración del embudo.",
   },
   "Dias antes (-) ou depois (+)": { es: "Días antes (-) o después (+)" },
   "Vence no dia do campo «{c}»": { es: "Vence el día del campo «{c}»" },
   "{n} dia(s) antes do campo «{c}»": { es: "{n} día(s) antes del campo «{c}»" },
   "{n} dia(s) depois do campo «{c}»": { es: "{n} día(s) después del campo «{c}»" },
-  "O passo {p} precisa da chave do campo de data do card.": {
-    es: "El paso {p} necesita la clave del campo de fecha de la ficha.",
-  },
+  "Escolha o campo de data do passo {p}.": { es: "Elige el campo de fecha del paso {p}." },
   "O prazo do passo {p} pode ir de -365 a 365 dias.": {
     es: "El plazo del paso {p} puede ir de -365 a 365 días.",
   },
