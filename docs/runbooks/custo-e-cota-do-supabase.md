@@ -242,6 +242,12 @@ crons HTTP do app, e cada um deles fala com o PostgREST; numa instalação parad
 isso costuma ser a maior parte do que sobra. Se o seu número não fechar depois de
 ajustar os intervalos, meça o `app` separadamente antes de mexer em mais nada.
 
+**Atenção ao backup (`backup.sh`) no plano Free:** o `pg_dump` lê as tabelas
+inteiras pela conexão do pooler. Num banco de ~150 MB, um dump diário consome
+~4,5 GB/mês só de egress — quase toda a franquia de 5 GB/mês do Supabase Free
+(#2235). Se você está no plano gratuito com banco volumoso, prefira rodar o
+backup semanalmente (ex.: `0 3 * * 0`) ou antes de manutenções/atualizações.
+
 ## 4. Espaço em disco é outra cota (e ela não se resolve com intervalo)
 
 O plano free também limita o **banco** (500 MB), e `job_queue`, `api_audit_log`

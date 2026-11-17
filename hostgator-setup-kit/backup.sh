@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Backup: dump do banco (Supabase) + snapshot das sessões do WhatsApp.
-# Supabase free NÃO tem backup automático — rode isto num cron diário.
-#
+# Supabase free NÃO tem backup automático. Num banco com volume (>100 MB), o pg_dump
+# diário consome ~3 a 4,5 GB/mês de egress da cota gratuita de 5 GB (#2235).
+# Para o plano free, considere cadência semanal (ex.: domingos):
+#   crontab -e →  0 3 * * 0  cd /caminho/deskcommcrm && bash hostgator-setup-kit/backup.sh
+# Para planos pagos ou Supabase local (sem restrição de egress):
 #   crontab -e →  0 3 * * *  cd /caminho/deskcommcrm && bash hostgator-setup-kit/backup.sh
 source "$(dirname "$0")/_common.sh"
 enter_project
