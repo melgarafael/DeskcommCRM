@@ -1,6 +1,6 @@
 -- manifest: cria organization_modules — o módulo opcional POR EMPRESA (linha ausente = herda a instalação, que segue sendo o teto); PK (organization_id, modulo), só service_role, sem policy.
 --
--- 9217 — O INTERRUPTOR DE MÓDULO PASSA A CABER POR EMPRESA (#3868).
+-- 9416 — O INTERRUPTOR DE MÓDULO PASSA A CABER POR EMPRESA (#3868).
 --
 -- ── O defeito ────────────────────────────────────────────────────────────────
 --
@@ -71,7 +71,7 @@ create table if not exists public.organization_modules (
 );
 
 comment on table public.organization_modules is
-  'Exceção de módulo opcional POR ORGANIZAÇÃO (migration 9217, issue #3868). Linha ausente = herda a instalação (platform_config, 0341). Instalação desligada vence a linha `ligado`: o servidor é teto. Só módulos por FLAG — honorarios/financeiro (módulos de tabela, ADR-0002) não valem aqui. Lida por lib/instalacao/modulos.ts e escrita por app/actions/settings/updateModuloDaEmpresa.ts; service_role apenas, sem policy.';
+  'Exceção de módulo opcional POR ORGANIZAÇÃO (migration 9416, issue #3868). Linha ausente = herda a instalação (platform_config, 0341). Instalação desligada vence a linha `ligado`: o servidor é teto. Só módulos por FLAG — honorarios/financeiro (módulos de tabela, ADR-0002) não valem aqui. Lida por lib/instalacao/modulos.ts e escrita por app/actions/settings/updateModuloDaEmpresa.ts; service_role apenas, sem policy.';
 
 comment on column public.organization_modules.estado is
   'ligado = a empresa tem o módulo (desde que a instalação também tenha); desligado = a empresa não tem, mesmo com a instalação ligada. Nunca apaga dado: é só a decisão de leitura.';

@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { countAs, GOV_AGENT_A, sql, tableExists } from "./gov-helpers";
 
 /**
- * `organization_modules` — o módulo opcional POR EMPRESA (migration 9217, #3868).
+ * `organization_modules` — o módulo opcional POR EMPRESA (migration 9416, #3868).
  *
  * ─── Por que este arquivo existe ─────────────────────────────────────────────
  *
@@ -42,7 +42,7 @@ beforeAll(() => {
   `);
 });
 
-describe("migration 9217 — a forma da tabela", () => {
+describe("migration 9416 — a forma da tabela", () => {
   it("existe, com organization_id, modulo, estado, updated_at e updated_by", () => {
     expect(tableExists("organization_modules")).toBe(true);
     for (const coluna of ["organization_id", "modulo", "estado", "updated_at", "updated_by"]) {

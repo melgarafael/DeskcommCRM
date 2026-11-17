@@ -86724,8 +86724,8 @@ begin
 end
 $fichas_absorvidas$;
 
--- ---- o módulo opcional POR EMPRESA (migration 9217, #3868) ----
--- Espelho da 9217. Não cria função, então pode ficar depois da VARREDURA anon —
+-- ---- o módulo opcional POR EMPRESA (migration 9416, #3868) ----
+-- Espelho da 9416. Não cria função, então pode ficar depois da VARREDURA anon —
 -- e é o que o `tests/invariants/baseline-e-cadeia-chegam-ao-mesmo-schema.test.ts`
 -- cobra: instalação nova e atualização precisam nascer com a MESMA tabela, o
 -- mesmo comentário e a mesma ACL. Linha ausente = herda a instalação; a
@@ -86744,7 +86744,7 @@ create table if not exists public.organization_modules (
 );
 
 comment on table public.organization_modules is
-  'Exceção de módulo opcional POR ORGANIZAÇÃO (migration 9217, issue #3868). Linha ausente = herda a instalação (platform_config, 0341). Instalação desligada vence a linha `ligado`: o servidor é teto. Só módulos por FLAG — honorarios/financeiro (módulos de tabela, ADR-0002) não valem aqui. Lida por lib/instalacao/modulos.ts e escrita por app/actions/settings/updateModuloDaEmpresa.ts; service_role apenas, sem policy.';
+  'Exceção de módulo opcional POR ORGANIZAÇÃO (migration 9416, issue #3868). Linha ausente = herda a instalação (platform_config, 0341). Instalação desligada vence a linha `ligado`: o servidor é teto. Só módulos por FLAG — honorarios/financeiro (módulos de tabela, ADR-0002) não valem aqui. Lida por lib/instalacao/modulos.ts e escrita por app/actions/settings/updateModuloDaEmpresa.ts; service_role apenas, sem policy.';
 
 comment on column public.organization_modules.estado is
   'ligado = a empresa tem o módulo (desde que a instalação também tenha); desligado = a empresa não tem, mesmo com a instalação ligada. Nunca apaga dado: é só a decisão de leitura.';

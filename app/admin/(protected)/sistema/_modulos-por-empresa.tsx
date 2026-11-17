@@ -107,7 +107,7 @@ export function FormularioDeModulosPorEmpresa({
         <CardTitle>{t("Módulos por empresa")}</CardTitle>
         <CardDescription>
           {t(
-            "Aqui você dá um módulo a uma empresa sem ligá-lo para as outras. Quem ficar em “Herdar” continua com o que a instalação decidiu — e desligar não apaga nada: o que a empresa já tem volta ao religar.",
+            "Aqui você abre a exceção de UMA empresa sobre o que está ligado acima. Quem ficar em “Herdar” segue a instalação — e desligar não apaga nada: o que a empresa já tem volta ao religar.",
           )}
         </CardDescription>
       </CardHeader>
@@ -180,7 +180,7 @@ export function FormularioDeModulosPorEmpresa({
                         : estado === "herda"
                           ? t("Herdando a instalação: é o que vale hoje para esta empresa.")
                           : estado === "ligado"
-                            ? t("Ligado só para esta empresa.")
+                            ? t("Ligado — igual a herdar: a empresa tem o módulo porque a instalação o tem. Não muda nada para as outras empresas.")
                             : t("Desligado para esta empresa. Nenhum dado foi apagado.")}
                     </p>
                   </div>
@@ -207,6 +207,12 @@ export function FormularioDeModulosPorEmpresa({
             })}
           </ul>
         )}
+
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Desligar aqui esconde a porta do módulo no menu desta empresa. A recusa nas rotas, no agente e nos trabalhos de fundo chega módulo a módulo; até lá, um módulo desligado pode continuar sendo usado por rotina interna.",
+          )}
+        </p>
 
         <p className="text-xs text-muted-foreground">
           {t(

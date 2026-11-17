@@ -111,7 +111,7 @@ const PROVA_PROPRIA: readonly Excecao[] = [
   {
     tabela: "organization_modules",
     razao:
-      "tests/invariants/modulos-por-empresa.test.ts (migration 9217, #3868) — tabela exclusiva do servidor: RLS ligada e NENHUMA policy, anon e authenticated sem privilégio (o JWT de um membro da própria organização recebe permission denied), service_role com os quatro verbos; PK (organization_id, modulo), CHECKs de estado e formato; e a prova de que desligar um módulo não apaga o dado do módulo (setores da empresa intactos ao desligar e ao religar).",
+      "tests/invariants/modulos-por-empresa.test.ts (migration 9416, #3868) — tabela exclusiva do servidor: RLS ligada e NENHUMA policy, anon e authenticated sem privilégio (o JWT de um membro da própria organização recebe permission denied), service_role com os quatro verbos; PK (organization_id, modulo), CHECKs de estado e formato; e a prova de que desligar um módulo não apaga o dado do módulo (setores da empresa intactos ao desligar e ao religar).",
   },
   { tabela: "extension_operations", razao: "tests/invariants/extensoes-declarativas.test.ts — recibo de instância fechado a anon/authenticated, inclusive configure com organização; RPCs service-only revalidam ator e papel" },
   { tabela: "channel_routing_policies", razao: "tests/invariants/channel-routing.test.ts — dois tenants reais, leitura positiva local e negativa cruzada por JWT; FK composta rejeita canal de outra org" },

@@ -620,7 +620,7 @@ export const AUDIT_ACTIONS = [
   // resposta aqui.
   "platform.modulo_updated",
   // Um módulo opcional dado ou NEGADO a UMA empresa (linha em
-  // `organization_modules`, migration 9217, issue #3868). A linha guarda o estado;
+  // `organization_modules`, migration 9416, issue #3868). A linha guarda o estado;
   // a pergunta "desde quando este cliente tem cobrança/banco externo?" — e,
   // principalmente, "quem tirou o módulo dele?" — só tem resposta aqui.
   "organization.modulo_updated",

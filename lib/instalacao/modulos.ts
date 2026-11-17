@@ -39,7 +39,7 @@
  *
  * O interruptor nasceu da instalação e valia para todas as empresas hospedadas.
  * Quem revende não tinha como dar `propostas` a um cliente e negar a outro. Agora
- * `organization_modules` (migration 9217) guarda a EXCEÇÃO de uma empresa, e
+ * `organization_modules` (migration 9416) guarda a EXCEÇÃO de uma empresa, e
  * `modulosLigados(db, organizacaoId)` aplica: linha da empresa vence, ausência
  * herda a instalação, e instalação desligada vence tudo (o servidor é teto).
  * Quem não configura nada — e quem chama sem `organizacaoId` — vê exatamente o
@@ -135,7 +135,7 @@ export const MODULOS_OPCIONAIS_POR_FLAG = [
 /**
  * Os módulos por FLAG que a camada POR EMPRESA governa (#3868). O interruptor da
  * instalação continua existindo e continua sendo o TETO; o que muda é que cada
- * empresa pode ter a EXCEÇÃO dela (`organization_modules`, migration 9217).
+ * empresa pode ter a EXCEÇÃO dela (`organization_modules`, migration 9416).
  *
  * De fora, e por motivos diferentes:
  *
@@ -321,7 +321,7 @@ async function modulosDesligadosNaEmpresa(
     for (const modulo of MODULOS_POR_EMPRESA) {
       const linha = linhas.find((l) => l.modulo === modulo);
       // Só `ligado` liga — a mesma régua da `platform_config` (0341). A CHECK da
-      // migration 9217 recusa o resto; valor estranho que entre por SQL manual não liga.
+      // migration 9416 recusa o resto; valor estranho que entre por SQL manual não liga.
       if (linha !== undefined && linha.estado !== LIGADO) desligados.add(modulo);
     }
     return { ok: true, desligados };

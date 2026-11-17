@@ -19265,11 +19265,8 @@ export const DICIONARIO: Traducoes = {
   // Recursos opcionais › Módulos por empresa (issue #3868): a exceção de UMA empresa
   // sobre o interruptor da instalação. Três estados, e "herda" é o de hoje.
   "Módulos por empresa": { es: "Módulos por empresa" },
-  "Cada empresa pode ter a exceção dela em “Módulos por empresa”; quem nunca configurar segue o que está aqui.": {
-    es: "Cada empresa puede tener su excepción en «Módulos por empresa»; quien nunca configure sigue lo que está aquí.",
-  },
-  "Aqui você dá um módulo a uma empresa sem ligá-lo para as outras. Quem ficar em “Herdar” continua com o que a instalação decidiu — e desligar não apaga nada: o que a empresa já tem volta ao religar.": {
-    es: "Aquí le das un módulo a una empresa sin activarlo para las demás. Quien quede en «Heredar» sigue con lo que decidió la instalación — y desactivar no borra nada: lo que la empresa ya tiene vuelve al reactivar.",
+  "Aqui você abre a exceção de UMA empresa sobre o que está ligado acima. Quem ficar em “Herdar” segue a instalação — e desligar não apaga nada: o que a empresa já tem volta ao religar.": {
+    es: "Aquí abres la excepción de UNA empresa sobre lo que está activado arriba. Quien quede en «Heredar» sigue la instalación — y desactivar no borra nada: lo que la empresa ya tiene vuelve al reactivar.",
   },
   "O módulo ligado acima continua valendo para todas; aqui você abre exceções.": {
     es: "El módulo activado arriba sigue valiendo para todas; aquí abres excepciones.",
@@ -19284,11 +19281,16 @@ export const DICIONARIO: Traducoes = {
   "Herdando a instalação: é o que vale hoje para esta empresa.": {
     es: "Heredando la instalación: es lo que vale hoy para esta empresa.",
   },
-  "Ligado só para esta empresa.": { es: "Activado solo para esta empresa." },
+  "Ligado — igual a herdar: a empresa tem o módulo porque a instalação o tem. Não muda nada para as outras empresas.": {
+    es: "Activado — igual que heredar: la empresa tiene el módulo porque la instalación lo tiene. No cambia nada para las demás empresas.",
+  },
   "Desligado para esta empresa. Nenhum dado foi apagado.": {
     es: "Desactivado para esta empresa. No se borró ningún dato.",
   },
   "Herdar da instalação": { es: "Heredar de la instalación" },
+  "Desligar aqui esconde a porta do módulo no menu desta empresa. A recusa nas rotas, no agente e nos trabalhos de fundo chega módulo a módulo; até lá, um módulo desligado pode continuar sendo usado por rotina interna.": {
+    es: "Desactivar aquí oculta la entrada del módulo en el menú de esta empresa. La negativa en las rutas, en el agente y en los trabajos de fondo llega módulo a módulo; hasta entonces, un módulo desactivado puede seguir siendo usado por una rutina interna.",
+  },
   "Cobrança dos seus clientes, login do Codex, Honorários e Financeiro não entram aqui: os dois primeiros são decisão só desta instalação, e os dois últimos são módulos de tabela, com tela própria.": {
     es: "Cobranza de tus clientes, inicio de sesión de Codex, Honorarios y Finanzas no entran aquí: los dos primeros son decisión solo de esta instalación, y los dos últimos son módulos de tabla, con pantalla propia.",
   },
@@ -19339,7 +19341,7 @@ export const DICIONARIO: Traducoes = {
   "Da sua empresa": { es: "De tu empresa" },
   "Em cada agente": { es: "En cada agente" },
   "Estes se ligam em cada agente, em Agente de IA › Agentes.": { es: "Estos se activan en cada agente, en Agente de IA › Agentes." },
-  "Tudo o que se liga e desliga nesta instalação, num lugar só. Vale para todas as empresas hospedadas aqui.": { es: "Todo lo que se activa y desactiva en esta instalación, en un solo lugar. Vale para todas las empresas alojadas aquí." },
+  "Tudo o que se liga e desliga nesta instalação, num lugar só. Vale para todas as empresas hospedadas aqui, e o que cada empresa usa pode ser ajustado abaixo.": { es: "Todo lo que se activa y desactiva en esta instalación, en un solo lugar. Vale para todas las empresas alojadas aquí, y lo que cada empresa usa se puede ajustar abajo." },
   "Depende do servidor": { es: "Depende del servidor" },
   "Só leitura. Estes dependem de credencial ou do arquivo de ambiente do servidor. Nenhum valor de segredo aparece aqui.": { es: "Solo lectura. Estos dependen de credenciales o del archivo de entorno del servidor. Ningún valor secreto aparece aquí." },
   "Configurado": { es: "Configurado" },

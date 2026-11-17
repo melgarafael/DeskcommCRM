@@ -152,13 +152,7 @@ export default async function Page({
         <h1 className="text-2xl font-semibold tracking-tight">{traduzir("Recursos opcionais", idioma)}</h1>
         <p className="text-sm text-muted-foreground">
           {traduzir(
-            "Tudo o que se liga e desliga nesta instalação, num lugar só. Vale para todas as empresas hospedadas aqui.",
-            idioma,
-          )}
-        </p>
-        <p className="text-sm text-muted-foreground">
-          {traduzir(
-            "Cada empresa pode ter a exceção dela em “Módulos por empresa”; quem nunca configurar segue o que está aqui.",
+            "Tudo o que se liga e desliga nesta instalação, num lugar só. Vale para todas as empresas hospedadas aqui, e o que cada empresa usa pode ser ajustado abaixo.",
             idioma,
           )}
         </p>
