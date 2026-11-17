@@ -31,6 +31,7 @@ import {
   vetoDoContatoAntesDaVaga,
 } from "./guard";
 import { instrucaoDeAbordagemFria, montarDadosDeAbordagem, estrategiaDoCandidato } from "./estrategia-site";
+import { temContextoDaEquipe } from "./contexto-da-equipe";
 import {
   INTERVALO_MINIMO_ENTRE_TENTATIVAS_MIN,
   LIMITE_TENTATIVAS,
@@ -393,6 +394,16 @@ export async function sendNextCandidate(
     // venda — nem estratégia (na instrução) nem Auditoria/Detalhe/Rascunho (nos
     // dados), que o prompt frio deixa citar "como o motivo do contato".
     const soCumprimenta = cfg.exit_offer !== "first_message";
+    // Fonte única em `montarDadosDeAbordagem` (prévia da tela bebe da mesma).
+    const dados = soCumprimenta
+      ? montarDadosDeAbordagem(p.data, null, null, { soCumprimenta })
+      : montarDadosDeAbordagem(
+          p.data,
+          site,
+          previaDoAgente(p.data, cfg.agent_id, cfg.briefing_editado_em),
+        );
+    // Medido nos dados JÁ filtrados pelo modo; o mesmo valor vai à instrução e ao modo.
+    const comContextoDaEquipe = temContextoDaEquipe(dados);
     const generated = await gerarAbordagemDeFormulario(pool, llmEdgeConfigFromEnv(env), {
       tenantId: c.organization_id,
       agentId: cfg.agent_id,
@@ -403,19 +414,14 @@ export async function sendNextCandidate(
         blocoVozVendedor(personalizacao) || undefined,
         estrategia,
         soCumprimenta,
+        comContextoDaEquipe,
       ),
       origem: "Pesquisa de empresas",
       // NÃO é `automacao`: a pessoa não entrou em funil nenhum. O prompt do
       // ramo frio é o único que proíbe afirmar preenchimento — ver blocoDeModo.
       origemDaAbordagem: "prospeccao_fria",
-      // Fonte única em `montarDadosDeAbordagem` (prévia da tela bebe da mesma).
-      dados: soCumprimenta
-        ? montarDadosDeAbordagem(p.data, null, null)
-        : montarDadosDeAbordagem(
-            p.data,
-            site,
-            previaDoAgente(p.data, cfg.agent_id, cfg.briefing_editado_em),
-          ),
+      dados,
+      comContextoDaEquipe,
     });
     if (!generated.ok)
       // DO CANDIDATO: o modelo não produziu texto para ESTES dados.

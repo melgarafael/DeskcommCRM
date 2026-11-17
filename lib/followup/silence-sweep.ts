@@ -569,6 +569,8 @@ type ContactEmbed =
       is_blocked: boolean | null;
       ai_authorized_at: string | null;
       phone_number: string | null;
+      /** O testador de Instagram/Facebook do pré-go-live casa por aqui. */
+      social_identity?: string | null;
       force_human: boolean | null;
       /** A marca permanente "sempre atendimento humano" (issue 2379). */
       ai_opt_out: boolean | null;
@@ -590,8 +592,15 @@ type LinhaDaConversa = {
   last_outbound_at?: string | null;
   contacts: ContactEmbed;
   sessao: { metadata: Record<string, unknown> | null } | null;
-  organizations: { status: string | null; settings?: unknown } | null;
 };
+
+/**
+ * Os campos da ORGANIZAÇÃO que a decisão de silêncio consome (#4311, resíduo):
+ * `status` pela régua de org operante e `settings` pelas listas de tags
+ * interna/da equipe. Lidos UMA vez por organização por varredura — antes vinham
+ * embutidos em cada linha de conversa.
+ */
+type FatosDaOrganizacao = { status: string | null; settings: unknown };
 
 /** Estados em que a inscrição ACABOU — os que contam para a pausa de reentrada. */
 const STATUS_ENCERRADOS = ["completed", "cancelled", "dead"] as const;
@@ -614,9 +623,8 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
   const canalDoContato = new Map<string, string>();
   // #4311 — as conversas da organização, UMA leitura por VARREDURA.
   //
-  // Esta é a consulta mais pesada do tick (embeds de `messages`, `contacts`,
-  // `sessao` e `organizations(settings)` — o `settings` da org vem repetido em
-  // CADA linha) e ela NÃO depende do ponteiro: só de `orgId`. O corte de
+  // Esta é a consulta mais pesada do tick (embeds de `messages`, `contacts` e
+  // `sessao`) e ela NÃO depende do ponteiro: só de `orgId`. O corte de
   // silêncio, o teto e os segmentos são aplicados em memória, logo abaixo.
   // Antes, cada um dos ponteiros da mesma org repetia a leitura inteira: 29
   // ponteiros × ~110 conversas, um tick por minuto → ~1.700 requisições/hora,
@@ -635,25 +643,54 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
   // continua contando `pointers_failed` por ponteiro.
   let varreduraDaLeituraAberta = false;
   let conversasPorOrg = new Map<string, Promise<LinhaDaConversa[]>>();
-  const carregarConversas = (orgId: string): Promise<LinhaDaConversa[]> => {
-    if (!varreduraDaLeituraAberta) return consultarConversasDoSilencio(admin, orgId);
-    const emCache = conversasPorOrg.get(orgId);
+  // #4311 (resíduo) — os fatos da ORGANIZAÇÃO e o grafo da versão, uma leitura
+  // por chave por VARREDURA.
+  //
+  // Os dois ficavam fora do cache acima: `organizations(status, settings)` vinha
+  // EMBUTIDO em cada linha de conversa (~7,7 KB × ~110 conversas ≈ 850 KB por
+  // resposta, o mesmo objeto repetido 110 vezes) e o grafo era relido uma vez por
+  // ponteiro (29 ponteiros da mesma versão = 29 leituras do mesmo grafo).
+  //
+  // Mesmo contrato de janela do cache de conversas: nada de cache global — o
+  // processo atende várias organizações e um retrato que atravessasse ticks
+  // serviria `settings` de um tick para o outro.
+  let organizacaoPorId = new Map<string, Promise<FatosDaOrganizacao>>();
+  let gatilhoPorVersao = new Map<string, Promise<NoDeGatilho | null>>();
+
+  const memoizar = <T>(
+    mapa: Map<string, Promise<T>>,
+    chave: string,
+    ler: () => Promise<T>,
+  ): Promise<T> => {
+    if (!varreduraDaLeituraAberta) return ler();
+    const emCache = mapa.get(chave);
     if (emCache) return emCache;
-    const leitura = consultarConversasDoSilencio(admin, orgId);
-    conversasPorOrg.set(orgId, leitura);
+    const leitura = ler();
+    mapa.set(chave, leitura);
     void leitura.catch(() => {
-      if (conversasPorOrg.get(orgId) === leitura) conversasPorOrg.delete(orgId);
+      if (mapa.get(chave) === leitura) mapa.delete(chave);
     });
     return leitura;
   };
+
+  const carregarConversas = (orgId: string): Promise<LinhaDaConversa[]> =>
+    memoizar(conversasPorOrg, orgId, () => consultarConversasDoSilencio(admin, orgId));
+  const carregarOrganizacao = (orgId: string): Promise<FatosDaOrganizacao> =>
+    memoizar(organizacaoPorId, orgId, () => consultarFatosDaOrganizacao(admin, orgId));
+  const carregarGatilho = (orgId: string, versionId: string): Promise<NoDeGatilho | null> =>
+    memoizar(gatilhoPorVersao, `${orgId}:${versionId}`, () => consultarGatilhoDaVersao(admin, orgId, versionId));
   return {
     iniciarVarreduraDaLeitura() {
       varreduraDaLeituraAberta = true;
       conversasPorOrg = new Map();
+      organizacaoPorId = new Map();
+      gatilhoPorVersao = new Map();
     },
     encerrarVarreduraDaLeitura() {
       varreduraDaLeituraAberta = false;
       conversasPorOrg = new Map();
+      organizacaoPorId = new Map();
+      gatilhoPorVersao = new Map();
     },
     async loadActiveSilencePointers() {
       const { data, error } = await admin
@@ -713,6 +750,11 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
       // #4311: a leitura em si mora em `consultarConversasDoSilencio` e sai UMA
       // vez por organização por varredura; aqui só ficam os cortes por ponteiro.
       const data = await carregarConversas(orgId);
+      // #4311 (resíduo): `status`/`settings` da organização saem da leitura
+      // única da org, não do embed por linha. `null` aqui reproduz exatamente o
+      // que o embed nulo reproduzia (org inexistente → `orgStatus: null` →
+      // `ehOperante(null)` = falso, falha fechada).
+      const organizacao = data.length > 0 ? await carregarOrganizacao(orgId) : null;
       const cutoff = new Date(cutoffIso).getTime();
       const desde = desdeIso ? new Date(desdeIso).getTime() : null;
       const agora = new Date();
@@ -746,12 +788,14 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
           const metadata = row.sessao?.metadata ?? {};
           const acesso = decidirElegibilidade(
             montarEstadoDeElegibilidade({
-              orgStatus: row.organizations?.status ?? null,
+              orgStatus: organizacao?.status ?? null,
               canalDesativado: metadata.disabled,
               aiGate: metadata.ai_gate,
               aiGateMode: metadata.ai_gate_mode,
               aiTestPhoneNumbers: metadata.ai_test_phone_numbers,
               contactPhoneNumber: row.contacts?.phone_number ?? null,
+              aiTestSocialIdentities: metadata.ai_test_social_identities,
+              contactSocialIdentity: row.contacts?.social_identity ?? null,
               forceHuman: false,
               // A marca PERMANENTE (issue 2379) entra na MESMA decisão: este sweep
               // retoma follow-up de contato em silêncio, e retomar um contato que
@@ -765,7 +809,7 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
               botSilencedUntil: null,
               aiAuthorizedAt: row.contacts?.ai_authorized_at ?? null,
               contactTags: row.contacts?.tags ?? null,
-              orgSettings: row.organizations?.settings,
+              orgSettings: organizacao?.settings,
               agora,
               ttlMs,
             }),
@@ -919,16 +963,12 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
       return contatosQueORetornoSegura(admin, orgId, folgaMs);
     },
 
-    async loadTriggerNode(orgId, versionId) {
-      const { data, error } = await admin
-        .from("followup_flow_versions")
-        .select("graph")
-        .eq("organization_id", orgId)
-        .eq("id", versionId)
-        .maybeSingle();
-      if (error) throw new Error(error.message);
-      if (!data) return null;
-      return noDeGatilhoDoGrafo(flowGraphSchema.parse(data.graph));
+    // #4311 (resíduo): o grafo é o MESMO para todo ponteiro que aponta para a
+    // mesma versão. Dentro da varredura, lê-se uma vez por (org, versão); fora
+    // dela, cada chamada lê o banco de agora — o mesmo contrato de
+    // `carregarConversas`.
+    loadTriggerNode(orgId, versionId) {
+      return carregarGatilho(orgId, versionId);
     },
 
     async loadContactIdsEmCooldown(orgId, pointerId, contactIds, cutoffIso) {
@@ -976,6 +1016,11 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
  * (`desdeIso`) e os `segments` são aplicados em memória por ponteiro, logo
  * depois — por isso a leitura pode ser compartilhada entre ponteiros da mesma
  * org sem mudar o conjunto de conversas considerado.
+ *
+ * #4311 (resíduo): o embed de `organizations` (`status` + `settings`) saiu
+ * daqui. Ele repetia o mesmo objeto de ~7,7 KB em CADA linha da resposta; os
+ * dois campos que a decisão consome vêm de `consultarFatosDaOrganizacao`, uma
+ * leitura por organização por varredura.
  */
 async function consultarConversasDoSilencio(
   admin: SupabaseClient,
@@ -984,7 +1029,7 @@ async function consultarConversasDoSilencio(
   const { data, error } = await admin
     .from("conversations")
     .select(
-      "id, service_revision, current_demanda_id, demandas!conversations_current_demanda_id_fkey(revision,fechada_em), status, assignee_kind, bot_silenced_until, last_outbound_at, messages!messages_conversation_id_fkey(organization_id,contact_id,conversation_id,service_revision,demanda_id,demanda_revision,sent_at), contact_id, last_inbound_at, channel_session_id, contacts:contact_id(tags, is_blocked, ai_authorized_at, phone_number, force_human, ai_opt_out), sessao:channel_session_id(metadata), organizations:organization_id(status, settings)",
+      "id, service_revision, current_demanda_id, demandas!conversations_current_demanda_id_fkey(revision,fechada_em), status, assignee_kind, bot_silenced_until, last_outbound_at, messages!messages_conversation_id_fkey(organization_id,contact_id,conversation_id,service_revision,demanda_id,demanda_revision,sent_at), contact_id, last_inbound_at, channel_session_id, contacts:contact_id(tags, is_blocked, ai_authorized_at, phone_number, social_identity, force_human, ai_opt_out), sessao:channel_session_id(metadata)",
     )
     .eq("organization_id", orgId).eq("demandas.organization_id", orgId)
     .eq("contacts.organization_id", orgId).eq("sessao.organization_id", orgId)
@@ -996,4 +1041,45 @@ async function consultarConversasDoSilencio(
     .not("status", "in", `(${CONVERSATION_TERMINAL_STATUSES.join(",")})`);
   if (error) throw new Error(error.message);
   return (data ?? []) as unknown as LinhaDaConversa[];
+}
+
+/**
+ * Os fatos da organização que a decisão de silêncio consome — `status` (régua de
+ * org operante) e `settings` (tags interna/da equipe). #4311 (resíduo): uma
+ * leitura por organização por varredura, no lugar do embed por linha.
+ *
+ * Org que não volta (`null`) dá `status: null`, exatamente como o embed nulo de
+ * antes: `ehOperante(null)` é falso, logo org ausente não atende — falha
+ * fechada. Erro de leitura LANÇA: calar o erro aqui inscreveria contato de uma
+ * organização que não se sabe operante.
+ */
+async function consultarFatosDaOrganizacao(
+  admin: SupabaseClient,
+  orgId: string,
+): Promise<FatosDaOrganizacao> {
+  const { data, error } = await admin
+    .from("organizations")
+    .select("status, settings")
+    .eq("id", orgId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  const linha = data as { status?: string | null; settings?: unknown } | null;
+  return { status: linha?.status ?? null, settings: linha?.settings };
+}
+
+/** O nó `trigger` de uma versão publicada (#4311 resíduo: uma leitura por versão por varredura). */
+async function consultarGatilhoDaVersao(
+  admin: SupabaseClient,
+  orgId: string,
+  versionId: string,
+): Promise<NoDeGatilho | null> {
+  const { data, error } = await admin
+    .from("followup_flow_versions")
+    .select("graph")
+    .eq("organization_id", orgId)
+    .eq("id", versionId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  return noDeGatilhoDoGrafo(flowGraphSchema.parse((data as { graph: unknown }).graph));
 }

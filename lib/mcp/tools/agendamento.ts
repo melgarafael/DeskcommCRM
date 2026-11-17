@@ -35,6 +35,11 @@ import {
   cancelarAgendamentoHandler,
   marcarAgendamentoHandler,
 } from "@/app/api/v1/agenda/agendamentos/_handler";
+import { negociosDoCompromisso } from "@/lib/agenda/negocios-do-compromisso";
+import {
+  podeRegistrarComparecimento,
+  RECUSA_DO_COMPARECIMENTO,
+} from "@/lib/agenda/comparecimento";
 import { ApiError } from "@/lib/api/types";
 import { SITUACOES_DO_AGENDAMENTO } from "@/lib/agenda/tipos";
 import { contatoDoNegocio } from "@/lib/operacao/modelos-de-mensagem";
@@ -641,7 +646,7 @@ const ENSINO_POR_CODIGO: Record<string, string> = {
   agenda_ainda_nao_aconteceu:
     "esse compromisso ainda não começou, então não há desfecho a registrar. Se a pessoa avisou que " +
     "não vem, use `crm_cancel_appointment`; se ela quer outro dia, `crm_reschedule_appointment`.",
-  not_found: "não encontrei esse compromisso. Confirme com `crm_list_appointments` antes de tentar de novo.",
+  not_found: "não encontrei esse compromisso nesta empresa: ele não existe ou é de outra organização. Confirme com `crm_list_appointments` antes de tentar de novo.",
   internal_error: "não consegui completar agora. Avise que alguém da equipe confirma, e não repita a tentativa.",
 };
 
@@ -1251,27 +1256,64 @@ const desfechoShape = {
 export const crmSetAppointmentOutcome: McpToolDefinition<typeof desfechoShape> = {
   name: "crm_set_appointment_outcome",
   description:
-    "Propõe à equipe registrar comparecimento ou falta depois do início do compromisso. " +
-    "A presença exige confirmação humana na Agenda; texto interpretado pelo assistente não é autorização. " +
-    "Se a pessoa avisou que não vem, use crm_cancel_appointment para o cancelamento operacional.",
+    "Registra comparecimento ou falta depois do início do compromisso. Pela tela é humano; " +
+    "por token exige o escopo `agenda:attendance`. Devolve o negócio vinculado. " +
+    "Se a pessoa avisou que não vem, use crm_cancel_appointment.",
   inputSchema: desfechoShape,
   category: "write",
   requiresRole: "ai_operator",
   requiresScope: "mcp:write",
   handler: async (input, ctx) =>
     semDerrubarOTurno("registrado", async () => {
-      if (ctx.actor.type !== "user") return { registrado: false, requer_confirmacao_humana: true,
-        orientacao: "Peça à equipe para abrir o compromisso na Agenda e confirmar a presença.",
-        href: `/app/agenda?compromisso=${input.appointment_id}` };
+      /**
+       * #4515 — O DESFECHO POR TOKEN.
+       *
+       * A pessoa da equipe continua registrando pela Agenda, e o agente de IA
+       * continua PROPONDO: `requer_confirmacao_humana` é a resposta de sempre, e
+       * ela existe porque texto interpretado por modelo não é testemunho. O que
+       * muda é o token emitido com `agenda:attendance`: ele foi autorizado por
+       * quem emite token, e é o caminho da integração que já viu o atendimento
+       * acontecer.
+       *
+       * Sem o escopo, o token recebe recusa NOMEADA — nunca a de agente, que
+       * mandaria a pessoa clicar na tela sem dizer por quê.
+       */
+      if (!podeRegistrarComparecimento(ctx.actor, ctx.tokenScopes)) {
+        if (ctx.actor.type === "api_token") {
+          return { registrado: false, motivo: "escopo_ausente", mensagem: RECUSA_DO_COMPARECIMENTO };
+        }
+        return { registrado: false, requer_confirmacao_humana: true,
+          orientacao: "Peça à equipe para abrir o compromisso na Agenda e confirmar a presença.",
+          href: `/app/agenda?compromisso=${input.appointment_id}` };
+      }
       const r = await alterarAgendamentoHandler(
         ctx.supabase,
-        { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId, amigoAgentExecution: Boolean(ctx.contatoDoTurno), amigoAgentToolIds: ctx.amigoAgentToolIds },
+        {
+          organization_id: ctx.organizationId,
+          actor: ctx.actor,
+          requestId: ctx.requestId,
+          amigoAgentExecution: Boolean(ctx.contatoDoTurno),
+          amigoAgentToolIds: ctx.amigoAgentToolIds,
+          // O escopo é do TOKEN; sem ele o handler recusa. Passar aqui é o que
+          // faz a tool e a rota usarem a MESMA decisão (#4515).
+          escoposDoToken: ctx.tokenScopes,
+        },
         {
           id: input.appointment_id,
           status: input.outcome,
           ...(input.notes ? { notes: input.notes } : {}),
         },
       );
-      return { registrado: true, compromisso: compromissoComHorarioLocal(r) };
+      // O desfecho JÁ foi gravado. A leitura do vínculo é enriquecimento: se
+      // falhar, a resposta perde o card e não a marcação — desfazer não é opção.
+      let negocio: { id: string; titulo: string } | null = null;
+      try {
+        negocio =
+          (await negociosDoCompromisso(ctx.supabase, ctx.organizationId, input.appointment_id))[0] ??
+          null;
+      } catch {
+        negocio = null;
+      }
+      return { registrado: true, compromisso: compromissoComHorarioLocal(r), negocio };
     }),
 };

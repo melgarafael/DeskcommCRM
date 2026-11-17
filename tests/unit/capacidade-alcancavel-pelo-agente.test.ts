@@ -102,6 +102,11 @@ const ESCRITA_QUE_E_TRABALHO_DE_ATENDENTE: ReadonlyArray<string> = [
   // esse custo é limitado pelo índice único parcial da 0123: no máximo uma
   // proposta viva por contato e campo, ou seja três por contato.
   "crm_propose_contact_field",
+  // `app/api/v1/contacts/[id]/` — PATCH exige `agent`, e é por ele que a equipe
+  // edita a mesma aba Diagnóstico. O poder é MENOR que o do PATCH: só as chaves
+  // do diagnóstico (nunca as observações da equipe nem campo da organização),
+  // mescladas no banco, com o selo "Escrito pela IA" (decisão D7).
+  "crm_save_lead_diagnosis",
   // `app/api/v1/ai/cases/[id]/` — exige `agent`.
   "crm_close_human_case",
   // `app/api/v1/conversations/[id]/reactivate-bot/` — POST exige `agent`.

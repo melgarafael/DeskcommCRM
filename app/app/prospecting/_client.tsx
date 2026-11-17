@@ -35,6 +35,7 @@ import { normalizarTags } from "@/lib/contacts/tag-normalizada";
 import { ProspectingAgentBuilder, type CreatedProspectingAgent } from "./_create-agent";
 import { AuditoriaDoCandidato, type PreviaDaAbordagem } from "./_auditoria-site";
 import { BaixarLista } from "./_baixar-lista";
+import { ArquivoDaAbordagem } from "@/components/prospecting/ArquivoDaAbordagem";
 import type { ProspectingAgentSetupInput } from "@/lib/prospecting/agent-setup-schema";
 import { TETO_DIARIO_DE_MIDIA_POR_NUMERO } from "@/lib/prospecting/midia-da-abordagem";
 import type { PersonalizacaoProspeccao } from "@/lib/prospecting/personalizar";
@@ -594,8 +595,9 @@ export function ProspectingClient() {
   // com acento e em colunas.
   function baixarModelo() {
     const modelo =
-      "\uFEFFempresa;telefone;site;segmento;cidade;email;instagram\r\n" +
-      "Padaria Exemplo;(11) 90000-0000;https://www.example.com;padaria;São Paulo;contato@example.com;https://instagram.com/exemplo\r\n";
+      "\uFEFFempresa;telefone;site;segmento;cidade;email;instagram;diagnostico;oferta;contexto\r\n" +
+      "Padaria Exemplo;(11) 90000-0000;https://www.example.com;padaria;São Paulo;contato@example.com;https://instagram.com/exemplo;" +
+      "O site não mostra o cardápio nem o horário de funcionamento;Site com cardápio e pedidos pelo WhatsApp;Indicação da Ana, nossa cliente, que compra na padaria\r\n";
     const url = URL.createObjectURL(new Blob([modelo], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a");
     a.href = url;
@@ -1291,6 +1293,14 @@ export function ProspectingClient() {
                 <button type="button" className="underline" onClick={baixarModelo}>
                   {t("Baixar modelo")}
                 </button>
+              </p>
+              {/* As três colunas opcionais viram dado da 1ª mensagem e a aba Diagnóstico do
+                  contato (lib/prospecting/contexto-da-equipe.ts): o aviso diz o que pode virar fato. */}
+              <p className="text-xs text-muted-foreground">
+                {t("Colunas opcionais, com o que a sua equipe já sabe de cada empresa: Diagnóstico, Oferta (o que oferecer) e Contexto.")}{" "}
+                {t(
+                  'O que você escrever em Contexto (uma indicação, um encontro, uma conversa) e em Diagnóstico (o que qualquer um vê de fora, como site, Google e redes) pode aparecer na primeira mensagem como fato. Escreva só o que é verdade. Recados para a equipe, como "falar com calma", não aparecem na mensagem. Não escreva CPF nem telefone de pessoas.',
+                )}
               </p>
               {/* Não depende da chave do provedor: a planilha não faz busca paga.
                   Lado a lado só entre sm e lg: a partir de lg o formulário mora na
@@ -2191,6 +2201,11 @@ export function ProspectingClient() {
                               )}
                             </div>
                           </fieldset>
+                          <ArquivoDaAbordagem
+                            valor={config.midia_da_abordagem}
+                            onChange={(midia) => update("midia_da_abordagem", midia)}
+                            travado={!!configCompleta}
+                          />
                           <div>
                             <Label htmlFor="prospecting-contact-tags">
                               {t("Etiquetas do contato")}
