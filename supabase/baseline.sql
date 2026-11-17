@@ -77979,9 +77979,9 @@ end;$$;
 revoke all on function public.fn_meet_delivery_settle(uuid,uuid,text,timestamptz,text,timestamptz) from public,anon,authenticated;
 grant execute on function public.fn_meet_delivery_settle(uuid,uuid,text,timestamptz,text,timestamptz) to service_role;
 
--- ---- o envio do link da agenda confere também os testadores por identidade social (migration 9400, #4701) ----
+-- ---- o envio do link da agenda confere também os testadores por identidade social (migration 9408, #4701) ----
 -- Mora logo abaixo do bloco da 9399, ACIMA do bloco da 9243 e da VARREDURA anon, pelo mesmo motivo.
--- Espelho de supabase/migrations/20261117030000_9400_entrega_da_agenda_confere_testadores_sociais.sql.
+-- Espelho de supabase/migrations/20261117050000_9408_entrega_da_agenda_confere_testadores_sociais.sql.
 create or replace function public.fn_meet_delivery_policy(p_org uuid,p_job uuid,p_worker text,p_acquired_at timestamptz)
 returns jsonb language plpgsql stable security definer set search_path=public as $$
 declare r record;

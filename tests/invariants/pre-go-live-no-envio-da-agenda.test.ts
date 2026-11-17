@@ -130,7 +130,7 @@ it("CONTROLE: o mesmo compromisso com o contato na lista passa pelo porteiro", a
   await expect(assertMeetingDeliveryPg(pool, e.contexto)).resolves.toMatchObject({ humanCommand: false });
 });
 
-it("⛔ testador de Instagram/Facebook (9400): a política devolve a lista social e a identidade do contato, e o porteiro deixa passar", async () => {
+it("⛔ testador de Instagram/Facebook (9408): a política devolve a lista social e a identidade do contato, e o porteiro deixa passar", async () => {
   const e = await entregaDaIaEmCanalDeTeste(null, TESTADOR_SOCIAL);
   const { rows } = await pool.query("select fn_meet_delivery_policy($1,$2,$3,$4::timestamptz) p", [
     e.org,

@@ -36,7 +36,7 @@ function politica(over: Record<string, unknown> = {}) {
   };
 }
 
-/** Contato de Instagram (sem telefone) e o testador da lista social do canal (9394, 9400). */
+/** Contato de Instagram (sem telefone) e o testador da lista social do canal (9394, 9408). */
 const TESTADOR_SOCIAL = "instagram:6af9e0ef28984e27de07bef4:1011223655361506";
 const OUTRO_SOCIAL = "instagram:6af9e0ef28984e27de07bef4:2022334466472617";
 
@@ -80,7 +80,7 @@ describe("envio do link da agenda em canal pré-go-live", () => {
       });
     });
 
-    it("política sem a lista social (banco sem a 9400): o testador social não passa", async () => {
+    it("política sem a lista social (banco sem a 9408): o testador social não passa", async () => {
       const p = politica({ contact_phone_number: null, contact_social_identity: TESTADOR_SOCIAL });
       await expect(assertMeetingDeliveryPg(pg(p), CONTEXTO)).rejects.toMatchObject({
         reason: "fora_da_lista_de_teste",

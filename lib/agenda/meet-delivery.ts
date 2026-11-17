@@ -27,8 +27,8 @@ const policySchema = z.discriminatedUnion("current", [
     // Obrigatórios como CHAVE, igual à marca acima: banco sem a 9399 não devolve o
     // modo do canal, e a entrega é recusada em vez de pular a lista de teste.
     ai_gate_mode: z.string().nullable(), ai_test_phone_numbers: z.unknown(), contact_phone_number: z.string().nullable(),
-    // Testadores de Instagram/Facebook (9400, depois da 9394). Opcionais: banco sem a
-    // 9400 não devolve a lista, e o gate a lê como vazia, então o testador social não
+    // Testadores de Instagram/Facebook (9408, depois da 9394). Opcionais: banco sem a
+    // 9408 não devolve a lista, e o gate a lê como vazia, então o testador social não
     // passa (falha fechada) e a lista de telefones continua valendo.
     ai_test_social_identities: z.unknown().optional(), contact_social_identity: z.string().nullable().optional(),
     /**

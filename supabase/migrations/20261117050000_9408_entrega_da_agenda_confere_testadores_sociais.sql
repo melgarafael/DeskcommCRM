@@ -1,6 +1,6 @@
 -- manifest: **O link de reunião que a IA envia também confere a lista de testadores por identidade social (Instagram/Facebook) do canal em pré-go-live (issue #4701, depois do #4690).** `fn_meet_delivery_policy` passa a devolver `ai_test_social_identities` (do `metadata` do canal, migration 9394) e `contact_social_identity` (`contacts.social_identity`), e `lib/agenda/meet-delivery.ts` passa as duas ao gate como `aiTestSocialIdentities` e `contactSocialIdentity`, como `consulta-pg.ts` já faz. Corpo copiado da 9399, só com essas duas chaves. Gate: `tests/invariants/pre-go-live-no-envio-da-agenda.test.ts` e `tests/unit/meet-delivery-pre-go-live.test.ts`.
 
--- ---- o envio do link da agenda confere também os testadores por identidade social (migration 9400, #4701) ----
+-- ---- o envio do link da agenda confere também os testadores por identidade social (migration 9408, #4701) ----
 -- A 9394 deu ao canal em modo de teste a lista `ai_test_social_identities`, que os
 -- outros caminhos da IA já leem. A política da entrega do link (9399) devolvia só a
 -- lista de telefones: o testador de Instagram/Facebook, que não tem telefone, ficava
