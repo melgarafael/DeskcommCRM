@@ -86304,8 +86304,8 @@ create index if not exists idx_conversations_fila_espera
 comment on index public.idx_conversations_fila_espera is
   'Fila de espera do Inbox (#4325): casa o pré-filtro do comando (sem dono, fora do histórico encerrado) e a ordem ORDEM_DA_ESPERA (awaiting_since asc, id asc). Medido: lista da Fila 4.343 -> 685 buffers com 120 mil conversas.';
 
--- ---- 9409 — a campanha de prospecção ganha janela própria e pausa/retoma sozinha (issue #4830, saída 1) ----
--- Espelho de supabase/migrations/20261117120000_9409_janela_da_campanha_de_prospeccao.sql.
+-- ---- 9411 — a campanha de prospecção ganha janela própria e pausa/retoma sozinha (issue #4830, saída 1) ----
+-- Espelho de supabase/migrations/20261117120000_9411_janela_da_campanha_de_prospeccao.sql.
 -- A janela mora em `config.janela` (jsonb, validada pelo schema estrito); a
 -- coluna abaixo é só o "quem pausou", que é estado do motor e não configuração.
 alter table public.prospecting_campaigns
