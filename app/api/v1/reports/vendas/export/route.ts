@@ -124,17 +124,21 @@ export async function GET(req: NextRequest): Promise<Response> {
     lido.relatorio.attendants.map((a) => a.user_id),
   );
 
-  const linhas: LinhaDoRelatorio[] = lido.relatorio.attendants.map((a) => ({
-    atendente: rotuloDoMembro(
-      { full_name: nomes.get(a.user_id) ?? null, email: null, user_id: a.user_id },
-      t,
-    ),
-    won: a.won,
-    lost: a.lost,
-    conversations_handled: a.conversations_handled,
-    avg_first_response_seconds: a.avg_first_response_seconds,
-    median_first_response_seconds: a.median_first_response_seconds,
-  }));
+  const linhas: LinhaDoRelatorio[] = lido.relatorio.attendants.map((a) => {
+    // O mapa pode não ter este id (a RPC pode devolver um atendente que já saiu
+    // da organização): `null`. Quem decide o que o arquivo escreve — o nome, o
+    // fallback "Atendente <sufixo>" — é a régua do helper, não esta rota; aqui
+    // só se entrega o dado que já veio da leitura.
+    const nome = nomes.get(a.user_id) ?? null;
+    return {
+      atendente: rotuloDoMembro({ full_name: nome, email: null, user_id: a.user_id }, t),
+      won: a.won,
+      lost: a.lost,
+      conversations_handled: a.conversations_handled,
+      avg_first_response_seconds: a.avg_first_response_seconds,
+      median_first_response_seconds: a.median_first_response_seconds,
+    };
+  });
 
   await audit({
     action: "reports.sales_exported",
