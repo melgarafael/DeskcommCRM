@@ -84,7 +84,8 @@ describe("isPublicPath", () => {
     expect(isPublicPath(`/api/v1/contacts/${contato}/avatar`)).toBe(true);
     expect(isPublicPath(`/api/v1/contacts/${contato}/avatar/extra`)).toBe(false);
     expect(isPublicPath("/api/v1/contacts/qualquer-id/avatar")).toBe(false);
-    expect(isPublicPath(`/api/v1/contacts/${contato}/person`)).toBe(false);
+    // Spec 33 (R2): a rota passou a aceitar token
+    expect(isPublicPath(`/api/v1/contacts/${contato}/person`)).toBe(true);
     expect(isPublicPath("/api/v1/contacts/bulk/avatar")).toBe(false);
   });
 

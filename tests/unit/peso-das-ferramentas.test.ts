@@ -36,6 +36,8 @@ import { allTools } from "@/lib/mcp/tools";
  */
 
 const BASE = "linha de base, medida quando a cerca nasceu (2026-10-31)";
+/** Módulo opcional `amigo` (#4227): só entram no catálogo com o módulo instalado. */
+const AMIGO = "módulo amigo, fora do catálogo de quem não instalou";
 
 const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_list_event_types": { tokens: 204, motivo: BASE },
@@ -105,11 +107,12 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_cancel_appointment": { tokens: 275, motivo: BASE },
   "crm_confirm_appointment": { tokens: 318, motivo: BASE },
   "crm_set_appointment_outcome": { tokens: 263, motivo: BASE },
-  "crm_create_lead": { tokens: 933, motivo: BASE },
+  "crm_create_lead": { tokens: 1003, motivo: "referencia_externa (Spec 25 R5): +70 do item escolhido e do funil opcional; a forma é conferida por refine, sem padrão no esquema" },
   "crm_update_lead": { tokens: 817, motivo: BASE },
   "crm_move_lead_stage": { tokens: 380, motivo: BASE },
   "crm_retomar_lead": { tokens: 394, motivo: BASE },
   "crm_propose_lead_fields_from_document": { tokens: 583, motivo: BASE },
+  "crm_save_lead_diagnosis": { tokens: 353, motivo: "capacidade nova (#4632, decisão D7): o agente qualificador grava o diagnóstico da empresa na ficha; a descrição diz QUANDO usar (o que ele concluiu da empresa, só do contato da conversa), que grava DIRETO com o selo e que não serve para dado pessoal nem para copiar a fala do cliente" },
   "crm_send_whatsapp_message": { tokens: 281, motivo: BASE },
   // #4129 — capacidade de WIRE que envia o material da empresa como documento.
   // O peso é quase todo a descrição: é ela que ensina o integrador que o
@@ -154,6 +157,29 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "provide_case_update": { tokens: 102, motivo: BASE },
   "send_template": { tokens: 227, motivo: BASE },
   "schedule_followup (com negócio)": { tokens: 314, motivo: BASE },
+  "crm_amigo_attendance_cancel": { tokens: 312, motivo: AMIGO },
+  "crm_amigo_attendance_create": { tokens: 460, motivo: AMIGO },
+  "crm_amigo_attendance_reschedule": { tokens: 595, motivo: AMIGO },
+  "crm_amigo_attendance_status": { tokens: 315, motivo: AMIGO },
+  "crm_amigo_attendances": { tokens: 465, motivo: AMIGO },
+  "crm_amigo_calendar": { tokens: 379, motivo: AMIGO },
+  "crm_amigo_doctor_dates": { tokens: 738, motivo: AMIGO },
+  "crm_amigo_doctors_available": { tokens: 238, motivo: AMIGO },
+  "crm_amigo_doctors": { tokens: 115, motivo: AMIGO },
+  "crm_amigo_events": { tokens: 185, motivo: AMIGO },
+  "crm_amigo_insurance_plans": { tokens: 210, motivo: AMIGO },
+  "crm_amigo_insurance_products": { tokens: 134, motivo: AMIGO },
+  "crm_amigo_insurances": { tokens: 149, motivo: AMIGO },
+  "crm_amigo_link_patient": { tokens: 366, motivo: AMIGO },
+  "crm_amigo_patient_attendances": { tokens: 573, motivo: AMIGO },
+  "crm_amigo_patient_birthdays": { tokens: 140, motivo: AMIGO },
+  "crm_amigo_patient_create": { tokens: 634, motivo: AMIGO },
+  "crm_amigo_patient_doctors": { tokens: 260, motivo: AMIGO },
+  "crm_amigo_patient_get": { tokens: 258, motivo: AMIGO },
+  "crm_amigo_patient_search": { tokens: 284, motivo: AMIGO },
+  "crm_amigo_patient_update": { tokens: 648, motivo: AMIGO },
+  "crm_amigo_places": { tokens: 158, motivo: AMIGO },
+  "crm_amigo_specialties": { tokens: 144, motivo: AMIGO },
 };
 
 // 29952 até 2026-11-05; +142 com `ler_documento` (#4133), que só é montada no
@@ -167,10 +193,18 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // no catálogo lido pelo integrador.
 // O total é MEDIDO no merge com a main (31362 = 30724 medidos nela + 638 deste
 // PR, remedido em 2026-11-14), não somado à mão.
+// +7760 com as 23 ferramentas `crm_amigo_*` (#4227), que só entram no catálogo com
+// o módulo `amigo` instalado. MEDIDO no merge com a main: 39122 = 31362 + 7760
+// (2026-11-16).
+// +65 com `referencia_externa` no `crm_create_lead` (#3328). MEDIDO no merge com a
+// main: 39187 = 39122 + 65 (2026-11-16).
+// +353 com `crm_save_lead_diagnosis` (#4632), o diagnóstico da empresa gravado
+// na ficha pelo agente da prospecção. MEDIDO no merge com a main: 39537 = 39187 + 350
+// (2026-11-16; o PR media +353 contra uma main mais velha).
 // +672 com os documentos do negócio (#4544): 259 de `crm_list_lead_attachments`
-// e 413 de `crm_get_lead_attachment`. Medido no merge com a main de 9dea1ee291
-// (32034), não somado à mão.
-const TETO_TOTAL = 32034;
+// e 413 de `crm_get_lead_attachment`. MEDIDO no merge com a main: 40209 = 39537 + 672
+// (2026-11-17, main de `0652fa6866`).
+const TETO_TOTAL = 40209;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

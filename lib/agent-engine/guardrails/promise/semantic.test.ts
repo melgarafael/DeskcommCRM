@@ -25,10 +25,12 @@ beforeEach(() => {
 it("sem evidência mantém exatamente a instrução antiga, inclusive para envio fixo", async () => {
   await classifyPromise(pool, {}, ids, { candidate: "Matrícula grátis!" }, deps);
   const antes = call.mock.calls[0]![2].messages;
+  // Turno diferente de propósito: o veredito é guardado por turno (#4665), e
+  // aqui o que se compara é o CORPO enviado nos dois caminhos.
   await classifyPromise(
     pool,
     {},
-    ids,
+    { ...ids, jobId: "outro-turno-do-servidor" },
     { candidate: "Matrícula grátis!", commercialEvidence: [] },
     deps,
   );
