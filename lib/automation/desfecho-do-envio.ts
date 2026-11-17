@@ -27,6 +27,8 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoAviso, preencher } from "@/lib/i18n/idioma-do-aviso";
 import { logger } from "@/lib/logger";
 import type { ActionResultDetail } from "@/lib/automation/types";
 import { fraseDaFalhaDeCanal } from "@/lib/channels/frases-de-falha";
@@ -198,14 +200,21 @@ export async function avisarEnvioQueFalhou(
     return;
   }
 
+  // A Central mostra o texto como foi gravado: o aviso nasce no idioma da
+  // organização. O motivo já chega pronto (frase do canal) e entra como dado.
+  const idioma = await idiomaDoAviso(admin, entrada.organizationId);
   const { error } = await admin.from("agent_inbox_items").insert({
     organization_id: entrada.organizationId,
     kind: "message_send_stuck",
     severity: "critical",
-    title: "Uma automação não conseguiu falar com o cliente",
-    body:
-      `A automação "${entrada.ruleName}" disparou e a mensagem não chegou. ${entrada.motivo} ` +
-      `Nada foi reenviado automaticamente — reenviar sem saber a causa arrisca mandar a mesma mensagem duas vezes.`,
+    title: traduzir("Uma automação não conseguiu falar com o cliente", idioma),
+    body: preencher(
+      traduzir(
+        'A automação "{regra}" disparou e a mensagem não chegou. {motivo} Nada foi reenviado automaticamente — reenviar sem saber a causa arrisca mandar a mesma mensagem duas vezes.',
+        idioma,
+      ),
+      { regra: entrada.ruleName, motivo: traduzir(entrada.motivo, idioma) },
+    ),
     ref_kind: entrada.conversationId ? "conversation" : null,
     ref_id: entrada.conversationId ?? null,
   });

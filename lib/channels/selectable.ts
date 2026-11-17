@@ -20,7 +20,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { nomeDoCanal } from "@/lib/channels/estado";
-import { lerModoDeAcessoDaIa, lerNumerosDeTeste } from "@/lib/ai/elegibilidade/pre-go-live";
+import {
+  lerIdentidadesSociaisDeTeste,
+  lerModoDeAcessoDaIa,
+  lerNumerosDeTeste,
+} from "@/lib/ai/elegibilidade/pre-go-live";
 import type { AcessoDaAiDoCanal } from "@/lib/ai/elegibilidade/aviso-do-modo-de-teste";
 
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "./archived";
@@ -182,7 +186,11 @@ export async function listSelectableChannels(
       // não pode chamar de "modo de teste" um canal que o motor trata de outro
       // jeito, nem o contrário.
       mode: lerModoDeAcessoDaIa(c.metadata),
-      testNumbersCount: lerNumerosDeTeste(c.metadata).length,
+      // Testadores de QUALQUER lista: telefone ou conta de rede social. Contar
+      // só telefones faria a tela do agente dizer "a IA não responde ninguém"
+      // num canal de Instagram com conta de teste autorizada.
+      testNumbersCount:
+        lerNumerosDeTeste(c.metadata).length + lerIdentidadesSociaisDeTeste(c.metadata).length,
     },
   }));
 }

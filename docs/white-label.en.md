@@ -1,4 +1,4 @@
-<!-- traduzido-de: docs/white-label.md@e402509d6d62 -->
+<!-- traduzido-de: docs/white-label.md@1a972883babb -->
 
 [🇧🇷 Português](white-label.md) · 🇺🇸 English · [🇪🇸 Español](white-label.es.md)
 
@@ -54,7 +54,7 @@ To color the menu text, target `text-muted-foreground` inside the group, not `ro
 }
 ```
 
-**If the CSS makes the screens unreadable.** A valid stylesheet can still hide text (transparent color, zero font size) or cover the screen with a shadow — including the login and the Brand page itself. To get out, open the page with `?sem_css=1` in the address: it loads without the custom CSS, only for you. Sign in through `/login?sem_css=1`, then open `/admin/marca?sem_css=1` by typing the address, clear the field and save. Without access to the screen, from the server: `psql "$SUPABASE_DB_URL" -c "delete from public.platform_config where chave = 'APP_CUSTOM_CSS';"` — the CSS stops applying within 30 seconds. Step by step in [`runbooks/css-personalizado.md`](runbooks/css-personalizado.md) (in Portuguese).
+**If the CSS makes the screens unreadable.** A valid stylesheet can still hide text (transparent color, zero font size) or cover the screen with a shadow — including the login and the Brand page itself. To get out, open the page with `?sem_css=1` in the address: it loads without the custom CSS, only for you. Sign in through `/login?sem_css=1`, then open `/admin/marca?sem_css=1` by typing the address, clear **both** fields (light and dark theme) and save. Without access to the screen, from the server: `psql "$SUPABASE_DB_URL" -c "delete from public.platform_config where chave in ('APP_CUSTOM_CSS', 'APP_CUSTOM_CSS_DARK');"` — both stylesheets stop applying within 30 seconds. Deleting only the light key keeps the dark one active whenever the dark theme is on. Step by step in [`runbooks/css-personalizado.md`](runbooks/css-personalizado.md) (in Portuguese).
 
 The file is accepted **by its bytes, not by its extension**. Renaming an `.svg` to `.png` fools nothing: the system reads the content, refuses it and says why. This is not fussiness — SVG is XML and can carry script, which would run if someone opened the image directly by its address, in a bucket that is public by necessity.
 

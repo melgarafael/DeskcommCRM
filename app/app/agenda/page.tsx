@@ -1,5 +1,8 @@
 import { tituloDaAgenda } from "@/lib/agenda/apresentacao";
+import { traduzir } from "@/lib/i18n/dicionario";
+import Link from "next/link";
 import { redirect } from "next/navigation";
+import { agendaAuthority } from "@/lib/amigo/agenda";
 import { headers } from "next/headers";
 
 import {
@@ -94,6 +97,10 @@ export default async function AgendaPage() {
    * indistinguível, para quem olha, de uma agenda sem compromissos.
    */
   const supabase = await createClient();
+  // Módulo `amigo` com a conexão ativa: a agenda é a do Amigo. A grade continua
+  // mostrando os espelhos (e remarcar/cancelar por ela vai ao Amigo), mas marcar
+  // de novo é pela tela do Amigo, com paciente, unidade e médico escolhidos.
+  const agendaNoAmigo = (await agendaAuthority(supabase, activeOrg.orgId)).provider === "amigo";
 
   /**
    * O RELÓGIO É DA ORGANIZAÇÃO — decisão do dono do produto (2026-09-20, #1350):
@@ -136,6 +143,8 @@ export default async function AgendaPage() {
         "id, name, duration_minutes, location_kind, location_details, is_active, default_owner_user_id, service_enabled, booking_mode",
       )
       .eq("organization_id", activeOrg.orgId)
+      // Tipo que veio de sistema externo (9392) não se marca pela grade local.
+      .is("external_provider", null)
       .eq("is_active", true)
       .order("name"),
     supabase
@@ -298,6 +307,15 @@ export default async function AgendaPage() {
       : undefined;
 
   return (
+    <>
+    {agendaNoAmigo && (
+      <p className="px-6 pt-4 text-sm text-muted-foreground">
+        {traduzir("A agenda desta clínica está no Amigo: as consultas daqui espelham as de lá.", user.idioma)}{" "}
+        <Link href="/app/integrations/amigo?aba=agenda" className="underline">
+          {traduzir("Marcar uma consulta no Amigo", user.idioma)}
+        </Link>
+      </p>
+    )}
     <AgendaClient
       tituloDaAgenda={tituloDaAgenda(apresentacao?.settings)}
       // O fuso RESOLVIDO da organização: a régua da grade inteira. `page.tsx`
@@ -341,7 +359,7 @@ export default async function AgendaPage() {
       // O piso da rota de marcar é `agent`; `viewer` — e o acompanhamento só de
       // leitura, que `resolveActiveOrg` resolve como `viewer` — levaria 403. A
       // tela esconder é cortesia: quem decide segue sendo a rota.
-      podeMarcar={ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent}
+      podeMarcar={!agendaNoAmigo && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent}
       tiposIniciais={(tipos ?? []).map((t) => ({
         id: t.id,
         nome: t.name,
@@ -411,5 +429,6 @@ export default async function AgendaPage() {
         }) as AgendamentoDaTela[],
       )}
     />
+    </>
   );
 }

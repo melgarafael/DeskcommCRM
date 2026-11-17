@@ -569,6 +569,8 @@ type ContactEmbed =
       is_blocked: boolean | null;
       ai_authorized_at: string | null;
       phone_number: string | null;
+      /** O testador de Instagram/Facebook do pré-go-live casa por aqui. */
+      social_identity?: string | null;
       force_human: boolean | null;
       /** A marca permanente "sempre atendimento humano" (issue 2379). */
       ai_opt_out: boolean | null;
@@ -792,6 +794,8 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
               aiGateMode: metadata.ai_gate_mode,
               aiTestPhoneNumbers: metadata.ai_test_phone_numbers,
               contactPhoneNumber: row.contacts?.phone_number ?? null,
+              aiTestSocialIdentities: metadata.ai_test_social_identities,
+              contactSocialIdentity: row.contacts?.social_identity ?? null,
               forceHuman: false,
               // A marca PERMANENTE (issue 2379) entra na MESMA decisão: este sweep
               // retoma follow-up de contato em silêncio, e retomar um contato que
@@ -1013,10 +1017,10 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
  * depois — por isso a leitura pode ser compartilhada entre ponteiros da mesma
  * org sem mudar o conjunto de conversas considerado.
  *
- * #4311 (resíduo): o embed `organizations:organization_id(status, settings)`
- * saiu daqui. Ele repetia o mesmo objeto de ~7,7 KB em CADA linha da resposta;
- * os dois campos que a decisão consome vêm de `consultarFatosDaOrganizacao`,
- * uma leitura por organização por varredura.
+ * #4311 (resíduo): o embed de `organizations` (`status` + `settings`) saiu
+ * daqui. Ele repetia o mesmo objeto de ~7,7 KB em CADA linha da resposta; os
+ * dois campos que a decisão consome vêm de `consultarFatosDaOrganizacao`, uma
+ * leitura por organização por varredura.
  */
 async function consultarConversasDoSilencio(
   admin: SupabaseClient,
@@ -1025,7 +1029,7 @@ async function consultarConversasDoSilencio(
   const { data, error } = await admin
     .from("conversations")
     .select(
-      "id, service_revision, current_demanda_id, demandas!conversations_current_demanda_id_fkey(revision,fechada_em), status, assignee_kind, bot_silenced_until, last_outbound_at, messages!messages_conversation_id_fkey(organization_id,contact_id,conversation_id,service_revision,demanda_id,demanda_revision,sent_at), contact_id, last_inbound_at, channel_session_id, contacts:contact_id(tags, is_blocked, ai_authorized_at, phone_number, force_human, ai_opt_out), sessao:channel_session_id(metadata)",
+      "id, service_revision, current_demanda_id, demandas!conversations_current_demanda_id_fkey(revision,fechada_em), status, assignee_kind, bot_silenced_until, last_outbound_at, messages!messages_conversation_id_fkey(organization_id,contact_id,conversation_id,service_revision,demanda_id,demanda_revision,sent_at), contact_id, last_inbound_at, channel_session_id, contacts:contact_id(tags, is_blocked, ai_authorized_at, phone_number, social_identity, force_human, ai_opt_out), sessao:channel_session_id(metadata)",
     )
     .eq("organization_id", orgId).eq("demandas.organization_id", orgId)
     .eq("contacts.organization_id", orgId).eq("sessao.organization_id", orgId)
