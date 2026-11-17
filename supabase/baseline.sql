@@ -1437,7 +1437,9 @@ COMMENT ON CONSTRAINT "conversations_status_check" ON "public"."conversations" I
 CREATE TABLE IF NOT EXISTS "public"."crm_lead_activities" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "organization_id" "uuid" NOT NULL,
-    "lead_id" "uuid" NOT NULL,
+    -- #4802 (item 3): anulável para o DELETE do negócio poder anular a referência
+    -- (FK ON DELETE SET NULL) sem levar a timeline comercial junto.
+    "lead_id" "uuid",
     "contact_id" "uuid",
     "source_module" "text" NOT NULL,
     "source_id" "uuid",
@@ -3573,13 +3575,19 @@ END IF; END $baseline_guard$;
 
 
 
-DO $baseline_guard$ BEGIN
-IF NOT EXISTS (SELECT 1 FROM pg_constraint
-                WHERE conname = 'crm_lead_activities_lead_id_fkey' AND conrelid = '"public"."crm_lead_activities"'::regclass)
-   AND to_regclass('"public"."crm_lead_activities_lead_id_fkey"') IS NULL THEN
+-- #4802 (item 3): SET NULL, e não CASCADE — apagar um negócio NÃO pode apagar a
+-- timeline comercial dele. A linha da atividade sobrevive com `contact_id`, que é
+-- por onde o histórico continua legível (ver a migration 9412).
 ALTER TABLE ONLY "public"."crm_lead_activities"
-    ADD CONSTRAINT "crm_lead_activities_lead_id_fkey" FOREIGN KEY ("lead_id") REFERENCES "public"."crm_leads"("id") ON DELETE CASCADE;
+    ALTER COLUMN "lead_id" DROP NOT NULL;
+DO $baseline_guard$ BEGIN
+IF EXISTS (SELECT 1 FROM pg_constraint
+                WHERE conname = 'crm_lead_activities_lead_id_fkey' AND conrelid = '"public"."crm_lead_activities"'::regclass) THEN
+ALTER TABLE ONLY "public"."crm_lead_activities"
+    DROP CONSTRAINT "crm_lead_activities_lead_id_fkey";
 END IF; END $baseline_guard$;
+ALTER TABLE ONLY "public"."crm_lead_activities"
+    ADD CONSTRAINT "crm_lead_activities_lead_id_fkey" FOREIGN KEY ("lead_id") REFERENCES "public"."crm_leads"("id") ON DELETE SET NULL;
 
 
 
@@ -54283,7 +54291,21 @@ declare
   v_coluna_motivo text := '';
   v_filtro_novos text := '';
   v_filtro_preservados text := 'false';
+  -- #4802 (item 3): o funil de destino sai da ETAPA, não de um argumento: assim
+  -- não existe chamada em que os dois discordem.
+  v_pipeline_destino uuid;
 begin
+  select s.pipeline_id
+    into v_pipeline_destino
+    from public.crm_stages s
+   where s.id = p_stage_id
+     and s.organization_id = p_organization_id;
+
+  if v_pipeline_destino is null then
+    raise exception 'stage_not_found: a etapa % não é da organização %', p_stage_id, p_organization_id
+      using errcode = '23503';
+  end if;
+
   -- `coalesce(..., 0)` cobre a etapa vazia; o DEFAULT da coluna é 1000, então
   -- o primeiro card de um lote para uma etapa vazia cai em 1000, como um card
   -- criado à mão.
@@ -54320,6 +54342,7 @@ begin
   novos as (
     update public.crm_leads l
        set stage_id          = $3,
+           pipeline_id       = $6,
            position_in_stage = $5 + (a.ordem * 1000),
            updated_at        = now()%s
       from alvo a
@@ -54330,6 +54353,7 @@ begin
   preservados as (
     update public.crm_leads l
        set stage_id          = $3,
+           pipeline_id       = $6,
            position_in_stage = $5 + (a.ordem * 1000),
            updated_at        = now()
       from alvo a
@@ -54342,7 +54366,7 @@ begin
   union all
   select p.id, p.from_stage_id, p.pipeline_id from preservados p
   $f$, v_coluna_motivo, v_filtro_novos, v_filtro_preservados)
-  using p_organization_id, p_lead_ids, p_stage_id, v_motivo, v_piso;
+  using p_organization_id, p_lead_ids, p_stage_id, v_motivo, v_piso, v_pipeline_destino;
 end;
 $$;
 
