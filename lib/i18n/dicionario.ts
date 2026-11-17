@@ -17193,6 +17193,10 @@ export const DICIONARIO: Traducoes = {
   "Pagante, passageiro…": { es: "Pagador, pasajero…" },
   "Participante adicionado.": { es: "Participante agregado." },
   "Participante removido.": { es: "Participante eliminado." },
+  // ─── #3566: quem foi marcado num grupo e não é contato do acervo ───
+  // A menção nunca mostra o LID cru; sem contato e sem nome de participante, sai
+  // esta palavra. Mesma grafia nos dois idiomas, como "Total".
+  "Participante": { es: "Participante" },
   // ─── #3669 F1: ligar ao negócio o número de outra pessoa do cliente ───
   "+ telefone": { es: "+ teléfono" },
   "Digite o telefone.": { es: "Escribe el teléfono." },
