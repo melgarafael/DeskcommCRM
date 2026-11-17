@@ -11463,5 +11463,11 @@
   "Abrir essa campanha": "O kampanyayı aç",
   "Cada aviso liga e desliga sozinho no Push. Desligar todos encerra os avisos deste aparelho fora do app.": "Her bildirim Push'ta ayrı ayrı açılıp kapanır. Hepsini kapatmak, bu cihazın uygulama dışındaki bildirimlerini sonlandırır.",
   "Negócio entrou numa etapa que avisa": "Fırsat bildirim veren bir aşamaya girdi",
-  "Dentro do app, este aviso aparece na Central de avisos.": "Uygulama içinde bu bildirim Bildirim Merkezi'nde görünür."
+  "Dentro do app, este aviso aparece na Central de avisos.": "Uygulama içinde bu bildirim Bildirim Merkezi'nde görünür.",
+  "1 conta de teste autorizada": "1 yetkili test hesabı",
+  "contas de teste autorizadas": "yetkili test hesabı",
+  "Somente as contas marcadas abaixo podem receber respostas automáticas enquanto o canal está em teste. Sem nenhuma marcada, a IA fica pausada.": "Kanal test modundayken yalnızca aşağıda işaretlenen hesaplar otomatik yanıt alabilir. Hiçbiri işaretli değilse yapay zekâ duraklatılmış kalır.",
+  "Contas autorizadas para teste": "Test için yetkili hesaplar",
+  "Nenhum contato desta rede conversou com o canal ainda. Peça para a conta de teste mandar uma mensagem e reabra este painel.": "Bu ağdan henüz hiçbir kişi kanalla yazışmadı. Test hesabından bir mesaj göndermesini isteyin ve bu paneli yeniden açın.",
+  "Salvar contas de teste": "Test hesaplarını kaydet"
 }

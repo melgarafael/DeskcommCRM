@@ -31,6 +31,30 @@ describe("lerVozesDaResposta", () => {
     ]);
   });
 
+  it("(a) devolve TODAS as vozes da resposta, inclusive as que não são do idioma da organização", () => {
+    // Conta realista: 7 vozes, uma maioria em espanhol/inglês para uma org em
+    // pt-BR (e vice-versa). Nenhuma pode ser cortada por `labels.language`:
+    // o catálogo é o que a credencial alcança, não o que o locale da org fala.
+    const resposta = {
+      voices: [
+        { voice_id: "ptBrAna0001", name: "Ana", labels: { language: "pt" } },
+        { voice_id: "esCarlos002", name: "Carlos", labels: { language: "es" } },
+        { voice_id: "enRachel003", name: "Rachel", labels: { language: "en" } },
+        { voice_id: "esMarisol04", name: "Marisol", labels: { language: "es-MX" } },
+        { voice_id: "enLiam00005", name: "Liam", labels: { language: "en" } },
+        { voice_id: "esSofia0006", name: "Sofia", verified_languages: [{ language: "es" }] },
+        { voice_id: "clonada0007", name: "Voz clonada do cliente", labels: null },
+      ],
+    };
+    const catalogo = lerVozesDaResposta(resposta);
+
+    expect(catalogo).toHaveLength(resposta.voices.length);
+    expect(catalogo.map((v) => v.id)).toEqual(resposta.voices.map((v) => v.voice_id));
+    // Dois `es`, um `es-MX` (o rótulo vem como a API manda) e dois `en`.
+    expect(catalogo.filter((v) => v.idioma?.startsWith("es"))).toHaveLength(3);
+    expect(catalogo.filter((v) => v.idioma === "en")).toHaveLength(2);
+  });
+
   it("sem idioma declarado, diz null em vez de inventar; sem nome, usa o id", () => {
     const catalogo = lerVozesDaResposta({
       voices: [{ voice_id: "abc12345", name: "  " }],

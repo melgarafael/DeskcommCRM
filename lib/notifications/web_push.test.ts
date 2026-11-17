@@ -19,7 +19,7 @@ const { sendNotification, deletados } = vi.hoisted(() => ({
   deletados: [] as Array<Array<[string, unknown]>>,
 }));
 
-vi.mock("web-push", () => ({ default: { setVapidDetails: vi.fn(), sendNotification } }));
+vi.mock("web-push", () => ({ setVapidDetails: vi.fn(), sendNotification }));
 vi.mock("./vapid", () => ({
   vapidPronto: () => true,
   vapidPublica: () => "pub",

@@ -45,6 +45,8 @@ import {
   lerTelefoneDeFichaVazia,
   registrarTelefoneAplicadoNaTimeline,
 } from "@/lib/contacts/telefone-aplicado";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoAviso, preencher } from "@/lib/i18n/idioma-do-aviso";
 import { logger } from "@/lib/logger";
 import { PHONE_REGEX } from "@/lib/schemas/contacts";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -476,6 +478,8 @@ export async function vencePropostasDeDado(
 
     if (!jaAberto) {
       const n = r.vencidas;
+      // A Central mostra o texto como foi gravado: o aviso nasce no idioma da organização.
+      const idioma = await idiomaDoAviso(db, organizationId);
       const { data: item } = await db
         .from("agent_inbox_items")
         .insert({
@@ -484,16 +488,21 @@ export async function vencePropostasDeDado(
           severity: "info",
           title:
             n === 1
-              ? "Uma informação de cliente venceu sem alguém conferir"
-              : `${n} informações de clientes venceram sem alguém conferir`,
+              ? traduzir("Uma informação de cliente venceu sem alguém conferir", idioma)
+              : preencher(traduzir("{n} informações de clientes venceram sem alguém conferir", idioma), { n }),
           // Diz o que ACONTECEU e o que fazer. Não repete o valor: o aviso é
           // lido por quem talvez não devesse ver o dado, e o dado continua na
           // ficha de quem tem acesso a ela.
           body:
-            `O assistente ouviu ${n === 1 ? "um dado" : "alguns dados"} na conversa com ` +
-            `${n === 1 ? "um cliente" : "clientes"} e ninguém confirmou a tempo. ` +
-            `${n === 1 ? "Ele saiu" : "Eles saíram"} da ficha para não parecer que já estava salvo. ` +
-            `Se a informação ainda importa, peça de novo ou preencha à mão.`,
+            n === 1
+              ? traduzir(
+                  "O assistente ouviu um dado na conversa com um cliente e ninguém confirmou a tempo. Ele saiu da ficha para não parecer que já estava salvo. Se a informação ainda importa, peça de novo ou preencha à mão.",
+                  idioma,
+                )
+              : traduzir(
+                  "O assistente ouviu alguns dados na conversa com clientes e ninguém confirmou a tempo. Eles saíram da ficha para não parecer que já estava salvo. Se a informação ainda importa, peça de novo ou preencha à mão.",
+                  idioma,
+                ),
           ref_kind: "organization",
           ref_id: organizationId,
         })
