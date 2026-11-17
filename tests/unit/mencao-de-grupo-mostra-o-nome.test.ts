@@ -10,13 +10,19 @@
  * de quem foi mencionado: `metadata.group_sender` dizia quem ESCREVEU, e quem
  * foi mencionado se perdia.
  *
- * ─── Os DOIS desfechos, no mesmo arquivo, de propósito ──────────────────────
+ * ─── Os DOIS desfechos da exibição, no mesmo arquivo, de propósito ───────────
  *
  * 1. **No acervo da empresa** (`contacts.wa_lid` = o LID da menção): o nome do
  *    contato substitui o código na exibição e na prévia da lista.
- * 2. **Fora do acervo**: a menção continua `@<lid>`. Não inventamos nome e não
- *    apagamos a menção — o identificador que o texto já tinha é a informação
- *    disponível, e é o que o operador vê.
+ * 2. **Fora do acervo**: a palavra do dicionário ("Participante"). O número
+ *    bruto NUNCA aparece na tela — era o defeito relatado na issue.
+ *
+ * O `metadata.group_sender` é o AUTOR da mensagem, não quem foi mencionado, e o
+ * payload não traz nome por menção: o nome do autor NUNCA vira rótulo de menção
+ * (senão "João" marcando Pedro e Ana sairia "@João e @João").
+ *
+ * Em nenhum dos dois o `body` gravado muda: ele continua com `@<lid>`, que é o
+ * dado do provedor e o que a auditoria precisa ver.
  *
  * O caminho exercitado é o de PRODUÇÃO: o payload cru do WAHA passa por
  * `mencoesDoGrupo` (o leitor do `contextInfo.mentionedJid`), o ingest grava o
@@ -138,7 +144,16 @@ function payloadComMencoes(lids: string[]): Parameters<typeof mencoesDoGrupo>[0]
 }
 
 /** Grava uma mensagem de grupo com menções, do payload ao banco. */
-async function ingerir(contatos: Contato[], body: string, jids: string[]) {
+async function ingerir(
+  contatos: Contato[],
+  body: string,
+  jids: string[],
+  remetente: Parameters<typeof gravarMensagemDeGrupo>[1]["remetente"] = {
+    name: "João do Grupo",
+    phone: null,
+    lid: "11111111111111",
+  },
+) {
   const { admin, inseridos, previews } = bancoFalso(contatos);
   const db = criarIngestDeGrupoDb(admin as never);
   const mencoes = mencoesDoGrupo(payloadComMencoes(jids));
@@ -154,7 +169,7 @@ async function ingerir(contatos: Contato[], body: string, jids: string[]) {
     mediaUrl: null,
     mediaMime: null,
     sentAt: "2026-09-23T12:00:00.000Z",
-    remetente: { name: "João do Grupo", phone: null, lid: "11111111111111" },
+    remetente,
     rawType: "chat",
     mencoes,
   });
@@ -166,15 +181,16 @@ async function ingerir(contatos: Contato[], body: string, jids: string[]) {
     mencoes,
     inseridos,
     previews,
-    exibido: textoComMencoesResolvidas(
-      linha.body as string,
-      lerMencoesDeGrupo(linha.metadata),
-    ),
+    // A MESMA chamada que a bolha faz (`MessageBubble`): a lista do metadata e a
+    // palavra de reserva. O `group_sender` (o autor) não entra.
+    exibido: textoComMencoesResolvidas(linha.body as string, lerMencoesDeGrupo(linha.metadata), {
+      palavraDesconhecida: "Participante",
+    }),
   };
 }
 
 describe("menção em grupo — LID vira NOME quando o contato está no acervo", () => {
-  it("o texto da bolha e a prévia da lista mostram @Maria Exemplo", async () => {
+  it("(a) o número que existe no CRM mostra o nome do contato — na bolha e na prévia", async () => {
     const r = await ingerir(
       [{ name: "Maria Exemplo", display_name: null, phone_number: "+5511988887777", wa_lid: LID_CONHECIDO }],
       `Bom dia @${LID_CONHECIDO}, pode confirmar?`,
@@ -182,17 +198,32 @@ describe("menção em grupo — LID vira NOME quando o contato está no acervo",
     );
 
     expect(r.desfecho).toBe("gravada");
-    // O CORPO gravado continua cru: o dado do provedor é auditável, quem resolve
-    // é a exibição.
-    expect(r.linha.body).toBe(`Bom dia @${LID_CONHECIDO}, pode confirmar?`);
-    // A lista foi guardada com o nome do contato do acervo.
-    expect((r.linha.metadata as Record<string, unknown>).mentions).toEqual([
-      { lid: LID_CONHECIDO, phone: null, name: "Maria Exemplo" },
-    ]);
     // A bolha mostra o nome…
     expect(r.exibido).toBe("Bom dia @Maria Exemplo, pode confirmar?");
     // …e a prévia desnormalizada também (ela é o que a lista da Inbox mostra).
     expect(r.previews.at(-1)).toBe("Bom dia @Maria Exemplo, pode confirmar?");
+  });
+
+  it("(d) o `body` gravado continua IDÊNTICO ao recebido e a lista aparece em `messages.metadata`", async () => {
+    const body = `Bom dia @${LID_CONHECIDO}, pode confirmar?`;
+    const r = await ingerir(
+      [{ name: "Maria Exemplo", display_name: null, phone_number: "+5511988887777", wa_lid: LID_CONHECIDO }],
+      body,
+      [LID_CONHECIDO],
+    );
+
+    // O dado do provedor é auditável: nada de reescrever histórico na entrada.
+    expect(r.linha.body).toBe(body);
+    expect(r.linha.body).toContain(`@${LID_CONHECIDO}`);
+    expect((r.linha.metadata as Record<string, unknown>).mentions).toEqual([
+      { lid: LID_CONHECIDO, phone: null, name: "Maria Exemplo" },
+    ]);
+    // E o `group_sender` continua lá, intacto, no mesmo metadata.
+    expect((r.linha.metadata as Record<string, unknown>).group_sender).toEqual({
+      name: "João do Grupo",
+      phone: null,
+      lid: "11111111111111",
+    });
   });
 
   it("o nome vem do ACERVO pelo `wa_lid` — contato com outro LID não resolve", async () => {
@@ -206,12 +237,13 @@ describe("menção em grupo — LID vira NOME quando o contato está no acervo",
     expect((r.linha.metadata as Record<string, unknown>).mentions).toEqual([
       { lid: LID_CONHECIDO, phone: null, name: null },
     ]);
-    expect(r.exibido).toBe(`Oi @${LID_CONHECIDO}`);
+    // Sem contato, cai para a palavra — nunca para o LID nem para o autor.
+    expect(r.exibido).toBe("Oi @Participante");
   });
 });
 
-describe("menção em grupo — LID desconhecido PERMANECE LID", () => {
-  it("não inventa nome e não apaga a menção: o texto sai idêntico", async () => {
+describe("menção em grupo — fora do acervo, a menção sai como \"Participante\", nunca com o nome do autor", () => {
+  it("(b) o número que NÃO existe no CRM mostra \"Participante\", e o nome do AUTOR (`group_sender`) não aparece", async () => {
     const body = `Fala @${LID_DESCONHECIDO}, tudo certo?`;
     const r = await ingerir(
       [{ name: "Maria Exemplo", display_name: null, phone_number: "+5511988887777", wa_lid: LID_CONHECIDO }],
@@ -220,21 +252,72 @@ describe("menção em grupo — LID desconhecido PERMANECE LID", () => {
     );
 
     expect(r.desfecho).toBe("gravada");
-    // A menção foi GUARDADA (a informação não se perde), só sem rótulo.
+    // A menção foi GUARDADA (a informação não se perde), só sem rótulo de contato.
     expect((r.linha.metadata as Record<string, unknown>).mentions).toEqual([
       { lid: LID_DESCONHECIDO, phone: null, name: null },
     ]);
-    // O texto exibido é byte a byte o mesmo: nem nome inventado, nem menção apagada.
-    expect(r.exibido).toBe(body);
-    expect(r.previews.at(-1)).toBe(body);
+    // O `body` continua cru; quem troca é a leitura.
+    expect(r.linha.body).toBe(body);
+    expect(r.exibido).toBe("Fala @Participante, tudo certo?");
+    expect(r.exibido).not.toContain(LID_DESCONHECIDO);
+    // O remetente padrão de `ingerir` é "João do Grupo": ele ESCREVEU, não foi
+    // mencionado, e o nome dele não pode aparecer no lugar da menção.
+    expect(r.exibido).not.toContain("João do Grupo");
+    // A prévia da lista (e a busca por conteúdo, que lê essa coluna) segue a
+    // mesma régua.
+    expect(r.previews.at(-1)).toBe("Fala @Participante, tudo certo?");
+    expect(r.previews.join("\n")).not.toContain("João do Grupo");
   });
 
-  it("acervo vazio e não-acervo dão o mesmo desfecho — o LID fica", async () => {
+  it("CONTROLE: o autor menciona DUAS pessoas fora do CRM — nenhuma das duas ganha o nome dele", async () => {
+    const OUTRO_DESCONHECIDO = "55443322110099";
+    const body = `@${LID_DESCONHECIDO} e @${OUTRO_DESCONHECIDO}, podem vir amanhã?`;
+    const r = await ingerir([], body, [LID_DESCONHECIDO, OUTRO_DESCONHECIDO], {
+      name: "João",
+      phone: null,
+      lid: "11111111111111",
+    });
+
+    expect(r.exibido).toBe("@Participante e @Participante, podem vir amanhã?");
+    expect(r.exibido).not.toContain("João");
+    expect(r.previews.at(-1)).toBe("@Participante e @Participante, podem vir amanhã?");
+    expect(r.previews.join("\n")).not.toContain("João");
+  });
+
+  it("(c) sem nome de autor também, a menção não mostra dígitos crus: sai a palavra do dicionário", async () => {
     const body = `Oi @${LID_DESCONHECIDO}`;
-    const r = await ingerir([], body, [LID_DESCONHECIDO]);
-    expect(r.exibido).toBe(body);
+    // Payload sem `pushName` e sem `participantAlt`: o webhook não deu nome nenhum.
+    const r = await ingerir([], body, [LID_DESCONHECIDO], { name: null, phone: null, lid: null });
+
+    expect(r.exibido).toBe("Oi @Participante");
+    expect(r.exibido).not.toMatch(/\d/);
+    // A palavra é a mesma chave do dicionário, com espanhol (a cerca de i18n
+    // roda no gate): a tela traduz, a prévia gravada fica em pt.
+    expect(r.previews.at(-1)).toBe("Oi @Participante");
     expect((r.linha.metadata as Record<string, unknown>).mentions).toEqual([
       { lid: LID_DESCONHECIDO, phone: null, name: null },
     ]);
+    // O `group_sender` entra sem nome (o schema aceita os três campos nulos); com
+    // ou sem ele, a menção desconhecida cai na palavra.
+    const participante = (r.linha.metadata as Record<string, unknown>).group_sender as { name: string | null } | undefined;
+    expect(participante?.name ?? null).toBeNull();
+  });
+
+  it("(e) `@` de e-mail no texto não é tocado pela resolução", async () => {
+    const body = `Fala @${LID_DESCONHECIDO}, manda para maria@exemplo.com`;
+    const r = await ingerir([], body, [LID_DESCONHECIDO], { name: null, phone: null, lid: null });
+
+    expect(r.exibido).toBe("Fala @Participante, manda para maria@exemplo.com");
+    expect(r.exibido).toContain("maria@exemplo.com");
+    // O corpo gravado continua com o e-mail e com o LID.
+    expect(r.linha.body).toBe(body);
+  });
+
+  it("CONTROLE: mensagem sem menção não paga leitura de contato nem ganha a chave", async () => {
+    const body = "Bom dia a todos, sem marcar ninguém";
+    const r = await ingerir([], body, []);
+    expect(r.exibido).toBe(body);
+    expect(r.previews.at(-1)).toBe(body);
+    expect((r.linha.metadata as Record<string, unknown>).mentions).toBeUndefined();
   });
 });

@@ -6049,5 +6049,11 @@
   "A capacidade do produto está desligada nesta empresa.": "本公司已关闭产品容量。",
   "Usar o campo Capacidade nos produtos": "在产品中使用容量字段",
   "Mostra o campo em Produtos e na planilha, para 128GB, 1TB ou 500ml, e o atendente de IA passa a procurar por ele. Desligar esconde o campo, mas não apaga o que já foi cadastrado.": "在“产品”和表格中显示该字段（如 128GB、1TB 或 500ml），AI 客服也会按它搜索。关闭后字段会隐藏，但不会删除已保存的内容。",
-  "Um campo a mais no catálogo para 128GB, 1TB ou 500ml. O atendente de IA passa a achar o produto por ele, mesmo quando o nome não repete a capacidade.": "目录中多一个字段，用于 128GB、1TB 或 500ml。即使名称中没有容量，AI 客服也能据此找到产品。"
+  "Um campo a mais no catálogo para 128GB, 1TB ou 500ml. O atendente de IA passa a achar o produto por ele, mesmo quando o nome não repete a capacidade.": "目录中多一个字段，用于 128GB、1TB 或 500ml。即使名称中没有容量，AI 客服也能据此找到产品。",
+  "1 conta de teste autorizada": "1 个已授权的测试账号",
+  "contas de teste autorizadas": "个已授权的测试账号",
+  "Somente as contas marcadas abaixo podem receber respostas automáticas enquanto o canal está em teste. Sem nenhuma marcada, a IA fica pausada.": "频道处于测试模式时，只有下方勾选的账号会收到自动回复。如果一个都没勾选，AI 保持暂停。",
+  "Contas autorizadas para teste": "授权测试的账号",
+  "Nenhum contato desta rede conversou com o canal ainda. Peça para a conta de teste mandar uma mensagem e reabra este painel.": "这个网络还没有联系人与该频道对话。请让测试账号先发一条消息，然后重新打开此面板。",
+  "Salvar contas de teste": "保存测试账号"
 }

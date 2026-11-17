@@ -788,6 +788,8 @@ export interface ExportPayload {
   /** Módulo opcional; o coletor atual inclui vazio se não instalado. Payloads antigos podem não conter a seção. */
   cadencias_inscricoes?: { id: string; cadence_id: string; lead_id: string; status: string; motivo_parada: string | null; rastreio_consentido: boolean; consentimento_em: string | null; emails_enviados: number; aberturas: number; created_at: string; concluida_em: string | null; parada_em: string | null }[];
   cadencias_eventos?: { id: string; enrollment_id: string; tipo: string; created_at: string }[];
+  /** Módulo `amigo` (#4227): o vínculo do titular com o cadastro de paciente no sistema da clínica. */
+  amigo_vinculos?: { connection_id: string; patient_id: number; lead_id: string | null }[];
   lead_field_proposals: LeadFieldProposalRow[];
   orders: OrderRow[];
   activities: ActivityRow[];
@@ -1646,6 +1648,25 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
           if (eventos) { conferirTeto("cadencias_eventos", eventos, 500); cadencias_eventos = eventos; }
         }
       }
+    }
+  }
+
+  // Módulo `amigo` (#4227), pelo mesmo caminho de cadências: o REGISTRO diz se o
+  // módulo existe; ausente, a chave nem aparece e a tabela nem é consultada.
+  // Suspenso também exporta. Só os ids do vínculo: o cadastro do paciente mora
+  // no Amigo, e a instalação não guarda cópia dele.
+  let amigoInstalado = false;
+  let amigo_vinculos: NonNullable<ExportPayload["amigo_vinculos"]> = [];
+  if (contactId) {
+    const { data: moduloAmigo, error: erroModuloAmigo } = await admin.from("modulos_instalados").select("modulo").eq("modulo", "amigo").maybeSingle();
+    if (erroModuloAmigo) throw new Error("amigo_export_module_read_failed");
+    if (moduloAmigo) {
+      amigoInstalado = true;
+      const { data: vinculos, error: erroVinculos } = await admin.from("amigo_patient_links")
+        .select("connection_id, patient_id, lead_id")
+        .eq("organization_id", organizationId).eq("contact_id", contactId).limit(500);
+      if (erroVinculos) throw new Error("amigo_export_load_failed");
+      if (vinculos) { conferirTeto("amigo_vinculos", vinculos, 500); amigo_vinculos = vinculos; }
     }
   }
 
@@ -2674,6 +2695,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     // O módulo ausente não altera o contrato do arquivo legado. Instalado
     // (inclusive suspenso), entrega suas seções, mesmo sem linhas do titular.
     ...(cadenciasInstaladas ? { cadencias_inscricoes, cadencias_eventos } : {}),
+    ...(amigoInstalado ? { amigo_vinculos } : {}),
     orders,
     activities,
     checkpoints,

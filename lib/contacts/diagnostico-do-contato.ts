@@ -11,7 +11,8 @@
  * ficha. Em troca, nenhuma tela, rota ou ferramenta lê esse jsonb pelo nome da
  * chave: todo mundo passa por `lerDiagnostico` (leitura tolerante) e
  * `aplicarDiagnostico` (escrita que devolve o objeto completo). Quem grava pelo
- * agente (a ferramenta do PR seguinte) usa `autoriaDoAgente`.
+ * agente (`crm_save_lead_diagnosis`, em `lib/mcp/tools/diagnostico.ts`) usa
+ * `gravacaoDoAgente`, que devolve só o PEDAÇO a mesclar no banco.
  *
  * ── Por que a leitura é tolerante e a escrita é por DIFERENÇA ────────────────
  *
@@ -275,6 +276,62 @@ export function segmentoDoContatoNovo(
 }
 
 /**
+ * O diagnóstico com que o contato NASCE pela prospecção a partir do que a EQUIPE escreveu
+ * na planilha (`diagnostico` → resumo, `oferta` → oferta, `contexto` → observações). Como
+ * `segmentoDoContatoNovo`, só para contato novo.
+ *
+ * A escrita passa por `aplicarDiagnostico` (o mesmo caminho da aba): mesma regra de corte,
+ * de chave vazia e de AUTORIA — `por`/`em` só entram quando há diagnóstico ou oferta; a
+ * observação sozinha é recado da equipe e não carrega autoria. `autor` é `usuario:<uuid>`
+ * de quem importou a planilha e `em` o instante da importação; autoria fora do formato
+ * (ou data ilegível) não é gravada, e os textos entram assim mesmo.
+ *
+ * Chave que a organização declarou como campo de contato próprio
+ * (`chavesDaOrganizacao`) fica de fora — o valor é dela, com o tipo e o padrão dela, e o
+ * `createContactHandler` recusaria com 422 o que não casa (o mesmo motivo do segmento).
+ */
+export function diagnosticoDoContatoNovo(
+  equipe:
+    | {
+        resumo?: string | null;
+        oferta?: string | null;
+        observacoes?: string | null;
+        autor?: string | null;
+        em?: string | null;
+      }
+    | null
+    | undefined,
+  chavesDaOrganizacao: Iterable<string> = [],
+): Record<string, unknown> {
+  if (!equipe) return {};
+  const vazio = textosDoDiagnostico({});
+  const editado: TextosDoDiagnostico = {
+    ...vazio,
+    resumo: equipe.resumo ?? "",
+    oferta: equipe.oferta ?? "",
+    observacoes: equipe.observacoes ?? "",
+  };
+  const autor = autoriaSchema.safeParse(equipe.autor);
+  const em = equipe.em ? new Date(equipe.em) : null;
+  const autoriaValida = autor.success && em !== null && !Number.isNaN(em.getTime());
+  const saida = aplicarDiagnostico({}, vazio, editado, autoriaValida ? autor.data : "", autoriaValida ? em : undefined);
+  if (!autoriaValida) {
+    delete saida[CHAVES_DO_DIAGNOSTICO.por];
+    delete saida[CHAVES_DO_DIAGNOSTICO.em];
+  }
+  for (const chave of chavesDaOrganizacao) delete saida[chave];
+  // Autoria sem o texto que ela assina (a organização ficou com a chave) não fica.
+  const sobrouDiagnostico = CAMPOS_QUE_DEFINEM_A_AUTORIA.some(
+    (campo) => typeof saida[CHAVES_DO_DIAGNOSTICO[campo]] === "string",
+  );
+  if (!sobrouDiagnostico) {
+    delete saida[CHAVES_DO_DIAGNOSTICO.por];
+    delete saida[CHAVES_DO_DIAGNOSTICO.em];
+  }
+  return saida;
+}
+
+/**
  * Quem EDITA a aba Diagnóstico; os demais só leem. Atendente (`agent`) ou
  * acima, fora do suporte só-leitura e com o contato não anonimizado — o mesmo
  * piso do `PATCH /api/v1/contacts/:id` (`requireRole("agent")`,
@@ -290,6 +347,134 @@ export function podeEditarDiagnostico(
   if (usuario.support?.access_mode === "support_readonly") return false;
   const rank = papel ? (ROLE_RANK[papel as Role] ?? 0) : 0;
   return rank >= ROLE_RANK.agent;
+}
+
+// ── A GRAVAÇÃO PELO AGENTE (ferramenta `crm_save_lead_diagnosis`) ────────────
+
+/**
+ * O que o agente pode escrever. Fica de fora `observacoes`, que é o recado DA
+ * EQUIPE: a IA preencher esse campo apagaria a anotação de uma pessoa e o
+ * selo "Escrito pela IA" não diria a verdade sobre ele. Autoria e data também
+ * ficam de fora: quem assina é o servidor, a partir do ator, nunca o modelo.
+ */
+export const CAMPOS_DO_AGENTE = ["segmento", "cnpj", "resumo", "oferta"] as const;
+export type CampoDoAgente = (typeof CAMPOS_DO_AGENTE)[number];
+export type EntradaDoAgente = Partial<Record<CampoDoAgente, string>>;
+
+export type GravacaoDoAgente =
+  | {
+      ok: true;
+      /** Chave de `custom_fields` → valor, para MESCLAR (nunca substituir o objeto). */
+      campos: Record<string, string>;
+      /** Chaves a tirar na mesma instrução (autoria que deixaria de ser verdade). */
+      remover: string[];
+      gravados: CampoDoAgente[];
+      /**
+       * Pedidos que não entram: a chave é um campo da própria organização, ou o
+       * valor é de uma pessoa da equipe (ver `daEquipe`).
+       */
+      preservados: CampoDoAgente[];
+      /** O recorte de `preservados` que fica porque uma PESSOA assinou o diagnóstico. */
+      daEquipe: CampoDoAgente[];
+      escritoPelaIA: boolean;
+    }
+  | { ok: false; motivo: "nada_para_gravar" }
+  | { ok: false; motivo: "valor_invalido"; campo: CampoDoAgente }
+  | { ok: false; motivo: "campo_da_organizacao"; preservados: CampoDoAgente[] }
+  | { ok: false; motivo: "escrito_pela_equipe"; preservados: CampoDoAgente[]; daEquipe: CampoDoAgente[] };
+
+/**
+ * O que a ferramenta do agente GRAVA, calculado sobre o `custom_fields` atual.
+ *
+ * - Cada valor passa pelo `diagnosticoSchema` ANTES de qualquer escrita; um só
+ *   inválido recusa a chamada inteira (nada é gravado pela metade).
+ * - A saída é um PEDAÇO para mesclar no banco (`fn_contato_anotar_campos`), e
+ *   não o objeto inteiro: os `link_*` e os campos da organização nem passam
+ *   por aqui, então não há como apagá-los.
+ * - Chave que a organização declarou como campo de contato nos funis
+ *   (`chavesDaOrganizacao`), ou que já guarda um valor fora do nosso formato,
+ *   é DELA e não é sobrescrita — a mesma regra de `segmentoDoContatoNovo`.
+ * - Diagnóstico assinado por uma PESSOA (`diag_por = usuario:<uuid>`) é da
+ *   equipe: quem não é pessoa (o agente, um token de integração sem autor) não
+ *   sobrescreve. Resumo e oferta ficam os dois — gravar a oferta vazia trocaria
+ *   a assinatura do resumo da equipe pelo selo da IA, e a pessoa perderia a
+ *   autoria de um texto que é dela; segmento e CNPJ ficam quando preenchidos, e
+ *   os vazios a IA completa. Sem isto, cada turno do agente apagava o que a
+ *   equipe escreveu, sem cópia em lugar nenhum (a auditoria guarda só os nomes
+ *   dos campos). Uma pessoa por token edita como na aba: grava e assina.
+ * - Diagnóstico ou oferta gravados mudam a autoria para `autor` e a data para
+ *   `agora` (o selo "Escrito pela IA" vem daí). Sem autor reconhecível, a
+ *   autoria antiga SAI: a assinatura de uma pessoa não pode ficar sobre um
+ *   texto que ela não escreveu.
+ */
+export function gravacaoDoAgente(
+  customFields: Record<string, unknown> | null | undefined,
+  entrada: EntradaDoAgente,
+  autor: string | null,
+  chavesDaOrganizacao: Iterable<string> = [],
+  agora: Date = new Date(),
+): GravacaoDoAgente {
+  const daOrganizacao = new Set(chavesDaOrganizacao);
+  const legivel = lerDiagnostico(customFields);
+  const forma = diagnosticoSchema.shape;
+  const campos: Record<string, string> = {};
+  const gravados: CampoDoAgente[] = [];
+  const preservados: CampoDoAgente[] = [];
+  const daEquipe: CampoDoAgente[] = [];
+  const autorValido = autor !== null && autoriaSchema.safeParse(autor).success ? autor : null;
+  const assinadoPelaEquipe =
+    autoriaDoDiagnostico(legivel)?.tipo === "usuario" && !autorValido?.startsWith("usuario:");
+
+  const pedidos = CAMPOS_DO_AGENTE.filter((campo) => entrada[campo] !== undefined);
+  if (pedidos.length === 0) return { ok: false, motivo: "nada_para_gravar" };
+
+  for (const campo of pedidos) {
+    const lido = forma[campo].safeParse(entrada[campo]);
+    if (!lido.success || typeof lido.data !== "string") {
+      return { ok: false, motivo: "valor_invalido", campo };
+    }
+    const chave = CHAVES_DO_DIAGNOSTICO[campo];
+    const atual = customFields?.[chave];
+    const ocupadaPorOutroFormato = atual !== undefined && atual !== null && legivel[campo] === undefined;
+    if (daOrganizacao.has(chave) || ocupadaPorOutroFormato) {
+      preservados.push(campo);
+      continue;
+    }
+    const defineAutoria = (CAMPOS_QUE_DEFINEM_A_AUTORIA as readonly string[]).includes(campo);
+    if (assinadoPelaEquipe && (defineAutoria || legivel[campo] !== undefined)) {
+      preservados.push(campo);
+      daEquipe.push(campo);
+      continue;
+    }
+    campos[chave] = lido.data;
+    gravados.push(campo);
+  }
+
+  if (gravados.length === 0) {
+    return daEquipe.length > 0
+      ? { ok: false, motivo: "escrito_pela_equipe", preservados, daEquipe }
+      : { ok: false, motivo: "campo_da_organizacao", preservados };
+  }
+
+  const remover: string[] = [];
+  const mudouAutoria = gravados.some((c) => (CAMPOS_QUE_DEFINEM_A_AUTORIA as readonly string[]).includes(c));
+  if (mudouAutoria) {
+    if (autorValido) {
+      campos[CHAVES_DO_DIAGNOSTICO.por] = autorValido;
+      campos[CHAVES_DO_DIAGNOSTICO.em] = agora.toISOString();
+    } else {
+      remover.push(CHAVES_DO_DIAGNOSTICO.por, CHAVES_DO_DIAGNOSTICO.em);
+    }
+  }
+  return {
+    ok: true,
+    campos,
+    remover,
+    gravados,
+    preservados,
+    daEquipe,
+    escritoPelaIA: mudouAutoria && autorValido?.startsWith("agente:") === true,
+  };
 }
 
 export interface EdicaoDaAba {

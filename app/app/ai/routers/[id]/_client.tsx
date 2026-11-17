@@ -163,6 +163,12 @@ export function RouterEditorClient({
   const [passagemAoCliente, setPassagemAoCliente] = React.useState(
     router.passagem_ao_cliente ?? "",
   );
+  // #4750 — o TERCEIRO modo: a troca automática SILENCIOSA. Mora no `config`
+  // (jsonb livre, sem coluna nem migration), ao lado da frase que ele desliga.
+  // Ausente/não-booleana = desligado, que é o comportamento de antes.
+  const [passagemSilenciosa, setPassagemSilenciosa] = React.useState(
+    router.config?.passagem_silenciosa === true,
+  );
   const [fallbackAgentId, setFallbackAgentId] = React.useState(router.fallback_agent_id ?? "");
   // Uma chave só para os dois campos: escolher modelo sem levar o provedor junto
   // manda o id para o provedor da ORG, e a classificação falha sempre.
@@ -236,6 +242,7 @@ export function RouterEditorClient({
           ? router.config.context_message_count
           : 4,
       passagemAoCliente: router.passagem_ao_cliente ?? "",
+      passagemSilenciosa: router.config?.passagem_silenciosa === true,
       members: members.map(camposDoMembro),
     }),
     [router, members],
@@ -251,6 +258,7 @@ export function RouterEditorClient({
     classifier !== baseline.classifier ||
     contextMessageCount !== baseline.contextMessageCount ||
     passagemAoCliente !== baseline.passagemAoCliente ||
+    passagemSilenciosa !== baseline.passagemSilenciosa ||
     JSON.stringify(currentMembers) !== JSON.stringify(baseline.members);
 
   const memberErrors = draftMembers.map((m) => {
@@ -312,7 +320,8 @@ export function RouterEditorClient({
         fallbackAgentId !== baseline.fallbackAgentId ||
         classifier !== baseline.classifier ||
         contextMessageCount !== baseline.contextMessageCount ||
-        passagemAoCliente !== baseline.passagemAoCliente
+        passagemAoCliente !== baseline.passagemAoCliente ||
+        passagemSilenciosa !== baseline.passagemSilenciosa
       ) {
         const [provider, modelId] = classifier.split("::");
         await updateRouter.mutateAsync({
@@ -329,6 +338,9 @@ export function RouterEditorClient({
               ? { classifier_model: null, classifier_provider: null }
               : { classifier_model: modelId, classifier_provider: provider }),
             context_message_count: contextMessageCount,
+            // #4750 — o terceiro modo. Vai SEMPRE explícito (true/false), e o
+            // PATCH mescla o `config`, então as outras chaves ficam intactas.
+            passagem_silenciosa: passagemSilenciosa,
             sender_routes: senderRoutes,
           },
         });
@@ -508,6 +520,32 @@ export function RouterEditorClient({
                 "Sai uma vez, para o cliente, quando a intenção da mensagem dele leva a conversa para outro agente do roteador. Escreva no idioma em que vocês atendem.",
               )}
             </p>
+            {/* #4750 — o TERCEIRO modo, na MESMA área da frase: é ele que a
+                desliga. Ligado, nada vai ao cliente e o agente novo continua
+                sem se apresentar. */}
+            <div className="flex items-start gap-2 rounded-md border p-2">
+              <Switch
+                id="router-passagem-silenciosa"
+                data-testid="passagem-silenciosa"
+                checked={passagemSilenciosa}
+                onCheckedChange={setPassagemSilenciosa}
+                disabled={!canManage}
+              />
+              <div className="space-y-1">
+                <Label htmlFor="router-passagem-silenciosa">
+                  {t("Troca automática silenciosa")}
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  {passagemSilenciosa
+                    ? t(
+                        "Ligada: nada é enviado ao cliente e o agente novo continua a conversa sem se apresentar nem anunciar a troca.",
+                      )
+                    : t(
+                        "Desligada: com frase abaixo, o cliente é avisado da troca; sem frase, o agente novo se apresenta com as palavras dele.",
+                      )}
+                </p>
+              </div>
+            </div>
             <div className="space-y-1">
               <Label htmlFor="router-passagem">{t("Frase enviada na troca")}</Label>
               <Textarea
@@ -520,9 +558,11 @@ export function RouterEditorClient({
                 placeholder={t("Ex.: Você está falando agora com o time de suporte. Já passei o seu caso para eles.")}
               />
               <p className="text-xs text-muted-foreground">
-                {passagemAoCliente.trim() === ""
-                  ? t("Desligada: o agente novo se apresenta com as palavras dele.")
-                  : t("Ligada: o cliente recebe esta frase uma vez, antes da resposta do agente novo.")}
+                {passagemSilenciosa
+                  ? t("Com a troca silenciosa ligada, esta frase NÃO é enviada ao cliente.")
+                  : passagemAoCliente.trim() === ""
+                    ? t("Desligada: o agente novo se apresenta com as palavras dele.")
+                    : t("Ligada: o cliente recebe esta frase uma vez, antes da resposta do agente novo.")}
               </p>
             </div>
           </Card>

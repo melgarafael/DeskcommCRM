@@ -13,7 +13,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { env } from "@/lib/env";
 import { drainEventLog } from "@/lib/event-log/drain";
 import { comOrigemDeRequest } from "@/lib/event-log/origem-do-dreno";
-import { ensureHandlersRegistered } from "@/lib/event-log/register-handlers";
 import { idsDoContatoEGemeos } from "@/lib/channels/contato-por-telefone";
 import { aplicarTextoNosFollowups } from "@/lib/followup/aplicar-inbound";
 import {
@@ -212,6 +211,11 @@ export async function drenarEventosDoInbound(
   inbound?: SinalDeInbound,
 ): Promise<void> {
   try {
+    // O registro dos handlers entra só aqui, quando o dreno vai rodar. No topo
+    // do arquivo, o import levava os workers de IA, LGPD, RAG… a todo mundo
+    // que importa a ingestão do canal, inclusive a quem nunca drena (o
+    // `session.status`, por exemplo).
+    const { ensureHandlersRegistered } = await import("@/lib/event-log/register-handlers");
     ensureHandlersRegistered();
     try {
       // ⚠️ MARCADO COMO "dentro de requisição". Este dreno roda no meio do

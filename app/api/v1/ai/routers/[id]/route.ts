@@ -62,6 +62,15 @@ const patchRouterSchema = z.object({
           c.context_message_count >= 0 &&
           c.context_message_count <= MAX_CLASSIFIER_CONTEXT_MESSAGES),
       "context_message_count deve ser inteiro entre 0 e 16",
+    )
+    /**
+     * #4750 — a chave da troca SILENCIOSA mora no `config` (jsonb livre, sem
+     * migration), então o tipo dela é a única cerca: texto solto aqui viraria
+     * "ligado" por acidente em qualquer leitura frouxa adiante.
+     */
+    .refine(
+      (c) => c?.passagem_silenciosa === undefined || typeof c.passagem_silenciosa === "boolean",
+      "passagem_silenciosa deve ser verdadeiro ou falso",
     ),
 });
 

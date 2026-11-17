@@ -18,6 +18,12 @@ import {
 import type { OfertaDaCampanha } from "./schema";
 import type { PreviaSalva } from "./previa";
 import { sinaisDaEmpresa } from "./sinais-da-empresa";
+import {
+  dadosDoContextoDaEquipe,
+  lerContextoDaEquipe,
+  ORIGEM_DOS_DADOS_COM_CONTEXTO_DA_EQUIPE,
+  ORIGEM_DOS_DADOS_DA_ABORDAGEM_FRIA,
+} from "./contexto-da-equipe";
 export type { OfertaDaCampanha } from "./schema";
 
 export interface ObjecaoComResposta {
@@ -550,6 +556,10 @@ export function blocoDeEstrategiaParaAgente(estrategia: EstrategiaDoLead): strin
  * Nesse modo nem a estratégia nem a auditoria entram (a estratégia é ângulo de
  * venda): é a definição do modo na spec do #3091, mantida pelo doc 170 = B. Os
  * chamadores tiram a auditoria dos dados com o mesmo booleano.
+ *
+ * `comContextoDaEquipe` troca a frase sobre a ORIGEM dos dados quando a ficha traz
+ * campos escritos pela equipe (`temContextoDaEquipe` sobre os MESMOS dados que vão ao
+ * modelo). Falso = byte a byte a de antes.
  */
 export function instrucaoDeAbordagemFria(
   instruction: string,
@@ -557,11 +567,12 @@ export function instrucaoDeAbordagemFria(
   voz?: string,
   estrategia?: EstrategiaDoLead | null,
   soCumprimenta = false,
+  comContextoDaEquipe = false,
 ): string {
   const base =
     `${instruction}\nFaça uma primeira abordagem curta e transparente. ` +
-    `Os dados vieram de pesquisa pública, não de um formulário preenchido pela pessoa. ` +
-    `Não invente familiaridade, resultados ou interesse. Uma pergunta por vez. ` +
+    (comContextoDaEquipe ? ORIGEM_DOS_DADOS_COM_CONTEXTO_DA_EQUIPE : ORIGEM_DOS_DADOS_DA_ABORDAGEM_FRIA) +
+    `Uma pergunta por vez. ` +
     `Critérios a confirmar durante a conversa: ${qualification}` +
     (soCumprimenta
       ? "\nEsta primeira mensagem NÃO apresenta serviço, preço nem proposta: só cumprimenta e confirma se falou com a empresa certa."
@@ -585,6 +596,11 @@ export function instrucaoDeAbordagemFria(
  * descoberta trazia cinco sinais e o prompt recebia a nota nua, as URLs cruas e
  * o veredito do site. Numa empresa sem site sobrava "não tem site", e a
  * mensagem saía igual à da empresa seguinte.
+ *
+ * O CONTEXTO DA EQUIPE (`data.contexto_da_equipe`, colunas da planilha) entra no FIM,
+ * como dado. `opcoes.soCumprimenta` é o modo "saída na 2ª mensagem": diagnóstico e
+ * oferta (ângulo de venda) ficam de fora, como a `Auditoria`; o `Contexto da equipe`
+ * fica. Sem contexto gravado, a saída é byte a byte a de antes.
  */
 export function montarDadosDeAbordagem(
   data: {
@@ -597,6 +613,7 @@ export function montarDadosDeAbordagem(
     socials: string[];
     phone?: string | null;
     whatsapp?: { existe: boolean; verificado_em: string } | null;
+    contexto_da_equipe?: unknown;
   },
   site: {
     classe: ClasseDeSite;
@@ -606,6 +623,7 @@ export function montarDadosDeAbordagem(
     verificado_em: string;
   } | null,
   previa?: PreviaSalva | null,
+  opcoes: { soCumprimenta?: boolean } = {},
 ): Record<string, string> {
   const dados: Record<string, string> = {
     Empresa: data.name,
@@ -634,5 +652,9 @@ export function montarDadosDeAbordagem(
   // alguém). Vai como DADO — dentro da cerca de nonce, nunca como instrução — e com teto próprio
   // em `formatarDados` (1200, não os 500 dos outros campos).
   if (previa?.texto) dados["Rascunho de abordagem"] = previa.texto;
+  // O que a EQUIPE escreveu na planilha: dado dentro da cerca, com teto próprio em
+  // `formatarDados`. Quem decide se as regras do `system` mudam é `temContextoDaEquipe`
+  // sobre ESTES dados — então o modo só-cumprimenta sem `Contexto da equipe` não liga nada.
+  Object.assign(dados, dadosDoContextoDaEquipe(lerContextoDaEquipe(data.contexto_da_equipe), opcoes));
   return dados;
 }
