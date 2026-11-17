@@ -40,19 +40,24 @@
  * o resto da resposta é o de antes. Sai mesmo sem meta cadastrada: "não há
  * alvo" não é motivo para esconder quanto entrou no mês.
  *
- * A org vem do cookie validado (`requireRole`), NUNCA do query. Read-only ⇒ sem
- * audit.
+ * A org vem do cookie validado (`requireRole`) ou da LINHA do token, NUNCA do
+ * query. Read-only ⇒ sem audit.
+ *
+ * Sessão OU token de servidor `dsk_…` com `mcp:read` (Spec 33, R3). A meta é da
+ * empresa/funil, mas o realizado vem de `crm_leads`, que na sessão a RLS recorta
+ * por atendente; o token lê a organização inteira, então exige `manager`.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { moedaDaOrganizacao } from "@/lib/metrics/moeda-da-organizacao";
 import { type NegocioComValor, separarValoresDoPeriodo } from "@/lib/metrics/valores-do-periodo";
 import { lerPaginado } from "@/lib/supabase/pagina";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -94,10 +99,18 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   // Piso agent: o atendente vê a meta da empresa — é o número que a tela dele
   // mostra. A escrita é que exige manager (policy da tabela + Server Action).
-  const authz = await requireRole("agent", { requestId, resource: "metrics" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "metrics",
+    role: "agent",
+    scope: "mcp:read",
+    tokenRole: "manager",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg } = authz;
+  // Está em PUBLIC_PATHS: o teto do token é a única contagem das chamadas dele.
+  const teto = await tetoDeEscritaDoToken(authz, "metrics", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const url = new URL(req.url);
   const parsed = querySchema.safeParse({
@@ -128,8 +141,8 @@ export async function GET(req: NextRequest): Promise<Response> {
     ? primeiroDiaDoMes(parsed.data.from)
     : `${de.slice(0, 7)}-01`;
 
-  const supabase = await createClient();
-  const orgId = activeOrg.orgId;
+  const supabase = authz.supabase;
+  const orgId = authz.organizationId;
 
   // As metas do MÊS (o da janela) na organização ativa. `pipeline_id is null` é
   // a meta da empresa e vem primeiro; metas por funil (fatia seguinte) também
@@ -230,7 +243,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const valoresDoPeriodo = separarValoresDoPeriodo({
     negocios: leituraDeValores.linhas,
     janela: { from: de, to: ate },
-    moedaDaOrganizacao: activeOrg.currency ?? null,
+    moedaDaOrganizacao: await moedaDaOrganizacao(orgId),
     truncado: leituraDeValores.truncado,
   });
 

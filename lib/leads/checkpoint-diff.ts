@@ -1,3 +1,7 @@
+import { preencher } from "@/lib/i18n/idioma-do-aviso";
+import { traduzir } from "@/lib/i18n/dicionario";
+import type { Idioma } from "@/lib/i18n/idiomas";
+
 /** O conteúdo de um checkpoint do agente (lead_checkpoints). */
 export interface CheckpointContent {
   commitments: string[];
@@ -33,6 +37,11 @@ export interface CheckpointDiff {
 export function diffCheckpoint(
   anterior: CheckpointContent | null,
   atual: CheckpointContent,
+  /**
+   * O idioma em que a timeline GRAVA o motivo. A linha é dado (a tela a mostra
+   * como veio), então nasce no idioma da organização; `pt-BR` sai byte a byte.
+   */
+  idioma: Idioma = "pt-BR",
 ): CheckpointDiff {
   const antesCommit = new Set(normalizar(anterior?.commitments));
   const antesObj = new Set(normalizar(anterior?.objections));
@@ -52,7 +61,7 @@ export function diffCheckpoint(
     addedObjections,
     nextActionChanged,
     reason: emit
-      ? motivo(addedObjections, addedCommitments, nextActionChanged, atual.next_action)
+      ? motivo(addedObjections, addedCommitments, nextActionChanged, atual.next_action, idioma)
       : anterior === null
         ? "primeiro checkpoint sem compromisso, objeção ou próxima ação"
         : "só reescreveu o resumo — não muda o que fazer a seguir",
@@ -65,16 +74,22 @@ function motivo(
   compromissos: string[],
   mudouAcao: boolean,
   proximaAcao: string | null,
+  idioma: Idioma,
 ): string {
+  // O rótulo passa pelo dicionário; o que a IA escreveu entra DEPOIS, numa
+  // passada só (`preencher`): um `{texto}` dentro do conteúdo nunca é marcador.
+  const rotulo = (chave: string, valores: { n?: number; texto: string }): string =>
+    preencher(traduzir(chave, idioma), { n: String(valores.n ?? ""), texto: valores.texto });
   const partes: string[] = [];
-  if (objecoes.length === 1) partes.push(`Nova objeção: ${objecoes[0]}`);
-  else if (objecoes.length > 1) partes.push(`${objecoes.length} novas objeções: ${objecoes.join("; ")}`);
+  if (objecoes.length === 1) partes.push(rotulo("Nova objeção: {texto}", { texto: objecoes[0] ?? "" }));
+  else if (objecoes.length > 1)
+    partes.push(rotulo("{n} novas objeções: {texto}", { n: objecoes.length, texto: objecoes.join("; ") }));
 
-  if (compromissos.length === 1) partes.push(`Novo compromisso: ${compromissos[0]}`);
+  if (compromissos.length === 1) partes.push(rotulo("Novo compromisso: {texto}", { texto: compromissos[0] ?? "" }));
   else if (compromissos.length > 1)
-    partes.push(`${compromissos.length} novos compromissos: ${compromissos.join("; ")}`);
+    partes.push(rotulo("{n} novos compromissos: {texto}", { n: compromissos.length, texto: compromissos.join("; ") }));
 
-  if (mudouAcao && proximaAcao) partes.push(`Próxima ação: ${proximaAcao}`);
+  if (mudouAcao && proximaAcao) partes.push(rotulo("Próxima ação: {texto}", { texto: proximaAcao }));
   return partes.join(" · ");
 }
 

@@ -17,30 +17,38 @@ import { randomUUID } from "node:crypto";
 
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { enderecoValido, finalDoEndereco, hashDoEndereco } from "@/lib/campanhas/exclusoes";
 import { criarExclusaoSchema } from "@/lib/campanhas/schemas";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 const COLUNAS = "id, contact_id, address_tail, reason, source, created_at, created_by";
 
-export async function GET(): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "campaign_suppressions" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "campaign_suppressions",
+    role: "manager",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "campaign_suppressions_lista", requestId);
+  if (teto) return teto;
+  const org = { orgId: authz.organizationId };
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data, error } = await supabase
     .from("campaign_suppressions")
     .select(COLUNAS)
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", org.orgId)
     .order("created_at", { ascending: false })
     .limit(500);
   if (error) return fail("internal_error", error.message, 500, { requestId });
@@ -53,9 +61,18 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (negado) return negado;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "campaign_suppressions" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "campaign_suppressions",
+    role: "manager",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "campaign_suppressions_criar", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const org = { orgId: authz.organizationId };
+  const autor = authz.actor.type === "user" ? authz.actor.id : null;
 
   const parsed = criarExclusaoSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -73,16 +90,29 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const admin = createAdminClient();
+  // O contato do corpo é conferido na organização ANTES de gravar, na sessão e no
+  // token: o cliente admin não passa pela RLS, e a chave estrangeira simples não
+  // confere organização. Sem isto, a supressão nasceria amarrada a contato alheio.
+  if (contact_id) {
+    const { data: contato, error: erroContato } = await admin
+      .from("contacts")
+      .select("id")
+      .eq("organization_id", org.orgId)
+      .eq("id", contact_id)
+      .maybeSingle();
+    if (erroContato) return fail("internal_error", erroContato.message, 500, { requestId });
+    if (!contato) return fail("not_found", t("Contato não encontrado."), 404, { requestId });
+  }
   const { data, error } = await admin
     .from("campaign_suppressions")
     .insert({
-      organization_id: authz.org.orgId,
+      organization_id: org.orgId,
       contact_id: contact_id ?? null,
       recipient_address_hash: hashDoEndereco(address),
       address_tail: finalDoEndereco(address),
       reason: reason ?? null,
       source: "manual",
-      created_by: authz.user.id,
+      created_by: autor,
     })
     .select(COLUNAS)
     .single();
@@ -97,8 +127,9 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   void audit({
     action: "campaign.suppression_added",
-    actorUserId: authz.user.id,
-    organizationId: authz.org.orgId,
+    actorUserId: autor,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: org.orgId,
     resourceType: "campaign_suppression",
     resourceId: (data as unknown as { id: string }).id,
     requestId,

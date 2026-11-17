@@ -89,3 +89,47 @@ describe("o CSS personalizado do tema escuro fica escopado no escuro", () => {
     );
   });
 });
+
+/**
+ * A PORTEIRA (#4463). O escopo do tema entra como PREFIXO controlado; quem
+ * escreve a regra continua restrito a seletor de CLASSE. Se o escopo virasse
+ * "aceita qualquer coisa quando `escuro`", a defesa contra o CSS que quebra a
+ * instalação inteira cairia junto — e o cliente poderia forjar `[data-theme]`,
+ * `#id` ou `body` no próprio texto.
+ */
+describe("o escopo do tema não abre a porteira do validador", () => {
+  it.each([
+    ["id, que o validador recusa desde sempre", "#nav-grupo-crm { color: #fff; }"],
+    ["tag", "div { color: #fff; }"],
+    ["atributo, inclusive o do tema", '[data-theme="dark"] .cartao { color: #fff; }'],
+    ["atributo depois da classe", '.cartao[aria-current="page"] { color: #fff; }'],
+    ["pseudo-classe de raiz", ":root .cartao { color: #fff; }"],
+    ["universal", "* { color: #fff; }"],
+    ["pseudo-elemento", ".cartao::before { color: #fff; }"],
+    ["lista em que só um seletor é de classe", ".cartao, #conteudo { color: #fff; }"],
+  ])("recusa %s nos DOIS escopos", (_caso, css) => {
+    for (const escopo of ["claro", "escuro"] as const) {
+      const resultado = validarCssPersonalizado(css, escopo);
+      expect(resultado.css, escopo).toBeNull();
+      expect(resultado.erro, escopo).toBeTruthy();
+    }
+  });
+
+  it("o cliente não consegue acrescentar um segundo [data-theme] ao seletor", () => {
+    const regra = validarCssPersonalizado(".cartao { color: #fff; }", "escuro");
+    expect(regra.erro).toBeNull();
+    // O prefixo é a ÚNICA ocorrência do atributo na folha emitida: o texto do
+    // cliente nunca o contém, então não há o que forjar.
+    expect((regra.css ?? "").match(/\[data-theme/g)).toHaveLength(1);
+    expect(regra.css).toBe(':root:root[data-theme="dark"] .cartao { color: #fff; }');
+  });
+
+  it("a classe válida sai idêntica nos dois escopos, só com o prefixo trocado", () => {
+    const regra = ".cartao:hover, .cartao > .titulo { color: #fff; }";
+    const claro = validarCssPersonalizado(regra, "claro");
+    const escuro = validarCssPersonalizado(regra, "escuro");
+    expect(claro.erro).toBeNull();
+    expect(escuro.erro).toBeNull();
+    expect(escuro.css?.replaceAll(':root:root[data-theme="dark"]', ":root:root")).toBe(claro.css);
+  });
+});
