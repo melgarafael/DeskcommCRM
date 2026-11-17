@@ -11861,12 +11861,7 @@ export const DICIONARIO: Traducoes = {
   "Remover os negócios da estrutura dos funis, mantendo contatos e históricos": {
     es: "Quitar los negocios de la estructura de los embudos, conservando contactos e historiales",
   },
-  "Funil de destino": { es: "Embudo de destino" },
   "Nenhum outro funil disponível": { es: "Ningún otro embudo disponible" },
-  "Etapa de destino": { es: "Etapa de destino" },
-  "Carregando etapas…": { es: "Cargando etapas…" },
-  "Escolha a etapa": { es: "Elige la etapa" },
-  "Aplicando…": { es: "Aplicando…" },
   "Remover os negócios e continuar": { es: "Quitar los negocios y continuar" },
   "Transferir e continuar": { es: "Transferir y continuar" },
   "Não consegui mover os negócios. Tente de novo.": {
