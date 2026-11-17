@@ -6238,6 +6238,7 @@
   "Não foi possível descartar. Confira se você tem papel de gestor.": "Silinemedi. Yönetici rolünüz olup olmadığını kontrol edin.",
   "Não foi possível desligar todos os grupos.": "Tüm gruplar kapatılamadı.",
   "Não foi possível desmarcar o contato como pessoal.": "Kişinin kişisel işareti kaldırılamadı.",
+  "Só quem marcou o contato como pessoal pode desmarcá-lo.": "Kişiyi kişisel olarak işaretleyen kişi dışında kimse bu işareti kaldıramaz.",
   "Não foi possível encaminhar: {motivo}": "İletilemedi: {motivo}",
   "Não foi possível encerrar. Cancele esta edição e abra novamente para revisar o desfecho.": "Kapatılamadı. Bu düzenlemeyi iptal edip sonucu gözden geçirmek için yeniden açın.",
   "Não foi possível entregar: o número não tem WhatsApp ou o aplicativo está desatualizado.": "Teslim edilemedi: numarada WhatsApp yok veya uygulama güncel değil.",

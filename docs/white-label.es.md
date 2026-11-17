@@ -1,4 +1,4 @@
-<!-- traduzido-de: docs/white-label.md@1a972883babb -->
+<!-- traduzido-de: docs/white-label.md@120e11feaad1 -->
 
 [🇧🇷 Português](white-label.md) · [🇺🇸 English](white-label.en.md) · 🇪🇸 Español
 
@@ -41,6 +41,8 @@ Ejemplo:
 ```
 
 **Color por sección del menú lateral.** El menú tiene clases estables, pensadas para este CSS. Todo grupo lleva `nav-grupo`, y cada uno lleva también la suya: `nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais`, `nav-grupo-analise` y `nav-grupo-organizacao` (la del pie, con Configuración y Ayuda). Cada destino tiene la suya: `nav-item-inbox`, `nav-item-kanban`, etcétera. Estas clases forman parte del contrato de la pantalla y no cambian entre versiones; las clases utilitarias de Tailwind, sí.
+
+**Color por sección del contenido.** El contenedor del contenido de toda pantalla lleva `tela-secao` y, cuando la ruta está en el registro de navegación, también la de la sección: `tela-secao-atendimento`, `tela-secao-crm`, `tela-secao-ia`, `tela-secao-canais`, `tela-secao-analise` y `tela-secao-organizacao` — con ella, `.tela-secao-crm .rounded-lg { border-top-color: #1d4ed8; }` vale solo en las pantallas de CRM. Una ruta fuera del registro queda solo con `tela-secao`.
 
 Para pintar el texto del menú, apunta a `text-muted-foreground` dentro del grupo, no a `rounded-md`. El título del grupo y los enlaces tienen las dos, pero el ítem de la pantalla abierta solo tiene `rounded-md`: ya tiene fondo en el color de destaque, y un color de texto elegido para el fondo del menú puede desaparecer sobre él. Como `text-muted-foreground` es de Tailwind, revisa el menú después de actualizar. El color del ejemplo es para el tema claro; en el oscuro, repite la regla en el campo **CSS del tema oscuro** con un color claro.
 

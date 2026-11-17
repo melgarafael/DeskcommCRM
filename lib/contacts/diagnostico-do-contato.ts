@@ -276,6 +276,62 @@ export function segmentoDoContatoNovo(
 }
 
 /**
+ * O diagnóstico com que o contato NASCE pela prospecção a partir do que a EQUIPE escreveu
+ * na planilha (`diagnostico` → resumo, `oferta` → oferta, `contexto` → observações). Como
+ * `segmentoDoContatoNovo`, só para contato novo.
+ *
+ * A escrita passa por `aplicarDiagnostico` (o mesmo caminho da aba): mesma regra de corte,
+ * de chave vazia e de AUTORIA — `por`/`em` só entram quando há diagnóstico ou oferta; a
+ * observação sozinha é recado da equipe e não carrega autoria. `autor` é `usuario:<uuid>`
+ * de quem importou a planilha e `em` o instante da importação; autoria fora do formato
+ * (ou data ilegível) não é gravada, e os textos entram assim mesmo.
+ *
+ * Chave que a organização declarou como campo de contato próprio
+ * (`chavesDaOrganizacao`) fica de fora — o valor é dela, com o tipo e o padrão dela, e o
+ * `createContactHandler` recusaria com 422 o que não casa (o mesmo motivo do segmento).
+ */
+export function diagnosticoDoContatoNovo(
+  equipe:
+    | {
+        resumo?: string | null;
+        oferta?: string | null;
+        observacoes?: string | null;
+        autor?: string | null;
+        em?: string | null;
+      }
+    | null
+    | undefined,
+  chavesDaOrganizacao: Iterable<string> = [],
+): Record<string, unknown> {
+  if (!equipe) return {};
+  const vazio = textosDoDiagnostico({});
+  const editado: TextosDoDiagnostico = {
+    ...vazio,
+    resumo: equipe.resumo ?? "",
+    oferta: equipe.oferta ?? "",
+    observacoes: equipe.observacoes ?? "",
+  };
+  const autor = autoriaSchema.safeParse(equipe.autor);
+  const em = equipe.em ? new Date(equipe.em) : null;
+  const autoriaValida = autor.success && em !== null && !Number.isNaN(em.getTime());
+  const saida = aplicarDiagnostico({}, vazio, editado, autoriaValida ? autor.data : "", autoriaValida ? em : undefined);
+  if (!autoriaValida) {
+    delete saida[CHAVES_DO_DIAGNOSTICO.por];
+    delete saida[CHAVES_DO_DIAGNOSTICO.em];
+  }
+  for (const chave of chavesDaOrganizacao) delete saida[chave];
+  // Autoria sem o texto que ela assina (a organização ficou com a chave) não fica.
+  const sobrouDiagnostico = CAMPOS_QUE_DEFINEM_A_AUTORIA.some(
+    (campo) => typeof saida[CHAVES_DO_DIAGNOSTICO[campo]] === "string",
+  );
+  if (!sobrouDiagnostico) {
+    delete saida[CHAVES_DO_DIAGNOSTICO.por];
+    delete saida[CHAVES_DO_DIAGNOSTICO.em];
+  }
+  return saida;
+}
+
+/**
  * Quem EDITA a aba Diagnóstico; os demais só leem. Atendente (`agent`) ou
  * acima, fora do suporte só-leitura e com o contato não anonimizado — o mesmo
  * piso do `PATCH /api/v1/contacts/:id` (`requireRole("agent")`,

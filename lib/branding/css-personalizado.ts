@@ -2,6 +2,7 @@ import postcss, { type Root } from "postcss";
 
 import { ESCOPO_DA_INSTALACAO } from "@/lib/extensions/tema";
 import { valorDaInstalacao } from "@/lib/instalacao/config";
+import { CLASSES_DE_SECAO_CONHECIDAS, ehClasseDeSecao } from "@/lib/navigation/secoes-da-tela";
 
 export const CHAVE_CSS_PERSONALIZADO = "APP_CUSTOM_CSS";
 /**
@@ -106,6 +107,27 @@ function recusar(erro: string): ResultadoCss {
   return { css: null, erro, regras: 0, declaracoes: 0 };
 }
 
+const CLASSE_NO_SELETOR = /\.([A-Za-z_][A-Za-z0-9_-]*)/g;
+
+/**
+ * A SEÇÃO QUE NÃO EXISTE (#4705). A família `tela-secao-*` é contrato FECHADO
+ * (`lib/navigation/secoes-da-tela.ts`), e classe fora dele não pinta nada — o
+ * cliente salvaria a folha, não veria efeito e não saberia por quê. As outras
+ * classes (`.card`, utilitárias do Tailwind) continuam passando: o validador
+ * nunca conheceu o catálogo inteiro delas, e ampliar isso não é esta issue.
+ */
+function classeDeSecaoDesconhecida(seletor: string): string | null {
+  for (const [, classe = ""] of seletor.matchAll(CLASSE_NO_SELETOR)) {
+    if (ehClasseDeSecao(classe) && !CLASSES_DE_SECAO_CONHECIDAS.includes(classe)) return classe;
+  }
+  return null;
+}
+
+function erroDeSecaoDesconhecida(classe: string): string {
+  const conhecidas = CLASSES_DE_SECAO_CONHECIDAS.map((nome) => `.${nome}`).join(", ");
+  return `A classe .${classe} não existe no conteúdo das telas. O contêiner do conteúdo leva ${conhecidas} — use uma delas para pintar a tela inteira.`;
+}
+
 /**
  * CSS de marca deliberadamente limitado a seletores de classes e propriedades
  * visuais. Não aceita código, regras de layout que ocultem controles, at-rules,
@@ -161,6 +183,16 @@ export function validarCssPersonalizado(
     if (seletores.length === 0 || seletores.some((seletor) => !SELETOR_VISUAL.test(seletor))) {
       erro =
         "Use seletores formados por classes, como .text-muted-foreground ou .rounded-md:hover.";
+      return false;
+    }
+
+    // A classe de seção é contrato fechado (#4705): a que não existe é recusada
+    // com a lista do que existe, em vez de ser gravada e não pintar nada.
+    const secaoDesconhecida = seletores
+      .map((seletor) => classeDeSecaoDesconhecida(seletor))
+      .find((classe) => classe !== null);
+    if (secaoDesconhecida) {
+      erro = erroDeSecaoDesconhecida(secaoDesconhecida);
       return false;
     }
 
