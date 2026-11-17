@@ -14792,6 +14792,21 @@ export const DICIONARIO: Traducoes = {
   "Nova tarefa": { es: "Nueva tarea" },
   "Ninguém": { es: "Nadie" },
   // A tarefa que se repete (#4595): o seletor de dias e a hora da série.
+  "Não repete": { es: "No se repite" },
+  "Diária": { es: "Diaria" },
+  "Semanal": { es: "Semanal" },
+  "Rotina": { es: "Rutina" },
+  "A tarefa volta todo dia, no horário acima, no fuso da empresa.": {
+    es: "La tarea vuelve todos los días, en el horario de arriba, en la zona horaria de la empresa.",
+  },
+  "A tarefa volta todo mês nesse dia, no horário acima, no fuso da empresa.": {
+    es: "La tarea vuelve todos los meses en ese día, en el horario de arriba, en la zona horaria de la empresa.",
+  },
+  "A próxima é criada quando você concluir esta tarefa.": {
+    es: "La siguiente se crea cuando completes esta tarea.",
+  },
+  "Escolha um dia do mês entre 1 e 31.": { es: "Elige un día del mes entre 1 y 31." },
+  "Escolha a repetição e o horário.": { es: "Elige la repetición y el horario." },
   "Repetir toda semana": { es: "Repetir cada semana" },
   "A tarefa volta nos dias escolhidos, no horário acima, no fuso da empresa.": {
     es: "La tarea vuelve los días elegidos, en el horario de arriba, en la zona horaria de la empresa.",
