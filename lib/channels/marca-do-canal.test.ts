@@ -18,11 +18,11 @@ import { describe, expect, it } from "vitest";
 
 import { PISOS, razaoDeContraste } from "@/lib/branding/contraste";
 import { CANAIS_NA_PALETA, descricaoComCanal, marcaDoCanal, rotuloAcessivelDoCanal } from "@/lib/channels/marca-do-canal";
-import { channelBrand, channelBrandDoAviso } from "@/lib/channels/presentation";
+import { channelBrand } from "@/lib/channels/presentation";
 
 const CSS = fs.readFileSync(path.join(process.cwd(), "app/globals.css"), "utf8");
 
-const CANAIS = ["whatsapp", "instagram", "messenger", "telegram", "email", "api-oficial"] as const;
+const CANAIS = ["whatsapp", "instagram", "messenger", "telegram"] as const;
 
 /** Lê o bloco cujo seletor está SOZINHO na linha — `includes` pegaria variantes. */
 function blocoDe(seletor: string): Map<string, string> {
@@ -81,17 +81,15 @@ describe("marcaDoCanal", () => {
   });
 });
 
-describe("channelBrandDoAviso", () => {
-  it("o número da API oficial sai como cano próprio no aviso; o logo da lista segue a rede", () => {
-    const oficial = { provider: "meta_cloud", social_platform: null };
-    expect(channelBrandDoAviso(oficial)).toBe("api-oficial");
-    // A lista de conversas continua dizendo "WhatsApp": ali se procura a
-    // conversa, não o cano.
-    expect(channelBrand(oficial)).toBe("whatsapp");
-    expect(channelBrandDoAviso({ provider: "waha" })).toBe("whatsapp");
-    expect(channelBrandDoAviso({ provider: "zernio_social", social_platform: "telegram" })).toBe("telegram");
-    expect(channelBrandDoAviso({ provider: "email" })).toBe("email");
-    expect(channelBrandDoAviso(null)).toBe("unknown");
+describe("channelBrand no aviso", () => {
+  it("a marca é da rede, nunca do transporte; só conversa de verdade tem marca", () => {
+    // O bot nativo do Telegram (#3440) grava `provider: "telegram"`: sem este
+    // caso, o aviso dele sairia neutro enquanto a tela promete "Telegram azul".
+    expect(channelBrand({ provider: "telegram" })).toBe("telegram");
+    // O número da API oficial continua WhatsApp: a cor do que já existe não muda.
+    expect(channelBrand({ provider: "meta_cloud" })).toBe("whatsapp");
+    // E-mail é canal de campanha, não de conversa: não gera aviso nem tem marca.
+    expect(channelBrand({ provider: "email" })).toBe("unknown");
   });
 });
 
@@ -103,8 +101,6 @@ describe("a paleta nomeada", () => {
       "whatsapp",
       "telegram",
       "instagram",
-      "email",
-      "api-oficial",
       "messenger",
     ]);
     for (const canal of CANAIS_NA_PALETA) {

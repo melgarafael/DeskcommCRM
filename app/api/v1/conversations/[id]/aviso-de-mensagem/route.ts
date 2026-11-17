@@ -7,7 +7,7 @@
  * `settings.notificacoes`, a mesma que o funil do push aplica), decidido aqui
  * no servidor e não no navegador.
  *
- * `canal` é a REDE da conversa, traduzida por `channelBrandDoAviso`, para o
+ * `canal` é a REDE da conversa, traduzida por `channelBrand`, para o
  * toast se identificar sem a pessoa ler (#4094). `cor_por_canal` é a opção da
  * empresa (`settings.notificacoes.cor_por_canal`): desligada, o aviso volta ao
  * neutro e o nome do canal continua no texto. Vem aqui, e não de um segundo pedido à
@@ -49,7 +49,7 @@ import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
-import { channelBrandDoAviso } from "@/lib/channels/presentation";
+import { channelBrand } from "@/lib/channels/presentation";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { logger } from "@/lib/logger";
 import {
@@ -99,7 +99,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<R
     const { modo, corPorCanal } = await lerOpcoesDoAviso(createAdminClient(), org.orgId);
     // O tipo vê o embed como lista; pela FK ele chega como objeto único.
     const sessao = conversa.channel_sessions;
-    const canal = channelBrandDoAviso(Array.isArray(sessao) ? sessao[0] : sessao);
+    const canal = channelBrand(Array.isArray(sessao) ? sessao[0] : sessao);
     return ok({ avisar, conteudo: modo, canal, cor_por_canal: corPorCanal }, { requestId });
   } catch (err) {
     logger.error("[aviso-de-mensagem] leitura falhou", {

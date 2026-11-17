@@ -23,15 +23,10 @@ import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
-import { EnvelopeSimple, InstagramLogo, MessengerLogo, PlugsConnected, TelegramLogo, WhatsappLogo } from "@/lib/ui/icons";
+import { InstagramLogo, MessengerLogo, TelegramLogo, WhatsappLogo } from "@/lib/ui/icons";
 
-/**
- * As origens que o produto sabe desenhar. Rede nova entra aqui E em
- * `channelBrand`; a API oficial entra como origem própria porque a pessoa
- * distingue "meu número por QR" de "meu número pela API oficial" ao bater o
- * olho — é a mesma rede, dois canos (ver `channelBrandDoAviso`).
- */
-export type CanalConhecido = "whatsapp" | "instagram" | "messenger" | "telegram" | "email" | "api-oficial";
+/** As redes que o produto sabe desenhar. Rede nova entra aqui E em `channelBrand`. */
+export type CanalConhecido = "whatsapp" | "instagram" | "messenger" | "telegram";
 
 export interface MarcaDeCanal {
   /** `unknown` é o fallback: sem ícone, cor neutra, rótulo genérico. */
@@ -52,8 +47,6 @@ export const CANAIS_NA_PALETA: readonly CanalConhecido[] = [
   "whatsapp",
   "telegram",
   "instagram",
-  "email",
-  "api-oficial",
   "messenger",
 ];
 
@@ -81,23 +74,6 @@ const MARCAS: Record<CanalConhecido, MarcaDeCanal> = {
     rotulo: "Telegram",
     cor: "var(--color-canal-telegram)",
     Icone: TelegramLogo,
-  },
-  email: {
-    id: "email",
-    rotulo: "E-mail",
-    cor: "var(--color-canal-email)",
-    Icone: EnvelopeSimple,
-  },
-  /**
-   * O número conectado pela API oficial da Meta. A REDE é a mesma do WhatsApp,
-   * mas o cano é outro — e é o cano que a pessoa procura quando o aviso toca
-   * fora do horário da campanha, não do atendimento.
-   */
-  "api-oficial": {
-    id: "api-oficial",
-    rotulo: "API oficial",
-    cor: "var(--color-canal-api-oficial)",
-    Icone: PlugsConnected,
   },
 };
 

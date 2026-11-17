@@ -69,7 +69,10 @@ export function entregarAviso(input: EntregarAvisoInput): void {
     // outros avisos, e o toast sai como sempre saiu (#4094).
     toast(title, {
       // A cor nunca é o único sinal: o nome da rede abre o corpo do aviso
-      // ("WhatsApp · Foto"), em texto, para quem não distingue a faixa.
+      // ("WhatsApp · Foto"), em texto, para quem não distingue a faixa. O
+      // prefixo NÃO depende de `corPorCanal`: com a cor ligada ou desligada,
+      // todo aviso de conversa de rede conhecida passa a abrir com o nome dela
+      // — é a parte da #4094 que muda o que quem já usa vê.
       description: input.canal == null ? body : descricaoComCanal(body, input.canal, idioma),
       action: href
         ? {

@@ -34,10 +34,7 @@ vi.mock("@/lib/auth/require-role", () => ({
     org: { orgId: ORG, name: "Org", role: estado.role },
   })),
 }));
-vi.mock("@/lib/channels/presentation", () => ({
-  channelBrand: estado.marca,
-  channelBrandDoAviso: estado.marca,
-}));
+vi.mock("@/lib/channels/presentation", () => ({ channelBrand: estado.marca }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
     from: () => {

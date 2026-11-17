@@ -9,9 +9,8 @@ export function channelBrand(
     case "datafy":
     case "wacalls":
       return "whatsapp";
-    case "email":
-    case "smtp":
-      return "email";
+    case "telegram":
+      return "telegram";
     case "zernio_social":
       if (session.social_platform === "instagram") return "instagram";
       if (session.social_platform === "facebook") return "messenger";
@@ -23,23 +22,4 @@ export function channelBrand(
     default:
       return "unknown";
   }
-}
-
-/**
- * A origem que o AVISO da esquina nomeia (`#4094`).
- *
- * Mesma regra de `channelBrand` — a marca é da rede, não do fornecedor — com
- * UMA exceção declarada: o número conectado pela API oficial da Meta sai como
- * `api-oficial`. Para quem atende, "chegou pelo WhatsApp do meu chip" e
- * "chegou pela API oficial" são dois canos com donos e janelas diferentes, e o
- * aviso existe para dizer isso sem abrir a conversa. O logo da lista de
- * conversas continua na rede (`channelBrand`), porque ali o que se procura é
- * a conversa, não o cano.
- */
-export function channelBrandDoAviso(
-  session?: { provider?: string | null; social_platform?: string | null } | null,
-) {
-  const rede = channelBrand(session);
-  if (rede === "whatsapp" && session?.provider === "meta_cloud") return "api-oficial";
-  return rede;
 }
