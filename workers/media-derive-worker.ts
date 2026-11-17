@@ -13,7 +13,7 @@ import { visaoEmVigor } from "@/lib/ai/pontos/capacidade-em-vigor";
 import { PONTO_TRANSCRICAO_DE_AUDIO, PONTO_VISAO_DE_IMAGEM } from "@/lib/ai/pontos/registro";
 import { costCents, type TokenUsage } from "@/lib/agent-engine/edge/llm/pricing";
 import { custoDoModeloForaDoMotor } from "@/lib/agent-engine/edge/llm/pricing-do-catalogo";
-import { decidirCustoDaChamada } from "@/lib/agent-engine/edge/llm/custo-da-chamada";
+import { decidirCustoDaChamada, haUsoMedido } from "@/lib/agent-engine/edge/llm/custo-da-chamada";
 import {
   aplicarOrcamento,
   LlmBudgetExceededError,
@@ -1179,6 +1179,9 @@ function custoComCatalogo(
   const decidir = (doCatalogoDaInstalacao?: number | null) =>
     decidirCustoDaChamada({
       provider,
+      // Mesmo corte de DADO do seam: modelo tarifado com `usage` zerado daria
+      // `0` ("de graça") — vira nulo com motivo `sem_uso`.
+      temUso: haUsoMedido(uso),
       informadoPeloProvedor: undefined,
       porPassosDoTerra: undefined,
       daTabelaDoMotor,
@@ -1287,6 +1290,9 @@ function comCustoRegistrado(
         return linhaCom(
           decidirCustoDaChamada({
             provider: ctx.provider,
+            // Aqui o uso EXISTE (a duração gravada é a medida do áudio); o que
+            // falta é a TARIFA. Marcar `sem_uso` mentiria sobre o motivo.
+            temUso: true,
             informadoPeloProvedor: undefined,
             porPassosDoTerra: undefined,
             daTabelaDoMotor: null,
