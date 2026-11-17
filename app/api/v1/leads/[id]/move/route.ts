@@ -332,7 +332,7 @@ export async function POST(
           .recurring_value_cents ?? null,
         meses: (lead as { recurring_months?: number | null }).recurring_months ?? null,
         criadoEm: (lead as { created_at?: string | null }).created_at ?? null,
-        userId: user.id,
+        userId,
         origem: "leads/[id]/move",
         requestId,
       },

@@ -383,7 +383,7 @@ export async function POST(req: NextRequest): Promise<Response> {
             valorRecorrente: linha.recurring_value_cents ?? null,
             meses: linha.recurring_months ?? null,
             criadoEm: linha.created_at ?? null,
-            userId: user.id,
+            userId,
             origem: "leads/bulk",
             requestId,
           });
