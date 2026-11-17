@@ -6,7 +6,8 @@
  * 2. O card do dossiê aberto (`?lead=`) aparece mesmo além do corte, e continua
  *    na tela quando o dossiê fecha.
  * 3. Mudar `isDraggingOver` da coluna não redesenha nenhum card; um pulso
- *    redesenha só o card dele.
+ *    redesenha só o card dele; o relógio de minuto redesenha os cards e o tempo
+ *    na etapa anda sem mudança no negócio.
  * 4. Os diálogos do menu do card não existem fechados e montam ao abrir pelo menu.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -20,6 +21,7 @@ import type { Lead } from "@/lib/types/leads";
 
 const h = vi.hoisted(() => ({
   renders: new Map<string, number>(),
+  horas: new Map<string, number | null>(),
   arrastandoPorCima: [] as Array<(v: boolean) => void>,
   montados: { perda: 0, mover: 0, editar: 0 },
 }));
@@ -47,8 +49,9 @@ vi.mock("@hello-pangea/dnd", async () => {
   };
 });
 vi.mock("@/components/kanban/KanbanCard", () => ({
-  KanbanCard: ({ lead }: { lead: { id: string } }) => {
+  KanbanCard: ({ lead, card }: { lead: { id: string }; card: { hoursInStage: number | null } }) => {
     h.renders.set(lead.id, (h.renders.get(lead.id) ?? 0) + 1);
+    h.horas.set(lead.id, card.hoursInStage);
     return <div data-testid="card" data-id={lead.id} />;
   },
 }));
@@ -204,6 +207,30 @@ describe("arrastar por cima da coluna não redesenha os cards", () => {
     h.renders.clear();
     rerender(coluna(stage, leads, { pulses: new Map([["l-0003", 1]]) }));
     expect([...h.renders.entries()]).toEqual([["l-0003", 1]]);
+  });
+});
+
+describe("o tempo na etapa anda com o relógio, sem mudança no negócio", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("depois de uma hora de tiques, o card mede uma hora a mais", () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    vi.setSystemTime(new Date("2026-11-16T12:00:00Z"));
+    const stage = etapa({ id: "s-aberta", name: "Negociação" });
+    const leads = negocios(3, "s-aberta").map((l) => ({
+      ...l,
+      stage_changed_at: "2026-11-16T10:00:00Z",
+    })) as Lead[];
+
+    render(coluna(stage, leads));
+    expect(h.horas.get("l-0000")).toBe(2);
+    h.renders.clear();
+
+    // Os mesmos objetos de negócio: só o relógio anda.
+    act(() => vi.advanceTimersByTime(60 * 60_000));
+
+    expect(h.horas.get("l-0000")).toBe(3);
+    expect(h.renders.get("l-0000")).toBeGreaterThan(0);
   });
 });
 

@@ -9,8 +9,14 @@
  * "InnerList" que a documentação do dnd recomenda. Cada card também é
  * memoizado, com o `buildCardInput` calculado uma vez por negócio: marcar um
  * card ou receber um pulso redesenha só ele.
+ *
+ * O tempo na etapa, o selo de esfriando e o "em Xh" da retomada dependem do
+ * relógio, não só do negócio. Com o memo, nada mais redesenha o card por
+ * acaso; por isso a lista tem um relógio de minuto (`useAgora`) que entra no
+ * `buildCardInput`: uma vez por minuto todos os cards da coluna se redesenham,
+ * e entre os minutos o memo segue barrando o resto.
  */
-import { memo, useMemo } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import type { Lead } from "@/lib/types/leads";
 import type { Stage } from "@/lib/kanban/types";
 import { buildCardInput } from "@/lib/kanban/card-state";
@@ -31,9 +37,23 @@ interface Comum {
   somenteLeitura?: boolean;
 }
 
+/** De quanto em quanto tempo o relógio dos cards anda. */
+export const TIQUE_DO_RELOGIO_MS = 60_000;
+
+/** `Date.now()` que só muda a cada tique: estável entre um tique e outro. */
+function useAgora(): number {
+  const [agora, setAgora] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setAgora(Date.now()), TIQUE_DO_RELOGIO_MS);
+    return () => clearInterval(id);
+  }, []);
+  return agora;
+}
+
 const CardDaColuna = memo(function CardDaColuna({
   lead,
   index,
+  agora,
   stageName,
   ownerNames,
   coolingIds,
@@ -46,13 +66,22 @@ const CardDaColuna = memo(function CardDaColuna({
 }: Comum & {
   lead: Lead;
   index: number;
+  agora: number;
   isSelected: boolean;
   isSelecting: boolean;
   pulseCount: number;
 }) {
   const card = useMemo(
-    () => buildCardInput(lead, { stageName, ownerNames, coolingIds, reactivations, canonicalTags }),
-    [lead, stageName, ownerNames, coolingIds, reactivations, canonicalTags],
+    () =>
+      buildCardInput(lead, {
+        stageName,
+        ownerNames,
+        coolingIds,
+        reactivations,
+        canonicalTags,
+        now: new Date(agora),
+      }),
+    [lead, stageName, ownerNames, coolingIds, reactivations, canonicalTags, agora],
   );
   return (
     <KanbanCard
@@ -78,6 +107,7 @@ export const CardsDaColuna = memo(function CardsDaColuna({
   pulses?: Map<string, number>;
 }) {
   const selecionando = (selectedLeadIds?.size ?? 0) > 0;
+  const agora = useAgora();
   return (
     <>
       {leads.map((lead, idx) => (
@@ -85,6 +115,7 @@ export const CardsDaColuna = memo(function CardsDaColuna({
           key={lead.id}
           lead={lead}
           index={idx}
+          agora={agora}
           isSelected={Boolean(selectedLeadIds?.has(lead.id))}
           isSelecting={selecionando}
           pulseCount={pulses?.get(lead.id) ?? 0}
