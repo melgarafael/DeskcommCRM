@@ -10464,6 +10464,13 @@ alter table public.agent_inbox_items
     -- entra na distribuição e este aviso conta a quem cuida do agente que ele
     -- não está passando adiante. Entra NESTA lista (#159, bloco único).
     'routing_ia_wait_expired',
+    -- (migration 9397, issue #4696) O retorno COMBINADO com o cliente que não
+    -- vai sair: o atendimento mudou antes do disparo e o job `followup_turn` foi
+    -- descartado por `service_boundary_stale`. O descarte está certo; o silêncio
+    -- não estava — 11 em 17 dias, um deles com o cliente esperando um contato
+    -- que nunca sairia. Nasce com `ref_kind='conversation'` (destino clicável) e
+    -- dedup por (kind, conversa). Entra NESTA lista (#159, bloco único).
+    'followup_descartado',
     'other'
   ));
 
@@ -77920,6 +77927,87 @@ create unique index if not exists crm_tasks_recurrence_ocorrencia_unica
 create index if not exists crm_tasks_series_idx
   on public.crm_tasks (organization_id)
   where recurrence is not null and recurrence_source_id is null;
+-- ---- o envio do link da agenda confere a lista de teste em pré-go-live (migration 9399, #4701) ----
+-- Mora ACIMA do bloco da 9243 e da VARREDURA anon: `lgpd-alcanca-fichas-fundidas`
+-- compara o trecho da 9243 até a varredura com a migration dela, por igualdade.
+-- Espelho de supabase/migrations/20261115233000_9399_entrega_da_agenda_confere_a_lista_de_teste.sql.
+create or replace function public.fn_meet_delivery_policy(p_org uuid,p_job uuid,p_worker text,p_acquired_at timestamptz)
+returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare r record;
+begin
+ select a.meeting_delivery,a.contact_id,v.channel_session_id,c.is_blocked,c.is_anonymized,c.force_human,c.ai_opt_out,c.ai_authorized_at,c.phone_number,v.assignee_kind,v.bot_silenced_until,cs.metadata,cs.archived_at,
+  public.fn_meet_delivery_current(p_org,p_job,p_worker,p_acquired_at) as current
+ into r from public.job_queue j join public.calendar_appointments a on a.organization_id=j.organization_id and a.id::text=j.payload->>'appointment_id'
+ join public.contacts c on c.organization_id=a.organization_id and c.id=a.contact_id
+ join public.conversations v on v.organization_id=a.organization_id and v.contact_id=a.contact_id and v.id::text=j.payload->'service_boundary'->>'conversation_id'
+ join public.channel_sessions cs on cs.organization_id=v.organization_id and cs.id=v.channel_session_id
+ where j.organization_id=p_org and j.id=p_job and j.kind='transactional_delivery' and j.status='running' and j.locked_by=p_worker and j.locked_at=p_acquired_at
+  and a.meeting_delivery_job_id=j.id and a.meeting_delivery->>'generation'=j.payload->>'delivery_generation';
+ if not found then return jsonb_build_object('current',false,'reason','stale');end if;
+ if not r.current then return jsonb_build_object('current',false,'reason',case when r.is_anonymized then 'lgpd' when r.is_blocked then 'opt_out' when r.archived_at is not null then 'channel' else 'access_or_stale' end);end if;
+ return jsonb_build_object('current',true,'contact_id',r.contact_id,'channel_session_id',r.channel_session_id,'human_command',r.meeting_delivery->'authorized_by'->>'kind'='user',
+  'force_human',r.force_human,'ai_opt_out',r.ai_opt_out,'ai_gate',r.metadata->>'ai_gate','ai_gate_mode',r.metadata->>'ai_gate_mode','ai_test_phone_numbers',r.metadata->'ai_test_phone_numbers','contact_phone_number',r.phone_number,'ai_authorized_at',r.ai_authorized_at,'assignee_kind',r.assignee_kind,'bot_silenced_until',r.bot_silenced_until);
+end;$$;
+revoke all on function public.fn_meet_delivery_policy(uuid,uuid,text,timestamptz) from public,anon,authenticated;
+grant execute on function public.fn_meet_delivery_policy(uuid,uuid,text,timestamptz) to service_role;
+
+create or replace function public.fn_meet_delivery_settle(p_org uuid,p_job uuid,p_worker text,p_acquired_at timestamptz,p_state text,p_retry_at timestamptz default null)
+returns boolean language plpgsql security definer set search_path=public as $$
+declare j public.job_queue; a public.calendar_appointments; contact uuid; current_intent boolean; reason text;
+begin
+ select contact_id into contact from public.job_queue where organization_id=p_org and id=p_job;
+ if contact is null then return false;end if;
+ perform public.fn_service_lock(p_org,contact);
+ select * into j from public.job_queue where organization_id=p_org and id=p_job for update;
+ if not found or j.kind<>'transactional_delivery' or j.status<>'running' or j.locked_by is distinct from p_worker or j.locked_at is distinct from p_acquired_at then return false;end if;
+ select * into a from public.calendar_appointments where organization_id=p_org and id::text=j.payload->>'appointment_id' for update;
+ current_intent:=a.meeting_delivery_job_id=j.id and a.meeting_delivery->>'generation'=j.payload->>'delivery_generation';
+ if p_state like 'blocked:%' then
+  reason:=substring(p_state from 9);
+  if reason not in ('opt_out','lgpd','channel','access_or_stale','force_human','conversa_silenciada','conversa_de_humano','sem_autorizacao','autorizacao_expirada','ai_opt_out','fora_da_lista_de_teste','limits','guardrail') then raise exception 'meet_reason_invalid' using errcode='22023';end if;
+  p_state:='blocked';
+ end if;
+ if p_state not in ('sent','queued','retry','failed','blocked','stale') then raise exception 'meet_state_invalid' using errcode='22023';end if;
+ if p_state in ('sent','queued','retry') and not public.fn_meet_delivery_current(p_org,p_job,p_worker,p_acquired_at) then p_state:='stale';end if;
+ if p_state='sent' and not exists(select 1 from public.send_ledger where organization_id=p_org and job_id=p_job and seq=1 and status='accepted') then raise exception 'meet_delivery_not_accepted' using errcode='PT409';end if;
+ if p_state='retry' and j.attempts>=j.max_attempts then p_state:='failed';end if;
+ if p_state in ('queued','retry') then
+  update public.job_queue set status='pending',locked_by=null,locked_at=null,attempts=case when p_state='queued' then greatest(0,attempts-1) else attempts end,run_after=coalesce(p_retry_at,now()+interval '1 minute'),last_error='meet_delivery_waiting' where id=p_job and organization_id=p_org;
+ else
+  update public.job_queue set status=case when p_state='sent' then 'done' else 'failed' end,locked_by=null,locked_at=null,last_error=case when p_state='sent' then null else coalesce(reason,'meet_delivery_'||p_state) end where id=p_job and organization_id=p_org;
+  if current_intent then
+   update public.calendar_appointments set meeting_delivery=meeting_delivery||jsonb_build_object('state',p_state,'error',case when p_state='sent' then null else coalesce(reason,'meet_delivery_'||p_state) end,'settled_at',now()) where id=a.id and organization_id=p_org;
+   if p_state<>'sent' then perform public.fn_meet_notice(p_org,a.id,p_state);
+   else update public.agent_inbox_items set status='resolved',resolved_at=now() where organization_id=p_org and ref_kind='appointment' and ref_id=a.id and kind='other' and status='open';end if;
+  end if;
+ end if;
+ return true;
+end;$$;
+revoke all on function public.fn_meet_delivery_settle(uuid,uuid,text,timestamptz,text,timestamptz) from public,anon,authenticated;
+grant execute on function public.fn_meet_delivery_settle(uuid,uuid,text,timestamptz,text,timestamptz) to service_role;
+
+-- ---- o envio do link da agenda confere também os testadores por identidade social (migration 9408, #4701) ----
+-- Mora logo abaixo do bloco da 9399, ACIMA do bloco da 9243 e da VARREDURA anon, pelo mesmo motivo.
+-- Espelho de supabase/migrations/20261117050000_9408_entrega_da_agenda_confere_testadores_sociais.sql.
+create or replace function public.fn_meet_delivery_policy(p_org uuid,p_job uuid,p_worker text,p_acquired_at timestamptz)
+returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare r record;
+begin
+ select a.meeting_delivery,a.contact_id,v.channel_session_id,c.is_blocked,c.is_anonymized,c.force_human,c.ai_opt_out,c.ai_authorized_at,c.phone_number,c.social_identity,v.assignee_kind,v.bot_silenced_until,cs.metadata,cs.archived_at,
+  public.fn_meet_delivery_current(p_org,p_job,p_worker,p_acquired_at) as current
+ into r from public.job_queue j join public.calendar_appointments a on a.organization_id=j.organization_id and a.id::text=j.payload->>'appointment_id'
+ join public.contacts c on c.organization_id=a.organization_id and c.id=a.contact_id
+ join public.conversations v on v.organization_id=a.organization_id and v.contact_id=a.contact_id and v.id::text=j.payload->'service_boundary'->>'conversation_id'
+ join public.channel_sessions cs on cs.organization_id=v.organization_id and cs.id=v.channel_session_id
+ where j.organization_id=p_org and j.id=p_job and j.kind='transactional_delivery' and j.status='running' and j.locked_by=p_worker and j.locked_at=p_acquired_at
+  and a.meeting_delivery_job_id=j.id and a.meeting_delivery->>'generation'=j.payload->>'delivery_generation';
+ if not found then return jsonb_build_object('current',false,'reason','stale');end if;
+ if not r.current then return jsonb_build_object('current',false,'reason',case when r.is_anonymized then 'lgpd' when r.is_blocked then 'opt_out' when r.archived_at is not null then 'channel' else 'access_or_stale' end);end if;
+ return jsonb_build_object('current',true,'contact_id',r.contact_id,'channel_session_id',r.channel_session_id,'human_command',r.meeting_delivery->'authorized_by'->>'kind'='user',
+  'force_human',r.force_human,'ai_opt_out',r.ai_opt_out,'ai_gate',r.metadata->>'ai_gate','ai_gate_mode',r.metadata->>'ai_gate_mode','ai_test_phone_numbers',r.metadata->'ai_test_phone_numbers','contact_phone_number',r.phone_number,'ai_test_social_identities',r.metadata->'ai_test_social_identities','contact_social_identity',r.social_identity,'ai_authorized_at',r.ai_authorized_at,'assignee_kind',r.assignee_kind,'bot_silenced_until',r.bot_silenced_until);
+end;$$;
+revoke all on function public.fn_meet_delivery_policy(uuid,uuid,text,timestamptz) from public,anon,authenticated;
+grant execute on function public.fn_meet_delivery_policy(uuid,uuid,text,timestamptz) to service_role;
 
 -- ---- agências: configuração protegida e vínculo exclusivo de clientes (migration 9373) ----
 -- Espelho de supabase/migrations/20261115001322_9373_organizacoes_agencias.sql.
@@ -79875,6 +79963,64 @@ begin
 end; $fn$;
 revoke all on function public.fn_appointment_record_attendance(uuid,uuid,bigint,jsonb,uuid) from public,anon,authenticated;
 grant execute on function public.fn_appointment_record_attendance(uuid,uuid,bigint,jsonb,uuid) to service_role;
+
+-- ---- campos personalizados do contato mesclados no banco (migration 9398) ----
+-- Espelho de supabase/migrations/20261115230804_9398_contato_anotar_campos.sql.
+-- CAMPOS PERSONALIZADOS DO CONTATO MESCLADOS NO BANCO
+--
+-- Por que uma função, e não o PATCH da ficha: o `PATCH /api/v1/contacts/:id`
+-- SUBSTITUI `custom_fields` inteiro, e o PostgREST não sabe dizer
+-- `custom_fields || x` — só manda um valor pronto, calculado a partir de uma
+-- leitura anterior. Entre a leitura e a gravação, o que outro caminho gravou
+-- (o "Completar fichas" da campanha, a aba Diagnóstico, uma proposta aprovada)
+-- era desfeito em silêncio.
+--
+-- Em READ COMMITTED (o padrão do PostgREST), a segunda transação ESPERA o
+-- commit da primeira e RECALCULA a expressão sobre a versão nova da linha. O que
+-- quebraria o conserto é ler para uma variável e gravar depois.
+--
+-- `p_remover` sai ANTES do `||`, na mesma instrução: é por ele que a autoria
+-- antiga (`diag_por`, `diag_em`) deixa de assinar um texto que ela não escreveu.
+--
+-- A recusa da ficha anonimizada mora no `where`: se a anonimização confirma
+-- primeiro, a releitura da linha já não casa e nada é gravado (retorno nulo).
+-- O gatilho `trg_contacts_anonimizado_limpa_custom_fields` zera os campos no
+-- momento da anonimização; esta função não pode trazê-los de volta depois.
+--
+-- O que ela NÃO faz: decidir papel, contato do turno ou ficha pessoal. Isso é
+-- de quem chama (o handler resolve a organização de fonte confiável, nunca do
+-- corpo). Contato de OUTRA organização devolve nulo, sem confirmar que existe.
+
+create or replace function public.fn_contato_anotar_campos(
+  p_org uuid, p_contato uuid, p_campos jsonb, p_remover text[]
+) returns jsonb language plpgsql security definer set search_path = public, pg_temp as $fn$
+declare
+  resultado jsonb;
+begin
+  if p_campos is null or jsonb_typeof(p_campos) <> 'object' then
+    raise exception 'campos_precisa_ser_objeto' using errcode = '22023';
+  end if;
+
+  update public.contacts
+     set custom_fields = (coalesce(custom_fields, '{}'::jsonb) - coalesce(p_remover, '{}'::text[])) || p_campos
+   where organization_id = p_org
+     and id = p_contato
+     and is_anonymized is not true
+   returning custom_fields into resultado;
+
+  return resultado;
+end $fn$;
+
+-- Função nova em `public` nasce exposta pelas DUAS origens (o grant a PUBLIC do
+-- Postgres e o `alter default privileges` do baseline): revogar das três.
+revoke all on function public.fn_contato_anotar_campos(uuid, uuid, jsonb, text[]) from public, anon, authenticated;
+grant execute on function public.fn_contato_anotar_campos(uuid, uuid, jsonb, text[]) to service_role;
+
+comment on function public.fn_contato_anotar_campos(uuid, uuid, jsonb, text[]) is
+  'Mescla campos personalizados no CONTATO dentro do banco, numa única instrução atômica, '
+  'e recusa ficha anonimizada. Não decide papel nem organização — isso é de quem chama.';
+
+notify pgrst, 'reload schema';
 
 -- ---- o contato pessoal ganha DONO (migration 9360, #4434) ----
 -- Espelho da 9360 (o porquê inteiro está no cabeçalho dela). Não cria função,

@@ -156,3 +156,20 @@ export function aceitaArquivo(id: string): boolean {
 export function ePreenchidoPorRotina(id: string): boolean {
   return TIPO_DE_FONTE_POR_ID.get(id)?.comoSePreenche === "automatico";
 }
+
+/**
+ * O material é um documento criado COLANDO TEXTO (e não um arquivo enviado)?
+ *
+ * É a única condição em que "Editar texto" (#4596) faz sentido: o texto colado
+ * vira um `.md` guardado (`origem: "texto_colado"`), e regravá-lo não troca o
+ * arquivo de ninguém. Um PDF enviado continua sem edição — regravar markdown
+ * por cima dele trocaria o arquivo da pessoa por outra coisa. A tela e a rota
+ * (`app/api/v1/ai/knowledge/sources/[id]/texto`) leem a MESMA regra.
+ */
+export function veioDeTextoColado(
+  sourceType: string,
+  meta: Record<string, unknown> | null | undefined,
+): boolean {
+  if (canonizarTipoDeFonte(sourceType) !== "documento") return false;
+  return meta?.origem === "texto_colado" && meta?.ext === "md" && typeof meta?.blob_path === "string";
+}

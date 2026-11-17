@@ -38,6 +38,7 @@ import type { Idioma } from "./idiomas";
 import { TEXTOS_AGENDA_CONFIGURACAO } from "./agenda-configuracao";
 import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
 import { TEXTOS_APARENCIA } from "./aparencia";
+import { TEXTOS_PROSPECCAO_ARQUIVO_DA_ABORDAGEM } from "./prospeccao-arquivo-da-abordagem";
 import { TEXTOS_CONTRATACAO } from "./contratacao";
 import { TEXTOS_TABELA_DE_VALORES } from "./tabela-de-valores";
 import { TEXTOS_DO_MOTOR_GRAVADO } from "./motor-gravado";
@@ -54,6 +55,7 @@ export const DICIONARIO: Traducoes = {
   ...TEXTOS_CADENCIAS_ORIGINAIS,
   ...TEXTOS_CADENCIAS,
   ...TEXTOS_APARENCIA,
+  ...TEXTOS_PROSPECCAO_ARQUIVO_DA_ABORDAGEM,
   "Grupo de anúncios": { es: "Grupo de anuncios" },
   "Palavra-chave": { es: "Palabra clave" },
   "Conta do Google Ads": { es: "Cuenta de Google Ads" },
@@ -1372,6 +1374,8 @@ export const DICIONARIO: Traducoes = {
   // com a situação de cada empresa (a situação sai no idioma da organização).
   "Baixar lista": { es: "Descargar lista" },
   "Só as não abordadas": { es: "Solo las no contactadas" },
+  // #4632 — a opção diz o que faz: entram as já abordadas, com data e campanha.
+  "Incluir as empresas já abordadas": { es: "Incluir las empresas ya contactadas" },
   "Contando as empresas…": { es: "Contando las empresas…" },
   "Não foi possível contar as empresas. Feche e abra o menu para tentar de novo.": {
     es: "No fue posible contar las empresas. Cierra y abre el menú para intentarlo de nuevo.",
@@ -2940,6 +2944,11 @@ export const DICIONARIO: Traducoes = {
   },
   "Buscar por nome…": { es: "Buscar por nombre…" },
   "Buscar agentes": { es: "Buscar agentes" },
+  // ─── Busca nas listas de Follow-ups e de Funis (#4593) ───
+  "Buscar fluxos": { es: "Buscar flujos" },
+  "Nenhum fluxo corresponde aos filtros atuais.": { es: "Ningún flujo coincide con los filtros actuales." },
+  "Buscar funis": { es: "Buscar embudos" },
+  "Nenhum funil corresponde à busca.": { es: "Ningún embudo coincide con la búsqueda." },
   "Filtrar por status": { es: "Filtrar por estado" },
   Status: { es: "Estado" },
   status: { es: "estado" },
@@ -4271,6 +4280,8 @@ export const DICIONARIO: Traducoes = {
   "Reindexando...": { es: "Reindexando..." },
   "Re-indexar": { es: "Reindexar" },
   "Editar conteúdo": { es: "Editar contenido" },
+  // #4596 — documento criado colando texto ganhou edição; igual em espanhol.
+  "Editar texto": { es: "Editar texto" },
   "Editor de FAQ em breve.": { es: "Editor de FAQ próximamente." },
   "Upload novo arquivo": { es: "Subir nuevo archivo" },
   "Upload de política em breve.": { es: "Subida de política próximamente." },
@@ -13775,6 +13786,15 @@ export const DICIONARIO: Traducoes = {
   "A conta que paga a assinatura recusou o login. Reconecte em IA › Credenciais; este aviso se resolve sozinho quando o login voltar.": {
     es: "La cuenta que paga la suscripción rechazó el inicio de sesión. Reconéctala en IA › Credenciales; este aviso se cierra solo cuando el inicio de sesión vuelva.",
   },
+  // ─── lib/ai/inbox-destino.ts, `followup_descartado` (#4696) ───
+  // O retorno combinado que não vai sair. O espanhol do rótulo repete o que o
+  // CLIENTE deixa de receber, e a orientação diz o que fazer com isso.
+  "Um retorno combinado com o cliente não vai sair": {
+    es: "Un seguimiento acordado con el cliente no va a salir",
+  },
+  "Abra a conversa e veja o que ficou combinado. Se ainda fizer sentido, retome o contato por ali.": {
+    es: "Abre la conversación y mira lo que quedó acordado. Si todavía tiene sentido, retoma el contacto por ahí.",
+  },
   // ─── lib/agent-engine/agent/aviso-de-destino-recusado.ts (#2297) ───
   "Transferência para o funil da intenção recusada": {
     es: "Transferencia al embudo de la intención rechazada",
@@ -15338,6 +15358,8 @@ export const DICIONARIO: Traducoes = {
   "Consultar a análise do site da empresa": { es: "Consultar el análisis del sitio web de la empresa" },
   "O agente pode consultar o que o sistema achou no site da empresa prospectada (tem site, está fora do ar, problemas) em qualquer momento da conversa.": { es: "El agente puede consultar lo que el sistema encontró en el sitio web de la empresa prospectada (si tiene sitio, si está fuera del aire, problemas) en cualquier momento de la conversación." },
   "Análise do site da empresa": { es: "Análisis del sitio web de la empresa" },
+  "Registrar o diagnóstico da empresa": { es: "Registrar el diagnóstico de la empresa" },
+  "Grava na ficha do contato o segmento, o CNPJ, o diagnóstico da empresa e a oferta sugerida, com o selo Escrito pela IA. Depois que alguém da equipe escreve o diagnóstico ou a oferta na aba Diagnóstico, a IA não troca mais o que está lá. Não mexe nas observações da equipe nem nos outros campos da ficha.": { es: "Guarda en la ficha del contacto el segmento, el CNPJ, el diagnóstico de la empresa y la oferta sugerida, con el sello Escrito por la IA. Después de que alguien del equipo escriba el diagnóstico o la oferta en la pestaña Diagnóstico, la IA ya no cambia lo que hay allí. No toca las observaciones del equipo ni los demás campos de la ficha." },
   "Cria uma sugestão de retomar o contato com um cliente que esfriou, para uma pessoa aprovar antes de qualquer envio.": {
     es: "Crea una sugerencia de retomar el contacto con un cliente que se enfrió, para que una persona la apruebe antes de cualquier envío.",
   },
@@ -15796,6 +15818,7 @@ export const DICIONARIO: Traducoes = {
   "O contato não está autorizado para atendimento automático. O responsável pode autorizar somente este link pelo botão de envio.": { es: "El contacto no está autorizado para la atención automática. El responsable puede autorizar solo este enlace con el botón de envío." },
   "A autorização de atendimento automático expirou. O responsável pode autorizar somente este link pelo botão de envio.": { es: "La autorización de atención automática venció. El responsable puede autorizar solo este enlace con el botón de envío." },
   "O contato está marcado como sempre atendimento humano. O responsável pode enviar este link pelo botão de envio, sem ativar a IA.": { es: "El contacto está marcado como siempre atención humana. El responsable puede enviar este enlace con el botón de envío, sin activar la IA." },
+  "O canal está em modo de teste e o contato não está na lista de teste da conexão.": { es: "El canal está en modo de prueba y el contacto no está en la lista de prueba de la conexión." },
   "O envio atingiu uma janela ou limite do canal. Aguarde a liberação antes de tentar novamente.": { es: "El envío alcanzó una ventana o un límite del canal. Espera a que se habilite antes de intentarlo de nuevo." },
   "Uma regra de envio impediu a mensagem. Confira o aviso na Central antes de tentar novamente.": { es: "Una regla de envío bloqueó el mensaje. Revisa el aviso en la Central antes de intentarlo de nuevo." },
   "Sua reunião está marcada para": { es: "Tu reunión está programada para" },

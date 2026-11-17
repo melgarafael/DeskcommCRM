@@ -14,8 +14,8 @@ import { blocosDeInteresseExternoResidentes } from "@/lib/agent-engine/agent/inb
  * O que cada caso guarda, e a linha que o deixa vermelho se for revertida:
  *  1. Com as DUAS ferramentas o bloco entra, nomeando-as e mandando chamar no MESMO
  *     turno, sem funil, e só afirmar depois do sucesso
- *     → tirar o ramo `blocosResidentes.push(...blocosDeInteresseExternoResidentes(...))`
- *       de `inbound-turn.ts` (este teste não o vê; o de baixo, sim) ou esvaziar o bloco.
+ *     → esvaziar o bloco. A fiação no `system` (tirar a chamada de
+ *       `blocosDoSistemaDoTurno`) é vigiada em `lib/agent-engine/agent/inbound-turn.test.ts`.
  *  2. Faltando qualquer das duas, nada entra: nomear ferramenta ausente faz o modelo
  *     tentar chamá-la
  *     → trocar o `&&` por `||` na função.

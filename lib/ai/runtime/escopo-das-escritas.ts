@@ -80,6 +80,9 @@ export const ESCOPO_DAS_ESCRITAS: Readonly<Record<string, Readonly<Record<string
 
   // ---- contato e conversa ----
   crm_propose_contact_field: { contact_id: "contato" },
+  // Diagnóstico da empresa na ficha (decisão D7): grava direto, então a cerca
+  // é a mesma da proposta — só a ficha do contato desta conversa.
+  crm_save_lead_diagnosis: { contact_id: "contato" },
   crm_create_conversation_draft: { conversation_id: "conversa" },
   crm_assign_conversation: { conversation_id: "conversa", to_user_id: "configuracao" },
   // #3881: a conversa vem do TURNO (o modelo não escolhe em qual conversa
