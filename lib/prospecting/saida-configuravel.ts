@@ -13,7 +13,12 @@
 import { audit } from "@/lib/audit";
 import type { ChannelSendResult } from "@/lib/agent-engine/channel-adapter";
 import type { Queryable } from "@/lib/agent-engine/queue/queue";
-import { comSaida, rodapeDeSaida, temSaida } from "@/lib/prospecting/rodape-de-saida";
+import {
+  comSaida,
+  rodapeDeSaida,
+  temSaida,
+  textoDaSaidaEfetivo,
+} from "@/lib/prospecting/rodape-de-saida";
 
 export interface ContagemSaida {
   candidatoId: string;
@@ -22,6 +27,11 @@ export interface ContagemSaida {
   /** Só preenchido quando ESTE envio reservou (levaASaida === true). */
   reservadaEm: string | null;
   locale: string | null;
+  /**
+   * O texto de saída PRÓPRIO da campanha (`config.texto_da_saida`, #4370), ou
+   * null. Opcional: vazio = a frase padrão de `rodape-de-saida.ts`.
+   */
+  textoDaSaida: string | null;
   /** Número automático desta mensagem para o candidato (após o incremento). */
   numeroDaMensagem: number;
 }
@@ -34,6 +44,7 @@ interface LinhaContagem {
   numero_da_mensagem: number;
   locale: string | null;
   reservada_em_texto: string | null;
+  texto_da_saida: string | null;
 }
 
 /** Texto do `update` atômico que conta a mensagem e, se for a vez, reserva a saída. Params: ($1 = organization_id, $2 = conversation_id). */
@@ -67,7 +78,11 @@ export const SQL_CONTAR_ENVIO_AUTOMATICO = `
               (antes.exit_offered_at is null and p.exit_offered_at is not null) as leva_a_saida,
               p.automatic_sends as numero_da_mensagem,
               (select o.locale from public.organizations o where o.id = $1) as locale,
-              p.exit_offered_at::text as reservada_em_texto
+              p.exit_offered_at::text as reservada_em_texto,
+              -- O texto da saída vem da CAMPANHA (#4370), na MESMA consulta que
+              -- já decide se este envio leva a saída: quem reserva é quem lê a
+              -- redação, e as duas coisas não podem divergir por um round-trip.
+              c.config->>'texto_da_saida' as texto_da_saida
 `;
 
 /** Texto do `update` que desfaz a contagem e a reserva de um envio falhado. Params: ($1 = organization_id, $2 = candidato_id, $3 = reservadaEm). */
@@ -117,7 +132,18 @@ export const SQL_AMARRAR_RESERVA_A_MENSAGEM = `
  * reprocesso da MESMA mensagem. Params: ($1 = organization_id, $2 = job_id, $3 = seq).
  */
 export const SQL_MENSAGEM_GUARDADA = `
-    select m.body, o.locale
+    select m.body, o.locale,
+           -- O texto PRÓPRIO da campanha (#4370) vem junto: o reprocesso tem de
+           -- repetir a MESMA redação que a tentativa anterior usou, e não trocar
+           -- o texto do dono pela frase padrão no meio do caminho.
+           (select c.config->>'texto_da_saida'
+              from public.prospecting_candidates p
+              join public.prospecting_campaigns c
+                on c.organization_id = p.organization_id and c.id = p.campaign_id
+             where p.organization_id = l.organization_id
+               and p.conversation_id = $4
+               and p.status in ('sending', 'sent')
+             limit 1) as texto_da_saida
       from public.send_ledger l
       join public.organizations o on o.id = l.organization_id
       left join public.messages m on m.organization_id = l.organization_id and m.id = l.crm_message_id
@@ -148,6 +174,7 @@ export async function contarEnvioAutomatico(
     // (com microssegundos) para que a comparação exata no desfazer não falhe.
     reservadaEm: linha.leva_a_saida ? linha.reservada_em_texto ?? null : null,
     locale: linha.locale ?? null,
+    textoDaSaida: linha.texto_da_saida ?? null,
     numeroDaMensagem: linha.numero_da_mensagem,
   };
 }
@@ -197,10 +224,18 @@ export async function enviarComSaidaConfiguravel(
   let r: ContagemSaida | null = null;
   if (conversationId) {
     try {
-      const { rows: guardada } = await db.query<{ body: string | null; locale: string | null }>(
-        SQL_MENSAGEM_GUARDADA,
-        [organizationId, mensagem.jobId, mensagem.seq],
-      );
+      const { rows: guardada } = await db.query<{
+        body: string | null;
+        locale: string | null;
+        texto_da_saida: string | null;
+      }>(SQL_MENSAGEM_GUARDADA, [
+        organizationId,
+        mensagem.jobId,
+        mensagem.seq,
+        // A conversa é o que liga o ledger ao candidato e, por ele, à campanha
+        // que tem o texto próprio da saída.
+        conversationId,
+      ]);
       if (guardada[0]) {
         // Reprocesso da mesma mensagem (no follow-up, o `queued` LANÇA em
         // `sendFixedOutbound` e o job cai no retry genérico da fila, que gasta
@@ -209,11 +244,12 @@ export async function enviarComSaidaConfiguravel(
         // ele tem de dizer o mesmo que a tela e a contagem já dizem.
         // ponytail: a decisão vem da 1ª mensagem física; numa resposta fatiada
         // em bolhas o rodapé mora na última, e o reprocesso sai sem ele.
-        const { body, locale } = guardada[0];
-        if (body !== null && temSaida(body, locale)) corpo = comSaida(corpo, locale);
+        const { body, locale, texto_da_saida } = guardada[0];
+        if (body !== null && temSaida(body, locale, texto_da_saida))
+          corpo = comSaida(corpo, locale, texto_da_saida);
       } else {
         r = await contarEnvioAutomatico(db, organizationId, conversationId);
-        if (r?.levaASaida) corpo = comSaida(corpo, r.locale);
+        if (r?.levaASaida) corpo = comSaida(corpo, r.locale, r.textoDaSaida);
       }
     } catch (erroContagem) {
       opcoes.avisar("contagem de saída automática falhou; segue sem a saída", {
@@ -262,7 +298,11 @@ export async function enviarComSaidaConfiguravel(
           organizationId,
           mensagem.jobId,
           mensagem.seq,
-          rodapeDeSaida(r.locale),
+          // A MESMA redação que foi para o corpo: o `strpos` acha a saída na
+          // mensagem e a reserva fica amarrada a ela. Com a frase padrão no lugar
+          // do texto do dono, a amarração não acharia nada, a reserva seria
+          // desfeita e a saída voltaria a ser oferecida — com o texto trocado.
+          textoDaSaidaEfetivo(r.textoDaSaida, r.locale),
           r.candidatoId,
           r.reservadaEm,
         ])
@@ -290,6 +330,10 @@ export async function enviarComSaidaConfiguravel(
           conversation_id: conversationId,
           message_number: r.numeroDaMensagem,
           via,
+          // A auditoria diz se a saída foi escrita pelo DONO (#4370): a pergunta
+          // "por que o texto é este?" tem de ter resposta no registro.
+          texto_personalizado:
+            textoDaSaidaEfetivo(r.textoDaSaida, r.locale) !== rodapeDeSaida(r.locale),
         },
       });
     }

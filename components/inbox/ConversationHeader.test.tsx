@@ -495,6 +495,17 @@ describe("ConversationHeader — por qual número a resposta sai (Spec 31, B2)",
     );
   });
 
+  it("a linha tem o número inteiro no title, para o truncate de 768 px não escondê-lo (#4242, item 3)", () => {
+    resposta.endereco = doExtra;
+    render(<ConversationHeader conversation={comTelefone()} />);
+
+    const linha = screen.getByTestId("resposta-sai-por");
+    const titulo = linha.getAttribute("title") ?? "";
+    // Sabotagem: tirar o `title` faz este caso cair — sobra só o texto cortado.
+    expect(titulo).toBe(linha.textContent);
+    expect(titulo.replace(/\D/g, "")).toContain((doExtra.phone_number ?? "").replace(/\D/g, ""));
+  });
+
   it.each<[string, Partial<EnderecoDaResposta>]>([
     ["a ficha não tem extra", { has_extras: false }],
     ["o canal responde pelo principal", { follows_last_inbound: false }],

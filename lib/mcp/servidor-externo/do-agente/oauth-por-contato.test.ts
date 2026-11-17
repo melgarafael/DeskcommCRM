@@ -634,10 +634,10 @@ describe("token expirado renova sem o contato perceber; corrida não corrompe [�
 // ─── Escrita ────────────────────────────────────────────────────────────────
 
 describe("escrita em turno com contato [§4]", () => {
-  it("escrita_delegada DESLIGADA: a escrita é recusada como sempre (escrita_sem_escopo_do_turno)", async () => {
+  it("escrita_delegada DESLIGADA: a escrita é recusada como antes — agora com o código nomeado (#4445)", async () => {
     await contatoAutoriza(await pedirLink(CONTATO_A, CONVERSA_A), "alice");
     const r = (await montar(await carga(CONTATO_A, CONVERSA_A), CONTATO_A).casa__casa_ligar!.execute({ aparelho: "luz" })) as { motivo?: string };
-    expect(r.motivo).toBe("escrita_sem_escopo_do_turno");
+    expect(r.motivo).toBe("escrita_nao_liberada");
     expect(stub.chamadas).toHaveLength(0);
   });
 

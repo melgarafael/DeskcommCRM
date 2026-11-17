@@ -21,14 +21,24 @@
  * E a hora da entrega é de UMA VEZ: o `read` chega depois do `delivered` e,
  * sem olhar o que a linha já tinha, reescrevia `delivered_at` com a hora da
  * leitura — o instante em que a mensagem tocou o aparelho se perdia. Quem
- * chama passa `anterior` (a coluna como está no banco) e o carimbo só entra
+ * chama passa `anterior` (as colunas como estão no banco) e o carimbo só entra
  * quando ela ainda está vazia; mesma regra do `carimbarUmaVez` do canal
  * não-oficial.
+ *
+ * A leitura é de uma vez só pelo mesmo motivo: a Meta reentrega webhook e o
+ * `read` repetido reescrevia `read_at` com a hora da reentrega, não com a hora
+ * em que o cliente abriu a mensagem. Com a linha na mão as duas datas são
+ * carimbadas quando nascem e nunca mais se movem; fora de ordem (`read` antes
+ * de `delivered`) também não regride — o `delivered` que chega atrasado acha a
+ * coluna preenchida e não toca nela.
  */
 import type { MessageStatusEvent } from "./webhook";
 
-/** A coluna que a guarda de uma vez só precisa ver antes do UPDATE. */
-export type CarimbosAnteriores = { delivered_at?: string | null };
+/** As colunas que a guarda de uma vez só precisa ver antes do UPDATE. */
+export type CarimbosAnteriores = {
+  delivered_at?: string | null;
+  read_at?: string | null;
+};
 
 export function statusUpdate(
   e: MessageStatusEvent,
@@ -46,7 +56,7 @@ export function statusUpdate(
   if ((e.status === "delivered" || e.status === "read") && !anterior.delivered_at) {
     update.delivered_at = now;
   }
-  if (e.status === "read") update.read_at = now;
+  if (e.status === "read" && !anterior.read_at) update.read_at = now;
 
   if (e.status === "failed") {
     // `error_code` é texto no banco (o canal não-oficial grava rótulos ali).

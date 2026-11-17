@@ -68,7 +68,7 @@ export const crmGetPipelineForecast: McpToolDefinition<typeof forecastInputShape
     "com bruto_cents e ponderado_cents. Nunca somadas. Os baldes \"sem data\" e \"sem " +
     "probabilidade\" vão À PARTE, nunca como zero. Fonte em " +
     "crm_pipelines.settings.previsao.fonte: \"etapa\" ou \"ia_quando_houver\" (ai_probability). " +
-    "Moedas diferentes NUNCA somam.",
+    "Moedas diferentes NUNCA somam. truncado: true quando o funil passa do teto de leitura; valores parciais.",
   inputSchema: forecastInputShape,
   category: "read",
   requiresRole: "agent",

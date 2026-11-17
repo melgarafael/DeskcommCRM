@@ -151,6 +151,9 @@ describe("só as superfícies de CHAVE pedem a união", () => {
     "app/app/ai/credentials/_components/CredentialCard.tsx",
     "app/app/ai/credentials/_components/CredentialsList.tsx",
     "app/app/ai/credentials/_components/RotateCredentialDialog.tsx",
+    // a cláusula 9 lista os SUBOPERADORES com chave ativa (o Jev recebe cada
+    // mensagem); nunca escolhe modelo de conversa
+    "lib/legal/operador.ts",
   ].sort();
 
   const usam = arquivosDeCodigo(["app", "lib", "components", "hooks", "workers"])

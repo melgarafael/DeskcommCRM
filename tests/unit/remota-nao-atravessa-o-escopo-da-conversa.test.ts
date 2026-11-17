@@ -141,8 +141,13 @@ describe("uma remota só conta como leitura com as DUAS metades (item 8)", () =>
 
 // ─── 2. A regra da conversa ──────────────────────────────────────────────────
 
-describe("remota classificada como escrita cai na conferência de escopo do turno", () => {
-  it("recusa com `escrita_sem_escopo_do_turno` — passa POR ela, não por fora", async () => {
+// #4445 — a recusa da escrita remota em turno com contato deixou de ser a
+// genérica de escopo do turno (`escrita_sem_escopo_do_turno`) e passou a ser a
+// NOMEADA da liberação (`escrita_nao_liberada`, com ferramenta e conexão):
+// continua recusando, e a lista que a libera é explícita
+// (`lib/mcp/servidor-externo/escrita-liberada.ts`).
+describe("remota classificada como escrita é recusada no turno com contato", () => {
+  it("recusa com `escrita_nao_liberada` — passa pela ponte, não por fora", async () => {
     const montadas = montar({ escolha: toolIdRemoto("erp_cancelar_pedido", "escrita"), contato: CONTATO });
     const ferramenta = montadas.erp_cancelar_pedido as unknown as {
       execute: (a: unknown) => Promise<unknown>;
@@ -152,7 +157,7 @@ describe("remota classificada como escrita cai na conferência de escopo do turn
     const resposta = await ferramenta.execute({ pedido_id: "1" });
     expect(resposta).toMatchObject({
       permitido: false,
-      motivo: "escrita_sem_escopo_do_turno",
+      motivo: "escrita_nao_liberada",
     });
   });
 
@@ -163,7 +168,7 @@ describe("remota classificada como escrita cai na conferência de escopo do turn
     };
     expect(await ferramenta.execute({ pedido_id: "1" })).toMatchObject({
       permitido: false,
-      motivo: "escrita_sem_escopo_do_turno",
+      motivo: "escrita_nao_liberada",
     });
   });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { SheetMatrix } from "@/lib/planilha/ler-arquivo";
+import { parseImportFile, type SheetMatrix } from "@/lib/planilha/ler-arquivo";
 import { lerPlanilhaDeProspeccao, PLANILHA_MAX_LINHAS } from "@/lib/prospecting/planilha";
 
 function ok(sheet: SheetMatrix) {
@@ -15,6 +15,21 @@ function p(r: ReturnType<typeof ok>, i: number) {
 }
 
 describe("lerPlanilhaDeProspeccao", () => {
+  it("na prévia de CSV, localiza o repetido e a primeira ocorrência na planilha", async () => {
+    const csv = new TextEncoder().encode(
+      'Empresa;Telefone;Cidade\r\n\r\nPadaria Um;11999990000;"São\r\nPaulo"\r\n\r\nPadaria Dois;11999990000;Campinas',
+    );
+    const arquivo = await parseImportFile(csv.buffer, "lista.csv", { maxLinhas: 2 });
+    if (!arquivo.ok) throw new Error(arquivo.error);
+
+    const r = ok(arquivo.sheet);
+
+    expect(r.candidatos.map((c) => c.linha)).toEqual([3]);
+    expect(r.erros).toEqual([
+      expect.objectContaining({ linha: 5, codigo: "repetido_na_planilha", detalhe: "linha 3" }),
+    ]);
+  });
+
   it("lê cabeçalho em português e normaliza o telefone para E.164", () => {
     const r = ok({
       headers: ["Empresa", "Telefone", "Site", "Segmento", "Cidade"],

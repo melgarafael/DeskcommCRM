@@ -24,7 +24,8 @@ import type pg from "pg";
 import { anexarCamposDoFunil } from "./campos-do-render";
 import { anexarOpcoesDoRender } from "./opcoes-do-render";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
-import { MARCACAO, renderTemplate } from "./template";
+import { fusoDaOrganizacao } from "./cron-de-data";
+import { resolverVariaveis, saudacaoDaHora, type InstanteDoEnvio } from "@/lib/variaveis/resolvedor";
 
 /**
  * O corpo da mensagem com as marcações de CRM resolvidas.
@@ -34,27 +35,20 @@ import { MARCACAO, renderTemplate } from "./template";
  * `{{contact.phone_number}}`, `{{lead.title}}` e o atalho de campo personalizado
  * (`{{servico}}` → `lead.custom_fields.servico`) resolvem igualzinho lá.
  */
-export function renderizarTextoDeFollowup(texto: string, contexto: Record<string, unknown>): string {
-  let saida = "";
-  let cursor = 0;
-  let algumaFicouVazia = false;
-  for (const marca of texto.matchAll(MARCACAO)) {
-    const inicio = marca.index ?? cursor;
-    saida += texto.slice(cursor, inicio);
-    const valor = renderTemplate(marca[0], contexto);
-    if (valor === "") {
-      // Marca sem valor: some ela e o espaço que ficaria órfão do lado esquerdo.
-      saida = saida.replace(/\s+$/, "");
-      algumaFicouVazia = true;
-    } else {
-      saida += valor;
-    }
-    cursor = inicio + marca[0].length;
-  }
-  saida += texto.slice(cursor);
-  // Sem valor no INÍCIO da frase ("{{nome}} chegou"), o espaço do segundo
-  // pedaço também não pode sobrar — " chegou" não é frase.
-  return algumaFicouVazia ? saida.replace(/^\s+/, "") : saida;
+export function renderizarTextoDeFollowup(
+  texto: string,
+  contexto: Record<string, unknown>,
+  agora?: InstanteDoEnvio,
+): string {
+  // A MESMA conta da automação, com a política desta tela: `remover` tira a
+  // marcação sem valor JUNTO com o espaço vizinho ("Oi {{primeiro_nome}}!" →
+  // "Oi!"), que é a régua do #2528. `agora` é o instante do envio — é ele que
+  // faz `{{saudacao}}` sair igual à campanha.
+  return resolverVariaveis(texto, contexto, {
+    fonte: "automacao",
+    quandoVazio: "remover",
+    agora,
+  }).texto;
 }
 
 /**
@@ -94,6 +88,16 @@ export async function contextoDoContato(
   });
   if (contatos.rows[0]) contexto.contact = contatos.rows[0];
   if (negocios.rows[0]) contexto.lead = negocios.rows[0];
+
+  // `{{saudacao}}` (#3687): o follow-up não tem a sessão do canal em mãos, então
+  // o fuso é o da ORGANIZAÇÃO — o mesmo que a janela usa como reserva
+  // (`fusoDaJanela`). Calculada aqui, no mesmo instante do envio: quem chama só
+  // tem o texto e o contexto. A linha da organização é a mesma lida acima para
+  // o `{{campo|data}}` — uma consulta só.
+  contexto.saudacao = saudacaoDaHora(
+    new Date(),
+    fusoDaOrganizacao(organizacao.rows[0]?.timezone),
+  );
 
   // O rótulo das opções (#3605): a linha do negócio guarda o CÓDIGO
   // (`paris-franca`) e o funil guarda o que o cliente deve ler. Uma leitura a

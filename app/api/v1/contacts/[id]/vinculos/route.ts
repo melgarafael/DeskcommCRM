@@ -11,39 +11,47 @@
  * organização do chamador, então outra organização não enxerga vínculo alheio e
  * a tela não pode discordar do servidor sobre o que barra. Só-sessão, como o
  * restante de `contacts` — `requireRole("viewer")` (ler é o menor privilégio).
+ *
+ * Sessão OU token de integração (Spec 33, R2): `mcp:read` e papel `viewer`. A
+ * organização sai da sessão ou da LINHA DO TOKEN, e o handler filtra por ela as
+ * duas leituras (a ficha e a contagem).
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 
 import { vinculosDoContatoHandler } from "../../_handler";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
-  const authz = await requireRole("viewer", { requestId, resource: "contacts" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "contacts",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
-
-  const supabase = await createClient();
+  const teto = await tetoDeEscritaDoToken(authz, "contacts", requestId);
+  if (teto) return teto;
 
   try {
     const result = await vinculosDoContatoHandler(
-      supabase,
+      authz.supabase,
       {
-        organization_id: authz.org.orgId,
-        actor: { type: "user", id: authz.user.id },
+        organization_id: authz.organizationId,
+        actor: authz.actor,
         requestId,
-        idioma: authz.user.idioma,
+        idioma: authz.idioma,
       },
       id,
     );

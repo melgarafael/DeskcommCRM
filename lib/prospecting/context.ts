@@ -7,11 +7,24 @@ export async function prospectingConversationContext(
   org: string,
   conversationId: string,
 ) {
-  const { rows } = await db.query<{ config: unknown; exit_offered_at: Date | null }>(
-    "select c.config, p.exit_offered_at from prospecting_candidates p join prospecting_campaigns c on c.organization_id=p.organization_id and c.id=p.campaign_id where p.organization_id=$1 and p.conversation_id=$2 and p.status in ('sending','sent') limit 1",
+  const { rows } = await db.query<{
+    config: unknown;
+    briefing: unknown;
+    exit_offered_at: Date | null;
+  }>(
+    "select c.config, p.data->'briefing' as briefing, p.exit_offered_at from prospecting_candidates p join prospecting_campaigns c on c.organization_id=p.organization_id and c.id=p.campaign_id where p.organization_id=$1 and p.conversation_id=$2 and p.status in ('sending','sent') order by p.attempted_at desc nulls last limit 1",
     [org, conversationId],
   );
-  const parsed = campaignConfigSchema.safeParse(rows[0]?.config);
+  // A conversa segue com o texto com que COMEÇOU (doc 358 › 1A): quando a campanha
+  // foi editada depois da abordagem, `editBriefing` deixou esse texto em
+  // `data.briefing`, e ele vence a `config` atual.
+  const config = rows[0]?.config;
+  const congelado = rows[0]?.briefing;
+  const parsed = campaignConfigSchema.safeParse(
+    config && typeof config === "object" && congelado && typeof congelado === "object"
+      ? { ...config, ...congelado }
+      : config,
+  );
   if (!parsed.success) return "";
   const c = parsed.data;
   const linha = rows[0];
