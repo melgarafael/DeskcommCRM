@@ -151,6 +151,12 @@ function montarDb(pointers: unknown[], conversas: unknown[] = CONVERSAS) {
     followup_flow_pointers: pointers,
     followup_flow_versions: [{ graph: GRAFO }],
     conversations: conversas,
+    // #4311 (resíduo): a org deixou de vir embutida na linha de conversa e é
+    // lida uma vez por organização no tick — o dublê precisa servi-la.
+    organizations: [
+      { id: ORG, status: "active", settings: {} },
+      { id: ORG_B, status: "active", settings: {} },
+    ],
   });
   const adapter = createSupabaseSilenceSweepDb(admin);
   const efeitos: Efeito[] = [];

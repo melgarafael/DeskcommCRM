@@ -69,8 +69,15 @@ export async function configPadraoDaOrganizacao(
     const cfg = campaignConfigSchema.safeParse(linha.config);
     if (cfg.success && cfg.data.agent_id) {
       // Só o agente da campanha antiga: instrução, qualificação e ofertas NÃO atravessam.
-      const { ofertas: _ofertasDaCampanhaAntiga, ...resto } = cfg.data;
+      // O carimbo de edição do texto também fica: ele é da campanha antiga, e a
+      // prévia que o levasse não conferiria com a campanha nova (`previaDoAgente`).
+      const {
+        ofertas: _ofertasDaCampanhaAntiga,
+        briefing_editado_em: _carimboDaCampanhaAntiga,
+        ...resto
+      } = cfg.data;
       void _ofertasDaCampanhaAntiga;
+      void _carimboDaCampanhaAntiga;
       return {
         config: { ...resto, instruction: INSTRUCAO_NEUTRA, qualification: QUALIFICACAO_NEUTRA },
         agenteId: cfg.data.agent_id,

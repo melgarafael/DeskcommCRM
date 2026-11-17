@@ -251,7 +251,7 @@ describe('degral 0b: o primeiro turno do contato que veio pela frase do anúncio
   it('(f) agente da campanha de OUTRA organização é RECUSADO e cai no agente do número', async () => {
     // A config da campanha vive no jsonb da organização e aceita qualquer uuid —
     // um id colado da outra empresa não pode virar atendimento. A FK composta da
-    // 9348 recusa a gravação; na leitura, `loadPublishedAgentConfigById` filtra
+    // 9409 recusa a gravação; na leitura, `loadPublishedAgentConfigById` filtra
     // por `organization_id` e devolve `null`, que é o que este dublê reproduz.
     const d = deps({
       daEntrada: 'agente-da-outra-org',

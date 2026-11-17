@@ -29,6 +29,36 @@ const make = (error: unknown = null) => {
   return { admin: { from } as unknown as SupabaseClient, from, insert };
 };
 describe("links rastreáveis", () => {
+  it("o nome do link não vira campanha nem site vira origem explícita do Google", async () => {
+    const { admin, insert } = make();
+    await destinoDoLink(admin, { ...link, utm: {} }, new URLSearchParams({ gclid: "clique" }));
+    expect(insert.mock.calls[0]![0].query_raw).toEqual({ gclid: "clique" });
+  });
+  it("o link nomeado guarda os rótulos da URL e IDs sem substituí-los pelo nome do link", async () => {
+    const { admin, insert } = make();
+    await destinoDoLink(admin, link, new URLSearchParams({
+      gclid: "clique",
+      utm_campaign: "Pesquisa Rio",
+      utm_adset: "Grupo Barra",
+      utm_ad: "Criativo A",
+      campaignid: "90071992547409930001",
+      adgroupid: "456",
+      creative: "789",
+      google_customer_id: "1234567890",
+      private_token: "nao-guardar",
+    }));
+    expect(insert.mock.calls[0]![0].query_raw).toEqual({
+      gclid: "clique",
+      utm_source: "instagram",
+      utm_campaign: "Pesquisa Rio",
+      utm_adset: "Grupo Barra",
+      utm_ad: "Criativo A",
+      google_campaign_id: "90071992547409930001",
+      google_adgroup_id: "456",
+      google_ad_id: "789",
+      google_customer_id: "1234567890",
+    });
+  });
   it.each(["gclid", "gbraid", "wbraid"])(
     "guarda %s com tenant/link e transporta o token para o WhatsApp",
     async (key) => {

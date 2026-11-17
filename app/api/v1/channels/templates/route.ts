@@ -47,7 +47,7 @@ import { deriveTemplateContract, describeAddress } from "@/lib/channels/meta/tem
 import { slotKey } from "@/lib/channels/meta/build-components";
 import { syncTemplates } from "@/lib/channels/meta/template-sync";
 import { mesclarValoresSalvos } from "@/lib/channels/meta/valores-salvos";
-import { erroDePermissaoDeGestao } from "@/lib/channels/templates-graph";
+import { erroDePermissaoDeGestao, recusaDeConteudoDoModelo } from "@/lib/channels/templates-graph";
 import { problemasDoModelo, textoDoProblema } from "@/lib/channels/limites-do-modelo";
 import { lerConteudo } from "@/lib/channels/template-conteudo";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -425,6 +425,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         ),
         403,
         { requestId },
+      );
+    }
+    // A recusa do CONTEÚDO (nome repetido, categoria recusada, componente fora
+    // do formato) chega como 4xx da plataforma. Antes disto ela saía como `502`
+    // com o texto cru em inglês — o operador lia "erro do servidor" para um
+    // defeito do próprio modelo e não sabia o que corrigir. Agora sai 422, na
+    // língua da tela, com o motivo da plataforma em `details` (é diagnóstico,
+    // não interface: não se traduz).
+    const recusa = recusaDeConteudoDoModelo(err);
+    if (recusa) {
+      return fail(
+        "validation_failed",
+        recusa.acesso
+          ? t("O acesso à conta do WhatsApp expirou. Reconecte o número e tente de novo.")
+          : t(
+              "A plataforma recusou o modelo. Confira nome, categoria, cabeçalho, corpo e exemplos e tente de novo.",
+            ),
+        422,
+        { requestId, details: { codigo: recusa.codigo, motivo: recusa.motivo } },
       );
     }
     // Conexão sem conta/token não é falha da plataforma, é PRECONDIÇÃO da nossa

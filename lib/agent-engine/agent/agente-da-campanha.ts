@@ -121,7 +121,7 @@ async function comTeto<T extends { rows: Array<Record<string, unknown>> }>(
  * prova, e o degrau vale em todo turno daquela conversa. A de ENTRADA não tem
  * vínculo nenhum — o cliente escreveu a frase do anúncio e a conversa podia
  * existir antes. O vínculo é a COLUNA que a ingestão gravou quando a frase
- * casou (`conversations.campaign_entry_agent_id`, migration 9348), e ele vale
+ * casou (`conversations.campaign_entry_agent_id`, migration 9409), e ele vale
  * em todo turno DESSA conversa: quem chega pelo anúncio é atendido pelo agente
  * daquela campanha, e não pelo agente do número que atende vários nichos.
  *
@@ -141,7 +141,7 @@ async function comTeto<T extends { rows: Array<Record<string, unknown>> }>(
  * - dono humano, silêncio, opt-out: a régua de elegibilidade barra ANTES, no
  *   drain e no início do turno (`decidirElegibilidadeDaConversa`) — este degrau
  *   não tem como passar por cima dela, porque nem chega a rodar;
- * - agente de outra organização: a FK composta da 9348 recusa a gravação, e o
+ * - agente de outra organização: a FK composta da 9409 recusa a gravação, e o
  *   `loadPublishedAgentConfigById` filtra por `organization_id` na leitura;
  * - agente arquivado ou sem versão publicada: `_loadAgentById` devolve `null` e
  *   o turno segue pela régua do número (falha aberta).

@@ -38,7 +38,7 @@ export const campanhaWhatsappSchema = z.object({
    * Quem atende a conversa que chegou por esta campanha (#4024).
    *
    * A ingestão grava este `agent_id` na CONVERSA
-   * (`conversations.campaign_entry_agent_id`, migration 9348) quando a frase
+   * (`conversations.campaign_entry_agent_id`, migration 9409) quando a frase
    * casa; o `resolve-turn-agent` o lê num degrau acima do roteador, em todo
    * turno dessa conversa — a mesma regra da campanha de saída (decisão do
    * mantenedor, 2026-11-05). Só a conversa em que a frase casou é afetada:
