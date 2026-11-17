@@ -136,6 +136,12 @@ export const KIND_LABEL = {
   // "parou de responder" é o que faz quem lê a Central agir — e a ação é uma
   // só, reconectar em Credenciais.
   assinatura_desconectada: "A conta do ChatGPT desconectou — a IA parou de responder",
+  // (#4696) O retorno COMBINADO com o cliente sumia sem aviso quando o
+  // atendimento mudava antes do disparo: o job ia para `failed` e a Central
+  // ficava vazia, então do lado de lá havia uma pessoa esperando uma mensagem
+  // que nunca sairia. O rótulo diz o que o CLIENTE deixa de receber — não
+  // "job descartado", que é vocabulário de fila.
+  followup_descartado: "Um retorno combinado com o cliente não vai sair",
   other: "Aviso do assistente",
 } as const satisfies Record<InboxKind, string>;
 
@@ -309,3 +315,45 @@ export const TITULO_DO_CLIENTE_SEM_RESPOSTA_NA_QUEDA =
 /** O corpo do mesmo aviso. Não traz nome, número nem trecho de mensagem. */
 export const CORPO_DO_CLIENTE_SEM_RESPOSTA_NA_QUEDA =
   "Este cliente escreveu enquanto o número estava fora do ar e ainda não teve resposta.";
+
+/**
+ * O retorno combinado que NÃO vai sair (#4696).
+ *
+ * ═══ A REGRA DE ESCRITA ═══
+ *
+ * Nenhuma frase daqui diz o código do erro. `service_boundary_stale` não é
+ * informação para quem abre a Central: o que a pessoa precisa saber é que uma
+ * mensagem PROMETIDA ao cliente não vai sair e por quê — e o "por quê" na
+ * língua de quem lê é "o atendimento mudou". Também não se afirma o que o
+ * sistema não apura: ele sabe que a fronteira mudou, não se o cliente ficou
+ * esperando no WhatsApp. O convite a agir é a única saída que o produto oferece
+ * de fato — abrir a conversa e retomar.
+ */
+export interface DadosDoRetornoDescartado {
+  /** Nome do contato, como está na ficha. */
+  contato: string;
+  /** O negócio a que o retorno pertencia, quando existe (nunca id nem etapa). */
+  negocio?: string | null;
+  /**
+   * O instante que estava combinado, JÁ FORMATADO no fuso da empresa (ex.:
+   * "12/11 às 15:00"). `null` quando o job não trouxe o instante — a frase
+   * então não inventa hora nenhuma.
+   */
+  quando: string | null;
+}
+
+export function copyDoRetornoDescartado(dados: DadosDoRetornoDescartado): {
+  title: string;
+  body: string;
+} {
+  const hora = dados.quando ? ` (${dados.quando})` : "";
+  const sobre = dados.negocio ? ` Era sobre ${dados.negocio}.` : "";
+  return {
+    title: `Retorno combinado com ${dados.contato} não vai sair`,
+    body:
+      `O atendimento de ${dados.contato} mudou antes do horário combinado${hora}: a conversa foi ` +
+      `encerrada ou virou outro atendimento, então o retorno que estava marcado não será ` +
+      `enviado.${sobre} Se ainda fizer sentido falar com essa pessoa, abra a conversa e ` +
+      `retome o contato.`,
+  };
+}
