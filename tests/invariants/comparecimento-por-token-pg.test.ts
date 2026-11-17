@@ -211,6 +211,10 @@ describe("comparecimento por token atravessa o gatilho do banco só pela porta c
     await expect(
       comoPapel("service_role", null, (c) => c.query(RPC, [a.org, passado, { status: "cancelled" }, tok])),
     ).rejects.toMatchObject({ code: "22023", message: "attendance_status_invalid" });
+    // Sem status no patch: `null not in (...)` é nulo, e sem a guarda o RPC deixava passar.
+    await expect(
+      comoPapel("service_role", null, (c) => c.query(RPC, [a.org, passado, {}, tok])),
+    ).rejects.toMatchObject({ code: "22023", message: "attendance_status_invalid" });
     const futuro = await compromisso(a, "now()+interval '1 day'");
     await expect(
       comoPapel("service_role", null, (c) => c.query(RPC, [a.org, futuro, { status: "completed" }, tok])),
@@ -253,6 +257,22 @@ describe("comparecimento por token atravessa o gatilho do banco só pela porta c
         return c.query(CHANGE, [a.org, id, { status: "completed" }]);
       }),
     ).rejects.toMatchObject({ code: "42501" });
+    expect(await estado(id)).toEqual(INTOCADO);
+  });
+
+  it("compromisso de autoridade externa (9392) não recebe comparecimento por token", async () => {
+    // O RPC roda como servidor; sem a recusa, o carimbo cairia no ramo do
+    // espelho e devolveria sucesso sem gravar o token que registrou.
+    const a = tenants[0]!;
+    const tok = await token(a, ["mcp:write", "agenda:attendance"]);
+    const id = await compromisso(a);
+    await pool.query(
+      "update calendar_appointments set authority='amigo', external_connection_id=gen_random_uuid() where id=$1",
+      [id],
+    );
+    await expect(
+      comoPapel("service_role", null, (c) => c.query(RPC, [a.org, id, { status: "completed" }, tok])),
+    ).rejects.toMatchObject({ code: "42501", message: "attendance_external_authority" });
     expect(await estado(id)).toEqual(INTOCADO);
   });
 });

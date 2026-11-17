@@ -83,6 +83,45 @@ export async function listPeopleHandler(
   };
 }
 
+/**
+ * Vínculos da pessoa com a empresa de cada um. Mesma regra de `vinculosDaEmpresa`
+ * (companies-handler): SESSÃO com o embed `companies:company_id` de sempre; TOKEN
+ * sem embed, com a empresa lida em consulta própria filtrada pela organização.
+ */
+async function vinculosDaPessoa(
+  supabase: SB,
+  ctx: HandlerCtx,
+  id: string,
+): Promise<Array<Record<string, unknown>>> {
+  if (ctx.actor.type === "user") {
+    const { data } = await supabase
+      .from("company_people")
+      .select(
+        "id, company_id, job_title, department, is_decision_maker, is_primary, companies:company_id(id, trade_name, legal_name, cnpj)",
+      )
+      .eq("organization_id", ctx.organization_id)
+      .eq("person_id", id);
+    return data ?? [];
+  }
+  const { data: vinculos } = await supabase
+    .from("company_people")
+    .select("id, company_id, job_title, department, is_decision_maker, is_primary")
+    .eq("organization_id", ctx.organization_id)
+    .eq("person_id", id);
+  const linhas = vinculos ?? [];
+  const ids = linhas.map((l) => l.company_id as string).filter(Boolean);
+  const empresas = new Map<string, unknown>();
+  if (ids.length > 0) {
+    const { data: firmas } = await supabase
+      .from("companies")
+      .select("id, trade_name, legal_name, cnpj")
+      .eq("organization_id", ctx.organization_id)
+      .in("id", ids);
+    for (const f of firmas ?? []) empresas.set(f.id as string, f);
+  }
+  return linhas.map((l) => ({ ...l, companies: empresas.get(l.company_id as string) ?? null }));
+}
+
 export async function getPersonHandler(supabase: SB, ctx: HandlerCtx, id: string) {
   const { data, error } = await supabase
     .from("people")
@@ -93,13 +132,7 @@ export async function getPersonHandler(supabase: SB, ctx: HandlerCtx, id: string
   if (error) err(ctx, 500, "internal_error", error.message);
   if (!data) err(ctx, 404, "not_found", "Pessoa não encontrada.");
 
-  const { data: links } = await supabase
-    .from("company_people")
-    .select(
-      "id, company_id, job_title, department, is_decision_maker, is_primary, companies:company_id(id, trade_name, legal_name, cnpj)",
-    )
-    .eq("organization_id", ctx.organization_id)
-    .eq("person_id", id);
+  const links = await vinculosDaPessoa(supabase, ctx, id);
 
   const { data: contacts } = await supabase
     .from("contacts")
@@ -108,13 +141,13 @@ export async function getPersonHandler(supabase: SB, ctx: HandlerCtx, id: string
     .eq("person_id", id)
     .is("is_merged_into", null);
 
-  return { person: data, companies: links ?? [], contacts: contacts ?? [] };
+  return { person: data, companies: links, contacts: contacts ?? [] };
 }
 
 export async function createPersonHandler(
   supabase: SB,
   ctx: HandlerCtx,
-  actorUserId: string,
+  actorUserId: string | null,
   raw: unknown,
 ) {
   const body = personCreateSchema.parse(raw);
@@ -165,6 +198,7 @@ export async function createPersonHandler(
   await audit({
     organizationId: ctx.organization_id,
     actorUserId,
+    actorApiTokenId: ctx.apiTokenId ?? null,
     action: "people.created",
     resourceType: "people",
     resourceId: data.id,
@@ -177,7 +211,7 @@ export async function createPersonHandler(
 export async function patchPersonHandler(
   supabase: SB,
   ctx: HandlerCtx,
-  actorUserId: string,
+  actorUserId: string | null,
   id: string,
   raw: unknown,
 ) {
@@ -203,6 +237,7 @@ export async function patchPersonHandler(
   await audit({
     organizationId: ctx.organization_id,
     actorUserId,
+    actorApiTokenId: ctx.apiTokenId ?? null,
     action: "people.updated",
     resourceType: "people",
     resourceId: id,
@@ -214,7 +249,7 @@ export async function patchPersonHandler(
 export async function linkCompanyPersonHandler(
   supabase: SB,
   ctx: HandlerCtx,
-  actorUserId: string,
+  actorUserId: string | null,
   raw: unknown,
 ) {
   const body = companyPersonCreateSchema.parse(raw);
@@ -241,6 +276,7 @@ export async function linkCompanyPersonHandler(
   await audit({
     organizationId: ctx.organization_id,
     actorUserId,
+    actorApiTokenId: ctx.apiTokenId ?? null,
     action: "company_people.linked",
     resourceType: "company_people",
     resourceId: data.id,
@@ -252,7 +288,7 @@ export async function linkCompanyPersonHandler(
 export async function patchCompanyPersonHandler(
   supabase: SB,
   ctx: HandlerCtx,
-  actorUserId: string,
+  actorUserId: string | null,
   id: string,
   raw: unknown,
 ) {
@@ -270,6 +306,7 @@ export async function patchCompanyPersonHandler(
   await audit({
     organizationId: ctx.organization_id,
     actorUserId,
+    actorApiTokenId: ctx.apiTokenId ?? null,
     action: "company_people.updated",
     resourceType: "company_people",
     resourceId: id,
@@ -281,9 +318,10 @@ export async function patchCompanyPersonHandler(
 export async function linkContactToPersonHandler(
   supabase: SB,
   ctx: HandlerCtx,
-  actorUserId: string,
+  actorUserId: string | null,
   contactId: string,
   personId: string | null,
+  actorApiTokenId?: string | null,
 ) {
   if (personId) {
     const { data: person } = await supabase
@@ -310,6 +348,7 @@ export async function linkContactToPersonHandler(
     organizationId: ctx.organization_id,
     actorUserId,
     action: "contacts.person_linked",
+    actorApiTokenId: actorApiTokenId ?? null,
     resourceType: "contacts",
     resourceId: contactId,
     requestId: ctx.requestId,

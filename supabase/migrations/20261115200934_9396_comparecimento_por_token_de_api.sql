@@ -42,6 +42,14 @@ begin
  new.revision_started_at:=case when changed then clock_timestamp() else old.revision_started_at end;
  if changed then new.confirmation_next_at:=null; end if;
  if new.status is distinct from old.status and new.status in ('completed','no_show') then
+  -- 9392: autoridade externa, gravada pelo servidor — espelho, não certificação.
+  -- Vem ANTES do ramo do token: o desfecho espelhado não tem autor, nem pessoa
+  -- nem token, e por isso zera também `outcome_api_token_id`.
+  if new.authority<>'local' and coalesce(nullif(current_setting('role',true),''),'none') not in ('authenticated','anon') then
+   new.outcome_source_kind:=null; new.outcome_user_id:=null; new.outcome_message_id:=null;
+   new.outcome_recorded_at:=null; new.outcome_api_token_id:=null;
+   return new;
+  end if;
   actor:=auth.uid();
   -- #4515: sem pessoa, a ÚNICA porta é um token de API desta organização que
   -- carregue `agenda:attendance` e esteja vivo. A GUC é escrita apenas por
@@ -108,8 +116,13 @@ begin
     and t.revoked_at is null and (t.expires_at is null or t.expires_at>now());
  if not found or not (token.scopes @> '["agenda:attendance"]'::jsonb) then
   raise exception 'attendance_scope_required' using errcode='42501'; end if;
+ -- Compromisso de autoridade externa (9392) é espelho: o desfecho dele vem do
+ -- sistema que manda. Sem esta recusa, o RPC (que roda como servidor) cairia no
+ -- ramo do espelho do carimbo e devolveria sucesso sem gravar quem registrou.
+ if exists(select 1 from public.calendar_appointments a where a.id=p_id and a.organization_id=p_org and a.authority<>'local') then
+  raise exception 'attendance_external_authority' using errcode='42501'; end if;
  status_novo:=p_patch->>'status';
- if status_novo not in ('completed','no_show') then
+ if status_novo is null or status_novo not in ('completed','no_show') then
   raise exception 'attendance_status_invalid' using errcode='22023'; end if;
  perform set_config('agenda.attendance_token',p_api_token::text,true);
  return public.fn_appointment_change(p_org,p_id,p_revision,p_patch);

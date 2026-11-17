@@ -65,6 +65,7 @@ import {
 } from './orcamento';
 import { corpoComoObjeto, custoInformadoPeloOpenRouter, custoTerraPorPassos, costCents, gravacaoDeUmaHora } from './pricing';
 import { custoDoModeloForaDoMotor } from './pricing-do-catalogo';
+import { decidirCustoDaChamada } from './custo-da-chamada';
 import { chaveDeOrcamentoDaInstalacao } from '../../../instalacao/comportamento';
 import { cobrancaLigadaComMemo } from '../../../instalacao/modulos';
 import { createDefaultRegistry, ehOpenRouterOficial, type ProviderRegistry } from './providers';
@@ -298,6 +299,20 @@ export interface RunModelCallInput {
   pararQuando?: StopCondition<ToolSet>;
   /** Teto por chamada auxiliar; nunca aumenta o limite configurado pela organização. */
   maxOutputTokens?: number;
+  /**
+   * Amostragem pedida NESTA chamada — vence `settings.llm.params.temperature`
+   * da organização, e só para baixo da decisão dela no que importa aqui: quem
+   * pede 0 quer o MESMO veredito para a MESMA entrada.
+   *
+   * Existe por causa do classificador de promessa (#4665): a temperatura da
+   * org é knob de redação e vale para o turno; uma classificação binária que
+   * varia entre duas execuções do mesmo texto veta numa e aprova na outra, e o
+   * agente não tem como saber o que mudou. Ausente = padrão da org, como antes.
+   *
+   * O provedor que não aceita amostragem continua descartando o campo (quem
+   * tira é o registry, por modelo) — aqui ele só deixa de ser sempre o da org.
+   */
+  temperature?: number;
   /**
    * Raciocínio pedido NESTA chamada, na opção portátil do AI SDK (`reasoning`).
    * Cada provedor traduz para o seu campo — a Anthropic desliga o `thinking` (ou
@@ -1106,7 +1121,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
 
     return generateText({
       ...opcoesBase,
-      temperature,
+      // A chamada pode fixar a amostragem (`input.temperature`); sem ela vale o
+      // knob da organização, como sempre foi.
+      temperature: input.temperature ?? temperature,
       topP,
       topK,
       maxOutputTokens: tetoDeSaida(maxOutputTokens, input.maxOutputTokens),
@@ -1628,22 +1645,42 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // número (campo ausente), vale a tabela, como antes. `config` já é a reserva
   // quando a assinatura cai nela. Gateway do operador NUNCA informa o próprio
   // custo: o critério é o endereço da chamada que de fato rodou.
+  // A REGRA ÚNICA mora em `custo-da-chamada.ts` (issue #4697): as quatro
+  // entradas abaixo são só RESOLUÇÃO — o que vale, em que ordem e com que
+  // marca é decidido num lugar só. Antes, três `??` encadeados aqui decidiam
+  // em silêncio, e o mesmo modelo saía com custo numas linhas e nulo noutras
+  // sem ninguém conseguir apontar a regra.
+  //
+  // O catálogo só é consultado quando a tabela não conhece o modelo: é o
+  // caminho do provedor PERSONALIZADO e do modelo de catálogo (#3013), e não
+  // pode virar uma ida ao banco em toda chamada.
   const informado =
     config.provider === 'openrouter' && ehOpenRouterOficial(baseUrlDaChamadaEfetiva)
       ? custoInformadoPeloOpenRouter(result)
       : undefined;
-  let cost = informado ?? custoTerraPorPassos(model, result) ?? costCents(model, usage, cfg.cacheTtl ?? '1h');
-  let origemDoCusto: 'catalogo_da_instalacao' | 'informado_pelo_provedor' | undefined =
-    informado !== undefined ? 'informado_pelo_provedor' : undefined;
-  if (cost === null) {
-    cost = await custoDoModeloForaDoMotor(db, {
-      model,
-      provider: config.provider,
-      usage,
-      log: deps.log,
-    });
-    if (cost !== null) origemDoCusto = 'catalogo_da_instalacao';
-  }
+  const porPassosDoTerra = informado === undefined ? custoTerraPorPassos(model, result) : undefined;
+  const daTabelaDoMotor =
+    informado === undefined && porPassosDoTerra === undefined
+      ? costCents(model, usage, cfg.cacheTtl ?? '1h')
+      : null;
+  const doCatalogoDaInstalacao =
+    daTabelaDoMotor === null && informado === undefined && porPassosDoTerra === undefined
+      ? await custoDoModeloForaDoMotor(db, {
+          model,
+          provider: config.provider,
+          usage,
+          log: deps.log,
+        })
+      : null;
+  const decidido = decidirCustoDaChamada({
+    provider: config.provider,
+    informadoPeloProvedor: informado,
+    porPassosDoTerra,
+    daTabelaDoMotor,
+    doCatalogoDaInstalacao,
+  });
+  const cost = decidido.costCents;
+
   // O mesmo leitor do custo: o corpo pode chegar como objeto ou como texto JSON.
   const provedorDeOrigem = (corpoComoObjeto(result.response?.body) as { provider?: unknown } | undefined)?.provider;
 
@@ -1720,9 +1757,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     cost_cents: cost,
     // Só quando o preço NÃO veio da tabela estática do motor: diz de qual caminho
     // saiu o número gravado, e é o que um operador procura quando pergunta "de
-    // onde saiu este custo?". Modelo sem preço em lugar nenhum não traz o campo —
-    // o `cost_cents: null` acima somado ao aviso de sem-preço é a marca.
-    ...(origemDoCusto !== undefined ? { custo_origem: origemDoCusto } : {}),
+    // onde saiu este custo?". Modelo sem preço em lugar nenhum sai com
+    // `sem_preco` — o motivo DECLARADO que a #4697 pede no lugar do nulo calado.
+    ...(decidido.origem !== undefined ? { custo_origem: decidido.origem } : {}),
     // Quem atendeu de fato na OpenRouter (Anthropic, Bedrock, Vertex…): é como se
     // mede a fixação de sessão sem coluna nova. Só existe com o corpo da resposta.
     ...(typeof provedorDeOrigem === 'string' ? { provedor_de_origem: provedorDeOrigem } : {}),

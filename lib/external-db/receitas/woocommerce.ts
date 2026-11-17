@@ -95,7 +95,7 @@ export const RECEITA_WOOCOMMERCE_PRODUTOS: DefinicaoDeReceita = {
       [`${p}postmeta`]: ["post_id", "meta_key", "meta_value"],
     };
   },
-  montar: (fixos, busca, limite) => {
+  montar: (fixos, busca, limite, idDoItem) => {
     const p = ((fixos ?? {}) as { prefixo?: string }).prefixo ?? PREFIXO_PADRAO;
     const posts = quotarIdentificadorMysql(`${p}posts`);
     const postmeta = quotarIdentificadorMysql(`${p}postmeta`);
@@ -169,6 +169,7 @@ export const RECEITA_WOOCOMMERCE_PRODUTOS: DefinicaoDeReceita = {
         `${posts}.post_type = ${marcador("product")}`,
         `${posts}.post_status = ${marcador("publish")}`,
       ];
+      if (idDoItem !== undefined) base.push(`${posts}.ID = ${marcador(idDoItem)}`);
       const precoMax = b.preco_max;
       if (precoMax !== undefined) {
         // PRECO_COLUNA vira NULL quando o produto não tem _price nem _regular_price.
