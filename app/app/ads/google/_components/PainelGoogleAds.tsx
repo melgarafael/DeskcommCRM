@@ -216,7 +216,7 @@ export function PainelGoogleAds({ linhas, hoje, nomesDasContas }: Props) {
   );
   const paginas = Math.max(1, Math.ceil(visiveis.length / porPagina));
   const situacoes = [
-    { nome: t("Ganhos"), valor: total.ganhos, classe: "bg-accent" },
+    { nome: t("Ganhos"), valor: total.ganhos, classe: "bg-success" },
     { nome: t("Em aberto"), valor: emAberto, classe: "bg-info" },
     { nome: t("Perdidos"), valor: total.perdidos, classe: "bg-border-strong" },
   ];
@@ -380,7 +380,7 @@ export function PainelGoogleAds({ linhas, hoje, nomesDasContas }: Props) {
               aria-hidden
               style={{
                 background: total.negocios
-                  ? `conic-gradient(var(--color-accent) 0 ${(100 * total.ganhos) / total.negocios}%, var(--color-info) 0 ${(100 * (total.ganhos + emAberto)) / total.negocios}%, var(--color-border-strong) 0)`
+                  ? `conic-gradient(var(--color-success) 0 ${(100 * total.ganhos) / total.negocios}%, var(--color-info) 0 ${(100 * (total.ganhos + emAberto)) / total.negocios}%, var(--color-border-strong) 0)`
                   : "var(--color-surface-elevated)",
               }}
             >
