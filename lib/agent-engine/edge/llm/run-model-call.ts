@@ -65,7 +65,7 @@ import {
 } from './orcamento';
 import { corpoComoObjeto, custoInformadoPeloOpenRouter, custoTerraPorPassos, costCents, gravacaoDeUmaHora } from './pricing';
 import { custoDoModeloForaDoMotor } from './pricing-do-catalogo';
-import { decidirCustoDaChamada } from './custo-da-chamada';
+import { decidirCustoDaChamada, haUsoMedido } from './custo-da-chamada';
 import { chaveDeOrcamentoDaInstalacao } from '../../../instalacao/comportamento';
 import { cobrancaLigadaComMemo } from '../../../instalacao/modulos';
 import { createDefaultRegistry, ehOpenRouterOficial, type ProviderRegistry } from './providers';
@@ -1658,6 +1658,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       : null;
   const decidido = decidirCustoDaChamada({
     provider: config.provider,
+    // O corte de DADO (issue #4697): resposta sem `usage` não vira `0`
+    // (preço × 0 token) — vira nulo com motivo `sem_uso`.
+    temUso: haUsoMedido(usage),
     informadoPeloProvedor: informado,
     porPassosDoTerra,
     daTabelaDoMotor,
