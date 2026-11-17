@@ -123,6 +123,16 @@ export interface HandlerCtx {
   aiVoiceDerivedText?: string | null;
   /** Chave HTTP validada na borda para replay de uma criação. */
   idempotencyKey?: string;
+  /**
+   * Escopos do TOKEN que chamou, quando a identidade entrou por Bearer (#4515).
+   *
+   * Mora no CTX pelo mesmo motivo de `onBehalfOf`: o mesmo input atravessa a
+   * rota e a ferramenta MCP, e um campo de escopo no input público seria um
+   * pedido de permissão escrito por quem pede. Sessão de navegador não tem
+   * escopo nenhum — o campo fica ausente, e é isso que mantém o caminho da tela
+   * funcionando exatamente como antes.
+   */
+  escoposDoToken?: readonly string[];
   /** Identidade estável do job interno; não usar claim, que muda em cada reclaim. */
   sourceJobId?: string;
   organization_id: string;
