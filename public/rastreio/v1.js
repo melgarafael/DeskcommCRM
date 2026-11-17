@@ -40,6 +40,14 @@
     "utm_placement",
     "fbclid",
   ];
+  // Parâmetros próprios de IDs: UTMs numéricas não são promovidas a IDs.
+  // O servidor normaliza estes aliases para google_*_id ao guardar o recibo.
+  var googleIds = [
+    "google_campaign_id", "campaignid", "campaign_id",
+    "google_adgroup_id", "adgroupid", "adgroup_id",
+    "google_ad_id", "creative", "ad_id",
+    "google_customer_id", "customerid", "customer_id",
+  ];
   function normalize(input) {
     var out = {};
     ["gclid", "gbraid", "wbraid"].forEach(function (name) {
@@ -49,8 +57,25 @@
     });
     utms.forEach(function (name) {
       var value = input[name];
-      if (typeof value === "string" && value.trim() && !/[{}<>]/.test(value))
-        out[name] = value.trim().slice(0, 200);
+      var googleOrigin = Boolean(out.gclid || out.gbraid || out.wbraid);
+      if (
+        typeof value !== "string" || !value.trim() || /[{}<>]/.test(value)
+      ) return;
+      if (googleOrigin && (
+        value.trim().length > 200 || /[\u0000-\u001f\u007f]/.test(value) ||
+        /(?:[a-z][a-z0-9+.-]*:\/\/|https?:|javascript:|data:|file:|mailto:|tel:|about:|www\.)/i.test(value)
+      )) return;
+      out[name] = value.trim().slice(0, 200);
+    });
+    googleIds.forEach(function (name) {
+      if (!out.gclid && !out.gbraid && !out.wbraid) return;
+      var value = input[name];
+      if (typeof value !== "string") return;
+      var customer = /customer/.test(name);
+      var valid = customer
+        ? /^(?:[0-9]{10}|[0-9]{3}-[0-9]{3}-[0-9]{4})$/.test(value.trim())
+        : /^[0-9]{1,30}$/.test(value.trim());
+      if (valid) out[name] = customer ? value.trim().replace(/-/g, "") : value.trim();
     });
     return out;
   }

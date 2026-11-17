@@ -48,8 +48,17 @@ import { botoesDaDefinicao } from "@/lib/channels/botoes-da-definicao";
 import { conferirDefinicao } from "@/lib/channels/conferir-definicao";
 import { CHAVE_DOS_BOTOES_DO_MODELO } from "@/lib/messaging/botoes-do-modelo";
 import { estadoDaJanela } from "@/lib/channels/janela";
+import {
+  CHAVE_DO_NOME_NA_METADATA,
+  nomeDeArquivoLimpo,
+  nomeDoAnexoParaEnviar,
+} from "@/lib/messaging/media/nome-de-arquivo";
 import { isMediaPathOwnedBy } from "@/lib/messaging/media/upload-validation";
 import { assertUrlDeMidiaSegura } from "@/lib/messaging/media/url-de-midia-externa";
+import {
+  nomeDeArquivoSeguro,
+  nomeDoDocumentoParaEnvio,
+} from "@/lib/messaging/media/nome-para-envio";
 import { semChavesDaDerivacao } from "@/lib/messaging/media/leitura-adiada";
 import {
   buildVcard,
@@ -69,6 +78,7 @@ import {
 } from "@/lib/channels/numero-do-atendente";
 import { emitirFalhaDeEntrega } from "@/lib/messaging/falha-de-entrega";
 import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
+import { mascararTextoRetido, perfisDoTextoRetido } from "@/lib/messaging/texto-retido";
 import { pedirReenvioDoDesacelerado, reenvioDesaceleradoAtende } from "@/lib/messaging/reenvio-desacelerado";
 import { esperaPedidaPeloCanal } from "@/lib/channels/erro-da-plataforma";
 import { aplicarAssinatura, configAssinatura, linhaDeAssinatura } from "@/lib/messaging/assinatura";
@@ -442,7 +452,34 @@ export async function listMessagesHandler(
   // A RESPOSTA continua cronológica (antigo → novo), igual a antes: o consumidor
   // renderiza de cima para baixo sem mudar nada. O que mudou foi QUAIS mensagens
   // entram na página, não a ordem em que saem.
-  return { messages: page.slice().reverse(), cursor, has_more: hasMore };
+  //
+  // O CORPO DA APAGADA PELO CONTATO NÃO SAI DAQUI (#4500). Até esta mudança ele
+  // viajava inteiro nesta resposta — o balão escondia e o JSON entregava, para
+  // qualquer leitor da rota ou do histórico pelo MCP. Revelar passou a ser porta
+  // própria, com perfil autorizado e auditoria (`texto-retido/route.ts`); o que
+  // esta leitura devolve no lugar do corpo é `body: null` + `texto_retido: true`.
+  // A máscara mora no fim, no único ponto por onde TODOS os consumidores passam
+  // — inclusive os que leem com service role e não têm RLS no caminho.
+  //
+  // O sinal `texto_retido` (o botão) só vai quando a organização LIGOU a porta —
+  // ao menos um perfil autorizado. A consulta às configurações só acontece se a
+  // página tem alguma apagada pelo contato, e é PLANA (sem `maybeSingle`) pelo
+  // mesmo motivo das consultas do topo: o dublê do invariante de paginação.
+  let portaLigada = false;
+  if (page.some((m) => m.direction === "inbound" && m.revoked_at != null)) {
+    const { data: orgs } = await supabase
+      .from("organizations")
+      .select("settings")
+      .eq("id", ctx.organization_id)
+      .limit(1);
+    const settings = ((orgs ?? []) as Array<{ settings?: unknown }>)[0]?.settings ?? null;
+    portaLigada = perfisDoTextoRetido(settings).length > 0;
+  }
+  return {
+    messages: page.map((m) => mascararTextoRetido(m, portaLigada)).reverse(),
+    cursor,
+    has_more: hasMore,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -511,7 +548,7 @@ export async function sendMessageHandler(
   // envio com 42703. Sem a coluna, nada está arquivado — e a consulta sem ela é a
   // consulta certa (ver lib/channels/archived).
   const convSelect = (comArchived: boolean) =>
-    `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, provider_conversation_id, last_inbound_at, contacts:contact_id(phone_number, wa_identity, wa_lid, is_blocked, is_personal), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status, metadata${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
+    `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, provider_conversation_id, last_inbound_at, contacts:contact_id(phone_number, wa_identity, wa_lid, social_identity, is_blocked, is_personal), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status, metadata${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
   //
   // O filtro por `organization_id` NÃO é redundância com a RLS — é a única
   // proteção que existe na metade dos chamadores. Este handler é a porta de
@@ -578,6 +615,8 @@ export async function sendMessageHandler(
       phone_number: string | null;
       wa_identity: string | null;
       wa_lid: string | null;
+      /** Instagram/Facebook: o testador social do pré-go-live casa por aqui. */
+      social_identity?: string | null;
       is_blocked: boolean;
       /** Spec 21: pessoal não recebe por nenhum caminho — o veto é no mesmo ponto do bloqueio. */
       is_personal: boolean;
@@ -1000,6 +1039,20 @@ export async function sendMessageHandler(
   // Lidos do espelho da definição — nunca do `metadata` de entrada, que é do
   // cliente da API — e sem barrar nada: é dado de exibição.
   const { [CHAVE_DOS_BOTOES_DO_MODELO]: _botoesDoCliente, ...metadataDeEntrada } = input.metadata ?? {};
+  // O nome que a PESSOA deu ao arquivo (#4457). O caminho no bucket nasce
+  // `out-<uuid>.<ext>`, então não há nome legível nele; este é o único que
+  // sobra. Passa pela guarda da ingestão porque vem do multipart, e é gravado
+  // na linha porque o balão e o download leem `metadata.media_filename` — sem
+  // isso o histórico continuaria mostrando o nome aleatório. `null` quando o
+  // envio não traz nome (token que só manda o storage_path): aí o balão segue
+  // com o rótulo de sempre, em vez de exibir um `out-<uuid>`.
+  // Por `media_url` (#4524) o nome DECLARADO passa pela guarda do envio — a
+  // mesma que nomeia o documento no payload — e a linha guarda esse mesmo
+  // nome, para o cartão e o download não contarem outra história. Requisição
+  // antiga, sem o campo, não ganha chave nova no JSONB.
+  const nomeOriginalDoAnexo = input.media_storage_path
+    ? nomeDeArquivoLimpo(input.media_filename)
+    : nomeDeArquivoSeguro(input.media_filename);
   const botoesDoModeloEnviado =
     input.type === "template"
       ? await botoesDaDefinicao(supabase, {
@@ -1045,6 +1098,9 @@ export async function sendMessageHandler(
       // são do servidor: o dreno converte a âncora em data e o cron pede visão
       // paga pela marca. O cliente não as forja — ver `CHAVES_DA_DERIVACAO`.
       ...semChavesDaDerivacao(metadataDeEntrada),
+      // Depois do `metadata` do cliente de propósito: o nome do arquivo é dado
+      // do ENVIO (#4457), e o cliente da API não o sobrescreve por metadata.
+      ...(nomeOriginalDoAnexo ? { [CHAVE_DO_NOME_NA_METADATA]: nomeOriginalDoAnexo } : {}),
       ...(ctx.actor.type === "ai_agent" ? { ai_actor_id: ctx.actor.id } : {}),
       ...(origemDoEmissor === "ai" ? { ai_actor_name: nomeDoAgente } : {}),
       ...(botoesDoModeloEnviado.length > 0 ? { [CHAVE_DOS_BOTOES_DO_MODELO]: botoesDoModeloEnviado } : {}),
@@ -1130,6 +1186,7 @@ export async function sendMessageHandler(
     organizationId: ctx.organization_id,
     channelSessionId: c.channel_session_id,
     contactPhoneNumber: c.contacts?.phone_number ?? "",
+    contactSocialIdentity: c.contacts?.social_identity ?? null,
   }).catch(() => ({ permite: false, motivo: "pre_go_live_indisponivel" }));
   if (acessoAtual && !acessoAtual.permite) {
     const { data: updated, error } = await supabase.from("messages").update({
@@ -1313,7 +1370,10 @@ export async function sendMessageHandler(
         if (signErr || !signed?.signedUrl) {
           throw new Error(`storage_sign_failed: ${signErr?.message ?? "no_url"}`);
         }
-        const filename = input.media_storage_path.split("/").pop() ?? undefined;
+        // O nome ORIGINAL vence o basename aleatório do bucket (#4457). Sem
+        // nome — chamada por token, que só conhece o storage_path —, o
+        // basename continua sendo o que sai, como sempre foi.
+        const filename = nomeDoAnexoParaEnviar(input.media_filename, input.media_storage_path);
         await checkBoundary();
         ({ externalId } = await adapter.send({
           beforeSend: checkBoundary,
@@ -1341,6 +1401,20 @@ export async function sendMessageHandler(
         // pela guarda anti-SSRF antes de a linha existir
         // (`assertUrlDeMidiaSegura`): ela chega também pela API pública e
         // pelo MCP, e quem a baixa é o gateway, de dentro da rede do servidor.
+        //
+        // O NOME (#4524): sem `filename` no `media`, quem escolhia era o canal
+        // — e o adaptador do canal grava o literal `file`, que no celular parece arquivo
+        // suspeito. A ordem está em `nomeDoDocumentoParaEnvio`: campo novo
+        // `media_filename`, depois o `metadata.media_filename` que a ingestão
+        // já grava (#2613), depois o último segmento da URL com extensão, e
+        // por fim uma reserva legível vinda do MIME. Nunca `file`, e nunca uma
+        // exceção: o nome é rótulo, não condição de envio.
+        const nomeDoDocumento = nomeDoDocumentoParaEnvio({
+          nomeExplicito: input.media_filename,
+          metadata: input.metadata,
+          url: input.media_url,
+          mime: input.media_mime,
+        });
         await checkBoundary();
         ({ externalId } = await adapter.send({
           beforeSend: checkBoundary,
@@ -1352,6 +1426,7 @@ export async function sendMessageHandler(
           media: {
             url: input.media_url,
             mime: input.media_mime ?? "application/octet-stream",
+            filename: nomeDoDocumento,
             caption: corpoDoCanal(input.body ?? null),
           },
           replyToExternalId: citada?.external_id ?? null,

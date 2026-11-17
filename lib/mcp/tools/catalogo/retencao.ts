@@ -126,4 +126,27 @@ export const TOOLS_RETENCAO = declararTools([
     risco: "seguro",
     pacotes: ["reter"],
   },
+  {
+    name: "crm_save_lead_diagnosis",
+    category: "write",
+    rotulo: "Registrar o diagnóstico da empresa",
+    explicacao:
+      "Grava na ficha do contato o segmento, o CNPJ, o diagnóstico da empresa e a oferta sugerida, com o selo Escrito pela IA. Depois que alguém da equipe escreve o diagnóstico ou a oferta na aba Diagnóstico, a IA não troca mais o que está lá. Não mexe nas observações da equipe nem nos outros campos da ficha.",
+    oQueToca: "Cadastro de clientes",
+    // `atencao`: muda a ficha, mas nada sai para o cliente, o texto fica à
+    // vista com o selo e a equipe desfaz editando a aba.
+    risco: "atencao",
+    // "reter", ao lado da análise do site e pela MESMA conta: o plano pedia
+    // "vender", mas em "vender" ela entraria no agente que nasce no onboarding
+    // e tiraria a última jornada que ainda cabe depois dele ("evoluir" passaria
+    // de 27 para 28 vagas, medido em `pacote-reserva-vaga-da-critica.test.ts`).
+    // Quem precisa dela é o agente da prospecção, e `lib/prospecting/agent-setup.ts`
+    // a liga por nome.
+    // O ALCANCE do pacote: ligar "reter" numa tela de capacidades também a liga
+    // (o risco `atencao` entra por pacote), inclusive em agente de retenção que
+    // atende cliente antigo. Por isso a cerca não depende de quem a liga: o que
+    // uma pessoa da equipe assinou não é sobrescrito (`gravacaoDoAgente`), e o
+    // agente só alcança o contato da conversa.
+    pacotes: ["reter"],
+  },
 ]);

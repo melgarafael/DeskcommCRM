@@ -34,6 +34,19 @@ import { createClient } from "@/lib/supabase/server";
  */
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+// A sessão do crm-summary passa por `resolveAuthDual`, que lê o cookie da organização
+// ativa e o usuário: aqui só o banco falso importa, então os dois portões ficam fixos.
+vi.mock("@/lib/auth/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth/server")>()),
+  loadAuthUser: vi.fn(async () => ({ id: "u-1", idioma: "pt-BR", organizations: [] })),
+}));
+vi.mock("@/lib/auth/require-role", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth/require-role")>()),
+  orgAtivaDaApi: vi.fn(async () => ({
+    ok: true,
+    org: { orgId: "org-1", name: "Org", role: "agent" },
+  })),
+}));
 vi.mock("@/lib/users/nome-do-atendente", () => ({ nomesDosAtendentes: async () => new Map() }));
 
 const ORG = "org-1";
@@ -62,7 +75,7 @@ function bancoFalso(tabelas: Record<string, Linha[]>) {
     };
     return chain;
   };
-  return { auth: { getUser: async () => ({ data: { user: { id: "u-1" } }, error: null }) }, from, selects };
+  return { auth: { getUser: async () => ({ data: { user: { id: "u-1" } }, error: null }) }, from, selects, rpc: vi.fn(async () => ({ data: null, error: null })) };
 }
 
 describe("crm-summary: a etapa do negócio e as etapas do funil", () => {
@@ -135,6 +148,9 @@ vi.mock("@/hooks/inbox/useConversationTags", () => ({
 }));
 vi.mock("@/hooks/contacts/useContactTagVocabulary", () => ({ useContactTagVocabulary: () => ({ data: [] }) }));
 vi.mock("@/hooks/contacts/useUpdateContact", () => ({ useUpdateContact: () => ({ mutate: vi.fn(), isPending: false }) }));
+// A seção de tarefas do painel (#4630) aparece em toda conversa com contato e tem
+// testes próprios (tarefa-da-demanda-no-inbox, tarefas-da-demanda-no-painel).
+vi.mock("@/components/inbox/TarefasDaDemanda", () => ({ TarefasDaDemanda: () => null }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({ useAuth: () => ({ user: { support: null } }) }));
 vi.mock("@/components/contacts/RoteirosDoContato", () => ({ RoteirosDoContato: () => null }));
 

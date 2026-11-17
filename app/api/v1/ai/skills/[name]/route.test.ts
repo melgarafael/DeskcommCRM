@@ -314,6 +314,29 @@ describe("PUT /api/v1/ai/skills/[name]", () => {
     );
   });
 
+  it("#4458: salvar skill SEM matcher (matcher vazio) → 200, audita 0 palavras e 0 etiquetas", async () => {
+    mockAuthzOk();
+    mockSkillInstalada();
+    vi.mocked(insertSkillVersion).mockResolvedValue({ id: "v2" } as never);
+    vi.mocked(setSkillPointer).mockResolvedValue(undefined as never);
+    const { PUT } = await import("./route");
+    const res = await PUT(reqPut("catalogo", { ...BODY_VALIDO, matcher: {} }), {
+      params: Promise.resolve({ name: "catalogo" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(vi.mocked(insertSkillVersion)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ matcher: {} }),
+    );
+    expect(vi.mocked(audit)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "ai.skill_saved",
+        metadata: { name: "catalogo", keywords: 0, tags: 0 },
+      }),
+    );
+  });
+
   it("matcher sem palavras-chave → 422, sem tocar o banco", async () => {
     mockAuthzOk();
     const { PUT } = await import("./route");
