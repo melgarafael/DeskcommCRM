@@ -104,6 +104,22 @@ export async function POST(req: NextRequest): Promise<Response> {
       continue;
     }
 
+    // Resolve the rate before opening the sale: a failed lookup must leave
+    // the appointment available for a later batch, without an empty sale.
+    const comissao = await percentualDoItem(supabase, org, {
+      attendantUserId: ag.owner_user_id,
+      eventTypeId: ag.event_type_id,
+    });
+    if (!comissao.ok) {
+      pular("erro_no_item");
+      logger.error("[faturar-lote] commission lookup failed", {
+        appointment_id: ag.id,
+        error: comissao.error,
+        requestId,
+      });
+      continue;
+    }
+
     // 1. a comanda. O índice único da 0243 garante uma por atendimento mesmo com
     // dois lotes simultâneos; aqui o conflito vira "já faturado", não erro.
     const { data: numero } = await supabase.rpc("fn_proximo_numero_de_comanda", { p_org: org });
@@ -147,10 +163,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       unit_price_cents: preco,
       total_cents: preco,
       attendant_user_id: ag.owner_user_id,
-      commission_percent: await percentualDoItem(supabase, org, {
-        attendantUserId: ag.owner_user_id,
-        eventTypeId: ag.event_type_id,
-      }),
+      commission_percent: comissao.percent,
     });
 
     if (erroItem) {
