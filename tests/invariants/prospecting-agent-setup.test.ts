@@ -314,6 +314,7 @@ it("publishes through the canonical function, retries the same agent and leaves 
   ).rows[0];
   expect(version.pipeline_ids).toEqual([f.input.pipeline_id]);
   expect(version.tool_ids).toContain("crm_move_lead_stage");
+  expect(version.tool_ids).toContain("crm_save_lead_diagnosis");
   expect(version.handoff_tool_enabled).toBe(true);
   const campaign = (
     await pool.query(

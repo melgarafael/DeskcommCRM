@@ -35,6 +35,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { roleAtLeast } from "@/lib/auth/types";
@@ -47,24 +48,51 @@ import { despareaVoz } from "@/lib/voice/desparear";
 import { lerEscolhaDaOrg } from "@/lib/voice/guarda";
 import { estadoDaVoz, instalacaoOfereceVoz } from "@/lib/voice/opt-in";
 import { getWacallsClient, wacallsFriendlyError } from "@/lib/wacalls/client";
+import { extractBearer } from "@/lib/mcp/auth";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
+
+  // DOIS PORTÕES, UM CORPO (Spec 33, R3). O token `dsk_…` (escopo `mcp:read`,
+  // papel manager) entra por `resolveAuthDual`; a sessão segue pelo `requireRole`
+  // de sempre. A organização vem da linha do token ou da sessão, nunca do path.
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "org_voice_calls",
+      role: "manager",
+      scope: "mcp:read",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "org_voice_calls", requestId);
+    if (teto) return teto;
+    // O token só lê; "pode editar" é dica de tela, e a sessão é quem edita.
+    const podeEditar = false;
+    return responderOptIn(authz.supabase, authz.organizationId, podeEditar, requestId);
+  }
 
   const authz = await requireRole("manager", { requestId, resource: "org_voice_calls" });
   if (!authz.ok) return authz.response;
   const { org } = authz;
-
   const db = await createClient();
+  const podeEditar = roleAtLeast(org.role, "admin");
+  return responderOptIn(db, org.orgId, podeEditar, requestId);
+}
 
+async function responderOptIn(
+  db: Awaited<ReturnType<typeof createClient>>,
+  organizationId: string,
+  podeEditar: boolean,
+  requestId: string,
+): Promise<Response> {
   // Falha FECHADA na informação de estado: dizer "ligada" porque a leitura
   // estourou faria a tela oferecer parear um número cujo consentimento ninguém
   // conseguiu confirmar.
   let escolha, riscoAceitoEm;
   try {
-    ({ escolha, riscoAceitoEm } = await lerEscolhaDaOrg(db, org.orgId));
+    ({ escolha, riscoAceitoEm } = await lerEscolhaDaOrg(db, organizationId));
   } catch (err) {
     return fail("read_failed", err instanceof Error ? err.message : String(err), 500, {
       requestId,
@@ -74,7 +102,7 @@ export async function GET(): Promise<Response> {
   const estado = estadoDaVoz(escolha, instalacaoOfereceVoz(env.WACALLS_API_BASE_URL));
 
   return ok(
-    { ...estado, riscoAceitoEm, podeEditar: roleAtLeast(org.role, "admin") },
+    { ...estado, riscoAceitoEm, podeEditar },
     { requestId },
   );
 }

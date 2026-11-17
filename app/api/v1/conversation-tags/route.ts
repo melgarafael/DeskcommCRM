@@ -11,10 +11,9 @@ import { tagsPageQuerySchema, tagsPageResultSchema } from "@/lib/schemas/tags";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { logger } from "@/lib/logger";
 import { canonicalConversationTagsSchema } from "@/lib/schemas/settings";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -24,18 +23,26 @@ export const dynamic = "force-dynamic";
 // espelhando o `CONTATOS_LIDOS` da rota irmã (`/api/v1/contact-tags`).
 const CONVERSAS_LIDAS = 1000;
 
-export async function GET(_req: NextRequest): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("viewer", { requestId, resource: "conversations" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "conversations",
+    role: "viewer",
+    scope: "mcp:read",
+    tokenRole: "agent",
+  });
   if (!authz.ok) return authz.response;
-  const { org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "conversations", requestId);
+  if (teto) return teto;
+  const { organizationId } = authz;
 
-  const supabase = await createClient();
-  if (_req.nextUrl.searchParams.has("busca")) {
-    const query = tagsPageQuerySchema.safeParse({ busca: _req.nextUrl.searchParams.get("busca") });
+  const supabase = authz.supabase;
+  if (req.nextUrl.searchParams.has("busca")) {
+    const query = tagsPageQuerySchema.safeParse({ busca: req.nextUrl.searchParams.get("busca") });
     if (!query.success) return fail("validation_failed", "Confira a busca e a página.", 422, { requestId });
     const { data: result, error: readError } = await supabase.rpc("fn_vocabulario_de_tags_pagina", {
-      p_org: activeOrg.orgId, p_busca: query.data.busca, p_offset: 0, p_limit: 200,
+      p_org: organizationId, p_busca: query.data.busca, p_offset: 0, p_limit: 200,
     });
     const parsed = tagsPageResultSchema.safeParse(result);
     if (readError || !parsed.success) return fail("internal_error", "Não foi possível carregar as tags.", 500, { requestId });
@@ -46,7 +53,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
   const { data, error } = await supabase
     .from("organizations")
     .select("settings")
-    .eq("id", activeOrg.orgId)
+    .eq("id", organizationId)
     .maybeSingle();
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
@@ -63,12 +70,13 @@ export async function GET(_req: NextRequest): Promise<Response> {
   // de conversas EXIBIA não estava entre as 8. O operador vê a etiqueta na tela
   // e não consegue filtrar por ela.
   //
-  // A organização vem de `requireRole`, NUNCA do body. E `supabase` aqui é o
-  // client da SESSÃO: a função é `security invoker`, então a RLS de
-  // `conversations` isola sozinha — pedir a de outra organização devolve zero.
+  // A organização vem de `resolveAuthDual`, NUNCA do body. E `supabase` aqui é
+  // o client do token (admin, sem RLS): a função filtra `p_org` por conta própria
+  // (`where c.organization_id = p_org`), então pedir a de outra organização
+  // devolve zero.
   const { data: emUso, error: erroEmUso } = await supabase.rpc(
     "fn_tags_de_conversa_em_uso",
-    { p_org: activeOrg.orgId },
+    { p_org: organizationId },
   );
   // A falha SOBE. Engolir devolveria o vocabulário curado como se fosse a lista
   // completa — que é exatamente a mentira que esta rota veio desfazer.
@@ -91,7 +99,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
   const { data: conversas, error: erroDaContagem } = await supabase
     .from("conversations")
     .select("tags")
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .neq("tags", "{}")
     .order("updated_at", { ascending: false })
     .limit(CONVERSAS_LIDAS);
@@ -102,7 +110,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
     // vez de virar um 500 sobre uma resposta que existe.
     logger.warn("conversation-tags: contagem de uso falhou; ordem alfabética", {
       requestId,
-      orgId: activeOrg.orgId,
+      orgId: organizationId,
       cause: erroDaContagem.message,
     });
   }
