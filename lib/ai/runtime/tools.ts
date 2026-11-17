@@ -398,13 +398,23 @@ function wrapMcpTool(
         // AQUI, antes do escopo de funil logo abaixo: a guarda julga o funil que vai
         // ser escrito, e com o argumento ausente ela recusaria sempre.
         //
-        // #4763, item 2: a guarda roda em TODA criação, com ou sem referência. Com
-        // o funil à mão e sem referência era aqui que o item deixava de ser
+        // #4763, item 2: a guarda roda em TODA criação que tenha algo a
+        // conferir — com a referência, ou com o par funil+etapa à mão. Com o
+        // funil à mão e sem referência era aqui que o item deixava de ser
         // olhado — a chamada passava direto para o escopo de funil, e o negócio
         // "Casa com piscina — AU-9999" nasceu de um item que não existe. Quem
-        // decide se há item a conferir é a guarda (o funil que é destino de
-        // receita ativa, num turno de conversa, exige a referência).
-        if (def.name === "crm_create_lead") {
+        // decide se o funil exige a referência é a guarda (destino de receita
+        // ativa, num turno de conversa).
+        //
+        // Funil SEM etapa não entra: a guarda só devolveria a recusa de ensino
+        // (`funil_e_etapa_juntos`), que é do handler — antecipá-la aqui pula a
+        // ordem do wrap (escopo de escrita antes do handler) e o erro sai de um
+        // lugar que não valida o pedido.
+        const temReferencia = typeof argsRecord.referencia_externa === "string";
+        const temParDeFunil =
+          typeof argsRecord.pipeline_id === "string" && argsRecord.pipeline_id !== "" &&
+          typeof argsRecord.stage_id === "string" && argsRecord.stage_id !== "";
+        if (def.name === "crm_create_lead" && (temReferencia || temParDeFunil)) {
           const completo = await completarDestinoDoNegocio(
             input.supabase,
             input.ctx.organizationId,

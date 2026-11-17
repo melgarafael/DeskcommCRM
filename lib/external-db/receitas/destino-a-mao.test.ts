@@ -100,7 +100,10 @@ describe("funil à mão que é destino de receita ativa, sem item", () => {
     );
 
     expect(r).toMatchObject({ ok: false, resposta: { erro: "item_obrigatorio" } });
-    const mensagem = (r as { resposta: { mensagem: string } }).resposta.mensagem;
+    // O discriminante é `ok`: estreitar por ele evita o cast de um tipo que não
+    // tem `resposta` (o tsc recusa `DestinoCompletado` → `{ resposta }`).
+    if (r.ok) throw new Error("esperava a recusa de item obrigatório");
+    const mensagem = String(r.resposta.mensagem);
     // As duas saídas legítimas, nomeadas para o modelo: o item, ou a equipe.
     expect(mensagem).toContain("referencia_externa");
     expect(mensagem).toContain("crm_request_human_handoff");
