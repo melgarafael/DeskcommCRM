@@ -6911,11 +6911,20 @@ async function executarTurnoDoAgente(
       outcome: routed.outcome,
       // `in`: o campo só existe no turno da troca; ausente = desligado.
       textoConfigurado: 'passagemAoClienteDoRouter' in routed ? routed.passagemAoClienteDoRouter : null,
+      // #4750 — o TERCEIRO modo (`config.passagem_silenciosa`): ligado, NADA
+      // vai ao cliente — nem a frase cadastrada. O silêncio vence a frase, e
+      // por isso o `enviar` abaixo nem é chamado.
+      passagemSilenciosa:
+        'passagemSilenciosaDoRouter' in routed && routed.passagemSilenciosaDoRouter === true,
       agenteAnteriorId: passagemRecebida?.agenteAnteriorId ?? null,
       agenteNovoId: routed.config?.agentId ?? null,
     };
+    const passagemSilenciosaDaTroca = trocaQuePedeAviso.passagemSilenciosa;
     let clienteAvisadoDaTroca = false;
-    if (textoDaPassagemAoCliente(trocaQuePedeAviso) !== null) {
+    if (
+      passagemSilenciosaDaTroca === false &&
+      textoDaPassagemAoCliente(trocaQuePedeAviso) !== null
+    ) {
       const desfechoDoAviso = await avisarClienteDaTrocaDeAgente(
         {
           log: runLog,
@@ -6973,8 +6982,11 @@ async function executarTurnoDoAgente(
             passagemRecebida,
             await idiomaDaOrganizacaoDoTurno(pool, tenantId, runLog),
             // Avisado o cliente, o agente novo NÃO repete o aviso: é o que
-            // impede duas mensagens de passagem na mesma troca.
+            // impede duas mensagens de passagem na mesma troca. No modo
+            // silencioso (#4750) também não: a instrução é continuar sem se
+            // apresentar nem anunciar a troca.
             clienteAvisadoDaTroca,
+            passagemSilenciosaDaTroca,
           );
     const openingBase = input.buildOpening({
       previous: effectivePrevious,
