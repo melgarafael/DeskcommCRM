@@ -31,9 +31,46 @@ const redirectUri = z
   .max(2000)
   .refine(redirectUriAceitavel, "redirect_uri precisa ser https (ou http em localhost), sem fragmento");
 
+/**
+ * O que o registro GRAVA tem teto curto: o registro é aberto, e cada campo
+ * guardado é espaço de banco que qualquer um ocupa. Endereço de volta real de
+ * cliente de MCP tem algumas dezenas de caracteres.
+ */
+const redirectUriRegistravel = z
+  .string()
+  .max(512)
+  .refine(redirectUriAceitavel, "redirect_uri precisa ser https (ou http em localhost), sem fragmento");
+
+/** Tamanho máximo do nome do cliente depois de limpo, em caracteres. */
+export const TETO_DO_NOME_DO_CLIENTE = 60;
+
+/**
+ * O nome que o cliente DECLARA no registro aberto vira texto nosso: título da
+ * tela de consentimento e nome do token em API Tokens. Sai o que não é texto
+ * visível — formato (`Cf`: direção bidi U+202A–U+202E e U+2066–U+2069, marcas
+ * U+200E/U+200F, larguras zero) e controle (`Cc`) —, quebras de linha e
+ * espaços viram um espaço só, e o resto é cortado. Vazio depois disso
+ * = sem nome (o registro usa o padrão).
+ */
+export function nomeDeClienteLimpo(bruto: string): string {
+  const visivel = bruto
+    .replace(/\p{Cf}/gu, "")
+    .replace(/\s+/gu, " ") // quebra de linha, tab e separadores viram espaço
+    .replace(/\p{Cc}/gu, "")
+    .trim();
+  return Array.from(visivel).slice(0, TETO_DO_NOME_DO_CLIENTE).join("").trimEnd();
+}
+
+/** Teto do corpo do registro, em caracteres — os campos aceitos cabem com folga. */
+export const TETO_DO_CORPO_DE_REGISTRO = 8_000;
+
 export const pedidoDeRegistroSchema = z.object({
-  redirect_uris: z.array(redirectUri).min(1).max(10),
-  client_name: z.string().trim().min(1).max(120).optional(),
+  redirect_uris: z.array(redirectUriRegistravel).min(1).max(5),
+  client_name: z
+    .string()
+    .max(1000)
+    .transform((v) => nomeDeClienteLimpo(v) || undefined)
+    .optional(),
   token_endpoint_auth_method: z
     .enum(["none", "client_secret_post", "client_secret_basic"])
     .optional(),

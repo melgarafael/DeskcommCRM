@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
   rpcResposta: { data: null as unknown, error: null as null | { code?: string; message: string } },
   auditadas: [] as Record<string, unknown>[],
   limitado: false,
+  registro: { motivo: null as string | null, despejados: 0 },
   authz: null as unknown,
   suporteNegado: null as Response | null,
 }));
@@ -29,6 +30,7 @@ vi.mock("@/lib/audit", () => ({
 
 vi.mock("@/lib/mcp/oauth/limites", () => ({
   oauthMcpLimitado: async () => h.limitado,
+  TETO_DE_CLIENTES_PENDENTES: 100,
 }));
 
 vi.mock("@/lib/branding/saida", () => ({ marcaDaSaida: async () => ({ nome: "CRM" }) }));
@@ -60,6 +62,17 @@ vi.mock("@/lib/supabase/admin", () => ({
     },
     rpc: (nome: string, args: Record<string, unknown>) => {
       h.rpcs.push({ nome, args });
+      if (nome === "fn_mcp_oauth_registrar_cliente") {
+        const { motivo, despejados } = h.registro;
+        return Promise.resolve({
+          data: [
+            motivo
+              ? { motivo, id: null, created_at: null, despejados }
+              : { motivo: null, id: "c0ffee00-0000-4000-8000-000000000001", created_at: "2026-11-15T20:00:00Z", despejados },
+          ],
+          error: null,
+        });
+      }
       return Promise.resolve(nome === "fn_mcp_oauth_podar" ? { data: 0, error: null } : h.rpcResposta);
     },
   }),
@@ -88,7 +101,10 @@ const CLIENTE = {
   redirect_uris: [REDIRECT],
   metodo_de_autenticacao: "none",
   client_secret_hash: null,
+  ultimo_uso_em: null as string | null,
 };
+/** O mesmo cliente depois de concluir uma troca de código aqui. */
+const CLIENTE_JA_CONECTOU = { ...CLIENTE, ultimo_uso_em: "2026-11-10T12:00:00Z" };
 
 function form(campos: Record<string, string>): string {
   return new URLSearchParams(campos).toString();
@@ -101,6 +117,7 @@ beforeEach(() => {
   h.rpcs = [];
   h.auditadas = [];
   h.limitado = false;
+  h.registro = { motivo: null, despejados: 0 };
   h.rpcResposta = { data: null, error: null };
   h.authz = null;
   h.suporteNegado = null;
@@ -134,6 +151,9 @@ describe("/api/mcp sem token: o 401 ensina onde pegar um", () => {
 });
 
 describe("POST /api/mcp/oauth/register", () => {
+  /** O que foi ao banco para registrar: a função que conta, despeja e insere sob lock. */
+  const registros = () => h.rpcs.filter((r) => r.nome === "fn_mcp_oauth_registrar_cliente");
+
   it("registra cliente público e não guarda segredo nenhum", async () => {
     const { POST } = await import("./register/route");
     const resp = await POST(
@@ -147,9 +167,23 @@ describe("POST /api/mcp/oauth/register", () => {
     expect(corpo.client_id).toMatch(/^dcc_[A-Za-z0-9_-]{32}$/);
     expect(corpo.client_secret).toBeUndefined();
     expect(corpo.token_endpoint_auth_method).toBe("none");
-    expect(h.inserts[0]!.payload.client_secret_hash).toBeNull();
-    expect(h.rpcs.map((r) => r.nome)).toContain("fn_mcp_oauth_podar");
+    expect(registros()[0]!.args.p_client_secret_hash).toBeNull();
+    // A poda é do cron diário, nunca da requisição de registro.
+    expect(h.rpcs.map((r) => r.nome)).not.toContain("fn_mcp_oauth_podar");
     expect(h.auditadas[0]!.action).toBe("mcp_oauth.cliente_registrado");
+  });
+
+  it("o nome declarado chega limpo ao banco — é ele que vira o nome do token", async () => {
+    const { POST } = await import("./register/route");
+    const resp = await POST(
+      new Request("http://x", {
+        method: "POST",
+        body: JSON.stringify({ client_name: "\u202EChat\nGPT\u202C\u200F", redirect_uris: [REDIRECT] }),
+      }),
+    );
+    expect(resp.status).toBe(201);
+    expect(registros()[0]!.args.p_nome).toBe("Chat GPT");
+    expect(((await resp.json()) as { client_name: string }).client_name).toBe("Chat GPT");
   });
 
   it("cliente com segredo: o plaintext sai na resposta e só o hash vai ao banco", async () => {
@@ -162,7 +196,7 @@ describe("POST /api/mcp/oauth/register", () => {
     );
     const corpo = (await resp.json()) as { client_secret: string };
     expect(corpo.client_secret).toMatch(/^dcs_/);
-    const guardado = h.inserts[0]!.payload.client_secret_hash as string;
+    const guardado = registros()[0]!.args.p_client_secret_hash as string;
     expect(guardado).toMatch(/^\\x[0-9a-f]{64}$/);
     expect(guardado).not.toContain(corpo.client_secret);
   });
@@ -174,7 +208,28 @@ describe("POST /api/mcp/oauth/register", () => {
     );
     expect(resp.status).toBe(400);
     expect(((await resp.json()) as { error: string }).error).toBe("invalid_redirect_uri");
-    expect(h.inserts).toHaveLength(0);
+    expect(registros()).toHaveLength(0);
+  });
+
+  it("teto de pendentes cheio: o registro novo é aceito, e o despejo vai na auditoria", async () => {
+    const { POST } = await import("./register/route");
+    h.registro = { motivo: null, despejados: 1 };
+    const resp = await POST(new Request("http://x", { method: "POST", body: JSON.stringify({ redirect_uris: [REDIRECT] }) }));
+    expect(resp.status).toBe(201);
+    expect(registros()[0]!.args.p_teto).toBe(100);
+    expect(h.auditadas[0]!.metadata).toMatchObject({ pendentes_despejados: 1 });
+  });
+
+  it("campos com teto: corpo grande, endereço longo e endereços demais são recusados sem gravar", async () => {
+    const { POST } = await import("./register/route");
+    const registrar = (corpo: string) => POST(new Request("http://x", { method: "POST", body: corpo }));
+    const grande = await registrar(JSON.stringify({ redirect_uris: [REDIRECT], client_name: "x".repeat(9_000) }));
+    expect(grande.status).toBe(413);
+    const longo = await registrar(JSON.stringify({ redirect_uris: [`${REDIRECT}?${"a".repeat(600)}`] }));
+    expect(longo.status).toBe(400);
+    const demais = await registrar(JSON.stringify({ redirect_uris: Array.from({ length: 6 }, (_, i) => `${REDIRECT}/${i}`) }));
+    expect(demais.status).toBe(400);
+    expect(registros()).toHaveLength(0);
   });
 
   it("limite de taxa responde 429 antes de tocar no banco", async () => {
@@ -182,7 +237,7 @@ describe("POST /api/mcp/oauth/register", () => {
     const { POST } = await import("./register/route");
     const resp = await POST(new Request("http://x", { method: "POST", body: JSON.stringify({ redirect_uris: [REDIRECT] }) }));
     expect(resp.status).toBe(429);
-    expect(h.inserts).toHaveLength(0);
+    expect(registros()).toHaveLength(0);
   });
 });
 
@@ -217,7 +272,24 @@ describe("GET /api/mcp/oauth/authorize", () => {
     expect(await resp.text()).not.toContain("evil.example");
   });
 
-  it("cliente conferido mas sem PKCE S256: volta ao cliente com invalid_request e o state", async () => {
+  it("cliente que nunca concluiu uma troca: erro de validação é página do CRM, NUNCA redirecionamento", async () => {
+    const { GET } = await import("./authorize/route");
+    const defeitos: Record<string, string>[] = [
+      { code_challenge_method: "plain" },
+      { response_type: "token" },
+      { resource: "https://outro.example/mcp" },
+    ];
+    for (const extra of defeitos) {
+      const resp = await GET(new Request(`http://x/api/mcp/oauth/authorize?${query(extra)}`));
+      expect(resp.status, JSON.stringify(extra)).toBe(400);
+      expect(resp.headers.get("location"), JSON.stringify(extra)).toBeNull();
+      expect(resp.headers.get("content-type")).toContain("text/html");
+      expect(await resp.text()).not.toContain("chatgpt.com");
+    }
+  });
+
+  it("cliente que já conectou, sem PKCE S256: volta ao cliente com invalid_request e o state", async () => {
+    h.clientes.set(CLIENT_ID, CLIENTE_JA_CONECTOU);
     const { GET } = await import("./authorize/route");
     const resp = await GET(new Request(`http://x/api/mcp/oauth/authorize?${query({ code_challenge_method: "plain" })}`));
     expect(resp.status).toBe(302);
@@ -227,7 +299,8 @@ describe("GET /api/mcp/oauth/authorize", () => {
     expect(volta.searchParams.get("state")).toBe("st-1");
   });
 
-  it("resource de outro servidor: invalid_target", async () => {
+  it("cliente que já conectou, resource de outro servidor: invalid_target", async () => {
+    h.clientes.set(CLIENT_ID, CLIENTE_JA_CONECTOU);
     const { GET } = await import("./authorize/route");
     const resp = await GET(new Request(`http://x/api/mcp/oauth/authorize?${query({ resource: "https://outro.example/mcp" })}`));
     expect(new URL(resp.headers.get("location")!).searchParams.get("error")).toBe("invalid_target");

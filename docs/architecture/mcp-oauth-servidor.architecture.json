@@ -28,7 +28,7 @@
     { "id": "mcp401", "lane": "mcp", "label": "app/api/mcp/route.ts (401)", "sublabel": "WWW-Authenticate: Bearer resource_metadata=…", "type": "api", "dot": "green" },
     { "id": "descobertaRecurso", "lane": "publico", "label": "/.well-known/oauth-protected-resource", "sublabel": "RFC 9728 · authorization_servers = o próprio CRM", "type": "api", "dot": "blue" },
     { "id": "descobertaServidor", "lane": "publico", "label": "/.well-known/oauth-authorization-server", "sublabel": "RFC 8414 · code + S256 · registro · revogação", "type": "api", "dot": "blue" },
-    { "id": "registro", "lane": "publico", "label": "POST /api/mcp/oauth/register", "sublabel": "RFC 7591 · limite por IP · poda · audit mcp_oauth.cliente_registrado", "type": "api", "dot": "blue" },
+    { "id": "registro", "lane": "publico", "label": "POST /api/mcp/oauth/register", "sublabel": "RFC 7591 · limite por IP (balde comum sem IP) · teto de pendentes · audit mcp_oauth.cliente_registrado", "type": "api", "dot": "blue" },
     { "id": "authorize", "lane": "publico", "label": "GET /api/mcp/oauth/authorize", "sublabel": "confere cliente e redirect · ponte same-origin (cookie Strict)", "type": "api", "dot": "blue" },
     { "id": "consentimento", "lane": "tela", "label": "/oauth/mcp/consentir", "sublabel": "empresa · ler ou ler e alterar · nome declarado + host de volta", "type": "ui", "dot": "green" },
     { "id": "consentirApi", "lane": "tela", "label": "POST /api/v1/mcp/oauth/consentir", "sublabel": "requireRole admin na organização escolhida · audit autorizado/negado", "type": "api", "dot": "green" },
@@ -40,7 +40,8 @@
     { "id": "apiTokens", "lane": "dados", "label": "api_tokens", "sublabel": "dsk_ · hash SHA-256 · scopes mcp:read/mcp:write + role:admin", "type": "table", "dot": "sky" },
     { "id": "telaTokens", "lane": "tela", "label": "/app/settings/api-tokens", "sublabel": "mostra a conexão \"(OAuth)\" · revogar desliga na próxima renovação", "type": "ui", "dot": "green" },
     { "id": "mcp", "lane": "mcp", "label": "lib/mcp/auth.ts → createMcpServer", "sublabel": "validateBearerToken inalterado · ensureScope mcp:read/mcp:write", "type": "lib", "dot": "green" },
-    { "id": "audit", "lane": "dados", "label": "api_audit_log", "sublabel": "mcp_oauth.* · actor_api_token_id da conexão", "type": "table", "dot": "sky" }
+    { "id": "audit", "lane": "dados", "label": "api_audit_log", "sublabel": "mcp_oauth.* · actor_api_token_id da conexão", "type": "table", "dot": "sky" },
+    { "id": "poda", "lane": "dados", "label": "cron data-retention → fn_mcp_oauth_podar", "sublabel": "diário · nunca autorizado em 24 h sai · conta na retention.sweep_run só quando apagou", "type": "worker", "dot": "sky" }
   ],
   "edges": [
     { "id": "e1", "from": "chatgpt", "to": "mcp401", "label": "chamada sem token" },
@@ -66,6 +67,8 @@
     { "id": "e21", "from": "chatgpt", "to": "revogar", "label": "desconectar" },
     { "id": "e22", "from": "consentirApi", "to": "audit", "label": "autorizado / negado" },
     { "id": "e23", "from": "token", "to": "audit", "label": "token_emitido / token_renovado" },
-    { "id": "e24", "from": "registro", "to": "audit", "label": "cliente_registrado" }
+    { "id": "e24", "from": "registro", "to": "audit", "label": "cliente_registrado" },
+    { "id": "e25", "from": "poda", "to": "clientes", "label": "apaga os nunca autorizados" },
+    { "id": "e26", "from": "poda", "to": "audit", "label": "retention.sweep_run (oauth_mcp_podados)" }
   ]
 }

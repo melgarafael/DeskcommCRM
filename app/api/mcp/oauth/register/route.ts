@@ -5,16 +5,17 @@
  * consentimento. Registrar NÃO dá acesso a nada — o acesso nasce só quando uma
  * pessoa que administra a organização permite, na tela de consentimento, que
  * mostra o nome declarado e o host de volta. Por isso o cliente vive sem
- * organização (`mcp_oauth_clientes`) e o registro é limitado por IP e podado
- * (`fn_mcp_oauth_podar`) aqui mesmo, que é onde a tabela cresce.
+ * organização (`mcp_oauth_clientes`), o registro é limitado por IP e por um
+ * teto de clientes nunca autorizados, e quem não foi autorizado em 24 h é
+ * apagado pela poda diária (`fn_mcp_oauth_podar`, cron `data-retention`).
  *
  * Público no `proxy` pela entrada `/api/mcp(\/.*)?$` de `lib/auth/public-paths.ts`.
  */
 import { randomUUID } from "node:crypto";
 
 import { audit } from "@/lib/audit";
-import { oauthMcpLimitado } from "@/lib/mcp/oauth/limites";
-import { pedidoDeRegistroSchema } from "@/lib/mcp/oauth/esquemas";
+import { oauthMcpLimitado, TETO_DE_CLIENTES_PENDENTES } from "@/lib/mcp/oauth/limites";
+import { pedidoDeRegistroSchema, TETO_DO_CORPO_DE_REGISTRO } from "@/lib/mcp/oauth/esquemas";
 import { erroOAuth, respostaOAuth } from "@/lib/mcp/oauth/respostas";
 import { byteaDoHash, novoClientId, novoSegredoDeCliente } from "@/lib/mcp/oauth/segredos";
 import { logger } from "@/lib/logger";
@@ -29,9 +30,13 @@ export async function POST(req: Request): Promise<Response> {
     return erroOAuth("slow_down", "Too many client registrations. Try again later.", 429, requestId);
   }
 
+  const texto = await req.text().catch(() => null);
+  if (texto !== null && texto.length > TETO_DO_CORPO_DE_REGISTRO) {
+    return erroOAuth("invalid_client_metadata", "Body too large.", 413, requestId);
+  }
   let bruto: unknown;
   try {
-    bruto = await req.json();
+    bruto = JSON.parse(texto ?? "");
   } catch {
     return erroOAuth("invalid_client_metadata", "Body must be JSON.", 400, requestId);
   }
@@ -59,37 +64,40 @@ export async function POST(req: Request): Promise<Response> {
   const nome = pedido.client_name ?? "Cliente MCP";
 
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("mcp_oauth_clientes")
-    .insert({
-      client_id: clientId,
-      client_secret_hash: segredo ? byteaDoHash(segredo) : null,
-      nome,
-      redirect_uris: pedido.redirect_uris,
-      metodo_de_autenticacao: metodo,
-    })
-    .select("id, created_at")
-    .single();
+  // Teto de pendentes, despejo e insert numa transação só, sob lock: ver
+  // `fn_mcp_oauth_registrar_cliente` (migration 9390).
+  const { data: linhas, error } = await admin.rpc("fn_mcp_oauth_registrar_cliente", {
+    p_client_id: clientId,
+    p_client_secret_hash: segredo ? byteaDoHash(segredo) : null,
+    p_nome: nome,
+    p_redirect_uris: pedido.redirect_uris,
+    p_metodo: metodo,
+    p_teto: TETO_DE_CLIENTES_PENDENTES,
+  });
+  const data = (Array.isArray(linhas) ? linhas[0] : linhas) as
+    | { motivo: string | null; id: string | null; created_at: string | null; despejados: number }
+    | undefined;
   if (error || !data) {
     logger.error("[mcp-oauth.register] insert failed", { request_id: requestId, error: error?.message });
     return erroOAuth("server_error", "Could not register the client.", 500, requestId);
   }
-
-  // A poda vai junto do crescimento. Falha dela não estraga o registro.
-  admin.rpc("fn_mcp_oauth_podar").then(({ error: e }) => {
-    if (e) logger.warn("[mcp-oauth.register] prune failed", { request_id: requestId, error: e.message });
-  });
+  if (!data.id || !data.created_at) {
+    logger.error("[mcp-oauth.register] no row returned", { request_id: requestId });
+    return erroOAuth("server_error", "Could not register the client.", 500, requestId);
+  }
+  const despejados = data.despejados;
 
   await audit({
     action: "mcp_oauth.cliente_registrado",
     organizationId: null,
     resourceType: "mcp_oauth_cliente",
-    resourceId: data.id as string,
+    resourceId: data.id,
     requestId,
     metadata: {
       client_name: nome,
       redirect_hosts: pedido.redirect_uris.map((u) => new URL(u).host),
       token_endpoint_auth_method: metodo,
+      ...(despejados > 0 ? { pendentes_despejados: despejados } : {}),
     },
   });
 
@@ -97,7 +105,7 @@ export async function POST(req: Request): Promise<Response> {
     {
       client_id: clientId,
       ...(segredo ? { client_secret: segredo, client_secret_expires_at: 0 } : {}),
-      client_id_issued_at: Math.floor(new Date(data.created_at as string).getTime() / 1000),
+      client_id_issued_at: Math.floor(new Date(data.created_at).getTime() / 1000),
       client_name: nome,
       redirect_uris: pedido.redirect_uris,
       token_endpoint_auth_method: metodo,

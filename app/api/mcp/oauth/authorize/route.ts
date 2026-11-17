@@ -11,7 +11,10 @@
  * Ordem das recusas (RFC 6749 §4.1.2.1): `client_id` ou `redirect_uri` que não
  * conferem com o REGISTRO viram página de erro aqui mesmo — devolver ao
  * `redirect_uri` não conferido faria desta rota um redirecionador aberto. Os
- * demais defeitos voltam ao cliente como `?error=`.
+ * demais defeitos voltam ao cliente como `?error=` SÓ se ele já concluiu uma
+ * troca de código aqui (`ultimo_uso_em`): o registro é aberto, e o endereço de
+ * um cliente que nenhum admin autorizou ainda não merece um redirecionamento
+ * nosso. Até lá, todo erro é página do CRM.
  */
 import { randomUUID } from "node:crypto";
 
@@ -51,10 +54,16 @@ export async function GET(req: Request): Promise<Response> {
 
   const e = enderecosOAuth();
   const voltaComErro = (erro: string) =>
-    comIdDaRequisicao(
-      Response.redirect(urlDeVoltaComErro(identidade.data.redirect_uri, erro, identidade.data.state, e.issuer), 302),
-      requestId,
-    );
+    cliente.ultimo_uso_em
+      ? comIdDaRequisicao(
+          Response.redirect(urlDeVoltaComErro(identidade.data.redirect_uri, erro, identidade.data.state, e.issuer), 302),
+          requestId,
+        )
+      : paginaDeErroOAuth(
+          `O aplicativo enviou um pedido de conexão inválido (${erro}). Volte ao aplicativo e tente conectar de novo.`,
+          400,
+          requestId,
+        );
 
   const pedido = pedidoDeAutorizacaoSchema.safeParse(params);
   if (!pedido.success) {

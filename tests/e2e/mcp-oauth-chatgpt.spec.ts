@@ -12,7 +12,7 @@
  *   4. A tela mostra o nome declarado, o host de volta e a empresa; Permitir
  *      devolve `code` + `state` + `iss` ao receptor.
  *   5. O código vira um `dsk_` que o `/api/mcp` aceita (tools/list responde).
- *   6. Renovação rotaciona: o token anterior morre, o novo vale (o refresh anterior só mais 60 s).
+ *   6. Renovação rotaciona: o token anterior morre, o novo vale (o refresh anterior, reapresentado, desliga a conexão).
  *   7. A conexão aparece em API Tokens como "(OAuth)"; Revogar ali derruba a
  *      renovação seguinte — a saída que a pessoa tem, pela tela.
  *   8. Cancelar devolve `access_denied`; "Somente ler" emite só `mcp:read`.
@@ -196,6 +196,8 @@ test.describe("OAuth do MCP: o aplicativo conecta sem colar token", () => {
     await expect(page.getByTestId("consentimento-nome")).toHaveText("ChatGPT (prova)");
     await expect(page.getByTestId("consentimento-host")).toContainText(new URL(redirectUri).host);
     await expect(cartao.getByRole("radio", { name: /Ler e alterar/ })).toBeChecked();
+    // mcp:write libera ferramentas que ENVIAM ao cliente: a tela tem de dizer.
+    await expect(page.getByTestId("consentimento-envio")).toContainText("enviar mensagens de WhatsApp e materiais");
     await expect(cartao.getByRole("radio", { name: /Somente ler/ })).not.toBeChecked();
     const caixa = await cartao.boundingBox();
     expect(caixa!.width, "o cartão cabe na tela").toBeLessThanOrEqual(page.viewportSize()!.width);
@@ -241,9 +243,9 @@ test.describe("OAuth do MCP: o aplicativo conecta sem colar token", () => {
     expect(velho.status, "o access token anterior morre na rotação").toBe(401);
     expect(velho.desafio).toContain('error="invalid_token"');
     expect((await listarFerramentas(acesso2)).status).toBe(200);
-    // (O refresh anterior ainda vale por 60 s — resposta perdida na rede. Que ele
-    // morre depois disso é medido no banco, com o relógio recuado:
-    // tests/invariants/mcp-oauth-servidor.test.ts.)
+    // (Reapresentar o refresh anterior desliga a conexão — medido no banco em
+    // tests/invariants/mcp-oauth-servidor.test.ts; aqui a conexão segue viva
+    // para a prova da tela.)
 
     // ── a conexão aparece na tela, e revogar ali a desliga ────────────────────
     await page.goto("/app/settings/api-tokens");

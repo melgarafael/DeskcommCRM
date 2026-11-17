@@ -155,3 +155,24 @@ describe("volta ao cliente", () => {
     expect(u.searchParams.has("state")).toBe(false);
   });
 });
+
+describe("nome declarado pelo cliente no registro", () => {
+  it("tira direção bidi, marcas e controles, junta espaços e corta", async () => {
+    const { nomeDeClienteLimpo, TETO_DO_NOME_DO_CLIENTE } = await import("./esquemas");
+    expect(nomeDeClienteLimpo("Chat‮GPT‬")).toBe("ChatGPT");
+    expect(nomeDeClienteLimpo("⁦Meu⁩ app‎‏")).toBe("Meu app");
+    expect(nomeDeClienteLimpo("  Chat\n\tGPT \u0000\u001b[31m  ")).toBe("Chat GPT [31m");
+    expect(nomeDeClienteLimpo("a b  c")).toBe("a b c");
+    expect(nomeDeClienteLimpo("​‮ ")).toBe("");
+    const longo = nomeDeClienteLimpo("x".repeat(500));
+    expect(Array.from(longo)).toHaveLength(TETO_DO_NOME_DO_CLIENTE);
+    expect(nomeDeClienteLimpo("Ação 🚀 Ü")).toBe("Ação 🚀 Ü");
+  });
+
+  it("o esquema do registro devolve o nome limpo, e nome só de invisíveis vira ausente", async () => {
+    const { pedidoDeRegistroSchema } = await import("./esquemas");
+    const base = { redirect_uris: ["https://chatgpt.com/cb"] };
+    expect(pedidoDeRegistroSchema.parse({ ...base, client_name: "Chat‮GPT" }).client_name).toBe("ChatGPT");
+    expect(pedidoDeRegistroSchema.parse({ ...base, client_name: "‮‏" }).client_name).toBeUndefined();
+  });
+});

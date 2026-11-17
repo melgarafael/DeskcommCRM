@@ -126,7 +126,10 @@ export function FormularioDeConsentimento({
             <span>
               <strong>{t("Ler e alterar")}</strong>
               <span className="block text-muted-foreground">
-                {t("Também criar e atualizar contatos, negócios, tarefas e notas, como um administrador.")}
+                {t("Também criar e alterar contatos, negócios, agenda, tarefas e automações, como um administrador.")}
+              </span>
+              <span className="block font-medium" data-testid="consentimento-envio">
+                {t("E enviar mensagens de WhatsApp e materiais diretamente aos seus clientes, em nome da empresa.")}
               </span>
             </span>
           </label>

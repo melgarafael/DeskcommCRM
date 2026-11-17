@@ -18,9 +18,11 @@ export interface ClienteOAuth {
   redirect_uris: string[];
   metodo_de_autenticacao: "none" | "client_secret_post" | "client_secret_basic";
   client_secret_hash: string | null;
+  /** Última troca ou renovação concluída. `null` = o cliente nunca obteve um token aqui. */
+  ultimo_uso_em: string | null;
 }
 
-const COLUNAS = "id, client_id, nome, redirect_uris, metodo_de_autenticacao, client_secret_hash";
+const COLUNAS = "id, client_id, nome, redirect_uris, metodo_de_autenticacao, client_secret_hash, ultimo_uso_em";
 
 export async function buscarCliente(admin: SupabaseClient, clientId: string): Promise<ClienteOAuth | null> {
   if (!CLIENT_ID.test(clientId)) return null;

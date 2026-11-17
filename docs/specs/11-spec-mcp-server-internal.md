@@ -115,12 +115,13 @@ autorização do MCP:
 
 - **O access token é um `dsk_` de `api_tokens`.** O `/api/mcp` valida pelo caminho de sempre: mesmo
   ator (`api_token`), escopos `mcp:read` / `mcp:write` + `role:admin`, mesma auditoria e isolamento.
+  A marca `aud:mcp` prende o token ao `/api/mcp`: no `/api/v1` ele recebe 403 (`resolveApiToken`).
   Uma conexão = uma linha de `api_tokens` (nome `<cliente> (OAuth)`); a renovação troca o hash na
   mesma linha. Revogar na tela API Tokens desliga a conexão na renovação seguinte.
 - Só **admin** da organização escolhida autoriza (a régua de quem emite token na tela). A renovação
   (a cada hora) re-confere que a pessoa segue admin; se não, revoga.
-- Prazos: código 5 min, access 1 h, refresh 60 dias (renovado a cada uso; o refresh anterior segue
-  aceito por 60 s, para a resposta de renovação perdida na rede). Origem anunciada =
+- Prazos: código 5 min, access 1 h, refresh 60 dias (renovado a cada uso; cada refresh vale uma vez, e
+  reapresentar um já rotacionado desliga a conexão — a pessoa reconecta). Origem anunciada =
   `NEXT_PUBLIC_APP_URL`, nunca o `Host`.
 - Mapa: `docs/architecture/mcp-oauth-servidor.architecture.json`. Prova de banco:
   `tests/invariants/mcp-oauth-servidor.test.ts`.

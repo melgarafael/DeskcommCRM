@@ -10,13 +10,15 @@
  *    TypeScript — paridade das duas pontas), queima o código mesmo na recusa,
  *    e o reuso revoga o que o código emitiu.
  * 4. O token emitido é uma linha de `api_tokens` da organização certa, criada
- *    pela pessoa que consentiu, com `role:admin` — e a RLS de `api_tokens` a
+ *    pela pessoa que consentiu, com `role:admin` e `aud:mcp` (só vale no
+ *    `/api/mcp`) — e a RLS de `api_tokens` a
  *    mostra ao admin da organização dona e a ninguém da vizinha.
- * 5. Renovação rotaciona (o hash do token muda na MESMA linha; o refresh
- *    anterior só vale mais 60 s, para a resposta perdida na rede) e re-confere: token revogado na tela, pessoa que deixou de ser
- *    admin → recusa e desliga a conexão.
+ * 5. Renovação rotaciona (o hash do token muda na MESMA linha; cada refresh
+ *    vale uma vez, e reapresentar um já rotacionado desliga a conexão) e
+ *    re-confere: token revogado na tela, pessoa que deixou de ser admin →
+ *    recusa e desliga a conexão.
  * 6. Revogação só alcança concessão do próprio cliente.
- * 7. A poda leva códigos vencidos e clientes nunca usados.
+ * 7. A poda leva códigos vencidos e clientes nunca autorizados há 24 h.
  */
 import { createHash } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -31,6 +33,7 @@ const FUNCOES = [
   "fn_mcp_oauth_renovar(bytea, uuid, bytea, bytea, text, timestamptz, timestamptz, text[])",
   "fn_mcp_oauth_revogar(bytea, uuid)",
   "fn_mcp_oauth_podar()",
+  "fn_mcp_oauth_registrar_cliente(text, bytea, text, text[], text, integer)",
 ] as const;
 
 const ORG_X = "93900000-0000-4000-8000-00000000000a";
@@ -171,7 +174,7 @@ describe("troca do código (authorization_code + PKCE)", () => {
     novoCodigo("dco_ok");
     const [motivo, token, concessao] = trocar("dco_ok", "dsk_t_ok", "dsr_ok").split("|");
     expect(motivo).toBe("ok");
-    expect(sql(`select organization_id || '|' || created_by || '|' || (scopes @> '["mcp:read","mcp:write","role:admin"]')::text
+    expect(sql(`select organization_id || '|' || created_by || '|' || (scopes @> '["mcp:read","mcp:write","role:admin","aud:mcp"]')::text
                   from public.api_tokens where id = '${token}';`)).toBe(`${ORG_X}|${ADMIN_X}|true`);
     expect(sql(`select (token_hash = ${h("dsk_t_ok")})::text from public.api_tokens where id = '${token}';`)).toBe("true");
     expect(sql(`select api_token_id from public.mcp_oauth_concessoes where id = '${concessao}';`)).toBe(token);
@@ -220,30 +223,38 @@ describe("renovação (refresh_token) com rotação", () => {
     expect(renovar("dsr_ren0", "dsr_ren1", "dsk_t_ren1")).toBe("ok|mcp:read mcp:write");
     expect(sql(`select (token_hash = ${h("dsk_t_ren1")})::text from public.api_tokens where id = '${token}';`)).toBe("true");
     expect(sql(`select count(*) from public.api_tokens where token_hash = ${h("dsk_t_ren0")};`)).toBe("0");
-    // Passada a tolerância de 60 s, o refresh anterior não vale mais.
-    sql(`update public.mcp_oauth_concessoes set renovada_em = now() - interval '61 seconds' where api_token_id = '${token}';`);
-    expect(renovar("dsr_ren0", "dsr_renX", "dsk_t_renX")).toBe("invalid_grant|");
-    expect(sql(`select (token_hash = ${h("dsk_t_ren1")})::text from public.api_tokens where id = '${token}';`)).toBe("true");
+    expect(sql(`select revoked_at is null from public.api_tokens where id = '${token}';`)).toBe("t");
   });
 
-  it("resposta perdida: o refresh anterior renova de novo por 60 s — e a janela não se estende", () => {
+  it("refresh já rotacionado reapresentado, mesmo no segundo seguinte: recusa e DESLIGA a conexão", () => {
+    novoCodigo("dco_reuso_ref");
+    const [, token, concessao] = trocar("dco_reuso_ref", "dsk_t_rr0", "dsr_rr0").split("|");
+    expect(renovar("dsr_rr0", "dsr_rr1", "dsk_t_rr1")).toBe("ok|mcp:read mcp:write");
+    expect(renovar("dsr_rr1", "dsr_rr2", "dsk_t_rr2")).toBe("ok|mcp:read mcp:write");
+    // Quem guardou uma cópia do refresh de duas gerações atrás o apresenta.
+    expect(renovar("dsr_rr0", "dsr_rrX", "dsk_t_rrX")).toBe("invalid_grant|");
+    // A reapresentação não virou o refresh atual…
+    expect(sql(`select count(*) from public.mcp_oauth_concessoes where refresh_hash = ${h("dsr_rrX")};`)).toBe("0");
+    // …e derrubou a conexão: token revogado, concessão revogada, o atual morto.
+    expect(sql(`select revoked_at is not null from public.api_tokens where id = '${token}';`)).toBe("t");
+    expect(sql(`select revogada_em is not null from public.mcp_oauth_concessoes where id = '${concessao}';`)).toBe("t");
+    expect(renovar("dsr_rr2", "dsr_rr3", "dsk_t_rr3")).toBe("invalid_grant|");
+  });
+
+  it("o imediatamente anterior também desliga — não há janela de tolerância", () => {
     novoCodigo("dco_perdida");
     const [, token] = trocar("dco_perdida", "dsk_t_p0", "dsr_p0").split("|");
     expect(renovar("dsr_p0", "dsr_p1", "dsk_t_p1")).toBe("ok|mcp:read mcp:write");
-    // O cliente não recebeu a resposta e repete com o refresh que ainda tem.
-    expect(renovar("dsr_p0", "dsr_p2", "dsk_t_p2")).toBe("ok|mcp:read mcp:write");
-    expect(sql(`select (token_hash = ${h("dsk_t_p2")})::text from public.api_tokens where id = '${token}';`)).toBe("true");
-    // O refresh da resposta perdida (p1) foi superado e nunca foi o "anterior": morre.
+    expect(renovar("dsr_p0", "dsr_p2", "dsk_t_p2")).toBe("invalid_grant|");
+    expect(sql(`select (token_hash = ${h("dsk_t_p1")})::text || '|' || (revoked_at is not null)::text
+                  from public.api_tokens where id = '${token}';`)).toBe("true|true");
     expect(renovar("dsr_p1", "dsr_p3", "dsk_t_p3")).toBe("invalid_grant|");
-    // A repetição não renovou o relógio: a janela conta da PRIMEIRA rotação.
-    sql(`update public.mcp_oauth_concessoes set renovada_em = renovada_em - interval '61 seconds' where api_token_id = '${token}';`);
-    expect(renovar("dsr_p0", "dsr_p4", "dsk_t_p4")).toBe("invalid_grant|");
-    expect(renovar("dsr_p2", "dsr_p5", "dsk_t_p5")).toBe("ok|mcp:read mcp:write");
   });
 
-  it("pedir menos escopo vale; pedir mais, não", () => {
+  it("pedir menos escopo vale; pedir mais, não — e a marca `aud:mcp` não sai na renovação", () => {
     expect(renovar("dsr_ren1", "dsr_ren2", "dsk_t_ren2", "'{mcp:read}'")).toBe("ok|mcp:read");
     expect(sql(`select (scopes @> '["mcp:write"]')::text from public.api_tokens where token_hash = ${h("dsk_t_ren2")};`)).toBe("false");
+    expect(sql(`select (scopes @> '["aud:mcp"]')::text from public.api_tokens where token_hash = ${h("dsk_t_ren2")};`)).toBe("true");
     novoCodigo("dco_so_leitura", { escopos: "{mcp:read}" });
     trocar("dco_so_leitura", "dsk_t_sl", "dsr_sl");
     expect(renovar("dsr_sl", "dsr_sl2", "dsk_t_sl2", "'{mcp:read,mcp:write}'")).toBe("invalid_scope|");
@@ -299,5 +310,61 @@ describe("poda", () => {
     expect(sql(`select count(*) from public.mcp_oauth_clientes where id = '${velho}';`)).toBe("0");
     expect(sql(`select count(*) from public.mcp_oauth_codigos where codigo_hash = ${h("dco_podar")};`)).toBe("0");
     expect(sql(`select count(*) from public.mcp_oauth_clientes where id = '${CLIENTE_A}';`)).toBe("1");
+  });
+
+  it("cliente registrado e nunca autorizado vence em 24 h; o recém-registrado fica", () => {
+    const vencido = "93902222-0000-4000-8000-0000000000e1";
+    const recente = "93902222-0000-4000-8000-0000000000e2";
+    sql(`insert into public.mcp_oauth_clientes (id, client_id, nome, redirect_uris, created_at) values
+           ('${vencido}', 'dcc_${"p".repeat(32)}', 'Pendente velho', '{${REDIRECT}}', now() - interval '25 hours'),
+           ('${recente}', 'dcc_${"q".repeat(32)}', 'Pendente novo', '{${REDIRECT}}', now() - interval '1 hour')
+           on conflict do nothing;`);
+    expect(Number(sql(`select public.fn_mcp_oauth_podar();`))).toBeGreaterThanOrEqual(1);
+    expect(sql(`select count(*) from public.mcp_oauth_clientes where id = '${vencido}';`)).toBe("0");
+    expect(sql(`select count(*) from public.mcp_oauth_clientes where id = '${recente}';`)).toBe("1");
+  });
+});
+
+describe("registro com teto de pendentes (fn_mcp_oauth_registrar_cliente)", () => {
+  /** Registra um cliente público; devolve `motivo|despejados` (`ok` quando entrou). */
+  function registrar(clientId: string, teto: number): string {
+    return sql(`select coalesce(motivo, 'ok') || '|' || despejados
+                  from public.fn_mcp_oauth_registrar_cliente('${clientId}', null, 'Novo', '{${REDIRECT}}', 'none', ${teto});`);
+  }
+  const vivo = (id: string) => sql(`select count(*) from public.mcp_oauth_clientes where id = '${id}';`);
+  const registrado = (clientId: string) =>
+    sql(`select count(*) from public.mcp_oauth_clientes where client_id = '${clientId}';`);
+
+  // Por último no arquivo: começa sem pendente nenhum para o teto ser exato.
+  it("teto cheio: o registro entra e sai o pendente mais antigo sem código vivo — nunca recusa", () => {
+    sql(`delete from public.mcp_oauth_clientes where ultimo_uso_em is null;`);
+    const comCodigo = "93902222-0000-4000-8000-0000000000c1";
+    const antigo = "93902222-0000-4000-8000-0000000000c2";
+    const recente = "93902222-0000-4000-8000-0000000000c3";
+    // O mais antigo de todos tem código vivo; o primeiro sem proteção é `antigo`.
+    sql(`insert into public.mcp_oauth_clientes (id, client_id, nome, redirect_uris, created_at) values
+           ('${comCodigo}', 'dcc_${"1".repeat(32)}', 'Com código', '{${REDIRECT}}', now() - interval '40 minutes'),
+           ('${antigo}', 'dcc_${"2".repeat(32)}', 'Antigo', '{${REDIRECT}}', now() - interval '20 minutes'),
+           ('${recente}', 'dcc_${"3".repeat(32)}', 'Recente', '{${REDIRECT}}', now() - interval '1 minute');`);
+    novoCodigo("dco_protege", { cliente: comCodigo });
+
+    expect(registrar(`dcc_${"5".repeat(32)}`, 3)).toBe("ok|1");
+    expect(registrado(`dcc_${"5".repeat(32)}`)).toBe("1");
+    expect([comCodigo, antigo, recente].map(vivo)).toEqual(["1", "0", "1"]);
+
+    // Cheio de novo: sai o próximo sem proteção, o de 1 minuto — sem idade mínima.
+    expect(registrar(`dcc_${"6".repeat(32)}`, 3)).toBe("ok|1");
+    expect([comCodigo, recente].map(vivo)).toEqual(["1", "0"]);
+
+    // Código usado (ou vencido) não protege mais.
+    sql(`update public.mcp_oauth_codigos set usado_em = now() where codigo_hash = ${h("dco_protege")};`);
+    expect(registrar(`dcc_${"7".repeat(32)}`, 3)).toBe("ok|1");
+    expect(vivo(comCodigo)).toBe("0");
+
+    // Todos protegidos: o teto cede e o registro entra mesmo assim, sem despejar ninguém.
+    for (const c of ["5", "6", "7"]) novoCodigo(`dco_vivo_${c}`, { cliente: sql(`select id from public.mcp_oauth_clientes where client_id = 'dcc_${c.repeat(32)}';`) });
+    expect(registrar(`dcc_${"8".repeat(32)}`, 3)).toBe("ok|0");
+    expect(registrado(`dcc_${"8".repeat(32)}`)).toBe("1");
+    expect(vivo(CLIENTE_A)).toBe("1");
   });
 });

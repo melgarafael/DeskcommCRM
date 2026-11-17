@@ -28,8 +28,11 @@ export const TEXTOS_MCP_OAUTH = {
     es: "Consultar contactos, conversaciones, negocios e informes.",
   },
   "Ler e alterar": { es: "Leer y modificar" },
-  "Também criar e atualizar contatos, negócios, tarefas e notas, como um administrador.": {
-    es: "También crear y actualizar contactos, negocios, tareas y notas, como un administrador.",
+  "Também criar e alterar contatos, negócios, agenda, tarefas e automações, como um administrador.": {
+    es: "También crear y modificar contactos, negocios, agenda, tareas y automatizaciones, como un administrador.",
+  },
+  "E enviar mensagens de WhatsApp e materiais diretamente aos seus clientes, em nome da empresa.": {
+    es: "Y enviar mensajes de WhatsApp y materiales directamente a tus clientes, en nombre de la empresa.",
   },
   "Você pode desligar esta conexão quando quiser na tela API Tokens do CRM.": {
     es: "Puedes desactivar esta conexión cuando quieras en la pantalla API Tokens del CRM.",

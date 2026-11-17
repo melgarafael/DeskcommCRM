@@ -56,7 +56,8 @@ async function handle(req: NextRequest): Promise<Response> {
   try {
     // Empresa suspensa entra marcada: o servidor só deixa a privacidade
     // responder (LGPD nunca é bloqueada — decisão do dono, 30/09).
-    auth = await validateBearerToken(req.headers.get("authorization"), { permiteOrgSuspensa: true });
+    // `portaDoMcp`: aqui vale também o token da conexão OAuth (`aud:mcp`).
+    auth = await validateBearerToken(req.headers.get("authorization"), { permiteOrgSuspensa: true, portaDoMcp: true });
   } catch (err) {
     if (err instanceof McpAuthError) {
       // O 401 diz ONDE conseguir um token (RFC 9728 §5.1): é por este
