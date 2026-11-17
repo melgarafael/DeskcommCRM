@@ -17,6 +17,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { canonizarTipoDeFonte } from "@/lib/ai/rag/tipos-de-fonte";
+import { PATCH_DE_RESTAURO, STATUS_DO_MATERIAL_CONSULTAVEL } from "@/lib/ai/knowledge/estado-do-material";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -222,10 +223,24 @@ export async function PATCH(
   // false e não havia rota de volta, então quem arquivava por engano recriava o
   // material à mão e perdia o histórico do que o agente já sabia.
   //
+  // O estado de volta é `ready`, NÃO `active`. São dois vocabulários diferentes,
+  // e trocá-los foi o defeito desta fatia na primeira tentativa:
+  //
+  //  * o pedido da API diz `status: "active"` — "está no acervo, não está
+  //    arquivado", na língua de quem chama;
+  //  * a COLUNA só aceita `ready | archived | building | failed`
+  //    (`ai_knowledge_sources_status_check`). Gravar `active` viola o CHECK com
+  //    23514 e a rota devolvia 500 — o material continuava arquivado;
+  //  * e mesmo que o CHECK aceitasse, o motor de busca só enxerga a fonte com
+  //    `s.is_active and s.status = 'ready'` (`fn_buscar_trechos_das_fontes`,
+  //    0181). `active` na coluna = material na tela e invisível para o agente.
+  //
   // `is_active` vai JUNTO, e não é detalhe de simetria: o rag-indexer pula a
   // fonte com `!is_active || status === 'archived'` (workers/rag-indexer.ts:707).
   // Voltar só o `status` deixaria o material na lista, na cara do operador, e
   // fora do que o agente consulta — pior que o arquivo, porque some sem aviso.
+  // `tests/invariants/rag-acervo-da-organizacao.test.ts` prova os dois estados
+  // contra um Postgres de verdade, pela própria função de busca.
   if (input.status === "active") {
     const nome = (ksRow.name ?? "").trim();
 
@@ -233,12 +248,12 @@ export async function PATCH(
     // trilha cheia de "restaurado" para o que nunca esteve arquivado esconde
     // exatamente o registro que se quer ler depois.
     if (ksRow.status !== "archived") {
-      return ok({ id: sourceId, status: "active", restored: false }, { requestId });
+      return ok({ id: sourceId, status: ksRow.status, restored: false }, { requestId });
     }
 
     const { error: restoreErr } = await admin
       .from("ai_knowledge_sources")
-      .update({ status: "active", is_active: true })
+      .update({ ...PATCH_DE_RESTAURO })
       .eq("id", sourceId)
       .eq("organization_id", activeOrg.orgId);
 
@@ -295,11 +310,14 @@ export async function PATCH(
       metadata: {
         source_type: ksRow.source_type,
         de: { status: "archived", is_active: false },
-        para: { status: "active", is_active: true },
+        para: { ...PATCH_DE_RESTAURO },
       },
     });
 
-    return ok({ id: sourceId, status: "active", restored: true }, { requestId });
+    return ok(
+      { id: sourceId, status: STATUS_DO_MATERIAL_CONSULTAVEL, restored: true },
+      { requestId },
+    );
   }
 
   if (Object.keys(updatePayload).length > 0) {

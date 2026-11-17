@@ -146,12 +146,18 @@ const ARQUIVADA: Linha = {
 /**
  * O que "de volta ao acervo" significa para quem consome a linha.
  *
- * A régua é a do rag-indexer (`workers/rag-indexer.ts:707`): `status` tem de
- * ser `active` E `is_active` tem de ser `true`. Só um dos dois passa na tela e
- * não passa no agente.
+ * A régua é a do MOTOR, não a da tela: `fn_buscar_trechos_das_fontes` (0181) só
+ * enxerga a fonte com `s.is_active and s.status = 'ready'`. `ready` e
+ * `is_active` têm de vir os DOIS. Só um dos dois passa na tela e não passa no
+ * agente.
+ *
+ * `active` NÃO é um valor da coluna: `ai_knowledge_sources_status_check` aceita
+ * `ready | archived | building | failed`. A primeira versão desta rota gravou
+ * `active` e levou 23514 (500) do banco — este helper existe para o teste medir
+ * o valor que o BANCO aceita, e não o que o pedido da API chama de "ativo".
  */
 function devolveAConsulta(dados: Record<string, unknown>): boolean {
-  return dados.status === "active" && dados.is_active === true;
+  return dados.status === "ready" && dados.is_active === true;
 }
 
 beforeEach(() => {
@@ -168,13 +174,18 @@ describe("PATCH { status: 'active' } — tirar do arquivo", () => {
     const res = await patch({ status: "active" });
 
     expect(res.status).toBe(200);
-    expect((await res.json()).data).toMatchObject({ id: FONTE_ID, status: "active", restored: true });
+    expect((await res.json()).data).toMatchObject({ id: FONTE_ID, status: "ready", restored: true });
 
     // `gravadas` é o que o "banco" aceitou, não o que a rota pediu.
     expect(estado.gravadas).toHaveLength(1);
     const gravada = estado.gravadas[0]!;
     expect(gravada.tabela).toBe("ai_knowledge_sources");
     expect(devolveAConsulta(gravada.dados)).toBe(true);
+
+    // O PACOTE EXATO, campo a campo. `status: "active"` aqui é o defeito que
+    // saiu com a primeira versão desta fatia: o CHECK da coluna recusa (23514)
+    // e, pior, o motor não enxerga `active` nem que o CHECK deixasse.
+    expect(gravada.dados).toEqual({ status: "ready", is_active: true });
 
     // Sem o evento o worker não reindexa: o material volta apontando para um
     // índice velho, ou para nenhum.
@@ -199,7 +210,7 @@ describe("PATCH { status: 'active' } — tirar do arquivo", () => {
       metadata: {
         source_type: "faq",
         de: { status: "archived", is_active: false },
-        para: { status: "active", is_active: true },
+        para: { status: "ready", is_active: true },
       },
     });
   });
@@ -255,7 +266,7 @@ describe("PATCH { status: 'active' } — tirar do arquivo", () => {
     const res = await patch({ status: "active" });
 
     expect(res.status).toBe(200);
-    expect((await res.json()).data).toMatchObject({ status: "active", restored: false });
+    expect((await res.json()).data).toMatchObject({ status: "ready", restored: false });
     expect(estado.gravadas).toEqual([]);
     expect(estado.eventos).toEqual([]);
     expect(estado.auditorias).toEqual([]);
