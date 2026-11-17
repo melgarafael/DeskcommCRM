@@ -179,7 +179,7 @@ function cabecalhosDe(abs: string): Set<string> {
     }
     if (emCerca) continue; // `#` dentro de bloco de código não é cabeçalho
     const m = /^#{1,6}\s+(.+?)\s*#*\s*$/.exec(linha);
-    if (!m) continue;
+    if (!m?.[1]) continue;
     const base = slugDeCabecalho(m[1]);
     const repetido = vistos.get(base) ?? 0;
     vistos.set(base, repetido + 1);
@@ -217,7 +217,8 @@ function arquivoCitado(alvo: string): string | null {
   })
     .split("\n")
     .filter(Boolean);
-  return achados.length > 0 ? path.join(RAIZ, achados[0]) : null;
+  const primeiro = achados[0];
+  return primeiro ? path.join(RAIZ, primeiro) : null;
 }
 
 /**
@@ -234,9 +235,9 @@ function rotulosDaFrase(texto: string, indice: number): string[] {
     antes.lastIndexOf(" | "),
     antes.lastIndexOf("\n\n"),
   );
-  return [...antes.slice(corte + 1).matchAll(/`([^`\s]+)`/g)]
-    .map(([, rotulo]) => rotulo)
-    .filter((rotulo) => /^[A-Za-z][\w-]{3,}$/.test(rotulo));
+  return [...antes.slice(corte + 1).matchAll(/`([^`\s]+)`/g)].flatMap(([, rotulo]) =>
+    rotulo && /^[A-Za-z][\w-]{3,}$/.test(rotulo) ? [rotulo] : [],
+  );
 }
 
 function decodificar(alvo: string): string {
@@ -391,6 +392,7 @@ describe("documentação — o ponteiro acerta o alvo dentro do arquivo", () => 
       const texto = fs.readFileSync(absDoc, "utf8");
 
       for (const [inteiro, destinoBruto] of texto.matchAll(LINK_COM_ANCORA)) {
+        if (!destinoBruto) continue;
         const i = destinoBruto.indexOf("#");
         const arquivo = destinoBruto.slice(0, i);
         const fragmento = decodificar(destinoBruto.slice(i + 1));
@@ -434,6 +436,7 @@ describe("documentação — o ponteiro acerta o alvo dentro do arquivo", () => 
 
       for (const m of texto.matchAll(REFERENCIA_DE_LINHA)) {
         const [bruto, alvo, inicio, fim] = m;
+        if (!alvo || !inicio) continue;
         const abs = arquivoCitado(alvo);
         const chave = `${doc}::${alvo}:${inicio}`;
         if (!abs) {
