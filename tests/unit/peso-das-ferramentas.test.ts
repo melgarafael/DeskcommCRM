@@ -56,6 +56,16 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_get_queue_status": { tokens: 83, motivo: BASE },
   "crm_list_leads": { tokens: 500, motivo: BASE },
   "crm_get_lead": { tokens: 202, motivo: BASE },
+  "crm_list_lead_attachments": {
+    tokens: 259,
+    motivo:
+      "#4544: a descrição diz que o id vem daqui e vai para a leitura do documento — sem isso o agente inventava um id ou desistia de olhar o anexo",
+  },
+  "crm_get_lead_attachment": {
+    tokens: 413,
+    motivo:
+      "#4544: precisa dizer que imagem/binário NÃO é transcrito (senão o agente trata resposta vazia como documento sem dados) e que o teto é por chamada",
+  },
   "crm_list_pipelines": { tokens: 63, motivo: BASE },
   "crm_get_pipeline_forecast": { tokens: 281, motivo: "#4322: a descrição passou a dizer que `truncado: true` marca valores parciais quando o funil passa do teto de leitura; sem isso o agente apresenta um recorte como o total" },
   "crm_search_knowledge": { tokens: 250, motivo: BASE },
@@ -191,7 +201,10 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +353 com `crm_save_lead_diagnosis` (#4632), o diagnóstico da empresa gravado
 // na ficha pelo agente da prospecção. MEDIDO no merge com a main: 39537 = 39187 + 350
 // (2026-11-16; o PR media +353 contra uma main mais velha).
-const TETO_TOTAL = 39537;
+// +672 com os documentos do negócio (#4544): 259 de `crm_list_lead_attachments`
+// e 413 de `crm_get_lead_attachment`. MEDIDO no merge com a main: 40209 = 39537 + 672
+// (2026-11-17, main de `0652fa6866`).
+const TETO_TOTAL = 40209;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
