@@ -58,7 +58,13 @@ function adminFalso() {
 
 const TEXTO = new TextEncoder();
 
-function concat(partes: Uint8Array[]): Uint8Array {
+/**
+ * `Uint8Array<ArrayBuffer>` e não `Uint8Array`: desde o TS 5.7 o tipo é genérico
+ * no buffer, e o `BodyInit` do `fetch` só aceita o buffer concreto — escrever o
+ * tipo cru aqui devolve `Uint8Array<ArrayBufferLike>` e o `tsc` reprova no
+ * `body:` da requisição (o `TextEncoder` deste arquivo já devolve o concreto).
+ */
+function concat(partes: Uint8Array[]): Uint8Array<ArrayBuffer> {
   const total = partes.reduce((n, p) => n + p.length, 0);
   const bytes = new Uint8Array(total);
   let cursor = 0;
@@ -72,7 +78,7 @@ function concat(partes: Uint8Array[]): Uint8Array {
 /** O fio do navegador: cabeçalho da parte, bytes do arquivo, fecho do multipart. */
 function corpoMultipart(
   arquivo: { nome: string; tipo: string; bytes: Uint8Array } | null,
-): Uint8Array {
+): Uint8Array<ArrayBuffer> {
   const partes: Uint8Array[] = [];
   if (arquivo) {
     partes.push(
