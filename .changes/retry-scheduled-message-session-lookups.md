@@ -1,6 +1,6 @@
 ---
 impacto: nada_mudou
 secao: corrigido
-titulo: Keep scheduled messages pending when the connection lookup fails
+titulo: Mensagem agendada continua pendente quando a leitura da conexão falha
 ---
-A scheduled message is no longer canceled as if its number were disconnected when the database fails to return the connection state. It remains pending for a later scheduler run, using the existing claim timeout. A confirmed disconnection still follows the chosen wait or cancel policy. Credit: @samirhvbr.
+Uma mensagem agendada não é mais cancelada como se o número estivesse desconectado quando o banco não consegue informar o estado da conexão. Ela continua agendada e é tentada de novo numa rodada seguinte do agendador, depois da trava de cinco minutos que já existia. A desconexão confirmada continua seguindo a escolha de esperar ou cancelar. Crédito: @samirhvbr (#4771).

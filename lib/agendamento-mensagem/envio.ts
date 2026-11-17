@@ -40,7 +40,7 @@ export async function sessaoEstaConectada(admin: SupabaseClient, organizationId:
     .eq("id", sessionId)
     .eq("organization_id", organizationId)
     .maybeSingle();
-  // A failed lookup must not cancel a pending send as if disconnection were confirmed.
+  // Leitura que falhou não pode cancelar o envio como se a desconexão estivesse confirmada.
   if (error) throw new Error(`session_lookup_failed: ${error.message}`);
   return data?.status === "WORKING";
 }
