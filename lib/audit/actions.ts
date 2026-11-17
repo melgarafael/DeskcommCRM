@@ -1486,6 +1486,9 @@ export const AUDIT_ACTIONS = [
   // O admin mudou o que os avisos do celular mostram com a tela bloqueada
   // (`settings.notificacoes`); metadata com o valor anterior e o novo.
   "notificacoes.tela_bloqueada_alterada",
+  // A empresa ligou/desligou a cor por canal no aviso de mensagem nova
+  // (`settings.notificacoes.cor_por_canal`, #4094); metadata com anterior/novo.
+  "notificacoes.cor_por_canal_alterada",
   // Inscrição de push removida no servidor: desligar os alertas, sair, ou
   // "sair de todos os dispositivos" (metadata.escopo diz qual).
   "notification_prefs.push_subscription_removed",
@@ -1644,6 +1647,18 @@ export const AUDIT_ACTIONS = [
   // "quem moveu" no painel. Mover roteador em silêncio não existe: as duas
   // camadas são gravadas na mesma operação.
   "ai.router_channel_moved",
+  // OAuth do MCP do CRM (migration 9390) — a conexão de um cliente como o
+  // ChatGPT. `cliente_registrado` é da instalação (sem organização: o registro
+  // dinâmico é aberto); `autorizado`/`negado` são da pessoa na tela de
+  // consentimento; `token_emitido`/`token_renovado`/`revogado` têm como ator o
+  // `api_tokens` da conexão. Metadata leva nome do cliente, host de volta e
+  // escopos — nunca código, token ou segredo.
+  "mcp_oauth.cliente_registrado",
+  "mcp_oauth.autorizado",
+  "mcp_oauth.negado",
+  "mcp_oauth.token_emitido",
+  "mcp_oauth.token_renovado",
+  "mcp_oauth.revogado",
   // Tabela de valores de negociação (#4612): criar a tabela e importar a
   // planilha que o agente vai usar para negociar preço. Metadata da importação
   // leva só contagens e a chave do arquivo — nunca preço de linha.
