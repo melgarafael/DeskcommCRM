@@ -85,6 +85,161 @@ const LINK_RELATIVO = /\[[^\]]*\]\((?!https?:|#|mailto:)([^)#\s]+)/g;
 const PATH_EM_CRASE =
   /`((?:app|lib|components|workers|scripts|tests|supabase|hooks|docs|hostgator-setup-kit|triagem|\.github|\.agents|\.claude|\.codex|\.cursor|\.opencode)\/[A-Za-z0-9_./[\]-]+\.(?:ts|tsx|sql|sh|yml|yaml|json|md|mdc|toml|mjs))`/g;
 
+/**
+ * O ALVO, e não só o caminho.
+ *
+ * As duas conferências acima olham o ARQUIVO e param ali. Medido nesta árvore em
+ * 2026-11-16: 450 links relativos, 75 deles com `#slug`, 34 referências
+ * `caminho/arquivo.ext:NNN` — e NENHUMA das 34 chegava a ser olhada, porque
+ * `PATH_EM_CRASE` exige o fechamento da crase logo depois da extensão e `:163`
+ * cai fora do padrão. Nos links, `LINK_RELATIVO` captura `([^)#\s]+)`, então
+ * `docs/runbooks/x.md#5-quando-...` era conferido como `docs/runbooks/x.md`: a
+ * âncora sumia antes de alguém perguntar por ela.
+ *
+ * O preço dessa cegueira está em duas issues abertas: o `README.md` apontava para
+ * `#5-quando-o-compute-nano-...` quando a seção é a **6** (#4759) e o runbook de
+ * custo citava `:163` para o cron `data-retention`, que mora na `:175` (#4760).
+ * Este gate passava verde nos dois. Uma cerca que não olha o alvo é pior que
+ * cerca nenhuma: dá sensação de cobertura.
+ */
+const LINK_COM_ANCORA = /\[[^\]]*\]\((?!https?:|mailto:)([^)\s]*#[^)\s]+)\)/g;
+const REFERENCIA_DE_LINHA =
+  /`([A-Za-z0-9_][A-Za-z0-9_./[\]-]*\.(?:ts|tsx|sql|sh|yml|yaml|json|md|mjs|toml)):(\d+)(?:-(\d+))?`/g;
+
+/**
+ * O que já estava torto quando o gate aprendeu a olhar o alvo — dívida congelada,
+ * defeito NOVO reprovado.
+ *
+ * Mesmo idioma de `HOSTS_DECLARADOS` e `FORA_DA_LISTA`: cada entrada é um fato
+ * medido, com o motivo escrito. Não há asserção de "entrada obsoleta" de
+ * propósito: as duas primeiras linhas abaixo estão sendo consertadas em PR
+ * separado (#4789 e #4790), e uma lista que exige a dívida viva reprovaria
+ * exatamente o PR que a paga. Quando o documento for corrigido, a entrada fica
+ * inerte — ela só é consultada quando a violação aparece.
+ *
+ * Medição que produziu esta lista (2026-11-16): 75 âncoras conferidas (1 torta),
+ * 34 referências de linha conferidas (4 tortas, 2 delas defeito real e 2 em que a
+ * citação está certa e o rótulo da frase é que nomeia outra coisa).
+ */
+const ANCORAS_QUE_ENVELHECERAM: Record<string, string> = {
+  "README.md::docs/runbooks/custo-e-cota-do-supabase.md#5-quando-o-compute-nano-do-plano-grátis-não-basta":
+    "envelheceu em data medida: a seção do compute Nano é a 6 desde que o runbook " +
+    "ganhou a §5 de log ingestion; o link ficou na 5 e cai no topo do arquivo. É o " +
+    "defeito do #4759, com conserto no PR #4789.",
+};
+
+const LINHAS_QUE_ENVELHECERAM: Record<string, string> = {
+  "docs/runbooks/custo-e-cota-do-supabase.md::docker/scheduler/entrypoint.sh:163":
+    "envelheceu em data medida: o cron `data-retention` mora na :175 — a lista CRONS " +
+    "cresceu e a citação ficou para trás. É o defeito do #4760, com conserto no PR #4790.",
+  "docs/runbooks/custo-e-cota-do-supabase.md::docker/scheduler/entrypoint.sh:167":
+    "envelheceu em data medida: o cron `media-retention` mora na :179, pelo mesmo " +
+    "motivo do :163 acima. Defeito do #4760, conserto no PR #4790.",
+  "docs/runbooks/custo-e-cota-do-supabase.md::lib/messaging/media/types.ts:7":
+    "a citação está CERTA (`MAX_MEDIA_BYTES` é o limite de 50 MB); quem não casa é o " +
+    "rótulo `whatsapp-media`, que a frase usa para nomear o bucket e não o que a linha " +
+    "contém. A conferência de rótulo não distingue os dois casos — congelado em data medida.",
+  "docs/runbooks/custo-e-cota-do-supabase.md::supabase/migrations/20260926200200_0432_poda_de_midia.sql:35":
+    "idem: a linha traz `media_retention_days`, e o rótulo da frase é o nome do job " +
+    "`media-retention`. Citação certa, rótulo vizinho — congelado em data medida.",
+};
+
+/**
+ * Slug de cabeçalho na régua do GitHub, calibrada contra os 75 links com `#` que
+ * este repo já tinha: minúsculas, pontuação e símbolo fora (emoji inclusive),
+ * `-` e `_` ficam, e CADA espaço vira um hífen — não a corrida de espaços. Com
+ * `\s+ → "-"` o cabeçalho `## 1. Supabase — banco + auth + storage` viraria
+ * `1-supabase-banco-auth-storage` e o link real `#1-supabase--banco--auth--storage`
+ * reprovaria como falso positivo. Com a troca por espaço, 74 dos 75 casam: o único
+ * que não casa é o defeito do #4759.
+ */
+function slugDeCabecalho(titulo: string): string {
+  return titulo
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\p{M}\s_-]/gu, "")
+    .replace(/ /g, "-");
+}
+
+const cabecalhosPorArquivo = new Map<string, Set<string>>();
+
+/** Slugs dos cabeçalhos do arquivo, na ordem — `#x` repetido vira `#x-1`, como no GitHub. */
+function cabecalhosDe(abs: string): Set<string> {
+  const pronto = cabecalhosPorArquivo.get(abs);
+  if (pronto) return pronto;
+
+  const slugs = new Set<string>();
+  const vistos = new Map<string, number>();
+  let emCerca = false;
+
+  for (const linha of fs.readFileSync(abs, "utf8").split("\n")) {
+    if (/^\s*(```|~~~)/.test(linha)) {
+      emCerca = !emCerca;
+      continue;
+    }
+    if (emCerca) continue; // `#` dentro de bloco de código não é cabeçalho
+    const m = /^#{1,6}\s+(.+?)\s*#*\s*$/.exec(linha);
+    if (!m?.[1]) continue;
+    const base = slugDeCabecalho(m[1]);
+    const repetido = vistos.get(base) ?? 0;
+    vistos.set(base, repetido + 1);
+    slugs.add(repetido === 0 ? base : `${base}-${repetido}`);
+  }
+
+  cabecalhosPorArquivo.set(abs, slugs);
+  return slugs;
+}
+
+const linhasPorArquivo = new Map<string, string[]>();
+
+function linhasDe(abs: string): string[] {
+  const pronto = linhasPorArquivo.get(abs);
+  if (pronto) return pronto;
+  const linhas = fs.readFileSync(abs, "utf8").split("\n");
+  linhasPorArquivo.set(abs, linhas);
+  return linhas;
+}
+
+/**
+ * Onde mora o arquivo citado. Caminho é relativo à RAIZ (é como os documentos
+ * deste repo escrevem: `docs/SETUP.md:136` visto de dentro de `docs/runbooks/`).
+ * Nome solto — `vitest.config.ts:12` — se resolve por `git ls-files`: o documento
+ * cita o arquivo pelo nome, e afirmar que ele existe em algum lugar é o que a
+ * frase faz. Inventar um caminho que o texto não deu seria fingir rigor.
+ */
+function arquivoCitado(alvo: string): string | null {
+  const naRaiz = path.join(RAIZ, alvo);
+  if (fs.existsSync(naRaiz)) return naRaiz;
+  if (alvo.includes("/")) return null;
+  const achados = execFileSync("git", ["ls-files", `*${alvo}`], {
+    cwd: RAIZ,
+    encoding: "utf8",
+  })
+    .split("\n")
+    .filter(Boolean);
+  const primeiro = achados[0];
+  return primeiro ? path.join(RAIZ, primeiro) : null;
+}
+
+/**
+ * Rótulos que a frase dá ao ponteiro: `o cron \`data-retention\` roda às 04h40
+ * (\`docker/scheduler/entrypoint.sh:163\`)`. Conta só o que vem ANTES da
+ * referência e na mesma frase — 240 caracteres, cortados no último ponto ou na
+ * última célula de tabela. É a ordem em que se escreve quando a linha é oferecida
+ * como prova do símbolo, e é o que pega o defeito do #4760.
+ */
+function rotulosDaFrase(texto: string, indice: number): string[] {
+  const antes = texto.slice(Math.max(0, indice - 240), indice);
+  const corte = Math.max(
+    antes.lastIndexOf(". "),
+    antes.lastIndexOf(" | "),
+    antes.lastIndexOf("\n\n"),
+  );
+  return [...antes.slice(corte + 1).matchAll(/`([^`\s]+)`/g)].flatMap(([, rotulo]) =>
+    rotulo && /^[A-Za-z][\w-]{3,}$/.test(rotulo) ? [rotulo] : [],
+  );
+}
+
 function decodificar(alvo: string): string {
   try {
     return decodeURIComponent(alvo);
@@ -197,6 +352,139 @@ describe("documentação — o que ela aponta existe", () => {
       violacoes,
       `nota de pendência sobrevivente — o gate citado JÁ está ativo:\n${violacoes.join("\n")}\n` +
         `confira a régua real: gh api repos/melgarafael/DeskcommCRM/branches/main/protection --jq '.required_status_checks.contexts'`,
+    ).toEqual([]);
+  });
+});
+
+/**
+ * A segunda metade do mesmo gate: o ponteiro não basta apontar para um arquivo —
+ * ele tem de apontar para DENTRO dele. Sem isto o título do arquivo promete o que
+ * o gate não faz, e os dois defeitos abaixo passam verdes, como passaram:
+ * `README.md` → `#5-...` numa seção 6 (#4759) e `entrypoint.sh:163` num cron que
+ * mora na `:175` (#4760).
+ */
+describe("documentação — o ponteiro acerta o alvo dentro do arquivo", () => {
+  const docs = markdownsRastreados().filter(ehAutoridade);
+
+  it("a conferência de alvo não está varrendo zero", () => {
+    // Mesmo modo de falha barato da primeira cerca: um regex quebrado devolve
+    // verde varrendo nada. Estes pisos são a medição de 2026-11-16 (75 e 34):
+    // se caírem muito, alguém quebrou a captura, não a documentação.
+    let ancoras = 0;
+    let referencias = 0;
+    for (const doc of docs) {
+      const texto = fs.readFileSync(path.join(RAIZ, doc), "utf8");
+      ancoras += [...texto.matchAll(LINK_COM_ANCORA)].length;
+      referencias += [...texto.matchAll(REFERENCIA_DE_LINHA)].length;
+    }
+    expect(ancoras, "nenhum link com âncora capturado — o padrão quebrou").toBeGreaterThan(50);
+    expect(
+      referencias,
+      "nenhuma referência `arquivo:linha` capturada — o padrão quebrou",
+    ).toBeGreaterThan(25);
+  });
+
+  it("nenhum link com âncora aponta para cabeçalho que não existe", () => {
+    const tortas: string[] = [];
+
+    for (const doc of docs) {
+      const absDoc = path.join(RAIZ, doc);
+      const texto = fs.readFileSync(absDoc, "utf8");
+
+      for (const [inteiro, destinoBruto] of texto.matchAll(LINK_COM_ANCORA)) {
+        if (!destinoBruto) continue;
+        const i = destinoBruto.indexOf("#");
+        const arquivo = destinoBruto.slice(0, i);
+        const fragmento = decodificar(destinoBruto.slice(i + 1));
+        if (!fragmento) continue;
+
+        let alvo: string;
+        if (arquivo === "") {
+          alvo = absDoc; // âncora no próprio documento
+        } else {
+          // Âncora em `.md` do repo. Em outro tipo (imagem, diagrama, PDF) o
+          // `#` não é cabeçalho — o gate não tem régua para conferir e não finge
+          // que tem.
+          if (!arquivo.endsWith(".md")) continue;
+          alvo = path.resolve(path.dirname(absDoc), decodificar(arquivo));
+          if (!fs.existsSync(alvo)) continue; // o teste de link morto acima já acusa
+        }
+
+        if (cabecalhosDe(alvo).has(fragmento)) continue;
+        const chave = `${doc}::${destinoBruto}`;
+        if (ANCORAS_QUE_ENVELHECERAM[chave]) continue;
+        tortas.push(`${doc} → ${inteiro}`);
+      }
+    }
+
+    expect(
+      tortas,
+      "link com âncora que não existe no documento de destino — o leitor cai no topo " +
+        "do arquivo e conclui que a seção não existe:\n" +
+        tortas.join("\n") +
+        "\nSe o cabeçalho mudou de nome, conserte o link; se é dívida antiga e medida, " +
+        "declare em ANCORAS_QUE_ENVELHECERAM com o motivo.",
+    ).toEqual([]);
+  });
+
+  it("nenhuma referência `arquivo:linha` aponta para linha que não existe", () => {
+    const tortas: string[] = [];
+
+    for (const doc of docs) {
+      const absDoc = path.join(RAIZ, doc);
+      const texto = fs.readFileSync(absDoc, "utf8");
+
+      for (const m of texto.matchAll(REFERENCIA_DE_LINHA)) {
+        const [bruto, alvo, inicio, fim] = m;
+        if (!alvo || !inicio) continue;
+        const abs = arquivoCitado(alvo);
+        const chave = `${doc}::${alvo}:${inicio}`;
+        if (!abs) {
+          if (LINHAS_QUE_ENVELHECERAM[chave]) continue;
+          tortas.push(`${doc} → ${bruto} (arquivo não existe)`);
+          continue;
+        }
+
+        const linhas = linhasDe(abs);
+        const ultima = Number(fim ?? inicio);
+        if (Number(inicio) < 1 || ultima > linhas.length) {
+          if (LINHAS_QUE_ENVELHECERAM[chave]) continue;
+          tortas.push(`${doc} → ${bruto} (o arquivo tem ${linhas.length} linhas)`);
+          continue;
+        }
+
+        /**
+         * Rótulo: quando a frase nomeia o símbolo e o símbolo aparece UMA vez no
+         * arquivo, o ponteiro tem de cair naquela linha — é o caso do cron que
+         * andou (#4760). Quando o nome se repete (variável de ambiente, nome de
+         * bucket), a frase pode legitimamente citar o lugar que USA o símbolo, e
+         * exigir o nome na linha congelaria frases verdadeiras como erro; aí a
+         * conferência para na existência da linha. Medido: dos 34 ponteiros, 6
+         * têm rótulo localizável — os outros 28 ficam na existência.
+         */
+        const unicos = rotulosDaFrase(texto, m.index ?? 0).filter(
+          (rotulo) => linhas.filter((l) => l.includes(rotulo)).length === 1,
+        );
+        if (unicos.length === 0) continue;
+        // Faixa (`:39-41`) vale pelo trecho inteiro: o símbolo pode estar em
+        // qualquer linha que a citação cobre.
+        const janela = linhas.slice(Number(inicio) - 1, ultima);
+        if (unicos.some((rotulo) => janela.some((l) => l.includes(rotulo)))) continue;
+        if (LINHAS_QUE_ENVELHECERAM[chave]) continue;
+        tortas.push(
+          `${doc} → ${bruto} (a linha ${inicio} não contém ${unicos.join("|")}, ` +
+            `que aparece só em outra linha de ${alvo})`,
+        );
+      }
+    }
+
+    expect(
+      tortas,
+      "referência `arquivo:linha` que não fecha — a linha citada não existe ou não é a " +
+        "do símbolo que a frase nomeia:\n" +
+        tortas.join("\n") +
+        "\nSe o código andou, atualize o número; se é dívida antiga e medida, declare em " +
+        "LINHAS_QUE_ENVELHECERAM com o motivo.",
     ).toEqual([]);
   });
 });

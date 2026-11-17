@@ -35,6 +35,7 @@ import {
   personalizacaoDaOrganizacao,
   type PersonalizacaoProspeccao,
 } from "./personalizar";
+import { temContextoDaEquipe } from "./contexto-da-equipe";
 import { chaveDaAuditoria, type PreviaSalva } from "./previa";
 import { campaignConfigSchema, type Prospect } from "./schema";
 import { siteEfetivo } from "./site-efetivo";
@@ -92,6 +93,11 @@ export async function gerarPreviaDoCandidato(
     sobrescritaVocabulario: personalizacao.vocabulario ?? null,
     status: linha.status,
   });
+  // A mesma regra do envio: a prévia é byte a byte o que o tick mandaria.
+  const soCumprimenta = cfg.data.exit_offer !== "first_message";
+  // Modo "saída na 2ª": sem Auditoria/Detalhe nem diagnóstico/oferta da equipe, como no envio (worker.ts).
+  const dados = montarDadosDeAbordagem(linha.data, soCumprimenta ? null : site, null, { soCumprimenta });
+  const comContextoDaEquipe = temContextoDaEquipe(dados);
   const gerado = await gerarAbordagemDeFormulario(pool, llmEdgeConfigFromEnv(env), {
     tenantId: org,
     agentId: cfg.data.agent_id,
@@ -101,13 +107,13 @@ export async function gerarPreviaDoCandidato(
       cfg.data.qualification,
       blocoVozVendedor(personalizacao) || undefined,
       estrategia,
-      // A mesma regra do envio: a prévia é byte a byte o que o tick mandaria.
-      cfg.data.exit_offer !== "first_message",
+      soCumprimenta,
+      comContextoDaEquipe,
     ),
     origem: "Pesquisa de empresas",
     origemDaAbordagem: "prospeccao_fria",
-    // Modo "saída na 2ª": sem Auditoria/Detalhe, como no envio (worker.ts).
-    dados: montarDadosDeAbordagem(linha.data, cfg.data.exit_offer !== "first_message" ? null : site),
+    dados,
+    comContextoDaEquipe,
   });
   if (!gerado.ok) return { ok: false, motivo: "ia_falhou", detalhe: gerado.reason };
 

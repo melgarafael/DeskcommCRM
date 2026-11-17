@@ -413,6 +413,93 @@ describe("criarPegadaDoCandidato", () => {
     });
   });
 
+  // #4459 parte 2: o que a EQUIPE escreveu na planilha vira a aba Diagnóstico do contato
+  // NOVO, assinado por quem importou (`diag_por`/`diag_em`), pelo esquema central.
+  const IMPORTOU = "usuario:12121212-1212-4121-8121-121212121212";
+  const comContextoDaEquipe = {
+    name: "Clínica 1",
+    key: "place-1",
+    maps_url: "https://maps.app.goo.gl/clinica1",
+    socials: [],
+    contexto_da_equipe: {
+      diagnostico: "Agenda só por telefone.",
+      oferta: "Site com agenda online.",
+      contexto: "Indicação da Marta.",
+      por: IMPORTOU,
+      em: "2026-11-12T12:00:00.000Z",
+    },
+  };
+
+  it("contato novo nasce com o diagnóstico da equipe e a autoria de quem importou", async () => {
+    const { db } = bancoFalso();
+    await criarPegadaDoCandidato(
+      db,
+      {} as never,
+      ORG,
+      campanha,
+      configOnSend,
+      candidato(1, { data: comContextoDaEquipe }),
+      null,
+    );
+    expect(m.contato.mock.calls[0]?.[2].custom_fields).toEqual({
+      link_google_meu_negocio: "https://maps.app.goo.gl/clinica1",
+      diag_resumo: "Agenda só por telefone.",
+      diag_oferta: "Site com agenda online.",
+      diag_observacoes: "Indicação da Marta.",
+      diag_por: IMPORTOU,
+      diag_em: "2026-11-12T12:00:00.000Z",
+    });
+  });
+
+  it("⭐ organização com campo de contato `diag_resumo` próprio: esse fica de fora, o resto entra", async () => {
+    const { db } = bancoFalso();
+    const settings = {
+      fields: [{ key: "diag_resumo", label: "Resumo", type: "text", escopo: "contato" }],
+    };
+    const ordem = vi.fn(async () => ({ data: [{ settings }], error: null }));
+    const admin = { from: vi.fn(() => ({ select: () => ({ eq: () => ({ order: ordem }) }) })) };
+    await criarPegadaDoCandidato(
+      db,
+      admin as never,
+      ORG,
+      campanha,
+      configOnSend,
+      candidato(1, { data: comContextoDaEquipe }),
+      null,
+    );
+    // Sem categoria: a leitura das definições acontece por causa do contexto da equipe.
+    expect(ordem).toHaveBeenCalled();
+    expect(m.contato.mock.calls[0]?.[2].custom_fields).toEqual({
+      link_google_meu_negocio: "https://maps.app.goo.gl/clinica1",
+      diag_oferta: "Site com agenda online.",
+      diag_observacoes: "Indicação da Marta.",
+      diag_por: IMPORTOU,
+      diag_em: "2026-11-12T12:00:00.000Z",
+    });
+  });
+
+  it("sem contexto da equipe e sem categoria, as definições nem são lidas (como antes)", async () => {
+    const { db } = bancoFalso();
+    const admin = { from: vi.fn() };
+    await criarPegadaDoCandidato(
+      db,
+      admin as never,
+      ORG,
+      campanha,
+      configOnSend,
+      candidato(1, {
+        data: { name: "Clínica 1", key: "place-1", maps_url: "https://maps.app.goo.gl/clinica1", socials: [] },
+      }),
+      null,
+    );
+    // As DEFINIÇÕES (`crm_pipelines`) não são lidas. Ler se o módulo `crm_b2b` está ligado
+    // (#4775: platform_config/modulos_instalados) é outra pergunta, e acontece sempre.
+    expect(admin.from).not.toHaveBeenCalledWith("crm_pipelines");
+    expect(m.contato.mock.calls[0]?.[2].custom_fields).toEqual({
+      link_google_meu_negocio: "https://maps.app.goo.gl/clinica1",
+    });
+  });
+
   // Spec 26 §3.2/§7.1: contato REAPROVEITADO não é tocado na abordagem. Não recria o contato
   // e não recebe update de links; ficha que já existe só se completa pelo botão.
   it("contato reaproveitado: não recria o contato e não recebe update de links na abordagem (spec 26 §7.1)", async () => {
