@@ -95,6 +95,7 @@ export const O_QUE_FICA = {
   honorarios_parcelas: "as parcelas que ele paga",
   cadencias_inscricoes: "as sequências de e-mail nas quais foi inscrito, autorização de abertura e descadastro",
   cadencias_eventos: "os envios, aberturas e paradas registrados sobre ele, sem metadados internos do provedor",
+  amigo_vinculos: "o vínculo dele com o cadastro de paciente no sistema da clínica (Amigo), sem o cadastro em si",
   lead_field_proposals:
     "os campos que a IA leu num documento do negocio dele e propos para o card (o documento e os valores ficam no anexo)",
   orders: "os pedidos dele na loja",

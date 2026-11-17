@@ -52,6 +52,7 @@ import { precisaRenovar } from "@/lib/agenda/google/oauth";
 import { falasDoSnapshot } from "@/lib/agent-engine/agent/conversa-do-caso/leitura";
 import { midiaDerivavelPendente } from "@/lib/agent-engine/edge/crm/midia-derivavel";
 import { normalizarInstante } from "@/lib/ai/elegibilidade/gate";
+import { quandoCombinado } from "@/lib/atendimento/aviso-retorno-descartado";
 import { estaPresente } from "@/lib/atendimento/presenca";
 import { acaoDaAgenda } from "@/lib/channels/agenda-de-pausa";
 import { serializarValor } from "@/lib/external-db/montagem";
@@ -247,6 +248,18 @@ export function reguasDeData(pool: pg.Pool): ReguaDeData[] {
           new Date(CHEGADA_MS - 3_600_000),
           5 * 60_000,
         ) === false,
+    },
+    {
+      nome: "quandoCombinado",
+      onde: "lib/atendimento/aviso-retorno-descartado.ts:88",
+      // (#4696) A hora do retorno combinado que vai para o aviso da Central: o
+      // `run_after` do job chega `Date` quando vem do driver e texto quando vem
+      // do payload clonado, e a frase tem de mostrar os DOIS como o mesmo
+      // "dd/mm às hh:mm" no fuso da empresa. Sem instante ela devolve `null` —
+      // a frase não inventa hora.
+      entrada: "valor",
+      exercitar: (valorCru) =>
+        quandoCombinado(valorCru as Date | string | null, "America/Sao_Paulo") !== null,
     },
   ];
 }

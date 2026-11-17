@@ -176,7 +176,7 @@ describe("gravarMensagemDeGrupo", () => {
     expect(d.inserirMensagem.mock.calls[0]![0]!.body).toBe("oi @75235009282237, pode vir?");
   });
 
-  it("#3566: menção a quem NÃO está no CRM mantém o número na prévia (nunca vazio nem @undefined)", async () => {
+  it("#3566: menção a quem NÃO está no CRM sai como \"Participante\" — nunca o LID, nunca o nome do AUTOR", async () => {
     const d = db(ligado());
     await gravarMensagemDeGrupo(
       d,
@@ -185,13 +185,31 @@ describe("gravarMensagemDeGrupo", () => {
         mencoes: [{ name: null, phone: null, lid: "99887766554433" }],
       }),
     );
+    // `entrada()` traz `group_sender: { name: "Maria", ... }`, que é quem
+    // ESCREVEU: o nome do autor não pode virar o rótulo de quem foi mencionado.
+    // O corpo gravado continua cru (conferido no caso do metadata, acima).
     expect(d.marcarConversa).toHaveBeenCalledWith(
       ORG,
       "v",
-      "oi @99887766554433",
+      "oi @Participante",
       "2026-09-23T12:00:00.000Z",
       "inbound",
     );
+  });
+
+  it("#3566: sem contato e sem participante a prévia mostra a palavra do dicionário, nunca dígitos", async () => {
+    const d = db(ligado());
+    await gravarMensagemDeGrupo(
+      d,
+      entrada({
+        body: "oi @99887766554433",
+        remetente: null,
+        mencoes: [{ name: null, phone: null, lid: "99887766554433" }],
+      }),
+    );
+    const [,, preview] = d.marcarConversa.mock.calls[0]!;
+    expect(preview).toBe("oi @Participante");
+    expect(String(preview)).not.toMatch(/\d/);
   });
 
   it("#3566: sem menção a prévia continua byte a byte igual e nenhum contato é lido", async () => {
