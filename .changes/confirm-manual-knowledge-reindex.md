@@ -1,6 +1,9 @@
 ---
 impacto: nada_mudou
 secao: corrigido
-titulo: Report failed requests to prepare a knowledge material again
+titulo: Preparar de novo um material do acervo avisa quando o pedido não foi registrado
 ---
-Preparing a material again now shows an error when its indexing request cannot be saved, instead of promising work that was never queued. A successful retry still queues the material normally. Credit: @samirhvbr.
+
+Quando o pedido para preparar de novo um material do acervo não consegue ser registrado, a tela agora mostra um erro em vez de prometer uma preparação que nunca entrou na fila. Tentar de novo depois funciona normalmente e registra a auditoria como antes.
+
+Crédito: @samirhvbr.
