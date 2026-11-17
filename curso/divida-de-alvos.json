@@ -1,0 +1,2798 @@
+{
+ "medidoEm": "origin/main 770ce69cee (17/11/2026)",
+ "oQueE": "Alvos que a cerca do curso NAO consegue provar no fonte porque o texto e montado em tempo de execucao com dado semeado. Declarar aqui NAO e aprovar: alvo que nao exista no fonte e nao esteja nesta lista reprova o teste.",
+ "motivos": {
+  "texto": "o texto é montado no código com dado semeado ou variável no meio (ex.: `Acompanhar ${nome}`); o literal inteiro da lição não existe no fonte",
+  "css-texto": "o `:text-is('…')` casa texto de registro semeado, não texto do código",
+  "role-nome": "o nome acessível é montado a partir de dado da tela (contador, nome de registro); não há literal único para procurar",
+  "rotulo": "o rótulo vem de chave traduzida variável; o literal não aparece cru no fonte"
+ },
+ "alvos": [
+  {
+   "modulo": "admin-cadastro",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-cadastro",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-cadastro",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-cadastro",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "css-texto"
+  },
+  {
+   "modulo": "admin-cadastro",
+   "passo": "p5",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-cobranca",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-cobranca",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-destinos-internos",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-destinos-internos",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-destinos-internos",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-extensoes",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-extensoes",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-inbox",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-inbox",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-inbox",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-inbox",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-inbox",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-inbox",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-inbox",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "css-texto"
+  },
+  {
+   "modulo": "admin-inbox",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-inbox",
+   "passo": "p5",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "admin-inbox",
+   "passo": "p5",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "admin-incidents",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "admin-lgpd",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 2,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-lgpd",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-lgpd",
+   "passo": "p3",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-lgpd",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-lgpd",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 4,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-marca",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-meta",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 2,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-meta",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-meta",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-meta",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-platform-admins",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-sistema",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "admin-sistema",
+   "passo": "p1",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "admin-sistema",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "admin-tenants",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "admin-tenants",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "admin-tenants",
+   "passo": "p1",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "admin-tenants",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "admin-tenants",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "admin-tenants",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "admin-tenants",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "admin-tenants",
+   "passo": "p1",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "admin-tenants",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "admin-tenants",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "admin-tenants",
+   "passo": "p1",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "admin-tenants",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "admin-usage",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "admin-users",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-users",
+   "passo": "p2",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "admin-users",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "admin-users",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-users",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 2,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-users",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "admin-users",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-users",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 3,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "admin-users",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "admin-users",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "admin-users",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 3,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "agenda",
+   "passo": "p1",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "agenda",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "api-tokens",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "api-tokens",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "api-tokens",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "api-tokens",
+   "passo": "p6",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "api-tokens",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "app-no-celular",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "atividades",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "automacoes",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "automacoes",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "automacoes",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "aviso-de-agendamento",
+   "passo": "p6",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "aviso-de-agendamento",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "aviso-de-agendamento",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 2,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "aviso-de-agendamento",
+   "passo": "p1",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "aviso-de-agendamento",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "aviso-de-agendamento",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 2,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "campanhas",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "campanhas",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "campanhas",
+   "passo": "p7",
+   "campo": "destaque",
+   "indice": 2,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "campanhas",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "campanhas",
+   "passo": "p1",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "campanhas",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "campanhas",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "campanhas",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "campanhas",
+   "passo": "p1",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "campanhas",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "campanhas",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "campanhas",
+   "passo": "p6",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "campanhas",
+   "passo": "p6",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "campanhas",
+   "passo": "p7",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "campanhas",
+   "passo": "p7",
+   "campo": "antes",
+   "indice": 3,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 2,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 3,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p2",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 2,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 3,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p2",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 2,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 3,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p3",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 2,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "casos",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 3,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "chamadas",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "chamadas",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "chamadas",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 2,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "comandas",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "comandas",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "comandas",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "comandas",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "conexoes",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "conexoes",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 2,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "conexoes",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "conexoes",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 2,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "conexoes",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "conexoes",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "conexoes",
+   "passo": "p5",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "conexoes",
+   "passo": "p5",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "conexoes",
+   "passo": "p6",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "conexoes",
+   "passo": "p6",
+   "campo": "antes",
+   "indice": 2,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "conexoes",
+   "passo": "p6",
+   "campo": "antes",
+   "indice": 3,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "conexoes",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "conexoes",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "contatos",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "contatos",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "css-texto"
+  },
+  {
+   "modulo": "contatos",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "contatos",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "contatos",
+   "passo": "p1",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "contatos",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "contatos",
+   "passo": "p3",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "contatos",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "contatos",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "contatos",
+   "passo": "p1",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "contatos",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "contatos",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "contatos",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "contatos",
+   "passo": "p5",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "contatos",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "contatos",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "conversoes",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "conversoes",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "css-texto"
+  },
+  {
+   "modulo": "conversoes",
+   "passo": "p5",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "conversoes",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "conversoes",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 4,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "conversoes",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "credenciais",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 2,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "credenciais",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "credenciais",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "dados-externos",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "dados-externos",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 3,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "dados-externos",
+   "passo": "p5",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "desempenho",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 2,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "desempenho",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "desempenho",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "desempenho",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "desempenho",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "desempenho",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 2,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "desempenho",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "desempenho",
+   "passo": "p3",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "desempenho",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "desempenho",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "distribuicao-de-atendimento",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "distribuicao-de-atendimento",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "distribuicao-de-atendimento",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "distribuicao-de-atendimento",
+   "passo": "p2",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "distribuicao-de-atendimento",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "distribuicao-de-atendimento",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "empresas",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "empresas",
+   "passo": "p4",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "empresas",
+   "passo": "p6",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "empresas",
+   "passo": "p6",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "empresas",
+   "passo": "p6",
+   "campo": "destaque",
+   "indice": 3,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "empresas",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "empresas",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "empresas",
+   "passo": "p5",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "equipe",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "equipe",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "rotulo"
+  },
+  {
+   "modulo": "equipe",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "rotulo"
+  },
+  {
+   "modulo": "equipe",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "equipe",
+   "passo": "p1",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "equipe",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "etapas-do-funil",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "css-texto"
+  },
+  {
+   "modulo": "etapas-do-funil",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "css-texto"
+  },
+  {
+   "modulo": "etapas-do-funil",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "css-texto"
+  },
+  {
+   "modulo": "etapas-do-funil",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "css-texto"
+  },
+  {
+   "modulo": "etapas-do-funil",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 2,
+   "tipo": "css-texto"
+  },
+  {
+   "modulo": "etapas-do-funil",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 7,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "financeiro",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "follow-ups",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "follow-ups",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "follow-ups",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 2,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "follow-ups",
+   "passo": "p3",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "follow-ups",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "follow-ups",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "follow-ups",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "follow-ups",
+   "passo": "p1",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "follow-ups",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 2,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p5",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 2,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 2,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p5",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p5",
+   "campo": "antes",
+   "indice": 3,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p6",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p6",
+   "campo": "antes",
+   "indice": 5,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p3",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 2,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p1",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 2,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 3,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p5",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p6",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p6",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p6",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p6",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p1",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "funis",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "inbox",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 2,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "inbox",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "inbox",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "inbox",
+   "passo": "p4",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "inbox",
+   "passo": "p4b",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "inbox",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "inbox",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "inbox",
+   "passo": "p3",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "inbox",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "inbox",
+   "passo": "p5",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "inbox",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 3,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "inbox",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "inbox",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 2,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "inbox",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "inbox",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "lgpd",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "lgpd",
+   "passo": "p5",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "lgpd",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "lgpd",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "lgpd",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "lgpd",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "lgpd",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 4,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "lgpd",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "lgpd",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "lgpd",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "lgpd",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "lgpd",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "lgpd",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "marca",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "marca",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "marca",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "marca",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "memoria",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "memoria",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "memoria",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "memoria",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "meta-ads-conexao",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "meta-ads-conexao",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "meta-ads-conexao",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "meta-ads-conexao",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 2,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "meta-ads-conexao",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "meta-ads",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "meta-ads",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "meta-ads",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "meta-de-vendas",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 2,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "meta-de-vendas",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "meta-de-vendas",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "meta-de-vendas",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "meta-de-vendas",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 3,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "modelos-de-proposta",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "modelos-de-proposta",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "modelos-de-proposta",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "organizacao",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "pessoas",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "pessoas",
+   "passo": "p3",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "pessoas",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "pessoas",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "pessoas",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 3,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "pessoas",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "pessoas",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "plano-e-cobranca",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "planos-de-tarefa",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "planos-de-tarefa",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "css-texto"
+  },
+  {
+   "modulo": "planos-de-tarefa",
+   "passo": "p5",
+   "campo": "antes",
+   "indice": 6,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "planos-de-tarefa",
+   "passo": "p7",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "css-texto"
+  },
+  {
+   "modulo": "planos-de-tarefa",
+   "passo": "p7",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "planos-de-tarefa",
+   "passo": "p5",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "css-texto"
+  },
+  {
+   "modulo": "planos-de-tarefa",
+   "passo": "p7",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "css-texto"
+  },
+  {
+   "modulo": "planos-de-tarefa",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "planos-de-tarefa",
+   "passo": "p3",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "planos-de-tarefa",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "produtos",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "produtos",
+   "passo": "p5",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "propostas-da-ia",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "propostas-da-ia",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "propostas-da-ia",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "propostas-da-ia",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "propostas-do-crm",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "propostas-do-crm",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "propostas",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "prospeccao",
+   "passo": "p5",
+   "campo": "antes",
+   "indice": 2,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "prospeccao",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 2,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "prospeccao",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "prospeccao",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "prospeccao",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "radar",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "radar",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "radar",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "radar",
+   "passo": "p2",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "radar",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "radar",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "radar",
+   "passo": "p1",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "radar",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "radar",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "radar",
+   "passo": "p3",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "radar",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "radar",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "radar",
+   "passo": "p1",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "radar",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "recursos-opcionais",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "recursos-opcionais",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 2,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "recursos-opcionais",
+   "passo": "p3",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "recursos-opcionais",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "recursos-opcionais",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "recursos-opcionais",
+   "passo": "p2",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "recursos-opcionais",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "respostas-rapidas",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "respostas-rapidas",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "respostas-rapidas",
+   "passo": "p2",
+   "campo": "destaque",
+   "indice": 2,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "respostas-rapidas",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "respostas-rapidas",
+   "passo": "p5",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "roteadores",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 3,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "roteadores",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "seguranca",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "seguranca",
+   "passo": "p3",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "tags",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "tarefas",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "tarefas",
+   "passo": "p4",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "tarefas",
+   "passo": "p5",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "tarefas",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "tarefas",
+   "passo": "p4",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "tarefas",
+   "passo": "p4",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "tarefas",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "tarefas",
+   "passo": "p1",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "tarefas",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "tipos-de-agendamento",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "tipos-de-agendamento",
+   "passo": "p1",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "tipos-de-agendamento",
+   "passo": "p2",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "tipos-de-agendamento",
+   "passo": "p6",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "webhooks",
+   "passo": "p2",
+   "campo": "clicar",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "webhooks",
+   "passo": "p3",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "webhooks",
+   "passo": "p6",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "webhooks",
+   "passo": "p1",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "texto"
+  },
+  {
+   "modulo": "webhooks",
+   "passo": "p5",
+   "campo": "antes",
+   "indice": 0,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "webhooks",
+   "passo": "p1",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "webhooks",
+   "passo": "p7",
+   "campo": "destaque",
+   "indice": 1,
+   "tipo": "role-nome"
+  },
+  {
+   "modulo": "webhooks",
+   "passo": "p7",
+   "campo": "antes",
+   "indice": 1,
+   "tipo": "role-nome"
+  }
+ ]
+}
