@@ -43,6 +43,33 @@ const abrir = (query: string) =>
   });
 
 describe("captura de identificadores Google", () => {
+  it("captura rótulos e IDs explícitos separados, sem aceitar parâmetros privados ou macros", async () => {
+    await abrir(new URLSearchParams({
+      gclid: "clique",
+      utm_campaign: "Campanha Rio",
+      utm_adset: "Grupo Barra",
+      utm_ad: "Anúncio A",
+      utm_term: "consulta",
+      utm_content: "texto",
+      campaignid: "90071992547409930001",
+      adgroupid: "456",
+      creative: "789",
+      google_customer_id: "1234567890",
+      email: "privado",
+      utm_medium: "{network}",
+    }).toString());
+    expect(mock.criar).toHaveBeenCalledWith(expect.anything(), "org", { gclid: "clique" }, {
+      utm_campaign: "Campanha Rio",
+      utm_adset: "Grupo Barra",
+      utm_ad: "Anúncio A",
+      utm_term: "consulta",
+      utm_content: "texto",
+      google_campaign_id: "90071992547409930001",
+      google_adgroup_id: "456",
+      google_ad_id: "789",
+      google_customer_id: "1234567890",
+    });
+  });
   it.each(["gclid", "gbraid", "wbraid"])(
     "leva %s do clique à captura sem renomear",
     async (tipo) => {

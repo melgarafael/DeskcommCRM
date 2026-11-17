@@ -37,6 +37,7 @@ interface Rascunho {
   nome: string;
   marca: string;
   categoria: string;
+  capacidade: string;
   preco: string;
   custo: string;
   quantidade: string;
@@ -49,6 +50,7 @@ const VAZIO: Rascunho = {
   nome: "",
   marca: "",
   categoria: "",
+  capacidade: "",
   preco: "",
   custo: "",
   quantidade: "0",
@@ -70,6 +72,7 @@ function doRascunho(
     nome: r.nome.trim(),
     ...(r.marca.trim() ? { marca: r.marca.trim() } : {}),
     ...(r.categoria.trim() ? { categoria: r.categoria.trim() } : {}),
+    ...(r.capacidade.trim() ? { capacidade: r.capacidade.trim() } : {}),
     preco_cents,
     custo_cents,
     controla_estoque: r.controla_estoque,
@@ -223,7 +226,9 @@ export function ProdutosClient({
   buscaInicial,
   urlsDasFotos,
   podeEditar,
+  capacidadeLigada = false,
   apresentacaoLigada = false,
+  fonteDoFeed = null,
   textos,
 }: {
   /** A página atual, já filtrada no servidor (ver `lib/catalogo/busca-da-tela.ts`). */
@@ -235,7 +240,11 @@ export function ProdutosClient({
   buscaInicial: string;
   urlsDasFotos: Record<string, string>;
   podeEditar: boolean;
+  /** A chave da empresa (`capacidade_do_produto`). Desligada, o campo não aparece. */
+  capacidadeLigada?: boolean;
   apresentacaoLigada?: boolean;
+  /** A seção do módulo `catalogo_por_feed`; `null` com o módulo desligado. */
+  fonteDoFeed?: React.ReactNode;
   textos: Textos;
 }) {
   const t = useT();
@@ -346,6 +355,8 @@ export function ProdutosClient({
         <h1 className="text-2xl font-semibold">{textos.titulo}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{textos.subtitulo}</p>
       </header>
+
+      {fonteDoFeed}
 
       <div className="mb-4 flex items-center gap-3">
         <input
@@ -483,6 +494,19 @@ export function ProdutosClient({
                 className="mt-1 h-9 w-full rounded-md border px-3"
               />
             </label>
+            {capacidadeLigada ? (
+              <label className="text-sm">
+                {t("Capacidade")} <span className="text-muted-foreground">{t("(opcional)")}</span>
+                <input
+                  value={rascunho.capacidade}
+                  onChange={(e) => setRascunho({ ...rascunho, capacidade: e.target.value })}
+                  placeholder={t("Ex.: 128GB")}
+                  maxLength={60}
+                  className="mt-1 h-9 w-full rounded-md border px-3"
+                  data-testid="produto-capacidade"
+                />
+              </label>
+            ) : null}
             <label className="text-sm">
               {t("Preço de venda")}
               <input
@@ -597,6 +621,7 @@ export function ProdutosClient({
                 <p className="text-xs text-muted-foreground">
                   {p.codigo}
                   {p.marca ? ` · ${p.marca}` : ""}
+                  {capacidadeLigada && p.capacidade ? ` · ${p.capacidade}` : ""}
                   {p.controla_estoque
                     ? ` · ${p.quantidade} ${t("em estoque")}`
                     : ` · ${t("sem controle de estoque")}`}
@@ -654,6 +679,7 @@ export function ProdutosClient({
               <EdicaoDoProduto
                 key={p.id}
                 produto={p}
+                capacidadeLigada={capacidadeLigada}
                 urlsDasFotos={urlsDasFotos}
                 apresentacaoLigada={apresentacaoLigada}
                 aoFechar={() => setEditando(null)}

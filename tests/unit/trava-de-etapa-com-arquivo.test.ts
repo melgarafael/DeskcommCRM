@@ -123,8 +123,10 @@ function bancoFalso(
     if (tabela === "crm_stages") {
       const chain = {
         select: () => chain,
-        eq: (_coluna: string, id: string) => {
-          (chain as { id?: string }).id = id;
+        // A rota filtra `.eq("id", …).eq("organization_id", …)`: só o filtro `id`
+        // define a etapa. O da organização não pode sobrescrever o id.
+        eq: (coluna: string, valor: string) => {
+          if (coluna === "id") (chain as { id?: string }).id = valor;
           return chain;
         },
         maybeSingle: async () => ({

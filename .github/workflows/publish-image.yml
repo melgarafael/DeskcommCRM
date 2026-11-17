@@ -291,6 +291,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             APP_VERSION=${{ steps.ver.outputs.value }}
+            NODE_HEAP_MB=6144
           # Cache por imagem: cada uma tem camadas diferentes, e um escopo único
           # faria uma sobrescrever o cache da outra a cada run.
           cache-from: type=gha,scope=${{ matrix.name }}-${{ matrix.arch }}
@@ -406,6 +407,7 @@ jobs:
           tags: deskcomm-smoke:pr
           build-args: |
             APP_VERSION=smoke
+            NODE_HEAP_MB=6144
           # Mesmo escopo de cache do build-and-push: as camadas são idênticas,
           # então na prática este job reaproveita aquele build em vez de repeti-lo.
           cache-from: |

@@ -1,15 +1,23 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
 import { audit } from "@/lib/audit";
 import type { AuditAction } from "@/lib/audit/actions";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import {
+  TETO_DE_CLIENTES_POR_RODADA,
+  previaDaAnaliseDoHistoricoSchema,
+  type PreviaDaAnaliseDoHistorico,
+} from "@/lib/channels/historico/analise";
 import { calcularPrevia, lerSessaoDoHistorico, type SessaoDoHistorico } from "@/lib/channels/historico/previa";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { extractBearer } from "@/lib/mcp/auth";
 
 export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ id: string }> };
@@ -41,13 +49,13 @@ const ACERVO_DESLIGADO = "Ligue 'Guardar o histórico' e conecte o número de no
 
 /** A sessão da org, ou a resposta de erro (404 sem sessão, 500 se o banco falhou). */
 async function sessaoOuFalha(
-  admin: ReturnType<typeof createAdminClient>,
+  db: SupabaseClient,
   orgId: string,
   id: string,
   requestId: string,
 ): Promise<{ sessao: SessaoDoHistorico } | { resposta: Response }> {
   try {
-    const sessao = await lerSessaoDoHistorico(admin, orgId, id);
+    const sessao = await lerSessaoDoHistorico(db, orgId, id);
     if (!sessao) return { resposta: fail("not_found", "Canal não encontrado.", 404, { requestId }) };
     return { sessao };
   } catch (err) {
@@ -73,6 +81,14 @@ const corpo = z.discriminatedUnion("acao", [
   z.object({ acao: z.literal("importar"), importacaoId: z.uuid() }),
   z.object({ acao: z.literal("cancelar"), importacaoId: z.uuid() }),
   z.object({ acao: z.literal("retomar"), importacaoId: z.uuid() }),
+  // `clientesConfirmados` é a contagem que a tela MOSTROU e o administrador
+  // confirmou (decisão 315, alternativa A). Sem ela não há análise, e nunca se
+  // enfileira mais do que ela — nem mais que o teto da rodada.
+  z.object({
+    acao: z.literal("analisar"),
+    importacaoId: z.uuid(),
+    clientesConfirmados: z.number().int().min(1).max(TETO_DE_CLIENTES_POR_RODADA),
+  }),
 ]);
 
 /**
@@ -110,33 +126,74 @@ async function haImportacaoEmAndamento(
   return { ocupado: data !== null };
 }
 
-export async function GET(_req: NextRequest, { params }: Context): Promise<Response> {
+/**
+ * A prévia da rodada de análise (`fn_previa_historico_analise`, migration 9350):
+ * contagem limitada ao teto, o que fica para a próxima, os pulados e a
+ * estimativa de custo contra o orçamento mensal que já existe.
+ */
+async function lerPreviaDaAnalise(
+  db: SupabaseClient,
+  orgId: string,
+  importacaoId: string,
+): Promise<{ previa: PreviaDaAnaliseDoHistorico } | { erro: true }> {
+  const { data, error } = await db.rpc("fn_previa_historico_analise", {
+    p_org: orgId,
+    p_importacao: importacaoId,
+    p_limite: TETO_DE_CLIENTES_POR_RODADA,
+  });
+  const lida = previaDaAnaliseDoHistoricoSchema.safeParse(data);
+  if (error || !lida.success) return { erro: true };
+  return { previa: lida.data };
+}
+
+export async function GET(req: NextRequest, { params }: Context): Promise<Response> {
   const requestId = randomUUID();
+
+  // DOIS PORTÕES, UM CORPO (Spec 33, R3). O token `dsk_…` (escopo `mcp:read`,
+  // papel admin) entra por `resolveAuthDual`; a sessão segue pelo `requireRole`
+  // de sempre. A organização vem da linha do token ou da sessão, nunca do path.
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "channel_sessions",
+      role: "admin",
+      scope: "mcp:read",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "channel_sessions", requestId);
+    if (teto) return teto;
+    return lerHistorico(authz.supabase, authz.organizationId, (await params).id, requestId);
+  }
+
   const auth = await requireRole("admin", { requestId, resource: "channel_sessions", allowPlatformAdmin: "leitura" });
   if (!auth.ok) return auth.response;
-  const { id } = await params;
+  return lerHistorico(createAdminClient(), auth.org.orgId, (await params).id, requestId);
+}
+
+async function lerHistorico(
+  db: SupabaseClient,
+  organizationId: string,
+  id: string,
+  requestId: string,
+): Promise<Response> {
   if (!z.uuid().safeParse(id).success) return fail("validation_failed", "Canal inválido.", 422, { requestId });
-  const admin = createAdminClient();
-  const lida = await sessaoOuFalha(admin, auth.org.orgId, id, requestId);
+  const lida = await sessaoOuFalha(db, organizationId, id, requestId);
   if ("resposta" in lida) return lida.resposta;
   const { sessao } = lida;
-  // A manual mais recente (a de sempre) e, à parte, a recuperação da queda que
-  // está aberta. A tela precisa das duas: a manual fica bloqueada enquanto a da
-  // queda espera ou roda, e sem a segunda a tela não diria por quê.
-  const { data, error } = await admin
+  const { data, error } = await db
     .from(TABELA)
     .select("*")
-    .eq("organization_id", auth.org.orgId)
+    .eq("organization_id", organizationId)
     .eq("channel_session_id", id)
     .eq("origem", "manual")
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (error) return fail("internal_error", "Não foi possível ler a importação.", 500, { requestId });
-  const { data: daQueda, error: erroDaQueda } = await admin
+  const { data: daQueda, error: erroDaQueda } = await db
     .from(TABELA)
     .select("*")
-    .eq("organization_id", auth.org.orgId)
+    .eq("organization_id", organizationId)
     .eq("channel_session_id", id)
     .eq("origem", "queda")
     .in("status", [...EM_ANDAMENTO])
@@ -144,8 +201,34 @@ export async function GET(_req: NextRequest, { params }: Context): Promise<Respo
     .limit(1)
     .maybeSingle();
   if (erroDaQueda) return fail("internal_error", "Não foi possível ler a importação.", 500, { requestId });
+  let analise: Record<string, number> | null = null;
+  let previaAnalise: PreviaDaAnaliseDoHistorico | null = null;
+  if (data && (data as { status?: string }).status === "concluida") {
+    const importacaoId = (data as { id: string }).id;
+    const { data: resumo, error: erroDoResumo } = await db.rpc("fn_resumo_historico_analise", {
+      p_org: organizationId,
+      p_importacao: importacaoId,
+    });
+    if (erroDoResumo) return fail("internal_error", "Não foi possível ler a análise.", 500, { requestId });
+    analise = (resumo ?? null) as Record<string, number> | null;
+    // A contagem e a estimativa que a tela mostra ANTES da confirmação. Durante
+    // uma rodada a tela repete o GET a cada 10 s e não oferece rodada nova:
+    // a prévia (que lê todas as mensagens da importação) espera ela acabar.
+    const analisando = (analise?.pending ?? 0) + (analise?.running ?? 0) > 0;
+    if (!analisando) {
+      const lida = await lerPreviaDaAnalise(db, organizationId, importacaoId);
+      if ("erro" in lida) return fail("internal_error", "Não foi possível ler a análise.", 500, { requestId });
+      previaAnalise = lida.previa;
+    }
+  }
   return ok(
-    { guardar_historico: sessao.guardarHistorico, importacao: data ?? null, recuperacao_da_queda: daQueda ?? null },
+    {
+      guardar_historico: sessao.guardarHistorico,
+      importacao: data ?? null,
+      recuperacao_da_queda: daQueda ?? null,
+      analise,
+      previa_analise: previaAnalise,
+    },
     { requestId },
   );
 }
@@ -209,6 +292,62 @@ export async function POST(req: NextRequest, { params }: Context): Promise<Respo
     const importacao = data as { id: string };
     auditar("channel.historico_previa", { importacao_id: importacao.id, dias: pedido.dias, previa });
     return ok({ importacao }, { requestId });
+  }
+
+  if (pedido.acao === "analisar") {
+    const { data: importacao, error: erroDaImportacao } = await admin
+      .from(TABELA)
+      .select("id, status, origem")
+      .eq("id", pedido.importacaoId)
+      .eq("organization_id", orgId)
+      .eq("channel_session_id", id)
+      .maybeSingle();
+    if (erroDaImportacao) return fail("internal_error", "Não foi possível ler a importação.", 500, { requestId });
+    if (!importacao) return fail("not_found", "Importação não encontrada.", 404, { requestId });
+    if (importacao.status !== "concluida" || importacao.origem !== "manual") {
+      return fail("invalid_state_transition", "Somente uma importação manual concluída pode ser analisada.", 409, { requestId });
+    }
+    const lida = await lerPreviaDaAnalise(admin, orgId, pedido.importacaoId);
+    if ("erro" in lida) return fail("internal_error", "Não foi possível ler a análise.", 500, { requestId });
+    const { previa } = lida;
+    // Uma rodada por vez: duas abas (ou dois cliques) somariam duas rodadas e
+    // furariam o teto que o administrador confirmou.
+    if (previa.em_andamento > 0) {
+      return fail("state_conflict", "Uma rodada de análise ainda está em andamento.", 409, { requestId });
+    }
+    if (previa.nesta_rodada === 0) {
+      return fail("state_conflict", "Não há clientes para analisar nesta importação.", 409, { requestId });
+    }
+    const { data: resumo, error: erroDoResumo } = await admin.rpc("fn_resumo_historico_analise", {
+      p_org: orgId,
+      p_importacao: pedido.importacaoId,
+    });
+    if (erroDoResumo) return fail("internal_error", "Não foi possível ler a análise.", 500, { requestId });
+    // O limite é o que o administrador confirmou. Se a contagem cresceu desde a
+    // tela, o excedente fica para a próxima rodada; se diminuiu, vai o que há.
+    const { data: enfileiradas, error } = await admin.rpc("fn_enqueue_historico_analise", {
+      p_org: orgId,
+      p_importacao: pedido.importacaoId,
+      p_limite: pedido.clientesConfirmados,
+    });
+    if (error) return fail("internal_error", "Não foi possível iniciar a análise.", 500, { requestId });
+    const clientesNaRodada = Number(enfileiradas ?? 0);
+    auditar("channel.historico_analysis_started", {
+      importacao_id: pedido.importacaoId,
+      clientes_confirmados: pedido.clientesConfirmados,
+      clientes_na_rodada: clientesNaRodada,
+      clientes_para_a_proxima_rodada: Math.max(previa.nesta_rodada + previa.restantes - clientesNaRodada, 0),
+      pulados_por_recusa_de_ia: previa.pulados_recusa,
+      pulados_por_estado_mais_novo: previa.pulados_mais_novos,
+      teto_da_rodada: TETO_DE_CLIENTES_POR_RODADA,
+      estimativa_cents: previa.estimativa_cents,
+      // O gasto REAL das rodadas anteriores desta importação (llm_calls pelos
+      // jobs dela): cada rodada nova registra quanto as anteriores custaram.
+      gasto_ate_aqui_cents: Number((resumo as { gasto_cents?: number } | null)?.gasto_cents ?? 0),
+      gasto_do_mes_cents: previa.gasto_do_mes_cents,
+      teto_mensal_cents: previa.teto_mensal_cents,
+    });
+    return ok({ importacao, clientes_na_rodada: clientesNaRodada }, { requestId });
   }
 
   const t = TRANSICOES[pedido.acao];

@@ -205,6 +205,51 @@ describe("as ações de uma automação", () => {
   });
 });
 
+/**
+ * ─── A BUSCA DO SELETOR IGNORA ACENTO (#4481) ──────────────────────────────
+ *
+ * O filtro do seletor comparava `.toLowerCase()` com `.toLowerCase()`: dobra a
+ * caixa, não o acento. `lower('Á')` continua `'á'`, que não é `'a'` — então só
+ * casava com acento e grafia idênticos, nos dois sentidos. Em português isso é
+ * o caso comum: a chave nasce sem acento (`saudacao`) e o rótulo nasce com ele
+ * (« como está no cadastro »), e o atendente digita das duas formas.
+ *
+ * A regra é a mesma do resto do repo (`termoSemAcento`), e o teste cobra as
+ * duas direções no MESMO caso: sem acento achando o acentuado e com acento
+ * achando o sem acento.
+ */
+describe("a busca do seletor de variável", () => {
+  const ROTULO_DO_NOME = "Nome do contato, como está no cadastro";
+
+  it("digitar sem acento acha o item acentuado, e digitar com acento acha o item sem acento", async () => {
+    const user = userEvent.setup();
+    render(noIdioma("pt-BR", <SeletorDeVariavel fonte="campanha" onInserir={() => {}} />));
+    await user.click(screen.getByRole("button", { name: ABRIR_SELETOR.pt }));
+    const lista = screen.getByRole("dialog", { name: ABRIR_SELETOR.pt });
+    const campo = within(lista).getByRole("textbox");
+    const itemDeChave = (chave: string) =>
+      within(lista).getByRole("button", { name: (nome) => nome.includes(`{{${chave}}}`) });
+
+    // A chave é `saudacao` (sem acento) e nada no rótulo repete esse termo.
+    await user.type(campo, "saudacao");
+    expect(itemDeChave("saudacao")).toBeTruthy();
+
+    // Sem acento no termo, o rótulo que escreve « está » tem de aparecer.
+    await user.clear(campo);
+    await user.type(campo, "esta");
+    expect(
+      within(lista).getByRole("button", {
+        name: (nome) => nome.includes("{{nome}}") && nome.includes(ROTULO_DO_NOME),
+      }),
+    ).toBeTruthy();
+
+    // O INVERSO: acento digitado, chave sem acento.
+    await user.clear(campo);
+    await user.type(campo, "saudação");
+    expect(itemDeChave("saudacao")).toBeTruthy();
+  });
+});
+
 describe("o cartão do e-mail no designer de automação", () => {
   const caixa = (idioma: Idioma, config: Record<string, unknown>) => {
     // Só o que o cartão lê; o resto das props do React Flow não muda o que ele desenha.

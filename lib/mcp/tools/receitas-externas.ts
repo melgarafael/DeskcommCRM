@@ -25,6 +25,8 @@ import { z } from "zod";
 import { redigirArgsReceita } from "@/lib/ai/runtime/serialize";
 import { abrirAcesso } from "@/lib/external-db/acesso";
 import { lerReceitasDoBanco } from "@/lib/external-db/receitas/instancias";
+import { orientacaoDeInteresse } from "@/lib/external-db/receitas/destino-do-interesse";
+import { nomesDoDestinoValido } from "@/lib/external-db/receitas/destino-no-banco";
 import { limiteDaReceita } from "@/lib/external-db/receitas/limite";
 import { receitaDe } from "@/lib/external-db/receitas/registro";
 import type { McpContext, McpToolDefinition } from "@/lib/mcp/types";
@@ -83,23 +85,73 @@ function motivoDoVazioReceita(resultado: unknown): string | null {
 function resolverConexaoReceita(
   ctx: McpContext,
   connectionId?: string,
-): { ok: true; connectionId: string } | { ok: false; resposta: Record<string, unknown> } {
-  // A resolução da conexão não é feita aqui (não temos a lista de conexões sem
-  // abrir acesso); a conexão vem do contexto do turno. O model pode passar
-  // connection_id; sem ele, assumimos a única ativa — mas não temos como saber
-  // quantas há sem consultar o banco. Para não vazar organização, a chamada
-  // exige connection_id quando há dúvida. Na prática, o agente usa a conexão
-  // que já conhece do describe.
-  if (!connectionId) {
+): Promise<{ ok: true; connectionId: string } | { ok: false; resposta: Record<string, unknown> }> {
+  // Caminho EXPLÍCITO: o id que o modelo mandou manda — comportamento de sempre,
+  // com uma única consulta (a do handler, por id). Nada de lista antes.
+  if (connectionId) return Promise.resolve({ ok: true, connectionId });
+
+  // Sem id: a conexão é ESCOLHIDA aqui, nunca adivinhada pelo modelo.
+  //
+  // #4763: antes esta função recusava sempre, sem contar nada — respondia
+  // `conexao_ambigua` mesmo com UMA conexão ativa, e o modelo gastava duas
+  // chamadas por turno (`crm_describe_external_data` + repetição) só para
+  // descobrir um id que o servidor podia resolver. A conta é sobre as conexões
+  // ATIVAS: `enabled = false` está desligada e não é candidata — contá-la
+  // recusaria uma empresa que tem exatamente uma conexão em uso.
+  return (async () => {
+    const { data, error } = await ctx.supabase
+      .from("external_db_connections")
+      .select("id, label, db_type, enabled")
+      .eq("organization_id", ctx.organizationId)
+      .order("label", { ascending: true });
+
+    if (error) {
+      return {
+        ok: false as const,
+        resposta: {
+          erro: "falha_na_leitura",
+          mensagem: "não foi possível ler as conexões de banco externo.",
+        },
+      };
+    }
+
+    const todas = (data ?? []) as Array<{
+      id: string;
+      label: string;
+      db_type: string;
+      enabled: boolean;
+    }>;
+    const possiveis = todas.filter((c) => c.enabled);
+
+    if (possiveis.length === 0) {
+      // Desligada não é "ambígua" nem "inexistente": tem motivo próprio, e a
+      // mensagem diz qual é para o atendente saber o que pedir ao administrador.
+      return {
+        ok: false as const,
+        resposta: {
+          erro: "sem_conexao",
+          mensagem:
+            todas.length > 0
+              ? "a conexão de banco externo desta empresa está desativada; um administrador precisa ativá-la em Integração de dados."
+              : "não há nenhum banco externo conectado e ativo. Peça para um administrador cadastrar em Integração de dados.",
+        },
+      };
+    }
+    if (possiveis.length === 1) {
+      return { ok: true as const, connectionId: possiveis[0]!.id };
+    }
+
+    // Duas ou mais ATIVAS: aí sim é ambiguidade de verdade, e a recusa diz
+    // quantas são — o modelo escolhe sem uma chamada de descoberta.
     return {
-      ok: false,
+      ok: false as const,
       resposta: {
         erro: "conexao_ambigua",
-        mensagem: "informe a connection_id do banco externo (use crm_describe_external_data).",
+        mensagem: `há ${possiveis.length} bancos conectados e ativos; diga qual usar pelo connection_id.`,
+        conexoes: possiveis.map((c) => ({ id: c.id, label: c.label, motor: c.db_type })),
       },
     };
-  }
-  return { ok: true, connectionId };
+  })();
 }
 
 export const crmConsultarReceita: McpToolDefinition<typeof consultaReceitaShape> = {
@@ -118,7 +170,7 @@ export const crmConsultarReceita: McpToolDefinition<typeof consultaReceitaShape>
   handler: async (input, ctx) => {
     const { acao, connection_id, instancia_id, busca } = input;
 
-    const resolvida = resolverConexaoReceita(ctx, connection_id);
+    const resolvida = await resolverConexaoReceita(ctx, connection_id);
     if (!resolvida.ok) return resolvida.resposta;
 
     const admin = ctx.supabase;
@@ -268,8 +320,14 @@ export const crmConsultarReceita: McpToolDefinition<typeof consultaReceitaShape>
       return { erro: "falha_na_leitura", mensagem: "não foi possível consultar o banco de origem agora." };
     }
 
+    // R5b: para onde vai o interesse do cliente num destes itens. Lido na hora (o
+    // funil pode ter sido arquivado), com a organização do contexto.
+    const destino = instancia.destino_do_interesse ?? null;
+    const nomes = destino ? await nomesDoDestinoValido(admin, ctx.organizationId, destino) : null;
+
     return {
       instancia: { id: instancia.id, receita: instancia.receita, rotulo: instancia.rotulo },
+      interesse: orientacaoDeInteresse(instancia.receita, destino, nomes),
       colunas: resultado.colunas,
       linhas: resultado.linhas,
       linhas_devolvidas: resultado.linhas.length,

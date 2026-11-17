@@ -241,7 +241,12 @@ export function PipelinePageClient({
     const settings = data?.pipeline.settings;
     return (motivo: string) => categoriaDoMotivo(motivo, settings);
   }, [data?.pipeline.settings]);
-  const filteredLeads = data ? applyFilters(data.leads, filters, { categoriaDo }) : [];
+  // `useMemo` (#4788): um array novo a cada render (tecla da busca, clique de
+  // seleção) chegava ao quadro como `leads` novo e redesenhava todos os cards.
+  const filteredLeads = useMemo(
+    () => (data ? applyFilters(data.leads, filters, { categoriaDo }) : []),
+    [data, filters, categoriaDo],
+  );
   // NÃO é a conta do FilterBar: o seletor de filtro lista as três caixas
   // (`marcadoresDoCard`: negócio, contato e conversa), e esta lista, a da tag em
   // lote, só `lead.tags` — é lá que a ação em lote grava (#852). O `useMemo` é o

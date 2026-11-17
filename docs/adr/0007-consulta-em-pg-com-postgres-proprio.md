@@ -22,7 +22,7 @@ Os três incidentes que motivam a issue confirmam que a peça a trocar é uma s�
 
 - cota de egress de 5 GB/mês no plano free (`docs/runbooks/custo-e-cota-do-supabase.md:1-4`);
 - projeto caindo com `PGRST002`/`522` por falta de compute
-  (`docs/runbooks/supabase-compute-insuficiente-free.md:17-24`);
+  (`docs/runbooks/supabase-sem-memoria-no-free.md`);
 - gateway do Supabase reexecutando requisições antigas (`docs/runbooks/postgrest-replay-do-gateway.md`).
 
 Os três são sintomas de **PostgREST + infraestrutura gerenciada**. Nenhum deles melhora por trocar o

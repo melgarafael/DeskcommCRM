@@ -77,6 +77,7 @@ trap cleanup EXIT
 echo "==> subindo $IMAGE como $CONTAINER (porta escolhida pelo daemon)"
 docker run -d --rm --name "$CONTAINER" -p "127.0.0.1::5432" \
   --label "deskcomm.harness=update-com-dados" \
+  --label "deskcomm.worktree=$ROOT" \
   -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres "$IMAGE" >/dev/null
 
 # `pg_isready` e `psql` sem `-h` mentem aqui: o initdb sobe um servidor
