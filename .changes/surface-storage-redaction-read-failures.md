@@ -1,6 +1,6 @@
 ---
 impacto: nada_mudou
 secao: corrigido
-titulo: Report a failed media-removal queue read as a failed cron run
+titulo: Falha ao ler a fila de remoção de mídia passa a aparecer como rodada de cron com erro
 ---
-When the media-removal worker cannot read its queue, the cron now returns an error instead of reporting a successful empty batch. The scheduler can report the failed run, and its request ID links to the application log. Pending files remain queued for a later attempt. Credit: @samirhvbr.
+Quando o worker que remove as mídias apagadas (LGPD e retenção) não consegue ler a fila, o cron agora responde erro em vez de relatar um lote vazio com sucesso. O agendador passa a registrar a rodada como falha, e o identificador da requisição liga a resposta ao log da aplicação. Os arquivos pendentes continuam na fila para a próxima tentativa. Crédito: @samirhvbr.
