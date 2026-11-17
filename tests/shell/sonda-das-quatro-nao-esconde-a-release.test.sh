@@ -82,6 +82,20 @@ echo '── 5. Sem versão instalada não há controle: anuncia (comportamento 
 R="$(veredito "$APP:1.109.0" 1.109.0)"
 check 'veredito é "indisponivel"' test "${R%%|*}" = "indisponivel"
 
+echo '── 6. Chamada como o agent.sh chama, dentro de $(...): a lista não se perde'
+# O agent.sh lê o veredito por `$(...)`, que roda num subshell: a variável
+# global preenchida lá dentro some ao voltar. O caso 2 chama direto e não veria.
+TRECHO="$(sed -n '/^    R_IMAGENS=/,/^    SEM_RESPOSTA=/p' "$KIT_DIR/agent.sh")"
+check 'o trecho do agent.sh foi achado' grep -qF 'veredito_das_imagens_da_release' <<<"$TRECHO"
+L="$(PATH="$WORK/bin:$PATH" EXISTEM="$APP:1.109.0 $SCHED:1.109.0 $VOZ:1.109.0 $WORKER:1.108.0" \
+  CURRENT_TAG=v1.108.0 LATEST_TAG=v1.109.0 bash -c '
+    source "$0/_common.sh" >/dev/null 2>&1
+    '"$TRECHO"'
+    printf "%s|%s" "$VEREDITO_IMAGENS" "$SEM_RESPOSTA"
+  ' "$KIT_DIR")"
+check 'veredito é "incompleta"' test "${L%%|*}" = "incompleta"
+check 'a linha de log leva a imagem ausente' grep -qF 'deskcomm-worker:ausente' <<<"${L#*|}"
+
 echo
 if [ "$FAILS" -gt 0 ]; then
   printf '✗ %s verificação(ões) falharam\n' "$FAILS"

@@ -283,12 +283,16 @@ if [ -n "$LATEST_TAG" ] && [ "$LATEST_TAG" != "$CURRENT" ]; then
   # registro fora do ar, e uma VPS com rede ruim não pode ficar sem
   # atualização para sempre, em silêncio.
   if [ -n "$LATEST_TAG" ]; then
-    VEREDITO_IMAGENS="$(veredito_das_imagens_da_release "${LATEST_TAG#v}" "${CURRENT_TAG#v}")"
+    # A lista sai do MESMO subshell que o veredito: `$(...)` roda num processo
+    # filho, e IMAGENS_SEM_RESPOSTA preenchida lá dentro some ao voltar.
+    R_IMAGENS="$(veredito_das_imagens_da_release "${LATEST_TAG#v}" "${CURRENT_TAG#v}"; printf '|%s' "${IMAGENS_SEM_RESPOSTA# }")"
+    VEREDITO_IMAGENS="${R_IMAGENS%%|*}"
+    SEM_RESPOSTA="${R_IMAGENS#*|}"
     if [ "$VEREDITO_IMAGENS" = "incompleta" ]; then
       # Só cai aqui quando alguma imagem está PROVADAMENTE ausente (a tag
       # instalada responde e a nova não). Falha de sonda já não chega como
       # `incompleta` — vira `indisponivel`, que anuncia.
-      log_err "não anunciei a ${LATEST_TAG}: release incompleta — ${IMAGENS_SEM_RESPOSTA# }"
+      log_err "não anunciei a ${LATEST_TAG}: release incompleta — ${SEM_RESPOSTA}"
       LATEST_TAG=""
     fi
   fi
