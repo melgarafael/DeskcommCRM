@@ -80537,8 +80537,8 @@ $$;
 revoke execute on function public.fn_mcp_oauth_registrar_cliente(text, bytea, text, text[], text, integer) from public, anon, authenticated;
 grant execute on function public.fn_mcp_oauth_registrar_cliente(text, bytea, text, text[], text, integer) to service_role;
 
--- ---- a campanha de entrada declara quem atende a conversa (migration 9409) ----
--- Espelho idempotente da 9409 (issue #4024). NÃO cria função nem gatilho: fica
+-- ---- a campanha de entrada declara quem atende a conversa (migration 9415) ----
+-- Espelho idempotente da 9415 (issue #4024). NÃO cria função nem gatilho: fica
 -- acima da VARREDURA anon por precaução, não por necessidade — a varredura só
 -- cura o que veio antes dela, e nenhum `create function` mora aqui.
 --
@@ -80568,7 +80568,7 @@ begin
 end $$;
 
 comment on column public.conversations.campaign_entry_agent_id is
-  'Agente declarado pela campanha de ENTRADA (frase do anúncio) cujo match trouxe este contato. Lido por resolve-turn-agent num degrau acima do roteador, em todo turno desta conversa. Nulo = conversa não veio de campanha de entrada. Migration 9409.';
+  'Agente declarado pela campanha de ENTRADA (frase do anúncio) cujo match trouxe este contato. Lido por resolve-turn-agent num degrau acima do roteador, em todo turno desta conversa. Nulo = conversa não veio de campanha de entrada. Migration 9415.';
 
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.

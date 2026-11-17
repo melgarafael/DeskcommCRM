@@ -58,7 +58,13 @@ import { loadActiveRouter, type LoadedRouter } from './router-config';
 import { transferirAgenteDaConversa } from './transferir-agente';
 
 vi.mock('./router-config', () => ({ loadActiveRouter: vi.fn() }));
-vi.mock('./agente-da-campanha', () => ({ agenteDaCampanhaDaConversa: vi.fn() }));
+// O módulo ganhou um segundo degrau (#4024): o dublê de módulo precisa expor os
+// DOIS nomes — mock de módulo que esquece um export faz o import virar `undefined`,
+// e o turno cai no catch com um TypeError que não tem nada a ver com este caso.
+vi.mock('./agente-da-campanha', () => ({
+  agenteDaCampanhaDaConversa: vi.fn(),
+  agenteDaCampanhaDeEntrada: vi.fn(),
+}));
 vi.mock('./agent-config', () => ({
   loadPublishedAgentConfigById: vi.fn(),
   loadPublishedAgentConfig: vi.fn(),
@@ -247,6 +253,9 @@ function depsDoTurno(classifyIntent: ReturnType<typeof vi.fn>, log = { info: vi.
     consultarJev: jevDesligado(),
     temIaDeSempre: vi.fn().mockResolvedValue(true),
     agenteDaCampanha: vi.fn().mockResolvedValue(null),
+    // Nenhuma conversa destes casos veio de anúncio (#4024) — o degrau devolve
+    // nulo e a régua do roteador é a que este arquivo mede.
+    agenteDaCampanhaDeEntrada: vi.fn().mockResolvedValue(null),
   } as never;
 }
 

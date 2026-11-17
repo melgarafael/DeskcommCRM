@@ -688,7 +688,7 @@ async function avaliarCampanha(admin: Admin, entrada: EntradaDeMensagem): Promis
  * depois, na mesma conversa, não troca o agente que já abriu o atendimento.
  *
  * Best-effort, como o resto do arquivo: falha aqui vira log e o turno segue pelo
- * agente do número — o lado seguro. A FK composta da 9409 ainda recusa, no
+ * agente do número — o lado seguro. A FK composta da 9415 ainda recusa, no
  * banco, um `agent_id` de OUTRA organização (a coluna nem é gravada, e o
  * `resolve-turn-agent` não tem como escolhê-lo).
  */

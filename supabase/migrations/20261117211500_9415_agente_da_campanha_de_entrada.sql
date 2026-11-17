@@ -1,6 +1,6 @@
 -- manifest: **A frase do anúncio leva o `agent_id` da campanha de entrada até a conversa que ela trouxe (issue #4024).** Uma coluna nulável em `conversations`: `campaign_entry_agent_id` — o agente declarado pela campanha cujo `match` casou a mensagem que trouxe o contato. A FK é COMPOSTA `(organization_id, campaign_entry_agent_id)` → `ai_agents(organization_id, id)` com `on delete set null (campaign_entry_agent_id)`: agente de OUTRA organização não pode nem ser gravado, e apagar o agente devolve a conversa à régua do número em vez de explodir o `delete` (sem a lista de colunas, o SET NULL tentaria anular `organization_id`, que é NOT NULL). Sem backfill e sem default: conversa que já existe e canal que não usa campanha de entrada continuam, byte a byte, com quem atendia antes.
 
--- 9409 — a campanha de ENTRADA declara quem atende a conversa.
+-- 9415 — a campanha de ENTRADA declara quem atende a conversa.
 --
 -- ═══ O que estava faltando ═══
 --
@@ -59,4 +59,4 @@ begin
 end $$;
 
 comment on column public.conversations.campaign_entry_agent_id is
-  'Agente declarado pela campanha de ENTRADA (frase do anúncio) cujo match trouxe este contato. Lido por resolve-turn-agent num degrau acima do roteador, em todo turno desta conversa. Nulo = conversa não veio de campanha de entrada. Migration 9409.';
+  'Agente declarado pela campanha de ENTRADA (frase do anúncio) cujo match trouxe este contato. Lido por resolve-turn-agent num degrau acima do roteador, em todo turno desta conversa. Nulo = conversa não veio de campanha de entrada. Migration 9415.';
