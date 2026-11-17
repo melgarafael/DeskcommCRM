@@ -3577,17 +3577,15 @@ END IF; END $baseline_guard$;
 
 -- #4802 (item 3): SET NULL, e não CASCADE — apagar um negócio NÃO pode apagar a
 -- timeline comercial dele. A linha da atividade sobrevive com `contact_id`, que é
--- por onde o histórico continua legível (ver a migration 9412).
-ALTER TABLE ONLY "public"."crm_lead_activities"
-    ALTER COLUMN "lead_id" DROP NOT NULL;
+-- por onde o histórico continua legível (o passo para quem JÁ tem a constraint
+-- com CASCADE é o bloco da migration 9412, no apêndice: aqui a guarda só cria).
 DO $baseline_guard$ BEGIN
-IF EXISTS (SELECT 1 FROM pg_constraint
-                WHERE conname = 'crm_lead_activities_lead_id_fkey' AND conrelid = '"public"."crm_lead_activities"'::regclass) THEN
-ALTER TABLE ONLY "public"."crm_lead_activities"
-    DROP CONSTRAINT "crm_lead_activities_lead_id_fkey";
-END IF; END $baseline_guard$;
+IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                WHERE conname = 'crm_lead_activities_lead_id_fkey' AND conrelid = '"public"."crm_lead_activities"'::regclass)
+   AND to_regclass('"public"."crm_lead_activities_lead_id_fkey"') IS NULL THEN
 ALTER TABLE ONLY "public"."crm_lead_activities"
     ADD CONSTRAINT "crm_lead_activities_lead_id_fkey" FOREIGN KEY ("lead_id") REFERENCES "public"."crm_leads"("id") ON DELETE SET NULL;
+END IF; END $baseline_guard$;
 
 
 
@@ -54291,21 +54289,7 @@ declare
   v_coluna_motivo text := '';
   v_filtro_novos text := '';
   v_filtro_preservados text := 'false';
-  -- #4802 (item 3): o funil de destino sai da ETAPA, não de um argumento: assim
-  -- não existe chamada em que os dois discordem.
-  v_pipeline_destino uuid;
 begin
-  select s.pipeline_id
-    into v_pipeline_destino
-    from public.crm_stages s
-   where s.id = p_stage_id
-     and s.organization_id = p_organization_id;
-
-  if v_pipeline_destino is null then
-    raise exception 'stage_not_found: a etapa % não é da organização %', p_stage_id, p_organization_id
-      using errcode = '23503';
-  end if;
-
   -- `coalesce(..., 0)` cobre a etapa vazia; o DEFAULT da coluna é 1000, então
   -- o primeiro card de um lote para uma etapa vazia cai em 1000, como um card
   -- criado à mão.
@@ -54342,7 +54326,6 @@ begin
   novos as (
     update public.crm_leads l
        set stage_id          = $3,
-           pipeline_id       = $6,
            position_in_stage = $5 + (a.ordem * 1000),
            updated_at        = now()%s
       from alvo a
@@ -54353,7 +54336,6 @@ begin
   preservados as (
     update public.crm_leads l
        set stage_id          = $3,
-           pipeline_id       = $6,
            position_in_stage = $5 + (a.ordem * 1000),
            updated_at        = now()
       from alvo a
@@ -54366,7 +54348,7 @@ begin
   union all
   select p.id, p.from_stage_id, p.pipeline_id from preservados p
   $f$, v_coluna_motivo, v_filtro_novos, v_filtro_preservados)
-  using p_organization_id, p_lead_ids, p_stage_id, v_motivo, v_piso, v_pipeline_destino;
+  using p_organization_id, p_lead_ids, p_stage_id, v_motivo, v_piso;
 end;
 $$;
 
@@ -63697,6 +63679,150 @@ $$;
 
 comment on function public.fn_mover_leads_em_lote(uuid, uuid[], uuid, text) is
   'Move um lote de leads para uma etapa dando a cada um posição DISTINTA no TOPO da coluna de destino (issue #3461): o lote encosta acima do primeiro card (`min - 1000` por card, na ordem em que estava no quadro) e não mais abaixo do último (`max + 1000`), que era o motivo de a conversa transferida do Inbox aparecer no fim. Etapa vazia continua nascendo em 1000, 2000, … Existe porque gravar a mesma position_in_stage em N linhas quebra o midpoint() do arrasto seguinte (prev === next → NaN) e deixa a ordem do quadro indefinida. `p_lost_reason` (0263, issue #917) grava o motivo da perda na MESMA escrita quando a etapa de destino é de perda — sem ele a CHECK crm_leads_lost_reason_required recusava o lote inteiro com 23514; a coluna só entra na escrita quando há motivo, para não revalidar o valor que já estava na linha. #2887: a coluna só entra na escrita de quem NÃO estava perdido (`status is distinct from ''lost''`) — o negócio que já estava perdido é movido por um segundo ramo sem a coluna, e preserva o motivo dele. Devolve uma linha por card movido, com a etapa de ORIGEM, para o handler emitir a atividade de timeline de cada um.';
+
+revoke all     on function public.fn_mover_leads_em_lote(uuid, uuid[], uuid, text) from public;
+revoke execute on function public.fn_mover_leads_em_lote(uuid, uuid[], uuid, text) from anon;
+grant  execute on function public.fn_mover_leads_em_lote(uuid, uuid[], uuid, text)
+  to authenticated, service_role;
+
+-- ---- o histórico do negócio sobrevive ao negócio, e o lote leva o funil junto (migration 9412, #4802) ----
+-- Espelho de supabase/migrations/20261117181500_9412_transferencia_de_negocios_entre_funis.sql.
+--
+-- ⚠️ Este bloco é a ÚLTIMA definição das duas coisas, e é de propósito: a cópia do
+-- `fn_mover_leads_em_lote` que mora mais acima (0674) escreve ABAIXO do último card,
+-- e a 9058 a substituiu pelo TOPO. Atualizar a cópia velha deixaria o caminho de
+-- INSTALAÇÃO com o topo e o da CADEIA com o rodapé — e é exatamente isso que o
+-- invariante de schema pega: um `fn|` com `body=` de outra versão. Por isso este
+-- bloco redefine a função a partir do corpo da 9058, e não da 0674.
+--
+-- A coluna e a FK vão juntas porque o `ON DELETE SET NULL` só é aceito sobre
+-- coluna anulável, e a ordem aqui é a mesma da migration.
+alter table public.crm_lead_activities
+  alter column lead_id drop not null;
+
+-- `drop if exists` + `add`, e não `add ... if not exists` (que o PostgreSQL não
+-- tem para constraint): é o que torna a REGRA idempotente, e não só a criação —
+-- quem JÁ tem a constraint com CASCADE precisa perdê-la, não só ganhá-la.
+alter table public.crm_lead_activities
+  drop constraint if exists crm_lead_activities_lead_id_fkey;
+alter table public.crm_lead_activities
+  add constraint crm_lead_activities_lead_id_fkey
+  foreign key (lead_id) references public.crm_leads(id) on delete set null;
+
+create or replace function public.fn_mover_leads_em_lote(
+  p_organization_id uuid,
+  p_lead_ids uuid[],
+  p_stage_id uuid,
+  p_lost_reason text default null
+) returns table (lead_id uuid, from_stage_id uuid, pipeline_id uuid)
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_min numeric;
+  v_total int;
+  -- Motivo em branco é ausência de motivo, nunca um motivo de uma letra.
+  v_motivo text := nullif(btrim(coalesce(p_lost_reason, '')), '');
+  v_coluna_motivo text := '';
+  v_filtro_novos text := '';
+  v_filtro_preservados text := 'false';
+  -- #4802 (item 3): o funil de destino sai da ETAPA, não de um argumento: assim
+  -- não existe chamada em que os dois discordem.
+  v_pipeline_destino uuid;
+begin
+  select s.pipeline_id
+    into v_pipeline_destino
+    from public.crm_stages s
+   where s.id = p_stage_id
+     and s.organization_id = p_organization_id;
+
+  if v_pipeline_destino is null then
+    raise exception 'stage_not_found: a etapa % não é da organização %', p_stage_id, p_organization_id
+      using errcode = '23503';
+  end if;
+
+  -- Quantos cards o lote tem DE VERDADE. O predicado é o MESMO do `alvo` da
+  -- escrita (organização + ids): contar por `array_length(p_lead_ids)` somaria
+  -- id de outra organização — que o `alvo` descarta —, e a posição do primeiro
+  -- card sairia de uma conta que inclui card que não vai ser movido.
+  select count(*)
+    into v_total
+    from public.crm_leads l
+   where l.organization_id = p_organization_id
+     and l.id = any(p_lead_ids);
+
+  -- Onde o lote ENCOSTA: o primeiro card da etapa de destino, sem contar os que
+  -- já estão no lote. `null` é a etapa vazia — e aí o lote ocupa o miolo de
+  -- sempre (1000, 2000, …), pelo `coalesce` da escrita.
+  select min(l.position_in_stage)
+    into v_min
+    from public.crm_leads l
+   where l.organization_id = p_organization_id
+     and l.stage_id = p_stage_id
+     and not (l.id = any(p_lead_ids));
+
+  -- Só com motivo a gravar a coluna entra na escrita (0263; ver o cabeçalho) —
+  -- e só quem NÃO estava perdido recebe a coluna (#2887). Sem motivo, o ramo dos
+  -- novos leva o lote inteiro e o dos preservados não casa nenhuma linha.
+  if v_motivo is not null then
+    v_coluna_motivo := ', lost_reason = $4';
+    v_filtro_novos := ' and l.status is distinct from ''lost''';
+    v_filtro_preservados := 'l.status = ''lost''';
+  end if;
+
+  return query execute format($f$
+  with alvo as (
+    select l.id,
+           l.stage_id    as from_stage_id,
+           l.pipeline_id as pipeline_id,
+           -- A ordem do lote no destino é a ordem em que ele estava no quadro:
+           -- etapa, depois posição. `id` só desempata para o resultado ser
+           -- determinístico (dois cards podem legitimamente empatar hoje —
+           -- é justamente o estado que a migration 0209 deixa de produzir).
+           row_number() over (order by l.stage_id, l.position_in_stage, l.id) as ordem
+      from public.crm_leads l
+     where l.organization_id = $1
+       and l.id = any($2)
+  ),
+  novos as (
+    update public.crm_leads l
+       set stage_id          = $3,
+           -- #4802 (item 3): o funil vem da ETAPA de destino ($7), nunca de um
+           -- argumento que pudesse divergir dela.
+           pipeline_id       = $7,
+           -- O TOPO da etapa (issue #3461): o lote inteiro encosta ACIMA do
+           -- primeiro card e mantém entre si a ordem de origem. $5 é esse
+           -- primeiro card; $6, o tamanho do lote. Etapa vazia ($5 nulo) cai
+           -- no `coalesce` e ocupa 1000, 2000, … como um card criado à mão.
+           position_in_stage = coalesce($5 - (($6 - a.ordem + 1) * 1000), a.ordem * 1000),
+           updated_at        = now()%s
+      from alvo a
+     where l.id = a.id
+       and l.organization_id = $1%s
+    returning l.id, a.from_stage_id, a.pipeline_id
+  ),
+  preservados as (
+    update public.crm_leads l
+       set stage_id          = $3,
+           pipeline_id       = $7,
+           position_in_stage = coalesce($5 - (($6 - a.ordem + 1) * 1000), a.ordem * 1000),
+           updated_at        = now()
+      from alvo a
+     where l.id = a.id
+       and l.organization_id = $1
+       and %s
+    returning l.id, a.from_stage_id, a.pipeline_id
+  )
+  select n.id, n.from_stage_id, n.pipeline_id from novos n
+  union all
+  select p.id, p.from_stage_id, p.pipeline_id from preservados p
+  $f$, v_coluna_motivo, v_filtro_novos, v_filtro_preservados)
+  using p_organization_id, p_lead_ids, p_stage_id, v_motivo, v_min, v_total, v_pipeline_destino;
+end;
+$$;
+
+comment on function public.fn_mover_leads_em_lote(uuid, uuid[], uuid, text) is
+  'Move um lote de leads para uma etapa dando a cada um posição DISTINTA no TOPO da coluna de destino (issue #3461): o lote encosta acima do primeiro card (`min - 1000` por card, na ordem em que estava no quadro). Etapa vazia continua nascendo em 1000, 2000, … Existe porque gravar a mesma position_in_stage em N linhas quebra o midpoint() do arrasto seguinte (prev === next → NaN) e deixa a ordem do quadro indefinida. `p_lost_reason` (0263, issue #917) grava o motivo da perda na MESMA escrita quando a etapa de destino é de perda. #2887: a coluna só entra na escrita de quem NÃO estava perdido. #4802 (item 3): `pipeline_id` acompanha a etapa — sai da própria etapa de destino —, e é o que permite a transferência em massa de negócios entre funis usar ESTE caminho em vez de um segundo update em massa. Devolve uma linha por card movido, com a etapa de ORIGEM, para o handler emitir a atividade de timeline de cada um.';
 
 revoke all     on function public.fn_mover_leads_em_lote(uuid, uuid[], uuid, text) from public;
 revoke execute on function public.fn_mover_leads_em_lote(uuid, uuid[], uuid, text) from anon;
