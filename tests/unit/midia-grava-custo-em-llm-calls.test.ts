@@ -167,7 +167,7 @@ vi.mock("@/lib/messaging/media/transcription", async (importOriginal) => ({
   }),
 }));
 
-const transcricaoDoEnv = vi.hoisted(() => ({ apiKey: "", baseUrl: "" }));
+const transcricaoDoEnv = vi.hoisted(() => ({ apiKey: "", baseUrl: "", model: "" }));
 vi.mock("@/lib/env", async (importOriginal) => {
   const real = await importOriginal<{ env: Env }>();
   return {
@@ -179,7 +179,9 @@ vi.mock("@/lib/env", async (importOriginal) => {
       get TRANSCRIPTION_BASE_URL() {
         return transcricaoDoEnv.baseUrl;
       },
-      TRANSCRIPTION_MODEL: "",
+      get TRANSCRIPTION_MODEL() {
+        return transcricaoDoEnv.model;
+      },
       TRANSCRIPTION_LANGUAGES: "",
       IA_DESTINOS_INTERNOS_PERMITIDOS: "",
     },
@@ -234,6 +236,7 @@ beforeEach(() => {
   bindingDaVez = BINDING;
   transcricaoDoEnv.apiKey = "";
   transcricaoDoEnv.baseUrl = "";
+  transcricaoDoEnv.model = "";
   linhaDaMensagem = {
     id: "msg1",
     organization_id: "org1",
@@ -333,6 +336,41 @@ describe("worker de mídia: chamada paga grava em llm_calls", () => {
       cost_cents: null,
       status: "ok",
     });
+  });
+
+  it("#4697: transcrição por serviço de endereço próprio grava o provedor IDENTIFICADO, nunca 'desconhecido'", async () => {
+    // O cenário da instalação real: serviço OpenAI-compatível próprio (chave e
+    // endereço preenchidos) servindo um Whisper de família nova. Até a #4697 o
+    // worker trocava o provedor anunciado pela escada por `desconhecido` só
+    // porque havia `TRANSCRIPTION_BASE_URL` — e o painel de uso não conseguia
+    // agrupar o gasto de áudio daquela instalação.
+    comAudio();
+    transcricaoDoEnv.apiKey = "chave-do-servico";
+    transcricaoDoEnv.baseUrl = "https://transcricao.exemplo/v1";
+    transcricaoDoEnv.model = "whisper-large-v3-turbo";
+
+    await deriveMessageMedia(eventRow());
+    await depsDaChamada().transcriber.transcribe(Buffer.from("ogg"), "audio/ogg");
+
+    expect(transcribeDoSvcMock).toHaveBeenCalled();
+    expect(llmCallsInsertMock).toHaveBeenCalledTimes(1);
+    const linha = llmCallsInsertMock.mock.calls[0]![0] as Record<string, unknown>;
+    expect(linha).toMatchObject({
+      purpose: PONTO_TRANSCRICAO_DE_AUDIO,
+      // `openai` é o que a ESCADA anuncia para este degrau — nos degraus 1 e 2
+      // ele nomeia o PROTOCOLO (`/v1/audio/transcriptions`), não a empresa.
+      provider: "openai",
+      model: "whisper-large-v3-turbo",
+      origem_da_escolha: "servico_da_instalacao",
+      // Sem tarifa por duração conhecida, o custo é nulo — nunca 0 —, e agora
+      // o motivo sai no log em vez de ficar calado.
+      cost_cents: null,
+    });
+    expect(linha["provider"]).not.toBe("desconhecido");
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      "[media-derive] transcrição cobrada por duração sem tarifa conhecida — a linha grava custo nulo",
+      { provider: "openai", model: "whisper-large-v3-turbo" },
+    );
   });
 
   it("fiação: o custo que o serviço mede (duração cobrada pela OpenAI) chega à linha do degrau 2", async () => {
