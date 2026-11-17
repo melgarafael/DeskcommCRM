@@ -514,6 +514,16 @@ describe("o histórico da conversa acompanha o link direto", () => {
   });
 });
 
+describe("marcar como pessoal", () => {
+  it("o dono gravado é sempre uma pessoa: token de integração não vira dono", () => {
+    // A rota aceita token desde a #4142; o id do token não é usuário.
+    const ROTA = semComentarios(fonte("app", "api", "v1", "contacts", "[id]", "personal", "route.ts"));
+    expect(ROTA).toMatch(/const donoNovo = authz\.actor\.type === "user" \? authz\.actor\.id : null;/);
+    expect(ROTA).toContain("personal_owner_user_id: donoNovo");
+    expect(ROTA).not.toMatch(/personal_owner_user_id: authz\./);
+  });
+});
+
 describe("a migration existe e o baseline a espelha", () => {
   it("a coluna nasce com dono e sem backfill, e o baseline tem o mesmo bloco", () => {
     const dir = path.join(RAIZ, "supabase", "migrations");

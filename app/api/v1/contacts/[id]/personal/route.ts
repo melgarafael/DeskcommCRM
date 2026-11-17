@@ -216,7 +216,12 @@ export async function POST(req: NextRequest, ctx: Context): Promise<Response> {
   // quem é a posse.
   const donoAtual =
     (contato as { personal_owner_user_id?: string | null }).personal_owner_user_id ?? null;
-  const precisaAdotar = eraPessoal && donoAtual === null;
+  // Dono é sempre uma PESSOA. Desde a #4142 esta rota aceita token de
+  // integração, e o id de um token não é usuário: quem marca por token deixa o
+  // contato sem dono — fora da operação e invisível para todos, como o legado —
+  // até uma pessoa marcar de novo e adotar.
+  const donoNovo = authz.actor.type === "user" ? authz.actor.id : null;
+  const precisaAdotar = eraPessoal && donoAtual === null && donoNovo !== null;
 
   let marcado = contato as {
     id: string;
@@ -227,7 +232,7 @@ export async function POST(req: NextRequest, ctx: Context): Promise<Response> {
   if (!eraPessoal || precisaAdotar) {
     const { data, error: updateErro } = await admin
       .from("contacts")
-      .update({ is_personal: true, personal_owner_user_id: authz.user.id })
+      .update({ is_personal: true, personal_owner_user_id: donoNovo })
       .eq("organization_id", authz.organizationId)
       .eq("id", id)
       .select("id, display_name, is_personal, personal_owner_user_id")
