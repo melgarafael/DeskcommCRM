@@ -36,6 +36,7 @@ import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { estamparAtribuicaoDoContato, metadataDoAnuncio } from "@/lib/leads/atribuicao-de-anuncio";
 import { ancoraCtwaDaMensagem } from "@/lib/leads/prova-meta-lead-submitted";
 import { extrairAtribuicaoWaha } from "@/lib/waha/atribuicao-de-anuncio";
+import { extrairEEstamparAtribuicaoGoogle } from "@/lib/plataformas-de-anuncio/google/atribuicao";
 import { criarIngestDeGrupoDb, gravarMensagemDeGrupo } from "@/lib/grupos/ingest";
 import type { RemetenteDeGrupo } from "@/lib/messaging/remetente-de-grupo";
 import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
@@ -1236,7 +1237,10 @@ async function handleInbound(
   if (atribuicao) await estamparAtribuicaoDoContato(admin, session.organization_id, contactId, atribuicao);
 
   const conversationId = await upsertConversation(admin, session.organization_id, contactId, session.id);
-  if (!conversationId) return;
+  if (!conversationId) {
+    await extrairEEstamparAtribuicaoGoogle(admin, session.organization_id, contactId, texto);
+    return;
+  }
 
   // A citação da mensagem respondida (issue #2474), resolvida ANTES do insert
   // porque o ponteiro é coluna da linha que está nascendo. Sem citação no
@@ -1356,6 +1360,11 @@ async function handleInbound(
   // `lib/channels/pos-entrada.ts`, junto com o motivo de cada posição. O
   // comportamento aqui é o MESMO de antes, campo a campo — o que mudou é quem o
   // executa.
+  // Só a entrega que inseriu a mensagem pode consumir o clique. Assim uma
+  // reentrega concorrente não fica com a atribuição que pertence ao novo negócio.
+  const atribuicaoGoogleDaMensagem = await extrairEEstamparAtribuicaoGoogle(
+    admin, session.organization_id, contactId, texto,
+  );
   await aplicarEfeitosPosEntrada(admin, {
     organizationId: session.organization_id,
     contactId,
@@ -1363,6 +1372,7 @@ async function handleInbound(
     messageId: insertedMessage?.id ?? null,
     channelSessionId: session.id,
     texto,
+    atribuicaoGoogleDaMensagem,
     nomeDoContato: notifyNameOf(p),
     requestId,
     origem: "waha_webhook",

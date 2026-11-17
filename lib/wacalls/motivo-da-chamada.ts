@@ -16,6 +16,10 @@
  * única pista que existe, e uma frase tranquilizadora onde não há informação é
  * pior que a informação estranha.
  */
+import { traduzir } from '@/lib/i18n/dicionario';
+import { preencher } from '@/lib/i18n/idioma-do-aviso';
+import type { Idioma } from '@/lib/i18n/idiomas';
+
 const MOTIVOS: Record<string, string> = {
   user_ended: 'Quem ligou desligou antes de alguém atender.',
   declined: 'A chamada foi recusada.',
@@ -30,10 +34,19 @@ const MOTIVOS: Record<string, string> = {
 };
 
 /** Frase em português para o `end_reason` cru do upstream. */
-export function motivoDaChamadaEmPortugues(motivo: string | null | undefined): string {
+export function motivoDaChamadaEmPortugues(
+  motivo: string | null | undefined,
+  /**
+   * O idioma da organização: a frase vai para o corpo do aviso, que a Central
+   * mostra como foi gravado. `pt-BR` (o padrão) é a frase de antes, byte a byte.
+   */
+  idioma: Idioma = 'pt-BR',
+): string {
   const cru = (motivo ?? '').trim();
-  if (!cru) return MOTIVOS['unknown']!;
-  const conhecido = MOTIVOS[cru.toLowerCase()];
-  if (conhecido) return conhecido;
-  return `A chamada terminou por um motivo que ainda não sabemos traduzir (${cru}).`;
+  if (!cru) return traduzir(MOTIVOS['unknown']!, idioma);
+  const chave = cru.toLowerCase();
+  if (Object.hasOwn(MOTIVOS, chave)) return traduzir(MOTIVOS[chave]!, idioma);
+  return preencher(traduzir('A chamada terminou por um motivo que ainda não sabemos traduzir ({motivo}).', idioma), {
+    motivo: cru,
+  });
 }
