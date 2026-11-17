@@ -1162,7 +1162,7 @@ describe("o ramo do token em leads e lead-captures", () => {
     };
     const { res, texto, falso } = await comoToken(c, { papel: "agent" });
     expect(res.status, texto).toBe(403);
-    expect(falso.linhas.crm_leads.map((l) => l.id)).toContain(LEAD_A);
+    expect((falso.linhas.crm_leads ?? []).map((l) => l.id)).toContain(LEAD_A);
   });
 
   it("POST /api/v1/leads/bulk: delete só remove leads da org do token", async () => {
