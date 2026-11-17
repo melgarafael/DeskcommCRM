@@ -138,6 +138,10 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     nome: "Lista de espera da agenda",
     oQueFaz: "Quando um horário abre, a vaga é oferecida a uma pessoa por vez, entre quem aceitou ser avisado.",
   },
+  amigo: {
+    nome: "Amigo (sistema de clínicas)",
+    oQueFaz: "A agenda passa a usar o sistema de clínicas Amigo: pacientes, vagas e consultas vêm de lá, e a IA marca pelo Amigo.",
+  },
   ouvidoria: {
     nome: "Ouvidoria",
     oQueFaz: "Reclamações, denúncias, elogios e sugestões com protocolo próprio, lidas só por administradores e fora do funil.",
@@ -200,6 +204,14 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
   revisao_por_km: {
     nome: "Revisão por quilometragem",
     oQueFaz: "O km informado no negócio vira a data prevista da próxima revisão, no campo de data que o funil escolheu.",
+  },  agencias: {
+    nome: "Agências administram clientes",
+    oQueFaz: "Uma empresa-agência cria as empresas dos clientes dela e entra nelas para administrar, sem login separado em cada uma; tudo o que faz lá fica registrado com o nome da agência.",
+  },
+  catalogo_por_feed: {
+    nome: "Catálogo sincronizado por feed",
+    oQueFaz:
+      "O catálogo acompanha sozinho o feed que o sistema de estoque da revenda publica: a cada 2 horas cria, atualiza e desativa produtos, sem apagar nenhum.",
   },
 };
 

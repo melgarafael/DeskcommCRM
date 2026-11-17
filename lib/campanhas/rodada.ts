@@ -109,6 +109,38 @@ export const CAMPANHAS_POR_PAGINA = NUMEROS_POR_RODADA * 3;
  */
 export const PAGINAS_POR_RODADA = 10;
 
+/**
+ * O CURSOR ENTRE TIQUES (#4495, a segunda metade).
+ *
+ * O orçamento de páginas é o custo máximo de UM tique; sem memória, ele também
+ * é o fim da fila para quem está depois dele: a varredura recomeçava sempre na
+ * campanha mais antiga, então a 301ª (com 300 paradas no próprio ritmo) não era
+ * lida em tique nenhum — o mesmo defeito da janela de 30, só 10× mais longe.
+ *
+ * Quem para no orçamento grava aqui o cursor `(started_at, id)` da última linha
+ * lida, e o tique seguinte continua dali. Quem para por qualquer outro motivo —
+ * fim da lista (página vazia), teto de números preenchido — APAGA o cursor, e o
+ * tique seguinte volta a começar pela mais antiga: a antiguidade manda sempre
+ * que há número para atender, e a rotação só existe enquanto a janela inteira
+ * está parada no ritmo dela. A volta completa em `ceil(campanhas / 300)` tiques.
+ *
+ * A tabela é a `watchdog_cursors` — cursor durável de plataforma, par
+ * (`timestamptz`, `uuid`), RLS sem policy (só service role), que este repo já
+ * tem e nenhum TS consumia. Duas colunas de cursor não pagam uma tabela nova; a
+ * chave `consumer` é que separa quem escreve. Falha de leitura ou de escrita é
+ * ABERTA: a varredura recomeça pela mais antiga (o comportamento anterior) em
+ * vez de a rodada inteira cair.
+ */
+const CONSUMIDOR_DO_CURSOR = "campanha:rodada";
+/** `epoch` + uuid zero = "começa do início": é o default da tabela e o que se grava ao fechar a volta. */
+const CURSOR_DO_COMECO = "1970-01-01T00:00:00.000Z";
+const ID_DO_COMECO = "00000000-0000-0000-0000-000000000000";
+
+interface CursorDaVarredura {
+  startedAt: string;
+  id: string;
+}
+
 /** Teto de agendadas promovidas por rodada: a sobra vira `running` no minuto seguinte. */
 const PROMOVIDAS_POR_RODADA = 100;
 
@@ -156,6 +188,49 @@ const COLUNAS_DA_CAMPANHA =
  */
 const COLUNAS_DA_CAMPANHA_COM_EMBED = `${COLUNAS_DA_CAMPANHA}, organizations:organization_id!inner(status)`;
 
+/** De onde a varredura deste tique começa. `null` = da campanha mais antiga. */
+async function lerCursorDaVarredura(admin: SupabaseClient): Promise<CursorDaVarredura | null> {
+  const { data, error } = await admin
+    .from("watchdog_cursors")
+    .select("last_created_at, last_event_id")
+    .eq("consumer", CONSUMIDOR_DO_CURSOR)
+    .maybeSingle();
+  if (error) {
+    logger.warn("[campanha] cursor da varredura não pôde ser lido; varrendo desde a mais antiga", {
+      motivo: error.message,
+    });
+    return null;
+  }
+  const linha = data as { last_created_at?: string | null; last_event_id?: string | null } | null;
+  if (!linha?.last_created_at || !linha.last_event_id) return null;
+  // `epoch` é o "começa do início": default da coluna e o que se grava ao fechar
+  // a volta. Comparar por data, e não por string: o PostgREST devolve o fuso
+  // como `+00:00` e o default do schema pode vir sem o `.000`.
+  if (new Date(linha.last_created_at).getTime() <= 0) return null;
+  return { startedAt: linha.last_created_at, id: linha.last_event_id };
+}
+
+/** Grava (ou apaga, com `null`) o cursor entre tiques. Nunca lança: é memória, não efeito. */
+async function gravarCursorDaVarredura(
+  admin: SupabaseClient,
+  cursor: CursorDaVarredura | null,
+): Promise<void> {
+  const { error } = await admin.from("watchdog_cursors").upsert(
+    {
+      consumer: CONSUMIDOR_DO_CURSOR,
+      last_created_at: cursor?.startedAt ?? CURSOR_DO_COMECO,
+      last_event_id: cursor?.id ?? ID_DO_COMECO,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "consumer" },
+  );
+  if (error) {
+    logger.warn("[campanha] cursor da varredura não pôde ser gravado; o próximo tique recomeça do início", {
+      motivo: error.message,
+    });
+  }
+}
+
 export async function rodarUmaRodadaDeCampanha(
   admin: SupabaseClient,
   agora: Date = new Date(),
@@ -182,12 +257,19 @@ export async function rodarUmaRodadaDeCampanha(
   // numérico deslizaria e pularia a seguinte. A varredura para em três lugares:
   // no teto de números (o anti-ban de sempre), na página VAZIA (fim provado) e
   // no orçamento de páginas, que é o custo máximo por tique.
+  //
+  // O cursor atravessa o TIQUE (ver `CONSUMIDOR_DO_CURSOR`): quem para no
+  // orçamento deixa gravado onde parou, e o tique seguinte continua dali em vez
+  // de reler as mesmas 300 e nunca chegar à 301ª. Quem para no teto de números
+  // ou no fim da lista apaga o cursor, e a próxima rodada volta a começar pela
+  // campanha mais antiga.
   const principaisOcupados = new Set<string>();
   const numerosQueFalaram = new Set<string>();
   const total: ResultadoDaRodada = { ...VAZIA, promovidas, detalhe: "" };
   const detalhes: string[] = [];
 
-  let cursor: { startedAt: string; id: string } | null = null;
+  const cursorLido = await lerCursorDaVarredura(admin);
+  let cursor: CursorDaVarredura | null = cursorLido;
   let paginas = 0;
   let ultimaPaginaCheia = false;
 
@@ -273,11 +355,23 @@ export async function rodarUmaRodadaDeCampanha(
     if (!cursor) break;
   }
 
-  if (paginas >= PAGINAS_POR_RODADA && ultimaPaginaCheia && principaisOcupados.size < NUMEROS_POR_RODADA) {
+  const parouNoOrcamento =
+    paginas >= PAGINAS_POR_RODADA && ultimaPaginaCheia && principaisOcupados.size < NUMEROS_POR_RODADA;
+
+  if (parouNoOrcamento) {
     // A fila foi lida até o limite do tique, e não até o fim. Dizer isso é o que
     // impede o operador de concluir que não havia mais campanha.
     logger.warn("[campanha] varredura parou no orçamento de páginas", { paginas, campanhas: detalhes.length });
     detalhes.push("varredura:orcamento");
+  }
+
+  // Quem continua de onde parou: só quem parou no orçamento E tem chave para a
+  // próxima página. Qualquer outro desfecho (teto de números, fim da lista,
+  // última linha sem `started_at`) devolve a varredura à campanha mais antiga no
+  // tique seguinte — é assim que a antiguidade volta a mandar.
+  const proximoCursor = parouNoOrcamento && cursor ? cursor : null;
+  if (proximoCursor?.startedAt !== cursorLido?.startedAt || proximoCursor?.id !== cursorLido?.id) {
+    await gravarCursorDaVarredura(admin, proximoCursor);
   }
 
   total.detalhe = detalhes.join(" ") || (promovidas > 0 ? "promovidas" : "nada_a_fazer");

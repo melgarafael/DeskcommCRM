@@ -181,6 +181,17 @@ describe('transferirAgenteDaConversa — a passagem que não depende do classifi
     ]);
   });
 
+  it('#4318: a escrita da passagem grava também a marca que o turno seguinte lê', async () => {
+    const p = poolFake(CENARIO_OK);
+    await transferirAgenteDaConversa(p.db, ENTRADA);
+
+    const { sql } = p.escritas[0]!;
+    // A marca nasce no MESMO `now()` de `active_agent_set_at`: é a igualdade
+    // entre as duas que diz "passagem pendente" ao turno seguinte.
+    expect(sql).toMatch(/active_agent_set_at = now\(\)/i);
+    expect(sql).toMatch(/active_agent_transfer_at = now\(\)/i);
+  });
+
   it('a trilha registra de quem para quem, quando, quem pediu e o motivo (sem texto livre)', async () => {
     const p = poolFake(CENARIO_OK);
     await transferirAgenteDaConversa(p.db, { ...ENTRADA, solicitadoPor: null });

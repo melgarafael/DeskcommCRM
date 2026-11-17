@@ -27,6 +27,10 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { traduzir } from "@/lib/i18n/dicionario";
+import { preencher } from "@/lib/i18n/idioma-do-aviso";
+import type { Idioma } from "@/lib/i18n/idiomas";
+
 import type { SaudeObservada } from "../health";
 
 export interface AvisoDeCanal {
@@ -83,20 +87,28 @@ const GRAVIDADE_DO_NUMERO: Record<string, { sev: "info" | "warn" | "critical"; t
 };
 
 /** O evento merece um aviso? `null` quando não é dos nossos. */
-export function avisoDoEvento(payload: unknown): AvisoDeCanal | null {
+export function avisoDoEvento(
+  payload: unknown,
+  /**
+   * O idioma da organização: o aviso é linha gravada e a Central o mostra como
+   * veio. `pt-BR` (o padrão) é o texto de antes, byte a byte. O nome do modelo,
+   * o estado cru e o motivo da plataforma são dado — entram sem tradução.
+   */
+  idioma: Idioma = "pt-BR",
+): AvisoDeCanal | null {
   const p = obj(payload);
   if (!p) return null;
   const evento = str(p.event) ?? "";
 
   if (evento === "whatsapp.template.status_updated") {
     const t = obj(p.template) ?? {};
-    const nome = str(t.name) ?? "(sem nome)";
+    const nome = str(t.name) ?? traduzir("(sem nome)", idioma);
     const estado = (str(t.status) ?? "UNKNOWN").toUpperCase();
     const motivo = str(t.reason);
     return {
       kind: "channel_template_review",
       severity: GRAVIDADE_DO_TEMPLATE[estado] ?? "warn",
-      title: `Modelo "${nome}": ${estado}`,
+      title: preencher(traduzir('Modelo "{nome}": {estado}', idioma), { nome, estado }),
       // "NONE" é como a plataforma diz "sem motivo" — repassá-lo seria mostrar
       // ruído no lugar onde o operador procura a explicação.
       body: motivo && motivo.toUpperCase() !== "NONE" ? motivo : null,
@@ -109,7 +121,7 @@ export function avisoDoEvento(payload: unknown): AvisoDeCanal | null {
     return {
       kind: "channel_number_alert",
       severity: numero.sev,
-      title: numero.texto,
+      title: traduzir(numero.texto, idioma),
       body: detalhe,
     };
   }

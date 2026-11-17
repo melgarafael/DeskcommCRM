@@ -329,6 +329,12 @@ if ! git checkout --quiet "$TARGET_TAG" 2>&1; then
   die "Não consegui trocar para a versão $TARGET_TAG (parece haver mudanças locais que divergem).
      Rode 'git status' pra ver, ou peça ajuda. NÃO mexi no banco — está tudo como estava."
 fi
+# Ida para frente: guarda de onde saiu. É para lá, e só para lá, que o agente
+# do host aceita voltar quando o pedido vem do app (ver agent.sh). Volta e
+# reinstalação da mesma versão não regravam: a origem continua a da última ida.
+if [ -z "$VOLTA_NO_TEMPO" ] && [ -z "$MESMA_TAG" ] && [ -n "$CURRENT_TAG" ]; then
+  printf '%s\n' "$CURRENT_TAG" > "$PROJECT_DIR/${ORIGEM_DA_ATUALIZACAO_ARQUIVO:-.update-de-onde-vim}" 2>/dev/null || true
+fi
 
 # As funções do kit são carregadas na linha 16, ANTES deste checkout — então,
 # sem esta releitura, o resto desta atualização roda com as funções da versão
