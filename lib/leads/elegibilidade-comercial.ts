@@ -8,7 +8,7 @@
  * sentidos: marcar perdido inventa uma perda comercial ("perdemos por preço"
  * para um golpe) e excluir o card apaga contato, conversa e atividades.
  *
- * A classificação vive em TRÊS colunas de `crm_leads` (migration 9222) e a
+ * A classificação vive em TRÊS colunas de `crm_leads` (migration 9414) e a
  * coluna que DECIDE é `nao_comercial_em`: nula é o estado de sempre, comercial.
  * `nao_comercial_motivo` e `nao_comercial_por` são o lastro humano — por quê e
  * quem —, não a elegibilidade.

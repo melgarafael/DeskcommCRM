@@ -1,4 +1,4 @@
--- 9222 · NEGÓCIO NÃO COMERCIAL (issue #4191)
+-- 9414 · NEGÓCIO NÃO COMERCIAL (issue #4191)
 --
 -- Um contato identificado pela equipe como golpe recebeu etiqueta e a conversa
 -- foi encerrada, mas o negócio continuou aberto no Radar. Marcar como perdido
@@ -47,7 +47,7 @@ alter table public.crm_leads
   );
 
 comment on column public.crm_leads.nao_comercial_em is
-  'Quando a equipe classificou o negócio como NÃO comercial (issue #4191, migration 9222). null = comercial, o estado de sempre. É a coluna que DECIDE: Radar e métricas de funil filtram por ela. Não é desfecho — status, etapa e closed_at não mudam.';
+  'Quando a equipe classificou o negócio como NÃO comercial (issue #4191, migration 9414). null = comercial, o estado de sempre. É a coluna que DECIDE: Radar e métricas de funil filtram por ela. Não é desfecho — status, etapa e closed_at não mudam.';
 comment on column public.crm_leads.nao_comercial_motivo is
   'Por que o negócio foi classificado como não comercial (issue #4191). Texto declarado pela equipe (golpe, spam, contato sem finalidade comercial…), sem vocabulário fechado no banco: a lista está em discussão na issue e um CHECK travaria a correção de um caso novo.';
 comment on column public.crm_leads.nao_comercial_por is
