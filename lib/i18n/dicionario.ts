@@ -19444,6 +19444,20 @@ export const DICIONARIO: Traducoes = {
   "A janela de esfriando vai de 1 hora a 8760 horas (365 dias).": {
     es: "La ventana de enfriamiento va de 1 hora a 8760 horas (365 días).",
   },
+
+  // ─── Critério da etapa (#4836) — o texto que o assistente lê ───
+  "Critério da etapa (quando um negócio entra aqui)": {
+    es: "Criterio de la etapa (cuándo entra un negocio aquí)",
+  },
+  "O assistente lê este texto para decidir quando mover o negócio para esta etapa.": {
+    es: "El asistente lee este texto para decidir cuándo mover el negocio a esta etapa.",
+  },
+  "Ex.: entra aqui quando o cliente aprova o orçamento e pede o link de pagamento.": {
+    es: "Ej.: entra aquí cuando el cliente aprueba el presupuesto y pide el enlace de pago.",
+  },
+  "O critério da etapa vai até {teto} caracteres.": {
+    es: "El criterio de la etapa admite hasta {teto} caracteres.",
+  },
   "Quando a empresa entra no funil": { es: "Cuándo entra la empresa al embudo" },
   "Só quando for abordada (recomendado)": { es: "Solo cuando se la contacte (recomendado)" },
   "O funil mostra só quem já recebeu a primeira mensagem.": { es: "El embudo muestra solo a quien ya recibió el primer mensaje." },
