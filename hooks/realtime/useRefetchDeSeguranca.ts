@@ -34,6 +34,13 @@ export interface RefetchDeSeguranca {
   ultimaVerificacao: number | null;
 }
 
+/**
+ * O teto da espera depois de falhas (#4508). Cinco minutos: perto o bastante
+ * para a tela se recuperar sozinha quando o Supabase volta, longe o bastante
+ * para uma queda longa não virar uma requisição a cada minuto.
+ */
+const TETO_DA_ESPERA_MS = 5 * 60_000;
+
 interface Opts<T> {
   queryKey: readonly unknown[];
   /**
@@ -78,6 +85,39 @@ export function useRefetchDeSeguranca<T>({
     ultimaDivergencia: null,
     ultimaVerificacao: null,
   });
+  /**
+   * A CONFERÊNCIA QUE FALHA ESPERA MAIS (#4508).
+   *
+   * ─── O defeito, medido ──────────────────────────────────────────────────────
+   *
+   * O intervalo era fixo: 45 s, com a API respondendo ou não. Com o REST fora,
+   * CADA conferência custa as três tentativas do cliente HTTP — 3 x 10 s mais o
+   * backoff, ~30,6 s de requisições — e a seguinte saía 45 s depois do INÍCIO,
+   * houvesse terminado ou não. Medido numa sonda com o cliente dublado: 40
+   * conferências em 30 min de aba aberta (1,33/min) contra um servidor que só
+   * devolve erro. É a "tempestade" que a issue pede para não existir: a tela que
+   * fica aberta o dia inteiro martelando uma dependência já lenta é o que a
+   * mantém lenta.
+   *
+   * ─── A régua ────────────────────────────────────────────────────────────────
+   *
+   * A espera DOBRA a cada conferência que termina em erro e volta ao intervalo
+   * normal na primeira que responde. O teto existe para a tela continuar se
+   * recuperando sozinha: sem ele, depois de uma queda longa a próxima
+   * conferência poderia ficar horas no futuro, e o operador voltaria a depender
+   * de F5 — que é o estado que este hook nasceu para acabar.
+   *
+   * Uma conferência em voo também não é atropelada pela próxima: com o servidor
+   * lento, o relógio de 45 s vencia antes de a leitura anterior voltar, e cada
+   * vencimento abria mais uma busca contra o mesmo servidor.
+   */
+  const falhasSeguidas = useRef(0);
+  const emVoo = useRef(false);
+
+  const esperaAtual = useCallback(
+    () => Math.min(intervaloMs * 2 ** Math.min(falhasSeguidas.current, 6), TETO_DA_ESPERA_MS),
+    [intervaloMs],
+  );
   // Ref para o efeito não re-montar a cada render e o intervalo não reiniciar
   // — reiniciar adiaria a verificação para sempre numa tela que redesenha.
   //
@@ -91,9 +131,25 @@ export function useRefetchDeSeguranca<T>({
   }, [assinatura]);
 
   const verificar = useCallback(async () => {
+    // A conferência anterior ainda não voltou: não abre outra. Com o servidor
+    // lento, o relógio vencia antes da resposta e cada vencimento era mais uma
+    // busca contra quem já estava fora.
+    if (emVoo.current) return;
+    emVoo.current = true;
+
     const antes = assinaturaRef.current(qc.getQueryData<T>(queryKey));
 
-    await qc.refetchQueries({ queryKey, exact: true });
+    try {
+      await qc.refetchQueries({ queryKey, exact: true });
+    } finally {
+      emVoo.current = false;
+    }
+
+    // A CONFERÊNCIA QUE VOLTOU EM ERRO ESPERA MAIS (#4508). O react-query não
+    // rejeita `refetchQueries` por padrão; quem sabe que falhou é o estado da
+    // query, que fica `error` mesmo quando há dado anterior na tela.
+    const falhou = qc.getQueryState(queryKey)?.status === "error";
+    falhasSeguidas.current = falhou ? falhasSeguidas.current + 1 : 0;
 
     const depois = assinaturaRef.current(qc.getQueryData<T>(queryKey));
 
@@ -126,15 +182,27 @@ export function useRefetchDeSeguranca<T>({
 
   useEffect(() => {
     if (!enabled) return;
-    const timer = setInterval(() => {
-      // ABA OCULTA NÃO CONFERE (issue #2235): ninguém está vendo a tela, e a
-      // conferência custa payload de página — o inbox esquecido refazia
-      // conversas e mensagens a cada 45 s. É a convenção da casa: presença,
-      // voz, alertas e `InterfaceRefresh` já pulam o trabalho de rede com a aba
-      // escondida, e o refetch de segurança era o único sem a guarda.
-      if (document.visibilityState !== "visible") return;
-      void verificar();
-    }, intervaloMs);
+    let vivo = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    // `setTimeout` encadeado, e não `setInterval`: a espera da PRÓXIMA
+    // conferência depende de a anterior ter dado certo (#4508). Com intervalo
+    // fixo, a conferência seguinte saía 45 s depois do início houvesse ou não
+    // terminado, e contra um servidor fora isso é uma busca nova a cada 45 s
+    // para sempre — a tempestade que a issue pede para não existir.
+    const ciclo = () => {
+      timer = setTimeout(async () => {
+        // ABA OCULTA NÃO CONFERE (issue #2235): ninguém está vendo a tela, e a
+        // conferência custa payload de página — o inbox esquecido refazia
+        // conversas e mensagens a cada 45 s. É a convenção da casa: presença,
+        // voz, alertas e `InterfaceRefresh` já pulam o trabalho de rede com a
+        // aba escondida, e o refetch de segurança era o único sem a guarda.
+        if (document.visibilityState === "visible") await verificar();
+        if (!vivo) return;
+        ciclo();
+      }, esperaAtual());
+    };
+    ciclo();
 
     // AO VOLTAR PARA A ABA, imediatamente: é o momento em que o usuário mais
     // acredita no que vê, e é justamente quando a tela pode estar mais velha —
@@ -145,10 +213,11 @@ export function useRefetchDeSeguranca<T>({
     };
     document.addEventListener("visibilitychange", aoVoltar);
     return () => {
-      clearInterval(timer);
+      vivo = false;
+      if (timer) clearTimeout(timer);
       document.removeEventListener("visibilitychange", aoVoltar);
     };
-  }, [enabled, intervaloMs, verificar]);
+  }, [enabled, esperaAtual, verificar]);
 
   return estado;
 }

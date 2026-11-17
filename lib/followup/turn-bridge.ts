@@ -18,6 +18,9 @@ import { requireCurrentServiceBoundary } from "@/lib/atendimento/fronteira-serve
  */
 import type pg from "pg";
 
+import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO, normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
+
 import type { AdminClient, EnrollmentPatch } from "./engine";
 import { etiquetasDoLead } from "./etiquetas-do-lead";
 import { flowGraphSchema } from "./graph-schema";
@@ -460,6 +463,13 @@ export function createPgAdminClient(pool: pg.Pool): TurnBridgeAdminClient {
       );
       return rows[0]?.name ?? null;
     },
+    async loadOrgLocale(orgId) {
+      const { rows } = await pool.query<{ locale: string | null }>(
+        `select locale from organizations where id = $1`,
+        [orgId],
+      );
+      return rows[0]?.locale ?? null;
+    },
     async insertDeadInboxItem(item) {
       await pool.query(
         `insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
@@ -493,12 +503,25 @@ export function createPgAdminClient(pool: pg.Pool): TurnBridgeAdminClient {
       //
       // `on conflict do nothing` casa o índice parcial da 0224
       // (inbox_appointment_revision_unique): repetir num reprocesso é no-op.
+      //
+      // Título e corpo vão como PARÂMETRO, no idioma da organização: a Central
+      // mostra o texto como foi gravado. Ler o idioma nunca barra o aviso.
+      let idioma: Idioma = IDIOMA_PADRAO;
+      try {
+        const { rows } = await pool.query<{ locale: string | null }>(
+          `select locale from organizations where id = $1`,
+          [item.organization_id],
+        );
+        idioma = normalizarIdioma(rows[0]?.locale ?? null);
+      } catch {
+        idioma = IDIOMA_PADRAO;
+      }
       await pool.query(
         `insert into agent_inbox_items
            (organization_id, kind, severity, title, body, ref_kind, ref_id, appointment_revision)
          select $1, 'appointment_recovery_review', 'warn',
-                'Cliente faltou e não respondeu à recuperação',
-                'As mensagens de reengajamento pós-falta foram enviadas e o cliente não respondeu. Decida o próximo passo e mova o card no funil.',
+                $4::text,
+                $5::text,
                 'appointment', a.id, $3
            from calendar_appointments a
            join contacts c
@@ -510,7 +533,16 @@ export function createPgAdminClient(pool: pg.Pool): TurnBridgeAdminClient {
          on conflict (organization_id, ref_id, appointment_revision, kind)
            where ref_kind = 'appointment' and appointment_revision is not null
            do nothing`,
-        [item.organization_id, item.appointment_id, item.appointment_revision],
+        [
+          item.organization_id,
+          item.appointment_id,
+          item.appointment_revision,
+          traduzir("Cliente faltou e não respondeu à recuperação", idioma),
+          traduzir(
+            "As mensagens de reengajamento pós-falta foram enviadas e o cliente não respondeu. Decida o próximo passo e mova o card no funil.",
+            idioma,
+          ),
+        ],
       );
     },
     async persistirRespostaFollowup(input) {

@@ -35,6 +35,36 @@ export const TOOLS_FUNIL = declararTools([
     pacotes: ["vender"],
   },
   {
+    name: "crm_list_lead_attachments",
+    category: "read",
+    rotulo: "Listar os documentos do negócio",
+    explicacao:
+      "Mostra os arquivos que a equipe anexou numa oportunidade — nome, tamanho e data —, para a IA saber o que já está guardado ali antes de pedir o documento de novo ao cliente.",
+    oQueToca: "Funil de vendas",
+    risco: "seguro",
+    // `reter`, e NÃO `vender` (#4544). Duas capacidades novas no pacote default
+    // do onboarding empurravam o `evoluir` — o segundo pacote que cabe no teto —
+    // de 27 para 29 e obrigavam a subir `TETO_TOOLS_POR_AGENTE`, número que o
+    // #4534 também move. Aqui elas ficam ao lado de
+    // `crm_propose_lead_fields_from_document`, que é o consumidor do id que esta
+    // ferramenta devolve: a leitura do documento e a proposta de campos para o
+    // card são a MESMA jornada. Medido: com elas em `reter`, o onboarding segue
+    // em 22 e o `evoluir` volta a exigir 27.
+    pacotes: ["reter"],
+  },
+  {
+    name: "crm_get_lead_attachment",
+    category: "read",
+    rotulo: "Ler o conteúdo de um documento do negócio",
+    explicacao:
+      "Lê o texto de um arquivo anexado à oportunidade (por exemplo a apólice do seguro ou o voucher da viagem), para a IA encontrar ali dados como número da apólice, localizador e hotel sem pedir tudo de novo ao cliente. Imagem não é lida.",
+    oQueToca: "Funil de vendas",
+    risco: "seguro",
+    // Mesma jornada do `crm_list_lead_attachments` (ver o comentário acima): a
+    // dupla mora em `reter`, com o `crm_propose_lead_fields_from_document`.
+    pacotes: ["reter"],
+  },
+  {
     name: "crm_list_pipelines",
     category: "read",
     rotulo: "Listar funis",

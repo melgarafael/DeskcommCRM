@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoAviso, preencher } from "@/lib/i18n/idioma-do-aviso";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 
@@ -190,18 +192,33 @@ export async function venceReativacoes(
       .eq("status", "open")
       .maybeSingle();
     if (!jaAberto) {
+      // A Central mostra o texto como foi gravado: o aviso nasce no idioma da organização.
+      const idioma = await idiomaDoAviso(admin, organizationId);
+      const um = r.vencidas === 1;
       const { data: item } = await admin
         .from("agent_inbox_items")
         .insert({
           organization_id: organizationId,
           kind: "reactivation_expired",
           severity: "warn",
-          title: `Decida sobre ${r.vencidas} ${r.vencidas === 1 ? "negócio parado" : "negócios parados"} — a sugestão de retomar venceu`,
-          body:
-            `${r.vencidas === 1 ? "Um negócio esfriou" : `${r.vencidas} negócios esfriaram`} e a sugestão de ` +
-            `retomar contato ficou sem resposta até o prazo. Eles saíram do quadro para não ` +
-            `parecerem em andamento. Retomar ou encerrar — as duas são decisões; deixar como ` +
-            `está é a única que não é.`,
+          title: preencher(
+            um
+              ? traduzir("Decida sobre {n} negócio parado — a sugestão de retomar venceu", idioma)
+              : traduzir("Decida sobre {n} negócios parados — a sugestão de retomar venceu", idioma),
+            { n: r.vencidas },
+          ),
+          body: preencher(
+            um
+              ? traduzir(
+                  "Um negócio esfriou e a sugestão de retomar contato ficou sem resposta até o prazo. Eles saíram do quadro para não parecerem em andamento. Retomar ou encerrar — as duas são decisões; deixar como está é a única que não é.",
+                  idioma,
+                )
+              : traduzir(
+                  "{n} negócios esfriaram e a sugestão de retomar contato ficou sem resposta até o prazo. Eles saíram do quadro para não parecerem em andamento. Retomar ou encerrar — as duas são decisões; deixar como está é a única que não é.",
+                  idioma,
+                ),
+            { n: r.vencidas },
+          ),
           ref_kind: "organization",
           ref_id: organizationId,
         })
