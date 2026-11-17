@@ -7,7 +7,7 @@ vi.mock("@/lib/event-log/drain", () => ({
   drainEventLog: vi.fn(async () => ({ drained: 0 })),
 }));
 // REGISTER-HANDLERS PREGUIÇOSO: o factory marca QUANDO o módulo foi carregado. O pipeline o
-// importa só dentro do dreno; importar o pipeline (o que todo `lib/waha/ingest` faz) não pode carregá-lo.
+// importa só dentro do dreno; importar o pipeline (o que toda ingestão do canal faz) não pode carregá-lo.
 const registro = vi.hoisted(() => ({ carregado: false, ensure: vi.fn() }));
 vi.mock("@/lib/event-log/register-handlers", () => {
   registro.carregado = true;
@@ -108,7 +108,7 @@ describe("drenarEventosDoInbound — o webhook não drena a fila de todo mundo q
 
 describe("REGISTER-HANDLERS PREGUIÇOSO", () => {
   // No topo do arquivo, o import do register-handlers levava os workers de IA, LGPD, RAG… a todo mundo que importa
-  // `lib/waha/ingest`. O caso « o webhook de status AVISA » do channel-health-aviso pagava esse custo dentro dos
+  // a ingestão do canal. O caso « o webhook de status AVISA » do channel-health-aviso pagava esse custo dentro dos
   // 15 s dele, e estourava sob carga.
   const adminQueFalha = {
     from: () => {

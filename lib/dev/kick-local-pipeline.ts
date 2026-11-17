@@ -213,7 +213,7 @@ export async function drenarEventosDoInbound(
   try {
     // O registro dos handlers entra só aqui, quando o dreno vai rodar. No topo
     // do arquivo, o import levava os workers de IA, LGPD, RAG… a todo mundo
-    // que importa `lib/waha/ingest`, inclusive a quem nunca drena (o
+    // que importa a ingestão do canal, inclusive a quem nunca drena (o
     // `session.status`, por exemplo).
     const { ensureHandlersRegistered } = await import("@/lib/event-log/register-handlers");
     ensureHandlersRegistered();
