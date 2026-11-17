@@ -2136,7 +2136,15 @@ export function ProspectingClient() {
                             {config.janela && (
                               <div className="space-y-3 pl-6">
                                 <div className="flex flex-wrap gap-3">
-                                  {NOMES_DOS_DIAS.map((nome, dia) => (
+                                  {[
+                                    t("Dom"),
+                                    t("Seg"),
+                                    t("Ter"),
+                                    t("Qua"),
+                                    t("Qui"),
+                                    t("Sex"),
+                                    t("Sáb"),
+                                  ].map((rotulo, dia) => (
                                     <label key={dia} className="flex items-center gap-1 text-sm">
                                       <input
                                         type="checkbox"
@@ -2153,7 +2161,7 @@ export function ProspectingClient() {
                                           update("janela", { ...config.janela!, dias: proximos });
                                         }}
                                       />
-                                      <span>{t(nome)}</span>
+                                      <span>{rotulo}</span>
                                     </label>
                                   ))}
                                 </div>
