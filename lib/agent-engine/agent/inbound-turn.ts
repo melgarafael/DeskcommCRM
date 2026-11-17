@@ -356,6 +356,7 @@ import {
 import type { DependenciasDoPonto } from '@/lib/ai/decisao/ponto';
 import { perguntarUrgenciaAoJev, registrarUrgenciaDoJev } from '@/lib/ai/decisao/urgencia';
 import { fatosDaOrganizacao } from './fatos-da-organizacao';
+import { traduzir } from '@/lib/i18n/dicionario';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import { blocoDoFeriado, ehFeriadoNacionalNoFuso, lerFeriadoDoTurno } from './feriado-nacional';
 import { blocosNoIdioma, diretivaDeIdioma, ferramentasNoIdioma } from './idioma-do-turno';
@@ -1180,8 +1181,9 @@ async function briefingDoCheckpointDuravel(
   leadId: string,
   log: Logger,
 ): Promise<BriefingDaPassagem> {
+  const idioma = (await fatosDaOrganizacao(pool, tenantId, log)).idioma;
   const montar = (checkpoint: Awaited<ReturnType<typeof latestCheckpoint>>) =>
-    montarBriefingDaPassagem({ checkpoint, motivo: { codigo: 'orcamento_de_ia' } });
+    montarBriefingDaPassagem({ checkpoint, motivo: { codigo: 'orcamento_de_ia' }, idioma });
   try {
     return montar(await latestCheckpoint(pool, tenantId, leadId));
   } catch (err) {
@@ -2336,6 +2338,7 @@ export async function deteccoesDeterministicasDoAssistido(
       checkpoint: await latestCheckpoint(pool, tenantId, leadId),
       pendentesDoCliente: inboundsPendentes,
       motivo: { codigo: 'requested_human' },
+      idioma: (await fatosDaOrganizacao(pool, tenantId, log)).idioma,
     });
     const aviso = avisoDaEscalacao();
     const desfecho = contextoLido
@@ -2369,6 +2372,7 @@ export async function deteccoesDeterministicasDoAssistido(
       checkpoint: await latestCheckpoint(pool, tenantId, leadId),
       pendentesDoCliente: inboundsPendentes,
       motivo: { codigo: 'suspected_optout' },
+      idioma: (await fatosDaOrganizacao(pool, tenantId, log)).idioma,
     });
     const aviso = avisoDaEscalacao();
     const desfecho = contextoLido
@@ -2667,8 +2671,10 @@ async function escalarComercialAntesDoModelo(
       ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
     },
   );
+  const idiomaDoTurno = (await fatosDaOrganizacao(pool, tenantId)).idioma;
   const briefing = montarBriefingDaPassagem({ checkpoint: null, pendentesDoCliente: textos,
-    motivo: { codigo: 'restricao_comercial', texto: 'Valores e negociação: fora do escopo da IA.' } });
+    motivo: { codigo: 'restricao_comercial', texto: traduzir('Valores e negociação: fora do escopo da IA.', idiomaDoTurno) },
+    idioma: idiomaDoTurno });
   await performHumanHandoff(pool, { tenantId, leadId: turno.leadId, conversationId: turno.conversationId },
     { reason: 'restricao_comercial', conversationSummary: briefing.body,
       inboxTitle: 'Valores e negociação — atendimento humano necessário',
@@ -3566,7 +3572,7 @@ async function executarTurnoDoAgente(
       motivo: 'outro',
     });
     const briefing = montarBriefingDaPassagem({ checkpoint: null, pendentesDoCliente: [],
-      motivo: { codigo: 'restricao_comercial', texto: 'Resposta comercial barrada; valores e negociação são exclusivos da equipe.' } });
+      motivo: { codigo: 'restricao_comercial', texto: traduzir('Resposta comercial barrada; valores e negociação são exclusivos da equipe.', idiomaDaOrg) }, idioma: idiomaDaOrg });
     await performHumanHandoff(pool, { tenantId, leadId, conversationId: input.conversationId },
       { reason: 'restricao_comercial', conversationSummary: briefing.body,
         inboxTitle: 'Valores e negociação — atendimento humano necessário',
@@ -3626,6 +3632,7 @@ async function executarTurnoDoAgente(
       checkpoint: previous,
       pendentesDoCliente: inboundsPendentes,
       motivo: { codigo: 'requested_human' },
+      idioma: idiomaDaOrg,
     });
     await performHumanHandoff(
       pool,
@@ -3665,6 +3672,7 @@ async function executarTurnoDoAgente(
       checkpoint: previous,
       pendentesDoCliente: inboundsPendentes,
       motivo: { codigo: 'suspected_optout' },
+      idioma: idiomaDaOrg,
     });
     await performHumanHandoff(
       pool,
@@ -5846,6 +5854,7 @@ async function executarTurnoDoAgente(
                 detalhe: mirror.detail,
                 etapaDeDestino: update.transition.to,
                 ...(mirror.stageName !== undefined ? { etapaDoFunil: mirror.stageName } : {}),
+                idioma: idiomaDaOrg,
               });
             }
           }
@@ -5985,7 +5994,7 @@ async function executarTurnoDoAgente(
             pool,
             { tenantId, leadId, conversationId: input.conversationId },
             {
-              conversationSummary: buildHandoffSummary(previous),
+              conversationSummary: buildHandoffSummary(previous, idiomaDaOrg),
               contextoDoTurno: { checkpoint: previous, pendentesDoCliente: inboundsPendentes },
               avisoAoLead: aviso,
               // #2210: com a mensagem na mão o handoff pergunta ao banco se a
@@ -7735,6 +7744,7 @@ async function executarTurnoDoAgente(
           }
         : null,
       content,
+      idiomaDaOrg,
     );
 
     if (mudanca.emit) {

@@ -14,6 +14,21 @@
  * `reason` é a classificação (ver `lib/net/alcance`), e é o que basta para saber
  * ONDE mexer.
  *
+ * ─── Por que agora também sai `causa` e `runbook` ────────────────────────────
+ * Uma instalação no plano free passou ~6 h com 100% de `/rest/v1` em 522 e este
+ * health respondendo só `tempo_esgotado`. A resposta estava certa e não dizia
+ * para onde ir: o runbook que já existia para o sintoma aponta OUTRA causa (o
+ * gateway reexecutando requisições), com uma proteção que já estava instalada e
+ * não resolve falta de memória. `causa` separa schema cache do PostgREST
+ * (`PGRST002`), projeto sem resposta na origem (`522`), banco inacessível e
+ * lentidão genérica; `runbook` é o CAMPO com o caminho do documento certo —
+ * separado de `error` porque `error` é redigido para quem não tem o segredo, e
+ * o caminho do doc é justamente o que serve a quem está com o sistema fora.
+ * Os campos antigos (`status`, `reason`, `error`, `latency_ms`, `target`)
+ * continuam com o mesmo nome e o mesmo significado; isto ACRESCENTA.
+ * Ver `lib/net/causa-do-supabase.ts` e
+ * `docs/runbooks/supabase-sem-memoria-no-free.md`.
+ *
  * ─── Por que o check do banco recusa o 3xx e o 200 que não é JSON ────────────
  * "O endereço respondeu" não é "o BANCO respondeu". Numa instalação em que o
  * endereço configurado cai num proxy, o `fetch` seguia o `307` para a tela de
@@ -36,6 +51,13 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { env } from "@/lib/env";
 import { alvoDe, classificarFalhaDeAlcance, type FalhaDeAlcance } from "@/lib/net/alcance";
+import {
+  RUNBOOK_DA_CAUSA,
+  causaDaFalhaDeAlcance,
+  causaDaResposta,
+  mensagemDaCausa,
+  type CausaDoSupabase,
+} from "@/lib/net/causa-do-supabase";
 import { validarConfigRedisRest } from "@/lib/redis-config";
 import { urlDoSupabaseNoServidor } from "@/lib/supabase/url-do-servidor";
 import { comIdDaRequisicao } from "@/lib/api/wrappers";
@@ -59,6 +81,18 @@ type Check = {
   latency_ms: number;
   error?: string;
   reason?: MotivoDeFalha;
+  /**
+   * A CAUSA, no nível que muda a ação — só o check do banco preenche. É campo
+   * NOVO ao lado de `reason`, e não substituto: `reason: "projeto_indisponivel"`
+   * continua significando "522 ou schema cache", como para quem já consome.
+   */
+  causa?: CausaDoSupabase;
+  /**
+   * O runbook que ESTA causa pede, relativo à raiz do repositório. Ponteiro em
+   * campo próprio porque `error` é redigido para quem não tem o segredo interno
+   * — e o caminho do doc é o que mais serve a quem está com o sistema fora.
+   */
+  runbook?: string;
   /** Protocolo + host + porta que tentamos. Só com `?verbose=1` autenticado. */
   target?: string;
 };
@@ -188,12 +222,16 @@ async function checkSupabase(): Promise<Check> {
     if (res.status === 401 || res.status === 403) {
       return { status: "ok", latency_ms: Date.now() - t0, target: alvoDe(url) };
     }
-    // Lê o corpo UMA vez: ele é o que distingue "o projeto Supabase caiu" de
-    // "lentidão genérica". Sem abrir conexão nova nem retry: só classificar o que
-    // já veio na resposta. Projeto indisponível: HTTP 522 (Cloudflare não
-    // alcança a origem) ou corpo com PGRST002 / schema cache (PostgREST não
-    // conseguiu carregar o cache de schema, típico de compute insuficiente no
-    // free). Não confundir com PGRST205 (tabela ausente num projeto de pé).
+    // Lê o corpo UMA vez: ele é o que distingue "o PostgREST não carregou o
+    // schema cache" de "nada respondeu na origem". Sem abrir conexão nova nem
+    // retry: só classificar o que já veio na resposta.
+    //
+    // Os dois ramos que já existiam continuam com o MESMO `reason`
+    // (`projeto_indisponivel`) porque é o contrato de quem já consome o health;
+    // o que se acrescenta é `causa` — `postgrest_sem_schema_cache` (503 PGRST002
+    // ou 5xx citando o schema cache: o PostgREST respondeu e o cache é o
+    // problema) e `projeto_sem_resposta_na_origem` (522 do Cloudflare, sem
+    // corpo). Não confundir com PGRST205 (tabela ausente num projeto de pé).
     //
     // A falha ao LER o corpo tem dois destinos. No `200` o corpo é a prova
     // (`corpoDoPostgrest`): a falha propaga crua para o `catch`, que dá o
@@ -203,16 +241,16 @@ async function checkSupabase(): Promise<Check> {
     // resposta, e ela cai no ramo `http_${status}`, como antes de o corpo ser lido.
     const leitura = withTimeout(res.text());
     const corpo = (res.status === 200 ? await leitura : await leitura.catch(() => "")).trim();
-    const projetoIndisponivel =
-      res.status === 522 ||
-      /PGRST002/i.test(corpo) ||
-      (res.status >= 500 && /schema cache/i.test(corpo));
-    if (projetoIndisponivel) {
+    const causa = causaDaResposta(res.status, corpo);
+    if (causa) {
       return {
         status: "down",
         latency_ms: Date.now() - t0,
-        error: "projeto_indisponivel (PGRST002/522/schema cache): reinicie o projeto no Supabase (Restart project) — ver docs/runbooks/supabase-compute-insuficiente-free.md",
+        error: mensagemDaCausa(causa, `HTTP ${res.status}`, TIMEOUT_MS),
+        // `reason` preservado: 522 e schema cache continuam "projeto_indisponivel".
         reason: "projeto_indisponivel",
+        causa,
+        runbook: RUNBOOK_DA_CAUSA[causa],
         target: alvoDe(url),
       };
     }
@@ -239,11 +277,25 @@ async function checkSupabase(): Promise<Check> {
       target: alvoDe(url),
     };
   } catch (e) {
+    // Aqui é o ramo de "não houve resposta": a falha de alcance já dizia POR QUE
+    // (DNS, porta fechada, rota, TLS, tempo) e continua dizendo — `reason` é o
+    // mesmo de antes. `causa` traduz isso para as TRÊS ações possíveis: nenhuma
+    // conexão é `banco_inacessivel` (confira endereço/rede antes de reiniciar o
+    // projeto), tempo esgotado é `lentidao_generica` (não dá para separar schema
+    // cache de sobrecarga sem resposta — a issue viu EXATAMENTE isto), e
+    // `indeterminada` segue sem causa: campo vazio é melhor que frase inventada.
+    const falha = classificarFalhaDeAlcance(e);
+    const causa = causaDaFalhaDeAlcance(falha);
+    const texto = e instanceof Error ? e.message : String(e);
     return {
       status: "down",
       latency_ms: Date.now() - t0,
-      error: e instanceof Error ? e.message : String(e),
-      reason: classificarFalhaDeAlcance(e),
+      error:
+        causa === undefined
+          ? texto
+          : mensagemDaCausa(causa, falha === "tempo_esgotado" ? `timeout ${TIMEOUT_MS} ms` : falha, TIMEOUT_MS),
+      reason: falha,
+      ...(causa === undefined ? {} : { causa, runbook: RUNBOOK_DA_CAUSA[causa] }),
       target: alvoDe(url),
     };
   }

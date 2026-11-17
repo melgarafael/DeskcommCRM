@@ -160,25 +160,29 @@ class ConsultaFalsa implements PromiseLike<{ data: Linha[]; error: null }> {
 
 function bancoFalso(atividades: Linha[]) {
   const registroDaAtividade: Array<Record<string, unknown>> = [];
+  // Spec 33 (R2): a rota também filtra a organização ao ler o contato e os
+  // negócios dele (o caminho do token não tem RLS). Esses filtros vão para um
+  // registro à parte, para a asserção abaixo seguir medindo só as atividades.
+  const registroDoResto: Array<Record<string, unknown>> = [];
   const cliente = {
     auth: { getUser: async () => ({ data: { user: { id: "usuario-da-sessao" } }, error: null }) },
     from: (tabela: string) => {
       if (tabela === "contacts") {
         return new ConsultaFalsa(
           [{ id: CONTATO, organization_id: ORG }],
-          registroDaAtividade,
+          registroDoResto,
         );
       }
       if (tabela === "crm_leads") {
         return new ConsultaFalsa(
-          [{ id: NEGOCIO, contact_id: CONTATO }],
-          registroDaAtividade,
+          [{ id: NEGOCIO, contact_id: CONTATO, organization_id: ORG }],
+          registroDoResto,
         );
       }
       if (tabela === "crm_lead_activities") {
         return new ConsultaFalsa(atividades, registroDaAtividade);
       }
-      return new ConsultaFalsa([], registroDaAtividade);
+      return new ConsultaFalsa([], registroDoResto);
     },
   };
   return { cliente, registroDaAtividade };
