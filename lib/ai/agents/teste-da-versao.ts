@@ -6,7 +6,7 @@
  * o dono testando pelo ChatGPT o rascunho que acabou de corrigir). Nada mudou
  * no caminho: abre a linha de `ai_agent_runs` com `is_dry_run = true`, roda
  * `testAgentVersion` (o motor do turno de WhatsApp, em modo prévia — não chama
- * WAHA, não cria mensagem, não toca contato nem conversa), fecha a linha e
+ * o provedor do canal, não cria mensagem, não toca contato nem conversa), fecha a linha e
  * audita `ai_agent.tested`.
  *
  * Devolve o resultado em vez de uma `Response`: quem chama traduz para o

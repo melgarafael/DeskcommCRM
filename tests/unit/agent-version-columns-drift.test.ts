@@ -393,6 +393,12 @@ function chavesNomeadas(bloco: string): string[] {
 function chavesDoAlvo(alvo: string): string[] {
   const nomes = chavesNomeadas(alvo);
   if (/\.\.\.[\w$]+\.version\b/.test(alvo)) nomes.push(...chavesCobertasPeloEsquema());
+  // `...linhaDoRascunhoClonado(src)` (reverter em lib/ai/agents/edicao.ts): as
+  // chaves são as que o corpo da função ESCREVE, lidas no arquivo dela.
+  if (/\.\.\.linhaDoRascunhoClonado\(/.test(alvo)) {
+    const corpo = fonte("lib/ai/agents/linha-da-versao.ts").split("export function linhaDoRascunhoClonado")[1] ?? "";
+    nomes.push(...chavesNomeadas(corpo));
+  }
   return [...new Set(nomes)];
 }
 
