@@ -144,7 +144,7 @@ function streamOk(uso: Record<string, unknown> = COM_USO) {
 const logDuble = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() });
 
 async function chamar(opts: { provider: string; model: string }, log = logDuble()) {
-  const p = pool(opts);
+  const p = pool({ provider: opts.provider, defaultModel: opts.model });
   const r = await runModelCall(
     p.pool,
     { anthropicApiKey: "ant", openaiApiKey: "openai-de-teste", cacheTtl: "1h" },
