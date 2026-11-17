@@ -155,7 +155,7 @@ async function funilDaConferencia(ctx: McpContext, alvo: AlvoDaConferencia): Pro
         .eq("id", alvo.leadId)
         .maybeSingle();
       if (error || !data) return { rotulos: new Map(), defs: [] };
-      settings = await settingsDoFunil(ctx.supabase, (data as { pipeline_id?: string | null }).pipeline_id);
+      settings = await settingsDoFunil(ctx.supabase, (data as { pipeline_id?: string | null }).pipeline_id, ctx.organizationId);
     }
     const defs = defsDoPadraoDoFunil(settings);
     return {

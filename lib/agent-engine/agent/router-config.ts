@@ -89,6 +89,16 @@ export interface LoadedRouter {
    * coluna existir: ausente lê como desligado, igual a `null`.
    */
   passagemAoCliente?: string | null;
+  /**
+   * #4750 — o TERCEIRO modo da troca automática (`config.passagem_silenciosa`):
+   * o classificador troca quem atende e NADA vai ao cliente; o agente novo
+   * continua a conversa sem se apresentar nem anunciar a troca.
+   *
+   * `config` é jsonb livre, então não há coluna nem migration: a chave mora ao
+   * lado de `context_message_count`, lida com a mesma régua defensiva. Ausente,
+   * não-booleana ou falsa = o comportamento de antes (o padrão do produto).
+   */
+  passagemSilenciosa?: boolean;
   /** Regras administrativas por remetente; validadas antes de escolher o agente. */
   senderRoutes?: unknown;
   members: RouterMember[];
@@ -174,6 +184,7 @@ export async function loadActiveRouter(
     sticky?: unknown;
     min_confidence?: unknown;
     context_message_count?: unknown;
+    passagem_silenciosa?: unknown;
   };
   const classifierModel =
     typeof cfg.classifier_model === 'string' && cfg.classifier_model.trim() !== ''
@@ -194,6 +205,9 @@ export async function loadActiveRouter(
       ? cfg.context_message_count
       : CLASSIFIER_CONTEXT_MESSAGES;
 
+  const passagemSilenciosa =
+    typeof cfg.passagem_silenciosa === 'boolean' ? cfg.passagem_silenciosa : false;
+
   return {
     id: router.id,
     name: router.name,
@@ -204,6 +218,7 @@ export async function loadActiveRouter(
     contextMessageCount,
     fallbackAgentId: router.fallback_agent_id,
     passagemAoCliente: normalizarPassagemAoCliente(router.passagem_ao_cliente),
+    passagemSilenciosa,
     senderRoutes: (router.config ?? {}).sender_routes,
     members: memberRows.map((m) => ({
       agentId: m.agent_id,

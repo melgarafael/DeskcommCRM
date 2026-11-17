@@ -40,6 +40,7 @@ import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
 import { TEXTOS_APARENCIA } from "./aparencia";
 import { TEXTOS_PROSPECCAO_ARQUIVO_DA_ABORDAGEM } from "./prospeccao-arquivo-da-abordagem";
 import { TEXTOS_CONTRATACAO } from "./contratacao";
+import { TEXTOS_MCP_OAUTH } from "./mcp-oauth";
 import { TEXTOS_TABELA_DE_VALORES } from "./tabela-de-valores";
 import { TEXTOS_DO_MOTOR_GRAVADO } from "./motor-gravado";
 import { TEXTOS_AVISOS_DA_CENTRAL } from "./avisos-da-central";
@@ -49,6 +50,7 @@ type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>
 
 export const DICIONARIO: Traducoes = {
   ...TEXTOS_CONTRATACAO,
+  ...TEXTOS_MCP_OAUTH,
   ...TEXTOS_TABELA_DE_VALORES,
   ...TEXTOS_DO_MOTOR_GRAVADO,
   ...TEXTOS_AVISOS_DA_CENTRAL,
@@ -4881,6 +4883,20 @@ export const DICIONARIO: Traducoes = {
   },
   "Ligada: o cliente recebe esta frase uma vez, antes da resposta do agente novo.": {
     es: "Activada: el cliente recibe esta frase una vez, antes de la respuesta del agente nuevo.",
+  },
+  // #4750 — o TERCEIRO modo da troca automática: silencioso. Mora no `config`
+  // do roteador e fica na mesma área da frase, porque é ele que a desliga.
+  "Troca automática silenciosa": { es: "Traspaso automático silencioso" },
+  "Ligada: nada é enviado ao cliente e o agente novo continua a conversa sem se apresentar nem anunciar a troca.":
+    {
+      es: "Activada: no se envía nada al cliente y el agente nuevo continúa la conversación sin presentarse ni anunciar el traspaso.",
+    },
+  "Desligada: com frase abaixo, o cliente é avisado da troca; sem frase, o agente novo se apresenta com as palavras dele.":
+    {
+      es: "Desactivada: con la frase de abajo se avisa al cliente del traspaso; sin frase, el agente nuevo se presenta con sus propias palabras.",
+    },
+  "Com a troca silenciosa ligada, esta frase NÃO é enviada ao cliente.": {
+    es: "Con el traspaso silencioso activado, esta frase NO se envía al cliente.",
   },
   "O número não pode ser trocado depois de criado — crie outro roteador para um número diferente.": {
     es: "El número no se puede cambiar una vez creado el enrutador. Para usar otro número, crea otro enrutador.",
