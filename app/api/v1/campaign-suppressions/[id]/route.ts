@@ -9,9 +9,10 @@ import { randomUUID } from "node:crypto";
 
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -19,23 +20,31 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export const dynamic = "force-dynamic";
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const negado = await requireSupportWrite();
   if (negado) return negado;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "campaign_suppressions" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "campaign_suppressions",
+    role: "manager",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "campaign_suppressions_excluir", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const org = { orgId: authz.organizationId };
   const { id } = await ctx.params;
 
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("campaign_suppressions")
     .delete()
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", org.orgId)
     .eq("id", id)
     .select("id, address_tail")
     .maybeSingle();
@@ -44,8 +53,9 @@ export async function DELETE(
 
   void audit({
     action: "campaign.suppression_removed",
-    actorUserId: authz.user.id,
-    organizationId: authz.org.orgId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: org.orgId,
     resourceType: "campaign_suppression",
     resourceId: id,
     requestId,

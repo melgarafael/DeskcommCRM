@@ -548,7 +548,7 @@ export async function sendMessageHandler(
   // envio com 42703. Sem a coluna, nada está arquivado — e a consulta sem ela é a
   // consulta certa (ver lib/channels/archived).
   const convSelect = (comArchived: boolean) =>
-    `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, provider_conversation_id, last_inbound_at, contacts:contact_id(phone_number, wa_identity, wa_lid, is_blocked, is_personal), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status, metadata${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
+    `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, provider_conversation_id, last_inbound_at, contacts:contact_id(phone_number, wa_identity, wa_lid, social_identity, is_blocked, is_personal), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status, metadata${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
   //
   // O filtro por `organization_id` NÃO é redundância com a RLS — é a única
   // proteção que existe na metade dos chamadores. Este handler é a porta de
@@ -615,6 +615,8 @@ export async function sendMessageHandler(
       phone_number: string | null;
       wa_identity: string | null;
       wa_lid: string | null;
+      /** Instagram/Facebook: o testador social do pré-go-live casa por aqui. */
+      social_identity?: string | null;
       is_blocked: boolean;
       /** Spec 21: pessoal não recebe por nenhum caminho — o veto é no mesmo ponto do bloqueio. */
       is_personal: boolean;
@@ -1205,6 +1207,7 @@ export async function sendMessageHandler(
     organizationId: ctx.organization_id,
     channelSessionId: c.channel_session_id,
     contactPhoneNumber: c.contacts?.phone_number ?? "",
+    contactSocialIdentity: c.contacts?.social_identity ?? null,
   }).catch(() => ({ permite: false, motivo: "pre_go_live_indisponivel" }));
   if (acessoAtual && !acessoAtual.permite) {
     const { data: updated, error } = await supabase.from("messages").update({

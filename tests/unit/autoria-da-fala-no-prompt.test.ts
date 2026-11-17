@@ -24,7 +24,7 @@ import {
   COMPACTION_INSTRUCTION,
   FLUSH_INSTRUCTION,
 } from "@/lib/agent-engine/agent/compaction";
-import { AUTORIA_SYSTEM_BLOCK } from "@/lib/agent-engine/agent/inbound-turn";
+import { AUTORIA_SYSTEM_BLOCK, TRANSPARENCIA_SYSTEM_BLOCK, blocosDoSistemaDoTurno } from "@/lib/agent-engine/agent/inbound-turn";
 import type { LeadContext } from "@/lib/agent-engine/edge/crm/get-lead-context";
 import { renderSemanticPromiseVeto } from "@/lib/agent-engine/guardrails/promise/semantic";
 
@@ -70,13 +70,32 @@ describe("o bloco residente de autoria", () => {
     expect(AUTORIA_SYSTEM_BLOCK).toContain("ofereça confirmar com a equipe");
   });
 
-  it("entra no system de todo agente, fora de qualquer condição", () => {
+  it("entra no system de todo agente, fora de qualquer condição — e é dos PRIMEIROS bytes (#4668)", () => {
+    const minimo = blocosDoSistemaDoTurno({
+      promptDoAgente: "",
+      casosLigados: false,
+      toolIds: [],
+      previewKind: null,
+      idioma: "pt-BR",
+      blocoDaVoz: null,
+    });
+    expect(minimo[0]).toBe(TRANSPARENCIA_SYSTEM_BLOCK);
+    expect(minimo[1]).toBe(AUTORIA_SYSTEM_BLOCK);
+
+    const cheio = blocosDoSistemaDoTurno({
+      promptDoAgente: "playbook do dono",
+      casosLigados: true,
+      toolIds: ["crm_find_free_slots"],
+      previewKind: "sandbox",
+      idioma: "es",
+      blocoDaVoz: "bloco de voz",
+    });
+    // Tudo ligado, e ele continua na frente — a posição não depende de feature.
+    expect(cheio[1]).toBe(AUTORIA_SYSTEM_BLOCK);
+    expect(cheio.filter((bloco) => bloco === AUTORIA_SYSTEM_BLOCK)).toHaveLength(1);
+
     const fonte = readFileSync(INBOUND, "utf8");
-    expect(fonte).toContain(
-      "const blocosResidentes = [systemWithMemory, TRANSPARENCIA_SYSTEM_BLOCK, AUTORIA_SYSTEM_BLOCK];",
-    );
     expect(fonte.split("## Quem disse o quê").length).toBe(2);
-    expect(fonte.split("blocosResidentes.push(AUTORIA_SYSTEM_BLOCK)").length).toBe(1);
   });
 });
 

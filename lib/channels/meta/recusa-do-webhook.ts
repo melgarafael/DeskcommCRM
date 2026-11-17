@@ -54,6 +54,8 @@ import { createHash } from "node:crypto";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoAviso } from "@/lib/i18n/idioma-do-aviso";
 import { logger } from "@/lib/logger";
 
 import { cabecalhosSeguros } from "../arquivo-de-webhook";
@@ -216,12 +218,19 @@ async function abrirAvisoDaRecusa(
   organizationId: string,
 ): Promise<RecusaRegistradaDoWebhookMeta["aviso"]> {
   try {
+    // A Central mostra o texto como foi gravado: o aviso nasce no idioma da
+    // organização. O título segue estável POR organização (o idioma dela não
+    // muda entre entregas), que é o que o índice de dedup por título precisa.
+    const idioma = await idiomaDoAviso(admin, organizationId);
     const { error } = await admin.from("agent_inbox_items").insert({
       organization_id: organizationId,
       kind: KIND_DO_AVISO,
       severity: "warn",
-      title: TITULO_DO_AVISO_DE_CONTRATO,
-      body: CORPO_DO_AVISO_DE_CONTRATO,
+      title: traduzir("O webhook da Meta recebeu um payload fora do contrato", idioma),
+      body: traduzir(
+        "A Cloud API entregou um corpo que não segue o contrato do canal. O evento foi arquivado como erro e a Meta recebeu 200, então não há reentrega: se isto se repetir, o formato do webhook mudou e mensagens podem estar deixando de entrar. Confira os eventos com status de erro em webhook_events_log e o log da rota do webhook da Meta.",
+        idioma,
+      ),
       ref_kind: null,
       ref_id: null,
     });
