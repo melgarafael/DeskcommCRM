@@ -31,7 +31,7 @@ export const dynamic = "force-dynamic";
 
 const LIMITE_DO_CORPO = 1_048_576;
 const RECUSAS_POR_MINUTO = 120;
-/** Avisos VÁLIDOS do Asaas de cliente que não existe aqui, por IP: o teto do token vazado. */
+/** Avisos VÁLIDOS de cliente que não existe aqui, por provedor de token estático: o teto do token vazado. */
 const DESCONHECIDOS_POR_MINUTO = 120;
 
 type Rota = { params: Promise<{ provedor: string }> };
@@ -126,10 +126,11 @@ export async function POST(req: NextRequest, { params }: Rota) {
     }
   }
   const org = dona?.organization_id ?? null;
-  if (!org && provedor === "asaas") {
-    // O token do Asaas é estático: vazado, ele assina avisos de clientes que não
-    // existem, e cada um viraria uma linha nova. Acima do balde, 200 SEM gravar:
-    // 429 faria o Asaas interromper a fila, e com ela os avisos verdadeiros; o
+  if (!org && provedor !== "stripe") {
+    // Só a Stripe assina cada aviso. Asaas e Efi autenticam por token ESTÁTICO:
+    // vazado, ele autentica avisos de clientes que não existem, e cada um viraria
+    // uma linha nova. Acima do balde, 200 SEM gravar: 429 faria o provedor
+    // interromper a fila, e com ela os avisos verdadeiros; o
     // que for de verdade, a reconciliação cura. Cliente conhecido só entra aqui se a
     // leitura da empresa falhou: sem saber a dona, o aviso também vira linha nova.
     // Chave GLOBAL por provedor, não por IP: o IP é o primeiro salto do

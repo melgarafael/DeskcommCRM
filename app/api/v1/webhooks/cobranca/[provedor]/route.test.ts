@@ -175,6 +175,26 @@ describe("webhook da cobrança", () => {
     });
   });
 
+  it("⭐ Efi também autentica por token estático: aviso válido de empresa desconhecida acima do balde dá 200 SEM gravar linha", async () => {
+    h.sinal = { eventoId: "efi:09027955:1", tipo: "notification", clienteRef: `org:${ORG}` };
+    m.dona = null;
+    h.permitido = false;
+    const url = `http://localhost/api/v1/webhooks/cobranca/efi?org=org%3A${ORG}&token=tok-do-aviso`;
+    const res = await POST(new NextRequest(url, { method: "POST", body: "notification=09027955" }), { params: Promise.resolve({ provedor: "efi" }) });
+    expect(res.status).toBe(200);
+    expect(h.baldes).toEqual(["cobranca-webhook-desconhecido:efi"]);
+    expect(doLog("insert")).toEqual([]);
+    expect(emits()).toEqual([]);
+  });
+
+  it("controle: a Stripe assina cada aviso e não passa pelo balde de desconhecidos", async () => {
+    m.dona = null;
+    h.permitido = false;
+    expect((await pedido()).status).toBe(200);
+    expect(h.baldes).toEqual([]);
+    expect(doLog("insert")).toHaveLength(1);
+  });
+
   it("⭐ a leitura da empresa falha: 500 com o ponteiro received e o motivo, o erro no log, e sem emitir", async () => {
     m.erroDona = true;
     expect((await pedido()).status).toBe(500);
