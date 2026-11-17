@@ -1,3 +1,4 @@
+---
 impacto: capacidade_nova
 secao: adicionado
 titulo: O filtro de spam retém a mensagem suspeita numa quarentena, em vez de acordar a equipe
