@@ -26,14 +26,18 @@ describe("consentimento de telemetria no primeiro install", () => {
   it("o instalador distingue primeira execução de uma escolha já gravada", () => {
     expect(install).toContain('if [ -z "${SENTRY_DSN+x}" ]; then');
     expect(install).toContain('SENTRY_DSN="off"');
-    expect(install).toContain('SENTRY_DSN=""');
+    // O token do "sim" é `comunidade`, não a chave vazia: desde a #4798 o vazio
+    // significa DESLIGADO (lib/sentry/dsn.ts), então gravar "" transformaria o
+    // consentimento em silêncio — e a chave pública do ingest não vai pro .env
+    // de quem instala.
+    expect(install).toContain('SENTRY_DSN="comunidade"');
     expect(install).toContain('envq SENTRY_DSN "${SENTRY_DSN:-}"');
   });
 
   it("a documentação do template explica as três escolhas persistentes", () => {
     expect(template).toContain("O install.sh pergunta na primeira instalação");
     expect(template).toContain("SENTRY_DSN=off");
-    expect(template).toContain("SENTRY_DSN=             → aceita o Sentry da comunidade");
+    expect(template).toContain("SENTRY_DSN=comunidade   → aceita o Sentry do projeto");
     expect(template).toContain("SENTRY_DSN=<seu-dsn>");
   });
 });
