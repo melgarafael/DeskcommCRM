@@ -52,12 +52,14 @@ import { precisaRenovar } from "@/lib/agenda/google/oauth";
 import { falasDoSnapshot } from "@/lib/agent-engine/agent/conversa-do-caso/leitura";
 import { midiaDerivavelPendente } from "@/lib/agent-engine/edge/crm/midia-derivavel";
 import { normalizarInstante } from "@/lib/ai/elegibilidade/gate";
+import { quandoCombinado } from "@/lib/atendimento/aviso-retorno-descartado";
 import { estaPresente } from "@/lib/atendimento/presenca";
 import { acaoDaAgenda } from "@/lib/channels/agenda-de-pausa";
 import { serializarValor } from "@/lib/external-db/montagem";
 import { diaDoValor } from "@/lib/followup/condicao-por-data";
 import { camposAlterados } from "@/lib/leads/campos-alterados";
 import { diaDoPrazo } from "@/lib/lgpd/sla";
+import { dataDaAbordagem } from "@/lib/prospecting/exportar";
 import { instanteDoBanco } from "@/lib/tempo/agora";
 
 /**
@@ -247,6 +249,32 @@ export function reguasDeData(pool: pg.Pool): ReguaDeData[] {
           new Date(CHEGADA_MS - 3_600_000),
           5 * 60_000,
         ) === false,
+    },
+    {
+      nome: "dataDaAbordagem",
+      onde: "lib/prospecting/exportar.ts:288",
+      // `prospecting_candidates.attempted_at` (timestamptz) e o `created_at` da
+      // trilha `prospecting.approach_sent`: é a coluna `abordada_em` do arquivo
+      // da campanha (#4632). Recusar o `Date` do driver deixaria a data da
+      // abordagem VAZIA justamente na lista que existe para dizer quando a
+      // empresa já foi tentada — e o modo de falha é mudo, porque o CSV continua
+      // bem formado. O dia civil é o de `CHEGADA` (2026-11-04), não outro.
+      entrada: "valor",
+      exercitar: (valorCru) =>
+        dataDaAbordagem({ data: {}, attempted_at: valorCru as string | Date }, "America/Sao_Paulo") ===
+        "2026-11-04",
+    },
+    {
+      nome: "quandoCombinado",
+      onde: "lib/atendimento/aviso-retorno-descartado.ts:88",
+      // (#4696) A hora do retorno combinado que vai para o aviso da Central: o
+      // `run_after` do job chega `Date` quando vem do driver e texto quando vem
+      // do payload clonado, e a frase tem de mostrar os DOIS como o mesmo
+      // "dd/mm às hh:mm" no fuso da empresa. Sem instante ela devolve `null` —
+      // a frase não inventa hora.
+      entrada: "valor",
+      exercitar: (valorCru) =>
+        quandoCombinado(valorCru as Date | string | null, "America/Sao_Paulo") !== null,
     },
   ];
 }

@@ -85,6 +85,18 @@ const SCOPES: { id: string; label: string }[] = [
   { id: "messages:write", label: "Enviar mensagens" },
   // #1613: sem esta linha o escopo existia na rota e ninguém conseguia concedê-lo.
   { id: "messages:on_behalf", label: "Integração pode enviar em nome de um atendente" },
+  // #4515: registrar presença sempre foi decisão de gente, e o `mcp:write` não
+  // distingue "marcar reunião" de "declarar quem faltou". Sem esta linha o
+  // escopo existiria na rota e ninguém conseguiria concedê-lo — o mesmo defeito
+  // que o #1613 e o #2052 fecharam nos escopos vizinhos.
+  // O rótulo nomeia as DUAS caixas que a rota também cobra (`mcp:write` e o
+  // papel de gerente, em `despachar` de app/api/v1/agenda/agendamentos/route.ts):
+  // na prova pela tela do #4523, quem marcou só esta recebeu 403 sem saber por quê.
+  {
+    id: "agenda:attendance",
+    label:
+      "Marcar comparecimento na agenda (Realizado / Não compareceu) depois do horário, sem abrir a tela (exige também AGIR no CRM e tratar o token como gerente)",
+  },
   { id: "audit:read", label: "Ler o log de auditoria" },
 ];
 

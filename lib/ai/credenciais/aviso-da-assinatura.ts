@@ -11,6 +11,11 @@
  *   * a rota que recebe o login novo (`…/credentials/[id]/revalidate`), quando a
  *     conta volta — é ela que FECHA, sem clique de ninguém.
  *
+ * O MESMO item também carrega o episódio "a IA inteira está fora" (#4610): a
+ * assinatura caiu e a reserva também recusou. Quem abre/atualiza é `avisarIaFora`
+ * e quem fecha é `fecharAvisoDaIaForaPelaChamada` — o título é o que distingue os
+ * dois episódios dentro do único item aberto por organização (migration 9027).
+ *
  * ── Best-effort, e por quê ──────────────────────────────────────────────────
  *
  * A abertura acontece LATERAL a um turno que já falhou; o fechamento, lateral a
@@ -24,8 +29,10 @@ import {
   avaliarAvisoDaAssinatura,
   KIND_ASSINATURA_DESCONECTADA,
   type ItemDaAssinaturaAberto,
+  type LadoQueFalhou,
   type SituacaoDaAssinatura,
 } from "./assinatura-desconectada";
+import { idiomaDoAviso } from "@/lib/i18n/idioma-do-aviso";
 import { logger } from "@/lib/logger";
 
 export type DesfechoDoAvisoDaAssinatura =
@@ -48,7 +55,7 @@ export async function sincronizarAvisoDaAssinatura(
   try {
     const { data: itemBruto, error: erroItem } = await db
       .from("agent_inbox_items")
-      .select("id, body")
+      .select("id, body, title")
       .eq("organization_id", situacao.organizationId)
       .eq("kind", KIND_ASSINATURA_DESCONECTADA)
       .eq("status", "open")
@@ -63,9 +70,22 @@ export async function sincronizarAvisoDaAssinatura(
     }
     const item = (itemBruto ?? null) as ItemDaAssinaturaAberto | null;
 
+    // Sem item e sem recusa não há o que escrever — nem idioma a ler.
+    const vaiEscrever = item !== null || (!situacao.conectada && situacao.recusa !== null);
+    // A Central mostra o texto como foi gravado: o aviso nasce no idioma da organização.
+    const idioma = vaiEscrever ? await idiomaDoAviso(db, situacao.organizationId) : undefined;
     const decisao = avaliarAvisoDaAssinatura(
-      { conectada: situacao.conectada, recusa: situacao.recusa },
+      {
+        conectada: situacao.conectada,
+        recusa: situacao.recusa,
+        // A decisão recebe a situação INTEIRA: passar só `conectada`/`recusa`
+        // deixava o episódio "IA fora" (#4610) inalcançável — a regra decidia
+        // "nada" e o aviso nunca abria.
+        ...(situacao.iaFora ? { iaFora: situacao.iaFora } : {}),
+        ...(situacao.voltaPorChamada === true ? { voltaPorChamada: true } : {}),
+      },
       item,
+      idioma,
     );
     if (decisao.acao === "nada") return "sem_mudanca";
 
@@ -148,5 +168,48 @@ export function fecharAvisoDaAssinatura(
     organizationId,
     conectada: true,
     recusa: null,
+  });
+}
+
+/**
+ * A IA INTEIRA FICOU FORA (#4610) — a assinatura caiu **e** a reserva também
+ * falhou. Abre (ou atualiza) o aviso do episódio, com os dois lados nomeados.
+ *
+ * Usa o MESMO item e o MESMO índice único da conta desconectada (migration
+ * 9027: um aberto por organização), de propósito: é o mesmo alarme — a porta da
+ * IA desta empresa está fechada —, e o destino do botão também (IA ›
+ * Credenciais). Dois kinds dariam dois itens abertos dizendo a mesma coisa.
+ *
+ * Best-effort, como o resto deste módulo: o turno já falhou, o aviso não pode
+ * virar uma segunda falha.
+ */
+export function avisarIaFora(
+  db: SupabaseClient,
+  d: { organizationId: string; assinatura: LadoQueFalhou; reserva: LadoQueFalhou },
+): Promise<DesfechoDoAvisoDaAssinatura> {
+  return sincronizarAvisoDaAssinatura(db, {
+    organizationId: d.organizationId,
+    conectada: false,
+    recusa: null,
+    iaFora: { assinatura: d.assinatura, reserva: d.reserva },
+  });
+}
+
+/**
+ * Uma chamada VOLTOU A PASSAR: o episódio "IA fora" acabou.
+ *
+ * Fecha só o item deste episódio (o título é a chave) — o item de LOGIN
+ * continua aberto enquanto a conta não for reconectada, porque a reserva
+ * responder não conserta o login.
+ */
+export function fecharAvisoDaIaForaPelaChamada(
+  db: SupabaseClient,
+  organizationId: string,
+): Promise<DesfechoDoAvisoDaAssinatura> {
+  return sincronizarAvisoDaAssinatura(db, {
+    organizationId,
+    conectada: true,
+    recusa: null,
+    voltaPorChamada: true,
   });
 }

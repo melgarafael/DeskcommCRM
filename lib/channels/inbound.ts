@@ -20,6 +20,7 @@ import { CHANNEL_PROVIDER_SOCIAL } from "./capabilities";
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { idiomaDoAviso } from "@/lib/i18n/idioma-do-aviso";
 import { logger } from "@/lib/logger";
 
 import { ingestTelegramInbound } from "./bot/ingest";
@@ -457,7 +458,14 @@ async function zernioEventoConferido(
       return { ok: true, body: { status: "saude", kind: aviso.kind, desfecho, espelhado } };
     }
 
-    const desfecho = await registrarAviso(admin, input.session.organization_id, aviso);
+    // A Central mostra o texto como foi gravado: o aviso nasce no idioma da
+    // organização (o `aviso` acima, em português, só decidiu o caminho).
+    const idioma = await idiomaDoAviso(admin, input.session.organization_id);
+    const desfecho = await registrarAviso(
+      admin,
+      input.session.organization_id,
+      avisoDoEvento(payload, idioma) ?? aviso,
+    );
     return { ok: true, body: { status: "aviso", kind: aviso.kind, desfecho, espelhado } };
   }
 
