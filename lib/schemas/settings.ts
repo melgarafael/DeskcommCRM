@@ -905,11 +905,36 @@ export const CONTEUDO_NA_TELA_BLOQUEADA_PADRAO: ConteudoNaTelaBloqueada = "nome"
 
 export const conteudoNaTelaBloqueadaWriteSchema = z.enum(CONTEUDOS_NA_TELA_BLOQUEADA);
 
+/**
+ * `organizations.settings.notificacoes.cor_por_canal` — o aviso de mensagem
+ * nova sai na cor da rede ou no neutro de sempre (#4094).
+ *
+ * Mora no MESMO nó `notificacoes` que a opção da tela bloqueada: é uma escolha
+ * da empresa sobre os avisos, não uma preferência de aparelho, e uma tabela
+ * nova para um booleano seria mais superfície (RLS, migration, backup) do que
+ * a decisão pede. `true` é o padrão: quem já usa o produto recebe a cor sem
+ * mexer em nada, e quem não gosta desliga num interruptor.
+ */
+export const COR_POR_CANAL_PADRAO = true;
+
 export const notificacoesSettingsSchema = z
   .object({
     conteudo_na_tela_bloqueada: conteudoNaTelaBloqueadaWriteSchema.catch(CONTEUDO_NA_TELA_BLOQUEADA_PADRAO),
+    cor_por_canal: z.boolean().catch(COR_POR_CANAL_PADRAO),
   })
-  .catch({ conteudo_na_tela_bloqueada: CONTEUDO_NA_TELA_BLOQUEADA_PADRAO });
+  .catch({
+    conteudo_na_tela_bloqueada: CONTEUDO_NA_TELA_BLOQUEADA_PADRAO,
+    cor_por_canal: COR_POR_CANAL_PADRAO,
+  });
+
+/** A cor por canal está ligada nesta organização? Nunca lança. */
+export function corPorCanalLigada(settings: unknown): boolean {
+  const notificacoes =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).notificacoes
+      : undefined;
+  return notificacoesSettingsSchema.parse(notificacoes ?? {}).cor_por_canal;
+}
 
 /** O que aparece com a tela bloqueada nesta organização. Nunca lança. */
 export function conteudoNaTelaBloqueada(settings: unknown): ConteudoNaTelaBloqueada {
