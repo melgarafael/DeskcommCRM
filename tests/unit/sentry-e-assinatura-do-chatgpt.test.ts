@@ -177,9 +177,9 @@ const registry = {
     doGenerate: async () => ({ text: "ok", usage: {} }),
     doStream: async () => ({ stream: [] }),
   }),
-  gemini: (_k: string, modelId: string) => ({
+  anthropic: (_k: string, modelId: string) => ({
     specificationVersion: "v3",
-    provider: "gemini",
+    provider: "anthropic",
     modelId,
     doGenerate: async () => ({ text: "ok", usage: {} }),
     doStream: async () => ({ stream: [] }),
@@ -188,11 +188,29 @@ const registry = {
 
 const logDuble = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() });
 
-async function chamar(provider: string, tools: ToolSet) {
-  const { pool, inserts } = poolCom(provider, "gpt-6-astra");
+/**
+ * `comReserva: false` é o mundo de quem usa a assinatura SEM chave de API
+ * cadastrada — o caso do relato da issue, em que a queda da assinatura não tem
+ * para onde cair. Com reserva, o motor troca de credencial e o cliente recebe
+ * resposta; o defeito fica invisível, e é assim que ele passou tanto tempo no ar.
+ */
+const MODELO_DO_PROVEDOR: Record<string, string> = {
+  "openai-assinatura": "gpt-6-astra",
+  openai: "gpt-6-astra",
+  anthropic: "claude-haiku-5-5",
+};
+
+async function chamar(provider: string, tools: ToolSet, opcoes: { comReserva?: boolean } = {}) {
+  const { pool, inserts } = poolCom(provider, MODELO_DO_PROVEDOR[provider] ?? "gpt-6-astra");
   const resultado = await runModelCall(
     pool,
-    { openaiApiKey: "openai-de-teste", geminiApiKey: "gemini-de-teste", cacheTtl: "1h" },
+    {
+      // A reserva da assinatura fala com a OpenAI por chave: sem esta chave, a
+      // queda da assinatura não tem para onde cair.
+      ...(opcoes.comReserva === false ? {} : { openaiApiKey: "openai-de-teste" }),
+      anthropicApiKey: "anthropic-de-teste",
+      cacheTtl: "1h",
+    },
     {
       tenantId: ORG,
       purpose: "agent_turn",
@@ -215,7 +233,11 @@ beforeEach(() => {
   vi.mocked(streamText).mockClear();
   vi.mocked(generateText).mockResolvedValue({
     text: "resposta ao cliente",
-    usage: { inputTokens: 900, outputTokens: 40 },
+    usage: {
+      inputTokens: 900,
+      outputTokens: 40,
+      inputTokenDetails: { cacheReadTokens: 0, cacheWriteTokens: 0 },
+    },
     steps: [],
     responseMessages: [],
     toolCalls: [],
@@ -297,6 +319,20 @@ describe("(b) com SENTRY_DSN configurado, a assinatura responde sem a instrument
     { name: INTEGRACAO_DO_SDK_DO_AI, setupOnce: integrarComoOSentry },
   ];
 
+  it("os três inits de SERVIDOR passam a lista filtrada (o filtro não pode ficar só no teste)", () => {
+    for (const arquivo of ARQUIVOS_COM_INIT) {
+      const texto = fonte(arquivo);
+      if (arquivo === "instrumentation-client.ts") continue; // navegador não serve a assinatura
+      expect(texto, `${arquivo}: init sem \`integrations: integracoesDoServidor\``).toContain(
+        "integrations: integracoesDoServidor",
+      );
+      // Ninguém pode instalar a integração à mão "para ter span de IA".
+      expect(texto, `${arquivo}: \`vercelAIIntegration\` reintroduzida`).not.toContain(
+        "vercelAIIntegration",
+      );
+    }
+  });
+
   it("as integrações que o init aceita NÃO incluem a do AI SDK", () => {
     const mantidas = integracoesDoServidor(padraoDoSdk()).map((i) => i.name);
     expect(mantidas).not.toContain(INTEGRACAO_DO_SDK_DO_AI);
@@ -317,15 +353,19 @@ describe("(b) com SENTRY_DSN configurado, a assinatura responde sem a instrument
 
     expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(generateText)).not.toHaveBeenCalled();
-    expect(resultado.text).toBe("resposta ao cliente");
+    // `runModelCall` devolve `{ result, usage, ... }`: o resultado do SDK (o
+    // mesmo formato que o `generateText` daria) vem em `result`.
+    expect(resultado.result.text).toBe("resposta ao cliente");
     // O laço de ferramentas chegou ao motor: é o que a assinatura precisa para
     // responder o cliente, e é o que o stream travado impedia.
-    expect((resultado as { toolCalls?: unknown[] }).toolCalls).toHaveLength(1);
+    expect((resultado.result as { toolCalls?: unknown[] }).toolCalls).toHaveLength(1);
   });
 
   it("controle negativo: com a instrumentação aplicada, o MESMO caminho falha", async () => {
     integrarComoOSentry();
-    await expect(chamar("openai-assinatura", ferramenta())).rejects.toThrow(
+    // Sem reserva: exatamente o relato da issue — a assinatura não tem para onde
+    // cair, e o cliente fica sem resposta em ~1 s.
+    await expect(chamar("openai-assinatura", ferramenta(), { comReserva: false })).rejects.toThrow(
       "The ReadableStream is locked",
     );
   });
@@ -370,19 +410,20 @@ describe("(c) quem configurou DSN continua com captura de erro", () => {
  * ────────────────────────────────────────────────────────────────────────────*/
 describe("(d) chamada curta e outros provedores ficam como estavam", () => {
   it("outros provedores continuam indo por `generateText`", async () => {
-    for (const provider of ["openai", "gemini"]) {
+    for (const provider of ["openai", "anthropic"]) {
       vi.mocked(streamText).mockClear();
+      vi.mocked(generateText).mockClear();
       const { resultado } = await chamar(provider, ferramenta());
       expect(vi.mocked(generateText), `${provider} deixou de usar generateText`).toHaveBeenCalledTimes(1);
       expect(vi.mocked(streamText), `${provider} passou pelo ramo de streaming`).not.toHaveBeenCalled();
-      expect(resultado.text).toBe("resposta ao cliente");
+      expect(resultado.result.text).toBe("resposta ao cliente");
     }
   });
 
   it("a chamada curta da assinatura (sem tools) continua funcionando", async () => {
     const { resultado } = await chamar("openai-assinatura", {} as ToolSet);
     expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1);
-    expect(resultado.text).toBe("resposta ao cliente");
+    expect(resultado.result.text).toBe("resposta ao cliente");
   });
 
   it("e a chamada curta também funciona COM a instrumentação fora do caminho", async () => {
@@ -390,6 +431,6 @@ describe("(d) chamada curta e outros provedores ficam como estavam", () => {
       integracao.setupOnce();
     }
     const { resultado } = await chamar("openai-assinatura", {} as ToolSet);
-    expect(resultado.text).toBe("resposta ao cliente");
+    expect(resultado.result.text).toBe("resposta ao cliente");
   });
 });
