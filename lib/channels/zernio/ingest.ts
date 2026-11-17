@@ -282,7 +282,10 @@ export async function ingestZernioInbound(
           enviadaEm: msg.sentAt,
         });
       }
-      if (input.socialMessage && msg.direction === "outbound" && !ehDeTransmissao(msg)) {
+      // #4749: a mesma régua do ramo da conversa nova (ver `ehRespostaManual`).
+      // Antes, só a rede social pausava aqui, e quem respondia pelo celular no
+      // WhatsApp via Zernio tinha a IA falando por cima na conversa já existente.
+      if (ehRespostaManual(msg)) {
         // #534: sem `avisar`, a falha da pausa viraria um `false` que ninguém lê.
         await pausarIaPorAtendimentoManual(admin, {
           organizationId: input.organizationId,
@@ -379,7 +382,7 @@ export async function ingestZernioInbound(
   // cada número novo da lista ficava com a IA calada pelo prazo do atendimento
   // manual — justamente quando as respostas chegam juntas.
   let pausaDaIANaoGravada: MotivoDaPausaNaoGravada | undefined;
-  if (msg.direction === "outbound" && !ehDeTransmissao(msg)) {
+  if (ehRespostaManual(msg)) {
     // #534: sem `avisar`, a falha da pausa viraria um `false` que ninguém lê.
     await pausarIaPorAtendimentoManual(admin, {
       organizationId: input.organizationId,
@@ -915,6 +918,25 @@ async function insertMessage(
 /** A saída veio de uma transmissão do provedor — de campanha ou do painel dele. */
 function ehDeTransmissao(msg: ZernioInboundMessage): boolean {
   return msg.direction === "outbound" && (msg.sentVia === "broadcast" || !!msg.broadcastId);
+}
+
+/**
+ * A saída é uma PESSOA respondendo por fora do CRM — e a IA para (#4749).
+ *
+ * Uma régua só para os dois ramos (conversa nova e conversa já existente) e
+ * para os dois tipos de conversa (WhatsApp e rede social). Ficam de fora:
+ *
+ *  - a transmissão do provedor (`ehDeTransmissao`, migration 0712);
+ *  - o envio pela API do provedor (`sentVia = "api"`), que é o caminho do
+ *    próprio CRM. O eco do nosso envio normalmente sai como `"duplicate"` pelo
+ *    `unique (organization_id, external_id)`; quando o webhook chega ANTES de o
+ *    envio carimbar o id (a corrida que `limparEco` trata em
+ *    `app/api/v1/messages/_handler.ts`), a linha nasce como saída comum, e sem
+ *    esta exceção a IA se calaria pela própria resposta. O digitado no
+ *    aplicativo do celular chega com `sentVia` nulo (ver `webhook.ts`).
+ */
+function ehRespostaManual(msg: ZernioInboundMessage): boolean {
+  return msg.direction === "outbound" && !ehDeTransmissao(msg) && msg.sentVia !== "api";
 }
 
 /** A campanha e o destinatário do eco, quando ele é de uma transmissão de campanha. */
