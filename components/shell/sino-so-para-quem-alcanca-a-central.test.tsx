@@ -64,6 +64,12 @@ vi.mock("@/hooks/notifications/useSonsDaCentral", () => ({ useSonsDaCentral: () 
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (texto: string) => texto }));
 // O `Link` de verdade pede o router do App Router por contexto, que não existe
 // no jsdom. A âncora preserva o que o sino tem de observável: existe e aponta.
+// `useRouter` entra no dublê porque o `<Link>` do sino pede o destino POR
+// INTENÇÃO (#3170), e o hook de prefetch chama `useRouter`.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ prefetch: vi.fn(), push: vi.fn(), refresh: vi.fn() }),
+  usePathname: () => "/app/inbox",
+}));
 vi.mock("next/link", () => ({
   default: ({ href, children, ...resto }: { href: string; children: React.ReactNode }) => (
     <a href={href} {...resto}>

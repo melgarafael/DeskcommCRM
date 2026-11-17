@@ -47,8 +47,18 @@ describe("lista do inbox esconde pessoal (critério 1)", () => {
 });
 
 describe("busca zera para pessoal (critério 2: nome, telefone e prévia)", () => {
-  it("a subconsulta de contatos filtra pessoal", () => {
-    expect(LISTA).toMatch(/\.eq\("is_personal",\s*false\)/);
+  it("a subconsulta de contatos filtra pessoal pelo MESMO `querPessoal` da lista", () => {
+    // #4434: a régua deixou de ser a constante `false`. O que a spec 21 protegia
+    // continua protegido (padrão = pessoal fora da busca), e a aba Pessoal
+    // inverte pelo MESMO booleano em nome/telefone e na prévia — nunca por uma
+    // segunda condição que possa divergir.
+    expect(LISTA).toMatch(/const querPessoal = q\.pessoais === true \|\| q\.pessoais === "true"/);
+    expect(LISTA.match(/\.eq\("(?:contacts\.)?is_personal",\s*querPessoal\)/g) ?? []).toHaveLength(
+      2,
+    );
+    // A catraca da doutrina antiga: ninguém pode voltar a FIXAR `false` numa
+    // ponta e deixar a outra invertida.
+    expect(LISTA).not.toMatch(/\.eq\("(?:contacts\.)?is_personal",\s*false\)/);
   });
 
   it("a prévia segue coberta pelo .not da query principal", () => {
@@ -145,6 +155,9 @@ describe("link direto e histórico recusam (defesa em profundidade)", () => {
 
   it("o corte do histórico está no fonte (duas consultas planas, antes de tudo)", () => {
     expect(HISTORICO).toMatch(/\.select\("contact_id"\)/);
-    expect(HISTORICO).toMatch(/\.select\("is_personal"\)/);
+    // #4434: o histórico precisa do DONO para deixar o dono ler — sem ele o
+    // corte teria de continuar sendo "pessoal some para todos", e a thread do
+    // dono abriria vazia.
+    expect(HISTORICO).toMatch(/\.select\("is_personal, personal_owner_user_id"\)/);
   });
 });

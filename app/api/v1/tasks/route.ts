@@ -29,12 +29,15 @@ import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { seSetoresDesligado } from "@/lib/atendimento/setores-modulo";
 import { requireRole } from "@/lib/auth/require-role";
+import { fusoDaOrganizacao } from "@/lib/automation/cron-de-data";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { portaDaAplicacao } from "@/lib/db";
 import { createClient } from "@/lib/supabase/server";
 import { registraAtividadeDaTarefa } from "@/lib/tarefas/atividade";
 import { conferirDemanda } from "@/lib/tarefas/demanda";
+import { normalizarRegra, proximaOcorrencia, regraDeRecorrenciaSchema, regraParaGravar } from "@/lib/tarefas/recorrencia";
 import { conferirResponsavel } from "@/lib/tarefas/responsavel";
 import {
   PRIORIDADES_DA_TAREFA,
@@ -54,7 +57,7 @@ const LIMITE_MAXIMO = 500;
 
 /** As colunas que a tela lê. Explícitas para o `select *` não vazar coluna nova. */
 const COLUNAS =
-  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, created_at, updated_at, lead:crm_leads(id, title)";
+  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, recurrence, created_at, updated_at, lead:crm_leads(id, title)";
 
 /**
  * Com o filtro de funil o `lead` vira INNER JOIN: o PostgREST só filtra pela coluna de um
@@ -77,6 +80,11 @@ const criacaoSchema = z.object({
   // Opcional como os outros dois — a tarefa avulsa é caso real.
   demanda_id: z.string().uuid().nullable().optional(),
   assigned_to: z.string().uuid().nullable().optional(),
+  /**
+   * A SÉRIE (#4595). Ausente/nula = tarefa avulsa, exatamente como antes.
+   * `dias` é dia da semana no fuso da ORGANIZAÇÃO e `hora` é hora de parede.
+   */
+  recurrence: regraDeRecorrenciaSchema.nullable().optional(),
 });
 
 const listaSchema = z.object({
@@ -106,6 +114,11 @@ const listaSchema = z.object({
    * da consulta e a RLS continuam valendo.
    */
   pipeline_id: z.string().uuid().optional(),
+  /**
+   * Só as tarefas atribuídas a membros DESTE setor (`attendant_sectors`).
+   * Permite que a equipe fiscal, contábil, dp, ti filtre sua respectiva fila.
+   */
+  sector_id: z.string().uuid().optional(),
   /**
    * Teto de linhas desta busca (#4028). Existe porque a visão em QUADRO desenha
    * todas as colunas de uma vez e pediria a base inteira: ela manda um número
@@ -156,6 +169,26 @@ export async function GET(req: NextRequest): Promise<Response> {
   else if (filtros.assigned_to === "ninguem") query = query.is("assigned_to", null);
   else if (filtros.assigned_to) query = query.eq("assigned_to", filtros.assigned_to);
   if (filtros.pipeline_id) query = query.eq("lead.pipeline_id", filtros.pipeline_id);
+
+  if (filtros.sector_id) {
+    // Setores é módulo opcional (doc 213): desligado, o filtro não existe —
+    // a mesma resposta das rotas de setor, em vez de filtrar por um dado que a
+    // instalação não mostra.
+    const desligado = await seSetoresDesligado(requestId);
+    if (desligado) return desligado;
+    const { data: membrosDoSetor, error: erroDoSetor } = await supabase
+      .from("attendant_sector_members")
+      .select("user_id")
+      .eq("sector_id", filtros.sector_id)
+      .eq("organization_id", authz.org.orgId);
+    if (erroDoSetor) {
+      return fail("internal_error", t("Erro ao listar as tarefas."), 500, { requestId });
+    }
+    const ids = (membrosDoSetor ?? []).map((m: { user_id: string }) => m.user_id);
+    // Setor sem ninguém: nenhuma tarefa é dele.
+    if (ids.length === 0) return ok({ tasks: [] as Tarefa[] }, { requestId });
+    query = query.in("assigned_to", ids);
+  }
 
   const { data, error } = await query;
   if (error) {
@@ -229,10 +262,43 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
   }
 
+  // ═══ A SÉRIE QUE SE REPETE (#4595) ═══
+  //
+  // A regra vira o JSON normalizado que a varredura lê (`dias` filtrados e
+  // ordenados, `hora` inteira, `ativa` explícita). E, quando a pessoa não
+  // escolheu data, a PRIMEIRA ocorrência já nasce calculada no fuso da
+  // organização: deixar para o primeiro cron faria a tarefa aparecer sem prazo
+  // por até dez minutos — tempo de sobra para a pessoa concluir que não salvou.
+  //
+  // O fuso é o da ORGANIZAÇÃO, e `instanteDe` (dentro de `proximaOcorrencia`) é
+  // quem converte hora de parede em instante. Calcular em UTC colocaria a
+  // ligação das 9h às 6h de Brasília.
+  let recurrence: ReturnType<typeof regraParaGravar> | null = null;
+  let dueDate = parsed.data.due_date ?? null;
+  if (parsed.data.recurrence) {
+    const regra = normalizarRegra(parsed.data.recurrence);
+    if (!regra) {
+      return fail("validation_failed", t("Escolha pelo menos um dia da semana e um horário."), 422, {
+        requestId,
+      });
+    }
+    recurrence = regraParaGravar(regra);
+    if (!dueDate) {
+      const [organizacao] = await portaDaAplicacao().query<{ timezone: string | null }>(
+        "select timezone from organizations where id = $1 limit 1",
+        [authz.org.orgId],
+      );
+      const proxima = proximaOcorrencia(regra, new Date(), fusoDaOrganizacao(organizacao?.timezone));
+      dueDate = proxima ? proxima.toISOString() : null;
+    }
+  }
+
   const { data, error } = await supabase
     .from("crm_tasks")
     .insert({
       ...parsed.data,
+      due_date: dueDate,
+      recurrence,
       organization_id: authz.org.orgId,
       created_by: authz.user.id,
     })

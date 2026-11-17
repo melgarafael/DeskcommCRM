@@ -118,8 +118,8 @@ export function ferramentasNoIdioma<T extends object>(
  * A passada de idioma dos blocos residentes do `system` — UMA, depois da
  * montagem.
  *
- * A ordem dos blocos é a de antes da #4260 e continua escrita no call site
- * (`inbound-turn.ts`), onde dá para ler; traduzir bloco a bloco no momento do
+ * A ordem dos blocos mora em `blocosDoSistemaDoTurno` (`inbound-turn.ts`),
+ * onde dá para ler, e a diretiva de idioma é o último deles; traduzir bloco a bloco no momento do
  * `push` espalharia a decisão de idioma por seis linhas e obrigaria cada
  * construtor a receber `idioma`. Aqui o bloco em português é a chave: bloco sem
  * tradução volta igual, e `pt-BR` devolve a lista como está.

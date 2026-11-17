@@ -16,7 +16,7 @@ vi.mock("@/hooks/useCreateTenant", () => ({ useCreateTenant: () => ({ mutateAsyn
 
 import { NewTenantForm } from "@/app/admin/(protected)/tenants/new/_form";
 
-const PLANO = { id: "cccccccc-0000-4000-8000-000000000001", nome: "Básico", preco_cents: 4990, intervalo: "mes", trial_dias: 14 };
+const PLANO = { id: "cccccccc-0000-4000-8000-000000000001", nome: "Básico", preco_cents: 4990, moeda: "BRL", intervalo: "mes", trial_dias: 14 };
 
 beforeEach(() => {
   vi.clearAllMocks();
