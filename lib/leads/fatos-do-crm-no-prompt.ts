@@ -17,7 +17,17 @@
  * por import transitivo, o caminho de quem fala com o cliente.
  *
  * Nada aqui toca banco, rede, logger ou relógio: entra fato, sai texto.
+ *
+ * ─── O que sai daqui vai para provedor de IA ────────────────────────────────
+ *
+ * Os dois consumidores mandam o bloco para fora da máquina. Nome de funil,
+ * etapa e etiqueta é digitado pela empresa e pode carregar telefone, CPF ou
+ * e-mail do cliente, então cada nome passa pelo `scrubMessage` em
+ * `normalizarNome`, ANTES do corte em `MAX_CARACTERES_DE_NOME` — depois do
+ * corte, um número partido no limite escaparia do padrão.
  */
+import { scrubMessage } from '@/lib/sentry/scrub';
+
 /** Quantos funis distintos entram no bloco. */
 export const MAX_FUNIS_NO_CLASSIFICADOR = 3;
 /** Quantas etapas por funil (o contato pode ter dois cards abertos no mesmo funil). */
@@ -81,11 +91,12 @@ export const FATOS_VAZIOS: FatosDoCrm = {
 
 /**
  * Nome de config em uma linha só: sem quebra (nome colado no formulário não vira
- * fato novo no prompt), sem espaço duplicado, cortado no teto com reticências.
+ * fato novo no prompt), sem espaço duplicado, com dado pessoal mascarado e
+ * cortado no teto com reticências — o scrub vem ANTES do corte.
  */
 export function normalizarNome(bruto: unknown): string {
   if (typeof bruto !== 'string') return '';
-  const limpo = bruto.replace(/\s+/g, ' ').trim();
+  const limpo = scrubMessage(bruto.replace(/\s+/g, ' ').trim());
   if (limpo === '') return '';
   return limpo.length > MAX_CARACTERES_DE_NOME
     ? `${limpo.slice(0, MAX_CARACTERES_DE_NOME - 1)}…`

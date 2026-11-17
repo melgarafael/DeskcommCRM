@@ -59,6 +59,8 @@ export function buildClassifierPrompt(
    * Fatos do CRM do contato (#3917): funis/etapas com negócio ABERTO e
    * etiquetas. Opcional — ausente ou vazio, o prompt é byte a byte o de antes,
    * e o classificador segue decidindo pelo texto como sempre fez.
+   * Vai para o provedor: cada nome chega com dado pessoal mascarado
+   * (`normalizarNome`, scrub antes do corte de tamanho).
    */
   fatosDoCrm?: FatosDoCrm | null,
 ): string {
