@@ -16,7 +16,6 @@ import {
 } from "@/lib/ui/icons";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
-import styles from "./PainelGoogleAds.module.css";
 
 type Dimensao = "campanha" | "grupo" | "anuncio" | "palavraChave";
 const niveis = {
@@ -114,7 +113,12 @@ function origem(linha: LinhaPainelGoogle, nivel: Dimensao) {
   return JSON.stringify(partes);
 }
 
-function agrupar(linhas: LinhaPainelGoogle[], nivel: Dimensao, locale: string, t: (texto: string) => string) {
+function agrupar(
+  linhas: LinhaPainelGoogle[],
+  nivel: Dimensao,
+  locale: string,
+  t: (texto: string) => string,
+) {
   const grupos = new Map<string, LinhaPainelGoogle[]>();
   for (const linha of linhas) {
     const chave = origem(linha, nivel);
@@ -152,7 +156,12 @@ export function PainelGoogleAds({ linhas, hoje, nomesDasContas }: Props) {
   const locale = useTagDeIdioma();
   const porcentagem = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 });
   const numero = new Intl.NumberFormat(locale);
-  const dataCurta = new Intl.DateTimeFormat(locale, { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+  const dataCurta = new Intl.DateTimeFormat(locale, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
   const [dias, setDias] = useState(30);
   const [conta, setConta] = useState("");
   const [nivel, setNivel] = useState<Dimensao>("campanha");
@@ -173,7 +182,10 @@ export function PainelGoogleAds({ linhas, hoje, nomesDasContas }: Props) {
   );
   const total = useMemo(() => somar(filtradas), [filtradas]);
   const emAberto = total.negocios - total.ganhos - total.perdidos;
-  const campanhas = useMemo(() => agrupar(filtradas, "campanha", locale, t), [filtradas, locale, t]);
+  const campanhas = useMemo(
+    () => agrupar(filtradas, "campanha", locale, t),
+    [filtradas, locale, t],
+  );
   const grupos = useMemo(
     () => (nivel === "campanha" ? campanhas : agrupar(filtradas, nivel, locale, t)),
     [filtradas, nivel, campanhas, locale, t],
@@ -204,9 +216,9 @@ export function PainelGoogleAds({ linhas, hoje, nomesDasContas }: Props) {
   );
   const paginas = Math.max(1, Math.ceil(visiveis.length / porPagina));
   const situacoes = [
-    { nome: t("Ganhos"), valor: total.ganhos, classe: styles.ganho },
-    { nome: t("Em aberto"), valor: emAberto, classe: styles.aberto },
-    { nome: t("Perdidos"), valor: total.perdidos, classe: styles.perdido },
+    { nome: t("Ganhos"), valor: total.ganhos, classe: "bg-accent" },
+    { nome: t("Em aberto"), valor: emAberto, classe: "bg-info" },
+    { nome: t("Perdidos"), valor: total.perdidos, classe: "bg-border-strong" },
   ];
   function voltarAoInicio() {
     setPagina(1);
@@ -218,18 +230,23 @@ export function PainelGoogleAds({ linhas, hoje, nomesDasContas }: Props) {
   );
 
   return (
-    <section className={styles.painel} data-superficie="clara" aria-label={t("Resultados no CRM")}>
-      <header className={styles.topo}>
+    <section
+      className="grid w-full min-w-0 gap-3 text-sm leading-[1.45] text-text tabular-nums sm:gap-[18px] [&_:focus-visible]:outline-2 [&_:focus-visible]:outline-offset-2 [&_:focus-visible]:outline-accent [&_button]:cursor-pointer"
+      data-superficie="clara"
+      aria-label={t("Resultados no CRM")}
+    >
+      <header className="flex flex-col items-start justify-between gap-4 min-[851px]:flex-row min-[851px]:items-end [&_h2]:text-[23px] [&_h2]:leading-tight [&_h2]:font-semibold [&_h2]:tracking-tight [&_p]:mt-1 [&_p]:text-[13px] [&_p]:text-muted-foreground">
         <div>
           <h2>{t("Resultados no CRM")}</h2>
           <p>{t("Negócios criados a partir de anúncios do Google.")}</p>
         </div>
-        <div className={styles.filtros}>
+        <div className="flex flex-wrap items-center gap-2.5 [&_label]:grid [&_label]:gap-1 [&_label>span:first-child]:text-[11px] [&_label>span:first-child]:font-semibold [&_label>span:first-child]:text-muted-foreground">
           <label>
             <span>{t("Conta de anúncios")}</span>
-            <span className={styles.select}>
+            <span className="relative flex min-h-9 items-center gap-2 rounded-md border border-border-strong bg-surface px-2.5 text-muted-foreground [&_svg]:pointer-events-none [&_svg]:absolute [&_svg:last-child]:right-2.5">
               <Buildings size={17} aria-hidden />
               <select
+                className="-mx-2.5 max-w-[17em] cursor-pointer appearance-none border-0 bg-transparent py-2 pr-6 pl-8 text-[13px] text-text"
                 value={conta}
                 onChange={(e) => {
                   setConta(e.target.value);
@@ -249,9 +266,10 @@ export function PainelGoogleAds({ linhas, hoje, nomesDasContas }: Props) {
           </label>
           <label>
             <span>{t("Período de criação")}</span>
-            <span className={styles.select}>
+            <span className="relative flex min-h-9 items-center gap-2 rounded-md border border-border-strong bg-surface px-2.5 text-muted-foreground [&_svg]:pointer-events-none [&_svg]:absolute [&_svg:last-child]:right-2.5">
               <CalendarBlank size={17} aria-hidden />
               <select
+                className="-mx-2.5 max-w-[17em] cursor-pointer appearance-none border-0 bg-transparent py-2 pr-6 pl-8 text-[13px] text-text"
                 value={dias}
                 onChange={(e) => {
                   setDias(Number(e.target.value));
@@ -270,7 +288,7 @@ export function PainelGoogleAds({ linhas, hoje, nomesDasContas }: Props) {
           </label>
         </div>
       </header>
-      <div className={styles.metricas}>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
         {[
           {
             nome: t("Negócios atribuídos"),
@@ -284,7 +302,12 @@ export function PainelGoogleAds({ linhas, hoje, nomesDasContas }: Props) {
             nota: t("Marcados como ganhos"),
             Icone: CheckCircle,
           },
-          { nome: t("Taxa de ganho"), valor: taxa(total, porcentagem), nota: t("Ganhos ÷ atribuídos"), Icone: Gauge },
+          {
+            nome: t("Taxa de ganho"),
+            valor: taxa(total, porcentagem),
+            nota: t("Ganhos ÷ atribuídos"),
+            Icone: Gauge,
+          },
           {
             nome: t("Valor ganho"),
             valor: dinheiro(total, locale, t),
@@ -292,7 +315,10 @@ export function PainelGoogleAds({ linhas, hoje, nomesDasContas }: Props) {
             Icone: ChartBar,
           },
         ].map(({ nome, valor, nota, Icone }) => (
-          <div className={styles.metrica} key={nome}>
+          <div
+            className="min-w-0 rounded-xl border border-border bg-surface p-[13px] first:border-accent/30 first:bg-accent-soft sm:px-[18px] sm:pt-[15px] sm:pb-[14px] [&_small]:text-xs [&_small]:text-muted-foreground [&_strong]:mt-2 [&_strong]:mb-1 [&_strong]:block [&_strong]:text-[clamp(21px,2.4vw,32px)] [&_strong]:leading-tight [&_strong]:font-semibold [&_strong]:tracking-tight [&_strong]:wrap-anywhere [&_svg]:shrink-0 [&_svg]:text-accent [&>div]:flex [&>div]:items-center [&>div]:justify-between [&>div]:gap-2 [&>div]:text-[13px] [&>div]:font-semibold"
+            key={nome}
+          >
             <div>
               <span>{nome}</span>
               <Icone size={19} aria-hidden />
@@ -302,9 +328,9 @@ export function PainelGoogleAds({ linhas, hoje, nomesDasContas }: Props) {
           </div>
         ))}
       </div>
-      <div className={styles.resumo}>
-        <section className={styles.card}>
-          <div className={styles.cardCabecalho}>
+      <div className="grid grid-cols-1 gap-2.5 min-[851px]:grid-cols-[minmax(0,1.55fr)_minmax(270px,1fr)] sm:grid-cols-[minmax(0,1.2fr)_minmax(235px,1fr)] sm:gap-3">
+        <section className="min-w-0 rounded-xl border border-border bg-surface p-[13px] sm:px-5 sm:py-[18px] [&_h2]:text-base [&_h2]:leading-snug [&_h2]:font-semibold [&_h2]:tracking-tight">
+          <div className="flex items-center justify-between gap-4 [&_p]:mt-1 [&_p]:text-[13px] [&_p]:text-muted-foreground [&>svg]:text-accent">
             <div>
               <h2>{t("Campanhas com mais negócios")}</h2>
               <p>{t("Até quatro campanhas, por volume de negócios atribuídos.")}</p>
@@ -312,17 +338,20 @@ export function PainelGoogleAds({ linhas, hoje, nomesDasContas }: Props) {
             <ChartBar size={21} aria-hidden />
           </div>
           {campanhas.length ? (
-            <ol className={styles.ranking}>
+            <ol className="mt-4 grid list-none gap-[11px] p-0 [&_li]:min-w-0">
               {campanhas.slice(0, 4).map((c) => (
                 <li key={c.chave}>
-                  <div className={styles.tituloBarra}>
+                  <div className="flex items-center justify-between gap-1.5 text-[13px] [&_b]:font-semibold [&_b]:wrap-anywhere [&_small]:text-[11px] [&_small]:text-muted-foreground [&_strong]:font-semibold [&_strong]:wrap-anywhere [&>div]:flex [&>div]:flex-wrap [&>div]:items-baseline [&>div]:gap-2 [&>div]:leading-tight">
                     <div>
                       <b>{c.titulo}</b>
                       <small>{nomeConta(c.linha.conta)}</small>
                     </div>
                     <strong>{numero.format(c.totais.negocios)}</strong>
                   </div>
-                  <div className={styles.trilho} aria-hidden>
+                  <div
+                    className="mt-1 h-1.5 overflow-hidden rounded-sm bg-surface-elevated [&>span]:block [&>span]:h-full [&>span]:bg-accent"
+                    aria-hidden
+                  >
                     <span
                       style={{
                         width: `${(100 * c.totais.negocios) / campanhas[0]!.totais.negocios}%`,
@@ -333,24 +362,26 @@ export function PainelGoogleAds({ linhas, hoje, nomesDasContas }: Props) {
               ))}
             </ol>
           ) : (
-            <p className={styles.vazio}>{t("Nenhuma campanha com negócios neste período.")}</p>
+            <p className="px-3.5 py-6 text-center text-muted-foreground">
+              {t("Nenhuma campanha com negócios neste período.")}
+            </p>
           )}
         </section>
-        <section className={styles.card}>
-          <div className={styles.cardCabecalho}>
+        <section className="min-w-0 rounded-xl border border-border bg-surface p-[13px] sm:px-5 sm:py-[18px] [&_h2]:text-base [&_h2]:leading-snug [&_h2]:font-semibold [&_h2]:tracking-tight">
+          <div className="flex items-center justify-between gap-4 [&_p]:mt-1 [&_p]:text-[13px] [&_p]:text-muted-foreground [&>svg]:text-accent">
             <div>
               <h2>{t("Situação dos negócios")}</h2>
               <p>{t("Resultado atual dos negócios criados no período.")}</p>
             </div>
           </div>
-          <div className={styles.funil}>
+          <div className="mt-3 flex items-center justify-start gap-3 min-[851px]:gap-[clamp(12px,2.2vw,28px)] sm:mt-6 sm:mb-2 sm:justify-center [&_i]:size-[9px] [&_i]:shrink-0 [&_i]:rounded-sm [&_li]:flex [&_li]:items-center [&_li]:gap-2 [&_li]:text-[13px] [&_li]:whitespace-nowrap [&_li_b]:ml-auto [&_ul]:grid [&_ul]:max-w-[190px] [&_ul]:flex-1 [&_ul]:list-none [&_ul]:gap-2.5 [&_ul]:p-0">
             <div
-              className={styles.disco}
+              className="grid aspect-square w-[clamp(83px,8vw,116px)] shrink-0 place-items-center rounded-full [&_b]:text-2xl [&_b]:leading-none [&_b]:tracking-tight [&_span]:mt-0.5 [&_span]:text-[10px] [&_span]:text-muted-foreground [&>div]:flex [&>div]:aspect-square [&>div]:w-[74%] [&>div]:flex-col [&>div]:items-center [&>div]:justify-center [&>div]:rounded-full [&>div]:bg-surface"
               aria-hidden
               style={{
                 background: total.negocios
-                  ? `conic-gradient(var(--ads-teal) 0 ${(100 * total.ganhos) / total.negocios}%, var(--ads-blue) 0 ${(100 * (total.ganhos + emAberto)) / total.negocios}%, var(--ads-gray) 0)`
-                  : "var(--ads-fundo)",
+                  ? `conic-gradient(var(--color-accent) 0 ${(100 * total.ganhos) / total.negocios}%, var(--color-info) 0 ${(100 * (total.ganhos + emAberto)) / total.negocios}%, var(--color-border-strong) 0)`
+                  : "var(--color-surface-elevated)",
               }}
             >
               <div>
@@ -370,13 +401,13 @@ export function PainelGoogleAds({ linhas, hoje, nomesDasContas }: Props) {
           </div>
         </section>
       </div>
-      <section className={styles.tabelaCard}>
-        <div className={styles.tabelaCabecalho}>
+      <section className="min-w-0 overflow-hidden rounded-xl border border-border bg-surface [&_h2]:text-base [&_h2]:leading-snug [&_h2]:font-semibold [&_h2]:tracking-tight">
+        <div className="flex flex-col items-start justify-between gap-2.5 p-3.5 sm:flex-row sm:items-center sm:gap-4 sm:px-5 sm:pt-[18px] sm:pb-3.5 [&_p]:mt-1 [&_p]:text-[13px] [&_p]:text-muted-foreground">
           <div>
             <h2>{t("Origem dos negócios")}</h2>
             <p>{t("Abra uma linha para conferir de onde vieram os resultados.")}</p>
           </div>
-          <label className={styles.busca}>
+          <label className="relative flex min-h-[33px] items-center gap-2 rounded-md border border-border-strong bg-surface px-2.5 text-muted-foreground [&_input]:w-[145px] [&_input]:min-w-0 [&_input]:border-0 [&_input]:bg-transparent [&_input]:py-1 [&_input]:text-[13px] [&_input]:text-text [&_input::placeholder]:text-muted-foreground">
             <MagnifyingGlass size={16} aria-hidden />
             <input
               aria-label={t("Buscar na tabela")}
@@ -390,11 +421,16 @@ export function PainelGoogleAds({ linhas, hoje, nomesDasContas }: Props) {
             />
           </label>
         </div>
-        <div className={styles.abas} role="group" aria-label={t("Agrupar resultados por")}>
+        <div
+          className="flex gap-3 overflow-x-auto border-b border-border px-3.5 sm:gap-4 sm:px-5"
+          role="group"
+          aria-label={t("Agrupar resultados por")}
+        >
           {dimensoes.map((d) => (
             <button
               key={d}
               type="button"
+              className="border-b-2 border-transparent bg-transparent pt-2 pb-2.5 text-[13px] whitespace-nowrap text-muted-foreground hover:text-accent aria-pressed:border-accent aria-pressed:font-semibold aria-pressed:text-accent"
               aria-pressed={d === nivel}
               onClick={() => {
                 setNivel(d);
@@ -406,9 +442,9 @@ export function PainelGoogleAds({ linhas, hoje, nomesDasContas }: Props) {
             </button>
           ))}
         </div>
-        <div className={styles.rolagem}>
-          <table>
-            <thead>
+        <div className="min-w-0 overflow-x-auto">
+          <table className="w-full border-collapse text-[13px] max-sm:min-w-[550px] [&_td]:align-middle [&_td:not([colspan])]:px-4 [&_td:not([colspan])]:py-2.5 [&_td:not([colspan])]:text-right [&_th]:px-4 [&_th]:py-2.5 [&_th]:align-middle [&_th:first-child]:text-left [&_tr:not(:last-child)>*]:border-b [&_tr:not(:last-child)>*]:border-border [&_tr>*:last-child]:pr-5">
+            <thead className="bg-surface-elevated text-muted-foreground [&_th]:text-right [&_th]:text-[11px] [&_th]:font-semibold [&_th]:whitespace-nowrap [&_th:first-child]:pl-[22px]">
               <tr>
                 <th scope="col">{t(niveis[nivel].singular)}</th>
                 <th scope="col">{t("Negócios")}</th>
@@ -427,11 +463,11 @@ export function PainelGoogleAds({ linhas, hoje, nomesDasContas }: Props) {
                 const id = identificador(g.linha, nivel);
                 return (
                   <Fragment key={g.chave}>
-                    <tr className={expandida ? styles.ativa : undefined}>
+                    <tr className={expandida ? "bg-accent-soft" : undefined}>
                       <th scope="row">
                         <button
                           type="button"
-                          className={styles.expandir}
+                          className="flex w-full items-center gap-2 border-0 bg-transparent p-0 text-left text-[13px] hover:text-accent [&_b]:block [&_b]:font-semibold [&_b]:wrap-anywhere [&_small]:mt-0.5 [&_small]:block [&_small]:text-[11px] [&_small]:font-normal [&_small]:wrap-anywhere [&_small]:text-muted-foreground [&_svg]:shrink-0 [&_svg]:text-accent"
                           aria-expanded={expandida}
                           onClick={() => setAberto(expandida ? null : g.chave)}
                         >
@@ -456,7 +492,10 @@ export function PainelGoogleAds({ linhas, hoje, nomesDasContas }: Props) {
                     </tr>
                     {expandida && (
                       <tr>
-                        <td colSpan={5} className={styles.detalhe}>
+                        <td
+                          colSpan={5}
+                          className="bg-accent-soft px-5 pt-3 pb-4 pl-[38px] text-left [&_dd]:font-semibold [&_dl]:flex [&_dl]:flex-wrap [&_dl]:gap-[22px] [&_dt]:text-xs [&_dt]:text-muted-foreground"
+                        >
                           <dl>
                             <div>
                               <dt>{t("Conta Google Ads")}</dt>
@@ -483,8 +522,11 @@ export function PainelGoogleAds({ linhas, hoje, nomesDasContas }: Props) {
                               <dt>{t("Situação no CRM")}</dt>
                               <dd>
                                 {numero.format(g.totais.ganhos)} {t("ganhos")} ·{" "}
-                                {numero.format(g.totais.negocios - g.totais.ganhos - g.totais.perdidos)} {t("em aberto")} ·{" "}
-                                {numero.format(g.totais.perdidos)} {t("perdidos")}
+                                {numero.format(
+                                  g.totais.negocios - g.totais.ganhos - g.totais.perdidos,
+                                )}{" "}
+                                {t("em aberto")} · {numero.format(g.totais.perdidos)}{" "}
+                                {t("perdidos")}
                               </dd>
                             </div>
                           </dl>
@@ -496,7 +538,7 @@ export function PainelGoogleAds({ linhas, hoje, nomesDasContas }: Props) {
               })}
               {!visiveis.length && (
                 <tr>
-                  <td colSpan={5} className={styles.vazio}>
+                  <td colSpan={5} className="px-3.5 py-6 text-center text-muted-foreground">
                     {busca
                       ? t("Nenhum resultado para esta busca.")
                       : t("Nenhum negócio atribuído ao Google Ads nesta conta e período.")}
@@ -506,7 +548,7 @@ export function PainelGoogleAds({ linhas, hoje, nomesDasContas }: Props) {
             </tbody>
           </table>
         </div>
-        <div className={styles.rodape}>
+        <div className="flex flex-wrap items-center justify-between gap-4 border-t border-border px-5 py-2.5 text-[11px] text-muted-foreground [&_button]:rounded-md [&_button]:border [&_button]:border-border [&_button]:bg-surface [&_button]:px-2 [&_button]:py-1 [&_button]:text-text [&_button:disabled]:cursor-default [&_button:disabled]:opacity-45 [&>div]:flex [&>div]:items-center [&>div]:gap-2.5">
           <span>
             {periodo} · {visiveis.length} {visiveis.length === 1 ? t("resultado") : t("resultados")}
           </span>
@@ -523,7 +565,9 @@ export function PainelGoogleAds({ linhas, hoje, nomesDasContas }: Props) {
                 {t("Anterior")}
               </button>
               <span>
-                {t("{atual} de {total}").replace("{atual}", numero.format(pagina)).replace("{total}", numero.format(paginas))}
+                {t("{atual} de {total}")
+                  .replace("{atual}", numero.format(pagina))
+                  .replace("{total}", numero.format(paginas))}
               </span>
               <button
                 type="button"
