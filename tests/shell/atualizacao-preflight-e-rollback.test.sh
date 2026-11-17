@@ -106,11 +106,20 @@ case "${1:-}" in
     # `docker buildx version`: o plugin existe, salvo no caso 7.
     if [ "${2:-}" = version ]; then [ -f "$DUB/sem-buildx" ] && exit 1; exit 0; fi
     # `docker buildx imagetools inspect` é a SONDA do registro: só responde
-    # enquanto `$DUB/registro` existir — e, com ele de pé, só para as imagens
-    # cuja publicação TERMINOU (`$DUB/voz-pronta` é o interruptor do caso 4).
+    # enquanto `$DUB/registro` existir — e, com ele de pé, uma tag JÁ PUBLICADA
+    # responde sempre. A voz da versão ALVO (0.9.0) é a única que depende de a
+    # publicação ter TERMINADO (`$DUB/voz-pronta`, o interruptor do caso 4).
+    #
+    # A distinção por TAG é o que a sonda de controle usa para separar "esta
+    # imagem não foi publicada" de "o registro está fora": na VPS real a tag
+    # INSTALADA (0.8.0) está no registro com certeza — é a que está rodando.
+    # Um shim que negasse 0.8.0 junto com 0.9.0 transformaria imagem faltando
+    # em apagão de rede e o caso 4 mediria outra coisa.
     [ -f "$DUB/registro" ] || exit 1
     case "$*" in
-      *deskcomm-voice-agent*) [ -f "$DUB/voz-pronta" ] || exit 1 ;;
+      *deskcomm-voice-agent*)
+        case "$*" in *:0.9.0*) [ -f "$DUB/voz-pronta" ] || exit 1 ;; esac
+        ;;
     esac
     exit 0 ;;
 esac
@@ -438,6 +447,9 @@ echo "── caso 4 — critério 1: release com imagem faltando NÃO é ofereci
 . "$RAIZ/hostgator-setup-kit/_common.sh"
 set +e
 preparar_vps
+# UM argumento só, de propósito: é assim que o preflight do update.sh e o
+# portão do build (build_local_permitido) chamam. A forma com a versão
+# instalada (a do agent.sh) é medida em sonda-das-quatro-nao-esconde-a-release.
 v="$(veredito_das_imagens_da_release 0.9.0)"
 if [ "$v" = "prontas" ]; then ok "as quatro prontas: a release pode ser anunciada"
 else nao "as quatro prontas" "prontas" "$v"; fi
@@ -449,6 +461,11 @@ else nao "release incompleta" "incompleta" "$v"; fi
 v="$(veredito_das_imagens_da_release v0.9.0)"
 if [ "$v" = "incompleta" ]; then ok "e o 'v' da tag não confunde a sonda"
 else nao "sonda com o v da tag" "incompleta" "$v"; fi
+# O registro respondeu (3 de 4): o build local de recuperação (#1060/#1143)
+# continua permitido — só o registro FORA o recusa.
+if ( unset DESKCOMM_BUILD_LOCAL; build_local_permitido 0.9.0 ); then
+  ok "registro de pé com 3 de 4: o portão segue permitindo o build local"
+else nao "build local com registro de pé" "permitido (rc 0)" "recusado"; fi
 
 rm -f "$DUB/registro"
 v="$(veredito_das_imagens_da_release 0.9.0)"

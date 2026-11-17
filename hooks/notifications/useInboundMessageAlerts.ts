@@ -130,10 +130,20 @@ async function contactIdFromRow(
  * deixa cliente sem resposta. Já o conteúdo, sem resposta válida, fica oculto,
  * e o canal fica `unknown`: o aviso sai com a marca neutra.
  */
-async function decisaoDoAviso(
-  conversationId: string | null,
-): Promise<{ avisar: boolean; conteudo: ConteudoNaTelaBloqueada; canal: string }> {
-  const semResposta = { avisar: true, conteudo: "oculto" as const, canal: "unknown" };
+async function decisaoDoAviso(conversationId: string | null): Promise<{
+  avisar: boolean;
+  conteudo: ConteudoNaTelaBloqueada;
+  canal: string;
+  corPorCanal: boolean;
+}> {
+  const semResposta = {
+    avisar: true,
+    conteudo: "oculto" as const,
+    canal: "unknown",
+    // Sem resposta do servidor, o aviso sai NEUTRO: cor é o enfeite que a
+    // empresa liga, e o silêncio de uma rota fora do ar não é permissão.
+    corPorCanal: false,
+  };
   if (!conversationId) return semResposta;
   try {
     const r = await fetch(`/api/v1/conversations/${conversationId}/aviso-de-mensagem`, {
@@ -141,13 +151,16 @@ async function decisaoDoAviso(
     });
     if (!r.ok) return semResposta;
     const json = (await r.json()) as {
-      data?: { avisar?: unknown; conteudo?: unknown; canal?: unknown } | null;
+      data?: { avisar?: unknown; conteudo?: unknown; canal?: unknown; cor_por_canal?: unknown } | null;
     };
     const conteudo = conteudoNaTelaBloqueadaWriteSchema.safeParse(json.data?.conteudo);
     return {
       avisar: json.data?.avisar !== false,
       conteudo: conteudo.success ? conteudo.data : "oculto",
       canal: typeof json.data?.canal === "string" ? json.data.canal : "unknown",
+      // `!== false` e não `=== true`: um servidor anterior a esta versão não
+      // manda o campo, e aí o aviso continua colorido como sempre foi.
+      corPorCanal: json.data?.cor_por_canal !== false,
     };
   } catch {
     return semResposta;
@@ -184,7 +197,7 @@ export function useInboundMessageAlerts(): void {
       return;
     }
     void (async () => {
-      const { avisar, conteudo, canal } = await decisaoDoAviso(conversationId);
+      const { avisar, conteudo, canal, corPorCanal } = await decisaoDoAviso(conversationId);
       if (!avisar) return;
       const contactId = await contactIdFromRow(row, conversationId);
       const bits = contactId
@@ -207,6 +220,7 @@ export function useInboundMessageAlerts(): void {
         icon: bits.icon,
         corpoSemPrevia,
         canal,
+        corPorCanal,
         conteudo,
       });
     })();
