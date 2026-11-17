@@ -835,6 +835,21 @@ export const crmSettingsSchema = z
      */
     avisar_transferencia_no_whatsapp: z.boolean().catch(true),
     /**
+     * `aviso_transferencia_com_resumo`: o aviso de transferência também leva o
+     * PRIMEIRO nome do cliente e o resumo que a IA escreveu ao passar
+     * (`conversations.last_handoff_reason`), além do link.
+     *
+     * ⚠️ NASCE DESLIGADA, ao contrário da vizinha `avisar_transferencia_no_whatsapp`,
+     * e de propósito: a mensagem padrão é mínima por decisão de privacidade (sem
+     * nome, motivo livre, transcrição ou dado clínico fora do CRM — o cabeçalho de
+     * `textoDoAvisoHandoff`). Esta opção é para quem OPERA um nicho onde o resumo no
+     * WhatsApp ajuda (uma arquiteta decidindo se atende, p.ex.) e aceita o
+     * trade-off; em base clínica fica desligada. Só o booleano `true` liga. O nome
+     * sai pelo PRIMEIRO token e o resumo passa por `sanitizarTextoDoLead` (sem URL,
+     * CPF ou telefone), a mesma régua do aviso de caso.
+     */
+    aviso_transferencia_com_resumo: z.boolean().catch(false),
+    /**
      * `cliente_pela_venda` (#3644): quem JÁ COMPROU (tem negócio `won` e nenhum
      * aberto) volta pelo funil de clientes, e não pelo de captação.
      *
@@ -884,6 +899,7 @@ export const crmSettingsSchema = z
     telefone_de_ficha_vazia: false,
     nome_informado_no_atendimento: false,
     avisar_transferencia_no_whatsapp: true,
+    aviso_transferencia_com_resumo: false,
     cliente_pela_venda: false,
     pos_venda_dias: 0,
     duplicados_por_nome: false,
@@ -1114,6 +1130,15 @@ export function avisoDeTransferenciaLigado(settings: unknown): boolean {
       ? (settings as Record<string, unknown>).crm
       : undefined;
   return crmSettingsSchema.parse(crm ?? {}).avisar_transferencia_no_whatsapp;
+}
+
+/** Ausente DESLIGA; só o booleano `true` põe nome e resumo no aviso de transferência. */
+export function avisoDeTransferenciaComResumoLigado(settings: unknown): boolean {
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
+  return crmSettingsSchema.parse(crm ?? {}).aviso_transferencia_com_resumo === true;
 }
 
 /**

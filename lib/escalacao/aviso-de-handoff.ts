@@ -1,7 +1,12 @@
 import type { EventRow, HandlerResult } from '@/lib/event-log/dispatcher';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AvisoDb, PacingDoAviso, TransporteDoAviso } from './aviso-ao-suporte';
-import { avisoDeTransferenciaLigado } from '@/lib/schemas/settings';
+import { primeiroNome } from './texto-do-aviso';
+import { sanitizarTextoDoLead, TETOS_DO_TEXTO_DO_LEAD } from './sanitizar-texto-do-lead';
+import {
+  avisoDeTransferenciaComResumoLigado,
+  avisoDeTransferenciaLigado,
+} from '@/lib/schemas/settings';
 
 /** Opt-in: usa somente o destinatário que o administrador já configurou. */
 export const EVENTO_AVISO_HANDOFF = 'ai.handoff_aviso_solicitado';
@@ -23,10 +28,12 @@ export interface ContextoAvisoHandoff {
   episodio: string | null;
   emHandoff: boolean;
   contactId: string;
+  /** `conversations.last_handoff_reason` — o resumo que a IA escreveu ao passar. */
+  resumo: string | null;
 }
 export interface AvisoHandoffDeps {
   db: Pick<AvisoDb, 'carregaConfig' | 'carregaCanal' | 'contatoAnonimizado' |
-    'destinoEhDaPropriaOrganizacao' | 'registraJidDoAviso'>;
+    'destinoEhDaPropriaOrganizacao' | 'registraJidDoAviso' | 'nomeDoContato'>;
   transporte: TransporteDoAviso;
   pacing: PacingDoAviso;
   clock(): Date;
@@ -36,20 +43,55 @@ export interface AvisoHandoffDeps {
   estado(row: EventRow): Promise<EstadoEnvioHandoff | null>;
   /** `settings.crm.avisar_transferencia_no_whatsapp`; ausente = ligado. */
   transferenciasLigadas(org: string): Promise<boolean>;
+  /** `settings.crm.aviso_transferencia_com_resumo`; ausente = DESLIGADO. */
+  resumoNoAviso(org: string): Promise<boolean>;
   /** Compare-and-set durável: só o vencedor pode chamar o transporte. */
   reservar(row: EventRow, em: string): Promise<boolean>;
   concluir(row: EventRow, estado: EstadoEnvioHandoff): Promise<void>;
 }
 
-/** Sem nome, motivo livre, transcrição ou dado clínico na notificação externa. */
-export function textoDoAvisoHandoff(urlPublica: string, conversa: string): string | null {
+/**
+ * A mensagem do aviso de transferência.
+ *
+ * Por PADRÃO ela é mínima — só o link —, e isso é decisão de privacidade: sem
+ * nome, motivo livre, transcrição ou dado clínico na notificação externa.
+ *
+ * Com o opt-in `aviso_transferencia_com_resumo` ligado, `extra` traz o PRIMEIRO
+ * nome e o resumo que a IA escreveu, e eles entram entre a abertura e o link. O
+ * nome é cortado no primeiro token (`primeiroNome`) e o resumo passa por
+ * `sanitizarTextoDoLead` (sem URL, CPF ou telefone), a MESMA régua do aviso de
+ * caso — quem liga a opção aceita o trade-off escrito no schema.
+ *
+ * `extra` AUSENTE devolve byte-a-byte a mensagem de antes desta opção: o caminho
+ * de quem não ligou nada não muda.
+ */
+export function textoDoAvisoHandoff(
+  urlPublica: string,
+  conversa: string,
+  extra?: { nome?: string | null; resumo?: string | null },
+): string | null {
   if (!UUID.test(conversa)) return null;
   let origem: URL;
   try { origem = new URL(urlPublica); } catch { return null; }
   if (origem.protocol !== 'https:' || origem.username || origem.password) return null;
   const link = new URL('/app/inbox', origem.origin);
   link.searchParams.set('id', conversa);
-  return `Um atendimento precisa de uma pessoa da equipe.\n\nAbrir conversa: ${link.href}\n\nResponda pelo CRM; responder a este aviso não chega ao cliente.`;
+
+  const nome = extra ? primeiroNome(extra.nome) : null;
+  const resumo = extra ? sanitizarTextoDoLead(extra.resumo ?? null, TETOS_DO_TEXTO_DO_LEAD.summary) : null;
+  const detalhes: string[] = [];
+  if (nome) detalhes.push(`Cliente: ${nome}`);
+  if (resumo) detalhes.push(`Resumo: ${resumo}`);
+
+  const corpo = [
+    'Um atendimento precisa de uma pessoa da equipe.',
+    ...(detalhes.length ? ['', ...detalhes] : []),
+    '',
+    `Abrir conversa: ${link.href}`,
+    '',
+    'Responda pelo CRM; responder a este aviso não chega ao cliente.',
+  ];
+  return corpo.join('\n');
 }
 
 /** Um recibo por episódio na Central; CAS no adapter preserva adendos concorrentes. */
@@ -115,19 +157,28 @@ export async function aplicaAvisoHandoff(deps: AvisoHandoffDeps, row: EventRow):
   const pacing = await deps.pacing.decide(row.organization_id, canal.id, agora);
   if (!pacing.liberado) return resposta('retry', pacing.motivo, pacing.liberaEm);
   // Releitura antes da reserva: retirada do opt-in ou atendimento retomado vence.
-  const [configAtual, contextoAtual, transferencias] = await Promise.all([
+  const [configAtual, contextoAtual, transferencias, comResumo] = await Promise.all([
     deps.db.carregaConfig(row.organization_id), deps.contexto(row.organization_id, conversa),
-    deps.transferenciasLigadas(row.organization_id),
+    deps.transferenciasLigadas(row.organization_id), deps.resumoNoAviso(row.organization_id),
   ]);
   if (!transferencias) return cancelar('desligado_em_transferencias');
   if (!configAtual?.ligado || configAtual.channel_session_id !== config.channel_session_id ||
       configAtual.telefone_destino !== config.telefone_destino) return cancelar('configuracao_alterada');
   if (!contextoAtual?.emHandoff || contextoAtual.episodio !== row.id) return cancelar('episodio_encerrado');
+  // Opt-in do resumo: só AQUI, com a conversa e o opt-in ainda válidos, o nome e
+  // o resumo entram no texto. Sem a opção, `textoFinal` é a mensagem mínima — e o
+  // caminho de quem não ligou nada não faz a leitura a mais do nome.
+  const textoFinal = comResumo
+    ? (textoDoAvisoHandoff(deps.urlPublica, conversa, {
+        nome: await deps.db.nomeDoContato(row.organization_id, contextoAtual.contactId),
+        resumo: contextoAtual.resumo,
+      }) ?? texto)
+    : texto;
   if (!(await deps.reservar(row, agora.toISOString()))) return resposta('retry', 'reserva_concorrente', new Date(agora.getTime() + 15_000));
   // Depois daqui NENHUMA falha autoriza outra chamada ao transporte.
   let resultado: EstadoEnvioHandoff;
   try {
-    const envio = await deps.transporte.envia(row.organization_id, canal, destino, texto);
+    const envio = await deps.transporte.envia(row.organization_id, canal, destino, textoFinal);
     resultado = { estado: envio.externalId ? 'enviado' : 'incerto', em: agora.toISOString(),
       motivo: envio.externalId ? 'aceito_pelo_canal' : 'sem_recibo_do_canal' };
   } catch {
@@ -158,7 +209,7 @@ function lerEstado(metadata: Metadata): EstadoEnvioHandoff | null {
 
 /** Só este consumidor altera a metadata deste tipo de evento; o dreno altera status/attempts. */
 export function criarPersistenciaAvisoHandoff(admin: Admin): Pick<AvisoHandoffDeps,
-  'contexto' | 'estado' | 'reservar' | 'concluir' | 'transferenciasLigadas'> {
+  'contexto' | 'estado' | 'reservar' | 'concluir' | 'transferenciasLigadas' | 'resumoNoAviso'> {
   async function metadataDoEvento(row: EventRow): Promise<Metadata> {
     const { data, error } = await admin.from('event_log').select('metadata')
       .eq('organization_id', row.organization_id).eq('id', row.id)
@@ -200,7 +251,7 @@ export function criarPersistenciaAvisoHandoff(admin: Admin): Pick<AvisoHandoffDe
   return {
     async contexto(org, conversa) {
       const { data, error } = await admin.from('conversations')
-        .select('contact_id, status, bot_silenced_until, metadata')
+        .select('contact_id, status, bot_silenced_until, last_handoff_reason, metadata')
         .eq('organization_id', org).eq('id', conversa).maybeSingle();
       if (error) throw new Error('aviso_handoff_contexto_indisponivel');
       if (!data) return null;
@@ -208,6 +259,7 @@ export function criarPersistenciaAvisoHandoff(admin: Admin): Pick<AvisoHandoffDe
       const episodio = data.metadata?.[MARCA_EPISODIO_HANDOFF];
       return { contactId: data.contact_id,
         episodio: typeof episodio === 'string' ? episodio : null,
+        resumo: typeof data.last_handoff_reason === 'string' ? data.last_handoff_reason : null,
         emHandoff: !['closed', 'resolved', 'archived'].includes(data.status) &&
           (silencio === 'infinity' || (typeof silencio === 'string' && Date.parse(silencio) > Date.now())),
       };
@@ -220,6 +272,14 @@ export function criarPersistenciaAvisoHandoff(admin: Admin): Pick<AvisoHandoffDe
         .eq('id', org).maybeSingle();
       if (error || !data) throw new Error('aviso_handoff_opcao_indisponivel');
       return avisoDeTransferenciaLigado((data as { settings?: unknown }).settings);
+    },
+    async resumoNoAviso(org) {
+      // Mesmo contrato de `transferenciasLigadas`: erro de leitura LANÇA, nunca
+      // vira "ligado". Ausente/torto = DESLIGADO (a mensagem mínima de sempre).
+      const { data, error } = await admin.from('organizations').select('settings')
+        .eq('id', org).maybeSingle();
+      if (error || !data) throw new Error('aviso_handoff_opcao_indisponivel');
+      return avisoDeTransferenciaComResumoLigado((data as { settings?: unknown }).settings);
     },
     async reservar(row, em) {
       const anterior = await metadataDoEvento(row);

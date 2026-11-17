@@ -23,7 +23,7 @@ const NOW = '2026-10-24T12:00:00.000Z';
 type Linhas = {
   event_log: EventRow[];
   conversations: { id: string; organization_id: string; contact_id: string; status: string;
-    bot_silenced_until: string | null; metadata: Record<string, unknown> }[];
+    bot_silenced_until: string | null; last_handoff_reason?: string | null; metadata: Record<string, unknown> }[];
   agent_inbox_items: { id: string; organization_id: string; ref_kind: string; ref_id: string; body: string }[];
   organizations: { id: string; settings: Record<string, unknown> }[];
 };
@@ -69,7 +69,8 @@ function fixture() {
   const admin = banco({
     event_log: [structuredClone(row)],
     conversations: [{ id: CONV, organization_id: ORG, contact_id: CONTACT,
-      status: 'pending', bot_silenced_until: 'infinity', metadata: { [MARCA_EPISODIO_HANDOFF]: EVENT } }],
+      status: 'pending', bot_silenced_until: 'infinity', last_handoff_reason: null,
+      metadata: { [MARCA_EPISODIO_HANDOFF]: EVENT } }],
     agent_inbox_items: [{ id: CENTRAL, organization_id: ORG, ref_kind: 'conversation', ref_id: CONV,
       body: 'Uma pessoa precisa assumir esta conversa.' }],
     // Sem a chave: ausente é ligado, como o aviso de Propostas.
@@ -85,7 +86,7 @@ function fixture() {
     db: { carregaConfig: async org => { assert.equal(org, ORG); return structuredClone(config); },
       carregaCanal: async (org, id) => { assert.equal(org, ORG); assert.equal(id, CHANNEL); return canal; },
       contatoAnonimizado: async () => false, destinoEhDaPropriaOrganizacao: async () => false,
-      registraJidDoAviso: async () => {} },
+      nomeDoContato: async () => 'Maria Fernanda Teste', registraJidDoAviso: async () => {} },
     transporte: { configurado: async () => true, resolveDestino: async () => 'destino-configurado',
       envia: async (...args) => { chamadas.push(args); return { externalId: 'recibo' }; } },
     pacing: { decide: async () => ({ liberado: true }), registraEnvio: async (...args) => { pacing.push(args); } },
@@ -235,6 +236,37 @@ test('link usa a rota real e remove query e fragmento da configuração', () => 
   assert.doesNotMatch(texto, /secreto|fragmento/);
   assert.equal(textoDoAvisoHandoff('http://crm.exemplo.test', CONV), null);
   assert.equal(textoDoAvisoHandoff('https://user:password@crm.exemplo.test', CONV), null);
+});
+
+test('sem o opt-in, a mensagem NÃO leva nome nem resumo (mínima por padrão)', async () => {
+  const f = fixture();
+  f.admin.linhas.conversations[0]!.last_handoff_reason = 'Quer orçamento do quarto da bebê.';
+  assert.equal((await aplicaAvisoHandoff(f.deps, f.row)).status, 'ok');
+  const enviado = f.chamadas[0]![3] as string;
+  assert.doesNotMatch(enviado, /Cliente:|Resumo:|Maria/);
+  assert.match(enviado, /Um atendimento precisa de uma pessoa da equipe\./);
+});
+
+test('com o opt-in ligado, a mensagem leva o PRIMEIRO nome e o resumo sanitizado', async () => {
+  const f = fixture();
+  f.admin.linhas.organizations[0]!.settings = { crm: { aviso_transferencia_com_resumo: true } };
+  f.admin.linhas.conversations[0]!.last_handoff_reason =
+    'Quer o quarto da bebê. telefone 11999998888 e http://spam.example';
+  assert.equal((await aplicaAvisoHandoff(f.deps, f.row)).status, 'ok');
+  const enviado = f.chamadas[0]![3] as string;
+  assert.match(enviado, /Cliente: Maria$/m); // só o primeiro nome
+  assert.match(enviado, /Resumo: .*quarto da beb/);
+  assert.doesNotMatch(enviado, /11999998888|spam\.example/); // sanitizado
+});
+
+test('textoDoAvisoHandoff com extra põe nome e resumo entre a abertura e o link', () => {
+  const texto = textoDoAvisoHandoff('https://crm.exemplo.test', CONV, {
+    nome: 'Izabella Eber', resumo: 'Projeto do quarto, já mandou fotos.',
+  });
+  assert.ok(texto);
+  assert.match(texto, /Cliente: Izabella\n/);
+  assert.match(texto, /Resumo: Projeto do quarto/);
+  assert.ok(texto.indexOf('Cliente:') < texto.indexOf('Abrir conversa:'));
 });
 
 test('evento sem Central e eventos do dreno HTTP nunca enviam', async () => {
