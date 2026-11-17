@@ -492,7 +492,9 @@ describe("criarPegadaDoCandidato", () => {
       }),
       null,
     );
-    expect(admin.from).not.toHaveBeenCalled();
+    // O módulo Empresas consulta sua configuração; aqui a guarda é só sobre
+    // a leitura das definições do funil, coberta pelo controle com contexto acima.
+    expect(admin.from).not.toHaveBeenCalledWith("crm_pipelines");
     expect(m.contato.mock.calls[0]?.[2].custom_fields).toEqual({
       link_google_meu_negocio: "https://maps.app.goo.gl/clinica1",
     });
