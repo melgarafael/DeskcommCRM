@@ -200,6 +200,26 @@ describe("crm_save_ai_agent_draft", () => {
     expect(h.salvos[0]!.payload.system_prompt).toMatch(/Seja breve\.\n\nUse no máximo duas frases\.$/);
   });
 
+  it("só configuração: o texto fica igual e a voz liga no rascunho", async () => {
+    const { crmSaveAiAgentDraft } = await import("./agentes");
+    const r = (await crmSaveAiAgentDraft.handler(
+      { agent_ids: [A2], configuracoes: { voz_ligada: true, voz_quando: "espelhar" } },
+      ctxFalso(),
+    )) as { resultados: Array<Record<string, unknown>> };
+    expect(r.resultados[0]).toMatchObject({ ok: true, configuracoes_alteradas: ["voz_ligada", "voz_quando"] });
+    expect(h.salvos[0]!.payload).toMatchObject({
+      voz_enabled: true,
+      system_prompt: "Você é o atendente do Instagram. Responda em português. Seja breve.",
+    });
+  });
+
+  it("pedido sem texto nem configuração é recusado antes de ler o banco", async () => {
+    const { crmSaveAiAgentDraft } = await import("./agentes");
+    const r = (await crmSaveAiAgentDraft.handler({ agent_ids: [A1] }, ctxFalso())) as Record<string, unknown>;
+    expect(r.erro).toBe("pedido_vazio");
+    expect(h.salvos).toHaveLength(0);
+  });
+
   it("nada salvo em nenhum: a chamada inteira é recusa (o audit não registra sucesso)", async () => {
     const { crmSaveAiAgentDraft } = await import("./agentes");
     const r = (await crmSaveAiAgentDraft.handler(

@@ -24,8 +24,9 @@ import { z } from "zod";
 
 import type { AtorDaEdicao } from "@/lib/ai/agents/edicao";
 import { linhaDoRascunhoClonado, VERSION_COLUMNS, type LinhaDaVersao } from "@/lib/ai/agents/linha-da-versao";
+import { aplicarConfiguracoes, QUANDO_VOZ } from "@/lib/ai/agents/configuracao-do-rascunho";
 import { aplicarEdicaoNoPrompt, explicarRecusa, PROMPT_MAX } from "@/lib/ai/agents/editar-prompt";
-import { testeHistoryMessageSchema, testRunSchema } from "@/lib/ai/agents/validation";
+import { PROVIDERS, testeHistoryMessageSchema, testRunSchema } from "@/lib/ai/agents/validation";
 import { escolherVersoesDaTela } from "@/lib/ai/agents/versoes-da-tela";
 
 import type { McpContext, McpToolDefinition } from "../types";
@@ -252,7 +253,8 @@ export const crmGetAiAgentVersion: McpToolDefinition<typeof getVersionShape> = {
         pode_chamar_humano: v.handoff_tool_enabled,
         assunto_juridico: v.handoff_legal_enabled,
       },
-      dividir_mensagens: v.split_messages,
+      dividir_mensagens: { ligado: v.split_messages, tamanho_maximo_da_parte: v.split_max_chars },
+      ver_imagens: v.image_vision_enabled ?? true,
       publicada_em: v.published_at,
     };
   },
@@ -393,14 +395,33 @@ const saveDraftShape = {
   novo_prompt: z.string().min(10).max(PROMPT_MAX).optional().describe("The WHOLE new instructions text. Excludes substituicoes/anexar_ao_final."),
   substituicoes: z.array(substituicaoShape).min(1).max(20).optional().describe("Targeted find/replace edits, applied in order."),
   anexar_ao_final: z.string().min(1).max(5000).optional().describe("Text appended at the end of the instructions."),
+  configuracoes: z
+    .object({
+      provedor: z.enum(PROVIDERS).optional().describe("AI provider. Omit to keep the current one."),
+      modelo: z.string().trim().min(1).max(120).optional().describe("Model id, e.g. claude-sonnet-5-5. Must belong to the provider."),
+      voz_ligada: z.boolean().optional().describe("Voice replies on/off."),
+      voz_quando: z.enum(QUANDO_VOZ).optional().describe('When to reply by voice: "nunca", "espelhar" (when the customer sends audio), "sempre", "quando_pede".'),
+      ferramentas_adicionar: z.array(z.string().min(1).max(120)).max(27).optional().describe("Tool ids to give the assistant."),
+      ferramentas_remover: z.array(z.string().min(1).max(120)).max(27).optional().describe("Tool ids to take away."),
+      palavras_para_humano: z.array(z.string().trim().min(1).max(60)).max(20).optional().describe("Words that hand the chat to a person (replaces the list)."),
+      pode_chamar_humano: z.boolean().optional().describe("Whether the assistant may decide to hand over to a person."),
+      assunto_juridico_para_humano: z.boolean().optional().describe("Hand over to a person on legal matters."),
+      dividir_mensagens: z.boolean().optional().describe("Split long replies into several messages."),
+      tamanho_maximo_da_parte: z.number().int().min(80).max(4000).optional().describe("Max characters per split part."),
+      ver_imagens: z.boolean().optional().describe("Whether the assistant looks at images customers send."),
+    })
+    .strict()
+    .optional()
+    .describe("Assistant SETTINGS to change in the same draft. Channel/number, AI key, funnels and knowledge are not changeable here."),
 };
 
 export const crmSaveAiAgentDraft: McpToolDefinition<typeof saveDraftShape> = {
   name: "crm_save_ai_agent_draft",
   description:
-    "Saves a correction to an AI assistant's instructions as a DRAFT. NOTHING changes for customers until the draft " +
-    "is published. The edit starts from the assistant's current draft if one exists (so other pending draft work is " +
-    "kept), otherwise from the live version; every other setting (model, channel, tools, voice) is copied unchanged. " +
+    "Saves a correction to an AI assistant's instructions and/or SETTINGS as a DRAFT. NOTHING changes for customers " +
+    "until the draft is published. The edit starts from the assistant's current draft if one exists (so other pending " +
+    "draft work is kept), otherwise from the live version; anything not mentioned is copied unchanged. Settings " +
+    "(configuracoes): model, voice, tools, hand-over-to-person words, message splitting, image reading. " +
     "Prefer targeted edits: substituicoes (exact find/replace, refused if the excerpt is missing or ambiguous) and/or " +
     "anexar_ao_final. Use novo_prompt only to replace the whole text. Several agent_ids apply the same edit to each " +
     "assistant separately; a failure on one does not block the others. After saving, test with crm_test_ai_agent_version.",
@@ -409,6 +430,11 @@ export const crmSaveAiAgentDraft: McpToolDefinition<typeof saveDraftShape> = {
   requiresRole: "admin",
   requiresScope: "mcp:write",
   handler: async (input, ctx) => {
+    const temEdicaoDeTexto =
+      input.novo_prompt !== undefined || (input.substituicoes?.length ?? 0) > 0 || input.anexar_ao_final !== undefined;
+    if (!temEdicaoDeTexto && !input.configuracoes) {
+      return { erro: "pedido_vazio", mensagem: "Nothing to change: send an instructions edit and/or configuracoes." };
+    }
     const ids = [...new Set(input.agent_ids)];
     const agentes = new Map((await lerAgentes(ctx, ids)).map((a) => [a.id, a]));
     const versoes = await versoesDe(ctx, ids);
@@ -436,15 +462,36 @@ export const crmSaveAiAgentDraft: McpToolDefinition<typeof saveDraftShape> = {
         continue;
       }
       const src = linha as unknown as LinhaDaVersao;
-      const edicao = aplicarEdicaoNoPrompt(src.system_prompt, input);
-      if (!edicao.ok) {
-        resultados.push({ agent_id: id, nome: agente.name, ok: false, erro: edicao.motivo, mensagem: explicarRecusa(edicao) });
-        continue;
+      let texto = src.system_prompt;
+      let aplicadas: Array<{ procurar: string; ocorrencias: number }> = [];
+      if (temEdicaoDeTexto) {
+        const edicao = aplicarEdicaoNoPrompt(src.system_prompt, input);
+        if (!edicao.ok) {
+          resultados.push({ agent_id: id, nome: agente.name, ok: false, erro: edicao.motivo, mensagem: explicarRecusa(edicao) });
+          continue;
+        }
+        texto = edicao.texto;
+        aplicadas = edicao.aplicadas;
+      }
+      let alvo: LinhaDaVersao = { ...src, system_prompt: texto };
+      let mudancasDeConfiguracao: string[] = [];
+      if (input.configuracoes) {
+        const cfg = aplicarConfiguracoes(alvo, input.configuracoes);
+        if (!cfg.ok) {
+          resultados.push({ agent_id: id, nome: agente.name, ok: false, erro: cfg.motivo, mensagem: cfg.mensagem });
+          continue;
+        }
+        alvo = cfg.linha;
+        mudancasDeConfiguracao = cfg.mudancas;
+        if (!temEdicaoDeTexto && mudancasDeConfiguracao.length === 0) {
+          resultados.push({ agent_id: id, nome: agente.name, ok: false, erro: "sem_mudanca", mensagem: "These settings are already in place." });
+          continue;
+        }
       }
       const salvo = await (await carregarEdicao()).salvarRascunhoDaVersao(ctx.supabase, {
         orgId: ctx.organizationId,
         agentId: id,
-        payload: { ...linhaDoRascunhoClonado(src), system_prompt: edicao.texto },
+        payload: linhaDoRascunhoClonado(alvo),
         ator: ator(ctx),
       });
       if (!salvo.ok) {
@@ -464,8 +511,9 @@ export const crmSaveAiAgentDraft: McpToolDefinition<typeof saveDraftShape> = {
         ok: true,
         rascunho: { versao: salvo.data.version_number, criado_agora: salvo.data.criada },
         partiu_de: { versao: base.version_number, era: draft && draft.id === base.id ? "rascunho" : "publicada" },
-        mudancas: edicao.aplicadas,
-        tamanho: { antes: src.system_prompt.length, depois: edicao.texto.length },
+        mudancas: aplicadas,
+        configuracoes_alteradas: mudancasDeConfiguracao,
+        tamanho: { antes: src.system_prompt.length, depois: texto.length },
       });
     }
 

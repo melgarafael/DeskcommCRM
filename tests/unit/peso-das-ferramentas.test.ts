@@ -71,7 +71,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_list_ai_agents": { tokens: 115, motivo: EDITAR_ASSISTENTES },
   "crm_get_ai_agent_version": { tokens: 294, motivo: EDITAR_ASSISTENTES },
   "crm_get_ai_agent_turn": { tokens: 265, motivo: EDITAR_ASSISTENTES },
-  "crm_save_ai_agent_draft": { tokens: 537, motivo: EDITAR_ASSISTENTES },
+  "crm_save_ai_agent_draft": { tokens: 1015, motivo: "editar assistentes: +478 com `configuracoes` (modelo, voz, ferramentas, passar para pessoa, dividir, imagens); nunca montada no turno do agente" },
   "crm_test_ai_agent_version": { tokens: 406, motivo: EDITAR_ASSISTENTES },
   "crm_publish_ai_agent_version": { tokens: 264, motivo: EDITAR_ASSISTENTES },
   "crm_rollback_ai_agent": { tokens: 235, motivo: EDITAR_ASSISTENTES },
@@ -205,7 +205,8 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // (2026-11-16; o PR media +353 contra uma main mais velha).
 // +2116 com as 7 ferramentas de editar os assistentes de IA (só admin, pelo
 // ChatGPT; nenhuma vai para o turno do agente). MEDIDO: 41653 = 39537 + 2116.
-const TETO_TOTAL = 41653;
+// +478 com `configuracoes` no rascunho do assistente. MEDIDO: 42131 = 41653 + 478.
+const TETO_TOTAL = 42131;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
