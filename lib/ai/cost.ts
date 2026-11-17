@@ -182,11 +182,11 @@ export async function computeCost(input: ComputeCostInput): Promise<number | nul
   const row = pricing.get(input.model);
   if (!row) {
     // O catálogo é a tabela PRÓPRIA desta rota: é onde o cron grava e onde a
-    // OpenRouter chega. Quem está no catálogo tem o preço decidido LÁ — o motor
-    // não pode sobrescrever, porque as duas tabelas divergem para o mesmo id
-    // (`claude-haiku-5-5` é 100/500 centavos por milhão no catálogo e 0,1/0,5
-    // dólar por milhão em `pricing.ts`, 10× de diferença) e a régua do #4123
-    // mede a rota legada pelo catálogo.
+    // OpenRouter chega. Quem está no catálogo tem o preço decidido LÁ, e o motor
+    // não sobrescreve: nas instalações as duas tabelas trazem os mesmos números
+    // (`claude-haiku-5-5` é 10/50 centavos por milhão no `baseline.sql` e em
+    // `pricing.ts`); se um dia divergirem, vale o catálogo, que é o que o cron e
+    // o operador atualizam, enquanto `pricing.ts` só muda com versão nova.
     const doCatalogo = await precoDoCatalogo(input.model);
     if (doCatalogo) {
       const cents =
