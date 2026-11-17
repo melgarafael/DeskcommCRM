@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useAgentInbox, type AgentInboxItem } from "@/hooks/ai/useAgentInbox";
+import { usePrefetchPorIntencao } from "@/hooks/navigation/prefetchPorIntencao";
 import { useT } from "@/hooks/i18n/useT";
 import { destinosDaInterface } from "@/lib/navigation/interface";
 
@@ -54,6 +55,16 @@ export function AvisoDePropostaEmDestaque() {
 function AvisoVisivel() {
   const t = useT();
   const { data } = useAgentInbox("open");
+  /**
+   * O cartão nasce já na viewport (canto inferior direito) e o `<Link>` do App
+   * Router prefetchava o destino dele na montagem — mais um render RSC completo
+   * por tela, ao lado do sino. O pedido passa a sair no ponteiro/foco do link,
+   * que é o único gesto que leva alguém para lá (#3170).
+   *
+   * O que NÃO muda: o cartão continua aparecendo sozinho quando o polling traz
+   * uma proposta nova — quem grita é a lista, não o prefetch.
+   */
+  const intencao = usePrefetchPorIntencao();
   const vistos = useRef<Set<string> | null>(null);
   const [dispensados, setDispensados] = useState<ReadonlySet<string>>(new Set());
   const [atual, setAtual] = useState<AgentInboxItem | null>(null);
@@ -66,7 +77,11 @@ function AvisoVisivel() {
   const corpo = t("A IA preparou uma proposta. Confira antes de enviar.");
 
   useEffect(() => {
-    const itens = data?.items ?? [];
+    // Sem resposta ainda não é "lista vazia": registrar os vistos aqui gravava
+    // um conjunto vazio, e a primeira lista de verdade tinha todo aviso aberto
+    // por novo — o cartão voltava a cada carga de página.
+    if (!data) return;
+    const itens = data.items;
     if (vistos.current === null) {
       vistos.current = new Set(itens.map((i) => i.id));
       return;
@@ -76,7 +91,6 @@ function AvisoVisivel() {
     for (const i of itens) registrados.add(i.id);
     if (!novo || dispensados.has(novo.id)) return;
     setAtual((anterior) => (anterior?.id === novo.id ? anterior : novo));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, dispensados]);
 
   // O aviso saiu da lista de abertos (resolveram ou reabriram em outra aba):
@@ -111,7 +125,7 @@ function AvisoVisivel() {
         {/* Abrir É dispensar: quem atendeu o aviso não pode achá-lo de novo na
             próxima carga do polling, ainda com a proposta aberta na frente. */}
         <Button asChild size="sm">
-          <Link href={destino} onClick={dispensar}>
+          <Link href={destino} onClick={dispensar} {...intencao(destino)}>
             {t("Abrir proposta")}
           </Link>
         </Button>

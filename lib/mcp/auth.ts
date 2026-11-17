@@ -37,9 +37,19 @@ export interface McpAuthResult {
   orgSuspensa?: true;
 }
 
-/** Opção de quem valida o token: aceitar o da empresa suspensa, marcado. */
+/**
+ * Marca do token que só vale no `/api/mcp` — a emitida pelo OAuth do MCP
+ * (migration 9390). A tela de API Tokens não a grava; quem a carrega é a
+ * conexão de um aplicativo, que consentiu em usar o MCP e nada além dele.
+ */
+export const ESCOPO_SO_MCP = "aud:mcp";
+
+/** Opções de quem valida o token. */
 export interface OpcoesDoToken {
+  /** Aceitar o token da empresa suspensa, marcado. */
   permiteOrgSuspensa?: boolean;
+  /** A porta é o `/api/mcp`: aceita o token marcado `aud:mcp`. Só o `/api/mcp` passa isto. */
+  portaDoMcp?: boolean;
 }
 
 export class McpAuthError extends Error {
@@ -113,7 +123,14 @@ export function extractBearer(authHeader: string | null): string | null {
 /** Por que um `dsk_...` não validou — neutro, sem código MCP nem HTTP status. */
 export class ApiTokenError extends Error {
   constructor(
-    public readonly reason: "malformed" | "not_found" | "revoked" | "expired" | "lookup_failed" | "org_suspended",
+    public readonly reason:
+      | "malformed"
+      | "not_found"
+      | "revoked"
+      | "expired"
+      | "lookup_failed"
+      | "org_suspended"
+      | "wrong_audience",
     message: string,
   ) {
     super(message);
@@ -186,6 +203,11 @@ export async function resolveApiToken(
   if (orgSuspensa && !opcoes.permiteOrgSuspensa) {
     throw new ApiTokenError("org_suspended", "Organization suspended.");
   }
+  const scopes = parseScopes(data.scopes);
+  // Token de conexão OAuth fora do `/api/mcp`: recusa antes de registrar uso.
+  if (scopes.includes(ESCOPO_SO_MCP) && !opcoes.portaDoMcp) {
+    throw new ApiTokenError("wrong_audience", "This token only works on the MCP endpoint (/api/mcp).");
+  }
 
   supabase
     .from("api_tokens")
@@ -199,7 +221,7 @@ export async function resolveApiToken(
   return {
     id: data.id,
     organizationId: data.organization_id,
-    scopes: parseScopes(data.scopes),
+    scopes,
     createdBy: data.created_by,
     ...(orgSuspensa ? { orgSuspensa: true as const } : {}),
   };
@@ -241,6 +263,10 @@ export async function validateBearerToken(
         // Token VÁLIDO: nem chute nem token morto. Debitar o balde trancaria a
         // integração do cliente por minutos depois da reativação.
         throw new McpAuthError(-32002, 403, err.message, "org_suspended");
+      }
+      if (err.reason === "wrong_audience") {
+        // Também VÁLIDO, só que para outra porta: 403 sem debitar balde.
+        throw new McpAuthError(-32002, 403, err.message);
       }
       if (err.reason !== "lookup_failed") {
         // Chute (malformado/desconhecido) debita o balde por ORIGEM; token real

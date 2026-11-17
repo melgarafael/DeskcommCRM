@@ -16,7 +16,20 @@ import type { DefeitoDoNumero } from "./defeito-do-numero";
 // e o lint de canal reprovaria o caminho.
 export type { OutboundMedia, ContatoDoAparelho };
 
-export type ChannelProvider = "waha" | "meta_cloud" | "zernio" | "zernio_social" | "wacalls" | "datafy";
+export type ChannelProvider =
+  | "waha"
+  | "meta_cloud"
+  | "zernio"
+  | "zernio_social"
+  | "wacalls"
+  | "datafy"
+  /**
+   * Bot do Telegram, o do @BotFather (#3440). Entra com o TIPO, e não como uma
+   * variação de um dos canais de WhatsApp, porque o endereço dele não é
+   * telefone: é o `chat_id` que o próprio bot recebe no update. Ver
+   * `./adapters/telegram.ts` e a ausência dele em `PROVIDERS_DE_TELEFONE`.
+   */
+  | "telegram";
 
 /**
  * Os providers que transportam MENSAGEM — o subconjunto sobre o qual a matriz
@@ -56,8 +69,15 @@ export interface ChannelCapabilities {
   banRisk: boolean;
   /** Intervalo mínimo imposto PELA PLATAFORMA entre msgs ao mesmo destinatário (ms). */
   minIntervalMs: number | null;
-  /** 'server-convert' = o canal converte áudio; 'opus-only' = precisamos entregar ogg/opus. */
-  voiceNote: "server-convert" | "opus-only";
+  /**
+   * O que o canal faz com a NOTA DE VOZ que sai daqui:
+   *   - 'server-convert' = o canal converte áudio (recebe mp3);
+   *   - 'opus-only' = precisamos entregar ogg/opus mono;
+   *   - 'none' = este canal não entrega nota de voz nossa — o agente responde
+   *     em texto, e a tela do agente diz isso. Existe para não mentir com um
+   *     dos dois de cima num canal onde todo envio de áudio é recusado.
+   */
+  voiceNote: "server-convert" | "opus-only" | "none";
   groups: "full" | "limited" | "none";
   /** Mensagem entregue gera custo → decisões de envio precisam considerar orçamento. */
   costPerMessage: boolean;
@@ -101,6 +121,20 @@ export interface ChannelCapabilities {
    * canal dizendo que a operação não existe ali.
    */
   statusUpdates: boolean;
+  /**
+   * O canal devolve a VENDA à plataforma de anúncios (Meta) pela conversa?
+   *
+   * É a pergunta que a tela de Conversões faz antes de oferecer "Enviar vendas
+   * pelo canal da conversa": a chave só tem efeito quando alguma conexão da
+   * organização responde `true`. Quem conversa por QR Code ou pela API oficial
+   * direta não tem a ponte — a venda sai pela conexão direta (conjunto de dados
+   * e token), e ligar a chave ali seria uma promessa que nada cumpre.
+   *
+   * A resposta declarativa é a da tela; quem executa confirma de novo pela
+   * presença de `reportConversion` no adapter, e o teste de matriz reprova
+   * qualquer divergência entre as duas, nos dois sentidos.
+   */
+  reportaConversao: boolean;
 }
 
 /**

@@ -369,6 +369,20 @@ export interface ProposalRow {
  * saber não só que a empresa escreveu algo sobre ele, mas quando ela combinou
  * agir — que é a informação que dá sentido ao texto.
  */
+/**
+ * Mensagem de texto agendada para o titular (migration 9336, #3118). O texto é
+ * escrito PARA ele e a anonimização o apaga, então o pedido de acesso o entrega,
+ * com o horário e o desfecho (agendada, encaminhada, falhou, cancelada).
+ */
+export interface ScheduledMessageRow {
+  id: string;
+  title: string | null;
+  body: string;
+  scheduled_at: string;
+  status: string;
+  created_at: string;
+}
+
 export interface TaskRow {
   id: string;
   title: string;
@@ -774,6 +788,8 @@ export interface ExportPayload {
   /** Módulo opcional; o coletor atual inclui vazio se não instalado. Payloads antigos podem não conter a seção. */
   cadencias_inscricoes?: { id: string; cadence_id: string; lead_id: string; status: string; motivo_parada: string | null; rastreio_consentido: boolean; consentimento_em: string | null; emails_enviados: number; aberturas: number; created_at: string; concluida_em: string | null; parada_em: string | null }[];
   cadencias_eventos?: { id: string; enrollment_id: string; tipo: string; created_at: string }[];
+  /** Módulo `amigo` (#4227): o vínculo do titular com o cadastro de paciente no sistema da clínica. */
+  amigo_vinculos?: { connection_id: string; patient_id: number; lead_id: string | null }[];
   lead_field_proposals: LeadFieldProposalRow[];
   orders: OrderRow[];
   activities: ActivityRow[];
@@ -792,6 +808,12 @@ export interface ExportPayload {
   sales: SaleRow[];
   proposals: ProposalRow[];
   tasks: TaskRow[];
+  /**
+   * Mensagens agendadas (migration 9336). Presente só quando há linha, como
+   * `calendar_waitlist`: o data.json de quem não tem agendamento fica byte a
+   * byte o de antes (fixtures de `lgpd-texto-segue-o-pais.test.tsx`).
+   */
+  scheduled_messages?: ScheduledMessageRow[];
   webhook_captures: CaptureRow[];
   audit_log_extract: AuditRow[];
   meeting_deliveries: MeetingDeliveryRow[];
@@ -1629,6 +1651,25 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // Módulo `amigo` (#4227), pelo mesmo caminho de cadências: o REGISTRO diz se o
+  // módulo existe; ausente, a chave nem aparece e a tabela nem é consultada.
+  // Suspenso também exporta. Só os ids do vínculo: o cadastro do paciente mora
+  // no Amigo, e a instalação não guarda cópia dele.
+  let amigoInstalado = false;
+  let amigo_vinculos: NonNullable<ExportPayload["amigo_vinculos"]> = [];
+  if (contactId) {
+    const { data: moduloAmigo, error: erroModuloAmigo } = await admin.from("modulos_instalados").select("modulo").eq("modulo", "amigo").maybeSingle();
+    if (erroModuloAmigo) throw new Error("amigo_export_module_read_failed");
+    if (moduloAmigo) {
+      amigoInstalado = true;
+      const { data: vinculos, error: erroVinculos } = await admin.from("amigo_patient_links")
+        .select("connection_id, patient_id, lead_id")
+        .eq("organization_id", organizationId).eq("contact_id", contactId).limit(500);
+      if (erroVinculos) throw new Error("amigo_export_load_failed");
+      if (vinculos) { conferirTeto("amigo_vinculos", vinculos, 500); amigo_vinculos = vinculos; }
+    }
+  }
+
   // Orders (contact_id when available, otherwise external_customer_id).
   let orders: OrderRow[] = [];
   {
@@ -1938,6 +1979,27 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     } else if (data) {
       conferirTeto("tasks", data, 500);
       tasks = data;
+    }
+  }
+
+  // Mensagens agendadas — contact_id direto em mensagens_agendadas (migration 9336).
+  let scheduled_messages: ScheduledMessageRow[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("mensagens_agendadas")
+      .select("id, title, body, scheduled_at, status, created_at")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("scheduled_at", { ascending: false })
+      .limit(500);
+    if (error) {
+      logger.warn("[lgpd-export-worker] scheduled messages load failed", {
+        request_id: requestId,
+        error: error.message,
+      });
+    } else if (data) {
+      conferirTeto("scheduled_messages", data, 500);
+      scheduled_messages = data;
     }
   }
 
@@ -2633,6 +2695,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     // O módulo ausente não altera o contrato do arquivo legado. Instalado
     // (inclusive suspenso), entrega suas seções, mesmo sem linhas do titular.
     ...(cadenciasInstaladas ? { cadencias_inscricoes, cadencias_eventos } : {}),
+    ...(amigoInstalado ? { amigo_vinculos } : {}),
     orders,
     activities,
     checkpoints,
@@ -2643,6 +2706,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     sales,
     proposals,
     tasks,
+    ...(scheduled_messages.length > 0 ? { scheduled_messages } : {}),
     webhook_captures,
     audit_log_extract,
     reply_drafts,

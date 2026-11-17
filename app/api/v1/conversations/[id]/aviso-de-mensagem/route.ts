@@ -1,13 +1,16 @@
 /**
  * GET /api/v1/conversations/[id]/aviso-de-mensagem — "devo avisar ESTA pessoa
- * da mensagem que acabou de chegar nesta conversa?" → `{ avisar, conteudo, canal }`.
+ * da mensagem que acabou de chegar nesta conversa?" →
+ * `{ avisar, conteudo, canal, cor_por_canal }`.
  *
  * `conteudo` é o que a bandeja do sistema pode mostrar (a opção da empresa em
  * `settings.notificacoes`, a mesma que o funil do push aplica), decidido aqui
  * no servidor e não no navegador.
  *
- * `canal` é a REDE da conversa, traduzida por `channelBrand`, para o toast se
- * identificar sem a pessoa ler (#4094). Vem aqui, e não de um segundo pedido à
+ * `canal` é a REDE da conversa, traduzida por `channelBrand`, para o
+ * toast se identificar sem a pessoa ler (#4094). `cor_por_canal` é a opção da
+ * empresa (`settings.notificacoes.cor_por_canal`): desligada, o aviso volta ao
+ * neutro e o nome do canal continua no texto. Vem aqui, e não de um segundo pedido à
  * rota da conversa, porque esta leitura já existe: cada aviso continua custando
  * uma pergunta só (é o que `tests/unit/aviso-nao-dispara-na-importacao.test.ts`
  * conta).
@@ -53,7 +56,7 @@ import {
   carregarDestinatariosDaMensagem,
   usuarioRecebeAviso,
 } from "@/lib/notifications/destinatarios-da-mensagem";
-import { lerTelaBloqueada } from "@/lib/notifications/tela-bloqueada";
+import { lerOpcoesDoAviso } from "@/lib/notifications/tela-bloqueada";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -90,13 +93,14 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<R
     // `null` só se a conversa sumiu entre as duas leituras: sem dono conhecido,
     // é fila — avisa, como antes da regra.
     const avisar = destino === null ? true : usuarioRecebeAviso(destino, user.id);
-    // O que a bandeja do sistema pode mostrar é decidido aqui, no servidor,
-    // pela mesma opção que o funil do push aplica.
-    const { modo } = await lerTelaBloqueada(createAdminClient(), org.orgId);
+    // O que a bandeja do sistema pode mostrar E se o aviso sai colorido são
+    // decididos aqui, no servidor: a mesma leitura de `organizations.settings`
+    // serve às duas opções, e o navegador não decide política de aviso sozinho.
+    const { modo, corPorCanal } = await lerOpcoesDoAviso(createAdminClient(), org.orgId);
     // O tipo vê o embed como lista; pela FK ele chega como objeto único.
     const sessao = conversa.channel_sessions;
     const canal = channelBrand(Array.isArray(sessao) ? sessao[0] : sessao);
-    return ok({ avisar, conteudo: modo, canal }, { requestId });
+    return ok({ avisar, conteudo: modo, canal, cor_por_canal: corPorCanal }, { requestId });
   } catch (err) {
     logger.error("[aviso-de-mensagem] leitura falhou", {
       conversation_id: id,

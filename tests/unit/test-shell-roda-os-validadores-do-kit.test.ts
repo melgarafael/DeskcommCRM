@@ -36,11 +36,13 @@ describe("test:shell", () => {
     expect(foraDoScript).toEqual([]);
   });
 
-  // Desde 03/11/2026 o CI não roda `pnpm test:shell` de uma vez: a parte 8 do
-  // `verify-parte` roda SÓ o arquivo mais pesado e a 7 roda todo o resto
+  // Desde 03/11/2026 o CI não roda `pnpm test:shell` de uma vez: a NONA parte do
+  // `verify-parte` roda SÓ o arquivo mais pesado e a OITAVA roda todo o resto
   // (scripts/test-shell-parte.sh). Os erros verdes que isto pega: o passo preso
   // a uma parte só (metade do kit sem rodar), o arquivo pesado renomeado, e um
   // corte que pula ou repete elo. Os pedaços são listados pelo PRÓPRIO script.
+  // A 7 e a 8 até 16/11/2026; a numeração andou quando a sétima parte de unit
+  // entrou (o `--shard` exige que as partes de unit sejam 1..N).
   it("os dois pedaços que o CI roda somam o test:shell inteiro, sem repetir", () => {
     const pkg = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")) as {
       scripts: Record<string, string>;
@@ -55,9 +57,9 @@ describe("test:shell", () => {
     );
     expect(passo, "o passo `Kit self-host (bash)` do ci.yml não foi encontrado — esta guarda cegou").not.toBeNull();
     const [, condicao, pesado, run] = passo!;
-    expect(condicao, "o kit tem de rodar nas partes 7 e 8").toBe("matrix.parte == 7 || matrix.parte == 8");
+    expect(condicao, "o kit tem de rodar nas partes 8 e 9").toBe("matrix.parte == 8 || matrix.parte == 9");
     expect(run).toBe(
-      `bash scripts/test-shell-parte.sh \${{ matrix.parte == 8 && 'so' || 'menos' }} "$KIT_PESADO"`,
+      `bash scripts/test-shell-parte.sh \${{ matrix.parte == 9 && 'so' || 'menos' }} "$KIT_PESADO"`,
     );
 
     const pedaco = (modo: string) =>

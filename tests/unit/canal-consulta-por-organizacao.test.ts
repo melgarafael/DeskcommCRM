@@ -60,6 +60,8 @@ function arquivosTs(dir: string): string[] {
 
 interface Consulta {
   arquivo: string;
+  /** Função que CONTÉM a cadeia — âncora estável da leitura legítima (a linha anda). */
+  funcao: string;
   linha: number;
   /** Filtros da cadeia em si — é onde o escopo de tenant tem de estar. */
   filtros: string[];
@@ -106,6 +108,7 @@ function consultas(fonte: string, arquivo: string): Consulta[] {
 
     out.push({
       arquivo: path.relative(RAIZ, arquivo),
+      funcao: funcaoQueContem(fonte, i),
       linha: fonte.slice(0, i).split("\n").length,
       filtros: colunasFiltradas(cadeia),
       filtrosComTerminal: colunasFiltradas(comTerminal),
@@ -115,7 +118,61 @@ function consultas(fonte: string, arquivo: string): Consulta[] {
   return out;
 }
 
+/** Nome da função que CONTÉM a posição `pos` — a âncora das leituras legítimas. */
+function funcaoQueContem(fonte: string, pos: number): string {
+  const antes = fonte.slice(0, pos);
+  const nomes = [...antes.matchAll(/(?:export\s+)?(?:async\s+)?function\s+([A-Za-z0-9_$]+)/g)];
+  return nomes.length > 0 ? nomes[nomes.length - 1]![1]! : "(fora de função)";
+}
+
 const TODAS = arquivosTs(DIR).flatMap((a) => consultas(fs.readFileSync(a, "utf8"), a));
+
+/**
+ * LEITURAS LEGÍTIMAS — as consultas que ATRAVESSAM organizações DE PROPÓSITO.
+ *
+ * A regra geral (abaixo) é: quem filtra por identificador de provider filtra
+ * `organization_id` também. Existe UMA pergunta no seam que não pode fazer isso
+ * sem apagar a proteção que ela mesma implementa — e é por isso que a lista é
+ * fechada, com motivo escrito e casamento EXATO (arquivo + função + o conjunto
+ * de filtros da cadeia), nunca por "está em tal linha".
+ *
+ * Quem for acrescentar item aqui precisa responder à pergunta que o motivo de
+ * cada um responde: por que filtrar por organização deixaria de cumprir o
+ * contrato? Se a resposta for "porque é mais fácil", o item não entra.
+ */
+const LEITURAS_LEGITIMAS: ReadonlyArray<{
+  arquivo: string;
+  funcao: string;
+  /** O conjunto EXATO de filtros da cadeia. Filtro novo ⇒ a declaração vence. */
+  filtros: readonly string[];
+  motivo: string;
+}> = [
+  {
+    arquivo: "lib/channels/bot/connect.ts",
+    funcao: "roboLigadoEmOutraConexao",
+    filtros: ["provider", "telegram_bot_id", "archived_at"],
+    motivo:
+      "Pergunta feita ANTES do setWebhook: 'este robô já atende por OUTRA conexão " +
+      "ativa?'. A resposta é sim/não e nada da outra conexão sai daqui; o ponto " +
+      "do contrato é justamente alcançar a conexão de OUTRA organização — o " +
+      "mesmo bot conectado por uma agência em duas instalações é configuração " +
+      "legítima (é o caso da issue #236). Filtrar por organization_id faria a " +
+      "consulta responder 'livre' e o setWebhook trocaria a URL e o segredo de " +
+      "quem já atendia: a proteção que existe para não mexer no webhook de " +
+      "ninguém passaria a autorizar exatamente isso.",
+  },
+];
+
+/** A consulta é EXATAMENTE a declarada (arquivo + função + conjunto de filtros)? */
+function ehLeituraLegitima(c: Consulta): boolean {
+  return LEITURAS_LEGITIMAS.some(
+    (l) =>
+      l.arquivo === c.arquivo &&
+      l.funcao === c.funcao &&
+      l.filtros.length === c.filtros.length &&
+      l.filtros.every((f) => c.filtros.includes(f)),
+  );
+}
 
 describe("lib/channels: consulta a channel_sessions por identificador do provider", () => {
   it("a varredura enxerga alguma consulta (senão ela mede o vazio)", () => {
@@ -132,7 +189,8 @@ describe("lib/channels: consulta a channel_sessions por identificador do provide
     const faltando = TODAS.filter(
       (c) =>
         c.filtros.some((f) => COLUNAS_DE_REF.includes(f)) &&
-        !c.filtros.includes("organization_id"),
+        !c.filtros.includes("organization_id") &&
+        !ehLeituraLegitima(c),
     ).map((c) => `${c.arquivo}:${c.linha} (filtros: ${c.filtros.join(", ") || "nenhum"})`);
 
     expect(
@@ -143,6 +201,25 @@ describe("lib/channels: consulta a channel_sessions por identificador do provide
         "de outra instalação (issue #236). Resolva o organization_id de fonte " +
         "confiável (sessão, linha já escopada, token do webhook), NUNCA do corpo.",
     ).toEqual([]);
+  });
+
+  it("toda leitura legítima declarada casa UMA consulta real que ainda precisa dela", () => {
+    // Sem este caso, `LEITURAS_LEGITIMAS` vira porta dos fundos: bastaria
+    // declarar arquivo+função inexistentes (ou já escopados) e a regra acima
+    // deixaria de olhar a consulta de verdade. É o controle do INSTRUMENTO da
+    // exceção, na mesma rodada do veredito.
+    const orfas = LEITURAS_LEGITIMAS.filter(
+      (l) => TODAS.filter((c) => c.arquivo === l.arquivo && c.funcao === l.funcao).length !== 1,
+    ).map((l) => `${l.arquivo}::${l.funcao} (consultas: ${TODAS.filter(
+      (c) => c.arquivo === l.arquivo && c.funcao === l.funcao,
+    ).length})`);
+    expect(orfas, "declaração sem consulta correspondente").toEqual([]);
+
+    const semEfeito = LEITURAS_LEGITIMAS.filter((l) => {
+      const c = TODAS.find((x) => x.arquivo === l.arquivo && x.funcao === l.funcao);
+      return !c || c.filtros.includes("organization_id") || !ehLeituraLegitima(c);
+    }).map((l) => `${l.arquivo}::${l.funcao}`);
+    expect(semEfeito, "declaração que não está cobrindo nada (a consulta já filtra organização, ou os filtros mudaram)").toEqual([]);
   });
 
   it("quem filtra por identificador do provider recorta os ATIVOS", () => {
