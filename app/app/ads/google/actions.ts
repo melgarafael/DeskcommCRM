@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { requireRole } from "@/lib/auth/require-role";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { podeAdministrarEmpresa } from "@/lib/auth/pode-administrar-empresa";
 import { lerCampanhas, lerConexaoGoogleParaApi } from "@/lib/plataformas-de-anuncio/google/api-google-ads";
 import { googleAdsEstaConfigurado } from "@/lib/plataformas-de-anuncio/google/config";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -16,7 +16,7 @@ export async function carregarMidiaGoogle(periodo: { de: string; ate: string }):
     Date.parse(janela.data.ate) - Date.parse(janela.data.de) >= 90 * 86_400_000) {
     return { ok: false, detalhe: "Selecione um período de até 90 dias." };
   }
-  const podeConfigurar = (acesso.user.is_platform_admin && !acesso.user.support) || ROLE_RANK[acesso.org.role] >= ROLE_RANK.admin;
+  const podeConfigurar = podeAdministrarEmpresa(acesso.user, acesso.org);
   const conexao = await lerConexaoGoogleParaApi(createAdminClient(), acesso.org.orgId);
   if (!conexao.ok) return { ok: false, detalhe: conexao.detalhe, abrirConfiguracoes: conexao.falha === "sem_conexao" ? podeConfigurar : undefined };
   // A conexão para enviar conversões pelo Data Manager pode funcionar sem as credenciais de relatórios.
