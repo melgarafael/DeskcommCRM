@@ -426,6 +426,9 @@ export function ActionForm({
           <p className="text-xs text-text-muted">
             {t("Para escrever uma data no formato do cliente, use {{campo|data}}.")}
           </p>
+          <p className="text-xs text-text-muted">
+            {t("Para a linha sumir quando o campo estiver vazio, envolva-a: {{#campo}}rótulo {{campo}}{{/campo}}.")}
+          </p>
           <div className="space-y-2 rounded-sm border border-border p-2" data-testid="action-variacoes">
             <Label>{t("Outras redações do mesmo passo (opcional)")}</Label>
             <p className="text-xs text-text-muted">

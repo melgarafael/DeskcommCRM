@@ -19,3 +19,8 @@ Três diferenças do Efi estão à mostra na tela e na documentação, em vez de
 **não aplica troca de plano** na assinatura — o preço novo passa a valer no próximo ciclo e a
 auditoria registra a recusa. O aviso de pagamento **não é cadastrado no painel do Efi**: a URL e o
 token viajam em cada cobrança criada pela instalação.
+
+Uma regra a mais, que o plano em três moedas trouxe: **o Efi cobra só em real**. Plano em dólar ou
+euro nasce recusado na criação quando o Efi está conectado — com o nome do provedor na mensagem — e
+o adaptador repete a guarda antes de chamar a API, para o número não virar real por acidente. É a
+mesma régua do Asaas.

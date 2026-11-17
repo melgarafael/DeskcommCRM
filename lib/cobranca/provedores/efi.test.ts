@@ -34,7 +34,7 @@ const REF = `org:${ORG}`;
 /** 12:00 em São Paulo: "hoje" é 2026-10-05. */
 const AGORA = new Date("2026-10-05T15:00:00Z");
 const APP = "https://crm.example.com";
-const PLANO = { id: "plano-1", nome: "CRM Pro", precoCents: 14990, intervalo: "mes" as const };
+const PLANO = { id: "plano-1", nome: "CRM Pro", precoCents: 14990, moeda: "BRL" as const, intervalo: "mes" as const };
 
 type Resposta = { status?: number; corpo?: unknown; headers?: Record<string, string> } | "rede_caiu" | "sem_corpo";
 type Responder = Resposta | Resposta[] | ((url: URL, corpo: unknown) => Resposta);
@@ -288,6 +288,24 @@ describe("criar a assinatura no Efi", () => {
     expect(aviso.url?.searchParams.get("org")).toBe(REF);
     expect(aviso.url?.searchParams.get("token")).toBe(SEGREDO_DO_AVISO);
     expect(aviso.url?.pathname).toBe("/api/v1/webhooks/cobranca/efi");
+  });
+
+  it("⭐ plano em dólar ou euro (migration 9332) é recusado antes de qualquer chamada: o Efi cobraria o número como real", async () => {
+    for (const moeda of ["USD", "EUR"] as const) {
+      const { adaptador, chamadas } = montar({});
+      const plano = { ...PLANO, moeda };
+      expect(
+        await adaptador
+          .iniciarAssinatura({ clienteRef: REF, orgId: ORG, plano, trialAte: null, urlDeVolta: "https://crm.example.com/app", chaveIdempotencia: "k1" })
+          .catch((e: unknown) => e),
+      ).toMatchObject({ codigo: "moeda_nao_suportada", transitorio: false });
+      expect(
+        await adaptador
+          .iniciarAjusteProporcional({ clienteRef: REF, orgId: ORG, plano, valorCents: 100, chaveIdempotencia: "k1", urlDeVolta: "https://crm.example.com/app" })
+          .catch((e: unknown) => e),
+      ).toMatchObject({ codigo: "moeda_nao_suportada" });
+      expect(chamadas).toHaveLength(0);
+    }
   });
 
   it("reusa o plano do mesmo preço e ciclo em vez de criar um por checkout", async () => {

@@ -28,7 +28,8 @@ importam: o Efi **não tem cadastro de cliente** (o pagador é informado na pág
 fatura), **não tem portal** (gerenciar é abrir a fatura aberta) e **não aplica troca de plano** na
 assinatura — a troca passa a valer no próximo ciclo assistido, e a tela diz isso. O aviso de
 pagamento **não é cadastrado no painel do Efi**: a URL e o token viajam em cada cobrança criada
-por esta instalação, então não há passo manual e não há o que colar no painel dele.
+por esta instalação, então não há passo manual e não há o que colar no painel dele. **Ele cobra só em
+real**: com o Efi conectado, plano em dólar ou euro é recusado na criação, como no Asaas.
 
 Vende para pequena empresa brasileira que paga no Pix ou no boleto? **Asaas** (fatura avulsa) ou
 **Efi Bank** (boleto recorrente). Cliente que

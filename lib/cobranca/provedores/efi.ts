@@ -38,7 +38,8 @@
  *   memória do processo, nunca em resposta.
  * - O valor SEMPRE vem do servidor (`plano.precoCents`); o Efi não aceita moeda
  *   (só BRL), então moeda não é campo — e não há como o corpo do cliente
- *   renegociar preço.
+ *   renegociar preço. Plano em USD/EUR (migration 9332) é recusado aqui, antes
+ *   de qualquer chamada, e não cobrado como se fosse real.
  * - Sem SDK: `fetch` + `node:crypto`, como o resto do módulo.
  */
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
@@ -259,6 +260,16 @@ const MESES_DO_INTERVALO = { mes: 1, ano: 12 } as const;
 /** O nome do plano no Efi carrega preço e ciclo: reusa o mesmo plano entre cobranças. */
 function nomeDoPlano(p: { nome: string; precoCents: number; intervalo: keyof typeof MESES_DO_INTERVALO }): string {
   return `CRM ${p.nome} ${p.intervalo} ${p.precoCents}`;
+}
+
+/**
+ * O Efi não tem moeda: todo valor é real. Plano em dólar ou euro (migration
+ * 9332) seria cobrado como se fosse real — R$ 500 no lugar de US$ 500. A rota de
+ * planos já recusa criar plano assim com o Efi conectado; esta é a defesa no
+ * último passo, antes de qualquer chamada ao provedor (mesma régua do Asaas).
+ */
+function exigirMoedaDoEfi(plano: { moeda: string }): void {
+  if (plano.moeda !== "BRL") throw new ErroDoProvedor(null, "moeda_nao_suportada", false);
 }
 
 export function criarAdaptadorEfi(dep: DependenciasDoEfi): AdaptadorDeCobranca {
@@ -499,6 +510,7 @@ export function criarAdaptadorEfi(dep: DependenciasDoEfi): AdaptadorDeCobranca {
   async function iniciarAssinatura(
     p: Parameters<AdaptadorDeCobranca["iniciarAssinatura"]>[0],
   ): ReturnType<AdaptadorDeCobranca["iniciarAssinatura"]> {
+    exigirMoedaDoEfi(p.plano);
     const orgId = orgDaRef(p.clienteRef);
     const emAberto = (await cobrancasDaOrg(orgId, new Date(agora().getTime() - 30 * 24 * 60 * 60 * 1000))).find(
       (c) => ABERTO.has(c.status) && linkSeguro(c.payment?.banking_billet?.link ?? null) !== null,
@@ -542,6 +554,7 @@ export function criarAdaptadorEfi(dep: DependenciasDoEfi): AdaptadorDeCobranca {
    * idempotência — a releitura acha a cobrança em aberto do mesmo ajuste.
    */
   async function iniciarAjusteProporcional(p: Parameters<AdaptadorDeCobranca["iniciarAjusteProporcional"]>[0]) {
+    exigirMoedaDoEfi(p.plano);
     const orgId = uuidDaOrg(p.orgId);
     const customId = `upgrade:${orgId}:${p.chaveIdempotencia}`;
     const consulta = new URLSearchParams({
