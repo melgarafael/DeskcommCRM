@@ -9,9 +9,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({ ligado: vi.fn(async () => true) }));
 vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: h.ligado }));
 
-import { lerCadastroNaTela, planoInicialDoSeletor, type PlanoDoCadastro } from "./cadastro";
+import { lerCadastroNaTela, planoInicialDoSeletor, planosNaMoedaDoLink, type PlanoDoCadastro } from "./cadastro";
 
-const plano = (id: string): PlanoDoCadastro => ({ id, nome: id, preco_cents: 4990, intervalo: "mes", trial_dias: 7 });
+const plano = (id: string): PlanoDoCadastro => ({ id, nome: id, preco_cents: 4990, moeda: "BRL", intervalo: "mes", trial_dias: 7 });
 
 function banco(p: { oferecidos: PlanoDoCadastro[]; padrao: string | null; erro?: boolean }) {
   return {
@@ -57,5 +57,27 @@ describe("planoInicialDoSeletor", () => {
   it("padrão fora dos oferecidos (ou sem padrão): o primeiro", () => {
     expect(planoInicialDoSeletor([plano("barato"), plano("outro")], "negociado")).toBe("barato");
     expect(planoInicialDoSeletor([], null)).toBeUndefined();
+  });
+});
+
+describe("planosNaMoedaDoLink — a moeda que o link pede (migration 9332)", () => {
+  const brl = { ...plano("brl"), moeda: "BRL" };
+  const usd = { ...plano("usd"), moeda: "USD" };
+  const eur = { ...plano("eur"), moeda: "EUR" };
+  const todos = [brl, usd, eur];
+
+  it("sem pedido, a lista inteira, como sempre", () => {
+    expect(planosNaMoedaDoLink(todos, {})).toEqual(todos);
+  });
+  it("?moeda= filtra, sem caixa e com espaços", () => {
+    expect(planosNaMoedaDoLink(todos, { moeda: " usd " })).toEqual([usd]);
+  });
+  it("?plano= decide pela moeda do plano escolhido", () => {
+    expect(planosNaMoedaDoLink(todos, { plano: "eur" })).toEqual([eur]);
+  });
+  it("?moeda= vence o ?plano=, e moeda sem plano oferecido não esvazia a lista", () => {
+    expect(planosNaMoedaDoLink(todos, { moeda: "BRL", plano: "eur" })).toEqual([brl]);
+    expect(planosNaMoedaDoLink(todos, { moeda: "JPY" })).toEqual(todos);
+    expect(planosNaMoedaDoLink(todos, { moeda: ["USD", "EUR"] })).toEqual([usd]);
   });
 });

@@ -44,6 +44,11 @@ import {
 import type { PlanoDeTarefas } from "@/lib/tarefas/plano";
 import { CaretDown, CaretUp, Pause, Play, X } from "@/lib/ui/icons";
 import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
+import {
+  CAMPOS_DE_ETIQUETA_GOOGLE_ADS,
+  ROTULOS_DE_ETIQUETA_GOOGLE_ADS,
+  type CampoDeEtiquetaGoogleAds,
+} from "@/lib/automation/etiquetas-google-ads";
 
 /**
  * #2041 — uma pessoa fixa (a forma de sempre, sem `modo`) ou um rodízio, em que
@@ -148,7 +153,7 @@ export type ActionItem =
     }
   | {
       type: "add_tag";
-      config: { tags: string[]; destino?: "card" | "contato" };
+      config: { tags: string[]; destino?: "card" | "contato"; google_ads_fields?: CampoDeEtiquetaGoogleAds[] };
     }
   | {
       type: "remove_tag";
@@ -800,7 +805,7 @@ function AddTagForm({
   config,
   onChange,
   tirar = false,
-}: FormProps<{ tags: string[]; destino?: "card" | "contato" }> & {
+}: FormProps<{ tags: string[]; destino?: "card" | "contato"; google_ads_fields?: CampoDeEtiquetaGoogleAds[] }> & {
   /** `remove_tag`: a mesma tela, com as frases de quem TIRA a etiqueta. */
   tirar?: boolean;
 }) {
@@ -828,6 +833,39 @@ function AddTagForm({
           placeholder={t("boas-vindas, novo-lead")}
         />
       </div>
+      {!tirar && (
+        <fieldset className="space-y-2 rounded-md border p-3">
+          <legend className="px-1 text-sm font-medium">{t("Etiquetas automáticas do Google Ads (opcional)")}</legend>
+          <p className="text-xs text-muted-foreground">
+            {t("Escolha os dados de origem que viram etiquetas. Só se aplica a negócios identificados como Google Ads; campos ausentes são ignorados.")}
+          </p>
+          <div className="flex flex-wrap gap-x-4 gap-y-2">
+            {CAMPOS_DE_ETIQUETA_GOOGLE_ADS.map((campo) => {
+              const selecionados = config.google_ads_fields ?? [];
+              const marcado = selecionados.includes(campo);
+              return (
+                <label key={campo} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={marcado}
+                    disabled={!marcado && config.tags.length + selecionados.length >= 10}
+                    onChange={(event) => onChange({
+                      ...config,
+                      google_ads_fields: event.target.checked
+                        ? [...selecionados, campo]
+                        : selecionados.filter((selecionado) => selecionado !== campo),
+                    })}
+                  />
+                  {t(ROTULOS_DE_ETIQUETA_GOOGLE_ADS[campo])}
+                </label>
+              );
+            })}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {t("Até dez etiquetas no total, com até 60 caracteres cada. O nome inclui o ID quando disponível; nomes longos usam só o ID ou são ignorados.")}
+          </p>
+        </fieldset>
+      )}
       <div className="space-y-1">
         <Label>{tirar ? t("De onde tirar") : t("Destino da etiqueta")}</Label>
         <Select

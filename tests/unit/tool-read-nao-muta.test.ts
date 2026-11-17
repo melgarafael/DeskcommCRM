@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { amigoOperations, isAmigoMutation } from "@/lib/amigo/contracts";
 import { TOOL_CATALOG } from "@/lib/mcp/tools/catalogo";
 
 /**
@@ -76,6 +77,20 @@ function definicoesDeTool(): Definicao[] {
       if (!nome || !cat) continue;
       achadas.push({ name: nome[1]!, category: cat[1]!, corpo: bloco, arquivo });
     }
+  }
+  // Ferramentas de FÁBRICA: `amigo.ts` monta uma tool por operação em
+  // `operationTool`, com nome em template — o split acima não as enxerga. O
+  // corpo varrido é o da fábrica inteira, e a categoria vem do mesmo predicado
+  // que a fábrica usa (`isAmigoMutation`), para cada operação.
+  const amigo = readFileSync(path.join(DIR, "amigo.ts"), "utf8");
+  const fabrica = amigo.slice(amigo.indexOf("function operationTool("), amigo.indexOf("const linkPatient"));
+  for (const operation of amigoOperations) {
+    achadas.push({
+      name: `crm_amigo_${operation}`,
+      category: isAmigoMutation(operation) ? "write" : "read",
+      corpo: fabrica,
+      arquivo: "amigo.ts",
+    });
   }
   return achadas;
 }

@@ -198,7 +198,14 @@ export function ConversationList({
   // de `textoDaFalhaDaLista`, cuja régua é a mesma da retentativa — antes daqui
   // todo mundo caía em "Erro ao carregar conversas", e o operador só descobria
   // que era timeout recarregando a página e perdendo filtro e conversa aberta.
-  if (q.isError && q.data === undefined) {
+  //
+  // `items.length === 0`, e não `q.data === undefined` (#4508, segunda metade):
+  // a lista que JÁ tinha respondido vazio e depois tem um refetch que falha
+  // chega aqui com `data` definido e zero linhas. Com a condição antiga ela
+  // caía no "Sem conversas por aqui" — a tela afirmando ausência de dados
+  // quando o que houve foi falha de leitura, que é a confusão que a issue pede
+  // para desfazer. Sem linha na tela, o que se sabe é que a leitura falhou.
+  if (q.isError && items.length === 0) {
     return (
       <div className="space-y-2 p-4 text-center text-sm text-muted-foreground" role="alert">
         <p className="text-foreground">{textoDaFalhaDaLista(q.error, t)}</p>
@@ -231,6 +238,42 @@ export function ConversationList({
 
   return (
     <div className="flex h-full flex-col">
+      {/*
+        A LISTA QUE JÁ CARREGOU NÃO SOME — E NÃO FICA CALADA (#4508).
+
+        Medido na `origin/main` antes deste conserto: lista carregada, o
+        refetch falha com a conexão caída e as linhas continuam na tela (certo),
+        mas a tela não diz NADA — só o toast que some em 5 s. Quem atende fica
+        olhando uma lista que pode estar de minutos atrás sem saber, e a única
+        pista é um aviso que já desapareceu. O aviso persistente é o que
+        distingue "não consegui atualizar agora, o que está aqui é o último que
+        chegou" de "não há conversas": o primeiro some quando a leitura volta, o
+        segundo não existe.
+
+        `role="status"` e não `alert` (#2366): `alert` é para o que SUBSTITUI a
+        tela; este convive com a lista e não deve ser anunciado como se a tela
+        tivesse virado erro. O botão repete a leitura sem recarregar a página —
+        filtro, busca e conversa aberta continuam onde estão.
+      */}
+      {q.isError && items.length > 0 && (
+        <div
+          data-testid="lista-desatualizada"
+          role="status"
+          aria-live="polite"
+          className="flex shrink-0 flex-col gap-1 border-b border-border/70 bg-surface-elevated px-3 py-2 text-xs text-text-muted"
+        >
+          <p className="text-foreground">{textoDaFalhaDaLista(q.error, t)}</p>
+          <p>{t("Mostrando as conversas que já estavam na tela. Nada foi perdido.")}</p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="mt-1 self-start"
+            onClick={() => q.refetch()}
+          >
+            {t("Tentar novamente")}
+          </Button>
+        </div>
+      )}
       <div className="flex-1 overflow-y-auto">
         {/* Vazio por FILTRO: fica DENTRO do return, nunca como `return` precoce —
             e por isso o bloco do `hasNextPage` abaixo continua sendo alcancado. */}
