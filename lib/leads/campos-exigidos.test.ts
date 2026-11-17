@@ -363,35 +363,49 @@ describe("recusaDeMotivoDoGanho — a lista do funil", () => {
 
 describe("settingsDoFunil — fail-open documentado", () => {
   it("lê o settings quando o funil responde", async () => {
+    const ORG = "22222222-2222-4222-8222-222222222222";
     const supabase = {
       from: () => ({
         select: () => ({
           eq: () => ({
-            maybeSingle: async () => ({ data: { settings: { won_reason_required: true } }, error: null }),
+            eq: () => ({
+              maybeSingle: async () => ({ data: { settings: { won_reason_required: true } }, error: null }),
+            }),
           }),
         }),
       }),
     } as never;
 
-    await expect(settingsDoFunil(supabase, "33333333-3333-4333-8333-333333333333")).resolves.toEqual({
+    await expect(
+      settingsDoFunil(supabase, "33333333-3333-4333-8333-333333333333", ORG),
+    ).resolves.toEqual({
       won_reason_required: true,
     });
   });
 
   it("erro de consulta, exceção ou pipeline ausente devolvem null — nada exigido", async () => {
+    const ORG = "22222222-2222-4222-8222-222222222222";
     const comErro = {
       from: () => ({
-        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: { message: "boom" } }) }) }),
+        select: () => ({
+          eq: () => ({
+            eq: () => ({ maybeSingle: async () => ({ data: null, error: { message: "boom" } }) }),
+          }),
+        }),
       }),
     } as never;
-    await expect(settingsDoFunil(comErro, "33333333-3333-4333-8333-333333333333")).resolves.toBeNull();
+    await expect(
+      settingsDoFunil(comErro, "33333333-3333-4333-8333-333333333333", ORG),
+    ).resolves.toBeNull();
 
     // Exceção (dublê que não serve a tabela, rede caída): capturada, não propaga.
     const queExige = { from: () => { throw new Error("tabela inesperada"); } } as never;
-    await expect(settingsDoFunil(queExige, "33333333-3333-4333-8333-333333333333")).resolves.toBeNull();
+    await expect(
+      settingsDoFunil(queExige, "33333333-3333-4333-8333-333333333333", ORG),
+    ).resolves.toBeNull();
 
     // Sem pipeline não há o que perguntar.
-    await expect(settingsDoFunil({} as never, null)).resolves.toBeNull();
+    await expect(settingsDoFunil({} as never, null, ORG)).resolves.toBeNull();
     void vi;
   });
 });

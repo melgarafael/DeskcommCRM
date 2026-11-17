@@ -85,7 +85,13 @@ async function pergunta(id = CONV) {
   const res = await GET(new NextRequest(`http://localhost/api/v1/conversations/${id}/aviso-de-mensagem`), {
     params: Promise.resolve({ id }),
   });
-  return { status: res.status, corpo: (await res.json()) as { data?: { avisar: boolean; conteudo?: string; canal?: string }; error?: { code: string } } };
+  return {
+    status: res.status,
+    corpo: (await res.json()) as {
+      data?: { avisar: boolean; conteudo?: string; canal?: string; cor_por_canal?: boolean };
+      error?: { code: string };
+    },
+  };
 }
 
 beforeEach(() => {
@@ -104,29 +110,29 @@ describe("aviso-de-mensagem", () => {
     estado.carregar.mockResolvedValue({ tipo: "todos" });
     const { status, corpo } = await pergunta();
     expect(status).toBe(200);
-    expect(corpo.data).toEqual({ avisar: true, conteudo: "nome", canal: "unknown" });
+    expect(corpo.data).toEqual({ avisar: true, conteudo: "nome", canal: "unknown", cor_por_canal: true });
     // Os fatos são lidos na organização ATIVA da sessão, para ESTA conversa.
     expect(estado.carregar.mock.calls[0]!.slice(1)).toEqual([ORG, CONV]);
   });
 
   it("com responsável → avisa o responsável", async () => {
     estado.carregar.mockResolvedValue({ tipo: "restrito", userIds: ["u-ana", "u-admin"] });
-    expect((await pergunta()).corpo.data).toEqual({ avisar: true, conteudo: "nome", canal: "unknown" });
+    expect((await pergunta()).corpo.data).toEqual({ avisar: true, conteudo: "nome", canal: "unknown", cor_por_canal: true });
   });
 
   it("com responsável → avisa o admin", async () => {
     estado.userId = "u-admin";
     estado.role = "admin";
     estado.carregar.mockResolvedValue({ tipo: "restrito", userIds: ["u-ana", "u-admin"] });
-    expect((await pergunta()).corpo.data).toEqual({ avisar: true, conteudo: "nome", canal: "unknown" });
+    expect((await pergunta()).corpo.data).toEqual({ avisar: true, conteudo: "nome", canal: "unknown", cor_por_canal: true });
   });
 
   it("com responsável → NÃO avisa outro atendente (nem gerente que não é admin)", async () => {
     estado.carregar.mockResolvedValue({ tipo: "restrito", userIds: ["u-bia", "u-admin"] });
-    expect((await pergunta()).corpo.data).toEqual({ avisar: false, conteudo: "nome", canal: "unknown" });
+    expect((await pergunta()).corpo.data).toEqual({ avisar: false, conteudo: "nome", canal: "unknown", cor_por_canal: true });
     estado.role = "manager";
     estado.userId = "u-gerente";
-    expect((await pergunta()).corpo.data).toEqual({ avisar: false, conteudo: "nome", canal: "unknown" });
+    expect((await pergunta()).corpo.data).toEqual({ avisar: false, conteudo: "nome", canal: "unknown", cor_por_canal: true });
   });
 
   it("conversa que a sessão não enxerga → 404, sem ler nada com o service role", async () => {
@@ -158,7 +164,7 @@ describe("aviso-de-mensagem", () => {
   it("diz o que a bandeja pode mostrar, pela opção da empresa", async () => {
     estado.carregar.mockResolvedValue({ tipo: "todos" });
     estado.org = { data: { settings: { notificacoes: { conteudo_na_tela_bloqueada: "oculto" } }, locale: "pt-BR" }, error: null };
-    expect((await pergunta()).corpo.data).toEqual({ avisar: true, conteudo: "oculto", canal: "unknown" });
+    expect((await pergunta()).corpo.data).toEqual({ avisar: true, conteudo: "oculto", canal: "unknown", cor_por_canal: true });
   });
 
   it("diz de qual rede a conversa é, sem mostrar o transporte", async () => {
@@ -170,12 +176,25 @@ describe("aviso-de-mensagem", () => {
 
   it("conversa sem sessão de canal → canal 'unknown', e o aviso segue", async () => {
     estado.carregar.mockResolvedValue({ tipo: "todos" });
-    expect((await pergunta()).corpo.data).toEqual({ avisar: true, conteudo: "nome", canal: "unknown" });
+    expect((await pergunta()).corpo.data).toEqual({ avisar: true, conteudo: "nome", canal: "unknown", cor_por_canal: true });
   });
 
-  it("falha ao ler a opção da empresa → esconde o conteúdo", async () => {
+  it("falha ao ler a opção da empresa → esconde o conteúdo e o aviso sai neutro", async () => {
     estado.carregar.mockResolvedValue({ tipo: "todos" });
     estado.org = { data: null, error: { message: "fora" } };
-    expect((await pergunta()).corpo.data).toEqual({ avisar: true, conteudo: "oculto", canal: "unknown" });
+    expect((await pergunta()).corpo.data).toEqual({ avisar: true, conteudo: "oculto", canal: "unknown", cor_por_canal: false });
+  });
+
+  it("a empresa desligou a cor por canal → o veredito diz que o aviso sai neutro", async () => {
+    estado.carregar.mockResolvedValue({ tipo: "todos" });
+    estado.sessao = { provider: "transporte-qualquer", social_platform: "uma-rede" };
+    estado.org = {
+      data: { settings: { notificacoes: { cor_por_canal: false } }, locale: "pt-BR" },
+      error: null,
+    };
+    const { corpo } = await pergunta();
+    // O canal continua nomeado — desligar a COR não esconde de onde veio.
+    expect(corpo.data?.canal).toBe("whatsapp");
+    expect(corpo.data?.cor_por_canal).toBe(false);
   });
 });

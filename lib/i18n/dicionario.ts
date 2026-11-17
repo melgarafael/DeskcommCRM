@@ -40,6 +40,7 @@ import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
 import { TEXTOS_APARENCIA } from "./aparencia";
 import { TEXTOS_PROSPECCAO_ARQUIVO_DA_ABORDAGEM } from "./prospeccao-arquivo-da-abordagem";
 import { TEXTOS_CONTRATACAO } from "./contratacao";
+import { TEXTOS_MCP_OAUTH } from "./mcp-oauth";
 import { TEXTOS_TABELA_DE_VALORES } from "./tabela-de-valores";
 import { TEXTOS_DO_MOTOR_GRAVADO } from "./motor-gravado";
 import { TEXTOS_AVISOS_DA_CENTRAL } from "./avisos-da-central";
@@ -49,6 +50,7 @@ type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>
 
 export const DICIONARIO: Traducoes = {
   ...TEXTOS_CONTRATACAO,
+  ...TEXTOS_MCP_OAUTH,
   ...TEXTOS_TABELA_DE_VALORES,
   ...TEXTOS_DO_MOTOR_GRAVADO,
   ...TEXTOS_AVISOS_DA_CENTRAL,
@@ -4881,6 +4883,20 @@ export const DICIONARIO: Traducoes = {
   },
   "Ligada: o cliente recebe esta frase uma vez, antes da resposta do agente novo.": {
     es: "Activada: el cliente recibe esta frase una vez, antes de la respuesta del agente nuevo.",
+  },
+  // #4750 — o TERCEIRO modo da troca automática: silencioso. Mora no `config`
+  // do roteador e fica na mesma área da frase, porque é ele que a desliga.
+  "Troca automática silenciosa": { es: "Traspaso automático silencioso" },
+  "Ligada: nada é enviado ao cliente e o agente novo continua a conversa sem se apresentar nem anunciar a troca.":
+    {
+      es: "Activada: no se envía nada al cliente y el agente nuevo continúa la conversación sin presentarse ni anunciar el traspaso.",
+    },
+  "Desligada: com frase abaixo, o cliente é avisado da troca; sem frase, o agente novo se apresenta com as palavras dele.":
+    {
+      es: "Desactivada: con la frase de abajo se avisa al cliente del traspaso; sin frase, el agente nuevo se presenta con sus propias palabras.",
+    },
+  "Com a troca silenciosa ligada, esta frase NÃO é enviada ao cliente.": {
+    es: "Con el traspaso silencioso activado, esta frase NO se envía al cliente.",
   },
   "O número não pode ser trocado depois de criado — crie outro roteador para um número diferente.": {
     es: "El número no se puede cambiar una vez creado el enrutador. Para usar otro número, crea otro enrutador.",
@@ -13304,6 +13320,7 @@ export const DICIONARIO: Traducoes = {
   "A IA não pode atender este contato.": { es: "La IA no puede atender a este contacto." },
   "Não foi possível marcar o contato como pessoal.": { es: "No fue posible marcar el contacto como personal." },
   "Não foi possível desmarcar o contato como pessoal.": { es: "No fue posible desmarcar el contacto como personal." },
+  "Só quem marcou o contato como pessoal pode desmarcá-lo.": { es: "Solo quien marcó el contacto como personal puede desmarcarlo." },
   "content é obrigatório.": { es: "content es obligatorio." },
   "Conversa do caso sem contato associado.": { es: "La conversación del caso no tiene contacto asociado." },
   "Conversa não encontrada.": { es: "Conversación no encontrada." },
@@ -20627,6 +20644,9 @@ export const DICIONARIO: Traducoes = {
   "Mostrar quem mandou e a mensagem": { es: "Mostrar quién lo envió y el mensaje" },
   "Aparecem o nome, a foto e o começo da mensagem.": { es: "Aparecen el nombre, la foto y el comienzo del mensaje." },
   "Quem decide é um administrador.": { es: "Quien decide es un administrador." },
+  "Só um administrador liga ou desliga a cor do aviso.": {
+    es: "Solo un administrador activa o desactiva el color del aviso.",
+  },
   "Cada aviso liga e desliga sozinho no Push. Desligar todos encerra os avisos deste aparelho fora do app.": {
     es: "Cada aviso se activa y desactiva por separado en el Push. Desactivarlos todos termina los avisos de este dispositivo fuera de la app.",
   },
@@ -21967,6 +21987,17 @@ export const DICIONARIO: Traducoes = {
   "Mensagem citada": { es: "Mensaje citado" },
   "Toque para carregar a original": { es: "Toque para cargar el original" },
   "A mensagem original não está mais na conversa.": { es: "El mensaje original ya no está en la conversación." },
+  // ---- Cor por canal no aviso de mensagem nova (#4094) --------------------
+  // Nomes de rede não se traduzem (WhatsApp é WhatsApp em espanhol); entram no
+  // dicionário assim mesmo porque a paleta de Configurações os lê por `t()`.
+  Telegram: { es: "Telegram" },
+  Instagram: { es: "Instagram" },
+  Messenger: { es: "Messenger" },
+  "Cor por canal no aviso de mensagem": { es: "Color por canal en el aviso de mensaje" },
+  "Com a cor ligada, o aviso de mensagem nova mostra uma faixa e o logo da rede na cor dela — WhatsApp verde, Telegram azul —, e o nome do canal abre o texto. Desligada, o aviso volta ao neutro de sempre.": {
+    es: "Con el color activado, el aviso de mensaje nuevo muestra una franja y el logo de la red en su color — WhatsApp verde, Telegram azul —, y el nombre del canal abre el texto. Desactivado, el aviso vuelve al neutro de siempre.",
+  },
+  "Demais canais: neutro": { es: "Demás canales: neutro" },
   // Módulo opcional Amigo (#4227, etapa 2): a tela de integração e o aviso na agenda.
   "A agenda desta clínica está no Amigo: as consultas daqui espelham as de lá.": { es: "La agenda de esta clínica está en Amigo: las citas de aquí reflejan las de allá." },
   "A agenda passa a usar o sistema de clínicas Amigo: pacientes, vagas e consultas vêm de lá, e a IA marca pelo Amigo.": { es: "La agenda pasa a usar el sistema de clínicas Amigo: pacientes, horarios y citas vienen de allá, y la IA agenda por Amigo." },
