@@ -80,6 +80,7 @@ const ROTULO_DO_MOTIVO: Record<MotivoDeDuplicidade, string> = {
   email: "mesmo e-mail",
   telefone_em_conflito: "telefone que o WhatsApp deixou em conflito",
   cpf: "mesmo CPF",
+  whatsapp: "mesma conta de WhatsApp",
   nome_parecido: "nome parecido",
 };
 
@@ -357,6 +358,20 @@ export function MergeDialog({ open, onOpenChange }: Props) {
           <p className="text-xs text-muted-foreground">
             {t(
               "Mostrando os duplicados entre os contatos mais antigos. Junte estes e reabra para ver os próximos.",
+            )}
+          </p>
+        ) : null}
+
+        {/*
+          A OPÇÃO DESLIGADA TAMBÉM TEM VOZ (#4138). A seção "Parecidos — confira"
+          simplesmente não vem quando a empresa não ligou a sugestão por nome — e
+          quem já a viu antes procuraria o motivo. Quem lê "desligada" sabe onde
+          ligar; quem lê nada conclui que a base está limpa.
+        */}
+        {q.data?.meta?.sugestao_por_nome === false ? (
+          <p className="text-xs text-muted-foreground" data-testid="sugestao-por-nome-desligada">
+            {t(
+              "A sugestão por nome está desligada. Para ver a seção \"Parecidos — confira\", ligue a opção em Configurações › Atendimento.",
             )}
           </p>
         ) : null}

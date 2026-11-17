@@ -96,8 +96,28 @@
  * CRM) nem `status` (mandar para `pending` diria "na fila esperando atendente",
  * o oposto de "estou atendendo").
  *
+ * ## Zero linhas tem DOIS motivos, e eles pedem tratamentos opostos (#534)
+ *
+ * O UPDATE devolve `error: null` e nenhuma linha quando não casou com nada. Duas
+ * causas possíveis, indistinguíveis pela resposta da escrita:
+ *
+ *   1. **CORRIDA** — a linha existe, mas a escrita ainda não é visível (réplica
+ *      atrasada, DELETE concorrente que ainda não commitou). Repetir UMA vez,
+ *      depois de RELER, resolve.
+ *   2. **CONVERSA INEXISTENTE / organização errada** — repetir nunca resolve.
+ *
+ * Repetir às cegas seria um laço; desistir em silêncio é o defeito. A decisão é
+ * tomada RELENDO a conversa: se ela está lá, é corrida e cabe uma segunda
+ * escrita; se não está, o motivo é nomeado e nenhuma escrita é repetida. O
+ * `ResultadoDaPausa` leva o motivo até o chamador — que NÃO pode seguir como se
+ * a IA estivesse pausada. A porta pública recebe `avisar`: quando a pausa não é
+ * garantida, o chamador é obrigado a gravar o motivo (audit), em vez de receber
+ * um `false` anônimo.
+ *
  * Fire-and-forget: a ingestão da mensagem do cliente não pode cair porque a
- * pausa falhou.
+ * pausa falhou. Isso vale para o CHAMADOR não lançar; não vale para esconder a
+ * falha: ela sai como `logger.error`, vai para o `audit` do chamador e volta no
+ * resultado da ingestão.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -196,18 +216,129 @@ export interface PausaPorAtendimentoManualInput {
    * comparar um com o outro produz falha intermitente. Default = agora.
    */
   agora?: Date;
+  /**
+   * O aviso de que a pausa NÃO foi garantida (#534) — chamado só nesse caso,
+   * com o motivo nomeado. Quem chama da ingestão TEM de passar um (o `audit`,
+   * tipicamente): é o que impede a falha de virar um `false` anônimo que o
+   * chamador ignora. Silêncio maior já em vigor NÃO é falha e não avisa.
+   */
+  avisar?: (falha: FalhaDaPausa) => void | Promise<void>;
+}
+
+/**
+ * POR QUE a pausa não foi garantida. Nomeado porque os dois motivos de zero
+ * linhas pedem tratamentos opostos (#534) e porque `false` anônimo é
+ * indistinguível de "já havia silêncio maior".
+ */
+export type MotivoDaPausaNaoGravada =
+  /** A conversa não existe nesta organização — repetir nunca resolve. */
+  | "conversa_inexistente"
+  /** A linha existe, mas a escrita não é visível — nem depois da repetição. */
+  | "corrida_persistente"
+  /** A LEITURA falhou: não há como dizer se a conversa existe. */
+  | "leitura_falhou"
+  /** A ESCRITA devolveu erro (rede, RLS, constraint). */
+  | "escrita_falhou"
+  /** Exceção inesperada no caminho. */
+  | "erro_inesperado";
+
+/**
+ * O que aconteceu de verdade.
+ *
+ * `pausada: true` com `gravada: false` é o caso legítimo de um silêncio MAIOR já
+ * em vigor (handoff formal, janela mais longa): a IA está calada, só não fomos
+ * nós que a calamos agora. `pausada: false` é FALHA, sempre com motivo nomeado.
+ */
+export type ResultadoDaPausa =
+  | { pausada: true; gravada: boolean }
+  | { pausada: false; motivo: MotivoDaPausaNaoGravada; detalhe?: string };
+
+type LeituraDaConversa =
+  | { estado: "ok"; botSilencedUntil: string | null }
+  | { estado: "ausente" }
+  | { estado: "erro"; detalhe: string };
+
+/** Uma leitura da conversa, sem lançar. */
+async function lerConversa(
+  admin: SupabaseClient,
+  organizationId: string,
+  conversationId: string,
+): Promise<LeituraDaConversa> {
+  try {
+    const { data, error } = await admin
+      .from("conversations")
+      .select("bot_silenced_until")
+      .eq("organization_id", organizationId)
+      .eq("id", conversationId)
+      .maybeSingle();
+    if (error) return { estado: "erro", detalhe: error.message.slice(0, 160) };
+    if (data == null) return { estado: "ausente" };
+    return {
+      estado: "ok",
+      botSilencedUntil: (data as { bot_silenced_until: string | null }).bot_silenced_until,
+    };
+  } catch (err) {
+    return {
+      estado: "erro",
+      detalhe: err instanceof Error ? err.message.slice(0, 160) : "erro",
+    };
+  }
+}
+
+type EscritaDaPausa =
+  | { estado: "ok"; linhas: number }
+  | { estado: "erro"; detalhe: string };
+
+/** UMA escrita da pausa. `linhas` é o que torna a pausa observável. */
+async function escreverPausa(
+  admin: SupabaseClient,
+  input: PausaPorAtendimentoManualInput,
+  gravado: string,
+  motivo: string,
+  agora: Date,
+): Promise<EscritaDaPausa> {
+  try {
+    const { data, error } = await admin
+      .from("conversations")
+      .update({
+        bot_silenced_until: gravado,
+        last_handoff_at: agora.toISOString(),
+        last_handoff_reason: motivo,
+      })
+      .eq("organization_id", input.organizationId)
+      .eq("id", input.conversationId)
+      .select("id");
+    if (error) return { estado: "erro", detalhe: error.message.slice(0, 160) };
+    return { estado: "ok", linhas: data?.length ?? 0 };
+  } catch (err) {
+    return { estado: "erro", detalhe: err instanceof Error ? err.message.slice(0, 160) : "erro" };
+  }
+}
+
+/** O instante do silêncio em vigor, em ms (`-Infinity` = sem silêncio). */
+function instanteDoSilencio(valor: string | null): number {
+  // Instante ilegível é tratado como "sem silêncio". A leitura conservadora
+  // seria não pausar, e ela deixaria a IA falando por cima do humano — o
+  // defeito que este módulo existe para não ter.
+  const normalizado = normalizarInstante(valor);
+  if (normalizado === null) return Number.NEGATIVE_INFINITY;
+  return normalizado instanceof Date ? normalizado.getTime() : normalizado;
 }
 
 /**
  * Pausa a IA numa conversa porque uma pessoa respondeu por fora do CRM, pelo
- * prazo da empresa (`lerPrazoDoSilencioManualMinutos`; padrão de 60 min) a
- * contar de `agora`. Devolve `true` se gravou (pausa nova ou prazo renovado),
- * `false` se havia silêncio mais longo em vigor ou se falhou.
+ * prazo da empresa (padrão de 60 min) a contar de `agora` — com MOTIVO quando
+ * não dá certo.
+ *
+ * Zero linhas na escrita não é "tanto faz": é o único desfecho em que a IA pode
+ * falar por cima do atendente. Por isso a conversa é RELIDA — corrida (linha
+ * existe) ganha UMA repetição; conversa inexistente vira `conversa_inexistente`
+ * sem repetir a escrita. Nunca lança.
  */
-export async function pausarIaPorAtendimentoManual(
+export async function pausarIaPorAtendimentoManualDetalhado(
   admin: SupabaseClient,
   input: PausaPorAtendimentoManualInput,
-): Promise<boolean> {
+): Promise<ResultadoDaPausa> {
   const agora = input.agora ?? new Date();
   const motivo = input.motivo ?? MOTIVO_ATENDIMENTO_MANUAL;
 
@@ -218,100 +349,212 @@ export async function pausarIaPorAtendimentoManual(
       : agora.getTime() + (await prazoDoSilencioDaEmpresaMs(admin, input.organizationId));
     const gravado = input.duravel ? "infinity" : new Date(propostoMs).toISOString();
 
-    const { data: atual, error: readErr } = await admin
-      .from("conversations")
-      .select("bot_silenced_until")
-      .eq("organization_id", input.organizationId)
-      .eq("id", input.conversationId)
-      .maybeSingle();
+    let leitura = await lerConversa(admin, input.organizationId, input.conversationId);
 
-    if (readErr) {
+    // "Não achei a conversa" ainda não é veredito: a linha pode ter acabado de
+    // nascer (ou a leitura pegou uma réplica atrasada). RELER decide, e reler
+    // não repete escrita nenhuma.
+    if (leitura.estado === "ausente") {
+      leitura = await lerConversa(admin, input.organizationId, input.conversationId);
+    }
+
+    if (leitura.estado === "erro") {
       logger.warn("[atendimento-manual] leitura da conversa falhou — IA não pausada", {
         organization_id: input.organizationId,
         conversation_id: input.conversationId,
-        detail: readErr.message.slice(0, 160),
+        detail: leitura.detalhe,
       });
-      return false;
+      return { pausada: false, motivo: "leitura_falhou", detalhe: leitura.detalhe };
     }
-    if (atual == null) return false;
+    if (leitura.estado === "ausente") {
+      // Segunda leitura, mesma resposta: repetir a escrita não mudaria nada.
+      // O caso mais comum é organização errada (conversa de outro tenant) —
+      // escrever de novo seria só mais uma ida ao banco sem destino.
+      logger.error("[atendimento-manual] pausa impossível — conversa inexistente nesta organização", {
+        organization_id: input.organizationId,
+        conversation_id: input.conversationId,
+        motivo: "conversa_inexistente",
+      });
+      return { pausada: false, motivo: "conversa_inexistente" };
+    }
 
     // NUNCA encurta um silêncio maior já em vigor. `Infinity` (handoff formal)
     // vence qualquer prazo finito; uma janela mais longa que a nossa também.
-    // Instante ilegível vira `null` e é tratado como "sem silêncio" — a leitura
-    // conservadora seria não pausar, e ela deixaria a IA falando por cima do
-    // humano, que é o defeito que este módulo existe para não ter.
-    const silenciadaAte = normalizarInstante(
-      (atual as { bot_silenced_until: string | null }).bot_silenced_until,
-    );
-    const atualMs =
-      silenciadaAte === null
-        ? Number.NEGATIVE_INFINITY
-        : silenciadaAte instanceof Date
-          ? silenciadaAte.getTime()
-          : silenciadaAte;
-    if (atualMs >= propostoMs) return false;
+    if (instanteDoSilencio(leitura.botSilencedUntil) >= propostoMs) {
+      return { pausada: true, gravada: false };
+    }
 
-    // A LINHA VOLTA. Um UPDATE pode devolver `error: null` sem ter tocado em
-    // nada — uma corrida com um DELETE que apaga a linha entre a leitura de
-    // cima e esta escrita (o cliente é admin, então RLS não é a causa). Sem
-    // ler de volta, a função dizia "pausei" com o banco intacto, e a IA
-    // voltava a falar por cima do humano no turno seguinte. Pedir
-    // `select("id")` é o que torna a pausa OBSERVÁVEL: sem linha nenhuma
-    // afetada, não houve pausa — é falha.
-    const { data: afetadas, error: updErr } = await admin
-      .from("conversations")
-      .update({
-        bot_silenced_until: gravado,
-        last_handoff_at: agora.toISOString(),
-        last_handoff_reason: motivo,
-      })
-      .eq("organization_id", input.organizationId)
-      .eq("id", input.conversationId)
-      .select("id");
-
-    if (updErr) {
+    const primeira = await escreverPausa(admin, input, gravado, motivo, agora);
+    if (primeira.estado === "erro") {
       logger.warn("[atendimento-manual] pausa da IA não gravada", {
         organization_id: input.organizationId,
         conversation_id: input.conversationId,
-        detail: updErr.message.slice(0, 160),
+        detail: primeira.detalhe,
       });
-      return false;
+      return { pausada: false, motivo: "escrita_falhou", detalhe: primeira.detalhe };
+    }
+    if (primeira.linhas > 0) {
+      logger.info("[atendimento-manual] IA pausada — pessoa respondeu pelo canal", {
+        organization_id: input.organizationId,
+        conversation_id: input.conversationId,
+        canal: input.canal ?? "desconhecido",
+        silenciada_ate: gravado,
+        motivo,
+      });
+      return { pausada: true, gravada: true };
     }
 
     // Zero linhas é o mesmo que erro: o `error` do supabase-js fica `null` e só
-    // a contagem denuncia. Segue o contrato — devolve `false`, nunca lança.
-    const rows = afetadas?.length ?? 0;
-    if (rows === 0) {
-      logger.warn("[atendimento-manual] pausa da IA não gravada — nenhuma linha afetada", {
+    // a contagem denuncia. Agora com DOIS desfechos possíveis — e a releitura é
+    // o que os separa.
+    logger.warn(
+      "[atendimento-manual] pausa da IA não gravada — nenhuma linha afetada; relendo para separar corrida de conversa inexistente",
+      {
         organization_id: input.organizationId,
         conversation_id: input.conversationId,
         rows: 0,
+      },
+    );
+
+    const relida = await lerConversa(admin, input.organizationId, input.conversationId);
+    if (relida.estado === "erro") {
+      logger.error("[atendimento-manual] releitura falhou depois de zero linhas — pausa NÃO garantida", {
+        organization_id: input.organizationId,
+        conversation_id: input.conversationId,
+        detail: relida.detalhe,
       });
-      return false;
+      return { pausada: false, motivo: "leitura_falhou", detalhe: relida.detalhe };
+    }
+    if (relida.estado === "ausente") {
+      // A linha sumiu entre a leitura e a escrita (DELETE concorrente) — ou
+      // nunca existiu. Repetir a escrita não muda esse veredito.
+      logger.error("[atendimento-manual] conversa desapareceu entre a leitura e a escrita — pausa impossível", {
+        organization_id: input.organizationId,
+        conversation_id: input.conversationId,
+        motivo: "conversa_inexistente",
+      });
+      return { pausada: false, motivo: "conversa_inexistente" };
     }
 
-    logger.info("[atendimento-manual] IA pausada — pessoa respondeu pelo canal", {
+    // Corrida confirmada: a linha ESTÁ lá. UMA repetição — nunca um laço.
+    const segunda = await escreverPausa(admin, input, gravado, motivo, agora);
+    if (segunda.estado === "erro") {
+      logger.error("[atendimento-manual] repetição da pausa falhou — IA não pausada", {
+        organization_id: input.organizationId,
+        conversation_id: input.conversationId,
+        detail: segunda.detalhe,
+      });
+      return { pausada: false, motivo: "escrita_falhou", detalhe: segunda.detalhe };
+    }
+    if (segunda.linhas > 0) {
+      logger.info("[atendimento-manual] IA pausada na repetição — corrida resolvida", {
+        organization_id: input.organizationId,
+        conversation_id: input.conversationId,
+        canal: input.canal ?? "desconhecido",
+        silenciada_ate: gravado,
+        motivo,
+      });
+      return { pausada: true, gravada: true };
+    }
+
+    logger.error("[atendimento-manual] pausa NÃO garantida — duas escritas sem linha afetada", {
       organization_id: input.organizationId,
       conversation_id: input.conversationId,
-      canal: input.canal ?? "desconhecido",
-      silenciada_ate: gravado,
-      motivo,
+      tentativas: 2,
+      motivo: "corrida_persistente",
     });
-    return true;
+    return { pausada: false, motivo: "corrida_persistente" };
   } catch (err) {
+    const detalhe = err instanceof Error ? err.message.slice(0, 160) : "erro";
     logger.warn("[atendimento-manual] pausa da IA lançou", {
       organization_id: input.organizationId,
       conversation_id: input.conversationId,
-      detail: err instanceof Error ? err.message.slice(0, 160) : "erro",
+      detail: detalhe,
     });
-    return false;
+    return { pausada: false, motivo: "erro_inesperado", detalhe };
   }
+}
+
+/**
+ * Pausa a IA numa conversa porque uma pessoa respondeu por fora do CRM, pelo
+ * prazo da empresa (`lerPrazoDoSilencioManualMinutos`; padrão de 60 min) a
+ * contar de `agora`. Devolve `true` se gravou (pausa nova ou prazo renovado),
+ * `false` se havia silêncio mais longo em vigor ou se falhou.
+ *
+ * Atalho booleano do detalhado: `true` só quando a pausa foi GRAVADA. Quem
+ * precisa saber POR QUE falhou usa `pausarIaPorAtendimentoManualDetalhado` — e
+ * quem está na ingestão passa `avisar`, que não deixa a falha passar em silêncio.
+ */
+export async function pausarIaPorAtendimentoManual(
+  admin: SupabaseClient,
+  input: PausaPorAtendimentoManualInput,
+): Promise<boolean> {
+  const resultado = await pausarIaPorAtendimentoManualDetalhado(admin, input);
+  if (resultado.pausada) return resultado.gravada;
+
+  logger.error(
+    "[atendimento-manual] PAUSA NÃO GARANTIDA — o chamador não pode seguir como se a IA estivesse pausada",
+    {
+      organization_id: input.organizationId,
+      conversation_id: input.conversationId,
+      canal: input.canal ?? "desconhecido",
+      motivo: resultado.motivo,
+      detalhe: resultado.detalhe,
+    },
+  );
+
+  const avisar = input.avisar;
+  if (avisar) {
+    try {
+      await avisar({
+        organizationId: input.organizationId,
+        conversationId: input.conversationId,
+        canal: input.canal,
+        motivo: resultado.motivo,
+        detalhe: resultado.detalhe,
+      });
+    } catch (err) {
+      // O aviso é a SEGUNDA rede. Se ele falhar, a falha original continua
+      // visível no erro acima e no retorno — não vira sucesso.
+      logger.warn("[atendimento-manual] aviso da pausa não gravada lançou", {
+        organization_id: input.organizationId,
+        conversation_id: input.conversationId,
+        motivo: resultado.motivo,
+        detail: err instanceof Error ? err.message.slice(0, 160) : "erro",
+      });
+    }
+  }
+  return false;
+}
+
+/** O que o chamador precisa saber para avisar alguém da falha. */
+export interface FalhaDaPausa {
+  organizationId: string;
+  conversationId: string;
+  canal?: string;
+  motivo: MotivoDaPausaNaoGravada;
+  detalhe?: string;
+}
+
+/** O motivo a carregar no resultado do chamador — `null` quando a IA está pausada. */
+export function motivoDaPausaNaoGravada(
+  resultado: ResultadoDaPausa,
+): MotivoDaPausaNaoGravada | null {
+  return resultado.pausada ? null : resultado.motivo;
 }
 
 /**
  * Pausa DURÁVEL (`'infinity'`) — o `#off` do celular, e a resposta manual de quem
  * ligou "Comandos pelo celular". A regra é a mesma de cima; só o prazo muda.
  */
+export async function pausarIaDuravelmenteDetalhado(
+  admin: SupabaseClient,
+  input: Omit<PausaPorAtendimentoManualInput, "duravel">,
+): Promise<ResultadoDaPausa> {
+  return pausarIaPorAtendimentoManualDetalhado(admin, { ...input, duravel: true });
+}
+
+/** Atalho booleano da pausa durável — `true` só quando GRAVOU; avisa na falha. */
 export async function pausarIaDuravelmente(
   admin: SupabaseClient,
   input: Omit<PausaPorAtendimentoManualInput, "duravel">,

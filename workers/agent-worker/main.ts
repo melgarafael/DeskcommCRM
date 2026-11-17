@@ -81,6 +81,7 @@ import {
 } from "@/lib/agent-engine/agent/followup-turn";
 import { createCaseReplyTurnHandler } from "@/lib/agent-engine/agent/case-reply-turn";
 import { createOperatorTurnHandler } from "@/lib/agent-engine/agent/operator-turn";
+import { createHistoryAnalysisHandler } from "@/lib/agent-engine/agent/history-analysis";
 import { completeTurnForEnrollment, createPgAdminClient } from "@/lib/followup/turn-bridge";
 import { seedPlatformPlaybook } from "@/lib/agent-engine/agent/playbook-seed";
 import { runCronLoop } from "@/lib/agent-engine/cron/scheduler";
@@ -644,6 +645,22 @@ export async function startWorker(
       },
     );
   }
+  // Teto abaixo do piso (#3878): o laço grampeia no piso — recuo nunca acelera —
+  // mas o operador precisa saber que o valor que ele escreveu não está em vigor.
+  // Sem esta linha, `QUEUE_IDLE_MAX_INTERVAL_MS=500` com piso 2000 pareceria
+  // "recuo ligado" e não faria nada.
+  if (
+    env.QUEUE_IDLE_MAX_INTERVAL_MS !== undefined &&
+    env.QUEUE_IDLE_MAX_INTERVAL_MS < env.QUEUE_POLL_INTERVAL_MS
+  ) {
+    log.warn(
+      "QUEUE_IDLE_MAX_INTERVAL_MS abaixo de QUEUE_POLL_INTERVAL_MS — o piso manda: o recuo não acelera a fila",
+      {
+        poll_ocioso_ms: env.QUEUE_POLL_INTERVAL_MS,
+        poll_ocioso_teto_ms: env.QUEUE_IDLE_MAX_INTERVAL_MS,
+      },
+    );
+  }
   await stopped;
 }
 
@@ -688,6 +705,9 @@ export async function main(): Promise<void> {
   // worker que não conhecesse o kind faria os jobs morrerem em 'dead' sem que
   // ninguém entendesse por quê.
   handlers.set("operator_turn", createOperatorTurnHandler(turnDeps));
+  // Histórico importado: só checkpoint/BANT/score. O handler não recebe
+  // adapter de canal nem tools, portanto não tem por onde falar com o cliente.
+  handlers.set("history_analysis", createHistoryAnalysisHandler(turnDeps));
   await startWorker(env, handlers, log);
 }
 

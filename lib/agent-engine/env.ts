@@ -12,6 +12,21 @@ import {
   RETORNO_STAGGER_WINDOW_MS_PADRAO,
 } from '@/lib/followup/janela';
 import { esforcoDeRaciocinioOpenAI } from '@/lib/agent-engine/edge/llm/providers';
+import { intervaloDoPollingDoEnv, tetoDoRecuoDoEnv } from '@/lib/agent-engine/queue/recuo';
+
+/**
+ * Aviso de env inválida que NÃO derruba o boot (#3878, sugestão 1).
+ *
+ * O `loadEnv` do worker lança quando o schema recusa, e um typo num knob de
+ * RITMO derrubava o processo inteiro — o oposto da doutrina de packaging deste
+ * repo ("atualização nunca exige edição manual de arquivo"). Os knobs de ritmo
+ * do polling degradam para o valor de hoje com uma linha no log, e é esta
+ * função que escreve a linha.
+ */
+const avisoDeEnv = (mensagem: string): void => {
+  console.warn(mensagem);
+};
+
 
 const envSchema = z.object({
   // Postgres do Supabase (connection string — Settings → Database). O motor usa
@@ -82,7 +97,16 @@ const envSchema = z.object({
   // cota de 5 GB do plano free do Supabase). O 2000 mantém o SIGNIFICADO da chave
   // para quem já a configurou, cabe 4× dentro do INBOUND_DEBOUNCE_MS (8000) e fica
   // abaixo do idleTimeoutMillis do pool (10s), acima do qual cada rodada reconecta.
-  QUEUE_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(2_000),
+  QUEUE_POLL_INTERVAL_MS: z
+    .string()
+    .optional()
+    .transform((bruto) =>
+      intervaloDoPollingDoEnv(bruto, {
+        nome: 'QUEUE_POLL_INTERVAL_MS',
+        padraoMs: 2_000,
+        avisar: avisoDeEnv,
+      }),
+    ),
   // TETO do recuo exponencial com a fila VAZIA (issue #3688). OPCIONAL, e
   // ausente = recuo DESLIGADO (a fila vazia dorme sempre o piso, como antes).
   // Ligar economiza consultas: o autor da issue mediu 3.880 chamadas do relógio
@@ -94,7 +118,10 @@ const envSchema = z.object({
   // O teto fica ACIMA do idleTimeoutMillis do pool (10 s) de propósito: cada
   // rodada depois de um sono longo reconecta (499 B medidos contra 66 B), mas
   // 1 rodada/min a 499 B continua 4× mais barata que 30 rodadas/min a 66 B.
-  QUEUE_IDLE_MAX_INTERVAL_MS: z.coerce.number().int().positive().optional(),
+  QUEUE_IDLE_MAX_INTERVAL_MS: z
+    .string()
+    .optional()
+    .transform((bruto) => tetoDoRecuoDoEnv(bruto, { nome: 'QUEUE_IDLE_MAX_INTERVAL_MS', avisar: avisoDeEnv })),
   // Ritmo do "havia trabalho e eu não peguei" — cap QUEUE_MAX_CONCURRENCY cheio ou
   // lane do contato ocupada. Aqui há job vencido esperando vaga, então recolher o
   // ritmo custaria throughput no pico sem economizar nada no ocioso: é o único
@@ -297,6 +324,12 @@ const envSchema = z.object({
   // Teto de mensagens FÍSICAS enviadas ao lead por turno (send_message + send_template
   // somados, bolhas incluídas) — nenhum gate de before-send limita CONTAGEM, só ritmo.
   MAX_SENDS_PER_TURN: z.coerce.number().int().positive().default(3),
+  // #4590 — teto de RESPOSTAS automáticas por CONVERSA numa janela. É a trava que faltava
+  // quando dois robôs se responderam 216 vezes numa hora: cada resposta era legítima, e nem o
+  // pacing (que mede o número) nem o spinning (que mede cópia para muita gente) olham para a
+  // mesma conversa girando. Default: 20 respostas em 1 h (cada bolha e foto conta uma).
+  TETO_DE_RESPOSTAS_POR_CONVERSA: z.coerce.number().int().positive().default(20),
+  TETO_DE_RESPOSTAS_JANELA_MIN: z.coerce.number().int().positive().default(60),
   // Circuit breaker de tools por run.
   TOOL_BREAKER_EXACT_WARN: z.coerce.number().int().positive().default(2),
   TOOL_BREAKER_EXACT_BLOCK: z.coerce.number().int().positive().default(5),

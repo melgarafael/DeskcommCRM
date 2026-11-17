@@ -98,11 +98,11 @@ const ROXO = "#ab4aba";
 /** A cor de FUNDO aplicada, comparada no MESMO formato que o navegador usa. */
 function mesmaCor(el: HTMLElement | null, hex: string): boolean {
   if (!el) return false;
-  const prova = document.createElement("span");
-  prova.style.backgroundColor = hex;
-  return (
-    window.getComputedStyle(el).backgroundColor === window.getComputedStyle(prova).backgroundColor
-  );
+  // Sem amostra no DOM: fora do documento o jsdom 31 (como o navegador) não computa estilo, e
+  // inserir a amostra dentro do waitFor dispara o observador dele e reentra sem fim.
+  const n = Number.parseInt(hex.replace("#", ""), 16);
+  const esperado = `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+  return window.getComputedStyle(el).backgroundColor === esperado;
 }
 
 function envolver(ui: ReactNode) {

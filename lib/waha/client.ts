@@ -11,6 +11,7 @@ import { describeWahaServer, type WahaServerCapabilities } from "@/lib/channels/
 import { logger } from "@/lib/logger";
 import { wahaPayloadSchema, type WahaPayload } from "@/lib/waha/envelope";
 import { classificarFalhaDeAlcance, explicarFalhaDeAlcance } from "@/lib/net/alcance";
+import { TETO_DE_MIDIA_MS } from "@/lib/waha/teto-de-midia";
 
 /**
  * AS CONVERSAS QUE O CRM NÃO ATENDE, E POR ISSO NÃO PRECISA RECEBER.
@@ -171,19 +172,9 @@ export const CHAVES_DO_FILTRO_FIXAS = Object.fromEntries(
  */
 export const TETO_PADRAO_MS = 15_000;
 
-/**
- * Mídia tem teto MAIOR, e por um motivo medível: `lib/waha/media-send.ts:28,31`
- * manda `convert: true` em `sendVideo` e `sendVoice`. O WAHA roda ffmpeg e BAIXA
- * a URL do Storage antes de responder.
- *
- * Um teto único calibrado para `sendText` cortaria envio de áudio legítimo — o
- * conserto do timeout viraria um defeito novo, e mais difícil de ver que o
- * original, porque a mensagem simplesmente não sai.
- *
- * 30s é o mesmo teto que a mídia de ENTRADA já usa
- * (`lib/messaging/media/waha-source.ts:18`).
- */
-export const TETO_DE_MIDIA_MS = 30_000;
+// O teto de mídia mora em `./teto-de-midia`, sem dependência de servidor: o
+// navegador espera o envio de mídia por ele (`hooks/inbox/useSendMessage.ts`).
+export { TETO_DE_MIDIA_MS };
 
 /**
  * O ERRO DIZ O STATUS. NUNCA O CORPO QUE O WAHA DEVOLVEU.
@@ -1136,12 +1127,22 @@ export class WahaClient {
    * junto em TODA chamada — é o que torna "página seguinte" uma pergunta com
    * resposta.
    *
-   * ─── O caso NOWEB sem store, que vem vazio e não é erro ────────────────────
+   * ─── O caso NOWEB sem store: `[]` ou 400, e o 400 NÃO é instabilidade ─────
    *
    * No NOWEB (o engine padrão do kit) este endpoint só enxerga o que o store
    * da sessão guardou (`noweb.store.enabled` — a opção "Guardar histórico" da
    * conexão). Sem ele a resposta é `[]`: lista vazia é um desfecho legítimo e
-   * quem chama decide o que comunicar; HTTP errado continua sendo exceção.
+   * quem chama decide o que comunicar.
+   *
+   * Dependendo da versão do transporte, porém, o store desligado vira
+   * **400** — e aí ele NÃO significa instabilidade, significa "este endpoint
+   * não existe nesta sessão" (a doc do WAHA é explícita: os endpoints de
+   * contatos não funcionam por padrão no NOWEB). O status sai daqui cru
+   * (`waha_contacts_all_400`) e quem classifica é
+   * `lib/channels/agenda-do-aparelho-falha.ts`: tratá-lo aqui como queda do
+   * número foi o defeito do #4102 — a tela mandava conferir uma conexão que
+   * estava boa, e a pessoa ficava travada sem saber que faltava ligar uma
+   * opção. O corpo da resposta continua não atravessando.
    */
   async listarAgendaDoAparelho(
     session: string,

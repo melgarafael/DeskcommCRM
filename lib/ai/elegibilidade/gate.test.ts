@@ -24,6 +24,8 @@ const base: EstadoDeElegibilidade = {
   aiOptOut: false,
   botSilencedUntil: null,
   assigneeKind: "ai",
+  // #3967: ausente por padrão — o modo é explícito e por conversa.
+  iaComDono: false,
   aiAuthorizedAt: null,
   preGoLiveAtivo: false,
   numeroDeTesteAutorizado: false,
@@ -74,6 +76,7 @@ describe("decidirElegibilidade — gate 'open' (comportamento de hoje)", () => {
       aiGate: "open",
       forceHuman: false,
       assigneeKind: null,
+      metadataDaConversa: null,
       botSilencedUntil: null,
       aiAuthorizedAt: null,
       orgStatus: "active",
@@ -89,6 +92,53 @@ describe("decidirElegibilidade — gate 'open' (comportamento de hoje)", () => {
     const d = decidirElegibilidade({ ...base, modo: "open", assigneeKind: "user" });
     expect(d.permite).toBe(false);
     expect(d.motivo).toBe("conversa_de_humano");
+  });
+
+  /**
+   * O MODO EXPLÍCITO POR CONVERSA (#3967) — a IA responde SEM soltar o dono.
+   *
+   * O dono humano é veto absoluto desde a 0032, e a única volta era
+   * `devolverAtendimentoAoAgente`, que faz `release`: a conversa sai da carteira
+   * de quem estava atendendo. O modo é o estado que desliga SÓ esse veto, na
+   * conversa em que alguém o ligou, e nada mais.
+   */
+  describe("modo 'IA com o dono'", () => {
+    it("dono humano + modo LIGADO → a IA responde; o dono continua o mesmo", () => {
+      const d = decidirElegibilidade({ ...base, modo: "open", assigneeKind: "user", iaComDono: true });
+      expect(d.permite).toBe(true);
+      expect(d.motivo).toBe("gate_aberto");
+    });
+
+    it("dono humano + modo DESLIGADO/ausente → silêncio de hoje (conversa_de_humano)", () => {
+      expect(decidirElegibilidade({ ...base, modo: "open", assigneeKind: "user", iaComDono: false }).motivo).toBe(
+        "conversa_de_humano",
+      );
+      expect(decidirElegibilidade({ ...base, modo: "open", assigneeKind: "user" }).motivo).toBe("conversa_de_humano");
+    });
+
+    it("o modo NÃO fura as outras travas: force_human, opt-out, silêncio e contato interno continuam vetando", () => {
+      const modo = { ...base, modo: "open" as const, assigneeKind: "user", iaComDono: true };
+      expect(decidirElegibilidade({ ...modo, forceHuman: true }).motivo).toBe("force_human");
+      expect(decidirElegibilidade({ ...modo, aiOptOut: true }).motivo).toBe("ai_opt_out");
+      expect(decidirElegibilidade({ ...modo, contatoInterno: true }).motivo).toBe("contato_interno");
+      expect(
+        decidirElegibilidade({ ...modo, botSilencedUntil: new Date(AGORA.getTime() + DIA) }).motivo,
+      ).toBe("conversa_silenciada");
+    });
+
+    it("o modo NÃO afrouxa o allowlist: dono + modo ligado sem autorização continua barrado", () => {
+      const d = decidirElegibilidade({ ...base, modo: "allowlist", assigneeKind: "user", iaComDono: true });
+      expect(d.permite).toBe(false);
+      expect(d.motivo).toBe("sem_autorizacao");
+      expect(d.bloqueioPorAllowlist).toBe(true);
+    });
+
+    it("o modo é inerte em conversa SEM dono: não autoriza nada que o canal já não autorizasse", () => {
+      expect(decidirElegibilidade({ ...base, modo: "open", assigneeKind: null, iaComDono: true }).motivo).toBe(
+        "gate_aberto",
+      );
+      expect(decidirElegibilidade({ ...base, modo: "open", assigneeKind: "user", iaComDono: true }).permite).toBe(true);
+    });
   });
 
   it("bot silenciado até o futuro bloqueia; silêncio no passado não", () => {
@@ -267,6 +317,7 @@ describe("montarEstadoDeElegibilidade — a org viaja", () => {
       forceHuman: false,
       aiOptOut: false,
       assigneeKind: null,
+      metadataDaConversa: null,
       botSilencedUntil: null,
       aiAuthorizedAt: null,
       orgStatus: undefined,
@@ -283,6 +334,7 @@ describe("montarEstadoDeElegibilidade — a org viaja", () => {
       forceHuman: false,
       aiOptOut: false,
       assigneeKind: null,
+      metadataDaConversa: null,
       botSilencedUntil: null,
       aiAuthorizedAt: null,
       orgStatus: "active",
@@ -300,6 +352,7 @@ describe("montarEstadoDeElegibilidade — a org viaja", () => {
         forceHuman: false,
         aiOptOut: false,
         assigneeKind: null,
+        metadataDaConversa: null,
         botSilencedUntil: null,
         aiAuthorizedAt: null,
         orgStatus: "active",
@@ -314,6 +367,7 @@ describe("montarEstadoDeElegibilidade — a org viaja", () => {
       forceHuman: false,
       aiOptOut: false,
       assigneeKind: null,
+      metadataDaConversa: null,
       botSilencedUntil: null,
       aiAuthorizedAt: null,
       orgStatus: "active",
@@ -362,6 +416,7 @@ describe("#2353 · contato interno não é atendido pela IA", () => {
       forceHuman: false,
       aiOptOut: false,
       assigneeKind: null,
+      metadataDaConversa: null,
       botSilencedUntil: null,
       aiAuthorizedAt: null,
       orgStatus: "active",
@@ -377,6 +432,7 @@ describe("#2353 · contato interno não é atendido pela IA", () => {
       forceHuman: false,
       aiOptOut: false,
       assigneeKind: null,
+      metadataDaConversa: null,
       botSilencedUntil: null,
       aiAuthorizedAt: null,
       orgStatus: "active",

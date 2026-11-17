@@ -18,6 +18,8 @@ import { describe, expect, it, vi } from "vitest";
 const SESSAO = { id: "sess-1", organizationId: "org-1", wabaId: "2434045433735175" };
 const APP_SECRET = "app-secret-de-teste";
 const ingeridos: unknown[] = [];
+/** A recusa do contrato arquiva o corpo cru; o sucesso não arquiva (nada mudou ali). */
+const arquivados: Record<string, unknown>[] = [];
 
 vi.mock("@/lib/channels/meta/session", () => ({
   metaSessionByWebhookToken: async () => SESSAO,
@@ -31,11 +33,28 @@ vi.mock("@/lib/channels/meta/ingest", () => ({
   },
 }));
 
-vi.mock("@/lib/supabase/admin", () => ({
-  createAdminClient: () => ({
-    from: () => ({ update: () => ({ eq: () => ({ eq: () => ({ eq: () => ({ eq: async () => ({}) }) }) }) }) }),
-  }),
-}));
+vi.mock("@/lib/supabase/admin", () => {
+  // Cadeia do PostgREST: filtros devolvem a si mesmos e a promessa resolve no fim.
+  const cadeia = (resultado: unknown) => {
+    const p = Promise.resolve(resultado) as unknown as Record<string, unknown>;
+    p.eq = () => p;
+    p.neq = () => p;
+    p.select = () => p;
+    p.maybeSingle = async () => resultado;
+    return p;
+  };
+  return {
+    createAdminClient: () => ({
+      from: (tabela: string) => ({
+        update: () => cadeia({ data: null, error: null }),
+        insert: (linha: Record<string, unknown>) => {
+          if (tabela === "webhook_events_log") arquivados.push(linha);
+          return cadeia({ data: { id: String(linha.id) }, error: null });
+        },
+      }),
+    }),
+  };
+});
 
 import { lerEnvelopeMeta } from "@/lib/channels/meta/envelope";
 import { parseMetaWebhook } from "@/lib/channels/meta/webhook";
@@ -91,7 +110,12 @@ describe("os payloads reais atravessam inteiros", () => {
     const r = lerEnvelopeMeta(
       JSON.stringify({
         object: "whatsapp_business_account",
-        entry: [{ id: "w", changes: [{ field: "messages", value: { messages: "nem é lista", metadata: 7 } }] }],
+        entry: [
+          {
+            id: "w",
+            changes: [{ field: "messages", value: { messages: "nem é lista", metadata: 7 } }],
+          },
+        ],
       }),
     );
     expect(r.ok).toBe(true);
@@ -150,18 +174,28 @@ describe("a rota — o desfecho que a Meta enxerga", () => {
     vi.unstubAllEnvs();
   });
 
-  it("`entry` torto bem assinado: 400 com o campo, e NADA é ingerido", async () => {
-    // Antes era 500 (exceção não capturada) e a Meta reentregava para sempre.
+  it("`entry` torto bem assinado: 200 dizendo que recusou, e NADA é ingerido", async () => {
+    // Antes era 500 (exceção não capturada) e a Meta reentregava para sempre;
+    // depois, 400 — que faz a Meta reentregar igual. Agora o corpo torto é
+    // arquivado com `status = 'error'` e a resposta é 200, sem pedir reentrega
+    // (#290, item 3). O caso completo está em
+    // `recusa-do-webhook-meta-deixa-rastro.test.ts`.
     vi.stubEnv("META_APP_SECRET", APP_SECRET);
     ingeridos.length = 0;
+    arquivados.length = 0;
 
     const res = await POST(pedido({ object: "whatsapp_business_account", entry: 3 }), ctx);
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
-      error: { code: "validation_failed", details: { campos: ["entry"] } },
+      accepted: false,
+      reason: "payload_fora_do_contrato",
+      campos: ["entry"],
+      arquivo: "error",
     });
     expect(ingeridos).toHaveLength(0);
+    expect(arquivados).toHaveLength(1);
+    expect(arquivados[0]).toMatchObject({ status: "error" });
     vi.unstubAllEnvs();
   });
 

@@ -59,17 +59,32 @@ export function textoDoWhatsappDoTelefone(
 }
 
 /**
- * A mensagem que a API manda, na tela. Os códigos que a tela conhece ganham frase
- * LITERAL (para o guardião de espanhol enxergar); o resto passa pelo `t()` como
- * a tela inteira já faz com o texto de `fail()`.
+ * A mensagem que a API manda, na tela — e ela vem PRIMEIRO (#4242).
+ *
+ * O servidor é a única fonte que conhece o país da organização: numa ficha de
+ * Portugal a frase `Telefone deve estar em formato E.164 (+351...)` é o que
+ * ensina o formato certo, e a tela trocava isso por um texto local que falava
+ * em DDD — palavra que Portugal não tem. Por isso: mensagem do servidor quando
+ * existe; o texto local só como recurso, quando a resposta não traz nada (ou
+ * traz só o código, que é o que `ApiError` guarda sem mensagem).
+ *
+ * Os textos locais também não contradizem o E.164: o do `invalid_phone` fala em
+ * formato internacional, sem DDD, porque a tela não sabe o país de quem está
+ * olhando — quem sabe é o servidor, e é ele quem fala primeiro.
  */
-function mensagemDeErro(err: unknown, t: (texto: string) => string): string {
+export function mensagemDeErro(err: unknown, t: (texto: string) => string): string {
   if (err instanceof ApiError) {
+    const doServidor = err.message?.trim();
+    // Sem `t()`: a frase já veio no idioma de quem opera (o servidor traduz com
+    // `user.idioma`) e pode citar o exemplo E.164 do país — traduzir de novo por
+    // chave não acharia entrada nenhuma. Ela é exibida como veio.
+    if (doServidor && doServidor !== err.code) return doServidor;
     if (err.code === "phone_in_use") return t("Este número já está em outra ficha.");
     if (err.code === "primary_phone_has_extras")
       return t("Torne outro número principal antes de remover este.");
-    if (err.code === "invalid_phone") return t("Número inválido. Confira o DDD e tente de novo.");
-    return t(err.message);
+    if (err.code === "invalid_phone")
+      return t("Número inválido. Informe o telefone no formato E.164, com o código do país.");
+    return t("Erro inesperado. Tente novamente.");
   }
   return t("Erro inesperado. Tente novamente.");
 }
@@ -245,6 +260,11 @@ export function TelefonesDaFicha({
     }
   }
 
+  /**
+   * "Tornar principal" de um extra troca direto: desde a 9354 o rótulo acompanha
+   * o número nos dois sentidos (`contacts.phone_label`), então não há perda
+   * para avisar (#4242).
+   */
   async function tornarPrincipalDoExtra(id: string) {
     setErro(null);
     try {
@@ -331,6 +351,10 @@ export function TelefonesDaFicha({
                 <span className="text-xs text-muted-foreground">
                   {textoDoWhatsappDoTelefone(contato.phone_whatsapp, t)}
                 </span>
+              )}
+              {/* #4242, item 2: o rótulo que veio do extra promovido. */}
+              {contato.phone_label && (
+                <span className="text-xs text-muted-foreground">{contato.phone_label}</span>
               )}
               {podeEditar && edicao?.modo !== "principal" && (
                 <Button type="button" size="sm" variant="ghost" onClick={abrirEdicaoDoPrincipal} disabled={ocupado}>

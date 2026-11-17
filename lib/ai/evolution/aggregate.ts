@@ -23,7 +23,17 @@ export interface EvolutionInput {
    */
   skillInstalls: Array<{ updated_at: string; name: string }>;
   skillActivations: Array<{ created_at: string; skill_name: string }>;
-  routerDecisions: Array<{ created_at: string; outcome: string; intent_name: string | null }>;
+  /**
+   * `router_id` nulo é o turno de um NÚMERO SEM ROTEADOR (#4340): a linha existe
+   * para deixar rastro, não é decisão de roteador nenhum, e não entra em nenhuma
+   * conta deste painel — ver `decisoesDeRoteador` abaixo.
+   */
+  routerDecisions: Array<{
+    created_at: string;
+    outcome: string;
+    intent_name: string | null;
+    router_id?: string | null;
+  }>;
   knowledgeSearches: Array<{
     created_at: string;
     hits: number;
@@ -200,6 +210,12 @@ export function aggregateEvolution(input: EvolutionInput): EvolutionPayload {
     })
     .filter((p) => p.steps.length > 0);
 
+  // O número sem roteador grava uma linha `no_match` com `router_id` nulo a
+  // cada turno (#4340) — e esse é o estado NORMAL de quem nunca criou roteador.
+  // Contá-la aqui viraria "o roteador não entendeu N conversas" numa instalação
+  // que não tem roteador: lacuna falsa. Só decisão de roteador de verdade entra.
+  const decisoesDeRoteador = input.routerDecisions.filter((r) => r.router_id !== null);
+
   return {
     range: { from: toUtcDay(input.range.from), to: toUtcDay(input.range.to) },
     learned: {
@@ -211,7 +227,7 @@ export function aggregateEvolution(input: EvolutionInput): EvolutionPayload {
     activity: {
       series: {
         skill_activations: serie(days, input.skillActivations),
-        router_decisions: serie(days, input.routerDecisions),
+        router_decisions: serie(days, decisoesDeRoteador),
         knowledge_searches: serie(days, buscasDoAgente),
         knowledge_searches_equipe: serie(days, buscasDaEquipe),
       },
@@ -220,7 +236,7 @@ export function aggregateEvolution(input: EvolutionInput): EvolutionPayload {
         // Só estes três outcomes carregam `intent_name` não-nulo (ver
         // `resolve-turn-agent.ts`); os demais já cairiam no filtro de null.
         // Nomear a lista deixa a regra explícita em vez de acidental.
-        input.routerDecisions.filter((r) => r.outcome === 'classified' || r.outcome === 'sticky' || r.outcome === 'reclassified'),
+        decisoesDeRoteador.filter((r) => r.outcome === 'classified' || r.outcome === 'sticky' || r.outcome === 'reclassified'),
         (r) => r.intent_name,
       ),
     },
@@ -237,8 +253,8 @@ export function aggregateEvolution(input: EvolutionInput): EvolutionPayload {
       pipelines_evaluated: input.pipelines.length,
       knowledge_near_misses: nearMisses,
       knowledge_empty: empty,
-      router_no_match: input.routerDecisions.filter((r) => r.outcome === 'no_match').length,
-      router_failed: input.routerDecisions.filter((r) => r.outcome === 'classifier_failed').length,
+      router_no_match: decisoesDeRoteador.filter((r) => r.outcome === 'no_match').length,
+      router_failed: decisoesDeRoteador.filter((r) => r.outcome === 'classifier_failed').length,
     },
   };
 }

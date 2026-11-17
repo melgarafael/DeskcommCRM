@@ -11,6 +11,9 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoAviso } from "@/lib/i18n/idioma-do-aviso";
+import type { Idioma } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { dataIsoNoFuso } from "@/lib/propostas/data-no-fuso";
@@ -60,6 +63,7 @@ async function rodarVencimento(
   const vencidas = encontrarPropostasVencidas(candidatas ?? [], new Date(), fusoPorOrganizacao);
   if (vencidas.length === 0) return { vencidas: 0 };
 
+  const idiomas = new Map<string, Idioma>();
   for (const p of vencidas) {
     const { error: updErr } = await admin
       .from("crm_proposals")
@@ -89,12 +93,17 @@ async function rodarVencimento(
       .eq("status", "open")
       .maybeSingle();
     if (!existente) {
+      // A Central mostra o texto como foi gravado: o aviso nasce no idioma da organização.
+      const idioma = await idiomaDoAviso(admin, p.organization_id, idiomas);
       const { error: inboxErr } = await admin.from("agent_inbox_items").insert({
         organization_id: p.organization_id,
         kind: "proposal_expired_notice",
         severity: "warn",
-        title: "Uma proposta venceu sem decisão do cliente",
-        body: "O prazo de validade passou e ninguém marcou aceite ou recusa. Reveja a proposta e decida os próximos passos com o cliente.",
+        title: traduzir("Uma proposta venceu sem decisão do cliente", idioma),
+        body: traduzir(
+          "O prazo de validade passou e ninguém marcou aceite ou recusa. Reveja a proposta e decida os próximos passos com o cliente.",
+          idioma,
+        ),
         ref_kind: "proposal",
         ref_id: p.id,
       });

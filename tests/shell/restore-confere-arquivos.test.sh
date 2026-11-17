@@ -63,7 +63,10 @@ while [ "$#" -gt 0 ]; do
         "$DUBLE_ROOT/projeto/.runtime/supabase/volumes/storage") tipo=storage ;;
         *) exit 92 ;;
       esac
-      [ "$entrada" = "$DUBLE_ROOT/projeto/backups" ] || exit 93
+      case "$entrada" in
+        "$DUBLE_ROOT/projeto/backups"|"$DUBLE_ROOT/projeto/db-backups") ;;
+        *) exit 93 ;;
+      esac
       if [ "${DUBLE_FALHA:-}" = "$tipo" ]; then
         printf 'tar: falha de escrita simulada\n' >&2
         exit 2
@@ -99,7 +102,7 @@ preparar() {
 rodar() {
   RC=0
   ( cd "$PROJ" && printf 'RESTAURAR\n' \
-      | DUBLE_FALHA="${1:-}" bash "$KIT_DIR/restore.sh" backups/db-20261026-030000.sql.gz \
+      | DUBLE_FALHA="${1:-}" bash "$KIT_DIR/restore.sh" "${2:-backups/db-20261026-030000.sql.gz}" \
     ) > "$WORK/saida" 2>&1 || RC=$?
 }
 
@@ -114,7 +117,7 @@ corromper_crc() {
 
 recusa_antes_de_escrever() {
   local caso="$1" arquivo="$2"
-  rodar
+  rodar "" "${3:-}"
   check "$caso: sai com erro" test "$RC" -ne 0
   check "$caso: nomeia o arquivo recusado" contem "$WORK/saida" "$arquivo"
   check "$caso: não chama Docker nem psql" test ! -s "$DUBLE_LOG"
@@ -157,6 +160,18 @@ check 'arquivos íntegros: a sessão é extraída de verdade' contem "$WORK/sess
 check 'arquivos íntegros: o anexo é extraído de verdade' contem "$PROJ/.runtime/supabase/volumes/storage/anexo" 'anexo do backup'
 check 'arquivos íntegros: a sessão anterior é substituída' test ! -f "$WORK/sessoes/anterior"
 check 'arquivos íntegros: o anexo anterior é substituído' test ! -f "$PROJ/.runtime/supabase/volumes/storage/anterior"
+
+preparar
+mv "$PROJ/backups" "$PROJ/db-backups"
+rodar "" "$PROJ/db-backups/${DUMP##*/}"
+check 'pasta db-backups: sai com zero' igual "$RC" 0
+check 'pasta db-backups: restaura a sessão ao lado do dump' contem "$WORK/sessoes/sessao" 'sessão do backup'
+check 'pasta db-backups: restaura o anexo ao lado do dump' contem "$PROJ/.runtime/supabase/volumes/storage/anexo" 'anexo do backup'
+
+preparar
+mv "$PROJ/backups" "$PROJ/db-backups"
+corromper_crc "$PROJ/db-backups/${WAHA##*/}"
+recusa_antes_de_escrever 'WAHA corrompido na pasta db-backups' "${WAHA##*/}" "db-backups/${DUMP##*/}"
 
 preparar
 rm -f "$WAHA" "$STORAGE"

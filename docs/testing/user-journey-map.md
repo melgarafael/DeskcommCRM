@@ -696,6 +696,24 @@ divide o servidor. Só aparece exercitando o produto pela tela.
 > não roda quando um caso falha). Corrigidos antes da primeira execução; o
 > resultado real entra aqui quando o CI disser.
 
+## J10b — Aparência: a empresa escolhe o visual do sistema `[P1]` (2026-11-14)
+
+Contexto do código: tela Configurações › Aparência (`app/app/settings/aparencia`),
+catálogo em `lib/aparencia/catalogo.ts`, CSS escopado por `[data-aparencia="id"]`
+(`lib/aparencia/css.ts` + `app/app/aparencia.css`), gravação por
+`fn_definir_aparencia_da_organizacao` (migration 9388). Spec:
+`tests/e2e/aparencia-templates.spec.ts`. Só estética: nenhuma rota, regra ou dado
+muda. `[P1]` porque quem nunca abre a tela vê o sistema de sempre.
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J10b.1 | Organização que nunca escolheu template | marcador sem nenhum atributo `data-aparencia*`; menu com a superfície e a fonte de fábrica | **PASS** (2026-11-14, banco fresco do `baseline.sql`, build de produção) |
+| J10b.2 | Visualizar um template | o menu, o fundo e os tokens do sistema em volta mudam só neste navegador; a barra "Prévia" continua à vista ao rolar; recarregar desfaz (nada gravado) | **PASS** |
+| J10b.3 | Aplicar um template | grava para a empresa; vale em outra tela (Contatos), no claro e no escuro, com a fonte do template | **PASS** |
+| J10b.4 | Ajustes por cima do template | arredondamento e efeitos desligados gravam, sobrevivem à troca de template e vencem os valores dele | **PASS** |
+| J10b.5 | Os dez templates nos dois modos | `--color-bg` de cada um em Contatos, claro e escuro; capturas em `evidence/aparencia-templates/` | **PASS** |
+| J10b.6 | Celular (390×844) | nada estoura a largura; a gaveta do menu usa o fundo sólido do template | **PASS** |
+
 ## J12 — A tela diz o que ESTA instalação consegue fazer `[P0]`
 
 **Por que P0:** é primeira impressão pura. Pelo kit, o install e a atualização
@@ -4195,6 +4213,10 @@ terão trace/vídeo. Não foi medido download na janela anterior à persistênci
 do worker, viewer PDF ou aplicativo externo. O PASS de UX deste head não
 substitui os cinco checks obrigatórios: o verify antigo falhou no teste de
 relógio, cujo reparo central entra pela composição da main, sem repetir a rodada antiga.
+## Gestão delegada de organizações por agência `[P1]`
+
+Spec: `tests/e2e/agencias-organizacoes.spec.ts`. Com o módulo `agencias` desligado (o padrão, doc 321), o painel da empresa não mostra o card de agência e `/api/v1/agencia/clientes` responde 404; o teste liga o módulo e só então a plataforma habilita a agência e define a cota; o administrador direto cria um cliente pelo seletor do topo, entra no CRM do cliente e volta. A desabilitação pela plataforma invalida a sessão já aberta. A API global permanece proibida e a auditoria identifica a pessoa real. Prova local realizada e limites do ambiente registrados em [organizacoes-agencias](../specs/organizacoes-agencias.md); execução da spec no ambiente oficial fresco ainda pendente.
+
 ## Transcrição pelo serviço da OpenRouter — adaptação #3408 (2026-10-27)
 
 **Prova real confirmada no head `081d4b2a`.** A
@@ -4335,6 +4357,21 @@ funções copiáveis com `credential_id` nulo — regra única em `lib/ai/molde-
 Não provado: que a primeira chamada de IA da empresa nova sai com a chave da instalação (o
 painel mostra modelo e origem, não faz chamada paga).
 
+## J68 — Capacidade do produto, ligada por empresa `[P1]` (2026-11-06)
+
+Recorte do #3472 (commit `44cac90dd`, de @adsinside, publicado por @igornewmedia). O relato de
+prova do fork é contexto: as capturas dele mostram o campo `cor`, que a main não tem, e por isso
+não entram aqui. Quem liga é a empresa, em `/app/settings/tenant`, cartão Catálogo.
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J68.1 | Chave desligada, o padrão | sem campo ao criar e editar, sem o valor na lista; POST e PATCH com capacidade dão 422 | **PASS (unit)** — `tests/unit/catalogo-edicao-do-produto.test.tsx`, `app/api/v1/products/route.test.ts`, `app/api/v1/products/[id]/route.test.ts`. Tela: **NÃO MEDIDO** |
+| J68.2 | Ligar no cartão Catálogo | grava `settings.catalogo.capacidade`, audita, e a escrita concorrente vira 409 | **PASS (unit)** — `app/api/v1/settings/catalogo/route.test.ts`. Tela: **NÃO MEDIDO** |
+| J68.3 | Ligada: criar, editar, limpar, ver na lista | o campo vem depois de Categoria e a lista mostra o valor | Tela: **NÃO MEDIDO** |
+| J68.4 | Planilha | desligada, a coluna vai para as colunas não usadas; ligada, lê a coluna, 61 caracteres recusam a linha com o motivo e sem a coluna não apaga | **PASS (unit)** — `tests/unit/capacidade-do-produto.test.ts`. Tela: **NÃO MEDIDO** |
+| J68.5 | Busca do agente | ligada, «iphone 256gb» acha o produto cujo nome não repete a capacidade e elimina o de 512GB; desligada, não pontua nem devolve | **PASS (unit)** — `tests/unit/capacidade-do-produto.test.ts` |
+| J68.6 | Desligar de novo | o valor some da tela e continua no banco | Tela: **NÃO MEDIDO** |
+| J68.7 | Editar só o preço de um produto com estoque | quantidade, controle de estoque e `ativo` não mudam | **PASS (unit)** — `app/api/v1/products/[id]/route.test.ts`. Tela: **NÃO MEDIDO** |
 
 ## E-mail da organização — conta e domínio (#3443 + #3464)
 
@@ -4382,3 +4419,92 @@ explícito de indisponibilidade. Laço: comparar as ofertas persistidas, tool di
 e resposta observada, bloqueando o aceite quando divergem. Mapa: `prospeccao-nativa`.
 [Registro da prova](ofertas-da-campanha.md). CNPJ já foi
 entregue na 1.93.0 e não integra esta capacidade nova; crédito de ofertas: @paulolimajr77.
+
+## Consultas MCP no Testar e no assistido — resgate #3564 (2026-10-27)
+
+Fonte preservada: `8088f3a65e3e3cece8d7427487ec4725f9aa23e8`, de @Denispds.
+Uma consulta externa escolhida como leitura pelo administrador e declarada
+`readOnlyHint` pelo servidor era recusada como ferramenta desconhecida na prévia.
+O montador agora marca o objeto final, e a política reconhece essa identidade;
+os wrappers do inbound preservam o objeto até essa decisão. Escritas, cópias e
+nomes colidentes continuam sujeitos às guardas existentes.
+
+**PASS da composição inprocess, sem prova de rota HTTP ou UX.** A bancada
+reservada aplicou o baseline canônico em PG17 nos modos INSTALL e UPDATE com
+`ON_ERROR_STOP`, moldes de uma/duas aplicações e banco novo por arquivo. Rodaram
+somente `pg-como-supabase.test.ts` e `mcp-previa-composta.test.ts`, um worker:
+33/33 antes dos controles causais (20,178s de processo) e 33/33 após restaurar
+os hashes (20,036s). No GREEN final, os 12 casos novos somaram 12,496s;
+os 21 controles do adapter somaram 0,556s. Não foi executada a suíte DB inteira.
+O unitário recortado e seus dois vizinhos passaram 34/34 antes da bancada.
+
+| Caminho medido | Resultado observado no código final |
+|---|---|
+| Testar e rascunho assistido | motor real → pick/wrappers/policy reais, mesma referência marcada → SDK e socket HTTP reais → candidata com o texto recebido |
+| Hint ausente/falso ou escolha de escrita | impedimento antes de chamar a ferramenta no servidor |
+| Cópia deliberada e nome nativo colidente | cópia sem autoridade pela marca; implementação nativa preservada; nenhuma chamada remota |
+| Sem escolha/opção, identidade divergente e contato de outra organização | descoberta/execução recusadas nos pontos correspondentes |
+| Recusa do fornecedor | chamada observada, sem candidata de consulta bem-sucedida |
+| Instrumento | bytes cifrados comparados, carga/descriptografia reais, token de leitura revogado, auditoria real e estado operacional do cliente preservado |
+
+As sabotagens tiveram RED reais, com as previsões originais preservadas:
+remover a marca deu 5 falhas/7 passes, em vez de 4/8, pois o controle de recusa
+também deixou de alcançar o socket. Substituir a conferência da marca por
+`!catalog` deu 7 falhas/5 passes: além dos controles de classificação, o mutante
+amplo liberou `send_message` sem o tratamento da prévia e atingiu o veto
+`preview_operational_job_forbidden`. Não se alteraram asserções para acertar a
+contagem; os hashes foram restaurados antes do novo GREEN separado.
+
+O adapter PG existente foi mantido. Só o teste novo traduz `api_tokens.scopes`
+para JSONB e conserva bytea no formato wire em um pool separado; o pool do motor,
+o token e a criptografia permanecem reais. Provider do modelo e fornecedor MCP
+são sintéticos explícitos; a exceção de transporte fica na junta existente do
+teste para seu próprio socket efêmero. AntiSSRF produtivo permanece intacto.
+Não foram medidos PostgREST, Auth, RLS, rotas HTTP, interface, ERP ou modelo
+público. Os cinco checks do novo head remoto continuam obrigatórios e pendentes
+até sua própria execução; este registro não é um E2E global verde.
+
+O retorno usa os consumidores existentes: `mcp.tool_called` na auditoria e
+impedimentos no resultado da prévia ajudam o operador a revisar as escolhas em
+Capacidades e a configuração do servidor externo. A próxima execução relê essa
+configuração; não há novo subsistema, tela, rota ou autorização de escrita.
+
+## J-midia — Fotos e PDFs recebidos: ordem e Baixar (2026-11-09)
+
+Relato de um escritório pela API oficial da Meta: Foto 1-2-3 e PDF 1-2-3 apareceram 3-2-1, e a
+foto não tinha download em lugar nenhum. Spec: `tests/e2e/inbox-baixar-midia-e-ordem.spec.ts`
+(parte 6), 1366×900; evidência em `evidence/inbox-baixar-midia-e-ordem/`.
+
+| Caso | O que prova | Como |
+|---|---|---|
+| Ordem no mesmo segundo `[P0]` | 3 fotos e 3 PDFs com o mesmo `sent_at` e ids sorteados ao contrário saem na ordem de chegada | E2E (ordem lida no DOM) + invariante `messages-list-paginacao` (rajada e virada de página) |
+| Baixar a foto | miniatura, foto ampliada e menu «Baixar» disparam download com `foto-AAAA-MM-DD-HHhMM-<id>.png` e os mesmos bytes | E2E (evento de download) |
+| Baixar o PDF pelo menu | «Baixar» no menu salva com o nome original | E2E (evento de download) |
+
+Capturas da prova: `evidence/inbox-baixar-midia-e-ordem/01-ordem-das-fotos.png`,
+`evidence/inbox-baixar-midia-e-ordem/02-ordem-dos-pdfs.png`,
+`evidence/inbox-baixar-midia-e-ordem/03-miniatura-com-baixar.png`,
+`evidence/inbox-baixar-midia-e-ordem/04-foto-ampliada-com-baixar.png`,
+`evidence/inbox-baixar-midia-e-ordem/05-menu-da-foto-com-baixar.png`,
+`evidence/inbox-baixar-midia-e-ordem/06-menu-do-pdf-com-baixar.png`.
+
+## J-mcp-oauth — Conectar o ChatGPT ao CRM por OAuth, sem colar token `[P1]` (2026-11-15)
+
+O ChatGPT só oferece OAuth ou "sem autenticação" ao adicionar um servidor MCP; o `/api/mcp` só
+aceitava `Bearer dsk_…`. Migration 9390. Spec: `tests/e2e/mcp-oauth-chatgpt.spec.ts` (parte 8),
+fazendo o papel do aplicativo com um receptor HTTP de verdade no `redirect_uri`; evidência em
+`evidence/mcp-oauth-chatgpt/`. Envs opcionais ausentes (sem Redis, sem WAHA).
+
+| Caso | O que prova | Como |
+|---|---|---|
+| Descoberta | o 401 do `/api/mcp` aponta `resource_metadata`; os dois documentos anunciam o próprio CRM, S256 e o registro | E2E (fetch) |
+| Sem sessão `[P0]` | o `authorize` leva ao login e VOLTA ao consentimento (cookie Strict, pela ponte) | E2E (URL medida) |
+| Consentimento | nome declarado, host de volta, empresa; "Ler e alterar" marcado; Permitir entrega `code` + `state` + `iss` | E2E (tela + receptor) |
+| O token abre o MCP | o `dsk_` emitido responde `tools/list`; a rotação mata o anterior | E2E (fetch no `/api/mcp`) |
+| Saída pela tela | a conexão aparece em API Tokens como "(OAuth)"; Revogar derruba o MCP e a renovação | E2E (tela + fetch) |
+| Cancelar / Somente ler | `access_denied` com o `state`; `scope=mcp:read`; verifier errado queima o código | E2E |
+| Redirect não registrado | página de erro, sem redirecionar | E2E (status + URL) |
+
+Banco (PKCE no SQL, reuso revoga, ainda-admin, isolamento): `tests/invariants/mcp-oauth-servidor.test.ts`.
+**Não medido aqui:** o ChatGPT de verdade — só existe contra um endereço público com HTTPS.
+Evidência: `evidence/mcp-oauth-chatgpt/01-consentimento.png`, `evidence/mcp-oauth-chatgpt/02-volta-ao-aplicativo.png`, `evidence/mcp-oauth-chatgpt/03-conexao-em-api-tokens.png`, `evidence/mcp-oauth-chatgpt/04-conexao-revogada.png`, `evidence/mcp-oauth-chatgpt/05-consentimento-somente-ler.png`, `evidence/mcp-oauth-chatgpt/06-redirect-nao-registrado.png`.

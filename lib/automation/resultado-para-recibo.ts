@@ -19,6 +19,7 @@ const CODIGOS_DAS_ACOES = new Set([
   "canal_sem_chave",
   "carteira_nao_passou",
   "commercial_requires_human",
+  "commercial_requires_human_duas_tentativas",
   "commercial_requires_human_sem_passagem",
   "compromisso_na_agenda",
   "config_invalida",
@@ -71,6 +72,8 @@ const CODIGOS_DAS_ACOES = new Set([
   "no_target",
   "numero_de_teste",
   "origin_capture_failed",
+  /* Doc 301 = B — a IA mexeu no modo assistido; nasce em parada-no-assistido.ts. */
+  "parada_no_assistido",
   "plano_nao_encontrado",
   "remetente_recusado",
   "resposta_vazia",
@@ -102,6 +105,10 @@ const CODIGOS_DAS_ACOES = new Set([
   "texto_vazio",
   "titulo_vazio",
   "uma_vez_por_contato",
+  /* #2974, fatia 2 — o motor barra pela JANELA por contato. Sem o código aqui o
+     recibo trocaria a razão por uma frase genérica, e a aba Atividade não
+     conseguiria dizer qual das duas réguas decidiu. */
+  "intervalo_por_contato",
   "unknown_action",
   "user_not_in_org",
   "whatsapp_enviado",

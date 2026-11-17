@@ -32,12 +32,16 @@ import {
 interface ConversaEmbed {
   bot_silenced_until: string | null;
   assignee_kind: string | null;
+  /** `conversations.metadata` — o modo "IA com o dono" (#3967) mora aqui. */
+  metadata: unknown;
   contacts: {
     force_human: boolean | null;
     /** A marca permanente "sempre atendimento humano" (issue 2379). */
     ai_opt_out: boolean | null;
     ai_authorized_at: string | null;
     phone_number: string | null;
+    /** `contacts.social_identity` — o testador de Instagram/Facebook casa por aqui. */
+    social_identity: string | null;
     /** `contacts.tags` — a régua de contato interno (#2353) e a da equipe (#3534). */
     tags: string[] | null;
   } | null;
@@ -56,7 +60,7 @@ export async function decidirElegibilidadeDaConversaViaSupabase(
   const { data, error } = await admin
     .from("conversations")
     .select(
-      "bot_silenced_until, assignee_kind, organizations:organization_id(status, settings), contacts:contact_id(force_human, ai_opt_out, ai_authorized_at, phone_number, tags), channel_sessions:channel_session_id(metadata)",
+      "bot_silenced_until, assignee_kind, metadata, organizations:organization_id(status, settings), contacts:contact_id(force_human, ai_opt_out, ai_authorized_at, phone_number, social_identity, tags), channel_sessions:channel_session_id(metadata)",
     )
     .eq("organization_id", input.organizationId)
     .eq("id", input.conversationId)
@@ -75,11 +79,14 @@ export async function decidirElegibilidadeDaConversaViaSupabase(
     aiGateMode: row.channel_sessions?.metadata?.["ai_gate_mode"] ?? null,
     aiTestPhoneNumbers: row.channel_sessions?.metadata?.["ai_test_phone_numbers"] ?? null,
     contactPhoneNumber: row.contacts?.phone_number ?? null,
+    aiTestSocialIdentities: row.channel_sessions?.metadata?.["ai_test_social_identities"] ?? null,
+    contactSocialIdentity: row.contacts?.social_identity ?? null,
     forceHuman: row.contacts?.force_human ?? false,
     contactTags: row.contacts?.tags ?? null,
     orgSettings: row.organizations?.settings,
     aiOptOut: row.contacts?.ai_opt_out ?? false,
     assigneeKind: row.assignee_kind,
+    metadataDaConversa: row.metadata,
     botSilencedUntil: row.bot_silenced_until,
     aiAuthorizedAt: row.contacts?.ai_authorized_at ?? null,
     agora: input.agora,

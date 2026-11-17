@@ -180,6 +180,7 @@ async function handleGroupInbound(row: EventRow): Promise<HandlerResult> {
     corpoSemPrevia,
     tag: `${NOTIFY_KINDS.message_inbound.tagPrefix}:${conversationId}`,
     href: `/app/inbox?id=${conversationId}`,
+    tipo: "message",
   };
   const { sent } = await enviarPushAQuemVeAConversa(row.organization_id, conversationId, payload);
   return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "ok", detail: `sent:${sent}` };
@@ -206,6 +207,12 @@ async function handleAvisoQuePedeGente(row: EventRow): Promise<HandlerResult> {
     return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "ok", detail: `sent:${sent}` };
   }
   const { sent } = await enviarPushDaOrg(row.organization_id, aviso.payload, aviso.para);
+  // O responsável da passagem sem celular inscrito: o aviso volta ao time, porque
+  // uma passagem que não chega a ninguém deixa o cliente esperando sem ninguém saber.
+  if (sent === 0 && aviso.seNinguemRecebeu) {
+    const doTime = await enviarPushDaOrg(row.organization_id, aviso.payload, aviso.seNinguemRecebeu);
+    return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "ok", detail: `sent:${doTime.sent}` };
+  }
   return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "ok", detail: `sent:${sent}` };
 }
 
@@ -303,6 +310,7 @@ export const webPushInboundHandler: EventHandler = {
           body: truncar(preview),
           tag: `${NOTIFY_KINDS.mention.tagPrefix}:${conversationId}`,
           href: `/app/inbox/${conversationId}`,
+          tipo: "mention",
         },
         [toUserId],
       );
@@ -326,6 +334,7 @@ export const webPushInboundHandler: EventHandler = {
         corpoSemPrevia: truncar(lead.title),
         tag: `${NOTIFY_KINDS.lead_assigned.tagPrefix}:${leadId}`,
         href,
+        tipo: "lead_assigned",
       });
     }
     if (row.event_type === "lead.won") {
@@ -357,7 +366,7 @@ export const webPushInboundHandler: EventHandler = {
       );
       const daGestao = await enviarPushDaOrg(
         row.organization_id,
-        { title: titulo, body: corpo(diaDaGestao), corpoSemPrevia, tag, href },
+        { title: titulo, body: corpo(diaDaGestao), corpoSemPrevia, tag, href, tipo: "lead_won" },
         { papelMinimo: "manager", excetoUsuario: lead.ownerUserId ?? undefined },
       );
 
@@ -383,6 +392,7 @@ export const webPushInboundHandler: EventHandler = {
         corpoSemPrevia,
         tag,
         href,
+        tipo: "lead_won",
       });
       return {
         consumer_key: WEB_PUSH_INBOUND_KEY,
@@ -396,6 +406,7 @@ export const webPushInboundHandler: EventHandler = {
       corpoSemPrevia: truncar(lead.title),
       tag: `${NOTIFY_KINDS.lead_lost.tagPrefix}:${leadId}`,
       href,
+      tipo: "lead_lost",
     });
   },
 };

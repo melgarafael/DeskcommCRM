@@ -14,16 +14,17 @@ import { type NextRequest } from "next/server";
 import { audit } from "@/lib/audit";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { moveLeadSchema, validateRequest } from "@/lib/schemas";
-import { createClient } from "@/lib/supabase/server";
 import { emitLeadActivity, stageChangeReason } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import {
   decideMotivoDaPerda,
   recusaDeMotivoDaPerdaPeloBanco,
 } from "@/lib/leads/motivo-da-perda";
 import { RECUSA_DE_TROCA_DE_FUNIL } from "@/lib/leads/clonar-para-funil";
+import { posicaoDeEntradaNaEtapa } from "@/lib/kanban/entrada-na-etapa";
 import { modoDeReabertura, recusaReabertura } from "@/lib/leads/reabertura";
 import { ocultarProvaMetaNaResposta } from "@/lib/leads/prova-meta-lead-submitted";
 import {
@@ -47,12 +48,20 @@ export async function POST(
   const requestId = randomUUID();
   const { id: leadId } = await ctx.params;
 
-  const supabase = await createClient();
   // spec 13 §4: escrita é agent+ (viewer é read-only).
-  const authz = await requireRole("agent", { requestId, resource: "crm_leads" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_leads",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const user = authz.user;
+  const teto = await tetoDeEscritaDoToken(authz, "leads_move", requestId);
+  if (teto) return teto;
+  const supabase = authz.supabase;
+  const { organizationId, actor, idioma } = authz;
+  const t = (texto: string) => traduzir(texto, idioma ?? IDIOMA_PADRAO);
+  const userId = actor.type === "user" ? actor.id : null;
 
   let input;
   try {
@@ -72,6 +81,7 @@ export async function POST(
     .from("crm_leads")
     .select("*")
     .eq("id", leadId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
 
   if (selErr) {
@@ -88,6 +98,7 @@ export async function POST(
     .from("crm_stages")
     .select("id, pipeline_id, name, is_lost, is_won")
     .eq("id", input.stage_id)
+    .eq("organization_id", organizationId)
     .maybeSingle();
 
   if (stageErr) {
@@ -115,12 +126,12 @@ export async function POST(
   // Vem ANTES da régua de campos: o card encerrado não reabre, então perguntar
   // pelos campos da etapa seria abrir um diálogo para uma escrita que o 409
   // abaixo recusa de qualquer jeito.
-  const settings = await settingsDoFunil(supabase, lead.pipeline_id);
+  const settings = await settingsDoFunil(supabase, lead.pipeline_id, organizationId);
   const recusa = recusaReabertura({
     modo: modoDeReabertura(settings),
     statusAtual: (lead as { status?: string }).status,
     etapaDestino: stage,
-    idioma: user.idioma,
+    idioma,
   });
   if (recusa) {
     // 409 e não 422: o board já trata 409 como "o servidor tem outro estado e
@@ -171,7 +182,7 @@ export async function POST(
         customFieldsPropostos: input.custom_fields ?? null,
       });
   if (vereditoDeCampos.faltando.length > 0) {
-    const recusa = recusaDeCamposObrigatorios(vereditoDeCampos.faltando, user.idioma);
+    const recusa = recusaDeCamposObrigatorios(vereditoDeCampos.faltando, idioma);
     return fail(recusa.codigo, recusa.mensagem, 422, {
       requestId,
       details: { faltando: vereditoDeCampos.faltando },
@@ -184,7 +195,7 @@ export async function POST(
     const recusaVocabulario = recusaDeMotivoDoGanho({
       motivo: input.won_reason,
       settingsDoFunil: settings,
-      idioma: user.idioma,
+      idioma,
     });
     if (recusaVocabulario) {
       return fail(recusaVocabulario.codigo, recusaVocabulario.mensagem, 422, {
@@ -202,7 +213,7 @@ export async function POST(
     etapaDeDestino: stage,
     motivo: input.lost_reason,
     motivoAtual: (lead as { lost_reason?: string | null }).lost_reason ?? null,
-    idioma: user.idioma,
+    idioma,
   });
   if (!veredito.ok) {
     return fail(veredito.codigo, veredito.mensagem, 422, { requestId });
@@ -210,11 +221,38 @@ export async function POST(
 
   // OCC update (Pattern B / Spec 09 §7.2). O motivo da perda entra NA MESMA
   // escrita que muda a etapa — nunca numa segunda, que teria janela.
+  //
+  // ── A POSIÇÃO QUANDO NINGUÉM A MANDA (#4151) ──────────────────────────────
+  //
+  // Quem move pela PÁGINA INTEIRA do negócio só conhece a etapa de destino: não
+  // há coluna na tela para escolher o ponto entre dois cards. Posicionar isso no
+  // cliente seria adivinhação — a página não carrega o funil inteiro (é a mesma
+  // leitura que a aba Lista existe para não pagar). Então o servidor lê a PONTA
+  // da etapa de destino e aplica a MESMA régua do `moveLeadHandler` / menu
+  // "Mover para…" (#3461): quem CHEGA entra no topo (min − 1000); a mesma etapa
+  // é reordenação e vai para o fim (max + 1000). Uma regra, um lugar.
+  let position = input.position_in_stage;
+  if (position === undefined) {
+    const mesmaEtapaJa = input.stage_id === lead.stage_id;
+    const { data: ponta } = await supabase
+      .from("crm_leads")
+      .select("position_in_stage")
+      .eq("stage_id", input.stage_id)
+      .order("position_in_stage", { ascending: mesmaEtapaJa ? false : true })
+      .limit(1)
+      .maybeSingle();
+    const valorDaPonta = ponta?.position_in_stage == null ? null : Number(ponta.position_in_stage);
+    position = mesmaEtapaJa
+      ? valorDaPonta == null
+        ? 1000
+        : valorDaPonta + 1000
+      : posicaoDeEntradaNaEtapa(valorDaPonta);
+  }
   const { data: updated, error: updErr } = await supabase
     .from("crm_leads")
     .update({
       stage_id: input.stage_id,
-      position_in_stage: input.position_in_stage,
+      position_in_stage: position,
       updated_at: new Date().toISOString(),
       ...veredito.patch,
       // O motivo de ganho sai NA MESMA escrita que muda a etapa — o mesmo
@@ -235,6 +273,7 @@ export async function POST(
         : {}),
     })
     .eq("id", leadId)
+    .eq("organization_id", organizationId)
     .eq("updated_at", input.expected_updated_at)
     .select("id")
     .maybeSingle();
@@ -244,7 +283,7 @@ export async function POST(
     // com a decisão acima, quem está na tela recebe a recusa de negócio. Sem isto,
     // qualquer caminho novo que escreva `stage_id` sem passar pela decisão volta a
     // chegar aqui como 500 — que é o defeito, com outro nome.
-    const recusa = recusaDeMotivoDaPerdaPeloBanco(updErr, user.idioma);
+    const recusa = recusaDeMotivoDaPerdaPeloBanco(updErr, idioma);
     if (recusa) return fail(recusa.codigo, recusa.mensagem, 422, { requestId });
     return fail("internal_error", updErr.message, 500, { requestId });
   }
@@ -255,6 +294,7 @@ export async function POST(
       .from("crm_leads")
       .select("updated_at")
       .eq("id", leadId)
+      .eq("organization_id", organizationId)
       .maybeSingle();
     return fail(
       "lead_stage_changed_concurrent",
@@ -275,6 +315,7 @@ export async function POST(
     .from("crm_stages")
     .select("name")
     .eq("id", lead.stage_id)
+    .eq("organization_id", organizationId)
     .maybeSingle();
 
   const atividade = await emitLeadActivity(supabase, {
@@ -284,7 +325,7 @@ export async function POST(
     type: "stage_changed",
     sourceModule: "crm",
     sourceId: leadId,
-    actor: { type: "user", id: user.id },
+    actor,
     reason: stageChangeReason(fromStage?.name ?? null, stage.name),
     payload: {
       from_stage_id: lead.stage_id,
@@ -314,6 +355,7 @@ export async function POST(
     .from("crm_leads")
     .select("*")
     .eq("id", leadId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
 
   const finalLead = fresh ?? lead;
@@ -327,10 +369,10 @@ export async function POST(
       p_payload: {
         from_stage_id: lead.stage_id,
         to_stage_id: input.stage_id,
-        position_in_stage: input.position_in_stage,
+        position_in_stage: position,
         status: finalLead.status,
       },
-      p_metadata: { request_id: requestId, actor_user_id: user.id },
+      p_metadata: { request_id: requestId, actor_user_id: userId },
       p_organization_id: lead.organization_id,
     })
     .then(({ error }) => {
@@ -339,7 +381,8 @@ export async function POST(
 
   await audit({
     action: "lead.moved",
-    actorUserId: user.id,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
     organizationId: lead.organization_id,
     resourceType: "crm_lead",
     resourceId: leadId,
@@ -347,7 +390,7 @@ export async function POST(
     metadata: {
       from_stage_id: lead.stage_id,
       to_stage_id: input.stage_id,
-      position_in_stage: input.position_in_stage,
+      position_in_stage: position,
     },
   });
 

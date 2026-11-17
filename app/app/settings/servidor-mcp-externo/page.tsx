@@ -1,7 +1,14 @@
 import { redirect } from "next/navigation";
 
-import { exigirProvaDeMfa, mfaEmDividaEstrita, requireAuth } from "@/lib/auth/server";
+import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
+import { exigirProvaDeMfa, mfaEmDividaEstrita, requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
+import {
+  CONEXAO_COMPARTILHADA,
+  escritasLiberadasDaConexao,
+  lerEscritaLiberada,
+} from "@/lib/mcp/servidor-externo/escrita-liberada";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { CadastroDoServidorMcpExterno } from "./_components/CadastroDoServidorMcpExterno";
 
 export const dynamic = "force-dynamic";
@@ -25,12 +32,17 @@ export const metadata = { title: "Servidor MCP externo" };
  * clicou num item do hub pareceria link quebrado; o 403 diz o que é: falta
  * permissão.
  *
- * ── O que ela NÃO carrega ──────────────────────────────────────────────────
+ * ── O que ela carrega, e o que NÃO ─────────────────────────────────────────
  *
- * Nada do banco no servidor. O que existe registrado não é legível por action
- * nenhuma (o endereço e a chave são lidos só pelo runtime), e é o TESTE que
- * conta o que está do outro lado — por isso a tela abre com o formulário
- * vazio e oferece "Testar conexão".
+ * Carrega SÓ a lista de ferramentas de escrita liberadas para a conexão do
+ * servidor compartilhado (#4445), lida da organização DA SESSÃO. Sem isso o
+ * campo abria em branco e quem voltava só para trocar o endereço apagava as
+ * liberações ao salvar (doc de decisão 347). Nomes de ferramenta não são
+ * segredo: são o que o próprio servidor anuncia no "Testar conexão".
+ *
+ * O endereço e a chave NÃO são carregados: o runtime é o único leitor deles, e
+ * é o TESTE que conta o que está do outro lado — por isso esses dois campos
+ * abrem vazios e a tela oferece "Testar conexão".
  */
 export default async function ServidorMcpExternoPage() {
   const user = await requireAuth();
@@ -38,22 +50,32 @@ export default async function ServidorMcpExternoPage() {
   // A action que grava exige o código provado nesta sessão: vai a ele antes.
   await exigirProvaDeMfa(mfaEmDividaEstrita);
 
+  // A organização sai da SESSÃO, como na action que grava — nunca da URL.
+  const org = await resolveActiveOrg(user);
+  if (!org) redirect("/app");
+  const { data } = await createAdminClient()
+    .from("organizations")
+    .select("settings")
+    .eq("id", org.orgId)
+    .maybeSingle();
+  const liberadasIniciais = escritasLiberadasDaConexao(
+    lerEscritaLiberada(data?.settings),
+    CONEXAO_COMPARTILHADA,
+  ).join("\n");
+
   const idioma = user.idioma;
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {traduzir("Servidor MCP externo", idioma)}
-        </h1>
+      <CabecalhoDaSubTela titulo={traduzir("Servidor MCP externo", idioma)} idioma={idioma}>
         <p className="text-sm text-muted-foreground">
           {traduzir(
             "O endereço e a chave do sistema de fora que a IA desta empresa pode consultar. Só o dono da instalação vê esta tela.",
             idioma,
           )}
         </p>
-      </header>
-      <CadastroDoServidorMcpExterno />
+      </CabecalhoDaSubTela>
+      <CadastroDoServidorMcpExterno liberadasIniciais={liberadasIniciais} />
     </div>
   );
 }

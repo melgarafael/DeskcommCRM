@@ -726,3 +726,149 @@ it("idle convergente limpa erro morto e remarca tentativa (#2467)", async () => 
   expect(row.google_sync_error).toBeNull();
   await app(f.id, "release", expectedAppointment(a));
 });
+/**
+ * O LAÇO INFINITO DA AGENDA INDISPONÍVEL (#4448), medido no caminho real:
+ * `claim` → leitura no Google → `idle` → guarda `not c.available` → 42501 →
+ * `error` com "O compromisso mudou" → a rodada seguinte reivindica DE NOVO.
+ *
+ * O compromisso aqui é um dos oito do relato: já encerrado (`completed`) e
+ * apontando para uma agenda que o CRM marcou `available=false` (deixou de ser
+ * agenda de destino). O aceite é em DUAS rodadas — a do claim recusado e a do
+ * cron seguinte, que é onde o laço se repetia — mais o controle positivo (agenda
+ * de volta, compromisso reconciliado como sempre).
+ */
+it("compromisso encerrado em agenda indisponível sai da fila em vez de voltar a cada rodada (#4448)", async () => {
+  const { createServer } = await import("node:http");
+  const { reconcileAppointment } = await import("@/lib/agenda/google/sync-executor");
+  const f = await fixture();
+  let remote: Record<string, unknown> | null = null;
+  let leituras = 0;
+  let escritas = 0;
+  const receiver = createServer(async (req, res) => {
+    let raw = "";
+    for await (const chunk of req) raw += String(chunk);
+    const body = raw ? JSON.parse(raw) : {};
+    if (req.method === "GET") {
+      if (!String(req.url).includes("/events/")) {
+        res.end(JSON.stringify({ id: "destino", timeZone: "America/Sao_Paulo" }));
+        return;
+      }
+      leituras += 1;
+      if (!remote) {
+        res.statusCode = 404;
+        res.end("{}");
+        return;
+      }
+      res.end(JSON.stringify(remote));
+      return;
+    }
+    escritas += 1;
+    remote =
+      req.method === "POST"
+        ? { ...body, etag: `"v${escritas}"` }
+        : { ...remote, ...body, etag: `"v${escritas}"` };
+    res.end(JSON.stringify(remote));
+  });
+  await new Promise<void>((r) => receiver.listen(0, "127.0.0.1", r));
+  const address = receiver.address();
+  if (!address || typeof address === "string") throw new Error("receiver");
+  const db = {
+    rpc: async (name: string, args: Record<string, unknown>) => {
+      try {
+        expect(name).toBe("fn_google_appointment");
+        const result = await pool.query("select fn_google_appointment($1,$2,$3,$4) result", [
+          args.p_org,
+          args.p_id,
+          args.p_action,
+          args.p_args,
+        ]);
+        return { data: result.rows[0].result, error: null };
+      } catch (e) {
+        return { data: null, error: e };
+      }
+    },
+  } as unknown as SupabaseClient;
+  const options = {
+    token: "receiver-only",
+    transport: ((url, init) =>
+      fetch(
+        `http://127.0.0.1:${address.port}${new URL(String(url)).pathname}${new URL(String(url)).search}`,
+        init,
+      )) as typeof fetch,
+  };
+  const candidato = async () =>
+    (
+      await pool.query(
+        "select id from calendar_service_google_candidates where id=$1 and google_next_attempt_at<=now()",
+        [f.id],
+      )
+    ).rows.length;
+  try {
+    // 1. publica e converge com a agenda disponível — o caminho saudável. O
+    //    compromisso é do passado porque o relato é de compromissos encerrados.
+    await pool.query(
+      "update calendar_appointments set starts_at=now()-interval '2 hours',ends_at=now()-interval '1 hour' where id=$1",
+      [f.id],
+    );
+    expect(await reconcileAppointment(db, GOV_ORG, f.id, options)).toBe("processed");
+    expect(await reconcileAppointment(db, GOV_ORG, f.id, options)).toBe("unchanged");
+    const leiturasComAgendaBoa = leituras;
+
+    // 2. o compromisso é encerrado (pela porta humana, como na vida real) e a
+    //    agenda deixa de ser destino.
+    const rev = (
+      await pool.query("select revision::text r from calendar_appointments where id=$1", [f.id])
+    ).rows[0].r;
+    await asUser(
+      GOV_AGENT_A,
+      'select fn_appointment_change($1,$2,$3,\'{"status":"completed"}\')',
+      [GOV_ORG, f.id, rev],
+    );
+    await pool.query("update calendar_connection_calendars set available=false where id=$1", [
+      f.cal,
+    ]);
+
+    // 3. rodada 1: o claim recusa — estado terminal, sem ler o Google, sem lease.
+    //    A PROVA DO LAÇO vem ANTES do rótulo de retorno: não é o `"terminal"` que
+    //    interessa, é o compromisso ter SAÍDO DA FILA. Na main ele volta com
+    //    `google_next_attempt_at = now() + 15 min` e a rodada das 5h05 o pega de
+    //    novo; com o conserto a tentativa fica em `infinity` e não há rodada
+    //    seguinte nenhuma.
+    const primeiraRodada = await reconcileAppointment(db, GOV_ORG, f.id, options);
+    const guardado = (
+      await pool.query(
+        "select google_sync_error,google_claim_token,google_next_attempt_at='infinity'::timestamptz estacionado from calendar_appointments where id=$1",
+        [f.id],
+      )
+    ).rows[0];
+    expect(
+      guardado.estacionado,
+      "a tentativa tem de ficar em `infinity`: é o que tira o compromisso da fila",
+    ).toBe(true);
+    expect(await candidato(), "a rodada seguinte não reivindica de novo").toBe(0);
+    expect(leituras, "o claim recusado não pode nem LER o Google").toBe(leiturasComAgendaBoa);
+    expect(primeiraRodada).toBe("terminal");
+    expect(guardado.google_sync_error).toContain("agenda de destino");
+    expect(guardado.google_sync_error).not.toContain("O compromisso mudou");
+    expect(guardado.google_claim_token).toBeNull();
+
+    // 4. rodada 2 — a do cron (5 min depois): NÃO é mais candidato, então não há
+    //    claim, não há leitura no Google e não há UPDATE em `calendar_appointments`.
+    expect(await candidato()).toBe(0);
+    expect(await reconcileAppointment(db, GOV_ORG, f.id, options)).toBe("terminal");
+    expect(leituras).toBe(leiturasComAgendaBoa);
+
+    // 5. controle positivo: agenda de volta ao ar, o compromisso volta à fila e
+    //    é reconciliado como sempre (o conserto não aposenta o caminho saudável).
+    await pool.query("update calendar_connection_calendars set available=true where id=$1", [
+      f.cal,
+    ]);
+    expect(await candidato()).toBe(1);
+    expect(await reconcileAppointment(db, GOV_ORG, f.id, options)).toBe("unchanged");
+    expect(leituras).toBeGreaterThan(leiturasComAgendaBoa);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      receiver.close((e) => (e ? reject(e) : resolve())),
+    );
+  }
+});

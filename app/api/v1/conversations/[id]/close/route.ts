@@ -188,6 +188,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     organizationId: convFechada.organization_id,
     conversationId: convFechada.id,
     contactId: convFechada.contact_id ?? null,
+    channelSessionId: convFechada.channel_session_id ?? null,
   });
   if (pesquisa.pedida) {
     logger.info("[conversations.close] pesquisa de satisfação enviada", {

@@ -411,7 +411,7 @@ describe("GET /api/v1/agenda/datas-dos-negocios", () => {
     expect(createClient).not.toHaveBeenCalled();
   });
 
-  it("com segundo campo, o retorno vem no dia do retorno", async () => {
+  it("com segundo campo, a ida, o meio e a volta aparecem — o dia do meio com rótulo próprio", async () => {
     const { cliente } = fakeDb({
       pipelines: [funilComDatas()],
       stages: [{ id: ETAPA, name: "Reservado", organization_id: ORG, pipeline_id: FUNIL }],
@@ -433,6 +433,8 @@ describe("GET /api/v1/agenda/datas-dos-negocios", () => {
 
     expect(corpo.data.itens.map((i: { dia: string; rotulos: string[] }) => [i.dia, i.rotulos[0]])).toEqual([
       ["2026-03-10", "Embarque"],
+      // #3221: o dia entre as pontas não é mais um buraco na grade.
+      ["2026-03-11", "Em andamento"],
       ["2026-03-12", "Retorno"],
     ]);
   });
@@ -476,7 +478,7 @@ describe("GET /api/v1/agenda/datas-dos-negocios", () => {
       expect(corpo.data.truncado).toBe(false);
     });
 
-    it("dois campos: a ida e a volta da semana aparecem, e os antigos ficam de fora", async () => {
+    it("dois campos: o que atravessa a semana aparece nela dia a dia, e os antigos ficam de fora", async () => {
       const { cliente } = fakeDb({
         pipelines: [funilComDatas()],
         leads: [
@@ -489,11 +491,22 @@ describe("GET /api/v1/agenda/datas-dos-negocios", () => {
 
       const corpo = await (await GET(req({ ...CONSULTA_BASE, campo_fim: "data_fim" }))).json();
 
+      // #3221: o meio entra recortado pela janela. "so-a-volta" começou em
+      // fevereiro — a ponta está fora e não aparece —, mas o meio dela cai na
+      // semana e aparece; "so-a-ida" só tem a ponta da ida dentro da janela.
       expect(
         corpo.data.itens.map((i: { dia: string; negocio: { id: string } }) => [i.dia, i.negocio.id]),
       ).toEqual([
+        ["2026-03-09", "so-a-volta"],
         ["2026-03-10", "so-a-ida"],
+        ["2026-03-10", "so-a-volta"],
+        ["2026-03-11", "so-a-ida"],
+        ["2026-03-11", "so-a-volta"],
+        ["2026-03-12", "so-a-ida"],
         ["2026-03-12", "so-a-volta"],
+        ["2026-03-13", "so-a-ida"],
+        ["2026-03-14", "so-a-ida"],
+        ["2026-03-15", "so-a-ida"],
       ]);
       expect(corpo.data.truncado).toBe(false);
     });

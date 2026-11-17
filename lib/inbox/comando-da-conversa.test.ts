@@ -171,6 +171,46 @@ describe("o que a tela NÃO pode afirmar", () => {
     expect(r.comando).toEqual({ quem: "ninguem" });
   });
 
+  it("⭐ sem agente NESTE número: é fila ('aguardando'), não 'ninguem' nem 'automatico' (#4012)", () => {
+    // O caso medido em produção: a organização TEM agente, publicado em outro
+    // número (ou o canal em pré-go-live com o contato fora da lista). Ninguém
+    // vai responder esta conversa — e `ninguem` esconderia a conversa da Fila,
+    // que é onde o atendente a encontra.
+    const r = comandoDaConversa(fatos({ automaticoDaConversa: false }), AGORA);
+    expect(r.comando).toEqual({ quem: "aguardando" });
+    expect(r.automaticoAtivo).toBe(false);
+    // Não há automático PAUSADO a explicar: não há automático aqui.
+    expect(r.motivo).toBeNull();
+  });
+
+  it("organização SEM agente e número sem agente: 'ninguem' — a mesma ordem do wrapper do banco (#4012)", () => {
+    // Organização sem agente implica número sem agente, então os dois fatos
+    // chegam `false` juntos. O banco pergunta primeiro pela organização
+    // (`fn_org_tem_automatico`) e responde `ninguem`; a tela, que recalcula o
+    // comando com os dois fatos, tem de dizer o mesmo. Os dois valores estão em
+    // `comandosDaFila`: a conversa aparece na Fila de qualquer jeito.
+    const r = comandoDaConversa(fatos({ automaticoDaOrg: false, automaticoDaConversa: false }), AGORA);
+    expect(r.comando).toEqual({ quem: "ninguem" });
+    expect(r.automaticoAtivo).toBe(false);
+  });
+
+  it("sem agente no número e silêncio vigente: continua fila, e o motivo é o silêncio", () => {
+    const r = comandoDaConversa(fatos({ automaticoDaConversa: false, bot_silenced_until: "infinity" }), AGORA);
+    expect(r.comando).toEqual({ quem: "aguardando" });
+    expect(r.motivo).toBe("pausado");
+  });
+
+  it("com agente no número (true) nada muda: segue 'automatico'", () => {
+    const r = comandoDaConversa(fatos({ automaticoDaConversa: true }), AGORA);
+    expect(r.comando).toEqual({ quem: "automatico" });
+    expect(r.automaticoAtivo).toBe(true);
+  });
+
+  it("sem agente no número, mas COM dono humano: quem manda é a pessoa", () => {
+    const r = comandoDaConversa(fatos({ automaticoDaConversa: false, assigned_to_user_id: ATENDENTE }), AGORA);
+    expect(r.comando).toEqual({ quem: "humano", userId: ATENDENTE, nome: null });
+  });
+
   it("'não sei' NÃO vira 'não há': leitura ausente mantém o comportamento anterior", () => {
     // `undefined` é leitura em andamento ou que falhou. Traduzi-la para "não há
     // automático" seria a mesma mentira ao contrário — e ela apareceria em toda
@@ -348,18 +388,29 @@ describe("o que entrou quando o banco passou a calcular o mesmo comando", () => 
     expect(r.motivo).toBe("contato_travado");
   });
 
-  it("a fila pede 'aguardando' — e 'automatico' também quando a org não tem robô", () => {
-    expect(comandosDaFila(true)).toEqual(["aguardando"]);
-    expect(comandosDaFila(undefined)).toEqual(["aguardando"]);
-    // Sem automático de pé, `automatico` não descreve ninguém: essas conversas
-    // estão esperando gente, e deixá-las fora faria a Fila de uma instalação
-    // nova nascer vazia com clientes sem resposta.
-    expect(comandosDaFila(false)).toEqual(["aguardando", "automatico"]);
+  it("a fila pede 'aguardando' E 'ninguem' — e 'automatico' só na janela do deploy", () => {
+    // `ninguem` é conversa que espera gente em QUALQUER organização: o banco só a
+    // nomeia assim quando não há agente no ar (issue #4012), e ela não pode sumir
+    // da Fila — trocar a mentira por um sumiço é pior que a mentira.
+    expect(comandosDaFila(true)).toEqual(["aguardando", "ninguem"]);
+    expect(comandosDaFila(undefined)).toEqual(["aguardando", "ninguem"]);
+    // `automatico` sobrevive à virada por um motivo com prazo: entre o deploy deste
+    // código e a migration aplicada, o banco ainda devolve `automatico` para essas
+    // conversas, e sem o valor extra a Fila de uma instalação sem IA nasceria vazia.
+    expect(comandosDaFila(false)).toEqual(["aguardando", "ninguem", "automatico"]);
   });
 
-  it("o vocabulário do banco tem QUATRO — 'ninguem' é renomeação de TS, não estado", () => {
-    expect([...COMANDOS_DO_BANCO]).toEqual(["humano", "automatico", "aguardando", "encerrada"]);
-    expect(COMANDOS_DO_BANCO as readonly string[]).not.toContain("ninguem");
+  it("o vocabulário do banco tem CINCO — 'ninguem' passou a ser resposta do SQL (#4012)", () => {
+    expect([...COMANDOS_DO_BANCO]).toEqual([
+      "humano",
+      "automatico",
+      "aguardando",
+      "encerrada",
+      "ninguem",
+    ]);
+    // E ele continua sendo o MESMO estado do TS: o rótulo da tela existe desde
+    // antes, e é o que o banco agora pode pedir.
+    expect(ROTULO_DO_COMANDO.ninguem).toBe("Sem atendente");
   });
 });
 

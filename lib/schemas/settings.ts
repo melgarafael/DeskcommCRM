@@ -21,6 +21,10 @@ import {
   TAMANHO_MAXIMO_DO_MODELO,
   TAMANHO_MAXIMO_DO_ROTULO,
 } from "@/lib/leads/atalhos-do-card";
+import {
+  MAX_CARACTERES_DA_CATEGORIA_DE_PERDA,
+  MAX_CATEGORIAS_DE_PERDA,
+} from "@/lib/schemas/leads";
 import { MOEDAS_SERVIDAS } from "@/lib/money";
 
 import { conversationTagSchema } from "./messaging";
@@ -312,6 +316,24 @@ export const customFieldSchema = z.object({
    * schema e a API conhecem, e o modo é uma propriedade dele.
    */
   multiple: z.boolean().optional(),
+  /**
+   * MOSTRAR NO RESUMO DA PASSAGEM (issue #4303).
+   *
+   * LIGADO, o valor que este campo tem no CARD entra no resumo que a pessoa lê
+   * ao assumir a conversa (`montarBriefingDaPassagem`, bloco "Dados coletados
+   * automaticamente"), com o RÓTULO do campo. É o dado que decide a próxima
+   * frase de quem atende — consumo em kWh, valor da conta — e que hoje só
+   * aparece se a pessoa abrir o card.
+   *
+   * DESLIGADO (o padrão) é o que toda definição já instalada é: a chave ausente
+   * não liga nada, e o resumo sai byte a byte como saía antes desta opção. Não
+   * há migration porque a definição é o jsonb `pipelines.settings.fields`; um
+   * funil antigo simplesmente não tem a chave.
+   *
+   * A leitura é `lib/leads/campos-do-resumo-da-passagem.ts`; quem lê só o CARD
+   * da conversa (negócio), nunca campos do contato nem de outra organização.
+   */
+  mostrar_no_resumo_da_passagem: z.boolean().optional(),
 });
 export type CustomFieldDef = z.infer<typeof customFieldSchema>;
 
@@ -426,6 +448,34 @@ export const pipelineConfigPatchSchema = z.object({
       ]),
     )
     .max(50)
+    .optional(),
+  /**
+   * AS CATEGORIAS DE PERDA DESTE FUNIL (#4437).
+   *
+   * A lista de fábrica (`CATEGORIAS_DE_PERDA`) é o piso de quem nunca declarou
+   * nada — mas ela é do PRODUTO, não do negócio: uma clínica não perde por
+   * "Concorrência" e uma loja precisa de "Risco". Aqui o funil declara as suas,
+   * na ordem em que quer vê-las na tela.
+   *
+   * DOUTRINA DA CHAVE (a mesma de `ocultar_encerrados_dias`):
+   *   - AUSENTE = o funil nunca declarou → vale a lista de fábrica, MAIS as
+   *     categorias que os motivos já usam (é assim que o "Risco" gravado à mão
+   *     no "Possível fraude" continua existindo sem migração de dado);
+   *   - PRESENTE, inclusive `[]` = decisão da organização → vale exatamente o
+   *     que está aqui. `[]` é legítimo: esconder todas é uma escolha, e não
+   *     pode ressuscitar a lista de fábrica.
+   *
+   * Esconder uma categoria é TIRÁ-LA DAQUI, e só isso: o `categoria` gravado em
+   * `lost_reasons` não é tocado, então o motivo que já usava continua agrupado
+   * no relatório e continua mostrando a categoria dele no menu. O que muda é
+   * que ela deixa de ser oferecida para os OUTROS motivos.
+   *
+   * Renomear é trocar o texto na lista; a tela reescreve o `categoria` dos
+   * motivos que usavam o nome antigo, senão o vínculo viraria um rótulo órfão.
+   */
+  lost_reason_categories: z
+    .array(z.string().min(1).max(MAX_CARACTERES_DA_CATEGORIA_DE_PERDA))
+    .max(MAX_CATEGORIAS_DE_PERDA)
     .optional(),
   /**
    * O MOTIVO DE GANHO por funil (issue #1536) — espelho de `lost_reasons`.
@@ -810,6 +860,22 @@ export const crmSettingsSchema = z
      * de um dígito a mais.
      */
     pos_venda_dias: z.number().int().min(0).max(365).catch(0),
+    /**
+     * `duplicados_por_nome` (#4138): a tela Contatos › Duplicados também sugere
+     * pares pelo NOME, na seção "Parecidos — confira".
+     *
+     * ⚠️ NASCE DESLIGADA em toda organização — e a régua é a mesma das vizinhas:
+     * só o booleano `true` liga. Desligada, a rota não chama
+     * `encontrarParecidosPorNome` nem lê as dispensas, e a seção nem aparece.
+     *
+     * O motivo de existir é o inverso do que a torna perigosa: em base de pessoa
+     * física o nome repete e a sugestão vira ruído; em base de empresas
+     * prospectadas é o único caminho medido para achar a mesma empresa com dois
+     * telefones (spec 31, B1). Quem sabe qual dos dois mundos é o seu é quem
+     * opera — não o produto. Nada aqui funde sozinho: a sugestão só abre a
+     * conferência, e juntar continua sendo um clique de gestor.
+     */
+    duplicados_por_nome: z.boolean().catch(false),
   })
   .catch({
     cliente_pela_agenda: false,
@@ -820,6 +886,7 @@ export const crmSettingsSchema = z
     avisar_transferencia_no_whatsapp: true,
     cliente_pela_venda: false,
     pos_venda_dias: 0,
+    duplicados_por_nome: false,
   });
 
 /**
@@ -838,11 +905,36 @@ export const CONTEUDO_NA_TELA_BLOQUEADA_PADRAO: ConteudoNaTelaBloqueada = "nome"
 
 export const conteudoNaTelaBloqueadaWriteSchema = z.enum(CONTEUDOS_NA_TELA_BLOQUEADA);
 
+/**
+ * `organizations.settings.notificacoes.cor_por_canal` — o aviso de mensagem
+ * nova sai na cor da rede ou no neutro de sempre (#4094).
+ *
+ * Mora no MESMO nó `notificacoes` que a opção da tela bloqueada: é uma escolha
+ * da empresa sobre os avisos, não uma preferência de aparelho, e uma tabela
+ * nova para um booleano seria mais superfície (RLS, migration, backup) do que
+ * a decisão pede. `true` é o padrão: quem já usa o produto recebe a cor sem
+ * mexer em nada, e quem não gosta desliga num interruptor.
+ */
+export const COR_POR_CANAL_PADRAO = true;
+
 export const notificacoesSettingsSchema = z
   .object({
     conteudo_na_tela_bloqueada: conteudoNaTelaBloqueadaWriteSchema.catch(CONTEUDO_NA_TELA_BLOQUEADA_PADRAO),
+    cor_por_canal: z.boolean().catch(COR_POR_CANAL_PADRAO),
   })
-  .catch({ conteudo_na_tela_bloqueada: CONTEUDO_NA_TELA_BLOQUEADA_PADRAO });
+  .catch({
+    conteudo_na_tela_bloqueada: CONTEUDO_NA_TELA_BLOQUEADA_PADRAO,
+    cor_por_canal: COR_POR_CANAL_PADRAO,
+  });
+
+/** A cor por canal está ligada nesta organização? Nunca lança. */
+export function corPorCanalLigada(settings: unknown): boolean {
+  const notificacoes =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).notificacoes
+      : undefined;
+  return notificacoesSettingsSchema.parse(notificacoes ?? {}).cor_por_canal;
+}
 
 /** O que aparece com a tela bloqueada nesta organização. Nunca lança. */
 export function conteudoNaTelaBloqueada(settings: unknown): ConteudoNaTelaBloqueada {
@@ -947,6 +1039,27 @@ export function regrasDeCliente(settings: unknown): RegrasDeCliente {
 /** A regra "cliente pela venda" está ligada nesta organização? Nunca lança. */
 export function clientePelaVendaLigado(settings: unknown): boolean {
   return regrasDeCliente(settings).pelaVenda;
+}
+
+/**
+ * A SUGESTÃO DE DUPLICADO PELO NOME está ligada nesta organização? **Desligada
+ * por padrão**, e nunca lança (#4138).
+ *
+ * A régua é a mesma das outras chaves de `settings.crm`: só o booleano `true`
+ * liga. Ausente — toda organização que já existia antes desta chave —, `false`,
+ * a string `"true"` ou qualquer lixo é DESLIGADO, e a tela de Duplicados volta a
+ * mostrar só os motivos fortes (telefone, e-mail, CPF, telefone em conflito).
+ *
+ * Lido pela rota da varredura (`app/api/v1/contacts/duplicates/route.ts`), que é
+ * quem decide se chama `encontrarParecidosPorNome` e se lê as dispensas: a tela
+ * não filtra nada por conta própria.
+ */
+export function duplicadosPorNomeLigado(settings: unknown): boolean {
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
+  return crmSettingsSchema.parse(crm ?? {}).duplicados_por_nome === true;
 }
 
 /**
@@ -1122,6 +1235,32 @@ export function ouvidoriaDeclarada(settings: unknown): OuvidoriaDaOrganizacao {
 /** Atalho booleano para quem só precisa saber se o módulo aceita registro. */
 export function ouvidoriaLigada(settings: unknown): boolean {
   return ouvidoriaDeclarada(settings).ativa === true;
+}
+
+/**
+ * A RECORRÊNCIA DO NEGÓCIO GANHO (#3602, doc 312 = A) —
+ * `settings.financeiro.recorrencia_no_ganho`.
+ *
+ * Ligada, ganhar um negócio com `recurring_value_cents` cria o molde mensal no
+ * financeiro (`lib/financeiro/recorrencia-do-negocio.ts`). Desligada de
+ * fábrica: cobrança automática não liga sozinha em quem atualiza. Só o `true`
+ * EXPLÍCITO liga (a régua de `ouvidoriaLigada`); ausente, `"true"` ou lixo é
+ * desligado. Nunca lança: roda no fecho do negócio.
+ *
+ * ponytail: ainda sem porta de escrita — o interruptor na tela chega com o
+ * #4264, quando todas as portas de ganho e de perda passarem pela mesma regra.
+ */
+export function recorrenciaNoGanhoLigada(settings: unknown): boolean {
+  const raiz =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)
+      : undefined;
+  const financeiro = raiz?.financeiro;
+  return (
+    !!financeiro &&
+    typeof financeiro === "object" &&
+    (financeiro as Record<string, unknown>).recorrencia_no_ganho === true
+  );
 }
 
 /**

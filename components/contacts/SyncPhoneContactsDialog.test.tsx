@@ -15,6 +15,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ResumoDaAgenda } from "@/hooks/contacts/useSyncPhoneContacts";
@@ -143,5 +144,58 @@ describe("SyncPhoneContactsDialog — retomada", () => {
     expect(screen.queryByRole("button", { name: "Continuar de onde parou" })).toBeNull();
     expect(screen.getByRole("button", { name: "Sincronizar de novo" })).toBeInTheDocument();
     expect(corposEnviados()).toEqual([{ channel_session_id: "canal-1", offset: 0 }]);
+  });
+});
+
+/** O envelope de erro da rota — o mesmo `{ error: { code, message, request_id } }`. */
+function erroDaRota(status: number, code: string, message: string) {
+  return Promise.resolve(
+    new Response(JSON.stringify({ error: { code, message, request_id: "req-1" } }), { status }),
+  );
+}
+
+describe("SyncPhoneContactsDialog — o motivo da falha (#4102)", () => {
+  it("acervo desligado aparece como o PROBLEMA DA OPÇÃO, com o caminho para ligá-la", async () => {
+    const usuario = userEvent.setup();
+    fetchMock.mockReturnValueOnce(
+      erroDaRota(
+        409,
+        "channel_acervo_desligado",
+        "A agenda do celular não pode ser lida: ligue a opção 'Guardar o histórico anterior à vinculação' em Conexões e conecte o número de novo. Sem ela o aparelho não entrega a agenda.",
+      ),
+    );
+
+    montar();
+    await usuario.click(await screen.findByRole("button", { name: "Sincronizar" }));
+
+    // O aviso fica na TELA (não só no toast): é o que a pessoa lê para destravar.
+    const aviso = await screen.findByRole("alert");
+    expect(aviso).toHaveTextContent("Guardar o histórico anterior à vinculação");
+    // O dano do relato era justamente a frase de número fora do ar.
+    expect(aviso).not.toHaveTextContent(/não respondeu/i);
+    expect(aviso).not.toHaveTextContent(/está conectado/i);
+    // E o caminho: um atalho para a tela onde a opção mora.
+    expect(screen.getByRole("link", { name: "Abrir Conexões" })).toHaveAttribute("href", "/app/connections");
+    // O toast também conta a causa certa — e não a de conexão.
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith(expect.stringContaining("Guardar o histórico"));
+  });
+
+  it("timeout real continua dizendo que o WhatsApp não respondeu, sem prometer opção nenhuma", async () => {
+    const usuario = userEvent.setup();
+    fetchMock.mockReturnValueOnce(
+      erroDaRota(
+        504,
+        "channel_timeout",
+        "O WhatsApp deste número não respondeu. Confira se ele está conectado e tente de novo.",
+      ),
+    );
+
+    montar();
+    await usuario.click(await screen.findByRole("button", { name: "Sincronizar" }));
+
+    const aviso = await screen.findByRole("alert");
+    expect(aviso).toHaveTextContent("não respondeu");
+    expect(aviso).not.toHaveTextContent(/Guardar o histórico/i);
+    expect(screen.queryByRole("link", { name: "Abrir Conexões" })).toBeNull();
   });
 });

@@ -2,10 +2,13 @@
  * DUPLO DE BANCO para os testes da #4023 (satisfação) e da #4026 (quarentena).
  *
  * Um `SupabaseClient` de mentira que guarda LINHAS de verdade em memória — é o
- * que permite provar o invariante da quarentena ("a mensagem continua lá") em
- * vez de só conferir que uma função foi chamada. Cobre apenas o subconjunto que
- * as duas fatias usam: `select/insert/update` com `eq`, `order`, `limit`,
- * `maybeSingle` e `rpc`.
+ * que permite provar o pedido e a nota (e o invariante da quarentena, "a
+ * mensagem continua lá") em vez de só conferir que uma função foi chamada.
+ * Cobre apenas o subconjunto que as duas fatias usam: `select/insert/update`
+ * com `eq`, `gt`, `order`, `limit`, `maybeSingle` e `rpc` — e, fora da tabela do
+ * pedido e da fila, só o que elas leem: o contato (os portões do envio) e as
+ * mensagens (as ENVIADAS depois da pergunta, e a retida que precisa continuar
+ * existindo).
  *
  * Não é genérico de propósito: um duplo genérico acabaria reimplementando
  * PostgREST, e o que se quer medir aqui é o comportamento do NOSSO código.
@@ -26,6 +29,7 @@ export interface LinhaSatisfacao {
   mensagem_da_resposta_id?: string | null;
 }
 
+/** Uma linha de `quarentena_de_entrada` — só as colunas que a fatia usa. */
 export interface LinhaQuarentena {
   id: string;
   organization_id: string;
@@ -42,18 +46,31 @@ export interface LinhaQuarentena {
   created_at?: string;
 }
 
-export interface MensagemDoBanco {
+/**
+ * Uma mensagem já gravada na conversa — só as colunas que as duas fatias leem.
+ *
+ * `direction`/`sent_at` são o que a pesquisa olha (a conversa seguiu depois da
+ * pergunta?); `body` é o que o caso da quarentena confere continuar existindo
+ * depois de a mensagem ser retida. Os campos opcionais existem porque cada caso
+ * semeia só o que usa — o `casa` compara apenas as colunas filtradas.
+ */
+export interface MensagemDaConversa {
   id: string;
   organization_id: string;
   conversation_id: string;
-  body: string;
+  direction?: "inbound" | "outbound";
+  sent_at?: string;
+  metadata?: Record<string, unknown> | null;
+  body?: string;
 }
 
 export interface EstadoDoBanco {
   settings: Record<string, unknown>;
+  /** O contato da conversa. `null` = o contato não existe na organização. */
+  contato: { is_blocked: boolean; is_personal: boolean } | null;
+  mensagens: MensagemDaConversa[];
   pedidos: LinhaSatisfacao[];
   quarentena: LinhaQuarentena[];
-  mensagens: MensagemDoBanco[];
   atualizacoes: Array<{ tabela: string; filtros: Filtros; valores: Filtros }>;
   rpcs: Array<{ nome: string; args: Filtros }>;
   erroDeInsert: { tabela: string; code: string } | null;
@@ -70,15 +87,17 @@ function casa(linha: Record<string, unknown>, filtros: Filtros): boolean {
 
 export function bancoFake(inicial: {
   settings?: Record<string, unknown>;
+  contato?: { is_blocked: boolean; is_personal: boolean } | null;
+  mensagens?: MensagemDaConversa[];
   pedidos?: LinhaSatisfacao[];
   quarentena?: LinhaQuarentena[];
-  mensagens?: MensagemDoBanco[];
 } = {}): DuploDeBanco {
   const estado: EstadoDoBanco = {
     settings: inicial.settings ?? {},
+    contato: inicial.contato === undefined ? { is_blocked: false, is_personal: false } : inicial.contato,
+    mensagens: [...(inicial.mensagens ?? [])],
     pedidos: [...(inicial.pedidos ?? [])],
     quarentena: [...(inicial.quarentena ?? [])],
-    mensagens: [...(inicial.mensagens ?? [])],
     atualizacoes: [],
     rpcs: [],
     erroDeInsert: null,
@@ -87,7 +106,13 @@ export function bancoFake(inicial: {
   let sequencia = 0;
   const novoId = (prefixo: string) => `${prefixo}-${++sequencia}`;
 
-  function resolver(tabela: string, op: "select" | "insert" | "update", valores: Filtros, filtros: Filtros): {
+  function resolver(
+    tabela: string,
+    op: "select" | "insert" | "update",
+    valores: Filtros,
+    filtros: Filtros,
+    maioresQue: Record<string, string>,
+  ): {
     data: unknown;
     error: { code?: string; message: string } | null;
   } {
@@ -103,6 +128,19 @@ export function bancoFake(inicial: {
         return { data: { id: "org", settings: estado.settings }, error: null };
       }
       return { data: { settings: estado.settings }, error: null };
+    }
+
+    if (tabela === "contacts") return { data: estado.contato, error: null };
+
+    if (tabela === "messages") {
+      const lista = estado.mensagens.filter(
+        (m) =>
+          casa(m as unknown as Record<string, unknown>, filtros) &&
+          Object.entries(maioresQue).every(
+            ([coluna, valor]) => String((m as unknown as Record<string, unknown>)[coluna]) > valor,
+          ),
+      );
+      return { data: lista, error: null };
     }
 
     if (tabela === "satisfacao_do_atendimento") {
@@ -142,6 +180,7 @@ export function bancoFake(inicial: {
     if (tabela === "quarentena_de_entrada") {
       if (op === "insert") {
         const mensagem = valores.message_id as string;
+        // O índice único `quarentena_uma_por_mensagem`: reentrega não duplica.
         if (estado.quarentena.some((q) => q.message_id === mensagem)) {
           return { data: null, error: { code: "23505", message: "duplicate key value" } };
         }
@@ -172,11 +211,6 @@ export function bancoFake(inicial: {
       return { data: lista[0] ?? null, error: null };
     }
 
-    if (tabela === "messages") {
-      const achado = estado.mensagens.find((m) => casa(m as unknown as Record<string, unknown>, filtros));
-      return { data: achado ?? null, error: null };
-    }
-
     return { data: null, error: null };
   }
 
@@ -184,8 +218,9 @@ export function bancoFake(inicial: {
     let op: "select" | "insert" | "update" = "select";
     let valores: Filtros = {};
     const filtros: Filtros = {};
+    const maioresQue: Record<string, string> = {};
 
-    const terminar = () => resolver(tabela, op, valores, filtros);
+    const terminar = () => resolver(tabela, op, valores, filtros, maioresQue);
 
     const api: Record<string, unknown> = {
       select: () => api,
@@ -201,6 +236,10 @@ export function bancoFake(inicial: {
       },
       eq: (coluna: string, valor: unknown) => {
         filtros[coluna] = valor;
+        return api;
+      },
+      gt: (coluna: string, valor: string) => {
+        maioresQue[coluna] = valor;
         return api;
       },
       order: () => api,

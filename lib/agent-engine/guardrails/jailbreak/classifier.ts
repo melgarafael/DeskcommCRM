@@ -18,6 +18,9 @@
 import type pg from 'pg';
 
 import type { Logger } from '../../obs/logger';
+import { traduzir } from '@/lib/i18n/dicionario';
+import { preencher } from '@/lib/i18n/idioma-do-aviso';
+import { fatosDaOrganizacao } from '../../agent/fatos-da-organizacao';
 import type { ProviderRegistry } from '../../edge/llm/providers';
 import { LlmBudgetExceededError, runModelCall, type LlmEdgeConfig } from '../../edge/llm/run-model-call';
 import type { LlmResolveOverride } from '../../edge/llm/credentials';
@@ -174,6 +177,9 @@ export async function escalateJailbreakPromise(
   db: pg.Pool,
   input: { tenantId: string; leadId: string; level: JailbreakLevel },
 ): Promise<number> {
+  // A Central mostra o texto como foi gravado: o aviso nasce no idioma da
+  // organização. `fatosDaOrganizacao` nunca lança — no pior caso, português.
+  const { idioma } = await fatosDaOrganizacao(db, input.tenantId);
   const { rowCount } = await db.query(
     `insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
      select $1, 'other', 'critical', $2, $3, 'jailbreak_escalation', $4
@@ -183,10 +189,14 @@ export async function escalateJailbreakPromise(
      )`,
     [
       input.tenantId,
-      'Possível manipulação do agente — revisar conversa',
-      `A última mensagem deste lead foi sinalizada com risco de jailbreak/injeção (nível: ${input.level}) ` +
-        'e, no MESMO turno, o agente tentou uma promessa fora da tabela do playbook. ' +
-        'Revise a conversa: o padrão sugere tentativa de manipulação para arrancar oferta indevida.',
+      traduzir('Possível manipulação do agente — revisar conversa', idioma),
+      preencher(
+        traduzir(
+          'A última mensagem deste lead foi sinalizada com risco de jailbreak/injeção (nível: {nivel}) e, no MESMO turno, o agente tentou uma promessa fora da tabela do playbook. Revise a conversa: o padrão sugere tentativa de manipulação para arrancar oferta indevida.',
+          idioma,
+        ),
+        { nivel: input.level },
+      ),
       input.leadId,
     ],
   );

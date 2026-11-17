@@ -1,5 +1,5 @@
 import { camposDeDataDoNegocio } from "@/lib/leads/campos-do-funil";
-import { diaDe } from "@/lib/kanban/calendario-do-funil";
+import { chaveDoDia, diaDe, LIMITE_DO_INTERVALO } from "@/lib/kanban/calendario-do-funil";
 
 /**
  * As datas do funil viram itens de calendário, na Agenda (#3221).
@@ -28,9 +28,9 @@ import { diaDe } from "@/lib/kanban/calendario-do-funil";
  *
  * ─── O que esta primeira fatia decidiu ──────────────────────────────────────
  *
- * Decisão de produto de 29/10. A configuração pelo administrador e os dias do
- * meio do intervalo seguem na #3221. O ponto em que cada escolha morde está
- * marcado com "PADRÃO CONSERVADOR":
+ * Decisão de produto de 29/10. A configuração pelo administrador segue na
+ * #3221; os dias do MEIO do intervalo entraram na fatia seguinte (regra 5). O
+ * ponto em que cada escolha morde está marcado com "PADRÃO CONSERVADOR":
  *
  *  (a) quais campos entram por padrão — nenhum: a camada nasce desligada, e não
  *      escolhe campo por heurística de nome;
@@ -84,6 +84,13 @@ export interface EscolhaDeDatas {
   campoFim?: string | null;
   /** O `label` do segundo campo. */
   rotuloFim?: string | null;
+  /**
+   * O rótulo dos dias do MEIO do intervalo (#3221). Ausente = `ROTULO_DO_MEIO`.
+   *
+   * Existe para a rota poder assinar a palavra no idioma de quem lê: como o
+   * `label` do início e do fim, ela é TEXTO, e o módulo puro não traduz nada.
+   */
+  rotuloMeio?: string | null;
 }
 
 /** O recorte visível na grade, em dias de calendário do fuso da organização. */
@@ -91,6 +98,32 @@ export interface JanelaDeDias {
   de: string;
   ate: string;
 }
+
+/**
+ * O rótulo dos dias do MEIO do intervalo (#3221).
+ *
+ * Não existe campo no funil para isso — e inventar um seria pedir ao
+ * administrador que declarasse uma data que ele não tem. Então o meio fala por
+ * uma palavra só, genérica o bastante para servir a qualquer funil: "Em
+ * andamento". É decisão DESTA fatia; trocá-la é mudar esta linha (e a chave do
+ * dicionário), sem tocar na régua de dias.
+ *
+ * O valor daqui é o padrão de quem chama o módulo puro. A rota passa
+ * `t("Em andamento")`, então o item chega à tela no idioma de quem lê.
+ */
+export const ROTULO_DO_MEIO = "Em andamento";
+
+/**
+ * Teto de dias do MEIO por negócio.
+ *
+ * Um intervalo patológico (1990 a 2030) não pode virar milhares de itens do
+ * mesmo negócio e esconder o resto da grade. 366 é o MESMO teto do intervalo
+ * do Calendário do funil (`LIMITE_DO_INTERVALO`): cobre com folga qualquer
+ * período que uma grade de mês ou semana mostre, e o que passa disso é dado que
+ * ninguém vai ler dia a dia. Ao estourar, a emissão PARA — as pontas continuam
+ * no lugar, e nenhum laço varre quarenta anos para descobrir o corte.
+ */
+export const TETO_DE_DIAS_DO_MEIO_POR_NEGOCIO = LIMITE_DO_INTERVALO;
 
 /** Um funil com os campos de data que ele declara. `campos` vazio = não entra na escolha. */
 export interface FunilComDatas {
@@ -137,6 +170,20 @@ export function funisComCamposDeData(
 export { diaDe as diaDoCampo };
 
 /**
+ * O dia seguinte a um `YYYY-MM-DD`, no calendário puro.
+ *
+ * `setDate` sobre uma data LOCAL (ano, mês, dia) é aritmética de calendário: não
+ * passa por UTC e não desliza na virada do mês. A chave de volta é a MESMA do
+ * Calendário do funil (`chaveDoDia`), não uma segunda formatação.
+ */
+function proximoDia(dia: string): string {
+  const [ano, mes, d] = dia.split("-").map(Number);
+  const data = new Date(ano!, mes! - 1, d!);
+  data.setDate(data.getDate() + 1);
+  return chaveDoDia(data);
+}
+
+/**
  * Os itens da camada: um por negócio por dia, dentro da janela pedida.
  *
  * Regras, na ordem em que mordem:
@@ -153,9 +200,13 @@ export { diaDe as diaDoCampo };
  *  4. **PADRÃO CONSERVADOR (b):** início e fim no MESMO dia viram UM item, com
  *     os dois rótulos ("Embarque · Retorno"). Dois chips idênticos no mesmo dia
  *     para o mesmo negócio leem como duplicata.
- *  5. **Os dias do MEIO do intervalo não entram.** A camada marca as DATAS que
- *     o funil declara; o que está em andamento no dia é outra pergunta, e segue
- *     na #3221.
+ *  5. **Os dias do MEIO do intervalo entram, um item por dia** (#3221). Entre
+ *     as duas pontas — exclusivas — cada dia visível na janela vira um item com
+ *     o rótulo do meio, para a grade responder "quem está em viagem no dia 12"
+ *     e não só "quem embarca e quem volta". O meio é recortado pela janela e
+ *     limitado por `TETO_DE_DIAS_DO_MEIO_POR_NEGOCIO`: ao estourar, para de
+ *     emitir (as pontas continuam), em vez de encher a grade com um intervalo
+ *     patológico.
  */
 export function itensDaCamada(
   negocios: readonly NegocioComDatas[],
@@ -166,6 +217,10 @@ export function itensDaCamada(
   const campoFim =
     escolha.campoFim && escolha.campoFim !== escolha.campo ? escolha.campoFim : null;
   const rotuloFim = escolha.rotuloFim ?? campoFim ?? "";
+  // O rótulo do meio tem padrão no módulo e pode ser assinado no idioma de quem
+  // lê (a rota traduz). `trim` porque rótulo em branco não é rótulo: o chip
+  // ficaria vazio no dia, e o dia pareceria um item sem nome.
+  const rotuloMeio = escolha.rotuloMeio?.trim() || ROTULO_DO_MEIO;
 
   for (const negocio of negocios) {
     const inicio = diaDe(negocio.campos?.[escolha.campo]);
@@ -190,6 +245,26 @@ export function itensDaCamada(
 
     if (fimVale && fim >= janela.de && fim <= janela.ate) {
       itens.push({ negocio: semCampos, dia: fim, rotulos: [rotuloFim] });
+    }
+
+    // ─── Dias do MEIO (#3221) ──────────────────────────────────────────────
+    //
+    // Estritamente entre as pontas (`dia < fim`, começando em `inicio + 1`) e
+    // dentro da janela visível. `fimVale` é a MESMA guarda do fim: intervalo
+    // incoerente não ganha meio, porque não ganha fim.
+    //
+    // O laço começa já recortado — e não em `inicio` para depois filtrar — para
+    // que um intervalo de 1990 a 2030 não custe quarenta anos de `setDate` por
+    // negócio. O teto conta os itens EMITIDOS e PARA: as pontas já estão na
+    // lista, e o que sobra do intervalo é dado que ninguém lê dia a dia.
+    if (fimVale) {
+      let dia = inicio < janela.de ? janela.de : proximoDia(inicio);
+      let emitidos = 0;
+      while (dia < fim && dia <= janela.ate && emitidos < TETO_DE_DIAS_DO_MEIO_POR_NEGOCIO) {
+        itens.push({ negocio: semCampos, dia, rotulos: [rotuloMeio] });
+        emitidos += 1;
+        dia = proximoDia(dia);
+      }
     }
   }
 
