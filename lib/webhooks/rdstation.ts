@@ -320,6 +320,13 @@ export function mapRdStationPayload(
   };
 }
 
+/** `source_metadata` do mapeador genérico sem as chaves de anúncio — essas seguem só a régua do envelope. */
+function semChavesDeAnuncio(metadata: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(metadata).filter(([chave]) => !ehChaveDeAnuncio(chave)),
+  );
+}
+
 /**
  * As chaves de anúncio do envelope do RD (issue #3149) — o clique com que a
  * pessoa chegou, e não o que ela respondeu.
@@ -340,12 +347,6 @@ export function mapRdStationPayload(
  * contato. Só as SETE chaves conhecidas entram — o resto do envelope continua
  * saindo como sempre saiu.
  */
-function semChavesDeAnuncio(metadata: Record<string, string>): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(metadata).filter(([chave]) => !ehChaveDeAnuncio(chave)),
-  );
-}
-
 function chavesDeAnuncio(
   ...origens: Array<Record<string, unknown>>
 ): Record<string, string> {
