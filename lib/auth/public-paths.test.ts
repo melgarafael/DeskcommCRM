@@ -53,7 +53,7 @@ describe("isPublicPath", () => {
    * `PATCH /api/v1/leads/[id]` aceita Bearer (auth-dual, monitoramento
    * processual). O que este bloco prova é a forma exata do segmento: UUID, não
    * `[^/]+` — `/api/v1/leads/` tem irmãos LITERAIS no mesmo nível (`bulk`,
-   * `import`, `proposals`, `reactivations`), nenhum deles com
+   * `at-risk`, `import`, `proposals`, `reactivations`), nenhum deles com
    * suporte a Bearer, que um padrão largo tornaria público por engano.
    */
   it("libera PATCH /api/v1/leads/[id] (bearer, forma de UUID)", () => {
