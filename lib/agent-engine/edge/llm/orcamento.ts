@@ -31,6 +31,10 @@
 import type pg from 'pg';
 
 import type { RecursoDoPlano } from '@/lib/cobranca/vocabulario';
+import { tagDeIdioma } from '@/lib/i18n/datas';
+import { traduzir } from '@/lib/i18n/dicionario';
+import { preencher } from '@/lib/i18n/idioma-do-aviso';
+import type { Idioma } from '@/lib/i18n/idiomas';
 
 import type { OrigemDaChaveLlm } from './credentials';
 
@@ -79,6 +83,24 @@ export const AVISO_CORPO =
 export const BLOQUEIO_TITULO = 'O limite de gasto com IA foi atingido';
 
 /**
+ * Os mesmos textos no idioma da ORGANIZAÇÃO — a Central mostra o item como foi
+ * gravado. `pt-BR` devolve as constantes acima, byte a byte. Uma função por
+ * texto, com a chave LITERAL dentro do `traduzir`, para o guarda de i18n ver.
+ */
+export function tituloDoAvisoDeGasto(idioma: Idioma): string {
+  return traduzir('O gasto de IA passou do aviso que você definiu', idioma);
+}
+export function corpoDoAvisoDeGasto(idioma: Idioma): string {
+  return traduzir(
+    'A IA continua respondendo normalmente — isto é o aviso, não a parada. Veja quanto já foi gasto e ajuste o limite em Uso de IA › Orçamento.',
+    idioma,
+  );
+}
+export function tituloDoBloqueio(idioma: Idioma): string {
+  return traduzir('O limite de gasto com IA foi atingido', idioma);
+}
+
+/**
  * Razão gravada em `conversations.last_handoff_reason` quando o teto de gasto
  * interrompe o atendimento. Constante exportada porque quem for procurar "por
  * que esta conversa foi parar na fila humana" busca por este valor no banco.
@@ -93,8 +115,8 @@ export const BLOQUEIO_TITULO = 'O limite de gasto com IA foi atingido';
 export const HANDOFF_REASON_ORCAMENTO = 'orcamento_de_ia';
 
 /** Escreve dólar, porque o número É dólar (`pricing.ts` calcula em USD). */
-function emDolares(cents: number): string {
-  return `US$ ${(cents / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function emDolares(cents: number, idioma: Idioma = 'pt-BR'): string {
+  return `US$ ${(cents / 100).toLocaleString(tagDeIdioma(idioma), { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 /**
@@ -108,16 +130,14 @@ function emDolares(cents: number): string {
  * é `lib/escalacao/retomada.ts`, acionado por um botão POR CONVERSA. Subir o
  * teto evita paradas NOVAS; ele não devolve a IA a nenhuma conversa já parada.
  */
-export function corpoDoBloqueio(gastoCents: number, tetoCents: number): string {
+export function corpoDoBloqueio(gastoCents: number, tetoCents: number, idioma: Idioma = 'pt-BR'): string {
   const pct = tetoCents > 0 ? Math.round((gastoCents / tetoCents) * 100) : 0;
-  return (
-    `O gasto de IA deste mês chegou a ${emDolares(gastoCents)} de um limite de ${emDolares(tetoCents)} (${pct}%), ` +
-    'e você escolheu que a IA parasse ao chegar nele. ' +
-    'As conversas que estavam sendo atendidas foram para a FILA DE ATENDIMENTO HUMANO — ' +
-    'ninguém ficou sem próximo passo, mas alguém precisa responder. ' +
-    'Aumentar o limite ou desligar a parada em Uso de IA › Orçamento evita paradas NOVAS; ' +
-    'cada conversa já parada volta ao automático pelo botão "Devolver ao automático" ' +
-    'no cabeçalho dela.'
+  return preencher(
+    traduzir(
+      'O gasto de IA deste mês chegou a {gasto} de um limite de {teto} ({pct}%), e você escolheu que a IA parasse ao chegar nele. As conversas que estavam sendo atendidas foram para a FILA DE ATENDIMENTO HUMANO — ninguém ficou sem próximo passo, mas alguém precisa responder. Aumentar o limite ou desligar a parada em Uso de IA › Orçamento evita paradas NOVAS; cada conversa já parada volta ao automático pelo botão "Devolver ao automático" no cabeçalho dela.',
+      idioma,
+    ),
+    { gasto: emDolares(gastoCents, idioma), teto: emDolares(tetoCents, idioma), pct },
   );
 }
 
@@ -443,6 +463,16 @@ export const TITULO_TETO_DO_PLANO = 'O uso de IA do plano acabou';
 export const CORPO_TETO_DO_PLANO =
   'O uso de IA incluído no plano acabou neste mês. As conversas foram para a equipe. ' +
   'Troque de plano em Configurações › Plano e cobrança, cadastre uma chave de IA própria ou aguarde o próximo mês.';
+/** Os dois textos do teto do plano no idioma da organização (`pt-BR` = as constantes acima). */
+export function tituloDoTetoDoPlano(idioma: Idioma): string {
+  return traduzir('O uso de IA do plano acabou', idioma);
+}
+export function corpoDoTetoDoPlano(idioma: Idioma): string {
+  return traduzir(
+    'O uso de IA incluído no plano acabou neste mês. As conversas foram para a equipe. Troque de plano em Configurações › Plano e cobrança, cadastre uma chave de IA própria ou aguarde o próximo mês.',
+    idioma,
+  );
+}
 /** Vai para `llm_calls.error_message` e para o `last_error` da fila — a instrução numa linha. */
 export const MOTIVO_TETO_DO_PLANO =
   'uso de IA incluído no plano da empresa esgotado neste mês — chamada recusada antes de sair byte para o provedor; troque de plano em Configurações › Plano e cobrança, cadastre uma chave de IA própria ou aguarde a virada do mês (agent_inbox_items kind=budget_exceeded ref_kind=plano)';

@@ -29,6 +29,12 @@
  * `tests/unit/audit-lista-do-painel-e-derivada.test.tsx` reprova quem tentar.
  */
 export const AUDIT_ACTIONS = [
+  // Módulo opcional `amigo` (#4227).
+  "amigo.configured",
+  "amigo.disconnected",
+  "amigo.operation",
+  "amigo.patient_linked",
+  "amigo.synced",
   "cold_call.result",
   "cold_call.script_updated",
   "settings.agenda_presentation_updated",
@@ -683,6 +689,12 @@ export const AUDIT_ACTIONS = [
   // "quem mexeu no cadastro dela?". Fundir as duas obrigaria a ler o metadata
   // para saber qual das duas coisas aconteceu.
   "org.branding_updated",
+  // A APARÊNCIA da organização (template visual e ajustes) trocada em
+  // `organizations.settings.aparencia` pela tela Configurações › Aparência —
+  // mesma forma da anterior (`organization_id` + `resource_id` = uuid da org).
+  // Ação própria porque a pergunta da trilha é outra: "quem trocou o visual
+  // desta empresa?", e não "quem trocou o nome ou a cor da marca?".
+  "org.aparencia_updated",
   // As ALÍNEAS a), c) e d) do art. 15.º preenchidas pelo controlador
   // (`organizations.settings.art15`, issue #2356) — mutação de TENANT com a
   // mesma forma da anterior: `organization_id` + `resource_id` = uuid da org.
@@ -1629,6 +1641,11 @@ export const AUDIT_ACTIONS = [
   // leva só contagens e a chave do arquivo — nunca preço de linha.
   "tabela_de_valores.criada",
   "tabela_de_valores.importada",
+  // O agente (ou uma pessoa por token) gravou o diagnóstico da empresa na ficha
+  // do contato (`crm_save_lead_diagnosis`, decisão D7: grava direto, com o selo
+  // "Escrito pela IA"). Metadata leva só os NOMES dos campos e se a autoria é da
+  // IA — nunca o texto, que mora na ficha e é alcançado pela anonimização.
+  "contact.diagnosis_saved",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

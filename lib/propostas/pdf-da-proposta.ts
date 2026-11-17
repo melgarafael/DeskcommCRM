@@ -14,6 +14,7 @@
 // que NÃO passa pela RLS.
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { assertDestinoResolvidoSeguro } from "@/lib/automation/outbound-ip";
 import { assertSafeOutboundUrl } from "@/lib/automation/outbound-url";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import {
@@ -136,8 +137,15 @@ export async function montarPdfDaProposta(
       }
       try {
         assertSafeOutboundUrl(p.imagem_url);
+        // O guard acima é TEXTUAL: ele lê o nome, não o IP. Um host público que resolve para
+        // 10.x, para a rede do compose ou para o metadata da nuvem (169.254.169.254) passaria
+        // por ele — e quem busca a imagem é o SERVIDOR, no react-pdf. `call-webhook.ts` já paga
+        // essa resolução (`assertDestinoResolvidoSeguro`); aqui ela faltava, então a imagem de
+        // catálogo era o caminho mais curto de "manager da organização" para a rede interna.
+        await assertDestinoResolvidoSeguro(new URL(p.imagem_url).hostname);
         imagensPorProduto.set(p.id, p.imagem_url);
       } catch {
+        // Inalcançável ou interno = item sem imagem. Nunca barra o envio da proposta.
         imagensPorProduto.set(p.id, null);
       }
     }
