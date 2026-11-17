@@ -10,10 +10,14 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * com `unread_count_for_assignee` re-zerado pro novo dono.
  */
 import { randomUUID } from "node:crypto";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { audit, isServiceRoleConfigured } from "@/lib/audit";
+import type { Idioma } from "@/lib/i18n/idiomas";
+import { extractBearer } from "@/lib/mcp/auth";
 import { registrarTrocaDeComando } from "@/lib/inbox/atividade-de-comando";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
@@ -208,19 +212,46 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
+  // Token de integração (Spec 33, R2): é só leitura, e a regra do número vem de
+  // `fn_numero_da_transferencia`, que filtra a organização e é só do service
+  // role. A transferência em si (POST) segue só de sessão.
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "conversations",
+      role: "agent",
+      scope: "mcp:read",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "conversations", requestId);
+    if (teto) return teto;
+    return responderPreviaDoNumero(req, authz.supabase, authz.organizationId, authz.idioma, id, requestId);
+  }
+
   const authz = await requireRole("agent", { requestId, resource: "conversations" });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const orgId = authz.org.orgId; // fonte confiável (cookie validado), nunca a query
+  // fonte confiável (cookie validado), nunca a query
+  return responderPreviaDoNumero(req, await createClient(), authz.org.orgId, authz.user.idioma, id, requestId);
+}
+
+async function responderPreviaDoNumero(
+  req: NextRequest,
+  supabase: SupabaseClient,
+  orgId: string,
+  idioma: Idioma | undefined,
+  id: string,
+  requestId: string,
+): Promise<Response> {
+  const t = (texto: string) => traduzir(texto, idioma ?? "pt-BR");
 
   const parsed = previaSchema.safeParse({ to_user_id: req.nextUrl.searchParams.get("to_user_id") });
   if (!parsed.success) {
     return fail("invalid_request", t("Destino inválido."), 400, { requestId });
   }
 
-  // Quem pergunta precisa enxergar a conversa: a leitura é pelo cliente da
-  // SESSÃO, com a RLS de sempre. Só depois o admin responde a regra.
-  const supabase = await createClient();
+  // Quem pergunta precisa enxergar a conversa: na sessão a leitura é pelo
+  // cliente da SESSÃO, com a RLS de sempre; no token, o filtro de organização
+  // abaixo isola. Só depois o admin responde a regra.
   const { data: conversa, error: erroConversa } = await supabase
     .from("conversations")
     .select("id")
@@ -230,7 +261,33 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (erroConversa) return fail("internal_error", erroConversa.message, 500, { requestId });
   if (!conversa) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
 
-  if (!isServiceRoleConfigured()) return ok({ numero: null }, { requestId });
+  if (!isServiceRoleConfigured()) return ok({ numero: null, negocio: null }, { requestId });
+
+  // #4312: a prévia do NEGÓCIO aberto — se ele acompanha a transferência e, se
+  // não acompanha, com quem ele fica. Vem pela SESSÃO de quem pergunta, e não
+  // pelo admin: a resposta depende da permissão dele (o dono do card entrega o
+  // que é dele; quem não é dono não leva). A regra é a da própria
+  // `fn_conversation_assign`, na mesma função — o aviso e o efeito não divergem,
+  // como já vale para o número.
+  const { data: previaNegocio, error: erroNegocio } = await supabase.rpc(
+    "fn_previa_do_negocio_na_transferencia",
+    {
+      p_organization_id: orgId,
+      p_conversation_id: id,
+      p_to_user_id: parsed.data.to_user_id,
+    },
+  );
+  if (erroNegocio) return fail("internal_error", erroNegocio.message, 500, { requestId });
+  const linhaNegocio = (
+    previaNegocio as Array<{ tem_negocio: boolean; leva: boolean; dono_user_id: string | null }> | null
+  )?.[0];
+  // `null` quando o contato não tem exatamente um negócio aberto (zero, ou mais
+  // de um — que a transferência também não toca): sem nada a dizer, o diálogo
+  // não diz nada.
+  const negocio =
+    linhaNegocio?.tem_negocio === true
+      ? { leva: linhaNegocio.leva, dono_user_id: linhaNegocio.dono_user_id }
+      : null;
 
   const admin = createAdminClient();
   const { data: numeroId, error: erroNumero } = await admin.rpc("fn_numero_da_transferencia", {
@@ -239,7 +296,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     p_to_user_id: parsed.data.to_user_id,
   });
   if (erroNumero) return fail("internal_error", erroNumero.message, 500, { requestId });
-  if (!numeroId) return ok({ numero: null }, { requestId });
+  if (!numeroId) return ok({ numero: null, negocio }, { requestId });
 
   const { data: sessao, error: erroSessao } = await admin
     .from("channel_sessions")
@@ -257,6 +314,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
         display_name: linha?.display_name ?? null,
         phone_number: linha?.phone_number ?? null,
       },
+      negocio,
     },
     { requestId },
   );

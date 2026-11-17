@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/types";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
+import { logger } from "@/lib/logger";
 import { normalizePersonName } from "@/lib/crm-b2b/normalize";
 import {
   companyPersonCreateSchema,
@@ -46,7 +47,79 @@ export async function listPeopleHandler(
 
   const { data, error } = await q;
   if (error) err(ctx, 500, "internal_error", error.message);
-  return { people: data ?? [] };
+  const people = (data ?? []) as Array<Record<string, unknown> & { id: string; email: string | null }>;
+  if (people.length === 0) return { people };
+
+  // Os e-mails da pessoa são o da ficha E os dos contatos ligados a ela
+  // (issue #3198): quem só tem e-mail no contato aparecia com "—" na lista.
+  // Leitura de apoio: se falhar, a lista sai só com o e-mail da ficha.
+  const { data: contatos } = await supabase
+    .from("contacts")
+    .select("person_id, email")
+    .eq("organization_id", ctx.organization_id)
+    .in(
+      "person_id",
+      people.map((p) => p.id),
+    )
+    .not("email", "is", null)
+    .is("is_merged_into", null);
+
+  const porPessoa = new Map<string, string[]>();
+  for (const c of (contatos ?? []) as Array<{ person_id: string; email: string }>) {
+    porPessoa.set(c.person_id, [...(porPessoa.get(c.person_id) ?? []), c.email]);
+  }
+  return {
+    people: people.map((p) => {
+      const vistos = new Set<string>();
+      const emails = [p.email, ...(porPessoa.get(p.id) ?? [])].filter((e): e is string => {
+        if (!e) return false;
+        const chave = e.toLowerCase();
+        if (vistos.has(chave)) return false;
+        vistos.add(chave);
+        return true;
+      });
+      return { ...p, emails };
+    }),
+  };
+}
+
+/**
+ * Vínculos da pessoa com a empresa de cada um. Mesma regra de `vinculosDaEmpresa`
+ * (companies-handler): SESSÃO com o embed `companies:company_id` de sempre; TOKEN
+ * sem embed, com a empresa lida em consulta própria filtrada pela organização.
+ */
+async function vinculosDaPessoa(
+  supabase: SB,
+  ctx: HandlerCtx,
+  id: string,
+): Promise<Array<Record<string, unknown>>> {
+  if (ctx.actor.type === "user") {
+    const { data } = await supabase
+      .from("company_people")
+      .select(
+        "id, company_id, job_title, department, is_decision_maker, is_primary, companies:company_id(id, trade_name, legal_name, cnpj)",
+      )
+      .eq("organization_id", ctx.organization_id)
+      .eq("person_id", id);
+    return data ?? [];
+  }
+  const { data: vinculos } = await supabase
+    .from("company_people")
+    .select("id, company_id, job_title, department, is_decision_maker, is_primary")
+    .eq("organization_id", ctx.organization_id)
+    .eq("person_id", id);
+  const linhas = vinculos ?? [];
+  const ids = linhas.map((l) => l.company_id as string).filter(Boolean);
+  const empresas = new Map<string, unknown>();
+  if (ids.length > 0) {
+    const { data: firmas } = await supabase
+      .from("companies")
+      .select("id, trade_name, legal_name, cnpj")
+      .eq("organization_id", ctx.organization_id)
+      .in("id", ids);
+    for (const f of firmas ?? []) empresas.set(f.id as string, f);
+  }
+  return linhas.map((l) => ({ ...l, companies: empresas.get(l.company_id as string) ?? null }));
 }
 
 export async function getPersonHandler(supabase: SB, ctx: HandlerCtx, id: string) {
@@ -59,13 +132,7 @@ export async function getPersonHandler(supabase: SB, ctx: HandlerCtx, id: string
   if (error) err(ctx, 500, "internal_error", error.message);
   if (!data) err(ctx, 404, "not_found", "Pessoa não encontrada.");
 
-  const { data: links } = await supabase
-    .from("company_people")
-    .select(
-      "id, company_id, job_title, department, is_decision_maker, is_primary, companies:company_id(id, trade_name, legal_name, cnpj)",
-    )
-    .eq("organization_id", ctx.organization_id)
-    .eq("person_id", id);
+  const links = await vinculosDaPessoa(supabase, ctx, id);
 
   const { data: contacts } = await supabase
     .from("contacts")
@@ -74,13 +141,13 @@ export async function getPersonHandler(supabase: SB, ctx: HandlerCtx, id: string
     .eq("person_id", id)
     .is("is_merged_into", null);
 
-  return { person: data, companies: links ?? [], contacts: contacts ?? [] };
+  return { person: data, companies: links, contacts: contacts ?? [] };
 }
 
 export async function createPersonHandler(
   supabase: SB,
   ctx: HandlerCtx,
-  actorUserId: string,
+  actorUserId: string | null,
   raw: unknown,
 ) {
   const body = personCreateSchema.parse(raw);
@@ -107,6 +174,23 @@ export async function createPersonHandler(
       is_primary: body.is_primary ?? false,
     });
     if (linkErr && linkErr.code !== "23505") {
+      // Desfaz a pessoa recém-criada: sem isso o 422 deixava a pessoa gravada
+      // e o "tentar de novo" da tela criava uma segunda (issue #3198).
+      const { error: desfazErr } = await supabase
+        .from("people")
+        .delete()
+        .eq("organization_id", ctx.organization_id)
+        .eq("id", data.id);
+      // Se nem o desfazer passa, sobra uma pessoa sem empresa: o log com o id
+      // deixa o caso visível (só ids, nada de nome ou e-mail).
+      if (desfazErr) {
+        logger.error("people.create_rollback_failed", {
+          organization_id: ctx.organization_id,
+          person_id: data.id,
+          request_id: ctx.requestId,
+          code: desfazErr.code,
+        });
+      }
       err(ctx, 422, "validation_failed", linkErr.message);
     }
   }
@@ -114,6 +198,7 @@ export async function createPersonHandler(
   await audit({
     organizationId: ctx.organization_id,
     actorUserId,
+    actorApiTokenId: ctx.apiTokenId ?? null,
     action: "people.created",
     resourceType: "people",
     resourceId: data.id,
@@ -126,7 +211,7 @@ export async function createPersonHandler(
 export async function patchPersonHandler(
   supabase: SB,
   ctx: HandlerCtx,
-  actorUserId: string,
+  actorUserId: string | null,
   id: string,
   raw: unknown,
 ) {
@@ -152,6 +237,7 @@ export async function patchPersonHandler(
   await audit({
     organizationId: ctx.organization_id,
     actorUserId,
+    actorApiTokenId: ctx.apiTokenId ?? null,
     action: "people.updated",
     resourceType: "people",
     resourceId: id,
@@ -163,7 +249,7 @@ export async function patchPersonHandler(
 export async function linkCompanyPersonHandler(
   supabase: SB,
   ctx: HandlerCtx,
-  actorUserId: string,
+  actorUserId: string | null,
   raw: unknown,
 ) {
   const body = companyPersonCreateSchema.parse(raw);
@@ -190,6 +276,7 @@ export async function linkCompanyPersonHandler(
   await audit({
     organizationId: ctx.organization_id,
     actorUserId,
+    actorApiTokenId: ctx.apiTokenId ?? null,
     action: "company_people.linked",
     resourceType: "company_people",
     resourceId: data.id,
@@ -201,7 +288,7 @@ export async function linkCompanyPersonHandler(
 export async function patchCompanyPersonHandler(
   supabase: SB,
   ctx: HandlerCtx,
-  actorUserId: string,
+  actorUserId: string | null,
   id: string,
   raw: unknown,
 ) {
@@ -219,6 +306,7 @@ export async function patchCompanyPersonHandler(
   await audit({
     organizationId: ctx.organization_id,
     actorUserId,
+    actorApiTokenId: ctx.apiTokenId ?? null,
     action: "company_people.updated",
     resourceType: "company_people",
     resourceId: id,
@@ -230,9 +318,10 @@ export async function patchCompanyPersonHandler(
 export async function linkContactToPersonHandler(
   supabase: SB,
   ctx: HandlerCtx,
-  actorUserId: string,
+  actorUserId: string | null,
   contactId: string,
   personId: string | null,
+  actorApiTokenId?: string | null,
 ) {
   if (personId) {
     const { data: person } = await supabase
@@ -259,10 +348,86 @@ export async function linkContactToPersonHandler(
     organizationId: ctx.organization_id,
     actorUserId,
     action: "contacts.person_linked",
+    actorApiTokenId: actorApiTokenId ?? null,
     resourceType: "contacts",
     resourceId: contactId,
     requestId: ctx.requestId,
     metadata: { person_id: personId },
   });
   return data;
+}
+
+/**
+ * Desfaz o vínculo pessoa ↔ empresa (issue #3198). A policy
+ * `company_people_delete` existia desde a 0448 com piso `manager` — o mesmo
+ * de criar o vínculo —, faltava a rota. Apaga só a linha da tabela de junção:
+ * a pessoa e a empresa continuam cadastradas.
+ */
+export async function unlinkCompanyPersonHandler(
+  supabase: SB,
+  ctx: HandlerCtx,
+  actorUserId: string,
+  id: string,
+) {
+  const { data, error } = await supabase
+    .from("company_people")
+    .delete()
+    .eq("organization_id", ctx.organization_id)
+    .eq("id", id)
+    .select("id, company_id, person_id")
+    .maybeSingle();
+  if (error) err(ctx, 500, "internal_error", error.message);
+  if (!data) err(ctx, 404, "not_found", "Vínculo não encontrado.");
+
+  await audit({
+    organizationId: ctx.organization_id,
+    actorUserId,
+    action: "company_people.unlinked",
+    resourceType: "company_people",
+    resourceId: id,
+    requestId: ctx.requestId,
+    metadata: { company_id: data.company_id, person_id: data.person_id },
+  });
+  return data;
+}
+
+/**
+ * A pessoa ligada a um contato, com as empresas dela (issue #3198) — o que a
+ * ficha do contato mostra. `person: null` quando o contato ainda não foi
+ * ligado (o caso de todo lead que chega pelo WhatsApp).
+ */
+export async function getContactPersonHandler(supabase: SB, ctx: HandlerCtx, contactId: string) {
+  const { data: contact, error } = await supabase
+    .from("contacts")
+    .select("id, person_id")
+    .eq("organization_id", ctx.organization_id)
+    .eq("id", contactId)
+    // A lápide de fusão não é um contato vivo (a mesma regra da listagem em
+    // `app/api/v1/contacts/_handler.ts`): aberto por um link antigo, o contato
+    // absorvido mostraria a pessoa DELE, que pode não ser a do sobrevivente.
+    .is("is_merged_into", null)
+    .maybeSingle();
+  if (error) err(ctx, 500, "internal_error", error.message);
+  if (!contact) err(ctx, 404, "not_found", "Contato não encontrado.");
+  if (!contact.person_id) return { person: null, companies: [] };
+
+  const { data: person } = await supabase
+    .from("people")
+    .select("id, full_name, email")
+    .eq("organization_id", ctx.organization_id)
+    .eq("id", contact.person_id)
+    .maybeSingle();
+  if (!person) return { person: null, companies: [] };
+
+  const { data: links } = await supabase
+    .from("company_people")
+    .select("id, job_title, is_decision_maker, companies:company_id(id, trade_name, legal_name)")
+    .eq("organization_id", ctx.organization_id)
+    .eq("person_id", person.id)
+    // Ordem estável: sem ela, as empresas do cartão trocam de lugar entre as
+    // leituras. A mais antiga primeiro, com o id como desempate.
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
+
+  return { person, companies: links ?? [] };
 }

@@ -113,7 +113,12 @@
     {"id": "iconeapp", "lane": "saida", "col": 9, "type": "service", "label": "/app-icon/{180,192,512,maskable}", "sublabel": "arquivo platform/favicon_path limitado; 180 (iPhone) e maskable com o desenho na zona segura; falha retorna desenho e log"},
     {"id": "manifestapp", "lane": "saida", "col": 10, "type": "frontend", "label": "manifest → aplicativo instalado", "sublabel": "marca pública da instalação; id /app, cores da régua, 192/512 + maskable; apple-touch-icon 180 no layout; leitura em runtime"},
     {"id": "telaapp", "lane": "humano", "col": 10, "type": "frontend", "label": "/app/settings/aplicativo (App no celular)", "sublabel": "passo a passo por aparelho, lido no cliente; sem https diz que não há app, sem botão (ADR-0006, decisão c)"},
-    {"id": "swapp", "lane": "saida", "col": 11, "type": "frontend", "label": "public/notify-sw.js", "sublabel": "todo push vira notificação; navegação sem rede → página neutra SEM marca nem dado (D4); nenhum cache"}
+    {"id": "swapp", "lane": "saida", "col": 11, "type": "frontend", "label": "public/notify-sw.js", "sublabel": "todo push vira notificação; navegação sem rede → página neutra SEM marca nem dado (D4); nenhum cache"},
+    {"id": "telaaparencia", "lane": "humano", "col": 1, "type": "frontend", "label": "/app/settings/aparencia", "sublabel": "template visual da ORGANIZAÇÃO (10, claro e escuro) + ajustes · admin do tenant · Visualizar só no navegador de quem olha (#4635)"},
+    {"id": "defaparencia", "lane": "escrita", "col": 2, "type": "api", "label": "definirAparenciaDaOrganizacao (server action)", "sublabel": "Zod estrito · client da SESSÃO, não o admin · audita só quando mudou"},
+    {"id": "fnaparencia", "lane": "banco", "col": 4, "type": "database", "label": "fn_definir_aparencia_da_organizacao (9388)", "sublabel": "admin + suporte + MFA pelo auth.uid() · forma validada · jsonb_set só na chave aparencia"},
+    {"id": "orgaparencia", "lane": "banco", "col": 3, "type": "database", "label": "organizations.settings.aparencia", "sublabel": "ao lado de settings.branding, nunca dentro · a lista de templates mora no código, id desconhecido = de fábrica"},
+    {"id": "aparenciacss", "lane": "resolver", "col": 6, "type": "service", "label": "lib/aparencia/css.ts", "sublabel": "tokens escopados por body:has([data-aparencia=id]) · cor de ação pelo MESMO cssDaMarca, régua com as superfícies do template · NUNCA lança"}
   ],
   "edges": [
     { "id": "emailorg1", "from": "orgmarca", "to": "orgresendconfig", "label": "conecta/desconecta a conta da empresa sem mudar o envio de sistema" },
@@ -197,7 +202,16 @@
     {"id": "e-tela-app-a", "from": "registry", "to": "telaapp", "label": "porta em Sua conta, ao lado de Notificações"},
     {"id": "e-tela-app-b", "from": "telaapp", "to": "manifestapp", "label": "instalar = o navegador lê este manifest: nome e ícone da INSTALAÇÃO, nunca da organização"},
     {"id": "e-sw-app-a", "from": "telaapp", "to": "swapp", "label": "registrar o SW é também a prova: https que o recusa fica sem app"},
-    {"id": "e-sw-app-b", "from": "manifestapp", "to": "swapp", "label": "o app instalado abre em /app, onde a casca registra o SW sem depender da permissão de avisos"}
+    {"id": "e-sw-app-b", "from": "manifestapp", "to": "swapp", "label": "o app instalado abre em /app, onde a casca registra o SW sem depender da permissão de avisos"},
+    {"id": "e-apar-porta", "from": "registry", "to": "telaaparencia", "label": "a PORTA: /app/settings/aparencia no grupo Sua empresa, minRole admin, sidebar:false"},
+    {"id": "e-apar-grava", "from": "telaaparencia", "to": "defaparencia", "label": "Salvar para a equipe"},
+    {"id": "e-apar-rpc", "from": "defaparencia", "to": "fnaparencia", "label": "RPC pela sessão: a autoridade é o banco"},
+    {"id": "e-apar-jsonb", "from": "fnaparencia", "to": "orgaparencia", "label": "jsonb_set atômico; {} ou null apaga a chave"},
+    {"id": "e-apar-audit", "from": "defaparencia", "to": "auditlog", "label": "org.aparencia_updated (com org), só quando mudou"},
+    {"id": "e-apar-le", "from": "orgaparencia", "to": "aparenciacss", "label": "aparenciaDeSettings: campo inválido vira o padrão, campo a campo"},
+    {"id": "e-apar-gerador", "from": "aparenciacss", "to": "css", "label": "cssDaMarca com EscopoDeAparencia (tipo com marca, id validado)"},
+    {"id": "e-apar-cor", "from": "organizacao", "to": "aparenciacss", "label": "cor própria na tela Marca vence: o template não declara a cor de ação"},
+    {"id": "e-apar-layout", "from": "aparenciacss", "to": "applayout", "label": "<EstiloDaAparencia/> ANTES de <EstiloDaMarcaDaOrganizacao/>"}
   ],
   "cards": [
     {

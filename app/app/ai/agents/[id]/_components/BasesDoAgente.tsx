@@ -1,6 +1,5 @@
 "use client";
 
-import { useT } from "@/hooks/i18n/useT";
 /**
  * O QUE ESTE ASSISTENTE CONSULTA ANTES DE RESPONDER (0181).
  *
@@ -34,9 +33,17 @@ import { useT } from "@/hooks/i18n/useT";
  */
 import * as React from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 
+import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { useT } from "@/hooks/i18n/useT";
+import { apiClient } from "@/lib/api/client";
+import {
+  lerModoDeConhecimento,
+  type ModoDeConhecimento,
+} from "@/lib/agent-engine/agent/modo-de-conhecimento";
 
 export interface MaterialDoAcervo {
   id: string;
@@ -59,11 +66,61 @@ interface Props {
   value: string[];
   onChange: (ids: string[]) => void;
   disabled?: boolean;
+  /**
+   * `ai_agents.config.knowledge_mode` como está no banco (#4358) — a MESMA
+   * leitura do motor (`lerModoDeConhecimento`), para a tela não inventar um
+   * vocabulário próprio. Ausente/fora do vocabulário = `busca`.
+   */
+  modoInicial?: unknown;
+  /**
+   * Id do agente. O modo mora em `config` do AGENTE, não da versão, então ele
+   * grava por PATCH imediato (como o limiar de sentimento e o servidor externo)
+   * e só tem como existir depois que o agente foi criado. Sem id, o seletor não
+   * aparece: prometer o salvamento num agente novo seria mentir para quem está
+   * preenchendo o formulário.
+   */
+  agentId?: string;
 }
 
-export function BasesDoAgente({ materiais, value, onChange, disabled = false }: Props) {
+export function BasesDoAgente({
+  materiais,
+  value,
+  onChange,
+  disabled = false,
+  modoInicial,
+  agentId,
+}: Props) {
   const t = useT();
   const marcados = new Set(value);
+  const [modo, setModo] = React.useState<ModoDeConhecimento>(() =>
+    lerModoDeConhecimento({ knowledge_mode: modoInicial }),
+  );
+  const [salvandoModo, setSalvandoModo] = React.useState(false);
+
+  /**
+   * Troca o modo e grava no config do agente. Otimista de propósito: a
+   * explicação do modo escolhido aparece na hora. Se o PATCH falhar, volta ao
+   * valor gravado — a tela nunca fica dizendo um modo que o banco não tem, que
+   * é o mesmo defeito que esta entrega veio consertar (a tela prometia uma
+   * consulta que o motor não fazia).
+   */
+  async function trocarModo(proximo: ModoDeConhecimento): Promise<void> {
+    if (proximo === modo || !agentId) return;
+    const anterior = modo;
+    setModo(proximo);
+    setSalvandoModo(true);
+    try {
+      await apiClient.patch(`/api/v1/ai/agents/${agentId}`, {
+        config: { knowledge_mode: proximo },
+      });
+      toast.success(t("Modo de consulta salvo — vale a partir da próxima mensagem."));
+    } catch (err) {
+      setModo(anterior);
+      showApiError(err);
+    } finally {
+      setSalvandoModo(false);
+    }
+  }
 
   function alternar(id: string, marcado: boolean): void {
     const proximo = new Set(marcados);
@@ -96,10 +153,47 @@ export function BasesDoAgente({ materiais, value, onChange, disabled = false }: 
         <h3 className="text-sm font-medium">{t("O que ele consulta antes de responder")}</h3>
         <p className="text-xs text-muted-foreground">
           {t(
-            "Marque o material do seu negócio que este assistente pode ler. Ele procura ali antes de responder, em vez de improvisar — e cita de onde tirou.",
+            "Marque o material do seu negócio que este assistente pode ler. Quem decide, a cada mensagem, é o modelo: ele pode responder sem consultar nada. Para cobrar a consulta, escreva nas instruções dele que ele consulte o material antes de responder.",
           )}
         </p>
       </div>
+
+      {/* Como o turno lê esse material (#4358). O campo já existia na
+          configuração desde a 1.104.0 e não tinha porta na tela; sem isto, a
+          única saída de `busca` era editar o JSON. */}
+      {agentId ? (
+        <div
+          className="space-y-2 border-t border-border pt-3"
+          data-testid="modo-de-conhecimento-secao"
+        >
+          <div className="space-y-1">
+            <Label htmlFor="knowledge_mode">{t("Como ele consulta esse material")}</Label>
+            <select
+              id="knowledge_mode"
+              data-testid="modo-de-conhecimento"
+              value={modo}
+              onChange={(e) => void trocarModo(e.target.value as ModoDeConhecimento)}
+              disabled={disabled || salvandoModo}
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+            >
+              <option value="busca">{t("Busca por assunto")}</option>
+              <option value="leitura_direta">{t("Leitura direta")}</option>
+            </select>
+          </div>
+          <p
+            data-testid="modo-de-conhecimento-explicacao"
+            className="text-xs text-muted-foreground"
+          >
+            {modo === "leitura_direta"
+              ? t(
+                  "A lista dos materiais (nome e resumo) entra no contexto de toda mensagem, sem depender da decisão do modelo; ele abre o material inteiro quando precisa. Não usa serviço de busca por vetores — só a mesma chave do modelo da conversa. Sem material marcado, ele volta sozinho à busca por assunto.",
+                )
+              : t(
+                  "O agente recebe a ferramenta de busca e escolhe, a cada mensagem, se usa. Ele pode responder sem consultar — as instruções do agente são o lugar de cobrar a consulta.",
+                )}
+          </p>
+        </div>
+      ) : null}
 
       {visiveis.length === 0 ? (
         <p className="text-xs text-muted-foreground" data-testid="agente-sem-acervo">

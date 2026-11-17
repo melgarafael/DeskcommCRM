@@ -141,6 +141,56 @@ describe("veto vira atividade no negócio certo", () => {
   });
 });
 
+// Spec 34: o "Não enviei" da trava comercial diz QUAL pedaço do texto a acionou e
+// guarda o texto na linha da timeline — nunca no rastro da cadeia.
+describe("veto comercial grava o texto e o trecho na linha", () => {
+  it("payload leva texto_barrado e trecho; o motivo cita o trecho", async () => {
+    const traceId = await novoTrace(CONTATO_COM_LEAD, "commercial_restriction", "commercial_requires_human");
+    const r = await emitVetoActivity({
+      pool,
+      organizationId: ORG,
+      contactId: CONTATO_COM_LEAD,
+      traceId,
+      gate: "commercial_restriction",
+      code: "commercial_requires_human",
+      agentId: AGENT,
+      textoBarrado: "Fica sem custo nenhum",
+      trecho: "custo",
+    });
+    expect(r.routed).toBe(true);
+    const { rows } = await pool.query(
+      `select reason, payload->>'texto_barrado' as texto, payload->>'trecho' as trecho
+         from crm_lead_activities
+        where lead_id = $1 and source_id = $2 and type = 'send_vetoed'`,
+      [LEAD, traceId],
+    );
+    expect(rows[0]).toEqual({
+      reason: 'Não enviei: a mensagem tocava em valores ou negociação, que são só com a equipe (o texto tinha "custo")',
+      texto: "Fica sem custo nenhum",
+      trecho: "custo",
+    });
+  });
+
+  it("sem texto nem trecho as chaves não existem no payload", async () => {
+    const traceId = await novoTrace(CONTATO_COM_LEAD, "stop", "opted_out");
+    await emitVetoActivity({
+      pool,
+      organizationId: ORG,
+      contactId: CONTATO_COM_LEAD,
+      traceId,
+      gate: "stop",
+      code: "opted_out",
+      agentId: AGENT,
+    });
+    const { rows } = await pool.query(
+      `select payload ? 'texto_barrado' as tem_texto, payload ? 'trecho' as tem_trecho
+         from crm_lead_activities where lead_id = $1 and source_id = $2`,
+      [LEAD, traceId],
+    );
+    expect(rows[0]).toEqual({ tem_texto: false, tem_trecho: false });
+  });
+});
+
 describe("veto sem negócio para pendurar", () => {
   it("vai para o event_log, NÃO para o card de outra pessoa", async () => {
     const traceId = await novoTrace(CONTATO_SEM_LEAD, "pacing", "rate_limited");

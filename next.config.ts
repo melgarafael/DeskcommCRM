@@ -1,5 +1,6 @@
 import { withSentryConfig } from "@sentry/nextjs/config";
 import type { NextConfig } from "next";
+import { MAX_MEDIA_BYTES } from "./lib/messaging/media/types";
 
 /** Performance budget (EPIC-12 §S-12.05):
  *  - LCP < 2.5s p75
@@ -70,6 +71,15 @@ const nextConfig: NextConfig = {
       "./node_modules/.pnpm/@napi-rs+canvas-*/node_modules/@napi-rs/*/*.node",
       // pdfjs-dist em si (ver comentário acima).
       "./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/**",
+      // pdfkit (dependência do @react-pdf/renderer): o build ESM registra as
+      // fontes padrão com `createRequire(import.meta.url)("#standard-fonts/…")`.
+      // O Turbopack (o build padrão daqui) rastreia esses `.cjs`: medido na
+      // imagem oficial 1.109.0, os 14 estão lá e o PDF com Helvetica sai. O
+      // tracer do webpack (`next build --webpack`) segue só o `import`
+      // estático (os `.mjs`), e aí todo PDF com Helvetica/Times/Courier morre
+      // em `MODULE_NOT_FOUND …/pdfkit/js/standard-fonts/Helvetica.cjs`. A
+      // linha deixa os dois builds iguais (192 KB, já presentes no Turbopack).
+      "./node_modules/.pnpm/pdfkit@*/node_modules/pdfkit/js/standard-fonts/**",
     ],
   },
   reactStrictMode: true,
@@ -78,6 +88,10 @@ const nextConfig: NextConfig = {
   typedRoutes: true,
   experimental: {
     optimizePackageImports: ["@phosphor-icons/react", "lucide-react", "date-fns"],
+    // O proxy.ts casa /api e o Next só repassa à rota os primeiros N bytes do
+    // corpo; abaixo do teto da rota o upload chega cortado (padrão: 10 MB).
+    // A mesma folga de 1 MiB que o `lerCorpoComTeto` das rotas de mídia.
+    proxyClientMaxBodySize: MAX_MEDIA_BYTES + 1_048_576,
   },
   images: {
     // O app não usa next/image de fato (só <img> raw); desligar o otimizador
@@ -104,6 +118,23 @@ const nextConfig: NextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "X-Frame-Options", value: "DENY" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          // O proxy na frente não manda HSTS — o Caddy do kit não manda, e o Traefik
+          // da hospedagem e o Cloudflare só mandam se alguém configurar: quem responde
+          // pelo transporte é a origem. Sem isto, quem já abriu o painel em https e
+          // depois chega por http volta a trafegar em claro.
+          // Sem includeSubDomains: o domínio é do cliente e pode ser o apex; o app
+          // não sabe se os subdomínios dele têm HTTPS.
+          { key: "Strict-Transport-Security", value: "max-age=31536000" },
+          // CSP curta de propósito: `frame-ancestors` repete o DENY para navegador
+          // que só entende CSP, `base-uri` impede tag injetada de mudar a base dos
+          // links relativos e `form-action` impede formulário forjado para fora.
+          // `script-src`/`style-src` ficam de fora: o Next injeta bootstrap inline e
+          // o app abre WebSocket — política sem nonce quebraria a tela, e política
+          // que quebra tela acaba desligada por quem opera.
+          {
+            key: "Content-Security-Policy",
+            value: "frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+          },
           // microphone=(self): o gravador de voz do composer (PTT estilo WhatsApp)
           // usa getUserMedia({audio}); microphone=() bloquearia em TODA origem,
           // inclusive a própria — daria "microphone is not allowed in this document".

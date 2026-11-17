@@ -219,7 +219,13 @@ describe("a lista do inbox não volta ao skeleton num refetch (#2366)", () => {
 
     expect(screen.getByText("c1")).toBeInTheDocument();
     expect(screen.getByText("c2")).toBeInTheDocument();
-    expect(screen.queryByText(/Erro ao carregar conversas/)).not.toBeInTheDocument();
+    // A lista continua, e o erro NÃO a substitui (#4508): o que entra é o aviso
+    // no topo, que convive com as linhas. A tela cheia de erro é o que este
+    // teste proíbe — e ela continua fora; o aviso é `status`, não `alert`.
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByTestId("lista-desatualizada")).toHaveTextContent(
+      "Erro ao carregar conversas.",
+    );
     expect(esqueleto()).toBe(0);
   });
 
