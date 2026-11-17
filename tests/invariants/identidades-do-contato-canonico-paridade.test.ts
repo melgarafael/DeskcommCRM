@@ -9,14 +9,14 @@ import {
 import { sql } from "./gov-helpers";
 
 /**
- * AS DUAS RÉGUAS DA FORMA CANÔNICA CONCORDAM — issue #3764, fatia 1 (migration 9082).
+ * AS DUAS RÉGUAS DA FORMA CANÔNICA CONCORDAM — issue #3764, fatia 1 (migration 9419).
  *
  * ─── O defeito que este arquivo existe para impedir ────────────────────────
  *
  * A forma canônica do identificador mora em DOIS lugares de propósito:
  *
- *   `normalizarIdentificador` (lib)  → o app decide com ela o que sugerir e o
- *                                      que juntar;
+ *   `normalizarIdentificador` (lib)  → a ingestão das redes decide com ela o
+ *                                      que procurar e o que gravar;
  *   `fn_identificador_canonico` (SQL) → o banco decide com ela o que GRAVAR, no
  *                                      gatilho e na constraint.
  *
@@ -26,7 +26,7 @@ import { sql } from "./gov-helpers";
  *
  *   1. a lib aceita e o banco grava OUTRA coisa — o app pergunta "quem tem este
  *      identificador?", compara com a coluna e não acha ninguém, então sugere
- *      cadastro novo para uma pessoa que já existe; e
+ *      ficha nova para uma pessoa que já existe; e
  *   2. a lib recusa e o banco aceita — a identidade nasce por uma porta que a
  *      outra considera inválida, e a partir daí nenhuma das duas a reconhece.
  *
@@ -38,16 +38,12 @@ import { sql } from "./gov-helpers";
  * ─── O que ele cobra ───────────────────────────────────────────────────────
  *
  * 1. mesmo resultado das duas pontas para uma matriz de entradas cruas — as que
- *    o atendente cola (local sem `+55`, com máscara, sem o nono dígito, URL do
- *    perfil, `@` na frente, maiúscula no e-mail) e as que NÃO são identidade
- *    (texto, número curto, e-mail sem domínio);
+ *    a DM entrega (o id numérico do participante) e as que o atendente cola
+ *    (URL do perfil, `@` na frente, maiúscula), e as que NÃO são identidade
+ *    (espaço no meio, tamanho fora da régua, `@` no fim);
  * 2. ponto fixo: o que a lib devolve tem de ser aceito pelo banco sem mudar —
  *    é o que a constraint `contact_identities_identificador_canonico` exige, e
- *    é o que impede o `insert` de morrer em `23514` depois de a tela já ter
- *    dito "pronto";
- * 3. a afirmação escrita no cabeçalho de `lib/contacts/identidades.ts` — que
- *    `3198966398`, `553198966398` e `+55 31 98966-398` colapsam no MESMO valor
- *    — medida no banco, não só na lib.
+ *    é o que impede o `insert` da ingestão de morrer em `23514`.
  *
  * Sem PII: números e perfis sintéticos.
  */
@@ -83,46 +79,8 @@ function canonicoNoBanco(casos: ReadonlyArray<readonly [CanalDeIdentidade, strin
  * atendente cola, e o lixo que não pode virar identidade.
  */
 const CASOS: ReadonlyArray<readonly [CanalDeIdentidade, string]> = [
-  // ── whatsapp: o número do Brasil, com e sem o nono dígito, com máscara ────
-  ["whatsapp", "3198966398"], // DDD + 8 dígitos, sem o nono e sem o `+`
-  ["whatsapp", "31989663989"], // DDD + 9 dígitos, sem o `+55`
-  ["whatsapp", "(31) 99896-6398"], // como o atendente digita
-  ["whatsapp", "55 31 9 9896-6398"], // com o `55` e sem o `+`
-  ["whatsapp", "553198966398"], // E.164 sem o `+`
-  ["whatsapp", "+553198966398"], // a grafia do `wa_id`, sem o nono
-  ["whatsapp", "+55 31 98966-398"],
-  ["whatsapp", "+55 (31) 9 8966-398"],
-  ["whatsapp", "+5531998966398"],
-  // fixo: o nono dígito NÃO entra (inventar um fundiria duas pessoas)
-  ["whatsapp", "3132345678"],
-  ["whatsapp", "553132345678"],
-  ["whatsapp", "+553132345678"],
-  // 13 dígitos cujo local começa em 9 mas o segundo dígito não é 6–9: a
-  // variante sem o nono NÃO pode ser gerada (é o fixo de outra pessoa)
-  ["whatsapp", "+5531900000000"],
-  // fora do Brasil: com `+` é o número; sem `+` e com 11 dígitos a lib assume BR
-  ["whatsapp", "+14155552671"],
-  ["whatsapp", "14155552671"],
-  ["whatsapp", "447700900123"],
-  // lixo: não é telefone em forma nenhuma
-  ["whatsapp", "123"],
-  ["whatsapp", "+123"],
-  ["whatsapp", "+1234567890123456"],
-  ["whatsapp", "55 31 ****-6398"],
-  ["whatsapp", "abc"],
-  ["whatsapp", ""],
-  ["whatsapp", "   "],
-  ["whatsapp", "+55 31 98966-398 "], // espaço nas pontas
-
-  // ── email ────────────────────────────────────────────────────────────────
-  ["email", "  Maiuscula@Invariant.TEST  "],
-  ["email", "user+tag@invariant.test"],
-  ["email", "sem-dominio"],
-  ["email", "a b@invariant.test"],
-  ["email", "@invariant.test"],
-  ["email", ""],
-
   // ── instagram: o `@` do direct, a URL colada, o perfil cru ───────────────
+  ["instagram", "17841400000000001"], // o id do participante que a DM entrega
   ["instagram", "fulano"],
   ["instagram", "@Fulano"],
   ["instagram", "@@fulano"],
@@ -138,6 +96,7 @@ const CASOS: ReadonlyArray<readonly [CanalDeIdentidade, string]> = [
   ["instagram", ""],
 
   // ── facebook: perfil e o id numérico (PSID) que a página entrega ─────────
+  ["facebook", "24680135792468013"],
   ["facebook", "Pessoa.B"],
   ["facebook", "https://www.facebook.com/Pessoa.B/?ref=page"],
   ["facebook", "m.facebook.com/pessoa.b"],
@@ -151,7 +110,7 @@ const CASOS: ReadonlyArray<readonly [CanalDeIdentidade, string]> = [
 
 describe("identidades — a lib e o banco concordam na forma canônica", () => {
   it("CONTROLE: a matriz mede os dois lados (canal do CHECK e casos com forma)", () => {
-    expect(CASOS.length).toBeGreaterThanOrEqual(40);
+    expect(CASOS.length).toBeGreaterThanOrEqual(20);
     for (const canal of CANAIS_DE_IDENTIDADE) {
       expect(CASOS.some(([c]) => c === canal), `a matriz não cobre o canal ${canal}`).toBe(true);
     }
@@ -180,7 +139,7 @@ describe("identidades — a lib e o banco concordam na forma canônica", () => {
       divergencias,
       "A lib e o banco divergem: o app sugere/junta por uma string que o banco não grava " +
         "(ou o banco aceita o que o app recusa). Nos dois casos o defeito é mudo — " +
-        "a sugestão de vínculo não acha ninguém e a pessoa nasce em duas fichas.",
+        "a ingestão não acha a identidade e a pessoa nasce em duas fichas.",
     ).toEqual([]);
   });
 
@@ -199,26 +158,8 @@ describe("identidades — a lib e o banco concordam na forma canônica", () => {
     expect(
       quebrados,
       "A lib produz forma que a constraint `contact_identities_identificador_canonico` recusa: " +
-        "a tela diz que gravou e o PostgREST devolve 23514.",
+        "a ingestão tenta gravar e o PostgREST devolve 23514.",
     ).toEqual([]);
-  });
-
-  it("as grafias do MESMO telefone colapsam no mesmo identificador (o cabeçalho da lib é verdade no banco)", () => {
-    const grafias = [
-      "3198966398",
-      "553198966398",
-      "+553198966398",
-      "+55 31 98966-398",
-      "+55 (31) 9 8966-398",
-      "(31) 99896-6398",
-    ] as const;
-    const noBanco = canonicoNoBanco(grafias.map((g) => ["whatsapp", g] as const));
-    const distintos = new Set(noBanco);
-    expect(
-      distintos.size,
-      `as ${grafias.length} grafias do mesmo celular viraram ${distintos.size} identidades: ${JSON.stringify(noBanco)}`,
-    ).toBe(1);
-    expect(noBanco[0]).not.toBeNull();
   });
 
   it("a mesma pessoa em canais diferentes NÃO vira a mesma identidade", () => {

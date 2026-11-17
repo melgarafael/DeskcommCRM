@@ -75,9 +75,8 @@ export interface ContactSnapshot {
    */
   additional_phones?: ContactPhoneSnapshot[];
   /**
-   * As identidades do contato nos outros canais (#3764, fatia 1): o @ do
-   * Instagram, o perfil do Facebook, o e-mail — cada uma com o canal de onde
-   * veio. A anonimização já as apaga pelo gatilho da ficha; sem esta linha o
+   * As identidades de rede social do contato (#3764, fatia 1): o perfil do
+   * Instagram e o do Facebook — cada uma com a rede de onde veio. A anonimização já as apaga pelo gatilho da ficha; sem esta linha o
    * titular pedia acesso e não recebia o que a ingestão guardou sobre ele.
    */
   identities?: ContactIdentitySnapshot[];
@@ -1372,7 +1371,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
   }
   if (contact && telefonesExtras.length > 0) contact.additional_phones = telefonesExtras;
 
-  // (#3764) As identidades do contato nos outros canais. A anonimização as apaga
+  // (#3764) As identidades de rede social do contato. A anonimização as apaga
   // pelo gatilho da ficha — e o titular que pede ACESSO tem de receber o que a
   // ingestão guardou sobre ele. Sem esta leitura, o dado existia no banco e não
   // saía no `data.json`: a mesma assimetria que a cerca de acesso×redação cobra.

@@ -1,61 +1,54 @@
--- manifest: **As identidades do contato (WhatsApp, Instagram, Facebook e e-mail) ganham tabela própria, para que a mesma pessoa seja reconhecida por mais de um caminho (issue #3764, fatia 1).** Tabela tenant-aware nova `contact_identities` (`organization_id`, `contact_id`, `canal`, `identificador`, `criado_em`), com `canal in ('whatsapp','instagram','facebook','email')`, `unique (organization_id, canal, identificador)`, RLS (leitura por organização, escrita a partir de `agent`) e grants próprios. `fn_identificador_canonico(canal, valor)` é a régua ÚNICA da forma gravada — telefone em E.164 pela `fn_telefone_canonico` (9043) mais a decisão de forma que ela não dá (`+55` implícito no número nacional e guarda de 8–15 dígitos, a mesma régua de `normalizePhoneBR`), e-mail em minúsculas, perfil social sem o `@` da frente e em minúsculas —, e `fn_identidades_do_contato_canonica` aplica a régua e confere o tenant do contato em todo `insert`/`update`: sem isso `+55 31 9…` e `+55319…` seriam duas identidades e o índice não seguraria nada. LGPD: a virada de `is_anonymized` apaga as identidades do contato (`trg_identidades_do_contato_anonimizado`), no mesmo desenho de porta única da 0391 — telefone, e-mail e perfil social não têm versão anonimizada que ainda sirva. Espelho no apêndice do `supabase/baseline.sql`, antes da VARREDURA anon (cria função). Prova: `lib/contacts/identidades.test.ts` (biblioteca pura) e `tests/invariants/identidades-do-contato.test.ts` (unique, forma canônica, RLS e anonimização). Fora desta fatia, declarado na issue: feed único por contato no Inbox, resposta pelo canal escolhido com janela de 24 h, IA com histórico unificado e atribuição/carteira por cliente (itens 2 a 5).
+-- manifest: **As identidades de rede social do contato (Instagram e Facebook) ganham tabela própria, e a ingestão das redes passa a gravá-las e a procurar a ficha por elas (issue #3764, fatia 1; contribuição de @webtecnica no PR #3837).** Tabela tenant-aware nova `contact_identities` (`organization_id`, `contact_id`, `canal`, `identificador`, `criado_em`), com `canal in ('instagram','facebook')`, `unique (organization_id, canal, identificador)`, RLS (leitura por organização, escrita a partir de `agent`) e grants próprios. Telefone e e-mail ficam FORA de propósito: já têm guarda única por organização (`contacts.phone_number` + `contact_phones`, `contacts.email_normalized`), e uma segunda cópia aqui não teria fonte declarada nem sincronia. `fn_identificador_canonico(canal, valor)` é a régua da forma gravada (perfil sem URL, sem o `@` da frente e em minúsculas; o id numérico que a rede entrega na DM passa intacto), e `fn_identidades_do_contato_canonica` aplica a régua e confere o tenant e a vida do contato em todo `insert`/`update`. O que muda no produto: a ficha VENCEDORA de uma fusão passa a receber a DM nova de uma identidade da ficha absorvida — `fn_mesclar_contatos` reponta `contact_identities.contact_id` pelo catálogo, e `contacts.social_identity` (um por ficha) só era herdado quando a vencedora não tinha o seu. Carga inicial a partir de `contacts.social_identity` (`<rede>:<conta>:<participante>`): a ficha viva leva a sua, e a lápide de uma fusão antiga entrega a dela à vencedora — o que cura as fusões que já perderam a identidade. LGPD: a virada de `is_anonymized` apaga as identidades (`trg_identidades_do_contato_anonimizado`), pela porta única da 0391. Espelho no apêndice do `supabase/baseline.sql`, antes da VARREDURA anon (cria função). Prova: `lib/contacts/identidades.test.ts`, `lib/channels/zernio/ingest-identidade-social.test.ts`, `tests/invariants/identidades-do-contato.test.ts` e `tests/invariants/identidades-do-contato-canonico-paridade.test.ts`. Fora desta fatia: sugestão de vínculo na tela, feed único por contato, resposta pelo canal escolhido, IA com histórico unificado e carteira por cliente (itens 2 a 5 da issue).
 --
--- 9082 — a mesma pessoa em mais de um caminho: WhatsApp, Instagram, Facebook e e-mail.
+-- 9419 — a mesma pessoa em mais de uma rede social, e a fusão que não perde nenhuma.
 --
 -- ─── O problema ─────────────────────────────────────────────────────────────
 --
--- O contato guarda o canal de forma CHAPADA: `contacts.phone_number` para o
--- WhatsApp (com os extras da 9043 em `contact_phones`) e `contacts.email` para o
--- e-mail. Instagram e Facebook não têm onde morar — o perfil social que a
--- ingestão da Zernio escreve vive dentro de `contacts.social_identity` (jsonb,
--- um por ficha), e nada liga um perfil ao outro. Quem chama no Instagram, depois
--- no Facebook e depois no WhatsApp nasce em até três fichas, e não existe
--- estrutura onde diga "estas três são a mesma pessoa".
+-- A ficha guarda UMA identidade social: `contacts.social_identity`
+-- (`<rede>:<conta>:<participante>`), e é por ela que a ingestão das redes acha a
+-- ficha de quem escreveu na DM. Juntar duas fichas que têm cada uma a sua
+-- (o Instagram de uma, o Facebook da outra) deixa a da absorvida na lápide —
+-- `fn_mesclar_contatos` só a herda quando a vencedora não tem nenhuma. Na
+-- próxima conversa daquela identidade, a ingestão não acha ficha viva e cria
+-- uma nova: a duplicata que a fusão acabou de desfazer volta a nascer.
 --
 -- ─── A decisão ──────────────────────────────────────────────────────────────
 --
--- Uma tabela por IDENTIDADE, não uma coluna por canal. Colunas por canal fecham
--- o vocabulário na migration: a quinta rede pediria `alter table` em
+-- Uma tabela por IDENTIDADE, não uma coluna por rede. Colunas por rede fecham o
+-- vocabulário na migration: a terceira rede pediria `alter table` em
 -- `contacts`, e o índice de unicidade teria de ser escrito uma vez por coluna.
--- Aqui o canal é dado (`canal`), a unicidade é uma só e o mesmo par
+-- Aqui a rede é dado (`canal`), a unicidade é uma só e o mesmo par
 -- `(canal, identificador)` nunca aponta para duas fichas da MESMA organização.
+-- Como `contact_id` é FK para `contacts`, `fn_mesclar_contatos` (0215) reponta a
+-- linha pelo catálogo, sem lista à mão — e a ficha vencedora passa a ter as
+-- identidades das duas.
+--
+-- Só Instagram e Facebook. Telefone e e-mail já têm guarda única por
+-- organização (`contacts.phone_number` + `contact_phones` da 9043,
+-- `contacts.email_normalized`), e uma segunda cópia aqui seria duas fontes sem
+-- sincronia. Acrescentar uma rede é acrescentar no CHECK, na régua e em
+-- `CANAIS_DE_IDENTIDADE` (`lib/contacts/identidades.ts`), na mesma entrega.
 --
 -- O identificador é gravado SEMPRE na forma canônica, e é o banco que garante:
 -- `fn_identificador_canonico` normaliza e a constraint
 -- `contact_identities_identificador_canonico` recusa o que não estiver nela.
--- Sem isso o unique seria decorativo — `+55 31 98966-398`, `+553198966398` e
--- `+5531998966398` são três strings e uma pessoa só.
 --
 -- ─── O que NÃO faz ──────────────────────────────────────────────────────────
 --
--- 1. **Não preenche nada a partir das fichas que já existem.** Escrever
---    `whatsapp` para todo `phone_number` seria afirmar que aquele número TEM
---    WhatsApp (a 9043 existe justamente porque nem todo celular tem, e criou
---    `contacts.phone_whatsapp` com `nao_sei` como resposta honesta), e o perfil
---    social da Zernio não diz a que rede pertence. A tabela nasce VAZIA; a
---    identidade nasce do uso.
--- 2. **Não funde ficha nenhuma.** A junção manual continua sendo
---    `fn_mesclar_contatos` (0215), que reponta toda FK por catálogo — inclusive
---    `contact_identities.contact_id`, sem lista à mão. Como o unique é por
---    ORGANIZAÇÃO, duas fichas da mesma organização nunca têm o mesmo par
---    `(canal, identificador)`, então o repontamento não pode colidir.
--- 3. **Não mexe no feed, no envio, nem na IA.** Aquilo é o resto da #3764.
+-- 1. **Não funde ficha nenhuma.** A junção continua sendo `fn_mesclar_contatos`.
+--    Como o unique é por ORGANIZAÇÃO, duas fichas da mesma organização nunca
+--    têm o mesmo par, então o repontamento não pode colidir.
+-- 2. **Não mexe no feed, no envio, nem na IA.** Aquilo é o resto da #3764.
 --
 -- Idempotente: `create ... if not exists`, `drop constraint if exists` + `add`,
 -- `create or replace`, `drop trigger if exists` + `create`.
 
 -- ── 1. A régua da forma gravada ─────────────────────────────────────────────
--- Telefone: o nono dígito do celular brasileiro é `fn_telefone_canonico` (9043),
--- a mesma regra de `canonicalPhoneBR` (`lib/channels/phone-variants.ts`). O que
--- a 9043 NÃO responde — e esta função precisa responder — é quando o `+55` está
--- implícito: ela recebe um E.164 que o app já normalizou, e aqui chega o que a
--- pessoa digitou. Então a decisão de forma (com `+` exige 8–15 dígitos; sem `+`,
--- 12–13 têm de começar com 55 e 10–11 são DDD + número) mora AQUI, espelhando
--- `normalizePhoneBR`. A duplicação lib×SQL é a que a 9043 já aceitou e
--- documentou; a alternativa (normalizar só em TypeScript) deixaria a porta do
--- PostgREST aberta para gravar variante. As duas réguas são medidas, caso a
--- caso, em `tests/invariants/identidades-do-contato-canonico-paridade.test.ts`:
--- divergir aqui é mudo — o app procura uma string e o banco grava outra.
+-- O que a ingestão grava é o id do participante que a rede entrega na DM
+-- (numérico); o que um atendente colaria é o perfil (`@fulano`, a URL). A régua
+-- aceita os dois e devolve a mesma forma que `normalizarIdentificador`
+-- (`lib/contacts/identidades.ts`) — a concordância é medida caso a caso em
+-- `tests/invariants/identidades-do-contato-canonico-paridade.test.ts`.
 --
 -- `immutable` e `search_path` vazio: entra numa constraint, e constraint
 -- reconstruída por `pg_restore` não enxerga o `search_path` de ninguém.
@@ -66,66 +59,27 @@ immutable
 parallel safe
 set search_path = ''
 as $$
-  with bruto as (
-    select btrim(coalesce(p_valor, '')) as v
-  ),
-  digitos as (
-    select regexp_replace(b.v, '\D', '', 'g') as d from bruto b
-  ),
-  perfil as (
+  with perfil as (
     select nullif(
       regexp_replace(
         regexp_replace(
           regexp_replace(
-            regexp_replace(lower(btrim(v)), '^https?://', ''),
+            regexp_replace(lower(btrim(coalesce(p_valor, ''))), '^https?://', ''),
             '^(www\.|m\.)?(instagram\.com|facebook\.com|fb\.com|fb\.me)/', ''),
           '[?#].*$', ''),
         '/+$', ''),
       '') as v
-    from bruto
   ),
-  -- Só o `@` da FRENTE sai. `btrim(v, '@')` tirava a cauda também, e `fulano@`
-  -- virava `fulano` — identidade que a lib RECUSA (`perfilDaUrl` só corta o
-  -- prefixo). Divergência em valor inválido é a pior espécie: o banco grava o
-  -- que a tela nunca procuraria.
+  -- Só o `@` da FRENTE sai: `fulano@` não é perfil, e a lib também o recusa.
   limpo as (select nullif(regexp_replace(perfil.v, '^@+', ''), '') as v from perfil)
   select case
-    when b.v = '' then null
-
-    -- ── whatsapp: a MESMA decisão de forma de `normalizePhoneBR` ────────────
-    -- Delegar isso à `fn_telefone_canonico` (9043) não dá: ela é a regra do
-    -- NONO DÍGITO sobre um número que JÁ é E.164 — o `contacts.phone_number` a
-    -- recebe depois de o app ter normalizado. Aqui entra o que a pessoa
-    -- digitou (o número do direct, o do formulário, o que o atendente colou),
-    -- então a decisão de quando o `+55` está implícito mora nesta função,
-    -- espelhando `lib/channels/phone-variants.ts`: com `+`, exige 8 a 15
-    -- dígitos; sem `+`, 12 ou 13 dígitos têm de começar com 55, e 10 ou 11 são
-    -- DDD + número brasileiro. Sem a guarda de tamanho, `123` virava `+123` e
-    -- um valor mascarado (`55 31 ****-6398`) virava `+55316398` — identidade
-    -- que nunca mais casa com o número real e ocupa o índice único.
-    -- A concordância das duas réguas, caso a caso, é medida em
-    -- `tests/invariants/identidades-do-contato-canonico-paridade.test.ts`.
-    when p_canal = 'whatsapp' then
-      case
-        when b.v like '+%' then
-          case when d.d ~ '^[0-9]{8,15}$' then public.fn_telefone_canonico(b.v) else null end
-        when length(d.d) in (12, 13) then
-          case when d.d like '55%' then public.fn_telefone_canonico('+' || d.d) else null end
-        when length(d.d) in (10, 11) then public.fn_telefone_canonico('+55' || d.d)
-        else null
-      end
-
-    -- A mesma régua de `contacts_email_format`: sem `@` e sem domínio não é
-    -- e-mail, e `null` aqui vira recusa no gatilho em vez de identidade torta.
-    when p_canal = 'email' then
-      case when lower(b.v) ~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then lower(b.v) else null end
     when p_canal = 'instagram' then
       case when l.v ~ '^[a-z0-9._]{1,30}$' and l.v !~ '^\.+$' then l.v else null end
     when p_canal = 'facebook' then
       case when l.v ~ '^[a-z0-9._-]{1,64}$' then l.v else null end
     else null
   end
-  from bruto b, digitos d, limpo l;
+  from limpo l;
 $$;
 
 revoke execute on function public.fn_identificador_canonico(text, text) from public, anon;
@@ -146,7 +100,7 @@ create table if not exists public.contact_identities (
 
 alter table public.contact_identities drop constraint if exists contact_identities_canal_check;
 alter table public.contact_identities add constraint contact_identities_canal_check
-  check (canal in ('whatsapp', 'instagram', 'facebook', 'email'));
+  check (canal in ('instagram', 'facebook'));
 
 -- O identificador gravado É a forma canônica do canal. A constraint é a segunda
 -- cerca (a primeira é o gatilho da seção 3): banco que já tem a linha recusa a
@@ -159,24 +113,21 @@ alter table public.contact_identities add constraint contact_identities_identifi
   );
 
 -- Um par `(canal, identificador)` aponta para UMA ficha da organização. É o
--- coração da fatia: o mesmo e-mail, o mesmo número ou o mesmo perfil não podem
--- morar em duas fichas.
+-- índice que a ingestão consulta para achar a ficha de quem escreveu.
 create unique index if not exists uniq_contact_identities_org_canal_identificador
   on public.contact_identities (organization_id, canal, identificador);
 
--- As duas leituras que a fatia seguinte vai pedir: "que identidades tem esta
--- ficha" e "quem já tem esta identidade" (a sugestão de vínculo).
+-- "Que identidades tem esta ficha" — o export do titular e o repontamento da
+-- fusão (que procura por `contact_id`).
 create index if not exists idx_contact_identities_contato
   on public.contact_identities (organization_id, contact_id);
-create index if not exists idx_contact_identities_org_canal
-  on public.contact_identities (organization_id, canal);
 
 alter table public.contact_identities enable row level security;
 
 -- Leitura para todo membro da organização; escrita a partir de `agent`, o mesmo
 -- piso do PATCH de contato e de `contact_phones` (9043). Policy `for all` só de
 -- tenancy é a dívida que a 0150 congelou: num `viewer` falando direto com o
--- PostgREST, ele trocaria o e-mail de uma ficha.
+-- PostgREST, ele trocaria a identidade de uma ficha.
 drop policy if exists tenant_isolation_contact_identities_read on public.contact_identities;
 create policy tenant_isolation_contact_identities_read on public.contact_identities
   for select
@@ -249,10 +200,10 @@ create trigger trg_identidades_do_contato_canonica
   for each row execute function public.fn_identidades_do_contato_canonica();
 
 -- ── 4. LGPD: anonimizar apaga as identidades ────────────────────────────────
--- Telefone, e-mail e perfil social não têm versão anonimizada que ainda sirva
--- (o mesmo critério do passo 1b de `contact_phones` na cascata). A porta é a
--- virada de `is_anonymized` em `contacts` — o mesmo desenho da 0391, que é por
--- onde passam os DOIS caminhos de anonimização (a cascata e
+-- Perfil social não tem versão anonimizada que ainda sirva (o mesmo critério
+-- do passo 1b de `contact_phones` na cascata). A porta é a virada de
+-- `is_anonymized` em `contacts` — o mesmo desenho da 0391, que é por onde
+-- passam os DOIS caminhos de anonimização (a cascata e
 -- `fn_lgpd_anonymize_contact`), então não há caminho que escape por construção.
 -- `after` e `return null`: gatilho de linha `after` não altera a linha do
 -- evento, e devolver `new` aqui sugeriria que altera.
@@ -279,3 +230,44 @@ drop trigger if exists trg_identidades_do_contato_anonimizado on public.contacts
 create trigger trg_identidades_do_contato_anonimizado
   after update of is_anonymized on public.contacts
   for each row execute function public.fn_identidades_do_contato_anonimizado();
+
+-- ── 5. As fichas que já existem ─────────────────────────────────────────────
+-- A carga inicial sai de `contacts.social_identity`, que a ingestão grava como
+-- `<rede>:<conta>:<participante>` desde que as redes existem. Duas fontes:
+--
+--   a ficha VIVA entrega a sua identidade a si mesma, e
+--   a LÁPIDE de uma fusão (`is_merged_into`) entrega a dela à vencedora — é a
+--   identidade que a herança por `coalesce` deixou para trás, e é isto que cura
+--   as fusões feitas antes desta migration.
+--
+-- Fica de fora o que o gatilho da seção 3 recusaria (ficha de destino
+-- anonimizada ou ela mesma mesclada, identificador fora da régua), porque uma
+-- recusa derrubaria o `insert` inteiro. A identidade de uma ficha anonimizada
+-- também não entra pela lápide. Entre duas fontes para o mesmo par vence a ficha
+-- viva, depois a mais antiga. Idempotente pelo `on conflict do nothing`.
+insert into public.contact_identities (organization_id, contact_id, canal, identificador)
+select distinct on (o.organization_id, o.canal, o.identificador)
+       o.organization_id, o.contact_id, o.canal, o.identificador
+  from (
+    select c.organization_id,
+           coalesce(c.is_merged_into, c.id) as contact_id,
+           split_part(c.social_identity, ':', 1) as canal,
+           public.fn_identificador_canonico(
+             split_part(c.social_identity, ':', 1),
+             regexp_replace(c.social_identity, '^.*:', '')
+           ) as identificador,
+           c.is_merged_into is null as viva,
+           c.created_at,
+           c.id
+      from public.contacts c
+     where c.social_identity ~ '^(instagram|facebook):.+:.+$'
+       and not coalesce(c.is_anonymized, false)
+  ) o
+  join public.contacts dono
+    on dono.id = o.contact_id
+   and dono.organization_id = o.organization_id
+   and dono.is_merged_into is null
+   and not coalesce(dono.is_anonymized, false)
+ where o.identificador is not null
+ order by o.organization_id, o.canal, o.identificador, o.viva desc, o.created_at, o.id
+on conflict (organization_id, canal, identificador) do nothing;

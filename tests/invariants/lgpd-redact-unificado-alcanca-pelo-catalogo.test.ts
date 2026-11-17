@@ -156,7 +156,7 @@ const DECISOES: Record<string, Decisao> = {
     decidida: "redigir",
     caminho: "gatilho",
     razao:
-      "PR da fatia 1 da #3764 (migration 9082): telefone, e-mail e perfil social não têm versão " +
+      "PR da fatia 1 da #3764 (migration 9419): perfil de rede social não tem versão " +
       "anonimizada que ainda sirva — o mesmo critério do passo 1b de `contact_phones`. Quem apaga é " +
       "`trg_identidades_do_contato_anonimizado`, em `contacts` AFTER UPDATE OF is_anonymized: a " +
       "anonimização continua sendo uma porta só, e a ficha deixa de carregar para onde a pessoa " +
