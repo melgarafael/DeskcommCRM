@@ -31,6 +31,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { seSetoresDesligado } from "@/lib/atendimento/setores-modulo";
 import { requireRole } from "@/lib/auth/require-role";
+import { podeAdministrarEmpresa } from "@/lib/auth/pode-administrar-empresa";
 import { fusoDaOrganizacao } from "@/lib/automation/cron-de-data";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { portaDaAplicacao } from "@/lib/db";
@@ -163,7 +164,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     .eq("id", authz.org.orgId);
   const restrito = atendenteRestrito({
     papel: authz.org.role,
-    isPlatformAdmin: authz.user.is_platform_admin,
+    administraEmpresa: podeAdministrarEmpresa(authz.user, authz.org),
     escopoLigado: lerEscopoDoAtendente(
       (linhaDaOrganizacao?.[0] as { settings?: unknown } | undefined)?.settings,
     ),

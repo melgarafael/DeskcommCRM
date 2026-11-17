@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { metadadosDaSessao, requireAuth, resolveActiveOrg } from "@/lib/auth/server";
+import { podeAdministrarEmpresa } from "@/lib/auth/pode-administrar-empresa";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -83,7 +84,7 @@ export default async function TarefasPage({
     .limit(1);
   const escopoProprio = atendenteRestrito({
     papel: activeOrg.role,
-    isPlatformAdmin: user.is_platform_admin,
+    administraEmpresa: podeAdministrarEmpresa(user, activeOrg),
     escopoLigado: lerEscopoDoAtendente(
       (organizacao?.[0] as { settings?: unknown } | undefined)?.settings,
     ),

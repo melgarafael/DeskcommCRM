@@ -66,11 +66,18 @@ export function lerEscopoDoAtendente(settings: unknown): boolean {
  */
 export function atendenteRestrito(entrada: {
   papel: string | null | undefined;
-  isPlatformAdmin?: boolean;
+  /**
+   * `podeAdministrarEmpresa(user, org)` — o MESMO atalho das server actions,
+   * nunca uma leitura da flag crua. Ele já cobra o scope `full` do platform
+   * admin (`escreveComoPlatformAdmin`) e barra a sessão de suporte; ler
+   * `.is_platform_admin` na rota seria o atalho que a cerca
+   * `tests/unit/admin-escrita-exige-scope-full.test.ts` (regra A) recusa.
+   */
+  administraEmpresa?: boolean;
   escopoLigado: boolean;
 }): boolean {
   if (!entrada.escopoLigado) return false;
-  if (entrada.isPlatformAdmin) return false;
+  if (entrada.administraEmpresa) return false;
   return entrada.papel === "agent";
 }
 

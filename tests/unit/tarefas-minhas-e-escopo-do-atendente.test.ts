@@ -72,6 +72,9 @@ function sessao(papel: Role = "agent", isPlatformAdmin = false) {
     full_name: "Ana",
     avatar_url: null,
     is_platform_admin: isPlatformAdmin,
+    // A rota decide "administra a empresa" por `podeAdministrarEmpresa`, que
+    // cobra o scope `full` (`escreveComoPlatformAdmin`) — nunca lê a flag crua.
+    platform_admin_scope: isPlatformAdmin ? "full" : null,
     idioma: "pt-BR" as const,
     organizations: [{ organization_id: ORG, organization_name: "Org", role: papel }],
   };

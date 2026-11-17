@@ -19,6 +19,8 @@ import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { podeAdministrarEmpresa } from "@/lib/auth/pode-administrar-empresa";
+import type { ActiveOrg, AuthUser } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { portaDaAplicacao } from "@/lib/db";
 import { createClient } from "@/lib/supabase/server";
@@ -70,7 +72,7 @@ interface Contexto {
  */
 async function atendenteRestritoNaOrganizacao(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  authz: { user: { id: string; is_platform_admin: boolean }; org: { orgId: string; role: string } },
+  authz: { user: AuthUser; org: ActiveOrg },
 ): Promise<boolean> {
   const { data: linhaDaOrganizacao } = await supabase
     .from("organizations")
@@ -78,7 +80,7 @@ async function atendenteRestritoNaOrganizacao(
     .eq("id", authz.org.orgId);
   return atendenteRestrito({
     papel: authz.org.role,
-    isPlatformAdmin: authz.user.is_platform_admin,
+    administraEmpresa: podeAdministrarEmpresa(authz.user, authz.org),
     escopoLigado: lerEscopoDoAtendente(
       (linhaDaOrganizacao?.[0] as { settings?: unknown } | undefined)?.settings,
     ),

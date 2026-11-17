@@ -56,7 +56,15 @@ function fazerSupabase() {
   elo.eq = (coluna: string, valor: unknown) => (filtros.push(["eq", coluna, valor]), elo);
   elo.is = (coluna: string, valor: unknown) => (filtros.push(["is", coluna, valor]), elo);
   elo.then = (res: (v: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(res);
-  vi.mocked(createClient).mockResolvedValue({ from: () => elo } as never);
+  // A opção da organização (#4737) é lida ANTES da lista, e fora do instrumento:
+  // este arquivo mede a consulta de `crm_tasks`, não a leitura de `settings`.
+  const daOrganizacao: Record<string, unknown> = {};
+  for (const metodo of ["select", "eq", "limit", "maybeSingle"]) daOrganizacao[metodo] = () => daOrganizacao;
+  daOrganizacao.then = (res: (v: unknown) => unknown) =>
+    Promise.resolve({ data: [{ settings: {} }], error: null }).then(res);
+  vi.mocked(createClient).mockResolvedValue({
+    from: (tabela?: string) => (tabela === "organizations" ? daOrganizacao : elo),
+  } as never);
   return { filtros, selects };
 }
 

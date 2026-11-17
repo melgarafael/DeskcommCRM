@@ -82,7 +82,19 @@ function fazerSupabase(respostas: Resposta[]) {
   let i = 0;
   const proxima = (): Resposta => respostas[Math.min(i++, respostas.length - 1)] ?? { data: null };
 
-  const from = () => {
+  const from = (tabela?: string) => {
+    // A opção da organização (#4737) é lida antes da tarefa e fora do
+    // instrumento: ela não consome a fila de respostas nem entra em `filtros`
+    // (aqui o alvo é `crm_tasks`; o recorte por escopo tem teste próprio).
+    if (tabela === "organizations") {
+      const daOrganizacao: Record<string, unknown> = {};
+      for (const metodo of ["select", "eq", "limit", "maybeSingle", "single"]) {
+        daOrganizacao[metodo] = () => daOrganizacao;
+      }
+      daOrganizacao.then = (res: (v: unknown) => unknown) =>
+        Promise.resolve({ data: [{ settings: {} }], error: null }).then(res);
+      return daOrganizacao;
+    }
     const elo: Record<string, unknown> = {};
     const devolve = () => {
       const r = proxima();
