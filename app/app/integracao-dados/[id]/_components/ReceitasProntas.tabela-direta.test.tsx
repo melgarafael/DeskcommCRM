@@ -29,6 +29,11 @@ const deps = vi.hoisted(() => ({
   previewReceita: vi.fn(),
 }));
 
+// R5b: o seletor de destino do interesse lê funis e etapas; aqui não interessa.
+vi.mock("@/hooks/campanhas/useDestinoDaCampanha", () => ({
+  useFunis: () => ({ data: [] }),
+  useEtapas: () => ({ data: [] }),
+}));
 vi.mock("@/hooks/external-db/useReceitasDaConexao", () => ({
   useReceitasDaConexao: deps.useReceitasDaConexao,
   salvarReceitas: deps.salvarReceitas,

@@ -204,6 +204,7 @@ describe("GET /api/v1/contacts — alcançável sem cookie (proxy)", () => {
 
   it("NÃO libera sub-rotas que ainda não suportam Bearer", () => {
     expect(isPublicPath("/api/v1/contacts/algum-id")).toBe(false);
-    expect(isPublicPath("/api/v1/contacts/import")).toBe(false);
+    // Spec 33 (R2): a rota passou a aceitar token
+    expect(isPublicPath("/api/v1/contacts/import")).toBe(true);
   });
 });

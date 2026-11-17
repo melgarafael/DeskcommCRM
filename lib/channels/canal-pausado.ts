@@ -41,6 +41,8 @@
 import { canalDesativado } from "@/lib/channels/desativado";
 import { nomeDoCanal } from "@/lib/channels/estado";
 import { tagDeIdioma } from "@/lib/i18n/datas";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { preencher } from "@/lib/i18n/idioma-do-aviso";
 import type { Idioma } from "@/lib/i18n/idiomas";
 import { FUSO_PADRAO } from "@/lib/tempo/fusos";
 
@@ -91,11 +93,16 @@ export interface ContextoDaPausa {
   /** Relógio: fake no teste, real na rota. */
   agora: Date;
   /**
-   * O idioma de quem está operando. O item é LINHA GRAVADA — a Central mostra
-   * como veio —, então é na escrita que o horário ganha o idioma de quem vai
-   * ler, pela MESMA camada de todo o resto (`lib/i18n/datas.ts`).
+   * O idioma da ORGANIZAÇÃO — o do título e do corpo. O item é LINHA GRAVADA
+   * que o time inteiro lê (a Central mostra como veio), então o texto não pode
+   * seguir quem clicou.
    */
   idioma?: Idioma;
+  /**
+   * O idioma de quem está operando — só para o HORÁRIO, pela MESMA camada de
+   * todo o resto (`lib/i18n/datas.ts`). Ausente, vale `idioma`.
+   */
+  idiomaDaData?: Idioma;
 }
 
 /** O motivo vira frase — sem isto, quem lê o corpo vê um identificador cru. */
@@ -107,6 +114,13 @@ const MOTIVO_LEGIVEL: Record<MotivoDaResolucaoDePausa, string> = {
 /** O título do item. Diz a CONSEQUÊNCIA, não a configuração. */
 export const TITULO_DO_AVISO_DE_PAUSA =
   "Este canal está pausado — não recebe nem envia mensagens";
+
+/**
+ * O autor que a janela de manutenção agendada assina. Exportado para o cron
+ * passar ESTA constante: o corpo a reconhece e a escreve no idioma do aviso —
+ * o autor humano (nome ou e-mail) é dado e entra como veio.
+ */
+export const AUTOR_DA_JANELA_AGENDADA = "a janela de manutenção agendada";
 
 /**
  * O horário no fuso que a interface já usa (`FUSO_PADRAO`) e no idioma de quem
@@ -135,11 +149,22 @@ export function corpoDoAvisoDePausa(
   contexto: ContextoDaPausa,
 ): string {
   const rotulo = nomeDoCanal(canal);
+  const idioma = contexto.idioma ?? "pt-BR";
+  const autor =
+    contexto.autor === AUTOR_DA_JANELA_AGENDADA
+      ? traduzir("a janela de manutenção agendada", idioma)
+      : contexto.autor;
   return (
-    `«${rotulo}» está pausado desde ` +
-    `${momentoDaPausa(contexto.agora, contexto.idioma)} — quem pausou foi ${contexto.autor}.\n\n` +
-    "Enquanto a pausa durar, as mensagens não entram nem saem por este canal. " +
-    "Para voltar, retome a pausa em Conexões."
+    preencher(traduzir("«{canal}» está pausado desde {quando} — quem pausou foi {autor}.", idioma), {
+      canal: rotulo,
+      quando: momentoDaPausa(contexto.agora, contexto.idiomaDaData ?? contexto.idioma),
+      autor,
+    }) +
+    "\n\n" +
+    traduzir(
+      "Enquanto a pausa durar, as mensagens não entram nem saem por este canal. Para voltar, retome a pausa em Conexões.",
+      idioma,
+    )
   );
 }
 
@@ -157,12 +182,12 @@ export function avaliarAvisoDePausa(
   contexto: ContextoDaPausa,
 ): DecisaoDeAvisoDePausa {
   if (canal.archived_at !== null) {
-    return item ? resolver(item, "canal_arquivado") : { acao: "nada" };
+    return item ? resolver(item, "canal_arquivado", contexto.idioma) : { acao: "nada" };
   }
   if (!canalDesativado(canal.metadata)) {
-    return item ? resolver(item, "reativado") : { acao: "nada" };
+    return item ? resolver(item, "reativado", contexto.idioma) : { acao: "nada" };
   }
-  const titulo = TITULO_DO_AVISO_DE_PAUSA;
+  const titulo = traduzir("Este canal está pausado — não recebe nem envia mensagens", contexto.idioma ?? "pt-BR");
   const corpo = corpoDoAvisoDePausa(canal, contexto);
   if (item) return { acao: "atualizar", item, titulo, corpo };
   return { acao: "abrir", titulo, corpo };
@@ -172,9 +197,12 @@ export function avaliarAvisoDePausa(
 function resolver(
   item: ItemDePausaAberto,
   motivo: MotivoDaResolucaoDePausa,
+  idioma: Idioma = "pt-BR",
 ): DecisaoDeAvisoDePausa {
   const anterior = (item.body ?? "").trim();
-  const linha = `Resolvido pelo sistema: ${MOTIVO_LEGIVEL[motivo]}.`;
+  const linha = preencher(traduzir("Resolvido pelo sistema: {motivo}.", idioma), {
+    motivo: traduzir(MOTIVO_LEGIVEL[motivo], idioma),
+  });
   return {
     acao: "resolver",
     item,

@@ -422,7 +422,7 @@ export function RedesSociaisClient() {
                             "O recebimento precisa de atenção. Confira a conexão antes de atender.",
                           )}
                     </p>
-                    <ChannelAiAccess channelId={account.channel.id} phoneTesting={false} />
+                    <ChannelAiAccess channelId={account.channel.id} phoneTesting={false} socialTesting={account.inbox_supported} />
                   </>
                 ) : (
                   <p className="text-xs text-muted-foreground">

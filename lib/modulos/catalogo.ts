@@ -57,6 +57,17 @@ export const CATALOGO_DE_MODULOS: readonly ModuloCatalogo[] = [
       "próprio, leitura restrita a administradores e sem cartão no funil. Quem não instala " +
       "o módulo não carrega a tabela.",
   },
+  {
+    // #4227 (doc 356): integração de um fornecedor, para um nicho — módulo
+    // desligado de fábrica, como cadências. Sem instalar, nenhuma tabela, tela,
+    // rota, ferramenta da IA ou robô existe.
+    slug: "amigo",
+    nome: "Amigo (sistema de clínicas)",
+    descricao:
+      "Liga a agenda ao sistema de clínicas Amigo: pacientes, convênios, vagas e consultas vêm de lá, " +
+      "e a IA marca, remarca e cancela pelo Amigo. Cada empresa cadastra o próprio token. " +
+      "Contribuição de @jadsonlsouza, PR #4227.",
+  },
 ];
 
 export function moduloDoCatalogo(slug: string): ModuloCatalogo | undefined {
