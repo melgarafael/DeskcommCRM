@@ -64,5 +64,7 @@ jobs:
         env:
           NEXT_TELEMETRY_DISABLED: "1"
           SENTRY_DSN: "off"
+          # Mesma folga do build e2e: o typecheck ultrapassa o heap padrão de 4 GB.
+          NODE_OPTIONS: --max-old-space-size=6144
       - name: O standalone leva o mysql2 completo?
         run: node scripts/verificar-standalone-mysql.mjs

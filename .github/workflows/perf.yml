@@ -43,6 +43,8 @@ jobs:
           # com aspas vazias ela não era alcançada — o build seguia com o DSN
           # padrão embutido.
           SENTRY_DSN: "off"
+          # Mesma folga do build e2e: o typecheck ultrapassa o heap padrão de 4 GB.
+          NODE_OPTIONS: --max-old-space-size=6144
 
       - name: Report bundle sizes
         run: |
