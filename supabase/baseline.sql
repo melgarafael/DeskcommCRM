@@ -49589,9 +49589,21 @@ grant execute on function public.fn_mesclar_contatos(uuid, uuid, uuid[]) to auth
 -- reemitir é inofensivo). Parcial: o arquivo dos canais não muda. Nenhuma
 -- linha desses provedores existia antes do CHECK acima, então não há o que
 -- deduplicar antes de criar o índice.
-create unique index if not exists uniq_webhook_events_log_cobranca
-  on public.webhook_events_log (provider, external_id)
-  where provider in ('stripe', 'asaas', 'efi');
+-- Recriado quando o predicado não cobre 'efi' (migration 9418): `if not exists`
+-- deixaria quem atualiza com o índice antigo, e o aviso do Efi sem 23505.
+-- Linha do Efi só existe depois que o CHECK a aceita, e ela nasce sob este
+-- índice: não há o que deduplicar antes de recriá-lo.
+do $$
+begin
+  if exists (select 1 from pg_indexes
+             where schemaname = 'public' and indexname = 'uniq_webhook_events_log_cobranca'
+               and indexdef not like '%''efi''%') then
+    drop index public.uniq_webhook_events_log_cobranca;
+  end if;
+  create unique index if not exists uniq_webhook_events_log_cobranca
+    on public.webhook_events_log (provider, external_id)
+    where provider in ('stripe', 'asaas', 'efi');
+end $$;
 
 -- ── D. quem a reconciliação relê: um predicado só ────────────────────────────
 -- A reconciliação (cron da cobrança, §8) relê pela API as assinaturas com
