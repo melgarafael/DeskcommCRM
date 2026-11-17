@@ -1,0 +1,376 @@
+"use client";
+import { useT } from "@/hooks/i18n/useT";
+import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
+import {
+  agentOperationOptions,
+  agentOperations,
+  type AgentOperation,
+} from "@/lib/amigo/agent-permissions";
+import { useCallback, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { FUSOS_OFERECIDOS } from "@/lib/tempo/fusos";
+import { amigoRequest, AmigoUiError, errorText, read } from "./_api";
+import { useLoad } from "./_hooks";
+import { Field, Notice, Panel, Pick, options } from "./_ui";
+import type { AmigoSafeConfig, Named } from "./_types";
+export function AmigoConfig({
+  config,
+  canConfigure,
+  onChange,
+}: {
+  config: AmigoSafeConfig;
+  canConfigure: boolean;
+  onChange: (value: AmigoSafeConfig) => void;
+}) {
+  const t = useT();
+  const tagDoIdioma = useTagDeIdioma();
+  const [token, setToken] = useState("");
+  const [tested, setTested] = useState(false);
+  const [places, setPlaces] = useState<Named[] | null>(null);
+  const [place, setPlace] = useState(String(config.default_place_id ?? ""));
+  const [timezone, setTimezone] = useState(config.timezone);
+  const [active, setActive] = useState(config.active);
+  const [sameDay, setSameDay] = useState(
+    config.allow_same_day === undefined ? "" : String(config.allow_same_day),
+  );
+  const [months, setMonths] = useState(String(config.months_ahead ?? ""));
+  const [reminders, setReminders] = useState(config.reminders_enabled);
+  const [agentSelection, setAgentSelection] = useState<AgentOperation[]>(
+    config.agent_operations ??
+      agentOperations.filter(
+        (id) => !agentOperationOptions.find((option) => option.id === id)?.humanOnly,
+      ),
+  );
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [disconnect, setDisconnect] = useState(false);
+  const lock = useRef(false);
+  const loadPlaces = useCallback(() => read<Named[]>("places"), []);
+  const savedPlaces = useLoad(loadPlaces, canConfigure && config.configured && !token);
+  const test = async () => {
+    if (lock.current) return;
+    lock.current = true;
+    setPending(true);
+    setError("");
+    setMessage("");
+    setTested(false);
+    try {
+      const result = await amigoRequest<{ valid: boolean; places: Named[] }>(
+        "/test",
+        "POST",
+        token.trim() ? { token: token.trim() } : {},
+      );
+      if (result.valid !== true || !Array.isArray(result.places))
+        throw new AmigoUiError("invalid_response");
+      setTested(true);
+      setPlaces(result.places);
+      setMessage(t("Conexão validada. Confira a unidade antes de salvar."));
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setPending(false);
+      lock.current = false;
+    }
+  };
+  const save = async () => {
+    if (lock.current) return;
+    lock.current = true;
+    setPending(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await amigoRequest<AmigoSafeConfig>("", "PUT", {
+        ...(token.trim() ? { token: token.trim() } : {}),
+        active,
+        ...(place ? { default_place_id: Number(place) } : {}),
+        timezone,
+        allow_same_day: sameDay ? sameDay === "true" : null,
+        months_ahead: months ? Number(months) : null,
+        reminders_enabled: reminders,
+        agent_operations: agentSelection,
+      });
+      onChange(result);
+      setToken("");
+      setTested(false);
+      setPlaces(null);
+      setActive(result.active);
+      setPlace(String(result.default_place_id ?? ""));
+      setMessage(
+        result.active
+          ? "Configuração salva. Amigo é a agenda principal."
+          : "Configuração salva. Confira unidade e fuso e ative a agenda em uma ação separada.",
+      );
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setPending(false);
+      lock.current = false;
+    }
+  };
+  const remove = async () => {
+    setPending(true);
+    setError("");
+    try {
+      await amigoRequest("", "DELETE");
+      onChange({
+        ...config,
+        configured: false,
+        active: false,
+        connection_id: null,
+        token_last4: null,
+        validated_at: null,
+        default_place_id: null,
+        reminders_enabled: false,
+      });
+      setToken("");
+      setPlace("");
+      setPlaces(null);
+      setActive(false);
+      setReminders(false);
+      setDisconnect(false);
+      setMessage(t("Conexão removida. O histórico foi preservado."));
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <Panel
+      title={t("Conexão da clínica")}
+      description={t("Conecte o Amigo para consultar pacientes e operar a agenda da sua clínica.")}
+    >
+      {!config.configured && (
+        <div className="rounded-md border border-dashed p-5">
+          <h2 className="font-medium">{t("Conecte sua clínica quando estiver pronto")}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t("A integração é opcional. Peça o token de acesso à sua clínica e configure por aqui.")}
+          </p>
+        </div>
+      )}
+      {config.configured && (
+        <dl className="grid gap-4 text-sm sm:grid-cols-3">
+          <div>
+            <dt className="text-muted-foreground">{t("Token salvo")}</dt>
+            <dd>•••• {config.token_last4}</dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">{t("Validado em")}</dt>
+            <dd>
+              {config.validated_at
+                ? new Date(config.validated_at).toLocaleString(tagDoIdioma, {
+                    timeZone: config.timezone,
+                  })
+                : t("Ainda não validado")}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">{t("Modo da agenda")}</dt>
+            <dd>
+              {config.active
+                ? t("Amigo como agenda principal")
+                : t("Integração disponível para consulta")}
+            </dd>
+          </div>
+        </dl>
+      )}
+      {!canConfigure ? (
+        <p className="text-sm text-muted-foreground">
+          {t(
+            "Um administrador configura a conexão e o modo da agenda. Você pode consultar as outras abas.",
+          )}
+        </p>
+      ) : (
+        <>
+          <form
+            className="space-y-5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void save();
+            }}
+          >
+            <fieldset className="space-y-3 rounded-lg border p-4">
+              <legend className="px-2 font-semibold">{t("Limite geral da clínica para o Amigo")}</legend>
+              <p className="text-sm text-muted-foreground">
+                {t(
+                  "Defina as operações disponíveis para os agentes da clínica. Cada agente tem sua própria seleção. As permissões da equipe e os limites de acesso aos pacientes continuam valendo.",
+                )}
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {agentOperationOptions.map((option) => (
+                  <label key={option.id} className="flex items-start gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={!option.humanOnly && agentSelection.includes(option.id)}
+                      disabled={pending || option.humanOnly}
+                      onChange={(e) =>
+                        setAgentSelection((current) =>
+                          e.target.checked
+                            ? [...current, option.id]
+                            : current.filter((id) => id !== option.id),
+                        )
+                      }
+                    />
+                    <span>
+                      {option.label}
+                      {option.humanOnly ? ` (${t("somente equipe")})` : ""}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Field label={t("Token Amigo")}>
+                <Input
+                  type="password"
+                  autoComplete="new-password"
+                  value={token}
+                  disabled={pending}
+                  placeholder={
+                    config.configured
+                      ? t("Deixe em branco para manter o token salvo")
+                      : t("Cole o token de acesso")
+                  }
+                  onChange={(e) => {
+                    setToken(e.target.value);
+                    setTested(false);
+                    setMessage("");
+                    setPlaces(null);
+                    setPlace("");
+                    setActive(false);
+                  }}
+                />
+              </Field>
+              <div className="flex items-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void test()}
+                  disabled={pending || (!token.trim() && !config.configured)}
+                >
+                  {t("Testar conexão")}
+                </Button>
+              </div>
+              <Pick
+                label={t("Unidade padrão")}
+                value={place}
+                required={active}
+                disabled={pending}
+                onChange={(e) => setPlace(e.target.value)}
+                options={options(places ?? savedPlaces.data)}
+              />
+              <Pick
+                label={t("Fuso da clínica")}
+                value={timezone}
+                disabled={pending}
+                onChange={(e) => setTimezone(e.target.value)}
+                placeholder=""
+                options={[
+                  ...FUSOS_OFERECIDOS,
+                  ...(!FUSOS_OFERECIDOS.some((f) => f.codigo === timezone)
+                    ? [{ codigo: timezone, rotulo: timezone }]
+                    : []),
+                ].map((f) => ({ value: f.codigo, label: f.rotulo }))}
+              />
+              <Pick
+                label={t("Ofertar vagas de hoje")}
+                value={sameDay}
+                disabled={pending}
+                placeholder={t("Usar regra da clínica no Amigo")}
+                onChange={(e) => setSameDay(e.target.value)}
+                options={[
+                  { value: "true", label: t("Permitir") },
+                  { value: "false", label: t("Não permitir") },
+                ]}
+              />
+              <Pick
+                label={t("Oferta de datas futuras")}
+                value={months}
+                disabled={pending}
+                placeholder={t("Usar regra da clínica no Amigo")}
+                onChange={(e) => setMonths(e.target.value)}
+                options={[
+                  { value: "3", label: t("Até 3 meses") },
+                  { value: "6", label: t("Até 6 meses") },
+                ]}
+              />
+            </div>
+            <label className="flex items-start gap-3 rounded-md border p-4 text-sm">
+              <input
+                type="checkbox"
+                className="mt-1 size-4 accent-primary"
+                checked={active}
+                disabled={pending || !!token.trim() || !config.configured || !config.validated_at}
+                onChange={(e) => setActive(e.target.checked)}
+              />
+              <span>
+                <span className="font-medium">{t("Usar Amigo como agenda principal")}</span>
+                <span className="mt-1 block text-muted-foreground">
+                  {t(
+                    "Salve o token primeiro. Depois confira unidade e fuso e ative a agenda. Compromissos anteriores mantêm sua origem.",
+                  )}
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-3 text-sm">
+              <input
+                type="checkbox"
+                className="mt-1 size-4 accent-primary"
+                checked={reminders}
+                disabled={pending}
+                onChange={(e) => setReminders(e.target.checked)}
+              />
+              <span>
+                {t("Enviar lembretes para consultas Amigo")}
+                <span className="mt-1 block text-muted-foreground">
+                  {t(
+                    "Desligado por padrão. Confira os avisos já enviados pelo Amigo para evitar mensagens duplicadas. É preciso vincular paciente, destinatário e tipo de atendimento.",
+                  )}
+                </span>
+              </span>
+            </label>
+            <Notice error={error || savedPlaces.error} loading={pending || savedPlaces.loading} />
+            {message && (
+              <p role="status" className="text-sm">
+                {message}
+              </p>
+            )}
+            <Button
+              disabled={
+                pending ||
+                (!!token.trim() && !tested) ||
+                (!config.configured && !tested) ||
+                (active && !place)
+              }
+            >
+              {t("Salvar configuração")}
+            </Button>
+          </form>
+          {config.configured && (
+            <div className="border-t pt-4">
+              {!disconnect ? (
+                <Button variant="outline" onClick={() => setDisconnect(true)}>
+                  {t("Desconectar Amigo")}
+                </Button>
+              ) : (
+                <div className="flex flex-wrap items-center gap-3">
+                  <p className="text-sm">
+                    {t("Desconectar impede novas operações e preserva o histórico.")}
+                  </p>
+                  <Button variant="destructive" disabled={pending} onClick={() => void remove()}>
+                    {t("Confirmar desconexão")}
+                  </Button>
+                  <Button variant="ghost" disabled={pending} onClick={() => setDisconnect(false)}>
+                    {t("Manter conexão")}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </Panel>
+  );
+}

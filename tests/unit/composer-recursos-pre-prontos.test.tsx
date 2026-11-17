@@ -120,6 +120,8 @@ vi.mock("@/hooks/auth/AuthProvider", () => ({
 
 import { Composer } from "@/components/inbox/Composer";
 import { BarraDeRecursos } from "@/components/inbox/composer/BarraDeRecursos";
+import { ContactPickerDialog } from "@/components/inbox/composer/ContactPickerDialog";
+import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 import { recursosDaBarra, type Recurso } from "@/lib/inbox/recursos";
 import { lerRespostaRapidaGravada } from "@/lib/inbox/resposta-rapida";
 import {
@@ -550,5 +552,18 @@ describe("Composer + recursos: o clique injeta, e o operador decide o resto (#28
     expect(pelaBarra).toBe("Oi Ana, tudo bem?");
     expect(peloMenu).toBe(pelaBarra);
     expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it("(m) ContactPickerDialog em espanhol mostra o placeholder de busca traduzido (#4754)", () => {
+    const qc = new QueryClient();
+    render(
+      <QueryClientProvider client={qc}>
+        <IdiomaProvider locale="es">
+          <ContactPickerDialog open={true} onOpenChange={() => {}} onPick={() => {}} />
+        </IdiomaProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByPlaceholderText("Buscar por nombre o teléfono…")).toBeInTheDocument();
   });
 });

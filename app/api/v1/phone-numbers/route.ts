@@ -17,6 +17,9 @@ import { requireRole } from "@/lib/auth/require-role";
 import { createPhoneNumberSchema } from "@/lib/schemas/phone-numbers";
 import { validateRequest } from "@/lib/schemas/_validate";
 import { createClient } from "@/lib/supabase/server";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { autorDe, existeNaOrganizacao } from "@/lib/api/token-operacao";
+import { extractBearer } from "@/lib/mcp/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -31,8 +34,56 @@ const COLUMNS =
 const MUTATION_COLUMNS =
   "id, number, label, routing_mode, default_ai_agent_id, is_active, created_at";
 
-export async function GET(): Promise<Response> {
+/**
+ * Com Bearer: `mcp:read` e papel `manager`, o da sessão. Sem o embed do agente
+ * (`agent:ai_agents`): a service role não passa pela RLS e a chave estrangeira não
+ * confere organização. O nome do agente vem de consulta própria da organização.
+ */
+async function listarPeloToken(req: NextRequest, requestId: string): Promise<Response> {
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "phone_numbers",
+    role: "manager",
+    scope: "mcp:read",
+  });
+  if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "phone_numbers_list", requestId);
+  if (teto) return teto;
+
+  const { data, error } = await authz.supabase
+    .from("phone_numbers")
+    .select(MUTATION_COLUMNS)
+    .eq("organization_id", authz.organizationId)
+    .order("created_at", { ascending: true });
+  if (error) return fail("internal_error", error.message, 500, { requestId });
+
+  const linhas = data ?? [];
+  const idsDeAgente = linhas
+    .map((l) => l.default_ai_agent_id as string | null)
+    .filter((id): id is string => typeof id === "string");
+  const agentes = new Map<string, { id: string; name: string }>();
+  if (idsDeAgente.length > 0) {
+    const { data: ags } = await authz.supabase
+      .from("ai_agents")
+      .select("id, name")
+      .eq("organization_id", authz.organizationId)
+      .in("id", idsDeAgente);
+    for (const a of ags ?? []) {
+      agentes.set(a.id as string, { id: a.id as string, name: a.name as string });
+    }
+  }
+  return ok(
+    linhas.map((l) => {
+      const agenteId = l.default_ai_agent_id as string | null;
+      return { ...l, agent: agenteId ? (agentes.get(agenteId) ?? null) : null };
+    }),
+    { requestId },
+  );
+}
+
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
+  if (extractBearer(req.headers.get("authorization"))) return listarPeloToken(req, requestId);
   const authz = await requireRole("manager", { requestId, resource: "phone_numbers" });
   if (!authz.ok) return authz.response;
   const { org: activeOrg } = authz;
@@ -48,6 +99,79 @@ export async function GET(): Promise<Response> {
   return ok(data ?? [], { requestId });
 }
 
+/**
+ * Com Bearer: `mcp:write` e papel `manager`. O agente padrão do corpo (se houver)
+ * tem de ser da organização do token. Corpo, troncal e 23505 seguem as da sessão.
+ */
+async function criarPeloToken(req: NextRequest, requestId: string): Promise<Response> {
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "phone_numbers",
+    role: "manager",
+    scope: "mcp:write",
+  });
+  if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "phone_numbers_create", requestId);
+  if (teto) return teto;
+  const organizationId = authz.organizationId;
+
+  let input;
+  try {
+    input = await validateRequest(createPhoneNumberSchema, req);
+  } catch (err) {
+    if (err instanceof ApiError) {
+      return fail(err.code, err.message, err.status, {
+        details: err.details as Record<string, unknown> | undefined,
+        requestId,
+      });
+    }
+    throw err;
+  }
+
+  const trunkEndpoint = process.env.VOIP_TRUNK_ENDPOINT;
+  if (!trunkEndpoint) {
+    return fail("voip_nao_configurado", "Troncal de voz não configurado no servidor.", 500, { requestId });
+  }
+  const agenteId = input.default_ai_agent_id;
+  if (agenteId && !(await existeNaOrganizacao(authz.supabase, "ai_agents", organizationId, agenteId))) {
+    return fail("not_found", "Agente não encontrado.", 404, { requestId });
+  }
+
+  const { data: row, error } = await authz.supabase
+    .from("phone_numbers")
+    .insert({
+      organization_id: organizationId,
+      number: input.number,
+      label: input.label ?? null,
+      trunk_endpoint: trunkEndpoint,
+      routing_mode: input.routing_mode,
+      default_ai_agent_id: input.default_ai_agent_id ?? null,
+      is_active: input.is_active,
+    })
+    .select(MUTATION_COLUMNS)
+    .single();
+
+  if (error) {
+    if (error.code === "23505") {
+      return fail("numero_ja_cadastrado", "Esse número já está cadastrado.", 409, { requestId });
+    }
+    return fail("internal_error", error.message, 500, { requestId });
+  }
+
+  await audit({
+    action: "phone_number.created",
+    actorUserId: autorDe(authz),
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId,
+    resourceType: "phone_numbers",
+    resourceId: row.id,
+    requestId,
+    metadata: { number: input.number },
+  });
+
+  return ok(row, { status: 201, requestId });
+}
+
 export async function POST(req: NextRequest): Promise<Response> {
   // Guarda de EFEITO do acompanhamento administrativo, ANTES do RBAC e do
   // client de service role: quem está só ACOMPANHANDO a organização de outra
@@ -58,6 +182,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (acompanhamentoNegado) return acompanhamentoNegado;
 
   const requestId = randomUUID();
+  if (extractBearer(req.headers.get("authorization"))) return criarPeloToken(req, requestId);
   const authz = await requireRole("manager", { requestId, resource: "phone_numbers" });
   if (!authz.ok) return authz.response;
   const { user: authUser, org: activeOrg } = authz;
