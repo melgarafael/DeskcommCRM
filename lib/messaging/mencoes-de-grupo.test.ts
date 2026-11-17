@@ -4,8 +4,8 @@
  * Cada regra de produto tem um caso aqui, e cada caso tem um jeito de ficar
  * VERMELHO: trocar a resolução por posição (o caso da ordem invertida reprova),
  * trocar por nome (o caso dos dois "João" reprova), reescrever o corpo (o caso
- * do cru reprova), resolver quem não está no CRM (o caso do desconhecido
- * reprova) e passar a tocar mensagem sem menção (o controle, byte a byte).
+ * do cru reprova), deixar o LID cru na tela (o caso do desconhecido reprova) e
+ * passar a tocar mensagem sem menção (o controle, byte a byte).
  */
 import { describe, expect, it } from "vitest";
 
@@ -21,8 +21,25 @@ describe("textoComMencoesResolvidas — o que a tela mostra", () => {
     );
   });
 
-  it("menção a desconhecido continua com o número — comportamento de hoje", () => {
-    expect(textoComMencoesResolvidas("oi @99887766554433", [DESCONHECIDO])).toBe("oi @99887766554433");
+  it("menção a quem NÃO está no CRM NÃO mostra dígitos crus", () => {
+    const exibido = textoComMencoesResolvidas("oi @99887766554433, tudo bem?", [DESCONHECIDO]);
+    expect(exibido).toBe("oi @Participante, tudo bem?");
+    expect(exibido).not.toMatch(/\d/);
+  });
+
+  it("a palavra de reserva vem de fora (dicionário traduzido), e nome de contato vence as duas", () => {
+    expect(textoComMencoesResolvidas("@99887766554433", [DESCONHECIDO], { palavraDesconhecida: "Participante" })).toBe(
+      "@Participante",
+    );
+    // Contato no CRM ganha da palavra.
+    expect(textoComMencoesResolvidas("@75235009282237", [MARIA], { palavraDesconhecida: "Participante" })).toBe(
+      "@Maria Exemplo",
+    );
+  });
+
+  it("menção que chegou como TELEFONE (@5511…) resolve pelo telefone da lista", () => {
+    const porTelefone = { lid: null, phone: "+5511988887777", name: "Pedro do CRM" };
+    expect(textoComMencoesResolvidas("oi @5511988887777", [porTelefone])).toBe("oi @Pedro do CRM");
   });
 
   it("o texto cru NÃO é destruído: a função devolve outro texto e o corpo fica com o @lid", () => {

@@ -16,6 +16,10 @@ export const socialAdapter: ChannelAdapter = {
   // Recipient routing is exclusively the stored providerConversationId, never a phone.
   resolveRecipient: (input) => (input.isGroup ? null : "provider-thread"),
   templates: undefined,
+  // A ponte de conversão do espalhamento acima é de WhatsApp
+  // (`/v1/whatsapp/conversions`). Herdada, ela fazia a escolha do canal da venda
+  // parar numa conversa de Instagram/Facebook e pular a de WhatsApp que tem ponte.
+  reportConversion: undefined,
   async checkHealth(input) {
     const db = createAdminClient();
     const { data } = await db

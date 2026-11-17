@@ -38,6 +38,18 @@ export interface MarcaDeCanal {
   Icone: PhosphorIcon | null;
 }
 
+/**
+ * A ordem em que a paleta aparece em Configurações › Notificações: as redes que
+ * mais chegam primeiro, o resto depois. A cor é a mesma da faixa do aviso — a
+ * tela que escolhe mostra o que vai ver.
+ */
+export const CANAIS_NA_PALETA: readonly CanalConhecido[] = [
+  "whatsapp",
+  "telegram",
+  "instagram",
+  "messenger",
+];
+
 const MARCAS: Record<CanalConhecido, MarcaDeCanal> = {
   whatsapp: {
     id: "whatsapp",
@@ -95,4 +107,19 @@ export function rotuloAcessivelDoCanal(marca: MarcaDeCanal, idioma: Idioma): str
   const nome = traduzir(marca.rotulo, idioma);
   if (marca.id === "unknown") return nome;
   return `${traduzir("Canal", idioma)}: ${nome}`;
+}
+
+/**
+ * O corpo do aviso com o nome do canal na FRENTE ("WhatsApp · Foto").
+ *
+ * Cor não é o único sinal (WCAG 1.4.1): quem é daltônico, quem está no sol e
+ * quem ouve a tela precisa da mesma informação em palavra. O prefixo some
+ * quando o canal não é conhecido — "Canal · Foto" não informa nada e só
+ * empurraria a prévia para fora do toast.
+ */
+export function descricaoComCanal(body: string, canal: string | null | undefined, idioma: Idioma): string {
+  const marca = marcaDoCanal(canal);
+  if (marca.id === "unknown") return body;
+  const nome = traduzir(marca.rotulo, idioma);
+  return body ? `${nome} · ${body}` : nome;
 }

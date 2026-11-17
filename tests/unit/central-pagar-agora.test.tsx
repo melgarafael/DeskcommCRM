@@ -11,6 +11,7 @@ vi.mock("@/hooks/ai/useAgentInbox", () => ({
   useAgentInbox: () => ({ data: { items: h.itens, open_count: h.itens.length }, error: null, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false, podeConsultar: true }),
   useUpdateInboxItem: () => ({ mutate: vi.fn(), isPending: false, isError: false }),
   useResolveAllInboxItems: () => ({ mutate: vi.fn(), isPending: false, isError: false }),
+  useDispararAcoesParadas: () => ({ mutate: vi.fn(), isPending: false, isError: false }),
 }));
 
 import { AgentInboxList } from "@/app/app/ai/inbox/_components/AgentInboxList";

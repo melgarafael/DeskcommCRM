@@ -49,6 +49,7 @@ import { createClient } from "@supabase/supabase-js";
 import { test, expect, type Locator, type Page } from "./helpers/test";
 
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
+import { ajusteDeRolagem, caixaInteiraNoRecorte } from "./helpers/recorte-do-alvo";
 
 const credenciais = credenciaisSupabaseDeTeste();
 const db = createClient(credenciais.url, credenciais.serviceRole, {
@@ -89,6 +90,64 @@ async function medir(alvo: Locator) {
 
 async function rolagemDoMain(page: Page): Promise<number> {
   return page.locator("main").evaluate((m) => m.scrollWidth - m.clientWidth);
+}
+
+/**
+ * Mede a CAIXA declarada do alvo de toque (o texto mais o halo do `::before`), o
+ * recorte que a contém e os pontos que o dedo alcança.
+ *
+ * `deslocamento` rola o recorte em N px antes de medir (negativo sobe o
+ * conteúdo). A rolagem e a medida acontecem em tarefas diferentes — a escrita
+ * volta numa chamada, a leitura vem na seguinte — e é isso que faz a régua ver
+ * a posição NOVA: `getBoundingClientRect` logo depois de um `scrollTop` escrito
+ * já força o layout, mas quem escreve e mede na mesma tarefa acaba comparando
+ * com o que estava lá antes.
+ */
+function medirRecorteDoAlvo(link: Locator, deslocamento = 0) {
+  return link.evaluate((el, d) => {
+    // O recorte do alvo: o PRIMEIRO ancestral que rola. Na tela do caso é o
+    // painel do `CaseDetail` (`overflow-y-auto`, o que embrulha o cabeçalho e o
+    // link), não o `<main>` — o `<main>` não rola aqui, e medir por ele mediria
+    // a página inteira em vez do painel que corta.
+    let pane: HTMLElement | null = el.parentElement;
+    while (pane !== null) {
+      const o = getComputedStyle(pane).overflowY;
+      if (o === "auto" || o === "scroll") break;
+      pane = pane.parentElement;
+    }
+    window.scrollTo(0, 0);
+    if (pane !== null && d !== 0) pane.scrollTop += d;
+
+    const estilo = getComputedStyle(el, "::before");
+    const altura = parseFloat(estilo.height);
+    const r = el.getBoundingClientRect();
+    const folga = (altura - r.height) / 2; // os 14px do `-inset-3.5`
+    const caixa = { top: r.top - folga, bottom: r.bottom + folga };
+    const pr = pane?.getBoundingClientRect() ?? null;
+    const porto = pr === null ? { top: 0, bottom: window.innerHeight } : { top: pr.top, bottom: pr.bottom };
+
+    const x = r.left + r.width / 2;
+    const y = r.top + r.height / 2;
+    const cai = (dy: number) => {
+      const alvo = document.elementFromPoint(x, y + dy);
+      return alvo !== null && (alvo === el || el.contains(alvo));
+    };
+    const MARGEM = 4;
+    return {
+      altura,
+      position: estilo.position,
+      caixa,
+      porto,
+      rolagem: pane?.scrollTop ?? 0,
+      rolavel: pane !== null,
+      toque: altura / 2 - MARGEM,
+      controle: altura / 2 + MARGEM,
+      acima: cai(-(altura / 2 - MARGEM)),
+      abaixo: cai(altura / 2 - MARGEM),
+      acimaFora: cai(-(altura / 2 + MARGEM)),
+      abaixoFora: cai(altura / 2 + MARGEM),
+    };
+  }, deslocamento);
 }
 
 /** Cada cartão com a SUA prova: o `<main>` não enxerga a rolagem da caixa da tabela. */
@@ -424,81 +483,66 @@ test("[P1] o gestor pausa o agente, abre o aviso e acompanha a IA pelo celular",
     // tree deu resultados OPOSTOS em duas execuções (41311223139 vermelho em
     // 20m22s, 41313181514 verde), com a altura declarada do `::before` em 44px
     // nos dois. A captura do job vermelho mostra o porquê: o container do caso
-    // estava rolado ~40px, o TOPO do link ficava fora do recorte do `<main>`
+    // estava rolado ~40px, o TOPO do link ficava fora do recorte do painel
     // (só a metade de baixo das letras do «Ver conversa» aparecia) e o ponto a
     // 21px acima do centro não existia para o dedo — o `elementFromPoint`
     // devolvia a barra do app. Recorte não é layout: a caixa continua 44px.
     // Ou seja, a régua media uma posição de rolagem, não o alvo.
     //
     // Duas coisas consertam isso, e cada uma tem o seu papel:
-    //  - o estado é posto no lugar (o topo do caso, que é como a tela abre) e o
-    //    teste CONFERE que a caixa do alvo está inteira dentro do recorte —
-    //    sem isso, mede-se o recorte;
+    //  - o estado é posto no lugar e o teste CONFERE que a caixa do alvo está
+    //    inteira dentro do recorte — sem isso, mede-se o recorte;
     //  - o alvo é lido como CAIXA: 16px da caixa `inline-block` do `text-xs` +
     //    2×14px do `-inset-3.5` = 44px. Isso é aritmética de layout; o toque é
     //    provado 4px DENTRO da borda declarada e o controle 4px FORA, longe o
     //    bastante da borda para o arredondamento de subpixel não decidir.
     // A altura do `::before` também é o que prova o `inline-block`: num link
     // `inline` a caixa é a da fonte (~14,5px) e a área não chega a 44px.
-    const m = await link.evaluate((el) => {
-      // A tela abre no topo do caso; medir a partir de outra rolagem mede o
-      // recorte (ver o comentário acima).
-      window.scrollTo(0, 0);
-      let p = el.parentElement;
-      while (p !== null) {
-        const o = getComputedStyle(p).overflowY;
-        if (o === "auto" || o === "scroll") p.scrollTop = 0;
-        p = p.parentElement;
-      }
-      el.scrollIntoView({ block: "nearest" });
-
-      const estilo = getComputedStyle(el, "::before");
-      const altura = parseFloat(estilo.height);
-      const r = el.getBoundingClientRect();
-      const folga = (altura - r.height) / 2; // os 14px do `-inset-3.5`
-      const caixa = { top: r.top - folga, bottom: r.bottom + folga };
-
-      // O recorte do alvo: o ancestral que rola (o `<main>` do caso).
-      let porto = { top: 0, bottom: window.innerHeight };
-      let q = el.parentElement;
-      while (q !== null) {
-        const o = getComputedStyle(q).overflowY;
-        if (o === "auto" || o === "scroll") {
-          const pr = q.getBoundingClientRect();
-          porto = { top: pr.top, bottom: pr.bottom };
-          break;
-        }
-        q = q.parentElement;
-      }
-
-      const x = r.left + r.width / 2;
-      const y = r.top + r.height / 2;
-      const cai = (dy: number) => {
-        const alvo = document.elementFromPoint(x, y + dy);
-        return alvo !== null && (alvo === el || el.contains(alvo));
-      };
-      const MARGEM = 4;
-      return {
-        altura,
-        position: estilo.position,
-        caixaTop: +caixa.top.toFixed(2),
-        portoTop: +porto.top.toFixed(2),
-        inteiroNoRecorte: caixa.top >= porto.top - 0.5 && caixa.bottom <= porto.bottom + 0.5,
-        toque: altura / 2 - MARGEM,
-        controle: altura / 2 + MARGEM,
-        acima: cai(-(altura / 2 - MARGEM)),
-        abaixo: cai(altura / 2 - MARGEM),
-        acimaFora: cai(-(altura / 2 + MARGEM)),
-        abaixoFora: cai(altura / 2 + MARGEM),
-      };
-    });
+    //
+    // 14/11/2026 — o "pôr o estado no lugar" NÃO pode ser `scrollIntoView`.
+    // Medido no job `e2e-parte (7)` do #4613 (head `6626d28e9`) e repetido no
+    // #4530, que não toca em mensagens, com a MESMA frase e os MESMOS números:
+    //
+    //   o alvo não está inteiro no recorte (topo da caixa 114px, topo do recorte 128px)
+    //
+    // 114 é 128 menos 14. O painel do `CaseDetail` estava rolado exatamente os
+    // 40px do nome e do telefone do contato (24 + 16), com o TEXTO do link
+    // encostado na borda de cima do recorte — 128px é o topo do painel, logo
+    // abaixo do «Voltar aos casos» — e o halo do `::before` inteiro do lado de
+    // fora. `scrollIntoView({ block: "nearest" })` só promete a caixa do
+    // ELEMENTO (16px): ele para assim que o texto aparece e não tem como saber
+    // que o alvo declarado é 28px mais alto. Quem rola o painel por conta
+    // própria é o chat do caso (`useThreadAutoScroll` leva o sentinela do fim
+    // para a tela e arrasta os ancestrais junto), então o estado de chegada
+    // depende de quem chegou primeiro — a régua herdava essa corrida.
+    //
+    // O estado agora é posto pela conta da CAIXA, não pela do elemento: mede-se
+    // a caixa e o recorte, `ajusteDeRolagem` diz quanto rolar (a mesma conta da
+    // asserção, em `tests/e2e/helpers/recorte-do-alvo.ts`, provada em
+    // `tests/unit/recorte-do-alvo.test.ts`) e mede-se de novo. A asserção de
+    // recorte CONTINUA valendo: aumentar a folga para esconder o problema
+    // reprova na unidade.
+    //
+    // A folga é 8px porque os controles andam 4px ALÉM da borda da caixa: um
+    // controle que cai fora do recorte não prova nada sobre a borda do alvo —
+    // ele some no `elementFromPoint` e o `false` dele vira sorte.
+    const RESPIRO_NO_RECORTE = 8;
+    let m = await medirRecorteDoAlvo(link);
+    // Até três passadas: uma rolagem suave do chat do caso pode estar em voo
+    // quando a medida começa. Medir de novo depois de cada ajuste é o que faz a
+    // régua ver o painel, e não a corrida.
+    for (let passada = 0; passada < 3 && m.rolavel; passada += 1) {
+      const ajuste = ajusteDeRolagem(m.caixa, m.porto, RESPIRO_NO_RECORTE);
+      if (ajuste === 0) break;
+      m = await medirRecorteDoAlvo(link, ajuste);
+    }
     expect(m.position, "o `::before` do link não é posicionado: não há alvo declarado para medir").toBe("absolute");
     expect(m.altura, "altura do alvo de toque (::before): caixa do text-xs + 2× `-inset-3.5`").toBeGreaterThanOrEqual(
       PISO_DE_TOQUE - 0.5,
     );
     expect(
-      m.inteiroNoRecorte,
-      `o alvo não está inteiro no recorte (topo da caixa ${m.caixaTop}px, topo do recorte ${m.portoTop}px): a régua mediria o recorte, não o alvo`,
+      caixaInteiraNoRecorte(m.caixa, m.porto),
+      `o alvo não está inteiro no recorte (topo da caixa ${m.caixa.top.toFixed(2)}px, topo do recorte ${m.porto.top.toFixed(2)}px, rolagem ${m.rolagem.toFixed(0)}px): a régua mediria o recorte, não o alvo`,
     ).toBe(true);
     expect(m.acima, `${m.toque}px acima do centro não cai no link`).toBe(true);
     expect(m.abaixo, `${m.toque}px abaixo do centro não cai no link`).toBe(true);

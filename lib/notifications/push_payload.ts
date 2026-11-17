@@ -3,6 +3,7 @@ import { z } from "zod";
 import { ROTULO_DO_TIPO } from "@/lib/messaging/previa-da-mensagem";
 
 import { NOTIFY_KINDS } from "./kinds";
+import { NOTIFY_UI_CATEGORIES } from "./prefs";
 
 export const PUSH_PAYLOAD_MAX = 140;
 
@@ -23,6 +24,12 @@ export const pushPayloadSchema = z.object({
   href: z.string().optional(),
   icon: z.string().optional(),
   corpoSemPrevia: z.string().optional(),
+  /**
+   * O tipo do aviso, para o funil não mandar a aparelho que o calou
+   * (`push_subscriptions.tipos_calados`). Ausente = chega sempre. Nunca sai do
+   * servidor.
+   */
+  tipo: z.enum(NOTIFY_UI_CATEGORIES).optional(),
 });
 
 export type PushPayload = z.infer<typeof pushPayloadSchema>;
@@ -42,7 +49,7 @@ export function montarPayloadDeInbound(input: {
   const tag = input.conversationId ? `${prefixo}:${input.conversationId}` : prefixo;
   const href = input.conversationId ? `/app/inbox?id=${input.conversationId}` : "/app/inbox";
   const icon = input.icon?.trim() || undefined;
-  return { title, body, tag, href, icon, corpoSemPrevia: input.corpoSemPrevia };
+  return { title, body, tag, href, icon, corpoSemPrevia: input.corpoSemPrevia, tipo: "message" };
 }
 
 const NOVA_MENSAGEM = "Nova mensagem";

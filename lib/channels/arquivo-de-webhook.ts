@@ -37,12 +37,18 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
 
+import { TELEGRAM_SECRET_HEADER } from "./bot/webhook";
+
 /** Cabeçalhos que NUNCA entram no arquivo, por menor que seja a chance. */
 // `asaas-access-token` (spec da cobrança do revendedor §2.4): o Asaas autentica
 // o webhook com um token ESTÁTICO no cabeçalho — é a credencial inteira, não uma
 // assinatura. A rota de cobrança nem grava cabeçalho; isto é o cinto para quando
 // alguém apontar o aviso do Asaas para uma rota de canal.
-const PROIBIDOS = ["authorization", "cookie", "x-api-key", "asaas-access-token"];
+// `x-telegram-bot-api-secret-token` (#3486): o Telegram autentica o webhook com o
+// `secret_token` do setWebhook repetido VERBATIM no cabeçalho — é o segredo
+// inteiro, não uma assinatura. Guardado aqui, qualquer um que lesse o arquivo
+// forjaria updates do robô.
+const PROIBIDOS = ["authorization", "cookie", "x-api-key", "asaas-access-token", TELEGRAM_SECRET_HEADER];
 
 /**
  * Cabeçalhos sanitizados.

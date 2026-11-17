@@ -76,6 +76,29 @@ export interface LoadedRouter {
   minConfidence: number;
   contextMessageCount?: number;
   fallbackAgentId: string | null;
+  /**
+   * A frase que o CLIENTE lê quando o classificador troca quem atende sozinho
+   * (#4363, `ai_routers.passagem_ao_cliente`). `null` = desligada, e o turno
+   * segue como antes: a troca é silenciosa e quem se apresenta é o agente novo.
+   *
+   * Vazio depois do `trim` vale como `null`: um PATCH antigo não pode virar
+   * mensagem em branco no WhatsApp do cliente. O teto é o mesmo CHECK da
+   * coluna (1200), repetido aqui para o dublê que monta o roteador à mão.
+   *
+   * Opcional no TIPO porque os dublês de teste montam o roteador antes desta
+   * coluna existir: ausente lê como desligado, igual a `null`.
+   */
+  passagemAoCliente?: string | null;
+  /**
+   * #4750 — o TERCEIRO modo da troca automática (`config.passagem_silenciosa`):
+   * o classificador troca quem atende e NADA vai ao cliente; o agente novo
+   * continua a conversa sem se apresentar nem anunciar a troca.
+   *
+   * `config` é jsonb livre, então não há coluna nem migration: a chave mora ao
+   * lado de `context_message_count`, lida com a mesma régua defensiva. Ausente,
+   * não-booleana ou falsa = o comportamento de antes (o padrão do produto).
+   */
+  passagemSilenciosa?: boolean;
   /** Regras administrativas por remetente; validadas antes de escolher o agente. */
   senderRoutes?: unknown;
   members: RouterMember[];
@@ -86,6 +109,26 @@ interface RouterRow {
   name: string;
   config: Record<string, unknown> | null;
   fallback_agent_id: string | null;
+  /** `null` em roteador criado antes da 9367 — o comportamento é o de antes. */
+  passagem_ao_cliente?: string | null;
+}
+
+/** Teto da coluna (CHECK da 9367). Texto maior que isto é lixo de escrita, não frase. */
+export const LIMITE_DA_PASSAGEM_AO_CLIENTE = 1200;
+
+/**
+ * A frase da passagem automática, pronta para uso — ou `null` quando não há
+ * frase. Três coisas numa função só, porque cada uma já foi um defeito em
+ * outro lugar do produto: `''` e espaço em branco são DESLIGADO (nunca uma
+ * mensagem vazia no WhatsApp do cliente), texto acima do teto da coluna é
+ * cortado em vez de fazer o turno falhar, e o resto vai como o dono escreveu —
+ * sem interpretar `{{nome}}` nem nada: o texto é dele, não um template.
+ */
+export function normalizarPassagemAoCliente(texto: string | null | undefined): string | null {
+  if (typeof texto !== 'string') return null;
+  const limpo = texto.trim();
+  if (limpo === '') return null;
+  return limpo.slice(0, LIMITE_DA_PASSAGEM_AO_CLIENTE);
 }
 
 interface MemberRow {
@@ -106,7 +149,7 @@ export async function loadActiveRouter(
   channelSessionId: string,
 ): Promise<LoadedRouter | null> {
   const { rows: routerRows } = await db.query<RouterRow>(
-    `select id, name, config, fallback_agent_id
+    `select id, name, config, fallback_agent_id, passagem_ao_cliente
      from ai_routers
      where organization_id = $1
        and channel_session_id = $2
@@ -141,6 +184,7 @@ export async function loadActiveRouter(
     sticky?: unknown;
     min_confidence?: unknown;
     context_message_count?: unknown;
+    passagem_silenciosa?: unknown;
   };
   const classifierModel =
     typeof cfg.classifier_model === 'string' && cfg.classifier_model.trim() !== ''
@@ -161,6 +205,9 @@ export async function loadActiveRouter(
       ? cfg.context_message_count
       : CLASSIFIER_CONTEXT_MESSAGES;
 
+  const passagemSilenciosa =
+    typeof cfg.passagem_silenciosa === 'boolean' ? cfg.passagem_silenciosa : false;
+
   return {
     id: router.id,
     name: router.name,
@@ -170,6 +217,8 @@ export async function loadActiveRouter(
     minConfidence,
     contextMessageCount,
     fallbackAgentId: router.fallback_agent_id,
+    passagemAoCliente: normalizarPassagemAoCliente(router.passagem_ao_cliente),
+    passagemSilenciosa,
     senderRoutes: (router.config ?? {}).sender_routes,
     members: memberRows.map((m) => ({
       agentId: m.agent_id,

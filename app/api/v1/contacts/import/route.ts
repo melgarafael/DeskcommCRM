@@ -22,12 +22,13 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
-import { requireRole } from "@/lib/auth/require-role";
 import { audit } from "@/lib/audit";
 import { camposCpfParaGravar } from "@/lib/contacts/cpf";
 import { abrirConversaDoContatoNovo } from "@/lib/contacts/conversa-ao-criar";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import {
   CSV_MAX_BYTES,
   CSV_MAX_DATA_ROWS,
@@ -40,7 +41,6 @@ import { contactCreateSchemaDoPais } from "@/lib/schemas";
 import { perfilDaOrganizacao } from "@/lib/legal/perfil-do-pais";
 import { contatosDonosDosExtras } from "@/lib/channels/contato-por-telefone";
 import { phoneLookupVariants } from "@/lib/channels/phone-variants";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -63,13 +63,20 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const supabase = await createClient();
   // spec 13 §4: escrita é agent+ (viewer é read-only), igual ao POST unitário.
-  const authz = await requireRole("agent", { requestId, resource: "contacts" });
+  // Sessão OU token de integração (Spec 33, R2): `mcp:write` e papel `agent`.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "contacts",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const user = authz.user;
-  const orgId = authz.org.orgId;
-  const t = (texto: string) => traduzir(texto, user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "contacts", requestId);
+  if (teto) return teto;
+  const supabase = authz.supabase;
+  const orgId = authz.organizationId;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   // O documento do titular, na régua do PAÍS da organização (issue #1033): o
   // cabeçalho aceito, a normalização do valor e a validação saem daqui. O país
@@ -81,7 +88,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   // 64 KB de folga para o envelope multipart; o file.size abaixo é o check do CSV.
   const corpo = await lerCorpoComTeto(req, CSV_MAX_BYTES + 64 * 1024, {
     requestId,
-    idioma: user.idioma,
+    idioma: authz.idioma,
     acimaDoTeto: t("Arquivo maior que ") + `${Math.floor(CSV_MAX_BYTES / 1024 / 1024)}MB.`,
   });
   if (!corpo.ok) return corpo.response;
@@ -255,7 +262,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
     const insertRow: Record<string, unknown> = {
       organization_id: orgId,
-      created_by_user_id: user.id,
+      created_by_user_id: authz.actor.type === "user" ? authz.actor.id : null,
       name: contato.name ?? null,
       display_name: contato.display_name ?? null,
       email: contato.email ?? null,
@@ -344,7 +351,8 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   await audit({
     action: "contacts.imported",
-    actorUserId: user.id,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
     organizationId: orgId,
     resourceType: "contact",
     resourceId: null,

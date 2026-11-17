@@ -31,6 +31,13 @@ const BASE = path.join(RAIZ, "app/api/v1");
 export const SO_SESSAO_POR_DESENHO: Record<string, string> = {
   "app/api/v1/prospecting/importar/route.ts":
     "recusa token de propósito (403), como reanalisar_site; ver o comentário da rota",
+  // Tabela de valores de negociação (#4612, fatia 1): a tabela é cadastro de
+  // tela, e o token `dsk_…` recusa a escrita com 403 logo no handler. A porta
+  // que o agente vai usar é a ferramenta da fatia 2, com escopo próprio.
+  "app/api/v1/tabelas-de-valores/route.ts":
+    "fatia 1 só de tela: a escrita recusa token com 403 no handler e a leitura fica atrás do proxy; a do agente vem por ferramenta própria",
+  "app/api/v1/tabelas-de-valores/[id]/importar/route.ts":
+    "importar planilha exige a tela (403 para token), como a importação de prospecção",
 };
 
 const UUID_DE_AMOSTRA = "00000000-0000-4000-8000-000000000000";
@@ -130,11 +137,15 @@ describe("PUBLIC_PATHS — as portas da R0", () => {
     "/api/v1/agenda/servicos/atualizar/x",
     "/api/v1/conversations/abc/drafts/consume",
     `/api/v1/conversations/${UUID}/drafts/consume/x`,
-    `/api/v1/conversations/${UUID}/notes`,
     "/api/v1/conversations/abc/notes/media",
     `/api/v1/conversations/${UUID}/notes/media/x`,
   ])("não libera %s", (caminho) => {
     expect(isPublicPath(caminho)).toBe(false);
+  });
+
+  it("notas da conversa passaram a aceitar token", () => {
+    // Spec 33 (R2): a rota passou a aceitar token
+    expect(isPublicPath(`/api/v1/conversations/${UUID}/notes`)).toBe(true);
   });
 
   it("os irmãos de nível seguem como estavam", () => {

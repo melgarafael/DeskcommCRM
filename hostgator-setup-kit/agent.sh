@@ -264,7 +264,13 @@ if [ -n "$LATEST_TAG" ] && [ "$LATEST_TAG" != "$CURRENT" ]; then
   # Só `ausente` cala. `indisponivel` é "não consegui perguntar ao registro", e
   # nesse caso anunciar é o que preserva o comportamento de sempre — uma VPS com
   # saída de rede ruim não pode ficar sem atualização para sempre, em silêncio.
-  [ "$VEREDITO_IMAGEM" = "ausente" ] && LATEST_TAG=""
+  if [ "$VEREDITO_IMAGEM" = "ausente" ]; then
+    # Calar é transitório, mas calar sem rastro não é diagnóstico: a tela diz
+    # "em dia" e o log não conta por quê. Uma linha aqui custa nada e responde
+    # a pergunta que sempre volta ("por que não apareceu?").
+    log_err "não anunciei a ${LATEST_TAG}: a sonda do app diz 'ausente' (a ${CURRENT_TAG} responde) — imagem do app não publicada"
+    LATEST_TAG=""
+  fi
   # ── E a release tem as QUATRO imagens? (#1955, critério 1) ──────────────
   # O veredito de cima olha SÓ a imagem do app. Um run de publicação que morre
   # no meio deixa a ETIQUETA publicada com o worker (ou o scheduler, ou a voz)
@@ -276,8 +282,19 @@ if [ -n "$LATEST_TAG" ] && [ "$LATEST_TAG" != "$CURRENT" ]; then
   # Só `incompleta` cala, pelo MESMO motivo do `ausente`: `indisponivel` é o
   # registro fora do ar, e uma VPS com rede ruim não pode ficar sem
   # atualização para sempre, em silêncio.
-  if [ -n "$LATEST_TAG" ] && [ "$(veredito_das_imagens_da_release "${LATEST_TAG#v}")" = "incompleta" ]; then
-    LATEST_TAG=""
+  if [ -n "$LATEST_TAG" ]; then
+    # A lista sai do MESMO subshell que o veredito: `$(...)` roda num processo
+    # filho, e IMAGENS_SEM_RESPOSTA preenchida lá dentro some ao voltar.
+    R_IMAGENS="$(veredito_das_imagens_da_release "${LATEST_TAG#v}" "${CURRENT_TAG#v}"; printf '|%s' "${IMAGENS_SEM_RESPOSTA# }")"
+    VEREDITO_IMAGENS="${R_IMAGENS%%|*}"
+    SEM_RESPOSTA="${R_IMAGENS#*|}"
+    if [ "$VEREDITO_IMAGENS" = "incompleta" ]; then
+      # Só cai aqui quando alguma imagem está PROVADAMENTE ausente (a tag
+      # instalada responde e a nova não). Falha de sonda já não chega como
+      # `incompleta` — vira `indisponivel`, que anuncia.
+      log_err "não anunciei a ${LATEST_TAG}: release incompleta — ${SEM_RESPOSTA}"
+      LATEST_TAG=""
+    fi
   fi
 fi
 
@@ -504,6 +521,24 @@ VOLTA_NO_TEMPO=""
 if [ -n "$ALVO" ] && [ "$ALVO" != "$CURRENT_TAG" ]; then
   is_already_in_head "$ALVO" && CONTIDA=0 || CONTIDA=$?
   [ "$CONTIDA" = 0 ] && VOLTA_NO_TEMPO=1
+fi
+# Volta pedida pelo app só para a versão de onde esta instalação veio. O alvo
+# chega pela rota, e quem consegue escrever no canal host-app não pode, com
+# isso, mandar o host reinstalar uma versão antiga qualquer (com o baseline e as
+# funções dela). A última ida para frente gravou a origem (update.sh); sem ela,
+# ou com alvo diferente, o run fecha recusado e o caminho pelo terminal segue
+# inteiro para quem tem acesso ao servidor.
+if [ -n "$VOLTA_NO_TEMPO" ]; then
+  ORIGEM_ARQ="${PROJECT_DIR}/${ORIGEM_DA_ATUALIZACAO_ARQUIVO:-.update-de-onde-vim}"
+  ORIGEM=""
+  [ -f "$ORIGEM_ARQ" ] && ORIGEM="$(head -n1 "$ORIGEM_ARQ" 2>/dev/null || true)"
+  [[ "$ORIGEM" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] || ORIGEM=""
+  if [ -z "$ORIGEM" ] || [ "${ALVO#v}" != "${ORIGEM#v}" ]; then
+    log_err "pedido de volta recusado: ${ALVO} não é a versão de onde esta instalação veio"
+    MOTIVO="A volta pela tela só vai para a versão de onde esta instalação veio${ORIGEM:+ ($ORIGEM)}. Para outra versão, rode no servidor: bash hostgator-setup-kit/update.sh --to ${ALVO} --force"
+    post "{\"kind\":\"run_result\",\"run_id\":\"${RUN_ID}\",\"status\":\"failed\",\"log_tail\":\"${MOTIVO}\"}" >/dev/null || true
+    exit 0
+  fi
 fi
 if [ -n "$VOLTA_NO_TEMPO" ] || [ -n "$FORCA_PEDIDA" ]; then UPDATE_ARGS+=(--force); fi
 

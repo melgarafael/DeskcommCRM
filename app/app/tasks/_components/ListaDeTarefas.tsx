@@ -8,10 +8,11 @@ import { useUser } from "@/hooks/auth/AuthProvider";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
-import { COR_DA_PRIORIDADE } from "./estilo-da-prioridade";
+import type { Sector } from "@/hooks/team/useSectors";
+import { COR_DA_PRIORIDADE, ESTILO_DA_URGENCIA } from "./estilo-da-prioridade";
 import {
   agrupaPorPrazo,
-  estaAtrasada,
+  calcularUrgenciaDoPrazo,
   estaEncerrada,
   type FaixaDePrazo,
   type PrioridadeDaTarefa,
@@ -19,6 +20,8 @@ import {
 } from "@/lib/tarefas/tipos";
 import { Check, Kanban, PencilSimple, Trash, UserCircle } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
+
+const SEM_SETOR: ReadonlyMap<string, Sector> = new Map();
 
 interface Props {
   tarefas: Tarefa[];
@@ -32,6 +35,13 @@ interface Props {
    * repetir o nome dele em cada linha só tomaria espaço.
    */
   mostrarNegocio?: boolean;
+  /**
+   * O setor de cada responsável, para o chip da tarefa. Quem monta é a tela de
+   * Tarefas, que já busca setores e equipe — e só com o módulo opcional ligado
+   * (doc 213). Ausente = sem chip: a lista do painel do inbox e a do dossiê não
+   * pedem setores a ninguém.
+   */
+  setorDoResponsavel?: ReadonlyMap<string, Sector>;
 }
 
 function Linha({
@@ -42,6 +52,7 @@ function Linha({
   aoApagar,
   mostrarNegocio,
   nomeDoResponsavel,
+  setor,
 }: {
   tarefa: Tarefa;
   podeEditar: boolean;
@@ -51,6 +62,7 @@ function Linha({
   mostrarNegocio: boolean;
   /** Já resolvido por quem monta a lista; `null` = sem responsável conhecido. */
   nomeDoResponsavel: string | null;
+  setor?: Sector | null;
 }) {
   const t = useT();
   const tag = useTagDeIdioma();
@@ -58,7 +70,8 @@ function Linha({
   const [confirmando, setConfirmando] = useState(false);
 
   const encerrada = estaEncerrada(tarefa);
-  const atrasada = estaAtrasada(tarefa);
+  const urgencia = calcularUrgenciaDoPrazo(tarefa);
+  const estiloUrgencia = ESTILO_DA_URGENCIA[urgencia];
 
   const rotuloDaPrioridade: Record<PrioridadeDaTarefa, string> = {
     low: t("Baixa"),
@@ -123,7 +136,15 @@ function Linha({
           >
             {rotuloDaPrioridade[tarefa.priority]}
           </span>
-          <span className={cn("text-muted-foreground", atrasada && "font-semibold text-destructive")}>
+          <span
+            className={cn(
+              "flex items-center gap-1",
+              estiloUrgencia.textoPrazo,
+            )}
+          >
+            {estiloUrgencia.icone ? (
+              <span aria-hidden>{estiloUrgencia.icone}</span>
+            ) : null}
             {tarefa.due_date
               ? new Date(tarefa.due_date).toLocaleString(tag, {
                   day: "2-digit",
@@ -137,6 +158,18 @@ function Linha({
             <span className="flex items-center gap-1 text-muted-foreground">
               <UserCircle size={12} aria-hidden />
               {nomeDoResponsavel}
+            </span>
+          ) : null}
+          {setor ? (
+            <span
+              className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium border"
+              style={{
+                backgroundColor: setor.color ? `${setor.color}18` : undefined,
+                color: setor.color ?? undefined,
+                borderColor: setor.color ? `${setor.color}35` : undefined,
+              }}
+            >
+              {setor.name}
             </span>
           ) : null}
           {mostrarNegocio && tarefa.lead ? (
@@ -206,6 +239,7 @@ export function ListaDeTarefas({
   aoEditar,
   aoApagar,
   mostrarNegocio = true,
+  setorDoResponsavel = SEM_SETOR,
 }: Props) {
   const t = useT();
   const usuario = useUser();
@@ -214,6 +248,7 @@ export function ListaDeTarefas({
   // lê, a consulta nem sai e a linha fica sem o nome — nunca com um id cru.
   const membros = useAssignableMembers(podeEditar);
   const nomes = new Map((membros.data ?? []).map((m) => [m.user_id, m.full_name]));
+
 
   function nomeDoResponsavel(tarefa: Tarefa): string | null {
     if (!tarefa.assigned_to) return null;
@@ -264,6 +299,7 @@ export function ListaDeTarefas({
                 aoApagar={aoApagar}
                 mostrarNegocio={mostrarNegocio}
                 nomeDoResponsavel={nomeDoResponsavel(tarefa)}
+                setor={tarefa.assigned_to ? setorDoResponsavel.get(tarefa.assigned_to) : null}
               />
             ))}
           </div>

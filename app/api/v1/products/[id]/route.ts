@@ -18,6 +18,7 @@ import { apagarDoBucket } from "@/lib/catalogo/fotos-no-bucket";
 import { guardarFotosPorUrl } from "@/lib/catalogo/fotos-por-url";
 import { MODULO_SERVICOS, sinaisFixosQueTravamPreco } from "@/lib/catalogo/servicos-supabase";
 import { moduloLigado } from "@/lib/instalacao/modulos";
+import { capacidadesDaOrganizacao } from "@/lib/organizacao/capacidades";
 import { COLUNAS_DO_PRODUTO, produtoPatchSchema } from "@/lib/schemas/produtos";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -54,6 +55,12 @@ export async function PATCH(
   const { fotos, ...campos } = parsed.data;
 
   const supabase = await createClient();
+  if (
+    campos.capacidade &&
+    !(await capacidadesDaOrganizacao(supabase, authz.org.orgId)).includes("capacidade_do_produto")
+  ) {
+    return fail("validation_failed", t("A capacidade do produto está desligada nesta empresa."), 422, { requestId });
+  }
 
   // A porta do módulo de serviços (doc 212): este item pode ser serviço ou
   // variação de um, e a família pode ter sinal FIXO. O preço novo não fica
