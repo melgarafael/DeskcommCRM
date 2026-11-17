@@ -40,6 +40,8 @@ Exemplo:
 
 **Cor por seção do menu lateral.** O menu tem classes estáveis, pensadas para este CSS. Todo grupo leva `nav-grupo`, e cada um leva também a sua: `nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais`, `nav-grupo-analise` e `nav-grupo-organizacao` (a do rodapé, com Configurações e Ajuda). Cada destino tem a dele: `nav-item-inbox`, `nav-item-kanban`, e assim por diante. Essas classes fazem parte do contrato da tela e não mudam entre versões; as classes utilitárias do Tailwind, sim.
 
+**Cor por seção do conteúdo.** O contêiner do conteúdo de toda tela leva `tela-secao` e, quando a rota está no registro de navegação, também a da seção: `tela-secao-atendimento`, `tela-secao-crm`, `tela-secao-ia`, `tela-secao-canais`, `tela-secao-analise` e `tela-secao-organizacao` — com ela, `.tela-secao-crm .rounded-lg { border-top-color: #1d4ed8; }` vale só nas telas de CRM. Rota fora do registro fica só com `tela-secao`.
+
 Para pintar o texto do menu, mire `text-muted-foreground` dentro do grupo, não `rounded-md`. O título do grupo e os links têm as duas, mas o item da tela aberta só tem `rounded-md`: ele já tem fundo na cor de destaque, e uma cor de texto escolhida para o fundo do menu pode sumir sobre esse fundo. Como `text-muted-foreground` é do Tailwind, confira o menu depois de atualizar. A cor do exemplo é para o tema claro; no escuro, repita a regra no campo **CSS do tema escuro** com uma cor clara.
 
 ```css

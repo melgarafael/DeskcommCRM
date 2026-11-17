@@ -250,11 +250,10 @@ describe("controle negativo pelo seam — id sem preço em tabela nenhuma", () =
       model: "provedor-x/modelo-que-nao-existe",
     });
 
-    // E a linha do log da chamada continua dizendo null — sem `custo_origem`,
-    // porque origem nenhuma cobrou este modelo.
+    // E a linha do log da chamada continua dizendo null — agora com o MOTIVO
+    // junto (`sem_preco`, #4697): nulo declarado, não nulo calado.
     const concluida = log.info.mock.calls.find(([msg]) => msg === "llm: chamada concluída");
-    expect(concluida![1]).toMatchObject({ cost_cents: null });
-    expect((concluida![1] as Record<string, unknown>).custo_origem).toBeUndefined();
+    expect(concluida![1]).toMatchObject({ cost_cents: null, custo_origem: "sem_preco" });
   });
 
   it("banco fora do ar no preço não derruba o turno: a resposta sai, o custo volta a ser desconhecido", async () => {

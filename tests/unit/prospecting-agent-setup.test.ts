@@ -225,6 +225,9 @@ describe("inline prospecting agent setup", () => {
     expect(state.router!.config.classifier_model).toBe("unchanged");
     expect(state.version!.pipeline_ids).toEqual([org]);
     expect(state.version!.tool_ids).toContain("crm_move_lead_stage");
+    // D7: o qualificador grava o diagnóstico na ficha — ligado por nome, fora do
+    // pacote do onboarding (que o mock acima nem traz).
+    expect(state.version!.tool_ids).toContain("crm_save_lead_diagnosis");
     expect(state.version!.tool_ids).not.toContain("crm_create_lead");
     expect(state.version!.handoff_tool_enabled).toBe(true);
     expect(state.agent!.paused_at).toBeNull();

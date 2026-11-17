@@ -231,8 +231,14 @@ Não avaliado por falta de execução/instância:
 - Se as políticas RLS **realmente** isolam (os invariantes existem para provar; não foram rodados).
 - Postura do container WAHA — `docker-compose.prod.yml` comenta "Core por default, dashboard
   off", mas exposição de porta e rede não foram verificadas contra instância viva.
-- Config do Caddy (`Caddyfile`) — TLS, headers de segurança, HSTS.
-- Se `next.config.ts` define CSP / security headers.
+- Config do Caddy (`Caddyfile`) — TLS. Cabeçalho ele não define nenhum (`grep -i header Caddyfile*`
+  não acha nada); os de segurança vêm da origem, no item abaixo.
+- Cabeçalhos de segurança, e este é MEDIDO em vez de "não avaliado": `next.config.ts` manda,
+  em toda resposta, `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`,
+  HSTS de um ano **sem** `includeSubDomains` (o domínio é do cliente e pode ser o apex) e uma
+  CSP curta — `frame-ancestors 'none'; base-uri 'self'; form-action 'self'`, **sem**
+  `script-src`, porque o Next injeta bootstrap inline. Quem reprova a regressão é
+  `tests/unit/cabecalhos-de-seguranca-do-painel.test.ts`.
 - Storage: se o bucket `whatsapp-media` está privado de fato e se a expiração das signed
   URLs é adequada.
 - Storage, e este é MEDIDO e DECLARADO em vez de "não avaliado": `brand-logos` (migration
@@ -248,8 +254,8 @@ Não avaliado por falta de execução/instância:
   continuam só no `service_role`), caminho **não-enumerável** (`<prefixo>/<uuid v4>.<ext>`)
   e teto de 512 KB. O que entra é decidido pelos **bytes** (`lib/branding/logo-arquivo.ts`),
   nunca pelo `Content-Type` — `allowed_mime_types` do bucket e `file.type` na rota leem a
-  mesma string que quem sobe escolhe. **SVG é banido**: este repo não define CSP (ver o item
-  acima sobre `next.config.ts`), e SVG navegado direto do endereço da imagem executa script.
+  mesma string que quem sobe escolhe. **SVG é banido**: a CSP do painel não tem `script-src` e
+  não vale no origin do Storage (ver o item acima sobre `next.config.ts`), e SVG navegado direto do endereço da imagem executa script.
   O que NÃO está coberto: um logo subido é **público para sempre até ser trocado** — quem
   subir por engano uma arte confidencial precisa removê-la pela tela, e a URL antiga deixa
   de existir junto com o arquivo (a rota apaga o anterior na troca).

@@ -10464,6 +10464,13 @@ alter table public.agent_inbox_items
     -- entra na distribuição e este aviso conta a quem cuida do agente que ele
     -- não está passando adiante. Entra NESTA lista (#159, bloco único).
     'routing_ia_wait_expired',
+    -- (migration 9397, issue #4696) O retorno COMBINADO com o cliente que não
+    -- vai sair: o atendimento mudou antes do disparo e o job `followup_turn` foi
+    -- descartado por `service_boundary_stale`. O descarte está certo; o silêncio
+    -- não estava — 11 em 17 dias, um deles com o cliente esperando um contato
+    -- que nunca sairia. Nasce com `ref_kind='conversation'` (destino clicável) e
+    -- dedup por (kind, conversa). Entra NESTA lista (#159, bloco único).
+    'followup_descartado',
     'other'
   ));
 
@@ -77796,7 +77803,6 @@ revoke execute on function public.fn_uso_de_ia(uuid, timestamptz, timestamptz, u
   from public, anon;
 grant  execute on function public.fn_uso_de_ia(uuid, timestamptz, timestamptz, uuid, text)
   to authenticated, service_role;
-
 -- ---- Atendente cria empresa e pessoa (migration 9370) ----
 -- O piso do INSERT desce de `manager` para `agent` em companies, people e company_people.
 -- Excluir segue `manager`. Idempotente: drop policy if exists + create policy.
@@ -77921,6 +77927,87 @@ create unique index if not exists crm_tasks_recurrence_ocorrencia_unica
 create index if not exists crm_tasks_series_idx
   on public.crm_tasks (organization_id)
   where recurrence is not null and recurrence_source_id is null;
+-- ---- o envio do link da agenda confere a lista de teste em pré-go-live (migration 9399, #4701) ----
+-- Mora ACIMA do bloco da 9243 e da VARREDURA anon: `lgpd-alcanca-fichas-fundidas`
+-- compara o trecho da 9243 até a varredura com a migration dela, por igualdade.
+-- Espelho de supabase/migrations/20261115233000_9399_entrega_da_agenda_confere_a_lista_de_teste.sql.
+create or replace function public.fn_meet_delivery_policy(p_org uuid,p_job uuid,p_worker text,p_acquired_at timestamptz)
+returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare r record;
+begin
+ select a.meeting_delivery,a.contact_id,v.channel_session_id,c.is_blocked,c.is_anonymized,c.force_human,c.ai_opt_out,c.ai_authorized_at,c.phone_number,v.assignee_kind,v.bot_silenced_until,cs.metadata,cs.archived_at,
+  public.fn_meet_delivery_current(p_org,p_job,p_worker,p_acquired_at) as current
+ into r from public.job_queue j join public.calendar_appointments a on a.organization_id=j.organization_id and a.id::text=j.payload->>'appointment_id'
+ join public.contacts c on c.organization_id=a.organization_id and c.id=a.contact_id
+ join public.conversations v on v.organization_id=a.organization_id and v.contact_id=a.contact_id and v.id::text=j.payload->'service_boundary'->>'conversation_id'
+ join public.channel_sessions cs on cs.organization_id=v.organization_id and cs.id=v.channel_session_id
+ where j.organization_id=p_org and j.id=p_job and j.kind='transactional_delivery' and j.status='running' and j.locked_by=p_worker and j.locked_at=p_acquired_at
+  and a.meeting_delivery_job_id=j.id and a.meeting_delivery->>'generation'=j.payload->>'delivery_generation';
+ if not found then return jsonb_build_object('current',false,'reason','stale');end if;
+ if not r.current then return jsonb_build_object('current',false,'reason',case when r.is_anonymized then 'lgpd' when r.is_blocked then 'opt_out' when r.archived_at is not null then 'channel' else 'access_or_stale' end);end if;
+ return jsonb_build_object('current',true,'contact_id',r.contact_id,'channel_session_id',r.channel_session_id,'human_command',r.meeting_delivery->'authorized_by'->>'kind'='user',
+  'force_human',r.force_human,'ai_opt_out',r.ai_opt_out,'ai_gate',r.metadata->>'ai_gate','ai_gate_mode',r.metadata->>'ai_gate_mode','ai_test_phone_numbers',r.metadata->'ai_test_phone_numbers','contact_phone_number',r.phone_number,'ai_authorized_at',r.ai_authorized_at,'assignee_kind',r.assignee_kind,'bot_silenced_until',r.bot_silenced_until);
+end;$$;
+revoke all on function public.fn_meet_delivery_policy(uuid,uuid,text,timestamptz) from public,anon,authenticated;
+grant execute on function public.fn_meet_delivery_policy(uuid,uuid,text,timestamptz) to service_role;
+
+create or replace function public.fn_meet_delivery_settle(p_org uuid,p_job uuid,p_worker text,p_acquired_at timestamptz,p_state text,p_retry_at timestamptz default null)
+returns boolean language plpgsql security definer set search_path=public as $$
+declare j public.job_queue; a public.calendar_appointments; contact uuid; current_intent boolean; reason text;
+begin
+ select contact_id into contact from public.job_queue where organization_id=p_org and id=p_job;
+ if contact is null then return false;end if;
+ perform public.fn_service_lock(p_org,contact);
+ select * into j from public.job_queue where organization_id=p_org and id=p_job for update;
+ if not found or j.kind<>'transactional_delivery' or j.status<>'running' or j.locked_by is distinct from p_worker or j.locked_at is distinct from p_acquired_at then return false;end if;
+ select * into a from public.calendar_appointments where organization_id=p_org and id::text=j.payload->>'appointment_id' for update;
+ current_intent:=a.meeting_delivery_job_id=j.id and a.meeting_delivery->>'generation'=j.payload->>'delivery_generation';
+ if p_state like 'blocked:%' then
+  reason:=substring(p_state from 9);
+  if reason not in ('opt_out','lgpd','channel','access_or_stale','force_human','conversa_silenciada','conversa_de_humano','sem_autorizacao','autorizacao_expirada','ai_opt_out','fora_da_lista_de_teste','limits','guardrail') then raise exception 'meet_reason_invalid' using errcode='22023';end if;
+  p_state:='blocked';
+ end if;
+ if p_state not in ('sent','queued','retry','failed','blocked','stale') then raise exception 'meet_state_invalid' using errcode='22023';end if;
+ if p_state in ('sent','queued','retry') and not public.fn_meet_delivery_current(p_org,p_job,p_worker,p_acquired_at) then p_state:='stale';end if;
+ if p_state='sent' and not exists(select 1 from public.send_ledger where organization_id=p_org and job_id=p_job and seq=1 and status='accepted') then raise exception 'meet_delivery_not_accepted' using errcode='PT409';end if;
+ if p_state='retry' and j.attempts>=j.max_attempts then p_state:='failed';end if;
+ if p_state in ('queued','retry') then
+  update public.job_queue set status='pending',locked_by=null,locked_at=null,attempts=case when p_state='queued' then greatest(0,attempts-1) else attempts end,run_after=coalesce(p_retry_at,now()+interval '1 minute'),last_error='meet_delivery_waiting' where id=p_job and organization_id=p_org;
+ else
+  update public.job_queue set status=case when p_state='sent' then 'done' else 'failed' end,locked_by=null,locked_at=null,last_error=case when p_state='sent' then null else coalesce(reason,'meet_delivery_'||p_state) end where id=p_job and organization_id=p_org;
+  if current_intent then
+   update public.calendar_appointments set meeting_delivery=meeting_delivery||jsonb_build_object('state',p_state,'error',case when p_state='sent' then null else coalesce(reason,'meet_delivery_'||p_state) end,'settled_at',now()) where id=a.id and organization_id=p_org;
+   if p_state<>'sent' then perform public.fn_meet_notice(p_org,a.id,p_state);
+   else update public.agent_inbox_items set status='resolved',resolved_at=now() where organization_id=p_org and ref_kind='appointment' and ref_id=a.id and kind='other' and status='open';end if;
+  end if;
+ end if;
+ return true;
+end;$$;
+revoke all on function public.fn_meet_delivery_settle(uuid,uuid,text,timestamptz,text,timestamptz) from public,anon,authenticated;
+grant execute on function public.fn_meet_delivery_settle(uuid,uuid,text,timestamptz,text,timestamptz) to service_role;
+
+-- ---- o envio do link da agenda confere também os testadores por identidade social (migration 9408, #4701) ----
+-- Mora logo abaixo do bloco da 9399, ACIMA do bloco da 9243 e da VARREDURA anon, pelo mesmo motivo.
+-- Espelho de supabase/migrations/20261117050000_9408_entrega_da_agenda_confere_testadores_sociais.sql.
+create or replace function public.fn_meet_delivery_policy(p_org uuid,p_job uuid,p_worker text,p_acquired_at timestamptz)
+returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare r record;
+begin
+ select a.meeting_delivery,a.contact_id,v.channel_session_id,c.is_blocked,c.is_anonymized,c.force_human,c.ai_opt_out,c.ai_authorized_at,c.phone_number,c.social_identity,v.assignee_kind,v.bot_silenced_until,cs.metadata,cs.archived_at,
+  public.fn_meet_delivery_current(p_org,p_job,p_worker,p_acquired_at) as current
+ into r from public.job_queue j join public.calendar_appointments a on a.organization_id=j.organization_id and a.id::text=j.payload->>'appointment_id'
+ join public.contacts c on c.organization_id=a.organization_id and c.id=a.contact_id
+ join public.conversations v on v.organization_id=a.organization_id and v.contact_id=a.contact_id and v.id::text=j.payload->'service_boundary'->>'conversation_id'
+ join public.channel_sessions cs on cs.organization_id=v.organization_id and cs.id=v.channel_session_id
+ where j.organization_id=p_org and j.id=p_job and j.kind='transactional_delivery' and j.status='running' and j.locked_by=p_worker and j.locked_at=p_acquired_at
+  and a.meeting_delivery_job_id=j.id and a.meeting_delivery->>'generation'=j.payload->>'delivery_generation';
+ if not found then return jsonb_build_object('current',false,'reason','stale');end if;
+ if not r.current then return jsonb_build_object('current',false,'reason',case when r.is_anonymized then 'lgpd' when r.is_blocked then 'opt_out' when r.archived_at is not null then 'channel' else 'access_or_stale' end);end if;
+ return jsonb_build_object('current',true,'contact_id',r.contact_id,'channel_session_id',r.channel_session_id,'human_command',r.meeting_delivery->'authorized_by'->>'kind'='user',
+  'force_human',r.force_human,'ai_opt_out',r.ai_opt_out,'ai_gate',r.metadata->>'ai_gate','ai_gate_mode',r.metadata->>'ai_gate_mode','ai_test_phone_numbers',r.metadata->'ai_test_phone_numbers','contact_phone_number',r.phone_number,'ai_test_social_identities',r.metadata->'ai_test_social_identities','contact_social_identity',r.social_identity,'ai_authorized_at',r.ai_authorized_at,'assignee_kind',r.assignee_kind,'bot_silenced_until',r.bot_silenced_until);
+end;$$;
+revoke all on function public.fn_meet_delivery_policy(uuid,uuid,text,timestamptz) from public,anon,authenticated;
+grant execute on function public.fn_meet_delivery_policy(uuid,uuid,text,timestamptz) to service_role;
 
 -- ---- agências: configuração protegida e vínculo exclusivo de clientes (migration 9373) ----
 -- Espelho de supabase/migrations/20261115001322_9373_organizacoes_agencias.sql.
@@ -79499,6 +79586,519 @@ do $reaplicar$ begin
 end $reaplicar$;
 
 notify pgrst, 'reload schema';
+
+-- ---- testadores de IA por identidade social no pré-go-live (migration 9394) ----
+-- Espelho de supabase/migrations/20261115170000_9394_testadores_de_ia_por_identidade_social.sql.
+-- Canal em modo de teste ganha `metadata.ai_test_social_identities` (o texto
+-- exato de `contacts.social_identity`): contato de Instagram/Facebook não tem
+-- telefone. (1) a sobrecarga de 5 argumentos de `fn_configurar_pre_go_live_canal`
+-- grava as duas listas de uma vez; a de 4 fica para a imagem anterior. (2)
+-- `fn_automatico_da_conversa` lê a lista nova (telefone OU identidade social).
+-- Fica ANTES da VARREDURA anon porque CRIA FUNÇÃO. Sem DDL de tabela, sem backfill.
+
+create or replace function public.fn_configurar_pre_go_live_canal(
+  p_org uuid,
+  p_canal uuid,
+  p_modo text,
+  p_numeros text[],
+  p_identidades text[]
+)
+returns integer
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_linhas integer;
+  v_gate text;
+begin
+  if p_modo is null or p_modo not in ('open', 'pre_go_live') then
+    raise exception 'modo de acesso da IA inválido' using errcode = '22023';
+  end if;
+
+  if p_numeros is null or exists (
+    select 1
+      from unnest(p_numeros) as n(numero)
+     where numero is null or numero !~ '^\+[1-9][0-9]{7,14}$'
+  ) then
+    raise exception 'lista de telefones de teste inválida' using errcode = '22023';
+  end if;
+
+  -- Mesma forma de `identidadeSocialDeTesteSchema` e o mesmo teto de
+  -- `MAX_TESTADORES_SOCIAIS` (lib/ai/elegibilidade/pre-go-live.ts).
+  if p_identidades is null
+     or coalesce(cardinality(p_identidades), 0) > 50
+     or exists (
+       select 1
+         from unnest(p_identidades) as i(identidade)
+        where identidade is null
+           or identidade !~ '^(instagram|facebook):[0-9a-fA-F]{24}:[A-Za-z0-9_.-]{1,128}$'
+     )
+  then
+    raise exception 'lista de identidades sociais de teste inválida' using errcode = '22023';
+  end if;
+
+  v_gate := case when p_modo = 'pre_go_live' then 'allowlist' else 'open' end;
+
+  update public.channel_sessions
+     set metadata = jsonb_set(
+       jsonb_set(
+         jsonb_set(
+           jsonb_set(coalesce(metadata, '{}'::jsonb), '{ai_gate}', to_jsonb(v_gate), true),
+           '{ai_gate_mode}', to_jsonb(p_modo), true
+         ),
+         '{ai_test_phone_numbers}', to_jsonb(p_numeros), true
+       ),
+       '{ai_test_social_identities}', to_jsonb(p_identidades), true
+     )
+   where organization_id = p_org
+     and id = p_canal
+     and archived_at is null;
+
+  get diagnostics v_linhas = row_count;
+  return v_linhas;
+end;
+$$;
+
+revoke execute on function public.fn_configurar_pre_go_live_canal(uuid, uuid, text, text[], text[])
+  from public, anon, authenticated;
+grant execute on function public.fn_configurar_pre_go_live_canal(uuid, uuid, text, text[], text[])
+  to service_role;
+
+create or replace function public.fn_automatico_da_conversa(
+  p_organization_id    uuid,
+  p_channel_session_id uuid,
+  p_contato_id         uuid
+) returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $automatico$
+declare
+  v_quem        boolean;
+  v_metadata    jsonb;
+  v_numeros     jsonb;
+  v_variantes   text[];
+  v_numero      text;
+  v_telefone    text;
+  v_identidades jsonb;
+  v_identidade  text;
+begin
+  -- (a) HÁ QUEM ATENDA ESTE NÚMERO? Espelho de `haQuemAtendaASessao`
+  -- (lib/ai/agents/quem-atende-a-sessao.ts): agente publicado na sessão, ou
+  -- roteador ativo nela cujo fallback/membro pode EXECUTAR (versão publicada,
+  -- não arquivado, não pausado). Medir a existência da linha em
+  -- `ai_router_members` deixaria o portão aberto para roteador de membros todos
+  -- pausados — a mesma correção que o SQL do worker já carrega.
+  select
+    exists (
+      select 1
+        from public.ai_agents a
+        join public.ai_agent_versions v on v.id = a.published_version_id
+       where a.organization_id = p_organization_id
+         and a.archived_at is null
+         and a.paused_at is null
+         and v.status = 'published'
+         and v.channel_session_id = p_channel_session_id
+    )
+    or exists (
+      select 1
+        from public.ai_routers r
+       where r.organization_id = p_organization_id
+         and r.is_active
+         and r.channel_session_id = p_channel_session_id
+         and (
+           exists (
+             select 1
+               from public.ai_agents fa
+               join public.ai_agent_versions fv on fv.id = fa.published_version_id
+              where fa.id = r.fallback_agent_id
+                and fa.organization_id = p_organization_id
+                and fa.archived_at is null
+                and fa.paused_at is null
+                and fv.status = 'published'
+           )
+           or exists (
+             select 1
+               from public.ai_router_members m
+               join public.ai_agents ma on ma.id = m.agent_id
+               join public.ai_agent_versions mv on mv.id = ma.published_version_id
+              where m.router_id = r.id
+                and ma.organization_id = p_organization_id
+                and ma.archived_at is null
+                and ma.paused_at is null
+                and mv.status = 'published'
+           )
+         )
+    )
+  into v_quem;
+
+  if v_quem is not true then
+    return false;
+  end if;
+
+  -- (b) O CANAL ESTÁ EM PRÉ-GO-LIVE? Espelho de `contatoPodeTestar`
+  -- (lib/ai/elegibilidade/pre-go-live.ts): as DUAS listas do canal — telefones
+  -- e identidades sociais — são a ÚNICA autorização positiva. O nono dígito é
+  -- comparado nas duas direções por `fn_telefone_variantes`; a identidade
+  -- social, por igualdade exata (a conta conectada faz parte dela).
+  select s.metadata
+    into v_metadata
+    from public.channel_sessions s
+   where s.id = p_channel_session_id
+     and s.organization_id = p_organization_id;
+
+  -- Canal sem metadata (o legado) não tem gate: nada a perguntar.
+  if v_metadata is null then
+    return true;
+  end if;
+  if coalesce(v_metadata ->> 'ai_gate', '') <> 'allowlist' then
+    return true;
+  end if;
+  if coalesce(v_metadata ->> 'ai_gate_mode', '') <> 'pre_go_live' then
+    return true;
+  end if;
+
+  v_numeros := v_metadata -> 'ai_test_phone_numbers';
+  if v_numeros is null or jsonb_typeof(v_numeros) <> 'array' or jsonb_array_length(v_numeros) = 0 then
+    v_numeros := null;
+  end if;
+  v_identidades := v_metadata -> 'ai_test_social_identities';
+  if v_identidades is null or jsonb_typeof(v_identidades) <> 'array' or jsonb_array_length(v_identidades) = 0 then
+    v_identidades := null;
+  end if;
+  if v_numeros is null and v_identidades is null then
+    return false;
+  end if;
+  -- O contato é resolvido AQUI DENTRO, e não no wrapper: `comando_da_conversa`
+  -- é campo calculado de conversa e a issue #2739 proíbe subconsulta a
+  -- `contacts` por linha (o invariante `o-comando-da-conversa-le-o-bit-do-contato`
+  -- mede). E só NESTE ponto: quem chega aqui é a conversa de um canal em
+  -- pré-go-live com alguma lista de teste preenchida.
+  select ct.phone_number, ct.social_identity
+    into v_telefone, v_identidade
+    from public.contacts ct
+   where ct.id = p_contato_id
+     and ct.organization_id = p_organization_id;
+
+  -- Identidade social: igualdade exata, item fora da forma IGNORADO — a mesma
+  -- regra de `lerIdentidadesSociaisDeTeste` (zod).
+  if v_identidades is not null and v_identidade is not null and btrim(v_identidade) <> '' then
+    if exists (
+      select 1
+        from jsonb_array_elements(v_identidades) as e(item)
+       where jsonb_typeof(e.item) = 'string'
+         and (e.item #>> '{}') ~ '^(instagram|facebook):[0-9a-fA-F]{24}:[A-Za-z0-9_.-]{1,128}$'
+         and (e.item #>> '{}') = btrim(v_identidade)
+    ) then
+      return true;
+    end if;
+  end if;
+
+  if v_numeros is null or v_telefone is null or btrim(v_telefone) = '' then
+    return false;
+  end if;
+
+  v_variantes := public.fn_telefone_variantes(v_telefone);
+  if coalesce(array_length(v_variantes, 1), 0) = 0 then
+    return false;
+  end if;
+
+  for v_numero in select jsonb_array_elements_text(v_numeros) loop
+    -- Item inválido é IGNORADO, nunca vira match permissivo — a mesma regra de
+    -- `lerNumerosDeTeste` (zod): só telefone com DDI e ao menos 8 dígitos.
+    if v_numero ~ '^\+[1-9][0-9 ()-]*$'
+       and length(regexp_replace(v_numero, '\D', '', 'g')) >= 8
+       and public.fn_telefone_variantes(v_numero) && v_variantes
+    then
+      return true;
+    end if;
+  end loop;
+
+  return false;
+end;
+$automatico$;
+
+comment on function public.fn_automatico_da_conversa(uuid, uuid, uuid)
+  is 'Há agente que vai responder ESTA conversa? Espelho SQL do portão do dreno (haQuemAtendaASessao) + pré-go-live (contatoPodeTestar: telefone OU identidade social). Recebe o CONTATO (não o telefone) e resolve o número e a identidade por dentro, com a empresa: o wrapper comando_da_conversa não pode voltar a consultar contacts por linha (issue #2739). false = sem agente publicado no número, ou contato fora das listas de teste do canal. Issues #4012 e testadores sociais.';
+
+revoke execute on function public.fn_automatico_da_conversa(uuid, uuid, uuid) from public, anon, authenticated;
+grant  execute on function public.fn_automatico_da_conversa(uuid, uuid, uuid) to service_role;
+
+-- ---- comparecimento por token de API (migration 9396, #4515) ----
+-- Espelho de supabase/migrations/20261115200934_9396_comparecimento_por_token_de_api.sql.
+-- Recria `fn_appointment_stamp` e cria o RPC do comparecimento: mora DEPOIS do
+-- bloco da 9392 (que também recria o carimbo; esta é a ÚLTIMA definição do
+-- arquivo e junta os dois ramos) e ANTES da cascata da 9243 e da VARREDURA anon.
+
+-- manifest: libera o desfecho do compromisso (completed/no_show) para token de
+-- API com o escopo `agenda:attendance` e grava QUAL token registrou (#4515).
+-- A presença pela tela e a recusa do agente de IA continuam iguais.
+
+-- ⚠️ POR QUE ISTO É SCHEMA E NÃO SÓ CÓDIGO. A regra "quem declara presença é uma
+-- pessoa" não mora só no handler: `fn_appointment_stamp` recusa com
+-- `appointment_human_confirmation_required` (42501) todo `update` que leve o
+-- compromisso para `completed`/`no_show` sem `auth.uid()`. Um token entra por
+-- service role, onde `auth.uid()` é nulo — sem esta migration a rota passaria a
+-- aceitar o token e o banco derrubaria a escrita, devolvendo 422 no lugar do
+-- desfecho.
+--
+-- O que a migration abre é UMA porta: o RPC `fn_appointment_record_attendance`,
+-- que confere o token (organização, revogação, validade e escopo), deixa o id do
+-- token numa GUC transaction-local e chama a MESMA `fn_appointment_change` da
+-- tela. O carimbo revalida o token na própria linha e grava
+-- `outcome_api_token_id`, então a pergunta "quem registrou?" tem resposta no
+-- banco, não só no audit.
+alter table public.calendar_appointments
+  add column if not exists outcome_api_token_id uuid references public.api_tokens(id) on delete set null;
+
+comment on column public.calendar_appointments.outcome_api_token_id is
+  'Token de API que registrou o desfecho (#4515); nulo quando quem registrou foi uma pessoa pela Agenda.';
+
+create or replace function public.fn_appointment_stamp()
+returns trigger language plpgsql security definer set search_path=public as $fn$
+declare changed boolean; actor uuid; token_do_desfecho uuid; grant_do_desfecho text;
+begin
+ if new.contact_id is not null and not exists(select 1 from public.contacts where id=new.contact_id and organization_id=new.organization_id) then
+  raise exception 'appointment_contact_scope' using errcode='23503'; end if;
+ if new.conversation_id is not null and not exists(select 1 from public.conversations where id=new.conversation_id and organization_id=new.organization_id and contact_id=new.contact_id and not is_group and (auth.uid() is null or public.fn_can_view_conversation(organization_id,assigned_to_user_id))) then
+  raise exception 'appointment_conversation_scope' using errcode='23503'; end if;
+ if tg_op='INSERT' then
+  new.revision:=1;
+  -- Legado importado sem autoria não vira fato certificado.
+  new.outcome_source_kind:=null; new.outcome_user_id:=null; new.outcome_message_id:=null;
+  new.outcome_recorded_at:=null; new.outcome_api_token_id:=null;
+  return new;
+ end if;
+ changed:=row(new.starts_at,new.ends_at,new.status,new.contact_id,new.conversation_id) is distinct from row(old.starts_at,old.ends_at,old.status,old.contact_id,old.conversation_id);
+ new.revision:=old.revision+case when changed then 1 else 0 end;
+ new.revision_started_at:=case when changed then clock_timestamp() else old.revision_started_at end;
+ if changed then new.confirmation_next_at:=null; end if;
+ if new.status is distinct from old.status and new.status in ('completed','no_show') then
+  -- 9392: autoridade externa, gravada pelo servidor — espelho, não certificação.
+  -- Vem ANTES do ramo do token: o desfecho espelhado não tem autor, nem pessoa
+  -- nem token, e por isso zera também `outcome_api_token_id`.
+  if new.authority<>'local' and coalesce(nullif(current_setting('role',true),''),'none') not in ('authenticated','anon') then
+   new.outcome_source_kind:=null; new.outcome_user_id:=null; new.outcome_message_id:=null;
+   new.outcome_recorded_at:=null; new.outcome_api_token_id:=null;
+   return new;
+  end if;
+  actor:=auth.uid();
+  -- #4515: sem pessoa, a ÚNICA porta é um token de API desta organização que
+  -- carregue `agenda:attendance` e esteja vivo. A GUC é escrita apenas por
+  -- `fn_appointment_record_attendance`, mas o token é REVALIDADO aqui: a GUC
+  -- sozinha não é a autorização, é o pedido.
+  if actor is null then
+   grant_do_desfecho:=current_setting('agenda.attendance_token',true);
+   if grant_do_desfecho is not null and grant_do_desfecho<>'' then
+    select t.id into token_do_desfecho from public.api_tokens t
+     where t.id::text=grant_do_desfecho and t.organization_id=new.organization_id
+       and t.revoked_at is null and (t.expires_at is null or t.expires_at>now())
+       and t.scopes @> '["agenda:attendance"]'::jsonb;
+   end if;
+   if token_do_desfecho is null then
+    raise exception 'appointment_human_confirmation_required' using errcode='42501'; end if;
+  elsif not public.fn_role_at_least(new.organization_id,'agent') or not public.fn_support_write_allowed(new.organization_id) then
+   raise exception 'appointment_human_confirmation_required' using errcode='42501'; end if;
+  if new.starts_at>now() then raise exception 'appointment_not_started' using errcode='22023'; end if;
+  new.outcome_user_id:=actor; new.outcome_recorded_at:=clock_timestamp();
+  new.outcome_api_token_id:=token_do_desfecho;
+  new.outcome_source_kind:=case when token_do_desfecho is not null then 'api_token' when new.outcome_message_id is null then 'user' else 'contact_message' end;
+  if new.outcome_message_id is not null and not exists(
+   select 1 from public.messages m join public.conversations c on c.id=m.conversation_id and c.organization_id=m.organization_id
+   where m.id=new.outcome_message_id and m.organization_id=new.organization_id and m.contact_id=new.contact_id
+    and (new.conversation_id is null or m.conversation_id=new.conversation_id)
+    and m.direction='inbound' and m.service_revision is not null and m.service_revision=c.service_revision
+    and m.demanda_id is not distinct from c.current_demanda_id and m.created_at>=old.revision_started_at
+    and not c.is_group and public.fn_can_view_conversation(c.organization_id,c.assigned_to_user_id)
+  ) then raise exception 'appointment_message_not_evidence' using errcode='42501'; end if;
+ elsif changed then
+  new.outcome_source_kind:=null; new.outcome_user_id:=null; new.outcome_message_id:=null;
+  new.outcome_recorded_at:=null; new.outcome_api_token_id:=null;
+ else
+  new.outcome_source_kind:=old.outcome_source_kind;
+  -- SET NULL por retenção da FK é erosão de referência, não nova autoria.
+  new.outcome_user_id:=case when new.outcome_user_id is null and not exists(select 1 from auth.users where id=old.outcome_user_id) then null else old.outcome_user_id end;
+  new.outcome_message_id:=case when new.outcome_message_id is null and not exists(select 1 from public.messages where id=old.outcome_message_id and organization_id=old.organization_id) then null else old.outcome_message_id end;
+  new.outcome_recorded_at:=old.outcome_recorded_at;
+  new.outcome_api_token_id:=old.outcome_api_token_id;
+ end if;
+ return new;
+end; $fn$;
+revoke all on function public.fn_appointment_stamp() from public,anon,authenticated;
+drop trigger if exists trg_appointment_stamp on public.calendar_appointments;
+create trigger trg_appointment_stamp before insert or update on public.calendar_appointments for each row execute function public.fn_appointment_stamp();
+
+-- O CAMINHO DA INTEGRAÇÃO. Valida o token, deixa o id na GUC transaction-local
+-- e delega para `fn_appointment_change` — a MESMA função que a tela chama, com
+-- a mesma revisão otimista, o mesmo recálculo de serviço e o mesmo evento
+-- `appointment.outcome_confirmed` que alimenta `fn_appointment_recover`
+-- (o gatilho de follow-up `appointment_no_show`).
+create or replace function public.fn_appointment_record_attendance(
+  p_org uuid,
+  p_id uuid,
+  p_revision bigint,
+  p_patch jsonb,
+  p_api_token uuid
+) returns jsonb language plpgsql security definer set search_path=public as $fn$
+declare token public.api_tokens; status_novo text;
+begin
+ if p_api_token is null then raise exception 'attendance_token_required' using errcode='42501'; end if;
+ select * into token from public.api_tokens t
+  where t.id=p_api_token and t.organization_id=p_org
+    and t.revoked_at is null and (t.expires_at is null or t.expires_at>now());
+ if not found or not (token.scopes @> '["agenda:attendance"]'::jsonb) then
+  raise exception 'attendance_scope_required' using errcode='42501'; end if;
+ -- Compromisso de autoridade externa (9392) é espelho: o desfecho dele vem do
+ -- sistema que manda. Sem esta recusa, o RPC (que roda como servidor) cairia no
+ -- ramo do espelho do carimbo e devolveria sucesso sem gravar quem registrou.
+ if exists(select 1 from public.calendar_appointments a where a.id=p_id and a.organization_id=p_org and a.authority<>'local') then
+  raise exception 'attendance_external_authority' using errcode='42501'; end if;
+ status_novo:=p_patch->>'status';
+ if status_novo is null or status_novo not in ('completed','no_show') then
+  raise exception 'attendance_status_invalid' using errcode='22023'; end if;
+ perform set_config('agenda.attendance_token',p_api_token::text,true);
+ return public.fn_appointment_change(p_org,p_id,p_revision,p_patch);
+end; $fn$;
+revoke all on function public.fn_appointment_record_attendance(uuid,uuid,bigint,jsonb,uuid) from public,anon,authenticated;
+grant execute on function public.fn_appointment_record_attendance(uuid,uuid,bigint,jsonb,uuid) to service_role;
+
+-- ---- campos personalizados do contato mesclados no banco (migration 9398) ----
+-- Espelho de supabase/migrations/20261115230804_9398_contato_anotar_campos.sql.
+-- CAMPOS PERSONALIZADOS DO CONTATO MESCLADOS NO BANCO
+--
+-- Por que uma função, e não o PATCH da ficha: o `PATCH /api/v1/contacts/:id`
+-- SUBSTITUI `custom_fields` inteiro, e o PostgREST não sabe dizer
+-- `custom_fields || x` — só manda um valor pronto, calculado a partir de uma
+-- leitura anterior. Entre a leitura e a gravação, o que outro caminho gravou
+-- (o "Completar fichas" da campanha, a aba Diagnóstico, uma proposta aprovada)
+-- era desfeito em silêncio.
+--
+-- Em READ COMMITTED (o padrão do PostgREST), a segunda transação ESPERA o
+-- commit da primeira e RECALCULA a expressão sobre a versão nova da linha. O que
+-- quebraria o conserto é ler para uma variável e gravar depois.
+--
+-- `p_remover` sai ANTES do `||`, na mesma instrução: é por ele que a autoria
+-- antiga (`diag_por`, `diag_em`) deixa de assinar um texto que ela não escreveu.
+--
+-- A recusa da ficha anonimizada mora no `where`: se a anonimização confirma
+-- primeiro, a releitura da linha já não casa e nada é gravado (retorno nulo).
+-- O gatilho `trg_contacts_anonimizado_limpa_custom_fields` zera os campos no
+-- momento da anonimização; esta função não pode trazê-los de volta depois.
+--
+-- O que ela NÃO faz: decidir papel, contato do turno ou ficha pessoal. Isso é
+-- de quem chama (o handler resolve a organização de fonte confiável, nunca do
+-- corpo). Contato de OUTRA organização devolve nulo, sem confirmar que existe.
+
+create or replace function public.fn_contato_anotar_campos(
+  p_org uuid, p_contato uuid, p_campos jsonb, p_remover text[]
+) returns jsonb language plpgsql security definer set search_path = public, pg_temp as $fn$
+declare
+  resultado jsonb;
+begin
+  if p_campos is null or jsonb_typeof(p_campos) <> 'object' then
+    raise exception 'campos_precisa_ser_objeto' using errcode = '22023';
+  end if;
+
+  update public.contacts
+     set custom_fields = (coalesce(custom_fields, '{}'::jsonb) - coalesce(p_remover, '{}'::text[])) || p_campos
+   where organization_id = p_org
+     and id = p_contato
+     and is_anonymized is not true
+   returning custom_fields into resultado;
+
+  return resultado;
+end $fn$;
+
+-- Função nova em `public` nasce exposta pelas DUAS origens (o grant a PUBLIC do
+-- Postgres e o `alter default privileges` do baseline): revogar das três.
+revoke all on function public.fn_contato_anotar_campos(uuid, uuid, jsonb, text[]) from public, anon, authenticated;
+grant execute on function public.fn_contato_anotar_campos(uuid, uuid, jsonb, text[]) to service_role;
+
+comment on function public.fn_contato_anotar_campos(uuid, uuid, jsonb, text[]) is
+  'Mescla campos personalizados no CONTATO dentro do banco, numa única instrução atômica, '
+  'e recusa ficha anonimizada. Não decide papel nem organização — isso é de quem chama.';
+
+-- ---- 9406 — a prospecção cria a Empresa, com o módulo ligado (issue #3198, fatia 2) ----
+-- Espelho de supabase/migrations/20261116161000_9406_prospeccao_cria_empresa.sql.
+-- `contacts.company_id` é referência à EMPRESA (telefone da recepção), não pessoa
+-- sintética; `companies.website/maps_url/place_id` guardam só o que não muda do
+-- Maps, e o único parcial `(organization_id, place_id)` é a deduplicação por
+-- negócio. A mesma organização é garantida por gatilho, como em
+-- `fn_contacts_person_same_org` (0448).
+alter table public.contacts
+  add column if not exists company_id uuid references public.companies(id) on delete set null;
+
+create index if not exists idx_contacts_org_company
+  on public.contacts (organization_id, company_id)
+  where company_id is not null;
+
+create or replace function public.fn_contacts_company_same_org()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_company_org uuid;
+begin
+  if new.company_id is null then
+    return new;
+  end if;
+  select organization_id into v_company_org
+    from public.companies where id = new.company_id;
+  if v_company_org is null then
+    raise exception 'contacts.company_id: empresa inexistente';
+  end if;
+  if new.organization_id is distinct from v_company_org then
+    raise exception 'contacts.company_id: organization_id deve coincidir com a empresa';
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_contacts_company_same_org() from public, anon;
+
+drop trigger if exists trg_contacts_company_same_org on public.contacts;
+create trigger trg_contacts_company_same_org
+  before insert or update of company_id, organization_id on public.contacts
+  for each row execute function public.fn_contacts_company_same_org();
+
+alter table public.companies
+  add column if not exists website text,
+  add column if not exists maps_url text,
+  add column if not exists place_id text;
+
+create unique index if not exists companies_org_place_id_uidx
+  on public.companies (organization_id, place_id)
+  where place_id is not null;
+
+notify pgrst, 'reload schema';
+
+-- ---- o contato pessoal ganha DONO (migration 9360, #4434) ----
+-- Espelho da 9360 (o porquê inteiro está no cabeçalho dela). Não cria função,
+-- então a posição não é obrigatória. Entra AQUI, FORA da janela que a cerca
+-- `lgpd-alcanca-fichas-fundidas` recorta do baseline (do bloco "Põe um arquivo
+-- na fila de remoção" até a VARREDURA anon) e antes do espelho da 9243: a cerca
+-- compara esse recorte com o corpo da migration, então o espelho de outra
+-- migration DENTRO dele faz a comparação divergir. Aditiva e idempotente:
+-- coluna, comentários e índice
+-- parcial em `is_personal`. Sem backfill de propósito — contato marcado antes
+-- desta migration fica com dono nulo e invisível para todos, inclusive `admin`.
+alter table public.contacts
+  add column if not exists personal_owner_user_id uuid
+    references auth.users(id) on delete set null;
+
+comment on column public.contacts.personal_owner_user_id is
+  'Dono da marca pessoal (issue #4434): o usuário que marcou o contato. Escopa a aba Pessoal do Inbox — cada pessoa lê e responde o próprio, e papel nenhum (nem admin, nem manager) dá acesso ao pessoal de outra pessoa. Nulo = marcado antes desta migration, ou dono removido: invisível para todos até alguém marcar de novo e adotar. Zera no desmarcar; quem/quando fica em auditoria + timeline.';
+
+comment on column public.contacts.is_personal is
+  'Contato de vida pessoal (spec 21, com dono desde a #4434): escondido da operação (IA, automação, campanha, prospecção, funil, RAG, métricas, busca da equipe, MCP) e alcançável só pelo dono da marca (`personal_owner_user_id`), que lê e responde. Gerente e admin NÃO são exceção. Só gerente/dono marca e desmarca, pela rota personal; quem/quando fica em auditoria + timeline, nunca aqui.';
+
+create index if not exists idx_contacts_org_personal_dono
+  on public.contacts (organization_id, personal_owner_user_id)
+  where (is_personal = true);
 
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
