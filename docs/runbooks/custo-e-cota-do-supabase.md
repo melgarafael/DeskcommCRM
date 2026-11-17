@@ -478,7 +478,7 @@ em toda instalação: o plano grátis continua sendo o caminho documentado de in
 **Micro (1 GB)** é o próximo passo a testar: dá o dobro de memória à introspecção. **Não está medido que resolva:**
 na instalação medida (29/10), quem devolveu o serviço foi o *Restart project*. Antes de trocar, confirme que é este ramo e não o
 replay do gateway: `postgrest-replay-do-gateway.md` (seção "Outro ramo: falta de memória/IO") e
-`supabase-compute-insuficiente-free.md`.
+`supabase-sem-memoria-no-free.md`.
 
 **Micro só existe em plano pago, e assinar não troca o compute.** O plano grátis roda o Nano e o Micro é dos planos
 pagos, então este passo são dois atos: assinar um plano pago e depois trocar o compute do projeto. O projeto que veio

@@ -6,6 +6,7 @@
 
 import type { InboxKind } from "@/lib/agent-engine/db/repository";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { preencher } from "@/lib/i18n/idioma-do-aviso";
 import type { Idioma } from "@/lib/i18n/idiomas";
 
 export type AgentInboxSeverity = "info" | "warn" | "critical";
@@ -135,6 +136,12 @@ export const KIND_LABEL = {
   // "parou de responder" é o que faz quem lê a Central agir — e a ação é uma
   // só, reconectar em Credenciais.
   assinatura_desconectada: "A conta do ChatGPT desconectou — a IA parou de responder",
+  // (#4696) O retorno COMBINADO com o cliente sumia sem aviso quando o
+  // atendimento mudava antes do disparo: o job ia para `failed` e a Central
+  // ficava vazia, então do lado de lá havia uma pessoa esperando uma mensagem
+  // que nunca sairia. O rótulo diz o que o CLIENTE deixa de receber — não
+  // "job descartado", que é vocabulário de fila.
+  followup_descartado: "Um retorno combinado com o cliente não vai sair",
   other: "Aviso do assistente",
 } as const satisfies Record<InboxKind, string>;
 
@@ -260,20 +267,45 @@ const TITULO_DO_RESUMO: Record<MotivoDoResumoDaRecuperacao, string> = {
 export function copyDoResumoDaRecuperacao(
   motivo: MotivoDoResumoDaRecuperacao,
   dados: DadosDoResumoDaRecuperacao,
+  /**
+   * O idioma da ORGANIZAÇÃO: o aviso é linha gravada e a Central o mostra como
+   * veio. `pt-BR` (o padrão) é o texto de antes, byte a byte. Números, datas e o
+   * erro resumido são dado e entram nos marcadores depois da tradução.
+   */
+  idioma: Idioma = "pt-BR",
 ): { title: string; body: string } {
-  const CORPO: Record<MotivoDoResumoDaRecuperacao, string> = {
-    concluida:
-      `Recuperamos ${dados.mensagens ?? 0} mensagens de ${dados.conversas ?? 0} conversas do período em que o número ficou fora (${dados.desde ?? ""} a ${dados.ate ?? ""}).`,
-    erro:
-      `A recuperação das conversas da queda parou: ${dados.erro ?? "motivo não registrado"}. Veja em Conexões.`,
-    numero_mudou:
-      "O número da conexão mudou na reconexão. As conversas do período fora do ar não foram recuperadas, para não trazer mensagens de outro aparelho.",
-    numero_nao_confirmado:
-      "Não conseguimos confirmar o número da conexão depois da volta. As conversas do período fora do ar não foram recuperadas.",
-    acervo_desligado:
-      "A conexão voltou, mas \"Guardar o histórico\" está desligado nela: não há como recuperar as conversas do período fora do ar.",
+  const corpo = (): string => {
+    switch (motivo) {
+      case "concluida":
+        return preencher(
+          traduzir(
+            "Recuperamos {mensagens} mensagens de {conversas} conversas do período em que o número ficou fora ({desde} a {ate}).",
+            idioma,
+          ),
+          { mensagens: dados.mensagens ?? 0, conversas: dados.conversas ?? 0, desde: dados.desde ?? "", ate: dados.ate ?? "" },
+        );
+      case "erro":
+        return preencher(traduzir("A recuperação das conversas da queda parou: {erro}. Veja em Conexões.", idioma), {
+          erro: dados.erro ?? traduzir("motivo não registrado", idioma),
+        });
+      case "numero_mudou":
+        return traduzir(
+          "O número da conexão mudou na reconexão. As conversas do período fora do ar não foram recuperadas, para não trazer mensagens de outro aparelho.",
+          idioma,
+        );
+      case "numero_nao_confirmado":
+        return traduzir(
+          "Não conseguimos confirmar o número da conexão depois da volta. As conversas do período fora do ar não foram recuperadas.",
+          idioma,
+        );
+      case "acervo_desligado":
+        return traduzir(
+          "A conexão voltou, mas \"Guardar o histórico\" está desligado nela: não há como recuperar as conversas do período fora do ar.",
+          idioma,
+        );
+    }
   };
-  return { title: TITULO_DO_RESUMO[motivo], body: CORPO[motivo] };
+  return { title: traduzir(TITULO_DO_RESUMO[motivo], idioma), body: corpo() };
 }
 
 /** O título do aviso por cliente sem resposta: a conversa é a referência, e o nome do cliente não entra (sem PII). */
@@ -283,3 +315,45 @@ export const TITULO_DO_CLIENTE_SEM_RESPOSTA_NA_QUEDA =
 /** O corpo do mesmo aviso. Não traz nome, número nem trecho de mensagem. */
 export const CORPO_DO_CLIENTE_SEM_RESPOSTA_NA_QUEDA =
   "Este cliente escreveu enquanto o número estava fora do ar e ainda não teve resposta.";
+
+/**
+ * O retorno combinado que NÃO vai sair (#4696).
+ *
+ * ═══ A REGRA DE ESCRITA ═══
+ *
+ * Nenhuma frase daqui diz o código do erro. `service_boundary_stale` não é
+ * informação para quem abre a Central: o que a pessoa precisa saber é que uma
+ * mensagem PROMETIDA ao cliente não vai sair e por quê — e o "por quê" na
+ * língua de quem lê é "o atendimento mudou". Também não se afirma o que o
+ * sistema não apura: ele sabe que a fronteira mudou, não se o cliente ficou
+ * esperando no WhatsApp. O convite a agir é a única saída que o produto oferece
+ * de fato — abrir a conversa e retomar.
+ */
+export interface DadosDoRetornoDescartado {
+  /** Nome do contato, como está na ficha. */
+  contato: string;
+  /** O negócio a que o retorno pertencia, quando existe (nunca id nem etapa). */
+  negocio?: string | null;
+  /**
+   * O instante que estava combinado, JÁ FORMATADO no fuso da empresa (ex.:
+   * "12/11 às 15:00"). `null` quando o job não trouxe o instante — a frase
+   * então não inventa hora nenhuma.
+   */
+  quando: string | null;
+}
+
+export function copyDoRetornoDescartado(dados: DadosDoRetornoDescartado): {
+  title: string;
+  body: string;
+} {
+  const hora = dados.quando ? ` (${dados.quando})` : "";
+  const sobre = dados.negocio ? ` Era sobre ${dados.negocio}.` : "";
+  return {
+    title: `Retorno combinado com ${dados.contato} não vai sair`,
+    body:
+      `O atendimento de ${dados.contato} mudou antes do horário combinado${hora}: a conversa foi ` +
+      `encerrada ou virou outro atendimento, então o retorno que estava marcado não será ` +
+      `enviado.${sobre} Se ainda fizer sentido falar com essa pessoa, abra a conversa e ` +
+      `retome o contato.`,
+  };
+}

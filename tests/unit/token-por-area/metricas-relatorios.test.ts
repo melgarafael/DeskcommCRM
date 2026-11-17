@@ -361,6 +361,7 @@ const CASOS: Caso[] = [
     linhas: LINHAS_DAS_ETIQUETAS,
     rpc: { fn_tags_de_conversa_em_uso: RPC_ETIQUETAS },
     papel: "viewer",
+    papelDoToken: "manager",
     escopo: "mcp:read",
     recurso: "reports",
     soDeA: ["tag-de-a"],
