@@ -51,7 +51,7 @@
    * e logo da conversa). Token porque a mesma marca precisa ser legível nos
    * DOIS temas: o tom de marca pensado para fundo claro some no escuro, e um
    * hex cravado no componente obriga a repetir o par em cada consumidor.
-   * Os quatro passam no piso de componente da WCAG (3:1) contra o --color-bg
+   * Todos eles passam no piso de componente da WCAG (3:1) contra o --color-bg
    * do próprio tema — medido em lib/channels/marca-do-canal.test.ts. */
   --color-canal-whatsapp: #128c4a;
   --color-canal-instagram: #c13584;
@@ -290,7 +290,7 @@
    * e logo da conversa). Token porque a mesma marca precisa ser legível nos
    * DOIS temas: o tom de marca pensado para fundo claro some no escuro, e um
    * hex cravado no componente obriga a repetir o par em cada consumidor.
-   * Os quatro passam no piso de componente da WCAG (3:1) contra o --color-bg
+   * Todos eles passam no piso de componente da WCAG (3:1) contra o --color-bg
    * do próprio tema — medido em lib/channels/marca-do-canal.test.ts. */
   --color-canal-whatsapp: #128c4a;
   --color-canal-instagram: #c13584;
@@ -384,7 +384,7 @@
    * e logo da conversa). Token porque a mesma marca precisa ser legível nos
    * DOIS temas: o tom de marca pensado para fundo claro some no escuro, e um
    * hex cravado no componente obriga a repetir o par em cada consumidor.
-   * Os quatro passam no piso de componente da WCAG (3:1) contra o --color-bg
+   * Todos eles passam no piso de componente da WCAG (3:1) contra o --color-bg
    * do próprio tema — medido em lib/channels/marca-do-canal.test.ts. */
   --color-canal-whatsapp: #25d366;
   --color-canal-instagram: #f472b6;
