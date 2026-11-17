@@ -64,18 +64,35 @@ interface Definicao {
   temPortao: boolean;
 }
 
+/** O delimitador que abre o corpo: o primeiro `as $tag$` depois da abertura. */
+const ABRE_CORPO = /\bas\s+(\$[a-z0-9_]*\$)/gi;
+
+function fimDoCorpo(sql: string, inicio: number): number {
+  ABRE_CORPO.lastIndex = inicio;
+  const a = ABRE_CORPO.exec(sql);
+  if (a) {
+    const fecha = sql.indexOf(a[1]!, a.index + a[0].length);
+    if (fecha !== -1) return fecha;
+  }
+  const fim = sql.indexOf("$$;", inicio);
+  return fim === -1 ? sql.length : fim;
+}
+
 /**
  * As definições de função de um arquivo SQL, na ordem em que o Postgres as
- * executa. O corpo termina no primeiro `$$;` depois da abertura: parar ali
- * evita capturar o portão da função SEGUINTE e concluir que esta o tem.
+ * executa. O corpo termina onde fecha o MESMO delimitador que o abriu (`$$`,
+ * `$function$`, `$fn$`...): parar ali evita capturar o portão da função
+ * SEGUINTE e concluir que esta o tem. Cortar no primeiro `$$;` falhava com
+ * `$function$`, porque o corte avançava sobre as funções seguintes: a
+ * `fn_mesclar_contatos` da main "tinha portão" emprestado de outra função, e
+ * a redefinição do #4493 parecia perdê-lo.
  */
 function definicoesDe(sql: string, origem: string, base: number): Definicao[] {
   const achados: Definicao[] = [];
   ABERTURA.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = ABERTURA.exec(sql)) !== null) {
-    const fim = sql.indexOf("$$;", m.index);
-    const corpo = sql.slice(m.index, fim === -1 ? sql.length : fim);
+    const corpo = sql.slice(m.index, fimDoCorpo(sql, m.index));
     achados.push({
       funcao: m[1]!,
       origem,
@@ -155,6 +172,20 @@ describe("recriar uma função não apaga o portão de MFA dela", () => {
         .map((d) => d.funcao),
     );
     expect(recriadas.size).toBeGreaterThan(0);
+  });
+
+  it("o corte respeita o delimitador: o portão da função seguinte não é emprestado", () => {
+    const sql = [
+      "create or replace function public.fn_a() returns void language plpgsql as $function$",
+      "begin perform 1; end;",
+      "$function$;",
+      "create or replace function public.fn_b() returns void language plpgsql as $$",
+      "begin if not public.fn_session_mfa_proven() then raise exception 'mfa'; end if; end;",
+      "$$;",
+    ].join("\n");
+    const [a, b] = definicoesDe(sql, "teste", 0);
+    expect(a).toMatchObject({ funcao: "fn_a", temPortao: false });
+    expect(b).toMatchObject({ funcao: "fn_b", temPortao: true });
   });
 
   it("no baseline.sql — é ele que o update.sh re-aplica em quem já instalou", () => {

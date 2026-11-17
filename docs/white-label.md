@@ -24,6 +24,8 @@ Na mesma página **Marca da instalação**, o administrador da instalação pode
 
 Por segurança, não é um editor de CSS irrestrito: aceita seletores de classes e propriedades visuais de cor, borda, sombra e tipografia. Recusa seletores globais ou por ID, regras `@`, URLs e carregamento remoto, funções fora de `rgb`/`rgba`/`hsl`/`hsla`/`var`/`calc`/`min`/`max`/`clamp`, comentários, escapes, scripts, `!important` e propriedades de layout e posicionamento. O limite é 16 KB. Se uma folha já salva deixar de passar na validação, ela não é aplicada e a tela Marca mostra o motivo. Como a configuração é da instalação, qualquer ajuste também afeta as organizações atendidas por ela; confira as telas depois de salvar.
 
+O editor tem **dois campos**. O primeiro vale nos dois temas; o segundo, **CSS do tema escuro**, vale só com o tema escuro ativo — ele é aplicado com o escopo do tema, então uma regra escrita ali não aparece no claro. É assim que se escolhe uma cor que funcione no escuro sem estragar o claro. As duas folhas são validadas juntas: se qualquer uma tiver regra inválida, nenhuma é aplicada e a tela Marca mostra qual campo corrigir.
+
 Exemplo:
 
 ```css
@@ -36,7 +38,21 @@ Exemplo:
 }
 ```
 
-**Se o CSS deixar as telas ilegíveis.** Uma folha válida ainda pode esconder texto (cor transparente, fonte de tamanho zero) ou cobrir a tela com uma sombra — inclusive o login e a própria página Marca. Para sair disso, abra a página com `?sem_css=1` no endereço: ela vem sem o CSS personalizado, só para você. Entre por `/login?sem_css=1`, depois abra `/admin/marca?sem_css=1` digitando o endereço, apague o conteúdo do campo e salve. Sem acesso à tela, pelo servidor: `psql "$SUPABASE_DB_URL" -c "delete from public.platform_config where chave = 'APP_CUSTOM_CSS';"` — o CSS deixa de valer em até 30 segundos. Passo a passo em [`runbooks/css-personalizado.md`](runbooks/css-personalizado.md).
+**Cor por seção do menu lateral.** O menu tem classes estáveis, pensadas para este CSS. Todo grupo leva `nav-grupo`, e cada um leva também a sua: `nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais`, `nav-grupo-analise` e `nav-grupo-organizacao` (a do rodapé, com Configurações e Ajuda). Cada destino tem a dele: `nav-item-inbox`, `nav-item-kanban`, e assim por diante. Essas classes fazem parte do contrato da tela e não mudam entre versões; as classes utilitárias do Tailwind, sim.
+
+Para pintar o texto do menu, mire `text-muted-foreground` dentro do grupo, não `rounded-md`. O título do grupo e os links têm as duas, mas o item da tela aberta só tem `rounded-md`: ele já tem fundo na cor de destaque, e uma cor de texto escolhida para o fundo do menu pode sumir sobre esse fundo. Como `text-muted-foreground` é do Tailwind, confira o menu depois de atualizar. A cor do exemplo é para o tema claro; no escuro, repita a regra no campo **CSS do tema escuro** com uma cor clara.
+
+```css
+.nav-grupo .text-muted-foreground {
+	color: #3d4f45;
+}
+
+.nav-grupo-crm .text-muted-foreground {
+	color: #2f6f8f;
+}
+```
+
+**Se o CSS deixar as telas ilegíveis.** Uma folha válida ainda pode esconder texto (cor transparente, fonte de tamanho zero) ou cobrir a tela com uma sombra — inclusive o login e a própria página Marca. Para sair disso, abra a página com `?sem_css=1` no endereço: ela vem sem o CSS personalizado, só para você. Entre por `/login?sem_css=1`, depois abra `/admin/marca?sem_css=1` digitando o endereço, apague o conteúdo dos **dois** campos (tema claro e tema escuro) e salve. Sem acesso à tela, pelo servidor: `psql "$SUPABASE_DB_URL" -c "delete from public.platform_config where chave in ('APP_CUSTOM_CSS', 'APP_CUSTOM_CSS_DARK');"` — as duas folhas deixam de valer em até 30 segundos. Apagar só a chave do claro mantém a do escuro valendo quando o tema escuro está ativo. Passo a passo em [`runbooks/css-personalizado.md`](runbooks/css-personalizado.md).
 
 O arquivo é aceito **pelos bytes, não pela extensão**. Renomear um `.svg` para `.png` não engana: o sistema lê o conteúdo, recusa e diz por quê. Isso não é preciosismo — SVG é XML e pode carregar script, que executaria se alguém abrisse a imagem direto pelo endereço dela, num bucket que é público por necessidade.
 
