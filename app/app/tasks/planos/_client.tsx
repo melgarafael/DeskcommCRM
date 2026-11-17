@@ -45,6 +45,23 @@ import { ArrowBendUpLeft } from "@/lib/ui/icons";
 import { camposDeDataDoNegocio } from "@/lib/leads/campos-do-funil";
 import { LIMITES_DO_PLANO } from "@/lib/tarefas/limites-do-plano";
 import type { PassoDePlano, PlanoDeTarefas } from "@/lib/tarefas/plano";
+import type { PrazoDoPasso } from "@/lib/tarefas/prazo-relativo";
+
+/**
+ * A chave gravada (pela API) que nenhum funil declara, para o seletor mostrá-la como é.
+ * Fora do componente porque dentro do callback do `.some` o TypeScript perde o
+ * estreitamento de `prazo.modo` (TS2339 em `prazo.campo`). Enquanto os funis carregam,
+ * nada é órfão ainda: mostrar a chave crua ali estourava a largura do passo a 375px.
+ */
+function chaveOrfa(
+  prazo: PrazoDoPasso,
+  campos: ReadonlyArray<{ chave: string }>,
+  carregando: boolean,
+): string | null {
+  if (carregando || prazo.modo !== "campo_de_data" || !prazo.campo) return null;
+  const campo = prazo.campo;
+  return campos.some((c) => c.chave === campo) ? null : campo;
+}
 import { explicarRecusaDoPlano, frasePrazoDoPasso } from "@/lib/tarefas/recusa-do-plano";
 import { PRIORIDADES_DA_TAREFA, type PrioridadeDaTarefa } from "@/lib/tarefas/tipos";
 import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
@@ -444,7 +461,7 @@ function Editor({
                 negócio, cada um com a sua data. O passo continua um só: quem lê
                 o JSON vê `prazo.modo` decidindo de onde o número conta.
               */}
-              <div className="space-y-1">
+              <div className="min-w-0 space-y-1">
                 <Label htmlFor={`passo-modo-${indice}`}>{t("O prazo conta de")}</Label>
                 <Select
                   value={passo.prazo.modo}
@@ -471,7 +488,7 @@ function Editor({
               </div>
 
               {passo.prazo.modo === "campo_de_data" ? (
-                <div className="space-y-1">
+                <div className="min-w-0 space-y-1">
                   <Label htmlFor={`passo-campo-${indice}`}>{t("Campo de data")}</Label>
                   {/*
                     Lista, não chave digitada: quem monta o plano não sabe a
@@ -501,7 +518,7 @@ function Editor({
                       {/* Plano gravado pela API com uma chave que nenhum funil declara:
                           mostrada como é, para a pessoa ver e trocar — sumir com
                           ela deixaria o seletor vazio sem dizer por quê. */}
-                      {passo.prazo.campo && !camposDeData.some((c) => c.chave === passo.prazo.campo) ? (
+                      {chaveOrfa(passo.prazo, camposDeData, carregandoFunis) ? (
                         <SelectItem value={passo.prazo.campo}>
                           {t("«{c}» (não está em nenhum funil)").replace("{c}", passo.prazo.campo)}
                         </SelectItem>
@@ -516,7 +533,7 @@ function Editor({
                 </div>
               ) : null}
 
-              <div className="space-y-1">
+              <div className="min-w-0 space-y-1">
                 <Label htmlFor={`passo-prazo-${indice}`}>
                   {passo.prazo.modo === "campo_de_data" ? t("Dias antes (-) ou depois (+)") : t("Vence em (dias)")}
                 </Label>
