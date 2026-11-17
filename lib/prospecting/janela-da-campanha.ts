@@ -21,8 +21,8 @@
  * automáticas passam pelo MESMO caminho que a tela usa: `status='paused'` e
  * `assertCanalLivre` na volta. Quando a janela de uma campanha abre com OUTRA
  * `running` no mesmo número, a trava decide — e a espera é NOMEADA na coluna
- * `error` da campanha ("a janela abriu, mas o número está com X; volta sozinha
- * quando o número ficar livre"), nunca silenciosa.
+ * `error` da campanha ("a janela abriu, mas o número está com outra campanha em
+ * andamento; volta sozinha quando o número ficar livre"), nunca silenciosa.
  *
  * `pausada_pela_janela` é o que separa a pausa AUTOMÁTICA da pausa de quem
  * opera: só a automática volta sozinha. Pausa manual, arquivamento e início
@@ -48,8 +48,6 @@ const DIA_POR_NOME: Record<string, number> = {
   Fri: 5,
   Sat: 6,
 };
-
-const NOME_CURTO_DO_DIA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"] as const;
 
 /**
  * A janela da campanha: dias (0..6), hora de início e hora de fim.
@@ -123,12 +121,6 @@ export function proximaAberturaDaJanelaDaCampanha(
   // Inalcançável com `dias` não vazio (o schema garante); devolve a próxima
   // madrugada em vez de laço infinito.
   return instantFromWall(w.y, w.mo, w.d + 1, janela.inicio, timezone);
-}
-
-/** Texto legível da janela — o MESMO no aviso da campanha e na tela. */
-export function descreverJanelaDaCampanha(janela: JanelaDaCampanha): string {
-  const dias = janela.dias.map((d) => NOME_CURTO_DO_DIA[d] ?? String(d)).join(", ");
-  return `${dias}, ${janela.inicio}h–${janela.fim}h`;
 }
 
 /**
