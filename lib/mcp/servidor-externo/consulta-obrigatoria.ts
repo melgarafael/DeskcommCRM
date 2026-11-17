@@ -77,7 +77,7 @@ export async function consultarFonteObrigatoria(
       action: "mcp.tool_called",
       organizationId: ids.organizationId,
       resourceType: "mcp_tool",
-      resourceId: nome,
+      resourceId: null,
       bypassedRls: true,
       metadata: {
         actor_type: "ai_agent",

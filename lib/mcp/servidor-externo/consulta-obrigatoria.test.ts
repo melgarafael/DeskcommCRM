@@ -1,9 +1,14 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type * as Chamada from "./chamada";
 const m = vi.hoisted(() => ({ carregar: vi.fn(), chamar: vi.fn(), audit: vi.fn() }));
 vi.mock("./carregar", () => ({ carregarServidorMcpExternoDoTurno: m.carregar }));
-vi.mock("./chamada", () => ({ chamarFerramentaRemota: m.chamar }));
+vi.mock("./chamada", async (importOriginal) => ({
+  ...(await importOriginal<typeof Chamada>()),
+  chamarFerramentaRemota: m.chamar,
+}));
 vi.mock("@/lib/audit", () => ({ audit: m.audit }));
+import { CABECALHOS_DO_CONTATO } from "./chamada";
 import {
   consultarFonteObrigatoria,
   textoAutorizadoPelaFonte,
@@ -26,7 +31,7 @@ beforeEach(() => {
   m.carregar.mockResolvedValue({
     servidor: {},
     ferramentas: [{ name: "consultar_dados_cliente", somenteLeitura: true }],
-    cabecalhos: { "X-Deskcomm-Contato-Id": ids.contactId },
+    cabecalhos: { [CABECALHOS_DO_CONTATO.id]: ids.contactId },
   });
 });
 it("usa identidade do executor e consulta fresca; recusa links e valores inventados", async () => {
@@ -37,6 +42,17 @@ it("usa identidade do executor e consulta fresca; recusa links e valores inventa
   m.chamar.mockResolvedValue({ dados: fonte });
   const atual = await consultarFonteObrigatoria(db, ids, agente);
   expect(atual).toEqual(fonte);
+  expect(m.audit).toHaveBeenCalledWith(
+    expect.objectContaining({
+      organizationId: ids.organizationId,
+      resourceType: "mcp_tool",
+      resourceId: null,
+      metadata: expect.objectContaining({
+        tool_name: agente.consultaObrigatoriaTool,
+        success: true,
+      }),
+    }),
+  );
   expect(m.carregar).toHaveBeenCalledWith(
     db,
     ids.organizationId,
