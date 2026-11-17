@@ -10,4 +10,4 @@ Com o interruptor desligado, que é o padrão, nada muda: a troca segue como hoj
 
 Quando as duas coisas estão ligadas — frase cadastrada e troca silenciosa —, o silêncio ganha: a frase não é enviada, porque ela é do modo avisado e não pode aparecer no modo que promete não avisar. A tela diz isso ao lado do campo.
 
-Crédito: @webtecnica (#4750, issue #4750).
+Contribuição de @webtecnica (#4786), a partir da issue #4750 de @DPalmercs.
