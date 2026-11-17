@@ -492,7 +492,16 @@ describe("criarPegadaDoCandidato", () => {
       }),
       null,
     );
-    expect(admin.from).not.toHaveBeenCalled();
+    // O invariante é sobre as DEFINIÇÕES (o `settings` dos funis), não sobre o
+    // cliente inteiro: desde a fatia 2 do #3198 a chave do módulo "Empresas e
+    // pessoas" é lida para decidir a empresa do contato novo. As definições
+    // continuam fora do caminho sem contexto e sem categoria.
+    const tabelas = admin.from.mock.calls.map(([tabela]) => tabela);
+    expect(tabelas).not.toContain("crm_pipelines");
+    // E a chave do módulo é lida UMA vez por tabela: a decisão não paga a mesma
+    // configuração duas vezes.
+    expect(tabelas.filter((t) => t === "platform_config")).toHaveLength(1);
+    expect(tabelas.filter((t) => t === "modulos_instalados")).toHaveLength(1);
     expect(m.contato.mock.calls[0]?.[2].custom_fields).toEqual({
       link_google_meu_negocio: "https://maps.app.goo.gl/clinica1",
     });
@@ -502,9 +511,12 @@ describe("criarPegadaDoCandidato", () => {
   // e não recebe update de links; ficha que já existe só se completa pelo botão.
   it("contato reaproveitado: não recria o contato e não recebe update de links na abordagem (spec 26 §7.1)", async () => {
     const { db, chamadas } = bancoFalso();
+    // Nem o módulo "Empresas e pessoas" (#3198) é consultado: sem contato novo não
+    // há empresa a criar, e o envio de quem já tem ficha não paga leitura nenhuma.
+    const admin = { from: vi.fn() };
     await criarPegadaDoCandidato(
       db,
-      {} as never,
+      admin as never,
       ORG,
       campanha,
       configOnSend,
@@ -519,6 +531,7 @@ describe("criarPegadaDoCandidato", () => {
       }),
       CONTATO,
     );
+    expect(admin.from).not.toHaveBeenCalled();
     expect(m.contato).not.toHaveBeenCalled();
     expect(chamadas.some((c) => c.sql.includes("update public.contacts"))).toBe(false);
   });

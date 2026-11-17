@@ -1063,10 +1063,6 @@ export async function criarPegadaDoCandidato(
     description: `Campanha: ${c.name}\nQualificação: ${config.qualification}`.slice(0, 2000),
   });
   let contactId = contatoDaCampanha ?? p.contact_id;
-  // A EMPRESA DO MÓDULO "EMPRESAS E PESSOAS" (#3198, fatia 2) — só com o módulo
-  // LIGADO. Desligado, `empresaDoCandidato` devolve `null` sem escrever nada, e
-  // o caminho abaixo é exatamente o de hoje: contato, negócio e conversa.
-  const empresaId = await empresaDoCandidato(admin, org, p.data);
   if (!contactId) {
     const linksDoNovo = await camposDoContatoNovo(admin, org, p);
     // Porta `prospeccao`: a conversa abre logo abaixo, no canal da CAMPANHA. Pela
@@ -1088,6 +1084,12 @@ export async function criarPegadaDoCandidato(
       { porta: "prospeccao" },
     );
     contactId = String(contact.contact.id);
+    // A EMPRESA DO MÓDULO "EMPRESAS E PESSOAS" (#3198, fatia 2) — só faz sentido
+    // para o contato que a prospecção ACABOU de criar, e é aqui que o vínculo é
+    // usado (logo abaixo). Fora deste ramo a leitura seria desperdício em TODO
+    // envio de contato reaproveitado — e criaria empresa sem ninguém ligado a ela.
+    // Desligado, `empresaDoCandidato` devolve `null` sem escrever nada.
+    const empresaId = await empresaDoCandidato(admin, org, p.data);
     // O contato NASCIDO da prospecção aponta para a empresa quando ela existe:
     // o telefone do Google é o da recepção, e o vínculo é com a EMPRESA
     // (#3198, fatia 2, decisão 1 do autor). Contato que já existia não é tocado.
