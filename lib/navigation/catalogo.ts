@@ -810,6 +810,20 @@ export const NAV_CATALOG = [
     healthDot: true,
   },
   {
+    // Módulo opcional (ADR-0002, #4227): a porta só existe depois que o dono da
+    // instalação instala `amigo` em `/admin/modulos`. Mesmo filtro de cadências.
+    href: "/app/integrations/amigo",
+    label: "Amigo",
+    description: "Ligue a agenda ao sistema de clínicas Amigo: pacientes, convênios e consultas.",
+    icon: "CalendarBlank",
+    // No hub do CRM, não no menu lateral: toda porta de módulo mora num hub
+    // (`tests/unit/porta-do-modulo-ligado.test.tsx`), e é ali que a agenda está.
+    group: "crm",
+    section: "O dia a dia da venda",
+    minRole: "agent",
+    modulo: "amigo",
+  },
+  {
     // Não tinha link nenhum no app inteiro: só se chegava digitando a URL.
     href: "/app/integrations/nuvemshop",
     label: "Nuvemshop",
@@ -1174,6 +1188,17 @@ export const NAV_CATALOG = [
     // SEM `sidebar`: fica só no hub. Trocar a marca é tarefa de uma vez, e
     // agrupar o menu já o fez crescer — duas telas a mais estouraram a dobra em
     // 900px, medido pelo e2e `navegacao.spec.ts`.
+  },
+  {
+    href: "/app/settings/aparencia",
+    label: "Aparência",
+    description: "O template visual do sistema: fundo, menu, tipografia, cantos e densidade.",
+    icon: "PaintBrush",
+    group: "organizacao",
+    section: "Sua empresa",
+    // `admin`, como a Marca: o visual é identidade da empresa e vale para todos.
+    // SEM `sidebar` pelo mesmo motivo da linha de cima — a dobra de 900px.
+    minRole: "admin",
   },
   {
     href: "/app/settings/billing",

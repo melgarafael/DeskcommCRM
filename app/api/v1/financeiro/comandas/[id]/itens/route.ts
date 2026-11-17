@@ -73,10 +73,12 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   const atendente =
     lido.data.attendant_user_id ?? agendamento?.owner_user_id ?? comanda.attendant_user_id ?? null;
 
-  const percent = await percentualDoItem(supabase, org, {
+  const comissao = await percentualDoItem(supabase, org, {
     attendantUserId: atendente,
     eventTypeId: lido.data.event_type_id ?? null,
   });
+  if (!comissao.ok) return fail("internal_error", comissao.error, 500, { requestId });
+  const percent = comissao.percent;
 
   const total = totalDoItem({
     quantidade: lido.data.quantity,

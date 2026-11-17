@@ -81,6 +81,7 @@ import {
   type AgendaDePausa,
 } from "@/lib/channels/agenda-de-pausa";
 import { sincronizarAvisoDoAgendador } from "@/lib/channels/aviso-do-agendador";
+import { AUTOR_DA_JANELA_AGENDADA } from "@/lib/channels/canal-pausado";
 import { sincronizarAvisoDePausa } from "@/lib/channels/central-de-pausa";
 import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 import { logger } from "@/lib/logger";
@@ -129,7 +130,9 @@ type CanalAlvo = { id: string; metadata: unknown };
  * cron escreve — se ele não sincronizasse, a pausa da madrugada ficaria
  * invisível para quem não agendou, e a retomada deixaria o aviso aberto.
  */
-const AUTOR_DA_JANELA = "a janela de manutenção agendada";
+// O autor que a janela assina: a constante de `canal-pausado`, que o corpo do
+// aviso reconhece e escreve no idioma da organização.
+const AUTOR_DA_JANELA = AUTOR_DA_JANELA_AGENDADA;
 
 async function canaisDaAgenda(db: SupabaseClient, agenda: AgendaDaTabela): Promise<CanalAlvo[]> {
   let consulta = db

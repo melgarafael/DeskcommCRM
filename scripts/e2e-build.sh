@@ -51,6 +51,14 @@ set -a
 . ./.env.e2e
 set +a
 
+# ═══ POR QUE O TETO DE HEAP ═══
+# O type check dentro do `next build` chega a ~4,0 GB, e o heap padrão do Node no
+# runner é ~4,1 GB. Em 17/11, e2e-parte (N) caiu com "JavaScript heap out of memory /
+# Failed to type check" em PRs sem relação entre si (#4716, #4729, #4774), cada vez numa
+# parte diferente: é o teto, não o PR. O runner tem 16 GB; o Dockerfile já fixa o seu.
+# Respeita um NODE_OPTIONS vindo de fora e só acrescenta o teto.
+export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=6144"
+
 echo "==> Buildando contra ${NEXT_PUBLIC_SUPABASE_URL}"
 pnpm exec next build
 

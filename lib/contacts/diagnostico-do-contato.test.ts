@@ -6,9 +6,11 @@ import {
   autoriaDoUsuario,
   CHAVES_DO_DIAGNOSTICO,
   cnpjInvalido,
+  diagnosticoDoContatoNovo,
   diagnosticoVazio,
   escritoPelaIA,
   gravacaoDaAba,
+  gravacaoDoAgente,
   lerDiagnostico,
   podeEditarDiagnostico,
   segmentoDoContatoNovo,
@@ -18,6 +20,7 @@ import {
 
 const AGENTE = "11111111-1111-4111-8111-111111111111";
 const USUARIO = "22222222-2222-4222-8222-222222222222";
+const AGENTE_ANTERIOR = "55555555-5555-4555-8555-555555555555";
 /** CNPJ numérico de exemplo com DV válido. */
 const CNPJ = "11222333000181";
 const AGORA = new Date("2026-11-14T15:00:00.000Z");
@@ -298,6 +301,211 @@ describe("gravacaoDaAba — a diferença aplicada sobre a ficha RELIDA", () => {
       diag_resumo: "Texto da equipe.",
       diag_por: autoriaDoUsuario(USUARIO),
       diag_em: AGORA.toISOString(),
+    });
+  });
+});
+
+describe("diagnosticoDoContatoNovo — o que a equipe escreveu na planilha vira a aba", () => {
+  const EM = "2026-11-12T12:00:00.000Z";
+  const autor = autoriaDoUsuario(USUARIO);
+
+  it("os três textos e a autoria de quem importou", () => {
+    expect(
+      diagnosticoDoContatoNovo({ resumo: "Sem site.", oferta: "Site.", observacoes: "Indicação.", autor, em: EM }),
+    ).toEqual({
+      [CHAVES_DO_DIAGNOSTICO.resumo]: "Sem site.",
+      [CHAVES_DO_DIAGNOSTICO.oferta]: "Site.",
+      [CHAVES_DO_DIAGNOSTICO.observacoes]: "Indicação.",
+      [CHAVES_DO_DIAGNOSTICO.por]: autor,
+      [CHAVES_DO_DIAGNOSTICO.em]: EM,
+    });
+  });
+
+  it("só observação: entra SEM autoria (é recado, não diagnóstico)", () => {
+    expect(diagnosticoDoContatoNovo({ observacoes: "Cliente antigo.", autor, em: EM })).toEqual({
+      [CHAVES_DO_DIAGNOSTICO.observacoes]: "Cliente antigo.",
+    });
+  });
+
+  it("autoria fora do formato ou data ilegível: os textos entram, a autoria não", () => {
+    for (const [a, e] of [
+      ["usuario:nao-e-uuid", EM],
+      ["qualquer coisa", EM],
+      [autor, "ontem"],
+      [null, null],
+    ] as const)
+      expect(diagnosticoDoContatoNovo({ resumo: "Sem site.", autor: a, em: e })).toEqual({
+        [CHAVES_DO_DIAGNOSTICO.resumo]: "Sem site.",
+      });
+  });
+
+  it("chave que a organização tem como campo próprio fica de fora — e a autoria sem texto também", () => {
+    expect(
+      diagnosticoDoContatoNovo(
+        { resumo: "Sem site.", observacoes: "Obs.", autor, em: EM },
+        [CHAVES_DO_DIAGNOSTICO.resumo],
+      ),
+    ).toEqual({ [CHAVES_DO_DIAGNOSTICO.observacoes]: "Obs." });
+  });
+
+  it("sem equipe, ou só com espaços, nada", () => {
+    expect(diagnosticoDoContatoNovo(null)).toEqual({});
+    expect(diagnosticoDoContatoNovo({ resumo: "  ", autor, em: EM })).toEqual({});
+  });
+});
+
+describe("gravacaoDoAgente — o PEDAÇO que a ferramenta do agente mescla no banco", () => {
+  /** Ficha com diagnóstico de uma rodada ANTERIOR da IA: a IA pode refazer o próprio texto. */
+  const atual = {
+    link_instagram: "instagram.com/padaria",
+    convenio: "Unimed",
+    diag_observacoes: "Recado da equipe.",
+    diag_resumo: "Texto antigo da IA.",
+    diag_por: autoriaDoAgente(AGENTE_ANTERIOR),
+    diag_em: "2026-11-01T10:00:00.000Z",
+  };
+
+  it("⭐ devolve só as chaves do diagnóstico, nunca o objeto inteiro", () => {
+    const r = gravacaoDoAgente(
+      atual,
+      { segmento: " Padaria ", cnpj: "11.222.333/0001-81", resumo: "Sem cardápio.", oferta: "Cardápio digital." },
+      autoriaDoAgente(AGENTE),
+      [],
+      AGORA,
+    );
+    expect(r).toEqual({
+      ok: true,
+      campos: {
+        segmento: "Padaria",
+        documento_cnpj: CNPJ,
+        diag_resumo: "Sem cardápio.",
+        diag_oferta: "Cardápio digital.",
+        diag_por: autoriaDoAgente(AGENTE),
+        diag_em: AGORA.toISOString(),
+      },
+      remover: [],
+      gravados: ["segmento", "cnpj", "resumo", "oferta"],
+      preservados: [],
+      daEquipe: [],
+      escritoPelaIA: true,
+    });
+    if (r.ok) {
+      // Aplicado como a função do banco aplica, o resto sobrevive e o selo aparece.
+      const depois = { ...atual, ...r.campos };
+      expect(depois).toMatchObject({ link_instagram: "instagram.com/padaria", convenio: "Unimed" });
+      expect(escritoPelaIA(lerDiagnostico(depois))).toBe(true);
+    }
+  });
+
+  it("valor inválido recusa a chamada inteira, sem gravar pela metade", () => {
+    expect(gravacaoDoAgente(atual, { resumo: "Ok.", cnpj: "123" }, autoriaDoAgente(AGENTE))).toEqual({
+      ok: false,
+      motivo: "valor_invalido",
+      campo: "cnpj",
+    });
+    expect(gravacaoDoAgente(atual, { resumo: "   " }, autoriaDoAgente(AGENTE))).toMatchObject({
+      ok: false,
+      motivo: "valor_invalido",
+      campo: "resumo",
+    });
+    expect(gravacaoDoAgente(atual, { oferta: "x".repeat(2001) }, autoriaDoAgente(AGENTE))).toMatchObject({
+      ok: false,
+      campo: "oferta",
+    });
+  });
+
+  it("observações da equipe não são campo do agente", () => {
+    const r = gravacaoDoAgente(
+      atual,
+      { observacoes: "IA no recado" } as unknown as Parameters<typeof gravacaoDoAgente>[1],
+      autoriaDoAgente(AGENTE),
+    );
+    expect(r).toEqual({ ok: false, motivo: "nada_para_gravar" });
+  });
+
+  it("chave da organização (declarada ou com valor em outro formato) fica preservada", () => {
+    const declarada = gravacaoDoAgente(atual, { segmento: "Padaria", resumo: "Ok." }, autoriaDoAgente(AGENTE), [
+      "segmento",
+    ]);
+    expect(declarada).toMatchObject({ ok: true, gravados: ["resumo"], preservados: ["segmento"] });
+    const outroFormato = gravacaoDoAgente(
+      { ...atual, segmento: ["Varejo"] },
+      { segmento: "Padaria" },
+      autoriaDoAgente(AGENTE),
+    );
+    expect(outroFormato).toEqual({ ok: false, motivo: "campo_da_organizacao", preservados: ["segmento"] });
+  });
+
+  it("só segmento ou CNPJ não mexe na autoria", () => {
+    const r = gravacaoDoAgente(atual, { segmento: "Padaria" }, autoriaDoAgente(AGENTE), [], AGORA);
+    expect(r).toMatchObject({ ok: true, campos: { segmento: "Padaria" }, remover: [], escritoPelaIA: false });
+  });
+
+  it("sem autor reconhecível, a autoria antiga sai junto", () => {
+    const r = gravacaoDoAgente(atual, { resumo: "Novo." }, null, [], AGORA);
+    expect(r).toMatchObject({ ok: true, campos: { diag_resumo: "Novo." }, remover: ["diag_por", "diag_em"] });
+    const torto = gravacaoDoAgente(atual, { resumo: "Novo." }, "agente:nao-e-uuid", [], AGORA);
+    expect(torto).toMatchObject({ ok: true, remover: ["diag_por", "diag_em"], escritoPelaIA: false });
+  });
+});
+
+describe("gravacaoDoAgente — o que uma PESSOA da equipe escreveu a IA não sobrescreve", () => {
+  /** Diagnóstico assinado por uma pessoa: a equipe assumiu a ficha. */
+  const daEquipe = {
+    link_instagram: "instagram.com/padaria",
+    segmento: "Panificação artesanal",
+    diag_resumo: "Texto da equipe.",
+    diag_por: autoriaDoUsuario(USUARIO),
+    diag_em: "2026-11-01T00:00:00.000Z",
+  };
+
+  it("⭐ resumo e oferta assinados pela equipe ficam; nada é gravado e a resposta diz por quê", () => {
+    const r = gravacaoDoAgente(daEquipe, { resumo: "Texto da IA.", oferta: "Oferta da IA." }, autoriaDoAgente(AGENTE));
+    expect(r).toEqual({
+      ok: false,
+      motivo: "escrito_pela_equipe",
+      preservados: ["resumo", "oferta"],
+      daEquipe: ["resumo", "oferta"],
+    });
+  });
+
+  it("a oferta vazia também fica: gravá-la trocaria a assinatura do resumo da equipe pelo selo da IA", () => {
+    const r = gravacaoDoAgente(daEquipe, { oferta: "Oferta da IA." }, autoriaDoAgente(AGENTE));
+    expect(r).toMatchObject({ ok: false, motivo: "escrito_pela_equipe", daEquipe: ["oferta"] });
+  });
+
+  it("segmento e CNPJ preenchidos ficam; os VAZIOS a IA completa, sem mexer na assinatura", () => {
+    const r = gravacaoDoAgente(
+      daEquipe,
+      { segmento: "Padaria", cnpj: "11.222.333/0001-81", resumo: "Texto da IA." },
+      autoriaDoAgente(AGENTE),
+      [],
+      AGORA,
+    );
+    expect(r).toEqual({
+      ok: true,
+      campos: { documento_cnpj: CNPJ },
+      remover: [],
+      gravados: ["cnpj"],
+      preservados: ["segmento", "resumo"],
+      daEquipe: ["segmento", "resumo"],
+      escritoPelaIA: false,
+    });
+  });
+
+  it("token de integração sem autor também não apaga o texto nem a assinatura da equipe", () => {
+    const r = gravacaoDoAgente(daEquipe, { resumo: "Texto do integrador." }, null);
+    expect(r).toMatchObject({ ok: false, motivo: "escrito_pela_equipe" });
+  });
+
+  it("uma PESSOA (por token) edita como na aba: grava e assina como ela", () => {
+    const outra = autoriaDoUsuario("66666666-6666-4666-8666-666666666666");
+    const r = gravacaoDoAgente(daEquipe, { resumo: "Revisado." }, outra, [], AGORA);
+    expect(r).toMatchObject({
+      ok: true,
+      campos: { diag_resumo: "Revisado.", diag_por: outra },
+      daEquipe: [],
+      escritoPelaIA: false,
     });
   });
 });

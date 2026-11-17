@@ -696,6 +696,24 @@ divide o servidor. Só aparece exercitando o produto pela tela.
 > não roda quando um caso falha). Corrigidos antes da primeira execução; o
 > resultado real entra aqui quando o CI disser.
 
+## J10b — Aparência: a empresa escolhe o visual do sistema `[P1]` (2026-11-14)
+
+Contexto do código: tela Configurações › Aparência (`app/app/settings/aparencia`),
+catálogo em `lib/aparencia/catalogo.ts`, CSS escopado por `[data-aparencia="id"]`
+(`lib/aparencia/css.ts` + `app/app/aparencia.css`), gravação por
+`fn_definir_aparencia_da_organizacao` (migration 9388). Spec:
+`tests/e2e/aparencia-templates.spec.ts`. Só estética: nenhuma rota, regra ou dado
+muda. `[P1]` porque quem nunca abre a tela vê o sistema de sempre.
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J10b.1 | Organização que nunca escolheu template | marcador sem nenhum atributo `data-aparencia*`; menu com a superfície e a fonte de fábrica | **PASS** (2026-11-14, banco fresco do `baseline.sql`, build de produção) |
+| J10b.2 | Visualizar um template | o menu, o fundo e os tokens do sistema em volta mudam só neste navegador; a barra "Prévia" continua à vista ao rolar; recarregar desfaz (nada gravado) | **PASS** |
+| J10b.3 | Aplicar um template | grava para a empresa; vale em outra tela (Contatos), no claro e no escuro, com a fonte do template | **PASS** |
+| J10b.4 | Ajustes por cima do template | arredondamento e efeitos desligados gravam, sobrevivem à troca de template e vencem os valores dele | **PASS** |
+| J10b.5 | Os dez templates nos dois modos | `--color-bg` de cada um em Contatos, claro e escuro; capturas em `evidence/aparencia-templates/` | **PASS** |
+| J10b.6 | Celular (390×844) | nada estoura a largura; a gaveta do menu usa o fundo sólido do template | **PASS** |
+
 ## J12 — A tela diz o que ESTA instalação consegue fazer `[P0]`
 
 **Por que P0:** é primeira impressão pura. Pelo kit, o install e a atualização

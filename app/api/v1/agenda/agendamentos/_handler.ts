@@ -5,6 +5,9 @@ import { execucaoDoServico, reciboDoServico, rpcDoServico } from "@/lib/agenda/s
 import { createAdminClient } from "@/lib/supabase/admin";
 import { randomUUID } from "node:crypto";
 import type { Json } from "@/lib/database.types";
+import { AUTORIDADE_LOCAL, RECUSA_DE_AUTORIDADE_EXTERNA, RECUSA_DE_TIPO_EXTERNO } from "@/lib/agenda/autoridade";
+import { agendaAuthority, changeAmigoAppointment, createAmigoAppointment, type AmigoBookingContext } from "@/lib/amigo/agenda";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 /**
  * A REGRA de marcar, remarcar e cancelar — fora da rota, de propósito.
  *
@@ -49,6 +52,11 @@ import {
   type SituacaoAnterior,
   type Transicao,
 } from "@/lib/agenda/laco";
+import {
+  podeRegistrarComparecimento,
+  RECUSA_DO_COMPARECIMENTO,
+  tokenTemEscopoDoComparecimento,
+} from "@/lib/agenda/comparecimento";
 import {
   ALVO_DE_VINCULO_DO_AGENDAMENTO,
   ENTIDADE_DO_AGENDAMENTO,
@@ -121,12 +129,16 @@ async function convidadosDaEquipeConferidos(
 const CODIGO_DA_RECUSA = {
   tipo_desconhecido: { status: 404, code: "not_found" },
   tipo_desativado: { status: 422, code: "agenda_tipo_desativado" },
+  tipo_de_sistema_externo: { status: 422, code: "agenda_tipo_de_sistema_externo" },
+  amigo_context_required: { status: 422, code: "agenda_amigo_context_required" },
   sem_responsavel: { status: 422, code: "agenda_sem_responsavel" },
   jornada_mal_configurada: { status: 422, code: "agenda_disponibilidade_invalida" },
   erro_interno: { status: 500, code: "internal_error" },
 } as const;
 
 export interface MarcarInput {
+  /** Só com o módulo `amigo` ligado e a agenda da organização no Amigo. */
+  amigo?: AmigoBookingContext;
   event_type_id: string;
   starts_at: string;
   owner_user_id?: string;
@@ -376,6 +388,19 @@ export async function marcarAgendamentoHandler(
   ctx: HandlerCtx,
   input: MarcarInput,
 ): Promise<Record<string, unknown>> {
+  // Módulo `amigo` ligado e conexão ativa: a agenda da organização é o Amigo, e
+  // marcar é marcar lá (etapa 2 do #4227). `agendaAuthority` devolve `local`
+  // com o módulo desligado, e então nada abaixo muda.
+  const autoridade = await agendaAuthority(supabase, ctx.organization_id);
+  if (autoridade.provider === "amigo" && autoridade.connection) {
+    await guardServiceEffect();
+    return createAmigoAppointment(supabase, ctx, input, autoridade.connection);
+  }
+  // Seleção do Amigo numa agenda local seria ignorada em silêncio, e quem pediu
+  // acharia que marcou lá.
+  if (input.amigo) {
+    throw new ApiError(422, "agenda_amigo_context_required", undefined, ctx.requestId, "A agenda desta organização não está no Amigo. Marque pela agenda local, sem a seleção do Amigo.");
+  }
   const chave =
     ctx.idempotencyKey ??
     (ctx.sourceJobId ? `agent-job:${ctx.sourceJobId}:${hashDoCorpo(input)}` : null);
@@ -447,7 +472,7 @@ async function executarCriacaoDeAgendamento(
   const { data: tipo, error: erroTipo } = await supabase
     .from("calendar_event_types")
     .select(
-      "id, name, is_active, duration_minutes, default_owner_user_id, requires_confirmation, location_kind, location_details, service_enabled",
+      "id, name, is_active, duration_minutes, default_owner_user_id, requires_confirmation, location_kind, location_details, service_enabled, external_provider",
     )
     .eq("organization_id", ctx.organization_id)
     .eq("id", input.event_type_id)
@@ -455,6 +480,9 @@ async function executarCriacaoDeAgendamento(
   if (erroTipo) throw new ApiError(500, "internal_error", undefined, ctx.requestId, erroTipo.message);
   if (!tipo) {
     throw new ApiError(404, "not_found", undefined, ctx.requestId, "Tipo de agendamento não encontrado.");
+  }
+  if (tipo.external_provider) {
+    throw new ApiError(422, "agenda_tipo_de_sistema_externo", undefined, ctx.requestId, RECUSA_DE_TIPO_EXTERNO);
   }
   if (!tipo.is_active) {
     throw new ApiError(422, "agenda_tipo_desativado", undefined, ctx.requestId, `"${tipo.name}" está desativado.`);
@@ -710,11 +738,16 @@ export async function alterarAgendamentoHandler(
     "status",
     "time_zone",
     "service_occurrence_id",
-  ]);
-
-  await exigeDonoDoCompromisso(supabase, ctx, atual);
+  ], { caminhoDoModulo: true });
 
   if (input.revision !== undefined && input.revision !== Number(atual.revision)) throw new ApiError(409,"conflict",undefined,ctx.requestId,"O compromisso mudou. Recarregue antes de confirmar.");
+  // Espelho de uma consulta do Amigo, com o módulo ligado: remarcar ou confirmar
+  // é feito lá, e a linha daqui é reescrita pela resposta. Sem dono local.
+  if (atual.authority === "amigo") {
+    await guardServiceEffect();
+    return changeAmigoAppointment(supabase, ctx, atual, { ...input }, "change");
+  }
+  await exigeDonoDoCompromisso(supabase, ctx, atual);
   if (atual.status === "cancelled") {
     throw new ApiError(
       422,
@@ -727,7 +760,13 @@ export async function alterarAgendamentoHandler(
 
   const mudanca: Record<string, unknown> = {};
   if (input.status === "completed" || input.status === "no_show") {
-    if (ctx.actor.type !== "user") throw new ApiError(403,"forbidden",undefined,ctx.requestId,"Peça à equipe para confirmar a presença no compromisso. Uma interpretação de texto não registra o fato.");
+    // ⚠️ A PORTA DO DESFECHO (#4515). Pessoa na tela entra sempre; token entra
+    // com o escopo `agenda:attendance`; agente de IA segue sem, por omissão — o
+    // token do runtime não nasce com esse escopo. A recusa nomeia o escopo
+    // porque é o que quem emitiu o token precisa ler para consertar.
+    if (!podeRegistrarComparecimento(ctx.actor, ctx.escoposDoToken)) {
+      throw new ApiError(403, "forbidden", undefined, ctx.requestId, RECUSA_DO_COMPARECIMENTO);
+    }
     if (input.outcome_message_id) mudanca.outcome_message_id=input.outcome_message_id;
   }
   if(input.confirmation_next_at) mudanca.confirmation_next_at=input.confirmation_next_at;
@@ -920,7 +959,15 @@ export async function alterarAgendamentoHandler(
 
   if (Object.keys(mudanca).length === 0) return { id: atual.id, inalterado: true };
 
-  const salvo = await alteraComRevisao(supabase,ctx,input.id,input.revision ?? Number(atual.revision),mudanca);
+  const tokenDoDesfecho =
+    ctx.actor.type === "api_token" &&
+    (input.status === "completed" || input.status === "no_show") &&
+    tokenTemEscopoDoComparecimento(ctx.escoposDoToken)
+      ? ctx.actor.id
+      : null;
+  const salvo = tokenDoDesfecho
+    ? await registraDesfechoComToken(supabase,ctx,input.id,input.revision ?? Number(atual.revision),mudanca,tokenDoDesfecho)
+    : await alteraComRevisao(supabase,ctx,input.id,input.revision ?? Number(atual.revision),mudanca);
 
   if (transicao) {
     await fecharOLaco(supabase, ctx, {
@@ -936,8 +983,11 @@ export async function alterarAgendamentoHandler(
 
     void audit({action: transicao === "rescheduled" ? "agenda.appointment_rescheduled" : transicao === "completed" || transicao === "no_show" ? "agenda.appointment_outcome_recorded" : "agenda.appointment_updated",
       actorUserId:ctx.actor.type === "user" ? ctx.actor.id : null,organizationId:ctx.organization_id,
+      // #4515: o desfecho registrado por token precisa dizer QUAL token — é o
+      // campo que separa "a equipe confirmou" de "a integração marcou por mim".
+      ...(ctx.actor.type === "api_token" ? {actorApiTokenId: ctx.actor.id} : {}),
       resourceType:"calendar_appointment",resourceId:input.id,requestId:ctx.requestId,
-      metadata:{status:salvo.status,revision:salvo.revision,outcome_source_kind:salvo.outcome_source_kind,outcome_message_id:salvo.outcome_message_id}});
+      metadata:{status:salvo.status,revision:salvo.revision,outcome_source_kind:salvo.outcome_source_kind,outcome_message_id:salvo.outcome_message_id,actor_kind:ctx.actor.type}});
 
   }
 
@@ -979,13 +1029,16 @@ export async function cancelarAgendamentoHandler(
     "event_type_id",
     "status",
     "time_zone",
-  ]);
-
-  await exigeDonoDoCompromisso(supabase, ctx, atual);
+  ], { caminhoDoModulo: true });
 
   // Idempotente: cancelar o que já está cancelado devolve o estado, não erro —
   // quem chamou queria o compromisso desmarcado, e ele está.
   if (input.revision !== undefined && input.revision !== Number(atual.revision)) throw new ApiError(409,"conflict",undefined,ctx.requestId,"O compromisso mudou. Recarregue antes de confirmar.");
+  if (atual.authority === "amigo") {
+    await guardServiceEffect();
+    return changeAmigoAppointment(supabase, ctx, atual, { ...input }, "cancel");
+  }
+  await exigeDonoDoCompromisso(supabase, ctx, atual);
   if (atual.status === "cancelled") {
     return { id: atual.id, status: "cancelled", ja_estava: true };
   }
@@ -1068,10 +1121,11 @@ async function exigeAgendamento(
   ctx: HandlerCtx,
   id: string,
   colunas: string[],
+  opcoes: { caminhoDoModulo?: boolean } = {},
 ): Promise<Record<string, unknown>> {
   const { data, error } = await supabase
     .from("calendar_appointments")
-    .select([...new Set([...colunas, "service_occurrence_id", "service_block"])].join(", "))
+    .select([...new Set([...colunas, "service_occurrence_id", "service_block", "authority", "external_status", "external_connection_id"])].join(", "))
     .eq("organization_id", ctx.organization_id)
     .eq("id", id)
     .maybeSingle();
@@ -1081,6 +1135,19 @@ async function exigeAgendamento(
   }
   const row = data as unknown as Record<string, unknown>;
   if (row.service_block) throw new ApiError(403, "forbidden", undefined, ctx.requestId, "Gerencie este bloqueio em Configurações da Agenda, com seu alcance explícito.");
+  // Autoridade de fora (migration 9392): a linha daqui é espelho, e remarcar ou
+  // cancelar por aqui divergiria do sistema que manda. Com o módulo `amigo`
+  // ligado, quem pediu `caminhoDoModulo` (remarcar e cancelar) recebe a linha e
+  // segue pelo Amigo; sem o módulo, ou de outro provedor, a recusa fica. A coluna
+  // é `not null default 'local'`: ausente, só num retrato que não a leu.
+  if (
+    opcoes.caminhoDoModulo &&
+    row.authority === "amigo" &&
+    (await moduloLigado(createAdminClient(), "amigo"))
+  ) {
+    return row;
+  }
+  if (row.authority != null && row.authority !== AUTORIDADE_LOCAL) throw new ApiError(409, "agenda_autoridade_externa", undefined, ctx.requestId, RECUSA_DE_AUTORIDADE_EXTERNA);
   return row;
 }
 
@@ -1564,9 +1631,10 @@ async function fecharOLaco(
    // Sem duplicata: o vínculo e o ativo costumam ser o MESMO negócio, e uma
    // lista com o id duas vezes faz o receptor somar dois sistemas do mesmo lead.
    return todos.filter((id, i) => todos.indexOf(id) === i);
- }
+}
 
- /** O negócio ativo do contato — pela MESMA régua do resto do produto.
+/**
+ * O negócio ativo do contato — pela MESMA régua do resto do produto.
  *
  * `resolveActiveLeadForContact` distingue três desfechos que um `limit(2)` não
  * distingue: roteou, `no_open_lead` e `ambiguous_open_leads`. Os dois últimos
@@ -1597,6 +1665,38 @@ async function leadAtivoDoContato(
     defaultPipelineId: (padrao as { id: string } | null)?.id ?? null,
   });
   return rota.routed ? rota.leadId : null;
+}
+
+/**
+ * A escrita do desfecho quando quem chama é TOKEN (#4515).
+ *
+ * Não é um `fn_appointment_change` disfarçado: o banco recusa o desfecho sem
+ * pessoa (`appointment_human_confirmation_required`, 42501) porque a regra é de
+ * schema, não de handler. Este RPC confere o token — organização, revogação,
+ * validade e o escopo `agenda:attendance` — e delega para a MESMA
+ * `fn_appointment_change`, então revisão otimista, recálculo de serviço, evento
+ * `appointment.outcome_confirmed` e o carimbo do desfecho saem idênticos aos da
+ * tela. A única diferença é a coluna `outcome_api_token_id`, que guarda qual
+ * token registrou.
+ */
+async function registraDesfechoComToken(supabase:SB,ctx:HandlerCtx,id:string,revision:number,patch:Record<string,unknown>,tokenId:string):Promise<Record<string,unknown>> {
+  await guardServiceEffect();
+  const execution = execucaoDoServico();
+  const {data,error}=await supabase.rpc("fn_appointment_record_attendance",{
+    p_org:ctx.organization_id,p_id:id,p_revision:revision,p_api_token:tokenId,
+    p_patch:{...patch,...(execution ? {_service_execution:execution} : {})},
+  });
+  if(error) {
+    const conflito=error?.code === "PT409" || error?.code === "40001";
+    // O banco revalida o escopo: se a rota e a ferramenta liberaram e o RPC
+    // recusou, a frase precisa dizer o mesmo que a recusa de cima — quem lê o
+    // 403 é quem emitiu o token.
+    const escopo = error.message.includes("attendance_scope_required") || error.message.includes("attendance_token_required");
+    throw new ApiError(conflito ? 409 : error.code === "42501" ? 403 : error.code === "P0002" ? 404 : 422,
+      conflito ? "conflict" : error.code === "42501" ? "forbidden" : error.code === "P0002" ? "not_found" : "validation_failed",undefined,ctx.requestId,
+      conflito ? "Este compromisso mudou. Atualize os dados antes de confirmar novamente." : escopo ? RECUSA_DO_COMPARECIMENTO : error.message.includes("appointment_human_confirmation_required") ? RECUSA_DO_COMPARECIMENTO : "Não foi possível registrar o comparecimento. Confira o horário e a mensagem vinculada.");
+  }
+  return data as Record<string,unknown>;
 }
 
 async function alteraComRevisao(supabase:SB,ctx:HandlerCtx,id:string,revision:number,patch:Record<string,unknown>):Promise<Record<string,unknown>> {
