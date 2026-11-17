@@ -60,6 +60,17 @@ export const ApiErrorCodes = {
   agenda_sem_responsavel: "agenda_sem_responsavel",
   agenda_disponibilidade_invalida: "agenda_disponibilidade_invalida",
   agenda_ja_cancelado: "agenda_ja_cancelado",
+  // Migration 9392 (#4227): o compromisso ou o tipo é de um sistema externo
+  // integrado, que é quem marca, remarca e cancela.
+  agenda_autoridade_externa: "agenda_autoridade_externa",
+  agenda_tipo_de_sistema_externo: "agenda_tipo_de_sistema_externo",
+  // Módulo `amigo` (#4227, etapa 2): a agenda é o Amigo e pede a seleção de
+  // paciente/unidade/médico; o resultado lá não foi confirmado; a mudança pedida
+  // não existe na API deles; a conexão não pôde ser lida.
+  agenda_amigo_context_required: "agenda_amigo_context_required",
+  agenda_amigo_unconfirmed: "agenda_amigo_unconfirmed",
+  agenda_amigo_unsupported_change: "agenda_amigo_unsupported_change",
+  agenda_provider_unavailable: "agenda_provider_unavailable",
   agenda_listagem_sem_recorte: "agenda_listagem_sem_recorte",
   // Código PRÓPRIO, e não o `unprocessable_entity` genérico: quem recebe isto
   // precisa saber que o `lead_id` mandado não é um negócio do funil (é quase
@@ -179,6 +190,11 @@ export const ApiErrorCodes = {
   // "recusa parcial" — recebe a porta fechada, e a recebe ANTES de o e-mail
   // sair, de o `due_at` ser tocado e de a auditoria registrar o aviso.
   lgpd_art12_so_fora_do_brasil: "lgpd_art12_so_fora_do_brasil",
+  // PATCH /channel-sessions/:id/ai-access: identidade social que a tela não
+  // oferece para ESTE canal (outra conta conectada, contato sem conversa aqui)
+  // ou lista social num canal que não é de rede social. A forma está certa;
+  // quem não serve é o vínculo com o canal.
+  testador_social_recusado: "testador_social_recusado",
   plano_invalido: "plano_invalido", // plano inexistente, arquivado, de outro intervalo, ou cobrança desligada
   // #2846: cobrança ligada, planos oferecidos e nenhum plano padrão — a empresa
   // não nasce sem plano (doc 146). Quem administra define um padrão.

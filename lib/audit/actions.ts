@@ -29,6 +29,12 @@
  * `tests/unit/audit-lista-do-painel-e-derivada.test.tsx` reprova quem tentar.
  */
 export const AUDIT_ACTIONS = [
+  // Módulo opcional `amigo` (#4227).
+  "amigo.configured",
+  "amigo.disconnected",
+  "amigo.operation",
+  "amigo.patient_linked",
+  "amigo.synced",
   "cold_call.result",
   "cold_call.script_updated",
   "settings.agenda_presentation_updated",
@@ -85,6 +91,14 @@ export const AUDIT_ACTIONS = [
   // A cascata retomando o que uma execução interrompida não terminou (#310).
   "lgpd.anonymize_catchup",
   "member.invited",
+  // A pessoa foi CRIADA por quem administra, com senha definida por ele
+  // (#3876) — não convidada. `member.invited` não serve: ali ninguém tinha
+  // conta e o e-mail era a prova; aqui a conta nasceu pronta e a trilha
+  // precisa responder "quem criou esta pessoa, com qual papel, e quando".
+  "member.created",
+  // A criação acima recusada pelo GoTrue (#3876). Gravado sem organização: o
+  // motivo real fica na auditoria do dono da instalação.
+  "member.create_refused",
   "team.interface_changed",
   /**
    * A EMPRESA trocou as portas que mostra (issue #1341, migration 0367). É o
@@ -511,6 +525,12 @@ export const AUDIT_ACTIONS = [
   "auth.password_reset_request_failed",
   "auth.password_reset_completed",
   "auth.password_reset_failed",
+  // A troca OBRIGATÓRIA do primeiro acesso (#3876). Distinta de
+  // `auth.password_reset_completed`: ali a pessoa voltou por "esqueci a senha";
+  // aqui ela cumpriu a obrigação que o vínculo impunha — e a pergunta de
+  // auditoria é "quando a senha provisória deixou de valer".
+  "auth.password_change_completed",
+  "auth.password_change_failed",
   "tenant.created_by_signup",
   "tenant.created_by_recovery",
   "conversation.snoozed",
@@ -669,6 +689,12 @@ export const AUDIT_ACTIONS = [
   // "quem mexeu no cadastro dela?". Fundir as duas obrigaria a ler o metadata
   // para saber qual das duas coisas aconteceu.
   "org.branding_updated",
+  // A APARÊNCIA da organização (template visual e ajustes) trocada em
+  // `organizations.settings.aparencia` pela tela Configurações › Aparência —
+  // mesma forma da anterior (`organization_id` + `resource_id` = uuid da org).
+  // Ação própria porque a pergunta da trilha é outra: "quem trocou o visual
+  // desta empresa?", e não "quem trocou o nome ou a cor da marca?".
+  "org.aparencia_updated",
   // As ALÍNEAS a), c) e d) do art. 15.º preenchidas pelo controlador
   // (`organizations.settings.art15`, issue #2356) — mutação de TENANT com a
   // mesma forma da anterior: `organization_id` + `resource_id` = uuid da org.
@@ -884,6 +910,8 @@ export const AUDIT_ACTIONS = [
   "catalog_product.ai_presentation_updated",
   "catalog_product.ai_presentation_audio_uploaded",
   "catalog_product.ai_presentation_audio_removed",
+  /** A rodada da fonte de catálogo (#3587, fatia 2) — cria, atualiza e desativa em lote. */
+  "catalog_products.synced_from_feed",
 
   // As tarefas do CRM (migration 0210). Tarefa é combinado de trabalho entre
   // pessoas do time — quem a criou, quem mudou o prazo e quem a apagou é
@@ -1226,6 +1254,7 @@ export const AUDIT_ACTIONS = [
   "companies.deleted",
   "companies.enriched",
   "people.created",
+  "people.deleted",
   "people.updated",
   "company_people.linked",
   "company_people.updated",
@@ -1509,6 +1538,9 @@ export const AUDIT_ACTIONS = [
   // sugestão, e quando". A fila guarda o usuário, mas a trilha é o rastro que a
   // organização consulta, e só ela tem o mesmo formato das outras ações de contato.
   "contact.duplicate_dismissed",
+  "agency.client_created",
+  "agency.session_started",
+  "agency.session_ended",
   // O admin mudou o limite em tokens acima do qual a tela Memória da IA avisa
   // que a memória pesa (`settings.memoria_da_ia`); metadata com o anterior e o novo.
   "ai.org_memory_weight_limit_updated",
@@ -1604,6 +1636,16 @@ export const AUDIT_ACTIONS = [
   // "quem moveu" no painel. Mover roteador em silêncio não existe: as duas
   // camadas são gravadas na mesma operação.
   "ai.router_channel_moved",
+  // Tabela de valores de negociação (#4612): criar a tabela e importar a
+  // planilha que o agente vai usar para negociar preço. Metadata da importação
+  // leva só contagens e a chave do arquivo — nunca preço de linha.
+  "tabela_de_valores.criada",
+  "tabela_de_valores.importada",
+  // O agente (ou uma pessoa por token) gravou o diagnóstico da empresa na ficha
+  // do contato (`crm_save_lead_diagnosis`, decisão D7: grava direto, com o selo
+  // "Escrito pela IA"). Metadata leva só os NOMES dos campos e se a autoria é da
+  // IA — nunca o texto, que mora na ficha e é alcançado pela anonimização.
+  "contact.diagnosis_saved",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

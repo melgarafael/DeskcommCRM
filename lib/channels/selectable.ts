@@ -20,7 +20,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { nomeDoCanal } from "@/lib/channels/estado";
-import { lerModoDeAcessoDaIa, lerNumerosDeTeste } from "@/lib/ai/elegibilidade/pre-go-live";
+import {
+  lerIdentidadesSociaisDeTeste,
+  lerModoDeAcessoDaIa,
+  lerNumerosDeTeste,
+} from "@/lib/ai/elegibilidade/pre-go-live";
 import type { AcessoDaAiDoCanal } from "@/lib/ai/elegibilidade/aviso-do-modo-de-teste";
 
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "./archived";
@@ -54,6 +58,14 @@ export interface SelectableChannel {
    * acionar. Também de CAPACIDADE, nunca de provedor.
    */
   reportaConversao: boolean;
+  /**
+   * A IA consegue responder com NOTA DE VOZ por este canal (capability
+   * `voiceNote` diferente de `none`)? A tela do agente usa para avisar, ao lado
+   * de "Enviar nota de voz", que neste canal a resposta sai em texto — sem isso
+   * o dono liga a voz numa conta de Instagram e não entende por que ela não fala.
+   * Também de CAPACIDADE, nunca de provedor.
+   */
+  enviaNotaDeVoz: boolean;
   /**
    * Como o acesso da IA está NESTE canal — modo e quantos números de teste estão
    * autorizados. Sem isto, a tela do agente não tinha como saber que o número
@@ -114,6 +126,16 @@ function reportaConversao(provider: string | null): boolean {
   }
 }
 
+/** Mesma régua: provedor desconhecido deste build responde `false` (não promete voz). */
+function enviaNotaDeVoz(provider: string | null): boolean {
+  if (!transportaMensagem(provider)) return false;
+  try {
+    return capabilitiesOf(provider as ProviderDeMensagem).voiceNote !== "none";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Canais ativos da organização, do mais antigo para o mais novo (ordem estável:
  * um dropdown que embaralha a cada render faz o operador clicar no item errado).
@@ -158,12 +180,17 @@ export async function listSelectableChannels(
     phone_number: c.phone_number ?? null,
     aceitaMensagemLivre: aceitaMensagemLivre(c.provider),
     reportaConversao: reportaConversao(c.provider),
+    enviaNotaDeVoz: enviaNotaDeVoz(c.provider),
     acessoDaAi: {
       // O MESMO leitor do runtime (`gate.ts` → `lerModoDeAcessoDaIa`): a tela
       // não pode chamar de "modo de teste" um canal que o motor trata de outro
       // jeito, nem o contrário.
       mode: lerModoDeAcessoDaIa(c.metadata),
-      testNumbersCount: lerNumerosDeTeste(c.metadata).length,
+      // Testadores de QUALQUER lista: telefone ou conta de rede social. Contar
+      // só telefones faria a tela do agente dizer "a IA não responde ninguém"
+      // num canal de Instagram com conta de teste autorizada.
+      testNumbersCount:
+        lerNumerosDeTeste(c.metadata).length + lerIdentidadesSociaisDeTeste(c.metadata).length,
     },
   }));
 }

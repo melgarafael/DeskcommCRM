@@ -17,6 +17,9 @@ import type pg from 'pg';
 import { phoneLookupVariants } from '@/lib/channels/phone-variants';
 import { emitAgentActivityForContact } from '@/lib/leads/agent-activity';
 import { motivoDaChamadaEmPortugues } from '@/lib/wacalls/motivo-da-chamada';
+import { traduzir } from '@/lib/i18n/dicionario';
+import { preencher } from '@/lib/i18n/idioma-do-aviso';
+import { fatosDaOrganizacao } from '../agent-engine/agent/fatos-da-organizacao';
 
 import type { Logger } from '../agent-engine/obs/logger';
 
@@ -443,14 +446,19 @@ async function handleCallEnded(
       answered: atendida,
     });
   }
+  // A Central e a linha do tempo mostram o texto como foi gravado: aviso e
+  // atividade nascem no idioma da organização. `fatosDaOrganizacao` nunca
+  // lança — no pior caso, português. Só lê quando algo vai ser escrito.
+  const vaiEscrever = (!atendida && recebida && !bloqueado) || (row.contact_id && !(bloqueado && recebida && !atendida));
+  const { idioma } = vaiEscrever ? await fatosDaOrganizacao(pool, sess.organizationId) : { idioma: 'pt-BR' as const };
   if (!atendida && recebida && !bloqueado) {
     await pool.query(
       `insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
        values ($1, 'voice_call_missed', 'warn', $2, $3, $4, $5)`,
       [
         sess.organizationId,
-        `Chamada perdida de ${row.peer_phone}`,
-        motivoDaChamadaEmPortugues(ev.reason),
+        preencher(traduzir('Chamada perdida de {telefone}', idioma), { telefone: row.peer_phone }),
+        motivoDaChamadaEmPortugues(ev.reason, idioma),
         row.contact_id ? 'contact' : null,
         row.contact_id,
       ],
@@ -497,10 +505,14 @@ async function handleCallEnded(
       // `fn_update_last_activity_at`: ninguém falou com ninguém.
       type: atendida ? 'voice_call' : recebida ? 'voice_call_missed' : 'voice_call_unanswered',
       reason: atendida
-        ? 'Chamada de voz atendida'
+        ? traduzir('Chamada de voz atendida', idioma)
         : recebida
-          ? `Chamada de voz perdida — ${motivoDaChamadaEmPortugues(ev.reason)}`
-          : `Chamada de voz sem resposta — ${motivoDaChamadaEmPortugues(ev.reason)}`,
+          ? preencher(traduzir('Chamada de voz perdida — {motivo}', idioma), {
+              motivo: motivoDaChamadaEmPortugues(ev.reason, idioma),
+            })
+          : preencher(traduzir('Chamada de voz sem resposta — {motivo}', idioma), {
+              motivo: motivoDaChamadaEmPortugues(ev.reason, idioma),
+            }),
       sourceModule: 'voice_calls',
       sourceId: row.id,
       // Quem atendeu assina. Sem isto a linha caía em `webhook_source` →

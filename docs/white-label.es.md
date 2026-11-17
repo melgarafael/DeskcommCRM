@@ -1,4 +1,4 @@
-<!-- traduzido-de: docs/white-label.md@e402509d6d62 -->
+<!-- traduzido-de: docs/white-label.md@1a972883babb -->
 
 [🇧🇷 Português](white-label.md) · [🇺🇸 English](white-label.en.md) · 🇪🇸 Español
 
@@ -54,7 +54,7 @@ Para pintar el texto del menú, apunta a `text-muted-foreground` dentro del grup
 }
 ```
 
-**Si el CSS deja las pantallas ilegibles.** Una hoja válida todavía puede ocultar texto (color transparente, fuente de tamaño cero) o cubrir la pantalla con una sombra — incluso el login y la propia página Marca. Para salir, abre la página con `?sem_css=1` en la dirección: carga sin el CSS personalizado, solo para ti. Entra por `/login?sem_css=1`, luego abre `/admin/marca?sem_css=1` escribiendo la dirección, borra el campo y guarda. Sin acceso a la pantalla, desde el servidor: `psql "$SUPABASE_DB_URL" -c "delete from public.platform_config where chave = 'APP_CUSTOM_CSS';"` — el CSS deja de aplicarse en hasta 30 segundos. Paso a paso en [`runbooks/css-personalizado.md`](runbooks/css-personalizado.md) (en portugués).
+**Si el CSS deja las pantallas ilegibles.** Una hoja válida todavía puede ocultar texto (color transparente, fuente de tamaño cero) o cubrir la pantalla con una sombra — incluso el login y la propia página Marca. Para salir, abre la página con `?sem_css=1` en la dirección: carga sin el CSS personalizado, solo para ti. Entra por `/login?sem_css=1`, luego abre `/admin/marca?sem_css=1` escribiendo la dirección, borra **los dos** campos (tema claro y tema oscuro) y guarda. Sin acceso a la pantalla, desde el servidor: `psql "$SUPABASE_DB_URL" -c "delete from public.platform_config where chave in ('APP_CUSTOM_CSS', 'APP_CUSTOM_CSS_DARK');"` — ambas hojas dejan de aplicarse en hasta 30 segundos. Borrar solo la clave del claro mantiene activa la del oscuro cuando el tema oscuro está encendido. Paso a paso en [`runbooks/css-personalizado.md`](runbooks/css-personalizado.md) (en portugués).
 
 El archivo se acepta **por sus bytes, no por su extensión**. Renombrar un `.svg` a `.png` no engaña: el sistema lee el contenido, lo rechaza y dice por qué. Esto no es quisquillosidad — SVG es XML y puede llevar script, que se ejecutaría si alguien abriera la imagen directamente por su dirección, en un bucket que es público por necesidad.
 
