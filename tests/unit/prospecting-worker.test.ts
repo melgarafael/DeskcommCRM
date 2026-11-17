@@ -611,6 +611,37 @@ describe("abordagem fria obedece o Estilo de resposta do agente (issue #2665)", 
       ).not.toContain(TEXTO_DO_DONO);
   });
 
+  it("campanha JÁ SALVA com a palavra riscada não pausa: sai a frase padrão (#4370, decisão (a))", async () => {
+    // A sonda do mantenedor: `texto_da_saida` gravado antes desta régua, com a
+    // palavra dentro de `~riscado~`. O envio faz `campaignConfigSchema.parse` a
+    // cada rodada (`worker.ts`); com o schema recusando, o `ZodError` não é
+    // `ProspectingError`, cai no `else` do tratamento e a campanha pausava com
+    // «Falha inesperada no envio». Aqui o envio inteiro roda com o texto riscado.
+    const escondido = "Se não quiser mais, responda ~PARAR~.";
+    const db = database(undefined, candidate, versaoComEstilo);
+    mocks.generate.mockResolvedValue({ ok: true, texto: textoDoModelo });
+    mocks.send.mockResolvedValue({ status: "sent", id: "balao" });
+    await sendNextCandidate(
+      {} as never,
+      db as never,
+      {} as never,
+      { ...campaign, config: { ...campaign.config, texto_da_saida: escondido } } as Campaign,
+      dormir,
+    );
+
+    const corpos = mocks.send.mock.calls.map(([, , input]) => String(input?.body));
+    const tudo = corpos.join("\n");
+    // O texto ilegível NÃO sai (é o defeito do #4370)...
+    expect(tudo, "o texto com a palavra riscada saiu").not.toContain(escondido);
+    // ...mas a saída NÃO some: a campanha volta para a frase padrão do idioma.
+    expect(corpos[0], "a saída não voltou para a frase padrão").toContain(rodapeDeSaida(null));
+    // E a campanha NÃO foi pausada por causa do texto gravado.
+    expect(
+      db.query.mock.calls.some(([q]) => String(q).includes("status='paused'")),
+      "a campanha foi pausada pela palavra riscada já salva",
+    ).toBe(false);
+  });
+
   it("sem o estilo ligado, a abordagem continua saindo em UMA mensagem (não regredir)", async () => {
     mocks.generate.mockResolvedValue({ ok: true, texto: textoDoModelo });
     await sendNextCandidate(

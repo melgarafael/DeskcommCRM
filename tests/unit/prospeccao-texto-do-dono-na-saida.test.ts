@@ -5,6 +5,8 @@ import path from "node:path";
 import type { ChannelSendResult } from "@/lib/agent-engine/channel-adapter";
 import { audit } from "@/lib/audit";
 import { campaignConfigSchema } from "@/lib/prospecting/schema";
+import { ProspectingError } from "@/lib/prospecting/provider";
+import { activateCampaign, validateConfig } from "@/lib/prospecting/store";
 import { ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
 import { traduzir } from "@/lib/i18n/dicionario";
 import {
@@ -20,6 +22,17 @@ import {
 import { enviarComSaidaConfiguravel } from "@/lib/prospecting/saida-configuravel";
 
 vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
+// O `store.ts` (o SALVAR e o `validateConfig`) puxa estes módulos; os dublês são
+// os mesmos do teste de ativação (`prospeccao-arquivar-campanha.test.ts`), que já
+// prova que `validateConfig` passa com eles.
+vi.mock("@/lib/atendimento/origem", () => ({
+  assertServiceBoundarySupabase: vi.fn(),
+  beginServiceAtOrigin: vi.fn(),
+}));
+vi.mock("@/lib/agent-engine/agent/router-config", () => ({ loadActiveRouter: async () => null }));
+vi.mock("@/lib/agent-engine/agent/agent-config", () => ({
+  loadPublishedAgentConfig: async () => ({ agentId: "00000000-0000-4000-8000-000000000001" }),
+}));
 const auditMock = vi.mocked(audit);
 
 /** O que o `audit` recebeu — o dublê não infere os parâmetros da função real. */
@@ -73,6 +86,44 @@ const BASE = {
   qualification: "Confirmar se quem responde decide sobre o site.",
   legal_basis_ref: "LIA-2026-11",
 };
+
+const ORG = "00000000-0000-4000-8000-0000000000a1";
+const CAMPANHA = "00000000-0000-4000-8000-0000000000a2";
+
+/**
+ * O banco mínimo do SALVAR (`activateCampaign`) e de `validateConfig`, com as
+ * mesmas respostas do teste de ativação. A régua do texto roda ANTES de
+ * qualquer `update`, então uma recusa tem de deixar `escritas` vazio.
+ */
+function bancoDoSalvar(locale: string | null = null) {
+  const escritas: Array<{ sql: string; params: unknown[] }> = [];
+  const query = vi.fn(async (sql: string, params: unknown[] = []) => {
+    if (/^(update|insert|delete)/i.test(sql)) escritas.push({ sql, params });
+    const rows = (() => {
+      if (sql.includes("pg_try_advisory_lock")) return [{ locked: true }];
+      if (sql.includes("select locale from organizations")) return [{ locale }];
+      if (sql.includes("from ai_agents a join ai_agent_versions"))
+        return [{ tool_ids: ["crm_move_lead_stage"], pipeline_ids: [BASE.pipeline_id] }];
+      if (sql.includes("from channel_sessions")) return [{ provider: "waha", status: "WORKING" }];
+      if (sql.includes("from crm_stages"))
+        return [{ id: BASE.stage_id }, { id: BASE.qualified_stage_id }];
+      if (sql.startsWith("select * from prospecting_campaigns"))
+        return [
+          {
+            id: CAMPANHA,
+            name: "Clinica",
+            status: "draft",
+            search_status: "succeeded",
+            config: null,
+          },
+        ];
+      return [];
+    })();
+    return { rows, rowCount: rows.length };
+  });
+  const pool = { connect: async () => ({ query, release: vi.fn() }) };
+  return { pool: pool as never, db: { query } as never, escritas };
+}
 
 /** db falso com respostas por trecho de SQL; a ORDEM decide o casamento. */
 function dbFalso(respostas: ReadonlyArray<readonly [string, unknown[]]>) {
@@ -359,20 +410,60 @@ describe("(5) a palavra não pode ir escondida por formatação", () => {
       expect(noIdioma(texto), `a palavra escondida passou: ${texto}`).toBe("palavra_escondida");
   });
 
-  it("o schema recusa com o MOTIVO certo — não com a frase de 'sem a palavra'", () => {
-    const recusado = campaignConfigSchema.safeParse({
+  it("o schema NÃO recusa a palavra riscada — a recusa é do salvar (#4647, decisão (a))", () => {
+    // A sonda do mantenedor: este é o MESMO parse que o envio faz a cada rodada
+    // (`worker.ts`). Se ele lançar, o `ZodError` não é `ProspectingError` e a
+    // campanha pausa com «Falha inesperada no envio» — o efeito que a decisão
+    // (a) recusa. Aqui se mede o `parse` de verdade, não o olho.
+    const config = { ...BASE, texto_da_saida: "Se não quiser mais, responda ~PARAR~." };
+    let parsed: unknown = null;
+    expect(
+      () => {
+        parsed = campaignConfigSchema.parse(config);
+      },
+      "o schema que o envio faz lançou para a campanha já salva",
+    ).not.toThrow();
+    expect(parsed).not.toBeNull();
+    // E o texto que esse envio leva é a frase padrão do idioma: a palavra
+    // riscada não sai (é ilegível no aparelho), mas a saída não some.
+    expect(textoDaSaidaEfetivo(config.texto_da_saida, "pt-BR")).toBe(PADRAO_PT);
+  });
+
+  it("quem recusa a palavra riscada é o SALVAR — 422 com a frase que ensina o conserto", async () => {
+    const { pool, escritas } = bancoDoSalvar();
+    const erro = await activateCampaign(
+      pool,
+      {} as never,
+      ORG,
+      CAMPANHA,
+      campaignConfigSchema.parse({
+        ...BASE,
+        texto_da_saida: "Se não quiser mais, responda ~PARAR~.",
+      }),
+    ).catch((e: unknown) => e);
+    expect(erro).toBeInstanceOf(ProspectingError);
+    expect((erro as ProspectingError).status).toBe(422);
+    expect((erro as ProspectingError).escopo).toBe("campanha");
+    const mensagem = (erro as ProspectingError).message;
+    // A frase antiga mandaria INCLUIR uma palavra que já está no texto: conserto
+    // que não se acha lendo o aviso. A de agora nomeia a marcação.
+    expect(mensagem).toContain("riscada");
+    expect(mensagem, "a recusa manda incluir uma palavra que já está lá").not.toContain(
+      "precisa conter",
+    );
+    // E NADA foi gravado: a campanha não inicia com um texto que o cliente lê apagado.
+    expect(escritas).toEqual([]);
+  });
+
+  it("o ENVIO e a RETOMADA aceitam a campanha já salva com o texto riscado — não pausam", async () => {
+    const { db } = bancoDoSalvar();
+    const config = campaignConfigSchema.parse({
       ...BASE,
       texto_da_saida: "Se não quiser mais, responda ~PARAR~.",
     });
-    expect(recusado.success, "o texto com a palavra riscada passou no schema").toBe(false);
-    const recusa = recusado.success
-      ? undefined
-      : recusado.error.issues.find((i) => i.path.join(".") === "texto_da_saida");
-    expect(recusa, "a recusa tem de ser do campo `texto_da_saida`").toBeDefined();
-    // A frase antiga mandaria INCLUIR uma palavra que já está no texto: conserto
-    // que não se acha lendo o aviso.
-    expect(recusa!.message).toContain("riscada");
-    expect(recusa!.message).not.toContain("precisa conter");
+    // Sem `aoGravar` é o caminho do `worker.ts` (a cada envio) e o da rota de
+    // retomada: a campanha já existe, e o texto dela não pode impedir o envio.
+    await expect(validateConfig(db, ORG, config)).resolves.toBeDefined();
   });
 
   it("o servidor pega o caso que só a régua do IDIOMA vê", () => {
