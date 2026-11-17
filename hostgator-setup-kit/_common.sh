@@ -1151,7 +1151,15 @@ com_prazo() {  # com_prazo <segundos> <comando...>
 IMAGENS_SEM_RESPOSTA=""
 
 veredito_das_imagens_da_release() {  # veredito_das_imagens_da_release <versão alvo> [versão instalada]
-  local versao="${1:-}" instalada="${2:-}" img total=0 achadas=0 ausentes=0
+  local versao="${1:-}" instalada="${2:-}" img total=0 achadas=0 ausentes=0 com_controle=0
+  # ponytail: o controle pela tag instalada só vale para quem PASSA o 2º
+  # argumento (o agent.sh passa sempre, mesmo vazio). O preflight do update.sh e
+  # o portão do build (build_local_permitido) chamam com UM argumento e leem
+  # `incompleta` como "o registro respondeu": para eles fica a regra de antes
+  # (alguma achada = incompleta; nenhuma = indisponivel). Sem isto, 3 de 4
+  # imagens publicadas viravam `indisponivel`, o preflight culpava a rede e o
+  # portão recusava o build local de recuperação (#1060/#1143).
+  [ "$#" -ge 2 ] && com_controle=1
   IMAGENS_SEM_RESPOSTA=""
   versao="${versao#v}"
   instalada="${instalada#v}"
@@ -1162,6 +1170,7 @@ veredito_das_imagens_da_release() {  # veredito_das_imagens_da_release <versão 
       achadas=$((achadas + 1))
       continue
     fi
+    [ "$com_controle" -eq 1 ] || continue
     # ⛔ A SONDA DE CONTROLE, pelo mesmo motivo da sonda do app.
     #
     # `com_prazo 20` transforma timeout e 429 do registro em "esta imagem não
@@ -1179,6 +1188,8 @@ veredito_das_imagens_da_release() {  # veredito_das_imagens_da_release <versão 
   done
   if [ "$achadas" -eq "$total" ]; then
     printf 'prontas'
+  elif [ "$com_controle" -eq 0 ] && [ "$achadas" -gt 0 ]; then
+    printf 'incompleta'
   elif [ "$ausentes" -gt 0 ]; then
     # Há pelo menos uma imagem provadamente ausente: a release não está pronta.
     # Isso cala o botão — e é o único caso que deve calar.

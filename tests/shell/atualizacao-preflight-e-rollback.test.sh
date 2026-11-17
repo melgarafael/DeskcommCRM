@@ -447,25 +447,28 @@ echo "── caso 4 — critério 1: release com imagem faltando NÃO é ofereci
 . "$RAIZ/hostgator-setup-kit/_common.sh"
 set +e
 preparar_vps
-# A versão INSTALADA entra junto porque é ela a sonda de controle: `com_prazo`
-# devolve o mesmo silêncio para "a tag não existe" e "o registro não respondeu",
-# e só a tag que já está rodando (0.8.0) separa as duas — é assim que o
-# `agent.sh` chama (agent.sh:286). Sem ela, toda falha de sonda vira
-# `indisponivel` e `incompleta` fica inalcançável.
-v="$(veredito_das_imagens_da_release 0.9.0 0.8.0)"
+# UM argumento só, de propósito: é assim que o preflight do update.sh e o
+# portão do build (build_local_permitido) chamam. A forma com a versão
+# instalada (a do agent.sh) é medida em sonda-das-quatro-nao-esconde-a-release.
+v="$(veredito_das_imagens_da_release 0.9.0)"
 if [ "$v" = "prontas" ]; then ok "as quatro prontas: a release pode ser anunciada"
 else nao "as quatro prontas" "prontas" "$v"; fi
 
 rm -f "$DUB/voz-pronta"
-v="$(veredito_das_imagens_da_release 0.9.0 0.8.0)"
+v="$(veredito_das_imagens_da_release 0.9.0)"
 if [ "$v" = "incompleta" ]; then ok "voz sem publicar: a release está INCOMPLETA e não se oferece"
 else nao "release incompleta" "incompleta" "$v"; fi
-v="$(veredito_das_imagens_da_release v0.9.0 0.8.0)"
+v="$(veredito_das_imagens_da_release v0.9.0)"
 if [ "$v" = "incompleta" ]; then ok "e o 'v' da tag não confunde a sonda"
 else nao "sonda com o v da tag" "incompleta" "$v"; fi
+# O registro respondeu (3 de 4): o build local de recuperação (#1060/#1143)
+# continua permitido — só o registro FORA o recusa.
+if ( unset DESKCOMM_BUILD_LOCAL; build_local_permitido 0.9.0 ); then
+  ok "registro de pé com 3 de 4: o portão segue permitindo o build local"
+else nao "build local com registro de pé" "permitido (rc 0)" "recusado"; fi
 
 rm -f "$DUB/registro"
-v="$(veredito_das_imagens_da_release 0.9.0 0.8.0)"
+v="$(veredito_das_imagens_da_release 0.9.0)"
 if [ "$v" = "indisponivel" ]; then
   ok "CONTROLE: registro fora → indisponível, que é o estado que NÃO cala o agente"
 else nao "registro fora" "indisponivel" "$v"; fi
