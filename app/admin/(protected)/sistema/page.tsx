@@ -180,7 +180,10 @@ export default async function Page({
             })}
           </ul>
         )}
+        {/* key por empresa: sem ela, trocar de empresa pelo seletor reaproveitava o
+            estado (e o `anterior` do rollback) da empresa de antes. */}
         <FormularioDeModulosPorEmpresa
+          key={empresaId ?? "nenhuma"}
           empresas={empresas}
           empresaId={empresaId}
           modulos={modulosDaEmpresa}
