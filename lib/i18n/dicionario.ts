@@ -20229,6 +20229,7 @@ export const DICIONARIO: Traducoes = {
   "Buscar opções": { es: "Buscar opciones" },
   "Nenhuma opção casa com a busca.": { es: "Ninguna opción coincide con la búsqueda." },
   "Mostrar mais opções": { es: "Mostrar más opciones" },
+  "Mostrar mais": { es: "Mostrar más" },
   "Editar vocabulário e campos deste funil": { es: "Editar vocabulario y campos de este embudo" },
   "Esse valor não está na lista. Escolha uma das opções.": {
     es: "Ese valor no está en la lista. Elija una de las opciones.",
