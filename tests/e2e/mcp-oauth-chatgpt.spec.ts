@@ -26,7 +26,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./helpers/test";
 
 import { lerCreds, loginComoAdmin, type CredsE2E } from "./helpers/login-admin";
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
