@@ -513,34 +513,42 @@ describe("a linha do tempo de todos os números (#3669)", () => {
   });
 
   it("⭐ cursor: a página seguinte continua de onde a anterior parou, sem repetir nem pular", async () => {
+    // As colunas são uuid, e o cursor só aceita uuid: o fixture fala a língua do banco.
+    const ID = {
+      c1: "c1000000-0000-4000-8000-000000000001",
+      c2: "c2000000-0000-4000-8000-000000000002",
+      c3: "c3000000-0000-4000-8000-000000000003",
+      l1: "d1000000-0000-4000-8000-000000000001",
+      l2: "d2000000-0000-4000-8000-000000000002",
+    };
     estado.conversas = [
-      conversa("c1", estado.segundo, "2026-11-05T10:00:00.000Z"),
-      conversa("c2", estado.segundo, "2026-11-03T10:00:00.000Z"),
-      conversa("c3", estado.principal, "2026-11-01T10:00:00.000Z"),
+      conversa(ID.c1, estado.segundo, "2026-11-05T10:00:00.000Z"),
+      conversa(ID.c2, estado.segundo, "2026-11-03T10:00:00.000Z"),
+      conversa(ID.c3, estado.principal, "2026-11-01T10:00:00.000Z"),
     ];
     estado.ligacoes = [
-      ligacao("l1", estado.principal, "2026-11-04T09:00:00.000Z"),
-      ligacao("l2", estado.segundo, "2026-11-02T09:00:00.000Z"),
+      ligacao(ID.l1, estado.principal, "2026-11-04T09:00:00.000Z"),
+      ligacao(ID.l2, estado.segundo, "2026-11-02T09:00:00.000Z"),
     ];
 
     const primeira = await pergunta(estado.leadId, "?limit=2");
-    expect(primeira.corpo.data!.linha_do_tempo.map((i) => i.id)).toEqual(["c1", "l1"]);
+    expect(primeira.corpo.data!.linha_do_tempo.map((i) => i.id)).toEqual([ID.c1, ID.l1]);
     expect(primeira.corpo.meta?.tem_mais).toBe(true);
 
     const cursor1 = primeira.corpo.meta!.proximo_cursor!;
     expect(cursor1).toBeTruthy();
 
     const segunda = await pergunta(estado.leadId, `?limit=2&cursor=${encodeURIComponent(cursor1)}`);
-    expect(segunda.corpo.data!.linha_do_tempo.map((i) => i.id)).toEqual(["c2", "l2"]);
+    expect(segunda.corpo.data!.linha_do_tempo.map((i) => i.id)).toEqual([ID.c2, ID.l2]);
     // Nada da página 1 volta na página 2.
-    expect(segunda.corpo.data!.linha_do_tempo.map((i) => i.id)).not.toContain("c1");
-    expect(segunda.corpo.data!.linha_do_tempo.map((i) => i.id)).not.toContain("l1");
+    expect(segunda.corpo.data!.linha_do_tempo.map((i) => i.id)).not.toContain(ID.c1);
+    expect(segunda.corpo.data!.linha_do_tempo.map((i) => i.id)).not.toContain(ID.l1);
 
     const terceira = await pergunta(
       estado.leadId,
       `?limit=2&cursor=${encodeURIComponent(segunda.corpo.meta!.proximo_cursor!)}`,
     );
-    expect(terceira.corpo.data!.linha_do_tempo.map((i) => i.id)).toEqual(["c3"]);
+    expect(terceira.corpo.data!.linha_do_tempo.map((i) => i.id)).toEqual([ID.c3]);
     expect(terceira.corpo.meta).toMatchObject({ tem_mais: false, proximo_cursor: null });
 
     // A união das páginas é a lista inteira, na ordem — sem buraco.
@@ -549,13 +557,35 @@ describe("a linha do tempo de todos os números (#3669)", () => {
       ...segunda.corpo.data!.linha_do_tempo.map((i) => i.id),
       ...terceira.corpo.data!.linha_do_tempo.map((i) => i.id),
     ];
-    expect(todos).toEqual(["c1", "l1", "c2", "l2", "c3"]);
+    expect(todos).toEqual([ID.c1, ID.l1, ID.c2, ID.l2, ID.c3]);
     expect(new Set(todos).size).toBe(todos.length);
 
     // Cursor de fora é dado de fora: quebrado é 400, não página errada.
     const quebrado = await pergunta(estado.leadId, "?cursor=nao-e-um-cursor");
     expect(quebrado.status).toBe(400);
     expect(quebrado.corpo.error?.code).toBe("invalid_cursor");
+  });
+
+  it("cursor com data fora do ISO do banco é 400, não 500 (vírgula não entra no or())", async () => {
+    const cursor = Buffer.from(
+      JSON.stringify({ e: "Jan 1 2026 (a,b)", t: "conversa", i: "c1000000-0000-4000-8000-000000000001" }),
+      "utf8",
+    ).toString("base64url");
+    const { status, corpo } = await pergunta(estado.leadId, `?cursor=${cursor}`);
+    expect(status).toBe(400);
+    expect(corpo.error?.code).toBe("invalid_cursor");
+    expect(estado.tabelas).not.toContain("conversations");
+  });
+
+  it("cursor com id que não é uuid é 400, não 500 (a coluna id é uuid)", async () => {
+    const cursor = Buffer.from(
+      JSON.stringify({ e: "2026-11-01T10:00:00.123456+00:00", t: "conversa", i: "x" }),
+      "utf8",
+    ).toString("base64url");
+    const { status, corpo } = await pergunta(estado.leadId, `?cursor=${cursor}`);
+    expect(status).toBe(400);
+    expect(corpo.error?.code).toBe("invalid_cursor");
+    expect(estado.tabelas).not.toContain("conversations");
   });
 
   it("⭐ pessoa de OUTRA organização não aparece na linha do tempo", async () => {

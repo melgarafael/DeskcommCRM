@@ -194,6 +194,9 @@ function codificarCursor(cursor: CursorDaLinhaDoTempo): string {
   );
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ISO_DO_BANCO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$/;
+
 /**
  * Cursor de fora é dado de fora: string vazia, base64 quebrado, tipo inventado e
  * data impossível viram 400 (`invalid_cursor`), não uma página silenciosamente
@@ -210,9 +213,15 @@ function lerCursor(bruto: string | null): CursorLido {
   const c = cru as { e?: unknown; t?: unknown; i?: unknown } | null;
   if (!c || typeof c !== "object") return { ok: false };
   if (c.t !== "conversa" && c.t !== "ligacao") return { ok: false };
-  if (typeof c.i !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(c.i)) return { ok: false };
+  if (typeof c.i !== "string" || !UUID.test(c.i)) return { ok: false };
   const em = c.e;
-  if (em !== null && (typeof em !== "string" || Number.isNaN(new Date(em).getTime()))) {
+  // Só o ISO que o PostgREST devolve: `new Date` aceitaria "Jan 1 2026 (a,b)", e a
+  // vírgula e os parênteses iriam crus para dentro do `or()`. O texto original é
+  // o que segue, para não perder os microssegundos.
+  if (
+    em !== null &&
+    (typeof em !== "string" || !ISO_DO_BANCO.test(em) || Number.isNaN(new Date(em).getTime()))
+  ) {
     return { ok: false };
   }
   return { ok: true, cursor: { em: em as string | null, tipo: c.t, id: c.i } };
