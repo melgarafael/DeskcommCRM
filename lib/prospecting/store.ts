@@ -36,8 +36,14 @@ import { montarPrevia, motivosDe, resumoVazio } from "./importacao-previa";
 import { audit } from "@/lib/audit";
 import { vereditoPuro } from "./site-classify";
 import { linksDoCandidato } from "./links-do-candidato";
+import { empresaDoCandidato, ligarContatoAEmpresa } from "./empresa-do-candidato";
 import { aplicarLinks } from "@/lib/leads/links-de-contato";
-import { segmentoDoContatoNovo } from "@/lib/contacts/diagnostico-do-contato";
+import {
+  autoriaDoUsuario,
+  diagnosticoDoContatoNovo,
+  segmentoDoContatoNovo,
+} from "@/lib/contacts/diagnostico-do-contato";
+import { lerContextoDaEquipe } from "@/lib/prospecting/contexto-da-equipe";
 import { defsDoPadraoDaOrg } from "@/lib/leads/padrao-do-campo";
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
 import { motivoSemWhatsapp } from "./whatsapp";
@@ -472,6 +478,21 @@ export async function previaDaPlanilha(
 }
 
 /**
+ * O candidato com o contexto da equipe ASSINADO: quem importou (`usuario:<id>`) e quando.
+ * Sem contexto, devolve o mesmo objeto — o candidato é gravado exatamente como antes.
+ */
+function carimbarContextoDaEquipe(p: Prospect, importadoPor: string | null, em: string): Prospect {
+  if (!p.contexto_da_equipe) return p;
+  return {
+    ...p,
+    contexto_da_equipe: {
+      ...p.contexto_da_equipe,
+      ...(importadoPor ? { por: autoriaDoUsuario(importadoPor), em } : {}),
+    },
+  };
+}
+
+/**
  * Cria a campanha a partir da planilha já lida e validada (`lerPlanilhaDeProspeccao`).
  *
  * A campanha nasce `succeeded`, sem `run_id`: não há busca a sincronizar, e daí em diante é o
@@ -490,6 +511,12 @@ export async function importarPlanilha(
   requestId: string,
   campos: CamposDaImportacao,
   planilha: LeituraComMotivos,
+  /**
+   * Quem importou — o id do usuário da SESSÃO (a rota recusa token), nunca do corpo. Vira a
+   * autoria (`usuario:<id>`) do contexto da equipe de cada candidato, e dali a autoria do
+   * diagnóstico do contato que a campanha criar. `null` = sem autoria (os textos entram).
+   */
+  importadoPor: string | null = null,
 ): Promise<ResultadoDaImportacao> {
   return withProspectingLock(pool, org, async (db) => {
     const prior = await db.query<Campaign & { result_count: number | null; skipped_count: number | null }>(
@@ -511,6 +538,7 @@ export async function importarPlanilha(
     }
     const previa = await previaDaPlanilha(db, org, planilha);
     const search: BuscaDaPlanilha = { origem: "importacao", ...campos };
+    const importadaEm = new Date().toISOString();
     await db.query("begin");
     try {
       const { rows } = await db.query<Campaign>(
@@ -522,7 +550,7 @@ export async function importarPlanilha(
         db,
         org,
         campaign.id,
-        previa.entram.map((c) => c.prospect),
+        previa.entram.map((c) => carimbarContextoDaEquipe(c.prospect, importadoPor, importadaEm)),
       );
       // `skipped_count` é toda linha lida que não entrou: as que a prévia já explicava e a que
       // o `unique` de telefone/identificador barrou (reimportação da mesma lista).
@@ -924,7 +952,14 @@ export async function marcarEtiquetasDaCampanha(
  * `segmento`: o `createContactHandler` confere o `custom_fields` contra o padrão desses
  * campos e recusa com 422, e uma categoria do Maps fora do padrão derrubaria a criação
  * de todo contato da campanha. A leitura das definições só acontece quando há
- * categoria, e é fail-open (`defsDoPadraoDaOrg` devolve lista vazia se falhar).
+ * categoria ou contexto da equipe, e é fail-open (`defsDoPadraoDaOrg` devolve lista
+ * vazia se falhar).
+ *
+ * O contexto da equipe (planilha: diagnóstico, oferta, contexto) vira `diag_resumo`,
+ * `diag_oferta` e `diag_observacoes` pelo MESMO schema central da aba Diagnóstico, com
+ * `diag_por`/`diag_em` de quem importou — só quando há diagnóstico ou oferta (a regra
+ * da autoria). Chave que a organização já tem como campo próprio fica de fora, pelo
+ * mesmo motivo do segmento.
  */
 async function camposDoContatoNovo(
   admin: SupabaseClient,
@@ -932,12 +967,26 @@ async function camposDoContatoNovo(
   p: Candidate,
 ): Promise<Record<string, unknown> | undefined> {
   try {
-    const chavesDaOrganizacao = p.data.category?.trim()
-      ? (await defsDoPadraoDaOrg(admin, org, "contato")).map((def) => def.key)
-      : [];
+    const equipe = lerContextoDaEquipe(p.data.contexto_da_equipe);
+    const chavesDaOrganizacao =
+      p.data.category?.trim() || equipe
+        ? (await defsDoPadraoDaOrg(admin, org, "contato")).map((def) => def.key)
+        : [];
     const campos = {
       ...aplicarLinks({}, linksDoCandidato(p.data)),
       ...segmentoDoContatoNovo(p.data.category, chavesDaOrganizacao),
+      // O que a EQUIPE escreveu na planilha vira a aba Diagnóstico do contato novo,
+      // assinado por quem importou (`lib/prospecting/contexto-da-equipe.ts`).
+      ...diagnosticoDoContatoNovo(
+        equipe && {
+          resumo: equipe.diagnostico,
+          oferta: equipe.oferta,
+          observacoes: equipe.contexto,
+          autor: equipe.por,
+          em: equipe.em,
+        },
+        chavesDaOrganizacao,
+      ),
     };
     return Object.keys(campos).length > 0 ? campos : undefined;
   } catch (error) {
@@ -1014,6 +1063,10 @@ export async function criarPegadaDoCandidato(
     description: `Campanha: ${c.name}\nQualificação: ${config.qualification}`.slice(0, 2000),
   });
   let contactId = contatoDaCampanha ?? p.contact_id;
+  // A EMPRESA DO MÓDULO "EMPRESAS E PESSOAS" (#3198, fatia 2) — só com o módulo
+  // LIGADO. Desligado, `empresaDoCandidato` devolve `null` sem escrever nada, e
+  // o caminho abaixo é exatamente o de hoje: contato, negócio e conversa.
+  const empresaId = await empresaDoCandidato(admin, org, p.data);
   if (!contactId) {
     const linksDoNovo = await camposDoContatoNovo(admin, org, p);
     // Porta `prospeccao`: a conversa abre logo abaixo, no canal da CAMPANHA. Pela
@@ -1035,6 +1088,10 @@ export async function criarPegadaDoCandidato(
       { porta: "prospeccao" },
     );
     contactId = String(contact.contact.id);
+    // O contato NASCIDO da prospecção aponta para a empresa quando ela existe:
+    // o telefone do Google é o da recepção, e o vínculo é com a EMPRESA
+    // (#3198, fatia 2, decisão 1 do autor). Contato que já existia não é tocado.
+    if (empresaId) await ligarContatoAEmpresa(db, org, contactId, empresaId);
     await db.query(
       "update prospecting_candidates set contact_id=$3 where organization_id=$1 and id=$2",
       [org, p.id, contactId],
