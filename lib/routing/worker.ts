@@ -16,6 +16,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { filtrarCandidatosExcluidos } from "@/lib/escalacao/devolucao-ao-rodizio";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoAviso, preencher } from "@/lib/i18n/idioma-do-aviso";
 import { logger } from "@/lib/logger";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import {
@@ -504,9 +506,6 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
   }
 }
 
-/** Título fixo: é por ele que quem lê a Central reconhece o aviso. */
-const TITULO_DA_ESPERA_VENCIDA = "A IA não passou a conversa no prazo";
-
 /**
  * O aviso do prazo vencido (#3966). Insere direto, sem `on conflict`: quem
  * impede a repetição é a marca `avisada` no `metadata` do pedido. Devolve
@@ -518,15 +517,23 @@ async function avisarEsperaVencida(
   conversationId: string,
   minutos: number,
 ): Promise<boolean> {
-  const { error } = await createAdminClient().from("agent_inbox_items").insert({
+  const admin = createAdminClient();
+  // A Central mostra o texto como foi gravado: o aviso nasce no idioma da
+  // organização. O título é fixo (por organização): é por ele que quem lê a
+  // Central reconhece o aviso.
+  const idioma = await idiomaDoAviso(admin, orgId);
+  const { error } = await admin.from("agent_inbox_items").insert({
     organization_id: orgId,
     kind: "routing_ia_wait_expired",
     severity: "warn",
-    title: TITULO_DA_ESPERA_VENCIDA,
-    body:
-      `A IA atendeu esta conversa por ${minutos} minutos, o prazo definido para este número, ` +
-      `e não a passou para a equipe. A conversa entrou na distribuição. ` +
-      `Se isso se repetir, confira o agente de IA deste número e o prazo em Configurações → Atendimento.`,
+    title: traduzir("A IA não passou a conversa no prazo", idioma),
+    body: preencher(
+      traduzir(
+        "A IA atendeu esta conversa por {minutos} minutos, o prazo definido para este número, e não a passou para a equipe. A conversa entrou na distribuição. Se isso se repetir, confira o agente de IA deste número e o prazo em Configurações → Atendimento.",
+        idioma,
+      ),
+      { minutos },
+    ),
     ref_kind: "conversation",
     ref_id: conversationId,
   });

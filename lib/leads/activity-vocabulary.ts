@@ -72,6 +72,18 @@ export type ActivityType =
   | "followup_resumed"
   | "followup_snoozed"
   | "followup_step_skipped"
+  /**
+   * O RETORNO COMBINADO QUE NÃO VAI SAIR (#4696).
+   *
+   * O job `followup_turn` foi descartado porque o atendimento mudou antes do
+   * disparo (`service_boundary_stale` em `assertCurrentServiceBoundary`). Não é
+   * `followup_cancelled`: ninguém desistiu do fluxo, e o cancelamento é decisão
+   * de um fluxo que continua vivo. Aqui o combinado morre por mudança de
+   * atendimento, e quem abre a ficha precisa ler isso — senão a conversa
+   * simplesmente para, e "por que ninguém falou com este cliente?" volta a ser a
+   * pergunta sem resposta visível que `consent_declined` já documenta aqui.
+   */
+  | "followup_discarded"
   | "demand_closed"
   | "promise_unowned"
   /**
@@ -321,6 +333,10 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   followup_resumed: "Follow-up retomado",
   followup_snoozed: "Follow-up adiado",
   followup_step_skipped: "Passo do follow-up pulado",
+  // Rótulo com OBJETO e o desfecho do lado do cliente: "Descartado" sozinho é
+  // palavra de fila, e quem lê a linha do tempo precisa saber que uma mensagem
+  // combinada não sai.
+  followup_discarded: "Retorno combinado não será enviado",
   // PROMESSA SEM RESPONSÁVEL. Entra na timeline pelo mesmo critério do
   // `diffCheckpoint`: só o que muda o que alguém faria a seguir. Turno em que o
   // Operador AGIU não gera linha própria — as ferramentas dele já geram as delas

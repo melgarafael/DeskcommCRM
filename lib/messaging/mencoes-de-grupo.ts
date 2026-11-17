@@ -23,9 +23,13 @@
  *
  * ─── Regras que a exibição tem de cumprir (cada uma com teste) ───────────────
  *
- *  - menção a quem está no CRM mostra o nome;
- *  - menção a desconhecido continua mostrando o número — não inventamos nome
- *    nem apagamos a informação que o texto já tinha;
+ *  - menção a quem está no CRM mostra o nome do contato;
+ *  - menção a quem NÃO está no CRM sai com a palavra do dicionário
+ *    ("Participante"): o número bruto NUNCA aparece na tela (era o defeito
+ *    relatado na issue). O payload do WhatsApp não traz o nome de quem foi
+ *    mencionado, e o `metadata.group_sender` é o AUTOR da mensagem — usar o
+ *    nome dele como rótulo da menção atribuiria a menção à pessoa errada
+ *    ("@João e @João" para duas pessoas que o João marcou);
  *  - a troca é por LID, numa passada só: menção repetida resolve CADA ocorrência
  *    pelo próprio identificador. Dois contatos chamados "João" não trocam de
  *    lugar, e um nome que contenha `@` ou dígitos não é reprocessado;
@@ -66,6 +70,41 @@ export function lerMencoesDeGrupo(metadata: unknown): RemetenteDeGrupo[] {
 }
 
 /**
+ * A palavra que substitui a menção quando o mencionado não é contato do CRM.
+ * O número bruto nunca vai à tela
+ * (era o defeito da issue); a chave é a mesma no dicionário (`lib/i18n`), e a
+ * tela passa a versão traduzida por `t()`.
+ */
+export const PALAVRA_DE_MENCAO_DESCONHECIDA = "Participante";
+
+/**
+ * O que a exibição sabe ALÉM da lista de menções: a palavra de reserva
+ * traduzida. Opcional porque o ingest (que monta a prévia da lista) não conhece
+ * idioma de tela; a bolha passa a versão de `t()`.
+ *
+ * NÃO há degrau com o nome do `group_sender`: ele é quem ESCREVEU a mensagem,
+ * não quem foi mencionado, e o payload não traz nome por menção.
+ */
+export type ReservaDaMencao = {
+  palavraDesconhecida?: string;
+};
+
+/**
+ * A ordem de resolução de UMA menção, e ela é curta de propósito:
+ *
+ *   1. `name` da própria menção — é o contato do CRM, resolvido no ingest;
+ *   2. `palavraDesconhecida` — a palavra do dicionário.
+ *
+ * O passo 2 é o que faltava: antes, quem não estava no CRM via o LID cru na
+ * tela, que é o defeito relatado. Nunca devolve dígitos.
+ */
+function rotuloDaMencao(m: RemetenteDeGrupo, reserva: ReservaDaMencao): string {
+  const doContato = m.name?.trim();
+  if (doContato) return doContato;
+  return reserva.palavraDesconhecida?.trim() || PALAVRA_DE_MENCAO_DESCONHECIDA;
+}
+
+/**
  * O texto que a bolha mostra: o corpo ORIGINAL com cada `@<lid>` conhecido
  * trocado por `@<nome>`. O corpo gravado não muda — esta função é de leitura.
  *
@@ -73,23 +112,31 @@ export function lerMencoesDeGrupo(metadata: unknown): RemetenteDeGrupo[] {
  * posição na lista) é o que faria duas pessoas chamadas "João" trocarem de
  * lugar, e um nome que veio com `@`/dígitos ser reprocessado.
  *
- * Menção cujo `name` é `null` (desconhecido no CRM, ou contato sem nome) fica
- * como veio: o número que já estava no texto é a informação disponível.
+ * Só o que está na LISTA de menções é tocado: `@` de e-mail, `@todos` e um
+ * número solto no texto continuam como vieram. Mensagem antiga, sem a chave no
+ * metadata, sai byte a byte igual.
+ *
+ * `@<telefone>` (menção que chegou como número, não como LID) resolve pelo
+ * telefone da menção, pela mesma ordem.
  */
 export function textoComMencoesResolvidas(
   body: string | null,
   mencoes: readonly RemetenteDeGrupo[],
+  reserva: ReservaDaMencao = {},
 ): string | null {
   if (body === null || mencoes.length === 0) return body;
-  const nomePorLid = new Map<string, string>();
+  const nomePorIdentificador = new Map<string, string>();
   for (const m of mencoes) {
-    if (m.lid !== null && m.name !== null && m.name !== "") nomePorLid.set(m.lid, m.name);
+    const nome = rotuloDaMencao(m, reserva);
+    if (m.lid !== null) nomePorIdentificador.set(m.lid, nome);
+    const digitosDoTelefone = m.phone?.replace(/\D/g, "");
+    if (digitosDoTelefone) nomePorIdentificador.set(digitosDoTelefone, nome);
   }
-  // Nada resolvido: devolve o MESMO texto, sem passar pelo replace (o controle
+  // Nada na lista: devolve o MESMO texto, sem passar pelo replace (o controle
   // "sem menção sai byte a byte igual" vale também aqui).
-  if (nomePorLid.size === 0) return body;
+  if (nomePorIdentificador.size === 0) return body;
   return body.replace(MENCAO_NO_TEXTO, (trecho, lid: string) => {
-    const nome = nomePorLid.get(lid);
+    const nome = nomePorIdentificador.get(lid);
     return nome === undefined ? trecho : `@${nome}`;
   });
 }
