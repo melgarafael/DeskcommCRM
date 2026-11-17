@@ -15278,6 +15278,9 @@ export const DICIONARIO: Traducoes = {
   "A mensagem citada não é desta conversa.": {
     es: "El mensaje citado no es de esta conversación.",
   },
+  "A mensagem citada foi apagada e não pode ser citada. Envie a resposta sem citá-la.": {
+    es: "El mensaje citado fue eliminado y no se puede citar. Envía la respuesta sin citarlo.",
+  },
   "Este número foi excluído da Central de Conexões.": {
     es: "Este número fue eliminado de la Central de Conexiones.",
   },

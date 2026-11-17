@@ -991,11 +991,20 @@ export async function sendMessageHandler(
   //
   // Recusar em silêncio (citar nada) seria pior que recusar alto: quem clicou
   // "responder" veria a mensagem sair sem o fio e não saberia por quê.
+  //
+  // E A APAGADA NÃO É CITÁVEL (#4787). O menu deixou de oferecer a ação, mas o
+  // id pode chegar assim mesmo: a citação escolhida ANTES da exclusão continua
+  // no compositor, um cliente da API manda o campo direto e o MCP também. Aqui
+  // é o único ponto por onde TODOS passam — e a recusa é ANTES do insert, do
+  // carimbo em `contacts` e de qualquer chamada ao canal: nada sai para a
+  // plataforma, o rascunho fica na tela e o reenvio sem citação é permitido.
+  // A régua é a da linha (`revoked_at`), não a da direção: apagada é apagada,
+  // e a tela já esconde a ação das duas.
   let citada: { id: string; external_id: string | null } | null = null;
   if (input.reply_to_message_id) {
     const { data: alvo } = await supabase
       .from("messages")
-      .select("id, external_id")
+      .select("id, external_id, revoked_at")
       .eq("id", input.reply_to_message_id)
       .eq("organization_id", ctx.organization_id)
       .eq("conversation_id", c.id)
@@ -1008,6 +1017,18 @@ export async function sendMessageHandler(
         undefined,
         ctx.requestId,
         traduzir("A mensagem citada não é desta conversa.", ctx.idioma ?? "pt-BR"),
+      );
+    }
+    if ((alvo as { revoked_at?: string | null }).revoked_at) {
+      throw new ApiError(
+        422,
+        "citacao_apagada",
+        undefined,
+        ctx.requestId,
+        traduzir(
+          "A mensagem citada foi apagada e não pode ser citada. Envie a resposta sem citá-la.",
+          ctx.idioma ?? "pt-BR",
+        ),
       );
     }
     citada = alvo as { id: string; external_id: string | null };
