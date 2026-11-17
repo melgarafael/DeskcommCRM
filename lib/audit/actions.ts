@@ -1641,6 +1641,11 @@ export const AUDIT_ACTIONS = [
   // leva só contagens e a chave do arquivo — nunca preço de linha.
   "tabela_de_valores.criada",
   "tabela_de_valores.importada",
+  // O agente (ou uma pessoa por token) gravou o diagnóstico da empresa na ficha
+  // do contato (`crm_save_lead_diagnosis`, decisão D7: grava direto, com o selo
+  // "Escrito pela IA"). Metadata leva só os NOMES dos campos e se a autoria é da
+  // IA — nunca o texto, que mora na ficha e é alcançado pela anonimização.
+  "contact.diagnosis_saved",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

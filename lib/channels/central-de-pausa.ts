@@ -30,6 +30,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { canalDesativado } from "@/lib/channels/desativado";
 import {
   avaliarAvisoDePausa,
   KIND_CANAL_PAUSADO,
@@ -37,6 +38,8 @@ import {
   type CanalAvaliado,
   type ItemDePausaAberto,
 } from "@/lib/channels/canal-pausado";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoAviso, preencher } from "@/lib/i18n/idioma-do-aviso";
 import { logger } from "@/lib/logger";
 import type { Idioma } from "@/lib/i18n/idiomas";
 
@@ -103,17 +106,25 @@ export async function sincronizarAvisoDePausa(
 
     // Linha ausente = excluída (hard delete). O item não pode ficar apontando
     // para uma linha que a tela já não carrega.
+    // A Central mostra o texto como foi gravado e o time inteiro o lê: título e
+    // corpo saem no idioma da ORGANIZAÇÃO. O idioma de quem clicou
+    // (`contexto.idioma`) vale só para o horário.
+    const idiomaDoTexto = (): Promise<Idioma> => idiomaDoAviso(db, canal.organization_id);
+
     if (!linha) {
       if (!item) return "sem_mudanca";
-      return (await fechar(db, item, resolverCorpo(item, "o canal foi arquivado")))
+      return (await fechar(db, item, resolverCorpo(item, await idiomaDoTexto())))
         ? "resolvido"
         : "falhou";
     }
 
+    // Sem item e sem pausa não há o que escrever — nem idioma a ler.
+    const vaiEscrever = item !== null || canalPausadoParaAviso(linha as CanalAvaliado);
     const decisao = avaliarAvisoDePausa(linha as CanalAvaliado, item, {
       autor: contexto.autor,
       agora,
-      idioma: contexto.idioma,
+      idioma: vaiEscrever ? await idiomaDoTexto() : undefined,
+      idiomaDaData: contexto.idioma,
     });
 
     if (decisao.acao === "nada") return "sem_mudanca";
@@ -178,10 +189,17 @@ export async function sincronizarAvisoDePausa(
 }
 
 /** O corpo de resolução do caminho em que a linha do canal já não existe. */
-function resolverCorpo(item: ItemDePausaAberto, motivoLivel: string): string {
+function resolverCorpo(item: ItemDePausaAberto, idioma: Idioma): string {
   const anterior = (item.body ?? "").trim();
-  const linha = `Resolvido pelo sistema: ${motivoLivel}.`;
+  const linha = preencher(traduzir("Resolvido pelo sistema: {motivo}.", idioma), {
+    motivo: traduzir("o canal foi arquivado", idioma),
+  });
   return anterior === "" ? linha : `${anterior}\n\n${linha}`;
+}
+
+/** A linha está pausada e não arquivada — a única situação que abre/atualiza o item. */
+function canalPausadoParaAviso(canal: CanalAvaliado): boolean {
+  return canal.archived_at === null && canalDesativado(canal.metadata);
 }
 
 /**

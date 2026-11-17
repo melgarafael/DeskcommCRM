@@ -190,6 +190,11 @@ export const ApiErrorCodes = {
   // "recusa parcial" — recebe a porta fechada, e a recebe ANTES de o e-mail
   // sair, de o `due_at` ser tocado e de a auditoria registrar o aviso.
   lgpd_art12_so_fora_do_brasil: "lgpd_art12_so_fora_do_brasil",
+  // PATCH /channel-sessions/:id/ai-access: identidade social que a tela não
+  // oferece para ESTE canal (outra conta conectada, contato sem conversa aqui)
+  // ou lista social num canal que não é de rede social. A forma está certa;
+  // quem não serve é o vínculo com o canal.
+  testador_social_recusado: "testador_social_recusado",
   plano_invalido: "plano_invalido", // plano inexistente, arquivado, de outro intervalo, ou cobrança desligada
   // #2846: cobrança ligada, planos oferecidos e nenhum plano padrão — a empresa
   // não nasce sem plano (doc 146). Quem administra define um padrão.
