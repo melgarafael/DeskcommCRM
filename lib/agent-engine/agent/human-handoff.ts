@@ -590,6 +590,7 @@ export async function performHumanHandoff(
       checkpoint: null,
       camposColetados: opts.camposColetados,
       motivo: { codigo: 'verificacao_manual' },
+      idioma: await idiomaDaOrganizacao(db, ids.tenantId, opts.log),
     });
     const gravou = await registrarPassagem(db, {
       organizationId: ids.tenantId,
@@ -925,6 +926,7 @@ export async function applyRequestHumanHandoff(
       : {}),
     ...(Object.keys(camposDoCard).length > 0 ? { camposColetados: camposDoCard } : {}),
     motivo: { codigo: motivoCodigo, texto: porQue },
+    idioma: await idiomaDaOrganizacao(db, ids.tenantId, opts.log),
   });
 
   // #2210: o handoff só carrega a marca quando a causa é a falta de texto —
@@ -1002,6 +1004,7 @@ export function buildHandoffSummary(
      */
     declaracao?: DeclaracaoDoTurno | null;
   } | null,
+  idioma: Idioma = 'pt-BR',
 ): string {
-  return montarBriefingDaPassagem({ checkpoint: previous }).body;
+  return montarBriefingDaPassagem({ checkpoint: previous, idioma }).body;
 }

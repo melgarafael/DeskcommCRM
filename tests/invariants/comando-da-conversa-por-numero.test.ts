@@ -266,6 +266,26 @@ describe("comando da conversa pergunta pelo NÚMERO (#4012)", () => {
     }
   });
 
+  it("⭐ pré-go-live, contato de Instagram na lista SOCIAL: 'automatico'; por outra conta conectada, não", () => {
+    const testador = "instagram:6af9e0ef28984e27de07bef4:1011223655361506";
+    const lista = (identidade: string) =>
+      `{"ai_gate":"allowlist","ai_gate_mode":"pre_go_live","ai_test_phone_numbers":[],"ai_test_social_identities":["${identidade}"]}`;
+    sql(`update public.contacts set social_identity = '${testador}' where id = '${CONTATO_PRE_GO_LIVE}';
+         update public.channel_sessions set metadata = '${lista(testador)}'::jsonb where id = '${SESSAO_PRE_GO_LIVE}';`);
+    try {
+      expect(comandoDaConversaNoBanco(CONVERSA_PRE_GO_LIVE)).toBe("automatico");
+      expect(fatoDoBanco(CONVERSA_PRE_GO_LIVE)).toBe("true");
+      // O contato de telefone do mesmo canal não entra pela lista social.
+      expect(comandoDaConversaNoBanco(CONVERSA_NA_LISTA)).toBe("aguardando");
+      sql(`update public.channel_sessions set metadata = '${lista("instagram:0123456789abcdef01234567:1011223655361506")}'::jsonb where id = '${SESSAO_PRE_GO_LIVE}';`);
+      expect(comandoDaConversaNoBanco(CONVERSA_PRE_GO_LIVE)).toBe("aguardando");
+      expect(fatoDoBanco(CONVERSA_PRE_GO_LIVE)).toBe("false");
+    } finally {
+      sql(`update public.contacts set social_identity = null where id = '${CONTATO_PRE_GO_LIVE}';
+           update public.channel_sessions set metadata = '${PRÉ_GO_LIVE_VAZIO}'::jsonb where id = '${SESSAO_PRE_GO_LIVE}';`);
+    }
+  });
+
   it("⭐ agente pausado pela tela: 'aguardando' — pausado não responde", () => {
     expect(comandoDaConversaNoBanco(CONVERSA_PAUSADO)).toBe("aguardando");
     expect(fatoDoBanco(CONVERSA_PAUSADO)).toBe("false");

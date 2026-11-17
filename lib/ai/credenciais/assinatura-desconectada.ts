@@ -22,6 +22,10 @@
  */
 
 /** O kind em `agent_inbox_items` (vocabulário fechado por CHECK, migration 9027). */
+import { traduzir } from "@/lib/i18n/dicionario";
+import { preencher } from "@/lib/i18n/idioma-do-aviso";
+import type { Idioma } from "@/lib/i18n/idiomas";
+
 export const KIND_ASSINATURA_DESCONECTADA = "assinatura_desconectada" as const;
 
 /** O título do item. Diz a CONSEQUÊNCIA para quem atende, não o token. */
@@ -124,21 +128,32 @@ const MOTIVO_LEGIVEL: Record<string, string> = {
  * que vem depois do último `:`. Sem isso todo aviso real dizia "sem motivo
  * identificado".
  */
-export function motivoLegivelDaAssinatura(recusa: string): string {
+export function motivoLegivelDaAssinatura(recusa: string, idioma: Idioma = "pt-BR"): string {
   const rotulo = recusa.slice(recusa.lastIndexOf(":") + 1);
-  return MOTIVO_LEGIVEL[rotulo] ?? MOTIVO_LEGIVEL.desconhecido!;
+  const chave = Object.hasOwn(MOTIVO_LEGIVEL, rotulo) ? rotulo : "desconhecido";
+  return traduzir(MOTIVO_LEGIVEL[chave] as string, idioma);
 }
 
 /**
  * O corpo do aviso que PEDE a reconexão. Sem data e sem token: o corpo é lido
  * por qualquer pessoa da equipe, e a linha do item já carrega o horário.
  */
-export function corpoDoAvisoDeAssinatura(recusa: string): string {
+export function corpoDoAvisoDeAssinatura(recusa: string, idioma: Idioma = "pt-BR"): string {
+  // No idioma da ORGANIZAÇÃO: a Central mostra o texto como foi gravado.
   return (
-    `A conta do ChatGPT que atende esta empresa foi recusada: ${motivoLegivelDaAssinatura(recusa)}.\n\n` +
-    "Enquanto isso, a IA não responde aos clientes que escrevem — as mensagens chegam e ficam sem resposta. " +
-    "A cota da assinatura NÃO é o problema.\n\n" +
-    "Para voltar: reconecte a conta em IA › Credenciais. Este aviso se fecha sozinho quando o login voltar."
+    preencher(traduzir("A conta do ChatGPT que atende esta empresa foi recusada: {motivo}.", idioma), {
+      motivo: motivoLegivelDaAssinatura(recusa, idioma),
+    }) +
+    "\n\n" +
+    traduzir(
+      "Enquanto isso, a IA não responde aos clientes que escrevem — as mensagens chegam e ficam sem resposta. A cota da assinatura NÃO é o problema.",
+      idioma,
+    ) +
+    "\n\n" +
+    traduzir(
+      "Para voltar: reconecte a conta em IA › Credenciais. Este aviso se fecha sozinho quando o login voltar.",
+      idioma,
+    )
   );
 }
 
@@ -167,20 +182,33 @@ export const CORPO_DA_RESOLUCAO_PELA_CHAMADA =
  * se dá NOME a cada lado. Sem o nome, a leitura aponta para a chave errada —
  * exatamente o que aconteceu quando só a metade da reserva aparecia.
  */
-export function corpoDoAvisoDaIaFora(d: {
-  assinatura: LadoQueFalhou;
-  reserva: LadoQueFalhou;
-}): string {
+export function corpoDoAvisoDaIaFora(
+  d: {
+    assinatura: LadoQueFalhou;
+    reserva: LadoQueFalhou;
+  },
+  idioma: Idioma = "pt-BR",
+): string {
+  // No idioma da ORGANIZAÇÃO, como o resto deste arquivo (#4724); pt-BR é o texto de antes.
+  const t = (s: string) => traduzir(s, idioma);
   const lado = (l: LadoQueFalhou): string =>
-    `${l.provider} — ${l.error_code} (HTTP ${l.http_status ?? "sem status"}): ${l.error_message.slice(0, 240)}`;
+    `${l.provider} — ${l.error_code} (HTTP ${l.http_status ?? t("sem status")}): ${l.error_message.slice(0, 240)}`;
   return (
-    "As duas credenciais de IA desta empresa recusaram a chamada:\n\n" +
-    `• assinatura: ${lado(d.assinatura)}\n` +
-    `• reserva: ${lado(d.reserva)}\n\n` +
-    "Sem nenhum provedor de pé, os agentes não respondem aos clientes que escrevem — as mensagens chegam e ficam " +
-    "sem resposta. O problema NÃO é a cota de mensagens do WhatsApp.\n\n" +
-    "Para voltar: reconecte a conta em IA › Credenciais e confira a chave de reserva em Agente de IA › Provedores. " +
-    "Este aviso se fecha sozinho quando uma chamada de IA voltar a passar."
+    t("As duas credenciais de IA desta empresa recusaram a chamada:") +
+    "\n\n" +
+    preencher(t("• assinatura: {lado}"), { lado: lado(d.assinatura) }) +
+    "\n" +
+    preencher(t("• reserva: {lado}"), { lado: lado(d.reserva) }) +
+    "\n\n" +
+    t(
+      "Sem nenhum provedor de pé, os agentes não respondem aos clientes que escrevem — as mensagens chegam e ficam " +
+        "sem resposta. O problema NÃO é a cota de mensagens do WhatsApp.",
+    ) +
+    "\n\n" +
+    t(
+      "Para voltar: reconecte a conta em IA › Credenciais e confira a chave de reserva em Agente de IA › Provedores. " +
+        "Este aviso se fecha sozinho quando uma chamada de IA voltar a passar.",
+    )
   );
 }
 
@@ -201,6 +229,8 @@ export function corpoDoAvisoDaIaFora(d: {
 export function avaliarAvisoDaAssinatura(
   situacao: SituacaoDaAssinatura,
   item: ItemDaAssinaturaAberto | null,
+  /** O idioma da organização; `pt-BR` (o padrão) é o texto de antes, byte a byte. */
+  idioma: Idioma = "pt-BR",
 ): DecisaoDoAvisoDaAssinatura {
   if (situacao.conectada) {
     if (!item) return { acao: "nada" };
@@ -208,10 +238,17 @@ export function avaliarAvisoDaAssinatura(
     // LOGIN continua aberto enquanto a conta não for reconectada, porque a
     // reserva responder não conserta o login: fechá-lo aqui esconderia a conta
     // quebrada atrás de uma IA que voltou pela chave paga.
-    if (situacao.voltaPorChamada === true && item.title !== TITULO_DA_IA_FORA) return { acao: "nada" };
+    if (
+      situacao.voltaPorChamada === true &&
+      item.title !== TITULO_DA_IA_FORA &&
+      item.title !== traduzir(TITULO_DA_IA_FORA, idioma)
+    )
+      return { acao: "nada" };
     const anterior = (item.body ?? "").trim();
-    const resolucao =
-      situacao.voltaPorChamada === true ? CORPO_DA_RESOLUCAO_PELA_CHAMADA : CORPO_DA_RESOLUCAO_DA_ASSINATURA;
+    const resolucao = traduzir(
+      situacao.voltaPorChamada === true ? CORPO_DA_RESOLUCAO_PELA_CHAMADA : CORPO_DA_RESOLUCAO_DA_ASSINATURA,
+      idioma,
+    );
     return {
       acao: "resolver",
       item,
@@ -221,15 +258,15 @@ export function avaliarAvisoDaAssinatura(
   // As DUAS pontas fora é o caso mais informativo e vence o de login: o corpo
   // nomeia assinatura e reserva, e é ele que quem investiga precisa ler.
   if (situacao.iaFora) {
-    const corpo = corpoDoAvisoDaIaFora(situacao.iaFora);
-    return item
-      ? { acao: "atualizar", item, titulo: TITULO_DA_IA_FORA, corpo }
-      : { acao: "abrir", titulo: TITULO_DA_IA_FORA, corpo };
+    const corpo = corpoDoAvisoDaIaFora(situacao.iaFora, idioma);
+    const titulo = traduzir(TITULO_DA_IA_FORA, idioma);
+    return item ? { acao: "atualizar", item, titulo, corpo } : { acao: "abrir", titulo, corpo };
   }
   if (situacao.recusa === null) return { acao: "nada" };
-  const corpo = corpoDoAvisoDeAssinatura(situacao.recusa);
+  const corpo = corpoDoAvisoDeAssinatura(situacao.recusa, idioma);
+  const titulo = traduzir("A conta do ChatGPT desconectou — a IA parou de responder", idioma);
   if (item) {
-    return { acao: "atualizar", item, titulo: TITULO_DO_AVISO_DE_ASSINATURA, corpo };
+    return { acao: "atualizar", item, titulo, corpo };
   }
-  return { acao: "abrir", titulo: TITULO_DO_AVISO_DE_ASSINATURA, corpo };
+  return { acao: "abrir", titulo, corpo };
 }

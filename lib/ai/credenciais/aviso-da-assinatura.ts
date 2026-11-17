@@ -32,6 +32,7 @@ import {
   type LadoQueFalhou,
   type SituacaoDaAssinatura,
 } from "./assinatura-desconectada";
+import { idiomaDoAviso } from "@/lib/i18n/idioma-do-aviso";
 import { logger } from "@/lib/logger";
 
 export type DesfechoDoAvisoDaAssinatura =
@@ -69,6 +70,10 @@ export async function sincronizarAvisoDaAssinatura(
     }
     const item = (itemBruto ?? null) as ItemDaAssinaturaAberto | null;
 
+    // Sem item e sem recusa não há o que escrever — nem idioma a ler.
+    const vaiEscrever = item !== null || (!situacao.conectada && situacao.recusa !== null);
+    // A Central mostra o texto como foi gravado: o aviso nasce no idioma da organização.
+    const idioma = vaiEscrever ? await idiomaDoAviso(db, situacao.organizationId) : undefined;
     const decisao = avaliarAvisoDaAssinatura(
       {
         conectada: situacao.conectada,
@@ -80,6 +85,7 @@ export async function sincronizarAvisoDaAssinatura(
         ...(situacao.voltaPorChamada === true ? { voltaPorChamada: true } : {}),
       },
       item,
+      idioma,
     );
     if (decisao.acao === "nada") return "sem_mudanca";
 
