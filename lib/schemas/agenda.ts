@@ -141,6 +141,26 @@ export const datasDosNegociosQuerySchema = z
 export type DatasDosNegociosQuery = z.infer<typeof datasDosNegociosQuerySchema>;
 
 /**
+ * A ESCOLHA GUARDADA da camada "Datas dos negócios" (#4436, item 1), canônica.
+ *
+ * A Server Action que grava (`definirCamadaDatasDosNegocios`) aceita isto, e as
+ * réguas são as MESMAS da consulta acima: `funilId` é uuid e as chaves seguem
+ * `chaveDeCampoDoFunilSchema`. Uma escolha que a consulta recusaria não pode
+ * ser gravada — o 422 voltaria na visita seguinte, a cada repintura.
+ *
+ * `null` é escolha VÁLIDA em três campos: nenhum funil (a lista decide), nenhum
+ * campo (a camada pede a escolha) e nenhum segundo campo (o caso comum).
+ */
+export const escolhaDaCamadaSchema = z.object({
+  ligada: z.boolean(),
+  funilId: z.string().trim().uuid("Informe o funil.").nullable(),
+  campo: chaveDeCampoDoFunilSchema.nullable(),
+  campoFim: chaveDeCampoDoFunilSchema.nullable(),
+});
+
+export type EscolhaDaCamadaInput = z.infer<typeof escolhaDaCamadaSchema>;
+
+/**
  * A recusa foi de CALENDÁRIO (e não de forma)?
  *
  * Uma pergunta só, respondida no módulo que declarou a issue — a rota não

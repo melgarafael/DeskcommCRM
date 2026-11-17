@@ -128,6 +128,8 @@ export async function GET(req: NextRequest): Promise<Response> {
     const status: Record<CodigoDeRecusaDaConsulta, { codigo: string; http: number }> = {
       tipo_desconhecido: { codigo: "not_found", http: 404 },
       tipo_desativado: { codigo: "validation_failed", http: 422 },
+      tipo_de_sistema_externo: { codigo: "agenda_tipo_de_sistema_externo", http: 422 },
+      amigo_context_required: { codigo: "agenda_amigo_context_required", http: 422 },
       sem_responsavel: { codigo: "validation_failed", http: 422 },
       jornada_mal_configurada: { codigo: "validation_failed", http: 422 },
       erro_interno: { codigo: "internal_error", http: 500 },

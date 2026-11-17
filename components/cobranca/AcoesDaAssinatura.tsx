@@ -19,6 +19,7 @@ import { abrirNoNavegador } from "@/lib/cobranca/navegar";
 import type { PlanoParaTroca } from "@/lib/cobranca/painel";
 import type { EstadoDaAssinatura, ProvedorDeCobranca } from "@/lib/cobranca/vocabulario";
 import { useIdioma } from "@/lib/i18n/IdiomaProvider";
+import { formatCents } from "@/lib/money";
 
 export interface PropsDasAcoes {
   estado: EstadoDaAssinatura;
@@ -113,7 +114,8 @@ export function AcoesDaAssinatura(p: PropsDasAcoes) {
         proximoVencimento: p.proximoVencimento ? new Date(p.proximoVencimento) : null,
         agora: new Date(p.instanteCalculo),
       });
-  const reais = (centavos: number) => new Intl.NumberFormat(idioma, { style: "currency", currency: "BRL" }).format(centavos / 100);
+  // A moeda é a do plano atual (migration 9332): a troca só oferece planos nela.
+  const reais = (centavos: number) => formatCents(centavos, p.planoAtual?.moeda ?? selecionado?.moeda ?? "BRL");
   const dolares = (centavos: number) => new Intl.NumberFormat(idioma, { style: "currency", currency: "USD" }).format(centavos / 100);
 
   const emDivida = p.estado === "em_atraso" || p.estado === "cancelada";

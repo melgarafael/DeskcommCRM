@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
+import { moduloLigado } from "@/lib/instalacao/modulos";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 import { TarefasClient } from "./_components/TarefasClient";
@@ -57,6 +59,7 @@ export default async function TarefasPage({
       podeEditar={podeEditar}
       minhasDeInicio={assigned_to === "me"}
       funis={(funis ?? []) as Array<{ id: string; name: string }>}
+      setoresLigados={await moduloLigado(createAdminClient(), "setores")}
     />
   );
 }

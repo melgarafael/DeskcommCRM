@@ -145,6 +145,7 @@ import { IDIOMA_PADRAO, normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { AUTORIDADE_LOCAL } from "@/lib/agenda/autoridade";
 import { resolverRemetenteDoLembrete, type CanalDoLembrete } from "@/lib/agenda/remetente-do-lembrete";
 import {
   lerModeloDoLembrete,
@@ -162,6 +163,7 @@ import {
 } from "@/lib/agenda/degraus-do-lembrete";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 import { recursoOcioso } from "@/lib/cron/piso-ocioso";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import {
   OrgNaoOperanteError,
   STATUS_OPERANTE,
@@ -196,6 +198,10 @@ interface TipoDoCompromisso {
 }
 
 interface CompromissoAVencer {
+  authority?: string;
+  external_connection_id?: string | null;
+  /** Módulo `amigo`: o turno da ordem de chegada, lido no Amigo na conferência. */
+  amigo_arrival_window?: string;
   conversation_id?: string | null;
   id: string;
   organization_id: string;
@@ -271,6 +277,8 @@ export function pecasDoLembrete(input: {
   tipoNome?: string | null;
   /** O link da reunião, só quando PRONTO (`linkDaReuniao`). */
   link?: string | null;
+  /** Ordem de chegada (módulo `amigo`): o turno no lugar da hora exata, que não existe. */
+  horarioLivre?: string;
 }): Record<string, string> {
   const idioma = input.idioma ?? IDIOMA_PADRAO;
   const t = (texto: string) => traduzir(texto, idioma);
@@ -282,12 +290,14 @@ export function pecasDoLembrete(input: {
     day: "2-digit",
     month: "2-digit",
   }).format(input.quando);
-  const hora = new Intl.DateTimeFormat(etiqueta, {
-    timeZone: input.timezone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).format(input.quando);
+  const hora =
+    input.horarioLivre ??
+    new Intl.DateTimeFormat(etiqueta, {
+      timeZone: input.timezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).format(input.quando);
 
   const nome = input.nomeDoContato?.trim() ?? "";
   return {
@@ -298,7 +308,7 @@ export function pecasDoLembrete(input: {
     dia,
     hora,
     endereco: input.local?.trim() ?? "",
-    quando: `${dia} ${t("às")} ${hora}`,
+    quando: input.horarioLivre ? `${dia}, ${hora}` : `${dia} ${t("às")} ${hora}`,
     link: input.link?.trim() ?? "",
   };
 }
@@ -342,6 +352,8 @@ export function montarLembrete(input: {
    * link ainda a caminho, a mensagem diz que ele chega pela conversa.
    */
   linkDaReuniao?: LinkDaReuniao | null;
+  /** Ordem de chegada (módulo `amigo`); ver `pecasDoLembrete`. */
+  horarioLivre?: string;
 }): string {
   const idioma = input.idioma ?? IDIOMA_PADRAO;
   const t = (texto: string) => traduzir(texto, idioma);
@@ -371,7 +383,7 @@ export function montarLembrete(input: {
   const onde = pecas.endereco ? ` ${t("Endereço")}: ${pecas.endereco}.` : "";
   const frase =
     `${saudacao} ${t("Passando pra lembrar do seu compromisso:")} ` +
-    `${input.titulo}, ${dia} ${t("às")} ${hora}.${onde}`;
+    `${input.titulo}, ${dia}${input.horarioLivre ? "," : ` ${t("às")}`} ${hora}.${onde}`;
   return linhaDoLink ? `${frase}\n${linhaDoLink}` : frase;
 }
 
@@ -541,6 +553,19 @@ export function degrausPendentes(input: {
 }
 
 /**
+ * As autoridades cujo compromisso esta rodada considera: o Amigo só com o
+ * módulo ligado. Com ele desligado, o filtro é o mesmo `eq` de antes.
+ */
+function comAutoridadesDoLembrete<Q extends { eq(coluna: string, valor: string): Q; in(coluna: string, valores: string[]): Q }>(
+  consulta: Q,
+  amigoLigado: boolean,
+): Q {
+  return amigoLigado
+    ? consulta.in("authority", [AUTORIDADE_LOCAL, "amigo"])
+    : consulta.eq("authority", AUTORIDADE_LOCAL);
+}
+
+/**
  * O QUE RODA DEPOIS DO PORTÃO DO PISO OCIOSO (#3773), na ordem do arquivo.
  *
  * O portão abaixo é saída antecipada da ROTA INTEIRA: em instalação ociosa a
@@ -595,13 +620,20 @@ async function handle(req: NextRequest): Promise<Response> {
   // `!inner` no tipo: só interessa compromisso cujo TIPO pede lembrete. O corte
   // por `starts_at` usa a maior antecedência possível — o corte fino, que depende
   // do `reminder_minutes_before` de cada linha, é `estaNaHora` logo abaixo.
-  const { data, error } = await admin
+  const { data, error } = await comAutoridadesDoLembrete(
+    admin
     .from("calendar_appointments")
     .select(
-      "id, organization_id, contact_id, conversation_id, title, starts_at, created_at, starts_at_marked_at, location_details, location_kind, meeting_state, meeting_url, reminder_sent_offsets_minutes, reminder_sent_at, " +
+      "id, organization_id, contact_id, conversation_id, title, starts_at, created_at, starts_at_marked_at, location_details, location_kind, meeting_state, meeting_url, reminder_sent_offsets_minutes, reminder_sent_at, authority, external_connection_id, " +
         "calendar_event_types!inner(name, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_template_name, reminder_body, reminder_bodies, location_details), organizations:organization_id!inner(status)",
     )
-    .eq("status", "confirmed")
+    .eq("status", "confirmed"),
+    // Compromisso de um sistema externo (9392) só recebe lembrete quando o
+    // módulo dele está ligado E confere o estado lá antes do envio (abaixo,
+    // `verifyAmigoReminder`). Sai no banco, antes do `limit`, para não ocupar a
+    // janela da varredura com linha que nenhum módulo vai conferir.
+    await moduloLigado(admin, "amigo"),
+  )
     // Org parada sai no banco, ANTES do `limit`: filtrar só em memória a deixaria
     // ocupar a janela da varredura enquanto a org segue parada.
     .eq("organizations.status", STATUS_OPERANTE)
@@ -659,6 +691,16 @@ async function handle(req: NextRequest): Promise<Response> {
   };
 
   for (const linha of linhas) {
+    // Espelho do Amigo: só sai lembrete depois de o módulo reler a consulta lá —
+    // situação, horário e paciente vinculado a este contato — e com o lembrete
+    // ligado na conexão. Qualquer dúvida é não enviar.
+    if (linha.authority === "amigo") {
+      const { verifyAmigoReminder } = await import("@/lib/amigo/sync");
+      if (!(await verifyAmigoReminder(admin, linha))) {
+        pular("amigo_nao_conferido");
+        continue;
+      }
+    }
     const tipo = tipoDe(linha);
     if (!tipo) {
       pular("sem_tipo");
@@ -753,6 +795,7 @@ async function handle(req: NextRequest): Promise<Response> {
       local: linha.location_details ?? tipo.location_details ?? null,
       idioma: normalizarIdioma(organizacao?.locale),
       tipoNome: tipo.name,
+      horarioLivre: linha.amigo_arrival_window,
     };
 
     // Os valores do modelo ANTES do aviso e do carimbo: um modelo que não fecha

@@ -103,10 +103,14 @@ describe("POST .../roteiros/:enrollmentId/negocio", () => {
   });
 
   it("módulo desligado: 404 e o banco nem é tocado", async () => {
+    // A identidade da sessão (resolveAuthDual) abre o cliente antes da checagem do
+    // módulo; o que a porta promete é nenhuma CONSULTA ao banco.
     deps.modulo.mockResolvedValue(false);
+    const consultas = vi.fn();
+    deps.client.mockResolvedValue({ from: consultas });
     const res = await POST(req(), ctx);
     expect(res.status).toBe(404);
-    expect(deps.client).not.toHaveBeenCalled();
+    expect(consultas).not.toHaveBeenCalled();
   });
 
   it("lead_id que não é uuid: 400", async () => {

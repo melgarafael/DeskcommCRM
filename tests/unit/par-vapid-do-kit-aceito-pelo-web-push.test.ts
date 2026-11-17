@@ -12,7 +12,7 @@
 import { execFileSync } from "node:child_process";
 import { createECDH } from "node:crypto";
 import path from "node:path";
-import webpush from "web-push";
+import * as webpush from "web-push";
 import { describe, expect, it } from "vitest";
 
 const COMMON = path.join(process.cwd(), "hostgator-setup-kit", "_common.sh");

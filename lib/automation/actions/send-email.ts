@@ -66,6 +66,7 @@
 import { registerAction } from "@/lib/automation/actions";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import { carregarResumoParaAEquipe } from "@/lib/automation/resumo-do-evento";
+import { instanteDoEnvio } from "@/lib/automation/instante-do-envio";
 import { renderTemplate } from "@/lib/automation/template";
 import {
   remetenteDaOrganizacaoDeSettings,
@@ -378,10 +379,14 @@ async function execute(
   }
 
   const contexto = await contextoDoEnvio(ctx, assunto, corpo);
-  const assuntoPronto = renderTemplate(assunto, contexto);
-  const corpoPronto = renderTemplate(corpo, contexto);
+  // #3687 — `{{saudacao}}` resolve no instante do envio (o mesmo das outras
+  // telas). Sem o token no texto, nenhuma leitura extra: `undefined`.
+  const agora = await instanteDoEnvio(ctx.admin, ctx.organizationId, assunto, corpo);
+  const assuntoPronto = renderTemplate(assunto, contexto, undefined, agora);
+  const corpoPronto = renderTemplate(corpo, contexto, undefined, agora);
   // No HTML, cada valor de fora (contato, negócio) entra como texto.
-  const corpoHtml = formato === "html" ? renderTemplate(corpo, contexto, escaparHtml) : corpoPronto;
+  const corpoHtml =
+    formato === "html" ? renderTemplate(corpo, contexto, escaparHtml, agora) : corpoPronto;
 
   // A consulta do `postponeUntil` é só o atalho; quem decide é esta contagem.
   // `skipped`, não `postponed`: o motor não reexecuta um evento por resultado

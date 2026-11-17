@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table";
+import { DestinoDoInteresse } from "./DestinoDoInteresse";
 import { toast } from "sonner";
 
 import { previewReceita, salvarReceitas, useReceitasDaConexao } from "@/hooks/external-db/useReceitasDaConexao";
@@ -462,6 +463,8 @@ function rotulosDoErro(t: (texto: string) => string): Record<string, string> {
     // A instância.
     descricao: t("Descrição"),
     rotulo: t("Nome da receita"),
+    // R5b: o 422 do destino arquivado chega com este caminho (medido na prova de tela do #3328).
+    destino_do_interesse: t("Para onde vai o interesse do cliente"),
     // Os "fixos" da receita.
     prefixo: t("Prefixo das tabelas"),
     post_type: t("Tipo de post"),
@@ -1061,6 +1064,10 @@ export default function ReceitasProntas({ connectionId, motor, canWrite }: Props
                       {t("O prefixo aparece antes de _posts no banco do WordPress (padrão wp_).")}
                     </p>
                   </div>
+                  <DestinoDoInteresse
+                    valor={inst.destino_do_interesse}
+                    onChange={(destino) => setRascunho({ ...inst, destino_do_interesse: destino })}
+                  />
                   {ehWordpress && (
                     <div>
                       <Label htmlFor={idInputPostType} className="text-xs text-muted-foreground">

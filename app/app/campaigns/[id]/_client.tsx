@@ -98,6 +98,11 @@ export function DetalheDaCampanha({ id }: { id: string }) {
   if (c.status === "running") disponiveis.push("pausar", "cancelar");
   if (c.status === "scheduled") disponiveis.push("pausar", "cancelar");
   if (c.status === "paused") disponiveis.push("retomar", "cancelar");
+  // Cancelada com gente ainda na fila: o fechamento dos destinatários falhou
+  // depois de a campanha ser gravada. Repetir o cancelamento termina o serviço.
+  if (c.status === "cancelled" && (m?.contagem.pendentes ?? 0) + (m?.contagem.naFila ?? 0) > 0) {
+    disponiveis.push("cancelar");
+  }
   disponiveis.push("duplicar");
 
   return (
@@ -242,7 +247,14 @@ export function DetalheDaCampanha({ id }: { id: string }) {
         {c.message_mode === "template" ? (
           <ModeloDaCampanhaNoDetalhe campanha={c} />
         ) : (
-          <p className="text-sm whitespace-pre-wrap">{c.message_body}</p>
+          <>
+            {c.email_subject && (
+              <p className="text-sm">
+                <strong>{t("Assunto")}</strong>: {c.email_subject}
+              </p>
+            )}
+            <p className="text-sm whitespace-pre-wrap">{c.message_body}</p>
+          </>
         )}
         <p className="text-xs text-muted-foreground">
           {t("Base legal")}:{" "}

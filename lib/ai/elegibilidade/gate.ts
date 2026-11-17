@@ -30,16 +30,13 @@
  *
  * Mensagem nova sozinha. Conversa aberta. Conversa sem responsável. Conversa
  * aguardando resposta. Histórico. Cliente antigo. `channel_session` existir.
- * Nada disso. No modo de teste, somente a lista de números do canal. No
- * allowlist por origem, `contacts.ai_authorized_at` — carimbado por uma origem
- * elegível (webhook do Respondi, match de campanha, ação de automação, retomada
- * manual pela tela) e dentro da janela de validade.
+ * Nada disso. No modo de teste, somente as listas de testadores do canal — a de
+ * telefones e a de identidades sociais (Instagram/Facebook, que não têm
+ * telefone). No allowlist por origem, `contacts.ai_authorized_at` — carimbado
+ * por uma origem elegível (webhook do Respondi, match de campanha, ação de
+ * automação, retomada manual pela tela) e dentro da janela de validade.
  */
-import {
-  AI_GATE_PRE_GO_LIVE,
-  lerNumerosDeTeste,
-  numeroPodeTestar,
-} from "./pre-go-live";
+import { AI_GATE_PRE_GO_LIVE, contatoPodeTestar } from "./pre-go-live";
 import { ehContatoInterno } from "@/lib/contacts/tags-internas";
 import { ehContatoDaEquipe } from "@/lib/contacts/tags-da-equipe";
 import { ehOperante } from "@/lib/organizacao/operante";
@@ -117,7 +114,11 @@ export interface EstadoDeElegibilidade {
   aiAuthorizedAt: Date | null;
   /** O allowlist representa o período de teste deste canal. */
   preGoLiveAtivo: boolean;
-  /** O telefone da conversa está na lista durável de testadores do canal. */
+  /**
+   * O contato da conversa está numa das listas duráveis de testadores do canal:
+   * o telefone em `ai_test_phone_numbers` OU a `contacts.social_identity` em
+   * `ai_test_social_identities`. O nome ficou o de quando só havia telefone.
+   */
   numeroDeTesteAutorizado: boolean;
   /** Agora, injetável para teste. */
   agora: Date;
@@ -271,6 +272,14 @@ export function montarEstadoDeElegibilidade(raw: {
   aiGateMode?: unknown;
   aiTestPhoneNumbers?: unknown;
   contactPhoneNumber?: string | null;
+  /**
+   * `channel_sessions.metadata.ai_test_social_identities` cru. Ausente = lista
+   * vazia: quem não lê a chave falha FECHADO (o testador social não passa),
+   * nunca aberto.
+   */
+  aiTestSocialIdentities?: unknown;
+  /** `contacts.social_identity` — a identidade de Instagram/Facebook do contato. */
+  contactSocialIdentity?: string | null;
   forceHuman: unknown;
   /** `contacts.tags` cru (array de `text[]`), para a régua de contato interno (#2353). */
   contactTags?: readonly string[] | null | undefined;
@@ -298,7 +307,10 @@ export function montarEstadoDeElegibilidade(raw: {
   const autorizadoEm = normalizarInstante(raw.aiAuthorizedAt);
   const modo = lerModoDoGate(raw.aiGate);
   const preGoLive = modo === "allowlist" && raw.aiGateMode === AI_GATE_PRE_GO_LIVE;
-  const numerosDeTeste = lerNumerosDeTeste({ ai_test_phone_numbers: raw.aiTestPhoneNumbers });
+  const listasDeTeste = {
+    ai_test_phone_numbers: raw.aiTestPhoneNumbers,
+    ai_test_social_identities: raw.aiTestSocialIdentities,
+  };
   return {
     orgStatus: raw.orgStatus ?? null,
     canalDesativado: raw.canalDesativado === true,
@@ -313,7 +325,11 @@ export function montarEstadoDeElegibilidade(raw: {
     aiAuthorizedAt: autorizadoEm instanceof Date ? autorizadoEm : null,
     preGoLiveAtivo: preGoLive,
     numeroDeTesteAutorizado:
-      preGoLive && numeroPodeTestar(raw.contactPhoneNumber, numerosDeTeste),
+      preGoLive &&
+      contatoPodeTestar(
+        { telefone: raw.contactPhoneNumber, identidadeSocial: raw.contactSocialIdentity },
+        listasDeTeste,
+      ),
     agora: raw.agora,
     ttlMs: raw.ttlMs,
   };

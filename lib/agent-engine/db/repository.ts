@@ -38,6 +38,10 @@ export type InboxKind =
   | 'appointment_recovery_review'
   | 'qr_rescan'
   | 'routing_unassigned'
+  // (migration 9333, #3966) O número pediu para esperar a IA qualificar e o
+  // prazo venceu sem ela passar a conversa: a conversa entrou na distribuição,
+  // e quem cuida do agente precisa saber que ele não está passando adiante.
+  | 'routing_ia_wait_expired'
   | 'job_dead'
   | 'event_dead'
   | 'budget_exceeded'
@@ -143,6 +147,13 @@ export type InboxKind =
   // sem resposta e a Central vazia. UM item por incidente (índice único
   // parcial), fechado sozinho quando o login volta pela tela de Credenciais.
   | 'assinatura_desconectada'
+  // (#4696) O retorno COMBINADO com o cliente que não vai sair: o atendimento
+  // mudou antes do disparo e `descartarFollowupObsoleto` encerra o job. Até
+  // aqui o descarte era correto e SILENCIOSO — 11 em 17 dias, um deles com o
+  // cliente esperando um contato que nunca viria. Nasce com
+  // `ref_kind='conversation'` e dedup por (kind, conversa): o mesmo contato
+  // descartado duas vezes no mesmo dia é UM aviso, não dois.
+  | 'followup_descartado'
   | 'other';
 
 export interface InboxItemRow {
