@@ -1112,6 +1112,31 @@ describe("o ramo do token em leads e lead-captures", () => {
     expect(relatorio.lead_ids).toEqual([LEAD_A]);
   });
 
+  it("GET /api/v1/leads/proposals: a pendente traz o nome da ETAPA do negócio, não do funil", async () => {
+    const c = CASOS.find((x) => x.rota === "leads/proposals" && x.metodo === "GET")!;
+    const { res, texto } = await comoToken(c, {
+      linhas: {
+        ...LINHAS_BASE,
+        lead_state: [
+          {
+            organization_id: ORG_A,
+            contact_id: CONTATO_A,
+            next_action: "ligar",
+            next_action_seq: 1,
+            updated_at: "2026-11-01T10:00:00.000Z",
+          },
+        ],
+      },
+    });
+    expect(res.status, texto).toBe(200);
+    const { pending } = json<{
+      data: { pending: Array<{ lead_id: string; stage_name: string | null; contact_name: string | null }> };
+    }>(texto).data;
+    expect(pending).toEqual([
+      expect.objectContaining({ lead_id: LEAD_A, stage_name: "Etapa da A", contact_name: "Cliente da A" }),
+    ]);
+  });
+
   it("POST /api/v1/leads/bulk: assign com token não-gerente é recusado", async () => {
     const c: Caso = {
       ...CASOS.find((x) => x.rota === "leads/bulk" && x.metodo === "POST")!,
@@ -1130,12 +1155,22 @@ describe("o ramo do token em leads e lead-captures", () => {
     expect(res.status, texto).toBe(404);
   });
 
+  it("POST /api/v1/leads/bulk: delete com token abaixo de manager é recusado", async () => {
+    const c: Caso = {
+      ...CASOS.find((x) => x.rota === "leads/bulk" && x.metodo === "POST")!,
+      corpo: { lead_ids: [LEAD_A], action: "delete" },
+    };
+    const { res, texto, falso } = await comoToken(c, { papel: "agent" });
+    expect(res.status, texto).toBe(403);
+    expect(falso.linhas.crm_leads.map((l) => l.id)).toContain(LEAD_A);
+  });
+
   it("POST /api/v1/leads/bulk: delete só remove leads da org do token", async () => {
     const c: Caso = {
       ...CASOS.find((x) => x.rota === "leads/bulk" && x.metodo === "POST")!,
       corpo: { lead_ids: [LEAD_A, LEAD_B], action: "delete" },
     };
-    const { res, texto } = await comoToken(c);
+    const { res, texto } = await comoToken(c, { papel: "manager" });
     expect(res.status, texto).toBe(200);
     const relatorio = json<{ data: { updated_count: number; lead_ids: string[] } }>(texto).data;
     expect(relatorio.updated_count).toBe(1);

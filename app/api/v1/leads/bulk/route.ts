@@ -59,16 +59,20 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   // Lê o corpo de um clone só para descobrir a ação e definir o piso de papel
   // ANTES de chamar resolveAuthDual (o token não passa por requireRole interno).
-  const actionDoBody = await req.clone().json().catch(() => ({}));
-  const roleDoLote =
-    actionDoBody.action === "assign" ? "manager" : ("agent" as const);
+  const actionDoBody = await req.clone().json().catch(() => null);
+  const acaoDoLote = (actionDoBody as { action?: unknown } | null)?.action;
+  const roleDoLote = acaoDoLote === "assign" ? "manager" : ("agent" as const);
 
   // spec 13 §4: escrita é agent+ (viewer é read-only). assign exige manager.
+  // O token não tem a RLS de visibilidade do `agent` (alcança a organização
+  // inteira) e nenhuma ferramenta MCP apaga negócio: apagar em lote por token
+  // exige `manager`, a mesma régua do radar (`leads/at-risk`).
   const authz = await resolveAuthDual(req, {
     requestId,
     resource: "crm_leads",
     role: roleDoLote,
     scope: "mcp:write",
+    ...(acaoDoLote === "delete" ? { tokenRole: "manager" as const } : {}),
   });
   if (!authz.ok) return authz.response;
   const teto = await tetoDeEscritaDoToken(authz, "leads_bulk", requestId);
