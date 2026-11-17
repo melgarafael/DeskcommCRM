@@ -4507,3 +4507,4 @@ fazendo o papel do aplicativo com um receptor HTTP de verdade no `redirect_uri`;
 
 Banco (PKCE no SQL, reuso revoga, ainda-admin, isolamento): `tests/invariants/mcp-oauth-servidor.test.ts`.
 **Não medido aqui:** o ChatGPT de verdade — só existe contra um endereço público com HTTPS.
+Evidência: `evidence/mcp-oauth-chatgpt/01-consentimento.png`, `evidence/mcp-oauth-chatgpt/02-volta-ao-aplicativo.png`, `evidence/mcp-oauth-chatgpt/03-conexao-em-api-tokens.png`, `evidence/mcp-oauth-chatgpt/04-conexao-revogada.png`, `evidence/mcp-oauth-chatgpt/05-consentimento-somente-ler.png`, `evidence/mcp-oauth-chatgpt/06-redirect-nao-registrado.png`.

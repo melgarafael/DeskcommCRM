@@ -39,7 +39,7 @@ export default async function ApiTokensPage() {
         <p className="font-medium">{traduzir("Conectar o ChatGPT ou outro aplicativo de MCP", idioma)}</p>
         <p className="text-muted-foreground">
           {traduzir("No aplicativo, adicione um servidor MCP com o endereço", idioma)}{" "}
-          <code className="rounded bg-muted px-1">{enderecosOAuth().recurso}</code>{" "}
+          <code className="rounded-md bg-muted px-1">{enderecosOAuth().recurso}</code>{" "}
           {traduzir("e escolha a autenticação OAuth. Você entra com a sua conta do CRM e decide se ele só lê ou também altera dados. A conexão aparece nesta lista com \"(OAuth)\" no nome; revogar a desliga. A data em Expira é a do acesso em uso, renovado sozinho a cada hora.", idioma)}
         </p>
       </section>
