@@ -44,6 +44,12 @@ export interface AgentRunRow {
   latency_ms: number | null;
   steps_count: number | null;
   tool_calls: unknown;
+  /**
+   * A pergunta e a resposta de uma execução de TESTE (#4426). `null` nas
+   * execuções reais — o motor não guarda texto de conversa em `llm_calls`.
+   */
+  input_text: string | null;
+  output_text: string | null;
   is_dry_run: boolean;
   started_at: string;
   completed_at: string | null;

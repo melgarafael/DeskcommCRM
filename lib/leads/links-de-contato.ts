@@ -20,6 +20,10 @@
 
 export const TIPOS_DE_LINK = [
   { id: "instagram", rotulo: "Instagram", curto: "IG" },
+  // O endereço que a empresa põe na bio do perfil (uma página de links, um
+  // catálogo, a agenda). Não é "Site": quem prospecta lê os dois de jeitos
+  // diferentes, e a bio costuma ser a porta de agendamento ou de pedido.
+  { id: "bio", rotulo: "Link na bio", curto: "Bio" },
   { id: "site", rotulo: "Site", curto: "Site" },
   { id: "google_meu_negocio", rotulo: "Google Meu Negócio", curto: "Google" },
   { id: "facebook", rotulo: "Facebook", curto: "FB" },
@@ -133,6 +137,32 @@ export function aplicarLinks(
   for (const { id } of TIPOS_DE_LINK) {
     const valor = (links[id] ?? "").trim();
     if (valor) saida[chaveDoLink(id)] = valor;
+  }
+  return saida;
+}
+
+/**
+ * O `custom_fields` NOVO tocando SÓ o link cujo texto mudou de `inicial` para
+ * `editado`. Todo o resto, inclusive um `link_<tipo>` do catálogo que a tela
+ * não soube ler (um número, um objeto gravado pela API ou por um campo da
+ * organização com o mesmo nome), volta como estava.
+ *
+ * `aplicarLinks` regrava o catálogo inteiro a partir do formulário, e por isso
+ * apaga o valor que `lerLinks` não leu. Quem edita em cima de uma cópia RELIDA
+ * na hora de salvar (a aba Diagnóstico da ficha) usa esta: o que outra pessoa
+ * gravou num link que ESTA pessoa não tocou sobrevive.
+ */
+export function aplicarLinksAlterados(
+  customFields: Record<string, unknown> | null | undefined,
+  inicial: LinksDoContato,
+  editado: LinksDoContato,
+): Record<string, unknown> {
+  const saida: Record<string, unknown> = { ...(customFields ?? {}) };
+  for (const { id } of TIPOS_DE_LINK) {
+    const novo = (editado[id] ?? "").trim();
+    if (novo === (inicial[id] ?? "").trim()) continue;
+    if (novo) saida[chaveDoLink(id)] = novo;
+    else delete saida[chaveDoLink(id)];
   }
   return saida;
 }

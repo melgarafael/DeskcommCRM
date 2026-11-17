@@ -24,13 +24,21 @@ import { type CSSProperties, type ReactNode, createElement } from "react";
 import { marcaDoCanal, rotuloAcessivelDoCanal } from "@/lib/channels/marca-do-canal";
 import { idiomaAtual } from "@/lib/i18n/IdiomaProvider";
 
-/** O ícone da rede + o nome dela em texto para leitor de tela. */
-export function MarcaDoCanal({ canal }: { canal?: string | null }) {
+/**
+ * O ícone da rede + o nome dela em texto para leitor de tela.
+ *
+ * `colorido: false` mantém o logo e o nome e troca só o token da cor pelo
+ * neutro do tema — é o que a empresa desliga em Configurações › Notificações.
+ * Esconder o logo junto tiraria a marca que não é cor (daltonismo, leitor de
+ * tela); o que sai de cena é a cor, não a informação.
+ */
+export function MarcaDoCanal({ canal, colorido = true }: { canal?: string | null; colorido?: boolean }) {
   const marca = marcaDoCanal(canal);
   const rotulo = rotuloAcessivelDoCanal(marca, idiomaAtual());
   const Icone = marca.Icone;
+  const cor = colorido ? marca.cor : marcaDoCanal(null).cor;
   return (
-    <span className="inline-flex items-center" style={{ color: marca.cor }} title={rotulo}>
+    <span className="inline-flex items-center" style={{ color: cor }} title={rotulo}>
       {Icone ? <Icone size={18} weight="fill" aria-hidden /> : null}
       {/* Cor não é informação acessível: daltonismo não distingue a faixa. */}
       <span className="sr-only">{rotulo}</span>
@@ -45,11 +53,15 @@ export function MarcaDoCanal({ canal }: { canal?: string | null }) {
  */
 export function aderecosDoAviso(
   canal?: string | null,
+  colorido = true,
 ): { icon: ReactNode; style: CSSProperties } | null {
   if (canal === undefined || canal === null) return null;
-  const marca = marcaDoCanal(canal);
+  // Desligada a cor, a faixa vira a borda neutra do tema: o aviso CONTINUA
+  // dizendo de onde veio (logo + nome no texto) e volta a parecer o de antes
+  // — que é exatamente o pedido de quem desliga.
+  const marca = marcaDoCanal(colorido ? canal : null);
   return {
-    icon: createElement(MarcaDoCanal, { canal }),
+    icon: createElement(MarcaDoCanal, colorido ? { canal } : { canal, colorido: false }),
     style: { borderLeft: `3px solid ${marca.cor}` },
   };
 }

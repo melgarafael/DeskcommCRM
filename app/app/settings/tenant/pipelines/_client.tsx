@@ -69,6 +69,7 @@ import {
 import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
 import { CaretDown, CaretUp, DragHandle, Plus, Trash } from "@/lib/ui/icons";
 import { entradaDoInboxDeclarada } from "@/lib/leads/entrada-do-inbox";
+import { funisQueCasam } from "@/lib/pipelines/filtrar-funis";
 import { RolagemDeChegada, type Chegada } from "@/lib/ui/rolagem-de-chegada";
 import { AgentMappingSection, ancoraDoMapeamento } from "./_mapping";
 import { StagesSection, ancoraDasEtapas } from "./_stages";
@@ -456,6 +457,9 @@ export function PipelinesClient({
   const [funilAberto, setFunilAberto] = useState<string | null>(() =>
     pipelines.length === 1 ? (pipelines[0]?.id ?? null) : null,
   );
+  const [busca, setBusca] = useState("");
+  // `null` = sem busca. A régua é a de `filtrar-funis` (#4593).
+  const visiveis = funisQueCasam(pipelines, busca);
   const [chegada, setChegada] = useState<ChegadaAoFunil | null>(null);
   /**
    * A ÂNCORA ABRE O FUNIL QUE ELA APONTA.
@@ -501,6 +505,23 @@ export function PipelinesClient({
   }
   return (
     <div className="flex flex-col gap-4">
+      {/* A BUSCA SÓ APARECE COM MAIS DE UM FUNIL (#4593): com um só não há o
+          que procurar, e a tela fica como era antes — a mesma régua do funil
+          que nasce aberto. */}
+      {pipelines.length > 1 && (
+        <Input
+          placeholder={t("Buscar por nome…")}
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          className="w-full sm:w-64"
+          aria-label={t("Buscar funis")}
+        />
+      )}
+      {visiveis?.size === 0 && (
+        <Card className="p-8 text-center text-sm text-muted-foreground">
+          {t("Nenhum funil corresponde à busca.")}
+        </Card>
+      )}
       {pipelines.map((p) => (
         <CardDoFunil
           key={p.id}
@@ -515,6 +536,7 @@ export function PipelinesClient({
             setChegada(null);
             setFunilAberto((aberto) => (aberto === p.id ? null : p.id));
           }}
+          oculto={visiveis !== null && !visiveis.has(p.id)}
         />
       ))}
       {chegada && <RolagemDoFunil {...chegada} aoTerminar={() => setChegada(null)} />}
@@ -566,6 +588,7 @@ function CardDoFunil({
   ehFunilPadrao,
   aberto,
   aoAlternar,
+  oculto = false,
 }: {
   pipeline: PipelineRow;
   etapas: EtapaDoFunil[];
@@ -575,6 +598,11 @@ function CardDoFunil({
   /** Recolhido ou aberto — o estado é da LISTA (`PipelinesClient`), um por vez. */
   aberto: boolean;
   aoAlternar: () => void;
+  /**
+   * Fora da busca da lista (#4593). O card SÓ SE ESCONDE, não desmonta: o
+   * editor guarda rascunho não salvo, e a busca não pode apagá-lo em silêncio.
+   */
+  oculto?: boolean;
 }) {
   const t = useT();
   const [editorAberto, setEditorAberto] = useState(false);
@@ -583,7 +611,7 @@ function CardDoFunil({
   const [editorMontado, setEditorMontado] = useState(false);
   const idDoCorpo = `corpo-do-funil-${pipeline.id}`;
   return (
-    <Card className="space-y-6 p-6">
+    <Card className="space-y-6 p-6" hidden={oculto} data-testid={`card-do-funil-${pipeline.id}`}>
       {/* ─── O FUNIL RECOLHIDO, E O NOME É O BOTÃO (#4083) ──────────────────
           O pedido da comunidade foi literal: com ~10 funis a tela vira um rolo
           e cada um deveria vir FECHADO, abrindo um por vez. O modelo citado é o
