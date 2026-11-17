@@ -98,7 +98,19 @@ export const PUBLIC_PATHS: RegExp[] = [
   /^\/api\/v1\/plataformas-de-anuncio\/google\/callback$/,
   /^\/api\/v1\/integrations\/nuvemshop\/callback$/,
   /^\/api\/internal\//,
+  // `/api/mcp` e o OAuth dele (`/api/mcp/oauth/{register,authorize,token,revoke}`,
+  // migration 9390): bearer ou nenhuma sessão por natureza. A autoridade mora
+  // dentro de cada rota — `dsk_` hasheado no MCP, PKCE e código de uso único no
+  // token, cliente autenticado na revogação. O `authorize` só confere o pedido
+  // e passa pela ponte same-origin até `/oauth/mcp/consentir`, que NÃO é
+  // pública: é lá que a sessão de quem administra a organização decide.
   /^\/api\/mcp(\/.*)?$/,
+  // Descoberta do OAuth do MCP (RFC 9728 e RFC 8414): documentos estáticos,
+  // sem banco e sem dado de organização. Sem estas linhas o proxy devolveria
+  // 307 para /login ao cliente de MCP, que lê isso como "não há OAuth aqui".
+  // Ancorados: só os dois documentos e a forma com o caminho do recurso.
+  /^\/\.well-known\/oauth-protected-resource(\/api\/mcp)?$/,
+  /^\/\.well-known\/oauth-authorization-server$/,
   // GET /api/v1/contacts aceita SESSÃO ou Bearer `dsk_...` (api_tokens) — a
   // MESMA dualidade de `/api/mcp` acima. Sem esta entrada, o proxy responde
   // 401 antes de o Bearer chegar à rota, porque `getUser()` aqui só enxerga

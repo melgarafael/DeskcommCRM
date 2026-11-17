@@ -283,6 +283,21 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "de admin da própria organização E de outra, RLS ligada, zero policies. Guarda o state de uso único e o code_verifier cifrado do OAuth por contato (9095).",
   },
   {
+    tabela: "mcp_oauth_codigos",
+    razao:
+      "tests/invariants/mcp-oauth-servidor.test.ts — privilégio NENHUM para anon e " +
+      "authenticated, `permission denied` sob `set role` com JWT de admin da própria " +
+      "organização E de outra, RLS ligada, zero policies. Guarda o hash do código de autorização do OAuth do MCP do CRM (9390).",
+  },
+  {
+    tabela: "mcp_oauth_concessoes",
+    razao:
+      "tests/invariants/mcp-oauth-servidor.test.ts — privilégio NENHUM para anon e " +
+      "authenticated, `permission denied` sob `set role` com JWT de admin da própria " +
+      "organização E de outra, RLS ligada, zero policies; o token emitido (api_tokens) " +
+      "é contado sob o JWT do admin dono (1) e do vizinho (0). Guarda o hash do refresh token do OAuth do MCP do CRM (9390).",
+  },
+  {
     tabela: "contato_mcp_credenciais",
     razao:
       "tests/invariants/servidores-mcp-por-agente-server-side.test.ts — privilégio " +
