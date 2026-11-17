@@ -24,7 +24,8 @@ vi.mock("@/lib/messaging/ritmo-do-envio-por-token", () => ({
 vi.mock("@/lib/agent-engine/db/request-pool", () => ({ getRequestPool: vi.fn(() => ({})) }));
 vi.mock("@/lib/materiais/copiar-no-storage", () => ({ copiarMaterialNoStorage: vi.fn(() => ({})) }));
 vi.mock("@/lib/agent-engine/agent/materiais-da-empresa", () => ({
-  canalDaConversa: vi.fn(async () => "waha"),
+  // `null` é o canal de quem não declarou outro — a régua do material o lê como WhatsApp.
+  canalDaConversa: vi.fn(async () => null),
   prepararMaterialDaEmpresa: vi.fn(async () => ({
     ok: true,
     anexo: {
