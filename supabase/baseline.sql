@@ -75095,9 +75095,9 @@ grant  execute on function public.fn_definir_lembrete_do_aviso_de_agendamento(uu
 
 notify pgrst, 'reload schema';
 
--- ---- catálogo de serviços como módulo opcional (migration 9248, #3480/#3372) ----
+-- ---- catálogo de serviços como módulo opcional (migration 9419, #3480/#3372) ----
 --
--- Espelho idempotente da migration 9248: cria só FUNÇÕES. A tabela
+-- Espelho idempotente da migration 9419: cria só FUNÇÕES. A tabela
 -- `catalog_service_details` nasce em `fn_modulo_instalar('catalogo_servicos', …)`, e
 -- quem já instalou recebe as versões novas por `fn_reaplicar_modulos_instalados()` (D6).
 -- O porquê de cada peça está no cabeçalho da migration.

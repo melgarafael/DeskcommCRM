@@ -913,7 +913,7 @@ export const AUDIT_ACTIONS = [
   /** A rodada da fonte de catálogo (#3587, fatia 2) — cria, atualiza e desativa em lote. */
   "catalog_products.synced_from_feed",
 
-  // O serviço no catálogo (#3372, migration 9248): sinal, prazo e preço do
+  // O serviço no catálogo (#3372, migration 9419): sinal, prazo e preço do
   // serviço são combinados com o cliente, e quem mudou precisa ficar registrado
   // como no produto. A variação tem ação própria porque é outro preço — o valor
   // que o cliente ouviu.
