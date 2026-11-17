@@ -1374,6 +1374,8 @@ export const DICIONARIO: Traducoes = {
   // com a situação de cada empresa (a situação sai no idioma da organização).
   "Baixar lista": { es: "Descargar lista" },
   "Só as não abordadas": { es: "Solo las no contactadas" },
+  // #4632 — a opção diz o que faz: entram as já abordadas, com data e campanha.
+  "Incluir as empresas já abordadas": { es: "Incluir las empresas ya contactadas" },
   "Contando as empresas…": { es: "Contando las empresas…" },
   "Não foi possível contar as empresas. Feche e abra o menu para tentar de novo.": {
     es: "No fue posible contar las empresas. Cierra y abre el menú para intentarlo de nuevo.",
