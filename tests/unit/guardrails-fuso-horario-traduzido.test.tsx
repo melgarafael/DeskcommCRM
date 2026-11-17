@@ -24,11 +24,10 @@ const item: GuardrailItem = {
 
 function renderComIdioma(locale: "pt-BR" | "es") {
   return render(
-    createElement(
-      IdiomaProvider,
-      { locale },
-      <GuardrailsEditor value={[item]} onChange={vi.fn()} />,
-    ),
+    createElement(IdiomaProvider, {
+      locale,
+      children: <GuardrailsEditor value={[item]} onChange={vi.fn()} />,
+    }),
   );
 }
 
