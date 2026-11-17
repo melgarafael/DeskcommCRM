@@ -426,7 +426,8 @@ describe("faixas — quem abre a ficha em cada largura de viewport (#4822)", () 
 
       expect(medidas, "nenhuma faixa foi medida").toHaveLength(ESPERADO.length);
       for (const [i, faixa] of ESPERADO.entries()) {
-        const m = medidas[i];
+        // `medidas` tem uma linha por faixa (asserção acima); o índice existe.
+        const m = medidas[i] as Record<string, unknown>;
         expect(
           { celular: m.celular, cabecalho: m.cabecalho, coluna: m.coluna },
           `em ${faixa.largura}px a porta da ficha não é a esperada`,
