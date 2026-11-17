@@ -17,7 +17,7 @@
 // semeado (`Acompanhar ${nome}`, `passo-titulo-${i}`): o literal inteiro não
 // existe no fonte para ser procurado. Declarar ali não é aprovar: alvo novo que
 // não exista no fonte e não esteja na lista reprova.
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
