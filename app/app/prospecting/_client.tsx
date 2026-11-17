@@ -131,6 +131,16 @@ const labels: Record<string, string> = {
   qualified: "Qualificado",
 };
 const selectClass = "h-10 w-full rounded-md border border-input bg-background px-3 text-sm";
+/**
+ * Dias da janela da campanha (#4830) na convenção do servidor: 0=domingo …
+ * 6=sábado. Os rótulos passam por `t()` na tela; a ORDEM é a da semana.
+ */
+const NOMES_DOS_DIAS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"] as const;
+/** A janela em texto — o mesmo formato que o servidor descreve (`7h–12h`). */
+function janelaEmTexto(janela: NonNullable<CampaignConfig["janela"]>): string {
+  const dias = janela.dias.map((d) => NOMES_DOS_DIAS[d] ?? String(d)).join(", ");
+  return `${dias}, ${janela.inicio}h–${janela.fim}h`;
+}
 const emptyConfig: CampaignConfig = {
   agent_id: "",
   channel_session_id: "",
@@ -1526,6 +1536,11 @@ export function ProspectingClient() {
                         {t("Ritmo:")} {configCompleta.daily_limit}{" "}
                         {t("abordagens em 24 horas, com pelo menos")}{" "}
                         {configCompleta.interval_minutes} {t("minutos entre elas.")}
+                        {configCompleta.janela && (
+                          <span className="block">
+                            {t("Roda só em")} {janelaEmTexto(configCompleta.janela)}.
+                          </span>
+                        )}
                       </p>
                       {campaign.status === "running" ? (
                         <Button
@@ -2090,6 +2105,110 @@ export function ProspectingClient() {
                               />
                             </div>
                           </div>
+                          <fieldset className="space-y-2">
+                            <legend className="text-sm font-medium">
+                              {t("Rodar só em horário próprio")}
+                            </legend>
+                            <label className="flex items-start gap-2 text-sm">
+                              <input
+                                type="checkbox"
+                                className="mt-1"
+                                checked={!!config.janela}
+                                disabled={busy}
+                                onChange={(e) =>
+                                  update(
+                                    "janela",
+                                    e.target.checked
+                                      ? { dias: [1, 2, 3, 4, 5], inicio: 7, fim: 12 }
+                                      : undefined,
+                                  )
+                                }
+                              />
+                              <span>
+                                {t("Esta campanha só dispara nos dias e horas abaixo")}
+                                <span className="block text-xs text-muted-foreground">
+                                  {t(
+                                    "Fora do horário ela pausa sozinha e volta na próxima abertura. A janela do número continua valendo: as duas precisam estar abertas. É assim que um número só atende dois nichos — um de manhã, outro à tarde.",
+                                  )}
+                                </span>
+                              </span>
+                            </label>
+                            {config.janela && (
+                              <div className="space-y-3 pl-6">
+                                <div className="flex flex-wrap gap-3">
+                                  {NOMES_DOS_DIAS.map((nome, dia) => (
+                                    <label key={dia} className="flex items-center gap-1 text-sm">
+                                      <input
+                                        type="checkbox"
+                                        checked={config.janela!.dias.includes(dia)}
+                                        disabled={busy}
+                                        onChange={() => {
+                                          const atuais = config.janela!.dias;
+                                          const proximos = atuais.includes(dia)
+                                            ? atuais.filter((d) => d !== dia)
+                                            : [...atuais, dia].sort((a, b) => a - b);
+                                          // Nenhum dia marcado = fila parada para
+                                          // sempre; a tela não deixa desmarcar o último.
+                                          if (proximos.length === 0) return;
+                                          update("janela", { ...config.janela!, dias: proximos });
+                                        }}
+                                      />
+                                      <span>{t(nome)}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div>
+                                    <Label htmlFor="prospecting-window-start">
+                                      {t("Começa às (hora cheia)")}
+                                    </Label>
+                                    <Input
+                                      id="prospecting-window-start"
+                                      type="number"
+                                      min={0}
+                                      max={23}
+                                      value={config.janela.inicio}
+                                      disabled={busy}
+                                      onChange={(e) =>
+                                        update("janela", {
+                                          ...config.janela!,
+                                          inicio: Number(e.target.value),
+                                        })
+                                      }
+                                      className="mt-1"
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label htmlFor="prospecting-window-end">
+                                      {t("Termina às (hora cheia)")}
+                                    </Label>
+                                    <Input
+                                      id="prospecting-window-end"
+                                      type="number"
+                                      min={1}
+                                      max={24}
+                                      value={config.janela.fim}
+                                      disabled={busy}
+                                      onChange={(e) =>
+                                        update("janela", {
+                                          ...config.janela!,
+                                          fim: Number(e.target.value),
+                                        })
+                                      }
+                                      className="mt-1"
+                                    />
+                                  </div>
+                                </div>
+                                {config.janela.inicio >= config.janela.fim && (
+                                  <p className="text-xs text-destructive" role="alert">
+                                    {t(
+                                      "A janela precisa começar antes de terminar (ex.: 7h às 12h).",
+                                    )}
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </fieldset>
                           <fieldset className="space-y-2">
                             <legend className="text-sm font-medium">
                               {t("Quando a empresa entra no funil")}

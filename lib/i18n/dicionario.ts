@@ -1483,6 +1483,25 @@ export const DICIONARIO: Traducoes = {
   "Ex.: confirmou a necessidade, participa da decisão e deseja conversar sobre a solução.": { es: "Ej.: confirmó la necesidad, participa en la decisión y desea conversar sobre la solución." },
   "Máximo em 24 horas": { es: "Máximo en 24 horas" },
   "Intervalo mínimo (minutos)": { es: "Intervalo mínimo (minutos)" },
+  "Rodar só em horário próprio": { es: "Funcionar solo en su propio horario" },
+  "Esta campanha só dispara nos dias e horas abaixo": {
+    es: "Esta campaña solo envía en los días y horas de abajo",
+  },
+  "Fora do horário ela pausa sozinha e volta na próxima abertura. A janela do número continua valendo: as duas precisam estar abertas. É assim que um número só atende dois nichos — um de manhã, outro à tarde.": {
+    es: "Fuera del horario se pausa sola y vuelve en la próxima apertura. La ventana del número sigue valiendo: las dos tienen que estar abiertas. Así un solo número atiende dos nichos — uno por la mañana y otro por la tarde.",
+  },
+  "Começa às (hora cheia)": { es: "Empieza a las (hora en punto)" },
+  "Termina às (hora cheia)": { es: "Termina a las (hora en punto)" },
+  "A janela precisa começar antes de terminar (ex.: 7h às 12h).": {
+    es: "La ventana tiene que empezar antes de terminar (ej.: 7h a 12h).",
+  },
+  "Roda só em": { es: "Funciona solo en" },
+  "Fora do horário da campanha. Ela volta sozinha na próxima abertura.": {
+    es: "Fuera del horario de la campaña. Vuelve sola en la próxima apertura.",
+  },
+  "O horário da campanha abriu, mas o número está com outra campanha em andamento. Ela retoma sozinha quando o número ficar livre.": {
+    es: "El horario de la campaña se abrió, pero el número está con otra campaña en curso. Se reanuda sola cuando el número quede libre.",
+  },
   "Referência da avaliação de legítimo interesse": { es: "Referencia de la evaluación de interés legítimo" },
   "Informe a referência real da avaliação que fundamenta esta prospecção. Isso não registra consentimento dos contatos.": { es: "Indica la referencia real de la evaluación que fundamenta esta prospección. Esto no registra consentimiento de los contactos." },
   "Ao iniciar, os contatos novos com telefone entram no funil. Contatos já existentes são preservados. A fila faz uma primeira abordagem; respostas seguem no Inbox. Uma mensagem já em transmissão pode concluir após a pausa.": { es: "Al iniciar, los contactos nuevos con teléfono entran al embudo y los que ya existen se conservan. La cola hace un primer contacto y las respuestas llegan al Inbox. Un mensaje que ya se está enviando puede terminar de salir después de la pausa." },
