@@ -480,7 +480,33 @@ describe("criarPegadaDoCandidato", () => {
 
   it("sem contexto da equipe e sem categoria, as definições nem são lidas (como antes)", async () => {
     const { db } = bancoFalso();
-    const admin = { from: vi.fn() };
+    // A pegada sempre pergunta se o módulo Empresas está ligado
+    // (`criarPegadaDoCandidato` → `empresaDoCandidato` → `moduloLigado`).
+    // `modulosLigados` lê as duas fontes — `platform_config` e
+    // `modulos_instalados` — e, desligado, não escreve empresa. As definições
+    // de campo moram em `crm_pipelines` (`defsDoPadraoDaOrg`) e só são lidas
+    // quando há categoria ou contexto da equipe. O dublê devolve vazio: módulo
+    // desligado, que é o padrão da instalação.
+    const tabelas: string[] = [];
+    const admin = {
+      from: vi.fn((tabela: string) => {
+        tabelas.push(tabela);
+        const fim = { data: [] as unknown[], error: null };
+        const q = {
+          select: () => q,
+          eq: () => q,
+          in: () => q,
+          order: () => q,
+          limit: () => q,
+          is: () => q,
+          maybeSingle: async () => ({ data: null, error: null }),
+          single: async () => ({ data: null, error: null }),
+          then: (ok: (v: unknown) => unknown, erro?: (e: unknown) => unknown) =>
+            Promise.resolve(fim).then(ok, erro),
+        };
+        return q;
+      }),
+    };
     await criarPegadaDoCandidato(
       db,
       admin as never,
@@ -488,11 +514,17 @@ describe("criarPegadaDoCandidato", () => {
       campanha,
       configOnSend,
       candidato(1, {
-        data: { name: "Clínica 1", key: "place-1", maps_url: "https://maps.app.goo.gl/clinica1", socials: [] },
+        data: {
+          name: "Clínica 1",
+          key: "place-1",
+          maps_url: "https://maps.app.goo.gl/clinica1",
+          socials: [],
+        },
       }),
       null,
     );
-    expect(admin.from).not.toHaveBeenCalled();
+    expect(tabelas, "as definições de campo não são lidas").not.toContain("crm_pipelines");
+    expect(tabelas).toEqual(["platform_config", "modulos_instalados"]);
     expect(m.contato.mock.calls[0]?.[2].custom_fields).toEqual({
       link_google_meu_negocio: "https://maps.app.goo.gl/clinica1",
     });
