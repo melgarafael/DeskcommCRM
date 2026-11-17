@@ -92,6 +92,7 @@ export const RECURSOS_DO_CRON = [
   "lembrete_de_agenda",
   "roteamento",
   "catalogo_do_feed",
+  "cadencias",
 ] as const;
 export type RecursoDoCron = (typeof RECURSOS_DO_CRON)[number];
 
@@ -347,7 +348,11 @@ select
   ) as roteamento,
   exists (
     select 1 from catalog_feed_sources where ativo = true
-  ) as catalogo_do_feed
+  ) as catalogo_do_feed,
+  exists (
+    select 1 from modulos_instalados
+     where modulo = 'cadencias' and estado = 'ativo'
+  ) as cadencias
 `;
 
 type Retrato = { emUso: Record<RecursoDoCron, boolean>; ate: number };
