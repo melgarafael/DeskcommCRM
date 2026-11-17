@@ -54,7 +54,7 @@ export async function drainStorageRedactionQueue(
     logger.error("[lgpd-redact-worker] queue select failed", {
       error_message: error.message,
     });
-    return stats;
+    throw new Error(`storage_redaction_queue_read_failed: ${error.message}`);
   }
 
   const queueRows = (rows ?? []) as QueueRow[];

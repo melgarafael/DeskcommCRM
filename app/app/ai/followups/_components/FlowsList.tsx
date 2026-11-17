@@ -3,19 +3,19 @@
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 
 import { useT } from "@/hooks/i18n/useT";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { FlowArrow, MagnifyingGlass, Plus, Sparkle, UploadSimple } from "@/lib/ui/icons";
+import { FlowArrow, Plus, Sparkle, UploadSimple } from "@/lib/ui/icons";
 import { useFollowupFlows, type FollowupFlowPointerRow } from "@/hooks/followup/useFollowupFlows";
 import type { FollowupFlowSurface } from "@/lib/followup/api-schemas";
-import { filtrarFluxos } from "@/lib/followup/filtrar-fluxos";
+import { filtrarFluxos, type FiltroDeStatusDoFluxo } from "@/lib/followup/filtrar-fluxos";
 import { DeleteFollowupFlowButton } from "./DeleteFollowupFlowButton";
 import { DuplicateFollowupFlowButton } from "./DuplicateFollowupFlowButton";
 import { ExportFollowupFlowButton } from "./ExportFollowupFlowButton";
+import { FlowsListFilters } from "./FlowsListFilters";
 import { FlowStatusBadge } from "./FlowStatusBadge";
 import { ImportFlowDialog } from "./ImportFlowDialog";
 import { ModelosDialog } from "./ModelosDialog";
@@ -58,14 +58,15 @@ export function FlowsList({ initialData, canWrite, surface }: Props) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [modelosOpen, setModelosOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  // #4593: com treze fluxos de nome parecido (e o cartão cortando o que os
-  // diferencia), achar um era rolar a lista inteira. O casamento é de
-  // `lib/followup/filtrar-fluxos.ts`, fora do componente e testável sem DOM.
-  const [busca, setBusca] = useState("");
+  const [status, setStatus] = useState<FiltroDeStatusDoFluxo>("all");
+  const [query, setQuery] = useState("");
   const deAtendimento = surface === "atendimento";
 
-  const flows = data ?? [];
-  const visiveis = filtrarFluxos(flows, busca);
+  const flows = useMemo(() => data ?? [], [data]);
+  // #4593: o casamento do termo e do status é de `lib/followup/filtrar-fluxos.ts`,
+  // fora do componente e testável sem DOM. Os modelos continuam conferindo os
+  // nomes da lista INTEIRA: um nome escondido pela busca segue ocupado.
+  const filtered = useMemo(() => filtrarFluxos(flows, { busca: query, status }), [flows, query, status]);
   // Cada superfície tem a SUA rota de editor: abrir um fluxo de atendimento não
   // pode jogar o usuário na lista de Follow-ups.
   const baseHref = deAtendimento ? "/app/ai/atendimento" : "/app/ai/followups";
@@ -155,28 +156,13 @@ export function FlowsList({ initialData, canWrite, surface }: Props) {
   return (
     <>
     <div className="flex flex-col gap-4">
-      {/*
-        A BUSCA VEM ANTES DA AÇÃO (#4593). Quem abre esta tela com treze fluxos
-        já sabe qual quer; o primeiro gesto é procurar, não criar. No celular ela
-        ocupa a linha inteira e os botões descem — mesma ordem da lista de
-        Agentes, que a comunidade usa como referência.
-      */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full sm:w-64">
-          <MagnifyingGlass
-            size={14}
-            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted"
-            aria-hidden
-          />
-          <Input
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            placeholder={t("Buscar fluxo…")}
-            aria-label={t("Buscar fluxo")}
-            className="h-9 w-full pl-8 text-sm"
-            data-testid="buscar-fluxo"
-          />
-        </div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <FlowsListFilters
+          status={status}
+          onStatusChange={setStatus}
+          query={query}
+          onQueryChange={setQuery}
+        />
         {canWrite && (
           <div className="flex flex-col gap-2 sm:flex-row">
             {!deAtendimento && modelosButton}
@@ -186,8 +172,14 @@ export function FlowsList({ initialData, canWrite, surface }: Props) {
         )}
       </div>
 
+      {filtered.length === 0 && (
+        <Card className="p-8 text-center text-sm text-text-muted">
+          {t("Nenhum fluxo corresponde aos filtros atuais.")}
+        </Card>
+      )}
+
       <ul className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {visiveis.map((flow) => (
+        {filtered.map((flow) => (
           <li key={flow.id}>
             <Card className="flex h-full flex-col gap-3 p-4 transition-colors hover:border-accent-400">
               <Link href={`${baseHref}/${flow.id}`} className="flex flex-1 flex-col gap-3">
@@ -225,26 +217,6 @@ export function FlowsList({ initialData, canWrite, surface }: Props) {
           </li>
         ))}
       </ul>
-
-      {/*
-        LISTA VAZIA POR BUSCA ≠ LISTA VAZIA DE FLUXOS. O ramo de cima (nenhum
-        fluxo cadastrado) tem ilustração e botão de criar; este só diz que o
-        termo não casou e devolve o caminho de voltar — sem isso, a tela some e
-        quem digitou erra a conclusão de que o fluxo foi apagado.
-      */}
-      {visiveis.length === 0 && (
-        <Card
-          className="flex flex-col items-center gap-2 p-8 text-center"
-          data-testid="sem-resultado-fluxo"
-        >
-          <p className="text-sm">
-            {t("Nenhum fluxo corresponde a")} “{busca}”.
-          </p>
-          <Button variant="outline" onClick={() => setBusca("")}>
-            {t("Limpar busca")}
-          </Button>
-        </Card>
-      )}
     </div>
     {dialogos}
     </>

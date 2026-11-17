@@ -1,36 +1,49 @@
 /**
- * A BUSCA DA LISTA DE FUNIS — função pura, fora do componente (#4593).
+ * A BUSCA DA LISTA DE FUNIS EM CONFIGURAÇÕES — função pura (#4593).
  *
- * ═══ O defeito ═══
+ * Com muitos funis a tela «Etapas do funil» já nasce recolhida (#4083), mas
+ * achar um funil ainda pedia ler a lista inteira. A tela ganha a mesma caixa de
+ * busca da lista de Agentes, e esta função é a régua dela.
  *
- * Configurações › Funis desenha todos os funis da empresa num rolo de cartões
- * abertos. Com oito ou dez funis, achar «Prospecção (Site)» era rolar a tela
- * inteira — não havia campo de busca nenhum, ao contrário da lista de Agentes.
+ * ═══ A régua ═══
  *
- * ═══ A regra ═══
+ * A mesma de `filtrarAgentes` (`lib/ai/agents/filtrar-agentes.ts`): os DOIS
+ * lados passam por `termoSemAcento` (`lib/inbox/termo-de-busca.ts`).
  *
- * O termo e o nome do funil passam por `termoSemAcento`
- * (`lib/inbox/termo-de-busca.ts`), a mesma régua de `filtrarFluxos` e de
- * `filtrarAgentes`. Quem digita `prospeccao site` acha «Prospecção (Site)».
+ * O termo casa com o NOME ou com o ENDEREÇO (`slug`): são os dois textos que o
+ * cartão do funil mostra, e quem copia o `/endereço` de um link espera achar o
+ * funil por ele.
  *
- * Slug e nomes de etapa ficam de fora DE PROPÓSITO: são campos de outra fatia
- * da issue (busca em mais campos) e mudariam o resultado desta lista sem que
- * nenhuma tela mostrasse o porquê do casamento.
+ * ═══ Por que devolve ids, e não a lista filtrada ═══
+ *
+ * A tela NÃO desmonta o cartão que a busca esconde: o editor do funil guarda
+ * rascunho não salvo, e desmontar o apagaria em silêncio (o mesmo motivo de
+ * «recolher só esconde», #3176/#4083). Por isso a tela pergunta QUEM casa e
+ * esconde o resto com `hidden`.
  */
 import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
 
-/** O mínimo que a busca enxerga do funil: o nome do cartão. */
+/** O mínimo que a busca enxerga do funil: o nome e o endereço do cartão. */
 export interface FunilBuscavel {
+  id: string;
   name: string;
+  slug: string;
 }
 
 /**
- * Filtra os funis pelo termo digitado, preservando a ordem recebida.
+ * Os ids dos funis que casam com o termo digitado.
  *
- * Termo vazio (ou só espaços) devolve a lista inteira, na MESMA referência.
+ * Termo vazio (ou só espaços) devolve `null`: não há busca, todos aparecem.
  */
-export function filtrarFunis<T extends FunilBuscavel>(funis: T[], busca: string): T[] {
+export function funisQueCasam(funis: FunilBuscavel[], busca: string): Set<string> | null {
   const termo = termoSemAcento(busca.trim());
-  if (!termo) return funis;
-  return funis.filter((funil) => termoSemAcento(funil.name).includes(termo));
+  if (!termo) return null;
+  return new Set(
+    funis
+      .filter(
+        (funil) =>
+          termoSemAcento(funil.name).includes(termo) || termoSemAcento(funil.slug).includes(termo),
+      )
+      .map((funil) => funil.id),
+  );
 }

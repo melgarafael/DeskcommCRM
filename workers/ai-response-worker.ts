@@ -25,16 +25,18 @@ import { embedText } from "@/lib/ai/embed";
 import { MODELO_DE_EMBEDDING_DO_GOOGLE } from "@/lib/ai/embeddings/chave";
 import { getBudgetStatus, type BudgetStatus } from "@/lib/ai/budget/check";
 import {
-  AVISO_CORPO,
-  AVISO_TITULO,
-  BLOQUEIO_TITULO,
-  CORPO_TETO_DO_PLANO,
+  corpoDoAvisoDeGasto,
   corpoDoBloqueio,
+  corpoDoTetoDoPlano,
   decidirOrcamento,
   decidirTetoDoPlano,
   HANDOFF_REASON_ORCAMENTO,
-  TITULO_TETO_DO_PLANO,
+  tituloDoAvisoDeGasto,
+  tituloDoBloqueio,
+  tituloDoTetoDoPlano,
 } from "@/lib/agent-engine/edge/llm/orcamento";
+import { idiomaDoAviso } from "@/lib/i18n/idioma-do-aviso";
+import type { Idioma } from "@/lib/i18n/idiomas";
 import type { OrigemDaChaveLlm } from "@/lib/agent-engine/edge/llm/credentials";
 import { computeCost } from "@/lib/ai/cost";
 import { silencioVigente } from "@/lib/inbox/comando-da-conversa";
@@ -511,8 +513,8 @@ async function vetoPorTetoDeGasto(alvo: {
     await abrirItemDeOrcamento(admin, orgId, {
       kind: "budget_warning",
       severity: "warn",
-      title: AVISO_TITULO,
-      body: AVISO_CORPO,
+      title: (idioma) => tituloDoAvisoDeGasto(idioma),
+      body: (idioma) => corpoDoAvisoDeGasto(idioma),
       refKind: "ai_budget",
     });
     logger.warn("[ai-response] gasto de IA passou do aviso — a resposta SEGUE", {
@@ -527,8 +529,8 @@ async function vetoPorTetoDeGasto(alvo: {
   await abrirItemDeOrcamento(admin, orgId, {
     kind: "budget_exceeded",
     severity: "critical",
-    title: BLOQUEIO_TITULO,
-    body: corpoDoBloqueio(status.current_month_consumed_cents, status.monthly_limit_cents),
+    title: (idioma) => tituloDoBloqueio(idioma),
+    body: (idioma) => corpoDoBloqueio(status.current_month_consumed_cents, status.monthly_limit_cents, idioma),
     refKind: "ai_budget",
   });
 
@@ -596,8 +598,8 @@ async function vetoPorTetoDoPlano(
   await abrirItemDeOrcamento(admin, alvo.orgId, {
     kind: "budget_exceeded",
     severity: "critical",
-    title: TITULO_TETO_DO_PLANO,
-    body: CORPO_TETO_DO_PLANO,
+    title: (idioma) => tituloDoTetoDoPlano(idioma),
+    body: (idioma) => corpoDoTetoDoPlano(idioma),
     refKind: "plano",
   });
   return devolverAoHumanoPorTeto(alvo, {
@@ -652,7 +654,14 @@ async function devolverAoHumanoPorTeto(
 async function abrirItemDeOrcamento(
   admin: ReturnType<typeof createAdminClient>,
   orgId: string,
-  item: { kind: string; severity: string; title: string; body: string; refKind: "ai_budget" | "plano" },
+  item: {
+    kind: string;
+    severity: string;
+    /** Texto no idioma da organização: a Central mostra o item como foi gravado. */
+    title: (idioma: Idioma) => string;
+    body: (idioma: Idioma) => string;
+    refKind: "ai_budget" | "plano";
+  },
 ): Promise<void> {
   const { count, error: erroDaBusca } = await admin
     .from("agent_inbox_items")
@@ -672,12 +681,14 @@ async function abrirItemDeOrcamento(
   }
   if ((count ?? 0) > 0) return;
 
+  // Só depois do dedup: o idioma é lido apenas quando o item vai mesmo nascer.
+  const idioma = await idiomaDoAviso(admin, orgId);
   const { error } = await admin.from("agent_inbox_items").insert({
     organization_id: orgId,
     kind: item.kind,
     severity: item.severity,
-    title: item.title,
-    body: item.body,
+    title: item.title(idioma),
+    body: item.body(idioma),
     ref_kind: item.refKind,
     ref_id: orgId,
   });

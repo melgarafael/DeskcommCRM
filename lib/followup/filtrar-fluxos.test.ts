@@ -1,51 +1,58 @@
 import { describe, expect, it } from "vitest";
 
-import { filtrarFluxos } from "./filtrar-fluxos";
+import { filtrarFluxos, type FiltroDeStatusDoFluxo } from "./filtrar-fluxos";
 
-/**
- * Os treze de retomada da queixa da comunidade (#4593): nomes parecidos, e o
- * cartão corta o que diferencia um do outro. Buscar por trecho é o que resolve.
- */
 const FLUXOS = [
-  { name: "Kelly · retomada (oficinas mecânica)" },
-  { name: "Kelly · retomada (clínicas)" },
-  { name: "Kelly · retomada (salões)" },
-  { name: "Orçamento enviado — 3 dias" },
-  { name: "Pós-venda 30 dias" },
+  { name: "Kelly · retomada (oficinas mecânicas)", status: "active" as const },
+  { name: "Kelly · retomada (clínicas odontológicas)", status: "active" as const },
+  { name: "Retomada pós-venda", status: "draft" as const },
+  { name: "Boas-vindas", status: "disabled" as const },
 ];
 
-const nomes = (termo: string) => filtrarFluxos(FLUXOS, termo).map((f) => f.name);
+const nomes = (busca: string, status: FiltroDeStatusDoFluxo = "all") =>
+  filtrarFluxos(FLUXOS, { busca, status }).map((f) => f.name);
 
-describe("Fluxos de follow-up: busca por trecho do nome (#4593)", () => {
-  it("acha pelo trecho que diferencia dois fluxos de nome parecido", () => {
-    expect(nomes("oficina")).toEqual(["Kelly · retomada (oficinas mecânica)"]);
-    expect(nomes("clínicas")).toEqual(["Kelly · retomada (clínicas)"]);
+describe('Follow-ups: "oficina" deixa só o fluxo de oficinas (#4593)', () => {
+  it("o termo da issue acha o fluxo pelo trecho que o cartão corta", () => {
+    expect(nomes("oficina")).toEqual(["Kelly · retomada (oficinas mecânicas)"]);
   });
 
-  it("ignora caixa: MAIÚSCULAS acham o mesmo fluxo", () => {
-    expect(nomes("OFICINAS")).toEqual(["Kelly · retomada (oficinas mecânica)"]);
+  it("os dois lados passam pela mesma régua: sem acento e sem caixa", () => {
+    expect(nomes("MECANICA")).toEqual(["Kelly · retomada (oficinas mecânicas)"]);
+    expect(nomes("pos-venda")).toEqual(["Retomada pós-venda"]);
+    expect(nomes("odontológicas")).toEqual(["Kelly · retomada (clínicas odontológicas)"]);
   });
 
-  it("ignora acento nos DOIS lados: sem acento acha o acentuado, e vice-versa", () => {
-    expect(nomes("clinicas")).toEqual(["Kelly · retomada (clínicas)"]);
-    expect(nomes("orçamento")).toEqual(["Orçamento enviado — 3 dias"]);
-    expect(nomes("ORCAMENTO")).toEqual(["Orçamento enviado — 3 dias"]);
-    expect(nomes("pos-venda")).toEqual(["Pós-venda 30 dias"]);
-  });
-
-  it("acha no meio do nome, não só no começo", () => {
-    expect(nomes("retomada")).toHaveLength(3);
+  it("acha no meio do nome e preserva a ordem recebida", () => {
+    expect(nomes("retomada")).toEqual([
+      "Kelly · retomada (oficinas mecânicas)",
+      "Kelly · retomada (clínicas odontológicas)",
+      "Retomada pós-venda",
+    ]);
   });
 
   it("termo que não existe devolve lista vazia", () => {
-    expect(nomes("juridico")).toEqual([]);
+    expect(nomes("imobiliaria")).toEqual([]);
+  });
+
+  it("termo vazio com todos os status devolve a lista inteira, na mesma referência", () => {
+    expect(filtrarFluxos(FLUXOS, { busca: "", status: "all" })).toBe(FLUXOS);
+    expect(filtrarFluxos(FLUXOS, { busca: "   ", status: "all" })).toBe(FLUXOS);
   });
 });
 
-describe("Fluxos de follow-up: controle negativo, sem termo (#4593)", () => {
-  it("lista sem termo volta COMPLETA, na mesma ordem e na mesma referência", () => {
-    expect(filtrarFluxos(FLUXOS, "")).toBe(FLUXOS);
-    expect(filtrarFluxos(FLUXOS, "   ")).toBe(FLUXOS);
-    expect(nomes("")).toEqual(FLUXOS.map((f) => f.name));
+describe("Follow-ups: filtro por status (#4593)", () => {
+  it("sem termo, recorta só pelo status", () => {
+    expect(nomes("", "draft")).toEqual(["Retomada pós-venda"]);
+    expect(nomes("", "disabled")).toEqual(["Boas-vindas"]);
+  });
+
+  it("com termo, procura dentro do recorte do status", () => {
+    expect(nomes("retomada", "active")).toEqual([
+      "Kelly · retomada (oficinas mecânicas)",
+      "Kelly · retomada (clínicas odontológicas)",
+    ]);
+    expect(nomes("retomada", "draft")).toEqual(["Retomada pós-venda"]);
+    expect(nomes("boas", "active")).toEqual([]);
   });
 });

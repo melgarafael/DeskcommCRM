@@ -45,15 +45,39 @@ beforeEach(() => {
     org: { orgId: ORG_ID, role: "manager" },
   } as never);
 
+  let depois: string | null = null;
+  let limite = Number.MAX_SAFE_INTEGER;
   const leitura = {
     select: () => leitura,
     eq: (col: string, v: unknown) => {
       filtrosDaLeitura.push([col, v]);
       return leitura;
     },
-    neq: () => Promise.resolve({ data: fontes, error: null }),
+    neq: () => leitura,
+    order: () => leitura,
+    limit: (n: number) => {
+      limite = n;
+      return leitura;
+    },
+    gt: (_col: string, value: string) => {
+      depois = value;
+      return leitura;
+    },
+    then: (resolve: (value: unknown) => unknown) =>
+      Promise.resolve({
+        data: fontes
+          .filter((f) => !depois || String(f.id) > depois)
+          .sort((a, b) => String(a.id).localeCompare(String(b.id)))
+          .slice(0, limite),
+        error: null,
+      }).then(resolve),
   };
-  vi.mocked(createClient).mockResolvedValue({ from: () => leitura } as never);
+  vi.mocked(createClient).mockResolvedValue({
+    from: () => {
+      depois = null;
+      return leitura;
+    },
+  } as never);
 
   const escrita = { eq: () => escrita, neq: () => Promise.resolve({ error: null }) };
   vi.mocked(createAdminClient).mockReturnValue({

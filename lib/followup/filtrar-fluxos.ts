@@ -1,41 +1,48 @@
 /**
- * A BUSCA DA LISTA DE FLUXOS DE FOLLOW-UP — função pura, fora do componente (#4593).
+ * A BUSCA DA LISTA DE FOLLOW-UPS — função pura, fora do componente (#4593).
  *
- * ═══ O defeito ═══
+ * Quem tem muitos fluxos (o caso da issue: mais de 13 fluxos de retomada, um
+ * por nicho, com nomes parecidos que o cartão corta) não achava um fluxo sem
+ * rolar a lista inteira. A tela ganha a mesma caixa de busca da lista de
+ * Agentes, e esta função é a régua dela.
  *
- * Quem tem treze fluxos de retomada, um por nicho, com nomes parecidos
- * («Kelly · retomada (oficinas mecânica)», «Kelly · retomada (clínicas)»), não
- * achava o que queria sem rolar a lista inteira — e o cartão corta o nome com
- * reticências, então dois fluxos diferentes ficavam com o MESMO rótulo visível.
+ * ═══ A régua ═══
  *
- * ═══ A regra ═══
+ * A mesma de `filtrarAgentes` (`lib/ai/agents/filtrar-agentes.ts`): os DOIS
+ * lados passam por `termoSemAcento` (`lib/inbox/termo-de-busca.ts`). Normalizar
+ * só o termo deixaria `"Retomada mecânica".includes("mecanica")` falso.
  *
- * O termo digitado e o nome do fluxo passam por `termoSemAcento`
- * (`lib/inbox/termo-de-busca.ts`), a régua única de busca do produto. Normalizar
- * só o termo não bastaria: `"Oficinas Mecânica".includes("mecanica")` continua
- * falso, e é esse o erro clássico deste defeito.
- *
- * ═══ Por que função pura e exportada ═══
- *
- * A filtragem nasce aqui, e não num `useMemo` do componente, para ser testável
- * sem DOM — o padrão que `lib/inbox/filtrar-destinos.ts` (#4078) fixou e que
- * `lib/ai/agents/filtrar-agentes.ts` (#4165) seguiu.
+ * O filtro por status entra aqui também, e não no componente, porque a ordem
+ * importa: o status recorta, o termo procura dentro do recorte — e os dois
+ * juntos são testáveis sem DOM.
  */
+import type { FollowupFlowStatus } from "@/hooks/followup/useFollowupFlows";
 import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
 
-/** O mínimo que a busca enxerga do fluxo: o nome do cartão. */
+/** O filtro de status da lista: um dos três estados do fluxo, ou todos. */
+export type FiltroDeStatusDoFluxo = FollowupFlowStatus | "all";
+
+/** O mínimo que a busca enxerga do fluxo: o nome do cartão e o status do selo. */
 export interface FluxoBuscavel {
   name: string;
+  status: FollowupFlowStatus;
 }
 
 /**
- * Filtra os fluxos pelo termo digitado, preservando a ordem recebida.
+ * Filtra os fluxos pelo status escolhido e pelo termo digitado, preservando a
+ * ordem recebida.
  *
- * Termo vazio (ou só espaços) devolve a lista inteira, na MESMA referência: a
- * tela abre sem filtro, e não há cópia para o React comparar à toa.
+ * Status `all` com termo vazio (ou só espaços) devolve a lista inteira, na
+ * mesma referência.
  */
-export function filtrarFluxos<T extends FluxoBuscavel>(fluxos: T[], busca: string): T[] {
+export function filtrarFluxos<T extends FluxoBuscavel>(
+  fluxos: T[],
+  { busca, status }: { busca: string; status: FiltroDeStatusDoFluxo },
+): T[] {
   const termo = termoSemAcento(busca.trim());
-  if (!termo) return fluxos;
-  return fluxos.filter((fluxo) => termoSemAcento(fluxo.name).includes(termo));
+  if (!termo && status === "all") return fluxos;
+  return fluxos.filter((fluxo) => {
+    if (status !== "all" && fluxo.status !== status) return false;
+    return !termo || termoSemAcento(fluxo.name).includes(termo);
+  });
 }

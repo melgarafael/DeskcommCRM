@@ -18,6 +18,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { enderecoDaUltimaRecebida, respondePelaUltimaRecebida } from "@/lib/channels/endereco-da-ultima-recebida";
 import { mesmoTelefoneNaLista } from "@/lib/channels/phone-variants";
 import { ehContatoPessoal } from "@/lib/contacts/contato-pessoal";
+import { podeVerPessoal } from "@/lib/inbox/pessoal";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -70,7 +71,7 @@ export async function GET(_req: NextRequest, ctx: Context): Promise<Response> {
   if (conversa.contact_id) {
     const { data: ficha, error: errFicha } = await supabase
       .from("contacts")
-      .select("phone_number, wa_lid, is_personal")
+      .select("phone_number, wa_lid, is_personal, personal_owner_user_id")
       .eq("organization_id", organizationId)
       .eq("id", conversa.contact_id)
       .maybeSingle();
@@ -78,7 +79,13 @@ export async function GET(_req: NextRequest, ctx: Context): Promise<Response> {
       return fail("internal_error", "Não foi possível ler a ficha.", 500, { requestId });
     }
     // Mesma resposta das portas irmãs da conversa (spec 21, D10).
-    if (ehContatoPessoal(ficha)) {
+    //
+    // #4434: o dono da marca precisa DESTA leitura para responder o seu — é ela
+    // que diz por qual número a resposta sai, e o cabeçalho a pede em TODA
+    // abertura, com toast de erro quando falha. Deixá-la fechada faria a conversa
+    // abrir com um erro na cara do dono. Papel não abre: `podeVerPessoal` só
+    // reconhece o dono (e `admin`/`manager` continuam de fora).
+    if (!podeVerPessoal({ type: "user", id: authz.user.id, role: authz.org.role }, ficha)) {
       return fail("not_found", "Conversa não encontrada.", 404, { requestId });
     }
     if (ficha) {
