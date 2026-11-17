@@ -62,6 +62,7 @@ import { TelefonesDaFicha } from "@/components/contacts/TelefonesDaFicha";
 import { DialButton } from "@/components/voice/DialButton";
 import { ListaDeLinks } from "@/components/contacts/ListaDeLinks";
 import { AcessosMcpDoContato } from "@/components/contacts/AcessosMcpDoContato";
+import { EmpresaDaProspeccao } from "@/components/crm-b2b/EmpresaDaProspeccao";
 import { PessoaDoContato } from "@/components/crm-b2b/PessoaDoContato";
 import { linksParaExibir } from "@/lib/leads/links-de-contato";
 import { DiagnosticoDoContato } from "@/components/contacts/DiagnosticoDoContato";
@@ -582,6 +583,16 @@ export function ContactDetailClient({
                 )}
                 nomeSugerido={nomeDoContato(contact) ?? ""}
               />
+              {/* #3198, fatia 3: o contato que veio da prospecção vira Empresa. */}
+              <div className="mt-4">
+                <EmpresaDaProspeccao
+                  contactId={contactId}
+                  podeCriar={Boolean(
+                    (user.is_platform_admin && !user.support) ||
+                      (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent),
+                  )}
+                />
+              </div>
             </div>
           )}
           {/* CARTEIRA DO CLIENTE (#2591): de quem é este cliente. Fica na Visão
