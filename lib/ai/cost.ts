@@ -181,13 +181,27 @@ export async function computeCost(input: ComputeCostInput): Promise<number | nul
   const pricing = await loadPricing();
   const row = pricing.get(input.model);
   if (!row) {
+    // O catálogo é a tabela PRÓPRIA desta rota: é onde o cron grava e onde a
+    // OpenRouter chega. Quem está no catálogo tem o preço decidido LÁ — o motor
+    // não pode sobrescrever, porque as duas tabelas divergem para o mesmo id
+    // (`claude-haiku-5-5` é 100/500 centavos por milhão no catálogo e 0,1/0,5
+    // dólar por milhão em `pricing.ts`, 10× de diferença) e a régua do #4123
+    // mede a rota legada pelo catálogo.
+    const doCatalogo = await precoDoCatalogo(input.model);
+    if (doCatalogo) {
+      const cents =
+        ((input.promptTokens ?? 0) * doCatalogo.prompt) / 1_000_000 +
+        ((input.completionTokens ?? 0) * doCatalogo.completion) / 1_000_000;
+      return comDegrau(cents);
+    }
+
     // ═══ #4697 — O FALLBACK QUE FALTAVA ═══
     //
-    // `ai_pricing` não conhece: ANTES de desistir e de ir ao catálogo, a tabela
-    // do MOTOR (`pricing.ts`) tem a palavra — é a mesma que o seam e a mídia
-    // consultam. Sem este passo, o mesmo modelo saía com preço no turno do
-    // agente e nulo no respondedor legado: o "umas chamadas com custo e outras
-    // não" do relato, na rota que ninguém tinha olhado.
+    // Nem `ai_pricing` nem o catálogo: a tabela do MOTOR (`pricing.ts`) tem a
+    // palavra — é a mesma que o seam e a mídia consultam. Sem este passo, o
+    // mesmo modelo saía com preço no turno do agente e nulo no respondedor
+    // legado: o "umas chamadas com custo e outras não" do relato, na rota que
+    // ninguém tinha olhado. ÚLTIMO recurso, nunca antes do catálogo.
     const daTabelaDoMotor = costCents(
       input.model,
       {
@@ -201,15 +215,9 @@ export async function computeCost(input: ComputeCostInput): Promise<number | nul
     );
     if (daTabelaDoMotor !== null) return comDegrau(daTabelaDoMotor);
 
-    // Nem a tabela do motor: tenta o catálogo, que é onde o cron grava e
-    // onde a OpenRouter chega. Embedding não passa por aqui — o catálogo não
-    // guarda preço de embedding —, e nesse caso o desfecho é o mesmo de antes.
-    const doCatalogo = await precoDoCatalogo(input.model);
-    if (!doCatalogo) return null;
-    const cents =
-      ((input.promptTokens ?? 0) * doCatalogo.prompt) / 1_000_000 +
-      ((input.completionTokens ?? 0) * doCatalogo.completion) / 1_000_000;
-    return comDegrau(cents);
+    // Embedding não passa por aqui — o catálogo não guarda preço de embedding —,
+    // e nesse caso o desfecho é o mesmo de antes.
+    return null;
   }
 
   // Linha sem taxa nenhuma não é preço: é a mesma ausência do catálogo.
