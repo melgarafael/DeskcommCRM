@@ -144,8 +144,10 @@ export const crmSendMaterial: McpToolDefinition<typeof materialInputShape> = {
   handler: async (input, ctx) => {
     const pool = getRequestPool();
 
-    // A preparação COPIA o arquivo para a conversa e conta no teto de 3 em 24 h:
-    // é efeito, e por isso mora dentro da chave, junto com o freio e o envio.
+    // A preparação CONFERE o teto de 3 envios em 24 h e COPIA o arquivo para a
+    // pasta da conversa (escrita no Storage): é efeito, e por isso mora dentro da
+    // chave, junto com o freio e o envio. Quem conta no teto é a mensagem enviada
+    // (`metadata.material_id`), não a cópia.
     return enviarComChave({
       ctx,
       endpoint: ENDPOINT_TAG_MATERIAL,
