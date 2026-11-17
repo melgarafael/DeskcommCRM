@@ -39,15 +39,21 @@ export default async function MetaDeVendasPage() {
 
   const mes = mesLocal();
   const supabase = await createClient();
+  // Todas as metas do MÊS (empresa, vendedor, funil): o formulário mostra a que
+  // já existe para a combinação escolhida em vez de fingir campo vazio.
   const { data } = await supabase
     .from("crm_metas")
-    .select("alvo")
+    .select("indicador, vendedor_id, alvo")
     .eq("organization_id", activeOrg.orgId)
-    .eq("indicador", "vendas_ganhas")
-    .is("pipeline_id", null)
     .eq("periodo", `${mes}-01`)
-    .maybeSingle();
-  const alvoAtual = ((data as { alvo?: number } | null)?.alvo ?? null) as number | null;
+    .is("pipeline_id", null);
+  const metas = ((data ?? []) as Array<{ indicador: string; vendedor_id: string | null; alvo: number }>)
+    .filter((m) => m.indicador === "vendas_ganhas" || m.indicador === "valor_vendido")
+    .map((m) => ({
+      indicador: m.indicador as "vendas_ganhas" | "valor_vendido",
+      vendedor_id: m.vendedor_id ?? null,
+      alvo: Number(m.alvo),
+    }));
 
   const idioma = user.idioma;
   const t = (texto: string) => traduzir(texto, idioma);
@@ -57,16 +63,16 @@ export default async function MetaDeVendasPage() {
       <CabecalhoDaSubTela className="flex flex-col gap-2" titulo={t("Meta de vendas")} idioma={idioma}>
         <p className="max-w-2xl text-sm text-muted-foreground">
           {t(
-            "Quanto a empresa quer vender neste mês. O Desempenho passa a mostrar o quanto já foi feito contra esse número — o realizado, o percentual e o quanto falta.",
+            "Quanto a empresa — ou um vendedor — quer vender neste mês, em quantidade de vendas ou em reais. O Desempenho passa a mostrar o quanto já foi feito contra esse número: o realizado, o percentual, o quanto falta e a projeção até o fim do mês.",
           )}
         </p>
       </CabecalhoDaSubTela>
 
-      <FormularioDaMeta mes={mes} alvoAtual={alvoAtual} />
+      <FormularioDaMeta mes={mes} metas={metas} />
 
       <p className="max-w-2xl text-xs text-muted-foreground">
         {t(
-          "Nesta primeira versão a meta é da EMPRESA inteira, para a quantidade de vendas ganhas: o que conta é o negócio fechado como ganho dentro do mês. Meta por vendedor, por período maior e por funil ficam para as próximas fatias.",
+          "A meta da empresa conta os negócios fechados como ganhos no mês; a do vendedor conta só os dele. Metas por funil e por trimestre ficam para as próximas fatias.",
         )}
       </p>
     </div>
