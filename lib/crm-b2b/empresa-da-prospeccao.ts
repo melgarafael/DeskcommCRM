@@ -20,6 +20,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
+import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { enderecoDoMaps, type EnderecoDaEmpresa } from "@/lib/crm-b2b/endereco-do-maps";
 import { logger } from "@/lib/logger";
 import { empresaDoCandidato, type NegocioDoMaps } from "@/lib/prospecting/empresa-do-candidato";
@@ -136,7 +137,7 @@ async function negocioDoContato(
   return {
     negocio: {
       key: placeId,
-      name: dados?.name || contato.display_name || contato.name || "Empresa sem nome",
+      name: dados?.name || nomeDoContato(contato) || "Empresa sem nome",
       phone: contato.phone_number,
       website: dados?.website ?? null,
       maps_url: dados?.maps_url ?? mapsDoContato,

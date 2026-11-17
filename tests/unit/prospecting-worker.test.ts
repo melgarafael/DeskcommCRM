@@ -88,6 +88,10 @@ import { ProspectingError } from "@/lib/prospecting/provider";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 import { withProspectingLock } from "@/lib/prospecting/store";
 import type { Campaign } from "@/lib/prospecting/store";
+import {
+  ORIGEM_DOS_DADOS_COM_CONTEXTO_DA_EQUIPE,
+  ORIGEM_DOS_DADOS_DA_ABORDAGEM_FRIA,
+} from "@/lib/prospecting/contexto-da-equipe";
 const id = "10000000-0000-4000-8000-000000000001";
 const campaign = {
   id,
@@ -387,6 +391,53 @@ describe("gradual outreach", () => {
     const segunda = await dadosDoModo("second_message");
     expect(segunda["Empresa"]).toBe("Example");
     for (const chave of ["Auditoria", "Detalhe", "Rascunho de abordagem"]) expect(segunda).not.toHaveProperty(chave);
+  });
+
+  // #4459 parte 2: o contexto da equipe. O worker mede `temContextoDaEquipe` nos dados JÁ
+  // filtrados pelo modo e entrega o MESMO valor à instrução e ao modo (`comContextoDaEquipe`).
+  it("contexto da equipe: o mesmo sinal vai à instrução e ao modo, medido depois do filtro do modo", async () => {
+    const chamada = async (
+      modo: "first_message" | "second_message",
+      contexto: Record<string, string>,
+    ) => {
+      vi.clearAllMocks();
+      mocks.generate.mockResolvedValue({ ok: true, texto: "Olá. Falo com a Example?" });
+      const comModo = { ...campaign, config: { ...campaign.config, exit_offer: modo } } as Campaign;
+      const comContexto = {
+        ...candidate,
+        data: { name: "Example", socials: [], website: null, contexto_da_equipe: contexto },
+      };
+      await sendNextCandidate({} as never, database(undefined, comContexto) as never, {} as never, comModo);
+      return mocks.generate.mock.calls[0]?.[2] as {
+        dados: Record<string, string>;
+        instrucao: string;
+        comContextoDaEquipe?: boolean;
+      };
+    };
+    const tres = { diagnostico: "Sem site.", oferta: "Site simples.", contexto: "Indicação do Pedro." };
+
+    const primeira = await chamada("first_message", tres);
+    expect(primeira.dados).toMatchObject({
+      "Diagnóstico da equipe": "Sem site.",
+      "Oferta sugerida pela equipe": "Site simples.",
+      "Contexto da equipe": "Indicação do Pedro.",
+    });
+    expect(primeira.comContextoDaEquipe).toBe(true);
+    expect(primeira.instrucao).toContain(ORIGEM_DOS_DADOS_COM_CONTEXTO_DA_EQUIPE);
+
+    // Saída na 2ª: só o contexto fica — e ele basta para ligar as regras.
+    const segunda = await chamada("second_message", tres);
+    expect(segunda.dados["Contexto da equipe"]).toBe("Indicação do Pedro.");
+    expect(segunda.dados).not.toHaveProperty("Diagnóstico da equipe");
+    expect(segunda.dados).not.toHaveProperty("Oferta sugerida pela equipe");
+    expect(segunda.comContextoDaEquipe).toBe(true);
+
+    // Saída na 2ª SEM contexto: o filtro tira diagnóstico e oferta, e nada liga.
+    const semContexto = await chamada("second_message", { diagnostico: "Sem site.", oferta: "Site simples." });
+    expect(Object.keys(semContexto.dados).some((k) => k.endsWith("da equipe"))).toBe(false);
+    expect(semContexto.comContextoDaEquipe).toBe(false);
+    expect(semContexto.instrucao).toContain(ORIGEM_DOS_DADOS_DA_ABORDAGEM_FRIA);
+    expect(semContexto.instrucao).not.toContain(ORIGEM_DOS_DADOS_COM_CONTEXTO_DA_EQUIPE);
   });
 });
 
