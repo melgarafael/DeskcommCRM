@@ -62,7 +62,6 @@ export function fechoDeImports(dirDaRota: string): Set<string> {
   const raizDaRota = join(RAIZ, dirDaRota);
   const vistos = new Set<string>();
   const fila = arquivosDeCodigo([dirDaRota]);
-  let lidos = 0;
   while (fila.length > 0) {
     const arquivo = fila.pop();
     if (!arquivo || vistos.has(arquivo)) continue;
@@ -73,7 +72,6 @@ export function fechoDeImports(dirDaRota: string): Set<string> {
     } catch {
       continue;
     }
-    lidos += 1;
     for (const [, especificador = ""] of fonte.matchAll(IMPORTACAO)) {
       const alvo = resolverDe(especificador, arquivo);
       if (!alvo || vistos.has(alvo)) continue;
