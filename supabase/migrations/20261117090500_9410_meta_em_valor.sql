@@ -1,6 +1,6 @@
 -- manifest: **Meta mensal em VALOR de venda (#4796, fatia 2 da #3025).** `crm_metas` ganha o indicador `valor_vendido` (alvo em CENTAVOS) e o dono opcional `vendedor_id`; a meta da empresa continua sendo `pipeline_id is null and vendedor_id is null`, e o índice único parcial é refeito para não confundir a meta da empresa com a do vendedor. Aditiva e retrocompatível: meta antiga, sem indicador, continua valendo por QUANTIDADE. Espelho no `baseline.sql`.
 -- ============================================================================
--- 9409 — META MENSAL EM VALOR DE VENDA (#4796, fatia 2 da #3025)
+-- 9410 — META MENSAL EM VALOR DE VENDA (#4796, fatia 2 da #3025)
 --
 -- ─── O que faltava ──────────────────────────────────────────────────────────
 -- A meta da 0756 conta VENDAS GANHAS. Numa agência de viagens, uma venda de
