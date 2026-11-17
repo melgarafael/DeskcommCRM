@@ -35,6 +35,7 @@ import { normalizarTags } from "@/lib/contacts/tag-normalizada";
 import { ProspectingAgentBuilder, type CreatedProspectingAgent } from "./_create-agent";
 import { AuditoriaDoCandidato, type PreviaDaAbordagem } from "./_auditoria-site";
 import { BaixarLista } from "./_baixar-lista";
+import { ArquivoDaAbordagem } from "@/components/prospecting/ArquivoDaAbordagem";
 import type { ProspectingAgentSetupInput } from "@/lib/prospecting/agent-setup-schema";
 import { TETO_DIARIO_DE_MIDIA_POR_NUMERO } from "@/lib/prospecting/midia-da-abordagem";
 import type { PersonalizacaoProspeccao } from "@/lib/prospecting/personalizar";
@@ -2191,6 +2192,11 @@ export function ProspectingClient() {
                               )}
                             </div>
                           </fieldset>
+                          <ArquivoDaAbordagem
+                            valor={config.midia_da_abordagem}
+                            onChange={(midia) => update("midia_da_abordagem", midia)}
+                            travado={!!configCompleta}
+                          />
                           <div>
                             <Label htmlFor="prospecting-contact-tags">
                               {t("Etiquetas do contato")}

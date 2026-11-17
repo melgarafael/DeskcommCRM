@@ -88,7 +88,7 @@ function banco(opcoes: {
       return { rows: opcoes.contatos ?? [] };
     }
     if (/from organizations/.test(sql)) {
-      return { rows: [{ locale: opcoes.locale ?? null }] };
+      return { rows: [{ locale: opcoes.locale ?? null, timezone: null }] };
     }
     return { rows: [] };
   });
@@ -278,10 +278,25 @@ describe("a lista inteira da campanha concluída", () => {
 
     const csv = (await resposta.text()).replace("\uFEFF", "");
     const [cabecalho, ...linhas] = csv.trim().split("\r\n");
-    expect(cabecalho).toBe("empresa;telefone;site;segmento;endereco;email;redes;situacao");
+    // A lista inteira ganhou as duas colunas da MARCA (#4632) no fim.
+    expect(cabecalho).toBe(
+      "empresa;telefone;site;segmento;endereco;email;redes;situacao;abordada_em;campanha_anterior",
+    );
     expect(linhas).toHaveLength(2);
-    expect(linhas[0]).toMatch(/^Sem Resposta;\+5511911110001;.*;abordada$/);
-    expect(linhas[1]).toMatch(/^Respondeu Sim;\+5511911110002;.*;respondeu$/);
+    // Sem trilha neste teste (o banco de mentira não devolve `api_audit_log`), a
+    // campanha da abordagem é a da própria linha — o dado dito pelo lugar em que
+    // a empresa entrou.
+    // Campos a campos, e não por regex: a linha tem `;` em toda coluna e o
+    // teste não precisa adivinhar o formato inteiro para provar a marca.
+    const campos = (linha: string) => linha.split(";");
+    const [, , , , , , , situacao0, em0, campanha0] = campos(linhas[0]!);
+    expect(situacao0).toBe("abordada");
+    expect(em0).toBe("2026-11-01");
+    expect(campanha0).toBe("Clínicas");
+    const [, , , , , , , situacao1, em1, campanha1] = campos(linhas[1]!);
+    expect(situacao1).toBe("respondeu");
+    expect(em1).toBe("2026-11-01");
+    expect(campanha1).toBe("Clínicas");
     for (const vetado of ["Pediu Parar", "Contato Pessoal", "Recusou Marketing", "Anonimizado"])
       expect(csv).not.toContain(vetado);
   });
@@ -333,7 +348,8 @@ describe("a lista inteira da campanha concluída", () => {
     });
     deps.pool.mockReturnValue({ query: fake.query });
     const csv = await (await GET(pedido(CAMPANHA, "?quem=todas"), contexto())).text();
-    expect(csv).toContain(";envio não confirmado\r\n");
+    // A situação é seguida pela MARCA da abordagem (#4632): `;` e não `\r\n`.
+    expect(csv).toContain(";envio não confirmado;");
     expect(csv).not.toContain(";abordada\r\n");
   });
 
@@ -341,8 +357,8 @@ describe("a lista inteira da campanha concluída", () => {
     fake = banco({ campanha: { id: CAMPANHA, name: "Clínicas" }, candidatos: CONCLUIDA, contatos: CONTATOS, locale: "es" });
     deps.pool.mockReturnValue({ query: fake.query });
     const csv = await (await GET(pedido(CAMPANHA, "?quem=todas"), contexto())).text();
-    expect(csv).toContain(";contactada\r\n");
-    expect(csv).toContain(";respondió\r\n");
+    expect(csv).toContain(";contactada;");
+    expect(csv).toContain(";respondió;");
   });
 
   it("a auditoria diz qual lista saiu e quantas ficaram de fora", async () => {

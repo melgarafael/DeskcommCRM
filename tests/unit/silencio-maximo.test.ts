@@ -72,6 +72,20 @@ describe("varredura de silêncio com teto", () => {
 
 /** Registra a cadeia do PostgREST; cada `await` devolve a próxima resposta da fila. */
 function fakeSupabase(respostas: unknown[][]) {
+  // #4311 (resíduo): `organizations.status/settings` é lida UMA vez por
+  // organização no tick (não mais embutida na linha de conversa) — o dublê
+  // serve essa tabela à parte, sem consumir a fila de respostas.
+  const ORG = { id: "org", status: "active", settings: {} };
+  const orgProxy: Record<string, unknown> = new Proxy(
+    {},
+    {
+      get(_t, prop) {
+        if (prop === "single" || prop === "maybeSingle") return async () => ({ data: ORG, error: null });
+        if (prop === "then") return (ok: (v: unknown) => unknown) => ok({ data: [ORG], error: null });
+        return () => orgProxy;
+      },
+    },
+  ) as Record<string, unknown>;
   const proxy: Record<string, unknown> = new Proxy(
     {},
     {
@@ -81,7 +95,7 @@ function fakeSupabase(respostas: unknown[][]) {
       },
     },
   ) as Record<string, unknown>;
-  return { from: () => proxy } as never;
+  return { from: (t: string) => (t === "organizations" ? orgProxy : proxy) } as never;
 }
 
 describe("createSupabaseSilenceSweepDb — a consulta de PRODUÇÃO", () => {

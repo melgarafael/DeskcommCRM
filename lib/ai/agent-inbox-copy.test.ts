@@ -66,8 +66,6 @@ describe("agent-inbox-copy — rótulos leigos dos avisos do runtime", () => {
       "appointment_outcome_required",
       "appointment_recovery_review",
       "proposal_expired_notice",
-      "proposal_acceptance_rate_drop",
-      "proposal_promised_not_created",
     ]);
     const semEs = Object.entries(KIND_LABEL)
       .filter(([, rotulo]) => !DICIONARIO[rotulo]?.es)

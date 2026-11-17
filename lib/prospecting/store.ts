@@ -36,6 +36,7 @@ import { montarPrevia, motivosDe, resumoVazio } from "./importacao-previa";
 import { audit } from "@/lib/audit";
 import { vereditoPuro } from "./site-classify";
 import { linksDoCandidato } from "./links-do-candidato";
+import { empresaDoCandidato, ligarContatoAEmpresa } from "./empresa-do-candidato";
 import { aplicarLinks } from "@/lib/leads/links-de-contato";
 import { segmentoDoContatoNovo } from "@/lib/contacts/diagnostico-do-contato";
 import { defsDoPadraoDaOrg } from "@/lib/leads/padrao-do-campo";
@@ -1014,6 +1015,10 @@ export async function criarPegadaDoCandidato(
     description: `Campanha: ${c.name}\nQualificação: ${config.qualification}`.slice(0, 2000),
   });
   let contactId = contatoDaCampanha ?? p.contact_id;
+  // A EMPRESA DO MÓDULO "EMPRESAS E PESSOAS" (#3198, fatia 2) — só com o módulo
+  // LIGADO. Desligado, `empresaDoCandidato` devolve `null` sem escrever nada, e
+  // o caminho abaixo é exatamente o de hoje: contato, negócio e conversa.
+  const empresaId = await empresaDoCandidato(admin, org, p.data);
   if (!contactId) {
     const linksDoNovo = await camposDoContatoNovo(admin, org, p);
     // Porta `prospeccao`: a conversa abre logo abaixo, no canal da CAMPANHA. Pela
@@ -1035,6 +1040,10 @@ export async function criarPegadaDoCandidato(
       { porta: "prospeccao" },
     );
     contactId = String(contact.contact.id);
+    // O contato NASCIDO da prospecção aponta para a empresa quando ela existe:
+    // o telefone do Google é o da recepção, e o vínculo é com a EMPRESA
+    // (#3198, fatia 2, decisão 1 do autor). Contato que já existia não é tocado.
+    if (empresaId) await ligarContatoAEmpresa(db, org, contactId, empresaId);
     await db.query(
       "update prospecting_candidates set contact_id=$3 where organization_id=$1 and id=$2",
       [org, p.id, contactId],
