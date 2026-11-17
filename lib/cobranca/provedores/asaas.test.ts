@@ -555,6 +555,8 @@ const rotaDeClientes = (clientes: Linha[]): Responder => (url: URL): Resposta =>
 describe("garantirCliente", () => {
   const ORG_DADOS = { id: ORG, nome: "Clínica Exemplo Ltda", email: "financeiro@example.com", documento: "11.222.333/0001-81" };
   const DOC = "11222333000181";
+  /** Conta em que o cliente achado nunca teve assinatura nem cobrança. */
+  const SEM_HISTORICO: Record<string, Responder> = { "GET /subscriptions": lista(), "GET /payments": lista() };
 
   it("⭐ cliente que já existe pela externalReference é reaproveitado, sem POST", async () => {
     const { adaptador, chamadas } = montar({ "GET /customers": lista({ object: "customer", id: CLIENTE, deleted: false }) });
@@ -624,14 +626,24 @@ describe("garantirCliente", () => {
 
   it("⭐ #4768 cliente pré-existente com o MESMO documento é ADOTADO: nenhum POST de criação", async () => {
     const { adaptador, chamadas } = montar({
+      ...SEM_HISTORICO,
       "GET /customers": rotaDeClientes([{ id: "cus_painel", cpfCnpj: DOC, externalReference: null, dateCreated: "2025-02-03" }]),
       "PUT /customers/cus_painel": { corpo: { id: "cus_painel", externalReference: ORG } },
     });
     expect(await adaptador.garantirCliente(ORG_DADOS)).toBe("cus_painel");
-    expect(chamadas.map((c) => c.rota)).toEqual(["GET /customers", "GET /customers", "PUT /customers/cus_painel"]);
+    expect(chamadas.map((c) => c.rota)).toEqual([
+      "GET /customers",
+      "GET /customers",
+      "GET /subscriptions",
+      "GET /payments",
+      "PUT /customers/cus_painel",
+    ]);
+    expect(chamadas[2]?.url.searchParams.get("customer")).toBe("cus_painel");
+    expect(chamadas[2]?.url.searchParams.get("includeDeleted")).toBe("true");
+    expect(chamadas[3]?.url.searchParams.get("customer")).toBe("cus_painel");
     expect(chamadas[1]?.url.searchParams.get("cpfCnpj")).toBe(DOC);
     // Só o vínculo vai no PUT: nada de sobrescrever nome, e-mail ou notificação do cadastro que já existia.
-    expect(chamadas[2]?.corpo).toEqual({ externalReference: ORG });
+    expect(chamadas[4]?.corpo).toEqual({ externalReference: ORG });
   });
 
   it("⭐ #4768 duas chamadas seguidas criam UM cliente só: a segunda acha pelo vínculo que o POST gravou", async () => {
@@ -655,6 +667,7 @@ describe("garantirCliente", () => {
   it("⭐ #4768 dois clientes com o mesmo documento: adota o mais ANTIGO, avisa e não cria um terceiro", async () => {
     const aviso = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const { adaptador, chamadas } = montar({
+      ...SEM_HISTORICO,
       // A listagem vem do mais novo para o mais velho: o desempate não pode depender da ordem do provedor.
       "GET /customers": rotaDeClientes([
         { id: "cus_dup_novo", cpfCnpj: DOC, externalReference: null, dateCreated: "2026-05-01" },
@@ -696,6 +709,7 @@ describe("garantirCliente", () => {
   it("#4768 PUT recusado por permissão: adota sem vínculo e avisa, ainda sem criar cliente", async () => {
     const aviso = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const { adaptador, chamadas } = montar({
+      ...SEM_HISTORICO,
       "GET /customers": rotaDeClientes([{ id: "cus_painel", cpfCnpj: DOC, externalReference: null, dateCreated: "2025-02-03" }]),
       "PUT /customers/cus_painel": { status: 403 },
     });
@@ -704,16 +718,39 @@ describe("garantirCliente", () => {
     expect(aviso.mock.calls.flat().join(" ")).toContain("cliente_adotado_sem_vinculo");
   });
 
-  it("#4768 cliente com vínculo de OUTRA organização não tem o vínculo reescrito", async () => {
+  it("⭐ #4768 cliente com vínculo de OUTRA organização não é adotado: cria um novo, como antes", async () => {
     const aviso = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const outra = "1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed";
     const { adaptador, chamadas } = montar({
+      ...SEM_HISTORICO,
       "GET /customers": rotaDeClientes([{ id: "cus_da_outra", cpfCnpj: DOC, externalReference: outra, dateCreated: "2025-01-01" }]),
+      "POST /customers": { corpo: { id: "cus_novo" } },
     });
-    expect(await adaptador.garantirCliente(ORG_DADOS)).toBe("cus_da_outra");
-    expect(chamadas.filter((c) => c.rota === "POST /customers")).toHaveLength(0);
+    // O mesmo cliente para duas empresas bate no índice único de cobranca_assinaturas e o checkout da segunda nunca passa.
+    expect(await adaptador.garantirCliente(ORG_DADOS)).toBe("cus_novo");
+    expect(chamadas.filter((c) => c.rota === "POST /customers")).toHaveLength(1);
     expect(chamadas.filter((c) => c.rota.startsWith("PUT "))).toHaveLength(0);
     expect(aviso.mock.calls.flat().join(" ")).toContain("cliente_de_outra_organizacao");
+  });
+
+  it("⭐ #4768 cliente que já tem assinatura ou cobrança na conta não é adotado: cria um novo, como antes", async () => {
+    const painel = [{ id: "cus_painel", cpfCnpj: DOC, externalReference: null, dateCreated: "2025-02-03" }];
+    for (const historico of [
+      { "GET /subscriptions": lista({ object: "subscription", id: "sub_antiga", deleted: true }), "GET /payments": lista() },
+      { "GET /subscriptions": lista(), "GET /payments": lista({ object: "payment", id: "pay_antigo" }) },
+    ]) {
+      const aviso = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const { adaptador, chamadas } = montar({
+        ...historico,
+        "GET /customers": rotaDeClientes(painel),
+        "POST /customers": { corpo: { id: "cus_novo" } },
+      });
+      expect(await adaptador.garantirCliente(ORG_DADOS)).toBe("cus_novo");
+      expect(chamadas.filter((c) => c.rota.startsWith("PUT "))).toHaveLength(0);
+      expect(aviso.mock.calls.flat().join(" ")).toContain("cliente_com_historico_nao_adotado");
+      expect(aviso.mock.calls.flat().join(" ")).not.toContain(DOC);
+      aviso.mockRestore();
+    }
   });
 });
 

@@ -16,7 +16,7 @@
  *   idempotência do POST é a RELEITURA antes de criar: cliente pela
  *   `externalReference` (o vínculo com a organização) e, não achando, pelo
  *   `cpfCnpj` — o cliente cadastrado direto no painel do Asaas não tem vínculo,
- *   e é adotado em vez de duplicado (#4768); assinatura ACTIVE, webhook pela URL
+ *   e, sem histórico na conta, é adotado em vez de duplicado (#4768); assinatura ACTIVE, webhook pela URL
  *   ou pelo nome. No máximo 3 tentativas e 5 s por espera.
  * - Toda resposta passa por Zod lendo só o que é usado; forma inesperada vira
  *   `ErroDoProvedor(200, "resposta_invalida")`, que `sincronizar` grava como
@@ -524,24 +524,27 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
 
   /**
    * Grava o vínculo da organização no cliente adotado (`PUT /customers/{id}` aceita
-   * `externalReference` e só altera os campos enviados). Duas recusas, nenhuma
-   * delas vira cliente novo: o vínculo de OUTRA organização não é reescrito (seria
-   * roubar o vínculo de quem já o tem) e chave sem permissão de editar cliente
-   * adota sem vínculo — a busca por documento mantém a idempotência.
+   * `externalReference` e só altera os campos enviados). Chave sem permissão de
+   * editar cliente adota sem vínculo, e o cliente gravado na assinatura mantém a
+   * idempotência dali em diante.
    */
   async function vincularCliente(cliente: ClienteDoAsaas, orgId: string): Promise<void> {
-    const vinculo = cliente.externalReference ?? "";
-    if (vinculo === orgId) return;
-    if (vinculo !== "") {
-      logger.warn("cobranca.asaas.cliente_de_outra_organizacao", {});
-      return;
-    }
     try {
       await chamar("PUT", `/customers/${encodeURIComponent(cliente.id)}`, { externalReference: orgId });
     } catch (e) {
       if (!(e instanceof ErroDoProvedor)) throw e;
       logger.warn("cobranca.asaas.cliente_adotado_sem_vinculo", { status: e.status, codigo: e.codigo });
     }
+  }
+
+  /** Se o cliente já teve assinatura (inclusive removida) ou cobrança na conta. */
+  async function temHistorico(clienteId: string): Promise<boolean> {
+    const cliente = encodeURIComponent(clienteId);
+    const [assinaturas, cobrancas] = await Promise.all([
+      chamar("GET", `/subscriptions?customer=${cliente}&includeDeleted=true&limit=1`),
+      chamar("GET", `/payments?customer=${cliente}&limit=1`),
+    ]);
+    return ler(listaDoAsaas(comId), assinaturas).data.length > 0 || ler(listaDoAsaas(comId), cobrancas).data.length > 0;
   }
 
   /**
@@ -551,7 +554,8 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
    * cliente cadastrado direto no painel do Asaas não tem `externalReference` — só
    * a releitura por vínculo não o acha, e o POST criaria um duplicado com o mesmo
    * CPF/CNPJ (#4768). Achado pelo documento, ele é ADOTADO (com o vínculo gravado
-   * nele) em vez de duplicado. `notificationDisabled` fica só na criação: quem
+   * nele) em vez de duplicado — só quando não tem vínculo nem assinatura ou
+   * cobrança na conta; nos outros casos, cria um novo, como antes. `notificationDisabled` fica só na criação: quem
    * avisa o pagador é a régua do sistema, com a marca da empresa, e os e-mails,
    * SMS e WhatsApp do Asaas sairiam em dobro; num cliente que já existe na conta,
    * desligar notificação mudaria o comportamento das outras integrações dele.
@@ -567,11 +571,19 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
       return escolherCliente(pelaOrg).id;
     }
     const peloDocumento = await clientesPor({ cpfCnpj: documento });
-    if (peloDocumento.length > 0) {
-      if (peloDocumento.length > 1) logger.warn("cobranca.asaas.cliente_duplicado", { quantidade: peloDocumento.length, por: "documento" });
-      const adotado = escolherCliente(peloDocumento);
-      await vincularCliente(adotado, orgId);
-      return adotado.id;
+    // Vínculo de OUTRA organização não é adotado: `cobranca_assinaturas` tem índice
+    // único em (provedor, provedor_cliente_id), e o mesmo cliente para duas empresas
+    // faria o checkout da segunda falhar em toda tentativa. Cria-se um novo, como antes.
+    const livres = peloDocumento.filter((c) => !c.externalReference);
+    if (livres.length < peloDocumento.length) logger.warn("cobranca.asaas.cliente_de_outra_organizacao", {});
+    if (livres.length > 0) {
+      if (livres.length > 1) logger.warn("cobranca.asaas.cliente_duplicado", { quantidade: livres.length, por: "documento" });
+      const adotado = escolherCliente(livres);
+      if (!(await temHistorico(adotado.id))) {
+        await vincularCliente(adotado, orgId);
+        return adotado.id;
+      }
+      logger.warn("cobranca.asaas.cliente_com_historico_nao_adotado", { quantidade: livres.length });
     }
     return ler(
       comId,
