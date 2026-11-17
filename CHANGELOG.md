@@ -46,6 +46,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   têm não basta: dizer que alguém faltou devolve o horário para outra pessoa, e quem
   emite o token decide se aquela integração tem esse poder.
 
+  Contribuição de @webtecnica (#4698, #4515).
+
   A regra não foi afrouxada no código. O banco recusa `Realizado` e `Não compareceu`
   sem pessoa logada, e a integração entra por service role — por isso a liberação é
   uma porta só, um RPC que confere o token e chama a mesma função que a tela chama.
@@ -77,6 +79,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **A lista da campanha volta com as empresas já abordadas e a marca do que foi tentado** Quem rodou uma campanha e quer oferecer outra coisa às MESMAS empresas, por outro número, não tinha por onde: o "Baixar lista" só devolvia as não abordadas e sumia quando todas já tinham recebido mensagem. Agora o menu do cartão tem a opção **Incluir as empresas já abordadas**, que baixa a lista inteira da campanha com duas colunas a mais no fim: `abordada_em`, com a data da tentativa, e `campanha_anterior`, com o nome da campanha em que a abordagem saiu. A coluna `situacao` continua dizendo o que aconteceu com cada empresa (respondeu, abordada, envio não confirmado, não abordada ou fora da fila), e o item aparece mesmo na campanha concluída, em que todas já foram abordadas.
 
+  Contribuição de @webtecnica (#4711, #4632).
+
   A opção não afrouxa nenhuma guarda: quem pediu para parar, contato pessoal e quem teve os dados apagados continuam fora das duas listas. A lista das não abordadas não mudou, e continua sendo a única que serve para reimportar aqui.
 
 - **O arquivo da primeira abordagem se escolhe na tela da campanha de prospecção** A mídia que vai junto da primeira mensagem da prospecção só podia ser
@@ -98,6 +102,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   "Escrito pela IA" até alguém da equipe mudar o diagnóstico ou a oferta. Daí em
   diante, a IA não troca mais o que a equipe escreveu.
 
+  Contribuição de @tabaterral (#4704).
+
   O agente só altera a ficha de quem está na conversa. Ele não escreve nas
   observações da equipe, não apaga os outros campos personalizados do contato e
   não grava nada em contato pessoal ou anonimizado.
@@ -111,9 +117,13 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **Campanhas, modelos de texto e lista de exclusão aceitam token de integração** As rotas de campanhas, de textos guardados e da lista de exclusão passam a aceitar token de integração. Com o token, a leitura pede o escopo `mcp:read` e a escrita (e a prévia do público, que não grava nada) pede `mcp:write`; em ambos os casos o token precisa do papel de gerente, como na tela.
 
+  Contribuição de @paulolimajr77 (#4389, Spec 33, fatia 3 de 9).
+
   Ficam de fora desta versão, e continuam só pela tela: iniciar, retomar, pausar, cancelar, agendar, duplicar e testar um envio. Todas passam pela mesma rota de ações, que dispara mensagens a clientes.
 
 - **Rotas de conversas e conversation-tags aceitam token de integração** As rotas de operação de conversas (`/api/v1/conversations/*`) e de vocabulário de tags de conversa (`/api/v1/conversation-tags`) passam a aceitar o token de integração `dsk_…` além da sessão de navegador. Cada rota filtra a organização da linha do token, sem mudar nada para quem usa pela tela. — Paulo Lima Jr.
+
+  Contribuição de @paulolimajr77 (#4389, Spec 33, fatia 3 de 9).
 
 - **Contatos, empresas, pessoas, vínculos e números de voz aceitam token de integração** As rotas de contatos passam a aceitar o token `dsk_…` de servidor, além da sessão de navegador: a ficha, a edição, as etiquetas de contato, a timeline, o resumo do CRM, as compras, a carteira (leitura), os roteiros, as propostas de dado, os vínculos, o pessoal, o sempre humano, mesclar, duplicados, importar planilha e agenda, e o lote. Cada uma pede `mcp:read` para ler e `mcp:write` para escrever, com o papel que a tela já exige.
 
@@ -132,11 +142,17 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   a equipe. Para liberar a IA ao público, o botão é o mesmo de sempre. Nada a
   configurar na atualização.
 
+  Contribuição de @lebaneseforas-byte (#4690).
+
 ### Alterado
 
 - **Os blocos fixos da plataforma passam a vir ANTES do prompt do agente no system do turno** O `system` de cada turno abria pelo prompt do agente, e os blocos que são iguais para toda a instalação (transparência e autoria) vinham depois dele. Como o cache de prefixo dos provedores só reaproveita o começo idêntico do pedido, cada agente diferente — e cada edição do prompt de um deles — invalidava também esses blocos. A ordem passa a ser: blocos da plataforma, o que a tela do agente habilita (casos, agenda, interesse no banco externo), o prompt dele com a memória e o índice de skills, o que muda por turno (prévia, voz) e, fechando, a diretiva de idioma da organização, que continua sendo a última instrução que o modelo lê. O texto de cada bloco não muda; muda a posição. É um comportamento só de custo: a primeira chamada de cada agente depois da publicação recomeça o cache uma vez, porque o prefixo mudou de ordem.
 
+  Contribuição de @webtecnica (#4676, #4668).
+
 - **Mídia de mensagem e relatório de etiquetas pelo token pedem papel de gerente** Pelo token de integração (`dsk_…`), a mídia de uma mensagem e o relatório de etiquetas passam a exigir um token de papel gerente ou administrador. É o mesmo critério das métricas: pelo token a leitura alcança a organização inteira, e na tela cada pessoa vê só as conversas que acompanha. Pela tela, nada muda. Crédito: @paulolimajr77.
+
+  Contribuição de @paulolimajr77 (#4388, Spec 33, fatia 2 de 9).
 
 ### Corrigido
 
@@ -146,6 +162,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **Inbox avisa quando a lista não pôde ser atualizada e não insiste sozinho contra a API fora** No Inbox, quando a API REST demora ou falha, a lista de conversas que já estava na tela continua ali — e agora há um aviso fixo no topo dizendo qual foi a falha (tempo esgotado, servidor fora, sessão expirada) e que as conversas seguem salvas, com o botão "Tentar novamente" que relê sem recarregar a página. Antes, uma falha depois da lista carregada deixava as conversas na tela sem nenhum aviso, e a única pista era um toast que sumia.
 
+  Contribuição de @webtecnica (#4695, #4508).
+
   A caixa vazia só aparece quando a leitura respondeu e não há conversa nenhuma: se a resposta anterior era vazia e a seguinte falhou, a tela diz que não conseguiu ler — não afirma que não há conversas.
 
   Com a API fora, a conferência automática da lista passa a esperar cada vez mais entre uma tentativa e a seguinte (45 s, 90 s, 180 s e até 5 min), em vez de bater a cada 45 s para sempre, e não abre uma nova enquanto a anterior não voltou.
@@ -154,7 +172,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Contribuição de @webtecnica (#4685).
 
-- **O painel passa a exigir HTTPS e a recusar enquadramento também por CSP** O painel já mandava `nosniff`, `X-Frame-Options: DENY`, política de referência e permissões fechadas, mas não mandava `Strict-Transport-Security` nem `Content-Security-Policy` — e o proxy na frente também não manda HSTS, então a primeira visita em `http://` ficava em `http://`, com o cookie de sessão atravessando rede hostil em claro antes de qualquer redirecionamento. Agora toda resposta traz HSTS de um ano e uma CSP curta que recusa enquadramento, troca de base e formulário forjado para fora; `script-src` continua fora da política de propósito, porque o Next injeta bootstrap inline e o app abre WebSocket, e uma política que quebra a tela acaba desligada por quem opera.
+- **O painel passa a exigir HTTPS e a recusar enquadramento também por CSP** O painel já mandava `nosniff`, `X-Frame-Options: DENY`, política de referência e permissões fechadas, mas não mandava `Strict-Transport-Security` nem `Content-Security-Policy` — e o proxy na frente também não manda HSTS, então a primeira visita em `http://` ficava em `http://`, com o cookie de sessão atravessando rede hostil em claro antes de qualquer redirecionamento. Agora toda resposta traz HSTS de um ano — o navegador passa a ir direto para `https://` a partir da visita seguinte; a primeira visita a um endereço digitado como `http://` continua dependendo do redirecionamento do proxy, porque o domínio não está na lista de preload dos navegadores — e uma CSP curta que recusa enquadramento, troca de base e formulário forjado para fora; `script-src` continua fora da política de propósito, porque o Next injeta bootstrap inline e o app abre WebSocket, e uma política que quebra a tela acaba desligada por quem opera.
 
   Contribuição de @webtecnica (#4686).
 
@@ -168,13 +186,19 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **Em modo de teste, o compromisso mostra por que o link de reunião não saiu para quem está fora da lista** Com a conexão em modo de teste antes de liberar a IA para todos, a IA já respondia só aos números da lista de teste, mas o envio automático do link de reunião só conferia essa lista no último passo: para um contato fora dela, a mensagem ficava como falha na conversa e o envio era tentado de novo, sem o motivo no compromisso. Agora o envio confere a lista antes, como os outros caminhos da IA: fora dela, o link não sai e o compromisso mostra o motivo. Um número da lista, ou uma conta de Instagram ou Facebook marcada como testadora, recebe o link mesmo sem autorização anterior, como nas respostas da IA. Não é preciso mexer no `.env` para atualizar.
 
+  Contribuição de @hskl18 (#4706, #4701).
+
 - **No canal oficial, a hora da leitura não muda quando o aviso de leitura chega repetido** No canal da API oficial, a hora em que o cliente leu a mensagem passa a ser gravada uma vez só. A plataforma reenvia o aviso de leitura quando não recebe a confirmação a tempo, e cada reenvio trocava essa hora pela hora do reenvio. Agora a primeira leitura fica, do mesmo jeito que a hora da entrega já ficava. Nenhuma ação é necessária na atualização. Contribuição de @webtecnica (#4730, #4316).
 
 - **No Inbox, a busca e o aviso de carregamento ao enviar um contato acompanham a tela em espanhol** Ao enviar um contato pelo Inbox com a instalação em espanhol, a janela que abria mantinha o campo de busca ("Buscar por nome ou telefone…") e o aviso de carregamento ("Carregando…") em português. Ambos passam a ser traduzidos pela função da tela (`t(...)`). Em português nada muda.
 
+  Contribuição de @jlom2024 (#4767, #4754).
+
   Crédito: @jlom2024.
 
 - **Reconectar um WhatsApp parado voltou a mostrar o QR, na ficha e pela faixa de alerta** Um número de WhatsApp que caiu ficava sem caminho de volta: o selo "Escaneie o QR" da Central de Conexões era só um rótulo — clicar não fazia nada — e o botão "Escanear o QR" da faixa vermelha de alerta levava para a tela em que a pessoa já estava. Agora o selo abre o código de pareamento de verdade, e a faixa abre o pareamento direto do número que pede QR, de onde ela estiver.
+
+  Contribuição de @guptasp82-jpg (#4742).
 
   Para um número que nunca chegou a parear, a ficha ganhou o botão "Gerar novo QR", o único caminho que devolve um código nesses casos. Um número que já está pareado não recebe esse botão — gerar um QR novo apagaria a credencial dele, e o caminho para esses continua sendo o "Reconectar" comum, que preserva o pareamento. Nenhuma ação é necessária na atualização.
 
@@ -183,6 +207,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   Contribuição de @webtecnica (#3566).
 
 - **As notas da IA na linha do tempo, o resumo da passagem e os avisos da Central saem no idioma da organização** Numa organização em espanhol, o que o motor GRAVA continuava em português, porque esses textos são dado e a tela os mostra como vieram, sem passar por `t()`: a linha "Resposta da IA" na linha do tempo ("Próxima ação:", "Novo compromisso:", "Nova objeção:"), a atividade de uma chamada de voz, o resumo que a pessoa lê quando a IA passa a conversa ("Por que a IA passou:", "Compromissos:", "Próxima ação:" — também quando um caso é escalado ou a automação barra uma resposta comercial), a razão da nota do negócio ("+12 1 compromisso do cliente…"), o aviso de quando o assistente quis mover um card de um funil que não é dele e cerca de 35 avisos da Central (follow-up parado, proposta vencida, canal em modo de teste ou pausado, mídia que o agente não conseguiu ler, orçamento de IA, entre outros). Agora cada um é traduzido no instante em que é gravado, no idioma da organização — inclusive o aviso de canal pausado, que seguia o idioma de quem clicou. Em português nada muda, byte a byte. O que já estava gravado continua como estava.
+
+  Contribuição de @donramon77 (#4724).
 
 - **Voz do agente só aparece com credencial do ElevenLabs validada** Em Agente de IA › Provedores › Voz do agente, a escolha de voz continuava na
   tela mesmo sem credencial do ElevenLabs validada: dava para colar um Voice ID e
