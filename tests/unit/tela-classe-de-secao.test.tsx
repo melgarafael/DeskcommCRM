@@ -110,6 +110,14 @@ describe("o conteúdo diz em que seção a pessoa está", () => {
     // Uma sub-rota do MESMO destino também é da seção dele.
     expect(classeDaSecao("/app/ai/cases")).toBe(CLASSES_DE_SECAO.ia);
     expect(classeDaSecao("/app/settings/tenant/agenda")).toBe(CLASSES_DE_SECAO.organizacao);
+    // Os hubs dos grupos e as subtelas fora do catálogo: o menu os pinta como do grupo.
+    expect(classeDaSecao("/app/settings/profile")).toBe(CLASSES_DE_SECAO.organizacao);
+    expect(classeDaSecao("/app/crm")).toBe(CLASSES_DE_SECAO.crm);
+    expect(classeDaSecao("/app/ai")).toBe(CLASSES_DE_SECAO.ia);
+    expect(classeDaSecao("/app/analise")).toBe(CLASSES_DE_SECAO.analise);
+    expect(classeDaSecao("/app/settings")).toBe(CLASSES_DE_SECAO.organizacao);
+    // Subtela de Configurações que não está no catálogo: cai no hub `/app/settings`.
+    expect(classeDaSecao("/app/settings/atualizacao")).toBe(CLASSES_DE_SECAO.organizacao);
   });
 
   it("(b) a classe muda quando a rota muda, e a anterior sai do <main>", () => {

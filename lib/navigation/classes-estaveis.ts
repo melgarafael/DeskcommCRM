@@ -21,7 +21,7 @@
  * Tailwind. Aquelas mudam com o design; estas existem só para dar um alvo
  * estável ao CSS do cliente.
  */
-import { NAV_CATALOG, type NavGroupId } from "./catalogo";
+import { NAV_CATALOG, NAV_GROUPS, type NavGroupId } from "./catalogo";
 import { classeDaSecaoDoGrupo } from "./secoes-da-tela";
 
 export { CLASSE_DA_SECAO, CLASSES_DE_SECAO } from "./secoes-da-tela";
@@ -78,18 +78,27 @@ export const CLASSES_DE_ITEM: Readonly<Record<string, string>> = Object.freeze(
  * tela de casos, não o hub `/app/ai`, e `tela-secao-ia` sai igual nos dois porque
  * o grupo é o mesmo.
  *
- * Rota fora do registro (hub sem entrada, tela solta, onboarding) devolve `null`:
+ * Os HUBS dos grupos (`NAV_GROUPS[].hub`: `/app/crm`, `/app/ai`, `/app/analise`,
+ * `/app/settings`) também são candidatos: o menu os pinta como do grupo, e as
+ * subtelas de `/app/settings` fora do catálogo (`/app/settings/atualizacao`, etc.) caem no
+ * hub pela mesma régua do href mais longo.
+ *
+ * Rota fora do registro (tela solta, onboarding) devolve `null`:
  * o `<main>` fica só com `tela-secao`, como a issue pede — inventar uma seção a
  * partir do primeiro segmento daria nomes que nenhum cliente conhece.
  */
 export function classeDaSecao(pathname: string): string | null {
   const caminho = pathname.replace(/\/+$/, "") || "/";
+  const candidatos = [
+    ...NAV_CATALOG.map((destino) => ({ href: destino.href, grupo: destino.group })),
+    ...NAV_GROUPS.flatMap((grupo) =>
+      grupo.hub ? [{ href: grupo.hub.href, grupo: grupo.id }] : [],
+    ),
+  ];
   let casado: { href: string; grupo: NavGroupId } | null = null;
-  for (const destino of NAV_CATALOG) {
-    if (caminho !== destino.href && !caminho.startsWith(`${destino.href}/`)) continue;
-    if (casado === null || destino.href.length > casado.href.length) {
-      casado = { href: destino.href, grupo: destino.group };
-    }
+  for (const candidato of candidatos) {
+    if (caminho !== candidato.href && !caminho.startsWith(`${candidato.href}/`)) continue;
+    if (casado === null || candidato.href.length > casado.href.length) casado = candidato;
   }
   return casado ? classeDaSecaoDoGrupo(casado.grupo) : null;
 }
