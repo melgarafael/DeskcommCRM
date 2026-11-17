@@ -3,11 +3,12 @@
 import { useT } from "@/hooks/i18n/useT";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { useAttendantMetrics, type AttendantMetric } from "@/hooks/metrics/useAttendantMetrics";
 import { EmptyState } from "@/components/empty/EmptyState";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatarDuracao } from "@/lib/metrics/canais";
-import { WarningOctagon } from "@/lib/ui/icons";
+import { DownloadSimple, WarningOctagon } from "@/lib/ui/icons";
 import { AtritoPanel } from "./AtritoPanel";
 import { CanaisPanel } from "./CanaisPanel";
 import { MetaDoMesPanel, type EstadoDaMeta } from "./MetaDoMesPanel";
@@ -60,6 +61,24 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
   const { data, isLoading, isError, refetch } = useAttendantMetrics(selectedOwner);
   // Opções do filtro: só manager+ (a rota /team é manager+). Agent nem vê o filtro.
   const team = useTeamMembers({ enabled: canCompare });
+
+  // O MESMO gate da rota de exportação (`requireRole("manager")`, o piso de
+  // `contacts/export` e `audit/export`): um botão que só devolve 403 é
+  // armadilha — quem não pode exportar nem vê a porta.
+  const podeExportar = canCompare;
+
+  /**
+   * Exportar é exportar o QUE A TELA ESTÁ MOSTRANDO (#4802, item 5): o
+   * atendente escolhido no filtro viaja na query, e o arquivo sai com os MESMOS
+   * números da tabela abaixo — a rota chama a mesma leitura desta tela
+   * (`lib/relatorios/vendas.ts`), não um recálculo. O
+   * `Content-Disposition: attachment` da resposta faz o navegador baixar, o
+   * mesmo gesto do "Exportar CSV" de Contatos e do Audit Log.
+   */
+  const exportarVendas = () => {
+    const qs = selectedOwner ? `?owner_user_id=${encodeURIComponent(selectedOwner)}` : "";
+    window.location.href = `/api/v1/reports/vendas/export${qs}`;
+  };
 
   // A meta é MENSAL e a janela é o mês corrente de quem está olhando a tela
   // (o mês é o dele, não um instante UTC — ver `lib/metas/periodo.ts`). Fixada
@@ -151,6 +170,18 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
                 ))}
             </SelectContent>
           </Select>
+          {/*
+            A porta do RELATÓRIO para fora da tela (#4802, item 5). Fica colada
+            no filtro de propósito: é o recorte VISÍVEL que sai no arquivo, e um
+            botão longe do filtro sugeriria que o arquivo é sempre o mundo
+            inteiro. O plano de papel é o mesmo da rota — agent não vê a porta.
+          */}
+          {podeExportar ? (
+            <Button variant="outline" onClick={exportarVendas}>
+              <DownloadSimple size={16} weight="bold" aria-hidden />
+              <span>{t("Exportar vendas")}</span>
+            </Button>
+          ) : null}
         </div>
       ) : null}
 

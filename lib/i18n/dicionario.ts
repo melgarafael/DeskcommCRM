@@ -12565,6 +12565,8 @@ export const DICIONARIO: Traducoes = {
   "\"—\" significa que não houve dado suficiente para medir, e não que o valor seja zero.": { es: "\"—\" significa que no hubo datos suficientes para medir, no que el valor sea cero." },
   "Erro ao carregar métricas.": { es: "Error al cargar las métricas." },
   "Todos os atendentes": { es: "Todos los asesores" },
+  // #4802, item 5 — a porta do relatório de vendas para fora da tela.
+  "Exportar vendas": { es: "Exportar ventas" },
   "(você)": { es: "(tú)" },
   "Nenhuma etapa configurada.": { es: "Ninguna etapa configurada." },
   "Performance por atendente": { es: "Rendimiento por asesor" },
