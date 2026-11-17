@@ -32,10 +32,33 @@ export const KIND_ASSINATURA_DESCONECTADA = "assinatura_desconectada" as const;
 export const TITULO_DO_AVISO_DE_ASSINATURA =
   "A conta do ChatGPT desconectou — a IA parou de responder";
 
+/**
+ * O título do aviso de "a IA inteira está fora" (#4610). É ele que separa, na
+ * MESMA linha da Central, o episódio em que o login caiu daquele em que as duas
+ * credenciais — assinatura e reserva — recusaram a chamada.
+ */
+export const TITULO_DA_IA_FORA = "A IA parou de responder — a assinatura e a reserva falharam";
+
 /** O item aberto desta organização, se houver — um incidente = um item. */
 export interface ItemDaAssinaturaAberto {
   id: string;
   body: string | null;
+  /** Ausente nos itens de clone antigo e nos dublês que só carregam `body`. */
+  title?: string | null;
+}
+
+/**
+ * Um lado da falha, **já redigido e truncado** pelo `normalizarErro` do seam.
+ *
+ * Este módulo é puro e NÃO redige nada: quem o chama entrega a mensagem que já
+ * passou por `redigirMensagemDoProvedor`. Duas redações em série seriam duas
+ * réguas, e a segunda apagaria o que a primeira deixou de propósito.
+ */
+export interface LadoQueFalhou {
+  provider: string;
+  http_status: number | null;
+  error_code: string;
+  error_message: string;
 }
 
 /** O que a decisão precisa saber. Nada de token, nada de mensagem do provedor. */
@@ -52,6 +75,23 @@ export interface SituacaoDaAssinatura {
    * se anuncia conta desconectada, porque reconectar não conserta nada.
    */
   recusa: string | null;
+  /**
+   * A IA INTEIRA FICOU FORA (#4610): a assinatura caiu **e** a reserva também
+   * falhou. Os dois lados entram no corpo, nomeados — foi a leitura de um só
+   * deles que, no incidente de 06/11, mandou trocar a chave errada.
+   *
+   * Ausente/`null` = o caso de sempre, em que só o login recusou.
+   */
+  iaFora?: { assinatura: LadoQueFalhou; reserva: LadoQueFalhou } | null;
+  /**
+   * Como a IA voltou. `true` = uma CHAMADA passou (o login pode seguir
+   * quebrado, com a reserva atendendo); ausente/`false` = o login voltou.
+   *
+   * Só muda a frase do fechamento e o alcance dele: uma chamada que passa
+   * fecha o item do episódio "IA fora" e **não** o item de login, porque o
+   * segundo continua verdadeiro enquanto a conta não for reconectada.
+   */
+  voltaPorChamada?: boolean;
 }
 
 export type DecisaoDoAvisoDaAssinatura =
@@ -122,12 +162,69 @@ export const CORPO_DA_RESOLUCAO_DA_ASSINATURA =
   "Resolvido pelo sistema: o login da conta foi renovado e a IA voltou a responder.";
 
 /**
+ * O fechamento quando foi uma CHAMADA que voltou a passar (#4610). Diz o que de
+ * fato aconteceu: no incidente de 06/11 a IA voltou sozinha, sem ninguém
+ * reconectar nada — anunciar "login renovado" ali seria inventar um conserto.
+ */
+export const CORPO_DA_RESOLUCAO_PELA_CHAMADA =
+  "Resolvido pelo sistema: uma chamada de IA voltou a passar e os agentes voltaram a responder.";
+
+/**
+ * O corpo do aviso de "a IA inteira está fora" (#4610).
+ *
+ * Sequência do incidente: a assinatura passou a recusar todas as chamadas e a
+ * chave de reserva também falhou. Ninguém disse isso a ninguém — a Central
+ * mostrava só um `job_dead` genérico. Este corpo diz as três coisas que quem
+ * administra precisa: QUEM recusou, com que motivo, e que o cliente está sem
+ * resposta agora.
+ *
+ * Os dois motivos chegam já redigidos e truncados pelo `normalizarErro`; aqui só
+ * se dá NOME a cada lado. Sem o nome, a leitura aponta para a chave errada —
+ * exatamente o que aconteceu quando só a metade da reserva aparecia.
+ */
+export function corpoDoAvisoDaIaFora(
+  d: {
+    assinatura: LadoQueFalhou;
+    reserva: LadoQueFalhou;
+  },
+  idioma: Idioma = "pt-BR",
+): string {
+  // No idioma da ORGANIZAÇÃO, como o resto deste arquivo (#4724); pt-BR é o texto de antes.
+  const t = (s: string) => traduzir(s, idioma);
+  const lado = (l: LadoQueFalhou): string =>
+    `${l.provider} — ${l.error_code} (HTTP ${l.http_status ?? t("sem status")}): ${l.error_message.slice(0, 240)}`;
+  return (
+    t("As duas credenciais de IA desta empresa recusaram a chamada:") +
+    "\n\n" +
+    preencher(t("• assinatura: {lado}"), { lado: lado(d.assinatura) }) +
+    "\n" +
+    preencher(t("• reserva: {lado}"), { lado: lado(d.reserva) }) +
+    "\n\n" +
+    t(
+      "Sem nenhum provedor de pé, os agentes não respondem aos clientes que escrevem — as mensagens chegam e ficam " +
+        "sem resposta. O problema NÃO é a cota de mensagens do WhatsApp.",
+    ) +
+    "\n\n" +
+    t(
+      "Para voltar: reconecte a conta em IA › Credenciais e confira a chave de reserva em Agente de IA › Provedores. " +
+        "Este aviso se fecha sozinho quando uma chamada de IA voltar a passar.",
+    )
+  );
+}
+
+/**
  * A decisão, para UMA organização, num instante.
  *
- * A ordem importa: o login voltando resolve SEMPRE (inclusive item aberto por um
- * incidente anterior), e só a recusa de LOGIN abre item. Recusa que não é de
- * login (`recusa === null`) não pode anunciar conta desconectada — mandaria o
- * operador reconectar uma conta que está boa.
+ * A ordem importa, e é ela que separa os dois episódios do MESMO item:
+ *
+ *  1. o login voltando resolve o item aberto (inclusive o de um incidente
+ *     anterior) — mas, quando a volta é por CHAMADA (`voltaPorChamada`), só o
+ *     item do episódio "IA fora" fecha;
+ *  2. as DUAS pontas fora (`iaFora`) abrem/atualizam com o texto completo, que
+ *     nomeia assinatura e reserva;
+ *  3. só a recusa de LOGIN abre o texto da conta desconectada. Recusa que não é
+ *     de login (`recusa === null`) não pode anunciar conta desconectada —
+ *     mandaria o operador reconectar uma conta que está boa.
  */
 export function avaliarAvisoDaAssinatura(
   situacao: SituacaoDaAssinatura,
@@ -137,9 +234,19 @@ export function avaliarAvisoDaAssinatura(
 ): DecisaoDoAvisoDaAssinatura {
   if (situacao.conectada) {
     if (!item) return { acao: "nada" };
+    // Uma chamada que passou fecha o episódio "IA fora" — e só ele. O item de
+    // LOGIN continua aberto enquanto a conta não for reconectada, porque a
+    // reserva responder não conserta o login: fechá-lo aqui esconderia a conta
+    // quebrada atrás de uma IA que voltou pela chave paga.
+    if (
+      situacao.voltaPorChamada === true &&
+      item.title !== TITULO_DA_IA_FORA &&
+      item.title !== traduzir(TITULO_DA_IA_FORA, idioma)
+    )
+      return { acao: "nada" };
     const anterior = (item.body ?? "").trim();
     const resolucao = traduzir(
-      "Resolvido pelo sistema: o login da conta foi renovado e a IA voltou a responder.",
+      situacao.voltaPorChamada === true ? CORPO_DA_RESOLUCAO_PELA_CHAMADA : CORPO_DA_RESOLUCAO_DA_ASSINATURA,
       idioma,
     );
     return {
@@ -147,6 +254,13 @@ export function avaliarAvisoDaAssinatura(
       item,
       corpo: anterior === "" ? resolucao : `${anterior}\n\n${resolucao}`,
     };
+  }
+  // As DUAS pontas fora é o caso mais informativo e vence o de login: o corpo
+  // nomeia assinatura e reserva, e é ele que quem investiga precisa ler.
+  if (situacao.iaFora) {
+    const corpo = corpoDoAvisoDaIaFora(situacao.iaFora, idioma);
+    const titulo = traduzir(TITULO_DA_IA_FORA, idioma);
+    return item ? { acao: "atualizar", item, titulo, corpo } : { acao: "abrir", titulo, corpo };
   }
   if (situacao.recusa === null) return { acao: "nada" };
   const corpo = corpoDoAvisoDeAssinatura(situacao.recusa, idioma);

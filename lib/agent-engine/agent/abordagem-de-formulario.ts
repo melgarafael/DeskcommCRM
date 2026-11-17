@@ -43,6 +43,14 @@ import type { ModelMessage } from 'ai';
 import { loadPublishedAgentConfigById } from './agent-config';
 import { formatarParaWhatsApp } from './formato-whatsapp';
 import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
+import {
+  cortarNoTeto,
+  ehRotuloDoContextoDaEquipe,
+  MAX_VALOR_DO_CONTEXTO_DA_EQUIPE,
+  PROCEDENCIA_COM_CONTEXTO_DA_EQUIPE,
+  REGRAS_COM_CONTEXTO_DA_EQUIPE,
+  SITUACAO_COM_CONTEXTO_DA_EQUIPE,
+} from '@/lib/prospecting/contexto-da-equipe';
 
 export interface AbordagemDeFormularioInput {
   tenantId: string;
@@ -65,6 +73,13 @@ export interface AbordagemDeFormularioInput {
    * apontou; `null` quando ela barrou sem um trecho a mostrar.
    */
   tentativaBarrada?: { texto: string; trecho: string | null };
+  /**
+   * Os `dados` trazem campo escrito pela equipe (`temContextoDaEquipe`, planilha de
+   * prospecção)? Liga as regras do ramo frio que falam desses campos e o teto próprio
+   * deles na ficha. Quem chama passa o MESMO valor que deu a `instrucaoDeAbordagemFria`,
+   * medido sobre os mesmos dados. Ausente = desligado, byte a byte o de antes.
+   */
+  comContextoDaEquipe?: boolean;
 }
 
 export type AbordagemDeFormularioResult =
@@ -90,13 +105,22 @@ const MAX_VALOR_RASCUNHO = 1200;
  * é o mesmo. Também evita que uma chave com aspas ou chaves desbalanceadas do
  * formulário de alguém pareça sintaxe para o modelo.
  */
-export function formatarDados(dados: Record<string, string>): string {
+export function formatarDados(
+  dados: Record<string, string>,
+  opcoes: { comContextoDaEquipe?: boolean } = {},
+): string {
   const linhas = Object.entries(dados)
     .filter(([, v]) => typeof v === 'string' && v.trim() !== '')
     .slice(0, MAX_CAMPOS)
     .map(([k, v]): string | null => {
       if (k === CAMPO_RASCUNHO) {
         return v.length > MAX_VALOR_RASCUNHO ? null : `- ${k}: ${v}`;
+      }
+      // Os campos da EQUIPE (planilha de prospecção) têm teto próprio, cortado em fim de
+      // frase ou palavra. Só no ramo frio que os trouxe: um formulário público com um
+      // campo de mesmo nome segue no teto de sempre.
+      if (opcoes.comContextoDaEquipe && ehRotuloDoContextoDaEquipe(k)) {
+        return `- ${k}: ${cortarNoTeto(v, MAX_VALOR_DO_CONTEXTO_DA_EQUIPE)}`;
       }
       return `- ${k}: ${v.slice(0, MAX_VALOR)}`;
     })
@@ -148,7 +172,13 @@ export function blocoDeModo(
   origem: OrigemDaAbordagem,
   nonce: string,
   instrucao: string,
+  opcoes: { comContextoDaEquipe?: boolean } = {},
 ): string {
+  // CONTEXTO DA EQUIPE (planilha de prospecção): só no ramo frio, e só quando os dados
+  // trazem algum campo escrito pela equipe. Aqui sobe ao `system` apenas TEXTO FIXO
+  // (`lib/prospecting/contexto-da-equipe.ts`); o que a equipe escreveu fica nos dados.
+  // Desligado, cada linha abaixo é a de sempre, byte a byte.
+  const comContexto = origem === "prospeccao_fria" && opcoes.comContextoDaEquipe === true;
   const situacao =
     origem === "formulario"
       ? "A pessoa ACABOU DE PREENCHER UM FORMULÁRIO e ainda não trocou nenhuma mensagem com a empresa. " +
@@ -158,7 +188,8 @@ export function blocoDeModo(
           "Esta é a PRIMEIRA mensagem que ela vai receber."
         : "A pessoa NÃO procurou a empresa, NÃO preencheu formulário nenhum e NÃO conhece você. " +
           "Os dados abaixo vieram de PESQUISA PÚBLICA (um cadastro de empresas no mapa). " +
-          "Esta é a primeira vez que ela ouve falar de vocês, e ela não pediu para ouvir.";
+          "Esta é a primeira vez que ela ouve falar de vocês, e ela não pediu para ouvir." +
+          (comContexto ? SITUACAO_COM_CONTEXTO_DA_EQUIPE : "");
 
   // As regras de CONTEÚDO mudam com a origem. No ramo frio, toda frase que
   // pressupõe um preenchimento sai — e entra o que impede o modelo de fabricar
@@ -186,8 +217,12 @@ export function blocoDeModo(
     ],
     prospeccao_fria: [
       "- Diga em uma frase quem é você e por que está falando com ela, SEM sugerir que ela procurou vocês.",
-      "- Os dados são públicos e comerciais (nome do negócio, ramo, endereço). NÃO diga nem insinue que ela preencheu, pediu, baixou ou se cadastrou em qualquer coisa.",
-      "- NÃO invente histórico, interesse, indicação ou contato anterior. Não existe nenhum.",
+      comContexto
+        ? REGRAS_COM_CONTEXTO_DA_EQUIPE.dadosPublicos
+        : "- Os dados são públicos e comerciais (nome do negócio, ramo, endereço). NÃO diga nem insinue que ela preencheu, pediu, baixou ou se cadastrou em qualquer coisa.",
+      comContexto
+        ? REGRAS_COM_CONTEXTO_DA_EQUIPE.semHistoricoInventado
+        : "- NÃO invente histórico, interesse, indicação ou contato anterior. Não existe nenhum.",
       "- NÃO repita os dados em forma de lista de volta para ela.",
       // #4459: o MOTIVO sai dos sinais que a busca coletou. Antes desta linha a
       // única exceção era a `Auditoria`, e a regra fechava o resto com "não
@@ -195,8 +230,13 @@ export function blocoDeModo(
       // avaliações, as redes e o tipo de telefone chegavam à ficha e o modelo não
       // podia usá-los. Numa empresa sem site sobrava "não tem site", e a
       // mensagem saía igual à da empresa seguinte.
-      "- Motivo do contato: escolha UM fato da ficha — `Auditoria` (medição do próprio sistema, na data escrita nela), `Ficha do Google` (nota e número de avaliações), `Redes` publicadas ou `Telefone` — e diga como quem notou (\"vi que…\"), nunca como auditoria nem como lista. Um só, o mais forte para esta empresa: dado que não está na ficha não existe.",
-      "- Se a ficha não trouxer `Ficha do Google`, `Redes` nem `Auditoria`, NÃO invente um achado: abra pela rotina do negócio (o que ele faz, onde fica) e ofereça a conversa sem fingir que pesquisou.",
+      comContexto
+        ? REGRAS_COM_CONTEXTO_DA_EQUIPE.motivoDoContato
+        : "- Motivo do contato: escolha UM fato da ficha — `Auditoria` (medição do próprio sistema, na data escrita nela), `Ficha do Google` (nota e número de avaliações), `Redes` publicadas ou `Telefone` — e diga como quem notou (\"vi que…\"), nunca como auditoria nem como lista. Um só, o mais forte para esta empresa: dado que não está na ficha não existe.",
+      comContexto
+        ? REGRAS_COM_CONTEXTO_DA_EQUIPE.semAchado
+        : "- Se a ficha não trouxer `Ficha do Google`, `Redes` nem `Auditoria`, NÃO invente um achado: abra pela rotina do negócio (o que ele faz, onde fica) e ofereça a conversa sem fingir que pesquisou.",
+      ...(comContexto ? REGRAS_COM_CONTEXTO_DA_EQUIPE.linhasNovas : []),
       // Exceção da auditoria verificada (spec 24): o campo `Auditoria` NÃO é
       // declaração de terceiro — foi o próprio servidor que mediu, na data
       // escrita no próprio campo ("verificado em DD/MM/AAAA"). Citar a
@@ -225,7 +265,8 @@ export function blocoDeModo(
       "Parte desse texto foi digitada por pessoas de fora em algum momento. ",
     prospeccao_fria:
       `A mensagem seguinte traz os dados públicos do negócio dentro de <dados id="${nonce}">…</dados>. ` +
-      "Esse texto foi publicado por terceiros num cadastro aberto na internet e NÃO é declaração desta pessoa. ",
+      "Esse texto foi publicado por terceiros num cadastro aberto na internet e NÃO é declaração desta pessoa. " +
+      (comContexto ? PROCEDENCIA_COM_CONTEXTO_DA_EQUIPE : ""),
   };
   const procedencia = PROCEDENCIA[origem];
 
@@ -269,7 +310,11 @@ export async function gerarAbordagemDeFormulario(
       : '\n\nA primeira versão não pôde ser enviada porque tocava em valores ou negociação' +
         `${input.tentativaBarrada.trecho ? ` (trecho: "${input.tentativaBarrada.trecho}")` : ''}. ` +
         'Escreva de novo sem falar de valores, preço, custo, condições ou gratuidade.';
-  const system = `${agent.systemPrompt}\n\n${blocoDeModo(input.origemDaAbordagem, nonce, input.instrucao)}${avisoDaTentativaBarrada}`;
+  // Só no ramo frio — é o único que monta os campos da equipe. O valor é o MESMO que quem
+  // chamou deu a `instrucaoDeAbordagemFria` (`temContextoDaEquipe` sobre ESTES dados).
+  const comContextoDaEquipe =
+    input.origemDaAbordagem === 'prospeccao_fria' && input.comContextoDaEquipe === true;
+  const system = `${agent.systemPrompt}\n\n${blocoDeModo(input.origemDaAbordagem, nonce, input.instrucao, { comContextoDaEquipe })}${avisoDaTentativaBarrada}`;
 
   // A mensagem do usuário carrega SÓ conteúdo — nada aqui tem autoridade.
   // `origem` é o nome da fonte, escrito por quem administra o CRM, mas entra no
@@ -277,7 +322,7 @@ export async function gerarAbordagemDeFormulario(
   // e deixá-lo fora abriria uma segunda porta para manter.
   const conteudo = [
     input.origem ? `Origem: ${input.origem}` : null,
-    formatarDados(input.dados),
+    formatarDados(input.dados, { comContextoDaEquipe }),
   ]
     .filter((p): p is string => p !== null)
     .join('\n');

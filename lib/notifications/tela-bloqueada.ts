@@ -11,7 +11,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { traduzir } from "@/lib/i18n/dicionario";
 import { normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
-import { conteudoNaTelaBloqueada, type ConteudoNaTelaBloqueada } from "@/lib/schemas/settings";
+import { conteudoNaTelaBloqueada, corPorCanalLigada, type ConteudoNaTelaBloqueada } from "@/lib/schemas/settings";
 
 import type { PushPayload } from "./push_payload";
 
@@ -47,13 +47,33 @@ export function redigirParaATelaBloqueada(
  * organização inexistente escondem o conteúdo (`oculto`) em vez de calar o
  * aviso: ele sai, só que sem dizer quem nem o quê.
  */
+export async function lerOpcoesDoAviso(
+  db: Pick<SupabaseClient, "from">,
+  orgId: string,
+): Promise<{ modo: ConteudoNaTelaBloqueada; idioma: Idioma; corPorCanal: boolean }> {
+  const { data, error } = await db.from("organizations").select("settings, locale").eq("id", orgId).maybeSingle();
+  const linha = data as { settings?: unknown; locale?: string | null } | null;
+  const idioma = normalizarIdioma(linha?.locale ?? null);
+  // Falha de leitura: o aviso sai neutro (a cor é enfeite; o conteúdo é o que
+  // não pode vazar), e o idioma fica o da organização quando ela é conhecida.
+  if (error || !linha) return { modo: "oculto", idioma, corPorCanal: false };
+  return {
+    modo: conteudoNaTelaBloqueada(linha.settings),
+    idioma,
+    corPorCanal: corPorCanalLigada(linha.settings),
+  };
+}
+
+/**
+ * Só o que a bandeja do sistema mostra. Continua existindo porque o funil do
+ * push (`./web_push.ts`) não pinta nada: a decisão sobre a cor do aviso é da
+ * tela, e quem precisa das duas opções de uma vez usa `lerOpcoesDoAviso` —
+ * UMA leitura, não duas.
+ */
 export async function lerTelaBloqueada(
   db: Pick<SupabaseClient, "from">,
   orgId: string,
 ): Promise<{ modo: ConteudoNaTelaBloqueada; idioma: Idioma }> {
-  const { data, error } = await db.from("organizations").select("settings, locale").eq("id", orgId).maybeSingle();
-  const linha = data as { settings?: unknown; locale?: string | null } | null;
-  const idioma = normalizarIdioma(linha?.locale ?? null);
-  if (error || !linha) return { modo: "oculto", idioma };
-  return { modo: conteudoNaTelaBloqueada(linha.settings), idioma };
+  const { modo, idioma } = await lerOpcoesDoAviso(db, orgId);
+  return { modo, idioma };
 }
