@@ -217,6 +217,12 @@ const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validado
   // do nome nem da URL) e o `org`/`produto` são uuids já resolvidos. Nenhum
   // texto da planilha entra na chave — a URL do cliente só escolhe o conteúdo.
   { arquivo: "lib/catalogo/fotos-por-url.ts", fronteira: "storage.chave-de-objeto" },
+  // O arquivo da primeira abordagem enviado pela tela (#4751): a chave é
+  // `{org}/prospecting/<uuid>.<ext>`. O org vem da AUTORIZAÇÃO (nunca do corpo),
+  // o uuid nasce na rota (`randomUUID`) e a extensão sai do tipo farejado nos
+  // BYTES — nada digitado pelo operador entra na chave. A pasta `prospecting/`
+  // não pertence a conversa nenhuma: o worker assina o caminho como está.
+  { arquivo: "app/api/v1/prospecting/arquivo/route.ts", fronteira: "storage.chave-de-objeto" },
   // Chave de idempotência: os geradores (manda UUID) e os validadores (exige UUID).
   { arquivo: "app/onboarding/connect-whatsapp/_client.tsx", fronteira: "api.idempotency-key", papel: "gerador" },
   { arquivo: "components/extensions/ExtensionsManager.tsx", fronteira: "api.idempotency-key", papel: "gerador" },
