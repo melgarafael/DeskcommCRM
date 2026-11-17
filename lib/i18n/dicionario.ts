@@ -1370,6 +1370,11 @@ export const DICIONARIO: Traducoes = {
   "Ex.: clientes da feira X, lista da associação Y": { es: "Ej.: clientes de la feria X, lista de la asociación Y" },
   "Aceita .csv ou .xlsx (primeira aba), até 500 empresas. Colunas obrigatórias: nome da empresa e telefone. Quem já é contato do CRM não é abordado. Nenhuma abordagem começa nesta etapa.": { es: "Acepta .csv o .xlsx (primera hoja), hasta 500 empresas. Columnas obligatorias: nombre de la empresa y teléfono. Quien ya es contacto del CRM no recibe abordaje. Ningún abordaje comienza en esta etapa." },
   "Baixar modelo": { es: "Descargar modelo" },
+  // #4459 parte 2 — as colunas opcionais da planilha e o aviso do que pode virar fato.
+  "Colunas opcionais, com o que a sua equipe já sabe de cada empresa: Diagnóstico, Oferta (o que oferecer) e Contexto.": {
+    es: "Columnas opcionales, con lo que tu equipo ya sabe de cada empresa: Diagnóstico, Oferta (qué ofrecer) y Contexto.",
+  },
+  'O que você escrever em Contexto (uma indicação, um encontro, uma conversa) e em Diagnóstico (o que qualquer um vê de fora, como site, Google e redes) pode aparecer na primeira mensagem como fato. Escreva só o que é verdade. Recados para a equipe, como "falar com calma", não aparecem na mensagem. Não escreva CPF nem telefone de pessoas.': { es: 'Lo que escribas en Contexto (una recomendación, un encuentro, una conversación) y en Diagnóstico (lo que cualquiera ve desde afuera, como el sitio, Google y las redes) puede aparecer en el primer mensaje como un hecho. Escribe solo lo que es verdad. Los recados para el equipo, como "hablar con calma", no aparecen en el mensaje. No escribas CPF ni teléfonos de personas.' },
   // #4360 — a lista da campanha de volta em CSV: só as não abordadas ou todas,
   // com a situação de cada empresa (a situação sai no idioma da organização).
   "Baixar lista": { es: "Descargar lista" },
@@ -15278,6 +15283,9 @@ export const DICIONARIO: Traducoes = {
   "A mensagem citada não é desta conversa.": {
     es: "El mensaje citado no es de esta conversación.",
   },
+  "A mensagem citada foi apagada e não pode ser citada. Envie a resposta sem citá-la.": {
+    es: "El mensaje citado fue eliminado y no se puede citar. Envía la respuesta sin citarlo.",
+  },
   "Este número foi excluído da Central de Conexões.": {
     es: "Este número fue eliminado de la Central de Conexiones.",
   },
@@ -17267,6 +17275,7 @@ export const DICIONARIO: Traducoes = {
   "Nenhuma conversa ou ligação nos outros números ainda.": {
     es: "Todavía no hay conversaciones ni llamadas en los otros números.",
   },
+  "Cursor de paginação inválido.": { es: "Cursor de paginación inválido." },
   // "Recebida" já existe mais abaixo (veio pela main, com o mesmo espanhol):
   // repetir a chave aqui é TS1117.
   Feita: { es: "Realizada" },
@@ -20225,6 +20234,7 @@ export const DICIONARIO: Traducoes = {
   "Buscar opções": { es: "Buscar opciones" },
   "Nenhuma opção casa com a busca.": { es: "Ninguna opción coincide con la búsqueda." },
   "Mostrar mais opções": { es: "Mostrar más opciones" },
+  "Mostrar mais": { es: "Mostrar más" },
   "Editar vocabulário e campos deste funil": { es: "Editar vocabulario y campos de este embudo" },
   "Esse valor não está na lista. Escolha uma das opções.": {
     es: "Ese valor no está en la lista. Elija una de las opciones.",

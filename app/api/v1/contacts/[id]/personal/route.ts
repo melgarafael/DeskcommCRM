@@ -51,8 +51,10 @@ type Context = { params: Promise<{ id: string }> };
  * campanha nem prospecção (D8 — espelha o desbloqueio, que também não reativa o
  * que o bloqueio cancelou), e também não reingere o que saiu do acervo: a
  * conversa volta ao RAG quando alguém a marcar de novo como útil. Quem marcou e
- * quando fica só em auditoria + timeline, sem coluna extra no contato
- * (spec §3.6).
+ * quando continua em auditoria + timeline (spec §3.6); desde a #4434 a coluna
+ * `personal_owner_user_id` guarda a POSSE — quem marcou —, porque é ela que
+ * decide quem lê e responde a conversa. Marcar contato legado sem dono ADOTA;
+ * desmarcar zera.
  *
  * ## Ordem dos efeitos do marcar (fixa, toda nesta rota)
  *
@@ -187,7 +189,7 @@ export async function POST(req: NextRequest, ctx: Context): Promise<Response> {
   // obrigatório (CLAUDE.md, anti-pattern 10).
   const { data: contato, error: leituraErro } = await admin
     .from("contacts")
-    .select("id, display_name, is_personal")
+    .select("id, display_name, is_personal, personal_owner_user_id")
     .eq("organization_id", authz.organizationId)
     .eq("id", id)
     .maybeSingle();
@@ -205,15 +207,35 @@ export async function POST(req: NextRequest, ctx: Context): Promise<Response> {
   // meio dos efeitos deixaria a prova pela metade para sempre: a retentativa
   // bateria no "já é pessoal" e nunca completaria o que faltou.
   const eraPessoal = (contato as { is_personal?: boolean }).is_personal === true;
+  // #4434 — quem marca é o DONO, e só ele lê e responde o que marcou.
+  //
+  // Contato marcado antes da migration 9360 tem dono nulo. Marcar de novo ADOTA:
+  // sem isso a fila pessoal herdada ficaria órfã para sempre, e o recorte só
+  // prevê uma saída para o pessoal antigo — alguém assumir. Adotar não gera
+  // auditoria nova: o fato "virou pessoal" já está na trilha; o que muda é de
+  // quem é a posse.
+  const donoAtual =
+    (contato as { personal_owner_user_id?: string | null }).personal_owner_user_id ?? null;
+  // Dono é sempre uma PESSOA. Desde a #4142 esta rota aceita token de
+  // integração, e o id de um token não é usuário: quem marca por token deixa o
+  // contato sem dono — fora da operação e invisível para todos, como o legado —
+  // até uma pessoa marcar de novo e adotar.
+  const donoNovo = authz.actor.type === "user" ? authz.actor.id : null;
+  const precisaAdotar = eraPessoal && donoAtual === null && donoNovo !== null;
 
-  let marcado = contato as { id: string; display_name: string | null; is_personal: boolean };
-  if (!eraPessoal) {
+  let marcado = contato as {
+    id: string;
+    display_name: string | null;
+    is_personal: boolean;
+    personal_owner_user_id?: string | null;
+  };
+  if (!eraPessoal || precisaAdotar) {
     const { data, error: updateErro } = await admin
       .from("contacts")
-      .update({ is_personal: true })
+      .update({ is_personal: true, personal_owner_user_id: donoNovo })
       .eq("organization_id", authz.organizationId)
       .eq("id", id)
-      .select("id, display_name, is_personal")
+      .select("id, display_name, is_personal, personal_owner_user_id")
       .maybeSingle();
     if (updateErro || !data) {
       return fail("internal_error", t("Não foi possível marcar o contato como pessoal."), 500, {
@@ -518,7 +540,7 @@ export async function DELETE(req: NextRequest, ctx: Context): Promise<Response> 
   const admin = createAdminClient();
   const { data: contato, error: leituraErro } = await admin
     .from("contacts")
-    .select("id, display_name, is_personal")
+    .select("id, display_name, is_personal, personal_owner_user_id")
     .eq("organization_id", authz.organizationId)
     .eq("id", id)
     .maybeSingle();
@@ -536,10 +558,13 @@ export async function DELETE(req: NextRequest, ctx: Context): Promise<Response> 
 
   const { data: desmarcado, error: updateErro } = await admin
     .from("contacts")
-    .update({ is_personal: false })
+    // #4434: desmarcar ZERA a posse. Sem isso, o contato voltaria a ser
+    // operacional carregando um dono de uma marca que não existe mais — e a
+    // próxima vez que alguém o marcasse herdaria o dono antigo em silêncio.
+    .update({ is_personal: false, personal_owner_user_id: null })
     .eq("organization_id", authz.organizationId)
     .eq("id", id)
-    .select("id, display_name, is_personal")
+    .select("id, display_name, is_personal, personal_owner_user_id")
     .maybeSingle();
   if (updateErro || !desmarcado) {
     return fail("internal_error", t("Não foi possível desmarcar o contato como pessoal."), 500, {

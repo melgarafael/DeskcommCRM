@@ -6,6 +6,7 @@ import {
   autoriaDoUsuario,
   CHAVES_DO_DIAGNOSTICO,
   cnpjInvalido,
+  diagnosticoDoContatoNovo,
   diagnosticoVazio,
   escritoPelaIA,
   gravacaoDaAba,
@@ -301,6 +302,55 @@ describe("gravacaoDaAba — a diferença aplicada sobre a ficha RELIDA", () => {
       diag_por: autoriaDoUsuario(USUARIO),
       diag_em: AGORA.toISOString(),
     });
+  });
+});
+
+describe("diagnosticoDoContatoNovo — o que a equipe escreveu na planilha vira a aba", () => {
+  const EM = "2026-11-12T12:00:00.000Z";
+  const autor = autoriaDoUsuario(USUARIO);
+
+  it("os três textos e a autoria de quem importou", () => {
+    expect(
+      diagnosticoDoContatoNovo({ resumo: "Sem site.", oferta: "Site.", observacoes: "Indicação.", autor, em: EM }),
+    ).toEqual({
+      [CHAVES_DO_DIAGNOSTICO.resumo]: "Sem site.",
+      [CHAVES_DO_DIAGNOSTICO.oferta]: "Site.",
+      [CHAVES_DO_DIAGNOSTICO.observacoes]: "Indicação.",
+      [CHAVES_DO_DIAGNOSTICO.por]: autor,
+      [CHAVES_DO_DIAGNOSTICO.em]: EM,
+    });
+  });
+
+  it("só observação: entra SEM autoria (é recado, não diagnóstico)", () => {
+    expect(diagnosticoDoContatoNovo({ observacoes: "Cliente antigo.", autor, em: EM })).toEqual({
+      [CHAVES_DO_DIAGNOSTICO.observacoes]: "Cliente antigo.",
+    });
+  });
+
+  it("autoria fora do formato ou data ilegível: os textos entram, a autoria não", () => {
+    for (const [a, e] of [
+      ["usuario:nao-e-uuid", EM],
+      ["qualquer coisa", EM],
+      [autor, "ontem"],
+      [null, null],
+    ] as const)
+      expect(diagnosticoDoContatoNovo({ resumo: "Sem site.", autor: a, em: e })).toEqual({
+        [CHAVES_DO_DIAGNOSTICO.resumo]: "Sem site.",
+      });
+  });
+
+  it("chave que a organização tem como campo próprio fica de fora — e a autoria sem texto também", () => {
+    expect(
+      diagnosticoDoContatoNovo(
+        { resumo: "Sem site.", observacoes: "Obs.", autor, em: EM },
+        [CHAVES_DO_DIAGNOSTICO.resumo],
+      ),
+    ).toEqual({ [CHAVES_DO_DIAGNOSTICO.observacoes]: "Obs." });
+  });
+
+  it("sem equipe, ou só com espaços, nada", () => {
+    expect(diagnosticoDoContatoNovo(null)).toEqual({});
+    expect(diagnosticoDoContatoNovo({ resumo: "  ", autor, em: EM })).toEqual({});
   });
 });
 
