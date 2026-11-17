@@ -49,6 +49,7 @@
  * Puro e síncrono onde dá; quem lê banco é `lerJanelaDaConversa`.
  */
 import { estadoDaJanela } from '@/lib/channels/janela';
+import type { Queryable } from '../queue/queue';
 
 /** Quanto o modelo pago espera o cliente escrever, quando ninguém configurou nada. */
 export const CARENCIA_PADRAO_MS = 10_000;
@@ -148,7 +149,7 @@ export function jaEsperouPelaCarencia(payload: unknown): boolean {
  * fecha é pagar modelo à toa, e travar um envio por falta de leitura seria pior.
  */
 export async function lerJanelaDaConversa(
-  db: { query: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }> },
+  db: Queryable,
   alvo: { organizationId: string; conversationId: string; agora: Date },
 ): Promise<LeituraDaJanela | null> {
   const { rows } = await db.query(

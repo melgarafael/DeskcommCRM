@@ -873,7 +873,7 @@ async function runFlowDrivenTurn(
         passoEhModeloPago: true,
         // A reserva da IA tem texto livre no lugar; o passo de modelo puro, não.
         temTextoLivreNoLugar: input.fallbackTemplateId !== undefined && input.templateId === undefined,
-        carenciaMs: carenciaDoAmbiente(deps.knobs?.carenciaDoModeloMs),
+        carenciaMs: carenciaDoAmbiente(deps.knobs.carenciaDoModeloMs),
         janela: await lerJanelaDaConversa(pool, {
           organizationId: target.tenantId,
           conversationId: target.conversationId,

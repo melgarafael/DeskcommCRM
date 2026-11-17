@@ -144,10 +144,20 @@ describe("decidirAntesDoModeloPago — a carência", () => {
 });
 
 describe("decidirAntesDoModeloPago — a reconferência na volta", () => {
-  it("o cliente escreveu em 3 s: a reserva da IA devolve TEXTO LIVRE, nenhum modelo pago", () => {
-    // Relógio controlado: o lead chegou em T0, o cliente escreveu em T0+3 s, o
-    // job volta em T0+10 s. A leitura da volta é a mesma função do código.
-    const janelaNaVolta: LeituraDaJanela = { fechada: false, primeiroContato: true };
+  /**
+   * A volta é medida com a MESMA leitura do código (`lerJanelaDaConversa`), e
+   * não com um `{ fechada }` escrito à mão: é isso que faz a sabotagem de
+   * "reconferir sempre como fechada" derrubar este teste.
+   */
+  it("o cliente escreveu em 3 s: a reserva da IA devolve TEXTO LIVRE, nenhum modelo pago", async () => {
+    // Lead chegou em T0; o cliente escreveu em T0+3 s; o job volta em T0+10 s.
+    const db = dbCom({ ultimo_inbound: emSegundos(3) });
+    const janelaNaVolta = await lerJanelaDaConversa(db as never, {
+      organizationId: ORG,
+      conversationId: CONVERSA,
+      agora: emSegundos(10),
+    });
+    expect(janelaNaVolta).toEqual({ fechada: false, primeiroContato: true });
     expect(
       decidirAntesDoModeloPago({
         passoEhModeloPago: true,
@@ -160,26 +170,39 @@ describe("decidirAntesDoModeloPago — a reconferência na volta", () => {
     ).toEqual({ acao: "texto_livre" });
   });
 
-  it("passo de modelo puro com a janela aberta na volta: DISPENSA o passo (não tem texto livre a mandar)", () => {
+  it("passo de modelo puro com a janela aberta na volta: DISPENSA o passo (não tem texto livre a mandar)", async () => {
+    const db = dbCom({ ultimo_inbound: emSegundos(3) });
+    const janelaNaVolta = await lerJanelaDaConversa(db as never, {
+      organizationId: ORG,
+      conversationId: CONVERSA,
+      agora: emSegundos(10),
+    });
     expect(
       decidirAntesDoModeloPago({
         passoEhModeloPago: true,
         temTextoLivreNoLugar: false,
         carenciaMs: CARENCIA_PADRAO_MS,
-        janela: { fechada: false, primeiroContato: true },
+        janela: janelaNaVolta,
         jaEsperou: true,
         agora: emSegundos(10),
       }),
     ).toMatchObject({ acao: "dispensar" });
   });
 
-  it("janela CONTINUA fechada na volta: modelo pago sai como hoje", () => {
+  it("janela CONTINUA fechada na volta: modelo pago sai como hoje", async () => {
+    // Ninguém escreveu nos 10 s da carência: `last_inbound_at` segue nulo.
+    const db = dbCom({ ultimo_inbound: null });
+    const janelaNaVolta = await lerJanelaDaConversa(db as never, {
+      organizationId: ORG,
+      conversationId: CONVERSA,
+      agora: emSegundos(10),
+    });
     expect(
       decidirAntesDoModeloPago({
         passoEhModeloPago: true,
         temTextoLivreNoLugar: true,
         carenciaMs: CARENCIA_PADRAO_MS,
-        janela: { fechada: true, primeiroContato: true },
+        janela: janelaNaVolta,
         jaEsperou: true,
         agora: emSegundos(10),
       }),
