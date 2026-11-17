@@ -190,7 +190,7 @@
     {
       "from": "operator",
       "to": "candidates",
-      "label": "planilha (CSV/XLSX)"
+      "label": "planilha (CSV/XLSX); diagnóstico, oferta e contexto da equipe assinados por quem importou"
     },
     {
       "from": "discovery",
@@ -200,7 +200,7 @@
     {
       "from": "candidates",
       "to": "crm",
-      "label": "ativação autorizada (o contato nasce com os links)"
+      "label": "ativação autorizada (o contato nasce com os links e a aba Diagnóstico com o texto da equipe)"
     },
     {
       "from": "crm",
@@ -210,7 +210,7 @@
     {
       "from": "queue",
       "to": "inbox",
-      "label": "primeira abordagem"
+      "label": "primeira abordagem (o texto da equipe vai como dado, dentro da cerca)"
     },
     {
       "from": "inbox",

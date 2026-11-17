@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { SiteEnrichment } from "@/lib/prospecting/site-classify";
 import type { PreviaSalva } from "@/lib/prospecting/previa";
+import type { ContextoDaEquipe } from "@/lib/prospecting/contexto-da-equipe";
 import {
   problemaNaMidiaDaAbordagem,
 } from "@/lib/prospecting/midia-da-abordagem";
@@ -421,6 +422,13 @@ export interface Prospect {
    * editada desde a abordagem, e a `config` ainda é o texto com que ela começou.
    */
   briefing?: Partial<CampaignBriefing> | null;
+  /**
+   * O que a EQUIPE já sabe da empresa (colunas `diagnostico`, `oferta` e `contexto` da
+   * planilha), com quem importou e quando (`lib/prospecting/contexto-da-equipe.ts`).
+   * Ausente = a lista não trouxe nada disso (e a busca no Maps nunca traz): a primeira
+   * mensagem e o contato novo saem como antes.
+   */
+  contexto_da_equipe?: ContextoDaEquipe | null;
 }
 
 /**
