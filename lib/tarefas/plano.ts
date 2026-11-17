@@ -44,13 +44,22 @@ import type { Db } from "@/lib/db";
 import {
   criarTarefaInterna,
   recusaDeConfiguracao,
-  type AtribuicaoDaTarefa,
   type ContatoDoPedido,
   type LeadDoPedido,
 } from "@/lib/tarefas/criar-tarefa";
 import { insereAtividadeDoLead } from "@/lib/tarefas/atividade";
 import { LIMITES_DO_PLANO } from "@/lib/tarefas/limites-do-plano";
 import { PRIORIDADES_DA_TAREFA, type PrioridadeDaTarefa } from "@/lib/tarefas/tipos";
+
+/**
+ * A atribuição de um PASSO de plano — as duas formas que `passoSchema` aceita.
+ *
+ * NÃO é `AtribuicaoDaTarefa` inteira: aquele tipo carrega `{ exato }`, que é o
+ * dono LITERAL da ocorrência de uma série (`#4595`) e nunca é escrito à mão num
+ * plano — `passoSchema` recusa. Alargar este campo para o tipo da tarefa fazia
+ * a tela (`planos/_client.tsx`) ler `usuario_id` numa união onde ele não existe.
+ */
+export type AtribuicaoDoPasso = "dono_do_lead" | { usuario_id: string };
 
 /** Um passo, já normalizado: `ordem` SEMPRE preenchida com a posição final. */
 export interface PassoDePlano {
@@ -60,7 +69,7 @@ export interface PassoDePlano {
   /** Dias entre a APLICAÇÃO e o prazo da tarefa — relativo, nunca data solta. */
   vence_em_dias: number;
   prioridade: PrioridadeDaTarefa;
-  atribuir_a: AtribuicaoDaTarefa;
+  atribuir_a: AtribuicaoDoPasso;
 }
 
 export interface PlanoDeTarefas {
@@ -263,7 +272,23 @@ export async function aplicarPlanoDeTarefas(
       ...(requestId ? { requestId } : {}),
       ...(agora ? { agora } : {}),
     });
-    if (!resultado.ok) return { ok: false, codigo: resultado.codigo, erro: resultado.erro };
+    // `ja_existe` NÃO é do domínio do plano: ele só nasce do índice único
+    // `(recurrence_source_id, due_date)`, quando o INSERT de uma OCORRÊNCIA de
+    // série é barrado (`criar-tarefa.ts`) — e nenhum passo de plano é ocorrência,
+    // porque `recurrenceSourceId` não é passado abaixo. Pôr o código em
+    // `CodigoDaAplicacao` prometeria à automação uma recusa que nunca acontece
+    // (e a ação a reportaria como `skipped` sem frase no mapa de motivos). Se
+    // ele chegar aqui, foi gravação recusada: `falha`, com o motivo à vista.
+    if (!resultado.ok) {
+      if (resultado.codigo === "ja_existe") {
+        return {
+          ok: false,
+          codigo: "falha",
+          erro: "ja_existe: o INSERT do passo foi recusado pelo índice de recorrência",
+        };
+      }
+      return { ok: false, codigo: resultado.codigo, erro: resultado.erro };
+    }
     tarefa_ids.push(resultado.tarefa_id);
   }
 
