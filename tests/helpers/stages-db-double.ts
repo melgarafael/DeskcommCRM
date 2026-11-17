@@ -39,6 +39,14 @@ export interface StageRow {
    * configuração, o estado que o radar trata como padrão de 24 h.
    */
   expected_duration_hours: number | null;
+  /**
+   * Chance de fechamento calibrada pela tela de Funis (#2999) e o aviso de
+   * equipe da etapa. Opcionais no dublê porque a etapa anterior a essas colunas
+   * (migration 0426/0440) é `null`/desligada — e é o estado que o caso de
+   * "campo vazio depois de salvar" precisa distinguir de "coluna não lida".
+   */
+  win_probability?: number | null;
+  avisar_na_central?: boolean;
 }
 
 /**
@@ -180,6 +188,8 @@ export interface Escrita {
   /** O corpo como a rota o mandou: linha no update/insert simples, ARRAY no insert multi-linha. */
   patch: Record<string, unknown> | Record<string, unknown>[];
   filtros: Array<[string, unknown]>;
+  /** Cabeçalhos da requisição (`setHeader`) — o gatilho do banco os lê em `request.headers`. */
+  cabecalhos?: Record<string, string>;
 }
 
 export interface DbOpts {
@@ -246,6 +256,18 @@ export interface DbOpts {
    * mensagem", e não o caso comum.
    */
   conversas?: Linha[];
+  /**
+   * `crm_tasks` — o selo de tarefas do card do quadro (#4321). É a tabela que
+   * cresce COM O FILHO (uma dúzia de tarefas por negócio), então é ela que
+   * mede se a leitura por lote prova o próprio fim em vez de aceitar o corte
+   * de `max_rows`.
+   */
+  tasks?: Linha[];
+  /**
+   * `crm_lead_attachments` — o anexo dos campos `file` do funil (#2829), lido
+   * pelo mesmo caminho das tarefas e pelo mesmo motivo.
+   */
+  attachments?: Linha[];
 }
 
 type Linha = Record<string, unknown>;
@@ -284,6 +306,8 @@ export interface Registro {
   /** As tabelas DEPOIS das escritas — é aqui que se confere que os negócios andaram. */
   tabelas: {
     crm_pipelines: Linha[];
+    crm_tasks: Linha[];
+    crm_lead_attachments: Linha[];
     crm_stages: Linha[];
     crm_leads: Linha[];
     crm_lead_activities: Linha[];
@@ -353,6 +377,8 @@ export function makeDb(opts: DbOpts = {}): Registro {
         { id: PIPE, name: "Pedidos", organization_id: opts.pipelineOrg ?? ORG_ID },
       ]) as unknown as Linha[],
       crm_stages: (opts.stages ?? []) as unknown as Linha[],
+      crm_tasks: (opts.tasks ?? []) as unknown as Linha[],
+      crm_lead_attachments: (opts.attachments ?? []) as unknown as Linha[],
       crm_leads: (opts.leads ?? []) as unknown as Linha[],
       crm_lead_activities: [],
       webhook_sources: (opts.webhookSources ?? []) as Linha[],
@@ -413,6 +439,7 @@ export function makeDb(opts: DbOpts = {}): Registro {
     let contar = false;
     let head = false;
     let apagar = false;
+    const cabecalhos: Record<string, string> = {};
     let teto: number | null = null;
     let desde = 0;
 
@@ -505,7 +532,13 @@ export function makeDb(opts: DbOpts = {}): Registro {
       aplica: () => void,
     ): Promise<{ data: unknown; error: unknown; count: number | null }> {
       const i = nEscrita++;
-      registro.escritas.push({ tipo, table, patch: corpo, filtros: [...filtros] });
+      registro.escritas.push({
+        tipo,
+        table,
+        patch: corpo,
+        filtros: [...filtros],
+        ...(Object.keys(cabecalhos).length ? { cabecalhos: { ...cabecalhos } } : {}),
+      });
       registro.eventos.push(`start:${table}:${i}`);
       // Folga real: sem ela, escritas disparadas em paralelo teriam o mesmo
       // intercalamento de um laço sequencial e o teste de ordem não mediria nada.
@@ -586,6 +619,10 @@ export function makeDb(opts: DbOpts = {}): Registro {
       },
       delete: () => {
         apagar = true;
+        return b;
+      },
+      setHeader: (nome: string, valor: string) => {
+        cabecalhos[nome] = valor;
         return b;
       },
       eq: (c: string, v: unknown) => {

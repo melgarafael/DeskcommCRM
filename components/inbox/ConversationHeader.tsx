@@ -23,8 +23,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { JanelaSelo } from "@/components/inbox/JanelaSelo";
 import { ChannelLogo } from "@/components/inbox/ChannelLogo";
-import { Phone, MagnifyingGlass, DotsThree, Pause, Archive, EyeSlash, UserCircle, UsersThree, Robot, Check, DownloadSimple } from "@/lib/ui/icons";
+import { Phone, MagnifyingGlass, DotsThree, Pause, Archive, EyeSlash, UserCircle, UsersThree, Robot, Check, DownloadSimple, CalendarCheck } from "@/lib/ui/icons";
 import { useAuth } from "@/hooks/auth/AuthProvider";
+import { NovaTarefaDaConversa } from "@/components/inbox/NovaTarefaDaConversa";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useReleaseConversation } from "@/hooks/inbox/useReleaseConversation";
 import {
@@ -145,8 +146,13 @@ export function ConversationHeader({
   // A FILA (#3876): o item do ⋯ só levanta a bandeira — o diálogo mora fora do
   // menu, pelo mesmo motivo do convite acima.
   const [filaAberta, setFilaAberta] = useState(false);
+  const [tarefaAberta, setTarefaAberta] = useState(false);
 
   const c = conversation.contacts ?? null;
+  const podeCriarTarefa = Boolean(
+    (user?.is_platform_admin && !user?.support) ||
+      (activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent),
+  );
   /**
    * A TRAVA DE HUMANO MORA NO CONTATO, não na conversa — e é por isso que
    * fechar a conversa não a solta. Enquanto `force_human` for `true`, os três
@@ -436,7 +442,15 @@ export function ConversationHeader({
             recebida, a resposta vai para o número por onde ela chegou; nos outros
             segue pelo principal, e a linha não aparece. */}
         {endereco?.has_extras && c?.phone_number && endereco.follows_last_inbound && endereco.phone_number && (
-          <p className="mt-0.5 min-w-0 truncate text-xs text-muted-foreground max-md:hidden" data-testid="resposta-sai-por">
+          // O `truncate` corta o número na largura de 768 px com o menu aberto
+          // (#4242, item 3), e a linha existe justamente para dizer o número
+          // inteiro: o `title` é onde ele continua legível quando o corte
+          // acontece.
+          <p
+            className="mt-0.5 min-w-0 truncate text-xs text-muted-foreground max-md:hidden"
+            data-testid="resposta-sai-por"
+            title={`${t("A resposta sai por:")} ${phoneForDisplay(endereco.phone_number)}`}
+          >
             {t("A resposta sai por:")} {phoneForDisplay(endereco.phone_number)}
           </p>
         )}
@@ -670,6 +684,16 @@ export function ConversationHeader({
                 por outro canal. Grupos não representam uma pessoa para ligar. */}
             {!conversation.is_group && c?.id && (
               <DialButton contactId={c.id} hasPhone={!!c.phone_number} comoItemDeMenu />
+            )}
+            {c?.id && podeCriarTarefa && (
+              <DropdownMenuItem
+                data-testid="acao-criar-tarefa"
+                title={t("Cria uma tarefa para este atendimento com prazo e responsável")}
+                onSelect={() => setTarefaAberta(true)}
+              >
+                <CalendarCheck size={16} aria-hidden className="mr-2" />
+                {t("Criar tarefa")}
+              </DropdownMenuItem>
             )}
             {podeReservar && <ItemReservarServico onSelect={() => setReservaAberta(true)} />}
             {/* Vídeo: sem JITSI_SERVER_URL o componente devolve `null` e o item
@@ -1052,6 +1076,14 @@ export function ConversationHeader({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {tarefaAberta && c?.id && (
+        <NovaTarefaDaConversa
+          contactId={c.id}
+          demandaId={conversation.current_demanda_id ?? null}
+          responsavelPadrao={user?.id}
+          aoFechar={() => setTarefaAberta(false)}
+        />
+      )}
     </div>
   );
 }

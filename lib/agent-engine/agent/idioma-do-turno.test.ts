@@ -41,6 +41,7 @@ import {
   TRANSPARENCIA_SYSTEM_BLOCK,
   blocoDoModoDePrevia,
   blocosDeAgendaResidentes,
+  blocosDoSistemaDoTurno,
 } from "./inbound-turn";
 import { SYSTEM_DO_OPERADOR, systemDoOperador } from "./operator-turn";
 
@@ -52,16 +53,17 @@ const TODAS_AS_FERRAMENTAS_DE_AGENDA = [
 ];
 
 /**
- * Os blocos residentes na ORDEM da montagem — a mesma sequência do call site do
- * turno (playbook+memória, guardrails, casos, agenda, prévia, diretiva). Em
- * `pt-BR` são a chave: `blocosNoIdioma` devolve a lista como está.
+ * Os blocos residentes na ORDEM da montagem — a mesma sequência de
+ * `blocosDoSistemaDoTurno` (#4668): plataforma, casos, agenda,
+ * prompt+memória do agente, prévia e, por último, a diretiva de idioma. Em `pt-BR` são a chave:
+ * `blocosNoIdioma` devolve a lista como está.
  */
 const BLOCOS_RESIDENTES_PT = [
-  "Memória da organização.",
   TRANSPARENCIA_SYSTEM_BLOCK,
   AUTORIA_SYSTEM_BLOCK,
   CASES_SYSTEM_BLOCK,
   ...blocosDeAgendaResidentes(TODAS_AS_FERRAMENTAS_DE_AGENDA),
+  "Memória da organização.",
   blocoDoModoDePrevia("sandbox"),
   diretivaDeIdioma("pt-BR"),
 ];
@@ -127,37 +129,32 @@ describe("o system do turno no idioma da organização", () => {
     expect(diretivaDeIdioma("pt-BR")).toContain("## Idioma da conversa");
   });
 
-  it("pt-BR: os blocos residentes continuam os mesmos, e a diretiva é o único bloco novo", () => {
+  it("pt-BR: os blocos residentes continuam os mesmos — só a ordem mudou (#4668)", () => {
     const residentes = blocosNoIdioma(BLOCOS_RESIDENTES_PT, "pt-BR");
     expect(residentes).toEqual([
-      "Memória da organização.",
       TRANSPARENCIA_SYSTEM_BLOCK,
       AUTORIA_SYSTEM_BLOCK,
       CASES_SYSTEM_BLOCK,
       ...blocosDeAgendaResidentes(TODAS_AS_FERRAMENTAS_DE_AGENDA),
+      "Memória da organização.",
       blocoDoModoDePrevia("sandbox"),
       diretivaDeIdioma("pt-BR"),
     ]);
   });
 
-  it("o turno monta os blocos na ordem de antes e a diretiva entra por último", () => {
-    const fonte = readFileSync(join(process.cwd(), "lib/agent-engine/agent/inbound-turn.ts"), "utf8");
-    const inicio = fonte.indexOf("const blocosResidentes = [");
-    expect(inicio).toBeGreaterThan(-1);
-    // Só a REGIÃO da montagem: os mesmos blocos, na mesma sequência da main,
-    // com a diretiva de idioma no fim (o único bloco novo).
-    const trecho = fonte.slice(inicio, fonte.indexOf("const openingContext", inicio));
-    const marcos = [
-      "TRANSPARENCIA_SYSTEM_BLOCK, AUTORIA_SYSTEM_BLOCK",
-      "push(CASES_SYSTEM_BLOCK)",
-      "push(...blocosDeAgendaResidentes(",
-      "push(blocoDoModoDePrevia(preview.kind))",
-      "push(diretivaDeIdioma(idiomaDaOrg))",
-    ];
-    const posicoes = marcos.map((marco) => trecho.indexOf(marco));
-    expect(posicoes.filter((p) => p < 0)).toEqual([]);
-    expect(posicoes).toEqual([...posicoes].sort((a, b) => a - b));
+  it("o turno monta na ordem plataforma → agente → turno, e a diretiva de idioma fecha o system (#4668)", () => {
+    const blocos = blocosDoSistemaDoTurno({
+      promptDoAgente: "Memória da organização.",
+      casosLigados: true,
+      toolIds: TODAS_AS_FERRAMENTAS_DE_AGENDA,
+      previewKind: "sandbox",
+      idioma: "pt-BR",
+      blocoDaVoz: null,
+    });
+    // A MESMA lista que a tradução percorre — a ordem mora num lugar só.
+    expect(blocos).toEqual(BLOCOS_RESIDENTES_PT);
     // E a tradução é uma passada DEPOIS da montagem, não um `idioma` por push.
+    const fonte = readFileSync(join(process.cwd(), "lib/agent-engine/agent/inbound-turn.ts"), "utf8");
     expect(fonte).toContain("blocosNoIdioma(blocosResidentes, idiomaDaOrg)");
   });
 

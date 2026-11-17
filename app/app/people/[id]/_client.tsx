@@ -63,12 +63,14 @@ export function PersonDetailClient({ id }: { id: string }) {
   }, [load]);
 
   // Mesmos pisos das rotas (issue #3198): ligar telefone é `agent`
-  // (PATCH contacts/:id/person); ligar e desligar empresa é `manager`
-  // (POST/DELETE company-people e a RLS de company_people).
+  // (PATCH contacts/:id/person); ligar empresa é `agent` (POST company-people, migration 9370);
+  // desligar segue `manager` (DELETE company-people e a RLS de company_people).
   const souAdminDaPlataforma = Boolean(user.is_platform_admin && !user.support);
   const podeLigarContato =
     souAdminDaPlataforma || Boolean(activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent);
   const podeLigarEmpresa =
+    souAdminDaPlataforma || Boolean(activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent);
+  const podeDesligarEmpresa =
     souAdminDaPlataforma || Boolean(activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager);
 
   async function ligarEmpresa(empresa: Opcao) {
@@ -232,7 +234,7 @@ export function PersonDetailClient({ id }: { id: string }) {
                           {t("Editar")}
                         </Button>
                       ) : null}
-                      {podeLigarEmpresa ? (
+                      {podeDesligarEmpresa ? (
                         <Button
                           size="sm"
                           variant="ghost"

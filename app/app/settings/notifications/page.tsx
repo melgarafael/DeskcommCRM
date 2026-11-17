@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { requireAuth } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { Card } from "@/components/ui/card";
@@ -9,6 +10,7 @@ import { PushProntoNesteEndereco } from "./_push-neste-endereco";
 import { TaskReminderPrefs } from "./_tarefas";
 import { SonsDosAvisos } from "./_sons";
 import { ConteudoNaTelaBloqueada } from "./_tela-bloqueada";
+import { CorPorCanalNoAviso } from "./_cor-por-canal";
 
 export const dynamic = "force-dynamic";
 
@@ -56,8 +58,7 @@ export default async function NotificationsPage() {
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{t("Notificações")}</h1>
+      <CabecalhoDaSubTela titulo={t("Notificações")} idioma={idioma}>
         <p className="text-sm text-muted-foreground">{t("Canais e categorias.")}</p>
         <Link
           href="/app/settings/aplicativo"
@@ -66,7 +67,7 @@ export default async function NotificationsPage() {
         >
           {t("Receber no celular: instalar o app")}
         </Link>
-      </header>
+      </CabecalhoDaSubTela>
 
       {pushPronto ? (
         // O par é a metade do servidor; a do navegador (https) só o cliente vê.
@@ -105,6 +106,11 @@ export default async function NotificationsPage() {
           </p>
         </Card>
       )}
+
+      {/* A cor do aviso de mensagem (#4094) vem antes do conteúdo da tela
+          bloqueada: é a primeira coisa que a pessoa vê quando um aviso toca, e
+          a que ela vem desligar. */}
+      <CorPorCanalNoAviso />
 
       <ConteudoNaTelaBloqueada />
 

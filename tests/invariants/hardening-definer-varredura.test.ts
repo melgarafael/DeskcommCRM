@@ -233,6 +233,16 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "meetAbertoLigado (lib/schemas/settings.ts), sem nenhuma exposição.",
   },
   {
+    fn: "fn_definir_aparencia_da_organizacao(uuid,jsonb)",
+    razao:
+      "app/actions/settings/definirAparenciaDaOrganizacao.ts chama com createClient da sessão; " +
+      "auth.uid() exige admin da própria organização, suporte de escrita e MFA comprovado " +
+      "antes de gravar. Só escreve a chave settings.aparencia (jsonb_set), com forma validada " +
+      "(chaves conhecidas, texto curto em minúsculas, cor #rrggbb). " +
+      "tests/invariants/aparencia-da-organizacao.test.ts prova admin próprio, negação de " +
+      "manager/agent/viewer, admin de outra organização, anon, aal1 com fator e forma inválida.",
+  },
+  {
     fn: "fn_definir_cliente_pela_agenda(uuid,boolean)",
     razao:
       "app/actions/settings/definirClientePelaAgenda.ts chama com createClient da sessão; " +
@@ -344,6 +354,41 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "junção 'vip'+'VIP' sem duplicata e exclusão que informa — sem apagar — a " +
       "regra do agente; tests/invariants/tags-cor-de-etiqueta.test.ts prova a " +
       "cor.",
+  },
+  {
+    fn: "fn_agencia_abrir_cliente(uuid,uuid)",
+    razao:
+      "POST app/api/v1/agencia/clientes/[id]/abrir/route.ts → auth.db de " +
+      "requireAgencia (lib/agencias/require-agencia.ts), que é createClient da " +
+      "sessão. Precisa da sessão: grava em agencia_sessoes o auth.uid() e o " +
+      "session_id do JWT, que um client de serviço não tem. Definer porque " +
+      "authenticated não tem insert em agencia_sessoes. A guarda está no corpo: " +
+      "sessão Auth viva, fn_agencia_autoridade (admin direto de agência habilitada, " +
+      "módulo `agencias` ligado), sem acompanhamento aberto, aal2 se há fator, e " +
+      "vínculo em agencia_clientes com cliente ativo — cliente alheio levanta " +
+      "42501 (tests/invariants/agencias.test.ts, três organizações, #4034).",
+  },
+  {
+    fn: "fn_agencia_criar_cliente(uuid,uuid,text,text)",
+    razao:
+      "POST app/api/v1/agencia/clientes/route.ts → auth.db de requireAgencia, " +
+      "createClient da sessão. Precisa da sessão: o recibo idempotente e o " +
+      "organizations.created_by são de auth.uid(). Definer porque cria a " +
+      "organização, o vínculo e o recibo numa transação, sob a trava da " +
+      "hierarquia. A guarda está no corpo: sessão Auth viva, fn_agencia_pode_gerir " +
+      "(admin direto, agência habilitada e ativa, módulo ligado, sem " +
+      "acompanhamento), aal2 se há fator, e a cota no gatilho de hierarquia " +
+      "(tests/invariants/agencias.test.ts, #4034).",
+  },
+  {
+    fn: "fn_agencia_encerrar_sessao()",
+    razao:
+      "POST app/api/v1/agencia/sessao/encerrar/route.ts usa createClient da " +
+      "sessão. Precisa da sessão e de mais nada: encerra só a linha de " +
+      "agencia_sessoes com actor_user_id = auth.uid() e o session_id do próprio " +
+      "JWT, e por isso continua permitido depois da revogação (é a saída). Definer " +
+      "porque authenticated não tem update em agencia_sessoes; não alcança sessão " +
+      "de outra pessoa nem de outra organização (#4034).",
   },
 ];
 
