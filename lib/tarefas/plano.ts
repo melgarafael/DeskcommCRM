@@ -136,6 +136,13 @@ const passoSchema = z
     if (!passo.prazo && passo.vence_em_dias === undefined) {
       ctx.addIssue({ code: "custom", path: ["vence_em_dias"], message: "passo_sem_prazo" });
     }
+    // O negativo só tem sentido contado de uma DATA do card ("7 dias antes da
+    // viagem"). Contado da aplicação, -5 é tarefa que já nasce vencida — o
+    // formato antigo (`vence_em_dias`, mínimo 0) nunca deixou, e a forma nova
+    // não pode abrir pela API o que a tela e o formato antigo recusam.
+    if (passo.prazo?.modo === "dias_a_partir_de_hoje" && passo.prazo.dias < 0) {
+      ctx.addIssue({ code: "custom", path: ["prazo", "dias"], message: "prazo_negativo_sem_campo" });
+    }
   });
 
 export const planoSchema = z.object({
@@ -190,14 +197,22 @@ export function lePlanosDoSettings(settings: unknown): PlanoDeTarefas[] {
         id: plano.data.id,
         nome: plano.data.nome,
         descricao: plano.data.descricao ?? null,
-        passos: ordenados.map((passo, indice) => ({
-          ordem: indice + 1,
-          titulo: passo.titulo,
-          descricao: passo.descricao ?? null,
-          prazo: prazoNormalizado(passo),
-          prioridade: passo.prioridade,
-          atribuir_a: passo.atribuir_a,
-        })),
+        passos: ordenados.map((passo, indice) => {
+          const prazo = prazoNormalizado(passo);
+          return {
+            ordem: indice + 1,
+            titulo: passo.titulo,
+            descricao: passo.descricao ?? null,
+            prazo,
+            // O GET de `settings/task-plans` sempre devolveu `vence_em_dias`, e
+            // quem lê a API por fora conta com ele. No modo de sempre ele é o
+            // MESMO número do `prazo`; no de campo de data não há número que o
+            // signifique, e inventar um seria mentir o prazo.
+            ...(prazo.modo === "dias_a_partir_de_hoje" ? { vence_em_dias: prazo.dias } : {}),
+            prioridade: passo.prioridade,
+            atribuir_a: passo.atribuir_a,
+          };
+        }),
       },
     ];
   });
