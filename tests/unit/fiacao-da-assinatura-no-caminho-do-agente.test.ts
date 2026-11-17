@@ -439,3 +439,143 @@ describe("4. a queda no runModelCall: a reserva responde e o log conta quem", ()
     expect(inserts.find((i) => i.sql.includes("'erro'"))).toBeDefined();
   });
 });
+
+/**
+ * 5. A QUEDA NÃO PODE APAGAR O ERRO DA ASSINATURA (#4610).
+ *
+ * Sequência do incidente: a assinatura do ChatGPT cai (401) e a chamada vai
+ * para a reserva; a reserva também falha (chave `openai` inválida). A linha de
+ * `llm_calls` gravava SÓ o erro da reserva, e o aviso da queda dizia apenas que
+ * a chamada caiu — sem status nem mensagem. Quem investigou leu "chave de API
+ * inválida" e trocou a chave errada; a IA ficou muda por seis horas.
+ *
+ * O que este bloco prova: com as duas falhas, o registro carrega as DUAS, com
+ * o lado nomeado; o log estruturado leva o erro da assinatura em campo próprio
+ * (status + mensagem); sem queda, o registro continua sendo o de sempre; e
+ * nenhuma das duas mensagens vaza chave — o redator é o mesmo de antes.
+ */
+describe("5. a queda guarda o erro ORIGINAL da assinatura ao lado do erro da reserva", () => {
+  const cfgComReserva = { cacheTtl: "1h", ["openai" + "ApiKey"]: CHAVE_SENTINELA } as never;
+  const cfgSemReserva = { cacheTtl: "1h" } as never;
+  const MENSAGEM_DA_ASSINATURA = "assinatura recusou o turno: login expirado";
+  const MENSAGEM_DA_RESERVA = "Incorrect API key provided";
+  // Sentinelas com cara de chave: se o redator não passar por elas, o teste vê.
+  const SEGREDO_DA_ASSINATURA = "sk-assinatura401nuncavaza";
+  const SEGREDO_DA_RESERVA = "sk-reserva401nuncavaza";
+
+  const erroDaAssinatura = () =>
+    Object.assign(new Error(`${MENSAGEM_DA_ASSINATURA} (Bearer ${SEGREDO_DA_ASSINATURA})`), {
+      statusCode: 401,
+    });
+  const erroDaReserva = () =>
+    Object.assign(new Error(`${MENSAGEM_DA_RESERVA}: ${SEGREDO_DA_RESERVA}`), { statusCode: 401 });
+
+  /** Logger espião: guarda nível, mensagem e campos de cada linha. */
+  const logQueEscuta = () => {
+    const linhas: Array<{ nivel: string; mensagem: string; campos: Record<string, unknown> }> = [];
+    const anota =
+      (nivel: string) =>
+      (mensagem: string, campos?: Record<string, unknown>) =>
+        linhas.push({ nivel, mensagem, campos: campos ?? {} });
+    return { log: { info: anota("info"), warn: anota("warn"), error: anota("error") } as never, linhas };
+  };
+
+  it("401 na assinatura + reserva recusando: a linha de llm_calls conta as DUAS falhas", async () => {
+    (estado.fake as FakeSupabase).linha = linhaDoLogin(); // a assinatura fala primeiro
+    const { pool, inserts } = poolDoSeam(PROVEDOR_POR_ASSINATURA);
+    // A fábrica da reserva é CONTADA: a queda continua com UMA tentativa só.
+    const reserva = vi.fn(registroQueFalha(erroDaReserva()));
+    const registro = {
+      [PROVEDOR_POR_ASSINATURA]: registroQueFalha(erroDaAssinatura()),
+      openai: reserva,
+      anthropic: registroOk,
+      fake: registroOk,
+    } as never;
+    const { log, linhas } = logQueEscuta();
+
+    let lancou: unknown = null;
+    try {
+      await runModelCall(
+        pool,
+        cfgComReserva,
+        { tenantId: ORG, purpose: "agent_turn", messages: [{ role: "user", content: "oi" }] },
+        { registry: registro, log },
+      );
+    } catch (e) {
+      lancou = e;
+    }
+
+    // O turno se comporta como antes: a reserva é tentada UMA vez e o erro que
+    // sobe é o dela.
+    expect(lancou, "a queda deixou de subir o erro da reserva").toBeInstanceOf(Error);
+    expect((lancou as Error).message).toContain(MENSAGEM_DA_RESERVA);
+    expect(reserva, "a reserva foi tentada mais de uma vez").toHaveBeenCalledTimes(1);
+
+    const linha = inserts.find((i) => i.sql.includes("'erro'"));
+    expect(linha, "a falha que o operador investiga não foi registrada").toBeDefined();
+    const mensagemGravada = String(linha!.params[9]);
+    expect(mensagemGravada, "o erro da assinatura foi apagado pelo da reserva").toContain(
+      MENSAGEM_DA_ASSINATURA,
+    );
+    expect(mensagemGravada, "o erro da reserva sumiu do registro").toContain(MENSAGEM_DA_RESERVA);
+    expect(mensagemGravada, "o http_status da assinatura não chegou ao registro").toContain("401");
+    // O registro NOMEIA os dois lados: sem isso o operador lê "chave inválida"
+    // e troca a chave errada — o custo real do incidente.
+    expect(mensagemGravada).toMatch(/assinatura/i);
+    expect(mensagemGravada).toMatch(/reserva/i);
+    // Segredo não entra na linha: o redator que já existia é o único caminho.
+    expect(mensagemGravada).not.toContain(SEGREDO_DA_ASSINATURA);
+    expect(mensagemGravada).not.toContain(SEGREDO_DA_RESERVA);
+
+    // O aviso da queda carrega o lado da assinatura, com nome de campo legível.
+    const aviso = linhas.find((l) => l.mensagem.includes("caiu na reserva"));
+    expect(aviso, "o aviso da queda sumiu").toBeDefined();
+    expect(aviso!.campos.http_status_da_assinatura).toBe(401);
+    expect(String(aviso!.campos.erro_da_assinatura)).toContain(MENSAGEM_DA_ASSINATURA);
+    expect(String(aviso!.campos.erro_da_assinatura)).not.toContain(SEGREDO_DA_ASSINATURA);
+    // …e o log da falha final carrega os dois lados: o erro da reserva nos
+    // campos de sempre, o da assinatura no campo próprio.
+    const falhaFinal = linhas.filter((l) => l.mensagem === "llm: chamada falhou").at(-1);
+    expect(falhaFinal, "o log da falha final sumiu").toBeDefined();
+    expect(falhaFinal!.campos.http_status_da_assinatura).toBe(401);
+    expect(String(falhaFinal!.campos.erro_da_assinatura)).toContain(MENSAGEM_DA_ASSINATURA);
+    expect(String(falhaFinal!.campos.erro_da_assinatura)).not.toContain(SEGREDO_DA_ASSINATURA);
+    expect(String(falhaFinal!.campos.error_message)).toContain(MENSAGEM_DA_RESERVA);
+    expect(String(falhaFinal!.campos.error_message)).not.toContain(SEGREDO_DA_RESERVA);
+  });
+
+  it("sem queda, o registro é o de sempre — nenhum campo a mais", async () => {
+    (estado.fake as FakeSupabase).linha = linhaDoLogin();
+    const { pool, inserts } = poolDoSeam(PROVEDOR_POR_ASSINATURA);
+    const registro = {
+      [PROVEDOR_POR_ASSINATURA]: registroQueFalha(erroDaAssinatura()),
+      openai: registroOk,
+      anthropic: registroOk,
+      fake: registroOk,
+    } as never;
+    const { log, linhas } = logQueEscuta();
+
+    let lancou: unknown = null;
+    try {
+      await runModelCall(
+        pool,
+        cfgSemReserva,
+        { tenantId: ORG, purpose: "agent_turn", messages: [{ role: "user", content: "oi" }] },
+        { registry: registro, log },
+      );
+    } catch (e) {
+      lancou = e;
+    }
+
+    expect(lancou, "sem reserva o erro ORIGINAL tem de subir").toBeInstanceOf(Error);
+    expect((lancou as Error).message).toContain(MENSAGEM_DA_ASSINATURA);
+    const linha = inserts.find((i) => i.sql.includes("'erro'"));
+    const mensagemGravada = String(linha!.params[9]);
+    expect(mensagemGravada).toContain(MENSAGEM_DA_ASSINATURA);
+    expect(mensagemGravada, "houve composição sem segunda falha").not.toMatch(/reserva/i);
+    expect(linhas.find((l) => l.mensagem.includes("caiu na reserva"))).toBeUndefined();
+    const falhaFinal = linhas.filter((l) => l.mensagem === "llm: chamada falhou").at(-1);
+    expect(falhaFinal!.campos.erro_da_assinatura, "campo extra sem queda").toBeUndefined();
+    expect(falhaFinal!.campos.http_status_da_assinatura).toBeUndefined();
+  });
+});

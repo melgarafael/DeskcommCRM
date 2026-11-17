@@ -124,7 +124,7 @@ PostgREST tenta de novo, a introspecção estoura de novo — e fica nesse laço
 3. **O disco está no limite?** No painel: **Project Settings → Infrastructure → Disk IO Budget**.
 
 **Conserto:** *Restart project* no painel do Supabase (é o único caminho que devolve o cache sem esperar a janela de
-IO). Se o projeto voltar a cair parado, o compute é o gargalo: ver `supabase-compute-insuficiente-free.md` para o que
+IO). Se o projeto voltar a cair parado, o compute é o gargalo: ver `supabase-sem-memoria-no-free.md` para o que
 medir antes de subir da Nano.
 
 ## Follow-up (não feito aqui)

@@ -1,5 +1,7 @@
 import type { RiskBucket } from "@/lib/leads/risk-radar";
 import { resolveBand, type ScoreBand } from "@/lib/kanban/score-band";
+import { traduzir } from "@/lib/i18n/dicionario";
+import type { Idioma } from "@/lib/i18n/idiomas";
 
 /**
  * O score é FÓRMULA, não chamada de modelo — e a diferença não é de custo.
@@ -115,8 +117,16 @@ const FRASE_RISCO: Record<RiskBucket, string> = {
   critico: "sem resposta há muito tempo",
 };
 
+/**
+ * A razão e as frases dos fatores são GRAVADAS (`ai_probability_reason`,
+ * `ai_probability_evidence`) e a tela as mostra como vieram, então nascem no
+ * idioma da organização. `pt-BR` devolve a chave: byte a byte o de antes.
+ */
+let idiomaDaFrase: Idioma = "pt-BR";
+const tr = (texto: string): string => traduzir(texto, idiomaDaFrase);
+
 function plural(n: number, singular: string, plural_: string): string {
-  return `${n} ${n === 1 ? singular : plural_}`;
+  return `${n} ${tr(n === 1 ? singular : plural_)}`;
 }
 
 /**
@@ -133,7 +143,16 @@ function plural(n: number, singular: string, plural_: string): string {
  * gravação, e com razão. Melhor recusar aqui, com motivo legível, do que
  * descobrir no INSERT.
  */
-export function calculaScore(sinais: SinaisDoLead): ScoreCalculado {
+export function calculaScore(sinais: SinaisDoLead, idioma: Idioma = "pt-BR"): ScoreCalculado {
+  idiomaDaFrase = idioma;
+  try {
+    return calculaScoreNoIdioma(sinais);
+  } finally {
+    idiomaDaFrase = "pt-BR";
+  }
+}
+
+function calculaScoreNoIdioma(sinais: SinaisDoLead): ScoreCalculado {
   // DELTA 1 — negócio fechado não tem probabilidade de fechar. Vem antes de
   // tudo: não importa quanto sinal exista, a pergunta já foi respondida.
   if (sinais.status !== "open") {
@@ -203,7 +222,7 @@ export function calculaScore(sinais: SinaisDoLead): ScoreCalculado {
   }
   // Recência não ganha âncora: ela não é um ponto no tempo da conversa, é a
   // AUSÊNCIA de pontos. Dar-lhe âncora seria apontar para o que não aconteceu.
-  fatores.push({ pontos: PESO_RISCO[sinais.risco], frase: FRASE_RISCO[sinais.risco] });
+  fatores.push({ pontos: PESO_RISCO[sinais.risco], frase: tr(FRASE_RISCO[sinais.risco]) });
 
   const bruto = fatores.reduce((soma, f) => soma + f.pontos, BASE);
   const score = Math.max(0, Math.min(100, bruto));
@@ -264,12 +283,12 @@ export function calculaScore(sinais: SinaisDoLead): ScoreCalculado {
   // indistinguível de razão gerada, que é o que a C1 proíbe. Dizer "limitado a
   // 0" custa quatro palavras e mantém a conta auditável por quem lê.
   if (score !== bruto) {
-    partes.push(`limitado a ${score}`);
+    partes.push(tr("limitado a {n}").replace("{n}", String(score)));
   }
 
   return {
     score,
-    reason: partes.length > 0 ? partes.join(", ") : "sem parcelas relevantes além da base",
+    reason: partes.length > 0 ? partes.join(", ") : tr("sem parcelas relevantes além da base"),
     evidence: { formula_v: FORMULA_V, factors: relevantes },
     band: resolveBand(score, sinais.bandAnterior),
   };

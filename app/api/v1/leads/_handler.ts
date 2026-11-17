@@ -1,3 +1,4 @@
+import { escritaComMarca, marcaDoAssistido } from "@/lib/automation/parada-no-assistido";
 import { guardServiceEffect } from "@/lib/atendimento/fronteira-server";
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -53,6 +54,10 @@ import {
 import { ORIGEM_DA_PLANILHA } from "@/lib/leads/planilha";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
+import {
+  desativaRecorrenciaDoNegocio,
+  recorrenciaDoNegocio,
+} from "@/lib/financeiro/recorrencia-do-negocio";
 import {
   decideMotivoDaPerda,
   recusaDeMotivoDaPerdaPeloBanco,
@@ -308,7 +313,8 @@ function actorAuditPayload(actor: Actor): {
   if (actor.type === "webhook_source") {
     return {
       actorUserId: null,
-      metadataActor: { actor_type: "webhook_source", actor_id: actor.id },
+      // A marca HERDADA (doc 301 = B): a regra rodou por causa da IA no assistido.
+      metadataActor: { actor_type: "webhook_source", actor_id: actor.id, ...marcaDoAssistido(actor) },
     };
   }
   // TOKEN DE SERVIDOR é caso próprio, e não o `else` de `ai_agent`: sem esta
@@ -327,6 +333,8 @@ function actorAuditPayload(actor: Actor): {
       actor_type: "ai_agent",
       actor_id: actor.id,
       ...(actor.api_token_id ? { actor_api_token_id: actor.api_token_id } : {}),
+      // Doc 301 = B: a ação da IA no assistido segura a automação que fala com o cliente.
+      ...marcaDoAssistido(actor),
     },
   };
 }
@@ -1111,13 +1119,17 @@ export async function updateLeadHandler(
     ? ctx.serviceOrigin ?? await observeServiceOrigin(createAdminClient(), ctx.organization_id, input.contact_id ?? existing.contact_id)
     : null;
   await guardServiceEffect();
-  const { data: updated, error: updErr } = await supabase
-    .from("crm_leads")
-    .update(patch)
-    .eq("organization_id", ctx.organization_id)
-    .eq("id", leadId)
-    .select(LEAD_COLS)
-    .maybeSingle();
+  // Doc 301 = B: a troca de responsável vira `lead.assigned` pelo GATILHO, e o
+  // gatilho só vê a marca do assistido pelo cabeçalho (`escritaComMarca`).
+  const { data: updated, error: updErr } = await escritaComMarca(
+    supabase
+      .from("crm_leads")
+      .update(patch)
+      .eq("organization_id", ctx.organization_id)
+      .eq("id", leadId)
+      .select(LEAD_COLS),
+    ctx.actor,
+  ).maybeSingle();
 
   const recusaNoUpdate = recusaDaGuardaDoBanco(ctx, updErr);
   if (recusaNoUpdate) throw recusaNoUpdate;
@@ -1302,18 +1314,23 @@ export async function updateLeadHandler(
     });
   }
 
-  await supabase
-    .rpc("emit_event", {
-      p_event_type: "lead.updated",
-      p_entity_kind: "crm_lead",
-      p_entity_id: leadId,
-      p_payload: { fields },
-      p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
-      p_organization_id: existing.organization_id,
-    })
-    .then(({ error }) => {
-      if (error) console.error("[lead.update] emit_event failed", error.message);
-    });
+  // A mesma guarda da timeline, agora também no barramento: desde a #1749 o
+  // `lead.updated` é gatilho de automação, e clicar Salvar sem mexer em nada
+  // dispararia toda regra "quando um negócio for alterado" sem condição.
+  if (fields.length > 0) {
+    await supabase
+      .rpc("emit_event", {
+        p_event_type: "lead.updated",
+        p_entity_kind: "crm_lead",
+        p_entity_id: leadId,
+        p_payload: { fields },
+        p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
+        p_organization_id: existing.organization_id,
+      })
+      .then(({ error }) => {
+        if (error) console.error("[lead.update] emit_event failed", error.message);
+      });
+  }
 
   if (input.tags !== undefined) {
     const prevTags: string[] = (existing as { tags?: string[] }).tags ?? [];
@@ -1596,21 +1613,25 @@ export async function moveLeadHandler(
   const serviceOrigin = ctx.serviceOrigin ?? await observeServiceOrigin(createAdminClient(), ctx.organization_id, lead.contact_id);
   const nowIso = new Date().toISOString();
   await guardServiceEffect();
-  const { data: updated, error: updErr } = await supabase
-    .from("crm_leads")
-    .update({
-      stage_id: input.to_stage_id,
-      position_in_stage: position,
-      updated_at: nowIso,
-      ...veredito.patch,
-      ...(stage.is_won && input.won_reason?.trim()
-        ? { won_reason: input.won_reason.trim() }
-        : {}),
-    })
-    .eq("id", leadId)
-    .eq("updated_at", lead.updated_at)
-    .select("*")
-    .maybeSingle();
+  // Doc 301 = B: etapa de ganho/perda vira `lead.won`/`lead.lost` pelo GATILHO,
+  // e o gatilho só vê a marca do assistido pelo cabeçalho (`escritaComMarca`).
+  const { data: updated, error: updErr } = await escritaComMarca(
+    supabase
+      .from("crm_leads")
+      .update({
+        stage_id: input.to_stage_id,
+        position_in_stage: position,
+        updated_at: nowIso,
+        ...veredito.patch,
+        ...(stage.is_won && input.won_reason?.trim()
+          ? { won_reason: input.won_reason.trim() }
+          : {}),
+      })
+      .eq("id", leadId)
+      .eq("updated_at", lead.updated_at)
+      .select("*"),
+    ctx.actor,
+  ).maybeSingle();
 
   if (updErr) {
     // Rede de segurança (#917) — mesma da rota de arrasto: recusa do banco por
@@ -1629,6 +1650,85 @@ export async function moveLeadHandler(
       ctx.requestId,
       traduzir("Lead foi modificado concorrentemente.", ctx.idioma ?? "pt-BR"),
     );
+  }
+
+  // ── O FINANCEIRO DO FECHO (#3602, fatias 3 e 4) ────────────────────────────
+  //
+  // Ganhar com `recurring_value_cents` declarado cria o molde da receita
+  // mensal (`recurring_entries`) ligado a este negócio; perder desativa o molde
+  // DELE. Sem isto, a recorrência do card era só um número na tela: o cron que
+  // gera as contas a receber nunca ficava sabendo dela, e quem vendia "setup +
+  // mensalidade" continuava lançando a mensalidade à mão — até esquecer.
+  //
+  // ── Por que AQUI, e não na rota do quadro ─────────────────────────────────
+  //
+  // Este handler é o escritor de etapa de tudo que NÃO é o arrasto (MCP
+  // `crm_move_lead_stage`, ações de automação, lote, IA). O arrasto e o botão
+  // Ganhar têm rota própria e convergem no mesmo `status = 'won'`; a fatia do
+  // molde nasce aqui, e o arrasto fica de fora desta onda, declarado no PR
+  // (é a próxima fatia, junto com a flag por funil).
+  //
+  // ── Por que admin client ──────────────────────────────────────────────────
+  //
+  // `recurring_entries` é tabela do módulo financeiro e a policy de escrita
+  // exige `manager` na organização: um agente de IA que move o card não tem
+  // esse papel, mas TEM o direito de fechar o negócio. Mesmo desenho do
+  // consumidor de `lead.won` (`comanda-do-ganho.handler.ts`). O isolamento por
+  // empresa não vem do RLS aqui: vem do `organization_id` do PRÓPRIO negócio,
+  // gravado assim nas duas funções (e provado em
+  // `tests/invariants/recorrencia-do-negocio.test.ts`).
+  //
+  // ── Falha BAIXA ───────────────────────────────────────────────────────────
+  //
+  // O card já moveu. Um financeiro que não nasceu vira log e um molde que
+  // alguém cria à mão; derrubar o fecho do negócio por causa dele seria pior.
+  // Não é silêncio: cada desfecho de erro sai no `console.error` com o request.
+  if (!mesmaEtapa && (stage.is_won || stage.is_lost)) {
+    const financeiro = createAdminClient();
+    try {
+      if (stage.is_won) {
+        const valorRecorrente =
+          (lead as { recurring_value_cents?: number | string | null }).recurring_value_cents ?? null;
+        // Sem valor declarado não há receita mensal: nem chega ao banco (o
+        // caminho comum é o ganho de valor único).
+        if (valorRecorrente !== null) {
+          const desfecho = await recorrenciaDoNegocio(financeiro, {
+            organizationId: lead.organization_id,
+            leadId,
+            pipelineId: lead.pipeline_id,
+            valorCents: valorRecorrente,
+            criadoEm: (lead as { created_at?: string | null }).created_at ?? null,
+            meses: (lead as { recurring_months?: number | null }).recurring_months ?? null,
+            userId: ctx.actor.type === "user" ? ctx.actor.id : null,
+          });
+          if (desfecho.estado === "falhou") {
+            console.error("[lead.move] recorrência do negócio falhou", {
+              request_id: ctx.requestId,
+              lead_id: leadId,
+              erro: desfecho.erro,
+            });
+          }
+        }
+      } else {
+        const desfecho = await desativaRecorrenciaDoNegocio(financeiro, {
+          organizationId: lead.organization_id,
+          leadId,
+        });
+        if (desfecho.estado === "falhou") {
+          console.error("[lead.move] desativação da recorrência falhou", {
+            request_id: ctx.requestId,
+            lead_id: leadId,
+            erro: desfecho.erro,
+          });
+        }
+      }
+    } catch (erro) {
+      console.error("[lead.move] financeiro do fecho lançou", {
+        request_id: ctx.requestId,
+        lead_id: leadId,
+        erro: erro instanceof Error ? erro.message : String(erro),
+      });
+    }
   }
 
   const a = actorAuditPayload(ctx.actor);

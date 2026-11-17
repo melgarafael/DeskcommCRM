@@ -72,7 +72,7 @@ interface LinhaDeContato {
  */
 export async function dispensarParDeContatos(
   pool: pg.Pool,
-  args: { organizationId: string; contactIds: [string, string]; userId: string },
+  args: { organizationId: string; contactIds: [string, string]; userId: string | null },
 ): Promise<ResultadoDaDispensa> {
   const org = args.organizationId;
   const [a, b] = args.contactIds.map((id) => id.toLowerCase()).sort() as [string, string];
