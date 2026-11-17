@@ -42,14 +42,17 @@
  * do mesmo número leriam o mesmo número antigo e ambos passariam — o
  * pingue-pongue voltaria pela porta da corrida.
  *
- * ## O que este arquivo NÃO faz, de propósito
+ * ## Os limites deste arquivo, de propósito
  *
- *  - **Não silencia a conversa.** `conversations.bot_silenced_until` é o
- *    silêncio humano, mais forte e reversível pela tela, e continua intocado.
- *    Aqui só se VETA o envio, com registro (trace em `before_send_traces` +
- *    timeline do veto), e a equipe é AVISADA na Central
- *    (`avisarEquipeDoTetoDeRespostas`), para decidir se do outro lado é um robô
- *    ou um cliente.
+ *  - **Silencia a conversa com HORIZONTE, e nunca com `'infinity'`.** O veto
+ *    sozinho já impede a resposta de sair, mas o pingue-pongue continuaria
+ *    abrindo turno (e gastando modelo) a cada mensagem do outro robô. Ao bater o
+ *    teto, a conversa é pausada em `conversations.bot_silenced_until` — a MESMA
+ *    coluna que o botão de pausar do atendente usa, então ele devolve para a IA
+ *    quando quiser, sem SQL. `'infinity'` continua reservado ao handoff, que é
+ *    decisão humana; e `silenciarConversaPeloTeto` não encurta silêncio maior.
+ *    A equipe também é AVISADA na Central (`avisarEquipeDoTetoDeRespostas`) —
+ *    a pausa não substitui o aviso.
  *  - **Não conta disparo nem follow-up.** Chega armado só no caminho de
  *    RESPOSTA (`RunBeforeSendArgs.tetoDeRespostas` só é passado pelo
  *    `send_message` do turno de entrada); follow-up e prospecção ficam de fora
