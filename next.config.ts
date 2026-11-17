@@ -118,10 +118,13 @@ const nextConfig: NextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "X-Frame-Options", value: "DENY" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          // O Cloudflare na frente não manda HSTS (medido no domínio real): quem
-          // responde pelo transporte é a origem. Sem isto, a primeira visita em
-          // http fica em http — e cookie de sessão atravessa rede hostil em claro.
-          { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
+          // O proxy na frente não manda HSTS — o Caddy do kit não manda, e o Traefik
+          // da hospedagem e o Cloudflare só mandam se alguém configurar: quem responde
+          // pelo transporte é a origem. Sem isto, quem já abriu o painel em https e
+          // depois chega por http volta a trafegar em claro.
+          // Sem includeSubDomains: o domínio é do cliente e pode ser o apex; o app
+          // não sabe se os subdomínios dele têm HTTPS.
+          { key: "Strict-Transport-Security", value: "max-age=31536000" },
           // CSP curta de propósito: `frame-ancestors` repete o DENY para navegador
           // que só entende CSP, `base-uri` impede tag injetada de mudar a base dos
           // links relativos e `form-action` impede formulário forjado para fora.

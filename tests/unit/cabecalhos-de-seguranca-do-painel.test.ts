@@ -16,8 +16,10 @@ describe("cabeçalhos de segurança do painel", () => {
 
     const porNome = new Map((doApp?.headers ?? []).map((h) => [h.key.toLowerCase(), h.value]));
 
-    // Medido no domínio real: o Cloudflare na frente não manda HSTS, quem responde é a origem.
+    // O proxy na frente (Caddy do kit, Traefik, Cloudflare) não manda HSTS: quem responde é a origem.
     expect(porNome.get("strict-transport-security")).toMatch(/^max-age=\d{8,}/);
+    // O domínio é do cliente e pode ser o apex: includeSubDomains forçaria HTTPS em subdomínios que o app não conhece.
+    expect(porNome.get("strict-transport-security")).not.toContain("includeSubDomains");
     const csp = porNome.get("content-security-policy") ?? "";
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).toContain("base-uri 'self'");
