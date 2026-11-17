@@ -52,6 +52,11 @@ export interface PatchDeEtapa {
    * inteiro a rota responde 422 — a coluna é `numeric` sem CHECK.
    */
   expected_duration_hours?: number | null;
+  /**
+   * A cor da etapa, `#rrggbb` (`crm_stages.color`). `null` volta ao padrão de
+   * hoje. Item 2 da #4802.
+   */
+  color?: string | null;
 }
 
 function useReler(pipelineId: string) {

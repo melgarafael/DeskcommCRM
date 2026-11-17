@@ -38,6 +38,11 @@ export interface EtapaDoFunil {
    * leituras antigas em cache.
    */
   expected_duration_hours?: number | null;
+  /**
+   * A cor da etapa, `#rrggbb` — `null` é o padrão de hoje. `undefined` em
+   * leituras antigas em cache. Item 2 da #4802.
+   */
+  color?: string | null;
   /** Quem mexeu nesta etapa por último (migration 0101). `null` antes dela. */
   last_change_actor_kind?: string | null;
   last_change_at?: string | null;

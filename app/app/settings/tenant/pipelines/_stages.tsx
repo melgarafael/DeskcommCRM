@@ -32,6 +32,7 @@ import { ROTULO_DO_PASSO } from "@/lib/leads/agent-mapping";
 import type { TaxaDaEtapa } from "@/lib/metrics/taxa-da-etapa";
 import { Archive, CaretDown, CaretUp, Plus, Warning } from "@/lib/ui/icons";
 import { SeloDeAutoria } from "@/components/operacao/SeloDeAutoria";
+import { CorDaEtapa } from "./_cor-da-etapa";
 import { useT } from "@/hooks/i18n/useT";
 
 import { mensagemDeErro } from "./_mapping";
@@ -690,6 +691,22 @@ export function StagesSection({
                   <Archive size={16} className="mr-1" aria-hidden />
                   {t("Arquivar")}
                 </Button>
+              </div>
+
+              {/* #4802 (item 2): a cor que o QUADRO já pintava e nenhuma tela
+                  escrevia. Mora aqui, na segunda linha, pelo mesmo motivo da
+                  janela abaixo: o cabeçalho já carrega nome, chance, ordem,
+                  papel e arquivar. Gravar aqui é gravar em `crm_stages.color`,
+                  a MESMA coluna que o `StageColumn` lê — pelo `PATCH` de etapa
+                  que já existia (auditado como os demais campos), não por um
+                  segundo caminho. */}
+              <div className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
+                <span className="font-medium">{t("Cor da etapa")}</span>
+                <CorDaEtapa
+                  etapa={etapa}
+                  desabilitado={ocupado}
+                  aoEscolher={(cor) => aplicar(etapa.id, { color: cor })}
+                />
               </div>
 
               {/* #1532: a janela de "esfriando" é configuração da etapa, não
