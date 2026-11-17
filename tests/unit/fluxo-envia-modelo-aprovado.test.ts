@@ -124,6 +124,23 @@ function fakePool(c: Cenario) {
       return c.modelo ? { rows: [{ name: "lembrete_cafeteira", language: "es" }] } : { rows: [] };
     }
     if (/from message_templates/.test(sql)) return { rows: c.texto ? [{ body: c.texto }] : [] };
+    // A reconferência da janela antes do modelo pago (#4835) lê a conexão e os
+    // DOIS lados da janela na mesma linha, a partir da conversa. Vem antes do
+    // ramo genérico de `conversations` porque o texto traz as duas tabelas.
+    if (/select s\.provider, c\.last_inbound_at, c\.last_outbound_at/.test(sql)) {
+      const ha = c.ultimoInboundHa;
+      return {
+        rows: [
+          {
+            provider: "zernio",
+            last_inbound_at: ha === null || ha === undefined ? null : new Date(Date.now() - ha * HORA),
+            // Um passo de retorno só existe porque já houve saída nesta conversa:
+            // não é o primeiro contato, e a carência não se aplica.
+            last_outbound_at: new Date(Date.now() - HORA),
+          },
+        ],
+      };
+    }
     if (/from channel_sessions s/.test(sql)) {
       const ha = c.ultimoInboundHa;
       return {
