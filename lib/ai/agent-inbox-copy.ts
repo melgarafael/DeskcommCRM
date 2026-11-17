@@ -6,6 +6,7 @@
 
 import type { InboxKind } from "@/lib/agent-engine/db/repository";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { preencher } from "@/lib/i18n/idioma-do-aviso";
 import type { Idioma } from "@/lib/i18n/idiomas";
 
 export type AgentInboxSeverity = "info" | "warn" | "critical";
@@ -260,20 +261,45 @@ const TITULO_DO_RESUMO: Record<MotivoDoResumoDaRecuperacao, string> = {
 export function copyDoResumoDaRecuperacao(
   motivo: MotivoDoResumoDaRecuperacao,
   dados: DadosDoResumoDaRecuperacao,
+  /**
+   * O idioma da ORGANIZAÇÃO: o aviso é linha gravada e a Central o mostra como
+   * veio. `pt-BR` (o padrão) é o texto de antes, byte a byte. Números, datas e o
+   * erro resumido são dado e entram nos marcadores depois da tradução.
+   */
+  idioma: Idioma = "pt-BR",
 ): { title: string; body: string } {
-  const CORPO: Record<MotivoDoResumoDaRecuperacao, string> = {
-    concluida:
-      `Recuperamos ${dados.mensagens ?? 0} mensagens de ${dados.conversas ?? 0} conversas do período em que o número ficou fora (${dados.desde ?? ""} a ${dados.ate ?? ""}).`,
-    erro:
-      `A recuperação das conversas da queda parou: ${dados.erro ?? "motivo não registrado"}. Veja em Conexões.`,
-    numero_mudou:
-      "O número da conexão mudou na reconexão. As conversas do período fora do ar não foram recuperadas, para não trazer mensagens de outro aparelho.",
-    numero_nao_confirmado:
-      "Não conseguimos confirmar o número da conexão depois da volta. As conversas do período fora do ar não foram recuperadas.",
-    acervo_desligado:
-      "A conexão voltou, mas \"Guardar o histórico\" está desligado nela: não há como recuperar as conversas do período fora do ar.",
+  const corpo = (): string => {
+    switch (motivo) {
+      case "concluida":
+        return preencher(
+          traduzir(
+            "Recuperamos {mensagens} mensagens de {conversas} conversas do período em que o número ficou fora ({desde} a {ate}).",
+            idioma,
+          ),
+          { mensagens: dados.mensagens ?? 0, conversas: dados.conversas ?? 0, desde: dados.desde ?? "", ate: dados.ate ?? "" },
+        );
+      case "erro":
+        return preencher(traduzir("A recuperação das conversas da queda parou: {erro}. Veja em Conexões.", idioma), {
+          erro: dados.erro ?? traduzir("motivo não registrado", idioma),
+        });
+      case "numero_mudou":
+        return traduzir(
+          "O número da conexão mudou na reconexão. As conversas do período fora do ar não foram recuperadas, para não trazer mensagens de outro aparelho.",
+          idioma,
+        );
+      case "numero_nao_confirmado":
+        return traduzir(
+          "Não conseguimos confirmar o número da conexão depois da volta. As conversas do período fora do ar não foram recuperadas.",
+          idioma,
+        );
+      case "acervo_desligado":
+        return traduzir(
+          "A conexão voltou, mas \"Guardar o histórico\" está desligado nela: não há como recuperar as conversas do período fora do ar.",
+          idioma,
+        );
+    }
   };
-  return { title: TITULO_DO_RESUMO[motivo], body: CORPO[motivo] };
+  return { title: traduzir(TITULO_DO_RESUMO[motivo], idioma), body: corpo() };
 }
 
 /** O título do aviso por cliente sem resposta: a conversa é a referência, e o nome do cliente não entra (sem PII). */
