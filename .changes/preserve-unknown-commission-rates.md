@@ -1,6 +1,6 @@
 ---
 impacto: nada_mudou
 secao: corrigido
-titulo: Keep failed commission lookups from becoming zero-percent commissions
+titulo: Falha ao ler as regras de comissão não vira comissão de zero por cento
 ---
-Adding a sale item, invoicing appointments in a batch, and opening a sale for a won deal now report a failed commission lookup instead of saving an incorrect zero-percent rate. The affected operation can be retried; other appointments in the batch continue normally. Previously saved items and commissions are unchanged. Credit: @samirhvbr.
+Lançar item no balcão, faturar atendimentos em lote e abrir a comanda de um negócio ganho passam a informar a falha quando a leitura das regras de comissão falha, em vez de gravar 0% no item. A operação afetada pode ser repetida, e no lote os demais atendimentos seguem normalmente. Itens e comissões já gravados não mudam. Crédito: @samirhvbr.
