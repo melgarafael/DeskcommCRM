@@ -100,6 +100,7 @@ const ROTULO_DO_TIPO: Record<string, string> = {
   meta_cloud: "Meta Cloud API",
   zernio: "Zernio",
   datafy: "Datafy",
+  twilio: "Twilio (SMS)",
 };
 
 export function rotuloDoTipoDeCanal(provider: string | null | undefined): string | null {

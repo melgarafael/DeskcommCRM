@@ -17,13 +17,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { after } from "next/server";
 
-import { fail, ok } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, fail, ok } from "@/lib/api/wrappers";
 import { abrirArquivoDoWebhook, fecharArquivoDoWebhook } from "@/lib/channels/arquivo-de-webhook";
 import { aceitarEntrada, processarDepoisDaResposta } from "@/lib/channels/entrada-aceita";
 import {
   handleInboundWebhook,
   inboundPayloadBelongsToSession,
   processaDepoisDeResponder,
+  respostaDeRecebimentoDoCanal,
   verifyInboundWebhookSignature,
   type InboundWebhookInput,
 } from "@/lib/channels/inbound";
@@ -61,6 +62,8 @@ export async function processarEntradaDoCanal(
     headers: Headers;
     secret: string | null;
     requestId: string;
+    /** A URL pública em que o canal entregou (o SMS assina por ela, #4415). */
+    urlPublica?: string | null;
   },
 ): Promise<Response> {
   const { sessao, rawBody, secret, requestId } = entrada;
@@ -93,7 +96,7 @@ export async function processarEntradaDoCanal(
     headers: req.headers,
   });
 
-  if (!verifyInboundWebhookSignature(sessao.provider, rawBody, req.headers, secret)) {
+  if (!verifyInboundWebhookSignature(sessao.provider, rawBody, req.headers, secret, entrada.urlPublica ?? null)) {
     await fecharArquivoDoWebhook(admin, arquivo, {
       status: "error",
       validSignature: false,
@@ -176,6 +179,7 @@ export async function processarEntradaDoCanal(
       rawBody,
       headers: req.headers,
       secret,
+      urlPublica: entrada.urlPublica ?? null,
     });
 
     if (r.ok) {
@@ -186,6 +190,15 @@ export async function processarEntradaDoCanal(
         // "ignorado por falta de identidade" quando alguém for contar depois.
         erro: typeof r.body.reason === "string" ? r.body.reason : null,
       });
+      // Canal que lê a resposta do webhook como instrução (o SMS, #4415) recebe
+      // o corpo que espera; o desfecho já ficou no arquivo, logo acima.
+      const propria = respostaDeRecebimentoDoCanal(sessao.provider);
+      if (propria) {
+        return comIdDaRequisicao(
+          new Response(propria.corpo, { status: 200, headers: { "Content-Type": propria.contentType } }),
+          requestId,
+        );
+      }
       return ok(r.body, { requestId });
     }
 

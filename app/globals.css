@@ -51,12 +51,13 @@
    * e logo da conversa). Token porque a mesma marca precisa ser legível nos
    * DOIS temas: o tom de marca pensado para fundo claro some no escuro, e um
    * hex cravado no componente obriga a repetir o par em cada consumidor.
-   * Os quatro passam no piso de componente da WCAG (3:1) contra o --color-bg
+   * Os cinco passam no piso de componente da WCAG (3:1) contra o --color-bg
    * do próprio tema — medido em lib/channels/marca-do-canal.test.ts. */
   --color-canal-whatsapp: #128c4a;
   --color-canal-instagram: #c13584;
   --color-canal-messenger: #0866ff;
   --color-canal-telegram: #0088cc;
+  --color-canal-sms: #6d28d9;
 
   /* Accent — Sage (11 stops) */
   --color-accent-50: #f3f6f1;
@@ -290,12 +291,13 @@
    * e logo da conversa). Token porque a mesma marca precisa ser legível nos
    * DOIS temas: o tom de marca pensado para fundo claro some no escuro, e um
    * hex cravado no componente obriga a repetir o par em cada consumidor.
-   * Os quatro passam no piso de componente da WCAG (3:1) contra o --color-bg
+   * Os cinco passam no piso de componente da WCAG (3:1) contra o --color-bg
    * do próprio tema — medido em lib/channels/marca-do-canal.test.ts. */
   --color-canal-whatsapp: #128c4a;
   --color-canal-instagram: #c13584;
   --color-canal-messenger: #0866ff;
   --color-canal-telegram: #0088cc;
+  --color-canal-sms: #6d28d9;
   --color-accent: var(--color-accent-600);
   --color-accent-fg: #ffffff;
   --color-accent-soft: var(--color-accent-100);
@@ -384,12 +386,13 @@
    * e logo da conversa). Token porque a mesma marca precisa ser legível nos
    * DOIS temas: o tom de marca pensado para fundo claro some no escuro, e um
    * hex cravado no componente obriga a repetir o par em cada consumidor.
-   * Os quatro passam no piso de componente da WCAG (3:1) contra o --color-bg
+   * Os cinco passam no piso de componente da WCAG (3:1) contra o --color-bg
    * do próprio tema — medido em lib/channels/marca-do-canal.test.ts. */
   --color-canal-whatsapp: #25d366;
   --color-canal-instagram: #f472b6;
   --color-canal-messenger: #60a5fa;
   --color-canal-telegram: #38bdf8;
+  --color-canal-sms: #a78bfa;
 
   /* Accent stays same hex stops; default shifts up for dark contrast */
   --color-accent-50: #f3f6f1;

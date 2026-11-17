@@ -51,6 +51,8 @@ const FONTE: Record<ProviderDeMensagem, FonteDeTemplates | null> = {
   // não existe definição aprovada a listar, e um seletor ali ofereceria solução
   // para um problema que este canal não tem.
   telegram: null,
+  // SMS (#4415): texto livre a qualquer hora, sem definição aprovada a listar.
+  twilio: null,
 };
 
 /** `null` quando este canal não trabalha com definições aprovadas. */

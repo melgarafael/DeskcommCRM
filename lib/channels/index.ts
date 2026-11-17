@@ -7,6 +7,7 @@ import { metaCloudAdapter } from "./adapters/meta-cloud";
 import { telegramAdapter } from "./adapters/telegram";
 import { wahaAdapter } from "./adapters/waha";
 import { socialAdapter } from "./social/adapter";
+import { twilioAdapter } from "./adapters/twilio";
 import { zernioAdapter } from "./adapters/zernio";
 import type { ChannelAdapter, ChannelProvider, ProviderDeMensagem } from "./types";
 
@@ -21,6 +22,7 @@ const ADAPTERS: Record<ProviderDeMensagem, ChannelAdapter | null> = {
   zernio_social: socialAdapter,
   datafy: datafyAdapter,
   telegram: telegramAdapter,
+  twilio: twilioAdapter,
 };
 
 /**

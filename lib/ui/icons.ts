@@ -107,6 +107,7 @@ export {
   InstagramLogo,
   MessengerLogo,
   TelegramLogo,
+  ChatText,
   Phone,
   PhoneIncoming,
   PhoneOutgoing,

@@ -135,7 +135,8 @@ describe("CONTROLE: os canais que já existiam continuam declarados", () => {
     // `telegram` entrou pelo #3440 (o bot do @BotFather é canal de conversa,
     // diferente do Telegram do catálogo social, que segue `inbox: false`): é a
     // mudança que o PR faz de propósito, e a fotografia acompanha.
-    expect([...CANAIS_DE_CONVERSA]).toEqual(["whatsapp", "telegram", "instagram", "facebook"]);
+    // `sms` (#4415) é canal próprio também, fora do catálogo do parceiro.
+    expect([...CANAIS_DE_CONVERSA]).toEqual(["whatsapp", "telegram", "sms", "instagram", "facebook"]);
   });
 
   it("a matriz de capabilities segue respondendo por todos os canais de mensagem", () => {
@@ -148,6 +149,7 @@ describe("CONTROLE: os canais que já existiam continuam declarados", () => {
       // O canal do bot do Telegram (#3440) é provider de MENSAGEM, com matriz
       // de capabilities própria — a matriz continua respondendo por todos.
       "telegram",
+      "twilio",
     ]);
     for (const provider of PROVIDERS_DE_MENSAGEM) {
       const caps = capabilitiesOf(provider);

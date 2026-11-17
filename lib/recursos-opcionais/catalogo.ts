@@ -213,6 +213,10 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     oQueFaz:
       "O catálogo acompanha sozinho o feed que o sistema de estoque da revenda publica: a cada 2 horas cria, atualiza e desativa produtos, sem apagar nenhum.",
   },
+  canal_sms: {
+    nome: "Canal de SMS",
+    oQueFaz: "Cada empresa conecta em Conexões um número de SMS, e as mensagens dele chegam ao Inbox e são respondidas pelo mesmo número.",
+  },
 };
 
 /**

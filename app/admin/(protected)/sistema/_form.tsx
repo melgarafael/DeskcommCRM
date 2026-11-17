@@ -434,6 +434,15 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
     foraDoMenu: "Não cria porta no menu do CRM: ele libera uma seção na tela de Produtos, em",
     painelEm: "/app/products",
   },
+  {
+    modulo: "canal_sms",
+    id: "modulo-canal-sms",
+    rotulo: "Canal de SMS",
+    descricao:
+      "Ligado, cada empresa ganha em Conexões uma aba para conectar um número de SMS, com a conta e a chave do fornecedor. As mensagens que chegam ao número caem no Inbox, e a resposta sai pelo mesmo número, também pela IA, pelos follow-ups e pelas automações; campanhas não passam por ele. Desligado, a aba some e ninguém conecta um número novo; um número já conectado segue atendendo até a empresa desconectá-lo.",
+    foraDoMenu: "Não cria porta no menu do CRM: ele libera uma aba em",
+    painelEm: "/app/connections",
+  },
 ];
 
 /**

@@ -21926,6 +21926,47 @@ export const DICIONARIO: Traducoes = {
   "Sequência esperando aprovação para falar com o cliente": { es: "Secuencia esperando aprobación para hablar con el cliente" },
   "Uma ação da IA no modo assistido levou o negócio a um ponto que inscreve o contato em uma sequência de follow-up, e a inscrição ficou parada. Se quiser que a sequência comece, inscreva o contato pelo painel dele na conversa; marque como resolvido para descartar.": { es: "Una acción de la IA en modo asistido llevó el negocio a un punto que inscribe al contacto en una secuencia de seguimiento, y la inscripción quedó detenida. Si quieres que la secuencia empiece, inscribe al contacto desde su panel en la conversación; márcalo como resuelto para descartarlo." },
   "Uma ação da IA no modo assistido levou o negócio a um ponto que inscreve o contato em {quantas} sequências de follow-up, e a inscrição ficou parada. Se quiser que a sequência comece, inscreva o contato pelo painel dele na conversa; marque como resolvido para descartar.": { es: "Una acción de la IA en modo asistido llevó el negocio a un punto que inscribe al contacto en {quantas} secuencias de seguimiento, y la inscripción quedó detenida. Si quieres que la secuencia empiece, inscribe al contacto desde su panel en la conversación; márcalo como resuelto para descartarlo." },
+  // ─── Canal de SMS (#4415) ───
+  "Confira os três campos: o Account SID (começa com AC), o Auth Token e o número no formato +1…": {
+    es: "Revisa los tres campos: el Account SID (empieza con AC), el Auth Token y el número en formato +1…",
+  },
+  "A conta de SMS recusou o Account SID ou o Auth Token. Copie os dois de novo do painel.": {
+    es: "La cuenta de SMS rechazó el Account SID o el Auth Token. Cópialos de nuevo del panel.",
+  },
+  "Este número não está nesta conta de SMS. Confira o número ou a conta.": {
+    es: "Este número no está en esta cuenta de SMS. Revisa el número o la cuenta.",
+  },
+  "Não foi possível falar com a conta de SMS agora. Tente de novo em instantes.": {
+    es: "No fue posible comunicarse con la cuenta de SMS ahora. Inténtalo de nuevo en unos instantes.",
+  },
+  "SMS": { es: "SMS" },
+  "Account SID": { es: "Account SID" },
+  "Auth Token": { es: "Auth Token" },
+  "Número de SMS": { es: "Número de SMS" },
+  "Conectar um número de SMS": { es: "Conectar un número de SMS" },
+  "Para atender por SMS quem não usa WhatsApp. As mensagens entram na Inbox no mesmo contato, e a IA, os follow-ups e as automações respondem por SMS.": {
+    es: "Para atender por SMS a quien no usa WhatsApp. Los mensajes entran en la Inbox en el mismo contacto, y la IA, los seguimientos y las automatizaciones responden por SMS.",
+  },
+  "Nos EUA, o número precisa estar registrado para envio comercial (A2P 10DLC) na conta de SMS antes de conectar — sem isso as operadoras bloqueiam as mensagens. Cada SMS é cobrado pela conta de SMS, por parte de 160 caracteres (70 com emoji ou acento).": {
+    es: "En EE. UU., el número debe estar registrado para envío comercial (A2P 10DLC) en la cuenta de SMS antes de conectarlo; sin eso, los operadores bloquean los mensajes. Cada SMS lo cobra la cuenta de SMS, por cada parte de 160 caracteres (70 con emoji o tilde).",
+  },
+  // O módulo `canal_sms` em /admin/sistema e em Recursos opcionais (PR #4574).
+  "Canal de SMS": { es: "Canal de SMS" },
+  "Ligado, cada empresa ganha em Conexões uma aba para conectar um número de SMS, com a conta e a chave do fornecedor. As mensagens que chegam ao número caem no Inbox, e a resposta sai pelo mesmo número, também pela IA, pelos follow-ups e pelas automações; campanhas não passam por ele. Desligado, a aba some e ninguém conecta um número novo; um número já conectado segue atendendo até a empresa desconectá-lo.": {
+    es: "Activado, cada empresa gana en Conexiones una pestaña para conectar un número de SMS, con la cuenta y la clave del proveedor. Los mensajes que llegan al número caen en el Inbox, y la respuesta sale por el mismo número, también por la IA, los seguimientos y las automatizaciones; las campañas no pasan por él. Desactivado, la pestaña desaparece y nadie conecta un número nuevo; un número ya conectado sigue atendiendo hasta que la empresa lo desconecte.",
+  },
+  "Cada empresa conecta em Conexões um número de SMS, e as mensagens dele chegam ao Inbox e são respondidas pelo mesmo número.": {
+    es: "Cada empresa conecta en Conexiones un número de SMS, y sus mensajes llegan al Inbox y se responden por el mismo número.",
+  },
+  "A conta e o número são conferidos na conta de SMS antes de gravar.": {
+    es: "La cuenta y el número se verifican en la cuenta de SMS antes de guardar.",
+  },
+  "Não foi possível apontar o recebimento do número sozinho. No painel da conta de SMS, cole a URL abaixo em “A message comes in” do número. Sem isso o CRM envia, mas a resposta do cliente não entra.": {
+    es: "No fue posible apuntar automáticamente la recepción del número. En el panel de la cuenta de SMS, pega la URL de abajo en “A message comes in” del número. Sin eso el CRM envía, pero la respuesta del cliente no entra.",
+  },
+  "O número já foi apontado para cá ao conectar. Se ele estiver num Messaging Service, cole a URL abaixo na integração do serviço, ou escolha “Defer to sender's webhook”.": {
+    es: "El número ya se apuntó aquí al conectarlo. Si está en un Messaging Service, pega la URL de abajo en la integración del servicio, o elige “Defer to sender's webhook”.",
+  },
 
   // ─── motivo do cancelamento do follow-up (#4428) ──────────────────────────
   // O motivo da inscrição é gravado como TEXTO e mostrado pelo Dossiê via `t()`

@@ -28,7 +28,12 @@ export default async function ConnectionsPage() {
   );
   const wacallsConfigured = Boolean(process.env.WACALLS_API_BASE_URL);
   // Doc 216 (A): o robô de mensagens é módulo opcional, ligado em /admin/sistema.
-  const roboLigado = await moduloLigado(createAdminClient(), "canal_bot");
+  // O SMS (#4415, PR #4574) segue o mesmo molde, com o módulo `canal_sms`.
+  const admin = createAdminClient();
+  const [roboLigado, smsLigado] = await Promise.all([
+    moduloLigado(admin, "canal_bot"),
+    moduloLigado(admin, "canal_sms"),
+  ]);
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
@@ -46,6 +51,7 @@ export default async function ConnectionsPage() {
         wacallsConfigured={wacallsConfigured}
         graphParceiro={canalGraphParceiroLigado() ? { label: GRAPH_PARTNER_LABEL } : null}
         bot={roboLigado ? { label: ROTULO_DO_ROBO } : null}
+        sms={smsLigado}
       />
     </div>
   );

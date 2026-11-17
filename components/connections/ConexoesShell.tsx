@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RedesSociaisClient } from "./RedesSociaisClient";
 import { CanalBotClient } from "./CanalBotClient";
 import { CanalGraphParceiroClient } from "./CanalGraphParceiroClient";
+import { CanalSmsClient } from "./CanalSmsClient";
 import { CanalOficialClient } from "./CanalOficialClient";
 import { CanalParceiroClient } from "./CanalParceiroClient";
 import { CanalVozClient } from "./CanalVozClient";
@@ -49,6 +50,7 @@ export function ConexoesShell({
   wacallsConfigured,
   graphParceiro = null,
   bot = null,
+  sms = false,
 }: {
   wahaConfigured: boolean;
   wacallsConfigured: boolean;
@@ -64,6 +66,12 @@ export function ConexoesShell({
    * doc 216): desligado = `null`, e a aba nem é montada, nem por `?aba=`.
    */
   bot?: { label: string } | null;
+  /**
+   * O canal de SMS (#4415) é MÓDULO OPCIONAL da instalação (`canal_sms`, no
+   * molde do `canal_bot`): desligado = `false`, e a aba nem é montada, nem por
+   * `?aba=sms`.
+   */
+  sms?: boolean;
 }) {
   const t = useT();
   const router = useRouter();
@@ -80,7 +88,9 @@ export function ConexoesShell({
           ? "telefonia"
           : abaParam === "voz"
             ? "voz"
-            : abaParam === "graph" && graphParceiro
+            : abaParam === "sms" && sms
+              ? "sms"
+              : abaParam === "graph" && graphParceiro
               ? "graph"
               : abaParam === "bot" && bot
                 ? "bot"
@@ -119,6 +129,7 @@ export function ConexoesShell({
         <TabsTrigger value="parceiro">{t("Provedor parceiro")}</TabsTrigger>
         <TabsTrigger value="telefonia">{t("Telefone")}</TabsTrigger>
         <TabsTrigger value="sociais">{t("Redes sociais")}</TabsTrigger>
+        {sms && <TabsTrigger value="sms">{t("SMS")}</TabsTrigger>}
         <TabsTrigger value="voz">{t("Chamada de voz")}</TabsTrigger>
         {graphParceiro && <TabsTrigger value="graph">{graphParceiro.label}</TabsTrigger>}
         {bot && <TabsTrigger value="bot">{bot.label}</TabsTrigger>}
@@ -143,6 +154,11 @@ export function ConexoesShell({
         <TelefoniaClient />
       </TabsContent>
       <TabsContent value="sociais" className="mt-0"><RedesSociaisClient /></TabsContent>
+      {sms && (
+        <TabsContent value="sms" className="mt-0">
+          <CanalSmsClient />
+        </TabsContent>
+      )}
 
       <TabsContent value="voz" className="mt-0">
         <CanalVozClient wacallsConfigured={wacallsConfigured} />

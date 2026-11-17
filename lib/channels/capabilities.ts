@@ -242,6 +242,40 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // Telegram não tem ponte, e `true` ofereceria uma chave que não envia nada.
     reportaConversao: false,
   },
+  // SMS (#4415). Não há janela de 24h nem modelo aprovado: texto livre a
+  // qualquer hora, e o que a regra dos EUA exige (registro do remetente, A2P
+  // 10DLC) é feito no fornecedor ANTES de conectar — o número chega pronto.
+  //
+  // `banRisk: false`: o risco aqui não é ban por padrão de uso de um aparelho,
+  // é filtro de operadora por conteúdo e volume, que o fornecedor enfileira e
+  // reporta como recusa (`remetente_nao_registrado`, `desacelerar` em
+  // `lib/channels/sms/twilio.ts`). Throttle/warm-up/cap do WhatsApp por QR não
+  // protegeriam nada. Horário comercial e fuso continuam armados (invariante 3:
+  // cortesia não é anti-ban).
+  //
+  // `costPerMessage: true`: cada parte de 160 caracteres (70 com emoji) é
+  // cobrada, nas duas direções.
+  twilio: {
+    freeformOutsideWindow: true,
+    requiresTemplates: false,
+    canManageTemplates: false,
+    banRisk: false,
+    minIntervalMs: null,
+    // Sem nota de voz no SMS: o adapter recusa tudo que não é texto (fatia 1).
+    // "none" faz o agente com voz ligada responder em texto, em vez de
+    // sintetizar um áudio que o adapter recusaria (o mesmo caso do Telegram).
+    voiceNote: "none",
+    groups: "none",
+    costPerMessage: true,
+    alteraMensagemEnviada: false,
+    podeReagir: false,
+    transmissao: false,
+    phonebook: false,
+    statusUpdates: false,
+    // Sem ponte de conversão no fornecedor de SMS: a venda de um lead que veio
+    // por SMS sai pela conexão direta (conjunto de dados e token), como no QR.
+    reportaConversao: false,
+  },
 };
 
 /**
@@ -277,6 +311,8 @@ export const CHANNEL_PROVIDER_DATAFY: ChannelProvider = "datafy";
 export const CHANNEL_PROVIDER_WACALLS: ChannelProvider = "wacalls";
 /** Bot do Telegram (Bot API, #3440) — canal de mensagem sem telefone. */
 export const CHANNEL_PROVIDER_TELEGRAM: ChannelProvider = "telegram";
+/** SMS (#4415) — o fornecedor; a conversa que ele abre é `channel = 'sms'`. */
+export const CHANNEL_PROVIDER_TWILIO: ChannelProvider = "twilio";
 
 /**
  * O provider em que o NÚMERO é a conexão: pareado por QR, a linha só vira
@@ -312,6 +348,7 @@ export const PROVIDERS_DE_MENSAGEM = [
   // fala com quem o iniciou. `PROVIDERS_DE_TELEFONE` fica de fora de propósito,
   // e o motivo está lá embaixo.
   "telegram",
+  "twilio",
 ] as const satisfies readonly ProviderDeMensagem[];
 
 /**
@@ -339,6 +376,7 @@ export const PROVIDERS_DE_TELEFONE = [
   "meta_cloud",
   "zernio",
   "datafy",
+  "twilio",
 ] as const satisfies readonly Exclude<(typeof PROVIDERS_DE_MENSAGEM)[number], "zernio_social" | "telegram">[];
 
 /**
@@ -417,8 +455,15 @@ export function canalConhecidoSemMensagem(provider: string | null | undefined): 
  * para quem o iniciou, e a v1 da proposta exclui campanha. A regra mora aqui, e
  * não num `false` falso na capability de janela: mentir na janela mudaria o
  * que o atendimento pode fazer só para esconder a campanha.
+ *
+ * O SMS (#4415) entra pelo mesmo motivo de produto: o dono decidiu que a
+ * campanha por SMS não entra na primeira fatia do canal (doc 366, PR #4574),
+ * como fez com o Telegram. O SMS manda texto a qualquer hora, e a conversa, a
+ * IA, os follow-ups e as automações continuam usando isso; só a campanha fica
+ * de fora. Criar uma campanha por uma conexão de SMS é recusado por
+ * `decidirConteudo` ("Este canal não envia campanhas.", 409).
  */
-const PROVIDERS_SEM_CAMPANHA = ["telegram"] as const satisfies readonly ProviderDeMensagem[];
+const PROVIDERS_SEM_CAMPANHA = ["telegram", "twilio"] as const satisfies readonly ProviderDeMensagem[];
 
 /**
  * O canal de campanha por E-MAIL (#3441, fatia E2a).

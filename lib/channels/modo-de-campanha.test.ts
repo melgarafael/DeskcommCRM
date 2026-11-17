@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   CANAL_DE_CAMPANHA_EMAIL,
+  CHANNEL_PROVIDER_TWILIO,
   canalTemRiscoDeBanimento,
   modoDeCampanhaDoCanal,
 } from "./capabilities";
@@ -32,6 +33,10 @@ describe("modoDeCampanhaDoCanal", () => {
 
   it("o bot (#3440) escreve livre na conversa e mesmo assim não faz campanha", () => {
     expect(modoDeCampanhaDoCanal("telegram")).toBeNull();
+  });
+
+  it("o SMS (#4415) também escreve livre e não faz campanha: decisão do dono no doc 366", () => {
+    expect(modoDeCampanhaDoCanal(CHANNEL_PROVIDER_TWILIO)).toBeNull();
   });
 });
 
