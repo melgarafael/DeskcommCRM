@@ -17,8 +17,9 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -28,16 +29,24 @@ export interface ReactivationLive {
   expires_at: string;
 }
 
-export async function GET(_req: NextRequest): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const guard = await requireRole("viewer", { requestId });
-  if (!guard.ok) return guard.response;
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_leads",
+    role: "viewer",
+    scope: "mcp:read",
+  });
+  if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "leads_reactivations", requestId);
+  if (teto) return teto;
+  const { supabase, organizationId, idioma } = authz;
+  const t = (texto: string) => traduzir(texto, idioma ?? IDIOMA_PADRAO);
 
-  const supabase = await createClient();
   const { data, error } = await supabase
     .from("crm_lead_reactivations")
     .select("id, lead_id, expires_at")
-    .eq("organization_id", guard.org.orgId)
+    .eq("organization_id", organizationId)
     .eq("status", "pending")
     .order("expires_at", { ascending: true });
   if (error) return fail("internal_error", error.message, 500, { requestId });

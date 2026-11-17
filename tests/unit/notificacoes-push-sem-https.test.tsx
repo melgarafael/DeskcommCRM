@@ -17,6 +17,9 @@ vi.mock("@/app/app/settings/notifications/_client", () => ({ NotificationPrefsCl
 vi.mock("@/app/app/settings/notifications/_tarefas", () => ({ TaskReminderPrefs: () => null }));
 vi.mock("@/app/app/settings/notifications/_sons", () => ({ SonsDosAvisos: () => null }));
 vi.mock("@/app/app/settings/notifications/_tela-bloqueada", () => ({ ConteudoNaTelaBloqueada: () => null }));
+// A seção da cor por canal (#4094) também é Server Component: no jsdom ela
+// suspenderia e derrubaria a montagem da página, como as vizinhas acima.
+vi.mock("@/app/app/settings/notifications/_cor-por-canal", () => ({ CorPorCanalNoAviso: () => null }));
 
 import NotificationsPage from "@/app/app/settings/notifications/page";
 
