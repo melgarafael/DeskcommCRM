@@ -155,6 +155,11 @@ function ctxComModulo(
         },
         eq: () => q,
         order: () => q,
+        // A capacidade da organização (#3472) lê uma linha de `organizations`;
+        // sem settings, a capacidade está desligada — o padrão de todo cliente.
+        maybeSingle: async () => ({ data: null, error: null }),
+        limit: async () => ({ data: [], error: null }),
+        in: async () => ({ data: [], error: null }),
         range: async () =>
           tabela === "catalog_products"
             ? { data: produtos, error: null, count: produtos.length }
@@ -181,8 +186,13 @@ describe("crm_search_products — catálogo de serviços (módulo opcional)", ()
     expect(chamadas).toEqual([
       {
         tabela: "catalog_products",
-        select: "id, codigo, nome, descricao, marca, categoria, preco_cents, moeda, controla_estoque, quantidade, ativo, fotos",
+        select:
+          "id, codigo, nome, descricao, marca, categoria, capacidade, preco_cents, moeda, controla_estoque, quantidade, ativo, fotos",
       },
+      // A main pergunta a capacidade da empresa (#3472) antes de pontuar. Com o
+      // módulo de serviço DESLIGADO, esta é a única outra leitura — e nada do
+      // módulo (`catalog_service_details`) é consultado.
+      { tabela: "organizations", select: "settings" },
     ]);
     // A variação é só mais um produto, como hoje; nenhum bloco de serviço.
     expect(r.produtos.map((p) => p.codigo).sort()).toEqual(["SOCIAL", "SOCIAL-20"]);

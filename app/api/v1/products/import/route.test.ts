@@ -20,7 +20,10 @@ vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({})) }));
-vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: vi.fn(async () => false) }));
+vi.mock("@/lib/instalacao/modulos", () => ({
+  moduloLigado: vi.fn(async () => false),
+  modulosLigados: vi.fn(async () => []),
+}));
 vi.mock("@/lib/catalogo/servicos-supabase", async (original) => ({
   ...(await original<Record<string, unknown>>()),
   sinaisFixosQueTravamPreco: vi.fn(async () => new Map()),
