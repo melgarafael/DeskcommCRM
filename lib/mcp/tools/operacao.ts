@@ -154,15 +154,13 @@ const updateStageShape = {
 export const crmUpdateStage: McpToolDefinition<typeof updateStageShape> = {
   name: "crm_update_stage",
   description:
-    "Renomeia, reordena, calibra a probabilidade de ganho (win_probability, 0-100; null limpa a " +
-    "calibração e a previsão passa a reportar a etapa sem probabilidade), ajusta a janela de " +
-    "esfriando (expected_duration_hours, em HORAS de 1 a 8760; null volta ao padrão de 24 h), " +
-    "escreve o critério da etapa (description: quando um card entra nela, até 500 caracteres; null " +
-    "ou vazio limpa) ou muda o papel de desfecho " +
-    "(is_won/is_lost) de uma etapa. " +
-    "after_stage_id é o id da etapa VIZINHA DA ESQUERDA (null = primeira coluna), não um número de posição. " +
-    "Mover a marcação de ganho/perda para outra etapa é permitido; REMOVÊ-LA sem substituta não é — " +
-    "o pipeline ficaria sem onde fechar negócio.",
+    "Renomeia, reordena, calibra o ganho (win_probability 0-100; null limpa e a etapa sai da " +
+    "previsão de probabilidade), ajusta o esfriando (expected_duration_hours, HORAS 1-8760; null " +
+    "volta a 24 h), escreve o critério da etapa (description: quando o card entra nela, até 500 " +
+    "caracteres; null limpa) ou muda o papel de desfecho (is_won/is_lost). " +
+    "after_stage_id é a etapa VIZINHA DA ESQUERDA (null = primeira coluna), não a posição. " +
+    "Mover ganho/perda de etapa é permitido; REMOVÊ-LA sem substituta não — o pipeline ficaria " +
+    "sem onde fechar.",
   inputSchema: updateStageShape,
   category: "write",
   requiresRole: "manager",
