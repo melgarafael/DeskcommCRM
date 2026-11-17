@@ -13,8 +13,10 @@ import { reconhecerDispositivoConfiavel } from "@/lib/auth/dispositivo-confiavel
 import { invalidarUsuario } from "@/lib/auth/cache-curto";
 import {
   authRateLimited,
+  bloqueioProgressivoDeConta,
   contaBloqueadaPorFalhas,
   registrarFalhaDeLogin,
+  falhasNaJanelaDiaria,
   AUTH_LIMITS,
 } from "@/lib/auth/rate-limit";
 
@@ -54,13 +56,30 @@ export async function signInWithPassword(input: LoginInput, next?: string): Prom
   // Antes de falar com o GoTrue: sem isto, tentar senha era de graça e
   // ilimitado (issue #64). Conta por IP e por conta — o ataque distribuído
   // contra um e-mail só não aparece na contagem por IP.
+  //
+  // O bloqueio progressivo (issue #4743) é a janela de 24 h: a de 5 min zera, e
+  // 5 erros a cada 5 min davam ~1.440 tentativas por dia contra a mesma conta.
+  // O balde é derivado do e-mail APRESENTADO, exista a conta ou não, então a
+  // resposta é a mesma sequência para e-mail inexistente — o bloqueio não pode
+  // virar oráculo de enumeração.
+  const bloqueio = await bloqueioProgressivoDeConta(parsed.data.email);
   if (
     (await authRateLimited("login", null, AUTH_LIMITS.login)) ||
-    (await contaBloqueadaPorFalhas(parsed.data.email, AUTH_LIMITS.login))
+    (await contaBloqueadaPorFalhas(parsed.data.email, AUTH_LIMITS.login)) ||
+    bloqueio.bloqueado
   ) {
     await audit({
-      action: "auth.login_rate_limited",
-      metadata: { email_hash: hashEmail(parsed.data.email) },
+      // Um evento por DEGRAU quando quem barrou foi a régua: 5 min e "até
+      // redefinir" são incidentes diferentes, e o dono da conta precisa saber
+      // qual dos dois aconteceu.
+      action: bloqueio.acao ?? "auth.login_rate_limited",
+      metadata: bloqueio.bloqueado
+        ? {
+            email_hash: hashEmail(parsed.data.email),
+            degrau: bloqueio.degrau,
+            restante_seg: bloqueio.restanteSec,
+          }
+        : { email_hash: hashEmail(parsed.data.email) },
       requestId,
       ip,
       userAgent,
@@ -75,7 +94,7 @@ export async function signInWithPassword(input: LoginInput, next?: string): Prom
 
   if (error || !data.user) {
     // Só senha errada gasta o orçamento da conta.
-    await registrarFalhaDeLogin(parsed.data.email, AUTH_LIMITS.login);
+    const degrau = await registrarFalhaDeLogin(parsed.data.email, AUTH_LIMITS.login);
     await audit({
       action: "auth.login_failed",
       metadata: {
@@ -86,6 +105,22 @@ export async function signInWithPassword(input: LoginInput, next?: string): Prom
       ip,
       userAgent,
     });
+    // O degrau que ACABOU de nascer tem evento próprio (issue #4743): quem lê a
+    // auditoria depois precisa distinguir "errou a senha" de "a conta entrou em
+    // bloqueio de 30 minutos" sem inferir nada.
+    if (degrau) {
+      await audit({
+        action: degrau.acao,
+        metadata: {
+          email_hash: hashEmail(parsed.data.email),
+          falhas_24h: await falhasNaJanelaDiaria(parsed.data.email),
+          castigo_seg: degrau.segundos,
+        },
+        requestId,
+        ip,
+        userAgent,
+      });
+    }
     return { ok: false, error: "invalid_credentials" };
   }
 
