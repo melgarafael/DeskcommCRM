@@ -72516,11 +72516,7 @@ set search_path = public, pg_temp as $$
  where q.organization_id = p_org;
 $$;
 
-revoke execute on function public.fn_satisfacao_fechar_vencidas(uuid) from public, anon, authenticated, service_role;
-revoke execute on function public.fn_satisfacao_resumo(uuid, timestamptz, timestamptz) from public, anon, authenticated, service_role;
 revoke execute on function public.fn_quarentena_resumo(uuid) from public, anon, authenticated, service_role;
-grant execute on function public.fn_satisfacao_fechar_vencidas(uuid) to service_role;
-grant execute on function public.fn_satisfacao_resumo(uuid, timestamptz, timestamptz) to service_role;
 grant execute on function public.fn_quarentena_resumo(uuid) to service_role;
 
 notify pgrst, 'reload schema';
