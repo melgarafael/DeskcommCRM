@@ -80020,6 +80020,60 @@ comment on function public.fn_contato_anotar_campos(uuid, uuid, jsonb, text[]) i
   'Mescla campos personalizados no CONTATO dentro do banco, numa única instrução atômica, '
   'e recusa ficha anonimizada. Não decide papel nem organização — isso é de quem chama.';
 
+-- ---- 9406 — a prospecção cria a Empresa, com o módulo ligado (issue #3198, fatia 2) ----
+-- Espelho de supabase/migrations/20261116161000_9406_prospeccao_cria_empresa.sql.
+-- `contacts.company_id` é referência à EMPRESA (telefone da recepção), não pessoa
+-- sintética; `companies.website/maps_url/place_id` guardam só o que não muda do
+-- Maps, e o único parcial `(organization_id, place_id)` é a deduplicação por
+-- negócio. A mesma organização é garantida por gatilho, como em
+-- `fn_contacts_person_same_org` (0448).
+alter table public.contacts
+  add column if not exists company_id uuid references public.companies(id) on delete set null;
+
+create index if not exists idx_contacts_org_company
+  on public.contacts (organization_id, company_id)
+  where company_id is not null;
+
+create or replace function public.fn_contacts_company_same_org()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_company_org uuid;
+begin
+  if new.company_id is null then
+    return new;
+  end if;
+  select organization_id into v_company_org
+    from public.companies where id = new.company_id;
+  if v_company_org is null then
+    raise exception 'contacts.company_id: empresa inexistente';
+  end if;
+  if new.organization_id is distinct from v_company_org then
+    raise exception 'contacts.company_id: organization_id deve coincidir com a empresa';
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_contacts_company_same_org() from public, anon;
+
+drop trigger if exists trg_contacts_company_same_org on public.contacts;
+create trigger trg_contacts_company_same_org
+  before insert or update of company_id, organization_id on public.contacts
+  for each row execute function public.fn_contacts_company_same_org();
+
+alter table public.companies
+  add column if not exists website text,
+  add column if not exists maps_url text,
+  add column if not exists place_id text;
+
+create unique index if not exists companies_org_place_id_uidx
+  on public.companies (organization_id, place_id)
+  where place_id is not null;
+
 notify pgrst, 'reload schema';
 
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
