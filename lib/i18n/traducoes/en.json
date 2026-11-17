@@ -4312,6 +4312,9 @@
   "Nenhuma conexão": "No connections",
   "Não foi possível verificar as conexões": "Couldn't check the connections",
   "Escaneie o QR": "Scan the QR code",
+  "Mostrar o QR": "Show the QR",
+  "Não foi possível gerar um novo QR.": "Couldn't generate a new QR.",
+  "Este número já foi pareado — gerar um novo QR descartaria a credencial guardada.": "This number was already linked — generating a new QR would discard the stored credential.",
   "Parado": "Stopped",
   "Caiu": "Dropped",
   "Situação desconhecida": "Unknown status",
@@ -9861,5 +9864,11 @@
   "Rascunho do assistente de IA": "AI assistant draft",
   "Teste do assistente de IA": "AI assistant test",
   "Atendimento dos clientes": "Customer service",
-  "Esta capacidade é de quem administra a empresa, por um aplicativo conectado como o ChatGPT. Um assistente não lê nem altera as próprias instruções.": "This capability belongs to whoever administers the company, through a connected app such as ChatGPT. An assistant does not read or change its own instructions."
+  "Esta capacidade é de quem administra a empresa, por um aplicativo conectado como o ChatGPT. Um assistente não lê nem altera as próprias instruções.": "This capability belongs to whoever administers the company, through a connected app such as ChatGPT. An assistant does not read or change its own instructions.",
+  "1 conta de teste autorizada": "1 authorized test account",
+  "contas de teste autorizadas": "authorized test accounts",
+  "Somente as contas marcadas abaixo podem receber respostas automáticas enquanto o canal está em teste. Sem nenhuma marcada, a IA fica pausada.": "Only the accounts checked below can receive automatic replies while the channel is in test mode. With none checked, the AI stays paused.",
+  "Contas autorizadas para teste": "Accounts authorized for testing",
+  "Nenhum contato desta rede conversou com o canal ainda. Peça para a conta de teste mandar uma mensagem e reabra este painel.": "No contact from this network has messaged the channel yet. Ask the test account to send a message, then reopen this panel.",
+  "Salvar contas de teste": "Save test accounts"
 }

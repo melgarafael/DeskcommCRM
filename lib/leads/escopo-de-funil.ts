@@ -166,6 +166,10 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   crm_resume_ai_attendance: "sem_funil",
   crm_save_org_memory: "sem_funil",
   crm_propose_contact_field: "sem_funil",
+  // O diagnóstico mora na FICHA do contato (decisão D8), que vale entre funis:
+  // não recebe `lead_id` nem `pipeline_id`, e não muda negócio nenhum. Quem
+  // limita é a cerca do contato do turno (`escopo-das-escritas.ts`).
+  crm_save_lead_diagnosis: "sem_funil",
   // Rascunho sugerido por integração (#1611): opera por `conversation_id`,
   // nunca `lead_id`, e não mexe em estado de funil nenhum. A barreira é OUTRA,
   // e é dela que a segurança depende: o RBAC da rota (agent+), o escopo
