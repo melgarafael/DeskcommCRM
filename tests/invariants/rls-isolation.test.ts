@@ -677,7 +677,7 @@ beforeAll(() => {
           values (v_org, 'rls-invariant-' || v_org::text, v_conv, v_contact, true, 'completed', 0);
         end if;
 
-        -- migrations 9352 (#4023) e 9419 (#4026): a nota de satisfacao e a linha de
+        -- migrations 9352 (#4023) e 9420 (#4026): a nota de satisfacao e a linha de
         -- quarentena. Semeio uma de cada por organizacao -- a ultima fechada
         -- como 'sem_nota' e a outra 'em_quarentena', os dois estados que mais
         -- erram na mao. A quarentena exige message_id unico: o id sai do
@@ -954,7 +954,7 @@ export const TABLES = [
   // migration 9043 — o segundo telefone da ficha (Spec 31 B1). Leitura por
   // organização; a escrita exige `agent`, o papel semeado aqui.
   "contact_phones",
-  // migration 9419 (#4026) — a fila de quarentena do filtro de spam. Vazar a
+  // migration 9420 (#4026) — a fila de quarentena do filtro de spam. Vazar a
   // linha conta ao vizinho que mensagem foi retida, com que confianca e por
   // quais sinais. Mesmo desenho: leitura org-scoped, escrita do motor.
   "quarentena_de_entrada",

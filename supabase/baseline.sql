@@ -72431,9 +72431,9 @@ grant execute on function public.fn_vocabulario_de_tags_pagina(uuid,text,integer
 
 notify pgrst, 'reload schema';
 
--- ---- quarentena de entrada (migration 9419) ----
+-- ---- quarentena de entrada (migration 9420) ----
 -- #4026. Espelho de
--- `supabase/migrations/20261117190000_9419_quarentena_de_entrada.sql`. A
+-- `supabase/migrations/20261117200200_9420_quarentena_de_entrada.sql`. A
 -- PESQUISA DE SATISFAÇÃO (#4023) não mora mais aqui: ela entrou pela migration
 -- 9352 e este bloco é só a fila de quarentena — o apêndice antigo trazia as duas
 -- e a satisfação passou a ser definida duas vezes no baseline (uma vez por
