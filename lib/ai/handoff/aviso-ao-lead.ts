@@ -229,7 +229,7 @@ export async function avisarLeadDoCrm(
     // foi respondida —, não há a quem responder: o aviso chega do nada, e "deixei
     // com uma pessoa da equipe" três dias depois, às 22h, lê-se como robô perdido.
     //
-    // Medido em produção (#4797, conversa de WhatsApp/WAHA): última mensagem do
+    // Medido em produção (#4797, conversa de canal de mensageria): última mensagem do
     // cliente em 13/11 15:23, resposta do agente em 15:24, mensagem MANUAL do
     // atendente em 14/11 16:42 — e em 16/11 22:19 saiu "Deixei isso com uma pessoa
     // da equipe, que continua daqui. Agora não tem ninguém livre…" com

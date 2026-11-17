@@ -44,9 +44,22 @@ vi.mock("@/lib/logger", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: 
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(), isServiceRoleConfigured: () => false }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const tabela = (nome: string): any => {
-      const chain: any = {
+    /** A cadeia POSTGREST de mentira — encadeável e "aguardável". */
+    interface CadeiaFalsa {
+      select: () => CadeiaFalsa;
+      update: (p: Record<string, unknown>) => CadeiaFalsa;
+      insert: (p: Record<string, unknown>) => CadeiaFalsa;
+      delete: () => CadeiaFalsa;
+      eq: () => CadeiaFalsa;
+      gt: () => CadeiaFalsa;
+      order: () => CadeiaFalsa;
+      limit: () => CadeiaFalsa;
+      maybeSingle: () => Promise<{ data: unknown; error: null }>;
+      single: () => Promise<{ data: unknown; error: null }>;
+      then: (r: (v: unknown) => unknown) => Promise<unknown>;
+    }
+    const tabela = (nome: string): CadeiaFalsa => {
+      const chain: CadeiaFalsa = {
         select: () => chain,
         update: (p: Record<string, unknown>) => {
           escritas.push({ tabela: nome, tipo: "update", payload: p });
@@ -88,7 +101,12 @@ beforeEach(() => {
     contact_id: CONTACT,
     last_handoff_at: null,
     last_handoff_reason: null,
-    last_outbound_at: null,
+    // O caso do #4797: a última coisa na conversa é a NOSSA mensagem, não uma
+    // do cliente. É daqui que o aviso é recusado — e é isso que o teste mede:
+    // a recusa não pode calar a passagem.
+    last_inbound_at: null,
+    last_outbound_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+    channel_session_id: null,
     assigned_to_user_id: null,
     metadata: {},
   };
