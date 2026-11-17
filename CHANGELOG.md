@@ -16,6 +16,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Com o módulo **desligado**, nada muda: a prospecção segue criando contato, negócio e conversa como hoje, e nenhuma linha é escrita em Empresas.
 
+  Contribuição de @webtecnica (#4775, #3198).
+
 - **A linha do tempo do negócio junta as conversas e ligações de todos os números** O dossiê do negócio passa a mostrar **uma linha do tempo só**, com as conversas e as ligações de todos os números do cliente intercaladas por data — mais recente primeiro. Cada linha diz de qual pessoa e de qual telefone veio o fato, e o bloco carrega mais páginas por cursor, sem repetir nem pular item quando chega mensagem nova no meio da rolagem.
 
   A leitura reaproveita as Pessoas relacionadas que já existem: nenhuma tabela nova, nenhuma mudança na entrada das mensagens do WhatsApp e nenhuma no envio. Negócio com um número só continua mostrando exatamente o que mostrava.
@@ -28,7 +30,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   O pessoal marcado antes desta versão continua invisível para todos, inclusive para o administrador: ele não tem dono, e a posse não é inventada. Para voltar a alcançar um contato assim, basta marcar de novo — quem marcar assume a conversa.
 
-  Crédito: @webtecnica.
+  Contribuição de @webtecnica (#4535, #4434).
 
 - **A IA lista e lê os documentos anexados ao negócio** Quando o dado que o cliente pede está num documento anexado ao card — a apólice do seguro, o voucher da viagem, a confirmação do hotel —, a IA agora consegue ver quais arquivos existem naquele negócio (nome, tipo, tamanho e data) e ler o texto do documento. Com isso ela descobre o número da apólice, o localizador e o hotel no próprio arquivo, em vez de perguntar de novo ao cliente. A leitura tira o texto de PDF com texto selecionável, até 24 mil caracteres por vez; o que passar disso volta parcial e avisado. Arquivo maior que 50 MB é recusado. Imagem e arquivo binário não são transcritos nem enviados como base64: a IA é avisada de que precisa de uma pessoa para abrir o arquivo, e nunca inventa o conteúdo. A IA só vê anexos de negócios da própria empresa, e durante um atendimento só do negócio daquele cliente.
 
@@ -48,11 +50,15 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Só a importação por planilha muda: a busca de empresas pelo Google Maps continua igual. Sem as colunas, a IA recebe exatamente as mesmas instruções e os mesmos dados de antes para escrever a primeira mensagem. Nenhuma ação é necessária na atualização. Crédito: @tabaterral, sobre a ideia de @aleflores35 no #4459.
 
+  Contribuição de @tabaterral (#4745).
+
 ### Alterado
 
 - **A varredura de silêncio do follow-up lê a organização e o fluxo uma vez por minuto, e não uma vez por conversa e por ponteiro** A varredura de silêncio do follow-up roda a cada minuto. Depois do conserto anterior (#4330), ela já lia as conversas de cada organização uma vez por rodada, mas cada linha ainda trazia o `settings` inteiro da organização (cerca de 7,7 KB repetidos em cada conversa) e o desenho do fluxo era lido de novo para cada ponteiro de silêncio ativo. Agora o status e o `settings` da organização saem de uma leitura por organização por rodada, e o desenho do fluxo de uma leitura por versão por rodada. Numa instalação com 29 ponteiros e cerca de 110 conversas abertas, isso tira, pela estimativa do autor, por volta de 850 KB de cada rodada, o que pesa na cota de tráfego do banco no Supabase Cloud. Quem recebe o follow-up continua o mesmo: organização inativa ou ausente não atende, e as tags internas da organização continuam valendo para cada conversa. Contribuição de @webtecnica.
 
 - **O quadro do funil abre e arrasta mais rápido em funis com muitos negócios ganhos ou perdidos** As colunas de etapa de ganho e de perda passam a mostrar os negócios de 50 em 50, com o botão "Mostrar mais" no fim da coluna. O contador, os totais e "selecionar a etapa" continuam contando todos os negócios da coluna, e as etapas abertas mostram todos, como antes. O negócio aberto por link e o card que acabou de ser solto aparecem mesmo além dos 50. Marcar, mover ou receber atualização de um card agora redesenha só aquele card, e passar um card por cima de uma coluna não redesenha os cards dela. Nenhuma ação é necessária na atualização (#4788).
+
+  Contribuição de @hudson-souza-mkt (#4801, #4788).
 
 ### Corrigido
 
@@ -80,7 +86,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Quando só o login cai, o aviso de conta desconectada continua sendo o de antes, com o mesmo texto e o mesmo botão.
 
-  Crédito: @webtecnica (#4610).
+  Contribuição de @webtecnica (#4718, #4610).
 
 - **Instalar um fluxo de follow-up a partir de um modelo passa a recusar em espanhol quando a instalação está em espanhol** Três avisos da instalação de um fluxo de follow-up a partir de um modelo saíam em português mesmo com a instalação em espanhol: "Este modelo não existe mais.", "Escolha a etapa do funil que dispara este fluxo." e "A etapa escolhida não existe neste funil — escolha outra.". Agora eles saem traduzidos. Junto, a regra de quatro operações da API (testar um roteador, instalar um fluxo a partir de um modelo, alterar e desativar um tipo de agendamento) passou a morar em funções de `lib/`, para que o servidor MCP e as automações usem a mesma regra da tela sem chamar a API por HTTP; as respostas, os códigos e a auditoria continuam os mesmos. Em português nada muda.
 
@@ -92,7 +98,11 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **O link do README para o runbook do Supabase abre na seção do compute Nano, não no topo** No README, a linha da tabela de pré-requisitos que manda procurar o runbook quando o projeto fica fora do ar parado (`522` ou `PGRST002` por horas) apontava para a âncora da seção 5 — o número que a seção do compute Nano tinha antes de a seção de Log ingestion entrar como 5. Quem clicava caía no topo do runbook e tinha de achar o trecho de olho. A âncora agora é a da seção 6, a mesma que o sumário do próprio runbook usa. Nada muda em quem já opera uma instalação: é um ponteiro de documentação.
 
+  Contribuição de @webtecnica (#4789, #4759).
+
 - **O runbook de custo do Supabase cita as linhas certas do scheduler e o texto certo da tela de erro** Duas coisas do runbook mandavam a pessoa olhar o lugar errado. A referência ao cron `data-retention` apontava para a linha 163 do `docker/scheduler/entrypoint.sh` — que hoje é a do `lead-time-triggers`, um cron que não tem nada a ver com retenção; o `data-retention` mora na linha 175. A do `media-retention` apontava para a 167 e ele está na 179. Quem abria o arquivo na linha indicada encontrava outro cron e concluía que a retenção não existia. E a frase que o runbook punha na tela de erro de segmento era “Algo de errado”, com a palavra faltando: a tela diz “Algo deu errado”. Nada muda em quem já opera uma instalação — é texto de documentação, conferido contra o código.
+
+  Contribuição de @webtecnica (#4790, #4760).
 
 - **Com uma única conexão de banco externo ativa, a consulta de receitas já escolhe essa conexão** A ferramenta `crm_consultar_receita` recusava toda chamada sem `connection_id` com `conexao_ambigua`, mesmo quando a empresa tinha uma única conexão de banco externo ativa. O modelo precisava de uma chamada extra de descoberta para descobrir o identificador e só então repetia a consulta — duas chamadas a mais por turno.
 
@@ -106,6 +116,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Nada de cliente é apagado no Asaas, nenhuma assinatura existente é tocada e o contrato do webhook não mudou. Limpeza dos duplicados que já existem e migração das assinaturas antigas ficam fora desta correção.
 
+  Contribuição de @webtecnica (#4778, #4768).
+
 - **A conversa não oferece mais "Responder a esta mensagem" para a mensagem que o contato apagou, e o servidor recusa o envio que a cita** Na conversa, o menu de uma mensagem que o contato apagou continuava com "Responder a esta mensagem" — Encaminhar, Reagir e Baixar já saíam do menu, e essa ação ficava. Quem clicasse veria a citação de um texto que estava fora do ar, e a resposta levava ao canal uma referência a uma mensagem que não existe mais do outro lado. Agora a ação não aparece na mensagem apagada, assim como as outras três.
 
   O servidor passou a recusar o envio com citação a uma mensagem apagada, com erro nomeado e frase que diz o que fazer: a resposta sai sem citá-la. Isso vale também quando a citação foi escolhida antes da exclusão — o contato apaga, o id continua no campo, e o envio é recusado antes de qualquer chamada ao canal. O texto escrito continua no campo, a citação é retirada e basta enviar de novo.
@@ -116,21 +128,31 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **A cadência desligada deixa de gastar 120 leituras por hora no banco** Numa instalação que nunca ligou o módulo de cadências, o cron `cadencia-worker` perguntava "o módulo está instalado?" a cada minuto, e essa pergunta custava duas leituras ao PostgREST (`platform_config` e `modulos_instalados`): 120 idas ao banco por hora só para descobrir que não havia nada a fazer. Agora a rota consulta o retrato do piso ocioso, que responde a mesma pergunta uma vez por janela de 30 s para todas as rotas do processo e não gasta a cota do PostgREST. Com o módulo desligado, a batida sai antes de qualquer leitura; com o módulo ligado, a rodada acontece exatamente como antes, inclusive a auditoria de quem teve inscrição processada.
 
+  Contribuição de @webtecnica (#4773, #3731).
+
 - **Preparar de novo um material do acervo avisa quando o pedido não foi registrado** Quando o pedido para preparar de novo um material do acervo não consegue ser registrado, a tela agora mostra um erro em vez de prometer uma preparação que nunca entrou na fila. Tentar de novo depois funciona normalmente e registra a auditoria como antes.
 
-  Crédito: @samirhvbr.
+  Contribuição de @samirhvbr (#4758).
 
 - **O detalhe de uma importação mostra as colunas Empresa, Pessoa e Contato no idioma da tela** Ao abrir o detalhe de uma importação, a tabela das linhas importadas trazia três colunas com o título em inglês ("Company", "Person" e "Contact"), mesmo com a tela em português ou em espanhol. Agora elas aparecem como "Empresa", "Pessoa" e "Contato" em português, e como "Empresa", "Persona" e "Contacto" em espanhol. Nenhuma ação é necessária na atualização.
 
+  Contribuição de @tridev-tej (#4769, #4756).
+
 - **Falha ao ler as regras de comissão não vira comissão de zero por cento** Lançar item no balcão, faturar atendimentos em lote e abrir a comanda de um negócio ganho passam a informar a falha quando a leitura das regras de comissão falha, em vez de gravar 0% no item. A operação afetada pode ser repetida, e no lote os demais atendimentos seguem normalmente. Itens e comissões já gravados não mudam. Crédito: @samirhvbr.
+
+  Contribuição de @samirhvbr (#4770).
 
 - **Preparar de novo toda a base de conhecimento alcança todos os materiais** Ao preparar de novo toda a base de conhecimento, inclusive depois de trocar o provedor de embeddings, o sistema agora lê os materiais ativos em páginas até o fim. Antes, a leitura era uma consulta só, e o limite de linhas por resposta da API (1.000 no padrão) deixava os materiais seguintes de fora sem avisar: numa base com 1.001 materiais, um ficava com o modelo antigo e fora das buscas feitas com o novo. Os materiais que ainda precisam de preparo continuam indo primeiro, e, se a leitura de alguma página falhar, nada é limpo nem enfileirado. Nenhuma ação é necessária na atualização.
 
-  Crédito: @samirhvbr.
+  Contribuição de @samirhvbr (#4772).
 
 - **Mensagem agendada continua pendente quando a leitura da conexão falha** Uma mensagem agendada não é mais cancelada como se o número estivesse desconectado quando o banco não consegue informar o estado da conexão. Ela continua agendada e é tentada de novo numa rodada seguinte do agendador, depois da trava de cinco minutos que já existia. A desconexão confirmada continua seguindo a escolha de esperar ou cancelar. Crédito: @samirhvbr (#4771).
 
+  Contribuição de @samirhvbr (#4771).
+
 - **Falha ao ler a fila de remoção de mídia passa a aparecer como rodada de cron com erro** Quando o worker que remove as mídias apagadas (LGPD e retenção) não consegue ler a fila, o cron agora responde erro em vez de relatar um lote vazio com sucesso. O agendador passa a registrar a rodada como falha, e o identificador da requisição liga a resposta ao log da aplicação. Os arquivos pendentes continuam na fila para a próxima tentativa. Crédito: @samirhvbr.
+
+  Contribuição de @samirhvbr (#4776).
 
 ## [1.115.0] — 2026-11-17
 
