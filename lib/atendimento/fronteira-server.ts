@@ -184,6 +184,12 @@ export function guardServiceTools(tools: ToolSet | undefined): ToolSet | undefin
     "crm_describe_external_data",
     "crm_query_external_data",
   ]);
+  // As guardas das chamadas paralelas de um passo correm em fila: cada `execute`
+  // começa na ordem em que o modelo escreveu as chamadas, não na ordem em que a
+  // consulta da guarda voltou. É dessa ordem que depende a fila de envio do turno
+  // (`lib/agent-engine/agent/fila-de-envio.ts`). Uma guarda que falha não trava as
+  // seguintes: cada uma confere o próprio efeito.
+  let guardaAnterior: Promise<unknown> = Promise.resolve();
   return Object.fromEntries(
     Object.entries(tools).map(([name, definition]) => {
       if (reads.has(name) || !definition.execute) return [name, definition];
@@ -192,9 +198,10 @@ export function guardServiceTools(tools: ToolSet | undefined): ToolSet | undefin
         name,
         {
           ...definition,
-          execute: async (...args: Parameters<typeof execute>) => {
-            await guardServiceEffect();
-            return execute(...args);
+          execute: (...args: Parameters<typeof execute>) => {
+            const guarda = guardaAnterior.then(() => guardServiceEffect());
+            guardaAnterior = guarda.catch(() => undefined);
+            return guarda.then(() => execute(...args));
           },
         },
       ];

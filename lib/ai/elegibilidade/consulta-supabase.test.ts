@@ -176,6 +176,38 @@ describe("decidirElegibilidadeDaConversaViaSupabase", () => {
     expect(d?.motivo).toBe("org_nao_operante");
   });
 
+  it("dono humano + modo 'IA com o dono' ligado: o transporte também permite (#3967)", async () => {
+    const d = await decidirElegibilidadeDaConversaViaSupabase(
+      adminStub({ data: linha({ assignee_kind: "user", metadata: { ai_com_dono: true } }), error: null }),
+      { organizationId: ORG, conversationId: CONV, agora: AGORA, ttlMs: TTL },
+    );
+    expect(d).toMatchObject({ permite: true, motivo: "gate_aberto" });
+  });
+
+  it("pré-go-live social: a identidade do contato chega ao gate — só a conta da lista passa", async () => {
+    const testador = "instagram:6af9e0ef28984e27de07bef4:1011223655361506";
+    const decidir = (identidade: string | null) =>
+      decidirElegibilidadeDaConversaViaSupabase(
+        adminStub({
+          data: linha({
+            channel_sessions: {
+              metadata: {
+                ai_gate: "allowlist", ai_gate_mode: "pre_go_live",
+                ai_test_phone_numbers: [], ai_test_social_identities: [testador],
+              },
+            },
+            contacts: { force_human: false, ai_authorized_at: null, phone_number: null, social_identity: identidade },
+          }),
+          error: null,
+        }),
+        { organizationId: ORG, conversationId: CONV, agora: AGORA, ttlMs: TTL },
+      );
+    expect(await decidir(testador)).toMatchObject({ permite: true, motivo: "numero_de_teste" });
+    expect(await decidir("instagram:0123456789abcdef01234567:1011223655361506"))
+      .toMatchObject({ permite: false, motivo: "fora_da_lista_de_teste" });
+    expect(await decidir(null)).toMatchObject({ permite: false, motivo: "fora_da_lista_de_teste" });
+  });
+
   it("conversa inexistente → null", async () => {
     const d = await decidirElegibilidadeDaConversaViaSupabase(adminStub({ data: null, error: null }), {
       organizationId: ORG,

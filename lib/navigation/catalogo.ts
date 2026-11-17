@@ -33,6 +33,7 @@ export interface NavGroup {
 }
 
 export interface NavMetadata {
+  agenciaOnly?: boolean;
   href: string;
   label: string;
   /** Aparece no card do hub e é texto buscável no ⌘K. Nunca vazio. */
@@ -147,6 +148,7 @@ export function sobeAoMenuLateral(
  * fechada e por isso não vira `minRole`.
  */
 export const NAV_CATALOG = [
+  { href: "/app/settings/organizacoes", label: "Organizações clientes", description: "Crie e administre os clientes da sua agência.", icon: "Buildings", group: "organizacao", section: "Empresa", minRole: "admin", agenciaOnly: true },
   {
     // SEM `sidebar: true`, e a razão não tem nada a ver com a qualidade desta
     // tela: o menu lateral está no limite medido. Com ela, seriam 20 portas, e
@@ -808,6 +810,20 @@ export const NAV_CATALOG = [
     healthDot: true,
   },
   {
+    // Módulo opcional (ADR-0002, #4227): a porta só existe depois que o dono da
+    // instalação instala `amigo` em `/admin/modulos`. Mesmo filtro de cadências.
+    href: "/app/integrations/amigo",
+    label: "Amigo",
+    description: "Ligue a agenda ao sistema de clínicas Amigo: pacientes, convênios e consultas.",
+    icon: "CalendarBlank",
+    // No hub do CRM, não no menu lateral: toda porta de módulo mora num hub
+    // (`tests/unit/porta-do-modulo-ligado.test.tsx`), e é ali que a agenda está.
+    group: "crm",
+    section: "O dia a dia da venda",
+    minRole: "agent",
+    modulo: "amigo",
+  },
+  {
     // Não tinha link nenhum no app inteiro: só se chegava digitando a URL.
     href: "/app/integrations/nuvemshop",
     label: "Nuvemshop",
@@ -1174,6 +1190,17 @@ export const NAV_CATALOG = [
     // 900px, medido pelo e2e `navegacao.spec.ts`.
   },
   {
+    href: "/app/settings/aparencia",
+    label: "Aparência",
+    description: "O template visual do sistema: fundo, menu, tipografia, cantos e densidade.",
+    icon: "PaintBrush",
+    group: "organizacao",
+    section: "Sua empresa",
+    // `admin`, como a Marca: o visual é identidade da empresa e vale para todos.
+    // SEM `sidebar` pelo mesmo motivo da linha de cima — a dobra de 900px.
+    minRole: "admin",
+  },
+  {
     href: "/app/settings/billing",
     // Spec da cobrança §9: as mensagens de limite e a Central mandam para
     // "Configurações › Plano e cobrança" — o item precisa ter esse nome.
@@ -1192,6 +1219,22 @@ export const NAV_CATALOG = [
     group: "organizacao",
     section: "Dados e acesso",
     minRole: "admin",
+  },
+  {
+    // A tela de gestão da Ouvidoria (#3611, fatia 3). `admin` porque é a régua
+    // da leitura: a RLS da 9040 exige `fn_role_at_least(…, 'admin')` e a tela
+    // barra em `lib/ouvidoria/acesso.ts`. Oferecer a porta a `manager` criaria
+    // um item de menu que responde "não pode" ao clicar. Módulo de tabela
+    // (ADR-0002): a porta só existe depois que quem administra a instalação
+    // instala `ouvidoria` em `/admin/modulos`.
+    href: "/app/ouvidoria",
+    label: "Ouvidoria",
+    description: "Reclamações, denúncias e elogios recebidos pela empresa, com protocolo.",
+    icon: "Flag",
+    group: "organizacao",
+    section: "Dados e acesso",
+    minRole: "admin",
+    modulo: "ouvidoria",
   },
   {
     href: "/app/settings/api-tokens",

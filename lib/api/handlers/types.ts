@@ -31,7 +31,20 @@ export type Actor =
    * porque nem todo caminho conhece o agente (token externo, por exemplo) — e
    * "não sei qual agente" tem de virar atividade de sistema, nunca linha perdida.
    */
-  | { type: "ai_agent"; id: string; role: string; api_token_id?: string; agent_id?: string }
+  | {
+      type: "ai_agent";
+      id: string;
+      role: string;
+      api_token_id?: string;
+      agent_id?: string;
+      /**
+       * `assisted` quando quem age é um agente em modo ASSISTIDO (doc 301 = B).
+       * Viaja para o `metadata` do evento como `actor_operation_mode`, e é por
+       * ele que o motor de automação segura as ações que falam com o cliente
+       * (`lib/automation/parada-no-assistido.ts`). Ausente = automático.
+       */
+      operation_mode?: "assisted";
+    }
   /**
    * TOKEN DE SERVIDOR sem escopo de agente — uma integração, não uma pessoa.
    *
@@ -73,10 +86,19 @@ export type Actor =
    * — o mesmo campo do ator `ai_agent` e pela mesma razão: o `id` deste ator é
    * a REGRA que disparou, e a assinatura `por_agente` (#3310) precisa do nome
    * de quem escreveu, não do nome de quem mandou disparar.
+   *
+   * `operation_mode` (doc 301 = B) é a marca HERDADA: a regra rodou por causa de
+   * algo que a IA fez no modo assistido, e o que ela escreve leva a mesma marca
+   * (`marcaHerdadaDoEvento` em `lib/automation/parada-no-assistido.ts`).
    */
-  | { type: "webhook_source"; id: string; textoEscritoPelaIA?: true; agent_id?: string };
+  | { type: "webhook_source"; id: string; textoEscritoPelaIA?: true; agent_id?: string; operation_mode?: "assisted" };
 
 export interface HandlerCtx {
+  /** Módulo `amigo`: a escrita vem do turno do agente (contexto do servidor, nunca do corpo). */
+  amigoAgentExecution?: boolean;
+  amigoAgentToolIds?: readonly string[];
+  /** O papel autenticado do MCP, para o domínio do Amigo quando o ator não traz papel. */
+  amigoRole?: string;
   prospectingDelivery?: ProspectingDelivery;
   agentOperation?: AgentOperationContext;
   meetingDelivery?: MeetingDeliveryContext;
@@ -101,10 +123,25 @@ export interface HandlerCtx {
   aiVoiceDerivedText?: string | null;
   /** Chave HTTP validada na borda para replay de uma criação. */
   idempotencyKey?: string;
+  /**
+   * Escopos do TOKEN que chamou, quando a identidade entrou por Bearer (#4515).
+   *
+   * Mora no CTX pelo mesmo motivo de `onBehalfOf`: o mesmo input atravessa a
+   * rota e a ferramenta MCP, e um campo de escopo no input público seria um
+   * pedido de permissão escrito por quem pede. Sessão de navegador não tem
+   * escopo nenhum — o campo fica ausente, e é isso que mantém o caminho da tela
+   * funcionando exatamente como antes.
+   */
+  escoposDoToken?: readonly string[];
   /** Identidade estável do job interno; não usar claim, que muda em cada reclaim. */
   sourceJobId?: string;
   organization_id: string;
   actor: Actor;
+  /**
+   * Id da linha do token (`api_tokens.id`) quando a chamada veio por Bearer, nas
+   * rotas REST de integração. Vira `actorApiTokenId` do audit. Sessão não tem.
+   */
+  apiTokenId?: string;
   /**
    * Autoria "em nome de" (#1613): a PESSOA por cuja decisão o token envia.
    *

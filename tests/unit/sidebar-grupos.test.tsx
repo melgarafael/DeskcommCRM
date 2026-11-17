@@ -14,6 +14,8 @@ import { cleanup, render, screen } from "@testing-library/react";
 
 import { Sidebar } from "@/components/shell/Sidebar";
 import type { ActiveOrg, AuthUser } from "@/lib/auth/types";
+import { validarCssPersonalizado } from "@/lib/branding/css-personalizado";
+import { NAV_GROUPS } from "@/lib/navigation/catalogo";
 
 const authRef: { user: Pick<AuthUser, "is_platform_admin">; activeOrg: ActiveOrg | null } = {
   user: { is_platform_admin: false },
@@ -191,5 +193,50 @@ describe("Sidebar agrupado", () => {
     expect(screen.getByRole("link", { name: /Inbox/ })).toHaveAttribute("aria-current", "page");
     // "Kanban" saiu da interface; o item da mesma URL agora se chama "Funis".
     expect(screen.getByRole("link", { name: "Funis" })).not.toHaveAttribute("aria-current");
+  });
+
+  /**
+   * CLASSE POR GRUPO É CONTRATO DO CSS PERSONALIZADO (#4463). O validador de
+   * /admin/marca só aceita seletor de classe, e o título do grupo só tinha `id`:
+   * não havia como dar cor a uma seção do menu. O que se prende aqui é que cada
+   * grupo desenhado (o rodapé inclusive) carrega `nav-grupo` e `nav-grupo-<id>`,
+   * aberto e recolhido, e que a classe de QUALQUER grupo do catálogo (inclusive
+   * um que nascer depois) passa no validador — um id com ponto ou espaço viraria classe inalcançável.
+   */
+  it("cada grupo leva uma classe estável que o CSS personalizado alcança", () => {
+    comoPapel("admin");
+    const { container, unmount } = render(<Sidebar collapsed={false} />);
+    const grupos = Array.from(container.querySelectorAll(".nav-grupo"));
+    // `organizacao` é o rodapé fixo, desenhado fora do loop e sem título: leva
+    // a classe comum do mesmo jeito, senão `.nav-grupo` pinta o menu pela metade.
+    const ids = ["atendimento", "crm", "ia", "canais", "analise", "organizacao"];
+    expect(grupos).toHaveLength(ids.length);
+    grupos.forEach((grupo, i) => {
+      expect(grupo).toHaveClass(`nav-grupo-${ids[i]}`);
+      if (ids[i] !== "organizacao") {
+        expect(grupo.querySelector(`h2#nav-grupo-${ids[i]}`)).not.toBeNull();
+      }
+    });
+    expect(
+      container.querySelector(".nav-grupo-crm")?.querySelector('a[href="/app/kanban"]'),
+    ).not.toBeNull();
+    // A doc ensina `.nav-grupo-crm .text-muted-foreground` porque o item da tela
+    // aberta não tem essa classe: ele tem fundo de destaque, e a cor escolhida
+    // para o fundo do menu sumiria ali (medido em 1,05:1 com `.rounded-md`).
+    expect(container.querySelector('.nav-grupo [aria-current="page"]')).not.toBeNull();
+    expect(container.querySelector('[aria-current="page"].text-muted-foreground')).toBeNull();
+    unmount();
+
+    const recolhido = render(<Sidebar collapsed />);
+    expect(recolhido.container.querySelectorAll(".nav-grupo")).toHaveLength(ids.length);
+    expect(recolhido.container.querySelector(".nav-grupo-atendimento")).not.toBeNull();
+
+    for (const { id } of NAV_GROUPS) {
+      const folha = validarCssPersonalizado(
+        `.nav-grupo-${id} .rounded-md:hover { color: var(--color-accent); }`,
+      );
+      expect(folha.erro, id).toBeNull();
+      expect(folha.css).toContain(`:root:root .nav-grupo-${id} .rounded-md:hover`);
+    }
   });
 });

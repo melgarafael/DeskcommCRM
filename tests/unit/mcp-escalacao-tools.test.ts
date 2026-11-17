@@ -74,7 +74,20 @@ function fazerSupabase(resolve: Resolver) {
   };
   return {
     from,
-    rpc: () => Promise.resolve({ data: [{ id: CONV }], error: null }),
+    // O NOME agora vem de UMA consulta a `fn_nomes_dos_membros` (#4326, fatia
+    // 3): a função filtra pelo vínculo com a org pedida, como o banco.
+    rpc: (funcao: string, args: { p_org: string; p_ids: string[] }) => {
+      if (funcao === "fn_nomes_dos_membros") {
+        const daOrg = args.p_org === ORG ? Object.keys(NOMES_DE_USUARIO) : [];
+        return Promise.resolve({
+          data: args.p_ids
+            .filter((id) => daOrg.includes(id))
+            .map((id) => ({ user_id: id, full_name: NOMES_DE_USUARIO[id] ?? null, email: null })),
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: [{ id: CONV }], error: null });
+    },
     // O lookup de NOME (issue #1539) fala com o endpoint admin do GoTrue. O
     // dublê responde com o full_name de `NOMES_DE_USUARIO` — é isso que faz o
     // `nome` da linha ser aferível, e não um null silencioso do catch.

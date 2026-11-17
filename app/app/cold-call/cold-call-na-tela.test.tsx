@@ -162,3 +162,35 @@ describe("quem não recebe ligação chega sem telefone, e a fila segue funciona
     expect(screen.queryByText("Lead 1")).toBeNull();
   });
 });
+
+describe('Cold call: "sao joao" acha o lead "São João"', () => {
+  // #4167: a busca fazia `l.titulo.toLowerCase().includes(termo)` nos dois lados
+  // crus — ignora caixa e não ignora acento. O telefone já funcionava e continua.
+  const saoJoao = { ...lead(1), titulo: "Padaria São João", telefone: "+5511987654321" };
+  const outro = { ...lead(2), titulo: "Mercado Central", telefone: "+5511911112222" };
+  const dados = { data: { funil: FUNIL, roteiro: "", leads: [saoJoao, outro] } };
+
+  it("sem acento, o negócio acentuado continua na fila", async () => {
+    vi.mocked(apiClient.get).mockResolvedValue(dados);
+    render(comQuery(<ColdCall />));
+    await screen.findByText("Padaria São João");
+
+    const campo = screen.getByRole("textbox", { name: "Buscar por nome ou telefone" });
+    fireEvent.change(campo, { target: { value: "sao joao" } });
+
+    expect(screen.getByText("Padaria São João")).toBeTruthy();
+    expect(screen.queryByText("Mercado Central")).toBeNull();
+  });
+
+  it("o telefone continua achando, mesmo agora que o termo passa pela régua", async () => {
+    vi.mocked(apiClient.get).mockResolvedValue(dados);
+    render(comQuery(<ColdCall />));
+    await screen.findByText("Padaria São João");
+
+    const campo = screen.getByRole("textbox", { name: "Buscar por nome ou telefone" });
+    fireEvent.change(campo, { target: { value: "8765" } });
+
+    expect(screen.getByText("Padaria São João")).toBeTruthy();
+    expect(screen.queryByText("Mercado Central")).toBeNull();
+  });
+});

@@ -59,6 +59,16 @@ vi.mock("@/hooks/leads/useLeadTimeline", () => ({
   }),
 }));
 
+// A seção "Conversas e ligações dos números" (#3669) só existe quando há pessoa
+// relacionada. Este arquivo mede a CASCA do dossiê — ordem e recolhimento —, e
+// com a lista vazia a seção não entra: é assim que a ordem esperada abaixo
+// continua sendo a de três seções. A seção com relacionado tem teste próprio
+// (`dossie-dos-numeros.test.tsx`).
+vi.mock("@/hooks/leads/useContatosRelacionados", () => ({
+  chaveDosContatosRelacionados: (leadId: string | null) => ["contatos-relacionados", leadId],
+  useContatosRelacionados: () => ({ data: { data: [] }, isLoading: false, isError: false }),
+}));
+
 vi.mock("./ContatoDoNegocio", () => ({ ContatoDoNegocio: () => <div data-peca="contato" /> }));
 vi.mock("./LeadFieldsForm", () => ({ LeadFieldsForm: () => <div data-peca="campos" /> }));
 vi.mock("./TarefasDoNegocio", () => ({ TarefasDoNegocio: () => <div data-peca="tarefas" /> }));
@@ -94,12 +104,12 @@ const LEAD = {
   owner_agent: null,
 } as unknown as Lead;
 
-function montarDossie() {
+function montarDossie(lead = LEAD) {
   return render(
     <LeadDossier
       open
       onOpenChange={() => undefined}
-      lead={LEAD}
+      lead={lead}
       pipelineId="funil-1"
       fieldDefs={[]}
       stageName="Novo"
@@ -127,6 +137,17 @@ function seisAtividades() {
   // recente, e é por isso que "as últimas três" é um corte no INÍCIO.
   return ["a6", "a5", "a4", "a3", "a2", "a1"].map((id) => ({ id, type: "stage_changed" }));
 }
+
+it("mostra a campanha do próprio negócio e omite conta e palavra-chave ausentes", () => {
+  montarDossie({
+    ...LEAD,
+    source: "google_ads",
+    source_metadata: { ad_platform: "google_ads", utm_campaign: "Pesquisa de verão" },
+  });
+  expect(screen.getByText("Pesquisa de verão")).toBeInTheDocument();
+  expect(screen.queryByText("Conta do Google Ads")).toBeNull();
+  expect(screen.queryByText("Palavra-chave")).toBeNull();
+});
 
 describe("a ordem das seções do dossiê (#3181)", () => {
   beforeEach(() => {

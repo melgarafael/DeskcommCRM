@@ -16,13 +16,19 @@ import { roleAtLeast } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { assumirConversaAposEnvio } from "@/lib/inbox/assumir-conversa-apos-envio";
 import { JANELA_SEGUNDOS, TETO_DE_ESCRITA, TETO_POR_ORGANIZACAO } from "@/lib/mcp/rate-limit";
+import { openSharedContactConversation } from "@/lib/messaging/open-shared-contact-conversation";
 import {
   depsDoRitmo,
   registrarEnvioPorToken,
   segurarEnvioPorToken,
   type EnvioSegurado,
 } from "@/lib/messaging/ritmo-do-envio-por-token";
-import { sendMessageSchema, validateRequest, type SendMessageInput } from "@/lib/schemas";
+import {
+  sendMessagePorTelefoneSchema,
+  validateRequest,
+  type SendMessageInput,
+  type SendMessagePorTelefoneInput,
+} from "@/lib/schemas";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Message } from "@/lib/types/messaging";
 
@@ -40,6 +46,90 @@ const ENDPOINT = "POST /api/v1/messages";
 const SCOPE_EM_NOME_DE = "messages:on_behalf";
 /** Papel mínimo de quem é apontado "em nome de": atendente ou acima. */
 const PAPEL_MINIMO_EM_NOME_DE = "agent";
+
+/**
+ * ─── A PORTA POR TELEFONE (#4513) ───────────────────────────────────────────
+ *
+ * O conector do DeskVoice manda `{ "to": "+55…", "text": "…", "callId": "…" }`;
+ * esta rota pedia `conversation_id` e as duas pontas nunca se encontravam. O
+ * que faltava era a PORTA, não a regra: achar/criar o contato pelas grafias do
+ * número e abrir (ou reabrir) a conversa 1:1 já é
+ * `openSharedContactConversation` — o MESMO ponto único de
+ * `POST /api/v1/conversations/open-with-contact` e da tool MCP
+ * `crm_start_conversation_and_send` (`lib/mcp/tools/start-conversation.ts`).
+ * Nada de `upsert` paralelo: um contato, um caminho.
+ *
+ * O cliente é o ADMIN, e não o da sessão, por medição e não por hábito: quem
+ * grava o contato é `fn_upsert_wa_contact`, cujo `grant execute` é de
+ * `service_role` só (`20260805180000_0108_revoke_definido_exposto.sql`). O
+ * isolamento por organização não vem do RLS nesse caminho — vem do
+ * `organization_id` que `encontrarContatoPorTelefone` filtra em toda consulta.
+ * A organização é SEMPRE a da autenticação (`authz.organizationId`), nunca um
+ * campo do corpo: o corpo não tem onde trazer organização.
+ *
+ * O freio anti-ban entra DEPOIS desta resolução, e isso é deliberado: ele
+ * pergunta a sessão pela CONVERSA (`segurarEnvioPorToken`), e a conversa só
+ * existe depois daqui. A consequência é conhecida e pequena: um envio
+ * segurado pelo teto diário pode deixar a conversa do contato aberta, vazia —
+ * o mesmo estado que "iniciar conversa" deixa no inbox, e não uma conversa
+ * órfã de um contato que não existe.
+ */
+async function conversaDoTelefone(p: {
+  organizationId: string;
+  telefone: string;
+  requestId: string;
+  t: (texto: string) => string;
+}): Promise<string> {
+  try {
+    const aberta = await openSharedContactConversation(createAdminClient(), p.organizationId, {
+      phone_number: p.telefone.trim(),
+    });
+    return aberta.conversation_id;
+  } catch (err) {
+    // As recusas são as MESMAS da rota irmã `open-with-contact`, com os mesmos
+    // números: o helper é um só, então a tradução de erro também é. Recusa
+    // nomeada aqui é o que o conector precisa para distinguir "número ruim"
+    // (422, não adianta retentar) de "canal fora do ar" (409, retentar depois).
+    const motivo = err instanceof Error ? err.message : "open_failed";
+    if (motivo === "invalid_phone") {
+      throw new ApiError(
+        422,
+        "validation_error",
+        { campo: "phone_number" },
+        p.requestId,
+        p.t("Telefone inválido."),
+      );
+    }
+    if (motivo === "session_not_found") {
+      throw new ApiError(
+        404,
+        "not_found",
+        undefined,
+        p.requestId,
+        p.t("Sessão de canal não encontrada."),
+      );
+    }
+    if (motivo === "session_unavailable") {
+      throw new ApiError(
+        409,
+        "state_conflict",
+        undefined,
+        p.requestId,
+        p.t("Este canal está desligado ou fora do ar. Reative a conexão ou escolha outro canal."),
+      );
+    }
+    if (motivo === "contact_personal") {
+      throw new ApiError(403, "forbidden", undefined, p.requestId, p.t("Contato marcado como pessoal."));
+    }
+    throw new ApiError(
+      500,
+      "internal_error",
+      undefined,
+      p.requestId,
+      p.t("Não foi possível abrir a conversa deste telefone."),
+    );
+  }
+}
 
 export async function POST(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
@@ -62,9 +152,12 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (!authz.ok) return authz.response;
   const { supabase, organizationId, actor, idioma } = authz;
 
-  let input;
+  // O corpo aceita UM DOS DOIS identificadores (#4513): `conversation_id`, como
+  // sempre, ou `phone_number` — o que o conector do DeskVoice manda. O schema
+  // exige pelo menos um; quem recusa os dois juntos é o bloco logo abaixo.
+  let entrada: SendMessagePorTelefoneInput;
   try {
-    input = await validateRequest(sendMessageSchema, req);
+    entrada = await validateRequest(sendMessagePorTelefoneSchema, req);
   } catch (err) {
     if (err instanceof ApiError) {
       return fail(err.code, err.message, err.status, {
@@ -76,6 +169,28 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const t = (texto: string) => traduzir(texto, idioma ?? "pt-BR");
+
+  /**
+   * ─── Os dois identificadores juntos são AMBIGUIDADE (#4513) ───────────────
+   *
+   * "O `conversation_id` vence" seria uma escolha, e uma escolha aqui é uma
+   * adivinhação: quem manda os dois está dizendo duas coisas diferentes, e a
+   * que perder virou engano silencioso — o telefone aponta para o contato B e o
+   * id para a conversa do contato A. A mensagem sai pelo caminho que ninguém
+   * pediu e ninguém descobre até o cliente responder.
+   *
+   * Então a recusa é NOMEADA (`ambiguous_target`), com 422, antes de qualquer
+   * efeito: nem teto, nem freio, nem conversa aberta, nem recibo de
+   * idempotência. Quem integra corrige o corpo e retenta com a mesma chave.
+   */
+  if (entrada.conversation_id && entrada.phone_number?.trim()) {
+    return fail(
+      "ambiguous_target",
+      t("Informe conversation_id ou phone_number — os dois juntos não dizem para qual conversa enviar."),
+      422,
+      { requestId, details: { campos: ["conversation_id", "phone_number"] } },
+    );
+  }
 
   // Idempotency-Key, quando vem, tem de ser UUID — mesma régua de
   // `message-templates` e do contrato (spec 01 §7.3). Chave malformada não vira
@@ -100,7 +215,7 @@ export async function POST(req: NextRequest): Promise<Response> {
    * ctx, porque a mesma entrada atravessa o MCP (item B, fora deste PR).
    */
   let onBehalf: HandlerCtx["onBehalfOf"];
-  if (input.on_behalf_of_user_id) {
+  if (entrada.on_behalf_of_user_id) {
     // A sessão do navegador não tem escopos — e não precisa: quem digita no
     // CRM já É a pessoa, e "em nome de" só existe para quem envia por token.
     if (authz.via !== "token" || !(authz.scopes ?? []).includes(SCOPE_EM_NOME_DE)) {
@@ -122,7 +237,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       .from("user_organizations")
       .select("user_id, role, revoked_at")
       .eq("organization_id", organizationId)
-      .eq("user_id", input.on_behalf_of_user_id)
+      .eq("user_id", entrada.on_behalf_of_user_id)
       .is("revoked_at", null)
       .maybeSingle();
     if (erroDeMembro) {
@@ -154,7 +269,7 @@ export async function POST(req: NextRequest): Promise<Response> {
           ? (actor.api_token_id ?? actor.id)
           : null;
     const [usuario, linhaDoToken] = await Promise.all([
-      supabase.auth.admin.getUserById(input.on_behalf_of_user_id).catch(() => null),
+      supabase.auth.admin.getUserById(entrada.on_behalf_of_user_id).catch(() => null),
       // O builder do PostgREST é thenable, mas o TIPO dele não declara
       // `.catch` — o envolvimento tem de ser por fora. E é enfeite: se a
       // leitura falhar, a autoria continua gravada na coluna, e o balão cai
@@ -172,7 +287,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       ),
     ]);
     onBehalf = {
-      userId: input.on_behalf_of_user_id,
+      userId: entrada.on_behalf_of_user_id,
       userName: (usuario?.data.user?.user_metadata?.full_name as string | undefined) ?? null,
       tokenName: (linhaDoToken?.data as { name?: string } | null)?.name ?? null,
     };
@@ -215,13 +330,39 @@ export async function POST(req: NextRequest): Promise<Response> {
       }
     }
 
+    // ─── #4513: a conversa vem do TELEFONE quando não veio pronta ──────────
+    //
+    // Fica DENTRO do efeito, e depois do teto de chamadas, de propósito:
+    //   - dentro do efeito: a chave de idempotência cobre o PAR abrir-conversa
+    //     + enviar, como na tool MCP. Um replay não abre uma segunda conversa
+    //     nem um segundo contato;
+    //   - depois do teto: quem já estourou cota não ganha conversa nova no
+    //     banco antes de ser recusado.
+    //
+    // Quando vem `conversation_id`, nada disto roda: o caminho antigo continua
+    // sendo exatamente o de antes, sem consulta a contato nenhum.
+    const conversaId =
+      entrada.conversation_id ??
+      (await conversaDoTelefone({
+        organizationId,
+        telefone: entrada.phone_number ?? "",
+        requestId,
+        t,
+      }));
+
+    // O handler recebe o corpo de SEMPRE — `conversation_id` obrigatório, sem
+    // `phone_number`. A resolução mora na porta; o handler não sabe (e não
+    // precisa saber) que a conversa veio de um telefone.
+    const { phone_number: _telefone, ...camposDoCorpo } = entrada;
+    const input: SendMessageInput = { ...camposDoCorpo, conversation_id: conversaId };
+
     // Freio anti-ban do número (espaçamento + teto diário), só para token:
     // ver o cabeçalho de `lib/messaging/ritmo-do-envio-por-token.ts`.
     const ritmo = authz.via === "token" ? await depsDoRitmo(createAdminClient()) : null;
     const segurado: EnvioSegurado = ritmo
       ? await segurarEnvioPorToken(ritmo, {
           organizationId,
-          conversationId: (input as SendMessageInput).conversation_id,
+          conversationId: input.conversation_id,
           requestId,
         })
       : null;
@@ -237,7 +378,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         // handler recusa se `on_behalf_of_user_id` vier sem este ctx (#1613).
         ...(onBehalf ? { onBehalfOf: onBehalf } : {}),
       },
-      input as SendMessageInput,
+      input,
     );
     // Uma resposta humana pelo inbox assume uma conversa livre — SÓ quando a
     // empresa ligou "a conversa fica com quem atendeu" (settings.routing,
@@ -273,8 +414,19 @@ export async function POST(req: NextRequest): Promise<Response> {
             organizationId,
             endpoint: ENDPOINT,
             chave,
-            // O corpo VALIDADO define a identidade da operação.
-            corpo: input,
+            // O corpo VALIDADO define a identidade da operação — e é o corpo
+            // que CHEGOU, não o normalizado: no caminho por telefone, o hash
+            // sai do `phone_number` e NUNCA do `conversation_id` resolvido. Se
+            // saísse do resolvido, duas coisas quebariam em silêncio: (a) a
+            // retentativa do mesmo pedido só casaria depois de resolver a
+            // conversa de novo — e resolver é justamente o efeito que a chave
+            // existe para não repetir; (b) o mesmo telefone e o mesmo id
+            // virariam a mesma operação, quando são dois jeitos diferentes de
+            // pedir (e o pedido com os dois é recusado antes, em
+            // `ambiguous_target`). Do lado de quem já manda `conversation_id`,
+            // o corpo validado é byte a byte o de antes — nenhum campo novo,
+            // nenhum default novo —, então o hash das chaves em voo não muda.
+            corpo: entrada,
             executar: async () => ({ resposta: await enviar(), status: 201 }),
           });
 

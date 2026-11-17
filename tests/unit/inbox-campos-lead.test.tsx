@@ -190,6 +190,9 @@ describe("painel do inbox — o botão diz o que faz (issue #908)", () => {
   });
 });
 
+// A seção de tarefas do painel (#4630) aparece em toda conversa com contato e tem
+// testes próprios (tarefa-da-demanda-no-inbox, tarefas-da-demanda-no-painel).
+vi.mock("@/components/inbox/TarefasDaDemanda", () => ({ TarefasDaDemanda: () => null }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useAuth: () => ({ user: { support: null } }),
   useActiveOrg: () => ({ currency: "BRL", country: null }),

@@ -26,7 +26,7 @@
 import { mkdirSync } from "node:fs";
 import * as zlib from "node:zlib";
 
-import { test, expect, type Locator, type Page, type TestInfo } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, type Locator, type Page, type TestInfo } from "./helpers/test";
 
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
 
@@ -308,6 +308,7 @@ test("gerente cria a primeira apresentação, persiste e não sobrescreve com re
 test.afterAll(async ({ browser }, info) => {
   if (!produtoId) return;
   const page = await browser.newPage({ baseURL: info.project.use.baseURL });
+  esperarARevelacaoNasCargas(page);
   await entrar(page, "manager");
   // Apaga o produto, e com ele a foto que sobrou no bucket.
   expect((await page.request.delete(`/api/v1/products/${produtoId}`)).ok()).toBe(true);

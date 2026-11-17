@@ -1,5 +1,8 @@
 import { tituloDaAgenda } from "@/lib/agenda/apresentacao";
+import { traduzir } from "@/lib/i18n/dicionario";
+import Link from "next/link";
 import { redirect } from "next/navigation";
+import { agendaAuthority } from "@/lib/amigo/agenda";
 import { headers } from "next/headers";
 
 import {
@@ -9,10 +12,11 @@ import {
   origemLocalDosCabecalhos,
 } from "@/lib/agenda/google/config";
 import { funisComCamposDeData } from "@/lib/agenda/datas-dos-negocios";
+import { lerEscolhaDaCamada } from "@/lib/agenda/preferencia-da-camada";
 import { donosDaAgenda } from "@/lib/agenda/donos-da-agenda";
 import { lerOcupacaoExterna } from "@/lib/agenda/ocupacao-externa";
 import { PROVEDOR_GOOGLE } from "@/lib/agenda/tipos";
-import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
+import { requireAuth, resolveActiveOrg, metadadosDaSessao } from "@/lib/auth/server";
 import { diaDeHojeNoFuso, semanaSemente } from "@/lib/agenda/semana-semente";
 import { fusoUtilizavel } from "@/lib/tempo/fusos";
 import { nomeDoContato, type ContatoNomeavel } from "@/lib/contacts/rotulo-do-contato";
@@ -93,6 +97,10 @@ export default async function AgendaPage() {
    * indistinguível, para quem olha, de uma agenda sem compromissos.
    */
   const supabase = await createClient();
+  // Módulo `amigo` com a conexão ativa: a agenda é a do Amigo. A grade continua
+  // mostrando os espelhos (e remarcar/cancelar por ela vai ao Amigo), mas marcar
+  // de novo é pela tela do Amigo, com paciente, unidade e médico escolhidos.
+  const agendaNoAmigo = (await agendaAuthority(supabase, activeOrg.orgId)).provider === "amigo";
 
   /**
    * O RELÓGIO É DA ORGANIZAÇÃO — decisão do dono do produto (2026-09-20, #1350):
@@ -135,6 +143,8 @@ export default async function AgendaPage() {
         "id, name, duration_minutes, location_kind, location_details, is_active, default_owner_user_id, service_enabled, booking_mode",
       )
       .eq("organization_id", activeOrg.orgId)
+      // Tipo que veio de sistema externo (9392) não se marca pela grade local.
+      .is("external_provider", null)
       .eq("is_active", true)
       .order("name"),
     supabase
@@ -267,7 +277,45 @@ export default async function AgendaPage() {
   const googleConfigurado = await googleEstaConfigurado();
   const faltaNoGoogle = googleConfigurado ? [] : await faltaParaConectarOGoogle();
 
+  // ─── A CAMADA "DATAS DOS NEGÓCIOS" (#3221, escolha guardada pela #4436) ────
+  //
+  // Os funis que declaram campo de data: a matéria-prima da camada, resolvida
+  // aqui com a mesma régua que o Calendário do funil usa.
+  const funisComDatas = funisComCamposDeData(
+    (
+      (funis ?? []) as Array<{
+        id: string;
+        name: string;
+        settings: Record<string, unknown> | null;
+      }>
+    ).map((f) => ({ id: f.id, nome: f.name, settings: f.settings })),
+  );
+
+  /**
+   * A ESCOLHA DA PESSOA (#4436), lida do `raw_user_meta_data` — e só quando há
+   * camada a oferecer. Instalação que não usa campo de data não paga nem a
+   * leitura: `funisComDatas` vazio e a camada nem aparece.
+   *
+   * `lerEscolhaDaCamada` sanea contra ESTA lista: funil arquivado não está nela
+   * (a consulta acima filtra `is_archived = false`) e campo que sumiu não está
+   * nos `campos`. O que sobra é só escolha que ainda existe — o resto volta ao
+   * padrão sem erro na tela.
+   */
+  const escolhaDaCamada =
+    funisComDatas.length > 0
+      ? lerEscolhaDaCamada(await metadadosDaSessao(), funisComDatas)
+      : undefined;
+
   return (
+    <>
+    {agendaNoAmigo && (
+      <p className="px-6 pt-4 text-sm text-muted-foreground">
+        {traduzir("A agenda desta clínica está no Amigo: as consultas daqui espelham as de lá.", user.idioma)}{" "}
+        <Link href="/app/integrations/amigo?aba=agenda" className="underline">
+          {traduzir("Marcar uma consulta no Amigo", user.idioma)}
+        </Link>
+      </p>
+    )}
     <AgendaClient
       tituloDaAgenda={tituloDaAgenda(apresentacao?.settings)}
       // O fuso RESOLVIDO da organização: a régua da grade inteira. `page.tsx`
@@ -294,15 +342,10 @@ export default async function AgendaPage() {
       // a pessoa (a camada nasce desligada), e a escolha de QUAIS campos são
       // datas não é feita aqui — ela vem do funil, pela mesma função que o
       // Calendário do funil usa (`camposDeDataDoNegocio`).
-      funisComDatas={funisComCamposDeData(
-        (
-          (funis ?? []) as Array<{
-            id: string;
-            name: string;
-            settings: Record<string, unknown> | null;
-          }>
-        ).map((f) => ({ id: f.id, nome: f.name, settings: f.settings })),
-      )}
+      funisComDatas={funisComDatas}
+      // A escolha que a pessoa deixou (#4436): a camada volta ligada no funil
+      // e no campo dela, em qualquer aparelho. Saneada logo acima.
+      escolhaDaCamada={escolhaDaCamada}
       googleConfigurado={googleConfigurado}
       contaConectada={conexoes?.map((c) => c.account_email).join(", ") || null}
       enderecoDeRetorno={enderecoDeRetorno(origemLocal ?? undefined)}
@@ -316,7 +359,7 @@ export default async function AgendaPage() {
       // O piso da rota de marcar é `agent`; `viewer` — e o acompanhamento só de
       // leitura, que `resolveActiveOrg` resolve como `viewer` — levaria 403. A
       // tela esconder é cortesia: quem decide segue sendo a rota.
-      podeMarcar={ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent}
+      podeMarcar={!agendaNoAmigo && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent}
       tiposIniciais={(tipos ?? []).map((t) => ({
         id: t.id,
         nome: t.name,
@@ -341,6 +384,7 @@ export default async function AgendaPage() {
           titulo: a.title ?? "Agendamento",
           responsavelId: a.owner_user_id ?? "",
           convidadosDaEquipe: a.team_guest_user_ids,
+          tipoId: a.event_type_id,
           comeca: a.starts_at,
           termina: a.ends_at,
           origem: "ui" as const,
@@ -385,5 +429,6 @@ export default async function AgendaPage() {
         }) as AgendamentoDaTela[],
       )}
     />
+    </>
   );
 }

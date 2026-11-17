@@ -20,7 +20,17 @@ import { CHANNEL_PROVIDER_SOCIAL } from "./capabilities";
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { CANAIS_QUE_RESPONDEM_ANTES, CHANNEL_PROVIDER_DATAFY, CHANNEL_PROVIDER_ZERNIO } from "./capabilities";
+import { idiomaDoAviso } from "@/lib/i18n/idioma-do-aviso";
+import { logger } from "@/lib/logger";
+
+import { ingestTelegramInbound } from "./bot/ingest";
+import { TELEGRAM_SECRET_HEADER, verifyTelegramSecretToken } from "./bot/webhook";
+import {
+  CANAIS_QUE_RESPONDEM_ANTES,
+  CHANNEL_PROVIDER_DATAFY,
+  CHANNEL_PROVIDER_TELEGRAM,
+  CHANNEL_PROVIDER_ZERNIO,
+} from "./capabilities";
 import { canalGraphParceiroLigado } from "./graph-parceiro/credentials";
 import { graphPartnerRefsDaSessao } from "./graph-parceiro/session";
 import {
@@ -30,7 +40,14 @@ import {
 } from "./graph-parceiro/webhook";
 import { sincronizarSaudeDaConexao } from "./health";
 import { lerEnvelopeMeta } from "./meta/envelope";
+import { avisarStatusDoModelo, desfechoDoAviso } from "./meta/aviso-do-modelo";
 import { ingestMetaAppContactSync, ingestMetaEcho, ingestMetaInbound } from "./meta/ingest";
+import {
+  MOTIVO_CONTATO_ANONIMIZADO,
+  MOTIVO_TITULAR_APAGADO,
+  perguntarTitularesApagadosNoLote,
+  type ApagadosNoLote,
+} from "./meta/titular-apagado";
 import { parseMetaWebhook } from "./meta/webhook";
 import { samePhone } from "./phone-variants";
 import {
@@ -91,7 +108,11 @@ export function acceptsInboundWebhook(provider: string): boolean {
   // O canal Datafy é opcional da instalação: desligado, a entrada dele não
   // existe — nem para quem tem o token de uma sessão gravada antes.
   if (provider === CHANNEL_PROVIDER_DATAFY) return canalGraphParceiroLigado();
-  return provider === CHANNEL_PROVIDER_ZERNIO || provider === CHANNEL_PROVIDER_SOCIAL;
+  return (
+    provider === CHANNEL_PROVIDER_ZERNIO ||
+    provider === CHANNEL_PROVIDER_SOCIAL ||
+    provider === CHANNEL_PROVIDER_TELEGRAM
+  );
 }
 
 /** Authenticate before archiving raw payloads. The handler repeats this guard for non-HTTP callers. */
@@ -100,6 +121,15 @@ export function verifyInboundWebhookSignature(provider: string, raw: string, hea
   // Cada canal assina do seu jeito; o esquema do Datafy está em `graph-parceiro/webhook`.
   if (provider === CHANNEL_PROVIDER_DATAFY) {
     return verifyGraphPartnerSignature(raw, headers.get(HEADER_ASSINATURA), headers.get(HEADER_TIMESTAMP), secret);
+  }
+  // ─── A EXCEÇÃO DECLARADA: o Telegram não assina o corpo ───────────────────
+  //
+  // Ele manda o `secret_token` que NÓS inventamos no `setWebhook` de volta
+  // no cabeçalho de todo update, comparado em tempo constante
+  // (`verifyTelegramSecretToken`). Autentica a requisição, não o corpo: é
+  // exceção de protocolo deste fornecedor, sem equivalência com um HMAC.
+  if (provider === CHANNEL_PROVIDER_TELEGRAM) {
+    return verifyTelegramSecretToken(headers.get(TELEGRAM_SECRET_HEADER), secret);
   }
   return verifyZernioSignature(raw, headers.get("x-zernio-signature"), secret);
 }
@@ -199,6 +229,8 @@ export async function handleInboundWebhook(
       return zernioInbound(admin, input);
     case CHANNEL_PROVIDER_DATAFY:
       return datafyInbound(admin, input);
+    case CHANNEL_PROVIDER_TELEGRAM:
+      return telegramInbound(admin, input);
     default:
       // Token de um canal que não entra por aqui. É configuração trocada, não
       // ataque — mas processar seria ler o payload com o parser errado.
@@ -426,7 +458,14 @@ async function zernioEventoConferido(
       return { ok: true, body: { status: "saude", kind: aviso.kind, desfecho, espelhado } };
     }
 
-    const desfecho = await registrarAviso(admin, input.session.organization_id, aviso);
+    // A Central mostra o texto como foi gravado: o aviso nasce no idioma da
+    // organização (o `aviso` acima, em português, só decidiu o caminho).
+    const idioma = await idiomaDoAviso(admin, input.session.organization_id);
+    const desfecho = await registrarAviso(
+      admin,
+      input.session.organization_id,
+      avisoDoEvento(payload, idioma) ?? aviso,
+    );
     return { ok: true, body: { status: "aviso", kind: aviso.kind, desfecho, espelhado } };
   }
 
@@ -487,6 +526,15 @@ async function datafyInbound(
   const eventos = parseMetaWebhook(leitura.envelope);
   const desfechos: string[] = [];
   const agora = new Date().toISOString();
+  /**
+   * A pergunta do apagado a pedido é do LOTE (uma consulta para todos os
+   * contatos desta entrega, migration 9321). `undefined` = ainda não perguntou;
+   * `null` = perguntou e falhou — aí cada evento cai na pergunta individual da
+   * ingestão, que falha fechada sem parar o lote.
+   */
+  let apagadosDaAgenda: ApagadosNoLote | null | undefined;
+  let puladosPorTitularApagado = 0;
+  let puladosPorContatoAnonimizado = 0;
 
   for (const e of eventos) {
     // Mesma régua da rota do canal oficial: evento carimbado com outra conta é
@@ -528,11 +576,33 @@ async function datafyInbound(
         desfechos.push("outro_numero");
         continue;
       }
-      const r = await ingestMetaAppContactSync(admin, e, {
-        organizationId: orgId,
-        channelSessionId: input.session.id,
-      });
+      if (apagadosDaAgenda === undefined) {
+        const lote = await perguntarTitularesApagadosNoLote(
+          admin,
+          orgId,
+          eventos.filter((x) => x.kind === "app_contact_sync").map((x) => x.phone),
+        );
+        apagadosDaAgenda = lote.erro ? null : lote.apagados;
+        if (lote.erro) {
+          logger.error("[meta.ingest] a pergunta do titular apagado no lote falhou", {
+            organization_id: orgId,
+            erro: lote.erro,
+          });
+        }
+      }
+      const r = await ingestMetaAppContactSync(
+        admin,
+        e,
+        { organizationId: orgId, channelSessionId: input.session.id },
+        apagadosDaAgenda ?? undefined,
+      );
       desfechos.push(`contato:${r.status}`);
+      if (r.status === "ignored" && r.reason === MOTIVO_TITULAR_APAGADO) {
+        puladosPorTitularApagado += 1;
+      }
+      if (r.status === "ignored" && r.reason === MOTIVO_CONTATO_ANONIMIZADO) {
+        puladosPorContatoAnonimizado += 1;
+      }
       continue;
     }
     if (e.kind === "message_status") {
@@ -549,18 +619,77 @@ async function datafyInbound(
       // ficava PENDING no espelho até alguém clicar em Sincronizar, e o seletor
       // do inbox não a oferecia. Escopo pela CONEXÃO desta entrega — a coluna
       // `waba_id` do espelho deste canal guarda o número, não a conta.
-      const { error } = await admin
+      const { data: espelhados, error } = await admin
         .from("meta_templates")
         .update({ status: e.event, rejected_reason: e.reason, updated_at: agora })
         .eq("organization_id", orgId)
         .eq("channel_session_id", input.session.id)
         .eq("name", e.templateName)
-        .eq("language", e.templateLanguage);
-      desfechos.push(error ? "modelo_nao_atualizado" : "modelo");
+        .eq("language", e.templateLanguage)
+        .select("id");
+      // O aviso vem DEPOIS do espelho: o empurrão para olhar não pode chegar
+      // antes de a tela que ele manda abrir já estar certa. Mesmo caminho do
+      // canal oficial direto (`meta/aviso-do-modelo`), e nunca uma segunda
+      // tabela de avisos — a Central é uma só.
+      // E só quando o update casou linha: zero linhas volta sem erro, e o aviso
+      // apontaria para um modelo que a tela não lista.
+      let desfecho = "modelo_nao_atualizado";
+      if (!error && (espelhados?.length ?? 0) > 0) {
+        desfecho = desfechoDoAviso(
+          await avisarStatusDoModelo(
+            admin,
+            { organizationId: orgId, channelSessionId: input.session.id },
+            e,
+          ),
+        );
+      }
+      desfechos.push(desfecho);
       continue;
     }
     desfechos.push("ignorado");
   }
 
+  // O que ficou de fora por LGPD não some em silêncio — `outcomes` só diz
+  // `contato:ignored`. Só o contador, nunca o telefone.
+  if (puladosPorTitularApagado > 0 || puladosPorContatoAnonimizado > 0) {
+    logger.info("[meta.ingest] contatos da agenda não sincronizados por LGPD", {
+      organization_id: orgId,
+      pulados_por_titular_apagado: puladosPorTitularApagado,
+      pulados_por_contato_anonimizado: puladosPorContatoAnonimizado,
+    });
+  }
+
   return { ok: true, body: { received: eventos.length, outcomes: desfechos } };
+}
+
+/**
+ * O bot do Telegram entra por aqui.
+ *
+ * Duas diferenças em relação aos outros canais, e só duas: (1) a prova de
+ * origem é o `secret_token` do cabeçalho, não um HMAC do corpo; (2) o update
+ * pode ser de um chat que não é conversa (canal, grupo de outro robô) — e aí o
+ * desfecho é `ignored`, não erro. O `bot_id` vem da SESSÃO, nunca do corpo.
+ */
+async function telegramInbound(
+  admin: SupabaseClient,
+  input: InboundWebhookInput,
+): Promise<InboundWebhookOutcome> {
+  if (!verifyInboundWebhookSignature(input.session.provider, input.rawBody, input.headers, input.secret)) {
+    return { ok: false, code: "unauthorized", message: "bad_signature" };
+  }
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(input.rawBody);
+  } catch {
+    return { ok: false, code: "invalid_json", message: "invalid_json" };
+  }
+
+  const resultado = await ingestTelegramInbound(admin, {
+    organizationId: input.session.organization_id,
+    channelSessionId: input.session.id,
+    payload,
+  });
+
+  return { ok: true, body: { ...resultado } };
 }

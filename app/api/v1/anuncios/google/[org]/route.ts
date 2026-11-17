@@ -8,6 +8,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { lerIdentificadoresGoogle } from "@/lib/plataformas-de-anuncio/google/identificadores";
+import { normalizarMetadadosGoogle } from "@/lib/plataformas-de-anuncio/google/metadados-da-campanha";
 
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { criarClickRef } from "@/lib/plataformas-de-anuncio/google/captura-de-clique";
@@ -20,6 +21,7 @@ import {
 } from "@/lib/plataformas-de-anuncio/pagina-de-captura";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { comIdDaRequisicao } from "@/lib/api/wrappers";
 
 export const dynamic = "force-dynamic";
 
@@ -49,10 +51,10 @@ export async function GET(req: NextRequest, ctx: RouteContext): Promise<Response
     if (!limite.allowed) {
       // 429 sem corpo de marketing: quem estoura este teto num clique de
       // anúncio real não existe — é abuso, não humano legítimo.
-      return new NextResponse(null, {
+      return comIdDaRequisicao(new NextResponse(null, {
         status: 429,
         headers: { "Retry-After": String(JANELA_SEGUNDOS) },
-      });
+      }), req);
     }
   }
 
@@ -91,11 +93,7 @@ export async function GET(req: NextRequest, ctx: RouteContext): Promise<Response
     return paginaDeSaida(whatsAppUrl(config.whatsappE164, textoSemRef(config.messageTemplate)));
   }
 
-  const queryRaw = Object.fromEntries(
-    ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"].flatMap((key) =>
-      search.get(key) ? [[key, search.get(key)!.slice(0, 256)]] : [],
-    ),
-  );
+  const queryRaw = normalizarMetadadosGoogle(Object.fromEntries(search.entries()));
   const criado = await criarClickRef(admin, organizationId, ids, queryRaw);
   if (!criado) {
     // Falha ao gravar o clique: mesma régua — a pessoa não paga o preço de um

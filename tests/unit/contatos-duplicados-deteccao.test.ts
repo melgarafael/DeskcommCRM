@@ -30,6 +30,8 @@ function contato(
     email_normalized: null,
     phone_number: null,
     cpf_hash: null,
+    wa_identity: null,
+    wa_lid: null,
     is_merged_into: null,
     is_anonymized: false,
     source_metadata: null,
@@ -165,6 +167,80 @@ describe("encontrarContatosDuplicados: CPF", () => {
       contato("lapide", { cpf_hash: HASH, is_merged_into: "vivo" }),
     ]);
     expect(grupos).toEqual([]);
+  });
+});
+
+/**
+ * O WhatsApp (#4081). `contacts.phone_whatsapp` NÃO é número — é a resposta
+ * "este telefone tem WhatsApp?" (`sim`/`nao`/`nao_sei`), e tratá-lo como número
+ * faria todo contato `sim` virar a mesma pessoa. O que é número de WhatsApp é o
+ * `lids`: a identidade canônica `wa_identity` (0027) e a correlação `wa_lid` (0122),
+ * as duas colunas GERADAS. As duas têm índice único criado com `if not exists`,
+ * então no clone onde ele não nasceu a mesma conta de WhatsApp aparece duas vezes
+ * e nada mais a liga.
+ */
+describe("encontrarContatosDuplicados: WhatsApp", () => {
+  const LID = "100000000000001";
+
+  it("a mesma `wa_identity` de lid une o par com o motivo `whatsapp` — mesmo com nomes diferentes", () => {
+    // Sabotagem: tirar o mapa por `wa_identity` deixa este caso vermelho — as duas
+    // fichas nascem do MESMO @lid e seguem separadas na tela.
+    const grupos = encontrarContatosDuplicados([
+      contato("a", { name: "Maria Souza", wa_identity: `lid:${LID}`, wa_lid: LID }),
+      contato("b", { name: "M. Souza", wa_identity: `lid:${LID}`, wa_lid: LID }),
+    ]);
+    expect(grupos).toHaveLength(1);
+    expect(grupos[0]!.contatos.map((c) => c.id).sort()).toEqual(["a", "b"]);
+    expect(grupos[0]!.motivos).toEqual(["whatsapp"]);
+  });
+
+  it("a `wa_lid` reencontra o par quando a identidade mudou de lid para telefone", () => {
+    // O caso que a 0122 descreve: a ficha nasceu `lid:X`; quando o telefone é
+    // descoberto, `wa_identity` vira `phone:+Y` e SÓ `wa_lid` ainda liga as duas.
+    const grupos = encontrarContatosDuplicados([
+      contato("com-telefone", {
+        phone_number: "+553****1111",
+        wa_identity: "phone:+553****1111",
+        wa_lid: LID,
+      }),
+      contato("so-lid", { wa_identity: `lid:${LID}`, wa_lid: LID }),
+    ]);
+    expect(grupos).toHaveLength(1);
+    expect(grupos[0]!.motivos).toEqual(["whatsapp"]);
+  });
+
+  it("`wa_identity`/`wa_lid` vazios em AMBOS não unem — vazio não é conta de WhatsApp", () => {
+    // O erro simétrico ao do CPF: `"" === ""` agruparia toda ficha sem WhatsApp
+    // num cadastro só.
+    const grupos = encontrarContatosDuplicados([
+      contato("a"),
+      contato("b", { wa_identity: "", wa_lid: "" }),
+      contato("c", { wa_identity: "  ", wa_lid: "  " }),
+    ]);
+    expect(grupos).toEqual([]);
+  });
+
+  it("WhatsApp encadeia com o CPF: A-B pela conta e B-C pelo documento = UM grupo", () => {
+    const HASH = "aa11bb22cc33dd44ee55ff6600112233445566778899aabbccddeeff00112233";
+    const grupos = encontrarContatosDuplicados([
+      contato("a", { wa_identity: `lid:${LID}`, wa_lid: LID }),
+      contato("b", { wa_identity: `lid:${LID}`, wa_lid: LID, cpf_hash: HASH }),
+      contato("c", { cpf_hash: HASH }),
+    ]);
+    expect(grupos).toHaveLength(1);
+    expect(grupos[0]!.contatos.map((c) => c.id).sort()).toEqual(["a", "b", "c"]);
+    expect(grupos[0]!.motivos).toEqual(["cpf", "whatsapp"]);
+  });
+
+  it("o motivo `whatsapp` NÃO aparece quando só o telefone casa", () => {
+    // `wa_identity` de ficha com telefone é `phone:+E164` — a MESMA string que o
+    // motivo `telefone` já cobre. Marcá-la como WhatsApp faria todo par de telefone
+    // dizer "WhatsApp" na tela, e o rótulo perderia o sentido.
+    const grupos = encontrarContatosDuplicados([
+      contato("a", { phone_number: "+553****6398", wa_identity: "phone:+553****6398" }),
+      contato("b", { phone_number: "+553****6398", wa_identity: "phone:+553****6398" }),
+    ]);
+    expect(grupos[0]!.motivos).toEqual(["telefone"]);
   });
 });
 

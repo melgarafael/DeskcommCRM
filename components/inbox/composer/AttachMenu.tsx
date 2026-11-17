@@ -5,23 +5,41 @@ import { useT } from "@/hooks/i18n/useT";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { FileText, ImageSquare, Plus, UserCircle } from "@/lib/ui/icons";
+import { CalendarDots, FileText, ImageSquare, Plus, UserCircle } from "@/lib/ui/icons";
 
 interface Props {
   disabled?: boolean;
-  onPick: (file: File) => void;
+  /**
+   * A ESCOLHA inteira, não o primeiro arquivo (#4364).
+   *
+   * O operador pode selecionar vários de uma vez no mesmo gesto — e o arraste já
+   * entregava lista à prévia desde a v1.95.0. Receber `File[]` aqui é o que faz
+   * o botão cair na MESMA `escolherArquivos` do `onDrop`, sem caminho de envio
+   * paralelo: prévia, limite de tamanho e retry continuam um só.
+   */
+  onPick: (files: File[]) => void;
   onPickContact?: () => void;
+  /**
+   * Abre as mensagens agendadas (#4131). O item aparece em qualquer largura:
+   * é a porta garantida. O botão de calendário ao lado do Enviar só aparece
+   * quando a linha do campo tem largura para ele (container query em
+   * MensagensAgendadas.tsx), e o conteúdo deste popover é renderizado fora
+   * dessa linha, então não teria como esconder-se pela mesma medida.
+   */
+  onAgendar?: () => void;
 }
 
 /** Menu "+" do composer (padrão WhatsApp): Fotos e vídeos / Documento / Contato. */
-export function AttachMenu({ disabled, onPick, onPickContact }: Props) {
+export function AttachMenu({ disabled, onPick, onPickContact, onAgendar }: Props) {
   const t = useT();
   const mediaRef = useRef<HTMLInputElement | null>(null);
   const docRef = useRef<HTMLInputElement | null>(null);
 
   const handle = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) onPick(file);
+    // `Array.from` antes de esvaziar o input: `e.target.files` é uma lista VIVA,
+    // e zerar o `value` logo abaixo a esvazia — a fila leria zero arquivo.
+    const files = Array.from(e.target.files ?? []);
+    if (files.length) onPick(files);
     e.target.value = ""; // permite re-selecionar o mesmo arquivo
   };
 
@@ -78,6 +96,16 @@ export function AttachMenu({ disabled, onPick, onPickContact }: Props) {
                 {t("Contato")}
               </button>
             )}
+            {onAgendar && (
+              <button
+                type="button"
+                className="flex min-h-11 w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-muted lg:min-h-0"
+                onClick={onAgendar}
+              >
+                <CalendarDots size={18} weight="duotone" className="text-primary" aria-hidden />
+                {t("Mensagens agendadas")}
+              </button>
+            )}
           </PopoverContent>
         </Popover>
       </TooltipProvider>
@@ -85,11 +113,23 @@ export function AttachMenu({ disabled, onPick, onPickContact }: Props) {
           popover ao fechar, e um input desmontado no meio do clique perde o
           file picker ("nada acontece"). Aqui os refs seguem válidos após o
           fechamento — o .click() síncrono no onClick preserva o user-gesture. */}
-      <input ref={mediaRef} type="file" accept="image/*,video/*" className="hidden" onChange={handle} />
+      {/* `multiple` nos DOIS: o operador manda vários PDFs (ou várias fotos) de
+          uma vez, como já faz arrastando. Sem ele o seletor do sistema só deixa
+          marcar um arquivo, e o resto do caminho — lista, prévia, envio em
+          sequência — nunca é exercitado por este gesto. */}
+      <input
+        ref={mediaRef}
+        type="file"
+        multiple
+        accept="image/*,video/*"
+        className="hidden"
+        onChange={handle}
+      />
       <input
         ref={docRef}
         type="file"
-        accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"
+        multiple
+        accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.xml"
         className="hidden"
         onChange={handle}
       />

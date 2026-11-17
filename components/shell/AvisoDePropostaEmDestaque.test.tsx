@@ -46,6 +46,12 @@ vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 // O `Link` de verdade pede o router do App Router por contexto; no jsdom não há
 // nenhum, e o clique morreria antes de chegar ao `onClick`. A âncora simples
 // preserva o que o cartão faz de observável: o `href` e o dispensar.
+// O `useRouter` entra no dublê porque o `<Link>` do cartão agora pede o destino
+// POR INTENÇÃO (`usePrefetchPorIntencao`), e o hook chama `useRouter` (#3170).
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ prefetch: vi.fn(), push: vi.fn(), refresh: vi.fn() }),
+  usePathname: () => "/app/inbox",
+}));
 vi.mock("next/link", () => ({
   default: ({ href, children, ...p }: { href: string; children: React.ReactNode }) => (
     <a href={href} {...p}>
@@ -119,6 +125,28 @@ describe("aviso de proposta em destaque", () => {
     caixa.data = abertos([ANTIGO]);
     rerender(<AvisoDePropostaEmDestaque />);
     expect(cartao()).toBeNull();
+  });
+
+  it("a lista que chega DEPOIS da montagem é a primeira carga: aviso antigo não vira cartão", async () => {
+    // Na tela de verdade o `useAgentInbox` começa sem resposta (`data`
+    // undefined) e a lista chega um instante depois. Registrar os vistos nessa
+    // hora registrava um conjunto VAZIO, e a lista que chegava em seguida
+    // tinha todo aviso aberto por "novo": o cartão voltava a cada carga de
+    // página enquanto o aviso seguisse aberto (medido na prova de tela do #4510).
+    caixa.data = undefined;
+    const { rerender } = render(<AvisoDePropostaEmDestaque />);
+    expect(cartao()).toBeNull();
+
+    caixa.data = abertos([ANTIGO]);
+    rerender(<AvisoDePropostaEmDestaque />);
+    expect(cartao()).toBeNull();
+
+    // E o aviso que nasce DEPOIS dessa primeira lista continua gritando.
+    caixa.data = abertos([ANTIGO, NOVO]);
+    rerender(<AvisoDePropostaEmDestaque />);
+    expect(await screen.findByTestId("aviso-proposta-destaque")).toHaveTextContent(
+      "Proposta da Ana — Condomínio Alvorada",
+    );
   });
 
   it("carga seguinte com aviso NOVO mostra o cartão com o título e o destino", async () => {

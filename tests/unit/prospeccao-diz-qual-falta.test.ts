@@ -77,6 +77,15 @@ function banco(cena: Cena) {
   const consultas: { sql: string; params: unknown[] }[] = [];
   const query = vi.fn(async (sql: string, params: unknown[] = []) => {
     consultas.push({ sql, params });
+    // ANTES do ramo da versão publicada: a consulta dos membros do roteador
+    // passou a trazer o público do agente pelo MESMO select (#3722, fatia 2:
+    // `left join ai_agent_versions`), e respondida pelo ramo de baixo ela
+    // devolveria a linha do agente no lugar do membro.
+    if (sql.includes("from ai_router_members")) {
+      // O agente da campanha É membro do roteador: sem isto o caminho feliz para
+      // numa recusa que não tem nada a ver com este teste.
+      return { rows: [{ agent_id: AGENTE, intent_name: "vendas" }] };
+    }
     if (sql.includes("join ai_agent_versions")) {
       if (cena.agente === null || params[0] !== (cena.organizacao ?? ORG)) return { rows: [] };
       return { rows: [{ ...cena.agente }] };
@@ -87,11 +96,6 @@ function banco(cena: Cena) {
     }
     if (sql.includes("from channel_sessions")) {
       return { rows: [{ provider: "waha", status: "WORKING" }] };
-    }
-    if (sql.includes("from ai_router_members")) {
-      // O agente da campanha É membro do roteador: sem isto o caminho feliz para
-      // numa recusa que não tem nada a ver com este teste.
-      return { rows: [{ agent_id: AGENTE, intent_name: "vendas" }] };
     }
     if (sql.includes("from ai_routers")) {
       return {

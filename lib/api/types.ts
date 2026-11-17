@@ -19,6 +19,13 @@ export class ApiError extends Error {
     public readonly details: Record<string, unknown> | undefined,
     public readonly requestId: string,
     message?: string,
+    /**
+     * `true` quando a resposta NÃO trouxe o envelope da casa (proxy, HTML de
+     * erro): aí `message` é o corpo cru ou `HTTP <status>`, texto que não foi
+     * escrito para quem está na tela. Quem mostra `message` ao usuário confere
+     * isto antes.
+     */
+    public readonly semEnvelope: boolean = false,
   ) {
     super(message ?? code);
     this.name = "ApiError";

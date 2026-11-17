@@ -115,6 +115,27 @@ function bancoFalso(tabelas: Record<string, Linha[]>): SupabaseClient {
       };
       return consulta;
     },
+    // O nome do responsável vem de UMA consulta a `fn_nomes_dos_membros`
+    // (#4326, fatia 3): devolve só quem tem vínculo com a org pedida, com
+    // `full_name` e e-mail — a tool recorta o nome.
+    rpc: (funcao: string, args: { p_org: string; p_ids: string[] }) => {
+      if (funcao !== "fn_nomes_dos_membros") {
+        return Promise.resolve({ data: null, error: { message: "rpc inesperado" } });
+      }
+      const daOrg = (tabelas.user_organizations ?? [])
+        .filter((v) => v.organization_id === args.p_org)
+        .map((v) => String(v.user_id));
+      return Promise.resolve({
+        data: args.p_ids
+          .filter((id) => daOrg.includes(id))
+          .map((id) => ({
+            user_id: id,
+            full_name: id === ANA ? "Ana Souza" : "Beto Lima",
+            email: `${id.slice(0, 4)}@estudio.test`,
+          })),
+        error: null,
+      });
+    },
     auth: {
       admin: {
         getUserById: async (id: string) => ({
@@ -463,6 +484,7 @@ describe("gatilhos de encerramento, reabertura e troca de responsável (#1528)",
 
 describe("o trigger do banco: a fonte única dos quatro gatilhos", () => {
   const BASELINE = readFileSync(join(process.cwd(), "supabase", "baseline.sql"), "utf8");
+  const EMISSAO = "perform public.emit_event(";
 
   /** O último corpo de `fn_emit_event_on_lead_change` — o que o self-host aplica. */
   function corpoDoTrigger(): string {
@@ -484,13 +506,14 @@ describe("o trigger do banco: a fonte única dos quatro gatilhos", () => {
     expect(corpo).toContain("if new.status is distinct from old.status then");
     expect(corpo).toContain("if new.owner_user_id is distinct from old.owner_user_id");
     // Todo emisso vem DEPOIS do primeiro guard: não existe caminho que emita
-    // sem que a coluna tenha mudado.
-    expect(corpo.indexOf("fn_log_event")).toBeGreaterThan(corpo.indexOf("is distinct from"));
+    // sem que a coluna tenha mudado. Desde a 9337 (#4319) o gatilho chama
+    // `emit_event` direto, para o metadata (a marca do assistido) chegar à linha.
+    expect(corpo.indexOf(EMISSAO)).toBeGreaterThan(corpo.indexOf("is distinct from"));
   });
 
   it("emite os quatro, com payload que é função pura da linha (idempotente)", () => {
     const corpo = corpoDoTrigger();
-    expect(corpo.match(/fn_log_event/g)).toHaveLength(4);
+    expect(corpo.split(EMISSAO)).toHaveLength(5);
     expect(corpo).toContain("'lead.won'");
     expect(corpo).toContain("'lead.lost'");
     expect(corpo).toContain("'lead.reopened'");

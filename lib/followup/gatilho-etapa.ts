@@ -48,6 +48,7 @@ import { serviceForEvent } from "@/lib/atendimento/origem";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { EventRow } from "@/lib/event-log/dispatcher";
+import { eventoDaIaNoAssistido } from "@/lib/automation/parada-no-assistido";
 import { flowGraphSchema } from "./graph-schema";
 import { triggerConfigSchema } from "./api-schemas";
 import {
@@ -144,6 +145,8 @@ export interface GatilhoEtapaSummary {
   enrolled: number;
   skipped_existing: number;
   skipped_stale_origin?: number;
+  /** A IA moveu no modo assistido: a sequência espera alguém inscrever (doc 301 = B). */
+  parados_no_assistido?: number;
   /** Negócio entrou na etapa mas não tem contato — não há a quem escrever. Contado, nunca calado. */
   sem_contato: number;
 }
@@ -200,6 +203,14 @@ export async function aplicaGatilhoDeEtapa(
   const contatoId = await deps.db.carregaContatoDoNegocio(row.organization_id, negocioId);
   if (!contatoId) {
     summary.sem_contato = armados.length;
+    return summary;
+  }
+
+  // Doc 301 = B: a IA moveu o card no modo ASSISTIDO (ou a regra que rodou por
+  // causa dela). Sequência fala com o cliente, então não inscreve: o handler
+  // abre o aviso na Central, e quem quiser inscreve pelo painel do contato.
+  if (eventoDaIaNoAssistido(row)) {
+    summary.parados_no_assistido = armados.length;
     return summary;
   }
 
