@@ -241,16 +241,16 @@ describe("triarCandidato", () => {
     // telefone agora pertence a um atendimento alheio. Antes bastava o
     // `contact_id` vir preenchido para seguir para a abordagem fria.
     const { db } = bancoFalso({ contatosConhecidos: [{ id: "alheio" }] });
-    expect(
-      await triarCandidato(db, ORG, CAMPANHA, candidato(1, { contact_id: CONTATO })),
-    ).toEqual({ motivo: "Contato já existe no CRM; atendimento preservado." });
+    expect(await triarCandidato(db, ORG, CAMPANHA, candidato(1, { contact_id: CONTATO }))).toEqual({
+      motivo: "Contato já existe no CRM; atendimento preservado.",
+    });
   });
 
   it("controle: `contact_id` preenchido e o telefone acha o MESMO contato, segue com ele", async () => {
     const { db } = bancoFalso({ contatosConhecidos: [{ id: CONTATO }] });
-    expect(
-      await triarCandidato(db, ORG, CAMPANHA, candidato(1, { contact_id: CONTATO })),
-    ).toEqual({ contatoDaCampanha: CONTATO });
+    expect(await triarCandidato(db, ORG, CAMPANHA, candidato(1, { contact_id: CONTATO }))).toEqual({
+      contatoDaCampanha: CONTATO,
+    });
   });
 
   it("sem telefone: pula, e nem consulta o CRM", async () => {
@@ -566,14 +566,19 @@ describe("prepararCandidatoNoEnvio: os casos de borda que o revisor cego apontou
  */
 type Chamada = { table: string; data: Record<string, unknown> };
 function adminDoMotor(opcoes: { regras: unknown[]; negocio: Record<string, unknown> | null }) {
-  const registro: { inserts: Chamada[]; updates: Chamada[]; rpcs: { fn: string; args: Record<string, unknown> }[] } = {
+  const registro: {
+    inserts: Chamada[];
+    updates: Chamada[];
+    rpcs: { fn: string; args: Record<string, unknown> }[];
+  } = {
     inserts: [],
     updates: [],
     rpcs: [],
   };
 
   const listar = (table: string, mode: string, data: Record<string, unknown> | null) => {
-    if (table === "automation_rules" && mode === "select") return { data: opcoes.regras, error: null };
+    if (table === "automation_rules" && mode === "select")
+      return { data: opcoes.regras, error: null };
     if (mode === "insert") {
       registro.inserts.push({ table, data: data ?? {} });
       return { error: null };
@@ -590,7 +595,8 @@ function adminDoMotor(opcoes: { regras: unknown[]; negocio: Record<string, unkno
       registro.inserts.push({ table, data: data ?? {} });
       return { data: { id: "run-1" }, error: null };
     }
-    if (table === "automation_rules" && mode === "select") return { data: { run_count: 0 }, error: null };
+    if (table === "automation_rules" && mode === "select")
+      return { data: { run_count: 0 }, error: null };
     if (table === "crm_leads" && mode === "select") return { data: opcoes.negocio, error: null };
     return { data: null, error: null };
   };
@@ -624,7 +630,9 @@ function adminDoMotor(opcoes: { regras: unknown[]; negocio: Record<string, unkno
       // `RETURNING` devolveria é o que a ação usa para saber se houve escrita.
       if (fn === "fn_lead_adicionar_etiquetas") {
         const antes = (opcoes.negocio?.tags as string[] | undefined) ?? [];
-        const adicionadas = [...new Set(args.p_etiquetas as string[])].filter((t) => !antes.includes(t));
+        const adicionadas = [...new Set(args.p_etiquetas as string[])].filter(
+          (t) => !antes.includes(t),
+        );
         return { data: { tags: [...antes, ...adicionadas], adicionadas }, error: null };
       }
       return { data: null, error: null };
@@ -734,7 +742,10 @@ describe("o negócio que a campanha abre: a regra de `lead.created` RODA (#3072)
     });
     // O carimbo EXATO que a ação de regra escreve (`create-or-move-lead.ts`,
     // `send-ai-message.ts`, `send-whatsapp.ts`): `rule:<uuid da regra>`.
-    const resultado = await runAutomationForEvent(motor.admin, eventoDoNegocio({ request_id: `rule:${REGRA}` }));
+    const resultado = await runAutomationForEvent(
+      motor.admin,
+      eventoDoNegocio({ request_id: `rule:${REGRA}` }),
+    );
 
     expect(resultado).toEqual({
       consumer_key: AUTOMATION_CONSUMER_KEY,
@@ -789,4 +800,82 @@ describe("sem WhatsApp (lib/prospecting/whatsapp.ts): o produto tira, e o motivo
       ]);
     },
   );
+});
+
+describe("módulo Empresas e pessoas (#3198, fatia 2): o modo DESLIGADO é o de hoje", () => {
+  const EMPRESA = uuid(900);
+
+  /**
+   * O dublê do admin devolve a `platform_config` com ou sem a chave do módulo, e
+   * uma empresa "nova" quando a prospecção insere. `modulosLigados` também lê
+   * `modulos_instalados` — fora do escopo desta fatia, vazio nos dois modos.
+   */
+  function adminComModulo(ligado: boolean) {
+    const tabelas: string[] = [];
+    const query = (tabela: string) => {
+      tabelas.push(tabela);
+      const fim = {
+        data:
+          tabela === "platform_config" && ligado
+            ? [{ chave: "MODULO_CRM_B2B", valor: "ligado" }]
+            : [],
+        error: null,
+      };
+      const q = {
+        select: () => q,
+        insert: () => q,
+        update: () => q,
+        delete: () => q,
+        eq: () => q,
+        in: () => q,
+        is: () => q,
+        limit: () => q,
+        order: () => q,
+        // Nenhuma empresa existe ainda: o caminho é o de criação.
+        maybeSingle: async () => ({ data: null, error: null }),
+        single: async () => ({ data: { id: EMPRESA }, error: null }),
+        then: (ok: (v: unknown) => unknown, erro?: (e: unknown) => unknown) =>
+          Promise.resolve(fim).then(ok, erro),
+      };
+      return q;
+    };
+    return { admin: { from: query } as never, tabelas };
+  }
+
+  it("desligado: contato, negócio e conversa nascem como hoje, e NENHUMA tabela do módulo é tocada", async () => {
+    const { db, chamadas } = bancoFalso();
+    const { admin, tabelas } = adminComModulo(false);
+
+    const linha = await criarPegadaDoCandidato(
+      db,
+      admin,
+      ORG,
+      campanha,
+      configOnSend,
+      candidato(1),
+      null,
+    );
+
+    // A pegada de sempre: contato (com a base legal), negócio e conversa.
+    expect(m.contato).toHaveBeenCalledTimes(1);
+    expect(m.negocio).toHaveBeenCalledTimes(1);
+    expect(m.fronteira).toHaveBeenCalledTimes(1);
+    expect(linha).toMatchObject({ status: "queued", conversation_id: CONVERSA });
+
+    // Nada de empresa: nem leitura, nem escrita. E o contato não é reescrito.
+    expect(tabelas).not.toContain("companies");
+    expect(gravou(chamadas, "update contacts set company_id")).toBe(false);
+  });
+
+  it("ligado: a mesma pegada, mais a empresa — o contato nasce com company_id", async () => {
+    const { db, chamadas } = bancoFalso();
+    const { admin, tabelas } = adminComModulo(true);
+
+    await criarPegadaDoCandidato(db, admin, ORG, campanha, configOnSend, candidato(1), null);
+
+    expect(tabelas).toContain("companies");
+    expect(gravou(chamadas, "update contacts set company_id")).toBe(true);
+    const vinculo = chamadas.find((c) => c.sql.includes("update contacts set company_id"));
+    expect(vinculo?.params).toEqual([ORG, CONTATO, EMPRESA]);
+  });
 });

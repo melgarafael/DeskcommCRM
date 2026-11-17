@@ -22,6 +22,10 @@
  */
 
 /** O kind em `agent_inbox_items` (vocabulário fechado por CHECK, migration 9027). */
+import { traduzir } from "@/lib/i18n/dicionario";
+import { preencher } from "@/lib/i18n/idioma-do-aviso";
+import type { Idioma } from "@/lib/i18n/idiomas";
+
 export const KIND_ASSINATURA_DESCONECTADA = "assinatura_desconectada" as const;
 
 /** O título do item. Diz a CONSEQUÊNCIA para quem atende, não o token. */
@@ -84,21 +88,32 @@ const MOTIVO_LEGIVEL: Record<string, string> = {
  * que vem depois do último `:`. Sem isso todo aviso real dizia "sem motivo
  * identificado".
  */
-export function motivoLegivelDaAssinatura(recusa: string): string {
+export function motivoLegivelDaAssinatura(recusa: string, idioma: Idioma = "pt-BR"): string {
   const rotulo = recusa.slice(recusa.lastIndexOf(":") + 1);
-  return MOTIVO_LEGIVEL[rotulo] ?? MOTIVO_LEGIVEL.desconhecido!;
+  const chave = Object.hasOwn(MOTIVO_LEGIVEL, rotulo) ? rotulo : "desconhecido";
+  return traduzir(MOTIVO_LEGIVEL[chave] as string, idioma);
 }
 
 /**
  * O corpo do aviso que PEDE a reconexão. Sem data e sem token: o corpo é lido
  * por qualquer pessoa da equipe, e a linha do item já carrega o horário.
  */
-export function corpoDoAvisoDeAssinatura(recusa: string): string {
+export function corpoDoAvisoDeAssinatura(recusa: string, idioma: Idioma = "pt-BR"): string {
+  // No idioma da ORGANIZAÇÃO: a Central mostra o texto como foi gravado.
   return (
-    `A conta do ChatGPT que atende esta empresa foi recusada: ${motivoLegivelDaAssinatura(recusa)}.\n\n` +
-    "Enquanto isso, a IA não responde aos clientes que escrevem — as mensagens chegam e ficam sem resposta. " +
-    "A cota da assinatura NÃO é o problema.\n\n" +
-    "Para voltar: reconecte a conta em IA › Credenciais. Este aviso se fecha sozinho quando o login voltar."
+    preencher(traduzir("A conta do ChatGPT que atende esta empresa foi recusada: {motivo}.", idioma), {
+      motivo: motivoLegivelDaAssinatura(recusa, idioma),
+    }) +
+    "\n\n" +
+    traduzir(
+      "Enquanto isso, a IA não responde aos clientes que escrevem — as mensagens chegam e ficam sem resposta. A cota da assinatura NÃO é o problema.",
+      idioma,
+    ) +
+    "\n\n" +
+    traduzir(
+      "Para voltar: reconecte a conta em IA › Credenciais. Este aviso se fecha sozinho quando o login voltar.",
+      idioma,
+    )
   );
 }
 
@@ -117,23 +132,27 @@ export const CORPO_DA_RESOLUCAO_DA_ASSINATURA =
 export function avaliarAvisoDaAssinatura(
   situacao: SituacaoDaAssinatura,
   item: ItemDaAssinaturaAberto | null,
+  /** O idioma da organização; `pt-BR` (o padrão) é o texto de antes, byte a byte. */
+  idioma: Idioma = "pt-BR",
 ): DecisaoDoAvisoDaAssinatura {
   if (situacao.conectada) {
     if (!item) return { acao: "nada" };
     const anterior = (item.body ?? "").trim();
+    const resolucao = traduzir(
+      "Resolvido pelo sistema: o login da conta foi renovado e a IA voltou a responder.",
+      idioma,
+    );
     return {
       acao: "resolver",
       item,
-      corpo:
-        anterior === ""
-          ? CORPO_DA_RESOLUCAO_DA_ASSINATURA
-          : `${anterior}\n\n${CORPO_DA_RESOLUCAO_DA_ASSINATURA}`,
+      corpo: anterior === "" ? resolucao : `${anterior}\n\n${resolucao}`,
     };
   }
   if (situacao.recusa === null) return { acao: "nada" };
-  const corpo = corpoDoAvisoDeAssinatura(situacao.recusa);
+  const corpo = corpoDoAvisoDeAssinatura(situacao.recusa, idioma);
+  const titulo = traduzir("A conta do ChatGPT desconectou — a IA parou de responder", idioma);
   if (item) {
-    return { acao: "atualizar", item, titulo: TITULO_DO_AVISO_DE_ASSINATURA, corpo };
+    return { acao: "atualizar", item, titulo, corpo };
   }
-  return { acao: "abrir", titulo: TITULO_DO_AVISO_DE_ASSINATURA, corpo };
+  return { acao: "abrir", titulo, corpo };
 }
