@@ -226,3 +226,112 @@ describe("create_or_move_lead — lead.won leva os anexos do card de Vendas (#45
     storage.falhar = false;
   });
 });
+
+/**
+ * ── A CÓPIA QUE FALHOU É REPETIDA NA PRÓXIMA EXECUÇÃO (#4544) ────────────────
+ *
+ * O anexo vai junto na criação do card. Se o Storage falhar nessa hora, o card
+ * nasce sem ele — e a automação, rodando de novo, caía no ramo de "a
+ * continuação já existe", que respondia `ja_existia` e NUNCA voltava a tentar:
+ * o voucher ficava fora do card de pós-venda para sempre.
+ *
+ * A cópia é idempotente (`clonado_do_attachment_id` + índice único parcial), e o
+ * ramo da continuação passou a chamá-la. Este caso roda as três execuções: a que
+ * falha, a que REPÕE e a que não duplica.
+ */
+describe("create_or_move_lead — a continuação já existente repõe o anexo que faltou (#4544)", () => {
+  it("1ª falha no Storage, 2ª repõe, 3ª não duplica", async () => {
+    storage.copias = [];
+    storage.falhar = true;
+    const db = dbDoGanho();
+    const executar = () => getAction("create_or_move_lead")!.execute(ctxDoGanho(db), CONFIG_POS_VENDA);
+
+    // 1 — o bucket recusa: o card nasce, o anexo não.
+    const primeira = await executar();
+    expect(primeira).toMatchObject({ status: "success", detail: { anexos: 0, anexos_com_falha: 1 } });
+    expect(anexosDoDb(db)).toHaveLength(1);
+    expect(anexosDoDb(db)[0]).toMatchObject({ lead_id: NEGOCIO_GANHO.id });
+
+    // 2 — o bucket volta: a MESMA regra, no card que já existe, repõe o anexo.
+    storage.falhar = false;
+    const segunda = await executar();
+    expect(segunda).toMatchObject({
+      status: "success",
+      detail: { anexos: 1, anexos_que_ja_estavam: 0 },
+    });
+    expect(anexosDoDb(db)).toHaveLength(2);
+    const reposto = anexosDoDb(db).find((linha) => linha.lead_id !== NEGOCIO_GANHO.id);
+    expect(reposto).toMatchObject({
+      field_key: "voucher",
+      file_name: "apolice.pdf",
+      clonado_do_attachment_id: APOLICE.id,
+    });
+
+    // 3 — rodar de novo não duplica: nada é copiado e nada é gravado.
+    const terceira = await executar();
+    expect(terceira).toMatchObject({
+      status: "success",
+      detail: { anexos: 0, anexos_que_ja_estavam: 1 },
+    });
+    expect(anexosDoDb(db)).toHaveLength(2);
+    expect(storage.copias).toHaveLength(2);
+
+    // A origem continua com o anexo dela, no caminho de sempre.
+    const daOrigem = anexosDoDb(db).filter((linha) => linha.lead_id === NEGOCIO_GANHO.id);
+    expect(daOrigem).toHaveLength(1);
+    expect(daOrigem[0]).toMatchObject({ id: APOLICE.id, storage_path: APOLICE.storage_path });
+  });
+});
+
+describe("create_or_move_lead — a reposição só entra em card com o mesmo dono da origem (#4544)", () => {
+  const DONO = "11111111-aaaa-4aaa-8aaa-111111111111";
+  const OUTRO = "22222222-bbbb-4bbb-8bbb-222222222222";
+
+  /** Uma continuação que JÁ existe no pós-venda, com o dono que o caso escolhe. */
+  function comContinuacao(donoDaContinuacao: string | null) {
+    const db = dbDoGanho();
+    db.tabelas.crm_leads[0]!.owner_user_id = DONO;
+    db.tabelas.crm_leads.push({
+      ...NEGOCIO_GANHO,
+      id: "continuacao-1",
+      pipeline_id: FUNIL_DE_POS_VENDA,
+      stage_id: "pos_venda",
+      status: "open",
+      owner_user_id: donoDaContinuacao,
+      source_metadata: { clonado_de: { lead_id: NEGOCIO_GANHO.id } },
+    } as never);
+    const ctx = ctxDoGanho(db);
+    ctx.context.lead = { ...NEGOCIO_GANHO, owner_user_id: DONO };
+    return { db, ctx };
+  }
+
+  it("dono diferente: nada é copiado para o card achado, e o recibo diz por quê", async () => {
+    storage.copias = [];
+    storage.falhar = false;
+    const { db, ctx } = comContinuacao(OUTRO);
+
+    const resultado = await getAction("create_or_move_lead")!.execute(ctx, CONFIG_POS_VENDA);
+
+    expect(resultado).toMatchObject({
+      status: "success",
+      detail: { ja_existia: "continuacao-1", anexos_nao_repostos: "dono_diferente" },
+    });
+    expect(anexosDoDb(db).filter((linha) => linha.lead_id === "continuacao-1")).toHaveLength(0);
+    expect(storage.copias).toHaveLength(0);
+  });
+
+  it("CONTROLE: mesmo dono, o anexo que faltava é reposto", async () => {
+    storage.copias = [];
+    storage.falhar = false;
+    const { db, ctx } = comContinuacao(DONO);
+
+    const resultado = await getAction("create_or_move_lead")!.execute(ctx, CONFIG_POS_VENDA);
+
+    expect(resultado).toMatchObject({
+      status: "success",
+      detail: { ja_existia: "continuacao-1", anexos: 1, anexos_que_ja_estavam: 0 },
+    });
+    expect(anexosDoDb(db).filter((linha) => linha.lead_id === "continuacao-1")).toHaveLength(1);
+    expect(storage.copias).toHaveLength(1);
+  });
+});

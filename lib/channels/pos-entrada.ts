@@ -125,6 +125,8 @@ export interface EntradaDeMensagem {
   channelSessionId: string;
   /** O texto que o cliente escreveu — é onde se procura o pedido de saída. */
   texto: string | null;
+  /** Ausente: o canal delega a captura ao pós-entrada. Null: já consultou e não encontrou clique Google. */
+  atribuicaoGoogleDaMensagem?: AtribuicaoDeAnuncio | null;
   /** Nome exibido pelo canal, quando houver. Serve para batizar o card novo. */
   nomeDoContato: string | null;
   /** Correlaciona a linha de auditoria com a request que a originou. */
@@ -1252,18 +1254,11 @@ async function guardarOrigemDaPagina(
   // nascimento do card. Preserva a regra já existente: contato importado ou
   // antigo ainda sem atribuição pode reivindicar o clique; a RPC continua
   // protegendo o primeiro toque e o recibo continua de consumo único.
-  if ((!entrada.canal || entrada.canal === "whatsapp") && PADRAO_DO_REF.test(entrada.texto ?? "")) {
-    try {
-      const atribuicao = await extrairEEstamparAtribuicaoGoogle(
-        admin, entrada.organizationId, entrada.contactId, entrada.texto,
-      );
-      if (atribuicao) return atribuicao;
-    } catch (erro) {
-      logger.error("pos-entrada: atribuição do clique falhou (a mensagem entra assim mesmo)", {
-        contactId: entrada.contactId,
-        error: erro instanceof Error ? erro.message.slice(0, 160) : "desconhecido",
-      });
-    }
+  if (!entrada.canal || entrada.canal === "whatsapp") {
+    const atribuicao = entrada.atribuicaoGoogleDaMensagem === undefined
+      ? await extrairEEstamparAtribuicaoGoogle(admin, entrada.organizationId, entrada.contactId, entrada.texto)
+      : entrada.atribuicaoGoogleDaMensagem;
+    if (atribuicao) return atribuicao;
   }
   const achada = extrairOrigemDaPagina(entrada.texto);
   // O ref não é lido no banco aqui: a leitura CONSOME o clique, e consumir um
