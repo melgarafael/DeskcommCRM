@@ -3660,6 +3660,18 @@ export const DICIONARIO: Traducoes = {
   "Atualizado em": { es: "Actualizado el" },
   Ativo: { es: "Activo" },
   Desativado: { es: "Desactivado" },
+  // ─── Follow-up: instalar um fluxo a partir de um modelo (#4688) ───
+  // As três mensagens saíram do route handler para `lib/followup/instalar-modelo.ts`
+  // junto com a regra. Elas já passavam por `t()` na rota, mas sem entrada aqui:
+  // quem opera em espanhol as recebia em português. A varredura de i18n só
+  // alcança `lib/`, então a falta apareceu quando a regra mudou de casa.
+  "Este modelo não existe mais.": { es: "Este modelo ya no existe." },
+  "Escolha a etapa do funil que dispara este fluxo.": {
+    es: "Elige la etapa del embudo que dispara este flujo.",
+  },
+  "A etapa escolhida não existe neste funil — escolha outra.": {
+    es: "La etapa elegida no existe en este embudo — elige otra.",
+  },
   // ─── Follow-up: fila e estados de enrollment/promessa ───
   "Não consegui criar o fluxo. Tente de novo.": {
     es: "No pude crear el flujo. Intenta de nuevo.",
