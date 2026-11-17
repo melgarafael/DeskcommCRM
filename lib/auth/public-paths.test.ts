@@ -53,7 +53,7 @@ describe("isPublicPath", () => {
    * `PATCH /api/v1/leads/[id]` aceita Bearer (auth-dual, monitoramento
    * processual). O que este bloco prova é a forma exata do segmento: UUID, não
    * `[^/]+` — `/api/v1/leads/` tem irmãos LITERAIS no mesmo nível (`bulk`,
-   * `at-risk`, `import`, `proposals`, `reactivations`), nenhum deles com
+   * `import`, `proposals`, `reactivations`), nenhum deles com
    * suporte a Bearer, que um padrão largo tornaria público por engano.
    */
   it("libera PATCH /api/v1/leads/[id] (bearer, forma de UUID)", () => {
@@ -84,7 +84,8 @@ describe("isPublicPath", () => {
     expect(isPublicPath(`/api/v1/contacts/${contato}/avatar`)).toBe(true);
     expect(isPublicPath(`/api/v1/contacts/${contato}/avatar/extra`)).toBe(false);
     expect(isPublicPath("/api/v1/contacts/qualquer-id/avatar")).toBe(false);
-    expect(isPublicPath(`/api/v1/contacts/${contato}/person`)).toBe(false);
+    // Spec 33 (R2): a rota passou a aceitar token
+    expect(isPublicPath(`/api/v1/contacts/${contato}/person`)).toBe(true);
     expect(isPublicPath("/api/v1/contacts/bulk/avatar")).toBe(false);
   });
 
