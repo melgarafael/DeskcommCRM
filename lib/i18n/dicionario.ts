@@ -1828,6 +1828,12 @@ export const DICIONARIO: Traducoes = {
   "As mensagens continuam chegando ao Inbox, e sua equipe pode responder manualmente. Os testes são mensagens reais no WhatsApp, com os custos normais de uso.": { es: "Los mensajes siguen llegando al Inbox y tu equipo puede responder manualmente. Las pruebas son mensajes reales en WhatsApp, con los costos normales de uso." },
   "O agente precisa estar publicado e vinculado a este canal. Bloqueios do contato e atendimento humano continuam sendo respeitados.": { es: "El agente debe estar publicado y vinculado a este canal. Se siguen respetando los bloqueos del contacto y la atención humana." },
   "Salvar lista de teste": { es: "Guardar lista de prueba" },
+  "1 conta de teste autorizada": { es: "1 cuenta de prueba autorizada" },
+  "contas de teste autorizadas": { es: "cuentas de prueba autorizadas" },
+  "Somente as contas marcadas abaixo podem receber respostas automáticas enquanto o canal está em teste. Sem nenhuma marcada, a IA fica pausada.": { es: "Solo las cuentas marcadas abajo pueden recibir respuestas automáticas mientras el canal está en prueba. Sin ninguna marcada, la IA queda en pausa." },
+  "Contas autorizadas para teste": { es: "Cuentas autorizadas para prueba" },
+  "Nenhum contato desta rede conversou com o canal ainda. Peça para a conta de teste mandar uma mensagem e reabra este painel.": { es: "Ningún contacto de esta red ha conversado con el canal todavía. Pide a la cuenta de prueba que envíe un mensaje y vuelve a abrir este panel." },
+  "Salvar contas de teste": { es: "Guardar cuentas de prueba" },
   "Ativar modo de teste": { es: "Activar modo de prueba" },
   "Liberar atendimento ao público": { es: "Habilitar atención al público" },
   // #4170 — a pausa da Prospecção quando o canal está em modo de teste. A

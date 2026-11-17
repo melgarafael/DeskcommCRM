@@ -15810,10 +15810,21 @@ export type Database = {
         Returns: string;
       };
       fn_conferir_modulos_instalados: { Args: Record<PropertyKey, never>; Returns: undefined };
-      fn_configurar_pre_go_live_canal: {
-        Args: { p_canal: string; p_modo: string; p_numeros: string[]; p_org: string };
-        Returns: number;
-      };
+      fn_configurar_pre_go_live_canal:
+        | {
+            Args: { p_canal: string; p_modo: string; p_numeros: string[]; p_org: string };
+            Returns: number;
+          }
+        | {
+            Args: {
+              p_canal: string;
+              p_identidades: string[];
+              p_modo: string;
+              p_numeros: string[];
+              p_org: string;
+            };
+            Returns: number;
+          };
       fn_contar_mensagem_ignorada: { Args: { p_org: string }; Returns: undefined };
       fn_contato_adicionar_etiquetas: {
         Args: { p_contato: string; p_etiquetas: string[]; p_org: string };
