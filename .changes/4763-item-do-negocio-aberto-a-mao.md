@@ -19,4 +19,4 @@ funil que não é destino de receita continua permitida — com o registro
 confunda com um que veio de um item conferido. Fora do atendimento (rota MCP,
 integração), nada é recusado.
 
-Crédito: @paulolimajr77, que mediu o caso com IA real (#4763).
+Contribuição de @webtecnica (#4785), a partir da medição de @paulolimajr77 com IA real (#4763).
