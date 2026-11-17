@@ -39,7 +39,7 @@ import {
 } from "./site-efetivo";
 import { previaDoAgente } from "./previa";
 import { blocoVozVendedor, personalizacaoDaOrganizacao } from "./personalizar";
-import { campaignConfigSchema, type OfertaDaCampanha } from "./schema";
+import { campaignConfigSchema, usaFichaDigital, type OfertaDaCampanha } from "./schema";
 import { prepararCandidatos } from "./preparo";
 import { provedoresQueConferemNumero } from "@/lib/channels";
 import { moduloLigado } from "@/lib/instalacao/modulos";
@@ -382,6 +382,11 @@ export async function sendNextCandidate(
     // de outro agente (a do padrão da organização), o envio escreve do zero.
     const personalizacao = await personalizacaoDaOrganizacao(db, c.organization_id);
     const site = siteEfetivo(p.data, new Date().toISOString());
+    // A campanha SEM ficha digital (#4829) não recebe os fatos da ficha: o veredito
+    // do site não vira ângulo de venda, e a prévia guardada de uma campanha que ainda
+    // usava a ficha não entra como rascunho. A estratégia continua sendo calculada —
+    // ela é o diagnóstico que a TELA mostra —, mas não sobe para a instrução.
+    const semFichaDigital = !usaFichaDigital(cfg);
     const estrategia = site
       ? estrategiaDoCandidato(p.data, site, {
           ofertas: (cfg.ofertas ?? ["site"]) as OfertaDaCampanha[],
@@ -396,11 +401,12 @@ export async function sendNextCandidate(
     const soCumprimenta = cfg.exit_offer !== "first_message";
     // Fonte única em `montarDadosDeAbordagem` (prévia da tela bebe da mesma).
     const dados = soCumprimenta
-      ? montarDadosDeAbordagem(p.data, null, null, { soCumprimenta })
+      ? montarDadosDeAbordagem(p.data, null, null, { soCumprimenta, semFichaDigital })
       : montarDadosDeAbordagem(
           p.data,
-          site,
-          previaDoAgente(p.data, cfg.agent_id, cfg.briefing_editado_em),
+          semFichaDigital ? null : site,
+          semFichaDigital ? null : previaDoAgente(p.data, cfg.agent_id, cfg.briefing_editado_em),
+          { semFichaDigital },
         );
     // Medido nos dados JÁ filtrados pelo modo; o mesmo valor vai à instrução e ao modo.
     const comContextoDaEquipe = temContextoDaEquipe(dados);
@@ -412,7 +418,7 @@ export async function sendNextCandidate(
         cfg.instruction,
         cfg.qualification,
         blocoVozVendedor(personalizacao) || undefined,
-        estrategia,
+        semFichaDigital ? null : estrategia,
         soCumprimenta,
         comContextoDaEquipe,
       ),
@@ -422,6 +428,7 @@ export async function sendNextCandidate(
       origemDaAbordagem: "prospeccao_fria",
       dados,
       comContextoDaEquipe,
+      semFichaDigital,
     });
     if (!generated.ok)
       // DO CANDIDATO: o modelo não produziu texto para ESTES dados.
