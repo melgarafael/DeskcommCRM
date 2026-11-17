@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { resolveTurnAgent } from './resolve-turn-agent';
@@ -296,5 +298,15 @@ describe('degral 0b: o primeiro turno do contato que veio pela frase do anúncio
     const out = await resolveTurnAgent({} as never, {} as never, { ...baseInput, signal: 'oi' }, comFalha as never);
 
     expect(out.config?.agentId).toBe('agent-do-numero');
+  });
+
+  it('a fiação de produção liga o degrau 0b à leitura da coluna (cerca de fonte)', () => {
+    // Os casos acima injetam `agenteDaCampanhaDeEntrada` para controlar o cenário.
+    // Sem esta cerca, alguém poderia desconectar o degrau do turno (voltar a um
+    // dublê que devolve `null`) e a suíte inteira continuaria verde — o defeito
+    // estaria de volta sem um teste vermelho. A leitura é a de produção.
+    const fonte = readFileSync(path.join(__dirname, 'resolve-turn-agent.ts'), 'utf8');
+    expect(fonte).toContain('deps.agenteDaCampanhaDeEntrada ?? agenteDaCampanhaDeEntrada');
+    expect(fonte).toContain('import { agenteDaCampanhaDaConversa, agenteDaCampanhaDeEntrada }');
   });
 });
