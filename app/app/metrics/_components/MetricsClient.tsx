@@ -8,6 +8,7 @@ import { useAttendantMetrics, type AttendantMetric } from "@/hooks/metrics/useAt
 import { EmptyState } from "@/components/empty/EmptyState";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatarDuracao } from "@/lib/metrics/canais";
+import { urlDaExportacao } from "@/lib/relatorios/vendas-csv";
 import { DownloadSimple, WarningOctagon } from "@/lib/ui/icons";
 import { AtritoPanel } from "./AtritoPanel";
 import { CanaisPanel } from "./CanaisPanel";
@@ -76,8 +77,7 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
    * mesmo gesto do "Exportar CSV" de Contatos e do Audit Log.
    */
   const exportarVendas = () => {
-    const qs = selectedOwner ? `?owner_user_id=${encodeURIComponent(selectedOwner)}` : "";
-    window.location.href = `/api/v1/reports/vendas/export${qs}`;
+    window.location.href = urlDaExportacao(selectedOwner);
   };
 
   // A meta é MENSAL e a janela é o mês corrente de quem está olhando a tela

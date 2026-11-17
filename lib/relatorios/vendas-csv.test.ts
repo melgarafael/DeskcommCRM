@@ -15,6 +15,7 @@ import {
   csvDoRelatorioDeVendas,
   nomeDoArquivoDoRelatorio,
   segundosComVirgula,
+  urlDaExportacao,
   type LinhaDoRelatorio,
 } from "./vendas-csv";
 
@@ -80,5 +81,15 @@ describe("o nome do arquivo", () => {
 
     expect(nome).toBe("vendas-por-atendente-2026-09-01_a_2026-10-01.csv");
     expect(nome).not.toMatch(/[^\w.-]/);
+  });
+});
+
+describe("a URL que o botão da tela abre", () => {
+  it("sem filtro é o conjunto inteiro; com filtro, o atendente viaja na query", () => {
+    expect(urlDaExportacao()).toBe("/api/v1/reports/vendas/export");
+    expect(urlDaExportacao(null)).toBe("/api/v1/reports/vendas/export");
+    expect(urlDaExportacao("33333333-3333-4333-8333-333333333333")).toBe(
+      "/api/v1/reports/vendas/export?owner_user_id=33333333-3333-4333-8333-333333333333",
+    );
   });
 });

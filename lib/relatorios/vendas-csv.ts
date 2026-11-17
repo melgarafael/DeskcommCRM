@@ -117,3 +117,15 @@ function dia(instante: Date): string {
 export function nomeDoArquivoDoRelatorio(janela: { from: Date; to: Date }): string {
   return `vendas-por-atendente-${dia(janela.from)}_a_${dia(janela.to)}.csv`;
 }
+
+/**
+ * A URL do arquivo a partir do filtro da tela (`null` = todos os atendentes).
+ *
+ * A query é a MESMA que a rota lê (`owner_user_id`), e é ela que faz o arquivo
+ * sair com o recorte visível em vez do mundo inteiro. Puro para o botão poder
+ * ser medido sem navegador.
+ */
+export function urlDaExportacao(ownerUserId?: string | null): string {
+  const qs = ownerUserId ? `?owner_user_id=${encodeURIComponent(ownerUserId)}` : "";
+  return `/api/v1/reports/vendas/export${qs}`;
+}
