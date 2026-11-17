@@ -455,8 +455,15 @@ export function canalConhecidoSemMensagem(provider: string | null | undefined): 
  * para quem o iniciou, e a v1 da proposta exclui campanha. A regra mora aqui, e
  * não num `false` falso na capability de janela: mentir na janela mudaria o
  * que o atendimento pode fazer só para esconder a campanha.
+ *
+ * O SMS (#4415) entra pelo mesmo motivo de produto: o dono decidiu que a
+ * campanha por SMS não entra na primeira fatia do canal (doc 366, PR #4574),
+ * como fez com o Telegram. O SMS manda texto a qualquer hora, e a conversa, a
+ * IA, os follow-ups e as automações continuam usando isso; só a campanha fica
+ * de fora. Criar uma campanha por uma conexão de SMS é recusado por
+ * `decidirConteudo` ("Este canal não envia campanhas.", 409).
  */
-const PROVIDERS_SEM_CAMPANHA = ["telegram"] as const satisfies readonly ProviderDeMensagem[];
+const PROVIDERS_SEM_CAMPANHA = ["telegram", "twilio"] as const satisfies readonly ProviderDeMensagem[];
 
 /**
  * O canal de campanha por E-MAIL (#3441, fatia E2a).

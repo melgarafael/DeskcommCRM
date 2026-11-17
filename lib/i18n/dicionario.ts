@@ -21941,6 +21941,14 @@ export const DICIONARIO: Traducoes = {
   "Nos EUA, o número precisa estar registrado para envio comercial (A2P 10DLC) na conta de SMS antes de conectar — sem isso as operadoras bloqueiam as mensagens. Cada SMS é cobrado pela conta de SMS, por parte de 160 caracteres (70 com emoji ou acento).": {
     es: "En EE. UU., el número debe estar registrado para envío comercial (A2P 10DLC) en la cuenta de SMS antes de conectarlo; sin eso, los operadores bloquean los mensajes. Cada SMS lo cobra la cuenta de SMS, por cada parte de 160 caracteres (70 con emoji o tilde).",
   },
+  // O módulo `canal_sms` em /admin/sistema e em Recursos opcionais (PR #4574).
+  "Canal de SMS": { es: "Canal de SMS" },
+  "Ligado, cada empresa ganha em Conexões uma aba para conectar um número de SMS, com a conta e a chave do fornecedor. As mensagens que chegam ao número caem no Inbox, e a resposta sai pelo mesmo número, também pela IA, pelos follow-ups e pelas automações; campanhas não passam por ele. Desligado, a aba some e ninguém conecta um número novo; um número já conectado segue atendendo até a empresa desconectá-lo.": {
+    es: "Activado, cada empresa gana en Conexiones una pestaña para conectar un número de SMS, con la cuenta y la clave del proveedor. Los mensajes que llegan al número caen en el Inbox, y la respuesta sale por el mismo número, también por la IA, los seguimientos y las automatizaciones; las campañas no pasan por él. Desactivado, la pestaña desaparece y nadie conecta un número nuevo; un número ya conectado sigue atendiendo hasta que la empresa lo desconecte.",
+  },
+  "Cada empresa conecta em Conexões um número de SMS, e as mensagens dele chegam ao Inbox e são respondidas pelo mesmo número.": {
+    es: "Cada empresa conecta en Conexiones un número de SMS, y sus mensajes llegan al Inbox y se responden por el mismo número.",
+  },
   "A conta e o número são conferidos na conta de SMS antes de gravar.": {
     es: "La cuenta y el número se verifican en la cuenta de SMS antes de guardar.",
   },

@@ -9,6 +9,10 @@
  *
  * Só `admin` conecta canal, como nos demais. A organização sai da sessão
  * (`requireRole`), nunca do corpo.
+ *
+ * O canal é MÓDULO OPCIONAL da instalação, no molde do robô de mensagens
+ * (`app/api/v1/channels/bot/route.ts`): com `canal_sms` desligado em
+ * `/admin/sistema`, as duas respondem 404 antes de ler o corpo ou o banco.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest, NextResponse } from "next/server";
@@ -27,6 +31,7 @@ import {
 import { traduzirLimiteDoPlano } from "@/lib/cobranca/limites";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptWebhookSecret } from "@/lib/webhooks/secrets";
@@ -50,7 +55,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const authz = await requireRole("admin", { requestId, resource: "channels_sms" });
   if (!authz.ok) return authz.response;
 
-  const sessao = await acharSessaoDeSms(createAdminClient(), authz.org.orgId);
+  const admin = createAdminClient();
+  if (!(await moduloLigado(admin, "canal_sms"))) return fail("not_found", "Not found", 404, { requestId });
+  const sessao = await acharSessaoDeSms(admin, authz.org.orgId);
   const ativa = sessao && !sessao.archivedAt ? sessao : null;
   return ok(
     {
@@ -75,6 +82,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const orgId = authz.org.orgId;
 
+  const admin = createAdminClient();
+  if (!(await moduloLigado(admin, "canal_sms"))) return fail("not_found", "Not found", 404, { requestId });
+
   const parsed = conectarSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return fail(
@@ -97,7 +107,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return fail("invalid_request", mensagem, 422, { requestId });
   }
 
-  const admin = createAdminClient();
   const chaveCifrada = await encryptWebhookSecret(admin, creds.authToken);
   if (!chaveCifrada) {
     return fail("invalid_request", t("cifra indisponível nesta instalação — a chave não foi gravada"), 422, {
