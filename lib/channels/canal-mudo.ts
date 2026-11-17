@@ -77,6 +77,17 @@ export function numerosAutorizados(metadata: Record<string, unknown> | null): st
   return bruto.filter((n): n is string => typeof n === "string" && n.trim() !== "");
 }
 
+/**
+ * As identidades sociais de teste (Instagram/Facebook, `ai_test_social_identities`),
+ * tolerando metadata malformada. Um testador social também faz o canal deixar de
+ * ser mudo: a IA responde a alguém.
+ */
+export function identidadesSociaisAutorizadas(metadata: Record<string, unknown> | null): string[] {
+  const bruto = metadata?.["ai_test_social_identities"];
+  if (!Array.isArray(bruto)) return [];
+  return bruto.filter((n): n is string => typeof n === "string" && n.trim() !== "");
+}
+
 /** O canal está no modo de teste? É o `ai_gate` que decide, como no runtime. */
 export function emModoDeTeste(metadata: Record<string, unknown> | null): boolean {
   return metadata?.["ai_gate"] === "allowlist";
@@ -94,7 +105,10 @@ export function avaliarCanal(canal: CanalParaAvaliar, agora: Date): DesfechoDoCa
   if (canal.archived_at !== null) return { acao: "resolver", motivo: "canal_arquivado" };
   if (!emModoDeTeste(canal.metadata))
     return { acao: "resolver", motivo: "saiu_do_modo_de_teste" };
-  if (numerosAutorizados(canal.metadata).length > 0)
+  if (
+    numerosAutorizados(canal.metadata).length > 0 ||
+    identidadesSociaisAutorizadas(canal.metadata).length > 0
+  )
     return { acao: "resolver", motivo: "ganhou_numero" };
   if (canal.status !== "WORKING") return { acao: "aguardar" };
 

@@ -66,6 +66,7 @@ async function alterar(req: NextRequest, ctx: Ctx, ocultar: boolean): Promise<Re
     // cru (`@<lid>`) faria o compare-and-set não achar a linha — a rota responde
     // 200 e a lista segue mostrando o texto que o gestor acabou de ocultar.
     const antigoPreview = previaDaMensagem(
+      // Mesma ORDEM da ingestão (#3566): contato do CRM → palavra de reserva.
       textoComMencoesResolvidas(message.body, lerMencoesDeGrupo(message.metadata)),
       message.type,
     );

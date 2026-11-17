@@ -19,7 +19,11 @@ import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Message } from "@/lib/types/messaging";
 import type { ReacaoNoBalao } from "@/lib/inbox/reacoes-no-fio";
-import { lerMencoesDeGrupo, textoComMencoesResolvidas } from "@/lib/messaging/mencoes-de-grupo";
+import {
+  lerMencoesDeGrupo,
+  PALAVRA_DE_MENCAO_DESCONHECIDA,
+  textoComMencoesResolvidas,
+} from "@/lib/messaging/mencoes-de-grupo";
 import { lerRemetenteDeGrupo, rotuloDoRemetente } from "@/lib/messaging/remetente-de-grupo";
 import { motivoDaFalhaDaMensagem } from "@/lib/inbox/motivo-da-falha";
 import { primeiroNomeDeQuemEnviou } from "@/lib/inbox/nome-no-balao";
@@ -325,12 +329,19 @@ export function MessageBubble({
   // Encaminhar vale para qualquer mensagem com conteúdo — recebida ou enviada.
   // Só não se encaminha o que foi apagado: o conteúdo saiu do ar de propósito.
   const podeEncaminhar = Boolean(onEncaminhar) && !apagada;
+  // RESPONDER CITANDO (#4787): a citação é o CONTEÚDO da mensagem num segundo
+  // lugar da tela — e, no envio, uma referência que sai para a plataforma. Se a
+  // linha foi apagada, citá-la é (a) mostrar de volta o que saiu do ar e (b)
+  // mandar ao canal um id que não existe mais lá. A régua é a MESMA régua de
+  // Encaminhar/Reagir/Baixar: o que foi apagado não ganha atalho de volta.
+  // O servidor recusa de novo (`citacao_apagada`) — aqui é a tela que não oferece.
+  const podeResponder = Boolean(onResponder) && !apagada;
   const podeReagir = Boolean(onReagir) && !apagada && !ocultaNoCrm;
   // Baixar vale para toda mídia que a tela mostra (foto, vídeo, áudio, documento,
   // figurinha). Não para a apagada nem para a oculta: o conteúdo saiu de cena de
   // propósito, e o menu não deve ser o atalho de volta a ele.
   const podeBaixar = hasMedia && !apagada && !ocultaNoCrm;
-  const temMenu = Boolean(onResponder || podeEncaminhar || podeBaixar || (podeEditar && onEditar) || podeApagar || podeOcultar || podeReagir);
+  const temMenu = Boolean(podeResponder || podeEncaminhar || podeBaixar || (podeEditar && onEditar) || podeApagar || podeOcultar || podeReagir);
   const cartaoDeDocumentoVisivel = hasMedia && message.type === "document"
     && !editando && !apagada && !ocultaNoCrm;
   const reenvio = onReenviar
@@ -442,10 +453,14 @@ export function MessageBubble({
   // e `metadata.mentions` guarda quem é cada identificador. O corpo GRAVADO
   // continua cru (é o dado do provedor, auditável); a troca acontece aqui, por
   // ocorrência e pelo PRÓPRIO lid — menção repetida resolve cada uma pelo seu, e
-  // dois contatos chamados "João" não trocam de lugar. Sem menção conhecida, o
-  // texto sai idêntico (o número que já estava lá é a informação disponível).
+  // dois contatos chamados "João" não trocam de lugar. Quem não está no CRM sai
+  // com a palavra do dicionário — o LID cru não aparece. O `remetente` acima é o
+  // AUTOR da mensagem e nunca vira rótulo de menção (#3566).
   const mencoes = lerMencoesDeGrupo(message.metadata);
-  const corpo = textoComMencoesResolvidas(message.body, mencoes) ?? "";
+  const corpo =
+    textoComMencoesResolvidas(message.body, mencoes, {
+      palavraDesconhecida: t(PALAVRA_DE_MENCAO_DESCONHECIDA),
+    }) ?? "";
   // O anúncio que gerou ESTA mensagem (a ingestão grava em `metadata.anuncio`
   // a mensagem nascida de um clique). Só na recebida: é o cliente que chega
   // pelo anúncio, como o WhatsApp mostra no celular.
@@ -565,8 +580,8 @@ export function MessageBubble({
                 editorRef.current?.querySelector("textarea")?.focus({ preventScroll: true });
                 editorRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest", inline: "nearest" });
               }}>
-              {onResponder && (
-                <DropdownMenuItem onSelect={() => onResponder(message)}>
+              {podeResponder && (
+                <DropdownMenuItem onSelect={() => onResponder?.(message)}>
                   <ArrowBendUpLeft size={16} aria-hidden />{t("Responder a esta mensagem")}
                 </DropdownMenuItem>
               )}
