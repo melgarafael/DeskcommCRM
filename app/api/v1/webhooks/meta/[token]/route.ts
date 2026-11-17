@@ -402,10 +402,12 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
       // O `delivered_at` como está no banco é lido ANTES: a hora da entrega é
       // de uma vez só e o `read` chega depois do `delivered` — sem olhar a
       // linha, ele reescrevia o instante em que a mensagem tocou o aparelho
-      // (#4316). Mesma guarda do `carimbarUmaVez` do canal não-oficial.
+      // (#4316). Mesma guarda do `carimbarUmaVez` do canal não-oficial. O
+      // `read_at` vem junto pela mesma razão: webhook reentregue não pode
+      // mover a hora em que o cliente abriu a mensagem.
       const { data: carimbos } = await admin
         .from("messages")
-        .select("delivered_at")
+        .select("delivered_at, read_at")
         .eq("organization_id", session.organizationId)
         .eq("external_id", e.externalId)
         .maybeSingle();

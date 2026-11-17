@@ -583,79 +583,85 @@ function CartaoDeVoz({ podeEditar }: { podeEditar: boolean }) {
         </p>
       )}
 
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="min-w-64 space-y-1.5">
-          <Label className="text-xs" htmlFor="voz-voice-id">
-            {t("Voice ID")}
-          </Label>
-          {catalogo.length > 0 && (
-            <Select
-              value={naLista ? voiceId : ""}
-              onValueChange={(id) => {
-                setVoiceId(id);
+      {/* Sem credencial validada a voz não é oferecida (#4260, item 2): não há
+          catálogo a listar nem prévia a sintetizar, e salvar um id aqui só
+          deixaria uma escolha que o turno não consegue usar. O caminho é o
+          link acima, que leva a cadastrar a chave. */}
+      {temCredencial && (
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-64 space-y-1.5">
+            <Label className="text-xs" htmlFor="voz-voice-id">
+              {t("Voice ID")}
+            </Label>
+            {catalogo.length > 0 && (
+              <Select
+                value={naLista ? voiceId : ""}
+                onValueChange={(id) => {
+                  setVoiceId(id);
+                  setErroDeFormato(null);
+                }}
+                disabled={!podeEditar}
+              >
+                <SelectTrigger data-testid="voz-escolher-da-lista" aria-label={t("Escolher da lista")}>
+                  <SelectValue placeholder={t("escolha da lista")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {catalogo.map((voz) => (
+                    <SelectItem key={voz.id} value={voz.id}>
+                      {voz.nome === voz.id
+                        ? voz.id
+                        : `${voz.nome}${voz.idioma ? ` — ${voz.idioma}` : ""}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <Input
+              id="voz-voice-id"
+              value={voiceId}
+              onChange={(e) => {
+                setVoiceId(e.target.value);
                 setErroDeFormato(null);
               }}
+              placeholder="ex.: 21m00Tcm4TlvDq8ikWAM"
+              data-testid="voz-voice-id"
               disabled={!podeEditar}
-            >
-              <SelectTrigger data-testid="voz-escolher-da-lista" aria-label={t("Escolher da lista")}>
-                <SelectValue placeholder={t("escolha da lista")} />
-              </SelectTrigger>
-              <SelectContent>
-                {catalogo.map((voz) => (
-                  <SelectItem key={voz.id} value={voz.id}>
-                    {voz.nome === voz.id
-                      ? voz.id
-                      : `${voz.nome}${voz.idioma ? ` — ${voz.idioma}` : ""}`}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          <Input
-            id="voz-voice-id"
-            value={voiceId}
-            onChange={(e) => {
-              setVoiceId(e.target.value);
-              setErroDeFormato(null);
-            }}
-            placeholder="ex.: 21m00Tcm4TlvDq8ikWAM"
-            data-testid="voz-voice-id"
-            disabled={!podeEditar}
-            aria-invalid={erroDeFormato !== null}
-          />
-          <p className="text-xs text-muted-foreground">
-            {t(
-              "Escolha da lista ou cole o ID de qualquer voz da sua conta, inclusive uma que não apareça aqui.",
-            )}
-          </p>
-          {erroDeFormato !== null && (
-            <p className="text-xs text-destructive" role="alert" data-testid="voz-erro-de-formato">
-              {erroDeFormato}
+              aria-invalid={erroDeFormato !== null}
+            />
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Escolha da lista ou cole o ID de qualquer voz da sua conta, inclusive uma que não apareça aqui.",
+              )}
             </p>
-          )}
-        </div>
+            {erroDeFormato !== null && (
+              <p className="text-xs text-destructive" role="alert" data-testid="voz-erro-de-formato">
+                {erroDeFormato}
+              </p>
+            )}
+          </div>
 
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={ouvindo || voiceId.trim() === ""}
-          onClick={() => void ouvirPrevia()}
-          data-testid="voz-ouvir-previa"
-        >
-          {ouvindo ? t("Gerando…") : t("Ouvir prévia")}
-        </Button>
-
-        {podeEditar && (
           <Button
             size="sm"
-            disabled={salvando || voiceId.trim() === ""}
-            onClick={() => void salvar()}
-            data-testid="voz-salvar"
+            variant="outline"
+            disabled={ouvindo || voiceId.trim() === ""}
+            onClick={() => void ouvirPrevia()}
+            data-testid="voz-ouvir-previa"
           >
-            {salvando ? t("Salvando…") : t("Salvar voz")}
+            {ouvindo ? t("Gerando…") : t("Ouvir prévia")}
           </Button>
-        )}
-      </div>
+
+          {podeEditar && (
+            <Button
+              size="sm"
+              disabled={salvando || voiceId.trim() === ""}
+              onClick={() => void salvar()}
+              data-testid="voz-salvar"
+            >
+              {salvando ? t("Salvando…") : t("Salvar voz")}
+            </Button>
+          )}
+        </div>
+      )}
 
       {erroDoProvedor !== null && (
         <p className="text-xs text-destructive" role="alert" data-testid="voz-erro-do-provedor">
