@@ -39,27 +39,43 @@ import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 // O `@sentry/nextjs` funciona fora do Next — aqui é só `Sentry.init` puro,
 // sem `instrumentation.ts` porque o worker não é um processo Next.
 import * as Sentry from "@sentry/nextjs";
-import { resolveSentryDsn, isCommunityDsn, DEFAULT_SENTRY_DSN } from "@/lib/sentry/dsn";
+import {
+  resolveSentryDsn,
+  isCommunityDsn,
+  DEFAULT_SENTRY_DSN,
+  integracoesDoServidor,
+} from "@/lib/sentry/dsn";
 import { opcoesDePrivacidade } from "@/lib/sentry/privacidade";
 
 const sentryDsn = resolveSentryDsn(process.env.SENTRY_DSN);
 const sentryCommunity = isCommunityDsn(sentryDsn);
 
-Sentry.init({
-  dsn: sentryDsn,
+// O worker é quem roda o turno do agente, inclusive o ramo da assinatura do
+// ChatGPT (`streamText` com tools, run-model-call.ts:1131). Sem DSN, nada de
+// Sentry aqui; com DSN, sem a integração do AI SDK — é ela que trava o stream
+// (#4798). Ver `integracoesDoServidor`, com o porquê e o tradeoff.
+if (sentryDsn) {
+  Sentry.init({
+    dsn: sentryDsn,
 
-  // No Sentry da comunidade, só erro (issue #100). Ver isCommunityDsn().
-  tracesSampleRate: sentryCommunity ? 0 : 1,
+    // No Sentry da comunidade, só erro (issue #100). Ver isCommunityDsn().
+    tracesSampleRate: sentryCommunity ? 0 : 1,
 
-  // Coleta restrita + scrub, num ponto só (Sentry 11 coleta amplo por default).
-  ...opcoesDePrivacidade,
-});
+    integrations: integracoesDoServidor,
+
+    // Coleta restrita + scrub, num ponto só (Sentry 11 coleta amplo por default).
+    ...opcoesDePrivacidade,
+  });
+}
 
 // Transparência de telemetria (mesma mensagem de sentry.server.config.ts,
 // adaptada para o processo worker): uma linha no boot dizendo o que está
-// ativo e como desligar.
+// ativo e como ligar/desligar.
 if (!sentryDsn) {
-  console.info("[telemetria] worker: Desligada (SENTRY_DSN=off) — nenhum erro é enviado.");
+  console.info(
+    "[telemetria] worker: Desligada (SENTRY_DSN ausente ou vazio) — nenhum erro é enviado. " +
+      "Para ligar: SENTRY_DSN=<seu-dsn>, ou SENTRY_DSN=comunidade para o Sentry do projeto.",
+  );
 } else if (sentryDsn === DEFAULT_SENTRY_DSN) {
   console.info(
     "[telemetria] worker: Relatórios de erro anonimizados ATIVOS (Sentry da comunidade). " +

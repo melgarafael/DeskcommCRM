@@ -3,26 +3,45 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from "@sentry/nextjs";
-import { resolveSentryDsn, isCommunityDsn, DEFAULT_SENTRY_DSN } from "./lib/sentry/dsn";
+import {
+  resolveSentryDsn,
+  isCommunityDsn,
+  DEFAULT_SENTRY_DSN,
+  integracoesDoServidor,
+} from "./lib/sentry/dsn";
 import { opcoesDePrivacidade } from "./lib/sentry/privacidade";
 
 const sentryDsn = resolveSentryDsn(process.env.SENTRY_DSN);
 const community = isCommunityDsn(sentryDsn);
 
-Sentry.init({
-  dsn: sentryDsn,
+// Sem DSN, sem Sentry: `init` com `dsn: undefined` ainda cria cliente e instala
+// integrações (o SDK só para de ENVIAR), e uma delas — a do AI SDK — é a que
+// trava a assinatura (#4798). Chave ausente aqui é processo sem instrumentação
+// nenhuma: nem envio, nem hook, nem span.
+if (sentryDsn) {
+  Sentry.init({
+    dsn: sentryDsn,
 
-  // No Sentry da comunidade, só erro (issue #100). Ver isCommunityDsn().
-  tracesSampleRate: community ? 0 : 1,
+    // No Sentry da comunidade, só erro (issue #100). Ver isCommunityDsn().
+    tracesSampleRate: community ? 0 : 1,
 
-  // Coleta restrita + scrub, num ponto só (Sentry 11 coleta amplo por default).
-  ...opcoesDePrivacidade,
-});
+    // A integração do AI SDK fica de fora nos DOIS casos: é ela que troca o
+    // `result.stream` por um stream espiado e trava o `streamText` com tools da
+    // assinatura. O porquê, com arquivo e linha, está em `integracoesDoServidor`.
+    integrations: integracoesDoServidor,
+
+    // Coleta restrita + scrub, num ponto só (Sentry 11 coleta amplo por default).
+    ...opcoesDePrivacidade,
+  });
+}
 
 // Transparência de telemetria: uma linha no boot dizendo o que está ativo e como
-// desligar. Evita "telemetria silenciosa" num projeto open source self-host.
+// ligar/desligar. Evita "telemetria silenciosa" num projeto open source self-host.
 if (!sentryDsn) {
-  console.info("[telemetria] Desligada (SENTRY_DSN=off) — nenhum erro é enviado.");
+  console.info(
+    "[telemetria] Desligada (SENTRY_DSN ausente ou vazio) — nenhum erro é enviado. " +
+      "Para ligar: SENTRY_DSN=<seu-dsn>, ou SENTRY_DSN=comunidade para o Sentry do projeto.",
+  );
 } else if (sentryDsn === DEFAULT_SENTRY_DSN) {
   console.info(
     "[telemetria] Relatórios de erro anonimizados ATIVOS (Sentry da comunidade). " +
