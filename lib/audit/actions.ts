@@ -1421,6 +1421,11 @@ export const AUDIT_ACTIONS = [
   // as gravações que ela deixou passar.
   "crm.telefone_de_ficha_vazia_alterado",
   "crm.nome_informado_alterado",
+  // O admin ligou/desligou o ESCOPO DAS TAREFAS do atendente (#4737). É a
+  // decisão que muda o que TODO atendente da empresa enxerga: o ato
+  // administrativo precisa ter nome próprio para quem auditar uma tarefa
+  // entender por que ela deixou (ou voltou) de aparecer para alguém.
+  "crm.escopo_das_tarefas_do_atendente_alterado",
   // O admin ligou/desligou a SUGESTÃO de duplicado pelo nome (#4138). É a opção
   // que decide se a tela de limpeza de contatos mostra "Parecidos — confira" —
   // o ato administrativo que abriu (ou fechou) essa seção para a organização.
