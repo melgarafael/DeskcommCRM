@@ -305,6 +305,8 @@ export const AUDIT_ACTIONS = [
   "ai_agent.reverted",
   "ai.dispatcher_run",
   "ai.pacing_knobs_updated",
+  /** Teto de respostas automáticas por conversa (#4590), ajustado pela empresa. */
+  "ai.teto_de_respostas_updated",
   "ai.inbox_item_status_changed",
   "ai.flywheel_proposal_applied",
   "ai.org_memory_published",

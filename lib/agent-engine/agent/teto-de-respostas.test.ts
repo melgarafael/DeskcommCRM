@@ -30,14 +30,21 @@ import type pg from "pg";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  CHAVE_DO_TETO_NO_ANTI_BAN,
   CODIGO_DO_TETO_DE_RESPOSTAS,
   JANELA_DO_TETO_DE_RESPOSTAS_MINUTOS_PADRAO,
+  MOTIVO_DO_SILENCIO_PELO_TETO,
+  SILENCIO_DO_TETO_DE_RESPOSTAS_MINUTOS_MAXIMO,
+  SILENCIO_DO_TETO_DE_RESPOSTAS_MINUTOS_PADRAO,
   TETO_DE_RESPOSTAS_PADRAO,
   TITULO_DO_AVISO_DO_TETO_DE_RESPOSTAS,
   avisarEquipeDoTetoDeRespostas,
   carregarRespostasDaConversa,
   contarRespostasAutomaticas,
   knobsDoTetoDeRespostas,
+  lerTetoDoAntiBan,
+  resolverTetoDeRespostasDaOrganizacao,
+  silenciarConversaPeloTeto,
   tetoDeRespostasGate,
 } from "@/lib/agent-engine/agent/teto-de-respostas";
 import { BEFORE_SEND_GATES, runBeforeSend } from "@/lib/agent-engine/guardrails/before-send";
@@ -445,17 +452,26 @@ describe("fiação do teto no turno", () => {
     expect(trecho.length, "não achei o bloco de args do envio").toBeGreaterThan(100);
     expect(trecho).toMatch(/tetoDeRespostas:\s*{/);
     expect(trecho).toMatch(/conversationId:\s*input\.conversationId/);
-    expect(trecho).toMatch(/knobsDoTetoDeRespostas\(deps\.knobs\.tetoDeRespostas\)/);
+    // Os números vêm da ORGANIZAÇÃO (fatia por empresa), resolvidos uma vez no
+    // turno — o env da instalação é só o padrão de quem não configurou.
+    expect(trecho).toMatch(/porConversa:\s*tetoDoTurno\.porConversa/);
+    expect(trecho).toMatch(/janelaMinutos:\s*tetoDoTurno\.janelaMinutos/);
+    expect(trecho).toMatch(/tetoDoTurno !== null/);
     // Só onde houve mensagem recebida, e nunca na prévia (o Testar não entrega nada).
-    expect(trecho).toMatch(/eResposta && !preview/);
+    expect(FONTE_INBOUND).toMatch(/eResposta && !preview[\s\S]{0,120}resolverTetoDeRespostasDaOrganizacao\(pool, /);
   });
 
-  it("o veto do teto no send_message AVISA a equipe na Central, fora da prévia", () => {
+  it("o veto do teto no send_message AVISA a equipe na Central e PAUSA a conversa, fora da prévia", () => {
     const i = FONTE_INBOUND.indexOf("chain.code === CODIGO_DO_TETO_DE_RESPOSTAS && !preview");
     expect(i, "o turno não reage ao veto do teto").toBeGreaterThan(0);
-    const trecho = FONTE_INBOUND.slice(i, i + 400);
+    const trecho = FONTE_INBOUND.slice(i, i + 1_200);
     expect(trecho).toMatch(/await avisarEquipeDoTetoDeRespostas\(pool,/);
     expect(trecho).toMatch(/conversationId:\s*input\.conversationId/);
+    // A pausa usa o caminho do atendente (`bot_silenced_until`), com o horizonte
+    // da organização — e pode ser desligada (`silenciarMinutos > 0`).
+    expect(trecho).toMatch(/tetoQueVale\.silenciarMinutos > 0/);
+    expect(trecho).toMatch(/await silenciarConversaPeloTeto\(pool,/);
+    expect(trecho).toMatch(/minutos:\s*tetoQueVale\.silenciarMinutos/);
   });
 
   it("o follow-up determinístico NÃO arma — ali não houve mensagem recebida", () => {
@@ -536,6 +552,233 @@ describe("ao bater o teto, a equipe é avisada uma vez por conversa", () => {
     const c = centralFalsa({ quebrada: true });
     const log = loggerFalso();
     await expect(avisar(c.db, CONVERSA_A, log)).resolves.toBeUndefined();
+    expect(log.warn).toHaveBeenCalled();
+  });
+});
+
+/**
+ * O TETO É DA ORGANIZAÇÃO — e ao bater ele PAUSA a conversa pelo caminho do
+ * atendente (#4590, fatia "configurável pela empresa").
+ *
+ * Antes desta fatia os dois números vinham do env da instalação: uma empresa não
+ * podia apertar o próprio limite sem editar arquivo de servidor e reiniciar o
+ * worker. Agora `organizations.settings.anti_ban.teto_de_respostas` manda, e o
+ * env continua sendo o padrão de quem nunca configurou — organização existente
+ * não muda de comportamento no dia do deploy.
+ */
+function bancoDaOrganizacao(teto: unknown, opcoes: { quebrado?: boolean } = {}) {
+  const consultas: { sql: string; params: unknown[] }[] = [];
+  const db = {
+    query: vi.fn(async (sql: string, params?: unknown[]) => {
+      consultas.push({ sql, params: params ?? [] });
+      if (opcoes.quebrado === true) throw new Error('relation "organizations" does not exist');
+      if (/from organizations/.test(sql)) return { rows: [{ teto }] };
+      return { rows: [] };
+    }),
+  } as unknown as Pick<pg.Pool, 'query'>;
+  return { db, consultas };
+}
+
+describe("o teto é da ORGANIZAÇÃO, e ausência de chave cai no padrão", () => {
+  it("organização que nunca configurou lê o padrão da instalação", async () => {
+    const { db } = bancoDaOrganizacao(null);
+    await expect(
+      resolverTetoDeRespostasDaOrganizacao(db, { organizationId: ORG }),
+    ).resolves.toEqual({
+      porConversa: TETO_DE_RESPOSTAS_PADRAO,
+      janelaMinutos: JANELA_DO_TETO_DE_RESPOSTAS_MINUTOS_PADRAO,
+      silenciarMinutos: SILENCIO_DO_TETO_DE_RESPOSTAS_MINUTOS_PADRAO,
+    });
+  });
+
+  it("a chave da organização manda sobre o env da instalação", async () => {
+    const { db } = bancoDaOrganizacao({
+      por_conversa: 5,
+      janela_minutos: 30,
+      silenciar_minutos: 15,
+    });
+    await expect(
+      resolverTetoDeRespostasDaOrganizacao(db, {
+        organizationId: ORG,
+        base: { porConversa: 20, janelaMinutos: 60 },
+      }),
+    ).resolves.toEqual({ porConversa: 5, janelaMinutos: 30, silenciarMinutos: 15 });
+  });
+
+  it("jsonb torto cai no padrão CAMPO A CAMPO (quem gravou um só mantém o outro)", async () => {
+    // N inválido volta ao padrão; o silêncio acompanha a janela de 15 min que a
+    // organização escolheu (não a de 60 do padrão).
+    expect(lerTetoDoAntiBan({ por_conversa: 0, janela_minutos: 15 })).toEqual({
+      porConversa: TETO_DE_RESPOSTAS_PADRAO,
+      janelaMinutos: 15,
+      silenciarMinutos: 15,
+    });
+    expect(lerTetoDoAntiBan('lixo')).toEqual({
+      porConversa: TETO_DE_RESPOSTAS_PADRAO,
+      janelaMinutos: JANELA_DO_TETO_DE_RESPOSTAS_MINUTOS_PADRAO,
+      silenciarMinutos: SILENCIO_DO_TETO_DE_RESPOSTAS_MINUTOS_PADRAO,
+    });
+    // Silêncio nunca é negativo e nunca passa de 24 h (acima disso é `'infinity'` disfarçado).
+    expect(lerTetoDoAntiBan({ silenciar_minutos: -1 }).silenciarMinutos).toBe(
+      SILENCIO_DO_TETO_DE_RESPOSTAS_MINUTOS_PADRAO,
+    );
+    expect(lerTetoDoAntiBan({ silenciar_minutos: 99_999 }).silenciarMinutos).toBe(
+      SILENCIO_DO_TETO_DE_RESPOSTAS_MINUTOS_MAXIMO,
+    );
+  });
+
+  it("a leitura é UMA linha por chave primária — e só o caminho jsonb", async () => {
+    const { db, consultas } = bancoDaOrganizacao(null);
+    await resolverTetoDeRespostasDaOrganizacao(db, { organizationId: ORG });
+    const { sql, params } = consultas[0]!;
+    expect(sql).toMatch(/from organizations\s+where id = \$1/);
+    expect(sql).toContain("settings -> 'anti_ban' -> $2");
+    expect(sql).not.toMatch(/count\(/);
+    expect(params).toEqual([ORG, CHAVE_DO_TETO_NO_ANTI_BAN]);
+  });
+
+  it("leitura quebrada não derruba o turno: vale o padrão, com registro", async () => {
+    const { db } = bancoDaOrganizacao(null, { quebrado: true });
+    const log = loggerFalso();
+    await expect(
+      resolverTetoDeRespostasDaOrganizacao(db, { organizationId: ORG, log }),
+    ).resolves.toEqual({
+      porConversa: TETO_DE_RESPOSTAS_PADRAO,
+      janelaMinutos: JANELA_DO_TETO_DE_RESPOSTAS_MINUTOS_PADRAO,
+      silenciarMinutos: SILENCIO_DO_TETO_DE_RESPOSTAS_MINUTOS_PADRAO,
+    });
+    expect(log.warn).toHaveBeenCalled();
+  });
+});
+
+describe("216 respostas em 1 h NÃO acontecem — o caso que abriu a issue", () => {
+  it("as 20 primeiras saem, a 21ª em diante é barrada, e nenhuma passa da janela", async () => {
+    const b = bancada({ linhas: [] });
+    const desfechos: string[] = [];
+
+    // O incidente real: uma resposta a cada ~18 s, 216 numa hora. Relógio
+    // controlado — nada de `sleep`, o tempo é o do parâmetro.
+    const enviados: number[] = [];
+    for (let i = 0; i < 216; i += 1) {
+      const now = new Date(COMECO.getTime() + i * 18_000);
+      const r = await tentaEnviar(b, { now });
+      desfechos.push(r.status === "sent" ? "sent" : r.code);
+      if (r.status === "sent") {
+        b.linhas.push(respostaDaIa(CONVERSA_A, now));
+        enviados.push(now.getTime());
+      }
+    }
+
+    // A 21ª tentativa do pingue-pongue é a primeira barrada — era ela que, no
+    // incidente, saía e alimentava o outro robô.
+    expect(desfechos.slice(0, TETO_DE_RESPOSTAS_PADRAO).every((d) => d === "sent")).toBe(true);
+    expect(desfechos[TETO_DE_RESPOSTAS_PADRAO]).toBe(CODIGO_DO_TETO_DE_RESPOSTAS);
+
+    // O invariante que o teto promete, e que 216 em 1 h violava: NENHUMA janela
+    // de 60 minutos tem mais de 20 respostas da IA nesta conversa.
+    const JANELA_MS = JANELA_DO_TETO_DE_RESPOSTAS_MINUTOS_PADRAO * 60_000;
+    const piorJanela = enviados.reduce(
+      (pior, t) => Math.max(pior, enviados.filter((o) => o >= t && o < t + JANELA_MS).length),
+      0,
+    );
+    expect(piorJanela).toBeLessThanOrEqual(TETO_DE_RESPOSTAS_PADRAO);
+    // E o total do episódio cai de 216 para a ordem de 20 por hora (~35 no
+    // transbordo da janela deslizante) — não é o mesmo loop.
+    expect(enviados.length).toBeLessThanOrEqual(2 * TETO_DE_RESPOSTAS_PADRAO);
+    expect(enviados.length).toBeLessThan(216 / 4);
+  });
+
+  it("conversa normal continua respondendo — 12 respostas espaçadas passam inteiras", async () => {
+    const b = bancada({ linhas: [] });
+    const desfechos: string[] = [];
+    // Atendimento de verdade: uma resposta a cada 4 min, 12 no total (~48 min).
+    for (let i = 0; i < 12; i += 1) {
+      const now = new Date(COMECO.getTime() + i * 4 * 60_000);
+      const r = await tentaEnviar(b, { now });
+      desfechos.push(r.status === "sent" ? "sent" : r.code);
+      if (r.status === "sent") b.linhas.push(respostaDaIa(CONVERSA_A, now));
+    }
+    expect(desfechos).toEqual(Array.from({ length: 12 }, () => "sent"));
+  });
+
+  it("com o teto desligado (organização sem teto de janela) o disparo de campanha não é tocado", async () => {
+    // O teto só existe no caminho de RESPOSTA: sem `tetoDeRespostas` armado, a
+    // cadeia não conta nada — é o caminho do disparo, que tem teto próprio.
+    const b = bancada({
+      linhas: Array.from({ length: 200 }, (_, i) =>
+        respostaDaIa(CONVERSA_A, new Date(COMECO.getTime() - (i + 1) * 1_000)),
+      ),
+    });
+    const r = await tentaEnviar(b, { now: COMECO, armado: false });
+    expect(r.status).toBe("sent");
+  });
+});
+
+describe("ao bater o teto, a conversa é PAUSADA pelo caminho do atendente", () => {
+  function bancoDeConversas(opcoes: { quebrado?: boolean; mudou?: boolean } = {}) {
+    const consultas: { sql: string; params: unknown[] }[] = [];
+    const db = {
+      query: vi.fn(async (sql: string, params?: unknown[]) => {
+        consultas.push({ sql, params: params ?? [] });
+        if (opcoes.quebrado === true) throw new Error("connection terminated");
+        return { rows: opcoes.mudou === false ? [] : [{ id: CONVERSA_A }] };
+      }),
+    } as unknown as Pick<pg.Pool, "query">;
+    return { db, consultas };
+  }
+
+  it("grava HORIZONTE em bot_silenced_until — nunca 'infinity'", async () => {
+    const { db, consultas } = bancoDeConversas();
+    await expect(
+      silenciarConversaPeloTeto(db, {
+        organizationId: ORG,
+        conversationId: CONVERSA_A,
+        minutos: SILENCIO_DO_TETO_DE_RESPOSTAS_MINUTOS_PADRAO,
+      }),
+    ).resolves.toBe(true);
+
+    const { sql, params } = consultas[0]!;
+    expect(sql).toMatch(/update conversations/);
+    expect(sql).toContain("bot_silenced_until = now() + make_interval");
+    expect(sql).not.toContain("infinity");
+    expect(params).toEqual([
+      CONVERSA_A,
+      ORG,
+      SILENCIO_DO_TETO_DE_RESPOSTAS_MINUTOS_PADRAO,
+      MOTIVO_DO_SILENCIO_PELO_TETO,
+    ]);
+  });
+
+  it("não encurta silêncio maior: o update só casa com silêncio vencido", async () => {
+    const { db, consultas } = bancoDeConversas({ mudou: false });
+    await expect(
+      silenciarConversaPeloTeto(db, { organizationId: ORG, conversationId: CONVERSA_A, minutos: 60 }),
+    ).resolves.toBe(false);
+    const { sql } = consultas[0]!;
+    // A guarda é o que impede um `'infinity'` de handoff (ou pausa mais longa do
+    // operador) ser rebaixado por uma trava automática.
+    expect(sql).toMatch(/bot_silenced_until is null\s+or bot_silenced_until < now\(\)/);
+  });
+
+  it("0 minuto desliga o silêncio — o veto e o aviso continuam", async () => {
+    const { db, consultas } = bancoDeConversas();
+    await expect(
+      silenciarConversaPeloTeto(db, { organizationId: ORG, conversationId: CONVERSA_A, minutos: 0 }),
+    ).resolves.toBe(false);
+    expect(consultas).toHaveLength(0);
+  });
+
+  it("banco quebrado não lança — o turno já foi vetado, a pausa é camada auxiliar", async () => {
+    const { db } = bancoDeConversas({ quebrado: true });
+    const log = loggerFalso();
+    await expect(
+      silenciarConversaPeloTeto(db, {
+        organizationId: ORG,
+        conversationId: CONVERSA_A,
+        minutos: 60,
+        log,
+      }),
+    ).resolves.toBe(false);
     expect(log.warn).toHaveBeenCalled();
   });
 });

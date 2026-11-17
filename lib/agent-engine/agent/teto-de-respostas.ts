@@ -276,6 +276,198 @@ export const tetoDeRespostasGate: Gate = {
 export const TITULO_DO_AVISO_DO_TETO_DE_RESPOSTAS =
   'A IA parou de responder esta conversa: muitas respostas em pouco tempo';
 
+// ─── O TETO POR ORGANIZAÇÃO, E O SILÊNCIO QUE ELE DEIXA ─────────────────────
+//
+// Até aqui os dois números vinham do env da INSTALAÇÃO
+// (`TETO_DE_RESPOSTAS_POR_CONVERSA` / `TETO_DE_RESPOSTAS_JANELA_MIN`), um valor
+// para todo mundo que roda na mesma máquina. Numa instalação self-host com mais
+// de uma empresa, isso obriga uma decisão de negócio (quanto é "conversa demais"
+// no atendimento DELA) a ser tomada mexendo em arquivo de servidor e
+// reiniciando o worker. A chave passa a morar em
+// `organizations.settings.anti_ban.teto_de_respostas` — o mesmo jsonb que já
+// guarda `crm`, `llm` e `voz`, sem coluna nova e sem migration: organização que
+// nunca configurou lê `null` e cai no padrão conservador (20 em 60 min).
+//
+// O env NÃO morre: ele continua sendo o padrão da instalação e o piso de quem
+// não configurou nada, que é o que mantém instalações existentes idênticas às de
+// hoje.
+
+/** Chave dentro de `organizations.settings.anti_ban`. */
+export const CHAVE_DO_TETO_NO_ANTI_BAN = 'teto_de_respostas';
+
+/**
+ * Silêncio padrão ao bater o teto, em minutos — a MESMA largura da janela, para
+ * o pingue-pongue não voltar no minuto seguinte.
+ *
+ * O silêncio é LIMITADO e nunca `'infinity'`: é o `conversations.bot_silenced_until`
+ * que o atendente liga e desliga na conversa (o mesmo que `pause-ai` grava), então
+ * quem discorda da pausa devolve o atendimento à IA em um clique. `'infinity'` é
+ * o silêncio do HANDOFF — durável por decisão humana —, e o teto não pode se
+ * apropriar dele para uma decisão automática.
+ *
+ * `0` desliga o silêncio: o veto continua (a resposta não sai) e o aviso na
+ * Central continua abrindo; o que não acontece é a pausa da conversa.
+ */
+export const SILENCIO_DO_TETO_DE_RESPOSTAS_MINUTOS_PADRAO = 60;
+
+/** Teto de sanidade do silêncio: 24 h. Acima disso é `'infinity'` disfarçado. */
+export const SILENCIO_DO_TETO_DE_RESPOSTAS_MINUTOS_MAXIMO = 1_440;
+
+/** O que a organização pode ajustar — o N, a janela e o silêncio. */
+export interface TetoDeRespostasDaOrganizacao extends TetoDeRespostasKnobs {
+  /** Minutos de silêncio ao bater o teto. `0` = não silencia (só veta e avisa). */
+  silenciarMinutos: number;
+}
+
+/** Objeto jsonb, ou `null` para qualquer outra coisa (jsonb é escrito à mão). */
+function objetoJson(valor: unknown): Record<string, unknown> | null {
+  if (valor === null || typeof valor !== 'object' || Array.isArray(valor)) return null;
+  return valor as Record<string, unknown>;
+}
+
+/** Número inteiro de um campo jsonb — `null` para ausência, texto, NaN. */
+function numeroJson(valor: unknown): number | null {
+  const n = typeof valor === 'number' ? valor : typeof valor === 'string' ? Number(valor) : NaN;
+  return Number.isFinite(n) ? Math.floor(n) : null;
+}
+
+/**
+ * Lê a subárvore `teto_de_respostas` do Anti-ban.
+ *
+ * Trata jsonb torto como AUSÊNCIA de cada campo, não do bloco inteiro: quem
+ * gravou só `janela_minutos` mantém o N do padrão. Campo inválido nunca vira
+ * teto — um `0` de digitação viraria "não responda nunca", e é justamente o
+ * desfecho que este arquivo existe para não causar por acidente.
+ */
+export function lerTetoDoAntiBan(
+  valor: unknown,
+  base?: Partial<TetoDeRespostasKnobs> | null,
+): TetoDeRespostasDaOrganizacao {
+  const bruto = objetoJson(valor);
+  const padrao = knobsDoTetoDeRespostas(base);
+  const n = numeroJson(bruto?.por_conversa);
+  const w = numeroJson(bruto?.janela_minutos);
+  const s = numeroJson(bruto?.silenciar_minutos);
+  const janelaMinutos = w !== null && w >= 1 ? w : padrao.janelaMinutos;
+  return {
+    porConversa: n !== null && n >= 1 ? n : padrao.porConversa,
+    janelaMinutos,
+    // O silêncio padrão acompanha a JANELA da organização (a pausa não pode ser
+    // maior que o período em que o pingue-pongue foi medido), limitado a 1 h.
+    silenciarMinutos:
+      s !== null && s >= 0
+        ? Math.min(s, SILENCIO_DO_TETO_DE_RESPOSTAS_MINUTOS_MAXIMO)
+        : Math.min(janelaMinutos, SILENCIO_DO_TETO_DE_RESPOSTAS_MINUTOS_PADRAO),
+  };
+}
+
+/** O mesmo, a partir do `organizations.settings` inteiro (leitura de tela). */
+export function tetoDeRespostasDasSettings(
+  settings: unknown,
+  base?: Partial<TetoDeRespostasKnobs> | null,
+): TetoDeRespostasDaOrganizacao {
+  const antiBan = objetoJson(objetoJson(settings)?.anti_ban);
+  return lerTetoDoAntiBan(antiBan?.[CHAVE_DO_TETO_NO_ANTI_BAN], base);
+}
+
+/**
+ * Os números que valem para ESTA organização — a leitura que o turno faz.
+ *
+ * Custo no caminho quente: UMA linha por chave primária
+ * (`where id = $1` em `organizations`) e só o caminho jsonb, não o `settings`
+ * inteiro (que carrega marca, `llm`, política de MFA). Não é varredura de
+ * `organizations`, e não toca `messages`: a contagem — essa sim, a consulta
+ * quente — continua sendo a do índice `idx_messages_conversation_sent`.
+ *
+ * **Nunca lança.** Organização com `settings` ilegível ou banco fora cai no
+ * padrão da instalação, com uma linha de log: um teto auxiliar não derruba
+ * turno (mesma doutrina de `contarRespostasAutomaticas`).
+ */
+export async function resolverTetoDeRespostasDaOrganizacao(
+  db: Queryable,
+  input: {
+    organizationId: string;
+    base?: Partial<TetoDeRespostasKnobs> | null;
+    log?: Logger;
+  },
+): Promise<TetoDeRespostasDaOrganizacao> {
+  const padrao = lerTetoDoAntiBan(null, input.base);
+  try {
+    const { rows } = await db.query<{ teto: unknown }>(
+      `select settings -> 'anti_ban' -> $2 as teto
+         from organizations
+        where id = $1`,
+      [input.organizationId, CHAVE_DO_TETO_NO_ANTI_BAN],
+    );
+    return lerTetoDoAntiBan(rows[0]?.teto, input.base);
+  } catch (err) {
+    input.log?.warn('teto de respostas por conversa: configuração da organização não lida — vale o padrão', {
+      organization_id: input.organizationId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return padrao;
+  }
+}
+
+/** Motivo gravado em `conversations.last_handoff_reason` ao silenciar pelo teto. */
+export const MOTIVO_DO_SILENCIO_PELO_TETO =
+  'Teto de respostas automáticas por conversa';
+
+/**
+ * Silencia a conversa pelo caminho que o atendente já usa: a coluna
+ * `conversations.bot_silenced_until`, que os guards do motor leem e que o botão
+ * "Devolver para a IA" (`reactivate-bot`) limpa.
+ *
+ * Duas escolhas que não são detalhe:
+ *
+ *  - **Horizonte, nunca `'infinity'`.** `'infinity'` é o silêncio do handoff,
+ *    decidido por uma pessoa; uma trava automática que o gravasse tiraria do
+ *    atendente a única forma de discordar sem SQL.
+ *  - **Não encurta silêncio maior.** O `where` só casa quando o silêncio atual é
+ *    nulo ou termina ANTES do novo alvo — então um `'infinity'` de handoff (ou
+ *    uma pausa mais longa do operador) continua de pé. Trava automática não
+ *    desfaz decisão humana, e não tem como "estender para sempre" por repetição:
+ *    cada veto grava o mesmo horizonte.
+ *
+ * **Nunca lança.** Devolve `true` quando a linha mudou. O veto e o aviso já
+ * aconteceram; falhar aqui não pode derrubar o turno.
+ */
+export async function silenciarConversaPeloTeto(
+  db: Queryable,
+  input: {
+    organizationId: string;
+    conversationId: string;
+    minutos: number;
+    log?: Logger;
+  },
+): Promise<boolean> {
+  if (!(input.minutos > 0)) return false;
+  const minutos = Math.min(
+    Math.floor(input.minutos),
+    SILENCIO_DO_TETO_DE_RESPOSTAS_MINUTOS_MAXIMO,
+  );
+  try {
+    const { rows } = await db.query<{ id: string }>(
+      `update conversations
+          set bot_silenced_until = now() + make_interval(mins => $3::int),
+              last_handoff_reason = $4
+        where id = $1
+          and organization_id = $2
+          and (bot_silenced_until is null
+               or bot_silenced_until < now() + make_interval(mins => $3::int))
+      returning id`,
+      [input.conversationId, input.organizationId, minutos, MOTIVO_DO_SILENCIO_PELO_TETO],
+    );
+    return rows.length > 0;
+  } catch (err) {
+    input.log?.warn('teto de respostas por conversa: conversa não silenciada', {
+      conversation_id: input.conversationId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
+
 /**
  * Avisa a equipe na Central que o teto vetou uma resposta nesta conversa.
  *

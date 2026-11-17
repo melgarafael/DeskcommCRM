@@ -3891,6 +3891,26 @@ export const DICIONARIO: Traducoes = {
     { es: "Sin límite de repeticiones, la pausa solo ESPACIA los reinicios: quien nunca responde vuelve a recibir el flujo en cada pausa, indefinidamente." },
   "O silêncio conta da última mensagem do CLIENTE, e mensagem da equipe não zera essa conta: quem escreveu e não foi atendido também entra no fluxo. Ligue “Só começar se a equipe já respondeu a última mensagem do cliente” se o fluxo é para quem sumiu, não para quem está esperando.":
     { es: "El silencio cuenta desde el último mensaje del CLIENTE, y un mensaje del equipo no reinicia esa cuenta: quien escribió y no fue atendido también entra en el flujo. Active “Empezar solo si el equipo ya respondió el último mensaje del cliente” si el flujo es para quien desapareció, no para quien está esperando." },
+  // Teto de respostas automáticas por conversa (#4590) — lista de conferência
+  // (`lib/ai/guardrails/lista-de-conferencia.ts`) e rota de configuração por
+  // organização (`app/api/v1/ai/pacing/teto-de-respostas`).
+  "Parar a conversa que virou pingue-pongue": {
+    es: "Detener la conversación que se volvió ping-pong",
+  },
+  "Se a mesma conversa já recebeu muitas respostas automáticas numa janela (padrão: 20 em 1 h), a próxima é barrada, a conversa é pausada e a equipe é avisada na Central. É o que impede dois robôs de conversarem sozinhos — caso real de 216 respostas em uma hora para o mesmo contato.":
+    {
+      es: "Si la misma conversación ya recibió muchas respuestas automáticas en una ventana (estándar: 20 en 1 h), la siguiente se bloquea, la conversación se pausa y el equipo recibe un aviso en la Central. Es lo que impide que dos robots conversen solos — caso real de 216 respuestas en una hora para el mismo contacto.",
+    },
+  "Não é escolha de estilo: conversa entre robôs queima cota do modelo e é risco de bloqueio do seu número. O número de respostas, a janela e o tempo de pausa da conversa se ajustam em Configurações › Anti-ban, para a empresa inteira — não no desligamento.":
+    {
+      es: "No es una elección de estilo: una conversación entre robots consume cuota del modelo y es riesgo de bloqueo de tu número. El número de respuestas, la ventana y el tiempo de pausa de la conversación se ajustan en Configuración › Anti-ban, para toda la empresa — no en el apagado.",
+    },
+  "Falha ao carregar o teto de respostas.": {
+    es: "No se pudo cargar el límite de respuestas.",
+  },
+  "Falha ao gravar o teto de respostas.": {
+    es: "No se pudo guardar el límite de respuestas.",
+  },
   // Teto de repeticoes e guarda de resposta da equipe (item 16 / item 12).
   "Quantas vezes no máximo, por contato (opcional)": {
     es: "Cuántas veces como máximo, por contacto (opcional)",
