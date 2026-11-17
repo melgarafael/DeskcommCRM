@@ -98,14 +98,15 @@ export function decidirAntesDoModeloPago(input: {
   /** O passo tem texto livre no lugar do modelo (reserva da IA) — `false` no passo de modelo puro. */
   temTextoLivreNoLugar: boolean;
   carenciaMs: number;
-  /** `null` = canal sem restrição de janela (QR), nada a esperar. */
+  /** `null` = canal sem restrição de janela, nada a esperar. */
   janela: LeituraDaJanela | null;
   /** O job já passou pela carência uma vez (rastro no payload). */
   jaEsperou: boolean;
   agora: Date;
 }): DecisaoAntesDoModelo {
   if (!input.passoEhModeloPago) return { acao: 'enviar' };
-  // Canal sem janela (QR/WAHA) e passo fora do primeiro contato: nada a proteger.
+  // Canal sem restrição de janela (a capability diz qual) e passo fora do
+  // primeiro contato: nada a proteger.
   if (input.janela === null) return { acao: 'enviar' };
   if (input.jaEsperou) {
     // A VOLTA: é aqui que a reconferência tem o que decidir.

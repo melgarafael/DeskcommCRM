@@ -18,6 +18,8 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
+import { CHANNEL_CAPABILITIES } from "@/lib/channels/capabilities";
+
 import {
   CARENCIA_PADRAO_MS,
   carenciaDoAmbiente,
@@ -31,6 +33,22 @@ import {
 const ORG = "11111111-1111-4111-8111-111111111111";
 const CONVERSA = "33333333-3333-4333-8333-333333333333";
 
+/**
+ * Os providers vêm da MATRIZ, não escritos aqui: a doutrina de restrição de
+ * canal proíbe nomear provider fora de `lib/channels/` (invariante 1), e o teste
+ * não precisa do nome — precisa de "um canal que impõe janela" e "um que não
+ * impõe", que é exatamente o que a capability diz.
+ */
+const canalQueImpoeJanela = (Object.entries(CHANNEL_CAPABILITIES) as Array<
+  [string, { freeformOutsideWindow: boolean }]
+>).find(([, c]) => !c.freeformOutsideWindow)?.[0];
+const canalSemJanela = (Object.entries(CHANNEL_CAPABILITIES) as Array<
+  [string, { freeformOutsideWindow: boolean }]
+>).find(([, c]) => c.freeformOutsideWindow)?.[0];
+if (canalQueImpoeJanela === undefined || canalSemJanela === undefined) {
+  throw new Error("matriz de capabilities sem os dois tipos de canal — teste inválido");
+}
+
 /** O instante em que o lead chega (relógio do teste, nunca o de parede). */
 const T0 = new Date("2026-11-17T12:00:00.000Z");
 const emSegundos = (s: number): Date => new Date(T0.getTime() + s * 1_000);
@@ -40,7 +58,7 @@ function dbCom(linha: { provider?: string | null; ultimo_inbound: Date | null; u
     query: vi.fn(async (_sql: string, _params?: unknown[]) => ({
       rows: [
         {
-          provider: linha.provider === undefined ? "meta_cloud" : linha.provider,
+          provider: linha.provider === undefined ? canalQueImpoeJanela : linha.provider,
           last_inbound_at: linha.ultimo_inbound,
           last_outbound_at: linha.ultima_saida ?? null,
         },
@@ -73,8 +91,8 @@ describe("lerJanelaDaConversa", () => {
     ).resolves.toEqual({ fechada: false, primeiroContato: true });
   });
 
-  it("canal por QR (waha) não tem janela: nada a esperar", async () => {
-    const db = dbCom({ provider: "waha", ultimo_inbound: null });
+  it("canal sem restrição de janela: nada a esperar", async () => {
+    const db = dbCom({ provider: canalSemJanela, ultimo_inbound: null });
     await expect(
       lerJanelaDaConversa(db as never, { organizationId: ORG, conversationId: CONVERSA, agora: T0 }),
     ).resolves.toEqual({ fechada: false, primeiroContato: true });
