@@ -141,8 +141,8 @@ as $$
     at time zone public.fn_fuso_valido(p_fuso))
 $$;
 
-revoke all on function public.fn_fuso_valido(text) from public;
-revoke all on function public.fn_prazo_do_campo(date, integer, text) from public;
+revoke execute on function public.fn_fuso_valido(text) from public, anon, authenticated;
+revoke execute on function public.fn_prazo_do_campo(date, integer, text) from public, anon, authenticated;
 grant execute on function public.fn_fuso_valido(text) to service_role;
 grant execute on function public.fn_prazo_do_campo(date, integer, text) to service_role;
 
@@ -226,7 +226,7 @@ begin
 end;
 $$;
 
-revoke all on function public.fn_recalcular_prazos_do_plano() from public;
+revoke execute on function public.fn_recalcular_prazos_do_plano() from public, anon, authenticated;
 grant execute on function public.fn_recalcular_prazos_do_plano() to service_role;
 
 drop trigger if exists crm_leads_recalcula_prazos_do_plano on public.crm_leads;
