@@ -36,6 +36,10 @@ function politica(over: Record<string, unknown> = {}) {
   };
 }
 
+/** Contato de Instagram (sem telefone) e o testador da lista social do canal (9394, 9400). */
+const TESTADOR_SOCIAL = "instagram:6af9e0ef28984e27de07bef4:1011223655361506";
+const OUTRO_SOCIAL = "instagram:6af9e0ef28984e27de07bef4:2022334466472617";
+
 const pg = (policy: unknown) => ({ query: async () => ({ rows: [{ policy }] }) }) as unknown as Queryable;
 const supa = (data: unknown) => ({ rpc: async () => ({ data, error: null }) }) as unknown as SupabaseClient;
 
@@ -64,12 +68,40 @@ describe("envio do link da agenda em canal pré-go-live", () => {
       });
       await expect(assertMeetingDeliveryPg(pg(semModo), CONTEXTO)).rejects.toThrow();
     });
+
+    it("contato de rede social fora da lista social: recusa pela lista", async () => {
+      const p = politica({
+        contact_phone_number: null,
+        ai_test_social_identities: [TESTADOR_SOCIAL],
+        contact_social_identity: OUTRO_SOCIAL,
+      });
+      await expect(assertMeetingDeliveryPg(pg(p), CONTEXTO)).rejects.toMatchObject({
+        reason: "fora_da_lista_de_teste",
+      });
+    });
+
+    it("política sem a lista social (banco sem a 9400): o testador social não passa", async () => {
+      const p = politica({ contact_phone_number: null, contact_social_identity: TESTADOR_SOCIAL });
+      await expect(assertMeetingDeliveryPg(pg(p), CONTEXTO)).rejects.toMatchObject({
+        reason: "fora_da_lista_de_teste",
+      });
+    });
   });
 
   describe("positive cases", () => {
     it("contato da lista de teste recebe o link", async () => {
       const p = politica({ contact_phone_number: "+5511999990000" });
       await expect(assertMeetingDeliveryPg(pg(p), CONTEXTO)).resolves.toMatchObject({ humanCommand: false });
+    });
+
+    it("testador de Instagram/Facebook da lista social recebe o link", async () => {
+      const p = politica({
+        contact_phone_number: null,
+        ai_test_social_identities: [TESTADOR_SOCIAL],
+        contact_social_identity: TESTADOR_SOCIAL,
+      });
+      await expect(assertMeetingDeliveryPg(pg(p), CONTEXTO)).resolves.toMatchObject({ humanCommand: false });
+      await expect(assertMeetingDeliverySupabase(supa(p), CONTEXTO)).resolves.toMatchObject({ humanCommand: false });
     });
 
     it("comando humano passa pelo porteiro mesmo fora da lista", async () => {

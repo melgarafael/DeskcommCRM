@@ -29,9 +29,11 @@ beforeAll(() => seedGov());
 afterAll(() => pool.end());
 
 const NUMERO_DE_TESTE = "+5511999990000";
+/** Testador de Instagram da lista social do canal (9394); o contato dele não tem telefone. */
+const TESTADOR_SOCIAL = "instagram:6af9e0ef28984e27de07bef4:1011223655361506";
 
 /** Compromisso presencial com a entrega autorizada pela IA, num canal pré-go-live, e o job já pego pelo worker. */
-async function entregaDaIaEmCanalDeTeste(telefoneDoContato: string) {
+async function entregaDaIaEmCanalDeTeste(telefoneDoContato: string | null, identidadeSocial: string | null = null) {
   const org = randomUUID();
   const id = randomUUID();
   const contact = randomUUID();
@@ -44,8 +46,8 @@ async function entregaDaIaEmCanalDeTeste(telefoneDoContato: string) {
     [org, GOV_AGENT_A],
   );
   await pool.query(
-    "insert into contacts(id,organization_id,name,display_name,phone_number,ai_authorized_at) values($1,$2,'Cliente','Cliente',$3,now())",
-    [contact, org, telefoneDoContato],
+    "insert into contacts(id,organization_id,name,display_name,phone_number,social_identity,ai_authorized_at) values($1,$2,'Cliente','Cliente',$3,$4,now())",
+    [contact, org, telefoneDoContato, identidadeSocial],
   );
   const boundary = await criarOrigemDeFollowup(pool, org, contact);
   await pool.query(
@@ -54,9 +56,10 @@ async function entregaDaIaEmCanalDeTeste(telefoneDoContato: string) {
   );
   await pool.query(
     `update channel_sessions set metadata = coalesce(metadata,'{}'::jsonb) || jsonb_build_object(
-        'ai_gate','allowlist','ai_gate_mode','pre_go_live','ai_test_phone_numbers',jsonb_build_array($2::text))
+        'ai_gate','allowlist','ai_gate_mode','pre_go_live','ai_test_phone_numbers',jsonb_build_array($2::text),
+        'ai_test_social_identities',jsonb_build_array($3::text))
       where id=(select channel_session_id from conversations where id=$1)`,
-    [boundary.conversation_id, NUMERO_DE_TESTE],
+    [boundary.conversation_id, NUMERO_DE_TESTE, TESTADOR_SOCIAL],
   );
   await pool.query(
     `insert into calendar_appointments(id,organization_id,contact_id,conversation_id,owner_user_id,title,
@@ -124,5 +127,22 @@ it("⛔ contato fora da lista de teste: o porteiro recusa pela lista, e o acerto
 
 it("CONTROLE: o mesmo compromisso com o contato na lista passa pelo porteiro", async () => {
   const e = await entregaDaIaEmCanalDeTeste(NUMERO_DE_TESTE);
+  await expect(assertMeetingDeliveryPg(pool, e.contexto)).resolves.toMatchObject({ humanCommand: false });
+});
+
+it("⛔ testador de Instagram/Facebook (9400): a política devolve a lista social e a identidade do contato, e o porteiro deixa passar", async () => {
+  const e = await entregaDaIaEmCanalDeTeste(null, TESTADOR_SOCIAL);
+  const { rows } = await pool.query("select fn_meet_delivery_policy($1,$2,$3,$4::timestamptz) p", [
+    e.org,
+    e.contexto.jobId,
+    e.contexto.jobClaim.worker_id,
+    e.contexto.jobClaim.acquired_at,
+  ]);
+  expect(rows[0].p).toMatchObject({
+    current: true,
+    ai_test_social_identities: [TESTADOR_SOCIAL],
+    contact_social_identity: TESTADOR_SOCIAL,
+    contact_phone_number: null,
+  });
   await expect(assertMeetingDeliveryPg(pool, e.contexto)).resolves.toMatchObject({ humanCommand: false });
 });
