@@ -239,9 +239,12 @@ export async function avisarLeadDoCrm(
     // está esperando resposta?" não era feita por ninguém.
     //
     // A régua é a MESMA que o resto do repositório usa para "o cliente disse e
-    // ainda não foi respondido": entrada mais nova que `last_outbound_at`
-    // (`falasPendentes`, em `./orchestrator.ts`). Duas expressões da mesma ideia
-    // divergem no dia em que uma delas aprende sobre reação ou mensagem apagada.
+    // ainda não foi respondido": `last_inbound_at` mais novo que
+    // `last_outbound_at` — as duas colunas são o máximo por direção, então
+    // comparar máximo com máximo é exatamente "quem falou por último"
+    // (`falasPendentes` em `./orchestrator.ts`, `silence-sweep`). Duas
+    // expressões da mesma ideia divergem no dia em que uma delas aprende sobre
+    // reação ou mensagem apagada.
     //
     // Fica deste lado (CRM) porque é aqui que o envio acontece sem turno: o
     // emissor do motor só roda de dentro de um turno, e turno, por construção,
