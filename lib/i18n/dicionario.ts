@@ -13674,6 +13674,7 @@ export const DICIONARIO: Traducoes = {
   },
   "Preparar tudo de novo": { es: "Preparar todo de nuevo" },
   "Não há material para reindexar.": { es: "No hay material para reindexar." },
+  "Não foi possível solicitar a preparação do material. Tente novamente.": { es: "No se pudo solicitar la preparación del material. Inténtalo de nuevo." },
   "Vou preparar o que falta e o que mudou; o material sem alteração é pulado.": {
     es: "Voy a preparar lo que falta y lo que cambió; el material sin cambios se omite.",
   },
