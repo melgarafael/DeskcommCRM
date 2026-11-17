@@ -6,8 +6,7 @@ titulo: Configurações ganha a tela do follow-up por etapa, que edita o prazo d
 
 O acompanhamento por etapa existia inteiro no servidor e só se montava no
 construtor de fluxos: para dizer que a etapa de proposta espera 2 dias, a única
-saída era `UPDATE` à mão no Postgres. Agora Configurações → **Follow-up por
-etapa** lista as etapas abertas do funil com os fluxos de "negócio parado na
+saída era `UPDATE` à mão no Postgres. Agora Configurações → **Follow-up por etapa** lista as etapas abertas do funil com os fluxos de "negócio parado na
 mesma etapa" que alcançam cada uma, e edita o prazo **no próprio fluxo**
 (`automation_rules.trigger_config.dias`) — o mesmo valor que a varredura lê.
 

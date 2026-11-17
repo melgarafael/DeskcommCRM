@@ -22009,6 +22009,9 @@ export const DICIONARIO: Traducoes = {
   "Um dos fluxos foi apagado enquanto a tela estava aberta. Recarregue.": {
     es: "Uno de los flujos se eliminó mientras la pantalla estaba abierta. Recarga.",
   },
+  "Não consegui salvar agora. Tente de novo.": {
+    es: "No pude guardar ahora. Inténtalo de nuevo.",
+  },
   "Ir para a mensagem citada": { es: "Ir al mensaje citado" },
   "Mensagem citada": { es: "Mensaje citado" },
   "Toque para carregar a original": { es: "Toque para cargar el original" },

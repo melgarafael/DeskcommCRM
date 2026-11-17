@@ -24,7 +24,7 @@
  * Os casos marcados com ⭐ são os que a sabotagem derruba (ver o comentário do
  * caso e `sabotagem` no relatório do PR).
  */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -39,8 +39,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("next/link", () => ({
-  default: ({ href, children }: { href: string; children: unknown }) =>
-    createElement("a", { href }, children as never),
+  default: ({ href, children, ...resto }: { href: string; children: unknown }) =>
+    createElement("a", { href, ...resto }, children as never),
 }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: mocks.refresh }),
@@ -213,15 +213,20 @@ describe("a tela: todas as linhas, cada uma com o seu prazo", () => {
     // Três fluxos alcançam a Proposta: os dois presos nela e o "qualquer etapa".
     expect(daProposta.querySelectorAll("[data-testid^='fluxo-']").length).toBe(3);
 
-    const primeiro = screen.getByTestId(`prazo-fluxo-${REGRA_2_DIAS}`) as HTMLInputElement;
-    const segundo = screen.getByTestId(`prazo-fluxo-${REGRA_7_DIAS}`) as HTMLInputElement;
-    const qualquer = screen.getByTestId(`prazo-fluxo-${REGRA_QUALQUER}`) as HTMLInputElement;
+    const primeiro = within(daProposta).getByTestId(`prazo-fluxo-${REGRA_2_DIAS}`) as HTMLInputElement;
+    const segundo = within(daProposta).getByTestId(`prazo-fluxo-${REGRA_7_DIAS}`) as HTMLInputElement;
+    const qualquer = within(daProposta).getByTestId(`prazo-fluxo-${REGRA_QUALQUER}`) as HTMLInputElement;
     expect(primeiro.value).toBe("2");
     expect(segundo.value).toBe("7");
     expect(qualquer.value).toBe("30");
 
     // Um campo por FLUXO — não existe "o prazo da etapa" agregando os dois.
     expect(daProposta.querySelectorAll("input")).toHaveLength(3);
+
+    // O fluxo "qualquer etapa" aparece em TODAS as etapas que alcança, e não
+    // num agregado: dois campos, um por etapa, com o mesmo prazo da regra.
+    const emTodas = screen.getAllByTestId(`prazo-fluxo-${REGRA_QUALQUER}`) as HTMLInputElement[];
+    expect(emTodas.map((campo) => campo.value)).toEqual(["30", "30"]);
   });
 
   it("etapa que nenhum fluxo alcança não ganha campo de prazo", () => {

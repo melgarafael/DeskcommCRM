@@ -1080,10 +1080,12 @@ export const NAV_CATALOG = [
     minRole: "manager",
   },
   {
-    // A tela da #3603 (fatia 3). O acompanhamento por etapa existia inteiro no
-    // backend e só se montava no construtor de fluxos: sem esta porta, a única
-    // forma de configurar era UPDATE à mão no Postgres — o anti-exemplo de "toda
-    // configuração tem superfície" (docs/doctrine/restricao-de-canal.md).
+    // A tela da #3603. O acompanhamento por etapa existia inteiro no backend e
+    // só se montava no construtor de fluxos: sem esta porta, a única forma de
+    // configurar era UPDATE à mão no Postgres — o anti-exemplo de "toda
+    // configuração tem superfície" (docs/doctrine/restricao-de-canal.md). A tela
+    // é uma JANELA para os fluxos de etapa parada: mostra os que alcançam cada
+    // etapa e edita o prazo NO PRÓPRIO FLUXO, sem chave paralela em `settings`.
     //
     // A entrada automática no funil NÃO está aqui: ela vive na main como um
     // interruptor e a escolha de funil/etapa saiu da action. Uma tela que a
