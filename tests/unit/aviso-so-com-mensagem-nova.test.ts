@@ -37,12 +37,12 @@
  *
  * ─── SABOTAGEM ──────────────────────────────────────────────────────────────
  *
- * - Devolver o envio sem a guarda 3 (comentar o bloco `if (!foraDeTurno)`) → (a)
- *   acusa: a frase volta a sair para quem já foi respondido.
- * - Fazer o conserto silenciar TAMBÉM o aviso legítimo (tratar todo mundo como
- *   `foraDeTurno`, ou trocar `estado === "sem_espera"` por `!== "esperando"`) →
- *   (b) acusa.
- * - Remover a guarda de repetição (guarda 2, o `avisosRecentes`) → (c) acusa.
+ * - Devolver o envio sem a guarda 3 (trocar `if (!foraDeTurno) {` por
+ *   `if (false) {`) → (a) acusa: a frase volta a sair para quem já foi
+ *   respondido.
+ * - Fazer o conserto silenciar TAMBÉM o aviso legítimo (trocar
+ *   `if (!conversa.esperando)` por `if (true)`) → (b) acusa.
+ * - Remover a guarda de repetição (guarda 2, `avisosRecentes`) → (c) acusa.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -70,7 +70,7 @@ const ORG = "11111111-1111-4111-8111-111111111111";
 const CONVERSA = "33333333-3333-4333-8333-333333333333";
 const CANAL = "55555555-5555-4555-8555-555555555555";
 
-/** Uma linha de `messages` — o que as duas leituras do emissor precisam ver. */
+/** Uma linha de `messages` — só as FALAS da IA importam aqui (guarda 1). */
 type Mensagem = {
   direction: "inbound" | "outbound";
   created_at: string;
@@ -80,23 +80,26 @@ type Mensagem = {
 };
 
 type Cenario = {
-  /** Todas as mensagens da conversa. */
+  /** As mensagens da conversa; as duas leituras de `messages` filtram por elas. */
   mensagens: Mensagem[];
+  /** `conversations.last_inbound_at` — a última mensagem do CLIENTE. */
+  lastInboundAt: string | null;
   /** `conversations.last_outbound_at` — a última SAÍDA (IA, atendente ou aviso). */
   lastOutboundAt: string | null;
   /** `conversations.channel_session_id`. */
   canal?: string | null;
-  /** Faz a leitura de `messages` estourar — o fail-closed. */
-  erro?: boolean;
+  /** Faz a leitura da CONVERSA estourar — o fail-closed da guarda 3. */
+  erroNaConversa?: boolean;
 };
 
 /**
  * Cliente supabase-js de mentira que RESPONDE ÀS PERGUNTAS.
  *
- * A leitura do emissor aplica `eq(direction)` e, na guarda 3, `gt(created_at)`:
- * filtrar de verdade aqui é o que distingue "o cliente está esperando" de "a
- * última coisa na conversa é a nossa". Um dublê que devolvesse a mesma lista
- * para as duas perguntas faria os cinco casos medirem a si mesmos.
+ * A guarda 1 lê `messages` (falas da IA); as guardas 3 e 4 leem a linha da
+ * conversa. Filtrar de verdade em `messages` e devolver `last_inbound_at` /
+ * `last_outbound_at` distintos é o que distingue "o cliente está esperando" de
+ * "a última coisa na conversa é a nossa": um dublê que respondesse a mesma
+ * coisa para as duas perguntas faria os casos medirem a si mesmos.
  */
 function banco(c: Cenario) {
   return {
@@ -115,7 +118,6 @@ function banco(c: Cenario) {
           },
           order: () => cadeia,
           limit: async (n: number) => {
-            if (c.erro) return { data: null, error: { message: "PostgREST fora" } };
             let linhas = [...c.mensagens];
             for (const [op, coluna, valor] of filtros) {
               // `organization_id`/`conversation_id` são o escopo do cliente de
@@ -145,13 +147,17 @@ function banco(c: Cenario) {
         const cadeia: Record<string, unknown> = {
           select: () => cadeia,
           eq: () => cadeia,
-          maybeSingle: async () => ({
-            data: {
-              last_outbound_at: c.lastOutboundAt,
-              channel_session_id: c.canal === undefined ? CANAL : c.canal,
-            },
-            error: null,
-          }),
+          maybeSingle: async () =>
+            c.erroNaConversa
+              ? { data: null, error: { message: "PostgREST fora" } }
+              : {
+                  data: {
+                    last_inbound_at: c.lastInboundAt,
+                    last_outbound_at: c.lastOutboundAt,
+                    channel_session_id: c.canal === undefined ? CANAL : c.canal,
+                  },
+                  error: null,
+                },
         };
         return cadeia;
       }
@@ -188,19 +194,6 @@ const falaDaIa = (created_at: string): Mensagem => ({
   status: "sent",
   metadata: null,
 });
-const falaDoAtendente = (created_at: string): Mensagem => ({
-  direction: "outbound",
-  sent_via: "system",
-  created_at,
-  status: "sent",
-  metadata: null,
-});
-const entradaDoCliente = (created_at: string): Mensagem => ({
-  direction: "inbound",
-  created_at,
-  status: "delivered",
-  metadata: null,
-});
 const avisoAnterior = (created_at: string, status = "sent"): Mensagem => ({
   direction: "outbound",
   sent_via: "ai",
@@ -223,11 +216,8 @@ describe("(a) passagem sem mensagem nova do cliente não toca o canal", () => {
     // última entrada do cliente (13/11 15:23). Ninguém espera resposta.
     const r = await avisarLeadDoCrm(
       banco({
-        mensagens: [
-          falaDaIa(diasAtras(3.3)),
-          entradaDoCliente(diasAtras(3.35)),
-          falaDoAtendente(diasAtras(2.2)),
-        ],
+        mensagens: [falaDaIa(diasAtras(3.3))],
+        lastInboundAt: diasAtras(3.35),
         lastOutboundAt: diasAtras(2.2),
       }),
       ENTRADA,
@@ -237,9 +227,22 @@ describe("(a) passagem sem mensagem nova do cliente não toca o canal", () => {
     expect(enviar).not.toHaveBeenCalled();
   });
 
-  it("falha de leitura da espera não vira 'pode mandar' (fail-closed)", async () => {
-    const r = await avisarLeadDoCrm(banco({ mensagens: [], lastOutboundAt: null, erro: true }), ENTRADA);
-    expect(r).toEqual({ avisado: false, porque: "falas_da_ia_nao_lidas" });
+  it("entrada e saída no MESMO instante são empate, não espera: não avisa", async () => {
+    const instante = horasAtras(1);
+    const r = await avisarLeadDoCrm(
+      banco({ mensagens: [falaDaIa(horasAtras(2))], lastInboundAt: instante, lastOutboundAt: instante }),
+      ENTRADA,
+    );
+    expect(r).toEqual({ avisado: false, porque: "sem_mensagem_nova_do_cliente" });
+    expect(enviar).not.toHaveBeenCalled();
+  });
+
+  it("falha de leitura da conversa não vira 'pode mandar' (fail-closed), e o motivo nomeia a leitura", async () => {
+    const r = await avisarLeadDoCrm(
+      banco({ mensagens: [falaDaIa(horasAtras(2))], lastInboundAt: null, lastOutboundAt: null, erroNaConversa: true }),
+      ENTRADA,
+    );
+    expect(r).toEqual({ avisado: false, porque: "espera_do_cliente_nao_lida" });
     expect(enviar).not.toHaveBeenCalled();
   });
 });
@@ -248,7 +251,8 @@ describe("(b) mensagem do cliente + low_confidence continua avisando", () => {
   it("cliente falou e ninguém respondeu: a frase sai, uma vez", async () => {
     const r = await avisarLeadDoCrm(
       banco({
-        mensagens: [entradaDoCliente(horasAtras(0.2)), falaDaIa(horasAtras(4))],
+        mensagens: [falaDaIa(horasAtras(4))],
+        lastInboundAt: horasAtras(0.2),
         lastOutboundAt: horasAtras(4),
       }),
       ENTRADA,
@@ -260,12 +264,22 @@ describe("(b) mensagem do cliente + low_confidence continua avisando", () => {
     expect(corpo.metadata).toMatchObject({ aviso_de_escalacao: true, handoff_reason: "low_confidence" });
   });
 
+  it("conversa nunca respondida (sem saída) também é espera: a frase sai", async () => {
+    const r = await avisarLeadDoCrm(
+      banco({ mensagens: [falaDaIa(horasAtras(4))], lastInboundAt: horasAtras(0.3), lastOutboundAt: null }),
+      ENTRADA,
+    );
+    expect(r).toEqual({ avisado: true });
+    expect(enviar).toHaveBeenCalledTimes(1);
+  });
+
   it("o aviso em si não cria a 'espera' que legitima o próximo: só o cliente cria", async () => {
     // O aviso anterior é a última SAÍDA. Sem entrada nova, a segunda passagem
     // não tem a quem responder — e isso vale mesmo passadas as 24 h da guarda 2.
     const r = await avisarLeadDoCrm(
       banco({
         mensagens: [avisoAnterior(horasAtras(30)), falaDaIa(horasAtras(40))],
+        lastInboundAt: horasAtras(40),
         lastOutboundAt: horasAtras(30),
       }),
       ENTRADA,
@@ -279,7 +293,8 @@ describe("(c) a segunda passagem não repete o aviso já registrado", () => {
   it("aviso entregue há 1 h + cliente escrevendo de novo: não sai outro", async () => {
     const r = await avisarLeadDoCrm(
       banco({
-        mensagens: [entradaDoCliente(horasAtras(0.1)), avisoAnterior(horasAtras(1)), falaDaIa(horasAtras(2))],
+        mensagens: [avisoAnterior(horasAtras(1)), falaDaIa(horasAtras(2))],
+        lastInboundAt: horasAtras(0.1),
         lastOutboundAt: horasAtras(0.05),
       }),
       ENTRADA,
@@ -291,7 +306,8 @@ describe("(c) a segunda passagem não repete o aviso já registrado", () => {
   it("aviso na fila (canal fora) também não vira um segundo aviso", async () => {
     const r = await avisarLeadDoCrm(
       banco({
-        mensagens: [entradaDoCliente(horasAtras(0.1)), avisoAnterior(horasAtras(1), "queued"), falaDaIa(horasAtras(2))],
+        mensagens: [avisoAnterior(horasAtras(1), "queued"), falaDaIa(horasAtras(2))],
+        lastInboundAt: horasAtras(0.1),
         lastOutboundAt: horasAtras(0.05),
       }),
       ENTRADA,
@@ -311,7 +327,7 @@ describe("(d) fora de turno, a janela de horário da organização manda", () =>
     // o agente externo NÃO avisar). É justamente ele que precisa da hora.
     janela.mockResolvedValue(new Date(Date.now() + 10 * 60 * 60 * 1000).toISOString());
     const r = await avisarLeadDoCrm(
-      banco({ mensagens: [falaDoAtendente(horasAtras(2))], lastOutboundAt: horasAtras(2) }),
+      banco({ mensagens: [falaDaIa(horasAtras(2))], lastInboundAt: horasAtras(3), lastOutboundAt: horasAtras(2) }),
       { ...ENTRADA, origem: "mcp_externo" },
     );
 
@@ -328,7 +344,7 @@ describe("(d) fora de turno, a janela de horário da organização manda", () =>
 
   it("dentro da janela, o mesmo caminho avisa normalmente", async () => {
     const r = await avisarLeadDoCrm(
-      banco({ mensagens: [falaDoAtendente(horasAtras(2))], lastOutboundAt: horasAtras(2) }),
+      banco({ mensagens: [falaDaIa(horasAtras(2))], lastInboundAt: horasAtras(3), lastOutboundAt: horasAtras(2) }),
       { ...ENTRADA, origem: "mcp_externo" },
     );
     expect(r).toEqual({ avisado: true });
@@ -337,7 +353,7 @@ describe("(d) fora de turno, a janela de horário da organização manda", () =>
 
   it("a janela não é consultada para quem está EM turno: cliente esperando às 22h recebe o aviso", async () => {
     const r = await avisarLeadDoCrm(
-      banco({ mensagens: [entradaDoCliente(horasAtras(0.2)), falaDaIa(horasAtras(1))], lastOutboundAt: null }),
+      banco({ mensagens: [falaDaIa(horasAtras(1))], lastInboundAt: horasAtras(0.2), lastOutboundAt: null }),
       ENTRADA,
     );
     expect(r).toEqual({ avisado: true });

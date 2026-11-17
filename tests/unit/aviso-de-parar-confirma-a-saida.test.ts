@@ -94,6 +94,24 @@ function banco() {
         };
         return cadeia;
       }
+      if (tabela === "conversations") {
+        // Guarda 3 (#4797): cliente esperando = entrada mais nova que a saída.
+        // Sem este ramo a leitura lançaria, o emissor calaria (fail-closed) e os
+        // casos abaixo — que medem a FRASE — reprovariam pelo motivo errado.
+        const cadeiaConversa: Record<string, unknown> = {
+          select: () => cadeiaConversa,
+          eq: () => cadeiaConversa,
+          maybeSingle: async () => ({
+            data: {
+              last_inbound_at: new Date().toISOString(),
+              last_outbound_at: new Date(Date.now() - 60_000).toISOString(),
+              channel_session_id: null,
+            },
+            error: null,
+          }),
+        };
+        return cadeiaConversa;
+      }
       if (tabela === "organizations") {
         const cadeia: Record<string, unknown> = {
           select: () => cadeia,

@@ -113,7 +113,18 @@ describe("emissor do CRM (`avisarLeadDoCrm`)", () => {
             ),
           maybeSingle: async () => {
             if (tabela === "organizations") return { data: { locale: "pt-BR" }, error: null };
-            if (tabela === "conversations") return { data: { active_ai_agent_id: AGENTE }, error: null };
+            if (tabela === "conversations")
+              return {
+                data: {
+                  active_ai_agent_id: AGENTE,
+                  // Guarda 3 (#4797): o cliente escreveu e ninguém respondeu —
+                  // a precondição para o emissor falar.
+                  last_inbound_at: new Date().toISOString(),
+                  last_outbound_at: new Date(Date.now() - 60_000).toISOString(),
+                  channel_session_id: null,
+                },
+                error: null,
+              };
             if (tabela === "ai_agents") return { data: { config: { aviso_de_handoff: FRASE } }, error: null };
             throw new Error(`tabela inesperada: ${tabela}`);
           },

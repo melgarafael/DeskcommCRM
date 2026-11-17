@@ -95,6 +95,22 @@ function adminComIdioma(locale: string | null | Error) {
         };
         return cadeia;
       }
+      if (tabela === "conversations") {
+        // Guarda 3 (#4797): cliente esperando = entrada mais nova que a saída.
+        const cadeiaConversa = {
+          select: () => cadeiaConversa,
+          eq: () => cadeiaConversa,
+          maybeSingle: async () => ({
+            data: {
+              last_inbound_at: new Date().toISOString(),
+              last_outbound_at: new Date(Date.now() - 60_000).toISOString(),
+              channel_session_id: null,
+            },
+            error: null,
+          }),
+        };
+        return cadeiaConversa;
+      }
       if (tabela !== "organizations") throw new Error(`tabela inesperada: ${tabela}`);
       if (locale instanceof Error) throw locale;
       const cadeia = {

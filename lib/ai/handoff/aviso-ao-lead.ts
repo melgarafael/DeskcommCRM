@@ -259,15 +259,18 @@ export async function avisarLeadDoCrm(
     //     acrescentar um chamador novo e esquecer de dizer de onde veio).
     const decididaPorPessoa = input.origem === "caso_escalado";
     const foraDeTurno = input.origem === "mcp_externo" || decididaPorPessoa;
+    // UMA leitura serve às duas guardas: a conversa sabe quem falou por último e
+    // por qual canal ela sai. `lerConversa` devolve três estados porque
+    // "indeterminado" não pode virar nem "esperando" nem "sem espera".
+    const conversa = await lerConversa(admin, input);
     if (!foraDeTurno) {
-      const espera = await clienteEsperandoResposta(admin, input);
       // Leitura que falha não avisa (fail-closed, como as guardas acima e como o
       // gate de elegibilidade): mandar a frase sem saber se alguém espera é
       // exatamente o defeito que esta guarda existe para impedir.
-      if (espera.estado === "indeterminado") {
+      if (conversa.tipo === "indeterminado") {
         return { avisado: false, porque: "espera_do_cliente_nao_lida" };
       }
-      if (espera.estado === "sem_espera") {
+      if (!conversa.esperando) {
         return { avisado: false, porque: "sem_mensagem_nova_do_cliente" };
       }
     }
@@ -287,26 +290,23 @@ export async function avisarLeadDoCrm(
     // Só para quem está fora de turno: um cliente que acabou de escrever e não foi
     // respondido recebe o aviso a qualquer hora — deixá-lo no escuro até as 8h
     // seria trocar um incômodo por um abandono.
-    if (foraDeTurno) {
-      const canal = await canalDaConversa(admin, input);
-      if (canal !== null) {
-        const proxima = await adiarAteAJanelaAbrir(
-          admin,
-          input.organizationId,
-          canal,
-          new Date(),
-        );
-        if (proxima !== null) {
-          logger.info("[handoff-orchestrator] aviso fora da janela de envio — não enviado", {
-            conversation_id: input.conversationId,
-            proxima_abertura: proxima,
-          });
-          return {
-            avisado: false,
-            porque: "fora_da_janela_de_envio",
-            motivoCodigo: "fora_da_janela",
-          };
-        }
+    if (foraDeTurno && conversa.tipo === "ok" && conversa.canal !== null) {
+      const proxima = await adiarAteAJanelaAbrir(
+        admin,
+        input.organizationId,
+        conversa.canal,
+        new Date(),
+      );
+      if (proxima !== null) {
+        logger.info("[handoff-orchestrator] aviso fora da janela de envio — não enviado", {
+          conversation_id: input.conversationId,
+          proxima_abertura: proxima,
+        });
+        return {
+          avisado: false,
+          porque: "fora_da_janela_de_envio",
+          motivoCodigo: "fora_da_janela",
+        };
       }
     }
 
@@ -484,101 +484,67 @@ async function quemPodeAssumir(
 }
 
 /**
- * O CLIENTE ESTÁ ESPERANDO RESPOSTA? — a pergunta da guarda 3.
+ * A CONVERSA, nas duas perguntas das guardas 3 e 4 — em UMA leitura.
  *
- * `esperando` = existe entrada do cliente mais nova que a última saída da
- * conversa (`conversations.last_outbound_at`). É a MESMA régua do
- * `falasPendentes` do orquestrador: o que o cliente disse e ninguém respondeu,
- * nem a IA nem uma pessoa.
+ * `esperando` = a última mensagem é do CLIENTE: `last_inbound_at` mais novo que
+ * `last_outbound_at`. É a régua de "o que o cliente disse e ninguém respondeu"
+ * que o resto do repositório já usa (`falasPendentes` em `./orchestrator.ts`,
+ * `silence-sweep` para o silêncio); as duas colunas são o MÁXIMO por direção, e
+ * comparar máximo com máximo é exatamente "quem falou por último".
  *
- * Três estados, e o terceiro não é decoração: `indeterminado` (leitura falhou)
- * NÃO vira `sem_espera` nem `esperando`. A guarda trata como "não avisa", e o
- * nome do estado diz no log que foi a leitura — não a conversa — que calou o
- * envio.
+ * Mensagem de entrada no MESMO instante da saída não conta: é empate de relógio,
+ * não espera — e mandar a frase por causa de um empate seria avisar sem motivo.
  *
- * `last_outbound_at` é do BANCO, não do que acabamos de mandar: um aviso
- * anterior conta como saída, e é isso que impede o segundo aviso de nascer de
- * uma espera que ele mesmo encerrou.
+ * Três estados, e o terceiro não é decoração: `indeterminado` (linha ausente ou
+ * leitura que falhou) NÃO vira `esperando: false`. A guarda 3 trata como "não
+ * avisa", e o `porque` devolvido nomeia a leitura — não a conversa — como a
+ * causa do silêncio.
  *
- * `gt` estrito de propósito: mensagem de entrada com o MESMO instante da saída
- * não é espera — é o empate de dois relógios, e mandar a frase por causa dele
- * seria avisar sem motivo.
+ * `canal` é o `channel_session_id` da MESMA linha: a janela de horário é a do
+ * número por onde esta conversa sai, nunca a de outro número da organização.
  */
-async function clienteEsperandoResposta(
+type ConversaDoAviso =
+  | { tipo: "ok"; esperando: boolean; canal: string | null }
+  | { tipo: "indeterminado" };
+
+async function lerConversa(
   admin: SupabaseClient,
   input: AvisoDoCrmInput,
-): Promise<{ estado: "esperando" | "sem_espera" | "indeterminado" }> {
+): Promise<ConversaDoAviso> {
   try {
-    const { data: conv, error: erroDaConversa } = await admin
+    const { data, error } = await admin
       .from("conversations")
-      .select("last_outbound_at")
+      .select("last_inbound_at, last_outbound_at, channel_session_id")
       .eq("organization_id", input.organizationId)
       .eq("id", input.conversationId)
       .maybeSingle();
-    if (erroDaConversa) {
+    if (error) {
       logger.warn("[handoff-orchestrator] conversa não lida — aviso não enviado", {
         conversation_id: input.conversationId,
-        error: erroDaConversa.message.slice(0, 200),
+        error: error.message.slice(0, 200),
       });
-      return { estado: "indeterminado" };
+      return { tipo: "indeterminado" };
     }
-    const ultimaSaida = (conv as { last_outbound_at?: string | null } | null)?.last_outbound_at ?? null;
+    const c = data as {
+      last_inbound_at?: string | null;
+      last_outbound_at?: string | null;
+      channel_session_id?: string | null;
+    } | null;
+    // Conversa que não está lá é conversa que não tem a quem avisar: mandar
+    // seria criar mensagem órfã. Fail-closed, como a leitura que falha.
+    if (c === null || c === undefined) return { tipo: "indeterminado" };
 
-    let consulta = admin
-      .from("messages")
-      .select("id")
-      .eq("organization_id", input.organizationId)
-      .eq("conversation_id", input.conversationId)
-      .eq("direction", "inbound");
-    // Sem saída nenhuma a conversa nunca foi respondida: qualquer entrada é
-    // espera (a consulta já é só de entradas).
-    if (ultimaSaida !== null) consulta = consulta.gt("created_at", ultimaSaida);
-    const { data: entradas, error: erroDasEntradas } = await consulta.limit(1);
-    if (erroDasEntradas) {
-      logger.warn("[handoff-orchestrator] entradas do cliente não lidas — aviso não enviado", {
-        conversation_id: input.conversationId,
-        error: erroDasEntradas.message.slice(0, 200),
-      });
-      return { estado: "indeterminado" };
-    }
-    return { estado: (entradas ?? []).length > 0 ? "esperando" : "sem_espera" };
+    const entrada = c.last_inbound_at ?? null;
+    const saida = c.last_outbound_at ?? null;
+    const esperando =
+      entrada !== null && (saida === null || new Date(entrada).getTime() > new Date(saida).getTime());
+    const canal = c.channel_session_id ?? null;
+    return { tipo: "ok", esperando, canal: canal !== "" ? canal : null };
   } catch (err) {
-    logger.warn("[handoff-orchestrator] espera do cliente não lida — aviso não enviado", {
+    logger.warn("[handoff-orchestrator] conversa não lida — aviso não enviado", {
       conversation_id: input.conversationId,
       error: err instanceof Error ? err.message.slice(0, 200) : String(err),
     });
-    return { estado: "indeterminado" };
-  }
-}
-
-/**
- * O canal da conversa, para a janela de horário (guarda 4).
- *
- * `null` = conversa sem canal. Não é erro: sem canal não existe janela a
- * consultar, e a guarda 3 já disse que este aviso tem a quem responder. Falha
- * de leitura também é `null` pelo mesmo motivo do `quemPodeAssumir` — a janela
- * é refinamento; o que a torna obrigatória é `foraDeTurno`, e quem está fora de
- * turno sem canal é um caso que a instalação não produz (canal arquivado ainda
- * tem id).
- */
-async function canalDaConversa(
-  admin: SupabaseClient,
-  input: AvisoDoCrmInput,
-): Promise<string | null> {
-  try {
-    const { data } = await admin
-      .from("conversations")
-      .select("channel_session_id")
-      .eq("organization_id", input.organizationId)
-      .eq("id", input.conversationId)
-      .maybeSingle();
-    const canal = (data as { channel_session_id?: string | null } | null)?.channel_session_id ?? null;
-    return canal !== null && canal !== "" ? canal : null;
-  } catch (err) {
-    logger.warn("[handoff-orchestrator] canal da conversa não lido — aviso sem janela", {
-      conversation_id: input.conversationId,
-      error: err instanceof Error ? err.message.slice(0, 200) : String(err),
-    });
-    return null;
+    return { tipo: "indeterminado" };
   }
 }

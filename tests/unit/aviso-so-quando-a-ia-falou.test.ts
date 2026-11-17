@@ -59,14 +59,12 @@ let filtros: [string, unknown][] = [];
  * `organizations` devolve o idioma — o resto do caminho é o de sempre.
  *
  * A guarda 3 (#4797) pergunta ao BANCO se o cliente está esperando resposta:
- * `conversations.last_outbound_at` + entrada mais nova que ela. Por isso a
- * conversa de mentira tem uma SAÍDA de 3 h atrás e uma ENTRADA de 2 h atrás — o
- * cliente falou e ninguém respondeu, que é o único caso em que esta frase faz
- * sentido. `entrada: false` é a conversa já respondida.
+ * `conversations.last_inbound_at` mais novo que `last_outbound_at`. A conversa
+ * de mentira está com o cliente ESPERANDO (entrada de 2 h atrás, saída de 3 h) —
+ * é a precondição para o aviso sair, e é o caso que estes testes medem.
  */
-function banco(falas: Fala[] | { erro: string }, opcoes: { entrada?: boolean } = {}) {
+function banco(falas: Fala[] | { erro: string }) {
   filtros = [];
-  const entrada = opcoes.entrada ?? true;
   return {
     from(tabela: string) {
       if (tabela === "messages") {
@@ -78,16 +76,12 @@ function banco(falas: Fala[] | { erro: string }, opcoes: { entrada?: boolean } =
           },
           gt: () => cadeia,
           order: () => cadeia,
-          // Duas leituras caem aqui: as falas da IA (`limit(20)`) e a entrada
-          // sem resposta (`limit(1)`, só `direction=inbound`).
-          limit: async (n: number) => {
-            if (!Array.isArray(falas)) return { data: null, error: { message: falas.erro } };
-            const pediuEntrada = filtros.some(([c, v]) => c === "direction" && v === "inbound");
-            if (pediuEntrada) {
-              return { data: entrada ? [{ created_at: horasAtras(2) }] : [], error: null };
-            }
-            return { data: falas.slice(0, n), error: null };
-          },
+          // Só a guarda 1 lê `messages` agora: as falas da IA. A espera do
+          // cliente (guarda 3) vem de `conversations`, não de uma varredura.
+          limit: async (n: number) =>
+            Array.isArray(falas)
+              ? { data: falas.slice(0, n), error: null }
+              : { data: null, error: { message: falas.erro } },
         };
         return cadeia;
       }
@@ -96,7 +90,11 @@ function banco(falas: Fala[] | { erro: string }, opcoes: { entrada?: boolean } =
           select: () => cadeia,
           eq: () => cadeia,
           maybeSingle: async () => ({
-            data: { last_outbound_at: horasAtras(3), channel_session_id: null },
+            data: {
+              last_inbound_at: horasAtras(2),
+              last_outbound_at: horasAtras(3),
+              channel_session_id: null,
+            },
             error: null,
           }),
         };

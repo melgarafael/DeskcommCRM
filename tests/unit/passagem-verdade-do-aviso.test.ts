@@ -62,6 +62,17 @@ function bancoComFalaDaIa() {
   for (const m of ["select", "eq", "order"]) cadeia[m] = () => cadeia;
   cadeia.limit = () =>
     Promise.resolve({ data: [{ metadata: null, created_at: new Date().toISOString() }], error: null });
+  // Guarda 3 (#4797): o cliente precisa estar esperando resposta. Uma entrada
+  // mais nova que a última saída — a precondição destes casos, que medem o que
+  // acontece DEPOIS de o emissor decidir falar.
+  cadeia.maybeSingle = async () => ({
+    data: {
+      last_inbound_at: new Date().toISOString(),
+      last_outbound_at: new Date(Date.now() - 60_000).toISOString(),
+      channel_session_id: null,
+    },
+    error: null,
+  });
   return { from: () => cadeia } as never;
 }
 
