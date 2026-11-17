@@ -12557,6 +12557,8 @@ export const DICIONARIO: Traducoes = {
   "O lembrete não pode sair mais de 7 dias (10080 minutos) antes.": { es: "El recordatorio no puede salir con más de 7 días (10080 minutos) de anticipación." },
   "Ação contém": { es: "La acción contiene" },
   "Ator": { es: "Actor" },
+  "Metadados": { es: "Metadatos" },
+  "ID da requisição": { es: "ID de la solicitud" },
   "Nenhum log no período.": { es: "Ningún registro en el período." },
   "Histórico append-only de mutações na organização. Manager+.": { es: "Historial append-only de cambios en la organización. Manager+." },
   "O que isso custou": { es: "Lo que esto costó" },
