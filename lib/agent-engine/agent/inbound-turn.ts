@@ -1,4 +1,4 @@
-import { consultarFonteObrigatoria, textoAutorizadoPelaFonte, blocoDaFonte, RESPOSTA_SEM_DADOS } from '@/lib/mcp/servidor-externo/consulta-obrigatoria';
+import { consultarFonteObrigatoria, textoAutorizadoPelaFonte, blocoDaFonte, RESPOSTA_SEM_DADOS, type FonteVerificada } from '@/lib/mcp/servidor-externo/consulta-obrigatoria';
 import { limitarFerramentasDaFonte } from '@/lib/mcp/servidor-externo/efeitos-da-fonte';
 import { contemAssuntoComercialNaSaida, contemAssuntoComercialRestrito, comercialExigeHumano } from '@/lib/escalacao/assunto-comercial';
 import { prospectingConversationContext } from "@/lib/prospecting/context";
@@ -3022,11 +3022,16 @@ async function executarTurnoDoAgente(
         inbound: liveJob().kind === 'inbound_turn',
       }, { log: runLog, jev: deps.jev });
   const agentConfig = routed.config;
-  const consultarDadosAtuais = () => agentConfig?.consultaObrigatoriaTool
-    ? consultarFonteObrigatoria(deps.crmCfg.supabase, {
+  let registrarFonteConsultada: (fonte: FonteVerificada | null) => void = () => undefined;
+  const consultarDadosAtuais = async () => {
+    const fonte = agentConfig?.consultaObrigatoriaTool
+      ? await consultarFonteObrigatoria(deps.crmCfg.supabase, {
         organizationId: tenantId, contactId: leadId || null, conversationId: input.conversationId,
       }, agentConfig)
-    : Promise.resolve(null);
+      : null;
+    registrarFonteConsultada(fonte);
+    return fonte;
+  };
   const fonteObrigatoriaInicial = agentConfig?.consultaObrigatoriaTool ? await consultarDadosAtuais() : null;
   // O traço grava o agente que o turno RESOLVEU: follow-up e resposta de caso
   // não passam `resolvedAgent`, e sem isto a linha ficaria sem agente nem fontes.
@@ -4233,6 +4238,16 @@ async function executarTurnoDoAgente(
     return [];
   });
   const evidenciasComerciais = criarEvidenciasComerciaisDoTurno(fontesQueProvamOferta);
+  // A consulta feita PELO EXECUTOR também sustenta o relato do registro no
+  // revisor de promessa. Continua sendo dado externo, nunca política comercial;
+  // os gates e a comparação exata com a fonte fresca permanecem na cadeia.
+  registrarFonteConsultada = (fonte) => {
+    if (fonte && agentConfig?.consultaObrigatoriaTool)
+      evidenciasComerciais.registrarLeituraRemota(agentConfig.consultaObrigatoriaTool, {
+        dados: fonte.respostas_permitidas,
+      });
+  };
+  registrarFonteConsultada(fonteObrigatoriaInicial);
   // `imagem_url` só vale para endereço que uma ferramenta de dados devolveu neste turno.
   const procedenciaDeImagens = criarProcedenciaDeImagens();
   const efeitosDoTurno = criarEfeitoDasEscrituras();

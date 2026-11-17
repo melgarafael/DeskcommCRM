@@ -515,6 +515,13 @@ informação não confirmada. Templates, mídia e outras operações automática
 podem contornar a regra; casos internos da equipe continuam disponíveis. O papel
 Operador não executa ações nesse modo. Desligado, mantém o comportamento anterior.
 
+A consulta feita pelo executor também alimenta as evidências do revisor semântico
+como `servidor_externo`, com a mesma redação de dados pessoais das demais leituras
+remotas. O registro permite avaliar o relato de uma data ou situação cadastrada;
+não se transforma em política comercial nem dispensa portões. Reconsultas atualizam
+o contexto da revisão, e a comparação exata com a fonte continua obrigatória antes
+e depois dos portões de saída.
+
 O painel permite testar o rascunho com a regra simulada antes de ativar essa
 configuração no atendimento. A publicação da versão é uma decisão separada.
 

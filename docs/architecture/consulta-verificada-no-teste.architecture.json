@@ -50,9 +50,16 @@
       "label": "MCP externo: identidade do executor e frases autorizadas"
     },
     {
+      "id": "revisor",
+      "lane": "core",
+      "col": 6,
+      "type": "service",
+      "label": "Revisor de promessa: registro externo consultado"
+    },
+    {
       "id": "resultado",
       "lane": "ui",
-      "col": 6,
+      "col": 7,
       "type": "service",
       "label": "Candidato ou impedimento; aviso da simulação e auditoria"
     }
@@ -67,6 +74,8 @@
     },
     { "from": "preview", "to": "fonte", "label": "Consulta inicial e antes de cada candidato" },
     { "from": "fonte", "to": "preview", "label": "Frases frescas ou falha fechada" },
+    { "from": "fonte", "to": "revisor", "label": "Consulta do executor também vira evidência externa" },
+    { "from": "revisor", "to": "preview", "label": "Julga o relato; não autoriza condição comercial nova" },
     {
       "from": "preview",
       "to": "resultado",
