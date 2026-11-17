@@ -24,6 +24,7 @@ import { portaDaAplicacao } from "@/lib/db";
 import { createClient } from "@/lib/supabase/server";
 import { registraAtividadeDaTarefa } from "@/lib/tarefas/atividade";
 import { conferirDemanda } from "@/lib/tarefas/demanda";
+import { atendenteRestrito, lerEscopoDoAtendente, tarefaForaDoEscopo } from "@/lib/tarefas/escopo-do-atendente";
 import { normalizarRegra, regraDeRecorrenciaSchema, regraParaGravar } from "@/lib/tarefas/recorrencia";
 import { conferirResponsavel } from "@/lib/tarefas/responsavel";
 import { PRIORIDADES_DA_TAREFA, SITUACOES_DA_TAREFA, type Tarefa } from "@/lib/tarefas/tipos";
@@ -57,6 +58,31 @@ const edicaoSchema = z
 
 interface Contexto {
   params: Promise<{ id: string }>;
+}
+
+/**
+ * A pessoa está restrita às próprias tarefas nesta organização? (#4737)
+ *
+ * A MESMA régua da listagem (`GET /api/v1/tasks`): a opção da organização, o
+ * papel exato de atendente e o platform admin de fora. Aqui ela decide se tocar
+ * na tarefa de um colega é recusa — na lista, se a lista é recortada. As duas
+ * portas leem a mesma função para não divergirem.
+ */
+async function atendenteRestritoNaOrganizacao(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  authz: { user: { id: string; is_platform_admin: boolean }; org: { orgId: string; role: string } },
+): Promise<boolean> {
+  const { data: linhaDaOrganizacao } = await supabase
+    .from("organizations")
+    .select("settings")
+    .eq("id", authz.org.orgId);
+  return atendenteRestrito({
+    papel: authz.org.role,
+    isPlatformAdmin: authz.user.is_platform_admin,
+    escopoLigado: lerEscopoDoAtendente(
+      (linhaDaOrganizacao?.[0] as { settings?: unknown } | undefined)?.settings,
+    ),
+  });
 }
 
 export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> {
@@ -99,6 +125,7 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
   }
 
   const supabase = await createClient();
+  const restrito = await atendenteRestritoNaOrganizacao(supabase, authz);
 
   if (parsed.data.demanda_id) {
     // A chave estrangeira não passa pela RLS: sem esta conferência, a demanda
@@ -128,13 +155,29 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
   // timeline do negócio — e a segunda seria mentira.
   const { data: antes, error: erroDaLeitura } = await supabase
     .from("crm_tasks")
-    .select("status")
+    .select("status, assigned_to")
     .eq("id", id)
     .eq("organization_id", authz.org.orgId)
     .maybeSingle();
 
   if (erroDaLeitura) {
     return fail("internal_error", t("Erro ao salvar a tarefa."), 500, { requestId });
+  }
+
+  // ═══ #4737: a tarefa de um COLEGA é recusa NOMEADA ═══
+  //
+  // O atendente restrito abre e altera as tarefas dele e as sem responsável.
+  // A de outro atendente recebe 403 com código próprio — e não 404 genérico,
+  // que faria a tela dizer "não existe" sobre uma tarefa que a colega vê.
+  // Tarefa SEM dono continua acessível: é a fila que ele pode assumir.
+  if (
+    tarefaForaDoEscopo({
+      restrito,
+      usuarioId: authz.user.id,
+      assignedTo: (antes as { assigned_to?: string | null } | null)?.assigned_to,
+    })
+  ) {
+    return fail("forbidden_scope", t("Esta tarefa é de outro atendente."), 403, { requestId });
   }
 
   // ═══ A SÉRIE: desligar é gravar `null` (#4595) ═══
@@ -233,6 +276,29 @@ export async function DELETE(_req: NextRequest, ctx: Contexto): Promise<Response
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
   const supabase = await createClient();
+  const restrito = await atendenteRestritoNaOrganizacao(supabase, authz);
+
+  // ═══ #4737: não se apaga a tarefa de um COLEGA ═══
+  //
+  // O DELETE não tem `where` que distinga dono, então a leitura vem antes —
+  // e a recusa é NOMEADA (403), não o 404 de "não achei" que faria a tela
+  // concluir que a tarefa já não existia.
+  const { data: donaDaTarefa } = await supabase
+    .from("crm_tasks")
+    .select("assigned_to")
+    .eq("id", id)
+    .eq("organization_id", authz.org.orgId)
+    .maybeSingle();
+  if (
+    tarefaForaDoEscopo({
+      restrito,
+      usuarioId: authz.user.id,
+      assignedTo: (donaDaTarefa as { assigned_to?: string | null } | null)?.assigned_to,
+    })
+  ) {
+    return fail("forbidden_scope", t("Esta tarefa é de outro atendente."), 403, { requestId });
+  }
+
   // `.select()` no delete para saber se ALGUMA linha saiu. Sem isso, apagar uma
   // tarefa de outra organização devolveria 200 — e a tela sumiria com a linha
   // do próprio usuário na próxima recarga, sem que nada tivesse sido apagado.

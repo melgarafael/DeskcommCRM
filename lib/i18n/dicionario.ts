@@ -13318,6 +13318,32 @@ export const DICIONARIO: Traducoes = {
   "Desligada: nenhuma pergunta sai ao encerrar.": {
     es: "Desactivada: no se envía ninguna pregunta al cerrar.",
   },
+  // #4737 — Tarefas: abrir em "Minhas", lembrar o filtro e o escopo do atendente.
+  "Atendente vê só as próprias tarefas (e as sem responsável)": {
+    es: "El agente solo ve sus propias tareas (y las sin responsable)",
+  },
+  "Ligada, quem tem papel de atendente vê, abre e altera apenas as tarefas atribuídas a si e as que ainda não têm responsável — na tela e na API, inclusive quando a lista é pedida direto. Tarefa de outro atendente é recusada com a mensagem de que é de outra pessoa, em vez de sumir da lista. Gerente e administrador continuam vendo as tarefas de todos: é assim que distribuem o trabalho. Vem desligada, e desligada tudo funciona como hoje.":
+    {
+      es: "Activada, quien tiene papel de agente ve, abre y modifica solo las tareas asignadas a sí y las que todavía no tienen responsable — en la pantalla y en la API, incluso cuando la lista se pide directamente. Una tarea de otro agente se rechaza con el mensaje de que es de otra persona, en vez de desaparecer de la lista. El gerente y el administrador siguen viendo las tareas de todos: así es como distribuyen el trabajo. Viene desactivada, y desactivada todo funciona como hoy.",
+    },
+  "Ligada: o atendente vê as tarefas dele e as sem responsável.": {
+    es: "Activada: el agente ve sus tareas y las sin responsable.",
+  },
+  "Desligada: o atendente vê as tarefas da equipe inteira, como hoje.": {
+    es: "Desactivada: el agente ve las tareas de todo el equipo, como hoy.",
+  },
+  "Sua empresa mostra aqui as suas tarefas e as que ainda não têm responsável.": {
+    es: "Tu empresa muestra aquí tus tareas y las que todavía no tienen responsable.",
+  },
+  "A lista mudou, mas não consegui lembrar esta escolha para a próxima visita.": {
+    es: "La lista cambió, pero no pude recordar esta elección para la próxima visita.",
+  },
+  "Você só vê as tarefas atribuídas a você e as sem responsável.": {
+    es: "Solo ves las tareas asignadas a ti y las sin responsable.",
+  },
+  "Esta tarefa é de outro atendente.": {
+    es: "Esta tarea es de otro agente.",
+  },
   "Resultado dos últimos 30 dias": {
     es: "Resultado de los últimos 30 días",
   },

@@ -37,6 +37,7 @@ import { portaDaAplicacao } from "@/lib/db";
 import { createClient } from "@/lib/supabase/server";
 import { registraAtividadeDaTarefa } from "@/lib/tarefas/atividade";
 import { conferirDemanda } from "@/lib/tarefas/demanda";
+import { atendenteRestrito, lerEscopoDoAtendente } from "@/lib/tarefas/escopo-do-atendente";
 import { normalizarRegra, proximaOcorrencia, regraDeRecorrenciaSchema, regraParaGravar } from "@/lib/tarefas/recorrencia";
 import { conferirResponsavel } from "@/lib/tarefas/responsavel";
 import {
@@ -146,6 +147,28 @@ export async function GET(req: NextRequest): Promise<Response> {
   const filtros = parsed.data;
 
   const supabase = await createClient();
+
+  // ═══ ATENDENTE VÊ SÓ AS PRÓPRIAS (#4737) ═══
+  //
+  // A opção da ORGANIZAÇÃO é lida AQUI, e não no cliente: é esta rota que
+  // responde ao token da sessão, e esconder o seletor na tela não impediria
+  // ninguém de pedir a lista inteira na mão. Desligada (o padrão), tudo como
+  // antes. O papel vem de `authz.org`, já resolvido pelo `fn_user_role_in_org`.
+  //
+  // `.select("settings")` sem `single`: a resposta é um array de uma linha, e o
+  // array não transforma "organização sumiu" em erro que derrubaria a lista.
+  const { data: linhaDaOrganizacao } = await supabase
+    .from("organizations")
+    .select("settings")
+    .eq("id", authz.org.orgId);
+  const restrito = atendenteRestrito({
+    papel: authz.org.role,
+    isPlatformAdmin: authz.user.is_platform_admin,
+    escopoLigado: lerEscopoDoAtendente(
+      (linhaDaOrganizacao?.[0] as { settings?: unknown } | undefined)?.settings,
+    ),
+  });
+
   // ⚠️ `organization_id` à mão mesmo com RLS ligada: é a regra do CLAUDE.md, e
   // ela não é redundante — o dia em que esta rota trocar para o admin client
   // (que bypassa RLS) o filtro já está aqui.
@@ -167,7 +190,28 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (filtros.aberto === "true") query = query.in("status", [...SITUACOES_ABERTAS_DA_TAREFA]);
   if (filtros.assigned_to === "me") query = query.eq("assigned_to", authz.user.id);
   else if (filtros.assigned_to === "ninguem") query = query.is("assigned_to", null);
-  else if (filtros.assigned_to) query = query.eq("assigned_to", filtros.assigned_to);
+  else if (filtros.assigned_to) {
+    // ═══ #4737: pedir a tarefa de um COLEGA é recusa NOMEADA ═══
+    //
+    // Devolver lista vazia aqui mentiria: a tela diria "ele não tem tarefas" e
+    // quem chamou a rota concluiria que o filtro não pegou. 403 com código
+    // próprio diz o que aconteceu — e só vale para quem está restrito; sem a
+    // opção, filtrar pelo id de um colega continua funcionando como hoje.
+    if (restrito && filtros.assigned_to !== authz.user.id) {
+      return fail(
+        "forbidden_scope",
+        t("Você só vê as tarefas atribuídas a você e as sem responsável."),
+        403,
+        { requestId },
+      );
+    }
+    query = query.eq("assigned_to", filtros.assigned_to);
+  } else if (restrito) {
+    // Sem filtro na requisição, o atendente restrito recebe a lista DELE: as
+    // tarefas atribuídas a si e a fila sem dono (que ele pode assumir). A
+    // restrição é esta linha — a tela só reflete o que a rota já recorta.
+    query = query.or(`assigned_to.eq.${authz.user.id},assigned_to.is.null`);
+  }
   if (filtros.pipeline_id) query = query.eq("lead.pipeline_id", filtros.pipeline_id);
 
   if (filtros.sector_id) {

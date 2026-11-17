@@ -132,7 +132,12 @@ describe("GET /api/v1/tasks?contact_id= — a busca do painel da conversa (#4630
     const CONTATO = "44444444-4444-4444-8444-444444444444";
     const res = await listar(`?contact_id=${CONTATO}&aberto=true`);
     expect(res.status).toBe(200);
-    expect(Object.keys(filtros)).toEqual(["crm_tasks"]);
+    // `organizations` entra na lista desde a #4737: a rota lê a opção
+    // "Atendente vê só as próprias tarefas" antes de montar a consulta. O que
+    // este caso prende continua sendo a consulta de TAREFAS — uma só, filtrada
+    // pela organização da sessão e pelo contato.
+    expect(Object.keys(filtros).sort()).toEqual(["crm_tasks", "organizations"]);
+    expect(filtros.organizations).toEqual([["eq", "id", ORG]]);
     expect(filtros.crm_tasks).toContainEqual(["eq", "organization_id", ORG]);
     expect(filtros.crm_tasks).toContainEqual(["eq", "contact_id", CONTATO]);
   });
