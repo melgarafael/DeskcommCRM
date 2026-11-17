@@ -69,6 +69,7 @@ function bancoFalso(opcoes: {
     won_reason: null,
     created_at: CRIADO_EM,
     recurring_value_cents: opcoes.recurringValueCents ?? null,
+    recurring_months: 12,
   });
 
   const from = (tabela: string) => {
@@ -167,6 +168,7 @@ describe("moveLeadHandler — o financeiro do fecho", () => {
         pipelineId: FUNIL,
         valorCents: 50_000,
         criadoEm: CRIADO_EM,
+        meses: 12,
         userId: USER,
       }),
     );
