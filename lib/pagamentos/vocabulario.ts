@@ -2,7 +2,7 @@
  * O VOCABULÁRIO DO GATEWAY DE PAGAMENTO DA ORGANIZAÇÃO (issue #4058, fatia 1).
  *
  * O lado TypeScript dos CHECKs de `organization_payment_gateways` (migration
- * 9222). Os dois pares são cobrados por
+ * 9409). Os dois pares são cobrados por
  * `tests/invariants/vocabulario-banco-x-typescript.test.ts` contra o Postgres
  * descartável: valor novo entra no CHECK (migration + bloco do baseline) e aqui,
  * no MESMO commit.

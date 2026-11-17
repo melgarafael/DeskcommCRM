@@ -1,5 +1,5 @@
 -- manifest: **A organização passa a escolher o gateway de pagamento dela (#4058, fatia 1).** Hoje o provedor de cobrança é da INSTALAÇÃO (`platform_config` + `lib/cobranca/configuracao.ts`) e serve para o revendedor cobrar as empresas; não existe nada que deixe a empresa cobrar o cliente dela. Esta fatia cria `organization_payment_gateways` (uma linha por organização, chave primária `organization_id`): provedor (`stripe`/`asaas`), modo derivado da chave, credencial e segredo de webhook cifrados com AES-256-GCM (`AI_CRED_AES_KEY`, mesmo envelope de `voip_trunk_settings`/`external_db_connections`, só `last4` exposto) e `is_active` para desligar sem apagar. A ausência de linha — ou `is_active = false` — HERDA a configuração da instalação; a herança mora no resolvedor (`lib/pagamentos/gateway-da-organizacao.ts`), não no banco. Catálogo de produtos, envio da cobrança na conversa e comprovante são fatias seguintes desta issue.
--- ---- gateway de pagamento por organização (migration 9222) ----
+-- ---- gateway de pagamento por organização (migration 9409) ----
 --
 -- Issue #4058, FATIA 1 — a CONFIGURAÇÃO do gateway, por organização.
 --

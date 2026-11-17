@@ -677,7 +677,7 @@ beforeAll(() => {
           values (v_org, 'rls-invariant-' || v_org::text, v_conv, v_contact, true, 'completed', 0);
         end if;
 
-        -- migration 9222 (#4058, fatia 1): o gateway de pagamento PROPRIO da
+        -- migration 9409 (#4058, fatia 1): o gateway de pagamento PROPRIO da
         -- organizacao. Vazar a linha entrega ao vizinho qual conta recebe o
         -- dinheiro da empresa e o last4 da chave. A leitura e org-scoped sem
         -- gate de papel (a tela de cobranca precisa saber se ha gateway), e a

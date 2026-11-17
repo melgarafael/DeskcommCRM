@@ -75736,7 +75736,7 @@ create trigger trg_routing_nova_mensagem_do_cliente
         and coalesce(new.metadata->>'historico_importado','') <> 'true')
   execute function public.fn_pedir_roteamento_na_mensagem();
 
--- ---- gateway de pagamento por organização (migration 9222) ----
+-- ---- gateway de pagamento por organização (migration 9409) ----
 --
 -- Issue #4058, FATIA 1 — a CONFIGURAÇÃO do gateway, por organização.
 --
