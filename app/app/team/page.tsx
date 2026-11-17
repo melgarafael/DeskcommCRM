@@ -99,7 +99,13 @@ export default async function TeamPage({
             que fazer, como a da aba de atendimento.
           */}
           {isManager ? (
-            <TeamMembersClient currentUserId={user.id} canManage={isAdmin} />
+            <TeamMembersClient
+              currentUserId={user.id}
+              canManage={isAdmin}
+              // #4864: as opções de "tela inicial" do membro são a interseção com
+              // o menu da empresa — o vínculo escolhe menos, nunca mais.
+              interfaceDaEmpresa={activeOrg?.interface_settings}
+            />
           ) : (
             <p className="text-sm text-muted-foreground">
               {t(
