@@ -150,6 +150,10 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
       conversationId,
       contactId,
       reason: body,
+      // #4797 — POR QUE esta passagem foge da guarda "o cliente está esperando":
+      // quem escalou foi uma PESSOA, pelo botão do caso, e não um worker de
+      // relógio. A hora continua valendo (guarda 4 do emissor).
+      origem: "caso_escalado",
       serviceBoundary: boundary!,
     });
 

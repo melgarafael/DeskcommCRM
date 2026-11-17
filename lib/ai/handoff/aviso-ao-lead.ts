@@ -31,6 +31,19 @@ import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
  * (`app/api/v1/messages/_handler.ts`), que é a trava irrevogável (regra dura
  * nº 2). E o aviso do lado do motor, esse sim, passa pela cadeia inteira.
  *
+ * ## As quatro guardas, e a ordem delas
+ *
+ * 1. a IA precisa ter FALADO nesta conversa;
+ * 2. um aviso por conversa a cada 24 h;
+ * 3. o CLIENTE precisa estar esperando resposta (#4797 — a frase responde a
+ *    uma mensagem dele, não a um relógio);
+ * 4. fora de turno, a HORA é a da organização (#4797 — 22h soa como robô).
+ *
+ * As duas primeiras são de 2026-09-27; as duas últimas vêm do incidente de
+ * 16/11, em que um aviso saiu três dias depois da última entrada, às 22h, com
+ * nenhuma mensagem nova do cliente. O porquê de cada uma está no ponto onde
+ * ela mora.
+ *
  * ## Ordem
  *
  * Chamado ANTES do UPDATE que silencia. Do lado do motor a ordem é obrigatória
@@ -61,6 +74,7 @@ import type {
 } from "@/lib/escalacao/passagem";
 import type { QuemPodeAssumir } from "@/lib/escalacao/disponibilidade";
 import { logger } from "@/lib/logger";
+import { adiarAteAJanelaAbrir } from "@/lib/automation/janela-do-canal";
 
 /** Ator do envio — é o automático falando, não uma pessoa. */
 const ATOR_DO_AVISO = "handoff-orchestrator";
@@ -206,6 +220,94 @@ export async function avisarLeadDoCrm(
         porque: "aviso_ja_enviado_na_janela",
         motivoCodigo: "na_fila_canal_fora",
       };
+    }
+
+    // ═══ GUARDA 3 — O AVISO RESPONDE A UMA MENSAGEM DO CLIENTE ═══
+    //
+    // A frase existe para o cliente que FALOU e ficou sem resposta não achar que
+    // está falando com o vazio. Se ninguém falou — ou se a última fala dele já
+    // foi respondida —, não há a quem responder: o aviso chega do nada, e "deixei
+    // com uma pessoa da equipe" três dias depois, às 22h, lê-se como robô perdido.
+    //
+    // Medido em produção (#4797, conversa de WhatsApp/WAHA): última mensagem do
+    // cliente em 13/11 15:23, resposta do agente em 15:24, mensagem MANUAL do
+    // atendente em 14/11 16:42 — e em 16/11 22:19 saiu "Deixei isso com uma pessoa
+    // da equipe, que continua daqui. Agora não tem ninguém livre…" com
+    // `sent_via: ai`, `ai_actor_id: handoff-orchestrator`, `aviso_de_escalacao:
+    // true`. As guardas 1 e 2 não tinham o que dizer sobre isso: a IA JÁ tinha
+    // falado (13/11), e a passagem anterior tinha mais de 24 h. A pergunta "alguém
+    // está esperando resposta?" não era feita por ninguém.
+    //
+    // A régua é a MESMA que o resto do repositório usa para "o cliente disse e
+    // ainda não foi respondido": entrada mais nova que `last_outbound_at`
+    // (`falasPendentes`, em `./orchestrator.ts`). Duas expressões da mesma ideia
+    // divergem no dia em que uma delas aprende sobre reação ou mensagem apagada.
+    //
+    // Fica deste lado (CRM) porque é aqui que o envio acontece sem turno: o
+    // emissor do motor só roda de dentro de um turno, e turno, por construção,
+    // nasce de uma entrada do cliente.
+    //
+    // DUAS EXCEÇÕES, e as duas com o horário como contrapartida (guarda 4):
+    //   - `mcp_externo`: o agente externo conversou pelo canal e declarou a
+    //     passagem; as falas dele não são `sent_via='ai'`, então a conversa pode
+    //     parecer "respondida" para esta leitura. O contrato do
+    //     `crm_request_human_handoff` manda ELE não avisar — o aviso é daqui.
+    //   - passagem decidida por uma PESSOA (`origem: "caso_escalado"`, a rota da
+    //     Central): quem clicou "escalar" sabe o que está fazendo. Silenciar um
+    //     atendente é pior que a frase fora de hora; a hora é tratada abaixo.
+    //     `origem` AUSENTE não é pessoa: cai na guarda (fail-closed para quem
+    //     acrescentar um chamador novo e esquecer de dizer de onde veio).
+    const decididaPorPessoa = input.origem === "caso_escalado";
+    const foraDeTurno = input.origem === "mcp_externo" || decididaPorPessoa;
+    if (!foraDeTurno) {
+      const espera = await clienteEsperandoResposta(admin, input);
+      // Leitura que falha não avisa (fail-closed, como as guardas acima e como o
+      // gate de elegibilidade): mandar a frase sem saber se alguém espera é
+      // exatamente o defeito que esta guarda existe para impedir.
+      if (espera.estado === "indeterminado") {
+        return { avisado: false, porque: "espera_do_cliente_nao_lida" };
+      }
+      if (espera.estado === "sem_espera") {
+        return { avisado: false, porque: "sem_mensagem_nova_do_cliente" };
+      }
+    }
+
+    // ═══ GUARDA 4 — FORA DE TURNO, A HORA É A DA ORGANIZAÇÃO ═══
+    //
+    // O caminho do MOTOR já passa por `runBeforeSend`, que aplica a janela do
+    // canal; este lado não passa (ver o cabeçalho: aqui não há `pg.Pool` nem
+    // `job_id`). Era essa a segunda metade do defeito #4797: a frase saiu às 22h
+    // porque nada, neste caminho, perguntava que horas são para quem vai receber.
+    //
+    // A janela é a MESMA que a automação e o follow-up já respeitam
+    // (`channel_knobs`, no fuso da ORGANIZAÇÃO — ver `lib/automation/janela-do-canal.ts`),
+    // não uma segunda régua. Sem linha em `channel_knobs`, valem os padrões do
+    // pacing, que já seguram a madrugada.
+    //
+    // Só para quem está fora de turno: um cliente que acabou de escrever e não foi
+    // respondido recebe o aviso a qualquer hora — deixá-lo no escuro até as 8h
+    // seria trocar um incômodo por um abandono.
+    if (foraDeTurno) {
+      const canal = await canalDaConversa(admin, input);
+      if (canal !== null) {
+        const proxima = await adiarAteAJanelaAbrir(
+          admin,
+          input.organizationId,
+          canal,
+          new Date(),
+        );
+        if (proxima !== null) {
+          logger.info("[handoff-orchestrator] aviso fora da janela de envio — não enviado", {
+            conversation_id: input.conversationId,
+            proxima_abertura: proxima,
+          });
+          return {
+            avisado: false,
+            porque: "fora_da_janela_de_envio",
+            motivoCodigo: "fora_da_janela",
+          };
+        }
+      }
     }
 
     // O aviso sai no idioma da ORGANIZAÇÃO (ver `textoDoAviso`). A leitura que
@@ -375,6 +477,106 @@ async function quemPodeAssumir(
   } catch (err) {
     logger.warn("[handoff-orchestrator] disponibilidade não lida — aviso sem prazo", {
       organization_id: organizationId,
+      error: err instanceof Error ? err.message.slice(0, 200) : String(err),
+    });
+    return null;
+  }
+}
+
+/**
+ * O CLIENTE ESTÁ ESPERANDO RESPOSTA? — a pergunta da guarda 3.
+ *
+ * `esperando` = existe entrada do cliente mais nova que a última saída da
+ * conversa (`conversations.last_outbound_at`). É a MESMA régua do
+ * `falasPendentes` do orquestrador: o que o cliente disse e ninguém respondeu,
+ * nem a IA nem uma pessoa.
+ *
+ * Três estados, e o terceiro não é decoração: `indeterminado` (leitura falhou)
+ * NÃO vira `sem_espera` nem `esperando`. A guarda trata como "não avisa", e o
+ * nome do estado diz no log que foi a leitura — não a conversa — que calou o
+ * envio.
+ *
+ * `last_outbound_at` é do BANCO, não do que acabamos de mandar: um aviso
+ * anterior conta como saída, e é isso que impede o segundo aviso de nascer de
+ * uma espera que ele mesmo encerrou.
+ *
+ * `gt` estrito de propósito: mensagem de entrada com o MESMO instante da saída
+ * não é espera — é o empate de dois relógios, e mandar a frase por causa dele
+ * seria avisar sem motivo.
+ */
+async function clienteEsperandoResposta(
+  admin: SupabaseClient,
+  input: AvisoDoCrmInput,
+): Promise<{ estado: "esperando" | "sem_espera" | "indeterminado" }> {
+  try {
+    const { data: conv, error: erroDaConversa } = await admin
+      .from("conversations")
+      .select("last_outbound_at")
+      .eq("organization_id", input.organizationId)
+      .eq("id", input.conversationId)
+      .maybeSingle();
+    if (erroDaConversa) {
+      logger.warn("[handoff-orchestrator] conversa não lida — aviso não enviado", {
+        conversation_id: input.conversationId,
+        error: erroDaConversa.message.slice(0, 200),
+      });
+      return { estado: "indeterminado" };
+    }
+    const ultimaSaida = (conv as { last_outbound_at?: string | null } | null)?.last_outbound_at ?? null;
+
+    let consulta = admin
+      .from("messages")
+      .select("id")
+      .eq("organization_id", input.organizationId)
+      .eq("conversation_id", input.conversationId)
+      .eq("direction", "inbound");
+    // Sem saída nenhuma a conversa nunca foi respondida: qualquer entrada é
+    // espera (a consulta já é só de entradas).
+    if (ultimaSaida !== null) consulta = consulta.gt("created_at", ultimaSaida);
+    const { data: entradas, error: erroDasEntradas } = await consulta.limit(1);
+    if (erroDasEntradas) {
+      logger.warn("[handoff-orchestrator] entradas do cliente não lidas — aviso não enviado", {
+        conversation_id: input.conversationId,
+        error: erroDasEntradas.message.slice(0, 200),
+      });
+      return { estado: "indeterminado" };
+    }
+    return { estado: (entradas ?? []).length > 0 ? "esperando" : "sem_espera" };
+  } catch (err) {
+    logger.warn("[handoff-orchestrator] espera do cliente não lida — aviso não enviado", {
+      conversation_id: input.conversationId,
+      error: err instanceof Error ? err.message.slice(0, 200) : String(err),
+    });
+    return { estado: "indeterminado" };
+  }
+}
+
+/**
+ * O canal da conversa, para a janela de horário (guarda 4).
+ *
+ * `null` = conversa sem canal. Não é erro: sem canal não existe janela a
+ * consultar, e a guarda 3 já disse que este aviso tem a quem responder. Falha
+ * de leitura também é `null` pelo mesmo motivo do `quemPodeAssumir` — a janela
+ * é refinamento; o que a torna obrigatória é `foraDeTurno`, e quem está fora de
+ * turno sem canal é um caso que a instalação não produz (canal arquivado ainda
+ * tem id).
+ */
+async function canalDaConversa(
+  admin: SupabaseClient,
+  input: AvisoDoCrmInput,
+): Promise<string | null> {
+  try {
+    const { data } = await admin
+      .from("conversations")
+      .select("channel_session_id")
+      .eq("organization_id", input.organizationId)
+      .eq("id", input.conversationId)
+      .maybeSingle();
+    const canal = (data as { channel_session_id?: string | null } | null)?.channel_session_id ?? null;
+    return canal !== null && canal !== "" ? canal : null;
+  } catch (err) {
+    logger.warn("[handoff-orchestrator] canal da conversa não lido — aviso sem janela", {
+      conversation_id: input.conversationId,
       error: err instanceof Error ? err.message.slice(0, 200) : String(err),
     });
     return null;
