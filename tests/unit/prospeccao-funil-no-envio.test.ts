@@ -492,7 +492,9 @@ describe("criarPegadaDoCandidato", () => {
       }),
       null,
     );
-    expect(admin.from).not.toHaveBeenCalled();
+    // As DEFINIÇÕES (`crm_pipelines`) não são lidas. Ler se o módulo `crm_b2b` está ligado
+    // (#4775: platform_config/modulos_instalados) é outra pergunta, e acontece sempre.
+    expect(admin.from).not.toHaveBeenCalledWith("crm_pipelines");
     expect(m.contato.mock.calls[0]?.[2].custom_fields).toEqual({
       link_google_meu_negocio: "https://maps.app.goo.gl/clinica1",
     });
