@@ -67,6 +67,8 @@ function bancoFalso(opcoes: {
   numero?: number;
   /** Regras de comissão em vigor; sem elas o item entra com 0%. */
   regras?: Registro[];
+  /** Database failure while reading the active commission rules. */
+  falhaRegras?: { message: string } | null;
 } = {}) {
   const escritas: { tabela: string; dados: Registro }[] = [];
   const rpcs: { fn: string; args: Registro }[] = [];
@@ -104,7 +106,9 @@ function bancoFalso(opcoes: {
         return resposta(opcoes.comandaExistente ?? { id: COMANDA, number: opcoes.numero ?? 7 });
       }
       if (tabela === "organizations") return resposta({ currency: "BRL" });
-      if (tabela === "commission_rules") return resposta(opcoes.regras ?? []);
+      if (tabela === "commission_rules") {
+        return opcoes.falhaRegras ? resposta(null, opcoes.falhaRegras) : resposta(opcoes.regras ?? []);
+      }
       throw new Error(`consulta inesperada no teste: ${tabela}`);
     };
     const c: Record<string, unknown> = {};
@@ -160,6 +164,42 @@ const entrada = (sobrescrita: Partial<Parameters<typeof comandaDoGanho>[1]> = {}
 });
 
 describe("comandaDoGanho", () => {
+  it("does not create a sale with an unknown commission rate", async () => {
+    const falso = bancoFalso({ falhaRegras: { message: "statement timeout" } });
+    expect(await comandaDoGanho(falso.supabase, entrada())).toMatchObject({ estado: "falhou" });
+    expect(falso.escritas).toEqual([]);
+    expect(falso.rpcs).toEqual([]);
+  });
+
+  it("leaves an empty linked sale retryable when its commission lookup fails", async () => {
+    const options = {
+      falhaRegras: { message: "statement timeout" } as { message: string } | null,
+      vinculos: [{ id: "existing-link", target_id: COMANDA }],
+      itens: [],
+      comandaExistente: { id: COMANDA, number: 7, status: "open" },
+      regras: [{ attendant_user_id: USER, event_type_id: null, percent: 12.5 }],
+    };
+    const falso = bancoFalso(options);
+    expect(await comandaDoGanho(falso.supabase, entrada())).toMatchObject({ estado: "falhou" });
+    expect(falso.escritas).toEqual([]);
+
+    options.falhaRegras = null;
+    expect(await comandaDoGanho(falso.supabase, entrada())).toMatchObject({ estado: "criado", comandaId: COMANDA });
+    expect(falso.escritas).toHaveLength(1);
+    expect(falso.escritas[0]).toMatchObject({ tabela: "sale_items", dados: { sale_id: COMANDA, commission_percent: 12.5 } });
+  });
+
+  it("does not require a new commission lookup when the linked sale already has its item", async () => {
+    const falso = bancoFalso({
+      falhaRegras: { message: "statement timeout" },
+      vinculos: [{ id: "existing-link", target_id: COMANDA }],
+      itens: [{ id: "existing-item" }],
+    });
+    expect(await comandaDoGanho(falso.supabase, entrada())).toEqual({ estado: "ja_existia", comandaId: COMANDA });
+    expect(falso.selecoes.some((s) => s.tabela === "commission_rules")).toBe(false);
+    expect(falso.escritas).toEqual([]);
+  });
+
   it("o item do ganho leva o percentual da regra do atendente, e 0 sem regra", async () => {
     const com = bancoFalso({
       regras: [{ attendant_user_id: USER, event_type_id: null, percent: 12.5 }],

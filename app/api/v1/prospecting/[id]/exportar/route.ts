@@ -17,7 +17,10 @@
  * mensagem é recusado pela triagem com "Contato já existe no CRM".
  *
  * `todas`: a lista INTEIRA da campanha, com a coluna `situacao` (respondeu,
- * abordada, envio não confirmado, não abordada ou fora da fila). A #4360
+ * abordada, envio não confirmado, não abordada ou fora da fila) e as duas
+ * colunas da MARCA (#4632): `abordada_em`, com a data da tentativa, e
+ * `campanha_anterior`, com a campanha em que a abordagem saiu — lida da trilha
+ * `prospecting.approach_sent`, que é a única que sobrevive à linha da campanha. A #4360
  * entregou só o primeiro modo e o botão sumia
  * quando todo mundo já tinha sido abordado: a campanha CONCLUÍDA, justamente a
  * que a pessoa quer reaproveitar para outra oferta, não tinha saída nenhuma. A
@@ -53,6 +56,7 @@
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
+import { fusoDaOrganizacao } from "@/lib/agent-engine/agent/fuso-da-org";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { comIdDaRequisicao, fail, ok } from "@/lib/api/wrappers";
@@ -63,7 +67,7 @@ import { idiomaDaOrganizacao } from "@/lib/prospecting/idioma";
 import {
   LISTAS,
   csvDaLista,
-  entraNaLista,
+  empresasDaLista,
   nomeDoArquivoDaLista,
   resumoDaLista,
   type QualLista,
@@ -142,7 +146,11 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   if (soResumo) return ok({ ...resumo, truncada }, { requestId, headers });
 
-  const saem = candidatos.filter((c) => entraNaLista(c, quem));
+  // Uma linha por empresa: a mesma empresa em duas campanhas sai uma vez em
+  // CADA campanha, nunca duas vezes na mesma. A régua D13 continua dentro de
+  // `empresasDaLista` (`entraNaLista`), então a opção nova não abre caminho para
+  // quem pediu para parar.
+  const saem = empresasDaLista(candidatos, quem);
   if (saem.length === 0)
     // Arquivo só com cabeçalho não explica nada a quem abriu a planilha; a tela
     // também não oferece a lista vazia. O estado é que não tem o que exportar,
@@ -171,8 +179,17 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // manda para fora (`lib/prospecting/idioma.ts`); os nomes das colunas ficam
   // como o importador os reconhece.
   const idioma: Idioma = quem === "todas" ? await idiomaDaOrganizacao(db, org) : "pt-BR";
+  // O dia de `abordada_em` é o do fuso da organização: em UTC, a abordagem das
+  // 21:30 de Brasília saía com a data do dia seguinte.
+  const fuso = quem === "todas" ? await fusoDaOrganizacao(db, org) : undefined;
   const csv = csvDaLista(saem, {
     comSituacao: quem === "todas",
+    // A marca do que já foi tentado só acompanha a lista que inclui as
+    // abordadas: na lista de reimportar, a coluna vazia em toda linha só
+    // engordaria o arquivo.
+    comAbordagem: quem === "todas",
+    nomeDaCampanha: campanha.name,
+    fuso,
     rotuloDaSituacao: (s) => traduzir(s, idioma),
   });
 

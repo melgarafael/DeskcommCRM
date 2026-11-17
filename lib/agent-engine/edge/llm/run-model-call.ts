@@ -24,10 +24,14 @@ import { z } from 'zod';
 
 import { PROVEDOR_POR_ASSINATURA } from '@/lib/ai/pontos/provedores';
 import { chamarComRetryUnicoEm401 } from '@/lib/ai/pontos/renovacao-da-assinatura';
-import { sincronizarAvisoDaAssinatura } from '@/lib/ai/credenciais/aviso-da-assinatura';
+import { avisarIaFora, fecharAvisoDaIaForaPelaChamada, sincronizarAvisoDaAssinatura } from '@/lib/ai/credenciais/aviso-da-assinatura';
 import { renovarAssinaturaNoTurno, lerLoginCodex } from '@/lib/ai/credenciais/login-codex';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { PONTO_POR_ID } from '@/lib/ai/pontos/registro';
+import { traduzir } from '@/lib/i18n/dicionario';
+import { preencher } from '@/lib/i18n/idioma-do-aviso';
+import { IDIOMA_PADRAO, type Idioma } from '@/lib/i18n/idiomas';
+import { fatosDaOrganizacao } from '../../agent/fatos-da-organizacao';
 // O par (provedor, modelo) é a mesma régua em TODOS os caminhos de execução:
 // este seam, a resolução dos pontos, a mídia, o embedding e o runtime do agente
 // importam daqui — não cada um a sua (issue #2377).
@@ -48,16 +52,16 @@ import {
   type OrigemDaChaveLlm,
 } from './credentials';
 import {
-  AVISO_CORPO,
-  AVISO_TITULO,
-  BLOQUEIO_TITULO,
-  CORPO_TETO_DO_PLANO,
+  corpoDoAvisoDeGasto,
   corpoDoBloqueio,
+  corpoDoTetoDoPlano,
   decidirOrcamento,
   decidirTetoDoPlano,
   lerTetoDoPlano,
   MOTIVO_TETO_DO_PLANO,
-  TITULO_TETO_DO_PLANO,
+  tituloDoAvisoDeGasto,
+  tituloDoBloqueio,
+  tituloDoTetoDoPlano,
   normalizarModoDeOrcamento,
   LIMIAR_PADRAO_PCT,
   SQL_ORCAMENTO,
@@ -65,6 +69,7 @@ import {
 } from './orcamento';
 import { corpoComoObjeto, custoInformadoPeloOpenRouter, custoTerraPorPassos, costCents, gravacaoDeUmaHora } from './pricing';
 import { custoDoModeloForaDoMotor } from './pricing-do-catalogo';
+import { decidirCustoDaChamada } from './custo-da-chamada';
 import { chaveDeOrcamentoDaInstalacao } from '../../../instalacao/comportamento';
 import { cobrancaLigadaComMemo } from '../../../instalacao/modulos';
 import { createDefaultRegistry, ehOpenRouterOficial, type ProviderRegistry } from './providers';
@@ -167,6 +172,41 @@ export const TITULO_ENDERECO_SEM_CHAVE_DA_EMPRESA =
 export const TITULO_ENDERECO_SEM_CHAVE_PRAZO =
   `A IA vai deixar de usar o endereço próprio desta empresa sem a chave dela em ${prazoLegivel()}`;
 
+/**
+ * Os dois títulos no idioma da ORGANIZAÇÃO — a Central mostra o item como foi
+ * gravado. `pt-BR` devolve as constantes acima, byte a byte; a dedup por título
+ * continua estável porque o idioma de uma organização não muda entre chamadas.
+ */
+function tituloDoEnderecoSemChave(degrau: 'avisa' | 'recusa', idioma: Idioma): string {
+  return degrau === 'recusa'
+    ? traduzir('A IA recusou usar o endereço próprio desta empresa sem a chave dela', idioma)
+    : preencher(traduzir('A IA vai deixar de usar o endereço próprio desta empresa sem a chave dela em {data}', idioma), {
+        data: prazoLegivel(),
+      });
+}
+
+/**
+ * O idioma da organização para os itens que o gate grava, com memo curto: o
+ * statement do orçamento recebe título e corpo do aviso por parâmetro em TODA
+ * chamada com orçamento ligado, e uma leitura a mais por chamada de IA seria
+ * custo sem motivo. Nunca lança (`fatosDaOrganizacao` cai em `pt-BR`).
+ */
+const MEMO_DO_IDIOMA_MS = 60_000;
+const memoDoIdioma = new Map<string, { idioma: Idioma; ate: number }>();
+async function idiomaDoGate(db: pg.Pool, organizationId: string): Promise<Idioma> {
+  const agora = Date.now();
+  const guardado = memoDoIdioma.get(organizationId);
+  if (guardado && guardado.ate > agora) return guardado.idioma;
+  let idioma: Idioma = IDIOMA_PADRAO;
+  try {
+    idioma = (await fatosDaOrganizacao(db, organizationId)).idioma;
+  } catch {
+    idioma = IDIOMA_PADRAO;
+  }
+  memoDoIdioma.set(organizationId, { idioma, ate: agora + MEMO_DO_IDIOMA_MS });
+  return idioma;
+}
+
 /** O corpo do aviso — só o HOST do endereço, nunca a URL inteira. */
 export function corpoDoAvisoDeEnderecoSemChave(d: {
   purpose: string;
@@ -174,30 +214,45 @@ export function corpoDoAvisoDeEnderecoSemChave(d: {
   baseUrl: string;
   /** `avisa` antes do prazo (a chamada seguiu), `recusa` depois dele. */
   degrau: 'avisa' | 'recusa';
+  /** O idioma da organização; `pt-BR` (o padrão) é o texto de antes, byte a byte. */
+  idioma?: Idioma;
 }): string {
+  const idioma = d.idioma ?? IDIOMA_PADRAO;
   const ponto = PONTO_POR_ID.get(d.purpose)?.rotulo ?? d.purpose;
   // Só o host: uma URL pode carregar usuário e senha (`https://u:s@host`) ou um
   // token na query, e este corpo é lido por qualquer pessoa da equipe.
-  let destino = 'um endereço próprio';
+  let destino = traduzir('um endereço próprio', idioma);
   try {
-    destino = `um endereço próprio (${new URL(d.baseUrl).host})`;
+    destino = preencher(traduzir('um endereço próprio ({host})', idioma), { host: new URL(d.baseUrl).host });
   } catch {
     // Endereço que nem é URL: o aviso segue sem o host, que é detalhe.
   }
   return (
-    `O ponto "${ponto}" está configurado em Agente de IA › Provedores para ${destino}, ` +
-    `mas esta empresa não tem chave de ${d.provider} cadastrada e validada. ` +
-    `A chave de IA da instalação — a que paga a conta de todas as empresas deste servidor — ` +
-    `não é enviada a um endereço escolhido por uma empresa. ` +
+    preencher(
+      traduzir(
+        'O ponto "{ponto}" está configurado em Agente de IA › Provedores para {destino}, mas esta empresa não tem chave de {provedor} cadastrada e validada. A chave de IA da instalação — a que paga a conta de todas as empresas deste servidor — não é enviada a um endereço escolhido por uma empresa.',
+        idioma,
+      ),
+      { ponto, destino, provedor: d.provider },
+    ) +
+    ' ' +
     (d.degrau === 'recusa'
-      ? `A chamada foi recusada antes de sair. Enquanto isso não for corrigido, as chamadas desse ponto ` +
-        `continuam recusadas; quando o ponto faz parte do atendimento, o agente deixa de responder aos ` +
-        `clientes desta empresa. `
-      : `A chamada SEGUIU desta vez, mas isso tem prazo: a partir de ${prazoLegivel()} ela passa a ser ` +
-        `recusada, e quando o ponto faz parte do atendimento o agente deixa de responder aos clientes ` +
-        `desta empresa. Corrija antes dessa data. `) +
-    `Para resolver: cadastre a chave da empresa em Agente de IA › Provedores, ` +
-    `ou tire o endereço próprio para voltar ao provedor padrão da instalação.`
+      ? traduzir(
+          'A chamada foi recusada antes de sair. Enquanto isso não for corrigido, as chamadas desse ponto continuam recusadas; quando o ponto faz parte do atendimento, o agente deixa de responder aos clientes desta empresa.',
+          idioma,
+        )
+      : preencher(
+          traduzir(
+            'A chamada SEGUIU desta vez, mas isso tem prazo: a partir de {data} ela passa a ser recusada, e quando o ponto faz parte do atendimento o agente deixa de responder aos clientes desta empresa. Corrija antes dessa data.',
+            idioma,
+          ),
+          { data: prazoLegivel() },
+        )) +
+    ' ' +
+    traduzir(
+      'Para resolver: cadastre a chave da empresa em Agente de IA › Provedores, ou tire o endereço próprio para voltar ao provedor padrão da instalação.',
+      idioma,
+    )
   );
 }
 
@@ -522,10 +577,11 @@ export async function aplicarOrcamento(d: EntradaDoGate): Promise<void> {
         chave: d.chave,
       }).acao === 'bloquear'
     ) {
+      const idioma = await idiomaDoGate(d.db, d.organizationId);
       await recusarPorTeto(d, {
         refKind: 'plano',
-        titulo: TITULO_TETO_DO_PLANO,
-        corpo: CORPO_TETO_DO_PLANO,
+        titulo: tituloDoTetoDoPlano(idioma),
+        corpo: corpoDoTetoDoPlano(idioma),
         erro: new LlmBudgetExceededError(MOTIVO_TETO_DO_PLANO),
         gastoCents: plano.gastoUsdCents,
         tetoCents: plano.tetoUsdCents ?? 0,
@@ -546,12 +602,15 @@ export async function aplicarOrcamento(d: EntradaDoGate): Promise<void> {
     return;
   }
 
+  // O aviso nasce DENTRO do statement (CTE `avisa`), então o texto vai pronto,
+  // no idioma da organização: a Central mostra o item como foi gravado.
+  const idioma = await idiomaDoGate(d.db, d.organizationId);
   let linha: LinhaDoOrcamento | undefined;
   try {
     const { rows } = await d.db.query<LinhaDoOrcamento>(SQL_ORCAMENTO, [
       d.organizationId,
-      AVISO_TITULO,
-      AVISO_CORPO,
+      tituloDoAvisoDeGasto(idioma),
+      corpoDoAvisoDeGasto(idioma),
     ]);
     linha = rows[0];
   } catch (err) {
@@ -599,8 +658,8 @@ export async function aplicarOrcamento(d: EntradaDoGate): Promise<void> {
 
   await recusarPorTeto(d, {
     refKind: 'ai_budget',
-    titulo: BLOQUEIO_TITULO,
-    corpo: corpoDoBloqueio(gastoCents, tetoCents),
+    titulo: tituloDoBloqueio(idioma),
+    corpo: corpoDoBloqueio(gastoCents, tetoCents, idioma),
     erro: new LlmBudgetExceededError(),
     gastoCents,
     tetoCents,
@@ -720,6 +779,7 @@ async function registrarRecusaDeEnderecoSemChave(d: {
   };
 
   try {
+    const idioma = await idiomaDoGate(d.db, d.input.tenantId);
     await d.db.query(
       `insert into agent_inbox_items (organization_id, kind, severity, title, body)
        select $1, 'other', 'critical', $2, $3
@@ -729,12 +789,13 @@ async function registrarRecusaDeEnderecoSemChave(d: {
        )`,
       [
         d.input.tenantId,
-        d.degrau === 'recusa' ? TITULO_ENDERECO_SEM_CHAVE_DA_EMPRESA : TITULO_ENDERECO_SEM_CHAVE_PRAZO,
+        tituloDoEnderecoSemChave(d.degrau, idioma),
         corpoDoAvisoDeEnderecoSemChave({
           purpose: d.purpose,
           provider: d.provider,
           baseUrl: d.baseUrl,
           degrau: d.degrau,
+          idioma,
         }),
       ],
     );
@@ -814,6 +875,19 @@ export function corpoDaOpenRouterNoResultado(
 ): { include?: { responseBody: true } } {
   return provider === 'openrouter' && ehOpenRouterOficial(baseUrl) ? { include: { responseBody: true } } : {};
 }
+
+/**
+ * As organizações em que ESTE processo abriu o aviso de "a IA inteira está fora"
+ * (#4610) e ainda não viu uma chamada passar.
+ *
+ * Existe para o fechamento custar uma query RARA em vez de uma por chamada:
+ * `runModelCall` é o caminho quente de todo turno, classificação e compaction, e
+ * um `update` na Central em cada sucesso seria pagar por um aviso que quase
+ * nunca está aberto. O preço do memo é de processo: quem reiniciar com um item
+ * aberto só o fecha no próximo sucesso que ele mesmo presenciar — e o item
+ * continua verdadeiro nesse intervalo.
+ */
+const organizacoesComAvisoDeIaFora = new Set<string>();
 
 export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunModelCallInput, deps: RunModelCallDeps = {}) {
   // O knob do raciocínio da DeepSeek entra pela fábrica: `deepseekThinking` só é
@@ -1439,13 +1513,31 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   let erroDaAssinatura: ReturnType<typeof normalizarErro> | null = null;
 
   /**
+   * QUEM caiu (#4610). `config` é trocada pela reserva logo abaixo, e a partir
+   * dali `config.provider` é o provedor que assumiu — sem esta variável o aviso
+   * diria que a reserva recusou duas vezes.
+   */
+  let provedorQueCaiu: string | null = null;
+
+  /**
+   * O erro da assinatura, lido por uma FUNÇÃO (#4610).
+   *
+   * O `let` acima é atribuído dentro do `catch` aninhado, e o TypeScript não
+   * propaga essa atribuição para o `catch` de fora: lá ele estreita o valor para
+   * `null` e qualquer `!== null` vira `never`. A leitura por closure devolve o
+   * tipo DECLARADO — a união — e é o único jeito de usar os campos dos dois
+   * lados sem um cast que mentiria.
+   */
+  const erroDaAssinaturaQueCaiu = (): ReturnType<typeof normalizarErro> | null => erroDaAssinatura;
+
+  /**
    * Os campos do erro da assinatura para o log — o MESMO trio no aviso da queda
    * e no log da falha final. É função, e não expressão no call site, porque o
    * `catch` do `try` de dentro não estreita o tipo deste `let` lá fora (o TS lê
    * `never` no ramo positivo); e porque um nome só descreve o que foi perdido.
    */
   const camposDaAssinaturaQueCaiu = (): Record<string, unknown> => {
-    const erro = erroDaAssinatura;
+    const erro = erroDaAssinaturaQueCaiu();
     if (erro === null) return {};
     return {
       http_status_da_assinatura: erro.http_status,
@@ -1473,6 +1565,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
         // A troca ANTES da nova tentativa: se a reserva também falhar, a linha de
         // `llm_calls` grava o provedor que de fato falhou por último, e não o que
         // a chamada começou a falar.
+        // #4610: guardar QUEM caiu também — o aviso da Central é escrito depois da
+        // troca, e sem isto diria que a reserva recusou duas vezes.
+        provedorQueCaiu = config.provider;
         config = reserva;
         await gateDeOrcamento(reserva);
         // #4610: a queda troca `config` pela reserva e a falha que sobe é a DELA;
@@ -1516,7 +1611,8 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     // também cair. O fechamento tem reserva de formato própria, em
     // `agent/abertura/checkpoint.ts` (`fecharOTurno`).
     const reservaDoModelo = decisao.reserva;
-    const { error_code: codigoDaFalha, http_status: statusDaFalha } = normalizarErro(err);
+    const falhaDaReserva = normalizarErro(err);
+    const { error_code: codigoDaFalha, http_status: statusDaFalha } = falhaDaReserva;
     const fabricaAtual = registry[config.provider];
     const vaiParaAReservaDoModelo =
       reservaDoModelo !== undefined &&
@@ -1558,6 +1654,51 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
         conectada: false,
         recusa: renovacaoDoTurno.recusa,
       }).catch(() => 'falhou');
+    }
+    // ─── A IA INTEIRA FORA VIRA AVISO NA CENTRAL (#4610) ──────────────────────
+    //
+    // `erroDaAssinatura !== null` é a marca de que a queda aconteceu: a
+    // assinatura recusou, a chamada foi para a reserva e a reserva também
+    // recusou. Não sobrou provedor nenhum para esta organização — o cliente
+    // escreve e fica sem resposta.
+    //
+    // O aviso do #3598 só abria com 401 de LOGIN. No incidente de 06/11 o login
+    // estava "ok" e a assinatura recusava chamadas: seis horas de agentes mudos
+    // com a Central mostrando só um `job_dead` genérico. Aqui o aviso abre pelo
+    // fato que importa — as duas credenciais recusaram —, com o erro ORIGINAL de
+    // cada lado (já redigido e truncado por `normalizarErro`).
+    const assinaturaQueCaiu = erroDaAssinaturaQueCaiu();
+    if (assinaturaQueCaiu !== null) {
+      const desfecho = await avisarIaFora(createAdminClient(), {
+        organizationId: input.tenantId,
+        assinatura: {
+          provider: provedorQueCaiu ?? PROVEDOR_POR_ASSINATURA,
+          http_status: assinaturaQueCaiu.http_status,
+          error_code: assinaturaQueCaiu.error_code,
+          error_message: assinaturaQueCaiu.error_message,
+        },
+        reserva: {
+          provider: config.provider,
+          http_status: falhaDaReserva.http_status,
+          error_code: falhaDaReserva.error_code,
+          error_message: falhaDaReserva.error_message,
+        },
+      }).catch(() => 'falhou' as const);
+      // O memo é o que permite fechar o aviso quando uma chamada voltar a
+      // passar sem pagar uma query por chamada bem-sucedida (ver
+      // `organizacoesComAvisoDeIaFora`).
+      if (desfecho !== 'falhou') organizacoesComAvisoDeIaFora.add(input.tenantId);
+      deps.log?.error('llm: a assinatura E a reserva falharam — a IA desta empresa está fora', {
+        organization_id: input.tenantId,
+        purpose,
+        provedor_da_assinatura: provedorQueCaiu ?? PROVEDOR_POR_ASSINATURA,
+        provedor_da_reserva: config.provider,
+        http_status_da_assinatura: assinaturaQueCaiu.http_status,
+        erro_da_assinatura: assinaturaQueCaiu.error_message,
+        http_status_da_reserva: falhaDaReserva.http_status,
+        erro_da_reserva: falhaDaReserva.error_message,
+        aviso_na_central: desfecho,
+      });
     }
     const camposDaFalha = {
       organization_id: input.tenantId,
@@ -1613,6 +1754,28 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   }
   const latencyMs = Date.now() - startedAt;
 
+  // ─── UMA CHAMADA PASSOU: O EPISÓDIO "IA FORA" ACABOU (#4610) ────────────────
+  //
+  // Aviso que só fecha no clique de alguém vira lista que ninguém lê — mesma
+  // doutrina do `canal-pausado` (#2389) e do próprio aviso da assinatura. Aqui o
+  // sinal de volta é o único honesto: uma chamada de IA respondeu.
+  //
+  // A query é condicionada ao memo de processo (`organizacoesComAvisoDeIaFora`):
+  // sem ele, TODO sucesso pagaria um `update` na Central para fechar um aviso
+  // que quase nunca está aberto, no caminho quente de cada turno.
+  if (organizacoesComAvisoDeIaFora.has(input.tenantId)) {
+    const desfecho = await fecharAvisoDaIaForaPelaChamada(createAdminClient(), input.tenantId).catch(
+      () => 'falhou' as const,
+    );
+    // `falhou` mantém o memo: a próxima chamada que passar tenta de novo.
+    if (desfecho !== 'falhou') organizacoesComAvisoDeIaFora.delete(input.tenantId);
+    deps.log?.info('llm: uma chamada voltou a passar — aviso da IA fora sincronizado', {
+      organization_id: input.tenantId,
+      purpose,
+      desfecho,
+    });
+  }
+
   const cacheWriteTokens = result.usage.inputTokenDetails.cacheWriteTokens ?? 0;
   const cacheWrite1hTokens = gravacaoDeUmaHora(usosCrusDosPassos(result), cacheWriteTokens);
   const usage = {
@@ -1644,22 +1807,42 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // número (campo ausente), vale a tabela, como antes. `config` já é a reserva
   // quando a assinatura cai nela. Gateway do operador NUNCA informa o próprio
   // custo: o critério é o endereço da chamada que de fato rodou.
+  // A REGRA ÚNICA mora em `custo-da-chamada.ts` (issue #4697): as quatro
+  // entradas abaixo são só RESOLUÇÃO — o que vale, em que ordem e com que
+  // marca é decidido num lugar só. Antes, três `??` encadeados aqui decidiam
+  // em silêncio, e o mesmo modelo saía com custo numas linhas e nulo noutras
+  // sem ninguém conseguir apontar a regra.
+  //
+  // O catálogo só é consultado quando a tabela não conhece o modelo: é o
+  // caminho do provedor PERSONALIZADO e do modelo de catálogo (#3013), e não
+  // pode virar uma ida ao banco em toda chamada.
   const informado =
     config.provider === 'openrouter' && ehOpenRouterOficial(baseUrlDaChamadaEfetiva)
       ? custoInformadoPeloOpenRouter(result)
       : undefined;
-  let cost = informado ?? custoTerraPorPassos(model, result) ?? costCents(model, usage, cfg.cacheTtl ?? '1h');
-  let origemDoCusto: 'catalogo_da_instalacao' | 'informado_pelo_provedor' | undefined =
-    informado !== undefined ? 'informado_pelo_provedor' : undefined;
-  if (cost === null) {
-    cost = await custoDoModeloForaDoMotor(db, {
-      model,
-      provider: config.provider,
-      usage,
-      log: deps.log,
-    });
-    if (cost !== null) origemDoCusto = 'catalogo_da_instalacao';
-  }
+  const porPassosDoTerra = informado === undefined ? custoTerraPorPassos(model, result) : undefined;
+  const daTabelaDoMotor =
+    informado === undefined && porPassosDoTerra === undefined
+      ? costCents(model, usage, cfg.cacheTtl ?? '1h')
+      : null;
+  const doCatalogoDaInstalacao =
+    daTabelaDoMotor === null && informado === undefined && porPassosDoTerra === undefined
+      ? await custoDoModeloForaDoMotor(db, {
+          model,
+          provider: config.provider,
+          usage,
+          log: deps.log,
+        })
+      : null;
+  const decidido = decidirCustoDaChamada({
+    provider: config.provider,
+    informadoPeloProvedor: informado,
+    porPassosDoTerra,
+    daTabelaDoMotor,
+    doCatalogoDaInstalacao,
+  });
+  const cost = decidido.costCents;
+
   // O mesmo leitor do custo: o corpo pode chegar como objeto ou como texto JSON.
   const provedorDeOrigem = (corpoComoObjeto(result.response?.body) as { provider?: unknown } | undefined)?.provider;
 
@@ -1736,9 +1919,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     cost_cents: cost,
     // Só quando o preço NÃO veio da tabela estática do motor: diz de qual caminho
     // saiu o número gravado, e é o que um operador procura quando pergunta "de
-    // onde saiu este custo?". Modelo sem preço em lugar nenhum não traz o campo —
-    // o `cost_cents: null` acima somado ao aviso de sem-preço é a marca.
-    ...(origemDoCusto !== undefined ? { custo_origem: origemDoCusto } : {}),
+    // onde saiu este custo?". Modelo sem preço em lugar nenhum sai com
+    // `sem_preco` — o motivo DECLARADO que a #4697 pede no lugar do nulo calado.
+    ...(decidido.origem !== undefined ? { custo_origem: decidido.origem } : {}),
     // Quem atendeu de fato na OpenRouter (Anthropic, Bedrock, Vertex…): é como se
     // mede a fixação de sessão sem coluna nova. Só existe com o corpo da resposta.
     ...(typeof provedorDeOrigem === 'string' ? { provedor_de_origem: provedorDeOrigem } : {}),

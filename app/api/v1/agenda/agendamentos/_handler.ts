@@ -53,6 +53,11 @@ import {
   type Transicao,
 } from "@/lib/agenda/laco";
 import {
+  podeRegistrarComparecimento,
+  RECUSA_DO_COMPARECIMENTO,
+  tokenTemEscopoDoComparecimento,
+} from "@/lib/agenda/comparecimento";
+import {
   ALVO_DE_VINCULO_DO_AGENDAMENTO,
   ENTIDADE_DO_AGENDAMENTO,
   NOME_GENERICO_DO_TIPO,
@@ -755,7 +760,13 @@ export async function alterarAgendamentoHandler(
 
   const mudanca: Record<string, unknown> = {};
   if (input.status === "completed" || input.status === "no_show") {
-    if (ctx.actor.type !== "user") throw new ApiError(403,"forbidden",undefined,ctx.requestId,"Peça à equipe para confirmar a presença no compromisso. Uma interpretação de texto não registra o fato.");
+    // ⚠️ A PORTA DO DESFECHO (#4515). Pessoa na tela entra sempre; token entra
+    // com o escopo `agenda:attendance`; agente de IA segue sem, por omissão — o
+    // token do runtime não nasce com esse escopo. A recusa nomeia o escopo
+    // porque é o que quem emitiu o token precisa ler para consertar.
+    if (!podeRegistrarComparecimento(ctx.actor, ctx.escoposDoToken)) {
+      throw new ApiError(403, "forbidden", undefined, ctx.requestId, RECUSA_DO_COMPARECIMENTO);
+    }
     if (input.outcome_message_id) mudanca.outcome_message_id=input.outcome_message_id;
   }
   if(input.confirmation_next_at) mudanca.confirmation_next_at=input.confirmation_next_at;
@@ -948,7 +959,15 @@ export async function alterarAgendamentoHandler(
 
   if (Object.keys(mudanca).length === 0) return { id: atual.id, inalterado: true };
 
-  const salvo = await alteraComRevisao(supabase,ctx,input.id,input.revision ?? Number(atual.revision),mudanca);
+  const tokenDoDesfecho =
+    ctx.actor.type === "api_token" &&
+    (input.status === "completed" || input.status === "no_show") &&
+    tokenTemEscopoDoComparecimento(ctx.escoposDoToken)
+      ? ctx.actor.id
+      : null;
+  const salvo = tokenDoDesfecho
+    ? await registraDesfechoComToken(supabase,ctx,input.id,input.revision ?? Number(atual.revision),mudanca,tokenDoDesfecho)
+    : await alteraComRevisao(supabase,ctx,input.id,input.revision ?? Number(atual.revision),mudanca);
 
   if (transicao) {
     await fecharOLaco(supabase, ctx, {
@@ -964,8 +983,11 @@ export async function alterarAgendamentoHandler(
 
     void audit({action: transicao === "rescheduled" ? "agenda.appointment_rescheduled" : transicao === "completed" || transicao === "no_show" ? "agenda.appointment_outcome_recorded" : "agenda.appointment_updated",
       actorUserId:ctx.actor.type === "user" ? ctx.actor.id : null,organizationId:ctx.organization_id,
+      // #4515: o desfecho registrado por token precisa dizer QUAL token — é o
+      // campo que separa "a equipe confirmou" de "a integração marcou por mim".
+      ...(ctx.actor.type === "api_token" ? {actorApiTokenId: ctx.actor.id} : {}),
       resourceType:"calendar_appointment",resourceId:input.id,requestId:ctx.requestId,
-      metadata:{status:salvo.status,revision:salvo.revision,outcome_source_kind:salvo.outcome_source_kind,outcome_message_id:salvo.outcome_message_id}});
+      metadata:{status:salvo.status,revision:salvo.revision,outcome_source_kind:salvo.outcome_source_kind,outcome_message_id:salvo.outcome_message_id,actor_kind:ctx.actor.type}});
 
   }
 
@@ -1609,9 +1631,10 @@ async function fecharOLaco(
    // Sem duplicata: o vínculo e o ativo costumam ser o MESMO negócio, e uma
    // lista com o id duas vezes faz o receptor somar dois sistemas do mesmo lead.
    return todos.filter((id, i) => todos.indexOf(id) === i);
- }
+}
 
- /** O negócio ativo do contato — pela MESMA régua do resto do produto.
+/**
+ * O negócio ativo do contato — pela MESMA régua do resto do produto.
  *
  * `resolveActiveLeadForContact` distingue três desfechos que um `limit(2)` não
  * distingue: roteou, `no_open_lead` e `ambiguous_open_leads`. Os dois últimos
@@ -1642,6 +1665,38 @@ async function leadAtivoDoContato(
     defaultPipelineId: (padrao as { id: string } | null)?.id ?? null,
   });
   return rota.routed ? rota.leadId : null;
+}
+
+/**
+ * A escrita do desfecho quando quem chama é TOKEN (#4515).
+ *
+ * Não é um `fn_appointment_change` disfarçado: o banco recusa o desfecho sem
+ * pessoa (`appointment_human_confirmation_required`, 42501) porque a regra é de
+ * schema, não de handler. Este RPC confere o token — organização, revogação,
+ * validade e o escopo `agenda:attendance` — e delega para a MESMA
+ * `fn_appointment_change`, então revisão otimista, recálculo de serviço, evento
+ * `appointment.outcome_confirmed` e o carimbo do desfecho saem idênticos aos da
+ * tela. A única diferença é a coluna `outcome_api_token_id`, que guarda qual
+ * token registrou.
+ */
+async function registraDesfechoComToken(supabase:SB,ctx:HandlerCtx,id:string,revision:number,patch:Record<string,unknown>,tokenId:string):Promise<Record<string,unknown>> {
+  await guardServiceEffect();
+  const execution = execucaoDoServico();
+  const {data,error}=await supabase.rpc("fn_appointment_record_attendance",{
+    p_org:ctx.organization_id,p_id:id,p_revision:revision,p_api_token:tokenId,
+    p_patch:{...patch,...(execution ? {_service_execution:execution} : {})},
+  });
+  if(error) {
+    const conflito=error?.code === "PT409" || error?.code === "40001";
+    // O banco revalida o escopo: se a rota e a ferramenta liberaram e o RPC
+    // recusou, a frase precisa dizer o mesmo que a recusa de cima — quem lê o
+    // 403 é quem emitiu o token.
+    const escopo = error.message.includes("attendance_scope_required") || error.message.includes("attendance_token_required");
+    throw new ApiError(conflito ? 409 : error.code === "42501" ? 403 : error.code === "P0002" ? 404 : 422,
+      conflito ? "conflict" : error.code === "42501" ? "forbidden" : error.code === "P0002" ? "not_found" : "validation_failed",undefined,ctx.requestId,
+      conflito ? "Este compromisso mudou. Atualize os dados antes de confirmar novamente." : escopo ? RECUSA_DO_COMPARECIMENTO : error.message.includes("appointment_human_confirmation_required") ? RECUSA_DO_COMPARECIMENTO : "Não foi possível registrar o comparecimento. Confira o horário e a mensagem vinculada.");
+  }
+  return data as Record<string,unknown>;
 }
 
 async function alteraComRevisao(supabase:SB,ctx:HandlerCtx,id:string,revision:number,patch:Record<string,unknown>):Promise<Record<string,unknown>> {

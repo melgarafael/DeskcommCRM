@@ -106,7 +106,13 @@ export function BaixarLista({ campaignId }: { campaignId: string }) {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-72 max-w-[calc(100vw-2rem)]">
         {item(SO_AS_NAO_ABORDADAS, t("Só as não abordadas"), contagem?.nao_abordadas)}
-        {item(TODAS, t("Todas"), contagem?.todas)}
+        {/*
+          A opção diz o que FAZ (#4632): não é "todas", é a lista com as
+          empresas já abordadas dentro, cada uma com a data e a campanha em que
+          foi tentada. O rótulo antigo ("Todas") não dizia que as abordadas
+          entravam — e a pergunta de quem roda campanha é justamente essa.
+        */}
+        {item(TODAS, t("Incluir as empresas já abordadas"), contagem?.todas)}
         {resumo.isFetching && (
           <p className="px-2 py-1.5 text-xs text-muted-foreground">{t("Contando as empresas…")}</p>
         )}

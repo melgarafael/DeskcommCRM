@@ -44,6 +44,7 @@
 import {
   FRASE_DO_MOTIVO,
   FRASE_DO_MOTIVO_DO_AVISO,
+  MARCA_DO_JEV,
   MOTIVO_PERCEBIDO_PELO_JEV,
   PISO_DO_BRIEFING,
   tentativaDaPassagemSchema,
@@ -53,6 +54,20 @@ import {
   type TentativaDaPassagem,
 } from "./passagem";
 import { ROTULO_DE_ANONIMIZADO } from "./texto-do-aviso";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMAS } from "@/lib/i18n/idiomas";
+
+/**
+ * A frase do Jev em TODO idioma que o briefing sabe gravar: o resumo nasce no
+ * idioma da organização, então procurar só a versão em português perderia a
+ * atribuição de uma organização em espanhol ou inglês.
+ */
+const MARCAS_DO_JEV: readonly string[] = [
+  MOTIVO_PERCEBIDO_PELO_JEV,
+  ...IDIOMAS.filter((idioma) => idioma !== "pt-BR").map(
+    (idioma) => `${traduzir(FRASE_DO_MOTIVO.low_sentiment, idioma)} ${traduzir(MARCA_DO_JEV, idioma)}`,
+  ),
+];
 
 /** A linha como a rota da conversa a devolve. As chaves são as colunas. */
 export interface PassagemDaConversa {
@@ -225,7 +240,7 @@ export function montarCartoesDaPassagem(
       // O motivo aparece em destaque, e o resumo embaixo é que dizia quem
       // percebeu: a atribuição ficava longe da frase que ela qualifica.
       percebidoPeloJev:
-        !anonimizada && p.motivo_codigo === "low_sentiment" && p.body.includes(MOTIVO_PERCEBIDO_PELO_JEV),
+        !anonimizada && p.motivo_codigo === "low_sentiment" && MARCAS_DO_JEV.some((marca) => p.body.includes(marca)),
       clienteQuer: anonimizada ? null : texto(p.title),
       resumo: semContexto ? null : corpo,
       semContexto,

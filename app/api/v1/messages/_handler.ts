@@ -34,6 +34,7 @@ import { decidirPreGoLiveDoCanalViaSupabase } from "@/lib/ai/elegibilidade/consu
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit, isServiceRoleConfigured } from "@/lib/audit";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { podeVerPessoal } from "@/lib/inbox/pessoal";
 import { assertOrgOperante } from "@/lib/organizacao/operante";
 import {
   CHANNEL_SESSION_REF_COLUMNS,
@@ -343,9 +344,15 @@ export async function listMessagesHandler(
   conversationId: string,
   q: ListMessagesQuery,
 ): Promise<ListMessagesResult> {
-  // Pessoal não é alcançável nem pelo histórico (spec 21, etapa 7): a conversa
-  // sumiu da lista e o link direto dá 404, então o histórico recusa junto —
-  // defesa em profundidade, com o mesmo 404 mudo para não revelar a conversa.
+  // Pessoal não é alcançável pelo histórico de QUEM NÃO É DONO (spec 21, etapa
+  // 7): a conversa sumiu da lista e o link direto dá 404, então o histórico
+  // recusa junto — defesa em profundidade, com o mesmo 404 mudo para não
+  // revelar a conversa.
+  //
+  // #4434: o dono da marca LÊ o seu. Sem esta troca a feature nasceria pela
+  // metade — a conversa abriria no cabeçalho e a thread viria vazia, que é pior
+  // que o 404, porque parece que as mensagens sumiram.
+  //
   // Duas consultas planas (sem embed, sem `maybeSingle`): o dublê do invariante
   // de paginação traduz a cadeia em SQL literal e só modela esses métodos.
   const { data: donas } = await supabase
@@ -355,17 +362,22 @@ export async function listMessagesHandler(
     .eq("organization_id", ctx.organization_id)
     .limit(1);
   const contatoId = ((donas ?? []) as Array<{ contact_id?: string | null }>)[0]?.contact_id ?? null;
-  let ehPessoal = false;
+  let contatoDaConversa: { is_personal?: boolean; personal_owner_user_id?: string | null } | null =
+    null;
   if (contatoId) {
     const { data: contato } = await supabase
       .from("contacts")
-      .select("is_personal")
+      .select("is_personal, personal_owner_user_id")
       .eq("id", contatoId)
       .eq("organization_id", ctx.organization_id)
       .limit(1);
-    ehPessoal = ((contato ?? []) as Array<{ is_personal?: boolean }>)[0]?.is_personal === true;
+    contatoDaConversa =
+      ((contato ?? []) as Array<{
+        is_personal?: boolean;
+        personal_owner_user_id?: string | null;
+      }>)[0] ?? null;
   }
-  if (ehPessoal) {
+  if (!podeVerPessoal(ctx.actor, contatoDaConversa)) {
     throw new ApiError(
       404,
       "not_found",
@@ -548,7 +560,7 @@ export async function sendMessageHandler(
   // envio com 42703. Sem a coluna, nada está arquivado — e a consulta sem ela é a
   // consulta certa (ver lib/channels/archived).
   const convSelect = (comArchived: boolean) =>
-    `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, provider_conversation_id, last_inbound_at, contacts:contact_id(phone_number, wa_identity, wa_lid, is_blocked, is_personal), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status, metadata${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
+    `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, provider_conversation_id, last_inbound_at, contacts:contact_id(phone_number, wa_identity, wa_lid, social_identity, is_blocked, is_personal, personal_owner_user_id), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status, metadata${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
   //
   // O filtro por `organization_id` NÃO é redundância com a RLS — é a única
   // proteção que existe na metade dos chamadores. Este handler é a porta de
@@ -615,9 +627,16 @@ export async function sendMessageHandler(
       phone_number: string | null;
       wa_identity: string | null;
       wa_lid: string | null;
+      /** Instagram/Facebook: o testador social do pré-go-live casa por aqui. */
+      social_identity?: string | null;
       is_blocked: boolean;
-      /** Spec 21: pessoal não recebe por nenhum caminho — o veto é no mesmo ponto do bloqueio. */
+      /** Spec 21: pessoal fora da operação. #4434: o DONO responde o seu. */
       is_personal: boolean;
+      /**
+       * #4434 — o dono da marca pessoal. É a ÚNICA entrada para responder:
+       * papel não abre esta porta, nem `admin`, nem `manager`.
+       */
+      personal_owner_user_id?: string | null;
     } | null;
     channel_sessions: (ChannelSessionRef & { status: string; metadata?: Record<string, unknown> | null; archived_at?: string | null }) | null;
   };
@@ -633,18 +652,38 @@ export async function sendMessageHandler(
     );
   }
 
-  // Contato pessoal (spec 21, etapa 11 — critério 7): TUDO recusado, manual ou
-  // automático, no mesmo ponto do bloqueio — sem exceção para gerente (a spec
-  // pede literalmente essa sabotagem: liberar gerente e ver o teste acusar).
+  // ── CONTATO PESSOAL: fora da OPERAÇÃO, dentro do ALCANCE do dono ──────────
+  //
+  // Spec 21 (etapa 11, critério 7): tudo recusado, manual ou automático, no
+  // mesmo ponto do bloqueio — a IA, a automação, a campanha e o token não falam
+  // com contato pessoal, e isso continua valendo.
+  //
+  // #4434: esconder da operação não pode tornar o contato inalcançável para quem
+  // o marcou. Quem responde é a PESSOA dona da marca, por ação humana — e mais
+  // ninguém: `admin` e `manager` NÃO são exceção. A comparação é com o dono, não
+  // com o papel, então não existe "sou admin, logo posso": o pessoal de outra
+  // pessoa não tem porta de entrada por papel.
+  //
+  // Dono nulo (contato marcado antes da 9360, ou dono removido) não casa
+  // ninguém: `null === id` é falso, e o contato segue fechado até alguém marcar
+  // de novo e adotar.
+  //
   // Erro padrão, sem vazar dado do contato.
   if (c.contacts?.is_personal === true) {
-    throw new ApiError(
-      403,
-      "forbidden",
-      undefined,
-      ctx.requestId,
-      traduzir("Contato marcado como pessoal.", ctx.idioma ?? "pt-BR"),
-    );
+    const humano = origemDaMensagem(ctx.actor) === "user";
+    const donoDaMarca = c.contacts.personal_owner_user_id ?? null;
+    // `humano` já implica `actor.type === "user"`; o `donoDaMarca !== null`
+    // deixa explícito que contato legado não é de ninguém.
+    const autorizado = humano && donoDaMarca !== null && donoDaMarca === ctx.actor.id;
+    if (!autorizado) {
+      throw new ApiError(
+        403,
+        "forbidden",
+        undefined,
+        ctx.requestId,
+        traduzir("Contato marcado como pessoal.", ctx.idioma ?? "pt-BR"),
+      );
+    }
   }
 
   // ─── De quem é o número desta conversa (#3642) ─────────────────────────────
@@ -989,11 +1028,20 @@ export async function sendMessageHandler(
   //
   // Recusar em silêncio (citar nada) seria pior que recusar alto: quem clicou
   // "responder" veria a mensagem sair sem o fio e não saberia por quê.
+  //
+  // E A APAGADA NÃO É CITÁVEL (#4787). O menu deixou de oferecer a ação, mas o
+  // id pode chegar assim mesmo: a citação escolhida ANTES da exclusão continua
+  // no compositor, um cliente da API manda o campo direto e o MCP também. Aqui
+  // é o único ponto por onde TODOS passam — e a recusa é ANTES do insert, do
+  // carimbo em `contacts` e de qualquer chamada ao canal: nada sai para a
+  // plataforma, o rascunho fica na tela e o reenvio sem citação é permitido.
+  // A régua é a da linha (`revoked_at`), não a da direção: apagada é apagada,
+  // e a tela já esconde a ação das duas.
   let citada: { id: string; external_id: string | null } | null = null;
   if (input.reply_to_message_id) {
     const { data: alvo } = await supabase
       .from("messages")
-      .select("id, external_id")
+      .select("id, external_id, revoked_at")
       .eq("id", input.reply_to_message_id)
       .eq("organization_id", ctx.organization_id)
       .eq("conversation_id", c.id)
@@ -1006,6 +1054,18 @@ export async function sendMessageHandler(
         undefined,
         ctx.requestId,
         traduzir("A mensagem citada não é desta conversa.", ctx.idioma ?? "pt-BR"),
+      );
+    }
+    if ((alvo as { revoked_at?: string | null }).revoked_at) {
+      throw new ApiError(
+        422,
+        "citacao_apagada",
+        undefined,
+        ctx.requestId,
+        traduzir(
+          "A mensagem citada foi apagada e não pode ser citada. Envie a resposta sem citá-la.",
+          ctx.idioma ?? "pt-BR",
+        ),
       );
     }
     citada = alvo as { id: string; external_id: string | null };
@@ -1184,6 +1244,7 @@ export async function sendMessageHandler(
     organizationId: ctx.organization_id,
     channelSessionId: c.channel_session_id,
     contactPhoneNumber: c.contacts?.phone_number ?? "",
+    contactSocialIdentity: c.contacts?.social_identity ?? null,
   }).catch(() => ({ permite: false, motivo: "pre_go_live_indisponivel" }));
   if (acessoAtual && !acessoAtual.permite) {
     const { data: updated, error } = await supabase.from("messages").update({
