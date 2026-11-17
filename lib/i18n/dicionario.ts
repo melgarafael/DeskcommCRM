@@ -21091,51 +21091,58 @@ export const DICIONARIO: Traducoes = {
   "Abrir no Conhecimento": { es: "Abrir en Conocimiento" },
   "Só administradores podem preparar o catálogo de novo.": { es: "Solo los administradores pueden preparar el catálogo de nuevo." },
 
-  // ─── #3603 (fatia 3): Configurações → Follow-up por etapa ────────────────
-  // A tela é só do follow-up: a entrada automática no funil vive na main como
-  // interruptor e não tem superfície aqui.
+  // ─── #3603: Configurações → Follow-up por etapa ──────────────────────────
+  // A tela EDITA os fluxos de "negócio parado na mesma etapa" que já existem:
+  // um prazo só, no próprio fluxo. As frases aqui são as da tabela e da coluna
+  // do prazo — o texto da mensagem não tem campo nesta tela, ele mora no fluxo.
   "Follow-up por etapa": { es: "Seguimiento por etapa" },
-  "O que cada etapa espera": { es: "Lo que cada etapa espera" },
-  "Follow-up por etapa salvo.": { es: "Seguimiento por etapa guardado." },
-  "Marcada para follow-up": { es: "Marcada para seguimiento" },
-  "Sem follow-up automático": { es: "Sin seguimiento automático" },
-  "Modelo de mensagem da etapa {etapa}": { es: "Modelo de mensaje de la etapa {etapa}" },
-  "O que a equipe escreve se o cliente não responder": {
-    es: "Lo que el equipo escribe si el cliente no responde",
-  },
-  "Prazo (horas)": { es: "Plazo (horas)" },
-  "Salvar follow-up por etapa": { es: "Guardar seguimiento por etapa" },
-  "Nenhum funil aberto com etapa para acompanhar. Crie um funil primeiro.": {
-    es: "Ningún embudo abierto con etapa para seguir. Crea un embudo primero.",
-  },
-  "Para cada etapa: se ela tem acompanhamento, em quantas horas ele começa e qual modelo de mensagem a equipe usa. Desligar uma etapa não apaga o prazo nem o texto — religar depois não obriga a escrever tudo de novo.":
-    {
-      es: "Para cada etapa: si tiene seguimiento, en cuántas horas empieza y qué modelo de mensaje usa el equipo. Desactivar una etapa no borra el plazo ni el texto — volver a activarla después no obliga a escribirlo todo de nuevo.",
-    },
-  "O envio continua sendo do fluxo de follow-up de cada etapa, no construtor de fluxos: é lá que o texto é revisado por uma pessoa antes de sair. Esta tela guarda a régua da operação — o que cada etapa espera.":
-    {
-      es: "El envío sigue siendo del flujo de seguimiento de cada etapa, en el constructor de flujos: es allí donde una persona revisa el texto antes de que salga. Esta pantalla guarda la regla de la operación — lo que cada etapa espera.",
-    },
   "O que a operação espera de cada etapa do funil depois que a conversa chega.": {
     es: "Lo que la operación espera de cada etapa del embudo después de que llega la conversación.",
   },
+  "O prazo de cada fluxo, etapa por etapa": {
+    es: "El plazo de cada flujo, etapa por etapa",
+  },
+  "Cada linha é um fluxo de “negócio parado na mesma etapa” que alcança a etapa, com o prazo que ele promete. Editar aqui grava no próprio fluxo: é o mesmo valor que a varredura lê, e não existe um segundo lugar guardando prazo.":
+    {
+      es: "Cada línea es un flujo de «negocio parado en la misma etapa» que alcanza la etapa, con el plazo que promete. Editar aquí graba en el propio flujo: es el mismo valor que lee el barrido, y no existe un segundo lugar que guarde el plazo.",
+    },
+  "Nenhum funil aberto com etapa para acompanhar. Crie um funil primeiro.": {
+    es: "Ningún embudo abierto con etapa para seguir. Crea un embudo primero.",
+  },
+  "Nenhum fluxo de etapa parada existe nesta empresa. Crie um no construtor de fluxos para dar prazo a uma etapa.":
+    {
+      es: "No existe ningún flujo de etapa parada en esta empresa. Crea uno en el constructor de flujos para dar plazo a una etapa.",
+    },
+  "Nenhum fluxo de etapa parada alcança esta etapa.": {
+    es: "Ningún flujo de etapa parada alcanza esta etapa.",
+  },
+  "Só nesta etapa": { es: "Solo en esta etapa" },
+  "Qualquer etapa do funil": { es: "Cualquier etapa del embudo" },
+  "Qualquer etapa de qualquer funil": { es: "Cualquier etapa de cualquier embudo" },
+  "Fluxo desligado": { es: "Flujo desactivado" },
+  "Mensagem definida no fluxo": { es: "Mensaje definido en el flujo" },
+  "Abrir no construtor do fluxo": { es: "Abrir en el constructor del flujo" },
+  "Prazo (dias)": { es: "Plazo (días)" },
+  "Nenhum prazo mudou.": { es: "Ningún plazo cambió." },
+  "Prazo dos fluxos salvo.": { es: "Plazo de los flujos guardado." },
+  "Quem envia a mensagem é o fluxo, no construtor: é lá que o texto é revisado por uma pessoa antes de sair. Esta tela só ajusta o prazo — o mesmo que o editor de fluxos mostra.":
+    {
+      es: "Quien envía el mensaje es el flujo, en el constructor: es allí donde una persona revisa el texto antes de que salga. Esta pantalla solo ajusta el plazo — el mismo que muestra el editor de flujos.",
+    },
   // As frases de recusa da tela ficam numa tabela de módulo (`ERRO` em
   // `_followup.tsx`) e chegam aqui por `t(ERRO[erro])` — por isso cada valor
   // dela precisa de entrada própria, uma linha por frase possível.
-  "Toda etapa ligada precisa de prazo e de modelo de mensagem.": {
-    es: "Toda etapa activada necesita plazo y modelo de mensaje.",
+  "Cada prazo precisa ser um número inteiro de dias, de 1 a 3650.": {
+    es: "Cada plazo debe ser un número entero de días, de 1 a 3650.",
   },
-  "O prazo máximo de um follow-up é de 720 horas (30 dias).": {
-    es: "El plazo máximo de un seguimiento es de 720 horas (30 días).",
+  "A regra recusou o valor. Confira o prazo e tente de novo.": {
+    es: "La regla rechazó el valor. Revisa el plazo e inténtalo de nuevo.",
   },
-  "Só um gerente ou administrador pode mudar esta opção.": {
-    es: "Solo un gerente o administrador puede cambiar esta opción.",
+  "Só um gerente ou administrador pode mudar o prazo de um fluxo.": {
+    es: "Solo un gerente o administrador puede cambiar el plazo de un flujo.",
   },
-  "Uma das etapas mudou enquanto a tela estava aberta. Recarregue.": {
-    es: "Una de las etapas cambió mientras la pantalla estaba abierta. Recarga.",
-  },
-  "Não consegui salvar agora. Tente de novo.": {
-    es: "No pude guardar ahora. Inténtalo de nuevo.",
+  "Um dos fluxos foi apagado enquanto a tela estava aberta. Recarregue.": {
+    es: "Uno de los flujos se eliminó mientras la pantalla estaba abierta. Recarga.",
   },
 };
 

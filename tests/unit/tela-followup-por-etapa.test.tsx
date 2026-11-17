@@ -1,258 +1,81 @@
 /**
- * A TELA DE ENTRADA E FOLLOW-UP (#3603, fatia 3) — e o que ela grava chega
- * INTEIRO ao motor da fatia 1.
+ * A TELA DO FOLLOW-UP POR ETAPA (#3603) — E O DEFEITO QUE ELA NÃO PODE TER.
  *
- * ─── Por que este arquivo não é só "o formulário chama a action" ───────────
+ * ─── O que este arquivo vigia ──────────────────────────────────────────────
  *
- * A pergunta que a fatia tem de responder não é "o botão salva?", é "a
- * configuração que a pessoa salvou é a que a PRÓXIMA conversa respeita?". Um
- * teste que só espionasse a server action provaria o clique e deixaria o buraco
- * intacto: a tela poderia mandar `ativa: false` para o motor ligado, ou gravar a
- * etapa no campo errado, e o teste ficaria verde.
+ * A primeira versão desta tela guardava o prazo em
+ * `organizations.settings.followup_por_etapa` e a varredura passou a obedecê-lo
+ * no lugar das regras: dois donos para o mesmo prazo. O mantenedor recusou com a
+ * razão certa, e a versão de hoje é uma JANELA para `automation_rules` — lê os
+ * fluxos de `lead.stage_stale`, mostra os que alcançam cada etapa e grava o
+ * prazo NO PRÓPRIO FLUXO.
  *
- * Por isso o caminho aqui é o de verdade, com dublê de banco no lugar do
- * Postgres: o componente chama a action REAL (`definirEntradaAutomaticaNoFunil`,
- * a da fatia 1 — a tela não tem uma cópia), a action grava no dublê, e o
- * SERVIÇO REAL (`abrirNegocioDaConversaNova`) lê o que ficou gravado e é
- * chamado com a conversa nova. O que se afirma no fim é o negócio criado na
- * etapa escolhida — ou a ausência dele, no controle.
+ * Os dois defeitos que a revisão vai procurar são, por isso, exatamente os dois
+ * que estes testes têm de pegar:
  *
- * ─── Casos ─────────────────────────────────────────────────────────────────
+ *   1. ⭐ a tela gravar um prazo que NÃO está em nenhum fluxo — o "segundo dono"
+ *      voltando pela porta dos fundos. Provado em dois níveis: o pedido de
+ *      gravação só nasce de um fluxo lido do banco (`pedidosDePrazo`), e a tela,
+ *      ao salvar, só chama a rota de regras com ids que ela recebeu.
+ *   2. ⭐ dois fluxos da mesma etapa escondidos atrás de um valor só. Provado
+ *      pela contagem de campos: uma etapa com dois fluxos tem DOIS inputs, com
+ *      os prazos de cada um, e salvar grava os dois.
  *
- * 1. ⭐ salvar pela tela e a conversa nova seguinte entra no funil escolhido
- *    (ponta a ponta com dublê);
- * 2. ⭐ desligar pela tela e a conversa nova NÃO entra — e o motor não paga
- *    sequer a consulta do funil (controle da fatia);
- * 3. trocar o funil limpa a etapa: nunca se grava o par impossível;
- * 4. ligar sem funil não chama a action (o botão nasce desabilitado);
- * 5. erro da action aparece na tela e NÃO anuncia "salvo";
- * 6. MFA em dívida leva ao desafio em vez de mostrar erro genérico;
- * 7. ⭐ etapa marcada para follow-up aparece marcada ao RECARREGAR (a tela
- *    re-renderizada com o que ficou gravado);
- * 8. desligar o follow-up de uma etapa preserva prazo e texto (religar não
- *    obriga a escrever de novo);
- * 9. etapa ligada sem prazo/texto não chama a action e diz o que falta;
- * 10. papel abaixo de manager não vê a página (redirect /403) e a action recusa;
- * 11. etapa de OUTRA organização é recusada (isolamento por tenant).
- *
- * ─── SABOTAGEM (previsão escrita ANTES) ────────────────────────────────────
- * Ver `cache/scratch/previsao-sabotagem-3603f3.md`. Em resumo: fazer a tela
- * salvar sem chamar a action derruba os casos 1, 2, 7, 8, 9 e 11 — e deixa o 10
- * verde de propósito, porque a recusa de papel mora na action, não no clique.
+ * Os casos marcados com ⭐ são os que a sabotagem derruba (ver o comentário do
+ * caso e `sabotagem` no relatório do PR).
  */
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { createElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  audit: vi.fn(),
-  loadAuthUser: vi.fn(),
+  patch: vi.fn(),
+  toastSuccess: vi.fn(),
+  toastError: vi.fn(),
+  refresh: vi.fn(),
   requireAuth: vi.fn(),
   resolveActiveOrg: vi.fn(),
-  mfaEmDivida: vi.fn(),
-  createAdminClient: vi.fn(),
   createClient: vi.fn(),
-  irAoDesafioDeMfa: vi.fn(),
-  refresh: vi.fn(),
 }));
 
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("next/link", () => ({
+  default: ({ href, children }: { href: string; children: unknown }) =>
+    createElement("a", { href }, children as never),
+}));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: mocks.refresh }),
   redirect: (destino: string) => {
     throw new Error(`REDIRECT:${destino}`);
   },
 }));
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
-vi.mock("@/lib/audit", () => ({ audit: mocks.audit }));
 vi.mock("@/lib/auth/server", () => ({
-  loadAuthUser: mocks.loadAuthUser,
   requireAuth: mocks.requireAuth,
   resolveActiveOrg: mocks.resolveActiveOrg,
-  mfaEmDivida: mocks.mfaEmDivida,
 }));
-vi.mock("@/lib/impersonate/support", () => ({ supportWriteError: () => null }));
-vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.createAdminClient }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
-vi.mock("@/lib/logger", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
-vi.mock("@/lib/auth/ir-ao-desafio-de-mfa", () => ({ irAoDesafioDeMfa: mocks.irAoDesafioDeMfa }));
+vi.mock("sonner", () => ({ toast: { success: mocks.toastSuccess, error: mocks.toastError } }));
+vi.mock("@/lib/api/client", () => ({ apiClient: { patch: mocks.patch } }));
 
-import { toast } from "sonner";
-
-import { followupPorEtapaDeclarado } from "@/lib/schemas/settings";
-
-import { definirFollowupPorEtapa } from "@/app/actions/settings/definirFollowupPorEtapa";
-import FollowupPorEtapaPage from "@/app/app/settings/followup-por-etapa/page";
+import {
+  configComNovoPrazo,
+  fluxosDaEtapaParada,
+  fluxosQueAlcancam,
+  pedidosDePrazo,
+  type FluxoDeEtapaParada,
+} from "@/lib/automation/prazos-da-etapa-parada";
 import { FollowupPorEtapaForm } from "@/app/app/settings/followup-por-etapa/_followup";
+import FollowupPorEtapaPage from "@/app/app/settings/followup-por-etapa/page";
 import type { FunilDaTela } from "@/app/app/settings/followup-por-etapa/_tipos";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
-const OUTRA_ORG = "12121212-1212-4121-8121-121212121212";
-const CONTATO = "22222222-2222-4222-8222-222222222222";
-const CONVERSA = "33333333-3333-4333-8333-333333333333";
 const FUNIL = "44444444-4444-4444-8444-444444444444";
-const ETAPA_ESCOLHIDA = "77777777-7777-4777-8777-777777777777";
-const ETAPA_ABERTA = "88888888-8888-4888-8888-888888888888";
-const LIDA = "99999999-9999-4999-8999-999999999999";
-const USER = { id: "00000000-0000-4000-8000-000000000001", support: null };
-
-interface EtapaDoDuble {
-  id: string;
-  organization_id: string;
-  pipeline_id: string;
-  name: string;
-  position: number;
-  is_archived: boolean;
-  is_won: boolean;
-  is_lost: boolean;
-}
-
-/**
- * O DUBLÊ DE BANCO — um PostgREST mínimo, encadeável, com o ESTADO vivo.
- *
- * O estado é o ponto: a action da fatia 1 grava `settings` aqui e o serviço da
- * fatia 1 lê `settings` DAQUI. Sem estado compartilhado o "ponta a ponta" seria
- * dois testes separados com a mesma piada.
- */
-interface Estado {
-  settings: Record<string, unknown>;
-  funis: Array<{ id: string; organization_id: string; name: string; is_archived: boolean }>;
-  etapas: EtapaDoDuble[];
-  contato: Record<string, unknown> | null;
-  escritas: Array<{ tabela: string; payload: unknown }>;
-  rpcs: Array<{ nome: string; args: Record<string, unknown> }>;
-  consultadas: string[];
-  leadId: string | null;
-}
-
-let estado: Estado;
-
-function linhaDe(tabela: string, filtros: Record<string, unknown>, id: string): unknown {
-  if (tabela === "organizations") return { settings: estado.settings };
-  if (tabela === "crm_pipelines") {
-    const achado = estado.funis.find(
-      (funil) =>
-        funil.id === (filtros.id ?? id) &&
-        funil.organization_id === filtros.organization_id &&
-        funil.is_archived === false,
-    );
-    return achado ? { id: achado.id } : null;
-  }
-  if (tabela === "crm_stages") {
-    const candidatas = estado.etapas
-      .filter(
-        (etapa) =>
-          etapa.organization_id === filtros.organization_id &&
-          (filtros.pipeline_id === undefined || etapa.pipeline_id === filtros.pipeline_id) &&
-          etapa.is_archived === false &&
-          etapa.is_won === false &&
-          etapa.is_lost === false,
-      )
-      .sort((a, b) => a.position - b.position);
-    // Sem `id` no filtro, o banco responde a PRIMEIRA etapa aberta — é o que
-    // `primeiraEtapaAberta` pede quando a etapa declarada não vale.
-    const procurada = (filtros.id ?? id) as string;
-    const achado = procurada === "" ? candidatas[0] : candidatas.find((e) => e.id === procurada);
-    return achado ? { id: achado.id } : null;
-  }
-  if (tabela === "contacts") return estado.contato;
-  return null;
-}
-
-function listaDe(
-  tabela: string,
-  filtros: Record<string, unknown>,
-  lista: Record<string, unknown[]>,
-): unknown[] {
-  if (tabela === "crm_pipelines") {
-    return estado.funis
-      .filter((funil) => funil.organization_id === filtros.organization_id && !funil.is_archived)
-      .map((funil) => ({ id: funil.id, name: funil.name }));
-  }
-  if (tabela === "crm_stages") {
-    const ids = lista.id as string[] | undefined;
-    return estado.etapas
-      .filter(
-        (etapa) =>
-          etapa.organization_id === filtros.organization_id &&
-          etapa.is_archived === false &&
-          etapa.is_won === false &&
-          etapa.is_lost === false &&
-          (!ids || ids.includes(etapa.id)),
-      )
-      // As colunas que a PÁGINA lê para montar o catálogo (nome e funil), e não
-      // só o `id` que a action confere: devolver menos aqui fazia a tela renderizar
-      // a seção 2 vazia, e foi assim que este dublê mentiu na primeira rodada.
-      .map((etapa) => ({
-        id: etapa.id,
-        name: etapa.name,
-        pipeline_id: etapa.pipeline_id,
-        position: etapa.position,
-      }));
-  }
-  return [];
-}
-
-function bancoFalso() {
-  return {
-    from(tabela: string) {
-      const filtros: Record<string, unknown> = {};
-      const listas: Record<string, unknown[]> = {};
-      let payload: unknown;
-      let escrevendo = false;
-      const api: Record<string, unknown> = {};
-      api.select = () => api;
-      api.order = () => api;
-      api.limit = () => api;
-      api.update = (novo: unknown) => {
-        payload = novo;
-        escrevendo = true;
-        return api;
-      };
-      api.insert = async (novo: unknown) => {
-        estado.escritas.push({ tabela, payload: novo });
-        return { error: null };
-      };
-      api.in = (coluna: string, valores: unknown[]) => {
-        listas[coluna] = valores;
-        return api;
-      };
-      api.eq = (coluna: string, valor: unknown) => {
-        if (escrevendo) {
-          estado.escritas.push({ tabela, payload });
-          if (tabela === "organizations") {
-            const novo = (payload ?? {}) as { settings?: Record<string, unknown> };
-            if (novo.settings) estado.settings = novo.settings;
-          }
-          return Promise.resolve({ error: null });
-        }
-        filtros[coluna] = valor;
-        return api;
-      };
-      api.maybeSingle = async () => {
-        estado.consultadas.push(tabela);
-        return { data: linhaDe(tabela, filtros, String(filtros.id ?? "")), error: null };
-      };
-      // O builder do Supabase é "thenable": `await` na cadeia devolve a lista.
-      api.then = (resolve: (valor: unknown) => unknown, reject: (erro: unknown) => unknown) => {
-        estado.consultadas.push(tabela);
-        try {
-          return Promise.resolve({ data: listaDe(tabela, filtros, listas), error: null }).then(
-            resolve,
-            reject,
-          );
-        } catch (erro) {
-          return Promise.reject(erro).then(resolve, reject);
-        }
-      };
-      return api;
-    },
-    async rpc(nome: string, args: Record<string, unknown>) {
-      estado.rpcs.push({ nome, args });
-      if (nome === "fn_nascer_lead_da_conversa") return { data: estado.leadId, error: null };
-      return { data: null, error: null };
-    },
-  };
-}
+const OUTRO_FUNIL = "45454545-4545-4545-8545-454545454545";
+const ETAPA_ABERTA = "77777777-7777-4777-8777-777777777777";
+const ETAPA_PROPOSTA = "88888888-8888-4888-8888-888888888888";
+const REGRA_2_DIAS = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const REGRA_7_DIAS = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const REGRA_QUALQUER = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const REGRA_OUTRO_FUNIL = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 
 const CATALOGO: FunilDaTela[] = [
   {
@@ -260,233 +83,284 @@ const CATALOGO: FunilDaTela[] = [
     name: "Comercial",
     etapas: [
       { id: ETAPA_ABERTA, name: "Novo" },
-      { id: ETAPA_ESCOLHIDA, name: "Em conversa" },
+      { id: ETAPA_PROPOSTA, name: "Proposta" },
     ],
   },
 ];
 
-const SEM_CONFIG = { ativa: false, pipeline_id: null, stage_id: null };
+/** As regras como o banco devolve: `{dias, pipeline_id, stage_id, proteger_pela_agenda}`. */
+const REGRAS = [
+  {
+    id: REGRA_2_DIAS,
+    name: "Proposta em 2 dias",
+    is_active: true,
+    actions: [{ type: "send_whatsapp_message", config: { texto: "Oi!" } }],
+    trigger_config: {
+      dias: 2,
+      pipeline_id: FUNIL,
+      stage_id: ETAPA_PROPOSTA,
+      proteger_pela_agenda: true,
+    },
+  },
+  {
+    id: REGRA_7_DIAS,
+    name: "Proposta em 7 dias",
+    is_active: true,
+    actions: [{ type: "send_ai_message", config: {} }],
+    trigger_config: {
+      dias: 7,
+      pipeline_id: FUNIL,
+      stage_id: ETAPA_PROPOSTA,
+      proteger_pela_agenda: false,
+    },
+  },
+  {
+    id: REGRA_QUALQUER,
+    name: "Qualquer etapa, 30 dias",
+    is_active: false,
+    actions: [],
+    trigger_config: { dias: 30, pipeline_id: FUNIL, stage_id: null, proteger_pela_agenda: true },
+  },
+  {
+    id: REGRA_OUTRO_FUNIL,
+    name: "Funil de suporte",
+    is_active: true,
+    actions: [],
+    trigger_config: { dias: 3, pipeline_id: OUTRO_FUNIL, stage_id: ETAPA_PROPOSTA, proteger_pela_agenda: false },
+  },
+];
+
+const FLUXOS: FluxoDeEtapaParada[] = fluxosDaEtapaParada(REGRAS);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  estado = {
-    settings: { branding: { accent_hex: "#123456" } },
-    funis: [{ id: FUNIL, organization_id: ORG, name: "Comercial", is_archived: false }],
-    etapas: [
-      {
-        id: ETAPA_ABERTA,
-        organization_id: ORG,
-        pipeline_id: FUNIL,
-        name: "Novo",
-        position: 1,
-        is_archived: false,
-        is_won: false,
-        is_lost: false,
-      },
-      {
-        id: ETAPA_ESCOLHIDA,
-        organization_id: ORG,
-        pipeline_id: FUNIL,
-        name: "Em conversa",
-        position: 2,
-        is_archived: false,
-        is_won: false,
-        is_lost: false,
-      },
-      // A etapa de OUTRA organização: existe no banco, não é desta empresa.
-      {
-        id: "abababab-abab-4bab-8bab-abababababab",
-        organization_id: OUTRA_ORG,
-        pipeline_id: "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd",
-        name: "Etapa da vizinha",
-        position: 1,
-        is_archived: false,
-        is_won: false,
-        is_lost: false,
-      },
-    ],
-    contato: { is_blocked: false, is_personal: false, display_name: "Fulana", phone_number: null },
-    escritas: [],
-    rpcs: [],
-    consultadas: [],
-    leadId: LIDA,
-  };
-  mocks.createAdminClient.mockReturnValue(bancoFalso());
-  mocks.createClient.mockResolvedValue(bancoFalso());
-  mocks.loadAuthUser.mockResolvedValue(USER);
-  mocks.requireAuth.mockResolvedValue({
-    ...USER,
-    idioma: "pt-BR",
-    is_platform_admin: false,
-  });
-  mocks.resolveActiveOrg.mockResolvedValue({ orgId: ORG, role: "manager" });
-  mocks.mfaEmDivida.mockResolvedValue(false);
+  mocks.patch.mockResolvedValue({ data: {} });
 });
 
-describe("follow-up por etapa", () => {
-  it("etapa marcada e salva aparece marcada AO RECARREGAR", async () => {
-    const { unmount } = render(
-      <FollowupPorEtapaForm inicial={{}} funis={CATALOGO} idioma="pt-BR" />,
-    );
-
-    const linha = within(screen.getByTestId(`etapa-${ETAPA_ESCOLHIDA}`));
-    expect(linha.getByText("Sem follow-up automático")).toBeVisible();
-
-    fireEvent.click(screen.getByTestId(`followup-ativa-${ETAPA_ESCOLHIDA}`));
-    fireEvent.change(screen.getByTestId(`followup-prazo-${ETAPA_ESCOLHIDA}`), {
-      target: { value: "24" },
+describe("os fluxos que alcançam a etapa (a mesma régua da varredura)", () => {
+  it("lê o trigger_config de etapa parada sem inventar campo de mensagem", () => {
+    const fluxo = FLUXOS.find((f) => f.id === REGRA_2_DIAS)!;
+    expect(fluxo).toMatchObject({
+      dias: 2,
+      pipelineId: FUNIL,
+      stageId: ETAPA_PROPOSTA,
+      ativo: true,
+      temMensagem: true,
     });
-    fireEvent.change(screen.getByTestId(`followup-mensagem-${ETAPA_ESCOLHIDA}`), {
-      target: { value: "Oi! Consigo te ajudar a seguir?" },
-    });
-    fireEvent.click(screen.getByTestId("salvar-followup"));
-
-    await waitFor(() =>
-      expect(followupPorEtapaDeclarado(estado.settings)[ETAPA_ESCOLHIDA]).toEqual({
-        ativa: true,
-        prazo_horas: 24,
-        mensagem: "Oi! Consigo te ajudar a seguir?",
-      }),
-    );
-    // A etapa que ninguém marcou continua desligada — e foi gravada assim.
-    expect(followupPorEtapaDeclarado(estado.settings)[ETAPA_ABERTA]).toEqual({
-      ativa: false,
-      prazo_horas: null,
-      mensagem: null,
-    });
-
-    // ─── RELOAD: a tela nasce de novo do que o banco tem ───────────────────
-    unmount();
-    render(
-      <FollowupPorEtapaForm
-        inicial={followupPorEtapaDeclarado(estado.settings)}
-        funis={CATALOGO}
-        idioma="pt-BR"
-      />,
-    );
-
-    const recarregada = within(screen.getByTestId(`etapa-${ETAPA_ESCOLHIDA}`));
-    expect(recarregada.getByText("Marcada para follow-up")).toBeVisible();
-    expect(screen.getByTestId(`followup-prazo-${ETAPA_ESCOLHIDA}`)).toHaveValue(24);
-    expect(screen.getByTestId(`followup-mensagem-${ETAPA_ESCOLHIDA}`)).toHaveValue(
-      "Oi! Consigo te ajudar a seguir?",
-    );
-    expect(
-      within(screen.getByTestId(`etapa-${ETAPA_ABERTA}`)).getByText("Sem follow-up automático"),
-    ).toBeVisible();
+    // O texto NÃO é campo desta tela: ele vive na ação do fluxo.
+    expect(Object.keys(fluxo.config).sort()).toEqual([
+      "dias",
+      "pipeline_id",
+      "proteger_pela_agenda",
+      "stage_id",
+    ]);
   });
 
-  it("desligar a etapa preserva prazo e texto — religar não obriga a escrever de novo", async () => {
-    estado.settings.followup_por_etapa = {
-      [ETAPA_ESCOLHIDA]: { ativa: true, prazo_horas: 48, mensagem: "Voltando ao assunto…" },
+  it("regra sem etapa alcança TODAS as etapas do funil dela", () => {
+    const alcancam = fluxosQueAlcancam(FLUXOS, FUNIL, ETAPA_ABERTA).map((f) => f.id);
+    expect(alcancam).toEqual([REGRA_QUALQUER]);
+    const naProposta = fluxosQueAlcancam(FLUXOS, FUNIL, ETAPA_PROPOSTA).map((f) => f.id);
+    expect(naProposta).toEqual([REGRA_2_DIAS, REGRA_7_DIAS, REGRA_QUALQUER]);
+  });
+
+  it("regra de outro funil não aparece", () => {
+    const ids = fluxosQueAlcancam(FLUXOS, FUNIL, ETAPA_PROPOSTA).map((f) => f.id);
+    expect(ids).not.toContain(REGRA_OUTRO_FUNIL);
+  });
+});
+
+describe("o que o salvar grava — e o que ele nunca grava", () => {
+  it("⭐ prazo que não é de nenhum fluxo NÃO vira gravação (a chave órfã morre aqui)", () => {
+    // Um rascunho indexado por ID DE ETAPA é exatamente a forma da versão
+    // recusada (settings.followup_por_etapa[stage_id]). Ele não tem fluxo
+    // correspondente, então não há pedido de gravação para ele.
+    const pedidos = pedidosDePrazo({ [ETAPA_PROPOSTA]: "5", [REGRA_2_DIAS]: "4" }, FLUXOS);
+    expect(pedidos).toEqual([{ regraId: REGRA_2_DIAS, dias: 4 }]);
+    expect(pedidos.map((p) => p.regraId)).not.toContain(ETAPA_PROPOSTA);
+  });
+
+  it("prazo igual ao gravado não gera escrita", () => {
+    const pedidos = pedidosDePrazo(
+      { [REGRA_2_DIAS]: "2", [REGRA_7_DIAS]: "7" },
+      FLUXOS,
+    );
+    expect(pedidos).toEqual([]);
+  });
+
+  it("prazo fora de 1..3650 ou não inteiro não gera escrita", () => {
+    expect(pedidosDePrazo({ [REGRA_2_DIAS]: "0" }, FLUXOS)).toEqual([]);
+    expect(pedidosDePrazo({ [REGRA_2_DIAS]: "3651" }, FLUXOS)).toEqual([]);
+    expect(pedidosDePrazo({ [REGRA_2_DIAS]: "2,5" }, FLUXOS)).toEqual([]);
+    expect(pedidosDePrazo({ [REGRA_2_DIAS]: "" }, FLUXOS)).toEqual([]);
+  });
+
+  it("o PATCH preserva o recorte do fluxo e só troca o prazo", () => {
+    const fluxo = FLUXOS.find((f) => f.id === REGRA_2_DIAS)!;
+    expect(configComNovoPrazo(fluxo.config, 9)).toEqual({
+      dias: 9,
+      pipeline_id: FUNIL,
+      stage_id: ETAPA_PROPOSTA,
+      proteger_pela_agenda: true,
+    });
+  });
+});
+
+describe("a tela: todas as linhas, cada uma com o seu prazo", () => {
+  it("⭐ etapa com dois fluxos mostra os DOIS, com o prazo de cada um", () => {
+    render(<FollowupPorEtapaForm fluxos={FLUXOS} funis={CATALOGO} idioma="pt-BR" />);
+
+    const daProposta = screen.getByTestId(`etapa-${ETAPA_PROPOSTA}`);
+    // Três fluxos alcançam a Proposta: os dois presos nela e o "qualquer etapa".
+    expect(daProposta.querySelectorAll("[data-testid^='fluxo-']").length).toBe(3);
+
+    const primeiro = screen.getByTestId(`prazo-fluxo-${REGRA_2_DIAS}`) as HTMLInputElement;
+    const segundo = screen.getByTestId(`prazo-fluxo-${REGRA_7_DIAS}`) as HTMLInputElement;
+    const qualquer = screen.getByTestId(`prazo-fluxo-${REGRA_QUALQUER}`) as HTMLInputElement;
+    expect(primeiro.value).toBe("2");
+    expect(segundo.value).toBe("7");
+    expect(qualquer.value).toBe("30");
+
+    // Um campo por FLUXO — não existe "o prazo da etapa" agregando os dois.
+    expect(daProposta.querySelectorAll("input")).toHaveLength(3);
+  });
+
+  it("etapa que nenhum fluxo alcança não ganha campo de prazo", () => {
+    render(<FollowupPorEtapaForm fluxos={[]} funis={CATALOGO} idioma="pt-BR" />);
+    expect(screen.getByTestId(`etapa-sem-fluxo-${ETAPA_ABERTA}`)).toBeTruthy();
+    expect(screen.queryByTestId(`prazo-fluxo-${REGRA_2_DIAS}`)).toBeNull();
+    expect(screen.getByTestId("followup-sem-fluxos")).toBeTruthy();
+  });
+
+  it("o fluxo com mensagem linka o construtor em vez de abrir campo de texto", () => {
+    render(<FollowupPorEtapaForm fluxos={FLUXOS} funis={CATALOGO} idioma="pt-BR" />);
+    const link = screen.getByTestId(`construtor-${REGRA_2_DIAS}`) as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toBe(`/app/webhooks/automacoes/${REGRA_2_DIAS}`);
+    expect(screen.queryByRole("textbox")).toBeNull();
+  });
+
+  it("⭐ salvar grava em CADA fluxo editado, pelo id da regra, sem tocar em settings", async () => {
+    render(<FollowupPorEtapaForm fluxos={FLUXOS} funis={CATALOGO} idioma="pt-BR" />);
+
+    fireEvent.change(screen.getByTestId(`prazo-fluxo-${REGRA_2_DIAS}`), { target: { value: "3" } });
+    fireEvent.change(screen.getByTestId(`prazo-fluxo-${REGRA_7_DIAS}`), { target: { value: "9" } });
+    fireEvent.click(screen.getByTestId("salvar-followup"));
+
+    await waitFor(() => expect(mocks.patch).toHaveBeenCalledTimes(2));
+
+    const porId = new Map(mocks.patch.mock.calls.map((chamada) => [chamada[0] as string, chamada[1]]));
+    expect(porId.get(`/api/v1/automation-rules/${REGRA_2_DIAS}`)).toEqual({
+      trigger_event: "lead.stage_stale",
+      trigger_config: {
+        dias: 3,
+        pipeline_id: FUNIL,
+        stage_id: ETAPA_PROPOSTA,
+        proteger_pela_agenda: true,
+      },
+    });
+    expect(porId.get(`/api/v1/automation-rules/${REGRA_7_DIAS}`)).toMatchObject({
+      trigger_config: { dias: 9, stage_id: ETAPA_PROPOSTA, proteger_pela_agenda: false },
+    });
+
+    // ⭐ Nenhuma chamada fora das regras que a tela recebeu — a chave paralela
+    // (`settings.followup_por_etapa`) não tem por onde voltar.
+    const idsConhecidos = new Set(FLUXOS.map((fluxo) => fluxo.id));
+    for (const [url, corpo] of mocks.patch.mock.calls) {
+      const alvo = String(url);
+      expect(alvo.startsWith("/api/v1/automation-rules/")).toBe(true);
+      expect(idsConhecidos.has(alvo.replace("/api/v1/automation-rules/", ""))).toBe(true);
+      expect(JSON.stringify(corpo)).not.toContain("followup_por_etapa");
+    }
+    await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalled());
+    expect(mocks.refresh).toHaveBeenCalled();
+  });
+
+  it("salvar sem mexer em nada não chama a rota", () => {
+    render(<FollowupPorEtapaForm fluxos={FLUXOS} funis={CATALOGO} idioma="pt-BR" />);
+    fireEvent.click(screen.getByTestId("salvar-followup"));
+    expect(mocks.patch).not.toHaveBeenCalled();
+    expect(mocks.toastSuccess).toHaveBeenCalledWith("Nenhum prazo mudou.");
+  });
+
+  it("prazo inválido não chama a rota e diz o que está errado", () => {
+    render(<FollowupPorEtapaForm fluxos={FLUXOS} funis={CATALOGO} idioma="pt-BR" />);
+    fireEvent.change(screen.getByTestId(`prazo-fluxo-${REGRA_2_DIAS}`), { target: { value: "0" } });
+    fireEvent.click(screen.getByTestId("salvar-followup"));
+    expect(mocks.patch).not.toHaveBeenCalled();
+    expect(screen.getByTestId("followup-erro").textContent).toContain("de 1 a 3650");
+  });
+
+  it("recusa da rota aparece na tela e NÃO anuncia salvo", async () => {
+    const { ApiError } = await import("@/lib/api/types");
+    mocks.patch.mockRejectedValueOnce(new ApiError(403, "forbidden_role", undefined, "req-1"));
+    render(<FollowupPorEtapaForm fluxos={FLUXOS} funis={CATALOGO} idioma="pt-BR" />);
+    fireEvent.change(screen.getByTestId(`prazo-fluxo-${REGRA_2_DIAS}`), { target: { value: "4" } });
+    fireEvent.click(screen.getByTestId("salvar-followup"));
+    await waitFor(() =>
+      expect(screen.getByTestId("followup-erro").textContent).toContain(
+        "gerente ou administrador",
+      ),
+    );
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+  });
+});
+
+describe("a página LÊ automation_rules — e nunca um mapa paralelo de prazo", () => {
+  /**
+   * O dublê de banco conta as TABELAS consultadas. É a prova do desenho: se a
+   * página voltar a ler `organizations.settings` para montar a tabela, a
+   * contagem de tabelas muda e o caso falha antes de qualquer asserção de HTML.
+   */
+  function bancoFalso(consultadas: string[]) {
+    const dados: Record<string, unknown[]> = {
+      automation_rules: REGRAS,
+      crm_pipelines: [{ id: FUNIL, name: "Comercial" }],
+      crm_stages: [
+        { id: ETAPA_ABERTA, name: "Novo", pipeline_id: FUNIL, position: 1 },
+        { id: ETAPA_PROPOSTA, name: "Proposta", pipeline_id: FUNIL, position: 2 },
+      ],
     };
-    render(
-      <FollowupPorEtapaForm
-        inicial={followupPorEtapaDeclarado(estado.settings)}
-        funis={CATALOGO}
-        idioma="pt-BR"
-      />,
-    );
+    return {
+      from(tabela: string) {
+        consultadas.push(tabela);
+        const api: Record<string, unknown> = {};
+        api.select = () => api;
+        api.eq = () => api;
+        api.order = () => api;
+        api.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
+          Promise.resolve({ data: dados[tabela] ?? [], error: null }).then(resolve, reject);
+        return api;
+      },
+    };
+  }
 
-    fireEvent.click(screen.getByTestId(`followup-ativa-${ETAPA_ESCOLHIDA}`));
-    fireEvent.click(screen.getByTestId("salvar-followup"));
+  it("⭐ monta a tabela a partir das regras de etapa parada, sem ler settings da organização", async () => {
+    const consultadas: string[] = [];
+    mocks.requireAuth.mockResolvedValue({ id: "u1", idioma: "pt-BR", support: null });
+    mocks.resolveActiveOrg.mockResolvedValue({ orgId: ORG, role: "manager" });
+    mocks.createClient.mockResolvedValue(bancoFalso(consultadas));
 
-    await waitFor(() =>
-      expect(followupPorEtapaDeclarado(estado.settings)[ETAPA_ESCOLHIDA]).toEqual({
-        ativa: false,
-        prazo_horas: 48,
-        mensagem: "Voltando ao assunto…",
-      }),
-    );
+    const elemento = (await FollowupPorEtapaPage()) as unknown as {
+      props: { children: Array<{ type: unknown; props: Record<string, unknown> }> };
+    };
+    const formulario = elemento.props.children.find(
+      (filho) => filho && filho.type === FollowupPorEtapaForm,
+    )!;
+
+    expect(consultadas).toContain("automation_rules");
+    expect(consultadas).not.toContain("organizations");
+
+    const fluxosDaPagina = formulario.props.fluxos as FluxoDeEtapaParada[];
+    expect(fluxosDaPagina.map((f) => [f.id, f.dias])).toEqual([
+      [REGRA_2_DIAS, 2],
+      [REGRA_7_DIAS, 7],
+      [REGRA_QUALQUER, 30],
+      [REGRA_OUTRO_FUNIL, 3],
+    ]);
   });
 
-  it("ligar sem prazo (ou sem texto) não salva e diz o que falta", async () => {
-    render(<FollowupPorEtapaForm inicial={{}} funis={CATALOGO} idioma="pt-BR" />);
-
-    fireEvent.click(screen.getByTestId(`followup-ativa-${ETAPA_ESCOLHIDA}`));
-    fireEvent.click(screen.getByTestId("salvar-followup"));
-
-    await waitFor(() =>
-      expect(screen.getByTestId("followup-erro")).toHaveTextContent(
-        "Toda etapa ligada precisa de prazo e de modelo de mensagem.",
-      ),
-    );
-    expect(estado.settings.followup_por_etapa).toBeUndefined();
-  });
-
-  it("etapa de OUTRA organização é recusada pela action, e a tela diz por quê", async () => {
-    const alheia = "abababab-abab-4bab-8bab-abababababab";
-    // A tela renderiza uma etapa que a empresa vizinha é dona (situação de
-    // corrida: a etapa foi movida depois que a página abriu).
-    const catalogoAlheio: FunilDaTela[] = [
-      ...CATALOGO,
-      { id: "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd", name: "Da vizinha", etapas: [{ id: alheia, name: "Etapa da vizinha" }] },
-    ];
-    render(<FollowupPorEtapaForm inicial={{}} funis={catalogoAlheio} idioma="pt-BR" />);
-
-    fireEvent.click(screen.getByTestId(`followup-ativa-${alheia}`));
-    fireEvent.change(screen.getByTestId(`followup-prazo-${alheia}`), { target: { value: "12" } });
-    fireEvent.change(screen.getByTestId(`followup-mensagem-${alheia}`), {
-      target: { value: "Oi" },
-    });
-    fireEvent.click(screen.getByTestId("salvar-followup"));
-
-    await waitFor(() =>
-      expect(screen.getByTestId("followup-erro")).toHaveTextContent(
-        "Uma das etapas mudou enquanto a tela estava aberta. Recarregue.",
-      ),
-    );
-    expect(estado.settings.followup_por_etapa).toBeUndefined();
-  });
-});
-
-describe("quem entra na tela", () => {
-  it("atendente não vê a página: cai em /403", async () => {
+  it("papel abaixo de manager não vê a página", async () => {
+    mocks.requireAuth.mockResolvedValue({ id: "u1", idioma: "pt-BR", support: null });
     mocks.resolveActiveOrg.mockResolvedValue({ orgId: ORG, role: "agent" });
-
     await expect(FollowupPorEtapaPage()).rejects.toThrow("REDIRECT:/403");
-  });
-
-  it("gerente vê a página, e ela tem SÓ a seção de follow-up", async () => {
-    render(await FollowupPorEtapaPage());
-
-    expect(screen.getByText("Follow-up por etapa")).toBeVisible();
-    // A seção da entrada automática saiu deste PR: ela vive na main e a tela
-    // daqui não pode prometer uma configuração que não grava mais.
-    expect(screen.queryByText("Entrada automática no funil")).toBeNull();
-  });
-
-  it("organização A não vê a configuração de B — a etapa da vizinha não vira linha", async () => {
-    // O `settings` da empresa A carrega uma chave apontando para a etapa da
-    // empresa B (escrita por fora: script, seed, API antiga — jsonb não tem FK).
-    // A tela lista as etapas do CATÁLOGO de A; a chave órfã não pode virar linha
-    // marcada, nem "vazar" o prazo e o texto que a vizinha configurou.
-    estado.settings.followup_por_etapa = {
-      "abababab-abab-4bab-8bab-abababababab": {
-        ativa: true,
-        prazo_horas: 6,
-        mensagem: "Regra da vizinha",
-      },
-      [ETAPA_ESCOLHIDA]: { ativa: true, prazo_horas: 24, mensagem: "Regra da casa" },
-    };
-
-    render(await FollowupPorEtapaPage());
-
-    expect(screen.queryByTestId("etapa-abababab-abab-4bab-8bab-abababababab")).toBeNull();
-    expect(screen.queryByText("Regra da vizinha")).toBeNull();
-    // E a regra da PRÓPRIA empresa continua aparecendo, marcada.
-    const minha = within(screen.getByTestId(`etapa-${ETAPA_ESCOLHIDA}`));
-    expect(minha.getByText("Marcada para follow-up")).toBeVisible();
-    expect(screen.getByTestId(`followup-mensagem-${ETAPA_ESCOLHIDA}`)).toHaveValue("Regra da casa");
-  });
-
-  it("a action recusa papel abaixo de manager mesmo fora da tela", async () => {
-    mocks.resolveActiveOrg.mockResolvedValue({ orgId: ORG, role: "agent" });
-    const r = await definirFollowupPorEtapa({
-      etapas: [{ stage_id: ETAPA_ESCOLHIDA, ativa: false, prazo_horas: null, mensagem: null }],
-    });
-
-    expect(r).toEqual({ ok: false, error: "forbidden_role" });
-    expect(estado.settings.followup_por_etapa).toBeUndefined();
   });
 });

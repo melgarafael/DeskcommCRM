@@ -1,39 +1,49 @@
 /**
- * CONFIGURAÇÕES → FOLLOW-UP POR ETAPA (#3603, fatia 3) — a TELA.
+ * CONFIGURAÇÕES → FOLLOW-UP POR ETAPA (#3603) — a TELA.
  *
- * ─── O que esta tela é (e o que ela deixou de ser) ─────────────────────────
+ * ─── O que esta tela é ─────────────────────────────────────────────────────
  *
- * O acompanhamento por etapa existia inteiro no backend e só se montava no
+ * O acompanhamento por etapa existia inteiro no servidor e só se montava no
  * construtor de fluxos: num produto self-host isso é o mesmo que não existir —
  * a única forma de configurar era `UPDATE` à mão no Postgres, o anti-exemplo de
  * "toda configuração tem superfície" (`docs/doctrine/restricao-de-canal.md`).
  *
- * A ENTRADA AUTOMÁTICA NO FUNIL saiu desta tela: ela vive na `main` como um
- * interruptor (`settings.entrada_automatica_no_funil.ativa`), por decisão de
- * quem mantém o produto — a escolha de funil e etapa foi retirada da action
- * (`definirEntradaAutomaticaNoFunil` recebe só `ativa`). Uma tela que
- * oferecesse funil e etapa gravaria um valor que ninguém lê.
+ * A tela mostra, para cada etapa aberta do funil, TODOS os fluxos de "negócio
+ * parado na mesma etapa" que alcançam aquela etapa — com o prazo de cada um — e
+ * grava o prazo NO PRÓPRIO FLUXO (`automation_rules.trigger_config.dias`).
  *
- * ─── Uma seção, uma gravação ───────────────────────────────────────────────
+ * ─── O desenho que foi recusado, e por que ele morreu ──────────────────────
  *
- * `definirFollowupPorEtapa` grava `settings.followup_por_etapa`, o contrato de
- * `lib/schemas/settings.ts`. Um salvar para a seção inteira: gravar por linha
- * faria uma escrita de jsonb por etapa, e a segunda poderia falhar deixando a
- * tela pela metade sem ninguém ver.
+ * A primeira versão guardava o prazo em `settings.followup_por_etapa` e a
+ * varredura passou a obedecê-lo no lugar das regras. Dois donos para o mesmo
+ * prazo: dois lembretes saíam juntos, um fluxo de 30 dias disparava em 6 h, e a
+ * tela podia dizer o contrário do que acontecia. A decisão de quem mantém o
+ * produto foi clara — um lugar só guarda o prazo —, e é a razão de esta página
+ * LER `automation_rules` em vez de `organizations.settings`.
+ *
+ * O que continua fora daqui, de propósito: o TEXTO da mensagem. Ele vive na ação
+ * `send_whatsapp_message`/`send_ai_message` do fluxo, onde uma pessoa o revisa
+ * antes de sair; esta tela linka o construtor do fluxo em vez de abrir um campo
+ * paralelo.
  *
  * ─── Gate: manager+ ────────────────────────────────────────────────────────
  *
  * A mesma linha da matriz da spec 13 §4 que cobre "atendimento/routing": quem
  * monta a régua comercial da empresa é o gerente. Quem está abaixo disso cai em
- * /403 — a tela não é oferecida, e a action recusa por conta própria (a cortesia
- * da tela não é autorização).
+ * /403. A gravação também cobra esse papel por conta própria
+ * (`PATCH /api/v1/automation-rules/[id]` exige `manager`) — a cortesia da tela
+ * não é autorização.
  */
 import { redirect } from "next/navigation";
 
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
+import { GATILHO_ETAPA_PARADA } from "@/lib/automation/gatilhos-de-tempo";
+import {
+  fluxosDaEtapaParada,
+  type RegraDeEtapaParadaCrua,
+} from "@/lib/automation/prazos-da-etapa-parada";
 import { traduzir } from "@/lib/i18n/dicionario";
-import { followupPorEtapaDeclarado } from "@/lib/schemas/settings";
 import { createClient } from "@/lib/supabase/server";
 import { FollowupPorEtapaForm } from "./_followup";
 import type { FunilDaTela } from "./_tipos";
@@ -61,22 +71,16 @@ export default async function FollowupPorEtapaPage() {
   }
 
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("organizations")
-    .select("settings")
-    .eq("id", activeOrg.orgId)
-    .maybeSingle();
-
-  const settings = (data?.settings ?? null) as unknown;
-
-  // A chave lida pela MESMA função que o serviço usa: a tela não pode mostrar
-  // uma etapa marcada que o motor lê como desligada (nem o contrário).
-  const followup = followupPorEtapaDeclarado(settings);
-
-  // Funis e etapas abertos, na ordem do quadro. A RLS decide o que aparece; o
-  // filtro de arquivado/ganho/perdido é o MESMO da gravação — oferecer uma etapa
-  // que a action recusaria seria um formulário que só falha no salvar.
-  const [{ data: funis }, { data: etapas }] = await Promise.all([
+  // Os FLUXOS, não um mapa de configuração: `automation_rules` é o único lugar em
+  // que o prazo existe. `configDaEtapaParada` (a mesma função do editor e da
+  // varredura) interpreta o `trigger_config` — a tela não tem um segundo leitor.
+  const [{ data: regras }, { data: funis }, { data: etapas }] = await Promise.all([
+    supabase
+      .from("automation_rules")
+      .select("id, name, trigger_config, is_active, actions")
+      .eq("organization_id", activeOrg.orgId)
+      .eq("trigger_event", GATILHO_ETAPA_PARADA)
+      .order("created_at", { ascending: true }),
     supabase
       .from("crm_pipelines")
       .select("id, name")
@@ -93,6 +97,11 @@ export default async function FollowupPorEtapaPage() {
       .order("position"),
   ]);
 
+  const fluxos = fluxosDaEtapaParada((regras ?? []) as RegraDeEtapaParadaCrua[]);
+
+  // Funis e etapas abertos, na ordem do quadro. A RLS decide o que aparece; o
+  // filtro de arquivado/ganho/perdido é o MESMO do construtor de fluxos —
+  // oferecer etapa que o gatilho não alcança seria um formulário que só mente.
   const porFunil = new Map<string, Array<{ id: string; name: string }>>();
   for (const etapa of (etapas ?? []) as EtapaRow[]) {
     porFunil.set(etapa.pipeline_id, [
@@ -122,7 +131,7 @@ export default async function FollowupPorEtapaPage() {
         </p>
       </header>
 
-      <FollowupPorEtapaForm inicial={followup} funis={catalogo} idioma={idioma} />
+      <FollowupPorEtapaForm fluxos={fluxos} funis={catalogo} idioma={idioma} />
     </div>
   );
 }

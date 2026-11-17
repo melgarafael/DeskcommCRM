@@ -1,183 +1,173 @@
 "use client";
 
 /**
- * SEÇÃO 2 — "FOLLOW-UP POR ETAPA" (#3603, fatia 3).
+ * "FOLLOW-UP POR ETAPA" (#3603) — a tabela que edita OS PRÓPRIOS FLUXOS.
  *
- * Uma linha por etapa ABERTA do funil, com as três decisões que a issue pede:
- * se aquela etapa tem acompanhamento, em quantas horas ele começa e com que
- * texto. O que é gravado é `settings.followup_por_etapa` (contrato em
- * `lib/schemas/settings.ts`), pela action `definirFollowupPorEtapa`.
+ * ─── O que esta tela NÃO faz ───────────────────────────────────────────────
  *
- * ─── Por que a lista vem do FUNIL e não da configuração ────────────────────
+ * Ela não guarda prazo. O prazo de um follow-up por etapa é
+ * `automation_rules.trigger_config.dias` da regra `lead.stage_stale` — e esta
+ * tela grava ali, pelo `PATCH /api/v1/automation-rules/[id]` que o construtor de
+ * fluxos já usa. Um lugar só guarda o prazo; o que a tela mostra é o que a
+ * varredura faz.
  *
- * A tela mostra TODAS as etapas abertas, marcadas ou não. Listar só as que já
- * têm regra esconderia justamente a etapa em que ninguém pensou — e "esta etapa
- * não tem acompanhamento" é a informação que a operação precisa ver. Etapa de
- * funil arquivado, ou fechada como ganho/perdido, não aparece: a action recusaria
- * gravar nela, e um formulário que só falha no salvar é pior que sua ausência.
+ * ─── Por que UMA linha por fluxo, e nunca uma por etapa ────────────────────
  *
- * ─── O que a tela NÃO promete ──────────────────────────────────────────────
+ * Uma etapa pode ser alcançada por vários fluxos ao mesmo tempo: dois fluxos de
+ * 2 e 7 dias na mesma etapa emitem os dois lembretes, e um fluxo "qualquer
+ * etapa" alcança todas as colunas do funil. Mostrar "o prazo da etapa" seria
+ * inventar um valor que ninguém configurou e esconder o segundo fluxo atrás
+ * dele — exatamente o mal-entendido que derrubou a primeira versão. A tabela
+ * mostra TODOS, cada um com o seu prazo, e editar um não mexe no outro.
  *
- * O ENVIO não nasce aqui. Quem manda mensagem por etapa é o fluxo de follow-up
- * que a etapa arma (`trigger_config.kind='stage_change'`, endereçado no
- * construtor de fluxos) — é lá que o texto é revisado por uma pessoa antes de
- * sair, e é a mesma regra da fatia 2. Esta seção registra a régua da operação:
- * desligar aqui não apaga prazo nem texto, e religar não obriga a escrever tudo
- * de novo.
+ * ─── O texto da mensagem não mora aqui ─────────────────────────────────────
  *
- * ⚠️ O SALVAR É UM SÓ PARA A SEÇÃO. Gravar por linha faria uma escrita de jsonb
- * por etapa, e a segunda poderia falhar deixando a tela pela metade sem ninguém
- * ver. Uma gravação, um resultado, uma frase.
+ * Onde o fluxo manda mensagem (`send_whatsapp_message`/`send_ai_message`), a
+ * linha linka o construtor do fluxo. Um campo de texto nesta tela seria um
+ * segundo dono do mesmo conteúdo — a mensagem sairia sem ninguém revisar no
+ * construtor, que é onde ela é enviada.
  */
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import { definirFollowupPorEtapa } from "@/app/actions/settings/definirFollowupPorEtapa";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
+import { apiClient } from "@/lib/api/client";
+import { ApiError } from "@/lib/api/types";
+import { GATILHO_ETAPA_PARADA } from "@/lib/automation/gatilhos-de-tempo";
+import {
+  DIAS_DA_ETAPA_MAX,
+  DIAS_DA_ETAPA_MIN,
+  configComNovoPrazo,
+  fluxosQueAlcancam,
+  pedidosDePrazo,
+  type FluxoDeEtapaParada,
+} from "@/lib/automation/prazos-da-etapa-parada";
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
-import {
-  MENSAGEM_DE_FOLLOWUP_MAX,
-  PRAZO_DE_FOLLOWUP_HORAS_MAX,
-  PRAZO_DE_FOLLOWUP_HORAS_MIN,
-  type FollowupPorEtapa,
-} from "@/lib/schemas/settings";
 
 import type { FunilDaTela } from "./_tipos";
 
-/** O rascunho de UMA etapa: o prazo fica em texto porque o campo pode estar vazio. */
-interface Rascunho {
-  ativa: boolean;
-  prazo: string;
-  mensagem: string;
-}
-
 /**
- * As frases de recusa, indexadas pelo código da action — e as duas que nascem na
- * própria tela (`formato_incompleto`, `prazo_maximo`) entram na MESMA tabela.
- *
- * Tabela de MÓDULO e não `setErro("frase")`: a guarda de i18n recusa
- * `t(<variável>)`, e uma frase que não passa pelo dicionário sai em português
- * para quem escolhe espanhol.
+ * As frases de recusa, indexadas pelo código que a rota devolve — tabela de
+ * MÓDULO para a guarda de i18n ver cada valor: uma frase montada em runtime
+ * escaparia do dicionário e sairia em português para quem escolhe espanhol.
  */
 const ERRO = {
-  validation_failed: "Toda etapa ligada precisa de prazo e de modelo de mensagem.",
-  formato_incompleto: "Toda etapa ligada precisa de prazo e de modelo de mensagem.",
-  prazo_maximo: "O prazo máximo de um follow-up é de 720 horas (30 dias).",
+  prazo_invalido: "Cada prazo precisa ser um número inteiro de dias, de 1 a 3650.",
+  invalid_request: "A regra recusou o valor. Confira o prazo e tente de novo.",
+  forbidden_role: "Só um gerente ou administrador pode mudar o prazo de um fluxo.",
+  not_found: "Um dos fluxos foi apagado enquanto a tela estava aberta. Recarregue.",
   unauthenticated: "Sua sessão expirou. Entre de novo.",
-  forbidden_tenant: "Você não está em nenhuma organização ativa.",
-  forbidden_role: "Só um gerente ou administrador pode mudar esta opção.",
-  mfa_required: "Confirme o segundo fator para salvar esta mudança.",
-  etapa_invalida: "Uma das etapas mudou enquanto a tela estava aberta. Recarregue.",
+  no_active_org: "Você não está em nenhuma organização ativa.",
   erro_ao_gravar: "Não consegui salvar agora. Tente de novo.",
 } as const;
 
 type ChaveDeErro = keyof typeof ERRO;
 
-function rascunhoInicial(inicial: FollowupPorEtapa, stageId: string): Rascunho {
-  const regra = inicial[stageId];
-  return {
-    ativa: regra?.ativa === true,
-    prazo: regra?.prazo_horas == null ? "" : String(regra.prazo_horas),
-    mensagem: regra?.mensagem ?? "",
-  };
+/** O escopo do fluxo, na frase que a linha mostra. Literais, para o dicionário ver. */
+function escopoDoFluxo(fluxo: FluxoDeEtapaParada, t: (texto: string) => string): string {
+  if (fluxo.stageId) return t("Só nesta etapa");
+  if (fluxo.pipelineId) return t("Qualquer etapa do funil");
+  return t("Qualquer etapa de qualquer funil");
 }
 
 export function FollowupPorEtapaForm({
-  inicial,
+  fluxos,
   funis,
   idioma,
 }: {
-  inicial: FollowupPorEtapa;
+  fluxos: FluxoDeEtapaParada[];
   funis: FunilDaTela[];
   idioma: Idioma;
 }) {
   const t = (texto: string) => traduzir(texto, idioma);
   const router = useRouter();
-  // Um rascunho por etapa, semeado com o que está gravado: é esse mapa que o
-  // "marcada" da tela lê, e é ele que o teste recarrega.
-  const [rascunhos, setRascunhos] = useState<Record<string, Rascunho>>(() => {
-    const mapa: Record<string, Rascunho> = {};
-    for (const funil of funis) {
-      for (const etapa of funil.etapas) mapa[etapa.id] = rascunhoInicial(inicial, etapa.id);
-    }
+  // Um rascunho por FLUXO (id da regra), semeado com o prazo gravado. O mapa é
+  // indexado pela mesma chave que o PATCH usa: não existe rascunho sem fluxo.
+  const [rascunhos, setRascunhos] = useState<Record<string, string>>(() => {
+    const mapa: Record<string, string> = {};
+    for (const fluxo of fluxos) mapa[fluxo.id] = String(fluxo.dias);
     return mapa;
   });
   const [erro, setErro] = useState<ChaveDeErro | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const etapasDaTela = funis.flatMap((funil) =>
-    funil.etapas.map((etapa) => ({ ...etapa, funilId: funil.id, funilNome: funil.name })),
+    funil.etapas.map((etapa) => ({ ...etapa, funil })),
   );
 
-  function mudar(stageId: string, patch: Partial<Rascunho>) {
+  function mudar(regraId: string, valor: string) {
     setErro(null);
-    setRascunhos((atual) => ({
-      ...atual,
-      [stageId]: { ...(atual[stageId] ?? { ativa: false, prazo: "", mensagem: "" }), ...patch },
-    }));
+    setRascunhos((atual) => ({ ...atual, [regraId]: valor }));
   }
 
   function salvar() {
     setErro(null);
-    // A conferência local repete a da action de propósito: a pessoa vê o que falta
-    // sem uma ida ao servidor, e a action continua sendo quem decide.
-    for (const etapa of etapasDaTela) {
-      const rascunho = rascunhos[etapa.id];
-      if (!rascunho?.ativa) continue;
-      const prazo = Number(rascunho.prazo);
-      if (!rascunho.prazo || !Number.isInteger(prazo) || prazo < PRAZO_DE_FOLLOWUP_HORAS_MIN) {
-        setErro("formato_incompleto");
-        return;
-      }
-      if (prazo > PRAZO_DE_FOLLOWUP_HORAS_MAX) {
-        setErro("prazo_maximo");
-        return;
-      }
-      if (!rascunho.mensagem.trim()) {
-        setErro("formato_incompleto");
+    const pedidos = pedidosDePrazo(rascunhos, fluxos);
+
+    // A conferência local repete a da rota de propósito: a pessoa vê o que está
+    // errado sem uma ida ao servidor — e a rota continua sendo quem decide.
+    for (const fluxo of fluxos) {
+      const valor = rascunhos[fluxo.id];
+      if (valor === undefined) continue;
+      const dias = Number(valor.trim());
+      if (!valor.trim() || !Number.isInteger(dias) || dias < DIAS_DA_ETAPA_MIN || dias > DIAS_DA_ETAPA_MAX) {
+        setErro("prazo_invalido");
         return;
       }
     }
 
+    if (pedidos.length === 0) {
+      toast.success(t("Nenhum prazo mudou."));
+      return;
+    }
+
     startTransition(async () => {
-      const resultado = await definirFollowupPorEtapa({
-        etapas: etapasDaTela.map((etapa) => {
-          const rascunho = rascunhos[etapa.id] ?? { ativa: false, prazo: "", mensagem: "" };
-          const prazo = Number(rascunho.prazo);
-          return {
-            stage_id: etapa.id,
-            ativa: rascunho.ativa,
-            prazo_horas: rascunho.prazo && Number.isInteger(prazo) ? prazo : null,
-            mensagem: rascunho.mensagem.trim() || null,
-          };
-        }),
-      });
-      if (resultado.ok) {
-        toast.success(t("Follow-up por etapa salvo."));
-        router.refresh();
+      const porId = new Map(fluxos.map((fluxo) => [fluxo.id, fluxo]));
+      let codigo: ChaveDeErro | null = null;
+      for (const pedido of pedidos) {
+        const fluxo = porId.get(pedido.regraId);
+        // Defesa em profundidade: sem fluxo lido do banco não há gravação. O
+        // caminho normal nem chega aqui — `pedidosDePrazo` só percorre `fluxos`.
+        if (!fluxo) {
+          codigo = "not_found";
+          continue;
+        }
+        try {
+          await apiClient.patch(`/api/v1/automation-rules/${fluxo.id}`, {
+            // O gatilho vai junto porque a rota recusa `trigger_config` de
+            // gatilho por tempo sem saber QUAL gatilho é (o mesmo veto que a
+            // criação aplica). É o valor que já está gravado — não troca nada.
+            trigger_event: GATILHO_ETAPA_PARADA,
+            trigger_config: configComNovoPrazo(fluxo.config, pedido.dias),
+          });
+        } catch (falha) {
+          if (!codigo) {
+            const daRota = falha instanceof ApiError ? (falha.code as ChaveDeErro) : null;
+            codigo = daRota && daRota in ERRO ? daRota : "erro_ao_gravar";
+          }
+        }
+      }
+      if (codigo) {
+        setErro(codigo);
         return;
       }
-      if (resultado.error === "mfa_required") {
-        irAoDesafioDeMfa();
-        return;
-      }
-      setErro(resultado.error);
+      toast.success(t("Prazo dos fluxos salvo."));
+      router.refresh();
     });
   }
 
   return (
     <Card className="space-y-4 p-6">
       <div>
-        <h2 className="text-sm font-medium">{t("O que cada etapa espera")}</h2>
+        <h2 className="text-sm font-medium">{t("O prazo de cada fluxo, etapa por etapa")}</h2>
         <p className="max-w-2xl text-xs text-muted-foreground">
           {t(
-            "Para cada etapa: se ela tem acompanhamento, em quantas horas ele começa e qual modelo de mensagem a equipe usa. Desligar uma etapa não apaga o prazo nem o texto — religar depois não obriga a escrever tudo de novo.",
+            "Cada linha é um fluxo de \u201cnegócio parado na mesma etapa\u201d que alcança a etapa, com o prazo que ele promete. Editar aqui grava no próprio fluxo: é o mesmo valor que a varredura lê, e não existe um segundo lugar guardando prazo.",
           )}
         </p>
       </div>
@@ -188,6 +178,14 @@ export function FollowupPorEtapaForm({
         </p>
       )}
 
+      {fluxos.length === 0 && etapasDaTela.length > 0 && (
+        <p className="text-xs text-muted-foreground" data-testid="followup-sem-fluxos">
+          {t(
+            "Nenhum fluxo de etapa parada existe nesta empresa. Crie um no construtor de fluxos para dar prazo a uma etapa.",
+          )}
+        </p>
+      )}
+
       {funis.map((funil) =>
         funil.etapas.length === 0 ? null : (
           <div key={funil.id} className="space-y-3" data-testid={`funil-${funil.id}`}>
@@ -195,60 +193,64 @@ export function FollowupPorEtapaForm({
               {funil.name}
             </h3>
             {funil.etapas.map((etapa) => {
-              const rascunho =
-                rascunhos[etapa.id] ?? ({ ativa: false, prazo: "", mensagem: "" } as Rascunho);
+              const daEtapa = fluxosQueAlcancam(fluxos, funil.id, etapa.id);
               return (
                 <div
                   key={etapa.id}
-                  className="grid gap-3 rounded-md border p-3 sm:grid-cols-[1fr_8rem]"
+                  className="space-y-2 rounded-md border p-3"
                   data-testid={`etapa-${etapa.id}`}
                 >
-                  <div className="flex items-start gap-3">
-                    <Switch
-                      id={`followup-${etapa.id}`}
-                      data-testid={`followup-ativa-${etapa.id}`}
-                      checked={rascunho.ativa}
-                      disabled={isPending}
-                      onCheckedChange={(novo) => mudar(etapa.id, { ativa: novo })}
-                    />
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor={`followup-${etapa.id}`}>
-                        {etapa.name}
-                        <span className="block text-xs font-normal text-muted-foreground">
-                          {rascunho.ativa
-                            ? t("Marcada para follow-up")
-                            : t("Sem follow-up automático")}
-                        </span>
-                      </Label>
-                      <textarea
-                        aria-label={t("Modelo de mensagem da etapa {etapa}").replace(
-                          "{etapa}",
-                          etapa.name,
-                        )}
-                        data-testid={`followup-mensagem-${etapa.id}`}
-                        className="min-h-16 w-full rounded-md border bg-background p-2 text-sm"
-                        maxLength={MENSAGEM_DE_FOLLOWUP_MAX}
-                        placeholder={t("O que a equipe escreve se o cliente não responder")}
-                        value={rascunho.mensagem}
-                        disabled={isPending}
-                        onChange={(evento) => mudar(etapa.id, { mensagem: evento.target.value })}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <Label htmlFor={`prazo-${etapa.id}`}>{t("Prazo (horas)")}</Label>
-                    <input
-                      id={`prazo-${etapa.id}`}
-                      data-testid={`followup-prazo-${etapa.id}`}
-                      className="w-full rounded-md border bg-background p-2 text-sm"
-                      type="number"
-                      min={PRAZO_DE_FOLLOWUP_HORAS_MIN}
-                      max={PRAZO_DE_FOLLOWUP_HORAS_MAX}
-                      value={rascunho.prazo}
-                      disabled={isPending}
-                      onChange={(evento) => mudar(etapa.id, { prazo: evento.target.value })}
-                    />
-                  </div>
+                  <Label className="text-sm">{etapa.name}</Label>
+                  {daEtapa.length === 0 ? (
+                    <p
+                      className="text-xs text-muted-foreground"
+                      data-testid={`etapa-sem-fluxo-${etapa.id}`}
+                    >
+                      {t("Nenhum fluxo de etapa parada alcança esta etapa.")}
+                    </p>
+                  ) : (
+                    daEtapa.map((fluxo) => (
+                      <div
+                        key={fluxo.id}
+                        className="grid gap-2 rounded-md bg-muted/30 p-2 sm:grid-cols-[1fr_7rem]"
+                        data-testid={`fluxo-${fluxo.id}`}
+                      >
+                        <div className="flex flex-col gap-1">
+                          <span className="text-sm">{fluxo.nome}</span>
+                          <span className="flex flex-wrap gap-x-2 text-xs text-muted-foreground">
+                            <span>{escopoDoFluxo(fluxo, t)}</span>
+                            {fluxo.ativo ? null : <span>{t("Fluxo desligado")}</span>}
+                            {fluxo.temMensagem ? (
+                              <span>{t("Mensagem definida no fluxo")}</span>
+                            ) : null}
+                          </span>
+                          <Link
+                            href={`/app/webhooks/automacoes/${fluxo.id}`}
+                            className="text-xs underline underline-offset-2"
+                            data-testid={`construtor-${fluxo.id}`}
+                          >
+                            {t("Abrir no construtor do fluxo")}
+                          </Link>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <Label htmlFor={`prazo-${fluxo.id}`} className="text-xs">
+                            {t("Prazo (dias)")}
+                          </Label>
+                          <input
+                            id={`prazo-${fluxo.id}`}
+                            data-testid={`prazo-fluxo-${fluxo.id}`}
+                            className="w-full rounded-md border bg-background p-2 text-sm"
+                            type="number"
+                            min={DIAS_DA_ETAPA_MIN}
+                            max={DIAS_DA_ETAPA_MAX}
+                            value={rascunhos[fluxo.id] ?? String(fluxo.dias)}
+                            disabled={isPending}
+                            onChange={(evento) => mudar(fluxo.id, evento.target.value)}
+                          />
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               );
             })}
@@ -261,10 +263,10 @@ export function FollowupPorEtapaForm({
           type="button"
           size="sm"
           data-testid="salvar-followup"
-          disabled={isPending || etapasDaTela.length === 0}
+          disabled={isPending || fluxos.length === 0}
           onClick={salvar}
         >
-          {t("Salvar follow-up por etapa")}
+          {t("Salvar prazos")}
         </Button>
         <p role="status" className="text-xs text-destructive" data-testid="followup-erro">
           {erro ? t(ERRO[erro]) : ""}
@@ -273,7 +275,7 @@ export function FollowupPorEtapaForm({
 
       <p className="text-xs text-muted-foreground">
         {t(
-          "O envio continua sendo do fluxo de follow-up de cada etapa, no construtor de fluxos: é lá que o texto é revisado por uma pessoa antes de sair. Esta tela guarda a régua da operação — o que cada etapa espera.",
+          "Quem envia a mensagem é o fluxo, no construtor: é lá que o texto é revisado por uma pessoa antes de sair. Esta tela só ajusta o prazo — o mesmo que o editor de fluxos mostra.",
         )}
       </p>
     </Card>
