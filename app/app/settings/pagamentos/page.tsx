@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -49,17 +50,14 @@ export default async function PagamentosSettingsPage() {
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {traduzir("Gateway de pagamento", idioma)}
-        </h1>
+      <CabecalhoDaSubTela titulo={traduzir("Gateway de pagamento", idioma)} idioma={idioma}>
         <p className="text-sm text-muted-foreground">
           {traduzir(
             "Com qual provedor esta organização cobra o cliente dela. A chave é conferida no provedor antes de ser gravada, fica cifrada e nunca volta para a tela — só os quatro últimos caracteres, e apenas os da chave desta organização.",
             idioma,
           )}
         </p>
-      </header>
+      </CabecalhoDaSubTela>
       <GatewayDaOrganizacaoClient
         initialRow={(data as GatewaySettingsRow | null) ?? null}
         canWrite={canWrite}
