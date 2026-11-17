@@ -106,6 +106,14 @@ import {
   type FotoParaEnvio,
 } from './fotos-do-produto';
 import {
+  canalDaConversa,
+  descreverMateriais,
+  listarMateriaisDoAgente,
+  prepararMaterialDaEmpresa,
+  type AnexoDeMaterial,
+} from './materiais-da-empresa';
+import { copiarMaterialNoStorage } from '@/lib/materiais/copiar-no-storage';
+import {
   criarProcedenciaDeImagens,
   descreverSemQuery,
   FERRAMENTAS_QUE_TRAZEM_IMAGEM,
@@ -348,6 +356,7 @@ import {
 import type { DependenciasDoPonto } from '@/lib/ai/decisao/ponto';
 import { perguntarUrgenciaAoJev, registrarUrgenciaDoJev } from '@/lib/ai/decisao/urgencia';
 import { fatosDaOrganizacao } from './fatos-da-organizacao';
+import { traduzir } from '@/lib/i18n/dicionario';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import { blocoDoFeriado, ehFeriadoNacionalNoFuso, lerFeriadoDoTurno } from './feriado-nacional';
 import { blocosNoIdioma, diretivaDeIdioma, ferramentasNoIdioma } from './idioma-do-turno';
@@ -474,6 +483,23 @@ export const AGENT_TOOL_DEFS = {
         .describe(
           'código de um produto do catálogo (o `codigo` de crm_search_products) que tem `fotos`: ' +
             'as fotos dele vão junto, e o texto vira a legenda da primeira',
+        ),
+      material_id: z
+        .string()
+        .uuid()
+        .optional()
+        .describe(
+          'id de um material da empresa — catálogo em PDF, tabela de preços, ficha — copiado ' +
+            'do id listado no fim desta descrição. O material vai junto como DOCUMENTO e o texto ' +
+            'de `body` vira a legenda dele. Não invente id: material que não está na lista não é ' +
+            'enviado. Não use junto com `produto_codigo`.',
+        ),
+      cliente_pediu: z
+        .boolean()
+        .optional()
+        .describe(
+          'true SOMENTE quando o cliente pediu este material nesta conversa. Sem ele, o material ' +
+            'que já saiu nos últimos 7 dias NÃO é reenviado (a ferramenta responde "já enviado").',
         ),
       imagem_url: z
         .string()
@@ -1155,8 +1181,9 @@ async function briefingDoCheckpointDuravel(
   leadId: string,
   log: Logger,
 ): Promise<BriefingDaPassagem> {
+  const idioma = (await fatosDaOrganizacao(pool, tenantId, log)).idioma;
   const montar = (checkpoint: Awaited<ReturnType<typeof latestCheckpoint>>) =>
-    montarBriefingDaPassagem({ checkpoint, motivo: { codigo: 'orcamento_de_ia' } });
+    montarBriefingDaPassagem({ checkpoint, motivo: { codigo: 'orcamento_de_ia' }, idioma });
   try {
     return montar(await latestCheckpoint(pool, tenantId, leadId));
   } catch (err) {
@@ -1469,6 +1496,51 @@ export function blocosDeAgendaResidentes(toolIds: readonly string[]): string[] {
     blocos.push(AGENDA_CADEIA_SYSTEM_BLOCK);
   }
   return blocos;
+}
+
+/**
+ * O INTERESSE DO CLIENTE NUM ITEM DO BANCO EXTERNO, residente (Spec 25, R5c).
+ *
+ * ─── O que faltava, medido ──────────────────────────────────────────────────
+ *
+ * Numa imobiliária montada do zero no espelho (22/10/2026), o agente mostrou o
+ * imóvel e, no turno seguinte ("tenho interesse nesse"), escreveu "seu interesse
+ * está registrado" SEM chamar nada — três vezes, em três configurações. A
+ * orientação que `crm_consultar_receita` devolve ("abra o negócio com
+ * crm_create_lead…") vive no RESULTADO daquele turno, e resultado de ferramenta
+ * não acompanha a conversa: no turno em que o cliente escolhe, o agente só tem o
+ * prompt, as `description` das ferramentas e o que está escrito nas mensagens.
+ *
+ * Por isso o ensino mora aqui, no mesmo lugar do da agenda: residente, a cada
+ * turno. E é CONDICIONAL: nomear ferramenta que o agente não tem faz o modelo
+ * tentar chamá-la, então o bloco só entra com as DUAS pontas (consultar o banco
+ * externo e abrir o negócio).
+ *
+ * Ensino, não garantia: o funil e a etapa saem da receita
+ * (`completarDestinoDoNegocio`), e o escopo de funil do agente segue julgando.
+ */
+const INTERESSE_EXTERNO_SYSTEM_BLOCK =
+  '## Banco de dados externo — o cliente escolheu um item\n' +
+  'Quando você mostrar itens vindos de `crm_consultar_receita`, escreva ao lado de cada um o código ' +
+  'dele (cód. = o campo `id` da linha): é por ele que você acha o item no turno seguinte.\n' +
+  'Quando o cliente disser que tem interesse em UM item que você mostrou, chame `crm_create_lead` ' +
+  'NESTE turno, ANTES de responder, com o `contact_id` desta conversa, um `title` com o nome do item e ' +
+  '`referencia_externa` = `<receita>:<código>` (a receita é o campo `receita` da instância que a ' +
+  'consulta devolveu, por exemplo `wordpress-conteudo`; se não estiver à mão, chame `crm_consultar_receita` ' +
+  'com `acao: "listar"` para ver). NÃO informe `pipeline_id` nem `stage_id`: o sistema usa o funil e a ' +
+  'etapa que a empresa configurou para essa receita.\n' +
+  'Só diga ao cliente que o interesse foi registrado DEPOIS de `crm_create_lead` responder com sucesso. ' +
+  'Escrever "registrei" sem ter chamado a ferramenta é o defeito. Se ela responder que a receita não ' +
+  'tem funil configurado, passe a conversa para a equipe e diga ao cliente que a equipe dará continuidade.';
+
+/**
+ * O bloco do interesse num item do banco externo — a decisão num lugar só, testável.
+ * A régua é o que o agente TEM: as duas ferramentas que o texto nomeia.
+ */
+export function blocosDeInteresseExternoResidentes(toolIds: readonly string[]): string[] {
+  return toolIds.includes('crm_consultar_receita') && toolIds.includes('crm_create_lead')
+    ? [INTERESSE_EXTERNO_SYSTEM_BLOCK]
+    : [];
 }
 
 /**
@@ -2266,6 +2338,7 @@ export async function deteccoesDeterministicasDoAssistido(
       checkpoint: await latestCheckpoint(pool, tenantId, leadId),
       pendentesDoCliente: inboundsPendentes,
       motivo: { codigo: 'requested_human' },
+      idioma: (await fatosDaOrganizacao(pool, tenantId, log)).idioma,
     });
     const aviso = avisoDaEscalacao();
     const desfecho = contextoLido
@@ -2299,6 +2372,7 @@ export async function deteccoesDeterministicasDoAssistido(
       checkpoint: await latestCheckpoint(pool, tenantId, leadId),
       pendentesDoCliente: inboundsPendentes,
       motivo: { codigo: 'suspected_optout' },
+      idioma: (await fatosDaOrganizacao(pool, tenantId, log)).idioma,
     });
     const aviso = avisoDaEscalacao();
     const desfecho = contextoLido
@@ -2597,8 +2671,10 @@ async function escalarComercialAntesDoModelo(
       ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
     },
   );
+  const idiomaDoTurno = (await fatosDaOrganizacao(pool, tenantId)).idioma;
   const briefing = montarBriefingDaPassagem({ checkpoint: null, pendentesDoCliente: textos,
-    motivo: { codigo: 'restricao_comercial', texto: 'Valores e negociação: fora do escopo da IA.' } });
+    motivo: { codigo: 'restricao_comercial', texto: traduzir('Valores e negociação: fora do escopo da IA.', idiomaDoTurno) },
+    idioma: idiomaDoTurno });
   await performHumanHandoff(pool, { tenantId, leadId: turno.leadId, conversationId: turno.conversationId },
     { reason: 'restricao_comercial', conversationSummary: briefing.body,
       inboxTitle: 'Valores e negociação — atendimento humano necessário',
@@ -3334,6 +3410,7 @@ async function executarTurnoDoAgente(
   // rascunho saía em terceira pessoa — "vou avisar o atendente e ele responde".
   // Vive em função de módulo (`blocoDoModoDePrevia`) para poder ser testada.
   if (preview) blocosResidentes.push(blocoDoModoDePrevia(preview.kind));
+  if (agentConfig !== null) blocosResidentes.push(...blocosDeInteresseExternoResidentes(agentConfig.toolIds));
   // #4260, item 1: o único bloco NOVO é a diretiva de idioma, e ela entra por
   // último para não deslocar nenhum dos de cima (o prefixo cacheável continua
   // igual em `pt-BR`). A tradução dos blocos acima acontece DEPOIS da montagem,
@@ -3495,7 +3572,7 @@ async function executarTurnoDoAgente(
       motivo: 'outro',
     });
     const briefing = montarBriefingDaPassagem({ checkpoint: null, pendentesDoCliente: [],
-      motivo: { codigo: 'restricao_comercial', texto: 'Resposta comercial barrada; valores e negociação são exclusivos da equipe.' } });
+      motivo: { codigo: 'restricao_comercial', texto: traduzir('Resposta comercial barrada; valores e negociação são exclusivos da equipe.', idiomaDaOrg) }, idioma: idiomaDaOrg });
     await performHumanHandoff(pool, { tenantId, leadId, conversationId: input.conversationId },
       { reason: 'restricao_comercial', conversationSummary: briefing.body,
         inboxTitle: 'Valores e negociação — atendimento humano necessário',
@@ -3555,6 +3632,7 @@ async function executarTurnoDoAgente(
       checkpoint: previous,
       pendentesDoCliente: inboundsPendentes,
       motivo: { codigo: 'requested_human' },
+      idioma: idiomaDaOrg,
     });
     await performHumanHandoff(
       pool,
@@ -3594,6 +3672,7 @@ async function executarTurnoDoAgente(
       checkpoint: previous,
       pendentesDoCliente: inboundsPendentes,
       motivo: { codigo: 'suspected_optout' },
+      idioma: idiomaDaOrg,
     });
     await performHumanHandoff(
       pool,
@@ -4501,6 +4580,36 @@ async function executarTurnoDoAgente(
   /** Quantas de `mcpToolIdsDoTurno` são cobertas pela nativa: contam para a projeção, mas NÃO estão no turno. */
   let cobertasPelaNativaNoTurno = 0;
 
+  /**
+   * O canal desta conversa e os materiais da empresa que ESTE agente pode enviar
+   * nela (#4129).
+   *
+   * A leitura é best-effort: material é uma capacidade EXTRA no turno, e uma
+   * falha de banco aqui não pode derrubar o atendimento — o turno segue sem a
+   * lista, e o modelo recebe a descrição dizendo que não há material. O que não
+   * se faz é deixar a falha VIRAR lista: oferta inventada não existe.
+   */
+  let canalDoTurno: string | null = null;
+  let materiaisDoTurno: Awaited<ReturnType<typeof listarMateriaisDoAgente>> = [];
+  if (agentConfig !== null) {
+    try {
+      canalDoTurno = await canalDaConversa(pool, {
+        tenantId,
+        conversationId: input.conversationId,
+      });
+      materiaisDoTurno = await listarMateriaisDoAgente(pool, {
+        tenantId,
+        agentId: agentConfig.agentId,
+        canal: canalDoTurno,
+      });
+    } catch (err) {
+      runLog.warn('materiais da empresa não lidos — turno segue sem eles', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+      });
+      materiaisDoTurno = [];
+    }
+  }
+
   const rawTools: ToolSet = {
     get_lead_context: tool({
       ...AGENT_TOOL_DEFS.get_lead_context,
@@ -4738,7 +4847,18 @@ async function executarTurnoDoAgente(
     }),
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
-      execute: async ({ body: corpoDoModelo, produto_codigo, imagem_url }) => {
+      // A lista de materiais entra na DESCRIÇÃO, e não no prompt: é aqui que o
+      // modelo procura o argumento desta ferramenta (#4129). Só o que passou
+      // pela lista do agente e pela régua do canal chega ao texto.
+      description:
+        AGENT_TOOL_DEFS.send_message.description + descreverMateriais(materiaisDoTurno),
+      execute: async ({
+        body: corpoDoModelo,
+        produto_codigo,
+        material_id,
+        cliente_pediu,
+        imagem_url,
+      }) => {
         tentativasDeEnvio += 1;
         // O texto sai no formato do WhatsApp — sem `\n` literal nem
         // `**negrito**` de Markdown na tela do cliente. Antes de qualquer gate,
@@ -4868,6 +4988,25 @@ async function executarTurnoDoAgente(
             },
           };
         }
+        // MATERIAL E PRODUTO JUNTOS NÃO SAEM (#4129): as duas listas competem
+        // pela legenda da mesma bolha, e o modelo que manda as duas está
+        // escolhendo errado. Recusar ANTES de reservar ensina sem gastar seq.
+        if (
+          material_id !== undefined &&
+          material_id.trim() !== '' &&
+          produto_codigo !== undefined &&
+          produto_codigo.trim() !== ''
+        ) {
+          return {
+            ok: false,
+            error: {
+              code: 'material_e_produto_juntos',
+              message:
+                'Escolha UM anexo: `material_id` (documento da empresa) OU `produto_codigo` (fotos do catálogo). ' +
+                'Nada foi enviado — chame de novo com apenas um dos dois.',
+            },
+          };
+        }
         // RESERVA EM VOO (#2996, item 6): do gate até aqui o CAMINHO DE PASSAGEM
         // é tudo síncrono (nenhuma operação assíncrona entre `checar` e
         // `reservar`; o único ponto que cede o event loop mora no ramo de
@@ -4894,6 +5033,13 @@ async function executarTurnoDoAgente(
         // ele segue inteiramente síncrono do `checar` até a reserva.
         let fotosDoProduto: FotoParaEnvio[] = [];
         let fotosQueFaltaram = 0;
+        // O anexo do material da empresa (#4129), quando a resposta pedir um.
+        // Um turno manda UM ou OUTRO — material e produto juntos são recusados
+        // antes de reservar, porque as duas listas competem pela legenda.
+        let anexoDoMaterial: AnexoDeMaterial | null = null;
+        // O id que resolveu um material ATIVO — vai no metadata da mensagem, e é
+        // por ele que os freios de reenvio contam.
+        let materialApresentado: string | null = null;
         // Foto por URL (`imagem_url`, Spec 25 R4): só uma das duas formas de foto vale
         // por mensagem — `produto_codigo` e `imagem_url` juntos são recusados abaixo.
         const temImagemPorUrl = imagem_url !== undefined && imagem_url.trim() !== '';
@@ -5010,6 +5156,42 @@ async function executarTurnoDoAgente(
             fotosDoProduto = preparadas.fotos;
             fotosQueFaltaram = preparadas.tinha - preparadas.fotos.length;
             produtoApresentado = produto_codigo.trim();
+          }
+          // O material da empresa (#4129): MESMO preparo do caminho de mídia e
+          // fora do lock do número — a cópia no Storage é rede. Todo freio
+          // (lista do agente, tipo, canal, 7 dias, 3 em 24 h) é do módulo; aqui
+          // só se devolve o ENSINO ao modelo, sem enviar nada.
+          if (material_id !== undefined && material_id.trim() !== '' && !preview) {
+            // Sem agente resolvido não há LISTA de materiais a respeitar — e o
+            // freio "só material da lista do agente" é o ponto. Recusar preserva
+            // o freio; mandar com `agentId: null` abriria o catálogo inteiro.
+            if (agentConfig === null) {
+              dupTrava.liberar(body);
+              return {
+                ok: false,
+                error: {
+                  code: 'material_sem_agente',
+                  message:
+                    'não há agente resolvido nesta conversa, então não há material permitido. ' +
+                    'Nada foi enviado — responda em texto, sem prometer arquivo.',
+                },
+              };
+            }
+            const preparado = await prepararMaterialDaEmpresa(pool, copiarMaterialNoStorage(runLog), {
+              tenantId,
+              agentId: agentConfig.agentId,
+              conversationId: input.conversationId,
+              materialId: material_id.trim(),
+              canal: canalDoTurno,
+              clientePediu: cliente_pediu === true,
+            });
+            if (!preparado.ok) {
+              // Nada saiu: libera a reserva antes de devolver o erro ao modelo.
+              dupTrava.liberar(body);
+              return { ok: false, error: { code: preparado.code, message: preparado.message } };
+            }
+            anexoDoMaterial = preparado.anexo;
+            materialApresentado = preparado.material.id;
           }
           // F4-04: sinaliza (independente do gate F4-01/F4-08) se ESTA candidata é uma
           // promessa fora de tabela — usado só para correlacionar com o jailbreak no fim do
@@ -5258,6 +5440,9 @@ async function executarTurnoDoAgente(
                   conversationId: input.conversationId,
                   body: corpo,
                   ...(media ? { media } : {}),
+                  // Só a bolha QUE CARREGA o arquivo leva o id do material: é o
+                  // metadata que faz os freios de reenvio contarem uma vez.
+                  ...(media && materialApresentado ? { materialId: materialApresentado } : {}),
                 });
               };
               // Saída configurável da prospecção (fora de prévia); ver saida-configuravel.ts.
@@ -5265,27 +5450,34 @@ async function executarTurnoDoAgente(
               return enviarComSaidaConfiguravel(saida, finalBody, (finalBody) => {
                   corposEnviados.push(finalBody);
                   // Cada foto é uma mensagem física: só vão as que cabem no teto do turno,
-                  // medido ANTES DE CADA FOTO, depois do texto.
-                  return enviarComFotos(finalBody, fotosDoProduto, {
-                    sleep,
-                    jitter,
-                    restantes: () => maxSendsPerTurn - seq,
-                    enviarFoto: (foto, legenda) => enviar(legenda, foto).then(marcarFoto),
-                    enviarTexto: (texto) => enviarVoz(texto) ?? sendInBubbles(texto, {
-                        enabled: agentConfig?.splitMessages ?? false,
-                        maxChars: agentConfig?.splitMaxChars ?? 600,
-                        // O teto do turno vale para as bolhas: o que passa dele vai
-                        // junto na última.
-                        maxBubbles: Math.max(1, maxSendsPerTurn - seq),
-                        sleep,
-                        jitter,
-                        // A pausa humana do turno NÃO mora mais aqui: ela subiu para
-                        // `esperaForaDoLock` (paga antes de o guardrail tomar o lock do
-                        // número) — issue #654. Neste ponto fica só o jitter anti-ban
-                        // entre bolhas.
-                        send: (bubble) => enviar(bubble),
-                      }),
-                  });
+                  // medido ANTES DE CADA FOTO, depois do texto. O material da
+                  // empresa (#4129) entra pela MESMA cadeia — um anexo só.
+                  return enviarComFotos(
+                    finalBody,
+                    anexoDoMaterial !== null ? [anexoDoMaterial] : fotosDoProduto,
+                    {
+                      sleep,
+                      jitter,
+                      restantes: () => maxSendsPerTurn - seq,
+                      enviarFoto: (foto, legenda) => enviar(legenda, foto).then(marcarFoto),
+                      enviarTexto: (texto) =>
+                        enviarVoz(texto) ??
+                        sendInBubbles(texto, {
+                          enabled: agentConfig?.splitMessages ?? false,
+                          maxChars: agentConfig?.splitMaxChars ?? 600,
+                          // O teto do turno vale para as bolhas: o que passa dele vai
+                          // junto na última.
+                          maxBubbles: Math.max(1, maxSendsPerTurn - seq),
+                          sleep,
+                          jitter,
+                          // A pausa humana do turno NÃO mora mais aqui: ela subiu para
+                          // `esperaForaDoLock` (paga antes de o guardrail tomar o lock do
+                          // número) — issue #654. Neste ponto fica só o jitter anti-ban
+                          // entre bolhas.
+                          send: (bubble) => enviar(bubble),
+                        }),
+                    },
+                  );
               });
             },
           };
@@ -5525,6 +5717,14 @@ async function executarTurnoDoAgente(
                 status: 'enviada',
                 message_id: outcome.messageId,
                 ...(produto_codigo !== undefined ? { fotos_enviadas: fotosDoProduto.length } : {}),
+                ...(materialApresentado !== null
+                  ? {
+                      material_enviado: materialApresentado,
+                      aviso:
+                        'o material foi enviado como documento. Não o reenvie nesta conversa; ' +
+                        'não escreva outro texto sobre ele neste turno.',
+                    }
+                  : {}),
                 // Rastro da foto por URL (Spec 25 R4): `foto_enviada` diz se a foto saiu;
                 // `foto_recusada` diz por que não foi buscada (formato ou guarda de rede).
                 ...(temImagemPorUrl ? { foto_enviada: fotoUrlEnviada } : {}),
@@ -5654,6 +5854,7 @@ async function executarTurnoDoAgente(
                 detalhe: mirror.detail,
                 etapaDeDestino: update.transition.to,
                 ...(mirror.stageName !== undefined ? { etapaDoFunil: mirror.stageName } : {}),
+                idioma: idiomaDaOrg,
               });
             }
           }
@@ -5793,7 +5994,7 @@ async function executarTurnoDoAgente(
             pool,
             { tenantId, leadId, conversationId: input.conversationId },
             {
-              conversationSummary: buildHandoffSummary(previous),
+              conversationSummary: buildHandoffSummary(previous, idiomaDaOrg),
               contextoDoTurno: { checkpoint: previous, pendentesDoCliente: inboundsPendentes },
               avisoAoLead: aviso,
               // #2210: com a mensagem na mão o handoff pergunta ao banco se a
@@ -6448,6 +6649,21 @@ async function executarTurnoDoAgente(
             // (impedimento no assistido, aviso no Teste) em vez de sair calado.
             conferirAfirmacoes,
             procedenciaDeImagens.viu,
+            // #4129 — a MESMA `prepararMaterialDaEmpresa` do caminho de produção.
+            // O destino é a pasta `dry-run` (nunca a conversa do cliente) e o
+            // pedido entra como explícito: os freios de reenvio dependem do
+            // histórico REAL da conversa, que o teste não escreve nem lê — no
+            // dry-run eles não são avaliados, e isso está declarado no PR.
+            // Por ÚLTIMO de propósito: é slot posicional (ver `applyPreviewPolicy`).
+            (materialId: string) =>
+              prepararMaterialDaEmpresa(pool, copiarMaterialNoStorage(runLog), {
+                tenantId,
+                agentId: preview?.agent.agentId ?? agentConfig?.agentId ?? '',
+                conversationId: PASTA_DE_TESTE_DE_MIDIA,
+                materialId,
+                canal: canalDoTurno,
+                clientePediu: true,
+              }),
           )
         : rawTools;
     const breakerTools = wrapToolsWithBreaker(previewTools, {
@@ -7528,6 +7744,7 @@ async function executarTurnoDoAgente(
           }
         : null,
       content,
+      idiomaDaOrg,
     );
 
     if (mudanca.emit) {

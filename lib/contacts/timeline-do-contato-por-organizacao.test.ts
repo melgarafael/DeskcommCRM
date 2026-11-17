@@ -33,6 +33,15 @@ import { GET } from "@/app/api/v1/contacts/[id]/timeline/route";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/auth/server", () => ({ loadAuthUser: vi.fn(async () => ({ idioma: "pt-BR" })) }));
+// Spec 33 (R2): a rota passou a resolver a organização ativa pela sessão (`orgAtivaDaApi`)
+// antes de consultar. O id é o mesmo `ORG` abaixo, escrito aqui porque o `vi.mock` sobe para o topo.
+vi.mock("@/lib/auth/require-role", async (original) => ({
+  ...(await original<typeof import("@/lib/auth/require-role")>()),
+  orgAtivaDaApi: vi.fn(async () => ({
+    ok: true,
+    org: { orgId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Org", role: "viewer" },
+  })),
+}));
 vi.mock("@/lib/users/nome-do-atendente", () => ({
   nomesDosAtendentes: vi.fn(async () => new Map<string, string>()),
 }));
@@ -151,25 +160,29 @@ class ConsultaFalsa implements PromiseLike<{ data: Linha[]; error: null }> {
 
 function bancoFalso(atividades: Linha[]) {
   const registroDaAtividade: Array<Record<string, unknown>> = [];
+  // Spec 33 (R2): a rota também filtra a organização ao ler o contato e os
+  // negócios dele (o caminho do token não tem RLS). Esses filtros vão para um
+  // registro à parte, para a asserção abaixo seguir medindo só as atividades.
+  const registroDoResto: Array<Record<string, unknown>> = [];
   const cliente = {
     auth: { getUser: async () => ({ data: { user: { id: "usuario-da-sessao" } }, error: null }) },
     from: (tabela: string) => {
       if (tabela === "contacts") {
         return new ConsultaFalsa(
           [{ id: CONTATO, organization_id: ORG }],
-          registroDaAtividade,
+          registroDoResto,
         );
       }
       if (tabela === "crm_leads") {
         return new ConsultaFalsa(
-          [{ id: NEGOCIO, contact_id: CONTATO }],
-          registroDaAtividade,
+          [{ id: NEGOCIO, contact_id: CONTATO, organization_id: ORG }],
+          registroDoResto,
         );
       }
       if (tabela === "crm_lead_activities") {
         return new ConsultaFalsa(atividades, registroDaAtividade);
       }
-      return new ConsultaFalsa([], registroDaAtividade);
+      return new ConsultaFalsa([], registroDoResto);
     },
   };
   return { cliente, registroDaAtividade };

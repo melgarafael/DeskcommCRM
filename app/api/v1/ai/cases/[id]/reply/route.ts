@@ -49,6 +49,7 @@ import { audit } from "@/lib/audit";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDaOrganizacao } from "@/lib/prospecting/idioma";
 
 export const dynamic = "force-dynamic";
 
@@ -170,6 +171,8 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
         blocker: caseRow.blocker,
         razaoHumana: body,
       },
+      // O resumo é gravado e a tela o mostra como veio: idioma da organização.
+      idioma: await idiomaDaOrganizacao(pool, org.orgId),
     });
     await performHumanHandoff(
       pool,

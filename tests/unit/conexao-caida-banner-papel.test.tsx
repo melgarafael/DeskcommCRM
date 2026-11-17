@@ -40,10 +40,20 @@ describe.each(["pt-BR", "es"] as const)("alerta de conexão em %s", locale => {
     const mounted = render(view(role, locale, who));
     const alert = screen.getByRole("alert");
     expect(alert).toHaveTextContent("Vendas");
-    expect(within(alert).getByRole("link", { name: copy[locale].qr })).toHaveAttribute("href", "/app/connections");
+    // O clique que diz "Escanear o QR" tem que ABRIR o QR, não a lista: a faixa
+    // também aparece NA Central de Conexões, onde um link para ela mesma é um
+    // clique que nada faz. `?qr=<id>` abre o diálogo de pareamento direto.
+    expect(within(alert).getByRole("link", { name: copy[locale].qr })).toHaveAttribute("href", "/app/connections?qr=channel");
     expect(within(alert).queryByText(copy[locale].help)).toBeNull();
     mounted.rerender(view(role, locale, who, [{ id: "channel", apelido: "Vendas", status: "FAILED" }]));
     expect(within(screen.getByRole("alert")).getByRole("link", { name: copy[locale].connections })).toHaveAttribute("href", "/app/connections");
+    // Entre várias caídas, o deep-link aponta para a que PRECISA de QR — a que
+    // só caiu continua na lista, onde a ficha dela diz o que aconteceu.
+    mounted.rerender(view(role, locale, who, [
+      { id: "channel", apelido: "Vendas", status: "FAILED" },
+      { id: "channel-2", apelido: "Suporte", status: "SCAN_QR_CODE" },
+    ]));
+    expect(within(screen.getByRole("alert")).getByRole("link", { name: copy[locale].qr })).toHaveAttribute("href", "/app/connections?qr=channel-2");
   });
 
   it.each([

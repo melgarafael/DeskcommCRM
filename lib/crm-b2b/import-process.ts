@@ -21,7 +21,12 @@ type SB = SupabaseClient;
 export interface ProcessImportOpts {
   organizationId: string;
   batchId: string;
-  userId: string;
+  /**
+   * Quem pediu a importação, como AUTOR das linhas (`created_by`,
+   * `created_by_user_id`). `null` quando quem pediu foi um token de servidor:
+   * o id de um token não existe em `auth.users`, e as quatro colunas aceitam nulo.
+   */
+  userId: string | null;
   sheet: SheetMatrix;
   mapping: Partial<Record<MappingField, string>>;
   enrichCompanies?: boolean;
@@ -175,7 +180,7 @@ async function processOneRow(
   ctx: {
     organizationId: string;
     batchId: string;
-    userId: string;
+    userId: string | null;
     mapped: Record<MappingField, string>;
     companyByKey: Map<string, string>;
     personByKey: Map<PersonCacheKey, PessoaDoLote>;

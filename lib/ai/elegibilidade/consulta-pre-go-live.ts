@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { lerNumerosDeTeste, numeroPodeTestar, preGoLiveAtivo } from "./pre-go-live";
+import { contatoPodeTestar, preGoLiveAtivo } from "./pre-go-live";
 
 export type DecisaoPreGoLive =
   | { ativo: false; permite: true; motivo: "fora_do_pre_go_live" }
@@ -14,7 +14,16 @@ export type DecisaoPreGoLive =
  */
 export async function decidirPreGoLiveDoCanalViaSupabase(
   admin: SupabaseClient,
-  input: { organizationId: string; channelSessionId: string; contactPhoneNumber: string },
+  input: {
+    organizationId: string;
+    channelSessionId: string;
+    contactPhoneNumber: string;
+    /**
+     * `contacts.social_identity` do destinatário. Opcional: quem não tem (o
+     * primeiro contato por telefone) falha fechado na lista social.
+     */
+    contactSocialIdentity?: string | null;
+  },
 ): Promise<DecisaoPreGoLive> {
   const { data, error } = await admin
     .from("channel_sessions")
@@ -30,7 +39,10 @@ export async function decidirPreGoLiveDoCanalViaSupabase(
   if (!preGoLiveAtivo(metadata)) {
     return { ativo: false, permite: true, motivo: "fora_do_pre_go_live" };
   }
-  return numeroPodeTestar(input.contactPhoneNumber, lerNumerosDeTeste(metadata))
+  return contatoPodeTestar(
+    { telefone: input.contactPhoneNumber, identidadeSocial: input.contactSocialIdentity },
+    metadata,
+  )
     ? { ativo: true, permite: true, motivo: "numero_de_teste" }
     : { ativo: true, permite: false, motivo: "fora_da_lista_de_teste" };
 }
