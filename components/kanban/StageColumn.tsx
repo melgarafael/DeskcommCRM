@@ -1,14 +1,15 @@
 "use client";
 import { Droppable } from "@hello-pangea/dnd";
-import { useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import { cn } from "@/lib/utils";
 import type { Lead } from "@/lib/types/leads";
 import type { Stage } from "@/lib/kanban/types";
-import { buildCardInput } from "@/lib/kanban/card-state";
 import { intervaloDaColuna } from "@/lib/kanban/selecao";
+import { CARDS_POR_VEZ, cardsVisiveisDaColuna, colunaLimitada, limiteQueMostra } from "@/lib/kanban/limite-da-coluna";
 import { formatSomaPorMoeda, formatValorDoNegocio, MOEDA_PADRAO, somaPorMoeda } from "@/lib/money";
-import { KanbanCard, type GestoDeSelecao } from "./KanbanCard";
+import type { GestoDeSelecao } from "./KanbanCard";
+import { CardsDaColuna } from "./CardsDaColuna";
 
 interface StageColumnProps {
   stage: Stage;
@@ -40,6 +41,13 @@ interface StageColumnProps {
   /** `manager`+ — mesmo corte de papel da rota que renomeia a etapa. */
   podeRenomear?: boolean;
   onRenomear?: (nome: string) => void;
+  /**
+   * Cards que aparecem mesmo além do corte de ganho/perda (#4788): o último
+   * solto pelo arraste e o do dossiê aberto (`?lead=`). Ver
+   * `lib/kanban/limite-da-coluna.ts`.
+   */
+  soltoId?: string | null;
+  abertoId?: string | null;
   /** Densidade dos cards (issue #3461, item 2) — atravessa como `pulses`. */
   denso?: boolean;
   /**
@@ -66,6 +74,8 @@ export function StageColumn({
   onMoverPara,
   podeRenomear = false,
   onRenomear,
+  soltoId = null,
+  abertoId = null,
   denso = false,
   somenteLeitura = false,
 }: StageColumnProps) {
@@ -120,25 +130,50 @@ export function StageColumn({
           moedaDoLead,
         );
 
-  const idsVisiveis = leads.map((l) => l.id);
+  const idsVisiveis = useMemo(() => leads.map((l) => l.id), [leads]);
   const selecionadosAqui = idsVisiveis.filter((id) => selectedLeadIds?.has(id)).length;
   const todosSelecionados = idsVisiveis.length > 0 && selecionadosAqui === idsVisiveis.length;
+
+  // Ganho e perda desenham 50 por vez (#4788); o contador, os totais e
+  // "selecionar a etapa" acima seguem com todos (`lib/kanban/limite-da-coluna.ts`).
+  // O ajuste do limite é no render, sem um quadro intermediário sem o card.
+  const [limite, setLimite] = useState(CARDS_POR_VEZ);
+  const limitada = colunaLimitada(stage);
+  const necessario = limiteQueMostra(leads, { limitada, limite, fixos: [soltoId, abertoId] });
+  if (necessario > limite) setLimite(necessario);
+  const mostrados = useMemo(
+    () => cardsVisiveisDaColuna(leads, { limitada, limite: necessario }),
+    [leads, limitada, necessario],
+  );
+  const escondidos = leads.length - mostrados.length;
 
   // A âncora do shift+clique. `useRef` e não `useState` de propósito: mudar a
   // âncora não muda nada na tela, e um `setState` aqui remontaria a coluna
   // inteira — inclusive o `Droppable` — a cada card marcado.
   const ancora = useRef<string | null>(null);
+  // A ordem e a seleção chegam ao `aoSelecionar` por ref (#4788): com elas nas
+  // dependências, marcar ou mover um card trocava a função que todos os cards
+  // recebem, e a coluna inteira redesenhava.
+  const idsAtuais = useRef(idsVisiveis);
+  const selecaoAtual = useRef(selectedLeadIds);
+  useEffect(() => {
+    idsAtuais.current = idsVisiveis;
+    selecaoAtual.current = selectedLeadIds;
+  }, [idsVisiveis, selectedLeadIds]);
 
-  const aoSelecionar = (leadId: string, gesto: GestoDeSelecao) => {
-    if (gesto === "intervalo") {
-      const faixa = intervaloDaColuna(idsVisiveis, ancora.current, leadId);
+  const aoSelecionar = useCallback(
+    (leadId: string, gesto: GestoDeSelecao) => {
+      if (gesto === "intervalo") {
+        const faixa = intervaloDaColuna(idsAtuais.current, ancora.current, leadId);
+        ancora.current = leadId;
+        onSelectMany?.(faixa, true);
+        return;
+      }
       ancora.current = leadId;
-      onSelectMany?.(faixa, true);
-      return;
-    }
-    ancora.current = leadId;
-    onSelectMany?.([leadId], !selectedLeadIds?.has(leadId));
-  };
+      onSelectMany?.([leadId], !selecaoAtual.current?.has(leadId));
+    },
+    [onSelectMany],
+  );
 
   const alternarEtapa = () => {
     ancora.current = null;
@@ -267,31 +302,37 @@ export function StageColumn({
               snapshot.isDraggingOver && "bg-accent/5",
             )}
           >
-            {leads.map((lead, idx) => (
-              <KanbanCard
-                key={lead.id}
-                card={buildCardInput(lead, {
-                  stageName: stage.name,
-                  ownerNames,
-                  coolingIds,
-                  reactivations,
-                  canonicalTags,
-                })}
-                lead={lead}
-                index={idx}
-                pipelineId={pipelineId}
-                isSelected={selectedLeadIds?.has(lead.id)}
-                isSelecting={(selectedLeadIds?.size ?? 0) > 0}
-                pulseCount={pulses?.get(lead.id) ?? 0}
-                onSelect={somenteLeitura ? undefined : aoSelecionar}
-                onOpen={somenteLeitura ? undefined : onOpen}
-                etapas={etapas}
-                onMoverPara={onMoverPara}
-                denso={denso}
-                somenteLeitura={somenteLeitura}
-              />
-            ))}
+            {/* Lista memoizada (#4788): mudar `isDraggingOver` não redesenha os
+                cards; em ganho/perda, só os `mostrados`. */}
+            <CardsDaColuna
+              leads={mostrados}
+              stageName={stage.name}
+              pipelineId={pipelineId}
+              ownerNames={ownerNames}
+              coolingIds={coolingIds}
+              reactivations={reactivations}
+              canonicalTags={canonicalTags}
+              selectedLeadIds={selectedLeadIds}
+              pulses={pulses}
+              onSelect={somenteLeitura ? undefined : aoSelecionar}
+              onOpen={somenteLeitura ? undefined : onOpen}
+              etapas={etapas}
+              onMoverPara={onMoverPara}
+              denso={denso}
+              somenteLeitura={somenteLeitura}
+            />
             {provided.placeholder}
+            {escondidos > 0 && (
+              <button
+                type="button"
+                onClick={() => setLimite((n) => n + CARDS_POR_VEZ)}
+                className="rounded-md border border-dashed border-border py-1.5 text-xs font-medium text-text-muted hover:bg-surface hover:text-text"
+                data-testid="mostrar-mais-da-coluna"
+                title={`${mostrados.length} / ${leads.length}`}
+              >
+                {t("Mostrar mais")} {Math.min(CARDS_POR_VEZ, escondidos)}
+              </button>
+            )}
             {leads.length === 0 && !snapshot.isDraggingOver && (
               <div className="flex h-20 items-center justify-center text-[11px] text-text-muted">
                 {t("vazio")}
