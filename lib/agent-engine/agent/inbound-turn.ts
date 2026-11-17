@@ -1737,6 +1737,13 @@ export interface InboundTurnKnobs {
    */
   maxSendsPerTurn?: number;
   /**
+   * #4835 — carência (ms) antes de gastar MODELO APROVADO no primeiro contato de
+   * um lead recém-chegado, com a janela de 24 h fechada (FOLLOWUP_CARENCIA_DO_MODELO_MS).
+   * Ausente = `CARENCIA_PADRAO_MS` (10 s); `0` desliga e devolve o comportamento
+   * de antes. Ver `agent/carencia-antes-do-modelo.ts`.
+   */
+  carenciaDoModeloMs?: number;
+  /**
    * #4590 — N respostas automáticas por CONVERSA dentro de W minutos
    * (TETO_DE_RESPOSTAS_POR_CONVERSA / TETO_DE_RESPOSTAS_JANELA_MIN). Ausente =
    * os defaults de `agent/teto-de-respostas.ts` (20 em 60 min) — main.ts sempre

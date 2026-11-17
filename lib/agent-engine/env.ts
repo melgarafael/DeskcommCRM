@@ -202,6 +202,14 @@ const envSchema = z.object({
   // enquanto a mensagem mais antiga sem resposta tiver menos que isto. 0 = desliga.
   // Ver `respostaFicouObsoleta` (agent/turno-ja-respondido.ts).
   RESPOSTA_OBSOLETA_TETO_MS: z.coerce.number().int().min(0).default(120_000),
+  // CARÊNCIA ANTES DO MODELO PAGO (#4835). O lead que chega por integração com a
+  // janela de 24 h fechada só pode receber modelo aprovado — e o cliente costuma
+  // escrever nos primeiros segundos, quando a janela abriria de graça. Com este
+  // valor, o primeiro contato que gastaria modelo pago devolve o job para a fila
+  // uma vez e relê a janela na volta. 10 s porque o caminho mais rápido (webhook)
+  // chega ao claim em ~2–4 s e o tick do cron é 30 s: cabe a escrita do cliente
+  // sem esperar um minuto. 0 = desliga (comportamento de antes, byte a byte).
+  FOLLOWUP_CARENCIA_DO_MODELO_MS: z.coerce.number().int().min(0).default(10_000),
   // Circuito de saúde do número — ritmo do ticker (block/response rate por número).
   NUMBER_HEALTH_INTERVAL_MS: z.coerce.number().int().positive().default(300_000),
   // Cron persistente por contato — knobs, nunca constantes.
