@@ -517,6 +517,29 @@ describe("PainelDeProvedores — voz do agente (#4260, item 2)", () => {
     expect(screen.getByTestId("voz-voice-id")).toHaveValue("21m00Tcm4TlvDq8ikWAM");
   });
 
+  it("(e) sem credencial do ElevenLabs a voz não é oferecida: só o aviso e o link", async () => {
+    dublar({
+      voz: {
+        voiceId: null,
+        vozesDisponiveis: [],
+        catalogo: [],
+        catalogoVeioDoProvedor: false,
+        temCredencial: false,
+      },
+    });
+    montar();
+
+    expect(await screen.findByTestId("cartao-de-voz")).toHaveTextContent(
+      "Sem credencial do ElevenLabs validada ainda.",
+    );
+    // Nenhuma porta para escolher/colar voz: sem credencial não há o que listar
+    // nem como sintetizar, e salvar aqui deixaria uma escolha inutilizável.
+    expect(screen.queryByTestId("voz-escolher-da-lista")).toBeNull();
+    expect(screen.queryByTestId("voz-voice-id")).toBeNull();
+    expect(screen.queryByTestId("voz-salvar")).toBeNull();
+    expect(screen.queryByTestId("voz-ouvir-previa")).toBeNull();
+  });
+
   it("a recusa do provedor sobre a voz chega à tela com a mensagem dele", async () => {
     dublar({
       voz: {

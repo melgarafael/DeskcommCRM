@@ -13,6 +13,7 @@ import { visaoEmVigor } from "@/lib/ai/pontos/capacidade-em-vigor";
 import { PONTO_TRANSCRICAO_DE_AUDIO, PONTO_VISAO_DE_IMAGEM } from "@/lib/ai/pontos/registro";
 import { costCents, type TokenUsage } from "@/lib/agent-engine/edge/llm/pricing";
 import { custoDoModeloForaDoMotor } from "@/lib/agent-engine/edge/llm/pricing-do-catalogo";
+import { decidirCustoDaChamada } from "@/lib/agent-engine/edge/llm/custo-da-chamada";
 import {
   aplicarOrcamento,
   LlmBudgetExceededError,
@@ -42,6 +43,9 @@ import {
 } from "@/lib/messaging/media/escada-de-transcricao";
 import { TranscriptionTooLargeError, type TranscriptionProvider } from "@/lib/messaging/media/transcription";
 import { logger } from "@/lib/logger";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoAviso, preencher } from "@/lib/i18n/idioma-do-aviso";
+import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 import { validarParProvedorModelo } from "@/lib/ai/par-provedor-modelo";
 import { reagirAConclusaoDeDerivacao } from "@/lib/escalacao/handoff-tecnico";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -473,7 +477,10 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
       await avisarMidiaNaoLida(
         msg.organization_id,
         rotuloDoTipo,
-        motivo,
+        {
+          chave: "o modelo devolveu a transcrição do áudio vazia ({origem}: {motivo})",
+          valores: { origem: decisao.origem, motivo: { traduzivel: decisao.motivo } },
+        },
         "O provedor respondeu sem texto. Confira o modelo em Provedores de IA: se ele aceita áudio mas devolve vazio, troque por outro modelo com capacidade audio.",
       );
       return { consumer_key, status: "ok", detail: "transcricao_vazia" };
@@ -725,7 +732,11 @@ function buildDeriveDeps(
       await avisarMidiaNaoLida(
         orgId,
         d.tipo,
-        `o limite de gasto com IA deste mês foi atingido e a IA está configurada para parar nele, então ${d.oQueNaoSaiu} ao provedor`,
+        {
+          chave:
+            "o limite de gasto com IA deste mês foi atingido e a IA está configurada para parar nele, então {o_que_nao_saiu} ao provedor",
+          valores: { o_que_nao_saiu: { traduzivel: d.oQueNaoSaiu } },
+        },
         "Enquanto o limite valer, a IA também não responde: as conversas vão para a fila de atendimento humano.",
         undefined,
         "Para resolver, suba o limite ou desligue a parada em Uso de IA › Orçamento.",
@@ -762,10 +773,14 @@ function buildDeriveDeps(
       // `{image:false}` por conservadorismo — afirmar ao operador que ele "não
       // enxerga imagens" seria gravar uma alegação que ninguém verificou (e
       // era o que acontecia com todo modelo da OpenRouter).
-      const motivo = visao.sabemos
-        ? `o modelo ${llm.defaultModel ?? "configurado"} não enxerga imagens`
-        : `não sei se o modelo ${llm.defaultModel ?? "configurado"} enxerga imagens, ` +
-          `então não arrisquei enviar a foto — escolha um modelo do catálogo em Agente de IA → Provedores`;
+      const modeloDaVisao = llm.defaultModel ?? { traduzivel: "configurado" };
+      const motivo: FraseDoAviso = visao.sabemos
+        ? { chave: "o modelo {modelo} não enxerga imagens", valores: { modelo: modeloDaVisao } }
+        : {
+            chave:
+              "não sei se o modelo {modelo} enxerga imagens, então não arrisquei enviar a foto — escolha um modelo do catálogo em Agente de IA → Provedores",
+            valores: { modelo: modeloDaVisao },
+          };
       await avisarMidiaNaoLida(orgId, "imagem", motivo);
       return MARCADOR_NAO_LIDA;
     }
@@ -801,7 +816,10 @@ function buildDeriveDeps(
     }
     const factory = registry[llm.provider];
     if (!factory) {
-      await avisarMidiaNaoLida(orgId, "imagem", `o provedor ${llm.provider} não está disponível nesta instalação`);
+      await avisarMidiaNaoLida(orgId, "imagem", {
+        chave: "o provedor {provedor} não está disponível nesta instalação",
+        valores: { provedor: llm.provider },
+      });
       return MARCADOR_NAO_LIDA;
     }
     // ─── O PAR ANTES DE ENVIAR A FOTO ──────────────────────────────────────
@@ -954,16 +972,25 @@ function buildDeriveDeps(
   // corpo do handler — lá em cima, com `failed` + motivo.
   //
   // Todo degrau que transcreve passa por `comCustoRegistrado`: a chamada paga
-  // vira linha em `llm_calls`, sucesso ou falha. O provedor do serviço da
-  // instalação com endereço próprio não é sabido — chute viraria estatística.
+  // vira linha em `llm_calls`, sucesso ou falha. O provedor é o do ANÚNCIO da
+  // escada (#4697) — uma regra só, a mesma que a tela mostra.
+  // ─── O PROVEDOR DA LINHA É O QUE A ESCADA ANUNCIOU (#4697) ───────────────
+  //
+  // Aqui havia uma SEGUNDA regra de provedor, só para este ramo: com
+  // `TRANSCRIPTION_BASE_URL` preenchido, a linha saía com
+  // `provider = 'desconhecido'` mesmo quando a escada já sabia quem ouviu o
+  // áudio — era o `whisper-large-v3-turbo` da instalação real sempre como
+  // `desconhecido`, e o painel de uso não conseguia agrupar o gasto de áudio.
+  //
+  // O anúncio da escada (`escada-de-transcricao.ts`) já é a fonte única do que
+  // a tela mostra; nos degraus 1 e 2 ele diz `openai` como PROTOCOLO
+  // (`/v1/audio/transcriptions`), não como empresa — está escrito no tipo
+  // `AnuncioDaTranscricao`. Uma regra só, a mesma que o operador vê.
   const comCusto = (servico: TranscriptionProvider): TranscriptionProvider =>
     comCustoRegistrado(servico, {
       admin,
       orgId,
-      provider:
-        decisao.origem === "servico_da_instalacao" && env.TRANSCRIPTION_BASE_URL
-          ? "desconhecido"
-          : decisao.anuncio.provider,
+      provider: decisao.anuncio.provider,
       model: decisao.anuncio.modelId ?? "desconhecido",
       origem: decisao.origem,
     });
@@ -1146,9 +1173,42 @@ function custoComCatalogo(
   uso: TokenUsage,
   linhaCom: (cost_cents: number | null) => ChamadaDeMidia,
 ): ChamadaDeMidia | Promise<ChamadaDeMidia> {
-  const doMotor = costCents(model, uso);
-  if (doMotor !== null) return linhaCom(doMotor);
-  return custoDoModeloForaDoMotor(derivePool(), { model, provider, usage: uso, log: logger }).then(linhaCom);
+  const daTabelaDoMotor = costCents(model, uso);
+  // A MESMA função que o seam usa (#4697): a ordem e a marca do custo saem de
+  // `custo-da-chamada.ts`, não de uma segunda cópia aqui.
+  const decidir = (doCatalogoDaInstalacao?: number | null) =>
+    decidirCustoDaChamada({
+      provider,
+      informadoPeloProvedor: undefined,
+      porPassosDoTerra: undefined,
+      daTabelaDoMotor,
+      doCatalogoDaInstalacao,
+    });
+  if (daTabelaDoMotor !== null) return linhaCom(decidir().costCents);
+  return custoDoModeloForaDoMotor(derivePool(), { model, provider, usage: uso, log: logger }).then((doCatalogo) =>
+    linhaCom(decidir(doCatalogo).costCents),
+  );
+}
+
+/**
+ * "Custo nulo por tarifa desconhecida" DITO, uma vez por (provedor, modelo) —
+ * a metade explícita do contrato da #4697, a mesma que
+ * `custoDoModeloForaDoMotor` já aplica ao modelo cobrado por token. Sem este
+ * aviso, uma transcrição cobrada por duração e sem tarifa na tabela gravava
+ * `cost_cents` nulo em silêncio: indistinguível de "grátis" para quem lê o log.
+ *
+ * `Set` de módulo, como `avisados` do catálogo: a nota de voz é o caminho mais
+ * quente do worker e um aviso por áudio inundaria o log sem dizer nada novo.
+ */
+const tarifasDeAudioAvisadas = new Set<string>();
+function avisarTarifaDeAudioDesconhecida(provider: string, model: string): void {
+  const chave = `${provider}|${model}`;
+  if (tarifasDeAudioAvisadas.has(chave)) return;
+  tarifasDeAudioAvisadas.add(chave);
+  logger.warn("[media-derive] transcrição cobrada por duração sem tarifa conhecida — a linha grava custo nulo", {
+    provider,
+    model,
+  });
 }
 
 /**
@@ -1218,7 +1278,20 @@ function comCustoRegistrado(
         // Custo informado pelo serviço (USD da OpenRouter, duração cobrada pela
         // OpenAI) vence; o modelo de conversa (degrau 4) vai pela régua do seam.
         if (custoInformado !== undefined) return linhaCom(custoInformado);
-        return uso ? custoComCatalogo(ctx.model, ctx.provider, uso, linhaCom) : linhaCom(null);
+        if (uso) return custoComCatalogo(ctx.model, ctx.provider, uso, linhaCom);
+        // Sem uso e sem tarifa informada, o custo é DESCONHECIDO — nulo, nunca
+        // zero (0 diria "grátis" ao painel e ao teto). A #4697 pede que o nulo
+        // não seja CALADO: o motivo sai uma vez por (provedor, modelo), como o
+        // aviso de sem-preço do catálogo. A decisão é a da MESMA regra do seam.
+        avisarTarifaDeAudioDesconhecida(ctx.provider, ctx.model);
+        return linhaCom(
+          decidirCustoDaChamada({
+            provider: ctx.provider,
+            informadoPeloProvedor: undefined,
+            porPassosDoTerra: undefined,
+            daTabelaDoMotor: null,
+          }).costCents,
+        );
       });
       return texto;
     },
@@ -1244,28 +1317,75 @@ export { MARCADOR_NAO_LIDA };
  * fazer, em português; a frase crua do provedor, quando existe, no fim e
  * rotulada (`DETALHE_TECNICO`) — mesma regra do aviso de evento morto.
  */
-export function textoDoAvisoDeMidiaNaoLida(aviso: {
-  tipo: string;
-  motivo: string;
-  consequencia: string;
-  detalheTecnico?: string;
-  /** Quando a saída não é modelo nem chave (ex.: o teto de gasto), o padrão mandaria o operador ao lugar errado. */
-  paraResolver?: string;
-}): { title: string; body: string } {
+/**
+ * Uma frase do aviso que leva valor de runtime (nome de modelo, de provedor):
+ * a CHAVE vai ao dicionário com `{marcadores}` e os valores entram depois da
+ * tradução. Valor `{ traduzivel }` é frase fixa do produto e também é traduzido.
+ */
+export interface FraseDoAviso {
+  chave: string;
+  valores: Readonly<Record<string, string | number | { traduzivel: string }>>;
+}
+
+/** A frase no idioma da organização. `pt-BR` devolve o texto de antes, byte a byte. */
+function fraseNoIdioma(frase: string | FraseDoAviso, idioma: Idioma): string {
+  if (typeof frase === "string") return traduzir(frase, idioma);
+  const valores: Record<string, string | number> = {};
+  for (const [nome, valor] of Object.entries(frase.valores)) {
+    valores[nome] = typeof valor === "object" ? traduzir(valor.traduzivel, idioma) : valor;
+  }
+  return preencher(traduzir(frase.chave, idioma), valores);
+}
+
+/** O título por tipo de mídia: uma frase inteira por tipo, para cada idioma poder concordar. */
+const TITULO_DA_MIDIA_NAO_LIDA: Record<string, string> = {
+  imagem: "O agente não conseguiu ler imagem que o cliente enviou",
+  "áudio": "O agente não conseguiu ler áudio que o cliente enviou",
+  documento: "O agente não conseguiu ler documento que o cliente enviou",
+  "vídeo": "O agente não conseguiu ler vídeo que o cliente enviou",
+  "mídia": "O agente não conseguiu ler mídia que o cliente enviou",
+};
+
+export function textoDoAvisoDeMidiaNaoLida(
+  aviso: {
+    tipo: string;
+    motivo: string | FraseDoAviso;
+    consequencia: string;
+    detalheTecnico?: string;
+    /** Quando a saída não é modelo nem chave (ex.: o teto de gasto), o padrão mandaria o operador ao lugar errado. */
+    paraResolver?: string;
+  },
+  /**
+   * A Central mostra o texto como foi gravado (nunca passa por `t()`), então o
+   * aviso nasce no idioma da organização. O detalhe técnico é a frase crua do
+   * provedor e segue como veio.
+   */
+  idioma: Idioma = IDIOMA_PADRAO,
+): { title: string; body: string } {
+  const titulo = Object.hasOwn(TITULO_DA_MIDIA_NAO_LIDA, aviso.tipo)
+    ? traduzir(TITULO_DA_MIDIA_NAO_LIDA[aviso.tipo]!, idioma)
+    : preencher(traduzir("O agente não conseguiu ler {tipo} que o cliente enviou", idioma), { tipo: aviso.tipo });
+  const paraResolver =
+    aviso.paraResolver === undefined
+      ? traduzir(
+          "Para resolver, ajuste o modelo desse ponto em Agente de IA → Provedores, ou cadastre a chave necessária em Credenciais.",
+          idioma,
+        )
+      : traduzir(aviso.paraResolver, idioma);
   return {
-    title: `O agente não conseguiu ler ${aviso.tipo} que o cliente enviou`,
+    title: titulo,
     body:
-      `Motivo: ${aviso.motivo}. ${aviso.consequencia} ` +
-      (aviso.paraResolver ??
-        `Para resolver, ajuste o modelo desse ponto em Agente de IA → Provedores, ou cadastre a chave necessária em Credenciais.`) +
-      (aviso.detalheTecnico ? ` ${DETALHE_TECNICO} ${aviso.detalheTecnico}` : ""),
+      preencher(traduzir("Motivo: {motivo}.", idioma), { motivo: fraseNoIdioma(aviso.motivo, idioma) }) +
+      ` ${traduzir(aviso.consequencia, idioma)} ` +
+      paraResolver +
+      (aviso.detalheTecnico ? ` ${traduzir(DETALHE_TECNICO, idioma)} ${aviso.detalheTecnico}` : ""),
   };
 }
 
 async function avisarMidiaNaoLida(
   organizationId: string,
   tipo: string,
-  motivo: string,
+  motivo: string | FraseDoAviso,
   /**
    * O que aconteceu com o atendimento. O padrão vale para as recusas, que
    * entregam o marcador ao agente; a falha permanente não entrega nada.
@@ -1287,6 +1407,9 @@ async function avisarMidiaNaoLida(
       .maybeSingle();
     if (jaAberto) return;
 
+    // Nunca lança: sem o idioma, o aviso sai em português, como antes.
+    const idioma = await idiomaDoAviso(admin, organizationId);
+
     // `warn`, não `warning`: o CHECK de `agent_inbox_items.severity` aceita
     // info|warn|critical. Com o valor errado o INSERT era recusado com 23514 —
     // e o aviso NUNCA abria. A Central ficava vazia exatamente no caso que esta
@@ -1295,7 +1418,7 @@ async function avisarMidiaNaoLida(
       organization_id: organizationId,
       kind: "midia_nao_lida",
       severity: "warn",
-      ...textoDoAvisoDeMidiaNaoLida({ tipo, motivo, consequencia, detalheTecnico, paraResolver }),
+      ...textoDoAvisoDeMidiaNaoLida({ tipo, motivo, consequencia, detalheTecnico, paraResolver }, idioma),
     });
     // E o retorno é CONFERIDO. O supabase-js devolve `{ error }` em vez de
     // lançar, então o `catch` abaixo era inalcançável para erro de banco: a
