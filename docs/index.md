@@ -145,7 +145,8 @@ acessibilidade).
 | [`runbooks/oracle-arm64.md`](runbooks/oracle-arm64.md) | **Oracle Ampere A1/Ubuntu** — VM ARM64, rede, instalação, atualização, backup e aceite real |
 | [`runbooks/remediar-worker-congelado.md`](runbooks/remediar-worker-congelado.md) | **Incidente: o worker congelado** — diagnóstico (`diagnostico.sh`), impacto medido e as duas rotas de remediação. **Ainda não ensaiado** |
 | [`runbooks/ativar-packaging.md`](runbooks/ativar-packaging.md) | **Ativação da doutrina de packaging** — os 3 passos que não cabem num PR (pacote público, check obrigatório, primeira release) |
-| [`runbooks/custo-e-cota-do-supabase.md`](runbooks/custo-e-cota-do-supabase.md) | **“Meu Supabase estourou a cota”** — como medir a origem do consumo, os dois intervalos da fila, as duas tabelas que só crescem e o aviso “Log Ingestion Exceeded” (1 GB de log no free) |
+| [`runbooks/banco-externo-do-leigo.md`](runbooks/banco-externo-do-leigo.md) | **Banco de dados externo, para quem não programa** — ligar o banco MySQL do site (WordPress ou WooCommerce), escolher a receita e fazer o agente mostrar os itens e abrir o negócio no funil, passo a passo pela tela |
+| [`runbooks/custo-e-cota-do-supabase.md`](runbooks/custo-e-cota-do-supabase.md) | **“Meu Supabase estourou a cota”** — qual das cotas estourou e o que aparece na tela e no log (**§0**: banco, storage, MAU, egress e log, com `arquivo:linha` do código), como medir a origem do consumo, os dois intervalos da fila, as duas tabelas que só crescem, o aviso “Log Ingestion Exceeded” (1 GB de log no free) e as saídas em ordem de custo (limpar, plano pago, Supabase local) |
 | [`runbooks/waha-hostgator.md`](runbooks/waha-hostgator.md) | Runbook do WAHA em produção |
 | [`runbooks/cloudpanel.md`](runbooks/cloudpanel.md) | **VPS que já tem CloudPanel/Nginx nas portas 80/443** — o modo proxy externo do kit, o endereço fixo para o Nginx do host e o 403 do webhook global |
 | [`saas/README.md`](saas/README.md) | **Revender como SaaS** — a jornada do dono da instalação, do servidor ao primeiro cliente pagando; modelo, painel do dono, primeiro cliente, custo por cliente |
@@ -212,3 +213,10 @@ anterior à v1.0.0; regenere (`/graphify .`) antes de confiar em detalhe fino.
   nome de pasta, portanto **INFERIDO**.
 
 - [Acompanhamento administrativo por sessão](support-sessions.md) — autoridade, somente leitura, saída e contratos OAuth.
+
+## Módulo opcional Amigo (sistema de clínicas)
+
+- [Configuração e operação](amigo-api.md)
+- [Contratos e limites documentados](research/2026-11-06-amigo-api.md)
+- [Evidências e limites da validação local](research/2026-11-07-amigo-api-validation.md)
+- [Mapa de integração](architecture/amigo-api.architecture.json)

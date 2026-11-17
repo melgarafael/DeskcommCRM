@@ -9,6 +9,12 @@ export interface DadosDaPropostaParaDocumento {
   prazo_dias_uteis: number | null;
   valid_until: string | null;
   created_at: string;
+  /**
+   * O negócio de onde saem as variáveis `{{lead.<chave>}}` (#4533). Opcional
+   * porque nem toda leitura de proposta traz a coluna — sem ela, o dataset é
+   * exatamente o de antes, sem `lead`.
+   */
+  lead_id?: string | null;
 }
 
 export interface ContatoParaDocumento {
@@ -29,16 +35,23 @@ export const LINHA_EM_BRANCO = "____/____/______";
 
 /**
  * Monta o objeto de dados que `renderizarDocumento` (M2) consome — spec §7
- * item 1: "briefing_json + proposta + cliente", as três fontes juntas.
+ * item 1: "briefing_json + proposta + cliente", as três fontes juntas, mais o
+ * NEGÓCIO (#4533) quando quem chama já o leu.
  * `investment`, `schedule`, `commercial_terms.validity_days` e `client.name`
  * SEMPRE vêm de coluna gravada (nunca do briefing) — são fato do negócio, não
  * algo que a IA deva inventar ou repetir por conta própria. `numero` continua
  * sempre `null`: o renderer reafirma a regra "número nunca aparece em
  * rascunho" (M2 Global Constraints).
+ *
+ * `negocio` é o `lead` JÁ FORMATADO (`dadosDoNegocio`): a leitura do card mora
+ * em `montarDocumentoDaProposta`, que é o único lugar com `db` e organização.
+ * Sem ele — proposta sem `lead_id`, leitura falhando, card vazio — o dataset
+ * sai EXATAMENTE como saía antes da #4533.
  */
 export function montarDadosDoDocumento(
   proposta: DadosDaPropostaParaDocumento,
   contato: ContatoParaDocumento | null,
+  negocio?: Record<string, unknown> | null,
 ): Record<string, unknown> {
   const briefing =
     proposta.briefing_json && typeof proposta.briefing_json === "object" && !Array.isArray(proposta.briefing_json)
@@ -57,7 +70,7 @@ export function montarDadosDoDocumento(
   const company = (briefingClient.company as string | undefined) ?? null;
   const nomeDoBriefing = (briefingClient.name as string | undefined) ?? null;
 
-  return {
+  const dados: Record<string, unknown> = {
     ...briefing,
     numero: null,
     client: {
@@ -74,4 +87,11 @@ export function montarDadosDoDocumento(
     },
     approval: { date: LINHA_EM_BRANCO },
   };
+
+  // O card vence o briefing: `{{lead.x}}` é fato do negócio, não algo que a IA
+  // escreveu na conversa. Chave vazia nem chega aqui — quem a omitiu foi
+  // `dadosDoNegocio`, e é a ausência que vira "[a definir]" na renderização.
+  if (negocio && Object.keys(negocio).length > 0) dados.lead = negocio;
+
+  return dados;
 }

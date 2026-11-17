@@ -237,7 +237,7 @@ interface FormState {
   reply_min_interval_ms: number | null;
   followup: FollowupValue;
   voz_enabled: boolean;
-  voz_quando: "nunca" | "espelhar" | "sempre";
+  voz_quando: "nunca" | "espelhar" | "sempre" | "quando_pede";
   // Papel OPERADOR (spec 16 §3.2) — o que mexe no sistema depois da conversa.
   operator_enabled: boolean;
   /** "" = herda o modelo do Conversador (vira null no payload). */
@@ -1565,6 +1565,13 @@ export function AgentForm(props: Props) {
                 "Precisa de uma credencial do ElevenLabs cadastrada e de uma voz escolhida em Agente de IA → Provedores. Sem os dois, o agente continua respondendo em texto — ligar aqui não quebra nada.",
               )}
             </p>
+            {form.voz_enabled && channelSession?.enviaNotaDeVoz === false ? (
+              <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="voz-canal-sem-nota">
+                {t(
+                  "O canal escolhido não recebe nota de voz da IA (redes sociais como Instagram e Facebook). Nele, o agente responde em texto.",
+                )}
+              </p>
+            ) : null}
             {form.voz_enabled ? (
               <div className="space-y-1">
                 <Label htmlFor="voz_quando">{t("Quando falar")}</Label>
@@ -1580,12 +1587,22 @@ export function AgentForm(props: Props) {
                     <SelectItem value="espelhar">
                       {t("Só quando o cliente mandar áudio")}
                     </SelectItem>
+                    <SelectItem value="quando_pede">
+                      {t("Quando o cliente mandar ou pedir áudio")}
+                    </SelectItem>
                     <SelectItem value="sempre">{t("Sempre")}</SelectItem>
                     <SelectItem value="nunca">
                       {t("Nunca (desligado, sem apagar a configuração)")}
                     </SelectItem>
                   </SelectContent>
                 </Select>
+                {form.voz_quando === "quando_pede" ? (
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      "Responde em áudio quando o cliente manda áudio, pede áudio por escrito ou avisa que não consegue ler. Quem pede para continuar no texto segue recebendo texto.",
+                    )}
+                  </p>
+                ) : null}
               </div>
             ) : null}
           </Card>

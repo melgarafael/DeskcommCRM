@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useT } from "@/hooks/i18n/useT";
+import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
 import {
   DICA_DO_CURINGA,
   GRUPOS_DE_VARIAVEL,
@@ -88,12 +89,18 @@ export function SeletorDeVariavel({
         dica: null,
       }));
     const todos = [...doCatalogo, ...dosExtras];
-    const termo = busca.trim().toLowerCase();
+    // A busca ignora ACENTO (#4481), não só a caixa: `lower('Á')` continua
+    // `'á'`, então comparar `.toLowerCase()` com `.toLowerCase()` só casava com
+    // acento e grafia idênticos. A chave nasce sem acento (`saudacao`) e o
+    // rótulo com ele (« como está no cadastro »); quem digita qualquer uma das
+    // duas formas tem de achar o item. A regra é a do repo inteiro
+    // (`termoSemAcento`), aplicada aos DOIS lados.
+    const termo = termoSemAcento(busca.trim());
     const filtrados = termo
       ? todos.filter(
           (item) =>
-            item.chave.toLowerCase().includes(termo) ||
-            item.rotulo.toLowerCase().includes(termo),
+            termoSemAcento(item.chave).includes(termo) ||
+            termoSemAcento(item.rotulo).includes(termo),
         )
       : todos;
     return GRUPOS_DE_VARIAVEL.map((grupo) => ({

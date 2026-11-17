@@ -218,6 +218,7 @@ export async function encerraDemanda(
   const settings = await settingsDoFunil(
     supabase,
     (lead as { pipeline_id: string }).pipeline_id,
+    ctx.organization_id,
   );
   const vereditoDeCampos = validaCamposExigidos({
     lead: lead as Record<string, unknown>,
@@ -339,6 +340,7 @@ export async function encerraDemanda(
     },
     valorRecorrente:
       (lead as { recurring_value_cents?: number | string | null }).recurring_value_cents ?? null,
+    meses: (lead as { recurring_months?: number | null }).recurring_months ?? null,
     criadoEm: (lead as { created_at?: string | null }).created_at ?? null,
     userId: ctx.actor.type === "user" ? ctx.actor.id : null,
     origem: "lib/leads/encerramento.encerraDemanda",
@@ -393,6 +395,7 @@ export async function encerraDemanda(
   await audit({
     action: eventType,
     actorUserId: a.actorUserId,
+    actorApiTokenId: ctx.actor.type === "api_token" ? ctx.actor.id : null,
     organizationId: ctx.organization_id,
     resourceType: "crm_lead",
     resourceId: input.leadId,

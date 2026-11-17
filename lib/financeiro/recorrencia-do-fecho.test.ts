@@ -75,11 +75,26 @@ describe("moveARecorrenciaNoFecho", () => {
         leadId: LEAD,
         pipelineId: FUNIL,
         valorCents: 50_000,
+        meses: null,
         criadoEm: CRIADO_EM,
         userId: USER,
       },
     );
     expect(financeiro.desativaRecorrenciaDoNegocio).not.toHaveBeenCalled();
+  });
+
+  it("a duração do contrato declarada no card chega ao molde (recurring_months)", async () => {
+    await moveARecorrenciaNoFecho({
+      ...base,
+      etapa: { is_won: true, is_lost: false },
+      valorRecorrente: 50_000,
+      meses: 12,
+    });
+
+    expect(financeiro.recorrenciaDoNegocio).toHaveBeenCalledWith(
+      { admin: true },
+      expect.objectContaining({ meses: 12 }),
+    );
   });
 
   it("ganho sem valor declarado não chega ao banco (o valor único não vira molde)", async () => {

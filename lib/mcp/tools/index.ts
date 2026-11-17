@@ -10,6 +10,7 @@
  *  `apenasHumano` no catálogo — nunca alcançável pelo agente publicado).
  */
 import type { McpToolDefinition } from "../types";
+import { amigoTools } from "./amigo";
 import { TOOL_CATALOG, VALID_TOOL_IDS } from "./catalog";
 import { crmSearchContacts, crmGetContact, crmProposeContactField } from "./contacts";
 import {
@@ -26,9 +27,11 @@ import {
   crmMoveLeadStage,
   crmRetomarLead,
   crmProposeLeadFieldsFromDocument,
+  crmListLeadAttachments,
+  crmGetLeadAttachment,
 } from "./leads";
 import { crmGetPipelineForecast, crmListPipelines } from "./pipelines";
-import { crmSendWhatsappMessage } from "./messages";
+import { crmSendMaterial, crmSendWhatsappMessage } from "./messages";
 import { crmPublishWhatsappStatus } from "./status";
 import { crmStartConversationAndSend } from "./start-conversation";
 import {
@@ -97,6 +100,7 @@ import {
   crmProposeReactivation,
 } from "./retencao";
 import { crmDraftProposal, crmPrepararProposta } from "./propostas";
+import { crmSaveLeadDiagnosis } from "./diagnostico";
 
 // Cast via `unknown` porque McpToolDefinition<TInput> nao e covariante
 // em TInput (handler usa TInput em posicao contravariante). Coletar
@@ -104,6 +108,8 @@ import { crmDraftProposal, crmPrepararProposta } from "./propostas";
 // nivel do array — o server core ja recebe args como `Record<string,
 // unknown>` e cada handler valida no Zod do registerTool.
 export const allTools: ReadonlyArray<McpToolDefinition> = [
+  // módulo opcional `amigo` — fora do catálogo quando desligado (`deModuloDesligado`)
+  ...amigoTools,
   // read
   crmListEventTypes,
   crmFindFreeSlots,
@@ -117,6 +123,11 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmGetQueueStatus,
   crmListLeads,
   crmGetLead,
+  // #4544 (item 2) — o documento anexado ao card: listar para descobrir o id,
+  // ler para tirar dali os valores. Entram logo depois do get_lead porque são a
+  // leitura do MESMO negócio, um nível abaixo.
+  crmListLeadAttachments,
+  crmGetLeadAttachment,
   crmListPipelines,
   crmGetPipelineForecast,
   crmSearchKnowledge,
@@ -163,7 +174,12 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmMoveLeadStage,
   crmRetomarLead,
   crmProposeLeadFieldsFromDocument,
+  // Diagnóstico da empresa na ficha do contato (decisão D7: grava direto).
+  crmSaveLeadDiagnosis,
   crmSendWhatsappMessage,
+  // #4129 — o material cadastrado da empresa, como documento. Serve ao wire
+  // (API/MCP); no turno, o envio é da nativa `send_message` com `material_id`.
+  crmSendMaterial,
   // Status não é mensagem: não tem destinatário nem conversa, e quem publica
   // escolhe um PÚBLICO. Vem logo depois do envio porque é a outra forma de
   // alcançar o cliente pelo mesmo número.

@@ -54,6 +54,8 @@ export interface FechoQueMoveARecorrencia {
   pipelineId: string | null;
   etapa: { is_won: boolean; is_lost: boolean };
   valorRecorrente?: number | string | null;
+  /** `crm_leads.recurring_months` — a duração do contrato (nulo = sem prazo). */
+  meses?: number | null;
   criadoEm?: string | null;
   userId?: string | null;
   /** A porta que fechou o negócio — só para o log de falha. */
@@ -97,6 +99,7 @@ export async function moveARecorrenciaNoFecho(
         leadId: entrada.leadId,
         pipelineId: entrada.pipelineId,
         valorCents: valor,
+        meses: entrada.meses ?? null,
         criadoEm: entrada.criadoEm ?? null,
         userId: entrada.userId ?? null,
       });

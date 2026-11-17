@@ -120,7 +120,7 @@ test("[P0] primeira cobrança: conectar, assinar, atrasar, suspender e voltar so
     await page.getByRole("tab", { name: "Planos" }).click();
     for (const [nome, preco] of [[ESSENCIAL, "49,90"], [PROFISSIONAL, "99,90"]] as const) {
       await page.getByLabel("Nome do plano").fill(nome);
-      await page.getByLabel("Preço (R$)").fill(preco);
+      await page.getByLabel("Preço (BRL)").fill(preco);
       await page.getByLabel("Dias de teste grátis").fill("7");
       await page.getByRole("button", { name: "Salvar plano" }).click();
       await expect(page.getByText(nome)).toBeVisible();

@@ -58,7 +58,7 @@ const EXTRAS_DO_BANCO = [
   },
 ];
 
-const PRINCIPAL_DO_BANCO = { phone_type: "celular", phone_whatsapp: "sim" };
+const PRINCIPAL_DO_BANCO = { phone_type: "celular", phone_whatsapp: "sim", phone_label: "Casa" };
 
 /** Registra cada `eq` por tabela: é o que o caso de organização confere. */
 function fakeSupabase(filtros: Array<{ tabela: string; coluna: string; valor: unknown }>, extras: unknown[]) {
@@ -123,6 +123,8 @@ describe("GET /api/v1/contacts/[id] — telefones extras", () => {
 
     expect(corpo.data.phone_type).toBe("celular");
     expect(corpo.data.phone_whatsapp).toBe("sim");
+    // #4242, item 2: o rótulo do principal (o do extra promovido) vai na resposta.
+    expect(corpo.data.phone_label).toBe("Casa");
     // Ordem por created_at: o extra de 01/10 vem antes do de 02/10, embora o
     // fake os tenha guardado na ordem inversa.
     expect(corpo.data.additional_phones).toEqual([
