@@ -218,7 +218,8 @@ describe("o propósito da leitura do CPF sai na linha contact.cpf_decrypted (#48
     expect(
       erroDe(() => comoUsuario(ESTRANHO, `public.decrypt_cpf('${CONTATO}', '${DA_FICHA}')`)),
     ).toContain("forbidden");
-    // A casca também não é atalho: ela delega para o mesmo corpo guardado.
+    // A de 1 argumento também não é atalho: ela roda o MESMO corpo guardado,
+    // com o GUC no lugar do parâmetro.
     expect(erroDe(() => comoUsuario(ESPECTADOR, `public.decrypt_cpf('${CONTATO}')`))).toContain(
       "forbidden",
     );
