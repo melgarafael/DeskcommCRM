@@ -1231,6 +1231,7 @@ export const AUDIT_ACTIONS = [
   // mesma pergunta de LGPD do ligado — metadata.origem diz para qual, e
   // origem_anterior de onde saiu.
   "ai.jev.origem_alterada",
+  "ai.jev.modelo_alterado",
   // O pedido de descadastro é do cliente e o padrão é irreversível — mas a
   // regra W-02 do catálogo de negócio prevê o override: admin desbloqueia à
   // mão. Sem esta linha, a ação existiria sem rastro de QUEM a desfez, que é
@@ -1433,6 +1434,9 @@ export const AUDIT_ACTIONS = [
   // O admin ligou/desligou o aviso das transferências para atendimento humano
   // (#3784) — o mesmo número e o mesmo teto diário do Aviso de caso.
   "crm.aviso_de_transferencia_alterado",
+  // O admin ligou/desligou o PRIMEIRO nome do cliente na mensagem do aviso de
+  // transferência. Nasce desligado por privacidade.
+  "crm.aviso_nome_na_transferencia_alterado",
   // O admin da plataforma exportou o INVENTÁRIO das instalações em CSV (#2777).
   // É leitura, mas é leitura EM ESCALA DE PLATAFORMA: grava quem, quando, QUANTO
   // saiu, se o teto cortou e QUE filtros valiam — nunca o texto da busca, que é

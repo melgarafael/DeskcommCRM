@@ -3,12 +3,17 @@
  *
  * Pagar uma parcela NÃO acontece aqui: é `/api/v1/honorarios/parcelas/[id]/pagar`, que cria o
  * `financial_entries` do caixa núcleo (DIRC "integrar" — não há tabela de "pagamento" própria).
+ *
+ * Leitura por SESSÃO OU TOKEN (`mcp:read`, Spec 33 R2, doc 376): com token o client é a
+ * service role, e o GET filtra `organization_id` da linha do token. O POST segue só de
+ * sessão e recusa o Bearer com 401 no `requireRole`.
  */
 import { randomUUID } from "node:crypto";
 
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
@@ -34,17 +39,26 @@ const criarSchema = z.object({
 
 type Ctx = { params: Promise<{ id: string }> };
 
-export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
+export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("viewer", { requestId, resource: "honorarios_parcelas" });
+  // Leitura do calendário: sessão OU token `mcp:read`. O papel mínimo é o da sessão.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "honorarios_parcelas",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "honorarios_parcelas_listar", requestId);
+  if (teto) return teto;
   const { id: contratoId } = await ctx.params;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data, error } = await supabase
     .from("honorarios_parcelas")
     .select("id, contrato_id, numero, vencimento, valor_cents, currency, financial_entry_id, status")
     .eq("contrato_id", contratoId)
+    .eq("organization_id", authz.organizationId)
     .order("numero", { ascending: true });
 
   if (error) {
