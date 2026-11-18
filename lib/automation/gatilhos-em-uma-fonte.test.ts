@@ -13,11 +13,21 @@ import { describe, expect, it } from "vitest";
 
 import { automationRulesHandler } from "./engine.handler";
 import { gatilhoDaTransicao } from "@/lib/agenda/laco";
-import { ENTIDADE_ESPERADA_POR_GATILHO, TRIGGER_EVENTS } from "@/lib/schemas/webhooks";
+import {
+  ENTIDADE_ESPERADA_POR_GATILHO,
+  EVENTOS_DOS_GATILHOS,
+  TRIGGER_EVENTS,
+} from "@/lib/schemas/webhooks";
 
 describe("gatilhos de automação", () => {
-  it("o handler assina exatamente o que a tela deixa escolher", () => {
-    expect([...automationRulesHandler.events].sort()).toEqual([...TRIGGER_EVENTS].sort());
+  it("o handler assina exatamente o que a tela deixa escolher, já traduzido para o barramento", () => {
+    // A lista deixou de ser idêntica à dos nomes quando o gatilho de caso passou
+    // a escutar `ai.case_opened` (#4900): a regra grava `case_opened`, e o
+    // evento publicado tem outro nome. O que não pode divergir é o CONJUNTO —
+    // um gatilho a mais aqui é evento sem regra, um a menos é regra que nunca
+    // roda.
+    expect([...automationRulesHandler.events].sort()).toEqual([...EVENTOS_DOS_GATILHOS].sort());
+    expect(EVENTOS_DOS_GATILHOS).toHaveLength(TRIGGER_EVENTS.length);
   });
 
   it("todo gatilho declara a entidade que o guard do motor espera", () => {

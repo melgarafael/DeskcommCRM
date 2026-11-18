@@ -36,7 +36,9 @@ import { audit } from "@/lib/audit";
 import { regraDoEvento } from "@/lib/automation/gatilho-de-data-do-funil";
 import {
   acoesQueFechamLaco,
+  campoFaltandoNoPayload,
   ENTIDADE_ESPERADA_POR_GATILHO,
+  gatilhoDoEvento,
   GATILHOS_DO_TRIGGER_DE_LEAD,
 } from "@/lib/schemas/webhooks";
 import { logger } from "@/lib/logger";
@@ -143,6 +145,38 @@ export async function buildContext(admin: SupabaseClient, row: EventRow): Promis
       .eq("organization_id", org)
       .maybeSingle();
     if (contact) context.contact = contact;
+  } else if (row.entity_kind === "agent_case") {
+    // ── O CASO (#4900) ─────────────────────────────────────────────────────
+    //
+    // O gatilho de caso existe para o card do funil de ATENDIMENTO acompanhar o
+    // chamado, e quem move o card é a ação `create_or_move_lead` — que precisa
+    // de um CONTATO. O caso sempre tem um (`agent_cases.conversation_id` é not
+    // null e `conversations.contact_id` também), e o emissor já o manda no
+    // payload; a leitura aqui é a versão de AGORA da ficha, como no compromisso.
+    //
+    // O NEGÓCIO NÃO É HIDRATADO de propósito: `payload.lead_id` é o card que a
+    // conversa já tinha — no funil de VENDAS, tipicamente. Hidratá-lo faria a
+    // ação tentar mover ESSE card para a etapa do atendimento, e o
+    // `moveLeadHandler` recusa mover entre funis. Sem `lead` no contexto, a ação
+    // procura o card do contato NO FUNIL DA REGRA e o cria se ainda não existir,
+    // que é exatamente o desenho do funil de atendimento.
+    const caixa = row.payload as Record<string, unknown>;
+    context.case = {
+      id: row.entity_id ?? (typeof caixa.case_id === "string" ? caixa.case_id : null),
+      status: typeof caixa.status === "string" ? caixa.status : null,
+      conversation_id: typeof caixa.conversation_id === "string" ? caixa.conversation_id : null,
+      source: typeof caixa.source === "string" ? caixa.source : null,
+    };
+    const contactId = typeof caixa.contact_id === "string" ? caixa.contact_id : null;
+    if (contactId) {
+      const { data: contact } = await admin
+        .from("contacts")
+        .select("*")
+        .eq("id", contactId)
+        .eq("organization_id", org)
+        .maybeSingle();
+      if (contact) context.contact = contact;
+    }
   } else if (row.entity_kind === "calendar_appointment" && row.entity_id) {
     const { data: appointment } = await admin
       .from("calendar_appointments")
@@ -652,10 +686,36 @@ export async function runAutomationForEvent(
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "skipped", detail: "caused_by_rule" };
   }
 
-  const expectedKind = EXPECTED_ENTITY_KIND[row.event_type];
+  // ── O GATILHO que este evento representa (#4900) ─────────────────────────
+  //
+  // Quase sempre `event_type` e o nome do gatilho são a MESMA string. Os dois de
+  // caso não são: o barramento publica `ai.case_opened`/`ai.case_closed` desde a
+  // 0148 (com dois consumidores), e a regra grava `case_opened`/`case_closed`.
+  // A tradução é uma função do catálogo (`gatilhoDoEvento`), e é ela que o guard
+  // de entidade e a busca das regras usam — sem isso, a regra de caso é salva e
+  // nunca casa, em silêncio.
+  const gatilho = gatilhoDoEvento(row.event_type);
+
+  const expectedKind = EXPECTED_ENTITY_KIND[gatilho];
   if (expectedKind && entidadeDoEvento(row) !== expectedKind) {
 
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "skipped", detail: "entity_kind_mismatch" };
+  }
+
+  // ── O PAYLOAD QUE A AÇÃO PRECISA (#4900) ─────────────────────────────────
+  //
+  // Gatilho de caso carrega `contact_id` (o dono do card) e `status` (o
+  // desfecho). Sem o contato não há card a mover, e criar um card SEM contato
+  // seria pior que não agir: o motor pula e DIZ o campo que faltou, como faz
+  // com a entidade errada. Gatilho que não declara payload exigido não passa
+  // por aqui (devolve `null`).
+  const faltandoNoPayload = campoFaltandoNoPayload(gatilho, row.payload);
+  if (faltandoNoPayload) {
+    return {
+      consumer_key: AUTOMATION_CONSUMER_KEY,
+      status: "skipped",
+      detail: `payload_incompleto:${faltandoNoPayload}`,
+    };
   }
 
   // Contato pessoal (spec 21, caminho 8): evento de pessoal não casa com regra
@@ -668,7 +728,9 @@ export async function runAutomationForEvent(
     .from("automation_rules")
     .select("id, name, conditions, actions, trigger_config")
     .eq("organization_id", row.organization_id)
-    .eq("trigger_event", row.event_type)
+    // Pelo GATILHO traduzido, não pelo `event_type` cru: `case_opened` é o que
+    // está gravado na regra, `ai.case_opened` é o que está na linha.
+    .eq("trigger_event", gatilho)
     .eq("is_active", true)
     .order("created_at", { ascending: true });
   if (error) {

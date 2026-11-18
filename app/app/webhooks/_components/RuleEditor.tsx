@@ -152,6 +152,23 @@ const CONTACT_FIELDS: CuratedField[] = [
   { value: "contact.tags", label: "Tags do contato", op: "contains", lista: true },
   { value: "contact.name", label: "Nome do contato", op: "contains" },
 ];
+/**
+ * #4900 — as condições do gatilho de CASO.
+ *
+ * O DESFECHO é condição, e não um terceiro gatilho: "caso resolvido leva o card
+ * para Resolvido" e "caso cancelado leva para Cancelado" são a MESMA regra com
+ * um filtro, e separar os dois gatilhos obrigaria o operador a manter duas
+ * regras para o mesmo assunto. `event.status` é o campo que o emissor grava
+ * (`resolved`, `escalated`, `cancelled` no fechamento).
+ *
+ * O resto são os campos do CONTATO: é ele que a ação usa para achar o card, e
+ * "só o cliente VIP" é o filtro que a operação quer — o status do caso já é o
+ * gatilho.
+ */
+const CASO_FIELDS: CuratedField[] = [
+  { value: "event.status", label: "Desfecho do caso", op: "eq" },
+  ...CONTACT_FIELDS,
+];
 const TAG_ADDED_FIELD: CuratedField = {
   value: "event.added_tags",
   label: "Tag adicionada",
@@ -234,6 +251,9 @@ export const CURATED_FIELDS: Record<TriggerEvent, CuratedField[]> = {
   // #4365 — as condições são as do CONTATO: quem monta a regra quer filtrar
   // QUEM ligou (tags, nome), e o fato em si (a ligação perdida) já é o gatilho.
   "voice_call.missed": CONTACT_FIELDS,
+  // #4900 — o caso: desfecho (`event.status`) e os campos do contato.
+  case_opened: CASO_FIELDS,
+  case_closed: CASO_FIELDS,
 };
 
 export const OP_LABELS: Record<Op, string> = {
