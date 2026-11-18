@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
@@ -22,7 +22,14 @@ import { fonteDeTemplates } from "@/lib/channels/templates-fonte";
  * `channel-adapter-olx.test.ts` (contrato pendente) e a nota no adapter.
  */
 const OLX = "olx" as const;
-const MIGRATION = "supabase/migrations/20261110151328_9317_canal_olx.sql";
+/**
+ * A migration do canal, achada pelo NOME do arquivo e não pelo timestamp: o
+ * numero e o timestamp sao globais e mudam a cada resgate (foi 9317, virou
+ * 9422), e o teste quebrava por renumeracao — não por defeito.
+ */
+const MIGRATION = `supabase/migrations/${
+  readdirSync("supabase/migrations").find((f) => f.endsWith("_canal_olx.sql")) ?? "canal_olx.sql"
+}`;
 
 describe("canal olx — vocabulário e seam", () => {
   it("declara o perfil auto-restrito do chat: só texto, sem definição e sem janela", () => {
@@ -60,7 +67,9 @@ describe("canal olx — vocabulário e seam", () => {
     expect(adapter.codes.notConfigured).toBe("olx_not_configured");
     expect(adapter.codes.sendFailed).toContain(OLX);
     // Fail-closed: provider fora da matriz lança em vez de cair no WAHA.
-    expect(() => getAdapter("telegram" as never)).toThrow(/unknown_channel_provider/);
+    // (`telegram` NÃO serve mais de exemplo: ele entrou na matriz pelo #3440, e
+    // este caso passou a exigir um provider que de fato não exista.)
+    expect(() => getAdapter("um_provider_do_futuro" as never)).toThrow(/unknown_channel_provider/);
   });
 
   it("migration e baseline conhecem o provider, o ramo do CHECK e o arquivo do webhook", () => {
@@ -81,6 +90,15 @@ describe("canal olx — vocabulário e seam", () => {
     expect(mig).toMatch(/provider = 'olx' and olx_seller_id is not null/);
     expect(mig).toContain("'olx'");
     expect(mig).toMatch(/conversations_channel_check\s+check \(channel in \([^)]*'olx'/);
+    // A reconstrução dos QUATRO CHECKs repetir a lista inteira inclui o que a
+    // main já aceitava: `telegram` (9342). Sem esta linha, a migration do OLX
+    // aplicada DEPOIS da 9342 encolhe o vocabulário em silêncio — sessão do bot
+    // bate 23514, `webhook_events_log` para de arquivar update e a conversa do
+    // bot é barrada. O merge de 1362 commits foi exatamente onde isso apareceu.
+    expect(mig).toMatch(/channel_sessions_provider_check[\s\S]{0,400}'telegram'/);
+    expect(mig).toMatch(/provider = 'telegram' and telegram_bot_id is not null/);
+    expect(mig).toMatch(/webhook_events_log_provider_check[\s\S]{0,400}'telegram'/);
+    expect(mig).toMatch(/conversations_channel_check\s+check \(channel in \([^)]*'telegram'/);
     // A descrição vive no cabeçalho `-- manifest:` do próprio .sql.
     expect(mig).toMatch(/^-- manifest:/m);
   });

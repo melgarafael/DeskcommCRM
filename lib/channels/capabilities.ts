@@ -277,6 +277,10 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // que a main acrescentou ao tipo entra aqui como `false`, a mesma leitura
     // do canal oficial, em vez de ficar com o valor implícito.
     statusUpdates: false,
+    // E não devolve venda a plataforma de anuncio nenhuma: o chat da OLX nao
+    // tem a ponte de conversoes da Meta, e o adapter nao implementa
+    // `reportConversion` (a matriz e o adapter sao conferidos um contra o outro).
+    reportaConversao: false,
   },
 };
 
