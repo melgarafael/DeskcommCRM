@@ -810,6 +810,20 @@ export const NAV_CATALOG = [
     healthDot: true,
   },
   {
+    // Módulo opcional (ADR-0002, #4227): a porta só existe depois que o dono da
+    // instalação instala `amigo` em `/admin/modulos`. Mesmo filtro de cadências.
+    href: "/app/integrations/amigo",
+    label: "Amigo",
+    description: "Ligue a agenda ao sistema de clínicas Amigo: pacientes, convênios e consultas.",
+    icon: "CalendarBlank",
+    // No hub do CRM, não no menu lateral: toda porta de módulo mora num hub
+    // (`tests/unit/porta-do-modulo-ligado.test.tsx`), e é ali que a agenda está.
+    group: "crm",
+    section: "O dia a dia da venda",
+    minRole: "agent",
+    modulo: "amigo",
+  },
+  {
     // Não tinha link nenhum no app inteiro: só se chegava digitando a URL.
     href: "/app/integrations/nuvemshop",
     label: "Nuvemshop",
@@ -966,6 +980,15 @@ export const NAV_CATALOG = [
     sidebar: true,
   },
   {
+    href: "/app/ads/google",
+    label: "Google Ads",
+    description: "Resultados dos negócios atribuídos ao Google Ads e desempenho da conta de anúncios.",
+    icon: "Megaphone",
+    group: "analise",
+    section: "Os números do período",
+    minRole: "manager",
+  },
+  {
     // Irmã de "Desempenho", não a mesma coisa: lá é DESFECHO (funil agora,
     // ganho/perdido por atendente); aqui é o TRABALHO que aconteceu no
     // período, com quem fez cada coisa. Um mês inteiro atendido pela IA e um
@@ -1091,6 +1114,28 @@ export const NAV_CATALOG = [
     minRole: "manager",
   },
   {
+    // A tela da #3603. O prazo dos fluxos de etapa parada já se editava no
+    // construtor, mas só fluxo por fluxo: nenhuma tela mostrava quais deles
+    // alcançam cada etapa. A tela é uma JANELA para os fluxos de etapa parada:
+    // mostra os que alcançam cada etapa e edita o prazo NO PRÓPRIO FLUXO, sem
+    // chave paralela em `settings`.
+    //
+    // A entrada automática no funil NÃO está aqui: ela vive na main como um
+    // interruptor e a escolha de funil/etapa saiu da action. Uma tela que a
+    // oferecesse gravaria valor que ninguém lê.
+    //
+    // `manager` e não `admin`, pela mesma linha da matriz da spec 13 §4 que cobre
+    // "atendimento/routing": quem monta a régua comercial da empresa é o gerente,
+    // e nada aqui apaga conversa nem mexe em dinheiro.
+    href: "/app/settings/followup-por-etapa",
+    label: "Follow-up por etapa",
+    description: "O que a operação espera de cada etapa do funil depois que a conversa chega.",
+    icon: "FlowArrow",
+    group: "organizacao",
+    section: "Sua empresa",
+    minRole: "manager",
+  },
+  {
     // A porta do freio POR EMPRESA do passo `ai_decide` (issue #2367). O #2228
     // criou o passo e o deixou opcional POR REGRA; sem esta tela, desligar de
     // uma vez todos os `ai_decide` de uma organização só existiria como
@@ -1199,6 +1244,17 @@ export const NAV_CATALOG = [
     // SEM `sidebar`: fica só no hub. Trocar a marca é tarefa de uma vez, e
     // agrupar o menu já o fez crescer — duas telas a mais estouraram a dobra em
     // 900px, medido pelo e2e `navegacao.spec.ts`.
+  },
+  {
+    href: "/app/settings/aparencia",
+    label: "Aparência",
+    description: "O template visual do sistema: fundo, menu, tipografia, cantos e densidade.",
+    icon: "PaintBrush",
+    group: "organizacao",
+    section: "Sua empresa",
+    // `admin`, como a Marca: o visual é identidade da empresa e vale para todos.
+    // SEM `sidebar` pelo mesmo motivo da linha de cima — a dobra de 900px.
+    minRole: "admin",
   },
   {
     href: "/app/settings/billing",

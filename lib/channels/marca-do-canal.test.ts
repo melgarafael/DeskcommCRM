@@ -17,7 +17,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { PISOS, razaoDeContraste } from "@/lib/branding/contraste";
-import { marcaDoCanal, rotuloAcessivelDoCanal } from "@/lib/channels/marca-do-canal";
+import { CANAIS_NA_PALETA, descricaoComCanal, marcaDoCanal, rotuloAcessivelDoCanal } from "@/lib/channels/marca-do-canal";
 import { channelBrand } from "@/lib/channels/presentation";
 
 const CSS = fs.readFileSync(path.join(process.cwd(), "app/globals.css"), "utf8");
@@ -78,6 +78,43 @@ describe("marcaDoCanal", () => {
       "telegram",
     );
     expect(channelBrand({ provider: "zernio_social", social_platform: "tiktok" })).toBe("unknown");
+  });
+});
+
+describe("channelBrand no aviso", () => {
+  it("a marca é da rede, nunca do transporte; só conversa de verdade tem marca", () => {
+    // O bot nativo do Telegram (#3440) grava `provider: "telegram"`: sem este
+    // caso, o aviso dele sairia neutro enquanto a tela promete "Telegram azul".
+    expect(channelBrand({ provider: "telegram" })).toBe("telegram");
+    // O número da API oficial continua WhatsApp: a cor do que já existe não muda.
+    expect(channelBrand({ provider: "meta_cloud" })).toBe("whatsapp");
+    // E-mail é canal de campanha, não de conversa: não gera aviso nem tem marca.
+    expect(channelBrand({ provider: "email" })).toBe("unknown");
+  });
+});
+
+describe("a paleta nomeada", () => {
+  it("cobre as origens do pedido e tem um neutro para o resto", () => {
+    // A paleta é curta e NOMEADA: a tela de Configurações e o aviso leem a
+    // mesma tabela — sem hex solto em componente.
+    expect([...CANAIS_NA_PALETA]).toEqual([
+      "whatsapp",
+      "telegram",
+      "instagram",
+      "messenger",
+    ]);
+    for (const canal of CANAIS_NA_PALETA) {
+      expect(marcaDoCanal(canal).cor).toMatch(/^var\(--color-canal-[a-z-]+\)$/);
+      expect(marcaDoCanal(canal).rotulo).not.toBe("Canal");
+    }
+    expect(marcaDoCanal("orkut").cor).toBe("var(--color-text-muted)");
+  });
+
+  it("o corpo do aviso nomeia o canal em texto; sem canal, não inventa prefixo", () => {
+    expect(descricaoComCanal("Foto", "whatsapp", "pt-BR")).toBe("WhatsApp · Foto");
+    expect(descricaoComCanal("Foto", "telegram", "es")).toBe("Telegram · Foto");
+    expect(descricaoComCanal("Foto", "orkut", "pt-BR")).toBe("Foto");
+    expect(descricaoComCanal("", "whatsapp", "pt-BR")).toBe("WhatsApp");
   });
 });
 

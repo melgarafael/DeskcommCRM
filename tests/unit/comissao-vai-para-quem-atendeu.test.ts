@@ -11,8 +11,9 @@
  * O instrumento é a linha que a rota manda para `sale_items`.
  */
 import { NextRequest } from "next/server";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 
@@ -38,8 +39,16 @@ const REGRAS = [
   { attendant_user_id: PROFISSIONAL, event_type_id: null, percent: 30 },
 ];
 
-function montarMundo(opts: { dono: string | null; comanda?: Record<string, unknown> }) {
+function montarMundo(opts: {
+  dono: string | null;
+  comanda?: Record<string, unknown>;
+  falhasRegras?: number;
+  appointmentIds?: string[];
+  escritas?: string[];
+  rpcs?: string[];
+}) {
   const itens: Array<Record<string, unknown>> = [];
+  let falhasRestantes = opts.falhasRegras ?? 0;
 
   vi.mocked(requireRole).mockImplementation(
     async () =>
@@ -52,17 +61,15 @@ function montarMundo(opts: { dono: string | null; comanda?: Record<string, unkno
 
   const lido = (tabela: string): unknown =>
     tabela === "calendar_appointments"
-      ? [
-          {
-            id: APPOINTMENT,
-            title: "Corte",
-            contact_id: null,
-            event_type_id: SERVICO,
-            owner_user_id: opts.dono,
-            status: "completed",
-            calendar_event_types: { name: "Corte", default_price_cents: 10000 },
-          },
-        ]
+      ? (opts.appointmentIds ?? [APPOINTMENT]).map((id) => ({
+          id,
+          title: "Corte",
+          contact_id: null,
+          event_type_id: SERVICO,
+          owner_user_id: opts.dono,
+          status: "completed",
+          calendar_event_types: { name: "Corte", default_price_cents: 10000 },
+        }))
       : tabela === "commission_rules"
         ? REGRAS
         : [];
@@ -71,6 +78,7 @@ function montarMundo(opts: { dono: string | null; comanda?: Record<string, unkno
     const cadeia: Record<string, unknown> = {};
     for (const m of ["select", "order", "limit", "eq", "in", "neq"]) cadeia[m] = () => cadeia;
     cadeia.insert = (linha: Record<string, unknown>) => {
+      opts.escritas?.push(tabela);
       if (tabela === "sale_items") itens.push(linha);
       const inserido = { id: `${tabela}-1`, number: 7, status: "open" };
       const elo: Record<string, unknown> = {
@@ -87,13 +95,23 @@ function montarMundo(opts: { dono: string | null; comanda?: Record<string, unkno
         : tabela === "organizations"
           ? { data: { currency: "BRL" }, error: null }
           : { data: null, error: null };
-    cadeia.then = (ok: (v: unknown) => unknown, ko: (e: unknown) => unknown) =>
-      Promise.resolve({ data: lido(tabela), error: null }).then(ok, ko);
+    cadeia.then = (ok: (v: unknown) => unknown, ko: (e: unknown) => unknown) => {
+      if (tabela === "commission_rules" && falhasRestantes > 0) {
+        falhasRestantes -= 1;
+        return Promise.resolve({
+          data: null,
+          error: { code: "57014", message: "statement timeout" },
+        }).then(ok, ko);
+      }
+      return Promise.resolve({ data: lido(tabela), error: null }).then(ok, ko);
+    };
     return cadeia;
   };
 
-  const rpc = async (fn: string) =>
-    fn === "fn_finalizar_comanda" ? { data: null, error: null } : { data: 7, error: null };
+  const rpc = async (fn: string) => {
+    opts.rpcs?.push(fn);
+    return fn === "fn_finalizar_comanda" ? { data: null, error: null } : { data: 7, error: null };
+  };
 
   vi.mocked(createClient).mockResolvedValue({ from, rpc } as never);
   return itens;
@@ -106,9 +124,51 @@ const pedido = (url: string, corpo: Record<string, unknown>) =>
     body: JSON.stringify(corpo),
   });
 
+beforeEach(() => vi.clearAllMocks());
+
 describe("faturar em lote", () => {
   const url = "http://localhost/api/v1/financeiro/comandas/faturar-lote";
   const corpo = { appointment_ids: [APPOINTMENT], payment_method_id: PAYMENT };
+
+  it("does not invoice or open an empty sale when the commission lookup fails", async () => {
+    const escritas: string[] = [];
+    const rpcs: string[] = [];
+    const itens = montarMundo({ dono: PROFISSIONAL, falhasRegras: 1, escritas, rpcs });
+    const { POST } = await import("@/app/api/v1/financeiro/comandas/faturar-lote/route");
+
+    const response = await POST(pedido(url, corpo));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      data: { faturados: 0, pulados: { erro_no_item: 1 }, numeros: [] },
+    });
+    expect(itens).toEqual([]);
+    expect(escritas).toEqual([]);
+    expect(rpcs).toEqual([]);
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it("continues the batch after a failed commission lookup without freezing zero percent", async () => {
+    const second = "88888888-8888-4888-8888-888888888888";
+    const escritas: string[] = [];
+    const rpcs: string[] = [];
+    const itens = montarMundo({
+      dono: PROFISSIONAL,
+      falhasRegras: 1,
+      appointmentIds: [APPOINTMENT, second],
+      escritas,
+      rpcs,
+    });
+    const { POST } = await import("@/app/api/v1/financeiro/comandas/faturar-lote/route");
+
+    const response = await POST(pedido(url, { ...corpo, appointment_ids: [APPOINTMENT, second] }));
+    expect(await response.json()).toMatchObject({
+      data: { faturados: 1, pulados: { erro_no_item: 1 }, numeros: [7] },
+    });
+    expect(escritas).toEqual(["sales", "sale_items"]);
+    expect(itens).toHaveLength(1);
+    expect(itens[0]).toMatchObject({ attendant_user_id: PROFISSIONAL, commission_percent: 30 });
+    expect(rpcs.filter((fn) => fn === "fn_finalizar_comanda")).toHaveLength(1);
+  });
 
   it("o item vai para o dono do agendamento, com o percentual DELE", async () => {
     const itens = montarMundo({ dono: PROFISSIONAL });
@@ -131,6 +191,35 @@ describe("item lançado no balcão", () => {
   const url = `http://localhost/api/v1/financeiro/comandas/${COMANDA}/itens`;
   const ctx = { params: Promise.resolve({ id: COMANDA }) };
   const corpo = { description: "Corte", unit_price_cents: 10000 };
+
+  it("rejects an unknown commission rate before writing, then retries with the actual rate", async () => {
+    const escritas: string[] = [];
+    const itens = montarMundo({
+      dono: PROFISSIONAL,
+      falhasRegras: 1,
+      escritas,
+      comanda: {
+        id: COMANDA,
+        status: "open",
+        number: 7,
+        attendant_user_id: PROFISSIONAL,
+        calendar_appointments: null,
+      },
+    });
+    const { POST } = await import("@/app/api/v1/financeiro/comandas/[id]/itens/route");
+
+    const response = await POST(pedido(url, corpo), ctx);
+    expect(response.status).toBe(500);
+    expect(await response.json()).toMatchObject({ error: { code: "internal_error" } });
+    expect(response.headers.get("x-request-id")).toBeTruthy();
+    expect(escritas).toEqual([]);
+    expect(audit).not.toHaveBeenCalled();
+
+    expect((await POST(pedido(url, corpo), ctx)).status).toBe(200);
+    expect(itens).toHaveLength(1);
+    expect(itens[0]?.commission_percent).toBe(30);
+    expect(audit).toHaveBeenCalledOnce();
+  });
 
   it("comanda do agendamento: o item vai para o dono do agendamento, não para quem abriu", async () => {
     const itens = montarMundo({
