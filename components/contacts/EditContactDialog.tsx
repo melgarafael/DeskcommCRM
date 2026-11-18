@@ -88,6 +88,12 @@ interface Props {
   onOpenChange: (v: boolean) => void;
   /** Definições vindas de `crm_pipelines.settings.fields[]`. Vazio = a seção some. */
   customFieldDefs?: CustomFieldDef[];
+  /**
+   * As definições vieram de TODOS os funis, não só do padrão (issue #4929 —
+   * a lista de contatos não tem funil). Muda só a frase da seção, que sem isto
+   * diria "funil padrão" sobre campos que vieram de outro funil.
+   */
+  camposDeTodosOsFunis?: boolean;
   /** Etiquetas já usadas na organização (`useContactTagVocabulary`). */
   vocabulario?: readonly string[] | null;
   /** `pipelines.settings.canonical_tags` do funil padrão. */
@@ -99,6 +105,7 @@ export function EditContactDialog({
   open,
   onOpenChange,
   customFieldDefs = [],
+  camposDeTodosOsFunis = false,
   vocabulario,
   canonicalTags,
 }: Props) {
@@ -426,7 +433,9 @@ export function EditContactDialog({
               <div>
                 <h3 className="text-sm font-medium">{t("Campos personalizados")}</h3>
                 <p className="text-xs text-muted-foreground">
-                  {t("Campos definidos no funil padrão da organização.")}
+                  {camposDeTodosOsFunis
+                    ? t("Campos personalizados definidos nos funis da organização.")
+                    : t("Campos definidos no funil padrão da organização.")}
                 </p>
               </div>
               <CustomFieldsEditor
