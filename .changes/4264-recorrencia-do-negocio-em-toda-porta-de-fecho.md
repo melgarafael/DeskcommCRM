@@ -1,13 +1,13 @@
 ---
-impacto: capacidade_nova
-secao: adicionado
-titulo: Ganhar ou perder um negócio pelo quadro, pelo botão e em lote também move a recorrência no financeiro
+impacto: nada_mudou
+secao: alterado
+titulo: O quadro, os botões Ganhar e Perder e o mover em lote passam pela mesma regra da recorrência do negócio
 ---
 
-A recorrência do negócio já existia: quando um negócio com valor mensal era ganho pelo MCP ou por uma automação, o molde da receita nascia no financeiro sozinho. As outras portas de fecho — **arrastar o card para a coluna Ganho no quadro**, **o botão Ganhar/Perder** (e tudo que passa por ele: `/win`, `/lose`, clone, `crm_close_demand`, cold call, troca de funil) e **o mover em lote** — fechavam o negócio sem que o financeiro soubesse, e a mensalidade continuava sendo lançada à mão.
+A recorrência do negócio (o molde mensal que nasce no financeiro quando um negócio com valor mensal é ganho) só era consultada quando o negócio fechava pelo MCP ou por uma automação. As outras portas de fecho — **arrastar o card para a coluna Ganho ou Perdido no quadro**, **os botões Ganhar e Perder** (e tudo que passa por eles: `/win`, `/lose`, clone, `crm_close_demand`, cold call, troca de funil) e **o mover em lote** — não chegavam a essa regra.
 
-Agora as três portas criam o mesmo molde, com o mesmo valor, o mesmo dia do mês (o `created_at` do negócio) e a mesma duração de contrato, e a perda desativa o molde **daquele** negócio. Arrastar dentro da coluna Ganho (reordenar sem trocar de etapa) e mover em lote um card que já estava lá não criam um segundo molde. Nada disso depende de ação do operador: quem arrasta o card continua arrastando.
+Agora as três portas passam pela mesma regra, com o mesmo valor, o mesmo dia do mês e a mesma duração de contrato, e a perda desativa só o molde **daquele** negócio. Reordenar dentro da coluna Ganho, ou mover em lote um card que já estava lá, não cria um segundo molde. Se o financeiro falhar, o movimento não é desfeito: o card move, o negócio fecha e a falha vai para o log com o id do negócio e o `request_id`.
 
-Se o financeiro estiver fora do ar, o movimento não é desfeito — o card move, o negócio fecha e a falha vira log com o id do negócio e o `request_id`, para o molde ser criado à mão se for o caso.
+**Para quem atualiza, nada muda.** A opção que liga a recorrência no ganho continua desligada de fábrica e ainda não tem tela, então nenhum molde é criado e nenhuma ação é necessária. O interruptor nas configurações do financeiro chega na etapa seguinte.
 
-Contribuição de @webtecnica, a partir da issue #3602.
+Contribuição de @webtecnica (#4264, issue #3602).

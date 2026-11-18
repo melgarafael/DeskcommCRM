@@ -19,7 +19,7 @@
  * desse cerco divergiriam na primeira correção — mesmo motivo pelo qual o
  * fecho do negócio virou `lib/leads/encerramento.ts`. Aqui só mora o cerco: a
  * conta, o dia, o valor e a idempotência continuam sendo daquelas funções
- * (índice único parcial `recurring_entries_org_lead_uidx`, migration 9246).
+ * (índice único parcial `recurring_entries_org_lead_uidx`, migration 9316).
  *
  * ─── `!mesmaEtapa` é de quem move ──────────────────────────────────────────
  *
@@ -34,11 +34,12 @@
  * O negócio já fechou quando isto roda: o card moveu, o status mudou. Derrubar
  * o movimento por causa do financeiro seria pior do que um molde que alguém
  * cria à mão. Toda falha — inclusive `createAdminClient` lançando — vira
- * `console.error` com a origem, o negócio e o request, e o retorno da porta
+ * `logger.error` com a origem, o negócio e o request, e o retorno da porta
  * segue intacto.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { desativaRecorrenciaDoNegocio, recorrenciaDoNegocio } from "./recorrencia-do-negocio";
@@ -104,7 +105,7 @@ export async function moveARecorrenciaNoFecho(
         userId: entrada.userId ?? null,
       });
       if (desfecho.estado === "falhou") {
-        console.error(`[${entrada.origem}] recorrência do negócio falhou`, {
+        logger.error(`[${entrada.origem}] recorrência do negócio falhou`, {
           request_id: entrada.requestId ?? null,
           lead_id: entrada.leadId,
           erro: desfecho.erro,
@@ -118,7 +119,7 @@ export async function moveARecorrenciaNoFecho(
       leadId: entrada.leadId,
     });
     if (desfecho.estado === "falhou") {
-      console.error(`[${entrada.origem}] desativação da recorrência falhou`, {
+      logger.error(`[${entrada.origem}] desativação da recorrência falhou`, {
         request_id: entrada.requestId ?? null,
         lead_id: entrada.leadId,
         erro: desfecho.erro,
@@ -127,7 +128,7 @@ export async function moveARecorrenciaNoFecho(
   } catch (erro) {
     // Inclui o próprio `createAdminClient`: sem service role configurada, o
     // financeiro fica de fora e o movimento continua.
-    console.error(`[${entrada.origem}] financeiro do fecho lançou`, {
+    logger.error(`[${entrada.origem}] financeiro do fecho lançou`, {
       request_id: entrada.requestId ?? null,
       lead_id: entrada.leadId,
       erro: erro instanceof Error ? erro.message : String(erro),

@@ -326,7 +326,7 @@ export async function encerraDemanda(
   //
   // ⚠️ DEPOIS do `jaEstava`: negócio que já estava ganho/perdido retorna antes
   // e não toca no financeiro. Ganhar duas vezes é idempotente no banco (índice
-  // único parcial, migration 9246), mas nem chega a tentar.
+  // único parcial, migration 9316), mas nem chega a tentar.
   //
   // Falha BAIXA pelo módulo do cerco: o negócio já fechou e o card não pode
   // voltar a aberto porque o molde não nasceu.
