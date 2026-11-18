@@ -8,13 +8,13 @@ import { supportWriteError } from '@/lib/impersonate/support';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 /**
- * Liga/desliga o RESUMO (primeiro nome + o que a IA escreveu ao passar) no aviso
- * das transferências. Mesma porta de `definirAvisoDeTransferencia`; ausente
- * continua DESLIGADO, porque a mensagem padrão é mínima por decisão de
- * privacidade. Quem lê: `aplicaAvisoHandoff` (relê o opt-in antes de montar o
- * texto, então desligar no meio do caminho vale já no próximo aviso).
+ * Liga/desliga o PRIMEIRO nome do cliente no aviso das transferências. Mesma
+ * porta de `definirAvisoDeTransferencia`; ausente continua DESLIGADO, porque a
+ * mensagem padrão é mínima por decisão de privacidade. Quem lê:
+ * `aplicaAvisoHandoff` (relê o opt-in antes de montar o texto, então desligar no
+ * meio do caminho vale já no próximo aviso).
  */
-export async function definirResumoNaTransferencia(ligar: boolean): Promise<{ ok: boolean; error?: string }> {
+export async function definirNomeNaTransferencia(ligar: boolean): Promise<{ ok: boolean; error?: string }> {
   const entrada = z.boolean().safeParse(ligar);
   if (!entrada.success) return { ok: false, error: 'Entrada inválida.' };
   const user = await loadAuthUser();
@@ -29,10 +29,10 @@ export async function definirResumoNaTransferencia(ligar: boolean): Promise<{ ok
   const atual = (data.settings ?? {}) as Record<string, unknown>;
   const crm = (atual.crm ?? {}) as Record<string, unknown>;
   const { data: salva, error } = await admin.from('organizations')
-    .update({ settings: { ...atual, crm: { ...crm, aviso_transferencia_com_resumo: entrada.data } } })
+    .update({ settings: { ...atual, crm: { ...crm, aviso_transferencia_com_nome: entrada.data } } })
     .eq('id', org.orgId).eq('settings', JSON.stringify(atual)).select('id').maybeSingle();
   if (error || !salva) return { ok: false, error: 'A configuração mudou ou não pôde ser salva. Recarregue e tente de novo.' };
-  await audit({ action: 'crm.aviso_resumo_na_transferencia_alterado', actorUserId: user.id, organizationId: org.orgId,
+  await audit({ action: 'crm.aviso_nome_na_transferencia_alterado', actorUserId: user.id, organizationId: org.orgId,
     resourceType: 'organization', resourceId: org.orgId, metadata: { ligado: entrada.data } });
   revalidatePath('/app/ai/cases/avisos');
   return { ok: true };

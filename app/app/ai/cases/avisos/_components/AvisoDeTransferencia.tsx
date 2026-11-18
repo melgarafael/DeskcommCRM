@@ -10,7 +10,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { definirAvisoDeTransferencia } from "@/app/actions/settings/definirAvisoDeTransferencia";
-import { definirResumoNaTransferencia } from "@/app/actions/settings/definirResumoNaTransferencia";
+import { definirNomeNaTransferencia } from "@/app/actions/settings/definirNomeNaTransferencia";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -18,16 +18,16 @@ import { useT } from "@/hooks/i18n/useT";
 
 export function AvisoDeTransferencia({
   ligada,
-  comResumo,
+  comNome,
 }: {
   ligada: boolean;
-  comResumo: boolean;
+  comNome: boolean;
 }) {
   const t = useT();
   const [valor, setValor] = useState(ligada);
-  const [resumo, setResumo] = useState(comResumo);
+  const [nome, setNome] = useState(comNome);
   const [pendente, startTransition] = useTransition();
-  const [pendenteResumo, startResumo] = useTransition();
+  const [pendenteNome, startNome] = useTransition();
   const router = useRouter();
   return (
     <Card className="space-y-3 p-4">
@@ -64,29 +64,29 @@ export function AvisoDeTransferencia({
       {valor && (
         <div className="flex items-start gap-3 border-t pt-3 pl-11">
           <Switch
-            id="aviso_transferencia_com_resumo"
-            checked={resumo}
-            disabled={pendenteResumo}
+            id="aviso_transferencia_com_nome"
+            checked={nome}
+            disabled={pendenteNome}
             onCheckedChange={(novo) =>
-              startResumo(async () => {
-                const r = await definirResumoNaTransferencia(novo);
+              startNome(async () => {
+                const r = await definirNomeNaTransferencia(novo);
                 if (!r.ok) {
                   toast.error(t(r.error ?? "Não foi possível salvar."));
                   return;
                 }
-                setResumo(novo);
+                setNome(novo);
                 toast.success(t("Opção salva."));
                 router.refresh();
               })
             }
           />
           <div className="space-y-1">
-            <Label htmlFor="aviso_transferencia_com_resumo" className="text-sm font-medium">
-              {t("Incluir o nome e o resumo do atendimento na mensagem")}
+            <Label htmlFor="aviso_transferencia_com_nome" className="text-sm font-medium">
+              {t("Incluir o primeiro nome do cliente na mensagem")}
             </Label>
             <p className="text-xs text-muted-foreground">
               {t(
-                "Por padrão a mensagem leva só o link. Com esta opção, ela também mostra o primeiro nome do cliente e o resumo que a IA escreveu. Deixe desligado se o conteúdo do atendimento não deve sair do CRM (dados sensíveis ou de saúde).",
+                "Por padrão a mensagem leva só o link. Com esta opção, ela também mostra o primeiro nome do cliente. O motivo da transferência continua só no CRM, ao abrir a conversa.",
               )}
             </p>
           </div>

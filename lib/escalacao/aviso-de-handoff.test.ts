@@ -238,35 +238,42 @@ test('link usa a rota real e remove query e fragmento da configuração', () => 
   assert.equal(textoDoAvisoHandoff('https://user:password@crm.exemplo.test', CONV), null);
 });
 
-test('sem o opt-in, a mensagem NÃO leva nome nem resumo (mínima por padrão)', async () => {
+test('sem o opt-in, a mensagem NÃO leva nome nem motivo (mínima por padrão)', async () => {
   const f = fixture();
   f.admin.linhas.conversations[0]!.last_handoff_reason = 'Quer orçamento do quarto da bebê.';
   assert.equal((await aplicaAvisoHandoff(f.deps, f.row)).status, 'ok');
   const enviado = f.chamadas[0]![3] as string;
-  assert.doesNotMatch(enviado, /Cliente:|Resumo:|Maria/);
+  assert.doesNotMatch(enviado, /Cliente:|Resumo:|Maria|quarto/);
   assert.match(enviado, /Um atendimento precisa de uma pessoa da equipe\./);
 });
 
-test('com o opt-in ligado, a mensagem leva o PRIMEIRO nome e o resumo sanitizado', async () => {
+// Doc 372 = A: a opção põe SÓ o primeiro nome. O motivo gravado na conversa —
+// texto livre da IA ou código interno como `requested_human` — nunca sai.
+for (const motivo of ['Quer o quarto da bebê, já mandou fotos.', 'requested_human']) {
+  test(`com o opt-in ligado, a mensagem leva só o PRIMEIRO nome, nunca o motivo (${motivo})`, async () => {
+    const f = fixture();
+    f.admin.linhas.organizations[0]!.settings = { crm: { aviso_transferencia_com_nome: true } };
+    f.admin.linhas.conversations[0]!.last_handoff_reason = motivo;
+    assert.equal((await aplicaAvisoHandoff(f.deps, f.row)).status, 'ok');
+    const enviado = f.chamadas[0]![3] as string;
+    assert.match(enviado, /^Cliente: Maria$/m);
+    assert.doesNotMatch(enviado, /Fernanda|Resumo|quarto|requested_?human/);
+  });
+}
+
+test('a chave antiga do rascunho (com_resumo) NÃO liga o nome', async () => {
   const f = fixture();
   f.admin.linhas.organizations[0]!.settings = { crm: { aviso_transferencia_com_resumo: true } };
-  f.admin.linhas.conversations[0]!.last_handoff_reason =
-    'Quer o quarto da bebê. telefone 11999998888 e http://spam.example';
   assert.equal((await aplicaAvisoHandoff(f.deps, f.row)).status, 'ok');
-  const enviado = f.chamadas[0]![3] as string;
-  assert.match(enviado, /Cliente: Maria$/m); // só o primeiro nome
-  assert.match(enviado, /Resumo: .*quarto da beb/);
-  assert.doesNotMatch(enviado, /11999998888|spam\.example/); // sanitizado
+  assert.doesNotMatch(f.chamadas[0]![3] as string, /Cliente:/);
 });
 
-test('textoDoAvisoHandoff com extra põe nome e resumo entre a abertura e o link', () => {
-  const texto = textoDoAvisoHandoff('https://crm.exemplo.test', CONV, {
-    nome: 'Izabella Eber', resumo: 'Projeto do quarto, já mandou fotos.',
-  });
+test('textoDoAvisoHandoff com nome põe o primeiro nome entre a abertura e o link', () => {
+  const texto = textoDoAvisoHandoff('https://crm.exemplo.test', CONV, { nome: 'Izabella Eber' });
   assert.ok(texto);
-  assert.match(texto, /Cliente: Izabella\n/);
-  assert.match(texto, /Resumo: Projeto do quarto/);
-  assert.ok(texto.indexOf('Cliente:') < texto.indexOf('Abrir conversa:'));
+  assert.match(texto, /\n\nCliente: Izabella\n\nAbrir conversa:/);
+  assert.equal(textoDoAvisoHandoff('https://crm.exemplo.test', CONV, { nome: '  ' }),
+    textoDoAvisoHandoff('https://crm.exemplo.test', CONV));
 });
 
 test('evento sem Central e eventos do dreno HTTP nunca enviam', async () => {
