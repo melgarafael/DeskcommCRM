@@ -245,6 +245,10 @@ describe("POST /api/v1/financeiro/comandas/[id]/estornar — o motivo não vaza 
 describe("POST /api/v1/financeiro/fidelidade — o motivo não vaza para o audit", () => {
   it("audita os pontos, nunca a justificativa escrita sobre a pessoa", async () => {
     sessao({
+      // #4845 — a rota passou a conferir que o contato é da empresa ativa antes
+      // de gravar o movimento. Este arquivo mede o que vai para o AUDIT, não o
+      // recorte (que tem teste próprio, com dublê que aplica os filtros).
+      contacts: { data: { id: CONTATO }, error: null },
       loyalty_ledger: {
         data: {
           id: "f1a1ce00-0000-4000-8000-0000000000e1",
