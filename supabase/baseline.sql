@@ -34284,6 +34284,42 @@ begin
     raise exception 'comanda_cancelada' using errcode = '22023';
   end if;
 
+  -- ─── #4845 — a comanda não fatura o atendimento de OUTRA empresa ───────────
+  --
+  -- A função é SECURITY DEFINER e conferia a empresa da COMANDA (`p_sale`), da
+  -- forma de pagamento e da conta de destino — nunca a do `appointment_id` nem
+  -- a do `contact_id` que a comanda carrega. Como ela grava `commissions` e um
+  -- `financial_entries` PAGO na `p_org`, uma comanda da A apontando para um
+  -- atendimento da B criava dinheiro na A por um serviço prestado na B.
+  --
+  -- Pior: o passo que marca o agendamento filtra `organization_id = p_org`,
+  -- então o da B continuava `confirmed` e podia ser faturado outra vez lá. O
+  -- índice único é por `(organization_id, appointment_id)`, logo nada impedia
+  -- a cobrança dupla.
+  --
+  -- A guarda é do BANCO porque a função não tem um chamador só: `faturar-lote`
+  -- e `comandas/[id]/finalizar` a chamam, e ela é EXECUTÁVEL por
+  -- `authenticated` — pelo PostgREST, qualquer sessão com papel `agent` numa
+  -- empresa alcança o RPC direto. Consertar apenas a rota deixaria a segunda
+  -- porta aberta.
+  --
+  -- Roda ANTES de qualquer escrita (venda, comissões, lançamento, ponto,
+  -- agendamento) e o erro não diz nada sobre a outra empresa: nem nome, nem
+  -- valor, nem de quem é o id.
+  if v_sale.appointment_id is not null and not exists (
+    select 1 from public.calendar_appointments
+     where id = v_sale.appointment_id and organization_id = p_org
+  ) then
+    raise exception 'agendamento_de_outra_organizacao' using errcode = '42501';
+  end if;
+
+  if v_sale.contact_id is not null and not exists (
+    select 1 from public.contacts
+     where id = v_sale.contact_id and organization_id = p_org
+  ) then
+    raise exception 'contato_de_outra_organizacao' using errcode = '42501';
+  end if;
+
   select account_id into v_conta from public.payment_methods
    where id = p_payment_method and organization_id = p_org and is_active;
   if not found then
