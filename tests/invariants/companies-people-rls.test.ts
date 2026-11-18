@@ -144,9 +144,10 @@ describe("escrita por papel no banco (RLS por operação)", () => {
     expect(writeCountAs(GOV_AGENT_A, editar)).toBe(1);
   });
 
-  it("agent não escreve no importador; manager escreve", () => {
+  it("viewer não escreve no importador; agent (A23 parte 2, migration 9421) e manager escrevem", () => {
     const lote = `insert into public.import_batches (organization_id, filename) values ('${GOV_ORG}', 'x.csv')`;
-    expect(writeCountAs(GOV_AGENT_A, lote)).toBe(0);
+    expect(writeCountAs(GOV_VIEWER, lote)).toBe(0);
+    expect(writeCountAs(GOV_AGENT_A, lote)).toBe(1);
     expect(writeCountAs(GOV_MANAGER, lote)).toBe(1);
   });
 
