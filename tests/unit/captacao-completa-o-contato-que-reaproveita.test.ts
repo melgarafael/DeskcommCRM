@@ -526,9 +526,10 @@ describe("contato fora da operação não é completado", () => {
 // contato com o e-mail no lugar do nome e SEM telefone — o follow-up pelo
 // WhatsApp nunca alcançava essa pessoa.
 //
-// Sabotagem medida: com a rota de `origin/main`, os dois casos ⭐ e o da colisão
-// de telefone (que precisa ver o 23505 no log) ficam VERMELHOS; os outros cinco
-// são controles — o que já ficava intocado continua intocado.
+// Sabotagem medida (17/11, na vps-teste): com a rota de `origin/main` no lugar
+// da deste PR, os 11 casos deste bloco ficam VERMELHOS — inclusive os que
+// descrevem o que já ficava intocado, que não servem de controle contra a rota
+// antiga. Quem vigia o conserto são os casos ⭐ e o da colisão de telefone.
 describe("reenvio do mesmo external_id completa o contato do card", () => {
   const EXTERNAL_ID = "gf-contact-3f9a1c0b7d2e4a51";
 
