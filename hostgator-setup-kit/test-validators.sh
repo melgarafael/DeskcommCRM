@@ -2761,8 +2761,15 @@ echo "integração: consentimento de telemetria no --yes (issue #668)"
 # O que este bloco acrescenta aos testes de presença de texto: ele RODA o
 # install.sh e lê o `.env` que sobrou, que é o arquivo com que a pessoa fica. A
 # distinção que a issue pede é entre "nunca decidiu" (chave AUSENTE) e "aceitou"
-# (chave declarada e VAZIA) — as duas viram texto igual em qualquer grep do
-# fonte, e só aparecem no comportamento.
+# (chave DECLARADA com o token `comunidade`) — as duas viram texto igual em
+# qualquer grep do fonte, e só aparecem no comportamento.
+#
+# A #4936 mudou o token do aceite: vazio deixou de significar "Sentry do
+# projeto" e passou a significar DESLIGADO (lib/sentry/dsn.ts), então o que o
+# install.sh grava no "sim" é `SENTRY_DSN=comunidade`. A chave vazia que ficou
+# de quem instalou antes continua sendo PRESERVADA na reexecução (é escolha
+# registrada, não lacuna) e quem a converte é o update.sh — por isso o cenário
+# dela está aqui, esperando o vazio e não o token.
 #
 # O caso (a) COPIA do template as linhas do Sentry em vez de reescrevê-las: é
 # assim que reativar a chave lá reprova aqui. Sem isso, o cenário mediria o
@@ -2810,7 +2817,14 @@ STUB
   }
   telemetria_ok "template copiado (sem escolha): o --yes grava off, não consente por ninguém" \
     "$SENTRY_DO_TEMPLATE" '"off"'
-  telemetria_ok "quem ACEITOU (chave declarada e vazia) continua aceitando na reexecução" \
+  # `comunidade` é o token do "sim" desde a #4936: vazio passou a significar
+  # DESLIGADO (lib/sentry/dsn.ts), então quem aceitou precisa de valor próprio —
+  # e o DSN do projeto não vai para o .env do cliente.
+  telemetria_ok "quem ACEITOU (SENTRY_DSN=comunidade) continua aceitando na reexecução" \
+    "SENTRY_DSN='comunidade'" '"comunidade"'
+  # E quem aceitou ANTES desta versão (chave declarada e vazia) não é convertido
+  # aqui: o install preserva o que está escrito e quem converte é o update.sh.
+  telemetria_ok "chave vazia legada é preservada pelo install (a conversão é do update.sh)" \
     "SENTRY_DSN=''" '""'
   telemetria_ok "DSN próprio sobrevive à reexecução" \
     "SENTRY_DSN='https://abc123@o0.ingest.sentry.io/42'" '"https://abc123@o0.ingest.sentry.io/42"'

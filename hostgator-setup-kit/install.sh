@@ -1660,7 +1660,11 @@ if [ -z "${SENTRY_DSN+x}" ]; then
     printf '\n%s\n' "$(t "Você pode mudar depois no .env, a qualquer momento.")"
     read -r -p "$(t "  Enviar relatórios de erro anonimizados? (s/N) ")" _tel
     if resposta_sim "${_tel:-}"; then
-      SENTRY_DSN=""
+      # `comunidade` é o TOKEN do consentimento, não um DSN: o `.env` de quem
+      # instala não leva a chave do Sentry do projeto (#4936). Vazio aqui virou
+      # "desligado" em lib/sentry/dsn.ts — gravar vazio transformaria o "sim"
+      # em silêncio.
+      SENTRY_DSN="comunidade"
       c_grn "$(t "✓ Telemetria de erros ligada — obrigado, isso ajuda o projeto.")"
     else
       SENTRY_DSN="off"
@@ -1943,10 +1947,11 @@ esac
   printf '# só ao sistema que vai criar empresas (depois: docker compose up -d app).\n'
   envq TENANT_PROVISIONING_SECRET "${TENANT_PROVISIONING_SECRET:-}"
   printf '# Telemetria de erros (você escolheu isto durante a instalação).\n'
-  printf '#   "off"  = não envia nada.\n'
-  printf '#   vazio  = só ERRO pro Sentry da comunidade, com CPF/telefone/e-mail\n'
-  printf '#            substituídos e token de URL redigido. Sem trace, sem replay.\n'
-  printf '#   <dsn>  = manda pro SEU Sentry (aí com performance e replay).\n'
+  printf '#   "off"        = não envia nada.\n'
+  printf '#   "comunidade" = só ERRO pro Sentry do projeto, com CPF/telefone/e-mail\n'
+  printf '#                  substituídos e token de URL redigido. Sem trace, sem replay.\n'
+  printf '#   <dsn>        = manda pro SEU Sentry (aí com performance e replay).\n'
+  printf '#   vazio        = DESLIGADA, igual a "off".\n'
   envq SENTRY_DSN "${SENTRY_DSN:-}"
   envq INTERNAL_SECRET "$INTERNAL_SECRET"
   envq INTERNAL_CRON_SECRET "$INTERNAL_CRON_SECRET"
@@ -2681,7 +2686,7 @@ fi
 telemetria_no_banner() {
   if [ "${SENTRY_DSN:-}" = "off" ]; then
     printf '%s\n' "$(t "  Telemetria: DESLIGADA — nenhum relatório de erro sai desta instalação.")"
-    printf '%s\n' "$(t "  Para ligar, apague a linha SENTRY_DSN do .env e rode: {1}" "docker compose $(dc_files) up -d")"
+    printf '%s\n' "$(t "  Para ligar, ponha SENTRY_DSN=comunidade (ou o seu DSN) no .env e rode: {1}" "docker compose $(dc_files) up -d")"
   else
     printf '%s\n' "$(t "  Telemetria: LIGADA — só relatórios de erro anonimizados vão ao Sentry do")"
     printf '%s\n' "$(t "  projeto. Para desligar, ponha SENTRY_DSN='off' no .env e rode: {1}" "docker compose $(dc_files) up -d")"

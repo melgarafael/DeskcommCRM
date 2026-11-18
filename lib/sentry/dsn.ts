@@ -1,13 +1,27 @@
 /**
- * DSN do Sentry com opt-out em runtime — modelo "telemetria de comunidade".
+ * DSN do Sentry — telemetria com opt-in EXPLÍCITO (issue #4936).
  *
- * Por padrão, erros vão pro Sentry do projeto (DEFAULT_SENTRY_DSN): num open source
- * self-host, é o que dá visibilidade pra corrigir bugs que afetam todo mundo. Quem
- * hospeda controla isso pelo `.env`, SEM rebuild da imagem:
+ * `SENTRY_DSN` ausente ou VAZIO significa telemetria DESLIGADA: o Sentry não
+ * manda nada, e ninguém recebe relatório de erro sem ter pedido. Quem hospeda
+ * escolhe pelo `.env`, sem rebuild da imagem:
  *
- *   SENTRY_DSN=off           → desliga toda a telemetria (nada é enviado)
+ *   SENTRY_DSN=  (vazio)     → DESLIGADA (mesmo que a chave não exista)
+ *   SENTRY_DSN=off           → desligada, escrito com todas as letras
+ *   SENTRY_DSN=comunidade    → Sentry do projeto, só erro (opt-in do install.sh)
  *   SENTRY_DSN=<seu-dsn>     → manda os erros pro SEU Sentry
- *   SENTRY_DSN=  (vazio)     → usa o Sentry da comunidade (padrão)
+ *
+ * O token `comunidade` existe porque a chave do DSN do projeto não é publicada
+ * no `.env` de quem instala: o instalador precisa registrar, em nome do que a
+ * pessoa consentiu, uma escolha que não é um DSN. Sem ele o `install.sh`
+ * gravaria vazio — que aqui significa DESLIGADO — e o "sim" do consentimento
+ * viraria silêncio.
+ *
+ * Antes desta função o vazio caía no DSN da comunidade, isto é: toda instalação
+ * mandava relatório de erro sem ninguém ter decidido, e não havia como
+ * distinguir "não configurou" de "aceitou". Quem já havia aceitado (o `.env`
+ * com a chave vazia) é convertido para `comunidade` pelo `update.sh`, sem
+ * edição manual de arquivo (ver `migrar_consentimento_de_telemetria` em
+ * `hostgator-setup-kit/_common.sh`).
  *
  * Vale para servidor (process.env) e navegador (window.__PUBLIC_ENV__.SENTRY_DSN,
  * injetado em runtime pelo <PublicEnvScript/>). O DSN não é segredo — DSNs do Sentry
@@ -16,10 +30,19 @@
 export const DEFAULT_SENTRY_DSN =
   "https://58fabf8ad54504863d404a3647ef3714@o4509908078559232.ingest.us.sentry.io/4509908083212288";
 
+/** O que o `install.sh` grava quando a pessoa aceita o Sentry da comunidade. */
+export const DSN_DA_COMUNIDADE = "comunidade";
+
 export function resolveSentryDsn(value: string | undefined | null): string | undefined {
-  const v = (value ?? "").trim().toLowerCase() === "off" ? "off" : (value ?? "").trim();
-  if (v === "off" || v === "false" || v === "0") return undefined;
-  return v.length > 0 ? v : DEFAULT_SENTRY_DSN;
+  const v = (value ?? "").trim();
+  const emMinusculas = v.toLowerCase();
+  // Token de consentimento: só ele chega ao DSN do projeto. Um DSN literal
+  // (alguém apontando para o Sentry da comunidade à mão) continua valendo, mas
+  // então é escolha escrita, não default.
+  if (emMinusculas === DSN_DA_COMUNIDADE) return DEFAULT_SENTRY_DSN;
+  if (emMinusculas === "off" || emMinusculas === "false" || emMinusculas === "0") return undefined;
+  // Vazio = desligado. É a linha que impede a telemetria silenciosa.
+  return v.length > 0 ? v : undefined;
 }
 
 /**
