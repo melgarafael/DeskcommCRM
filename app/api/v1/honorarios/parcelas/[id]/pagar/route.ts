@@ -89,6 +89,8 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     const parcelaPaga = data as ParcelaPaga;
     await audit({
       action: "honorarios.parcela_paga",
+      actorUserId: authz.user.id,
+      organizationId: authz.org.orgId,
       resourceType: "honorarios_parcela",
       resourceId: parcelaId,
       requestId,

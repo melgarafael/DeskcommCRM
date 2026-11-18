@@ -119,6 +119,8 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   await audit({
     action: "honorarios.parcela_criada",
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
     resourceType: "honorarios_parcela",
     resourceId: data.id,
     requestId,

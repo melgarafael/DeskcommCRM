@@ -79,6 +79,8 @@ export async function DELETE(_req: NextRequest, ctx: Ctx): Promise<Response> {
 
   await audit({
     action: "comanda.item_removido",
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
     resourceType: "sale",
     resourceId: id,
     requestId,

@@ -161,6 +161,8 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   await audit({
     action: "comanda.aberta",
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
     resourceType: "sale",
     resourceId: data.id,
     requestId,
