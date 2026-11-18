@@ -139,9 +139,9 @@ export function ZonaDePerigoDaOrganizacao({ displayName }: Props) {
             <AlertDialogTitle>{t("Limpar os dados de teste?")}</AlertDialogTitle>
             <AlertDialogDescription>
               {t(
-                "Esta ação é irreversível. Os dados de teste de",
+                "Esta ação é irreversível. Todos os dados de atendimento de",
               )}{" "}
-              <strong>{displayName}</strong> {t("serão apagados de vez.")}
+              <strong>{displayName}</strong> {t("serão apagados de vez, sejam de teste ou não.")}
             </AlertDialogDescription>
           </AlertDialogHeader>
 
