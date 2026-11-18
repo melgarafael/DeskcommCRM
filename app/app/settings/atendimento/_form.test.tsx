@@ -34,6 +34,7 @@ const inicial: AtendimentoConfig = {
   handoff_return_after_minutes: null,
   conversation_stays_with_attendant: false,
   manual_reply_silence_minutes: null,
+  destino_do_handoff: null,
 };
 
 function corpoDoPatch(): Record<string, unknown> {
@@ -166,5 +167,105 @@ describe("Distribuição de atendimento — silêncio da IA depois de resposta p
   it("empresa com 15 min salvos vê 15 no campo", () => {
     render(<AtendimentoForm initial={{ ...inicial, manual_reply_silence_minutes: 15 }} />);
     expect(screen.getByLabelText(ROTULO)).toHaveValue(15);
+  });
+});
+
+/**
+ * A ENTREGA AO DONO, AO PASSAR PARA HUMANO (#3804 item 3) — a tela que LIGA.
+ *
+ * A decisão existia no código do handoff e não tinha como ser ligada por quem
+ * instala o produto. O que se prova aqui: desligada, o corpo leva `null` (o
+ * handoff de hoje, fila da Central); ligada, leva a cadeia na ordem da
+ * TENTATIVA (responsável do negócio, depois carteira) e o fallback escolhido —
+ * e nada de pessoa fixa escondida.
+ */
+describe("Distribuição de atendimento — a IA entrega a conversa ao dono (#3804)", () => {
+  it("desligado por padrão: sem bloco de destinos, e o corpo leva null", async () => {
+    render(<AtendimentoForm initial={{ ...inicial, mode: "round_robin" }} />);
+    expect(screen.getByTestId("destino-do-handoff-ligado")).not.toBeChecked();
+    expect(screen.queryByTestId("destinos-do-handoff")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("opcao-modo-manual"));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+    expect(corpoDoPatch()).toMatchObject({ destino_do_handoff: null });
+  });
+
+  it("ligar manda a cadeia na ordem da tentativa e o rodízio como fallback", async () => {
+    render(<AtendimentoForm initial={inicial} />);
+    fireEvent.click(screen.getByTestId("destino-do-handoff-ligado"));
+
+    expect(screen.getByTestId("handoff-destino-responsavel_do_negocio")).toBeChecked();
+    expect(screen.getByTestId("handoff-destino-dono_da_carteira")).toBeChecked();
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+    expect(corpoDoPatch()).toMatchObject({
+      destino_do_handoff: {
+        modo: "destino",
+        destinos: ["responsavel_do_negocio", "dono_da_carteira"],
+        fallback: { modo: "rodizio" },
+      },
+    });
+  });
+
+  it("tirar um destino mantém o outro, na ordem canônica", async () => {
+    render(<AtendimentoForm initial={inicial} />);
+    fireEvent.click(screen.getByTestId("destino-do-handoff-ligado"));
+    fireEvent.click(screen.getByTestId("handoff-destino-responsavel_do_negocio"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+    expect(corpoDoPatch()).toMatchObject({
+      destino_do_handoff: { modo: "destino", destinos: ["dono_da_carteira"] },
+    });
+  });
+
+  it("o último destino não pode ser desligado — a configuração não fica sem o que tentar", () => {
+    render(
+      <AtendimentoForm
+        initial={{
+          ...inicial,
+          destino_do_handoff: {
+            modo: "destino",
+            destinos: ["dono_da_carteira"],
+            fallback: { modo: "rodizio" },
+          },
+        }}
+      />,
+    );
+    expect(screen.getByTestId("handoff-destino-dono_da_carteira")).toBeDisabled();
+  });
+
+  it("escolher a fila da Central grava fallback null e a empresa reabre assim", async () => {
+    render(<AtendimentoForm initial={inicial} />);
+    fireEvent.click(screen.getByTestId("destino-do-handoff-ligado"));
+    fireEvent.change(screen.getByLabelText("Se nenhum destino servir"), {
+      target: { value: "fila" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+    const salvo = corpoDoPatch().destino_do_handoff as Record<string, unknown>;
+    // `null` e não `{ modo: "fixo", user_id: <qualquer> }`: sem dono, a
+    // conversa vai para a fila — nunca para uma pessoa escolhida no escuro.
+    expect(salvo.fallback).toBeNull();
+  });
+
+  it("empresa com a entrega ligada reabre com a caixa marcada e o fallback salvo", () => {
+    render(
+      <AtendimentoForm
+        initial={{
+          ...inicial,
+          destino_do_handoff: {
+            modo: "destino",
+            destinos: ["responsavel_do_negocio", "dono_da_carteira"],
+            fallback: null,
+          },
+        }}
+      />,
+    );
+    expect(screen.getByTestId("destino-do-handoff-ligado")).toBeChecked();
+    expect(screen.getByLabelText("Se nenhum destino servir")).toHaveValue("fila");
   });
 });
