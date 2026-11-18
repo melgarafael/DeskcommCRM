@@ -236,8 +236,10 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (filtros.sector_id) {
     // Setores é módulo opcional (doc 213): desligado, o filtro não existe —
     // a mesma resposta das rotas de setor, em vez de filtrar por um dado que a
-    // instalação não mostra.
-    const desligado = await seSetoresDesligado(requestId);
+    // instalação não mostra. A EMPRESA entra porque aqui ela já está na mão
+    // (`organizationId` do token da sessão), #3868/F2 da #4871: com o setor
+    // desligado só para ela, o filtro responde o mesmo 404 das rotas de setor.
+    const desligado = await seSetoresDesligado(requestId, organizationId);
     if (desligado) return desligado;
     const { data: membrosDoSetor, error: erroDoSetor } = await supabase
       .from("attendant_sector_members")
