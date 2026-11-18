@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useT } from "@/hooks/i18n/useT";
 import { MagnifyingGlass } from "@/lib/ui/icons";
+import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 
@@ -47,14 +48,6 @@ export interface GrupoDaPaleta {
   id: string;
   /** Texto em português: é a CHAVE do dicionário. */
   label: string;
-}
-
-/** Sem acento e sem caixa: ninguém digita "orçamento" com cedilha às pressas. */
-function normalizar(texto: string): string {
-  return texto
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
 }
 
 export interface PaletaDeDestinosProps {
@@ -151,15 +144,19 @@ function Resultados({
     return grupos.filter((g) => gruposNoCatalogo.has(g.id));
   }, [destinos, grupos]);
 
+  // O casamento usa `termoSemAcento` (`lib/inbox/termo-de-busca.ts`) — a MESMA
+  // régua das listas de fluxos, funis e agentes (#4593). Havia aqui uma cópia
+  // local (`normalize("NFD")` sem a tabela das letras que não decompõem), e duas
+  // cópias divergem no primeiro ajuste: «Øyvind» achava na lista e não aqui.
   const resultados = useMemo(() => {
-    const termo = normalizar(busca.trim());
+    const termo = termoSemAcento(busca.trim());
     const filtrados = destinos.filter((d) => {
       const casaCategoria = categoriaAtiva === "todos" || d.group === categoriaAtiva;
       if (!casaCategoria) return false;
       if (!termo) return true;
-      return normalizar(`${d.label} ${d.description} ${rotuloGrupo.get(d.group) ?? ""}`).includes(
-        termo,
-      );
+      return termoSemAcento(
+        `${d.label} ${d.description} ${rotuloGrupo.get(d.group) ?? ""}`,
+      ).includes(termo);
     });
     if (termo) return filtrados;
     // O catálogo não é contíguo por grupo (a Prospecção, de CRM, vem antes do
@@ -308,7 +305,8 @@ function Resultados({
                     {t(label)}
                   </h3>
                   <span className="text-[11px] text-muted-foreground">
-                    {itens.length} {itens.length === 1 ? t("ferramenta") : t("ferramentas")}
+                    {/* Só o número: o grupo pode ser de telas ou de registros (funis, fluxos, agentes) (#4593). */}
+                    {itens.length}
                   </span>
                 </div>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">

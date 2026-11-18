@@ -53,6 +53,37 @@ function toolsDoSeedDaSpec(): string[] {
   return [...bloco[1].matchAll(/^\s*"([^"]+)",?\s*$/gm)].map((m) => m[1]!);
 }
 
+const SCRIPT_DO_SEED = join(process.cwd(), "scripts/seed-e2e-capacidades.ts");
+
+/**
+ * A lista que o BANCO realmente recebe, lida do script que a grava.
+ *
+ * ## Por que esta leitura existe (medido antes de escrever)
+ *
+ * A spec não escreve `tool_ids` — quem escreve é `scripts/seed-e2e-capacidades.ts`
+ * (`TOOLS_LIGADAS`). A primeira versão da correção do #4544 acrescentou duas
+ * capacidades em `TOOLS_DO_SEED` (11 → 13) e esqueceu o script: a spec passou a
+ * DESCREVER 13, o banco continuou com 11, e o clique em "Atender" virou
+ * 11 + 17 = 28 contra o teto de 29 — cabia, a tela aplicava, e a recusa
+ * `/faltam? 1 vaga/` que o caso cobra nunca aparecia. O `e2e-parte (7)` ficou
+ * vermelho, e este teste continuou VERDE porque lia só a spec: os dois lados
+ * concordavam com uma lista que o banco não tinha.
+ *
+ * Comparar as duas pontas aqui é o único jeito de a divergência aparecer no
+ * `pnpm test:unit` (segundos) em vez de no e2e (dezenas de minutos).
+ */
+function toolsLigadasPeloScript(): string[] {
+  const texto = readFileSync(SCRIPT_DO_SEED, "utf8");
+  const bloco = texto.match(/const TOOLS_LIGADAS = \[([\s\S]*?)\];/);
+  if (!bloco?.[1]) {
+    throw new Error(
+      "const TOOLS_LIGADAS não existe mais em scripts/seed-e2e-capacidades.ts. " +
+        "Este teste lê o seed de lá de propósito — atualize os dois juntos.",
+    );
+  }
+  return [...bloco[1].matchAll(/^\s*"([^"]+)",?\s*$/gm)].map((m) => m[1]!);
+}
+
 /**
  * O catálogo COMO A TELA O VÊ, não o dado cru.
  *
@@ -84,6 +115,19 @@ describe("ligar Atender com o seed da spec excede o teto em exatamente uma vaga"
     // Um seed vazio faria a conta abaixo medir só o pacote — verde sobre nada.
     expect(SEED.length, "o seed da spec foi lido vazio").toBeGreaterThan(0);
     expect(EM_ATENDER.length, "o pacote 'atender' sumiu do catálogo").toBeGreaterThan(0);
+  });
+
+  it("o seed da spec é o MESMO que o script grava no banco", () => {
+    // A spec descreve o cenário; o script é quem o cria. Quando as duas listas
+    // divergem, o caso mede outra coisa — foi assim que o `e2e-parte (7)` ficou
+    // vermelho com este teste verde (11 no banco, 13 na spec, #4544).
+    expect(
+      toolsLigadasPeloScript(),
+      "a lista de `TOOLS_DO_SEED` (spec) e a de `TOOLS_LIGADAS` (script de seed) " +
+        "precisam ser iguais, na mesma ORDEM: o caso do teto desliga o índice 2 e a " +
+        "aritmética acima conta quantas estão ligadas. Duas listas divergentes medem " +
+        "um cenário que o banco não tem.",
+    ).toEqual(SEED);
   });
 
   it("cada ferramenta do seed existe no catálogo", () => {

@@ -22,8 +22,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { HandlerCtx } from "@/lib/api/handlers/types";
+import type * as GuardaDeIp from "@/lib/automation/outbound-ip";
 import { encaminharMensagem } from "@/lib/inbox/encaminhar-mensagem";
-import { criarDubleDoHandler } from "@/tests/helpers/duble-do-handler";
+import { colunasDoSelect, criarDubleDoHandler } from "@/tests/helpers/duble-do-handler";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const ORIGEM_ID = "22222222-2222-4222-8222-222222222222";
@@ -60,6 +61,20 @@ vi.mock("@/lib/supabase/admin", () => ({
     storage: { from: () => ({ copy, createSignedUrl: signedUrl }) },
   }),
 }));
+
+/** O host público do caso de mídia externa (#4457). Não existe no DNS. */
+const { HOST_PUBLICO } = vi.hoisted(() => ({ HOST_PUBLICO: "cdn.exemplo.com" }));
+
+// Só o DNS do host público do teste é dublado: a guarda anti-SSRF continua
+// real para todo o resto (localhost e `meta-media:` caem antes do DNS).
+vi.mock("@/lib/automation/outbound-ip", async (importOriginal) => {
+  const real = await importOriginal<typeof GuardaDeIp>();
+  return {
+    ...real,
+    assertDestinoResolvidoSeguro: async (host: string) =>
+      host === HOST_PUBLICO ? undefined : real.assertDestinoResolvidoSeguro(host),
+  };
+});
 
 const ctx: HandlerCtx = {
   organization_id: ORG,
@@ -236,5 +251,111 @@ describe("encaminhar mídia recebida — objeto copiado, nunca a media_url crua"
       message: "Esta mídia não pode ser encaminhada.",
     });
     expect(copias).toEqual([]);
+  });
+});
+
+/**
+ * O NOME DO ARQUIVO VIAJA JUNTO COM A MÍDIA (#4457).
+ *
+ * O objeto copiado tem nome de bucket: `{mensagem}.{ext}` na mídia recebida,
+ * `out-<uuid>.<ext>` na enviada. O nome que a pessoa vê mora em
+ * `metadata.media_filename` da origem. É ele que precisa chegar ao documento do
+ * WhatsApp e à linha do destino, que o balão e o download leem. Antes deste
+ * conserto, o encaminhamento nem lia o `metadata` da origem, e o cliente recebia
+ * `m1.pdf` no lugar do voucher.
+ */
+const VOUCHER = "Dom Travel - Voucher LOC XXXXXX - Nome do Passageiro - Maceió.pdf";
+const PDF_NA_ORIGEM = `${ORG}/${ORIGEM_CONV}/m1.pdf`;
+
+function documentoRecebido(metadata: Record<string, unknown>, extra: Record<string, unknown> = {}) {
+  return origemRecebida({
+    type: "document",
+    body: null,
+    media_url: "http://localhost:3000/api/files/default/m1.pdf",
+    media_storage_path: PDF_NA_ORIGEM,
+    media_mime: "application/pdf",
+    metadata,
+    ...extra,
+  });
+}
+
+/** Encaminha pelo caminho real e devolve o que o WAHA e o banco receberam. */
+async function encaminharDocumento(
+  metadata: Record<string, unknown>,
+  extra: Record<string, unknown> = {},
+) {
+  vi.stubEnv("WAHA_API_BASE_URL", WAHA_BASE);
+  vi.stubEnv("WAHA_API_KEY", "hash123");
+  const fetchMock = vi.fn(async (..._args: unknown[]) =>
+    Response.json({ id: { _serialized: "DOC1" } }),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const { supabase, capturas } = dubleCom(documentoRecebido(metadata, extra));
+
+  await encaminharMensagem(supabase, ctx, {
+    messageId: ORIGEM_ID,
+    conversationIdDestino: DESTINO_CONV,
+    via: "session",
+  });
+
+  const envioDoArquivo = fetchMock.mock.calls.find(
+    ([url]) => String(url) === `${WAHA_BASE}/api/sendFile`,
+  );
+  const corpo = envioDoArquivo
+    ? (JSON.parse(String((envioDoArquivo[1] as RequestInit).body)) as {
+        file?: { filename?: string };
+      })
+    : null;
+  const linhaDoDestino = (capturas.inserts.messages ?? [])[0] as
+    | { metadata?: Record<string, unknown> }
+    | undefined;
+  return {
+    /** O nome que o cliente vê no WhatsApp. */
+    nomeNoWhatsApp: corpo?.file?.filename,
+    metadataDoDestino: linhaDoDestino?.metadata ?? {},
+    /** A 1ª leitura de `messages` é a da origem: `lerOrigem` roda antes de tudo. */
+    leituraDaOrigem: capturas.selects.messages?.[0] ?? "",
+  };
+}
+
+describe("encaminhar documento: o nome original viaja junto (#4457)", () => {
+  it("o cliente do destino recebe o documento com o nome original, não o do objeto", async () => {
+    const { nomeNoWhatsApp } = await encaminharDocumento({ media_filename: VOUCHER });
+
+    expect(nomeNoWhatsApp).toBe(VOUCHER);
+  });
+
+  it("a linha do destino guarda o mesmo nome, para o balão e o download", async () => {
+    const { metadataDoDestino } = await encaminharDocumento({ media_filename: VOUCHER });
+
+    expect(metadataDoDestino.media_filename).toBe(VOUCHER);
+  });
+
+  // O dublê devolve a linha inteira, peça a consulta a coluna ou não. No banco
+  // de verdade, o PostgREST só devolve o que foi pedido: este caso é o único que
+  // vê a coluna sair do `select`.
+  it("a leitura da origem pede a coluna metadata", async () => {
+    const { leituraDaOrigem } = await encaminharDocumento({ media_filename: VOUCHER });
+
+    expect(colunasDoSelect(leituraDaOrigem)).toContain("metadata");
+  });
+
+  it("origem sem nome: segue o nome do objeto, e a linha do destino não ganha nome inventado", async () => {
+    const { nomeNoWhatsApp, metadataDoDestino } = await encaminharDocumento({});
+
+    expect(nomeNoWhatsApp).toBe("m1.pdf");
+    expect(metadataDoDestino).not.toHaveProperty("media_filename");
+  });
+
+  // Sem objeto nosso, a mídia viaja pela URL pública. Sem o nome da origem, o
+  // envio cairia no último pedaço da URL (`arquivo-7f3a.pdf`).
+  it("mídia externa (URL pública, sem objeto nosso): o nome original também chega", async () => {
+    const { nomeNoWhatsApp, metadataDoDestino } = await encaminharDocumento(
+      { media_filename: VOUCHER },
+      { media_storage_path: null, media_url: `https://${HOST_PUBLICO}/arquivo-7f3a.pdf` },
+    );
+
+    expect(nomeNoWhatsApp).toBe(VOUCHER);
+    expect(metadataDoDestino.media_filename).toBe(VOUCHER);
   });
 });

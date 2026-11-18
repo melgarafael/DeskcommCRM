@@ -1963,6 +1963,39 @@ function PipelineEditor({
                 </p>
               </div>
             )}
+            {/* ── A IA PODE LER (issue #4669) ───────────────────────────────
+                A marca que autoriza o valor deste campo a chegar ao MODELO: o
+                bloco do negócio do follow-up escrito por IA e a leitura
+                `crm_get_lead` de um turno. Mesma disciplina de `multiple` e de
+                `mostrar_no_resumo_da_passagem`: desmarcar APAGA a chave, porque
+                a definição é jsonb e a AUSÊNCIA é o desmarcado (ver o comentário
+                de `ia_pode_ler` no schema). Só campo do NEGÓCIO: é o
+                `crm_leads.custom_fields` que os dois caminhos leem. */}
+            {escopoDoCampo(f) === "negocio" && (
+              <div className="space-y-1 lg:col-span-4">
+                <label className="flex items-center gap-1 text-xs">
+                  <input
+                    type="checkbox"
+                    aria-label={`${t("A IA pode ler este campo")} — ${f.label || i + 1}`}
+                    checked={f.ia_pode_ler === true}
+                    onChange={(ev) => {
+                      const next = [...fields];
+                      const { ia_pode_ler: _apagada, ...semOpcao } = f;
+                      next[i] = ev.target.checked
+                        ? { ...f, ia_pode_ler: true }
+                        : (semOpcao as CustomFieldDef);
+                      setFields(next);
+                    }}
+                  />
+                  {t("A IA pode ler este campo")}
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "Ligado, o valor deste campo pode chegar ao assistente de IA: no follow-up escrito por IA e na leitura que o agente faz do negócio. Desligado, o valor fica só no card. Desligado por padrão.",
+                  )}
+                </p>
+              </div>
+            )}
             {/* ── QUANDO ESTE CAMPO APARECE (issues #2728 e #4041) ──────────
                 A condição que a ficha do contato, o dossiê e o painel do inbox
                 leem para ESCONDER o campo: UMA condição (o de sempre) ou uma

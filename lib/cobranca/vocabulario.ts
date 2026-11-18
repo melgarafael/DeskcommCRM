@@ -11,7 +11,7 @@
 export const ESTADOS_DA_ASSINATURA = ["trial", "ativa", "em_atraso", "cancelada"] as const;
 export type EstadoDaAssinatura = (typeof ESTADOS_DA_ASSINATURA)[number];
 
-export const PROVEDORES_DE_COBRANCA = ["stripe", "asaas"] as const;
+export const PROVEDORES_DE_COBRANCA = ["stripe", "asaas", "efi"] as const;
 export type ProvedorDeCobranca = (typeof PROVEDORES_DE_COBRANCA)[number];
 
 export const MODOS = ["teste", "producao"] as const;
@@ -28,6 +28,8 @@ export type Intervalo = (typeof INTERVALOS)[number];
 export const MOEDAS = ["BRL", "USD", "EUR"] as const;
 /** As moedas que o Asaas cobra: plano fora delas é recusado na rota e no adaptador. */
 export const MOEDAS_DO_ASAAS: readonly Moeda[] = ["BRL"];
+/** As moedas que o Efi cobra: ele não tem moeda (só BRL), mesma régua do Asaas. */
+export const MOEDAS_DO_EFI: readonly Moeda[] = ["BRL"];
 export type Moeda = (typeof MOEDAS)[number];
 
 export const AVISOS_DA_REGUA = ["trial_acabando", "venceu", "suspende_em_breve", "suspensa"] as const;

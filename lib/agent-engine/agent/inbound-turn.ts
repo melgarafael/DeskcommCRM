@@ -360,6 +360,7 @@ import { traduzir } from '@/lib/i18n/dicionario';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import { blocoDoFeriado, ehFeriadoNacionalNoFuso, lerFeriadoDoTurno } from './feriado-nacional';
 import { blocosNoIdioma, diretivaDeIdioma, ferramentasNoIdioma } from './idioma-do-turno';
+import type { Idioma } from './idioma-do-turno';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 import {
@@ -1544,6 +1545,68 @@ export function blocosDeInteresseExternoResidentes(toolIds: readonly string[]): 
 }
 
 /**
+ * OS BLOCOS FIXOS DA PLATAFORMA — os primeiros bytes do `system` (#4668).
+ *
+ * São idênticos para todo agente de toda instalação: não dependem do prompt do
+ * dono, das ferramentas publicadas, do idioma da organização nem do turno. Por
+ * isso vêm ANTES de tudo o que pode variar — é o único trecho que o cache de
+ * prefixo do provedor consegue reaproveitar entre agentes diferentes.
+ */
+export const BLOCOS_FIXOS_DA_PLATAFORMA: readonly string[] = [
+  TRANSPARENCIA_SYSTEM_BLOCK,
+  AUTORIA_SYSTEM_BLOCK,
+];
+
+export interface BlocosDoSistemaDoTurno {
+  /** `composeSystemPrompt(playbook, memória da org, índice de skills)` — a parte do agente. */
+  promptDoAgente: string;
+  casosLigados: boolean;
+  toolIds: readonly string[];
+  previewKind: TurnPreview['kind'] | null;
+  idioma: Idioma;
+  blocoDaVoz: string | null;
+}
+
+/**
+ * A ORDEM DO `system` — e a ordem é dinheiro, não estilo (#4668).
+ *
+ * O cache de prefixo dos provedores só reaproveita o começo IGUAL do pedido. Com
+ * o prompt do agente na frente, cada agente diferente — e cada edição do prompt
+ * de um deles — invalidava também os blocos da plataforma, que são iguais para
+ * todos. Aqui a montagem obedece a quatro faixas, da mais estável para a mais
+ * volátil:
+ *
+ *   1. fixo da plataforma (`BLOCOS_FIXOS_DA_PLATAFORMA`): mesmos bytes em toda
+ *      instalação;
+ *   2. por-agente, do mais estável ao menos: o que a TELA habilita (casos,
+ *      agenda, interesse no banco externo) muda quando o dono mexe nas ferramentas; o prompt muda quando ele
+ *      reescreve o texto, e aí só invalida daqui para baixo;
+ *   3. por-turno (prévia, voz): tudo o que pode mudar entre dois turnos do MESMO
+ *      agente fica no fim.
+ *
+ * A diretiva de idioma é a EXCEÇÃO, e fecha o `system`: o texto dela diz "mesmo
+ * que as regras ACIMA estejam em português", e isso só é verdade se tudo o mais
+ * estiver acima dela. Na frente ela mentiria sobre o que está acima dela. É também
+ * a posição que ela já tinha antes desta reordenação. É curta: o que ela custa ao
+ * cache é só ela mesma.
+ *
+ * A regra que este arquivo não pode perder: bloco novo entra na faixa dele, e
+ * nada volátil (relógio, lead, contador) entra aqui — o por-turno tem sufixo
+ * próprio, depois do breakpoint.
+ */
+export function blocosDoSistemaDoTurno(input: BlocosDoSistemaDoTurno): string[] {
+  const blocos: string[] = [...BLOCOS_FIXOS_DA_PLATAFORMA];
+  if (input.casosLigados) blocos.push(CASES_SYSTEM_BLOCK);
+  blocos.push(...blocosDeAgendaResidentes(input.toolIds));
+  blocos.push(...blocosDeInteresseExternoResidentes(input.toolIds));
+  blocos.push(input.promptDoAgente);
+  if (input.previewKind !== null) blocos.push(blocoDoModoDePrevia(input.previewKind));
+  if (input.blocoDaVoz !== null) blocos.push(input.blocoDaVoz);
+  blocos.push(diretivaDeIdioma(input.idioma));
+  return blocos;
+}
+
+/**
  * Leituras de REGISTRO da organização cujo retorno o turno guarda: catálogo e conhecimento
  * viram evidência do classificador semântico; catálogo, pedidos e honorários dão lastro
  * aos valores (`guardrails/lastro-comercial.ts`). A ponte MCP já filtra organização e contato.
@@ -1673,6 +1736,13 @@ export interface InboundTurnKnobs {
    * testes que não exercitam o teto o omitem sem custo.
    */
   maxSendsPerTurn?: number;
+  /**
+   * #4835 — carência (ms) antes de gastar MODELO APROVADO no primeiro contato de
+   * um lead recém-chegado, com a janela de 24 h fechada (FOLLOWUP_CARENCIA_DO_MODELO_MS).
+   * Ausente = `CARENCIA_PADRAO_MS` (10 s); `0` desliga e devolve o comportamento
+   * de antes. Ver `agent/carencia-antes-do-modelo.ts`.
+   */
+  carenciaDoModeloMs?: number;
   /**
    * #4590 — N respostas automáticas por CONVERSA dentro de W minutos
    * (TETO_DE_RESPOSTAS_POR_CONVERSA / TETO_DE_RESPOSTAS_JANELA_MIN). Ausente =
@@ -3390,32 +3460,10 @@ async function executarTurnoDoAgente(
     orgMemoryBlock: renderOrgMemory(orgMemory),
     skillIndex,
   });
-  // Spec 15 §5.2: bloco das tools de caso SEMPRE residente (não invalida o prefixo
-  // cacheável — mesmo espírito do índice de skills) quando a tela habilita. O bloco da
-  // Agenda segue o mesmo padrão, condicionado a `crm_book_appointment` estar entre as
-  // tools publicadas — ver comentário de `agendaSystemBlock`. `TRANSPARENCIA_SYSTEM_BLOCK`
-  // e `AUTORIA_SYSTEM_BLOCK` não dependem de nenhuma feature — todo agente publicado os recebe.
-  const blocosResidentes = [systemWithMemory, TRANSPARENCIA_SYSTEM_BLOCK, AUTORIA_SYSTEM_BLOCK];
-  if (agentConfig !== null && agentConfig.casesEnabled) blocosResidentes.push(CASES_SYSTEM_BLOCK);
-  // Spec 15 §5.2 / doutrina da Agenda: a régua é o que o agente TEM — ver
-  // `blocosDeAgendaResidentes`, que decidiu isto num lugar só para poder ser
-  // testada (o bloco da cadeia nomeia `crm_list_event_types`, e nomear
-  // ferramenta ausente faz o modelo tentar chamá-la).
-  if (agentConfig !== null) blocosResidentes.push(...blocosDeAgendaResidentes(agentConfig.toolIds));
-  // #3757: o bloco da prévia diz de QUEM é a voz. São duas prévias com donos
-  // diferentes — o "Testar" (sandbox) é do agente falando como agente, mas o
-  // "Sugerir resposta" (assisted) escreve o rascunho que o ATENDENTE humano vai
-  // revisar e enviar. Com um bloco só, o prompt de atendimento automático (que
-  // ensina a passar a vez a uma pessoa) vazava para a caixa do atendente e o
-  // rascunho saía em terceira pessoa — "vou avisar o atendente e ele responde".
-  // Vive em função de módulo (`blocoDoModoDePrevia`) para poder ser testada.
-  if (preview) blocosResidentes.push(blocoDoModoDePrevia(preview.kind));
-  if (agentConfig !== null) blocosResidentes.push(...blocosDeInteresseExternoResidentes(agentConfig.toolIds));
-  // #4260, item 1: o único bloco NOVO é a diretiva de idioma, e ela entra por
-  // último para não deslocar nenhum dos de cima (o prefixo cacheável continua
-  // igual em `pt-BR`). A tradução dos blocos acima acontece DEPOIS da montagem,
-  // numa passada só — ver `blocosNoIdioma`.
-  blocosResidentes.push(diretivaDeIdioma(idiomaDaOrg));
+  // #4668: a montagem e a ORDEM do `system` moraram para
+  // `blocosDoSistemaDoTurno` (logo abaixo de `blocosDeAgendaResidentes`) e
+  // acontecem DEPOIS de a voz ser resolvida — aquela função é a ordem que o
+  // cache de prefixo enxerga, e é lá que um bloco novo escolhe a faixa dele.
   const openingContext = preview
     ? preview.context
     : await lerContextoDaConversa();
@@ -3472,12 +3520,21 @@ async function executarTurnoDoAgente(
   // modelo escrevia como sempre — três bolhas, lista e sigla — e a síntese lia
   // tudo numa nota de 35 segundos (medido numa instalação real em 03/11/2026, número
   // oficial). Por isso o `system` só é montado DEPOIS de a voz ser resolvida, e
-  // o bloco vai NO FIM: o prefixo dos turnos em texto continua o mesmo.
+  // o bloco vai no fim (só a diretiva de idioma vem depois): o prefixo dos
+  // turnos em texto continua o mesmo.
   const blocoDaVoz = blocoDaRespostaFalada(vozParaEsteTurno);
-  if (blocoDaVoz) blocosResidentes.push(blocoDaVoz);
-  // #4260, item 1: a passada de idioma vem DEPOIS da montagem — a ordem dos
-  // blocos e o `join` daqui continuam os de antes, e em `pt-BR` cada bloco volta
-  // igual. Mutação local, na mesma lista: o turno não guarda os blocos.
+  const blocosResidentes = blocosDoSistemaDoTurno({
+    promptDoAgente: systemWithMemory,
+    casosLigados: agentConfig !== null && agentConfig.casesEnabled,
+    toolIds: agentConfig?.toolIds ?? [],
+    previewKind: preview?.kind ?? null,
+    idioma: idiomaDaOrg,
+    blocoDaVoz,
+  });
+  // #4260, item 1: a passada de idioma vem DEPOIS da montagem — uma passada só,
+  // por dicionário (chave = o texto em português), nunca um `idioma` por `push`.
+  // Mudar a ORDEM dos blocos não muda esta régua: em `pt-BR` cada bloco volta
+  // igual, e em `es` cada um volta traduzido no mesmo lugar da lista.
   blocosNoIdioma(blocosResidentes, idiomaDaOrg).forEach((bloco, indice) => {
     blocosResidentes[indice] = bloco;
   });
@@ -6861,11 +6918,20 @@ async function executarTurnoDoAgente(
       outcome: routed.outcome,
       // `in`: o campo só existe no turno da troca; ausente = desligado.
       textoConfigurado: 'passagemAoClienteDoRouter' in routed ? routed.passagemAoClienteDoRouter : null,
+      // #4750 — o TERCEIRO modo (`config.passagem_silenciosa`): ligado, NADA
+      // vai ao cliente — nem a frase cadastrada. O silêncio vence a frase, e
+      // por isso o `enviar` abaixo nem é chamado.
+      passagemSilenciosa:
+        'passagemSilenciosaDoRouter' in routed && routed.passagemSilenciosaDoRouter === true,
       agenteAnteriorId: passagemRecebida?.agenteAnteriorId ?? null,
       agenteNovoId: routed.config?.agentId ?? null,
     };
+    const passagemSilenciosaDaTroca = trocaQuePedeAviso.passagemSilenciosa;
     let clienteAvisadoDaTroca = false;
-    if (textoDaPassagemAoCliente(trocaQuePedeAviso) !== null) {
+    if (
+      passagemSilenciosaDaTroca === false &&
+      textoDaPassagemAoCliente(trocaQuePedeAviso) !== null
+    ) {
       const desfechoDoAviso = await avisarClienteDaTrocaDeAgente(
         {
           log: runLog,
@@ -6923,8 +6989,11 @@ async function executarTurnoDoAgente(
             passagemRecebida,
             await idiomaDaOrganizacaoDoTurno(pool, tenantId, runLog),
             // Avisado o cliente, o agente novo NÃO repete o aviso: é o que
-            // impede duas mensagens de passagem na mesma troca.
+            // impede duas mensagens de passagem na mesma troca. No modo
+            // silencioso (#4750) também não: a instrução é continuar sem se
+            // apresentar nem anunciar a troca.
             clienteAvisadoDaTroca,
+            passagemSilenciosaDaTroca,
           );
     const openingBase = input.buildOpening({
       previous: effectivePrevious,
