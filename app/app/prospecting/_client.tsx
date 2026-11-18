@@ -383,6 +383,8 @@ export function ProspectingClient() {
     usar_ficha_digital: boolean;
     /** De onde vem a primeira mensagem: estratégia do site ou prompt do agente. */
     fonte_da_abordagem: FonteDaAbordagem;
+    /** A fonte que a campanha tinha ao abrir o formulário: o pedido só leva a fonte se ela mudou. */
+    fonte_gravada: FonteDaAbordagem;
   } | null>(null);
   const [confirmandoBriefing, setConfirmandoBriefing] = useState(false);
   // Levar a lista para outra campanha: confirmação + recibo (repetir não cria outra).
@@ -579,6 +581,7 @@ export function ProspectingClient() {
             ofertas: c.config?.ofertas ?? ["site"],
             usar_ficha_digital: c.config?.usar_ficha_digital !== false,
             fonte_da_abordagem: c.config?.fonte_da_abordagem ?? "estrategia",
+            fonte_gravada: c.config?.fonte_da_abordagem ?? "estrategia",
           },
     );
   }
@@ -601,7 +604,11 @@ export function ProspectingClient() {
         qualification: briefing.qualification.trim(),
         ofertas: briefing.ofertas,
         usar_ficha_digital: briefing.usar_ficha_digital,
-        fonte_da_abordagem: briefing.fonte_da_abordagem,
+        // A fonte só vai quando muda: o servidor só a grava (e a audita) quando ela
+        // vem no pedido, e salvar o texto não deve registrar uma troca que não houve.
+        ...(briefing.fonte_da_abordagem !== briefing.fonte_gravada
+          ? { fonte_da_abordagem: briefing.fonte_da_abordagem }
+          : {}),
       },
       t("Instrução e critérios atualizados. A campanha continua pausada."),
     );
