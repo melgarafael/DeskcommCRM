@@ -19509,6 +19509,14 @@ export const DICIONARIO: Traducoes = {
     es: "Incluye la palabra que la persona responde para salir; sin ella, el pedido no se reconoce.",
   },
   "Use até 160 caracteres e nenhum link.": { es: "Usa hasta 160 caracteres y ningún enlace." },
+  // A palavra da saída que está LÁ e não se lê (#4370): riscado, spoiler ou
+  // código. O conserto é tirar a marcação, não incluir a palavra.
+  // O inglês mora em `traducoes/en.json` (idioma `em_construcao`: catálogo não
+  // carregado), como todas as frases em inglês deste produto.
+  "A palavra está no texto, mas riscada, escondida ou em código. Tire a marcação de cima dela: é o que a pessoa vai responder.":
+    {
+      es: "La palabra está en el texto, pero tachada, oculta o en código. Quita la marca que la tapa: es lo que la persona va a responder.",
+    },
   "Na primeira mensagem (recomendado)": { es: "En el primer mensaje (recomendado)" },
   "A abertura já diz como parar:": { es: "La apertura ya dice cómo detenerse:" },
   "Atrasar para a 2ª mensagem": { es: "Postergar al 2.º mensaje" },

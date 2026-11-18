@@ -157,9 +157,27 @@ export const campaignConfigSchema = z
         TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA,
         `O texto da opção de parar tem até ${TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA} caracteres.`,
       )
-      .refine((texto) => problemaNoTextoDaSaida(texto) === null, {
-        message:
-          "O texto da opção de parar precisa conter a palavra que a pessoa responde para sair (PARAR, BAJA ou STOP) e não pode ter link.",
+      // A recusa por PALAVRA ESCONDIDA não mora aqui (#4370, decisão (a) do
+      // #4647): este schema é o MESMO que o envio faz a cada rodada
+      // (`worker.ts`), e o campo existe desde a v1.109.0 — recusar `~PARAR~`
+      // aqui fazia a campanha JÁ SALVA pausar com «Falha inesperada no envio»,
+      // quando o contrato é ela seguir com a frase padrão (`textoDaSaidaEfetivo`,
+      // o mesmo caminho que o cabeçalho de `rodape-de-saida.ts` documenta).
+      // Quem recusa a palavra escondida é o SALVAR (`store.ts`,
+      // `validarTextoDaSaidaNoIdioma` com `aoGravar`), com a mensagem que ensina
+      // a tirar a marcação — e é lá que a tela mostra a recusa.
+      .superRefine((texto, ctx) => {
+        const problema = problemaNoTextoDaSaida(texto);
+        // `palavra_escondida` passa de propósito: a régua dela é a do salvar.
+        if (problema === null || problema === "longo" || problema === "palavra_escondida")
+          return;
+        ctx.addIssue({
+          code: "custom",
+          message:
+            problema === "sem_palavra"
+              ? "O texto da opção de parar precisa conter a palavra que a pessoa responde para sair (PARAR, BAJA ou STOP) e não pode ter link."
+              : "O texto da opção de parar não pode ter link.",
+        });
       })
       .optional(),
     // Etiquetas do contato na abordagem (spec 27). Ausente = a campanha não etiqueta ninguém.
