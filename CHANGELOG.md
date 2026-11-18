@@ -69,6 +69,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   Planos de tarefa ganhou o seletor de onde o prazo conta, com o campo de data e o
   deslocamento. Nenhuma ação é necessária na atualização.
 
+  Contribuição de @webtecnica (#4747, #4717).
+
 - **Troca automática de agente em modo silencioso, sem apresentação ao cliente** A tela do roteador ganhou, na mesma área da mensagem de passagem, o interruptor Troca automática silenciosa. Ligado, quando o classificador troca sozinho quem atende a conversa, nada é enviado ao cliente e o agente novo continua do ponto em que o atendimento está, sem se apresentar nem anunciar a troca — que é o que a frase do prompt não conseguia impedir, porque o bloco do sistema vem depois dela.
 
   Com o interruptor desligado, que é o padrão, nada muda: a troca segue como hoje, com a frase cadastrada avisando o cliente uma vez, ou com o agente novo se apresentando quando não há frase. Um roteador que já existia, sem essa opção, abre com o interruptor desligado.
@@ -95,11 +97,17 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   humano" e bot silenciado barram o turno antes de o agente da campanha ser
   consultado.
 
+  Contribuição de @webtecnica (#4059, #4024).
+
 - **Agentes e integrações MCP contam leads sem listá-los** Nova ferramenta `crm_count_leads`: devolve só números (o total e, sem filtro de status, o total de abertos, ganhos e perdidos), com filtro por funil, etapa e status. Quem precisa responder "quantos leads temos?" deixa de paginar a lista inteira do `crm_list_leads` (que não informa total e leva todos os negócios ao modelo). A contagem respeita as mesmas regras da listagem: só a organização do token, sem contatos pessoais e, em conversa de atendimento, só os negócios do contato da conversa. A ferramenta aparece no pacote "Não perder o cliente" do agente.
+
+  Contribuição de @Alyandher (#4886).
 
 - **Ficha juntada continua recebendo as mensagens do Instagram e do Facebook das duas** Quando duas fichas da mesma pessoa eram juntadas e cada uma tinha a sua conversa por rede social (o Instagram numa, o Facebook na outra), a ficha que ficava herdava só uma das duas. A próxima conversa pela outra rede não achava ninguém e criava uma ficha nova, refazendo a duplicata que a junção tinha desfeito. Agora cada ficha guarda todas as suas identidades de Instagram e Facebook, a junção leva todas para a ficha que fica, e a mensagem nova pela rede social procura a ficha por essas identidades antes de criar outra. A atualização já carrega as identidades das fichas que existem, inclusive as das junções feitas antes dela. A pedido do titular, a cópia dos dados inclui as identidades, e a anonimização as apaga. Telefone e e-mail continuam nas guardas que já tinham. Contribuição de @webtecnica (#3764).
 
 - **Leads aceitam token de integração** As rotas de leads passam a aceitar o token `dsk_…` de servidor, além da sessão de navegador. Integrações (n8n e outros sistemas server-to-server) podem criar, atualizar, mover, ganhar, perder, clonar e retomar negócios, além de gerenciar anexos, vínculos de contato e propostas de campos, sem precisar de cookie de sessão. Cada chamada filtra a organização pela linha do token, mantendo o isolamento entre tenants. O radar de risco (`at-risk`) e a exclusão em lote (`bulk` com `delete`) pedem um token de papel `manager`, porque o token enxerga a organização inteira. O histórico de capturas (`lead-captures`) e a nova tentativa de conversão (`leads/[id]/conversion/retry`) seguem só pela sessão.
+
+  Contribuição de @paulolimajr77 (#4390, Spec 33, fatia 4 de 9).
 
 - **O ChatGPT (e outros aplicativos de MCP) conecta ao CRM por OAuth, sem colar token** Aplicativos como o ChatGPT só oferecem OAuth na hora de adicionar um servidor MCP:
   não há onde colar um token de API. Agora o CRM atende esse caminho. No aplicativo,
@@ -114,7 +122,11 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   instalação precisa ter `NEXT_PUBLIC_APP_URL` com o endereço público real — é ele que
   o aplicativo confere.
 
+  Contribuição de @lebaneseforas-byte (#4720).
+
 - **Rotas de propostas aceitam token de integração** As rotas de propostas (`proposals`, `proposals/[id]`, o `assistant/apply`, o `assistant/disponibilidade`, o `decide`, o `documento`, o `modelo`, a `previa` e o `revise`) passam a aceitar o token `dsk_…` de servidor. A leitura exige o escopo `mcp:read` e a escrita exige `mcp:write`, com o mesmo papel que a sessão já pede para cada ação. A organização vem da linha do token. Continuam somente de sessão o assistente que redige com IA (`proposals/[id]/assistant`), o preenchimento com a conversa (`proposals/[id]/preencher-com-conversa`) e o envio ao cliente (`proposals/[id]/send`).
+
+  Contribuição de @paulolimajr77 (#4390, Spec 33, fatia 4 de 9).
 
 ### Alterado
 
@@ -153,7 +165,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   silêncio da tela não deixava rastro: a pergunta "por que não apareceu?" só podia
   ser respondida lendo o código.
 
-  Crédito: @webtecnica.
+  Contribuição de @webtecnica (#4813, #4545).
 
 - **Chamada sem medição de uso deixa de gravar custo zero, e o custo nulo passa a dizer o motivo** Depois da regra única do custo (#4700), faltava o outro lado do defeito do #4697: a chamada que o provedor **não mediu**. Quando a resposta chega sem `usage` — gateway sem contagem, resposta cortada, assinatura que devolve o bloco vazio —, o preço de tabela vezes zero token dá `0`, e esse `0` entrava em `cost_cents` com cara de número medido: o painel de custo e o teto de gasto, que somam `coalesce(cost_cents, 0)`, liam "esta chamada foi de graça" quando o que faltava era o dado. Agora toda rota que grava chamada pergunta antes se o provedor mediu uso (`haUsoMedido`): sem medição, o custo é nulo com o motivo `sem_uso`, que é distinto de `sem_preco` (uso medido, preço desconhecido) — os dois nulos deixam de se confundir no log da linha. O nulo, e não o zero, é o que acende o aviso de gasto incompleto na tela de Orçamento; zero apagava esse sinal. Junto veio a divergência entre rotas: a legada (`computeCost`, dos workers de resposta e de sentimento) consultava `ai_pricing` antes da tabela do motor, enquanto o seam consultava `pricing.ts` — o mesmo modelo podia sair com número numa rota e nulo na outra. A legada passa a consultar também a tabela do motor, como último recurso: depois de `ai_pricing` e do catálogo. Nenhuma linha já gravada é reescrita: a correção é só do caminho de escrita novo.
 
@@ -182,6 +194,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Ajuste a partir da issue #4818.
 
+  Contribuição de @60507 (#4832, #4818).
+
 - **As colunas ID da requisição e Metadados da tela de auditoria agora são traduzidas** Na tela de auditoria, as colunas "Request ID" e "Metadata" apareciam sempre em inglês, mesmo com a interface em português ou espanhol. Agora elas aparecem como "ID da requisição" e "Metadados" (em espanhol, "ID de la solicitud" e "Metadatos").
 
   Contribuição de @Cuasare (#4819).
@@ -196,6 +210,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **Contato com compromisso cancelado na Agenda pode ser excluído** Excluir um contato que já teve um compromisso cancelado na Agenda era recusado com o aviso "Cancele ou apague o compromisso antes de excluir". Cancelar não liberava a exclusão, e a Agenda não tem como apagar um compromisso, então esse contato nunca saía da base. Agora o compromisso cancelado não segura mais a exclusão: ele continua na Agenda de quem atendeu, sem o vínculo com o contato excluído. Compromisso marcado, realizado ou com falta continua impedindo a exclusão, e o aviso passa a pedir só o que dá para fazer: cancelar. Nenhuma ação é necessária na atualização.
 
+  Contribuição de @minhatribodigital (#4766).
+
 - **O CPF cadastrado aparece na ficha do contato e pode ser corrigido na edição** O CPF era gravado no cadastro (cifrado, com busca e duplicados funcionando), mas não aparecia em tela nenhuma: a ficha só sabia se havia CPF, e a edição do contato não tinha o campo. Para ver o número, o caminho era exportar a lista em CSV.
 
   Agora a ficha do contato tem a linha **CPF** (NIF na organização portuguesa). Ela diz "Cadastrado" quando há documento, e gerente ou administrador vê o número no botão **Mostrar**, que pede ao servidor na hora — o número não vem junto com a ficha, e cada leitura fica na auditoria, como já ficava no export. Atendente vê só que há CPF, e a tela diz por quê. Em **Editar contato** entrou o campo do documento, com a mesma conferência do cadastro: vazio mantém o que está gravado, preenchido troca.
@@ -206,9 +222,13 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **As respostas do formulário do RD Station chegam ao card do lead** Quando o lead vinha pelo webhook do RD Station, o card nascia só com nome, telefone, e-mail e os dados de origem do RD: as respostas do formulário (por exemplo, orçamento, cidade preferida ou o aceite da política de privacidade) ficavam pelo caminho. Agora elas entram no card como entrariam num envio comum para a mesma fonte, respeitando o mapeamento de campos e os tipos das perguntas configuradas (moeda e número). As informações técnicas que o RD manda junto — token, rastreio de tráfego, navegador, identificador da conversão — continuam fora do card. Nada muda nos formulários de outras origens.
 
+  Contribuição de @VinhoAbencoado (#4839).
+
 - **O segundo envio de uma integração completa o contato do card, e não só o card** Na fonte de webhook com "Atualizar o card quando o envio repete o mesmo cadastro" ligada, a integração que manda primeiro só o e-mail (a pessoa clicou num link) e depois o cadastro com nome e telefone, sob o mesmo `external_id`, atualizava o título, os campos e a etapa do card — mas o contato ligado a ele ficava com o e-mail no lugar do nome e sem telefone. Sem número, o follow-up pelo WhatsApp, o agente e o envio pelo CRM não alcançavam a pessoa.
 
   Agora o reenvio também completa o contato do card: grava o telefone e o e-mail que faltam e troca o nome só quando ele ainda é o provisório (vazio, ou a cópia do e-mail ou do telefone). Nada que já esteja preenchido é trocado — um nome ou número escrito na tela continua valendo —, um telefone que já é de outro contato não é copiado nem religa o card, e contato pessoal ou anonimizado não é alterado. Quando o telefone entra, sai o mesmo `contact.phone_added` do resto do sistema.
+
+  Contribuição de @maclevison (#4861).
 
 ## [1.116.0] — 2026-11-17
 
