@@ -246,7 +246,6 @@ describe("canal-mudo-watcher", () => {
 
   it("canal de Instagram fala em contas de teste, não em números", async () => {
     const social = {
-      provider: "zernio_social",
       metadata: { ai_gate: "allowlist", social_platform: "instagram", ai_test_phone_numbers: [] },
     };
     const cap = vazio();
@@ -268,7 +267,6 @@ describe("canal-mudo-watcher", () => {
       admin(
         [
           canalMudo({
-            provider: "zernio_social",
             metadata: {
               ai_gate: "allowlist",
               social_platform: "instagram",

@@ -38,7 +38,7 @@ import {
   type CanalParaAvaliar,
   type MotivoDaResolucao,
 } from "@/lib/channels/canal-mudo";
-import { channelBrand } from "@/lib/channels/presentation";
+import { REDES_COM_TESTADOR_SOCIAL } from "@/lib/ai/elegibilidade/pre-go-live";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { idiomaDoAviso, preencher } from "@/lib/i18n/idioma-do-aviso";
 import type { Idioma } from "@/lib/i18n/idiomas";
@@ -59,20 +59,15 @@ const LIMITE = 500;
 type CanalLido = CanalParaAvaliar & {
   display_name?: string | null;
   phone_number?: string | null;
-  provider?: string | null;
 };
 
-/** Instagram e Facebook autorizam CONTAS de teste, não números (`ai_test_social_identities`). */
+/**
+ * Rede social (Instagram, Facebook…) autoriza CONTAS de teste, não números
+ * (`ai_test_social_identities`). A lista de redes é a mesma do pré-go-live.
+ */
 function ehCanalSocial(canal: CanalLido | undefined): boolean {
-  if (!canal) return false;
-  const rede = channelBrand({
-    provider: canal.provider ?? null,
-    social_platform:
-      typeof canal.metadata?.["social_platform"] === "string"
-        ? (canal.metadata["social_platform"] as string)
-        : null,
-  });
-  return rede === "instagram" || rede === "messenger";
+  const rede = canal?.metadata?.["social_platform"];
+  return typeof rede === "string" && REDES_COM_TESTADOR_SOCIAL.includes(rede);
 }
 
 /** Como a pessoa reconhece a conexão: o nome dado em Conexões, ou o número. */
@@ -164,7 +159,7 @@ async function handle(req: NextRequest): Promise<Response> {
   const { data: canaisBruto, error: erroCanais } = await admin
     .from("channel_sessions")
     .select(
-      "id, organization_id, status, archived_at, last_status_change_at, metadata, display_name, phone_number, provider",
+      "id, organization_id, status, archived_at, last_status_change_at, metadata, display_name, phone_number",
     )
     .is("archived_at", null)
     .limit(LIMITE);
