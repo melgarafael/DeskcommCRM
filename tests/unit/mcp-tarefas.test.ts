@@ -219,19 +219,22 @@ describe("MCP Tools — Tarefas (crm_create_task, crm_list_tasks e crm_update_ta
         supabase: mockSupabase as unknown as McpContext["supabase"],
       };
 
-      const result = await crmCreateTask.handler(
+      const result = (await crmCreateTask.handler(
         {
           title: "Auditar balancete",
           description: "Conferir conciliação SCI",
           priority: "high",
         },
         ctx,
-      );
+      )) as { task: { id: string } };
 
-      expect(capturedPayload).not.toBeNull();
-      expect(capturedPayload?.organization_id).toBe(fakeOrgId);
-      expect(capturedPayload?.created_by).toBe(fakeUserId);
-      expect(capturedPayload?.title).toBe("Auditar balancete");
+      // `capturedPayload` é atribuído dentro do dublê (closure): sem reler com o
+      // tipo declarado, o TS estreita para `null` e o acesso vira `never`.
+      const payload = capturedPayload as Record<string, unknown> | null;
+      expect(payload).not.toBeNull();
+      expect(payload?.organization_id).toBe(fakeOrgId);
+      expect(payload?.created_by).toBe(fakeUserId);
+      expect(payload?.title).toBe("Auditar balancete");
       expect(result.task).toBeDefined();
       expect(result.task.id).toBe("99999999-8888-7777-6666-555555555555");
     });
@@ -258,7 +261,9 @@ describe("MCP Tools — Tarefas (crm_create_task, crm_list_tasks e crm_update_ta
         { data: tarefa, error: null },
       ]);
 
-      const result = await crmUpdateTask.handler({ task_id: TAREFA, status: "done" }, contexto(supabase));
+      const result = (await crmUpdateTask.handler({ task_id: TAREFA, status: "done" }, contexto(supabase))) as {
+        task: { status: string };
+      };
 
       expect(chamadas).toContainEqual(["eq", ["id", TAREFA]]);
       expect(chamadas).toContainEqual(["eq", ["organization_id", ORG]]);
