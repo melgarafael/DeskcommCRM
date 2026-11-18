@@ -445,7 +445,7 @@ describe("a saída do processo passa pelo guard anti-SSRF (#2147, item 4)", () =
       }) as unknown as typeof fetch,
     });
     await expect(guard("https://erp.loja/mcp")).rejects.toThrow(/private_ip/);
-    expect(vi.mocked(lookup)).toHaveBeenCalledWith("erp.loja", { all: true });
+    expect(vi.mocked(lookup)).toHaveBeenCalledWith("erp.loja", { all: true, verbatim: true });
     expect(saidas, "saiu byte com o host resolvendo para 10.0.0.5").toEqual([]);
   });
 
