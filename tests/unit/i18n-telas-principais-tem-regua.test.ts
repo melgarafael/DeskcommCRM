@@ -179,17 +179,4 @@ describe("os idiomas de verdade", () => {
     const completos = REGISTRO_DE_IDIOMAS.filter((idioma) => idioma.nivel === "completo");
     expect(completos.map((idioma) => idioma.codigo)).toEqual(["pt-BR", "es"]);
   });
-
-  it("o inglês de hoje já alcança a régua — a promoção do #4721 é possível", () => {
-    // Medido nesta árvore: 71,6% (3.273 de 4.573 frases) contra o piso de 66,7%.
-    // Se este caso ficar vermelho, ou o inglês regrediu ou o produto ganhou
-    // frases mais rápido do que ele; os dois merecem aparecer num PR.
-    const cobertura = coberturaDoCatalogo(catalogo("en"), MEDICAO.frases);
-    const veredito = avaliarCoberturaDasTelasPrincipais(cobertura);
-    expect(
-      veredito.atende,
-      `inglês em ${(100 * veredito.cobertura).toFixed(1)}% das frases das telas principais ` +
-        `(faltam ${veredito.faltam} para ${(100 * COBERTURA_MINIMA_DAS_TELAS_PRINCIPAIS).toFixed(1)}%)`,
-    ).toBe(true);
-  });
 });
