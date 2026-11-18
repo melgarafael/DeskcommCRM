@@ -80,16 +80,29 @@ número de recepção e número de financeiro, com filas e horários diferentes.
 qual o Zendesk permite grupo padrão por conta **e** por agente, e o Freshdesk fala de "filas por
 canal".
 
-### D2 — Fila como dono
+### D2 — O dono é a FILA; a pessoa é o responsável do momento
 
-Conversa com `sector_id` e `assigned_to_user_id IS NULL` **pertence à fila**. Qualquer membro do
-setor pode assumir (o `claim` já filtra por setor; a RLS já abre leitura para membro do setor).
-Não é coluna nova: "sem dono" já significa sem dono — o que muda é o **significado** que a tela e
-a distribuição passam a dar ao par (`sector_id`, `assigned_to_user_id`).
+Duas palavras, duas coisas — e misturá-las é o que faz a operação perder o controle:
+
+| Papel | Quem é | Quem define |
+|---|---|---|
+| **Dono** | o **setor** (`conversations.sector_id`) | **a administração geral** (admin/manager) — na política do canal (D1) ou no gesto de transferir de fila (D3) |
+| **Responsável** | a pessoa que está atendendo agora (`assigned_to_user_id`) | qualquer membro do setor **do próprio setor**, pelo `claim`/assumir; e a administração, ao transferir |
+
+Consequência de desenho: **`assigned_to_user_id IS NULL` deixa de ser "conversa de ninguém"** e passa a
+ser "conversa da fila, aguardando alguém do setor assumir". Não é coluna nova: o estado já existe; o
+que muda é a leitura que o produto faz dele.
+
+E o limite de permissão que vem daí: **atendente não escolhe o dono**. Ele assume dentro do próprio
+setor e pode devolver; **mover a conversa para outro setor é gesto de administração** (admin/manager),
+igual ao que já vale para a política de distribuição do canal. Sem isso, "o setor é o dono" vira
+ficção no primeiro dia em que um atendente mover a conversa de Pedagogia para Secretaria para se
+livrar do atendimento.
 
 ### D3 — "Transferir para fila" no diálogo de transferência
 
-Terceira aba no `ReassignDialog`: `Atendente` · `Número` · **`Fila`**. Escolher fila grava o setor
+Terceira aba no `ReassignDialog`: `Atendente` · `Número` · **`Fila`**, visível para **admin/manager**
+(mover de fila é gesto de administração — ver D2). Escolher fila grava o setor
 (`PUT /conversations/[id]/sector`) e, num segundo passo explícito, **libera o responsável**
 (`release`) — as duas rotas já existem e já auditam (`conversation.sector_changed`,
 `conversation.released`). O motivo continua sendo campo único para as três abas.
@@ -124,6 +137,21 @@ O que falta não é permissão — é o par dela:
 
 O Zendesk tem *default group por agente*. Aqui isso vira `user_organizations` → setor padrão, útil
 para orientar o "Assumir" de quem está em três setores. Fica registrado, não implementado.
+
+## Quem pode o quê (proposta)
+
+| Gesto | viewer | agent | manager | admin |
+|---|---|---|---|---|
+| Assumir conversa da **sua** fila | — | ✅ | ✅ | ✅ |
+| Devolver para a fila (release) | — | ✅ | ✅ | ✅ |
+| **Mover a conversa para outra fila** | — | — | ✅ | ✅ |
+| Definir a **fila de entrada** do canal | — | — | — | ✅ |
+| Trocar o responsável por outra pessoa | — | — | ✅ | ✅ |
+| Ver conversas de outro setor | — | — | ✅ (org-wide) | ✅ |
+
+Leitura: quanto mais a fila vira dono, mais o "assumir/devolver" é do atendente e menos o "classificar"
+é dele. É o inverso do que acontece hoje, em que qualquer `agent` move a fila pelo ⋯ e nenhum gestor
+define qual fila recebe o quê.
 
 ## Consequências
 
@@ -162,9 +190,10 @@ mexem em **disparo e fila** — e por isso estão aqui como proposta, não como 
 1. **Dono-fila sem coluna nova**: `assigned_to_user_id IS NULL` + `sector_id` preenchido é estado
    suficiente para "a conversa é da fila", ou você prefere um `owner_kind` explícito
    (`user` | `sector`)?
-2. **Transferir para fila**: libera o responsável na hora (volta para a distribuição da fila) ou
-   mantém o responsável anterior até alguém assumir? A segunda opção evita conversa "solta", mas
-   deixa o dono antigo recebendo notificação de conversa que já não é dele.
+2. **Transferir para fila**: mantém o responsável anterior até alguém do setor assumir (proposta —
+   evita conversa "solta" e o histórico diz quem entregou) ou libera na hora? E o atendente pode
+   mover para **outro** setor, ou só a administração (a coluna "mover para outra fila" da tabela
+   acima)?
 3. **Rodízio**: `channel_routing_responsibles` vira subconjunto da fila (proposta) ou é ignorado
    quando há fila definida?
 4. **Privacidade**: `own_and_sector` já existe por organização. Vale abrir a opção **por setor**
