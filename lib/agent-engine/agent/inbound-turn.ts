@@ -6478,6 +6478,24 @@ async function executarTurnoDoAgente(
                   for (const i of colheita.livres) horariosLivresDoTurno.add(i);
                   if (colheita.marcou) marcouNesteTurno = true;
                   for (const i of colheita.marcados) marcadosNesteTurno.add(i);
+                  // A lista que a ferramenta devolveu é EVIDÊNCIA do turno, não
+                  // promessa do modelo: o que ele faz depois é copiá-la para a
+                  // mensagem. Sem este registro a conferência de promessa lia a
+                  // cópia como "vaga confirmada sem comprovação" e vetava até
+                  // sobrar uma frase vaga, sem data e sem horário (#4927). Entra
+                  // na origem `servidor_externo`, que sustenta relatar data,
+                  // horário, duração e situação — nunca condição comercial.
+                  const descartadas = evidenciasComerciais.registrarConsultaDeAgenda(
+                    name,
+                    resultado,
+                  );
+                  if (descartadas.length > 0) {
+                    runLog.warn('horário da agenda acima do teto da evidência — fora da conferência de promessa', {
+                      ferramenta: name,
+                      descartadas: descartadas.length,
+                      tamanhos: descartadas,
+                    });
+                  }
                   return resultado;
                 }) as typeof mcpTool.execute,
               };
