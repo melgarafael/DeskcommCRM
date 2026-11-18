@@ -71,10 +71,15 @@ export function retentionCopy(
         `${t("O limite diário de envios do número foi atingido — proteção contra bloqueio do WhatsApp. Libera de novo amanhã, a partir das")} ${ctx.window_start_hour}h.`,
       );
     case "mass_identical":
+      // #4943: o aviso dizia o que aconteceu e parava aí — quem operava entendia
+      // que precisava DESLIGAR a proteção e não achava onde. A segunda frase é o
+      // próximo passo em linguagem de quem escreve o prompt, e a terceira diz o
+      // que o gate isenta (curtas e links de pagamento), senão o medo de repetir
+      // um link de cobrança faz o operador parar de cobrar.
       return make(
         "protection",
         t(
-          "A mesma mensagem estava se repetindo em massa por este número. O envio foi segurado para variar o texto e não parecer robô para o WhatsApp.",
+          "A mesma mensagem estava se repetindo em massa por este número — o envio foi segurado para não parecer robô para o WhatsApp. Para liberar: no prompt, descreva o objetivo de cada mensagem em vez do texto exato e peça para personalizar com o nome e o contexto do lead. Mensagens curtas e links de pagamento não entram nessa conta.",
         ),
       );
     case "contato_bloqueado":
