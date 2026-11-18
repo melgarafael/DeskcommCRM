@@ -87,7 +87,7 @@ export function CorDaEtapa({ etapa, desabilitado, aoEscolher }: Props) {
           </span>
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-auto p-3">
+      <PopoverContent align="start" className="w-auto max-w-[calc(100vw-2rem)] p-3">
         <p className="mb-2 text-xs font-semibold text-text">{rotulo}</p>
         <div className="flex flex-wrap items-center gap-2">
           {PALETA_DE_ETAPAS.map((tom) => (
