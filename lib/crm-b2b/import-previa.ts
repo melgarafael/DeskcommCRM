@@ -36,6 +36,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { MENSAGEM_DE_CNPJ_INVALIDO, normalizeCnpj } from "@/lib/crm-b2b/normalize";
 import { applyMapping, type MappingField, type SheetMatrix } from "@/lib/crm-b2b/spreadsheet";
 import { contatosDonosDosExtras } from "@/lib/channels/contato-por-telefone";
+import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { normalizePhoneBR } from "@/lib/webhooks/inbound";
 import { canonicalPhoneBR, phoneLookupVariants } from "@/lib/channels/phone-variants";
 
@@ -263,7 +264,7 @@ function comoExistente(c: ContatoLido): ExistenteNaBase {
   return {
     tipo: "contato",
     id: c.id,
-    nome: c.display_name ?? c.name ?? null,
+    nome: nomeDoContato(c),
     donoId: c.carteira_user_id ?? c.created_by_user_id ?? null,
   };
 }
