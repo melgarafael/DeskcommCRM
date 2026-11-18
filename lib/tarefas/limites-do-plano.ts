@@ -17,6 +17,8 @@ export const LIMITES_DO_PLANO = {
   tituloDoPasso: 200,
   descricaoDoPasso: 1000,
   venceEmDias: 365,
+  /** Tamanho da CHAVE do campo de data que um passo pode apontar (#4717 item 4). */
+  campoDeData: 64,
   passos: 30,
   planos: 50,
 } as const;
