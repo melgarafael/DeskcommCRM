@@ -72,9 +72,7 @@ export function DetalheDoCompromisso({
   const query = useQuery({
     queryKey: ["agenda", "detalhe", id],
     enabled: !!id,
-    // Poll moderado (30s) para não drenar egress desnecessário no Supabase Free (#2235),
-    // alinhado aos outros hooks de detalhe da aplicação.
-    refetchInterval: 30_000,
+    refetchInterval: 5000,
     queryFn: async () =>
       (await apiClient.get<{ data: Detalhe }>(`/api/v1/agenda/agendamentos/${id}`)).data,
   });

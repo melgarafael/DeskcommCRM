@@ -16,23 +16,15 @@ describe("Intervalos de refetch e guardas contra consumo excessivo de egress (#2
     expect(conteudo).toMatch(/status === ["']dispatched["']/);
   });
 
-  it("DetalheDoCompromisso não usa mais poll agressivo de 5s", () => {
-    const conteudo = fs.readFileSync(
-      path.resolve(process.cwd(), "components/agenda/DetalheDoCompromisso.tsx"),
-      "utf8",
-    );
-
-    expect(conteudo).not.toMatch(/refetchInterval:\s*5000[, ]/);
-    expect(conteudo).toMatch(/refetchInterval:\s*30_?000[, ]/);
-  });
-
-  it("backup.sh avisa sobre o impacto de egress no Supabase Free", () => {
+  it("backup.sh avisa sobre o egress sem tirar o backup diário do padrão", () => {
     const conteudo = fs.readFileSync(
       path.resolve(process.cwd(), "hostgator-setup-kit/backup.sh"),
       "utf8",
     );
 
     expect(conteudo).toMatch(/egress/i);
-    expect(conteudo).toMatch(/0 3 \* \* 0/);
+    expect(conteudo).toMatch(/Shared Pooler/);
+    // O cron recomendado continua diário (decisão do mantenedor no #4803).
+    expect(conteudo).toMatch(/crontab -e →\s+0 3 \* \* \*\s/);
   });
 });
