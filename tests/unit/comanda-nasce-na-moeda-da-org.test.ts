@@ -138,7 +138,17 @@ function montarMundo(opts: MundoOpts = {}) {
       tabela === "organizations"
         ? // D11 — `moedaDaOrganizacao` lê `currency` com `maybeSingle`.
           { data: { currency: moedaDaOrg }, error: null }
-        : { data: null, error: null };
+        : // #4845 — o POST de comanda resolve `appointment_id` e `contact_id` do
+          // CORPO dentro da empresa ativa ANTES do insert. O dublê devolvia `null`
+          // para toda tabela, então o registro que existe na empresa "não existia
+          // em empresa nenhuma" e a rota recusava com 404. O mundo do teste é que
+          // estava incompleto: estas duas linhas são da MESMA empresa da sessão
+          // (`ORG`), como estariam no banco de verdade.
+          tabela === "calendar_appointments"
+          ? { data: AGENDAMENTOS.find((a) => a.organization_id === ORG) ?? null, error: null }
+          : tabela === "contacts"
+            ? { data: CONTATOS.find((c) => c.organization_id === ORG) ?? null, error: null }
+            : { data: null, error: null };
     cadeia.single = async () => ({ data: null, error: null });
     cadeia.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
       Promise.resolve({
