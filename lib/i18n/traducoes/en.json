@@ -9862,6 +9862,8 @@
   "Instrução e critérios atualizados. A campanha continua pausada.": "Instructions and criteria updated. The campaign remains paused.",
   "Vale só para as empresas que ainda não foram abordadas. Quem já recebeu a primeira mensagem continua a conversa com o texto com que ela começou, e as prévias de quem está na fila são refeitas com o texto novo.": "Applies only to businesses not yet approached. Anyone who already got the first message keeps the conversation going with the text it started with, and the previews of those still in the queue are redone with the new text.",
   "Confirmar a troca do texto desta campanha? Quem já foi abordado não recebe nada de novo por causa disso.": "Confirm changing this campaign's text? Anyone already approached receives nothing new because of it.",
+  "{n} dias": "{n} days",
+  "Etapa {atual} de {total}": "Stage {atual} of {total}",
   "1 conta de teste autorizada": "1 authorized test account",
   "contas de teste autorizadas": "authorized test accounts",
   "Somente as contas marcadas abaixo podem receber respostas automáticas enquanto o canal está em teste. Sem nenhuma marcada, a IA fica pausada.": "Only the accounts checked below can receive automatic replies while the channel is in test mode. With none checked, the AI stays paused.",
