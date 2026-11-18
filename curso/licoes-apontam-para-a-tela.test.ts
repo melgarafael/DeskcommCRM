@@ -9,14 +9,18 @@
 //
 // Esta cerca compara com o REPOSITÓRIO, nunca com uma lista escrita à mão:
 // rota contra a árvore `app/` (mais os hrefs de `lib/navigation/catalogo.ts`);
-// âncora e alvo contra o fonte da tela, resolvido pelo grafo de imports a
-// partir do `page.tsx` daquela rota.
+// âncora contra o fonte da tela, resolvido pelo grafo de imports a partir do
+// `page.tsx` daquela rota; alvo de destaque, `antes` e `clicar` contra todo o
+// fonte de `app/`, `components/` e `lib/` — não só o da tela daquela rota.
 //
 // O que ela NÃO prova — e por isso está declarado em `divida-de-alvos.json`, com
 // motivo por tipo — é o alvo cujo texto é montado em tempo de execução com dado
 // semeado (`Acompanhar ${nome}`, `passo-titulo-${i}`): o literal inteiro não
 // existe no fonte para ser procurado. Declarar ali não é aprovar: alvo novo que
-// não exista no fonte e não esteja na lista reprova.
+// não exista no fonte e não esteja na lista reprova — com um teto declarado:
+// alvo cujo começo casa o prefixo estático de um template do fonte (`salvar-${x}`
+// prova qualquer `salvar-…`) conta como provado. Medido no #4826: 332 alvos só
+// passam assim, 296 deles testids.
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
@@ -311,19 +315,26 @@ const efetiva = rotaEfetiva();
 
 type Pendencia = { chave: string; motivo: string };
 
-function alvosDoCurso(): Array<{ chave: string; modulo: string; passo: string; campo: string; indice: number; alvo: Alvo }> {
-  const lista: Array<{ chave: string; modulo: string; passo: string; campo: string; indice: number; alvo: Alvo }> = [];
+type AlvoDoCurso = { chave: string; modulo: string; licao: string; passo: string; campo: string; indice: number; alvo: Alvo };
+
+/** A chave leva a LIÇÃO: os ids de passo (`p2`, `p3`…) se repetem entre as
+ *  lições de um módulo, e sem ela uma entrada de dívida de uma lição escondia
+ *  alvo quebrado de outra (medido no #4826: 398 entradas cobriam 1.034 alvos). */
+function chaveDoAlvo(a: { modulo: string; licao: string; passo: string; campo: string; indice: number }): string {
+  return `${a.modulo}::${a.licao}::${a.passo}::${a.campo}::${a.indice}`;
+}
+
+function alvosDoCurso(): AlvoDoCurso[] {
+  const lista: AlvoDoCurso[] = [];
   for (const modulo of modulos) {
     for (const licao of modulo.licoes) {
       for (const passo of licao.passos) {
         const empurrar = (campo: string, indice: number, alvo: Alvo | undefined) => {
           if (!alvo) return;
+          const ref = { modulo: modulo.id, licao: licao.id, passo: passo.id, campo, indice };
           lista.push({
-            chave: `${modulo.id}::${passo.id}::${campo}::${indice}`,
-            modulo: modulo.id,
-            passo: passo.id,
-            campo,
-            indice,
+            ...ref,
+            chave: chaveDoAlvo(ref),
             alvo,
           });
         };
@@ -340,9 +351,19 @@ const ALVOS = alvosDoCurso();
 
 const divida = JSON.parse(readFileSync(DIVIDA, "utf8")) as {
   motivos: Record<string, string>;
-  alvos: Array<{ modulo: string; passo: string; campo: string; indice: number; tipo: string }>;
+  alvos: Array<{ modulo: string; licao: string; passo: string; campo: string; indice: number; tipo: string }>;
 };
-const CHAVES_EM_DIVIDA = new Set(divida.alvos.map((a) => `${a.modulo}::${a.passo}::${a.campo}::${a.indice}`));
+const CHAVES_DA_DIVIDA = divida.alvos.map(chaveDoAlvo);
+const CHAVES_EM_DIVIDA = new Set(CHAVES_DA_DIVIDA);
+
+/** O literal que o fonte teria de conter, quando o alvo é conferível e o fonte
+ *  NÃO o contém; `undefined` quando o alvo está provado ou fora do alcance da
+ *  cerca (sem literal classificável, ou `regex`). Papel ARIA fica à parte. */
+function semProvaNoFonte(alvo: Alvo): AlvoClassificado | undefined {
+  const classificado = classificar(alvo);
+  if (!classificado || alvo.regex) return undefined;
+  return existeNoFonte(classificado.valor) ? undefined : classificado;
+}
 
 describe("toda lição do curso aponta para uma tela que existe", () => {
   it("leu o curso inteiro — o piso que impede o verde vazio", () => {
@@ -407,10 +428,9 @@ describe("toda lição do curso aponta para uma tela que existe", () => {
         semProva.push({ chave, motivo: `role "${alvo.role}" não é papel ARIA` });
         continue;
       }
-      const classificado = classificar(alvo);
-      if (!classificado) continue;
-      if (alvo.regex) continue;
-      if (existeNoFonte(classificado.valor)) {
+      if (!classificar(alvo) || alvo.regex) continue;
+      const classificado = semProvaNoFonte(alvo);
+      if (!classificado) {
         conferidos += 1;
         continue;
       }
@@ -448,5 +468,17 @@ describe("toda lição do curso aponta para uma tela que existe", () => {
     expect(semMotivo).toEqual([]);
     const tipos = new Set(divida.alvos.map((a) => a.tipo));
     for (const tipo of tipos) expect(divida.motivos[tipo]?.length ?? 0).toBeGreaterThan(20);
+    // Entrada repetida conta duas vezes no teto e cobre um alvo só.
+    expect(new Set(CHAVES_DA_DIVIDA).size).toBe(divida.alvos.length);
+    // Entrada velha (alvo apagado, ou que passou a existir no fonte) abre vaga
+    // no teto para um alvo quebrado novo entrar sem ninguém ver.
+    const porChave = new Map(ALVOS.map((a) => [a.chave, a.alvo]));
+    const velhas = divida.alvos
+      .filter((a) => {
+        const alvo = porChave.get(chaveDoAlvo(a));
+        return !alvo || semProvaNoFonte(alvo)?.tipo !== a.tipo;
+      })
+      .map(chaveDoAlvo);
+    expect(velhas, `entradas de divida-de-alvos.json sem alvo correspondente, ou cujo alvo já existe no fonte:\n${velhas.slice(0, 20).join("\n")}`).toEqual([]);
   });
 });
