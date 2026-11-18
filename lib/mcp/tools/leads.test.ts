@@ -19,6 +19,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
+import { etiquetasParaGravar } from "@/lib/leads/etiquetas-do-patch";
 import { updateLeadSchema } from "@/lib/schemas/leads";
 
 import { crmMoveLeadStage, crmUpdateLead } from "./leads";
@@ -28,6 +29,14 @@ function comoOHandlerFaz(entrada: Record<string, unknown>) {
   const doShape = z.object(crmUpdateLead.inputSchema).parse(entrada);
   const { lead_id: _ignorado, ...resto } = doShape as Record<string, unknown>;
   return updateLeadSchema.parse(resto);
+}
+
+/**
+ * O caminho INTEIRO do handler de etiquetas: shape da ferramenta → schema que
+ * o handler parseia → união/diferença sobre a lista GRAVADA (`existing.tags`).
+ */
+function comoOHandlerFazComEtiquetas(entrada: Record<string, unknown>, atuais: string[] = []) {
+  return etiquetasParaGravar(comoOHandlerFaz(entrada), atuais);
 }
 
 const LEAD_ID = "11111111-2222-4333-8444-555555555555";
@@ -78,6 +87,54 @@ describe("crm_update_lead — campos personalizados do funil", () => {
 
     expect(saida.tags).toEqual(["controlado"]);
     expect(saida.custom_fields).toBeUndefined();
+  });
+});
+
+describe("crm_update_lead — etiquetas do negócio (#4666)", () => {
+  it("normaliza espaço e caixa: [\" Cliente VIP \"] grava a forma canônica da tela", () => {
+    // A régua é a MESMA da tela (`normalizarTag`, lib/contacts/tag-normalizada):
+    // sem ela, " Cliente VIP " conviveria com "cliente vip" na mesma coluna.
+    const saida = comoOHandlerFazComEtiquetas({ lead_id: LEAD_ID, tags: [" Cliente VIP "] });
+
+    expect(saida).toEqual(["cliente vip"]);
+    // E não vira DUAS etiquetas quando uma das grafias já está gravada.
+    expect(comoOHandlerFazComEtiquetas({ lead_id: LEAD_ID, tags: [" Cliente VIP "] }, ["cliente vip"])).toEqual([
+      "cliente vip",
+    ]);
+  });
+
+  it("tags_adicionar ACRESCENTA: as etiquetas anteriores ficam", () => {
+    // O defeito da issue: o agente mandava `["novo"]` em `tags` e apagava as
+    // outras. Com `tags_adicionar` o pedido "marque o lead com novo" é feito
+    // sem perder nada.
+    const saida = comoOHandlerFazComEtiquetas(
+      { lead_id: LEAD_ID, tags_adicionar: ["Inadimplente"] },
+      ["cliente vip", "recompra"],
+    );
+
+    expect(saida).toEqual(["cliente vip", "recompra", "inadimplente"]);
+  });
+
+  it("tags_remover tira SÓ a citada — e não erra por caixa nem por acento", () => {
+    const saida = comoOHandlerFazComEtiquetas(
+      { lead_id: LEAD_ID, tags_remover: ["Sao Paulo"] },
+      ["cliente vip", "são paulo", "recompra"],
+    );
+
+    expect(saida).toEqual(["cliente vip", "recompra"]);
+  });
+
+  it("tags continua SUBSTITUINDO a lista inteira — contrato preservado de propósito", () => {
+    // Declarado, não silencioso: quem já manda `tags` recebe o mesmo
+    // comportamento de antes (a lista inteira é trocada), e é por isso que a
+    // descrição da ferramenta diz isso ao modelo e que existem os dois campos
+    // aditivos. Mudar isto quebraria todo chamador que hoje substitui.
+    const saida = comoOHandlerFazComEtiquetas({ lead_id: LEAD_ID, tags: ["nova"] }, [
+      "cliente vip",
+      "recompra",
+    ]);
+
+    expect(saida).toEqual(["nova"]);
   });
 });
 
