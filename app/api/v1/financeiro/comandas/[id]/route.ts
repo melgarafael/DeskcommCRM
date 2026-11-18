@@ -47,6 +47,10 @@ export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
       "id, number, status, contact_id, attendant_user_id, appointment_id, discount_cents, total_cents, currency, payment_method_id, notes, finalized_at, cancelled_at, cancel_reason, reversed_at, reverse_reason, created_at, sale_items(id, description, quantity, unit_price_cents, discount_cents, total_cents, commission_percent, attendant_user_id, event_type_id, created_at)",
     )
     .eq("id", id)
+    // #4845 — o id vem de uma lista que vazou, e a RLS de `sales` libera todas as
+    // empresas de que a pessoa é membro. Sem este filtro a comanda da outra
+    // empresa era lida inteira — itens, valores, observação.
+    .eq("organization_id", authz.org.orgId)
     .maybeSingle();
 
   if (error) return fail("internal_error", error.message, 500, { requestId });
@@ -94,6 +98,10 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     .from("sales")
     .select("id, status, number")
     .eq("id", id)
+    // #4845 — a conferência de empresa é ANTES de qualquer escrita, e a recusa é
+    // o mesmo 404 da comanda inexistente: quem está na A não descobre, pela
+    // resposta, que existe uma comanda com este id na B.
+    .eq("organization_id", authz.org.orgId)
     .maybeSingle();
   if (!atual) return fail("not_found", "Comanda não encontrada.", 404, { requestId });
 
@@ -116,7 +124,14 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     mudanca.cancelled_at = new Date().toISOString();
   }
 
-  const { error } = await supabase.from("sales").update(mudanca).eq("id", id);
+  // O filtro de empresa vai também no UPDATE, e não só na leitura acima: é o
+  // mesmo molde de `tasks/[id]`, e é o que impede que uma corrida entre a leitura
+  // e a escrita mude a linha de outra empresa.
+  const { error } = await supabase
+    .from("sales")
+    .update(mudanca)
+    .eq("id", id)
+    .eq("organization_id", authz.org.orgId);
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
   // ⚠️ NUNCA espalhe o corpo lido aqui. `lib/audit` grava `metadata` CRU em

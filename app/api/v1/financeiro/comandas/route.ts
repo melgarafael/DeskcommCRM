@@ -44,6 +44,10 @@ export async function GET(req: NextRequest): Promise<Response> {
   const limite = Math.min(Number(url.searchParams.get("limit")) || LIMITE_PADRAO, LIMITE_MAXIMO);
 
   const supabase = await createClient();
+  // #4845 — a lista é da EMPRESA ATIVA. A RLS de `sales` libera todas as empresas
+  // de que a pessoa é membro, então sem este filtro a tela mostrava número,
+  // contato, itens e valores da outra empresa — inclusive duas comandas "#1" de
+  // empresas diferentes na mesma lista.
   let q = supabase
     .from("sales")
     // Literal ÚNICO, e não concatenação: o supabase-js infere o tipo do
@@ -52,6 +56,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     .select(
       "id, number, status, contact_id, attendant_user_id, appointment_id, discount_cents, total_cents, currency, payment_method_id, notes, finalized_at, cancelled_at, reversed_at, created_at, sale_items(id, description, quantity, unit_price_cents, discount_cents, total_cents, commission_percent, attendant_user_id, event_type_id)",
     )
+    .eq("organization_id", authz.org.orgId)
     .order("number", { ascending: false })
     .limit(limite);
 
