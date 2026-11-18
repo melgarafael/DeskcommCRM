@@ -19,7 +19,8 @@
  * da organização por um número falso.
  */
 
-import { costCentsComVirada } from "@/lib/agent-engine/edge/llm/pricing";
+import { costCents, costCentsComVirada } from "@/lib/agent-engine/edge/llm/pricing";
+import { haUsoMedido } from "@/lib/agent-engine/edge/llm/custo-da-chamada";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { multiplicadorDoDegrau } from "@/lib/ai/custo-escalonado";
 
@@ -144,6 +145,26 @@ export async function computeCost(input: ComputeCostInput): Promise<number | nul
   const comDegrau = (cents: number) =>
     cents * multiplicadorDoDegrau(input.model, input.promptTokens);
 
+  // ═══ #4697 — SEM USO NÃO É "DE GRAÇA" ═══
+  //
+  // Todo contador zerado significa que o provedor não mediu a chamada (gateway
+  // sem `usage`, resposta cortada). Tarifa × 0 token dava `0`, que a tela de
+  // Uso e o teto leem como "grátis", quando o que falta é o DADO. O nulo acende
+  // `gasto_incompleto` em `getBudgetStatus`; o zero apaga o sinal. Mesma régua
+  // do módulo do seam (`haUsoMedido`), porque rota diferente não pode decidir
+  // diferente para o mesmo modelo.
+  if (
+    !haUsoMedido({
+      inputTokens: input.promptTokens,
+      outputTokens: input.completionTokens,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    }) &&
+    (input.embeddingTokens ?? 0) === 0
+  ) {
+    return null;
+  }
+
   // Ids com promoção datada guardam no catálogo a tarifa posterior à promo
   // (0649, 0703). O gasto gravado em llm_calls tem de seguir `costCents`
   // (promo estritamente antes do corte). Outro modelo segue a linha de ai_pricing.
@@ -160,15 +181,44 @@ export async function computeCost(input: ComputeCostInput): Promise<number | nul
   const pricing = await loadPricing();
   const row = pricing.get(input.model);
   if (!row) {
-    // `ai_pricing` não conhece: tenta o catálogo, que é onde o cron grava e
-    // onde a OpenRouter chega. Embedding não passa por aqui — o catálogo não
-    // guarda preço de embedding —, e nesse caso o desfecho é o mesmo de antes.
+    // O catálogo é a tabela PRÓPRIA desta rota: é onde o cron grava e onde a
+    // OpenRouter chega. Quem está no catálogo tem o preço decidido LÁ, e o motor
+    // não sobrescreve. Para o `claude-haiku-5-5` as duas tabelas trazem os mesmos
+    // números (10/50 centavos por milhão no `baseline.sql` e em `pricing.ts`); se
+    // um id divergir, vale o catálogo, que é o que o cron e o operador atualizam,
+    // enquanto `pricing.ts` só muda com versão nova. A régua do #4123
+    // (`lib/ai/cost.test.ts`) mede esta rota pelo catálogo.
     const doCatalogo = await precoDoCatalogo(input.model);
-    if (!doCatalogo) return null;
-    const cents =
-      ((input.promptTokens ?? 0) * doCatalogo.prompt) / 1_000_000 +
-      ((input.completionTokens ?? 0) * doCatalogo.completion) / 1_000_000;
-    return comDegrau(cents);
+    if (doCatalogo) {
+      const cents =
+        ((input.promptTokens ?? 0) * doCatalogo.prompt) / 1_000_000 +
+        ((input.completionTokens ?? 0) * doCatalogo.completion) / 1_000_000;
+      return comDegrau(cents);
+    }
+
+    // ═══ #4697 — O FALLBACK QUE FALTAVA ═══
+    //
+    // Nem `ai_pricing` nem o catálogo: a tabela do MOTOR (`pricing.ts`) tem a
+    // palavra — é a mesma que o seam e a mídia consultam. Sem este passo, o
+    // mesmo modelo saía com preço no turno do agente e nulo no respondedor
+    // legado: o "umas chamadas com custo e outras não" do relato, na rota que
+    // ninguém tinha olhado. ÚLTIMO recurso, nunca antes do catálogo.
+    const daTabelaDoMotor = costCents(
+      input.model,
+      {
+        inputTokens: input.promptTokens ?? 0,
+        outputTokens: input.completionTokens ?? 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
+      "1h",
+      input.em ?? new Date(),
+    );
+    if (daTabelaDoMotor !== null) return comDegrau(daTabelaDoMotor);
+
+    // Embedding não passa por aqui — o catálogo não guarda preço de embedding —,
+    // e nesse caso o desfecho é o mesmo de antes.
+    return null;
   }
 
   // Linha sem taxa nenhuma não é preço: é a mesma ausência do catálogo.

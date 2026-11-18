@@ -278,6 +278,13 @@ function instanteDe(m: MensagemParaPdf): number {
   return Number.isFinite(instante) ? instante : 0;
 }
 
+/** O mesmo instante governa o recorte das recentes e a ordem desenhada no PDF. */
+export function mensagensEmOrdemCronologica(
+  mensagens: readonly MensagemParaPdf[],
+): MensagemParaPdf[] {
+  return [...mensagens].sort((a, b) => instanteDe(a) - instanteDe(b) || a.id.localeCompare(b.id));
+}
+
 /**
  * O HISTÓRICO EM ORDEM CRONOLÓGICA — a garantia do documento, e ela mora
  * AQUI, não na ordem em que o banco devolveu: a rota lê das mais recentes para
@@ -298,9 +305,7 @@ export function linhasDoHistorico(
   const { t } = opcoes;
   const fuso = opcoes.fuso ?? FUSO_PADRAO;
   const idioma = opcoes.idioma ?? IDIOMA_PADRAO;
-  const ordenadas = [...mensagens].sort(
-    (a, b) => instanteDe(a) - instanteDe(b) || a.id.localeCompare(b.id),
-  );
+  const ordenadas = mensagensEmOrdemCronologica(mensagens);
   return ordenadas.map((m) => ({
     id: m.id,
     direcao: m.direction,

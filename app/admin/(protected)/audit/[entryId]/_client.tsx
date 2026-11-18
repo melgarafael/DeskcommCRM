@@ -132,14 +132,14 @@ export function AuditDetailClient({ entryId }: AuditDetailClientProps) {
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Metadata JSON viewer */}
         <div className="space-y-3">
-          <h2 className="text-sm font-medium">Metadata</h2>
+          <h2 className="text-sm font-medium">{t("Metadados")}</h2>
           <pre className="overflow-auto rounded-md border bg-muted/40 p-4 text-xs leading-relaxed">
             {JSON.stringify(entry.metadata, null, 2)}
           </pre>
 
           {/* Extra entry fields */}
           <div className="rounded-md border p-4 space-y-2 text-sm">
-            <Row label="Request ID" value={entry.request_id ?? "—"} mono />
+            <Row label={t("ID da requisição")} value={entry.request_id ?? "—"} mono />
             <Row label="Resource Type" value={entry.resource_type ?? "—"} />
             <Row label="Resource ID" value={entry.resource_id ?? "—"} mono />
             <Row label="Bypassed RLS" value={entry.bypassed_rls ? t("Sim") : t("Não")} />

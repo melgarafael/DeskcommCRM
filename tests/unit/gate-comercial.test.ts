@@ -180,7 +180,8 @@ describe("sem o argumento, a cadeia lê a restrição da organização (falha fe
           agent_id: "00000000-0000-4000-8000-000000000007" }
       : { current: true, human_command: true, contact_id: "00000000-0000-4000-8000-000000000002",
           channel_session_id: "00000000-0000-4000-8000-000000000004", force_human: null, ai_opt_out: false,
-          ai_gate: null, ai_authorized_at: null, assignee_kind: null, bot_silenced_until: null };
+          ai_gate: null, ai_authorized_at: null, assignee_kind: null, bot_silenced_until: null,
+          ai_gate_mode: null, ai_test_phone_numbers: null, contact_phone_number: null };
     const { run, send, leituras, client } = cadeia(true, via === "approvedReply" ? { approvedReply: escopo } : { meetingDelivery: escopo });
     client.query.mockImplementation(async (sql: string) =>
       /fn_reply_delivery_policy|fn_meet_delivery_policy/.test(sql) ? { rows: [{ policy: politica }] } : { rows: [] });

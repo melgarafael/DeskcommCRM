@@ -35,8 +35,9 @@ import {
   personalizacaoDaOrganizacao,
   type PersonalizacaoProspeccao,
 } from "./personalizar";
+import { temContextoDaEquipe } from "./contexto-da-equipe";
 import { chaveDaAuditoria, type PreviaSalva } from "./previa";
-import { campaignConfigSchema, type Prospect } from "./schema";
+import { campaignConfigSchema, usaFichaDigital, type Prospect } from "./schema";
 import { siteEfetivo } from "./site-efetivo";
 
 /** O que a função precisa de um candidato (a rota e o preparo leem o mesmo recorte). */
@@ -82,16 +83,31 @@ export async function gerarPreviaDoCandidato(
   if (!cfg?.success || !cfg.data.agent_id) return { ok: false, motivo: "sem_agente" };
 
   const ofertas = (cfg.data.ofertas ?? ["site"]) as OfertaDaCampanha[];
+  // A campanha SEM ficha digital (#4829): os fatos da ficha não entram nos dados nem a
+  // auditoria vira ângulo. A prévia tem de sair com os MESMOS argumentos do envio.
+  const semFichaDigital = !usaFichaDigital(cfg.data);
   // Mesmos fios do envio (voz + vocabulário da org + estratégia): a prévia só
   // vale se for byte a byte o que o tick mandaria. A estratégia vem da MESMA
   // fonte que o worker usa (`estrategiaDoCandidato`).
   const personalizacao = opcoes.personalizacao ?? (await personalizacaoDaOrganizacao(pool, org));
+  // A estratégia continua sendo o diagnóstico que a TELA mostra — o que muda na campanha
+  // sem ficha digital é que ela não sobe para a instrução do modelo (abaixo).
   const estrategia = estrategiaDoCandidato(linha.data, site, {
     ofertas,
     nicho: linha.search?.niche ?? linha.data.category ?? "",
     sobrescritaVocabulario: personalizacao.vocabulario ?? null,
     status: linha.status,
   });
+  // A mesma regra do envio: a prévia é byte a byte o que o tick mandaria.
+  const soCumprimenta = cfg.data.exit_offer !== "first_message";
+  // Modo "saída na 2ª": sem Auditoria/Detalhe nem diagnóstico/oferta da equipe, como no envio (worker.ts).
+  const dados = montarDadosDeAbordagem(
+    linha.data,
+    soCumprimenta || semFichaDigital ? null : site,
+    null,
+    { soCumprimenta, semFichaDigital },
+  );
+  const comContextoDaEquipe = temContextoDaEquipe(dados);
   const gerado = await gerarAbordagemDeFormulario(pool, llmEdgeConfigFromEnv(env), {
     tenantId: org,
     agentId: cfg.data.agent_id,
@@ -100,14 +116,15 @@ export async function gerarPreviaDoCandidato(
       cfg.data.instruction,
       cfg.data.qualification,
       blocoVozVendedor(personalizacao) || undefined,
-      estrategia,
-      // A mesma regra do envio: a prévia é byte a byte o que o tick mandaria.
-      cfg.data.exit_offer !== "first_message",
+      semFichaDigital ? null : estrategia,
+      soCumprimenta,
+      comContextoDaEquipe,
     ),
     origem: "Pesquisa de empresas",
     origemDaAbordagem: "prospeccao_fria",
-    // Modo "saída na 2ª": sem Auditoria/Detalhe, como no envio (worker.ts).
-    dados: montarDadosDeAbordagem(linha.data, cfg.data.exit_offer !== "first_message" ? null : site),
+    dados,
+    comContextoDaEquipe,
+    semFichaDigital,
   });
   if (!gerado.ok) return { ok: false, motivo: "ia_falhou", detalhe: gerado.reason };
 
@@ -125,6 +142,8 @@ export async function gerarPreviaDoCandidato(
     baseada_em: chaveDaAuditoria(linha.data) ?? `${site.classe}@derivado`,
     gerada_em: new Date().toISOString(),
     agente_id: cfg.data.agent_id,
+    // O carimbo do texto com que a prévia foi escrita (#4570): o envio só a usa se ainda for o atual.
+    ...(cfg.data.briefing_editado_em ? { briefing_editado_em: cfg.data.briefing_editado_em } : {}),
   };
   return { ok: true, texto: gerado.texto, previa, estrategia, score };
 }

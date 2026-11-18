@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { lePlanosDoSettings } from "./plano";
+import { lePlanosDoSettings, planoSchema } from "./plano";
+import { explicarRecusaDoPlano, frasePrazoDoPasso } from "./recusa-do-plano";
 
 /**
  * PLANOS DE TAREFA (#1752) — a LEITURA da configuração.
@@ -71,5 +72,48 @@ describe("lePlanosDoSettings", () => {
     expect(lePlanosDoSettings(undefined)).toEqual([]);
     expect(lePlanosDoSettings({ task_plans: "lixo" })).toEqual([]);
     expect(lePlanosDoSettings(null)).toEqual([]);
+  });
+});
+
+describe("prazo do passo (#4717 item 4)", () => {
+  const passo = (prazo: unknown) => ({
+    id: "p",
+    nome: "Viagem",
+    passos: [{ titulo: "Cobrar", prazo }],
+  });
+
+  it("recusa dias negativos contados da aplicação; aceita contados de um campo de data", () => {
+    expect(planoSchema.safeParse(passo({ modo: "dias_a_partir_de_hoje", dias: -5 })).success).toBe(false);
+    expect(
+      planoSchema.safeParse(passo({ modo: "campo_de_data", campo: "data_da_viagem", dias: -5 })).success,
+    ).toBe(true);
+  });
+
+  it("a recusa do negativo fala a régua do modo de sempre, não a do campo", () => {
+    const r = planoSchema.safeParse(passo({ modo: "dias_a_partir_de_hoje", dias: -5 }));
+    const details = Object.fromEntries(
+      (r.success ? [] : r.error.issues).map((i) => [`0.${i.path.join(".")}`, i.message]),
+    );
+    expect(explicarRecusaDoPlano(details, (s) => s)).toBe(frasePrazoDoPasso((s) => s, 1));
+  });
+
+  it("o GET continua devolvendo vence_em_dias no modo de sempre — e só nele", () => {
+    const [plano] = lePlanosDoSettings({
+      task_plans: [
+        {
+          id: "p",
+          nome: "Viagem",
+          passos: [
+            { titulo: "Antigo", vence_em_dias: 3 },
+            { titulo: "Do campo", prazo: { modo: "campo_de_data", campo: "data_da_viagem", dias: -7 } },
+          ],
+        },
+      ],
+    });
+    expect(plano?.passos[0]).toMatchObject({
+      vence_em_dias: 3,
+      prazo: { modo: "dias_a_partir_de_hoje", dias: 3 },
+    });
+    expect(plano?.passos[1]).not.toHaveProperty("vence_em_dias");
   });
 });

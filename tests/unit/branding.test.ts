@@ -873,6 +873,12 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "é o serviço da conta ChatGPT que o operador abre para conectar a assinatura. O produto não faz requests para este host; a consulta do catálogo e a inferência SIWC usam a API pública oficial em api.openai.com.",
   },
+  // ── Módulo opcional `amigo` (#4227): a API do sistema de clínicas ──
+  "amigobot-api.amigoapp.com.br": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "API do sistema de clínicas Amigo, origem FIXA do transporte (`lib/amigo/transport.ts`): só é chamada com o módulo `amigo` instalado e um token cadastrado pela empresa. Não há campo para URL livre — o host fixo é o que impede a credencial de ir a outro destino.",
+  },
   // ── Web Push: o serviço de push do navegador, destino do envio ──
   "fcm.googleapis.com": {
     categoria: "FORNECEDOR",
@@ -985,6 +991,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "endpoint da Graph API do WhatsApp Cloud — 6 arquivos: envio de template, sincronização de modelos, validação de credencial, conversões e insights. É contrato da Meta, não escolha nossa.",
   },
+  "api.telegram.org": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint da Bot API do Telegram (canal nativo do #3440): é para onde `lib/channels/bot/credentials.ts` envia `sendMessage` e registra o webhook. Endpoint padrão fixo de propósito — instalação que não configura nada tem de funcionar —, com override por TELEGRAM_API_BASE_URL para a prova em tela.",
+  },
   "www.googleapis.com": {
     categoria: "FORNECEDOR",
     motivo:
@@ -1023,6 +1034,16 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     categoria: "FORNECEDOR",
     motivo:
       "endpoint do SANDBOX do Asaas (`lib/cobranca/provedores/asaas.ts`): a chave `$aact_hmlg_` do dono só funciona aqui, e é com ela que ele testa antes de publicar.",
+  },
+  "cobrancas.api.efipay.com.br": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint de PRODUÇÃO da API de cobranças do Efi Bank (`lib/cobranca/provedores/efi.ts`): Pix e boleto recorrentes com que o DONO da instalação cobra as empresas dele, com a credencial Efi DELE. Destino do request, não marca.",
+  },
+  "cobrancas-h.api.efipay.com.br": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint de HOMOLOGAÇÃO da API de cobranças do Efi Bank (`lib/cobranca/provedores/efi.ts`): o par de credenciais de teste do dono só funciona aqui, e é com ele que ele testa antes de publicar.",
   },
   "www.tiendanube.com": {
     categoria: "FORNECEDOR",
@@ -1063,6 +1084,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     categoria: "CONSOLE",
     motivo:
       "painel onde o usuário gera a PRÓPRIA chave da DeepSeek (`ondePegarAChave` em lib/ai/pontos/provedores.ts). Endereço do fornecedor, não nosso.",
+  },
+  "cdn.deepseek.com": {
+    categoria: "CONSOLE",
+    motivo:
+      "documento do fornecedor: é a política de privacidade da DeepSeek que `fonteDoPais` (lib/ai/pontos/provedores.ts) cita como prova do país de processamento. A tela (`OndeOTextoEProcessado.tsx`) só monta o link com a URL deste catálogo — o produto NUNCA busca o host, quem abre é a pessoa que quer ler a fonte. Endereço do fornecedor, não nosso: trocar pelo domínio do revendedor faria o link não provar nada.",
   },
   "app.requesty.ai": {
     categoria: "CONSOLE",
@@ -1176,6 +1202,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "marca agregador e conta como link social no raio-X. Nunca chamada, nunca exibida (a tela mostra o rótulo traduzido).",
   },
+  "fb.com": {
+    categoria: "RECONHECIMENTO",
+    motivo:
+      "apelido curto do Facebook publicado em `socials`: o rótulo da rede na 1ª mensagem sai do host (`lib/prospecting/sinais-da-empresa.ts`). Nunca chamado, nunca exibido como endereço — o prompt recebe `Facebook: <url>`.",
+  },
   "google.com": {
     categoria: "RECONHECIMENTO",
     motivo:
@@ -1211,10 +1242,20 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "assinatura de HTML do Wix no raio-X. Nunca chamada, nunca exibida.",
   },
+  "tiktok.com": {
+    categoria: "RECONHECIMENTO",
+    motivo:
+      "rede social reconhecida pelo host em `socials` (planilha importada e links do site): vira o rótulo `TikTok` na 1ª mensagem. Nunca chamada, nunca exibida como endereço.",
+  },
   "wordpress.com": {
     categoria: "RECONHECIMENTO",
     motivo:
       "assinatura de construtor (WordPress.com gratuito): URL final contendo o domínio vira o rótulo. Nunca chamada, nunca exibida.",
+  },
+  "youtube.com": {
+    categoria: "RECONHECIMENTO",
+    motivo:
+      "rede social reconhecida pelo host em `socials` (planilha importada e links do site): vira o rótulo `YouTube` na 1ª mensagem. Nunca chamada, nunca exibida como endereço.",
   },
 };
 
@@ -1384,6 +1425,11 @@ describe("catraca de host de terceiro no código que embarca", () => {
       // Decisão escrita (spec 24, auditoria de site): agregador de bio-links,
       // marca agregador sem fetch — nunca chamado, nunca exibido.
       "carrd.co",
+      // Decisão escrita: o host é a CDN onde a DeepSeek publica a política de
+      // privacidade que `fonteDoPais` cita como prova do país de processamento.
+      // O produto não fala com ele — a tela monta o link da fonte e quem abre é
+      // a pessoa. CONSOLE porque é documento do fornecedor, não destino nosso.
+      "cdn.deepseek.com",
       // A pessoa abre o produto ChatGPT para autenticar a conta; o CRM chama
       // apenas `api.openai.com` no fluxo SIWC.
       "chatgpt.com",
@@ -1399,6 +1445,13 @@ describe("catraca de host de terceiro no código que embarca", () => {
       // como link social no raio-X — nunca chamada, nunca exibida (a tela mostra
       // o rótulo traduzido).
       "facebook.com",
+      // Decisão escrita (#4459): `fb.com`, `tiktok.com` e `youtube.com` entram
+      // como RECONHECIMENTO, não como FORNECEDOR — o produto NÃO fala com eles.
+      // `lib/prospecting/sinais-da-empresa.ts` lê o host da URL já coletada em
+      // `socials` (planilha importada, links do site) só para escrever o NOME da
+      // rede na 1ª mensagem; a tela e o prompt recebem o rótulo, nunca o host
+      // como destino de chamada. Mesma classe dos três vizinhos desta lista.
+      "fb.com",
       // Decisão escrita (spec 24, auditoria de site): substring `google.com/maps`
       // comparada no HTML para detectar endereço/mapa — nunca chamada por causa
       // desta regra, nunca exibida.
@@ -1456,6 +1509,9 @@ describe("catraca de host de terceiro no código que embarca", () => {
       // Decisão escrita (spec 24, auditoria de site): assinatura de HTML do
       // Wix no raio-X — nunca chamada, nunca exibida.
       "static.wixstatic.com",
+      // Ver a decisão escrita em `fb.com`: mesma classe, mesmo módulo, o rótulo
+      // da rede na 1ª mensagem.
+      "tiktok.com",
       "tusitio.com",
       // Exemplo de link do WhatsApp gerado pela tela de Conversões (#924). Está
       // aqui, e não em FORNECEDOR, porque o produto NÃO fala com esse host: quem
@@ -1469,6 +1525,9 @@ describe("catraca de host de terceiro no código que embarca", () => {
       // AUTORIDADE, porque não é painel, amostra nem plataforma: é o endereço
       // a que a lei manda o titular ir. País novo com lei revisada traz a sua.
       "www.cnpd.pt",
+      // Ver a decisão escrita em `fb.com`: mesma classe, mesmo módulo, o rótulo
+      // da rede na 1ª mensagem.
+      "youtube.com",
     ]);
   });
 

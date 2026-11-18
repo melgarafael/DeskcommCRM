@@ -7,6 +7,9 @@ import type { ChannelAdapter } from "@/lib/agent-engine/channel-adapter";
 import { applySendOutcome } from "@/lib/agent-engine/edge/crm/send-message";
 import { reconcileAcceptedSend } from "@/lib/agent-engine/edge/crm/send-ledger";
 import { insertInboxItem } from "@/lib/agent-engine/db/repository";
+import { fatosDaOrganizacao } from "@/lib/agent-engine/agent/fatos-da-organizacao";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { preencher } from "@/lib/i18n/idioma-do-aviso";
 import type { runBeforeSend } from "@/lib/agent-engine/guardrails/before-send";
 import { deriveLgpdFromContact } from "@/lib/agent-engine/guardrails/lgpd/legal-basis";
 import { isLeadInHandoff } from "@/lib/agent-engine/agent/human-handoff";
@@ -285,16 +288,21 @@ export async function resumePersistedCatalogPresentation(
     // igual até o job morrer com o cliente sem resposta. Encerra como o veto.
     const nextSeq = snapshot.sends_already_counted + 1 + sentBefore;
     await clearSnapshot();
+    // A Central mostra o texto como foi gravado: o aviso nasce no idioma da organização.
+    const { idioma } = await fatosDaOrganizacao(pool, job.organization_id);
     await insertInboxItem(
       pool,
       job.organization_id,
       {
         kind: "other",
-        title: "Apresentação do catálogo interrompida: a mídia do produto mudou",
-        body:
-          `A foto ou o áudio do produto ${materialized.error.product_code} foi trocado ou removido ` +
-          `enquanto a apresentação esperava para continuar. O cliente já tinha recebido ${sentBefore} ` +
-          "mensagem(ns); o agente responde o restante com as próprias palavras.",
+        title: traduzir("Apresentação do catálogo interrompida: a mídia do produto mudou", idioma),
+        body: preencher(
+          traduzir(
+            "A foto ou o áudio do produto {produto} foi trocado ou removido enquanto a apresentação esperava para continuar. O cliente já tinha recebido {enviadas} mensagem(ns); o agente responde o restante com as próprias palavras.",
+            idioma,
+          ),
+          { produto: materialized.error.product_code, enviadas: sentBefore },
+        ),
         refKind: "conversation",
         refId: input.conversationId,
       },

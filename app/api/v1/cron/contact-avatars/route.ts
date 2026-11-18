@@ -82,9 +82,13 @@ interface ContactRow {
 /**
  * Identidade do contato → o chatId que o adapter espera.
  *
- * MESMA ORDEM de `resolveWahaChatId` (lib/waha/send.ts) e de `chatIdOf`
- * (session-reconciler): `wa_lid` primeiro, `wa_identity` depois, telefone por
- * último. Esta função só lia `wa_identity` — que é GERADA com o telefone antes
+ * A ORDEM daqui é a de `resolveWahaChatId` (lib/waha/send.ts) e de `chatIdOf`
+ * (session-reconciler) DEPOIS do passo que só eles têm: o número da última
+ * mensagem recebida (Spec 31, B4). Aquele passo é do ENVIO — responder pelo
+ * número por onde a pessoa escreveu; aqui a foto é a DA FICHA, então este cron
+ * segue no principal de propósito. Do `wa_lid` em diante a ordem é a mesma:
+ * `wa_lid` primeiro, `wa_identity` depois, telefone por último. Esta função só
+ * lia `wa_identity` — que é GERADA com o telefone antes
  * do lid (migration 0122). Num número BR cujo wa_id não tem o nono dígito, isso
  * produzia `55AA9BBBBCCCC@c.us`, endereço inexistente: o provider devolvia
  * `profilePictureURL: null`, o job carimbava "sem foto" e o avatar nunca vinha.

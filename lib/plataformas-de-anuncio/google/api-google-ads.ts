@@ -290,6 +290,8 @@ export interface CampanhaGoogle {
   id: string;
   nome: string;
   status: string;
+  moeda?: string;
+  fuso?: string;
   impressoes: number;
   cliques: number;
   custo: number;
@@ -297,6 +299,10 @@ export interface CampanhaGoogle {
 }
 
 const linhaDeCampanha = z.object({
+  customer: z.object({
+    currencyCode: z.string().regex(/^[A-Z]{3}$/).optional(),
+    timeZone: z.string().optional(),
+  }).optional(),
   campaign: z.object({
     id: z.union([z.string(), z.number()]).transform(String),
     name: z.string().default(""),
@@ -326,27 +332,26 @@ export async function lerCampanhas(
   if (!data.test(periodo.de) || !data.test(periodo.ate))
     return { ok: false, falha: "recusado", detalhe: "Período inválido." };
   const resposta = await chamar(conexao, "googleAds:search", {
-    query: `SELECT campaign.id, campaign.name, campaign.status, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions FROM campaign WHERE segments.date BETWEEN '${periodo.de}' AND '${periodo.ate}' AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC LIMIT 200`,
+    query: `SELECT customer.currency_code, customer.time_zone, campaign.id, campaign.name, campaign.status, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions FROM campaign WHERE segments.date BETWEEN '${periodo.de}' AND '${periodo.ate}' AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC LIMIT 200`,
   });
   if (!resposta.ok) return resposta;
   const resultados = z
-    .object({ results: z.array(z.unknown()).optional() })
+    .object({ results: z.array(linhaDeCampanha).optional() })
     .safeParse(resposta.dados);
-  const campanhas = (resultados.success ? (resultados.data.results ?? []) : []).flatMap((r) => {
-    const l = linhaDeCampanha.safeParse(r);
-    if (!l.success) return [];
-    return [
-      {
-        id: l.data.campaign.id,
-        nome: l.data.campaign.name,
-        status: l.data.campaign.status,
-        impressoes: numero(l.data.metrics.impressions),
-        cliques: numero(l.data.metrics.clicks),
-        custo: numero(l.data.metrics.costMicros) / 1_000_000,
-        conversoes: numero(l.data.metrics.conversions),
-      },
-    ];
-  });
+  if (!resultados.success) {
+    return { ok: false, falha: "transitorio", detalhe: "O Google devolveu um relatório de campanhas que não pôde ser lido." };
+  }
+  const campanhas = (resultados.data.results ?? []).map(({ campaign, customer, metrics }) => ({
+    id: campaign.id,
+    nome: campaign.name,
+    status: campaign.status,
+    ...(customer?.currencyCode && { moeda: customer.currencyCode }),
+    ...(customer?.timeZone && { fuso: customer.timeZone }),
+    impressoes: numero(metrics.impressions),
+    cliques: numero(metrics.clicks),
+    custo: numero(metrics.costMicros) / 1_000_000,
+    conversoes: numero(metrics.conversions),
+  }));
   return { ok: true, dados: campanhas };
 }
 

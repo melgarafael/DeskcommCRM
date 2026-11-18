@@ -69,6 +69,7 @@ const NOME_DA_DECLARACAO = "PASSOS_DEPOIS_DO_PORTAO";
 const ROTAS_CONHECIDAS = [
   "agenda-google-push",
   "agenda-google-sync",
+  "cadencia-worker",
   "campaign-worker",
   "channel-pause-scheduler",
   "historico-import",

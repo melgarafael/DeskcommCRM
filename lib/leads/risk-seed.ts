@@ -2,6 +2,8 @@ import { protecaoAgendaSupabase } from "@/lib/agenda/protecao-followup";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { buscaEmLotes } from "@/lib/supabase/em-lotes";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoAviso, preencher } from "@/lib/i18n/idioma-do-aviso";
 
 import { classifyRisk, resolveStageWindow, type RiskBucket } from "@/lib/leads/risk-radar";
 import { sinceDoBucket } from "@/lib/leads/risk-since";
@@ -249,6 +251,8 @@ export async function semeiaEstadosDeRisco(
   if (jaAberto) {
     itemDeCaixaId = (jaAberto as { id: string }).id;
   } else if (emRisco > 0) {
+    // A Central mostra o texto como foi gravado: o aviso nasce no idioma da organização.
+    const idioma = await idiomaDoAviso(admin, organizationId);
     const { data: item } = await admin
       .from("agent_inbox_items")
       .insert({
@@ -257,12 +261,19 @@ export async function semeiaEstadosDeRisco(
         severity: emRisco > 10 ? "warn" : "info",
         // A AÇÃO VAI NO TÍTULO. "48 negócios em risco" é um número e não move
         // ninguém; o item precisa dizer o que fazer com ele.
-        title: `Revise ${emRisco} ${emRisco === 1 ? "negócio parado" : "negócios parados"} e decida quais encerrar`,
-        body:
-          `${porBucket.critico} sem resposta há muito tempo e ${porBucket.em_risco} esfriando. ` +
-          `Eles já estavam assim antes de o sistema passar a acompanhar — por isso ` +
-          `aparecem juntos agora, e não porque algo aconteceu hoje. ` +
-          `Encerrar o que morreu é o que faz o radar voltar a significar alguma coisa.`,
+        title: preencher(
+          emRisco === 1
+            ? traduzir("Revise {n} negócio parado e decida quais encerrar", idioma)
+            : traduzir("Revise {n} negócios parados e decida quais encerrar", idioma),
+          { n: emRisco },
+        ),
+        body: preencher(
+          traduzir(
+            "{criticos} sem resposta há muito tempo e {em_risco} esfriando. Eles já estavam assim antes de o sistema passar a acompanhar — por isso aparecem juntos agora, e não porque algo aconteceu hoje. Encerrar o que morreu é o que faz o radar voltar a significar alguma coisa.",
+            idioma,
+          ),
+          { criticos: porBucket.critico, em_risco: porBucket.em_risco },
+        ),
         ref_kind: "organization",
         ref_id: organizationId,
       })

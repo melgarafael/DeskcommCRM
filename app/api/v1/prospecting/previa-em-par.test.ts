@@ -199,3 +199,27 @@ describe("prova em par: rota (clique) × preparo (tick)", () => {
     expect(JSON.stringify(preparo)).not.toContain("RASCUNHO-ANTIGO");
   });
 });
+
+describe("prova em par com o contexto da equipe (#4459 parte 2)", () => {
+  it("rota e preparo mandam os mesmos dados da equipe e o MESMO sinal `comContextoDaEquipe`", async () => {
+    const comContexto = {
+      ...DADOS,
+      contexto_da_equipe: {
+        diagnostico: "Agenda online sem confirmação por WhatsApp.",
+        contexto: "Indicação da Marta, cliente da clínica.",
+        por: `usuario:${CONTATO}`,
+        em: "2026-10-09T12:00:00.000Z",
+      },
+    };
+    const rota = await viaRota(comContexto, null);
+    deps.generate.mockClear();
+    const preparo = await viaPreparo(comContexto, null);
+    expect(preparo).toEqual(rota);
+    const args = preparo as { dados: Record<string, string>; comContextoDaEquipe?: boolean; instrucao: string };
+    expect(args.dados["Contexto da equipe"]).toBe("Indicação da Marta, cliente da clínica.");
+    expect(args.comContextoDaEquipe).toBe(true);
+    expect(args.instrucao).toContain("planilha da sua equipe");
+    // Quem importou e quando não são dado da mensagem.
+    expect(JSON.stringify(args.dados)).not.toContain("usuario:");
+  });
+});
