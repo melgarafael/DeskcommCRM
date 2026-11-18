@@ -10,6 +10,9 @@
 export const TEXTOS_AVISOS_DA_CENTRAL = {
   "Este canal está em modo de teste — a IA não responde ninguém": { es: "Este canal está en modo de prueba — la IA no le responde a nadie" },
   "Este canal está em modo de teste e não tem nenhum número autorizado, então a IA não responde a ninguém nele — as mensagens chegam no Inbox e ficam sem resposta automática. Em Conexões, autorize os números de teste ou abra o canal ao público.": { es: "Este canal está en modo de prueba y no tiene ningún número autorizado, así que la IA no le responde a nadie en él — los mensajes llegan al Inbox y se quedan sin respuesta automática. En Conexiones, autoriza los números de prueba o abre el canal al público." },
+  "O canal «{canal}» está em modo de teste — a IA não responde ninguém nele": { es: "El canal «{canal}» está en modo de prueba — la IA no le responde a nadie en él" },
+  "Este canal está em modo de teste e não tem nenhuma conta de teste autorizada, então a IA não responde a ninguém nele — as mensagens chegam no Inbox e ficam sem resposta automática. Em Conexões, autorize as contas de teste ou abra o canal ao público.": { es: "Este canal está en modo de prueba y no tiene ninguna cuenta de prueba autorizada, así que la IA no le responde a nadie en él — los mensajes llegan al Inbox y se quedan sin respuesta automática. En Conexiones, autoriza las cuentas de prueba o abre el canal al público." },
+  "o canal ganhou conta de teste autorizada": { es: "el canal recibió una cuenta de prueba autorizada" },
   "Assim há {dias} dia(s).": { es: "Así desde hace {dias} día(s)." },
   "Resolvido pelo sistema: {motivo}.": { es: "Resuelto por el sistema: {motivo}." },
   "o canal ganhou número autorizado": { es: "el canal recibió un número autorizado" },
