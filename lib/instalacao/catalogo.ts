@@ -236,6 +236,26 @@ export const CATALOGO_DA_INSTALACAO: readonly ChaveDaInstalacao[] = [
     controle: "edita",
     telaDona: "cobranca",
   },
+  {
+    chave: "EFI_CLIENT",
+    rotulo: "Credencial do Efi Bank",
+    explicacao:
+      "Client-Id e Client-Secret da aplicação do Efi, separados por dois-pontos e precedidos do ambiente (teste ou producao). Homologação e produção são pares diferentes de chaves.",
+    grupo: "integracao",
+    natureza: "segredo",
+    controle: "edita",
+    telaDona: "cobranca",
+  },
+  {
+    chave: "EFI_WEBHOOK_TOKEN",
+    rotulo: "Token dos avisos de pagamento do Efi",
+    explicacao:
+      "Confere que um aviso de pagamento veio mesmo do Efi. É criado quando você conecta a credencial; o Efi não tem cadastro de aviso no painel, então a URL e o token viajam em cada cobrança.",
+    grupo: "integracao",
+    natureza: "segredo",
+    controle: "edita",
+    telaDona: "cobranca",
+  },
 
   // ── DIAGNÓSTICO: de partida ───────────────────────────────────────────────
   {

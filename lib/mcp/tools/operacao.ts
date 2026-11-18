@@ -142,19 +142,25 @@ const updateStageShape = {
    * `crm_stages.expected_duration_hours` para classificar lead parado.
    */
   expected_duration_hours: z.number().int().min(1).max(8760).nullable().optional(),
+  /**
+   * O CRITÉRIO da etapa (`crm_stages.description`) — quando um negócio entra
+   * nela, em texto livre (até 500 caracteres; `null` ou vazio limpa). É este
+   * texto que `crm_list_stages` devolve como "o critério da etapa", então
+   * escrevê-lo é como o agente passa a saber quando mover o card para cá.
+   */
+  description: z.string().nullable().optional(),
 };
 
 export const crmUpdateStage: McpToolDefinition<typeof updateStageShape> = {
   name: "crm_update_stage",
   description:
-    "Renomeia, reordena, calibra a probabilidade de ganho (win_probability, 0-100; null limpa a " +
-    "calibração e a previsão passa a reportar a etapa sem probabilidade), ajusta a janela de " +
-    "esfriando (expected_duration_hours, em HORAS de 1 a 8760; null volta ao padrão de 24 h) ou " +
-    "muda o papel de desfecho " +
-    "(is_won/is_lost) de uma etapa. " +
-    "after_stage_id é o id da etapa VIZINHA DA ESQUERDA (null = primeira coluna), não um número de posição. " +
-    "Mover a marcação de ganho/perda para outra etapa é permitido; REMOVÊ-LA sem substituta não é — " +
-    "o pipeline ficaria sem onde fechar negócio.",
+    "Renomeia, reordena, calibra o ganho (win_probability 0-100; null limpa e a etapa sai da " +
+    "previsão de probabilidade), ajusta o esfriando (expected_duration_hours, HORAS 1-8760; null " +
+    "volta a 24 h), escreve o critério da etapa (description: quando o card entra nela, até 500 " +
+    "caracteres; null limpa) ou muda o papel de desfecho (is_won/is_lost). " +
+    "after_stage_id é a etapa VIZINHA DA ESQUERDA (null = primeira coluna), não a posição. " +
+    "Mover ganho/perda de etapa é permitido; REMOVÊ-LA sem substituta não — o pipeline ficaria " +
+    "sem onde fechar.",
   inputSchema: updateStageShape,
   category: "write",
   requiresRole: "manager",
@@ -169,13 +175,14 @@ export const crmUpdateStage: McpToolDefinition<typeof updateStageShape> = {
     if (input.expected_duration_hours !== undefined) {
       pedido.expected_duration_hours = input.expected_duration_hours;
     }
+    if (input.description !== undefined) pedido.description = input.description;
     if (Object.keys(pedido).length === 0) {
       throw new ApiError(
         422,
         "unprocessable_entity",
         undefined,
         ctx.requestId,
-        "Diga o que mudar na etapa: o nome, a ordem, a janela de esfriando ou o papel dela no desfecho do negócio.",
+        "Diga o que mudar na etapa: o nome, a ordem, a janela de esfriando, o critério (quando um card entra nela) ou o papel dela no desfecho do negócio.",
       );
     }
     const { funil } = await atualizarEtapa(deps(ctx), {

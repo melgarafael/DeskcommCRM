@@ -37,6 +37,7 @@ import { entradaDoCatalogo } from "./catalogos";
 import type { Idioma } from "./idiomas";
 import { TEXTOS_AGENDA_CONFIGURACAO } from "./agenda-configuracao";
 import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
+import { TEXTOS_PAINEL_GOOGLE_ADS } from "./painel-google-ads";
 import { TEXTOS_APARENCIA } from "./aparencia";
 import { TEXTOS_PROSPECCAO_ARQUIVO_DA_ABORDAGEM } from "./prospeccao-arquivo-da-abordagem";
 import { TEXTOS_CONTRATACAO } from "./contratacao";
@@ -49,6 +50,7 @@ import { TEXTOS_AVISOS_DA_CENTRAL } from "./avisos-da-central";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  ...TEXTOS_PAINEL_GOOGLE_ADS,
   ...TEXTOS_CONTRATACAO,
   ...TEXTOS_MCP_OAUTH,
   ...TEXTOS_TABELA_DE_VALORES,
@@ -1028,6 +1030,12 @@ export const DICIONARIO: Traducoes = {
   "Sem marca nenhuma este campo nunca é exigido — é o comportamento de sempre. Marcado, ele precisa estar preenchido para o negócio entrar na etapa escolhida ou ser fechado como ganho/perdido.":
     {
       es: "Sin ninguna marca este campo nunca se exige — es el comportamiento de siempre. Marcado, debe estar completado para que el negocio entre en la etapa elegida o se cierre como ganado/perdido.",
+    },
+  // ─── CAMPO DO CARD QUE A IA PODE LER (issue #4669) ───
+  "A IA pode ler este campo": { es: "La IA puede leer este campo" },
+  "Ligado, o valor deste campo pode chegar ao assistente de IA: no follow-up escrito por IA e na leitura que o agente faz do negócio. Desligado, o valor fica só no card. Desligado por padrão.":
+    {
+      es: "Activado, el valor de este campo puede llegar al asistente de IA: en el seguimiento escrito por IA y en la lectura que el agente hace del negocio. Desactivado, el valor queda solo en la tarjeta. Desactivado por defecto.",
     },
   "Este funil exige alguns dados antes de mover o negócio. Preencha o que falta para continuar.": {
     es: "Este embudo exige algunos datos antes de mover el negocio. Completa lo que falta para continuar.",
@@ -2925,6 +2933,8 @@ export const DICIONARIO: Traducoes = {
   "Lembrete de caso parado salvo.": { es: "Recordatorio de caso detenido guardado." },
   "Não foi possível salvar o lembrete de caso parado.": { es: "No se pudo guardar el recordatorio de caso detenido." },
   "{n} dias": { es: "{n} días" },
+  // A barra de etapas do dossiê (`BarraDeEtapas`): o "onde estou" do leitor de tela.
+  "Etapa {atual} de {total}": { es: "Etapa {atual} de {total}" },
   "{n} horas": { es: "{n} horas" },
   // O que a tela diz a quem NÃO alcança a Central (#3147): a frase verdadeira
   // no lugar do estado vazio, que era falso para quem não pode ver aviso nenhum.
@@ -9455,6 +9465,12 @@ export const DICIONARIO: Traducoes = {
   negócio: { es: "negocio" },
   negócios: { es: "negocios" },
   "Etapa atualizada.": { es: "Etapa actualizada." },
+  // #4802 (item 2): a cor da etapa passa a se escolher na tela de etapas. Os
+  // oito nomes de tom já existem no bloco da etiqueta — a etapa usa a MESMA
+  // paleta, e duplicar os nomes aqui seria uma segunda tradução para a mesma
+  // fileira.
+  "Cor da etapa": { es: "Color de la etapa" },
+  "Cor escolhida": { es: "Color elegido" },
   "Só uma etapa pode ser a de fechamento. Marcar esta desmarca": {
     es: "Solo una etapa puede ser la de cierre. Marcar esta desmarca",
   },
@@ -17979,6 +17995,17 @@ export const DICIONARIO: Traducoes = {
   "Informe a chave de API do Asaas para começar.": { es: "Ingresa la clave de API de Asaas para empezar." },
   "Troque a chave, o ambiente ou o fluxo de retorno.": { es: "Cambia la clave, el entorno o el flujo de retorno." },
   "Chave de API do Asaas": { es: "Clave de API de Asaas" },
+  "Credencial do Efi": { es: "Credencial de Efi" },
+  "O aviso de pagamento no Efi": { es: "El aviso de pago en Efi" },
+  "boleto recorrente com link de pagamento do próprio Efi, que também aceita Pix e cartão na página dele. Pede a credencial da aplicação (Client-Id e Client-Secret).": {
+    es: "boleto recurrente con enlace de pago del propio Efi, que también acepta Pix y tarjeta en su página. Pide la credencial de la aplicación (Client-Id y Client-Secret).",
+  },
+  "No Efi: Aplicações › sua aplicação › API de Cobranças. Cole no formato ambiente:client_id:client_secret (ambiente = teste ou producao). Homologação e produção são pares DIFERENTES de chaves.": {
+    es: "En Efi: Aplicaciones › tu aplicación › API de Cobros. Pégalo en el formato ambiente:client_id:client_secret (ambiente = teste o producao). Homologación y producción son pares DIFERENTES de claves.",
+  },
+  "O Efi não tem um cadastro de aviso no painel: a URL e o token abaixo viajam em cada cobrança que este sistema cria, e a chave fica guardada para conferir quem chamou. Nada a fazer no painel do Efi.": {
+    es: "Efi no tiene un registro de aviso en el panel: la URL y el token de abajo viajan en cada cobro que crea este sistema, y la clave queda guardada para comprobar quién llamó. Nada que hacer en el panel de Efi.",
+  },
   "Deixe em branco para manter a chave atual": { es: "Deja en blanco para mantener la clave actual" },
   Ambiente: { es: "Entorno" },
   "Sandbox (teste)": { es: "Sandbox (prueba)" },
@@ -19331,6 +19358,45 @@ export const DICIONARIO: Traducoes = {
   "Padrão: varia": { es: "Por defecto: varía" },
   "Desligado por quem administra o servidor": { es: "Desactivado por quien administra el servidor" },
   "Recursos opcionais": { es: "Recursos opcionales" },
+  // Recursos opcionais › Módulos por empresa (issue #3868): a exceção de UMA empresa
+  // sobre o interruptor da instalação. Três estados, e "herda" é o de hoje.
+  "Módulos por empresa": { es: "Módulos por empresa" },
+  "Aqui você abre a exceção de UMA empresa sobre o que está ligado acima. Quem ficar em “Herdar” segue a instalação — e desligar não apaga nada: o que a empresa já tem volta ao religar.": {
+    es: "Aquí abres la excepción de UNA empresa sobre lo que está activado arriba. Quien quede en «Heredar» sigue la instalación — y desactivar no borra nada: lo que la empresa ya tiene vuelve al reactivar.",
+  },
+  "O módulo ligado acima continua valendo para todas; aqui você abre exceções.": {
+    es: "El módulo activado arriba sigue valiendo para todas; aquí abres excepciones.",
+  },
+  "Nenhuma (só o padrão da instalação)": { es: "Ninguna (solo lo predeterminado de la instalación)" },
+  "Não deu para ler os módulos desta empresa agora. Recarregue a página em instantes.": {
+    es: "No se pudieron leer los módulos de esta empresa ahora. Recarga la página en unos instantes.",
+  },
+  "Desligado nesta instalação: nenhuma empresa tem este módulo, e não dá para ligá-lo só para uma. Ligue-o em “Módulos”, acima.": {
+    es: "Desactivado en esta instalación: ninguna empresa tiene este módulo, y no se puede activar solo para una. Actívalo en «Módulos», arriba.",
+  },
+  "Herdando a instalação: é o que vale hoje para esta empresa.": {
+    es: "Heredando la instalación: es lo que vale hoy para esta empresa.",
+  },
+  "Ligado — igual a herdar: a empresa tem o módulo porque a instalação o tem. Não muda nada para as outras empresas.": {
+    es: "Activado — igual que heredar: la empresa tiene el módulo porque la instalación lo tiene. No cambia nada para las demás empresas.",
+  },
+  "Desligado para esta empresa. Nenhum dado foi apagado.": {
+    es: "Desactivado para esta empresa. No se borró ningún dato.",
+  },
+  "Herdar da instalação": { es: "Heredar de la instalación" },
+  "Desligar aqui esconde a porta do módulo no menu desta empresa. A recusa nas rotas, no agente e nos trabalhos de fundo chega módulo a módulo; até lá, um módulo desligado pode continuar sendo usado por rotina interna.": {
+    es: "Desactivar aquí oculta la entrada del módulo en el menú de esta empresa. La negativa en las rutas, en el agente y en los trabajos de fondo llega módulo a módulo; hasta entonces, un módulo desactivado puede seguir siendo usado por una rutina interna.",
+  },
+  "Cobrança dos seus clientes, login do Codex, Honorários e Financeiro não entram aqui: os dois primeiros são decisão só desta instalação, e os dois últimos são módulos de tabela, com tela própria.": {
+    es: "Cobranza de tus clientes, inicio de sesión de Codex, Honorarios y Finanzas no entran aquí: los dos primeros son decisión solo de esta instalación, y los dos últimos son módulos de tabla, con pantalla propia.",
+  },
+  "Este módulo está desligado nesta instalação. Ligue-o em “Módulos”, acima, antes de dar a alguma empresa.": {
+    es: "Este módulo está desactivado en esta instalación. Actívalo en «Módulos», arriba, antes de dárselo a alguna empresa.",
+  },
+  "Esta empresa não existe mais. Recarregue a página.": { es: "Esta empresa ya no existe. Recarga la página." },
+  "Este módulo ainda não pode ser ligado nesta versão.": {
+    es: "Este módulo todavía no se puede activar en esta versión.",
+  },
   // Recursos opcionais › IA das empresas novas (migration 9096) e os dois lugares que a citam.
   "IA das empresas novas": { es: "IA de las empresas nuevas" },
   "Toda empresa criada daqui em diante nasce com a mesma escolha de modelo por função da empresa que você escolher aqui. As empresas que já existem não mudam.": { es: "Toda empresa creada a partir de ahora nace con la misma elección de modelo por función de la empresa que elijas aquí. Las empresas que ya existen no cambian." },
@@ -19371,7 +19437,7 @@ export const DICIONARIO: Traducoes = {
   "Da sua empresa": { es: "De tu empresa" },
   "Em cada agente": { es: "En cada agente" },
   "Estes se ligam em cada agente, em Agente de IA › Agentes.": { es: "Estos se activan en cada agente, en Agente de IA › Agentes." },
-  "Tudo o que se liga e desliga nesta instalação, num lugar só. Vale para todas as empresas hospedadas aqui.": { es: "Todo lo que se activa y desactiva en esta instalación, en un solo lugar. Vale para todas las empresas alojadas aquí." },
+  "Tudo o que se liga e desliga nesta instalação, num lugar só. Vale para todas as empresas hospedadas aqui, e o que cada empresa usa pode ser ajustado abaixo.": { es: "Todo lo que se activa y desactiva en esta instalación, en un solo lugar. Vale para todas las empresas alojadas aquí, y lo que cada empresa usa se puede ajustar abajo." },
   "Depende do servidor": { es: "Depende del servidor" },
   "Só leitura. Estes dependem de credencial ou do arquivo de ambiente do servidor. Nenhum valor de segredo aparece aqui.": { es: "Solo lectura. Estos dependen de credenciales o del archivo de entorno del servidor. Ningún valor secreto aparece aquí." },
   "Configurado": { es: "Configurado" },
@@ -19515,6 +19581,20 @@ export const DICIONARIO: Traducoes = {
   "Janela de esfriando": { es: "Ventana de enfriamiento" },
   "A janela de esfriando vai de 1 hora a 8760 horas (365 dias).": {
     es: "La ventana de enfriamiento va de 1 hora a 8760 horas (365 días).",
+  },
+
+  // ─── Critério da etapa (#4836) — o texto que o assistente lê ───
+  "Critério da etapa (quando um negócio entra aqui)": {
+    es: "Criterio de la etapa (cuándo entra un negocio aquí)",
+  },
+  "O assistente lê este texto para decidir quando mover o negócio para esta etapa.": {
+    es: "El asistente lee este texto para decidir cuándo mover el negocio a esta etapa.",
+  },
+  "Ex.: entra aqui quando o cliente aprova o orçamento e pede o link de pagamento.": {
+    es: "Ej.: entra aquí cuando el cliente aprueba el presupuesto y pide el enlace de pago.",
+  },
+  "O critério da etapa vai até {teto} caracteres.": {
+    es: "El criterio de la etapa admite hasta {teto} caracteres.",
   },
   "Quando a empresa entra no funil": { es: "Cuándo entra la empresa al embudo" },
   "Só quando for abordada (recomendado)": { es: "Solo cuando se la contacte (recomendado)" },
@@ -19856,6 +19936,7 @@ export const DICIONARIO: Traducoes = {
   "Conectado. Falta um passo: cadastre o aviso no Asaas (veja abaixo).": { es: "Conectado. Falta un paso: registra el aviso en Asaas (mira abajo)." },
   "No Asaas: menu Integrações › Chaves de API. Comece pela conta de sandbox do Asaas; troque pela chave de produção quando a compra de teste der certo.": { es: "En Asaas: menú Integraciones › Claves de API. Empieza con la cuenta de sandbox de Asaas; cámbiala por la clave de producción cuando la compra de prueba funcione." },
   "O Asaas só avisa pagamentos num endereço https público (ex.: https://crm.example.com). Configure o domínio do sistema com HTTPS e volte aqui.": { es: "Asaas solo avisa pagos en una dirección https pública (ej.: https://crm.example.com). Configura el dominio del sistema con HTTPS y vuelve aquí." },
+  "O Efi só avisa pagamentos num endereço https público (ex.: https://crm.example.com). Configure o domínio do sistema com HTTPS e volte aqui.": { es: "Efí solo avisa pagos en una dirección https pública (ej.: https://crm.example.com). Configura el dominio del sistema con HTTPS y vuelve aquí." },
   "Falta um passo: cadastre o aviso de pagamento no Asaas": { es: "Falta un paso: registra el aviso de pago en Asaas" },
   "O Asaas não deixou o sistema cadastrar o aviso sozinho. No Asaas, abra Integrações › Webhooks. Se já existir um aviso com o endereço abaixo, edite-o e troque só o token; se não, clique em Adicionar e preencha assim:": { es: "Asaas no dejó que el sistema registrara el aviso solo. En Asaas, abre Integraciones › Webhooks. Si ya existe un aviso con la dirección de abajo, edítalo y cambia solo el token; si no, haz clic en Agregar y complétalo así:" },
   "Nome: Cobrança do sistema": { es: "Nombre: Cobrança do sistema" },
@@ -20113,6 +20194,19 @@ export const DICIONARIO: Traducoes = {
   "A auditoria do site escolhe o melhor argumento por empresa, nesta ordem.": {
     es: "La auditoría del sitio elige el mejor argumento por empresa, en este orden.",
   },
+  // #4829 — campanha que não usa a ficha digital como motivo do contato.
+  "Motivo do primeiro contato": { es: "Motivo del primer contacto" },
+  "Usar a ficha digital (site, avaliações, redes) como motivo do contato": {
+    es: "Usar la ficha digital (sitio, reseñas, redes) como motivo del contacto",
+  },
+  "Desligada, a primeira mensagem abre pelo ramo e pela região da empresa, e não cita nota, avaliações, redes nem auditoria do site. É o modo de quem vende consórcio, crédito, seguro, contabilidade ou consultoria: a oferta é a que você escreveu na instrução.":
+    {
+      es: "Desactivada, el primer mensaje abre por el rubro y la región de la empresa, y no cita nota, reseñas, redes ni auditoría del sitio. Es el modo de quien vende consorcio, crédito, seguro, contabilidad o consultoría: la oferta es la que escribiste en la instrucción.",
+    },
+  "Desligada, a primeira mensagem abre pelo ramo e pela região da empresa, e não cita nota, avaliações, redes nem auditoria do site. A oferta é a que você escreveu na instrução.":
+    {
+      es: "Desactivada, el primer mensaje abre por el rubro y la región de la empresa, y no cita nota, reseñas, redes ni auditoría del sitio. La oferta es la que escribiste en la instrucción.",
+    },
   "Site profissional": { es: "Sitio profesional" },
   "Automação do atendimento (CRM)": { es: "Automatización de la atención (CRM)" },
   "Automações e integrações (N8N)": { es: "Automatizaciones e integraciones (N8N)" },
@@ -22355,6 +22449,14 @@ export const DICIONARIO: Traducoes = {
   "é o destinatário responsável por este atendimento.": { es: "es el destinatario responsable de esta atención." },
   "é o paciente correto e que": { es: "es el paciente correcto y que" },
   "Chegou": { es: "Llegó" },
+  // #4864 — tela inicial (Configurações › Empresa › Menu lateral, e a interface
+  // do membro em Equipe). O nome da porta NÃO entra aqui: vem do catálogo e é
+  // traduzido por `entradaDoCatalogo`, que já tem espanhol para toda porta.
+  "Tela inicial": { es: "Pantalla inicial" },
+  "Padrão do sistema": { es: "Estándar del sistema" },
+  "Por onde o sistema abre depois de entrar. Sem escolha, abre o Inbox — ou a primeira área do menu, quando o Inbox estiver oculto. A escolha não muda permissões: se a área for ocultada depois, a entrada volta ao padrão.": {
+    es: "Por dónde se abre el sistema después de entrar. Sin elección, abre el Inbox — o la primera área del menú, cuando el Inbox esté oculto. La elección no cambia permisos: si el área se oculta después, la entrada vuelve al estándar.",
+  },
   // #4717 fase 1 — checklist de etapas do card, no painel do Inbox.
   "Checklist do card": { es: "Lista de verificación del negocio" },
   "concluídas": { es: "completadas" },

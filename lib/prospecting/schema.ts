@@ -59,9 +59,22 @@ export const briefingDaCampanhaSchema = z
     // Sem `.default()`: numa EDIÇÃO, oferta omitida não pode voltar silenciosamente
     // para "site" e trocar o que a campanha vende sem ninguém pedir.
     ofertas: z.array(z.enum(OFERTAS_DA_CAMPANHA)).min(1).max(3),
+    // Ausente = não mexe: o interruptor da ficha digital só é gravado quando a tela o
+    // manda, e uma edição de texto antiga não o reescreve por acidente.
+    usar_ficha_digital: z.boolean().optional(),
   })
   .strict();
 export type OfertaDaCampanha = (typeof OFERTAS_DA_CAMPANHA)[number];
+
+/**
+ * A campanha monta a primeira mensagem com os fatos da ficha digital (nota,
+ * avaliações, redes, auditoria do site)? Ausente = SIM — o de sempre, o mesmo
+ * default de `site` nas ofertas. Só `false` desliga, e é o ÚNICO lugar que decide
+ * isso: worker, prévia, tela e prompt perguntam aqui.
+ */
+export function usaFichaDigital(config: { usar_ficha_digital?: boolean | null }): boolean {
+  return config.usar_ficha_digital !== false;
+}
 
 /**
  * Rótulos de tela de cada oferta. Fonte única: a tela da campanha (com `t()`), o
@@ -124,6 +137,20 @@ export const campaignConfigSchema = z
       .min(TAMANHO_MINIMO_DO_BRIEFING)
       .max(TAMANHO_MAXIMO_DO_BRIEFING),
     ofertas: ofertasDaCampanhaSchema,
+    // A CAMPANHA SEM FICHA DIGITAL (#4829, Discussion 4828 itens 1 e 2). `false` tira
+    // da PRIMEIRA mensagem os fatos da ficha digital — `Ficha do Google` (nota e
+    // avaliações), `Redes`, `Auditoria`/`Detalhe` do site e o próprio `Site` — e troca
+    // a regra do motivo do contato no prompt frio: a abertura passa a ser pelo que a
+    // empresa É (o ramo e a região). Serve a quem vende
+    // consórcio, crédito, seguro, contabilidade ou consultoria, público para o qual
+    // "sua nota no Google" abre uma conversa que não é sobre o que ele compra.
+    //
+    // SEM `.default()`: ausente = LIGADA, o comportamento de sempre, e configuração
+    // gravada antes desta chave existir segue byte a byte igual (o mesmo raciocínio de
+    // `contact_tags` e `exit_offer`). Nesse modo `ofertas` continua guardada — quem
+    // vende algo que não é uma das três ofertas digitais escreve a oferta na
+    // `instruction`, e ela não vira ângulo de venda de site.
+    usar_ficha_digital: z.boolean().optional(),
     daily_limit: LIMITE_DIARIO.default(10),
     interval_minutes: INTERVALO_MINUTOS.default(15),
     legal_basis_ref: z.string().trim().min(3).max(500),
@@ -298,6 +325,9 @@ export const prospectingInputSchema = z.discriminatedUnion("action", [
       instruction: briefingDaCampanhaSchema.shape.instruction,
       qualification: briefingDaCampanhaSchema.shape.qualification,
       ofertas: briefingDaCampanhaSchema.shape.ofertas,
+      // Opcional: quem edita só o texto (ou um cliente antigo da API) não mexe no
+      // interruptor. Quando vem, é ele que passa a valer para as próximas conversas.
+      usar_ficha_digital: briefingDaCampanhaSchema.shape.usar_ficha_digital,
     })
     .strict(),
   // Reanálise manual da auditoria (spec 24): reescreve `data.site` na hora.
@@ -336,8 +366,11 @@ export const prospectingInputSchema = z.discriminatedUnion("action", [
 ]);
 export type CampaignConfig = z.infer<typeof campaignConfigSchema>;
 export type CampaignPace = Pick<CampaignConfig, "daily_limit" | "interval_minutes">;
-/** O pedaço da configuração que se edita com a campanha iniciada e pausada (#4570). */
-export type CampaignBriefing = Pick<CampaignConfig, "instruction" | "qualification" | "ofertas">;
+/** O pedaço da configuração que se edita com a campanha iniciada e pausada (#4570, #4829). */
+export type CampaignBriefing = Pick<
+  CampaignConfig,
+  "instruction" | "qualification" | "ofertas" | "usar_ficha_digital"
+>;
 export type SearchInput = z.infer<typeof searchSchema>;
 /**
  * O que a campanha importada de planilha guarda em `prospecting_campaigns.search` (jsonb).
