@@ -22042,6 +22042,9 @@ export const DICIONARIO: Traducoes = {
   },
   "Fila atual": { es: "Fila actual" },
   "Transferir para a fila": { es: "Transferir a la fila" },
+  "A conversa foi para a fila, mas o responsável atual não pôde ser liberado.": {
+    es: "La conversación pasó a la fila, pero no se pudo liberar al responsable actual.",
+  },
   "Escolha a fila": { es: "Elige la fila" },
   "{n} atendentes": { es: "{n} agentes" },
   "Soltar o responsável atual": { es: "Liberar al responsable actual" },

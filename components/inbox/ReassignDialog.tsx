@@ -53,6 +53,18 @@ interface Props {
   /** A fila em que a conversa está hoje: aparece marcada, não pré-selecionada. */
   filaAtual?: string | null;
   /**
+   * A conversa está com QUEM está transferindo (#4950). Só então "soltar o
+   * responsável" é oferecido.
+   *
+   * `POST /release` responde 409 a quem não é o `assigned_to_user_id` atual
+   * (`p_expected_assignee: user.id`, `p_enforce_expected: true` na rota; a
+   * `fn_conversation_assign` sai sem linha quando não bate). Oferecer o
+   * interruptor a quem não é o dono seria prometer o que a rota recusa — e o
+   * caminho mais comum da aba Fila é justamente conversa SEM dono, que o
+   * `PUT /sector` já redistribui sozinho (`redistribuiu`).
+   */
+  conversaEhMinha?: boolean;
+  /**
    * O que a aba Número precisa. Sem `numero`, a aba não aparece — é o caso de
    * quem chama o diálogo fora do Inbox. Com `numero`, ela aparece sempre que há
    * outro número com telefone, inclusive numa conversa de rede social cujo
@@ -103,6 +115,7 @@ export function ReassignDialog({
   abaInicial = "atendente",
   podeTransferirParaFila = false,
   filaAtual = null,
+  conversaEhMinha = false,
   numero,
 }: Props) {
   const t = useT();
@@ -120,7 +133,7 @@ export function ReassignDialog({
   const [aba, setAba] = useState<AbaDeTransferencia>(abaInicial);
   const [paraSessao, setParaSessao] = useState<string>("");
   const [sectorId, setSectorId] = useState<string>("");
-  const [liberar, setLiberar] = useState(true);
+  const [liberar, setLiberar] = useState(conversaEhMinha);
   const [erroDaFila, setErroDaFila] = useState<string | null>(null);
 
   const options = (members.data ?? []).filter((m) => m.user_id !== user.id);
@@ -171,7 +184,7 @@ export function ReassignDialog({
       setParaSessao("");
       setAba(abaInicial);
       setSectorId("");
-      setLiberar(true);
+      setLiberar(conversaEhMinha);
       setErroDaFila(null);
     }
     onOpenChange(v);
@@ -183,16 +196,36 @@ export function ReassignDialog({
    * rotas são as que já existem (`PUT /sector` e `POST /release`) — este diálogo
    * só junta o que o operador fazia em dois menus. A ordem importa: o setor
    * primeiro, porque a redistribuição do release respeita a fila.
+   *
+   * As duas etapas têm donos diferentes e, por isso, tratamento diferente: se o
+   * SETOR falha, nada aconteceu e a mensagem de erro é a do `PUT`. Se o
+   * RELEASE falha, a fila JÁ mudou — anunciar "não foi possível mover" nesse
+   * ponto mentiria sobre o estado, que é o que o 409 de `release` produzia para
+   * qualquer conversa que não estivesse com quem transferia.
    */
   async function transferirParaFila() {
     if (!sectorId) return;
     setErroDaFila(null);
     try {
       await moverParaFila.mutateAsync({ conversationId, sectorId });
-      if (liberar) await liberarResponsavel.mutateAsync({ conversation_id: conversationId });
+    } catch (err) {
+      setErroDaFila(
+        err instanceof Error ? err.message : t("Não foi possível mover a conversa de fila."),
+      );
+      return;
+    }
+    if (!liberar) {
+      close(false);
+      return;
+    }
+    try {
+      await liberarResponsavel.mutateAsync({ conversation_id: conversationId });
       close(false);
     } catch (err) {
-      setErroDaFila(err instanceof Error ? err.message : t("Não foi possível mover a conversa de fila."));
+      const motivo = err instanceof Error ? ` ${err.message}` : "";
+      setErroDaFila(
+        `${t("A conversa foi para a fila, mas o responsável atual não pôde ser liberado.")}${motivo}`,
+      );
     }
   }
 
@@ -276,22 +309,24 @@ export function ReassignDialog({
               )}
             </div>
 
-            <div className="flex items-start gap-3 rounded-md border border-border p-3">
-              <Switch
-                id="liberar-responsavel"
-                checked={liberar}
-                onCheckedChange={setLiberar}
-                data-testid="switch-liberar-responsavel"
-              />
-              <div className="space-y-0.5">
-                <Label htmlFor="liberar-responsavel">{t("Soltar o responsável atual")}</Label>
-                <p className="text-xs text-muted-foreground">
-                  {t(
-                    "A conversa fica com a fila e qualquer pessoa dela pode assumir. Desligado, quem já está nela continua responsável e o histórico registra a troca de fila.",
-                  )}
-                </p>
+            {conversaEhMinha && (
+              <div className="flex items-start gap-3 rounded-md border border-border p-3">
+                <Switch
+                  id="liberar-responsavel"
+                  checked={liberar}
+                  onCheckedChange={setLiberar}
+                  data-testid="switch-liberar-responsavel"
+                />
+                <div className="space-y-0.5">
+                  <Label htmlFor="liberar-responsavel">{t("Soltar o responsável atual")}</Label>
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      "A conversa fica com a fila e qualquer pessoa dela pode assumir. Desligado, quem já está nela continua responsável e o histórico registra a troca de fila.",
+                    )}
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="space-y-1.5">
               <Label htmlFor="fila-reason">{t("Motivo (opcional)")}</Label>
@@ -306,7 +341,7 @@ export function ReassignDialog({
             </div>
 
             {erroDaFila && (
-              <p className="text-xs text-destructive" role="status" data-testid="erro-da-fila">
+              <p className="text-xs text-destructive" role="alert" data-testid="erro-da-fila">
                 {erroDaFila}
               </p>
             )}

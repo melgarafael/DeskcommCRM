@@ -898,6 +898,10 @@ export function ConversationHeader({
           plataformaAdmin: user.is_platform_admin === true && !user.support,
         })}
         filaAtual={conversation.sector_id ?? null}
+        // #4950: só o DONO pode soltar — `POST /release` devolve 409 a quem não
+        // é o `assigned_to_user_id` atual. Conversa sem dono já é redistribuída
+        // pelo próprio `PUT /sector`, então ali o interruptor não é oferecido.
+        conversaEhMinha={isMineAssigned}
         numero={
           onAbrirConversa && c?.id
             ? {

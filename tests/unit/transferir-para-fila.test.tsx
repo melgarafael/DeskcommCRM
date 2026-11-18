@@ -68,7 +68,13 @@ window.HTMLElement.prototype.releasePointerCapture = vi.fn();
 
 import { ReassignDialog } from "@/components/inbox/ReassignDialog";
 
-function abrir(props: { podeTransferirParaFila?: boolean; abaInicial?: "atendente" | "fila" } = {}) {
+function abrir(
+  props: {
+    podeTransferirParaFila?: boolean;
+    conversaEhMinha?: boolean;
+    abaInicial?: "atendente" | "fila";
+  } = {},
+) {
   const qc = new QueryClient();
   render(
     <QueryClientProvider client={qc}>
@@ -104,7 +110,7 @@ describe("transferir para fila (#4950)", () => {
     // `abaInicial` em vez de simular o clique na aba: o Radix ativa a aba por
     // `mousedown`, não por `click`, e o que este teste mede é o contrato da
     // tela, não o do Radix. A presença da aba é medida na linha abaixo.
-    abrir({ podeTransferirParaFila: true, abaInicial: "fila" });
+    abrir({ podeTransferirParaFila: true, conversaEhMinha: true, abaInicial: "fila" });
     expect(screen.getByTestId("aba-transferir-fila")).toBeTruthy();
     await escolherPedagogia();
 
@@ -126,7 +132,7 @@ describe("transferir para fila (#4950)", () => {
   });
 
   it("com o interruptor de soltar o responsável desligado, só move a fila", async () => {
-    abrir({ podeTransferirParaFila: true, abaInicial: "fila" });
+    abrir({ podeTransferirParaFila: true, conversaEhMinha: true, abaInicial: "fila" });
     await escolherPedagogia();
 
     const interruptor = screen.getByTestId("switch-liberar-responsavel");
@@ -136,5 +142,36 @@ describe("transferir para fila (#4950)", () => {
 
     await waitFor(() => expect(moverParaFila).toHaveBeenCalledTimes(1));
     expect(liberar).not.toHaveBeenCalled();
+  });
+
+  it("sem ser a dona da conversa, o interruptor não aparece e o release não é chamado", async () => {
+    // `POST /release` só aceita o `assigned_to_user_id` atual: para os outros o
+    // `fn_conversation_assign` sai sem linha e a rota responde 409. Oferecer o
+    // interruptor aqui prometeria o que a rota recusa — e a conversa sem dono já
+    // volta para a distribuição no próprio `PUT /sector` (`redistribuiu`).
+    abrir({ podeTransferirParaFila: true, abaInicial: "fila" });
+    expect(screen.queryByTestId("switch-liberar-responsavel")).toBeNull();
+
+    await escolherPedagogia();
+    fireEvent.click(await screen.findByTestId("btn-transferir-para-fila"));
+
+    await waitFor(() => expect(moverParaFila).toHaveBeenCalledTimes(1));
+    expect(liberar).not.toHaveBeenCalled();
+  });
+
+  it("quando o release recusa, a mensagem diz que a fila MUDOU", async () => {
+    // O defeito que este caso prende: o 409 do release acontece DEPOIS de o
+    // setor já ter sido gravado, e a tela antiga anunciava "não foi possível
+    // mover a conversa de fila" para uma conversa que já tinha mudado.
+    liberar.mockRejectedValueOnce(new Error("Você não está atribuído a essa conversa."));
+    abrir({ podeTransferirParaFila: true, conversaEhMinha: true, abaInicial: "fila" });
+    await escolherPedagogia();
+
+    fireEvent.click(await screen.findByTestId("btn-transferir-para-fila"));
+
+    const erro = await screen.findByTestId("erro-da-fila");
+    expect(erro.textContent).toContain("foi para a fila");
+    expect(erro.textContent).toContain("não pôde ser liberado");
+    expect(moverParaFila).toHaveBeenCalledTimes(1);
   });
 });
