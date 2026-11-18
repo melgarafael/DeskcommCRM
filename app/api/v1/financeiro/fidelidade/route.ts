@@ -23,9 +23,11 @@ import { z } from "zod";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { requireRole } from "@/lib/auth/require-role";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -107,17 +109,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
-  // Sessão OU token `mcp:write`. O token mexe no saldo como a sessão do atendente
-  // (`agent`): o ledger continua append-only, e o motivo fica só no ledger.
-  const authz = await resolveAuthDual(req, {
-    requestId,
-    resource: "financeiro",
-    role: "agent",
-    scope: "mcp:write",
-  });
+  const authz = await requireRole("agent", { requestId, resource: "financeiro" });
   if (!authz.ok) return authz.response;
-  const teto = await tetoDeEscritaDoToken(authz, "financeiro_fidelidade_movimento", requestId);
-  if (teto) return teto;
 
   const lido = movimentoSchema.safeParse(await req.json().catch(() => ({})));
   if (!lido.success) {
@@ -126,9 +119,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
-  const supabase = authz.supabase;
-  const atorUserId = authz.actor.type === "user" ? authz.actor.id : null;
-  const org = authz.organizationId;
+  const supabase = await createClient();
+  const org = authz.org.orgId;
 
   // #4845 — o contato tem de ser DESTA empresa. A FK só exige que o contato
   // exista; para quem é membro de duas empresas, um `contact_id` da outra passava
@@ -153,8 +145,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       contact_id: lido.data.contact_id,
       points: lido.data.points,
       reason: lido.data.reason,
-      // Token não é pessoa: `created_by_user_id` só recebe id de `auth.users`.
-      created_by_user_id: atorUserId,
+      created_by_user_id: authz.user.id,
     })
     .select("id, points, reason, created_at")
     .single();
@@ -175,9 +166,6 @@ export async function POST(req: NextRequest): Promise<Response> {
   // LGPD chega; o audit guarda só quantos pontos e que houve justificativa.
   await audit({
     action: lido.data.points > 0 ? "fidelidade.ponto_dado" : "fidelidade.ponto_resgatado",
-    actorUserId: atorUserId,
-    actorApiTokenId: authz.apiTokenId ?? null,
-    organizationId: authz.organizationId,
     resourceType: "contact",
     resourceId: lido.data.contact_id,
     requestId,

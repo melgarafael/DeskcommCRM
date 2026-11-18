@@ -1,11 +1,11 @@
 ---
 impacto: capacidade_nova
 secao: adicionado
-titulo: Financeiro e honorários aceitam token de integração nas rotas de leitura e de operação comum
+titulo: Financeiro e honorários aceitam token de integração para leitura
 ---
 
-As rotas de comandas, itens, fila de faturamento, fidelidade, lançamentos (extrato e pagamento), catálogo financeiro e contratos de honorários agora aceitam o token de integração (`Authorization: Bearer dsk_…`), com a mesma organização do token e o mesmo papel que a tela já exige. A leitura pede a permissão `mcp:read` e a escrita pede `mcp:write`; um token sem a permissão recebe 403. No catálogo, criar, editar e inativar pede papel `manager`; no extrato, pagar ou excluir lançamento pede `agent`; em fidelidade, pontuar ou resgatar pede `agent`.
+As rotas de leitura do catálogo financeiro, das comandas (a lista, uma comanda e a fila de faturamento), da fidelidade (saldo e extrato), do extrato de lançamentos e dos contratos e parcelas de honorários agora aceitam o token de integração (`Authorization: Bearer dsk_…`). A leitura pede a permissão `mcp:read` e o mesmo papel que a tela já exige; a organização é a do token, e cada chamada conta no teto do token e da organização: passou do limite, a resposta é 429 com `Retry-After`.
 
-Continuam só de sessão, e recusam o token: cancelar e estornar comanda, finalizar comanda, faturar em lote e pagar parcela de honorário. Essas operações dependem de funções do banco que exigem a sessão da pessoa logada (`auth.uid()`).
+Toda escrita no financeiro e nos honorários continua só pela tela e recusa o token com 401: abrir, alterar e cancelar comanda, lançar e tirar item, finalizar, estornar e faturar em lote, catálogo, fidelidade, lançamentos e contratos e parcelas de honorários. Abrir a escrita por token virá numa fatia própria.
 
-Cada chamada com token conta no teto de escrita da organização e do token: passou do limite, a resposta é 429 com `Retry-After`.
+Contribuição de @paulolimajr77 (#4391).

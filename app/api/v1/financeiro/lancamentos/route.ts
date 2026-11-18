@@ -10,15 +10,13 @@
  * não vem do corpo: deixar quem chama escolher `'sale'` permitiria criar uma
  * entrada que o relatório conta como venda sem existir comanda nenhuma por trás.
  *
- * ⚠️ COM SESSÃO, client de SESSÃO. A RLS já diz que escrever exige `agent`, e a
+ * ⚠️ CLIENT DE SESSÃO na escrita. A RLS já diz que escrever exige `agent`, e a
  * rota cobra o mesmo degrau de propósito — pedir `manager` aqui criaria uma
  * segunda régua.
  *
- * ⚠️ COM TOKEN (`mcp:write`, Spec 33 R2) o client é a service role e a RLS deixa
- * de proteger: o insert leva a organização da linha do token, `account_id` e
- * `account_plan_id` do corpo são conferidos na organização (a FK é simples e
- * aceitaria a conta de outra), e `created_by_user_id` fica nulo (token não é
- * pessoa).
+ * ⚠️ COM TOKEN só a LEITURA (`mcp:read`, Spec 33 R2, doc 376): o GET usa a
+ * service role e filtra `organization_id` da linha do token. O POST segue só de
+ * sessão e recusa o Bearer com 401 no `requireRole`.
  */
 import { randomUUID } from "node:crypto";
 
@@ -28,8 +26,10 @@ import { z } from "zod";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { requireRole } from "@/lib/auth/require-role";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { requireSupportWrite } from "@/lib/impersonate/support";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -94,15 +94,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
-  const authz = await resolveAuthDual(req, {
-    requestId,
-    resource: "financeiro",
-    role: "agent",
-    scope: "mcp:write",
-  });
+  const authz = await requireRole("agent", { requestId, resource: "financeiro" });
   if (!authz.ok) return authz.response;
-  const teto = await tetoDeEscritaDoToken(authz, "financeiro_lancamentos_criar", requestId);
-  if (teto) return teto;
 
   const lido = criarSchema.safeParse(await req.json().catch(() => ({})));
   if (!lido.success) {
@@ -111,9 +104,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
-  const supabase = authz.supabase;
-  const atorUserId = authz.actor.type === "user" ? authz.actor.id : null;
-  const org = authz.organizationId;
+  const supabase = await createClient();
+  const org = authz.org.orgId;
 
   // ─── A CONTA E O PLANO SÃO DESTA EMPRESA (#4845) ───────────────────────
   //
@@ -152,12 +144,12 @@ export async function POST(req: NextRequest): Promise<Response> {
   // outra unidade na lista, que é o pior desfecho porque parece certo. Mesmo
   // leitor da comanda (`moedaDaOrganizacao`), e o corpo nem declara o campo: o
   // Zod o descarta antes de chegar aqui.
-  const moeda = await moedaDaOrganizacao(supabase, authz.organizationId);
+  const moeda = await moedaDaOrganizacao(supabase, authz.org.orgId);
 
   const { data, error } = await supabase
     .from("financial_entries")
     .insert({
-      organization_id: authz.organizationId,
+      organization_id: authz.org.orgId,
       currency: moeda,
       account_id: lido.data.account_id,
       account_plan_id: lido.data.account_plan_id ?? null,
@@ -172,7 +164,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       // diferentes.
       paid_at: lido.data.status === "paid" ? new Date().toISOString() : null,
       origin: "manual",
-      created_by_user_id: atorUserId,
+      created_by_user_id: authz.user.id,
     })
     .select("id, direction, amount_cents, currency, status, entry_date")
     .single();
@@ -188,9 +180,6 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   await audit({
     action: "financeiro.lancamento_criado",
-    actorUserId: atorUserId,
-    actorApiTokenId: authz.apiTokenId ?? null,
-    organizationId: authz.organizationId,
     resourceType: "financial_entry",
     resourceId: data.id,
     requestId,

@@ -3,13 +3,13 @@
  *
  * ⚠️ COM SESSÃO usa o client de SESSÃO: a RLS já diz quem lê (a organização) e
  * quem escreve (manager+), e repetir a regra aqui criaria uma segunda fonte da
- * mesma verdade. `resolveAuthDual` é só a borda de autenticação.
+ * mesma verdade. `resolveAuthDual` (GET) e `requireRole` (escritas) são só a
+ * borda de autenticação.
  *
- * ⚠️ COM TOKEN (`mcp:read`/`mcp:write`, Spec 33 R2) o client é a service role e a
- * RLS deixa de proteger: toda cadeia filtra `organization_id` da linha do
- * token, e as REFERÊNCIAS do corpo (conta, plano de contas, serviço, pessoa)
- * são conferidas na organização antes de gravar. A FK é simples, e o banco
- * aceitaria a conta de outra organização.
+ * ⚠️ COM TOKEN só a LEITURA (`mcp:read`, Spec 33 R2, doc 376): o client é a
+ * service role e a RLS deixa de proteger, então o GET filtra `organization_id`
+ * da linha do token. POST, PATCH e DELETE seguem só de sessão e recusam o
+ * Bearer com 401 no `requireRole` — abrir a escrita por token é fatia própria.
  *
  * ⚠️ DELETE INATIVA, não apaga. Conta com lançamento é história; apagá-la
  * deixaria o lançamento órfão ou o levaria junto. É a mesma decisão de
@@ -17,17 +17,16 @@
  * parou de usar uma forma de pagamento.
  */
 import { randomUUID } from "node:crypto";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { requireRole } from "@/lib/auth/require-role";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import {
   COLUNAS_POR_ENTIDADE,
-  type EntidadeDoCatalogo,
   ENTIDADES_DO_CATALOGO,
   ROTULO_DA_ENTIDADE,
   SCHEMA_POR_ENTIDADE,
@@ -37,9 +36,9 @@ import {
 } from "@/lib/financeiro/catalogo";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { traduzir } from "@/lib/i18n/dicionario";
-import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -64,58 +63,6 @@ async function entidade(ctx: Ctx, requestId: string) {
     };
   }
   return { ok: true as const, tipo, tabela: ENTIDADES_DO_CATALOGO[tipo] };
-}
-
-/**
- * As colunas do corpo que apontam para outra tabela por FK SIMPLES, e a tabela
- * que elas apontam. Só o ramo do token usa: a sessão tem a RLS do banco.
- */
-const REFERENCIAS_DO_CATALOGO: Partial<
-  Record<EntidadeDoCatalogo, ReadonlyArray<{ campo: string; tabela: string }>>
-> = {
-  formas_de_pagamento: [{ campo: "account_id", tabela: "financial_accounts" }],
-  recorrencias: [
-    { campo: "account_id", tabela: "financial_accounts" },
-    { campo: "account_plan_id", tabela: "account_plans" },
-  ],
-  regras_de_comissao: [{ campo: "event_type_id", tabela: "calendar_event_types" }],
-};
-
-/**
- * `true` quando alguma referência do corpo NÃO é da organização. Com a service
- * role a FK aceitaria o id de outra organização, então cada referência
- * presente e não nula é buscada com o filtro de `organization_id`. A pessoa da
- * regra de comissão é conferida pelo vínculo ativo dela com a organização.
- */
-async function temReferenciaDeFora(
-  db: SupabaseClient,
-  organizationId: string,
-  tipo: EntidadeDoCatalogo,
-  campos: Record<string, unknown>,
-): Promise<boolean> {
-  for (const { campo, tabela } of REFERENCIAS_DO_CATALOGO[tipo] ?? []) {
-    const id = campos[campo];
-    if (typeof id !== "string") continue;
-    const { data } = await db
-      .from(tabela)
-      .select("id")
-      .eq("organization_id", organizationId)
-      .eq("id", id)
-      .maybeSingle();
-    if (!data) return true;
-  }
-  const pessoa = tipo === "regras_de_comissao" ? campos.attendant_user_id : undefined;
-  if (typeof pessoa === "string") {
-    const { data } = await db
-      .from("user_organizations")
-      .select("user_id")
-      .eq("organization_id", organizationId)
-      .eq("user_id", pessoa)
-      .is("revoked_at", null)
-      .maybeSingle();
-    if (!data) return true;
-  }
-  return false;
 }
 
 export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
@@ -159,17 +106,9 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   const e = await entidade(ctx, requestId);
   if (!e.ok) return e.response;
 
-  const authz = await resolveAuthDual(req, {
-    requestId,
-    resource: "financeiro",
-    role: "manager",
-    scope: "mcp:write",
-  });
+  const authz = await requireRole("manager", { requestId, resource: "financeiro" });
   if (!authz.ok) return authz.response;
-  const teto = await tetoDeEscritaDoToken(authz, "financeiro_catalogo_criar", requestId);
-  if (teto) return teto;
-  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
-  const atorUserId = authz.actor.type === "user" ? authz.actor.id : null;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
   const lido = SCHEMA_POR_ENTIDADE[e.tipo].safeParse(await req.json().catch(() => ({})));
   if (!lido.success) {
@@ -178,7 +117,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     });
   }
 
-  const supabase = authz.supabase;
+  const supabase = await createClient();
 
   // ─── A MOEDA É DA ORGANIZAÇÃO, NUNCA DO CORPO (#3379) ──────────────────
   //
@@ -190,15 +129,9 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   // porque são a mesma pergunta: qual é a moeda desta organização.
   const linha: Record<string, unknown> = {
     ...lido.data,
-    organization_id: authz.organizationId,
+    organization_id: authz.org.orgId,
   };
-  // Só o token precisa desta conferência: a sessão passa pela RLS do banco.
-  if (authz.via === "token" && (await temReferenciaDeFora(supabase, authz.organizationId, e.tipo, lido.data))) {
-    return fail("validation_failed", t("A conta informada não existe nesta organização."), 422, {
-      requestId,
-    });
-  }
-  if (temColunaDeMoeda(e.tipo)) linha.currency = await moedaDaOrganizacao(supabase, authz.organizationId);
+  if (temColunaDeMoeda(e.tipo)) linha.currency = await moedaDaOrganizacao(supabase, authz.org.orgId);
 
   const { data, error } = await supabase
     .from(e.tabela)
@@ -225,9 +158,8 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   void audit({
     action: "financeiro.catalogo_criado",
-    actorUserId: atorUserId,
-    actorApiTokenId: authz.apiTokenId ?? null,
-    organizationId: authz.organizationId,
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
     resourceType: e.tabela,
     // ⚠️ Cast por `unknown`: `lib/database.types.ts` ainda não conhece estas
     // três tabelas, porque ele é gerado a partir de um banco que já tem a
@@ -252,17 +184,9 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   const e = await entidade(ctx, requestId);
   if (!e.ok) return e.response;
 
-  const authz = await resolveAuthDual(req, {
-    requestId,
-    resource: "financeiro",
-    role: "manager",
-    scope: "mcp:write",
-  });
+  const authz = await requireRole("manager", { requestId, resource: "financeiro" });
   if (!authz.ok) return authz.response;
-  const teto = await tetoDeEscritaDoToken(authz, "financeiro_catalogo_alterar", requestId);
-  if (teto) return teto;
-  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
-  const atorUserId = authz.actor.type === "user" ? authz.actor.id : null;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
   const corpo = await req.json().catch(() => ({}));
   const base = alterarSchema.safeParse(corpo);
@@ -278,17 +202,12 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     return fail("validation_failed", t("Nenhum campo para alterar."), 422, { requestId });
   }
 
-  const supabase = authz.supabase;
-  if (authz.via === "token" && (await temReferenciaDeFora(supabase, authz.organizationId, e.tipo, campos))) {
-    return fail("validation_failed", t("A conta informada não existe nesta organização."), 422, {
-      requestId,
-    });
-  }
+  const supabase = await createClient();
   const { data, error } = await supabase
     .from(e.tabela)
     .update(campos)
     .eq("id", base.data.id)
-    .eq("organization_id", authz.organizationId)
+    .eq("organization_id", authz.org.orgId)
     .select(COLUNAS_POR_ENTIDADE[e.tipo])
     .maybeSingle();
 
@@ -316,9 +235,8 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   void audit({
     action: "financeiro.catalogo_alterado",
-    actorUserId: atorUserId,
-    actorApiTokenId: authz.apiTokenId ?? null,
-    organizationId: authz.organizationId,
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
     resourceType: e.tabela,
     resourceId: base.data.id,
     requestId,
@@ -336,17 +254,9 @@ export async function DELETE(req: NextRequest, ctx: Ctx): Promise<Response> {
   const e = await entidade(ctx, requestId);
   if (!e.ok) return e.response;
 
-  const authz = await resolveAuthDual(req, {
-    requestId,
-    resource: "financeiro",
-    role: "manager",
-    scope: "mcp:write",
-  });
+  const authz = await requireRole("manager", { requestId, resource: "financeiro" });
   if (!authz.ok) return authz.response;
-  const teto = await tetoDeEscritaDoToken(authz, "financeiro_catalogo_inativar", requestId);
-  if (teto) return teto;
-  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
-  const atorUserId = authz.actor.type === "user" ? authz.actor.id : null;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
   const lido = z
     .object({ id: z.string().uuid() })
@@ -354,7 +264,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx): Promise<Response> {
   if (!lido.success) return fail("validation_failed", t("id inválido."), 422, { requestId });
 
   // INATIVA. Ver o cabeçalho: o passado não se reescreve.
-  const supabase = authz.supabase;
+  const supabase = await createClient();
   // Na recorrência, desligar pelo catálogo é decisão da equipe: zera a marca de
   // "desligado pela perda", e o re-ganho do negócio não o religa (#4256).
   const desliga = e.tipo === "recorrencias" ? { is_active: false, desativada_pela_perda: false } : { is_active: false };
@@ -362,7 +272,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx): Promise<Response> {
     .from(e.tabela)
     .update(desliga)
     .eq("id", lido.data.id)
-    .eq("organization_id", authz.organizationId)
+    .eq("organization_id", authz.org.orgId)
     .select("id")
     .maybeSingle();
 
@@ -371,9 +281,8 @@ export async function DELETE(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   void audit({
     action: "financeiro.catalogo_inativado",
-    actorUserId: atorUserId,
-    actorApiTokenId: authz.apiTokenId ?? null,
-    organizationId: authz.organizationId,
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
     resourceType: e.tabela,
     resourceId: lido.data.id,
     requestId,

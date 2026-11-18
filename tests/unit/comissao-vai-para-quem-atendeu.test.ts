@@ -75,13 +75,8 @@ function montarMundo(opts: {
         : [];
 
   const from = (tabela: string) => {
-    const filtros: Record<string, unknown> = {};
     const cadeia: Record<string, unknown> = {};
-    for (const m of ["select", "order", "limit", "in", "neq"]) cadeia[m] = () => cadeia;
-    cadeia.eq = (coluna: string, valor: unknown) => {
-      filtros[coluna] = valor;
-      return cadeia;
-    };
+    for (const m of ["select", "order", "limit", "eq", "in", "neq"]) cadeia[m] = () => cadeia;
     cadeia.insert = (linha: Record<string, unknown>) => {
       opts.escritas?.push(tabela);
       if (tabela === "sale_items") itens.push(linha);
@@ -94,18 +89,12 @@ function montarMundo(opts: {
         Promise.resolve({ data: inserido, error: null }).then(ok, ko);
       return elo;
     };
-    cadeia.maybeSingle = async () => {
-      if (tabela === "calendar_appointments") {
-        // Como no banco: o agendamento só aparece se id e organização do filtro baterem.
-        const bate = filtros.id === APPOINTMENT && filtros.organization_id === ORG;
-        return { data: bate ? { owner_user_id: opts.dono } : null, error: null };
-      }
-      return tabela === "sales"
+    cadeia.maybeSingle = async () =>
+      tabela === "sales"
         ? { data: opts.comanda ?? null, error: null }
         : tabela === "organizations"
           ? { data: { currency: "BRL" }, error: null }
           : { data: null, error: null };
-    };
     cadeia.then = (ok: (v: unknown) => unknown, ko: (e: unknown) => unknown) => {
       if (tabela === "commission_rules" && falhasRestantes > 0) {
         falhasRestantes -= 1;
@@ -240,7 +229,7 @@ describe("item lançado no balcão", () => {
         status: "open",
         number: 7,
         attendant_user_id: RECEPCAO,
-        appointment_id: APPOINTMENT,
+        calendar_appointments: { owner_user_id: PROFISSIONAL },
       },
     });
     const { POST } = await import("@/app/api/v1/financeiro/comandas/[id]/itens/route");
@@ -252,7 +241,7 @@ describe("item lançado no balcão", () => {
   it("comanda avulsa: o item vai para quem abriu a comanda", async () => {
     const itens = montarMundo({
       dono: null,
-      comanda: { id: COMANDA, status: "open", number: 7, attendant_user_id: RECEPCAO, appointment_id: null },
+      comanda: { id: COMANDA, status: "open", number: 7, attendant_user_id: RECEPCAO, calendar_appointments: null },
     });
     const { POST } = await import("@/app/api/v1/financeiro/comandas/[id]/itens/route");
 
@@ -268,7 +257,7 @@ describe("item lançado no balcão", () => {
         status: "open",
         number: 7,
         attendant_user_id: RECEPCAO,
-        appointment_id: APPOINTMENT,
+        calendar_appointments: { owner_user_id: PROFISSIONAL },
       },
     });
     const { POST } = await import("@/app/api/v1/financeiro/comandas/[id]/itens/route");
