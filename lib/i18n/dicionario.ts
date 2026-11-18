@@ -3901,9 +3901,9 @@ export const DICIONARIO: Traducoes = {
     {
       es: "Si la misma conversación ya recibió muchas respuestas automáticas en una ventana (estándar: 20 en 1 h), la siguiente se bloquea, la conversación se pausa y el equipo recibe un aviso en la Central. Es lo que impide que dos robots conversen solos — caso real de 216 respuestas en una hora para el mismo contacto.",
     },
-  "Não é escolha de estilo: conversa entre robôs queima cota do modelo e é risco de bloqueio do seu número. O número de respostas, a janela e o tempo de pausa da conversa se ajustam em Configurações › Anti-ban, para a empresa inteira — não no desligamento.":
+  "Não é escolha de estilo: conversa entre robôs queima cota do modelo e é risco de bloqueio do seu número. O número de respostas, a janela e o tempo de pausa da conversa valem para a empresa inteira e se ajustam pela API do anti-ban (ainda sem tela) — não no desligamento.":
     {
-      es: "No es una elección de estilo: una conversación entre robots consume cuota del modelo y es riesgo de bloqueo de tu número. El número de respuestas, la ventana y el tiempo de pausa de la conversación se ajustan en Configuración › Anti-ban, para toda la empresa — no en el apagado.",
+      es: "No es una elección de estilo: una conversación entre robots consume cuota del modelo y es riesgo de bloqueo de tu número. El número de respuestas, la ventana y el tiempo de pausa de la conversación valen para toda la empresa y se ajustan por la API del anti-ban (todavía sin pantalla) — no en el apagado.",
     },
   "Falha ao carregar o teto de respostas.": {
     es: "No se pudo cargar el límite de respuestas.",
