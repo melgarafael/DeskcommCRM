@@ -34,26 +34,26 @@ const ERRO_EM_PORTUGUES: Record<string, string> = {
   db_error: "Não consegui apagar os dados agora.",
 };
 
-/** O rótulo de cada tipo na prévia, na ordem em que a tela os lista. */
-const ROTULO_DA_PREVIA: ReadonlyArray<readonly [keyof ContagensApagadas, string]> = [
-  ["messages", "mensagens"],
-  ["conversations", "conversas"],
-  ["contacts", "contatos"],
-  ["crm_leads", "negócios"],
-  ["crm_proposals", "propostas"],
-  ["orders", "pedidos"],
-  ["calendar_appointments", "agendamentos"],
-  ["companies", "empresas"],
-  ["people", "pessoas"],
-  ["import_batches", "importações"],
-];
-
 interface Props {
   readonly displayName: string;
 }
 
 export function ZonaDePerigoDaOrganizacao({ displayName }: Props) {
   const t = useT();
+  // O rótulo de cada tipo na prévia, na ordem em que a tela os lista. Cada texto
+  // passa por t() como literal (a cerca de i18n não aceita t() sobre parâmetro).
+  const linhasDaPrevia: ReadonlyArray<readonly [keyof ContagensApagadas, string]> = [
+    ["messages", t("mensagens")],
+    ["conversations", t("conversas")],
+    ["contacts", t("contatos")],
+    ["crm_leads", t("negócios")],
+    ["crm_proposals", t("propostas")],
+    ["orders", t("pedidos")],
+    ["calendar_appointments", t("agendamentos")],
+    ["companies", t("empresas")],
+    ["people", t("pessoas")],
+    ["import_batches", t("importações")],
+  ];
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [digitado, setDigitado] = useState("");
@@ -154,9 +154,9 @@ export function ZonaDePerigoDaOrganizacao({ displayName }: Props) {
               <p className="text-muted-foreground">{t("Não consegui contar agora. Você ainda pode apagar.")}</p>
             ) : (
               <ul className="grid grid-cols-2 gap-x-4 gap-y-1">
-                {ROTULO_DA_PREVIA.map(([chave, rotulo]) => (
+                {linhasDaPrevia.map(([chave, rotulo]) => (
                   <li key={chave} className="flex justify-between">
-                    <span>{t(rotulo)}</span>
+                    <span>{rotulo}</span>
                     <span className="tabular-nums">{previa[chave]}</span>
                   </li>
                 ))}
