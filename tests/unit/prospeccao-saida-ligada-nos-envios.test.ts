@@ -41,6 +41,7 @@ describe("saída configurável ligada nos envios automáticos", () => {
     );
     expect(src).toContain("const seqDoEnvio = seq + 1;");
     expect(src).toContain("envioSeq: seqDoEnvio,");
+    expect(src).toContain("enviarVoz(texto, seqDoEnvio)");
   });
 
   it("followup-turn usa enviarComSaidaConfiguravel com modelo === undefined", () => {

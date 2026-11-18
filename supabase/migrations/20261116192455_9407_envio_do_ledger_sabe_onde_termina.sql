@@ -1,4 +1,4 @@
--- manifest: **O `send_ledger` passa a guardar ONDE cada ENVIO começa (#4370).** `send_ledger.envio_seq smallint` = o `seq` da PRIMEIRA mensagem física do envio (`send_message` do turno) a que a linha pertence; as bolhas do envio levam o mesmo número. A consulta do reprocesso (`SQL_MENSAGEM_GUARDADA`) filtra por ele em vez de `seq >= $3`, que é o contador do TURNO inteiro e por isso concatenava o envio seguinte. Nulo em toda linha gravada antes desta migration e em todo caminho que não é o turno da prospecção (follow-up de mensagem única, voz, apresentação) — a consulta cai no comportamento anterior para essas linhas. Só acrescenta coluna: nenhum envio muda, e `unique (job_id, seq)` fica como está. Idempotente; espelho no apêndice do `supabase/baseline.sql`, antes da VARREDURA anon (0116).
+-- manifest: **O `send_ledger` passa a guardar ONDE cada ENVIO começa (#4370).** `send_ledger.envio_seq smallint` = o `seq` da PRIMEIRA mensagem física do envio (`send_message` do turno) a que a linha pertence; as bolhas do envio levam o mesmo número. A consulta do reprocesso (`SQL_MENSAGEM_GUARDADA`) filtra por ele em vez de `seq >= $3`, que é o contador do TURNO inteiro e por isso concatenava o envio seguinte. Nulo em toda linha gravada antes desta migration e em todo caminho que não é o turno da prospecção (follow-up de mensagem única, apresentação) — a consulta cai no comportamento anterior para essas linhas. Só acrescenta coluna: nenhum envio muda, e `unique (job_id, seq)` fica como está. Idempotente; espelho no apêndice do `supabase/baseline.sql`, antes da VARREDURA anon (0116).
 -- ============================================================================
 -- 9407 — O LEDGER DO ENVIO PRECISA SABER ONDE O ENVIO TERMINA.
 --
@@ -57,7 +57,8 @@
 --
 -- Os caminhos que NÃO são o turno da prospecção continuam sem gravar a coluna:
 -- follow-up (`seq: 1` fixo, UMA mensagem física — o fallback é idêntico ao que
--- era), nota de voz da apresentação e envio fixo. Nenhum deles perde nada.
+-- era) e envio fixo. Nenhum deles perde nada. A nota de voz do `send_message`
+-- grava a coluna como as bolhas: ela é o envio inteiro.
 -- ============================================================================
 
 alter table public.send_ledger

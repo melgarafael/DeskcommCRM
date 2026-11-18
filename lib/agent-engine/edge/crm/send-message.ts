@@ -66,7 +66,8 @@ export interface SendMessageInput {
    * bolhas deste envio. `seq` continua sendo a identidade da intenção
    * (`unique (job_id, seq)`), intocada; `envioSeq` é a fronteira. `input` desce
    * inteiro até `sendWithLedger` como `Intent`, então o campo atravessa sem
-   * tradução. Ausente = NULL (follow-up de mensagem única, envio fixo, voz).
+   * tradução. Ausente = NULL (follow-up de mensagem única, envio fixo). A nota de
+   * voz do `send_message` leva o mesmo `envioSeq` das bolhas que ela substitui.
    */
   envioSeq?: number;
   conversationId: string;

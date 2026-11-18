@@ -5290,7 +5290,7 @@ async function executarTurnoDoAgente(
           // mensagem física, mas ela pertence ao envio do `send_message` que a
           // pediu — a fronteira vai junto para o ledger, senão o reprocesso desta
           // bolha cai na régua antiga (`seq >= $3`) sozinho, misturando turno.
-          const enviarVoz = (texto: string, envioSeqDoEnvio?: number): Promise<ChannelSendResult> | null => {
+          const enviarVoz = (texto: string, envioSeqDoEnvio: number): Promise<ChannelSendResult> | null => {
             const voz = vozParaEsteTurno;
             // Link ou resposta longa: `null` e o texto segue em bolhas (ver `textoParaFalar`).
             const falado = voz ? textoParaFalar(texto) : null;
@@ -5304,7 +5304,7 @@ async function executarTurnoDoAgente(
               jobClaim: claimOfJob(liveJob()),
               agentOperation,
               seq: seqDesteEnvio,
-              ...(envioSeqDoEnvio !== undefined ? { envioSeq: envioSeqDoEnvio } : {}),
+              envioSeq: envioSeqDoEnvio,
               conversationId: input.conversationId,
               // `body` continua sendo o texto FALADO — é ele que entra no
               // hash de idempotência do ledger (ver o comentário de
@@ -5530,7 +5530,7 @@ async function executarTurnoDoAgente(
                       restantes: () => maxSendsPerTurn - seq,
                       enviarFoto: (foto, legenda) => enviar(legenda, foto).then(marcarFoto),
                       enviarTexto: (texto) =>
-                        enviarVoz(texto) ??
+                        enviarVoz(texto, seqDoEnvio) ??
                         sendInBubbles(texto, {
                           enabled: agentConfig?.splitMessages ?? false,
                           maxChars: agentConfig?.splitMaxChars ?? 600,
@@ -5547,7 +5547,6 @@ async function executarTurnoDoAgente(
                         }),
                     },
                   );
-
               });
             },
           };
