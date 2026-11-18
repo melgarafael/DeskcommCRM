@@ -1227,6 +1227,7 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível carregar o enriquecimento.": { es: "No se pudo cargar el enriquecimiento." },
   "Sem dados de enriquecimento para este contato.": { es: "Sin datos de enriquecimiento para este contacto." },
   "Avaliações no Google": { es: "Reseñas en Google" },
+  "E-mails": { es: "Correos" },
   "E-mails comerciais": { es: "Correos comerciales" },
   "Fonte: pesquisa de empresas": { es: "Fuente: búsqueda de empresas" },
   "Ver no Google Maps": { es: "Ver en Google Maps" },
