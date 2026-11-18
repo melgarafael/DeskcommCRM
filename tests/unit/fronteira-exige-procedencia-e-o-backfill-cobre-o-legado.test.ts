@@ -35,19 +35,46 @@ import { createSupabaseAdminClient } from "@/lib/followup/engine";
  * quando não termina (migration 0222, passo 4).
  */
 
+/**
+ * Dublê do client service-role — ROTEIA POR TABELA.
+ *
+ * A versão anterior respondia o payload de `conversations` a QUALQUER
+ * `from()`. Enquanto a organização vinha EMBUTIDA na linha de conversa, isso
+ * bastava; depois de #4311 (resíduo) ela é lida à parte, em
+ * `organizations(status, settings)`, e o dublê genérico devolvia a lista de
+ * conversas nessa pergunta também — `status` virava `undefined`, o gate
+ * respondia `org_nao_operante` (`lib/ai/elegibilidade/gate.ts:178`) e a
+ * varredura não enxergava ninguém, inclusive quem TEM carimbo. Era o dublê
+ * mentindo sobre uma tabela que o produto passou a ler, não a varredura
+ * deixando de carimbar: com o mesmo caso e a org servida, `c-novo` aparece.
+ *
+ * Refs #4729.
+ */
 function supabaseComConversas(data: unknown[]) {
-  const chain: Record<string, unknown> = new Proxy(
-    {},
-    {
-      get(_target, prop) {
-        if (prop === "then") {
-          return (resolve: (value: unknown) => unknown) => resolve({ data, error: null });
-        }
-        return () => chain;
+  const responder = (tabela: string) => ({
+    data: tabela === "organizations" ? { status: "active", settings: {} } : data,
+    error: null,
+  });
+  const chain = (tabela: string): Record<string, unknown> =>
+    new Proxy(
+      {},
+      {
+        get(_target, prop) {
+          if (prop === "then") {
+            return (resolve: (value: unknown) => unknown) => resolve(responder(tabela));
+          }
+          if (prop === "maybeSingle" || prop === "single") {
+            const linha = responder(tabela);
+            return async () => ({
+              data: Array.isArray(linha.data) ? (linha.data[0] ?? null) : linha.data,
+              error: null,
+            });
+          }
+          return () => chain(tabela);
+        },
       },
-    },
-  );
-  return { from: () => chain } as never;
+    );
+  return { from: (tabela: string) => chain(tabela) } as never;
 }
 
 const metadata = { ai_gate: "open" };
