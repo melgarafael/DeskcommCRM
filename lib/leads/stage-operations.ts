@@ -22,6 +22,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ApiError } from "@/lib/api/types";
+import { normalizarCorDaEtapa } from "@/lib/leads/cor-da-etapa";
 import type { Actor } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
 import { buildLeadActivityRow, stageChangeReason } from "@/lib/leads/activity-emitter";
@@ -30,7 +31,9 @@ import {
   posicaoEntre,
   slugDeNome,
   updatesDeMarcacao,
+  normalizarDescricaoDeEtapa,
   validarArquivamento,
+  validarDescricaoDeEtapa,
   validarJanelaDeEsfriamento,
   validarMarcacao,
   validarNomeDeEtapa,
@@ -52,7 +55,7 @@ export interface DepsDeEtapa {
 
 /** As colunas que a tela e as regras usam. `position` entra: a reordenação calcula em cima dela. */
 const COLUNAS =
-  "id, name, slug, position, is_won, is_lost, is_archived, win_probability, agent_stage_hint, avisar_na_central, expected_duration_hours, last_change_actor_kind, last_change_at";
+  "id, name, slug, description, position, color, is_won, is_lost, is_archived, win_probability, agent_stage_hint, avisar_na_central, expected_duration_hours, last_change_actor_kind, last_change_at";
 
 /** A etapa como sai para quem lê — inclui a autoria da última mudança de configuração. */
 export interface EtapaVisivel {
@@ -62,6 +65,13 @@ export interface EtapaVisivel {
   position: number;
   is_won: boolean;
   is_lost: boolean;
+  /**
+   * A cor da etapa (`crm_stages.color`, `#rrggbb`) — `null` é o padrão de hoje,
+   * e é o que o quadro pinta com o token neutro. O Kanban lê a MESMA coluna
+   * (`StageColumn`, via `select *` do quadro): o que esta operação grava é o que
+   * a coluna pinta. Item 2 da #4802.
+   */
+  color: string | null;
   /**
    * Probabilidade de GANHO desta etapa, 0–100 (migration 0426). `null` = etapa
    * sem calibração, e a previsão a reporta à parte em vez de somar zero.
@@ -80,6 +90,10 @@ export interface EtapaVisivel {
    * `validarJanelaDeEsfriamento`, aqui e nas rotas).
    */
   expected_duration_hours: number | null;
+  /** O CRITÉRIO da etapa, em texto livre (`crm_stages.description`): quando um card entra aqui. `null` = sem descrição. */
+  description: string | null;
+  /** A que passo do funil do agente a etapa corresponde (new|contacted|…|lost) ou null. */
+  agent_stage_hint: string | null;
   /** `user` | `ai` | `system` — `null` nas etapas anteriores a esta coluna. */
   last_change_actor_kind: string | null;
   last_change_at: string | null;
@@ -87,6 +101,10 @@ export interface EtapaVisivel {
 
 type EtapaLida = EtapaEditavel & {
   avisar_na_central?: boolean | null;
+  description?: string | null;
+  agent_stage_hint?: string | null;
+  /** `crm_stages.color` — o quadro pinta esta coluna (item 2 da #4802). */
+  color?: string | null;
   last_change_actor_kind: string | null;
   last_change_at: string | null;
 };
@@ -139,9 +157,12 @@ export function corpo(etapas: EtapaLida[]): { etapas: EtapaVisivel[] } {
         position: e.position,
         is_won: e.is_won,
         is_lost: e.is_lost,
+        color: normalizarCorDaEtapa(e.color),
         win_probability: e.win_probability ?? null,
         avisar_na_central: e.avisar_na_central === true,
         expected_duration_hours: e.expected_duration_hours ?? null,
+        description: e.description ?? null,
+        agent_stage_hint: e.agent_stage_hint ?? null,
         last_change_actor_kind: e.last_change_actor_kind ?? null,
         last_change_at: e.last_change_at ?? null,
       })),
@@ -330,6 +351,12 @@ export interface PedidoDeEdicao {
   /** Liga ou desliga o aviso na Central para quem entra nesta etapa (0440). */
   avisar_na_central?: boolean;
   /**
+   * A cor da etapa, `#rrggbb` (`crm_stages.color`). `null` volta ao padrão de
+   * hoje — o ponto neutro do quadro. Item 2 da #4802: a escrita que faltava
+   * para o campo que o Kanban já pintava.
+   */
+  color?: string | null;
+  /**
    * Janela de "esfriando" da etapa, em HORAS (`crm_stages.expected_duration_hours`).
    * `null` limpa a configuração de propósito — a etapa volta ao padrão de
    * 24 h/72 h do radar (`resolveStageWindow`). Aceita 1 a 8760 (uma hora a um
@@ -337,6 +364,17 @@ export interface PedidoDeEdicao {
    * banco, porque a coluna é `numeric` sem CHECK.
    */
   expected_duration_hours?: number | null;
+  /**
+   * O CRITÉRIO da etapa (`crm_stages.description`) — quando um negócio entra
+   * aqui, em texto livre. `null` limpa: a etapa volta a "sem critério" na
+   * leitura do agente (`crm_list_stages`).
+   *
+   * Vazio normaliza para `null` (`normalizarDescricaoDeEtapa`): a coluna é
+   * nullable, e `""` chegaria ao modelo como um critério que existe e não diz
+   * nada. O teto é `TETO_DA_DESCRICAO_DA_ETAPA`, medido depois do `trim` pela
+   * MESMA função que a tela usa.
+   */
+  description?: string | null;
 }
 
 export async function atualizarEtapa(
@@ -403,6 +441,16 @@ export async function atualizarEtapa(
     }
   }
 
+  // O critério é texto livre, mas o teto é o mesmo da tela — recusar AQUI, antes
+  // do banco, é o que faz o 422 chegar em português em vez de um corte silencioso
+  // (a coluna é `text` sem CHECK, então nada abaixo desta linha recusaria).
+  if (pedido.description !== undefined && pedido.description !== null) {
+    const veredito = validarDescricaoDeEtapa(pedido.description);
+    if (!veredito.ok) {
+      throw new ApiError(422, "unprocessable_entity", undefined, deps.requestId, veredito.erro);
+    }
+  }
+
   const temMarcacao = pedido.is_won !== undefined || pedido.is_lost !== undefined;
   if (temMarcacao) {
     const veredito = validarMarcacao(etapas, stageId, pedido);
@@ -417,14 +465,42 @@ export async function atualizarEtapa(
     win_probability?: number | null;
     avisar_na_central?: boolean;
     expected_duration_hours?: number | null;
+    color?: string | null;
+    description?: string | null;
   } = {};
   if (pedido.name !== undefined) patchDoAlvo.name = pedido.name.trim();
   // `undefined` não viaja; `null` limpa a calibração de propósito.
   if (pedido.win_probability !== undefined) patchDoAlvo.win_probability = pedido.win_probability;
   if (pedido.avisar_na_central !== undefined) patchDoAlvo.avisar_na_central = pedido.avisar_na_central;
+  // `null` é "volta ao padrão" — o mesmo contrato dos dois campos acima, e o
+  // que o botão «Padrão» da tela manda. Cor malformada nunca chega ao banco: o
+  // CHECK `crm_stages_color_format` recusaria com 23514 cru na cara do usuário,
+  // e a frase em português é escrita aqui, antes da escrita.
+  if (pedido.color !== undefined) {
+    if (pedido.color === null) {
+      patchDoAlvo.color = null;
+    } else {
+      const cor = normalizarCorDaEtapa(pedido.color);
+      if (cor === null) {
+        throw new ApiError(
+          422,
+          "unprocessable_entity",
+          undefined,
+          deps.requestId,
+          "Escolha uma das cores da paleta — a cor da etapa é uma cor sólida, no formato #rrggbb.",
+        );
+      }
+      patchDoAlvo.color = cor;
+    }
+  }
   // Mesmo contrato: `undefined` = "não mexe", `null` = "volta ao padrão de 24 h".
   if (pedido.expected_duration_hours !== undefined) {
     patchDoAlvo.expected_duration_hours = pedido.expected_duration_hours;
+  }
+  // `undefined` = "não mexe"; texto vazio vira `null` na MESMA função que a tela
+  // usa, senão a garantia "vazio grava nulo" dependeria de duas cópias da regra.
+  if (pedido.description !== undefined) {
+    patchDoAlvo.description = normalizarDescricaoDeEtapa(pedido.description);
   }
 
   if (pedido.depois_de !== undefined) {

@@ -22,6 +22,12 @@ export const REFERENCIAS_DE_AVISO = {
   lead: { tabela: "crm_leads", papel: "agent", rotulo: "Abrir negócio", href: (id: string, pipelineId?: string) => `/app/pipelines/${pipelineId}?lead=${id}` },
   followup_enrollment: { tabela: "followup_enrollments", papel: "viewer", rotulo: "Abrir acompanhamento", href: (id: string) => `/app/ai/followups/enrollments/${id}` },
   channel_session: { tabela: "channel_sessions", papel: "admin", rotulo: "Revisar conexão", href: () => "/app/connections", ativo: true },
+  // O aviso de saúde/go-live do número (`lib/agent-engine/health/circuit.ts`,
+  // HEALTH_HOLD_REF_KIND) grava `ref_kind = 'number_health'` com o id da CONEXÃO
+  // em `ref_id`. Sem esta entrada o botão caía em "Este contexto não está
+  // disponível para você" para qualquer canal. O destino é o mesmo de
+  // `channel_session`: é em Conexões que se libera o número.
+  number_health: { tabela: "channel_sessions", papel: "admin", rotulo: "Revisar conexão", href: () => "/app/connections", ativo: true },
   ai_knowledge_source: { tabela: "ai_knowledge_sources", papel: "manager", rotulo: "Abrir base de conhecimento", href: () => "/app/ai/knowledge/sources" },
   agent_case: { tabela: "agent_cases", papel: "agent", rotulo: "Abrir atendimento", href: (id: string) => `/app/ai/cases?caso=${id}` },
   proposal: { tabela: "crm_proposals", papel: "agent", rotulo: "Abrir proposta", href: (id: string) => `/app/proposals/${id}` },
@@ -39,6 +45,12 @@ export const REFERENCIAS_DE_AVISO = {
   // `lib/tarefas/criar-tarefa.ts`). Sem referência o botão cairia na Central,
   // meio caminho — quem recebe o aviso já está nela.
   task: { tabela: "crm_tasks", papel: "agent", rotulo: "Abrir tarefa", href: () => "/app/tasks" },
+  // Doc 301 = B: o run em que a automação SEGUROU o que fala com o cliente
+  // porque a IA mexeu no modo assistido (`lib/automation/parada-no-assistido.ts`).
+  // O botão de disparar mora na própria Central; este leva à aba Atividade, onde
+  // o run mostra o que rodou e o que ficou parado. `manager`: a mesma régua da
+  // tela de Webhooks e da rota que dispara.
+  automation_rule_run: { tabela: "automation_rule_runs", papel: "manager", rotulo: "Ver na atividade das automações", href: () => "/app/webhooks?aba=atividade" },
 } satisfies Record<string, Alvo>;
 
 export type InboxRefKind = keyof typeof REFERENCIAS_DE_AVISO | "organization" | "ai_budget" | "plano" | "job_queue" | "cron_jobs";
@@ -61,6 +73,7 @@ export const POLITICAS_DE_AVISO = {
   appointment_outcome_required:{refs:["appointment"],orientacao:"Abra o compromisso e confirme a presença."},
   appointment_recovery_review:{refs:["appointment"],orientacao:"Confira o motivo e escolha o próximo passo no compromisso."},
   routing_unassigned: { refs: ["conversation"], orientacao: "Confira os responsáveis em Configurações → Atendimento." },
+  routing_ia_wait_expired: { refs: ["conversation"], orientacao: "Abra a conversa para ver até onde a IA foi. Se isso se repetir, confira o agente de IA deste número." },
   qr_rescan: { refs: ["channel_session"], orientacao: "Peça a quem administra para revisar a conexão do WhatsApp." },
   job_dead: { refs: ["conversation", "job_queue", "cron_jobs"], orientacao: "Confira o motivo deste aviso com quem administra antes de tentar a operação novamente." },
   event_dead: { refs: [], orientacao: "Peça a quem administra para conferir o processamento descrito neste aviso." },
@@ -84,6 +97,12 @@ export const POLITICAS_DE_AVISO = {
   message_send_stuck: { refs: ["conversation"], orientacao: "Confira a resposta que não chegou antes de decidir se precisa enviar novamente." },
   midia_nao_lida: { refs: [], orientacao: "Peça ao gestor para revisar o provedor e as credenciais de leitura de fotos e áudios.", geral: { papel: "manager", href: "/app/ai/providers", rotulo: "Revisar provedores de IA" } },
   channel_template_review: { refs: [], orientacao: "Confira os modelos na conexão WhatsApp via Parceiro. Este aviso não identifica um modelo específico.", geral: { papel: "admin", href: "/app/connections?aba=parceiro&sub=templates", rotulo: "Revisar modelos do canal" } },
+  // (migration 9327, issue #3635) O mesmo evento no canal OFICIAL DIRETO. O
+  // `ref_kind='channel_session'` do produtor é o que responde "QUAL conexão" —
+  // a empresa pode ter dois números com modelos homônimos —, e o destino geral
+  // é a sub-aba de modelos da aba oficial, não a do parceiro: o modelo reprovado
+  // se conserta lá, e mandar para a outra aba é um aviso que leva ao lugar errado.
+  channel_template_review_direct: { refs: ["channel_session"], orientacao: "Abra Conexões › Modelos do canal oficial: o modelo reprovado precisa de correção no texto antes de voltar para revisão.", geral: { papel: "admin", href: "/app/connections?aba=oficial&sub=templates", rotulo: "Revisar modelos do canal oficial" } },
   channel_number_alert: { refs: ["channel_session"], orientacao: "Peça a quem administra para revisar a situação do número nas conexões.", geral: CONEXOES },
   // Sem `geral`, ao contrário do vizinho acima: o `canal-mudo-watcher` SEMPRE
   // nasce apontando para a conexão que ficou muda (`ref_kind: channel_session`),
@@ -196,6 +215,11 @@ export const POLITICAS_DE_AVISO = {
   // `conversation`: quem pode ver a conversa pode responder; não há "dono" a quem
   // mandar, porque a conversa recuperada pode não ter responsável.
   cliente_sem_resposta_na_queda: { refs: ["conversation"], orientacao: "Abra a conversa e responda o cliente — ele escreveu enquanto o número estava fora do ar." },
+  // (#4696) Aponta para a CONVERSA, e não para o contato: é ali que está o fio
+  // onde o retorno foi combinado e é ali que a pessoa pode retomar. A orientação
+  // não manda "revisar" nada — nada está quebrado; o atendimento mudou e a
+  // mensagem prometida deixou de fazer sentido no fio antigo.
+  followup_descartado: { refs: ["conversation"], orientacao: "Abra a conversa e veja o que ficou combinado. Se ainda fizer sentido, retome o contato por ali." },
   // (migration 9027, issue #3371) O aviso nasce SEM referência: o que o conserta
   // não é uma linha do banco, é o login da conta — e o login mora na tela de
   // Credenciais. O botão diz o que fazer ("Reconectar"), não "revisar", porque
@@ -207,7 +231,7 @@ export const POLITICAS_DE_AVISO = {
   // `message_send_stuck` cala o aviso de automação aberto na mesma janela. A porta
   // passa pela MESMA conferência dos outros kinds: RLS de `conversations` no
   // client da request, papel `agent` da entrada `conversation`.
-  other: { refs: ["agenda_reminder_sender", "lead", "conversation", "channel_session", "appointment", "ai_agent", "ai_provider_credential", "agent_case"], orientacao: "Confira a situação descrita neste aviso com a pessoa responsável." },
+  other: { refs: ["agenda_reminder_sender", "lead", "conversation", "channel_session", "number_health", "appointment", "ai_agent", "ai_provider_credential", "agent_case", "automation_rule_run"], orientacao: "Confira a situação descrita neste aviso com a pessoa responsável." },
 } satisfies Record<InboxKind, Politica>;
 
 /**

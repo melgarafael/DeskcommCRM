@@ -24,27 +24,70 @@
  *    porque STT e TTS não compartilham a mesma forma de chamada.
  */
 
+import type { PaisDaSede, PaisDoProvedor } from "@/lib/ai/pontos/provedores";
+
 /** Como a chave daquele serviço é validada e o que a tela precisa pedir. */
 export interface ProvedorDeServico {
   id: string;
   /** Nome como o operador conhece. */
   rotulo: string;
+  /**
+   * O código que as superfícies imprimem: a declaração quando existe, senão a
+   * sede registrada (#4588). Ver `ProvedorSuportado.pais` no catálogo irmão.
+   */
+  pais: PaisDoProvedor;
+  /**
+   * A SEDE registrada pelo catálogo — onde fica a empresa que recebe o áudio,
+   * e não onde ele é processado (#4588). `null` em `desconhecido`/`operador`.
+   */
+  sede: PaisDaSede | null;
+  /**
+   * A declaração do provedor sobre a região de processamento, `null` quando
+   * ele não publica essa informação (#4588). Só vem preenchida com
+   * `fonteDoPais`, como no catálogo de conversa.
+   */
+  paisDeclarado: PaisDaSede | null;
   /** Uma frase sobre quando escolher este, para quem não acompanha o mercado. */
   quandoUsar: string;
   /** Onde o operador pega a chave — a tela mostra o link. */
   ondePegarAChave: string;
   /** Como a chave começa — vira placeholder do campo, para a pessoa reconhecer que copiou a coisa certa. */
   prefixoDaChave: string;
+  /**
+   * De onde veio a declaração de processamento (#4519), no mesmo vocabulário
+   * do catálogo irmão: URL do documento público e data da consulta, ou `null`
+   * quando o provedor não publica a região — e sempre `null` para
+   * `desconhecido`/`operador`, que não têm documento a citar.
+   */
+  fonteDoPais: { url: string; consultadoEm: string } | null;
+  /**
+   * POR QUE não há `paisDeclarado` (#4518) — a mesma regra do catálogo irmão:
+   * `null` se e somente se a declaração existe.
+   */
+  motivoDaRegiaoNaoDeclarada: string | null;
 }
 
 export const PROVEDORES_DE_SERVICO = [
   {
     id: "elevenlabs",
     rotulo: "ElevenLabs (voz)",
+    // NÃO DECLARADO, como a Requesty: a sede da empresa que responde a API não
+    // está numa fonte que este repo possa citar com data. A cláusula diz "não
+    // declara o país; consulte a política do provedor" em vez de omitir o
+    // serviço que recebe o áudio do cliente.
+    pais: "desconhecido",
+    // Sem sede citável e sem declaração de região: o áudio sai, e o contrato
+    // diz o que se sabe — que não se sabe (#4588).
+    sede: null,
+    paisDeclarado: null,
+    // A ElevenLabs não publica, em fonte que este repo possa citar com data, o
+    // país de onde processa o áudio.
+    motivoDaRegiaoNaoDeclarada: "não publica, em fonte citável, o país de onde processa o áudio",
     quandoUsar:
       "Para o agente ouvir o áudio que o cliente manda com mais precisão (inclusive diferenciando quem fala) e para responder falando, em nota de voz, quando fizer sentido.",
     ondePegarAChave: "https://elevenlabs.io/app/settings/api-keys",
     prefixoDaChave: "sk_…",
+    fonteDoPais: null,
   },
 ] as const satisfies readonly ProvedorDeServico[];
 // `as const satisfies`, mesma razão do arquivo irmão: anotar o tipo apagaria os

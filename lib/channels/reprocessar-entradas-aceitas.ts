@@ -28,7 +28,7 @@
  *   - em `MAX_TENTATIVAS` a linha vira `dead` e a organização recebe UM aviso na
  *     Central (família `MENSAGEM_DO_NUMERO_OFICIAL_QUE_NAO_ENTROU`);
  *   - linha com corpo legível não morre levando um pedido de sair: o opt-out é
- *     gravado antes (`marcarMorta`), e sem ele a linha fica para a rodada seguinte;
+ *     gravado antes da desistência, e sem ele a linha fica para a rodada seguinte;
  *   - para na terceira falha seguida da rodada (o banco ainda não voltou) e
  *     depois de `PRAZO_DA_RODADA_MS`, para a rodada caber nos 45 s que o
  *     agendador dá a ela.
@@ -47,7 +47,7 @@ import { logger } from "@/lib/logger";
 import { ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
-import { fecharArquivoDoWebhook } from "./arquivo-de-webhook";
+import { fecharArquivoDoWebhook, marcarArquivoDoWebhookComoMorto } from "./arquivo-de-webhook";
 import { processarEntradaAceita, registrarFalhaDaEntrada } from "./entrada-aceita";
 import { CANAIS_QUE_RESPONDEM_ANTES, mensagemDaEntradaAceita, type InboundWebhookInput } from "./inbound";
 import { aplicarEfeitosDaRecuperacao, aplicarOptOutPendente, type EntradaDaRecuperacao } from "./pos-entrada";
@@ -103,7 +103,12 @@ async function respeitarPedidoDeSair(admin: Admin, linha: LinhaAceita): Promise<
   });
 }
 
-async function marcarMorta(admin: Admin, linha: LinhaAceita, motivo: string, tentativas: number): Promise<void> {
+async function desistir(
+  admin: Admin,
+  linha: LinhaAceita,
+  r: ResultadoDoReplay,
+  desfecho: { motivo: string; tentativas: number; aviso?: string },
+): Promise<void> {
   try {
     await respeitarPedidoDeSair(admin, linha);
   } catch (err) {
@@ -112,14 +117,20 @@ async function marcarMorta(admin: Admin, linha: LinhaAceita, motivo: string, ten
       log_id: linha.id,
       detail: err instanceof Error ? err.message : String(err),
     });
+    r.ainda_falhando += 1;
     return;
   }
-  const { error } = await admin
-    .from("webhook_events_log")
-    .update({ status: "dead", attempts: tentativas, error_message: motivo.slice(0, 500) })
-    .eq("id", linha.id);
-  if (error) {
-    logger.error("[webhook-replay] não marcou a entrada como morta", { log_id: linha.id, detail: error.message });
+  const resultado = await marcarArquivoDoWebhookComoMorto(
+    admin,
+    linha,
+    { status: "received", attempts: desfecho.tentativas },
+    desfecho,
+  );
+  if (resultado === "falhou") r.ainda_falhando += 1;
+  if (resultado !== "gravado") return;
+  r.desistidas += 1;
+  if (desfecho.aviso !== undefined) {
+    await avisarMensagemPerdida(admin, linha, desfecho.tentativas, desfecho.aviso);
   }
 }
 
@@ -300,9 +311,11 @@ async function encerrarVencidas(admin: Admin, desde: string, r: ResultadoDoRepla
       continue;
     }
     const motivo = "passou da janela de reprocessamento sem terminar";
-    await marcarMorta(admin, linha, `replay: ${motivo}`, linha.attempts);
-    await avisarMensagemPerdida(admin, linha, linha.attempts, motivo);
-    r.desistidas += 1;
+    await desistir(admin, linha, r, {
+      motivo: `replay: ${motivo}`,
+      tentativas: linha.attempts,
+      aviso: motivo,
+    });
   }
 }
 
@@ -357,9 +370,7 @@ export async function reprocessarEntradasAceitas(
     const falhou = async (detalhe: string) => {
       falhasSeguidas += 1;
       if (tentativas >= MAX_TENTATIVAS) {
-        await marcarMorta(admin, linha, detalhe, tentativas);
-        await avisarMensagemPerdida(admin, linha, tentativas, detalhe);
-        r.desistidas += 1;
+        await desistir(admin, linha, r, { motivo: detalhe, tentativas, aviso: detalhe });
       } else {
         await registrarFalhaDaEntrada(admin, linha.id, tentativas, detalhe);
         r.ainda_falhando += 1;
@@ -370,9 +381,11 @@ export async function reprocessarEntradasAceitas(
       // Sem corpo, tentar de novo não muda nada. Morre, com aviso — a mensagem
       // aceita não entrou. (Dentro da janela a poda não alcança o corpo; isto é
       // o cinto para um arquivo que nasceu sem ele.)
-      await marcarMorta(admin, linha, "replay: arquivo sem corpo", tentativas);
-      await avisarMensagemPerdida(admin, linha, tentativas, "arquivo sem corpo");
-      r.desistidas += 1;
+      await desistir(admin, linha, r, {
+        motivo: "replay: arquivo sem corpo",
+        tentativas,
+        aviso: "arquivo sem corpo",
+      });
       continue;
     }
 
@@ -385,8 +398,7 @@ export async function reprocessarEntradasAceitas(
     }
     if (!sessao) {
       // Canal apagado ou arquivado: a rota também não ingeriria. Sem aviso — foi decisão de alguém.
-      await marcarMorta(admin, linha, "replay: canal inexistente ou arquivado", tentativas);
-      r.desistidas += 1;
+      await desistir(admin, linha, r, { motivo: "replay: canal inexistente ou arquivado", tentativas });
       continue;
     }
 

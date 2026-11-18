@@ -37,5 +37,5 @@ export function utmsDoLink(
 }
 // Auto-tagging preserva gclid/gbraid/wbraid; não inventamos macros sem suporte do Google.
 export const SUFIXO_GOOGLE =
-  "utm_source=google&utm_medium=cpc&utm_campaign={campaignid}&utm_content={creative}&utm_term={keyword}";
+  "utm_source=google&utm_medium=cpc&utm_campaign={campaignid}&utm_content={creative}&utm_term={keyword}&google_campaign_id={campaignid}&google_adgroup_id={adgroupid}&google_ad_id={creative}";
 export const MODELO_GOOGLE = `{lpurl}?${SUFIXO_GOOGLE}`;

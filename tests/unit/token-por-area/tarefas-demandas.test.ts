@@ -263,7 +263,7 @@ type Caso = {
   /** O papel que a rota exige da sessão (a tabela do plano). */
   papel: Papel;
   escopo: "mcp:read" | "mcp:write";
-  papelDoToken?: "admin";
+  papelDoToken?: Papel;
   /** O `resource` do `resolveAuthDual` e do teto do token. */
   recurso: string;
   rpc?: Record<string, unknown>;
@@ -323,6 +323,7 @@ const APAGAR_TAREFA: Caso = {
   params: { id: TAREFA_A },
   linhas: LINHAS_DE_TAREFAS,
   papel: "agent",
+  papelDoToken: "manager",
   escopo: "mcp:write",
   recurso: "crm_tasks",
   status: 200,

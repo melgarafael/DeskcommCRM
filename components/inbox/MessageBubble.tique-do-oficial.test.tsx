@@ -67,6 +67,14 @@ describe("MessageBubble — tique do canal oficial (#4316)", () => {
     expect(screen.getByLabelText("Entregue")).toBeInTheDocument();
   });
 
+  it("(e) read antes do delivered: o read_at sozinho já mostra Lida", () => {
+    // Fora de ordem — a Meta não garante `delivered` antes de `read`. A tela
+    // não pode ficar em "Entregue" com a leitura já carimbada.
+    render(<MessageBubble message={msg({ delivered_at: null, read_at: LIDA })} />);
+    expect(screen.getByLabelText("Lida")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Entregue")).not.toBeInTheDocument();
+  });
+
   it("(d) sem carimbo nenhum mostra Enviada", () => {
     render(<MessageBubble message={msg({ delivered_at: null, read_at: null })} />);
     expect(screen.getByLabelText("Enviada")).toBeInTheDocument();

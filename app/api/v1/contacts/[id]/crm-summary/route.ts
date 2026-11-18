@@ -46,6 +46,7 @@ import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
+import { situacaoDaRecusaDeOfertas } from "@/lib/lgpd/sem-interesse";
 
 export const dynamic = "force-dynamic";
 
@@ -58,8 +59,9 @@ export const dynamic = "force-dynamic";
 // `stage_id` e as `etapas` do funil alimentam o seletor de etapa do painel: mover
 // o negócio (ex.: "Pedido confirmado") direto da conversa, sem ir ao quadro.
 // `tags` = as do NEGÓCIO, só para ler no painel (as do contato e da conversa já vinham).
+// `stage_changed_at` (reserva: `created_at`) = os dias na etapa da barra de etapas do painel.
 const LEAD_COLS =
-  "id, title, status, value_cents, recurring_value_cents, recurring_period, recurring_months, currency, updated_at, pipeline_id, stage_id, custom_fields, tags, crm_pipelines!inner(name, settings, is_archived, etapas:crm_stages!crm_stages_pipeline_id_fkey(id, name, position, is_won, is_lost, is_archived)), crm_stages!crm_leads_stage_id_fkey(name)";
+  "id, title, status, value_cents, recurring_value_cents, recurring_period, recurring_months, currency, updated_at, stage_changed_at, created_at, pipeline_id, stage_id, custom_fields, tags, crm_pipelines!inner(name, settings, is_archived, etapas:crm_stages!crm_stages_pipeline_id_fkey(id, name, position, is_won, is_lost, is_archived)), crm_stages!crm_leads_stage_id_fkey(name)";
 const ORDER_COLS = "id, external_id, status, total_cents, currency, created_at";
 /** Acompanha o que a timeline mostra — `reason` e `actor_kind` inclusive. */
 /**
@@ -143,7 +145,7 @@ async function responderCrmSummary(
   requestId: string,
 ): Promise<Response> {
   const { data: contactScope, error: scopeError } = await supabase.from("contacts")
-    .select("organization_id, is_anonymized, source_metadata").eq("id", contactId).eq("organization_id", organizationId).maybeSingle();
+    .select("organization_id, is_anonymized, source_metadata, consent").eq("id", contactId).eq("organization_id", organizationId).maybeSingle();
   if (scopeError) return fail("internal_error", scopeError.message, 500, { requestId });
   if (!contactScope) return fail("not_found", "Contato não encontrado.", 404, { requestId });
   // Candidates are worker-only. Authorize the contact through RLS first, then
@@ -301,6 +303,7 @@ async function responderCrmSummary(
       demandas: demandas.data ?? [],
       fatos: fatos.data ?? [], historico: historico.data ?? [],
       ...anuncios,
+      recusa_de_ofertas: situacaoDaRecusaDeOfertas(contactScope.consent),
     },
     { requestId },
   );

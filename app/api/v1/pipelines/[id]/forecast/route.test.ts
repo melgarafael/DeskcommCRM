@@ -30,41 +30,97 @@ const USER = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
 type Linha = Record<string, unknown>;
 
+interface Chamada {
+  metodo: string;
+  args: unknown[];
+}
+
 /**
- * Client falso com a cadeia do PostgREST (select/eq/order/maybeSingle) e
+ * Client falso com a cadeia do PostgREST (select/eq/order/range/maybeSingle) e
  * `then`, para o `await` da rota funcionar. O `.eq` filtra DE VERDADE: linha
  * sem o campo seria descartada, e o teste mediria o dublê em vez da rota.
+ *
+ * Desde a #4322 ele também se comporta como o PostgREST onde o defeito mora:
+ *  - `maxRows` corta CADA resposta, sem erro nenhum (`supabase/config.toml`);
+ *  - `.range()` pagina, e `select(..., { count: "exact" })` devolve o `count`
+ *    do total JÁ filtrado, antes do corte — é o que o `lerPaginado` usa para
+ *    provar o fim;
+ *  - `.order()` ordena DE VERDADE (sem ele o pedaço seria arbitrário);
+ *  - `.eq("crm_leads.pipeline_id", x)` filtra pelo EMBED `crm_leads!inner`: a
+ *    linha de score carrega `crm_leads: { pipeline_id, status }` e a que não
+ *    bate sai da resposta, como no `!inner`.
  */
-function clienteFake(linhasPorTabela: Record<string, Linha[]>) {
-  const consultas: Array<{ tabela: string; colunas: string }> = [];
+function clienteFake(linhasPorTabela: Record<string, Linha[]>, opcoes: { maxRows?: number } = {}) {
+  const consultas: Array<{ tabela: string; colunas: string; chamadas: Chamada[] }> = [];
+
+  const valorDe = (linha: Linha, coluna: string): unknown => {
+    const [cabeca, ...resto] = coluna.split(".");
+    let atual: unknown = linha[cabeca as string];
+    for (const parte of resto) {
+      atual = (atual as Record<string, unknown> | null | undefined)?.[parte];
+    }
+    return atual;
+  };
 
   const from = (tabela: string) => {
     let linhas = [...(linhasPorTabela[tabela] ?? [])];
     let colunas = "";
+    let contar = false;
+    let faixa: [number, number] | null = null;
+    const ordens: string[] = [];
+    const chamadas: Chamada[] = [];
+
+    const executar = () => {
+      const ordenadas = [...linhas].sort((a, b) => {
+        for (const col of ordens) {
+          const x = valorDe(a, col) as string | number;
+          const y = valorDe(b, col) as string | number;
+          if (x === y) continue;
+          return x < y ? -1 : 1;
+        }
+        return 0;
+      });
+      const total = ordenadas.length;
+      let pagina = faixa ? ordenadas.slice(faixa[0], faixa[1] + 1) : ordenadas;
+      if (opcoes.maxRows !== undefined) pagina = pagina.slice(0, opcoes.maxRows);
+      consultas.push({ tabela, colunas, chamadas });
+      return { data: pagina, error: null, count: contar ? total : null };
+    };
+
     const q: {
-      select: (cols?: string) => typeof q;
-      order: () => typeof q;
+      select: (cols?: string, opts?: { count?: string }) => typeof q;
+      order: (col: string) => typeof q;
+      range: (de: number, ate: number) => typeof q;
       eq: (col: string, valor: unknown) => typeof q;
       maybeSingle: () => Promise<{ data: Linha | null; error: null }>;
       then: (ok?: (v: unknown) => unknown, erro?: (e: unknown) => unknown) => Promise<unknown>;
     } = {
-      select: (cols) => {
+      select: (cols, opts) => {
+        chamadas.push({ metodo: "select", args: [cols, opts] });
         colunas = cols ?? "";
+        contar = opts?.count === "exact";
         return q;
       },
-      order: () => q,
+      order: (col) => {
+        chamadas.push({ metodo: "order", args: [col] });
+        ordens.push(col);
+        return q;
+      },
+      range: (de, ate) => {
+        chamadas.push({ metodo: "range", args: [de, ate] });
+        faixa = [de, ate];
+        return q;
+      },
       eq: (col, valor) => {
-        linhas = linhas.filter((l) => l[col] === valor);
+        chamadas.push({ metodo: "eq", args: [col, valor] });
+        linhas = linhas.filter((l) => valorDe(l, col) === valor);
         return q;
       },
       maybeSingle: async () => {
-        consultas.push({ tabela, colunas });
+        consultas.push({ tabela, colunas, chamadas });
         return { data: linhas[0] ?? null, error: null };
       },
-      then: (ok, erro) => {
-        consultas.push({ tabela, colunas });
-        return Promise.resolve({ data: linhas, error: null }).then(ok, erro);
-      },
+      then: (ok, erro) => Promise.resolve(executar()).then(ok, erro),
     };
     return q;
   };

@@ -63,6 +63,8 @@ interface LinhaDeContato {
   name: string | null;
   display_name: string | null;
   phone_number: string | null;
+  /** `contacts.email`, único por organização — o endereço do canal de e-mail (#3441). */
+  email: string | null;
   is_blocked: boolean;
   is_personal: boolean;
   is_anonymized: boolean;
@@ -72,10 +74,15 @@ interface LinhaDeContato {
 }
 
 /** As colunas de sempre, mais os campos personalizados quando o TEXTO os usa. */
-const COLUNAS_DO_CONTATO = "id, name, display_name, phone_number, is_blocked, is_personal, is_anonymized, consent";
+const COLUNAS_DO_CONTATO =
+  "id, name, display_name, phone_number, email, is_blocked, is_personal, is_anonymized, consent";
 
 /**
  * Os candidatos do recorte, e o recibo de truncamento.
+ *
+ * A linha lida carrega TELEFONE e E-MAIL: quem escolhe o endereço do canal é a
+ * classificação (`classificarAudiencia`), e ela precisa dos dois porque os dois
+ * canais de campanha existem agora (#3441).
  *
  * `truncado` só é verdadeiro quando o recorte bate o teto de
  * `TETO_DE_IDS_DE_NEGOCIO` E há pelo menos uma linha além dele — a prévia
@@ -300,6 +307,10 @@ export async function buscarCandidatos(
       contactId: l.id,
       nome: nomeDoContato(l),
       telefone: l.phone_number,
+      // O e-mail entra SEMPRE na linha lida: custa uma coluna escalar, e a
+      // prévia de uma campanha de e-mail precisa dele para contar quem fica de
+      // fora. O recorte de WhatsApp simplesmente não olha para ele.
+      email: l.email,
       bloqueado: l.is_blocked,
       pessoal: l.is_personal === true,
       anonimizado: l.is_anonymized,

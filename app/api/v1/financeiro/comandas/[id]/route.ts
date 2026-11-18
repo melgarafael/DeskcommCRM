@@ -18,10 +18,12 @@ import type { NextRequest } from "next/server";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { requireRole } from "@/lib/auth/require-role";
 import { alterarComandaSchema } from "@/lib/financeiro/comanda";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +57,9 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
       "id, number, status, contact_id, attendant_user_id, appointment_id, discount_cents, total_cents, currency, payment_method_id, notes, finalized_at, cancelled_at, cancel_reason, reversed_at, reverse_reason, created_at",
     )
     .eq("id", id)
+    // #4845 — o id vem de uma lista que vazou, e a RLS de `sales` libera todas as
+    // empresas de que a pessoa é membro. Sem este filtro a comanda da outra
+    // empresa era lida inteira — itens, valores, observação.
     .eq("organization_id", authz.organizationId)
     .maybeSingle();
 
@@ -95,15 +100,8 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
-  const authz = await resolveAuthDual(req, {
-    requestId,
-    resource: "financeiro",
-    role: "agent",
-    scope: "mcp:write",
-  });
+  const authz = await requireRole("agent", { requestId, resource: "financeiro" });
   if (!authz.ok) return authz.response;
-  const teto = await tetoDeEscritaDoToken(authz, "financeiro_comanda_alterar", requestId);
-  if (teto) return teto;
 
   const lido = alterarComandaSchema.safeParse(await req.json().catch(() => ({})));
   if (!lido.success) {
@@ -112,20 +110,17 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     });
   }
 
-  // Cancelar é só de sessão (fragmento `financeiro-aceita-token`): o token não cancela
-  // comanda. A recusa vem antes de qualquer leitura ou escrita.
-  if (authz.via === "token" && lido.data.cancel === true) {
-    return fail("forbidden", "Cancelar a comanda é só pela sessão.", 403, { requestId });
-  }
-
   const { id } = await ctx.params;
-  const supabase = authz.supabase;
+  const supabase = await createClient();
 
   const { data: atual } = await supabase
     .from("sales")
     .select("id, status, number")
     .eq("id", id)
-    .eq("organization_id", authz.organizationId)
+    // #4845 — a conferência de empresa é ANTES de qualquer escrita, e a recusa é
+    // o mesmo 404 da comanda inexistente: quem está na A não descobre, pela
+    // resposta, que existe uma comanda com este id na B.
+    .eq("organization_id", authz.org.orgId)
     .maybeSingle();
   if (!atual) return fail("not_found", "Comanda não encontrada.", 404, { requestId });
 
@@ -148,11 +143,14 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     mudanca.cancelled_at = new Date().toISOString();
   }
 
+  // O filtro de empresa vai também no UPDATE, e não só na leitura acima: é o
+  // mesmo molde de `tasks/[id]`, e é o que impede que uma corrida entre a leitura
+  // e a escrita mude a linha de outra empresa.
   const { error } = await supabase
     .from("sales")
     .update(mudanca)
     .eq("id", id)
-    .eq("organization_id", authz.organizationId);
+    .eq("organization_id", authz.org.orgId);
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
   // ⚠️ NUNCA espalhe o corpo lido aqui. `lib/audit` grava `metadata` CRU em
@@ -168,9 +166,6 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   // a observação. Este é o padrão que o POST de abertura já segue.
   await audit({
     action: lido.data.cancel ? "comanda.cancelada" : "comanda.alterada",
-    organizationId: authz.organizationId,
-    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
-    actorApiTokenId: authz.apiTokenId ?? null,
     resourceType: "sale",
     resourceId: id,
     requestId,

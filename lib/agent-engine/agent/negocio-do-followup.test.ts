@@ -24,17 +24,20 @@ describe('blocoDoNegocio: o card do negócio chega ao turno de IA do fluxo', () 
   });
 
   it('leva os campos do NEGÓCIO declarados no funil, com o rótulo e o valor legível', () => {
+    // Desde a #4669 todo campo que chega ao prompt é MARCADO "A IA pode ler":
+    // os marcados aqui deixam fora só o que o teste quer deixar fora (escopo,
+    // arquivo, vazio, chave não declarada), e não a marca.
     const bloco = blocoDoNegocio({
       ...CARD_DA_OBRA,
       custom_fields: { tipo: 'residencial', area_m2: 180, cpf_mestre: '000', visitado: true, planta: 'https://x/y.pdf', solto: 'z' },
       pipeline_settings: {
         fields: [
-          { key: 'tipo', label: 'Tipo de obra', type: 'select', options: [{ value: 'residencial', label: 'Residencial' }] },
-          { key: 'area_m2', label: 'Área (m²)', type: 'number' },
-          { key: 'cpf_mestre', label: 'CPF', type: 'text', escopo: 'contato' },
-          { key: 'visitado', label: 'Visita feita', type: 'boolean' },
-          { key: 'planta', label: 'Planta', type: 'file' },
-          { key: 'vazio', label: 'Prazo', type: 'text' },
+          { key: 'tipo', label: 'Tipo de obra', type: 'select', options: [{ value: 'residencial', label: 'Residencial' }], ia_pode_ler: true },
+          { key: 'area_m2', label: 'Área (m²)', type: 'number', ia_pode_ler: true },
+          { key: 'cpf_mestre', label: 'CPF', type: 'text', escopo: 'contato', ia_pode_ler: true },
+          { key: 'visitado', label: 'Visita feita', type: 'boolean', ia_pode_ler: true },
+          { key: 'planta', label: 'Planta', type: 'file', ia_pode_ler: true },
+          { key: 'vazio', label: 'Prazo', type: 'text', ia_pode_ler: true },
         ],
       },
     });
@@ -46,6 +49,46 @@ describe('blocoDoNegocio: o card do negócio chega ao turno de IA do fluxo', () 
     expect(bloco).not.toContain('Planta');
     expect(bloco).not.toContain('Prazo');
     expect(bloco).not.toContain('solto');
+  });
+
+  it('só o campo marcado "A IA pode ler" entra no prompt (#4669)', () => {
+    // Os dois campos estão preenchidos no card; só o marcado vai ao modelo.
+    // Documento e observação interna são os exemplos da issue porque são
+    // exatamente o que o dono do funil desmarca para não sair da empresa.
+    const bloco = blocoDoNegocio({
+      ...CARD_DA_OBRA,
+      custom_fields: {
+        documento: 'cnh-digital.pdf',
+        observacao_interna: 'cliente com proposta de outro fornecedor',
+      },
+      pipeline_settings: {
+        fields: [
+          { key: 'documento', label: 'Documento', type: 'text', ia_pode_ler: true },
+          { key: 'observacao_interna', label: 'Observação interna', type: 'text', ia_pode_ler: false },
+        ],
+      },
+    });
+    expect(bloco).toContain('Documento: cnh-digital.pdf');
+    expect(bloco).not.toContain('Observação interna');
+    expect(bloco).not.toContain('proposta de outro fornecedor');
+  });
+
+  it('campo antigo SEM a marca não vai ao modelo — ausência é desmarcado (#4669)', () => {
+    // A decisão da fatia: `null` numa caixa de consentimento não é `sim`. Toda
+    // definição que já existe (sem a chave) deixa de ir ao modelo até alguém
+    // marcá-la — e o resto do card continua no bloco: o filtro tira o campo
+    // não autorizado, não o contexto do negócio.
+    const bloco = blocoDoNegocio({
+      ...CARD_DA_OBRA,
+      custom_fields: { condicao_de_saude: 'diabetes tipo 2' },
+      pipeline_settings: {
+        fields: [{ key: 'condicao_de_saude', label: 'Condição de saúde', type: 'text' }],
+      },
+    });
+    expect(bloco).not.toContain('Condição de saúde');
+    expect(bloco).not.toContain('diabetes tipo 2');
+    expect(bloco).toContain('Etapa atual: IA Começar o atendimento');
+    expect(bloco).toContain('INSS da obra');
   });
 
   it('não acrescenta nada quando não há negócio, ou o card só tem título', () => {

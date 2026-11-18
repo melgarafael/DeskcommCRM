@@ -18,6 +18,8 @@ export interface VoiceAgentConfig {
   ragTopK: number;
   ragSimilarityThreshold: number;
   voiceModel: string;
+  /** `config.agenda_na_ligacao`: a ligação recebe as ferramentas de agenda. Desligado de fábrica. */
+  agendaNaLigacao: boolean;
   /**
    * Chave da OpenAI pra abrir a sessão Realtime (WebSocket cru, não passa
    * pelo AI Gateway). Vem, em ordem: credencial cadastrada em IA >
@@ -90,6 +92,7 @@ export async function getActiveVoiceAgent(organizationId: string): Promise<Voice
     voice: cfg.voice,
     voiceSpeed: cfg.voice_speed,
     voiceModel: cfg.voice_model,
+    agendaNaLigacao: cfg.agenda_na_ligacao,
     ragTopK: cfg.rag_top_k,
     ragSimilarityThreshold: cfg.rag_similarity_threshold,
     apiKey: await resolverChaveOpenAiDaVoz(organizationId),
