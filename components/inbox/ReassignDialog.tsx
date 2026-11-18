@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/auth/AuthProvider";
@@ -26,12 +27,15 @@ import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useContinuarPorOutroNumero } from "@/hooks/inbox/useContinuarPorOutroNumero";
 import { type ConversaDoContato, useConversasDoContato } from "@/hooks/inbox/useConversasDoContato";
 import { usePreviaDaTransferencia } from "@/hooks/inbox/usePreviaDaTransferencia";
+import { useReleaseConversation } from "@/hooks/inbox/useReleaseConversation";
 import { useTransferConversation } from "@/hooks/inbox/useTransferConversation";
+import { useDefinirFilaDaConversa } from "@/hooks/inbox/useDefinirFilaDaConversa";
+import { type Sector, useSectors } from "@/hooks/team/useSectors";
 import { nomeDoCanal } from "@/lib/channels/estado";
 import { outrosNumerosDoContato } from "@/lib/inbox/outros-numeros";
 import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
-export type AbaDeTransferencia = "atendente" | "numero";
+export type AbaDeTransferencia = "atendente" | "numero" | "fila";
 
 interface Props {
   conversationId: string;
@@ -39,6 +43,15 @@ interface Props {
   onOpenChange: (v: boolean) => void;
   /** Aba em que o diálogo abre. A faixa de número fora do ar abre em "numero". */
   abaInicial?: AbaDeTransferencia;
+  /**
+   * A conversa pode mudar de FILA (#4950). Quem decide é `podeMoverParaFila`, a
+   * mesma régua do item do menu ⋯: módulo `setores` ligado, conversa não
+   * encerrada e papel de atendente para cima. Sem isso a aba "Fila" não aparece
+   * — é a resposta que a rota daria, não estética.
+   */
+  podeTransferirParaFila?: boolean;
+  /** A fila em que a conversa está hoje: aparece marcada, não pré-selecionada. */
+  filaAtual?: string | null;
   /**
    * O que a aba Número precisa. Sem `numero`, a aba não aparece — é o caso de
    * quem chama o diálogo fora do Inbox. Com `numero`, ela aparece sempre que há
@@ -88,6 +101,8 @@ export function ReassignDialog({
   open,
   onOpenChange,
   abaInicial = "atendente",
+  podeTransferirParaFila = false,
+  filaAtual = null,
   numero,
 }: Props) {
   const t = useT();
@@ -95,11 +110,18 @@ export function ReassignDialog({
   const members = useAssignableMembers(open);
   const transfer = useTransferConversation();
   const continuar = useContinuarPorOutroNumero();
+  const moverParaFila = useDefinirFilaDaConversa();
+  const liberarResponsavel = useReleaseConversation();
+  const { data: respostaDasFilas } = useSectors(open && podeTransferirParaFila);
+  const filas: Sector[] = respostaDasFilas?.data ?? [];
   const { data: sessoes } = useChannelSessions({ enabled: open && numero != null });
   const [toUserId, setToUserId] = useState<string>("");
   const [reason, setReason] = useState("");
   const [aba, setAba] = useState<AbaDeTransferencia>(abaInicial);
   const [paraSessao, setParaSessao] = useState<string>("");
+  const [sectorId, setSectorId] = useState<string>("");
+  const [liberar, setLiberar] = useState(true);
+  const [erroDaFila, setErroDaFila] = useState<string | null>(null);
 
   const options = (members.data ?? []).filter((m) => m.user_id !== user.id);
   // #3642 (doc 237, 2-A): avisar ANTES de confirmar quando a conversa vai trocar
@@ -133,7 +155,10 @@ export function ReassignDialog({
           })();
   const numeros = numero ? outrosNumerosDoContato(sessoes, numero.channelSessionId) : [];
   const temAbaNumero = numero != null && numeros.length > 0;
-  const abaAtual = temAbaNumero ? aba : "atendente";
+  const temAbaFila = podeTransferirParaFila;
+  const quantasAbas = 1 + (temAbaNumero ? 1 : 0) + (temAbaFila ? 1 : 0);
+  const abaAtual: AbaDeTransferencia =
+    (aba === "numero" && !temAbaNumero) || (aba === "fila" && !temAbaFila) ? "atendente" : aba;
   // #4312 (defeito 3): as outras conversas do contato. Só na aba do atendente —
   // a aba Número tem o próprio seletor, e duas listas de número na mesma tela
   // seriam dois caminhos para a mesma decisão.
@@ -145,8 +170,30 @@ export function ReassignDialog({
       setReason("");
       setParaSessao("");
       setAba(abaInicial);
+      setSectorId("");
+      setLiberar(true);
+      setErroDaFila(null);
     }
     onOpenChange(v);
+  }
+
+  /**
+   * Mover para fila é UM gesto com dois efeitos: grava o setor na conversa e,
+   * opcionalmente, solta o responsável para que a fila a redistribua. As duas
+   * rotas são as que já existem (`PUT /sector` e `POST /release`) — este diálogo
+   * só junta o que o operador fazia em dois menus. A ordem importa: o setor
+   * primeiro, porque a redistribuição do release respeita a fila.
+   */
+  async function transferirParaFila() {
+    if (!sectorId) return;
+    setErroDaFila(null);
+    try {
+      await moverParaFila.mutateAsync({ conversationId, sectorId });
+      if (liberar) await liberarResponsavel.mutateAsync({ conversation_id: conversationId });
+      close(false);
+    } catch (err) {
+      setErroDaFila(err instanceof Error ? err.message : t("Não foi possível mover a conversa de fila."));
+    }
   }
 
   function continuarPeloNumero() {
@@ -174,18 +221,99 @@ export function ReassignDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {temAbaNumero && (
+        {(temAbaNumero || temAbaFila) && (
           <Tabs value={abaAtual} onValueChange={(v) => setAba(v as AbaDeTransferencia)}>
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList
+              className="grid w-full"
+              style={{ gridTemplateColumns: `repeat(${quantasAbas}, minmax(0, 1fr))` }}
+            >
               <TabsTrigger value="atendente">{t("Atendente")}</TabsTrigger>
-              <TabsTrigger value="numero" data-testid="aba-transferir-numero">
-                {t("Número")}
-              </TabsTrigger>
+              {temAbaFila && (
+                <TabsTrigger value="fila" data-testid="aba-transferir-fila">
+                  {t("Fila")}
+                </TabsTrigger>
+              )}
+              {temAbaNumero && (
+                <TabsTrigger value="numero" data-testid="aba-transferir-numero">
+                  {t("Número")}
+                </TabsTrigger>
+              )}
             </TabsList>
           </Tabs>
         )}
 
-        {abaAtual === "numero" && numero ? (
+        {abaAtual === "fila" && (
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="transferir-fila">{t("Transferir para a fila")}</Label>
+              <Select value={sectorId} onValueChange={setSectorId}>
+                <SelectTrigger id="transferir-fila" className="w-full" data-testid="select-fila">
+                  <SelectValue placeholder={t("Escolha a fila")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {filas.map((f) => (
+                    <SelectItem key={f.id} value={f.id} data-testid={`opcao-fila-${f.id}`}>
+                      {f.color ? (
+                        <span
+                          aria-hidden
+                          className="mr-1 inline-block size-2 rounded-full"
+                          style={{ backgroundColor: f.color }}
+                        />
+                      ) : null}
+                      {f.name}
+                      <span className="ml-1 text-muted-foreground">
+                        · {t("{n} atendentes").replace("{n}", String(f.member_count))}
+                      </span>
+                      {f.id === filaAtual && (
+                        <span className="ml-1 text-[10px] text-text-subtle">{t("Fila atual")}</span>
+                      )}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {respostaDasFilas && filas.length === 0 && (
+                <p className="text-xs text-muted-foreground">{t("Nenhuma fila cadastrada.")}</p>
+              )}
+            </div>
+
+            <div className="flex items-start gap-3 rounded-md border border-border p-3">
+              <Switch
+                id="liberar-responsavel"
+                checked={liberar}
+                onCheckedChange={setLiberar}
+                data-testid="switch-liberar-responsavel"
+              />
+              <div className="space-y-0.5">
+                <Label htmlFor="liberar-responsavel">{t("Soltar o responsável atual")}</Label>
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "A conversa fica com a fila e qualquer pessoa dela pode assumir. Desligado, quem já está nela continua responsável e o histórico registra a troca de fila.",
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="fila-reason">{t("Motivo (opcional)")}</Label>
+              <Textarea
+                id="fila-reason"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder={t("Ex.: o responsável pediu para falar com a Pedagogia")}
+                maxLength={500}
+                rows={2}
+              />
+            </div>
+
+            {erroDaFila && (
+              <p className="text-xs text-destructive" role="status" data-testid="erro-da-fila">
+                {erroDaFila}
+              </p>
+            )}
+          </div>
+        )}
+
+        {abaAtual === "numero" && numero && (
           <div className="space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="reassign-numero">{t("Continuar pelo número")}</Label>
@@ -217,7 +345,9 @@ export function ReassignDialog({
               </p>
             )}
           </div>
-        ) : (
+        )}
+
+        {abaAtual === "atendente" && (
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="reassign-target">{t("Transferir para")}</Label>
@@ -343,7 +473,17 @@ export function ReassignDialog({
           <Button variant="ghost" onClick={() => close(false)}>
             {t("Cancelar")}
           </Button>
-          {abaAtual === "numero" ? (
+          {abaAtual === "fila" ? (
+            <Button
+              disabled={!sectorId || moverParaFila.isPending || liberarResponsavel.isPending}
+              onClick={transferirParaFila}
+              data-testid="btn-transferir-para-fila"
+            >
+              {moverParaFila.isPending || liberarResponsavel.isPending
+                ? t("Movendo…")
+                : t("Transferir para a fila")}
+            </Button>
+          ) : abaAtual === "numero" ? (
             <Button
               disabled={!paraSessao || !numero?.contactPhone || continuar.isPending}
               onClick={continuarPeloNumero}

@@ -48,7 +48,7 @@ import { comandoDaConversa, ROTULO_DO_MOTIVO } from "@/lib/inbox/comando-da-conv
 import { ReassignDialog } from "@/components/inbox/ReassignDialog";
 import { SnoozeButton } from "@/components/inbox/SnoozeButton";
 import { DialogoDeConvite, ParticipantesDaConversa } from "@/components/inbox/ParticipantesDaConversa";
-import { DialogoMoverParaFila, ItemMoverParaFila } from "@/components/inbox/MoverParaFila";
+import { DialogoMoverParaFila, ItemMoverParaFila, podeMoverParaFila } from "@/components/inbox/MoverParaFila";
 import { DialButton } from "@/components/voice/DialButton";
 import { VideoCallButton } from "@/components/inbox/VideoCallButton";
 import { ItemReservarServico, ReservarServicoNaConversa } from "@/components/agenda/ReservarServicoNaConversa";
@@ -891,6 +891,13 @@ export function ConversationHeader({
         conversationId={conversation.id}
         open={reassignOpen}
         onOpenChange={setReassignOpen}
+        podeTransferirParaFila={podeMoverParaFila({
+          papel: activeOrg?.role,
+          modulos: activeOrg?.modulos_ligados ?? [],
+          encerrada,
+          plataformaAdmin: user.is_platform_admin === true && !user.support,
+        })}
+        filaAtual={conversation.sector_id ?? null}
         numero={
           onAbrirConversa && c?.id
             ? {

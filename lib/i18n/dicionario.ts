@@ -22041,6 +22041,16 @@ export const DICIONARIO: Traducoes = {
     es: "Elige la fila a la que va esta conversación. Si está sin dueño, vuelve a la distribución.",
   },
   "Fila atual": { es: "Fila actual" },
+  "Transferir para a fila": { es: "Transferir a la fila" },
+  "Escolha a fila": { es: "Elige la fila" },
+  "{n} atendentes": { es: "{n} agentes" },
+  "Soltar o responsável atual": { es: "Liberar al responsable actual" },
+  "A conversa fica com a fila e qualquer pessoa dela pode assumir. Desligado, quem já está nela continua responsável e o histórico registra a troca de fila.": {
+    es: "La conversación queda con la fila y cualquier persona de ella puede asumirla. Desactivado, quien ya está en ella sigue como responsable y el historial registra el cambio de fila.",
+  },
+  "Ex.: o responsável pediu para falar com a Pedagogia": {
+    es: "Ej.: el responsable pidió hablar con Pedagogía",
+  },
   "Nenhuma fila cadastrada.": { es: "Ninguna fila registrada." },
   "Movendo…": { es: "Moviendo…" },
   "Conversa movida para a fila.": { es: "Conversación movida a la fila." },
