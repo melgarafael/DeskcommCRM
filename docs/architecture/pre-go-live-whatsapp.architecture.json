@@ -9,7 +9,7 @@
   ],
   "mainPath": ["tela", "api", "config", "gate", "inbox"],
   "nodes": [
-    { "id": "tela", "lane": "operador", "col": 1, "type": "frontend", "label": "Conexões / ChannelAiAccess" },
+    { "id": "tela", "lane": "operador", "col": 1, "type": "frontend", "label": "Conexões / ChannelAiAccess (telefones; contas de rede social escolhidas entre os contatos do canal)" },
     { "id": "api", "lane": "servidor", "col": 2, "type": "route", "label": "GET/PATCH channel-sessions/:id/ai-access" },
     { "id": "config", "lane": "banco", "col": 3, "type": "database", "label": "metadata / fn_configurar_pre_go_live_canal" },
     { "id": "gate", "lane": "servidor", "col": 4, "type": "lib", "label": "gate.ts / drain / turnos / sweep / automação" },
@@ -22,12 +22,12 @@
     { "id": "e1", "from": "tela", "to": "api", "label": "admin configura" },
     { "id": "e2", "from": "api", "to": "config", "label": "UPDATE atômico por tenant" },
     { "id": "e3", "from": "config", "to": "tela", "label": "modo salvo e lista" },
-    { "id": "e4", "from": "config", "to": "gate", "label": "allowlist estrita por telefone" },
+    { "id": "e4", "from": "config", "to": "gate", "label": "allowlist estrita por telefone ou identidade social" },
     { "id": "e5", "from": "gate", "to": "sink", "label": "somente elegíveis" },
     { "id": "e6", "from": "config", "to": "sink", "label": "mudança durante geração também barra" },
     { "id": "e7", "from": "sink", "to": "inbox", "label": "mensagem enviada ou falha visível" },
     { "id": "e8", "from": "inbox", "to": "tela", "label": "operador valida e abre/restringe" },
-    { "id": "e9", "from": "api", "to": "audit", "label": "modo e contagem, sem telefone" },
+    { "id": "e9", "from": "api", "to": "audit", "label": "modo e contagens, sem telefone nem identidade" },
     { "id": "e10", "from": "audit", "to": "auditTela", "label": "consulta de auditoria existente" }
   ]
 }

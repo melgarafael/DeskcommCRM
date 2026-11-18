@@ -123,6 +123,12 @@ const schema = z.object({
   /** Optional dedicated secret for cron endpoints (S-06.07 onwards). */
   INTERNAL_CRON_SECRET: z.string().optional().default(""),
   /**
+   * Módulo `amigo` (#4227): troca a origem da API do Amigo por ESTE computador,
+   * para a prova de tela com receptor de mentira. Só `http(s)://127.0.0.1|localhost`
+   * vale; qualquer outro valor é ignorado (`origemDoAmigo`, lib/amigo/transport.ts).
+   */
+  AMIGO_API_ORIGIN_LOCAL: z.string().optional().default(""),
+  /**
    * Segredo do DONO DA INSTALAÇÃO para `POST /api/v1/tenants/provision` (um
    * sistema externo cria organizações). Vazio por padrão = a rota não existe
    * (404); com menos de 32 caracteres também fica desligada.

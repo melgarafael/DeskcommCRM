@@ -68,6 +68,16 @@ export function origemDoNegocioPeloCanal(canal: string | null | undefined): Orig
   if (canal === "olx") {
     return { rotulo: "OLX", source: "olx", motivo: "primeira mensagem recebida no chat da OLX" };
   }
+  // O bot do Telegram não está no catálogo do parceiro (lá o Telegram é rede do
+  // intermediário, com `inbox: false`), então ele tem origem própria e
+  // explícita — o mesmo cuidado que fez o Instagram parar de virar `whatsapp`.
+  if (canal === "telegram") {
+    return {
+      rotulo: "Telegram",
+      source: "telegram",
+      motivo: "primeira mensagem recebida no Telegram",
+    };
+  }
   const rede = SOCIAL_NETWORKS.find((r) => r.inbox && r.id === canal);
   if (!rede) return ORIGEM_DO_WHATSAPP;
   return {

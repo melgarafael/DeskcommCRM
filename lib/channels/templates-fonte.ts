@@ -47,6 +47,10 @@ const FONTE: Record<ProviderDeMensagem, FonteDeTemplates | null> = {
   // Parceiro Graph-compatível: os modelos são os da Cloud API, servidos por uma
   // rota própria (host/token do parceiro).
   datafy: "graph",
+  // Bot do Telegram (#3440): texto livre a qualquer hora, como o canal por QR —
+  // não existe definição aprovada a listar, e um seletor ali ofereceria solução
+  // para um problema que este canal não tem.
+  telegram: null,
   // Chat só de TEXTO (issue #2927): não há definição aprovada a listar, e um
   // seletor de modelo ali ofereceria solução para um problema que o canal não
   // tem — mesma razão do canal por QR.

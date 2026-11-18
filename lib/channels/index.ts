@@ -5,6 +5,7 @@
 import { datafyAdapter } from "./adapters/datafy";
 import { metaCloudAdapter } from "./adapters/meta-cloud";
 import { olxAdapter } from "./adapters/olx";
+import { telegramAdapter } from "./adapters/telegram";
 import { wahaAdapter } from "./adapters/waha";
 import { socialAdapter } from "./social/adapter";
 import { zernioAdapter } from "./adapters/zernio";
@@ -20,6 +21,7 @@ const ADAPTERS: Record<ProviderDeMensagem, ChannelAdapter | null> = {
   zernio: zernioAdapter,
   zernio_social: socialAdapter,
   datafy: datafyAdapter,
+  telegram: telegramAdapter,
   olx: olxAdapter,
 };
 

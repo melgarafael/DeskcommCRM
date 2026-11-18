@@ -11,9 +11,10 @@ import { randomUUID } from "node:crypto";
 
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { editarTemplateSchema } from "@/lib/campanhas/schemas";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -30,9 +31,18 @@ export async function PATCH(
   if (negado) return negado;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "campaign_templates" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "campaign_templates",
+    role: "manager",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "campaign_templates_editar", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const org = { orgId: authz.organizationId };
+  const autor = authz.actor.type === "user" ? authz.actor.id : null;
   const { id } = await ctx.params;
 
   const parsed = editarTemplateSchema.safeParse(await req.json().catch(() => null));
@@ -40,7 +50,7 @@ export async function PATCH(
     return fail("validation_failed", t("Dados inválidos."), 422, { requestId });
   }
 
-  const mudanca: Record<string, unknown> = { updated_by: authz.user.id };
+  const mudanca: Record<string, unknown> = { updated_by: autor };
   if (parsed.data.name !== undefined) mudanca.name = parsed.data.name;
   if (parsed.data.body !== undefined) mudanca.body = parsed.data.body;
 
@@ -48,7 +58,7 @@ export async function PATCH(
   const { data, error } = await admin
     .from("campaign_templates")
     .update(mudanca)
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", org.orgId)
     .eq("id", id)
     .select(COLUNAS)
     .maybeSingle();
@@ -66,23 +76,31 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const negado = await requireSupportWrite();
   if (negado) return negado;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "campaign_templates" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "campaign_templates",
+    role: "manager",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "campaign_templates_excluir", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const org = { orgId: authz.organizationId };
   const { id } = await ctx.params;
 
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("campaign_templates")
     .delete()
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", org.orgId)
     .eq("id", id)
     .select("id")
     .maybeSingle();

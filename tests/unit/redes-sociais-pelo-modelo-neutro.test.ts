@@ -132,8 +132,11 @@ describe("CONTROLE: os canais que já existiam continuam declarados", () => {
   });
 
   it("o vocabulário de canal da conversa não mudou", () => {
+    // `telegram` entrou pelo #3440 (o bot do @BotFather é canal de conversa,
+    // diferente do Telegram do catálogo social, que segue `inbox: false`): é a
+    // mudança que o PR faz de propósito, e a fotografia acompanha.
     // `olx` entrou com o chat da OLX (#2927): canal próprio, fora do catálogo social.
-    expect([...CANAIS_DE_CONVERSA]).toEqual(["whatsapp", "olx", "instagram", "facebook"]);
+    expect([...CANAIS_DE_CONVERSA]).toEqual(["whatsapp", "telegram", "olx", "instagram", "facebook"]);
   });
 
   it("a matriz de capabilities segue respondendo por todos os canais de mensagem", () => {
@@ -143,6 +146,9 @@ describe("CONTROLE: os canais que já existiam continuam declarados", () => {
       "zernio",
       "zernio_social",
       "datafy",
+      // O canal do bot do Telegram (#3440) é provider de MENSAGEM, com matriz
+      // de capabilities própria — a matriz continua respondendo por todos.
+      "telegram",
       // O chat da OLX (#2927): canal de mensagem opcional, com matriz própria.
       "olx",
     ]);

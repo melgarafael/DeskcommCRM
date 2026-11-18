@@ -70,7 +70,7 @@ export interface CobrancaAsaas {
   dateCreated: string;
   ordem: number;
 }
-interface ClienteAsaas { id: string; name: string; email: string; cpfCnpj: string; externalReference: string | null }
+interface ClienteAsaas { id: string; name: string; email: string; cpfCnpj: string; externalReference: string | null; dateCreated: string }
 interface WebhookAsaas { id: string; name: string; url: string; email: string; authToken: string; events: string[] }
 
 export interface ChamadaAsaas {
@@ -200,7 +200,8 @@ export function criarDialetoAsaas(baseAtual: () => string): DialetoAsaas {
     return { object: "list", hasMore: offset + limit < dados.length, totalCount: dados.length, limit, offset, data: dados.slice(offset, offset + limit) };
   };
   const objCliente = (c: ClienteAsaas) => ({
-    object: "customer", id: c.id, name: c.name, email: c.email, cpfCnpj: c.cpfCnpj, externalReference: c.externalReference, deleted: false,
+    object: "customer", id: c.id, name: c.name, email: c.email, cpfCnpj: c.cpfCnpj, externalReference: c.externalReference,
+    dateCreated: c.dateCreated, deleted: false,
   });
   const objAssinatura = (a: AssinaturaAsaas) => ({
     object: "subscription", id: a.id, dateCreated: a.dateCreated, customer: a.customer, billingType: "UNDEFINED", cycle: a.cycle,
@@ -293,7 +294,9 @@ export function criarDialetoAsaas(baseAtual: () => string): DialetoAsaas {
     const c = corpo ?? {};
 
     if (metodo === "GET" && p === "/v3/customers") {
-      const dados = [...clientes.values()].filter((x) => !query.externalReference || x.externalReference === query.externalReference);
+      const dados = [...clientes.values()].filter((x) =>
+        (!query.externalReference || x.externalReference === query.externalReference) &&
+        (!query.cpfCnpj || x.cpfCnpj === query.cpfCnpj));
       return json(res, 200, lista(dados.map(objCliente), query));
     }
     const clienteUnico = /^\/v3\/customers\/([^/]+)$/.exec(p);
@@ -301,12 +304,24 @@ export function criarDialetoAsaas(baseAtual: () => string): DialetoAsaas {
       const x = clientes.get(clienteUnico[1] ?? "");
       return x ? json(res, 200, objCliente(x)) : erro(res, 404, "not_found", "Cliente não encontrado.");
     }
+    // O adaptador adota o cliente que já existe gravando o vínculo nele (#4768): só os campos enviados mudam.
+    if (metodo === "PUT" && clienteUnico) {
+      const x = clientes.get(clienteUnico[1] ?? "");
+      if (!x) return erro(res, 404, "not_found", "Cliente não encontrado.");
+      if (c.name !== undefined) x.name = texto(c.name);
+      if (c.email !== undefined) x.email = texto(c.email);
+      if (c.externalReference !== undefined) x.externalReference = texto(c.externalReference) || null;
+      return json(res, 200, objCliente(x));
+    }
     if (metodo === "POST" && p === "/v3/customers") {
       const nome = texto(c.name).trim();
       const doc = texto(c.cpfCnpj);
       if (nome === "") return erro(res, 400, "invalid_name", "O nome do cliente é obrigatório.");
       if (!documentoValido(doc)) return erro(res, 400, "invalid_cpfCnpj", "O CPF/CNPJ informado é inválido.");
-      const x: ClienteAsaas = { id: novoId("cus"), name: nome, email: texto(c.email), cpfCnpj: doc, externalReference: texto(c.externalReference) || null };
+      const x: ClienteAsaas = {
+        id: novoId("cus"), name: nome, email: texto(c.email), cpfCnpj: doc,
+        externalReference: texto(c.externalReference) || null, dateCreated: hojeEmSaoPaulo(),
+      };
       clientes.set(x.id, x);
       return json(res, 200, objCliente(x));
     }

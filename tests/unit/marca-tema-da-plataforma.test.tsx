@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   loadAuthUser: vi.fn(),
   marcaDaInstalacao: vi.fn(),
   cssPersonalizadoDaInstalacao: vi.fn(),
+  cssPersonalizadoEscuroDaInstalacao: vi.fn(),
   temasInstaladosDaPlataforma: vi.fn(),
   idDoTemaDaPlataforma: vi.fn(),
 }));
@@ -23,6 +24,9 @@ vi.mock("@/lib/branding/instalacao", () => ({
 }));
 vi.mock("@/lib/branding/css-personalizado", () => ({
   cssPersonalizadoDaInstalacao: mocks.cssPersonalizadoDaInstalacao,
+  // O campo do tema escuro (#4463) tem escopo próprio: o mock precisa dos DOIS
+  // leitores, senão a página quebra antes de compor o cartão que este teste mede.
+  cssPersonalizadoEscuroDaInstalacao: mocks.cssPersonalizadoEscuroDaInstalacao,
   validarCssPersonalizado: () => ({ css: null, erro: null, regras: 0, declaracoes: 0 }),
 }));
 vi.mock("@/lib/extensions/tema-da-plataforma", () => ({
@@ -77,6 +81,7 @@ describe("/admin/marca mostra o tema da plataforma", () => {
     });
     mocks.marcaDaInstalacao.mockResolvedValue(null);
     mocks.cssPersonalizadoDaInstalacao.mockResolvedValue("");
+    mocks.cssPersonalizadoEscuroDaInstalacao.mockResolvedValue("");
     mocks.idDoTemaDaPlataforma.mockResolvedValue(null);
     mocks.temasInstaladosDaPlataforma.mockResolvedValue([]);
   });
