@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { diasNaEtapa, montarBarraDeEtapas, type EtapaDaBarra } from "@/lib/kanban/barra-de-etapas";
 
@@ -184,5 +184,77 @@ describe("o dossiê monta a barra com o mesmo fio do seletor", () => {
   it("passa onMudarEtapa e a permissão de mover card à barra, e mantém o seletor", () => {
     expect(dossie).toMatch(/<BarraDeEtapas[\s\S]*?podeMover=\{podeMoverCard\}[\s\S]*?onMudar=\{onMudarEtapa\}/);
     expect(dossie).toMatch(/<EtapaNoDossie[\s\S]*?onMudar=\{onMudarEtapa\}/);
+  });
+});
+
+describe("a barra de etapas — a etapa atual no centro da faixa", () => {
+  // O jsdom não calcula layout: a faixa tem 200px visíveis a partir de x=100 e
+  // conteúdo de 700px; a etapa atual está em x=400 com 80px. O centro da faixa
+  // é 200 e o da etapa 440: a faixa precisa rolar 240px. A gaveta é o ancestral
+  // posicionado, e `offsetLeft` (0 no jsdom, ~24px a mais na tela) não serve.
+  let larguraVisivel = 200;
+  let rolagem = 0;
+  let aoRedimensionar: (() => void) | null = null;
+  const restaurar: Array<() => void> = [];
+
+  function fingir<T extends object>(proto: T, nome: string, descritor: PropertyDescriptor) {
+    const antes = Object.getOwnPropertyDescriptor(proto, nome);
+    Object.defineProperty(proto, nome, { configurable: true, ...descritor });
+    restaurar.push(() => {
+      if (antes) Object.defineProperty(proto, nome, antes);
+      else delete (proto as Record<string, unknown>)[nome];
+    });
+  }
+
+  beforeEach(() => {
+    larguraVisivel = 200;
+    rolagem = 0;
+    aoRedimensionar = null;
+    const ol = HTMLOListElement.prototype;
+    fingir(ol, "clientWidth", { get: () => larguraVisivel });
+    fingir(ol, "scrollWidth", { get: () => 700 });
+    fingir(ol, "clientLeft", { get: () => 0 });
+    fingir(ol, "scrollLeft", { get: () => rolagem, set: (v: number) => (rolagem = v) });
+    const caixa = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      if (this.tagName === "OL") return { left: 100, width: larguraVisivel } as DOMRect;
+      // A etapa atual anda com a rolagem, como na tela.
+      if (this.getAttribute("aria-current") === "step") return { left: 400 - rolagem, width: 80 } as DOMRect;
+      return { left: 0, width: 0 } as DOMRect;
+    });
+    restaurar.push(() => caixa.mockRestore());
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(cb: () => void) {
+          aoRedimensionar = cb;
+        }
+        observe() {}
+        disconnect() {
+          aoRedimensionar = null;
+        }
+      },
+    );
+    restaurar.push(() => vi.unstubAllGlobals());
+  });
+
+  afterEach(() => {
+    while (restaurar.length) restaurar.pop()!();
+  });
+
+  it("ao abrir, rola a faixa até o centro da etapa atual cair no centro dela", () => {
+    montar();
+    expect(rolagem).toBe(240);
+  });
+
+  it("quando a faixa muda de largura, centraliza de novo", () => {
+    montar();
+    expect(rolagem).toBe(240);
+    // Painel mais largo: 400px visíveis, centro em 300; a etapa está em
+    // 400-240=160, centro 200, e a faixa volta 100px.
+    larguraVisivel = 400;
+    aoRedimensionar?.();
+    expect(rolagem).toBe(140);
   });
 });

@@ -34,8 +34,9 @@ import {
  *
  * O painel tem 28rem até no desktop. A lista não quebra linha: rola na
  * horizontal dentro da própria faixa, os nomes das etapas não atuais são
- * cortados com reticências (o nome inteiro fica no `title`), e ao abrir a faixa
- * centraliza a etapa atual. Leitor de tela ouve "Etapa N de M" antes da lista.
+ * cortados com reticências (o nome inteiro fica no `title`), e ao abrir (e ao
+ * mudar de largura) a faixa centraliza a etapa atual. Leitor de tela ouve
+ * "Etapa N de M" antes da lista.
  */
 
 /** O recorte de seta, feito por `clip-path` num fundo À PARTE: o anel de foco
@@ -75,13 +76,27 @@ export function BarraDeEtapas({
   const barra = montarBarraDeEtapas(etapas, etapaAtual);
 
   // Centraliza a etapa atual na faixa, SÓ na horizontal: `scrollIntoView`
-  // rolaria também o painel inteiro, e o cabeçalho pularia.
+  // rolaria também o painel inteiro, e o cabeçalho pularia. A conta é pelas
+  // caixas na tela, não por `offsetLeft`: este é relativo ao ancestral
+  // posicionado (a gaveta), não à faixa, e deixava a etapa fora do centro.
+  // Refaz quando a faixa muda de largura (painel redimensionado).
   useEffect(() => {
     const lista = faixa.current;
     const item = atual.current;
     if (!lista || !item) return;
-    if (lista.scrollWidth <= lista.clientWidth) return;
-    lista.scrollLeft = Math.max(0, item.offsetLeft - (lista.clientWidth - item.clientWidth) / 2);
+    const centralizar = () => {
+      if (lista.scrollWidth <= lista.clientWidth) return;
+      const caixaDaLista = lista.getBoundingClientRect();
+      const caixaDoItem = item.getBoundingClientRect();
+      const centroDaLista = caixaDaLista.left + lista.clientLeft + lista.clientWidth / 2;
+      const centroDoItem = caixaDoItem.left + caixaDoItem.width / 2;
+      lista.scrollLeft = Math.max(0, lista.scrollLeft + centroDoItem - centroDaLista);
+    };
+    centralizar();
+    if (typeof ResizeObserver === "undefined") return;
+    const observador = new ResizeObserver(centralizar);
+    observador.observe(lista);
+    return () => observador.disconnect();
   }, [etapaAtual, barra?.total]);
 
   if (!barra) return null;
