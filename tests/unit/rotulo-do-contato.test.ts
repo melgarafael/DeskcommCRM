@@ -200,6 +200,11 @@ describe("a sétima cópia não nasce", () => {
       motivo: "nome interno do CANAL oficial preservado ao salvar a credencial de novo, não de contato",
     },
     {
+      arquivo: "lib/channels/meta/gravar-canal-oficial.ts",
+      trecho: 'display_name: existente?.display_name || (validacao.verifiedName ?? "Canal oficial"),',
+      motivo: "o mesmo nome interno do CANAL oficial, na gravação compartilhada com o Embedded Signup (#4074), não de contato",
+    },
+    {
       arquivo: "app/api/v1/contacts/_handler.ts",
       trecho: "display_name: input.display_name ?? null,",
       motivo: "grava a coluna que veio no corpo; não decide o nome exibido",

@@ -167,7 +167,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       ? {
           appId: embedded.appId,
           configId: embedded.configId,
-          graphVersion: graphBaseUrl().split("/").pop() ?? "v22.0",
+          graphVersion: graphBaseUrl().split("/").pop() ?? "",
         }
       : null,
     connected: Boolean(data),
