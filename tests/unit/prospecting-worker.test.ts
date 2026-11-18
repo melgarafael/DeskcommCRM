@@ -82,7 +82,7 @@ vi.mock("@/lib/prospecting/store", () => ({
 // O preparo automático (B2) tem a suíte própria em lib/prospecting/preparo.test.ts;
 // aqui só se mede QUANDO o tick o chama (ordem, fora do bloqueio, fail-open).
 vi.mock("@/lib/prospecting/preparo", () => ({ prepararCandidatos: mocks.preparo }));
-import { sendNextCandidate, tickProspecting } from "@/lib/prospecting/worker";
+import { confereWhatsapp, sendNextCandidate, tickProspecting } from "@/lib/prospecting/worker";
 import { rodapeDeSaida } from "@/lib/prospecting/rodape-de-saida";
 import { ProspectingError } from "@/lib/prospecting/provider";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
@@ -1329,11 +1329,135 @@ describe("tick × preparo automático (B2)", () => {
                   error: null,
                 })
               : { eq: async () => ({ data: [], error: null }) },
+          // #4871: a camada por empresa (`organization_modules`) é lida em lote,
+          // por `.select().eq("modulo")` — empresa sem linha herda a instalação.
+          eq: async (_c: string, _valor: unknown) => ({ data: [], error: null }),
         }),
       }),
     };
     await tickProspecting(ligado.pool as never, admin as never);
     const [canais] = paramsDaSegunda(ligado.pool) as [string[]];
     expect(canais.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * #4871 — a ORGANIZAÇÃO chega ao tick. O tick é GLOBAL (até 20 empresas na mesma
+ * execução), então a pergunta certa não é "passar o id": é "esta empresa ainda
+ * confere WhatsApp?". As combinações do piso são medidas com o `modulosLigados`
+ * e o `empresasComModuloDesligado` REAIS, sobre um admin de mentira — dublê da
+ * consulta, não da decisão.
+ */
+describe("tick × `conferir_whatsapp` por empresa (#4871)", () => {
+  const A = "10000000-0000-4000-8000-00000000000a";
+  const B = "10000000-0000-4000-8000-00000000000b";
+
+  function adminDeModulos(cena: {
+    instalacaoLigada: boolean;
+    linhas: Array<{ organization_id: string; estado: string }> | "erro";
+  }) {
+    const lidas: string[] = [];
+    const admin = {
+      from: (tabela: string) => {
+        lidas.push(tabela);
+        return {
+          select: () => ({
+            in: (_c: string, chaves: string[]) =>
+              tabela === "platform_config"
+                ? Promise.resolve({
+                    data:
+                      chaves.includes("MODULO_CONFERIR_WHATSAPP") && cena.instalacaoLigada
+                        ? [{ chave: "MODULO_CONFERIR_WHATSAPP", valor: "ligado" }]
+                        : [],
+                    error: null,
+                  })
+                : { eq: async () => ({ data: [], error: null }) },
+            eq: async (_c: string, _valor: unknown) =>
+              tabela === "organization_modules"
+                ? cena.linhas === "erro"
+                  ? { data: null, error: { message: "permission denied", code: "42501" } }
+                  : { data: cena.linhas, error: null }
+                : { data: [], error: null },
+          }),
+        };
+      },
+    };
+    return { admin, lidas };
+  }
+
+  const poolComDuasRodando = () => ({
+    // O 2º parâmetro existe para a tupla de `mock.calls` ter comprimento 2 e o
+    // `[1]` dos params não reprovar o typecheck (TS2493), como no `database()`.
+    query: vi.fn(async (sql: string, _params?: unknown[]) =>
+      sql.includes("'draft'")
+        ? { rows: [{ organization_id: B }] }
+        : { rows: [{ organization_id: A }] },
+    ),
+  });
+
+  const depsPorOrganizacao = () =>
+    new Map(
+      mocks.preparo.mock.calls.map((c) => [
+        c[2] as string,
+        c[5] as { conferirWhatsapp: (admin: unknown, organizacaoId: string) => Promise<boolean> },
+      ]),
+    );
+
+  it("MESMA execução: a empresa ligada confere e a que desligou o módulo não", async () => {
+    const { admin } = adminDeModulos({
+      instalacaoLigada: true,
+      linhas: [{ organization_id: B, estado: "desligado" }],
+    });
+    await tickProspecting(poolComDuasRodando() as never, admin as never);
+
+    const deps = depsPorOrganizacao();
+    // As DUAS empresas foram preparadas na mesma rodada — a desligada não some do
+    // tick, ela só não confere o número dos leads.
+    expect([...deps.keys()].sort()).toEqual([A, B].sort());
+    await expect(deps.get(A)!.conferirWhatsapp({}, A)).resolves.toBe(true);
+    await expect(deps.get(B)!.conferirWhatsapp({}, B)).resolves.toBe(false);
+  });
+
+  it("instalação desligada vence a linha `ligado` da empresa — e a leitura por empresa nem acontece", async () => {
+    const { admin, lidas } = adminDeModulos({
+      instalacaoLigada: false,
+      linhas: [{ organization_id: A, estado: "ligado" }],
+    });
+    const pool = poolComDuasRodando();
+    await tickProspecting(pool as never, admin as never);
+
+    await expect(depsPorOrganizacao().get(A)!.conferirWhatsapp({}, A)).resolves.toBe(false);
+    // O ramo (c) recebe lista vazia de canais, como antes do #4871.
+    const params = pool.query.mock.calls.find((c) => String(c[0]).includes("'draft'"))?.[1];
+    expect(params).toEqual([[]]);
+    expect(lidas).not.toContain("organization_modules");
+  });
+
+  it("falha de leitura das linhas por empresa fecha: ninguém confere nesta rodada", async () => {
+    const { admin } = adminDeModulos({ instalacaoLigada: true, linhas: "erro" });
+    const pool = poolComDuasRodando();
+    await tickProspecting(pool as never, admin as never);
+
+    const deps = depsPorOrganizacao();
+    await expect(deps.get(A)!.conferirWhatsapp({}, A)).resolves.toBe(false);
+    await expect(deps.get(B)!.conferirWhatsapp({}, B)).resolves.toBe(false);
+    const params = pool.query.mock.calls.find((c) => String(c[0]).includes("'draft'"))?.[1];
+    expect(params).toEqual([[]]);
+  });
+});
+
+describe("confereWhatsapp — a régua da empresa, sem banco (#4871)", () => {
+  const A = "10000000-0000-4000-8000-00000000000a";
+  it("instalação ligada + empresa sem linha: herda e confere", () => {
+    expect(confereWhatsapp(true, new Set(), A)).toBe(true);
+  });
+  it("empresa desligada: não confere", () => {
+    expect(confereWhatsapp(true, new Set([A]), A)).toBe(false);
+  });
+  it("instalação desligada: não confere, nem com a empresa fora da lista", () => {
+    expect(confereWhatsapp(false, new Set(), A)).toBe(false);
+  });
+  it("leitura ilegível (null): não confere", () => {
+    expect(confereWhatsapp(true, null, A)).toBe(false);
   });
 });

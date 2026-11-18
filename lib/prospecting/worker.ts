@@ -42,7 +42,7 @@ import { blocoVozVendedor, personalizacaoDaOrganizacao } from "./personalizar";
 import { campaignConfigSchema, usaFichaDigital, type OfertaDaCampanha } from "./schema";
 import { prepararCandidatos } from "./preparo";
 import { provedoresQueConferemNumero } from "@/lib/channels";
-import { moduloLigado } from "@/lib/instalacao/modulos";
+import { empresasComModuloDesligado, moduloLigado } from "@/lib/instalacao/modulos";
 import { CanalReconectandoError, ProspectingError } from "./provider";
 import { mensagemDaRecusaDoCanal } from "./motivo-da-pausa";
 import { canalDaCampanha } from "./canal-da-campanha";
@@ -851,6 +851,34 @@ const ORGS_COM_PREPARO_PENDENTE =
 /** Teto de tempo do preparo de UMA organização dentro do tick. */
 const PRAZO_DO_PREPARO_MS = 100_000;
 
+/**
+ * Quem CONFERE WhatsApp nesta rodada (#4871) — decidido POR EMPRESA, mesmo num
+ * tick que percorre até 20 organizações de uma vez.
+ *
+ * O cron não tem "a empresa do request": o tick é GLOBAL e a pergunta certa é
+ * "esta empresa ainda confere?", respondida aqui. A ordem é a da camada por
+ * empresa, e ela é a MESMA de `lib/instalacao/modulos.ts`:
+ *
+ *   1. instalação desligada VENCE — nem a linha `ligado` da empresa liga;
+ *   2. a linha `desligado` da empresa tira a empresa;
+ *   3. sem linha, a empresa herda a instalação;
+ *   4. `desligadas === null` é leitura que falhou, e falha de leitura não
+ *      confere o número de ninguém (fecha, não abre).
+ *
+ * Puro de propósito: a rodada lê `organization_modules` UMA vez
+ * (`empresasComModuloDesligado`) e esta função responde por cada empresa sem
+ * tocar no banco — o teste prova as combinações sem dublê da decisão.
+ */
+export function confereWhatsapp(
+  instalacaoLigada: boolean,
+  desligadas: ReadonlySet<string> | null,
+  organizacaoId: string,
+): boolean {
+  if (!instalacaoLigada) return false;
+  if (desligadas === null) return false;
+  return !desligadas.has(organizacaoId);
+}
+
 export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient, requestId?: string) {
   // Organização parada (suspensa, redigida, arquivada) não prospecta: a busca é
   // paga e a abordagem sai para fora. O corte é no SQL, antes do `limit 20`:
@@ -869,12 +897,23 @@ export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient, requ
   // Segunda consulta, à parte (a primeira não muda): quem só tem rascunho/pausada.
   // Fail-open: se ela falhar, as organizações que já rodam seguem como antes.
   let apenasPreparo: string[] = [];
+  // O TETO da instalação, como antes: desligado, ninguém confere WhatsApp.
+  let conferirNaInstalacao = false;
+  // #4871 — a camada POR EMPRESA, lida UMA vez para a rodada inteira (o tick é
+  // global). `null` = a leitura falhou: ninguém confere nesta rodada.
+  let semConferencia: ReadonlySet<string> | null = null;
   try {
-    // Módulo desligado (o padrão): lista vazia, e o ramo (c) não seleciona ninguém.
-    const conferir = await moduloLigado(admin, "conferir_whatsapp");
+    conferirNaInstalacao = await moduloLigado(admin, "conferir_whatsapp");
+    // A empresa que desligou o módulo não precisa ser lida quando a instalação já
+    // negou a todos: a instalação vence, e a leitura extra não mudaria resposta.
+    semConferencia = conferirNaInstalacao
+      ? await empresasComModuloDesligado(admin, "conferir_whatsapp")
+      : new Set<string>();
+    // Módulo desligado na instalação OU leitura ilegível (o padrão): lista vazia,
+    // e o ramo (c) não seleciona ninguém.
     apenasPreparo = (
       await pool.query<{ organization_id: string }>(ORGS_COM_PREPARO_PENDENTE, [
-        conferir ? provedoresQueConferemNumero() : [],
+        conferirNaInstalacao && semConferencia !== null ? provedoresQueConferemNumero() : [],
       ])
     ).rows.map((r) => r.organization_id);
   } catch (error) {
@@ -1082,6 +1121,14 @@ export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient, requ
         org,
         requestId ?? randomUUID(),
         Math.min(deadline, Date.now() + PRAZO_DO_PREPARO_MS),
+        {
+          // #4871: a decisão da rodada, em memória e POR EMPRESA — a empresa
+          // desligada não tem o número dos leads conferido, e a ligada é preparada
+          // na MESMA execução, sem uma leitura de módulos por organização. O resto
+          // das dependências continua sendo o padrão do preparo.
+          conferirWhatsapp: async (_admin, organizacaoId) =>
+            confereWhatsapp(conferirNaInstalacao, semConferencia, organizacaoId),
+        },
       );
     } catch (error) {
       logger.error("[prospecting] preparo automático falhou", {
