@@ -55,6 +55,10 @@ import { ORIGEM_DA_PLANILHA } from "@/lib/leads/planilha";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import {
+  desativaRecorrenciaDoNegocio,
+  recorrenciaDoNegocio,
+} from "@/lib/financeiro/recorrencia-do-negocio";
+import {
   decideMotivoDaPerda,
   recusaDeMotivoDaPerdaPeloBanco,
 } from "@/lib/leads/motivo-da-perda";
@@ -604,6 +608,7 @@ export async function createLeadHandler(
     .from("crm_stages")
     .select("id, pipeline_id, organization_id")
     .eq("id", input.stage_id)
+    .eq("organization_id", ctx.organization_id)
     .maybeSingle();
 
   if (stageErr) {
@@ -647,7 +652,7 @@ export async function createLeadHandler(
       : camposDoCorpo;
   const settingsDaCriacao =
     opcoes.exigirCamposDaEtapa !== false || Object.keys(recorteInicial).length > 0
-      ? await settingsDoFunil(supabase, input.pipeline_id)
+      ? await settingsDoFunil(supabase, input.pipeline_id, ctx.organization_id)
       : null;
 
   // ── A OPÇÃO DO CAMPO DE SELEÇÃO (#3508) — o que veio vira o `value` ────────
@@ -757,6 +762,7 @@ export async function createLeadHandler(
     .from("crm_leads")
     .select("position_in_stage")
     .eq("stage_id", input.stage_id)
+    .eq("organization_id", ctx.organization_id)
     // O segundo argumento EXPLÍCITO (e não o default do supabase-js): os fakes
     // `FakeQuery` das suítes de invariante leem `opts.ascending` sem guarda, e
     // um `.order(col)` de um argumento só os derruba com `Cannot read
@@ -930,6 +936,7 @@ export async function createLeadHandler(
   await audit({
     action: "lead.created",
     actorUserId: a.actorUserId,
+    actorApiTokenId: ctx.actor.type === "api_token" ? ctx.actor.id : null,
     organizationId: ctx.organization_id,
     resourceType: "crm_lead",
     resourceId: (lead as { id: string }).id,
@@ -1007,7 +1014,7 @@ export async function updateLeadHandler(
       (existing as { custom_fields?: unknown }).custom_fields,
     );
     if (Object.keys(alterados).length > 0) {
-      settingsDaEdicao = await settingsDoFunil(supabase, existing.pipeline_id);
+      settingsDaEdicao = await settingsDoFunil(supabase, existing.pipeline_id, ctx.organization_id);
       // ── A OPÇÃO (#3508) — a mesma régua da criação, no MESMO recorte ──────
       //
       // Só o que MUDOU é julgado (ver o bloco acima), e o que casa vira o
@@ -1310,18 +1317,23 @@ export async function updateLeadHandler(
     });
   }
 
-  await supabase
-    .rpc("emit_event", {
-      p_event_type: "lead.updated",
-      p_entity_kind: "crm_lead",
-      p_entity_id: leadId,
-      p_payload: { fields },
-      p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
-      p_organization_id: existing.organization_id,
-    })
-    .then(({ error }) => {
-      if (error) console.error("[lead.update] emit_event failed", error.message);
-    });
+  // A mesma guarda da timeline, agora também no barramento: desde a #1749 o
+  // `lead.updated` é gatilho de automação, e clicar Salvar sem mexer em nada
+  // dispararia toda regra "quando um negócio for alterado" sem condição.
+  if (fields.length > 0) {
+    await supabase
+      .rpc("emit_event", {
+        p_event_type: "lead.updated",
+        p_entity_kind: "crm_lead",
+        p_entity_id: leadId,
+        p_payload: { fields },
+        p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
+        p_organization_id: existing.organization_id,
+      })
+      .then(({ error }) => {
+        if (error) console.error("[lead.update] emit_event failed", error.message);
+      });
+  }
 
   if (input.tags !== undefined) {
     const prevTags: string[] = (existing as { tags?: string[] }).tags ?? [];
@@ -1373,6 +1385,7 @@ export async function updateLeadHandler(
   await audit({
     action: "lead.updated",
     actorUserId: a.actorUserId,
+    actorApiTokenId: ctx.actor.type === "api_token" ? ctx.actor.id : null,
     organizationId: existing.organization_id,
     resourceType: "crm_lead",
     resourceId: leadId,
@@ -1426,6 +1439,7 @@ export async function moveLeadHandler(
     .from("crm_leads")
     .select("*")
     .eq("id", leadId)
+    .eq("organization_id", ctx.organization_id)
     .maybeSingle();
 
   if (selErr) {
@@ -1483,7 +1497,7 @@ export async function moveLeadHandler(
   // porque duas réguas para a mesma regra é como o defeito nasce.
   // Vem ANTES da régua de campos, como no arrasto: um encerrado que não reabre
   // não tem campo de etapa a pedir.
-  const settings = await settingsDoFunil(supabase, lead.pipeline_id);
+  const settings = await settingsDoFunil(supabase, lead.pipeline_id, ctx.organization_id);
   {
     const recusa = recusaReabertura({
       modo: modoDeReabertura(settings),
@@ -1521,6 +1535,7 @@ export async function moveLeadHandler(
       .from("crm_leads")
       .select("position_in_stage")
       .eq("stage_id", input.to_stage_id)
+      .eq("organization_id", ctx.organization_id)
       .order("position_in_stage", { ascending: mesmaEtapaJa ? false : true })
       .limit(1)
       .maybeSingle();
@@ -1641,6 +1656,85 @@ export async function moveLeadHandler(
       ctx.requestId,
       traduzir("Lead foi modificado concorrentemente.", ctx.idioma ?? "pt-BR"),
     );
+  }
+
+  // ── O FINANCEIRO DO FECHO (#3602, fatias 3 e 4) ────────────────────────────
+  //
+  // Ganhar com `recurring_value_cents` declarado cria o molde da receita
+  // mensal (`recurring_entries`) ligado a este negócio; perder desativa o molde
+  // DELE. Sem isto, a recorrência do card era só um número na tela: o cron que
+  // gera as contas a receber nunca ficava sabendo dela, e quem vendia "setup +
+  // mensalidade" continuava lançando a mensalidade à mão — até esquecer.
+  //
+  // ── Por que AQUI, e não na rota do quadro ─────────────────────────────────
+  //
+  // Este handler é o escritor de etapa de tudo que NÃO é o arrasto (MCP
+  // `crm_move_lead_stage`, ações de automação, lote, IA). O arrasto e o botão
+  // Ganhar têm rota própria e convergem no mesmo `status = 'won'`; a fatia do
+  // molde nasce aqui, e o arrasto fica de fora desta onda, declarado no PR
+  // (é a próxima fatia, junto com a flag por funil).
+  //
+  // ── Por que admin client ──────────────────────────────────────────────────
+  //
+  // `recurring_entries` é tabela do módulo financeiro e a policy de escrita
+  // exige `manager` na organização: um agente de IA que move o card não tem
+  // esse papel, mas TEM o direito de fechar o negócio. Mesmo desenho do
+  // consumidor de `lead.won` (`comanda-do-ganho.handler.ts`). O isolamento por
+  // empresa não vem do RLS aqui: vem do `organization_id` do PRÓPRIO negócio,
+  // gravado assim nas duas funções (e provado em
+  // `tests/invariants/recorrencia-do-negocio.test.ts`).
+  //
+  // ── Falha BAIXA ───────────────────────────────────────────────────────────
+  //
+  // O card já moveu. Um financeiro que não nasceu vira log e um molde que
+  // alguém cria à mão; derrubar o fecho do negócio por causa dele seria pior.
+  // Não é silêncio: cada desfecho de erro sai no `console.error` com o request.
+  if (!mesmaEtapa && (stage.is_won || stage.is_lost)) {
+    const financeiro = createAdminClient();
+    try {
+      if (stage.is_won) {
+        const valorRecorrente =
+          (lead as { recurring_value_cents?: number | string | null }).recurring_value_cents ?? null;
+        // Sem valor declarado não há receita mensal: nem chega ao banco (o
+        // caminho comum é o ganho de valor único).
+        if (valorRecorrente !== null) {
+          const desfecho = await recorrenciaDoNegocio(financeiro, {
+            organizationId: lead.organization_id,
+            leadId,
+            pipelineId: lead.pipeline_id,
+            valorCents: valorRecorrente,
+            criadoEm: (lead as { created_at?: string | null }).created_at ?? null,
+            meses: (lead as { recurring_months?: number | null }).recurring_months ?? null,
+            userId: ctx.actor.type === "user" ? ctx.actor.id : null,
+          });
+          if (desfecho.estado === "falhou") {
+            console.error("[lead.move] recorrência do negócio falhou", {
+              request_id: ctx.requestId,
+              lead_id: leadId,
+              erro: desfecho.erro,
+            });
+          }
+        }
+      } else {
+        const desfecho = await desativaRecorrenciaDoNegocio(financeiro, {
+          organizationId: lead.organization_id,
+          leadId,
+        });
+        if (desfecho.estado === "falhou") {
+          console.error("[lead.move] desativação da recorrência falhou", {
+            request_id: ctx.requestId,
+            lead_id: leadId,
+            erro: desfecho.erro,
+          });
+        }
+      }
+    } catch (erro) {
+      console.error("[lead.move] financeiro do fecho lançou", {
+        request_id: ctx.requestId,
+        lead_id: leadId,
+        erro: erro instanceof Error ? erro.message : String(erro),
+      });
+    }
   }
 
   const a = actorAuditPayload(ctx.actor);
@@ -1805,6 +1899,7 @@ export async function moveLeadHandler(
   await audit({
     action: "lead.moved",
     actorUserId: a.actorUserId,
+    actorApiTokenId: ctx.actor.type === "api_token" ? ctx.actor.id : null,
     organizationId: lead.organization_id,
     resourceType: "crm_lead",
     resourceId: leadId,
@@ -1862,6 +1957,7 @@ export async function retomarLeadHandler(
     .from("crm_leads")
     .select("*")
     .eq("id", leadId)
+    .eq("organization_id", ctx.organization_id)
     .maybeSingle();
   if (selErr) {
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, selErr.message);
@@ -1925,6 +2021,7 @@ export async function retomarLeadHandler(
     .from("crm_pipelines")
     .select("settings")
     .eq("id", origemTipada.pipeline_id)
+    .eq("organization_id", ctx.organization_id)
     .maybeSingle();
   if (funilErr) {
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, funilErr.message);

@@ -120,6 +120,14 @@ const COPY: Record<string, { variant: Variant; msg?: string }> = {
   lost_reason_required: { variant: "warning" },
   lost_reason_invalid: { variant: "warning" },
 
+  // ---- Resposta a mensagem apagada (#4787) ----
+  //
+  // Recusa ROTINEIRA e com caminho de saída: a citada foi apagada entre a
+  // escolha e o envio, e a resposta pode sair sem a citação. Sem `msg` de
+  // propósito — a rota diz o que fazer ("Envie a resposta sem citá-la"), e
+  // nenhuma frase genérica daqui alcança esse detalhe.
+  citacao_apagada: { variant: "warning" },
+
   // ---- Chaves de IA em uso ----
   //
   // Recusa ROTINEIRA, não quebra: a chave está ligada a versões de agente e o

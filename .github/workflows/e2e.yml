@@ -1352,6 +1352,7 @@ jobs:
       # cron `recover-stuck-messages` abre para a conversa dele. Não depende de
       # WAHA nem de vizinha. PREVISÃO, não medida: ~1 min de caso.
       SPECS_PARTE_5: >-
+        agencias-organizacoes.spec.ts
         extensoes-da-instalacao.spec.ts
         admin-credencial-google.spec.ts
         admin-gestao-de-tenants.spec.ts
@@ -1373,6 +1374,7 @@ jobs:
         i18n-espanhol-na-tela.spec.ts
         extensoes-declarativas.spec.ts
         marca-logo.spec.ts
+        aparencia-templates.spec.ts
         suporte-temporario.spec.ts
         olhar-telas-do-epico.spec.ts
         jev-decisoes-rapidas.spec.ts
@@ -1575,6 +1577,7 @@ jobs:
         system-update.spec.ts
         respostas-rapidas-conteudos.spec.ts
         b2b-vinculos-pela-tela.spec.ts
+        mcp-oauth-chatgpt.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #

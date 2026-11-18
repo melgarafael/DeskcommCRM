@@ -696,6 +696,24 @@ divide o servidor. Só aparece exercitando o produto pela tela.
 > não roda quando um caso falha). Corrigidos antes da primeira execução; o
 > resultado real entra aqui quando o CI disser.
 
+## J10b — Aparência: a empresa escolhe o visual do sistema `[P1]` (2026-11-14)
+
+Contexto do código: tela Configurações › Aparência (`app/app/settings/aparencia`),
+catálogo em `lib/aparencia/catalogo.ts`, CSS escopado por `[data-aparencia="id"]`
+(`lib/aparencia/css.ts` + `app/app/aparencia.css`), gravação por
+`fn_definir_aparencia_da_organizacao` (migration 9388). Spec:
+`tests/e2e/aparencia-templates.spec.ts`. Só estética: nenhuma rota, regra ou dado
+muda. `[P1]` porque quem nunca abre a tela vê o sistema de sempre.
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J10b.1 | Organização que nunca escolheu template | marcador sem nenhum atributo `data-aparencia*`; menu com a superfície e a fonte de fábrica | **PASS** (2026-11-14, banco fresco do `baseline.sql`, build de produção) |
+| J10b.2 | Visualizar um template | o menu, o fundo e os tokens do sistema em volta mudam só neste navegador; a barra "Prévia" continua à vista ao rolar; recarregar desfaz (nada gravado) | **PASS** |
+| J10b.3 | Aplicar um template | grava para a empresa; vale em outra tela (Contatos), no claro e no escuro, com a fonte do template | **PASS** |
+| J10b.4 | Ajustes por cima do template | arredondamento e efeitos desligados gravam, sobrevivem à troca de template e vencem os valores dele | **PASS** |
+| J10b.5 | Os dez templates nos dois modos | `--color-bg` de cada um em Contatos, claro e escuro; capturas em `evidence/aparencia-templates/` | **PASS** |
+| J10b.6 | Celular (390×844) | nada estoura a largura; a gaveta do menu usa o fundo sólido do template | **PASS** |
+
 ## J12 — A tela diz o que ESTA instalação consegue fazer `[P0]`
 
 **Por que P0:** é primeira impressão pura. Pelo kit, o install e a atualização
@@ -4195,6 +4213,10 @@ terão trace/vídeo. Não foi medido download na janela anterior à persistênci
 do worker, viewer PDF ou aplicativo externo. O PASS de UX deste head não
 substitui os cinco checks obrigatórios: o verify antigo falhou no teste de
 relógio, cujo reparo central entra pela composição da main, sem repetir a rodada antiga.
+## Gestão delegada de organizações por agência `[P1]`
+
+Spec: `tests/e2e/agencias-organizacoes.spec.ts`. Com o módulo `agencias` desligado (o padrão, doc 321), o painel da empresa não mostra o card de agência e `/api/v1/agencia/clientes` responde 404; o teste liga o módulo e só então a plataforma habilita a agência e define a cota; o administrador direto cria um cliente pelo seletor do topo, entra no CRM do cliente e volta. A desabilitação pela plataforma invalida a sessão já aberta. A API global permanece proibida e a auditoria identifica a pessoa real. Prova local realizada e limites do ambiente registrados em [organizacoes-agencias](../specs/organizacoes-agencias.md); execução da spec no ambiente oficial fresco ainda pendente.
+
 ## Transcrição pelo serviço da OpenRouter — adaptação #3408 (2026-10-27)
 
 **Prova real confirmada no head `081d4b2a`.** A
@@ -4465,3 +4487,24 @@ Capturas da prova: `evidence/inbox-baixar-midia-e-ordem/01-ordem-das-fotos.png`,
 `evidence/inbox-baixar-midia-e-ordem/04-foto-ampliada-com-baixar.png`,
 `evidence/inbox-baixar-midia-e-ordem/05-menu-da-foto-com-baixar.png`,
 `evidence/inbox-baixar-midia-e-ordem/06-menu-do-pdf-com-baixar.png`.
+
+## J-mcp-oauth — Conectar o ChatGPT ao CRM por OAuth, sem colar token `[P1]` (2026-11-15)
+
+O ChatGPT só oferece OAuth ou "sem autenticação" ao adicionar um servidor MCP; o `/api/mcp` só
+aceitava `Bearer dsk_…`. Migration 9390. Spec: `tests/e2e/mcp-oauth-chatgpt.spec.ts` (parte 8),
+fazendo o papel do aplicativo com um receptor HTTP de verdade no `redirect_uri`; evidência em
+`evidence/mcp-oauth-chatgpt/`. Envs opcionais ausentes (sem Redis, sem WAHA).
+
+| Caso | O que prova | Como |
+|---|---|---|
+| Descoberta | o 401 do `/api/mcp` aponta `resource_metadata`; os dois documentos anunciam o próprio CRM, S256 e o registro | E2E (fetch) |
+| Sem sessão `[P0]` | o `authorize` leva ao login e VOLTA ao consentimento (cookie Strict, pela ponte) | E2E (URL medida) |
+| Consentimento | nome declarado, host de volta, empresa; "Ler e alterar" marcado; Permitir entrega `code` + `state` + `iss` | E2E (tela + receptor) |
+| O token abre o MCP | o `dsk_` emitido responde `tools/list`; a rotação mata o anterior | E2E (fetch no `/api/mcp`) |
+| Saída pela tela | a conexão aparece em API Tokens como "(OAuth)"; Revogar derruba o MCP e a renovação | E2E (tela + fetch) |
+| Cancelar / Somente ler | `access_denied` com o `state`; `scope=mcp:read`; verifier errado queima o código | E2E |
+| Redirect não registrado | página de erro, sem redirecionar | E2E (status + URL) |
+
+Banco (PKCE no SQL, reuso revoga, ainda-admin, isolamento): `tests/invariants/mcp-oauth-servidor.test.ts`.
+**Não medido aqui:** o ChatGPT de verdade — só existe contra um endereço público com HTTPS.
+Evidência: `evidence/mcp-oauth-chatgpt/01-consentimento.png`, `evidence/mcp-oauth-chatgpt/02-volta-ao-aplicativo.png`, `evidence/mcp-oauth-chatgpt/03-conexao-em-api-tokens.png`, `evidence/mcp-oauth-chatgpt/04-conexao-revogada.png`, `evidence/mcp-oauth-chatgpt/05-consentimento-somente-ler.png`, `evidence/mcp-oauth-chatgpt/06-redirect-nao-registrado.png`.

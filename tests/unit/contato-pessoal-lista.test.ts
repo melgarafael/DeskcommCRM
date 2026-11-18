@@ -17,12 +17,12 @@ import { listMessagesHandler } from "@/app/api/v1/messages/_handler";
  * ─── SABOTAGEM (prova no CI) ───────────────────────────────────────────────
  * - Tirar o `.not("contact_id", ...)` da lista mas manter o da busca: a busca
  *   por prévia acha a conversa escondida (critério 2 acusa pelo `.not`).
- * - Tirar o `is_personal = false` de `fn_contatos_da_busca` (migration 9391):
+ * - Tirar o `is_personal = v_pessoal` de `fn_contatos_da_busca` (migration 9421):
  *   busca por nome/telefone volta a achar pessoal.
  * - Manter somando no counts: o badge diverge da lista (critério 3).
  * - Tirar o 404 do `getConversationHandler`: o caso "link direto dá 404" cai.
  * Linha para reverter: `app/api/v1/conversations/_handler.ts`,
- * `supabase/migrations/*_9391_*.sql`,
+ * `supabase/migrations/*_9421_*.sql`,
  * `app/api/v1/conversations/counts/route.ts`, `app/api/v1/messages/_handler.ts`.
  */
 
@@ -46,9 +46,9 @@ const HISTORICO = semComentarios(fonte("app", "api", "v1", "messages", "_handler
  * este teste fica vermelho, como antes.
  */
 const MIGRACOES = path.join(RAIZ, "supabase", "migrations");
-const ARQUIVO_9391 = fs.readdirSync(MIGRACOES).find((nome) => nome.includes("_9391_"));
-const FUNCAO_DA_BUSCA = ARQUIVO_9391
-  ? semComentarios(fs.readFileSync(path.join(MIGRACOES, ARQUIVO_9391), "utf8"))
+const ARQUIVO_9421 = fs.readdirSync(MIGRACOES).find((nome) => nome.includes("_9421_"));
+const FUNCAO_DA_BUSCA = ARQUIVO_9421
+  ? semComentarios(fs.readFileSync(path.join(MIGRACOES, ARQUIVO_9421), "utf8"))
   : "";
 
 describe("lista do inbox esconde pessoal (critério 1)", () => {
@@ -64,21 +64,41 @@ describe("lista do inbox esconde pessoal (critério 1)", () => {
 });
 
 describe("busca zera para pessoal (critério 2: nome, telefone e prévia)", () => {
-  it("a subconsulta de contatos filtra pessoal", () => {
+  it("a subconsulta de contatos filtra pessoal pelo MESMO `querPessoal` da lista", () => {
+    // #4434: a régua deixou de ser a constante `false`. O que a spec 21 protegia
+    // continua protegido (padrão = pessoal fora da busca), e a aba Pessoal
+    // inverte pelo MESMO booleano em nome/telefone e na prévia — nunca por uma
+    // segunda condição que possa divergir.
+    expect(LISTA).toMatch(/const querPessoal = q\.pessoais === true \|\| q\.pessoais === "true"/);
+    // A catraca da doutrina antiga: ninguém pode voltar a FIXAR `false` numa
+    // ponta e deixar a outra invertida.
+    expect(LISTA).not.toMatch(/\.eq\("(?:contacts\.)?is_personal",\s*false\)/);
+
     // #4326 (fatia 1): o casamento de texto saiu do handler para
     // `fn_contatos_da_busca` (`security definer`), porque `like`/`ilike` não são
     // `leakproof` e a RLS impediria o índice de trigrama. O filtro de pessoal foi
-    // junto — continua havendo UM lugar que o aplica. A prova de COMPORTAMENTO
-    // (ficha pessoal não é achada) está em
-    // `tests/invariants/fn-contatos-da-busca-usa-o-indice.test.ts`; aqui fica a de
-    // FONTE, que é a que esta cerca sempre cobrou.
+    // junto — e foi junto como PARÂMETRO: o handler manda o mesmo `querPessoal`
+    // (e o dono) que a lista usa, e a função aplica nas DUAS pontas (ficha e
+    // telefone extra). A prova de COMPORTAMENTO (ficha pessoal não é achada) está
+    // em `tests/invariants/fn-contatos-da-busca-usa-o-indice.test.ts`; aqui fica a
+    // de FONTE, que é a que esta cerca sempre cobrou.
     expect(LISTA, "a busca deixou de delegar o casamento à função").toMatch(
       /fn_contatos_da_busca/,
     );
-    expect(ARQUIVO_9391, "faltou a migration 9391 — o filtro de pessoal sumiu junto").toBeDefined();
-    expect(FUNCAO_DA_BUSCA, "a função da busca não filtra ficha pessoal").toMatch(
+    expect(LISTA, "o booleano de pessoal não chega à função").toMatch(/p_pessoal:\s*querPessoal/);
+    expect(LISTA, "o dono da ficha pessoal não chega à função").toMatch(
+      /p_dono:\s*querPessoal\s*\?\s*atorHumanoId\s*:\s*null/,
+    );
+    expect(ARQUIVO_9421, "faltou a migration do filtro de pessoal").toBeDefined();
+    expect(FUNCAO_DA_BUSCA, "a função da busca não aplica o parâmetro de pessoal").toMatch(
+      /is_personal\s*=\s*v_pessoal/,
+    );
+    expect(FUNCAO_DA_BUSCA, "a função da busca voltou a FIXAR pessoal").not.toMatch(
       /is_personal\s*=\s*false/,
     );
+    // Duas tabelas, duas pontas: ficha (`contacts`) e telefone extra
+    // (`contact_phones`). Uma delas sem o filtro é a fresta que a spec 21 fecha.
+    expect(FUNCAO_DA_BUSCA.match(/is_personal\s*=\s*v_pessoal/g) ?? []).toHaveLength(3);
   });
 
   it("a prévia segue coberta pelo .not da query principal", () => {
@@ -175,6 +195,9 @@ describe("link direto e histórico recusam (defesa em profundidade)", () => {
 
   it("o corte do histórico está no fonte (duas consultas planas, antes de tudo)", () => {
     expect(HISTORICO).toMatch(/\.select\("contact_id"\)/);
-    expect(HISTORICO).toMatch(/\.select\("is_personal"\)/);
+    // #4434: o histórico precisa do DONO para deixar o dono ler — sem ele o
+    // corte teria de continuar sendo "pessoal some para todos", e a thread do
+    // dono abriria vazia.
+    expect(HISTORICO).toMatch(/\.select\("is_personal, personal_owner_user_id"\)/);
   });
 });

@@ -133,6 +133,23 @@ beforeAll(() => {
             '43260000-2222-4000-8000-000000000003', '${TEL_EXTRA}', 'celular', 'nao_sei')
     on conflict (id) do update set phone_number = excluded.phone_number;
 
+    -- #4434: a aba Pessoal inverte o sinal, e o dono acompanha. A Débora é da
+    -- USER_A; a "Débora do colega" tem o MESMO nome buscável e outro dono, para
+    -- o caso abaixo provar que p_dono filtra de verdade (e não só o booleano).
+    update public.contacts
+       set is_personal = true, personal_owner_user_id = '${USER_A}'
+     where id = '43260000-2222-4000-8000-000000000005';
+
+    insert into public.contacts
+      (id, organization_id, display_name, name, phone_number, is_anonymized, is_personal,
+       personal_owner_user_id)
+    values ('43260000-2222-4000-8000-000000000007', '${ORG_A}', 'Débora Nunes (colega)', null,
+            '+5511977770007', false, true, '${USER_B}')
+    on conflict (id) do update set
+      display_name = excluded.display_name,
+      is_personal = excluded.is_personal,
+      personal_owner_user_id = excluded.personal_owner_user_id;
+
     insert into public.contacts
       (id, organization_id, display_name, phone_number, is_anonymized, anonymized_at)
     values ('${anonimizado.id}', '${ORG_A}', '${anonimizado.display}', '${anonimizado.tel}', true, now())
@@ -323,6 +340,19 @@ describe("fn_contatos_da_busca — o índice e a cerca", () => {
     expect(buscarComo(USER_A, `p_org => '${ORG_A}', p_termo => 'debora'`)).toBe(0);
   });
 
+  it("dentro da aba Pessoal o sinal INVERTE, e só a ficha do dono casa (#4434)", () => {
+    // O mesmo termo, o mesmo usuário: fora da aba, ZERO (caso acima). Dentro
+    // dela, `p_pessoal` inverte — mas o dono vai junto, então a ficha de mesmo
+    // nome do colega (USER_B) continua fora. Sem `p_dono`, o parâmetro abriria
+    // a ficha pessoal de todo mundo, que é o vazamento que o #4434 fechou.
+    expect(
+      idsComo(
+        USER_A,
+        `p_org => '${ORG_A}', p_termo => 'debora', p_pessoal => true, p_dono => '${USER_A}'`,
+      ),
+    ).toEqual(["43260000-2222-4000-8000-000000000005"]);
+  });
+
   it("o telefone EXTRA acha a ficha", () => {
     expect(idsComo(USER_A, `p_org => '${ORG_A}', p_digitos => array['${TEL_EXTRA.slice(1)}']`)).toEqual([
       "43260000-2222-4000-8000-000000000003",
@@ -343,11 +373,11 @@ describe("fn_contatos_da_busca — o índice e a cerca", () => {
   it("os grants fecham `anon` e abrem só a sessão e o servidor", () => {
     const linha = lastLine(
       sql(`
-        select has_function_privilege('anon', 'public.fn_contatos_da_busca(uuid,text,text[],integer)', 'execute')::text
+        select has_function_privilege('anon', 'public.fn_contatos_da_busca(uuid,text,text[],integer,boolean,uuid)', 'execute')::text
             || ',' ||
-               has_function_privilege('authenticated', 'public.fn_contatos_da_busca(uuid,text,text[],integer)', 'execute')::text
+               has_function_privilege('authenticated', 'public.fn_contatos_da_busca(uuid,text,text[],integer,boolean,uuid)', 'execute')::text
             || ',' ||
-               has_function_privilege('service_role', 'public.fn_contatos_da_busca(uuid,text,text[],integer)', 'execute')::text;
+               has_function_privilege('service_role', 'public.fn_contatos_da_busca(uuid,text,text[],integer,boolean,uuid)', 'execute')::text;
       `),
     );
     expect(linha).toBe("false,true,true");

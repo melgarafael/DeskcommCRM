@@ -21,6 +21,7 @@ import { normalizarTermoDeBusca, termoSemAcento, termoSeguroParaOr } from "@/lib
 import { ORDEM_DA_ESPERA, ehAFila, comPreFiltroDoComando } from "@/lib/inbox/comando-da-conversa";
 import { aplicarMarcadores } from "@/lib/inbox/marcador-da-conversa";
 import { exigirControleDaConversa } from "@/lib/inbox/controle-da-conversa";
+import { TETO_DE_PESSOAIS, podeVerPessoal } from "@/lib/inbox/pessoal";
 
 // O escape da gramática do `or=` mora na régua única (`lib/inbox/termo-de-busca`);
 // continua exportado daqui porque é daqui que os testes o leem desde a #3918.
@@ -83,7 +84,7 @@ const SELECT_COLS = `
   comando_da_conversa,
   automatico_da_conversa,
   usable_for_rag,
-  contacts:contact_id (id, display_name, name, address_book_name, phone_number, is_anonymized, tags, is_blocked, is_personal, contact_type, avatar_storage_path, force_human),
+  contacts:contact_id (id, display_name, name, address_book_name, phone_number, is_anonymized, tags, is_blocked, is_personal, personal_owner_user_id, contact_type, avatar_storage_path, force_human),
   channel_sessions:channel_session_id (phone_number, display_name, provider, social_platform:metadata->>social_platform)
 `;
 
@@ -113,6 +114,57 @@ export async function idsDeContatosPessoais(
     .limit(500);
   return idsQueCabemNaURL((data ?? []).map((c) => (c as { id: string }).id));
 }
+
+/**
+ * Os ids do pessoal que ESTE ator pode ver (issue #4434 — a aba Pessoal).
+ *
+ * ─── Por que existe ────────────────────────────────────────────────────────
+ *
+ * A spec 21 escondeu o pessoal da operação e, no mesmo gesto, o tornou
+ * inalcançável para todos — inclusive para quem marcou. A #4434 separa as duas
+ * coisas: esconder da operação continua valendo, mas quem marcou lê e responde
+ * o SEU.
+ *
+ * ─── A régua ═══
+ *
+ * Só existe UMA entrada: ser o dono da marca (`personal_owner_user_id`). Não há
+ * exceção por papel — `admin` e `manager` não leem o pessoal de outra pessoa,
+ * porque o dano de uma porta esquecida aqui não é bug de UX: é a conversa de
+ * família de alguém aparecendo na tela de outro. Foi por isso que a régua não
+ * recebe `role` nem `verTodos`: sem parâmetro, não há como ligar a exceção por
+ * engano (o desenho de referência do PR #4187 tinha `admin` vendo tudo — e é
+ * exatamente o que a #4434 NÃO aprova).
+ *
+ * Contato sem dono (marcado antes da migration 9360, ou dono removido) não casa
+ * ninguém: fica invisível até alguém marcar de novo e adotar.
+ *
+ * Ator que não é pessoa (`api_token`/`ai_agent`) nunca casa o dono: o MCP
+ * continua sem ver pessoal (spec 21 §6.1, mantida).
+ */
+export async function idsDeContatosPessoaisVisiveis(
+  supabase: SB,
+  organizationId: string,
+  userId: string | null,
+): Promise<string[]> {
+  // Sem pessoa não há dono — e `undefined` no `.eq` viraria filtro AUSENTE, que
+  // devolveria o pessoal de toda a organização. Falha fechada, de propósito.
+  if (!userId) return [];
+  const { data } = await supabase
+    .from("contacts")
+    // Service role bypassa RLS: o filtro de organização é manual e obrigatório.
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("is_personal", true)
+    .eq("personal_owner_user_id", userId)
+    .limit(TETO_DE_PESSOAIS);
+  return idsQueCabemNaURL((data ?? []).map((c) => (c as { id: string }).id));
+}
+
+// A régua do pessoal mora em `lib/inbox/pessoal` porque três caminhos a usam
+// (a ficha da conversa aqui, o histórico e o envio em `messages/_handler`).
+// Reexportada daqui porque é deste módulo que os testes e os chamadores a leem
+// desde a spec 21; uma segunda cópia divergiria na primeira condição nova.
+export { podeVerPessoal };
 
 interface CursorPayload {
   sort: string | null;
@@ -198,12 +250,34 @@ export async function listConversationsHandler(
     .order("id", { ascending: asc })
     .limit(q.limit + 1);
 
-  // Contato pessoal some da lista (spec 21, etapa 7 — critério 1): conversa cujo
-  // contato é pessoal não aparece em nenhuma visão. ANTES de todo filtro
+  // ── CONTATO PESSOAL: escondido da OPERAÇÃO, alcançável pelo DONO ────────
+  //
+  // Spec 21 (etapa 7): conversa de contato pessoal não aparece em nenhuma visão
+  // de trabalho — some da lista, da busca e das contagens, ANTES de todo filtro
   // opcional, para que cursor e `has_more` descrevam o conjunto já escondido.
-  const pessoais = await idsDeContatosPessoais(supabase, ctx.organization_id);
-  if (pessoais.length > 0) {
-    query = query.not("contact_id", "in", `(${pessoais.join(",")})`);
+  //
+  // #4434 (a aba "Pessoal"): a MESMA régua, com o sinal invertido quando a aba
+  // pede `?pessoais=true`. Aí a lista mostra SÓ o pessoal de quem está olhando, e
+  // NADA mais. Ator que não é pessoa nunca chega aqui (a primitiva devolve vazio),
+  // então um token do MCP não lista pessoal nem pedindo o filtro.
+  const atorHumanoId = ctx.actor.type === "user" ? ctx.actor.id : null;
+  const querPessoal = q.pessoais === true || q.pessoais === "true";
+  if (querPessoal) {
+    const visiveis = await idsDeContatosPessoaisVisiveis(
+      supabase,
+      ctx.organization_id,
+      atorHumanoId,
+    );
+    // Conjunto vazio é RESPOSTA (ninguém marcou nada, ou nada é meu) — e não
+    // pode virar `in ()`, que é SQL inválido no PostgREST e faria a aba Pessoal
+    // responder 500 justamente para quem nunca marcou ninguém.
+    if (visiveis.length === 0) return { conversations: [], cursor: null, has_more: false };
+    query = query.in("contact_id", visiveis);
+  } else {
+    const pessoais = await idsDeContatosPessoais(supabase, ctx.organization_id);
+    if (pessoais.length > 0) {
+      query = query.not("contact_id", "in", `(${pessoais.join(",")})`);
+    }
   }
 
   // `.in` e não `.eq`: o filtro agora chega como LISTA (um valor vira lista de um,
@@ -428,21 +502,37 @@ export async function listConversationsHandler(
     // `fn_contatos_da_busca` faz o MESMO casamento num `security definer`: ela
     // confere a organização contra `fn_user_org_ids()` (quem tem sessão e não é
     // membro recebe ZERO linha; sem `auth.uid()` a chamada é do servidor, que já
-    // bypassa RLS), repete o filtro de organização nas duas tabelas e mantém as
-    // regras de hoje — anonimizado nunca casa, ficha pessoal fica fora, e o
-    // telefone EXTRA ignora a lápide da fusão. O que volta são IDs: a leitura
-    // das linhas continua sendo a da query principal, pelo cliente da sessão, e
-    // `contact_id.in.(...)` é igualdade de uuid (`leakproof`). Quem decide o que
-    // a pessoa vê continua sendo a RLS, não a função.
+    // bypassa RLS) e repete o filtro de organização nas duas tabelas. O termo
+    // chega no mesmo formato de antes, com UMA troca de dialeto: o `*` que o
+    // `or=` do PostgREST converte em `%` vira `%` aqui, porque no `like` do SQL
+    // ele é literal. O `\%` posto por `termoSeguroParaOr` já é o escape do
+    // próprio LIKE, então `%`/`_` digitados continuam literais. O termo vai SEM
+    // ACENTO: ele casa a coluna gerada (`busca_sem_acento`) e o telefone com o
+    // MESMO texto — dígito não tem acento, e um termo acentuado não pode deixar
+    // de achar o contato. O que volta são IDs: a leitura das linhas continua
+    // sendo a da query principal, pelo cliente da sessão, e `contact_id.in.(...)`
+    // é igualdade de uuid (`leakproof`). Quem decide o que a pessoa vê continua
+    // sendo a RLS, não a função.
     //
-    // O termo chega no mesmo formato de antes, com UMA troca de dialeto: o `*`
-    // que o `or=` do PostgREST converte em `%` vira `%` aqui, porque no `like`
-    // do SQL ele é literal. O `\%` posto por `termoSeguroParaOr` já é o escape
-    // do próprio LIKE, então `%`/`_` digitados continuam literais.
+    // ─── AS REGRAS QUE A `main` GANHOU NESTE TRECHO NÃO SAÍRAM ──────────────
     //
-    // O termo vai SEM ACENTO: ele casa a coluna gerada (`busca_sem_acento`) e o
-    // telefone com o MESMO texto. Dígito não tem acento, então o número continua
-    // casando igual — e um termo acentuado não pode deixar de achar o contato.
+    // Elas entraram como ARGUMENTO da função — o mesmo lugar do casamento, e não
+    // uma segunda condição que possa divergir:
+    //
+    //   · o nome casa sem acento (#3918) pela coluna gerada `busca_sem_acento`
+    //     (`lower(public.f_unaccent(display_name, name, address_book_name))`) e
+    //     pelo `termoSemAcento` — a mesma régua em TypeScript, conferida por
+    //     `tests/invariants/busca-do-inbox-ignora-acento.test.ts`; o nome da
+    //     agenda do celular (#2439) é a terceira parte da coluna;
+    //   · pessoal não é achado FORA da aba dele (spec 21, etapa 7 — critério 2)
+    //     e DENTRO da aba o sinal INVERTE pelo MESMO booleano da lista (#4434):
+    //     `q.pessoais` vira `p_pessoal`, e `p_dono` leva o dono para o pessoal do
+    //     colega não entrar. Era o `is_personal = querPessoal` + o filtro de dono
+    //     das duas consultas que a fatia substituiu;
+    //   · o telefone EXTRA continua ignorando a lápide da fusão
+    //     (`is_merged_into is null`) e o anonimizado nunca casa (`is_anonymized
+    //     = false`) — dentro da função, no braço que substituiu a segunda
+    //     consulta a `contact_phones`.
     const termoDaBusca = termoSemAcento(s).replace(/\*/g, "%");
     const { data: idsCasados, error: erroDaBusca } = await supabase.rpc(
       "fn_contatos_da_busca",
@@ -451,6 +541,8 @@ export async function listConversationsHandler(
         p_termo: termoDaBusca,
         p_digitos: pareceTelefone ? [somenteDigitos] : [],
         p_limite: TETO_DE_CONTATOS_NA_BUSCA,
+        p_pessoal: querPessoal,
+        p_dono: querPessoal ? atorHumanoId : null,
       },
     );
     if (erroDaBusca) {
@@ -540,12 +632,18 @@ export async function getConversationHandler(
       traduzir("Conversa não encontrada.", ctx.idioma ?? "pt-BR"),
     );
   }
-  // Pessoal some até por link direto (spec 21, D10 — critério 1): a conversa de
-  // contato pessoal responde 404, com a mesma mensagem de "não existe", para
-  // não revelar que ela está lá. O desmarcar acontece pela ficha de Contatos.
-  const pessoal = (data as unknown as { contacts?: { is_personal?: boolean } | null }).contacts
-    ?.is_personal;
-  if (pessoal === true) {
+  // Pessoal some até por link direto para QUEM NÃO É DONO (spec 21, D10 —
+  // critério 1; #4434): a conversa responde 404, com a mesma mensagem de "não
+  // existe", para não revelar que ela está lá. O dono da marca abre normalmente —
+  // é o que a aba Pessoal mostra —, e ninguém mais: nem `admin`, nem `manager`.
+  // Ator que não é pessoa (token MCP) continua recebendo 404 em todo caso,
+  // porque `podeVerPessoal` só reconhece `user`.
+  const contato = (
+    data as unknown as {
+      contacts?: { is_personal?: boolean; personal_owner_user_id?: string | null } | null;
+    }
+  ).contacts;
+  if (!podeVerPessoal(ctx.actor, contato)) {
     throw new ApiError(
       404,
       "not_found",

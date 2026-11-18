@@ -209,8 +209,14 @@ export function DetalheDoCompromisso({
               <p>{t("Compromisso pessoal, sem cliente vinculado.")}</p>
             )}
             {a.outcome_recorded_at ? (
-              <p>
-                {t("Presença registrada pela equipe")}:{" "}
+              <p data-testid="compromisso-autoria-da-presenca">
+                {/* #4515: `api_token` é o carimbo do RPC de comparecimento por
+                    token. Dizer "pela equipe" ali atribuiria a uma pessoa o que
+                    uma integração declarou. */}
+                {a.outcome_source_kind === "api_token"
+                  ? t("Presença registrada por uma integração (token de API)")
+                  : t("Presença registrada pela equipe")}
+                :{" "}
                 {formatoDeData.format(new Date(a.outcome_recorded_at))}
               </p>
             ) : (

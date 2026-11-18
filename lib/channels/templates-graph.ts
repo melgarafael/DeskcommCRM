@@ -321,4 +321,34 @@ export function erroDePermissaoDeGestao(err: unknown): boolean {
   return /whatsapp_business_management|permissions error/i.test(texto);
 }
 
+/**
+ * A recusa é do CONTEÚDO/modelo (nome, categoria, componentes)? — pergunta para
+ * a ROTA do canal oficial (#3635, fatia 1).
+ *
+ * Criar e editar modelo passam pela revisão da conta, e a plataforma responde
+ * `4xx` com o motivo no corpo (`100` campo inválido, `190` acesso expirado,
+ * `368` conta bloqueada). Antes disto a rota só sabia classificar permissão: todo
+ * o resto caía no `502` genérico — o operador lia "erro do servidor" para um
+ * problema do PRÓPRIO modelo, e o motivo específico que a plataforma mandou se
+ * perdia.
+ *
+ * `motivo` é o texto da plataforma SEM o prefixo de depuração (`rotulo_acao:
+ * status`): é o que a tela mostra em `details` para quem precisa corrigir o
+ * campo. Nunca contém token — o cliente só põe ali `error.message`.
+ *
+ * Fica aqui, e não na rota, pela mesma razão de `erroDePermissaoDeGestao`: é
+ * conhecimento do DIALETO da plataforma, e o canal de parceiro não usa.
+ */
+export function recusaDeConteudoDoModelo(
+  err: unknown,
+): { codigo: string | null; motivo: string; acesso: boolean } | null {
+  if (!(err instanceof ErroDeModelosDaGraph)) return null;
+  // 5xx é falha da plataforma, não do modelo; 4xx é o payload dela sendo recusado.
+  if (err.status === null || err.status < 400 || err.status >= 500) return null;
+  if (erroDePermissaoDeGestao(err)) return null;
+  // `rotulo_acao: 400 <motivo da plataforma>` → só o motivo interessa à tela.
+  const motivo = err.message.replace(/^[^:]+:\s*\d{3}\s*/, "").trim();
+  return { codigo: err.codigo, motivo, acesso: err.codigo === "190" };
+}
+
 export type { ChannelTemplate, ChannelTemplateDraft };
