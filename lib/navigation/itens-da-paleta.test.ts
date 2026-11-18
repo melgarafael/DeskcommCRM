@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   GRUPOS_DE_ITENS_DA_BUSCA,
-  filtrarItensDaBusca,
   itensDaBusca,
   type FontesDosItensDaBusca,
 } from "./itens-da-paleta";
@@ -28,7 +27,6 @@ const FONTES: FontesDosItensDaBusca = {
 };
 
 const itens = itensDaBusca(FONTES);
-const achados = (termo: string) => filtrarItensDaBusca(itens, termo);
 
 describe("⌘K: fluxos, funis e agentes como itens da busca (#4593)", () => {
   it("devolve os TRÊS tipos, cada um no seu grupo e com o destino do registro", () => {
@@ -53,45 +51,8 @@ describe("⌘K: fluxos, funis e agentes como itens da busca (#4593)", () => {
     ]);
   });
 
-  it("acha o FUNIL por trecho do nome e abre o funil certo", () => {
-    expect(achados("prospeccao").map((i) => i.href)).toEqual([
-      "/app/pipelines/funil-prospeccao-site",
-    ]);
-    expect(achados("(site)").map((i) => i.label)).toEqual(["Prospecção (Site)"]);
-  });
-
-  it("acha o FLUXO por trecho do nome, sem acento e sem caixa", () => {
-    expect(achados("oficinas").map((i) => i.href)).toEqual(["/app/ai/followups/fluxo-oficinas"]);
-    expect(achados("POS-VENDA").map((i) => i.href)).toEqual(["/app/ai/followups/fluxo-pos-venda"]);
-  });
-
-  it("acha o AGENTE pela DESCRIÇÃO, como já acontece na lista de Agentes", () => {
-    expect(achados("pre-vendas").map((i) => i.href)).toEqual(["/app/ai/agents/agente-kelly"]);
-    expect(achados("whatsapp").map((i) => i.label)).toEqual(["Kelly"]);
-  });
-
-  it("quem digita o nome do grupo vê o grupo inteiro", () => {
-    expect(achados("funis")).toHaveLength(2);
-    expect(achados("follow-ups")).toHaveLength(2);
-    expect(achados("agentes")).toHaveLength(2);
-  });
-
   it("fonte vazia não inventa grupo", () => {
     expect(itensDaBusca({})).toEqual([]);
     expect(itensDaBusca({ funis: [] })).toEqual([]);
-  });
-});
-
-describe("⌘K: controle negativo, sem termo (#4593)", () => {
-  it("sem termo, os três grupos voltam COMPLETOS e na mesma referência", () => {
-    // É o catálogo que a paleta mostra antes da primeira letra: nenhum item pode
-    // sumir por causa do filtro.
-    expect(filtrarItensDaBusca(itens, "")).toBe(itens);
-    expect(filtrarItensDaBusca(itens, "   ")).toBe(itens);
-
-    const porGrupo = (grupo: string) => itens.filter((i) => i.group === grupo).length;
-    expect(porGrupo("funis")).toBe(2);
-    expect(porGrupo("followups")).toBe(2);
-    expect(porGrupo("agentes")).toBe(2);
   });
 });

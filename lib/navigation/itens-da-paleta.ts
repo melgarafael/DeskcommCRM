@@ -3,8 +3,8 @@
  *
  * ═══ O defeito ═══
  *
- * A paleta só conhecia `NAV_DESTINATIONS`: digitar «oficinas» ou «prospeccao
- * site» ali não devolvia O FLUXO nem O FUNIL com esse nome — devolvia a tela em
+ * A paleta só conhecia `NAV_DESTINATIONS`: digitar «oficinas» ou
+ * «prospeccao» ali não devolvia O FLUXO nem O FUNIL com esse nome — devolvia a tela em
  * que eles vivem, e a pessoa tinha de procurar de novo no meio de treze itens.
  * Quem já estava na tela certa digitava ⌘K e colhia «nenhum resultado».
  *
@@ -18,15 +18,15 @@
  *
  * ═══ Por que função pura e exportada ═══
  *
- * A montagem e o filtro são testáveis sem DOM, como `filtrarFluxos` e
- * `filtrarFunis`. O componente não decide casamento: só desenha.
+ * A montagem é testável sem DOM. O casamento NÃO mora aqui: é o mesmo da
+ * paleta para destinos (`PaletaDeDestinos`), coberto em
+ * `tests/unit/command-palette.test.tsx` — um filtro paralelo neste módulo só
+ * divergiria do que a tela faz.
  *
  * ⚠️ QUEM ENXERGA O QUÊ NÃO É DECIDIDO AQUI. Este módulo recebe listas JÁ
  * recortadas por quem as buscou (RLS da rota, papel na tela). Lista vazia = grupo
  * ausente, e é assim que um item que a pessoa não pode ver não aparece.
  */
-import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
-
 /** Os três grupos que a issue pediu, mais nada. */
 export type GrupoDeItensDaBusca = "funis" | "followups" | "agentes";
 
@@ -108,27 +108,4 @@ export function itensDaBusca(fontes: FontesDosItensDaBusca): ItemDaBusca[] {
   }
 
   return itens;
-}
-
-/** Os campos que o termo digitado percorre — os mesmos que a paleta já casa. */
-function textoBuscavel(item: ItemDaBusca): string {
-  const rotuloDoGrupo =
-    GRUPOS_DE_ITENS_DA_BUSCA.find((grupo) => grupo.id === item.group)?.label ?? "";
-  return `${item.label} ${item.description} ${rotuloDoGrupo}`;
-}
-
-/**
- * Filtra os itens pelo termo digitado, preservando a ordem recebida.
- *
- * Termo vazio (ou só espaços) devolve a lista inteira, na MESMA referência —
- * é o catálogo que a paleta mostra antes da primeira letra.
- *
- * Casa com o NOME do item, com a descrição e com o rótulo do grupo: quem digita
- * «agentes» vê os agentes, quem digita «prospeccao site» vê o funil e quem
- * digita «oficinas» vê o fluxo. Os DOIS lados passam pela régua única.
- */
-export function filtrarItensDaBusca(itens: ItemDaBusca[], busca: string): ItemDaBusca[] {
-  const termo = termoSemAcento(busca.trim());
-  if (!termo) return itens;
-  return itens.filter((item) => termoSemAcento(textoBuscavel(item)).includes(termo));
 }
