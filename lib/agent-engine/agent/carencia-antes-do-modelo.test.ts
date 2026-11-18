@@ -21,6 +21,7 @@ import { describe, expect, it, vi } from "vitest";
 import { CHANNEL_CAPABILITIES } from "@/lib/channels/capabilities";
 
 import {
+  CARENCIA_MAXIMA_MS,
   CARENCIA_PADRAO_MS,
   carenciaDoAmbiente,
   decidirAntesDoModeloPago,
@@ -244,5 +245,75 @@ describe("carenciaDoAmbiente", () => {
     expect(carenciaDoAmbiente(Number.NaN)).toBe(CARENCIA_PADRAO_MS);
     expect(carenciaDoAmbiente(0)).toBe(0);
     expect(carenciaDoAmbiente(15_500)).toBe(15_500);
+  });
+
+  it("o TETO apara a espera: um número absurdo no ambiente não segura o primeiro contato", () => {
+    // Sem teto, `FOLLOWUP_CARENCIA_DO_MODELO_MS=600000` deixaria o lead 10 min
+    // sem resposta na esperança de "economizar mais modelo".
+    expect(carenciaDoAmbiente(600_000)).toBe(CARENCIA_MAXIMA_MS);
+    expect(carenciaDoAmbiente(CARENCIA_MAXIMA_MS + 1)).toBe(CARENCIA_MAXIMA_MS);
+    expect(carenciaDoAmbiente(CARENCIA_MAXIMA_MS)).toBe(CARENCIA_MAXIMA_MS);
+  });
+});
+
+/**
+ * #4835, item 4 — a janela JÁ ABERTA (item 2 do "o que existe hoje" da issue):
+ * o passo de modelo aprovado conferia a janela uma vez e mandava o pago mesmo
+ * com ela aberta.
+ */
+describe("decidirAntesDoModeloPago — a janela JÁ aberta", () => {
+  const abertaPrimeiroContato: LeituraDaJanela = { fechada: false, primeiroContato: true };
+  const base = {
+    passoEhModeloPago: true,
+    carenciaMs: CARENCIA_PADRAO_MS,
+    janela: abertaPrimeiroContato,
+    jaEsperou: false,
+    agora: T0,
+  } as const;
+
+  it("janela aberta e corpo sem botão: TEXTO DO MODELO — nem modelo pago nem espera", () => {
+    expect(
+      decidirAntesDoModeloPago({
+        ...base,
+        temTextoLivreNoLugar: false,
+        podeDegradarParaTextoLivre: true,
+      }),
+    ).toEqual({ acao: "texto_do_modelo" });
+  });
+
+  it("janela aberta e modelo com botão/carrossel: modelo pago sai — degradar perderia o que se toca", () => {
+    expect(
+      decidirAntesDoModeloPago({
+        ...base,
+        temTextoLivreNoLugar: false,
+        podeDegradarParaTextoLivre: false,
+      }),
+    ).toEqual({ acao: "enviar" });
+  });
+
+  it("janela aberta sem a informação do corpo (chamador antigo): não degrada", () => {
+    expect(decidirAntesDoModeloPago({ ...base, temTextoLivreNoLugar: false })).toEqual({ acao: "enviar" });
+  });
+
+  it("na VOLTA da carência a janela aberta não vira texto do modelo: o inbound já respondeu (duas mensagens)", () => {
+    expect(
+      decidirAntesDoModeloPago({
+        ...base,
+        jaEsperou: true,
+        temTextoLivreNoLugar: false,
+        podeDegradarParaTextoLivre: true,
+      }),
+    ).toMatchObject({ acao: "dispensar" });
+  });
+
+  it("janela fechada e primeiro contato continuam com a carência — o item 4 não engoliu o ganho do item 1", () => {
+    expect(
+      decidirAntesDoModeloPago({
+        ...base,
+        janela: { fechada: true, primeiroContato: true },
+        temTextoLivreNoLugar: false,
+        podeDegradarParaTextoLivre: true,
+      }),
+    ).toEqual({ acao: "esperar", esperaMs: CARENCIA_PADRAO_MS, ate: emSegundos(10) });
   });
 });

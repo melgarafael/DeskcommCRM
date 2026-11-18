@@ -859,7 +859,7 @@ async function runFlowDrivenTurn(
       });
     }
     // #4835 — O GANHO, MEDIDO: cada linha destas é um modelo pago que não saiu.
-    const registrarModeloDispensado = (motivo: 'texto_livre' | 'dispensar'): Promise<void> =>
+    const registrarModeloDispensado = (motivo: 'texto_livre' | 'dispensar' | 'janela_aberta'): Promise<void> =>
       pool
         .query(
           `insert into followup_enrollment_events
@@ -870,7 +870,7 @@ async function runFlowDrivenTurn(
             target.tenantId,
             enrollmentId,
             nodeId,
-            { job_id: job.id, motivo, no_do_payload: nodeId, tem_texto_livre: motivo === 'texto_livre' },
+            { job_id: job.id, motivo, no_do_payload: nodeId, tem_texto_livre: motivo !== 'dispensar' },
             `${job.id}:modelo_pago_dispensado`,
           ],
         )
@@ -906,10 +906,17 @@ async function runFlowDrivenTurn(
     // dentro do POST e o claim vem ~2–4 s depois; sem esta carência, a
     // conferência que já existia (`janelaFechada`, acima) chega tarde.
     if (passo !== null && passo.tipo === 'modelo_aprovado') {
+      // O corpo renderizado e o nome do modelo ficam à mão: a decisão de hoje
+      // pode transformar este passo em texto livre, e o texto é exatamente o que
+      // o modelo diria (o mesmo que os gates de conteúdo avaliam).
+      const corpoDoModelo = passo.body;
+      const nomeDoModelo = passo.modelo.name;
+      const podeDegradarParaTextoLivre = corpoDoModelo.trim().length > 0 && !passo.modelo.temBotoes;
       const decisaoDoModelo = decidirAntesDoModeloPago({
         passoEhModeloPago: true,
         // A reserva da IA tem texto livre no lugar; o passo de modelo puro, não.
         temTextoLivreNoLugar: input.fallbackTemplateId !== undefined && input.templateId === undefined,
+        podeDegradarParaTextoLivre,
         carenciaMs: carenciaDoAmbiente(deps.knobs.carenciaDoModeloMs),
         janela: await lerJanelaDaConversa(pool, {
           organizationId: target.tenantId,
@@ -938,6 +945,20 @@ async function runFlowDrivenTurn(
           node_id: nodeId,
         });
         throw new JobSettledError('carência antes do modelo pago — job devolvido à fila');
+      }
+      if (decisaoDoModelo.acao === 'texto_do_modelo') {
+        // #4835, item 4 — A JANELA JÁ ESTAVA ABERTA: o modelo aprovado seria
+        // cobrado para dizer exatamente o que o texto livre do próprio passo diz.
+        // O passo NÃO é pulado (o cliente não pode ficar sem a mensagem): ele
+        // deixa de ser modelo e vira o texto do corpo renderizado, que segue
+        // pelo envio fixo logo abaixo, com os mesmos gates de conteúdo. É UM
+        // envio — nunca o texto e o modelo.
+        await registrarModeloDispensado('janela_aberta');
+        runLog.info('modelo pago dispensado — a janela já estava aberta; o corpo do modelo sai como texto livre', {
+          node_id: nodeId,
+          modelo: nomeDoModelo,
+        });
+        passo = { tipo: 'texto', body: corpoDoModelo };
       }
       if (decisaoDoModelo.acao === 'texto_livre' || decisaoDoModelo.acao === 'dispensar') {
         // O GANHO, MEDIDO: cada linha destas é um modelo pago que não saiu. É o
@@ -998,7 +1019,7 @@ async function runFlowDrivenTurn(
       try {
         desfecho = await sendFixedOutbound(
           deps, job, pool, ctx, clock, target, passo.body, false,
-          passo.tipo === 'modelo_aprovado' ? passo.modelo : undefined,
+          passo.tipo === 'modelo_aprovado' ? { name: passo.modelo.name, language: passo.modelo.language, values: passo.modelo.values } : undefined,
           passo.tipo === 'texto' ? passo.midia : undefined,
           // #4429, segunda metade — as OUTRAS redações do passo. `undefined` no
           // passo de uma redação só: o envio segue sem escolha, como antes.
@@ -1284,7 +1305,12 @@ type PassoSemIa =
   | {
       tipo: 'modelo_aprovado';
       body: string;
-      modelo: { name: string; language: string; values: Record<string, string> };
+      /**
+       * #4835 — o modelo tem botão ou carrossel. Decide se o corpo pode sair
+       * como TEXTO LIVRE com a janela aberta: degradar um modelo com botão
+       * entregaria um texto que manda tocar em algo que não veio.
+       */
+      modelo: { name: string; language: string; values: Record<string, string>; temBotoes: boolean };
     }
   | { tipo: 'recusado'; motivo: string };
 
@@ -1436,8 +1462,27 @@ async function resolveModeloAprovado(
   return {
     tipo: 'modelo_aprovado',
     body: renderTemplateBody(linha.components, values, meta),
-    modelo: { name: alvo.name, language: alvo.language, values },
+    modelo: { name: alvo.name, language: alvo.language, values, temBotoes: modeloInterativo(linha.components) },
   };
+}
+
+/**
+ * #4835 — o modelo tem algo que o texto livre não carrega: botão ou carrossel.
+ *
+ * `BUTTONS` com pelo menos um botão, ou qualquer componente de carrossel, conta.
+ * É a régua do degradar-para-texto: com botão, o texto do corpo sozinho mandaria
+ * o cliente tocar em algo que não existe, e aí o modelo pago é o único envio
+ * honesto. Sem botão, o corpo renderizado é a mensagem inteira.
+ */
+function modeloInterativo(components: unknown): boolean {
+  if (!Array.isArray(components)) return false;
+  return components.some((componente) => {
+    if (componente === null || typeof componente !== 'object') return false;
+    const c = componente as { type?: unknown; buttons?: unknown; cards?: unknown };
+    const tipo = typeof c.type === 'string' ? c.type.toUpperCase() : '';
+    if (tipo === 'BUTTONS' && Array.isArray(c.buttons) && c.buttons.length > 0) return true;
+    return tipo === 'CAROUSEL' || (Array.isArray(c.cards) && c.cards.length > 0);
+  });
 }
 
 /**

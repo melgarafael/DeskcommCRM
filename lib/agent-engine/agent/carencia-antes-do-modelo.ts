@@ -37,14 +37,23 @@
  * cron — quem espera a carência não espera um minuto inteiro por causa dela. É a
  * mesma ordem de grandeza do debounce de inbound já existente (`INBOUND_DEBOUNCE_MS`,
  * 8 s), e é knob: `FOLLOWUP_CARENCIA_DO_MODELO_MS = 0` desliga e devolve o
- * comportamento de antes, byte a byte.
+ * comportamento de antes, byte a byte. O knob tem TETO (`CARENCIA_MAXIMA_MS`,
+ * 30 s): a carência é de segundos, e um número absurdo no ambiente não pode
+ * segurar o primeiro contato de um lead.
+ *
+ * ─── A JANELA JÁ ABERTA (item 4 da issue) ───────────────────────────────────
+ *
+ * A carência só existe para o caso em que a janela está FECHADA e pode abrir. Se
+ * ela já está aberta, o modelo aprovado é gasto sem necessidade e o cliente
+ * recebe o mesmo texto por dinheiro: aí o corpo RENDERIZADO do modelo (o mesmo
+ * que os gates de conteúdo já avaliam) sai como TEXTO LIVRE. Só não degrada
+ * quando o modelo tem botão ou carrossel — o texto perderia o que o cliente
+ * precisa tocar —, e aí o modelo pago sai, declarado.
  *
  * O que fica FORA: (a) o cliente que escreve depois de N — aí o modelo pago sai
- * como hoje, e é o preço declarado da espera; (b) o passo de modelo puro com a
- * janela JÁ aberta e sem carência: continua saindo, porque mudar isso é decisão
- * de produto sobre o passo que o operador configurou, não reconferência; (c) o
- * caminho inline do texto fixo (`enviar-texto-fixo.ts`), que não manda modelo
- * pago.
+ * como hoje, e é o preço declarado da espera; (b) o modelo com botão/carrossel
+ * na janela aberta, que continua saindo como modelo; (c) o caminho inline do
+ * texto fixo (`enviar-texto-fixo.ts`), que não manda modelo pago.
  *
  * Puro e síncrono onde dá; quem lê banco é `lerJanelaDaConversa`.
  */
@@ -53,6 +62,17 @@ import type { Queryable } from '../queue/queue';
 
 /** Quanto o modelo pago espera o cliente escrever, quando ninguém configurou nada. */
 export const CARENCIA_PADRAO_MS = 10_000;
+
+/**
+ * O TETO da espera. A carência é de segundos, não de minutos: quem chega por
+ * integração não pode ficar sem resposta porque alguém subiu o knob com a
+ * intenção de "economizar mais modelo". Acima disto o valor é aparado — e o
+ * chamador sabe que o teto existe porque o número volta aparado, não silencioso.
+ *
+ * 30 s é o dobro do padrão e continua abaixo do tick de 1 min do cron: mesmo no
+ * pior caso o primeiro contato sai dentro do ciclo seguinte.
+ */
+export const CARENCIA_MAXIMA_MS = 30_000;
 
 /** Chave do rastro no `payload` do job: a carência já foi usada por este turno. */
 export const CHAVE_CARENCIA = 'carencia_do_modelo';
@@ -65,6 +85,13 @@ export type DecisaoAntesDoModelo =
   | { acao: 'esperar'; esperaMs: number; ate: Date }
   /** A janela abriu durante a carência: o turno de IA responde em texto livre. */
   | { acao: 'texto_livre' }
+  /**
+   * A janela JÁ estava aberta no turno e o passo é modelo pago: o corpo
+   * renderizado do modelo sai como TEXTO LIVRE — a mesma mensagem, sem a
+   * cobrança do modelo. Não é `texto_livre` porque ali quem escreve é o turno de
+   * IA; aqui não há IA nenhuma, o texto é o do próprio passo.
+   */
+  | { acao: 'texto_do_modelo' }
   /** A janela abriu durante a carência e o passo não tem texto livre: não sai. */
   | { acao: 'dispensar'; motivo: string };
 
@@ -79,10 +106,11 @@ export interface LeituraDaJanela {
   primeiroContato: boolean;
 }
 
-/** `N` do ambiente: `0` desliga; valor ausente ou inválido cai no padrão. */
+/** `N` do ambiente: `0` desliga; valor ausente ou inválido cai no padrão; acima do teto, o teto. */
 export function carenciaDoAmbiente(valor: number | undefined | null): number {
   if (valor === undefined || valor === null || !Number.isFinite(valor)) return CARENCIA_PADRAO_MS;
-  return valor > 0 ? Math.floor(valor) : 0;
+  if (valor <= 0) return 0;
+  return Math.min(Math.floor(valor), CARENCIA_MAXIMA_MS);
 }
 
 /**
@@ -97,6 +125,12 @@ export function decidirAntesDoModeloPago(input: {
   passoEhModeloPago: boolean;
   /** O passo tem texto livre no lugar do modelo (reserva da IA) — `false` no passo de modelo puro. */
   temTextoLivreNoLugar: boolean;
+  /**
+   * O corpo RENDERIZADO do modelo pode sair como texto livre: tem corpo e não
+   * tem botão nem carrossel. `false`/ausente quando degradar mudaria o que o
+   * cliente recebe — e aí o modelo pago é o único jeito.
+   */
+  podeDegradarParaTextoLivre?: boolean;
   carenciaMs: number;
   /** `null` = canal sem restrição de janela, nada a esperar. */
   janela: LeituraDaJanela | null;
@@ -115,7 +149,15 @@ export function decidirAntesDoModeloPago(input: {
       ? { acao: 'texto_livre' }
       : { acao: 'dispensar', motivo: MOTIVO_DO_MODELO_DISPENSADO };
   }
-  if (!input.janela.fechada) return { acao: 'enviar' };
+  if (!input.janela.fechada) {
+    // #4835, item 4 da issue — JANELA ABERTA: aqui texto livre é de graça, e o
+    // modelo aprovado é dinheiro jogado fora. O passo não é "pulado" (o cliente
+    // não pode ficar sem a mensagem): o corpo renderizado do modelo que já está
+    // na mão sai como texto. Isto NÃO vale na volta da carência, tratada acima:
+    // ali o cliente acabou de escrever e o turno do inbound é quem responde —
+    // mandar o texto do passo também seria a SEGUNDA mensagem do mesmo turno.
+    return input.podeDegradarParaTextoLivre === true ? { acao: 'texto_do_modelo' } : { acao: 'enviar' };
+  }
   if (!input.janela.primeiroContato) return { acao: 'enviar' };
   if (input.carenciaMs <= 0) return { acao: 'enviar' };
   return {
