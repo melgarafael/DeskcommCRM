@@ -1,5 +1,5 @@
 ---
-impacto: capacidade_nova
+impacto: nada_mudou
 secao: corrigido
 titulo: No canal oficial, a resposta que cita uma mensagem chega citando — o cliente toca e cai nela
 ---
