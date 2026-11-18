@@ -858,6 +858,43 @@ async function runFlowDrivenTurn(
         variaveis: undefined,
       });
     }
+    // #4835 — O GANHO, MEDIDO: cada linha destas é um modelo pago que não saiu.
+    const registrarModeloDispensado = (motivo: 'texto_livre' | 'dispensar'): Promise<void> =>
+      pool
+        .query(
+          `insert into followup_enrollment_events
+             (organization_id, enrollment_id, node_id, event_type, payload, idempotency_key)
+           values ($1, $2, $3, 'modelo_pago_dispensado', $4, $5)
+           on conflict (enrollment_id, idempotency_key) where idempotency_key is not null do nothing`,
+          [
+            target.tenantId,
+            enrollmentId,
+            nodeId,
+            { job_id: job.id, motivo, no_do_payload: nodeId, tem_texto_livre: motivo === 'texto_livre' },
+            `${job.id}:modelo_pago_dispensado`,
+          ],
+        )
+        .then(
+          () => undefined,
+          (err: unknown) => {
+            // Instrumentação nunca derruba o envio (nem o pulo).
+            runLog.warn('registro do modelo dispensado não entrou', {
+              error: err instanceof Error ? err.message.slice(0, 160) : 'erro desconhecido',
+            });
+          },
+        );
+    // A VOLTA DA CARÊNCIA NO PLANO B DA IA: o cliente escreveu, a janela abriu,
+    // e o bloco acima já não troca a IA pelo modelo — o gancho abaixo nem é
+    // alcançado. A economia aconteceu aqui, e sem este registro ela não entra
+    // na contagem de `modelo_pago_dispensado`.
+    if (
+      passo === null &&
+      input.fallbackTemplateId !== undefined &&
+      input.templateId === undefined &&
+      jaEsperouPelaCarencia(job.payload)
+    ) {
+      await registrarModeloDispensado('texto_livre');
+    }
     // #4835 — A CARÊNCIA ANTES DO MODELO PAGO, e a reconferência da janela no
     // instante de gastar. Aqui é o ÚLTIMO ponto antes de reservar o modelo: o
     // passo já foi resolvido (é modelo aprovado de verdade, não texto de
@@ -905,31 +942,7 @@ async function runFlowDrivenTurn(
       if (decisaoDoModelo.acao === 'texto_livre' || decisaoDoModelo.acao === 'dispensar') {
         // O GANHO, MEDIDO: cada linha destas é um modelo pago que não saiu. É o
         // número que responde "quanto a reconferência economizou" depois.
-        await pool
-          .query(
-            `insert into followup_enrollment_events
-               (organization_id, enrollment_id, node_id, event_type, payload, idempotency_key)
-             values ($1, $2, $3, 'modelo_pago_dispensado', $4, $5)
-             on conflict (enrollment_id, idempotency_key) where idempotency_key is not null do nothing`,
-            [
-              target.tenantId,
-              enrollmentId,
-              nodeId,
-              {
-                job_id: job.id,
-                motivo: decisaoDoModelo.acao,
-                no_do_payload: nodeId,
-                tem_texto_livre: decisaoDoModelo.acao === 'texto_livre',
-              },
-              `${job.id}:modelo_pago_dispensado`,
-            ],
-          )
-          .catch((err: unknown) => {
-            // Instrumentação nunca derruba o envio (nem o pulo).
-            runLog.warn('registro do modelo dispensado não entrou', {
-              error: err instanceof Error ? err.message.slice(0, 160) : 'erro desconhecido',
-            });
-          });
+        await registrarModeloDispensado(decisaoDoModelo.acao);
         if (decisaoDoModelo.acao === 'texto_livre') {
           // A janela abriu: o texto livre é o do turno de IA, que roda logo
           // abaixo. Nada de modelo pago — e nada de pular o passo.
