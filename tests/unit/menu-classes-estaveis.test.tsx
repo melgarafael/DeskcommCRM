@@ -220,7 +220,7 @@ describe("o hub e o item aberto também são alvos estáveis do CSS do dono", ()
 
     const ativos = Array.from(container.querySelectorAll(".nav-item-ativo"));
     expect(ativos).toHaveLength(1);
-    expect(ativos[0].getAttribute("href")).toBe("/app/analise");
+    expect(ativos[0]?.getAttribute("href")).toBe("/app/analise");
   });
 
   it("a regra que o contrato torna possível passa no validador, nos dois escopos", () => {
