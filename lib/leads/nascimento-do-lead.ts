@@ -168,8 +168,9 @@ export interface DadosDoNascimento {
  * número — o número de atacado põe gente no funil de atacado. Nulo é o
  * comportamento de antes: o funil padrão da organização.
  *
- * ⚠️ A FK NÃO CONHECE ORGANIZAÇÃO, e o handler que grava pode ter sido
- * contornado (SQL à mão, clone). Por isso a leitura confere de novo: o funil
+ * A FK é composta com a organização (o banco recusa funil ou etapa de outra
+ * empresa, e etapa de outro funil), mas arquivar o funil ou a etapa, ou virar
+ * a etapa de ganho/perda, não passa por ela. Por isso a leitura confere de novo: o funil
  * tem de ser DESTA organização e não arquivado; a etapa, DESTE funil, aberta e
  * não de ganho/perda. Etapa que não serve cai na etapa de entrada do próprio
  * funil (`etapaDeEntrada`); funil que não serve devolve `null`, e quem chama

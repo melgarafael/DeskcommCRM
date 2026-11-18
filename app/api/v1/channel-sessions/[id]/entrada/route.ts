@@ -17,10 +17,10 @@ type Context = { params: Promise<{ id: string }> };
  * `pipeline_id: null` volta ao funil padrão da organização. `stage_id` é
  * opcional: sem ele, a conversa nasce na etapa de entrada do próprio funil.
  *
- * ⚠️ O ADMIN CLIENT BYPASSA RLS e a FK não conhece organização: funil e etapa
- * são conferidos contra a organização do NÚMERO (resolvida da sessão, nunca do
- * body) antes de gravar. Sem isso, um uuid de funil de outra empresa passaria
- * pela FK e o número despejaria contatos lá.
+ * ⚠️ O ADMIN CLIENT BYPASSA RLS: funil e etapa são conferidos contra a
+ * organização do NÚMERO (resolvida da sessão, nunca do body) antes de gravar.
+ * A FK composta com a organização recusaria o mesmo uuid de outra empresa, mas
+ * com um 500 cru; a conferência aqui devolve o erro que a tela sabe mostrar.
  */
 const entradaSchema = z
   .object({

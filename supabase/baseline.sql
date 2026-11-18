@@ -87559,12 +87559,29 @@ notify pgrst, 'reload schema';
 -- Cada conexão pode apontar o funil e a etapa onde a conversa nova vira negócio.
 -- Nulas = funil padrão da organização (comportamento de antes). Idempotente.
 alter table public.channel_sessions
-  add column if not exists entry_pipeline_id uuid
-    references public.crm_pipelines(id) on delete set null;
+  add column if not exists entry_pipeline_id uuid,
+  add column if not exists entry_stage_id uuid;
 
-alter table public.channel_sessions
-  add column if not exists entry_stage_id uuid
-    references public.crm_stages(id) on delete set null;
+-- Chave composta com a organização (mesmo desenho de ai_router_members, #2155):
+-- o número nunca aponta para funil ou etapa de OUTRA empresa, e a etapa fica
+-- presa ao funil escolhido. `on delete set null` com lista de colunas zera só
+-- o destino quando o funil/etapa some; a conexão segue no funil padrão.
+-- Uma chave por tabela alvo: duas tornariam ambíguo o join do PostgREST.
+do $$ begin
+  alter table public.channel_sessions
+    add constraint channel_sessions_entry_pipeline_mesma_org
+    foreign key (organization_id, entry_pipeline_id)
+    references public.crm_pipelines (organization_id, id)
+    on delete set null (entry_pipeline_id);
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  alter table public.channel_sessions
+    add constraint channel_sessions_entry_stage_do_funil
+    foreign key (organization_id, entry_pipeline_id, entry_stage_id)
+    references public.crm_stages (organization_id, pipeline_id, id)
+    on delete set null (entry_stage_id);
+exception when duplicate_object then null; end $$;
 
 comment on column public.channel_sessions.entry_pipeline_id is
   'Funil onde a conversa nova DESTE número vira negócio. Nulo = funil padrão da organização (crm_pipelines.is_default). Aplicado por lib/leads/nascimento-do-lead.ts (migration 9430).';
