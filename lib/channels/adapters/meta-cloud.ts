@@ -397,7 +397,7 @@ export const metaCloudAdapter: ChannelAdapter = {
           // irmão de `type` — dentro de `text`/`image` a Meta ignora e o cliente
           // recebe a mensagem solta, que é o defeito que a issue relata. Sem
           // citação a chave não existe; nem vazia, porque `context: {}` é corpo
-          // inválido para a Graph.
+          // inválido para a Graph. Coberto em tests/unit/meta-cloud-citacao-contexto.test.ts.
           ...(contexto ? { context: contexto } : {}),
         }),
       },
