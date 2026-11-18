@@ -178,6 +178,11 @@ describe("detectarVazamentoInterno — calibração contra fala legítima", () =
     // falso-positivo mais caro do conjunto.
     expect(detectarVazamentoInterno("me escreve em contato_vendas@empresa.com.br").termos).toEqual([]);
     expect(detectarVazamentoInterno("o cupom está em https://loja.com.br/promo_verao").termos).toEqual([]);
+    expect(
+      detectarVazamentoInterno(
+        "Seu portal do cliente está disponível: https://portal.ararquitetura.com/projeto/afc35b68-fe81-4861-a4d4-f1603cb47a4f",
+      ).termos,
+    ).toEqual([]);
   });
 });
 

@@ -32,6 +32,7 @@ import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { resolverContatoDoTeste } from "@/lib/ai/agents/contato-do-teste";
 import {
   testRunSchema,
   LIMITE_DO_HISTORICO_EM_MENSAGENS,
@@ -191,15 +192,19 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   // não deixa cópia para envelhecer. O teste da rota cobra isso.
   const { data: version } = await admin
     .from("ai_agent_versions")
-    .select(
-      "id, channel_session_id",
-    )
+    .select("id, channel_session_id")
     .eq("id", vid)
     .eq("organization_id", organizationId)
     .eq("agent_id", id)
     .maybeSingle();
 
   if (!version) return fail("not_found", t("Version não encontrada."), 404, { requestId });
+
+  const contatoDoTeste = parsed.data.contact_id
+    ? await resolverContatoDoTeste(admin, organizationId, parsed.data.contact_id)
+    : null;
+  if (parsed.data.contact_id && !contatoDoTeste)
+    return fail("not_found", t("Contato não disponível para este teste."), 404, { requestId });
 
   const startedAt = new Date();
 
@@ -210,7 +215,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       agent_id: id,
       agent_version_id: vid,
       conversation_id: null,
-      contact_id: null,
+      contact_id: contatoDoTeste?.id ?? null,
       channel_session_id: version.channel_session_id,
       inbound_message_id: null,
       outbound_message_id: null,
@@ -243,6 +248,8 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       sampleMessage: parsed.data.sample_message,
       history: parsed.data.history,
       sampleContact: parsed.data.sample_contact,
+      authorizedContact: contatoDoTeste ?? undefined,
+      requiredSourceTool: parsed.data.required_source_tool,
       sampleTags: parsed.data.sample_tags,
       channelId: version.channel_session_id,
     });
@@ -354,7 +361,12 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     resourceType: "ai_agent_version",
     resourceId: vid,
     requestId,
-    metadata: { run_id: runRow.id, dry_run: true },
+    metadata: {
+      run_id: runRow.id,
+      dry_run: true,
+      contact_id: contatoDoTeste?.id ?? null,
+      required_source_tool: parsed.data.required_source_tool ?? null,
+    },
   });
 
   return ok(resultPayload, { requestId });

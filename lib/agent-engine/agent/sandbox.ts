@@ -4,6 +4,7 @@ import { runAgentPreview, type InboundTurnDeps } from "./inbound-turn";
 import { newPreviewResult, scenarioContext } from "./preview";
 import type { LeadContextMessage } from "../edge/crm/get-lead-context";
 import { trimTranscriptToBudget } from "./compaction";
+import type { ContatoAutorizadoDoTeste } from "@/lib/ai/agents/contato-do-teste";
 
 /** Uma mensagem anterior do teste — o que o admin digitou e o que a IA respondeu. */
 export interface TesteHistoryMessage {
@@ -28,19 +29,39 @@ export async function testAgentVersion(
      */
     history?: TesteHistoryMessage[];
     sampleContact?: { name?: string; phone?: string };
+    authorizedContact?: ContatoAutorizadoDoTeste;
+    /** Simula a configuração apenas neste teste; não altera o agente publicado. */
+    requiredSourceTool?: string;
     /** Etiquetas simuladas (spec 27, fatia 3): entram no matcher de skills desta prévia. */
     sampleTags?: string[];
     channelId: string | null;
   },
 ) {
-  const agent = await loadAgentVersionConfig(
+  const loaded = await loadAgentVersionConfig(
     pool,
     input.organizationId,
     input.agentId,
     input.versionId,
   );
-  if (!agent) throw new Error("preview_version_unavailable");
+  if (!loaded) throw new Error("preview_version_unavailable");
+  const agent = { ...loaded };
+  if (input.requiredSourceTool) {
+    if (
+      !input.authorizedContact ||
+      !agent.toolIds.includes(`mcp_externo:leitura:${input.requiredSourceTool}`)
+    )
+      throw new Error("preview_source_not_selected");
+    agent.mcpExternoNoAtendimento = true;
+    agent.consultaObrigatoriaTool = input.requiredSourceTool;
+    agent.operatorEnabled = false;
+  }
   const result = newPreviewResult();
+  if (input.requiredSourceTool)
+    result.warnings.push({
+      code: "test_source_override",
+      message:
+        "A consulta obrigatória foi simulada somente neste teste. O atendimento publicado não foi alterado.",
+    });
 
   /**
    * O CONTEXTO DO TESTE É A CONVERSA — e ele passa pelas MESMAS duas peneiras do
@@ -73,14 +94,23 @@ export async function testAgentVersion(
   const orcado = trimTranscriptToBudget(naJanela, agent.historyTokenWindow);
   const mensagensDoContexto = orcado.length > 0 ? orcado : [novaMensagem];
 
-  const context = scenarioContext(mensagensDoContexto, input.sampleContact);
+  const context = scenarioContext(
+    mensagensDoContexto,
+    input.authorizedContact
+      ? {
+          name: input.authorizedContact.name ?? undefined,
+          phone: input.authorizedContact.phone_number ?? undefined,
+        }
+      : input.sampleContact,
+  );
+  if (input.authorizedContact) context.context.lead_id = input.authorizedContact.id;
   await runAgentPreview(deps, pool, {
     kind: "sandbox",
     organizationId: input.organizationId,
     runId: input.runId,
     agent,
     context,
-    contactId: null,
+    contactId: input.authorizedContact?.id ?? null,
     channelId: input.channelId,
     tags: input.sampleTags,
     result,

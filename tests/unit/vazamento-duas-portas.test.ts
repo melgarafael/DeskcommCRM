@@ -76,6 +76,7 @@ describe("o que o gate NÃO pode barrar — o vocabulário do cliente", () => {
     ["valor e prazo", "Aprovei 15% para as 200 caixas, entrega em 5 dias úteis."],
     ["telefone", "Ligo no 11 98765-4321 amanhã."],
     ["código de rastreio", "Rastreio BR123456789BR, chega quarta."],
+    ["link do portal com uuid", "Seu portal do cliente está disponível: https://portal.ararquitetura.com/projeto/afc35b68-fe81-4861-a4d4-f1603cb47a4f"],
   ])("deixa passar: %s", (_n, texto) => {
     const r = detectarVazamentoInterno(texto);
     expect(r.achou, `barrado por ${r.categorias.join(",")}: ${r.termos.join(", ")}`).toBe(false);

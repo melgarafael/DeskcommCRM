@@ -74,6 +74,7 @@ interface RegraTexto {
   readonly categoria: CategoriaVazamento;
   readonly re: RegExp;
   readonly rotulo?: string;
+  readonly ignoraSe?: (match: RegExpExecArray, texto: string) => boolean;
 }
 
 /**
@@ -257,10 +258,15 @@ const REGRAS: ReadonlyArray<RegraTexto> = [
   // medidos passando limpo. Um identificador assim NUNCA significa nada para quem
   // lê: se o agente precisa referenciar algo, referencia pelo nome ou pelo número
   // que o cliente conhece.
+  //
+  // ⚠️ EXCLUI UUID EM ENDEREÇO/URL: se o UUID faz parte de uma URL do portal do
+  // cliente (ex.: https://portal.empresa.com/projeto/<uuid>), ele é o próprio link
+  // legítimo de navegação que o cliente pediu — não é identificador de sistema solto.
   {
     categoria: 'erro_cru',
     rotulo: 'identificador interno',
     re: /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,
+    ignoraSe: (m, texto) => trechoEmEnderecoOuUrl(texto, m.index ?? 0, (m.index ?? 0) + m[0].length),
   },
   // (E3) CÓDIGO DE ERRO OPACO — a outra metade da terceira porta: o código veio do
   // DADO que a tool devolveu, não do nome dela.
@@ -370,6 +376,26 @@ function pareceEnderecoOuArquivo(token: string): boolean {
 }
 
 /**
+ * Verifica se um trecho do texto [inicio, fim] está contido em um token que é
+ * endereço (e-mail/URL) ou caminho.
+ *
+ * Um UUID solto («Seu atendimento é 3f2a1b6c...») é identificador opaco interno.
+ * O mesmo UUID como parte de uma URL pública do cliente («https://portal.com/projeto/3f2a...»)
+ * é o endereço que o cliente precisa receber — barrá-lo seria falso-positivo que impede
+ * o envio do portal ou de links legítimos.
+ */
+function trechoEmEnderecoOuUrl(texto: string, inicio: number, fim: number): boolean {
+  const antes = texto.slice(0, inicio);
+  const depois = texto.slice(fim);
+  const espacoAntes = antes.search(/\s\S*$/);
+  const inicioToken = espacoAntes === -1 ? 0 : espacoAntes + 1;
+  const espacoDepois = depois.search(/\s/);
+  const fimToken = espacoDepois === -1 ? texto.length : fim + espacoDepois;
+  const token = texto.slice(inicioToken, fimToken);
+  return token.includes('://') || pareceEnderecoOuArquivo(token);
+}
+
+/**
  * Remove diacríticos (NFD) e PRESERVA a caixa. É esta a base das duas visões do texto: a
  * regra (A) varre esta (a caixa é o dado que separa `crm_leads` de `PED_2024_001`), as
  * demais varrem a versão em minúsculas. Como só diferem por `toLowerCase()`, os índices
@@ -439,6 +465,7 @@ export function detectarVazamentoInterno(body: string): VazamentoInterno {
   }
   for (const regra of REGRAS) {
     for (const m of texto.matchAll(regra.re)) {
+      if (regra.ignoraSe?.(m, texto)) continue;
       achados.push({ termo: regra.rotulo ?? m[0], categoria: regra.categoria, posicao: m.index });
     }
   }

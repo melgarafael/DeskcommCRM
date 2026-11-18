@@ -53,6 +53,30 @@ const definition = (execute: (args: unknown) => unknown) =>
     inputSchema: z.object({ body: z.string().optional() }),
     execute: async (args) => execute(args),
   });
+it("consulta obrigatória veta texto e mídia não confirmados antes de produzir candidato", async () => {
+  const p = preview();
+  const permitido = "A data cadastrada é 31/12/2026.";
+  const fonte = vi.fn(async (body: string) => body === permitido);
+  const send = vi.fn();
+  const tools = applyPreviewPolicy({ send_message: definition(send) }, p, gate(), () => [], undefined, undefined, undefined, undefined, undefined, undefined, fonte);
+  await tools.send_message!.execute!({ body: "Entregaremos amanhã." }, { toolCallId: "t", messages: [], context: undefined });
+  expect(p.result.candidates).toHaveLength(0);
+  expect(p.result.impediments.at(-1)?.code).toBe("fonte_obrigatoria");
+  await tools.send_message!.execute!({ body: permitido, imagem_url: "https://outro.example/imagem.png" }, { toolCallId: "t", messages: [], context: undefined });
+  expect(p.result.candidates).toHaveLength(0);
+  await tools.send_message!.execute!({ body: permitido }, { toolCallId: "t", messages: [], context: undefined });
+  expect(p.result.candidates[0]?.body).toBe(permitido);
+  expect(send).not.toHaveBeenCalled();
+});
+it('revalida a fonte antes de registrar a candidata final', async () => {
+  const p = preview();
+  const fonte = vi.fn().mockResolvedValueOnce(true).mockResolvedValue(false);
+  const tools = applyPreviewPolicy({ send_message: definition(vi.fn()) }, p, gate(), () => [], undefined, undefined, undefined, undefined, undefined, undefined, fonte);
+  await tools.send_message!.execute!({ body: 'Confirmado.' }, { toolCallId: 't', messages: [], context: undefined });
+  expect(fonte).toHaveBeenCalledTimes(2);
+  expect(p.result.candidates).toHaveLength(0);
+  expect(p.result.impediments.at(-1)?.code).toBe('fonte_obrigatoria');
+});
 async function execute(t: ReturnType<typeof applyPreviewPolicy>, name: string, args: unknown = {}) {
   return t[name]!.execute!(args, { toolCallId: 'test', messages: [], context: undefined });
 }
