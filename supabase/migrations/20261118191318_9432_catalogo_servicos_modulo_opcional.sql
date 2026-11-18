@@ -1,6 +1,6 @@
 -- manifest: Catálogo de serviços como módulo opcional (#3372, #3480, doc 212 = A/A): `fn_catalogo_servicos_provisionar()` cria `catalog_service_details` (1:1 com `catalog_products`, SEM preço) só onde o módulo é instalado; `fn_catalogo_servicos_salvar` grava item e detalhe numa transação, com a família travada e a regra do sinal fixo conferida no estado final. `catalog_products` não muda e nenhuma instalação muda sozinha.
 --
--- 9419 — o serviço nasce como módulo opcional (ADR-0002).
+-- 9432 — o serviço nasce como módulo opcional (ADR-0002).
 --
 -- A base é de @webtecnica (#3480): tipo, unidade, prazo, sinal, instruções à IA e
 -- variação como item próprio do catálogo. O doc 212 decidiu o destino (módulo
