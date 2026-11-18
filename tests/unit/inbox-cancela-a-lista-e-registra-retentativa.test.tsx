@@ -89,7 +89,7 @@ let logSpy: ReturnType<typeof vi.spyOn>;
 /** As linhas `request_retried` que o cliente escreveu neste teste. */
 function registros(): Array<Record<string, unknown>> {
   return logSpy.mock.calls
-    .map((args) => {
+    .map((args: unknown[]) => {
       const [linha] = args as [unknown];
       if (typeof linha !== "string") return null;
       try {
@@ -98,7 +98,10 @@ function registros(): Array<Record<string, unknown>> {
         return null;
       }
     })
-    .filter((l): l is Record<string, unknown> => l !== null && l.msg === "request_retried");
+    .filter(
+      (l: Record<string, unknown> | null): l is Record<string, unknown> =>
+        l !== null && l.msg === "request_retried",
+    );
 }
 
 beforeEach(() => {
