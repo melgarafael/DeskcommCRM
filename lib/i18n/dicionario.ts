@@ -18458,6 +18458,8 @@ export const DICIONARIO: Traducoes = {
   "Sem telefone no cadastro": { es: "Sin teléfono en el registro" },
   "Telefone fora do formato de envio": { es: "Teléfono con formato no válido para envío" },
   "Pediu para não receber mensagens": { es: "Pidió no recibir mensajes" },
+  "Dono da carteira dos contatos criados": { es: "Dueño de la cartera de los contactos creados" },
+  "Eu (quem importa)": { es: "Yo (quien importa)" },
   "Motivo": { es: "Motivo" },
   "Já cadastrado como": { es: "Ya registrado como" },
   "De quem é": { es: "De quién es" },

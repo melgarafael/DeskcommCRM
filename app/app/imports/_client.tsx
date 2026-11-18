@@ -13,7 +13,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { useActiveOrg, useUser } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
+import { roleAtLeast } from "@/lib/auth/types";
 
 interface BatchRow {
   id: string;
@@ -59,8 +61,20 @@ function csvDasLinhasDeFora(p: Previa, t: (s: string) => string): string {
   return "\uFEFF" + [cabecalho.map(aspas).join(","), ...linhas].join("\r\n");
 }
 
+interface Membro {
+  user_id: string;
+  role: string;
+  full_name: string | null;
+}
+
 export function ImportsListClient() {
   const t = useT();
+  const usuario = useUser();
+  const podeEscolherODono = roleAtLeast(useActiveOrg()?.role, "manager");
+  // A23 parte 2: o dono da carteira dos contatos criados. Padrão: quem importa.
+  // O Atendente só é dono dele mesmo (o servidor também confere); gerente e admin escolhem.
+  const [membros, setMembros] = useState<Membro[]>([]);
+  const [donoId, setDonoId] = useState<string>(usuario.id);
   const [rows, setRows] = useState<BatchRow[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -78,6 +92,14 @@ export function ImportsListClient() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (!podeEscolherODono) return;
+    void fetch("/api/v1/team/assignable")
+      .then((r) => r.json())
+      .then((j) => setMembros(Array.isArray(j.data) ? (j.data as Membro[]) : []))
+      .catch(() => setMembros([]));
+  }, [podeEscolherODono]);
+
   async function enviar(modo: "previa" | "importar") {
     if (!file) return;
     setUploading(true);
@@ -85,6 +107,7 @@ export function ImportsListClient() {
     const fd = new FormData();
     fd.set("file", file);
     if (modo === "previa") fd.set("previa", "true");
+    else fd.set("dono_user_id", donoId);
     const res = await fetch("/api/v1/imports", { method: "POST", body: fd });
     const json = await res.json();
     setUploading(false);
@@ -167,6 +190,34 @@ export function ImportsListClient() {
             >
               {t("Baixar o CSV do que ficou de fora")} ({previa.linhas_fora.length})
             </Button>
+          </div>
+          {/* A23 parte 2: de quem ficam os contatos criados. */}
+          <div className="grid max-w-sm gap-1.5">
+            <label className="text-sm font-medium" htmlFor="dono-da-carteira">
+              {t("Dono da carteira dos contatos criados")}
+            </label>
+            {podeEscolherODono ? (
+              <select
+                id="dono-da-carteira"
+                data-testid="dono-da-carteira"
+                className="h-9 rounded-md border bg-background px-2 text-sm"
+                value={donoId}
+                onChange={(e) => setDonoId(e.target.value)}
+              >
+                <option value={usuario.id}>{t("Eu (quem importa)")}</option>
+                {membros
+                  .filter((m) => m.user_id !== usuario.id)
+                  .map((m) => (
+                    <option key={m.user_id} value={m.user_id}>
+                      {m.full_name ?? m.user_id.slice(0, 8)}
+                    </option>
+                  ))}
+              </select>
+            ) : (
+              <p className="text-sm text-muted-foreground" data-testid="dono-da-carteira">
+                {t("Eu (quem importa)")}
+              </p>
+            )}
           </div>
           <p className="text-xs text-muted-foreground">
             {t("O que já existe não é duplicado nem sobrescrito: o CSV diz de quem é, para você resolver com o responsável.")}
