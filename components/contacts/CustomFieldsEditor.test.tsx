@@ -441,3 +441,96 @@ describe("CustomFieldsEditor — lista pesquisável com MÚLTIPLA ESCOLHA (#3182
     expect(gravado).toEqual(["consolidadora-a", "operadora-b"]);
   });
 });
+
+/**
+ * A MÚLTIPLA ESCOLHA COMPACTA (#2979, item 3).
+ *
+ * O defeito: o `multiselect` desenhava UMA CAIXINHA POR OPÇÃO — o "Tipo de
+ * serviço" com 20 opções eram 20 caixinhas empilhadas no dossiê. Ele não pode
+ * virar `select`, porque as automações fazem `contains` sobre a LISTA. Agora
+ * usa o seletor da lista pesquisável múltipla (busca + chips), e o registro
+ * continua o mesmo: a lista dos `value` das opções.
+ */
+describe("CustomFieldsEditor — múltipla escolha compacta (#2979)", () => {
+  const SERVICOS = Array.from({ length: 20 }, (_, i) => ({
+    value: `servico-${i + 1}`,
+    label: `Serviço ${i + 1}`,
+  }));
+  SERVICOS[6] = { value: "cruzeiro", label: "Cruzeiro" };
+  const TIPO: CustomFieldDef[] = [
+    { key: "tipo_servico", label: "Tipo de serviço", type: "multiselect", options: SERVICOS },
+  ];
+  const AVISO = "Esse valor não está na lista. Escolha uma das opções.";
+
+  function Harness({
+    inicial,
+    campos = TIPO,
+    aoGravar,
+  }: {
+    inicial?: unknown;
+    campos?: CustomFieldDef[];
+    aoGravar?: (v: unknown) => void;
+  }) {
+    const [v, setV] = useState<Record<string, unknown>>(
+      inicial === undefined ? {} : { tipo_servico: inicial },
+    );
+    return (
+      <CustomFieldsEditor
+        mode="lead"
+        fields={campos}
+        value={v}
+        onChange={(n) => {
+          aoGravar?.(n.tipo_servico);
+          setV(n);
+        }}
+      />
+    );
+  }
+
+  it("20 opções não viram 20 caixinhas: só os marcados aparecem, como chips", () => {
+    render(<Harness inicial={["servico-2", "servico-3"]} />);
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+    expect(screen.getByText("Serviço 2")).toBeTruthy();
+    expect(screen.getByText("Serviço 3")).toBeTruthy();
+    expect(screen.queryByText("Serviço 4")).toBeNull();
+    expect(screen.queryByRole("listbox")).toBeNull();
+    // O rótulo continua apontando para o campo.
+    expect(screen.getByRole("combobox", { name: /Tipo de serviço/ })).toBeTruthy();
+  });
+
+  it("buscar e escolher grava o `value` da opção, somado à lista — o mesmo registro das caixinhas", () => {
+    let gravado: unknown;
+    render(<Harness inicial={["servico-2"]} aoGravar={(v) => (gravado = v)} />);
+    const input = screen.getByRole("combobox", { name: /Tipo de serviço/ });
+    fireEvent.change(input, { target: { value: "cruz" } });
+    fireEvent.click(screen.getByRole("option", { name: "Cruzeiro" }));
+    expect(gravado).toEqual(["servico-2", "cruzeiro"]);
+    expect(screen.getByText("Cruzeiro")).toBeTruthy();
+  });
+
+  it("ao focar, a lista abre com as opções para escolher sem digitar", () => {
+    render(<Harness />);
+    fireEvent.focus(screen.getByRole("combobox", { name: /Tipo de serviço/ }));
+    expect(screen.getByRole("option", { name: "Serviço 1" })).toBeTruthy();
+  });
+
+  it("remover um chip tira só ele do registro", () => {
+    let gravado: unknown;
+    render(<Harness inicial={["servico-2", "cruzeiro"]} aoGravar={(v) => (gravado = v)} />);
+    fireEvent.click(screen.getByRole("button", { name: "Remover Cruzeiro" }));
+    expect(gravado).toEqual(["servico-2"]);
+    expect(screen.queryByText("Cruzeiro")).toBeNull();
+  });
+
+  it("texto fora das opções não entra, nem com `allow_new` (chave só da lista pesquisável)", () => {
+    const comNovo: CustomFieldDef[] = [{ ...TIPO[0]!, allow_new: true }];
+    const aoGravar = vi.fn();
+    render(<Harness inicial={["servico-2"]} campos={comNovo} aoGravar={aoGravar} />);
+    const input = screen.getByRole("combobox", { name: /Tipo de serviço/ });
+    fireEvent.change(input, { target: { value: "Safári" } });
+    expect(fireEvent.keyDown(input, { key: "Enter" })).toBe(false);
+    expect(screen.getByText(AVISO)).toBeTruthy();
+    expect(aoGravar).not.toHaveBeenCalled();
+    expect(screen.queryByText("Este campo aceita um valor novo, fora da lista.")).toBeNull();
+  });
+});

@@ -5,6 +5,7 @@ import { env } from "@/lib/env";
 import { fetchDoServidor } from "@/lib/supabase/fetch-do-servidor";
 import { urlDoSupabaseNoServidor } from "@/lib/supabase/url-do-servidor";
 import { isPublicPath } from "@/lib/auth/public-paths";
+import { validarIdentidade } from "@/lib/supabase/identidade-validada";
 import { CABECALHO_SEM_CSS, PARAMETRO_SEM_CSS } from "@/lib/branding/sem-css-personalizado";
 import {
   verifyImpersonateCookieEdge,
@@ -103,9 +104,20 @@ export async function proxy(request: NextRequest) {
   );
 
   // Validate JWT server-side (NEVER use getSession on backend per CLAUDE.md).
+  //
+  // #4326 item 1: esta chamada era uma ida ao GoTrue por aba, por fetch e por
+  // navegação — o proxy roda ANTES do handler, que desde o #3696 já lê a mesma
+  // validação de um cache curto. `validarIdentidade` usa a MESMA chave
+  // (`sessao:<hash dos cookies>`), então proxy e handler dividem a entrada:
+  // dentro da janela, uma ida ao `/auth/v1/user` serve as duas pontas. O teto
+  // do proxy para antes da margem de renovação do auth-js: é este `getUser()`
+  // que renova e devolve o cookie novo. Sem sessão reconhecível o caminho é o
+  // de antes.
+  // A autorização segue por requisição — o RPC de platform admin abaixo não
+  // entra nesse cache.
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await validarIdentidade(() => supabase.auth.getUser(), request.cookies.getAll());
 
   if (!user) {
     // API routes must respond with JSON envelope (contract: {error:{code,message}})

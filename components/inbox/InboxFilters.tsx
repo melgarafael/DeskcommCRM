@@ -30,6 +30,7 @@ import {
   type ModoDeEtiqueta,
   marcadoresEscolhidos,
 } from "@/lib/inbox/marcador-da-conversa";
+import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabulary";
 import { useConversationTagVocabulary } from "@/hooks/inbox/useConversationTags";
@@ -39,7 +40,18 @@ import { roleAtLeast, type Role, type VisibilityMode } from "@/lib/auth/types";
 import { SeletorDeAtendente } from "@/components/inbox/SeletorDeAtendente";
 import type { Sector } from "@/hooks/team/useSectors";
 
-export type InboxTab = "unassigned" | "mine" | "all" | "closed" | "archived" | "ai";
+export type InboxTab =
+  | "unassigned"
+  | "mine"
+  | "all"
+  | "closed"
+  | "archived"
+  | "ai"
+  /**
+   * A aba "Pessoal" (#4434): o fora-da-operação que continua alcançável para
+   * quem marcou o contato. Não é trabalho, e por isso fecha a faixa.
+   */
+  | "pessoal";
 
 /**
  * A faixa na ORDEM DO TRABALHO (#2498): primeiro o que o robô conduz, depois o
@@ -66,6 +78,10 @@ const INBOX_TABS: { value: InboxTab; label: string }[] = [
   // separada dela porque são passados diferentes (#923): fechada é atendimento
   // encerrado, arquivada é o que saiu da fila de trabalho sem ser destruído.
   { value: "archived", label: "Arquivadas" },
+  // PESSOAL (#4434): o fora-da-operação que continua alcançável. Fecha a faixa de
+  // propósito — é o único lugar da tela que não é trabalho, e o operador
+  // atravessa as abas de atendimento para chegar nele.
+  { value: "pessoal", label: "Pessoal" },
 ];
 
 /**
@@ -77,7 +93,17 @@ export function visibleInboxTabs(role: Role, mode: VisibilityMode | undefined): 
   // `own_and_sector` (#4022): a conversa do colega do setor não está na Fila nem
   // em Minhas — sem a aba Todas ela não aparece em lugar nenhum da tela.
   const hideAll = role === "agent" && mode !== "all" && mode !== "own_and_sector";
-  return INBOX_TABS.filter((t) => !(t.value === "all" && hideAll)).map((t) => t.value);
+  // A aba "Pessoal" (#4434) segue a MESMA régua da rota que marca e desmarca:
+  // `manager`+ (`requireRole("manager")`). Para quem não pode marcar, ela seria
+  // uma porta para um conjunto que ele nunca preenche.
+  //
+  // ⚠️ Visibilidade de ABA não é permissão: o `admin` vê a aba e, dentro dela,
+  // só o próprio pessoal. Quem decide o que aparece é o dono da marca, no
+  // servidor — esta linha é cosmética, como a de "Todas".
+  const hidePessoal = !roleAtLeast(role, "manager");
+  return INBOX_TABS.filter(
+    (t) => !(t.value === "all" && hideAll) && !(t.value === "pessoal" && hidePessoal),
+  ).map((t) => t.value);
 }
 
 export interface InboxFiltersValue {
@@ -344,6 +370,10 @@ export function InboxFilters({ value, onChange, filas: filasDaOrganizacao }: Pro
     all: counts?.all,
     closed: counts?.closed,
     archived: counts?.archived,
+    // A aba "Pessoal" (#4434): badge que conta o que a aba lista — o pessoal
+    // DESTE usuário. Opcional na resposta por causa de cache antigo (ver
+    // `ConversationCounts`), então `undefined` some, não vira zero.
+    pessoal: counts?.pessoal,
   };
   // Filtrar por um número que saiu da lista (o operador acabou de excluir o
   // canal) deixa o inbox mostrando um subconjunto — às vezes vazio — sem nada na
@@ -457,9 +487,12 @@ export function InboxFilters({ value, onChange, filas: filasDaOrganizacao }: Pro
    * mesma tela que mente que esta entrega existe para matar.
    */
   const [buscaDeEtiqueta, setBuscaDeEtiqueta] = useState("");
-  const termoDaEtiqueta = buscaDeEtiqueta.trim().toLocaleLowerCase();
+  // Os DOIS lados pela régua de acento do repo (`termoSemAcento`, #4410):
+  // `toLocaleLowerCase` dobra CAIXA e não ACENTO, então `orcamento` não achava
+  // a etiqueta "Orçamento enviado".
+  const termoDaEtiqueta = termoSemAcento(buscaDeEtiqueta.trim());
   const opcoesVisiveis = termoDaEtiqueta
-    ? opcoesDoSeletor.filter((tag) => tag.toLocaleLowerCase().includes(termoDaEtiqueta))
+    ? opcoesDoSeletor.filter((tag) => termoSemAcento(tag).includes(termoDaEtiqueta))
     : opcoesDoSeletor;
   const alternaEtiqueta = (tag: string) => {
     const escolhida = etiquetas.includes(tag);

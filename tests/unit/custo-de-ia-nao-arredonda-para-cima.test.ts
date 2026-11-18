@@ -64,8 +64,13 @@ describe("computeCost — centavos fracionados", () => {
     expect(cents).toBeLessThan(0.02);
   });
 
-  it("zero tokens é zero, não um centavo", async () => {
-    expect(await computeCost({ model: "gpt-5.6-luna", promptTokens: 0, completionTokens: 0 })).toBe(0);
+  it("zero tokens não é zero centavo: é ausência de medição — nulo", async () => {
+    // Antes da #4697 este caso devolvia `0`, com a leitura "não gastou". A
+    // doutrina da coluna é a outra: `0` diz "custo zero" (chamada gratuita) e
+    // `null` diz "não sei". Uma chamada que chegou aqui com os dois contadores
+    // zerados não é gratuita — é uma chamada cujo `usage` o provedor não
+    // mandou. Gravar `0` apagava o sinal de gasto incompleto da tela e do teto.
+    expect(await computeCost({ model: "gpt-5.6-luna", promptTokens: 0, completionTokens: 0 })).toBeNull();
   });
 
   it("modelo que nenhum catálogo conhece custa null — nunca um 0 que diria \"grátis\" à tela e ao teto", async () => {

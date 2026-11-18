@@ -9,6 +9,9 @@ import type { NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoAviso } from "@/lib/i18n/idioma-do-aviso";
+import type { Idioma } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 import { modulosLigados } from "@/lib/instalacao/modulos";
 import { capacidadesLigadas } from "@/lib/organizacao/capacidades";
@@ -72,6 +75,7 @@ async function rodar(admin: ReturnType<typeof createAdminClient>, requestId: str
     { tarefas: tarefas ?? [], propostas: propostas ?? [], orgsLigadas },
     new Date(),
   );
+  const idiomas = new Map<string, Idioma>();
   for (const t of achadas) {
     const { data: existente } = await admin
       .from("agent_inbox_items")
@@ -82,10 +86,12 @@ async function rodar(admin: ReturnType<typeof createAdminClient>, requestId: str
       .eq("status", "open")
       .maybeSingle();
     if (!existente) {
+      // A Central mostra o texto como foi gravado: o aviso nasce no idioma da organização.
+      const idioma = await idiomaDoAviso(admin, t.organization_id, idiomas);
       const { error: inboxErr } = await admin.from("agent_inbox_items").insert({
         organization_id: t.organization_id, kind: "proposal_promised_not_created", severity: "warn",
-        title: "Uma proposta prometida não foi criada",
-        body: "Um compromisso de enviar proposta venceu e nenhuma proposta foi criada para este negócio.",
+        title: traduzir("Uma proposta prometida não foi criada", idioma),
+        body: traduzir("Um compromisso de enviar proposta venceu e nenhuma proposta foi criada para este negócio.", idioma),
         ref_kind: "lead", ref_id: t.lead_id,
       });
       if (inboxErr) {

@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type * as Sessao from "@/lib/channels/meta/session";
@@ -588,6 +588,100 @@ describe("canal oficial direto — limites e exemplos ANTES da plataforma", () =
 
     expect(res.status).toBe(200);
     expect(h.sync).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * QUEM NÃO É `admin` E A RECUSA DO CONTEÚDO (#3635, fatia 1) — os dois desfechos
+ * que faltavam prender.
+ *
+ * ─── Por que estes dois ──────────────────────────────────────────────────────
+ *
+ * 1. `admin` é a única porta da ESCRITA. Ele já era exigido, mas nenhum caso
+ *    provava que a recusa acontece ANTES da plataforma: um `requireRole`
+ *    movido para depois do `fetch` (ou um ramo novo que o ignore) continuaria
+ *    "verde" na asserção de status, enquanto um `agent` conseguiria criar
+ *    modelo na conta da empresa. Aqui a prova é a chamada NÃO existir.
+ *
+ * 2. A recusa do CONTEÚDO pela plataforma chegava como `502` com o texto cru:
+ *    "erro do servidor" para um nome repetido ou um componente fora do formato.
+ *    O caso prende o desfecho que o operador lê (422, na língua dele) e o motivo
+ *    da plataforma em `details` — e, no mesmo caso, que o canal de PARCEIRO não
+ *    herdou nada disto: ele segue com a mensagem crua, que é o contrato dele.
+ */
+describe("canal oficial direto — admin obrigatório e recusa legível da plataforma", () => {
+  it("⭐ sem `admin` a escrita é recusada ANTES da plataforma (nenhuma chamada)", async () => {
+    h.role.mockResolvedValue({
+      ok: false,
+      response: NextResponse.json(
+        { error: { code: "forbidden_role", message: "forbidden_role" } },
+        { status: 403, headers: { "x-request-id": "req-recusa" } },
+      ),
+    });
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const res = await post({ acao: "criar", ...ALVO, category: "UTILITY", components: CORPO });
+
+    expect(res.status).toBe(403);
+    await expect(res.json()).resolves.toMatchObject({ error: { code: "forbidden_role" } });
+    // E o papel exigido é `admin`, não "algum papel": um `orgOrFail` trocado por
+    // `agent` deixaria um convidado criar modelo na conta da empresa, e o 403
+    // acima continuaria verde porque o dublê nega qualquer papel.
+    expect(h.role).toHaveBeenCalledWith(
+      "admin",
+      expect.objectContaining({ resource: "channels_templates" }),
+    );
+    // A prova que importa: o corpo era VÁLIDO e mesmo assim nada saiu daqui.
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(h.sync).not.toHaveBeenCalled();
+    expect(h.audit).not.toHaveBeenCalled();
+    // E a credencial nem foi resolvida: a recusa é antes de qualquer I/O de conta.
+    expect(h.creds).not.toHaveBeenCalled();
+    expect(h.sessao).not.toHaveBeenCalled();
+  });
+
+  it("⭐ recusa do CONTEÚDO vira 422 legível com o motivo — e o parceiro não muda", async () => {
+    h.espelho = [LINHA_OFICIAL];
+    const MOTIVO = "Invalid parameter: name is already in use";
+    // A plataforma recusa o payload: 4xx com código e motivo no corpo.
+    // `mockImplementation` e não `mockResolvedValue`: o corpo de uma `Response` só
+    // pode ser lido UMA vez, e o mesmo objeto servido às duas chamadas (oficial e
+    // parceiro) chegaria vazio na segunda.
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      new Response(
+        JSON.stringify({ error: { message: MOTIVO, code: 100, type: "OAuthException" } }),
+        { status: 400 },
+      ),
+    );
+
+    const res = await post({ acao: "criar", ...ALVO, category: "UTILITY", components: CORPO });
+
+    // 422, não 502: o defeito é do MODELO, não do servidor.
+    expect(res.status).toBe(422);
+    const j = (await res.json()) as {
+      error: { code: string; message: string; details: { codigo: string; motivo: string } };
+    };
+    expect(j.error.code).toBe("validation_failed");
+    // Mensagem na língua da tela, dizendo O QUE conferir — e nada de "erro do servidor".
+    expect(j.error.message).toContain("recusou o modelo");
+    expect(j.error.message).not.toMatch(/internal_error|502/);
+    // O motivo da plataforma chega preservado, em `details` (diagnóstico, não interface).
+    expect(j.error.details).toMatchObject({ codigo: "100", motivo: MOTIVO });
+    // Recusa não sincroniza nem audita: nada foi gravado.
+    expect(h.sync).not.toHaveBeenCalled();
+    expect(h.audit).not.toHaveBeenCalled();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    // ─── CONTROLE: o canal de PARCEIRO segue com o contrato DELE ───────────────
+    // O mesmo 400, pelo binding do parceiro: a mensagem crua continua saindo
+    // (é o que a rota dele já devolvia), sem a tradução desta fatia.
+    await expect(
+      graphPartnerTemplateOps.create({
+        organizationId: "org-da-sessao",
+        sessionRef: "PN-PARCEIRO",
+        draft: { name: "boas_vindas", language: "pt_BR", category: "UTILITY", components: CORPO },
+      }),
+    ).rejects.toThrow(MOTIVO);
   });
 });
 

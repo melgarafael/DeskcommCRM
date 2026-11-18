@@ -37,12 +37,18 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
 
+import { TELEGRAM_SECRET_HEADER } from "./bot/webhook";
+
 /** Cabeçalhos que NUNCA entram no arquivo, por menor que seja a chance. */
 // `asaas-access-token` (spec da cobrança do revendedor §2.4): o Asaas autentica
 // o webhook com um token ESTÁTICO no cabeçalho — é a credencial inteira, não uma
 // assinatura. A rota de cobrança nem grava cabeçalho; isto é o cinto para quando
 // alguém apontar o aviso do Asaas para uma rota de canal.
-const PROIBIDOS = ["authorization", "cookie", "x-api-key", "asaas-access-token"];
+// `x-telegram-bot-api-secret-token` (#3486): o Telegram autentica o webhook com o
+// `secret_token` do setWebhook repetido VERBATIM no cabeçalho — é o segredo
+// inteiro, não uma assinatura. Guardado aqui, qualquer um que lesse o arquivo
+// forjaria updates do robô.
+const PROIBIDOS = ["authorization", "cookie", "x-api-key", "asaas-access-token", TELEGRAM_SECRET_HEADER];
 
 /**
  * Cabeçalhos sanitizados.
@@ -152,4 +158,36 @@ export async function fecharArquivoDoWebhook(
     // A linha `received` já está gravada com o corpo cru, que é o que importa.
     // Falhar aqui não pode derrubar a resposta ao provedor.
   }
+}
+
+/** Só a rodada que encontrou a linha ainda pendente pode registrar a desistência. */
+export async function marcarArquivoDoWebhookComoMorto(
+  admin: SupabaseClient,
+  linha: { id: string; organization_id: string | null },
+  pendente: { status: "received" | "error"; attempts: number },
+  desfecho: { motivo: string; tentativas: number },
+): Promise<"gravado" | "mudou" | "falhou"> {
+  const update = admin
+    .from("webhook_events_log")
+    .update({
+      status: "dead",
+      attempts: desfecho.tentativas,
+      error_message: desfecho.motivo.slice(0, 500),
+    })
+    .eq("id", linha.id)
+    .eq("status", pendente.status)
+    .eq("attempts", pendente.attempts);
+  const daOrg =
+    linha.organization_id === null
+      ? update.is("organization_id", null)
+      : update.eq("organization_id", linha.organization_id);
+  const { data, error } = await daOrg.select("id");
+  if (error) {
+    logger.error("[webhook-replay] não marcou a linha como morta", {
+      log_id: linha.id,
+      detail: error.message,
+    });
+    return "falhou";
+  }
+  return data?.length ? "gravado" : "mudou";
 }

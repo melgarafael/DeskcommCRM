@@ -21,6 +21,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -98,7 +99,7 @@ export async function POST(
     console.warn("[ai-knowledge-reindex] clear last_index_error failed (non-blocking):", clearErr.message);
   }
 
-  // Emit knowledge_source.updated (fire-and-forget).
+  // Confirm the durable event before reporting that reindexing is queued.
   const { error: emitErr } = await admin.rpc("emit_event" as never, {
     p_event_type: "knowledge_source.updated",
     p_entity_kind: "ai_knowledge_source",
@@ -113,7 +114,13 @@ export async function POST(
   } as never);
 
   if (emitErr) {
-    console.warn("[ai-knowledge-reindex] emit_event failed (non-blocking):", emitErr.message);
+    logger.warn("[ai-knowledge-reindex] emit_event failed", { error: emitErr.message, requestId });
+    return fail(
+      "internal_error",
+      t("Não foi possível solicitar a preparação do material. Tente novamente."),
+      500,
+      { requestId },
+    );
   }
 
   // Reindexar não muda o conteúdo, mas muda quando o agente passa a saber dele.

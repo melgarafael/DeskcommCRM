@@ -33,6 +33,12 @@ import type { MotivoDeExclusao, StatusDoDestinatario } from "./tipos";
 export interface ContatoParaDecidir {
   contactId: string;
   telefone: string | null;
+  /**
+   * `contacts.email` (único por organização). Só o canal de e-mail o usa; é
+   * opcional porque o despacho do WhatsApp monta o contato por outro caminho e
+   * não tem por que carregar o e-mail.
+   */
+  email?: string | null;
   bloqueado: boolean;
   /** `contacts.is_personal` (spec 21): fora da operação, nada sai para ele. */
   pessoal: boolean;
@@ -41,8 +47,35 @@ export interface ContatoParaDecidir {
   recusouMarketing: boolean;
 }
 
+/**
+ * Por onde a audiência fala. O RECORTE é o mesmo; o que muda é o endereço que
+ * precisa existir — telefone para WhatsApp, e-mail para e-mail (#3441).
+ */
+export type CanalDaAudiencia = "whatsapp" | "email";
+
 /** O telefone que o canal aceita: E.164 com `+`, o mesmo CHECK de `contacts.phone_number`. */
 const E164 = /^\+\d{8,15}$/;
+
+/**
+ * O e-mail que o envio aceita: uma @ e um domínio com ponto e TLD.
+ *
+ * Não é a RFC 5322 inteira — endereço citado, `+`, subdomínio e IDN passam na
+ * primeira parte; o que se recusa aqui é o que o provedor de envio recusaria de
+ * qualquer jeito (espaço, sem @, sem domínio). O teto de 254 caracteres é o do
+ * SMTP (`RFC 5321` §4.5.3.1.3), e o dobro de qualquer endereço real.
+ */
+const EMAIL_DE_ENVIO = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const TETO_DO_EMAIL = 254;
+
+/** O endereço de e-mail pronto para envio e para a unicidade: `trim` + minúsculas. */
+export function normalizarEmail(bruto: string | null | undefined): string {
+  return (bruto ?? "").trim().toLowerCase();
+}
+
+/** Este endereço serve para envio? Vazio não é inválido: é ausente (`sem_email`). */
+export function emailValido(email: string): boolean {
+  return email.length <= TETO_DO_EMAIL && EMAIL_DE_ENVIO.test(email);
+}
 
 /**
  * Este contato pode receber? `null` = pode.
@@ -51,12 +84,25 @@ const E164 = /^\+\d{8,15}$/;
  * porque é o veto irrevogável — quem pediu para parar não é "sem telefone", é
  * alguém que pediu para parar, e trocar isso na tela seria mentir sobre o
  * motivo de não ter recebido.
+ *
+ * Os vetos que não são de endereço valem nos dois canais; os de endereço, só no
+ * canal perguntado. Um contato sem telefone PODE receber e-mail, e vice-versa —
+ * por isso `canal` é parâmetro, e não um segundo conjunto de motivos.
  */
-export function motivoParaExcluir(c: ContatoParaDecidir): MotivoDeExclusao | null {
+export function motivoParaExcluir(
+  c: ContatoParaDecidir,
+  canal: CanalDaAudiencia = "whatsapp",
+): MotivoDeExclusao | null {
   if (c.bloqueado) return "opt_out";
   if (c.pessoal) return "contato_pessoal";
   if (c.anonimizado) return "anonimizado";
   if (c.recusouMarketing) return "recusou_marketing";
+  if (canal === "email") {
+    const email = normalizarEmail(c.email);
+    if (email === "") return "sem_email";
+    if (!emailValido(email)) return "email_invalido";
+    return null;
+  }
   const telefone = c.telefone?.trim() ?? "";
   if (telefone === "") return "sem_telefone";
   if (!E164.test(telefone)) return "telefone_invalido";
@@ -109,6 +155,11 @@ export interface ContextoDaClassificacao {
   hashDoEndereco: (endereco: string) => string;
   /** Renderiza o texto e diz o que faltou. Injetado para esta função ficar pura. */
   renderizar: (c: CandidatoDaAudiencia) => { texto: string; faltando: string[] };
+  /**
+   * Por onde esta audiência fala. Omitido = WhatsApp, que é tudo o que existia
+   * antes do canal de e-mail (#3441) e o que o despacho continua perguntando.
+   */
+  canal?: CanalDaAudiencia;
 }
 
 /**
@@ -138,6 +189,8 @@ export function classificarAudiencia(
   const enderecosVistos = new Set<string>();
   const saida: LinhaClassificada[] = [];
 
+  const canal = ctx.canal ?? "whatsapp";
+
   for (const candidato of candidatos) {
     const excluir = (motivo: MotivoDeExclusao): void => {
       saida.push({ candidato, elegivel: false, motivo, corpo: null });
@@ -147,7 +200,7 @@ export function classificarAudiencia(
       excluir("excluido_manualmente");
       continue;
     }
-    const pessoal = motivoParaExcluir(candidato);
+    const pessoal = motivoParaExcluir(candidato, canal);
     if (pessoal) {
       excluir(pessoal);
       continue;
@@ -156,8 +209,14 @@ export function classificarAudiencia(
       excluir("ja_em_campanha");
       continue;
     }
-    const endereco = candidato.telefone!.trim();
-    if (ctx.suprimidos.has(ctx.hashDoEndereco(endereco))) {
+    // O endereço é o do CANAL: telefone no WhatsApp, e-mail (normalizado) no
+    // e-mail. É ele que a unicidade compara — dois cadastros com o mesmo e-mail
+    // são a mesma pessoa recebendo duas vezes.
+    const endereco = canal === "email" ? normalizarEmail(candidato.email) : candidato.telefone!.trim();
+    // A lista de supressão da operação guarda HASH DE TELEFONE (migration 0376):
+    // perguntá-la com um e-mail daria "não está suprimido" sempre, que é pior do
+    // que não perguntar. A supressão de e-mail entra na fatia dela (#3441, E1).
+    if (canal === "whatsapp" && ctx.suprimidos.has(ctx.hashDoEndereco(endereco))) {
       excluir("suprimido");
       continue;
     }
