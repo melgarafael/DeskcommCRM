@@ -907,6 +907,17 @@ async function handle(req: NextRequest): Promise<Response> {
     return fail("internal_error", "Failed to prune history.", 500, { requestId });
   }
 
+  // ── A poda do OAuth do MCP (migration 9390) ──────────────────────────
+  //
+  // Cliente registrado e nunca autorizado em 24 h, código vencido, concessão
+  // morta e cliente parado: a regra mora em `fn_mcp_oauth_podar`, aqui é só o
+  // relógio — e é aqui, e não no `/register`, para a poda não rodar dentro de
+  // uma requisição pública. Falha entra em `falhas`, como as podas irmãs, e
+  // a contagem vai na MESMA linha `retention.sweep_run` da rodada.
+  const podaOAuth = await admin.rpc("fn_mcp_oauth_podar" as never);
+  const oauthMcpPodados = !podaOAuth.error && typeof podaOAuth.data === "number" ? podaOAuth.data : 0;
+  if (podaOAuth.error) resultado.falhas.push(`fn_mcp_oauth_podar: ${podaOAuth.error.message}`.slice(0, 300));
+
   // ── A cascata de anonimização que ficou pela metade ──────────────────
   //
   // Mora AQUI, e não numa rota de cron própria, por uma razão de packaging: o
@@ -953,12 +964,12 @@ async function handle(req: NextRequest): Promise<Response> {
   // a fazer. E o metadata leva as contagens do que JÁ foi apagado — antes, o
   // catch registrava só `{falhou, erro}` e o trabalho que aconteceu sumia.
   const houveFalhaParcial = resultado.falhas.length > 0;
-  if (houveEfeito(resultado) || houveFalhaParcial) {
+  if (houveEfeito(resultado) || oauthMcpPodados > 0 || houveFalhaParcial) {
     void audit({
       action: "retention.sweep_run",
       organizationId: null,
       bypassedRls: true,
-      metadata: { ...(houveFalhaParcial ? { falhou: true } : {}), ...resultado },
+      metadata: { ...(houveFalhaParcial ? { falhou: true } : {}), ...resultado, oauth_mcp_podados: oauthMcpPodados },
       requestId,
     });
   }
@@ -1000,6 +1011,7 @@ async function handle(req: NextRequest): Promise<Response> {
 
   const corpo = {
     ...resultado,
+    oauth_mcp_podados: oauthMcpPodados,
     anonimizacoes_examinadas: varredura.examinados,
     anonimizacoes_completadas: varredura.completados.length,
     anonimizacoes_tem_resto: varredura.temResto,

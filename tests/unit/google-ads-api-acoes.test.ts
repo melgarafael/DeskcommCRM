@@ -139,13 +139,14 @@ describe("ações de conversão", () => {
 });
 
 describe("campanhas e recursos de mensagem", () => {
-  it("converte custo de micros para reais e recusa período malformado sem chamar o Google", async () => {
+  it("converte micros na moeda retornada pela conta e recusa período malformado sem chamar o Google", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
           results: [
             {
               campaign: { id: "7", name: "Busca", status: "ENABLED" },
+              customer: { currencyCode: "EUR", timeZone: "Europe/Madrid" },
               metrics: {
                 impressions: "1000",
                 clicks: "50",
@@ -165,6 +166,8 @@ describe("campanhas e recursos de mensagem", () => {
           id: "7",
           nome: "Busca",
           status: "ENABLED",
+          moeda: "EUR",
+          fuso: "Europe/Madrid",
           impressoes: 1000,
           cliques: 50,
           custo: 12.345,

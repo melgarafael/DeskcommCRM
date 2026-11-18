@@ -21,12 +21,15 @@ import {
 } from "./conversations";
 import {
   crmListLeads,
+  crmCountLeads,
   crmGetLead,
   crmCreateLead,
   crmUpdateLead,
   crmMoveLeadStage,
   crmRetomarLead,
   crmProposeLeadFieldsFromDocument,
+  crmListLeadAttachments,
+  crmGetLeadAttachment,
 } from "./leads";
 import { crmGetPipelineForecast, crmListPipelines } from "./pipelines";
 import { crmSendMaterial, crmSendWhatsappMessage } from "./messages";
@@ -98,6 +101,7 @@ import {
   crmProposeReactivation,
 } from "./retencao";
 import { crmDraftProposal, crmPrepararProposta } from "./propostas";
+import { crmSaveLeadDiagnosis } from "./diagnostico";
 
 // Cast via `unknown` porque McpToolDefinition<TInput> nao e covariante
 // em TInput (handler usa TInput em posicao contravariante). Coletar
@@ -119,7 +123,13 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmGetConversationHistory,
   crmGetQueueStatus,
   crmListLeads,
+  crmCountLeads,
   crmGetLead,
+  // #4544 (item 2) — o documento anexado ao card: listar para descobrir o id,
+  // ler para tirar dali os valores. Entram logo depois do get_lead porque são a
+  // leitura do MESMO negócio, um nível abaixo.
+  crmListLeadAttachments,
+  crmGetLeadAttachment,
   crmListPipelines,
   crmGetPipelineForecast,
   crmSearchKnowledge,
@@ -166,6 +176,8 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmMoveLeadStage,
   crmRetomarLead,
   crmProposeLeadFieldsFromDocument,
+  // Diagnóstico da empresa na ficha do contato (decisão D7: grava direto).
+  crmSaveLeadDiagnosis,
   crmSendWhatsappMessage,
   // #4129 — o material cadastrado da empresa, como documento. Serve ao wire
   // (API/MCP); no turno, o envio é da nativa `send_message` com `material_id`.

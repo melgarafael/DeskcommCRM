@@ -630,6 +630,16 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
         // sozinha mandava transferir uma conversa que já é de quem está aqui.
         onError: (erro) => {
           restoreOnError();
+          // #4787: a citada foi apagada DEPOIS de escolhida. O servidor recusou
+          // (`citacao_apagada`) — e a citação não tem como ficar: sem tirá-la,
+          // todo Enter seguinte levaria a mesma recusa e a resposta ficaria
+          // presa atrás de uma mensagem que não existe mais. O TEXTO fica (o
+          // `restoreOnError` acima), então reenviar sem citação é um Enter.
+          // O aviso com o motivo é o toast da rota, que já saiu no onError de
+          // `useSendMessage` — aqui não se inventa uma segunda frase.
+          if (erro instanceof ApiError && erro.code === "citacao_apagada") {
+            onCancelarResposta?.();
+          }
           const aviso = erro instanceof ApiError ? avisoDaContinua(erro.code, erro.details) : null;
           if (aviso) setContinua({ conversationId, ...aviso });
         },
