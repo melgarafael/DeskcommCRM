@@ -1,16 +1,86 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { doEventoDoGoogle, type EventoDoGoogle } from "./evento";
+
+import { logger } from "@/lib/logger";
+
+import { doEventoDoGoogle, type EventoDoGoogle, type MotivoDeRecusa } from "./evento";
 import { ehEventoNosso } from "./escrita";
 import { classificarErroDoGoogle } from "./erros";
 import { googleTransport, GoogleHttpError, type GoogleFetch } from "./transport";
 import { calendarSnapshotSchema, googleRpc, type CalendarFence } from "./sync-store";
 import { reconcileAppointment, tokenForConnection } from "./sync-executor";
 
+/**
+ * O evento do Google que a leitura recusou, nomeado com o dia e a hora DE PAREDE.
+ *
+ * Sem isto a rodada seguinte relê a mesma página para sempre e a tela repete a
+ * frase genérica: o operador não tem como saber QUAL evento corrigir no Google.
+ * A frase carrega a data e a hora como a tela do Google as mostra — e só isso.
+ * Título e pessoa ficam de fora de propósito: o texto é persistido e sai na
+ * tela, e conteúdo de terceiro não viaja para lá.
+ */
+export class EventoRecusadoNaLeitura extends Error {
+  constructor(
+    /** Motivo nomeado do parser — o que o programador precisa saber, sem texto de terceiro. */
+    readonly motivo: MotivoDeRecusa,
+    /** Dia (e hora, quando o evento tem) de parede, pronto para a tela. */
+    readonly quando: string,
+  ) {
+    super(
+      `O evento de ${quando} tem horário que a leitura não consegue usar (${motivo}). Corrija ou remova esse evento no Google Agenda.`,
+    );
+    this.name = "EventoRecusadoNaLeitura";
+  }
+}
+
+/** `YYYY-MM-DD` com hora opcional, exatamente como o Google devolve o `start`. */
+const DATA_DE_PAREDE = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/;
+
+/**
+ * O dia e a hora de PAREDE do evento, do jeito que a tela do Google mostra.
+ *
+ * Lido do texto cru, sem converter fuso: a hora de parede é justamente a que a
+ * pessoa vê lá. Converter mandaria o operador procurar o evento no dia errado
+ * sempre que ele cruza a meia-noite.
+ */
+function quandoDoEvento(evento: EventoDoGoogle): string {
+  const inicio = evento.start;
+  const texto = (inicio?.dateTime ?? inicio?.date ?? "").trim();
+  const m = DATA_DE_PAREDE.exec(texto);
+  if (!m) return "data ilegível";
+  const [, ano, mes, dia, hora, minuto] = m;
+  return hora && minuto ? `${dia}/${mes}/${ano} às ${hora}:${minuto}` : `${dia}/${mes}/${ano}`;
+}
+
+/** A restrição que o banco citou — só o nome, nunca o texto livre do erro. */
+const RESTRICAO_CITADA = /constraint "([A-Za-z0-9_]+)"/;
+
+/**
+ * Classe, código e restrição do erro — o suficiente para o log dizer a causa.
+ *
+ * O texto livre fica de fora: ele carrega título, e-mail e nome de convidado do
+ * evento de terceiro, e log não é lugar para conteúdo de cliente.
+ */
+function diagnosticoDoErro(erro: unknown): {
+  classe: string;
+  codigo: string | null;
+  restricao: string | null;
+} {
+  const classe = erro instanceof Error ? erro.constructor.name : typeof erro;
+  const bruto = erro && typeof erro === "object" ? (erro as { code?: unknown }).code : undefined;
+  const codigo = bruto === undefined || bruto === null ? null : String(bruto);
+  const restricao =
+    (erro instanceof Error && RESTRICAO_CITADA.exec(erro.message)?.[1]) || null;
+  return { classe, codigo, restricao };
+}
+
 /** A frase persistida quando a leitura incremental do Google falha. */
 export function mensagemDaRecusaDeLeitura(erro: unknown): string {
   if (erro instanceof GoogleHttpError) {
     return classificarErroDoGoogle(erro, "sincronizar").mensagem;
   }
+  // A recusa do evento é diagnóstica por natureza: data e hora já passaram pelo
+  // recorte que remove título e pessoa, então a frase pode ir para a tela.
+  if (erro instanceof EventoRecusadoNaLeitura) return erro.message;
   return "A leitura não terminou. Tente sincronizar novamente nas configurações.";
 }
 
@@ -128,7 +198,7 @@ export async function syncCalendar(
         throw new Error("Evento do produto sem vínculo. Revise a publicação antiga.");
       const read = doEventoDoGoogle(event, { fusoDoCalendario: timeZone! });
       if (read.tipo === "recusado")
-        throw new Error("Evento inválido. A leitura não foi concluída.");
+        throw new EventoRecusadoNaLeitura(read.motivo, quandoDoEvento(event));
       if (read.tipo === "cancelado") {
         items.push({
           external_event_id: read.externalEventId,
@@ -140,6 +210,17 @@ export async function syncCalendar(
       }
       const begins = Date.parse(read.evento.starts_at);
       const ends = Date.parse(read.evento.ends_at);
+      // Duração zero (início igual ao fim) NÃO ocupa horário — e, se entrasse no
+      // lote, derrubaria o LOTE INTEIRO: `calendar_external_events_periodo_valido`
+      // exige `ends_at > starts_at`. A recusa não é `GoogleHttpError`, então a
+      // rodada seguinte releria a mesma página para sempre. A poda fica aqui, no
+      // executor, e NÃO no parser: `doEventoDoGoogle` também alimenta os
+      // compromissos vinculados, onde "cancelado" cancelaria no CRM um
+      // agendamento que alguém só editou no Google.
+      if (!(ends > begins)) {
+        pruneIds.add(eventId);
+        continue;
+      }
       if (ends <= windowStart || begins >= windowEnd) {
         pruneIds.add(eventId);
         continue;
@@ -172,7 +253,12 @@ export async function syncCalendar(
   } catch (e) {
     try {
       if (e instanceof GoogleHttpError && e.status === 410) await call("reset");
-      else await call("error", { message: mensagemDaRecusaDeLeitura(e) });
+      else {
+        // O diagnóstico vai por classe/código/restrição, nunca pelo texto livre:
+        // a mensagem do provedor carrega título e convidado do evento alheio.
+        logger.warn("[agenda-google] leitura da agenda recusada", diagnosticoDoErro(e));
+        await call("error", { message: mensagemDaRecusaDeLeitura(e) });
+      }
     } catch {
       /* fence vencido não grava diagnóstico tardio */
     }

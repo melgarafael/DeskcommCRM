@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { syncCalendar } from "@/lib/agenda/google/calendar-executor";
 import { reconcileAppointment, tokenForConnection } from "@/lib/agenda/google/sync-executor";
 import { idDeEventoDoGoogle } from "@/lib/agenda/google/escrita";
+const log = vi.hoisted(() => ({ warn: vi.fn(), info: vi.fn() }));
+vi.mock("@/lib/logger", () => ({ logger: log }));
 vi.mock("@/lib/agenda/google/sync-executor", () => ({
   reconcileAppointment: vi.fn(),
   tokenForConnection: vi.fn(),
@@ -34,11 +36,13 @@ let snapshot: Record<string, unknown>,
   batches: Array<Record<string, unknown>>,
   consultasDeVinculo: number[],
   linked: { id: string; google_event_id: string } | null,
+  falhaNoLote: Error | null,
   transport: ReturnType<typeof vi.fn<typeof fetch>>;
 function db() {
   return {
     rpc: async (_name: string, p: Record<string, unknown>) => {
       if (_name === "fn_google_calendar_page_batch") {
+        if (falhaNoLote) throw falhaNoLote;
         const args = p.p_args as Record<string, unknown>;
         batches.push(args);
         return {
@@ -92,6 +96,7 @@ beforeEach(() => {
   batches = [];
   consultasDeVinculo = [];
   linked = null;
+  falhaNoLote = null;
   transport = vi
     .fn()
     .mockResolvedValue(new Response(JSON.stringify({ items: [event], nextSyncToken: "new" })));
@@ -227,5 +232,72 @@ describe("leitura paginada sob claim original", () => {
     expect(await syncCalendar(db(), org, id, transport)).toBe("complete");
     expect(consultasDeVinculo).toEqual([50, 50, 20]);
     expect(batches[0]!.items).toHaveLength(120);
+  });
+  it("evento de duração zero é podado e não derruba a página inteira", async () => {
+    // O CHECK `calendar_external_events_periodo_valido` exige ends_at > starts_at:
+    // um evento de terceiro com início igual ao fim recusava o LOTE inteiro e a
+    // leitura relia a mesma página para sempre. Duração zero não ocupa horário.
+    const duracaoZero = {
+      ...event,
+      id: "terceiro-duracao-zero",
+      start: { dateTime: "2026-09-03T09:00:00-03:00" },
+      end: { dateTime: "2026-09-03T09:00:00-03:00" },
+    };
+    transport.mockResolvedValue(
+      new Response(JSON.stringify({ items: [duracaoZero, event], nextSyncToken: "new" })),
+    );
+    expect(await syncCalendar(db(), org, id, transport)).toBe("complete");
+    expect(batches[0]?.prune_ids).toEqual(["terceiro-duracao-zero"]);
+    expect(
+      (batches[0]!.items as Array<{ external_event_id: string }>).map((i) => i.external_event_id),
+    ).toEqual([event.id]);
+  });
+  it("evento recusado diz a data e a hora dele, sem título nem pessoa", async () => {
+    transport.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          items: [
+            {
+              ...event,
+              id: "terceiro-ilegivel",
+              summary: "Consulta de rotina da Maria",
+              attendees: [
+                { email: "maria.souza@exemplo.test", displayName: "Maria Souza", self: false },
+              ],
+              start: { dateTime: "2026-09-02T14:00:00-03:00" },
+              end: { dateTime: "2026-09-02T13:00:00-03:00" },
+            },
+          ],
+          nextSyncToken: "new",
+        }),
+      ),
+    );
+    expect(await syncCalendar(db(), org, id, transport)).toBe("failed");
+    const erro = actions.find((a) => a.action === "error")!;
+    const mensagem = String(erro.args.message);
+    expect(mensagem).toContain("02/09/2026");
+    expect(mensagem).toContain("14:00");
+    expect(mensagem).toContain("instante_invalido");
+    expect(mensagem).not.toContain("Consulta de rotina");
+    expect(mensagem).not.toContain("Maria");
+    expect(mensagem).not.toContain("maria.souza");
+    expect(batches).toHaveLength(0);
+  });
+  it("recusa do banco vai ao log por classe, código e restrição, sem texto livre", async () => {
+    falhaNoLote = Object.assign(
+      new Error(
+        'new row for relation "calendar_external_events" violates check constraint "calendar_external_events_periodo_valido"',
+      ),
+      { code: "23514" },
+    );
+    expect(await syncCalendar(db(), org, id, transport)).toBe("failed");
+    const [, contexto] = log.warn.mock.calls[0]!;
+    expect(contexto).toEqual({
+      classe: "Error",
+      codigo: "23514",
+      restricao: "calendar_external_events_periodo_valido",
+    });
+    expect(JSON.stringify(contexto)).not.toContain("new row for relation");
+    expect(actions.map((a) => a.action)).toEqual(["claim", "error", "release"]);
   });
 });
