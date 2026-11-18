@@ -42092,17 +42092,6 @@ drop policy if exists tenant_isolation_import_batches_all on public.import_batch
 drop policy if exists import_batches_select on public.import_batches;
 create policy import_batches_select on public.import_batches
   for select using (organization_id in (select public.fn_user_org_ids()));
-drop policy if exists import_batches_insert on public.import_batches;
-create policy import_batches_insert on public.import_batches
-  for insert with check (organization_id in (select public.fn_user_org_ids())
-                         and public.fn_role_at_least(organization_id, 'manager'));
-drop policy if exists import_batches_update on public.import_batches;
-create policy import_batches_update on public.import_batches
-  for update
-  using (organization_id in (select public.fn_user_org_ids())
-         and public.fn_role_at_least(organization_id, 'manager'))
-  with check (organization_id in (select public.fn_user_org_ids())
-              and public.fn_role_at_least(organization_id, 'manager'));
 drop policy if exists import_batches_delete on public.import_batches;
 create policy import_batches_delete on public.import_batches
   for delete using (organization_id in (select public.fn_user_org_ids())
@@ -42146,17 +42135,6 @@ drop policy if exists tenant_isolation_import_rows_all on public.import_rows;
 drop policy if exists import_rows_select on public.import_rows;
 create policy import_rows_select on public.import_rows
   for select using (organization_id in (select public.fn_user_org_ids()));
-drop policy if exists import_rows_insert on public.import_rows;
-create policy import_rows_insert on public.import_rows
-  for insert with check (organization_id in (select public.fn_user_org_ids())
-                         and public.fn_role_at_least(organization_id, 'manager'));
-drop policy if exists import_rows_update on public.import_rows;
-create policy import_rows_update on public.import_rows
-  for update
-  using (organization_id in (select public.fn_user_org_ids())
-         and public.fn_role_at_least(organization_id, 'manager'))
-  with check (organization_id in (select public.fn_user_org_ids())
-              and public.fn_role_at_least(organization_id, 'manager'));
 drop policy if exists import_rows_delete on public.import_rows;
 create policy import_rows_delete on public.import_rows
   for delete using (organization_id in (select public.fn_user_org_ids())
