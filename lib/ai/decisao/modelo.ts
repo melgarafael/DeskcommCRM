@@ -77,9 +77,23 @@ export function caminhoDaChamada(modelo: string): string {
 export function modeloDaChamada(config: Pick<ConfigDoJev, "origem" | "modelo">): string {
   if (config.origem === "openrouter") {
     const escolhido = config.modelo?.trim();
-    if (escolhido) return escolhido;
+    // Um nome do Jev gravado vale como o padrão: `jev-1.13.0` (o nome da
+    // TypeSafe) mandado à OpenRouter seria recusado a cada mensagem.
+    if (escolhido && !ehModeloDoJev(escolhido)) return escolhido;
   }
   return modeloDaOrigem(config.origem);
+}
+
+/**
+ * QUEM RECEBE a mensagem com aquele modelo, para o aceite e o aviso de dado de
+ * saúde o nomearem (doc 369): o prefixo do id na OpenRouter (`perplexity/…` ⇒
+ * `perplexity`). O Jev é da TypeSafe AI em qualquer das formas do nome.
+ */
+export function fornecedorDoModelo(modelo: string): string {
+  const id = modelo.trim();
+  if (ehModeloDoJev(id)) return "TypeSafe AI";
+  const barra = id.indexOf("/");
+  return barra > 0 ? id.slice(0, barra) : id;
 }
 
 /** O padrão daquela origem — o que a tela mostra como "não escolhi nada". */

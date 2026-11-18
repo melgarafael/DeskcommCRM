@@ -52,7 +52,7 @@ vi.mock("@/lib/logger", () => ({
 
 import { CACHE_DO_CATALOGO_MS, conferirModeloDaConfig, esquecerCatalogo, listarModelosDeDecisao } from "@/lib/ai/decisao/catalogo";
 import { lerConfigDoJev } from "@/lib/ai/decisao/config";
-import { caminhoDaChamada, ehModeloDoJev, modeloDaChamada } from "@/lib/ai/decisao/modelo";
+import { caminhoDaChamada, ehModeloDoJev, fornecedorDoModelo, modeloDaChamada } from "@/lib/ai/decisao/modelo";
 import { MODELO_DA_TYPESAFE, MODELO_NA_OPENROUTER } from "@/lib/ai/decisao/origem";
 import { decidirNoPonto } from "@/lib/ai/decisao/ponto";
 
@@ -215,8 +215,27 @@ describe("(c) modelo sem `decisions` é recusado com a mensagem do que falta", (
       origem: "openrouter",
       deps: { fetchImpl, baseUrl: "https://openrouter.ai/api" },
     });
-    expect(conferido).toEqual({ ok: true, modelo: MODELO_NA_OPENROUTER });
+    // Gravado como o PADRÃO (ausência do campo), e não como texto: doc 369.
+    expect(conferido).toEqual({ ok: true, modelo: null });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("o nome do Jev no formato da TypeSafe também vira o padrão — nunca sai pela OpenRouter", async () => {
+    const fetchImpl = vi.fn();
+    const conferido = await conferirModeloDaConfig({
+      modelo: MODELO_DA_TYPESAFE,
+      origem: "openrouter",
+      deps: { fetchImpl, baseUrl: "https://openrouter.ai/api" },
+    });
+    expect(conferido).toEqual({ ok: true, modelo: null });
+    // E um nome do Jev que já estivesse gravado resolve para o da origem.
+    expect(modeloDaChamada({ origem: "openrouter", modelo: MODELO_DA_TYPESAFE })).toBe(MODELO_NA_OPENROUTER);
+  });
+
+  it("o fornecedor nomeado no aceite é o prefixo do id; o Jev é da TypeSafe AI", () => {
+    expect(fornecedorDoModelo("perplexity/decisor:free")).toBe("perplexity");
+    expect(fornecedorDoModelo(MODELO_NA_OPENROUTER)).toBe("TypeSafe AI");
+    expect(fornecedorDoModelo(MODELO_DA_TYPESAFE)).toBe("TypeSafe AI");
   });
 
   it("`null` volta ao padrão sem rede", async () => {

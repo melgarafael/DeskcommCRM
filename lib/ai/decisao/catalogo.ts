@@ -168,7 +168,7 @@ export interface PedidoDeConferencia {
  * A conferência da ESCRITA — o único lugar que transforma um id em config.
  *
  *  - `null`/vazio ⇒ o padrão, sem rede: voltar ao Jev não depende do fornecedor;
- *  - o Jev, em qualquer das formas ⇒ aceito, sem rede (é o padrão calibrado);
+ *  - o Jev, em qualquer das formas ⇒ o padrão (`null`), sem rede;
  *  - outro modelo com origem `typesafe` ⇒ recusado: a chave da TypeSafe não
  *    serve para ele, e a chamada sairia com 404 de modelo;
  *  - outro modelo com origem `openrouter` ⇒ conferido no catálogo, e recusado
@@ -179,7 +179,9 @@ export async function conferirModeloDaConfig(
 ): Promise<ConferenciaDoModelo> {
   const bruto = pedido.modelo?.trim() ?? "";
   if (bruto === "") return { ok: true, modelo: null };
-  if (ehModeloDoJev(bruto)) return { ok: true, modelo: bruto };
+  // O Jev em qualquer das formas é o PADRÃO, e o padrão é a ausência do campo:
+  // gravado como texto, `jev-1.13.0` (o nome da TypeSafe) sairia pela OpenRouter.
+  if (ehModeloDoJev(bruto)) return { ok: true, modelo: null };
   if (pedido.origem !== "openrouter") {
     return { ok: false, motivo: "jev_modelo_exige_openrouter", mensagem: MENSAGEM_EXIGE_OPENROUTER };
   }

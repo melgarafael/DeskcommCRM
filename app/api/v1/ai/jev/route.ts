@@ -54,7 +54,7 @@ import {
   type MudancaDaConfig,
 } from "@/lib/ai/decisao/config";
 import { CHAVES_DO_CLIMA, type MotorDoClima } from "@/lib/ai/decisao/metadados-do-clima";
-import { modeloDaChamada } from "@/lib/ai/decisao/modelo";
+import { fornecedorDoModelo, modeloDaChamada } from "@/lib/ai/decisao/modelo";
 import {
   ORIGENS_DO_JEV,
   provedorDaCredencial,
@@ -775,6 +775,10 @@ export async function PATCH(req: NextRequest): Promise<Response> {
       mudanca.aceite = { ...atual.aceite, em: new Date().toISOString(), por: user.id };
     }
     mudanca.origem = corpo.origem;
+    // O modelo escolhido só vale pela OpenRouter. Voltar à TypeSafe o apaga:
+    // gravado, ele voltaria a valer na próxima ida à OpenRouter sob um aceite
+    // que nomeia só a TypeSafe AI.
+    if (corpo.origem === "typesafe" && atual.modelo !== undefined) mudanca.modelo = null;
   }
   if (corpo.modelo !== undefined) {
     // A conferência vale para a origem que valerá DEPOIS deste PATCH: trocar de
@@ -786,7 +790,27 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     if (!conferido.ok) {
       return fail(conferido.motivo, t(conferido.mensagem), 422, { requestId });
     }
-    if ((conferido.modelo ?? null) !== (atual.modelo ?? null)) mudanca.modelo = conferido.modelo;
+    if ((conferido.modelo ?? null) !== (atual.modelo ?? null)) {
+      // LGPD (doc 369): trocar o modelo troca QUEM recebe a mensagem. Cada
+      // troca para um modelo que não é o Jev pede o aceite de novo, nomeando o
+      // fornecedor; voltar ao Jev (`null`) não pede.
+      if (conferido.modelo !== null) {
+        if (corpo.aceite_lgpd !== true) {
+          return fail(
+            "jev_exige_aceite",
+            t(
+              "Com este modelo, cada mensagem dos clientes vai, uma de cada vez e sem o resto da conversa, para {fornecedor} (modelo {modelo}), pela OpenRouter, nos Estados Unidos, e o fornecedor pode processá-la em outro país. Ninguém conferiu os termos de privacidade, de retenção e de treino desse fornecedor: a empresa assume essa conferência, em especial nos modelos gratuitos. Para trocar, confirme que você está de acordo.",
+            )
+              .replace("{fornecedor}", fornecedorDoModelo(conferido.modelo))
+              .replace("{modelo}", conferido.modelo),
+            422,
+            { requestId },
+          );
+        }
+        mudanca.aceite = { ...(atual.aceite ?? { alcance: "mensagem" as const }), em: new Date().toISOString(), por: user.id };
+      }
+      mudanca.modelo = conferido.modelo;
+    }
   }
   if (corpo.modo_roteador !== undefined && corpo.modo_roteador !== atual.modo_roteador) {
     // Decisão B (doc 89): sem a IA de sempre, o Jev não roteia sozinho. O turno

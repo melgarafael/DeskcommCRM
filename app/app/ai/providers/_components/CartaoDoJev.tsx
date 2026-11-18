@@ -40,6 +40,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { descreverErroDeValidacao } from "@/lib/ai/credenciais/erro-de-validacao";
 import type { EstadoDaTarefa } from "@/lib/ai/decisao/config";
 import { PROVEDOR_DO_JEV } from "@/lib/ai/decisao/credencial";
+import { ehModeloDoJev, fornecedorDoModelo } from "@/lib/ai/decisao/modelo";
 import { MODELO_NA_OPENROUTER, type OrigemDoJev } from "@/lib/ai/decisao/origem";
 import { ROTEADOR_SOB_DEMANDA, ROTEADOR_SOB_DEMANDA_SEM_IA, TAREFA_DO_CLIMA, TAREFAS_DO_JEV, tarefaPodeDecidir } from "@/lib/ai/decisao/tarefas";
 import { O_QUE_FAZER_DO_JEV } from "@/lib/ai/decisao/textos";
@@ -364,6 +365,15 @@ function roteadorSobDemanda(d: DadosDoJev): boolean {
 const origemDoCartao = (d: DadosDoJev): OrigemDoJev => d.origem ?? "typesafe";
 
 /**
+ * O modelo que responde quando NÃO é o Jev — `null` no padrão. Só a origem
+ * OpenRouter serve outros modelos (`@/lib/ai/decisao/modelo`).
+ */
+function modeloDeFora(dados: DadosDoJev): string | null {
+  const modelo = dados.modelo?.trim() ?? "";
+  return origemDoCartao(dados) === "openrouter" && modelo !== "" && !ehModeloDoJev(modelo) ? modelo : null;
+}
+
+/**
  * O provedor da credencial que ESTA origem consome (`lib/ai/decisao/origem`): a
  * chave do Jev na TypeSafe, ou a credencial OpenRouter da empresa. É o que a
  * frase de recusa e o diálogo de colar a chave precisam saber para apontar a
@@ -485,9 +495,14 @@ export function CartaoDoJev({
           como categoria, então o aviso aparece para todos em forma condicional.
           A ida para os EUA já está no consentimento, mais abaixo. */}
       <p className="mt-3 rounded-md bg-warning-bg p-3 text-sm text-warning-fg" data-testid="jev-aviso-area-saude">
-        {t(
-          "Se a sua empresa é da área da saúde: as mensagens que o Jev lê podem conter dado de saúde, que a LGPD trata como sensível. Antes de ligar, confira com quem cuida da LGPD da empresa se o contrato da TypeSafe cobre esse tipo de dado.",
-        )}
+        {/* Doc 369: com outro modelo, quem recebe a mensagem é o fornecedor dele. */}
+        {modeloDeFora(dados) !== null
+          ? t(
+              "Se a sua empresa é da área da saúde: as mensagens que o Jev lê podem conter dado de saúde, que a LGPD trata como sensível. Antes de ligar, confira com quem cuida da LGPD da empresa se os termos de {fornecedor}, que recebe as mensagens pela OpenRouter, cobrem esse tipo de dado.",
+            ).replace("{fornecedor}", fornecedorDoModelo(modeloDeFora(dados) ?? ""))
+          : t(
+              "Se a sua empresa é da área da saúde: as mensagens que o Jev lê podem conter dado de saúde, que a LGPD trata como sensível. Antes de ligar, confira com quem cuida da LGPD da empresa se o contrato da TypeSafe cobre esse tipo de dado.",
+            )}
       </p>
 
       {/* Depois de colar a chave nada confirmava que ela FUNCIONA: esta linha é
@@ -669,9 +684,14 @@ function ModeloDoDecisor({ dados, recarregar }: { dados: DadosDoJev; recarregar:
   const pelaOpenRouter = origemDoCartao(dados) === "openrouter";
   const escolhido = dados.modelo_escolhido ?? "";
   const [valor, setValor] = useState(escolhido);
+  const [concordo, setConcordo] = useState(false);
   // A resposta do PATCH recarrega o cartão: o campo acompanha o que foi gravado.
   useEffect(() => setValor(escolhido), [escolhido]);
-  const mudou = valor.trim() !== escolhido;
+  const novo = valor.trim();
+  const mudou = novo !== escolhido;
+  // Doc 369: trocar para um modelo que não é o Jev troca QUEM recebe a
+  // mensagem, e pede o aceite de novo nomeando o fornecedor. Voltar ao Jev não.
+  const pedeAceite = mudou && novo !== "" && !ehModeloDoJev(novo);
 
   return (
     <div className="mt-4 space-y-1" data-testid="jev-modelo">
@@ -686,12 +706,18 @@ function ModeloDoDecisor({ dados, recarregar }: { dados: DadosDoJev; recarregar:
           value={valor}
           placeholder={MODELO_NA_OPENROUTER}
           disabled={!dados.pode_editar || !pelaOpenRouter || enviando}
-          onChange={(e) => setValor(e.target.value)}
+          onChange={(e) => {
+            setValor(e.target.value);
+            // O aceite é do modelo que estava escrito: outro id, aceite de novo.
+            setConcordo(false);
+          }}
         />
         <Button
           size="sm"
-          disabled={!dados.pode_editar || !pelaOpenRouter || enviando || !mudou}
-          onClick={() => void mudar({ modelo: valor.trim() }, t("Modelo do decisor salvo."))}
+          disabled={!dados.pode_editar || !pelaOpenRouter || enviando || !mudou || (pedeAceite && !concordo)}
+          onClick={() =>
+            void mudar(pedeAceite ? { modelo: novo, aceite_lgpd: true } : { modelo: novo }, t("Modelo do decisor salvo."))
+          }
         >
           {t("Salvar modelo do decisor")}
         </Button>
@@ -706,6 +732,25 @@ function ModeloDoDecisor({ dados, recarregar }: { dados: DadosDoJev; recarregar:
           </Button>
         )}
       </div>
+      {pelaOpenRouter && pedeAceite && (
+        <div className="flex max-w-2xl items-start gap-2 rounded-md border border-border p-3" data-testid="jev-modelo-aceite">
+          <input
+            id="jev-modelo-aceite"
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 accent-[var(--color-accent)]"
+            checked={concordo}
+            disabled={!dados.pode_editar || enviando}
+            onChange={(e) => setConcordo(e.target.checked)}
+          />
+          <label htmlFor="jev-modelo-aceite" className="text-sm">
+            {t(
+              "Concordo com o envio de cada mensagem dos clientes, uma de cada vez e sem o resto da conversa, para {fornecedor} (modelo {modelo}), pela OpenRouter, nos Estados Unidos, sabendo que o fornecedor pode processá-la em outro país. Ninguém conferiu os termos de privacidade, de retenção e de treino desse fornecedor: a empresa assume essa conferência, em especial nos modelos gratuitos.",
+            )
+              .replace("{fornecedor}", fornecedorDoModelo(novo))
+              .replace("{modelo}", novo)}
+          </label>
+        </div>
+      )}
       <p className="max-w-2xl text-xs text-muted-foreground">
         {pelaOpenRouter
           ? t(
