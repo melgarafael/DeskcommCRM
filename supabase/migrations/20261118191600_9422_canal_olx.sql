@@ -71,8 +71,11 @@ alter table public.webhook_events_log
 
 alter table public.webhook_events_log
   add constraint webhook_events_log_provider_check check (provider in (
-    'waha', 'nuvemshop', 'generic', 'meta_cloud', 'zernio', 'datafy', 'stripe', 'asaas',
-    'telegram', 'olx'
+    -- A lista inteira, e não a de quando esta migration foi escrita: a 9418
+    -- (Efi Bank, #4056) entrou na `main` DEPOIS daqui e acrescentou `efi`.
+    -- Reconstruir com a lista velha apagaria o provedor de cobrança em silêncio.
+    'waha', 'nuvemshop', 'generic', 'meta_cloud', 'zernio', 'datafy',
+    'stripe', 'asaas', 'efi', 'telegram', 'olx'
   ));
 
 with ativos as (
