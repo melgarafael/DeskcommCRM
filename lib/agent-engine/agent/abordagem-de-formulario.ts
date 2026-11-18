@@ -49,6 +49,7 @@ import {
   MAX_VALOR_DO_CONTEXTO_DA_EQUIPE,
   PROCEDENCIA_COM_CONTEXTO_DA_EQUIPE,
   REGRAS_COM_CONTEXTO_DA_EQUIPE,
+  ROTULOS_DO_CONTEXTO_DA_EQUIPE,
   SITUACAO_COM_CONTEXTO_DA_EQUIPE,
 } from '@/lib/prospecting/contexto-da-equipe';
 
@@ -80,6 +81,11 @@ export interface AbordagemDeFormularioInput {
    * medido sobre os mesmos dados. Ausente = desligado, byte a byte o de antes.
    */
   comContextoDaEquipe?: boolean;
+  /**
+   * A campanha NÃO usa a ficha digital como motivo do contato (#4829).
+   * Ausente = desligado, byte a byte o de antes.
+   */
+  semFichaDigital?: boolean;
 }
 
 export type AbordagemDeFormularioResult =
@@ -172,13 +178,17 @@ export function blocoDeModo(
   origem: OrigemDaAbordagem,
   nonce: string,
   instrucao: string,
-  opcoes: { comContextoDaEquipe?: boolean } = {},
+  opcoes: { comContextoDaEquipe?: boolean; semFichaDigital?: boolean } = {},
 ): string {
   // CONTEXTO DA EQUIPE (planilha de prospecção): só no ramo frio, e só quando os dados
   // trazem algum campo escrito pela equipe. Aqui sobe ao `system` apenas TEXTO FIXO
   // (`lib/prospecting/contexto-da-equipe.ts`); o que a equipe escreveu fica nos dados.
   // Desligado, cada linha abaixo é a de sempre, byte a byte.
   const comContexto = origem === "prospeccao_fria" && opcoes.comContextoDaEquipe === true;
+  // CAMPANHA SEM FICHA DIGITAL (#4829): o motivo do contato deixa de sair de nota,
+  // avaliações, redes ou auditoria — que nem chegam aos dados — e passa a sair do que
+  // a empresa É. Só no ramo frio: formulário e automação nunca citaram a ficha.
+  const semFicha = origem === "prospeccao_fria" && opcoes.semFichaDigital === true;
   const situacao =
     origem === "formulario"
       ? "A pessoa ACABOU DE PREENCHER UM FORMULÁRIO e ainda não trocou nenhuma mensagem com a empresa. " +
@@ -217,9 +227,13 @@ export function blocoDeModo(
     ],
     prospeccao_fria: [
       "- Diga em uma frase quem é você e por que está falando com ela, SEM sugerir que ela procurou vocês.",
-      comContexto
-        ? REGRAS_COM_CONTEXTO_DA_EQUIPE.dadosPublicos
-        : "- Os dados são públicos e comerciais (nome do negócio, ramo, endereço). NÃO diga nem insinue que ela preencheu, pediu, baixou ou se cadastrou em qualquer coisa.",
+      semFicha
+        ? // #4829: sem ficha digital não há `Site`, `Ficha do Google` nem `Redes` nos
+          // dados — citá-los aqui faria o prompt falar de campos que não existem.
+          "- Os dados da ficha (nome do negócio, ramo, endereço e `Telefone`) são públicos e comerciais. NÃO diga nem insinue que ela preencheu, pediu, baixou ou se cadastrou em qualquer coisa."
+        : comContexto
+          ? REGRAS_COM_CONTEXTO_DA_EQUIPE.dadosPublicos
+          : "- Os dados são públicos e comerciais (nome do negócio, ramo, endereço). NÃO diga nem insinue que ela preencheu, pediu, baixou ou se cadastrou em qualquer coisa.",
       comContexto
         ? REGRAS_COM_CONTEXTO_DA_EQUIPE.semHistoricoInventado
         : "- NÃO invente histórico, interesse, indicação ou contato anterior. Não existe nenhum.",
@@ -230,12 +244,33 @@ export function blocoDeModo(
       // avaliações, as redes e o tipo de telefone chegavam à ficha e o modelo não
       // podia usá-los. Numa empresa sem site sobrava "não tem site", e a
       // mensagem saía igual à da empresa seguinte.
-      comContexto
-        ? REGRAS_COM_CONTEXTO_DA_EQUIPE.motivoDoContato
-        : "- Motivo do contato: escolha UM fato da ficha — `Auditoria` (medição do próprio sistema, na data escrita nela), `Ficha do Google` (nota e número de avaliações), `Redes` publicadas ou `Telefone` — e diga como quem notou (\"vi que…\"), nunca como auditoria nem como lista. Um só, o mais forte para esta empresa: dado que não está na ficha não existe.",
-      comContexto
-        ? REGRAS_COM_CONTEXTO_DA_EQUIPE.semAchado
-        : "- Se a ficha não trouxer `Ficha do Google`, `Redes` nem `Auditoria`, NÃO invente um achado: abra pela rotina do negócio (o que ele faz, onde fica) e ofereça a conversa sem fingir que pesquisou.",
+      //
+      // #4829: quando a campanha NÃO vende presença digital, a regra do motivo e a
+      // do "sem achado" saem INTEIRAS (inclusive a versão com contexto da equipe) —
+      // os fatos que elas mandavam citar nem estão nos dados, e "abra pela rotina do
+      // negócio" ainda deixaria a porta aberta para "vi que vocês não têm site".
+      //
+      // Com contexto da equipe, a indicação/encontro continua sendo o motivo: a linha
+      // semFicha substitui `motivoDoContato` inteira e, sem o prefixo, a regra que
+      // `semHistoricoInventado` autoriza perderia a prioridade. Os dados desta campanha
+      // são só Empresa, Segmento, Endereço e Telefone — "o que vende" e "para quem" não
+      // estão neles, então a linha não os pede.
+      ...(semFicha
+        ? [
+            "- Motivo do contato: " +
+              (comContexto
+                ? `UM só. Indicação, encontro ou conversa anterior do \`${ROTULOS_DO_CONTEXTO_DA_EQUIPE.contexto}\` É o motivo, sem somar outro fato. Sem isso, `
+                : "") +
+              "abra pelo que a empresa É — o ramo (`Segmento`) e a região (`Endereço`) —, sem inventar o que ela vende nem para quem, e sem fingir que pesquisou; nunca por um fato da ficha digital. Nota, número de avaliações, redes e auditoria do site NÃO estão nos dados desta campanha: citar qualquer um deles (nem dizer que ela não tem site) é inventar, e é proibido.",
+          ]
+        : [
+            comContexto
+              ? REGRAS_COM_CONTEXTO_DA_EQUIPE.motivoDoContato
+              : "- Motivo do contato: escolha UM fato da ficha — `Auditoria` (medição do próprio sistema, na data escrita nela), `Ficha do Google` (nota e número de avaliações), `Redes` publicadas ou `Telefone` — e diga como quem notou (\"vi que…\"), nunca como auditoria nem como lista. Um só, o mais forte para esta empresa: dado que não está na ficha não existe.",
+            comContexto
+              ? REGRAS_COM_CONTEXTO_DA_EQUIPE.semAchado
+              : "- Se a ficha não trouxer `Ficha do Google`, `Redes` nem `Auditoria`, NÃO invente um achado: abra pela rotina do negócio (o que ele faz, onde fica) e ofereça a conversa sem fingir que pesquisou.",
+          ]),
       ...(comContexto ? REGRAS_COM_CONTEXTO_DA_EQUIPE.linhasNovas : []),
       // Exceção da auditoria verificada (spec 24): o campo `Auditoria` NÃO é
       // declaração de terceiro — foi o próprio servidor que mediu, na data
@@ -243,7 +278,13 @@ export function blocoDeModo(
       // observação ("seu site estava fora do ar quando verificamos em ...")
       // é gancho de venda sobre fato próprio, não invasão: continua
       // proibido demonstrar saber dado pessoal ou histórico que não existe.
-      "- EXCEÇÃO: o campo `Auditoria` (quando existir) pode ser citado como o motivo do contato, porque é medição feita pelo próprio sistema na data escrita no próprio campo — nunca como algo que ela disse, pediu ou publicou, nunca como medição de agora, e continua proibido citar dado pessoal ou histórico que não existe.",
+      // Sem ficha digital (#4829) a exceção também sai: não há `Auditoria` nos dados,
+      // e a linha autorizaria justamente o motivo que a campanha não vende.
+      ...(semFicha
+        ? []
+        : [
+            "- EXCEÇÃO: o campo `Auditoria` (quando existir) pode ser citado como o motivo do contato, porque é medição feita pelo próprio sistema na data escrita no próprio campo — nunca como algo que ela disse, pediu ou publicou, nunca como medição de agora, e continua proibido citar dado pessoal ou histórico que não existe.",
+          ]),
       // A prévia guardada chega nos DADOS como texto gerado antes — pelo botão ou
       // pelo preparo automático, sem garantia de que alguém a leu. Mesma confiança
       // dos outros dados: conteúdo, não ordem.
@@ -314,7 +355,7 @@ export async function gerarAbordagemDeFormulario(
   // chamou deu a `instrucaoDeAbordagemFria` (`temContextoDaEquipe` sobre ESTES dados).
   const comContextoDaEquipe =
     input.origemDaAbordagem === 'prospeccao_fria' && input.comContextoDaEquipe === true;
-  const system = `${agent.systemPrompt}\n\n${blocoDeModo(input.origemDaAbordagem, nonce, input.instrucao, { comContextoDaEquipe })}${avisoDaTentativaBarrada}`;
+  const system = `${agent.systemPrompt}\n\n${blocoDeModo(input.origemDaAbordagem, nonce, input.instrucao, { comContextoDaEquipe, semFichaDigital: input.semFichaDigital === true })}${avisoDaTentativaBarrada}`;
 
   // A mensagem do usuário carrega SÓ conteúdo — nada aqui tem autoridade.
   // `origem` é o nome da fonte, escrito por quem administra o CRM, mas entra no

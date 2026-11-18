@@ -49,9 +49,15 @@ import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 interface Props {
   currentUserId: string;
   canManage: boolean;
+  /**
+   * O menu da EMPRESA (#4864). O diálogo de interface do membro precisa dele
+   * para oferecer como tela inicial só as portas que a empresa deixa visíveis:
+   * o vínculo escolhe menos, nunca mais.
+   */
+  interfaceDaEmpresa?: unknown;
 }
 
-export function TeamMembersClient({ currentUserId, canManage }: Props) {
+export function TeamMembersClient({ currentUserId, canManage, interfaceDaEmpresa }: Props) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
   const { data, isLoading, isError } = useTeamMembers();
@@ -223,6 +229,7 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
         <MemberInterfaceDialog
           key={interfaceMember.user_id}
           member={interfaceMember}
+          interfaceDaEmpresa={interfaceDaEmpresa}
           onClose={() => setInterfaceMember(null)}
         />
       )}

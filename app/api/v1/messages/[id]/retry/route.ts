@@ -27,6 +27,7 @@ import { roleAtLeast } from "@/lib/auth/types";
 import { estadoDaJanela } from "@/lib/channels/janela";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
+import { nomeOriginalDaMensagem } from "@/lib/messaging/media/nome-de-arquivo";
 import { reenvioDaMensagem } from "@/lib/messaging/reenvio";
 import type { SendMessageInput } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
@@ -128,6 +129,10 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     media_storage_path: lida.media_storage_path ?? undefined,
     media_mime: lida.media_mime ?? undefined,
     media_size_bytes: lida.media_size_bytes ?? undefined,
+    // O nome que a pessoa deu ao arquivo (#4457), gravado na linha pelo envio
+    // (#4484) ou pela ingestão (#2613). Sem ele, o documento sairia de novo com
+    // o nome do objeto no bucket (`out-<uuid>.pdf`).
+    media_filename: nomeOriginalDaMensagem(lida.metadata) ?? undefined,
     reply_to_message_id: lida.reply_to_message_id ?? undefined,
   };
 

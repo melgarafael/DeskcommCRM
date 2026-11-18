@@ -8,7 +8,7 @@ const h = vi.hoisted(() => ({
   escrita: vi.fn(),
   audit: vi.fn(),
   ligada: true,
-  provedor: "stripe" as "stripe" | "asaas" | null,
+  provedor: "stripe" as "stripe" | "asaas" | "efi" | null,
   banco: undefined as unknown as BancoFalso,
 }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
@@ -59,6 +59,14 @@ describe("POST /api/v1/admin/cobranca/planos", () => {
     const res = await POST(pedido({ ...CORPO, moeda: "EUR" }));
     expect(res.status).toBe(422);
     expect((await res.json()).error.message).toBe("O Asaas cobra só em real. Para dólar ou euro, conecte a Stripe.");
+    expect(h.banco.cadeias).toEqual([]);
+  });
+
+  it("⭐ plano em dólar com o Efi: 422 com nome, nada gravado — o Efi cobraria o número como real", async () => {
+    h.provedor = "efi";
+    const res = await POST(pedido({ ...CORPO, moeda: "USD" }));
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.message).toBe("O Efi cobra só em real. Para dólar ou euro, conecte a Stripe.");
     expect(h.banco.cadeias).toEqual([]);
   });
 

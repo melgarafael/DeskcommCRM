@@ -19,11 +19,10 @@ import { randomUUID } from "node:crypto";
 
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -40,8 +39,17 @@ export async function GET(req: NextRequest): Promise<Response> {
   // mesmo molde da cobrança desligada (falha fechada, dois lados).
   const admin = createAdminClient();
   if (!(await moduloLigado(admin, "financeiro"))) return fail("not_found", "Not found", 404, { requestId });
-  const authz = await requireRole("agent", { requestId, resource: "financeiro" });
+  // Leitura: sessão OU token `mcp:read`. O papel mínimo é o da sessão.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "financeiro",
+    role: "agent",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "financeiro_comandas_pendentes", requestId);
+  if (teto) return teto;
+  const org = authz.organizationId;
 
   const url = new URL(req.url);
   const agora = new Date();
@@ -49,13 +57,20 @@ export async function GET(req: NextRequest): Promise<Response> {
     url.searchParams.get("de") ??
     new Date(agora.getTime() - JANELA_PADRAO_DIAS * 86_400_000).toISOString();
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
 
+  // #4845 — A EMPRESA ATIVA É O RECORTE, e a RLS não basta. Ela libera todas as
+  // empresas de que a pessoa é membro (`organization_id IN fn_user_org_ids()`) e,
+  // para `calendar_appointments`, todas as empresas quando quem olha é admin da
+  // plataforma (`fn_can_view_appointment` → `fn_is_platform_admin()`). Sem esta
+  // linha, o multiempresa via em "Atendimentos sem comanda" o serviço prestado na
+  // outra empresa — e o botão ao lado dele fatura de verdade.
+  // Sem embed de `calendar_event_types`: o nome e o preço do tipo vêm da consulta
+  // própria abaixo, com a organização (o embed traria a linha de outra organização).
   const { data: agendamentos, error } = await supabase
     .from("calendar_appointments")
-    .select(
-      "id, title, starts_at, contact_id, event_type_id, status, calendar_event_types(name, default_price_cents)",
-    )
+    .select("id, title, starts_at, contact_id, event_type_id, status")
+    .eq("organization_id", org)
     .in("status", ["confirmed", "completed"])
     .gte("starts_at", de)
     .lt("starts_at", agora.toISOString())
@@ -68,20 +83,34 @@ export async function GET(req: NextRequest): Promise<Response> {
   // Quais já têm comanda. Uma consulta só, e não uma por agendamento: a segunda
   // forma funciona em desenvolvimento e derruba a tela com trinta atendimentos.
   const ids = agendamentos.map((a) => a.id);
+  // #4845 — "JÁ FATURADO" É DESTA EMPRESA. A checagem anterior olhava as comandas
+  // de todas as empresas: um atendimento da A que já tinha comanda na A escondia
+  // o atendimento homônimo da B (e o contrário), então a lista mentia para os dois
+  // lados na mesma consulta.
   const { data: comandas } = await supabase
     .from("sales")
     .select("appointment_id")
+    .eq("organization_id", org)
     .in("appointment_id", ids)
     .neq("status", "cancelled");
 
   const jaFaturados = new Set((comandas ?? []).map((c) => c.appointment_id as string));
 
+  // Nome e preço padrão dos tipos destes agendamentos, numa consulta só e da organização.
+  const { data: tipos } = await supabase
+    .from("calendar_event_types")
+    .select("id, name, default_price_cents")
+    .eq("organization_id", org)
+    .in(
+      "id",
+      agendamentos.map((a) => a.event_type_id).filter((v): v is string => typeof v === "string"),
+    );
+  const tipoPorId = new Map((tipos ?? []).map((t) => [t.id as string, t] as const));
+
   const pendentes = agendamentos
     .filter((a) => !jaFaturados.has(a.id))
     .map((a) => {
-      const tipo = Array.isArray(a.calendar_event_types)
-        ? a.calendar_event_types[0]
-        : a.calendar_event_types;
+      const tipo = a.event_type_id ? tipoPorId.get(a.event_type_id) : undefined;
       return {
         appointment_id: a.id,
         title: a.title,
