@@ -93,11 +93,17 @@ Consequência de desenho: **`assigned_to_user_id IS NULL` deixa de ser "conversa
 ser "conversa da fila, aguardando alguém do setor assumir". Não é coluna nova: o estado já existe; o
 que muda é a leitura que o produto faz dele.
 
-E o limite de permissão que vem daí: **atendente não escolhe o dono**. Ele assume dentro do próprio
-setor e pode devolver; **mover a conversa para outro setor é gesto de administração** (admin/manager),
-igual ao que já vale para a política de distribuição do canal. Sem isso, "o setor é o dono" vira
-ficção no primeiro dia em que um atendente mover a conversa de Pedagogia para Secretaria para se
-livrar do atendimento.
+E o limite de permissão que vem daí: **atendente não escolhe o dono**. Ele assume e devolve dentro dos
+setores **a que pertence**; **mover a conversa para um setor de fora da sua lista é gesto de
+administração** (admin/manager), igual ao que já vale para a política de distribuição do canal. Sem
+isso, "o setor é o dono" vira ficção no primeiro dia em que um atendente mover a conversa de
+Pedagogia para Secretaria para se livrar do atendimento.
+
+**Pertencer a mais de um setor é o caso normal, não a exceção** — e ele já está resolvido no banco:
+`attendant_sector_members` é N:N desde a 9062, e `fn_conversation_sector_scope` devolve **uma linha por
+(organização, setor)** do chamador. Na escola: a mesma pessoa cobre Secretaria e Pedagogia; ela vê e
+assume nas duas, e continua sem ver Direção. É por isso que a regra certa não é "atendente vê um
+setor" nem "vê a organização", e sim **"vê os seus setores"**.
 
 ### D3 — "Transferir para fila" no diálogo de transferência
 
@@ -144,14 +150,20 @@ para orientar o "Assumir" de quem está em três setores. Fica registrado, não 
 |---|---|---|---|---|
 | Assumir conversa da **sua** fila | — | ✅ | ✅ | ✅ |
 | Devolver para a fila (release) | — | ✅ | ✅ | ✅ |
-| **Mover a conversa para outra fila** | — | — | ✅ | ✅ |
+| **Mover entre os setores de que a pessoa é membro** | — | ✅ (proposta) | ✅ | ✅ |
+| **Mover para um setor de fora da lista da pessoa** | — | — | ✅ | ✅ |
 | Definir a **fila de entrada** do canal | — | — | — | ✅ |
 | Trocar o responsável por outra pessoa | — | — | ✅ | ✅ |
-| Ver conversas de outro setor | — | — | ✅ (org-wide) | ✅ |
+| Ver conversas dos setores a que **pertence** (N:N) | — | ✅ | ✅ | ✅ |
+| Ver conversas de setor em que **não** é membro | — | — | ✅ (org-wide) | ✅ |
 
 Leitura: quanto mais a fila vira dono, mais o "assumir/devolver" é do atendente e menos o "classificar"
 é dele. É o inverso do que acontece hoje, em que qualquer `agent` move a fila pelo ⋯ e nenhum gestor
-define qual fila recebe o quê.
+define qual fila recebe o quê — e em que o multi-setor não muda nada, porque a fila nunca foi dono.
+
+As duas linhas de "mover" são a mesma régua vista de dois lados: **a lista de setores da pessoa
+é o limite do que ela pode fazer sozinha**. Quem cobre Secretaria e Pedagogia transita entre as
+duas; para mandar à Direção, chama a administração.
 
 ## Consequências
 
@@ -199,9 +211,12 @@ mexem em **disparo e fila** — e por isso estão aqui como proposta, não como 
 4. **Privacidade**: `own_and_sector` já existe por organização. Vale abrir a opção **por setor**
    (`attendant_sectors.restrito`), para um setor fechado e outro aberto na mesma empresa, ou manter
    só o modo da organização?
-5. **Nome de produto**: manter **Setor** (o que já está em tela, módulo e endpoints), ou renomear
+5. **Multi-setor**: pertencer a vários setores deve liberar o atendente a **mover entre eles**
+   (proposta, por analogia com "assumir"), ou mover é sempre da administração, mesmo entre setores
+   da própria pessoa?
+6. **Nome de produto**: manter **Setor** (o que já está em tela, módulo e endpoints), ou renomear
    para **Fila**/**Departamento** como o mercado? É PR de rótulo, sem migração.
-6. **Escopo desta proposta**: seguir o fatiamento acima (1 já como código, 2–3 depois da sua
+7. **Escopo desta proposta**: seguir o fatiamento acima (1 já como código, 2–3 depois da sua
    decisão) ou você prefere uma fatia só com as quatro decisões juntas?
 
 ## O que este ADR NÃO propõe
