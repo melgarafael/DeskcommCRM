@@ -29,6 +29,12 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 KIT_DIR="$ROOT/hostgator-setup-kit"
+# O namespace das imagens vem da FONTE (`_common.sh`), como no resto da suíte:
+# escrever `ghcr.io/...` à mão aqui reprova a catraca de
+# `tests/unit/namespace-das-imagens.test.ts`, e um publicador diferente do nosso
+# (fork) ficaria com o teste reprovando sem ter quebrado nada.
+NS="$(sed -n 's/^IMG_NS="\(.*\)"$/\1/p' "$KIT_DIR/_common.sh" | head -1)"
+[ -n "$NS" ] || { echo "não consegui ler IMG_NS de _common.sh" >&2; exit 1; }
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -85,17 +91,17 @@ export PATH
 PROJ="$WORK/proj"
 mkdir -p "$PROJ/backups"
 : > "$PROJ/docker-compose.prod.yml"
-cat > "$PROJ/.env" <<'ENV'
-APP_IMAGE="ghcr.io/melgarafael/deskcommcrm:v1.115.0"
-WORKER_IMAGE="ghcr.io/melgarafael/deskcomm-worker:v1.115.0"
-SCHEDULER_IMAGE="ghcr.io/melgarafael/deskcomm-scheduler:v1.115.0"
-VOICE_AGENT_IMAGE="ghcr.io/melgarafael/deskcomm-voice-agent:v1.115.0"
+cat > "$PROJ/.env" <<ENV
+APP_IMAGE="$NS/deskcommcrm:v1.115.0"
+WORKER_IMAGE="$NS/deskcomm-worker:v1.115.0"
+SCHEDULER_IMAGE="$NS/deskcomm-scheduler:v1.115.0"
+VOICE_AGENT_IMAGE="$NS/deskcomm-voice-agent:v1.115.0"
 ENV
 
 # A "volta": a versão que o update anterior deixou no snapshot. É ela que a
 # poda tem de preservar junto com a atual.
-cat > "$PROJ/.deskcomm-env-antes-do-update" <<'ENV'
-APP_IMAGE="ghcr.io/melgarafael/deskcommcrm:v1.114.0"
+cat > "$PROJ/.deskcomm-env-antes-do-update" <<ENV
+APP_IMAGE="$NS/deskcommcrm:v1.114.0"
 ENV
 
 runner() {  # runner <arquivo> : fonte das funções, com o projeto como cwd
@@ -215,16 +221,16 @@ check "retenção ZERO não apaga o único backup" [ -f "$UM2/storage-20260107-0
 printf '\n▶ 4. Poda conservadora de imagens\n'
 : > "$DOCKER_LOG"
 export FAKE_IMAGE_LIST="$WORK/imagens.txt"
-cat > "$FAKE_IMAGE_LIST" <<'LIST'
-ghcr.io/melgarafael/deskcommcrm:v1.108.0
-ghcr.io/melgarafael/deskcommcrm:v1.110.0
-ghcr.io/melgarafael/deskcommcrm:v1.114.0
-ghcr.io/melgarafael/deskcommcrm:v1.115.0
-ghcr.io/melgarafael/deskcommcrm:stable
-ghcr.io/melgarafael/deskcomm-worker:v1.108.0
-ghcr.io/melgarafael/deskcomm-worker:v1.115.0
+cat > "$FAKE_IMAGE_LIST" <<LIST
+$NS/deskcommcrm:v1.108.0
+$NS/deskcommcrm:v1.110.0
+$NS/deskcommcrm:v1.114.0
+$NS/deskcommcrm:v1.115.0
+$NS/deskcommcrm:stable
+$NS/deskcomm-worker:v1.108.0
+$NS/deskcomm-worker:v1.115.0
 LIST
-export FAKE_IMAGE_USED="ghcr.io/melgarafael/deskcomm-worker:v1.108.0"
+export FAKE_IMAGE_USED="$NS/deskcomm-worker:v1.108.0"
 
 poda="$WORK/poda.sh"
 runner "$poda"
@@ -242,12 +248,12 @@ check "NUNCA com --all" nao_tem "$DOCKER_LOG" "--all"
 check "nunca docker system prune" nao_tem "$DOCKER_LOG" "system prune"
 check "uma chamada só de prune (sem laço)" [ "$(grep -c 'image prune' "$DOCKER_LOG")" -eq 1 ]
 
-check "removeu a versão antiga do app" tem "$DOCKER_LOG" "image rm ghcr.io/melgarafael/deskcommcrm:v1.108.0"
-check "removeu a outra versão antiga" tem "$DOCKER_LOG" "image rm ghcr.io/melgarafael/deskcommcrm:v1.110.0"
-check "preservou a versão ATUAL" nao_tem "$DOCKER_LOG" "rm ghcr.io/melgarafael/deskcommcrm:v1.115.0"
-check "preservou a versão da VOLTA" nao_tem "$DOCKER_LOG" "rm ghcr.io/melgarafael/deskcommcrm:v1.114.0"
-check "preservou o canal móvel stable" nao_tem "$DOCKER_LOG" "rm ghcr.io/melgarafael/deskcommcrm:stable"
-check "preservou imagem usada por contêiner parado" nao_tem "$DOCKER_LOG" "rm ghcr.io/melgarafael/deskcomm-worker:v1.108.0"
+check "removeu a versão antiga do app" tem "$DOCKER_LOG" "image rm $NS/deskcommcrm:v1.108.0"
+check "removeu a outra versão antiga" tem "$DOCKER_LOG" "image rm $NS/deskcommcrm:v1.110.0"
+check "preservou a versão ATUAL" nao_tem "$DOCKER_LOG" "rm $NS/deskcommcrm:v1.115.0"
+check "preservou a versão da VOLTA" nao_tem "$DOCKER_LOG" "rm $NS/deskcommcrm:v1.114.0"
+check "preservou o canal móvel stable" nao_tem "$DOCKER_LOG" "rm $NS/deskcommcrm:stable"
+check "preservou imagem usada por contêiner parado" nao_tem "$DOCKER_LOG" "rm $NS/deskcomm-worker:v1.108.0"
 check "não tocou em imagem de terceiros" nao_tem "$DOCKER_LOG" "image rm devlikeapro"
 check "a saída diz o que foi removido" tem <(printf '%s' "$saida") "imagem antiga removida"
 
@@ -256,7 +262,7 @@ printf '\n▶ 4b. Falha da poda não aborta\n'
 saida="$(FAKE_PRUNE_FAIL=1 bash "$poda" 2>&1)"; rc=$?
 check "RC 0 mesmo com a poda falhando" [ "$rc" -eq 0 ]
 check "o aviso aparece para o operador" tem <(printf '%s' "$saida") "poda de camadas soltas não rodou"
-check "e a poda das nossas imagens segue" tem "$DOCKER_LOG" "image rm ghcr.io/melgarafael/deskcommcrm:v1.108.0"
+check "e a poda das nossas imagens segue" tem "$DOCKER_LOG" "image rm $NS/deskcommcrm:v1.108.0"
 
 printf '\n▶ 4c. Poda desligável pelo .env\n'
 : > "$DOCKER_LOG"
