@@ -61,7 +61,7 @@ vi.mock("next/link", () => ({
 }));
 
 const AGORA = new Date("2026-11-07T12:00:00Z");
-/** 5 dias parado na etapa → o rodapé escreve "5d em Negociação". */
+/** 5 dias parado na etapa → o rodapé da coluna escreve "5d", sem repetir o nome. */
 const ENTRADA_NA_ETAPA = "2026-11-02T12:00:00Z";
 /** 30 minutos atrás: a última mensagem é de HOJE, então o rótulo é a HORA. */
 const ULTIMA_MENSAGEM = "2026-11-07T11:30:00Z";
@@ -95,11 +95,11 @@ const LEAD: Lead = {
   tarefas: [],
 } as unknown as Lead;
 
-function montar(lead: Lead = LEAD) {
+function montar(lead: Lead = LEAD, opcoes: { naColuna?: boolean; dono?: string } = {}) {
   const cliente = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const card = buildCardInput(lead, {
     stageName: "Negociação",
-    ownerNames: new Map([["u-1", "Marcos"]]),
+    ownerNames: new Map([["u-1", opcoes.dono ?? "Marcos"]]),
     coolingIds: new Set<string>(),
     reactivations: new Map(),
     canonicalTags: [],
@@ -111,7 +111,14 @@ function montar(lead: Lead = LEAD) {
         <Droppable droppableId="etapa-1" type="LEAD">
           {() => (
             <div>
-              <KanbanCard card={card} lead={lead} index={0} pipelineId="p-1" etapas={[]} />
+              <KanbanCard
+                card={card}
+                lead={lead}
+                index={0}
+                pipelineId="p-1"
+                etapas={[]}
+                naColuna={opcoes.naColuna ?? true}
+              />
             </div>
           )}
         </Droppable>
@@ -193,10 +200,39 @@ describe("o card do funil mostra o que importa (#3945, fatia 1)", () => {
     expect(within(cartao).getByLabelText("Responsável: Atendente ACME · v3")).toBeInTheDocument();
   });
 
-  it("⭐ HÁ QUANTO TEMPO NA ETAPA — conta da ENTRADA na etapa", () => {
+  it("⭐ HÁ QUANTO TEMPO NA ETAPA — conta da ENTRADA na etapa, sem repetir a coluna", () => {
     const { container } = montar();
 
     const cartao = container.querySelector('[data-densidade="confortavel"]') as HTMLElement;
-    expect(within(cartao).getByText(/5d em Negociação/)).toBeInTheDocument();
+    const rodape = within(cartao).getByTestId("rodape-do-card");
+    expect(within(rodape).getByText("5d")).toBeInTheDocument();
+    expect(within(rodape).queryByText(/Negociação/)).toBeNull();
+    expect(within(cartao).queryByTestId("etapa-fora-da-coluna")).toBeNull();
+  });
+
+  it("nome longo no card: primeiro e último, inteiro no title, iniciais intactas", () => {
+    const { container } = montar(LEAD, { dono: "Fernanda da Silva Santos" });
+
+    const cartao = container.querySelector('[data-densidade="confortavel"]') as HTMLElement;
+    const rodape = within(cartao).getByTestId("rodape-do-card");
+    expect(within(rodape).getByText("Fernanda Santos")).toBeInTheDocument();
+    expect(within(rodape).getByText("FS")).toBeInTheDocument();
+    expect(within(rodape).queryByText("Fernanda da Silva Santos")).toBeNull();
+    expect(within(rodape).getByTitle("Fernanda da Silva Santos")).toBeInTheDocument();
+  });
+
+  it("fora da coluna, a etapa fica numa linha própria, não ao lado do nome", () => {
+    const { container } = montar(LEAD, {
+      naColuna: false,
+      dono: "Fernanda da Silva Santos",
+    });
+
+    const cartao = container.querySelector('[data-densidade="confortavel"]') as HTMLElement;
+    const rodape = within(cartao).getByTestId("rodape-do-card");
+    expect(within(rodape).getByText("Fernanda Santos")).toBeInTheDocument();
+    expect(within(rodape).queryByText(/Negociação/)).toBeNull();
+    const etapa = within(cartao).getByTestId("etapa-fora-da-coluna");
+    expect(etapa).toHaveTextContent("5d em Negociação");
+    expect(rodape.contains(etapa)).toBe(false);
   });
 });
