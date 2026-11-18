@@ -110,7 +110,7 @@ describe("catálogo de modelos", () => {
    *
    * O risco real é a instalação FRESCA, de passada única: ali o modelo fica sem
    * preço até alguém rodar um update, e nesse intervalo `computeCost()` devolve
-   * 0 sem log e o teto de `ai_budgets` nunca dispara — exatamente o bug que a
+   * null (até 31/10/2026, um 0 sem log) e o teto de `ai_budgets` nunca dispara — exatamente o bug que a
    * 0068 existe para consertar.
    *
    * O que sobrevive ao harness é a PROCEDÊNCIA do preço: se a linha veio do

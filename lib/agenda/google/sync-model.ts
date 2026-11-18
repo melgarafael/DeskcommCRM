@@ -4,6 +4,9 @@ import { z } from "zod";
 import {
   doEventoDoGoogle,
   paraEventoDoGoogle,
+  participantesDoAgendamento,
+  PREFIXO_PROPRIEDADE,
+  propriedadesPrivadas,
   type AgendamentoParaGoogle,
   type EventoDoGoogle,
 } from "./evento";
@@ -100,6 +103,28 @@ export const sameShared = (a: Shared, b: Shared) =>
     (Date.parse(a.starts_at) === Date.parse(b.starts_at) &&
       Date.parse(a.ends_at) === Date.parse(b.ends_at) &&
       a.time_zone === b.time_zone));
+/**
+ * O hash do grupo `guest`: os e-mails que NÓS gerenciamos no evento.
+ *
+ * ⚠️ A forma é a mesma de antes para zero e um convidado (`hash("")`,
+ * `hash(email)`) — é o que mantém válidos os checkpoints já gravados. Com dois
+ * ou mais, a lista ordenada entra junta: mudar quem participa muda o hash, e é
+ * assim que a alteração chega ao Google como qualquer outro campo.
+ */
+export function hashDosConvidados(emails: readonly (string | null | undefined)[]): string {
+  return hash(
+    emails
+      .map((e) => e?.trim().toLowerCase() ?? "")
+      .filter(Boolean)
+      .sort()
+      .join(","),
+  );
+}
+
+const emailsDosConvidadosDaEquipe = (
+  a: AgendamentoParaGoogle,
+): string[] => (a.convidados_da_equipe ?? []).map((g) => g.email).filter(Boolean);
+
 export function localProjection(
   a: AgendamentoParaGoogle & { guest_email?: string | null },
 ): Projection {
@@ -115,7 +140,7 @@ export function localProjection(
       title: hash(body.summary),
       description: hash(body.description),
       location: hash(body.location),
-      guest: hash(a.guest_email?.toLowerCase()),
+      guest: hashDosConvidados([a.guest_email, ...emailsDosConvidadosDaEquipe(a)]),
     },
   };
 }
@@ -123,15 +148,32 @@ export function remoteProjection(
   e: EventoDoGoogle,
   local: Projection,
   base: Base | null,
+  /**
+   * Os e-mails que gerenciamos, quando o chamador os conhece (#4006).
+   *
+   * Sem eles, um evento com DOIS convidados nossos não teria como saber quais
+   * `attendees` são nossos — o checkpoint guarda o hash da lista inteira, não
+   * e-mail por e-mail. O caminho sem a lista continua valendo para os casos de
+   * zero/um convidado, que é todo checkpoint antigo.
+   */
+  gerenciados?: readonly (string | null | undefined)[] | null,
 ): Projection {
   const read = doEventoDoGoogle(e, { fusoDoCalendario: local.shared.time_zone });
   if (read.tipo === "recusado") throw new Error(read.motivo);
+  const lista = new Set((gerenciados ?? []).map((x) => x?.trim().toLowerCase() ?? "").filter(Boolean));
   const managed = new Set(
     [local.outbound.guest, base?.remote.guest, base?.local.guest].filter(Boolean),
   );
-  const guests = (e.attendees ?? []).filter(
-    (p) => !p.organizer && managed.has(hash(p.email?.toLowerCase())),
-  );
+  const guests = (e.attendees ?? []).filter((p) => {
+    if (p.organizer) return false;
+    const email = p.email?.trim().toLowerCase() ?? "";
+    if (!email) return false;
+    // SOMA, nunca troca: o hash do checkpoint é o que reconhece o convidado
+    // ÚNICO de uma escrita histórica (B aceito com CAS perdido, e a lista atual
+    // já em C) e o convidado de antes que precisa sair. Trocar pela lista atual
+    // cegava essas duas leituras (invariante I2 de agenda-google-recovery).
+    return lista.has(email) || managed.has(hash(email));
+  });
   return {
     shared:
       read.tipo === "cancelado"
@@ -146,12 +188,7 @@ export function remoteProjection(
       title: hash(e.summary),
       description: hash(e.description),
       location: hash(e.location),
-      guest: hash(
-        guests
-          .map((p) => p.email?.trim().toLowerCase())
-          .sort()
-          .join(","),
-      ),
+      guest: hashDosConvidados(guests.map((p) => p.email)),
     },
   };
 }
@@ -244,6 +281,14 @@ export function delta(
   base: Base | null,
   changed: readonly Group[],
   shared: boolean,
+  /**
+   * Os e-mails de quem ERA convidado da equipe e deixou de ser (#4006).
+   *
+   * O checkpoint guarda o hash da lista, não os endereços, então a única forma
+   * de DESconvidar alguém é o chamador dizer quem saiu — e ele sabe: o evento
+   * carrega os ids publicados em `deskcomm_guests` (`propriedadesPrivadas`).
+   */
+  opcoes?: { convidadosAnteriores?: readonly (string | null | undefined)[] | null },
 ): Record<string, unknown> {
   const body = paraEventoDoGoogle(a);
   const patch: Record<string, unknown> = {};
@@ -256,34 +301,70 @@ export function delta(
     if (g === "description") patch.description = body.description ?? "";
     if (g === "location") patch.location = body.location ?? "";
     if (g === "guest") {
-      const wantedGuest = a.guest_email?.trim().toLowerCase();
-      const wantedContact = a.contact_email?.trim().toLowerCase();
-      const existing = e.attendees ?? [];
-      const kept = existing.filter(
-        (p) =>
-          p.organizer ||
-          hash(p.email?.toLowerCase()) !== base?.remote.guest ||
-          p.email?.toLowerCase() === wantedGuest,
-      );
-      if (wantedGuest && !kept.some((p) => p.email?.toLowerCase() === wantedGuest))
-        kept.push({ email: wantedGuest, responseStatus: "needsAction" });
-      // O e-mail da ficha não entra no hash `guest` (stamp SQL só vê
-      // `guest_email`). Sem esta linha, um compromisso já publicado nunca
-      // ganharia o lead como convidado. ponytail: troca de e-mail na ficha
-      // depois da primeira ida não dispara push sozinha — o teto é o stamp;
-      // upgrade é incluir o e-mail do contato em `fn_google_projection_stamp`.
-      if (
-        wantedContact &&
-        !kept.some((p) => p.email?.toLowerCase() === wantedContact)
-      ) {
-        const convidado: { email: string; responseStatus: "needsAction"; displayName?: string } = {
-          email: wantedContact,
-          responseStatus: "needsAction",
-        };
-        if (a.contact_nome?.trim()) convidado.displayName = a.contact_nome.trim();
-        kept.push(convidado);
+      const baixo = (x: string | null | undefined) => x?.trim().toLowerCase() ?? "";
+      const desejados = participantesDoAgendamento({
+        contactEmail: a.contact_email,
+        contactName: a.contact_nome,
+        guestEmail: a.guest_email,
+        teamGuests: a.convidados_da_equipe,
+      });
+      const querem = new Set(desejados.map((p) => baixo(p.email)));
+      const saiu = new Set((opcoes?.convidadosAnteriores ?? []).map(baixo).filter(Boolean));
+      const existentes = e.attendees ?? [];
+      /**
+       * ⚠️ Quem fica, fica COM o `responseStatus` que está lá.
+       *
+       * Reenviar todo mundo como `needsAction` apagaria o "aceito" de quem já
+       * respondeu, e o convite voltaria a pedir resposta a cada edição. Quem
+       * sai é só: (a) o convidado da equipe que foi tirado da lista, e (b) o
+       * convidado único de antes (`guest_email`), que o checkpoint sabe
+       * reconhecer pelo hash. Convidado posto direto no Google por uma pessoa
+       * não é nosso e sobrevive — é a mesma regra de sempre.
+       */
+      const mantidos = existentes.filter((p) => {
+        const email = baixo(p.email);
+        if (p.organizer) return true;
+        if (!email) return false;
+        if (querem.has(email)) return true;
+        if (saiu.has(email)) return false;
+        if (base?.remote.guest && hash(email) === base.remote.guest) return false;
+        return true;
+      });
+      const final = [...mantidos];
+      for (const convidado of desejados) {
+        if (final.some((p) => baixo(p.email) === baixo(convidado.email))) continue;
+        const entrada: {
+          email: string;
+          responseStatus: "needsAction";
+          displayName?: string;
+        } = { email: convidado.email, responseStatus: "needsAction" };
+        if (convidado.nome?.trim()) entrada.displayName = convidado.nome.trim();
+        final.push(entrada);
       }
-      patch.attendees = kept;
+      patch.attendees = final;
+      /**
+       * Os ids publicados são o que torna a remoção possível na próxima
+       * passada. Vão junto do PATCH que mexe em convidado, com as MESMAS chaves
+       * do POST (sem elas o evento deixaria de ser reconhecido) — e SÓ quando
+       * há lista nossa para registrar ou para apagar.
+       *
+       * Compromisso sem equipe continua com o PATCH de antes, byte por byte:
+       * mandar `extendedProperties` em toda edição de convidado só aumentaria
+       * a chance de conflito com quem edita o evento no Google.
+       */
+      const tinhaListaPublicada = Boolean(
+        e.extendedProperties?.private?.[`${PREFIXO_PROPRIEDADE}_guests`],
+      );
+      if (a.convidados_equipe_ids?.length || tinhaListaPublicada) {
+        const privadas: Record<string, string | null> = propriedadesPrivadas(a);
+        // Chave privada com valor `null` é como o Google APAGA a propriedade:
+        // sem isto, os ids de quem já saiu ficariam no evento para sempre e a
+        // próxima passada tentaria desconvidar gente que não está mais lá.
+        if (!a.convidados_equipe_ids?.length) {
+          privadas[`${PREFIXO_PROPRIEDADE}_guests`] = null;
+        }
+        patch.extendedProperties = { private: privadas };
+      }
     }
   }
   return patch;

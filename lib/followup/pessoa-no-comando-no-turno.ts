@@ -27,6 +27,7 @@
 import type pg from 'pg';
 
 import { isLeadInHandoff } from '@/lib/agent-engine/agent/human-handoff';
+import { lerEstadoDoComando, opcaoLiberaEnvio } from './envio-com-o-dono';
 import { ACTION_RECHECK_MAX_MS } from './node-handlers';
 
 export type DesfechoDaPessoaNoComando = { kind: 'adiada'; ate: Date } | { kind: 'cancelada' } | null;
@@ -38,6 +39,13 @@ export async function aplicarPessoaNoComandoAoTurno(
     enrollmentId: string;
     nodeId: string;
     contactId: string;
+    /**
+     * O passo manda texto pronto (`fixed_body` ou modelo). Só ele aproveita a
+     * opção `send_when_assigned`: o passo de IA seguiria para um turno que o
+     * próprio silêncio veta, e o fluxo concluiria como `skipped` e avançaria em
+     * vez de esperar.
+     */
+    passoDeTexto: boolean;
   },
   agora: Date,
 ): Promise<DesfechoDaPessoaNoComando> {
@@ -49,8 +57,9 @@ export async function aplicarPessoaNoComandoAoTurno(
     steps_taken: number;
     handoff_policy: string | null;
     fim_do_silencio_ms: number | null;
+    send_when_assigned: boolean;
   }>(
-    `select e.status, e.current_node_id, e.steps_taken, p.handoff_policy,
+    `select e.status, e.current_node_id, e.steps_taken, p.handoff_policy, p.send_when_assigned,
             (select (extract(epoch from max(v.bot_silenced_until)) * 1000)::float8 from conversations v
               where v.organization_id = e.organization_id and v.contact_id = e.contact_id
                 and v.bot_silenced_until is not null and v.bot_silenced_until <> 'infinity') as fim_do_silencio_ms
@@ -66,6 +75,24 @@ export async function aplicarPessoaNoComandoAoTurno(
   // Ausente vale `pause`, o default da coluna — a mesma leitura da varredura.
   const politica = linha.handoff_policy === 'allow' || linha.handoff_policy === 'cancel' ? linha.handoff_policy : 'pause';
   if (politica === 'allow') return null;
+
+  // #3974 — A OPÇÃO POR FLUXO VENCE A POSSE, NÃO O HANDOFF.
+  //
+  // O caso medido na issue: o vendedor é o dono da conversa (assumir/atribuir
+  // grava `bot_silenced_until = 'infinity'`), e o follow-up de etapa morria aqui
+  // em 7 de 28 inscrições. Ligada a opção, o passo SEGUE quando o único motivo
+  // do `isLeadInHandoff` é a posse; `force_human`, `ai_opt_out` e contato
+  // interno continuam sujeitos à política, e o veto do turno da IA
+  // (`inbound-turn.ts`) nem é lido por esta função.
+  //
+  // O silêncio de 5 min da resposta pela tela e a pausa manual também não são
+  // posse: `lerEstadoDoComando` exige conversa aberta COM dono (a régua de
+  // `comando_da_conversa`) e nenhuma conversa calada SEM dono, então esses dois
+  // casos continuam adiando/cancelando como hoje.
+  if (linha.send_when_assigned === true && alvo.passoDeTexto) {
+    const estado = await lerEstadoDoComando(pool, alvo);
+    if (opcaoLiberaEnvio(true, estado)) return null;
+  }
 
   if (politica === 'pause') {
     const teto = agora.getTime() + ACTION_RECHECK_MAX_MS;

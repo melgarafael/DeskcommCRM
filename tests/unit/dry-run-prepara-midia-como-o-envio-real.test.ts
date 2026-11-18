@@ -149,10 +149,12 @@ describe("dry-run prepara a mídia do produto como o envio real (#2490)", () => 
         fotosPreparadas: 2,
         anexos: [
           {
+            kind: "image",
             storagePath: `${ORG}/${PASTA_DE_TESTE_DE_MIDIA}/catalogo-11111111-2222-4333-8444-555555555555.jpg`,
             mime: "image/jpeg",
           },
           {
+            kind: "image",
             storagePath: `${ORG}/${PASTA_DE_TESTE_DE_MIDIA}/catalogo-66666666-7777-4888-8999-000000000000.png`,
             mime: "image/png",
           },

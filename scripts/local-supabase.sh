@@ -4,7 +4,11 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-cli() { npx --yes supabase "$@"; }
+# Versão EXATA, a mesma do e2e (.github/workflows/e2e.yml). Sem versão, o npx
+# baixava o `latest`, e a 3.0.0 recusa o `[inbucket]` do config.toml:
+# o instalador local parava no primeiro `supabase start`.
+SUPABASE_CLI_VERSION=2.117.0
+cli() { npx --yes "supabase@$SUPABASE_CLI_VERSION" "$@"; }
 
 json_value() {
   local key="$1"

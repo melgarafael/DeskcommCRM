@@ -93,6 +93,9 @@ export const O_QUE_FICA = {
   leads: "as oportunidades abertas para ele: título, estado e valor",
   honorarios_contratos: "o contrato de honorários dele (sem a divisão interna do escritório)",
   honorarios_parcelas: "as parcelas que ele paga",
+  cadencias_inscricoes: "as sequências de e-mail nas quais foi inscrito, autorização de abertura e descadastro",
+  cadencias_eventos: "os envios, aberturas e paradas registrados sobre ele, sem metadados internos do provedor",
+  amigo_vinculos: "o vínculo dele com o cadastro de paciente no sistema da clínica (Amigo), sem o cadastro em si",
   lead_field_proposals:
     "os campos que a IA leu num documento do negocio dele e propos para o card (o documento e os valores ficam no anexo)",
   orders: "os pedidos dele na loja",
@@ -101,9 +104,12 @@ export const O_QUE_FICA = {
   mcp_pedidos_de_acesso: "os links de autorização gerados para ele acessar sistemas externos, e quando foram usados",
   mcp_acessos: "os sistemas externos que ele autorizou o agente a acessar, com os escopos e as datas (nunca o token)",
   appointments: "os compromissos dele, com o link da reunião e a anotação que o PDF já imprime",
+  calendar_waitlist:
+    "a inscrição dele na lista de espera de encaixe: o serviço, as janelas que ele pediu, a urgência, a oferta que recebeu e a observação da recepção que a anonimização apaga (seção só do data.json, como `activities`)",
   sales: "as compras dele e por que foram canceladas ou estornadas",
   proposals: "as propostas comerciais enviadas a ele",
   tasks: "o que se combinou fazer para ele",
+  scheduled_messages: "as mensagens agendadas para ele: o texto, o horário e se saíram",
   webhook_captures:
     "o que ele enviou num formulário, com o IP e o navegador de onde enviou: dado dele, origem do contato (art. 19, II)",
   audit_log_extract: "o registro de quem acessou e mudou os dados dele (o PDF já entrega)",

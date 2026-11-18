@@ -13,11 +13,17 @@ import { randomUUID } from "node:crypto";
 
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { FILTRO_VAZIO } from "@/lib/campanhas/audiencia";
-import { decidirConteudo, decidirVelocidade, lerModoDoCanal } from "@/lib/campanhas/conteudo-do-canal";
+import {
+  camposDeGravacao,
+  decidirConteudo,
+  decidirVelocidade,
+  fraseDaRecusa,
+  lerModoDoCanal,
+} from "@/lib/campanhas/conteudo-do-canal";
 import { gravarPool } from "@/lib/campanhas/pool-de-numeros";
 import {
   codificarCursor,
@@ -25,23 +31,31 @@ import {
   decodificarCursor,
   listarCampanhasSchema,
 } from "@/lib/campanhas/schemas";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 const COLUNAS_DA_LISTA =
   "id, name, status, channel_session_id, snapshot_total, snapshot_eligible, snapshot_excluded, " +
   "scheduled_at, started_at, completed_at, cancelled_at, created_at, created_by, " +
-  "pipeline_id, stage_id, agent_id, message_mode, provider_template_name";
+  "pipeline_id, stage_id, agent_id, message_mode, email_subject, provider_template_name";
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "campaigns" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "campaigns",
+    role: "manager",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "campaigns_lista", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const org = { orgId: authz.organizationId };
 
   const params = Object.fromEntries(new URL(req.url).searchParams.entries());
   const parsed = listarCampanhasSchema.safeParse(params);
@@ -53,11 +67,11 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
   const q = parsed.data;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   let query = supabase
     .from("campaigns")
     .select(COLUNAS_DA_LISTA)
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", org.orgId)
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
     .limit(q.limit + 1);
@@ -91,10 +105,20 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (negado) return negado;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "campaigns" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "campaigns",
+    role: "manager",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user, org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "campaigns_criar", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const org = { orgId: authz.organizationId };
+  // Autor só quando é uma pessoa logada: o token não é usuário, e NULL é o
+  // que a coluna `created_by` aceita (`references auth.users`, nullable).
+  const autor = authz.actor.type === "user" ? authz.actor.id : null;
 
   const parsed = criarCampanhaSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -114,7 +138,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   const supabase = createAdminClient();
   // A conexão é conferida CONTRA A ORGANIZAÇÃO: a FK composta da 0375 recusaria
   // o número de outro tenant, mas a recusa do banco chegaria como erro genérico.
-  const canal = await lerModoDoCanal(supabase, org.orgId, entrada.channel_session_id);
+  // Sem número, o canal é E-MAIL: não há linha a conferir, e o formato vem da
+  // capability do canal (o esquema já recusou número junto com `canal: email`).
+  const canal = await lerModoDoCanal(supabase, org.orgId, entrada.channel_session_id ?? null);
   if (!canal.existe) {
     return fail(
       "campanha_canal_indisponivel",
@@ -123,11 +149,12 @@ export async function POST(req: NextRequest): Promise<Response> {
       { requestId },
     );
   }
-  // O conteúdo segue o que o número aceita: texto livre no QR, modelo aprovado
-  // no oficial (migration 0710). O modelo escolhido é conferido inteiro aqui.
+  // O conteúdo segue o que o canal aceita: texto livre no QR, modelo aprovado no
+  // oficial (migration 0710), assunto + corpo no e-mail (9334). O modelo
+  // escolhido é conferido inteiro aqui, e a conta Resend também.
   const conteudo = await decidirConteudo(supabase, {
     organizationId: org.orgId,
-    channelSessionId: entrada.channel_session_id,
+    channelSessionId: entrada.channel_session_id ?? null,
     extras: entrada.channel_session_ids ?? [],
     modoDoCanal: canal.modo,
     pedido: entrada,
@@ -135,10 +162,17 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (!conteudo.ok) {
     return fail(conteudo.codigo, t(conteudo.mensagem), conteudo.status, { requestId });
   }
-  // Rápida só com modelo aprovado (migration 0711).
-  const velocidade = decidirVelocidade({ pedida: entrada.velocidade, atual: "gradual", modo: conteudo.modo });
+  // Rápida e broadcast só com modelo aprovado (migrations 0711 e 0712); o
+  // broadcast, só no número que o faz e com variáveis de texto fixo.
+  const velocidade = decidirVelocidade({
+    pedida: entrada.velocidade,
+    atual: "gradual",
+    modo: conteudo.modo,
+    transmissao: canal.transmissao,
+    variaveis: conteudo.colunas.provider_template_variables,
+  });
   if (!velocidade.ok) {
-    return fail(velocidade.codigo, t(velocidade.mensagem), velocidade.status, { requestId });
+    return fail(velocidade.codigo, fraseDaRecusa(velocidade, t), velocidade.status, { requestId });
   }
 
   const { data, error } = await supabase
@@ -147,9 +181,10 @@ export async function POST(req: NextRequest): Promise<Response> {
       organization_id: org.orgId,
       name: entrada.name,
       description: entrada.description ?? null,
-      channel_session_id: entrada.channel_session_id,
-      message_body: conteudo.modo === "template" ? null : (entrada.message_body ?? null),
-      ...conteudo.colunas,
+      channel_session_id: entrada.channel_session_id ?? null,
+      // A MESMA decisão que validou vira linha: assunto, modo e corpo saem
+      // juntos daqui (`camposDeGravacao`), sem a rota reescrever o texto.
+      ...camposDeGravacao(conteudo, entrada.message_body),
       base_legal: entrada.base_legal,
       lia_ref: entrada.lia_ref ?? null,
       audience_filter: entrada.audience_filter ?? FILTRO_VAZIO,
@@ -163,7 +198,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       pipeline_id: entrada.pipeline_id ?? null,
       stage_id: entrada.stage_id ?? null,
       agent_id: entrada.agent_id ?? null,
-      created_by: user.id,
+      created_by: autor,
     })
     .select(COLUNAS_DA_LISTA)
     .single();
@@ -174,7 +209,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const criada = data as unknown as { id: string };
-  if ((entrada.channel_session_ids ?? []).length > 0) {
+  // Campanha de e-mail não tem número (o esquema já recusou `channel_session_ids`
+  // junto com `canal: email`), então o pool só existe no caminho do WhatsApp.
+  if ((entrada.channel_session_ids ?? []).length > 0 && entrada.channel_session_id) {
     // Falha do pool NÃO derruba a criação: a campanha existe e fala pelo número
     // principal. Devolver erro aqui faria o operador achar que nada foi criado
     // e criar de novo.
@@ -193,7 +230,8 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   void audit({
     action: "campaign.created",
-    actorUserId: user.id,
+    actorUserId: autor,
+    actorApiTokenId: authz.apiTokenId ?? null,
     organizationId: org.orgId,
     resourceType: "campaign",
     resourceId: criada.id,

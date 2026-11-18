@@ -41,6 +41,7 @@ type Chamada = { rota: string; url: URL; headers: Headers; corpo: unknown };
 
 /** Rota = "MÉTODO /caminho" sem `/v3` e sem query. Lista = fila (a última se repete). Rota não declarada → 404. */
 function asaasFalso(rotas: Record<string, Responder>) {
+  rotas = { "PUT /payments/pay_1": { corpo: {} }, "PUT /payments/pay_v": { corpo: {} }, ...rotas };
   const filas = new Map<string, Responder>(Object.entries(rotas).map(([k, v]) => [k, Array.isArray(v) ? [...v] : v]));
   const chamadas: Chamada[] = [];
   const fetchFalso: typeof fetch = async (entrada, init) => {
@@ -373,6 +374,8 @@ describe("verificarWebhook", () => {
     // Token vazado: sem teto, cada aviso gravaria uma linha do tamanho que quem manda quiser.
     ["⭐ com id de 5 KB", JSON.stringify({ id: "x".repeat(5_000), event: "PAYMENT_RECEIVED" })],
     ["⭐ com event fora do vocabulário do Asaas", JSON.stringify({ id: "evt_1", event: "payment_received" })],
+    ["⭐ com payment.customer de 5 KB", JSON.stringify({ id: "evt_1", event: "PAYMENT_RECEIVED", payment: { customer: "x".repeat(5_000) } })],
+    ["⭐ com subscription.customer de 5 KB", JSON.stringify({ id: "evt_1", event: "SUBSCRIPTION_DELETED", subscription: { customer: "x".repeat(5_000) } })],
   ])(
     "token certo e corpo %s → ponteiro sem empresa, id curto e estável (nunca 401: o Asaas pausaria a fila)",
     (_nome, corpo) => {
@@ -534,8 +537,26 @@ describe("prepararWebhook e removerWebhooks", () => {
   });
 });
 
+const texto = (v: unknown): string | null => (typeof v === "string" ? v : null);
+/** `GET /customers` como o Asaas: filtra por `externalReference` e `cpfCnpj`; removido só com `includeDeleted`. */
+const rotaDeClientes = (clientes: Linha[]): Responder => (url: URL): Resposta =>
+  lista(
+    ...clientes.filter((c) => {
+      const vinculo = texto(c.externalReference);
+      const documento = texto(c.cpfCnpj);
+      return (
+        (url.searchParams.get("includeDeleted") === "true" || c.deleted !== true) &&
+        (url.searchParams.get("externalReference") === null || vinculo === url.searchParams.get("externalReference")) &&
+        (url.searchParams.get("cpfCnpj") === null || documento === url.searchParams.get("cpfCnpj"))
+      );
+    }),
+  );
+
 describe("garantirCliente", () => {
   const ORG_DADOS = { id: ORG, nome: "Clínica Exemplo Ltda", email: "financeiro@example.com", documento: "11.222.333/0001-81" };
+  const DOC = "11222333000181";
+  /** Conta em que o cliente achado nunca teve assinatura nem cobrança. */
+  const SEM_HISTORICO: Record<string, Responder> = { "GET /subscriptions": lista(), "GET /payments": lista() };
 
   it("⭐ cliente que já existe pela externalReference é reaproveitado, sem POST", async () => {
     const { adaptador, chamadas } = montar({ "GET /customers": lista({ object: "customer", id: CLIENTE, deleted: false }) });
@@ -550,7 +571,9 @@ describe("garantirCliente", () => {
       "POST /customers": { corpo: { object: "customer", id: "cus_novo" } },
     });
     expect(await adaptador.garantirCliente(ORG_DADOS)).toBe("cus_novo");
-    expect(chamadas[1]?.corpo).toEqual({
+    // Duas buscas antes do POST: pelo vínculo (externalReference) e pelo documento.
+    expect(chamadas.map((c) => c.rota)).toEqual(["GET /customers", "GET /customers", "POST /customers"]);
+    expect(chamadas[2]?.corpo).toEqual({
       name: "Clínica Exemplo Ltda",
       email: "financeiro@example.com",
       cpfCnpj: "11222333000181",
@@ -590,12 +613,144 @@ describe("garantirCliente", () => {
     expect(await segundo.adaptador.garantirCliente(ORG_DADOS)).toBe(CLIENTE);
   });
 
-  it("o documento nunca vai em URL nem em log", async () => {
+  it("o documento entra SÓ no filtro cpfCnpj da busca, e nunca em log", async () => {
     const aviso = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const { adaptador, chamadas } = montar({ "GET /customers": [{ status: 503 }, lista()], "POST /customers": { corpo: { id: "c" } } });
     await adaptador.garantirCliente(ORG_DADOS);
-    expect(chamadas.map((c) => c.url.toString()).join(" ")).not.toContain("11222333000181");
-    expect(aviso.mock.calls.flat().join(" ")).not.toContain("11222333000181");
+    const comDocumento = chamadas.filter((c) => c.url.toString().includes(DOC));
+    expect(comDocumento.map((c) => [c.rota, c.url.searchParams.get("cpfCnpj"), c.url.pathname])).toEqual([["GET /customers", DOC, "/v3/customers"]]);
+    expect(aviso.mock.calls.flat().join(" ")).not.toContain(DOC);
+  });
+
+  // ---- #4768: o cliente que já existe na conta, cadastrado fora do CRM ----
+
+  it("⭐ #4768 cliente pré-existente com o MESMO documento é ADOTADO: nenhum POST de criação", async () => {
+    const { adaptador, chamadas } = montar({
+      ...SEM_HISTORICO,
+      "GET /customers": rotaDeClientes([{ id: "cus_painel", cpfCnpj: DOC, externalReference: null, dateCreated: "2025-02-03" }]),
+      "PUT /customers/cus_painel": { corpo: { id: "cus_painel", externalReference: ORG } },
+    });
+    expect(await adaptador.garantirCliente(ORG_DADOS)).toBe("cus_painel");
+    expect(chamadas.map((c) => c.rota)).toEqual([
+      "GET /customers",
+      "GET /customers",
+      "GET /subscriptions",
+      "GET /payments",
+      "PUT /customers/cus_painel",
+    ]);
+    expect(chamadas[2]?.url.searchParams.get("customer")).toBe("cus_painel");
+    expect(chamadas[2]?.url.searchParams.get("includeDeleted")).toBe("true");
+    expect(chamadas[3]?.url.searchParams.get("customer")).toBe("cus_painel");
+    expect(chamadas[1]?.url.searchParams.get("cpfCnpj")).toBe(DOC);
+    // Só o vínculo vai no PUT: nada de sobrescrever nome, e-mail ou notificação do cadastro que já existia.
+    expect(chamadas[4]?.corpo).toEqual({ externalReference: ORG });
+  });
+
+  it("⭐ #4768 duas chamadas seguidas criam UM cliente só: a segunda acha pelo vínculo que o POST gravou", async () => {
+    const clientes: Linha[] = [];
+    const rotas: Record<string, Responder> = {
+      "GET /customers": rotaDeClientes(clientes),
+      "POST /customers": (_url: URL, corpo: unknown) => {
+        const novo = { id: "cus_unico", dateCreated: "2026-10-05", ...((corpo ?? {}) as Linha) };
+        clientes.push(novo);
+        return { corpo: novo };
+      },
+    };
+    const primeiro = montar(rotas);
+    expect(await primeiro.adaptador.garantirCliente(ORG_DADOS)).toBe("cus_unico");
+    const segundo = montar(rotas);
+    expect(await segundo.adaptador.garantirCliente(ORG_DADOS)).toBe("cus_unico");
+    expect(clientes).toHaveLength(1);
+    expect(segundo.chamadas.filter((c) => c.rota === "POST /customers")).toHaveLength(0);
+  });
+
+  it("⭐ #4768 dois clientes com o mesmo documento: adota o mais ANTIGO, avisa e não cria um terceiro", async () => {
+    const aviso = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { adaptador, chamadas } = montar({
+      ...SEM_HISTORICO,
+      // A listagem vem do mais novo para o mais velho: o desempate não pode depender da ordem do provedor.
+      "GET /customers": rotaDeClientes([
+        { id: "cus_dup_novo", cpfCnpj: DOC, externalReference: null, dateCreated: "2026-05-01" },
+        { id: "cus_dup_velho", cpfCnpj: DOC, externalReference: null, dateCreated: "2025-02-03" },
+      ]),
+      "PUT /customers/cus_dup_velho": { corpo: { id: "cus_dup_velho", externalReference: ORG } },
+    });
+    expect(await adaptador.garantirCliente(ORG_DADOS)).toBe("cus_dup_velho");
+    expect(chamadas.filter((c) => c.rota === "POST /customers")).toHaveLength(0);
+    expect(chamadas.filter((c) => c.rota.startsWith("PUT ")).map((c) => c.rota)).toEqual(["PUT /customers/cus_dup_velho"]);
+    expect(aviso.mock.calls.flat().join(" ")).toContain("cliente_duplicado");
+  });
+
+  it("#4768 conta sem cliente parecido continua criando como hoje (caracterização)", async () => {
+    const { adaptador, chamadas } = montar({
+      "GET /customers": rotaDeClientes([{ id: "cus_outro", cpfCnpj: "11144477735", externalReference: null, dateCreated: "2025-01-01" }]),
+      "POST /customers": { corpo: { id: "cus_novo" } },
+    });
+    expect(await adaptador.garantirCliente(ORG_DADOS)).toBe("cus_novo");
+    expect(chamadas.filter((c) => c.rota === "POST /customers")).toHaveLength(1);
+    expect(chamadas[1]?.url.searchParams.get("cpfCnpj")).toBe(DOC);
+  });
+
+  it("⭐ #4768 erro ao procurar pelo documento NÃO vira 'não existe': propaga, sem POST", async () => {
+    const transitorio = montar({
+      "GET /customers": (url: URL) => (url.searchParams.get("cpfCnpj") === null ? lista() : { status: 503 }),
+      "POST /customers": { corpo: { id: "cus_novo" } },
+    });
+    await expect(transitorio.adaptador.garantirCliente(ORG_DADOS)).rejects.toMatchObject({ transitorio: true });
+    expect(transitorio.chamadas.filter((c) => c.rota === "POST /customers")).toHaveLength(0);
+    const semPermissao = montar({
+      "GET /customers": (url: URL) => (url.searchParams.get("cpfCnpj") === null ? lista() : { status: 403 }),
+      "POST /customers": { corpo: { id: "cus_novo" } },
+    });
+    await expect(semPermissao.adaptador.garantirCliente(ORG_DADOS)).rejects.toMatchObject({ status: 403 });
+    expect(semPermissao.chamadas.filter((c) => c.rota === "POST /customers")).toHaveLength(0);
+  });
+
+  it("#4768 PUT recusado por permissão: adota sem vínculo e avisa, ainda sem criar cliente", async () => {
+    const aviso = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { adaptador, chamadas } = montar({
+      ...SEM_HISTORICO,
+      "GET /customers": rotaDeClientes([{ id: "cus_painel", cpfCnpj: DOC, externalReference: null, dateCreated: "2025-02-03" }]),
+      "PUT /customers/cus_painel": { status: 403 },
+    });
+    expect(await adaptador.garantirCliente(ORG_DADOS)).toBe("cus_painel");
+    expect(chamadas.filter((c) => c.rota === "POST /customers")).toHaveLength(0);
+    expect(aviso.mock.calls.flat().join(" ")).toContain("cliente_adotado_sem_vinculo");
+  });
+
+  it("⭐ #4768 cliente com vínculo de OUTRA organização não é adotado: cria um novo, como antes", async () => {
+    const aviso = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const outra = "1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed";
+    const { adaptador, chamadas } = montar({
+      ...SEM_HISTORICO,
+      "GET /customers": rotaDeClientes([{ id: "cus_da_outra", cpfCnpj: DOC, externalReference: outra, dateCreated: "2025-01-01" }]),
+      "POST /customers": { corpo: { id: "cus_novo" } },
+    });
+    // O mesmo cliente para duas empresas bate no índice único de cobranca_assinaturas e o checkout da segunda nunca passa.
+    expect(await adaptador.garantirCliente(ORG_DADOS)).toBe("cus_novo");
+    expect(chamadas.filter((c) => c.rota === "POST /customers")).toHaveLength(1);
+    expect(chamadas.filter((c) => c.rota.startsWith("PUT "))).toHaveLength(0);
+    expect(aviso.mock.calls.flat().join(" ")).toContain("cliente_de_outra_organizacao");
+  });
+
+  it("⭐ #4768 cliente que já tem assinatura ou cobrança na conta não é adotado: cria um novo, como antes", async () => {
+    const painel = [{ id: "cus_painel", cpfCnpj: DOC, externalReference: null, dateCreated: "2025-02-03" }];
+    for (const historico of [
+      { "GET /subscriptions": lista({ object: "subscription", id: "sub_antiga", deleted: true }), "GET /payments": lista() },
+      { "GET /subscriptions": lista(), "GET /payments": lista({ object: "payment", id: "pay_antigo" }) },
+    ]) {
+      const aviso = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const { adaptador, chamadas } = montar({
+        ...historico,
+        "GET /customers": rotaDeClientes(painel),
+        "POST /customers": { corpo: { id: "cus_novo" } },
+      });
+      expect(await adaptador.garantirCliente(ORG_DADOS)).toBe("cus_novo");
+      expect(chamadas.filter((c) => c.rota.startsWith("PUT "))).toHaveLength(0);
+      expect(aviso.mock.calls.flat().join(" ")).toContain("cliente_com_historico_nao_adotado");
+      expect(aviso.mock.calls.flat().join(" ")).not.toContain(DOC);
+      aviso.mockRestore();
+    }
   });
 });
 
@@ -619,7 +774,7 @@ const rotaDePagamentos = (todas: Linha[]) => (url: URL): Resposta =>
     (url.searchParams.get("subscription") === null || c.subscription === url.searchParams.get("subscription")) &&
     (url.searchParams.get("customer") === null || c.customer === url.searchParams.get("customer")) &&
     (url.searchParams.get("status") === null || c.status === url.searchParams.get("status"))));
-const PLANO = { id: "1d0e4b9a-7c2f-4e1a-9b3c-5d6e7f8a9b0c", nome: "Essencial", precoCents: 4990, intervalo: "mes" as const };
+const PLANO = { id: "1d0e4b9a-7c2f-4e1a-9b3c-5d6e7f8a9b0c", nome: "Essencial", precoCents: 4990, moeda: "BRL" as const, intervalo: "mes" as const };
 
 describe("iniciarAssinatura", () => {
   const PEDIDO = {
@@ -634,15 +789,78 @@ describe("iniciarAssinatura", () => {
       ...extra,
     });
 
+  it("⭐ plano em dólar ou euro (migration 9332) é recusado antes de qualquer chamada: o Asaas cobraria o número como real", async () => {
+    for (const moeda of ["USD", "EUR"] as const) {
+      const { adaptador, chamadas } = criando();
+      const plano = { ...PLANO, moeda };
+      expect(await adaptador.iniciarAssinatura({ ...PEDIDO, plano }).catch((e: unknown) => e)).toMatchObject({ codigo: "moeda_nao_suportada", transitorio: false });
+      expect(await adaptador.iniciarAjusteProporcional({ ...PEDIDO, plano, valorCents: 100 }).catch((e: unknown) => e)).toMatchObject({ codigo: "moeda_nao_suportada" });
+      expect(await adaptador.trocarPlano({ assinaturaRef: "sub_x", plano }).catch((e: unknown) => e)).toMatchObject({ codigo: "moeda_nao_suportada" });
+      expect(chamadas).toHaveLength(0);
+    }
+  });
+
   it("⭐ cria com UNDEFINED (Pix, boleto ou cartão na fatura) e devolve a invoiceUrl da 1ª cobrança", async () => {
     const { adaptador, chamadas } = criando();
     expect(await adaptador.iniciarAssinatura(PEDIDO)).toEqual({
       url: "https://sandbox.asaas.com/i/pay_1", expiraEm: null, assinaturaRef: "sub_novo", sessaoId: "pay_1",
     });
+    expect(chamadas.find((c) => c.rota === "PUT /payments/pay_1")?.corpo).toEqual({
+      callback: { successUrl: "https://crm.example.com/cobranca/volta?para=painel&voltou=1", autoRedirect: true },
+    });
     expect(chamadas.find((c) => c.rota === "POST /subscriptions")?.corpo).toEqual({
       customer: CLIENTE, billingType: "UNDEFINED", value: 49.9, cycle: "MONTHLY", nextDueDate: "2026-10-05",
       description: "Essencial", externalReference: ORG,
+      callback: { successUrl: "https://crm.example.com/cobranca/volta?para=painel&voltou=1", autoRedirect: true },
     });
+  });
+
+  it.each([
+    "nao-e-url", "http://crm.example.com/volta", "javascript:alert(1)",
+    "https://usuario:senha@crm.example.com/volta", "https://crm.example.com/volta#fragmento",
+  ])("retorno que não serve não vai ao provedor, e a cobrança sai sem a volta automática: %s", async (urlDeVolta) => {
+    const { adaptador, chamadas } = criando();
+    expect(await adaptador.iniciarAssinatura({ ...PEDIDO, urlDeVolta })).toMatchObject({ url: "https://sandbox.asaas.com/i/pay_1" });
+    expect(chamadas.find((c) => c.rota === "POST /subscriptions")?.corpo).not.toHaveProperty("callback");
+    expect(chamadas.some((c) => c.rota.startsWith("PUT /payments"))).toBe(false);
+  });
+
+  it("conta que recusa o callback (domínio não cadastrado): refaz UMA vez sem ele e a cobrança sai", async () => {
+    const { adaptador, chamadas } = criando({
+      "POST /subscriptions": (_url, corpo) =>
+        corpo !== null && typeof corpo === "object" && "callback" in corpo
+          ? { status: 400, corpo: { errors: [{ code: "invalid_callback" }] } }
+          : { corpo: assinatura({ id: "sub_novo" }) },
+    });
+    expect(await adaptador.iniciarAssinatura(PEDIDO)).toMatchObject({ assinaturaRef: "sub_novo", url: "https://sandbox.asaas.com/i/pay_1" });
+    const posts = chamadas.filter((c) => c.rota === "POST /subscriptions");
+    expect(posts).toHaveLength(2);
+    expect(posts[1]?.corpo).not.toHaveProperty("callback");
+    // A fatura recusaria o mesmo callback: não insiste.
+    expect(chamadas.some((c) => c.rota.startsWith("PUT /payments"))).toBe(false);
+  });
+
+  it("recusa que não é do callback continua recusa (não esconde o erro de verdade)", async () => {
+    const { adaptador, chamadas } = criando({ "POST /subscriptions": { status: 400, corpo: { errors: [{ code: "invalid_customer" }] } } });
+    await expect(adaptador.iniciarAssinatura(PEDIDO)).rejects.toMatchObject({ status: 400, codigo: "invalid_customer" });
+    expect(chamadas.filter((c) => c.rota === "POST /subscriptions")).toHaveLength(2);
+  });
+
+  it("POST que caiu (5xx) não é refeito sem callback: pode ter criado", async () => {
+    const { adaptador, chamadas } = criando({ "POST /subscriptions": { status: 503 } });
+    await expect(adaptador.iniciarAssinatura(PEDIDO)).rejects.toMatchObject({ status: 503 });
+    expect(chamadas.filter((c) => c.rota === "POST /subscriptions")).toHaveLength(1);
+  });
+
+  it("falha ao pôr o callback na fatura não derruba o link válido nem cria outra assinatura", async () => {
+    const { adaptador, chamadas } = montar({
+      "GET /subscriptions": rotaDeAssinaturas([assinatura({ id: "sub_viva" })]),
+      "GET /payments": rotaDePagamentos([cobranca({ id: "pay_v", subscription: "sub_viva" })]),
+      "PUT /payments/pay_v": { status: 503 },
+    });
+    expect(await adaptador.iniciarAssinatura(PEDIDO)).toMatchObject({ assinaturaRef: "sub_viva", url: "https://sandbox.asaas.com/i/pay_v" });
+    expect(chamadas.filter((c) => c.rota.startsWith("POST "))).toHaveLength(0);
+    expect(chamadas.filter((c) => c.rota === "PUT /payments/pay_v").length).toBeGreaterThan(0);
   });
 
   it("⭐ cria cobrança avulsa proporcional no mesmo cliente e recupera o pagamento por referência idempotente", async () => {
@@ -706,6 +924,9 @@ describe("iniciarAssinatura", () => {
     expect(await adaptador.iniciarAssinatura(PEDIDO)).toMatchObject({ assinaturaRef: "sub_viva", url: "https://sandbox.asaas.com/i/pay_v" });
     expect(chamadas.some((c) => c.rota === "POST /subscriptions")).toBe(false);
     expect(chamadas[0]?.url.searchParams.get("status")).toBe("ACTIVE");
+    expect(chamadas.find((c) => c.rota === "PUT /payments/pay_v")?.corpo).toEqual({
+      callback: { successUrl: "https://crm.example.com/cobranca/volta?para=painel&voltou=1", autoRedirect: true },
+    });
   });
 
   it("cobrança ainda não gerada: transitório (o 2º clique reaproveita a assinatura)", async () => {
@@ -726,11 +947,11 @@ describe("iniciarAssinatura", () => {
     await expect(adaptador.iniciarAssinatura(PEDIDO)).rejects.toMatchObject({ codigo: "resposta_invalida" });
   });
 
-  it("a volta e a chave de idempotência não vão ao Asaas (a fatura não devolve o cliente)", async () => {
+  it("a volta segue no callback, mas a chave de idempotência não é enviada ao Asaas", async () => {
     const { adaptador, chamadas } = criando();
     await adaptador.iniciarAssinatura(PEDIDO);
     const tudo = JSON.stringify(chamadas.map((c) => [c.url.toString(), c.corpo]));
-    expect(tudo).not.toContain("cobranca/volta");
+    expect(tudo).toContain("cobranca/volta");
     expect(tudo).not.toContain("idem-1");
   });
 });
@@ -893,7 +1114,7 @@ describe("lerSituacao", () => {
 });
 
 describe("trocarPlano", () => {
-  const PRO = { id: "2e1f5c0b-8d3a-4f2b-a0c4-6e7f8a9b0c1d", nome: "Pro", precoCents: 9990, intervalo: "mes" as const };
+  const PRO = { id: "2e1f5c0b-8d3a-4f2b-a0c4-6e7f8a9b0c1d", nome: "Pro", precoCents: 9990, moeda: "BRL" as const, intervalo: "mes" as const };
   const trocar = (cobrancas: Linha[], put: Responder = { corpo: assinatura({ value: 99.9 }) }, agora = AGORA) => {
     const m = montar({ "GET /payments": rotaDePagamentos(cobrancas), "PUT /subscriptions/sub_1": put }, { agora: () => agora });
     return { ...m, troca: m.adaptador.trocarPlano({ assinaturaRef: "sub_1", plano: PRO }) };

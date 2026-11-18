@@ -26,6 +26,19 @@ function leitor(rows = [ID], falha = false, pipelineVisible = true) {
   return { client, queries };
 }
 describe("destinos da Central", () => {
+  it("o aviso de saúde/go-live do número (ref_kind number_health) leva a Conexões, para o admin", async () => {
+    // O produtor (`lib/agent-engine/health/circuit.ts`) grava kind 'other' +
+    // ref_kind 'number_health' + ref_id = id da conexão. Sem destino registrado
+    // o botão caía em "Este contexto não está disponível para você".
+    const l = leitor();
+    const [admin] = await resolverDestinosDosAvisos(l.client, ORG, "admin", [aviso("other", "number_health")]);
+    expect(admin?.destination).toMatchObject({ estado: "disponivel", href: "/app/connections", rotulo: "Revisar conexão" });
+    expect(l.queries[0]).toMatchObject({ table: "channel_sessions", archived: true });
+    const [agente] = await resolverDestinosDosAvisos(leitor().client, ORG, "agent", [aviso("other", "number_health")]);
+    expect(agente?.destination.estado).toBe("sem_permissao");
+    const [sumida] = await resolverDestinosDosAvisos(leitor([]).client, ORG, "admin", [aviso("other", "number_health")]);
+    expect(sumida?.destination.estado).toBe("indisponivel");
+  });
   it("aviso Meet abre só compromisso visível ao agente e mantém os vetos do resolvedor", async () => {
     for (const [role, rows, failure, state] of [
       ["agent", [ID], false, "disponivel"],
@@ -55,6 +68,8 @@ describe("destinos da Central", () => {
     ["other", "ai_provider_credential", "/app/ai/credentials"],
     // O caso aberto na Central, na hora (`lib/escalacao/caso-na-central.handler.ts`).
     ["other", "agent_case", `/app/ai/cases?caso=${ID}`],
+    // Doc 301 = B: o run em que a automação segurou o que fala com o cliente.
+    ["other", "automation_rule_run", "/app/webhooks?aba=atividade"],
   ])("%s/%s abre somente contexto real", async (kind, ref, href) => {
     const l = leitor(); const [item] = await resolverDestinosDosAvisos(l.client, ORG, "admin", [aviso(kind, ref)]);
     expect(item?.destination).toMatchObject({ estado: "disponivel", href });
@@ -131,6 +146,16 @@ describe("destinos da Central", () => {
       expect(oculta?.destination.estado, kind).toBe("indisponivel");
     }
   });
+  it("apresentação do catálogo interrompida (other → conversa) abre a conversa só para quem a enxerga", async () => {
+    const [admin] = await resolverDestinosDosAvisos(leitor().client, ORG, "admin", [aviso("other", "conversation")]);
+    expect(admin?.destination).toEqual({ estado: "disponivel", rotulo: "Abrir conversa", href: `/app/inbox/${ID}` });
+    // Fora do alcance da RLS de quem lê: nem o link, nem a existência.
+    const [oculta] = await resolverDestinosDosAvisos(leitor([]).client, ORG, "agent", [aviso("other", "conversation")]);
+    expect(oculta?.destination.estado).toBe("indisponivel");
+    const [viewer] = await resolverDestinosDosAvisos(leitor().client, ORG, "viewer", [aviso("other", "conversation")]);
+    expect(viewer?.destination.estado).toBe("sem_permissao");
+  });
+
   it("teto de IA do PLANO leva o admin à tela do plano, e só com a org ativa", async () => {
     // Sem "plano" na lista de refs, o item virava "Este contexto não está
     // disponível para você" — a frase falsa na parada mais cara do produto.

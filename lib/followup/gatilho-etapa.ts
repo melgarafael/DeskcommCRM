@@ -48,6 +48,7 @@ import { serviceForEvent } from "@/lib/atendimento/origem";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { EventRow } from "@/lib/event-log/dispatcher";
+import { eventoDaIaNoAssistido } from "@/lib/automation/parada-no-assistido";
 import { flowGraphSchema } from "./graph-schema";
 import { triggerConfigSchema } from "./api-schemas";
 import {
@@ -144,6 +145,8 @@ export interface GatilhoEtapaSummary {
   enrolled: number;
   skipped_existing: number;
   skipped_stale_origin?: number;
+  /** A IA moveu no modo assistido: a sequência espera alguém inscrever (doc 301 = B). */
+  parados_no_assistido?: number;
   /** Negócio entrou na etapa mas não tem contato — não há a quem escrever. Contado, nunca calado. */
   sem_contato: number;
 }
@@ -203,9 +206,28 @@ export async function aplicaGatilhoDeEtapa(
     return summary;
   }
 
+  // Doc 301 = B: a IA moveu o card no modo ASSISTIDO (ou a regra que rodou por
+  // causa dela). Sequência fala com o cliente, então não inscreve: o handler
+  // abre o aviso na Central, e quem quiser inscreve pelo painel do contato.
+  if (eventoDaIaNoAssistido(row)) {
+    summary.parados_no_assistido = armados.length;
+    return summary;
+  }
+
   for (const pointer of armados) {
     const noDeGatilho = await deps.db.carregaNoDeGatilho(row.organization_id, pointer.active_version_id);
     if (!noDeGatilho) continue;
+    // #3852: este produtor NÃO passa o canal, e é deliberado. O evento
+    // `lead.stage_changed` não carrega conversa: o payload do gatilho traz só
+    // `lead_id/from_stage_id/to_stage_id` (`supabase/baseline.sql:244`), e a
+    // conversa só é resolvida DEPOIS, no INSERT (`serviceForEvent` →
+    // `fn_service_event_origin`, `supabase/baseline.sql:20571`/`20577` — que
+    // escolhe a sessão pelo snapshot do comando, não por "a última conversa").
+    // Deduzir a conversa aqui escolheria uma sessão possivelmente diferente da
+    // que o envio vai usar, e o turno resolve o agente pelo número
+    // (`agent-config.ts:430`, `v.channel_session_id = $2`): persona de um número
+    // e envio por outro. Diferença haveria, conserto não. Fica o comportamento
+    // por organização até o evento ter canal.
     const { agentId, barrado } = await decidirAgenteDoEnrollmentAutomatico(
       deps.gateDb,
       row.organization_id,

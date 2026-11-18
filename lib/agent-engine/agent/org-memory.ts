@@ -32,6 +32,8 @@ export interface OrgMemoryEntry {
   body: string;
   /** `YYYY-MM-DD` no fuso da organização; `null` = sem prazo. */
   valid_until: string | null;
+  /** Quem escreveu: `manual`, `flywheel` (aprovado por pessoa) ou `agent` (a própria IA). */
+  source?: string;
 }
 
 export interface LoadedOrgMemory {
@@ -71,7 +73,7 @@ export async function loadOrgMemory(
   // `Date` à meia-noite local, e aí a comparação de calendário compararia
   // instantes.
   const { rows: entryRows } = await db.query<OrgMemoryEntry & { fuso: string | null }>(
-    `select e.id, e.title, e.body,
+    `select e.id, e.title, e.body, e.source,
             to_char(e.valid_until, 'YYYY-MM-DD') as valid_until,
             o.timezone as fuso
        from org_memory_entries e
@@ -83,6 +85,15 @@ export async function loadOrgMemory(
   const hoje = dataIsoNoFuso(deps.agora ?? new Date(), fusoUtilizavel(entryRows[0]?.fuso));
   const entries = entradasVigentes(entryRows, hoje).map(({ fuso: _fuso, ...entry }) => entry);
   return { content: docRows[0]?.content ?? null, entries };
+}
+
+/**
+ * Só as entradas que uma PESSOA escreveu ou aprovou. O lastro comercial
+ * (`guardrails/lastro-comercial.ts`) não aceita como registro da empresa o que o
+ * próprio agente anotou: no prompt elas continuam.
+ */
+export function memoriaEscritaPorPessoas(mem: LoadedOrgMemory): LoadedOrgMemory {
+  return { ...mem, entries: mem.entries.filter((e) => e.source === 'manual' || e.source === 'flywheel') };
 }
 
 /** Bloco do prefixo estável — '' quando a org não tem memória (zero custo). */

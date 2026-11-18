@@ -12,6 +12,11 @@ export interface ChannelRoutingSettings {
     distribution_mode: RoutingMode | null;
     /** Atendente de destino padrão do NÚMERO (#2331). null = sem destino padrão. */
     default_assignee_user_id: string | null;
+    /**
+     * "Esperar a IA qualificar antes de distribuir" (#3966): o prazo máximo, em
+     * minutos. null/ausente = opção desligada, que é o padrão de fábrica.
+     */
+    ai_wait_minutes?: number | null;
   }>;
   members: Array<{ id: string; name: string }>;
 }
@@ -19,7 +24,7 @@ export async function loadChannelRoutingSettings(db: SupabaseClient, org: string
   const results = await Promise.all([
     db.from("channel_sessions").select("id, display_name, phone_number").eq("organization_id", org).is("archived_at", null).in("provider", [...PROVIDERS_DE_MENSAGEM]).order("created_at"),
     db.from("user_organizations").select("user_id").eq("organization_id", org).is("revoked_at", null).in("role", ["agent", "manager", "admin"]),
-    db.from("channel_routing_policies").select("id, channel_session_id, distribution_mode, default_assignee_user_id").eq("organization_id", org),
+    db.from("channel_routing_policies").select("id, channel_session_id, distribution_mode, default_assignee_user_id, ai_wait_minutes").eq("organization_id", org),
     db.from("channel_routing_responsibles").select("policy_id, user_id").eq("organization_id", org),
   ]);
   for (const result of results) if (result.error) throw new Error(result.error.message);
@@ -28,7 +33,7 @@ export async function loadChannelRoutingSettings(db: SupabaseClient, org: string
   const policies = results[2].data ?? [];
   const responsibles = results[3].data ?? [];
   const ids = members.map((m) => String(m.user_id));
-  const names = await nomesDosAtendentes(ids);
+  const names = await nomesDosAtendentes(org, ids);
   return {
     channels: channels.map((c) => {
       const policy = policies.find((p) => p.channel_session_id === c.id);
@@ -37,7 +42,8 @@ export async function loadChannelRoutingSettings(db: SupabaseClient, org: string
       const default_assignee_user_id = policy?.default_assignee_user_id ? String(policy.default_assignee_user_id) : null;
       return { id: c.id, display_name: c.display_name, phone_number: c.phone_number, user_ids,
         mode: !policy ? "legacy_unconfigured" : user_ids.length ? "restricted" : "restricted_empty",
-        distribution_mode, default_assignee_user_id };
+        distribution_mode, default_assignee_user_id,
+        ai_wait_minutes: (policy as { ai_wait_minutes?: number | null } | undefined)?.ai_wait_minutes ?? null };
     }),
     members: ids.map((id) => ({ id, name: rotuloDoMembro({ full_name: names.get(id), user_id: id }) })),
   };

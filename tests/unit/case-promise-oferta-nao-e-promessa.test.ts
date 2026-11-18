@@ -195,3 +195,58 @@ describe("#3725 — a cadeia de envio deixa passar a oferta (gate case_promise)"
     expect(verdict.pass).toBe(true);
   });
 });
+
+describe("#3725 — o erro-de-ensino aponta para o RETORNO marcado, não para caso humano", () => {
+  /**
+   * A promessa de RETOMADA ("nossa equipe vai te responder outro dia") continua
+   * vetada — o cliente não pode ouvir promessa de humano sem destino. Mas o
+   * ensino mandava abrir `open_human_case`, e era isso que o modelo obedecia:
+   * abria caso para quem só havia respondido "Não". O ensino agora aponta o
+   * `schedule_followup` (quando o turno tem como agendar) ou a reformulação.
+   */
+  const RETOMADAS = [
+    "Sem problema! Nossa equipe vai te responder outro dia.",
+    "Assim que liberarem eu te aviso.",
+    "Nosso time vai verificar e retornar.",
+  ];
+
+  it.each(RETOMADAS)("com retorno agendável, o ensino manda agendar: %s", (body) => {
+    const verdict = casePromiseGate.evaluate(
+      baseCtx({
+        casesEnabled: true,
+        body,
+        followup: { disponivel: true, agendadoNesteTurno: false },
+      }),
+    );
+    expect(verdict.pass).toBe(false);
+    if (verdict.pass) return;
+    expect(verdict.reason).toContain("schedule_followup");
+  });
+
+  it.each(RETOMADAS)("sem retorno agendável, o ensino NÃO manda abrir caso humano: %s", (body) => {
+    const verdict = casePromiseGate.evaluate(
+      baseCtx({
+        casesEnabled: true,
+        body,
+        followup: { disponivel: false, agendadoNesteTurno: false },
+      }),
+    );
+    expect(verdict.pass).toBe(false);
+    if (verdict.pass) return;
+    expect(verdict.reason).toContain("sem prometer retorno");
+    expect(verdict.reason.startsWith("Você prometeu envolver um humano")).toBe(false);
+  });
+
+  it("a promessa de AÇÃO segue ensinando o caso humano", () => {
+    const verdict = casePromiseGate.evaluate(
+      baseCtx({
+        casesEnabled: true,
+        body: "Já encaminhei para a equipe.",
+        followup: { disponivel: false, agendadoNesteTurno: false },
+      }),
+    );
+    expect(verdict.pass).toBe(false);
+    if (verdict.pass) return;
+    expect(verdict.reason).toContain("open_human_case");
+  });
+});

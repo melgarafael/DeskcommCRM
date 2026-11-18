@@ -24,7 +24,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 export const dynamic = "force-dynamic";
 
 const SOURCE_COLUMNS =
-  "id, name, draft_graph, trigger_config, handoff_policy, surface, active_version_id";
+  "id, name, draft_graph, trigger_config, handoff_policy, send_when_assigned, surface, active_version_id";
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -81,6 +81,8 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
       draft_graph,
       trigger_config: origem.trigger_config,
       handoff_policy: origem.handoff_policy,
+      // #3974 — a opção do fluxo viaja com a cópia; duplicar não pode voltar ao default sem avisar.
+      send_when_assigned: origem.send_when_assigned === true,
       surface: origem.surface ?? "followup",
     })
     .select("*")

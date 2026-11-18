@@ -14,13 +14,25 @@ flowchart LR
     Fechamento --> Resumo[lead_checkpoints]
     Resumo --> Proximo[Próximo turno]
     Banco --> Proximo
+    Banco --> Revisor[Revisor semântico antes do envio]
+    Revisor --> Envio[Confirmação fiel ou veto visível na execução]
 ```
 
 ## Contratos
 
+- A reserva feita em turno anterior não deixa recibo no turno seguinte. Quando a
+  revisão semântica tem evidência comercial e o turno não tentou mexer na agenda,
+  o turno lê em `calendar_appointments` as reservas `confirmed` e futuras do
+  contato (`lerReservasConfirmadasDoContato`), com filtro de organização e contato
+  no SQL, e as entrega em `evidencias_agendamento`, o mesmo campo dos recibos. Ver
+  [`docs/specs/promessas-com-evidencias-consultadas.md`](../specs/promessas-com-evidencias-consultadas.md).
+  `pending` não comprova. Nenhuma reserva autoriza preço, gratuidade ou promessa
+  de resultado. O texto fixo de follow-up não recebe essa leitura.
+
 - `compromissos-do-contato.ts` mantém o recorte por organização, contato,
   compromissos não cancelados e término futuro. Exibe a hora local com o fuso
-  da reserva e o mesmo instante em ISO com offset. O teto continua em cinco;
+  da reserva e o mesmo instante em ISO com offset, além do local que o revisor
+  confere. O teto continua em cinco;
   o aviso de truncamento e a situação de Google Meet permanecem.
 - `crm_list_appointments` e os resultados de escrita de agenda incluem rótulos
   locais. Os campos absolutos usados para executar as ações são preservados.

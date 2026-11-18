@@ -156,6 +156,30 @@ export function TemplatesParceiroClient({
     },
   });
 
+  /**
+   * DE QUAL NÚMERO SÃO ESTES MODELOS.
+   *
+   * A frase dizia "este número" e não dizia qual — e numa instalação real isso
+   * custou caro: a conexão foi reapontada para outra conta, os modelos da
+   * anterior ficaram listados aqui, e não havia nada na tela que permitisse
+   * notar. Modelo aprovado pertence a uma conta de WhatsApp Business
+   * específica; ver o número ao lado da lista é o que transforma "modelos
+   * estranhos" em "modelos de outro número". Só na aba do parceiro por
+   * credencial: é dele a rota que devolve o número.
+   */
+  const doParceiro = rota === "/api/v1/channels/partner/templates";
+  const conexao = useQuery({
+    queryKey: ["canal-parceiro-cabecalho"],
+    enabled: doParceiro,
+    queryFn: async () => {
+      const r = await apiClient.get<{ data: { phone_number: string | null; account_id: string | null } }>(
+        "/api/v1/channels/partner",
+      );
+      return r.data;
+    },
+  });
+  const numero = doParceiro ? (conexao.data?.phone_number ?? null) : null;
+
   const templates = lista.data?.data.templates ?? [];
 
   return (
@@ -164,6 +188,14 @@ export function TemplatesParceiroClient({
         <p className="text-sm text-muted-foreground">
           {t(
             "O que a plataforma aprovou para este número. É daqui que sai a mensagem quando a janela de 24h fecha.",
+          )}
+          {numero !== null && (
+            <>
+              {" "}
+              <strong className="text-foreground" data-testid="numero-dos-modelos">
+                {numero}
+              </strong>
+            </>
           )}
         </p>
         <div className="flex gap-2">

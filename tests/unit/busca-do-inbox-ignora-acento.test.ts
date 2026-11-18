@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { listConversationsHandler } from "@/app/api/v1/conversations/_handler";
+import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
 
 /**
  * A BUSCA DO INBOX IGNORA ACENTO — "Andreia" acha "Andréia" e o contrário (issue #3918).
@@ -16,9 +17,10 @@ import { listConversationsHandler } from "@/app/api/v1/conversations/_handler";
  * conclui que o cliente não está no CRM. No Brasil a mesma pessoa aparece escrita
  * das duas formas, e é o atendente quem digita rápido, sem acento.
  *
- * A régua do repo já conhecia esse buraco: `lib/contacts/busca-regex.ts` (#1835)
- * resolve acento no lado do TERMO para a listagem de contatos. A do inbox ficou
- * de fora, e é esta fatia.
+ * A régua própria da listagem de contatos (`lib/contacts/busca-regex.ts`, #1835)
+ * cobria o lado do TERMO para aquelas quatro colunas. A #3918 (fatia 2) aposentou
+ * essa régua: Contatos, seletor e a ferramenta do agente passaram a usar esta
+ * mesma coluna gerada, e agora existe UMA regra de acento no repo.
  *
  * ─── O que este arquivo mede, e o que ele NÃO mede ───────────────────────────
  * Mede a FORMA do filtro que sai do handler: a coluna alvo é a normalizada
@@ -45,6 +47,16 @@ interface Chamada {
 function fakeSupabase(contatos: Array<{ id: string }>) {
   const chamadas: Chamada[] = [];
   const client = {
+    // A busca de texto deixou de ser um `or=` em `contacts` e virou RPC
+    // (`fn_contatos_da_busca`, #4326): é a função que casa, do lado do banco, e
+    // devolve os ids. O dublê responde como o PostgREST responde a `rpc()`.
+    rpc: (fn: string, args: unknown) => {
+      chamadas.push({ tabela: "rpc", metodo: fn, args: [args] });
+      return Promise.resolve({
+        data: contatos.map((c) => ({ contact_id: c.id })),
+        error: null,
+      });
+    },
     from: (tabela: string) => {
       const proxy: Record<string, unknown> = new Proxy(
         {},
@@ -73,13 +85,13 @@ const ctx = {
   actor: { type: "user" as const, id: "user-1" },
 } as never;
 
-/** Os argumentos que o handler mandou para `contacts.or(...)` — o filtro do nome. */
+/** Os argumentos que o handler mandou para `fn_contatos_da_busca` — o filtro do nome. */
 async function filtroDeContatos(search: string, contatos: Array<{ id: string }> = []) {
   const { client, chamadas } = fakeSupabase(contatos);
   await listConversationsHandler(client, ctx, { limit: 50, search } as never);
   return chamadas
-    .filter((c) => c.tabela === "contacts" && c.metodo === "or")
-    .flatMap((c) => c.args.map(String))
+    .filter((c) => c.tabela === "rpc" && c.metodo === "fn_contatos_da_busca")
+    .flatMap((c) => c.args.map((a) => JSON.stringify(a)))
     .join(" | ");
 }
 
@@ -89,19 +101,32 @@ async function todasAsChamadas(search: string) {
   return chamadas;
 }
 
+/**
+ * Os ARGUMENTOS da função, já decodificados.
+ *
+ * O teste do `%` não pode comparar texto de JSON: `JSON.stringify` escapa a
+ * barra (`\%` vira `"\\%"`), e a asserção passaria a medir o escape do
+ * `stringify` em vez do escape do LIKE. Aqui se lê o valor.
+ */
+async function argumentosDaBusca(search: string) {
+  const chamadas = await todasAsChamadas(search);
+  return chamadas
+    .filter((c) => c.tabela === "rpc" && c.metodo === "fn_contatos_da_busca")
+    .map((c) => c.args[0] as { p_termo?: string; p_digitos?: string[] });
+}
+
 describe("busca do inbox — o nome casa sem acento", () => {
   it("⭐ 'andreia' procura na coluna normalizada, não no nome acentuado", async () => {
     const filtro = await filtroDeContatos("andreia", [{ id: "contato-andreia" }]);
 
+    // A coluna gerada passou a ser lida DENTRO da função (#4326), então o que se
+    // prova aqui é o outro lado do par: o termo chega SEM ACENTO. A coluna em si
+    // é provada contra o banco em `tests/invariants/busca-do-inbox-ignora-acento`.
+    expect(filtro, "o termo não chegou ao filtro").toContain('"p_termo":"andreia"');
     expect(
       filtro,
-      "a busca ainda mira a coluna acentuada: `ILÍKE` dobra caixa, não acento, " +
-        "então 'andreia' nunca acha 'Andréia'",
-    ).toContain("busca_sem_acento");
-    expect(filtro, "o termo não chegou ao filtro").toContain("andreia");
-    expect(
-      filtro,
-      "sobrou o filtro nas colunas cruas — os dois lados precisam ser normalizados",
+      "sobrou um filtro nas colunas cruas — o handler não deve mais ler `contacts` " +
+        "com `display_name.ilike`/`name.ilike` (é a varredura que a fatia tirou)",
     ).not.toContain("display_name.ilike");
   });
 
@@ -130,9 +155,9 @@ describe("busca do inbox — o nome casa sem acento", () => {
       const a = await filtroDeContatos(digitado);
       const b = await filtroDeContatos(noBanco);
       expect(a, `"${digitado}" e "${noBanco}" não caem no mesmo filtro`).toBe(b);
-      expect(a, `o filtro de "${digitado}" não chegou à coluna normalizada`).toContain(
-        "busca_sem_acento",
-      );
+      const nomeQueChegou = /"p_termo":"([^"]*)"/.exec(a)?.[1];
+      expect(nomeQueChegou, `o filtro de "${digitado}" não chegou à função`).toBeDefined();
+      expect(nomeQueChegou, `"${digitado}" não foi normalizado`).toBe(termoSemAcento(digitado));
     }
   });
 
@@ -140,19 +165,24 @@ describe("busca do inbox — o nome casa sem acento", () => {
     // Curinga injetado em busca é o defeito que `termoSeguroParaOr` documenta e
     // impede: `%` e `_` são metacaracteres do LIKE. A normalização de acento não
     // pode desfazê-lo no caminho.
-    const filtro = await filtroDeContatos("%");
+    const [args] = await argumentosDaBusca("%");
 
-    expect(filtro, "o `%` deixou de ser escapado: a busca passaria a casar tudo").toContain(
-      String.raw`\%`,
-    );
-    expect(filtro, "sobrou um `%` cru no filtro").not.toMatch(/\.\*[^\\%]*%\*/);
+    // Comparação de VALOR, não de texto de JSON: `JSON.stringify` já escapa a
+    // barra (`\%` vira `"\\%"`), e a asserção passaria a medir o escape do
+    // `stringify` em vez do escape do LIKE.
+    expect(
+      args?.p_termo,
+      "o `%` deixou de ser escapado: a busca passaria a casar tudo",
+    ).toBe("\\%");
   });
 
   it("o telefone continua sendo buscado por dígitos", async () => {
     // Controle de não-regressão: a fatia troca o campo de NOME; o telefone tem
     // outro caminho (dígitos, sem acento possível) e sai daqui intacto.
     const chamadas = await todasAsChamadas("991234567");
-    const texto = JSON.stringify(chamadas.filter((c) => c.tabela === "contacts"));
-    expect(texto).toContain("phone_number");
+    const texto = JSON.stringify(chamadas.filter((c) => c.tabela === "rpc"));
+    expect(texto, "o telefone deixou de ser buscado por dígitos").toContain(
+      '"p_digitos":["991234567"]',
+    );
   });
 });

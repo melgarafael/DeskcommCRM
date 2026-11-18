@@ -187,7 +187,7 @@ describe("regras de demonstração", () => {
     expect(evaluateConditions(regra(REGRA_VIP).conditions, comum)).toBe(false);
   });
 
-  it("assign_owner funciona no gatilho da regra VIP — e não funcionaria no de mensagem", async () => {
+  it("assign_owner funciona no gatilho da regra VIP — e, desde o #3974, também no de mensagem COM negócio", async () => {
     const executor = getAction("assign_owner");
     expect(executor, "assign_owner não registrado").toBeDefined();
     const config = regra(REGRA_VIP).actions.find((a) => a.type === "assign_owner")!.config;
@@ -197,22 +197,37 @@ describe("regras de demonstração", () => {
       user_organizations: { user_id: GERENTE, role: "manager" },
     });
 
-    const ctx = async (evento: EventRow): Promise<ActionCtx> => ({
-      admin,
+    const ctxCom = (adminDoCaso: SupabaseClient) => async (evento: EventRow): Promise<ActionCtx> => ({
+      admin: adminDoCaso,
       serviceBoundaries: new Map(),
       organizationId: ORG,
       ruleId: "regra",
       ruleName: REGRA_VIP,
       event: evento,
-      context: await buildContext(admin, evento),
+      context: await buildContext(adminDoCaso, evento),
       requestId: evento.id,
     });
 
-    expect((await executor!.execute(await ctx(eventoDeLeadCriado()), config)).status).toBe("success");
-    // O que a primeira versão pedia: `assign_owner` num evento de mensagem, cujo
-    // contexto tem contato e nunca lead.
+    expect((await executor!.execute(await ctxCom(admin)(eventoDeLeadCriado()), config)).status).toBe("success");
+
+    // Até o #3974 este caso era `skipped`/`missing_input`, e era a limitação que
+    // a issue descreve: o contexto de mensagem carregava só o contato, então a
+    // ação não tinha negócio para atribuir. O negócio ABERTO do contato passou a
+    // entrar no contexto — a mesma ação, na mesma regra, agora funciona.
+    const adminComNegocio = banco({
+      contacts: CONTATO_LINHA,
+      crm_leads: { id: LEAD, organization_id: ORG, contact_id: CONTATO, status: "open", tags: [] },
+      user_organizations: { user_id: GERENTE, role: "manager" },
+    });
     expect(
-      await executor!.execute(await ctx(eventoDeMensagem("orçamento")), config),
+      (await executor!.execute(await ctxCom(adminComNegocio)(eventoDeMensagem("orçamento")), config)).status,
+    ).toBe("success");
+
+    // E a guarda continua de pé: mensagem de contato SEM negócio segue pulando —
+    // a correção não transformou "sem entrada" em sucesso por atacado.
+    const adminSemNegocio = banco({ contacts: CONTATO_LINHA, user_organizations: { user_id: GERENTE, role: "manager" } });
+    expect(
+      await executor!.execute(await ctxCom(adminSemNegocio)(eventoDeMensagem("orçamento")), config),
     ).toMatchObject({ status: "skipped", detail: { reason: "missing_input" } });
   });
 });

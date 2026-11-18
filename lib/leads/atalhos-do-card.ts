@@ -57,6 +57,18 @@ export type IconeDeAtalho = (typeof ICONES_DE_ATALHO)[number];
  */
 export const MAX_ATALHOS = 6;
 
+/**
+ * A FORMA do telefone dentro do `tel:` (2ª fatia da #3487).
+ *
+ * `completo` é o E.164 que `contacts.phone_number` guarda (`+5511…`) e serve a
+ * quem disca internacional. `sem_pais` é DDD + número (`11…`), que é a forma
+ * que o PABX em nuvem do relato disca — e a coluna NÃO pode mudar para atender
+ * esse caso: é a mesma ficha que a ingestão do canal usa. Quem escolhe é o
+ * atalho, por destino.
+ */
+export const MODOS_DE_DISCAGEM = ["completo", "sem_pais"] as const;
+export type ModoDeDiscagem = (typeof MODOS_DE_DISCAGEM)[number];
+
 export const TAMANHO_MAXIMO_DO_ROTULO = 40;
 /** Folgado de propósito: URL de pedido com parâmetros passa de 300 sem esforço. */
 export const TAMANHO_MAXIMO_DO_MODELO = 2000;
@@ -73,6 +85,18 @@ export interface AtalhoDoCard {
   rotulo: string;
   icone: IconeDeAtalho;
   url: string;
+  /**
+   * A forma do telefone no `tel:`. AUSENTE = `completo`, que é o comportamento
+   * de todo atalho gravado antes desta opção existir — por isso opcional: o
+   * jsonb antigo continua com a mesma forma, e o padrão é aplicado na hora de
+   * montar o link, não na leitura (que regravaria o objeto).
+   */
+  discagem?: ModoDeDiscagem;
+}
+
+/** O que a montagem do link precisa saber ALÉM do modelo e dos dados. */
+export interface OpcoesDoAtalho {
+  discagem?: ModoDeDiscagem;
 }
 
 /** Um atalho já validado e com o href montado — o que a tela desenha. */
@@ -245,16 +269,46 @@ export function marcadoresDoModelo(bruto: string | null | undefined): string[] {
  * Espaço, parêntese e hífen quebram o link em alguns softphones (o `+` vira
  * `%2B` ou o número é cortado no primeiro espaço), e é por isso que a
  * normalização acontece ANTES de montar o href — não é cosmética, é o que faz
- * o clique discar. O `+` só sobrevive se estava lá: inventar código de país
- * seria pior que não discar, e a issue deixa "sem código do país" para a 2ª
- * fatia.
+ * o clique discar.
+ *
+ * `sem_pais` (2ª fatia da #3487) tira o `55` e o `+` e devolve DDD + número, que
+ * é o que o PABX do relato disca. `completo` mantém o E.164 de sempre, com o
+ * `+` só se ele já estava lá: inventar código de país seria pior que não discar.
  */
-export function normalizarTelefoneParaTel(bruto: string | null | undefined): string | null {
+export function normalizarTelefoneParaTel(
+  bruto: string | null | undefined,
+  modo: ModoDeDiscagem = "completo",
+): string | null {
   const original = texto(bruto);
   if (!original) return null;
   const digitos = original.replace(/\D/g, "");
   if (digitos.length < MINIMO_DE_DIGITOS_NO_TELEFONE) return null;
-  return original.startsWith("+") ? `+${digitos}` : digitos;
+  const semPais = modo === "sem_pais";
+  const alvo = semPais ? semOCodigoDoPais(digitos) : digitos;
+  if (alvo.length < MINIMO_DE_DIGITOS_NO_TELEFONE) return null;
+  // `+` sem país é link inválido: em `sem_pais`, o número é só dígitos.
+  return !semPais && original.startsWith("+") ? `+${alvo}` : alvo;
+}
+
+/**
+ * Tira o código do país brasileiro, e SÓ ele.
+ *
+ * As três condições são o que separa "código do país" de "número que começa com
+ * 55" (DDD 55 existe, Santa Maria/RS): o comprimento tem de ser o de um número
+ * brasileiro COM país (12 = fixo, 13 = celular, já que sem país o máximo é 11),
+ * os dois dígitos seguintes têm de formar um DDD válido, e é a MESMA prudência
+ * de `phoneLookupVariants` com o nono dígito — cortar um `55` que era DDD
+ * inventaria um número e a chamada sairia para outra pessoa.
+ *
+ * Fora disso, o número volta inteiro: estrangeiro e cadastro estranho não são
+ * adivinhados.
+ */
+function semOCodigoDoPais(digitos: string): string {
+  if (!digitos.startsWith("55")) return digitos;
+  if (digitos.length !== 12 && digitos.length !== 13) return digitos;
+  const ddd = digitos.slice(2, 4);
+  if (!/^[1-9][0-9]$/.test(ddd)) return digitos;
+  return digitos.slice(2);
 }
 
 function campoDe(
@@ -293,10 +347,14 @@ function documentoDoContato(dados: DadosDoAtalho): string | null {
  * `custom_fields` do negócio que o funil manda preencher (`settings.fields`).
  * Quem quiser o do contato escreve `contact.<campo>` e não depende de sorte.
  */
-export function valorDoMarcador(chave: string, dados: DadosDoAtalho): string | null {
+export function valorDoMarcador(
+  chave: string,
+  dados: DadosDoAtalho,
+  opcoes: OpcoesDoAtalho = {},
+): string | null {
   const k = chave.trim().toLowerCase();
 
-  if (k === "telefone") return normalizarTelefoneParaTel(dados.telefone);
+  if (k === "telefone") return normalizarTelefoneParaTel(dados.telefone, opcoes.discagem);
   if (k === "nome") return texto(dados.nome) || null;
   if (k === "primeiro_nome") {
     const nome = texto(dados.nome);
@@ -333,10 +391,11 @@ function preencher(
   cauda: string,
   dados: DadosDoAtalho,
   codificar: boolean,
+  opcoes: OpcoesDoAtalho = {},
 ): string | null {
   let faltou = false;
   const saida = cauda.replace(MARCADOR, (_literal, bruto: string) => {
-    const valor = valorDoMarcador(bruto, dados);
+    const valor = valorDoMarcador(bruto, dados, opcoes);
     if (valor === null) {
       faltou = true;
       return "";
@@ -358,6 +417,7 @@ function preencher(
 export function montarHref(
   modelo: string | null | undefined,
   dados: DadosDoAtalho,
+  opcoes: OpcoesDoAtalho = {},
 ): string | null {
   if (!modeloAceito(modelo)) return null;
   const inteiro = texto(modelo);
@@ -367,13 +427,13 @@ export function montarHref(
 
   let href: string;
   if (esquema === "tel:") {
-    const cru = preencher(cauda, dados, false);
+    const cru = preencher(cauda, dados, false, opcoes);
     if (cru === null) return null;
-    const telefone = normalizarTelefoneParaTel(cru);
+    const telefone = normalizarTelefoneParaTel(cru, opcoes.discagem);
     if (!telefone) return null;
     href = `tel:${telefone}`;
   } else {
-    const cru = preencher(cauda, dados, true);
+    const cru = preencher(cauda, dados, true, opcoes);
     if (cru === null) return null;
     href = `${esquema}${cru}`;
   }
@@ -415,7 +475,7 @@ export function atalhosParaExibir(
   for (const item of lista.slice(0, MAX_ATALHOS)) {
     const atalho = lerAtalho(item);
     if (!atalho) continue;
-    const href = montarHref(atalho.url, dados);
+    const href = montarHref(atalho.url, dados, { discagem: atalho.discagem });
     if (!href) continue;
     saida.push({
       rotulo: atalho.rotulo,
@@ -436,13 +496,19 @@ export function atalhosParaExibir(
  */
 export function lerAtalho(item: unknown): AtalhoDoCard | null {
   if (!item || typeof item !== "object") return null;
-  const bruto = item as { rotulo?: unknown; icone?: unknown; url?: unknown };
+  const bruto = item as { rotulo?: unknown; icone?: unknown; url?: unknown; discagem?: unknown };
   const rotulo = texto(bruto.rotulo);
   const url = texto(bruto.url);
   if (!rotulo || rotulo.length > TAMANHO_MAXIMO_DO_ROTULO) return null;
   if (!(ICONES_DE_ATALHO as readonly string[]).includes(String(bruto.icone))) return null;
   if (!url) return null;
-  return { rotulo, icone: bruto.icone as IconeDeAtalho, url };
+  const atalho: AtalhoDoCard = { rotulo, icone: bruto.icone as IconeDeAtalho, url };
+  // Valor fora da lista não é erro de segurança (não vira href): volta como
+  // ausente, que é o comportamento padrão. Só o que foi escolhido na tela entra.
+  if ((MODOS_DE_DISCAGEM as readonly string[]).includes(String(bruto.discagem))) {
+    atalho.discagem = bruto.discagem as ModoDeDiscagem;
+  }
+  return atalho;
 }
 
 /**

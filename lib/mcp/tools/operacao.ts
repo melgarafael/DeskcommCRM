@@ -42,7 +42,7 @@ import {
   type DepsDaOperacao,
 } from "@/lib/operacao/entradas-automaticas";
 import { listarMarcadores, listarTime } from "@/lib/operacao/marcadores-e-time";
-import { resolveUserNames } from "./_users";
+import { nomesDosAtendentesCom } from "@/lib/users/nome-do-atendente";
 import {
   CHAVE_DE_VALOR_MAX,
   VALOR_DE_VARIAVEL_MAX,
@@ -81,7 +81,9 @@ export const crmListStages: McpToolDefinition<typeof listStagesShape> = {
     "Lista as etapas ativas de um pipeline, na ordem do quadro, com id, name, slug, position, " +
     "is_won/is_lost, win_probability (probabilidade de ganho 0-100 ou null quando a etapa nao foi " +
     "calibrada), expected_duration_hours (janela de esfriando em HORAS, ou null quando a etapa " +
-    "usa o padrao de 24 h) e a autoria da última mudança de configuração (last_change_actor_kind: user|ai|system). " +
+    "usa o padrao de 24 h), description (o criterio da etapa: quando um card entra nela, ou null), agent_stage_hint (a que passo do funil do agente a etapa corresponde: " +
+    "new|contacted|qualifying|qualified|negotiating|won|lost, ou null quando nao ha equivalente) e a " +
+    "autoria da última mudança de configuração (last_change_actor_kind: user|ai|system). " +
     "Use antes de mover um lead ou de criar etapa nova, para não duplicar coluna existente.",
   inputSchema: listStagesShape,
   category: "read",
@@ -140,19 +142,25 @@ const updateStageShape = {
    * `crm_stages.expected_duration_hours` para classificar lead parado.
    */
   expected_duration_hours: z.number().int().min(1).max(8760).nullable().optional(),
+  /**
+   * O CRITÉRIO da etapa (`crm_stages.description`) — quando um negócio entra
+   * nela, em texto livre (até 500 caracteres; `null` ou vazio limpa). É este
+   * texto que `crm_list_stages` devolve como "o critério da etapa", então
+   * escrevê-lo é como o agente passa a saber quando mover o card para cá.
+   */
+  description: z.string().nullable().optional(),
 };
 
 export const crmUpdateStage: McpToolDefinition<typeof updateStageShape> = {
   name: "crm_update_stage",
   description:
-    "Renomeia, reordena, calibra a probabilidade de ganho (win_probability, 0-100; null limpa a " +
-    "calibração e a previsão passa a reportar a etapa sem probabilidade), ajusta a janela de " +
-    "esfriando (expected_duration_hours, em HORAS de 1 a 8760; null volta ao padrão de 24 h) ou " +
-    "muda o papel de desfecho " +
-    "(is_won/is_lost) de uma etapa. " +
-    "after_stage_id é o id da etapa VIZINHA DA ESQUERDA (null = primeira coluna), não um número de posição. " +
-    "Mover a marcação de ganho/perda para outra etapa é permitido; REMOVÊ-LA sem substituta não é — " +
-    "o pipeline ficaria sem onde fechar negócio.",
+    "Renomeia, reordena, calibra o ganho (win_probability 0-100; null limpa e a etapa sai da " +
+    "previsão de probabilidade), ajusta o esfriando (expected_duration_hours, HORAS 1-8760; null " +
+    "volta a 24 h), escreve o critério da etapa (description: quando o card entra nela, até 500 " +
+    "caracteres; null limpa) ou muda o papel de desfecho (is_won/is_lost). " +
+    "after_stage_id é a etapa VIZINHA DA ESQUERDA (null = primeira coluna), não a posição. " +
+    "Mover ganho/perda de etapa é permitido; REMOVÊ-LA sem substituta não — o pipeline ficaria " +
+    "sem onde fechar.",
   inputSchema: updateStageShape,
   category: "write",
   requiresRole: "manager",
@@ -167,13 +175,14 @@ export const crmUpdateStage: McpToolDefinition<typeof updateStageShape> = {
     if (input.expected_duration_hours !== undefined) {
       pedido.expected_duration_hours = input.expected_duration_hours;
     }
+    if (input.description !== undefined) pedido.description = input.description;
     if (Object.keys(pedido).length === 0) {
       throw new ApiError(
         422,
         "unprocessable_entity",
         undefined,
         ctx.requestId,
-        "Diga o que mudar na etapa: o nome, a ordem, a janela de esfriando ou o papel dela no desfecho do negócio.",
+        "Diga o que mudar na etapa: o nome, a ordem, a janela de esfriando, o critério (quando um card entra nela) ou o papel dela no desfecho do negócio.",
       );
     }
     const { funil } = await atualizarEtapa(deps(ctx), {
@@ -543,8 +552,9 @@ export const crmListTeamMembers: McpToolDefinition<typeof listTeamShape> = {
     const time = await listarTime(deps(ctx));
     // Nome sem UUID na ponta (issue #1539): a mesma resolução de `nome` da
     // `crm_list_available_attendants`, pelo helper que expõe SÓ full_name.
-    const nomes = await resolveUserNames(
+    const nomes = await nomesDosAtendentesCom(
       ctx.supabase,
+      ctx.organizationId,
       time.map((p) => p.user_id),
     );
     return { time: time.map((p) => ({ ...p, nome: nomes.get(p.user_id) ?? null })) };

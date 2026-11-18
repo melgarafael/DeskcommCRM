@@ -73,6 +73,7 @@ import {
 /** Os dois eventos deste consumidor — os MESMOS literais de `gatilho-caso.ts`. */
 export const EVENTO_CASO_ABERTO = "ai.case_opened";
 export const EVENTO_CASO_FECHADO = "ai.case_closed";
+export const EVENTO_CASO_ATUALIZADO = "ai.case_updated";
 
 /**
  * Teto de idade do EVENTO: 30 minutos.
@@ -194,6 +195,9 @@ export interface PatchDaEntrega {
 
 export interface AvisoDb {
   carregaConfig(orgId: string): Promise<ConfigDoAviso | null>;
+  cancelaAtualizacao?(orgId: string, caseId: string, eventId: string, erro?: ErroDaEntregaDeAviso): Promise<void>;
+  /** Relê o fato/ciclo/configuração/fronteira canônicos; nunca usa texto do payload. */
+  carregaAtualizacao?(orgId: string, caseId: string, eventId: string, configRevision: string): Promise<{ info: string; ask: string; contactId: string; conversationId: string } | null>;
   carregaCaso(orgId: string, caseId: string): Promise<CasoDoAviso | null>;
   contatoAnonimizado(orgId: string, contactId: string): Promise<boolean>;
   /** INSERT com a `unique`; `criada:false` = outro processo chegou primeiro. */
@@ -202,7 +206,8 @@ export interface AvisoDb {
     caseId: string;
     destino: string;
     channelSessionId: string | null;
-  }): Promise<{ criada: boolean; entrega: EntregaDoAviso | null }>;
+    caseEventId?: string;
+  }): Promise<{ criada: boolean; reivindicada?: boolean; entrega: EntregaDoAviso | null }>;
   atualizaEntrega(orgId: string, entregaId: string, patch: PatchDaEntrega): Promise<void>;
   /** Devolve quantas entregas `pendente` daquele caso viraram `cancelado`. */
   cancelaPendentesDoCaso(orgId: string, caseId: string): Promise<number>;
@@ -398,7 +403,7 @@ function fraseDoErro(codigo: ErroDaEntregaDeAviso): string {
 }
 
 /**
- * Aplica UMA linha de `ai.case_opened` ou `ai.case_closed`.
+ * Aplica UMA linha de `ai.case_opened`, `ai.case_updated` ou `ai.case_closed`.
  *
  * A ordem dos passos não é estética: cada um só roda depois do que pode
  * dispensá-lo, e o mais barato vem primeiro. O caminho de TODA instalação que
@@ -420,7 +425,11 @@ export async function aplicaAvisoDeCaso(
       ? { status: "ok", detail: `cancelado=${canceladas}` }
       : skipped("nada_pendente");
   }
-  if (row.event_type !== EVENTO_CASO_ABERTO) return skipped("evento_ignorado");
+  const atualizacao = row.event_type === EVENTO_CASO_ATUALIZADO;
+  if (row.event_type !== EVENTO_CASO_ABERTO && !atualizacao) return skipped("evento_ignorado");
+  const caseEventId = atualizacao ? textoOuNulo(row.payload.case_event_id) : null;
+  const configRevision = atualizacao ? textoOuNulo(row.payload.config_revision) : null;
+  if (atualizacao && (!caseEventId || !configRevision)) return skipped("atualizacao_sem_vinculo");
 
   // ── 0. Dreno DENTRO da requisição: adia sem tocar a rede ─────────────────
   //
@@ -442,11 +451,17 @@ export async function aplicaAvisoDeCaso(
 
   // ── 2. Configuração — o caminho de toda instalação que nunca ligou ───────
   const cfg = await deps.db.carregaConfig(orgId);
-  if (!cfg || !cfg.ligado || !cfg.channel_session_id) return skipped("sem_configuracao");
+  if (!cfg || !cfg.ligado || !cfg.channel_session_id) {
+    if (atualizacao) await deps.db.cancelaAtualizacao?.(orgId, caseId, caseEventId!);
+    return skipped("sem_configuracao");
+  }
   const channelSessionId = cfg.channel_session_id;
 
   // ── 3. Teto de idade do EVENTO ───────────────────────────────────────────
-  if (passouDoTeto(row, agora)) return skipped("evento_velho");
+  if (passouDoTeto(row, agora)) {
+    if (atualizacao) await deps.db.cancelaAtualizacao?.(orgId, caseId, caseEventId!, "expirou");
+    return skipped("evento_velho");
+  }
 
   // ── 4. O caso ainda merece aviso? ────────────────────────────────────────
   const caso = await deps.db.carregaCaso(orgId, caseId);
@@ -454,10 +469,20 @@ export async function aplicaAvisoDeCaso(
   if (!ORIGENS_ACEITAS.has(caso.source ?? "")) return skipped(`origem_nao_aceita:${caso.source}`);
   if (!STATUS_ABERTOS.has(caso.status)) return skipped(`caso_fechado:${caso.status}`);
 
+  const fato = atualizacao && caseEventId && configRevision
+    ? await deps.db.carregaAtualizacao?.(orgId, caseId, caseEventId, configRevision)
+    : null;
+  if (atualizacao && (!fato || fato.conversationId !== caso.conversation_id ||
+      fato.conversationId !== row.payload.conversation_id || fato.contactId !== row.payload.contact_id)) {
+    await deps.db.cancelaAtualizacao?.(orgId, caseId, caseEventId!);
+    return skipped("atualizacao_superada");
+  }
+
   // ── 4b. PARA QUEM vai o aviso (#3803) ────────────────────────────────────
   //
   // Antes da reivindicação e por uma razão de chave: `destino` faz parte da
-  // `unique (organization_id, case_id, destino)`, então ele precisa estar
+  // chave de entrega (`entregas_de_aviso_abertura_unica` na abertura,
+  // `entregas_de_aviso_atualizacao_unica` em cada resposta do cliente), então ele precisa estar
   // decidido quando a linha nasce. No modo `fixo` isto é o número da empresa e
   // nenhuma consulta a mais é feita; no modo `responsavel` são quatro leituras
   // (conversa, negócio aberto, carteira e os telefones dos três) e a decisão da
@@ -467,15 +492,19 @@ export async function aplicaAvisoDeCaso(
   // Sem número não há aviso: `sem_destino` é a resposta honesta (a coluna é
   // `not null` com CHECK, então este ramo só existe para uma linha torta — e
   // mandar para `""` faria o transporte recusar com um erro que ninguém lê).
-  if (!destino.telefone) return skipped("sem_destino");
+  if (!destino.telefone) {
+    if (atualizacao) await deps.db.cancelaAtualizacao?.(orgId, caseId, caseEventId!);
+    return skipped("sem_destino");
+  }
   const numeroDoAviso = destino.telefone;
 
   // ── 5. REIVINDICA antes de tocar a rede ──────────────────────────────────
-  const { criada, entrega } = await deps.db.reivindicaEntrega({
+  const { criada, reivindicada, entrega } = await deps.db.reivindicaEntrega({
     organizationId: orgId,
     caseId,
     destino: numeroDoAviso,
     channelSessionId,
+    ...(caseEventId ? { caseEventId } : {}),
   });
   if (!entrega) return skipped("reivindicacao_sem_linha");
 
@@ -486,7 +515,7 @@ export async function aplicaAvisoDeCaso(
       return await condena(deps, orgId, caso, entrega, "indeterminado", null, agora);
     }
     const desdeOToque = agora.getTime() - Date.parse(entrega.updated_at);
-    if (desdeOToque >= 0 && desdeOToque < JANELA_DE_REIVINDICACAO_MS) {
+    if (!reivindicada && desdeOToque >= 0 && desdeOToque < JANELA_DE_REIVINDICACAO_MS) {
       return retry(
         new Date(agora.getTime() + JANELA_DE_REIVINDICACAO_MS),
         "outra rodada está enviando este aviso",
@@ -634,7 +663,23 @@ export async function aplicaAvisoDeCaso(
     // esse número: ensinar o comando a ele faria a resposta entrar no CRM como
     // mensagem comum. Para ele, o aviso diz para abrir o link (#3803).
     respostaWhatsappHabilitada: cfg.resposta_whatsapp_habilitada && destino.origem === "numero_da_empresa",
+    ...(fato && caseEventId ? { atualizacao: { ...fato, eventId: caseEventId } } : {}),
   });
+
+  // Última fotografia antes da rede. Nenhum lock permanece aberto no transporte.
+  const cfgAgora = await deps.db.carregaConfig(orgId);
+  const casoAgora = await deps.db.carregaCaso(orgId, caseId);
+  const destinoAgora = cfgAgora
+    ? await destinoDoEnvio(deps, orgId, cfgAgora, caso.conversation_id, contactId)
+    : null;
+  if (!cfgAgora?.ligado || cfgAgora.channel_session_id !== channelSessionId ||
+      destinoAgora?.telefone !== numeroDoAviso || destinoAgora.origem !== destino.origem ||
+      cfgAgora.resposta_whatsapp_habilitada !== cfg.resposta_whatsapp_habilitada ||
+      !casoAgora || !STATUS_ABERTOS.has(casoAgora.status) ||
+      (atualizacao && !(await deps.db.carregaAtualizacao?.(orgId, caseId, caseEventId!, configRevision!)))) {
+    await deps.db.atualizaEntrega(orgId, entrega.id, { status: "cancelado", erro_codigo: null });
+    return skipped("envio_superado");
+  }
 
   // ── 14. O transporte ─────────────────────────────────────────────────────
   let externalId: string | null = null;
@@ -871,7 +916,31 @@ export function createSupabaseAvisoDb(admin: SupabaseClient): AvisoDb {
       return Boolean((data as { is_anonymized?: boolean } | null)?.is_anonymized);
     },
 
-    async reivindicaEntrega({ organizationId, caseId, destino, channelSessionId }) {
+    async cancelaAtualizacao(orgId, caseId, eventId, erro) {
+      const pendente = (patch: PatchDaEntrega) => admin.from("entregas_de_aviso_de_caso")
+        .update(patch)
+        .eq("organization_id", orgId).eq("case_id", caseId)
+        .eq("update_event_id", eventId).eq("status", "pendente");
+      // O código novo só entra onde não havia nenhum: `expirou` por cima de
+      // `teto_diario_do_numero` mandaria quem investiga procurar defeito onde há
+      // regra (a mesma razão do passo 11).
+      if (erro) {
+        const { error } = await pendente({ status: "cancelado", erro_codigo: erro }).is("erro_codigo", null);
+        if (error) throw new Error(error.message);
+      }
+      const { error } = await pendente({ status: "cancelado" });
+      if (error) throw new Error(error.message);
+    },
+
+    async carregaAtualizacao(orgId, caseId, eventId, configRevision) {
+      const { data, error } = await admin.rpc("fn_ler_retorno_de_caso", {
+        p_org: orgId, p_case: caseId, p_event: eventId, p_config_revision: configRevision,
+      });
+      if (error) throw new Error(error.message);
+      return data as { info: string; ask: string; contactId: string; conversationId: string } | null;
+    },
+
+    async reivindicaEntrega({ organizationId, caseId, destino, channelSessionId, caseEventId }) {
       const { data, error } = await admin
         .from("entregas_de_aviso_de_caso")
         .insert({
@@ -880,24 +949,39 @@ export function createSupabaseAvisoDb(admin: SupabaseClient): AvisoDb {
           destino,
           channel_session_id: channelSessionId,
           status: "pendente",
+          update_event_id: caseEventId ?? null,
         })
         .select("id, organization_id, case_id, destino, status, tentativas, created_at, updated_at")
         .maybeSingle();
 
       if (!error) return { criada: true, entrega: (data as EntregaDoAviso | null) ?? null };
-      // 23505 = a `unique (organization_id, case_id, destino)`. É o caminho
-      // NORMAL sob concorrência, não um erro.
+      // 23505 = um dos dois índices parciais: `entregas_de_aviso_abertura_unica`
+      // (caso + destino, `update_event_id` nulo) ou
+      // `entregas_de_aviso_atualizacao_unica` (caso + destino + atualização). É o
+      // caminho NORMAL sob concorrência, não um erro.
       if (error.code !== "23505") throw new Error(error.message);
 
-      const relida = await admin
+      const query = admin
         .from("entregas_de_aviso_de_caso")
         .select("id, organization_id, case_id, destino, status, tentativas, created_at, updated_at")
         .eq("organization_id", organizationId)
         .eq("case_id", caseId)
-        .eq("destino", destino)
-        .maybeSingle();
+        .eq("destino", destino);
+      const relida = await (caseEventId ? query.eq("update_event_id", caseEventId) : query.is("update_event_id", null)).maybeSingle();
       if (relida.error) throw new Error(relida.error.message);
-      return { criada: false, entrega: (relida.data as EntregaDoAviso | null) ?? null };
+      const anterior = (relida.data as EntregaDoAviso | null) ?? null;
+      // Lease vencido precisa de CAS: dois drenos não podem retomar a mesma linha.
+      if (anterior?.status === "pendente" && Date.now() - Date.parse(anterior.updated_at) >= JANELA_DE_REIVINDICACAO_MS) {
+        const retomada = await admin.from("entregas_de_aviso_de_caso")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("organization_id", organizationId).eq("id", anterior.id)
+          .eq("status", "pendente").eq("updated_at", anterior.updated_at)
+          .select("id, organization_id, case_id, destino, status, tentativas, created_at, updated_at").maybeSingle();
+        if (retomada.error) throw new Error(retomada.error.message);
+        if (retomada.data) return { criada: false, reivindicada: true, entrega: retomada.data as EntregaDoAviso };
+        return { criada: false, entrega: { ...anterior, updated_at: new Date().toISOString() } };
+      }
+      return { criada: false, entrega: anterior };
     },
 
     async atualizaEntrega(orgId, entregaId, patch) {

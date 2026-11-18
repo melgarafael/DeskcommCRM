@@ -58,8 +58,17 @@ const NAO_AVALIAVEIS_SEM_TURNO: ReadonlyArray<{ gate: string; porque: string }> 
   { gate: "lgpd", porque: "depende da base legal registrada para o contato" },
   { gate: "pacing", porque: "depende de quantas mensagens o número já enviou hoje e do horário do envio" },
   { gate: "messaging_window", porque: "depende de quando o contato falou com você pela última vez" },
+  {
+    gate: "teto_de_respostas",
+    porque:
+      "depende de quantas respostas esta conversa já recebeu na janela — e o teste do agente não conta como resposta enviada",
+  },
   { gate: "spinning", porque: "depende das últimas mensagens enviadas por este número" },
   { gate: "promise", porque: "depende da tabela de preços e condições da organização" },
+  {
+    gate: "concessao_sem_lastro",
+    porque: "depende do que o cliente e a empresa já escreveram na conversa — não há conversa real no teste",
+  },
   { gate: "semantic_promise", porque: "esta checagem textual não chama modelo; a prévia do motor pode chamar um modelo adicional" },
   {
     gate: "factual_claim",

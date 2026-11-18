@@ -122,6 +122,15 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   // Consulta E marca numa chamada só (issue #831): o `contact_id` é OBRIGATÓRIO
   // como no marcar puro (DECISÃO 27), então o alvo resolve de verdade.
   crm_find_and_book_appointment: "funil_vem_do_contato",
+  // Módulo `amigo` (#4227): toda escrita no Amigo pelo turno leva o `contact_id`
+  // do atendimento (a ponte de escopo recusa sem ele), como o marcar da agenda.
+  crm_amigo_patient_create: "funil_vem_do_contato",
+  crm_amigo_patient_update: "funil_vem_do_contato",
+  crm_amigo_link_patient: "funil_vem_do_contato",
+  crm_amigo_attendance_create: "funil_vem_do_contato",
+  crm_amigo_attendance_cancel: "funil_vem_do_contato",
+  crm_amigo_attendance_status: "funil_vem_do_contato",
+  crm_amigo_attendance_reschedule: "funil_vem_do_contato",
   crm_reschedule_appointment: "sem_funil",
   crm_cancel_appointment: "sem_funil",
   // Mesmo argumento das duas acima, e pela mesma razão: operam por
@@ -133,6 +142,13 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
 
   // ---- não têm funil, e isso é declarado ----
   crm_send_whatsapp_message: "sem_funil",
+  // #4129 — envia o DOCUMENTO da empresa na conversa; não lê nem move negócio,
+  // e o material é catálogo da organização. Mesmo alvo da irmã acima.
+  crm_send_material: "sem_funil",
+  // O Status do WhatsApp não toca negócio nenhum: é publicação de mídia no
+  // canal. Declarado (e não ausente) porque a régua de vacuidade recusa a
+  // ferramenta nova que ninguém classificou.
+  crm_publish_whatsapp_status: "sem_funil",
   // Abre conversa nova (contato pode nem ter negócio ainda) e manda a primeira
   // mensagem — não recebe `lead_id` nem `pipeline_id`. Como as de configuração
   // logo abaixo, a barreira dela é OUTRA: `requiresRole: manager` +
@@ -143,9 +159,17 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   crm_add_case_note: "sem_funil",
   crm_close_human_case: "sem_funil",
   crm_assign_conversation: "sem_funil",
+  // #3881: escolhe a FILA da conversa (`sector_id`), não o negócio. Não lê nem
+  // grava `crm_leads`, então a classificação é "não se aplica" — declarada,
+  // porque ausência aqui é recusa por vacuidade (`ferramenta_nao_classificada`).
+  crm_set_conversation_sector: "sem_funil",
   crm_resume_ai_attendance: "sem_funil",
   crm_save_org_memory: "sem_funil",
   crm_propose_contact_field: "sem_funil",
+  // O diagnóstico mora na FICHA do contato (decisão D8), que vale entre funis:
+  // não recebe `lead_id` nem `pipeline_id`, e não muda negócio nenhum. Quem
+  // limita é a cerca do contato do turno (`escopo-das-escritas.ts`).
+  crm_save_lead_diagnosis: "sem_funil",
   // Rascunho sugerido por integração (#1611): opera por `conversation_id`,
   // nunca `lead_id`, e não mexe em estado de funil nenhum. A barreira é OUTRA,
   // e é dela que a segurança depende: o RBAC da rota (agent+), o escopo

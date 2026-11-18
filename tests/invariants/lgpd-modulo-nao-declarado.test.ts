@@ -86,6 +86,25 @@ interface Violacao {
  * padrão é o mesmo defeito de não decidir.
  */
 const ALLOWLIST: Record<string, string> = {
+  "amigo.amigo_patient_links":
+    "Vínculo contato ↔ paciente do Amigo (#4227): a linha inteira É o dado, e a seção declarada " +
+    "só sabe anular coluna. Fica fora da seção porque a anonimização a APAGA: o gatilho " +
+    "trg_amigo_redigir_titular (migration 9393) remove o vínculo do contato anonimizado e redige " +
+    "o espelho das consultas e os recibos daquele paciente; provado em amigo-modulo.test.ts.",
+  "cadencias.email_cadences":
+    "Configuração compartilhada da sequência por organização, sem vínculo com contacts. " +
+    "name nomeia a cadência, e configuracao/passos guardam modelos, não a execução " +
+    "de um titular. Inscrições e eventos permanecem declarados na LGPD; anonimizar " +
+    "um contato não deve apagar todas as sequências da organização.",
+  "cadencias.email_cadence_suppressions":
+    "Registro de que o endereço e o contato pediram para não receber cadências: organização, " +
+    "hash do e-mail (sem o endereço em claro), ponteiro para o contato, origem e data. Fica FORA " +
+    "da anonimização de propósito — apagá-lo devolveria o titular à fila de e-mail, o oposto do " +
+    "pedido; o contato anonimizado já é recusado pelas funções, e apagar o contato só zera o ponteiro.",
+  "cadencias.email_cadence_recipients":
+    "Destinatário de cada envio: organização, hash do e-mail (sem o endereço em claro), ponteiro " +
+    "para o contato e para a inscrição. Fica FORA da anonimização de propósito: é o que o link de " +
+    "descadastro de um e-mail já entregue resolve, e o titular anonimizado ainda pode clicar nele.",
   "financeiro.commission_rules":
     "commission_rules não tem ligação nenhuma com a pessoa: guarda a regra de " +
     "comissão (tipo, evento, percentual, atendente/serviço) e a coluna `name` é o " +
@@ -100,6 +119,13 @@ const ALLOWLIST: Record<string, string> = {
     "quantidade, reason em vocabulário do programa e idempotency_key são dado " +
     "do programa de fidelidade, e a pessoa por trás já está anônima na cascata " +
     "(contact_id vira contato anonimizado, não contato legível).",
+  "ouvidoria.ouvidoria_manifestacoes":
+    "Decisão escrita no catálogo LGPD (#3611, fatia 1): a manifestação é o " +
+    "documento da ouvidoria que a empresa tem de responder, e redigir o texto " +
+    "apagaria a própria manifestação. A identificação do manifestante sai junto " +
+    "com o contato: contact_id é on delete set null, então apagar/anonimizar a " +
+    "pessoa desliga o vínculo e a linha continua legível só para administradores " +
+    "(RLS da 9040). Não é seção declarada porque não há o que redigir.",
 };
 
 /**

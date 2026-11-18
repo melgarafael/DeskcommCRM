@@ -6,16 +6,16 @@
  * `eventoRecomendadoParaMeta` (`lib/conversoes/regras-meta.ts`) decidia SÓ
  * pelo nome da etapa e devolvia `QualifiedLead` para etapa com "qualific",
  * "interess" ou "diagnost" no nome — sem saber se a instalação tem conexão
- * direta da Meta. Só o canal da conversa repassa eventos de etapa, e a
- * lista dele é `EVENTOS_DE_ETAPA_NO_CANAL` (sem `QualifiedLead`): numa
- * instalação só-com-canal, o botão "Usar o recomendado" (`_regrasMeta.tsx`)
- * ligava a etapa com um evento sem saída, e o aviso do #2839 aparecia em
- * seguida — a tela recomendava e avisava que a recomendação não tem saída,
- * no mesmo instante.
+ * direta da Meta. Só o canal da conversa repassa eventos de etapa, e a lista
+ * dele (`EVENTOS_DE_ETAPA_NO_CANAL`) não tinha `QualifiedLead`: numa instalação
+ * só-com-canal, o botão "Usar o recomendado" (`_regrasMeta.tsx`) ligava a etapa
+ * com um evento sem saída, e o aviso do #2839 aparecia em seguida.
  *
- * A sugestão agora recebe o estado da conexão direta: sem ela, etapa de
- * qualificação não tem evento do canal que a represente e fica sem sugestão;
- * com ela, o comportamento é o de sempre.
+ * O #2890 fez a sugestão perguntar se o evento tem saída. Desde 27/10/2026 o
+ * canal repassa `QualifiedLead` — o provedor passou a aceitá-lo —, e a mesma
+ * pergunta agora responde "sim": etapa de qualificação recebe `QualifiedLead`
+ * também sem conexão direta, e a invariante "nenhuma sugestão sem saída" segue
+ * valendo.
  *
  * ─── Por que este arquivo existe ────────────────────────────────────────────
  *
@@ -80,12 +80,12 @@ const usarRecomendado = () =>
 
 describe("a sugestão não recomenda evento sem saída (#2890)", () => {
   it.each([
-    ["Lead qualificado", null],
-    ["Interessado", null],
-    ["Diagnóstico", null],
-    ["Cliente qualificado", null],
+    ["Lead qualificado", "QualifiedLead"],
+    ["Interessado", "QualifiedLead"],
+    ["Diagnóstico", "QualifiedLead"],
+    ["Cliente qualificado", "QualifiedLead"],
   ])(
-    "sem conexão direta, etapa de nome %s não sugere QualifiedLead — não sugere nada",
+    "⭐ sem conexão direta, etapa de nome %s sugere QualifiedLead — o canal o repassa",
     (nome, esperado) => {
       expect(eventoRecomendadoParaMeta(nome, false)).toBe(esperado);
     },
@@ -107,17 +107,20 @@ describe("a sugestão não recomenda evento sem saída (#2890)", () => {
     ["ORÇAMENTO ENVIADO", "InitiateCheckout"],
     ["VISITA AGENDADA", "LeadSubmitted"],
   ])(
-    "com conexão direta, o comportamento é o de hoje: %s → %s",
+    "com conexão direta, o comportamento é o de sempre: %s → %s",
     (nome, esperado) => {
       expect(eventoRecomendadoParaMeta(nome, true)).toBe(esperado);
     },
   );
 
+  it("etapa sem nome reconhecível fica sem sugestão", () => {
+    expect(eventoRecomendadoParaMeta("Novo", false)).toBeNull();
+  });
+
   it("sem conexão direta, nenhuma sugestão está fora da lista do canal", () => {
-    // Não vacuidade: existe etapa sem sugestão (a de qualificação) — ela é o
-    // caso do defeito; se toda etapa sugerisse algo, a invariante passaria
-    // sem vigiar o que interessa.
-    expect(eventoRecomendadoParaMeta("Qualificação", false)).toBeNull();
+    // Não vacuidade: a etapa de qualificação, que era o caso do defeito, agora
+    // sugere algo — e é justamente ela que a invariante precisa vigiar.
+    expect(eventoRecomendadoParaMeta("Qualificação", false)).toBe("QualifiedLead");
     for (const nome of [
       "Qualificação",
       "Lead qualificado",
@@ -138,38 +141,28 @@ describe("a sugestão não recomenda evento sem saída (#2890)", () => {
 });
 
 describe("o botão \"Usar o recomendado\" respeita o canal (#2890)", () => {
-  it("sem conexão direta: não liga a etapa de qualificação, e liga a de orçamento com o evento do canal", () => {
+  it("⭐ sem conexão direta: liga a etapa de qualificação com QualifiedLead, e a de orçamento com InitiateCheckout", () => {
     abrir(false);
 
     // Não vacuidade: a tela das regras está montada, com os dois switches
-    // desligados — sem isto, "não ligou" valeria por a tela não ter rendido.
+    // desligados — sem isto, "ligou" valeria por outro motivo.
     expect(screen.getByTestId("regras-meta-por-etapa")).toBeInTheDocument();
     expect(switchDaEtapa(QUALIFICACAO.id)).not.toBeChecked();
     expect(switchDaEtapa(ORCAMENTO.id)).not.toBeChecked();
 
     usarRecomendado();
 
-    // A etapa de qualificação fica sem evento para sugerir: o botão NÃO a
-    // liga. Ligar com QualifiedLead era o defeito — a regra ficava gravada
-    // com um evento que não sai pelo canal.
+    expect(switchDaEtapa(QUALIFICACAO.id)).toBeChecked();
+    expect(eventoDaEtapa(QUALIFICACAO.id)).toHaveValue("QualifiedLead");
     expect(
-      switchDaEtapa(QUALIFICACAO.id),
-      "o botão ligou a etapa de qualificação com um evento fora do canal",
-    ).not.toBeChecked();
-    expect(
-      within(screen.getByTestId(`regra-meta-${QUALIFICACAO.id}`)).queryByLabelText(
-        "Evento enviado à Meta",
-      ),
-      "a etapa de qualificação ganhou seletor de evento ligado",
+      screen.queryByTestId(`aviso-evento-fora-do-canal-${QUALIFICACAO.id}`),
+      "a recomendação ligou a etapa e, no mesmo instante, avisou que ela não tem saída",
     ).toBeNull();
-
-    // A etapa de orçamento sugere InitiateCheckout, que o canal repassa: o
-    // botão continua funcionando para ela.
     expect(switchDaEtapa(ORCAMENTO.id)).toBeChecked();
     expect(eventoDaEtapa(ORCAMENTO.id)).toHaveValue("InitiateCheckout");
   });
 
-  it("com conexão direta: o botão liga a etapa de qualificação com QualifiedLead, como hoje", () => {
+  it("com conexão direta: o botão liga a etapa de qualificação com QualifiedLead, como sempre", () => {
     abrir(true);
     usarRecomendado();
 

@@ -36,6 +36,11 @@
  * renomeia uma chave volta ao nome original na próxima rodada. Nenhuma versão de
  * agente aponta para estas chaves (a Bia usa a chave da instalação), então o
  * apagar não esbarra na FK `ON DELETE RESTRICT`.
+ *
+ * Além das chaves, liga o módulo `login_codex` da instalação: é o que faz o
+ * painel "Conectar a assinatura do ChatGPT" existir no topo da tela, e é dele
+ * que a lição da assinatura fotografa. `platform_config` volta ao estado de
+ * fábrica antes de cada lição, então nada vaza para as outras telas.
  */
 import { createCipheriv, randomBytes } from "node:crypto";
 
@@ -72,6 +77,27 @@ export async function limpar(c: Contexto) {
 export async function semear(c: Contexto) {
   const { db, org, pessoa } = c;
   await limpar(c);
+
+  // A lição "Preparar a assinatura do ChatGPT" fotografa o painel de conexão do
+  // topo da tela, e o painel só existe com o módulo ligado — a instalação nasce
+  // com ele desligado. Grava a MESMA linha que `gravarModulo` grava
+  // (lib/instalacao/modulos.ts). A base devolve `platform_config` ao estado de
+  // fábrica antes de cada lição, então as outras lições e os outros módulos
+  // continuam vendo o interruptor desligado, e o padrão de fábrica segue
+  // desligado para quem instala.
+  semErro(
+    await db.from("platform_config").upsert(
+      {
+        chave: "MODULO_LOGIN_CODEX",
+        valor: "ligado",
+        eh_segredo: false,
+        semeado_do_env: false,
+        updated_by: pessoa.helena,
+      },
+      { onConflict: "chave" },
+    ),
+    "ligar o módulo Login do Codex",
+  );
 
   const CHAVES = [
     {

@@ -6,13 +6,20 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 vi.mock("@/lib/event-log/drain", () => ({
   drainEventLog: vi.fn(async () => ({ drained: 0 })),
 }));
-vi.mock("@/lib/event-log/register-handlers", () => ({
-  ensureHandlersRegistered: vi.fn(),
-}));
+// REGISTER-HANDLERS PREGUIÇOSO: o factory marca QUANDO o módulo foi carregado. O pipeline o
+// importa só dentro do dreno; importar o pipeline (o que toda ingestão do canal faz) não pode carregá-lo.
+const registro = vi.hoisted(() => ({ carregado: false, ensure: vi.fn() }));
+vi.mock("@/lib/event-log/register-handlers", () => {
+  registro.carregado = true;
+  return { ensureHandlersRegistered: registro.ensure };
+});
 
 import { drenarEventosDoInbound, kickLocalPipeline } from "@/lib/dev/kick-local-pipeline";
 import { env } from "@/lib/env";
 import { drainEventLog } from "@/lib/event-log/drain";
+
+// Lido logo depois dos imports: o que o import do pipeline carregou, antes de qualquer caso chamar o dreno.
+const carregadoAoImportar = registro.carregado;
 
 describe("kickLocalPipeline", () => {
   it("não propaga erro do tick do contato (contrato: nunca 5xx no webhook)", async () => {
@@ -96,5 +103,33 @@ describe("drenarEventosDoInbound — o webhook não drena a fila de todo mundo q
     await drenarEventosDoInbound(adminQueFalha);
 
     expect(vi.mocked(drainEventLog).mock.calls[0]).toEqual([adminQueFalha]);
+  });
+});
+
+describe("REGISTER-HANDLERS PREGUIÇOSO", () => {
+  // No topo do arquivo, o import do register-handlers levava os workers de IA, LGPD, RAG… a todo mundo que importa
+  // a ingestão do canal. O caso « o webhook de status AVISA » do channel-health-aviso pagava esse custo dentro dos
+  // 15 s dele, e estourava sob carga.
+  const adminQueFalha = {
+    from: () => {
+      throw new Error("sem banco neste teste");
+    },
+  } as unknown as SupabaseClient;
+
+  it("importar o pipeline não carrega o register-handlers", () => {
+    expect(carregadoAoImportar).toBe(false);
+  });
+
+  it("o dreno registra os handlers antes de drenar", async () => {
+    vi.mocked(drainEventLog).mockClear();
+    registro.ensure.mockClear();
+    await drenarEventosDoInbound(adminQueFalha);
+
+    expect(registro.carregado).toBe(true);
+    expect(registro.ensure).toHaveBeenCalledTimes(1);
+    expect(drainEventLog).toHaveBeenCalledTimes(1);
+    expect(registro.ensure.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(drainEventLog).mock.invocationCallOrder[0]!,
+    );
   });
 });

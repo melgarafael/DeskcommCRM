@@ -2,7 +2,8 @@
 
 > Contrato portável para **qualquer** agente de código (Codex, Cursor, OpenCode, Antigravity, Copilot).
 > Este arquivo é o núcleo. A **doutrina completa e não-negociável vive em [`CLAUDE.md`](CLAUDE.md)** —
-> leia-o antes de tocar em código. O mapa de toda a documentação está em [`docs/index.md`](docs/index.md).
+> leia-o antes de tocar em código. Seções longas dele (testes, migrations, auditoria, WAHA, QA visual)
+> têm o texto integral em [`docs/doctrine/`](docs/doctrine/); lá vale o integral sobre o resumo. O mapa de toda a documentação está em [`docs/index.md`](docs/index.md).
 > Precedência quando dois documentos discordam: `CLAUDE.md` > `docs/specs/` > `docs/prd/` >
 > `HANDOFF-*.md` > `README.md`.
 
@@ -232,7 +233,8 @@ if (!authz.ok) return authz.response;
 ```
 
 **Erros** — `fail(code, message, status)` com código de `lib/api/errors.ts`. Nunca `throw` cru na
-borda. Cada response leva `X-Request-Id`, correlacionado com o audit log.
+borda. Toda resposta de `ok()`/`fail()` leva o `X-Request-Id`, e é o mesmo do registro e da auditoria;
+as rotas que montam resposta à mão estão sendo migradas (issue #4107).
 
 **Nomes e dados** — arquivos e símbolos em PT-BR são a norma (mantenha o idioma do arquivo que
 editar). JSON da API em **snake_case**; dinheiro em `_cents` + `currency`; datas ISO-8601 UTC;
@@ -283,7 +285,8 @@ o controlador (`organizations.legal_name`) e o DPO.
 - **`docker-compose.traefik.yml`** — numa VPS que já tem proxy reverso próprio
   (Hostinger, Coolify, Dokploy…), é o único lugar que dá ao contêiner `app` as labels
   de roteamento. Todo `up -d` leva os **dois** arquivos de compose:
-**Anti-patterns proibidos** — string que deveria ser FK; duplicação sem source of truth declarado;
+**Anti-patterns proibidos** — string que deveria ser FK (lista `uuid[]` pequena, lida junto com a
+linha e conferida no handler é exceção escrita em `CLAUDE.md`, seção Modelagem); duplicação sem source of truth declarado;
 feature nomeando um provider de canal (gate `pnpm lint:channels`); tela nova sem porta declarada em
 `lib/navigation/registry.ts` (gate `tests/unit/navegacao-completude.test.ts`); `getSession()` no
 server; segredo em query string; `throw` cru na borda da API.

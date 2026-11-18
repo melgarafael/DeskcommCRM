@@ -80,6 +80,7 @@ vi.mock("@/lib/ai/agents/escopo", () => ({
 }));
 
 import { AgentForm } from "@/app/app/ai/agents/[id]/_components/AgentForm";
+import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
 import { revalidatePath } from "next/cache";
@@ -148,9 +149,10 @@ const VERSAO = {
   created_by: null,
 };
 
-function abrirEditor() {
+function abrirEditor(locale?: string) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const { container } = render(
+    <IdiomaProvider locale={locale}>
     <QueryClientProvider client={qc}>
       <AgentForm
         mode="edit"
@@ -162,7 +164,8 @@ function abrirEditor() {
         base={VERSAO as never}
         draftObsoleto={null}
       />
-    </QueryClientProvider>,
+    </QueryClientProvider>
+    </IdiomaProvider>,
   );
   const campo = (id: string) => {
     const el = container.querySelector(`#${id}`);
@@ -196,6 +199,22 @@ describe("editor de agente — a tela", () => {
     expect(cadastro).toHaveProperty("name", "Vitória da Recepção");
   });
 
+  it("nome repetido no Salvar rascunho: a frase vai ao campo no idioma de quem usa (#3952)", async () => {
+    // A `message` da Action é pt; a tela monta a frase com `t()`.
+    acoes.salvar.mockResolvedValue({
+      ok: false,
+      error: "agent_name_taken",
+      message: "Já existe um agente com esse nome. O rascunho foi salvo; o nome do agente não mudou.",
+    });
+    const { campo } = abrirEditor("es");
+    fireEvent.change(campo("name"), { target: { value: "Recepción" } });
+    fireEvent.click(screen.getByRole("button", { name: /guardar borrador/i }));
+    await waitFor(() => expect(acoes.salvar).toHaveBeenCalled());
+    expect(await screen.findByTestId("erro-do-nome")).toHaveTextContent(
+      "Ya existe un agente con este nombre. El borrador se guardó; el nombre del agente no cambió.",
+    );
+  });
+
   it("leva também a descrição e a ordem de preferência", async () => {
     const { campo } = abrirEditor();
     fireEvent.change(campo("description"), { target: { value: "cuida do primeiro contato" } });
@@ -226,6 +245,117 @@ describe("editor de agente — a tela", () => {
       expect(screen.getByText(/ordem de preferência vai de 0 a 1000/i)).toBeInTheDocument(),
     );
     expect(acoes.salvar, "mandou um valor que o servidor recusa").not.toHaveBeenCalled();
+  });
+});
+
+describe("editor de agente — skills por agente (9107)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    acoes.salvar.mockResolvedValue({ ok: true, data: { version_id: "v2", version_number: 2 } });
+  });
+
+  async function versaoSalva(skillNames: string[] | null | undefined) {
+    const versao = skillNames === undefined ? VERSAO : { ...VERSAO, skill_names: skillNames };
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(
+      <QueryClientProvider client={qc}>
+        <AgentForm
+          mode="edit"
+          agent={AGENTE_ROW as never}
+          credentials={CREDENCIAIS as never}
+          channelSessions={SESSOES as never}
+          draft={null}
+          published={versao as never}
+          base={versao as never}
+          draftObsoleto={null}
+          skills={[{ name: "agendamento", description: "Marca horário." }]}
+        />
+      </QueryClientProvider>,
+    );
+    const nome = container.querySelector("#name");
+    if (!nome) throw new Error("campo #name não existe na tela");
+    fireEvent.change(nome, { target: { value: "Recepção 2" } });
+    fireEvent.click(screen.getByRole("button", { name: /salvar rascunho/i }));
+    await waitFor(() => expect(acoes.salvar).toHaveBeenCalled());
+    return acoes.salvar.mock.calls[0]?.[1] as Record<string, unknown>;
+  }
+
+  it("versão de antes da 9107 (sem a coluna) salva com skill_names null = todas", async () => {
+    expect(await versaoSalva(undefined)).toHaveProperty("skill_names", null);
+  });
+
+  it("a lista própria da versão volta intacta no rascunho salvo", async () => {
+    expect(await versaoSalva(["agendamento"])).toHaveProperty("skill_names", ["agendamento"]);
+  });
+});
+
+describe("editor de agente — ver as fotos que o cliente envia (9108)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    acoes.salvar.mockResolvedValue({ ok: true, data: { version_id: "v2", version_number: 2 } });
+  });
+
+  async function salvar(visao: boolean | undefined, clicarNaChave: boolean) {
+    const versao = visao === undefined ? VERSAO : { ...VERSAO, image_vision_enabled: visao };
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(
+      <QueryClientProvider client={qc}>
+        <AgentForm
+          mode="edit"
+          agent={AGENTE_ROW as never}
+          credentials={CREDENCIAIS as never}
+          channelSessions={SESSOES as never}
+          draft={null}
+          published={versao as never}
+          base={versao as never}
+          draftObsoleto={null}
+        />
+      </QueryClientProvider>,
+    );
+    const chave = container.querySelector("#image_vision_enabled");
+    if (!chave) throw new Error("a chave #image_vision_enabled não existe na tela");
+    if (clicarNaChave) fireEvent.click(chave);
+    else {
+      const nome = container.querySelector("#name");
+      if (!nome) throw new Error("campo #name não existe na tela");
+      fireEvent.change(nome, { target: { value: "Recepção 2" } });
+    }
+    fireEvent.click(screen.getByRole("button", { name: /salvar rascunho/i }));
+    await waitFor(() => expect(acoes.salvar).toHaveBeenCalled());
+    return acoes.salvar.mock.calls[0]?.[1] as Record<string, unknown>;
+  }
+
+  it("a ajuda diz o custo e o que acontece desligado", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <AgentForm
+          mode="edit"
+          agent={AGENTE_ROW as never}
+          credentials={CREDENCIAIS as never}
+          channelSessions={SESSOES as never}
+          draft={null}
+          published={VERSAO as never}
+          base={VERSAO as never}
+          draftObsoleto={null}
+        />
+      </QueryClientProvider>,
+    );
+    const ajuda = screen.getByTestId("visao-de-foto-ajuda").textContent ?? "";
+    expect(ajuda).toContain("chamada paga");
+    expect(ajuda).toContain("não vê o que ela mostra");
+  });
+
+  it("versão de antes da 9108 (sem a coluna) abre LIGADA e salva true", async () => {
+    expect(await salvar(undefined, false)).toHaveProperty("image_vision_enabled", true);
+  });
+
+  it("desligar a chave e salvar grava false no rascunho", async () => {
+    expect(await salvar(true, true)).toHaveProperty("image_vision_enabled", false);
+  });
+
+  it("religar a chave de uma versão desligada grava true", async () => {
+    expect(await salvar(false, true)).toHaveProperty("image_vision_enabled", true);
   });
 });
 
@@ -454,5 +584,77 @@ describe("todo campo do formulário viaja em algum payload", () => {
       esquecidos,
       `estes campos são editáveis na tela e NENHUM payload os leva ao servidor: ${esquecidos.join(", ")}`,
     ).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 4. "Quando falar": o cliente pede (#4345)
+// ---------------------------------------------------------------------------
+
+/**
+ * A quarta opção de "Quando falar" precisa existir NA TELA e sobreviver ao
+ * caminho de salvar. O valor mora numa coluna de VERSÃO: seletor que mostra a
+ * opção e grava outra coisa faria o dono escolher em vão — o mesmo silêncio de
+ * que a #463 tratou para os campos de cadastro.
+ *
+ * A prova é pela tela de verdade (o gatilho do seletor renderiza o rótulo do
+ * item selecionado; item inexistente cai no vazio), no idioma pt e no es.
+ */
+describe("editor de agente — quando falar: o cliente pede (#4345)", () => {
+  function abrirComVoz(quando: string, locale?: string) {
+    acoes.salvar.mockResolvedValue({ ok: true, data: { version_id: "v2", version_number: 2 } });
+    const versao = { ...VERSAO, voz_enabled: true, voz_quando: quando };
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(
+      <IdiomaProvider locale={locale}>
+        <QueryClientProvider client={qc}>
+          <AgentForm
+            mode="edit"
+            agent={AGENTE_ROW as never}
+            credentials={CREDENCIAIS as never}
+            channelSessions={SESSOES as never}
+            draft={null}
+            published={versao as never}
+            base={versao as never}
+            draftObsoleto={null}
+          />
+        </QueryClientProvider>
+      </IdiomaProvider>,
+    );
+    return container;
+  }
+
+  it("a versão gravada com o modo novo mostra a opção no seletor", () => {
+    const container = abrirComVoz("quando_pede");
+    expect(container.querySelector("#voz_quando")).toHaveTextContent(
+      "Quando o cliente mandar ou pedir áudio",
+    );
+  });
+
+  it("a ajuda diz quem continua recebendo texto", () => {
+    abrirComVoz("quando_pede");
+    expect(
+      screen.getByText(/quem pede para continuar no texto segue recebendo texto/i),
+    ).toBeInTheDocument();
+  });
+
+  it("o modo novo atravessa o Salvar rascunho sem cair no padrão", async () => {
+    const container = abrirComVoz("quando_pede");
+    // O botão de salvar só habilita com algo editado — mexer no nome é o que
+    // uma pessoa faria; o que se cobra aqui é a COLUNA de voz no payload.
+    fireEvent.change(container.querySelector("#name") as HTMLInputElement, {
+      target: { value: "Recepção que fala" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /salvar rascunho/i }));
+    await waitFor(() => expect(acoes.salvar).toHaveBeenCalled());
+    // Argumento 1 é o payload da VERSÃO (o 2 é o cadastro de `ai_agents`).
+    expect(acoes.salvar.mock.calls[0]?.[1]).toHaveProperty("voz_quando", "quando_pede");
+  });
+
+  it("em espanhol o rótulo novo sai do dicionário", () => {
+    const container = abrirComVoz("quando_pede", "es");
+    expect(container.querySelector("#voz_quando")).toHaveTextContent(
+      "Cuando el cliente envíe o pida audio",
+    );
   });
 });

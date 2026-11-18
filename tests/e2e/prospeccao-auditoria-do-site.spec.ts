@@ -1,11 +1,20 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { tmpdir } from "node:os";
+import pg from "pg";
 
 import { expect, test } from "./helpers/test";
 import { createClient } from "@supabase/supabase-js";
 
 import { carregarEnvLocal, destinoEhLocal } from "../../scripts/lib/env-de-teste";
+import { seedPlatformPlaybook } from "../../lib/agent-engine/agent/playbook-seed";
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
+import { iniciarFilhoDoTurno } from "./helpers/filho-do-turno-local";
+import {
+  COMPLEMENTO_SEM_SITE, COMPLEMENTO_TRES, TEXTO_DO_PAR,
+  criarFixtureDeOfertas, limparFixtureDeOfertas, mudarOfertas,
+  type FixtureDeOfertas,
+} from "../support/prospeccao-ofertas-fixture";
 
 /**
  * AUDITORIA DO SITE NA FILA DE PROSPECÇÃO (spec 24, issue #2703).
@@ -206,5 +215,84 @@ test.describe("Auditoria do site na fila de prospecção (#2703)", () => {
     await expect(dialogo.getByRole("button", { name: "Prévia da abordagem" })).toBeDisabled();
     await expect(dialogo.getByText("Escolha o agente na etapa 2 para ver a prévia.")).toBeVisible();
     await page.screenshot({ path: path.join(EVIDENCIA, "fila-com-auditoria.png"), fullPage: true });
+
+    // 5. Configuração completa própria: a campanha antiga e seus controles não mudam.
+    // Modelo/canal controlados medem encadeamento; o aceite de modelo real é separado.
+    const dbUrl = env.SUPABASE_DB_URL;
+    expect(dbUrl && destinoEhLocal(dbUrl), "A fixture exige Postgres QA local explícito.").toBeTruthy();
+    const pool = new pg.Pool({ connectionString: dbUrl, max: 2, statement_timeout: 5000, connectionTimeoutMillis: 5000 });
+    const pasta = fs.mkdtempSync(path.join(tmpdir(), "ofertas-qa-"));
+    const evidencias = path.join(process.cwd(), "evidence", "prospeccao-ofertas");
+    fs.mkdirSync(evidencias, { recursive: true });
+    let fixture: FixtureDeOfertas | undefined;
+    let filho: ReturnType<typeof iniciarFilhoDoTurno> | undefined;
+    let limpeza = false;
+    let controles = false;
+    try {
+      await page.keyboard.press("Escape");
+      await expect(dialogo).toHaveCount(0);
+      const { org_id } = JSON.parse(fs.readFileSync(path.join(process.cwd(), ".e2e-creds.json"), "utf8")) as { org_id: string };
+      // O turno exige a camada de plataforma, que numa instalação real o worker semeia ao subir.
+      await seedPlatformPlaybook(pool);
+      fixture = await criarFixtureDeOfertas(pool, org_id);
+      const abrirAuditoriaPropria = async () => {
+        await page.reload();
+        await page.getByRole("button", { name: new RegExp(fixture!.nome) }).click();
+        await page.getByRole("row", { name: new RegExp(fixture!.nome) }).getByRole("button", { name: "Ver detalhes" }).click();
+        await expect(dialogo.getByText(fixture!.nome, { exact: true })).toBeVisible();
+      };
+      await abrirAuditoriaPropria();
+      await expect(dialogo.getByText(COMPLEMENTO_TRES, { exact: true })).toBeVisible();
+      await expect(dialogo.getByRole("button", { name: "Prévia da abordagem" })).toBeEnabled();
+      // Não clicar na prévia: primeira abordagem e fornecedor externo não são esta prova.
+      await page.screenshot({ path: path.join(evidencias, "ofertas-tres.png"), fullPage: true });
+
+      const entrada = path.join(pasta, "entrada.json");
+      const reciboDoTurno = path.join(evidencias, "encadeamento-controlado.json");
+      fs.writeFileSync(entrada, JSON.stringify({
+        org: fixture.org, conversation: fixture.conversation, contact: fixture.contact,
+        agent: fixture.agent, channel: fixture.channel, texto: TEXTO_DO_PAR,
+      }));
+      filho = iniciarFilhoDoTurno([
+        "--max-old-space-size=768", "--import", "tsx", "tests/e2e/helpers/ofertas-no-turno.ts",
+        "--medir-ofertas-controladas", entrada, reciboDoTurno,
+      ], 30_000, { E2E_TURNO_DB_URL: dbUrl });
+      await filho.resultado;
+      const par: unknown = JSON.parse(fs.readFileSync(reciboDoTurno, "utf8"));
+      expect(par).toMatchObject({
+        tipo: "encadeamento-controlado", texto_cru: TEXTO_DO_PAR,
+        mesma_conversa: true, consulta_direta: true, tool_vista_pelo_provider: true,
+        ofertas: ["Site profissional", "Automação do atendimento (CRM)", "Automações e integrações (N8N)"],
+        complementar: COMPLEMENTO_TRES, modelo_real: false, semantica_aprovada: false,
+      });
+
+      await mudarOfertas(pool, fixture, ["site"]);
+      await abrirAuditoriaPropria();
+      await expect(dialogo.getByText(COMPLEMENTO_TRES, { exact: true })).toHaveCount(0);
+      await expect(dialogo.getByText(COMPLEMENTO_SEM_SITE, { exact: true })).toHaveCount(0);
+      await page.screenshot({ path: path.join(evidencias, "site-only.png"), fullPage: true });
+
+      await mudarOfertas(pool, fixture, ["automacao_crm", "automacao_n8n"]);
+      await abrirAuditoriaPropria();
+      const complementar = dialogo.getByText(COMPLEMENTO_SEM_SITE, { exact: true });
+      await expect(complementar).toBeVisible();
+      await expect(complementar).not.toContainText("Além do site");
+      await page.screenshot({ path: path.join(evidencias, "sem-site.png"), fullPage: true });
+      controles = true;
+    } finally {
+      try {
+        if (filho) await filho.encerrar();
+        if (fixture) await limparFixtureDeOfertas(pool, fixture);
+        limpeza = true;
+      } finally {
+        await pool.end();
+        fs.rmSync(pasta, { recursive: true, force: true });
+        fs.writeFileSync(path.join(evidencias, "recibo-visual.json"), JSON.stringify({
+          controles, limpeza, variantes: ["tres-ofertas", "site-only", "sem-site"],
+          modelo_real: false, semantica_aprovada: false,
+          head: process.env.GITHUB_SHA ?? "checkout-local", run: process.env.GITHUB_RUN_ID ?? null,
+        }, null, 2));
+      }
+    }
   });
 });

@@ -8,6 +8,7 @@ import type { FetchedMedia } from "@/lib/messaging/media/types";
 import type { OutboundMedia } from "@/lib/waha/media-send";
 import type { TemplateContract } from "@/lib/channels/meta/template-contract";
 import type { ContatoDoAparelho } from "@/lib/waha/client";
+import type { DefeitoDoNumero } from "./defeito-do-numero";
 
 // O tipo do contato do aparelho ATRAVESSA o seam como tipo só (o import some na
 // compilação), do mesmo jeito do `OutboundMedia` acima: quem fora daqui precisa
@@ -15,7 +16,20 @@ import type { ContatoDoAparelho } from "@/lib/waha/client";
 // e o lint de canal reprovaria o caminho.
 export type { OutboundMedia, ContatoDoAparelho };
 
-export type ChannelProvider = "waha" | "meta_cloud" | "zernio" | "zernio_social" | "wacalls" | "datafy";
+export type ChannelProvider =
+  | "waha"
+  | "meta_cloud"
+  | "zernio"
+  | "zernio_social"
+  | "wacalls"
+  | "datafy"
+  /**
+   * Bot do Telegram, o do @BotFather (#3440). Entra com o TIPO, e não como uma
+   * variação de um dos canais de WhatsApp, porque o endereço dele não é
+   * telefone: é o `chat_id` que o próprio bot recebe no update. Ver
+   * `./adapters/telegram.ts` e a ausência dele em `PROVIDERS_DE_TELEFONE`.
+   */
+  | "telegram";
 
 /**
  * Os providers que transportam MENSAGEM — o subconjunto sobre o qual a matriz
@@ -55,13 +69,29 @@ export interface ChannelCapabilities {
   banRisk: boolean;
   /** Intervalo mínimo imposto PELA PLATAFORMA entre msgs ao mesmo destinatário (ms). */
   minIntervalMs: number | null;
-  /** 'server-convert' = o canal converte áudio; 'opus-only' = precisamos entregar ogg/opus. */
-  voiceNote: "server-convert" | "opus-only";
+  /**
+   * O que o canal faz com a NOTA DE VOZ que sai daqui:
+   *   - 'server-convert' = o canal converte áudio (recebe mp3);
+   *   - 'opus-only' = precisamos entregar ogg/opus mono;
+   *   - 'none' = este canal não entrega nota de voz nossa — o agente responde
+   *     em texto, e a tela do agente diz isso. Existe para não mentir com um
+   *     dos dois de cima num canal onde todo envio de áudio é recusado.
+   */
+  voiceNote: "server-convert" | "opus-only" | "none";
   groups: "full" | "limited" | "none";
   /** Mensagem entregue gera custo → decisões de envio precisam considerar orçamento. */
   costPerMessage: boolean;
   /** O atendente pode editar e apagar para todos uma mensagem já enviada. */
   alteraMensagemEnviada: boolean;
+  /** O adapter deste canal aceita reagir a mensagens. */
+  podeReagir: boolean;
+  /**
+   * O PROVEDOR faz a transmissão: recebe a lista inteira e um modelo, e manda a
+   * todos de uma vez, com o relatório por destinatário (migration 0712). É o que
+   * liga a terceira velocidade da campanha. Os valores do modelo são os mesmos
+   * para todos — o provedor não recebe valor por destinatário.
+   */
+  transmissao: boolean;
   /**
    * O canal deixa LER, em bloco e paginado, a AGENDA DE CONTATOS do aparelho
    * pareado — o que o número da empresa salvou no celular?
@@ -77,6 +107,34 @@ export interface ChannelCapabilities {
    * presença do método `listPhonebook` no adapter.
    */
   phonebook: boolean;
+  /**
+   * O canal publica STATUS (o recado de imagem que some em 24 horas)?
+   *
+   * Nasce de uma diferença de plataforma, não de gosto: o Status é do app do
+   * WhatsApp, e só quem fala com um APARELHO pareado tem o endpoint que publica
+   * nele. A API oficial (a Meta e os intermediários que a espelham) não tem o
+   * gesto — não é restrição de janela nem de template, é ausência de rota.
+   *
+   * É a resposta declarativa que a tela e a ferramenta consultam ANTES de
+   * oferecer a publicação; quem executa confirma de novo pela presença de
+   * `publishStatus` no adapter. Canal que responde `false` não é erro: é o
+   * canal dizendo que a operação não existe ali.
+   */
+  statusUpdates: boolean;
+  /**
+   * O canal devolve a VENDA à plataforma de anúncios (Meta) pela conversa?
+   *
+   * É a pergunta que a tela de Conversões faz antes de oferecer "Enviar vendas
+   * pelo canal da conversa": a chave só tem efeito quando alguma conexão da
+   * organização responde `true`. Quem conversa por QR Code ou pela API oficial
+   * direta não tem a ponte — a venda sai pela conexão direta (conjunto de dados
+   * e token), e ligar a chave ali seria uma promessa que nada cumpre.
+   *
+   * A resposta declarativa é a da tela; quem executa confirma de novo pela
+   * presença de `reportConversion` no adapter, e o teste de matriz reprova
+   * qualquer divergência entre as duas, nos dois sentidos.
+   */
+  reportaConversao: boolean;
 }
 
 /**
@@ -196,10 +254,37 @@ export interface OutboundEnvelope extends ChannelTenantScope {
 }
 
 /**
+ * Quem vê a publicação de Status — e a omissão é o desenho.
+ *
+ * `todos` precisa ser dito (`{ tipo: "todos" }`), nunca deduzido de uma lista
+ * vazia: no transporte, lista vazia e "sem lista" são a MESMA coisa, e o
+ * acidente que isso cria é a peça de marketing aparecendo para o número
+ * inteiro sem ninguém ter pedido. Forçar a escolha explícita deixa o default
+ * do produto fora do alcance de um array que veio vazio por engano.
+ */
+export type PublicoDoStatus =
+  | { tipo: "contatos"; /** Só dígitos, E.164 sem `+` (oito a quinze). */ numeros: string[] }
+  | { tipo: "todos" };
+
+/** O que a publicação de Status leva — ver `ChannelAdapter.publishStatus`. */
+export interface PublishStatusInput extends ChannelTenantScope {
+  /** Identificador da sessão/número no provider (WAHA: nome da sessão). */
+  sessionRef: string;
+  imagem: {
+    mime: "image/jpeg" | "image/png";
+    /** Base64 sem o prefixo `data:`. */
+    base64: string;
+  };
+  /** Legenda curta que acompanha a imagem. */
+  legenda?: string;
+  publico: PublicoDoStatus;
+}
+
+/**
  * Uma conversão no vocabulário neutro que o canal traduz — ver
  * `ChannelAdapter.reportConversion`. A venda (`Purchase`) e os eventos de ETAPA
  * da Meta que o canal sabe repassar (`InitiateCheckout`, `LeadSubmitted`,
- * `AddToCart`), que saem sem valor.
+ * `AddToCart`, `QualifiedLead`, `ViewContent`), que saem sem valor.
  */
 export interface ChannelConversionInput extends ChannelTenantScope {
   sessionRef: string;
@@ -207,7 +292,7 @@ export interface ChannelConversionInput extends ChannelTenantScope {
   providerConversationId: string | null;
   /** Só dígitos (E.164 sem `+`). Reforço de casamento, nunca o único. */
   phone: string | null;
-  event: "Purchase" | "InitiateCheckout" | "LeadSubmitted" | "AddToCart";
+  event: "Purchase" | "InitiateCheckout" | "LeadSubmitted" | "AddToCart" | "QualifiedLead" | "ViewContent";
   /** Chave de deduplicação na plataforma: o mesmo id nunca conta duas vezes. */
   eventId: string;
   occurredAt: Date;
@@ -247,7 +332,20 @@ export interface ChannelAdapter {
    * porque carregam nome de provider, e o lint da Task 7 proíbe esse nome fora
    * de `lib/channels/`. Quem chama escreve o que o adapter disser.
    */
-  readonly codes: { notConfigured: string; sendFailed: string; unknownError: string };
+  readonly codes: {
+    notConfigured: string;
+    sendFailed: string;
+    unknownError: string;
+    /**
+     * O canal pediu para DESACELERAR — não é falha da mensagem: muitas para a
+     * mesma pessoa (~10 por minuto, 131056 da plataforma) ou a conta limitada
+     * (429 com `Retry-After`). O handler de envio trata como `queued` e pede a
+     * nova tentativa (`lib/messaging/reenvio-desacelerado.ts`) para a mensagem
+     * sem outro dono; falhar uma mensagem que sairia daqui a um minuto é perder
+     * venda por pressa. Opcional: canal que não distingue segue `failed`.
+     */
+    throttled?: string;
+  };
 
   /**
    * URL da foto de perfil do contato, ou null quando não há (sem foto,
@@ -453,12 +551,48 @@ export interface ChannelAdapter {
     text: string;
   }): Promise<void>;
 
+  /** Reage à mensagem existente; sem id retornado o transporte depende do eco. */
+  sendReaction?(input: ChannelTenantScope & {
+    sessionRef: string;
+    recipient: string | null;
+    externalId: string;
+    emoji: string;
+  }): Promise<{ externalId: string | null }>;
+
   /** Apaga para todos uma mensagem enviada. Mesmo contrato de `editMessage`. */
   revokeMessage?(input: ChannelTenantScope & {
     sessionRef: string;
     recipient: string | null;
     externalId: string;
   }): Promise<void>;
+
+  /**
+   * Publica uma IMAGEM no Status do número (#3397) — o recado que some em 24h,
+   * visível só para o público escolhido.
+   *
+   * Existe porque Status NÃO é mensagem: não tem destinatário, não abre
+   * conversa, não entra no histórico de ninguém e não aceita texto solto. Quem
+   * publica escolhe um PÚBLICO — a lista de telefones ou o número inteiro —, e
+   * quem sabe montar esse endereço é o canal, não a feature. Antes disto a
+   * publicação existia como chamada direta ao provedor, fora do seam, e por
+   * isso (a) só funcionava no transporte que ela nomeava e (b) não passava
+   * pelas mesmas travas dos outros envios.
+   *
+   * OPCIONAL como os demais: o Status é do WhatsApp, não do produto. Quem não
+   * publica Status não implementa e a capability `statusUpdates` responde
+   * `false` — quem chama pergunta a ela (ou testa a presença deste método) em
+   * vez de perguntar QUAL provider é, que é o que o lint de canal proíbe.
+   *
+   * LANÇA quando o transporte recusa: aqui não há mensagem de cliente para
+   * salvar, então falha silenciosa seria pior — o operador acharia que a peça
+   * foi ao ar.
+   *
+   * `incerto: true` é o terceiro desfecho, e não cabe em "saiu" nem em "recusou":
+   * o transporte não deu resposta legível, e a publicação pode estar em curso do
+   * outro lado. Lançar aqui liberaria a chave de idempotência, e o retry
+   * publicaria em dobro.
+   */
+  publishStatus?(input: PublishStatusInput): Promise<{ externalId: string | null; incerto?: true }>;
 
   /**
    * A conexão está de pé AGORA? Pergunta feita ao transporte, não ao banco.
@@ -576,6 +710,11 @@ export interface ChannelHealth {
   status: string | null;
   /** Detalhe do erro, para o corpo do aviso. Nunca credencial. */
   detail: string | null;
+  /**
+   * Defeitos do número de pé que esta sonda não mediu (campo ausente ou `null`):
+   * não abrem aviso, e também não fecham o que está aberto.
+   */
+  defeitosSemMedida?: DefeitoDoNumero["tipo"][];
 }
 
 /** Definição aprovada, na forma NEUTRA — sem o vocabulário de nenhum provider. */

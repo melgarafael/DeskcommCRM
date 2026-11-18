@@ -146,6 +146,22 @@ describe("a regra de \"criar contato abre conversa\" mora num lugar só", () => 
     expect(abreConversaAoCriar("manual")).toBe(true);
     expect(abreConversaAoCriar("importacao_csv")).toBe(false);
   });
+
+  it("prospecção não abre por aqui: ela abre a conversa no canal da campanha", () => {
+    expect(abreConversaAoCriar("prospeccao")).toBe(false);
+  });
+});
+
+describe("porta prospeccao — não abre conversa em canal que a campanha não escolheu", () => {
+  it("org com a sessão de telefone pronta: porta_nao_abre, zero leitura e zero RPC", async () => {
+    // O cenário medido em produção: há um número que disca e que NÃO é o da
+    // campanha. Pela porta manual a conversa nasceria nele; aqui, não nasce.
+    const banco = bancoDeMentira([SESSAO_QUE_DISCA]);
+
+    expect(await abrir("prospeccao", banco)).toEqual({ aberta: false, motivo: "porta_nao_abre" });
+    expect(banco.leituras).toEqual([]);
+    expect(banco.rpcs).toEqual([]);
+  });
 });
 
 describe("porta importacao_csv — não abre, e não custa leitura", () => {

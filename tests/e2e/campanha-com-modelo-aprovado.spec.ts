@@ -47,6 +47,11 @@ const SUFIXO = String(Date.now()).slice(-7);
 const ETIQUETA = `e2e-campanha-modelo-${SUFIXO}`;
 const ETIQUETA_RAPIDA = `e2e-campanha-rapida-${SUFIXO}`;
 const NOMES_DA_RAPIDA = ["Ana", "Bea", "Carla"];
+const ETIQUETA_BROADCAST = `e2e-campanha-broadcast-${SUFIXO}`;
+const NOMES_DO_BROADCAST = ["Dora", "Eva", "Flor"];
+const ETIQUETA_RETOMADA = `e2e-campanha-retomada-${SUFIXO}`;
+const NOMES_DA_RETOMADA = ["Gina", "Hilda", "Iris"];
+const TRANSMISSAO = `BC-E2E-${SUFIXO}`;
 const MODELO = "oferta_e2e_campanha";
 const PAUSADO = "pausado_e2e_campanha";
 const IMAGEM_SALVA = "https://example.com/e2e/cafeteira.jpg";
@@ -62,13 +67,84 @@ const COMPONENTES = [
 const recebidos: { metodo: string; caminho: string; corpo: Record<string, unknown> | null }[] = [];
 let servidor: http.Server | null = null;
 
+/**
+ * O broadcast que o dublê guarda: os telefones recebidos e o estado (migration
+ * 0712). Como no provedor, os telefones só crescem: sair da lista exige apagar o
+ * rascunho. `recusarOEnvio` faz o `send` recusar uma vez, com os telefones já lá.
+ */
+const transmissao = { id: TRANSMISSAO, criadas: 0, telefones: [] as string[], estado: "draft", recusarOEnvio: false };
+
+/**
+ * As respostas de broadcast seguem a especificação publicada do provedor e a
+ * prova real de 16/10/2026 (`profileId` é objeto; o relatório traz
+ * `platformIdentifier` só com dígitos).
+ */
+function respostaDeBroadcast(metodo: string, caminho: string, corpo: Record<string, unknown> | null): unknown {
+  if (metodo === "GET" && caminho === "/v1/accounts") {
+    return { accounts: [{ _id: CONTA, profileId: { _id: "PERFIL-E2E", name: "Perfil E2E" } }] };
+  }
+  if (metodo === "POST" && caminho === "/v1/broadcasts") {
+    transmissao.criadas += 1;
+    transmissao.id = transmissao.criadas === 1 ? TRANSMISSAO : `${TRANSMISSAO}-${transmissao.criadas}`;
+    transmissao.telefones = [];
+    transmissao.estado = "draft";
+    return { success: true, broadcast: { id: transmissao.id, status: "draft" } };
+  }
+  const base = `/v1/broadcasts/${transmissao.id}`;
+  if (metodo === "POST" && caminho === `${base}/recipients`) {
+    const novos = ((corpo?.phones as string[]) ?? []).filter((t) => !transmissao.telefones.includes(t));
+    transmissao.telefones.push(...novos);
+    return { success: true, added: novos.length, skipped: 0 };
+  }
+  if (metodo === "DELETE" && caminho === base) {
+    transmissao.telefones = [];
+    return { success: true };
+  }
+  if (metodo === "POST" && caminho === `${base}/send`) {
+    if (transmissao.recusarOEnvio) {
+      transmissao.recusarOEnvio = false;
+      return { success: false, code: "http_503", error: "fora do ar" };
+    }
+    transmissao.estado = "completed";
+    return { success: true, status: "completed", sent: transmissao.telefones.length, failed: 0 };
+  }
+  if (metodo === "GET" && caminho === base) {
+    return { success: true, broadcast: { id: transmissao.id, status: transmissao.estado } };
+  }
+  if (metodo === "GET" && caminho === `${base}/recipients`) {
+    const agora = new Date().toISOString();
+    return {
+      success: true,
+      recipients: transmissao.telefones.map((t, i) => ({
+        id: `r${i}`,
+        platformIdentifier: t.replace(/\D/g, ""),
+        contactName: t,
+        status: transmissao.estado === "draft" ? "pending" : "delivered",
+        messageId: `wamid.BC${SUFIXO}-${transmissao.criadas}-${i}`,
+        sentAt: agora,
+        deliveredAt: agora,
+        readAt: null,
+      })),
+      pagination: { total: transmissao.telefones.length, limit: 100, skip: 0, hasMore: false },
+    };
+  }
+  return null;
+}
+
 function dubleDoProvedor(): http.Server {
   return http.createServer((req, res) => {
     let bruto = "";
     req.on("data", (c) => (bruto += c));
     req.on("end", () => {
       const url = new URL(req.url ?? "/", URL_DO_DUBLE);
-      recebidos.push({ metodo: req.method ?? "", caminho: url.pathname, corpo: bruto ? JSON.parse(bruto) : null });
+      const corpo = bruto ? (JSON.parse(bruto) as Record<string, unknown>) : null;
+      recebidos.push({ metodo: req.method ?? "", caminho: url.pathname, corpo });
+      const broadcast = respostaDeBroadcast(req.method ?? "", url.pathname, corpo);
+      if (broadcast !== null) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(broadcast));
+        return;
+      }
       res.writeHead(201, { "Content-Type": "application/json" });
       // wamid único por envio: `(organization_id, external_id)` é único em messages.
       res.end(
@@ -100,6 +176,8 @@ test.describe("Campanhas — número oficial manda modelo aprovado", () => {
   let sessaoId = "";
   let campanhaId = "";
   let campanhaRapidaId = "";
+  let campanhaBroadcastId = "";
+  let campanhaRetomadaId = "";
 
   test.beforeAll(async () => {
     creds = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
@@ -190,14 +268,34 @@ test.describe("Campanhas — número oficial manda modelo aprovado", () => {
       })),
     );
     if (erroRapida) throw new Error(`contatos da rápida: ${erroRapida.message}`);
+
+    const { error: erroBroadcast } = await admin.from("contacts").insert(
+      NOMES_DO_BROADCAST.map((nome, i) => ({
+        organization_id: creds.org_id,
+        display_name: `${nome} E2E ${SUFIXO}`,
+        phone_number: `+55117${SUFIXO}${i}`,
+        tags: [ETIQUETA_BROADCAST],
+      })),
+    );
+    if (erroBroadcast) throw new Error(`contatos do broadcast: ${erroBroadcast.message}`);
+
+    const { error: erroRetomada } = await admin.from("contacts").insert(
+      NOMES_DA_RETOMADA.map((nome, i) => ({
+        organization_id: creds.org_id,
+        display_name: `${nome} E2E ${SUFIXO}`,
+        phone_number: `+55116${SUFIXO}${i}`,
+        tags: [ETIQUETA_RETOMADA],
+      })),
+    );
+    if (erroRetomada) throw new Error(`contatos da retomada: ${erroRetomada.message}`);
   });
 
   test.afterAll(async () => {
-    for (const id of [campanhaId, campanhaRapidaId].filter(Boolean)) {
+    for (const id of [campanhaId, campanhaRapidaId, campanhaBroadcastId, campanhaRetomadaId].filter(Boolean)) {
       await admin.from("campaign_recipients").delete().eq("campaign_id", id);
       await admin.from("campaigns").delete().eq("id", id);
     }
-    for (const etiqueta of [ETIQUETA, ETIQUETA_RAPIDA]) {
+    for (const etiqueta of [ETIQUETA, ETIQUETA_RAPIDA, ETIQUETA_BROADCAST, ETIQUETA_RETOMADA]) {
       const { data } = await admin.from("contacts").select("id").contains("tags", [etiqueta]);
       const ids = ((data as Array<{ id: string }> | null) ?? []).map((c) => c.id);
       if (ids.length) {
@@ -423,6 +521,257 @@ test.describe("Campanhas — número oficial manda modelo aprovado", () => {
       { timeout: 30_000 },
     );
     await page.screenshot({ path: path.join(EVIDENCIA, "07-rapida-lista-inteira-numa-rodada.png"), fullPage: true });
+  });
+  test("o número oficial oferece o broadcast; com dado de cada pessoa ele fica travado, com o motivo", async ({ page }) => {
+    await login(page, creds.users.manager!.email, creds.password);
+    await page.goto("/app/campaigns/new");
+    await page.locator("#nome").fill(`Broadcast E2E ${SUFIXO}`);
+    await page.locator("#canal").selectOption(sessaoId);
+    await expect(page.getByTestId("modelo-da-campanha")).toBeVisible({ timeout: 30_000 });
+    await page.locator("#modelo").selectOption(`${MODELO}|pt_BR`);
+    await page.getByLabel("Origem: {{1}}", { exact: true }).selectOption("contact_first_name");
+    await page.getByLabel("Origem: {{2}}", { exact: true }).selectOption("fixed");
+    await page.getByLabel("Texto fixo: {{2}}", { exact: true }).fill("Cafeteira Elétrica");
+
+    // O nome muda de pessoa para pessoa: o broadcast aparece, travado, e diz por quê.
+    const velocidade = page.getByTestId("velocidade-da-campanha");
+    const broadcast = velocidade.getByRole("radio", { name: "Broadcast" });
+    await expect(broadcast).toBeVisible({ timeout: 30_000 });
+    await expect(broadcast).toBeDisabled();
+    await expect(page.getByTestId("broadcast-travado")).toContainText("{{1}}");
+    await page.screenshot({ path: path.join(EVIDENCIA, "08-broadcast-travado-com-nome.png"), fullPage: true });
+
+    // Texto fixo nas duas: o broadcast destrava, e a tela diz o que sai para todos.
+    await page.getByLabel("Origem: {{1}}", { exact: true }).selectOption("fixed");
+    await page.getByLabel("Texto fixo: {{1}}", { exact: true }).fill("amiga");
+    await expect(broadcast).toBeEnabled();
+    await broadcast.check();
+    await expect(page.getByTestId("broadcast-travado")).toHaveCount(0);
+    await expect(page.getByTestId("broadcast-texto-fixo")).toContainText("«amiga»");
+    await expect(page.getByTestId("broadcast-texto-fixo")).toContainText("«Cafeteira Elétrica»");
+    // A lista sai inteira: a tela não oferece o intervalo nem os máximos da campanha.
+    await expect(page.locator("#intervalo")).toHaveCount(0);
+    await expect(page.locator("#teto")).toHaveCount(0);
+    await expect(page.locator("#teto-hora")).toHaveCount(0);
+    await expect(page.locator("#janela-inicio")).toBeVisible();
+    await expect(page.getByTestId("broadcast-teto")).toContainText("teto diário do número");
+    await expect(page.getByTestId("broadcast-parar")).toContainText("cancelando a campanha inteira");
+    await page.screenshot({ path: path.join(EVIDENCIA, "09-broadcast-escolhido-texto-fixo.png"), fullPage: true });
+    await page.setViewportSize({ width: 375, height: 800 });
+    const noCelular = await page.evaluate(() => ({ rolavel: document.documentElement.scrollWidth, tela: document.documentElement.clientWidth }));
+    expect(noCelular.rolavel).toBeLessThanOrEqual(noCelular.tela);
+    await page.screenshot({ path: path.join(EVIDENCIA, "09-broadcast-escolhido-375px.png"), fullPage: true });
+  });
+
+  test("⭐ broadcast: a lista vai ao provedor numa chamada e o relatório volta à campanha", async ({ page }) => {
+    test.skip(!TEM_DUBLE, `precisa do dublê do provedor: ZERNIO_API_BASE_URL=${URL_DO_DUBLE} ZERNIO_ACCOUNT_ID=${CONTA}`);
+    await login(page, creds.users.manager!.email, creds.password);
+    await page.goto("/app/campaigns/new");
+
+    await page.locator("#nome").fill(`Broadcast E2E ${SUFIXO}`);
+    await page.locator("#canal").selectOption(sessaoId);
+    await expect(page.getByTestId("modelo-da-campanha")).toBeVisible({ timeout: 30_000 });
+    await page.locator("#modelo").selectOption(`${MODELO}|pt_BR`);
+    await page.getByLabel("Origem: {{1}}", { exact: true }).selectOption("fixed");
+    await page.getByLabel("Texto fixo: {{1}}", { exact: true }).fill("amiga");
+    await page.getByLabel("Origem: {{2}}", { exact: true }).selectOption("fixed");
+    await page.getByLabel("Texto fixo: {{2}}", { exact: true }).fill("Cafeteira Elétrica");
+    await page.getByLabel("Com alguma destas etiquetas").fill(ETIQUETA_BROADCAST);
+    await page.getByTestId("velocidade-da-campanha").getByRole("radio", { name: "Broadcast" }).check();
+    await page.getByRole("button", { name: "Salvar rascunho" }).click();
+    await page.waitForURL(/\/app\/campaigns\/[0-9a-f-]{36}$/, { timeout: 60_000 });
+    campanhaBroadcastId = page.url().split("/").pop()!;
+    const { data: salva } = await admin.from("campaigns").select("velocidade").eq("id", campanhaBroadcastId).single();
+    expect((salva as { velocidade: string }).velocidade).toBe("transmissao");
+
+    await page.getByRole("button", { name: "Preparar lista" }).click();
+    await expect(page.getByRole("button", { name: "Iniciar envio" })).toBeVisible({ timeout: 60_000 });
+    await page.getByRole("button", { name: "Iniciar envio" }).click();
+    await expect(page.getByText(/Broadcast: a lista inteira vai para o provedor de uma vez/)).toBeVisible();
+    await page.getByRole("button", { name: "Confirmar" }).click();
+    await expect
+      .poll(async () => {
+        const { data } = await admin.from("campaigns").select("status").eq("id", campanhaBroadcastId).single();
+        return (data as { status: string } | null)?.status;
+      }, { timeout: 30_000 })
+      .toBe("running");
+
+    const rodada = () =>
+      page.request.post("/api/v1/cron/campaign-worker", {
+        headers: { authorization: `Bearer ${process.env.INTERNAL_SECRET ?? "e2e-placeholder-nao-e-segredo"}` },
+      });
+
+    // 1ª rodada: cria o broadcast, entrega os telefones e manda — nenhum envio de um em um.
+    const antes = recebidos.length;
+    const tick = await rodada();
+    expect(tick.ok(), `rodada: ${tick.status()} ${await tick.text()}`).toBe(true);
+    const desta = recebidos.slice(antes);
+    expect(desta.filter((r) => r.caminho === "/v1/inbox/conversations")).toHaveLength(0);
+    const criar = desta.find((r) => r.metodo === "POST" && r.caminho === "/v1/broadcasts")!;
+    expect(criar.corpo).toMatchObject({
+      profileId: "PERFIL-E2E",
+      accountId: CONTA,
+      platform: "whatsapp",
+      template: {
+        name: MODELO,
+        language: "pt_BR",
+        // O valor já escrito: o provedor não completa variável por destinatário.
+        components: expect.arrayContaining([
+          { type: "header", parameters: [{ type: "image", image: { link: IMAGEM_SALVA } }] },
+          { type: "body", parameters: [{ type: "text", text: "amiga" }, { type: "text", text: "Cafeteira Elétrica" }] },
+        ]),
+      },
+    });
+    expect(transmissao.telefones.sort()).toEqual(NOMES_DO_BROADCAST.map((_, i) => `+55117${SUFIXO}${i}`).sort());
+    expect(desta.some((r) => r.metodo === "POST" && r.caminho === `/v1/broadcasts/${TRANSMISSAO}/send`)).toBe(true);
+
+    const { data: entregue } = await admin
+      .from("campaigns")
+      .select("provider_broadcast_id")
+      .eq("id", campanhaBroadcastId)
+      .single();
+    expect((entregue as { provider_broadcast_id: string }).provider_broadcast_id).toBe(TRANSMISSAO);
+
+    // 2ª rodada: lê o relatório e leva a cada destinatário; o provedor terminou, a campanha conclui.
+    const tick2 = await rodada();
+    expect(tick2.ok(), `rodada 2: ${tick2.status()} ${await tick2.text()}`).toBe(true);
+    const { data: destinatarios } = await admin
+      .from("campaign_recipients")
+      .select("status, sent_at, delivered_at")
+      .eq("campaign_id", campanhaBroadcastId);
+    const lista = (destinatarios ?? []) as Array<{ status: string; sent_at: string | null; delivered_at: string | null }>;
+    expect(lista.map((d) => d.status)).toEqual(NOMES_DO_BROADCAST.map(() => "delivered"));
+    expect(lista.every((d) => d.sent_at && d.delivered_at)).toBe(true);
+    const { data: depois } = await admin.from("campaigns").select("status").eq("id", campanhaBroadcastId).single();
+    expect((depois as { status: string }).status).toBe("completed");
+
+    // Pela tela: os contadores mostram a lista inteira entregue.
+    await page.reload();
+    await expect(page.getByText("Entregues", { exact: true }).locator("xpath=following-sibling::p[1]")).toHaveText(
+      String(NOMES_DO_BROADCAST.length),
+      { timeout: 30_000 },
+    );
+    await page.screenshot({ path: path.join(EVIDENCIA, "10-broadcast-entregue-pelo-relatorio.png"), fullPage: true });
+  });
+
+  test("⭐ broadcast: acima do teto pausa antes de criar, e quem sai da lista na pausa não recebe na retomada", async ({ page }) => {
+    test.skip(!TEM_DUBLE, `precisa do dublê do provedor: ZERNIO_API_BASE_URL=${URL_DO_DUBLE} ZERNIO_ACCOUNT_ID=${CONTA}`);
+    const telefones = NOMES_DA_RETOMADA.map((_, i) => `+55116${SUFIXO}${i}`);
+    const rodada = async () => {
+      const r = await page.request.post("/api/v1/cron/campaign-worker", {
+        headers: { authorization: `Bearer ${process.env.INTERNAL_SECRET ?? "e2e-placeholder-nao-e-segredo"}` },
+      });
+      expect(r.ok(), `rodada: ${r.status()} ${await r.text()}`).toBe(true);
+    };
+    const daCampanha = async (): Promise<{ status: string; failure_code: string | null; provider_broadcast_id: string | null }> => {
+      const { data } = await admin
+        .from("campaigns")
+        .select("status, failure_code, provider_broadcast_id")
+        .eq("id", campanhaRetomadaId)
+        .single();
+      return data as { status: string; failure_code: string | null; provider_broadcast_id: string | null };
+    };
+    const retomarPelaTela = async () => {
+      await page.reload();
+      await page.getByRole("button", { name: "Retomar", exact: true }).click();
+      await expect.poll(async () => (await daCampanha()).status, { timeout: 30_000 }).toBe("running");
+    };
+    const tetoDoNumero = async (teto: number) => {
+      const { error } = await admin.from("channel_sessions").update({ daily_message_limit: teto }).eq("id", sessaoId);
+      if (error) throw new Error(`teto do número: ${error.message}`);
+    };
+
+    await login(page, creds.users.manager!.email, creds.password);
+    await page.goto("/app/campaigns/new");
+    await page.locator("#nome").fill(`Broadcast retomada E2E ${SUFIXO}`);
+    await page.locator("#canal").selectOption(sessaoId);
+    await expect(page.getByTestId("modelo-da-campanha")).toBeVisible({ timeout: 30_000 });
+    await page.locator("#modelo").selectOption(`${MODELO}|pt_BR`);
+    await page.getByLabel("Origem: {{1}}", { exact: true }).selectOption("fixed");
+    await page.getByLabel("Texto fixo: {{1}}", { exact: true }).fill("amiga");
+    await page.getByLabel("Origem: {{2}}", { exact: true }).selectOption("fixed");
+    await page.getByLabel("Texto fixo: {{2}}", { exact: true }).fill("Cafeteira Elétrica");
+    await page.getByLabel("Com alguma destas etiquetas").fill(ETIQUETA_RETOMADA);
+    await page.getByTestId("velocidade-da-campanha").getByRole("radio", { name: "Broadcast" }).check();
+    await page.getByRole("button", { name: "Salvar rascunho" }).click();
+    await page.waitForURL(/\/app\/campaigns\/[0-9a-f-]{36}$/, { timeout: 60_000 });
+    campanhaRetomadaId = page.url().split("/").pop()!;
+    await page.getByRole("button", { name: "Preparar lista" }).click();
+    await expect(page.getByRole("button", { name: "Iniciar envio" })).toBeVisible({ timeout: 60_000 });
+    await page.getByRole("button", { name: "Iniciar envio" }).click();
+    await page.getByRole("button", { name: "Confirmar" }).click();
+    await expect.poll(async () => (await daCampanha()).status, { timeout: 30_000 }).toBe("running");
+
+    // A lista não cabe no teto do número: pausa antes de criar, e a tela diz por quê.
+    await tetoDoNumero(2);
+    const antesDoTeto = recebidos.length;
+    await rodada();
+    expect(recebidos.slice(antesDoTeto).filter((r) => r.metodo === "POST" && r.caminho === "/v1/broadcasts")).toHaveLength(0);
+    expect(await daCampanha()).toMatchObject({ status: "paused", failure_code: "transmissao_acima_do_teto" });
+    await page.reload();
+    await expect(page.getByText(/Último problema: A lista inteira não cabe no teto diário deste número/)).toBeVisible({ timeout: 30_000 });
+    const opcaoBroadcast = page.getByTestId("velocidade-da-campanha").getByRole("radio", { name: "Broadcast" });
+    await expect(opcaoBroadcast).toBeChecked({ timeout: 30_000 });
+    await page.screenshot({ path: path.join(EVIDENCIA, "11-broadcast-acima-do-teto.png"), fullPage: true });
+
+    // Com o teto ajustado, os telefones sobem e o envio é recusado: pausa com o rascunho cheio.
+    await tetoDoNumero(100_000);
+    await retomarPelaTela();
+    transmissao.recusarOEnvio = true;
+    await rodada();
+    expect(await daCampanha()).toMatchObject({ status: "paused", failure_code: "transmissao_http_503" });
+    const rascunho = transmissao.id;
+    expect([...transmissao.telefones].sort()).toEqual([...telefones].sort());
+
+    // Na pausa, uma pessoa pede para sair: é a marca que a ingestão grava no contato.
+    const { error: erroOptOut } = await admin
+      .from("contacts")
+      .update({ is_blocked: true })
+      .eq("organization_id", creds.org_id)
+      .eq("phone_number", telefones[0]!);
+    if (erroOptOut) throw new Error(`opt-out: ${erroOptOut.message}`);
+
+    await retomarPelaTela();
+    const antesDaRetomada = recebidos.length;
+    // 1ª rodada: apaga o rascunho, que é a única forma de tirar a pessoa dele.
+    await rodada();
+    const daRetomada = recebidos.slice(antesDaRetomada);
+    expect(daRetomada.some((r) => r.metodo === "DELETE" && r.caminho === `/v1/broadcasts/${rascunho}`)).toBe(true);
+    expect(daRetomada.some((r) => r.caminho.endsWith("/send"))).toBe(false);
+    // 2ª rodada: rascunho novo, só com quem ficou, e o envio.
+    await rodada();
+    expect(transmissao.id).not.toBe(rascunho);
+    expect([...transmissao.telefones].sort()).toEqual(telefones.slice(1).sort());
+    expect(recebidos.filter((r) => r.caminho === `/v1/broadcasts/${transmissao.id}/send`)).toHaveLength(1);
+    expect((await daCampanha()).provider_broadcast_id).toBe(transmissao.id);
+
+    // Com a lista entregue, a tela trava a velocidade.
+    await page.reload();
+    await expect(page.getByTestId("broadcast-entregue")).toBeVisible({ timeout: 30_000 });
+    await expect(opcaoBroadcast).toBeChecked({ timeout: 30_000 });
+    await expect(opcaoBroadcast).toBeDisabled();
+
+    // 3ª rodada: o relatório conclui; a pessoa que saiu segue fora.
+    await rodada();
+    expect((await daCampanha()).status).toBe("completed");
+    const { data: fim } = await admin
+      .from("campaign_recipients")
+      .select("status, recipient_address")
+      .eq("campaign_id", campanhaRetomadaId);
+    const porTelefone = new Map(((fim ?? []) as Array<{ status: string; recipient_address: string }>).map((d) => [d.recipient_address, d.status]));
+    expect(porTelefone.get(telefones[0]!)).toBe("opted_out");
+    expect(porTelefone.get(telefones[1]!)).toBe("delivered");
+    expect(porTelefone.get(telefones[2]!)).toBe("delivered");
+
+    await page.reload();
+    await expect(page.getByText("Entregues", { exact: true }).locator("xpath=following-sibling::p[1]")).toHaveText("2", { timeout: 30_000 });
+    await page.screenshot({ path: path.join(EVIDENCIA, "12-broadcast-retomada-sem-quem-saiu.png"), fullPage: true });
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.reload();
+    await expect(page.getByText("Entregues", { exact: true }).locator("xpath=following-sibling::p[1]")).toHaveText("2", { timeout: 30_000 });
+    const larguras = await page.evaluate(() => ({ rolavel: document.documentElement.scrollWidth, tela: document.documentElement.clientWidth }));
+    expect(larguras.rolavel).toBeLessThanOrEqual(larguras.tela);
+    await page.screenshot({ path: path.join(EVIDENCIA, "13-broadcast-retomada-375px.png"), fullPage: true });
   });
 });
 

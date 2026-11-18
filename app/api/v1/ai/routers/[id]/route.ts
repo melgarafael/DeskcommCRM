@@ -1,7 +1,9 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET    /api/v1/ai/routers/:id — detalhe do router + membros (agent+).
- * PATCH  /api/v1/ai/routers/:id — atualiza campos (admin), audit `ai.router_updated`.
+ * PATCH  /api/v1/ai/routers/:id — atualiza campos (admin), audit `ai.router_updated`;
+ *   com `channel_session_id`, move o roteador para o número novo (#4340), audit
+ *   `ai.router_channel_moved` (só sai de número removido — ver a régua no módulo).
  * DELETE /api/v1/ai/routers/:id — remove o router (admin), audit `ai.router_deleted`.
  *   Cascade FK (migration 0085) já apaga ai_router_members junto.
  *
@@ -16,6 +18,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { moverRoteadorParaNumero } from "@/lib/ai/agents/mover-roteador-de-numero";
 import { senderRoutesSchema } from "@/lib/ai/agents/sender-routes";
 import { MAX_CLASSIFIER_CONTEXT_MESSAGES } from "@/lib/ai/classifier-context";
 
@@ -25,7 +28,8 @@ type RouteCtx = { params: Promise<{ id: string }> };
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const ROUTER_DETAIL_COLUMNS = "id, name, channel_session_id, is_active, config, fallback_agent_id";
+const ROUTER_DETAIL_COLUMNS =
+  "id, name, channel_session_id, is_active, config, fallback_agent_id, passagem_ao_cliente";
 const MEMBER_COLUMNS =
   "id, agent_id, intent_name, intent_description, examples, position, flow_pointer_id, pipeline_id, stage_id";
 
@@ -33,6 +37,20 @@ const patchRouterSchema = z.object({
   name: z.string().min(1).max(120).optional(),
   is_active: z.boolean().optional(),
   fallback_agent_id: z.string().uuid().nullable().optional(),
+  /**
+   * #4340 — mover o roteador INTEIRO (intenções, destinos, reserva) para o
+   * número novo. O corpo é o mesmo do formulário; a diferença é a régua em
+   * `moverRoteadorParaNumero`: só sai de número ARQUIVADO e só entra em número
+   * vivo e sem roteador, com auditoria "de X para Y".
+   */
+  channel_session_id: z.string().uuid().optional(),
+  /**
+   * #4363 — a frase que o CLIENTE lê quando o roteador troca de agente
+   * automaticamente. `null`/`""` = desligada (o padrão, e o comportamento de
+   * antes). Mesmo teto do CHECK da 9367: aqui a régua responde 422 com o motivo,
+   * em vez de deixar o banco recusar a linha inteira.
+   */
+  passagem_ao_cliente: z.string().max(1200).nullable().optional(),
   config: z
     .record(z.string(), z.unknown())
     .optional()
@@ -44,6 +62,15 @@ const patchRouterSchema = z.object({
           c.context_message_count >= 0 &&
           c.context_message_count <= MAX_CLASSIFIER_CONTEXT_MESSAGES),
       "context_message_count deve ser inteiro entre 0 e 16",
+    )
+    /**
+     * #4750 — a chave da troca SILENCIOSA mora no `config` (jsonb livre, sem
+     * migration), então o tipo dela é a única cerca: texto solto aqui viraria
+     * "ligado" por acidente em qualquer leitura frouxa adiante.
+     */
+    .refine(
+      (c) => c?.passagem_silenciosa === undefined || typeof c.passagem_silenciosa === "boolean",
+      "passagem_silenciosa deve ser verdadeiro ou falso",
     ),
 });
 
@@ -144,6 +171,46 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
 
   const admin = createAdminClient();
 
+  // #4340 — a troca de número vem PRIMEIRO e tem régua própria. Ela não é um
+  // campo do formulário: é o gesto de resgatar um roteador cujo número foi
+  // removido. Se falhar, nada mais do patch é aplicado (o operador pediu uma
+  // coisa só e ela não aconteceu).
+  let mudancaDeNumero: { de: string; para: string; movido: boolean } | null = null;
+  if (patch.channel_session_id !== undefined) {
+    const resultado = await moverRoteadorParaNumero(admin, {
+      organizationId,
+      routerId: id,
+      novoChannelSessionId: patch.channel_session_id,
+      quemMoveu: { userId: authUserId, apiTokenId: authz.apiTokenId ?? null, requestId },
+    });
+    if (!resultado.ok) {
+      switch (resultado.code) {
+        case "router_not_found":
+          return fail("not_found", t("Router não encontrado."), 404, { requestId });
+        case "numero_atual_ainda_ativo":
+          return fail(
+            "numero_atual_ainda_ativo",
+            t("Este roteador ainda aponta para um número conectado."),
+            422,
+            { requestId },
+          );
+        case "numero_novo_invalido":
+          return fail("numero_novo_invalido", t("Escolha um número conectado desta empresa."), 422, {
+            requestId,
+          });
+        case "numero_novo_ja_tem_roteador":
+          return fail("router_already_exists", t("Este número já tem um roteador."), 409, {
+            requestId,
+          });
+        default:
+          return fail("internal_error", t("Erro ao mover o roteador de número."), 500, {
+            requestId,
+          });
+      }
+    }
+    mudancaDeNumero = resultado;
+  }
+
   const { data: existing, error: loadErr } = await admin
     .from("ai_routers")
     .select("id, config, fallback_agent_id")
@@ -161,6 +228,13 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   if (patch.name !== undefined) update.name = patch.name;
   if (patch.is_active !== undefined) update.is_active = patch.is_active;
   if (patch.fallback_agent_id !== undefined) update.fallback_agent_id = patch.fallback_agent_id;
+  if (patch.passagem_ao_cliente !== undefined) {
+    // `""` e espaço em branco são DESLIGADO, não uma mensagem vazia: a mesma
+    // régua do leitor (`normalizarPassagemAoCliente`), para que a tela possa
+    // "salvar vazio" sem gravar uma frase que ninguém escreveu.
+    const frase = patch.passagem_ao_cliente?.trim() ?? "";
+    update.passagem_ao_cliente = frase === "" ? null : frase;
+  }
   if (patch.config !== undefined) {
     const currentConfig = (existing.config ?? {}) as Record<string, unknown>;
     update.config = { ...currentConfig, ...patch.config };
@@ -205,7 +279,10 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   }
 
   if (Object.keys(update).length === 0) {
-    return ok({ id }, { requestId });
+    // Só a troca de número veio no corpo: a linha já foi gravada (e auditada)
+    // por `moverRoteadorParaNumero`. Devolver os dois ids deixa o cliente
+    // conferir o movimento sem uma segunda leitura.
+    return ok({ id, ...(mudancaDeNumero ?? {}) }, { requestId });
   }
 
   const { error: updErr } = await admin

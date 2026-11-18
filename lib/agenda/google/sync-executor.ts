@@ -8,6 +8,8 @@ import {
   PREFIXO_PROPRIEDADE,
   type EventoDoGoogle,
 } from "./evento";
+import { emailsDeQuemSaiuDoEvento, emailsDosConvidadosDaEquipe } from "./convidados-da-equipe";
+import { blocoDoNegocioDoEvento } from "./contexto-do-negocio";
 import {
   compare,
   comConviteDaFicha,
@@ -43,6 +45,35 @@ const OPERACAO_POR_METODO: Record<PendingWrite["method"], OperacaoNoGoogle> = {
   DELETE: "apagar",
 };
 
+/** A frase de versão vencida — a ÚNICA em que repetir é o conserto certo. */
+const MENSAGEM_DA_VERSAO_ATUAL =
+  "O compromisso mudou. A sincronização vai reler a versão atual.";
+
+/**
+ * A agenda de destino que o CRM marcou `available=false` (#4448). É a MESMA
+ * frase que o `claim` grava em `google_sync_error` quando recusa o compromisso
+ * — duas camadas, um vocabulário só.
+ */
+const MENSAGEM_DA_AGENDA_INDISPONIVEL =
+  'A agenda de destino não aparece mais na conta Google. A sincronização volta sozinha se ela reaparecer; para adiantar, use "Atualizar lista e sincronização" nas configurações da agenda.';
+
+/** Guarda que não é de versão: repetir não muda o resultado. */
+const MENSAGEM_DO_ERRO_PERMANENTE =
+  "A sincronização parou e não volta sozinha. Revise o compromisso e a conexão nas configurações.";
+
+/**
+ * O SQLSTATE de um erro de banco, quando há um. `PT409` é versão vencida (o
+ * único caso em que reler resolve); `42501` é guarda de autoridade/
+ * disponibilidade; `P0002`/`22023` são estado inválido.
+ */
+function codigoDoBanco(erro: unknown): string | null {
+  if (!(erro instanceof Error)) return null;
+  // Falha de transporte do PostgREST chega com `code: ""`, e o `googleRpc` copia
+  // a chave mesmo quando ela é `undefined`: nenhum dos dois é SQLSTATE.
+  const codigo = (erro as { code?: unknown }).code;
+  return codigo === undefined || codigo === null || codigo === "" ? null : String(codigo);
+}
+
 /**
  * A frase que o caminho de publicação PERSISTE quando o Google recusa (#950).
  *
@@ -59,6 +90,15 @@ const OPERACAO_POR_METODO: Record<PendingWrite["method"], OperacaoNoGoogle> = {
  * para ele ("O evento mudou no Google. Releia antes de publicar."), enquanto o
  * classificador não tem caso para 412 — cairia em `permanente`, "repetir não
  * muda o resultado", que é o oposto do que resolve uma pré-condição vencida.
+ *
+ * ⚠️ ERRO DE BANCO NÃO É RECUSA DO GOOGLE, e a frase tem de dizer o que ele
+ * significa (#4448). Antes, TODO erro com `code` virava "O compromisso mudou.
+ * A sincronização vai reler a versão atual." — verdade para o `PT409`
+ * (`google_stale`, que nasce de uma versão vencida e se resolve relendo) e
+ * MENTIRA para o `42501` (`google_connection_unavailable`): os oito
+ * compromissos do relato ficaram meses voltando a cada 15 min porque a frase
+ * mandava tentar de novo um compromisso que nada tinha de novo. Guarda que
+ * recusa por autoridade/disponibilidade não se conserta repetindo.
  */
 export function mensagemDaRecusaDePublicacao(
   erro: unknown,
@@ -68,9 +108,14 @@ export function mensagemDaRecusaDePublicacao(
     if (erro.status === 412) return erro.message;
     return classificarErroDoGoogle(erro, OPERACAO_POR_METODO[metodo]).mensagem;
   }
-  return erro instanceof Error && "code" in erro
-    ? "O compromisso mudou. A sincronização vai reler a versão atual."
-    : "Não foi possível sincronizar. Confira a conexão e tente novamente.";
+  const codigo = codigoDoBanco(erro);
+  if (codigo === null)
+    return "Não foi possível sincronizar. Confira a conexão e tente novamente.";
+  const texto = erro instanceof Error ? erro.message : "";
+  if (codigo === "PT409" || /google_stale|appointment_stale/.test(texto))
+    return MENSAGEM_DA_VERSAO_ATUAL;
+  if (texto.includes("google_connection_unavailable")) return MENSAGEM_DA_AGENDA_INDISPONIVEL;
+  return MENSAGEM_DO_ERRO_PERMANENTE;
 }
 
 /**
@@ -184,7 +229,15 @@ export async function reconcileAppointment(
     p_args: options.calendarFence ? { calendar_fence: options.calendarFence } : {},
   });
   if (!raw) return "busy";
-  if (typeof raw === "object" && "terminal" in raw && (raw.terminal === "redacted" || raw.terminal === "not_configured"))
+  if (
+    typeof raw === "object" &&
+    "terminal" in raw &&
+    (raw.terminal === "redacted" ||
+      raw.terminal === "not_configured" ||
+      // O claim recusou porque a agenda de destino está indisponível (#4448):
+      // o compromisso já está estacionado em `infinity` e com o motivo gravado.
+      raw.terminal === "calendar_unavailable")
+  )
     return "terminal";
   let a = appointmentSnapshotSchema.parse(raw);
   const call = (action: string, extra: Record<string, unknown> = {}) =>
@@ -211,6 +264,28 @@ export async function reconcileAppointment(
       return "processed";
     }
     const contato = await emailDoContato(db, org, a.contact_id);
+    /**
+     * OS DOIS ACRÉSCIMOS DO #4006, resolvidos ANTES da projeção local.
+     *
+     * `local` é montado por `localProjection` → `paraEventoDoGoogle`, e é dele
+     * que saem os hashes comparados com o Google. Se os convidados da equipe e
+     * o bloco do negócio entrassem só na hora do POST/PATCH, o hash local
+     * ficaria diferente do publicado e TODA passada acharia que há algo a
+     * escrever — um PATCH a cada 15 minutos por compromisso.
+     */
+    const convidadosDaEquipe = await emailsDosConvidadosDaEquipe(db, org, a.team_guest_user_ids);
+    const blocoDoNegocio = await blocoDoNegocioDoEvento(db, org, a);
+    /**
+     * O compromisso com o que é resolvido aqui (não é coluna): a lista de
+     * convidados já com e-mail, os ids que vão para `deskcomm_guests` e o bloco
+     * que a descrição leva no fim.
+     */
+    const comEquipe = <T extends object>(x: T) => ({
+      ...x,
+      convidados_da_equipe: convidadosDaEquipe,
+      convidados_equipe_ids: a.team_guest_user_ids,
+      contexto_do_negocio: blocoDoNegocio,
+    });
     if (!a.google_connection_id || !a.google_calendar_id || !a.google_event_id)
       throw new Error("Publicação antiga sem identidade completa. Revise a conexão.");
     const api = googleTransport(
@@ -309,13 +384,37 @@ export async function reconcileAppointment(
     );
     /** O marcador de leitura, único: publicado OU ainda em voo com o link. */
     const espacoAberto = () => espacoAbertoPublicado() || espacoAbertoNaIntencao;
-    let local = localProjection({ ...a, meet_aberto: espacoAberto() });
+    let local = localProjection(comEquipe({ ...a, meet_aberto: espacoAberto() }));
     // Listagem é sinal de mudança, não versão para um PATCH: GET exato revalida.
     const event = await api.get(a.google_calendar_id, a.google_event_id);
     const linked = event?.extendedProperties?.private;
     const association =
       linked?.[`${PREFIXO_PROPRIEDADE}_org`] === org &&
       linked?.[`${PREFIXO_PROPRIEDADE}_appointment`] === id;
+    /**
+     * Quem ERA convidado da equipe e não fica (#4006). O evento guarda os ids
+     * publicados em `deskcomm_guests`; os e-mails deles é que permitem DESconvidar.
+     * Só vale em evento que é deste compromisso: nos outros, a lista não é nossa.
+     */
+    const quemSaiu = association
+      ? await emailsDeQuemSaiuDoEvento(
+          db,
+          org,
+          (linked?.[`${PREFIXO_PROPRIEDADE}_guests`] ?? "").split(","),
+          a.team_guest_user_ids,
+        )
+      : [];
+    /**
+     * Os e-mails que NÓS gerenciamos no evento, a lista que o `attendees` filtra.
+     * Quem saiu entra aqui: sem ele a leitura do Google não enxergaria a saída, e
+     * uma lista de 2 ou mais pessoas nunca mandaria o PATCH que o tira (só saída
+     * convergia em silêncio; saída com entrada virava conflito).
+     */
+    const convidadosGerenciados = () => [
+      a.guest_email,
+      ...convidadosDaEquipe.map((g) => g.email),
+      ...quemSaiu,
+    ];
     const wasPublished = base !== null;
     const conflict = async (
       reason: GoogleConflict["reason"],
@@ -349,7 +448,7 @@ export async function reconcileAppointment(
       await conflict("series", null);
       return "processed";
     }
-    let remote = event ? remoteProjection(event, local, base) : null;
+    let remote = event ? remoteProjection(event, local, base, convidadosGerenciados()) : null;
     if (a.google_conflict?.reason === "series" && event && remote) {
       // As guardas acima provaram que o recurso é novamente único e válido.
       // Refaça as três vias; não reconheça a intenção nem desfaça o domínio aqui.
@@ -377,7 +476,7 @@ export async function reconcileAppointment(
       const pending = a.google_pending_write;
       // Observe a escrita no contexto capturado (A → B), antes de comparar
       // a intenção atual (C). O checkpoint histórico não reconhece C.
-      const historical = event ? remoteProjection(event, pending.desired, base) : null;
+      const historical = event ? remoteProjection(event, pending.desired, base, convidadosGerenciados()) : null;
       const reached =
         pending.method === "DELETE"
           ? !event || event.status === "cancelled"
@@ -428,7 +527,7 @@ export async function reconcileAppointment(
       }
     }
     // Uma escrita histórica reconhecida pode mudar quem é o convidado gerido.
-    remote = event ? remoteProjection(event, local, base) : null;
+    remote = event ? remoteProjection(event, local, base, convidadosGerenciados()) : null;
     if (a.google_conflict) {
       const conflictState = a.google_conflict;
       const resolution = conflictState.resolution;
@@ -502,7 +601,7 @@ export async function reconcileAppointment(
         await commit({ base: next, conflict: null, clear_pending: true, etag: event.etag });
       }
     }
-    local = localProjection({ ...a, meet_aberto: espacoAberto() });
+    local = localProjection(comEquipe({ ...a, meet_aberto: espacoAberto() }));
     base = a.google_base_projection;
     if (!event) {
       if (wasPublished) {
@@ -516,14 +615,17 @@ export async function reconcileAppointment(
       } else {
         await send(
           "POST",
-          paraEventoDoGoogle({
-            ...a,
-            participantes: participantesDoAgendamento({
-              contactEmail: contato?.email,
-              contactName: contato?.nome,
-              guestEmail: a.guest_email,
+          paraEventoDoGoogle(
+            comEquipe({
+              ...a,
+              participantes: participantesDoAgendamento({
+                contactEmail: contato?.email,
+                contactName: contato?.nome,
+                guestEmail: a.guest_email,
+                teamGuests: convidadosDaEquipe,
+              }),
             }),
-          }) as unknown as Record<string, unknown>,
+          ) as unknown as Record<string, unknown>,
           null,
           [...groups],
           true,
@@ -605,15 +707,16 @@ export async function reconcileAppointment(
       local.shared.cancelled
         ? undefined
         : delta(
-            {
+            comEquipe({
               ...a,
               contact_email: contato?.email ?? null,
               contact_nome: contato?.nome ?? null,
-            },
+            }),
             event,
             base,
             decision.groups,
             decision.shared,
+            { convidadosAnteriores: quemSaiu },
           ),
       event.etag ?? null,
       decision.groups,
@@ -683,35 +786,50 @@ export async function reconcileAppointment(
         //
         // O corpo é remontado da projeção nova — o mesmo `localDoEvento` de
         // sempre, agora com o marcador ligado —, nunca montado à mão aqui.
-        local = localProjection({ ...a, meet_aberto: true });
+        local = localProjection(comEquipe({ ...a, meet_aberto: true }));
         if (method === "POST") {
-          body = paraEventoDoGoogle({
-            ...a,
-            meet_aberto: true,
-            participantes: participantesDoAgendamento({
-              contactEmail: contato?.email,
-              contactName: contato?.nome,
-              guestEmail: a.guest_email,
+          body = paraEventoDoGoogle(
+            comEquipe({
+              ...a,
+              meet_aberto: true,
+              participantes: participantesDoAgendamento({
+                contactEmail: contato?.email,
+                contactName: contato?.nome,
+                guestEmail: a.guest_email,
+                teamGuests: convidadosDaEquipe,
+              }),
             }),
-          }) as unknown as Record<string, unknown>;
+          ) as unknown as Record<string, unknown>;
         } else if (method === "PATCH") {
           campos = [...new Set([...campos, "location" as const])];
           body = delta(
-            {
+            comEquipe({
               ...a,
               meet_aberto: true,
               contact_email: contato?.email ?? null,
               contact_nome: contato?.nome ?? null,
-            },
+            }),
             event!,
             base,
             campos,
             shared,
+            { convidadosAnteriores: quemSaiu },
           );
         }
       }
       // Se só faltava conferência e a capacidade foi recusada, nenhum PATCH vazio.
       if (method === "PATCH" && !shared && !campos.length && !conferenceRequestId) return;
+      /**
+       * QUANDO NÃO SE MANDA E-MAIL A NINGUÉM (#4006).
+       *
+       * Ajuste SÓ de descrição — o bloco do negócio que mudou de proposta, por
+       * exemplo — não é notícia para o cliente: `sendUpdates=all` faria um
+       * e-mail por compromisso futuro cada vez que a proposta mudasse de
+       * situação. Criar, remarcar, cancelar e mexer em convidado continuam
+       * `all`: esses SIM são notícia, e é o convite que a issue pede.
+       */
+      const soDescricao =
+        method === "PATCH" && !shared && campos.length > 0 && campos.every((c) => c === "description");
       const pending: PendingWrite = {
         ...(conferenceRequestId ? { conference_request_id: conferenceRequestId } : {}),
         operation_id: randomUUID(),
@@ -734,9 +852,10 @@ export async function reconcileAppointment(
         method,
         body,
         etag,
+        soDescricao ? "none" : "all",
       );
       const observed = response
-        ? remoteProjection(response, local, base)
+        ? remoteProjection(response, local, base, convidadosGerenciados())
         : { ...local, shared: { ...local.shared, cancelled: true } };
       await commit({
         base: checkpoint(base, local, observed, campos, shared),

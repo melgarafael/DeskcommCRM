@@ -164,14 +164,30 @@ export async function renovarSeProxima(entrada: {
  * Se a segunda também vier 401, ela é devolvida como está — quem classifica a
  * falha (`decidirQuedaDoProvedor`) manda a chamada para a reserva. Um loop de
  * retentativas aqui gastaria a cota da assinatura para repetir o mesmo erro.
+ *
+ * O `renovarApos401` pode responder `{ repetir: false, motivo }` para dizer que
+ * a repetição NÃO tem novidade a enviar (#4361): sem token novo, o segundo POST
+ * é um 401 CERTO — gasta a tentativa, o tempo do turno e nada conserta. Nesse
+ * caso o retry devolve o PRIMEIRO erro com `tentativas: 1` e o
+ * `motivoDaRenovacao`, e quem chama decide o que fazer com o motivo (log, aviso).
+ * Respostas antigas (`undefined`, `true`) mantêm o comportamento de sempre:
+ * renovar e repetir.
  */
 export async function chamarComRetryUnicoEm401<T>(entrada: {
   tentar: () => Promise<{ status: number; corpo: T }>;
   renovarApos401: () => Promise<unknown>;
-}): Promise<{ status: number; corpo: T; tentativas: number }> {
+}): Promise<{ status: number; corpo: T; tentativas: number; motivoDaRenovacao?: string }> {
   const primeira = await entrada.tentar();
   if (primeira.status !== 401) return { ...primeira, tentativas: 1 };
-  await entrada.renovarApos401();
+  const decisao = await entrada.renovarApos401();
+  if (decisao !== null && typeof decisao === "object" && (decisao as { repetir?: unknown }).repetir === false) {
+    const motivo = (decisao as { motivo?: unknown }).motivo;
+    return {
+      ...primeira,
+      tentativas: 1,
+      motivoDaRenovacao: typeof motivo === "string" ? motivo : "renovacao_sem_token_novo",
+    };
+  }
   const segunda = await entrada.tentar();
   return { ...segunda, tentativas: 2 };
 }

@@ -13,7 +13,28 @@ export type SendOutcome =
       crmMessageId: string | null;
     }
   | { kind: "blocked"; idempotencyKey: string };
-export type Intent = { tenantId: string; leadId: string | null; jobId: string; seq: number; body: string };
+/**
+ * A intenção de uma MENSAGEM FÍSICA no ledger.
+ *
+ * `seq` é o contador do TURNO (quem manda no `channel.send` é quem sabe o
+ * número), e `(jobId, seq)` é a identidade exactly-once da linha.
+ *
+ * `envioSeq` (migration 9407) é a FRONTEIRA do envio: o `seq` da primeira
+ * bolha do `send_message` a que esta linha pertence. O `seq` sozinho não separa
+ * dois envios do mesmo job — ele cresce entre eles —, e o reprocesso da saída
+ * configurável precisa das bolhas DESTE envio, não do turno (#4370, medido pelo
+ * mantenedor nos cenários B e C). Opcional de propósito: quem envia UMA
+ * mensagem por job (follow-up) não tem o que separar, e gravar NULL cai na
+ * régua anterior, que ali é idêntica.
+ */
+export type Intent = {
+  tenantId: string;
+  leadId: string | null;
+  jobId: string;
+  seq: number;
+  envioSeq?: number;
+  body: string;
+};
 export type Row = {
   id: string;
   status: SendLedgerStatus;
@@ -160,8 +181,12 @@ export function pgSendLedger(db: Queryable): LedgerStore {
   return {
     async create(i, hash) {
       const { rows } = await db.query<{ id: string }>(
-        "insert into send_ledger (organization_id, contact_id, job_id, seq, body_hash) values ($1, $2, $3, $4, $5) returning id",
-        [i.tenantId, i.leadId, i.jobId, i.seq, hash],
+        // `envio_seq` na ESCRITA (#4370, migration 9407): a fronteira do envio
+        // tem de estar na linha antes do envio sair. Gravá-la depois deixaria o
+        // envio interrompido por crash — justamente o que o reprocesso atende —
+        // sem a marca, e o reprocesso voltaria a ler o turno inteiro.
+        "insert into send_ledger (organization_id, contact_id, job_id, seq, envio_seq, body_hash) values ($1, $2, $3, $4, $5, $6) returning id",
+        [i.tenantId, i.leadId, i.jobId, i.seq, i.envioSeq ?? null, hash],
       );
       if (!rows[0]) throw new Error("send_ledger_insert_missing");
       return rows[0].id;
@@ -224,6 +249,8 @@ export function supabaseSendLedger(db: SupabaseClient): LedgerStore {
           contact_id: i.leadId,
           job_id: i.jobId,
           seq: i.seq,
+          // Fronteira do envio na ESCRITA — o porquê está em `pgSendLedger.create`.
+          envio_seq: i.envioSeq ?? null,
           body_hash: hash,
         })
         .select("id")
@@ -320,6 +347,70 @@ export function supabaseSendLedger(db: SupabaseClient): LedgerStore {
     },
   };
 }
+/**
+ * Motivo do cancelamento quando o passo de follow-up foi vetado pela trava de
+ * repetição (`spinning`, código `mass_identical` — ver `decideSpinning`).
+ *
+ * `{n}` é a CONTAGEM de repetições que o próprio veto carrega (`matchCount`),
+ * materializada no texto por `motivoDoVetoDaTrava`. A chave com `{n}` é a mesma
+ * convenção do dicionário para texto que leva número (ex.: "Este contato tem {n}
+ * compromissos na Agenda."), e a tradução mora lá.
+ */
+export const MOTIVO_DO_VETO_DA_TRAVA_DE_REPETICAO =
+  "A trava de repetição (anti-ban) segurou este envio: o mesmo texto já saiu {n} vez(es) por este número. Varie o texto antes de reenviar.";
+
+/** O motivo de sempre, para toda causa de não-envio que não é a trava de repetição. */
+export const MOTIVO_DO_PASSO_SEM_ENVIO =
+  "O assistente concluiu este passo sem enviar uma mensagem. Revise o próximo passo.";
+
+/**
+ * A CONTAGEM de repetições de um trace de veto — `null` quando o trace não a tem.
+ *
+ * O `trace` é o JSONB que `persistTrace` grava em `before_send_traces`: um
+ * registro por gate, e o `detail` só existe no gate que devolveu valores
+ * estruturados. Veto de outra trava (ou linha gravada antes de a cadeia passar
+ * a mandar `matchCount`) não tem número — e sem número não há o que nomear.
+ */
+function contagemDoVetoDeRepeticao(trace: unknown): number | null {
+  if (!Array.isArray(trace)) return null;
+  for (const entrada of trace) {
+    if (typeof entrada !== "object" || entrada === null) continue;
+    const registro = entrada as { code?: unknown; detail?: unknown };
+    if (registro.code !== "mass_identical") continue;
+    const detalhe = registro.detail as { matchCount?: unknown } | undefined;
+    const contagem = detalhe?.matchCount;
+    if (typeof contagem === "number" && Number.isFinite(contagem) && contagem > 0) return contagem;
+  }
+  return null;
+}
+
+/**
+ * Por que o passo não enviou, quando o `send_ledger` não tem linha para o job.
+ *
+ * A cadeia `before_send` veta ANTES de gravar no ledger, então o veto da trava
+ * de repetição nunca chega ao ramo `status = 'vetoed'` abaixo: o único rastro
+ * dele é a linha em `before_send_traces` (`vetoed_gate`/`vetoed_code`/`trace`),
+ * escrita na mesma tentativa. Sem esta leitura, o motivo gravado na inscrição é
+ * sempre o genérico — quem abre o follow-up não descobre que houve trava.
+ *
+ * Devolve `null` para TODA causa que não é a trava de repetição com contagem:
+ * o chamador cai no texto de sempre, e nenhuma outra causa muda de motivo.
+ */
+async function motivoDoVetoDaTrava(db: Queryable, org: string, job: string): Promise<string | null> {
+  const { rows } = await db.query<{ vetoed_code: string | null; trace: unknown }>(
+    `select vetoed_code, trace from before_send_traces
+      where organization_id=$1 and job_id=$2 and vetoed_code is not null
+      order by created_at desc
+      limit 1`,
+    [org, job],
+  );
+  const linha = rows[0];
+  if (linha?.vetoed_code !== "mass_identical") return null;
+  const contagem = contagemDoVetoDeRepeticao(linha.trace);
+  if (contagem === null) return null;
+  return MOTIVO_DO_VETO_DA_TRAVA_DE_REPETICAO.replace("{n}", String(contagem));
+}
+
 /** Resultado do turno sem importar runtime/env; ausência de envio é terminal explícito. */
 export async function resultadoDoEnvioDoFollowup(
   db: Queryable,
@@ -330,11 +421,15 @@ export async function resultadoDoEnvioDoFollowup(
     "select status from send_ledger where organization_id=$1 and job_id=$2",
     [org, job],
   );
-  if (!rows.length)
+  if (!rows.length) {
+    // #4428: sem linha no ledger, o veto da cadeia é o que explica o silêncio —
+    // e ele tem nome. As demais causas continuam com o texto genérico.
+    const motivoDoVeto = await motivoDoVetoDaTrava(db, org, job);
     return {
       kind: "skipped",
-      reason: "O assistente concluiu este passo sem enviar uma mensagem. Revise o próximo passo.",
+      reason: motivoDoVeto ?? MOTIVO_DO_PASSO_SEM_ENVIO,
     };
+  }
   if (rows.every((row) => row.status === "vetoed"))
     return { kind: "skipped", reason: "O envio foi recusado pelas regras do atendimento." };
   if (rows.some((row) => row.status !== "accepted")) throw new Error("followup_message_not_sent");

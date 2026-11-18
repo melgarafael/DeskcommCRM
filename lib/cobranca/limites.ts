@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { recursoDoPlanoOuErro } from "@/lib/cobranca/planos";
 import type { RecursoDoPlano } from "@/lib/cobranca/vocabulario";
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
@@ -82,7 +83,12 @@ export async function lerLimiteDoPlano(
   organizationId: string,
   recurso: RecursoComLimite,
 ): Promise<number | null> {
-  const { data, error } = await db.rpc("fn_limite_do_plano", { p_org: organizationId, p_recurso: recurso });
+  const { data, error } = await db.rpc("fn_limite_do_plano", {
+    p_org: organizationId,
+    // o recurso passa pelo vocabulário ANTES do banco: valor fora da lista é
+    // recusa explícita aqui, não um `22023` que só o log do Postgres explica.
+    p_recurso: recursoDoPlanoOuErro(recurso),
+  });
   if (error) throw new Error(`fn_limite_do_plano: ${error.code ?? "sem_sqlstate"} ${error.message}`);
   return typeof data === "number" ? data : null;
 }

@@ -48,6 +48,7 @@
  */
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 
@@ -114,9 +115,12 @@ function estaBloqueado(item: HTMLElement): boolean {
 async function abrirMenu(over: Partial<AgentRow>) {
   const user = userEvent.setup();
   render(
-    <IdiomaProvider locale="pt-BR">
-      <AgentRowMenu agent={{ ...AGENTE, ...over } as AgentRow} />
-    </IdiomaProvider>,
+    // O menu recarrega a lista de agentes pelo React Query depois da ação.
+    <QueryClientProvider client={new QueryClient()}>
+      <IdiomaProvider locale="pt-BR">
+        <AgentRowMenu agent={{ ...AGENTE, ...over } as AgentRow} />
+      </IdiomaProvider>
+    </QueryClientProvider>,
   );
   await user.click(screen.getByRole("button", { name: "Menu de ações" }));
   return user;

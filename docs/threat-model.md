@@ -38,9 +38,13 @@ São conclusões de leitura de código.
 | `/api/v1/webhooks/waha` (global, sem token) | só rede interna: requisição com marca de proxy de borda recebe 404 (`chegouPelaBorda`, `lib/http/ip-do-cliente.ts` — régua de cabeçalho, válida nos proxies do kit: Caddy, Traefik, Nginx Proxy Manager, túnel da Cloudflare); depois, o mesmo HMAC. Com a porta do app publicada direto, a camada que vale é a assinatura do remetente (`/admin/sistema`) | ❌ |
 | `/api/v1/webhooks/in/:token` | path token + assinatura opcional | ✅ 60/min por token |
 | `/api/v1/webhooks/nuvemshop/*` | HMAC | ❌ |
-| `/api/v1/webhooks/cobranca/:provedor` | Stripe: `Stripe-Signature` (HMAC com horário). Asaas: token estático em `asaas-access-token` (sha256 + `timingSafeEqual`); o corpo é só ponteiro e a decisão vem da releitura. Token vazado: o dono gera outro em Admin › Cobrança › Conexão, "Testar e conectar" de novo | ✅ recusas 120/min por IP; Asaas, avisos válidos de cliente desconhecido 120/min por provedor, chave global (acima, 200 sem gravar) |
+| `/api/v1/webhooks/cobranca/:provedor` | Stripe: `Stripe-Signature` (HMAC com horário). Asaas: token estático em `asaas-access-token` (sha256 + `timingSafeEqual`); o corpo é só ponteiro e a decisão vem da releitura. Token vazado: o dono gera outro em Admin › Cobrança › Conexão, "Testar e conectar" de novo | ✅ recusas 120/min por IP; Asaas, avisos válidos sem empresa identificada (cliente desconhecido ou leitura que falhou) 120/min por provedor, chave global (acima, 200 sem gravar) |
 | `/api/v1/cron/*` (9 rotas) | `Bearer INTERNAL_CRON_SECRET\|INTERNAL_SECRET`, **fail-closed** | ❌ |
-| `/api/mcp` | `Bearer tok_...` validado contra `api_tokens` (hash SHA256) | ❌ |
+| `/api/mcp` | `Bearer dsk_...` validado contra `api_tokens` (hash SHA256) — colado à mão ou emitido pelo OAuth abaixo; 401 leva `WWW-Authenticate` com `resource_metadata` | ✅ teto de falhas de token (IP e valor) |
+| `/.well-known/oauth-protected-resource`, `/.well-known/oauth-authorization-server` (9390) | documentos estáticos, sem banco nem dado de organização; origem de `NEXT_PUBLIC_APP_URL`, nunca do `Host` | ❌ (estáticos) |
+| `/api/mcp/oauth/register` (9390) | registro aberto (RFC 7591) que não dá acesso a nada; redirect só `https` (ou `http` em loopback), sem fragmento; segredo só SHA-256; cliente nunca autorizado apagado em 24 h pela poda diária (cron `data-retention`) | ✅ por IP, com balde comum quando não há IP (`LIMITES_OAUTH_MCP.registro` em `lib/mcp/oauth/limites.ts`), e teto de pendentes |
+| `/api/mcp/oauth/authorize` (9390) | `client_id` + `redirect_uri` conferidos contra o REGISTRO antes de qualquer redirecionamento (senão página de erro, nunca redirect); PKCE S256 obrigatório; `resource` tem de ser este MCP; segue por ponte same-origin para `/oauth/mcp/consentir`, que exige sessão de **admin** da organização escolhida (`requireRole`) e recusa acompanhamento de suporte | ✅ por IP; consentimento por IP e por pessoa (`LIMITES_OAUTH_MCP` em `lib/mcp/oauth/limites.ts`) |
+| `/api/mcp/oauth/token`, `/api/mcp/oauth/revoke` (9390) | código de uso único (5 min, só hash) queimado mesmo na recusa, reuso revoga o emitido; PKCE conferido no banco; refresh rotacionado, re-confere admin e revogação na tela a cada renovação; revogação só da concessão do próprio cliente | ✅ por IP (`LIMITES_OAUTH_MCP.token` / `.revogacao`) |
 | `/api/v1/mcp-oauth/iniciar/:state` e `/api/v1/mcp-oauth/callback/:servidor` (OAuth por contato, 9095) | o `state` de `mcp_oauth_pedidos`: 256 bits, uso único (consumido por UPDATE condicional ANTES da troca do `code`), 10 min, amarrado a organização, servidor, contato e conversa; o `code` só vira token com o `code_verifier` cifrado daquela linha (PKCE S256). O endereço de retorno é um por servidor e tem de ser o do pedido; o `iss` (RFC 9207), quando vem, tem de ser o emissor dele. Nada da URL escolhe tenant | ✅ 30/min por IP |
 | `/403`, `/404`, `/500`, `/503`, `/admin/forbidden` | — | ❌ |
 
@@ -231,8 +235,14 @@ Não avaliado por falta de execução/instância:
 - Se as políticas RLS **realmente** isolam (os invariantes existem para provar; não foram rodados).
 - Postura do container WAHA — `docker-compose.prod.yml` comenta "Core por default, dashboard
   off", mas exposição de porta e rede não foram verificadas contra instância viva.
-- Config do Caddy (`Caddyfile`) — TLS, headers de segurança, HSTS.
-- Se `next.config.ts` define CSP / security headers.
+- Config do Caddy (`Caddyfile`) — TLS. Cabeçalho ele não define nenhum (`grep -i header Caddyfile*`
+  não acha nada); os de segurança vêm da origem, no item abaixo.
+- Cabeçalhos de segurança, e este é MEDIDO em vez de "não avaliado": `next.config.ts` manda,
+  em toda resposta, `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`,
+  HSTS de um ano **sem** `includeSubDomains` (o domínio é do cliente e pode ser o apex) e uma
+  CSP curta — `frame-ancestors 'none'; base-uri 'self'; form-action 'self'`, **sem**
+  `script-src`, porque o Next injeta bootstrap inline. Quem reprova a regressão é
+  `tests/unit/cabecalhos-de-seguranca-do-painel.test.ts`.
 - Storage: se o bucket `whatsapp-media` está privado de fato e se a expiração das signed
   URLs é adequada.
 - Storage, e este é MEDIDO e DECLARADO em vez de "não avaliado": `brand-logos` (migration
@@ -248,8 +258,8 @@ Não avaliado por falta de execução/instância:
   continuam só no `service_role`), caminho **não-enumerável** (`<prefixo>/<uuid v4>.<ext>`)
   e teto de 512 KB. O que entra é decidido pelos **bytes** (`lib/branding/logo-arquivo.ts`),
   nunca pelo `Content-Type` — `allowed_mime_types` do bucket e `file.type` na rota leem a
-  mesma string que quem sobe escolhe. **SVG é banido**: este repo não define CSP (ver o item
-  acima sobre `next.config.ts`), e SVG navegado direto do endereço da imagem executa script.
+  mesma string que quem sobe escolhe. **SVG é banido**: a CSP do painel não tem `script-src` e
+  não vale no origin do Storage (ver o item acima sobre `next.config.ts`), e SVG navegado direto do endereço da imagem executa script.
   O que NÃO está coberto: um logo subido é **público para sempre até ser trocado** — quem
   subir por engano uma arte confidencial precisa removê-la pela tela, e a URL antiga deixa
   de existir junto com o arquivo (a rota apaga o anterior na troca).

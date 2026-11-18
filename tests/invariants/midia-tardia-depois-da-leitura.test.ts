@@ -383,7 +383,7 @@ afterAll(async () => {
 describe("#3845 — a mídia que chega depois da última leitura do contexto", () => {
   it("MEDIÇÃO 0: a régua da mídia pendente contra Postgres REAL vê o áudio que chegou", async () => {
     // A régua é a peça que decide se o turno espera a derivação (#3841) e se o
-    // drain adia o despacho. Ela recebe `created_at as quando` — e o driver
+    // drain adia o despacho. Ela recebe a âncora (`case … end as quando`) — e o driver
     // devolve `timestamptz` como `Date`, não como string. Este caso mede isso no
     // banco de verdade: dublê de pool devolve string e esconde a fronteira.
     const id = await audio(new Date().toISOString());

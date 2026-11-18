@@ -1,5 +1,5 @@
 import type { Queryable } from "@/lib/agent-engine/queue/queue";
-import { campaignConfigSchema } from "./schema";
+import { ROTULOS_DAS_OFERTAS, campaignConfigSchema } from "./schema";
 
 /** Trusted operator criteria; scraped websites never become system instructions. */
 export async function prospectingConversationContext(
@@ -7,11 +7,24 @@ export async function prospectingConversationContext(
   org: string,
   conversationId: string,
 ) {
-  const { rows } = await db.query<{ config: unknown; exit_offered_at: Date | null }>(
-    "select c.config, p.exit_offered_at from prospecting_candidates p join prospecting_campaigns c on c.organization_id=p.organization_id and c.id=p.campaign_id where p.organization_id=$1 and p.conversation_id=$2 and p.status in ('sending','sent') limit 1",
+  const { rows } = await db.query<{
+    config: unknown;
+    briefing: unknown;
+    exit_offered_at: Date | null;
+  }>(
+    "select c.config, p.data->'briefing' as briefing, p.exit_offered_at from prospecting_candidates p join prospecting_campaigns c on c.organization_id=p.organization_id and c.id=p.campaign_id where p.organization_id=$1 and p.conversation_id=$2 and p.status in ('sending','sent') order by p.attempted_at desc nulls last limit 1",
     [org, conversationId],
   );
-  const parsed = campaignConfigSchema.safeParse(rows[0]?.config);
+  // A conversa segue com o texto com que COMEÇOU (doc 358 › 1A): quando a campanha
+  // foi editada depois da abordagem, `editBriefing` deixou esse texto em
+  // `data.briefing`, e ele vence a `config` atual.
+  const config = rows[0]?.config;
+  const congelado = rows[0]?.briefing;
+  const parsed = campaignConfigSchema.safeParse(
+    config && typeof config === "object" && congelado && typeof congelado === "object"
+      ? { ...config, ...congelado }
+      : config,
+  );
   if (!parsed.success) return "";
   const c = parsed.data;
   const linha = rows[0];
@@ -27,5 +40,11 @@ export async function prospectingConversationContext(
     fraseSaida =
       "\n\nAntes da mensagem que leva a instrução de saída, não apresente serviço, preço nem proposta: apresente-se e peça permissão. O sistema acrescenta a instrução de saída sozinho; não a escreva.";
   }
-  return `\n\nEsta conversa veio de uma campanha de prospecção. Objetivo definido pelo operador: ${c.instruction}\nCritérios de qualificação a confirmar com a pessoa: ${c.qualification}\nConverse naturalmente, uma pergunta por vez. Uma empresa da lista da campanha ainda não é um cliente qualificado. Registre o que a pessoa confirmar, sem inventar necessidade, orçamento ou interesse. Só depois de confirmar os critérios, use as ferramentas disponíveis para mover o negócio do funil ${c.pipeline_id} para a etapa ${c.qualified_stage_id}. Explique a evidência no registro. Se faltar informação, continue qualificando. Respeite recusa, opt-out e intervenção humana; não prometa condições fora da política do agente.${fraseSaida}`;
+  // Só site é o padrão (`emptyConfig` nasce com ele marcado): quem não mexeu nas caixinhas e
+  // vende outra coisa pelo campo livre não pode passar a ler, em todo turno, que vende site.
+  const soSite = c.ofertas.length === 1 && c.ofertas[0] === "site";
+  const linhaDasOfertas = soSite
+    ? ""
+    : `\nO que esta campanha vende, em ordem: ${c.ofertas.map((o) => ROTULOS_DAS_OFERTAS[o]).join("; ")}.`;
+  return `\n\nEsta conversa veio de uma campanha de prospecção. Objetivo definido pelo operador: ${c.instruction}\nCritérios de qualificação a confirmar com a pessoa: ${c.qualification}${linhaDasOfertas}\nConverse naturalmente, uma pergunta por vez. Uma empresa da lista da campanha ainda não é um cliente qualificado. Registre o que a pessoa confirmar, sem inventar necessidade, orçamento ou interesse. Só depois de confirmar os critérios, use as ferramentas disponíveis para mover o negócio do funil ${c.pipeline_id} para a etapa ${c.qualified_stage_id}. Explique a evidência no registro. Se faltar informação, continue qualificando. Respeite recusa, opt-out e intervenção humana; não prometa condições fora da política do agente.${fraseSaida}`;
 }

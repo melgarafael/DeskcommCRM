@@ -711,7 +711,9 @@ describe('ordem no turno (achado 5 da prova do #1130)', () => {
       'agentConfig.pausedAt',
       'detectHumanHandoffRequest(texto)',
       'detectAmbiguousOptOut(texto)',
-      'isLeadInHandoff(pool, tenantId, leadId)',
+      // O 4º argumento (`conversationId`, #4146) entra depois: o que se pina aqui
+      // é a CHAMADA, não a lista de parâmetros.
+      'isLeadInHandoff(pool, tenantId, leadId,',
     ]) {
       const posicao = src.indexOf(trava);
       expect(posicao, trava).toBeGreaterThan(0);

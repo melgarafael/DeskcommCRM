@@ -1,6 +1,9 @@
 "use client";
+import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
+
+import { ApiError } from "@/lib/api/types";
 
 import { ArrowsClockwise, Warning } from "@/lib/ui/icons";
 import { useT } from "@/hooks/i18n/useT";
@@ -51,6 +54,15 @@ export function SyncPhoneContactsDialog({ open, onOpenChange }: Props) {
    * vez de reler as mil primeiras linhas e parar no milésimo (ponto 2 do CR).
    */
   const [retomada, setRetomada] = useState(0);
+  /**
+   * A ÚLTIMA FALHA, na tela e não só no toast (#4102).
+   *
+   * O motivo muda a ação: store desligado pede ligar uma opção em Conexões;
+   * timeout pede olhar a conexão. Um toast de 4 segundos não dá tempo de ler
+   * uma frase dessas, e o texto que a rota manda já é o certo — a tela só o
+   * mantém visível e, no caso da opção, aponta o caminho.
+   */
+  const [falha, setFalha] = useState<{ mensagem: string; acervo: boolean } | null>(null);
 
   // A pergunta é de CAPABILITY, não de provider — a tela não tem adapter em
   // mãos, então pergunta o que o canal PERMITE ("tem agenda do aparelho para
@@ -72,6 +84,7 @@ export function SyncPhoneContactsDialog({ open, onOpenChange }: Props) {
     setEscolhido(null);
     setResumo(null);
     setRetomada(0);
+    setFalha(null);
   }
 
   /**
@@ -83,6 +96,7 @@ export function SyncPhoneContactsDialog({ open, onOpenChange }: Props) {
     if (!numero || sincronizar.isPending) return;
     try {
       const r = await sincronizar.mutateAsync({ channelSessionId: numero, offset: retomada });
+      setFalha(null);
       setResumo(r);
       setRetomada(r.proximo_offset ?? 0);
       if (r.importados > 0) toast.success(`${r.importados} ${t("contato(s) sincronizado(s)")}`);
@@ -93,6 +107,9 @@ export function SyncPhoneContactsDialog({ open, onOpenChange }: Props) {
         err instanceof Error && err.message
           ? t(err.message)
           : t("Não foi possível ler a agenda do celular.");
+      // O código é o que diz se há CAMINHO a oferecer: só o acervo desligado se
+      // resolve numa tela do próprio sistema (Conexões). Um timeout não.
+      setFalha({ mensagem: msg, acervo: err instanceof ApiError && err.code === "channel_acervo_desligado" });
       toast.error(msg);
     }
   }
@@ -125,6 +142,23 @@ export function SyncPhoneContactsDialog({ open, onOpenChange }: Props) {
           </DialogDescription>
         </DialogHeader>
 
+        {falha && (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-md border border-error-fg/30 bg-error-bg p-3 text-sm"
+          >
+            <Warning size={18} weight="duotone" aria-hidden className="mt-0.5 shrink-0 text-error-fg" />
+            <div className="space-y-1">
+              <p>{falha.mensagem}</p>
+              {falha.acervo && (
+                <Link href="/app/connections" className="underline">
+                  {t("Abrir Conexões")}
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
+
         {!resumo && (
           <form onSubmit={onSubmit} className="space-y-4">
             {canais.isLoading ? (
@@ -144,6 +178,7 @@ export function SyncPhoneContactsDialog({ open, onOpenChange }: Props) {
                       // Outro número, outra agenda: o cursor do anterior não vale.
                       setEscolhido(v);
                       setRetomada(0);
+                      setFalha(null);
                     }}
                   >
                     <SelectTrigger className="w-full">

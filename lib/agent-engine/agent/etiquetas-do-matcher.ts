@@ -8,6 +8,9 @@ import type { LoadedSkill } from './skills';
  * Etiquetas da CONVERSA e do CONTATO que o matcher de skills (`any_tags`) lê. O agente põe
  * essas etiquetas com `crm_manage_tags`.
  *
+ * A etiqueta do NEGÓCIO fica de fora de propósito: uma pessoa com negócios em dois nichos
+ * ativaria as skills dos dois na mesma conversa, e essa seleção ainda não tem regra aprovada.
+ *
  * Só consulta quando alguma skill carregada tem `any_tags` e quando o turno é real (preview
  * não tem conversa). Sempre com organization_id: o pool é o da service role, que ignora RLS,
  * e o id da conversa vem do job, não do body. Falha de leitura não derruba o turno: registra
@@ -21,7 +24,8 @@ export async function etiquetasParaOMatcher(
   preview: TurnPreview | undefined,
   log: Logger,
 ): Promise<string[]> {
-  if (preview) return [];
+  // Prévia (Testar): não há conversa real; as etiquetas são as que o operador simulou.
+  if (preview) return preview.tags ?? [];
   if (!skills.some((s) => (s.matcher.any_tags?.length ?? 0) > 0)) return [];
   try {
     const { rows } = await pool.query<{ tags: string[] | null }>(

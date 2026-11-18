@@ -1,6 +1,6 @@
 // @vitest-environment node
-import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { pedidoComTamanho } from "@/tests/helpers/pedido-com-tamanho";
 
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
@@ -110,7 +110,7 @@ async function importar(linhas: string[]): Promise<Resumo> {
     "contatos.csv",
     { type: "text/csv" },
   ));
-  const resposta = await POST(new NextRequest("http://localhost/api/v1/contacts/import", {
+  const resposta = await POST(await pedidoComTamanho("http://localhost/api/v1/contacts/import", {
     method: "POST",
     body: form,
   }));
@@ -336,7 +336,7 @@ describe("POST /api/v1/contacts/import — a planilha segue o PAÍS da organiza�
       "contatos.csv",
       { type: "text/csv" },
     ));
-    const resposta = await POST(new NextRequest("http://localhost/api/v1/contacts/import", {
+    const resposta = await POST(await pedidoComTamanho("http://localhost/api/v1/contacts/import", {
       method: "POST",
       body: form,
     }));
@@ -392,7 +392,7 @@ describe("POST /api/v1/contacts/import — o CPF grava os DOIS campos ou nenhum 
       "contatos.csv",
       { type: "text/csv" },
     ));
-    const resposta = await POST(new NextRequest("http://localhost/api/v1/contacts/import", {
+    const resposta = await POST(await pedidoComTamanho("http://localhost/api/v1/contacts/import", {
       method: "POST",
       body: form,
     }));

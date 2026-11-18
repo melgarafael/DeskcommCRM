@@ -31,7 +31,14 @@ const TabsList = React.forwardRef<
       // fora. Não é `h-auto lg:h-9`: quem já passa `h-auto` (Conexões, Inbox)
       // perderia o `h-auto` no computador, porque o `tailwind-merge` derruba o
       // da base e deixa o `lg:h-9` de pé.
-      "inline-flex h-9 max-w-full items-center max-lg:h-auto justify-center overflow-x-auto rounded-lg bg-muted p-1 text-muted-foreground",
+      //
+      // `justify-center-safe` e não `justify-center`: centralizar uma fila que
+      // TRANSBORDA empurra metade do excesso para a esquerda, onde a rolagem não
+      // chega (`scrollLeft` não fica negativo). Medido a 375 px no detalhe do
+      // agente: a primeira aba, "Configuração", ficava em left = -80 px, e quem
+      // ia ao Histórico no celular não tinha como voltar. `safe` centraliza
+      // quando cabe e começa pela primeira quando não cabe.
+      "inline-flex h-9 max-w-full items-center max-lg:h-auto justify-center-safe overflow-x-auto rounded-lg bg-muted p-1 text-muted-foreground",
       className,
     )}
     {...props}

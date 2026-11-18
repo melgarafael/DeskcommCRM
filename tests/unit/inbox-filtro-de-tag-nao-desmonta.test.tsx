@@ -140,11 +140,16 @@ describe("não-regressão: o que a condicional protegia", () => {
     expect(gatilho()).not.toBeInTheDocument();
   });
 
-  it("vocabulário em voo, sem nada conhecido ainda, também não desenha o seletor", () => {
+  it("vocabulário em voo, sem nada conhecido ainda: gatilho em carregamento", () => {
+    // #1336 mudou o que este caso guarda. Antes, "ainda não sei" era tratado
+    // como "não tenho nada" e o gatilho NÃO nascia — era a piscada: o controle
+    // aparecia quando o dado chegava. Agora o estado (a) é dito na tela desde o
+    // primeiro render (e o menu diz que está carregando). O que continua
+    // proibido é inventar opção — ver `inbox-filtro-de-tag-tres-estados`.
     tagsRef.current = undefined;
     tagsDoContatoRef.current = undefined;
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
-    expect(gatilho()).not.toBeInTheDocument();
+    expect(gatilho()).toBeInTheDocument();
   });
 
   it("filtro órfão mantém a válvula: o seletor aparece com a etiqueta que sumiu do vocabulário", () => {

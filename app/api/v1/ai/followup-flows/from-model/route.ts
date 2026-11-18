@@ -3,38 +3,26 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * POST /api/v1/ai/followup-flows/from-model — instala um modelo pronto do
  * catálogo (`lib/followup/modelos/`) como fluxo RASCUNHO da organização ativa.
  *
- * O que ela grava, de uma vez: o ponteiro com o nome do modelo, o `draft_graph`
- * inteiro (textos e prazos), o `trigger_config` já armado e a política de
- * handoff. O que ela NÃO faz, e as duas omissões são deliberadas:
+ * ─── A regra NÃO mora mais aqui ──────────────────────────────────────────────
  *
- *   • **não publica.** Texto que vai para paciente é lido por uma pessoa antes
- *     de sair. O fluxo nasce `draft`, e publicar continua sendo o botão do
- *     construtor — que roda o mesmo `validateFlowForPublish` de sempre.
- *   • **não mexe em agente nenhum.** Gatilho automático só enrolla se um agente
- *     PUBLICADO tem o ponteiro em `followup.flow_pointer_ids`
- *     (`agent-followup-gate.ts`). Ligar isso sozinha seria mudar o
- *     comportamento de um agente que já atende, sem ninguém pedir. Quem avisa
- *     que falta esse passo é a tela.
+ * A conferência do modelo e da etapa, a validação do grafo ANTES do insert, o
+ * insert como rascunho, o 409 do nome repetido e a auditoria estão em
+ * `lib/followup/instalar-modelo.ts` — `instalarFluxoDoModelo`. Motivo: o servidor
+ * MCP instala fluxo pelo assistente e precisava da MESMA regra, sem chamar esta
+ * API por HTTP nem copiá-la. Ver a issue #4688.
  *
- * ⚠️ O GRAFO É VALIDADO AQUI, ANTES DO INSERT. `draft_graph` é `jsonb` sem
- * CHECK: um modelo quebrado entraria no banco em silêncio e só apareceria
- * quando o dono da clínica abrisse o construtor. O catálogo é código nosso, e
- * por isso a falha é 500 `modelo_invalido` — defeito do produto, não do pedido.
- *
- * Auth: sessão de navegador OU Bearer `dsk_...` (api_tokens) via
- * `lib/api/auth-dual.ts` — a mesma dualidade das demais rotas de configuração
- * que aceitam token. No ramo do token, a org sai da linha do token.
+ * Esta rota guarda a BORDA, e só ela: `requireSupportWrite`, `resolveAuthDual`
+ * (manager, `mcp:write`), `tetoDeEscritaDoToken`, a leitura do JSON, o
+ * `instalarModeloSchema`, a chamada da função e `ok(data, { status: 201 })` ou
+ * `fail()` com o `requestId`.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
-import { audit } from "@/lib/audit";
-import { instalarModeloSchema, triggerConfigSchema } from "@/lib/followup/api-schemas";
-import { flowGraphSchema } from "@/lib/followup/graph-schema";
-import { validateFlowForPublish } from "@/lib/followup/validate-publish";
-import { modeloPorId } from "@/lib/followup/modelos";
+import { instalarModeloSchema } from "@/lib/followup/api-schemas";
+import { instalarFluxoDoModelo } from "@/lib/followup/instalar-modelo";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -72,103 +60,12 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
-  const modelo = modeloPorId(parsed.data.model_id);
-  if (!modelo) {
-    return fail("not_found", t("Este modelo não existe mais."), 404, { requestId });
-  }
+  const r = await instalarFluxoDoModelo(
+    supabase,
+    { organizationId, actor, apiTokenId: apiTokenId ?? null, requestId, t },
+    parsed.data,
+  );
+  if (!r.ok) return fail(r.code, r.message, r.status, { requestId });
 
-  // A etapa é conferida AQUI, com alguém na tela — e não só no publish. Etapa de
-  // outra organização, apagada ou arquivada deixa o fluxo `active` sem nunca
-  // enrollar ninguém: fluxo morto com cara de vivo.
-  if (modelo.pedeEtapa) {
-    if (!parsed.data.stage_id) {
-      return fail(
-        "trigger_stage_missing",
-        t("Escolha a etapa do funil que dispara este fluxo."),
-        422,
-        { requestId },
-      );
-    }
-    const { data: etapa, error: etapaErr } = await supabase
-      .from("crm_stages")
-      .select("id, name, is_archived")
-      .eq("id", parsed.data.stage_id)
-      .eq("organization_id", organizationId)
-      .maybeSingle();
-    if (etapaErr) return fail("internal_error", etapaErr.message, 500, { requestId });
-    if (!etapa) {
-      return fail(
-        "trigger_stage_not_found",
-        t("A etapa escolhida não existe neste funil — escolha outra."),
-        422,
-        { requestId },
-      );
-    }
-    if (etapa.is_archived) {
-      return fail(
-        "trigger_stage_archived",
-        `A etapa «${etapa.name}» está arquivada e nunca receberia um negócio — escolha uma etapa ativa.`,
-        422,
-        { requestId },
-      );
-    }
-  }
-
-  const gatilho = triggerConfigSchema.safeParse(modelo.gatilho({ stageId: parsed.data.stage_id }));
-  const grafo = flowGraphSchema.safeParse(modelo.grafo);
-  // Sem contexto de conexão: o modelo do catálogo tem de ser publicável em
-  // QUALQUER organização, inclusive a que tem canal com janela de 24 h.
-  const publicavel = grafo.success ? validateFlowForPublish(grafo.data) : null;
-  if (!gatilho.success || !grafo.success || (publicavel && !publicavel.ok)) {
-    return fail(
-      "internal_error",
-      `modelo_invalido: ${modelo.id}`,
-      500,
-      { requestId },
-    );
-  }
-
-  const nome = parsed.data.name ?? modelo.nome;
-  const { data: criado, error: insErr } = await supabase
-    .from("followup_flow_pointers")
-    .insert({
-      organization_id: organizationId,
-      name: nome,
-      draft_graph: grafo.data,
-      trigger_config: gatilho.data,
-      handoff_policy: modelo.handoffPolicy,
-    })
-    .select("*")
-    .single();
-
-  if (insErr || !criado) {
-    // Instalar duas vezes é engano comum (a pessoa não vê o fluxo na lista e
-    // clica de novo). O 409 nomeia o fluxo que JÁ existe em vez de criar um
-    // segundo com o mesmo desenho disputando o mesmo paciente — só uma
-    // inscrição por contato vive por vez (`idx_followup_enrollments_one_live`).
-    if (insErr?.code === "23505") {
-      return fail(
-        "conflict",
-        `Você já tem um fluxo chamado «${nome}». Abra esse ou instale com outro nome.`,
-        409,
-        { requestId },
-      );
-    }
-    return fail("internal_error", insErr?.message ?? "followup_flow_insert_failed", 500, {
-      requestId,
-    });
-  }
-
-  void audit({
-    action: "followup_flow.created",
-    actorUserId: actor.type === "user" ? actor.id : null,
-    actorApiTokenId: apiTokenId ?? null,
-    organizationId,
-    resourceType: "followup_flow_pointer",
-    resourceId: criado.id,
-    requestId,
-    metadata: { name: nome, model_id: modelo.id, trigger_kind: gatilho.data.kind },
-  });
-
-  return ok(criado, { requestId, status: 201 });
+  return ok(r.data, { requestId, status: 201 });
 }

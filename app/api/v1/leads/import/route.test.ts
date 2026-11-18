@@ -20,6 +20,7 @@
 // o caso 1 vermelho (nenhuma remoção) e os controles verdes.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { pedidoComTamanho } from "@/tests/helpers/pedido-com-tamanho";
 import { NextRequest } from "next/server";
 
 import { createLeadHandler } from "@/app/api/v1/leads/_handler";
@@ -99,12 +100,12 @@ function supabaseFake({ contatosComNegocio = [] as string[] } = {}) {
   return { cliente: { from } as never, inseridos, remocoes };
 }
 
-function pedido(): NextRequest {
+function pedido(): Promise<NextRequest> {
   const form = new FormData();
   form.append("file", new File([PLANILHA], "leads.csv", { type: "text/csv" }));
   form.append("pipeline_id", FUNIL);
   form.append("stage_id", ETAPA);
-  return new NextRequest("http://localhost/api/v1/leads/import", { method: "POST", body: form });
+  return pedidoComTamanho("http://localhost/api/v1/leads/import", { method: "POST", body: form });
 }
 
 async function importar(entrada: {
@@ -124,7 +125,7 @@ async function importar(entrada: {
   });
 
   const { POST } = await import("./route");
-  const res = await POST(pedido());
+  const res = await POST(await pedido());
   return { status: res.status, corpo: (await res.json()) as Record<string, unknown>, fake };
 }
 

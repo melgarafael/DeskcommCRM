@@ -37,5 +37,15 @@ export default async function ContactDetailPage({
   // Módulo opcional `mcp_por_agente` (doc 252): desligado, a lista de acessos do
   // contato a servidores MCP externos não aparece na aba LGPD.
   const acessosMcp = await moduloLigado(createAdminClient(), "mcp_por_agente");
-  return <ContactDetailClient contactId={id} paineisDeModulo={paineisDeModulo} acessosMcp={acessosMcp} />;
+  // Módulo opcional `crm_b2b` (doc 68, issue #3198): desligado, a ficha não
+  // ganha o cartão "Pessoa" nem chama rota de empresas e pessoas.
+  const b2b = await moduloLigado(createAdminClient(), "crm_b2b");
+  return (
+    <ContactDetailClient
+      contactId={id}
+      paineisDeModulo={paineisDeModulo}
+      acessosMcp={acessosMcp}
+      b2b={b2b}
+    />
+  );
 }

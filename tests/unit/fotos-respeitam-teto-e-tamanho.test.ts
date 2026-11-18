@@ -18,11 +18,12 @@ describe("fotos do catálogo", () => {
     expect(recorte).not.toMatch(/fotosDoProduto\.slice\(0,/);
   });
 
-  it("a rota de upload recusa pelo Content-Length antes de ler o corpo", () => {
+  it("a rota de upload só lê o corpo pelo teto (tests/unit/uploads-passam-pelo-teto)", () => {
     const rota = ler("app/api/v1/products/[id]/fotos/route.ts");
-    const precheck = rota.indexOf('req.headers.get("content-length")');
-    const leitura = rota.indexOf("req.formData()");
-    expect(precheck).toBeGreaterThan(-1);
-    expect(precheck).toBeLessThan(leitura);
+    const teto = rota.indexOf("lerCorpoComTeto(req");
+    const leitura = rota.indexOf(".formData()");
+    expect(teto).toBeGreaterThan(-1);
+    expect(teto).toBeLessThan(leitura);
+    expect(rota).not.toContain("req.formData()");
   });
 });

@@ -33,6 +33,7 @@ export interface NavGroup {
 }
 
 export interface NavMetadata {
+  agenciaOnly?: boolean;
   href: string;
   label: string;
   /** Aparece no card do hub e é texto buscável no ⌘K. Nunca vazio. */
@@ -147,6 +148,7 @@ export function sobeAoMenuLateral(
  * fechada e por isso não vira `minRole`.
  */
 export const NAV_CATALOG = [
+  { href: "/app/settings/organizacoes", label: "Organizações clientes", description: "Crie e administre os clientes da sua agência.", icon: "Buildings", group: "organizacao", section: "Empresa", minRole: "admin", agenciaOnly: true },
   {
     // SEM `sidebar: true`, e a razão não tem nada a ver com a qualidade desta
     // tela: o menu lateral está no limite medido. Com ela, seriam 20 portas, e
@@ -206,6 +208,18 @@ export const NAV_CATALOG = [
     icon: "CalendarBlank",
     group: "atendimento",
     sidebar: true,
+  },
+  {
+    // Módulo opcional (ADR-0002, doc 208): a porta só existe depois que o
+    // administrador da instalação instala `lista_de_espera` em `/admin/modulos`.
+    href: "/app/agenda/lista-de-espera",
+    label: "Lista de espera",
+    description: "Quem aceitou ser avisado quando abrir um horário, na ordem da fila.",
+    icon: "CalendarBlank",
+    group: "crm",
+    section: "O dia a dia da venda",
+    minRole: "viewer",
+    modulo: "lista_de_espera",
   },
   {
     // Renomeado de "Templates": estes são scripts do atendente, consumidos pelo
@@ -796,6 +810,20 @@ export const NAV_CATALOG = [
     healthDot: true,
   },
   {
+    // Módulo opcional (ADR-0002, #4227): a porta só existe depois que o dono da
+    // instalação instala `amigo` em `/admin/modulos`. Mesmo filtro de cadências.
+    href: "/app/integrations/amigo",
+    label: "Amigo",
+    description: "Ligue a agenda ao sistema de clínicas Amigo: pacientes, convênios e consultas.",
+    icon: "CalendarBlank",
+    // No hub do CRM, não no menu lateral: toda porta de módulo mora num hub
+    // (`tests/unit/porta-do-modulo-ligado.test.tsx`), e é ali que a agenda está.
+    group: "crm",
+    section: "O dia a dia da venda",
+    minRole: "agent",
+    modulo: "amigo",
+  },
+  {
     // Não tinha link nenhum no app inteiro: só se chegava digitando a URL.
     href: "/app/integrations/nuvemshop",
     label: "Nuvemshop",
@@ -870,6 +898,27 @@ export const NAV_CATALOG = [
     // `/admin/modulos`. Mesmo mecanismo genérico de `banco_externo` acima, só
     // que a fonte é a TABELA, não a flag de `platform_config`; `deModuloDesligado`
     // e este filtro não sabem a diferença, e não precisam saber.
+    href: "/app/cadencias",
+    label: "Cadências de e-mail",
+    description: "Sequências de e-mail por negócio, com descadastro.",
+    icon: "PaperPlaneTilt",
+    group: "crm",
+    section: "O dia a dia da venda",
+    minRole: "manager",
+    modulo: "cadencias",
+    capacidade: "cadencias",
+  },
+  {
+    href: "/app/settings/cadencias",
+    label: "Configurar cadências",
+    description: "Ativar as cadências de e-mail nesta empresa.",
+    icon: "PaperPlaneTilt",
+    group: "organizacao",
+    section: "Sua empresa",
+    minRole: "admin",
+    modulo: "cadencias",
+  },
+  {
     href: "/app/honorarios",
     label: "Honorários",
     description: "O modelo de cobrança de cada caso e o calendário de parcelas.",
@@ -931,6 +980,15 @@ export const NAV_CATALOG = [
     sidebar: true,
   },
   {
+    href: "/app/ads/google",
+    label: "Google Ads",
+    description: "Resultados dos negócios atribuídos ao Google Ads e desempenho da conta de anúncios.",
+    icon: "Megaphone",
+    group: "analise",
+    section: "Os números do período",
+    minRole: "manager",
+  },
+  {
     // Irmã de "Desempenho", não a mesma coisa: lá é DESFECHO (funil agora,
     // ganho/perdido por atendente); aqui é o TRABALHO que aconteceu no
     // período, com quem fez cada coisa. Um mês inteiro atendido pela IA e um
@@ -944,6 +1002,18 @@ export const NAV_CATALOG = [
     group: "analise",
     section: "Os números do período",
     sidebar: true,
+  },
+  {
+    // Em Análise, e não em Atendimento: porta de módulo mora em grupo com hub
+    // ("Ver tudo em Análise"), como a do Cold Call.
+    href: "/app/painel",
+    label: "Painel de atendimento",
+    description: "Quem espera resposta, quem está em atendimento e quem foi atendido hoje, por número.",
+    icon: "ListChecks",
+    group: "analise",
+    section: "Os números do período",
+    // Módulo opcional da instalação, desligado por padrão (#3403).
+    modulo: "painel_atendimento",
   },
   {
     // Observabilidade, não configuração: por isso não fica junto dos agentes.
@@ -1014,6 +1084,28 @@ export const NAV_CATALOG = [
     label: "Distribuição de atendimento",
     description: "Quem recebe cada cliente novo, e o que cada atendente enxerga.",
     icon: "UsersThree",
+    group: "organizacao",
+    section: "Sua empresa",
+    minRole: "manager",
+  },
+  {
+    // A tela da #3603. O prazo dos fluxos de etapa parada já se editava no
+    // construtor, mas só fluxo por fluxo: nenhuma tela mostrava quais deles
+    // alcançam cada etapa. A tela é uma JANELA para os fluxos de etapa parada:
+    // mostra os que alcançam cada etapa e edita o prazo NO PRÓPRIO FLUXO, sem
+    // chave paralela em `settings`.
+    //
+    // A entrada automática no funil NÃO está aqui: ela vive na main como um
+    // interruptor e a escolha de funil/etapa saiu da action. Uma tela que a
+    // oferecesse gravaria valor que ninguém lê.
+    //
+    // `manager` e não `admin`, pela mesma linha da matriz da spec 13 §4 que cobre
+    // "atendimento/routing": quem monta a régua comercial da empresa é o gerente,
+    // e nada aqui apaga conversa nem mexe em dinheiro.
+    href: "/app/settings/followup-por-etapa",
+    label: "Follow-up por etapa",
+    description: "O que a operação espera de cada etapa do funil depois que a conversa chega.",
+    icon: "FlowArrow",
     group: "organizacao",
     section: "Sua empresa",
     minRole: "manager",
@@ -1129,6 +1221,17 @@ export const NAV_CATALOG = [
     // 900px, medido pelo e2e `navegacao.spec.ts`.
   },
   {
+    href: "/app/settings/aparencia",
+    label: "Aparência",
+    description: "O template visual do sistema: fundo, menu, tipografia, cantos e densidade.",
+    icon: "PaintBrush",
+    group: "organizacao",
+    section: "Sua empresa",
+    // `admin`, como a Marca: o visual é identidade da empresa e vale para todos.
+    // SEM `sidebar` pelo mesmo motivo da linha de cima — a dobra de 900px.
+    minRole: "admin",
+  },
+  {
     href: "/app/settings/billing",
     // Spec da cobrança §9: as mensagens de limite e a Central mandam para
     // "Configurações › Plano e cobrança" — o item precisa ter esse nome.
@@ -1147,6 +1250,22 @@ export const NAV_CATALOG = [
     group: "organizacao",
     section: "Dados e acesso",
     minRole: "admin",
+  },
+  {
+    // A tela de gestão da Ouvidoria (#3611, fatia 3). `admin` porque é a régua
+    // da leitura: a RLS da 9040 exige `fn_role_at_least(…, 'admin')` e a tela
+    // barra em `lib/ouvidoria/acesso.ts`. Oferecer a porta a `manager` criaria
+    // um item de menu que responde "não pode" ao clicar. Módulo de tabela
+    // (ADR-0002): a porta só existe depois que quem administra a instalação
+    // instala `ouvidoria` em `/admin/modulos`.
+    href: "/app/ouvidoria",
+    label: "Ouvidoria",
+    description: "Reclamações, denúncias e elogios recebidos pela empresa, com protocolo.",
+    icon: "Flag",
+    group: "organizacao",
+    section: "Dados e acesso",
+    minRole: "admin",
+    modulo: "ouvidoria",
   },
   {
     href: "/app/settings/api-tokens",

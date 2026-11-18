@@ -15,6 +15,7 @@ import { comercialExigeHumanoViaSupabase, restricaoComercialBarra } from "@/lib/
 import { ttlDaAutorizacaoMs } from "@/lib/ai/elegibilidade/gate";
 import { createSupabaseAdminClient, type FollowupJobRequest } from "@/lib/followup/engine";
 import { canalDaConversa, decidirAdiamentoPorJanela } from "@/lib/followup/janela-de-disparo";
+import { liberaEnvioComODonoViaSupabase } from "@/lib/followup/envio-com-o-dono";
 import { criarPacingDoCanal } from "@/lib/agent-engine/pacing/ledger-supabase";
 import { adiamentoPorRitmo } from "@/lib/followup/ritmo-do-texto-fixo";
 import type { EnrollmentRow } from "@/lib/followup/node-handlers";
@@ -170,13 +171,51 @@ export async function enviarTextoFixoPendente(
         ttlMs: ttlDaAutorizacaoMs(process.env),
       });
       if (elegib !== null && !elegib.permite) {
-        logger.info("[followup] texto fixo não enviado — conversa não elegível para IA", {
+        // #3974 — A OPÇÃO POR FLUXO "enviar mesmo com a conversa atribuída".
+        //
+        // O dono da conversa aparece aqui como `conversa_de_humano`
+        // (`assignee_kind = 'user'`) ou `conversa_silenciada` (o silêncio
+        // `infinity` que assumir/atribuir grava). Ligada a opção E sendo a posse
+        // o ÚNICO motivo (`liberaEnvioComODonoViaSupabase` confere `force_human`,
+        // `ai_opt_out` e contato interno por conta própria, e NÃO libera o
+        // silêncio sem dono nem a pausa manual), o envio segue.
+        //
+        // As réguas seguintes continuam valendo para este job: restrição
+        // comercial, as duas janelas de horário, o ritmo anti-ban, a agenda e o
+        // `is_blocked` da cadeia. E o veto da IA não muda — este caminho só
+        // envia texto de operador.
+        const posse = elegib.motivo === "conversa_de_humano" || elegib.motivo === "conversa_silenciada";
+        let liberadoPelaOpcao = false;
+        if (posse) {
+          try {
+            liberadoPelaOpcao = await liberaEnvioComODonoViaSupabase(admin, {
+              organizationId: job.organization_id as string,
+              contactId,
+              enrollmentId: payload.followup_enrollment_id,
+            });
+          } catch (err) {
+            // Fail-closed: não liberar sem conseguir ler o que a liberação exige.
+            logger.warn("[followup] opção de envio com dono não pôde ser lida", {
+              organization_id: job.organization_id,
+              enrollment_id: enrollmentId,
+              error: err instanceof Error ? err.message.slice(0, 160) : "erro desconhecido",
+            });
+          }
+        }
+        if (!liberadoPelaOpcao) {
+          logger.info("[followup] texto fixo não enviado — conversa não elegível para IA", {
+            organization_id: job.organization_id,
+            conversation_id: conversationId,
+            motivo: elegib.motivo,
+          });
+          await settle(job.organization_id,job.id,jobClaim.acquired_at,true);
+          continue;
+        }
+        logger.info("[followup] texto fixo liberado pela opção do fluxo — a conversa está com uma pessoa", {
           organization_id: job.organization_id,
           conversation_id: conversationId,
           motivo: elegib.motivo,
         });
-        await settle(job.organization_id,job.id,jobClaim.acquired_at,true);
-        continue;
       }
 
       // #2877 — A RESTRIÇÃO COMERCIAL, TAMBÉM AQUI. O worker (`followup-turn.ts`)

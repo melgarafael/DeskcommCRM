@@ -31,16 +31,22 @@ import {
 import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSessions";
 import { useT } from "@/hooks/i18n/useT";
 import { useAgentesPublicados, useEtapas, useFunis } from "@/hooks/campanhas/useDestinoDaCampanha";
-import { VARIAVEIS_DA_CAMPANHA, DESCRICAO_DA_VARIAVEL } from "@/lib/campanhas/renderizador";
+import { SeletorDeVariavel } from "@/components/variaveis/SeletorDeVariavel";
+import { PreviaComValores } from "@/components/variaveis/PreviaComValores";
 
 import {
   ModeloDaCampanha,
   variaveisIncompletas,
   type EscolhaDoModelo,
 } from "../_components/ModeloDaCampanha";
-import { VelocidadeDaCampanha, type Velocidade } from "../_components/VelocidadeDaCampanha";
+import {
+  VelocidadeDaCampanha,
+  variaveisParaOBroadcast,
+  variaveisQueImpedemOBroadcast,
+  type Velocidade,
+} from "../_components/VelocidadeDaCampanha";
 
-export function NovaCampanha() {
+export function NovaCampanha({ emailLigado = false }: { emailLigado?: boolean }) {
   const t = useT();
   const router = useRouter();
   const canais = useChannelSessions();
@@ -69,13 +75,28 @@ export function NovaCampanha() {
   const [etapaDoPublico, setEtapaDoPublico] = useState("");
   const [modelo, setModelo] = useState<EscolhaDoModelo | null>(null);
   const [velocidade, setVelocidade] = useState<Velocidade>("gradual");
+  /**
+   * Canal de e-mail (#3441). Ligado, a campanha não tem número: o remetente é a
+   * conta Resend da organização e o endereço é o de cada contato. Quem recusa a
+   * organização sem conta é o servidor — a tela não sabe (nem deve) se ela existe.
+   */
+  const [canalDeEmail, setCanalDeEmail] = useState(false);
+  const [assunto, setAssunto] = useState("");
 
   // O que o número escolhido aceita: texto livre (QR) ou modelo aprovado
   // (oficial). Quem decide é o servidor, pela capability do canal.
-  const doCanal = useModelosDaCampanha(canal);
-  const ehOficial = doCanal.data?.modo === "template";
-  // Rápida só no número oficial: trocar para um número por QR volta a gradual.
-  const rapida = ehOficial && velocidade === "rapida";
+  // E-mail não tem modelo: o hook nem consulta, porque não há número escolhido.
+  const doCanal = useModelosDaCampanha(canalDeEmail ? "" : canal);
+  const ehOficial = !canalDeEmail && doCanal.data?.modo === "template";
+  // Rápida e broadcast só no número oficial: trocar para um número por QR volta
+  // a gradual. O broadcast, só quando o provedor do número o faz.
+  const transmissaoNoNumero = ehOficial && doCanal.data?.transmissao === true;
+  const velocidadeEfetiva: Velocidade = !ehOficial
+    ? "gradual"
+    : velocidade === "transmissao" && !transmissaoNoNumero
+      ? "rapida"
+      : velocidade;
+  const emBroadcast = velocidadeEfetiva === "transmissao";
   const providerDoCanal = (canais.data ?? []).find((c) => c.id === canal)?.provider ?? null;
   const modeloEscolhido =
     modelo && doCanal.data
@@ -87,6 +108,8 @@ export function NovaCampanha() {
     modelo !== null &&
     modeloEscolhido !== null &&
     variaveisIncompletas(modeloEscolhido, modelo.variables).length === 0;
+  const variaveisDoBroadcast = variaveisParaOBroadcast(modeloEscolhido, modelo?.variables);
+  const broadcastTravado = emBroadcast && variaveisQueImpedemOBroadcast(variaveisDoBroadcast).length > 0;
 
   const funis = useFunis();
   const etapas = useEtapas(funil || null);
@@ -114,34 +137,50 @@ export function NovaCampanha() {
 
   const podeSalvar =
     nome.trim() !== "" &&
-    canal !== "" &&
+    (canalDeEmail ? assunto.trim() !== "" && texto.trim() !== "" : canal !== "") &&
     (ehOficial ? modeloPronto : texto.trim() !== "") &&
+    !broadcastTravado &&
     temCriterio &&
     (baseLegal !== "legitimate_interest" || liaRef.trim() !== "");
 
   async function salvar() {
     const criada = await criar.mutateAsync({
       name: nome.trim(),
-      channel_session_id: canal,
-      ...(ehOficial && modelo
+      // Sem número, o canal é e-mail: `channel_session_id` fica de fora (o
+      // esquema recusa número junto com `canal: "email"`), e o conteúdo é
+      // assunto + corpo — a mesma conferência que a prévia usa.
+      ...(canalDeEmail
         ? {
-            message_mode: "template",
-            provider_template_name: modelo.name,
-            provider_template_language: modelo.language,
-            provider_template_variables: modelo.variables,
+            canal: "email" as const,
+            message_mode: "email" as const,
+            email_subject: assunto.trim(),
+            message_body: texto.trim(),
+            channel_session_ids: [],
           }
-        : { message_body: texto.trim() }),
+        : {
+            channel_session_id: canal,
+            ...(ehOficial && modelo
+              ? {
+                  message_mode: "template" as const,
+                  provider_template_name: modelo.name,
+                  provider_template_language: modelo.language,
+                  provider_template_variables: modelo.variables,
+                }
+              : { message_body: texto.trim() }),
+            channel_session_ids: ehOficial ? [] : extras,
+          }),
       base_legal: baseLegal,
       lia_ref: liaRef.trim() || null,
       audience_filter: filtro,
-      // Na rápida o intervalo não vale (a rajada tem o próprio espaçamento).
-      intervalo_segundos: intervalo && !rapida ? Number(intervalo) : null,
-      velocidade: rapida ? "rapida" : "gradual",
+      // Na rápida o intervalo não vale (a rajada tem o próprio espaçamento); no
+      // broadcast a tela não oferece os máximos da campanha: a lista sai inteira,
+      // e quem freia é o teto diário do número (`tetoDaTransmissao`).
+      intervalo_segundos: intervalo && velocidadeEfetiva === "gradual" ? Number(intervalo) : null,
+      velocidade: velocidadeEfetiva,
       janela_inicio_hora: janelaInicio ? Number(janelaInicio) : null,
       janela_fim_hora: janelaFim ? Number(janelaFim) : null,
-      teto_diario: tetoDiario ? Number(tetoDiario) : null,
-      teto_horario: tetoHorario ? Number(tetoHorario) : null,
-      channel_session_ids: ehOficial ? [] : extras,
+      teto_diario: tetoDiario && !emBroadcast ? Number(tetoDiario) : null,
+      teto_horario: tetoHorario && !emBroadcast ? Number(tetoHorario) : null,
       pipeline_id: funil || null,
       stage_id: etapa || null,
       agent_id: agente || null,
@@ -169,6 +208,41 @@ export function NovaCampanha() {
             placeholder={t("Ex.: Reativação de clientes parados")}
           />
         </div>
+        {/* Doc 305 (A): a escolha do canal só existe com o módulo
+            `campanha_por_email` ligado. Desligado, a campanha é de WhatsApp e o
+            servidor recusa a de e-mail (`campanha_email_desligada`). */}
+        {emailLigado && (
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium">{t("Por onde a campanha fala")}</legend>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="canal-da-campanha"
+              checked={!canalDeEmail}
+              onChange={() => setCanalDeEmail(false)}
+            />
+            {t("WhatsApp (número conectado)")}
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="canal-da-campanha"
+              checked={canalDeEmail}
+              onChange={() => setCanalDeEmail(true)}
+            />
+            {t("E-mail")}
+          </label>
+          {canalDeEmail && (
+            <p className="text-sm text-muted-foreground">
+              {t(
+                "O e-mail sai pela conta Resend da organização: sem ela conectada, a campanha é recusada com o motivo.",
+              )}
+            </p>
+          )}
+        </fieldset>
+        )}
+
+        {!canalDeEmail && (
         <div className="space-y-2">
           <Label htmlFor="canal">{t("Enviar pelo número")}</Label>
           <select
@@ -194,6 +268,7 @@ export function NovaCampanha() {
             </p>
           )}
         </div>
+        )}
 
         {ehOficial && (canais.data ?? []).length > 1 && (
           <p className="text-sm text-muted-foreground">
@@ -202,7 +277,7 @@ export function NovaCampanha() {
             )}
           </p>
         )}
-        {!ehOficial && (canais.data ?? []).length > 1 && (
+        {!canalDeEmail && !ehOficial && (canais.data ?? []).length > 1 && (
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium">{t("Falar também por estes números")}</legend>
             <p className="text-sm text-muted-foreground">
@@ -283,6 +358,13 @@ export function NovaCampanha() {
             "Escolha pelo menos um critério — uma lista sem recorte ninguém confere antes de apertar.",
           )}
         </p>
+        {canalDeEmail && (
+          <p className="text-sm text-muted-foreground">
+            {t(
+              "Só contatos com e-mail recebem esta campanha; quem não tem fica de fora e aparece na contagem.",
+            )}
+          </p>
+        )}
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="com-tags">{t("Com alguma destas etiquetas")}</Label>
@@ -369,6 +451,7 @@ export function NovaCampanha() {
               previa.mutate({
                 audience_filter: filtro,
                 message_body: ehOficial ? "" : texto,
+                ...(canalDeEmail ? { canal: "email" as const } : {}),
                 ...(ehOficial && modelo
                   ? {
                       modelo: {
@@ -411,6 +494,21 @@ export function NovaCampanha() {
 
       <Card className="space-y-4 p-4">
         <h2 className="font-medium">{t("Mensagem")}</h2>
+        {canalDeEmail && (
+          <div className="space-y-2">
+            <Label htmlFor="assunto">{t("Assunto do e-mail")}</Label>
+            <Input
+              id="assunto"
+              value={assunto}
+              onChange={(e) => setAssunto(e.target.value)}
+              maxLength={150}
+              placeholder={t("Escreva o assunto do e-mail: é ele que o cliente vê antes de abrir.")}
+            />
+            <p className="text-sm text-muted-foreground">
+              {t("Até 150 caracteres: o cliente de e-mail corta o resto.")}
+            </p>
+          </div>
+        )}
         {ehOficial ? (
           <ModeloDaCampanha
             channelSessionId={canal}
@@ -421,28 +519,25 @@ export function NovaCampanha() {
         ) : (
           <>
             <Textarea
-              rows={6}
+              rows={canalDeEmail ? 12 : 6}
               value={texto}
               onChange={(e) => setTexto(e.target.value)}
-              placeholder={t("Escreva como você falaria com uma pessoa só.")}
-              aria-label={t("Texto da mensagem")}
+              placeholder={
+                canalDeEmail
+                  ? t("Escreva o corpo do e-mail.")
+                  : t("Escreva como você falaria com uma pessoa só.")
+              }
+              aria-label={canalDeEmail ? t("Corpo do e-mail (texto puro)") : t("Texto da mensagem")}
             />
+            <PreviaComValores texto={texto} fonte="campanha" />
             <div className="space-y-1 text-sm text-muted-foreground">
-              <p>{t("Você pode usar:")}</p>
-              <ul className="space-y-1">
-                {VARIAVEIS_DA_CAMPANHA.map((v) => (
-                  <li key={v}>
-                    <button
-                      type="button"
-                      className="rounded-md bg-surface-elevated px-1 font-mono text-xs"
-                      onClick={() => setTexto((atual) => `${atual}{{${v}}}`)}
-                    >
-                      {`{{${v}}}`}
-                    </button>{" "}
-                    — {t(DESCRICAO_DA_VARIAVEL[v])}
-                  </li>
-                ))}
-              </ul>
+              <div className="flex items-center gap-2">
+                <p>{t("Você pode usar:")}</p>
+                <SeletorDeVariavel
+                  fonte="campanha"
+                  onInserir={(token) => setTexto((atual) => `${atual}${token}`)}
+                />
+              </div>
               <p>{t('Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.')}</p>
               <p>
                 {t(
@@ -454,6 +549,8 @@ export function NovaCampanha() {
         )}
       </Card>
 
+      {/* E-mail não abre conversa: nada nasce no funil por causa dela. */}
+      {!canalDeEmail && (
       <Card className="space-y-4 p-4">
         <h2 className="font-medium">{t("Quem responder")}</h2>
         <p className="text-sm text-muted-foreground">
@@ -523,17 +620,29 @@ export function NovaCampanha() {
           </p>
         </div>
       </Card>
+      )}
 
+      {/* O ritmo é do número (janela de 24h, teto por conexão): no e-mail não há
+          número, e o envio é a fatia seguinte — não se promete aqui um controle
+          que o despacho do e-mail ainda não obedece. */}
+      {!canalDeEmail && (
       <Card className="space-y-4 p-4">
         <h2 className="font-medium">{t("Ritmo desta campanha")}</h2>
-        {canal && <VelocidadeDaCampanha valor={velocidade} onChange={setVelocidade} ehOficial={ehOficial} />}
+        {canal && (
+          <VelocidadeDaCampanha
+            valor={velocidadeEfetiva}
+            onChange={setVelocidade}
+            ehOficial={ehOficial}
+            transmissao={transmissaoNoNumero ? { variaveis: variaveisDoBroadcast } : null}
+          />
+        )}
         <p className="text-sm text-muted-foreground">
           {t(
             "Em branco, vale o ritmo do número (Conexões › Proteção de envio). O que você puser aqui só pode deixar mais devagar.",
           )}
         </p>
         <div className="grid gap-4 sm:grid-cols-2">
-          {!rapida && (
+          {velocidadeEfetiva === "gradual" && (
             <div className="space-y-2">
               <Label htmlFor="intervalo">{t("Intervalo mínimo entre mensagens (segundos)")}</Label>
               <Input
@@ -545,26 +654,30 @@ export function NovaCampanha() {
               />
             </div>
           )}
-          <div className="space-y-2">
-            <Label htmlFor="teto">{t("Máximo por dia")}</Label>
-            <Input
-              id="teto"
-              type="number"
-              min={1}
-              value={tetoDiario}
-              onChange={(e) => setTetoDiario(e.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="teto-hora">{t("Máximo por hora")}</Label>
-            <Input
-              id="teto-hora"
-              type="number"
-              min={1}
-              value={tetoHorario}
-              onChange={(e) => setTetoHorario(e.target.value)}
-            />
-          </div>
+          {!emBroadcast && (
+            <div className="space-y-2">
+              <Label htmlFor="teto">{t("Máximo por dia")}</Label>
+              <Input
+                id="teto"
+                type="number"
+                min={1}
+                value={tetoDiario}
+                onChange={(e) => setTetoDiario(e.target.value)}
+              />
+            </div>
+          )}
+          {!emBroadcast && (
+            <div className="space-y-2">
+              <Label htmlFor="teto-hora">{t("Máximo por hora")}</Label>
+              <Input
+                id="teto-hora"
+                type="number"
+                min={1}
+                value={tetoHorario}
+                onChange={(e) => setTetoHorario(e.target.value)}
+              />
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="janela-inicio">{t("Enviar só a partir das (hora)")}</Label>
             <Input
@@ -589,6 +702,7 @@ export function NovaCampanha() {
           </div>
         </div>
       </Card>
+      )}
 
       <div className="flex items-center justify-end gap-2">
         <Button variant="outline" onClick={() => router.push("/app/campaigns")}>

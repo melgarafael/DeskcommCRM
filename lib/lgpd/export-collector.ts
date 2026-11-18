@@ -75,6 +75,12 @@ export interface ContactSnapshot {
    */
   additional_phones?: ContactPhoneSnapshot[];
   /**
+   * As identidades de rede social do contato (#3764, fatia 1): o perfil do
+   * Instagram e o do Facebook — cada uma com a rede de onde veio. A anonimização já as apaga pelo gatilho da ficha; sem esta linha o
+   * titular pedia acesso e não recebia o que a ingestão guardou sobre ele.
+   */
+  identities?: ContactIdentitySnapshot[];
+  /**
    * Campos personalizados — onde os roteiros de atendimento gravam o que o
    * cliente respondeu (CPF inclusive). A anonimização já os zera; sem esta
    * linha o titular pedia acesso e não recebia o que o roteiro coletou.
@@ -96,6 +102,13 @@ export interface ContactPhoneSnapshot {
   /** O `lid` do WhatsApp DAQUELE número: é o que casa a mensagem de grupo dele. */
   wa_lid: string | null;
   created_at: string;
+}
+
+/** Uma identidade do contato num canal, como o titular a recebe (#3764). */
+export interface ContactIdentitySnapshot {
+  canal: string;
+  identificador: string;
+  criado_em: string;
 }
 
 export interface ConsentRow {
@@ -269,6 +282,36 @@ export interface AppointmentRow {
 }
 
 /**
+ * O "quero encaixe" do titular na lista de espera (`calendar_waitlist`, módulo
+ * opcional). Entra porque a seção de LGPD do módulo apaga `observacoes` na
+ * anonimização: a redação e o export são as duas pontas da mesma regra.
+ *
+ * `janelas`, `antecedencia_minima_horas`, `urgencia` e `status` a redação
+ * PRESERVA (parâmetro de operação, não identificação) e ainda assim entram: "eu
+ * pedi encaixe para tal semana, com tal urgência, e fui atendido" é informação a
+ * respeito dele. `owner_user_id` e `created_by_user_id` ficam de fora: são a
+ * equipe, não ele.
+ */
+export interface WaitlistRow {
+  id: string;
+  event_type_id: string;
+  status: string;
+  urgencia: number;
+  janelas: Json;
+  antecedencia_minima_horas: number;
+  valido_ate: string | null;
+  consentimento_em: string;
+  consentimento_origem: string;
+  oferta_appointment_id: string | null;
+  oferta_expira_em: string | null;
+  ofertada_em: string | null;
+  observacoes: string | null;
+  created_by_kind: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
  * A comanda do titular (migrations 0350-0359).
  *
  * Entra porque a anonimização APAGA: a 0359 pôs `sales` na cascata de redação
@@ -339,6 +382,20 @@ export interface ProposalRow {
  * saber não só que a empresa escreveu algo sobre ele, mas quando ela combinou
  * agir — que é a informação que dá sentido ao texto.
  */
+/**
+ * Mensagem de texto agendada para o titular (migration 9336, #3118). O texto é
+ * escrito PARA ele e a anonimização o apaga, então o pedido de acesso o entrega,
+ * com o horário e o desfecho (agendada, encaminhada, falhou, cancelada).
+ */
+export interface ScheduledMessageRow {
+  id: string;
+  title: string | null;
+  body: string;
+  scheduled_at: string;
+  status: string;
+  created_at: string;
+}
+
 export interface TaskRow {
   id: string;
   title: string;
@@ -741,6 +798,11 @@ export interface ExportPayload {
    */
   honorarios_contratos: HonorariosContratoRow[];
   honorarios_parcelas: HonorariosParcelaRow[];
+  /** Módulo opcional; o coletor atual inclui vazio se não instalado. Payloads antigos podem não conter a seção. */
+  cadencias_inscricoes?: { id: string; cadence_id: string; lead_id: string; status: string; motivo_parada: string | null; rastreio_consentido: boolean; consentimento_em: string | null; emails_enviados: number; aberturas: number; created_at: string; concluida_em: string | null; parada_em: string | null }[];
+  cadencias_eventos?: { id: string; enrollment_id: string; tipo: string; created_at: string }[];
+  /** Módulo `amigo` (#4227): o vínculo do titular com o cadastro de paciente no sistema da clínica. */
+  amigo_vinculos?: { connection_id: string; patient_id: number; lead_id: string | null }[];
   lead_field_proposals: LeadFieldProposalRow[];
   orders: OrderRow[];
   activities: ActivityRow[];
@@ -749,9 +811,22 @@ export interface ExportPayload {
   mcp_pedidos_de_acesso?: AcessoMcpRow[];
   mcp_acessos?: AcessoMcpRow[];
   appointments: AppointmentRow[];
+  /**
+   * A inscrição do titular na lista de espera (módulo opcional). Ausente quando
+   * vazia — a cópia de quem nunca pediu encaixe não ganha uma chave a mais —,
+   * e nunca ausente de propósito: quem tem inscrição precisa receber a linha
+   * cujo `observacoes` a anonimização apaga.
+   */
+  calendar_waitlist?: WaitlistRow[];
   sales: SaleRow[];
   proposals: ProposalRow[];
   tasks: TaskRow[];
+  /**
+   * Mensagens agendadas (migration 9336). Presente só quando há linha, como
+   * `calendar_waitlist`: o data.json de quem não tem agendamento fica byte a
+   * byte o de antes (fixtures de `lgpd-texto-segue-o-pais.test.tsx`).
+   */
+  scheduled_messages?: ScheduledMessageRow[];
   webhook_captures: CaptureRow[];
   audit_log_extract: AuditRow[];
   meeting_deliveries: MeetingDeliveryRow[];
@@ -1296,6 +1371,29 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
   }
   if (contact && telefonesExtras.length > 0) contact.additional_phones = telefonesExtras;
 
+  // (#3764) As identidades de rede social do contato. A anonimização as apaga
+  // pelo gatilho da ficha — e o titular que pede ACESSO tem de receber o que a
+  // ingestão guardou sobre ele. Sem esta leitura, o dado existia no banco e não
+  // saía no `data.json`: a mesma assimetria que a cerca de acesso×redação cobra.
+  // A consulta filtra organização e ficha: o cliente aqui é o administrador.
+  let identidades: ContactIdentitySnapshot[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("contact_identities")
+      .select("canal, identificador, criado_em")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("criado_em", { ascending: true });
+    if (error) {
+      logger.warn("[lgpd-export-worker] contact identities load failed", {
+        request_id: requestId,
+        error: error.message,
+      });
+    }
+    identidades = (data ?? []) as ContactIdentitySnapshot[];
+  }
+  if (contact && identidades.length > 0) contact.identities = identidades;
+
   // No `consents` table in current schema; legal basis is in contacts.consent JSONB.
   const consents: ConsentRow[] = [];
   if (contact?.consent && typeof contact.consent === "object") {
@@ -1560,6 +1658,54 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // ADR-0002/D8: ausência do módulo é vazia; qualquer outra falha é explícita.
+  let cadenciasInstaladas = false;
+  let cadencias_inscricoes: NonNullable<ExportPayload["cadencias_inscricoes"]> = [];
+  let cadencias_eventos: NonNullable<ExportPayload["cadencias_eventos"]> = [];
+  if (contactId) {
+    // O registro, não o cache de schema do PostgREST, diz se o módulo existe.
+    // Suspenso também exporta: privacidade nunca depende do recurso ligado.
+    const { data: moduloCadencias, error: erroModulo } = await admin.from("modulos_instalados").select("modulo").eq("modulo", "cadencias").maybeSingle();
+    if (erroModulo) throw new Error("cadencias_export_module_read_failed");
+    if (moduloCadencias) {
+      cadenciasInstaladas = true;
+      const { data: inscricoesCadencia, error: erroCadencias } = await admin.from("email_cadence_enrollments")
+        .select("id, cadence_id, lead_id, status, motivo_parada, rastreio_consentido, consentimento_em, emails_enviados, aberturas, created_at, concluida_em, parada_em")
+        .eq("organization_id", organizationId).eq("contact_id", contactId).order("created_at", { ascending: false }).limit(500);
+      if (erroCadencias) throw new Error("cadencias_export_load_failed");
+      if (inscricoesCadencia) {
+        conferirTeto("cadencias_inscricoes", inscricoesCadencia, 500);
+        cadencias_inscricoes = inscricoesCadencia;
+        const ids = inscricoesCadencia.map((i) => i.id);
+        if (ids.length > 0) {
+          const { data: eventos, error: erroEventos } = await admin.from("email_cadence_events").select("id, enrollment_id, tipo, created_at")
+            .eq("organization_id", organizationId).in("enrollment_id", ids).order("created_at", { ascending: false }).limit(500);
+          if (erroEventos) throw new Error("cadencias_events_export_load_failed");
+          if (eventos) { conferirTeto("cadencias_eventos", eventos, 500); cadencias_eventos = eventos; }
+        }
+      }
+    }
+  }
+
+  // Módulo `amigo` (#4227), pelo mesmo caminho de cadências: o REGISTRO diz se o
+  // módulo existe; ausente, a chave nem aparece e a tabela nem é consultada.
+  // Suspenso também exporta. Só os ids do vínculo: o cadastro do paciente mora
+  // no Amigo, e a instalação não guarda cópia dele.
+  let amigoInstalado = false;
+  let amigo_vinculos: NonNullable<ExportPayload["amigo_vinculos"]> = [];
+  if (contactId) {
+    const { data: moduloAmigo, error: erroModuloAmigo } = await admin.from("modulos_instalados").select("modulo").eq("modulo", "amigo").maybeSingle();
+    if (erroModuloAmigo) throw new Error("amigo_export_module_read_failed");
+    if (moduloAmigo) {
+      amigoInstalado = true;
+      const { data: vinculos, error: erroVinculos } = await admin.from("amigo_patient_links")
+        .select("connection_id, patient_id, lead_id")
+        .eq("organization_id", organizationId).eq("contact_id", contactId).limit(500);
+      if (erroVinculos) throw new Error("amigo_export_load_failed");
+      if (vinculos) { conferirTeto("amigo_vinculos", vinculos, 500); amigo_vinculos = vinculos; }
+    }
+  }
+
   // Orders (contact_id when available, otherwise external_customer_id).
   let orders: OrderRow[] = [];
   {
@@ -1713,6 +1859,31 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // Lista de espera — módulo opcional (ADR-0002 D8). Onde ele não foi instalado a
+  // tabela não existe (42P01/PGRST205) e o bloco sai vazio. Qualquer outro erro
+  // lança: o worker tenta de novo, e o titular nunca recebe como completo um
+  // arquivo sem a inscrição cujo texto a anonimização apaga.
+  let calendar_waitlist: WaitlistRow[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("calendar_waitlist")
+      .select(
+        "id, event_type_id, status, urgencia, janelas, antecedencia_minima_horas, valido_ate, consentimento_em, consentimento_origem, oferta_appointment_id, oferta_expira_em, ofertada_em, observacoes, created_by_kind, created_at, updated_at",
+      )
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (error) {
+      if (error.code !== "42P01" && error.code !== "PGRST205") {
+        throw new Error(`calendar_waitlist_load_failed: ${error.message}`);
+      }
+    } else if (data) {
+      conferirTeto("calendar_waitlist", data, 500);
+      calendar_waitlist = data;
+    }
+  }
+
   // Comandas — contact_id direto em sales (migrations 0350-0359).
   //
   // A 0359 acrescentou esta tabela à cascata de redação; este bloco é a outra
@@ -1844,6 +2015,27 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     } else if (data) {
       conferirTeto("tasks", data, 500);
       tasks = data;
+    }
+  }
+
+  // Mensagens agendadas — contact_id direto em mensagens_agendadas (migration 9336).
+  let scheduled_messages: ScheduledMessageRow[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("mensagens_agendadas")
+      .select("id, title, body, scheduled_at, status, created_at")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("scheduled_at", { ascending: false })
+      .limit(500);
+    if (error) {
+      logger.warn("[lgpd-export-worker] scheduled messages load failed", {
+        request_id: requestId,
+        error: error.message,
+      });
+    } else if (data) {
+      conferirTeto("scheduled_messages", data, 500);
+      scheduled_messages = data;
     }
   }
 
@@ -2536,15 +2728,21 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     lead_field_proposals,
     honorarios_contratos,
     honorarios_parcelas,
+    // O módulo ausente não altera o contrato do arquivo legado. Instalado
+    // (inclusive suspenso), entrega suas seções, mesmo sem linhas do titular.
+    ...(cadenciasInstaladas ? { cadencias_inscricoes, cadencias_eventos } : {}),
+    ...(amigoInstalado ? { amigo_vinculos } : {}),
     orders,
     activities,
     checkpoints,
     mcp_pedidos_de_acesso: mcpPedidos,
     mcp_acessos: mcpAcessos,
     appointments,
+    ...(calendar_waitlist.length > 0 ? { calendar_waitlist } : {}),
     sales,
     proposals,
     tasks,
+    ...(scheduled_messages.length > 0 ? { scheduled_messages } : {}),
     webhook_captures,
     audit_log_extract,
     reply_drafts,

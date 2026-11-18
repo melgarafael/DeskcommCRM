@@ -14,7 +14,7 @@
  *
  * ─── A régua ─────────────────────────────────────────────────────────────────
  *
- * `direction = 'inbound'`, tipo em `TIPOS_DERIVAVEIS`, e status FORA de
+ * `direction = 'inbound'` (ou mídia REABERTA, ver abaixo), tipo em `TIPOS_DERIVAVEIS`, e status FORA de
  * `DERIVACAO_TERMINADA` (`ready`/`failed`/`skipped` — `skipped` é a mídia que o
  * worker desiste de ler DE PROPÓSITO, e sem ele a linha ficaria null para sempre
  * segurando a resposta do texto seguinte até o teto).
@@ -27,16 +27,30 @@
  * `sent_at`. No inbound, `sent_at` é o relógio do aparelho: uma foto entregue
  * com atraso (aparelho offline, canal reconectando) nasceria "além do teto" e o
  * turno seguiria sem a leitura que acabou de começar.
+ *
+ * Foto REABERTA (adiada por falta de leitor, `lib/messaging/media/leitura-adiada.ts`)
+ * conta do PEDIDO (`metadata.derivacao_pedida_em`), não da chegada: uma foto de
+ * dias atrás reaberta agora nasceria além do teto e a resposta não esperaria a
+ * descrição que acabou de ser pedida. Pela mesma razão a ordem segue a âncora, e
+ * a foto que o atendente mandou do celular (outbound) entra quando foi reaberta.
+ *
+ * A âncora mora em `metadata`, e `metadata` não é só do servidor: o cast só roda
+ * quando o texto é um ISO-8601 de calendário real (o CASE avalia na ordem), senão
+ * um valor torto derrubava esta consulta e calava a IA da empresa inteira. Data
+ * FUTURA cai na chegada, e não em `least(…, now())`: isso faria a âncora ser
+ * "pedida agora" a cada rodada, e a resposta esperaria para sempre por uma mídia
+ * que ninguém vai derivar.
  */
 import type pg from 'pg';
 
 import { DERIVACAO_TERMINADA, TIPOS_DERIVAVEIS } from '@/lib/messaging/media/derivable';
+import { ANCORA_ISO_8601 } from '@/lib/messaging/media/leitura-adiada';
 
 export interface MidiaDerivavelPendente {
   type: string;
   /** `null` = a derivação nem foi pedida ainda; qualquer valor fora de `DERIVACAO_TERMINADA` é pendente. */
   status: string | null;
-  /** `messages.created_at` (ISO 8601) — a hora em que a mídia chegou, âncora de toda espera. */
+  /** A âncora de toda espera (ISO 8601): `messages.created_at`, a hora em que a mídia chegou — ou o pedido da leitura, se ela foi reaberta. */
   quando: string;
 }
 
@@ -94,16 +108,23 @@ export async function midiaDerivavelPendente(
     media_derived_status: string | null;
     quando: string | Date;
   }>(
-    `select type, media_derived_status, created_at as quando
+    `select type, media_derived_status,
+            case when coalesce(metadata->>'derivacao_pedida_em', '') !~ $4 then created_at
+                 when (metadata->>'derivacao_pedida_em')::timestamptz > now() then created_at
+                 else (metadata->>'derivacao_pedida_em')::timestamptz
+            end as quando
        from messages
       where organization_id = $1
         and conversation_id = $2
-        and direction = 'inbound'
+        and (direction = 'inbound' or metadata ? 'derivacao_pedida_em')
         and type = any($3::text[])
         and media_url is not null
-      order by created_at desc
+      order by quando desc
       limit 20`,
-    [input.organizationId, input.conversationId, [...TIPOS_DERIVAVEIS]],
+    // A foto entra mesmo quando o agente da conversa não vê imagens: o turno pode
+    // ir a outro agente, que vê. Esperar só custa quando a foto JÁ está sendo
+    // descrita, isto é, quando alguém a lê; a adiada é `skipped`, que é final.
+    [input.organizationId, input.conversationId, [...TIPOS_DERIVAVEIS], ANCORA_ISO_8601],
   );
   const pendente = rows.find(ehPendente);
   if (pendente === undefined) return null;

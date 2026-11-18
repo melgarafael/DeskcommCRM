@@ -90,13 +90,60 @@ export function decodeCursor(raw: string): Cursor | null {
  *    `lead_id = irmão`, e não casa com nenhum dos dois lados.
  */
 export function eixoDoDossie(leadId: string, contactId: string | null): string | null {
-  if (!contactId) return null; // sem contato o lado 2 não existe: quem chama usa `.eq`
+  if (!contactId) return null; // sem contato o lado 2 não existe: quem chama usa igualdade simples
   return `lead_id.eq.${leadId},and(contact_id.eq.${contactId},lead_id.is.null)`;
+}
+
+/**
+ * O eixo da ORGANIZAÇÃO, colado na frente do resto do filtro.
+ *
+ * Função, e não `organization_id.eq.X` repetido nas duas chamadas, porque o
+ * eixo é o mesmo nos dois filtros que a rota manda — o da página e o do
+ * cursor. Sem ele a consulta não diz de qual empresa é a linha: todos os
+ * índices de `crm_lead_activities` começam por `organization_id`
+ * (`supabase/baseline.sql:2736`, `:2740`, `:2744`), então nenhum deles serve, e
+ * a leitura passa a varrer a tabela inteira pagando a RLS linha a linha.
+ *
+ * A forma é `and(...)` em volta, e não um `.eq()` solto na query, porque o que
+ * vem depois pode ser um `or(...)` — inclusive o do próprio dossiê. O
+ * PostgREST lê a árvore booleana: `and(organization_id.eq.X,or(...))` é a
+ * conjunção da empresa com o eixo, e não o eixo aplicado à tabela toda.
+ */
+function comOrganizacao(orgId: string, condicao: string): string {
+  return `and(organization_id.eq.${orgId},${condicao})`;
+}
+
+/**
+ * O filtro da PRIMEIRA página: organização dona + eixo do dossiê.
+ *
+ * Os dois lados do dossiê continuam exatamente como estão — este filtro não
+ * troca nem simplifica a união, só a cerca pela empresa. Sem contato o eixo é
+ * `null` e vira igualdade simples no lead, que é o que dá porta ao negócio sem
+ * contato.
+ */
+export function filtroDaPagina(orgId: string, leadId: string, contactId: string | null): string {
+  const eixo = eixoDoDossie(leadId, contactId);
+  return comOrganizacao(orgId, eixo ? `or(${eixo})` : `lead_id.eq.${leadId}`);
+}
+
+/**
+ * O filtro do CURSOR: mesma empresa + a chave da paginação.
+ *
+ * Carrega a organização de novo, e não por redundância: o cursor também é um
+ * `or(...)`, e deixá-lo sem o eixo é o mesmo defeito em outra chamada — a
+ * segunda página voltaria a varrer a tabela toda. A ordem continua
+ * `performed_at desc, id desc`; aqui só se pede o que vem DEPOIS do último
+ * item, pela mesma chave.
+ */
+export function filtroDoCursor(orgId: string, cursor: Cursor): string {
+  const depoisDoUltimo = `or(performed_at.lt.${cursor.performed_at},and(performed_at.eq.${cursor.performed_at},id.lt.${cursor.id}))`;
+  return comOrganizacao(orgId, depoisDoUltimo);
 }
 
 /** Anexa o nome do agente e da pessoa que agiram, para a linha não dizer só "Agente". */
 export async function comNomeDoAtor(
   supabase: Awaited<ReturnType<typeof createClient>>,
+  orgId: string,
   rows: TimelineItem[],
 ): Promise<TimelineItemView[]> {
   const agentIds = [...new Set(rows.map((r) => r.actor_agent_id).filter((v): v is string => !!v))];
@@ -128,17 +175,9 @@ export async function comNomeDoAtor(
     //
     // Os imports ficam onde as funções são de fato USADAS. Quem importa a
     // função pura não paga por dependência que ela não tem.
-    const { isServiceRoleConfigured } = await import("@/lib/audit");
-    if (isServiceRoleConfigured()) {
-      const { createAdminClient } = await import("@/lib/supabase/admin");
-      const admin = createAdminClient();
-      await Promise.all(
-        userIds.map(async (id) => {
-          const { data } = await admin.auth.admin.getUserById(id);
-          const nome = data?.user?.user_metadata?.full_name;
-          if (typeof nome === "string" && nome.trim() !== "") nomeUsuario.set(id, nome);
-        }),
-      );
+    const { nomesDosAtendentes } = await import("@/lib/users/nome-do-atendente");
+    for (const [id, nome] of await nomesDosAtendentes(orgId, userIds)) {
+      if (typeof nome === "string" && nome.trim() !== "") nomeUsuario.set(id, nome);
     }
   }
 

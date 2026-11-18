@@ -16,6 +16,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { filtrarCandidatosExcluidos } from "@/lib/escalacao/devolucao-ao-rodizio";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoAviso, preencher } from "@/lib/i18n/idioma-do-aviso";
 import { logger } from "@/lib/logger";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import {
@@ -24,6 +26,7 @@ import {
   type RegraDoNumero,
 } from "@/lib/routing/decide";
 import { motivoParaNaoRotear, type MotivoDoCaso } from "@/lib/routing/caso-da-conversa";
+import { lerEsperaPelaIA, lerQualificacaoDaIA, prazoDaEspera } from "@/lib/routing/qualificacao-da-ia";
 import { loadEligibleAttendants, InvalidRoutingChannel, InvalidRoutingSector } from "@/lib/routing/eligibles";
 import { routingConfigSchema } from "@/lib/schemas/routing";
 
@@ -47,6 +50,11 @@ export type RoutingOutcome =
   | "skipped_contato_fornecedor"
   /** #3717: o caso mais recente da conversa não pede uma pessoa agora. */
   | "skipped_caso_sem_humano"
+  /**
+   * #3966: o número pediu para esperar a IA qualificar. O pedido NÃO foi
+   * consumido — ficou guardado até o prazo máximo, ou até a passagem para humano.
+   */
+  | "waiting_ia_qualificando"
   | "assign_lost_race"
   | "error";
 
@@ -56,13 +64,23 @@ export interface RoutingSummary {
   errors: string[];
 }
 
-interface EventRow {
+/**
+ * A linha como ela sai da VARREDURA (#3878, item 3): sem `payload`/`metadata`.
+ *
+ * O corpo do evento só existe depois do claim, em `EventRow` — antes disso
+ * ninguém pode lê-lo, e é o tipo que impede alguém de "só usar o payload" a
+ * partir da varredura e reintroduzir o egress que este corte tirou.
+ */
+interface EventoDaFila {
   id: string;
   organization_id: string;
-  payload: Record<string, unknown>;
-  metadata: Record<string, unknown> | null;
   consumed_by: string[];
   attempts: number;
+}
+
+interface EventRow extends EventoDaFila {
+  payload: Record<string, unknown>;
+  metadata: Record<string, unknown> | null;
   claimed_at?: string;
 }
 
@@ -79,6 +97,7 @@ const EMPTY_OUTCOMES = (): Record<RoutingOutcome, number> => ({
   skipped_contato_pessoal: 0,
   skipped_contato_fornecedor: 0,
   skipped_caso_sem_humano: 0,
+  waiting_ia_qualificando: 0,
   assign_lost_race: 0,
   error: 0,
 });
@@ -118,11 +137,16 @@ export async function runRoutingWorker(opts: RoutingWorkerOptions = {}): Promise
       .eq("updated_at", previous.updated_at);
     if (error) summary.errors.push("routing_recovery_failed");
   }
+  // ─── A VARREDURA NÃO LEVA O CORPO DO EVENTO (#3878, item 3) ────────────────
+  //
+  // `payload`/`metadata` são o JSONB gordo da linha, e este pull traz até 100
+  // eventos por tique só para decidir QUAIS reclamar. O corpo é de quem chega
+  // ao `processEvent` — um por claim — e vem no `update ... select` do claim
+  // (`claimEvent`), que já acontecia: uma linha por evento processado em vez de
+  // 100 por tique, sem consulta a mais.
   const { data: rawEvents, error: pullErr } = await admin
     .from("event_log")
-    .select(
-      "id, organization_id, payload, metadata, consumed_by, attempts, next_attempt_at, status",
-    )
+    .select("id, organization_id, consumed_by, attempts")
     .eq("event_type", ROUTING_EVENT_TYPE)
     .eq("status", "pending")
     .or(`next_attempt_at.is.null,next_attempt_at.lte.${now.toISOString()}`)
@@ -134,13 +158,15 @@ export async function runRoutingWorker(opts: RoutingWorkerOptions = {}): Promise
     return summary;
   }
 
-  const events = (rawEvents ?? []).filter(
+  const naFila = (rawEvents ?? []).filter(
     (e) => !(Array.isArray(e.consumed_by) && e.consumed_by.includes(ROUTING_WORKER_KEY)),
-  ) as EventRow[];
+  ) as EventoDaFila[];
 
-  for (const event of events) {
-    const claimed = await claimEvent(event);
-    if (!claimed) continue;
+  for (const candidato of naFila) {
+    // O claim devolve a linha COM o corpo; quem perde a corrida (outro worker
+    // pegou) não custa um byte de `payload`/`metadata`.
+    const event = await claimEvent(candidato);
+    if (!event) continue;
     summary.batch_size += 1;
     try {
       const outcome = await processEvent(event, now);
@@ -179,7 +205,7 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
   const { data: conv, error: convError } = await admin
     .from("conversations")
     .select(
-      "id, organization_id, contact_id, channel_session_id, assigned_to_user_id, status, metadata, last_inbound_at, sector_id",
+      "id, organization_id, contact_id, channel_session_id, assigned_to_user_id, status, metadata, last_inbound_at, sector_id, bot_silenced_until, last_handoff_at, active_ai_agent_id",
     )
     .eq("id", conversationId)
     .eq("organization_id", orgId)
@@ -272,9 +298,60 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
    */
   const viaDestinoPadrao = !alreadyAssigned && Boolean(efetivo.defaultAssigneeUserId)
     && (!sectorId || await ehMembroDaFila(admin, orgId, sectorId, efetivo.defaultAssigneeUserId as string));
+
+  // A IA AINDA ESTÁ QUALIFICANDO? (#3966) — só é perguntado quando o NÚMERO
+  // ligou a opção (`ai_wait_minutes`, desligada de fábrica; doc 311). Com ela
+  // desligada nenhuma leitura a mais acontece e o caminho é o de sempre.
+  //
+  // Fica DEPOIS do destino padrão do número ("direto para uma pessoa" não
+  // espera, #2331) e só vale onde há distribuição automática. A leitura é
+  // fail-open (ver `qualificacao-da-ia.ts`).
+  //
+  // O PRAZO: a espera começa na primeira vez que este pedido é adiado e a marca
+  // vai no `metadata` do evento. Venceu sem a IA passar a conversa ⇒ ela segue
+  // para a distribuição logo abaixo e a Central avisa UMA vez.
+  let esperaPelaIAAte: string | null = null;
+  const minutosDeEspera = regraDoNumero?.ai_wait_minutes ?? null;
+  if (
+    minutosDeEspera !== null &&
+    !alreadyAssigned &&
+    !motivoDoCaso &&
+    !viaDestinoPadrao &&
+    (efetivo.mode === "round_robin" || efetivo.mode === "load")
+  ) {
+    const qualificando = await lerQualificacaoDaIA(admin, orgId, {
+      channel_session_id: conv.channel_session_id,
+      active_ai_agent_id:
+        (conv as { active_ai_agent_id?: string | null }).active_ai_agent_id ?? null,
+      bot_silenced_until:
+        (conv as { bot_silenced_until?: string | null }).bot_silenced_until ?? null,
+      last_handoff_at: (conv as { last_handoff_at?: string | null }).last_handoff_at ?? null,
+      assigned_to_user_id: conv.assigned_to_user_id ?? null,
+    }, now);
+    const marca = lerEsperaPelaIA(event.metadata);
+    if (qualificando) {
+      const prazo = prazoDaEspera(marca, now, minutosDeEspera);
+      if (!prazo.vencida) {
+        esperaPelaIAAte = prazo.ate;
+        event.metadata = { ...(event.metadata ?? {}), espera_pela_ia: { desde: prazo.desde } };
+      } else if (!prazo.avisada && (await avisarEsperaVencida(orgId, conversationId, minutosDeEspera))) {
+        event.metadata = {
+          ...(event.metadata ?? {}),
+          espera_pela_ia: { desde: prazo.desde, avisada: true },
+        };
+      }
+    } else if (marca) {
+      // A IA saiu do caminho (passou para humano, foi pausada): a espera
+      // acabou. Sem limpar, um episódio novo de qualificação neste MESMO pedido
+      // herdaria o relógio antigo e nasceria vencido.
+      event.metadata = { ...(event.metadata ?? {}), espera_pela_ia: null };
+    }
+  }
+
   let eligibles: Awaited<ReturnType<typeof loadEligibleAttendants>> = [];
   if (
     !alreadyAssigned &&
+    esperaPelaIAAte === null &&
     !viaDestinoPadrao &&
     (efetivo.mode === "round_robin" || efetivo.mode === "load")
   ) {
@@ -321,6 +398,7 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
     attempts: event.attempts,
     now,
     motivoDoCaso,
+    esperaPelaIAAte,
   });
 
   switch (action.kind) {
@@ -411,28 +489,94 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
       );
       return "requeued_no_eligible";
     }
+    case "wait_ai": {
+      // Um reagendamento só, para o PRAZO — não a cada minuto. O pedido some da
+      // varredura até lá, então não ocupa o lote nem gera rodada de trabalho.
+      // Não conta tentativa e não avisa: nada falhou. A passagem para humano
+      // traz `next_attempt_at` para agora (`fn_request_channel_routing`).
+      await requeueEvent(
+        event,
+        now,
+        event.attempts,
+        { reason: "ia_qualificando" },
+        action.nextAttemptAt,
+      );
+      return "waiting_ia_qualificando";
+    }
   }
+}
+
+/**
+ * O aviso do prazo vencido (#3966). Insere direto, sem `on conflict`: quem
+ * impede a repetição é a marca `avisada` no `metadata` do pedido. Devolve
+ * `false` quando não gravou — o worker então tenta de novo na próxima rodada —,
+ * e NUNCA lança: o aviso não pode segurar a conversa fora da distribuição.
+ */
+async function avisarEsperaVencida(
+  orgId: string,
+  conversationId: string,
+  minutos: number,
+): Promise<boolean> {
+  const admin = createAdminClient();
+  // A Central mostra o texto como foi gravado: o aviso nasce no idioma da
+  // organização. O título é fixo (por organização): é por ele que quem lê a
+  // Central reconhece o aviso.
+  const idioma = await idiomaDoAviso(admin, orgId);
+  const { error } = await admin.from("agent_inbox_items").insert({
+    organization_id: orgId,
+    kind: "routing_ia_wait_expired",
+    severity: "warn",
+    title: traduzir("A IA não passou a conversa no prazo", idioma),
+    body: preencher(
+      traduzir(
+        "A IA atendeu esta conversa por {minutos} minutos, o prazo definido para este número, e não a passou para a equipe. A conversa entrou na distribuição. Se isso se repetir, confira o agente de IA deste número e o prazo em Configurações → Atendimento.",
+        idioma,
+      ),
+      { minutos },
+    ),
+    ref_kind: "conversation",
+    ref_id: conversationId,
+  });
+  if (error) {
+    logger.warn("[routing-worker] aviso de espera vencida não foi gravado", {
+      organization_id: orgId,
+      conversation_id: conversationId,
+      error: error.message,
+    });
+    return false;
+  }
+  return true;
 }
 
 // --- event lifecycle (mesma mecânica do agent-dispatcher; status ∈ pending|processing|done|dead) ---
 
-async function claimEvent(event: EventRow): Promise<boolean> {
+async function claimEvent(naFila: EventoDaFila): Promise<EventRow | null> {
   const admin = createAdminClient();
-  event.claimed_at = new Date().toISOString();
+  const claimedAt = new Date().toISOString();
+  // O corpo do evento vem DAQUI (#3878, item 3): a varredura acima só trouxe
+  // `id/organization_id/consumed_by/attempts`, e este `update ... select` — que
+  // já existia para carimbar o claim e ler o `updated_at` — devolve a
+  // representação da linha reclamada. Uma linha por evento processado, no mesmo
+  // round-trip; nenhum evento que perde o claim paga o JSONB.
   const { data, error } = await admin
     .from("event_log")
-    .update({ status: "processing", updated_at: event.claimed_at })
-    .eq("id", event.id)
-    .eq("organization_id", event.organization_id)
+    .update({ status: "processing", updated_at: claimedAt })
+    .eq("id", naFila.id)
+    .eq("organization_id", naFila.organization_id)
     .eq("status", "pending")
-    .select("id, updated_at")
+    .select("id, updated_at, payload, metadata")
     .maybeSingle();
   if (error) {
-    logger.warn("[routing-worker] claim failed", { event_id: event.id, error: error.message });
-    return false;
+    logger.warn("[routing-worker] claim failed", { event_id: naFila.id, error: error.message });
+    return null;
   }
-  if (data) event.claimed_at = data.updated_at;
-  return Boolean(data);
+  if (!data) return null;
+  return {
+    ...naFila,
+    payload: (data.payload ?? {}) as Record<string, unknown>,
+    metadata: (data.metadata ?? null) as Record<string, unknown> | null,
+    claimed_at: data.updated_at,
+  };
 }
 
 async function markDone(
@@ -540,16 +684,21 @@ export async function carregarRegraDoNumero(
   if (!channelSessionId) return null;
   const { data, error } = await admin
     .from("channel_routing_policies")
-    .select("distribution_mode, default_assignee_user_id")
+    .select("distribution_mode, default_assignee_user_id, ai_wait_minutes")
     .eq("organization_id", orgId)
     .eq("channel_session_id", channelSessionId)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) return null;
-  const row = data as { distribution_mode: string | null; default_assignee_user_id: string | null };
+  const row = data as {
+    distribution_mode: string | null;
+    default_assignee_user_id: string | null;
+    ai_wait_minutes?: number | null;
+  };
   return {
     distribution_mode: (row.distribution_mode ?? null) as RegraDoNumero["distribution_mode"],
     default_assignee_user_id: row.default_assignee_user_id ?? null,
+    ai_wait_minutes: row.ai_wait_minutes ?? null,
   };
 }
 
@@ -620,9 +769,10 @@ export async function motivoDoCasoParaRoteamento(
  *
  * ## Por que isto existe
  *
- * `fn_conversation_assign` grava `conversations.assigned_to_user_id` e não toca
- * em `crm_leads.owner_user_id` (medido: a função inteira só faz `update
- * public.conversations`). Enquanto `visibility_mode` era `all` ou
+ * `fn_conversation_assign` grava `conversations.assigned_to_user_id` e, desde a
+ * 9208, adota o negócio quando o contato tem UM aberto sem dono. Esta função
+ * cobre o contato com mais de um, que a 9208 não toca (por isso
+ * `leads_adotados` conta só esses). Enquanto `visibility_mode` era `all` ou
  * `own_and_unassigned`, ninguém notava: o lead sem dono aparecia para todo
  * mundo. No modo `own` — exatamente o que a issue #144 pede — lead sem dono não
  * aparece para NINGUÉM. O atendente receberia a conversa e o funil dele ficaria

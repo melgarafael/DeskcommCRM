@@ -5,6 +5,7 @@ import { apiClient } from "@/lib/api/client";
 import { randomId } from "@/lib/random-id";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import type { Message } from "@/lib/types/messaging";
+import { TETO_DE_MIDIA_MS } from "@/lib/waha/teto-de-midia";
 
 interface SendArgs {
   conversation_id: string;
@@ -12,6 +13,11 @@ interface SendArgs {
   media_url?: string;
   media_mime?: string;
   media_storage_path?: string;
+  /**
+   * O nome ORIGINAL do anexo (#4457). Sem ele o servidor só conhece o basename
+   * aleatório do bucket, e é esse nome que o cliente veria no WhatsApp.
+   */
+  media_filename?: string;
   media_size_bytes?: number;
   type?: string;
   /**
@@ -42,6 +48,22 @@ const identidadeDoEnvio = (input: SendArgs) => JSON.stringify(input);
  */
 const REAPROVEITA_CHAVE_MS = 2 * 60 * 1000;
 
+/**
+ * Quanto o navegador espera um envio COM MÍDIA — acima do teto do servidor.
+ *
+ * O servidor espera o WAHA até `TETO_DE_MIDIA_MS` (vídeo de dezenas de MB, com
+ * `convert`). Com o prazo padrão de escrita do `apiClient` (30s), a tela
+ * desistia antes: um vídeo de ~40 MB saía, a bolha mostrava ✓, e o diálogo
+ * "Enviar anexo" voltava com "Enviar" ativo. Clicar de novo subia o arquivo
+ * outra vez (caminho novo no Storage, logo chave de idempotência nova) e o
+ * cliente recebia o vídeo DUAS vezes — medido na prova de tela do #4422.
+ *
+ * Esperando mais que o servidor, a resposta (enviada ou falhou) sempre chega,
+ * e o diálogo fica em "enviando" até lá. Os 30s de folga cobrem o que a rota faz
+ * antes do envio ao WAHA (resolver o chat, até `TETO_PADRAO_MS`, e o banco).
+ */
+export const PRAZO_DO_ENVIO_DE_MIDIA_MS = TETO_DE_MIDIA_MS + 30_000;
+
 export function useSendMessage() {
   const qc = useQueryClient();
   /**
@@ -67,7 +89,11 @@ export function useSendMessage() {
         : randomId();
       chaves.current.delete(identidade);
       try {
-        return await apiClient.post<{ data: Message }>("/api/v1/messages", input, { idempotencyKey });
+        const comMidia = Boolean(input.media_storage_path || input.media_url);
+        return await apiClient.post<{ data: Message }>("/api/v1/messages", input, {
+          idempotencyKey,
+          ...(comMidia ? { timeoutMs: PRAZO_DO_ENVIO_DE_MIDIA_MS } : {}),
+        });
       } catch (err) {
         chaves.current.set(identidade, { chave: idempotencyKey, falhouEm: Date.now() });
         throw err;

@@ -71,6 +71,27 @@ describe("AtalhosDoNegocio — a faixa de botões do card", () => {
     expect(pedido).toHaveAttribute("rel", "noopener noreferrer");
   });
 
+  it("`sem_pais` desenha DDD + número — a forma que o PABX disca (#3487, 2ª fatia)", () => {
+    // O mesmo contato, dois destinos: `completo` disca internacional e
+    // `sem_pais` disca como o softphone do relato. O que muda é o atalho.
+    contato.atual = {
+      id: "contato-1",
+      name: "Maria Silva",
+      display_name: null,
+      phone_number: "+55 11 98888-7777",
+      email: null,
+      custom_fields: {},
+    };
+    render(
+      <AtalhosDoNegocio
+        atalhos={[{ rotulo: "Ligar", icone: "telefone", url: "tel:{{telefone}}", discagem: "sem_pais" }]}
+        lead={NEGOCIO}
+        contactId="contato-1"
+      />,
+    );
+    expect(screen.getByRole("link", { name: /Ligar/ })).toHaveAttribute("href", "tel:11988887777");
+  });
+
   it("`javascript:` gravado por fora NÃO vira link na tela", () => {
     comContato({});
     const { container } = render(

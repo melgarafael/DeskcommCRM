@@ -24,7 +24,8 @@ import type * as ObsLogger from "@/lib/agent-engine/obs/logger";
  * #2938 — CASO HUMANO SÓ COM SINAL DE FALHA (decisão (b) do mantenedor): o
  * CORRECAO_DO_TURNO_MUDO autoriza o modelo a escolher o silêncio ("nada a
  * dizer"), então silêncio deliberado NÃO abre caso humano; abre quando a
- * SAÍDA veio truncada (length) ou quando a PRÓPRIA correção também truncou.
+ * SAÍDA veio truncada (length), quando a PRÓPRIA correção também truncou, ou
+ * quando a correção TENTOU responder e a cadeia barrou de novo.
  * Esses três cenários rodam numa sessão com agente publicado e
  * `cases_enabled=true` (a coluna vem false por padrão e a régua
  * `casesEnabled` gateia o `openCase`), contando casos por conversa.
@@ -60,6 +61,11 @@ const VERSION_CASOS = "ee0d0601-0000-4000-8000-000000000007";
 const SESSION_VETO = "ee0d0601-0000-4000-8000-000000000008";
 const AGENT_VETO = "ee0d0601-0000-4000-8000-000000000009";
 const VERSION_VETO = "ee0d0601-0000-4000-8000-00000000000a";
+// Agenda armada E casos ligados: o veto de ensino que se repete na correção
+// precisa de um lugar para virar caso (a régua `casesEnabled`).
+const SESSION_VETO_CASOS = "ee0d0601-0000-4000-8000-00000000000b";
+const AGENT_VETO_CASOS = "ee0d0601-0000-4000-8000-00000000000c";
+const VERSION_VETO_CASOS = "ee0d0601-0000-4000-8000-00000000000d";
 const MARCA_DA_CORRECAO = "Este turno terminou SEM nenhuma mensagem ao cliente";
 
 type Modules = {
@@ -258,6 +264,26 @@ beforeAll(async () => {
     AGENT_VETO,
   ]);
   await pool.query(
+    `insert into channel_sessions (id, organization_id, waha_session_name, status, webhook_secret_encrypted)
+     values ($1,$2,'turno-mudo-veto-casos-session','WORKING','\\x00'::bytea) on conflict (id) do nothing`,
+    [SESSION_VETO_CASOS, ORG],
+  );
+  await pool.query(
+    `insert into ai_agents (id, organization_id, name, system_prompt)
+     values ($1, $2, 'Agente com agenda e casos', 'system') on conflict (id) do nothing`,
+    [AGENT_VETO_CASOS, ORG],
+  );
+  await pool.query(
+    `insert into ai_agent_versions
+       (id, organization_id, agent_id, version_number, system_prompt, provider, model, channel_session_id, status, tool_ids, cases_enabled)
+     values ($1, $2, $3, 1, 'system', 'anthropic', 'claude-sonnet-4-6', $4, 'published', array['crm_reschedule_appointment'], true)`,
+    [VERSION_VETO_CASOS, ORG, AGENT_VETO_CASOS, SESSION_VETO_CASOS],
+  );
+  await pool.query(`update ai_agents set published_version_id = $1 where id = $2`, [
+    VERSION_VETO_CASOS,
+    AGENT_VETO_CASOS,
+  ]);
+  await pool.query(
     `with v as (
        insert into playbook_versions (organization_id, layer, content)
        select null, 'platform', E'## Identidade\nAssistente de teste.'
@@ -417,6 +443,42 @@ describe("o turno de resposta que terminou sem mensagem ao cliente", () => {
 
     expect(enviados).toEqual([]);
     expect(await contarCasos(CONV), "caso abriu com casos desligados").toBe(0);
+  });
+
+  it("⭐ veto que se repete na correção: o modelo quis responder, nada saiu — abre caso", async () => {
+    // A 1ª chamada confirma agenda sem ferramenta (agenda_stall veta) e encerra; a
+    // correção tenta de novo e leva o mesmo veto. Nenhuma mensagem saiu e o modelo
+    // não escolheu o silêncio — com a régua antiga (`tentativasDeEnvio === 0`) o
+    // turno terminava calado, sem caso e sem nada na tela do time.
+    const { fake, prompts } = modelo([
+      enviar("Seu agendamento está confirmado para amanhã às 9h"),
+      texto("(o envio foi barrado; encerro)"),
+      enviar("Pronto, confirmado para amanhã às 9h!"),
+      texto("(barrado de novo)"),
+    ]);
+    const conversa = crypto.randomUUID();
+    await turno(fake, { sessao: SESSION_VETO_CASOS, conversa });
+
+    expect(enviados, "a confirmação passou sem veto — o agenda_stall não estava armado").toEqual([]);
+    expect(prompts[2], "a correção do turno mudo não foi pedida").toContain(MARCA_DA_CORRECAO);
+    expect(await contarCasos(conversa), "o cliente ficou sem resposta e ninguém do time soube").toBe(1);
+  });
+
+  it("controle: veto e depois silêncio ESCOLHIDO na correção não abre caso (#2938)", async () => {
+    const { fake, prompts } = modelo([
+      enviar("Seu agendamento está confirmado para amanhã às 9h"),
+      texto("(o envio foi barrado; encerro)"),
+      texto("(decidi não responder)"),
+    ]);
+    const conversa = crypto.randomUUID();
+    await turno(fake, { sessao: SESSION_VETO_CASOS, conversa });
+
+    expect(enviados).toEqual([]);
+    expect(prompts[2]).toContain(MARCA_DA_CORRECAO);
+    expect(
+      await contarCasos(conversa),
+      "a correção não tentou enviar: o silêncio foi escolha, não falha",
+    ).toBe(0);
   });
 
   it("a correção que TAMBÉM trunca é sinal de falha — abre caso", async () => {

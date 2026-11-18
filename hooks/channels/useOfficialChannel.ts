@@ -16,6 +16,17 @@ export interface OfficialChannelState {
   displayName: string | null;
   phoneNumber: string | null;
   status: string | null;
+  /**
+   * DE ONDE veio a conexão (#4074): `embedded_signup` = janela da Meta com o app
+   * da instalação; `token_manual` = credencial colada na aba. `inferida` marca
+   * as linhas anteriores à migration 9328, que só podiam ser manuais. `null` =
+   * coluna ausente ou valor desconhecido — a tela não inventa rótulo.
+   */
+  origem?: {
+    valor: "embedded_signup" | "token_manual";
+    rotulo: string;
+    inferida: boolean;
+  } | null;
   webhook: {
     callbackUrl: string;
     verifyToken: string | null;

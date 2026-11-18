@@ -17,6 +17,7 @@ import type { CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { auditMcpToolCall } from "./audit";
 import { McpAuthError, ensureRole, ensureScope, type McpAuthResult } from "./auth";
+import { recusaDaChamada, rotuloDaRecusa } from "./desfecho-da-chamada";
 import { verificarTetoMcp } from "./rate-limit";
 import { tamanhoDoResultado } from "./resultado-bytes";
 import { allTools } from "./tools";
@@ -85,6 +86,7 @@ export function createMcpServer(
           role: auth.role,
           actor: auth.actor,
           apiTokenId: auth.apiTokenId,
+          tokenScopes: auth.scopes,
           requestId,
           supabase,
         };
@@ -116,20 +118,34 @@ export function createMcpServer(
           // sem achado era `success: true` por aqui e `false` por lá.
           const motivoDoVazio = tool.motivoDoVazio?.(result) ?? null;
 
+          // RECUSA TAMBÉM NÃO É SUCESSO (#4343). Medido na prova do #3328:
+          // `crm_create_lead` recusou com `{ erro: "sem_destino" }`, nenhum
+          // negócio nasceu, e esta linha gravava `success: true` — a trilha
+          // afirmava uma mutação que não aconteceu. A régua é a mesma dos
+          // outros dois ingressos (`lib/mcp/desfecho-da-chamada.ts`), não uma
+          // lista de ferramentas: qualquer recusa no formato do catálogo conta.
+          const recusa = recusaDaChamada(result);
+
           await auditMcpToolCall({
             ctx,
             toolName: tool.name,
             args: argsAudit,
             durationMs,
-            success: motivoDoVazio === null,
+            success: motivoDoVazio === null && recusa === null,
             resultSummary: summarizeResult(result),
             // Mede o texto de `content` (o que a ferramenta devolve ao modelo). O `structuredContent`,
             // mais abaixo, leva o mesmo objeto para o cliente que prefere dado estruturado e NÃO entra
-            // nesta medida: um cliente que lê os dois campos recebe cerca de o dobro do que a coluna diz.
+            // nesta medida: um cliente que lê os dois campos recebe cerca do dobro do que a coluna diz.
             resultBytes: tamanhoDoResultado(result),
-            ...(motivoDoVazio === null
-              ? {}
-              : { desfecho: "sem_resultado" as const, motivo: motivoDoVazio }),
+            ...(recusa !== null
+              ? {
+                  errorMessage: rotuloDaRecusa(recusa),
+                  desfecho: "recusa" as const,
+                  ...(recusa.codigo === null ? {} : { motivo: recusa.codigo }),
+                }
+              : motivoDoVazio === null
+                ? {}
+                : { desfecho: "sem_resultado" as const, motivo: motivoDoVazio }),
           });
 
           return {

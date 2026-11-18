@@ -62,7 +62,7 @@ const CONTATO_LINHA = {
   email: null,
   email_normalized: null,
   phone_number: null,
-  cpf_hash: null,
+  cpf_available: false,
   birthdate: null,
   is_blocked: false,
   is_personal: false,
@@ -90,23 +90,47 @@ const estado = vi.hoisted(() => ({
 }));
 
 /**
+ * Um termo do `.or()` do PostgREST, no subconjunto que a rota usa:
+ * `coluna.eq.valor`, `coluna.neq.valor`, `coluna.is.null` e `coluna.not.is.null`.
+ * Termo fora disso derruba o teste, em vez de contar errado calado.
+ */
+function casaTermo(linha: Record<string, string>, termo: string): boolean {
+  const [coluna, ...resto] = termo.split(".");
+  const valor = linha[coluna!];
+  const op = resto.join(".");
+  if (op === "is.null") return valor === undefined || valor === null;
+  if (op === "not.is.null") return valor !== undefined && valor !== null;
+  if (resto[0] === "eq") return valor === resto.slice(1).join(".");
+  if (resto[0] === "neq") return valor !== resto.slice(1).join(".");
+  throw new Error(`termo de .or() sem dublê: ${termo}`);
+}
+
+/**
  * Dublê do supabase: `contacts` responde o 404/200 da pré-checagem e
- * `calendar_appointments` aplica os `.eq()` recebidos antes de contar — é
- * exatamente o filtro `organization_id` que a rota real envia e que a prova de
- * "outra organização não enxerga" precisa exercitar.
+ * `calendar_appointments` aplica os `.eq()` e o `.or()` recebidos antes de
+ * contar — o filtro `organization_id` que a prova de "outra organização não
+ * enxerga" precisa exercitar, e o recorte de status do achado A9 (compromisso
+ * cancelado não barra).
  */
 function supabaseFalso() {
   const cadeiaDeContagem = () => {
     const filtros: Array<[string, unknown]> = [];
+    const ous: string[] = [];
     const cadeia: Record<string, unknown> = {};
     cadeia.select = () => cadeia;
     cadeia.eq = (coluna: string, valor: unknown) => {
       filtros.push([coluna, valor]);
       return cadeia;
     };
+    cadeia.or = (expressao: string) => {
+      ous.push(expressao);
+      return cadeia;
+    };
     cadeia.then = (resolver: (v: unknown) => unknown) => {
-      const contagem = estado.agenda.filter((linha) =>
-        filtros.every(([coluna, valor]) => linha[coluna] === valor),
+      const contagem = estado.agenda.filter(
+        (linha) =>
+          filtros.every(([coluna, valor]) => linha[coluna] === valor) &&
+          ous.every((expressao) => expressao.split(",").some((termo) => casaTermo(linha, termo))),
       ).length;
       return Promise.resolve({ count: contagem, error: null }).then(resolver);
     };
@@ -161,7 +185,7 @@ async function consultarRota() {
 
 describe("GET /api/v1/contacts/[id]/vinculos — a pré-checagem", () => {
   it("conta o compromisso da própria organização e nomeia o vínculo", async () => {
-    estado.agenda = [{ contact_id: CONTATO, organization_id: ORG }];
+    estado.agenda = [{ contact_id: CONTATO, organization_id: ORG, status: "confirmed" }];
 
     const { status, body } = await consultarRota();
 
@@ -172,8 +196,41 @@ describe("GET /api/v1/contacts/[id]/vinculos — a pré-checagem", () => {
     });
   });
 
+  it("compromisso cancelado não barra; o vivo e a reserva de serviço cancelada barram (A9)", async () => {
+    // A função de exclusão desvincula o cancelado comum (migration 9405), então
+    // a pré-checagem não pode contá-lo: contar faria a tela pedir "cancele" de
+    // algo já cancelado. A reserva de serviço não se desvincula com sessão de
+    // usuário, e por isso continua contando.
+    estado.agenda = [
+      { contact_id: CONTATO, organization_id: ORG, status: "cancelled" },
+      { contact_id: CONTATO, organization_id: ORG, status: "confirmed" },
+      { contact_id: CONTATO, organization_id: ORG, status: "completed" },
+      { contact_id: CONTATO, organization_id: ORG, status: "cancelled", service_occurrence_id: "occ-1" },
+    ];
+
+    const { status, body } = await consultarRota();
+
+    expect(status).toBe(200);
+    expect((body as unknown as { data: unknown }).data).toEqual({
+      vinculos: ["3 compromisso(s) na agenda"],
+      por_tabela: { calendar_appointments: 3 },
+    });
+  });
+
+  it("só compromisso cancelado: nenhum vínculo, a exclusão é liberada (A9)", async () => {
+    estado.agenda = [{ contact_id: CONTATO, organization_id: ORG, status: "cancelled" }];
+
+    const { status, body } = await consultarRota();
+
+    expect(status).toBe(200);
+    expect((body as unknown as { data: unknown }).data).toEqual({
+      vinculos: [],
+      por_tabela: {},
+    });
+  });
+
   it("o compromisso de outra organização não aparece", async () => {
-    estado.agenda = [{ contact_id: CONTATO, organization_id: ORG_ALHEIA }];
+    estado.agenda = [{ contact_id: CONTATO, organization_id: ORG_ALHEIA, status: "confirmed" }];
 
     const { status, body } = await consultarRota();
 
@@ -186,7 +243,7 @@ describe("GET /api/v1/contacts/[id]/vinculos — a pré-checagem", () => {
 
   it("ficha que a organização não enxerga responde 404, sem contar nada", async () => {
     estado.contatoVisivel = false;
-    estado.agenda = [{ contact_id: CONTATO, organization_id: ORG }];
+    estado.agenda = [{ contact_id: CONTATO, organization_id: ORG, status: "confirmed" }];
 
     const { status } = await consultarRota();
 
@@ -225,7 +282,7 @@ describe("diálogo 'Excluir contato?' — o aviso antes do clique", () => {
 
     expect(
       await screen.findByText(
-        "Este contato tem 1 compromisso na Agenda. Cancele ou apague o compromisso antes de excluir.",
+        "Este contato tem 1 compromisso não cancelado na Agenda. Cancele o compromisso antes de excluir.",
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Abrir Agenda" })).toHaveAttribute(
