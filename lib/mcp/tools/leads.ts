@@ -43,6 +43,8 @@ import { audit } from "@/lib/audit";
 import { nomesDosAtendentesCom } from "@/lib/users/nome-do-atendente";
 import type { McpContext, McpToolDefinition } from "../types";
 import { ApiError } from "@/lib/api/types";
+import { filtrarCamposLegiveisPelaIa } from "@/lib/leads/campos-do-funil";
+import { settingsDoFunil } from "@/lib/leads/campos-exigidos";
 
 /**
  * A recusa ÚNICA das leituras de negócio durante um turno: negócio de outro
@@ -182,6 +184,49 @@ async function enrichLeads(
   }));
 }
 
+/**
+ * O recorte do turno (#4669): DENTRO de um turno de agente o `custom_fields`
+ * de TODA resposta de negócio é o que o modelo lê — leitura e escrita, porque
+ * `crm_update_lead` e as irmãs devolvem a linha inteira (`select *`) e o modelo
+ * a lê do mesmo jeito. Só saem as chaves que o dono do funil marcou "A IA pode
+ * ler". Sem turno (token de pessoa) a ficha volta inteira: quem lê é uma
+ * pessoa, com a permissão dela. Um `settings` por funil distinto, sem N+1.
+ */
+async function recortarParaOTurno(
+  ctx: McpContext,
+  leads: Array<Record<string, unknown>>,
+): Promise<Array<Record<string, unknown>>> {
+  if (!ctx.contatoDoTurno || leads.length === 0) return leads;
+  const funis = [...new Set(leads.map((l) => l.pipeline_id as string | null | undefined))];
+  const settingsPorFunil = new Map(
+    await Promise.all(
+      funis.map(async (id) => [id, await settingsDoFunil(ctx.supabase, id, ctx.organizationId)] as const),
+    ),
+  );
+  return leads.map((l) =>
+    "custom_fields" in l
+      ? {
+          ...l,
+          custom_fields: filtrarCamposLegiveisPelaIa(
+            settingsPorFunil.get(l.pipeline_id as string | null | undefined) as
+              | Record<string, unknown>
+              | null,
+            l.custom_fields,
+          ),
+        }
+      : l,
+  );
+}
+
+/** O mesmo recorte para a resposta de UM negócio. */
+async function recortarUmParaOTurno(
+  ctx: McpContext,
+  lead: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const [recortado] = await recortarParaOTurno(ctx, [lead]);
+  return recortado ?? lead;
+}
+
 // ---------------------------------------------------------------------------
 // list
 // ---------------------------------------------------------------------------
@@ -236,7 +281,7 @@ export const crmListLeads: McpToolDefinition<typeof listInputShape> = {
       },
     );
     return {
-      leads: await enrichLeads(ctx, result.leads),
+      leads: await enrichLeads(ctx, await recortarParaOTurno(ctx, result.leads)),
       cursor: result.cursor,
       has_more: result.has_more,
     };
@@ -327,7 +372,7 @@ export const crmGetLead: McpToolDefinition<typeof getInputShape> = {
       // Defesa em profundidade — service-role bypassa RLS.
       throw new Error("not_found");
     }
-    const [enriched] = await enrichLeads(ctx, [lead]);
+    const [enriched] = await enrichLeads(ctx, await recortarParaOTurno(ctx, [lead]));
     return { lead: enriched };
   },
 };
@@ -512,7 +557,7 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
       },
     );
     return {
-      lead,
+      lead: await recortarUmParaOTurno(ctx, lead),
       ...(conferencia.recusados.length > 0
         ? {
             campos_nao_gravados: conferencia.recusados,
@@ -542,7 +587,40 @@ const updateInputShape = {
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
-  tags: z.array(z.string()).optional(),
+  /**
+   * AS ETIQUETAS DO NEGÓCIO (#4666) — e a descrição de `tags` diz a verdade.
+   *
+   * `tags` SUBSTITUI a lista inteira, e é o contrato antigo: renomear ou
+   * reinterpretar o campo quebraria quem já o manda. O que faltava era
+   * `tags_adicionar`/`tags_remover` — o que o agente quase sempre quer — e a
+   * frase que avisa que a lista é substituída, porque sem ela o modelo apagava
+   * etiqueta acreditando acrescentar.
+   *
+   * A normalização NÃO mora no shape: `z.toJSONSchema` recusa `transform`
+   * ("Transforms cannot be represented in JSON Schema", medido no zod 4.6), e o
+   * shape bruto é justamente o que vira o esquema que o modelo lê. Ela mora em
+   * `updateLeadSchema` (`lib/schemas/leads.ts`), que é o schema que este handler
+   * parseia com `updateLeadSchema.parse(rest)` — a mesma régua para o MCP e para
+   * o PATCH REST, sem uma segunda regra.
+   */
+  tags: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Substitui a lista INTEIRA de etiquetas do negócio: o que não vier aqui é APAGADO. " +
+        "Para acrescentar use tags_adicionar; para tirar só algumas, tags_remover.",
+    ),
+  tags_adicionar: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Etiquetas a ACRESCENTAR à lista atual (união): as que já estão ficam. É o que usar " +
+        'para "marcar o negócio com X".',
+    ),
+  tags_remover: z
+    .array(z.string())
+    .optional()
+    .describe("Etiquetas a REMOVER da lista atual (diferença): as demais ficam."),
   /**
    * Os campos que o DONO declarou em `pipeline.settings.fields`.
    *
@@ -563,7 +641,8 @@ const updateInputShape = {
 export const crmUpdateLead: McpToolDefinition<typeof updateInputShape> = {
   name: "crm_update_lead",
   description:
-    "Atualiza campos editáveis de um lead. Stage transitions são via crm_move_lead_stage; status é gerenciado por triggers.",
+    "Atualiza campos editáveis de um lead. Stage transitions são via crm_move_lead_stage; status é gerenciado por triggers. " +
+    "`tags` SUBSTITUI a lista inteira de etiquetas; para acrescentar use `tags_adicionar`.",
   inputSchema: updateInputShape,
   category: "write",
   requiresRole: "agent",
@@ -591,7 +670,7 @@ export const crmUpdateLead: McpToolDefinition<typeof updateInputShape> = {
         : { ...parsed, custom_fields: conferencia.custom_fields },
     );
     return {
-      lead,
+      lead: await recortarUmParaOTurno(ctx, lead),
       ...(conferencia.recusados.length > 0
         ? {
             campos_nao_gravados: conferencia.recusados,
@@ -663,7 +742,7 @@ export const crmMoveLeadStage: McpToolDefinition<typeof moveInputShape> = {
         lost_reason: input.lost_reason,
       },
     );
-    return { lead };
+    return { lead: await recortarUmParaOTurno(ctx, lead) };
   },
 };
 
@@ -704,7 +783,7 @@ export const crmRetomarLead: McpToolDefinition<typeof retomarInputShape> = {
       input.lead_id,
       { stage_id: input.stage_id },
     );
-    return { lead };
+    return { lead: await recortarUmParaOTurno(ctx, lead) };
   },
 };
 
