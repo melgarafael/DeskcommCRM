@@ -29,6 +29,24 @@ export function mensagemDeBloqueioPorVinculo(
       );
 }
 
+/**
+ * O aviso do diálogo "Excluir contato?" sobre os negócios ABERTOS do contato (A6):
+ * a exclusão os fecha como perdidos (motivo "Contato excluído") em vez de deixá-los
+ * soltos no funil. Não barra nada — é informação, e some quando não há card aberto.
+ */
+export function avisoDeCardsAbertos(
+  cardsAbertos: number | undefined,
+  t: (texto: string) => string,
+): string | null {
+  if (typeof cardsAbertos !== "number" || cardsAbertos < 1) return null;
+  return cardsAbertos === 1
+    ? t("Este contato tem 1 negócio aberto. Ao excluir, ele será fechado como perdido (motivo: Contato excluído).")
+    : t("Este contato tem {n} negócios abertos. Ao excluir, eles serão fechados como perdidos (motivo: Contato excluído).").replace(
+        "{n}",
+        String(cardsAbertos),
+      );
+}
+
 function toastDeBloqueioPorVinculo(err: ApiError): boolean {
   const t = (s: string) => traduzir(s, idiomaAtual());
   const mensagem = mensagemDeBloqueioPorVinculo(err.details, t);

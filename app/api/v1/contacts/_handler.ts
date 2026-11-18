@@ -32,6 +32,7 @@ import { camposCpfParaGravar, hashCpf } from "@/lib/contacts/cpf";
 import type { Contact } from "@/lib/types/contacts";
 import { abrirConversaDoContatoNovo, type PortaDaCriacao } from "@/lib/contacts/conversa-ao-criar";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
+import { encerraDemanda } from "@/lib/leads/encerramento";
 import { listaLegivel } from "@/lib/leads/activity-vocabulary";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { atribuirConversaDoCadastroAoCriador } from "@/lib/contacts/conversa-do-criador";
@@ -1332,6 +1333,34 @@ async function contarVinculosRestrict(
 }
 
 /**
+ * Os cards ABERTOS do contato — os que a exclusão fecha (A6).
+ *
+ * `crm_leads.contact_id` é `on delete set null`: apagar a ficha sem isto deixava
+ * o card aberto no Kanban, sem contato, e ninguém sabia a quem ligar. A rota
+ * fecha cada um como perdido (motivo de sistema `contact_deleted`) ANTES de apagar
+ * a ficha. Card ganho ou perdido não entra: é histórico de venda e fica como está.
+ * A contagem da tela e o fechamento leem ESTA função, para o aviso não discordar
+ * do que a exclusão faz.
+ */
+async function cardsAbertosDoContato(
+  supabase: SB,
+  ctx: HandlerCtx,
+  contactId: string,
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("crm_leads")
+    .select("id")
+    .eq("organization_id", ctx.organization_id)
+    .eq("contact_id", contactId)
+    .eq("status", "open");
+  if (error) {
+    // Sem saber quais cards fecham, apagar a ficha recriaria o card solto.
+    throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
+  }
+  return ((data ?? []) as Array<{ id: string }>).map((l) => l.id);
+}
+
+/**
  * O que a exclusão VAI encontrar, apurado sem apagar nada: a pré-checagem que o
  * diálogo "Excluir contato?" consulta antes do clique (issue #1925).
  *
@@ -1344,9 +1373,12 @@ export async function vinculosDoContatoHandler(
   supabase: SB,
   ctx: HandlerCtx,
   contactId: string,
-): Promise<{ vinculos: string[]; por_tabela: Record<string, number> }> {
+): Promise<{ vinculos: string[]; por_tabela: Record<string, number>; cards_abertos: number }> {
   await contatoExistente(supabase, ctx, contactId);
-  return contarVinculosRestrict(supabase, ctx, contactId);
+  const bloqueios = await contarVinculosRestrict(supabase, ctx, contactId);
+  // Não barra nada: é o que a exclusão vai FECHAR (A6), para a tela avisar antes.
+  const cards = await cardsAbertosDoContato(supabase, ctx, contactId);
+  return { ...bloqueios, cards_abertos: cards.length };
 }
 
 export async function deleteContactHandler(
@@ -1384,6 +1416,47 @@ export async function deleteContactHandler(
         ctx.idioma ?? "pt-BR",
       ),
     );
+  }
+
+  // A6: o contato some, o negócio dele não pode ficar solto no Kanban. Cada card
+  // ABERTO fecha como perdido, pela MESMA porta do botão "Perdido" (`encerraDemanda`:
+  // etapa de perda do funil, timeline, auditoria), com o motivo de sistema
+  // `contact_deleted`. Vem DEPOIS da pré-checagem (o 409 não toca em nada) e ANTES
+  // da função que apaga: depois dela o `contact_id` já é null e não há como achar o
+  // card. Se um funil não consegue fechar (sem etapa de perda, campo exigido), a
+  // exclusão para aqui com 409 — recusar é melhor que recriar o card solto.
+  for (const leadId of await cardsAbertosDoContato(supabase, ctx, contactId)) {
+    try {
+      await encerraDemanda(supabase, ctx, {
+        leadId,
+        desfecho: "lost",
+        motivo: "contact_deleted",
+        razaoNaTimeline: "O contato foi excluído",
+      });
+    } catch (err) {
+      await audit({
+        action: "contact.delete_blocked",
+        actorUserId: a.actorUserId,
+        organizationId: ctx.organization_id,
+        resourceType: "contact",
+        resourceId: contactId,
+        requestId: ctx.requestId,
+        metadata: { ...a.metadataActor, motivo: "card_nao_fechou", lead_id: leadId, apagados: [] },
+      });
+      if (err instanceof ApiError) {
+        throw new ApiError(
+          409,
+          "state_conflict",
+          { lead_id: leadId },
+          ctx.requestId,
+          traduzir(
+            "Não foi possível excluir: um negócio aberto deste contato não pôde ser fechado. Feche ou mova o negócio e tente de novo.",
+            ctx.idioma ?? "pt-BR",
+          ),
+        );
+      }
+      throw err;
+    }
   }
 
   // UMA função, UMA transação (issue #1862).

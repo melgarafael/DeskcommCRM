@@ -19,6 +19,14 @@ const revogarAcessosSpy = vi.fn(async (_db: unknown, _org: string, _contato: str
 vi.mock("@/lib/mcp/servidor-externo/do-agente/revogacao", () => ({
   revogarAcessosDoContato: (db: unknown, org: string, contato: string) => revogarAcessosSpy(db, org, contato),
 }));
+// A6: o fechamento dos cards abertos passa pela porta do botão "Perdido".
+const encerraSpy = vi.fn(async (_db: unknown, _ctx: unknown, input: { leadId: string }) => {
+  ordem.push(`encerra:${input.leadId}`);
+  return { lead: {}, jaEstava: false };
+});
+vi.mock("@/lib/leads/encerramento", () => ({
+  encerraDemanda: (db: unknown, ctx: unknown, input: { leadId: string }) => encerraSpy(db, ctx, input),
+}));
 const ADMIN = { cliente: "admin" };
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ADMIN }));
 
@@ -32,6 +40,7 @@ const FUNCAO = "fn_apagar_contato_com_historico";
 const chamadas: Array<{ tabela: string; op: string }> = [];
 const contagens: Array<{ tabela: string; filtros: Array<[string, unknown]> }> = [];
 const rpcs: Array<{ nome: string; args: Record<string, unknown> | undefined }> = [];
+const leitasDeCards: Array<Array<[string, unknown]>> = [];
 
 interface CadeiaContagem {
   eq: (coluna: string, valor: unknown) => CadeiaContagem;
@@ -50,6 +59,8 @@ interface OpcoesFake {
   rpcErro?: { code?: string; message: string };
   /** A função devolve false: a ficha não estava acessível para quem chamou. */
   rpcFalse?: boolean;
+  /** Ids dos cards ABERTOS do contato (A6). */
+  cardsAbertos?: string[];
 }
 
 function clienteFalso(opts?: OpcoesFake): unknown {
@@ -86,6 +97,21 @@ function clienteFalso(opts?: OpcoesFake): unknown {
                     ? { count: null, error: opts.erroContagem }
                     : { count: opts?.vinculos ?? 0, error: null },
                 );
+              },
+            };
+            return cadeia;
+          }
+          if (tabela === "crm_leads") {
+            // A6: `select("id")` dos cards abertos do contato.
+            const filtros: Array<[string, unknown]> = [];
+            const cadeia = {
+              eq: (coluna: string, valor: unknown) => {
+                filtros.push([coluna, valor]);
+                return cadeia;
+              },
+              then: (resolve: (valor: unknown) => unknown) => {
+                leitasDeCards.push(filtros);
+                return resolve({ data: (opts?.cardsAbertos ?? []).map((id) => ({ id })), error: null });
               },
             };
             return cadeia;
@@ -134,6 +160,12 @@ describe("deleteContactHandler", () => {
     rpcs.length = 0;
     ordem.length = 0;
     revogarAcessosSpy.mockClear();
+    encerraSpy.mockReset();
+    encerraSpy.mockImplementation(async (_db, _ctx, input) => {
+      ordem.push(`encerra:${input.leadId}`);
+      return { lead: {}, jaEstava: false };
+    });
+    leitasDeCards.length = 0;
   });
 
   it("apaga a ficha inteira com UMA chamada de função — nenhuma tabela apagada pela rota", async () => {
@@ -265,5 +297,75 @@ describe("deleteContactHandler", () => {
     ).rejects.toMatchObject({ status: 404, code: "not_found" });
     expect(auditSpy).not.toHaveBeenCalled();
     expect(rpcs.some((r) => r.nome === FUNCAO)).toBe(false);
+  });
+});
+
+describe("deleteContactHandler — cards abertos (A6)", () => {
+  const CARD_1 = "c05e7a00-0000-4000-8000-0000000000d1";
+  const CARD_2 = "c05e7a00-0000-4000-8000-0000000000d2";
+
+  beforeEach(() => {
+    auditSpy.mockClear();
+    chamadas.length = 0;
+    contagens.length = 0;
+    rpcs.length = 0;
+    ordem.length = 0;
+    leitasDeCards.length = 0;
+    encerraSpy.mockReset();
+    encerraSpy.mockImplementation(async (_db, _ctx, input) => {
+      ordem.push(`encerra:${input.leadId}`);
+      return { lead: {}, jaEstava: false };
+    });
+  });
+
+  it("fecha cada card ABERTO como perdido (contact_deleted) ANTES de apagar a ficha", async () => {
+    const { deleteContactHandler } = await import("@/app/api/v1/contacts/_handler");
+    await deleteContactHandler(clienteFalso({ cardsAbertos: [CARD_1, CARD_2] }) as never, ctxFalso(), CONTATO);
+
+    expect(encerraSpy).toHaveBeenCalledTimes(2);
+    expect(encerraSpy.mock.calls[0]?.[2]).toMatchObject({
+      leadId: CARD_1,
+      desfecho: "lost",
+      motivo: "contact_deleted",
+    });
+    // Depois da função o contact_id já é null e o card não se acha mais: a ordem é a regra.
+    expect(ordem.indexOf(`encerra:${CARD_1}`)).toBeLessThan(ordem.indexOf(FUNCAO));
+    expect(ordem.indexOf(`encerra:${CARD_2}`)).toBeLessThan(ordem.indexOf(FUNCAO));
+    // Só os ABERTOS da organização do chamador.
+    expect(leitasDeCards[0]).toEqual(
+      expect.arrayContaining([
+        ["organization_id", ORG],
+        ["contact_id", CONTATO],
+        ["status", "open"],
+      ]),
+    );
+  });
+
+  it("sem card aberto não fecha nada", async () => {
+    const { deleteContactHandler } = await import("@/app/api/v1/contacts/_handler");
+    await deleteContactHandler(clienteFalso() as never, ctxFalso(), CONTATO);
+    expect(encerraSpy).not.toHaveBeenCalled();
+    expect(rpcs.some((r) => r.nome === FUNCAO)).toBe(true);
+  });
+
+  it("card que não fecha (funil sem etapa de perda): 409 e a ficha NÃO é apagada", async () => {
+    const { ApiError } = await import("@/lib/api/types");
+    encerraSpy.mockRejectedValueOnce(new ApiError(422, "pipeline_no_lost_stage", undefined, "req-1", "sem etapa"));
+    const { deleteContactHandler } = await import("@/app/api/v1/contacts/_handler");
+    await expect(
+      deleteContactHandler(clienteFalso({ cardsAbertos: [CARD_1] }) as never, ctxFalso(), CONTATO),
+    ).rejects.toMatchObject({ status: 409, code: "state_conflict" });
+    expect(rpcs.some((r) => r.nome === FUNCAO)).toBe(false);
+    expect(ultimaAuditoria()).toMatchObject({
+      action: "contact.delete_blocked",
+      metadata: expect.objectContaining({ motivo: "card_nao_fechou", lead_id: CARD_1 }),
+    });
+  });
+
+  it("a pré-checagem da tela conta os mesmos cards abertos, sem fechar nenhum", async () => {
+    const { vinculosDoContatoHandler } = await import("@/app/api/v1/contacts/_handler");
+    const r = await vinculosDoContatoHandler(clienteFalso({ cardsAbertos: [CARD_1, CARD_2] }) as never, ctxFalso(), CONTATO);
+    expect(r.cards_abertos).toBe(2);
+    expect(encerraSpy).not.toHaveBeenCalled();
   });
 });

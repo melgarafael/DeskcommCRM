@@ -193,6 +193,7 @@ describe("GET /api/v1/contacts/[id]/vinculos — a pré-checagem", () => {
     expect((body as unknown as { data: unknown }).data).toEqual({
       vinculos: ["1 compromisso(s) na agenda"],
       por_tabela: { calendar_appointments: 1 },
+      cards_abertos: 0,
     });
   });
 
@@ -214,6 +215,7 @@ describe("GET /api/v1/contacts/[id]/vinculos — a pré-checagem", () => {
     expect((body as unknown as { data: unknown }).data).toEqual({
       vinculos: ["3 compromisso(s) na agenda"],
       por_tabela: { calendar_appointments: 3 },
+      cards_abertos: 0,
     });
   });
 
@@ -226,6 +228,7 @@ describe("GET /api/v1/contacts/[id]/vinculos — a pré-checagem", () => {
     expect((body as unknown as { data: unknown }).data).toEqual({
       vinculos: [],
       por_tabela: {},
+      cards_abertos: 0,
     });
   });
 
@@ -238,6 +241,7 @@ describe("GET /api/v1/contacts/[id]/vinculos — a pré-checagem", () => {
     expect((body as unknown as { data: unknown }).data).toEqual({
       vinculos: [],
       por_tabela: {},
+      cards_abertos: 0,
     });
   });
 

@@ -40,6 +40,7 @@ vi.mock("next/link", () => ({
 vi.mock("@/hooks/contacts/useDeleteContact", () => ({
   useDeleteContact: () => ({ mutateAsync: vi.fn(), isPending: false }),
   mensagemDeBloqueioPorVinculo: () => null,
+  avisoDeCardsAbertos: () => null,
 }));
 
 function contato(pessoal: boolean, tags: string[]): Contact {
