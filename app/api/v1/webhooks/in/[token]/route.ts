@@ -39,6 +39,7 @@ import {
   type RdStationMapped,
 } from "@/lib/webhooks/rdstation";
 import { isElementorPayload, mapElementorPayload, type ElementorMapped } from "@/lib/webhooks/elementor";
+import { isHotmartPayload, mapHotmartPayload, type HotmartMapped } from "@/lib/webhooks/hotmart";
 import {
   motivoDaRecusaDaCriacao,
   origemDaPagina,
@@ -312,6 +313,19 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
       ? mapElementorPayload(payload)
       : null;
 
+  // Hotmart manda a compra em `{ event: "PURCHASE_*", data: { buyer, purchase } }`
+  // — dois níveis de envelope, o mesmo problema dos três acima: nenhuma chave de
+  // topo chama `nome`. É o último da precedência porque a detecção é por forma
+  // estrita (família `PURCHASE_*` + bloco `data`), e nenhum payload é de duas
+  // origens.
+  const hotmartMapped: HotmartMapped | null =
+    respondiMapped === null &&
+    rdStationMapped === null &&
+    elementorMapped === null &&
+    isHotmartPayload(payload)
+      ? mapHotmartPayload(payload)
+      : null;
+
   // Idempotência (spec §5): `external_id` é campo reservado do envio — quem
   // integra via sistema (Zapier/n8n/loja) manda o ID único do disparo e o
   // reenvio automático (retry por timeout) NUNCA duplica o lead. O índice
@@ -336,6 +350,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
       // tipo de coisa que só aparece quando alguém manda um corpo fabricado.
       : (respondiMapped?.externalId?.slice(0, 255) ??
         rdStationMapped?.externalId?.slice(0, 255) ??
+        hotmartMapped?.externalId?.slice(0, 255) ??
         null);
 
   const respondWithLead = (leadId: string): NextResponse => {
@@ -453,6 +468,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     respondiMapped ??
     rdStationMapped ??
     elementorMapped ??
+    hotmartMapped ??
     mapInboundPayload(externalId ? payloadForMapping : payload, fieldMap);
   if (!mapped.phone) {
     const rawPhone = findRawPhoneIfUnnormalized(payload, fieldMap);
