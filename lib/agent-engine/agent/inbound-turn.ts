@@ -1737,6 +1737,13 @@ export interface InboundTurnKnobs {
    */
   maxSendsPerTurn?: number;
   /**
+   * #4835 — carência (ms) antes de gastar MODELO APROVADO no primeiro contato de
+   * um lead recém-chegado, com a janela de 24 h fechada (FOLLOWUP_CARENCIA_DO_MODELO_MS).
+   * Ausente = `CARENCIA_PADRAO_MS` (10 s); `0` desliga e devolve o comportamento
+   * de antes. Ver `agent/carencia-antes-do-modelo.ts`.
+   */
+  carenciaDoModeloMs?: number;
+  /**
    * #4590 — N respostas automáticas por CONVERSA dentro de W minutos
    * (TETO_DE_RESPOSTAS_POR_CONVERSA / TETO_DE_RESPOSTAS_JANELA_MIN). Ausente =
    * os defaults de `agent/teto-de-respostas.ts` (20 em 60 min) — main.ts sempre
@@ -6911,11 +6918,20 @@ async function executarTurnoDoAgente(
       outcome: routed.outcome,
       // `in`: o campo só existe no turno da troca; ausente = desligado.
       textoConfigurado: 'passagemAoClienteDoRouter' in routed ? routed.passagemAoClienteDoRouter : null,
+      // #4750 — o TERCEIRO modo (`config.passagem_silenciosa`): ligado, NADA
+      // vai ao cliente — nem a frase cadastrada. O silêncio vence a frase, e
+      // por isso o `enviar` abaixo nem é chamado.
+      passagemSilenciosa:
+        'passagemSilenciosaDoRouter' in routed && routed.passagemSilenciosaDoRouter === true,
       agenteAnteriorId: passagemRecebida?.agenteAnteriorId ?? null,
       agenteNovoId: routed.config?.agentId ?? null,
     };
+    const passagemSilenciosaDaTroca = trocaQuePedeAviso.passagemSilenciosa;
     let clienteAvisadoDaTroca = false;
-    if (textoDaPassagemAoCliente(trocaQuePedeAviso) !== null) {
+    if (
+      passagemSilenciosaDaTroca === false &&
+      textoDaPassagemAoCliente(trocaQuePedeAviso) !== null
+    ) {
       const desfechoDoAviso = await avisarClienteDaTrocaDeAgente(
         {
           log: runLog,
@@ -6973,8 +6989,11 @@ async function executarTurnoDoAgente(
             passagemRecebida,
             await idiomaDaOrganizacaoDoTurno(pool, tenantId, runLog),
             // Avisado o cliente, o agente novo NÃO repete o aviso: é o que
-            // impede duas mensagens de passagem na mesma troca.
+            // impede duas mensagens de passagem na mesma troca. No modo
+            // silencioso (#4750) também não: a instrução é continuar sem se
+            // apresentar nem anunciar a troca.
             clienteAvisadoDaTroca,
+            passagemSilenciosaDaTroca,
           );
     const openingBase = input.buildOpening({
       previous: effectivePrevious,

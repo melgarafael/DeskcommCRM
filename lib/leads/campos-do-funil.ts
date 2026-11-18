@@ -36,6 +36,56 @@ export function camposPorEscopo(
 }
 
 /**
+ * O campo está liberado para o MODELO? (issue #4669)
+ *
+ * Só o `true` EXPLÍCITO libera. A ausência da marca — toda definição que já
+ * existe, e o que a tela grava quando a caixa está desmarcada — é DESMARCADO:
+ * o valor fica no card e não vai ao modelo. A régua mora aqui, e não em cada
+ * caminho, porque são vários (`negocio-do-followup.ts` e toda resposta de
+ * negócio no turno, em `lib/mcp/tools/leads.ts`) e cópias divergiriam no dia em
+ * que uma delas mudasse.
+ */
+export function campoLiberadoParaIa(
+  campo: Pick<CustomFieldDef, "ia_pode_ler">,
+): boolean {
+  return campo.ia_pode_ler === true;
+}
+
+/** Os campos de um escopo que a IA pode ler — a lista que o prompt recebe. */
+export function camposLiberadosParaIa(
+  campos: CustomFieldDef[],
+  escopo: EscopoDoCampo = "negocio",
+): CustomFieldDef[] {
+  return camposPorEscopo(campos, escopo).filter(campoLiberadoParaIa);
+}
+
+/**
+ * O recorte de `custom_fields` que a IA pode ler (issue #4669) — o que as
+ * ferramentas de negócio devolvem DENTRO de um turno de agente.
+ *
+ * Chave que o funil não declara não tem marca, e sem marca não há autorização:
+ * fica de fora, igual à leitura do bloco do follow-up ("sem rótulo não há como
+ * o modelo saber o que o valor significa"). `custom_fields` que não é objeto
+ * volta como veio — o filtro não inventa nem apaga a forma da ficha.
+ */
+export function filtrarCamposLegiveisPelaIa(
+  settings: Record<string, unknown> | null | undefined,
+  custom: unknown,
+): Record<string, unknown> | null {
+  if (!custom || typeof custom !== "object" || Array.isArray(custom)) {
+    return (custom as Record<string, unknown> | null | undefined) ?? null;
+  }
+  const liberadas = new Set(
+    camposLiberadosParaIa(camposDoFunil(settings)).map((campo) => campo.key),
+  );
+  const out: Record<string, unknown> = {};
+  for (const [chave, valor] of Object.entries(custom as Record<string, unknown>)) {
+    if (liberadas.has(chave)) out[chave] = valor;
+  }
+  return out;
+}
+
+/**
  * O embed `crm_pipelines(settings)` do PostgREST vem objeto (FK to-one) ou,
  * se a relação vacilar, array. Os dois caem aqui — lixo vira `null`.
  */

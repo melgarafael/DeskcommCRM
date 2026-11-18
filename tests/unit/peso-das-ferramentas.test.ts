@@ -56,6 +56,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_get_queue_status": { tokens: 83, motivo: BASE },
   "crm_list_leads": { tokens: 500, motivo: BASE },
   "crm_get_lead": { tokens: 202, motivo: BASE },
+  "crm_count_leads": { tokens: 317, motivo: "ferramenta nova: conta negócios sem listá-los, para o agente não paginar crm_list_leads só para responder 'quantos?'; 3 filtros (funil, etapa, status), sem responsável, de propósito, para pesar menos" },
   "crm_list_lead_attachments": {
     tokens: 259,
     motivo:
@@ -204,7 +205,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +672 com os documentos do negócio (#4544): 259 de `crm_list_lead_attachments`
 // e 413 de `crm_get_lead_attachment`. MEDIDO no merge com a main: 40209 = 39537 + 672
 // (2026-11-17, main de `0652fa6866`).
-const TETO_TOTAL = 40209;
+const TETO_TOTAL = 40526;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
