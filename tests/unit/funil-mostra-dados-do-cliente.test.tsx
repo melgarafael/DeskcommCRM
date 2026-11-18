@@ -74,7 +74,10 @@ const CONTATO = {
   email: "ana@exemplo.com",
   phone_number: "+5511999998888",
   updated_at: "2026-09-19T10:00:00Z",
-  custom_fields: { cor_favorita: "azul", link_instagram: "instagram.com/loja" } as Record<string, unknown>,
+  custom_fields: { cor_favorita: "azul", link_instagram: "instagram.com/loja" } as Record<
+    string,
+    unknown
+  >,
 };
 
 /** O candidato a PARTICIPANTE que a busca do dossiê oferece (#3083 F1). */
@@ -121,8 +124,16 @@ describe("ContatoNoCard", () => {
       />,
     );
 
-    expect(screen.getByText("+5511999998888")).toBeInTheDocument();
-    expect(screen.getByText("ana@exemplo.com")).toBeInTheDocument();
+    const telefone = screen.getByText("+5511999998888");
+    expect(telefone).toBeInTheDocument();
+    expect(telefone.className).toContain("shrink-0");
+    const email = screen.getByText("ana@exemplo.com");
+    expect(email).toBeInTheDocument();
+    expect(email).toHaveAttribute("title", "ana@exemplo.com");
+    expect(email.className).toContain("min-w-0");
+    expect(email.className).toContain("overflow-hidden");
+    expect(email.className).toContain("text-ellipsis");
+    expect(email.className).toContain("whitespace-nowrap");
 
     const instagram = screen.getByRole("link", { name: "Abrir Instagram" });
     expect(instagram).toHaveAttribute("href", "https://www.instagram.com/loja");
