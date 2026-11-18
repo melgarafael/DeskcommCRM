@@ -27,6 +27,7 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { LEAD_STAGES, type LeadStage } from "@/lib/agent-engine/agent/lead-state";
 import { diffParaUpdates, validarMapeamento, type EtapaDoMapa } from "@/lib/leads/agent-mapping";
+import { normalizarCorDaEtapa } from "@/lib/leads/cor-da-etapa";
 import { anexaFluxos, carregaFluxosPorEtapa, type FluxosPorEtapa } from "@/lib/followup/fluxos-da-etapa";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -87,6 +88,8 @@ const bodySchema = z.object({
  * a regra do mapeamento carregar um campo que ela nunca lê.
  */
 type EtapaComAutoria = EtapaDoMapa & {
+  /** `crm_stages.color`, `#rrggbb` — `null` = padrão, o ponto neutro do quadro. */
+  color?: string | null;
   /** Chance de fechamento calibrada pelo gestor, 0–100; `null` = sem calibração. */
   win_probability?: number | null;
   avisar_na_central?: boolean | null;
@@ -127,7 +130,7 @@ async function lerFunil(
     // consulta só para ela seria um round-trip por render numa tela de
     // configuração — e um caminho a mais para a lista e a autoria divergirem.
     .select(
-      "id, name, is_won, is_lost, win_probability, agent_stage_hint, avisar_na_central, expected_duration_hours, description, last_change_actor_kind, last_change_at",
+      "id, name, color, is_won, is_lost, win_probability, agent_stage_hint, avisar_na_central, expected_duration_hours, description, last_change_actor_kind, last_change_at",
     )
     .eq("organization_id", orgId)
     .eq("pipeline_id", pipelineId)
@@ -165,6 +168,11 @@ function corpo(etapas: EtapaComAutoria[], fluxos: FluxosPorEtapa | null) {
       name: e.name,
       is_won: e.is_won,
       is_lost: e.is_lost,
+      // #4802 (item 2): a cor viaja na MESMA leitura que a tela de etapas faz.
+      // Sem ela aqui, o seletor abriria sempre em «Padrão» e a primeira gravação
+      // sobrescreveria a cor que o quadro já pintava — o defeito do #2999, com
+      // outro campo.
+      color: normalizarCorDaEtapa(e.color),
       // #2999: o select trazia a coluna desde bec1ab38c, mas o corpo a deixava
       // cair — a tela de etapas lê DAQUI e mostrava a chance vazia ao recarregar.
       win_probability: e.win_probability ?? null,

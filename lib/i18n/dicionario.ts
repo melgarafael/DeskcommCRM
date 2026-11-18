@@ -9465,6 +9465,12 @@ export const DICIONARIO: Traducoes = {
   negócio: { es: "negocio" },
   negócios: { es: "negocios" },
   "Etapa atualizada.": { es: "Etapa actualizada." },
+  // #4802 (item 2): a cor da etapa passa a se escolher na tela de etapas. Os
+  // oito nomes de tom já existem no bloco da etiqueta — a etapa usa a MESMA
+  // paleta, e duplicar os nomes aqui seria uma segunda tradução para a mesma
+  // fileira.
+  "Cor da etapa": { es: "Color de la etapa" },
+  "Cor escolhida": { es: "Color elegido" },
   "Só uma etapa pode ser a de fechamento. Marcar esta desmarca": {
     es: "Solo una etapa puede ser la de cierre. Marcar esta desmarca",
   },

@@ -66,6 +66,17 @@ const bodySchema = z
      */
     expected_duration_hours: z.number().int().min(1).max(8760).nullable().optional(),
     /**
+     * A cor da etapa, `#rrggbb` (`crm_stages.color`), ou `null` para voltar ao
+     * padrão de hoje. O CHECK `crm_stages_color_format` já recusa outro formato,
+     * mas com 23514 cru: aqui a recusa vira frase em português antes do banco.
+     * Item 2 da #4802 — a escrita que faltava para o campo que o Kanban pinta.
+     */
+    color: z
+      .string()
+      .regex(/^#[0-9a-fA-F]{6}$/, "A cor da etapa é um hex de seis dígitos, como #0091ff.")
+      .nullable()
+      .optional(),
+    /**
      * O CRITÉRIO da etapa (`crm_stages.description`) — quando um negócio entra
      * nela, em texto livre. `null` limpa e a etapa volta a "sem critério" na
      * leitura do agente.
