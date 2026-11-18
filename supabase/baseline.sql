@@ -80049,9 +80049,9 @@ create policy company_people_insert on public.company_people
   for insert with check (organization_id in (select public.fn_user_org_ids())
                          and public.fn_role_at_least(organization_id, 'agent'));
 
--- ---- A importação abre ao Atendente e define o dono da carteira (migration 9421) ----
+-- ---- A importação abre ao Atendente e define o dono da carteira (migration 9431) ----
 --
--- Apêndice da 9421: INSERT/UPDATE de import_batches e import_rows sobem de manager
+-- Apêndice da 9431: INSERT/UPDATE de import_batches e import_rows sobem de manager
 -- para agent, e a posse do Atendente em fn_definir_carteira_do_cliente ganha a
 -- exceção da importação própria. Entra ANTES do bloco da VARREDURA anon.
 
@@ -80150,7 +80150,7 @@ begin
         from public.contacts c
        where c.id = p_contact
          and c.organization_id = p_org;
-      -- 9421 (A23, #4888): a IMPORTAÇÃO própria. Quem importa a planilha cria o
+      -- 9431 (A23, #4888): a IMPORTAÇÃO própria. Quem importa a planilha cria o
       -- contato e o recebe na carteira: contato SEM dono, criado por ele nesta
       -- importação (`source = 'import_csv'`, `created_by_user_id` = ele) e dono
       -- pedido = ele mesmo, com a origem `importacao`. Nada mais passa por aqui:

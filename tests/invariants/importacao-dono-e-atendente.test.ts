@@ -1,6 +1,6 @@
 /**
  * A23 parte 2 (#4888) — a importação abre ao Atendente e define o dono da carteira.
- * Migration 9421 (apêndice do baseline).
+ * Migration 9431 (apêndice do baseline).
  *
  * Duas provas, no banco de verdade:
  *
@@ -61,7 +61,7 @@ function donoDe(contato: string): string {
   return lastLine(sql(`select coalesce(carteira_user_id::text, 'NULL') from public.contacts where id = '${contato}';`));
 }
 
-describe("importação: o Atendente importa e é dono do que importa (9421)", () => {
+describe("importação: o Atendente importa e é dono do que importa (9431)", () => {
   beforeAll(() => {
     sql(`
       insert into auth.users (id, email) values
@@ -69,7 +69,7 @@ describe("importação: o Atendente importa e é dono do que importa (9421)", ()
         ('${GESTOR}', 'imp-g@invariant.test'), ('${LEITOR}', 'imp-l@invariant.test')
       on conflict (id) do nothing;
       insert into public.organizations (id, slug, legal_name, display_name)
-        values ('${ORG}', 'importacao-9421', 'Importacao 9421', 'Importacao 9421')
+        values ('${ORG}', 'importacao-9431', 'Importacao 9431', 'Importacao 9431')
         on conflict (id) do nothing;
       insert into public.user_organizations (user_id, organization_id, role, accepted_at) values
         ('${ATENDENTE}', '${ORG}', 'agent', now()), ('${COLEGA}', '${ORG}', 'agent', now()),
