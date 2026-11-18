@@ -9503,6 +9503,9 @@ export const DICIONARIO: Traducoes = {
   "é onde ele se perde. Cada funil precisa de uma de cada — por isso a marcação se muda de lugar, não se apaga.": {
     es: "es donde se pierde. Cada embudo necesita una de cada — por eso la marca se cambia de lugar, no se borra.",
   },
+  "Para mudar a ordem, arraste a coluna pela alça ou use as setas.": {
+    es: "Para cambiar el orden, arrastra la columna por el asa o usa las flechas.",
+  },
   Mover: { es: "Mover" },
   "uma coluna para trás": { es: "una columna hacia atrás" },
   "uma coluna para frente": { es: "una columna hacia adelante" },
