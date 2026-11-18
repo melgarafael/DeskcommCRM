@@ -60,6 +60,7 @@ import { serializarValor } from "@/lib/external-db/montagem";
 import { diaDoValor } from "@/lib/followup/condicao-por-data";
 import { camposAlterados } from "@/lib/leads/campos-alterados";
 import { diaDoPrazo } from "@/lib/lgpd/sla";
+import { montarChecklistDoNegocio } from "@/lib/tarefas/checklist";
 import { dataDaAbordagem } from "@/lib/prospecting/exportar";
 import { prazoDoCampoNoFuso } from "@/lib/tarefas/prazo-relativo";
 import { instanteDoBanco } from "@/lib/tempo/agora";
@@ -251,6 +252,37 @@ export function reguasDeData(pool: pg.Pool): ReguaDeData[] {
           new Date(CHEGADA_MS - 3_600_000),
           5 * 60_000,
         ) === false,
+    },
+    {
+      nome: "montarChecklistDoNegocio",
+      onde: "lib/tarefas/checklist.ts:140",
+      // O checklist do card (#4717) lê `crm_lead_activities.created_at` da linha
+      // `task_completed` — `timestamptz`, `Date` no `pg` e string no PostgREST —
+      // e decide o "quando marcou" que o painel mostra. A normalização mora em
+      // `iso()` (privada, arquivo:linha do sítio que a catraca acusou); quem
+      // decide é esta régua. Recusar o `Date` não lançaria nada: a marca
+      // simplesmente não entraria no mapa e TODO item concluído apareceria sem
+      // autor/data.
+      entrada: "valor",
+      exercitar: (valorCru) => {
+        const checklist = montarChecklistDoNegocio({
+          negocioId: "ee390000-0000-4000-8000-000000000199",
+          aplicacoes: [
+            { payload: { plano_id: "plano-1", plano_nome: "Plano", tarefa_ids: ["tarefa-1"] } },
+          ],
+          tarefas: [{ id: "tarefa-1", title: "Passo do plano", status: "done", due_date: null }],
+          marcas: [
+            {
+              source_id: "tarefa-1",
+              performed_by_user_id: "ee390000-0000-4000-8000-000000000198",
+              // O valor CRU: `Date` do driver, string do cliente REST, e
+              // `null`/`undefined` quando o item nunca foi concluído.
+              created_at: valorCru as string,
+            },
+          ],
+        });
+        return checklist !== null && mesmoInstante(checklist.itens[0]?.marcado_em ?? null);
+      },
     },
     {
       nome: "dataDaAbordagem",
