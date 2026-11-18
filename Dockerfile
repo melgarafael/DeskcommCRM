@@ -26,6 +26,11 @@ ARG NEXT_PUBLIC_SUPABASE_URL=https://placeholder.supabase.co
 ARG NEXT_PUBLIC_SUPABASE_ANON_KEY=placeholder-anon-key
 ARG NEXT_PUBLIC_APP_URL=https://placeholder.invalid
 ARG NEXT_PUBLIC_ADMIN_URL=https://placeholder.invalid
+# Teto de heap do build. O PADRÃO (4096) é o de quem builda na VPS pelo override
+# docker-compose.build.yml (docs/runbooks/deploy.md §4) e não muda. O CI passa
+# 6144 por build-arg (publish-image.yml): em 17/11 o type check do `next build`
+# passou de 4 GB e o imagens-ok caiu por "heap out of memory" (#4390, #4832).
+ARG NODE_HEAP_MB=4096
 # O build do Next é faminto: o heap default do Node (~2GB) estoura. NODE_OPTIONS
 # eleva pra 4GB. Isso é custo de QUEM BUILDA — o CI —, não de quem instala: o
 # caminho normal do self-hoster é `docker compose pull`, e o install.sh não
@@ -37,7 +42,7 @@ ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
     NEXT_PUBLIC_ADMIN_URL=$NEXT_PUBLIC_ADMIN_URL \
     NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
-    NODE_OPTIONS=--max-old-space-size=4096
+    NODE_OPTIONS=--max-old-space-size=${NODE_HEAP_MB}
 
 # Turbopack (`pnpm build`): ~4min vs ~34min do webpack num VPS. O bloco `webpack:`
 # do Sentry (tree-shake + upload de sourcemap em build-time) é ignorado, mas o

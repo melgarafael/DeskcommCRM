@@ -371,6 +371,8 @@ export function ProspectingClient() {
     instruction: string;
     qualification: string;
     ofertas: OfertaDaCampanha[];
+    /** #4829: `false` = a abertura não cita a ficha digital. */
+    usar_ficha_digital: boolean;
   } | null>(null);
   const [confirmandoBriefing, setConfirmandoBriefing] = useState(false);
   const campaign = data?.campaigns.find((c) => c.id === selected) ?? data?.campaigns[0];
@@ -562,6 +564,7 @@ export function ProspectingClient() {
             instruction: c.config?.instruction ?? "",
             qualification: c.config?.qualification ?? "",
             ofertas: c.config?.ofertas ?? ["site"],
+            usar_ficha_digital: c.config?.usar_ficha_digital !== false,
           },
     );
   }
@@ -583,6 +586,7 @@ export function ProspectingClient() {
         instruction: briefing.instruction.trim(),
         qualification: briefing.qualification.trim(),
         ofertas: briefing.ofertas,
+        usar_ficha_digital: briefing.usar_ficha_digital,
       },
       t("Instrução e critérios atualizados. A campanha continua pausada."),
     );
@@ -1699,7 +1703,7 @@ export function ProspectingClient() {
                                 type="checkbox"
                                 className="mt-1"
                                 checked={briefing.ofertas.includes(valor)}
-                                disabled={busy}
+                                disabled={busy || !briefing.usar_ficha_digital}
                                 onChange={() => {
                                   const ligadas = briefing.ofertas.includes(valor)
                                     ? briefing.ofertas.filter((o) => o !== valor)
@@ -1713,6 +1717,32 @@ export function ProspectingClient() {
                             </label>
                           ))}
                         </fieldset>
+                        {/* #4829: o interruptor da ficha digital, editável com a campanha
+                            pausada — é o modo de quem vende consórcio, crédito, seguro,
+                            contabilidade ou consultoria. */}
+                        <label className="flex items-start gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            className="mt-1"
+                            checked={briefing.usar_ficha_digital}
+                            disabled={busy}
+                            onChange={(e) =>
+                              setBriefing({ ...briefing, usar_ficha_digital: e.target.checked })
+                            }
+                          />
+                          <span>
+                            {t(
+                              "Usar a ficha digital (site, avaliações, redes) como motivo do contato",
+                            )}
+                          </span>
+                        </label>
+                        {!briefing.usar_ficha_digital ? (
+                          <p className="text-xs text-muted-foreground">
+                            {t(
+                              "Desligada, a primeira mensagem abre pelo ramo e pela região da empresa, e não cita nota, avaliações, redes nem auditoria do site. A oferta é a que você escreveu na instrução.",
+                            )}
+                          </p>
+                        ) : null}
                         <p className="text-xs text-muted-foreground">
                           {t(
                             "Vale só para as empresas que ainda não foram abordadas. Quem já recebeu a primeira mensagem continua a conversa com o texto com que ela começou, e as prévias de quem está na fila são refeitas com o texto novo.",
@@ -2043,7 +2073,7 @@ export function ProspectingClient() {
                                       type="checkbox"
                                       className="mt-1"
                                       checked={(config.ofertas ?? ["site"]).includes(valor)}
-                                      disabled={busy}
+                                      disabled={busy || config.usar_ficha_digital === false}
                                       onChange={() => {
                                         const atuais = config.ofertas ?? ["site"];
                                         const ligadas = atuais.includes(valor)
@@ -2057,6 +2087,36 @@ export function ProspectingClient() {
                                     <span>{rotulo}</span>
                                   </label>
                                 ))}
+                              </fieldset>
+                              {/* #4829: campanha que NÃO vende presença digital. Desligada,
+                                  a ficha digital (nota, avaliações, redes, auditoria) sai da
+                                  primeira mensagem e a abertura passa a ser pelo que a empresa
+                                  é; a oferta é a do texto da instrução. */}
+                              <fieldset className="space-y-2">
+                                <legend className="text-sm font-medium">
+                                  {t("Motivo do primeiro contato")}
+                                </legend>
+                                <label className="flex items-start gap-2 text-sm">
+                                  <input
+                                    type="checkbox"
+                                    className="mt-1"
+                                    checked={config.usar_ficha_digital !== false}
+                                    disabled={busy}
+                                    onChange={(e) =>
+                                      update("usar_ficha_digital", e.target.checked)
+                                    }
+                                  />
+                                  <span>
+                                    {t(
+                                      "Usar a ficha digital (site, avaliações, redes) como motivo do contato",
+                                    )}
+                                  </span>
+                                </label>
+                                <p className="text-xs text-muted-foreground">
+                                  {t(
+                                    "Desligada, a primeira mensagem abre pelo ramo e pela região da empresa, e não cita nota, avaliações, redes nem auditoria do site. É o modo de quem vende consórcio, crédito, seguro, contabilidade ou consultoria: a oferta é a que você escreveu na instrução.",
+                                  )}
+                                </p>
                               </fieldset>
                             </div>
                           )}
@@ -2196,7 +2256,11 @@ export function ProspectingClient() {
                                     ? t(
                                         "Inclua a palavra que a pessoa responde para sair; sem ela o pedido não é reconhecido.",
                                       )
-                                    : t("Use até 160 caracteres e nenhum link.")}
+                                    : problemaDoTextoDaSaida === "palavra_escondida"
+                                      ? t(
+                                          "A palavra está no texto, mas riscada, escondida ou em código. Tire a marcação de cima dela: é o que a pessoa vai responder.",
+                                        )
+                                      : t("Use até 160 caracteres e nenhum link.")}
                                 </p>
                               )}
                             </div>
