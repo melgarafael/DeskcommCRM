@@ -56,9 +56,10 @@ export function OwnerBadge({
   /** O responsável humano saiu da equipe: o nome fica, e o rótulo avisa. */
   foraDaEquipe?: boolean;
   /**
-   * Linha do card do funil: desenha primeiro + último nome e encolhe com
-   * reticências. O nome inteiro fica no `title`. As iniciais não mudam — saem
-   * do nome completo, como sempre.
+   * Linha do card do funil: o nome de pessoa vira primeiro + último; o nome
+   * do agente não é abreviado, só encolhe. Os dois encolhem com reticências e
+   * o nome inteiro fica no `title`. As iniciais não mudam — saem do nome
+   * completo, como sempre.
    */
   abreviarNome?: boolean;
 }) {
@@ -86,7 +87,10 @@ export function OwnerBadge({
   const versionSuffix = isAgent && agentVersion != null ? ` · v${agentVersion}` : "";
   const saiuSuffix = !isAgent && foraDaEquipe ? ` · ${t("Fora da equipe")}` : "";
   const fullLabel = `${label}${versionSuffix}${saiuSuffix}`;
-  const nomeVisivel = abreviarNome && ownerName ? nomeAbreviado(ownerName) : label;
+  // Só nome de pessoa vira primeiro + último. O nome do agente foi escolhido
+  // pela equipe ("Agente de Qualificação"); cortar palavras do meio troca o
+  // nome — ele só encolhe com reticências.
+  const nomeVisivel = abreviarNome && !isAgent && ownerName ? nomeAbreviado(ownerName) : label;
 
   return (
     <div

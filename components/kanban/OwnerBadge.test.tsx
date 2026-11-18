@@ -98,4 +98,12 @@ describe("OwnerBadge", () => {
     expect(nome.className).toContain("text-ellipsis");
     expect(nome.className).toContain("whitespace-nowrap");
   });
+
+  it("no card, o nome do agente não perde palavras — só encolhe com reticências", () => {
+    render(<OwnerBadge ownerKind="ai" ownerName="Agente de Qualificação" abreviarNome />);
+    const nome = screen.getByText("Agente de Qualificação");
+    expect(screen.queryByText("Agente Qualificação")).toBeNull();
+    expect(nome.className).toContain("text-ellipsis");
+    expect(nome.className).toContain("whitespace-nowrap");
+  });
 });
