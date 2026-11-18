@@ -98,6 +98,14 @@ function montarMundoDeFerramenta(opts?: MundoOpts) {
       if (table === "platform_config") {
         return { select: () => ({ in: async () => ({ data: [{ chave: "MODULO_PROPOSTAS", valor: "ligado" }], error: null }) }) };
       }
+      // #3868: a capacidade passou a perguntar também a EXCEÇÃO da empresa
+      // (`organization_modules`). Zero linhas = a empresa nunca configurou, então
+      // herda a instalação — o mesmo caminho de quem não usa a camada nova. Sem esta
+      // tabela o fake caía no throw de "não mockada", `modulosLigados` falhava fechado
+      // e o teste media o fake, não a ferramenta.
+      if (table === "organization_modules") {
+        return { select: () => ({ eq: async () => ({ data: [], error: null }) }) };
+      }
       if (table === "organizations") {
         const resposta = { data: { settings, timezone: opts?.fusoDaOrganizacao ?? null, currency: opts?.moedaDaOrganizacao ?? "BRL" }, error: null };
         return {

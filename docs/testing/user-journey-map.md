@@ -1228,7 +1228,14 @@ enfileirar) e pelo turno (`lib/agent-engine/agent/inbound-turn.ts`, decide
 rodar). Origens que autorizam: webhook do Respondi
 (`app/api/v1/webhooks/in/[token]`), match de campanha na ingestão
 (`lib/channels/pos-entrada.ts` × `organizations.settings.campanhas_whatsapp`),
-ação `send_ai_message`, retomada manual (`lib/escalacao/retomada.ts`).
+ação `send_ai_message`, a retomada manual (`lib/escalacao/retomada.ts`). A campanha de ENTRADA tem um
+segundo efeito além da elegibilidade: se ela declara `agent_id`, a conversa
+que chegou pela frase é atendida pelo agente dela — gravado em
+`conversations.campaign_entry_agent_id` na ingestão (migration 9415) e lido num
+degrau acima do roteador em todo turno dessa conversa, a mesma regra da
+campanha de saída. A régua de elegibilidade continua vindo antes: dono humano,
+`force_human`, `ai_opt_out` e silêncio barram o turno sem que o degrau da
+campanha seja consultado.
 
 | # | Caso | Expectativa | Cobertura |
 |---|---|---|---|
@@ -1251,6 +1258,8 @@ ação `send_ai_message`, retomada manual (`lib/escalacao/retomada.ts`).
 | J20.17 | Cliente antigo irritado (gate allowlist, não autorizado) → worker de sentimento dispara `low_sentiment` | `triggerHandoff` NÃO dispara: sem "um humano vai te atender", sem mexer no estado da conversa | **UNIT** — `handoff-orchestrator-elegibilidade.test.ts` (`bloqueioPorAllowlist` e `conversa_silenciada` barram; fail-closed em erro) |
 | J20.18 | Eu respondo o cliente à mão pelo meu WhatsApp numa conversa autorizada | IA para naquela conversa por um PRAZO renovado a cada nova fala humana — o da EMPRESA (`settings.routing.manual_reply_silence_minutes`, Configurações › Atendimento, 5 min a 24 h; padrão `PRAZO_DO_SILENCIO_MS`, 60 min; diagnóstico de @gaberaldo-svg no #2005: clínica que atende o dia inteiro pelo celular nunca via a IA voltar) —, SEM apagar `ai_authorized_at`; volta sozinha quando o prazo vence, ou antes por "devolver ao automático" | **UNIT** — `atendimento-manual.test.ts` (as duas pontas do prazo medidas pelo motor real `decidirElegibilidade`, renovação, e o que NUNCA encurta: `'infinity'` do handoff formal e janela mais longa) + `waha-ingest-atendimento-manual.test.ts` (via `dispatchWahaEvent` real; eco do próprio envio NÃO pausa) + guarda de fonte no Zernio + fiação em `handoff-fantasma-fiacao.test.ts` + o prazo da empresa em `atendimento-manual.test.ts` (15 min gravado; erro/exceção ao ler o ajuste ainda pausa com 60; `#off` nem consulta) e os valores inválidos em `prazo-silencio-knob.test.ts` + o campo em `app/app/settings/atendimento/_form.test.tsx`; **E2E** — `tests/e2e/j20-elegibilidade-atendimento-manual.spec.ts` (webhook `fromMe` genuíno → `bot_silenced_until` finito e futuro, nunca `'infinity'`, + rastro; `ai_authorized_at` intacto; 2ª mensagem RENOVA o prazo; tela mostra o selo; "devolver ao automático" solta a trava e a autorização continua) |
 | J20.19 | Worker parado acorda com backlog; dois inbound antigos com o MESMO `sent_at` | a "última inbound" é a mais RECENTE (por `created_at`), nunca a de maior uuid — o evento antigo é pulado | **INVARIANTE** — `tests/invariants/drain-recencia-inbound.test.ts` (Postgres real) + `drain.test.ts` guarda a cláusula `coalesce(sent_at, created_at)` |
+| J20.24 | Cliente chega pela FRASE do anúncio e a campanha declara `agent_id` (a tela ainda não existe: a config é jsonb) | A conversa que chegou pela frase é atendida pelo agente DAQUELA campanha — `conversations.campaign_entry_agent_id` (9415) é lido no degrau 0b, acima do roteador, em TODO turno dessa conversa (a mesma regra da campanha de saída); uma conversa nova do mesmo contato volta à régua do número | **UNIT** — `resolve-turn-agent-campanha-de-entrada.test.ts` (GREEN pelo agente da campanha com `agent_id`/`published_version_id`; sem campanha, agente arquivado/sem versão publicada, conversa NOVA do mesmo contato e agente de outra organização caem no agente do número; a segunda mensagem da MESMA conversa continua no agente da campanha) + `agente-da-campanha-de-entrada-marca-a-conversa.test.ts` (a ingestão grava, recortada por organização/conversa, e não sobrescreve a primeira campanha) + **INVARIANTE** — `campanha-de-entrada-nao-perde-a-conversa-no-adiamento.test.ts` (o turno adiado pela janela anti-ban não tira a conversa do agente da campanha; o turno seguinte, dentro da janela, sai por ele) |
+| J20.25 | Campanha de entrada com o DONO HUMANO, `force_human`, "sempre atendimento humano" (`ai_opt_out`) ou bot silenciado | a régua de elegibilidade continua mandando: a IA não fala, e o degrau da campanha nem é consultado | **UNIT** — `campanha-de-entrada-nao-passa-por-cima-da-regua.test.ts` (as quatro recusas com a autorização da campanha vigente; ordem portão → resolução do agente no `inbound-turn.ts`) |
 
 **Sabotagem que confirma:** removendo o veto `sem_autorizacao` de
 `decidirElegibilidade`, `gate.test.ts` e `drain.test.ts` reprovam; restaurado,
@@ -4487,3 +4496,24 @@ Capturas da prova: `evidence/inbox-baixar-midia-e-ordem/01-ordem-das-fotos.png`,
 `evidence/inbox-baixar-midia-e-ordem/04-foto-ampliada-com-baixar.png`,
 `evidence/inbox-baixar-midia-e-ordem/05-menu-da-foto-com-baixar.png`,
 `evidence/inbox-baixar-midia-e-ordem/06-menu-do-pdf-com-baixar.png`.
+
+## J-mcp-oauth — Conectar o ChatGPT ao CRM por OAuth, sem colar token `[P1]` (2026-11-15)
+
+O ChatGPT só oferece OAuth ou "sem autenticação" ao adicionar um servidor MCP; o `/api/mcp` só
+aceitava `Bearer dsk_…`. Migration 9390. Spec: `tests/e2e/mcp-oauth-chatgpt.spec.ts` (parte 8),
+fazendo o papel do aplicativo com um receptor HTTP de verdade no `redirect_uri`; evidência em
+`evidence/mcp-oauth-chatgpt/`. Envs opcionais ausentes (sem Redis, sem WAHA).
+
+| Caso | O que prova | Como |
+|---|---|---|
+| Descoberta | o 401 do `/api/mcp` aponta `resource_metadata`; os dois documentos anunciam o próprio CRM, S256 e o registro | E2E (fetch) |
+| Sem sessão `[P0]` | o `authorize` leva ao login e VOLTA ao consentimento (cookie Strict, pela ponte) | E2E (URL medida) |
+| Consentimento | nome declarado, host de volta, empresa; "Ler e alterar" marcado; Permitir entrega `code` + `state` + `iss` | E2E (tela + receptor) |
+| O token abre o MCP | o `dsk_` emitido responde `tools/list`; a rotação mata o anterior | E2E (fetch no `/api/mcp`) |
+| Saída pela tela | a conexão aparece em API Tokens como "(OAuth)"; Revogar derruba o MCP e a renovação | E2E (tela + fetch) |
+| Cancelar / Somente ler | `access_denied` com o `state`; `scope=mcp:read`; verifier errado queima o código | E2E |
+| Redirect não registrado | página de erro, sem redirecionar | E2E (status + URL) |
+
+Banco (PKCE no SQL, reuso revoga, ainda-admin, isolamento): `tests/invariants/mcp-oauth-servidor.test.ts`.
+**Não medido aqui:** o ChatGPT de verdade — só existe contra um endereço público com HTTPS.
+Evidência: `evidence/mcp-oauth-chatgpt/01-consentimento.png`, `evidence/mcp-oauth-chatgpt/02-volta-ao-aplicativo.png`, `evidence/mcp-oauth-chatgpt/03-conexao-em-api-tokens.png`, `evidence/mcp-oauth-chatgpt/04-conexao-revogada.png`, `evidence/mcp-oauth-chatgpt/05-consentimento-somente-ler.png`, `evidence/mcp-oauth-chatgpt/06-redirect-nao-registrado.png`.

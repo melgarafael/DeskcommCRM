@@ -36,8 +36,11 @@ beforeEach(() => {
 });
 
 describe("as chaves da cobrança só se escrevem pela tela de Cobrança", () => {
-  it("controle: a sonda enxerga as seis chaves da cobrança (Stripe e Asaas)", () => {
-    expect(DA_COBRANCA).toHaveLength(6);
+  // #4056: o Efi Bank é o terceiro provedor do mesmo contrato, com o par de
+  // credenciais dele (EFI_CLIENT e EFI_WEBHOOK_TOKEN). O número é exato de
+  // propósito: é o controle de que a sonda enxerga TODAS as chaves da cobrança.
+  it("controle: a sonda enxerga as oito chaves da cobrança (Stripe, Asaas e Efi)", () => {
+    expect(DA_COBRANCA).toHaveLength(8);
   });
 
   it.each(DA_COBRANCA)("salvar %s pela ação genérica é recusado sem gravar nem auditar", async (chave) => {
