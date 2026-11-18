@@ -80,15 +80,19 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "recusa a linha e o contato é salvo sem CPF (#2522).",
   },
   {
-    fn: "decrypt_cpf(uuid)",
+    fn: "decrypt_cpf(uuid,text)",
     razao:
-      "GET app/api/v1/contacts/[id]/route.ts → getContactHandler (_handler.ts:418) " +
-      "é o único call site, com o client de sessão — e ele só CHEGA ali depois de " +
-      "ler user_organizations do contato e exigir roleAtLeast(manager). Definer " +
-      "porque lê contacts.cpf_encrypted e ESCREVE o audit contact.cpf_decrypted em " +
-      "api_audit_log antes de devolver o texto. A guarda de tenant é a da casa: " +
-      "fora de fn_user_org_ids() a função levanta forbidden_org (platform admin " +
-      "passa), então cross-org nunca lê CPF (#2522).",
+      "(9423) GET app/api/v1/contacts/[id]/route.ts → getContactHandler passa o propósito " +
+      "da leitura (`x-decrypt-purpose`) como PARÂMETRO: o PostgREST abre a transação " +
+      "dele, e o GUC `app.decrypt_purpose` não tem como ser fixado na mesma transação da " +
+      "RPC — era por isso que a linha `contact.cpf_decrypted` nascia com purpose nulo. " +
+      "Definer porque lê contacts.cpf_encrypted e ESCREVE o audit em api_audit_log antes " +
+      "de devolver o texto (mesmo corpo da 0762, com `coalesce(p_purpose, " +
+      "current_setting(...))` no lugar do GUC puro). As guardas são as da casa, dentro " +
+      "da função: fora de `fn_user_org_ids()` levanta forbidden_org, e abaixo de manager " +
+      "levanta forbidden_role (#2522, #4892). A assinatura de UM argumento NÃO está aqui " +
+      "porque desde a 9423 ela é casca `security invoker` — quem chama `decrypt_cpf(id)` " +
+      "(o export de contatos e o SQL de sempre) cai neste mesmo corpo, com propósito nulo.",
   },
   {
     fn: "fn_honorarios_parcela_pagar(uuid,uuid,uuid,uuid)",

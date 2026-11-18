@@ -222,8 +222,18 @@ describe("credencial de enfeite não derruba a leitura (#754)", () => {
     expect(iTenancy, "quem não é da organização lê o CPF antes da checagem").toBeLessThan(iDecifra);
     expect(iAudit, "decrypt sairia sem deixar rastro").toBeLessThan(iDecifra);
 
-    // Quem instala (baseline) e quem atualiza (a ÚLTIMA migration que define a
-    // função — 0597, depois o forward-fix 0762) recebem igual.
+    // Quem instala (baseline) e quem atualiza (a ÚLTIMA migration que toca a
+    // função — 0597, o forward-fix 0762, depois a 9423) recebem igual.
+    //
+    // ⚠️ A 9423 deu DUAS assinaturas à porta: `decrypt_cpf(uuid, text)` leva o
+    // corpo AUDITADO (é a que o handler chama, com o propósito da leitura) e
+    // `decrypt_cpf(uuid)` é CASCA `security invoker` que delega com propósito
+    // nulo — ela não tem guarda para repetir, e é o que o export de contatos
+    // chama. A paridade install × update continua cobrada, como antes, no corpo
+    // auditado: a última migration traz exatamente UMA definição com o audit, e
+    // ela é a mesma do baseline. A casca também é cobrada — uma assinatura de um
+    // argumento que deixasse de delegar (ou sumisse) quebraria o export, e o
+    // `to_regprocedure` do invariante de banco só veria a EXISTÊNCIA.
     const arquivo0597 = readdirSync(MIGRATIONS).find((n) => n.includes("_0597_"));
     expect(arquivo0597, "migration 0597 não está em supabase/migrations/").toBeTruthy();
     const definidoras = readdirSync(MIGRATIONS)
@@ -232,10 +242,25 @@ describe("credencial de enfeite não derruba a leitura (#754)", () => {
       .map((n) => definicoesDeFuncao(readFileSync(join(MIGRATIONS, n), "utf8"), "decrypt_cpf"))
       .filter((d) => d.length > 0);
     const naMigration = definidoras.at(-1) ?? [];
-    expect(naMigration.length, "a migration não define decrypt_cpf").toBe(1);
     expect(
-      naMigration[0]!.corpo,
+      naMigration.length,
+      "a última migration de decrypt_cpf tem de definir as DUAS assinaturas (corpo auditado + casca)",
+    ).toBe(2);
+
+    const comAudit = naMigration.filter((d) => d.corpo.includes("insert into public.api_audit_log"));
+    expect(
+      comAudit.length,
+      "a última migration de decrypt_cpf não traz o corpo AUDITADO (uma, e só uma, assinatura)",
+    ).toBe(1);
+    expect(
+      comAudit[0]!.corpo,
       "corpo divergente entre baseline (install) e a última migration de decrypt_cpf (update)",
     ).toBe(corpo);
+
+    const cascas = naMigration.filter((d) => d.corpo.includes("public.decrypt_cpf(p_contact_id, null)"));
+    expect(
+      cascas.length,
+      "a assinatura de um argumento tem de continuar sendo a CASCA que delega com propósito nulo",
+    ).toBe(1);
   });
 });
