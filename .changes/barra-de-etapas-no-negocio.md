@@ -22,4 +22,6 @@ A mesma barra também aparece no painel da conversa, no Inbox, logo acima do
 seletor "Etapa do funil": quem atende vê onde o negócio está e há quantos dias,
 sem sair da conversa. O clique move pelo mesmo caminho do seletor e segue a
 mesma regra de quem pode mover; ganho e perda continuam só no seletor, onde a
-perda pede o motivo. Nenhuma ação é necessária na atualização.
+perda pede o motivo. Como o painel é estreito, só a faixa das etapas rola de
+lado: o restante do painel fica no lugar. Nenhuma ação é necessária na
+atualização.

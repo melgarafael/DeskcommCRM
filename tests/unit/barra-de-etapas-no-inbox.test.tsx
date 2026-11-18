@@ -26,6 +26,11 @@ import type * as RequireRole from "@/lib/auth/require-role";
  *  4. **Abaixo de `agent` a barra só mostra** — nenhum botão; a mesma régua do
  *     "Levar para outro funil" deste painel.
  *  5. **Resposta antiga (sem as etapas) não desenha barra.**
+ *  6. **A faixa não alarga o painel.** A lista da barra não quebra linha; todo
+ *     `fieldset` entre ela e a `aside` precisa de `min-w-0`, senão o
+ *     `min-width: min-content` do navegador repassa os ~700px da faixa e a
+ *     coluna inteira rola de lado. O jsdom não calcula layout, então a classe é
+ *     medida no DOM.
  */
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
@@ -217,6 +222,24 @@ describe("painel da conversa — barra de etapas", () => {
     const nav = await barra();
     expect(within(nav).getByText("Etapa B (3 dias)")).toBeInTheDocument();
     expect(within(nav).queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("a faixa não alarga o painel: todo fieldset acima da barra tem min-w-0", async () => {
+    servir({ stage_id: "s-b", etapas_do_funil: ETAPAS, stage_changed_at: TRES_DIAS_E_POUCO });
+    renderPainel();
+
+    const nav = await barra();
+    const aside = nav.closest("aside");
+    expect(aside).not.toBeNull();
+    const fieldsets: HTMLElement[] = [];
+    for (let el = nav.parentElement; el && el !== aside; el = el.parentElement) {
+      if (el.tagName === "FIELDSET") fieldsets.push(el);
+    }
+    // Hoje é o `fieldset disabled={readonly}` do módulo Negócios; se sumir, o
+    // teste segue valendo para o próximo que aparecer.
+    expect(fieldsets.length).toBeGreaterThan(0);
+    for (const f of fieldsets) expect(f.classList.contains("min-w-0")).toBe(true);
+    expect(nav.classList.contains("min-w-0")).toBe(true);
   });
 
   it("resposta antiga, sem as etapas do funil, não desenha barra", async () => {

@@ -1550,7 +1550,11 @@ export function CRMSidePanel({
         {sectionsLoading ? (
           <Skeleton className="mt-2 h-14 w-full" />
         ) : leads && leads.length > 0 ? (
-          <fieldset disabled={readonly}><InboxLeadEditor
+          /* `min-w-0`: o `fieldset` nasce com `min-width: min-content` (padrão
+             do navegador) e repassaria a largura da faixa em nowrap da barra de
+             etapas para a `aside`, que rolaria de lado inteira. Com ele, quem
+             rola é só a faixa (`BarraDeEtapas`). */
+          <fieldset disabled={readonly} className="min-w-0"><InboxLeadEditor
             leads={leads}
             selecionadoId={leadAtivoId}
             onSelecionar={setLeadAtivoId}
