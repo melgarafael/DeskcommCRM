@@ -21165,6 +21165,11 @@ export const DICIONARIO: Traducoes = {
   "Setor atualizado.": { es: "Sector actualizado." },
   "Setor apagado.": { es: "Sector eliminado." },
   "Setor do atendente atualizado.": { es: "Sector del asesor actualizado." },
+  // O selo de setor da tarefa quando o setor é o do RESPONSÁVEL (#4883): o
+  // fallback existe, mas não pode passar por "o setor do atendimento".
+  "Setor do responsável — a tarefa não tem conversa nem negócio com setor": {
+    es: "Sector del responsable — la tarea no tiene conversación ni negocio con sector",
+  },
   "Já existe um setor com este nome.": { es: "Ya existe un sector con este nombre." },
   "Setor não encontrado.": { es: "Sector no encontrado." },
   // O módulo opcional dos setores (doc 213) em /admin/sistema e em Recursos opcionais.
