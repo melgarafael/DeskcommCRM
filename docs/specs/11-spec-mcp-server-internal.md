@@ -231,6 +231,25 @@ inputSchema: z.object({
 })
 ```
 
+#### `crm_count_leads`
+**Maps to**: `countLeadsHandler` (`app/api/v1/leads/_handler.ts`) — sem rota REST própria.
+
+Conta negócios **sem listá-los**. Existe porque `crm_list_leads` só pagina por cursor e não informa o total: quem precisa de "quantos?" acabava paginando a lista inteira e levando todos os negócios ao modelo. Devolve só números — nenhum nome, contato ou id.
+
+```ts
+inputSchema: z.object({
+  pipeline_id: z.string().uuid().optional(),
+  stage_id: z.string().uuid().optional(),
+  status: z.enum(['open', 'won', 'lost']).optional()
+})
+outputSchema: z.object({
+  total: z.number().int(),
+  by_status: z.object({ open: z.number(), won: z.number(), lost: z.number() }).optional() // só sem filtro de status
+})
+```
+
+Mesma régua de visibilidade da listagem: `organization_id` na primeira cláusula (client service-role), negócio de contato pessoal não conta e, em conversa de atendimento, conta apenas os negócios do contato do turno. Contagem feita no banco (`head: true`, `count: 'exact'`).
+
 #### `crm_get_lead`
 **Maps to**: `GET /api/v1/leads/:id`
 
@@ -346,7 +365,7 @@ A versão do agente armazena `tool_ids text[]` (Spec 10 §3.2). Validação no p
 const VALID_TOOL_IDS = [
   'crm_search_contacts', 'crm_get_contact',
   'crm_list_conversations', 'crm_get_conversation', 'crm_get_conversation_history',
-  'crm_list_leads', 'crm_get_lead', 'crm_list_pipelines',
+  'crm_list_leads', 'crm_count_leads', 'crm_get_lead', 'crm_list_pipelines',
   'crm_send_whatsapp_message', 'crm_create_lead', 'crm_update_lead', 'crm_move_lead_stage',
   'crm_request_human_handoff'
 ]

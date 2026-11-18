@@ -473,6 +473,73 @@ export async function listLeadsHandler(
 // get
 // ---------------------------------------------------------------------------
 
+export interface CountLeadsQuery {
+  pipeline_id?: string;
+  stage_id?: string;
+  status?: "open" | "won" | "lost";
+  owner_user_id?: string;
+  /** Só os negócios deste contato — o escopo do turno do agente, igual à listagem. */
+  contact_id?: string;
+}
+
+export interface CountLeadsResult {
+  total: number;
+  /** Só quando a consulta não filtra por status: o mesmo total, aberto por status. */
+  by_status?: { open: number; won: number; lost: number };
+}
+
+/**
+ * Conta negócios SEM listá-los: devolve só números.
+ *
+ * Existe porque `listLeadsHandler` só pagina por cursor e não informa o total —
+ * quem precisa responder "quantos negócios?" acabava paginando a lista inteira
+ * (um agente de IA gastou dezenas de chamadas e levou todos os negócios ao
+ * modelo só para contar). Contar no banco (`head: true`, `count: exact`) não traz
+ * nenhuma linha.
+ *
+ * Mesma régua de visibilidade da listagem, para os números fecharem com a lista:
+ *  - `organization_id` é a PRIMEIRA cláusula (client service-role no MCP, RLS não vale);
+ *  - negócio de contato pessoal não conta (spec 21, a leitura exclui);
+ *  - os mesmos filtros de funil, etapa, status, responsável e contato do turno.
+ */
+export async function countLeadsHandler(
+  supabase: SB,
+  ctx: HandlerCtx,
+  q: CountLeadsQuery,
+): Promise<CountLeadsResult> {
+  const pessoais = await idsDeContatosPessoais(supabase, ctx.organization_id);
+
+  const contar = async (status?: "open" | "won" | "lost"): Promise<number> => {
+    let query = supabase
+      .from("crm_leads")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", ctx.organization_id);
+    if (q.pipeline_id) query = query.eq("pipeline_id", q.pipeline_id);
+    if (q.stage_id) query = query.eq("stage_id", q.stage_id);
+    if (status) query = query.eq("status", status);
+    if (q.owner_user_id) query = query.eq("owner_user_id", q.owner_user_id);
+    if (q.contact_id) query = query.eq("contact_id", q.contact_id);
+    if (pessoais.length > 0) {
+      query = query.not("contact_id", "in", `(${pessoais.join(",")})`);
+    }
+    const { count, error } = await query;
+    if (error) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
+    }
+    return count ?? 0;
+  };
+
+  if (q.status) return { total: await contar(q.status) };
+
+  const [total, open, won, lost] = await Promise.all([
+    contar(),
+    contar("open"),
+    contar("won"),
+    contar("lost"),
+  ]);
+  return { total, by_status: { open, won, lost } };
+}
+
 export async function getLeadHandler(
   supabase: SB,
   ctx: HandlerCtx,
