@@ -22,27 +22,71 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *     banco desta instalação está desatualizado" em sucesso silencioso, com o
  *     dado indo para um lugar que nenhuma lista, índice ou policy alcança.
  *     Falhar aberto na INFORMAÇÃO é o certo aqui: 500 com a mensagem do banco.
+ *
+ * ─── Sessão OU token (Spec 33, R2) ─────────────────────────────────────────
+ *
+ * As duas portas entram por `resolveAuthDual`: a sessão do navegador com o
+ * mesmo papel de sempre (viewer lê, agent cria), ou o Bearer `dsk_…` com
+ * `mcp:read`/`mcp:write` e a organização vinda da LINHA DO TOKEN.
+ *
+ * No ramo do token o cliente é a service role, e a RLS deixa de proteger:
+ *  - o `.eq("organization_id", …)` de cada cadeia é a única barreira;
+ *  - o embed `lead:crm_leads(…)` sai da leitura e o negócio é juntado em
+ *    consulta própria, filtrada pela organização (`negocio-da-tarefa.ts`);
+ *  - `lead_id` e `contact_id` do corpo são conferidos na organização antes de
+ *    gravar, como já são `demanda_id` e `assigned_to`;
+ *  - `assigned_to=me` não existe: token não é pessoa, e o responsável é
+ *    sempre um id de `auth.users`. Quem integra usa o id do responsável;
+ *  - `created_by` só recebe id de pessoa — nunca o id do token.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
-import { audit, isServiceRoleConfigured } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { audit } from "@/lib/audit";
+import { seSetoresDesligado } from "@/lib/atendimento/setores-modulo";
+import { fusoDaOrganizacao } from "@/lib/automation/cron-de-data";
 import { traduzir } from "@/lib/i18n/dicionario";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { portaDaAplicacao } from "@/lib/db";
 import { registraAtividadeDaTarefa } from "@/lib/tarefas/atividade";
 import { conferirDemanda } from "@/lib/tarefas/demanda";
+import {
+  anexarNegocioDaTarefa,
+  COLUNAS_DA_TAREFA,
+  conferirNegocioEContato,
+} from "@/lib/tarefas/negocio-da-tarefa";
+import { normalizarRegra, proximaOcorrencia, regraDeRecorrenciaSchema, regraParaGravar } from "@/lib/tarefas/recorrencia";
 import { conferirResponsavel } from "@/lib/tarefas/responsavel";
-import { PRIORIDADES_DA_TAREFA, SITUACOES_DA_TAREFA, type Tarefa } from "@/lib/tarefas/tipos";
+import {
+  PRIORIDADES_DA_TAREFA,
+  SITUACOES_ABERTAS_DA_TAREFA,
+  SITUACOES_DA_TAREFA,
+  type Tarefa,
+} from "@/lib/tarefas/tipos";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * O teto da lista — e o máximo que `?limite=` aceita. Está nomeado porque agora
+ * tem dois leitores (o default do `.limit()` e a validação do parâmetro): o dia
+ * em que um deles mudar sozinho, a rota passaria a aceitar mais do que serve.
+ */
+const LIMITE_MAXIMO = 500;
+
 /** As colunas que a tela lê. Explícitas para o `select *` não vazar coluna nova. */
 const COLUNAS =
-  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, created_at, updated_at, lead:crm_leads(id, title)";
+  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, recurrence, created_at, updated_at, lead:crm_leads(id, title)";
+
+/**
+ * Com o filtro de funil o `lead` vira INNER JOIN: o PostgREST só filtra pela coluna de um
+ * recurso embutido se o embutido for obrigatório; com o join comum a tarefa de outro funil
+ * continuaria na lista, só que com `lead: null`. Sem o filtro a consulta é a de sempre — o
+ * join obrigatório esconderia as tarefas soltas (sem negócio), que são caso real.
+ */
+const COLUNAS_NO_FUNIL = COLUNAS.replace("lead:crm_leads(", "lead:crm_leads!inner(");
 
 const criacaoSchema = z.object({
   title: z.string().trim().min(1).max(255),
@@ -57,6 +101,11 @@ const criacaoSchema = z.object({
   // Opcional como os outros dois — a tarefa avulsa é caso real.
   demanda_id: z.string().uuid().nullable().optional(),
   assigned_to: z.string().uuid().nullable().optional(),
+  /**
+   * A SÉRIE (#4595). Ausente/nula = tarefa avulsa, exatamente como antes.
+   * `dias` é dia da semana no fuso da ORGANIZAÇÃO e `hora` é hora de parede.
+   */
+  recurrence: regraDeRecorrenciaSchema.nullable().optional(),
 });
 
 const listaSchema = z.object({
@@ -76,17 +125,49 @@ const listaSchema = z.object({
    * a equipe inteira numa lista só (a lista corta em 500 — filtrar na tela
    * esconderia as que ficaram fora do corte). Um id de terceiro vindo do
    * navegador só ESTREITA uma lista que viewer+ já vê inteira; a organização sai
-   * da sessão e a RLS segura o resto.
+   * da sessão (ou da linha do token) e o `.eq("organization_id")` segura o resto.
+   * `me` só existe para quem é uma pessoa: o token recebe 422.
    */
   assigned_to: z.union([z.literal("me"), z.literal("ninguem"), z.string().uuid()]).optional(),
+  /**
+   * Só as tarefas de negócios DESTE funil (`crm_leads.pipeline_id`). A tarefa não tem funil
+   * próprio: ela herda o do negócio a que está presa, então tarefa solta fica de fora quando
+   * o filtro está ligado. Um id de outra organização não devolve nada — o `organization_id`
+   * da consulta e a RLS continuam valendo.
+   */
+  pipeline_id: z.string().uuid().optional(),
+  /**
+   * Só as tarefas atribuídas a membros DESTE setor (`attendant_sectors`).
+   * Permite que a equipe fiscal, contábil, dp, ti filtre sua respectiva fila.
+   */
+  sector_id: z.string().uuid().optional(),
+  /**
+   * Teto de linhas desta busca (#4028). Existe porque a visão em QUADRO desenha
+   * todas as colunas de uma vez e pediria a base inteira: ela manda um número
+   * menor que o teto da lista. O máximo é DAQUI, não do navegador — um cliente
+   * que peça mais que `LIMITE_MAXIMO` recebe 422 em vez de uma consulta do
+   * tamanho que ele quiser.
+   */
+  limite: z.coerce.number().int().min(1).max(LIMITE_MAXIMO).optional(),
 });
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
-  const authz = await requireRole("viewer", { requestId, resource: "crm_tasks" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_tasks",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  // Está em PUBLIC_PATHS: o Bearer chega aqui sem estrangulamento a montante, e
+  // o teto por token e por organização é o único que conta as chamadas.
+  const teto = await tetoDeEscritaDoToken(authz, "crm_tasks", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const organizationId = authz.organizationId;
+  const doToken = authz.via === "token";
 
   const parsed = listaSchema.safeParse(Object.fromEntries(new URL(req.url).searchParams));
   if (!parsed.success) {
@@ -97,17 +178,48 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
   const filtros = parsed.data;
 
-  const supabase = await createClient();
+  // `me` é a PESSOA da sessão. Token não é pessoa: não há "minhas tarefas" a
+  // resolver, e adivinhar um responsável seria devolver a lista de outro.
+  let responsavel: string | undefined = filtros.assigned_to;
+  if (responsavel === "me") {
+    if (authz.actor.type !== "user") {
+      return fail("validation_failed", t("Parâmetros inválidos."), 422, {
+        requestId,
+        details: { assigned_to: ["`me` só vale para quem entrou pela tela; use o id do responsável ou `ninguem`."] },
+      });
+    }
+    responsavel = authz.actor.id;
+  }
+
+  // O filtro de funil só existe com o negócio EMBUTIDO (`lead:crm_leads!inner`),
+  // e o embed é exatamente o que o ramo do token não usa: com a service role ele
+  // não passa pela RLS de `crm_leads` e devolveria negócio de outra organização.
+  // Em vez de reabrir o embed, o token recebe 422 — quem precisa do funil filtra
+  // pelos negócios (`GET /api/v1/pipelines/[id]/leads`) e cruza por `lead_id`.
+  if (doToken && filtros.pipeline_id) {
+    return fail("validation_failed", t("Parâmetros inválidos."), 422, {
+      requestId,
+      details: { pipeline_id: ["Este filtro só vale para quem entrou pela tela; use `lead_id`."] },
+    });
+  }
+
+  const supabase = authz.supabase;
+  // No ramo do token o negócio NÃO vem por embed (service role não passa pela RLS
+  // de `crm_leads`): ele é juntado abaixo, em consulta filtrada pela organização.
+  const colunas: string = doToken
+    ? COLUNAS_DA_TAREFA
+    : filtros.pipeline_id
+      ? COLUNAS_NO_FUNIL
+      : COLUNAS;
   // ⚠️ `organization_id` à mão mesmo com RLS ligada: é a regra do CLAUDE.md, e
-  // ela não é redundante — o dia em que esta rota trocar para o admin client
-  // (que bypassa RLS) o filtro já está aqui.
+  // no ramo do token (admin client, que bypassa RLS) é a ÚNICA barreira.
   let query = supabase
     .from("crm_tasks")
-    .select(COLUNAS)
-    .eq("organization_id", authz.org.orgId)
+    .select(colunas)
+    .eq("organization_id", organizationId)
     .order("due_date", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: false })
-    .limit(500);
+    .limit(filtros.limite ?? LIMITE_MAXIMO);
 
   if (filtros.status) query = query.eq("status", filtros.status);
   if (filtros.priority) query = query.eq("priority", filtros.priority);
@@ -116,17 +228,44 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (filtros.demanda_id) query = query.eq("demanda_id", filtros.demanda_id);
   if (filtros.due_from) query = query.gte("due_date", filtros.due_from);
   if (filtros.due_to) query = query.lte("due_date", filtros.due_to);
-  if (filtros.aberto === "true") query = query.in("status", ["pending", "in_progress"]);
-  if (filtros.assigned_to === "me") query = query.eq("assigned_to", authz.user.id);
-  else if (filtros.assigned_to === "ninguem") query = query.is("assigned_to", null);
-  else if (filtros.assigned_to) query = query.eq("assigned_to", filtros.assigned_to);
+  if (filtros.aberto === "true") query = query.in("status", [...SITUACOES_ABERTAS_DA_TAREFA]);
+  if (responsavel === "ninguem") query = query.is("assigned_to", null);
+  else if (responsavel) query = query.eq("assigned_to", responsavel);
+  if (filtros.pipeline_id) query = query.eq("lead.pipeline_id", filtros.pipeline_id);
+
+  if (filtros.sector_id) {
+    // Setores é módulo opcional (doc 213): desligado, o filtro não existe —
+    // a mesma resposta das rotas de setor, em vez de filtrar por um dado que a
+    // instalação não mostra.
+    const desligado = await seSetoresDesligado(requestId);
+    if (desligado) return desligado;
+    const { data: membrosDoSetor, error: erroDoSetor } = await supabase
+      .from("attendant_sector_members")
+      .select("user_id")
+      .eq("sector_id", filtros.sector_id)
+      .eq("organization_id", organizationId);
+    if (erroDoSetor) {
+      return fail("internal_error", t("Erro ao listar as tarefas."), 500, { requestId });
+    }
+    const ids = (membrosDoSetor ?? []).map((m: { user_id: string }) => m.user_id);
+    // Setor sem ninguém: nenhuma tarefa é dele.
+    if (ids.length === 0) return ok({ tasks: [] as Tarefa[] }, { requestId });
+    query = query.in("assigned_to", ids);
+  }
 
   const { data, error } = await query;
   if (error) {
     return fail("internal_error", t("Erro ao listar as tarefas."), 500, { requestId });
   }
 
-  return ok({ tasks: (data ?? []) as unknown as Tarefa[] }, { requestId });
+  const tarefas = (data ?? []) as unknown as Tarefa[];
+  if (!doToken) return ok({ tasks: tarefas }, { requestId });
+
+  const comNegocio = await anexarNegocioDaTarefa(supabase, organizationId, tarefas);
+  if (!comNegocio) {
+    return fail("internal_error", t("Erro ao listar as tarefas."), 500, { requestId });
+  }
+  return ok({ tasks: comNegocio }, { requestId });
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -136,9 +275,21 @@ export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
   // `agent` e não `manager`: criar tarefa é o gesto de quem ATENDE, todo dia.
-  const authz = await requireRole("agent", { requestId, resource: "crm_tasks" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_tasks",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "crm_tasks", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const organizationId = authz.organizationId;
+  const doToken = authz.via === "token";
+  // `created_by` tem FK para `auth.users`: o id de um token não é pessoa e
+  // violaria a chave. Só a sessão (ou um ator `user`) assina a tarefa.
+  const autorId = authz.actor.type === "user" ? authz.actor.id : null;
 
   const parsed = criacaoSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -151,9 +302,13 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (parsed.data.assigned_to) {
     // A chave estrangeira de `assigned_to` é só para `auth.users`: sem esta conferência, um id de
     // outra organização (ou de quem saiu da equipe) gravaria sem erro. A régua
-    // e o porquê do admin client estão em `lib/tarefas/responsavel.ts`.
-    const equipe = isServiceRoleConfigured() ? createAdminClient() : await createClient();
-    const veredito = await conferirResponsavel(equipe, authz.org.orgId, parsed.data.assigned_to);
+    // e o porquê do filtro de organização estão em `lib/tarefas/responsavel.ts`
+    // (SQL direto na porta de `lib/db` — o pool NÃO passa por RLS).
+    const veredito = await conferirResponsavel(
+      portaDaAplicacao(),
+      organizationId,
+      parsed.data.assigned_to,
+    );
     if (veredito === "falha_na_consulta") {
       return fail("internal_error", t("Erro ao salvar a tarefa."), 500, { requestId });
     }
@@ -164,12 +319,30 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
+
+  if (doToken) {
+    // Na sessão a RLS esconde o negócio de outra organização; a service role não.
+    // O token só prende a tarefa a negócio e contato da PRÓPRIA organização.
+    const vinculos = await conferirNegocioEContato(supabase, organizationId, parsed.data);
+    if (vinculos === "falha_na_consulta") {
+      return fail("internal_error", t("Erro ao salvar a tarefa."), 500, { requestId });
+    }
+    if (vinculos === "fora_da_organizacao") {
+      return fail("validation_failed", t("O negócio, o contato ou a demanda vinculada não existe."), 422, {
+        requestId,
+      });
+    }
+  }
 
   if (parsed.data.demanda_id) {
     // A chave estrangeira não passa pela RLS: sem esta conferência, a demanda
     // de outra organização gravaria sem erro. A régua está em `lib/tarefas/demanda.ts`.
-    const veredito = await conferirDemanda(supabase, authz.org.orgId, parsed.data.demanda_id);
+    const veredito = await conferirDemanda(
+      portaDaAplicacao(),
+      organizationId,
+      parsed.data.demanda_id,
+    );
     if (veredito === "falha_na_consulta") {
       return fail("internal_error", t("Erro ao salvar a tarefa."), 500, { requestId });
     }
@@ -185,14 +358,47 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
   }
 
+  // ═══ A SÉRIE QUE SE REPETE (#4595) ═══
+  //
+  // A regra vira o JSON normalizado que a varredura lê (`dias` filtrados e
+  // ordenados, `hora` inteira, `ativa` explícita). E, quando a pessoa não
+  // escolheu data, a PRIMEIRA ocorrência já nasce calculada no fuso da
+  // organização: deixar para o primeiro cron faria a tarefa aparecer sem prazo
+  // por até dez minutos — tempo de sobra para a pessoa concluir que não salvou.
+  //
+  // O fuso é o da ORGANIZAÇÃO, e `instanteDe` (dentro de `proximaOcorrencia`) é
+  // quem converte hora de parede em instante. Calcular em UTC colocaria a
+  // ligação das 9h às 6h de Brasília.
+  let recurrence: ReturnType<typeof regraParaGravar> | null = null;
+  let dueDate = parsed.data.due_date ?? null;
+  if (parsed.data.recurrence) {
+    const regra = normalizarRegra(parsed.data.recurrence);
+    if (!regra) {
+      return fail("validation_failed", t("Escolha pelo menos um dia da semana e um horário."), 422, {
+        requestId,
+      });
+    }
+    recurrence = regraParaGravar(regra);
+    if (!dueDate) {
+      const [organizacao] = await portaDaAplicacao().query<{ timezone: string | null }>(
+        "select timezone from organizations where id = $1 limit 1",
+        [organizationId],
+      );
+      const proxima = proximaOcorrencia(regra, new Date(), fusoDaOrganizacao(organizacao?.timezone));
+      dueDate = proxima ? proxima.toISOString() : null;
+    }
+  }
+
   const { data, error } = await supabase
     .from("crm_tasks")
     .insert({
       ...parsed.data,
-      organization_id: authz.org.orgId,
-      created_by: authz.user.id,
+      due_date: dueDate,
+      recurrence,
+      organization_id: organizationId,
+      created_by: autorId,
     })
-    .select(COLUNAS)
+    .select(doToken ? COLUNAS_DA_TAREFA : COLUNAS)
     .single();
 
   if (error) {
@@ -206,25 +412,32 @@ export async function POST(req: NextRequest): Promise<Response> {
     return fail("internal_error", t("Erro ao salvar a tarefa."), 500, { requestId });
   }
 
-  const tarefa = data as unknown as Tarefa;
+  const gravada = data as unknown as Tarefa;
 
   await audit({
-    organizationId: authz.org.orgId,
-    actorUserId: authz.user.id,
+    organizationId,
+    actorUserId: autorId,
+    actorApiTokenId: authz.apiTokenId ?? null,
     action: "crm_task.created",
     resourceType: "crm_tasks",
-    resourceId: tarefa.id,
+    resourceId: gravada.id,
     requestId,
-    metadata: { due_date: tarefa.due_date, priority: tarefa.priority },
+    metadata: { due_date: gravada.due_date, priority: gravada.priority },
   });
 
   // O laço de retorno: tarefa presa a um negócio aparece na linha do tempo dele.
-  await registraAtividadeDaTarefa(supabase, {
-    organizationId: authz.org.orgId,
-    tarefa,
+  await registraAtividadeDaTarefa(portaDaAplicacao(), {
+    organizationId,
+    tarefa: gravada,
     tipo: "task_created",
-    actor: { type: "user", id: authz.user.id },
+    actor: authz.actor,
   });
+
+  // A tarefa já está gravada: se a junção do negócio falhar, a resposta sai
+  // com `lead: null` em vez de um 500 que convidaria o cliente a criar de novo.
+  const tarefa = doToken
+    ? ((await anexarNegocioDaTarefa(supabase, organizationId, [gravada]))?.[0] ?? { ...gravada, lead: null })
+    : gravada;
 
   return ok({ task: tarefa }, { requestId, status: 201 });
 }

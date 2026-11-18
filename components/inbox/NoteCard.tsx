@@ -9,7 +9,9 @@ import type { Note } from "@/lib/types/messaging";
 import { AudioPlayer } from "@/components/inbox/media/AudioPlayer";
 import { DocumentCard } from "@/components/inbox/media/DocumentCard";
 import { ImageMedia } from "@/components/inbox/media/ImageMedia";
+import { MediaUnavailable } from "@/components/inbox/media/MediaUnavailable";
 import { VideoMedia } from "@/components/inbox/media/VideoMedia";
+import { TextoComLinks } from "@/components/inbox/TextoComLinks";
 import { kindFromMime } from "@/lib/messaging/media/upload-validation";
 import { partesDoCorpo } from "@/lib/notifications/mentions";
 
@@ -25,10 +27,39 @@ import { partesDoCorpo } from "@/lib/notifications/mentions";
  * `kindFromMime` é o MESMO corte que decidiu se o upload era aceito — o que
  * renderiza é necessariamente o que passou pela validação. Mime que a função não
  * conhece cai em documento, o fallback que sempre dá para baixar o arquivo.
+ *
+ * ─── O anexo que o PRAZO apagou (#3756) ──────────────────────────────────────
+ *
+ * A retenção por idade da 0572 zera os três ponteiros da nota, e até aqui o
+ * "sem caminho" era lido como "nota só de texto": o operador lia a nota e não
+ * sabia que ali havia um arquivo. A mensagem já tinha o seu aviso desde a 0557;
+ * a nota passa a ter o equivalente, no lugar do anexo e no MESMO desenho — o
+ * `MediaUnavailable` que a bolha usa (`MessageBubble`, ramo `mediaExpirada`),
+ * não um segundo cartão inventado aqui: dois avisos para a mesma política
+ * ensinariam dois vocabulários. A marca (`media_expired_at`, com os dias que a
+ * política tinha no instante da remoção) é o que distingue os dois casos: sem
+ * ela, nota apagada e nota que nunca teve anexo são a mesma coisa.
  */
 export function NoteMedia({ note }: { note: Note }) {
   const t = useT();
-  if (!note.media_storage_path) return null; // nota só de texto
+  if (!note.media_storage_path) {
+    // O aviso carrega os DIAS, como o da mensagem: "por política" sem o número
+    // é promessa sem medida. Nota marcada por uma versão que não gravava os
+    // dias (ou marca sem valor) cai no texto genérico, nunca em erro.
+    if (!note.media_expired_at) return null; // nota só de texto
+    const aviso =
+      typeof note.media_retention_days === "number"
+        ? t("Anexo da nota apagado pela política de retenção ({n} dias)").replace(
+            "{n}",
+            String(note.media_retention_days),
+          )
+        : t("Anexo da nota apagado pela política de retenção.");
+    return (
+      <div className="mt-1.5">
+        <MediaUnavailable detalhe={aviso} />
+      </div>
+    );
+  }
   const src = `/api/v1/conversations/${note.conversation_id}/notes/${note.id}/media`;
   switch (kindFromMime(note.media_mime ?? "") ?? "document") {
     case "image":
@@ -87,10 +118,16 @@ export function NoteCard({ note, onDelete }: Props) {
             <span>{t("Nota interna · só o time vê")}</span>
           </div>
           {onDelete && (
+            // Visível por padrão (toque e leitor de tela), escondido SÓ onde
+            // existe hover, revelado pelo hover do grupo e pelo foco do
+            // teclado — o mesmo contrato do botão de opções da mensagem em
+            // `MessageBubble.tsx` (#4562). Antes o `opacity-0` era
+            // incondicional: quem tabulava até aqui pousava num botão
+            // invisível, e no celular ele nunca aparecia.
             <button
               type="button"
               onClick={onDelete}
-              className="opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+              className="opacity-100 transition-opacity hover:text-destructive [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-1 rounded-md"
               aria-label={t("Excluir nota")}
             >
               <Trash size={12} weight="bold" />
@@ -114,7 +151,7 @@ export function NoteCard({ note, onDelete }: Props) {
                   {`@${parte.mencao.nome}`}
                 </span>
               ) : (
-                <span key={i}>{parte.texto}</span>
+                <span key={i}><TextoComLinks texto={parte.texto} /></span>
               ),
             )}
           </p>

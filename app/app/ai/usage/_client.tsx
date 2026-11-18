@@ -119,7 +119,8 @@ export function UsageDashboardClient({ agents, initial }: Props) {
               hint={t("cada resposta do agente pode fazer várias")}
             />
             {/*
-              Turno = um job distinto com chamada `agent_turn` que deu certo, e
+              Turno = um job distinto com chamada `agent_turn` ou `followup_turn`
+              (o follow-up, migration 9097) que deu certo, e
               o custo dele é o do job inteiro mesmo com filtro. `llm_calls.job_id`
               vira null quando a poda da fila apaga o job, então o turno antigo
               deixa de contar — o hint diz isso em vez de esconder.
@@ -135,10 +136,22 @@ export function UsageDashboardClient({ agents, initial }: Props) {
             />
             <StatCard
               label={t("Taxa de cache")}
-              value={`${(q.data.totals.cache_hit_rate * 100).toLocaleString("pt-BR", {
-                maximumFractionDigits: 1,
-              })}%`}
-              hint={t("do texto enviado à IA veio do cache, que custa bem menos")}
+              // Sem chamada cacheável no recorte não há o que medir: "0%" leria
+              // como cache quebrado, o falso alarme que o #4362 tira da tela.
+              value={
+                q.data.totals.cacheable_invocations === 0
+                  ? "—"
+                  : `${(q.data.totals.cache_hit_rate * 100).toLocaleString("pt-BR", {
+                      maximumFractionDigits: 1,
+                    })}%`
+              }
+              hint={
+                q.data.totals.cacheable_invocations === 0
+                  ? t("nenhuma chamada no período passa do tamanho que o provedor guarda em cache")
+                  : t(
+                      "do texto das chamadas que o provedor guarda em cache (entrada ≥ 1.024 tokens); as menores ficam fora da conta",
+                    )
+              }
             />
             <StatCard
               label={t("Passaram para uma pessoa")}

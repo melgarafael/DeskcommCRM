@@ -25,6 +25,7 @@ import { respostaDeRecusa } from "@/lib/api/recusa";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { criarEtapa } from "@/lib/leads/stage-operations";
+import { anexaFluxos, carregaFluxosPorEtapa } from "@/lib/followup/fluxos-da-etapa";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -77,7 +78,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     // e sem elas aqui, a tela de configurações do funil mostra os campos vazios
     // logo depois de salvar (issue #2999).
     .select(
-      "id, name, position, is_won, is_lost, expected_duration_hours, win_probability, avisar_na_central",
+      "id, name, position, color, is_won, is_lost, expected_duration_hours, win_probability, avisar_na_central",
     )
     .eq("organization_id", authz.org.orgId)
     .eq("pipeline_id", id)
@@ -85,7 +86,19 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .order("position", { ascending: true });
   if (error) return fail("internal_error", t("Falha ao listar etapas."), 500, { requestId });
 
-  return ok(data ?? [], { requestId });
+  // #3603 — a lista read-only de «quais fluxos disparam ao entrar nesta etapa».
+  // Nenhuma consulta por etapa, e as MESMAS portas do motor
+  // (`lib/followup/fluxos-da-etapa.ts`). Se esta leitura falhar, a resposta sai
+  // SEM o campo — a tela então não afirma nem "tem" nem "não tem" —, em vez de
+  // derrubar uma listagem de etapas que já foi lida com sucesso.
+  let fluxos: Awaited<ReturnType<typeof carregaFluxosPorEtapa>> | null = null;
+  try {
+    fluxos = await carregaFluxosPorEtapa(supabase, authz.org.orgId);
+  } catch {
+    fluxos = null;
+  }
+
+  return ok(anexaFluxos((data ?? []) as Array<{ id: string }>, fluxos), { requestId });
 }
 
 export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {

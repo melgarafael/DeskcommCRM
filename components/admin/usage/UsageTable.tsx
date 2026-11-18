@@ -40,7 +40,8 @@ function exportCSV(tenants: UsageTenantRow[], range: UsageRange): void {
     "conversas",
     "invocacoes_ai",
     "tokens",
-    "custo_reais",
+    "custo_usd",
+    "chamadas_sem_preco",
   ];
 
   const rows = tenants.map((t) => [
@@ -53,6 +54,7 @@ function exportCSV(tenants: UsageTenantRow[], range: UsageRange): void {
     t.ai_invocations_count,
     t.ai_tokens_total,
     (t.ai_cost_cents / 100).toFixed(2),
+    t.ai_unpriced_count ?? 0,
   ]);
 
   const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
@@ -145,6 +147,11 @@ export function UsageTable({ tenants, range }: UsageTableProps) {
                 </TableCell>
                 <TableCell className="text-right text-sm font-medium tabular-nums">
                   {fmtUSD(row.ai_cost_cents)}
+                  {!!row.ai_unpriced_count && (
+                    <span className="block text-xs font-normal text-muted-foreground">
+                      {row.ai_unpriced_count} {t("chamadas sem preço")}
+                    </span>
+                  )}
                 </TableCell>
               </TableRow>
             ))}

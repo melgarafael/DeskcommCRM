@@ -225,6 +225,9 @@ describe("inline prospecting agent setup", () => {
     expect(state.router!.config.classifier_model).toBe("unchanged");
     expect(state.version!.pipeline_ids).toEqual([org]);
     expect(state.version!.tool_ids).toContain("crm_move_lead_stage");
+    // D7: o qualificador grava o diagnóstico na ficha — ligado por nome, fora do
+    // pacote do onboarding (que o mock acima nem traz).
+    expect(state.version!.tool_ids).toContain("crm_save_lead_diagnosis");
     expect(state.version!.tool_ids).not.toContain("crm_create_lead");
     expect(state.version!.handoff_tool_enabled).toBe(true);
     expect(state.agent!.paused_at).toBeNull();
@@ -431,5 +434,28 @@ describe("model and router prerequisites", () => {
     expect(vi.mocked(db.query).mock.calls.some(([sql]) => String(sql).startsWith("delete"))).toBe(
       false,
     );
+  });
+});
+
+describe("o agente da campanha conversa no idioma da organização (idioma.ts)", () => {
+  it("sem idioma passado, o prompt é o de sempre (português do Brasil)", () => {
+    expect(prospectingAgentPrompt(input)).toContain("Converse em português do Brasil");
+  });
+
+  it("organização em espanhol (es-MX): a versão criada manda conversar em espanhol, não em português", async () => {
+    const { pool, db } = database();
+    const original = db.query.getMockImplementation()!;
+    db.query.mockImplementation(async (sql: string, params: unknown[] = []) =>
+      sql.startsWith("select locale from organizations")
+        ? { rows: [{ locale: "es-MX" }] }
+        : original(sql, params),
+    );
+    await setupProspectingAgent(pool, admin, context, input);
+    const versao = mocks.create.mock.calls[0]![2].version as { system_prompt: string };
+    expect(versao.system_prompt).toContain("Converse em espanhol");
+    expect(versao.system_prompt).not.toContain("português do Brasil");
+    // A consulta do idioma é da organização do contexto, nunca de outra.
+    const consulta = db.query.mock.calls.find(([sql]) => String(sql).startsWith("select locale"));
+    expect(consulta?.[1]).toEqual([org]);
   });
 });

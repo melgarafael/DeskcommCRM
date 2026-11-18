@@ -30,10 +30,46 @@ export type PrioridadeDaTarefa = (typeof PRIORIDADES_DA_TAREFA)[number];
 export const SITUACOES_DA_TAREFA = ["pending", "in_progress", "done", "cancelled"] as const;
 export type SituacaoDaTarefa = (typeof SITUACOES_DA_TAREFA)[number];
 
+/**
+ * As situações em que a tarefa ainda PEDE AÇÃO — o que `?aberto=true` significa
+ * na rota e o que o contador do menu conta.
+ *
+ * Existe como constante, e não como literal em cada lugar, porque são dois
+ * consumidores com a mesma pergunta: `app/api/v1/tasks/route.ts` (o filtro) e
+ * `components/shell/ContadorDeTarefas.tsx` (o número). Duas listas iguais
+ * separadas divergem na primeira mudança de vocabulário — e a divergência aqui
+ * seria muda: o menu contaria uma coisa e a tela mostraria outra.
+ */
+export const SITUACOES_ABERTAS_DA_TAREFA = ["pending", "in_progress"] as const;
+
+const ABERTAS = new Set<string>(SITUACOES_ABERTAS_DA_TAREFA);
+
+/** A MESMA régua de `SITUACOES_ABERTAS_DA_TAREFA`, para quem tem um status na mão. */
+export function tarefaEstaAberta(status: SituacaoDaTarefa): boolean {
+  return ABERTAS.has(status);
+}
+
 /** O negócio a que a tarefa está presa, como a lista o mostra. */
 export interface NegocioDaTarefa {
   id: string;
   title: string;
+}
+
+/**
+ * A REGRA da tarefa que se repete (#4595) — o que `crm_tasks.recurrence` guarda.
+ *
+ * `dias` é dia da semana LOCAL da organização, domingo = 0 (a régua de
+ * `diaDaSemanaLocal` e do `dow` da jornada); `hora` é hora de PAREDE da
+ * organização, 0–23. Nada de instante aqui: quem vira instante é
+ * `proximaOcorrencia` (`lib/tarefas/recorrencia.ts`), com o fuso da org.
+ *
+ * `ativa` é o interruptor da SÉRIE: desligada, ela para de gerar e não apaga o
+ * que já nasceu — as ocorrências passadas continuam sendo história.
+ */
+export interface RegraDeRecorrencia {
+  dias: number[];
+  hora: number;
+  ativa: boolean;
 }
 
 /** Uma linha de `crm_tasks`, como a API a devolve. */
@@ -56,6 +92,11 @@ export interface Tarefa {
   demanda_id: string | null;
   assigned_to: string | null;
   created_by: string | null;
+  /**
+   * A regra da SÉRIE (#4595). Nula = tarefa avulsa ou ocorrência já gerada —
+   * quem repete é a linha que carrega a regra, não cada ocorrência.
+   */
+  recurrence: RegraDeRecorrencia | null;
   created_at: string;
   updated_at: string;
   /**
@@ -77,6 +118,11 @@ export interface NovaTarefa {
   /** A demanda do atendimento a que a tarefa fica presa (#2818). */
   demanda_id?: string | null;
   assigned_to?: string | null;
+  /**
+   * A regra da série (#4595). Presente = a tarefa criada é a SÉRIE e passa a
+   * gerar ocorrências; `null` (ou ausente) = tarefa avulsa, como hoje.
+   */
+  recurrence?: RegraDeRecorrencia | null;
 }
 
 export type EdicaoDaTarefa = Partial<NovaTarefa>;
@@ -120,6 +166,84 @@ export function estaAtrasada(
   if (!tarefa.due_date) return false;
   if (estaEncerrada(tarefa)) return false;
   return new Date(tarefa.due_date).getTime() < agora.getTime();
+}
+
+export type UrgenciaDoPrazo = "normal" | "atencao_48h" | "vence_hoje" | "atrasada";
+
+export interface ConfiguracaoDiasTrabalho {
+  /**
+   * Dias da semana em que a empresa trabalha (0=Domingo, 1=Segunda, ..., 6=Sábado).
+   * Padrão: [1, 2, 3, 4, 5] (Segunda a Sexta).
+   */
+  diasUteis?: readonly number[];
+}
+
+export const DIAS_UTEIS_PADRAO: readonly number[] = [1, 2, 3, 4, 5];
+
+/**
+ * Calcula a diferença em horas úteis entre dois instantes,
+ * desconsiderando dias não úteis (ex: sábados e domingos quando não trabalhados).
+ */
+export function calcularHorasUteisEntre(
+  inicio: Date,
+  fim: Date,
+  diasUteis: readonly number[] = DIAS_UTEIS_PADRAO,
+): number {
+  if (fim.getTime() <= inicio.getTime()) {
+    return (fim.getTime() - inicio.getTime()) / (1000 * 60 * 60);
+  }
+
+  // Acima de 14 dias corridos, garantidamente há mais de 48h úteis
+  const diffBrutaHoras = (fim.getTime() - inicio.getTime()) / (1000 * 60 * 60);
+  if (diffBrutaHoras > 14 * 24) {
+    return diffBrutaHoras;
+  }
+
+  const setDias = new Set(diasUteis);
+  const msPorHora = 1000 * 60 * 60;
+  let totalHoras = 0;
+
+  let cursor = new Date(inicio.getTime());
+  while (cursor.getTime() < fim.getTime()) {
+    const proximaHora = new Date(cursor.getTime() + msPorHora);
+    const limiteHora = proximaHora.getTime() > fim.getTime() ? fim : proximaHora;
+    const duracaoHoras = (limiteHora.getTime() - cursor.getTime()) / msPorHora;
+
+    if (setDias.has(cursor.getDay())) {
+      totalHoras += duracaoHoras;
+    }
+
+    cursor = limiteHora;
+  }
+
+  return totalHoras;
+}
+
+/**
+ * Classifica a urgência do prazo de uma tarefa com base nas horas úteis restantes:
+ * - "atrasada": prazo já estourou
+ * - "vence_hoje": vence em até 24h úteis (prioridade máxima do dia)
+ * - "atencao_48h": vence em até 48h úteis (alerta preventivo de 2 dias)
+ * - "normal": mais de 48h úteis ou sem prazo
+ */
+export function calcularUrgenciaDoPrazo(
+  tarefa: Pick<Tarefa, "due_date" | "status">,
+  agora: Date = new Date(),
+  config?: ConfiguracaoDiasTrabalho,
+): UrgenciaDoPrazo {
+  if (!tarefa.due_date || estaEncerrada(tarefa)) return "normal";
+
+  const prazo = new Date(tarefa.due_date);
+  if (prazo.getTime() < agora.getTime()) {
+    return "atrasada";
+  }
+
+  const dias = config?.diasUteis ?? DIAS_UTEIS_PADRAO;
+  const horasRestantes = calcularHorasUteisEntre(agora, prazo, dias);
+
+  if (horasRestantes <= 24) return "vence_hoje";
+  if (horasRestantes <= 48) return "atencao_48h";
+  return "normal";
 }
 
 /** O que o selo do card conta: o que ainda pede ação, e quanto disso já venceu. */

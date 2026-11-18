@@ -37,11 +37,13 @@ import {
   resolveSessionRef,
   type ChannelSessionRef,
 } from "@/lib/channels";
+import { enderecoDaUltimaRecebida } from "@/lib/channels/endereco-da-ultima-recebida";
 
 /** Único estado em que o canal pode falar agora — mesmo critério do handler de envio. */
 const SESSAO_SAUDAVEL = "WORKING";
 
 interface ConversaParaPresenca {
+  contact_id: string | null;
   is_group: boolean;
   group_chat_id: string | null;
   contacts: {
@@ -70,7 +72,7 @@ export async function sinalizarDigitando(
   const { data } = await supabase
     .from("conversations")
     .select(
-      `is_group, group_chat_id, contacts:contact_id(phone_number, wa_identity, wa_lid), ` +
+      `contact_id, is_group, group_chat_id, contacts:contact_id(phone_number, wa_identity, wa_lid), ` +
         `channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status)`,
     )
     .eq("id", input.conversationId)
@@ -90,12 +92,22 @@ export async function sinalizarDigitando(
   // da doutrina de restrição de canal).
   if (!adapter.signalTyping) return;
 
+  // Ficha com telefone extra: o "digitando…" sai pelo número que a pessoa escreveu,
+  // o mesmo endereço da resposta. A porta de canal decide quem tem isso.
+  const ultimoRecebidoChatId = await enderecoDaUltimaRecebida(supabase, {
+    provider: sessao.provider,
+    isGroup: conversa.is_group,
+    organizationId: input.organizationId,
+    conversationId: input.conversationId,
+    contactId: conversa.contact_id ?? null,
+  });
   const recipient = adapter.resolveRecipient({
     isGroup: conversa.is_group,
     groupChatId: conversa.group_chat_id,
     phoneNumber: conversa.contacts?.phone_number,
     waIdentity: conversa.contacts?.wa_identity,
     waLid: conversa.contacts?.wa_lid,
+    ultimoRecebidoChatId,
   });
   if (!recipient) return;
 

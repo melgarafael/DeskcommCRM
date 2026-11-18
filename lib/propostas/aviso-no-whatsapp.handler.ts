@@ -35,14 +35,24 @@ export const avisoDePropostaNoWhatsAppHandler: EventHandler = {
               return resolverPadroesDaProposta((data as { settings?: unknown } | null)?.settings).avisarNoWhatsApp;
             },
             carregaConfig: (orgId) => doCaso.carregaConfig(orgId),
+            // O MESMO adapter do aviso de caso: a #3803 resolve o destino pela
+            // mesma função nas duas rotas (conversa → negócio → carteira).
+            carregaMundoDoAviso: doCaso.carregaMundoDoAviso,
             async carregaProposta(orgId, propostaId) {
               const { data } = await admin
                 .from("crm_proposals")
-                .select("titulo, status, contact_id")
+                .select("titulo, status, contact_id, conversation_id")
                 .eq("organization_id", orgId)
                 .eq("id", propostaId)
                 .maybeSingle();
-              return (data as { titulo: string | null; status: string; contact_id: string | null } | null) ?? null;
+              return (
+                (data as {
+                  titulo: string | null;
+                  status: string;
+                  contact_id: string | null;
+                  conversation_id: string | null;
+                } | null) ?? null
+              );
             },
             async avisoAberto(orgId, propostaId) {
               const { data } = await admin
@@ -65,6 +75,7 @@ export const avisoDePropostaNoWhatsAppHandler: EventHandler = {
               return nomeDoContato(data as { name: string | null; display_name: string | null } | null);
             },
             carregaCanal: (orgId, canalId) => doCaso.carregaCanal(orgId, canalId),
+            destinoEhDaPropriaOrganizacao: (orgId, telefone) => doCaso.destinoEhDaPropriaOrganizacao(orgId, telefone),
             registraJidDoAviso: (orgId, jid) => doCaso.registraJidDoAviso(orgId, jid),
             marcaDaOrganizacao: (orgId) => doCaso.marcaDaOrganizacao(orgId),
           },

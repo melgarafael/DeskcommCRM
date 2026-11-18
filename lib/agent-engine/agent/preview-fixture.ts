@@ -4,6 +4,10 @@
 import { randomUUID } from 'node:crypto';
 import { createFakeRegistry } from '../edge/llm/providers';
 import { MARCA_DA_CONSULTA_INTERNA } from './conversa-do-caso/contexto';
+import { INSTRUCAO_DO_PEDIDO_HUMANO } from './proposta-sob-pedido';
+
+/** Cenário sintético exclusivo da jornada3281; só existe no provider de QA. */
+export const CENARIO_DE_SILENCIO_ASSISTIDO = '[cenario-ui-silencio-3281]';
 export function previewFixtureRegistry() {
   return createFakeRegistry(async (options) => {
     const text = JSON.stringify(options.prompt);
@@ -13,7 +17,21 @@ export function previewFixtureRegistry() {
       | { type: 'text'; text: string }
       | { type: 'tool-call'; toolCallId: string; toolName: string; input: string }
     > = [];
-    if (!options.tools?.length) {
+    if (options.tools?.length && text.includes(CENARIO_DE_SILENCIO_ASSISTIDO)) {
+      // A mesma conversa só ganha texto quando o motor inclui o pedido humano.
+      // Não há contador global de chamadas nem alteração do cenário comum.
+      const pedido = JSON.stringify(INSTRUCAO_DO_PEDIDO_HUMANO).slice(1, -1);
+      if (text.includes(pedido)) {
+        content.push({
+          type: 'tool-call',
+          toolCallId: randomUUID(),
+          toolName: 'send_message',
+          input: JSON.stringify({ body: 'Bom dia! Posso ajudar com o seu pedido?' }),
+        });
+      } else {
+        content.push({ type: 'text', text: '' });
+      }
+    } else if (!options.tools?.length) {
       // A CONSULTA INTERNA DO CASO vem ANTES dos ramos de JSON.
       //
       // Os ramos abaixo devolvem JSON (memória, compactação, checkpoint) porque

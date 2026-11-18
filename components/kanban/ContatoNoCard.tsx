@@ -1,7 +1,7 @@
 "use client";
 
+import { ListaDeLinks } from "@/components/contacts/ListaDeLinks";
 import { useT } from "@/hooks/i18n/useT";
-import { TIPOS_DE_LINK } from "@/lib/leads/links-de-contato";
 import type { Lead } from "@/lib/types/leads";
 import { EnvelopeSimple, Phone } from "@/lib/ui/icons";
 
@@ -37,44 +37,30 @@ export function ContatoNoCard({ lead }: Props) {
   return (
     <div className="mt-1 space-y-1 text-xs text-text-muted" data-testid="contato-no-card">
       {(telefone || email) && (
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2 overflow-hidden">
           {telefone && (
-            <span className="inline-flex shrink-0 items-center gap-1 tabular-nums">
-              <Phone size={12} aria-hidden />
+            <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap tabular-nums">
+              <Phone size={12} aria-hidden className="shrink-0" />
               <span className="sr-only">{t("Telefone")}: </span>
               {telefone}
             </span>
           )}
           {email && (
-            <span className="inline-flex min-w-0 items-center gap-1">
-              <EnvelopeSimple size={12} aria-hidden />
+            <span className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+              <EnvelopeSimple size={12} aria-hidden className="shrink-0" />
               <span className="sr-only">{t("E-mail")}: </span>
-              <span className="truncate">{email}</span>
+              <span
+                className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
+                title={email}
+              >
+                {email}
+              </span>
             </span>
           )}
         </div>
       )}
       {links.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {links.map(({ tipo, href }) => {
-            const definicao = TIPOS_DE_LINK.find((d) => d.id === tipo);
-            const rotulo = definicao ? t(definicao.rotulo) : tipo;
-            return (
-              <a
-                key={tipo}
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                title={`${rotulo} — ${href}`}
-                aria-label={`${t("Abrir")} ${rotulo}`}
-                onClick={(e) => e.stopPropagation()}
-                className="rounded-md border border-border px-1.5 py-0.5 text-[11px] leading-4 text-text-muted hover:border-accent hover:text-accent"
-              >
-                {definicao?.curto ?? tipo}
-              </a>
-            );
-          })}
-        </div>
+        <ListaDeLinks links={links} aoClicarNoLink={(e) => e.stopPropagation()} />
       )}
     </div>
   );

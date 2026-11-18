@@ -9,6 +9,7 @@ import { aplicarConvite } from "@/lib/auth/aplicar-convite";
 import { respostaDePonte } from "@/lib/auth/ponte-de-volta";
 import { safeNext } from "@/lib/auth/safe-next";
 import { reconhecerDispositivoConfiavel } from "@/lib/auth/dispositivo-confiavel";
+import { invalidarUsuario } from "@/lib/auth/cache-curto";
 import { audit } from "@/lib/audit";
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { env } from "@/lib/env";
@@ -140,6 +141,11 @@ export async function GET(request: NextRequest) {
 
   const usuario = data.user;
 
+  // Entrar de novo é o jeito que a pessoa tem de "atualizar" o que vê. O cache
+  // curto de autorização só é derrubado por quem escreve PELO APP; vínculo
+  // gravado por fora (seed, worker, SQL) esperaria o TTL. Um MISS por login.
+  invalidarUsuario(usuario.id);
+
   // O Google autentica com dois fatores (e a conta pode tê-los). O login por
   // senha NÃO deixa passar quem tem TOTP verificado sem o segundo fator
   // (`signInWithPassword.ts:88`), e a entrada com Google tem de ter a mesma
@@ -151,7 +157,13 @@ export async function GET(request: NextRequest) {
     !!totpVerificado && !!data.session && (await reconhecerDispositivoConfiavel(usuario.id, totpVerificado.id, data.session.access_token));
   if (totpVerificado && !confiavel) {
     const params = new URLSearchParams({ factor: totpVerificado.id, next: safeNext(next, "/app") });
-    return redirectTo(`/login/mfa?${params}`);
+    // O PEDIDO do código também é tela que EXIGE sessão: `/login/mfa` faz
+    // `getUser()` e, sem usuário, devolve para `/login`. Um 302 daqui continuaria
+    // a cadeia de navegação começada em `accounts.google.com`, o cookie `Strict`
+    // não viajaria e a pessoa nunca veria o campo do código (issue #4335 — a
+    // mesma classe da #1646, que já tirou o 302 dos destinos de sucesso).
+    // Mesma ponte, mesmo motivo; o `factor` e o `next` viajam nela.
+    return await paraTelaAutenticada(`/login/mfa?${params}`);
   }
 
   // ENTRADA: já existe vínculo. Provisionar ou reaplicar convite aqui seria
@@ -266,7 +278,17 @@ export async function GET(request: NextRequest) {
   if (modo === "com_aprovacao") return await paraTelaAutenticada("/get-started");
 
   try {
-    await ensureTenantForUser(usuario, { source: "signup" });
+    // A volta do Google não traz nada nosso além da URL: o idioma da tela e o
+    // fuso do navegador vieram nela (`urlDeRetornoDoGoogle`), e são só PISTAS —
+    // `perfilDaEmpresaNova` aceita apenas idioma servido e fuso que existe.
+    await ensureTenantForUser(usuario, {
+      source: "signup",
+      pistas: {
+        idioma: url.searchParams.get("idioma"),
+        fuso: url.searchParams.get("fuso"),
+        acceptLanguage: request.headers.get("accept-language"),
+      },
+    });
   } catch (e) {
     await audit({
       action: "auth.signup_provision_failed",

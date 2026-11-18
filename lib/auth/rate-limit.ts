@@ -126,6 +126,7 @@ export const AUTH_LIMITS = {
   // usado UMA vez na vida de uma conta — 3 por hora por identidade já é
   // folga para quem errou o nome duas vezes.
   org_recovery: { ip: 5, id: 3, windowSec: 3600 },
+  mfa: { ip: 30, id: 3, windowSec: 60 },
 } satisfies Record<string, AuthRateLimits>;
 
 export const __LOGIN_IP_DEFAULT_PARA_TESTE = LOGIN_IP_DEFAULT;
@@ -266,4 +267,50 @@ export async function registrarFalhaDeToken(
       err instanceof Error ? err.message : err,
     );
   }
+}
+
+/** Janela longa do segundo fator: só por usuário (o teto por IP é o da janela curta). */
+const MFA_DIARIO = { id: 15, windowSec: 86400 } as const;
+
+/**
+ * Bloqueio por FALHA no segundo fator (MFA/TOTP), contado no servidor e não
+ * no navegador — a mesma dupla proteção do `login`:
+ *  - janela curta (`AUTH_LIMITS.mfa`, 3 falhas / 60s por usuário e 30 por IP);
+ *  - janela diária (`MFA_DIARIO`, 15 falhas / 24h por usuário).
+ *
+ * Toda tela que confere o código do segundo fator consulta e alimenta este
+ * mesmo balde: `verifyMfa` e `updatePassword`.
+ */
+export async function mfaBloqueadoPorFalhas(
+  userId: string,
+  limits: AuthRateLimits = AUTH_LIMITS.mfa,
+  diario: { id: number; windowSec: number } = MFA_DIARIO,
+): Promise<boolean> {
+  const ip = ipDoCliente(await headers());
+  if (ip !== null) {
+    const atualIp = await peekRateLimit(`auth:mfa_fail:ip:${opaque(ip)}`, limits.windowSec);
+    if (atualIp >= limits.ip) return true;
+  }
+  if (limits.id !== undefined) {
+    const atualId = await peekRateLimit(`auth:mfa_fail:id:${opaque(userId)}`, limits.windowSec);
+    if (atualId >= limits.id) return true;
+  }
+  const atualDia = await peekRateLimit(`auth:mfa_fail_daily:id:${opaque(userId)}`, diario.windowSec);
+  return atualDia >= diario.id;
+}
+
+/** Registra uma tentativa de MFA/TOTP que falhou no contador do servidor. */
+export async function registrarFalhaDeMfa(
+  userId: string,
+  limits: AuthRateLimits = AUTH_LIMITS.mfa,
+  diario: { id: number; windowSec: number } = MFA_DIARIO,
+): Promise<void> {
+  const ip = ipDoCliente(await headers());
+  if (ip !== null) {
+    await checkRateLimit(`auth:mfa_fail:ip:${opaque(ip)}`, limits.ip, limits.windowSec);
+  }
+  if (limits.id !== undefined) {
+    await checkRateLimit(`auth:mfa_fail:id:${opaque(userId)}`, limits.id, limits.windowSec);
+  }
+  await checkRateLimit(`auth:mfa_fail_daily:id:${opaque(userId)}`, diario.id, diario.windowSec);
 }

@@ -14,7 +14,9 @@
  * ao fire-and-forget; o caso 2 é o controle de que o caminho bom continua bom.
  *
  * E a rota do detalhe passa a dar o link do PDF para `pending_review` — é o
- * arquivo que o operador entrega à mão (caso 4).
+ * arquivo que o operador entrega à mão (caso 4). Desde a #2341 ela dá também o
+ * do `data.json`: o pacote é dois arquivos, e o caminho manual — justamente o
+ * de quem não recebeu e-mail — entregava um só (casos 6 e 7).
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -195,28 +197,59 @@ describe("lgpd-export-worker: o desfecho pending_review é conferido", () => {
   });
 });
 
-describe("GET /api/v1/lgpd/requests/[id]: o PDF da revisão pendente chega ao operador", () => {
-  const pedirDetalhe = async (status: string) => {
+describe("GET /api/v1/lgpd/requests/[id]: o pacote da revisão pendente chega ao operador", () => {
+  const pedirDetalhe = async (status: string, result: Record<string, unknown> = {
+    pdf_path: `${ORG}/${PEDIDO}/report.pdf`,
+  }) => {
     estado.assinados = [];
     estado.detalhe = {
       id: PEDIDO,
       organization_id: ORG,
       status,
-      result: { pdf_path: `${ORG}/${PEDIDO}/report.pdf` },
+      result,
     };
     const resposta = await detalhe({} as never, { params: Promise.resolve({ id: PEDIDO }) });
-    return (await resposta.json()) as { data: { signed_pdf_url: string | null } };
+    return (await resposta.json()) as {
+      data: { signed_pdf_url: string | null; signed_json_url: string | null };
+    };
   };
 
   it("4. pending_review com PDF gerado devolve o link assinado", async () => {
     const corpo = await pedirDetalhe("pending_review");
     expect(corpo.data.signed_pdf_url).toBe("https://storage.test/x");
     expect(estado.assinados).toEqual([`${ORG}/${PEDIDO}/report.pdf`]);
+    // Resultado anterior ao `json_path`: não há arquivo, e a rota não inventa um.
+    expect(corpo.data.signed_json_url).toBeNull();
   });
 
   it("5. controle: processing não ganha link", async () => {
     const corpo = await pedirDetalhe("processing");
     expect(corpo.data.signed_pdf_url).toBeNull();
+    expect(corpo.data.signed_json_url).toBeNull();
     expect(estado.assinados).toEqual([]);
+  });
+
+  it("6. ⭐ pending_review devolve as DUAS ligações: o PDF e a cópia que ele resume (#2341)", async () => {
+    const corpo = await pedirDetalhe("pending_review", {
+      pdf_path: `${ORG}/${PEDIDO}/report.pdf`,
+      json_path: `${ORG}/${PEDIDO}/data.json`,
+    });
+
+    expect(corpo.data.signed_pdf_url).toBe("https://storage.test/x");
+    expect(
+      corpo.data.signed_json_url,
+      "o operador é quem entrega à mão, e a tela não lhe dá o arquivo de dados",
+    ).toBe("https://storage.test/x");
+    // As duas assinaturas, na ordem em que o pacote é entregue.
+    expect(estado.assinados).toEqual([`${ORG}/${PEDIDO}/report.pdf`, `${ORG}/${PEDIDO}/data.json`]);
+  });
+
+  it("7. completed também entrega as duas (o titular que abriu o link depois)", async () => {
+    const corpo = await pedirDetalhe("completed", {
+      pdf_path: `${ORG}/${PEDIDO}/report.pdf`,
+      json_path: `${ORG}/${PEDIDO}/data.json`,
+    });
+    expect(corpo.data.signed_pdf_url).toBe("https://storage.test/x");
+    expect(corpo.data.signed_json_url).toBe("https://storage.test/x");
   });
 });

@@ -30,6 +30,11 @@ import WebSocket from "ws";
 import type { Socket } from "node:net";
 import { pcm16ToUlaw, ulawToPcm16 } from "@/lib/voip/ulaw";
 import { somarUsoDaResposta, usoVazio, type UsoDaSessao } from "./uso-da-sessao";
+import { esperaDaVez } from "./espera-da-vez";
+// Só TIPO: a ponte não importa o módulo da agenda em runtime. Quem monta as
+// cinco operações (com o handler de verdade) é o worker — ver
+// `agenda-da-voz.ts` e o comentário de `AudioSocketCallContext.agenda`.
+import type { AgendaDaVoz, PreparoDaVoz } from "./agenda-da-voz";
 
 // Fallback só pra quem ainda não configurou nada na aba Voz do agente
 // (config.voice_model) -- normalmente this.ctx.voiceModel já vem preenchido
@@ -39,6 +44,9 @@ import { somarUsoDaResposta, usoVazio, type UsoDaSessao } from "./uso-da-sessao"
 // do modelo iria vazio para a API. Vazio (ou só espaço) conta como ausente,
 // mesma regra de `graphVersion()` em lib/graph-version.ts.
 const REALTIME_MODEL_FALLBACK = process.env.OPENAI_REALTIME_MODEL?.trim() || "gpt-realtime";
+
+// Quanto esperar antes de responder (ver ./espera-da-vez.ts). Padrão "low".
+const ESPERA_DA_VEZ = esperaDaVez(process.env.VOICE_VAD_EAGERNESS);
 
 const FRAME_TYPE = { HANGUP: 0x00, UUID: 0x01, DTMF: 0x03, AUDIO: 0x10 } as const;
 
@@ -53,6 +61,29 @@ const FRAME_TYPE = { HANGUP: 0x00, UUID: 0x01, DTMF: 0x03, AUDIO: 0x10 } as cons
 const ENCERRAR_CHAMADA_TOOL_NAME = "encerrar_chamada";
 const CONSULTAR_CONHECIMENTO_TOOL_NAME = "consultar_conhecimento";
 
+/**
+ * A AGENDA NA LIGAÇÃO (#4221) — os nomes são os que o modelo vê, e são de
+ * propósito diferentes dos do MCP do texto (`crm_*`): quem atende ao telefone
+ * não escolhe entre 40 ferramentas, escolhe entre cinco, e o nome tem de caber
+ * na boca de quem fala. A escrita é em DOIS PASSOS (`preparar_` → `confirmar_`)
+ * para que nada seja gravado antes de a pessoa ouvir o resumo e dizer sim.
+ */
+const LISTAR_TIPOS_TOOL_NAME = "listar_tipos_de_atendimento";
+const ACHAR_HORARIO_TOOL_NAME = "achar_horario_livre";
+const LISTAR_COMPROMISSOS_TOOL_NAME = "listar_compromissos";
+const PREPARAR_AGENDAMENTO_TOOL_NAME = "preparar_agendamento";
+const CONFIRMAR_AGENDAMENTO_TOOL_NAME = "confirmar_agendamento";
+
+/** Nome de tool de agenda → true. Um só lugar para o despacho e o tools[]. */
+const NOMES_DE_AGENDA: ReadonlySet<string> = new Set([
+  LISTAR_TIPOS_TOOL_NAME,
+  ACHAR_HORARIO_TOOL_NAME,
+  LISTAR_COMPROMISSOS_TOOL_NAME,
+  PREPARAR_AGENDAMENTO_TOOL_NAME,
+  CONFIRMAR_AGENDAMENTO_TOOL_NAME,
+]);
+
+
 const INSTRUCAO_ENCERRAR_CHAMADA = `
 
 Quando a conversa chegar a uma conclusão natural (o cliente se despediu, o
@@ -65,6 +96,126 @@ horário, procedimento, catálogo) que você não tem certeza, chame a function
 "${CONSULTAR_CONHECIMENTO_TOOL_NAME}" com a pergunta antes de responder — não
 invente. Se a busca não achar nada, diga que vai verificar e retornar, não
 afirme um fato sem fonte.`;
+
+/**
+ * Ligação RECEBIDA: quem atende fala primeiro. Sem isto a IA ficava calada até
+ * ouvir voz — o semantic_vad só cria resposta quando detecta fala — e quem
+ * ligava ouvia silêncio, achando que ninguém tinha atendido (medido ao vivo em
+ * 03/11/2026: 36 s e 12 s de silêncio até o cliente falar "alô"). Na ligação
+ * que NÓS fazemos é o contrário: quem atende diz "alô" e a IA responde a isso,
+ * então a abertura não vale para a saída.
+ */
+const INSTRUCAO_FALA_PRIMEIRO = `
+
+Esta é uma ligação que o cliente fez para a empresa, e você acabou de atender.
+Fale primeiro, sem esperar o cliente: cumprimente e se apresente numa frase
+curta, do jeito que suas instruções acima pedem, e pergunte como pode ajudar.`;
+
+/**
+ * A agenda, dita em voz. Entra na sessão SÓ quando o worker injeta
+ * `ctx.agenda` — mesma disciplina do `consultar_conhecimento`, que só aparece
+ * quando há acervo: ferramenta que não existe não é oferecida ao modelo.
+ *
+ * As três regras que não podem faltar: horário só vem da ferramenta (o modelo
+ * da Realtime não sabe que dia é hoje), nada é dito como marcado antes de
+ * `confirmar_agendamento` voltar com o horário, e o resumo do preparo é LIDO
+ * em voz alta seguido da PERGUNTA — sem o sim da pessoa, não há escrita.
+ */
+const INSTRUCAO_AGENDA = `
+
+Nesta ligação você também cuida da agenda da empresa. Antes de oferecer um
+horário, chame "${ACHAR_HORARIO_TOOL_NAME}" — nunca ofereça horário que não
+veio da ferramenta, e como você não sabe a data de hoje use o campo
+dias_a_frente em vez de inventar datas. Para marcar, chame
+"${PREPARAR_AGENDAMENTO_TOOL_NAME}" com o tipo e o horário combinados; ele
+devolve um resumo curto com dia e hora. Leia esse resumo em voz alta e
+PERGUNTE se pode confirmar. Só chame "${CONFIRMAR_AGENDAMENTO_TOOL_NAME}"
+depois do sim da pessoa, passando o código que veio no preparo — não fale o
+código em voz alta, ele é para a ferramenta. Nunca diga que está marcado antes
+de a confirmação voltar com o horário. Se a confirmação for recusada, ofereça
+os horários alternativos que ela trouxer e não repita o horário recusado. Se a
+pessoa já tem compromisso e quer outro dia, chame o preparo com remarcar
+ligado — é o MESMO compromisso mudando de hora.`;
+
+/**
+ * As cinco tools de agenda como a Realtime API as recebe.
+ *
+ * Os `parameters` são o contrato MÍNIMO da fala: tipo, dia, hora e o código do
+ * preparo. Não há `organization_id`, `org_id` nem `supabase` aqui — e a ponte
+ * também não lê esses campos dos argumentos (ver `handleAgendaCall`), porque a
+ * organização é a da ligação. `dia` é opcional de propósito: o modelo não sabe
+ * que dia é hoje, então o caminho normal é `dias_a_frente`.
+ */
+const AGENDA_TOOLS = [
+  {
+    type: "function" as const,
+    name: LISTAR_TIPOS_TOOL_NAME,
+    description:
+      "Lista os tipos de atendimento que a empresa agenda, com a duração de cada um. Use antes de falar de horário.",
+    parameters: { type: "object", properties: {}, required: [] },
+  },
+  {
+    type: "function" as const,
+    name: ACHAR_HORARIO_TOOL_NAME,
+    description:
+      "Mostra até três horários livres de um tipo de atendimento. Use ANTES de oferecer qualquer horário à pessoa.",
+    parameters: {
+      type: "object",
+      properties: {
+        tipo: { type: "string", description: "o tipo de atendimento, como voltou em listar_tipos_de_atendimento." },
+        dias_a_frente: {
+          type: "number",
+          description: "quantos dias olhar a partir de hoje (padrão 7). Use quando não houver um dia certo.",
+        },
+        dia: { type: "string", description: "dia certo, em AAAA-MM-DD, só quando a pessoa nomear a data." },
+      },
+      required: ["tipo"],
+    },
+  },
+  {
+    type: "function" as const,
+    name: LISTAR_COMPROMISSOS_TOOL_NAME,
+    description:
+      "Lista os compromissos que esta pessoa já tem marcados. Use antes de marcar de novo ou quando ela falar de um compromisso existente.",
+    parameters: {
+      type: "object",
+      properties: {
+        dia: { type: "string", description: "dia certo, em AAAA-MM-DD, só quando a pessoa nomear a data." },
+      },
+      required: [],
+    },
+  },
+  {
+    type: "function" as const,
+    name: PREPARAR_AGENDAMENTO_TOOL_NAME,
+    description:
+      "Prepara a marcação (ou a remarcação) e devolve um resumo com dia e hora para você LER à pessoa e perguntar se pode confirmar. NÃO grava nada sozinho.",
+    parameters: {
+      type: "object",
+      properties: {
+        tipo: { type: "string", description: "o tipo de atendimento combinado." },
+        hora: { type: "string", description: "a hora combinada, como 14:00." },
+        dias_a_frente: { type: "number", description: "quantos dias olhar a partir de hoje (padrão 7)." },
+        dia: { type: "string", description: "dia certo, em AAAA-MM-DD, só quando a pessoa nomear a data." },
+        remarcar: { type: "boolean", description: "true quando a pessoa já tem compromisso e quer mudar o horário dele." },
+      },
+      required: ["tipo", "hora"],
+    },
+  },
+  {
+    type: "function" as const,
+    name: CONFIRMAR_AGENDAMENTO_TOOL_NAME,
+    description:
+      "Confirma o que foi preparado e grava na agenda. Chame SÓ depois de a pessoa dizer sim, com o código que veio do preparo.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "o código devolvido por preparar_agendamento." },
+      },
+      required: ["id"],
+    },
+  },
+] as const;
 
 export interface AudioSocketCallContext {
   callId: string;
@@ -81,6 +232,12 @@ export interface AudioSocketCallContext {
   apiKey?: string;
   onTranscriptTurn: (turn: { speaker: "agent" | "customer"; text: string }) => void;
   onCallEnded: () => void;
+  /**
+   * true na ligação RECEBIDA: a IA abre a conversa assim que a sessão fica
+   * pronta (ver INSTRUCAO_FALA_PRIMEIRO). Ausente ou false: espera o cliente
+   * falar, que é o certo na ligação que nós fazemos.
+   */
+  falaPrimeiro?: boolean;
   /**
    * Resolvida em PARALELO com a abertura deste WebSocket (index.ts dispara
    * os dois ao mesmo tempo, não aguarda uma coisa antes da outra) — o
@@ -99,6 +256,36 @@ export interface AudioSocketCallContext {
   searchKnowledge: (pergunta: string) => Promise<{
     trechos: Array<{ content: string; source_name?: string | null }>;
   }>;
+  /**
+   * A AGENDA desta ligação (#4221) — injetada pelo worker, do mesmo jeito que
+   * `searchKnowledge`. A ponte NÃO cria cliente Supabase nem conhece tabela:
+   * ela só declara as cinco tools, guarda o preparo pendente da ligação e
+   * devolve TEXTO curto para o modelo falar. Quem executa é o handler de
+   * verdade da tool de texto, montado em `agenda-da-voz.ts` com a organização
+   * e o contato DA LINHA — nunca com o que o modelo escreveu.
+   *
+   * Ausente = a agenda não é oferecida: as cinco tools não são declaradas e
+   * `INSTRUCAO_AGENDA` não entra na sessão.
+   */
+  agenda?: AgendaDaVoz;
+}
+
+/**
+ * Leitura dos argumentos da agenda — CAMPO A CAMPO, de propósito.
+ *
+ * O JSON vem do modelo; nada aqui repassa o objeto cru. Assim um
+ * `organization_id` (ou `org_id`, ou `supabase`) que o modelo invente não
+ * encontra caminho: a organização e o cliente da escrita são os da LIGAÇÃO.
+ */
+function lerTexto(valor: unknown): string {
+  return typeof valor === "string" ? valor.trim() : "";
+}
+
+function lerDias(valor: unknown): number | undefined {
+  const n = typeof valor === "number" ? valor : Number.NaN;
+  if (!Number.isFinite(n)) return undefined;
+  const inteiro = Math.trunc(n);
+  return inteiro >= 1 ? inteiro : undefined;
 }
 
 /** Monta um frame AudioSocket (tipo + tamanho BE + payload). */
@@ -124,6 +311,36 @@ export class AudioSocketCallBridge {
    *  (onde o nome chega) e consumido em response.function_call_arguments.done
    *  (onde os argumentos chegam completos, mas sem o nome de novo). */
   private pendingFunctionCalls = new Map<string, string>();
+
+  /**
+   * O QUE FOI PREPARADO NESTA LIGAÇÃO (#4221), por código opaco.
+   *
+   * `preparar_agendamento` NÃO escreve: valida, lê a agenda e guarda aqui os
+   * argumentos já resolvidos (o `starts_at` que veio da consulta, o
+   * compromisso a mover). `confirmar_agendamento` só aceita um código que
+   * esteja AQUI — código desconhecido não tem o que executar, então a escrita
+   * nem é tentada (é o caso (c) dos testes). O mapa morre com a ligação: o
+   * preparo de uma chamada nunca confirma em outra.
+   */
+  private agendaPendente = new Map<
+    string,
+    {
+      operacao: PreparoDaVoz["operacao"];
+      args: Record<string, unknown>;
+      /** `falasDoCliente` quando o resumo foi entregue ao modelo. */
+      falasNoPreparo: number;
+    }
+  >();
+  /**
+   * Turnos de fala do CLIENTE (`input_audio_buffer.committed`). A confirmação
+   * só grava se a pessoa falou DEPOIS do resumo: sem isso, o "sim" seria só o
+   * modelo obedecendo a instrução, e um modelo que chama preparar e confirmar
+   * em sequência marcaria sem ninguém ter ouvido dia e hora. Não lê o conteúdo
+   * — quem decide se a resposta foi "sim" continua sendo o modelo.
+   */
+  private falasDoCliente = 0;
+  /** Só o contador: o código é `prep-1`, `prep-2` — opaco, curto e nunca um UUID. */
+  private agendaSeq = 0;
 
   /**
    * false até o session.update ser enviado com sucesso (ver setupRealtime,
@@ -263,7 +480,11 @@ export class AudioSocketCallBridge {
             type: "realtime",
             model: this.realtimeModel,
             output_modalities: ["audio"],
-            instructions: this.ctx.agentInstructions + INSTRUCAO_ENCERRAR_CHAMADA,
+            instructions:
+              this.ctx.agentInstructions +
+              INSTRUCAO_ENCERRAR_CHAMADA +
+              (this.ctx.agenda ? INSTRUCAO_AGENDA : "") +
+              (this.ctx.falaPrimeiro ? INSTRUCAO_FALA_PRIMEIRO : ""),
             audio: {
               input: {
                 format: { type: "audio/pcmu" },
@@ -272,10 +493,11 @@ export class AudioSocketCallBridge {
                 // som é fala de verdade. semantic_vad usa um classificador que
                 // avalia o CONTEÚDO (é fala? faz sentido como turno
                 // terminado?), não só amplitude -- muito mais resistente a
-                // ruído/eco. eagerness "low": espera mais confiança antes de
-                // considerar que a pessoa terminou de falar, custa alguma
-                // latência mas evita a IA emendar resposta em cima de nada.
-                turn_detection: { type: "semantic_vad", eagerness: "low" },
+                // ruído/eco. eagerness padrão "low": espera mais confiança antes
+                // de considerar que a pessoa terminou de falar, custa latência
+                // (pode passar de segundos) mas evita a IA emendar resposta em
+                // cima de nada. Linha limpa: VOICE_VAD_EAGERNESS=auto.
+                turn_detection: { type: "semantic_vad", eagerness: ESPERA_DA_VEZ },
                 // Sem `language`, o Whisper detecta automaticamente a cada
                 // trecho -- e erra de vez em quando (ruído de linha, palavra
                 // ambígua), transcrevendo em outro idioma no meio da
@@ -318,11 +540,23 @@ export class AudioSocketCallBridge {
                     },
                   ]
                 : []),
+              // Agenda: declarada SÓ com `ctx.agenda` (ver INSTRUCAO_AGENDA).
+              ...(this.ctx.agenda ? AGENDA_TOOLS : []),
             ],
             tool_choice: "auto",
           },
         }),
       );
+
+      // Ligação recebida: a IA abre a conversa. Vai ANTES de drenar o áudio
+      // acumulado — se a fala do cliente fosse primeiro, o VAD poderia criar
+      // uma resposta ao mesmo tempo que esta, e a API recusa a segunda
+      // ("conversation_already_has_active_response"). Se o cliente falar por
+      // cima da saudação, o semantic_vad a interrompe, como em qualquer turno.
+      if (this.ctx.falaPrimeiro) {
+        console.info(`[realtime] call=${this.ctx.callId} ligação recebida: IA abre a conversa`);
+        this.realtimeWs.send(JSON.stringify({ type: "response.create" }));
+      }
 
       // Sessão configurada — agora sim dá pra mandar áudio pra API. Drena o
       // que ficou acumulado em preOpenAudioBuffer enquanto o WS ainda abria
@@ -376,6 +610,12 @@ export class AudioSocketCallBridge {
           this.ctx.onTranscriptTurn({ speaker: "agent", text: transcriptLimpo });
           break;
         }
+        // Fim de um turno do cliente (o VAD fechou o áudio). Chega ANTES da
+        // resposta que esse turno dispara — a transcrição, não: ela é
+        // assíncrona e pode vir depois da chamada de função.
+        case "input_audio_buffer.committed":
+          this.falasDoCliente += 1;
+          break;
         case "conversation.item.input_audio_transcription.completed":
           this.ctx.onTranscriptTurn({ speaker: "customer", text: event.transcript });
           break;
@@ -391,6 +631,8 @@ export class AudioSocketCallBridge {
           this.pendingFunctionCalls.delete(event.call_id);
           if (nome === CONSULTAR_CONHECIMENTO_TOOL_NAME) {
             void this.handleKnowledgeQuery(event.call_id, event.arguments);
+          } else if (nome !== undefined && NOMES_DE_AGENDA.has(nome)) {
+            void this.handleAgendaCall(nome, event.call_id, event.arguments);
           }
           break;
         }
@@ -470,6 +712,18 @@ export class AudioSocketCallBridge {
       output = "A base de conhecimento está indisponível agora -- responda com o que você já sabe e não invente fatos.";
     }
 
+    this.responderFunctionCall(callId, output);
+  }
+
+  /**
+   * Devolve o resultado de QUALQUER function call e pede a resposta seguinte.
+   *
+   * É o mesmo par que `handleKnowledgeQuery` já fazia (function_call_output +
+   * response.create) — sem o `response.create` o turno fica parado esperando
+   * algo que nunca chega, porque o resultado da function sozinho não dispara
+   * resposta.
+   */
+  private responderFunctionCall(callId: string, output: string) {
     if (this.realtimeWs.readyState !== WebSocket.OPEN) return;
     this.realtimeWs.send(
       JSON.stringify({
@@ -478,6 +732,119 @@ export class AudioSocketCallBridge {
       }),
     );
     this.realtimeWs.send(JSON.stringify({ type: "response.create" }));
+  }
+
+  /**
+   * As cinco tools de agenda (#4221).
+   *
+   * O que sai daqui para o modelo é TEXTO curto — nunca `JSON.stringify` e
+   * nunca um UUID: o modelo lê o texto, e o que ele lê ele pode falar. O
+   * código do preparo (`prep-1`) é a ÚNICA coisa técnica que atravessa a
+   * fronteira, e a instrução manda não dizê-lo em voz alta; o que ele
+   * identifica fica no mapa desta ligação, não na conversa.
+   *
+   * ⚠️ Argumentos vindos do modelo são LIDOS CAMPO A CAMPO (`lerTexto`,
+   * `lerDias`). Nada de espalhar o objeto cru: um `organization_id` enviado
+   * junto não é encaminhado a lugar nenhum — a organização é sempre a de
+   * `this.ctx`, que vem da linha de `voice_calls`.
+   */
+  private async handleAgendaCall(nome: string, callId: string, argsJson: string) {
+    const agenda = this.ctx.agenda;
+    if (!agenda) return;
+
+    let args: Record<string, unknown> = {};
+    try {
+      const bruto = JSON.parse(argsJson) as unknown;
+      if (bruto !== null && typeof bruto === "object") args = bruto as Record<string, unknown>;
+    } catch {
+      // argumentos malformados: cada branch trata o que falta como vazio
+    }
+
+    let output: string;
+    try {
+      output = await this.executarAgenda(agenda, nome, args);
+    } catch (err) {
+      console.error(
+        `[realtime] call=${this.ctx.callId} agenda (${nome}) falhou:`,
+        err instanceof Error ? err.message : err,
+      );
+      output =
+        "A agenda não respondeu agora. Diga que vai verificar e peça para a pessoa aguardar um instante.";
+    }
+    this.responderFunctionCall(callId, output);
+  }
+
+  /** Despacho de UMA tool de agenda → o texto que o modelo fala em seguida. */
+  private async executarAgenda(
+    agenda: AgendaDaVoz,
+    nome: string,
+    args: Record<string, unknown>,
+  ): Promise<string> {
+    const tipo = lerTexto(args.tipo);
+    const dia = lerTexto(args.dia);
+    const diasAFrente = lerDias(args.dias_a_frente);
+
+    switch (nome) {
+      case LISTAR_TIPOS_TOOL_NAME:
+        return agenda.listarTipos();
+
+      case ACHAR_HORARIO_TOOL_NAME:
+        return agenda.horariosLivres({
+          tipo,
+          ...(dia !== "" ? { dia } : {}),
+          ...(diasAFrente !== undefined ? { dias_a_frente: diasAFrente } : {}),
+        });
+
+      case LISTAR_COMPROMISSOS_TOOL_NAME:
+        return agenda.listarCompromissos({ ...(dia !== "" ? { dia } : {}) });
+
+      case PREPARAR_AGENDAMENTO_TOOL_NAME: {
+        const preparo = await agenda.preparar({
+          tipo,
+          hora: lerTexto(args.hora),
+          ...(dia !== "" ? { dia } : {}),
+          ...(diasAFrente !== undefined ? { dias_a_frente: diasAFrente } : {}),
+          ...(args.remarcar === true ? { remarcar: true } : {}),
+        });
+        if ("recusa" in preparo) return preparo.recusa;
+
+        const id = `prep-${++this.agendaSeq}`;
+        this.agendaPendente.set(id, {
+          operacao: preparo.operacao,
+          args: preparo.args,
+          falasNoPreparo: this.falasDoCliente,
+        });
+        return (
+          `${preparo.resumo} ` +
+          `Leia isso à pessoa e pergunte se pode confirmar; se ela disser sim, chame "${CONFIRMAR_AGENDAMENTO_TOOL_NAME}" ` +
+          `com o código ${id} — não diga o código em voz alta.`
+        );
+      }
+
+      case CONFIRMAR_AGENDAMENTO_TOOL_NAME: {
+        const id = lerTexto(args.id);
+        const pendente = this.agendaPendente.get(id);
+        if (!pendente) {
+          // Código desconhecido (inventado, de outra ligação ou já usado):
+          // NADA é escrito. Uma preparação = uma confirmação: o código sai do
+          // mapa ANTES da escrita, então repetir a chamada não marca duas vezes.
+          return "Não tenho nada preparado com esse código, e nada foi marcado. Posso olhar os horários de novo.";
+        }
+        if (this.falasDoCliente <= pendente.falasNoPreparo) {
+          // A pessoa ainda não respondeu ao resumo. O preparo FICA: depois do
+          // sim dela, o mesmo código confirma.
+          return (
+            "Nada foi marcado: a pessoa ainda não respondeu. Leia o resumo, pergunte se pode confirmar " +
+            `e só chame "${CONFIRMAR_AGENDAMENTO_TOOL_NAME}" depois que ela disser sim.`
+          );
+        }
+        this.agendaPendente.delete(id);
+        return agenda.executar(pendente.operacao, pendente.args);
+      }
+
+      default:
+        return "Não consegui usar a agenda agora. Diga que vai verificar.";
+    }
   }
 
   private outboundFramesLogged = false;
@@ -493,6 +860,8 @@ export class AudioSocketCallBridge {
 
   close() {
     if (this.pacerTimer) clearInterval(this.pacerTimer);
+    // O preparo morre com a ligação: código de uma chamada nunca confirma em outra.
+    this.agendaPendente.clear();
     this.realtimeWs.close();
     if (!this.socket.destroyed) this.socket.end();
   }

@@ -8,7 +8,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { test, expect, type Page, type TestInfo } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, type Page, type TestInfo } from "./helpers/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 import { escolherDiaDesenhado, irParaASemanaSeguinte } from "./helpers/agenda-semana-integra";
 import { enviarTextoFixoPendente } from "../../lib/followup/enviar-texto-fixo";
@@ -63,12 +63,22 @@ async function fixture() {
   // envio seria ADIADO e os `expect(...).toBe(1)` deste arquivo cairiam. O
   // fixture declara o que ele é — um número de teste que dispara a qualquer
   // hora — e a suíte mede o que veio medir.
+  //
+  // O mesmo vale para o RITMO anti-ban (1,2 s + até 0,8 s de jitter): o drain
+  // inline conta cada envio no `pacing_ledger`, e o drain seguinte do mesmo
+  // número cai dentro do intervalo quando a tela responde rápido — é adiado com
+  // `pacing_throttle` e a corrida da :715 nunca arma. Antes do cache curto da
+  // autorização (#3712) as telas entre um drain e outro levavam mais que isso
+  // por acaso; depois dele, medido no CI, o drain da corrida passou a cair a
+  // ~0,7 s da liberação. Nenhum caso daqui mede o ritmo.
   const knobs = await db.from("channel_knobs").insert({
     organization_id: org,
     channel_session_id: session,
     window_start_hour: 0,
     window_end_hour: 24,
     allow_sunday: true,
+    throttle_ms: 0,
+    jitter_max_ms: 0,
   });
   if (knobs.error) throw knobs.error;
   const type = await insert("calendar_event_types", {
@@ -163,12 +173,24 @@ async function login(page: Page, email: string) {
 // no CI essa resposta levou ~3,9 s nas duas falhas medidas (#1879), disputando o
 // servidor com os prefetches do menu. O `expect` de 5 s começava junto com a
 // busca e perdia a corrida por ~1 s. Espera-se o EVENTO (a resposta), não um prazo.
-async function abrirRadar(page: Page) {
+/** O corpo de `/api/v1/leads/at-risk` que a tela vai pintar — o EVENTO da carga. */
+type RadarDaRota = {
+  sem_proximo_passo: Array<{ id: string; contact_name: string | null }>;
+  total_sem_proximo_passo: number;
+};
+
+async function abrirRadar(page: Page): Promise<RadarDaRota> {
   const carregou = page.waitForResponse(
     (r) => new URL(r.url()).pathname === "/api/v1/leads/at-risk" && r.request().method() === "GET",
   );
   await page.goto("/app/radar");
-  expect((await carregou).status()).toBe(200);
+  const resposta = await carregou;
+  expect(resposta.status()).toBe(200);
+  // #1879 — o corpo da resposta é o evento que popula o radar: `RiskRadarList`
+  // só renderiza `radar-sem-proximo-passo` quando `data.sem_proximo_passo` chega
+  // (`app/app/radar/_components/RiskRadarList.tsx:101`). Devolvê-lo aqui deixa
+  // cada caso cobrar o PAYLOAD antes do DOM, sem teto de 5 s no caminho.
+  return ((await resposta.json()) as { data: RadarDaRota }).data;
 }
 async function detail(page: Page, id: string, title: string) {
   await page.goto(`/app/agenda?compromisso=${id}`);
@@ -1095,7 +1117,11 @@ test("Radar recorta demandas pela RLS real, além do pool frio, e preserva gest�
   };
   await policy("own");
   await login(page, members.agent!.email);
-  await abrirRadar(page);
+  const radarDoAgente = await abrirRadar(page);
+  expect(
+    radarDoAgente.sem_proximo_passo.map((d) => d.contact_name),
+    "a rota respondeu 200 sem a demanda 'Própria fora do pool' — o radar não tem o que pintar",
+  ).toContain("Própria fora do pool");
   await expect(page.getByTestId("radar-sem-proximo-passo")).toContainText("Própria fora do pool");
   const own = await read();
   expect(own.sem_proximo_passo.map((d) => d.id).sort()).toEqual(
@@ -1114,7 +1140,11 @@ test("Radar recorta demandas pela RLS real, além do pool frio, e preserva gest�
   );
   expect(unassigned.total_sem_proximo_passo).toBe(3);
   await login(page, members.manager!.email);
-  await abrirRadar(page);
+  const radarDoGestor = await abrirRadar(page);
+  expect(
+    radarDoGestor.sem_proximo_passo.map((d) => d.contact_name),
+    "a rota respondeu 200 sem a demanda 'Órfã de gestão' para a gestão",
+  ).toContain("Órfã de gestão");
   await expect(page.getByTestId("radar-sem-proximo-passo")).toContainText("Órfã de gestão");
   expect((await read()).total_sem_proximo_passo).toBe(6);
   await login(page, members.viewer!.email);
@@ -1134,7 +1164,11 @@ test("Radar recorta demandas pela RLS real, além do pool frio, e preserva gest�
   await page.getByRole("button", { name: /Acompanhar/ }).click();
   await page.getByRole("button", { name: "Confirmar e entrar" }).click();
   await page.waitForURL("**/app/inbox");
-  await abrirRadar(page);
+  const radarDoSuporte = await abrirRadar(page);
+  expect(
+    radarDoSuporte.sem_proximo_passo.map((d) => d.contact_name),
+    "a rota respondeu 200 sem a demanda 'Órfã de gestão' para o suporte em acompanhamento",
+  ).toContain("Órfã de gestão");
   await expect(page.getByTestId("radar-sem-proximo-passo")).toContainText("Órfã de gestão");
   expect((await read()).total_sem_proximo_passo).toBe(6);
   await page.getByRole("button", { name: "Sair do acompanhamento" }).click();
@@ -1160,6 +1194,7 @@ test("duas sessões: remarcação não reautoriza cancelamento em rascunho", asy
   await detail(page, id, "Consulta concorrente");
   await page.getByLabel("Motivo do cancelamento").fill("Decisão antes da remarcação");
   const other = await browser.newContext();
+  other.on("page", esperarARevelacaoNasCargas);
   try {
     const colleague = await other.newPage();
     await login(colleague, f.email);

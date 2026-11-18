@@ -99,4 +99,46 @@ describe("CaseReplyPanel", () => {
 
     await waitFor(() => expect(showApiErrorMock).toHaveBeenCalled());
   });
+
+  /**
+   * #3810: a 4ª opção NÃO passa pelo `.../reply`. Ela tem rota própria
+   * (`.../close`), corpo próprio (`{note}`, sem `action`) e rótulo próprio no
+   * botão — "Enviar" seria mentira, porque nada é enviado a ninguém.
+   */
+  it("encerrar sem avisar o cliente chama o POST /close com {note} e invalida as queries", async () => {
+    postMock.mockResolvedValue({ data: { status: "cancelled" } });
+    const { invalidateSpy } = renderWith("awaiting_human");
+
+    fireEvent.click(screen.getByRole("radio", { name: /encerrar sem avisar o cliente/i }));
+    fireEvent.change(
+      screen.getByPlaceholderText(/por que este caso não precisa mais de resposta/i),
+      { target: { value: "o cliente comprou em outra loja" } },
+    );
+
+    const botao = screen.getByRole("button", { name: "Encerrar caso" });
+    expect(botao).not.toBeDisabled();
+    fireEvent.click(botao);
+
+    await waitFor(() =>
+      expect(postMock).toHaveBeenCalledWith("/api/v1/ai/cases/case-1/close", {
+        note: "o cliente comprou em outra loja",
+      }),
+    );
+    // Nenhuma chamada ao caminho que avisa o cliente.
+    expect(postMock.mock.calls.some(([url]) => String(url).endsWith("/reply"))).toBe(false);
+    await waitFor(() => expect(invalidateSpy).toHaveBeenCalled());
+  });
+
+  it("a nota do encerramento é obrigatória: sem texto o botão fica desabilitado", () => {
+    renderWith("awaiting_human");
+
+    fireEvent.click(screen.getByRole("radio", { name: /encerrar sem avisar o cliente/i }));
+    expect(screen.getByRole("button", { name: "Encerrar caso" })).toBeDisabled();
+
+    fireEvent.change(
+      screen.getByPlaceholderText(/por que este caso não precisa mais de resposta/i),
+      { target: { value: "   " } },
+    );
+    expect(screen.getByRole("button", { name: "Encerrar caso" })).toBeDisabled();
+  });
 });

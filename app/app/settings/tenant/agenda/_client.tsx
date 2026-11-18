@@ -47,7 +47,11 @@ export interface TipoRow {
   requires_confirmation: boolean;
   is_active: boolean;
   reminder_enabled: boolean;
+  /** Bloco do negócio na descrição do evento do Google (migration 9209). Desligado de fábrica. */
+  levar_dados_do_negocio?: boolean;
   reminder_channel_session_id?: string | null;
+  /** Modelo aprovado para quando a janela de 24 h do cliente fechou (migration 9092). */
+  reminder_meta_template_id?: string | null;
   reminder_minutes_before: number;
   reminder_extra_offsets_minutes: number[] | null;
   reminder_body: string | null;
@@ -126,14 +130,28 @@ export interface CanalParaLembrete {
   nome: string;
 }
 
+/**
+ * Um modelo aprovado que o lembrete consegue mandar — a página só passa os que
+ * `modeloServeAoLembrete` aceita, com o número dono no rótulo: o modelo só sai
+ * por ele (`lib/agenda/lembrete-por-modelo.ts`).
+ */
+export interface ModeloParaLembrete {
+  id: string;
+  nome: string;
+}
+
 function LembreteDoCompromisso({
   tipo,
   canais,
   erroCanais,
+  modelos,
+  erroModelos,
 }: {
   tipo: TipoRow;
   canais: CanalParaLembrete[];
   erroCanais: string | null;
+  modelos: ModeloParaLembrete[];
+  erroModelos: string | null;
 }) {
   const t = useT();
   const [ligado, setLigado] = React.useState(tipo.reminder_enabled);
@@ -205,7 +223,7 @@ function LembreteDoCompromisso({
           disabled={!ligado || Boolean(erroCanais)}
           defaultValue={tipo.reminder_channel_session_id ?? ""}
           data-testid={`editar-lembrete-canal-${tipo.id}`}
-          className="rounded-md border border-border bg-surface p-2 text-sm text-text disabled:opacity-50"
+          className="w-full min-w-0 rounded-md border border-border bg-surface p-2 text-sm text-text disabled:opacity-50 max-md:min-h-11"
         >
           <option value="">
             {t("Automático — conversa da reserva ou único canal disponível")}
@@ -231,6 +249,56 @@ function LembreteDoCompromisso({
           <span role="alert">
             {t(
               "Não foi possível carregar os canais. A escolha guardada será preservada; tente novamente.",
+            )}
+          </span>
+        ) : null}
+      </label>
+      {/*
+        O MODELO PARA FORA DA JANELA. No número oficial, texto livre só chega a
+        quem escreveu nas últimas 24 h, e a reserva feita dias antes cai fora: sem
+        modelo, o cron pula o lembrete e avisa a equipe (#2595). Com ele, o
+        lembrete sai pelo modelo. Mesmo desenho do canal acima: desabilitado não
+        entra no FormData, então falha de leitura preserva a escolha guardada.
+      */}
+      <label className="grid gap-1 text-xs text-text-muted">
+        {t("Se a janela de 24 h do cliente já tiver fechado, mandar este modelo aprovado")}
+        <select
+          name="reminder_meta_template_id"
+          disabled={!ligado || Boolean(erroModelos)}
+          defaultValue={tipo.reminder_meta_template_id ?? ""}
+          data-testid={`editar-lembrete-modelo-${tipo.id}`}
+          className="w-full min-w-0 rounded-md border border-border bg-surface p-2 text-sm text-text disabled:opacity-50 max-md:min-h-11"
+        >
+          <option value="">
+            {t("Nenhum — fora da janela o lembrete não sai e a equipe recebe um aviso")}
+          </option>
+          {tipo.reminder_meta_template_id &&
+          !modelos.some((m) => m.id === tipo.reminder_meta_template_id) ? (
+            <option value={tipo.reminder_meta_template_id}>
+              {t("Modelo configurado indisponível — escolha outro")}
+            </option>
+          ) : null}
+          {modelos.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.nome}
+            </option>
+          ))}
+        </select>
+        <span>
+          {t(
+            "Vale só para o número oficial, que depois de 24 horas sem mensagem do cliente aceita apenas modelo aprovado. O modelo sai pelo número dono dele, e as variáveis recebem, nesta ordem: {{1}} primeiro nome, {{2}} dia e hora, {{3}} título, {{4}} endereço.",
+          )}
+        </span>
+        {erroModelos ? (
+          <span role="alert">
+            {t(
+              "Não foi possível carregar os modelos aprovados. A escolha guardada será preservada; tente novamente.",
+            )}
+          </span>
+        ) : modelos.length === 0 ? (
+          <span>
+            {t(
+              "Nenhum modelo aprovado no WhatsApp ainda. Crie um em Conexões → Modelos e ele aparece aqui quando for aprovado.",
             )}
           </span>
         ) : null}
@@ -359,6 +427,8 @@ export function TiposDeAgendamentoClient({
   tiposIniciais,
   canais = [],
   erroCanais = null,
+  modelos = [],
+  erroModelos = null,
   tituloDaAgenda = null,
   pessoas,
   podeEditar,
@@ -375,6 +445,9 @@ export function TiposDeAgendamentoClient({
   tiposIniciais: TipoRow[];
   canais?: CanalParaLembrete[];
   erroCanais?: string | null;
+  /** Modelos aprovados que o lembrete consegue mandar fora da janela de 24 h. */
+  modelos?: ModeloParaLembrete[];
+  erroModelos?: string | null;
   tituloDaAgenda?: string | null;
   pessoas: Array<{ id: string; papel: string; nome: string }>;
   podeEditar: boolean;
@@ -771,6 +844,7 @@ export function TiposDeAgendamentoClient({
                           return cents === null ? null : cents;
                         })(),
                         reminder_enabled: dados.get("reminder_enabled") === "on",
+                        levar_dados_do_negocio: dados.get("levar_dados_do_negocio") === "on",
                         // O campo desabilitado também não aparece, e omitir é o
                         // certo: desligar o aviso não pode apagar a lista que
                         // alguém escolheu (ver `LembreteDoCompromisso`).
@@ -784,6 +858,13 @@ export function TiposDeAgendamentoClient({
                                   ? {
                                       reminder_channel_session_id:
                                         String(dados.get("reminder_channel_session_id") || "") ||
+                                        null,
+                                    }
+                                  : {}),
+                                ...(dados.has("reminder_meta_template_id")
+                                  ? {
+                                      reminder_meta_template_id:
+                                        String(dados.get("reminder_meta_template_id") || "") ||
                                         null,
                                     }
                                   : {}),
@@ -858,7 +939,30 @@ export function TiposDeAgendamentoClient({
                     </span>
                   </label>
                 </div>
-                <LembreteDoCompromisso tipo={tipo} canais={canais} erroCanais={erroCanais} />
+                {/* Doc 272 = B: desligado de fábrica. No Google todo convidado lê
+                    a descrição — inclusive o cliente com e-mail na ficha. */}
+                <label className="flex items-start gap-2 border-t border-border pt-3 text-xs text-text-muted">
+                  <input
+                    type="checkbox"
+                    name="levar_dados_do_negocio"
+                    defaultChecked={tipo.levar_dados_do_negocio === true}
+                    data-testid={`editar-levar-negocio-${tipo.id}`}
+                    className="mt-0.5 size-4 shrink-0 rounded-sm border-border accent-accent"
+                  />
+                  <span className="grid gap-0.5">
+                    <span>{t("Levar os dados do negócio para o Google")}</span>
+                    <span className="text-[11px]">
+                      {t("Negócio, etapa, produtos, cliente e telefone entram na descrição do evento. Todo convidado lê, inclusive o cliente.")}
+                    </span>
+                  </span>
+                </label>
+                <LembreteDoCompromisso
+                  tipo={tipo}
+                  canais={canais}
+                  erroCanais={erroCanais}
+                  modelos={modelos}
+                  erroModelos={erroModelos}
+                />
                 <div className="flex justify-end">
                   <Button
                     type="submit"

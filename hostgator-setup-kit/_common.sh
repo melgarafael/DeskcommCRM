@@ -262,6 +262,9 @@ dc() {
   # dos overlays de modo e de proxy, que é a ordem em que o compose aplica.
   local -a ca=()
   if ca_do_supabase_ok && [ -f docker-compose.supabase-ca.yml ]; then ca=(-f docker-compose.supabase-ca.yml); fi
+  # Rede do Supabase self-hosted no MESMO host: sem este overlay o compose recria
+  # app/worker/scheduler só nas redes do CRM e `supabase-db` deixa de resolver.
+  if rede_do_supabase_ok && [ -f docker-compose.supabase-rede.yml ]; then ca+=(-f docker-compose.supabase-rede.yml); fi
   if [ "${SINGLE_SERVER:-0}" = "1" ]; then
     # #2099: o single-server também respeita o proxy da hospedagem. Os dois
     # ramos eram `if SINGLE_SERVER` → return ANTES do seletor, então o
@@ -294,6 +297,9 @@ dc_files() {
   local sufixo=""
   if ca_do_supabase_ok && [ -f docker-compose.supabase-ca.yml ]; then
     sufixo=" -f docker-compose.supabase-ca.yml"
+  fi
+  if rede_do_supabase_ok && [ -f docker-compose.supabase-rede.yml ]; then
+    sufixo="${sufixo} -f docker-compose.supabase-rede.yml"
   fi
   if [ "${SINGLE_SERVER:-0}" = "1" ]; then
     # #2099: mesma junção de dc() — a lista de -f tem de bater com o que dc()
@@ -371,6 +377,22 @@ ca_do_supabase() {
 # compose criar um DIRETÓRIO no lugar da CA e subir o app sem ela.
 ca_do_supabase_ok() { ca_do_supabase >/dev/null 2>&1; }
 
+# SUPABASE_DOCKER_NETWORK: nome da rede docker de um Supabase self-hosted que roda
+# no mesmo host (ex.: supabase_default). Só vale se a rede existir — uma rede
+# `external` ausente derruba o `up` inteiro.
+rede_do_supabase_ok() {
+  [ -n "${SUPABASE_DOCKER_NETWORK:-}" ] && docker network inspect "$SUPABASE_DOCKER_NETWORK" >/dev/null 2>&1
+}
+
+# A chave declarada com a rede ausente deixa o overlay de fora sem um pio, e o
+# `supabase-db` volta a não resolver no próximo `up -d`. Uma linha no log da
+# atualização (que a tela mostra) aponta a causa antes do rollback.
+aviso_rede_do_supabase() {
+  if [ -n "${SUPABASE_DOCKER_NETWORK:-}" ] && ! rede_do_supabase_ok; then
+    c_ylw "⚠ SUPABASE_DOCKER_NETWORK=$SUPABASE_DOCKER_NETWORK está no .env, mas essa rede não existe neste servidor (docker network ls). Sigo SEM ligar o CRM à rede do Supabase; se o banco é o supabase-db, o worker não vai achá-lo. Corrija o nome no .env ou suba o Supabase antes de atualizar."
+  fi
+}
+
 # psql/pg_dump efêmeros. No modo single-server o Postgres só é alcançável pela
 # bridge privada (supabase-db), nunca por porta pública.
 #
@@ -382,7 +404,10 @@ ca_do_supabase_ok() { ca_do_supabase >/dev/null 2>&1; }
 pg_container() {
   local -a rede=() ca=()
   local caminho=""
-  [ -n "${PSQL_DOCKER_NETWORK:-}" ] && rede=(--network "$PSQL_DOCKER_NETWORK")
+  # Sem PSQL_DOCKER_NETWORK, a rede do Supabase do mesmo host serve também ao
+  # psql/pg_dump do kit (backup, baseline): quem declarou uma não declara duas.
+  if [ -n "${PSQL_DOCKER_NETWORK:-}" ]; then rede=(--network "$PSQL_DOCKER_NETWORK")
+  elif rede_do_supabase_ok; then rede=(--network "$SUPABASE_DOCKER_NETWORK"); fi
   # `local caminho` na linha de cima, não em `local caminho="$(...)"`: com a
   # atribuição junto, o status do comando substituído some dentro do `local` e
   # este `if` aceitaria uma CA quebrada como se estivesse pronta.
@@ -1119,22 +1144,59 @@ com_prazo() {  # com_prazo <segundos> <comando...>
 #   incompleta    → ALGUMA falta e o registro respondeu = publicação incompleta;
 #   indisponivel  → NENHUMA respondeu = o registro/DNS está fora (ou a tag nem
 #                   existe, o que para o chamador dá no mesmo: não se sabe).
-veredito_das_imagens_da_release() {  # veredito_das_imagens_da_release <versão>
-  local versao="${1:-}" img total=0 achadas=0
+# Preenchida por veredito_das_imagens_da_release: quais imagens não responderam e
+# por quê (`nome:ausente` ou `nome:indeterminado`). Existe para o agent.sh poder
+# REGISTRAR o motivo de esconder uma release — antes disto, o silêncio da tela não
+# deixava rastro nenhum e o diagnóstico morria em "não apareceu".
+IMAGENS_SEM_RESPOSTA=""
+
+veredito_das_imagens_da_release() {  # veredito_das_imagens_da_release <versão alvo> [versão instalada]
+  local versao="${1:-}" instalada="${2:-}" img total=0 achadas=0 ausentes=0 com_controle=0
+  # ponytail: o controle pela tag instalada só vale para quem PASSA o 2º
+  # argumento (o agent.sh passa sempre, mesmo vazio). O preflight do update.sh e
+  # o portão do build (build_local_permitido) chamam com UM argumento e leem
+  # `incompleta` como "o registro respondeu": para eles fica a regra de antes
+  # (alguma achada = incompleta; nenhuma = indisponivel). Sem isto, 3 de 4
+  # imagens publicadas viravam `indisponivel`, o preflight culpava a rede e o
+  # portão recusava o build local de recuperação (#1060/#1143).
+  [ "$#" -ge 2 ] && com_controle=1
+  IMAGENS_SEM_RESPOSTA=""
   versao="${versao#v}"
+  instalada="${instalada#v}"
   [ -n "$versao" ] || { printf 'indisponivel'; return 0; }
   for img in "$IMG_APP" "$IMG_WORKER" "$IMG_SCHEDULER" "$IMG_VOICE_AGENT"; do
     total=$((total + 1))
     if com_prazo 20 docker buildx imagetools inspect "${img}:${versao}" >/dev/null 2>&1; then
       achadas=$((achadas + 1))
+      continue
+    fi
+    [ "$com_controle" -eq 1 ] || continue
+    # ⛔ A SONDA DE CONTROLE, pelo mesmo motivo da sonda do app.
+    #
+    # `com_prazo 20` transforma timeout e 429 do registro em "esta imagem não
+    # existe" — e a diferença entre as duas coisas é o que decide se a release é
+    # escondida. A tag INSTALADA é a sonda certa porque ela existe com certeza:
+    # está rodando aqui. Se nem ela responde, o que está fora é o registro, não
+    # a imagem; e aí esconder a atualização seria ligar o silêncio da tela a um
+    # problema de rede que ninguém vê.
+    if [ -n "$instalada" ] && com_prazo 20 docker buildx imagetools inspect "${img}:${instalada}" >/dev/null 2>&1; then
+      ausentes=$((ausentes + 1))
+      IMAGENS_SEM_RESPOSTA="${IMAGENS_SEM_RESPOSTA} ${img##*/}:ausente"
+    else
+      IMAGENS_SEM_RESPOSTA="${IMAGENS_SEM_RESPOSTA} ${img##*/}:indeterminado"
     fi
   done
   if [ "$achadas" -eq "$total" ]; then
     printf 'prontas'
-  elif [ "$achadas" -eq 0 ]; then
-    printf 'indisponivel'
-  else
+  elif [ "$com_controle" -eq 0 ] && [ "$achadas" -gt 0 ]; then
     printf 'incompleta'
+  elif [ "$ausentes" -gt 0 ]; then
+    # Há pelo menos uma imagem provadamente ausente: a release não está pronta.
+    # Isso cala o botão — e é o único caso que deve calar.
+    printf 'incompleta'
+  else
+    # Nenhuma ausência provada: só falha de sonda. Anunciar, como sempre foi.
+    printf 'indisponivel'
   fi
 }
 
@@ -1552,6 +1614,11 @@ restaurar_versao_anterior() {  # → 0 sempre (rollback que falha não mata a vo
 # que o sistema voltou atrás sozinho.
 VIGIA_ARQUIVO=".update-vigia"
 VIGIA_FALHAS_ARQUIVO=".update-vigia-falhas"
+# De qual versão a última atualização PARA FRENTE saiu. É o único alvo de volta
+# que o agente aceita do app: o alvo de um pedido de volta chega pela rota, e o
+# host não recua para onde a rota mandar. Voltar para outra versão anterior
+# continua possível, mas só pelo terminal (update.sh --to <versão> --force).
+ORIGEM_DA_ATUALIZACAO_ARQUIVO=".update-de-onde-vim"
 # Janela de 2 horas = 24 ciclos de cron. Folgada de propósito: uma atualização
 # que derruba o app costuma derrubar na largada (primeiros requests, cron que
 # roda pela primeira vez na versão nova), e o rollback só devolve versão — o
@@ -1957,10 +2024,69 @@ resposta_sim() {
 # passava como saudável, desde que qualquer outro check estivesse de pé. Quem
 # decide é o app, no Node que já está sendo invocado; o shell não repete a
 # regra dele.
+# app_health_probe [prazo_s] — `0`/ausente = sem prazo, como sempre foi.
+#
+# O prazo existe porque `docker exec` trava pelo mesmo motivo do `docker ps`
+# (#1955: resolver do Docker saturado) e era o segundo ponto em que o
+# healthcheck ficava sem resposta. `timeout` só executa BINÁRIOS e `dc()` é
+# função de shell, então o caminho COM prazo sai como
+# `docker compose $(dc_files) exec` — o idioma que o resto deste arquivo já usa
+# (:1407, :1744) e que carrega o mesmo conjunto de overlays, coberto pelo
+# test-validators.sh. Quem não pede prazo continua passando por `dc()`.
 app_health_probe() {
-  dc exec -T app node -e \
-    "fetch('http://127.0.0.1:3000/api/v1/health').then(r=>r.json()).then(j=>{console.log((j&&j.data&&j.data.status)||'sem_status');console.log(JSON.stringify(j))}).catch(()=>process.exit(1))" \
-    2>/dev/null || echo ''
+  local prazo="${1:-0}" sonda
+  sonda="fetch('http://127.0.0.1:3000/api/v1/health').then(r=>r.json()).then(j=>{console.log((j&&j.data&&j.data.status)||'sem_status');console.log(JSON.stringify(j))}).catch(()=>process.exit(1))"
+  if [ "$prazo" = "0" ]; then
+    dc exec -T app node -e "$sonda" 2>/dev/null || echo ''
+  else
+    com_prazo "$prazo" docker compose $(dc_files) exec -T app node -e "$sonda" 2>/dev/null || echo ''
+  fi
+}
+
+# relatar_saude_do_app <saída de app_health_probe> — imprime o veredito e devolve
+# 0 SÓ quando o status GERAL é `healthy`. Qualquer outra coisa reprova.
+#
+# É o irmão rigoroso do wait_app_healthy, e a diferença é de propósito: lá
+# `degraded` passa porque, durante a instalação, ele costuma dizer "serviço
+# OPCIONAL ainda não configurado" e recusar reprovaria um CRM de pé. Aqui quem
+# lê é o dono — e um cron: "saudável" é uma AFIRMAÇÃO, e `degraded` quer dizer
+# que alguma coisa do produto não está funcionando (WhatsApp fora, por
+# exemplo). Dizer "✓ app saudável" nesses estados era o defeito do #4087: o
+# healthcheck procurava o `ok` dos CHECKS no JSON cru e aprovava um app com o
+# BANCO FORA, porque `checks.redis.status` também é `ok`.
+#
+# Falha FECHADA: corpo vazio, JSON inválido (HTML de proxy, por exemplo) ou
+# status fora do vocabulário (`sem_status`) reprovam. Um healthcheck que aprova
+# o que não entendeu é pior do que um que grita.
+relatar_saude_do_app() {
+  local saida="${1:-}" status corpo
+  # Sem pipe para `head`/`tail`: com `set -o pipefail`, o SIGPIPE do printf num
+  # corpo grande derrubaria o script (mesma família do pipe que matou o
+  # supabase-provision.sh). Expansão de parâmetro não abre processo nenhum.
+  case "$saida" in
+    *$'\n'*) status="${saida%%$'\n'*}"; corpo="${saida#*$'\n'}" ;;
+    *)       status="$saida";            corpo='' ;;
+  esac
+  status="${status%$'\r'}"
+  case "$status" in
+    healthy)
+      c_grn "✓ app saudável (status geral: healthy)"
+      return 0 ;;
+    degraded)
+      c_ylw "⚠ app DEGRADADO (status geral: degraded) — algum subsistema não está funcionando;"
+      c_ylw "  o JSON acima diz qual. Isto NÃO é 'saudável'."
+      return 1 ;;
+    unhealthy)
+      c_red "⛔ app NÃO está saudável (status geral: unhealthy) — algum subsistema está fora;"
+      c_red "  o JSON acima diz qual. Logs: docker compose logs --tail=50 app worker"
+      return 1 ;;
+    *)
+      c_red "⛔ não deu para saber a saúde do app (status geral: ${status:-vazio})."
+      if [ -n "$corpo" ]; then
+        c_dim "  resposta: ${corpo:0:200}"
+      fi
+      return 1 ;;
+  esac
 }
 
 # wait_app_healthy [tentativas] [intervalo_s] — 0 quando o app se declara
@@ -3009,7 +3135,26 @@ setup_event_log_drain_cron() {
   # que traz este conserto: o `update.sh` faz `source` deste arquivo ANTES do
   # `git checkout` da tag, então no update que o traz quem roda aqui ainda é a
   # versão anterior desta função.
-  local cron_line="* * * * * curl -fsS -H @\"${cabecalho}\" \"${url_drain}\" >/dev/null 2>&1 ${marcador}"
+  # ── A LINHA DO HOST É VIGIA, NÃO O SEGUNDO DRENO (#2235) ──────────────────
+  #
+  # Até aqui esta linha era `* * * * * curl … event-log-drain`, e o `scheduler`
+  # do compose faz a MESMA chamada no mesmo minuto. Numa instalação do kit os
+  # dois rodavam juntos: a issue #2235 mediu ~62% das chamadas `service_role` ao
+  # PostgREST na `event_log`, com o sistema parado e ninguém usando o produto.
+  #
+  # A redundância tem valor (scheduler caído não pode parar automação, webhook
+  # nem derivação de mídia), então ela não é removida — é rebaixada: de 15 em 15
+  # minutos, e o script só dispara o dreno quando o contêiner `scheduler` desta
+  # instalação NÃO está rodando. Instalação saudável: ~4 chamadas/hora em vez de
+  # 60; scheduler fora do ar: o dreno continua chegando, com atraso de até 15
+  # min (o produto já vive com 1 min de cadência e handlers idempotentes).
+  #
+  # O nome do projeto compose entra como argumento porque o filtro do `docker ps`
+  # é por rótulo: sem ele, duas instalações na mesma VPS (caso previsto em
+  # `cron_tag`) fariam o scheduler de uma calar o vigia da outra.
+  local vigia="${PROJECT_DIR:-$PWD}/hostgator-setup-kit/drain-watchdog.sh"
+  local projeto; projeto="$(nome_do_projeto_atual)"
+  local cron_line="*/15 * * * * \"${vigia}\" \"${url_drain}\" \"${cabecalho}\" \"${projeto}\" ${marcador}"
   # ⚠️ `|| true` OBRIGATÓRIO, e não é defensividade: `crontab -l` sai com status
   # 1 (sem stdout, só um aviso no stderr) quando o usuário NUNCA teve crontab —
   # o caso NORMAL de uma VPS recém-provisionada, que é o caso normal de quem
@@ -3043,7 +3188,7 @@ setup_event_log_drain_cron() {
   # Stdin vazio para o `cron_merge` é exatamente o que "sem crontab prévio" deve
   # produzir — o comportamento não muda, só o status.
   ( { crontab -l 2>/dev/null || true; } | cron_merge "$marcador" "$url_drain" "$cron_line" ) | crontab -
-  c_grn "$(t "✓ automações ativas (cron do event-log-drain, a cada minuto)")"
+  c_grn "$(t "✓ automações ativas (vigia do event-log-drain; quem drena é o contêiner scheduler)")"
 
   if [ "$first_time" = 1 ]; then
     # 1ª ativação do cron (inclusive numa instalação já existente que nunca

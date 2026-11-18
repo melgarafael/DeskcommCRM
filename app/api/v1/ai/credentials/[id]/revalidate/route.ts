@@ -15,6 +15,11 @@ import { requireRole } from "@/lib/auth/require-role";
 import { byteaToBuffer, decryptKey } from "@/lib/crypto/aes_gcm";
 import { validateProviderKey } from "@/lib/ai/provider-validators";
 import { lerBaseUrlDaCredencial } from "@/lib/ai/credenciais/guardar";
+import { fecharAvisoDaAssinatura } from "@/lib/ai/credenciais/aviso-da-assinatura";
+import {
+  FalhaAoListarModelosDaAssinatura,
+  listarModelosDaAssinatura,
+} from "@/lib/ai/catalogo/modelos-da-assinatura";
 import { renovarComTravaDeBanco } from "@/lib/ai/credenciais/login-codex";
 import { renovarPorRefreshToken } from "@/lib/ai/pontos/pkce-da-assinatura";
 import { PROVEDOR_POR_ASSINATURA } from "@/lib/ai/pontos/provedores";
@@ -81,6 +86,31 @@ export async function POST(
       },
     });
     if (renovado.ok) {
+      // ─── RELIGAR NÃO PODE QUEBRAR O PUBLISH (#3371, fatia 6) ────────────────
+      //
+      // Este ramo devolvia a credencial sem tocar em `models_available`: a lista
+      // ficava VAZIA até alguém abrir o seletor de modelos, e o primeiro
+      // "Publicar" respondia `422 model_not_found` — foi exatamente o que
+      // aconteceu ao religar a conta do cliente Obralivre, poucos segundos
+      // depois de a tela dizer que estava tudo certo.
+      //
+      // A listagem já existe e é a MESMA que o seletor usa; ela também grava o
+      // espelho `models_available` da credencial ativa. Chamada aqui, ela usa o
+      // token que a renovação acabou de gravar — e, pela fatia 5, não rotaciona
+      // de novo para isso. Falha na listagem NÃO derruba a revalidação: o login
+      // está bom, e transformar um 200 em 409 mandaria o operador reconectar uma
+      // conta que acabou de voltar.
+      try {
+        await listarModelosDaAssinatura(activeOrg.orgId);
+      } catch (erro) {
+        logger.warn("[ai.credentials] a conta voltou, mas a listagem de modelos falhou", {
+          organizationId: activeOrg.orgId,
+          motivo:
+            erro instanceof FalhaAoListarModelosDaAssinatura ? erro.motivo : "desconhecido",
+        });
+      }
+      // O login voltou: o aviso único da Central fecha sozinho (#3371, fatia 2).
+      await fecharAvisoDaAssinatura(admin, activeOrg.orgId);
       const { data: safe } = await admin
         .from("ai_provider_credentials_safe")
         .select(SAFE_COLUMNS)

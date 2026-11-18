@@ -94,10 +94,24 @@ describe("site-fetch", () => {
       expect(v.provisorio).toBe(true);
     });
 
-    it("403 SEM desafio continua erro de verdade (site-ruim, definitivo)", async () => {
+    it("403 SEM desafio também é MEDIÇÃO BARRADA (não medido), nunca site-ruim", async () => {
+      // Era o caso B do #3723: firewall do site barra o IP de datacenter da VPS,
+      // o mesmo endereço abre com 200 de rede residencial — e a empresa ouvia
+      // "seu site responde com erro (403)".
       const v = await auditarSite("https://exemplo.com.br", AGORA, respondeCom(403), VERIFICADOR_LIBERADO, 0);
+      expect(v.classe).toBe("nao-medido");
+      expect(v.provisorio).toBe(true);
+      expect(v.problemas).toEqual(["medicao-bloqueada"]);
+      expect(v.problemas).not.toContain("http-403");
+    });
+
+    it("403 persistente congela nao-medido, não site-ruim citável", async () => {
+      const v = await auditarSite(
+        "https://exemplo.com.br", AGORA, respondeCom(403), VERIFICADOR_LIBERADO, LIMITE_TENTATIVAS - 1,
+      );
+      expect(v.classe).toBe("nao-medido");
       expect(v.provisorio).toBe(false);
-      expect(v.problemas).toContain("http-403");
+      expect(v.tentativas).toBe(LIMITE_TENTATIVAS);
     });
   });
 
@@ -213,7 +227,7 @@ describe("site-fetch", () => {
       "https://dns-morto.test/", AGORA,
       fakeFetch({ "*": { status: 200, body: PAGINA_BOA } }), verificadorDnsMorto,
     );
-    expect(v.classe).toBe("fora-do-ar");
+    expect(v.classe).toBe("nao-medido");
     expect(v.provisorio).toBe(true);
     expect(v.tentativas).toBe(1);
   });
@@ -237,9 +251,12 @@ describe("site-fetch", () => {
     const v = await auditarSite(
       "https://sempre-lento.test/", AGORA, fetchRuim, VERIFICADOR_LIBERADO, LIMITE_TENTATIVAS - 1,
     );
+    // Não medido NÃO congela como "fora do ar": a empresa não ouve "seu site
+    // não abre" por causa de um timeout nosso (#3723).
     expect(v.provisorio).toBe(false);
     expect(v.tentativas).toBe(LIMITE_TENTATIVAS);
-    expect(v.classe).toBe("fora-do-ar");
+    expect(v.classe).toBe("nao-medido");
+    expect(v.problemas).toEqual(["medicao-instavel"]);
   }, 15000);
 
   it("deveReverificar só chama de volta o provisório abaixo do teto", () => {
@@ -271,7 +288,7 @@ describe("site-fetch", () => {
     }) as typeof fetch;
     const urls = ["https://a.test/", "https://ruim.test/", "https://b.test/"];
     const saidas = await auditarSites(urls, AGORA, 2, misto, VERIFICADOR_LIBERADO);
-    expect(saidas.map((s) => s.classe)).toEqual(["site-ok", "fora-do-ar", "site-ok"]);
+    expect(saidas.map((s) => s.classe)).toEqual(["site-ok", "nao-medido", "site-ok"]);
   });
 
   describe("SSRF contra servidor local real", () => {
@@ -414,7 +431,7 @@ describe("dns: inexistente é definitivo na hora, dúvida de rede espera", () =>
     const v = await auditarSite(
       "https://instavel.test/", AGORA, fetchExplosivo(contador), verificar,
     );
-    expect(v.classe).toBe("fora-do-ar");
+    expect(v.classe).toBe("nao-medido");
     expect(v.provisorio).toBe(true);
     expect(v.tentativas).toBe(1);
     expect(contador.chamadas).toBe(0);
@@ -443,7 +460,7 @@ describe("dns: inexistente é definitivo na hora, dúvida de rede espera", () =>
         fetchExplosivo(contador),
         verificar,
       );
-      expect(v.classe).toBe("fora-do-ar");
+      expect(v.classe).toBe("nao-medido");
       expect(v.provisorio).toBe(true);
     }
     expect(contador.chamadas).toBe(0);

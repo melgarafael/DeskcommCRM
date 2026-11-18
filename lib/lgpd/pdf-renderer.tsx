@@ -340,6 +340,13 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
               <Text style={styles.label}>Telefone:</Text>
               <Text style={styles.value}>{data.contact.phone_number ?? "—"}</Text>
             </View>
+            {/* Endereço da pessoa física (issue #3494): só aparece quando há, como na ficha. */}
+            {enderecoDoContato(data.contact) ? (
+              <View style={styles.row}>
+                <Text style={styles.label}>Endereço:</Text>
+                <Text style={styles.value}>{enderecoDoContato(data.contact)}</Text>
+              </View>
+            ) : null}
             <View style={styles.row}>
               {/* O valor "informado na conversa" vem só da pergunta de roteiro
                   do tipo `cpf`, validada como CPF (`lib/lgpd/campos-personalizados.ts`):
@@ -675,6 +682,10 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
       </Page>
     </Document>
   );
+}
+
+function enderecoDoContato(c: NonNullable<ExportPayload["contact"]>): string {
+  return [c.street, c.number, c.complement, c.district, c.city, c.state, c.zip_code].filter(Boolean).join(", ");
 }
 
 export async function renderLgpdPdf(

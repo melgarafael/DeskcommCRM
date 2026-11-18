@@ -126,9 +126,16 @@ export function FollowupWindowEditor({ value, onChange, disabled }: Props) {
                   <button
                     key={day}
                     type="button"
+                    aria-pressed={active}
                     onClick={() => toggleWeekday(day)}
                     disabled={disabled}
-                    className={`rounded-md border px-2 py-1 text-xs ${
+                    // #3923 — `min-h-11` abaixo de `lg`: com `px-2 py-1 text-xs`
+                    // o alvo ficava em 26px de altura (12px de texto + 8px de
+                    // padding + 2px de borda), e no celular o dedo erra o dia —
+                    // 44px é o piso de toque da casa (ADR-0006, mesmo padrão de
+                    // `components/ui/button.tsx`). No desktop o chip volta ao
+                    // tamanho compacto, onde quem aciona é o mouse.
+                    className={`min-h-11 rounded-md border px-2 py-1 text-xs lg:min-h-0 ${
                       active
                         ? "border-primary bg-primary/10 text-primary"
                         : "border-border/60 text-muted-foreground"

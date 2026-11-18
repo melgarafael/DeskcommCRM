@@ -52,9 +52,9 @@ export function ListaDeLancamentos({
   contas: Conta[];
   /**
    * A moeda em que o valor é digitado (#3367): a da organização, que é a régua
-   * do valor digitado. A `currency` gravada no lançamento manual ainda nasce no
-   * padrão do banco, BRL (ver #3379). As linhas JÁ GRAVADAS seguem a `currency`
-   * da própria linha (#1531); esta é só a régua de quem está escrevendo agora.
+   * do valor digitado. A linha que nasce daqui é GRAVADA nessa mesma moeda
+   * (#3379) — a rota resolve `organizations.currency` no servidor. As linhas já
+   * gravadas seguem a `currency` da própria linha (#1531).
    */
   moeda: string;
   podeLancar: boolean;

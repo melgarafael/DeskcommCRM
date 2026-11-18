@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { marcaDaSaida } from "@/lib/branding/saida";
+import { idiomaDaInstalacao } from "@/lib/email/idioma-do-email";
 import {
   MODELOS_DE_ACESSO,
   montarTemplateDeAcesso,
@@ -68,7 +69,13 @@ export async function GET(
   // do produto, que é uma instalação funcionando.
   const marca = await marcaDaSaida(null);
 
-  return new NextResponse(montarTemplateDeAcesso(modelo as ModeloDeAcesso, marca), {
+  // O idioma do molde é o da INSTALAÇÃO (`APP_LOCALE`): o GoTrue busca este
+  // endereço sozinho, sem sessão e sem saber de qual organização é a pessoa
+  // confirmando a conta — não há destinatário a consultar aqui. Trocar o idioma
+  // da instalação re-busca o molde no próximo `GOTRUE_MAILER_TEMPLATE_MAX_AGE`.
+  const idioma = idiomaDaInstalacao();
+
+  return new NextResponse(montarTemplateDeAcesso(modelo as ModeloDeAcesso, marca, idioma), {
     status: 200,
     headers: {
       "content-type": "text/html; charset=utf-8",

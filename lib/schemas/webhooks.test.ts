@@ -5,8 +5,14 @@ import {
   createAutomationRuleSchema,
   updateAutomationRuleSchema,
   conditionSchema,
+  condicoesQueSoExistemNoNegocioAlterado,
+  MENSAGEM_DO_CAMPO_ALTERADO_FORA_DO_GATILHO,
 } from "./webhooks";
-import { conditionsSchema } from "@/lib/automation/conditions";
+import {
+  conditionsSchema,
+  RECUSAS_DA_CONDICAO_DO_CAMPO_ALTERADO,
+  validarCondicaoDoCampoAlterado,
+} from "@/lib/automation/conditions";
 
 const UUID = "11111111-1111-4111-8111-111111111111";
 const UUID2 = "22222222-2222-4222-8222-222222222222";
@@ -96,6 +102,21 @@ describe("createAutomationRuleSchema", () => {
       actions: [{ type: "start_message_flow", config: { flow_pointer_id: "not-uuid" } }],
     });
     expect(r.success).toBe(false);
+  });
+
+  it("start_message_flow keeps replace_live_flow (boolean) and refuses anything else", () => {
+    const regra = (config: Record<string, unknown>) =>
+      createAutomationRuleSchema.safeParse({
+        name: "Regra",
+        trigger_event: "lead.created",
+        actions: [{ type: "start_message_flow", config }],
+      });
+    const r = regra({ flow_pointer_id: UUID, replace_live_flow: true });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.actions[0]!.config).toEqual({ flow_pointer_id: UUID, replace_live_flow: true });
+    }
+    expect(regra({ flow_pointer_id: UUID, replace_live_flow: "sim" }).success).toBe(false);
   });
 
   it("rejects an action of unknown type", () => {
@@ -298,5 +319,143 @@ describe("assign_owner: atendente fixo ou rodízio", () => {
     expect(dentroDaIa.success).toBe(false);
     const patch = updateAutomationRuleSchema.safeParse({ actions: [rodizio(fila), rodizio(fila)] });
     expect(patch.success).toBe(false);
+  });
+
+  /*
+   * #3514 — as duas opções da passagem SDR → Closer. A regra que estes testes
+   * protegem é a de COMPATIBILIDADE: o payload que já está gravado em toda
+   * instalação não ganha chave nenhuma, e quem não marcou nada continua com o
+   * comportamento de antes. Por isso a asserção é de igualdade EXATA, e não de
+   * "contém": uma chave `contato: false` inventada pelo parse já seria uma
+   * mudança de contrato.
+   */
+  it("a passagem para o cliente é opt-in: sem as chaves, o config sai igual ao gravado", () => {
+    const r = regra([{ type: "assign_owner", config: { user_id: UUID } }]);
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.actions[0]?.config).toEqual({ user_id: UUID });
+  });
+
+  it("aceita as duas caixas e as devolve como vieram", () => {
+    const r = regra([{ type: "assign_owner", config: { user_id: UUID, contato: true, conversas: true } }]);
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.actions[0]?.config).toEqual({ user_id: UUID, contato: true, conversas: true });
+
+    // Uma caixa só também vale: quem quer o cliente sem mexer nas conversas.
+    const soContato = regra([{ type: "assign_owner", config: { user_id: UUID, contato: true } }]);
+    expect(soContato.success && soContato.data.actions[0]?.config).toEqual({ user_id: UUID, contato: true });
+  });
+
+  it("recusa valor que não é booleano, apontando a caixa", () => {
+    const r = regra([{ type: "assign_owner", config: { user_id: UUID, conversas: "sim" } }]);
+    expect(r.success).toBe(false);
+    expect(r.error?.issues[0]?.path).toEqual(["actions", 0, "config", "conversas"]);
+  });
+
+  it("no rodízio as caixas não existem: o parse as descarta (a vez é decidida no banco)", () => {
+    const fila = [{ user_id: UUID, pausado: false }];
+    const r = regra([{ type: "assign_owner", config: { modo: "rodizio", fila, contato: true, conversas: true } }]);
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.actions[0]?.config).toEqual({ modo: "rodizio", fila });
+  });
+});
+
+// #2974 — "no máximo uma vez por contato". O motor lê a chave com `=== true`;
+// um valor torto gravado por outra porta seria silenciosamente DESLIGADO (a tela
+// diria uma coisa e a regra faria outra), então a porta recusa.
+describe("trigger_config.uma_vez_por_contato: ligado/desligado, nunca outra coisa", () => {
+  const criar = (trigger_config: Record<string, unknown>) =>
+    createAutomationRuleSchema.safeParse({
+      name: "Boas-vindas",
+      trigger_event: "lead.created",
+      conditions: [],
+      actions: [{ type: "add_tag", config: { tags: ["novo"] } }],
+      trigger_config,
+    });
+
+  it("aceita ligado, desligado e a chave ausente (o comportamento de antes)", () => {
+    expect(criar({ uma_vez_por_contato: true }).success).toBe(true);
+    expect(criar({ uma_vez_por_contato: false }).success).toBe(true);
+    expect(criar({}).success).toBe(true);
+    // `null` é "não configurado", o mesmo que ausente.
+    expect(criar({ uma_vez_por_contato: null }).success).toBe(true);
+  });
+
+  it("recusa string e número, apontando a chave", () => {
+    const texto = criar({ uma_vez_por_contato: "sim" });
+    expect(texto.success).toBe(false);
+    expect(texto.error?.issues[0]?.path).toEqual(["trigger_config", "uma_vez_por_contato"]);
+    expect(texto.error?.issues[0]?.message).toBe(
+      "A opção “uma vez por contato” só aceita ligado ou desligado.",
+    );
+
+    const numero = criar({ uma_vez_por_contato: 1 });
+    expect(numero.success).toBe(false);
+    expect(numero.error?.issues[0]?.path).toEqual(["trigger_config", "uma_vez_por_contato"]);
+  });
+
+  it("o PATCH passa pela mesma régua", () => {
+    expect(updateAutomationRuleSchema.safeParse({ trigger_config: { uma_vez_por_contato: true } }).success).toBe(true);
+    const torto = updateAutomationRuleSchema.safeParse({ trigger_config: { uma_vez_por_contato: "1" } });
+    expect(torto.success).toBe(false);
+    expect(torto.error?.issues[0]?.path).toEqual(["trigger_config", "uma_vez_por_contato"]);
+  });
+});
+
+describe("#1749: a condição “foi alterado” e o gatilho de negócio alterado", () => {
+  const alterou = (value: string) => ({ field: "event.fields", op: "campo_alterado" as const, value });
+  const regra = (trigger_event: string, conditions: unknown) =>
+    createAutomationRuleSchema.safeParse({
+      name: "Data prevista mudou",
+      trigger_event,
+      conditions,
+      actions: [{ type: "add_tag", config: { tags: ["x"] } }],
+    });
+
+  it("a criação aceita a condição no gatilho lead.updated", () => {
+    expect(regra("lead.updated", [alterou("expected_close_date")]).success).toBe(true);
+  });
+
+  it("a criação recusa a condição em outro gatilho — inclusive dentro de grupo", () => {
+    for (const conditions of [
+      [alterou("expected_close_date")],
+      // O grupo do topo é o único que a API aceita (#2727).
+      { any: [{ field: "lead.title", op: "eq", value: "x" }, alterou("title")] },
+    ]) {
+      const r = regra("lead.created", conditions);
+      expect(r.success).toBe(false);
+      expect(r.error?.issues.map((i) => i.message)).toContain(MENSAGEM_DO_CAMPO_ALTERADO_FORA_DO_GATILHO);
+    }
+  });
+
+  it("o par MESCLADO do PATCH: trocar o gatilho com a condição gravada é recusado", () => {
+    // A rota chama com `parsed.trigger_event ?? gravada.trigger_event` e
+    // `parsed.conditions ?? condicoesGravadas` — os quatro cruzamentos:
+    const gravadas = { all: [alterou("expected_close_date")] };
+    expect(condicoesQueSoExistemNoNegocioAlterado("lead.created", gravadas)).toHaveLength(1); // só o gatilho mudou
+    expect(condicoesQueSoExistemNoNegocioAlterado("lead.created", [alterou("title")])).toHaveLength(1); // só as condições
+    expect(condicoesQueSoExistemNoNegocioAlterado("lead.updated", gravadas)).toEqual([]);
+    expect(condicoesQueSoExistemNoNegocioAlterado("lead.created", [{ field: "lead.title", op: "eq", value: "x" }])).toEqual([]);
+    expect(condicoesQueSoExistemNoNegocioAlterado("lead.created", undefined)).toEqual([]);
+  });
+
+  it("o valor é um campo da lista fechada do negócio, nunca texto livre", () => {
+    expect(validarCondicaoDoCampoAlterado(alterou("expected_close_date"))).toBeNull();
+    expect(validarCondicaoDoCampoAlterado(alterou("custom_fields"))).toBeNull();
+    // O nome errado que o parecer mediu: salvo, a regra nunca dispararia.
+    expect(validarCondicaoDoCampoAlterado(alterou("data_prevista"))).toBe(
+      RECUSAS_DA_CONDICAO_DO_CAMPO_ALTERADO.campoDesconhecido,
+    );
+    // Derivado que `camposAlterados` nunca devolve não é escolha válida.
+    expect(validarCondicaoDoCampoAlterado(alterou("updated_at"))).toBe(
+      RECUSAS_DA_CONDICAO_DO_CAMPO_ALTERADO.campoDesconhecido,
+    );
+    expect(validarCondicaoDoCampoAlterado(alterou("  "))).toBe(RECUSAS_DA_CONDICAO_DO_CAMPO_ALTERADO.semCampo);
+    expect(validarCondicaoDoCampoAlterado({ field: "lead.title", op: "campo_alterado", value: "title" })).toBe(
+      RECUSAS_DA_CONDICAO_DO_CAMPO_ALTERADO.campo,
+    );
+    // Outro operador: a função não opina.
+    expect(validarCondicaoDoCampoAlterado({ field: "lead.title", op: "eq", value: "x" })).toBeNull();
+    // E a mesma régua vale no schema que a API e a tela usam.
+    expect(conditionSchema.safeParse(alterou("data_prevista")).success).toBe(false);
   });
 });

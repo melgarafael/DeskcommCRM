@@ -47,6 +47,10 @@ describe("reenvioDaMensagem", () => {
     ["missing_phone_number", "nenhum"],
     ["pre_go_live", "nenhum"],
     ["pre_go_live_indisponivel", "nenhum"],
+    // #3848 — o fluxo escolheu não enviar porque o contato tem compromisso na
+    // agenda. O reenvio daqui não reavalia a agenda: mandaria mesmo, contra a
+    // decisão do fluxo, e sem dizer que a furou.
+    ["compromisso_na_agenda", "nenhum"],
     ["canal_x_error", "confirmar"],
     ["canal_y_error", "confirmar"],
     ["send_timeout", "confirmar"],

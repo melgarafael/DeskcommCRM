@@ -1,0 +1,788 @@
+{
+  "id": "conhecimento",
+  "titulo": "Conhecimento",
+  "tela": "/app/ai/knowledge/sources",
+  "resumo": "O material da sua empresa que o agente de IA lê antes de responder: perguntas frequentes, preparos, políticas. Aqui você ensina, confere e tira do ar.",
+  "licoes": [
+    {
+      "id": "conhecimento-conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Conhecimento",
+      "objetivo": "Entender o que é o acervo do agente, o que o aviso da chave quer dizer e o que cada cartão de material mostra.",
+      "papel": "admin",
+      "busca": [
+        "base de conhecimento",
+        "o que o agente sabe",
+        "ensinar o agente",
+        "material do agente",
+        "perguntas frequentes do agente",
+        "agente responde errado",
+        "acervo"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "rota": "/app/ai",
+          "texto": "Conhecimento não aparece direto no menu lateral. No grupo \"Agente de IA\" do menu, clique em \"Ver tudo em IA\". Na parte \"Ensinar o agente\" está o cartão \"Conhecimento\". O caminho completo é: Agente de IA › Ver tudo em IA › Conhecimento.",
+          "dica": "Só gerente ou administrador vê este cartão. Para um atendente, ou para quem só tem permissão de leitura, ele não aparece, e o endereço da tela leva a uma página de acesso negado.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ver tudo em IA",
+                "exato": true
+              },
+              "rotulo": "Ver tudo em IA",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Conhecimento ",
+                "regex": true
+              },
+              "rotulo": "Abrir o Conhecimento",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Conhecimento ",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O que o agente sabe",
+          "rota": "/app/ai/knowledge/sources",
+          "texto": "O agente de IA é o atendente virtual que responde os pacientes no WhatsApp. Esta tela, \"O que o agente sabe\", guarda o material da clínica que ele lê antes de responder: perguntas frequentes, preparo de exames, valores. Com o material, ele procura a resposta certa em vez de improvisar. A tela é da empresa toda: cada assistente escolhe, na tela dele, quais destes materiais pode ler.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "O que o agente sabe",
+                "exato": true
+              },
+              "rotulo": "O acervo da clínica",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O aviso da chave",
+          "texto": "Para o agente conseguir procurar no material, o sistema prepara o texto com a ajuda de um serviço de inteligência artificial: a OpenAI, a OpenRouter ou o Google. Isso pede uma chave desse serviço, chamada \"chave de embedding\". Quando a chave está valendo, no lugar deste aviso aparece a frase \"Pronto para preparar material.\" e qual chave está em uso. Nesta clínica o material foi preparado pela OpenAI, e a chave da OpenAI não está mais utilizável. Por isso o aviso com o triângulo: enquanto isso não for resolvido, o agente não consegue consultar o material.",
+          "dica": "Uma chave deixa de ser utilizável quando é apagada, desativada ou recusada na conferência com o serviço. Como cadastrar a chave está na lição \"Cadastrar a chave que prepara o material\".",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "conhecimento-sem-chave"
+              },
+              "rotulo": "Falta a chave",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "O estado da base",
+          "texto": "O quadro \"Estado da base de conhecimento\" faz a conta dos materiais do acervo, sem os arquivados. \"Prontos\" são os que o agente já encontra. \"Com erro\" são os que falharam ao preparar. Quando algum está sendo preparado naquele momento, aparece também \"preparando\". O material que está esperando a chave entra no total, mas não em \"prontos\" nem em \"com erro\". Quando há falha, a linha de baixo, com o triângulo, diz onde ver o motivo.",
+          "dica": "Com chave valendo e tudo preparado, o quadro mostra \"tudo pronto\", em verde. Sem nenhum material, o quadro nem aparece.",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "status-da-base-resumo"
+              },
+              "rotulo": "A conta dos materiais",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "status-da-base"
+              },
+              "rotulo": "Estado da base",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "A linha de comandos",
+          "texto": "À esquerda, a tela diz quantos materiais estão no acervo, sem contar os arquivados. \"Adicionar material\" abre o formulário para ensinar algo novo ao agente. \"Preparar tudo de novo\" manda o sistema preparar de novo todos os materiais; o que já estava pronto e não mudou é pulado. Esse botão fica apagado enquanto não houver uma chave valendo.",
+          "dica": "A lista se atualiza sozinha: quando o sistema termina de preparar um material, o cartão muda sem você recarregar a página.",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "acervo-reindexar-tudo"
+              },
+              "rotulo": "Apagado sem chave",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "acervo-adicionar"
+              },
+              "rotulo": "Ensinar algo novo",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "O que cada cartão mostra",
+          "texto": "Cada cartão é um material. No alto vêm o nome e, embaixo, o tipo, como \"Perguntas e respostas\". \"Preparado\" diz há quanto tempo o sistema preparou o material pela última vez, ou \"nunca\". \"Trechos que o agente encontra\" é em quantos pedaços o texto foi dividido para a busca. \"Consultado por\" lista os assistentes que leem este material.",
+          "dica": "\"Nenhum assistente ainda\", em laranja, quer dizer que nenhum assistente marcou este material. Para ligar, abra \"Agentes\", entre no assistente, marque o material em \"O que ele consulta antes de responder\" e publique. Só conta a versão publicada.",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "material-d1160000-0000-4000-8000-000000000001"
+              },
+              "rotulo": "Um material",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "material-orfao-d1160000-0000-4000-8000-000000000001"
+              },
+              "rotulo": "Nenhum assistente lê",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p7",
+          "titulo": "O selo de cada material",
+          "texto": "O selo colorido no canto do cartão diz em que pé está o material. \"O agente já sabe\", em verde: está preparado e o agente encontra. \"Não entrou\", em vermelho: a preparação falhou, e o motivo está em \"Por que não entrou\". \"Esperando a chave\", em laranja: o material foi guardado, mas só será preparado quando houver uma chave valendo. Existe ainda \"Entrou pela metade\", em laranja: só parte do material foi preparada. Ele entra na conta \"com erro\" do quadro de cima. Clique em \"Preparar de novo\" para tentar completar.",
+          "dica": "Dois selos não aparecem aqui. \"Ainda não preparado\", em cinza, é o do material que ainda não passou pela preparação, como um recém-cadastrado. \"Preparando…\", em azul, aparece enquanto o sistema prepara.",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "O agente já sabe",
+                "exato": true,
+                "dentro": {
+                  "testid": "material-d1160000-0000-4000-8000-000000000001"
+                }
+              },
+              "rotulo": "Pronto",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Não entrou",
+                "exato": true,
+                "dentro": {
+                  "testid": "material-d1160000-0000-4000-8000-000000000003"
+                }
+              },
+              "rotulo": "Falhou",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Esperando a chave",
+                "exato": true,
+                "dentro": {
+                  "testid": "material-d1160000-0000-4000-8000-000000000004"
+                }
+              },
+              "rotulo": "Esperando a chave",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "conhecimento-cadastrar-a-chave",
+      "titulo": "Cadastrar a chave que prepara o material",
+      "objetivo": "Saber de onde vem a chave de embedding e cadastrá-la sem sair da tela de Conhecimento.",
+      "papel": "admin",
+      "busca": [
+        "chave de embedding",
+        "chave da openai",
+        "falta uma chave",
+        "material não prepara",
+        "esperando a chave",
+        "openrouter",
+        "chave do google"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Quem prepara a base",
+          "rota": "/app/ai/knowledge/sources",
+          "texto": "Dentro do aviso, a linha \"Quem prepara a base\" diz qual serviço preparou o material desta clínica: aqui, a OpenAI. Para resolver sem sair da tela, clique em \"Cadastrar a chave aqui\". O link \"IA › Credenciais\" leva à tela com todas as chaves de IA da empresa.",
+          "dica": "O material já preparado só é encontrado com o mesmo serviço que o preparou. Por isso uma chave de outro serviço não é usada sozinha.",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "conhecimento-provedor"
+              },
+              "rotulo": "Preparada pela OpenAI",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "conhecimento-cadastrar-chave"
+              },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "conhecimento-cadastrar-chave"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Escolher o serviço",
+          "texto": "Em \"Provedor da chave de embedding\", escolha de qual serviço é a chave: OpenAI, OpenRouter ou Google. Como esta base é preparada pela OpenAI, a chave precisa ser da OpenAI ou da OpenRouter. O texto dos materiais é enviado ao serviço escolhido para preparar a busca. Em \"Como você quer chamar esta chave\" dê um nome para reconhecê-la depois; se deixar em branco, ela fica com o nome sugerido, como \"Chave da OpenAI\".",
+          "dica": "Se você cadastrar uma chave do Google, ela não é usada sozinha: aparece o botão \"Trocar para o Google\", e a troca prepara toda a base de novo.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "conhecimento-cadastrar-chave"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "conhecimento-chave-input"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "group",
+                "nome": "Provedor da chave de embedding",
+                "exato": true
+              },
+              "rotulo": "De qual serviço",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Como você quer chamar esta chave",
+                "exato": true
+              },
+              "rotulo": "Nome da chave",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Colar a chave e salvar",
+          "texto": "No campo \"Chave da OpenAI\", cole a chave que você criou no site do serviço; o endereço aparece logo abaixo do campo, como platform.openai.com/api-keys. A chave é guardada cifrada e nunca aparece de volta na tela. Clique em \"Salvar chave\". O sistema confere a chave com o serviço, o que leva alguns segundos. Quando ela for aceita, o aviso dá lugar a \"Pronto para preparar material.\", com o nome da chave.",
+          "dica": "Com a chave valendo, clique em \"Preparar tudo de novo\" para preparar o material que ficou para trás. \"Cancelar\" fecha o formulário sem guardar nada. Só o administrador consegue salvar a chave. Um gerente vê o aviso e o formulário, mas ao clicar em \"Salvar chave\" recebe uma mensagem de que não tem permissão.",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "conhecimento-chave-input"
+              },
+              "rotulo": "Cole a chave aqui",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "conhecimento-chave-salvar"
+              },
+              "rotulo": "Salvar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "conhecimento-chave-salvar"
+          }
+        }
+      ]
+    },
+    {
+      "id": "conhecimento-ensinar-algo-novo",
+      "titulo": "Ensinar algo novo ao agente",
+      "objetivo": "Cadastrar um material novo: escolher o tipo, escrever perguntas e respostas no formato certo e guardar no acervo.",
+      "papel": "admin",
+      "busca": [
+        "adicionar material",
+        "cadastrar perguntas frequentes",
+        "ensinar o agente",
+        "subir pdf para o agente",
+        "colar texto para o agente",
+        "faq do agente"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir o formulário",
+          "rota": "/app/ai/knowledge/sources",
+          "texto": "Para ensinar algo novo ao agente, clique em \"Adicionar material\", à direita, acima dos cartões.",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "acervo-adicionar"
+              },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "acervo-adicionar"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Que tipo de material é",
+          "texto": "Primeiro escolha o tipo. \"Perguntas e respostas\" já vem marcado: são as dúvidas que se repetem, com a resposta pronta. É o formato que o agente usa melhor, porque cada resposta chega inteira. \"Documento\" é um texto corrido, como uma política ou um manual. \"Conversas anteriores\" e \"Catálogo de produtos\" ficam apagados: o sistema os preenche sozinho, e não dá para digitar nada neles.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "acervo-adicionar"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "material-tipos"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "material-tipo-faq"
+              },
+              "rotulo": "Já vem marcado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "material-tipo-documento"
+              },
+              "rotulo": "Texto corrido",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "material-tipo-conversas"
+              },
+              "rotulo": "Preenchido sozinho",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "material-tipo-catalogo"
+              },
+              "rotulo": "Preenchido sozinho",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "testid": "material-tipo-documento"
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Um documento: arquivo ou texto",
+          "texto": "Com \"Documento\", você envia um arquivo ou cola o texto. Em \"Arquivo (opcional)\" vão PDF, Markdown, CSV ou texto, até 20 MB. Se não tiver o arquivo, cole o texto no campo \"…ou cole o texto aqui\". O PDF precisa ter texto que dê para selecionar: um PDF só de imagens escaneadas não tem letra nenhuma para o sistema ler.",
+          "dica": "Planilha do Excel não entra direto: salve como CSV antes de enviar.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "material-tipo-documento"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "material-arquivo"
+              },
+              "rotulo": "Enviar o arquivo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "material-conteudo"
+              },
+              "rotulo": "Ou colar o texto",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Escrever perguntas e respostas",
+          "texto": "Agora vamos cadastrar perguntas e respostas. Clique de novo em \"Perguntas e respostas\". Em \"Nome do material\" dê um nome que você reconheça depois. Em \"Conteúdo\", escreva cada item em duas linhas: uma começando com \"## Pergunta:\" e outra com \"## Resposta:\". Deixe uma linha em branco entre um item e outro.",
+          "dica": "As marcas \"## Pergunta:\" e \"## Resposta:\" são escritas em português, mesmo com a tela em outro idioma. Sem elas, o sistema não acha nenhum par e não guarda o material.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "material-tipo-faq"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "material-nome"
+              },
+              "valor": "Primeira consulta de nutrição"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "material-conteudo"
+              },
+              "valor": "## Pergunta: Preciso levar exames na primeira consulta de nutrição?\n## Resposta: Se tiver exames de sangue dos últimos 6 meses, traga. Se não tiver, a nutricionista pede na consulta.\n\n## Pergunta: Quanto tempo dura a primeira consulta de nutrição?\n## Resposta: Cerca de 1 hora. O retorno dura 30 minutos."
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "material-nome"
+              },
+              "rotulo": "Nome do material",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "material-conteudo"
+              },
+              "rotulo": "Perguntas e respostas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[role=dialog] p:has(> code)"
+              },
+              "rotulo": "O formato",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Guardar no acervo",
+          "texto": "Antes do botão, o formulário avisa, em letras cor de laranja, quando não há chave valendo: o material fica guardado e esperando, e o agente só passa a conhecê-lo depois que a chave for cadastrada. Clique em \"Adicionar ao acervo\". \"Cancelar\" fecha o formulário sem guardar nada.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "material-aviso-sem-chave"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "material-aviso-sem-chave"
+              },
+              "rotulo": "Vai ficar esperando",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "material-criar"
+              },
+              "rotulo": "Guardar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "material-criar"
+          }
+        },
+        {
+          "id": "p6",
+          "titulo": "O material entrou no acervo",
+          "texto": "O material novo aparece primeiro na grade, com o selo \"Ainda não preparado\". Com uma chave valendo, o sistema começa a preparar em instantes: o selo passa para \"Preparando…\" e depois para \"O agente já sabe\". Sem chave, como nesta clínica, o selo passa para \"Esperando a chave\".",
+          "dica": "Material novo ainda não é lido por nenhum assistente. Marque-o na tela do assistente, em \"O que ele consulta antes de responder\", e publique.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "material-criar"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "div[data-testid^='material-']:has-text('Primeira consulta de nutrição')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div[data-testid^='material-']:has-text('Primeira consulta de nutrição')"
+              },
+              "rotulo": "Material novo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Ainda não preparado",
+                "exato": true
+              },
+              "rotulo": "Ainda não preparado",
+              "tipo": "numero"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "conhecimento-conferir-corrigir-arquivar",
+      "titulo": "Conferir, corrigir e arquivar",
+      "objetivo": "Ler o que está guardado num material, ver o que o agente aprendeu dele, corrigir o conteúdo, entender por que um material não entrou e tirar um material do ar.",
+      "papel": "admin",
+      "busca": [
+        "ler o material",
+        "o que o agente aprendeu",
+        "editar perguntas frequentes",
+        "material não entrou",
+        "preparar de novo",
+        "arquivar material",
+        "agente responde errado"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Ler o material",
+          "rota": "/app/ai/knowledge/sources",
+          "texto": "Para ver o que está guardado num material, clique em \"Ler o material\", no pé do cartão. Clicar no nome do material faz o mesmo.",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "material-abrir-nome-d1160000-0000-4000-8000-000000000001"
+              },
+              "rotulo": "O nome também abre",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "material-abrir-d1160000-0000-4000-8000-000000000001"
+              },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "material-abrir-d1160000-0000-4000-8000-000000000001"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O conteúdo guardado",
+          "texto": "A página mostra o material como ele foi cadastrado. Num material de perguntas e respostas, cada item aparece com a \"Pergunta\" em cima e a \"Resposta\" embaixo. Num documento, aparece o texto inteiro. Para voltar à lista, clique em \"Voltar ao acervo\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "material-abrir-d1160000-0000-4000-8000-000000000001"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "material-conteudo"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='material-conteudo'] li:has([data-testid='material-pergunta-0'])"
+              },
+              "rotulo": "Uma pergunta e a resposta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Voltar ao acervo",
+                "exato": true
+              },
+              "rotulo": "Voltar à lista",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O que o agente aprendeu",
+          "rota": "/app/ai/knowledge/sources",
+          "texto": "\"Ver o que ele aprendeu\" mostra os trechos que o agente procura antes de responder: os pedaços em que o sistema dividiu o material. Quando o agente erra sobre um assunto, é aqui que se vê o porquê. Ao lado de cada trecho aparece o tamanho dele em tokens, a medida de texto que os serviços de IA usam. O botão só aparece quando o material já tem trechos.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "material-ver-d1160000-0000-4000-8000-000000000001"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "material-trechos-lista"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "dialog"
+              },
+              "rotulo": "Os trechos do material",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Corrigir o conteúdo",
+          "rota": "/app/ai/knowledge/sources",
+          "texto": "\"Editar conteúdo\" abre o texto atual do material, no mesmo formato de \"## Pergunta:\" e \"## Resposta:\". Mude o que precisar e clique em \"Salvar conteúdo\". O que você salvar substitui o conteúdo de antes, e o sistema prepara o material de novo.",
+          "dica": "\"Editar conteúdo\" só existe nos materiais de perguntas e respostas. Um documento não se edita aqui: para trocar, arquive o antigo e cadastre a versão nova.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "material-editar-d1160000-0000-4000-8000-000000000001"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "faq-editar-texto"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "faq-editar-texto"
+              },
+              "rotulo": "O texto atual",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "faq-editar-salvar"
+              },
+              "rotulo": "Salvar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "faq-editar-salvar"
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "Por que não entrou",
+          "rota": "/app/ai/knowledge/sources",
+          "texto": "Num material com o selo \"Não entrou\", clique em \"Por que não entrou\" para ver o motivo. Ele vem como o serviço respondeu, às vezes em inglês. Aqui, \"Incorrect API key provided\" quer dizer que a OpenAI recusou a chave. Depois de resolver o motivo, por exemplo cadastrando uma chave que funcione, clique em \"Preparar de novo\" para o sistema tentar outra vez.",
+          "dica": "Quando um material não entra, a Central de avisos também recebe um aviso.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "[data-testid='material-d1160000-0000-4000-8000-000000000003'] summary"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='material-d1160000-0000-4000-8000-000000000003'] details"
+              },
+              "rotulo": "O motivo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "material-reindexar-d1160000-0000-4000-8000-000000000003"
+              },
+              "rotulo": "Tentar outra vez",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "material-reindexar-d1160000-0000-4000-8000-000000000003"
+          }
+        },
+        {
+          "id": "p6",
+          "titulo": "Arquivar um material",
+          "rota": "/app/ai/knowledge/sources",
+          "texto": "Para tirar um material do ar, clique em \"Arquivar\". Não há pergunta de confirmação: o clique arquiva na hora, e nenhum assistente consulta mais aquele material. Antes, olhe \"Consultado por\": os assistentes listados ali deixam de saber daquele assunto.",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "material-orfao-d1160000-0000-4000-8000-000000000004"
+              },
+              "rotulo": "Quem deixa de saber",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "material-arquivar-d1160000-0000-4000-8000-000000000004"
+              },
+              "rotulo": "Arquivar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "material-arquivar-d1160000-0000-4000-8000-000000000004"
+          }
+        },
+        {
+          "id": "p7",
+          "titulo": "Os arquivados",
+          "texto": "O material sai da grade e entra na lista de arquivados, no fim da tela. Clique nela para ver os nomes. Material arquivado não é apagado, mas também não tem botão para voltar: para usar o conteúdo de novo, cadastre-o outra vez. Você pode usar o mesmo nome do material arquivado. Dois materiais em uso, porém, não podem ter o mesmo nome.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "material-arquivar-d1160000-0000-4000-8000-000000000004"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "[data-testid='acervo-arquivados'] summary"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "[data-testid='acervo-arquivados'] li:has-text('Valores das consultas particulares')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "acervo-arquivados"
+              },
+              "rotulo": "Os arquivados",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

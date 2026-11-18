@@ -18,6 +18,11 @@
  * caminho fica nomeado (`source: 'env'`) em vez de virar comportamento oculto — quem
  * depura vê de onde a credencial veio.
  *
+ * A reserva do env vale **só para o número dela** (`META_PHONE_NUMBER_ID`). Uma
+ * sessão de OUTRO número sem token legível fica sem credencial — `null`, que os
+ * consumidores já tratam como canal não conectado — em vez de falar pelo número e
+ * pelo token do `.env`. Ver `resolveMetaCreds`.
+ *
  * A ordem é sessão-primeiro de propósito: com a credencial gravada, o env deixa de
  * ter efeito. Se fosse o contrário, um env esquecido silenciaria a configuração da
  * tela e o operador não entenderia por que mudou nada.
@@ -89,8 +94,9 @@ export function metaCredsFromEnv(): MetaCredentials | null {
 /**
  * Credencial da sessão desta ORGANIZAÇÃO que atende este `phone_number_id`.
  *
- * `null` significa "esta sessão não tem token gravado" — o chamador cai no env. NÃO
- * significa erro: durante a transição a maioria das instalações ainda usa env.
+ * `null` significa "esta sessão não tem token legível" — o chamador decide se a
+ * reserva do env vale (só para o número do env, ver `resolveMetaCreds`). NÃO
+ * significa erro de consulta: esse LANÇA, abaixo.
  *
  * **LANÇA quando a consulta falha**, e essa é a diferença que a issue #236 pagou.
  * A versão anterior desestruturava só `{ data }` e jogava o `error` fora: com duas
@@ -132,8 +138,8 @@ export async function metaCredsForPhoneNumberId(
 
   const token = await decryptWebhookSecret(admin, cifrado as unknown as string);
   // Decifra que falha devolve null: a chave (GUC) pode não estar configurada nesta
-  // instalação. Cair no env é melhor que derrubar o envio — e o `source` no retorno
-  // deixa a diferença visível para quem depura.
+  // instalação. Para o número do env, a reserva cobre; para qualquer outro, o
+  // desfecho é "sem credencial" (ver `resolveMetaCreds`).
   if (!token) return null;
 
   return {
@@ -145,14 +151,27 @@ export async function metaCredsForPhoneNumberId(
 }
 
 /**
- * A credencial em vigor para este número: **sessão primeiro, env como fallback**.
+ * A credencial em vigor para este número: **sessão primeiro, env como reserva — e a
+ * reserva só para o número dela**.
  *
  * Uma instalação com várias organizações grava um token por sessão e cada uma envia
- * pelo seu; uma instalação de número único pode continuar no env sem tocar em nada.
+ * pelo seu; uma instalação de número único pode continuar no env sem tocar em nada,
+ * porque a sessão dela É a do `META_PHONE_NUMBER_ID`.
+ *
+ * Sessão de outro número sem token legível falha fechado (`null` →
+ * `meta_not_configured` / `missing_meta_token` nos consumidores). Devolver o env ali
+ * faria a sessão falar pelo número e pelo token de outra conexão — o env traz o
+ * `phoneNumberId` dele, não o da sessão consultada.
  */
 export async function resolveMetaCreds(
   admin: SupabaseClient,
   lookup: MetaCredsLookup,
 ): Promise<MetaCredentials | null> {
-  return (await metaCredsForPhoneNumberId(admin, lookup)) ?? metaCredsFromEnv();
+  const daSessao = await metaCredsForPhoneNumberId(admin, lookup);
+  if (daSessao) return daSessao;
+  const env = metaCredsFromEnv();
+  // Lookup sem número é o caminho legado sem sessão oficial gravada: a linha
+  // `meta_cloud` não existe sem `meta_phone_number_id` (CHECK
+  // `channel_sessions_provider_ref_check`), então ele não é "outro número".
+  return env && (!lookup.phoneNumberId || env.phoneNumberId === lookup.phoneNumberId) ? env : null;
 }

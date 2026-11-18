@@ -28,6 +28,7 @@ const estado = vi.hoisted(() => ({
 
 vi.mock("@/lib/channels/contato-por-telefone", () => ({
   encontrarContatoPorTelefone: async () => null,
+  encontrarContatoPorTelefoneComAnonimizacao: async () => null,
 }));
 vi.mock("@/lib/escalacao/numero-interno-de-aviso", () => ({
   ehNumeroInternoDeAviso: async () => false,

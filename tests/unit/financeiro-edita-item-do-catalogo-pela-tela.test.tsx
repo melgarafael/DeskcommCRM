@@ -83,7 +83,7 @@ const DADOS: Record<string, unknown[]> = {
     },
   ],
   // `/api/v1/team/assignable` e `/api/v1/agenda/tipos` terminam em outros nomes.
-  assignable: [{ user_id: "u-ana", name: "Ana Souza", email: null }],
+  assignable: [{ user_id: "u-ana", full_name: "Ana Souza", role: "agent" }],
   tipos: [{ id: "s-1", name: "Manicure" }],
 };
 

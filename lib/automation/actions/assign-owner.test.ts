@@ -3,6 +3,7 @@ import type { ActionCtx } from "@/lib/automation/types";
 
 import { getAction } from "@/lib/automation/actions";
 import "@/lib/automation/actions/assign-owner";
+import { sufixoDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 const PESSOA = "11111111-1111-4111-8111-111111111111";
 
@@ -69,11 +70,15 @@ describe("assign_owner em rodízio", () => {
     });
   });
 
-  it("sem nome no perfil, a frase usa o começo do id em vez de falhar", async () => {
+  it("sem nome no perfil, a frase usa o rótulo da régua em vez de falhar — e sem uuid (#3023)", async () => {
     const admin = adminFalso({ data: { user_id: PESSOA, posicao: 1 }, error: null }, null);
     const r = await getAction("assign_owner")!.execute(ctx(admin), RODIZIO);
     expect(r.status).toBe("success");
-    expect(r.detail?.explicacao).toBe("Vez de 11111111, posição 1 da fila do rodízio.");
+    // A régua de `lib/users/rotulo-do-atendente.ts`: nome → e-mail →
+    // `Atendente <sufixo do hash do id>`. A frase é informação de uma atribuição
+    // que ACONTECEU — falhar aqui esconderia o fato —, mas não vaza o id.
+    expect(r.detail?.explicacao).toBe(`Vez de Atendente ${sufixoDoMembro(PESSOA)}, posição 1 da fila do rodízio.`);
+    expect(r.detail?.explicacao).not.toContain("11111111");
   });
 
   it("ninguém disponível (todos pausados ou fora da equipe) é skipped com o motivo", async () => {

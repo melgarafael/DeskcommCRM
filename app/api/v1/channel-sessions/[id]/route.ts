@@ -16,17 +16,23 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * espera o QR, e o preflight custa seis contagens; quem precisa dele é o diálogo
  * de exclusão, uma vez, ao abrir. Contrato em `ChannelDeletionImpact`.
  *
- * Qualquer membro da org pode consultar. organization_id vem da sessão.
+ * Qualquer membro da org pode consultar. organization_id vem da sessão ou da
+ * linha do token — nunca do path.
  */
-import { assertWahaConnectionIdle, ChannelConnectionError } from "@/lib/channels/connect-waha";
-import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { randomUUID } from "node:crypto";
 
+import { assertWahaConnectionIdle, ChannelConnectionError } from "@/lib/channels/connect-waha";
 import { audit } from "@/lib/audit";
 import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser, mfaEmDivida } from "@/lib/auth/server";
 import { orgAtivaDaApi, requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { extractBearer } from "@/lib/mcp/auth";
 import { CHANNEL_PROVIDER_SOCIAL, CHANNEL_PROVIDER_WAHA } from "@/lib/channels/capabilities";
+import { BOT_CHANNEL_PROVIDER, desligarRoboNoFornecedor } from "@/lib/channels/bot/connect";
+import { PARTNER_CHANNEL_PROVIDER, desfazerNoProvedor } from "@/lib/channels/connect";
 import { resolverSaudeDaConexaoRemovida } from "@/lib/channels/health";
 import { sincronizarAvisoDePausa } from "@/lib/channels/central-de-pausa";
 import { desfazerWebhookDoNumero } from "@/lib/channels/meta/webhook-override";
@@ -159,6 +165,23 @@ export async function GET(
   const requestId = randomUUID();
   const { id } = await params;
 
+  // DOIS PORTÕES, UM CORPO (Spec 33, R3). O token `dsk_…` (escopo `mcp:read`,
+  // papel membro) entra por `resolveAuthDual`; a sessão segue por
+  // `loadAuthUser` + `orgAtivaDaApi` de sempre. A organização vem da linha do
+  // token ou da sessão, nunca do path.
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "channel_sessions",
+      role: "viewer",
+      scope: "mcp:read",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "channel_sessions", requestId);
+    if (teto) return teto;
+    return responderGet(authz.supabase, authz.organizationId, undefined, requestId, id, req, true);
+  }
+
   const user = await loadAuthUser();
   if (!user) return fail("unauthenticated", "Auth required.", 401, { requestId });
   const ativa = await orgAtivaDaApi(user, requestId);
@@ -167,22 +190,39 @@ export async function GET(
   if (!activeOrg) return fail("forbidden_tenant", "Nenhuma organização ativa.", 403, { requestId });
 
   const supabase = await createClient();
-  const { data: session } = await supabase
+  return responderGet(supabase, activeOrg.orgId, user, requestId, id, req);
+}
+
+async function responderGet(
+  db: SupabaseClient,
+  organizationId: string,
+  user: { support?: { access_mode?: string | null } | null } | undefined,
+  requestId: string,
+  id: string,
+  req: NextRequest,
+  soLeitura = false,
+): Promise<Response> {
+  const { data: session } = await db
     .from("channel_sessions")
     .select("id, provider, waha_session_name, display_name, phone_number, status")
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .eq("id", id)
     .maybeSingle();
   if (!session) return fail("not_found", "Canal não encontrado.", 404, { requestId });
 
   const impact =
     req.nextUrl.searchParams.get("impact") === "1"
-      ? await loadDeletionImpact(activeOrg.orgId, id)
+      ? await loadDeletionImpact(organizationId, id)
       : null;
   const comImpacto = <T extends object>(corpo: T): T & { deletion_impact?: ChannelDeletionImpact } =>
     impact ? { ...corpo, deletion_impact: impact } : corpo;
 
-  if (user.support?.access_mode === "support_readonly") return ok(comImpacto({ ...session, waha_configured: false }), { requestId });
+  // Ramo do token (`soLeitura`): só lê a linha e responde. Não consulta o WAHA nem
+  // grava `channel_sessions` (carimbo de saúde, status, telefone): a convergência é
+  // da sessão. Pelo token, o estado vem do banco com `waha_configured: false`, o
+  // mesmo sinal de "não confirmado agora" do ramo abaixo.
+  if (soLeitura) return ok(comImpacto({ ...session, waha_configured: false }), { requestId });
+  if (user?.support?.access_mode === "support_readonly") return ok(comImpacto({ ...session, waha_configured: false }), { requestId });
   const waha = getWahaClient();
   // Canal oficial não tem sessão no transporte para consultar — `waha_session_name`
   // é NULL nele por CHECK, e perguntar assim mesmo pediria `/api/sessions/null`.
@@ -222,10 +262,10 @@ export async function GET(
   if (phoneNumber && phoneNumber !== session.phone_number) patch.phone_number = phoneNumber;
 
   const gravar = (corpo: Record<string, unknown>) =>
-    supabase
+    db
       .from("channel_sessions")
       .update(corpo)
-      .eq("organization_id", activeOrg.orgId)
+      .eq("organization_id", organizationId)
       .eq("id", id);
 
   let phoneConflict = false;
@@ -337,7 +377,7 @@ export async function DELETE(
   const { data: session } = await supabase
     .from("channel_sessions")
     .select(
-      "id, provider, waha_session_name, display_name, phone_number, meta_phone_number_id, meta_token_encrypted",
+      "id, provider, waha_session_name, display_name, phone_number, meta_phone_number_id, meta_token_encrypted, zernio_credencial_da_instalacao",
     )
     .eq("organization_id", activeOrg.orgId)
     .eq("id", id)
@@ -368,6 +408,8 @@ export async function DELETE(
    * estava fora do ar e a exclusão seguiu em best-effort.
    */
   let socialWebhook: "apagada" | "sem_integracao" | "falhou" | "nao_social" = "nao_social";
+  let parceiro: "desfeito" | "nada_a_desfazer" | "sem_credencial" | "falhou" | "nao_parceiro" = "nao_parceiro";
+  let robo: "desfeito" | "sem_credencial" | "falhou" | "nao_robo" = "nao_robo";
 
   if (session.provider === CHANNEL_PROVIDER_WAHA) {
     const waha = getWahaClient();
@@ -417,6 +459,61 @@ export async function DELETE(
     // DEPOIS de apagar a assinatura, que pode ter sido achada pela URL dele.
     // (`meta_token_encrypted` não entra aqui de propósito: a linha social não
     // usa essa coluna — a credencial que autoriza a chamada vive na integração.)
+    patch.webhook_path_token = randomUUID().replace(/-/g, "");
+  } else if (session.provider === BOT_CHANNEL_PROVIDER) {
+    // O robô de mensagens (#3486): o webhook dele aponta para esta instalação.
+    // Apaga lá ANTES do patch, que gira o token do caminho; best-effort como o
+    // ramo social, porque o robô é da conta da empresa.
+    try {
+      robo = await desligarRoboNoFornecedor(createAdminClient(), activeOrg.orgId, id);
+    } catch (err) {
+      robo = "falhou";
+      logger.warn("Falha ao apagar o webhook do robô no fornecedor", {
+        requestId,
+        channel_session_id: id,
+        organization_id: activeOrg.orgId,
+        erro: err instanceof Error ? err.message : String(err),
+      });
+    }
+    patch.webhook_path_token = randomUUID().replace(/-/g, "");
+  } else if (session.provider === PARTNER_CHANNEL_PROVIDER) {
+    // ─── O QUE A INSTALAÇÃO FEZ NO PROVEDOR PARCEIRO NÃO FICA ÓRFÃO ──────────
+    //
+    // A conexão por um clique pôs o perfil da organização no webhook ÚNICO da
+    // instalação e conectou o número na conta DELA; a por chave própria pode ter
+    // tido o webhook do número registrado pela rota. `desfazerNoProvedor` tira o
+    // perfil do filtro (o webhook segue entregando as outras conexões) e
+    // desconecta o número — senão ele seguiria na fatura do provedor da
+    // instalação depois de sair do CRM —, ou apaga a assinatura do número na
+    // chave própria. Webhook colado à mão não é tocado.
+    //
+    // Antes do patch, que gira o token. Na chave própria é best-effort como o
+    // ramo social: provedor fora do ar vai para o log e para a auditoria
+    // (`parceiro`), e NÃO desfaz a exclusão que o operador pediu — o número é
+    // da conta da organização. Na conexão por um clique o número está na conta
+    // (e na fatura) da INSTALAÇÃO: arquivar ou apagar a linha assim mesmo
+    // levaria embora o único registro de que ele ainda está lá, e nada voltaria
+    // a desconectá-lo. Ali a exclusão falha fechada, como o ramo do WAHA, e a
+    // linha fica para o operador excluir de novo.
+    try {
+      parceiro = await desfazerNoProvedor(createAdminClient(), activeOrg.orgId, id);
+    } catch (err) {
+      parceiro = "falhou";
+      logger.warn("Falha ao desfazer a conexão no provedor parceiro", {
+        requestId,
+        channel_session_id: id,
+        organization_id: activeOrg.orgId,
+        erro: err instanceof Error ? err.message : String(err),
+      });
+      if (session.zernio_credencial_da_instalacao === true) {
+        return fail(
+          "upstream_unavailable",
+          t("O provedor não confirmou a remoção do número. A conexão continua aqui: tente excluir de novo em alguns minutos."),
+          502,
+          { requestId },
+        );
+      }
+    }
     patch.webhook_path_token = randomUUID().replace(/-/g, "");
   } else {
     // ─── O OVERRIDE NÃO FICA ÓRFÃO NA META (issue #1334) ─────────────────────
@@ -498,15 +595,25 @@ export async function DELETE(
     patch.webhook_path_token = randomUUID().replace(/-/g, "");
   }
 
+  // A linha da conexão pela instalação só é arquivada ou apagada pelo service
+  // role (gatilho da migration 9093): por fora desta rota, o número ficaria na
+  // conta da instalação sem passar por `desfazerNoProvedor`. A credencial do
+  // número oficial (`meta_token_encrypted`, zerada acima) também só é gravada
+  // pelo service role (migration 9104). O filtro de organização abaixo é o
+  // mesmo nos dois clientes, resolvido da sessão.
+  const escritor =
+    session.zernio_credencial_da_instalacao === true || "meta_token_encrypted" in patch
+      ? createAdminClient()
+      : supabase;
   if (arquivar) {
-    const { error: archErr } = await supabase
+    const { error: archErr } = await escritor
       .from("channel_sessions")
       .update(patch)
       .eq("organization_id", activeOrg.orgId)
       .eq("id", id);
     if (archErr) return fail("internal_error", archErr.message, 500, { requestId });
   } else {
-    const { error: delErr } = await supabase
+    const { error: delErr } = await escritor
       .from("channel_sessions")
       .delete()
       .eq("organization_id", activeOrg.orgId)
@@ -568,6 +675,8 @@ export async function DELETE(
       avisos_fechados: avisosFechados,
       webhook_override: webhookOverride,
       social_webhook: socialWebhook,
+      parceiro,
+      robo,
       ...impact.history,
       ...impact.configuration,
     },

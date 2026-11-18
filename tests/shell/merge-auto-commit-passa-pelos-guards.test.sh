@@ -1,34 +1,43 @@
 #!/usr/bin/env bash
 # merge-auto-commit-passa-pelos-guards — prova do #1225.
 #
+# merge-auto-commit-passa-pelos-guards — prova do #1225, depois da aposentadoria do
+# congelamento de `tests/invariants/**`.
+#
 # O QUE ESTE ARQUIVO MEDE
 # `loop/hooks/pre-commit` só roda quando existe um `git commit`. Um merge que resolve
 # SOZINHO não passa por `git commit`: o git cria o commit de merge e pronto. Sem a rota
 # `pre-merge-commit` o dispatcher dos guards (validate-features, check-migration-triple,
-# freeze-invariants) nunca era consultado — e um `git merge -X theirs origin/main` fazia
-# o fortalecimento que a branch tinha feito no invariante desaparecer com exit 0, sem
-# válvula e sem aviso.
+# guard-invariants) nunca era consultado — e o defeito medido no #1225 era um
+# `git merge -X theirs origin/main` que descartava, em SILÊNCIO, o fortalecimento que a
+# branch tinha feito num invariante.
 #
-# Aqui isso é medido pelo CAMINHO DE PRODUÇÃO (`git merge` de verdade, com o hook que o git
-# consulta e `core.hooksPath` armado), nunca chamando um `.sh` na mão: chamar o arquivo mede
-# a FUNÇÃO; o que decide é o SISTEMA.
+# O que mudou, e por que este arquivo não sumiu junto: com o fim do épico o congelamento
+# foi aposentado (`M` é manutenção de teste — ver `loop/hooks/guard-invariants.sh`), então
+# aquele descarte deixou de ser dano. O que continua sendo dano é a DELEÇÃO: apagar o
+# invariante que a `main` tem tira o teste do gate sem ninguém decidir nada. A rota do
+# #1225 e a regra que sobrou são medidas aqui, pelo CAMINHO DE PRODUÇÃO (`git merge` de
+# verdade, com o hook que o git consulta e `core.hooksPath` armado), nunca chamando um
+# `.sh` na mão: chamar o arquivo mede a FUNÇÃO; o que decide é o SISTEMA.
 #
 # CASOS
-#   M1  o merge que ENFRAQUECE aborta (é o defeito do #1225) — e, sem o hook, a mesma
-#       montagem perde em SILÊNCIO (a metade que dá sentido à asserção).
-#   M2  CONTROLE NEGATIVO: um merge que não encosta em arquivo congelado segue passando.
-#       É o que separa "barramento" de "bloqueio de todo merge".
-#   M3  O LADO QUE A ROTA DECIDE (o #374): no `pre-merge-commit` o git NÃO escreve MERGE_HEAD
-#       (sondado por hook-sonda, caso M3-PREMISSA), mas entrega o outro lado em
-#       `GITHEAD_<sha>=<ref>`. Com esse sinal a procedência do #1161 fica decidível também no
-#       caminho LIMPO, e o merge que só traz o invariante da main PASSA — era ele o falso
-#       positivo da #374. M3-SEM-SINAL é a metade que fecha: no MESMO estado, removendo só a
-#       variável, a rota volta a falhar FECHADO.
+#   ROTA-PREMISSA  sonda de causa: no `pre-merge-commit` o git NÃO escreveu MERGE_HEAD e o
+#       commit de merge foi feito por ela — é o hook que o git chama, não um `.sh` na mão.
+#   M1   o merge que só traz a REESCRITA da main PASSA (era o dano do #1225; hoje `M` é
+#       livre, e o caso garante que ninguém "conserta" o hook religando a barreira).
+#   M2   CONTROLE NEGATIVO: um merge que não encosta em nada guardado segue passando. É o
+#       que separa "barramento" de "bloqueio de todo merge".
+#   M-DEL  a DELEÇÃO introduzida na RESOLUÇÃO do merge (o invariante que a main mantém
+#       apagado de carona no commit da resolução) é RECUSADA, e o HEAD fica parado — o
+#       caminho realista de um invariante incômodo sair do gate.
+#   M-VÁLVULA  a mesma deleção, com `DESKCOMM_GOV_INVARIANTS_EDIT=1`: passa.
+#   M4   o sinal do outro lado é FORJÁVEL (`GITHEAD_*` é variável de ambiente e MERGE_HEAD
+#       se escreve à mão): um commit COMUM que apaga o invariante com o sinal apontado para
+#       a main continua RECUSADO — sinal nenhum lava uma deleção.
 #
-# Controle de vivacidade: M1 (o aborto) fica VERMELHO com o `loop/hooks/pre-merge-commit`
-# removido — é o que prova que este arquivo mede o hook e não a si mesmo. M3 fica VERMELHO
-# com o sinal `GITHEAD_*` tirado do guard (ele volta a recusar). M2 continua verde: mede o
-# outro lado, que o hook não barra.
+# Controle de vivacidade: M-DEL e M4 ficam VERDES (a recusa some) com `main_tem` desligado
+# no hook; M-DEL também fica verde com o `loop/hooks/pre-merge-commit` fora do caminho.
+# M2 continua verde sempre: mede o outro lado, que o hook não barra.
 #
 # ⚠️ Nenhum número de casos escrito aqui, de propósito: contagem em prosa envelhece a cada
 # caso novo e ninguém a revisa. Quem precisa do número RODA o arquivo — o rodapé o imprime.
@@ -88,8 +97,8 @@ tem_marcador() { git -C "$1" show "HEAD:$2" 2>/dev/null | grep -qF "MARCADOR-$3"
 
 # ── as DUAS "mains" do cenário ──────────────────────────────────────────────────────
 # principal: a main REESCREVE o slot do invariante que a branch vai editar (M1) e que a
-# branch nem toca (M3). principal_limpo: a main só mexe em README/src — é o que permite ao
-# CONTROLE NEGATIVO (M2) medir um merge que não encosta em arquivo congelado nenhum.
+# branch nem toca (M1). principal_limpo: a main só mexe em README/src — é o que permite ao
+# CONTROLE NEGATIVO (M2) medir um merge que não encosta em invariante nenhum.
 principal="$TMP/principal"; mkdir -p "$principal/tests/invariants" "$principal/src"
 git -C "$principal" init -q -b main
 inv "$SLOT_BRANCH" "$SLOT_MAIN" "$SLOT_LIVRE" > "$principal/$INV"
@@ -134,63 +143,12 @@ merge_auto() {
 exit_de()  { sed -n 's/^__EXIT__//p' <<<"$1"; }
 saida_de() { sed '/^__EXIT__/d' <<<"$1"; }
 
-printf '\nmerge-auto-commit-passa-pelos-guards — #1225\n'
+printf '\nmerge-auto-commit-passa-pelos-guards — #1225 (congelamento aposentado)\n'
 
-# ── M1 · o merge que ENFRAQUECE ─────────────────────────────────────────────────────
-# A branch tem commit PRÓPRIO no invariante (a autoria que o guard lê) e a main reescreveu o
-# MESMO slot na ponta: o 3-way conflita e o `-X theirs` resolve a favor da main, descartando o
-# fortalecimento da branch — que é o dano do #1225.
-m="$TMP/m"; armar "$m" "$principal" "$BASE"
-inv "$MARCA_BRANCH" "$SLOT_MAIN" "$SLOT_LIVRE" > "$m/$INV"
-commitar "$m" "a branch fortalece o invariante dela"
-SHA_BRANCH=$(git -C "$m" rev-parse HEAD)
-if [ -n "$(git -C "$m" log --oneline "$BASE"..HEAD -- "$INV")" ]; then ok "M1: a branch TEM commit próprio no invariante (a autoria que o guard lê)"
-else falha "M1: a branch TEM commit próprio no invariante" "log vazio — o caso não tem autoria para medir"; fi
-if [ -n "$(git -C "$m" log --oneline HEAD..origin/main -- "$INV")" ]; then ok "M1: e a MAIN também tocou o invariante (é o que faz o -X theirs ter o que descartar)"
-else falha "M1: e a MAIN também tocou o invariante" "a main não tocou: o caso mediria outra coisa"; fi
-
-# M1-ANTES · a MESMA montagem sem a rota nova: o merge perde em SILÊNCIO. Sem esta metade o
-# caso seria uma asserção sobre si mesmo — é ela que mostra o que o hook está barrando.
-msem="$TMP/msem"; armar "$msem" "$principal" "$BASE"
-rm -f "$msem/loop/hooks/pre-merge-commit"
-inv "$MARCA_BRANCH" "$SLOT_MAIN" "$SLOT_LIVRE" > "$msem/$INV"
-commitar "$msem" "a branch fortalece o invariante dela"
-r=$(merge_auto "$msem" "" -X theirs origin/main)
-assert_exit "$(exit_de "$r")" 0 "M1-ANTES: sem a rota, o merge auto-commita (exit 0) — o defeito do #1225"
-assert_igual "$(pais_de "$msem")" "2" "M1-ANTES: e o commit resultante é um MERGE de verdade (2 pais)"
-if tem_marcador "$msem" "$INV" BRANCH; then
-  falha "M1-ANTES: e o fortalecimento da branch DESAPARECE do HEAD" "MARCADOR-BRANCH ainda está lá: a montagem não encena a perda"
-else ok "M1-ANTES: e o fortalecimento da branch DESAPARECE do HEAD, em silêncio"; fi
-assert_contains "$(git -C "$msem" show "HEAD:$INV")" "MARCADOR-MAIN" "M1-ANTES: quem ficou no lugar foi a versão da main"
-
-r=$(merge_auto "$m" "" -X theirs origin/main)
-assert_recusa "$(exit_de "$r")" "M1: com a rota, o MESMO merge é BARRADO"
-assert_contains "$(saida_de "$r")" "Not committing merge" "M1: e a recusa vem do hook, no caminho do auto-commit (não de conflito)"
-assert_contains "$(saida_de "$r")" "$INV" "M1: e a mensagem nomeia o invariante acusado"
-assert_igual "$(git -C "$m" rev-parse HEAD)" "$SHA_BRANCH" "M1: e o HEAD ficou PARADO (nada foi commitado)"
-if tem_marcador "$m" "$INV" BRANCH; then ok "M1: e o fortalecimento da branch continua no HEAD"
-else falha "M1: e o fortalecimento da branch continua no HEAD" "o marcador sumiu do HEAD apesar do exit != 0"; fi
-
-# ── M2 · CONTROLE NEGATIVO: merge que não encosta em arquivo congelado ──────────────
-# Se este caso ficar vermelho, o hook barra todo merge — o oposto do conserto. É o par que
-# impede o teste de passar por bloquear tudo.
-m2="$TMP/m2"; armar "$m2" "$principal_limpo" "$BASE_LIMPO"
-mkdir -p "$m2/src"
-printf 'só trabalho meu\n' > "$m2/meu-trabalho.txt"
-printf 'export const x = 1;\n' > "$m2/src/meu.ts"
-commitar "$m2" "commit próprio, fora de qualquer arquivo congelado"
-r=$(merge_auto "$m2" "" origin/main)
-assert_exit "$(exit_de "$r")" 0 "M2: merge que não encosta em arquivo congelado segue PASSANDO (a rota não é bloqueio cego)"
-assert_igual "$(pais_de "$m2")" "2" "M2: e o merge foi mesmo feito (2 pais)"
-assert_igual "$(git -C "$m2" rev-parse HEAD^2)" "$PONTA_LIMPA" "M2: e o 2º pai é a ponta da main"
-assert_contains "$(git -C "$m2" show "HEAD:README.md")" "linha que a MAIN acrescentou" "M2: e o que a main trouxe chegou ao HEAD"
-if [ -f "$m2/loop/hooks/pre-merge-commit" ]; then ok "M2: com a rota ARMADA no fixture (o merge passou POR ela)"
-else falha "M2: com a rota ARMADA no fixture" "loop/hooks/pre-merge-commit não existe no fixture"; fi
-
-# ── M3-PREMISSA · o git NÃO escreve MERGE_HEAD quando chama pre-merge-commit ─────────
-# Sonda de causa, e não prosa: é a AUSÊNCIA do MERGE_HEAD que impede os guards de inocentar o
-# que veio da main (o #1161 decide procedência por ele). Se um dia o git passar a escrevê-lo,
-# esta premissa cai e o caso M3 tem de ser reescrito — por isso ela é asserção.
+# ── ROTA-PREMISSA · o git NÃO escreve MERGE_HEAD quando chama pre-merge-commit ───────
+# Sonda de causa, e não prosa: o hook que o git chama no auto-commit é este, e ele enxerga
+# o estado SEM o MERGE_HEAD — o que importa para qualquer guard que um dia volte a julgar
+# procedência. Se um dia o git passar a escrevê-lo, esta premissa cai e quem a ler sabe.
 m3p="$TMP/m3p"; armar "$m3p" "$principal_limpo" "$BASE_LIMPO"
 cat > "$m3p/loop/hooks/pre-merge-commit" <<'SONDA'
 #!/usr/bin/env bash
@@ -205,71 +163,69 @@ SONDA_SAIDA="$TMP/sonda.txt"; export SONDA_SAIDA
 printf 'só trabalho meu\n' > "$m3p/meu-trabalho.txt"
 commitar "$m3p" "commit próprio"
 r=$(merge_auto "$m3p" "" origin/main)
-assert_exit "$(exit_de "$r")" 0 "M3-PREMISSA: a sonda deixa o merge seguir (mede o estado, não barra)"
-assert_contains "$(cat "$SONDA_SAIDA" 2>/dev/null)" "MERGE_HEAD=AUSENTE" "M3-PREMISSA: no pre-merge-commit o git NÃO escreveu MERGE_HEAD"
-assert_contains "$(cat "$SONDA_SAIDA" 2>/dev/null)" "ORIG_HEAD=" "M3-PREMISSA: a sonda rodou mesmo (ORIG_HEAD presente)"
+assert_exit "$(exit_de "$r")" 0 "ROTA-PREMISSA: a sonda deixa o merge seguir (mede o estado, não barra)"
+assert_contains "$(cat "$SONDA_SAIDA" 2>/dev/null)" "MERGE_HEAD=AUSENTE" "ROTA-PREMISSA: no pre-merge-commit o git NÃO escreveu MERGE_HEAD"
+assert_contains "$(cat "$SONDA_SAIDA" 2>/dev/null)" "ORIG_HEAD=" "ROTA-PREMISSA: a sonda rodou mesmo (ORIG_HEAD presente)"
+assert_igual "$(pais_de "$m3p")" "2" "ROTA-PREMISSA: e o commit de merge foi feito por ela"
 
-# ── M3 · a main mexe no invariante e a branch NÃO: o merge limpo PASSA (#374) ─────────
-# O merge não enfraquece NADA (o invariante da branch é o da base) — mas o git chama
-# `pre-merge-commit` ANTES de escrever o MERGE_HEAD (M3-PREMISSA), e sem aquela referência as
-# seis condições do guard não tinham por onde começar: a rota falhava FECHADO sobre o que a
-# main trouxe, acusando quem mergeia (#374). O mesmo git entrega o outro lado, NAQUELE
-# instante, em `GITHEAD_<sha>=<ref>` — com ele a procedência decide igual no caminho LIMPO.
-# As asserções medem o RESULTADO (merge feito com dois pais, invariante da main no HEAD), não
-# só o exit: sem guard nenhum o merge também sairia 0.
-m3a="$TMP/m3a"; armar "$m3a" "$principal" "$BASE"
-printf 'só trabalho meu\n' > "$m3a/meu-trabalho.txt"
-commitar "$m3a" "commit próprio, sem tocar no invariante"
-SHA_M3A=$(git -C "$m3a" rev-parse HEAD)
-assert_igual "$(git -C "$m3a" log --oneline "$BASE"..HEAD -- "$INV" | wc -l | tr -d ' ')" "0" "M3: a branch NÃO tocou o invariante (a premissa do caso)"
-r=$(merge_auto "$m3a" "" origin/main)
-assert_exit "$(exit_de "$r")" 0 "M3: o merge limpo que só traz o invariante da main PASSA (#374)"
-assert_igual "$(pais_de "$m3a")" "2" "M3: e o merge foi mesmo feito"
-assert_contains "$(git -C "$m3a" show "HEAD:$INV")" "MARCADOR-MAIN" "M3: e o invariante da main chegou ao HEAD"
+# ── M1 · o merge que só traz a REESCRITA da main PASSA ───────────────────────────────
+# Era o dano do #1225 (o `-X theirs` descartava o fortalecimento da branch). Com o
+# congelamento aposentado isso não é dano: `M` saiu do hook. O caso existe para que a
+# aposentadoria não seja desfeita por engano — e mede pelo caminho de produção, com a rota
+# armada, o merge feito de fato e a versão da main no HEAD.
+m="$TMP/m"; armar "$m" "$principal" "$BASE"
+printf 'só trabalho meu\n' > "$m/meu-trabalho.txt"
+commitar "$m" "commit próprio, sem encostar no invariante"
+r=$(merge_auto "$m" "" -X theirs origin/main)
+assert_exit "$(exit_de "$r")" 0 "M1: merge que só traz a reescrita do invariante da main PASSA"
+assert_igual "$(pais_de "$m")" "2" "M1: e o commit resultante é um MERGE de verdade (2 pais)"
+assert_contains "$(git -C "$m" show "HEAD:$INV")" "MARCADOR-MAIN" "M1: e a versão da main está no HEAD"
 
-# ── M3-SEM-SINAL · o MESMO estado, sem o `GITHEAD_*`: a rota volta a falhar FECHADO ─────
-# Sem esta metade o M3 acima seria uma asserção sobre si mesmo (um guard apagado também
-# deixaria o merge passar). O fixture troca o `pre-merge-commit` por um que raspura só a
-# variável e despacha os guards como o git faria: o sinal é o que decide, e a doutrina de
-# falhar FECHADO quando não há sinal NÃO mudou.
-m3s="$TMP/m3s"; armar "$m3s" "$principal" "$BASE"
-printf 'só trabalho meu\n' > "$m3s/meu-trabalho.txt"
-commitar "$m3s" "commit próprio, sem tocar no invariante"
-cat > "$m3s/loop/hooks/pre-merge-commit" <<'RASPA'
-#!/usr/bin/env bash
-# raspura o sinal do outro lado e só então despacha os guards (é o git sem o GITHEAD_*)
-for nome in $(env | sed -n 's/^\(GITHEAD_[^=]*\)=.*/\1/p'); do unset "$nome"; done
-exec bash "$(git rev-parse --show-toplevel)/loop/hooks/pre-commit"
-RASPA
-chmod +x "$m3s/loop/hooks/pre-merge-commit"
-SHA_M3S=$(git -C "$m3s" rev-parse HEAD)
-r=$(merge_auto "$m3s" "" origin/main)
-assert_recusa "$(exit_de "$r")" "M3-SEM-SINAL: sem o sinal, a MESMA montagem volta a ser RECUSADA"
-assert_contains "$(saida_de "$r")" "$INV" "M3-SEM-SINAL: e a mensagem nomeia o invariante (não é recusa anônima)"
-assert_igual "$(git -C "$m3s" rev-parse HEAD)" "$SHA_M3S" "M3-SEM-SINAL: e o HEAD ficou PARADO (nada foi commitado)"
+# ── M-DEL · a DELEÇÃO introduzida na RESOLUÇÃO do merge: RECUSADA, HEAD parado ───────
+# A montagem é a forma realista: a branch conflita no README, a main reescreveu o invariante
+# e NÃO o apagou, e quem resolve apaga o invariante de carona no commit da resolução. É o
+# caminho em que um invariante incômodo sai do gate sem ninguém decidir nada — e o único
+# tipo de dano que sobrou nesta família de guardas.
+md="$TMP/md"; armar "$md" "$principal" "$BASE"
+printf 'ponta da BRANCH\n' > "$md/README.md"; commitar "$md" "a branch reescreve o README"
+git -C "$md" merge --no-edit origin/main >/dev/null 2>&1 || true
+if [ -n "$(git -C "$md" rev-parse -q --verify MERGE_HEAD)" ]; then ok "M-DEL: o merge conflitou de verdade (MERGE_HEAD presente)"
+else falha "M-DEL: o merge conflitou de verdade" "sem MERGE_HEAD: o caso não mede resolução"; fi
+SHA_MD=$(git -C "$md" rev-parse HEAD)
+printf 'resolvido\n' > "$md/README.md"; git -C "$md" add README.md
+# `-f` porque o lado da main deixou o arquivo MODIFICADO no índice do merge.
+git -C "$md" rm -qf "$INV"
+if git -C "$md" diff --cached --name-status | grep -q "^D	$INV$"; then ok "M-DEL: a resolução deixa um D no índice (a premissa do caso)"
+else falha "M-DEL: a resolução deixa um D no índice" "name-status: $(git -C "$md" diff --cached --name-status | tr '\n' ' ')"; fi
+saida=$( cd "$md" && git commit --no-edit 2>&1 ); rc=$?
+assert_recusa "$rc" "M-DEL: resolver o merge apagando invariante que a main tem é RECUSADO"
+assert_contains "$saida" "$INV" "M-DEL: e a mensagem nomeia o invariante"
+assert_igual "$(git -C "$md" rev-parse HEAD)" "$SHA_MD" "M-DEL: e o HEAD ficou PARADO (o merge não foi concluído)"
+if [ -n "$(git -C "$md" rev-parse -q --verify "HEAD:$INV")" ]; then ok "M-DEL: e o invariante continua no HEAD (a consequência, não só o exit)"
+else falha "M-DEL: o invariante continua no HEAD" "sumiu do HEAD"; fi
 
-# e a válvula declarada continua de pé — ela deixou de ser a ÚNICA saída deste caminho,
-# mas ninguém a retirou: quem está com pressa ou sem o sinal ainda tem por onde sair.
-m3b="$TMP/m3b"; armar "$m3b" "$principal" "$BASE"
-printf 'só trabalho meu\n' > "$m3b/meu-trabalho.txt"
-commitar "$m3b" "commit próprio, sem tocar no invariante"
-r=$(merge_auto "$m3b" "DESKCOMM_GOV_INVARIANTS_EDIT=1" origin/main)
-assert_exit "$(exit_de "$r")" 0 "M3: com a válvula declarada o MESMO merge segue passando (a saída não foi retirada)"
-assert_igual "$(pais_de "$m3b")" "2" "M3: e o merge foi mesmo feito"
-assert_contains "$(git -C "$m3b" show "HEAD:$INV")" "MARCADOR-MAIN" "M3: e o invariante da main chegou ao HEAD"
+# ── M-VÁLVULA · a mesma deleção, com a saída declarada ───────────────────────────────
+mv="$TMP/mv"; armar "$mv" "$principal" "$BASE"
+printf 'ponta da BRANCH\n' > "$mv/README.md"; commitar "$mv" "a branch reescreve o README"
+git -C "$mv" merge --no-edit origin/main >/dev/null 2>&1 || true
+printf 'resolvido\n' > "$mv/README.md"; git -C "$mv" add README.md
+git -C "$mv" rm -qf "$INV"
+saida=$( cd "$mv" && DESKCOMM_GOV_INVARIANTS_EDIT=1 git commit --no-edit 2>&1 ); rc=$?
+assert_exit "$rc" 0 "M-VÁLVULA: com DESKCOMM_GOV_INVARIANTS_EDIT=1 a mesma resolução passa"
+assert_igual "$(pais_de "$mv")" "2" "M-VÁLVULA: e o merge foi concluído (2 pais)"
+if [ -z "$(git -C "$mv" rev-parse -q --verify "HEAD:$INV")" ]; then ok "M-VÁLVULA: e o invariante saiu do HEAD, como pedido"
+else falha "M-VÁLVULA: o invariante saiu do HEAD" "segue lá"; fi
 
-# ── M4 · o sinal é FORJÁVEL: um commit COMUM com `GITHEAD_*` não vira merge ───────────
-# `GITHEAD_<sha>` é variável de ambiente, e quem roda o commit a escreve. Um `git commit`
-# COMUM (sem merge) que edita o invariante à mão, com o sinal apontando para a ponta da main,
-# tem de ser recusado como qualquer edição: as condições 3 a 6 do guard prendem o resultado ao
-# conteúdo da main, e o sinal sozinho não inocenta nada.
+# ── M4 · o sinal do outro lado não LAVA uma deleção ─────────────────────────────────
+# `GITHEAD_<sha>` é variável de ambiente: quem commita a escreve. Um `git commit` COMUM
+# (sem merge) que apaga o invariante com o sinal apontando para a main tem de ser recusado
+# como qualquer deleção — a régua é o que a main TEM, não o sinal que a sessão apresenta.
 m4="$TMP/m4"; armar "$m4" "$principal" "$BASE"
-inv "$SLOT_BRANCH" "$SLOT_MAIN" 'it("MARCADOR-FORJADO", () => {});' > "$m4/$INV"
-git -C "$m4" add -A >/dev/null
+git -C "$m4" rm -q "$INV"
 SHA_M4=$(git -C "$m4" rev-parse HEAD)
-r=$( cd "$m4" && env "GITHEAD_$PONTA_MAIN=origin/main" git commit -q -m "edição disfarçada" 2>&1 ); rc=$?
-assert_recusa "$rc" "M4: commit comum com GITHEAD_<ponta> forjado que edita o invariante é RECUSADO"
-assert_contains "$r" "$INV" "M4: e a mensagem nomeia o invariante"
+saida=$( cd "$m4" && env "GITHEAD_$PONTA_MAIN=origin/main" git commit -m "apaga com o sinal forjado" 2>&1 ); rc=$?
+assert_recusa "$rc" "M4: commit comum com GITHEAD_<ponta> forjado que APAGA o invariante é RECUSADO"
+assert_contains "$saida" "$INV" "M4: e a mensagem nomeia o invariante"
 assert_igual "$(git -C "$m4" rev-parse HEAD)" "$SHA_M4" "M4: e o HEAD ficou PARADO (nada foi commitado)"
 
 printf '\nmerge-auto-commit-passa-pelos-guards: %s casos, %s falha(s)\n' "$casos" "$falhas"

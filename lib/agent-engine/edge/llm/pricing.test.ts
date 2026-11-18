@@ -82,9 +82,12 @@ describe("costCents — cada tarifa isolada, por modelo", () => {
     ["gpt-4o-mini", 15, 60, 7.5, 15, 15],
     ["gpt-4o", 250, 1000, 125, 250, 250],
     ["gpt-4o-2024-05-13", 500, 1500, 500, 500, 500],
-    // Linha 6 (conferida em 11/10/2026): leitura de cache a 0.05× só no gpt-6.1-sol.
+    // Linha 6 (conferida em 11/10/2026; Terra em 27/10/2026): leitura de cache a
+    // 0.05× só no gpt-6.1-sol e no gpt-6.1-terra.
     ["gpt-6-astra", 1000, 5000, 100, 1250, 1250],
     ["gpt-6.1-sol", 200, 1000, 10, 250, 250],
+    // Terra: helpers usam 1M de entrada (>272k), logo entrada/cache estão na faixa longa.
+    ["gpt-6.1-terra", 200, 500, 10, 250, 250],
     ["gpt-6-luna", 10, 50, 1, 12.5, 12.5],
     ["gpt-5.6-terra", 200, 1200, 20, 250, 250],
     ["gpt-5.6-sol", 400, 2000, 40, 500, 500],
@@ -286,6 +289,48 @@ describe("costCents — id com prefixo provider/ (formato OpenRouter)", () => {
     expect(custo).not.toBeNull();
     expect(custo).toBeGreaterThan(22);
     expect(custo).toBeLessThan(24);
+  });
+});
+
+describe("costCents — id com PONTO no lugar do hífen (formato atual do OpenRouter)", () => {
+  // Issue #1931: o relator mediu 48 de 60 execuções de `anthropic/claude-haiku-5.5`
+  // com `cost_cents` nulo, enquanto `anthropic/claude-haiku-4-5` precificava. O
+  // recorte do prefixo (issue #1880) sozinho não bastava: a tabela indexa
+  // `claude-haiku-5-5` (hífen) e o OpenRouter publica a versão com ponto. Sem isso o
+  // custo só não ficava nulo quando o próprio OpenRouter informava `usage.cost`.
+  const USO: TokenUsage = {
+    inputTokens: 359_369,
+    outputTokens: 4_070,
+    cacheReadTokens: 294_128,
+    cacheWriteTokens: 0,
+  };
+
+  it("o id com ponto custa o MESMO que o id canônico com hífen", () => {
+    const canonico = costCents("claude-haiku-5-5", USO, "1h");
+    const comPonto = costCents("anthropic/claude-haiku-5.5", USO, "1h");
+    expect(canonico).not.toBeNull();
+    expect(comPonto).not.toBeNull();
+    expect(comPonto).toBeCloseTo(canonico as number, 10);
+  });
+
+  it.each([
+    // id com PONTO, id canônico com hífen
+    ["anthropic/claude-haiku-5.5", "claude-haiku-5-5"],
+    ["anthropic/claude-haiku-4.5", "claude-haiku-4-5"],
+    ["anthropic/claude-sonnet-5.5", "claude-sonnet-5-5"],
+    ["anthropic/claude-opus-5.5", "claude-opus-5-5"],
+  ])("%s precifica como %s em todas as tarifas", (comPonto, canonico) => {
+    expect(entrada(comPonto)).toBeCloseTo(entrada(canonico) as number, 6);
+    expect(saida(comPonto)).toBeCloseTo(saida(canonico) as number, 6);
+    expect(leituraDeCache(comPonto)).toBeCloseTo(leituraDeCache(canonico) as number, 6);
+    expect(gravacaoDeCache(comPonto, "1h")).toBeCloseTo(
+      gravacaoDeCache(canonico, "1h") as number,
+      6,
+    );
+  });
+
+  it("ponto + sufixo de data do vendor casa a linha sem data", () => {
+    expect(entrada("anthropic/claude-haiku-4.5-20251001")).toBeCloseTo(100, 6);
   });
 });
 

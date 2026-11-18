@@ -28,6 +28,7 @@ import { ApiError } from "@/lib/api/types";
 import { useT } from "@/hooks/i18n/useT";
 import { useIdioma } from "@/lib/i18n/IdiomaProvider";
 import { copyToClipboard } from "@/lib/clipboard";
+import { formatCents } from "@/lib/money";
 
 // ---------------------------------------------------------------------------
 // Schema (mirrors server Zod; client keeps it in sync)
@@ -74,6 +75,7 @@ export interface PlanoParaEscolher {
   id: string;
   nome: string;
   preco_cents: number;
+  moeda: string;
   intervalo: string;
   trial_dias: number;
 }
@@ -81,15 +83,26 @@ export interface PlanoParaEscolher {
 /** Valor do item "Sem cobrança": o Select do Radix não aceita valor vazio. */
 const ISENTA = "isenta";
 
-function formatarPreco(cents: number, idioma: string): string {
-  return new Intl.NumberFormat(idioma, { style: "currency", currency: "BRL" }).format(cents / 100);
+/** O preço na moeda do plano (migration 9332), na convenção dela. */
+function formatarPreco(cents: number, moeda: string): string {
+  return formatCents(cents, moeda);
 }
 
 export function NewTenantForm({
   cobranca,
+  moldeDeIa = null,
+  agenciasLigado = false,
 }: {
   /** Spec da cobrança §9: ligada, o plano de cobrança substitui o rótulo antigo (D-2). */
   cobranca: { ligada: boolean; planos: readonly PlanoParaEscolher[] };
+  /**
+   * O molde de IA da instalação (migration 9096), quando há um: a empresa que
+   * nascer deste formulário recebe a IA dele. Dito AQUI, no momento de criar,
+   * e não só em Recursos opcionais — é aqui que a pessoa decide criar.
+   */
+  moldeDeIa?: { nome: string } | null;
+  /** Módulo `agencias` (doc 321). Desligado, o bloco some e o pedido não leva `agencia`. */
+  agenciasLigado?: boolean;
 }) {
   const t = useT();
   const idioma = useIdioma();
@@ -109,6 +122,7 @@ export function NewTenantForm({
       plan: "standard",
       plano_id: undefined,
       owner_email: "",
+      agencia: { habilitada: false, limite_clientes: 0, clientes_inclusos: false },
     },
   });
 
@@ -148,6 +162,7 @@ export function NewTenantForm({
         ...(cobranca.ligada ? { plano_id: values.plano_id } : { plan: values.plan }),
         owner_email: values.owner_email,
         owner_interface_settings: ownerInterface,
+        ...(agenciasLigado ? { agencia: values.agencia } : {}),
       });
 
       toast.success(t("Tenant criado com sucesso!"));
@@ -317,7 +332,7 @@ export function NewTenantForm({
                     <SelectItem value={ISENTA}>{t("Sem cobrança (isenta)")}</SelectItem>
                     {cobranca.planos.map((p) => (
                       <SelectItem key={p.id} value={p.id}>
-                        {p.nome} · {formatarPreco(p.preco_cents, idioma)}{" "}
+                        {p.nome} · {formatarPreco(p.preco_cents, p.moeda)}{" "}
                         {p.intervalo === "mes" ? t("por mês") : t("por ano")} · {p.trial_dias} {t("dias de teste")}
                       </SelectItem>
                     ))}
@@ -325,32 +340,62 @@ export function NewTenantForm({
                 </Select>
                 <p className="text-xs text-muted-foreground">
                   {cobranca.planos.length === 0
-                    ? t("Nenhum plano criado ainda: a empresa nasce isenta. Crie planos em Cobrança e atribua um no painel da empresa.")
-                    : t("Com um plano, a empresa começa em teste grátis pelos dias do plano. Isenta, ela não paga e não tem limites.")}
+                    ? t(
+                        "Nenhum plano criado ainda: a empresa nasce isenta. Crie planos em Cobrança e atribua um no painel da empresa.",
+                      )
+                    : t(
+                        "Com um plano, a empresa começa em teste grátis pelos dias do plano. Isenta, ela não paga e não tem limites.",
+                      )}
                 </p>
               </div>
             ) : (
-            <div className="space-y-1.5">
-              <Label htmlFor="plan">{t("Plano")}</Label>
-              <Select
-                value={planValue}
-                onValueChange={(v) => setValue("plan", v as "standard" | "pro" | "enterprise")}
-              >
-                <SelectTrigger id="plan" aria-label={t("Plano")}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="standard">Standard</SelectItem>
-                  <SelectItem value="pro">Pro</SelectItem>
-                  <SelectItem value="enterprise">Enterprise</SelectItem>
-                </SelectContent>
-              </Select>
-              {errors.plan && (
-                <p className="text-xs text-error-fg">{t(errors.plan.message ?? "")}</p>
-              )}
-            </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="plan">{t("Plano")}</Label>
+                <Select
+                  value={planValue}
+                  onValueChange={(v) => setValue("plan", v as "standard" | "pro" | "enterprise")}
+                >
+                  <SelectTrigger id="plan" aria-label={t("Plano")}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="standard">Standard</SelectItem>
+                    <SelectItem value="pro">Pro</SelectItem>
+                    <SelectItem value="enterprise">Enterprise</SelectItem>
+                  </SelectContent>
+                </Select>
+                {errors.plan && (
+                  <p className="text-xs text-error-fg">{t(errors.plan.message ?? "")}</p>
+                )}
+              </div>
             )}
 
+            {agenciasLigado && (
+            <div className="space-y-3 rounded-lg border p-4">
+              <label className="flex items-center gap-2">
+                <input type="checkbox" {...register("agencia.habilitada")} />
+                {t("Permitir que esta agência administre organizações clientes")}
+              </label>
+              <Label htmlFor="limite_clientes">{t("Limite de organizações clientes")}</Label>
+              <Input
+                id="limite_clientes"
+                type="number"
+                min={0}
+                max={10000}
+                step={1}
+                {...register("agencia.limite_clientes", { valueAsNumber: true })}
+              />
+              <label className="flex items-center gap-2">
+                <input type="checkbox" {...register("agencia.clientes_inclusos")} />
+                {t("Incluir clientes no acordo comercial da agência")}
+              </label>
+              <p className="text-sm text-muted-foreground">
+                {t(
+                  "Autoriza criar clientes sem assinatura individual, mesmo com cobrança ativa. Valores e porcentagens são negociados separadamente; não há cobrança automática por cliente.",
+                )}
+              </p>
+            </div>
+            )}
             {/* owner_email */}
             <div className="space-y-1.5">
               <Label htmlFor="owner_email">
@@ -374,6 +419,13 @@ export function NewTenantForm({
               role="admin"
               disabled={isSubmitting}
             />
+            {moldeDeIa && (
+              <p className="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground" data-testid="aviso-molde-de-ia">
+                {t(
+                  "A IA desta empresa vai nascer copiada de {empresa}, o molde escolhido em Recursos opcionais: o modelo de cada função e o modelo padrão, com a chave de IA desta instalação.",
+                ).replace("{empresa}", moldeDeIa.nome)}
+              </p>
+            )}
             {/* Actions */}
             <div className="flex items-center gap-3 pt-2">
               <Button

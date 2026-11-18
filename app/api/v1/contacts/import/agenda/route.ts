@@ -28,8 +28,8 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import {
   CHANNEL_SESSION_REF_COLUMNS,
   DEFAULT_CHANNEL_PROVIDER,
@@ -39,9 +39,15 @@ import {
   type ChannelSessionRef,
 } from "@/lib/channels";
 import { criarDepsDeAgenda, sincronizarAgendaDoCelular } from "@/lib/contacts/agenda-do-celular";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  classificarFalhaDaAgenda,
+  type MotivoDaFalhaDaAgenda,
+} from "@/lib/channels/agenda-do-aparelho-falha";
 
 export const dynamic = "force-dynamic";
 
@@ -56,15 +62,66 @@ const corpoSchema = z.object({
   offset: z.number().int().min(0).max(100_000_000).default(0),
 });
 
+/**
+ * O QUE CADA MOTIVO DE FALHA DIZ AO OPERADOR (#4102).
+ *
+ * A frase é a parte visível do diagnóstico, e é por isso que ela muda por
+ * motivo: um 400 em `contacts/all` significa store desligado e só destrava
+ * ligando a opção (dizer "não respondeu" mandava a pessoa conferir uma conexão
+ * que estava boa — o dano do relato); um timeout de verdade pede olhar a
+ * conexão; um 5xx é do servidor do canal e pede esperar; 401/403 é sessão
+ * inválida e pede reconectar.
+ *
+ * O status do provedor NUNCA aparece na frase — ele fica no log, com `causa`.
+ */
+const RESPOSTA_POR_MOTIVO: Record<MotivoDaFalhaDaAgenda, { status: number; code: string; mensagem: string }> = {
+  acervo_desligado: {
+    status: 409,
+    code: "channel_acervo_desligado",
+    mensagem:
+      "A agenda do celular não pode ser lida: ligue a opção 'Guardar o histórico anterior à vinculação' em Conexões e conecte o número de novo. Sem essa opção o aparelho não entrega a agenda.",
+  },
+  sessao_recusada: {
+    status: 502,
+    code: "channel_session_rejected",
+    mensagem: "O WhatsApp recusou a sessão deste número. Reconecte-o em Conexões e tente de novo.",
+  },
+  // A frase do timeout é a MESMA de antes de propósito: aqui ela está certa.
+  sem_resposta: {
+    status: 504,
+    code: "channel_timeout",
+    mensagem: "O WhatsApp deste número não respondeu. Confira se ele está conectado e tente de novo.",
+  },
+  servidor: {
+    status: 502,
+    code: "channel_unavailable",
+    mensagem: "O serviço do WhatsApp deste número falhou. Tente de novo em instantes.",
+  },
+  indisponivel: {
+    status: 502,
+    code: "channel_unavailable",
+    mensagem: "Não foi possível ler a agenda do celular agora. Tente de novo em instantes.",
+  },
+};
+
 export async function POST(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
   // Escrita agent+ — a mesma régua de `POST /api/v1/contacts/import`: sincronizar
-  // a agenda cria contato em bloco tanto quanto a planilha.
-  const authz = await requireRole("agent", { requestId, resource: "contacts" });
+  // a agenda cria contato em bloco tanto quanto a planilha. Sessão OU token de
+  // integração (Spec 33, R2): `mcp:write` e papel `agent`.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "contacts",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "contacts", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const corpo = corpoSchema.safeParse(await req.json().catch(() => null));
   if (!corpo.success) {
@@ -76,7 +133,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     .from("channel_sessions")
     .select(`${CHANNEL_SESSION_REF_COLUMNS}, status`)
     .eq("id", corpo.data.channel_session_id)
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .maybeSingle();
   // A ausência (outro tenant, id que não existe) e o erro de banco têm o MESMO
   // desfecho visível aqui — não vazar que o id existe em outra organização.
@@ -124,16 +181,17 @@ export async function POST(req: NextRequest): Promise<Response> {
     const resumo = await sincronizarAgendaDoCelular(
       criarDepsDeAgenda(admin, (session, pagina) =>
         listar({
-          organizationId: authz.org.orgId,
+          organizationId: authz.organizationId,
           sessionRef: session,
           limit: pagina.limit,
           offset: pagina.offset,
         }),
       ),
       {
-        organizationId: authz.org.orgId,
+        organizationId: authz.organizationId,
         session: sessionRef,
-        actorUserId: authz.user.id,
+        actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+        actorApiTokenId: authz.apiTokenId ?? null,
         requestId,
         // O cursor do clique anterior: a rota só repassa, quem lê é o serviço.
         offset: corpo.data.offset,
@@ -141,19 +199,21 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
     return ok(resumo, { requestId });
   } catch (err) {
-    // O transporte (fora do ar, sem configuração, teto estourado) vira a MESMA
-    // frase de saída da rota de grupos — aponta para a conexão e nunca vaza
-    // status/corpo do provedor (mesma doutrina do cabeçalho do cliente do
-    // transporte: o erro de lá carrega só o status HTTP).
-    logger.warn("sync-agenda: o transporte do canal não respondeu", {
+    // A leitura pode falhar por motivos que NÃO são a mesma coisa: store da
+    // sessão desligado (400 — pede ligar uma opção), sessão inválida (401/403),
+    // servidor do canal (5xx), relógio/rede (timeout) ou o que não se sabe.
+    // Cada um tem a sua frase; antes, todos viravam "o WhatsApp não respondeu",
+    // e quem estava conectado ia conferir uma conexão que estava boa (#4102).
+    const falha = classificarFalhaDaAgenda(err);
+    // A causa técnica — o status que o transporte devolveu (`contacts_all_400`)
+    // — fica AQUI, para diagnóstico: a tela mostra o motivo em português, o log
+    // guarda o que o transporte respondeu.
+    logger.warn("sync-agenda: a leitura da agenda falhou", {
       requestId,
-      causa: err instanceof Error ? err.message.slice(0, 160) : String(err),
+      motivo: falha.motivo,
+      causa: falha.causa.slice(0, 160),
     });
-    return fail(
-      "channel_unavailable",
-      "O WhatsApp deste número não respondeu. Confira se ele está conectado e tente de novo.",
-      502,
-      { requestId },
-    );
+    const resposta = RESPOSTA_POR_MOTIVO[falha.motivo];
+    return fail(resposta.code, resposta.mensagem, resposta.status, { requestId });
   }
 }

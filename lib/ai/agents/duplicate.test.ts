@@ -7,6 +7,7 @@
 import { describe, it, expect, vi } from "vitest";
 
 import { duplicateAgentWithVersion } from "./duplicate";
+import { agentMcpCreateSchema } from "./validation";
 
 // O módulo `login_codex` DESLIGADO em todo o arquivo, salvo onde um caso o liga:
 // os casos com `anthropic` provam que a régua do #2458 não toca os outros.
@@ -62,14 +63,30 @@ const VERSAO_PUBLICADA = {
   created_by: "someone",
 };
 
-/** Fake mínimo do supabase-js: guarda os inserts para inspeção. */
-function makeDb(opts: { agent: unknown; draft?: unknown; published?: unknown }) {
+/**
+ * Fake mínimo do supabase-js: guarda os inserts para inspeção e IMITA o índice
+ * `ai_agents_name_unique`. Sem isso o teste de duplicar duas vezes passaria no
+ * fake e bateria no banco de verdade: a colisão é do par (organização, nome), e
+ * é ele que este fake recusa com o 23505 que o banco devolve.
+ */
+function makeDb(opts: {
+  agent: unknown;
+  draft?: unknown;
+  published?: unknown;
+  /** Estado inicial do índice: nomes já gravados, por organização. */
+  nomes?: Record<string, string[]>;
+}) {
   const inserts: Array<{ table: string; row: Record<string, unknown> }> = [];
+  const nomes = opts.nomes ?? {};
 
   function builder(table: string) {
     const state: Record<string, unknown> = {};
+    let soNomes = false;
     const api: Record<string, unknown> = {
-      select: () => api,
+      select: (cols?: string) => {
+        soNomes = cols === "name";
+        return api;
+      },
       eq: (col: string, val: unknown) => {
         state[col] = val;
         return api;
@@ -79,6 +96,26 @@ function makeDb(opts: { agent: unknown; draft?: unknown; published?: unknown }) 
       update: () => api,
       insert: (row: Record<string, unknown>) => {
         inserts.push({ table, row });
+        if (table === "ai_agents") {
+          const daOrg = (nomes[String(row.organization_id)] ??= []);
+          const nome = String(row.name);
+          // `unique (organization_id, name)`, simulado.
+          if (daOrg.includes(nome)) {
+            return {
+              select: () => ({
+                single: async () => ({
+                  data: null,
+                  error: {
+                    code: "23505",
+                    message:
+                      'duplicate key value violates unique constraint "ai_agents_name_unique"',
+                  },
+                }),
+              }),
+            };
+          }
+          daOrg.push(nome);
+        }
         const id = table === "ai_agents" ? "novo-agente" : "nova-versao";
         return {
           select: () => ({ single: async () => ({ data: { ...row, id }, error: null }) }),
@@ -90,6 +127,20 @@ function makeDb(opts: { agent: unknown; draft?: unknown; published?: unknown }) 
         if (state.status === "published") return { data: opts.published ?? null, error: null };
         return { data: null, error: null };
       },
+      // A consulta de nomes é a única que NÃO termina em `single`/`maybeSingle`.
+      then: (resolve: (v: unknown) => unknown) =>
+        resolve({
+          // Sem o filtro de organização, a leitura devolve os nomes de TODAS —
+          // como o service role faria. É o que torna o caso "outra organização"
+          // capaz de reprovar a consulta que esquece o `.eq`.
+          data: soNomes
+            ? (state.organization_id === undefined
+                ? Object.values(nomes).flat()
+                : (nomes[String(state.organization_id)] ?? [])
+              ).map((name) => ({ name }))
+            : [],
+          error: null,
+        }),
     };
     return api;
   }
@@ -151,7 +202,12 @@ describe("duplicateAgentWithVersion", () => {
   });
 
   it("prefere a draft mais recente à published", async () => {
-    const draft = { ...VERSAO_PUBLICADA, id: "version-2", status: "draft", system_prompt: "rascunho novo" };
+    const draft = {
+      ...VERSAO_PUBLICADA,
+      id: "version-2",
+      status: "draft",
+      system_prompt: "rascunho novo",
+    };
     const { db, inserts } = makeDb({ agent: AGENTE_MCP, draft, published: VERSAO_PUBLICADA });
 
     await duplicateAgentWithVersion(db, {
@@ -185,7 +241,10 @@ describe("duplicateAgentWithVersion", () => {
     expect(agente.row.kind).toBe("mcp_agent");
 
     const versao = inserts.find((i) => i.table === "ai_agent_versions");
-    expect(versao, "sem a v1 a cópia é a casca que este módulo existe para não produzir").toBeDefined();
+    expect(
+      versao,
+      "sem a v1 a cópia é a casca que este módulo existe para não produzir",
+    ).toBeDefined();
     expect(versao!.row.status).toBe("draft");
     expect(versao!.row.version_number).toBe(1);
     // A ponte do formato legado: `model` vira provider/modelo e os dois nulos
@@ -232,7 +291,11 @@ describe("duplicateAgentWithVersion", () => {
 });
 
 describe("duplicar com a assinatura do ChatGPT na origem (#2458)", () => {
-  const ORIGEM_ASSINATURA = { ...VERSAO_PUBLICADA, provider: "openai-assinatura", model: "gpt-5.5" };
+  const ORIGEM_ASSINATURA = {
+    ...VERSAO_PUBLICADA,
+    provider: "openai-assinatura",
+    model: "gpt-5.5",
+  };
   const pedido = { orgId: ORG, agentId: "agent-1", actorUserId: ACTOR, requireVersion: true };
 
   it("módulo desligado: recusa com a frase do módulo e não grava nem o agente", async () => {
@@ -256,5 +319,130 @@ describe("duplicar com a assinatura do ChatGPT na origem (#2458)", () => {
       "openai-assinatura",
     );
     modulo.loginCodex = false;
+  });
+});
+
+/**
+ * Duplicar o MESMO agente duas vezes (#3978). O nome da cópia era literalmente
+ * `${name} (cópia)`: a segunda tentativa gravava o mesmo nome da primeira,
+ * batia em `ai_agents_name_unique` e a rota devolvia 500. Aqui o índice é
+ * simulado (não há banco de pé no teste) — a segunda duplicação devolve
+ * `agent_insert_failed` mesmo código 23505 do banco → 500 na rota.
+ */
+describe("duplicar o mesmo agente mais de uma vez (#3978)", () => {
+  const pedido = { orgId: ORG, agentId: "agent-1", actorUserId: ACTOR, requireVersion: true };
+
+  function nomeInserido(inserts: Array<{ table: string; row: Record<string, unknown> }>): string {
+    const agente = inserts.filter((i) => i.table === "ai_agents").at(-1);
+    if (!agente) throw new Error("nenhum insert em ai_agents");
+    return String(agente.row.name);
+  }
+
+  it("(cópia), (cópia 2), (cópia 3) — e o nome do original nunca volta", async () => {
+    const { db, inserts } = makeDb({
+      agent: AGENTE_MCP,
+      published: VERSAO_PUBLICADA,
+      // Estado do índice: o original já está gravado.
+      nomes: { [ORG]: ["Suporte"] },
+    });
+
+    const nomes: string[] = [];
+    for (let i = 1; i <= 3; i++) {
+      const res = await duplicateAgentWithVersion(db, pedido);
+      expect(res.ok, `duplicação ${i} recusada: ${res.ok ? "" : (res.message ?? res.error)}`).toBe(
+        true,
+      );
+      nomes.push(nomeInserido(inserts));
+    }
+
+    expect(nomes).toEqual(["Suporte (cópia)", "Suporte (cópia 2)", "Suporte (cópia 3)"]);
+    expect(nomes).not.toContain("Suporte");
+  });
+
+  it("não pula número: (cópia) livre com (cópia 2) ocupada dá (cópia)", async () => {
+    const { db, inserts } = makeDb({
+      agent: AGENTE_MCP,
+      published: VERSAO_PUBLICADA,
+      nomes: { [ORG]: ["Suporte", "Suporte (cópia 2)"] },
+    });
+
+    const res = await duplicateAgentWithVersion(db, pedido);
+    expect(res.ok).toBe(true);
+    expect(nomeInserido(inserts)).toBe("Suporte (cópia)");
+  });
+
+  it("nome que já é cópia continua a linhagem: (cópia) vira (cópia 2), não (cópia) (cópia)", async () => {
+    const copia = { ...AGENTE_MCP, name: "Suporte (cópia)" };
+    const { db, inserts } = makeDb({
+      agent: copia,
+      published: VERSAO_PUBLICADA,
+      nomes: { [ORG]: ["Suporte", "Suporte (cópia)"] },
+    });
+
+    const res = await duplicateAgentWithVersion(db, pedido);
+    expect(res.ok).toBe(true);
+    expect(nomeInserido(inserts)).toBe("Suporte (cópia 2)");
+  });
+
+  it("teto de 120 do schema: o sufixo come o fim do nome e o resultado continua válido", async () => {
+    const longo = "z".repeat(120);
+    const { db, inserts } = makeDb({
+      agent: { ...AGENTE_MCP, name: longo },
+      published: VERSAO_PUBLICADA,
+      nomes: { [ORG]: [longo] },
+    });
+
+    const primeira = await duplicateAgentWithVersion(db, pedido);
+    expect(primeira.ok).toBe(true);
+    const nome1 = nomeInserido(inserts);
+    expect(nome1.length).toBe(120);
+    expect(nome1.endsWith(" (cópia)")).toBe(true);
+    // A MESMA régua com que a tela cria um agente: `agentMcpCreateSchema.name`.
+    expect(agentMcpCreateSchema.shape.name.safeParse(nome1).success).toBe(true);
+
+    const segunda = await duplicateAgentWithVersion(db, pedido);
+    expect(segunda.ok).toBe(true);
+    const nome2 = nomeInserido(inserts);
+    expect(nome2).not.toBe(nome1);
+    expect(nome2.endsWith(" (cópia 2)")).toBe(true);
+    expect(nome2.length).toBeLessThanOrEqual(120);
+    expect(agentMcpCreateSchema.shape.name.safeParse(nome2).success).toBe(true);
+  });
+
+  it("duas duplicações SIMULTÂNEAS: a que perde a corrida tenta o próximo nome, não 500", async () => {
+    const { db, inserts } = makeDb({
+      agent: AGENTE_MCP,
+      published: VERSAO_PUBLICADA,
+      nomes: { [ORG]: ["Suporte"] },
+    });
+
+    // As duas leem a lista antes de qualquer uma gravar: escolhem o mesmo nome.
+    const [a, b] = await Promise.all([
+      duplicateAgentWithVersion(db, pedido),
+      duplicateAgentWithVersion(db, pedido),
+    ]);
+
+    expect(a.ok && b.ok, `${a.ok ? "" : a.message} ${b.ok ? "" : b.message}`).toBe(true);
+    const gravados = inserts.filter((i) => i.table === "ai_agents").map((i) => String(i.row.name));
+    // A colisão aconteceu (3 tentativas para 2 cópias) e foi resolvida.
+    expect(gravados).toEqual(["Suporte (cópia)", "Suporte (cópia)", "Suporte (cópia 2)"]);
+  });
+
+  it("outra organização com o mesmo nome não ocupa o nome desta", async () => {
+    const OUTRA = "org-2";
+    const { db, inserts } = makeDb({
+      agent: AGENTE_MCP,
+      published: VERSAO_PUBLICADA,
+      nomes: {
+        // A outra organização já tem as três primeiras cópias; esta, nenhuma.
+        [OUTRA]: ["Suporte", "Suporte (cópia)", "Suporte (cópia 2)"],
+        [ORG]: ["Suporte"],
+      },
+    });
+
+    const res = await duplicateAgentWithVersion(db, pedido);
+    expect(res.ok).toBe(true);
+    // Se a lista de nomes vazasse entre organizações, sairia "(cópia 3)".
+    expect(nomeInserido(inserts)).toBe("Suporte (cópia)");
   });
 });

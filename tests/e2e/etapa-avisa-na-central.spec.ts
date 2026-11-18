@@ -124,6 +124,20 @@ test.afterAll(async () => {
   if (userId) await db.auth.admin.deleteUser(userId);
 });
 
+/**
+ * A tela de Etapas nasce com cada funil RECOLHIDO quando a empresa tem mais de
+ * um (#4083) — e esta organização tem o funil semeado no onboarding MAIS o
+ * «Pedidos» criado aqui. O cabeçalho é o que abre; com um funil só ele já vem
+ * aberto, e um clique cego FECHARIA, daí a checagem do `aria-expanded`.
+ */
+async function abrirOFunil(page: Page, pipelineId: string): Promise<void> {
+  const cabecalho = page.getByTestId(`abrir-funil-${pipelineId}`);
+  if ((await cabecalho.getAttribute("aria-expanded")) === "false") {
+    await cabecalho.click();
+    await expect(cabecalho).toHaveAttribute("aria-expanded", "true");
+  }
+}
+
 test("a etapa marcada avisa a equipe na Central; a vizinha, sem a marca, não", async ({ page }) => {
   test.setTimeout(240_000);
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -131,6 +145,7 @@ test("a etapa marcada avisa a equipe na Central; a vizinha, sem a marca, não", 
 
   // ---- 1. a chave, pela tela ----
   await page.goto("/app/settings/tenant/pipelines");
+  await abrirOFunil(page, funilId);
   const chave = page.getByTestId(`avisar-${etapaConfirmado}`);
   await expect(chave).toBeVisible({ timeout: ESPERA });
   await expect(chave, "vem desligada").toHaveAttribute("aria-checked", "false");

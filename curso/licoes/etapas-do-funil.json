@@ -1,0 +1,1027 @@
+{
+  "id": "etapas-do-funil",
+  "titulo": "Etapas do funil",
+  "tela": "/app/settings/tenant/pipelines",
+  "resumo": "Onde você monta as colunas de cada funil, do primeiro contato até a venda ou a desistência, e decide os motivos de perda.",
+  "licoes": [
+    {
+      "id": "etapas-do-funil-conhecendo",
+      "titulo": "Conhecendo a tela de Etapas do funil",
+      "objetivo": "Achar a tela, entender o que é cada coluna do funil e reconhecer os ajustes de cada etapa.",
+      "papel": "admin",
+      "busca": [
+        "etapas do funil",
+        "colunas do funil",
+        "configurar funil",
+        "etapas do quadro",
+        "chance de fechamento",
+        "esfriando",
+        "onde mudo as etapas"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "rota": "/app/crm",
+          "texto": "Etapas do funil é onde você monta as colunas de cada funil, ou seja, os passos que o cliente percorre até fechar com você. Ela não aparece direto no menu. No grupo \"CRM\" do menu, clique em \"Ver tudo em CRM\". Na parte \"Preparar a venda\" está o cartão \"Etapas do funil\". O caminho completo é: CRM › Ver tudo em CRM › Etapas do funil.",
+          "dica": "Só gerente ou administrador vê este cartão. Para um atendente, ele não aparece, e o endereço da tela leva a uma página de acesso negado.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ver tudo em CRM",
+                "exato": true
+              },
+              "rotulo": "Ver tudo em CRM",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Etapas do funil ",
+                "regex": true
+              },
+              "rotulo": "Abrir Etapas do funil",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Etapas do funil ",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Um cartão para cada funil",
+          "rota": "/app/settings/tenant/pipelines",
+          "texto": "Um funil é o caminho que o cliente faz até fechar, dividido em etapas. Cada etapa vira uma coluna no quadro do funil. Esta tela mostra um cartão para cada funil ativo da empresa. A Clínica Bem Viver tem dois: \"Pacientes\", aqui no alto, e \"Pilates\", que aparece quando você rola a tela. Nas próximas lições você mexe no \"Pilates\", para não mudar o funil principal.",
+          "dica": "Funil arquivado não aparece aqui. Para criar ou arquivar um funil inteiro, use a tela Funis, no menu CRM.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Etapas do funil",
+                "exato": true
+              },
+              "rotulo": "A tela",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Pacientes",
+                "exato": true,
+                "literal": true
+              },
+              "rotulo": "Um funil da empresa",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Cada linha é uma coluna do quadro",
+          "texto": "Em \"Etapas deste funil\", cada linha é uma coluna do quadro, na ordem em que o cliente avança: a linha 1 é a primeira coluna, à esquerda. Em cada linha você vê o nome da coluna, a chance de fechamento, as setas de ordem, o papel da coluna e o botão \"Arquivar\".",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "etapas-cabecalho",
+                "dentro": {
+                  "testid": "etapas-d1110000-0000-4000-8000-000000000001"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "etapas-cabecalho",
+                "dentro": {
+                  "testid": "etapas-d1110000-0000-4000-8000-000000000001"
+                }
+              },
+              "rotulo": "O que cada coluna diz",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "nome-d1110100-0000-4000-8000-000000000001"
+              },
+              "rotulo": "Nome",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "papel-d1110100-0000-4000-8000-000000000001"
+              },
+              "rotulo": "Papel",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "arquivar-d1110100-0000-4000-8000-000000000001"
+              },
+              "rotulo": "Arquivar",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "A coluna de fechamento e a de perda",
+          "texto": "Duas colunas têm papel especial. A de fechamento, marcada \"Aqui o cliente fecha\", é onde o negócio vira venda: no Pilates, \"Matrícula feita\". A de perda, \"Aqui o cliente desiste\", é onde ele se perde: \"Não seguiu\". O negócio que chega nelas é dado como ganho ou como perdido. Todo funil precisa de uma de cada. As outras colunas ficam em \"Nada especial\".",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "papel-d1110100-0000-4000-8000-000000000005"
+              },
+              "rotulo": "Aqui o negócio vira venda",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "papel-d1110100-0000-4000-8000-000000000006"
+              },
+              "rotulo": "Aqui o negócio se perde",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "A chance de fechamento",
+          "texto": "\"Chance de fechamento\" é um número de 0 a 100: de cada 100 negócios nesta coluna, quantos costumam fechar. A tela Desempenho usa esse número no quadro \"Previsão\", que estima quanto deve entrar. Embaixo do campo, o sistema conta o que já aconteceu no último ano: 13 negócios encerrados passaram por \"Aula experimental marcada\" e 8 foram ganhos (62%). Com 10 casos ou mais aparece o botão \"Usar 62%?\", que grava o número para você. Com menos, a tela avisa \"Poucos casos para sugerir\".",
+          "dica": "Nas colunas de fechamento e de perda o campo fica travado: elas valem 100 e 0. A frase \"nesta etapa agora\" mostra quantos negócios estão na coluna hoje e, pela mediana, há quantas horas eles entraram nela.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "probabilidade-d1110100-0000-4000-8000-000000000003"
+              },
+              "rotulo": "Chance, de 0 a 100",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "taxa-d1110100-0000-4000-8000-000000000003"
+              },
+              "rotulo": "O que já aconteceu",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "usar-taxa-d1110100-0000-4000-8000-000000000003"
+              },
+              "rotulo": "Gravar a sugestão",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "Esfriando e aviso para a equipe",
+          "texto": "Embaixo de cada etapa ficam mais dois ajustes. \"Janela de esfriando\" é quanto tempo um negócio pode ficar parado na coluna, sem conversa nem mudança, antes de aparecer como esfriando no quadro e no Radar. Vazio vale 24 horas; em \"Aula experimental feita\" são 2 dias. Com a chave \"Avisar a equipe na Central\" ligada, todo negócio que entra na coluna abre um aviso na Central de avisos, o sino do alto da tela.",
+          "dica": "Os dois ajustes são gravados quando você sai do campo ou clica na chave. Não há botão de salvar.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "janela-dias-d1110100-0000-4000-8000-000000000004"
+              },
+              "rotulo": "Dias parado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "janela-horas-d1110100-0000-4000-8000-000000000004"
+              },
+              "rotulo": "Horas",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "avisar-d1110100-0000-4000-8000-000000000004"
+              },
+              "rotulo": "Aviso na Central",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p7",
+          "titulo": "Para onde o agente leva o cartão",
+          "texto": "Mais abaixo, \"Para onde o card vai em cada passo\" liga o agente de IA às suas colunas. Cada linha é um momento do atendimento, como \"Em negociação\" ou \"Ganho\". Quando o agente chega nesse momento, o cartão do cliente anda sozinho para a etapa escolhida. \"Não mover o card\" também vale: o cartão fica onde está. Depois de mudar, clique em \"Salvar estas escolhas\".",
+          "dica": "Na lista de etapas, a frase \"O assistente usa esta etapa para…\" mostra o mesmo vínculo, e \"Mudar isso\" desce até aqui.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "mapeamento-d1110000-0000-4000-8000-000000000001"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='mapeamento-d1110000-0000-4000-8000-000000000001'] > ul"
+              },
+              "rotulo": "Passo do agente › etapa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar estas escolhas",
+                "exato": true,
+                "dentro": {
+                  "testid": "mapeamento-d1110000-0000-4000-8000-000000000001"
+                }
+              },
+              "rotulo": "Gravar as escolhas",
+              "tipo": "numero"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "etapas-do-funil-criar-e-organizar",
+      "titulo": "Renomear, criar e reordenar etapas",
+      "objetivo": "Trocar o nome de uma coluna, acrescentar uma etapa nova e colocá-la no lugar certo do funil.",
+      "papel": "admin",
+      "busca": [
+        "renomear etapa",
+        "criar etapa",
+        "nova coluna no funil",
+        "mudar ordem das etapas",
+        "acrescentar etapa",
+        "trocar nome da coluna"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Trocar o nome de uma coluna",
+          "rota": "/app/settings/tenant/pipelines",
+          "texto": "O funil Pilates começa com uma coluna chamada \"Novo\". Para trocar o nome, clique no nome, apague e escreva o novo. Aqui escrevemos \"Pediu informação\".",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "avisar-d1110100-0000-4000-8000-000000000001"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "nome-d1110100-0000-4000-8000-000000000001"
+              },
+              "valor": "Pediu informação"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "nome-d1110100-0000-4000-8000-000000000001"
+              },
+              "rotulo": "Nome novo",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Gravar o nome",
+          "texto": "Aperte Enter ou clique fora do campo: o nome é gravado na hora, sem botão de salvar. Se mudar de ideia antes disso, aperte Esc e o nome antigo volta. O nome novo vale em todo lugar: no quadro do funil e também aqui embaixo, em \"Para onde o card vai em cada passo\", onde \"Novo lead\" já aponta para \"Pediu informação\".",
+          "dica": "Duas colunas do mesmo funil não podem ter o mesmo nome. Se tentar, a tela avisa e não grava.",
+          "antes": [
+            {
+              "acao": "press",
+              "tecla": "Enter",
+              "alvo": {
+                "testid": "nome-d1110100-0000-4000-8000-000000000001"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "etapa-new",
+                "dentro": {
+                  "testid": "mapeamento-d1110000-0000-4000-8000-000000000001"
+                }
+              },
+              "rotulo": "O nome novo já vale aqui",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Acrescentar uma etapa",
+          "texto": "A clínica quer uma coluna para quem já escolheu o plano, mas ainda não pagou. No fim da lista de etapas do Pilates, clique em \"Acrescentar etapa ao fim\".",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "nova-etapa",
+                "dentro": {
+                  "testid": "etapas-d1110000-0000-4000-8000-000000000001"
+                }
+              },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "nova-etapa",
+            "dentro": {
+              "testid": "etapas-d1110000-0000-4000-8000-000000000001"
+            }
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "O nome da etapa nova",
+          "texto": "Escreva o nome da coluna, aqui \"Aguardando pagamento\", e clique em \"Criar\" (ou aperte Enter). \"Cancelar\" fecha sem criar nada.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "nova-etapa",
+                "dentro": {
+                  "testid": "etapas-d1110000-0000-4000-8000-000000000001"
+                }
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "nova-etapa-nome"
+              },
+              "valor": "Aguardando pagamento"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "nova-etapa-nome"
+              },
+              "rotulo": "Nome da coluna",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "nova-etapa-criar"
+              },
+              "rotulo": "Criar",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "testid": "nova-etapa-criar"
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "A etapa entra no fim",
+          "texto": "A etapa nova sempre entra no fim do funil, depois até da coluna de perda. Para levá-la para o lugar certo, use a seta para cima: cada clique sobe a etapa uma posição, ou seja, uma coluna para a esquerda no quadro.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "nova-etapa-criar"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "textbox",
+                "nome": "Aguardando pagamento",
+                "regex": true,
+                "dentro": {
+                  "testid": "etapas-d1110000-0000-4000-8000-000000000001"
+                }
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "textbox",
+                "nome": "Aguardando pagamento",
+                "regex": true,
+                "dentro": {
+                  "testid": "etapas-d1110000-0000-4000-8000-000000000001"
+                }
+              },
+              "rotulo": "Etapa nova",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "li[data-testid^='etapa-']:has(input[aria-label*='Aguardando pagamento']) button[data-testid^='subir-']"
+              },
+              "rotulo": "Subir uma posição",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "css": "li[data-testid^='etapa-']:has(input[aria-label*='Aguardando pagamento']) button[data-testid^='subir-']"
+          }
+        },
+        {
+          "id": "p6",
+          "titulo": "No lugar certo",
+          "texto": "Com dois cliques na seta para cima, \"Aguardando pagamento\" ficou entre \"Aula experimental feita\" e \"Matrícula feita\". É nessa posição que a coluna aparece no quadro do funil. A seta para baixo faz o caminho contrário.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "li[data-testid^='etapa-']:has(input[aria-label*='Aguardando pagamento']) button[data-testid^='subir-']"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 2000
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "li[data-testid^='etapa-']:has(input[aria-label*='Aguardando pagamento']) button[data-testid^='subir-']"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 2000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "nome-d1110100-0000-4000-8000-000000000004"
+              },
+              "rotulo": "Antes",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "textbox",
+                "nome": "Aguardando pagamento",
+                "regex": true,
+                "dentro": {
+                  "testid": "etapas-d1110000-0000-4000-8000-000000000001"
+                }
+              },
+              "rotulo": "Etapa nova",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "nome-d1110100-0000-4000-8000-000000000005"
+              },
+              "rotulo": "Depois",
+              "tipo": "numero"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "etapas-do-funil-papel-e-arquivar",
+      "titulo": "Mudar o papel de uma coluna e arquivar uma etapa",
+      "objetivo": "Entender como a coluna de fechamento muda de lugar e tirar do funil uma etapa que não serve mais, sem perder os negócios dela.",
+      "papel": "admin",
+      "busca": [
+        "arquivar etapa",
+        "apagar coluna do funil",
+        "excluir etapa",
+        "etapa de ganho",
+        "etapa de perda",
+        "mudar etapa de fechamento"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Escolher o papel da coluna",
+          "rota": "/app/settings/tenant/pipelines",
+          "texto": "O seletor \"O que acontece nesta coluna\" tem três escolhas: \"Nada especial\", \"Aqui o cliente fecha\" (a coluna de fechamento) e \"Aqui o cliente desiste\" (a coluna de perda). Veja o que acontece quando você abre o seletor de \"Aula experimental feita\" e escolhe \"Aqui o cliente fecha\".",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "avisar-d1110100-0000-4000-8000-000000000004"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "papel-d1110100-0000-4000-8000-000000000004"
+              },
+              "rotulo": "Papel da coluna",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "papel-d1110100-0000-4000-8000-000000000004"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "A marcação muda de lugar",
+          "texto": "Só uma coluna pode ser a de fechamento. Por isso a tela pede confirmação e diz qual coluna perde a marcação: aqui, \"Matrícula feita\". \"Marcar mesmo assim\" muda a marcação de lugar. Na clínica, quem fecha a venda é a matrícula, então clique em \"Cancelar\" e nada muda.",
+          "dica": "Para tirar a marcação de uma coluna, marque outra no lugar: o funil nunca fica sem coluna de fechamento nem sem coluna de perda. Se a coluna for usada pelo agente de IA para outro passo, a tela recusa e mostra o caminho para mudar o agente antes.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "papel-d1110100-0000-4000-8000-000000000004"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Aqui o cliente fecha",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "confirmar-papel-d1110100-0000-4000-8000-000000000004"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "confirmar-papel-d1110100-0000-4000-8000-000000000004"
+              },
+              "rotulo": "Quem perde a marcação",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "confirmar-papel-sim-d1110100-0000-4000-8000-000000000004"
+              },
+              "rotulo": "Confirmar",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar",
+                "exato": true,
+                "dentro": {
+                  "testid": "confirmar-papel-d1110100-0000-4000-8000-000000000004"
+                }
+              },
+              "rotulo": "Desistir",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Cancelar",
+            "exato": true,
+            "dentro": {
+              "testid": "confirmar-papel-d1110100-0000-4000-8000-000000000004"
+            }
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Arquivar uma etapa",
+          "dica": "A coluna de fechamento e a de perda não podem ser arquivadas: marque outra coluna no lugar antes.",
+          "texto": "A clínica não usa mais a coluna \"Lista de espera\". Arquivar é o jeito de tirar uma etapa do funil. Clique em \"Arquivar\" na linha dela. A tela explica antes: a coluna sai do quadro e para de receber negócios novos, nada é apagado, mas não dá para trazer a coluna de volta por esta tela.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar",
+                "exato": true,
+                "dentro": {
+                  "testid": "confirmar-papel-d1110100-0000-4000-8000-000000000004"
+                }
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "arquivar-d1110100-0000-4000-8000-000000000002"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "arquivar-painel-d1110100-0000-4000-8000-000000000002"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "arquivar-painel-d1110100-0000-4000-8000-000000000002"
+              },
+              "rotulo": "Leia antes de arquivar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "arquivar-confirmar-d1110100-0000-4000-8000-000000000002"
+              },
+              "rotulo": "Arquivar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "arquivar-confirmar-d1110100-0000-4000-8000-000000000002"
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Para onde vão os negócios",
+          "texto": "Quando a coluna tem negócios, a tela pergunta para onde eles vão. Aqui são 2 alunos na lista de espera. Clique em \"Escolha a etapa\" e escolha \"Novo\". A lista só oferece colunas comuns: a de fechamento e a de perda ficam de fora, porque mandar os negócios para lá os daria como ganhos ou perdidos.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "arquivar-confirmar-d1110100-0000-4000-8000-000000000002"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "arquivar-pergunta-d1110100-0000-4000-8000-000000000002"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "arquivar-pergunta-d1110100-0000-4000-8000-000000000002"
+              },
+              "rotulo": "A pergunta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "destino-d1110100-0000-4000-8000-000000000002"
+              },
+              "rotulo": "Escolha o destino",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "destino-d1110100-0000-4000-8000-000000000002"
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "Mover e arquivar",
+          "texto": "O botão \"Mover os negócios e arquivar\" fica apagado até você escolher o destino. Depois de escolher, clique nele: os negócios mudam de coluna primeiro, e só depois a etapa sai do funil.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "destino-d1110100-0000-4000-8000-000000000002"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Novo",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "destino-d1110100-0000-4000-8000-000000000002"
+              },
+              "rotulo": "Destino: Novo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "arquivar-confirmar-d1110100-0000-4000-8000-000000000002"
+              },
+              "rotulo": "Mover e arquivar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "arquivar-confirmar-d1110100-0000-4000-8000-000000000002"
+          }
+        },
+        {
+          "id": "p6",
+          "titulo": "A etapa saiu do funil",
+          "texto": "\"Lista de espera\" sumiu da lista e do quadro, e os 2 negócios dela foram para \"Novo\". A mudança fica registrada no histórico de cada negócio. A conta de negócios que aparece embaixo de cada etapa só se atualiza quando você recarrega a página.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "arquivar-confirmar-d1110100-0000-4000-8000-000000000002"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 2500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "nome-d1110100-0000-4000-8000-000000000001"
+              },
+              "rotulo": "Recebeu os negócios",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "etapas-do-funil-motivos-de-perda",
+      "titulo": "Cadastrar os motivos de perda",
+      "objetivo": "Trocar a lista pronta de motivos de perda pelos motivos da sua clínica, com uma categoria para cada um.",
+      "papel": "admin",
+      "busca": [
+        "motivos de perda",
+        "por que perdi o cliente",
+        "cadastrar motivo de perda",
+        "categoria de perda",
+        "vocabulário do funil",
+        "marcar como perdido",
+        "campos do negócio"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir o editor do funil",
+          "rota": "/app/settings/tenant/pipelines",
+          "texto": "No fim do cartão de cada funil fica o botão \"Editar vocabulário e campos deste funil\". Ele abre os ajustes do funil que só o administrador muda, como os motivos de perda. Clique nele no cartão do Pilates.",
+          "dica": "O gerente também entra nesta tela, mas não vê este botão.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "abrir-editor-d1110000-0000-4000-8000-000000000001"
+              },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "abrir-editor-d1110000-0000-4000-8000-000000000001"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Escrever os motivos",
+          "texto": "Motivo de perda é a resposta para \"por que este negócio não fechou?\". Sem nada cadastrado, a janela \"Marcar como perdido\" mostra uma lista pronta, com motivos de loja como \"Produto indisponível\". Em \"Motivos de perda (separados por vírgula)\", escreva os motivos da sua clínica, separados por vírgula. Para cada motivo escrito aparece uma linha com o seletor de categoria.",
+          "dica": "Os quatro campos do alto (\"Lead\", \"Deal\", \"Won\" e \"Lost\") guardam como este funil chama o cliente, o negócio, o ganho e a perda.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "abrir-editor-d1110000-0000-4000-8000-000000000001"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "editor-d1110000-0000-4000-8000-000000000001"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "[data-testid='editor-d1110000-0000-4000-8000-000000000001'] div.space-y-1:has(> label:text-is('Motivos de perda (separados por vírgula)')) > input"
+              },
+              "valor": "Achou caro, Horário não encaixou, Mudou de bairro, Preferiu outro estúdio"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='editor-d1110000-0000-4000-8000-000000000001'] div.space-y-1:has(> label:text-is('Motivos de perda (separados por vírgula)')) > input"
+              },
+              "rotulo": "Os motivos, com vírgula",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[data-testid='editor-d1110000-0000-4000-8000-000000000001'] div.flex.items-center.gap-2:has(> span:text-is('Achou caro')) button[role=combobox]"
+              },
+              "rotulo": "Categoria de cada um",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "A categoria e salvar",
+          "texto": "Ao lado de cada motivo, escolha a categoria: \"Cliente\", \"Concorrência\", \"Mérito\", \"Nós\" ou \"Ausência\". Ela junta motivos parecidos no relatório \"Perdas\" da tela Desempenho e no filtro \"Categoria\" que o quadro mostra quando você filtra os perdidos. Pense em quem fez o negócio se perder: \"Achou caro\" vai em \"Nós\", porque quem define o preço é a clínica; \"Preferiu outro estúdio\" vai em \"Concorrência\". \"Sem categoria\" também vale. Depois clique em \"Salvar vocabulário e campos\", no fim do editor: nada do editor vale antes disso.",
+          "dica": "O relatório \"Perdas\" aparece para gerente e administrador. O mesmo editor guarda outros ajustes do funil, como os motivos de ganho e os campos extras do negócio.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "[data-testid='editor-d1110000-0000-4000-8000-000000000001'] div.flex.items-center.gap-2:has(> span:text-is('Achou caro')) button[role=combobox]"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Nós",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "[data-testid='editor-d1110000-0000-4000-8000-000000000001'] div.flex.items-center.gap-2:has(> span:text-is('Preferiu outro estúdio')) button[role=combobox]"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Concorrência",
+                "exato": true
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar vocabulário e campos",
+                "exato": true,
+                "dentro": {
+                  "testid": "editor-d1110000-0000-4000-8000-000000000001"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='editor-d1110000-0000-4000-8000-000000000001'] div.flex.items-center.gap-2:has(> span:text-is('Achou caro')) button[role=combobox]"
+              },
+              "rotulo": "Nós",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "css": "[data-testid='editor-d1110000-0000-4000-8000-000000000001'] div.flex.items-center.gap-2:has(> span:text-is('Preferiu outro estúdio')) button[role=combobox]"
+              },
+              "rotulo": "Concorrência",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar vocabulário e campos",
+                "exato": true,
+                "dentro": {
+                  "testid": "editor-d1110000-0000-4000-8000-000000000001"
+                }
+              },
+              "rotulo": "Gravar tudo",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar vocabulário e campos",
+            "exato": true,
+            "dentro": {
+              "testid": "editor-d1110000-0000-4000-8000-000000000001"
+            }
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Os seus motivos na hora de perder",
+          "texto": "Depois de salvar, abra o quadro do Pilates (menu \"Funis\" › \"Pilates\"), passe o mouse num cartão, clique nos três pontinhos e em \"Marcar como perdido\". A janela agora mostra os motivos da clínica no lugar da lista pronta, mais \"Outro motivo\" para o caso que não está na lista.",
+          "dica": "Os motivos valem só para este funil. Cada funil tem a sua lista.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar vocabulário e campos",
+                "exato": true,
+                "dentro": {
+                  "testid": "editor-d1110000-0000-4000-8000-000000000001"
+                }
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 2000
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Funis",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "abrir-d1110000-0000-4000-8000-000000000001"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "abrir-d1110000-0000-4000-8000-000000000001"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "group",
+                "nome": "Bruno Lacerda$",
+                "regex": true
+              }
+            },
+            {
+              "acao": "hover",
+              "alvo": {
+                "role": "group",
+                "nome": "Bruno Lacerda$",
+                "regex": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Ações do lead",
+                "dentro": {
+                  "role": "group",
+                  "nome": "Bruno Lacerda$",
+                  "regex": true
+                }
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "menuitem",
+                "nome": "Marcar como perdido",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "dialog"
+              },
+              "rotulo": "Os motivos da clínica",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[role=dialog] label:has-text('Achou caro')"
+              },
+              "rotulo": "Motivo cadastrado",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

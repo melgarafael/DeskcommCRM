@@ -1,29 +1,21 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/ai/routers/:id/test — classifica uma mensagem de TESTE contra o
- * router (manager+). Reusa loadActiveRouter/classifyIntent (Tasks 2-3, mesmo
- * seam de runtime) — NUNCA grava em ai_router_decisions (telemetria de
- * decisões reais de produção, não de teste) nem em conversations.
+ * router (manager+).
  *
- * leadId/jobId vão null pro classificador: não existe contact/job real por
- * trás de um clique de teste na UI, e llm_calls.contact_id/job_id são FKs —
- * um uuid inventado quebraria o insert do registro de custo (ver
- * lib/agent-engine/agent/intent-classifier.ts).
+ * ─── A regra NÃO mora mais aqui ──────────────────────────────────────────────
  *
- * O match só conta se confidence >= min_confidence do router (a MESMA régua do
- * runtime, `destinoDoVeredito` em resolve-turn-agent.ts, sem sticky: o teste não
- * tem conversa) — devolve min_confidence no payload pra a tela explicar quando
- * o resultado cairia no fallback/genérico em produção.
+ * O carregamento do router, a recusa de inativo, a recusa do roteador por
+ * remetente, a consulta ao Jev, o classificador, o `destinoDoVeredito` e o
+ * payload de saída estão em `lib/agent-engine/agent/testar-roteador.ts` —
+ * `testarRoteador`. Motivo: quem não é rota (servidor MCP, automação) precisa da
+ * MESMA regra e só tinha dois caminhos ruins, chamar esta API por HTTP ou
+ * copiá-la. Ver a issue #4688.
  *
- * Com a tarefa do roteador do Jev rodando, o Jev responde a mesma frase ao mesmo
- * tempo no modo comparação. Sob demanda, só consulta a IA de sempre se o
- * Jev não tiver intenção confiável. A tela distingue reserva não consultada
- * de falha de resposta. Nada disso vira
- * observação (R5): uma frase digitada por quem configura não é concordância de
- * atendimento. O custo dele entra em `llm_calls`, como o do classificador de
- * sempre quando consultado neste clique (R8). A prévia segue o modo salvo, e
- * o sob demanda só vale onde a empresa tem a IA de sempre; sem ela, vale a
- * regra de hoje (R2).
+ * Esta rota guarda a BORDA, e só ela: `requireSupportWrite`, o uuid do path,
+ * `resolveAuthDual` (manager, `config:write`, token admin), `tetoDeEscritaDoToken`,
+ * o Zod do corpo, a montagem de `deps`, a chamada da função e `ok()`/`fail()`
+ * com o `requestId`.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -34,12 +26,9 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSkillsPool } from "@/lib/ai/skills/db";
 import { env } from "@/lib/env";
-import { llmEdgeConfigFromEnv, temIaDeSempre } from "@/lib/agent-engine/edge/llm/credentials";
+import { llmEdgeConfigFromEnv } from "@/lib/agent-engine/edge/llm/credentials";
 import { createLogger } from "@/lib/agent-engine/obs/logger";
-import { loadActiveRouter } from "@/lib/agent-engine/agent/router-config";
-import { classifyIntent, type IntentVerdict } from "@/lib/agent-engine/agent/intent-classifier";
-import { destinoDoVeredito, vereditoConfiavelDoRoteador } from "@/lib/agent-engine/agent/resolve-turn-agent";
-import { consultarJevNoRoteador, registrarRoteadorDoJev } from "@/lib/ai/decisao/roteador";
+import { testarRoteador } from "@/lib/agent-engine/agent/testar-roteador";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -48,7 +37,7 @@ type RouteCtx = { params: Promise<{ id: string }> };
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const testSchema = z.object({
+export const testSchema = z.object({
   message: z.string().min(1).max(4000),
 });
 
@@ -72,7 +61,6 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
-  const { organizationId } = authz;
 
   const teto = await tetoDeEscritaDoToken(authz, "ai_routers_test", requestId);
   if (teto) return teto;
@@ -92,125 +80,17 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     });
   }
 
-  const admin = createAdminClient();
-  const { data: router, error: routerErr } = await admin
-    .from("ai_routers")
-    .select("id, channel_session_id")
-    .eq("id", id)
-    .eq("organization_id", organizationId)
-    .maybeSingle();
-  if (routerErr) {
-    return fail("internal_error", "Erro ao carregar router.", 500, { requestId });
-  }
-  if (!router) {
-    return fail("not_found", t("Router não encontrado."), 404, { requestId });
-  }
-
-  const pool = getSkillsPool();
-  const loaded = await loadActiveRouter(pool, organizationId, router.channel_session_id);
-  if (!loaded || loaded.id !== id) {
-    return fail(
-      "state_conflict",
-      t("O router precisa estar ativo (is_active=true) para ser testado."),
-      409,
-      { requestId },
-    );
-  }
-
-  const llmCfg = llmEdgeConfigFromEnv(env);
-  const log = createLogger();
-
-  const jev = consultarJevNoRoteador(pool, {
-    organizationId,
-    mensagem: parsed.data.message,
-    membros: loaded.members,
-    contactId: null,
-    jobId: null,
-  });
-  const [modo, estadoDoJev] = await Promise.all([
-    jev.modo ?? Promise.resolve("comparacao"), jev.estado,
-  ]);
-  // A mesma regra do turno (decisão B, doc 89): sem a IA de sempre, o Jev não
-  // decide sozinho nem na prévia — vale a comparação, e a R2.
-  const independente = modo === "sob_demanda" && estadoDoJev === "decidindo" &&
-    await temIaDeSempre(pool, llmCfg, organizationId, loaded.classifierProvider);
-  const classificar = () => classifyIntent(
-    pool, llmCfg,
-    { tenantId: organizationId, leadId: null, jobId: null, router: loaded, signal: parsed.data.message },
-    { log },
-  );
-  // Na comparação, as duas consultas seguem em paralelo. Na decisão independente,
-  // a mesma régua do turno real determina se a reserva precisa ser chamada.
-  const comparacao = independente ? null : classificar();
-  const escolhaDoJev = await jev.escolha;
-  const jevConfiavel = vereditoConfiavelDoRoteador(loaded, escolhaDoJev?.veredito ?? null);
-  const iaConsultada = !independente || !jevConfiavel;
-  const verdict = comparacao !== null ? await comparacao : iaConsultada ? await classificar() : null;
-  if (escolhaDoJev !== null) {
-    await registrarRoteadorDoJev(pool, {
-      organizationId,
-      contactId: null,
-      jobId: null,
-      jev: escolhaDoJev,
-      decidiu: false,
-      observacao: null,
-    });
-  }
-
-  // Sem veredito, ou abaixo do mínimo, produção cai no fallback/genérico — e o
-  // painel de teste não pode fingir que casou (review whole-branch item 3).
-  const agenteDo = (v: IntentVerdict | null): string | null =>
-    destinoDoVeredito(loaded, undefined, null, v).membro?.agentId ?? loaded.fallbackAgentId;
-  const nomeDoAgente = async (agentId: string | null): Promise<string | null> => {
-    if (!agentId) return null;
-    const { data: agentRow } = await admin
-      .from("ai_agents")
-      .select("name")
-      .eq("id", agentId)
-      .eq("organization_id", organizationId)
-      .maybeSingle();
-    return agentRow?.name ?? null;
-  };
-
-  // A saída ilegível segue "nenhuma" para o agente (a régua do turno), mas não
-  // é resposta da IA: a tela a mostra como "não respondeu", e o Jev decidindo
-  // não vale no lugar dela (R2).
-  const iaRespondeu = verdict !== null && verdict.falhou !== true;
-  const agentId = agenteDo(verdict);
-  const agentName = await nomeDoAgente(agentId);
-  const agenteDoJev = escolhaDoJev === null ? null : agenteDo(escolhaDoJev.veredito);
-
-  return ok(
+  const r = await testarRoteador(
     {
-      ia_consultada: iaConsultada,
-      modo_roteador: modo,
-      intent_name: iaRespondeu ? verdict.intentName : null,
-      // `?? null`, nunca `?? 0`: sem veredito não houve medição, e zero é uma
-      // AFIRMAÇÃO ("o classificador tem certeza de que não é nada"). A tela local
-      // escapa por checar `intent_name` antes de exibir, mas isto é contrato de
-      // API pública — todo outro consumidor leria a invenção. Doutrina em
-      // `lib/kanban/card-state.ts`: null é "sinal insuficiente", 0 é "calculei e deu zero".
-      confidence: iaRespondeu ? verdict.confidence : null,
-      min_confidence: loaded.minConfidence,
-      agent_id: agentId,
-      agent_name: agentName,
-      // `null` com a tarefa do roteador do Jev desligada (ou o Jev inteiro).
-      jev:
-        estadoDoJev === "desligada"
-          ? null
-          : {
-              estado: estadoDoJev,
-              respondeu: escolhaDoJev !== null,
-              intent_name: escolhaDoJev?.veredito.intentName ?? null,
-              // A probabilidade calibrada da escolha — sobre ela vale o `min_confidence`.
-              confidence: escolhaDoJev?.veredito.confidence ?? null,
-              agent_id: agenteDoJev,
-              agent_name: agenteDoJev === agentId ? agentName : await nomeDoAgente(agenteDoJev),
-              // Em produção vale a escolha dele: decidindo, respondendo, e com a
-              // IA de sempre respondendo também (R2).
-              decide: independente ? jevConfiavel : estadoDoJev === "decidindo" && escolhaDoJev !== null && iaRespondeu,
-            },
+      admin: createAdminClient(),
+      pool: getSkillsPool(),
+      llmCfg: llmEdgeConfigFromEnv(env),
+      log: createLogger(),
+      t,
     },
-    { requestId },
+    { organizationId: authz.organizationId, routerId: id, mensagem: parsed.data.message },
   );
+  if (!r.ok) return fail(r.code, r.message, r.status, { requestId });
+
+  return ok(r.data, { requestId });
 }

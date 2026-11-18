@@ -37,8 +37,9 @@ export function useCarteiraDoContato(contactId: string, enabled = true) {
  * Põe/tira o cliente na carteira de um vendedor (`PATCH /contacts/[id]/carteira`).
  *
  * `null` tira da carteira (o contato volta ao fluxo normal). A rota exige
- * `manager`+; quem não pode nem vê o seletor — o gate de papel é do cartão, não
- * daqui, para a mensagem de recusa vir do servidor e não duplicar a régua.
+ * `agent`+ COM posse no cliente (#3746): o cartão só oferece o seletor quando o
+ * GET devolve `pode_alterar`, e quem recusa o PATCH é o servidor — aqui não se
+ * duplica a régua nem se traduz recusa por conta própria.
  *
  * Invalida a própria carteira E `["contact", id]`, porque o PATCH mexe no contato
  * que a ficha já tem em cache; sem a segunda chave a tela mostraria o dono velho

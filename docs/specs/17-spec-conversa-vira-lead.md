@@ -102,13 +102,24 @@ aberto para ele. Cada recusa é registrada — silêncio não distingue "não de
 
 > Decidido pelo Rafael em 2026-08-06, depois de a medição mostrar que não havia política nenhuma.
 
-**O Operador PROPÕE; um humano CONFIRMA.** A IA não grava dado de contato direto. O problema não é
+**Por padrão, o Operador PROPÕE; um humano CONFIRMA.** A IA não sobrescreve os dados da ficha. O problema não é
 hipotético: `contactPatchSchema` aceita e-mail livre, o handler não lê o valor anterior antes de
 sobrescrever, e o audit grava só os NOMES dos campos alterados — um e-mail dito de brincadeira
 substituiria o correto e **o valor antigo não existiria em lugar nenhum**.
 
 Note a assimetria que ficaria sem esta decisão: o `pushName` do WhatsApp é CONGELADO pelo
 `coalesce` do upsert, e o e-mail dito ao robô seria sobrescrevível à vontade.
+
+**Exceções opt-in do contrato atual:** a organização pode permitir preencher telefone vazio
+e, nesta contribuição, nome vazio em **Configurações → Distribuição de atendimento**. O nome
+exige seleção pela capacidade `crm_propose_contact_field`, mensagem inbound real do próprio
+contato, contexto e revisão do runtime, correspondência com o texto e CAS que preserva edição
+humana. As opções vêm desligadas; nome existente diferente, e-mail e nascimento continuam
+aguardando revisão. O percurso e seus limites estão em
+[`Aviso de transferência humana e nome informado`](../features/atendimento-alerta-humano-nome-informado.md).
+A aplicação automática do nome registra auditoria, muda a ficha e deixa uma linha na timeline
+do contato (como o telefone aplicado); não grava consentimento. A seção abaixo descreve a confirmação humana, não transforma a
+autoaplicação em confirmação ou consentimento do titular.
 
 ### Base legal — aplicada, não inventada
 

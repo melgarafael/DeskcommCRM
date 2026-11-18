@@ -28,23 +28,61 @@ export const createFollowupFlowSchema = z.strictObject({
 // desse fluxo cancela (outcome='replied') na 1ª resposta do contato em vez de
 // acordar o classify. Sibling de `kind` (não dentro de `params`) porque é uma
 // política de REAÇÃO À RESPOSTA, ortogonal a como o fluxo foi disparado — vale
-// pros kinds igualmente. Default false quando ausente (fluxos existentes
-// continuam acordando o classify, comportamento inalterado).
+// pros kinds igualmente. Default false quando ausente, EXCETO em
+// `appointment_no_show`, em que ausente vale true (#3400; ver
+// `parseCancelOnReply` em `lib/followup/reactivity.ts`).
 const CANCEL_ON_REPLY = { cancel_on_reply: z.boolean().optional() };
+
+/**
+ * #3974 — "quando o cliente responder, mover o card para a etapa X", a opção
+ * irmã de `cancel_on_reply` no gatilho de ETAPA.
+ *
+ * Só o `stage_change` a aceita, e não é economia de schema: é o único gatilho
+ * que sabe QUAL card armou (o negócio que entrou em `params.stage_id`). Nos
+ * outros kinds o fluxo nasce de um contato, de um silêncio ou de um caso, sem
+ * card identificado — mover "o negócio do contato" ali seria escolher por ele
+ * quando o contato tem dois, e é por isso que a tela também não oferece o campo.
+ *
+ * As duas opções são ORTOGONAIS: juntas, o card anda e a inscrição é encerrada
+ * (a resposta executou o que o fluxo prometia e não há mais o que esperar).
+ */
+const MOVE_ON_REPLY = { move_to_stage_on_reply: z.string().uuid().optional() };
+
 
 export const triggerConfigSchema = z.discriminatedUnion("kind", [
   z.strictObject({kind:z.literal("appointment_no_show"),params:z.strictObject({event_type_ids:z.array(z.string().uuid()).optional()}).optional(),...CANCEL_ON_REPLY}),
   z.strictObject({ kind: z.literal("manual"), ...CANCEL_ON_REPLY }),
   z.strictObject({ kind: z.literal("webhook"), ...CANCEL_ON_REPLY }),
+  /**
+   * #4587 — o filtro do gatilho "negócio criado": em QUAL funil e/ou com QUAL
+   * etiqueta o card precisa nascer.
+   *
+   * Por que ele existe: só há UM fluxo vivo por contato
+   * (`idx_followup_enrollments_one_live`). Sem filtro, todo card novo de
+   * qualquer funil arma todo fluxo `lead_created` da conta — o card aberto no
+   * funil B inscrevia o contato no fluxo do funil A, e essa inscrição, por ser
+   * a única permitida, BLOQUEAVA a do funil certo (23505 → skip). O fluxo que
+   * devia falar com o cliente ficava calado e o errado falava.
+   *
+   * Ausentes = comportamento de sempre: qualquer funil, qualquer etiqueta.
+   * `tag` é comparada já normalizada (`lib/contacts/tag-normalizada`), porque é
+   * essa a forma que o banco guarda.
+   */
   z.strictObject({
     kind: z.literal("lead_created"),
-    params: z.strictObject({}).optional(),
+    params: z
+      .strictObject({
+        pipeline_id: z.string().uuid().optional(),
+        tag: z.string().trim().min(1).max(40).optional(),
+      })
+      .optional(),
     ...CANCEL_ON_REPLY,
   }),
   z.strictObject({
     kind: z.literal("stage_change"),
     params: z.strictObject({ stage_id: z.string().uuid() }),
     ...CANCEL_ON_REPLY,
+    ...MOVE_ON_REPLY,
   }),
   z.strictObject({
     kind: z.literal("silence"),
@@ -128,6 +166,13 @@ export const patchFollowupFlowSchema = z.strictObject({
   name: z.string().trim().min(1).max(80).optional(),
   draft_graph: flowGraphSchema.optional(),
   handoff_policy: z.enum(["pause", "cancel", "allow"]).optional(),
+  /**
+   * #3974 — "enviar mesmo com a conversa atribuída a uma pessoa". Por fluxo, e
+   * o default é `false` (comportamento de sempre). Lida pelo motor em
+   * `lib/followup/envio-com-o-dono.ts`, não pela política de handoff: são duas
+   * réguas diferentes, e a de handoff continua valendo para a IA responder.
+   */
+  send_when_assigned: z.boolean().optional(),
   trigger_config: triggerConfigSchema.optional(),
 });
 
@@ -142,4 +187,10 @@ export const createFollowupEnrollmentSchema = z.strictObject({
   // ausente, resolve-se do próprio pointer (agentes que o armam). Validado
   // contra a org antes de gravar.
   agent_id: z.string().uuid().optional(),
+  // #3746: a conversa de onde a inscrição nasceu. Opcional porque a fila de
+  // follow-ups inscreve sem ter uma conversa aberta, e porque um cliente antigo
+  // que não manda o campo não pode parar de funcionar. Quando vem, é a conversa
+  // que a régua de posse confere (o Atendente inscreve o cliente que ele
+  // atende); sem ela, vale qualquer conversa do contato atribuída a ele.
+  conversation_id: z.string().uuid().optional(),
 });

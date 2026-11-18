@@ -3,7 +3,8 @@
  * mandar por ESTE número (migration 0710, issue #1330 fatia 4).
  *
  * Devolve o modo do número (`text` = texto livre, número por QR; `template` =
- * modelo aprovado, número oficial; `null` = canal que não faz campanha) e, no
+ * modelo aprovado, número oficial; `null` = canal que não faz campanha), se ele
+ * faz broadcast (`transmissao`, migration 0712) e, no
  * oficial, os modelos espelhados DESTA conexão com as variáveis de cada um —
  * o rótulo, o tipo e as origens que servem — para a tela montar o mapa sem
  * reimplementar o contrato.
@@ -20,15 +21,15 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { slotKey } from "@/lib/channels/meta/build-components";
 import { isStatusSendable } from "@/lib/channels/meta/template-binding";
 import { lerModoDoCanal } from "@/lib/campanhas/conteudo-do-canal";
 import { origensPermitidas, rotuloDaVariavel, tipoDaVariavel } from "@/lib/campanhas/modelo";
 import { contratoDe, listarModelosDaConexao } from "@/lib/campanhas/modelo-da-conexao";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -36,9 +37,17 @@ const querySchema = z.object({ channel_session_id: z.string().uuid() });
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "campaigns" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "campaigns",
+    role: "manager",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "campaigns_modelos", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const org = { orgId: authz.organizationId };
 
   const parsed = querySchema.safeParse(Object.fromEntries(new URL(req.url).searchParams.entries()));
   if (!parsed.success) {
@@ -46,8 +55,8 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
   const channelSessionId = parsed.data.channel_session_id;
 
-  const supabase = await createClient();
-  const canal = await lerModoDoCanal(supabase, authz.org.orgId, channelSessionId);
+  const supabase = authz.supabase;
+  const canal = await lerModoDoCanal(supabase, org.orgId, channelSessionId);
   if (!canal.existe) {
     return fail(
       "campanha_canal_indisponivel",
@@ -57,12 +66,12 @@ export async function GET(req: NextRequest): Promise<Response> {
     );
   }
   if (canal.modo !== "template") {
-    return ok({ modo: canal.modo, modelos: [] }, { requestId });
+    return ok({ modo: canal.modo, transmissao: false, modelos: [] }, { requestId });
   }
 
   try {
     const definicoes = await listarModelosDaConexao(supabase, {
-      organizationId: authz.org.orgId,
+      organizationId: org.orgId,
       channelSessionId,
     });
     const modelos = definicoes.map((d) => {
@@ -86,7 +95,9 @@ export async function GET(req: NextRequest): Promise<Response> {
         })),
       };
     });
-    return ok({ modo: canal.modo, modelos }, { requestId });
+    // `transmissao`: o provedor deste número faz broadcast (a terceira
+    // velocidade, migration 0712) — a tela só oferece a opção quando é verdade.
+    return ok({ modo: canal.modo, transmissao: canal.transmissao, modelos }, { requestId });
   } catch (err) {
     return fail("internal_error", err instanceof Error ? err.message : String(err), 500, { requestId });
   }

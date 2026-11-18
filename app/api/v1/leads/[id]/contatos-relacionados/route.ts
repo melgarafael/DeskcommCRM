@@ -36,6 +36,7 @@
  *     telefone; a rota só não mente sobre o estado — daí o flag `anonimizado`
  *     no payload, para a tela marcar a pessoa.
  */
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
@@ -43,11 +44,14 @@ import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
-import { loadAuthUser } from "@/lib/auth/server";
-import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { loadAuthUser } from "@/lib/auth/server";
+import { extractBearer } from "@/lib/mcp/auth";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createClient } from "@/lib/supabase/server";
+import { logger } from "@/lib/logger";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 
 export const dynamic = "force-dynamic";
 
@@ -73,6 +77,7 @@ interface LinhaDeContato {
   display_name: string | null;
   is_merged_into: string | null;
   is_anonymized: boolean;
+  phone_number?: string | null;
 }
 
 /** O que a tela recebe por pessoa: a âncora, o nome, o papel e o estado LGPD. */
@@ -81,6 +86,15 @@ export interface ContatoRelacionado {
   nome: string | null;
   papel: string | null;
   anonimizado: boolean;
+  /**
+   * O número da pessoa e a conversa mais recente dela (#3669): com o comprador
+   * e o fixo da loja na mesma lista, o número É o que distingue um do outro, e
+   * a conversa é o atalho que a vendedora procura. AUSENTES quando não há
+   * (sem telefone, anonimizado, nenhuma conversa) — nunca uma string vazia que
+   * a tela teria de adivinhar.
+   */
+  telefone?: string;
+  conversa_id?: string;
 }
 
 /**
@@ -96,6 +110,21 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id: leadId } = await ctx.params;
 
+  const authHeader = _req.headers.get("authorization");
+  if (extractBearer(authHeader)) {
+    const authz = await resolveAuthDual(_req, {
+      requestId,
+      resource: "crm_leads",
+      role: "viewer",
+      scope: "mcp:read",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "leads_contatos_relacionados", requestId);
+    if (teto) return teto;
+    return responder(authz.supabase, authz.organizationId, authz.idioma ?? IDIOMA_PADRAO, leadId, requestId);
+  }
+
+  // Sessão do navegador
   const supabase = await createClient();
   const {
     data: { user },
@@ -105,14 +134,23 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
   const authUser = await loadAuthUser();
-  const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
+  return responder(supabase, null, authUser?.idioma ?? "pt-BR", leadId, requestId);
+}
+
+async function responder(
+  supabase: SupabaseClient,
+  organizationId: string | null,
+  idioma: Idioma,
+  leadId: string,
+  requestId: string,
+): Promise<Response> {
+  const t = (texto: string) => traduzir(texto, idioma);
 
   // O lead vem pela RLS do caller — é ele que prova a org, nunca o body.
-  const { data: lead, error: leadErr } = await supabase
-    .from("crm_leads")
-    .select("id, organization_id")
-    .eq("id", leadId)
-    .maybeSingle();
+  // No ramo do token, o client é admin: filtra explicitamente pela org do token.
+  let leadQuery = supabase.from("crm_leads").select("id, organization_id").eq("id", leadId);
+  if (organizationId) leadQuery = leadQuery.eq("organization_id", organizationId);
+  const { data: lead, error: leadErr } = await leadQuery.maybeSingle();
   if (leadErr) return fail("internal_error", leadErr.message, 500, { requestId });
   if (!lead) return fail("not_found", t("Negócio não encontrado."), 404, { requestId });
   const orgId = (lead as { organization_id: string }).organization_id;
@@ -139,7 +177,8 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   const { data: contatos, error: contatosErr } = await supabase
     .from("contacts")
-    .select("id, organization_id, name, display_name, is_merged_into, is_anonymized")
+    .select("id, organization_id, name, display_name, is_merged_into, is_anonymized, phone_number")
+    .eq("organization_id", orgId)
     .in("id", alvos);
   if (contatosErr) return fail("internal_error", contatosErr.message, 500, { requestId });
 
@@ -160,7 +199,8 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     if (ponteiros.length === 0) break;
     const { data: vencedores, error: vencedoresErr } = await supabase
       .from("contacts")
-      .select("id, organization_id, name, display_name, is_merged_into, is_anonymized")
+      .select("id, organization_id, name, display_name, is_merged_into, is_anonymized, phone_number")
+      .eq("organization_id", orgId)
       .in("id", ponteiros);
     if (vencedoresErr) return fail("internal_error", vencedoresErr.message, 500, { requestId });
     const novos = (vencedores ?? []) as unknown as LinhaDeContato[];
@@ -184,12 +224,48 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     if (contato.organization_id !== orgId) continue;
     if (vistos.has(contato.id)) continue;
     vistos.add(contato.id);
+    const anonimizado = contato.is_anonymized === true;
     resultado.push({
       contact_id: contato.id,
       nome: nomeDoContato(contato),
       papel: papelDo(link.metadata),
-      anonimizado: contato.is_anonymized === true,
+      anonimizado,
+      // A cascata LGPD já redigiu o número do anonimizado; a rota não o
+      // mostra nem assim, para não depender da redação ter rodado.
+      ...(!anonimizado && contato.phone_number ? { telefone: contato.phone_number } : {}),
     });
+  }
+
+  // A CONVERSA de cada pessoa, a mais recente (mesma ordem do quadro, rota
+  // `pipelines/[id]/board`). Uma consulta para a lista inteira, com o filtro de
+  // organização explícito. Falhar aqui não derruba a lista: as pessoas e os
+  // números continuam sendo a resposta, só sem o atalho — e o motivo vai para o
+  // log, não some.
+  if (resultado.length > 0) {
+    const { data: conversas, error: conversasErr } = await supabase
+      .from("conversations")
+      .select("id, contact_id, last_message_at")
+      .eq("organization_id", orgId)
+      .in(
+        "contact_id",
+        resultado.map((p) => p.contact_id),
+      )
+      .order("last_message_at", { ascending: false, nullsFirst: false });
+    if (conversasErr) {
+      logger.warn("contatos-relacionados: conversas não lidas", {
+        requestId,
+        error: conversasErr.message,
+      });
+    } else {
+      const conversaDe = new Map<string, string>();
+      for (const c of (conversas ?? []) as unknown as { id: string; contact_id: string }[]) {
+        if (!conversaDe.has(c.contact_id)) conversaDe.set(c.contact_id, c.id);
+      }
+      for (const pessoa of resultado) {
+        const conversa = conversaDe.get(pessoa.contact_id);
+        if (conversa) pessoa.conversa_id = conversa;
+      }
+    }
   }
 
   return ok(resultado, { requestId });
@@ -225,13 +301,15 @@ type NegocioDoCaller =
   | { ok: false; message: string };
 
 async function negocioDoCaller(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: SupabaseClient,
   leadId: string,
+  organizationId: string,
 ): Promise<NegocioDoCaller> {
   const { data, error } = await supabase
     .from("crm_leads")
     .select("id, organization_id, contact_id")
     .eq("id", leadId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
   if (error) return { ok: false, message: error.message };
   return {
@@ -250,9 +328,17 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   // Escrita é `agent`+ (spec 13 §4): `viewer` lê a lista e não a escreve.
   // A guarda de suporte não substitui o papel — as duas valem.
-  const authz = await requireRole("agent", { requestId, resource: "crm_lead_links" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_lead_links",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "leads_contatos_relacionados", requestId);
+  if (teto) return teto;
+  const { supabase, organizationId, actor, idioma } = authz;
+  const t = (texto: string) => traduzir(texto, idioma ?? IDIOMA_PADRAO);
 
   const parsed = CorpoDoParticipante.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -263,9 +349,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   }
   const { contact_id: contactId, papel } = parsed.data;
 
-  const supabase = await createClient();
-
-  const busca = await negocioDoCaller(supabase, leadId);
+  const busca = await negocioDoCaller(supabase, leadId, organizationId);
   if (!busca.ok) return fail("internal_error", busca.message, 500, { requestId });
   const lead = busca.lead;
   if (!lead) return fail("not_found", t("Negócio não encontrado."), 404, { requestId });
@@ -293,12 +377,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .from("contacts")
     .select("id, organization_id")
     .eq("id", contactId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
   if (contatoErr) return fail("internal_error", contatoErr.message, 500, { requestId });
-  if (
-    !contato ||
-    (contato as { organization_id: string }).organization_id !== lead.organization_id
-  ) {
+  if (!contato) {
     return fail("not_found", t("Contato não encontrado."), 404, { requestId });
   }
 
@@ -308,7 +390,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // devolveria 23505 e a tela mostraria erro de banco para um gesto legítimo.
   const { error: upsertErr } = await supabase.from("crm_lead_links").upsert(
     {
-      organization_id: lead.organization_id,
+      organization_id: organizationId,
       lead_id: leadId,
       target_kind: ALVO_DE_CONTATO,
       target_id: contactId,
@@ -317,7 +399,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       // nunca null.
       metadata: papel ? { papel } : {},
       // Quem deu o papel — o último a escrever, que é quem responde por ele.
-      created_by_user_id: authz.user.id,
+      created_by_user_id: actor.type === "user" ? actor.id : null,
     },
     { onConflict: "lead_id,target_kind,target_id,link_kind" },
   );
@@ -326,8 +408,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // O papel é texto livre: a trilha guarda só SE havia papel, nunca o texto.
   await audit({
     action: "lead.participant_added",
-    actorUserId: authz.user.id,
-    organizationId: lead.organization_id,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId,
     resourceType: "crm_lead",
     resourceId: leadId,
     requestId,
@@ -344,9 +427,17 @@ export async function DELETE(req: NextRequest, ctx: RouteCtx): Promise<Response>
   const requestId = randomUUID();
   const { id: leadId } = await ctx.params;
 
-  const authz = await requireRole("agent", { requestId, resource: "crm_lead_links" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_lead_links",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "leads_contatos_relacionados", requestId);
+  if (teto) return teto;
+  const { supabase, organizationId, actor, idioma } = authz;
+  const t = (texto: string) => traduzir(texto, idioma ?? IDIOMA_PADRAO);
 
   const parsed = AlvoDoVinculo.safeParse({
     contact_id: req.nextUrl.searchParams.get("contact_id"),
@@ -359,9 +450,7 @@ export async function DELETE(req: NextRequest, ctx: RouteCtx): Promise<Response>
   }
   const contactId = parsed.data.contact_id;
 
-  const supabase = await createClient();
-
-  const busca = await negocioDoCaller(supabase, leadId);
+  const busca = await negocioDoCaller(supabase, leadId, organizationId);
   if (!busca.ok) return fail("internal_error", busca.message, 500, { requestId });
   const lead = busca.lead;
   if (!lead) return fail("not_found", t("Negócio não encontrado."), 404, { requestId });
@@ -372,7 +461,7 @@ export async function DELETE(req: NextRequest, ctx: RouteCtx): Promise<Response>
     .from("crm_lead_links")
     .delete()
     .eq("lead_id", leadId)
-    .eq("organization_id", lead.organization_id)
+    .eq("organization_id", organizationId)
     .eq("target_kind", ALVO_DE_CONTATO)
     .eq("link_kind", VINCULO_DE_CONTATO)
     .eq("target_id", contactId)
@@ -385,8 +474,9 @@ export async function DELETE(req: NextRequest, ctx: RouteCtx): Promise<Response>
   if (removido) {
     await audit({
       action: "lead.participant_removed",
-      actorUserId: authz.user.id,
-      organizationId: lead.organization_id,
+      actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+      actorApiTokenId: authz.apiTokenId ?? null,
+      organizationId,
       resourceType: "crm_lead",
       resourceId: leadId,
       requestId,

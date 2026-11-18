@@ -62,10 +62,15 @@ describe("0082 · proposta de reativação chega ao clone", () => {
     ).toBe("1");
   });
 
-  it("DENTRO da publicação de realtime — proposta é estado, não telemetria", () => {
+  it("FORA da publicação de realtime — nenhuma tela assina proposta (#3697)", () => {
+    // A 0082 publicou a tabela pela regra "mudança de estado pinta o card" — mas
+    // o card é do NEGÓCIO (`crm_leads`), e nenhuma tela abriu canal nesta. Publicada
+    // sem consumidor, cada escrita era decodificada pelo Realtime e descartada. A
+    // 9046 tirou; `tests/unit/realtime-assinatura-tem-publicacao.test.ts` guarda o
+    // outro lado (se alguém voltar a assinar, tem que republicar).
     expect(
       sql(`select count(*) from pg_publication_tables
             where pubname='supabase_realtime' and tablename='crm_lead_reactivations'`),
-    ).toBe("1");
+    ).toBe("0");
   });
 });

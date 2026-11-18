@@ -14,6 +14,8 @@ import { cleanup, render, screen } from "@testing-library/react";
 
 import { Sidebar } from "@/components/shell/Sidebar";
 import type { ActiveOrg, AuthUser } from "@/lib/auth/types";
+import { validarCssPersonalizado } from "@/lib/branding/css-personalizado";
+import { NAV_GROUPS } from "@/lib/navigation/catalogo";
 
 const authRef: { user: Pick<AuthUser, "is_platform_admin">; activeOrg: ActiveOrg | null } = {
   user: { is_platform_admin: false },
@@ -25,6 +27,7 @@ vi.mock("@/hooks/auth/AuthProvider", () => ({
   usePermission: () => false,
 }));
 vi.mock("next/navigation", () => ({
+  useRouter: () => ({ prefetch: vi.fn() }),
   usePathname: () => "/app/inbox",
 }));
 vi.mock("@/components/connections/ConnectionHealthDot", () => ({
@@ -41,6 +44,11 @@ vi.mock("@/components/shell/ContadorDeCasos", () => ({
 vi.mock("@/components/shell/ContadorDaFila", () => ({
   ContadorDaFila: ({ compacto }: { compacto: boolean }) => (
     <span data-testid="marcador-fila" data-compacto={String(compacto)} />
+  ),
+}));
+vi.mock("@/components/shell/ContadorDeTarefas", () => ({
+  ContadorDeTarefas: ({ compacto }: { compacto: boolean }) => (
+    <span data-testid="marcador-tarefas" data-compacto={String(compacto)} />
   ),
 }));
 vi.mock("@/app/actions/shell/toggleSidebar", () => ({
@@ -88,21 +96,27 @@ describe("Sidebar agrupado", () => {
     expect(screen.queryByRole("link", { name: "Etapas do funil" })).toBeNull();
   });
 
-  it("o número de Casos mora no item de Casos, e o da Fila no item de Inbox", () => {
+  it("o número de Casos mora no item de Casos, o da Fila no de Inbox e o de Tarefas no de Tarefas", () => {
     comoPapel("admin");
     render(<Sidebar collapsed={false} />);
     const casos = screen.getAllByTestId("marcador-casos");
     const fila = screen.getAllByTestId("marcador-fila");
+    const tarefas = screen.getAllByTestId("marcador-tarefas");
     expect(casos).toHaveLength(1);
     expect(fila).toHaveLength(1);
+    expect(tarefas).toHaveLength(1);
     expect(casos[0]!.closest("a")).toHaveAttribute("href", "/app/ai/cases");
     expect(fila[0]!.closest("a")).toHaveAttribute("href", "/app/inbox");
+    // O contador de tarefas NÃO pode cair no item do Inbox nem no de Casos: ele
+    // é do item que leva à tela de Tarefas (#3938).
+    expect(tarefas[0]!.closest("a")).toHaveAttribute("href", "/app/tasks");
     // Roteadores saiu do menu para Casos caber (a folga era menos de uma linha).
     expect(screen.queryByRole("link", { name: "Roteadores" })).toBeNull();
     cleanup();
     // Recolhido, o contador vira ponto — é o componente que decide, com esta dica.
     render(<Sidebar collapsed />);
     expect(screen.getByTestId("marcador-casos")).toHaveAttribute("data-compacto", "true");
+    expect(screen.getByTestId("marcador-tarefas")).toHaveAttribute("data-compacto", "true");
   });
 
   it("e os dois itens de funil não disputam o mesmo nome", () => {
@@ -179,5 +193,50 @@ describe("Sidebar agrupado", () => {
     expect(screen.getByRole("link", { name: /Inbox/ })).toHaveAttribute("aria-current", "page");
     // "Kanban" saiu da interface; o item da mesma URL agora se chama "Funis".
     expect(screen.getByRole("link", { name: "Funis" })).not.toHaveAttribute("aria-current");
+  });
+
+  /**
+   * CLASSE POR GRUPO É CONTRATO DO CSS PERSONALIZADO (#4463). O validador de
+   * /admin/marca só aceita seletor de classe, e o título do grupo só tinha `id`:
+   * não havia como dar cor a uma seção do menu. O que se prende aqui é que cada
+   * grupo desenhado (o rodapé inclusive) carrega `nav-grupo` e `nav-grupo-<id>`,
+   * aberto e recolhido, e que a classe de QUALQUER grupo do catálogo (inclusive
+   * um que nascer depois) passa no validador — um id com ponto ou espaço viraria classe inalcançável.
+   */
+  it("cada grupo leva uma classe estável que o CSS personalizado alcança", () => {
+    comoPapel("admin");
+    const { container, unmount } = render(<Sidebar collapsed={false} />);
+    const grupos = Array.from(container.querySelectorAll(".nav-grupo"));
+    // `organizacao` é o rodapé fixo, desenhado fora do loop e sem título: leva
+    // a classe comum do mesmo jeito, senão `.nav-grupo` pinta o menu pela metade.
+    const ids = ["atendimento", "crm", "ia", "canais", "analise", "organizacao"];
+    expect(grupos).toHaveLength(ids.length);
+    grupos.forEach((grupo, i) => {
+      expect(grupo).toHaveClass(`nav-grupo-${ids[i]}`);
+      if (ids[i] !== "organizacao") {
+        expect(grupo.querySelector(`h2#nav-grupo-${ids[i]}`)).not.toBeNull();
+      }
+    });
+    expect(
+      container.querySelector(".nav-grupo-crm")?.querySelector('a[href="/app/kanban"]'),
+    ).not.toBeNull();
+    // A doc ensina `.nav-grupo-crm .text-muted-foreground` porque o item da tela
+    // aberta não tem essa classe: ele tem fundo de destaque, e a cor escolhida
+    // para o fundo do menu sumiria ali (medido em 1,05:1 com `.rounded-md`).
+    expect(container.querySelector('.nav-grupo [aria-current="page"]')).not.toBeNull();
+    expect(container.querySelector('[aria-current="page"].text-muted-foreground')).toBeNull();
+    unmount();
+
+    const recolhido = render(<Sidebar collapsed />);
+    expect(recolhido.container.querySelectorAll(".nav-grupo")).toHaveLength(ids.length);
+    expect(recolhido.container.querySelector(".nav-grupo-atendimento")).not.toBeNull();
+
+    for (const { id } of NAV_GROUPS) {
+      const folha = validarCssPersonalizado(
+        `.nav-grupo-${id} .rounded-md:hover { color: var(--color-accent); }`,
+      );
+      expect(folha.erro, id).toBeNull();
+      expect(folha.css).toContain(`:root:root .nav-grupo-${id} .rounded-md:hover`);
+    }
   });
 });

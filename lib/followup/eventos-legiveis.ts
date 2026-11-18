@@ -166,7 +166,7 @@ export function resumoDoNo(node: FlowNode): NoDoDossie {
         ...base,
         resumo:
           node.config.mode === "fixed"
-            ? `espera ${duracaoLegivel(node.config.duration_ms)}`
+            ? `espera ${duracaoLegivel(node.config.duration_ms)}${node.config.ate_o_horario ? " e só termina em horário comercial" : ""}`
             : `espera adaptativa, entre ${duracaoLegivel(node.config.min_ms)} e ${duracaoLegivel(node.config.max_ms)}`,
       };
     case "condition":
@@ -471,7 +471,7 @@ export function descreveEvento(
       const ate = quandoLegivel(p.next_eval_at, idioma);
       return {
         titulo: "Segurou o fluxo por causa de um retorno agendado",
-        detalhe: ate ? `volta a andar em ${ate}, um dia depois do retorno` : null,
+        detalhe: ate ? `volta a andar em ${ate}, depois do retorno` : null,
         ...motor,
       };
     }
@@ -530,6 +530,10 @@ export function descreveEvento(
       return { titulo: "Encerrado porque o cliente respondeu", detalhe: null, ...cliente };
     case "reactivity_opted_out":
       return { titulo: "Encerrado porque o cliente pediu para parar", detalhe: null, ...cliente };
+    case "cancelled_sem_interesse":
+      // `lib/followup/encerrar-pela-recusa.ts`: a retomada da prospecção não fala de
+      // novo com quem disse que não tem interesse.
+      return { titulo: "Encerrado porque o cliente disse que não tem interesse", detalhe: null, ...cliente };
     case "reactivity_handoff_cancel":
       return { titulo: "Encerrado porque uma pessoa assumiu a conversa", detalhe: null, ...pessoa };
     case "handoff_paused":
@@ -554,8 +558,29 @@ export function descreveEvento(
       };
     case "turn_skipped":
       return {titulo:"Acompanhamento encerrado sem novo envio",detalhe:texto(p.reason),...motor};
+    case "modelo_pago_dispensado":
+      // #4835 — o modelo APROVADO (pago) não saiu porque o cliente escreveu
+      // durante a carência e a janela de 24 h abriu de graça. Duas linhas
+      // diferentes porque as duas saídas são diferentes: a reserva da IA segue
+      // em texto livre; o passo de modelo puro não tem texto livre e é pulado.
+      return {
+        titulo: "Nenhum modelo pago foi enviado — o cliente escreveu antes",
+        detalhe:
+          p.tem_texto_livre === true
+            ? "a janela de 24 horas abriu durante a espera, e o atendimento seguiu em texto livre"
+            : "a janela de 24 horas abriu durante a espera; este passo era só de modelo aprovado e foi pulado",
+        ...cliente,
+      };
     case "cancelled_manual":
       return { titulo: "Cancelado por uma pessoa da equipe", detalhe: null, ...pessoa };
+    case "replaced_by_rule":
+      // `start_message_flow` com `replace_live_flow`: outra regra pôs o contato
+      // num fluxo diferente. O nome da regra é o que a pessoa procura na tela.
+      return {
+        titulo: "Encerrado porque uma automação o colocou em outro fluxo",
+        detalhe: texto(p.rule_name),
+        ...motor,
+      };
     case "paused_manual":
       return { titulo: "Pausado por uma pessoa da equipe", detalhe: texto(p.motivo), ...pessoa };
     case "resumed_manual": {
@@ -611,6 +636,25 @@ export function descreveEvento(
       return {
         titulo: "Cancelado porque o caso foi resolvido",
         detalhe: "o follow-up existia para esse caso e parou junto com ele",
+        ...motor,
+      };
+    // O vínculo do negócio (#3363): a execução do roteiro passou a ter um card
+    // EXPLÍCITO, e o roteiro continua nele até terminar. Sem frase, a escolha
+    // aparecia como "Passo registrado pelo motor, código: roteiro_negocio" — o
+    // nome da variável no lugar do fato, que é o defeito que este arquivo existe
+    // para não ter.
+    case "roteiro_negocio":
+      return {
+        titulo: "Negócio do roteiro definido",
+        detalhe: "as respostas deste roteiro vão para este negócio até ele terminar",
+        ...motor,
+      };
+    case "cancelled_by_stage_change":
+      return {
+        titulo: "Cancelado porque o negócio saiu da etapa",
+        // Sem nome de etapa no detalhe de propósito: o payload guarda o
+        // `to_stage_id`, e um uuid na tela é pior que a frase cobrindo o caso.
+        detalhe: "o toque era da etapa que armou este fluxo, e o card saiu dela",
         ...motor,
       };
     default:

@@ -59,6 +59,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { carregarResumoParaAEquipe, leadDoContexto } from "../resumo-do-evento";
 import type { ActionCtx, ActionExecutor, ActionResultDetail } from "../types";
 import { registerAction } from "@/lib/automation/actions";
+import type { ModeloDoAviso } from "@/lib/escalacao/modelo-do-aviso";
 
 const TIPO = "notify_team";
 
@@ -79,6 +80,8 @@ interface ConfigNotifyTeam {
 interface NumeroDaEquipe {
   channel_session_id: string;
   telefone_destino: string;
+  /** O modelo aprovado que leva o aviso pela conexão que só manda modelo (9094). */
+  modelo_id: string | null;
 }
 
 /** A linha de `channel_sessions` que a checagem de capacidade olha. */
@@ -102,7 +105,7 @@ type Admin = SupabaseClient;
 async function numeroDaEquipe(admin: Admin, organizationId: string): Promise<NumeroDaEquipe | null> {
   const { data } = await admin
     .from("config_aviso_de_caso")
-    .select("channel_session_id, telefone_destino, ligado")
+    .select("channel_session_id, telefone_destino, ligado, modelo_id")
     .eq("organization_id", organizationId)
     .maybeSingle();
   if (data === null) return null;
@@ -110,11 +113,16 @@ async function numeroDaEquipe(admin: Admin, organizationId: string): Promise<Num
     channel_session_id: string | null;
     telefone_destino: string | null;
     ligado: boolean | null;
+    modelo_id?: string | null;
   };
   if (linha.ligado !== true) return null;
   if (typeof linha.channel_session_id !== "string" || linha.channel_session_id === "") return null;
   if (typeof linha.telefone_destino !== "string" || linha.telefone_destino === "") return null;
-  return { channel_session_id: linha.channel_session_id, telefone_destino: linha.telefone_destino };
+  return {
+    channel_session_id: linha.channel_session_id,
+    telefone_destino: linha.telefone_destino,
+    modelo_id: linha.modelo_id ?? null,
+  };
 }
 
 /** A linha de `channel_sessions` que decide se o canal aceita envio agora. */
@@ -156,20 +164,52 @@ async function canalDaEquipe(
  * Mesma régua do aviso de caso: arquivado, pausado, desligado e canal que não
  * aceita mensagem livre (template-only) não podem receber este texto. Um envio
  * que passasse por aqui desligaria o número da empresa ou cairia na fila de
- * revisão do provedor.
+ * revisão do provedor. O canal que só manda modelo serve quando há um modelo
+ * aprovado escolhido para ele (migration 9094): o texto vai dentro do modelo.
  *
  * O import de capacidades é TARDIO, pelo mesmo motivo do aviso de caso: o
  * catálogo de capacidades puxa o inventário de provedores, e arrastá-lo para
  * o topo de quem só REGISTRA a ação derrubaria o bundle de quem nunca envia.
  */
-async function motivoDeBloqueioDoCanal(canal: CanalDaEquipe): Promise<string | null> {
+async function motivoDeBloqueioDoCanal(
+  canal: CanalDaEquipe,
+  modelo: ModeloDoAviso | null,
+): Promise<string | null> {
   if (canal.archived_at !== null) return "canal_arquivado";
   if (canal.status !== "WORKING") return "canal_pausado";
   if (canal.metadata !== null) return "canal_desligado";
   if (canal.provider === "") return "canal_sem_provedor";
-  const { capabilitiesOf } = await import("@/lib/channels/capabilities");
-  if (!capabilitiesOf(canal.provider as never).freeformOutsideWindow) return "canal_nao_aceita_texto_livre";
+  if (!(await aceitaTextoLivre(canal)) && modelo === null) return "canal_nao_aceita_texto_livre";
   return null;
+}
+
+async function aceitaTextoLivre(canal: CanalDaEquipe): Promise<boolean> {
+  const { capabilitiesOf } = await import("@/lib/channels/capabilities");
+  return capabilitiesOf(canal.provider as never).freeformOutsideWindow;
+}
+
+/**
+ * O MODELO APROVADO que leva o aviso quando a conexão só manda modelo
+ * (migration 9094) — o mesmo que o ADMIN escolheu em Avisos para o aviso de
+ * caso, conferido AGORA pela regra única (`lib/escalacao/modelo-do-aviso.ts`).
+ * `null` quando o canal aceita texto livre (o modelo não é usado) ou quando o
+ * modelo não serve mais: aí o bloqueio acima diz por quê.
+ */
+async function modeloSeOCanalPedir(
+  admin: Admin,
+  organizationId: string,
+  canal: CanalDaEquipe,
+  numero: NumeroDaEquipe,
+): Promise<ModeloDoAviso | null> {
+  if (canal.provider === "" || numero.modelo_id === null) return null;
+  if (await aceitaTextoLivre(canal)) return null;
+  const { carregarModeloDoAviso } = await import("@/lib/escalacao/modelo-do-aviso");
+  const avaliacao = await carregarModeloDoAviso(admin, {
+    organizationId,
+    channelSessionId: canal.id,
+    modeloId: numero.modelo_id,
+  });
+  return avaliacao.ok ? avaliacao.modelo : null;
 }
 
 function resumoVazio(motivo: string): ActionResultDetail {
@@ -190,7 +230,8 @@ async function enviaPorWhatsApp(
   if (canal === null) {
     return { type: TIPO, status: "skipped", detail: { reason: "canal_da_equipe_nao_encontrado" } };
   }
-  const bloqueio = await motivoDeBloqueioDoCanal(canal);
+  const modelo = await modeloSeOCanalPedir(ctx.admin, ctx.organizationId, canal, numero);
+  const bloqueio = await motivoDeBloqueioDoCanal(canal, modelo);
   if (bloqueio !== null) {
     return { type: TIPO, status: "skipped", detail: { reason: bloqueio } };
   }
@@ -211,7 +252,11 @@ async function enviaPorWhatsApp(
   // não lançar (`externalId: null` = canal noop/resposta sem id reconhecível, e
   // o aviso de caso também o trata como entregue).
   try {
-    await transporte.envia(ctx.organizationId, canal as never, destino, resumo);
+    if (modelo) {
+      await transporte.envia(ctx.organizationId, canal as never, destino, resumo, { modelo });
+    } else {
+      await transporte.envia(ctx.organizationId, canal as never, destino, resumo);
+    }
   } catch (err) {
     return {
       type: TIPO,
@@ -225,7 +270,11 @@ async function enviaPorWhatsApp(
   const { criarPacingDoCanal } = await import("@/lib/agent-engine/pacing/ledger-supabase");
   await (await criarPacingDoCanal(ctx.admin)).registraEnvio(ctx.organizationId, canal.id, agora);
 
-  return { type: TIPO, status: "success", detail: { reason: "whatsapp_enviado", canal: "whatsapp" } };
+  return {
+    type: TIPO,
+    status: "success",
+    detail: { reason: "whatsapp_enviado", canal: "whatsapp", ...(modelo ? { modelo: modelo.name } : {}) },
+  };
 }
 
 /**
@@ -239,7 +288,9 @@ async function decideEspera(ctx: ActionCtx): Promise<string | null> {
   const numero = await numeroDaEquipe(ctx.admin, ctx.organizationId);
   if (numero === null) return null;
   const canal = await canalDaEquipe(ctx.admin, ctx.organizationId, numero.channel_session_id);
-  if (canal === null || (await motivoDeBloqueioDoCanal(canal)) !== null) return null;
+  if (canal === null) return null;
+  const modelo = await modeloSeOCanalPedir(ctx.admin, ctx.organizationId, canal, numero);
+  if ((await motivoDeBloqueioDoCanal(canal, modelo)) !== null) return null;
   const { criarPacingDoCanal } = await import("@/lib/agent-engine/pacing/ledger-supabase");
   const pacing = await criarPacingDoCanal(ctx.admin);
   const decisao = await pacing.decide(ctx.organizationId, canal.id, new Date());

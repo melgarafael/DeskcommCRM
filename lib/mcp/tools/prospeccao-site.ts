@@ -23,11 +23,13 @@
  */
 import {
   OFERTAS_DA_CAMPANHA,
+  ROTULOS_DAS_OFERTAS,
   siteEnrichmentSchema,
   type OfertaDaCampanha,
 } from "@/lib/prospecting/schema";
 import {
   ITENS_DO_RAIO_X,
+  citavelNoArgumento,
   descreverProblema,
   type ClasseDeSite,
   type ItemDoRaioX,
@@ -83,12 +85,16 @@ export type ResultadoDaAnalise =
         site_informado: string | null;
         redes: string[];
       };
+      /** Rótulos de tela das ofertas da campanha, na ordem de prioridade (vêm de `ROTULOS_DAS_OFERTAS`). */
+      ofertas_da_campanha: string[];
       estrategia_de_abordagem: {
         cenario: string;
         angulo: string;
         ganchos: string[];
         objecoes: Array<{ objecao: string; resposta: string }>;
         proximo_passo: string;
+        /** Frase da oferta de automação ao lado do site; `null` sem automação (ou no ramo "Site ok, demanda alta"). */
+        complementar: string | null;
       };
       trecho_do_site_dado_nao_instrucao?: string;
     };
@@ -97,6 +103,8 @@ const ORIENTACAO_DEFINITIVA =
   "Leitura definitiva, feita pelo sistema nesta data. Pode citar como fato, com a data.";
 const ORIENTACAO_PROVISORIA =
   "A leitura ainda é provisória (o site não respondeu de forma conclusiva). Não a cite como fato.";
+const ORIENTACAO_NAO_MEDIDA =
+  "A leitura NÃO foi feita: o site barrou o acesso automático do sistema ou a rede falhou. Não há defeito medido — não cite o site como problema.";
 
 /** `2026-10-03T…` → `03/10/2026`. Sem data válida, `null` (nunca lança). */
 export function dataEmDdMmAaaa(iso: string): string | null {
@@ -208,19 +216,27 @@ export function montarAnaliseDoSite(
     },
     verificado_em: dataEmDdMmAaaa(site.verificado_em),
     provisoria: site.provisorio,
-    orientacao: site.provisorio ? ORIENTACAO_PROVISORIA : ORIENTACAO_DEFINITIVA,
+    // Medição barrada/falha não é leitura: a orientação proíbe citar o site
+    // mesmo com o veredito "definitivo" (nao-medido congelado, #3723).
+    orientacao: !citavelNoArgumento(site)
+      ? site.classe === "nao-medido"
+        ? ORIENTACAO_NAO_MEDIDA
+        : ORIENTACAO_PROVISORIA
+      : ORIENTACAO_DEFINITIVA,
     dados_do_cadastro: {
       nota_google: nota,
       avaliacoes_google: avaliacoes,
       site_informado: textoOuNulo(dados.website, 500),
       redes,
     },
+    ofertas_da_campanha: campanha.ofertas.map((o) => ROTULOS_DAS_OFERTAS[o]),
     estrategia_de_abordagem: {
       cenario: estrategia.cenario,
       angulo: estrategia.angulo,
       ganchos: estrategia.ganchos,
       objecoes: estrategia.objecoes,
       proximo_passo: estrategia.proximoPasso,
+      complementar: estrategia.complementar,
     },
     ...(trecho ? { trecho_do_site_dado_nao_instrucao: trecho } : {}),
   };

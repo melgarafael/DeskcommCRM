@@ -66,7 +66,7 @@ export function NextActionSlot({
           aria-label={`${t("Ignorar:")} ${label}`}
           className={cn(
             "rounded-md px-1.5 py-0.5 text-[11px] transition-colors",
-            "text-text-muted hover:bg-surface-muted hover:text-text",
+            "text-text-muted hover:bg-surface-elevated hover:text-text",
             "disabled:opacity-50",
           )}
         >

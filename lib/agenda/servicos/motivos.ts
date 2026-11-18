@@ -13,4 +13,14 @@ export const MOTIVOS_DO_SERVICO: Readonly<Record<string, string>> = {
   professional_unavailable: "Nenhum profissional habilitado está disponível neste horário.",
   resource_unavailable: "Um recurso necessário está indisponível neste horário.",
   service_stale: "A configuração mudou. Consulte os horários novamente.",
+  /** Lugar (mesa, camarote, quadra): o serviço tem lugares e a reserva precisa dizer qual. */
+  space_required: "Escolha o lugar desta reserva.",
+  space_not_eligible: "Este lugar não é oferecido por este serviço.",
+  space_unavailable: "Este lugar está bloqueado neste período.",
+  space_capacity_reached: "O lugar já está ocupado neste período.",
+  party_exceeds_space_capacity: "O número de pessoas passa da capacidade deste lugar.",
+  party_invalid: "O número de pessoas precisa estar entre 1 e 100000.",
+  service_resource_in_use: "Este recurso já está em uso; o tipo dele não pode ser trocado.",
+  service_resource_invalid: "Nome, capacidade, tipo ou área do recurso inválidos.",
+  service_resource_not_found: "Recurso não encontrado. Atualize a tela e tente de novo.",
 };

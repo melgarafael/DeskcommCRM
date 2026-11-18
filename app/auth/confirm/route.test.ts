@@ -236,7 +236,9 @@ describe("GET /auth/confirm", () => {
     const { POST } = await import("./route");
     const res = await POST(envio("type=signup&token_hash=abc"));
 
-    expect(vi.mocked(ensureTenantForUser)).toHaveBeenCalledWith(USUARIO);
+    expect(vi.mocked(ensureTenantForUser)).toHaveBeenCalledWith(USUARIO, {
+      pistas: { acceptLanguage: null },
+    });
     expect(vi.mocked(aplicarConvite)).not.toHaveBeenCalled();
     expect(destino(res)).toBe("/onboarding/welcome");
   });

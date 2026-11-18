@@ -13,9 +13,17 @@ import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runFollowupTick, createSupabaseAdminClient } from "@/lib/followup/engine";
 import { enviarTextoFixoPendente } from "@/lib/followup/enviar-texto-fixo";
+import { esquecerRetrato } from "@/lib/cron/piso-ocioso";
 
 vi.mock("@/lib/env", () => ({ env: { INTERNAL_SECRET: "dev-secret", INTERNAL_CRON_SECRET: "" } }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+// Sem pool `pg` de propósito, e não por acaso do ambiente: o portão do piso
+// ocioso falha ao ler e vale "tem trabalho" (fail-open) — é o que esta suíte mede.
+vi.mock("@/lib/agent-engine/db/request-pool", () => ({
+  getRequestPool: () => {
+    throw new Error("sem pool nesta suíte");
+  },
+}));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: vi.fn(() => ({
     from: vi.fn(),
@@ -36,6 +44,9 @@ function req(headers: Record<string, string> = {}): NextRequest {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // O retrato do piso ocioso é memoizado no processo (#3694): sem esquecer entre
+  // casos, um teste herdaria o retrato do anterior.
+  esquecerRetrato();
 });
 
 describe("GET/POST /api/v1/cron/followup-flow-worker", () => {
@@ -64,8 +75,17 @@ describe("GET/POST /api/v1/cron/followup-flow-worker", () => {
     const { POST } = await import("@/app/api/v1/cron/followup-flow-worker/route");
     const res = await POST(req({ authorization: "Bearer dev-secret" }));
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { data: typeof summary & { confirmation_sweep: unknown } };
-    expect(body.data).toEqual({ ...summary, confirmation_sweep: { ok: true, avisos: 0 } });
+    const body = (await res.json()) as {
+      data: typeof summary & { confirmation_sweep: unknown; recursos: Record<string, boolean> };
+    };
+    // `recursos` (#3694) diz se o portão deixou cada etapa rodar. Esta suíte não
+    // tem pool `pg` (o portão falha ao ler), e falha vale "tem trabalho" de
+    // propósito (fail-open): o portão nunca é o motivo de um recurso parar.
+    expect(body.data).toEqual({
+      ...summary,
+      confirmation_sweep: { ok: true, avisos: 0 },
+      recursos: { followup: true, followup_silencio: true, fila_followup: true },
+    });
     expect(vi.mocked(createSupabaseAdminClient)).toHaveBeenCalledWith(expect.anything());
     expect(vi.mocked(createAdminClient)).toHaveBeenCalled();
     expect(vi.mocked(enviarTextoFixoPendente)).toHaveBeenCalled();
@@ -139,7 +159,11 @@ describe("GET/POST /api/v1/cron/followup-flow-worker", () => {
       expect(vi.mocked(runFollowupTick)).toHaveBeenCalledTimes(1);
       expect(vi.mocked(enviarTextoFixoPendente)).toHaveBeenCalled();
       const body = (await res.json()) as { data: Record<string, unknown> };
-      expect(body.data).toEqual({ ...summary, confirmation_sweep: { ok: false, erro } });
+      expect(body.data).toEqual({
+        ...summary,
+        confirmation_sweep: { ok: false, erro },
+        recursos: { followup: true, followup_silencio: true, fila_followup: true },
+      });
       expect(logErro).toHaveBeenCalledWith(
         expect.stringContaining("fn_appointment_confirmation_sweep"),
         expect.objectContaining({ error: erro }),

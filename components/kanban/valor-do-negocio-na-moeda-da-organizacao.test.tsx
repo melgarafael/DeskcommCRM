@@ -98,7 +98,7 @@ describe("o valor do negócio é lido na moeda da organização (#3331)", () => 
     const usuario = userEvent.setup();
     renderForm(<LeadFieldsForm lead={negocio("USD")} pipelineId={FUNIL} />);
 
-    const campo = screen.getByLabelText(/Valor/);
+    const campo = screen.getByLabelText(/^Valor \(/);
     await usuario.clear(campo);
     await usuario.type(campo, "1,300");
 
@@ -121,7 +121,7 @@ describe("o valor do negócio é lido na moeda da organização (#3331)", () => 
     renderForm(<LeadFieldsForm lead={negocio(null)} pipelineId={FUNIL} />);
 
     expect(screen.getByText(/Valor \(\$\)/)).toBeTruthy();
-    const campo = screen.getByLabelText(/Valor/);
+    const campo = screen.getByLabelText(/^Valor \(/);
     await usuario.clear(campo);
     await usuario.type(campo, "1,300");
     await usuario.click(screen.getByRole("button", { name: /Salvar/ }));
@@ -137,7 +137,7 @@ describe("o valor do negócio é lido na moeda da organização (#3331)", () => 
     const usuario = userEvent.setup();
     renderForm(<LeadFieldsForm lead={negocio("BRL")} pipelineId={FUNIL} />);
 
-    const campo = screen.getByLabelText(/Valor/);
+    const campo = screen.getByLabelText(/^Valor \(/);
     await usuario.clear(campo);
     await usuario.type(campo, "1,300");
 

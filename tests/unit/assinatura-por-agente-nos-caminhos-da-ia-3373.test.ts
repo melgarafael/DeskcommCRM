@@ -244,7 +244,7 @@ describe("#3373 · o nome do agente assina nos DOIS caminhos que caíam no nome_
 });
 
 describe("#3373 · regressão zero: o que continua exatamente como hoje", () => {
-  it("interruptor DESLIGADO: a ação assina com o nome_ia, e o agente nem é lido", async () => {
+  it("interruptor DESLIGADO: a ação assina com o nome_ia, e o nome do agente é lido uma vez, para o balão", async () => {
     const fetchMock = wahaRespondendo();
     const { supabase, capturas } = duble(CONFIG_DESLIGADA);
     const { getAction } = await import("@/lib/automation/actions");
@@ -267,7 +267,10 @@ describe("#3373 · regressão zero: o que continua exatamente como hoje", () => 
       `a ação não chegou ao INSERT: ${JSON.stringify(resultado)}`,
     ).toHaveLength(1);
     expect(textoQueSaiu(fetchMock)).toBe("*Assistente Virtual*\nOi Thiago, vi seu formulário.");
-    expect(mockedNomeDoAgente).not.toHaveBeenCalled();
+    // #3649: o nome serve também ao balão ("IA · <nome>"), então é lido mesmo
+    // com o interruptor desligado — uma vez, e não entra na assinatura.
+    expect(mockedNomeDoAgente).toHaveBeenCalledTimes(1);
+    expect(mockedNomeDoAgente).toHaveBeenCalledWith(expect.anything(), ORG, AGENTE);
   });
 
   it("o motor do turno (ator ai_agent SEM agent_id) continua assinando com o agente do `id`", async () => {

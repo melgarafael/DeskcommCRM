@@ -41,17 +41,34 @@ export interface EscolhaRemota {
   nome: string;
   /** `true` só quando o administrador marcou a ferramenta como leitura. */
   leitura: boolean;
+  /**
+   * O servidor DO AGENTE a que a escolha pertence (`ai_agent_mcp_servers.id`).
+   * Ausente = o servidor compartilhado da organização (o formato de antes,
+   * `mcp_externo:<marca>:<nome>`), que segue valendo sem migração de dados.
+   */
+  servidorId?: string;
 }
 
 const NOME_DE_PROTOCOLO = /^[A-Za-z0-9_-]{1,64}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 function ehNomeDeProtocolo(nome: unknown): nome is string {
   return typeof nome === "string" && NOME_DE_PROTOCOLO.test(nome);
 }
 
-/** Monta o id que vai para `tool_ids` — o inverso exato de `lerToolIdRemoto`. */
-export function toolIdRemoto(nome: string, marca: MarcaRemota): string {
-  return `${PREFIXO_TOOL_ID_MCP_EXTERNO}${marca}:${nome}`;
+/**
+ * Monta o id que vai para `tool_ids` — o inverso exato de `lerToolIdRemoto`.
+ *
+ * Com `servidorId`, o formato dos servidores POR AGENTE:
+ * `mcp_externo:<servidor_id>:<leitura|escrita>:<nome>`. O id do servidor no
+ * prefixo é o que impede o `buscar_pedido` de um servidor de ser confundido
+ * com o `buscar_pedido` de outro — nomes iguais em servidores diferentes são
+ * escolhas diferentes.
+ */
+export function toolIdRemoto(nome: string, marca: MarcaRemota, servidorId?: string): string {
+  return servidorId
+    ? `${PREFIXO_TOOL_ID_MCP_EXTERNO}${servidorId}:${marca}:${nome}`
+    : `${PREFIXO_TOOL_ID_MCP_EXTERNO}${marca}:${nome}`;
 }
 
 /**
@@ -64,12 +81,17 @@ export function toolIdRemoto(nome: string, marca: MarcaRemota): string {
  */
 export function lerToolIdRemoto(id: string): EscolhaRemota | null {
   if (!id.startsWith(PREFIXO_TOOL_ID_MCP_EXTERNO)) return null;
-  const resto = id.slice(PREFIXO_TOOL_ID_MCP_EXTERNO.length);
-  const [marca, nome, ...sobra] = resto.split(":");
-  if (sobra.length > 0) return null;
+  const partes = id.slice(PREFIXO_TOOL_ID_MCP_EXTERNO.length).split(":");
+  // Três partes = servidor do agente (com o id do servidor na frente); duas =
+  // o servidor compartilhado da organização. Qualquer outra forma não é escolha.
+  const [servidorId, marca, nome] =
+    partes.length === 3 ? partes : partes.length === 2 ? [undefined, ...partes] : [];
+  if (servidorId !== undefined && !UUID.test(servidorId)) return null;
   if (!ehNomeDeProtocolo(nome)) return null;
   if (marca !== "leitura" && marca !== "escrita") return null;
-  return { nome: nome!, leitura: marca === "leitura" };
+  return servidorId
+    ? { nome: nome!, leitura: marca === "leitura", servidorId }
+    : { nome: nome!, leitura: marca === "leitura" };
 }
 
 /** É um id de ferramenta remota bem formado? (`false` para ids compilados.) */
@@ -91,15 +113,42 @@ export function toolIdAceito(id: string, catalogo: ReadonlySet<string>): boolean
 }
 
 /**
- * As escolhas remotas de um `tool_ids`, na ordem do array e sem duplicatas de
- * nome — a mesma ferramenta marcada leitura E escrita seria duas verdades
- * sobre o mesmo tool no turno, e a primeira que vence.
+ * As escolhas remotas do servidor COMPARTILHADO da organização, na ordem do
+ * array e sem duplicatas de nome — a mesma ferramenta marcada leitura E escrita
+ * seria duas verdades sobre o mesmo tool no turno, e a primeira que vence.
+ *
+ * Só o formato sem servidor: as escolhas de servidor do agente têm dono próprio
+ * (`escolhasDoServidor`) e não podem montar contra o servidor da organização.
  */
 export function escolhasRemotas(toolIds: readonly string[]): EscolhaRemota[] {
   const porNome = new Map<string, EscolhaRemota>();
   for (const id of toolIds) {
     const escolha = lerToolIdRemoto(id);
-    if (escolha && !porNome.has(escolha.nome)) porNome.set(escolha.nome, escolha);
+    if (escolha && !escolha.servidorId && !porNome.has(escolha.nome)) {
+      porNome.set(escolha.nome, escolha);
+    }
   }
   return [...porNome.values()];
+}
+
+/** As escolhas de UM servidor do agente, com a mesma régua de duplicata. */
+export function escolhasDoServidor(toolIds: readonly string[], servidorId: string): EscolhaRemota[] {
+  const porNome = new Map<string, EscolhaRemota>();
+  for (const id of toolIds) {
+    const escolha = lerToolIdRemoto(id);
+    if (escolha?.servidorId === servidorId && !porNome.has(escolha.nome)) {
+      porNome.set(escolha.nome, escolha);
+    }
+  }
+  return [...porNome.values()];
+}
+
+/** Os ids de servidor do agente que aparecem em algum `tool_ids`. */
+export function servidoresEscolhidos(toolIds: readonly string[]): Set<string> {
+  const ids = new Set<string>();
+  for (const id of toolIds) {
+    const escolha = lerToolIdRemoto(id);
+    if (escolha?.servidorId) ids.add(escolha.servidorId);
+  }
+  return ids;
 }

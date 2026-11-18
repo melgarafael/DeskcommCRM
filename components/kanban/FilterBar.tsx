@@ -27,9 +27,10 @@ import {
   parseAgentOwnerFilter,
   type LeadFilters,
 } from "@/lib/kanban/filters";
-import { categoriaDoMotivo } from "@/lib/leads/motivos-de-perda-do-funil";
+import { SEM_CATEGORIA, categoriaDoMotivo, categoriasDoFunil } from "@/lib/leads/motivos-de-perda-do-funil";
 import { rotuloDoMotivoDePerda } from "@/lib/schemas/leads";
 import { cn } from "@/lib/utils";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 interface FilterBarProps {
   filters: LeadFilters;
@@ -103,7 +104,7 @@ export function FilterBar({ filters, onChange, leads, settings }: FilterBarProps
         .map((m) => ({
           key: `u:${m.user_id}`,
           owner: m.user_id,
-          name: m.full_name ?? t("Sem nome"),
+          name: rotuloDoMembro(m, t),
           kind: "user" as OwnerKind,
           version: null,
         })),
@@ -171,11 +172,23 @@ export function FilterBar({ filters, onChange, leads, settings }: FilterBarProps
     return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
   }, [leads]);
   const categoriasPerdidas = useMemo(() => {
-    const set = new Set<string>();
+    /**
+     * AS CATEGORIAS DO FUNIL ENTRAM AQUI (#4437). A conta antiga era só o que
+     * está no quadro, e isso tem dois buracos: a categoria que o funil declara
+     * mas nenhum card perdido usa ainda não aparece (ninguém consegue filtrar
+     * por ela depois de cadastrá-la), e o motivo SEM categoria não aparecia de
+     * jeito nenhum — perdido, e inalcançável por qualquer recorte de categoria.
+     * `categoriasDoFunil` é a régua do funil (declaradas + em uso); o sentinela
+     * entra só quando existe card nesse estado, e é o MESMO texto do relatório.
+     */
+    const set = new Set<string>(categoriasDoFunil(settings));
+    let temSemCategoria = false;
     for (const motivo of motivosPerdidos) {
       const categoria = categoriaDoMotivo(motivo, settings);
       if (categoria) set.add(categoria);
+      else temSemCategoria = true;
     }
+    if (temSemCategoria) set.add(SEM_CATEGORIA);
     return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
   }, [motivosPerdidos, settings]);
   /** Só com a aba em Perdidos: fora dela os dois filtros esconderiam tudo. */
@@ -186,7 +199,14 @@ export function FilterBar({ filters, onChange, leads, settings }: FilterBarProps
     return rotulo === motivo ? motivo : t(rotulo);
   };
   const motivoLabel = filters.lostReason ? rotuloDoMotivo(filters.lostReason) : t("Todos");
-  const categoriaLabel = filters.lostCategory ?? t("Todas");
+  // O sentinela é texto do PRODUTO (traduzível); categoria de negócio é dado.
+  // O literal vai escrito no ramo de propósito: `t(variável)` traduziria dado do
+  // operador (a régua de `i18n-espanhol-cobre-a-tela`), e categoria de negócio
+  // na tela tem de aparecer exatamente como foi cadastrada.
+  const categoriaLabel =
+    filters.lostCategory === SEM_CATEGORIA
+      ? t("Sem categoria")
+      : (filters.lostCategory ?? t("Todas"));
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-2">
@@ -304,7 +324,7 @@ export function FilterBar({ filters, onChange, leads, settings }: FilterBarProps
                     key={categoria}
                     onClick={() => onChange({ ...filters, lostCategory: categoria })}
                   >
-                    {categoria}
+                    {categoria === SEM_CATEGORIA ? t("Sem categoria") : categoria}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>

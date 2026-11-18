@@ -11,7 +11,12 @@ const dadosDoServicoSchema = z.object({
   service_revision: z.number().int().positive(), requires_confirmation: z.boolean(), destination_calendar_id: z.uuid().nullable(),
   service_publication_mode: z.enum(["none", "service", "professional"]),
   schedule: z.array(horarioDoServicoSchema), professionals: z.array(z.uuid()),
-  resources: z.array(z.object({ resource_id: z.uuid(), units: z.number().int().positive() })), calendar_sources: z.array(z.uuid()),
+  /** `kind='space'` é lugar reservável (capacidade em pessoas); `resource` é exigência com unidades. */
+  resources: z.array(z.object({
+    resource_id: z.uuid(), units: z.number().int().positive(),
+    kind: z.enum(["resource", "space"]).default("resource"),
+    name: z.string().optional(), capacity: z.number().int().positive().optional(), sector: z.string().nullable().optional(),
+  })), calendar_sources: z.array(z.uuid()),
 });
 export type DadosDoServico = z.infer<typeof dadosDoServicoSchema>;
 export const disponibilidadeDoServicoSchema = z.object({
@@ -21,6 +26,10 @@ export const disponibilidadeDoServicoSchema = z.object({
   capacity_limit: z.number().nullable().optional(), occupied: z.number().optional(), remaining_capacity: z.number().nullable().optional(),
   available_professionals: z.number().optional(), service_revision: z.number().optional(), coverage_verified: z.boolean().optional(),
   destination_calendar_id: z.uuid().nullable().optional(), requires_confirmation: z.boolean().optional(), time_zone: z.string().optional(),
+  /** O lugar escolhido e a ocupação dele, em pessoas, no período consultado (issue #4029). */
+  space_id: z.uuid().nullable().optional(), space_name: z.string().nullable().optional(), space_sector: z.string().nullable().optional(),
+  space_capacity: z.number().nullable().optional(), space_occupied: z.number().optional(),
+  space_remaining_capacity: z.number().nullable().optional(), party_size: z.number().optional(),
 });
 export type DisponibilidadeDoServico = z.infer<typeof disponibilidadeDoServicoSchema>;
 
@@ -48,12 +57,15 @@ export async function atualizarFontesDoServico(
 
 export async function consultarServico(
   db: SupabaseClient, organizationId: string, service: DadosDoServico,
-  params: { de: Date; ate: Date; agora: Date; ownerUserId?: string | null },
+  params: { de: Date; ate: Date; agora: Date; ownerUserId?: string | null; spaceId?: string | null; partySize?: number | null },
 ): Promise<{ candidates: CandidatoDoServico[]; availability: DisponibilidadeDoServico[] }> {
   const candidates = candidatosDoServico(service, service.schedule, params.de, params.ate);
+  // Com lugar, a prévia responde POR lugar: a vaga é da mesa, não do serviço.
   const raw = await googleRpc(db, "fn_calendar_service_preview", {
     p_org: organizationId, p_type: service.event_type_id, p_starts: candidates.map((c) => c.starts_at),
     p_owner: params.ownerUserId ?? null, p_now: params.agora.toISOString(),
+    ...(params.spaceId ? { p_space: params.spaceId } : {}),
+    ...(params.partySize ? { p_party: params.partySize } : {}),
   });
   return { candidates, availability: z.array(disponibilidadeDoServicoSchema).parse(raw) };
 }

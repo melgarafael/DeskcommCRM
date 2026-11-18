@@ -12,6 +12,19 @@ import { ehHexValido } from "@/lib/branding/rampa";
 import { normalizarTags } from "@/lib/contacts/tag-normalizada";
 import { IDIOMAS } from "@/lib/i18n/idiomas";
 import { DIAS_MAXIMO_DO_RECORTE } from "@/lib/kanban/recorte-de-encerrados";
+import { DIAS_MAXIMO_PARA_REABRIR } from "@/lib/leads/janela-do-perdido";
+import {
+  ICONES_DE_ATALHO,
+  MAX_ATALHOS,
+  MODOS_DE_DISCAGEM,
+  modeloAceito,
+  TAMANHO_MAXIMO_DO_MODELO,
+  TAMANHO_MAXIMO_DO_ROTULO,
+} from "@/lib/leads/atalhos-do-card";
+import {
+  MAX_CARACTERES_DA_CATEGORIA_DE_PERDA,
+  MAX_CATEGORIAS_DE_PERDA,
+} from "@/lib/schemas/leads";
 import { MOEDAS_SERVIDAS } from "@/lib/money";
 
 import { conversationTagSchema } from "./messaging";
@@ -156,12 +169,24 @@ export const notificationPrefsSchema = z.object({
 });
 export type NotificationPrefsInput = z.infer<typeof notificationPrefsSchema>;
 
+/**
+ * A CHAVE de um campo personalizado do funil — a mesma régua da ESCRITA
+ * (`customFieldSchema.key`) e a mesma que qualquer leitura por chave precisa.
+ *
+ * Exportada (issue #3221) porque a rota `GET /api/v1/agenda/datas-dos-negocios`
+ * recebe a chave na querystring e a interpola num caminho jsonb do PostgREST
+ * (`custom_fields->>campo`): sem a régua, um `campo` com vírgula ou ponto vira
+ * SINTAXE de filtro, e não nome de campo. Duas cópias da regex divergiriam no
+ * dia em que uma delas mudasse — por isso é a mesma constante.
+ */
+export const chaveDeCampoDoFunilSchema = z
+  .string()
+  .min(1)
+  .max(40)
+  .regex(/^[a-z][a-z0-9_]*$/i, "Use letras, números e underscore");
+
 export const customFieldSchema = z.object({
-  key: z
-    .string()
-    .min(1)
-    .max(40)
-    .regex(/^[a-z][a-z0-9_]*$/i, "Use letras, números e underscore"),
+  key: chaveDeCampoDoFunilSchema,
   label: z.string().min(1).max(80),
   type: z.enum([
     "text",
@@ -270,8 +295,8 @@ export const customFieldSchema = z.object({
    * ele é gravado como digitado. DESLIGADO (o padrão, e a chave ausente em toda
    * definição que já existe), a escrita só aceita um valor que case com uma
    * opção (por `value`, `label` ou apelido), gravando o `value` CANÔNICO.
-   * Hoje a régua vale na ficha (CustomFieldsEditor); `validarValorPesquisavel`
-   * existe pronta para as escritas do servidor, ainda não plugada (#2521).
+   * A régua vale na ficha (CustomFieldsEditor) e, desde #3508, nas escritas do
+   * servidor (`lib/leads/opcao-do-campo-no-servidor.ts`).
    */
   allow_new: z.boolean().optional(),
   /**
@@ -291,6 +316,52 @@ export const customFieldSchema = z.object({
    * schema e a API conhecem, e o modo é uma propriedade dele.
    */
   multiple: z.boolean().optional(),
+  /**
+   * MOSTRAR NO RESUMO DA PASSAGEM (issue #4303).
+   *
+   * LIGADO, o valor que este campo tem no CARD entra no resumo que a pessoa lê
+   * ao assumir a conversa (`montarBriefingDaPassagem`, bloco "Dados coletados
+   * automaticamente"), com o RÓTULO do campo. É o dado que decide a próxima
+   * frase de quem atende — consumo em kWh, valor da conta — e que hoje só
+   * aparece se a pessoa abrir o card.
+   *
+   * DESLIGADO (o padrão) é o que toda definição já instalada é: a chave ausente
+   * não liga nada, e o resumo sai byte a byte como saía antes desta opção. Não
+   * há migration porque a definição é o jsonb `pipelines.settings.fields`; um
+   * funil antigo simplesmente não tem a chave.
+   *
+   * A leitura é `lib/leads/campos-do-resumo-da-passagem.ts`; quem lê só o CARD
+   * da conversa (negócio), nunca campos do contato nem de outra organização.
+   */
+  mostrar_no_resumo_da_passagem: z.boolean().optional(),
+  /**
+   * A IA PODE LER ESTE CAMPO? (issue #4669)
+   *
+   * LIGADO, o valor deste campo pode chegar ao modelo: o bloco do negócio do
+   * follow-up escrito por IA (`lib/agent-engine/agent/negocio-do-followup.ts`)
+   * e a leitura `crm_get_lead` DENTRO de um turno de agente
+   * (`lib/mcp/tools/leads.ts`) o devolvem. DESLIGADO, o valor fica no card e
+   * não vai para o modelo por nenhum destes dois caminhos — documento, dado de
+   * saúde, observação interna.
+   *
+   * A AUSÊNCIA é DESMARCADO, e isso é a decisão desta fatia, não um detalhe:
+   * um campo que ninguém marcou NÃO está autorizado a ir para o modelo.
+   * `null` numa caixa de consentimento não é `sim` — e é o que o dono do funil
+   * espera ao ver a caixa vazia. Consequência declarada: as definições que já
+   * existem (sem a chave) param de ir ao modelo até alguém marcá-las; é o
+   * mesmo sentido dos outros booleanos opcionais daqui (`multiple`,
+   * `allow_new`, `mostrar_no_resumo_da_passagem`), cuja ausência também é
+   * "desligado". O interruptor mora na mesma fatia, na tela do funil
+   * (`app/app/settings/tenant/pipelines/_client.tsx`), e desmarcá-lo APAGA a
+   * chave — é o que faz da ausência o desmarcado também no que a tela grava.
+   *
+   * Sem `.default(false)` de propósito, igual a `escopo`: o `handleSave`
+   * regrava `fields` inteiro, e gravar a chave em cima de toda definição
+   * existente mudaria a forma do funil no primeiro salvamento. Quem lê só o
+   * `true` explícito — `campoLiberadoParaIa` em `lib/leads/campos-do-funil.ts` —
+   * é a régua única dos dois caminhos.
+   */
+  ia_pode_ler: z.boolean().optional(),
 });
 export type CustomFieldDef = z.infer<typeof customFieldSchema>;
 
@@ -319,11 +390,26 @@ export const MAX_CAMPOS_DO_NEGOCIO = 50;
 export const MENSAGEM_DO_TETO_DE_CAMPOS_DO_NEGOCIO = `O funil aceita no máximo ${MAX_CAMPOS_DO_NEGOCIO} campos do negócio. Os campos do contato não entram nesta conta.`;
 
 /**
+ * A recusa da chave repetida (#4043), legível — e com a chave dentro.
+ *
+ * A ordem do funil É a do array, e `crm_leads.custom_fields` é um objeto lido
+ * POR CHAVE: dois campos com a mesma chave disputam a mesma posição na tela e a
+ * mesma gaveta do negócio. Enquanto só existia adicionar/remover, isso passava
+ * calado; com reordenar, "qual dos dois vem primeiro" deixa de ter resposta.
+ */
+export const MENSAGEM_DE_CHAVE_REPETIDA = (chave: string) =>
+  `A chave "${chave}" aparece mais de uma vez nos campos deste funil. Cada campo precisa de uma chave própria.`;
+
+/**
  * `fields` do PATCH: a cota conta só os campos do NEGÓCIO.
  *
  * O array segue sendo `customFieldSchema[]` (a forma de cada campo não mudou) —
  * o que mudou é O QUE a cota conta. Quem escreve a mensagem é esta régua, para
  * a tela do funil e a captação dizerem a mesma frase.
+ *
+ * A CHAVE REPETIDA (#4043) é recusada aqui, e não campo a campo: `customFieldSchema`
+ * julga um item, e o defeito só existe na lista. Repetir a chave não é "ordem
+ * estranha" — é a lista deixando de descrever uma ordem possível.
  */
 export const camposDoFunilPatchSchema = z
   .array(customFieldSchema)
@@ -334,6 +420,15 @@ export const camposDoFunilPatchSchema = z
         code: "custom",
         message: `${MENSAGEM_DO_TETO_DE_CAMPOS_DO_NEGOCIO} Recebidos ${doNegocio}.`,
       });
+    }
+    // Uma issue só: cinco repetições da mesma chave não são cinco consertos.
+    const vistas = new Set<string>();
+    for (const campo of campos) {
+      if (vistas.has(campo.key)) {
+        ctx.addIssue({ code: "custom", message: MENSAGEM_DE_CHAVE_REPETIDA(campo.key) });
+        return;
+      }
+      vistas.add(campo.key);
     }
   });
 
@@ -381,6 +476,34 @@ export const pipelineConfigPatchSchema = z.object({
       ]),
     )
     .max(50)
+    .optional(),
+  /**
+   * AS CATEGORIAS DE PERDA DESTE FUNIL (#4437).
+   *
+   * A lista de fábrica (`CATEGORIAS_DE_PERDA`) é o piso de quem nunca declarou
+   * nada — mas ela é do PRODUTO, não do negócio: uma clínica não perde por
+   * "Concorrência" e uma loja precisa de "Risco". Aqui o funil declara as suas,
+   * na ordem em que quer vê-las na tela.
+   *
+   * DOUTRINA DA CHAVE (a mesma de `ocultar_encerrados_dias`):
+   *   - AUSENTE = o funil nunca declarou → vale a lista de fábrica, MAIS as
+   *     categorias que os motivos já usam (é assim que o "Risco" gravado à mão
+   *     no "Possível fraude" continua existindo sem migração de dado);
+   *   - PRESENTE, inclusive `[]` = decisão da organização → vale exatamente o
+   *     que está aqui. `[]` é legítimo: esconder todas é uma escolha, e não
+   *     pode ressuscitar a lista de fábrica.
+   *
+   * Esconder uma categoria é TIRÁ-LA DAQUI, e só isso: o `categoria` gravado em
+   * `lost_reasons` não é tocado, então o motivo que já usava continua agrupado
+   * no relatório e continua mostrando a categoria dele no menu. O que muda é
+   * que ela deixa de ser oferecida para os OUTROS motivos.
+   *
+   * Renomear é trocar o texto na lista; a tela reescreve o `categoria` dos
+   * motivos que usavam o nome antigo, senão o vínculo viraria um rótulo órfão.
+   */
+  lost_reason_categories: z
+    .array(z.string().min(1).max(MAX_CARACTERES_DA_CATEGORIA_DE_PERDA))
+    .max(MAX_CATEGORIAS_DE_PERDA)
     .optional(),
   /**
    * O MOTIVO DE GANHO por funil (issue #1536) — espelho de `lost_reasons`.
@@ -456,6 +579,63 @@ export const pipelineConfigPatchSchema = z.object({
    * válido: um número escrito aqui e outro lá divergiriam no primeiro ajuste.
    */
   ocultar_encerrados_dias: z.number().int().min(0).max(DIAS_MAXIMO_DO_RECORTE).optional(),
+  /**
+   * A JANELA DO NEGÓCIO PERDIDO QUE VOLTA (#4076): quantos dias depois da
+   * perda a mensagem do contato ainda REABRE o mesmo card em vez de abrir um
+   * negócio novo. `0` (e a chave ausente, que é o estado de todo funil de hoje)
+   * é DESLIGADO — o comportamento de antes da opção existir.
+   *
+   * O teto vem do domínio (`lib/leads/janela-do-perdido`), que é quem decide o
+   * que é uma janela válida: um número escrito aqui e outro lá divergiriam no
+   * primeiro ajuste, e a tela mostraria um valor que o motor ignora. `min(0)` e
+   * não `min(1)`: o zero é uma DECISÃO (desliguei), e recusá-lo deixaria a
+   * janela antiga gravada quando alguém desmarcasse a opção.
+   */
+  reabrir_perdido_dias: z.number().int().min(0).max(DIAS_MAXIMO_PARA_REABRIR).optional(),
+  /**
+   * OS ATALHOS DO CARD (issue #3487) — os botões que abrem outro sistema com o
+   * dado do cliente: `tel:` para o softphone do PABX, `https://…?cliente={{erp_id}}`
+   * para o app de pedidos.
+   *
+   * ─── A régua do ESQUEMA, e por que ela está aqui ──────────────────────────
+   *
+   * O `url` é digitado por uma pessoa e renderizado para outras: o valor vira
+   * `<a href>`, e `javascript:`/`data:` num href é execução de código a um
+   * clique. A allowlist (`tel:`, `http:`, `https:`) RECUSA NA GRAVAÇÃO, e a
+   * renderização revalida o que veio do banco (`lib/leads/atalhos-do-card.ts`,
+   * `atalhosParaExibir`) — o `settings` é jsonb, escrito também por script, seed
+   * e restauração de backup, e um valor posto por fora passaria por esta porta
+   * sem tocá-la.
+   *
+   * ⚠️ `refine` e não `z.enum`: a mensagem de erro precisa dizer QUAL regra
+   * caiu, e o formulário lê o `details` para marcar a linha errada.
+   *
+   * `atalhos` AUSENTE é o estado de todo funil instalado: nenhum botão, e o card
+   * continua idêntico ao de antes desta entrega.
+   */
+  atalhos: z
+    .array(
+      z.object({
+        rotulo: z.string().trim().min(1).max(TAMANHO_MAXIMO_DO_ROTULO),
+        icone: z.enum(ICONES_DE_ATALHO),
+        url: z
+          .string()
+          .trim()
+          .min(1)
+          .max(TAMANHO_MAXIMO_DO_MODELO)
+          .refine(modeloAceito, { message: "esquema_nao_permitido" }),
+        /**
+         * A forma do telefone no `tel:` (2ª fatia da #3487). Opcional: ausente é
+         * `completo`, o E.164 de sempre — todo atalho gravado antes desta opção
+         * continua idêntico, e o patch antigo (sem a chave) continua válido.
+         * `z.enum` aqui e não `refine`: é vocabulário fechado de duas palavras,
+         * e a mensagem de erro não precisa ensinar nada além da lista.
+         */
+        discagem: z.enum(MODOS_DE_DISCAGEM).optional(),
+      }),
+    )
+    .max(MAX_ATALHOS)
+    .optional(),
 });
 export type PipelineConfigPatch = z.infer<typeof pipelineConfigPatchSchema>;
 
@@ -557,6 +737,32 @@ export const marcaDaOrganizacaoSchema = z.object({
 });
 export type MarcaDaOrganizacaoInput = z.infer<typeof marcaDaOrganizacaoSchema>;
 
+/**
+ * A CONTA Resend da organização (#3287, fatia da conta própria) — o que a
+ * server action `conectarContaResendDaOrganizacao` aceita.
+ *
+ * `api_key` é a chave CRUA que a pessoa colou do painel da Resend. Ela NUNCA é
+ * gravada em claro nem devolvida: a action cifra antes de gravar
+ * (`organization_resend_accounts`) e a tela só vê os 4 últimos. O `.min(10)` é
+ * o mesmo piso do `criarCliente` da Resend — uma chave mais curta não é chave.
+ *
+ * `from_email` é o endereço de remetente no DOMÍNIO da organização. A forma é
+ * validada aqui; o domínio ser VERIFICADO na conta é conferido pela API da
+ * Resend na própria action (`verificarDominioNaResend`) — o critério (E): a
+ * recusa de domínio não verificado é mensagem própria, não erro cru da API.
+ */
+export const contaResendDaOrganizacaoSchema = z.object({
+  api_key: z.string().trim().min(10, "Cole a chave da sua conta Resend.").max(200),
+  from_email: z
+    .string()
+    .trim()
+    .max(254)
+    .refine((valor) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(valor), {
+      message: "Use um endereço de e-mail como contato@suaempresa.com",
+    }),
+});
+export type ContaResendDaOrganizacaoInput = z.infer<typeof contaResendDaOrganizacaoSchema>;
+
 /** Prazos por organização. Leitura legada degrada; escrita usa schema estrito. */
 export const agendaSettingsWriteSchema = z.strictObject({
   confirmation_delay_minutes: z.number().int().min(1).max(10080),
@@ -590,6 +796,11 @@ export const agendaSettingsSchema = agendaSettingsWriteSchema.catch({confirmatio
  * qualquer lixo é desligado aqui E lá. Se os dois idiomas divergissem, a tela
  * mostraria o selo de uma regra que o trigger não aplica.
  *
+ * `cliente_pela_venda` e `pos_venda_dias` (#3644): quem já COMPROU volta pelo
+ * funil de clientes, e não pelo de captação — e, dentro da janela de pós-venda,
+ * a conversa não vira card nenhum. As duas nascem desligadas; a régua de leitura
+ * é a mesma da chave acima.
+ *
  * `internal_contact_tags` (#2353): a lista de etiquetas que marcam um contato
  * INTERNO (equipe, sócio, família, fornecedor). Contato com uma delas não vira
  * card e não recebe atendimento da IA — ver `lib/contacts/tags-internas.ts`.
@@ -600,10 +811,27 @@ export const agendaSettingsSchema = agendaSettingsWriteSchema.catch({confirmatio
  */
 export const internalContactTagsSchema = z.array(z.string()).catch([]);
 
+/**
+ * `team_contact_tags` (#3534): a lista de etiquetas que marcam um contato da
+ * EQUIPE QUE CONTINUA SENDO ATENDIDA — sócio que testa o agente, pessoa que
+ * pede informação a qualquer hora. A diferença para `internal_contact_tags` é
+ * toda a razão de a chave existir:
+ *
+ *   - `internal_contact_tags` → o contato NÃO é atendido pela IA (veto
+ *     `contato_interno`) e não vira card;
+ *   - `team_contact_tags`     → o contato É atendido (o turno segue normal),
+ *     é medido e registrado, mas nenhum repasse AUTOMÁTICO o silencia.
+ *
+ * Mesma forma de leitura (`catch([])`), mesmo bolso jsonb, nenhuma migration:
+ * quem nunca configurar a lista mantém exatamente o comportamento de antes.
+ */
+export const teamContactTagsSchema = z.array(z.string()).catch([]);
+
 export const crmSettingsSchema = z
   .object({
     cliente_pela_agenda: z.boolean().catch(false),
     internal_contact_tags: internalContactTagsSchema,
+    team_contact_tags: teamContactTagsSchema,
     /**
      * `telefone_de_ficha_vazia` (issue #2593): o telefone que o cliente diz
      * numa conversa entra SOZINHO na ficha SEM número — sem passar pela fila de
@@ -621,8 +849,86 @@ export const crmSettingsSchema = z
      * o bloco que as regras de contato já usam.
      */
     telefone_de_ficha_vazia: z.boolean().catch(false),
+    nome_informado_no_atendimento: z.boolean().catch(false),
+    /**
+     * `avisar_transferencia_no_whatsapp` (#3784): a transferência para atendimento
+     * humano também manda o aviso ao número do Aviso no WhatsApp.
+     *
+     * ⚠️ NASCE LIGADA, ao contrário das vizinhas: é a régua do aviso de
+     * Propostas (`proposals.avisar_no_whatsapp !== false`), e não a das regras
+     * de contato. Ela não grava dado de ninguém; só existe para quem já ligou o
+     * Aviso de caso poder tirar as transferências do teto diário do número.
+     * Só o booleano `false` desliga — e é a mesma régua do SQL do handoff
+     * (`is distinct from 'false'::jsonb`), que decide se o evento nem nasce.
+     */
+    avisar_transferencia_no_whatsapp: z.boolean().catch(true),
+    /**
+     * `aviso_transferencia_com_nome`: o aviso de transferência também leva o
+     * PRIMEIRO nome do cliente, além do link.
+     *
+     * ⚠️ NASCE DESLIGADA, ao contrário da vizinha `avisar_transferencia_no_whatsapp`:
+     * a mensagem padrão é mínima por decisão de privacidade. Só o booleano `true` liga.
+     *
+     * Só o nome, nunca o "resumo" (doc 372 = A, que segue o doc 176): texto escrito
+     * pela IA chega à equipe com a cara da empresa, e na maioria das passagens o
+     * `last_handoff_reason` nem é resumo — é código interno (`requested_human`).
+     */
+    aviso_transferencia_com_nome: z.boolean().catch(false),
+    /**
+     * `cliente_pela_venda` (#3644): quem JÁ COMPROU (tem negócio `won` e nenhum
+     * aberto) volta pelo funil de clientes, e não pelo de captação.
+     *
+     * ⚠️ NASCE DESLIGADA em toda organização, e a régua é a mesma das outras
+     * duas chaves: só o booleano `true` liga. Desligada, o roteamento é
+     * exatamente o de antes desta chave existir (`first_service_at` com a regra
+     * da agenda ligada) — é o que permite entregar a regra sem tocar em quem não
+     * a pediu.
+     *
+     * Mora no `crm` porque é uma regra de CONTATO, como as vizinhas — nenhuma
+     * coluna nem tabela nova, como o mantenedor decidiu no #2593.
+     */
+    cliente_pela_venda: z.boolean().catch(false),
+    /**
+     * `pos_venda_dias` (#3644): a janela em que a conversa de quem acabou de
+     * comprar NÃO abre negócio nenhum. `0` (o padrão) desliga a janela: o card
+     * nasce sempre, como hoje.
+     *
+     * Teto de 365 porque o que isto cobre é pós-venda imediato ("chegou
+     * certinho?"), não o relacionamento inteiro com o cliente — e um número
+     * fora da faixa é configuração torta, não intenção: cai em `0` (o
+     * comportamento de sempre) em vez de segurar conversa por um ano por causa
+     * de um dígito a mais.
+     */
+    pos_venda_dias: z.number().int().min(0).max(365).catch(0),
+    /**
+     * `duplicados_por_nome` (#4138): a tela Contatos › Duplicados também sugere
+     * pares pelo NOME, na seção "Parecidos — confira".
+     *
+     * ⚠️ NASCE DESLIGADA em toda organização — e a régua é a mesma das vizinhas:
+     * só o booleano `true` liga. Desligada, a rota não chama
+     * `encontrarParecidosPorNome` nem lê as dispensas, e a seção nem aparece.
+     *
+     * O motivo de existir é o inverso do que a torna perigosa: em base de pessoa
+     * física o nome repete e a sugestão vira ruído; em base de empresas
+     * prospectadas é o único caminho medido para achar a mesma empresa com dois
+     * telefones (spec 31, B1). Quem sabe qual dos dois mundos é o seu é quem
+     * opera — não o produto. Nada aqui funde sozinho: a sugestão só abre a
+     * conferência, e juntar continua sendo um clique de gestor.
+     */
+    duplicados_por_nome: z.boolean().catch(false),
   })
-  .catch({ cliente_pela_agenda: false, internal_contact_tags: [], telefone_de_ficha_vazia: false });
+  .catch({
+    cliente_pela_agenda: false,
+    internal_contact_tags: [],
+    team_contact_tags: [],
+    telefone_de_ficha_vazia: false,
+    nome_informado_no_atendimento: false,
+    avisar_transferencia_no_whatsapp: true,
+    aviso_transferencia_com_nome: false,
+    cliente_pela_venda: false,
+    pos_venda_dias: 0,
+    duplicados_por_nome: false,
+  });
 
 /**
  * `organizations.settings.notificacoes.conteudo_na_tela_bloqueada` — o que o
@@ -640,11 +946,36 @@ export const CONTEUDO_NA_TELA_BLOQUEADA_PADRAO: ConteudoNaTelaBloqueada = "nome"
 
 export const conteudoNaTelaBloqueadaWriteSchema = z.enum(CONTEUDOS_NA_TELA_BLOQUEADA);
 
+/**
+ * `organizations.settings.notificacoes.cor_por_canal` — o aviso de mensagem
+ * nova sai na cor da rede ou no neutro de sempre (#4094).
+ *
+ * Mora no MESMO nó `notificacoes` que a opção da tela bloqueada: é uma escolha
+ * da empresa sobre os avisos, não uma preferência de aparelho, e uma tabela
+ * nova para um booleano seria mais superfície (RLS, migration, backup) do que
+ * a decisão pede. `true` é o padrão: quem já usa o produto recebe a cor sem
+ * mexer em nada, e quem não gosta desliga num interruptor.
+ */
+export const COR_POR_CANAL_PADRAO = true;
+
 export const notificacoesSettingsSchema = z
   .object({
     conteudo_na_tela_bloqueada: conteudoNaTelaBloqueadaWriteSchema.catch(CONTEUDO_NA_TELA_BLOQUEADA_PADRAO),
+    cor_por_canal: z.boolean().catch(COR_POR_CANAL_PADRAO),
   })
-  .catch({ conteudo_na_tela_bloqueada: CONTEUDO_NA_TELA_BLOQUEADA_PADRAO });
+  .catch({
+    conteudo_na_tela_bloqueada: CONTEUDO_NA_TELA_BLOQUEADA_PADRAO,
+    cor_por_canal: COR_POR_CANAL_PADRAO,
+  });
+
+/** A cor por canal está ligada nesta organização? Nunca lança. */
+export function corPorCanalLigada(settings: unknown): boolean {
+  const notificacoes =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).notificacoes
+      : undefined;
+  return notificacoesSettingsSchema.parse(notificacoes ?? {}).cor_por_canal;
+}
 
 /** O que aparece com a tela bloqueada nesta organização. Nunca lança. */
 export function conteudoNaTelaBloqueada(settings: unknown): ConteudoNaTelaBloqueada {
@@ -679,6 +1010,21 @@ export function tagsInternasDaOrg(settings: unknown): string[] {
 }
 
 /**
+ * Lê `organizations.settings.crm.team_contact_tags` (#3534) já normalizada —
+ * minúscula, aparada, sem repetição —, a MESMA forma que `tagsInternasDaOrg`.
+ *
+ * Ausente, jsonb torto ou lista com lixo → lista vazia: nenhum contato é da
+ * equipe, e o produto se comporta exatamente como antes da chave existir.
+ */
+export function tagsDaEquipeDaOrg(settings: unknown): string[] {
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
+  return normalizarTags(crmSettingsSchema.parse(crm ?? {}).team_contact_tags);
+}
+
+/**
  * O interruptor de #2593 está ligado nesta organização? **Desligado por
  * padrão**, e nunca lança.
  *
@@ -695,6 +1041,66 @@ export function telefoneDeFichaVaziaLigado(settings: unknown): boolean {
       ? (settings as Record<string, unknown>).crm
       : undefined;
   return crmSettingsSchema.parse(crm ?? {}).telefone_de_ficha_vazia === true;
+}
+
+/**
+ * As regras de CONTATO do bloco `settings.crm`, lidas de UMA vez (#3644).
+ *
+ * ⚠️ EXISTE PORQUE AGORA SÃO TRÊS CHAVES NO MESMO OBJETO. O nascimento do lead
+ * decide o funil por duas delas (`cliente_pela_agenda` e `cliente_pela_venda`)
+ * e a janela de pós-venda pela terceira: lendo chave por chave, seriam três
+ * `select settings` na MESMA linha de `organizations` — no caminho quente da
+ * ingestão, por mensagem recebida. Uma leitura só, três respostas.
+ *
+ * A régua é a das vizinhas: só o booleano `true` liga, `pos_venda_dias` fora de
+ * 0–365 (ou torto) cai em `0`. Nunca lança.
+ */
+export interface RegrasDeCliente {
+  /** `first_service_at` preenchido passa a contar como cliente (migration 0262). */
+  pelaAgenda: boolean;
+  /** Negócio ganho sem nada aberto conta como cliente (#3644). */
+  pelaVenda: boolean;
+  /** Janela, em dias, em que a conversa de quem acabou de comprar não abre card. */
+  posVendaDias: number;
+}
+
+export function regrasDeCliente(settings: unknown): RegrasDeCliente {
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
+  const lido = crmSettingsSchema.parse(crm ?? {});
+  return {
+    pelaAgenda: lido.cliente_pela_agenda === true,
+    pelaVenda: lido.cliente_pela_venda === true,
+    posVendaDias: lido.pos_venda_dias,
+  };
+}
+
+/** A regra "cliente pela venda" está ligada nesta organização? Nunca lança. */
+export function clientePelaVendaLigado(settings: unknown): boolean {
+  return regrasDeCliente(settings).pelaVenda;
+}
+
+/**
+ * A SUGESTÃO DE DUPLICADO PELO NOME está ligada nesta organização? **Desligada
+ * por padrão**, e nunca lança (#4138).
+ *
+ * A régua é a mesma das outras chaves de `settings.crm`: só o booleano `true`
+ * liga. Ausente — toda organização que já existia antes desta chave —, `false`,
+ * a string `"true"` ou qualquer lixo é DESLIGADO, e a tela de Duplicados volta a
+ * mostrar só os motivos fortes (telefone, e-mail, CPF, telefone em conflito).
+ *
+ * Lido pela rota da varredura (`app/api/v1/contacts/duplicates/route.ts`), que é
+ * quem decide se chama `encontrarParecidosPorNome` e se lê as dispensas: a tela
+ * não filtra nada por conta própria.
+ */
+export function duplicadosPorNomeLigado(settings: unknown): boolean {
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
+  return crmSettingsSchema.parse(crm ?? {}).duplicados_por_nome === true;
 }
 
 /**
@@ -756,4 +1162,200 @@ export function meetAbertoLigado(settings: unknown): boolean {
       ? (settings as Record<string, unknown>)
       : undefined;
   return raiz?.google_meet_acesso_aberto === true;
+}
+
+/** Só true booleano autoriza preencher o nome vazio a partir do texto real do atendimento. */
+export function nomeInformadoLigado(settings: unknown): boolean {
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
+  return crmSettingsSchema.parse(crm ?? {}).nome_informado_no_atendimento === true;
+}
+
+/** Ausente liga; só o booleano `false` tira as transferências do Aviso no WhatsApp. */
+export function avisoDeTransferenciaLigado(settings: unknown): boolean {
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
+  return crmSettingsSchema.parse(crm ?? {}).avisar_transferencia_no_whatsapp;
+}
+
+/** Ausente DESLIGA; só o booleano `true` põe o primeiro nome no aviso de transferência. */
+export function avisoDeTransferenciaComNomeLigado(settings: unknown): boolean {
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
+  return crmSettingsSchema.parse(crm ?? {}).aviso_transferencia_com_nome === true;
+}
+
+/**
+ * `organizations.settings.memoria_da_ia.limite_do_aviso_tokens` — acima deste
+ * peso a tela Memória da IA AVISA que a memória pesa. Só avisa: nada é
+ * bloqueado nem cortado. A memória vai inteira no prompt de TODO agente,
+ * várias leituras por mensagem, e cada empresa escolhe onde quer o aviso.
+ *
+ * Ausente (toda empresa que nunca escolheu) ou torto → o RECOMENDADO, que é o
+ * limiar fixo que a tela tinha antes desta chave existir. Lido pela tela
+ * (`app/app/ai/memory/page.tsx`); gravado só por `definirLimiteDoPesoDaMemoria`.
+ */
+export const LIMITE_RECOMENDADO_DO_PESO_DA_MEMORIA = 1_500;
+/** Abaixo disto uma regra de duas frases já acende o aviso, e ele vira ruído. */
+export const LIMITE_MINIMO_DO_PESO_DA_MEMORIA = 100;
+/**
+ * O documento aceita até 50 mil caracteres (≈14 mil tokens, `postSchema` de
+ * `app/api/v1/ai/memory/route.ts`); 50 mil tokens é um quarto da janela de 200
+ * mil dos modelos comuns. Um limite acima disso não avisa nada que importe.
+ */
+export const LIMITE_MAXIMO_DO_PESO_DA_MEMORIA = 50_000;
+
+export const limiteDoPesoDaMemoriaWriteSchema = z
+  .number()
+  .int()
+  .min(LIMITE_MINIMO_DO_PESO_DA_MEMORIA)
+  .max(LIMITE_MAXIMO_DO_PESO_DA_MEMORIA);
+
+/** O limite do aviso de peso da memória nesta organização. Nunca lança. */
+export function limiteDoPesoDaMemoria(settings: unknown): number {
+  const raiz =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)
+      : undefined;
+  const bloco = raiz?.memoria_da_ia;
+  const valor =
+    bloco && typeof bloco === "object" && !Array.isArray(bloco)
+      ? (bloco as Record<string, unknown>).limite_do_aviso_tokens
+      : undefined;
+  return limiteDoPesoDaMemoriaWriteSchema.catch(LIMITE_RECOMENDADO_DO_PESO_DA_MEMORIA).parse(valor);
+}
+
+/**
+ * O MÓDULO DE OUVIDORIA (#3611, fatia 1) — `settings.ouvidoria`.
+ *
+ * A empresa LIGA o módulo para si: recebe manifestações (reclamação, denúncia,
+ * elogio, sugestão) que ganham protocolo próprio e NÃO viram cartão no funil.
+ * Quem grava é `lib/ouvidoria/registro.ts`; quem lê é
+ * `lib/ouvidoria/leitura.ts`. Este bloco é o CONTRATO do jsonb — a leitura
+ * existe UMA vez para o serviço, a tela (fatia seguinte) e qualquer script não
+ * divergirem.
+ *
+ * ─── Por que jsonb e não coluna ──────────────────────────────────────────────
+ * É preferência da organização, sem invariante que o banco prove sozinho: o
+ * resto do estado do módulo (perfis autorizados, destinatários do aviso) chega
+ * nas fatias seguintes e cada um é uma decisão de empresa, não uma coluna da
+ * manifestação. A manifestação em si é TABELA (`ouvidoria_manifestacoes`,
+ * migration 9040) — protocolo, unicidade e privacidade não cabem em jsonb.
+ *
+ * ─── Régua de leitura ────────────────────────────────────────────────────────
+ * Só o `true` EXPLÍCITO liga, a mesma de `settings.entrada_do_inbox.ativa` e de
+ * `settings.crm.cliente_pela_agenda`: ausente, `false`, `"true"` ou lixo é
+ * DESLIGADO — e desligado é "nenhuma manifestação é aceita", que é o estado de
+ * TODA instalação que já existe. Quem desliga não perde o acervo: a leitura das
+ * manifestações já recebidas continua valendo para os administradores (decisão
+ * de `lib/ouvidoria/leitura.ts`), porque fechar a porta de entrada não pode
+ * apagar o que a ouvidoria precisa responder.
+ *
+ * ⚠️ O VALOR É JSONB ESCRITO POR FORA (script, seed, API antiga) e não passa
+ * pelo zod de escrita; por isso o `.catch` de cada campo. Um jsonb torto
+ * desliga o módulo em silêncio, nunca lança — esta leitura roda no caminho do
+ * registro, e um throw ali derrubaria o atendimento.
+ */
+export const OUVIDORIA_CHAVE = "ouvidoria";
+
+export const ouvidoriaSchema = z
+  .object({
+    /** A porta de ENTRADA do módulo. Ausente/`false`/lixo = desligado. */
+    ativa: z.boolean().catch(false),
+  })
+  .catch({ ativa: false });
+
+export type OuvidoriaDaOrganizacao = z.infer<typeof ouvidoriaSchema>;
+
+/** O bloco lido de `organizations.settings`. Nunca lança. */
+export function ouvidoriaDeclarada(settings: unknown): OuvidoriaDaOrganizacao {
+  const raiz =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)
+      : undefined;
+  return ouvidoriaSchema.parse(raiz?.[OUVIDORIA_CHAVE] ?? {});
+}
+
+/** Atalho booleano para quem só precisa saber se o módulo aceita registro. */
+export function ouvidoriaLigada(settings: unknown): boolean {
+  return ouvidoriaDeclarada(settings).ativa === true;
+}
+
+/**
+ * A RECORRÊNCIA DO NEGÓCIO GANHO (#3602, doc 312 = A) —
+ * `settings.financeiro.recorrencia_no_ganho`.
+ *
+ * Ligada, ganhar um negócio com `recurring_value_cents` cria o molde mensal no
+ * financeiro (`lib/financeiro/recorrencia-do-negocio.ts`). Desligada de
+ * fábrica: cobrança automática não liga sozinha em quem atualiza. Só o `true`
+ * EXPLÍCITO liga (a régua de `ouvidoriaLigada`); ausente, `"true"` ou lixo é
+ * desligado. Nunca lança: roda no fecho do negócio.
+ *
+ * ponytail: ainda sem porta de escrita — o interruptor na tela chega na fatia
+ * seguinte ao #4264 (issue #3602), que pôs todas as portas de ganho e de perda
+ * na mesma regra.
+ */
+export function recorrenciaNoGanhoLigada(settings: unknown): boolean {
+  const raiz =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)
+      : undefined;
+  const financeiro = raiz?.financeiro;
+  return (
+    !!financeiro &&
+    typeof financeiro === "object" &&
+    (financeiro as Record<string, unknown>).recorrencia_no_ganho === true
+  );
+}
+
+/**
+ * A ENTRADA AUTOMÁTICA NO FUNIL (#3603, fatia 1) — `settings.entrada_automatica_no_funil`.
+ *
+ * Um interruptor, e só isso: `{ ativa: boolean }`. Ligado, a conversa que o
+ * PRÓPRIO CRM abre (a porta `ensureConversation`: "Iniciar conversa" do Inbox,
+ * ficha do contato, lembrete de agenda e de tarefa, ferramenta de início de
+ * conversa do agente de IA) ganha negócio como a conversa que CHEGA já ganha.
+ * A que chega entra sempre, e esta chave não muda nada nela.
+ *
+ * ─── O destino não é escolhido aqui ──────────────────────────────────────────
+ * Opção (a), decidida na thread do #3616: o card nasce no MESMO destino da
+ * entrada — o funil `is_default`, na etapa de `settings.entrada_do_inbox` do
+ * funil (ou na primeira aberta), e o funil de clientes quando a regra de
+ * cliente vale. Quem decide é `garantirLeadDaConversa`; quem aplica esta chave
+ * é `lib/leads/entrada-automatica-no-funil.ts`. Um segundo destino configurável
+ * seriam duas respostas para "onde entra o contato novo?".
+ *
+ * ─── Régua de leitura ────────────────────────────────────────────────────────
+ * Só o `true` EXPLÍCITO liga (a mesma de `settings.crm.cliente_pela_agenda` e de
+ * `settings.entrada_do_inbox.ativa`): ausente, `false`, `"true"` ou lixo é
+ * DESLIGADO, e desligado é "nenhum negócio nasce por esta porta" — o estado de
+ * toda instalação que já existe.
+ *
+ * ⚠️ `pipeline_id`/`stage_id` gravados por uma versão anterior deste PR são
+ * IGNORADOS na leitura (o objeto do zod descarta chave desconhecida): não
+ * escolhem funil e não impedem a chave de ligar.
+ *
+ * Nunca lança: um jsonb torto não pode derrubar a abertura de uma conversa.
+ */
+export const ENTRADA_AUTOMATICA_NO_FUNIL_CHAVE = "entrada_automatica_no_funil";
+
+export const entradaAutomaticaNoFunilSchema = z
+  .object({ ativa: z.boolean().catch(false) })
+  .catch({ ativa: false });
+
+export type EntradaAutomaticaNoFunil = z.infer<typeof entradaAutomaticaNoFunilSchema>;
+
+/** O bloco lido de `organizations.settings`. Nunca lança. */
+export function entradaAutomaticaNoFunilDeclarada(settings: unknown): EntradaAutomaticaNoFunil {
+  const raiz =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)
+      : undefined;
+  return entradaAutomaticaNoFunilSchema.parse(raiz?.[ENTRADA_AUTOMATICA_NO_FUNIL_CHAVE] ?? {});
 }

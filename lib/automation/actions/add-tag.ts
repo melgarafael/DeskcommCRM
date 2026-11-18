@@ -63,6 +63,7 @@
  */
 import { originFromAutomationEvent } from "@/lib/atendimento/origem-automacao";
 import { registerAction } from "@/lib/automation/actions";
+import { etiquetasGoogleAds } from "@/lib/automation/etiquetas-google-ads";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 
 type Destino = "card" | "contato";
@@ -89,7 +90,11 @@ function lista(valor: unknown): string[] {
 }
 
 async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise<ActionResultDetail> {
-  const tags = Array.isArray(config.tags) ? config.tags.map(String) : [];
+  const literais = Array.isArray(config.tags) ? config.tags.map(String) : [];
+  const automaticas = etiquetasGoogleAds(ctx.context, config.google_ads_fields);
+  // As literais mantêm a semântica antiga. A opção nova usa a mesma junção
+  // atômica, destino e evento, dentro do teto nativo de dez por ação.
+  const tags = [...literais, ...automaticas.slice(0, Math.max(0, 10 - literais.length))];
   if (!tags.length) return { type: "add_tag", status: "skipped", detail: { reason: "no_tags" } };
 
   const destino: Destino = config.destino === "contato" ? "contato" : "card";
@@ -168,12 +173,14 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     ? await originFromAutomationEvent(ctx, contactId)
     : null;
 
+  const metadata: Record<string, unknown> = {};
+  if (ctx.ruleId) metadata.caused_by_rule = ctx.ruleId;
   await ctx.admin.rpc("emit_event", {
     p_event_type: target.event,
     p_entity_kind: target.kind,
     p_entity_id: target.id,
     p_payload: { added_tags: added, tags: merged, service_origin: serviceOrigin },
-    p_metadata: { caused_by_rule: ctx.ruleId },
+    p_metadata: metadata,
     p_organization_id: ctx.organizationId,
   });
   return { type: "add_tag", status: "success", detail: { added } };

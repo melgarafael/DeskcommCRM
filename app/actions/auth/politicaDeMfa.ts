@@ -19,6 +19,7 @@ import { revalidatePath } from "next/cache";
 import { audit } from "@/lib/audit";
 import { loadAuthUser, resolveActiveOrg, sessionAal, isMfaEnrolled, mfaEmDivida } from "@/lib/auth/server";
 import { esquecerDispositivosConfiaveis } from "@/lib/auth/dispositivo-confiavel";
+import { invalidarUsuario } from "@/lib/auth/cache-curto";
 import {
   empresaExigeMfa,
   exigeCadastroDeMfa,
@@ -230,6 +231,7 @@ export async function desativarMfaDaConta(): Promise<ResultadoDaPolitica> {
     const { error } = await supabase.auth.mfa.unenroll({ factorId: f.id });
     if (error) return { ok: false, erro: "Não consegui remover a verificação agora." };
   }
+  invalidarUsuario(user.id);
   // Sem fator, a confiança não serve para nada — e, se a pessoa religar a
   // verificação um dia, nenhum navegador antigo pode voltar dispensado em silêncio.
   await esquecerDispositivosConfiaveis(user.id);

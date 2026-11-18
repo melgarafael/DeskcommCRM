@@ -27,10 +27,12 @@ import type { Queryable } from "../../queue/queue";
 import {
   DECLARACAO_INSTRUCTION,
   declaracaoDoTurnoSchema,
+  instrucaoDeDeclaracao,
   intencaoSchema,
   promessaSchema,
   type DeclaracaoDoTurno,
 } from "../declaracao";
+import { falaDoMotor, type Idioma } from "../idioma-do-turno";
 
 /** Conteúdo do checkpoint — o modelo devolve, o Zod valida, o Postgres guarda. */
 export const checkpointContentSchema = z.object({
@@ -80,8 +82,14 @@ export interface LeadCheckpointRow extends Omit<CheckpointContent, 'declaracao'>
  * turno em que ele esquecesse seria um lead parado em silêncio. É o mesmo
  * argumento que este arquivo já usa para o checkpoint — e sai de graça, porque
  * é a mesma chamada de modelo.
+ *
+ * O TEXTO base (`CHECKPOINT_BASE`) e a frase final (`FECHO_SEM_TEXTO_FORA`) são
+ * os pedaços que a #4260 item 1 passou a traduzir; a declaração vem de
+ * `DECLARACAO_INSTRUCTION`. A soma dos três é a constante de sempre.
  */
-export const CHECKPOINT_INSTRUCTION =
+const FECHO_SEM_TEXTO_FORA = ' Sem texto fora do JSON.';
+
+const CHECKPOINT_BASE =
   'Feche o turno AGORA. Responda SOMENTE com um JSON válido no formato ' +
   '{"commitments": string[], "objections": string[], "next_action": string|null, "rolling_summary": string} ' +
   '— compromissos assumidos, objeções do lead, próxima ação e o resumo acumulado ' +
@@ -101,9 +109,44 @@ export const CHECKPOINT_INSTRUCTION =
   // contexto do modelo.
   'Em `next_action`, escreva a ação que vem DEPOIS da resposta que você está ' +
   'esperando — nunca a pergunta que você acabou de fazer. Se o turno terminou ' +
-  'perguntando, a próxima ação é o que fazer COM a resposta quando ela chegar. ' +
-  DECLARACAO_INSTRUCTION +
-  ' Sem texto fora do JSON.';
+  'perguntando, a próxima ação é o que fazer COM a resposta quando ela chegar. ';
+
+export const CHECKPOINT_INSTRUCTION = CHECKPOINT_BASE + DECLARACAO_INSTRUCTION + FECHO_SEM_TEXTO_FORA;
+
+/**
+ * A instrução de fechamento no idioma da organização (#4260, item 1).
+ *
+ * É a última coisa que o modelo lê no turno — e era toda em português. As três
+ * partes são as mesmas da constante acima, então `pt-BR` sai IDÊNTICO a
+ * `CHECKPOINT_INSTRUCTION` (o texto de hoje). As chaves do JSON
+ * (`commitments`, `next_action`…) não mudam: `checkpointContentSchema` as lê.
+ */
+export function instrucaoDeFechamento(idioma: Idioma = 'pt-BR'): string {
+  if (idioma === 'pt-BR') return CHECKPOINT_INSTRUCTION;
+  return falaDoMotor(CHECKPOINT_BASE, idioma) + instrucaoDeDeclaracao(idioma) + falaDoMotor(FECHO_SEM_TEXTO_FORA, idioma);
+}
+
+/**
+ * As mensagens do fechamento com a PRIMEIRA pergunta no idioma da organização.
+ *
+ * O turno empilha a instrução canônica (`CHECKPOINT_INSTRUCTION`) na ordem de
+ * sempre — abertura, resposta, agenda, instrução, correção — e só DEPOIS passa
+ * por aqui. A posição e a identidade da instrução continuam as de antes (é o que
+ * `tests/unit/fechamento-do-turno-corrige-antes-de-repetir` prende lendo o
+ * fonte); o idioma entra como passada, e em `pt-BR` a lista volta como está.
+ */
+export function instrucaoDeFechamentoNoIdioma<T extends object>(
+  mensagens: readonly T[],
+  idioma: Idioma,
+): T[] {
+  if (idioma === 'pt-BR') return [...mensagens];
+  const traduzida = instrucaoDeFechamento(idioma);
+  return mensagens.map((mensagem) =>
+    (mensagem as { content?: unknown }).content === CHECKPOINT_INSTRUCTION
+      ? ({ ...mensagem, content: traduzida } as T)
+      : mensagem,
+  );
+}
 
 export async function insertCheckpoint(
   db: Queryable,
@@ -235,11 +278,21 @@ export function correcaoDoFechamento(problemas: string): string {
  * recusada e o problema. Só se ela também vier fora do contrato o erro sobe como
  * antes, e a fila re-tenta o turno. Falha do fornecedor (rede, 5xx, teto) não é
  * recusa: sobe na hora, sem segunda chamada, como sempre subiu.
+ *
+ * A RESERVA DE FORMATO é o pré-requisito para um modelo mais barato neste ponto:
+ * saída ruim vira uma 3ª chamada, nunca um turno repetido. Quando quem recusou
+ * duas vezes NÃO é o modelo do agente (binding do ponto no painel), a 3ª chamada
+ * vai ao modelo do agente, com o pedido de base — sem as respostas recusadas — e
+ * o MESMO `ajustar`. Sem `reserva`, sem `model` na resposta ou com o próprio
+ * modelo do agente recusando, o erro sobe como antes; e se a reserva também
+ * recusar, sobe o erro dela. Não existe modo de falha novo.
  */
-export async function fecharOTurno<R extends { text: string; callId?: string | null }>(opcoes: {
+export async function fecharOTurno<R extends { text: string; callId?: string | null; model?: string }>(opcoes: {
   pedir: (extra: Array<{ role: 'assistant' | 'user'; content: string }>) => Promise<R>;
   /** Ajuste do texto antes do parse (hoje: tirar o link da reunião). */
   ajustar?: (text: string) => string;
+  /** O modelo do agente e o pedido de base nele (`runModelCall` com `reservaDeFormato`). */
+  reserva?: { modelo: string; pedir: () => Promise<R> };
   log?: { warn(msg: string, fields?: Record<string, unknown>): void };
 }): Promise<{ content: CheckpointContent; resposta: R; corrigido: boolean }> {
   const ajustar = opcoes.ajustar ?? ((t: string) => t);
@@ -255,6 +308,24 @@ export async function fecharOTurno<R extends { text: string; callId?: string | n
       { role: 'assistant', content: primeira.text },
       { role: 'user', content: correcaoDoFechamento(err.paraOModelo) },
     ]);
-    return { content: parseCheckpointText(ajustar(segunda.text)), resposta: segunda, corrigido: true };
+    try {
+      return { content: parseCheckpointText(ajustar(segunda.text)), resposta: segunda, corrigido: true };
+    } catch (err2) {
+      const reserva = opcoes.reserva;
+      if (!(err2 instanceof FechamentoRecusado) || reserva === undefined || segunda.model === undefined || segunda.model === reserva.modelo) {
+        throw err2;
+      }
+      opcoes.log?.warn('fechamento recusado duas vezes no modelo do ponto — repetindo no modelo do agente', {
+        problemas: err2.problemas,
+        modelo_recusado: segunda.model,
+      });
+      const terceira = await reserva.pedir();
+      return { content: parseCheckpointText(ajustar(terceira.text)), resposta: terceira, corrigido: true };
+    }
   }
+}
+
+/** O link cru da reunião não vai para a memória do lead: a Agenda é quem o mostra. */
+export function tirarLinkDaReuniao(text: string): string {
+  return text.replace(/https:\/\/meet\.google\.com\/[a-zA-Z0-9-]+/g, '[link da reunião disponível na Agenda]');
 }

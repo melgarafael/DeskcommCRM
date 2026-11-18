@@ -83,6 +83,11 @@ function dubleSupabase() {
         else filtrosLidos.push({ tabela, coluna, valor });
         return cadeia;
       };
+      cadeia.in = (coluna: string, valores: unknown) => {
+        if (filtrosDaEscrita) filtrosDaEscrita.push([coluna, valores]);
+        else filtrosLidos.push({ tabela, coluna, valor: valores });
+        return cadeia;
+      };
       cadeia.update = (patch: unknown) => {
         filtrosDaEscrita = [];
         escritas.push({ tabela, patch, filtros: filtrosDaEscrita });
@@ -499,6 +504,76 @@ describe("o discador exige o consentimento da organização", () => {
   });
 });
 
+describe("recusar a chamada recebida: SIP e WaCalls", () => {
+  async function recusar() {
+    const { POST } = await import("@/app/api/v1/voice/calls/[id]/reject/route");
+    return POST(new Request("http://x", { method: "POST" }), { params: Promise.resolve({ id: CHAMADA }) });
+  }
+
+  /** Respostas em sequência para `voice_calls`: a leitura do provider, depois o UPDATE (e a releitura). */
+  function sequencia(...rs: Resposta[]) {
+    let i = 0;
+    respostas["voice_calls"] = () => rs[Math.min(i++, rs.length - 1)]!;
+  }
+
+  it("SIP tocando, instalação SEM WaCalls: encerra como recusada, só se ainda tocando, sem chamar o WaCalls", async () => {
+    // Era 503 `wacalls_not_configured` (ou 404, sem sessão WaCalls), e a tela
+    // escondia o banner só em memória — recarregou, voltou.
+    vi.mocked(getWacallsClient).mockReturnValue(null as never);
+    sequencia(
+      { data: { provider: "sip", contact_id: CONTATO }, error: null },
+      { data: [{ id: CHAMADA }], error: null },
+    );
+    const res = await recusar();
+
+    expect(res.status).toBe(200);
+    expect(wacalls.rejectCall).not.toHaveBeenCalled();
+    const escrita = escritas.find((e) => e.tabela === "voice_calls");
+    expect(escrita?.patch).toMatchObject({ status: "ended", end_reason: "declined" });
+    expect(escrita?.filtros).toEqual(
+      expect.arrayContaining([
+        ["organization_id", ORG],
+        ["id", CHAMADA],
+        ["provider", "sip"],
+        ["status", ["starting", "ringing"]],
+      ]),
+    );
+  });
+
+  it("SIP que alguém já atendeu: 409, não 200", async () => {
+    sequencia(
+      { data: { provider: "sip", contact_id: CONTATO }, error: null },
+      { data: [], error: null },
+      { data: { status: "connected" }, error: null },
+    );
+    const res = await recusar();
+    expect(res.status).toBe(409);
+    expect((await corpo(res)).error).toMatchObject({ code: "state_conflict" });
+  });
+
+  it("SIP que já acabou (fantasma encerrado pelo cron, outra aba): 200 sem auditar recusa", async () => {
+    const { audit } = await import("@/lib/audit");
+    sequencia(
+      { data: { provider: "sip", contact_id: CONTATO }, error: null },
+      { data: [], error: null },
+      { data: { status: "ended" }, error: null },
+    );
+    const res = await recusar();
+    expect(res.status).toBe(200);
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it("controle: chamada do WaCalls continua recusada no WaCalls", async () => {
+    sequencia(
+      { data: { provider: "wacalls", contact_id: CONTATO }, error: null },
+      chamadaNoBanco({ status: "ringing", owner_user_id: null, created_by: null }),
+    );
+    const res = await recusar();
+    expect(res.status).toBe(200);
+    expect(wacalls.rejectCall).toHaveBeenCalledWith("sessao-up", "up-1");
+  });
+});
+
 describe("só quem está na linha desliga", () => {
   async function desligar() {
     const { DELETE } = await import("@/app/api/v1/voice/calls/[id]/route");
@@ -626,7 +701,7 @@ describe("quem perde a corrida do atender ouve isso, não 'conectado'", () => {
 describe("erro de consulta não é 'nunca ligou'", () => {
   async function historico() {
     const { GET } = await import("@/app/api/v1/voice/calls/history/route");
-    return GET(new Request("http://x/api/v1/voice/calls/history"));
+    return GET(new Request("http://x/api/v1/voice/calls/history") as never);
   }
 
   it("controle positivo: sem erro, devolve a lista", async () => {
@@ -639,7 +714,7 @@ describe("erro de consulta não é 'nunca ligou'", () => {
   it("com ?id=, filtra pela ligação — é assim que o painel confere UMA ligação", async () => {
     respostas["voice_calls"] = { data: [{ id: CHAMADA }], error: null };
     const { GET } = await import("@/app/api/v1/voice/calls/history/route");
-    const res = await GET(new Request(`http://x/api/v1/voice/calls/history?id=${CHAMADA}&limit=1`));
+    const res = await GET(new Request(`http://x/api/v1/voice/calls/history?id=${CHAMADA}&limit=1`) as never);
     expect(res.status).toBe(200);
     expect(filtrosLidos).toEqual(
       expect.arrayContaining([
@@ -651,7 +726,7 @@ describe("erro de consulta não é 'nunca ligou'", () => {
 
   it("?id= que não é uuid é 400, sem consultar", async () => {
     const { GET } = await import("@/app/api/v1/voice/calls/history/route");
-    const res = await GET(new Request("http://x/api/v1/voice/calls/history?id=1%20or%201=1"));
+    const res = await GET(new Request("http://x/api/v1/voice/calls/history?id=1%20or%201=1") as never);
     expect(res.status).toBe(400);
     expect(filtrosLidos).toEqual([]);
   });

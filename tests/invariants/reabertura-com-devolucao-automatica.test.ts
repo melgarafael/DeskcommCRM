@@ -85,7 +85,7 @@ async function estado(conversation: string) {
   const { rows } = await pool.query(
     `select c.id, c.organization_id, c.channel_session_id, c.status, c.assignee_kind,
             c.assigned_to_user_id, c.assigned_at, c.bot_silenced_until::text bot_silenced_until,
-            c.last_handoff_at, c.last_outbound_at, c.status_changed_at,
+            c.last_handoff_at, c.last_outbound_at, c.status_changed_at, c.metadata,
             o.settings, clock_timestamp() agora
        from conversations c join organizations o on o.id = c.organization_id
       where c.id = $1 and c.organization_id = $2`,
@@ -105,6 +105,7 @@ async function estado(conversation: string) {
     last_handoff_at: iso(r.last_handoff_at),
     last_outbound_at: iso(r.last_outbound_at),
     status_changed_at: iso(r.status_changed_at),
+    metadata: r.metadata,
   };
   const prazo = lerPrazoDeDevolucaoMinutos(r.settings);
   expect(prazo, "o prazo de devolução precisa estar ligado nesta organização").toBe(PRAZO_MINUTOS);

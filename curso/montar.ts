@@ -107,8 +107,9 @@ const referenciadas = new Set([
   ),
   ...nichos.flatMap((n) => n.jornadas.flatMap((j) => j.cenas.map((c) => c.captura))),
 ]);
+// Na ordem do curso, não na do manifesto: a do manifesto depende das rodadas que a bancada já fez.
 const capturas = Object.fromEntries(
-  Object.entries(manifesto).filter(([chave]) => referenciadas.has(chave)),
+  [...referenciadas].filter((chave) => manifesto[chave]).map((chave) => [chave, manifesto[chave]]),
 );
 for (const [chave, captura] of Object.entries(capturas)) {
   const foto = (captura as { foto?: unknown }).foto;

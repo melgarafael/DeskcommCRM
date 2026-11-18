@@ -261,3 +261,59 @@ describe("a tela desenha o funil e a etapa do gatilho de tempo", () => {
     expect(payload.trigger_config.stage_id).toBeNull();
   });
 });
+
+/**
+ * #2974 — O CONTROLE NA GAVETA DO CONTATO NOVO, no editor de verdade.
+ *
+ * Três gestos, e o terceiro é o que um "omitir a chave quando desligado"
+ * quebraria em silêncio: LIGAR grava `true`; abrir uma regra já ligada e salvar
+ * sem mexer mantém `true`; DESLIGAR grava `false` — e não pode ser engolido pelo
+ * merge do `configAoSalvarDaTela` com o `true` que estava guardado.
+ */
+describe("a gaveta do contato novo grava o limite de uma vez por contato", () => {
+  const CAIXA = "Rodar no máximo uma vez por contato";
+  const REGRA_DO_CONTATO_NOVO: AutomationRuleRow = {
+    ...REGRA_DA_ETAPA,
+    name: "Boas-vindas ao contato novo",
+    trigger_event: "lead.created",
+    trigger_config: { webhook_source_id: null, uma_vez_por_contato: false },
+  };
+
+  it("⭐ ligar na tela grava `true`", async () => {
+    montar(REGRA_DO_CONTATO_NOVO);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: CAIXA }));
+
+    const payload = await salvar();
+    expect(payload.trigger_config.uma_vez_por_contato, "ligar na tela não foi gravado").toBe(true);
+  });
+
+  it("⭐ abrir uma regra ligada mostra a caixa marcada e salvar sem mexer mantém o `true`", async () => {
+    montar({
+      ...REGRA_DO_CONTATO_NOVO,
+      trigger_config: { webhook_source_id: null, uma_vez_por_contato: true },
+    });
+
+    expect(screen.getByRole("checkbox", { name: CAIXA })).toBeChecked();
+
+    const payload = await salvar();
+    expect(payload.trigger_config.uma_vez_por_contato).toBe(true);
+  });
+
+  it("⭐ desligar grava `false` — o merge não mantém o `true` guardado", async () => {
+    montar({
+      ...REGRA_DO_CONTATO_NOVO,
+      trigger_config: { webhook_source_id: null, uma_vez_por_contato: true },
+    });
+
+    fireEvent.click(screen.getByRole("checkbox", { name: CAIXA }));
+
+    const payload = await salvar();
+    expect(payload.trigger_config.uma_vez_por_contato, "não deu para DESLIGAR a opção").toBe(false);
+  });
+
+  it("num gatilho que não é o de contato novo a caixa nem é desenhada", async () => {
+    montar(REGRA_DA_ETAPA);
+    expect(screen.queryByRole("checkbox", { name: CAIXA })).toBeNull();
+  });
+});

@@ -19,6 +19,7 @@ import {
 } from "@/lib/auth/requirePlatformAdmin";
 import { type TipoDeSuspensao } from "@/lib/organizacao/operante";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { invalidarOrg } from "@/lib/auth/cache-curto";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 
@@ -108,6 +109,10 @@ export async function POST(
       metadata: { tenant_id: tenantId, tenant_slug: org.slug, reactivated_by: adminCtx.user.id, reason: body.reason },
     });
   }
+
+  // #3696: espelho do `suspend` — o `org_status` que cada membro tem em cache
+  // volta a valer agora, não daqui a 30 s.
+  invalidarOrg(tenantId);
 
   return ok(resultado.data, { requestId });
 }

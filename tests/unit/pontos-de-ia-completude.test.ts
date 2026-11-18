@@ -272,6 +272,10 @@ describe("capacidade exigida", () => {
     // tela. É o defeito que o painel precisa tornar impossível de configurar.
     expect(porId("agent_turn").exige.tools).toBe(true);
     expect(porId("operator_turn").exige.tools).toBe(true);
+    // O follow-up é o MESMO turno do agente, com as mesmas ferramentas na mão
+    // do modelo: se o ponto não exigisse, o painel deixaria escolher para ele o
+    // modelo que escreve bem e não opera o CRM.
+    expect(porId("followup_turn").exige.tools).toBe(true);
   });
 
   it("os pontos de embedding declaram a dimensão do contrato", () => {

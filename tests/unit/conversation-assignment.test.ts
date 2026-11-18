@@ -52,7 +52,15 @@ const CONV_ROW = {
 };
 
 function makeSupabaseStub(state: StubState) {
+  // A transferência lê o número da conversa ANTES da troca, para a auditoria
+  // registrar o antigo e o novo (#3642). Aqui a leitura não acha nada.
+  const leitura = {
+    select: () => leitura,
+    eq: () => leitura,
+    maybeSingle: () => Promise.resolve({ data: null, error: null }),
+  };
   return {
+    from: () => leitura,
     rpc: async (fn: string, args: Record<string, unknown>) => {
       state.rpcCalls.push({ fn, args });
       if (fn === "fn_conversation_assign") return { data: state.assignRows, error: null };

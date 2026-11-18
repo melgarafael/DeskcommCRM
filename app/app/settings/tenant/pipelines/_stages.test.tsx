@@ -997,3 +997,188 @@ describe("taxa histórica por etapa — a contagem ao lado do campo (#1753)", ()
     expect(new Set(urls).size).toBe(1);
   });
 });
+
+describe("StagesSection — os fluxos armados na etapa, só leitura (#3603)", () => {
+  /** O funil com o campo `fluxos` preenchido etapa por etapa. */
+  function comFluxos(porEtapa: Record<string, EtapaDoFunil["fluxos"]>) {
+    const etapas = ETAPAS.map((e) => ({ ...e, fluxos: porEtapa[e.id] }));
+    vi.mocked(apiClient.get).mockResolvedValue({ data: estado({}, etapas) });
+  }
+
+  /**
+   * ⭐ A LINHA DA FATIA. O gatilho por etapa já existia e já armava; a tela do
+   * funil era o único lugar onde ele não aparecia — quem suspeitava de mensagem
+   * automática não tinha onde conferir.
+   */
+  it("mostra o NOME do fluxo armado na etapa e diz quando não há nenhum", async () => {
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: { etapas: [] } });
+    comFluxos({ e1: [{ id: "f1", name: "Retomada da proposta", sem_agente: false }], e2: [] });
+    montar();
+
+    const linha = await screen.findByTestId("fluxos-de-e1");
+    expect(linha).toHaveTextContent("Retomada da proposta");
+    // `[]` é afirmação: «não há nenhum». É diferente do campo ausente (abaixo).
+    expect(screen.getByTestId("fluxos-de-e2")).toHaveTextContent(
+      "Nenhum fluxo de follow-up armado nesta etapa.",
+    );
+  });
+
+  /**
+   * O fluxo que o motor barra por falta de agente aparece, mas com o aviso:
+   * a linha diz que ele existe e que está parado, nunca que vai disparar.
+   */
+  it("marca o fluxo que nenhum agente com follow-up ligado arma", async () => {
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: { etapas: [] } });
+    comFluxos({
+      e1: [
+        { id: "f1", name: "Retomada da proposta", sem_agente: true },
+        { id: "f2", name: "Lembrete fixo", sem_agente: false },
+      ],
+      e2: [],
+    });
+    montar();
+
+    const linha = await screen.findByTestId("fluxos-de-e1");
+    expect(linha).toHaveTextContent(
+      "Retomada da proposta (não dispara: nenhum agente com follow-up ligado arma este fluxo), Lembrete fixo.",
+    );
+  });
+
+  /**
+   * «Texto, não editor». Este teste é a cerca contra a tentação de transformar a
+   * linha num segundo lugar para armar/desarmar gatilho: o fluxo se configura no
+   * editor de follow-up, e duas superfícies escrevendo o mesmo `trigger_config`
+   * divergiriam no primeiro ajuste.
+   */
+  it("é LEITURA: a linha não traz campo, seletor nem botão", async () => {
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: { etapas: [] } });
+    comFluxos({ e1: [{ id: "f1", name: "Retomada da proposta", sem_agente: false }], e2: [] });
+    montar();
+
+    const linha = await screen.findByTestId("fluxos-de-e1");
+    expect(within(linha).queryByRole("textbox")).not.toBeInTheDocument();
+    expect(within(linha).queryByRole("combobox")).not.toBeInTheDocument();
+    expect(within(linha).queryByRole("button")).not.toBeInTheDocument();
+    expect(within(linha).queryByRole("checkbox")).not.toBeInTheDocument();
+    // Renderizar não fala com rota de escrita nenhuma.
+    expect(apiClient.patch).not.toHaveBeenCalled();
+    expect(apiClient.post).not.toHaveBeenCalled();
+    expect(apiClient.put).not.toHaveBeenCalled();
+    expect(apiClient.delete).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Campo ausente = a consulta dos fluxos falhou (ou é cache de uma leitura
+   * anterior). A tela então NÃO afirma nada — dizer «nenhum fluxo» aqui seria
+   * transformar um erro de leitura em informação tranquilizadora, que é o pior
+   * jeito de mentir numa tela de configuração.
+   */
+  it("sem o campo, a tela não diz nem «tem» nem «não tem»", async () => {
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: { etapas: [] } });
+    vi.mocked(apiClient.get).mockResolvedValue({ data: estado() });
+    montar();
+
+    await screen.findByTestId("nome-e1");
+    expect(screen.queryByTestId("fluxos-de-e1")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("fluxos-de-e2")).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * #4836 — O CRITÉRIO DA ETAPA, na tela.
+ *
+ * O agente já lia `crm_stages.description` e não havia onde escrevê-lo: todo
+ * funil criado pela tela ficava com `null` em todas as etapas. O que se mede
+ * aqui é o que nasce DESTE lado — o campo aparece com o texto gravado, o blur
+ * manda o texto aparado, vazio manda `null`, e o teto é recusado na TELA com a
+ * mesma régua da API (sem depender de um 422 para descobrir).
+ */
+describe("StagesSection — o critério da etapa (#4836)", () => {
+  it("o campo aparece por etapa, com o rótulo, a ajuda e o texto já gravado", async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: estado({}, [
+        { id: "e1", name: "Carrinho abandonado", is_won: false, is_lost: false, description: "Entra aqui quando o carrinho fica 24 h parado." },
+        { id: "e2", name: "Aguardando pagamento", is_won: false, is_lost: false, description: null },
+      ]),
+    });
+    montar();
+    await screen.findByTestId("criterio-e1");
+
+    expect(screen.getByTestId("criterio-e1")).toHaveValue("Entra aqui quando o carrinho fica 24 h parado.");
+    expect(screen.getByTestId("criterio-e2")).toHaveValue("");
+    // O rótulo e a ajuda moram na LINHA de cada etapa (o campo é por etapa, não
+    // um cabeçalho de coluna) — por isso a asserção é dentro da linha.
+    const linha = within(screen.getByTestId("etapa-e1"));
+    expect(linha.getByText(ROTULO.criterio)).toBeInTheDocument();
+    expect(
+      linha.getByText("O assistente lê este texto para decidir quando mover o negócio para esta etapa."),
+    ).toBeInTheDocument();
+  });
+
+  it("digitar e sair do campo → PATCH com o texto APARADO", async () => {
+    const user = userEvent.setup();
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: { etapas: [] } });
+    montar();
+    await screen.findByTestId("criterio-e2");
+
+    await user.type(screen.getByTestId("criterio-e2"), "  Entra aqui quando o cliente aprova.  ");
+    await user.tab();
+
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(apiClient.patch).mock.calls[0]![0]).toContain("/stages/e2");
+    expect(vi.mocked(apiClient.patch).mock.calls[0]![1]).toEqual({
+      description: "Entra aqui quando o cliente aprova.",
+    });
+  });
+
+  it("apagar o texto → PATCH com `null` (vazio NÃO vira string vazia)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: estado({}, [
+        { id: "e2", name: "Aguardando pagamento", is_won: false, is_lost: false, description: "Critério antigo" },
+      ]),
+    });
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: { etapas: [] } });
+    montar();
+    const campo = await screen.findByTestId("criterio-e2");
+
+    await user.clear(campo);
+    await user.tab();
+
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(apiClient.patch).mock.calls[0]![1]).toEqual({ description: null });
+  });
+
+  it("acima do teto → a TELA recusa, avisa e não chama a API", async () => {
+    const user = userEvent.setup();
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: { etapas: [] } });
+    montar();
+    const campo = await screen.findByTestId("criterio-e2");
+
+    // 501 caracteres: um a mais que o teto da constante compartilhada.
+    await user.click(campo);
+    await user.paste("x".repeat(501));
+    await user.tab();
+
+    expect(apiClient.patch).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledWith("O critério da etapa vai até 500 caracteres.");
+    // O rascunho volta ao que o banco tem — a tela não guarda o texto recusado.
+    expect(campo).toHaveValue("");
+    expect(screen.getByTestId("criterio-contagem-e2")).toHaveTextContent("0/500");
+  });
+
+  it("o contador mostra o que falta e passa a marcar o excesso", async () => {
+    const user = userEvent.setup();
+    montar();
+    const campo = await screen.findByTestId("criterio-e2");
+
+    await user.type(campo, "abc");
+    expect(screen.getByTestId("criterio-contagem-e2")).toHaveTextContent("3/500");
+
+    await user.clear(campo);
+    await user.click(campo);
+    await user.paste("y".repeat(520));
+    expect(screen.getByTestId("criterio-contagem-e2")).toHaveTextContent("520/500");
+  });
+});
+

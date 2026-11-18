@@ -32,6 +32,15 @@
  *
  * O teto de ids é obrigatório, não zelo: a lista viaja na URL do PostgREST, e
  * uma busca por "a" sem limite estoura a requisição.
+ *
+ * ─── O passo 1 mudou de lugar (#4326, fatia 1) ──────────────────────────────
+ *
+ * A "consulta curta em `contacts`" daquele desenho virou `fn_contatos_da_busca`.
+ * O motivo é medido e não é gosto: `like`/`ilike` não são `leakproof`, e com RLS
+ * na tabela o planejador não pode usá-los como condição de índice, então a
+ * consulta lia a organização INTEIRA mesmo com trigrama no lugar. A função faz o
+ * mesmo casamento fora da política, checa a organização contra
+ * `fn_user_org_ids()` e devolve só ids. A forma do passo 2 é a de sempre.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -51,6 +60,15 @@ interface Chamada {
 function fakeSupabase(contatosEncontrados: Array<{ id: string }>) {
   const chamadas: Chamada[] = [];
   const client = {
+    // A busca de texto virou RPC (#4326): quem casa agora é
+    // `fn_contatos_da_busca`, do lado do banco, e devolve ids.
+    rpc: (fn: string, args: unknown) => {
+      chamadas.push({ tabela: "rpc", metodo: fn, args: [args] });
+      return Promise.resolve({
+        data: contatosEncontrados.map((c) => ({ contact_id: c.id })),
+        error: null,
+      });
+    },
     from: (tabela: string) => {
       const proxy: Record<string, unknown> = new Proxy(
         {},
@@ -87,7 +105,11 @@ async function buscar(search: string, contatos: Array<{ id: string }> = []) {
 
 /** Todos os argumentos de string entregues a um método, numa tabela. */
 const args = (c: Chamada[], tabela: string, metodo: string) =>
-  c.filter((x) => x.tabela === tabela && x.metodo === metodo).flatMap((x) => x.args).join(" | ");
+  c
+    .filter((x) => x.tabela === tabela && x.metodo === metodo)
+    .flatMap((x) => x.args)
+    .map((a) => (typeof a === "string" ? a : JSON.stringify(a)))
+    .join(" | ");
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -96,22 +118,34 @@ describe("busca do inbox — o contato entra no predicado", () => {
     const c = await buscar("Maria", [{ id: "contato-maria" }]);
 
     // 1ª metade: a consulta em contacts existe, é da MESMA organização, e casa
-    // os dois campos de nome (o produto usa `display_name` e `name`).
-    const nomes = args(c, "contacts", "or");
-    expect(nomes, "nenhuma consulta em contacts: a busca segue cega ao nome").toContain(
-      "display_name",
+    // pelo nome. Desde a #3918 o campo do nome é a coluna GERADA
+    // `busca_sem_acento`, que carrega `display_name`, `name` e
+    // `address_book_name` já sem acento e em minúscula — os três campos que o
+    // produto usa continuam no OR, só que do lado do banco. Que a coluna é
+    // gerada EXATAMENTE dessas três colunas é provado em
+    // `tests/invariants/busca-do-inbox-ignora-acento.test.ts`, lendo a expressão
+    // de geração no catálogo (aqui só se veria a forma da consulta).
+    // A busca por nome deixou de ser um `or=` em `contacts` (que varria a
+    // organização inteira sob RLS) e virou uma chamada a `fn_contatos_da_busca`
+    // (#4326). O que este dublê pode provar é a FORMA da chamada: organização,
+    // termo sem acento e teto. Que a função casa e que ela chega no índice é
+    // provado contra o banco, em `tests/invariants/fn-contatos-da-busca-usa-o-indice`.
+    const busca = args(c, "rpc", "fn_contatos_da_busca");
+    expect(busca, "a busca ainda não chama a função: o nome segue sem caminho").toContain(
+      '"p_termo":"maria"',
     );
-    expect(nomes).toContain("name");
-    // O nome da agenda do celular (#2439) é o que a lista mostra sem nome no CRM.
-    expect(nomes).toContain("address_book_name");
     expect(
-      args(c, "contacts", "eq"),
-      "consulta em contacts sem filtro de organização — service role bypassa RLS",
-    ).toContain("org-1");
+      busca,
+      "chamada sem filtro de organização — a função bypassa RLS",
+    ).toContain('"p_org":"org-1"');
     expect(
-      c.some((x) => x.tabela === "contacts" && x.metodo === "limit"),
-      "consulta em contacts sem teto: a lista de ids viaja na URL e uma busca por 'a' estoura a requisição",
-    ).toBe(true);
+      busca,
+      "chamada sem teto: a lista de ids viaja na URL e uma busca por 'a' estoura a requisição",
+    ).toContain('"p_limite":');
+    expect(
+      args(c, "contacts", "or"),
+      "voltou a varrer `contacts` com `or=`: é exatamente a consulta que a fatia tirou",
+    ).toBe("");
 
     // 2ª metade: os ids achados entram no predicado da lista, SEM perder o
     // casamento por conteúdo — quem busca um trecho de mensagem continua achando.
@@ -124,27 +158,40 @@ describe("busca do inbox — o contato entra no predicado", () => {
     );
   });
 
-  it("⭐ contato anonimizado não volta a ser encontrável pelo nome antigo", async () => {
-    // A anonimização é direito do titular. Se a busca voltasse a achá-lo pelo
-    // nome, o conserto criaria um vazamento onde não havia.
+  it("⛔ a varredura crua de `contacts` não voltou — o único SELECT lá é o de fichas pessoais", async () => {
+    // A anonimização é direito do titular, e ficha pessoal não entra na busca do
+    // Inbox (spec 21). As duas regras passaram para DENTRO de
+    // `fn_contatos_da_busca` — o handler não tem mais como aplicá-las, e é
+    // `tests/invariants/fn-contatos-da-busca-usa-o-indice` que as prova no banco.
+    // O que se prova aqui é o que o handler NÃO pode voltar a fazer: casar
+    // nome/telefone em `contacts` (é a varredura que a fatia tirou). A única
+    // consulta legítima à tabela é a EXCLUSÃO de fichas pessoais, que roda
+    // sempre, com ou sem busca.
     const c = await buscar("Maria", [{ id: "contato-maria" }]);
-    const filtros = c.filter((x) => x.tabela === "contacts");
-    const texto = JSON.stringify(filtros);
-    expect(texto, "a varredura de nome não exclui contato anonimizado").toContain(
-      "is_anonymized",
-    );
+    const consultasEmContacts = c.filter((x) => x.tabela === "contacts");
+
+    const metodos = consultasEmContacts.map((x) => x.metodo);
+    expect(
+      metodos.filter((m) => ["or", "ilike", "like"].includes(m)),
+      "o handler voltou a casar texto em `contacts`: a regra de anonimizado/pessoal " +
+        "sairia da função e passaria a depender de disciplina no chamador",
+    ).toEqual([]);
+    expect(
+      args(c, "contacts", "eq"),
+      "a exclusão de pessoais saiu — conversa de ficha pessoal voltaria à lista",
+    ).toContain("is_personal");
   });
 
   it("telefone com dígitos suficientes também procura o número", async () => {
     const c = await buscar("991234567", [{ id: "contato-tel" }]);
-    expect(args(c, "contacts", "or")).toContain("phone_number");
+    expect(args(c, "rpc", "fn_contatos_da_busca")).toContain('"p_digitos":["991234567"]');
   });
 
   it("termo curto de dígitos não vira busca de telefone", async () => {
     // "12" casaria metade da base e devolveria a lista inteira embaralhada —
     // pior que não achar, porque parece que a busca funcionou.
     const c = await buscar("12", []);
-    expect(args(c, "contacts", "or")).not.toContain("phone_number");
+    expect(args(c, "rpc", "fn_contatos_da_busca")).toContain('"p_digitos":[]');
   });
 
   it("sem contato casado, a busca por conteúdo continua funcionando sozinha", async () => {

@@ -1,6 +1,8 @@
 /**
  * Reprocessa o arquivo de webhook do canal por QR que o banco recusou por um
- * instante — o corpo do cron `app/api/v1/cron/webhook-replay`.
+ * instante — a primeira metade do cron `app/api/v1/cron/webhook-replay` (a
+ * segunda, a entrada que responde antes de processar, mora em
+ * `./reprocessar-entradas-aceitas.ts`).
  *
  * Mora em `lib/channels/` porque precisa nomear o transporte (a ingestão, o
  * contrato do envelope, o valor de `provider` no arquivo), e esta é a fronteira
@@ -34,6 +36,8 @@ import { processarEventoWaha } from "@/lib/waha/desfecho-do-webhook";
 import { conferirContratoWaha, type WahaRoteamento } from "@/lib/waha/envelope";
 import { PREFIXO_TRANSITORIA } from "@/lib/waha/falha-transitoria";
 
+import { marcarArquivoDoWebhookComoMorto } from "./arquivo-de-webhook";
+
 /** Deixa a reentrega do próprio transporte acontecer antes (ela vem em segundos). */
 export const ESPERA_MS = 2 * 60 * 1000;
 /** Com o cron a cada minuto, ~20 min de banco fora antes de desistir. */
@@ -59,14 +63,22 @@ export interface ResultadoDoReplay {
   desistidas: number;
 }
 
-async function marcarMorta(admin: Admin, linha: LinhaArquivada, motivo: string, tentativas: number): Promise<void> {
-  const { error } = await admin
-    .from("webhook_events_log")
-    .update({ status: "dead", attempts: tentativas, error_message: motivo.slice(0, 500) })
-    .eq("id", linha.id);
-  if (error) {
-    logger.error("[webhook-replay] não marcou a linha como morta", { log_id: linha.id, detail: error.message });
-  }
+async function desistir(
+  admin: Admin,
+  linha: LinhaArquivada,
+  r: ResultadoDoReplay,
+  desfecho: { motivo: string; tentativas: number; avisar: boolean },
+): Promise<void> {
+  const resultado = await marcarArquivoDoWebhookComoMorto(
+    admin,
+    linha,
+    { status: "error", attempts: linha.attempts },
+    desfecho,
+  );
+  if (resultado === "falhou") r.ainda_falhando += 1;
+  if (resultado !== "gravado") return;
+  r.desistidas += 1;
+  if (desfecho.avisar) await avisarMensagemPerdida(admin, linha, desfecho.tentativas);
 }
 
 /** Um aviso aberto por organização enquanto durar — Central inundada ninguém lê. */
@@ -141,9 +153,11 @@ export async function reprocessarArquivoDeWebhooks(
     if (!contrato || !contrato.ok) {
       // Sem corpo (a retenção já o limpou) ou fora do contrato: tentar de novo
       // não muda nada. Morre, com aviso — a mensagem, se era uma, se perdeu.
-      await marcarMorta(admin, linha, "replay: arquivo sem corpo legível", linha.attempts);
-      await avisarMensagemPerdida(admin, linha, linha.attempts);
-      r.desistidas += 1;
+      await desistir(admin, linha, r, {
+        motivo: "replay: arquivo sem corpo legível",
+        tentativas: linha.attempts,
+        avisar: true,
+      });
       continue;
     }
 
@@ -167,8 +181,11 @@ export async function reprocessarArquivoDeWebhooks(
     }
     if (!session) {
       // Canal apagado ou arquivado: a rota também não ingeriria. Sem aviso — foi decisão de alguém.
-      await marcarMorta(admin, linha, "replay: canal inexistente ou arquivado", linha.attempts);
-      r.desistidas += 1;
+      await desistir(admin, linha, r, {
+        motivo: "replay: canal inexistente ou arquivado",
+        tentativas: linha.attempts,
+        avisar: false,
+      });
       continue;
     }
 
@@ -177,9 +194,11 @@ export async function reprocessarArquivoDeWebhooks(
       falhasSeguidas += 1;
       const tentativas = linha.attempts + 1;
       if (tentativas >= MAX_TENTATIVAS) {
-        await marcarMorta(admin, linha, linha.error_message ?? "transitoria", tentativas);
-        await avisarMensagemPerdida(admin, linha, tentativas);
-        r.desistidas += 1;
+        await desistir(admin, linha, r, {
+          motivo: linha.error_message ?? "transitoria",
+          tentativas,
+          avisar: true,
+        });
       } else {
         await admin.from("webhook_events_log").update({ attempts: tentativas }).eq("id", linha.id);
         r.ainda_falhando += 1;

@@ -3,10 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
-import type { Previsao } from "@/lib/leads/previsao";
+import type { PrevisaoCarregada } from "@/lib/leads/previsao";
 
-/** A previsão de um funil, com o id do funil que a originou. */
-export type PrevisaoDoFunil = Previsao & { pipeline_id: string };
+/** A previsão de um funil, com o id do funil que a originou (e `truncado` quando é um recorte). */
+export type PrevisaoDoFunil = PrevisaoCarregada;
 
 /**
  * A previsão ponderada do funil padrão da organização (issue #1535) — é o que

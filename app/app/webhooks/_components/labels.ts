@@ -3,6 +3,8 @@
  * de atividade (UI-T4) importa os mesmos mapas, nunca redeclara os textos.
  */
 import type { TRIGGER_EVENTS } from "@/lib/schemas/webhooks";
+import type { ModuloOpcional } from "@/lib/instalacao/modulos";
+import type { CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
 
 export type TriggerEvent = (typeof TRIGGER_EVENTS)[number];
 export type ActionType =
@@ -11,13 +13,19 @@ export type ActionType =
   | "send_email"
   | "send_ai_message"
   | "add_tag"
+  | "remove_tag"
   | "assign_owner"
   | "call_webhook"
   | "start_message_flow"
   | "create_task"
   | "apply_task_plan"
+  // #3727 — grava a data do comparecimento num campo de data do negócio; quem
+  // conta os dias é a regra do gatilho de data do funil (#989).
+  | "set_lead_date_field"
   // #2642 — o único destino que não é o lead: a EQUIPE.
-  | "notify_team";
+  | "notify_team"
+  // #3881 — a automação escolhe a FILA da conversa (módulo `setores`).
+  | "define_sector";
 
 export const TRIGGER_LABELS: Record<TriggerEvent, string> = {
   "lead.created": "Quando entrar um contato novo (webhook)",
@@ -64,6 +72,15 @@ export const TRIGGER_LABELS: Record<TriggerEvent, string> = {
   // funil) ficam embaixo, na configuração da regra.
   "lead.silent_for": "Quando ficar N dias sem mensagem",
   "lead.stage_stale": "Quando um lead ficar N dias na mesma etapa",
+  // #1749 — "negócio alterado". A frase diz o FATO (a edição do negócio) e não
+  // "negócio atualizado", que sugeriria qualquer escrita do sistema: o evento
+  // nasce só do PATCH de edição do negócio, e o detalhe do que mudou vai na
+  // condição, embaixo.
+  "lead.updated": "Quando um negócio for alterado",
+  // #4365 — a frase diz o DESFECHO para quem ligou ("não for atendida"), que é
+  // o fato que a regra escuta. "Recebida" separa da ligação FEITA que ninguém
+  // atendeu — essa não é perdida, e não dispara este gatilho.
+  "voice_call.missed": "Quando uma ligação recebida não for atendida",
 };
 
 export const ACTION_LABELS: Record<ActionType, string> = {
@@ -74,6 +91,7 @@ export const ACTION_LABELS: Record<ActionType, string> = {
   send_email: "Enviar e-mail",
   send_ai_message: "Mensagem escrita pela IA",
   add_tag: "Adicionar tag",
+  remove_tag: "Tirar tag",
   assign_owner: "Atribuir a um atendente",
   call_webhook: "Avisar outro sistema (webhook)",
   start_message_flow: "Iniciar fluxo de mensagem",
@@ -82,8 +100,48 @@ export const ACTION_LABELS: Record<ActionType, string> = {
   // #1752 — a SEQUÊNCIA em vez do lembrete único: aplica um plano salvo em
   // Tarefas › Planos ao negócio, criando as N tarefas de uma vez e na ordem.
   apply_task_plan: "Aplicar um plano de tarefas ao negócio",
+  // #3727 — a ação que não fala com ninguém e não espera: ela GRAVA a data do
+  // atendimento, e quem conta os dias é a regra do gatilho de data do funil.
+  // A frase diz o dado e o destino, que é o que quem monta a regra escolhe.
+  set_lead_date_field: "Gravar a data do atendimento num campo do negócio",
   // #2642 — o único destino que não é o lead. A frase diz "equipe" e não
   // "WhatsApp" porque quem recebe é o WhatsApp cadastrado em Avisos, e quem
   // lê a lista precisa saber que quem recebe é GENTE DA CASA, não o cliente.
   notify_team: "Mensagem para a equipe (resumo do negócio ganho)",
+  // #3881 — a frase diz o que muda na operação (a conversa passa a ser
+  // distribuída para quem atende aquele setor) e não fala em "sector_id".
+  define_sector: "Definir o setor da conversa",
 };
+
+/**
+ * #3881 — ação que só existe com um módulo opcional ligado. O seletor
+ * "Adicionar ação" e a paleta do canvas não a oferecem com o módulo desligado
+ * (o padrão de toda instalação); uma regra que JÁ a grava continua mostrando a
+ * caixa, porque o que está salvo não some da tela.
+ */
+const MODULO_DA_ACAO: Partial<Record<ActionType, ModuloOpcional>> = { define_sector: "setores" };
+
+export function acaoOferecida(tipo: ActionType, modulosLigados: readonly string[] | undefined): boolean {
+  const modulo = MODULO_DA_ACAO[tipo];
+  return !modulo || (modulosLigados ?? []).includes(modulo);
+}
+
+/**
+ * #4409 — o gatilho que só dispara com uma capacidade da organização ligada. A
+ * ligação perdida nasce do worker de voz, e quem não usa telefonia (o padrão)
+ * veria uma opção que nunca dispara. Mesmo desenho de `acaoOferecida`: o gatilho
+ * JÁ gravado na regra (`atual`) continua na lista, porque o que está salvo não
+ * some da tela.
+ */
+const CAPACIDADE_DO_GATILHO: Partial<Record<TriggerEvent, CapacidadeDaOrganizacao>> = {
+  "voice_call.missed": "telefonia",
+};
+
+export function gatilhoOferecido(
+  ev: TriggerEvent,
+  capacidadesLigadas: readonly string[] | undefined,
+  atual?: string,
+): boolean {
+  const capacidade = CAPACIDADE_DO_GATILHO[ev];
+  return !capacidade || ev === atual || (capacidadesLigadas ?? []).includes(capacidade);
+}

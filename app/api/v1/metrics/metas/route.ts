@@ -29,17 +29,35 @@
  * A explicação sai no idioma de quem pediu (o `t` de sempre), porque quem a
  * escreveu foi o servidor.
  *
- * A org vem do cookie validado (`requireRole`), NUNCA do query. Read-only ⇒ sem
- * audit.
+ * ─── As duas parcelas do período (fatia 2, item 1, da #3602) ────────────────
+ * A meta continua contando VENDAS GANHAS, e valor não entra no percentual. Ao
+ * lado dela a rota passa a devolver `valores_do_periodo`: "vendido único"
+ * (`value_cents`) e "recorrência nova mensal" (`recurring_value_cents` dos
+ * ganhos com `recurring_period = 'monthly'`), SEPARADOS, mais a contagem de
+ * negócios com recorrência. Nada é somado entre as duas parcelas — a régua é
+ * `lib/metrics/valores-do-periodo.ts`, a mesma que o funil usa. Aditivo e
+ * retrocompatível: quem não preenche recorrência recebe zero nos dois números e
+ * o resto da resposta é o de antes. Sai mesmo sem meta cadastrada: "não há
+ * alvo" não é motivo para esconder quanto entrou no mês.
+ *
+ * A org vem do cookie validado (`requireRole`) ou da LINHA do token, NUNCA do
+ * query. Read-only ⇒ sem audit.
+ *
+ * Sessão OU token de servidor `dsk_…` com `mcp:read` (Spec 33, R3). A meta é da
+ * empresa/funil, mas o realizado vem de `crm_leads`, que na sessão a RLS recorta
+ * por atendente; o token lê a organização inteira, então exige `manager`.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
-import { createClient } from "@/lib/supabase/server";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { moedaDaOrganizacao } from "@/lib/metrics/moeda-da-organizacao";
+import { type NegocioComValor, separarValoresDoPeriodo } from "@/lib/metrics/valores-do-periodo";
+import { lerPaginado } from "@/lib/supabase/pagina";
 
 export const dynamic = "force-dynamic";
 
@@ -81,10 +99,18 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   // Piso agent: o atendente vê a meta da empresa — é o número que a tela dele
   // mostra. A escrita é que exige manager (policy da tabela + Server Action).
-  const authz = await requireRole("agent", { requestId, resource: "metrics" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "metrics",
+    role: "agent",
+    scope: "mcp:read",
+    tokenRole: "manager",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg } = authz;
+  // Está em PUBLIC_PATHS: o teto do token é a única contagem das chamadas dele.
+  const teto = await tetoDeEscritaDoToken(authz, "metrics", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const url = new URL(req.url);
   const parsed = querySchema.safeParse({
@@ -115,8 +141,8 @@ export async function GET(req: NextRequest): Promise<Response> {
     ? primeiroDiaDoMes(parsed.data.from)
     : `${de.slice(0, 7)}-01`;
 
-  const supabase = await createClient();
-  const orgId = activeOrg.orgId;
+  const supabase = authz.supabase;
+  const orgId = authz.organizationId;
 
   // As metas do MÊS (o da janela) na organização ativa. `pipeline_id is null` é
   // a meta da empresa e vem primeiro; metas por funil (fatia seguinte) também
@@ -186,6 +212,41 @@ export async function GET(req: NextRequest): Promise<Response> {
     });
   }
 
+  // ─── Os ganhos da janela, em LINHAS, para as duas parcelas (#3602) ────────
+  //
+  // Depois do laço de propósito: a PRIMEIRA leitura de `crm_leads` desta rota
+  // continua sendo a contagem `head: true` do realizado, que não traz linha
+  // nenhuma e por isso não serve para somar valor. Esta leitura é própria, e é
+  // PAGINADA: sem `.range()` o PostgREST corta a resposta em `max_rows` (1000)
+  // sem erro nenhum, e um mês com 1.200 vendas apareceria como se fossem 1.000.
+  // `truncado` viaja na resposta para ninguém ler um piso como se fosse o total.
+  const leituraDeValores = await lerPaginado<NegocioComValor>((inicio, fim, contar) =>
+    supabase
+      .from("crm_leads")
+      .select(
+        "status, closed_at, currency, value_cents, recurring_value_cents, recurring_period",
+        contar ? { count: "exact" } : undefined,
+      )
+      .eq("organization_id", orgId)
+      .eq("status", "won")
+      .gte("closed_at", de)
+      .lt("closed_at", ate)
+      .order("closed_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(inicio, fim),
+  );
+  if (leituraDeValores.erro) {
+    return fail("internal_error", `crm_leads: valores do período: ${leituraDeValores.erro}`, 500, {
+      requestId,
+    });
+  }
+  const valoresDoPeriodo = separarValoresDoPeriodo({
+    negocios: leituraDeValores.linhas,
+    janela: { from: de, to: ate },
+    moedaDaOrganizacao: await moedaDaOrganizacao(orgId),
+    truncado: leituraDeValores.truncado,
+  });
+
   const semMeta = saida.length === 0;
 
   return ok(
@@ -194,6 +255,9 @@ export async function GET(req: NextRequest): Promise<Response> {
       periodo,
       indicador: INDICADOR_DA_FATIA,
       metas: saida,
+      // Duas parcelas SEPARADAS (nunca um total): o painel mostra as duas lado
+      // a lado, e a org sem recorrência recebe zero nos dois sem nada mudar.
+      valores_do_periodo: valoresDoPeriodo,
       motivo: semMeta ? "sem_meta" : null,
       explicacao: semMeta
         ? t(

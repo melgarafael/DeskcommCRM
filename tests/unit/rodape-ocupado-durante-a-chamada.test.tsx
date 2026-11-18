@@ -66,6 +66,12 @@ vi.mock("@/hooks/notifications/useCrmAlerts", () => ({ useCrmAlerts: () => {} })
 // razão dos três mocks acima, e mesma forma.
 vi.mock("@/hooks/calls/useInboundCallAlerts", () => ({ useInboundCallAlerts: () => {} }));
 vi.mock("@/lib/notifications/notify_open", () => ({ useNotifyOpenFromServiceWorker: () => {} }));
+// A casca lê o pathname para publicar a classe de seção do conteúdo (#4705).
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/app/inbox",
+  useRouter: () => ({ prefetch: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
 
 import type { ReactElement } from "react";
 

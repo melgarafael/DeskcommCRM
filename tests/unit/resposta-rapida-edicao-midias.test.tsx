@@ -20,8 +20,7 @@ vi.mock("@/lib/api/client", () => ({
   apiClient: {
     patch: async (url: string, corpo: unknown) => {
       h.ordem.push("patch");
-      h.patch(url, corpo);
-      return { data: {} };
+      return h.patch(url, corpo);
     },
     post: vi.fn(),
   },
@@ -70,6 +69,9 @@ const salvar = () => fireEvent.click(screen.getByRole("button", { name: /^salvar
 beforeEach(() => {
   h.ordem = [];
   h.patch.mockReset();
+  h.patch.mockImplementation(async (_url: string, corpo: { midias?: unknown; midias_esperadas: unknown }) => ({
+    data: { midias: corpo.midias ?? corpo.midias_esperadas },
+  }));
   h.upload.mockReset();
 });
 

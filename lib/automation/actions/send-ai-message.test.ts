@@ -149,7 +149,11 @@ function bancoFalso(canal: { metadata?: unknown; existe?: boolean; erro?: string
   return { cliente: { from, rpc } as unknown as ActionCtx["admin"], idas, rpc };
 }
 
-function executar(admin: ActionCtx["admin"], telefone: string): Promise<ActionResultDetail> {
+function executar(
+  admin: ActionCtx["admin"],
+  telefone: string,
+  extra: Partial<ActionCtx> = {},
+): Promise<ActionResultDetail> {
   const acao = getAction("send_ai_message");
   if (!acao) throw new Error("send_ai_message não está registrada");
   const ctx: ActionCtx = {
@@ -162,6 +166,7 @@ function executar(admin: ActionCtx["admin"], telefone: string): Promise<ActionRe
     // Sem `lead` de propósito: com ele a ação vai ao banco buscar a captação do
     // formulário, e o que se mede aqui não depende disso.
     context: { contact: { id: "contato-1", phone_number: telefone } },
+    ...extra,
   };
   return acao.execute(ctx, {
     channel_session_id: CANAL,
@@ -218,6 +223,21 @@ describe("send_ai_message — quem PODE receber continua recebendo", () => {
     expect(r.status).toBe("success");
     expect(gerarAbordagemDeFormulario).toHaveBeenCalledTimes(1);
     expect(sendMessageHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it("pulo congelado pela agenda (#3813): pula sem gastar o modelo, mesmo com a agenda já livre", async () => {
+    // O dublê devolve agenda VAZIA: sem a marca, este mesmo caso envia (o de cima).
+    const { cliente } = bancoFalso({ metadata: { ai_gate: "open", ai_test_phone_numbers: [] } });
+
+    const r = await executar(cliente, "+5521988887777", { puloCongeladoPelaAgenda: { appointment_id: "compromisso-1" } });
+
+    expect(r).toEqual({
+      type: "send_ai_message",
+      status: "skipped",
+      detail: { reason: "compromisso_na_agenda", appointment_id: "compromisso-1" },
+    });
+    expect(gerarAbordagemDeFormulario).not.toHaveBeenCalled();
+    expect(sendMessageHandler).not.toHaveBeenCalled();
   });
 
   it("canal aberto ao público não é barrado", async () => {

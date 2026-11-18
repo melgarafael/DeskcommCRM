@@ -241,3 +241,59 @@ describe("lerPlanilha — planilha em espanhol", () => {
     );
   });
 });
+
+/**
+ * QUEM NOMEIA GANHA DE QUEM DESCREVE — e a coluna que descreve vira a DESCRIÇÃO.
+ *
+ * `descricao`/`descripcion` sozinhas nomeiam o produto (casos acima). Ao lado
+ * de uma coluna que nomeia, as duas disputavam o posto de nome e o vencedor
+ * era a ordem das colunas: com a descrição primeiro, TODO produto entrava com
+ * o texto longo no título, sem erro nenhum na tela. E o texto da descrição,
+ * que é o que o atendente de IA conta ao cliente, não entrava em lugar nenhum.
+ */
+describe("lerPlanilha — a coluna de descrição ao lado da de nome", () => {
+  it.each([
+    ["nome;descricao;preco", "Massageador;Com calor e 3 velocidades;350,00"],
+    ["descricao;nome;preco", "Com calor e 3 velocidades;Massageador;350,00"],
+    ["Descrição;Produto;Preço", "Com calor e 3 velocidades;Massageador;350,00"],
+  ])("%s: o nome é o nome, a descrição é a descrição", (cabecalho, linha) => {
+    const r = lerPlanilha(`${cabecalho}\n${linha}\n`);
+    if ("erro" in r) throw new Error(r.erro);
+    expect(r.produtos[0]).toMatchObject({ nome: "Massageador", descricao: "Com calor e 3 velocidades" });
+    expect(r.colunasIgnoradas).toEqual([]);
+  });
+
+  it.each([
+    ["nombre;descripcion;precio", "Masajeador;Con calor y 3 velocidades;350,00"],
+    ["descripcion;nombre;precio", "Con calor y 3 velocidades;Masajeador;350,00"],
+  ])("em espanhol, %s: o mesmo, em qualquer ordem", (cabecalho, linha) => {
+    const r = lerPlanilha(`${cabecalho}\n${linha}\n`);
+    if ("erro" in r) throw new Error(r.erro);
+    expect(r.produtos[0]).toMatchObject({ nome: "Masajeador", descricao: "Con calor y 3 velocidades" });
+  });
+
+  it("célula de descrição vazia não carrega `descricao` — a gravada na tela fica", () => {
+    const r = lerPlanilha("nome;descricao;preco\nMassageador;;350,00\n");
+    if ("erro" in r) throw new Error(r.erro);
+    expect(r.produtos[0]).not.toHaveProperty("descricao");
+  });
+
+  it("planilha sem coluna de descrição não fala de descrição", () => {
+    const r = lerPlanilha("nome;preco\nMassageador;350,00\n");
+    if ("erro" in r) throw new Error(r.erro);
+    expect(r.produtos[0]).not.toHaveProperty("descricao");
+  });
+
+  it("duas colunas que nomeiam: não há regra a aplicar, a primeira segue valendo", () => {
+    const r = lerPlanilha("nome;produto;preco\nMassageador;Outro;350,00\n");
+    if ("erro" in r) throw new Error(r.erro);
+    expect(r.produtos[0]).toMatchObject({ nome: "Massageador" });
+    expect(r.produtos[0]).not.toHaveProperty("descricao");
+  });
+
+  it("a descrição cabe no teto do schema do produto (2000)", () => {
+    const r = lerPlanilha(`nome;descricao;preco\nMassageador;${"a".repeat(2500)};350,00\n`);
+    if ("erro" in r) throw new Error(r.erro);
+    expect(r.produtos[0]!.descricao).toHaveLength(2000);
+  });
+});

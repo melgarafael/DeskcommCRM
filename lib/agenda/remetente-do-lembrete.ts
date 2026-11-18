@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { transportaMensagem } from "@/lib/channels/capabilities";
+import { PROVIDERS_DE_TELEFONE, transportaMensagem } from "@/lib/channels/capabilities";
 import { canalAceitaTextoLivreAgora } from "@/lib/channels/janela";
 
 export interface CanalDoLembrete {
@@ -20,13 +20,26 @@ export type MotivoSemRemetente =
   | "sem_canal"
   | "remetente_ambiguo";
 export type RemetenteDoLembrete =
-  { canal: CanalDoLembrete; motivo: null } | { canal: null; motivo: MotivoSemRemetente };
+  | { canal: CanalDoLembrete; motivo: null }
+  | {
+      canal: null;
+      motivo: MotivoSemRemetente;
+      /**
+       * Só com `canal_fora_da_janela_24h`, e só quando o remetente seria UM número
+       * certo (o indicado, ou o único que a preferência deixa): é por ele que um
+       * modelo aprovado ainda pode sair (`reminder_meta_template_id` do tipo,
+       * `lib/agenda/lembrete-por-modelo.ts`). Texto livre continua proibido — este
+       * campo não autoriza nada sozinho.
+       */
+      foraDaJanela?: CanalDoLembrete;
+    };
 
 /** Um vínculo é autoridade, não preferência: indisponível nunca libera outro número. */
 export function decidirRemetenteDoLembrete(
   canais: CanalDoLembrete[],
   canalIndicadoId: string | null,
   agora: Date,
+  telefoneDoContato?: string | null,
 ): RemetenteDoLembrete {
   const operante = (c: CanalDoLembrete) =>
     c.status === "WORKING" &&
@@ -38,15 +51,36 @@ export function decidirRemetenteDoLembrete(
     if (!canal || !operante(canal)) return { canal: null, motivo: "canal_indicado_indisponivel" };
     return canalAceitaTextoLivreAgora(canal.provider, canal.lastInboundAt, agora)
       ? { canal, motivo: null }
-      : { canal: null, motivo: "canal_fora_da_janela_24h" };
+      : { canal: null, motivo: "canal_fora_da_janela_24h", foraDaJanela: canal };
   }
-  const candidatos = canais
-    .filter(operante)
-    .filter((c) => canalAceitaTextoLivreAgora(c.provider, c.lastInboundAt, agora));
+
+  // #2594: o canal do próprio contato — com telefone, o de telefone; sem, o
+  // social. A preferência só desempata: se nenhum da lista é do tipo preferido,
+  // a lista vale como antes. Telefone não informado (undefined) não inventa
+  // preferência.
+  const preferir = (lista: CanalDoLembrete[]) => {
+    if (telefoneDoContato === undefined) return lista;
+    const temTelefone = Boolean(telefoneDoContato?.trim());
+    const preferidos = lista.filter(
+      (c) => (PROVIDERS_DE_TELEFONE as readonly string[]).includes(c.provider ?? "") === temTelefone,
+    );
+    return preferidos.length > 0 ? preferidos : lista;
+  };
+  const operantes = canais.filter(operante);
+  const candidatos = preferir(
+    operantes.filter((c) => canalAceitaTextoLivreAgora(c.provider, c.lastInboundAt, agora)),
+  );
   if (candidatos.length > 1) return { canal: null, motivo: "remetente_ambiguo" };
   const unico = candidatos[0];
   if (candidatos.length === 1 && unico) return { canal: unico, motivo: null };
-  return { canal: null, motivo: canais.some(operante) ? "canal_fora_da_janela_24h" : "sem_canal" };
+  if (operantes.length === 0) return { canal: null, motivo: "sem_canal" };
+  // Todos os operantes estão fora da janela. Se a mesma preferência deixa UM
+  // número, é por ele que um modelo aprovado ainda pode sair; com dois, nenhum é
+  // "o" remetente — e o modelo também não escolhe.
+  const foraDaJanela = preferir(operantes);
+  return foraDaJanela.length === 1 && foraDaJanela[0]
+    ? { canal: null, motivo: "canal_fora_da_janela_24h", foraDaJanela: foraDaJanela[0] }
+    : { canal: null, motivo: "canal_fora_da_janela_24h" };
 }
 
 /** Leitura sempre recortada à organização E ao contato da reserva. Falha não é ausência. */
@@ -55,6 +89,7 @@ export async function resolverRemetenteDoLembrete(
   compromisso: { organization_id: string; contact_id: string; conversation_id?: string | null },
   canalDoTipoId: string | null,
   agora: Date,
+  telefoneDoContato?: string | null,
 ): Promise<RemetenteDoLembrete> {
   const org = compromisso.organization_id;
   let indicado = canalDoTipoId;
@@ -111,5 +146,6 @@ export async function resolverRemetenteDoLembrete(
       }
     }
   }
-  return decidirRemetenteDoLembrete(canais, indicado, agora);
+  return decidirRemetenteDoLembrete(canais, indicado, agora, telefoneDoContato);
 }
+

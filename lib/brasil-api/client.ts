@@ -1,8 +1,9 @@
 /**
- * Cliente HTTP isolado da BrasilAPI (CNPJ).
+ * Cliente HTTP isolado da BrasilAPI (CNPJ e CEP).
  *
- * Só consulta CNPJs explicitamente pedidos pelo usuário (cadastro/import).
- * Timeout curto; Zod na borda; nunca lança para o React — retorna Result.
+ * Só consulta documentos e CEPs explicitamente pedidos pelo usuário
+ * (cadastro/import). Timeout curto; Zod na borda; nunca lança para o React —
+ * retorna Result.
  */
 import { z } from "zod";
 
@@ -89,15 +90,66 @@ export interface BrasilApiClient {
   lookupCnpj(normalizedCnpj: string): Promise<BrasilApiResult>;
 }
 
-export function createBrasilApiClient(opts: BrasilApiClientOpts = {}): BrasilApiClient {
+/**
+ * O CEP do contato pessoa física (#3494).
+ *
+ * `/cep/v1` e não `/cep/v2`: a v2 acrescenta coordenadas e, quando o serviço de
+ * geocodificação não responde, devolve erro para um CEP que existe. O endereço
+ * de entrega/cobrança não usa coordenada, então a rota mais simples é também a
+ * que não inventa falha.
+ */
+export const brasilApiCepSchema = z
+  .object({
+    cep: z.string().nullable().optional(),
+    state: z.string().nullable().optional(),
+    city: z.string().nullable().optional(),
+    neighborhood: z.string().nullable().optional(),
+    street: z.string().nullable().optional(),
+    service: z.string().nullable().optional(),
+  })
+  .passthrough();
+
+export type BrasilApiCep = z.infer<typeof brasilApiCepSchema>;
+
+export type BrasilApiCepResult =
+  | { ok: true; data: BrasilApiCep; raw: unknown }
+  | {
+      ok: false;
+      code: "invalid_cep" | "not_found" | "timeout" | "upstream_error" | "incomplete";
+      message: string;
+      status?: number;
+    };
+
+/**
+ * Contrato do CEP, separado do de CNPJ.
+ *
+ * Interface PRÓPRIA em vez de um método a mais em `BrasilApiClient`: os dublês
+ * de CNPJ (`lib/crm-b2b/*.test.ts`) já montam o objeto inteiro, e exigir um
+ * método novo neles seria mudar teste alheio para acomodar esta fatia. Quem
+ * consulta CEP declara a interface que precisa.
+ */
+export interface BrasilApiCepClient {
+  lookupCep(normalizedCep: string): Promise<BrasilApiCepResult>;
+}
+
+export function createBrasilApiClient(
+  opts: BrasilApiClientOpts = {},
+): BrasilApiClient & BrasilApiCepClient {
   const baseUrl = (opts.baseUrl ?? DEFAULT_BASE).replace(/\/$/, "");
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const fetchFn = opts.fetchFn ?? fetch;
 
   return {
     async lookupCnpj(normalizedCnpj: string): Promise<BrasilApiResult> {
-      if (!/^\d{14}$/.test(normalizedCnpj)) {
-        return { ok: false, code: "invalid_cnpj", message: "CNPJ deve ter 14 dígitos." };
+      // 12 posições de dígito ou LETRA + 2 dígitos verificadores: o CNPJ
+      // alfanumérico da Receita (#3495). Recusar aqui devolveria `invalid_cnpj`
+      // para um documento legítimo que a rota de empresa já aceita.
+      if (!/^[0-9A-Z]{14}$/.test(normalizedCnpj)) {
+        return {
+          ok: false,
+          code: "invalid_cnpj",
+          message: "CNPJ deve ter 14 posições (12 alfanuméricas e 2 dígitos verificadores).",
+        };
       }
 
       const ctrl = new AbortController();
@@ -138,6 +190,82 @@ export function createBrasilApiClient(opts: BrasilApiClientOpts = {}): BrasilApi
             ok: false,
             code: "incomplete",
             message: "BrasilAPI sem razão social nem nome fantasia.",
+          };
+        }
+        return { ok: true, data: parsed.data, raw };
+      } catch (err) {
+        const aborted = err instanceof Error && err.name === "AbortError";
+        return {
+          ok: false,
+          code: aborted ? "timeout" : "upstream_error",
+          message: aborted
+            ? "Timeout ao consultar a BrasilAPI."
+            : "Falha de rede ao consultar a BrasilAPI.",
+        };
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+
+    /**
+     * CEP → endereço (issue #3494). Mesmo `baseUrl`, mesmo `User-Agent`
+     * explícito, mesmo `AbortController` e mesmas famílias de erro do CNPJ —
+     * quem já depura uma chamada desta BrasilAPI reconhece a outra.
+     *
+     * A validação de forma é aqui de propósito: a rota que chama isto é pública
+     * para a tela, e um CEP de 7 dígitos não pode virar uma requisição a um
+     * serviço de terceiro nem um 500 por causa de `fetch` com URL estranha.
+     */
+    async lookupCep(normalizedCep: string): Promise<BrasilApiCepResult> {
+      const digitos = normalizedCep.replace(/\D/g, "");
+      if (digitos.length !== 8) {
+        return {
+          ok: false,
+          code: "invalid_cep",
+          message: "CEP deve ter 8 dígitos.",
+        };
+      }
+
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      try {
+        const res = await fetchFn(`${baseUrl}/cep/v1/${digitos}`, {
+          method: "GET",
+          headers: { Accept: "application/json", "User-Agent": USER_AGENT },
+          signal: ctrl.signal,
+        });
+        if (res.status === 404) {
+          return {
+            ok: false,
+            code: "not_found",
+            message: "CEP não encontrado na BrasilAPI.",
+            status: 404,
+          };
+        }
+        if (!res.ok) {
+          return {
+            ok: false,
+            code: "upstream_error",
+            message: `BrasilAPI respondeu ${res.status}.`,
+            status: res.status,
+          };
+        }
+        const raw: unknown = await res.json();
+        const parsed = brasilApiCepSchema.safeParse(raw);
+        if (!parsed.success) {
+          return {
+            ok: false,
+            code: "incomplete",
+            message: "Resposta da BrasilAPI incompleta ou inválida.",
+          };
+        }
+        // CEP de município inteiro (o "CEP geral" de cidade pequena) vem só com
+        // cidade/UF — isso é resposta VÁLIDA. Vazio de tudo é que não serve.
+        if (!parsed.data.city && !parsed.data.state) {
+          return {
+            ok: false,
+            code: "incomplete",
+            message: "BrasilAPI sem cidade nem UF para este CEP.",
           };
         }
         return { ok: true, data: parsed.data, raw };

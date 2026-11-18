@@ -154,6 +154,66 @@ beforeAll(() => {
  * arquivo tem de EXISTIR: exceção que aponta para teste que sumiu não prova nada.
  */
 const PROVA_DE_MODULO: Record<string, { readonly arquivo: string; readonly razao: string }> = {
+  amigo_connections: {
+    arquivo: "tests/invariants/amigo-modulo.test.ts",
+    razao:
+      "Duas organizações semeadas: a sessão da gestão de A lê exatamente a conexão de A (contagem 1), o atendente lê zero e a sessão não escreve.",
+  },
+  amigo_credentials: {
+    arquivo: "tests/invariants/amigo-modulo.test.ts",
+    razao:
+      "Sem grant nenhum para a sessão: authenticated e anon recebem permission denied ao ler o ciphertext, de qualquer organização.",
+  },
+  amigo_patient_links: {
+    arquivo: "tests/invariants/amigo-modulo.test.ts",
+    razao:
+      "Vínculo semeado em A e em B: a gestão de A não lê o de B, e a FK composta recusa vincular contato ou conexão de outra organização.",
+  },
+  amigo_appointment_links: {
+    arquivo: "tests/invariants/amigo-modulo.test.ts",
+    razao:
+      "Espelho semeado em A e em B: a gestão de A lê só o de A (contagem 1), o atendente lê zero; a FK composta recusa compromisso de outra organização.",
+  },
+  amigo_operations: {
+    arquivo: "tests/invariants/amigo-modulo.test.ts",
+    razao:
+      "Recibo semeado em A e em B: a gestão de A lê exatamente o de A (contagem 1) e zero quando filtra pela organização B.",
+  },
+  email_cadences: {
+    arquivo: "tests/invariants/cadencias-consentimento-isolamento.test.ts",
+    razao:
+      "JWT real com claims de dois tenants: a sequência tem linha semeada na organização A, " +
+      "a sessão de A lê exatamente essa linha e a de B lê zero. O teste exige contagem " +
+      "positiva antes da recusa, para não aceitar isolamento por ausência de fixture.",
+  },
+  email_cadence_enrollments: {
+    arquivo: "tests/invariants/cadencias-consentimento-isolamento.test.ts",
+    razao:
+      "Inscrição real da organização A: countAs com JWT de A confirma leitura positiva e " +
+      "JWT de B retorna zero; abertura com a organização errada também retorna false sem " +
+      "alterar a inscrição. A prova roda nas mesmas tabelas provisionadas do módulo.",
+  },
+  email_cadence_events: {
+    arquivo: "tests/invariants/cadencias-consentimento-isolamento.test.ts",
+    razao:
+      "Eventos reais gerados pela RPC de abertura consentida: contagem positiva pelo dono " +
+      "do tenant e zero por JWT da organização vizinha, incluindo a tabela de atividade que " +
+      "guarda metadata. Não é apenas conferência do nome da policy no catálogo.",
+  },
+  email_cadence_suppressions: {
+    arquivo: "tests/invariants/cadencias-descadastro-e-visibilidade.test.ts",
+    razao:
+      "Tabela só do servidor: o teste confere RLS ligada e nenhum privilégio de anon nem de " +
+      "authenticated, e prova pela função real que a supressão sobrevive ao negócio, à " +
+      "cadência e ao contato apagados, à troca de e-mail e à fusão, recusando a reinscrição.",
+  },
+  email_cadence_recipients: {
+    arquivo: "tests/invariants/cadencias-descadastro-e-visibilidade.test.ts",
+    razao:
+      "Tabela só do servidor: o teste confere RLS ligada e nenhum privilégio de anon nem de " +
+      "authenticated, e prova pela reserva real que o destinatário sobrevive ao negócio apagado " +
+      "e que o link resolve por ele.",
+  },
   honorarios_contratos: {
     arquivo: "tests/invariants/honorarios-rls-por-operacao.test.ts",
     razao:
@@ -168,6 +228,13 @@ const PROVA_DE_MODULO: Record<string, { readonly arquivo: string; readonly razao
       "Mesmo arquivo: `writeCountAs` com JWT para viewer/agent/manager nas quatro operações, " +
       "imutabilidade da parcela paga (status e financial_entry_id não mudam sem o caixa) e a " +
       "recusa de FK cross-org. A leitura cross-org por contagem é medida neste arquivo.",
+  },
+  calendar_waitlist: {
+    arquivo: "tests/invariants/lista-de-espera-encaixe.test.ts",
+    razao:
+      "JWT real: a organização lê só a própria fila, a sessão não grava (42501) e o gatilho de " +
+      "vínculos recusa contato, tipo, profissional e compromisso de outra organização mesmo " +
+      "na escrita do servidor.",
   },
   // #1907 — as cinco tabelas da comanda, que nascem em `fn_financeiro_provisionar()`
   // (ADR-0002 D2/D3). A prova comportamental é a MESMA da lista de leitura
@@ -208,6 +275,14 @@ const PROVA_DE_MODULO: Record<string, { readonly arquivo: string; readonly razao
       "Extrato de pontos semeado por organização (`insert into public.loyalty_ledger`) na " +
       "lista org-scoped: vizinho vê zero movimentações. A leitura é medida aqui; a decisão de " +
       "NÃO redigir (razão `manter` do #1504) mora no redact-unificado, e é outra régua.",
+  },
+  ouvidoria_manifestacoes: {
+    arquivo: "tests/invariants/ouvidoria-registro-privado.test.ts",
+    razao:
+      "JWT real (`set role authenticated` + claims): admin lê a manifestação da própria " +
+      "organização e zero do vizinho nos dois sentidos; agent e viewer da MESMA organização " +
+      "leem zero; authenticated e anon sem insert/update/delete (escrita só pelo service_role); " +
+      "protocolo único POR organização e forma fechada cobrada por CHECK.",
   },
 };
 
@@ -744,25 +819,29 @@ describe("D8 — as varreduras de RLS, security definer e cascata de LGPD com os
       expect(tabelasComDadoDePessoa()).toContain("contacts");
       expect(tabelasNaCascata()).toContain("contacts");
 
-      // Nenhum módulo real cai no escopo SEM decisão — e é pela RÉGUA (FK × coluna de dado
-      // pessoal), não por cegueira: a sonda do caso seguinte mostra que o escopo enxerga
-      // tabela de módulo. A única entrada real é `sales` (#1907): FK para `contacts` E
-      // `notes`, alcançada pela SEÇÃO declarada `financeiro/sales` (D8/0485) — a asserção
-      // seguinte cobra a cobertura de cada entrada; aqui se cobra que a comanda seja a ÚNICA
-      // e que a seção dela exista de fato no banco, para a exceção não virar esconderijo.
+      // Catálogo esperado explícito: a comanda mantém a seção financeiro/sales; cadências
+      // acrescenta a inscrição, que tem FK para contacts e coluna de erro livre. As duas
+      // seções de cadências são declaradas no baseline antes das tabelas existirem (D8).
+      // Uma terceira tabela no escopo continua reprovando, em vez de passar por inclusão.
       const escopoDeModulo = tabelasComDadoDePessoa().filter((t) => TABELAS_DE_MODULO.includes(t));
       expect(
         escopoDeModulo,
-        "tabela de módulo com dado de pessoa no escopo da cascata — a comanda (`sales`) é a " +
-          "única decisão escrita deste PR (#1907, seção declarada `financeiro/sales`); se outra " +
-          "entrou, a régua mudou e a decisão dela precisa ser reavaliada",
-      ).toEqual(["sales"]);
+        "o escopo de módulos deve conter somente sales e email_cadence_enrollments; " +
+          "qualquer outra tabela exige decisão explícita e prova de cobertura",
+      ).toEqual(["email_cadence_enrollments", "sales"]);
       expect(
         declarada("financeiro", "sales"),
         "`sales` está no escopo do irmão mas a seção `financeiro/sales` não está declarada em " +
           "`modulo_secoes_lgpd` — a D8 manda a cobertura ser SQL dinâmico declarado, não passo " +
           "nomeado no corpo da cascata",
       ).toBe(true);
+
+      for (const tabela of ["email_cadence_enrollments", "email_cadence_events"]) {
+        expect(
+          declarada("cadencias", tabela),
+          `a seção cadencias/${tabela} deve existir para a cascata dinâmica alcançar o módulo`,
+        ).toBe(true);
+      }
 
       const violacoes = PROVISIONAMENTOS.flatMap((p) => violacoesLgpd(p));
       expect(

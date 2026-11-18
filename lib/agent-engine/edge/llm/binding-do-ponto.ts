@@ -98,6 +98,44 @@ export async function carregarBinding(
   return rows[0] ?? null;
 }
 
+/**
+ * O binding do ponto, ou `null` — NUNCA lança.
+ *
+ * É a leitura do seam, e é exportada para quem precisa saber o modelo ANTES da
+ * chamada: o turno do agente monta a mídia nativa (a foto do cliente como
+ * bytes) com a capacidade do modelo que vai recebê-la. No `followup_turn` esse
+ * modelo pode ser o do painel, e montar a parte para o modelo do agente
+ * mandaria imagem a um modelo que talvez não enxergue — o provedor recusa e o
+ * follow-up não sai. Uma leitura só, com a mesma degradação: falha de leitura
+ * vale como "sem escolha", que é o comportamento de antes.
+ */
+export async function bindingOuNulo(
+  db: pg.Pool,
+  organizationId: string,
+  purpose: string,
+  log?: { warn: (msg: string, meta?: Record<string, unknown>) => void },
+): Promise<LinhaDeBinding | null> {
+  try {
+    return await carregarBinding(db, organizationId, purpose);
+  } catch (err) {
+    // Segue o caminho de antes desta frente — indisponibilidade da tabela não
+    // pode virar cliente sem resposta.
+    //
+    // Mas NÃO em silêncio. Um clone que não aplicou o baseline não tem esta
+    // tabela; sem este aviso, o painel inteiro pareceria funcionar (salva na
+    // tela, mostra a escolha) enquanto nenhuma chamada de modelo a respeitaria
+    // — que é a forma exata do problema que esta frente veio resolver, agora
+    // criada por ela. O aviso é por chamada e barato; quem o consome é o log
+    // estruturado, e na frente de logs vira aviso na Central.
+    log?.warn('llm: não consegui ler o binding do ponto — usando o padrão', {
+      organization_id: organizationId,
+      purpose,
+      motivo: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
 export interface EntradaDoSeam {
   organizationId: string;
   purpose: string;
@@ -125,26 +163,7 @@ export async function decidirParaOSeam(
   entrada: EntradaDoSeam,
   deps: { log?: { warn: (msg: string, meta?: Record<string, unknown>) => void } } = {},
 ): Promise<DecisaoDeBinding> {
-  let binding: LinhaDeBinding | null = null;
-  try {
-    binding = await carregarBinding(db, entrada.organizationId, entrada.purpose);
-  } catch (err) {
-    // Segue o caminho de antes desta frente — indisponibilidade da tabela não
-    // pode virar cliente sem resposta.
-    //
-    // Mas NÃO em silêncio. Um clone que não aplicou o baseline não tem esta
-    // tabela; sem este aviso, o painel inteiro pareceria funcionar (salva na
-    // tela, mostra a escolha) enquanto nenhuma chamada de modelo a respeitaria
-    // — que é a forma exata do problema que esta frente veio resolver, agora
-    // criada por ela. O aviso é por chamada e barato; quem o consome é o log
-    // estruturado, e na frente de logs vira aviso na Central.
-    binding = null;
-    deps.log?.warn('llm: não consegui ler o binding do ponto — usando o padrão', {
-      organization_id: entrada.organizationId,
-      purpose: entrada.purpose,
-      motivo: err instanceof Error ? err.message : String(err),
-    });
-  }
+  const binding = await bindingOuNulo(db, entrada.organizationId, entrada.purpose, deps.log);
 
   // Só os classificadores consultam o catálogo; os demais pontos não pagam a leitura.
   let catalogo: ModeloDoCatalogoEconomico[] | null = null;

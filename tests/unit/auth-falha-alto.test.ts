@@ -77,8 +77,12 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 const { loadAuthUser, resolveActiveOrg } = await import("@/lib/auth/server");
+// O cache curto (#3696) é do PROCESSO: entre casos, ele precisa começar vazio —
+// senão o snapshot de `u1` do caso anterior responde pelo seguinte.
+const { esquecerTudo } = await import("@/lib/auth/cache-curto");
 
 beforeEach(() => {
+  esquecerTudo();
   consultas.platformAdmins = { data: null, error: null };
   consultas.memberships = { data: [], error: null };
 });
@@ -147,6 +151,10 @@ describe("loadAuthUser — falha de permissão não vira 'sem organização'", (
         org_status: null,
         suspended_kind: null,
         interface_settings: { preset: "completa" },
+        // A marca da senha provisória (#3876) viaja na membership. O dublê não
+        // devolve a coluna e a sessão recebe `false` — o `=== true` do mapeamento
+        // não inventa obrigação para quem não tem.
+        senha_provisoria: false,
       },
     ]);
   });

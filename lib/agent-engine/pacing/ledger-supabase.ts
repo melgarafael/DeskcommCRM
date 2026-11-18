@@ -85,6 +85,7 @@ export async function lerEstadoDoPacing(
     .select("id", { count: "exact", head: true })
     .eq("organization_id", organizationId)
     .eq("channel_session_id", channelSessionId)
+    .eq("resposta", false)
     .gte("sent_at", inicioDoDia.toISOString());
 
   const knobs = await admin

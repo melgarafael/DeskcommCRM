@@ -68,6 +68,19 @@ describe("cliente da BrasilAPI", () => {
    * o caso era redundante, não que o gate estava errado.
    */
 
+  it("aceita o CNPJ alfanumérico da Receita na consulta (#3495)", async () => {
+    const { chamadas, fetchFn } = espiao();
+
+    const r = await createBrasilApiClient({ fetchFn }).lookupCnpj("12ABC34501DE35");
+
+    // A régua de formato daqui é a mesma da rota: 12 posições alfanuméricas
+    // MAIÚSCULAS + 2 dígitos. Recusar antes da rede devolveria `invalid_cnpj`
+    // para um documento legítimo, e a tela mostraria 502 no lugar do cadastro.
+    expect(r.ok).toBe(true);
+    expect(chamadas).toHaveLength(1);
+    expect(chamadas[0]!.url).toContain("/cnpj/v1/12ABC34501DE35");
+  });
+
   it("ainda distingue 404 de erro de upstream", async () => {
     // Controle de que o espião não está mascarando o tratamento de status: a
     // tela precisa separar "CNPJ não existe" de "não consegui consultar".

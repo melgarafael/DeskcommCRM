@@ -3,7 +3,8 @@
  *
  * ## Por que este arquivo existe
  *
- * O DeskcommCRM chama modelo de linguagem em 23 lugares. Até aqui, QUAL modelo
+ * O DeskcommCRM chama modelo de linguagem em vários lugares — quantos, quem
+ * responde é `PONTOS_DE_IA.length`, não esta frase. Até aqui, QUAL modelo
  * cada um usava estava espalhado por três pilhas que não se falavam
  * (`runModelCall` com BYOK por org, `lib/ai/gateway.ts` por variável de
  * ambiente, `lib/ai/runtime/agent.ts` com um terceiro `switch`) e por sete
@@ -158,11 +159,19 @@ export interface PontoDeIa {
    * (`entrada.transcricao`). Marcar `escada` é o que impede a tela de voltar a
    * anunciar um `whisper-1` fixo para quem transcreve pelo modelo de conversa
    * da organização (#2190).
+   *
+   * `opcoes`, quando presente, é o menu FECHADO de serviços entre os quais o
+   * painel deixa escolher — fechado porque o ponto não fala a API de chat. Com
+   * `escada`, o menu só escolhe o degrau 0 dela (ver `escada-de-transcricao.ts`);
+   * a escolha grava em `ai_purpose_bindings` como qualquer outra. A PRIMEIRA
+   * opção é a padrão: é nela que o painel abre quando o efetivo não casa com
+   * nenhuma (`CartaoDoPonto`).
    */
   fixo?: {
     razao: string;
     usa?: { provider: string; modelId: string };
     escada?: "transcricao";
+    opcoes?: readonly { provider: string; modelId: string; rotulo: string }[];
   };
   registraEm: DestinoDeTelemetria;
   /**
@@ -210,6 +219,42 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     emissor: "lib/agent-engine/agent/inbound-turn.ts",
     sintomaDeFalha:
       "O cliente manda mensagem e ninguém responde. A conversa fica parada na Caixa de entrada sem aviso.",
+    registraEm: "llm_calls",
+  },
+  {
+    // ═══ POR QUE O FOLLOW-UP TEM PONTO PRÓPRIO, separado de `agent_turn` ═══
+    //
+    // O mesmo turno do agente (`executarTurnoDoAgente`, em `inbound-turn.ts`)
+    // roda em dois tipos de trabalho que custam e exigem coisas diferentes:
+    //
+    //  - `inbound_turn` RESPONDE quem escreveu. É ali que o agente opera o CRM
+    //    de verdade — move etapa, grava o pedido —, e o modelo é a
+    //    personalidade dele: fica na versão publicada (`agent_turn`).
+    //  - `followup_turn` RETOMA quem parou de responder — o passo de IA de um
+    //    fluxo de follow-up, ou o retorno que o próprio agente combinou. Não há
+    //    pergunta nova do cliente: o trabalho é quase só escrever.
+    //
+    // Medido numa instalação real (30/09–02/10/2026): os follow-ups eram 31%
+    // do gasto do agente (162 turnos, 3,7¢ cada no modelo da versão publicada).
+    // Comparados em 42 turnos reais, um modelo barato escreveu bem as retomadas
+    // e NÃO operou o CRM (não moveu etapa nem guardou pedido) — então trocar o
+    // modelo do agente inteiro custaria o funil. Trocar só aqui, não.
+    //
+    // A escolha mora no painel, mas SEM escolha nada muda: vale o modelo da
+    // versão publicada, como antes deste ponto existir
+    // (`PONTOS_DO_AGENTE_COM_ESCOLHA_NO_PAINEL`, em `resolver.ts`). Exige
+    // ferramentas como `agent_turn`, porque o turno é o mesmo e as ferramentas
+    // do CRM continuam na mão do modelo — a catraca recusa o modelo que não as
+    // sabe usar.
+    id: "followup_turn",
+    rotulo: "Escrever o follow-up",
+    oQueFaz:
+      "Escreve as mensagens que o agente manda sozinho quando o cliente para de responder: os passos de IA dos fluxos de follow-up e os retornos que ele mesmo combinou. Sem escolha aqui, usa o modelo da versão publicada do agente.",
+    papel: "atender",
+    exige: { tools: true, imagem: true },
+    emissor: "lib/agent-engine/agent/inbound-turn.ts",
+    sintomaDeFalha:
+      "O follow-up não sai: o cliente que parou de responder não recebe a retomada, e o fluxo fica parado no passo da mensagem.",
     registraEm: "llm_calls",
   },
   {
@@ -567,7 +612,7 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     emissor: "lib/messaging/media/transcription.ts",
     fixo: {
       razao:
-        "Este ponto não tem modelo escolhido no painel: quem ouve o áudio é a escada de transcrição, e ela decide a cada nota de voz. Primeiro o serviço desta instalação (TRANSCRIPTION_API_KEY); na falta dele, a chave OpenAI com o modelo de transcrição de sempre (whisper-1, ou o que TRANSCRIPTION_MODEL trouxer); e quando não há chave OpenAI nenhuma, o modelo de conversa da organização — desde que ele declare a capacidade de áudio, que é como uma organização só com Gemini transcreve. Sem nenhum dos três, o áudio não vira texto, e o motivo aparece aqui. Por isso fixar um provedor aqui apagaria os degraus seguintes.",
+        "Este ponto não tem modelo escolhido no painel: quem ouve o áudio é a escada de transcrição, e ela decide a cada nota de voz. Primeiro o serviço desta instalação (TRANSCRIPTION_API_KEY); na falta dele, a chave OpenAI com o modelo de transcrição de sempre (whisper-1, ou o que TRANSCRIPTION_MODEL trouxer); se a conversa da organização for OpenRouter, a própria OpenRouter transcreve com a mesma chave; e quando não há chave OpenAI nenhuma, o modelo de conversa da organização — desde que ele declare a capacidade de áudio, que é como uma organização só com Gemini transcreve. Sem nenhum dos quatro, o áudio não vira texto, e o motivo aparece aqui. Por isso fixar um provedor aqui apagaria os degraus seguintes. A única escolha é usar o ElevenLabs (Scribe) antes de todos eles, com a chave do ElevenLabs da organização; sem essa chave, vale a ordem acima.",
       // ⚠️ POR QUE NÃO HÁ MAIS um par fixo (provider "openai" + "whisper-1")
       // neste ponto (#2190): o objeto `fixo` vive sem o campo que declarava
       // esse par.
@@ -587,6 +632,17 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
       // `tests/unit/a-tela-e-o-motor-concordam-sobre-imagem.test.ts` compara os
       // dois lados e reprova a volta de um provider fixo.
       escada: "transcricao",
+      // O menu é a única escolha que a escada aceita de fora: o ElevenLabs
+      // (Scribe) é o degrau 0 dela, e só vale quando escolhido aqui — ter a
+      // chave do ElevenLabs para a VOZ do agente não é escolher transcrever com
+      // ele. "Automático" é a escada sem o degrau 0; o par openai/whisper-1 é só
+      // a etiqueta gravada dessa escolha, porque não há como apagar um binding
+      // pela tela. Nenhum dos dois é OpenAI-compatível com o outro: o Scribe
+      // mora em `transcription-elevenlabs.ts` (`/v1/speech-to-text`, `xi-api-key`).
+      opcoes: [
+        { provider: "openai", modelId: "whisper-1", rotulo: "Automático" },
+        { provider: "elevenlabs", modelId: "scribe_v1", rotulo: "ElevenLabs (Scribe)" },
+      ],
     },
     sintomaDeFalha:
       "O cliente manda áudio e o agente responde como se não tivesse recebido nada.",
@@ -602,6 +658,23 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     emissor: "workers/media-derive-worker.ts",
     sintomaDeFalha:
       "O cliente manda uma foto do produto ou um comprovante e o agente age como se a imagem não existisse.",
+    registraEm: "llm_calls",
+  },
+  {
+    id: "sintese_de_voz",
+    rotulo: "Responder o cliente falando",
+    oQueFaz:
+      "Transforma a resposta do agente em nota de voz, nas organizações e versões que ligaram essa opção.",
+    papel: "atender",
+    exige: {},
+    emissor: "lib/agent-engine/edge/crm/send-message.ts",
+    fixo: {
+      razao:
+        "Usa o ElevenLabs — não é um modelo de conversa, e hoje não há um segundo serviço de síntese para escolher entre.",
+      usa: { provider: "elevenlabs", modelId: "eleven_multilingual_v2" },
+    },
+    sintomaDeFalha:
+      "A organização ligou a resposta em voz e o agente continua respondendo só em texto.",
     registraEm: "llm_calls",
   },
 

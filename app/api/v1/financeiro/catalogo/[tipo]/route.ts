@@ -1,10 +1,15 @@
 /**
  * O catálogo financeiro: contas, formas de pagamento e plano de contas.
  *
- * ⚠️ USA O CLIENT DE SESSÃO, nunca o admin. A RLS já diz quem lê (a organização)
- * e quem escreve (manager+), e repetir a regra aqui criaria uma segunda fonte da
- * mesma verdade — a que roda em TypeScript seria a pior das duas. `requireRole`
- * é só a borda de autenticação.
+ * ⚠️ COM SESSÃO usa o client de SESSÃO: a RLS já diz quem lê (a organização) e
+ * quem escreve (manager+), e repetir a regra aqui criaria uma segunda fonte da
+ * mesma verdade. `resolveAuthDual` (GET) e `requireRole` (escritas) são só a
+ * borda de autenticação.
+ *
+ * ⚠️ COM TOKEN só a LEITURA (`mcp:read`, Spec 33 R2, doc 376): o client é a
+ * service role e a RLS deixa de proteger, então o GET filtra `organization_id`
+ * da linha do token. POST, PATCH e DELETE seguem só de sessão e recusam o
+ * Bearer com 401 no `requireRole` — abrir a escrita por token é fatia própria.
  *
  * ⚠️ DELETE INATIVA, não apaga. Conta com lançamento é história; apagá-la
  * deixaria o lançamento órfão ou o levaria junto. É a mesma decisão de
@@ -15,9 +20,11 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import {
   COLUNAS_POR_ENTIDADE,
   ENTIDADES_DO_CATALOGO,
@@ -25,6 +32,7 @@ import {
   SCHEMA_POR_ENTIDADE,
   ehEntidadeDoCatalogo,
   lerAlteracao,
+  temColunaDeMoeda,
 } from "@/lib/financeiro/catalogo";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -62,17 +70,25 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   const e = await entidade(ctx, requestId);
   if (!e.ok) return e.response;
 
-  const authz = await requireRole("viewer", { requestId, resource: "financeiro" });
+  // Leitura do catálogo: sessão OU token `mcp:read`. O papel mínimo é o da sessão.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "financeiro",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "financeiro_catalogo", requestId);
+  if (teto) return teto;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   // `inativos=1` para quem precisa ver o que saiu de uso — a tela normal não
   // mostra, mas o histórico existe e alguém vai perguntar por ele.
   const incluirInativos = new URL(req.url).searchParams.get("inativos") === "1";
   let q = supabase
     .from(e.tabela)
     .select(COLUNAS_POR_ENTIDADE[e.tipo])
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .order("name", { ascending: true })
     .limit(500);
   if (!incluirInativos) q = q.eq("is_active", true);
@@ -102,9 +118,24 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   }
 
   const supabase = await createClient();
+
+  // ─── A MOEDA É DA ORGANIZAÇÃO, NUNCA DO CORPO (#3379) ──────────────────
+  //
+  // `financial_accounts.currency` e `recurring_entries.currency` têm
+  // `default 'BRL'` no banco, e nenhum dos dois schemas declara o campo: sem
+  // esta linha a conta e o molde de uma organização em dólar nasciam em real —
+  // e o cron da recorrência copiava essa moeda para cada lançamento do mês, para
+  // sempre. O leitor é o mesmo do cadastro de produto (`moedaDaOrganizacao`),
+  // porque são a mesma pergunta: qual é a moeda desta organização.
+  const linha: Record<string, unknown> = {
+    ...lido.data,
+    organization_id: authz.org.orgId,
+  };
+  if (temColunaDeMoeda(e.tipo)) linha.currency = await moedaDaOrganizacao(supabase, authz.org.orgId);
+
   const { data, error } = await supabase
     .from(e.tabela)
-    .insert({ ...lido.data, organization_id: authz.org.orgId })
+    .insert(linha)
     .select(COLUNAS_POR_ENTIDADE[e.tipo])
     .single();
 
@@ -234,9 +265,12 @@ export async function DELETE(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   // INATIVA. Ver o cabeçalho: o passado não se reescreve.
   const supabase = await createClient();
+  // Na recorrência, desligar pelo catálogo é decisão da equipe: zera a marca de
+  // "desligado pela perda", e o re-ganho do negócio não o religa (#4256).
+  const desliga = e.tipo === "recorrencias" ? { is_active: false, desativada_pela_perda: false } : { is_active: false };
   const { data, error } = await supabase
     .from(e.tabela)
-    .update({ is_active: false })
+    .update(desliga)
     .eq("id", lido.data.id)
     .eq("organization_id", authz.org.orgId)
     .select("id")

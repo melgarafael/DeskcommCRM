@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { NextRequest } from "next/server";
 import { requireSupportWrite } from "@/lib/impersonate/support";
+import { invalidarUsuario } from "@/lib/auth/cache-curto";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { interfaceSettingsSchema, interfaceTemDestino } from "@/lib/navigation/interface";
@@ -37,6 +38,12 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ user_id: 
     return fail("validation_error", "Selecione ao menos uma área permitida ao papel.", 400, {
       requestId,
     });
+  // #3696: derrubar o snapshot ANTES da escrita fecha a janela em que uma tela
+  // que atualiza "ao vivo" (evento → `router.refresh`) pede o valor velho no
+  // meio do UPDATE e o guarda de novo. A invalidação de baixo, depois do
+  // commit, cobre o intervalo que sobra.
+  invalidarUsuario(user_id);
+
   const { data, error } = await db
     .from("user_organizations")
     .update({ interface_settings: parsed.data.interface_settings })
@@ -51,6 +58,10 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ user_id: 
     return fail("internal_error", "Não foi possível salvar a interface.", 500, { requestId });
   if (!data)
     return fail("conflict", "O vínculo mudou. Atualize e tente novamente.", 409, { requestId });
+
+  // #3696: `interface_settings` viaja DENTRO do snapshot de permissões (a tela
+  // inteira depende dele), então a escrita aqui também derruba o cache.
+  invalidarUsuario(user_id);
   void audit({
     action: "team.interface_changed",
     organizationId: authz.org.orgId,

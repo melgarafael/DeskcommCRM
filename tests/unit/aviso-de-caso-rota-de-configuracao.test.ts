@@ -181,6 +181,40 @@ describe("PUT — salvar a configuração", () => {
     );
   });
 
+  it("a chave `whatsapp` AUSENTE atravessa o corpo intacta (#3935)", async () => {
+    // O contrato do banco lê a chave ausente como "a tela não falou deste
+    // membro" (não mexe) e o `null` como "apague". Se a rota completasse a
+    // ausência com `null` — que é o que o `zod` faria sem o `.optional()` —, a
+    // tela que não exibiu a equipe voltaria a apagar o número de todo mundo.
+    const MEMBRO = "44444444-4444-4444-8444-444444444444";
+    const { rpc } = clienteDeSessao({});
+    await PUT(
+      put({
+        ...CORPO_OK,
+        destino_modo: "responsavel",
+        responsaveis: [{ user_id: MEMBRO }],
+      }),
+    );
+
+    const params = rpc.mock.calls[0] as unknown as [string, { p_responsaveis: unknown }];
+    expect(params[1].p_responsaveis).toEqual([{ user_id: MEMBRO }]);
+    // A auditoria conta quem RECEBEU número nesta gravação: a chave ausente não
+    // gravou nada, e contá-la mentiria num log append-only.
+    const auditado = vi.mocked(audit).mock.calls.at(-1)![0] as { metadata: Record<string, unknown> };
+    expect(auditado.metadata.membros_com_whatsapp).toBe(0);
+    // E o caminho explícito continua explícito: `null` chega como `null`.
+    const segundo = clienteDeSessao({});
+    await PUT(
+      put({
+        ...CORPO_OK,
+        destino_modo: "responsavel",
+        responsaveis: [{ user_id: MEMBRO, whatsapp: null }],
+      }),
+    );
+    const params2 = segundo.rpc.mock.calls[0] as unknown as [string, { p_responsaveis: unknown }];
+    expect(params2[1].p_responsaveis).toEqual([{ user_id: MEMBRO, whatsapp: null }]);
+  });
+
   it("a auditoria leva o número MASCARADO, e nunca o telefone inteiro", async () => {
     clienteDeSessao({ rpc: { data: { trocou_numero: true, antes_ligado: false }, error: null } });
     await PUT(put(CORPO_OK));
@@ -195,6 +229,27 @@ describe("PUT — salvar a configuração", () => {
     // `api_audit_log` é append-only e a cascata de LGPD não o alcança: o que
     // entra ali fica para sempre.
     expect(JSON.stringify(entrada.metadata)).not.toContain("998966398");
+  });
+
+  it("a auditoria diz QUAL regra autorizou o destino (#3900)", async () => {
+    // `api_audit_log` é append-only: "a pessoa confirmou" e "o número é da
+    // equipe, então não vira interno" precisam ser distinguíveis anos depois,
+    // senão ninguém entende por que uma atendente continuou chegando ao CRM.
+    const ler = () =>
+      (vi.mocked(audit).mock.calls[0]![0] as { metadata: Record<string, unknown> }).metadata;
+
+    clienteDeSessao({
+      rpc: { data: { trocou_numero: true, antes_ligado: true, destino_e_de_membro: true }, error: null },
+    });
+    await PUT(put(CORPO_OK));
+    expect(ler().autorizacao_do_destino).toBe("membro_da_equipe");
+
+    vi.mocked(audit).mockClear();
+    clienteDeSessao({
+      rpc: { data: { trocou_numero: true, antes_ligado: true, destino_e_de_membro: false }, error: null },
+    });
+    await PUT(put({ ...CORPO_OK, confirma_contato: true }));
+    expect(ler().autorizacao_do_destino).toBe("confirmacao_explicita");
   });
 
   it("o número que já é de um cliente vira PERGUNTA, com código próprio", async () => {

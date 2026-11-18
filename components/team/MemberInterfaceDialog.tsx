@@ -16,17 +16,23 @@ import { InterfaceEditor } from "./InterfaceEditor";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import {
+  combinarInterfaces,
   interfaceSettingsSchema,
   interfaceTemDestino,
   lerInterface,
 } from "@/lib/navigation/interface";
+import { TelaInicialSelect } from "./TelaInicialSelect";
 import type { Role } from "@/lib/auth/types";
 import type { TeamMember } from "@/hooks/team/useTeamMembers";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 export function MemberInterfaceDialog({
   member,
+  interfaceDaEmpresa,
   onClose,
 }: {
   member: TeamMember;
+  /** O menu da EMPRESA: as opções de tela inicial são a interseção com ele. */
+  interfaceDaEmpresa?: unknown;
   onClose: () => void;
 }) {
   const t = useT();
@@ -48,7 +54,7 @@ export function MemberInterfaceDialog({
     <Dialog open onOpenChange={(open) => !open && !save.isPending && onClose()}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{t("Interface de")} {member.full_name ?? member.email ?? t("membro")}</DialogTitle>
+          <DialogTitle>{t("Interface de")} {rotuloDoMembro(member, t)}</DialogTitle>
           <DialogDescription>{t("A alteração vale apenas nesta organização e aparece para o membro sem sair da conta.")}</DialogDescription>
         </DialogHeader>
         {lerInterface(member.interface_settings).needsAdjustment && (
@@ -56,8 +62,29 @@ export function MemberInterfaceDialog({
         )}
         <InterfaceEditor
           value={settings}
-          onChange={setSettings}
+          // O editor reconstrói `{preset, destinos}`: sem devolver a `inicio`
+          // por cima, mexer numa área apagaria a tela inicial do vínculo (#4864).
+          onChange={(next) =>
+            setSettings((current) => ({
+              ...next,
+              ...(current.inicio ? { inicio: current.inicio } : {}),
+            }))
+          }
           role={member.role as Role}
+          disabled={save.isPending}
+        />
+        <TelaInicialSelect
+          value={settings.inicio}
+          onChange={(inicio) =>
+            setSettings((current) => {
+              const { inicio: _anterior, ...resto } = current;
+              return inicio ? { ...resto, inicio } : resto;
+            })
+          }
+          role={member.role as Role}
+          // A INTERSEÇÃO com a empresa: uma porta que ela ocultou não é oferecida
+          // como entrada, porque a entrada a descartaria e cairia no padrão.
+          visiveis={combinarInterfaces(interfaceDaEmpresa, settings)}
           disabled={save.isPending}
         />
         <Button

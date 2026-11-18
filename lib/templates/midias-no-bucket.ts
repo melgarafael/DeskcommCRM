@@ -21,12 +21,15 @@ export async function apagarMidiasDoTemplate(
   requestId: string,
 ): Promise<void> {
   if (caminhos.length === 0) return;
-  const { error } = await createAdminClient().storage.from(BUCKET_DAS_MIDIAS).remove([...caminhos]);
-  if (error) {
-    logger.error("[message-templates] falha ao apagar imagem do template", {
-      detalhe: error.message,
-      requestId,
-      quantidade: caminhos.length,
-    });
+  try {
+    const { error } = await createAdminClient().storage.from(BUCKET_DAS_MIDIAS).remove([...caminhos]);
+    if (!error) return;
+  } catch {
+    // A referência já foi gravada/apagada. Uma rejeição do transporte tem a
+    // mesma semântica do erro estruturado: não desfaz a resposta bem-sucedida.
   }
+  logger.error("[message-templates] falha ao apagar mídia do template", {
+    requestId,
+    quantidade: caminhos.length,
+  });
 }

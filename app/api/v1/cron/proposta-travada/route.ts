@@ -18,9 +18,12 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoAviso, preencher } from "@/lib/i18n/idioma-do-aviso";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 
 export const dynamic = "force-dynamic";
 
@@ -102,14 +105,23 @@ export async function recuperarPropostasTravadas(
     revertidas += n;
     organizacoesComAviso += 1;
 
+    // A Central mostra o texto como foi gravado: o aviso nasce no idioma da organização.
+    const idioma = await idiomaDoAviso(admin, orgId);
     const { error: inboxErr } = await admin.from("agent_inbox_items").insert({
       organization_id: orgId,
       kind: "proposta_travada",
       severity: "critical",
-      title: n === 1 ? "Uma proposta não confirmou o envio" : `${n} propostas não confirmaram o envio`,
-      body:
-        `Ficaram mais de ${STUCK_AFTER_MS / 60000} minutos em envio e voltaram a rascunho, com o número mantido. ` +
-        `Verifique a conexão do WhatsApp e reenvie manualmente — nada foi reenviado sozinho.`,
+      title:
+        n === 1
+          ? traduzir("Uma proposta não confirmou o envio", idioma)
+          : preencher(traduzir("{n} propostas não confirmaram o envio", idioma), { n }),
+      body: preencher(
+        traduzir(
+          "Ficaram mais de {minutos} minutos em envio e voltaram a rascunho, com o número mantido. Verifique a conexão do WhatsApp e reenvie manualmente — nada foi reenviado sozinho.",
+          idioma,
+        ),
+        { minutos: STUCK_AFTER_MS / 60000 },
+      ),
       // "proposal" é a chave de `REFERENCIAS_DE_AVISO` (lib/ai/inbox-destino.ts)
       // — não o nome da tabela. Errar aqui faz o botão "Abrir proposta" nunca
       // aparecer (falha fechada, sem erro visível).
@@ -124,9 +136,24 @@ export async function recuperarPropostasTravadas(
   return { scanned: travadas.length, revertidas, organizations: organizacoesComAviso };
 }
 
+/**
+ * Os passos que rodam DEPOIS do portão do piso ocioso, na ordem do arquivo.
+ * `tests/unit/cron-passa-pelo-portao.test.ts` lê o AST e reprova se divergir:
+ * passo novo aqui embaixo NÃO roda numa instalação sem proposta em `enviando`.
+ */
+const PASSOS_DEPOIS_DO_PORTAO = ["let result", "try", "if (result.revertidas > 0)", "return"] as const;
+void PASSOS_DEPOIS_DO_PORTAO;
+
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   if (!autorizaCron(req)) return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
+
+  // #3694 (crédito: @webtecnica): instalação sem NENHUMA proposta em `enviando`
+  // saía vazia 117 de 117 vezes. O sinal do piso ocioso é a mesma condição da
+  // consulta abaixo (`status = 'enviando'`) — o corte de 5 min continua sendo da
+  // rodada real, porque o sinal sem ele é mais largo. Esperar o TTL de 30 s aqui
+  // não custa nada: a proposta só é "presa" depois de 5 min.
+  if (await recursoOcioso("propostas")) return ok({ pulado: "recurso_ocioso" }, { requestId });
 
   let result: RecuperarResult;
   try {

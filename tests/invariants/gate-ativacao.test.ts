@@ -180,6 +180,38 @@ describe("preflight do ativar-gate contra Postgres real", () => {
     expect(r.detalhe).toMatch(/1 já não recebiam IA hoje/);
   });
 
+  it("checkImpactoConversas · enxerga o modo 'IA com o dono' (#3967): dono humano + modo ligado segue elegível", async () => {
+    // A coluna tem de chegar como BOOLEANO. Com `cv.metadata->>'ai_com_dono'` ela
+    // chegava como o texto 'true', o `=== true` do preflight nunca casava e a
+    // conversa contava como "já não recebia IA" — o oposto do que o motor faz.
+    const DONO = `${P}30`;
+    await q(`insert into auth.users (id, email) values ($1, 'gate-ativ-dono@invariant.test') on conflict (id) do nothing`, [DONO]);
+    await q(
+      `insert into user_organizations (user_id, organization_id, role, accepted_at) values ($1,$2,'agent',now())
+         on conflict do nothing`,
+      [DONO, ORG],
+    );
+    try {
+      await q(`update conversations set assignee_kind = 'user', assigned_to_user_id = $2 where id = $1`, [CV_AUTORIZADO, DONO]);
+      // Controle: dono humano SEM o modo cala a IA (a autorizada passa a "já bloqueada").
+      const semModo = await checkImpactoConversas(ctx());
+      expect(semModo.detalhe).toMatch(/0 seguem elegíveis/);
+      expect(semModo.detalhe).toMatch(/2 já não recebiam IA hoje/);
+
+      await q(`update conversations set metadata = jsonb_build_object('ai_com_dono', true) where id = $1`, [CV_AUTORIZADO]);
+      const comModo = await checkImpactoConversas(ctx());
+      expect(comModo.detalhe).toMatch(/1 seguem elegíveis/);
+      expect(comModo.detalhe).toMatch(/1 já não recebiam IA hoje/);
+    } finally {
+      await q(
+        `update conversations set assignee_kind = null, assigned_to_user_id = null, metadata = '{}'::jsonb where id = $1`,
+        [CV_AUTORIZADO],
+      );
+      await q(`delete from user_organizations where user_id = $1`, [DONO]);
+      await q(`delete from auth.users where id = $1`, [DONO]);
+    }
+  });
+
   it("checkDenyByDefault · contato antigo e simulações NÃO autorizam; PASS", async () => {
     const r = await checkDenyByDefault(ctx());
     expect(r.status).toBe("PASS");

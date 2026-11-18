@@ -17,6 +17,7 @@ import { internalTaskConfigSchema } from "@/lib/followup/graph-schema";
 import { PRIORIDADES_DA_TAREFA, type PrioridadeDaTarefa } from "@/lib/tarefas/tipos";
 
 import type { ConfigOf } from "./shared";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 const ROTULO_DA_PRIORIDADE: Record<(typeof PRIORIDADES_DA_TAREFA)[number], string> = {
   low: "Baixa",
@@ -127,7 +128,7 @@ export function InternalTaskForm({
             <SelectItem value="dono_do_lead">{t("Dono do negócio")}</SelectItem>
             {(members ?? []).map((m) => (
               <SelectItem key={m.user_id} value={m.user_id}>
-                {m.full_name ?? m.user_id.slice(0, 8)}
+                {rotuloDoMembro(m, t)}
               </SelectItem>
             ))}
           </SelectContent>

@@ -8,6 +8,14 @@ vi.mock("@/lib/leads/activity-emitter", () => ({
 vi.mock("@/lib/leads/activity-write-failure", () => ({
   registraFalhaDeAtividade: vi.fn(async () => undefined),
 }));
+// O financeiro do fecho (#3602, fatia 5): o cerco (`recorrencia-do-fecho`) roda
+// de verdade, e o que se observa são as duas funções do molde.
+const molde = vi.hoisted(() => ({
+  recorrenciaDoNegocio: vi.fn(async () => ({ estado: "criado" })),
+  desativaRecorrenciaDoNegocio: vi.fn(async () => ({ estado: "desativado" })),
+}));
+vi.mock("@/lib/financeiro/recorrencia-do-negocio", () => molde);
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({})) }));
 
 import { encerraDemanda } from "./encerramento";
 
@@ -59,7 +67,8 @@ function makeDb({
 
     const builder = {
       select: () => {
-        operation = "select";
+        // `update(...).select("id")` continua sendo o update: devolve as linhas que ele alcançou.
+        if (operation !== "update") operation = "select";
         return builder;
       },
       update: (value: Row) => {
@@ -104,8 +113,10 @@ function makeDb({
             return resolve({ data: null, error: updateError });
           }
           const rows = tables[table] ?? [];
+          const alcancadas: Row[] = [];
           for (const row of rows) {
             if (filters.every(([column, value]) => row[column] === value)) {
+              alcancadas.push(row);
               Object.assign(row, patch);
               const stage = stages.find((candidate) => candidate.id === row.stage_id);
               if (stage?.is_won === true) {
@@ -117,6 +128,7 @@ function makeDb({
               }
             }
           }
+          return resolve({ data: alcancadas.map((row) => ({ id: row.id })), error: null });
         } else if (operation === "insert" && insertRow) {
           (tables[table] ??= []).push(insertRow);
         }
@@ -208,19 +220,22 @@ describe("encerraDemanda", () => {
     expect(db.updates[0]).toMatchObject({ stage_id: WON_STAGE });
   });
 
-  it("move para o fim da stage, preserva a fonte única de evento e fecha como ganho", async () => {
+  it("entra no TOPO da stage (#3461), preserva a fonte única de evento e fecha como ganho", async () => {
+    // Dois já ganhos, o de MENOR posição no fim da lista: o encerrado entra um
+    // passo acima do primeiro da coluna (2000 − 1000), nunca abaixo do último.
     const db = makeDb({
       leads: [
         baseLead(),
         baseLead({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", stage_id: WON_STAGE, position_in_stage: 4000, status: "won" }),
+        baseLead({ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", stage_id: WON_STAGE, position_in_stage: 2000, status: "won" }),
       ],
       stages: baseStages(),
     });
 
     const result = await encerraDemanda(db.client as never, ctx, { leadId: LEAD, desfecho: "won" });
 
-    expect(result.lead).toMatchObject({ status: "won", stage_id: WON_STAGE, position_in_stage: 5000 });
-    expect(db.updates[0]).toMatchObject({ stage_id: WON_STAGE, position_in_stage: 5000 });
+    expect(result.lead).toMatchObject({ status: "won", stage_id: WON_STAGE, position_in_stage: 1000 });
+    expect(db.updates[0]).toMatchObject({ stage_id: WON_STAGE, position_in_stage: 1000 });
     expect(db.rpcs).toEqual([]);
   });
 
@@ -245,6 +260,50 @@ describe("encerraDemanda", () => {
     expect(result).toMatchObject({ jaEstava: true, lead });
     expect(db.updates).toEqual([]);
     expect(db.rpcs).toEqual([]);
+  });
+
+  it("o fecho humano (sem `travaOtimista`) segue sem trava: não filtra status nem etapa de origem", async () => {
+    const db = makeDb({ leads: [baseLead()], stages: baseStages() });
+    const filtrosDoUpdate: Array<[string, unknown]> = [];
+    const fromOriginal = db.client.from;
+    db.client.from = (table: string) => {
+      const b = fromOriginal(table);
+      const eqOriginal = b.eq;
+      let ehUpdate = false;
+      const updOriginal = b.update;
+      b.update = (v: Row) => ((ehUpdate = true), updOriginal(v));
+      b.eq = (c: string, v: unknown) => (ehUpdate && table === "crm_leads" && filtrosDoUpdate.push([c, v]), eqOriginal(c, v));
+      return b;
+    };
+
+    await encerraDemanda(db.client as never, ctx, { leadId: LEAD, desfecho: "won" });
+
+    expect(filtrosDoUpdate.map(([c]) => c).sort()).toEqual(["id", "organization_id"]);
+  });
+
+  it("com `travaOtimista`: negócio já PERDIDO na leitura do fecho → 409 state_conflict e nenhum update", async () => {
+    const db = makeDb({ leads: [baseLead({ status: "lost", stage_id: LOST_STAGE })], stages: baseStages() });
+
+    await expect(
+      encerraDemanda(db.client as never, ctx, { leadId: LEAD, desfecho: "won", travaOtimista: true }),
+    ).rejects.toMatchObject({ code: "state_conflict", status: 409 });
+    expect(db.updates).toEqual([]);
+  });
+
+  it("com `travaOtimista`: o card mudou entre a leitura e a escrita → o update não alcança linha e vira 409 state_conflict", async () => {
+    const db = makeDb({ leads: [baseLead()], stages: baseStages() });
+    // Um humano arrasta o card enquanto o fecho valida a régua (a leitura de settings do funil).
+    // Troca a LINHA (o dublê devolve a linha por referência ao fecho).
+    const fromOriginal = db.client.from;
+    db.client.from = (table: string) => {
+      if (table === "crm_pipelines") db.tables.crm_leads!.splice(0, 1, baseLead({ stage_id: LOST_STAGE, status: "lost" }));
+      return fromOriginal(table);
+    };
+
+    await expect(
+      encerraDemanda(db.client as never, ctx, { leadId: LEAD, desfecho: "won", travaOtimista: true }),
+    ).rejects.toMatchObject({ code: "state_conflict", status: 409 });
+    expect(db.tables.crm_leads?.[0]).toMatchObject({ stage_id: LOST_STAGE, status: "lost" });
   });
 
   // BUG REPRODUZIDO (crm.fabrasoftware.com.br): a recusa de
@@ -404,5 +463,109 @@ describe("encerraDemanda", () => {
     await expect(
       encerraDemanda(db.client as never, ctx, { leadId: LEAD, desfecho: "lost", motivo: "price" }),
     ).rejects.toMatchObject({ code: "internal_error", status: 500 });
+  });
+});
+
+// ── O FINANCEIRO DO FECHO (#3602, fatia 5) ───────────────────────────────────
+//
+// `encerraDemanda` é a porta compartilhada do botão Ganhar/Perder: `/win`,
+// `/lose`, a origem do clone, `create_or_move_lead`, o `crm_close_demand` (MCP),
+// o cold call e a troca de funil. Uma chamada aqui cobre TODAS — e é o que se
+// mede: ganho com `recurring_value_cents` cria o molde UMA vez (a segunda
+// chamada não duplica), perda desativa, e negócio que já estava no desfecho
+// retorna antes de tocar no financeiro.
+describe("encerraDemanda — o financeiro do fecho (#3602, fatia 5)", () => {
+  const CRIADO_EM = "2026-03-05T23:30:00.000Z";
+  const ATOR = ctx.actor.type === "user" ? ctx.actor.id : null;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+  });
+
+  it("ganhar com recorrência declarada cria o molde UMA vez, com os dados do negócio", async () => {
+    const db = makeDb({
+      leads: [baseLead({ recurring_value_cents: 50_000, created_at: CRIADO_EM })],
+      stages: baseStages(),
+    });
+
+    await encerraDemanda(db.client as never, ctx, { leadId: LEAD, desfecho: "won" });
+
+    expect(molde.recorrenciaDoNegocio).toHaveBeenCalledTimes(1);
+    expect(molde.recorrenciaDoNegocio).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        organizationId: ORG,
+        leadId: LEAD,
+        pipelineId: PIPELINE,
+        valorCents: 50_000,
+        criadoEm: CRIADO_EM,
+        userId: ATOR,
+      }),
+    );
+    expect(molde.desativaRecorrenciaDoNegocio).not.toHaveBeenCalled();
+  });
+
+  it("ganhar DUAS vezes não duplica: a segunda chamada nem chega ao financeiro", async () => {
+    const db = makeDb({
+      leads: [baseLead({ recurring_value_cents: 50_000, created_at: CRIADO_EM })],
+      stages: baseStages(),
+    });
+
+    await encerraDemanda(db.client as never, ctx, { leadId: LEAD, desfecho: "won" });
+    const segunda = await encerraDemanda(db.client as never, ctx, {
+      leadId: LEAD,
+      desfecho: "won",
+    });
+
+    expect(segunda.jaEstava).toBe(true);
+    expect(molde.recorrenciaDoNegocio).toHaveBeenCalledTimes(1);
+  });
+
+  it("ganhar SEM recorrência declarada não toca no financeiro", async () => {
+    const db = makeDb({
+      leads: [baseLead({ recurring_value_cents: null, created_at: CRIADO_EM })],
+      stages: baseStages(),
+    });
+
+    await encerraDemanda(db.client as never, ctx, { leadId: LEAD, desfecho: "won" });
+
+    expect(molde.recorrenciaDoNegocio).not.toHaveBeenCalled();
+    expect(molde.desativaRecorrenciaDoNegocio).not.toHaveBeenCalled();
+  });
+
+  it("perder desativa o molde DAQUELE negócio, e não cria outro", async () => {
+    const db = makeDb({
+      leads: [baseLead({ recurring_value_cents: 50_000, created_at: CRIADO_EM })],
+      stages: baseStages(),
+    });
+
+    await encerraDemanda(db.client as never, ctx, {
+      leadId: LEAD,
+      desfecho: "lost",
+      motivo: "price",
+    });
+
+    expect(molde.desativaRecorrenciaDoNegocio).toHaveBeenCalledTimes(1);
+    expect(molde.desativaRecorrenciaDoNegocio).toHaveBeenCalledWith(expect.anything(), {
+      organizationId: ORG,
+      leadId: LEAD,
+    });
+    expect(molde.recorrenciaDoNegocio).not.toHaveBeenCalled();
+  });
+
+  it("financeiro fora do ar NÃO derruba o fecho: o negócio fecha igual", async () => {
+    molde.recorrenciaDoNegocio.mockRejectedValueOnce(new Error("banco fora"));
+    const db = makeDb({
+      leads: [baseLead({ recurring_value_cents: 50_000, created_at: CRIADO_EM })],
+      stages: baseStages(),
+    });
+
+    const result = await encerraDemanda(db.client as never, ctx, {
+      leadId: LEAD,
+      desfecho: "won",
+    });
+
+    expect(result.lead).toMatchObject({ status: "won", stage_id: WON_STAGE });
   });
 });

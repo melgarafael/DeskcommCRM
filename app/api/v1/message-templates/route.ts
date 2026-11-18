@@ -18,11 +18,12 @@ import { roleAtLeast } from "@/lib/auth/types";
 import { createTemplateSchema } from "@/lib/schemas/templates";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { grupoDaOrganizacao } from "@/lib/templates/grupo-da-resposta";
 import { posicaoEntre } from "@/lib/templates/ordem";
 
 export const dynamic = "force-dynamic";
 const COLS =
-  "id, organization_id, owner_user_id, title, body, shortcut, midias, mostrar_na_barra, created_by_user_id, created_at, updated_at, ordem";
+  "id, organization_id, owner_user_id, title, body, shortcut, midias, mostrar_na_barra, grupo_id, created_by_user_id, created_at, updated_at, ordem";
 /** Tag do endpoint no recibo de idempotência. Muda de rota muda de recibo. */
 const ENDPOINT = "/api/v1/message-templates";
 
@@ -69,7 +70,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       details: parsed.error.flatten().fieldErrors as Record<string, unknown>,
     });
   }
-  const { title, body, shortcut, shared, mostrar_na_barra } = parsed.data;
+  const { title, body, shortcut, shared, mostrar_na_barra, grupo_id } = parsed.data;
   // Compartilhado exige manager+. requireRole já resolveu o role efetivo do
   // banco em org.role — reusar em vez de uma 2ª chamada/RPC. A RLS with_check
   // barra de qualquer forma; isto só dá um erro claro antes do insert.
@@ -85,6 +86,20 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const supabase = await createClient();
+
+  // O GRUPO (#3245) tem de ser da organização ativa. `null` é sempre válido —
+  // é "sem grupo". A FK composta do banco é a segunda barreira; esta é a que
+  // devolve 422 dizendo QUAL campo está errado.
+  try {
+    if (!(await grupoDaOrganizacao(supabase, org.orgId, grupo_id))) {
+      return fail("validation_failed", t("Dados inválidos."), 422, {
+        requestId,
+        details: { grupo_id: [t("Grupo que não pertence a esta organização.")] },
+      });
+    }
+  } catch {
+    return fail("internal_error", "Erro ao criar template.", 500, { requestId });
+  }
 
   /**
    * O efeito. Lança em falha de propósito: assim o helper propaga sem gravar
@@ -116,6 +131,9 @@ export async function POST(req: NextRequest): Promise<Response> {
         title,
         body,
         shortcut: shortcut ?? null,
+        // O grupo (#3245): ausente na tela = `null` = lista plana, que é o
+        // estado de toda resposta anterior à 0808.
+        grupo_id: grupo_id ?? null,
         // "Mostrar na barra do Inbox" (#3282): só vai quando a tela escolheu.
         // Ausente, a coluna assume o default dela (`true`) — a resposta nasce
         // aparecendo na barra, que é o comportamento de sempre.

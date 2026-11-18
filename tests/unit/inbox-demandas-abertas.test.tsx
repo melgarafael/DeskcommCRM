@@ -230,7 +230,7 @@ describe("painel do inbox — demandas abertas", () => {
     renderPainel();
 
     const secao = await screen.findByTestId("inbox-demandas");
-    const leads = screen.getByText("Leads recentes");
+    const leads = screen.getByText("Negócios recentes");
     // `compareDocumentPosition` mede a ordem no documento, não a aparência —
     // medida por ferramenta, nunca a olho.
     const posicao = secao.compareDocumentPosition(leads);
@@ -238,6 +238,9 @@ describe("painel do inbox — demandas abertas", () => {
   });
 });
 
+// A seção de tarefas do painel (#4630) aparece em toda conversa com contato e tem
+// testes próprios (tarefa-da-demanda-no-inbox, tarefas-da-demanda-no-painel).
+vi.mock("@/components/inbox/TarefasDaDemanda", () => ({ TarefasDaDemanda: () => null }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({ useAuth: () => ({ user: { support: null } }) }));
 
 

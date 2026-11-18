@@ -1,14 +1,15 @@
 "use client";
 import { Droppable } from "@hello-pangea/dnd";
-import { useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import { cn } from "@/lib/utils";
 import type { Lead } from "@/lib/types/leads";
 import type { Stage } from "@/lib/kanban/types";
-import { buildCardInput } from "@/lib/kanban/card-state";
 import { intervaloDaColuna } from "@/lib/kanban/selecao";
+import { CARDS_POR_VEZ, cardsVisiveisDaColuna, colunaLimitada, limiteQueMostra } from "@/lib/kanban/limite-da-coluna";
 import { formatSomaPorMoeda, formatValorDoNegocio, MOEDA_PADRAO, somaPorMoeda } from "@/lib/money";
-import { KanbanCard, type GestoDeSelecao } from "./KanbanCard";
+import type { GestoDeSelecao } from "./KanbanCard";
+import { CardsDaColuna } from "./CardsDaColuna";
 
 interface StageColumnProps {
   stage: Stage;
@@ -40,6 +41,21 @@ interface StageColumnProps {
   /** `manager`+ — mesmo corte de papel da rota que renomeia a etapa. */
   podeRenomear?: boolean;
   onRenomear?: (nome: string) => void;
+  /**
+   * Cards que aparecem mesmo além do corte de ganho/perda (#4788): o último
+   * solto pelo arraste e o do dossiê aberto (`?lead=`). Ver
+   * `lib/kanban/limite-da-coluna.ts`.
+   */
+  soltoId?: string | null;
+  abertoId?: string | null;
+  /** Densidade dos cards (issue #3461, item 2) — atravessa como `pulses`. */
+  denso?: boolean;
+  /**
+   * Quadro de um funil ARQUIVADO (#1298): abre para OLHAR, e nada aqui grava.
+   * Sem arraste, sem menu de ações de card, sem seleção (a barra em lote é
+   * escrita) e sem abrir o dossiê, que tem ações próprias.
+   */
+  somenteLeitura?: boolean;
 }
 
 export function StageColumn({
@@ -58,6 +74,10 @@ export function StageColumn({
   onMoverPara,
   podeRenomear = false,
   onRenomear,
+  soltoId = null,
+  abertoId = null,
+  denso = false,
+  somenteLeitura = false,
 }: StageColumnProps) {
   const t = useT();
   // O TOTAL É POR MOEDA (#1531). Antes ele somava todos os `value_cents` e
@@ -110,25 +130,50 @@ export function StageColumn({
           moedaDoLead,
         );
 
-  const idsVisiveis = leads.map((l) => l.id);
+  const idsVisiveis = useMemo(() => leads.map((l) => l.id), [leads]);
   const selecionadosAqui = idsVisiveis.filter((id) => selectedLeadIds?.has(id)).length;
   const todosSelecionados = idsVisiveis.length > 0 && selecionadosAqui === idsVisiveis.length;
+
+  // Ganho e perda desenham 50 por vez (#4788); o contador, os totais e
+  // "selecionar a etapa" acima seguem com todos (`lib/kanban/limite-da-coluna.ts`).
+  // O ajuste do limite é no render, sem um quadro intermediário sem o card.
+  const [limite, setLimite] = useState(CARDS_POR_VEZ);
+  const limitada = colunaLimitada(stage);
+  const necessario = limiteQueMostra(leads, { limitada, limite, fixos: [soltoId, abertoId] });
+  if (necessario > limite) setLimite(necessario);
+  const mostrados = useMemo(
+    () => cardsVisiveisDaColuna(leads, { limitada, limite: necessario }),
+    [leads, limitada, necessario],
+  );
+  const escondidos = leads.length - mostrados.length;
 
   // A âncora do shift+clique. `useRef` e não `useState` de propósito: mudar a
   // âncora não muda nada na tela, e um `setState` aqui remontaria a coluna
   // inteira — inclusive o `Droppable` — a cada card marcado.
   const ancora = useRef<string | null>(null);
+  // A ordem e a seleção chegam ao `aoSelecionar` por ref (#4788): com elas nas
+  // dependências, marcar ou mover um card trocava a função que todos os cards
+  // recebem, e a coluna inteira redesenhava.
+  const idsAtuais = useRef(idsVisiveis);
+  const selecaoAtual = useRef(selectedLeadIds);
+  useEffect(() => {
+    idsAtuais.current = idsVisiveis;
+    selecaoAtual.current = selectedLeadIds;
+  }, [idsVisiveis, selectedLeadIds]);
 
-  const aoSelecionar = (leadId: string, gesto: GestoDeSelecao) => {
-    if (gesto === "intervalo") {
-      const faixa = intervaloDaColuna(idsVisiveis, ancora.current, leadId);
+  const aoSelecionar = useCallback(
+    (leadId: string, gesto: GestoDeSelecao) => {
+      if (gesto === "intervalo") {
+        const faixa = intervaloDaColuna(idsAtuais.current, ancora.current, leadId);
+        ancora.current = leadId;
+        onSelectMany?.(faixa, true);
+        return;
+      }
       ancora.current = leadId;
-      onSelectMany?.(faixa, true);
-      return;
-    }
-    ancora.current = leadId;
-    onSelectMany?.([leadId], !selectedLeadIds?.has(leadId));
-  };
+      onSelectMany?.([leadId], !selecaoAtual.current?.has(leadId));
+    },
+    [onSelectMany],
+  );
 
   const alternarEtapa = () => {
     ancora.current = null;
@@ -155,7 +200,7 @@ export function StageColumn({
         coluna de etapa não vira painel. De `md` para cima volta o `w-80` de
         sempre, onde a graça é justamente ver várias etapas ao mesmo tempo.
       */
-      className="bg-surface-muted/40 flex min-h-full w-[85vw] max-w-80 shrink-0 snap-center flex-col rounded-lg border border-border md:w-80"
+      className="bg-surface-elevated/40 flex min-h-full w-[85vw] max-w-80 shrink-0 snap-center flex-col rounded-lg border border-border md:w-80"
       data-etapa-do-quadro={stage.id}
     >
       {/* Cabeçalho e total PRESOS no alto do quadro enquanto os cards rolam: com
@@ -173,7 +218,7 @@ export function StageColumn({
         className="sticky top-0 z-10 -mx-px -mt-px rounded-t-lg border-x border-t border-border bg-background"
         data-cabecalho-da-etapa
       >
-        <div className="bg-surface-muted/40 rounded-t-lg">
+        <div className="bg-surface-elevated/40 rounded-t-lg">
           <div className="group/etapa flex items-center gap-2 border-b border-border px-3 py-2.5">
             {/* "Selecionar a etapa inteira" é o gesto que faz a ação em lote valer a
             pena: sem ele, mover trinta cards deixa de ser trinta arrastes e vira
@@ -182,32 +227,34 @@ export function StageColumn({
             Indeterminado quando a seleção é parcial: "alguns" e "nenhum" não
             podem ter a mesma aparência num controle que o próximo clique
             inverte. */}
-            <input
-              type="checkbox"
-              checked={todosSelecionados}
-              ref={(el) => {
-                if (el) el.indeterminate = selecionadosAqui > 0 && !todosSelecionados;
-              }}
-              disabled={idsVisiveis.length === 0}
-              onChange={alternarEtapa}
-              aria-label={
-                todosSelecionados
-                  ? `${t("Desmarcar todos em")} ${stage.name}`
-                  : `${t("Selecionar todos em")} ${stage.name}`
-              }
-              className={cn(
-                "h-4 w-4 shrink-0 cursor-pointer accent-accent transition-opacity",
-                "focus:opacity-100 disabled:cursor-default",
-                // `pointer-coarse:opacity-100` pelo mesmo motivo da caixa do
-                // card (ver `components/kanban/KanbanCard.tsx`): no toque o
-                // hover nunca acontece, e "selecionar a etapa inteira" é o gesto
-                // que faz a ação em lote valer a pena. Sem ele, mover trinta
-                // cards no celular eram trinta arrastes.
-                selecionadosAqui > 0
-                  ? "opacity-100"
-                  : "opacity-0 group-hover/etapa:opacity-100 pointer-coarse:opacity-100",
-              )}
-            />
+            {!somenteLeitura && (
+              <input
+                type="checkbox"
+                checked={todosSelecionados}
+                ref={(el) => {
+                  if (el) el.indeterminate = selecionadosAqui > 0 && !todosSelecionados;
+                }}
+                disabled={idsVisiveis.length === 0}
+                onChange={alternarEtapa}
+                aria-label={
+                  todosSelecionados
+                    ? `${t("Desmarcar todos em")} ${stage.name}`
+                    : `${t("Selecionar todos em")} ${stage.name}`
+                }
+                className={cn(
+                  "h-4 w-4 shrink-0 cursor-pointer accent-accent transition-opacity",
+                  "focus:opacity-100 disabled:cursor-default",
+                  // `pointer-coarse:opacity-100` pelo mesmo motivo da caixa do
+                  // card (ver `components/kanban/KanbanCard.tsx`): no toque o
+                  // hover nunca acontece, e "selecionar a etapa inteira" é o gesto
+                  // que faz a ação em lote valer a pena. Sem ele, mover trinta
+                  // cards no celular eram trinta arrastes.
+                  selecionadosAqui > 0
+                    ? "opacity-100"
+                    : "opacity-0 group-hover/etapa:opacity-100 pointer-coarse:opacity-100",
+                )}
+              />
+            )}
             <span
               className={cn("h-2 w-2 rounded-full", !stage.color && "bg-text-muted/40")}
               style={accentStyle}
@@ -255,29 +302,37 @@ export function StageColumn({
               snapshot.isDraggingOver && "bg-accent/5",
             )}
           >
-            {leads.map((lead, idx) => (
-              <KanbanCard
-                key={lead.id}
-                card={buildCardInput(lead, {
-                  stageName: stage.name,
-                  ownerNames,
-                  coolingIds,
-                  reactivations,
-                  canonicalTags,
-                })}
-                lead={lead}
-                index={idx}
-                pipelineId={pipelineId}
-                isSelected={selectedLeadIds?.has(lead.id)}
-                isSelecting={(selectedLeadIds?.size ?? 0) > 0}
-                pulseCount={pulses?.get(lead.id) ?? 0}
-                onSelect={aoSelecionar}
-                onOpen={onOpen}
-                etapas={etapas}
-                onMoverPara={onMoverPara}
-              />
-            ))}
+            {/* Lista memoizada (#4788): mudar `isDraggingOver` não redesenha os
+                cards; em ganho/perda, só os `mostrados`. */}
+            <CardsDaColuna
+              leads={mostrados}
+              stageName={stage.name}
+              pipelineId={pipelineId}
+              ownerNames={ownerNames}
+              coolingIds={coolingIds}
+              reactivations={reactivations}
+              canonicalTags={canonicalTags}
+              selectedLeadIds={selectedLeadIds}
+              pulses={pulses}
+              onSelect={somenteLeitura ? undefined : aoSelecionar}
+              onOpen={somenteLeitura ? undefined : onOpen}
+              etapas={etapas}
+              onMoverPara={onMoverPara}
+              denso={denso}
+              somenteLeitura={somenteLeitura}
+            />
             {provided.placeholder}
+            {escondidos > 0 && (
+              <button
+                type="button"
+                onClick={() => setLimite((n) => n + CARDS_POR_VEZ)}
+                className="rounded-md border border-dashed border-border py-1.5 text-xs font-medium text-text-muted hover:bg-surface hover:text-text"
+                data-testid="mostrar-mais-da-coluna"
+                title={`${mostrados.length} / ${leads.length}`}
+              >
+                {t("Mostrar mais")} {Math.min(CARDS_POR_VEZ, escondidos)}
+              </button>
+            )}
             {leads.length === 0 && !snapshot.isDraggingOver && (
               <div className="flex h-20 items-center justify-center text-[11px] text-text-muted">
                 {t("vazio")}

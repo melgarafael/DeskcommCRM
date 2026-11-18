@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { CHAVES_DE_TOKEN_DO_TEMA } from "@/lib/extensions/tema";
+
 /**
  * Guardas da migração para o Tailwind 4 (config em CSS).
  *
@@ -591,5 +593,165 @@ describe("Tailwind 4 — alpha em cor de texto agora PINTA, então precisa passa
       [...new Set(reprovados)].sort(),
       "o alpha PINTA no v4: ou tire o `/NN` (restaura o que a produção já mostra) ou use um alpha que passe",
     ).toEqual([]);
+  });
+});
+
+/**
+ * A família `surface-*` — classe que nomeia token INEXISTENTE é classe MUDA.
+ *
+ * Medido na `main` a9a99abc86, quando o funil da issue #3791 ganhou esta guarda:
+ * `app/globals.css` declara, de superfície, exatamente DOIS tokens —
+ * `--color-surface` (#ffffff/#1d1c17) e `--color-surface-elevated`
+ * (#f5f3ee/#272620) — e o `@theme inline` faz ponte para esses dois e só para
+ * esses dois. A árvore usava TRÊS nomes: 89 chamadas de `bg-surface-elevated`
+ * (pintavam), 6 de `bg-surface-muted` (o quadro do funil: coluna da etapa,
+ * cabeçalho preso, esqueleto do quadro, aviso de funil arquivado e o hover de
+ * "Ignorar"/"Encerrar" da próxima ação e da reativação) e 2 de
+ * `bg-surface-sunken` (dois painéis da agenda). As oito NÃO pintavam: o
+ * Tailwind 4 gera utilitário a partir das CHAVES do `@theme inline`, então
+ * `bg-surface-muted` não é erro nem aviso — é ausência de regra. Coluna
+ * transparente sobre o fundo da página, e hover que não acende no cursor.
+ *
+ * ── Por que o token NÃO foi criado, e sim trocado ───────────────────────────
+ *
+ * Porque `lib/extensions/tema.ts` ENUMERA os tokens que uma extensão pode
+ * sobrescrever (`CHAVES_DE_TOKEN_DO_TEMA`, allowlist fechada — o `z.object`
+ * dela é `.strict()`), e as cinco paletas de `app/design/lib/tokens.ts`
+ * declaram superfície como registro FECHADO por tema (`bg`, `surface`,
+ * `surfaceElevated`, `text`, `textMuted`, `border`) nos dois modos. Criar
+ * `--color-surface-muted` exigiria: uma chave na allowlist do tema de extensão,
+ * um campo em CADA uma das 5 paletas × 2 temas, a ponte no `@theme inline` e a
+ * linha no espelho `[data-theme="light"]`. Faltando qualquer uma, a instalação
+ * que escolheu um tema de extensão fica sem o token e a coluna volta a não
+ * pintar — só que agora num cliente, não no CI. `--color-surface-elevated` já é
+ * a superfície suave, já está em todas as paletas e já tem par nos dois temas,
+ * então é ela que o quadro passa a usar.
+ *
+ * ── Por que a guarda olha a FAMÍLIA, e não os dois nomes ────────────────────
+ *
+ * Porque o furo não é `muted` nem `sunken`: é usar `bg-surface-<qualquer>` sem
+ * conferir se `<qualquer>` existe. Prender os dois nomes de hoje deixaria o
+ * terceiro nascer igual — e nesta mesma árvore esse padrão já custou três
+ * rodadas (ver o comentário do lookahead acima). O conjunto proibido é derivado
+ * do próprio CSS: o nome tem de estar no `:root` E no `@theme inline`. Nenhuma
+ * lista digitada aqui envelhece.
+ */
+describe("Tailwind 4 — `bg-surface-*` sem token é classe muda", () => {
+  const PONTE = new Set(propsDe(bloco("@theme inline")));
+  const DECLARADOS = new Set(propsDe(bloco(":root")));
+  const FONTES_DE_UI = listarFontes(["app", "components", "lib", "hooks"]);
+
+  /**
+   * `bg-surface-<nome>` escrito em className, com arquivo:linha.
+   *
+   * A regex é a MESMA forma das guardas de `rounded`/`shadow`: o lookbehind com
+   * `:` pega `hover:bg-surface-…` e `data-[…]:bg-surface-…` (o hover morto da
+   * issue é exatamente essa forma), e o lookahead com `/` e `!` pega o
+   * modificador de alpha (`bg-surface-elevated/40`, que é o da coluna) e o
+   * `important` do v4.
+   */
+  function superficies(arquivos: string[]): { onde: string; nome: string }[] {
+    const achados: { onde: string; nome: string }[] = [];
+    const rx = /(?<=[\s"'`:])bg-(surface-[a-z0-9-]+)(?=[\s"'`/!]|$)/g;
+    for (const f of arquivos) {
+      const linhas = fs.readFileSync(f, "utf8").split("\n");
+      linhas.forEach((linha, i) => {
+        const cru = linha.trimStart();
+        if (cru.startsWith("*") || cru.startsWith("//") || cru.startsWith("/*")) return;
+        for (const m of linha.matchAll(rx)) {
+          achados.push({ onde: `${path.relative(RAIZ, f)}:${i + 1}`, nome: m[1]! });
+        }
+      });
+    }
+    return achados;
+  }
+
+  const resolve = (nome: string) =>
+    DECLARADOS.has(`--color-${nome}`) && PONTE.has(`--color-${nome}`);
+
+  it("nenhuma classe `bg-surface-*` nomeia token que o CSS não declara e o `@theme` não faz ponte", () => {
+    const achadas = superficies(FONTES_DE_UI);
+
+    // Piso de vacuidade: a família é usada de verdade na árvore (97 chamadas
+    // medidas em 31/10/2026). Guarda que varre zero arquivo — `@source`
+    // mudando, `listarFontes` quebrado — passa verde sem provar nada.
+    expect(achadas.length).toBeGreaterThan(50);
+
+    const mudas = achadas
+      .filter(({ nome }) => !resolve(nome))
+      .map(({ onde, nome }) => `${onde}  bg-${nome}`);
+    expect(
+      mudas,
+      "`bg-surface-*` sem `--color-surface-*` no `:root` + ponte no `@theme inline` não gera regra nenhuma: o elemento fica transparente, com build verde",
+    ).toEqual([]);
+  });
+
+  it("as seis superfícies do quadro do funil resolvem (issue #3791)", () => {
+    // Os seis usos medidos na `main` a9a99abc86, arquivo por arquivo — a lista
+    // é o escopo da issue, e falhar aqui é falhar no defeito que o autor viu.
+    const SITES = [
+      "app/app/pipelines/[id]/_client.tsx", // aviso de funil arquivado
+      "components/kanban/NextActionSlot.tsx", // hover de "Ignorar"
+      "components/kanban/ReactivationSlot.tsx", // hover de "Encerrar"
+      "components/kanban/KanbanBoard.tsx", // esqueleto do quadro
+      "components/kanban/StageColumn.tsx", // coluna (2: corpo e cabeçalho)
+    ];
+    const achadas = superficies(SITES.map((p) => path.join(RAIZ, p)));
+
+    // `StageColumn.tsx` contribui com dois; o piso é 6, e não igualdade, para
+    // que uma coluna nova legítima não reprove por ser a sétima.
+    expect(
+      achadas.length,
+      `esperava ao menos 6 usos de bg-surface-* no quadro do funil, achei ${achadas.length}`,
+    ).toBeGreaterThanOrEqual(6);
+
+    expect(
+      achadas.filter(({ nome }) => !resolve(nome)).map(({ onde, nome }) => `${onde}  bg-${nome}`),
+      "superfície do quadro sem fundo: nenhuma destas classes pinta hoje",
+    ).toEqual([]);
+  });
+
+  it("`surface-elevated` resolve para cor nos dois temas e se distingue da página e do card", () => {
+    /** Declarações `--x: valor` de um bloco, como mapa. */
+    const declaracoes = (seletor: string) => {
+      const mapa = new Map<string, string>();
+      for (const d of bloco(seletor).matchAll(/^\s*(--[a-z0-9-]+)\s*:\s*([^;]+);/gim)) {
+        if (d[1] && d[2]) mapa.set(d[1], d[2].trim());
+      }
+      return mapa;
+    };
+
+    // Os três blocos que o produto realmente aplica: o `:root` (claro), o
+    // atributo escuro, e o espelho de subárvore clara — este último existe para
+    // que um `<div data-theme="light">` dentro de página escura receba token.
+    const BLOCOS = {
+      ":root": declaracoes(":root"),
+      '[data-theme="dark"]': declaracoes('[data-theme="dark"]'),
+      '[data-theme="light"]': declaracoes('[data-theme="light"]'),
+    } as const;
+
+    for (const [nome, mapa] of Object.entries(BLOCOS)) {
+      const elevada = mapa.get("--color-surface-elevated");
+      expect(elevada, `--color-surface-elevated ausente em ${nome}`).toMatch(/^#[0-9a-f]{6}$/i);
+
+      // "Resolver para cor" não basta: um token que devolvesse o MESMO valor do
+      // fundo da página ou do card seria invisível — o defeito da issue com
+      // outro nome. A asserção é a diferença, medida nos dois valores reais.
+      for (const vizinho of ["--color-surface", "--color-bg"]) {
+        expect(mapa.get(vizinho), `${vizinho} ausente em ${nome}`).toMatch(/^#[0-9a-f]{6}$/i);
+        expect(
+          elevada,
+          `em ${nome} a superfície elevada repete ${vizinho}: a coluna e o hover continuariam invisíveis`,
+        ).not.toBe(mapa.get(vizinho));
+      }
+    }
+
+    // E a ponte: sem ela a classe existe no código e não no CSS.
+    expect(PONTE.has("--color-surface-elevated")).toBe(true);
+
+    // O token escolhido está na allowlist do tema de extensão. É a MEDIDA que
+    // decidiu entre criar `surface-muted` e reusar `surface-elevated`: um nome
+    // fora desta lista não é sobrescrevível por paleta de extensão.
+    expect(CHAVES_DE_TOKEN_DO_TEMA as readonly string[]).toContain("--color-surface-elevated");
   });
 });

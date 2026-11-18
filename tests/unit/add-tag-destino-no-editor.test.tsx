@@ -42,6 +42,7 @@ import {
   defaultActionConfig,
   type ActionItem,
 } from "@/app/app/webhooks/_components/ActionConfigForm";
+import { DescricaoDasEtiquetas } from "@/app/app/webhooks/automacoes/[id]/_components/CaixaDaAutomacao";
 
 /** O formulário CONTROLADO — como o editor real, que re-renderiza a cada troca. */
 function montar(inicial: ActionItem) {
@@ -141,5 +142,45 @@ describe("o editor de automações expõe o destino da etiqueta", () => {
     const devolta = await abrirDestino(user);
     await user.click(devolta.card);
     expect(screen.queryByText(aviso)).toBeNull();
+  });
+});
+
+describe("o editor oferece etiquetas Google Ads por escolha explícita", () => {
+  it("a caixa da ação salva mostra os campos em vez de pedir uma etiqueta literal", () => {
+    render(<DescricaoDasEtiquetas tipo="add_tag" config={{ tags: [], google_ads_fields: ["campaign", "adgroup"] }} />);
+    expect(screen.getByText("Google Ads: Campanha, Grupo de anúncios")).toBeInTheDocument();
+    expect(screen.queryByText("Escreva pelo menos uma tag")).toBeNull();
+  });
+
+  it("começa desmarcado e guarda campos, literais e destino ao editar", async () => {
+    const { user, onChange } = montar({ type: "add_tag", config: { tags: [] } });
+    expect(screen.getByText("Etiquetas automáticas do Google Ads (opcional)")).toBeInTheDocument();
+    expect(screen.getAllByRole("checkbox")).toHaveLength(5);
+    for (const checkbox of screen.getAllByRole("checkbox")) expect(checkbox).not.toBeChecked();
+
+    await user.click(screen.getByRole("checkbox", { name: "Campanha" }));
+    await user.click(screen.getByRole("checkbox", { name: "Conta do Google Ads" }));
+    const opcoes = await abrirDestino(user);
+    await user.click(opcoes.contato);
+    await user.type(screen.getByRole("textbox"), "origem");
+
+    expect(onChange.mock.calls.at(-1)?.[0]).toEqual({ type: "add_tag", config: {
+      tags: ["origem"], destino: "contato", google_ads_fields: ["campaign", "account"],
+    } });
+    await user.click(screen.getByRole("checkbox", { name: "Campanha" }));
+    expect(onChange.mock.calls.at(-1)?.[0].config.google_ads_fields).toEqual(["account"]);
+  });
+
+  it("reabre a seleção gravada e respeita o teto conjunto de dez", () => {
+    montar({ type: "add_tag", config: { tags: Array(9).fill("literal"), google_ads_fields: ["adgroup"] } });
+    expect(screen.getByRole("checkbox", { name: "Grupo de anúncios" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Grupo de anúncios" })).toBeEnabled();
+    expect(screen.getByRole("checkbox", { name: "Campanha" })).toBeDisabled();
+  });
+
+  it("a ação de tirar etiquetas conserva apenas a seleção literal", () => {
+    montar({ type: "remove_tag", config: { tags: ["literal"] } });
+    expect(screen.queryByText("Etiquetas automáticas do Google Ads (opcional)")).toBeNull();
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
   });
 });

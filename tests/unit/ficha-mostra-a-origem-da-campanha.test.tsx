@@ -52,7 +52,7 @@ const BASE = {
   email: null,
   email_normalized: null,
   phone_number: null,
-  cpf_hash: null,
+  cpf_available: false,
   birthdate: null,
   is_blocked: false,
   is_personal: false,
@@ -99,6 +99,28 @@ function valorDe(rotulo: string): string | null {
 }
 
 describe("a ficha do contato mostra a origem da campanha", () => {
+  it("Google Ads: mostra os IDs explícitos ao lado dos nomes e a palavra-chave do anúncio", () => {
+    abrirFicha({
+      ad_platform: "google_ads",
+      utm_source: "google",
+      utm_campaign: "Campanha de pesquisa",
+      google_campaign_id: "301",
+      google_adgroup_id: "502",
+      adset_name: "Grupo antigo de outra plataforma",
+      ad_name: "Criativo antigo de outra plataforma",
+      utm_content: "Anúncio A",
+      google_ad_id: "704",
+      utm_term: "exemplo",
+      google_customer_id: "1234567890",
+    }, "google_ads");
+    expect(valorDe("Origem")).toBe("google_ads");
+    expect(valorDe("Campanha")).toBe("Campanha de pesquisa (301)");
+    expect(valorDe("Grupo de anúncios")).toBe("502");
+    expect(valorDe("Anúncio")).toBe("Anúncio A (704)");
+    expect(valorDe("Palavra-chave")).toBe("exemplo");
+    expect(valorDe("Conta do Google Ads")).toBe("1234567890");
+  });
+
   it("link do site: a origem é a fonte da campanha, e os quatro níveis aparecem", () => {
     abrirFicha(
       {
@@ -136,5 +158,27 @@ describe("a ficha do contato mostra a origem da campanha", () => {
       expect(valorDe(nivel), nivel).toBeNull();
     }
     expect(screen.queryByText(FRASE)).toBeNull();
+  });
+
+  const AVISO = "Provável: deduzida pelo horário do clique. A mensagem chegou sem o código do link.";
+
+  it("origem deduzida pelo horário do clique: a ficha avisa que é dedução", () => {
+    abrirFicha(
+      {
+        ad_platform: "site",
+        utm_source: "site",
+        utm_campaign: "Landing · Verão",
+        origem_inferida_por: "horario",
+      },
+      "site",
+    );
+    expect(screen.getByText(AVISO)).toBeInTheDocument();
+    expect(valorDe("Campanha")).toBe("Landing · Verão");
+  });
+
+  it("a mesma origem vinda do código não ganha o aviso", () => {
+    abrirFicha({ ad_platform: "site", utm_source: "site", utm_campaign: "Landing · Verão" }, "site");
+    expect(valorDe("Campanha")).toBe("Landing · Verão");
+    expect(screen.queryByText(AVISO)).toBeNull();
   });
 });

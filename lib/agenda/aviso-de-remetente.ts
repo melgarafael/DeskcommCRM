@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoAviso, preencher } from "@/lib/i18n/idioma-do-aviso";
 import { logger } from "@/lib/logger";
 import type { MotivoSemRemetente } from "./remetente-do-lembrete";
 
@@ -10,8 +12,10 @@ const explicacoes: Record<MotivoSemRemetente, string> = {
     "O canal indicado está desconectado, pausado, arquivado ou não pode enviar mensagens.",
   conversa_do_compromisso_invalida:
     "A conversa da reserva não corresponde a este contato e organização, ou está sem canal.",
+  // O próximo passo mora na mesma tela do canal: o modelo aprovado do tipo, que é
+  // o único envio que o número aceita fora da janela (`lembrete-por-modelo.ts`).
   canal_fora_da_janela_24h:
-    "O canal indicado não pode enviar texto livre fora da janela de atendimento.",
+    "O canal indicado não pode enviar texto livre fora da janela de atendimento, e o tipo não tem um modelo aprovado que sirva para o lembrete.",
   falha_ao_ler_remetente:
     "Não foi possível consultar o canal da reserva. A próxima rodada tentará novamente.",
 };
@@ -45,8 +49,16 @@ export async function atualizarAvisoDeRemetente(
     }
     const { data, error: leitura } = await filtro().maybeSingle();
     if (leitura) throw leitura;
-    const body = `${explicacoes[motivo]} O lembrete não foi enviado nem marcado como enviado. Confira a reserva na Agenda e o canal em Configurações → Tipos de agendamento. Corrigido dentro do prazo, a próxima rodada tenta enviar; avisos vencidos não são reenviados.`;
-    const valores = { title: "Lembrete aguardando definição do canal", body };
+    // A Central mostra o texto como foi gravado: o aviso nasce no idioma da organização.
+    const idioma = await idiomaDoAviso(admin, org);
+    const body = preencher(
+      traduzir(
+        "{explicacao} O lembrete não foi enviado nem marcado como enviado. Confira a reserva na Agenda e o canal em Configurações → Tipos de agendamento. Corrigido dentro do prazo, a próxima rodada tenta enviar; avisos vencidos não são reenviados.",
+        idioma,
+      ),
+      { explicacao: traduzir(explicacoes[motivo], idioma) },
+    );
+    const valores = { title: traduzir("Lembrete aguardando definição do canal", idioma), body };
     const { error } = data
       ? await admin
           .from("agent_inbox_items")

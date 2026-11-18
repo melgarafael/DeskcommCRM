@@ -57,15 +57,17 @@ describe("atribuição da OpenRouter sai da instalação, nunca do código", () 
     expect(cabecalhosDeAtribuicaoOpenRouter()).toEqual({ "X-Title": "CRM da Exemplo" });
   });
 
-  it("nenhum dos três caminhos de OpenRouter carrega host ou marca literal", () => {
-    // Os TRÊS call sites de OPENROUTER_ENDPOINT no repositório. O #266 tocava
+  it("nenhum dos caminhos de OpenRouter carrega host ou marca literal", () => {
+    // Os call sites de OPENROUTER_ENDPOINT no repositório. O #266 tocava
     // dois e esquecia o terceiro (a prova de crédito da instalação) — que é a
     // evidência de que os cabeçalhos são atribuição e não requisito: ele
-    // funciona hoje sem eles.
+    // funciona hoje sem eles. O #3382 acrescenta o quarto: a escada de
+    // transcrição, que fala com a OpenRouter pela mesma atribuição.
     const arquivos = [
       "lib/agent-engine/edge/llm/providers.ts",
       "lib/ai/runtime/agent.ts",
       "lib/instalacao/prova-de-credito.ts",
+      "lib/messaging/media/escada-de-transcricao.ts",
     ];
     for (const rel of arquivos) {
       // eslint-disable-next-line @typescript-eslint/no-require-imports

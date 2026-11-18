@@ -19,8 +19,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { audit } from "@/lib/audit";
 import type { AuditAction } from "@/lib/audit/actions";
+import { invalidarOrg } from "@/lib/auth/cache-curto";
 import { textoDoAviso, type TextoDoAviso } from "@/lib/cobranca/avisos";
 import { toleranciaDias } from "@/lib/cobranca/configuracao";
+import { primeiroPagamentoPendente } from "@/lib/cobranca/contratacao";
 import { enviarAvisoAosAdmins } from "@/lib/cobranca/emails";
 import { aplicarLeitura } from "@/lib/cobranca/estado";
 import { SEM_TROCA } from "@/lib/cobranca/prorata";
@@ -33,7 +35,7 @@ import {
   type Situacao,
 } from "@/lib/cobranca/provedores/contrato";
 import { decidirRegua, type AcaoDaRegua } from "@/lib/cobranca/regua";
-import type { AvisoDaRegua, ErroDeLeitura, EstadoDaAssinatura } from "@/lib/cobranca/vocabulario";
+import type { AvisoDaRegua, ErroDeLeitura, EstadoDaAssinatura, Moeda } from "@/lib/cobranca/vocabulario";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 import type { TipoDeSuspensao } from "@/lib/organizacao/operante";
@@ -143,12 +145,12 @@ export async function sincronizar(
       const adaptador = (deps.adaptador ?? adaptadorPadrao)(provedor);
       const pagamento = await adaptador.lerPagamentoProporcional(primeira.troca_pagamento_ref);
       if (pagamento === "pago") {
-        const { data: alvo, error: erroAlvo } = await admin.from("cobranca_planos").select("id, nome, preco_cents, intervalo").eq("id", primeira.plano_troca_pendente_id).maybeSingle();
+        const { data: alvo, error: erroAlvo } = await admin.from("cobranca_planos").select("id, nome, preco_cents, moeda, intervalo").eq("id", primeira.plano_troca_pendente_id).maybeSingle();
         if (erroAlvo || !alvo) throw new Error("plano do upgrade proporcional indisponível");
         let precoAtualizado = true;
         try {
           await adaptador.trocarPlano({ assinaturaRef: primeira.provedor_assinatura_id, plano: {
-            id: alvo.id, nome: alvo.nome, precoCents: alvo.preco_cents, intervalo: alvo.intervalo,
+            id: alvo.id, nome: alvo.nome, precoCents: alvo.preco_cents, moeda: alvo.moeda as Moeda, intervalo: alvo.intervalo,
           } });
         } catch (e) {
           // Transitório, ou a mensalidade do período ainda aberta (Asaas): a próxima leitura tenta de novo.
@@ -186,7 +188,11 @@ export async function sincronizar(
   const lidoEm = agora();
   let situacao: Situacao;
   try {
-    situacao = await (deps.adaptador ?? adaptadorPadrao)(provedor).lerSituacao({ clienteRef: cliente });
+    situacao = await (deps.adaptador ?? adaptadorPadrao)(provedor).lerSituacao({
+      clienteRef: cliente,
+      // Já está na linha: o Efi lê a assinatura por aqui (não tem cliente).
+      assinaturaRef: primeira?.provedor_assinatura_id ?? null,
+    });
   } catch (e) {
     const erro = paraErroDeLeitura(e);
     const { error } = await admin
@@ -382,7 +388,7 @@ export async function aplicarRegua(
       ultimoAviso: linha.ultimo_aviso,
       ultimoAvisoEm: emData(linha.ultimo_aviso_em),
       relidaEm: emData(linha.relida_em),
-      entradaPendente: linha.pagamento_inicial_pendente === true,
+      entradaPendente: primeiroPagamentoPendente(linha),
     },
     { status: org.status, suspendedKind: org.suspended_kind },
     agora,
@@ -423,6 +429,12 @@ export async function aplicarRegua(
         p_ator: null,
       });
       if (error) throw new Error(`cobranca: reativação falhou (${error.code ?? "sem_codigo"})`);
+      // O estado da empresa mora no snapshot de autorização em cache (30 s), que
+      // é memória do PROCESSO (`lib/auth/cache-curto.ts`). Isto só vale na hora
+      // quando a régua roda no app: "Já paguei", cancelar, cron/cobranca,
+      // admin/cobranca/conexao. Pelo webhook do provedor ela roda no worker
+      // (`sinal.handler` via event_log), e lá o teto do app segue sendo o TTL.
+      invalidarOrg(orgId);
       if (!mudou(data)) return "nada";
       auditar("cobranca.org_reativada", orgId, { motivo: "pagamento_confirmado" });
       await enviar(admin, { id: orgId, idioma }, textoDoAviso("liberada", { ...contexto, data: null, origem: "atraso" }), null);
@@ -436,6 +448,7 @@ export async function aplicarRegua(
         p_motivo: MOTIVO_DA_SUSPENSAO,
       });
       if (error) throw new Error(`cobranca: suspensão falhou (${error.code ?? "sem_codigo"})`);
+      invalidarOrg(orgId);
       if (!mudou(data)) return "nada";
       auditar("cobranca.org_suspensa", orgId, { debito_desde: acao.debitoDesde.toISOString() });
       // A origem importa aqui: quem foi suspenso no fim do teste grátis não tem

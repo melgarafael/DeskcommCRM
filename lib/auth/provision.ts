@@ -2,6 +2,15 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
+import { lerIntencaoDoCadastro } from "@/lib/cobranca/contratacao";
+import { invalidarUsuario } from "@/lib/auth/cache-curto";
+import { logger } from "@/lib/logger";
+import {
+  CHAVE_FUSO_DO_CADASTRO,
+  CHAVE_IDIOMA_DO_CADASTRO,
+  perfilDaEmpresaNova,
+  type PistasDoCadastro,
+} from "@/lib/auth/perfil-da-empresa-nova";
 
 /** Normaliza o nome da empresa para um slug candidato (citext unique no DB). */
 export function slugify(name: string): string {
@@ -29,6 +38,14 @@ type ProvisionUser = {
  */
 type ProvisionOptions = {
   source?: "signup" | "recovery";
+  /**
+   * De onde a pessoa está chegando — idioma da tela, fuso do navegador e o
+   * `Accept-Language`. O cadastro por e-mail as guarda no `user_metadata`
+   * (`signUp`); a entrada com Google as traz na URL de volta. As do metadado
+   * vencem as daqui, porque foram gravadas no momento em que a pessoa leu a tela.
+   * Ver `lib/auth/perfil-da-empresa-nova.ts`.
+   */
+  pistas?: PistasDoCadastro;
 };
 
 /**
@@ -97,21 +114,51 @@ export async function ensureTenantForUser(
     user.email?.split("@")[0] ||
     "Minha empresa";
   const base = slugify(orgName);
+  // Só um recibo assinado do servidor pode reservar o UUID da primeira empresa.
+  // Metadata editável sozinha conserva o provisionamento nativo sem auto-checkout.
+  const planoDoCadastro = user.user_metadata?.cobranca_plan_id;
+  // Leitura que falha não derruba o cadastro: a empresa nasce sem o UUID
+  // reservado, e a pessoa continua o pagamento pelo caminho manual.
+  const intencao = typeof planoDoCadastro === "string"
+    ? await lerIntencaoDoCadastro(admin, user.id, planoDoCadastro).catch((e: unknown) => {
+      logger.warn("signup_provisioning.intencao_indisponivel", { userId: user.id, erro: e instanceof Error ? e.message : "desconhecido" });
+      return null;
+    })
+    : null;
+
+  // Idioma, fuso e moeda de quem está chegando. Em `pt-BR` o perfil é só
+  // `{ locale: "pt-BR" }`, o mesmo valor do default da coluna: a empresa
+  // brasileira nasce exatamente como nascia.
+  const meta = user.user_metadata ?? {};
+  const perfil = perfilDaEmpresaNova({
+    idioma:
+      (typeof meta[CHAVE_IDIOMA_DO_CADASTRO] === "string" ? (meta[CHAVE_IDIOMA_DO_CADASTRO] as string) : null) ??
+      options.pistas?.idioma ??
+      null,
+    fuso:
+      (typeof meta[CHAVE_FUSO_DO_CADASTRO] === "string" ? (meta[CHAVE_FUSO_DO_CADASTRO] as string) : null) ??
+      options.pistas?.fuso ??
+      null,
+    acceptLanguage: options.pistas?.acceptLanguage ?? null,
+  });
 
   // ponytail: check-then-insert tem janela de corrida se o mesmo link for
   // confirmado 2x em paralelo (pior caso: org duplicada órfã). Advisory lock
   // por user_id se isso aparecer na prática.
   let org: { id: string; slug: string } | null = null;
+  let idReservado = intencao?.organization_id ?? null;
   for (let attempt = 0; attempt < 3 && !org; attempt++) {
     const slug = attempt === 0 ? base : `${base}-${Math.random().toString(36).slice(2, 6)}`;
     const { data, error } = await admin
       .from("organizations")
       .insert({
+        ...(idReservado ? { id: idReservado } : {}),
         slug,
         display_name: orgName,
         legal_name: orgName,
         status: "active",
         created_by: user.id,
+        ...perfil,
         ...(typeof user.user_metadata?.cobranca_plan_id === "string" ? { settings: { cobranca_signup_plan_id: user.user_metadata.cobranca_plan_id } } : {}),
       })
       .select("id, slug")
@@ -120,6 +167,15 @@ export async function ensureTenantForUser(
       org = data;
     } else if (error && error.code !== "23505") {
       throw new Error(`signup provisioning: org insert failed: ${error.message}`);
+    } else if (idReservado) {
+      // O 23505 pode ser do UUID reservado, não do slug: a mesma intenção já
+      // criou esta empresa (vínculo que falhou depois, ou confirmação clicada
+      // duas vezes). Repetir o mesmo id esgotaria as tentativas.
+      const reservada = await empresaDoIdReservado(admin, idReservado, user.id);
+      if (reservada.tipo === "ja_vinculada") return { provisioned: false, organizationId: idReservado };
+      if (reservada.tipo === "adotar") org = reservada.org;
+      else if (reservada.tipo === "de_outro") idReservado = null;
+      // "livre": a colisão foi do slug; a próxima tentativa troca o slug e mantém o id.
     }
   }
   if (!org) throw new Error("signup provisioning: slug exhausted after 3 attempts");
@@ -134,6 +190,10 @@ export async function ensureTenantForUser(
     throw new Error(`signup provisioning: membership insert failed: ${memberError.message}`);
   }
 
+  // #3696: vínculo novo não pode conviver com um snapshot em cache que diz
+  // "sem organização" (a tela de cadastro já chamou `loadAuthUser` antes).
+  invalidarUsuario(user.id);
+
   void audit({
     action:
       options.source === "recovery" ? "tenant.created_by_recovery" : "tenant.created_by_signup",
@@ -142,10 +202,49 @@ export async function ensureTenantForUser(
     resourceType: "organization",
     resourceId: org.id,
     bypassedRls: true,
-    metadata: { slug: org.slug },
+    metadata: { slug: org.slug, ...perfil },
   });
 
   return { provisioned: true, organizationId: org.id };
+}
+
+type EmpresaDoIdReservado =
+  | { tipo: "livre" }
+  | { tipo: "adotar"; org: { id: string; slug: string } }
+  | { tipo: "ja_vinculada" }
+  | { tipo: "de_outro" };
+
+/**
+ * Quem ocupa o UUID que a intenção assinada reservou. Só a empresa criada por
+ * ESTA pessoa e sem ninguém mais vinculado é retomada; qualquer outro dono faz
+ * o provisionamento seguir sem o id reservado.
+ */
+async function empresaDoIdReservado(
+  admin: ReturnType<typeof createAdminClient>,
+  id: string,
+  userId: string,
+): Promise<EmpresaDoIdReservado> {
+  const { data: org, error } = await admin
+    .from("organizations")
+    .select("id, slug, created_by")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(`signup provisioning: leitura da empresa reservada falhou: ${error.message}`);
+  if (!org) return { tipo: "livre" };
+  if (org.created_by !== userId) return { tipo: "de_outro" };
+
+  const { data: vinculos, error: erroVinculos } = await admin
+    .from("user_organizations")
+    .select("user_id, revoked_at")
+    .eq("organization_id", id);
+  if (erroVinculos) {
+    throw new Error(`signup provisioning: leitura dos vínculos da empresa reservada falhou: ${erroVinculos.message}`);
+  }
+  const lista = vinculos ?? [];
+  if (lista.length === 0) return { tipo: "adotar", org: { id: org.id, slug: org.slug } };
+  const [unico] = lista;
+  if (lista.length === 1 && unico?.user_id === userId && unico.revoked_at === null) return { tipo: "ja_vinculada" };
+  return { tipo: "de_outro" };
 }
 
 type ExternalProvisionInput = {
@@ -316,6 +415,10 @@ export async function provisionExternalTenant(
     throw new Error(`provisioning: membership insert failed: ${memberError.message}`);
   }
 
+  // #3696: idem — o dono pode ter sessão aberta enquanto o provisionamento de
+  // fora o vincula à empresa recém-criada.
+  invalidarUsuario(ownerId);
+
   // Ator NULO: quem criou foi um sistema de fora, com o segredo da instalação
   // (decisão do dono, doc 40, 19/09). O dono é dado da linha, não o autor da
   // ação — creditá-lo afirmaria que uma pessoa fez o que uma máquina fez.
@@ -415,6 +518,9 @@ async function garantirAdminDaOrganizacao(
   // Sobrou só `23505`: já havia linha (revogada, rebaixada, ou corrida com
   // outra chamada). Nada mudou — e o que não teve efeito não audita.
   if (error) return;
+
+  // #3696: o conserto do vínculo também é escrita de permissão.
+  invalidarUsuario(p.ownerId);
 
   // O conserto DEIXA RASTRO. Sem esta linha, a organização que nasceu de uma
   // tentativa partida não tem registro nenhum do que a completou: a

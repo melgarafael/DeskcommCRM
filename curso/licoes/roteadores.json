@@ -1,0 +1,806 @@
+{
+  "id": "roteadores",
+  "titulo": "Roteadores",
+  "tela": "/app/ai/routers",
+  "resumo": "Quando um mesmo número de WhatsApp tem mais de um agente de IA, o roteador lê o que o cliente quer e entrega a conversa ao agente certo.",
+  "licoes": [
+    {
+      "id": "roteadores-conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Roteadores",
+      "objetivo": "Entender o que um roteador faz, onde fica a tela e o que o cartão e a página de cada roteador mostram.",
+      "papel": "admin",
+      "busca": [
+        "roteador",
+        "roteador de intenção",
+        "mais de um agente no mesmo número",
+        "qual agente atende",
+        "separar atendimento por assunto",
+        "triagem do whatsapp",
+        "direcionar conversa para o agente certo"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "rota": "/app/ai",
+          "texto": "Roteadores não aparece direto no menu lateral. No grupo \"Agente de IA\" do menu, clique em \"Ver tudo em IA\". Na parte \"Montar o agente\" está o cartão \"Roteadores\". O caminho completo é: Agente de IA › Ver tudo em IA › Roteadores.",
+          "dica": "Só gerente ou administrador vê este cartão. Para um atendente, ou para quem só tem permissão de leitura, ele não aparece, e o endereço da tela leva à página \"403 — Sem permissão\".",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ver tudo em IA",
+                "exato": true
+              },
+              "rotulo": "Ver tudo em IA",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Roteadores ",
+                "regex": true
+              },
+              "rotulo": "Abrir os Roteadores",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Roteadores ",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Para que serve um roteador",
+          "rota": "/app/ai/routers",
+          "texto": "Um agente de IA é o atendente virtual que responde os clientes no WhatsApp. Quando a empresa tem mais de um agente, cada um cuidando de um assunto, o roteador decide quem atende. Ele lê a mensagem do cliente, entende o que a pessoa quer (a \"intenção\") e entrega a conversa ao agente daquele assunto. Cada roteador fica ligado a um número de WhatsApp. Aqui aparece o roteador que a Clínica Bem Viver está montando para o número da recepção.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Triagem da recepção",
+                "regex": true
+              },
+              "rotulo": "Um roteador",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Novo roteador",
+                "exato": true
+              },
+              "rotulo": "Criar outro",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O que o cartão mostra",
+          "texto": "Cada cartão é um roteador. No alto vêm o nome e o selo \"ativo\" ou \"inativo\". Ativo quer dizer que ele já decide quem atende as conversas do número. Inativo quer dizer que ele não decide nada: o número segue com o agente publicado nele, como se o roteador não existisse. Embaixo vêm o número de WhatsApp e quantas intenções ele tem. Este ainda está \"inativo\" e \"Sem intenções configuradas\": a clínica vai montar tudo antes de ligar.",
+          "dica": "Um número pode ter vários roteadores guardados, mas só um ativo de cada vez.",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "inativo",
+                "exato": true,
+                "dentro": {
+                  "role": "link",
+                  "nome": "^Triagem da recepção",
+                  "regex": true
+                }
+              },
+              "rotulo": "Ligado ou não",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "texto": "^Recepção Bem Viver",
+                "regex": true,
+                "dentro": {
+                  "role": "link",
+                  "nome": "^Triagem da recepção",
+                  "regex": true
+                }
+              },
+              "rotulo": "O número",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "texto": "Sem intenções configuradas",
+                "exato": true,
+                "dentro": {
+                  "role": "link",
+                  "nome": "^Triagem da recepção",
+                  "regex": true
+                }
+              },
+              "rotulo": "Quantas intenções",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Triagem da recepção",
+            "regex": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Por dentro do roteador",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "^Triagem da recepção",
+                "regex": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Identificação",
+                "exato": true
+              }
+            }
+          ],
+          "texto": "Clique no cartão para abrir o roteador. Em \"Identificação\" ficam o nome, o número e a chave que liga e desliga. Em \"Intenções\", à direita, você diz que assuntos ele reconhece e qual agente atende cada um. Mais abaixo, à esquerda, vêm \"Agente por número do remetente\" (para mandar certos telefones sempre para um agente, antes da IA decidir), o modelo de IA que lê as mensagens, o agente de reserva para quando nenhuma intenção serve e um teste. Nada do que você muda vale antes de clicar em \"Salvar\".",
+          "dica": "Um gerente também abre os roteadores, mas só para ver e testar: os campos ficam travados e os botões \"Novo roteador\", \"Intenção\", \"Salvar\" e \"Excluir roteador\" não aparecem. Só o administrador cria, muda e exclui roteadores.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Identificação",
+                "exato": true
+              },
+              "rotulo": "Nome, número e liga/desliga",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Intenções",
+                "exato": true
+              },
+              "rotulo": "Os assuntos",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Grava as mudanças",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "roteadores-criar",
+      "titulo": "Criar um roteador",
+      "objetivo": "Criar um roteador novo e ligá-lo a um número de WhatsApp da empresa.",
+      "papel": "admin",
+      "busca": [
+        "criar roteador",
+        "novo roteador",
+        "primeiro roteador",
+        "ligar roteador ao whatsapp",
+        "roteador para o meu número",
+        "este número já tem um roteador ativo"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O botão Novo roteador",
+          "rota": "/app/ai/routers",
+          "texto": "Para criar um roteador, clique em \"Novo roteador\", no alto da tela. Quando a empresa ainda não tem nenhum, a tela mostra uma explicação no meio e o botão \"Criar meu primeiro roteador\", que abre a mesma janela.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Novo roteador",
+                "exato": true
+              },
+              "rotulo": "Criar um roteador",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Novo roteador",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Nome e número",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Novo roteador",
+                "exato": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Nome",
+                "exato": true
+              },
+              "valor": "Triagem do WhatsApp"
+            }
+          ],
+          "texto": "Na janela \"Novo roteador\", dê um nome que diga para que ele serve. Em \"Número de WhatsApp\", você escolhe o número que ele vai atender: a lista mostra os números de WhatsApp da empresa, cada um com o seu estado. Repare no aviso embaixo: só é possível ter um roteador ativo por número.",
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Nome",
+                "exato": true
+              },
+              "rotulo": "Para que ele serve",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Número de WhatsApp",
+                "exato": true
+              },
+              "rotulo": "Qual número",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Só é possível ter um roteador ativo por número.",
+                "exato": true
+              },
+              "rotulo": "Um ativo por número",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": {
+            "rotulo": "Número de WhatsApp",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Escolher o número",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "rotulo": "Número de WhatsApp",
+                "exato": true
+              }
+            }
+          ],
+          "texto": "Clique no número que o roteador vai atender. Aqui aparece o \"Recepção Bem Viver\", com o estado \"Conectado\". Escolha com cuidado: depois de criado, o número do roteador não pode ser trocado. Para outro número, crie outro roteador.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "option",
+                "nome": "^Recepção Bem Viver",
+                "regex": true
+              },
+              "rotulo": "O número da recepção",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "^Recepção Bem Viver",
+            "regex": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Criar",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "^Recepção Bem Viver",
+                "regex": true
+              }
+            }
+          ],
+          "texto": "Com o nome e o número escolhidos, o botão \"Criar roteador\" acende. O roteador novo já nasce ativo. Por isso, se o número escolhido já tiver outro roteador ativo, o sistema recusa e avisa: \"Este número já tem um roteador ativo.\". Nesse caso, desligue o outro antes. Para desistir, clique em \"Cancelar\".",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Criar roteador",
+                "exato": true
+              },
+              "rotulo": "Criar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar",
+                "exato": true
+              },
+              "rotulo": "Desistir",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Criar roteador",
+            "exato": true
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "O roteador nasce vazio",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Criar roteador",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Identificação",
+                "exato": true
+              }
+            }
+          ],
+          "texto": "Depois de criado, a página do roteador abre sozinha, com o aviso \"Roteador criado — agora escolha as intenções.\". Ele já aparece como \"ativo\", mas ainda não tem intenções nem agente de reserva. Enquanto estiver assim, quem responde o número continua sendo o agente que já estava publicado nele. O próximo passo é cadastrar as intenções, na lição seguinte.",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "ativo",
+                "exato": true
+              },
+              "rotulo": "Já nasce ativo",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Intenções",
+                "exato": true
+              },
+              "rotulo": "Ainda sem intenções",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "roteadores-intencoes",
+      "titulo": "Cadastrar as intenções",
+      "objetivo": "Ensinar ao roteador cada assunto que os clientes trazem e dizer qual agente atende cada um.",
+      "papel": "admin",
+      "busca": [
+        "intenção do roteador",
+        "cadastrar intenção",
+        "frases de exemplo",
+        "quando escolher esta intenção",
+        "agente que atende",
+        "funil de destino",
+        "roteador não reconhece o assunto"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Uma intenção para cada assunto",
+          "rota": "/app/ai/routers/d1130000-0000-4000-8000-000000000001",
+          "texto": "Uma intenção é um assunto que faz o cliente escrever, como \"agendar consulta\" ou \"resultado de exame\". O roteador compara cada mensagem com as intenções cadastradas e escolhe a que mais combina. Este roteador ainda não tem nenhuma. Para cadastrar a primeira, clique em \"Intenção\", com o sinal de mais.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Intenções",
+                "exato": true
+              },
+              "rotulo": "Os assuntos",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Intenção",
+                "exato": true
+              },
+              "rotulo": "Nova intenção",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Intenção",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Nome e agente",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Intenção",
+                "exato": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "placeholder": "Ex.: quer comprar",
+                "exato": true
+              },
+              "valor": "Agendar consulta"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "texto": "Selecione o agente",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Bia — Recepção virtual",
+                "exato": true
+              }
+            }
+          ],
+          "texto": "Em \"Nome da intenção\", escreva um nome curto, como \"Agendar consulta\". Dois assuntos do mesmo roteador não podem ter o mesmo nome. Em \"Agente que atende\", escolha quem assume a conversa quando o cliente quer isso. Nesta clínica de exemplo só existe a Bia. Numa operação com vários agentes, cada intenção aponta para o agente que entende daquele assunto.",
+          "dica": "O agente escolhido aqui não precisa de número próprio. Depois de salvar, a tela dele mostra o aviso \"Este agente é acionado pelo roteador\" e, sem número próprio, ele pode ser publicado usando o número do roteador.",
+          "destaques": [
+            {
+              "alvo": {
+                "placeholder": "Ex.: quer comprar",
+                "exato": true
+              },
+              "rotulo": "Nome curto",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "li button[role='combobox']:not([aria-label])"
+              },
+              "rotulo": "Quem atende",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "placeholder": "Escreva como explicaria para um atendente novo: em que situação o cliente cai aqui.",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Quando escolher esta intenção",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "placeholder": "Escreva como explicaria para um atendente novo: em que situação o cliente cai aqui.",
+                "exato": true
+              },
+              "valor": "O paciente quer marcar, remarcar ou desmarcar uma consulta, sessão ou exame."
+            }
+          ],
+          "texto": "Em \"Quando escolher esta intenção\", descreva a situação com suas palavras, como explicaria a um atendente novo. É este texto que a IA lê para decidir. Nome, agente e esta descrição são obrigatórios: enquanto faltar um deles, aparece um aviso em vermelho embaixo do bloco e o botão \"Salvar\" fica apagado.",
+          "destaques": [
+            {
+              "alvo": {
+                "placeholder": "Escreva como explicaria para um atendente novo: em que situação o cliente cai aqui.",
+                "exato": true
+              },
+              "rotulo": "O que a IA lê",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "placeholder": "Ex.: quanto custa? (Enter)",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Frases de exemplo",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "placeholder": "Ex.: quanto custa? (Enter)",
+                "exato": true
+              },
+              "valor": "Quero marcar uma consulta com a nutricionista"
+            },
+            {
+              "acao": "press",
+              "tecla": "Enter",
+              "alvo": {
+                "placeholder": "Ex.: quanto custa? (Enter)",
+                "exato": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "placeholder": "Ex.: quanto custa? (Enter)",
+                "exato": true
+              },
+              "valor": "Preciso remarcar minha sessão de fisioterapia"
+            },
+            {
+              "acao": "press",
+              "tecla": "Enter",
+              "alvo": {
+                "placeholder": "Ex.: quanto custa? (Enter)",
+                "exato": true
+              }
+            }
+          ],
+          "texto": "Em \"Frases de exemplo (opcional)\", escreva mensagens como um paciente escreveria e aperte Enter, ou clique em \"Adicionar\". Cada frase vira uma etiqueta; clicar numa etiqueta tira a frase. Cabem até 10 frases por intenção. Os exemplos ajudam a IA a reconhecer o assunto mesmo quando o cliente escreve de outro jeito.",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Quero marcar uma consulta com a nutricionista"
+              },
+              "rotulo": "Uma frase de exemplo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "placeholder": "Ex.: quanto custa? (Enter)",
+                "exato": true
+              },
+              "rotulo": "Escreva e aperte Enter",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Funil de destino",
+          "texto": "\"Funil de destino (opcional)\" serve para quem tem um funil de vendas para cada serviço. Deixando \"Sem destino — só escolher o agente\", o roteador só escolhe quem atende. Escolhendo um funil, quando esta intenção é reconhecida o sistema leva o negócio do cliente para esse funil antes de o agente responder. Aí aparece também o campo \"Etapa de destino\", que já vem em \"Primeira etapa aberta\".",
+          "dica": "Se quem administra o servidor ligou o recurso opcional \"Fluxos de atendimento\", cada intenção ganha ainda o campo \"Fluxo de atendimento (opcional)\": um roteiro de perguntas que começa quando a intenção é reconhecida.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "Funil de destino (opcional)",
+                "exato": true
+              },
+              "rotulo": "Para onde vai o negócio",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "Mais intenções e salvar",
+          "texto": "Para outro assunto, clique de novo em \"Intenção\": cada um ganha o seu bloco, e a lixeira ao lado do agente tira o bloco. Quando terminar, clique em \"Salvar\" e aparece o aviso \"Roteador salvo.\". As intenções só passam a decidir quem atende quando o roteador está ativo.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Intenção",
+                "exato": true
+              },
+              "rotulo": "Mais um assunto",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Remover intenção",
+                "exato": true
+              },
+              "rotulo": "Tirar este assunto",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Grava as intenções",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar",
+            "exato": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "roteadores-reserva-teste-ligar",
+      "titulo": "Reserva, teste e ligar o roteador",
+      "objetivo": "Escolher o agente de reserva, entender o modelo que lê as mensagens, testar e ligar, desligar ou excluir o roteador.",
+      "papel": "admin",
+      "busca": [
+        "agente de fallback",
+        "agente de reserva",
+        "testar roteador",
+        "testar classificação",
+        "ativar roteador",
+        "desligar roteador",
+        "excluir roteador",
+        "modelo do classificador"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Quando nenhuma intenção serve",
+          "rota": "/app/ai/routers/d1130000-0000-4000-8000-000000000001",
+          "texto": "Nem toda mensagem combina com uma intenção, e a IA também pode ficar em dúvida: com menos de 60% de certeza, a escolha dela não vale. Para esses casos existe o \"Agente de fallback\", o agente de reserva: quando a conversa ainda não está com o agente de alguma intenção, é ele quem atende o que não foi reconhecido. Aqui é a Bia. Escolhendo \"Nenhum — responde com o atendimento padrão\", responde o agente publicado no número.",
+          "dica": "Se a IA que lê as mensagens falhar, por exemplo por falta de crédito na conta do provedor, a conversa continua com o agente da intenção que já a atendia; se ainda não estava com nenhum, vai para o agente de reserva.",
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Agente de fallback",
+                "exato": true
+              },
+              "rotulo": "O agente de reserva",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "A IA que lê as mensagens",
+          "texto": "Em \"Modelo que identifica a intenção\" fica a IA que lê cada mensagem e escolhe a intenção. \"Automático — usa o provedor da organização\" deixa o sistema usar a inteligência que a empresa já configurou. Para escolher outro modelo, só aparecem os de provedores com chave cadastrada. Nesta clínica de exemplo não há nenhuma chave de IA utilizável, por isso o campo está travado e o aviso pede para cadastrar uma em Credenciais (Agente de IA › Ver tudo em IA › Credenciais). Em \"Mensagens anteriores para o roteamento\", de 0 a 16, você diz quantas mensagens anteriores da conversa a IA lê junto com a atual: mais mensagens ajudam a entender o contexto, mas podem aumentar o custo e a demora.",
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Modelo do classificador",
+                "exato": true
+              },
+              "rotulo": "Qual IA lê",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Mensagens anteriores para o roteamento",
+                "exato": true
+              },
+              "rotulo": "Quanto da conversa ela lê",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Testar antes de valer",
+          "texto": "\"Testar classificação\" mostra o que o roteador faria com uma frase sua, sem mexer em nenhuma conversa real. Você escreve como um cliente escreveria e clica no botão. Aparecem a intenção escolhida, a certeza da IA em porcentagem e o agente que atenderia. Se a certeza ficar abaixo do mínimo, o resultado avisa que, de verdade, a conversa não seguiria aquela intenção. O teste usa a IA de verdade e gasta crédito do provedor. Ele só funciona com o roteador ativo; por isso aparece o aviso \"Ative o roteador para poder testar a classificação.\".",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Ative o roteador para poder testar a classificação.",
+                "exato": true
+              },
+              "rotulo": "Só com ele ativo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Testar classificação",
+                "exato": true
+              },
+              "rotulo": "Testar",
+              "tipo": "seta"
+            }
+          ],
+          "dica": "O gerente, que só pode ver a tela, também pode usar o teste."
+        },
+        {
+          "id": "p4",
+          "titulo": "Ligar o roteador",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "switch",
+                "nome": "Inativo — não roteia nada",
+                "exato": true
+              }
+            }
+          ],
+          "texto": "Depois de cadastrar as intenções, clique na chave do bloco \"Identificação\". O texto muda para \"Ativo — está roteando as conversas deste número\", e a mudança vale depois de clicar em \"Salvar\". A partir daí, cada mensagem nova do número passa pelo roteador. Depois que ele entrega uma conversa a um agente, ela continua com esse agente; só muda se o cliente passar a falar de outro assunto cadastrado, com certeza suficiente. Para desligar, clique na chave de novo e salve: o número volta para o agente publicado nele.",
+          "dica": "Se outro roteador já estiver ativo no mesmo número, o sistema recusa ao salvar, com o aviso \"Este número já tem um roteador ativo.\". Desligue o outro primeiro.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Ativo — está roteando as conversas deste número",
+                "exato": true
+              },
+              "rotulo": "Ligado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Vale depois de salvar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "Excluir um roteador",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Excluir roteador",
+                "exato": true
+              }
+            }
+          ],
+          "texto": "\"Excluir roteador\", no canto de cima, apaga o roteador e todas as intenções dele. Antes, uma janela pede a confirmação. Depois de excluir, o número volta a ser atendido sem roteador, pelo agente publicado nele. Não dá para desfazer. Se quiser só parar o roteador por um tempo, desligue a chave em vez de excluir.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "alertdialog"
+              },
+              "rotulo": "Confirmação",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Excluir",
+                "exato": true
+              },
+              "rotulo": "Apaga de vez",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar",
+                "exato": true
+              },
+              "rotulo": "Desistir",
+              "tipo": "numero"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

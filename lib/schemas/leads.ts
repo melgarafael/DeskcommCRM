@@ -9,6 +9,8 @@
  */
 import { z } from "zod";
 
+import { normalizarTags } from "@/lib/contacts/tag-normalizada";
+
 /**
  * Accept either ISO 8601 (e.g. "2026-04-29T03:15:54.000Z") or Postgres-style
  * timestamptz (e.g. "2026-04-29 03:15:54.123456+00") since Supabase returns
@@ -21,7 +23,19 @@ const flexibleTimestamp = z
 
 export const moveLeadSchema = z.object({
   stage_id: z.string().uuid(),
-  position_in_stage: z.number().finite(),
+  /**
+   * A POSIÇÃO É OPCIONAL (#4151).
+   *
+   * O arrasto do quadro sempre a manda (ele tem a coluna na tela e escolhe o
+   * ponto exato entre dois cards). Quem abre o negócio em PÁGINA INTEIRA não
+   * tem a coluna: só sabe a etapa de destino. Omitida, o servidor posiciona
+   * pela MESMA régua de quem chega pelo menu ou pelo MCP — no topo da etapa de
+   * destino (`posicaoDeEntradaNaEtapa`, min − 1000; #3461) —, lendo a etapa
+   * inteira no banco em vez de adivinhar no cliente.
+   *
+   * Continua `finite`: posição explícita inválida não vira `NaN` no banco.
+   */
+  position_in_stage: z.number().finite().optional(),
   expected_updated_at: flexibleTimestamp,
   /**
    * O motivo da perda, quando a etapa de destino é de perda (issue #917). É o
@@ -141,6 +155,23 @@ export const CATEGORIAS_DE_PERDA = ["Cliente", "Concorrência", "Mérito", "Nós
 export type CategoriaDePerda = (typeof CATEGORIAS_DE_PERDA)[number];
 
 /**
+ * O teto de uma categoria (`settings.lost_reason_categories`, #4437) e o de
+ * quantas o funil declara.
+ *
+ * Mora AQUI, ao lado da lista de fábrica, porque DOIS lados aplicam a mesma
+ * régua: o schema do PATCH (`lib/schemas/settings`) e o leitor da tela/relatório
+ * (`lib/leads/motivos-de-perda-do-funil`). O leitor não pode importar o schema
+ * de settings — settings importa daqui —, então o número fica neste arquivo,
+ * que não importa nada de settings e é o berço da lista.
+ *
+ * 40 é o mesmo teto da categoria de um motivo, e não é coincidência: são o
+ * mesmo vocabulário, escrito uma vez no funil e usado no motivo.
+ */
+export const MAX_CARACTERES_DA_CATEGORIA_DE_PERDA = 40;
+/** Acima disso a tela de categorias não é lista, é rolagem — o mesmo espírito do teto de motivos. */
+export const MAX_CATEGORIAS_DE_PERDA = 30;
+
+/**
  * A categoria PADRÃO de cada motivo canônico (issue #1537): o motivo já nasce
  * agrupado sem que ninguém cadastre nada, e o funil pode SOBRESCREVER gravando
  * `{ label, categoria }` em `settings.lost_reasons`.
@@ -191,6 +222,25 @@ export const createLeadSchema = z.object({
   contact_id: z.string().uuid().nullable().optional(),
   value_cents: z.coerce.number().int().nonnegative().nullable().optional(),
   /**
+   * O VALOR RECORRENTE, ao lado do valor único (fatia 1 da #3602).
+   *
+   * `nonnegative` é a MESMA régua do `value_cents`: mensalidade negativa é dado
+   * impossível, e o CHECK da migration 9028 repete a regra no banco para quem
+   * escreve por fora do schema (psql, import, integração).
+   */
+  recurring_value_cents: z.coerce.number().int().nonnegative().nullable().optional(),
+  /**
+   * A periodicidade. `literal("monthly")` e não `z.string()`: a v1 conhece UMA,
+   * e aceitar texto livre deixaria "yearly" gravado sem nenhuma régua que o
+   * multiplique — o painel da fatia 2 somaria mensalidade com anualidade.
+   */
+  recurring_period: z.literal("monthly").nullable().optional(),
+  /**
+   * A duração em meses; ausente/nula = sem prazo. Zero não é "sem prazo" — é
+   * contrato que não dura nada, e quem divide pelo prazo dividiria por ele.
+   */
+  recurring_months: z.coerce.number().int().min(1).max(600).nullable().optional(),
+  /**
    * Sem `default`, e isso É o conserto.
    *
    * Com `.default("BRL")` o campo nunca chegava ausente ao handler: quem
@@ -240,6 +290,25 @@ export const updateLeadSchema = z.object({
   description: z.string().max(2000).nullable().optional(),
   contact_id: z.string().uuid().nullable().optional(),
   value_cents: z.coerce.number().int().nonnegative().nullable().optional(),
+  /**
+   * O VALOR RECORRENTE, ao lado do valor único (fatia 1 da #3602).
+   *
+   * `nonnegative` é a MESMA régua do `value_cents`: mensalidade negativa é dado
+   * impossível, e o CHECK da migration 9028 repete a regra no banco para quem
+   * escreve por fora do schema (psql, import, integração).
+   */
+  recurring_value_cents: z.coerce.number().int().nonnegative().nullable().optional(),
+  /**
+   * A periodicidade. `literal("monthly")` e não `z.string()`: a v1 conhece UMA,
+   * e aceitar texto livre deixaria "yearly" gravado sem nenhuma régua que o
+   * multiplique — o painel da fatia 2 somaria mensalidade com anualidade.
+   */
+  recurring_period: z.literal("monthly").nullable().optional(),
+  /**
+   * A duração em meses; ausente/nula = sem prazo. Zero não é "sem prazo" — é
+   * contrato que não dura nada, e quem divide pelo prazo dividiria por ele.
+   */
+  recurring_months: z.coerce.number().int().min(1).max(600).nullable().optional(),
   currency: z.string().length(3).optional(),
   owner_user_id: z.string().uuid().nullable().optional(),
   /**
@@ -254,7 +323,24 @@ export const updateLeadSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .nullable()
     .optional(),
-  tags: z.array(z.string()).optional(),
+  /**
+   * AS ETIQUETAS DO NEGÓCIO (#4666) — três campos, e a diferença é a do agente.
+   *
+   * Até aqui existia só `tags`, que SUBSTITUI a lista inteira: o agente que
+   * queria acrescentar "X" mandava `["X"]` e apagava as outras sem saber.
+   * `tags_adicionar` e `tags_remover` são a união e a diferença sobre a lista
+   * atual (a decisão mora em `lib/leads/etiquetas-do-patch.ts`, porque só o
+   * handler conhece a lista gravada).
+   *
+   * A NORMALIZAÇÃO mora AQUI, e é a mesma da tela (`normalizarTags` de
+   * `lib/contacts/tag-normalizada.ts`: apara as pontas, minúscula, corte em 40,
+   * descarta vazio e repetido): `" Cliente VIP "` não pode virar uma segunda
+   * grafia de "cliente vip". A grafia que JÁ EXISTE no negócio continua vencendo
+   * — quem manda "vip" para um negócio que tem "VIP" não renomeia o chip.
+   */
+  tags: z.array(z.string()).transform(normalizarTags).optional(),
+  tags_adicionar: z.array(z.string()).transform(normalizarTags).optional(),
+  tags_remover: z.array(z.string()).transform(normalizarTags).optional(),
   custom_fields: z.record(z.string(), z.unknown()).optional(),
 });
 export type UpdateLeadInput = z.infer<typeof updateLeadSchema>;

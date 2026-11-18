@@ -128,8 +128,15 @@ describe("lerNumeroInternoDeAviso — a leitura quente", () => {
 
   it("organização sem configuração devolve vazio e não casa nada", async () => {
     const { db } = fakeDb(null);
+    // Os dois campos do #3900 aparecem vazios: sem linha, não há modo nem
+    // equipe para comparar — e "vazio" aqui é o que mantém o corte valendo.
     expect(await lerNumeroInternoDeAviso(db, ORG)).toEqual({
-      destino: null, jid: null, respostaWhatsappHabilitada: false, sessaoId: null,
+      destino: null,
+      jid: null,
+      respostaWhatsappHabilitada: false,
+      sessaoId: null,
+      destinoModo: null,
+      whatsappsDaEquipe: null,
     });
     expect(await ehNumeroInternoDeAviso(db, ORG, { kind: "phone", phone: "+5531998966398", lid: null })).toBe(
       false,

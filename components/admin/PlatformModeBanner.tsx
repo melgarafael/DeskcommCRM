@@ -11,10 +11,11 @@ import { useT } from "@/hooks/i18n/useT";
  *
  * ── Por que a troca de tema mora AQUI ────────────────────────────────────────
  *
- * O `AdminShell` não tem barra de topo no desktop — o único `<header>` dele é
- * `lg:hidden`. Esta tarja é o único elemento persistente do topo em TODAS as
- * larguras, então é o único lugar onde um controle global cabe sem inventar
- * uma barra nova (o que mudaria o layout de todas as telas do admin).
+ * O `AdminShell` tem uma barra de topo nas duas larguras desde que ganhou a
+ * busca (⌘K): no celular ela leva o menu, a marca e a busca; no desktop, só a
+ * busca. A troca de tema continua nesta tarja, que é o elemento do topo que
+ * diz em que superfície a pessoa está — e a catraca
+ * `admin-tem-troca-de-tema.test.tsx` vigia que ela siga aqui.
  *
  * ── Por que as cores são token e não `amber-*` ───────────────────────────────
  *

@@ -16,9 +16,8 @@ import { useDefinirCorDaEtiqueta } from "@/hooks/tags/useDefinirCorDaEtiqueta";
 import { chaveDaEtiqueta } from "@/lib/tags/cor-da-etiqueta";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { ROLE_RANK } from "@/lib/auth/types";
-import { sugestoesDeEtiqueta } from "@/lib/contacts/etiquetas";
+import { sugestoesDeEtiqueta, etiquetaParaGravar, opcaoDeCriar } from "@/lib/contacts/etiquetas";
 import {
-  normalizarTag,
   normalizarTags,
   TAMANHO_MAXIMO_DA_TAG,
 } from "@/lib/contacts/tag-normalizada";
@@ -128,30 +127,6 @@ export function ContactTagsEditor(props: Props) {
     daPessoa.mutate({ tags: next });
   }
 
-  /** Grava a etiqueta com o tom escolhido. Devolve a tag gravada, ou `null` se recusada (duplicada/cheia). */
-  function criar(raw: string, escolhida: string | null): string | null {
-    const tag = normalizarTag(raw);
-    if (!tag || tags.some((v) => normalizarTag(v) === tag) || tags.length >= 20)
-      return null;
-    apply([...tags, tag]);
-    // A cor é VOCABULÁRIO, não da linha (#2718): chamada independente do
-    // attach — a SQL faz append do verbete, e falhar aqui não desfaz a tag.
-    if (escolhida) void definirCor(tag, escolhida);
-    return tag;
-  }
-
-  /** Caminho DIGITADO: consome o tom escolhido no gatilho 🎨 e limpa o rascunho. */
-  function add(raw: string) {
-    if (criar(raw, cor)) {
-      setDraft("");
-      setCor(null);
-    }
-  }
-
-  function remove(tag: string) {
-    apply(tags.filter((v) => v !== tag));
-  }
-
   // Sem sugestão cada operador digitava a sua variação da mesma tag (#852).
   // A comparação é entre formas NORMALIZADAS: um contato que já tem "VIP"
   // (gravado antes, pelo diálogo de contato, que não normaliza) recebia o chip
@@ -175,6 +150,37 @@ export function ContactTagsEditor(props: Props) {
     selecionadas: tags,
     digitado: draft,
   });
+
+  // #3180 (critério 3) — a etiqueta NOVA, a ÚLTIMA opção da lista e só quando
+  // o texto não casa com nenhuma existente: `null` = não há o que criar.
+  const nova = opcaoDeCriar({ conhecidas, selecionadas: tags, digitado: draft });
+
+  /** Grava a etiqueta com o tom escolhido. Devolve a tag gravada, ou `null` se recusada (duplicada/cheia). */
+  function criar(raw: string, escolhida: string | null): string | null {
+    // #3180 — o que se digita NÃO vira variante de uma etiqueta que já existe:
+    // quando o texto casa pela chave larga (sem caixa, sem acento), é a grafia
+    // EXISTENTE que se grava. É o que faz o Enter APLICAR a etiqueta em vez de
+    // criar "carteira-andréia" ao lado de "carteira-andreia".
+    const tag = etiquetaParaGravar({ conhecidas, selecionadas: tags, digitado: raw });
+    if (!tag || tags.length >= 20) return null;
+    apply([...tags, tag]);
+    // A cor é VOCABULÁRIO, não da linha (#2718): chamada independente do
+    // attach — a SQL faz append do verbete, e falhar aqui não desfaz a tag.
+    if (escolhida) void definirCor(tag, escolhida);
+    return tag;
+  }
+
+  /** Caminho DIGITADO: consome o tom escolhido no gatilho 🎨 e limpa o rascunho. */
+  function add(raw: string) {
+    if (criar(raw, cor)) {
+      setDraft("");
+      setCor(null);
+    }
+  }
+
+  function remove(tag: string) {
+    apply(tags.filter((v) => v !== tag));
+  }
 
   return (
     <div className="mt-2 space-y-2 rounded-md border border-border p-2">
@@ -248,7 +254,7 @@ export function ContactTagsEditor(props: Props) {
       </div>
 
       {vocabularyError && <p role="alert" className="text-xs text-destructive">{t("Não foi possível carregar as tags.")}</p>}
-      {suggestions.length > 0 && (
+      {(suggestions.length > 0 || nova !== null) && (
         <div className="flex flex-wrap gap-1">
           {suggestions.map((tag) => (
             <button
@@ -268,6 +274,20 @@ export function ContactTagsEditor(props: Props) {
               + {tag}
             </button>
           ))}
+          {/* #3180 (critério 3) — CRIAR fica por ÚLTIMO e só quando o texto não
+              casa com nenhuma etiqueta existente: assim a lista diz, sem
+              ambiguidade, o que já existe e o que nasceria. Clicar (ou o Enter
+              no campo, que passa pelo mesmo caminho) grava. */}
+          {nova !== null && (
+            <button
+              type="button"
+              onClick={() => add(draft)}
+              disabled={pendente || tags.length >= 20}
+              className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-[10px] text-muted-foreground hover:border-solid hover:text-foreground disabled:opacity-50"
+            >
+              {t("Criar")} «{nova}»
+            </button>
+          )}
         </div>
       )}
 

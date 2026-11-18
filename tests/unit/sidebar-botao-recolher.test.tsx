@@ -33,6 +33,7 @@ vi.mock("@/hooks/auth/AuthProvider", () => ({
   usePermission: () => false,
 }));
 vi.mock("next/navigation", () => ({
+  useRouter: () => ({ prefetch: vi.fn() }),
   usePathname: () => "/app/inbox",
 }));
 vi.mock("@/components/connections/ConnectionHealthDot", () => ({
@@ -43,6 +44,9 @@ vi.mock("@/components/shell/ContadorDeCasos", () => ({
 }));
 vi.mock("@/components/shell/ContadorDaFila", () => ({
   ContadorDaFila: () => null,
+}));
+vi.mock("@/components/shell/ContadorDeTarefas", () => ({
+  ContadorDeTarefas: () => null,
 }));
 vi.mock("@/app/actions/shell/toggleSidebar", () => ({
   toggleSidebar: vi.fn(),

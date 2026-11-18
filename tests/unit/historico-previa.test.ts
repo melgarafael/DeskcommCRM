@@ -3,6 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 // ingest.ts importa @/lib/audit (→ supabase/server → validação de env).
 vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
 
+// A ficha do escopo `so_crm`: só o telefone 5511900000001 tem ficha viva nesta organização.
+const fichas = vi.hoisted(() => ({ comFicha: new Set<string>(["5511900000001"]) }));
+vi.mock("@/lib/channels/historico/fichas-do-crm", async (orig) => ({
+  ...(await orig<typeof import("@/lib/channels/historico/fichas-do-crm")>()),
+  fichaDoCrmParaOChat: async (_admin: unknown, args: { telefones: string[] }) =>
+    args.telefones.some((t) => fichas.comFicha.has(t)) ? { contactId: "ct-1" } : null,
+}));
+
 import { calcularPrevia, TETO_DE_CHAMADAS_DA_PREVIA } from "@/lib/channels/historico/previa";
 
 /**
@@ -14,6 +22,8 @@ import { calcularPrevia, TETO_DE_CHAMADAS_DA_PREVIA } from "@/lib/channels/histo
 const AGORA = Date.UTC(2026, 9, 20, 12, 0, 0);
 const DIA = 86_400;
 const desde90 = Math.floor(AGORA / 1000) - 90 * DIA;
+const ADMIN = {} as never;
+const ORG = "org-1";
 
 function canalDeMentira(chats: Array<{ id: string; ts: number | null }>, msgs: Record<string, Array<Record<string, unknown>>>) {
   const chamadas: string[] = [];
@@ -59,7 +69,7 @@ describe("prévia da importação do histórico (#999)", () => {
         "velha@c.us": [m("5")],
       },
     );
-    const p = await calcularPrevia("sessao", 90, { canal, agora: AGORA });
+    const p = await calcularPrevia(ADMIN, ORG, "todos", "sessao", 90, { canal, agora: AGORA });
     expect(p).toEqual({
       conversas: 2,
       mensagens: 4,
@@ -75,7 +85,7 @@ describe("prévia da importação do histórico (#999)", () => {
     const chats = Array.from({ length: 30 }, (_, i) => ({ id: `${i}@c.us`, ts: desde90 + 10 }));
     const msgs = Object.fromEntries(chats.map((c) => [c.id, [m(`${c.id}-1`)]]));
     const canal = canalDeMentira(chats, msgs);
-    const p = await calcularPrevia("sessao", 90, { canal, agora: AGORA, tetoDeChamadas: 10 });
+    const p = await calcularPrevia(ADMIN, ORG, "todos", "sessao", 90, { canal, agora: AGORA, tetoDeChamadas: 10 });
     expect(canal.chamadas.length).toBe(10);
     expect(p.parcial).toBe(true);
     expect(p.conversas).toBe(30);
@@ -87,11 +97,29 @@ describe("prévia da importação do histórico (#999)", () => {
     // 120 conversas = 3 páginas de 50; com teto 2, a terceira página não é pedida.
     const chats = Array.from({ length: 120 }, (_, i) => ({ id: `${i}@c.us`, ts: desde90 + 10 }));
     const canal = canalDeMentira(chats, {});
-    const p = await calcularPrevia("sessao", 90, { canal, agora: AGORA, tetoDeChamadas: 2 });
+    const p = await calcularPrevia(ADMIN, ORG, "todos", "sessao", 90, { canal, agora: AGORA, tetoDeChamadas: 2 });
     expect(canal.chamadas).toEqual(["chats@0", "chats@50"]);
     expect(p.parcial).toBe(true);
     expect(p.conversas).toBe(100);
     expect(p.mensagens).toBe(0);
+  });
+
+  it("escopo so_crm: 3 chats, 1 com ficha viva, conta só o que a rodada importaria", async () => {
+    const canal = canalDeMentira(
+      [
+        { id: "5511900000001@c.us", ts: desde90 + 10 },
+        { id: "5511900000002@c.us", ts: desde90 + 10 },
+        { id: "5511900000003@c.us", ts: desde90 + 10 },
+      ],
+      {
+        "5511900000001@c.us": [m("1"), m("2")],
+        "5511900000002@c.us": [m("3"), m("4"), m("5")],
+        "5511900000003@c.us": [m("6")],
+      },
+    );
+    const p = await calcularPrevia(ADMIN, ORG, "so_crm", "sessao", 90, { canal, agora: AGORA });
+    expect(p).toMatchObject({ conversas: 1, mensagens: 2, parcial: false });
+    // Sabotagem: contar os chats sem ficha (como o `todos`) faz `conversas` dar 3.
   });
 
   it("o teto padrão é de 100 chamadas", () => {

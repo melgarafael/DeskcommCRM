@@ -30,6 +30,31 @@ type Linha = Record<string, unknown>;
 let tabela: Linha[] = [];
 let seq = 0;
 const escritas: Array<{ op: string; payload: Linha; filtros: Record<string, unknown> }> = [];
+// A prévia da rodada de análise (migration 9350) e o resumo dos jobs. O
+// enfileirar devolve o que caberia: o menor entre o limite pedido e a rodada.
+const PREVIA_DA_ANALISE = {
+  nesta_rodada: 50,
+  restantes: 70,
+  pulados_recusa: 3,
+  pulados_mais_novos: 2,
+  em_andamento: 0,
+  teto_da_rodada: 50,
+  estimativa_cents: 120.5,
+  gasto_do_mes_cents: 900,
+  teto_mensal_cents: 5000,
+};
+const RESUMO_DA_ANALISE = { total: 0, pending: 0, running: 0, done: 0, failed: 0, dead: 0, gasto_cents: 0 };
+let previaDaAnalise = { ...PREVIA_DA_ANALISE };
+let resumoDaAnalise = { ...RESUMO_DA_ANALISE };
+const rpc = vi.fn(async (nome: string, args: Record<string, unknown>) => ({
+  data:
+    nome === "fn_resumo_historico_analise"
+      ? resumoDaAnalise
+      : nome === "fn_previa_historico_analise"
+        ? previaDaAnalise
+        : Math.min(Number(args.p_limite), previaDaAnalise.nesta_rodada),
+  error: null,
+}));
 
 function consulta(op: "select" | "insert" | "update", payload?: Linha) {
   const filtros: Array<(l: Linha) => boolean> = [];
@@ -75,7 +100,7 @@ const req = (body: unknown = {}, method = "POST") =>
 const comoAdmin = (orgId = org, role = "admin") =>
   vi.mocked(requireRole).mockResolvedValue({ ok: true, user: { id: "u1" }, org: { orgId, role } } as Awaited<ReturnType<typeof requireRole>>);
 const linha = (extra: Linha = {}): Linha => {
-  const l = { id: `00000000-0000-4000-8000-0000000000a${tabela.length}`, organization_id: org, channel_session_id: canal, status: "previa", dias: 90, previa: previaOk, cursor: {}, erro: null, created_at: `2026-10-19T00:00:0${tabela.length}Z`, ...extra };
+  const l = { id: `00000000-0000-4000-8000-0000000000a${tabela.length}`, organization_id: org, channel_session_id: canal, status: "previa", dias: 90, origem: "manual", escopo: "so_crm", previa: previaOk, cursor: {}, erro: null, created_at: `2026-10-19T00:00:0${tabela.length}Z`, ...extra };
   tabela.push(l);
   return l;
 };
@@ -86,6 +111,8 @@ beforeEach(() => {
   tabela = [];
   seq = 0;
   escritas.length = 0;
+  previaDaAnalise = { ...PREVIA_DA_ANALISE };
+  resumoDaAnalise = { ...RESUMO_DA_ANALISE };
   vi.mocked(loadAuthUser).mockResolvedValue(null);
   vi.mocked(requireSupportWrite).mockResolvedValue(null);
   comoAdmin();
@@ -94,6 +121,7 @@ beforeEach(() => {
   );
   vi.mocked(calcularPrevia).mockResolvedValue(previaOk);
   vi.mocked(createAdminClient).mockReturnValue({
+    rpc,
     from: (t: string) => {
       if (t !== "importacoes_de_historico") throw new Error(`tabela inesperada: ${t}`);
       return { select: () => consulta("select"), insert: (p: Linha) => consulta("insert", p), update: (p: Linha) => consulta("update", p) };
@@ -120,7 +148,7 @@ describe("importação do histórico: rotas (#999)", () => {
   it("os quatro períodos são aceitos, 180 dias inclusive", async () => {
     for (const dias of [30, 90, 180, 365]) {
       expect((await POST(req({ acao: "previa", dias }), context())).status).toBe(200);
-      expect(vi.mocked(calcularPrevia)).toHaveBeenLastCalledWith("sessao-1", dias);
+      expect(vi.mocked(calcularPrevia)).toHaveBeenLastCalledWith(expect.anything(), org, "so_crm", "sessao-1", dias);
     }
     const inseridas = escritas.filter((e) => e.op === "insert").map((e) => (e.payload as { dias?: number }).dias);
     expect(inseridas).toContain(180);
@@ -197,9 +225,9 @@ describe("importação do histórico: rotas (#999)", () => {
   it("prévia ok grava status 'previa' com a prévia, na org e no número do path, e audita", async () => {
     const r = await POST(req({ acao: "previa", dias: 90, organization_id: outraOrg }), context());
     expect(r.status).toBe(200);
-    expect(calcularPrevia).toHaveBeenCalledWith("sessao-1", 90);
+    expect(calcularPrevia).toHaveBeenCalledWith(expect.anything(), org, "so_crm", "sessao-1", 90);
     expect(tabela).toHaveLength(1);
-    expect(tabela[0]).toMatchObject({ organization_id: org, channel_session_id: canal, status: "previa", dias: 90, previa: previaOk, criada_por: "u1" });
+    expect(tabela[0]).toMatchObject({ organization_id: org, channel_session_id: canal, status: "previa", dias: 90, escopo: "so_crm", previa: previaOk, criada_por: "u1" });
     expect((await r.json()).data.importacao).toMatchObject({ status: "previa", previa: previaOk });
     expect(acoes()).toEqual(["channel.historico_previa"]);
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ organizationId: org, resourceType: "channel_session", resourceId: canal }));
@@ -269,5 +297,159 @@ describe("importação do histórico: rotas (#999)", () => {
     const { data } = await r.json();
     expect(data).toMatchObject({ guardar_historico: true, importacao: { id: ultima.id, status: "rodando" } });
     expect(requireRole).toHaveBeenCalledWith("admin", expect.objectContaining({ allowPlatformAdmin: "leitura" }));
+  });
+
+  it("Spec 32: prévia sem escopo nasce so_crm; 'todos' é escolha explícita; escopo fora da lista é 422", async () => {
+    expect((await POST(req({ acao: "previa", dias: 30 }), context())).status).toBe(200);
+    expect((await POST(req({ acao: "previa", dias: 30, escopo: "todos" }), context())).status).toBe(200);
+    expect((await POST(req({ acao: "previa", dias: 30, escopo: "algum" }), context())).status).toBe(422);
+    const escopos = escritas.filter((e) => e.op === "insert").map((e) => (e.payload as { escopo?: string }).escopo);
+    expect(escopos).toEqual(["so_crm", "todos"]);
+    expect(vi.mocked(calcularPrevia).mock.calls.map((c) => c[2] as string)).toEqual(["so_crm", "todos"]);
+  });
+
+  it("Spec 32: com a recuperação da queda aguardando, prévia e importar manuais respondem 409 sem tocar no banco", async () => {
+    linha({ origem: "queda", status: "aguardando", dias: null, escopo: "so_crm", channel_session_id: canal });
+    const previa = linha({ status: "previa" });
+    const r = await POST(req({ acao: "previa", dias: 90 }), context());
+    expect(r.status).toBe(409);
+    expect(calcularPrevia).not.toHaveBeenCalled();
+    const imp = await POST(req({ acao: "importar", importacaoId: previa.id }), context());
+    expect(imp.status).toBe(409);
+    expect(previa.status).toBe("previa");
+    expect(acoes()).toEqual([]);
+  });
+
+  it("Spec 32: cancelar aceita 'aguardando' (a recuperação da queda)", async () => {
+    const l = linha({ origem: "queda", status: "aguardando", dias: null });
+    expect((await POST(req({ acao: "cancelar", importacaoId: l.id }), context())).status).toBe(200);
+    expect(l.status).toBe("cancelada");
+    expect(acoes()).toEqual(["channel.historico_import_cancelled"]);
+  });
+
+  it("Spec 32: GET devolve a manual mais recente e, à parte, a recuperação da queda aberta", async () => {
+    const manual = linha({ status: "concluida" });
+    const daQueda = linha({ origem: "queda", status: "rodando", dias: null, escopo: "so_crm" });
+    const r = await GET(req({}, "GET"), context());
+    const { data } = await r.json();
+    expect(data.importacao).toMatchObject({ id: manual.id, origem: "manual" });
+    expect(data.recuperacao_da_queda).toMatchObject({ id: daQueda.id, origem: "queda", status: "rodando" });
+    expect(data.analise).toMatchObject({ total: 0, done: 0 });
+  });
+
+  it("análise só nasce para a importação manual concluída da organização", async () => {
+    const concluida = linha({ status: "concluida", origem: "manual" });
+    const r = await POST(req({ acao: "analisar", importacaoId: concluida.id, clientesConfirmados: 50 }), context());
+    expect(r.status).toBe(200);
+    expect(rpc).toHaveBeenCalledWith("fn_enqueue_historico_analise", {
+      p_org: org,
+      p_importacao: concluida.id,
+      p_limite: 50,
+    });
+    expect(acoes()).toEqual(["channel.historico_analysis_started"]);
+  });
+
+  it("análise recusa prévia, erro e recuperação da queda", async () => {
+    for (const extra of [
+      { status: "previa", origem: "manual" },
+      { status: "erro", origem: "manual" },
+      { status: "concluida", origem: "queda" },
+    ]) {
+      const imp = linha(extra);
+      const r = await POST(req({ acao: "analisar", importacaoId: imp.id, clientesConfirmados: 10 }), context());
+      expect(r.status).toBe(409);
+    }
+    expect(rpc).not.toHaveBeenCalledWith("fn_enqueue_historico_analise", expect.anything());
+  });
+
+  it("análise de outra organização: 404, sem prévia nem fila", async () => {
+    const alheia = linha({ status: "concluida", organization_id: outraOrg });
+    const r = await POST(req({ acao: "analisar", importacaoId: alheia.id, clientesConfirmados: 10 }), context());
+    expect(r.status).toBe(404);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(audit).not.toHaveBeenCalled();
+  });
+});
+
+describe("análise do histórico: as três travas da decisão 315", () => {
+  it("trava 1: o GET entrega a contagem e a estimativa da rodada ANTES de qualquer análise", async () => {
+    linha({ status: "concluida" });
+    const { data } = await (await GET(req({}, "GET"), context())).json();
+    expect(rpc).toHaveBeenCalledWith("fn_previa_historico_analise", expect.objectContaining({ p_org: org, p_limite: 50 }));
+    expect(data.previa_analise).toMatchObject({
+      nesta_rodada: 50,
+      restantes: 70,
+      estimativa_cents: 120.5,
+      gasto_do_mes_cents: 900,
+      teto_mensal_cents: 5000,
+    });
+    expect(rpc).not.toHaveBeenCalledWith("fn_enqueue_historico_analise", expect.anything());
+  });
+
+  it("trava 1: sem a contagem confirmada, nada é enfileirado nem auditado", async () => {
+    const concluida = linha({ status: "concluida" });
+    const r = await POST(req({ acao: "analisar", importacaoId: concluida.id }), context());
+    expect(r.status).toBe(422);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it("trava 2: confirmação acima do teto da rodada é recusada", async () => {
+    const concluida = linha({ status: "concluida" });
+    const r = await POST(req({ acao: "analisar", importacaoId: concluida.id, clientesConfirmados: 51 }), context());
+    expect(r.status).toBe(422);
+    expect(rpc).not.toHaveBeenCalledWith("fn_enqueue_historico_analise", expect.anything());
+  });
+
+  it("trava 2: enfileira no máximo o que foi confirmado, e o resto fica para a próxima rodada", async () => {
+    const concluida = linha({ status: "concluida" });
+    const r = await POST(req({ acao: "analisar", importacaoId: concluida.id, clientesConfirmados: 30 }), context());
+    expect(r.status).toBe(200);
+    expect((await r.json()).data.clientes_na_rodada).toBe(30);
+    expect(rpc).toHaveBeenCalledWith("fn_enqueue_historico_analise", expect.objectContaining({ p_limite: 30 }));
+    const meta = vi.mocked(audit).mock.calls[0]![0].metadata;
+    expect(meta).toMatchObject({ clientes_confirmados: 30, clientes_na_rodada: 30, clientes_para_a_proxima_rodada: 90 });
+  });
+
+  it("trava 2: uma rodada por vez — com análise em andamento, a nova é recusada", async () => {
+    const concluida = linha({ status: "concluida" });
+    previaDaAnalise = { ...PREVIA_DA_ANALISE, em_andamento: 4 };
+    const r = await POST(req({ acao: "analisar", importacaoId: concluida.id, clientesConfirmados: 50 }), context());
+    expect(r.status).toBe(409);
+    expect(rpc).not.toHaveBeenCalledWith("fn_enqueue_historico_analise", expect.anything());
+  });
+
+  it("sem cliente elegível (todos recusaram IA ou têm estado mais novo): 409, nada enfileirado", async () => {
+    const concluida = linha({ status: "concluida" });
+    previaDaAnalise = { ...PREVIA_DA_ANALISE, nesta_rodada: 0, restantes: 0, pulados_recusa: 7 };
+    const r = await POST(req({ acao: "analisar", importacaoId: concluida.id, clientesConfirmados: 5 }), context());
+    expect(r.status).toBe(409);
+    expect(rpc).not.toHaveBeenCalledWith("fn_enqueue_historico_analise", expect.anything());
+  });
+
+  it("durante uma rodada o GET não refaz a prévia (a tela não oferece rodada nova)", async () => {
+    linha({ status: "concluida" });
+    resumoDaAnalise = { ...RESUMO_DA_ANALISE, total: 10, pending: 4, running: 1, done: 5 };
+    const { data } = await (await GET(req({}, "GET"), context())).json();
+    expect(data.previa_analise).toBeNull();
+    expect(rpc).not.toHaveBeenCalledWith("fn_previa_historico_analise", expect.anything());
+  });
+
+  it("audita quem disparou, quantos, a estimativa e o gasto real das rodadas anteriores", async () => {
+    const concluida = linha({ status: "concluida" });
+    resumoDaAnalise = { ...RESUMO_DA_ANALISE, total: 50, done: 50, gasto_cents: 42.25 };
+    await POST(req({ acao: "analisar", importacaoId: concluida.id, clientesConfirmados: 50 }), context());
+    const chamada = vi.mocked(audit).mock.calls[0]![0];
+    expect(chamada).toMatchObject({ action: "channel.historico_analysis_started", actorUserId: "u1", organizationId: org });
+    expect(chamada.metadata).toMatchObject({
+      importacao_id: concluida.id,
+      clientes_na_rodada: 50,
+      pulados_por_recusa_de_ia: 3,
+      pulados_por_estado_mais_novo: 2,
+      estimativa_cents: 120.5,
+      gasto_ate_aqui_cents: 42.25,
+      gasto_do_mes_cents: 900,
+      teto_mensal_cents: 5000,
+    });
   });
 });

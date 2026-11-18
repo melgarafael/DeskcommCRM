@@ -3,18 +3,21 @@ import Link from "next/link";
 import { useT } from "@/hooks/i18n/useT";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
-import { ArrowRight, CaretDoubleLeft, CaretDoubleRight, CaretDown, Gear } from "@/lib/ui/icons";
+import { ArrowRight, BookOpen, CaretDoubleLeft, CaretDoubleRight, CaretDown, Gear } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { toggleSidebar } from "@/app/actions/shell/toggleSidebar";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { ConnectionHealthDot } from "@/components/connections/ConnectionHealthDot";
 import { ContadorDeCasos } from "@/components/shell/ContadorDeCasos";
 import { ContadorDaFila } from "@/components/shell/ContadorDaFila";
+import { ContadorDeTarefas } from "@/components/shell/ContadorDeTarefas";
 import { VersionFooter } from "@/components/shell/VersionFooter";
 import { LogotipoDoProduto, SimboloDoProduto } from "@/components/branding/MarcaDoProduto";
 import { marcaEhADoProduto } from "@/lib/branding";
 import { useMarcaDaInstalacao } from "@/lib/branding/contexto";
 import { GRUPO_NO_RODAPE, sidebarGroups } from "@/lib/navigation/registry";
+import { classeDoGrupo, classeDoItem } from "@/lib/navigation/classes-estaveis";
+import { usePrefetchPorIntencao } from "@/hooks/navigation/prefetchPorIntencao";
 
 const CHAVE_GRUPOS_FECHADOS = "sidebar-grupos-fechados";
 
@@ -43,6 +46,13 @@ export function SidebarContent({
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
   const { user, activeOrg } = useAuth();
+  /**
+   * O menu não prefetcha sozinho (#3170): um render RSC por link do menu (19
+   * destinos × as duas instâncias, lateral e móvel), e eles disputam o servidor
+   * com o render que o clique pediu. O prefetch passa a ser
+   * por intenção (ponteiro/foco) — ver `hooks/navigation/prefetchPorIntencao.ts`.
+   */
+  const intencao = usePrefetchPorIntencao();
   const todos = sidebarGroups(
     user.is_platform_admin && !user.support,
     activeOrg?.role ?? null,
@@ -53,7 +63,21 @@ export function SidebarContent({
   // Configurações sai da área que rola e vai para o rodapé fixo: medido em
   // 1280x768, ele caía fora da dobra mesmo em telas de 1080px.
   const grupos = todos.filter((g) => g.group.id !== GRUPO_NO_RODAPE);
-  const rodape = todos.find((g) => g.group.id === GRUPO_NO_RODAPE)?.group.hub;
+  const grupoDoRodape = todos.find((g) => g.group.id === GRUPO_NO_RODAPE);
+  const rodape = grupoDoRodape?.group.hub;
+  /**
+   * "Ajuda" é o ÚLTIMO item do rodapé fixo (issue #3567), e chega por `href` em
+   * vez de uma segunda lista escrita aqui: a entrada vive no `NAV_CATALOG` com
+   * `sidebar: true`, então atravessa o mesmo filtro de papel, de módulo e de
+   * área personalizada que todo o resto do menu. Um `Link` de Ajuda escrito à
+   * mão aqui faria o link sobreviver a uma empresa que tirou a tela das áreas
+   * dela — e a pessoa cairia num 403 saindo do socorro.
+   *
+   * O comentário NÃO pode citar a tag com os sinais: a cerca
+   * `menu-prefetch-so-por-intencao` lê o TEXTO do arquivo, comentário incluído,
+   * e uma tag de exemplo aqui é indistinguível de um link de verdade para ela.
+   */
+  const ajuda = grupoDoRodape?.items.find((d) => d.href === "/app/ajuda");
 
   /**
    * Grupo fechado é preferência POR NAVEGADOR, não por conta: começa vazio (tudo
@@ -136,6 +160,9 @@ export function SidebarContent({
         {(logo || logoEscuro) && !collapsed ? (
           // Sem arte própria para o escuro, preserva a proteção de contraste.
           <div
+            // `data-logo-selo`: sem logo do tema escuro, o selo branco do modo
+            // escuro também vale no menu escuro de um template (`aparencia.css`).
+            data-logo-selo={logoEscuro ? undefined : ""}
             className={cn(
               // `min-w-0`: item de flex não encolhe abaixo do `min-width: auto`,
               // que é o valor padrão — sem isso, uma arte própria larga empurra o
@@ -154,6 +181,7 @@ export function SidebarContent({
               <img
                 src={logo}
                 alt={nome}
+                data-logo={logoEscuro ? "claro" : undefined}
                 className={cn(
                   // `max-w-[min(10rem,100%)]` e não `max-w-[10rem]` sozinho, como o
                   // review mediu (#2723): a linha da logo tem ~207px úteis na barra
@@ -184,6 +212,7 @@ export function SidebarContent({
               <img
                 src={logoEscuro}
                 alt={nome}
+                data-logo="escuro"
                 className="hidden h-7 w-auto max-w-[min(10rem,100%)] object-contain dark:block"
               />
             ) : null}
@@ -286,15 +315,32 @@ export function SidebarContent({
         mais densidade raspada. A conta é fechada e vale conferir antes de abrir
         o PR: cada linha custa 32px (28px de altura + 4px de `space-y-1`), e
         trocar N destinos do menu por um único link de hub devolve (N-1)×32px.
+        ✅ O RODAPÉ TAMBÉM PESA — e ele não tem hub. O link da Ajuda (#3567) entrou
+        na coluna fixa embaixo: uma linha de 32px (28px de item + `mb-1`) que sai
+        direto da altura desta nav. Medido em 1280×900, o conteúdo daqui NÃO mudou
+        — 744px —, mas a caixa visível caiu de 763 para 731 e o `navegacao.spec.ts`
+        reprovou por 13px. Os 16px devolvidos vieram da MOLDURA, não de item:
+        4px no topo/rodapé desta nav (`p-2` → `px-2 py-1`), 4px no rodapé fixo e
+        2px entre os dois links fixos (`mb-1` → `mb-0.5`). Os `py-1`/`text-sm` de
+        cada destino continuam os mesmos: a regra do hub vale para destino novo,
+        e nenhum destino novo apareceu aqui.
       */}
-      <nav className="flex-1 space-y-2 overflow-y-auto p-2" aria-label={t("Navegação principal")}>
+      <nav
+        className="flex-1 space-y-2 overflow-y-auto px-2 py-1"
+        aria-label={t("Navegação principal")}
+      >
         {grupos.map(({ group, items }) => {
           const tituloId = `nav-grupo-${group.id}`;
           // Recolhido o sidebar inteiro (rail de 64px), o grupo sempre mostra
           // seus itens — não há onde desenhar cabeçalho nem seta para fechá-lo.
           const aberto = collapsed || !gruposFechados.has(group.id);
           return (
-            <div key={group.id} className="space-y-1">
+            // `nav-grupo` (comum a todo grupo) e `nav-grupo-<id>` são contrato
+            // público: é por elas que o CSS personalizado de /admin/marca, que só
+            // aceita seletor de classe, dá cor ao menu inteiro ou a uma seção dele
+            // (#4463). Renomear quebra a folha de quem já instalou; documentado em
+            // docs/white-label.md.
+            <div key={group.id} className={cn("space-y-1 nav-grupo", classeDoGrupo(group.id))}>
               {/* Colapsado, o sidebar tem 64px: seis rótulos ali seriam ilegíveis.
                   Vira um filete separador, que preserva o agrupamento sem texto. */}
               {collapsed ? (
@@ -333,10 +379,14 @@ export function SidebarContent({
                       <li key={item.href}>
                         <Link
                           href={item.href}
+                          {...intencao(item.href)}
                           title={collapsed ? t(item.label) : undefined}
                           aria-current={isActive ? "page" : undefined}
                           onClick={onNavigate}
                           className={cn(
+                            // A classe do DESTINO é contrato estável para o CSS da
+                            // tela Marca (#4463): `nav-item-inbox`, `nav-item-kanban`…
+                            classeDoItem(item.href),
                             "relative flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
                             isActive
                               ? "bg-accent text-accent-foreground"
@@ -353,6 +403,9 @@ export function SidebarContent({
                           )}
                           {item.contador === "casos" && <ContadorDeCasos compacto={collapsed} />}
                           {item.contador === "fila" && <ContadorDaFila compacto={collapsed} />}
+                          {item.contador === "tarefas" && (
+                            <ContadorDeTarefas compacto={collapsed} />
+                          )}
                         </Link>
                       </li>
                     );
@@ -361,6 +414,7 @@ export function SidebarContent({
                     <li>
                       <Link
                         href={group.hub.href}
+                        {...intencao(group.hub.href)}
                         title={collapsed ? t(group.hub.label) : undefined}
                         aria-current={pathname === group.hub.href ? "page" : undefined}
                         onClick={onNavigate}
@@ -383,15 +437,17 @@ export function SidebarContent({
           );
         })}
       </nav>
-      <div className="border-t p-2">
+      <div className={cn("border-t px-2 py-1 nav-grupo", classeDoGrupo(GRUPO_NO_RODAPE))}>
         {rodape && (
           <Link
             href={rodape.href}
+            {...intencao(rodape.href)}
             title={collapsed ? t(rodape.label) : undefined}
             aria-current={pathname.startsWith(rodape.href) ? "page" : undefined}
             onClick={onNavigate}
             className={cn(
-              "mb-1 flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
+              "mb-0.5 flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
+              classeDoItem(rodape.href),
               pathname.startsWith(rodape.href)
                 ? "bg-accent text-accent-foreground"
                 : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
@@ -400,6 +456,30 @@ export function SidebarContent({
           >
             <Gear size={18} aria-hidden />
             {!collapsed && <span className="truncate">{t(rodape.label)}</span>}
+          </Link>
+        )}
+        {ajuda && (
+          // Último link do rodapé, como pedido na issue #3567: é o que se
+          // procura quando o resto não respondeu. Mesmas classes do link de
+          // Configurações acima — rodapé com dois pesos diferentes lê-se como
+          // dois assuntos diferentes.
+          <Link
+            href={ajuda.href}
+            {...intencao(ajuda.href)}
+            title={collapsed ? t(ajuda.label) : undefined}
+            aria-current={pathname.startsWith(ajuda.href) ? "page" : undefined}
+            onClick={onNavigate}
+            className={cn(
+              "mb-0.5 flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
+              classeDoItem(ajuda.href),
+              pathname.startsWith(ajuda.href)
+                ? "bg-accent text-accent-foreground"
+                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+              collapsed && "justify-center px-2",
+            )}
+          >
+            <BookOpen size={18} aria-hidden />
+            {!collapsed && <span className="truncate">{t(ajuda.label)}</span>}
           </Link>
         )}
         <VersionFooter collapsed={collapsed} onNavigate={onNavigate} />
@@ -462,6 +542,10 @@ function BotaoDeRecolher({
 export function Sidebar({ collapsed }: { collapsed: boolean }) {
   return (
     <aside
+      // Ganchos da tela Aparência (`app/app/aparencia.css`): sem template
+      // escolhido nenhuma regra os usa, e o menu é exatamente o de antes.
+      data-casca="menu"
+      data-casca-lugar="lateral"
       className={cn(
         // ⚠️ `sticky`, e NUNCA `fixed`.
         //
@@ -502,7 +586,15 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
         collapsed ? "w-16" : "w-60",
       )}
     >
-      <SidebarContent collapsed={collapsed} />
+      {/*
+        O painel que DESENHA o menu num template de menu flutuante: o recuo vira
+        padding do `<aside>`, e é este painel que ganha fundo, raio e vidro — a
+        altura do `<aside>` (e do menu inteiro, medido por `navegacao.spec.ts`)
+        não muda. Sem template, é uma coluna flex que só repassa os filhos.
+      */}
+      <div data-casca="menu-painel" className="flex h-full min-h-0 flex-col">
+        <SidebarContent collapsed={collapsed} />
+      </div>
     </aside>
   );
 }

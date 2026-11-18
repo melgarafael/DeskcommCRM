@@ -2,7 +2,9 @@
 import Link from "next/link";
 import type { MouseEvent } from "react";
 
+import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
+import { dataEHoraCompletas, horaCurta } from "@/lib/i18n/hora-curta";
 import { ChatCircle } from "@/lib/ui/icons";
 import type { Lead } from "@/lib/types/leads";
 import { cn } from "@/lib/utils";
@@ -27,7 +29,7 @@ import { AbrirConversaDoLead, temAlvoParaAbrir } from "./AbrirConversaDoLead";
  *
  * ─── Ausência é estado normal, não erro ─────────────────────────────────────
  *
- * Lead criado à mão ou por webhook não tem contato; contato pode não ter
+ * Negócio criado à mão ou por webhook não tem contato; contato pode não ter
  * conversa. Nesses casos o slot não aparece — e NÃO aparece um "sem mensagens"
  * cinza, que ocuparia a mesma linha em metade dos cards para não dizer nada.
  *
@@ -48,6 +50,7 @@ export function ConversaSlot({
   phone?: string | null;
 }) {
   const t = useT();
+  const locale = useLocaleDeData();
   if (conversa === undefined) return null;
   if (conversa === null) {
     // A guarda de alvo fica AQUI, antes de montar: montar o botão sem contato
@@ -60,6 +63,19 @@ export function ConversaSlot({
 
   const preview = conversa.preview?.trim();
   const temNaoLidas = conversa.unread > 0;
+  // ─── A HORA DA ÚLTIMA MENSAGEM (fatia 1 do #3945) ─────────────────────────
+  //
+  // O `last_message_at` já vinha no payload do quadro desde a #1993 e o card o
+  // ignorava: a prévia dizia O QUE a pessoa falou e não QUANDO. "Quero saber o
+  // preço" é a mesma frase hoje e há três semanas, e a diferença entre as duas
+  // é a decisão inteira de quem olha o funil.
+  //
+  // A régua é `horaCurta` — a MESMA da linha da Inbox, extraída para
+  // `lib/i18n/hora-curta.ts`. Duas contas do mesmo "quando" divergiriam no
+  // primeiro ajuste. `title` guarda a data completa: o curto omite de propósito,
+  // esconder não é o mesmo que ser compacto.
+  const hora = horaCurta(conversa.last_message_at, locale);
+  const horaCompleta = dataEHoraCompletas(conversa.last_message_at, locale);
 
   return (
     <Link
@@ -76,17 +92,35 @@ export function ConversaSlot({
       title={t("Abrir esta conversa no Inbox")}
     >
       <ChatCircle size={12} weight="regular" className="shrink-0" aria-hidden />
-      <span className="truncate">
+      <span className="min-w-0 flex-1 truncate">
         {preview || <span className="italic">{t("conversa sem mensagens")}</span>}
       </span>
-      {temNaoLidas && (
-        // O número, não um ponto: "3 sem ler" e "12 sem ler" pedem urgências
-        // diferentes, e um ponto colapsa as duas.
-        <span
-          className="ml-auto shrink-0 rounded-full bg-primary px-1.5 text-[10px] font-medium text-primary-foreground tabular-nums"
-          aria-label={`${conversa.unread} ${t("sem ler")}`}
-        >
-          {conversa.unread}
+      {(hora || temNaoLidas) && (
+        // Hora e não-lidas no mesmo grupo à direita: um bloco só, alinhado, em
+        // vez de dois `ml-auto` brigando por quem empurra quem.
+        <span className="ml-auto flex shrink-0 items-center gap-1">
+          {hora && (
+            <time
+              dateTime={conversa.last_message_at ?? undefined}
+              title={horaCompleta || undefined}
+              // `data-hora-da-mensagem` é o observável do teste: o card precisa
+              // mostrar QUANDO, e um texto qualquer na linha não prova isso.
+              data-hora-da-mensagem={hora}
+              className="whitespace-nowrap tabular-nums text-[10px]"
+            >
+              {hora}
+            </time>
+          )}
+          {temNaoLidas && (
+            // O número, não um ponto: "3 sem ler" e "12 sem ler" pedem urgências
+            // diferentes, e um ponto colapsa as duas.
+            <span
+              className="rounded-full bg-primary px-1.5 text-[10px] font-medium text-primary-foreground tabular-nums"
+              aria-label={`${conversa.unread} ${t("sem ler")}`}
+            >
+              {conversa.unread}
+            </span>
+          )}
         </span>
       )}
     </Link>

@@ -1,0 +1,158 @@
+{
+  "id": "propostas-da-ia",
+  "titulo": "Propostas da IA",
+  "tela": "/app/ai/proposals",
+  "resumo": "Os próximos passos que a IA sugere para cada negócio aberto, numa lista só, esperando alguém da equipe aprovar ou ignorar.",
+  "licoes": [
+    {
+      "id": "propostas-da-ia-conhecendo-a-tela",
+      "titulo": "Conhecendo as Propostas da IA",
+      "objetivo": "Saber onde ficam as sugestões de próximo passo da IA e o que cada linha da lista mostra.",
+      "papel": "agent",
+      "busca": [
+        "propostas da ia",
+        "próximo passo sugerido",
+        "sugestão da ia",
+        "próxima ação",
+        "o que a ia sugere fazer",
+        "aguardando decisão"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "rota": "/app/ai",
+          "texto": "Propostas da IA não aparece direto no menu lateral. No grupo \"Agente de IA\" do menu, clique em \"Ver tudo em IA\". Na parte \"Acompanhar o agente\" está o cartão \"Propostas\". O caminho completo é: Agente de IA › Ver tudo em IA › Propostas.",
+          "dica": "Não confunda com as propostas comerciais (orçamentos enviados ao cliente), que ficam no CRM. Aqui são sugestões de próximo passo que a IA faz para a equipe.",
+          "destaques": [
+            {
+              "alvo": { "role": "link", "nome": "Ver tudo em IA", "exato": true },
+              "rotulo": "Ver tudo em IA",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "role": "link", "nome": "^Propostas", "regex": true },
+              "rotulo": "Abrir as Propostas",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": { "role": "link", "nome": "^Propostas", "regex": true }
+        },
+        {
+          "id": "p2",
+          "titulo": "Para que serve",
+          "rota": "/app/ai/proposals",
+          "texto": "Enquanto conversa com os clientes, a Bia, a IA da clínica, anota qual deveria ser o próximo passo de cada negócio: ligar, pedir um documento, confirmar um horário. Ela não faz isso sozinha; sugere, e alguém da equipe decide. A mesma sugestão aparece no cartão do negócio no funil, mas aqui ficam todas juntas, para nenhuma ficar esquecida. A aba \"Aguardando decisão\" mostra quantas esperam, e as mais antigas vêm primeiro.",
+          "antes": [{ "acao": "aguardar", "alvo": { "texto": "Retorno pós-cirúrgico — Fernanda Oliveira", "exato": true } }],
+          "destaques": [
+            {
+              "alvo": { "role": "tab", "nome": "^Aguardando decisão", "regex": true },
+              "rotulo": "Esperando você",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "css": "ul:has(button[aria-label^='Aprovar'])" },
+              "rotulo": "Sugestões da IA",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Lendo uma sugestão",
+          "texto": "Cada linha começa pelo nome do negócio, seguido do cliente, da etapa do funil em que ele está e de há quanto tempo a IA fez a sugestão. Logo abaixo vem o próximo passo, com as palavras da IA. Aqui a Bia sugere confirmar com a Fernanda o retorno de quinta com o Dr. Paulo.",
+          "destaques": [
+            {
+              "alvo": { "texto": "Retorno pós-cirúrgico — Fernanda Oliveira", "exato": true },
+              "rotulo": "O negócio",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "texto": "Confirmar com a Fernanda o retorno de quinta às 9h30 com o Dr. Paulo", "exato": true },
+              "rotulo": "O próximo passo sugerido",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "propostas-da-ia-decidindo",
+      "titulo": "Aprovando ou ignorando uma sugestão",
+      "objetivo": "Decidir uma sugestão da IA e conferir a decisão no histórico.",
+      "papel": "agent",
+      "busca": [
+        "aprovar proposta da ia",
+        "ignorar sugestão",
+        "recusar sugestão da ia",
+        "já decididas",
+        "histórico de decisões"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Aprovar ou Ignorar",
+          "rota": "/app/ai/proposals",
+          "texto": "Embaixo de cada sugestão há dois botões. \"Aprovar\" diz que a equipe concorda com o próximo passo. \"Ignorar\" diz que ele não serve. Os dois ficam registrados no histórico do negócio: ignorar também é uma decisão, não um esquecimento. Quem tem só permissão de leitura vê a lista, mas os botões ficam apagados.",
+          "antes": [{ "acao": "aguardar", "alvo": { "texto": "Retorno pós-cirúrgico — Fernanda Oliveira", "exato": true } }],
+          "destaques": [
+            {
+              "alvo": { "texto": "Aprovar", "exato": true, "n": 0 },
+              "rotulo": "Aprovar",
+              "tipo": "seta"
+            },
+            {
+              "alvo": { "texto": "Ignorar", "exato": true, "n": 0 },
+              "rotulo": "Ignorar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": { "texto": "Aprovar", "exato": true, "n": 0 }
+        },
+        {
+          "id": "p2",
+          "titulo": "A sugestão sai da lista",
+          "texto": "Ao aprovar, a sugestão da Fernanda sai da lista e o número da aba \"Aguardando decisão\" diminui. Ela também some do cartão do negócio no funil. Aprovar não manda nada ao cliente: quem faz o que foi combinado é a equipe. Para ver o que já foi decidido, abra a aba \"Já decididas\".",
+          "antes": [
+            { "acao": "click", "alvo": { "texto": "Aprovar", "exato": true, "n": 0 } },
+            { "acao": "esperar", "ms": 1500 }
+          ],
+          "destaques": [
+            {
+              "alvo": { "role": "tab", "nome": "^Aguardando decisão", "regex": true },
+              "rotulo": "Uma a menos",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "role": "tab", "nome": "Já decididas", "exato": true },
+              "rotulo": "Histórico",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": { "role": "tab", "nome": "Já decididas", "exato": true }
+        },
+        {
+          "id": "p3",
+          "titulo": "As decisões ficam registradas",
+          "texto": "A aba \"Já decididas\" mostra cada decisão, da mais nova para a mais antiga, com o selo \"Aprovada\" ou \"Ignorada\", o negócio, quem decidiu e quando. No topo está a que você acabou de aprovar. Mais abaixo, uma sugestão que a Ana ignorou: oferecer à Juliana o pacote de 10 sessões.",
+          "antes": [
+            { "acao": "click", "alvo": { "role": "tab", "nome": "Já decididas", "exato": true } },
+            { "acao": "aguardar", "alvo": { "texto": "Ignorada", "exato": true } }
+          ],
+          "destaques": [
+            {
+              "alvo": { "texto": "Aprovada", "exato": true, "n": 0 },
+              "rotulo": "A que você aprovou",
+              "tipo": "seta"
+            },
+            {
+              "alvo": { "texto": "Ignorada", "exato": true },
+              "rotulo": "Ignorar também conta",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

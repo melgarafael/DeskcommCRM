@@ -78,6 +78,11 @@ const REPUTACOES: Array<[number | null, number | null]> = [
 const OFERTAS: Array<[OfertaDaCampanha[], number | null]> = [
   [["site"], null],
   [["automacao_crm"], 80],
+  [["automacao_n8n"], 80],
+  [["automacao_crm", "automacao_n8n"], 80],
+  [["site", "automacao_crm"], 80],
+  [["site", "automacao_n8n"], 80],
+  [["site", "automacao_crm", "automacao_n8n"], 80],
 ];
 const FALTAS: ItemDoRaioX[] = ["whatsapp", "tel", "mapa"];
 
@@ -114,6 +119,7 @@ function textosDa(e: EstrategiaDoLead): string[] {
     e.cenario,
     e.angulo,
     e.proximoPasso,
+    ...(e.complementar ? [e.complementar] : []),
     ...e.ganchos,
     ...e.objecoes.flatMap((o) => [o.objecao, o.resposta]),
   ];
@@ -149,9 +155,9 @@ describe("sem tradutor, o texto é o de antes (o que o agente recebe)", () => {
     expect(comProblemas.ganchos).toContain(
       "Problemas detectados: página praticamente vazia (não apresenta serviços nem contato); o site responde com erro (503).",
     );
-    expect(comProblemas.ganchos).toContain(
-      "Faltas concretas no site: whatsapp, tel — cite uma como exemplo específico.",
-    );
+    // O gancho das faltas do checklist deixou de existir (#3723): `falta-tel`
+    // em site com `wa.me` mandava a empresa ouvir que não tem telefone.
+    expect(comProblemas.ganchos.some((g) => g.startsWith("Faltas concretas no site"))).toBe(false);
     expect(vocabularioDoNicho("pet shop")).toBe("clientes de pet shop");
     expect(vocabularioDoNicho("")).toBe("clientes novos");
   });
@@ -183,8 +189,9 @@ describe("sem tradutor, o texto é o de antes (o que o agente recebe)", () => {
         verificado_em: "2026-10-10T12:00:00.000Z",
       },
     );
+    // `falta-tel` do checklist não entra no campo que o agente lê (#3723).
     expect(dados["Auditoria"]).toBe(
-      "Site com problemas (verificado em 10/10/2026) — não abre direito no celular; o site responde com erro (503); sem telefone clicável",
+      "Site com problemas (verificado em 10/10/2026) — não abre direito no celular; o site responde com erro (503)",
     );
     const bloco = blocoDeEstrategiaParaAgente(montarEstrategia({ ...base, classe: "fora-do-ar" }));
     expect(bloco).toContain("Cenário: Site fora do ar");
@@ -245,12 +252,22 @@ describe("toda frase que a tela pode mostrar tem espanhol", () => {
   });
 
   it("com o t em espanhol, nada sai em português nem com marcador sobrando", () => {
+    // A matriz tem ~127 mil entradas: um `expect` por frase eram ~1,4 milhão de
+    // asserções, 13 s numa máquina parada e o prazo de 15 s estourado no CI. O
+    // laço junta o que reprova e a asserção é uma só, sobre o conjunto inteiro.
+    const comMarcador = new Set<string>();
+    const cenarioEmPortugues = new Set<string>();
+    let casos = 0;
     for (const entrada of matriz()) {
       const pt = montarEstrategia(entrada);
       const es = montarEstrategia(entrada, paraEspanhol);
-      for (const texto of textosDa(es)) expect(texto).not.toMatch(/\{[a-z]+\}/);
-      expect(es.cenario).not.toBe(pt.cenario);
+      for (const texto of textosDa(es)) if (/\{[a-z]+\}/.test(texto)) comMarcador.add(texto);
+      if (es.cenario === pt.cenario) cenarioEmPortugues.add(pt.cenario);
+      casos++;
     }
+    expect(casos).toBeGreaterThan(1000);
+    expect([...comMarcador]).toEqual([]);
+    expect([...cenarioEmPortugues]).toEqual([]);
     expect(descreverProblema("http-503", paraEspanhol)).toBe("el sitio responde con error (503)");
     expect(pontuarCandidato(5, 120, "site-ok", "site", true, paraEspanhol).motivo).toBe(
       "nota alta + volumen de reseñas · verificación pendiente",

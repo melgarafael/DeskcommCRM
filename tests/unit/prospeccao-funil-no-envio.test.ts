@@ -236,6 +236,23 @@ describe("triarCandidato", () => {
     expect(dono?.params).toEqual([ORG, "alheio", CAMPANHA, "place-1"]);
   });
 
+  it("`contact_id` preenchido não é passe livre: se o telefone acha OUTRO contato, pula", async () => {
+    // A candidata já carrega um contato (o da pegada desta campanha), mas o
+    // telefone agora pertence a um atendimento alheio. Antes bastava o
+    // `contact_id` vir preenchido para seguir para a abordagem fria.
+    const { db } = bancoFalso({ contatosConhecidos: [{ id: "alheio" }] });
+    expect(await triarCandidato(db, ORG, CAMPANHA, candidato(1, { contact_id: CONTATO }))).toEqual({
+      motivo: "Contato já existe no CRM; atendimento preservado.",
+    });
+  });
+
+  it("controle: `contact_id` preenchido e o telefone acha o MESMO contato, segue com ele", async () => {
+    const { db } = bancoFalso({ contatosConhecidos: [{ id: CONTATO }] });
+    expect(await triarCandidato(db, ORG, CAMPANHA, candidato(1, { contact_id: CONTATO }))).toEqual({
+      contatoDaCampanha: CONTATO,
+    });
+  });
+
   it("sem telefone: pula, e nem consulta o CRM", async () => {
     const { db, chamadas } = bancoFalso();
     expect(await triarCandidato(db, ORG, CAMPANHA, candidato(1, { phone: null }))).toEqual({
@@ -271,6 +288,17 @@ describe("criarPegadaDoCandidato", () => {
     expect(linha).toMatchObject({ status: "queued", conversation_id: CONVERSA });
   });
 
+  it("o cadastro do contato vai pela porta `prospeccao`: a ÚNICA conversa é a do canal da campanha", async () => {
+    // Pela porta `manual` o cadastro abria outra conversa no telefone mais
+    // antigo da org, antes da `beginServiceAtOrigin` abrir a da campanha.
+    const { db } = bancoFalso();
+    await criarPegadaDoCandidato(db, {} as never, ORG, campanha, configOnSend, candidato(1), null);
+
+    expect(m.contato.mock.calls[0]?.[4]).toEqual({ porta: "prospeccao" });
+    expect(m.fronteira).toHaveBeenCalledTimes(1);
+    expect(m.fronteira).toHaveBeenCalledWith({}, ORG, CONTATO, configOnSend.channel_session_id);
+  });
+
   it("idempotente: contato da campanha e negócio que já existem não são criados de novo", async () => {
     const { db } = bancoFalso({ negocioExistente: { id: NEGOCIO } });
     await criarPegadaDoCandidato(
@@ -285,6 +313,216 @@ describe("criarPegadaDoCandidato", () => {
     expect(m.contato).not.toHaveBeenCalled();
     expect(m.negocio).not.toHaveBeenCalled();
     expect(m.fronteira).toHaveBeenCalledTimes(1);
+  });
+
+  // Spec 26 §3.2: o contato NOVO nasce com os links que a busca achou, nas chaves certas.
+  // O website do Instagram cai em `link_instagram` (e não em `link_site`).
+  it("contato novo nasce com os links do candidato nas chaves link_<tipo> (spec 26)", async () => {
+    const { db } = bancoFalso();
+    await criarPegadaDoCandidato(
+      db,
+      {} as never,
+      ORG,
+      campanha,
+      configOnSend,
+      candidato(1, {
+        data: {
+          name: "Clínica 1",
+          key: "place-1",
+          maps_url: "https://maps.app.goo.gl/clinica1",
+          socials: ["https://www.facebook.com/clinica1"],
+          website: "https://www.instagram.com/clinica1/",
+        },
+      }),
+      null,
+    );
+    expect(m.contato.mock.calls[0]?.[2].custom_fields).toEqual({
+      link_facebook: "https://www.facebook.com/clinica1",
+      link_instagram: "https://www.instagram.com/clinica1/",
+      link_google_meu_negocio: "https://maps.app.goo.gl/clinica1",
+    });
+  });
+
+  // A aba Diagnóstico da ficha: a categoria da busca vira o `segmento` do contato NOVO,
+  // ao lado dos links, pelo esquema central (lib/contacts/diagnostico-do-contato.ts).
+  it("contato novo nasce com o segmento copiado da categoria da busca", async () => {
+    const { db } = bancoFalso();
+    await criarPegadaDoCandidato(
+      db,
+      {} as never,
+      ORG,
+      campanha,
+      configOnSend,
+      candidato(1, {
+        data: {
+          name: "Clínica 1",
+          key: "place-1",
+          category: " Dentista ",
+          maps_url: "https://maps.app.goo.gl/clinica1",
+          socials: [],
+        },
+      }),
+      null,
+    );
+    expect(m.contato.mock.calls[0]?.[2].custom_fields).toEqual({
+      link_google_meu_negocio: "https://maps.app.goo.gl/clinica1",
+      segmento: "Dentista",
+    });
+  });
+
+  // A organização que já tem campo de CONTATO `segmento` (aqui, com padrão de lista
+  // fechada): o createContactHandler conferiria a categoria do Maps contra esse padrão e
+  // recusaria com 422, e a campanha não abordaria ninguém. O segmento fica de fora; os
+  // links seguem.
+  it("⭐ organização com campo de contato `segmento` próprio: a categoria não é copiada", async () => {
+    const { db } = bancoFalso();
+    const settings = {
+      fields: [
+        {
+          key: "segmento",
+          label: "Segmento",
+          type: "text",
+          escopo: "contato",
+          padrao: "^(Varejo|Serviços|Indústria)$",
+        },
+      ],
+    };
+    const ordem = vi.fn(async () => ({ data: [{ settings }], error: null }));
+    const admin = { from: vi.fn(() => ({ select: () => ({ eq: () => ({ order: ordem }) }) })) };
+    await criarPegadaDoCandidato(
+      db,
+      admin as never,
+      ORG,
+      campanha,
+      configOnSend,
+      candidato(1, {
+        data: {
+          name: "Clínica 1",
+          key: "place-1",
+          category: "Dentista",
+          maps_url: "https://maps.app.goo.gl/clinica1",
+          socials: [],
+        },
+      }),
+      null,
+    );
+    expect(admin.from).toHaveBeenCalledWith("crm_pipelines");
+    expect(ordem).toHaveBeenCalled();
+    expect(m.contato.mock.calls[0]?.[2].custom_fields).toEqual({
+      link_google_meu_negocio: "https://maps.app.goo.gl/clinica1",
+    });
+  });
+
+  // #4459 parte 2: o que a EQUIPE escreveu na planilha vira a aba Diagnóstico do contato
+  // NOVO, assinado por quem importou (`diag_por`/`diag_em`), pelo esquema central.
+  const IMPORTOU = "usuario:12121212-1212-4121-8121-121212121212";
+  const comContextoDaEquipe = {
+    name: "Clínica 1",
+    key: "place-1",
+    maps_url: "https://maps.app.goo.gl/clinica1",
+    socials: [],
+    contexto_da_equipe: {
+      diagnostico: "Agenda só por telefone.",
+      oferta: "Site com agenda online.",
+      contexto: "Indicação da Marta.",
+      por: IMPORTOU,
+      em: "2026-11-12T12:00:00.000Z",
+    },
+  };
+
+  it("contato novo nasce com o diagnóstico da equipe e a autoria de quem importou", async () => {
+    const { db } = bancoFalso();
+    await criarPegadaDoCandidato(
+      db,
+      {} as never,
+      ORG,
+      campanha,
+      configOnSend,
+      candidato(1, { data: comContextoDaEquipe }),
+      null,
+    );
+    expect(m.contato.mock.calls[0]?.[2].custom_fields).toEqual({
+      link_google_meu_negocio: "https://maps.app.goo.gl/clinica1",
+      diag_resumo: "Agenda só por telefone.",
+      diag_oferta: "Site com agenda online.",
+      diag_observacoes: "Indicação da Marta.",
+      diag_por: IMPORTOU,
+      diag_em: "2026-11-12T12:00:00.000Z",
+    });
+  });
+
+  it("⭐ organização com campo de contato `diag_resumo` próprio: esse fica de fora, o resto entra", async () => {
+    const { db } = bancoFalso();
+    const settings = {
+      fields: [{ key: "diag_resumo", label: "Resumo", type: "text", escopo: "contato" }],
+    };
+    const ordem = vi.fn(async () => ({ data: [{ settings }], error: null }));
+    const admin = { from: vi.fn(() => ({ select: () => ({ eq: () => ({ order: ordem }) }) })) };
+    await criarPegadaDoCandidato(
+      db,
+      admin as never,
+      ORG,
+      campanha,
+      configOnSend,
+      candidato(1, { data: comContextoDaEquipe }),
+      null,
+    );
+    // Sem categoria: a leitura das definições acontece por causa do contexto da equipe.
+    expect(ordem).toHaveBeenCalled();
+    expect(m.contato.mock.calls[0]?.[2].custom_fields).toEqual({
+      link_google_meu_negocio: "https://maps.app.goo.gl/clinica1",
+      diag_oferta: "Site com agenda online.",
+      diag_observacoes: "Indicação da Marta.",
+      diag_por: IMPORTOU,
+      diag_em: "2026-11-12T12:00:00.000Z",
+    });
+  });
+
+  it("sem contexto da equipe e sem categoria, as definições nem são lidas (como antes)", async () => {
+    const { db } = bancoFalso();
+    const admin = { from: vi.fn() };
+    await criarPegadaDoCandidato(
+      db,
+      admin as never,
+      ORG,
+      campanha,
+      configOnSend,
+      candidato(1, {
+        data: { name: "Clínica 1", key: "place-1", maps_url: "https://maps.app.goo.gl/clinica1", socials: [] },
+      }),
+      null,
+    );
+    // As DEFINIÇÕES (`crm_pipelines`) não são lidas. Ler se o módulo `crm_b2b` está ligado
+    // (#4775: platform_config/modulos_instalados) é outra pergunta, e acontece sempre.
+    expect(admin.from).not.toHaveBeenCalledWith("crm_pipelines");
+    expect(m.contato.mock.calls[0]?.[2].custom_fields).toEqual({
+      link_google_meu_negocio: "https://maps.app.goo.gl/clinica1",
+    });
+  });
+
+  // Spec 26 §3.2/§7.1: contato REAPROVEITADO não é tocado na abordagem. Não recria o contato
+  // e não recebe update de links; ficha que já existe só se completa pelo botão.
+  it("contato reaproveitado: não recria o contato e não recebe update de links na abordagem (spec 26 §7.1)", async () => {
+    const { db, chamadas } = bancoFalso();
+    await criarPegadaDoCandidato(
+      db,
+      {} as never,
+      ORG,
+      campanha,
+      configOnSend,
+      candidato(1, {
+        data: {
+          name: "Clínica 1",
+          key: "place-1",
+          maps_url: null,
+          socials: [],
+          website: "https://www.clinica1.com.br/",
+        },
+      }),
+      CONTATO,
+    );
+    expect(m.contato).not.toHaveBeenCalled();
+    expect(chamadas.some((c) => c.sql.includes("update public.contacts"))).toBe(false);
   });
 });
 
@@ -415,14 +653,19 @@ describe("prepararCandidatoNoEnvio: os casos de borda que o revisor cego apontou
  */
 type Chamada = { table: string; data: Record<string, unknown> };
 function adminDoMotor(opcoes: { regras: unknown[]; negocio: Record<string, unknown> | null }) {
-  const registro: { inserts: Chamada[]; updates: Chamada[]; rpcs: { fn: string; args: Record<string, unknown> }[] } = {
+  const registro: {
+    inserts: Chamada[];
+    updates: Chamada[];
+    rpcs: { fn: string; args: Record<string, unknown> }[];
+  } = {
     inserts: [],
     updates: [],
     rpcs: [],
   };
 
   const listar = (table: string, mode: string, data: Record<string, unknown> | null) => {
-    if (table === "automation_rules" && mode === "select") return { data: opcoes.regras, error: null };
+    if (table === "automation_rules" && mode === "select")
+      return { data: opcoes.regras, error: null };
     if (mode === "insert") {
       registro.inserts.push({ table, data: data ?? {} });
       return { error: null };
@@ -439,7 +682,8 @@ function adminDoMotor(opcoes: { regras: unknown[]; negocio: Record<string, unkno
       registro.inserts.push({ table, data: data ?? {} });
       return { data: { id: "run-1" }, error: null };
     }
-    if (table === "automation_rules" && mode === "select") return { data: { run_count: 0 }, error: null };
+    if (table === "automation_rules" && mode === "select")
+      return { data: { run_count: 0 }, error: null };
     if (table === "crm_leads" && mode === "select") return { data: opcoes.negocio, error: null };
     return { data: null, error: null };
   };
@@ -473,7 +717,9 @@ function adminDoMotor(opcoes: { regras: unknown[]; negocio: Record<string, unkno
       // `RETURNING` devolveria é o que a ação usa para saber se houve escrita.
       if (fn === "fn_lead_adicionar_etiquetas") {
         const antes = (opcoes.negocio?.tags as string[] | undefined) ?? [];
-        const adicionadas = [...new Set(args.p_etiquetas as string[])].filter((t) => !antes.includes(t));
+        const adicionadas = [...new Set(args.p_etiquetas as string[])].filter(
+          (t) => !antes.includes(t),
+        );
         return { data: { tags: [...antes, ...adicionadas], adicionadas }, error: null };
       }
       return { data: null, error: null };
@@ -583,7 +829,10 @@ describe("o negócio que a campanha abre: a regra de `lead.created` RODA (#3072)
     });
     // O carimbo EXATO que a ação de regra escreve (`create-or-move-lead.ts`,
     // `send-ai-message.ts`, `send-whatsapp.ts`): `rule:<uuid da regra>`.
-    const resultado = await runAutomationForEvent(motor.admin, eventoDoNegocio({ request_id: `rule:${REGRA}` }));
+    const resultado = await runAutomationForEvent(
+      motor.admin,
+      eventoDoNegocio({ request_id: `rule:${REGRA}` }),
+    );
 
     expect(resultado).toEqual({
       consumer_key: AUTOMATION_CONSUMER_KEY,
@@ -592,5 +841,128 @@ describe("o negócio que a campanha abre: a regra de `lead.created` RODA (#3072)
     });
     expect(motor.rpcs).toHaveLength(0);
     expect(motor.inserts).toHaveLength(0);
+  });
+});
+
+describe("sem WhatsApp (lib/prospecting/whatsapp.ts): o produto tira, e o motivo diz isso", () => {
+  const semZap = (n: number, extra: Record<string, unknown> = {}) =>
+    candidato(n, {
+      data: {
+        name: `Clínica ${n}`,
+        key: `place-${n}`,
+        maps_url: null,
+        socials: [],
+        whatsapp: { existe: false, verificado_em: "2026-11-02T12:00:00Z" },
+      },
+      ...extra,
+    });
+
+  it("triarCandidato: pula com o motivo, sem nem consultar o CRM", async () => {
+    const { db, chamadas } = bancoFalso();
+    expect(await triarCandidato(db, ORG, CAMPANHA, semZap(1))).toEqual({
+      motivo: "Sem WhatsApp neste número.",
+    });
+    expect(chamadas).toHaveLength(0);
+  });
+
+  it.each([
+    { modo: "on_send", config: configOnSend },
+    { modo: "on_start", config: configOnStart },
+  ])(
+    "`$modo`: a desmarcada por não ter WhatsApp vira 'Não abordado' com ESSE motivo, não 'pelo operador'",
+    async ({ config }) => {
+      const { db, chamadas } = bancoFalso();
+      // O preparo já a desmarcou (selected=false); mesmo marcada de volta pela API, não entra.
+      await enfileirarCandidatos(db, {} as never, ORG, campanha, config, [
+        semZap(1, { selected: false }),
+        semZap(2),
+        candidato(3),
+      ]);
+      const puladas = chamadas
+        .filter((c) => c.sql.includes("set status='skipped'"))
+        .map((c) => [c.params[1], c.params[2]]);
+      expect(puladas).toEqual([
+        [uuid(101), "Sem WhatsApp neste número."],
+        [uuid(102), "Sem WhatsApp neste número."],
+      ]);
+    },
+  );
+});
+
+describe("módulo Empresas e pessoas (#3198, fatia 2): o modo DESLIGADO é o de hoje", () => {
+  const EMPRESA = uuid(900);
+
+  /**
+   * O dublê do admin devolve a `platform_config` com ou sem a chave do módulo, e
+   * uma empresa "nova" quando a prospecção insere. `modulosLigados` também lê
+   * `modulos_instalados` — fora do escopo desta fatia, vazio nos dois modos.
+   */
+  function adminComModulo(ligado: boolean) {
+    const tabelas: string[] = [];
+    const query = (tabela: string) => {
+      tabelas.push(tabela);
+      const fim = {
+        data:
+          tabela === "platform_config" && ligado
+            ? [{ chave: "MODULO_CRM_B2B", valor: "ligado" }]
+            : [],
+        error: null,
+      };
+      const q = {
+        select: () => q,
+        insert: () => q,
+        update: () => q,
+        delete: () => q,
+        eq: () => q,
+        in: () => q,
+        is: () => q,
+        limit: () => q,
+        order: () => q,
+        // Nenhuma empresa existe ainda: o caminho é o de criação.
+        maybeSingle: async () => ({ data: null, error: null }),
+        single: async () => ({ data: { id: EMPRESA }, error: null }),
+        then: (ok: (v: unknown) => unknown, erro?: (e: unknown) => unknown) =>
+          Promise.resolve(fim).then(ok, erro),
+      };
+      return q;
+    };
+    return { admin: { from: query } as never, tabelas };
+  }
+
+  it("desligado: contato, negócio e conversa nascem como hoje, e NENHUMA tabela do módulo é tocada", async () => {
+    const { db, chamadas } = bancoFalso();
+    const { admin, tabelas } = adminComModulo(false);
+
+    const linha = await criarPegadaDoCandidato(
+      db,
+      admin,
+      ORG,
+      campanha,
+      configOnSend,
+      candidato(1),
+      null,
+    );
+
+    // A pegada de sempre: contato (com a base legal), negócio e conversa.
+    expect(m.contato).toHaveBeenCalledTimes(1);
+    expect(m.negocio).toHaveBeenCalledTimes(1);
+    expect(m.fronteira).toHaveBeenCalledTimes(1);
+    expect(linha).toMatchObject({ status: "queued", conversation_id: CONVERSA });
+
+    // Nada de empresa: nem leitura, nem escrita. E o contato não é reescrito.
+    expect(tabelas).not.toContain("companies");
+    expect(gravou(chamadas, "update contacts set company_id")).toBe(false);
+  });
+
+  it("ligado: a mesma pegada, mais a empresa — o contato nasce com company_id", async () => {
+    const { db, chamadas } = bancoFalso();
+    const { admin, tabelas } = adminComModulo(true);
+
+    await criarPegadaDoCandidato(db, admin, ORG, campanha, configOnSend, candidato(1), null);
+
+    expect(tabelas).toContain("companies");
+    expect(gravou(chamadas, "update contacts set company_id")).toBe(true);
+    const vinculo = chamadas.find((c) => c.sql.includes("update contacts set company_id"));
+    expect(vinculo?.params).toEqual([ORG, CONTATO, EMPRESA]);
   });
 });

@@ -9,6 +9,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { invalidarOrg } from "@/lib/auth/cache-curto";
 import { logger } from "@/lib/logger";
 import { ehOperante, type TipoDeSuspensao } from "@/lib/organizacao/operante";
 
@@ -67,5 +68,6 @@ export async function reativarSeSuspensaPorCobranca(
     logger.error("cobrança: reativação da empresa falhou", { org: org.id, codigo: error.code });
     return null;
   }
+  invalidarOrg(org.id);
   return { reativada: (data as { changed?: unknown } | null)?.changed === true };
 }

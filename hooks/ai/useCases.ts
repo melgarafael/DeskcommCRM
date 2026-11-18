@@ -71,6 +71,8 @@ export interface CaseEvent {
   body: string | null;
   /** `metadata.source` do evento: "whatsapp" quando a equipe respondeu pelo número de avisos. */
   source: string | null;
+  /** `metadata.fora_da_fronteira`: "true" quando a resposta do cliente chegou fora do atendimento atual. */
+  fora_da_fronteira?: string | null;
   created_at: string;
 }
 
@@ -114,6 +116,27 @@ export function useReplyCase() {
     mutationFn: ({ id, action, body }: { id: string; action: CaseHumanAction; body: string }) =>
       apiClient
         .post<{ data: { status: CaseStatus; delivery?: "service_stale" } }>(`/api/v1/ai/cases/${id}/reply`, { action, body })
+        .then((r) => r.data),
+    onSettled: (_data, _err, vars) => {
+      qc.invalidateQueries({ queryKey: ["ai-case", vars.id] });
+      qc.invalidateQueries({ queryKey: ["ai-cases"] });
+    },
+  });
+}
+
+/**
+ * Encerrar o caso SEM avisar o cliente (#3810) — rota própria, com a nota
+ * obrigatória e nenhum envio. Separada de `useReplyCase` porque o corpo é
+ * `{note}` e a ação não existe na matriz do `.../reply`: juntar as duas num
+ * mutation só faria o cliente da API inventar um `action` que o servidor não
+ * conhece.
+ */
+export function useCloseCaseWithoutReply() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, note }: { id: string; note: string }) =>
+      apiClient
+        .post<{ data: { status: CaseStatus } }>(`/api/v1/ai/cases/${id}/close`, { note })
         .then((r) => r.data),
     onSettled: (_data, _err, vars) => {
       qc.invalidateQueries({ queryKey: ["ai-case", vars.id] });

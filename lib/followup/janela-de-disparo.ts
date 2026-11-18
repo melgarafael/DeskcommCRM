@@ -90,8 +90,12 @@ export async function canalDaConversa(
  * espelho em Supabase de `followupPublicadoDoEnrollment`
  * (`lib/agent-engine/agent/janela-de-followup.ts`, que fala `pg`): as MESMAS
  * três leituras, com o mesmo desfecho `null` quando agent/version não existe.
+ *
+ * Exportada porque a escolha de envio com compromisso (#3813) lê a MESMA
+ * configuração (`quando_ha_compromisso`, ao lado de `send_window`): duas
+ * leituras da mesma pergunta divergem no dia em que só uma for atualizada.
  */
-async function followupPublicado(
+export async function followupPublicadoSupabase(
   admin: SupabaseClient,
   organizationId: string,
   enrollmentId: string,
@@ -158,7 +162,7 @@ export async function decidirAdiamentoPorJanela(
   );
   const knobs = sessionId === null ? null : await knobsDoCanal(admin, entrada.organizationId, sessionId);
 
-  const followup = await followupPublicado(admin, entrada.organizationId, entrada.enrollmentId);
+  const followup = await followupPublicadoSupabase(admin, entrada.organizationId, entrada.enrollmentId);
   let fuso: string | null = null;
   if (followup !== null) {
     const { data: org, error: falhaOrg } = await admin

@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { provedorDaInstalacao } from "@/lib/cobranca/configuracao";
 import { sugestaoDoCadastro } from "@/lib/cobranca/documento";
+import { declararPlano, limitesDaTela } from "@/lib/cobranca/planos";
 import { lerUsoDaOrganizacao, type UsoDaOrganizacao } from "@/lib/cobranca/uso";
 import type { EstadoDaAssinatura, Modo, ProvedorDeCobranca } from "@/lib/cobranca/vocabulario";
 
@@ -27,6 +28,8 @@ export interface PlanoParaTroca {
   id: string;
   nome: string;
   preco_cents: number;
+  /** A moeda do plano (migration 9332): o preço se escreve nela. */
+  moeda: string;
   intervalo: string;
   max_assentos: number | null;
   max_canais: number | null;
@@ -39,6 +42,7 @@ export interface DadosDoPainel {
     id: string;
     nome: string;
     preco_cents: number;
+    moeda: string;
     intervalo: string;
     max_assentos: number | null;
     max_canais: number | null;
@@ -87,7 +91,7 @@ export async function lerPainelDaAssinatura(db: SupabaseClient, orgId: string): 
   const [planos, uso, gasto, org, daInstalacao] = await Promise.all([
     db
       .from("cobranca_planos")
-      .select("id, nome, preco_cents, intervalo, max_assentos, max_canais, teto_ia_usd_cents, arquivado_em, oferecido_ao_cliente"),
+      .select("id, nome, preco_cents, moeda, intervalo, max_assentos, max_canais, teto_ia_usd_cents, arquivado_em, oferecido_ao_cliente"),
     lerUsoDaOrganizacao(db, orgId),
     db.rpc("fn_gasto_de_ia_do_mes", { p_org: orgId }),
     db.from("organizations").select("timezone, cnpj").eq("id", orgId).maybeSingle(),
@@ -120,8 +124,11 @@ export async function lerPainelDaAssinatura(db: SupabaseClient, orgId: string): 
       : null,
     plano: plano
       ? {
-          id: plano.id, nome: plano.nome, preco_cents: plano.preco_cents, intervalo: plano.intervalo,
-          max_assentos: plano.max_assentos, max_canais: plano.max_canais, teto_ia_usd_cents: plano.teto_ia_usd_cents,
+          id: plano.id, nome: plano.nome, preco_cents: plano.preco_cents, moeda: plano.moeda, intervalo: plano.intervalo,
+          // o teto de cada recurso DERIVA da declaração do plano (planos.ts): a
+          // linha que não trouxe uma coluna lança aqui, em vez de a tela mostrar
+          // "sem limite" para um SELECT que só esqueceu o campo.
+          ...limitesDaTela(declararPlano(plano)),
         }
       : null,
     uso,
@@ -133,9 +140,11 @@ export async function lerPainelDaAssinatura(db: SupabaseClient, orgId: string): 
     },
     planosParaTroca: plano
       ? todos
-          .filter((p) => p.arquivado_em === null && p.oferecido_ao_cliente && p.intervalo === plano.intervalo && p.id !== plano.id)
-          .map((p) => ({ id: p.id, nome: p.nome, preco_cents: p.preco_cents, intervalo: p.intervalo,
-            max_assentos: p.max_assentos, max_canais: p.max_canais, teto_ia_usd_cents: p.teto_ia_usd_cents }))
+          // Mesma moeda (migration 9332): a troca entre moedas é recusada em `troca.ts`,
+          // então a tela nem a oferece.
+          .filter((p) => p.arquivado_em === null && p.oferecido_ao_cliente && p.intervalo === plano.intervalo && p.moeda === plano.moeda && p.id !== plano.id)
+          .map((p) => ({ id: p.id, nome: p.nome, preco_cents: p.preco_cents, moeda: p.moeda, intervalo: p.intervalo,
+            ...limitesDaTela(declararPlano(p)) }))
       : [],
   };
 }

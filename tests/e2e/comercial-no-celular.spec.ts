@@ -255,6 +255,10 @@ test.describe("vendas e dinheiro no celular", () => {
       expect(toque.acima, `${nome}: controle — 1px acima da aba ainda acerta a aba`).toBe(false);
       expect(toque.borda, `${nome}: a borda de cima não recebe o toque`).toBe(true);
     }
+    // A lista de fontes chega depois das abas (busca no navegador, esqueleto
+    // antes). Medir no esqueleto é medir outra tela: o vermelho dependia de
+    // quem chegava primeiro (5 de 14 runs da parte 7, com fonte de nome longo).
+    await expect(page.getByRole("button", { name: /Nova fonte|Criar primeira fonte/ })).toBeVisible({ timeout: 30_000 });
     await semRolagemNoMain(page, "Webhooks");
     await foto("02-webhooks");
 

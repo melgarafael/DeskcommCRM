@@ -152,6 +152,16 @@ const DECISOES: Record<string, Decisao> = {
     caminho: "cascata",
     razao: "Passo 1 da própria cascata: nome/rótulo, email, telefone, CPF, data de nascimento, consent, source_metadata e tags; is_anonymized/anonymized_at viram o que responde ao titular.",
   },
+  contact_identities: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao:
+      "PR da fatia 1 da #3764 (migration 9419): perfil de rede social não tem versão " +
+      "anonimizada que ainda sirva — o mesmo critério do passo 1b de `contact_phones`. Quem apaga é " +
+      "`trg_identidades_do_contato_anonimizado`, em `contacts` AFTER UPDATE OF is_anonymized: a " +
+      "anonimização continua sendo uma porta só, e a ficha deixa de carregar para onde a pessoa " +
+      "podia ser alcançada.",
+  },
   conversations: {
     decidida: "redigir",
     caminho: "cascata",
@@ -237,6 +247,11 @@ const DECISOES: Record<string, Decisao> = {
     razao: "0482 (grupos na inbox, #1647): subject é o NOME do grupo e vira null; contact_id aponta para o placeholder do grupo (contacts.kind = 'whatsapp_group'), e número, conversa e liga/desliga ficam. O que o TITULAR escreveu em grupo é redigido pelo gatilho fn_redigir_conversas_ao_anonimizar, em messages.",
   },
   // ── redigir pela virada de is_anonymized (gatilho) ────────────────────────
+  mensagens_agendadas: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao: "9336 (#3118, primeira parte): fn_mensagens_agendadas_contato_anonimizado troca o texto por '[redigido]', apaga o título e cancela o que ainda não saiu, na virada — o texto agendado é escrito PARA a pessoa e costuma nomeá-la. Horário, status e o vínculo com a mensagem enviada ficam: são a trilha do que a empresa mandou. Efeito provado em tests/invariants/lgpd-mensagem-agendada-do-contato-anonimizado.test.ts.",
+  },
   ai_reply_drafts: {
     decidida: "redigir",
     caminho: "gatilho",
@@ -247,10 +262,25 @@ const DECISOES: Record<string, Decisao> = {
     caminho: "gatilho",
     razao: "0184: title, description, notes, location_details e cancellation_reason são texto livre que nomeia a pessoa (queixa clínica numa clínica); gatilho da virada, com google/meet no mesmo acorde.",
   },
+  contact_phones: {
+    decidida: "redigir",
+    caminho: "cascata",
+    razao: "9043 (Spec 31 B1): os telefones extras e o `lid` do WhatsApp de cada um — apagados no passo 1b de fn_lgpd_cascade_redact_contact, depois do gatilho de grupo que ainda os lê.",
+  },
   contact_field_proposals: {
     decidida: "redigir",
     caminho: "gatilho",
     razao: "fn_apaga_propostas_de_contato_anonimizado: a fila guarda o VALOR proposto para virar escrita em contacts — apaga, não redige, porque proposta pendente de contato anonimizado não tem mais destinatário.",
+  },
+  contato_mcp_credenciais: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao: "9095: fn_mcp_contato_anonimizado_revoga_acessos agenda a revogação IMEDIATA na virada; o cron mcp-oauth-revogacao revoga no terceiro (RFC 7009 — precisa do token) e, com o contato anonimizado, apaga a linha.",
+  },
+  mcp_oauth_pedidos: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao: "9095: fn_mcp_contato_anonimizado_revoga_acessos APAGA os pedidos de autorização pendentes na virada — link de acesso de contato anonimizado não tem mais destinatário.",
   },
   crm_tasks: {
     decidida: "redigir",
@@ -298,6 +328,21 @@ const DECISOES: Record<string, Decisao> = {
     razao: "Doc 199 (pergunta 2 = A): ctwa_clid liga a pessoa ao anúncio em que clicou na Meta; fn_apaga_cliques_ctwa_de_contato_anonimizado (0806) APAGA as linhas do contato na virada de is_anonymized. Custo aceito: clique antigo reenviado pela Meta seria contado de novo.",
   },
   // ── manter: a linha e o conteúdo ficam, por decisão ───────────────────────
+  satisfacao_do_atendimento: {
+    decidida: "manter",
+    razao:
+      "Pesquisa de satisfacao (#4023): a linha guarda a NOTA (1 a 5), o estado e marcas de tempo — nenhum texto e nenhum dado pessoal. A anonimizacao reescreve o CONTATO e a linha passa a apontar para `Cliente Anonimizado #N`, que nao identifica ninguem; o texto da resposta mora em `messages`, que a cascata ja redige (`mensagem_da_resposta_id` e so um ponteiro, sem FK). No expurgo do contato, `contact_id` zera por `on delete set null` e a nota continua servindo a media da empresa. Apagar a linha na anonimizacao destruiria a serie historica de qualidade do atendimento sem proteger ninguem.",
+  },
+  automation_rule_contact_claims: {
+    decidida: "manter",
+    razao:
+      "Trava de corrida do dreno da automacao (#3267): guarda so identificadores (organizacao, regra, contato, evento) e o dado pessoal mora em `contacts`, que a cascata anonimiza. Apagar a linha aqui nao protege ninguem e destruiria a prova de que a regra ja executou — a chave unica e o proprio registro da corrida.",
+  },
+  automation_rule_runs: {
+    decidida: "manter",
+    razao:
+      "Recibo da execucao da regra automatica (#3267 acrescentou o `contact_id`, com `on delete set null` de proposito: o recibo sobrevive ao expurgo do contato). Guarda status, erro e o resultado das acoes — so as falhas vao detalhadas —, e o dado pessoal mora em `contacts`, que a cascata anonimiza. Apagar o recibo destruiria a prova de que a regra executou, que e justamente o que a opcao \"no maximo uma vez por contato\" precisa auditar; a coluna do contato zera sozinha no expurgo.",
+  },
   before_send_traces: {
     decidida: "manter",
     razao: "Traço de decisão do gate de envio (vetoed_gate/vetoed_code) para auditoria de POR QUE a mensagem não saiu; é código de vocabulário, não o conteúdo enviado — o corpo mora em messages.",
@@ -334,6 +379,11 @@ const DECISOES: Record<string, Decisao> = {
     decidida: "manter",
     razao: "token/utm/query de aterrissagem da Meta, mesmo motivo do gclid: identificador de campanha que só serve enquanto existir — apagar desfaz a atribuição sem proteger texto de ninguém.",
   },
+  ouvidoria_manifestacoes: {
+    decidida: "manter",
+    razao:
+      "O RELATO é o documento da manifestação (#3611): ele responde ao protocolo que já foi entregue a quem reclamou, e a ouvidoria precisa do texto para apurar — redigir apagaria a própria manifestação que a empresa tem de responder, e o prazo de resposta é sobre ela. A identificação do manifestante sai junto com o contato: `contact_id` é `on delete set null`, então apagar/anonimizar a pessoa desliga o vínculo e a linha continua legível só para os administradores (RLS da 9040). Redigir o TEXTO é decisão de produto da fatia de gestão (retenção e resposta), registrada aqui para não ser tomada por acidente.",
+  },
   send_ledger: {
     decidida: "manter",
     razao: "body_hash é IRREVERSÍVEL (a própria doutrina do invariante irmão manda `_hash` ficar de fora) e last_error/status são código; é a prova de que a mensagem saiu, sem guardar o que ela dizia.",
@@ -367,6 +417,7 @@ const DEZ_E_UM = [
  */
 beforeAll(() => {
   sql("select public.fn_financeiro_provisionar();");
+  sql("select public.fn_ouvidoria_provisionar();");
 });
 
 describe("LGPD: redact unificado — catálogo de FKs com decisão escrita", () => {

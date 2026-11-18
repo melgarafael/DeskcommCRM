@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { intervaloDeEspera, rodarLoopDaFila } from "@/lib/agent-engine/queue/loop";
+import { loadEnv } from "@/lib/agent-engine/env";
+import type { SonecaDaFila } from "@/lib/agent-engine/queue/soneca";
 import type { Logger } from "@/lib/agent-engine/obs/logger";
 
 /**
@@ -12,8 +14,9 @@ import type { Logger } from "@/lib/agent-engine/obs/logger";
  * derrubando o processo a cada `docker stop`.
  *
  * Sem Postgres e sem fake timers de propósito: `vi.useFakeTimers()` não fakeia o
- * `setTimeout` de `node:timers/promises`, que é o que o worker usa. Aqui o
- * `dormir` é injetado, então o tempo é do teste.
+ * `setTimeout` de `node:timers/promises`, que é o que o worker usa. Aqui a
+ * `soneca` é injetada, então o tempo é do teste — e o wake tem teste próprio
+ * com relógio virtual em `fila-acorda-quando-chega-trabalho`.
  */
 function logSpy(): Logger & { erros: { msg: string }[] } {
   const erros: { msg: string }[] = [];
@@ -26,7 +29,20 @@ function logSpy(): Logger & { erros: { msg: string }[] } {
   } as unknown as Logger & { erros: { msg: string }[] };
 }
 
-const INTERVALOS = { ociosoMs: 2_000, retryMs: 250 };
+const INTERVALOS = { ociosoMs: 2_000, retryMs: 250, ociosoMaxMs: 60_000 };
+
+/**
+ * Soneca de mentira: registra a espera pedida e NUNCA corta por wake — o tempo
+ * aqui é do teste. `dormir` é substituível para quem precisa simular o abort do
+ * desligamento. A geração é fixa, então a conferência do laço nunca dispara: o
+ * roteiro do wake tem teste próprio em `fila-acorda-quando-chega-trabalho`.
+ */
+function sonecaDeMentira(
+  dormiu: number[] = [],
+  dormir: SonecaDaFila["dormir"] = async (ms) => void dormiu.push(ms),
+): SonecaDaFila {
+  return { acordar: () => undefined, geracao: () => 0, dormir };
+}
 
 /**
  * Para o laço depois de `n` rodadas COMPLETAS.
@@ -42,10 +58,75 @@ function pararDepoisDe(n: number): { deveParar: () => boolean; contar: () => voi
 }
 
 describe("intervaloDeEspera", () => {
-  it("fila vazia (null) dorme o teto ocioso", () => {
+  it("primeira rodada com a fila vazia dorme o piso", () => {
     // Guarda o `case when` do relógio na camada JS: se `null` virasse 0 aqui, a
     // instalação parada voltaria a girar no ritmo curto — o defeito da issue.
     expect(intervaloDeEspera(null, INTERVALOS)).toBe(2_000);
+    expect(intervaloDeEspera(null, INTERVALOS, 0)).toBe(2_000);
+  });
+
+  it("10 rodadas ociosas seguidas nunca passam de 60 s", () => {
+    // A prova da issue #3688: o ritmo ocioso RECUA, dobra por rodada e para no
+    // teto. Sem o recuo, a instalação parada consulta o banco 30×/min para
+    // sempre (3.880 chamadas em 2h19 medidas pelo autor da issue). Sem o teto, o
+    // recuo viraria uma soneca de horas e a fila demoraria a acordar.
+    const esperas = Array.from({ length: 10 }, (_, rodadasOciosas) =>
+      intervaloDeEspera(null, INTERVALOS, rodadasOciosas),
+    );
+
+    expect(esperas).toEqual([
+      2_000, 4_000, 8_000, 16_000, 32_000, 60_000, 60_000, 60_000, 60_000, 60_000,
+    ]);
+    expect(Math.max(...esperas)).toBeLessThanOrEqual(60_000);
+  });
+
+  it("doc 242 (C): sem QUEUE_IDLE_MAX_INTERVAL_MS o recuo fica DESLIGADO", () => {
+    // Decisão do dono: na fila de respostas do agente, o comportamento de hoje é
+    // o default e o recuo é opt-in. O env é o mesmo `loadEnv` do worker, e o
+    // valor vai cru para `ociosoMaxMs` (workers/agent-worker/main.ts).
+    const base: NodeJS.ProcessEnv = {
+      NODE_ENV: "test",
+      SUPABASE_DB_URL: "postgresql://u:p@localhost:5432/db",
+      NEXT_PUBLIC_SUPABASE_URL: "https://x.supabase.co",
+      SUPABASE_SERVICE_ROLE_KEY: "service-key",
+    };
+    const rodadas = (envAtual: ReturnType<typeof loadEnv>) =>
+      Array.from({ length: 10 }, (_, n) =>
+        intervaloDeEspera(
+          null,
+          {
+            ociosoMs: envAtual.QUEUE_POLL_INTERVAL_MS,
+            retryMs: envAtual.QUEUE_CLAIM_RETRY_INTERVAL_MS,
+            ociosoMaxMs: envAtual.QUEUE_IDLE_MAX_INTERVAL_MS,
+          },
+          n,
+        ),
+      );
+
+    // `.env` antigo e `CHAVE=` vazia: piso fixo, como antes da #3688.
+    for (const envAtual of [loadEnv(base), loadEnv({ ...base, QUEUE_IDLE_MAX_INTERVAL_MS: "" })]) {
+      expect(envAtual.QUEUE_IDLE_MAX_INTERVAL_MS).toBeUndefined();
+      expect(new Set(rodadas(envAtual))).toEqual(new Set([2_000]));
+    }
+    // Quem liga, recua até o teto que escolheu.
+    expect(rodadas(loadEnv({ ...base, QUEUE_IDLE_MAX_INTERVAL_MS: "60000" })).at(-1)).toBe(60_000);
+  });
+
+  it("contador absurdo não vira Infinity nem NaN", () => {
+    // `2 ** 1000` é Infinity; `Math.min(Infinity, teto)` salva, mas o laço não
+    // pode depender disso para dormir o valor certo.
+    expect(intervaloDeEspera(null, INTERVALOS, 1_000)).toBe(60_000);
+    expect(intervaloDeEspera(null, INTERVALOS, -5)).toBe(2_000);
+  });
+
+  it("o recuo não vaza para os outros dois ramos", () => {
+    // O que a issue manda NÃO mudar: trabalho vencido que o claim não pegou
+    // segue no ritmo curto e job agendado segue acordando no vencimento, por
+    // mais rodadas ociosas que tenham vindo antes.
+    expect(intervaloDeEspera(0, INTERVALOS, 7)).toBe(250);
+    expect(intervaloDeEspera(-1, INTERVALOS, 7)).toBe(250);
+    expect(intervaloDeEspera(500, INTERVALOS, 7)).toBe(500);
+    expect(intervaloDeEspera(9_000, INTERVALOS, 7)).toBe(2_000);
   });
 
   it("job já vencido que o claim não pegou mantém o ritmo curto", () => {
@@ -82,7 +163,7 @@ describe("rodarLoopDaFila", () => {
       relogio,
       claimar,
       aoClaimar: contar,
-      dormir: async (ms) => void dormiu.push(ms),
+      soneca: sonecaDeMentira(dormiu),
       deveParar,
       intervalos: INTERVALOS,
       log: logSpy(),
@@ -92,8 +173,38 @@ describe("rodarLoopDaFila", () => {
     expect(relogio).toHaveBeenCalledTimes(3);
     // A 1ª espera é a curta porque a rodada do boot claimou sem consultar o
     // relógio: "claim vazio logo depois de trabalho" é o estado cap-cheio, que
-    // merece o ritmo rápido. Da 2ª em diante o relógio governa e é o teto.
-    expect(dormiu).toEqual([250, 2_000, 2_000, 2_000]);
+    // merece o ritmo rápido. Da 2ª em diante o relógio governa e o ritmo RECUA
+    // (issue #3688): 2 s, 4 s, 8 s — a instalação parada deixa de consultar o
+    // banco 30×/min. Sem o recuo esta lista sai [250, 2000, 2000, 2000].
+    expect(dormiu).toEqual([250, 2_000, 4_000, 8_000]);
+  });
+
+  it("fila vazia recua e volta ao mínimo no primeiro trabalho", async () => {
+    // O outro lado do recuo: uma fila que ACORDA não pode herdar a soneca que
+    // acumulou dormindo, senão o primeiro job de uma instalação parada espera o
+    // teto de 60 s para ser visto. Roteiro de 7 rodadas: 3 ociosas (2→4→8 s), um
+    // job vencido que o claim PEGA, uma rodada de retry curto e uma ociosa que
+    // tem de voltar ao PISO — sem o reset ela sairia 16 s.
+    const relogios: (number | null)[] = [null, null, null, 0, null];
+    const claims: { id: string }[][] = [[], [{ id: "job-1" }], []];
+    const relogio = vi.fn(async () => relogios.shift() ?? null);
+    const claimar = vi.fn(async () => claims.shift() ?? []);
+    const dormiu: number[] = [];
+    const { deveParar, contar } = pararDepoisDe(7);
+
+    await rodarLoopDaFila({
+      relogio,
+      claimar,
+      aoClaimar: contar,
+      soneca: sonecaDeMentira(dormiu),
+      deveParar,
+      intervalos: INTERVALOS,
+      log: logSpy(),
+    });
+
+    expect(dormiu).toEqual([250, 2_000, 4_000, 8_000, 250, 2_000]);
+    // O job foi despachado: a rodada que achou trabalho não dormiu nada.
+    expect(claimar).toHaveBeenCalledTimes(3);
   });
 
   it("relógio que LANÇA faz o laço claimar mesmo assim, e loga", async () => {
@@ -110,7 +221,7 @@ describe("rodarLoopDaFila", () => {
       },
       claimar,
       aoClaimar: contar,
-      dormir: async () => undefined,
+      soneca: sonecaDeMentira(),
       deveParar,
       intervalos: INTERVALOS,
       log,
@@ -135,9 +246,9 @@ describe("rodarLoopDaFila", () => {
         relogio: async () => null,
         claimar: async () => [],
         aoClaimar: () => undefined,
-        dormir: async () => {
+        soneca: sonecaDeMentira([], async () => {
           throw abortError;
-        },
+        }),
         deveParar: () => false,
         intervalos: INTERVALOS,
         log: logSpy(),
@@ -162,7 +273,7 @@ describe("rodarLoopDaFila", () => {
         despachados.push(...jobs);
         contar();
       },
-      dormir: async () => undefined,
+      soneca: sonecaDeMentira(),
       deveParar,
       intervalos: INTERVALOS,
       log: logSpy(),
@@ -185,7 +296,7 @@ describe("rodarLoopDaFila", () => {
       relogio,
       claimar: async () => [],
       aoClaimar: contar,
-      dormir: async () => undefined,
+      soneca: sonecaDeMentira(),
       deveParar,
       intervalos: INTERVALOS,
       log: logSpy(),

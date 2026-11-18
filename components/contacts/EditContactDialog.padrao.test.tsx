@@ -28,6 +28,13 @@ vi.mock("@/hooks/contacts/useUpdateContact", () => ({ useUpdateContact: () => us
 vi.mock("@/hooks/tags/useDefinirCorDaEtiqueta", () => ({
   useDefinirCorDaEtiqueta: () => ({ definirCor: vi.fn(async () => true) }),
 }));
+/* A leitura de sugestões de etiqueta também é react-query, e passou a acontecer
+   DENTRO do diálogo com a #3144 (a ficha pergunta ao vocabulário curado o que o
+   texto digitado casaria). Dublada pelo mesmo motivo da cor acima: este fixture
+   monta o diálogo sem provider, e aqui o assunto é o padrão dos campos. */
+vi.mock("@/hooks/contacts/useContactTagVocabulary", () => ({
+  useContactTagVocabulary: () => ({ data: [], isError: false }),
+}));
 const { mutateAsync, useUpdate } = vi.hoisted(() => ({
   mutateAsync: vi.fn(),
   useUpdate: { mutateAsync: vi.fn(), isPending: false },

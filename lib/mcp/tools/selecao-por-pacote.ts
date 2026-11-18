@@ -79,6 +79,23 @@ import { entraPorPacote, type ToolBundle, type ToolRisk } from "./pacotes";
  * argumento (a heurística de degradação) que ninguém mediu, que é exatamente o
  * que o bloco ⚠️ acima diz. O dia em que o `evoluir` exigir 28, o passo volta a
  * ser ele.
+ *
+ * ═══ Continua 27: o documento do negócio foi para o `reter`, não para o default ═
+ *
+ * As duas capacidades de leitura do anexo do card (`crm_list_lead_attachments` e
+ * `crm_get_lead_attachment`, #4544 item 2) nasceram com `pacotes: ["vender"]`,
+ * que é o default do onboarding, e a medição a partir do agente que nasce
+ * mostrou o que este comentário já previa: o `evoluir` — o menor segundo pacote
+ * — subia de 27 para 29 e NENHUM segundo pacote cabia no teto 27. Era o beco do
+ * D3 de novo, e o passo "natural" seria 29.
+ *
+ * Não se subiu o teto. O `vender` é o default que TODO agente novo paga, e o
+ * mesmo número está sendo movido pelo #4534 (aberto, nosso, leva a 31): duas
+ * mudanças do mesmo teto em PRs diferentes são conflito e disputa de produto.
+ * A saída foi de PACOTE, não de constante: as duas foram para o `reter`, ao lado
+ * do `crm_propose_lead_fields_from_document`, que consome o id que a listagem
+ * devolve. Medido depois da mudança: onboarding 22 (era 24), evoluir 27 (voltou
+ * ao valor que 27 atende), reter 34.
  */
 export const TETO_TOOLS_POR_AGENTE = 27;
 
@@ -157,9 +174,17 @@ export function ligarPacote(
   for (const name of capacidadesAutomaticasDoPacote(catalogo, pacote)) {
     atual.add(name);
   }
+  // Id que NÃO é do catálogo compilado sobrevive ao pacote. Hoje é a escolha de
+  // ferramenta do servidor MCP externo (`mcp_externo:*`, #3586): ela mora no
+  // mesmo `tool_ids`, mas quem a oferece é o servidor da instalação, não o
+  // catálogo — e ligar "Atender e responder" não é declaração de que o
+  // administrador desmarcou o ERP. Sem isto, um clique num pacote apagava a
+  // escolha remota em silêncio.
+  const doCatalogo = new Set(catalogo.map((c) => c.name));
+  const foraDoCatalogo = selecionadas.filter((n) => !doCatalogo.has(n));
   // Ordem do catálogo, não ordem de clique: a lista salva vira diff de versão
   // do agente, e diff que muda de ordem a cada clique é diff ilegível.
-  return catalogo.map((c) => c.name).filter((n) => atual.has(n));
+  return [...catalogo.map((c) => c.name).filter((n) => atual.has(n)), ...foraDoCatalogo];
 }
 
 /**

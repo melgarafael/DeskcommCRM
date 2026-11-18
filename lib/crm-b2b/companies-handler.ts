@@ -9,12 +9,8 @@ import {
   type BrasilApiResult,
 } from "@/lib/brasil-api/client";
 import { enrichCompanyFromBrasilApi } from "@/lib/crm-b2b/enrich";
-import { formatCnpj, normalizeCnpj } from "@/lib/crm-b2b/normalize";
-import {
-  companyCreateSchema,
-  companyPatchSchema,
-  type CompanyCreate,
-} from "@/lib/crm-b2b/schemas";
+import { formatCnpj, MENSAGEM_DE_CNPJ_INVALIDO, normalizeCnpj } from "@/lib/crm-b2b/normalize";
+import { companyCreateSchema, companyPatchSchema, type CompanyCreate } from "@/lib/crm-b2b/schemas";
 
 type SB = SupabaseClient;
 
@@ -50,7 +46,9 @@ export async function listCompaniesHandler(
 
   if (opts.search?.trim()) {
     const s = `%${opts.search.trim()}%`;
-    q = q.or(`trade_name.ilike.${s},legal_name.ilike.${s},cnpj.ilike.${s},normalized_cnpj.ilike.${s}`);
+    q = q.or(
+      `trade_name.ilike.${s},legal_name.ilike.${s},cnpj.ilike.${s},normalized_cnpj.ilike.${s}`,
+    );
   }
 
   const { data, error } = await q;
@@ -60,6 +58,46 @@ export async function listCompaniesHandler(
   const hasMore = rows.length > limit;
   const page = hasMore ? rows.slice(0, limit) : rows;
   return { companies: page, has_more: hasMore };
+}
+
+/**
+ * Vínculos da empresa com a pessoa de cada um. SESSÃO: o embed `people:person_id`
+ * de sempre. TOKEN: sem embed (a service role não passa pela RLS e a chave
+ * estrangeira não confere organização); a pessoa vem de consulta própria,
+ * filtrada pela organização do token.
+ */
+async function vinculosDaEmpresa(
+  supabase: SB,
+  ctx: HandlerCtx,
+  id: string,
+): Promise<Array<Record<string, unknown>>> {
+  if (ctx.actor.type === "user") {
+    const { data } = await supabase
+      .from("company_people")
+      .select(
+        "id, person_id, job_title, department, is_decision_maker, is_primary, notes, people:person_id(id, full_name, email, normalized_name)",
+      )
+      .eq("organization_id", ctx.organization_id)
+      .eq("company_id", id);
+    return data ?? [];
+  }
+  const { data: vinculos } = await supabase
+    .from("company_people")
+    .select("id, person_id, job_title, department, is_decision_maker, is_primary, notes")
+    .eq("organization_id", ctx.organization_id)
+    .eq("company_id", id);
+  const linhas = vinculos ?? [];
+  const ids = linhas.map((l) => l.person_id as string).filter(Boolean);
+  const pessoas = new Map<string, unknown>();
+  if (ids.length > 0) {
+    const { data: gente } = await supabase
+      .from("people")
+      .select("id, full_name, email, normalized_name")
+      .eq("organization_id", ctx.organization_id)
+      .in("id", ids);
+    for (const p of gente ?? []) pessoas.set(p.id as string, p);
+  }
+  return linhas.map((l) => ({ ...l, people: pessoas.get(l.person_id as string) ?? null }));
 }
 
 export async function getCompanyHandler(supabase: SB, ctx: HandlerCtx, id: string) {
@@ -72,15 +110,9 @@ export async function getCompanyHandler(supabase: SB, ctx: HandlerCtx, id: strin
   if (error) err(ctx, 500, "internal_error", error.message);
   if (!data) err(ctx, 404, "not_found", "Empresa não encontrada.");
 
-  const { data: links } = await supabase
-    .from("company_people")
-    .select(
-      "id, person_id, job_title, department, is_decision_maker, is_primary, notes, people:person_id(id, full_name, email, normalized_name)",
-    )
-    .eq("organization_id", ctx.organization_id)
-    .eq("company_id", id);
+  const links = await vinculosDaEmpresa(supabase, ctx, id);
 
-  const personIds = (links ?? []).map((l) => l.person_id as string).filter(Boolean);
+  const personIds = links.map((l) => l.person_id as string).filter(Boolean);
   let contacts: unknown[] = [];
   if (personIds.length > 0) {
     const { data: cts } = await supabase
@@ -92,18 +124,18 @@ export async function getCompanyHandler(supabase: SB, ctx: HandlerCtx, id: strin
     contacts = cts ?? [];
   }
 
-  return { company: data, people: links ?? [], contacts };
+  return { company: data, people: links, contacts };
 }
 
 export async function createCompanyHandler(
   supabase: SB,
   ctx: HandlerCtx,
-  actorUserId: string,
+  actorUserId: string | null,
   raw: unknown,
 ) {
   const body: CompanyCreate = companyCreateSchema.parse(raw);
   const normalized = body.cnpj ? normalizeCnpj(body.cnpj) : null;
-  if (body.cnpj && !normalized) err(ctx, 422, "validation_failed", "CNPJ inválido.");
+  if (body.cnpj && !normalized) err(ctx, 422, "validation_failed", MENSAGEM_DE_CNPJ_INVALIDO);
 
   if (normalized) {
     const { data: dup } = await supabase
@@ -143,6 +175,7 @@ export async function createCompanyHandler(
   await audit({
     organizationId: ctx.organization_id,
     actorUserId,
+    actorApiTokenId: ctx.apiTokenId ?? null,
     action: "companies.created",
     resourceType: "companies",
     resourceId: data.id,
@@ -163,7 +196,7 @@ export async function createCompanyHandler(
 export async function patchCompanyHandler(
   supabase: SB,
   ctx: HandlerCtx,
-  actorUserId: string,
+  actorUserId: string | null,
   id: string,
   raw: unknown,
 ) {
@@ -175,7 +208,7 @@ export async function patchCompanyHandler(
   }
   if (body.cnpj !== undefined) {
     const normalized = body.cnpj ? normalizeCnpj(body.cnpj) : null;
-    if (body.cnpj && !normalized) err(ctx, 422, "validation_failed", "CNPJ inválido.");
+    if (body.cnpj && !normalized) err(ctx, 422, "validation_failed", MENSAGEM_DE_CNPJ_INVALIDO);
     patch.cnpj = normalized ? formatCnpj(normalized) : null;
     patch.normalized_cnpj = normalized;
   }
@@ -193,6 +226,7 @@ export async function patchCompanyHandler(
   await audit({
     organizationId: ctx.organization_id,
     actorUserId,
+    actorApiTokenId: ctx.apiTokenId ?? null,
     action: "companies.updated",
     resourceType: "companies",
     resourceId: id,
@@ -213,7 +247,7 @@ export async function patchCompanyHandler(
 export async function enrichCompanyHandler(
   supabase: SB,
   ctx: HandlerCtx,
-  actorUserId: string,
+  actorUserId: string | null,
   id: string,
 ) {
   const result = await enrichCompanyFromBrasilApi(supabase, {
@@ -223,6 +257,7 @@ export async function enrichCompanyHandler(
   await audit({
     organizationId: ctx.organization_id,
     actorUserId,
+    actorApiTokenId: ctx.apiTokenId ?? null,
     action: "companies.enriched",
     resourceType: "companies",
     resourceId: id,
@@ -245,7 +280,7 @@ export async function lookupCompanyCnpjHandler(
 ) {
   const cnpj = typeof raw?.cnpj === "string" ? raw.cnpj.trim() : "";
   const normalized = normalizeCnpj(cnpj);
-  if (!normalized) err(ctx, 422, "validation_failed", "CNPJ inválido.");
+  if (!normalized) err(ctx, 422, "validation_failed", MENSAGEM_DE_CNPJ_INVALIDO);
 
   const { data: dup } = await supabase
     .from("companies")
@@ -278,7 +313,7 @@ export async function lookupCompanyCnpjHandler(
 export async function deleteCompanyHandler(
   supabase: SB,
   ctx: HandlerCtx,
-  actorUserId: string,
+  actorUserId: string | null,
   id: string,
 ) {
   const { data: existing, error: loadErr } = await supabase
@@ -323,6 +358,7 @@ export async function deleteCompanyHandler(
   await audit({
     organizationId: ctx.organization_id,
     actorUserId,
+    actorApiTokenId: ctx.apiTokenId ?? null,
     action: "companies.deleted",
     resourceType: "companies",
     resourceId: id,

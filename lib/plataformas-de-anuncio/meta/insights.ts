@@ -113,7 +113,24 @@ const CAMPOS_DE_INSIGHTS = [...CAMPOS_DE_INSIGHTS_BASE, ...CAMPOS_DO_CONNECT_RAT
  */
 const CAMPOS_DE_INSIGHTS_SEM_CONNECT_RATE = CAMPOS_DE_INSIGHTS_BASE.join(",");
 
-const CAMPOS_DE_CAMPANHA = ["id", "name", "status", "effective_status", "objective"].join(",");
+/**
+ * Os campos do cadastro da campanha.
+ *
+ * `created_time`/`start_time` entraram com a #3911: sem eles a tabela não tem
+ * por onde ordenar e a ordem acaba sendo a da plataforma (das mais antigas para
+ * as mais novas), que é o defeito que a issue descreve. Os dois são campos
+ * históricos do nó `campaigns` — não são campo novo como os do Connect rate,
+ * logo não pedem a repetição de `lerInsights`.
+ */
+const CAMPOS_DE_CAMPANHA = [
+  "id",
+  "name",
+  "status",
+  "effective_status",
+  "objective",
+  "created_time",
+  "start_time",
+].join(",");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // O formato do fio — tipos do que a plataforma devolve
@@ -161,6 +178,17 @@ export interface CampanhaCrua {
   status?: string;
   effective_status?: string;
   objective?: string;
+  /**
+   * Quando a campanha foi criada, no formato da plataforma
+   * (`2026-08-14T09:31:10+0000`). É a chave da ordenação padrão da tabela
+   * (#3911) — a campanha mais recente primeiro.
+   */
+  created_time?: string;
+  /**
+   * Quando a campanha começou a veicular. Desempata `created_time` igual, que
+   * acontece de verdade quando duas campanhas nascem do mesmo rascunho.
+   */
+  start_time?: string;
 }
 
 interface RespostaPaginada<T> {

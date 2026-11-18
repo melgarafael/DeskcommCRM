@@ -21,8 +21,9 @@
  *       VERMELHO, sem o que o caso mediria "hook apagado".
  *   (b) a branch que CRIA migration com sequência já usada segue BARRADA — é a
  *       metade sem a qual o conserto seria "desligar o guard".
- *   (c) invariante novo da branch passa, e o invariante da main MODIFICADO pela
- *       branch segue barrado — a catraca continua de pé.
+ *   (c) invariante novo da branch passa, e DELETAR invariante que a main tem segue
+ *       barrado — o congelamento do diretório foi aposentado (fim do épico), e o que
+ *       ficou é a proteção de deleção; a catraca não é bloqueio de tudo.
  *
  * Os dois guards de migration irmãos (`.agents/`, o do contribuidor, e
  * `loop/hooks/`, o do mantenedor) são medidos nos dois casos que lhes dizem
@@ -45,7 +46,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-const FREEZE = "loop/hooks/freeze-invariants.sh";
+const INVARIANTES = "loop/hooks/guard-invariants.sh";
 const MIG_MANTENEDOR = "loop/hooks/check-migration-triple.sh";
 const MIG_CONTRIBUIDOR = ".agents/skills/deskcomm-contribuir/scripts/hooks/check-migration-triple.sh";
 const PLANO_GUARD = "loop/hooks/validate-features.sh";
@@ -168,14 +169,16 @@ const temMERGE_HEAD = (dir: string): boolean =>
   existsSync(join(dir, git(dir, "rev-parse", "--git-path", "MERGE_HEAD")));
 
 /**
- * SABOTAGEM: o guard de volta ao comportamento ANTES do conserto. O bloco que
- * resolve o outro lado pelo sinal da rota (`GITHEAD_*`) é desligado com um
- * token — `outro_lado` fica vazio, `lados` fica 0 e nenhuma exclusão acontece,
- * que era exatamente o estado medido na issue.
+ * SABOTAGEM: a régua da deleção desligada. `main_tem` passa a responder sempre
+ * "a main não tem", que é o estado de um hook que só conta linhas de `D` sem
+ * julgar contra a ponta da main — o furo que o caso D mede.
  */
 function guardSaboutado(): string {
-  const fonte = readFileSync(join(RAIZ, FREEZE), "utf-8");
-  const sabotado = fonte.replace('if [ -z "$outro_lado" ]; then', "if false; then");
+  const fonte = readFileSync(join(RAIZ, INVARIANTES), "utf-8");
+  const sabotado = fonte.replace(
+    '  git rev-parse --quiet --verify "origin/main:$1" >/dev/null 2>&1',
+    "  return 1",
+  );
   expect(sabotado, "o marcador da sabotagem não foi encontrado no guard").not.toBe(fonte);
   const caminho = join(HOME_FIXTURE, "freeze-sabotado.sh");
   writeFileSync(caminho, sabotado);
@@ -212,18 +215,17 @@ describe("hooks não acusam o MERGE da main (#374)", () => {
     expect(rodar(dir, MIG_MANTENEDOR).rc).toBe(0);
   });
 
-  it("(a) invariante que a main reescreveu, no caminho SEM MERGE_HEAD, não é acusado", () => {
-    const { dir, ponta } = fixture();
+  it("(a) invariante que a main reescreveu PASSA — o congelamento foi aposentado", () => {
+    const { dir } = fixture();
     trazERescreve(dir, INV);
 
-    // premissa de medição: este é o estado do caminho LIMPO — sem MERGE_HEAD
-    // (o git só o escreve depois do `pre-merge-commit`) e com o outro lado
-    // entregue em `GITHEAD_<sha>=<ref>`, que é o que o git faz naquele instante.
-    expect(temMERGE_HEAD(dir)).toBe(false);
+    // premissa de medição: o índice traz a versão da main. Até a aposentadoria este era
+    // o falso positivo do #374 — sem `MERGE_HEAD` e sem o sinal da rota o guard falhava
+    // FECHADO sobre o que a main trouxe. Hoje não há o que julgar: `M` saiu do hook, e
+    // passa com o estado encenado, sem sinal nenhum e sem a válvula.
     expect(git(dir, "diff", "--cached", "--name-status", "--", INV)).toContain(`M\t${INV}`);
 
-    const sinal: Record<string, string> = { [`GITHEAD_${ponta}`]: "origin/main" };
-    expect(rodar(dir, FREEZE, { ...sinal }).rc).toBe(0);
+    expect(rodar(dir, INVARIANTES).rc).toBe(0);
   });
 
   it.skipIf(!temJq)(
@@ -273,14 +275,19 @@ describe("hooks não acusam o MERGE da main (#374)", () => {
     });
   }
 
-  it("(a) SABOTAGEM: guard de volta ao comportamento antigo deixa o MESMO estado VERMELHO", () => {
-    const { dir, ponta } = fixture();
-    trazERescreve(dir, INV);
-    const sinal: Record<string, string> = { [`GITHEAD_${ponta}`]: "origin/main" };
+  it("(a) SABOTAGEM: com a régua da deleção desligada o caso D fica VERDE — o hook mede a main", () => {
+    const { dir } = fixture();
+    git(dir, "rm", "-q", "--", INV);
 
-    const sabotado = rodarSaboutado(dir, { ...sinal });
-    expect(sabotado.rc, `a sabotagem não ficou vermelha: ${sabotado.saida.slice(0, 400)}`).toBe(1);
-    expect(sabotado.saida).toContain(INV);
+    // o estado e a asserção positiva: apagar invariante que a main tem é recusado.
+    const bom = rodar(dir, INVARIANTES);
+    expect(bom.rc, bom.saida.slice(0, 400)).toBe(1);
+    expect(bom.saida).toContain(INV);
+
+    // e a sabotagem (`main_tem` respondendo sempre "não tem") deixa o MESMO estado verde:
+    // sem ela, a asserção acima se provaria com um hook que só conta linhas de `D`.
+    const sabotado = rodarSaboutado(dir);
+    expect(sabotado.rc, `a sabotagem não ficou verde: ${sabotado.saida.slice(0, 400)}`).toBe(0);
   });
 
   it("(b) a branch que CRIA migration com sequência já usada segue BARRADA nos dois guards", () => {
@@ -358,10 +365,10 @@ describe("hooks não acusam o MERGE da main (#374)", () => {
       "A\ttests/invariants/novo-da-branch.test.ts",
     );
 
-    expect(rodar(dir, FREEZE).rc).toBe(0);
+    expect(rodar(dir, INVARIANTES).rc).toBe(0);
   });
 
-  it("(c) invariante da main MODIFICADO pela branch continua BARRADO", () => {
+  it("(c) invariante da main MODIFICADO pela branch agora PASSA (o congelamento saiu)", () => {
     const { dir } = fixture();
     writeFileSync(
       join(dir, INV),
@@ -370,8 +377,7 @@ describe("hooks não acusam o MERGE da main (#374)", () => {
     git(dir, "add", "--", INV);
     expect(git(dir, "diff", "--cached", "--name-status", "--", INV)).toContain(`M\t${INV}`);
 
-    const r = rodar(dir, FREEZE);
-    expect(r.rc, r.saida.slice(0, 400)).toBe(1);
-    expect(r.saida).toContain(INV);
+    const r = rodar(dir, INVARIANTES);
+    expect(r.rc, r.saida.slice(0, 400)).toBe(0);
   });
 });

@@ -9,6 +9,7 @@
  * sem I/O de propósito — a precedência entre os sinais é a parte que erra
  * sozinha, e é o que o teste prende.
  */
+import { COBERTA_PELA_NATIVA } from "@/lib/mcp/tools/ferramentas-do-harness";
 import type { ToolRisk } from "@/lib/mcp/tools/pacotes";
 
 /** Uma linha como `fn_agent_tool_usage` devolve. */
@@ -164,6 +165,15 @@ export function montarUsoDeCapacidades(input: MontarUsoInput): CapacidadeComUso[
     const total = uso?.total ?? 0;
     const falhas = uso?.falhas ?? 0;
     const emTeste = uso?.em_teste ?? 0;
+    // A capacidade que a ferramenta interna cobre sai do atendimento quando a
+    // interna está lá (`COBERTA_PELA_NATIVA`), e o uso da interna não entra nesta
+    // contagem. "Considere desligar por concorrer com as outras" seria falso; a
+    // linha fica (falhar aberto na informação) e diz o que vale nos dois casos.
+    const coberta = COBERTA_PELA_NATIVA[name];
+    const recomendacao =
+      coberta !== undefined && sinal === "nunca_usada"
+        ? coberta.nota
+        : recomendar(sinal, { total, falhas, em_teste: emTeste }, janelaEmDias);
 
     resultado.push({
       name,
@@ -178,11 +188,7 @@ export function montarUsoDeCapacidades(input: MontarUsoInput): CapacidadeComUso[
       em_teste: emTeste,
       ultima_vez: uso?.ultima_vez ?? null,
       sinal,
-      recomendacao: recomendar(
-        sinal,
-        { total, falhas, em_teste: emTeste },
-        janelaEmDias,
-      ),
+      recomendacao,
     });
   }
 

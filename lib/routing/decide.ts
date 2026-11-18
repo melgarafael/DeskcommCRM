@@ -10,6 +10,8 @@
 import type { Json } from "@/lib/database.types";
 import type { RoutingConfig, RoutingMode } from "@/lib/schemas/routing";
 
+import type { MotivoDoCaso } from "./caso-da-conversa";
+
 /** Um atendente já FILTRADO por elegibilidade (§5: disponível ∧ horário ∧ folga). */
 export interface RoutingCandidate {
   userId: string;
@@ -29,7 +31,14 @@ export type RoutingAction =
   /** Marca o evento consumido sem atribuir (já tem dono, modo manual, modo não suportado). */
   | { kind: "skip"; reason: string }
   /** Sem elegível: reenfileira com backoff (fica na fila até haver quem atenda). */
-  | { kind: "requeue"; nextAttemptAt: string; attempts: number };
+  | { kind: "requeue"; nextAttemptAt: string; attempts: number }
+  /**
+   * A IA está qualificando e o NÚMERO pediu para esperar (#3966): o pedido fica
+   * guardado até `nextAttemptAt`, que é o PRAZO MÁXIMO da espera. Não conta
+   * tentativa e não avisa — nada falhou. Quem traz a conversa antes do prazo é a
+   * passagem para humano, que reemite o pedido.
+   */
+  | { kind: "wait_ai"; nextAttemptAt: string };
 
 export interface DecideRoutingInput {
   mode: RoutingMode | string;
@@ -49,6 +58,32 @@ export interface DecideRoutingInput {
   /** attempts atual do event_log (antes deste processamento). */
   attempts: number;
   now: Date;
+  /**
+   * O CASO DESTA CONVERSA TIRA ELA DA FILA? (#3717) — `null`/ausente = não.
+   *
+   * Quem responde a pergunta é `motivoParaNaoRotear` (`./caso-da-conversa`), a
+   * partir do caso mais recente lido pelo worker. Vem como argumento pronto, e
+   * não como a linha do caso, por dois motivos: a decisão continua sem banco (as
+   * regras do acceptance test seguem testáveis por unit) e existe UM lugar — o
+   * módulo da regra — onde o vocabulário de `agent_cases.status` é lido.
+   */
+  motivoDoCaso?: MotivoDoCaso | null;
+  /**
+   * ATÉ QUANDO ESPERAR A IA QUALIFICAR (#3966) — instante ISO do prazo máximo.
+   *
+   * O pedido de roteamento nasce no INSERT (`trg_conversation_routing_requested`),
+   * antes de qualquer resposta da IA. Num número com agente de qualificação, a
+   * fila entregava a conversa a uma pessoa em menos de 1 min: a atribuição grava
+   * `assignee_kind = 'user'`, o gate da IA cala o agente (`conversa_de_humano`) e
+   * o lead ficava sem resposta até alguém olhar.
+   *
+   * É OPÇÃO DO NÚMERO, desligada de fábrica (`channel_routing_policies.
+   * ai_wait_minutes`, decisão do dono no doc 311). O worker só preenche este
+   * campo quando o número ligou a opção, a IA está de fato qualificando
+   * (`qualificacaoEmCurso`, em `./qualificacao-da-ia`) e o prazo ainda não
+   * venceu. `null`/ausente é o comportamento de sempre: distribui no nascimento.
+   */
+  esperaPelaIAAte?: string | null;
 }
 
 /**
@@ -84,6 +119,16 @@ export function decideRouting(input: DecideRoutingInput): RoutingAction {
   // Idempotência (acceptance 3): conversa que já ganhou dono não é reatribuída.
   if (input.alreadyAssigned) return { kind: "skip", reason: "already_assigned" };
 
+  // O CASO MANDA ANTES DA FILA (#3717). Se o caso mais recente da conversa não
+  // pede uma pessoa agora — `awaiting_lead` (a bola está com o cliente) ou um
+  // caso já concluído sem entrada nova do cliente —, a conversa sai da fila
+  // mesmo estando `open`/`ai_handling` e sem dono. Vem DEPOIS da idempotência
+  // (conversa com dono não é assunto da fila) e ANTES do destino padrão do
+  // número (#2331): aquele decide QUEM recebe quando há distribuição; este
+  // decide SE há distribuição. Um caso concluído não vira trabalho de ninguém
+  // só porque o número entrega tudo a uma pessoa específica.
+  if (input.motivoDoCaso) return { kind: "skip", reason: input.motivoDoCaso };
+
   // Destino padrão do NÚMERO (#2331): vence o modo. O canal que entrega tudo a
   // uma pessoa específica recebe mesmo quando o modo da organização é manual (o
   // caso "sem IA, direto para o fulano") ou rodízio.
@@ -98,7 +143,17 @@ export function decideRouting(input: DecideRoutingInput): RoutingAction {
     return { kind: "skip", reason: `unsupported_mode:${input.mode}` };
   }
 
-  const picked = input.mode === "load" ? selectByLoad(input.eligibles) : selectRoundRobin(input.eligibles);
+  // A IA AINDA ESTÁ QUALIFICANDO, e o número pediu para esperar (#3966). Vem
+  // DEPOIS do destino padrão do número de propósito: "direto para uma pessoa" é
+  // a regra mais específica do número e não espera ninguém (#2331). E depois do
+  // modo manual: onde não há distribuição automática não há o que adiar, e o
+  // resultado tem de ser o de sempre. Só o rodízio e a carga esperam.
+  // Quem traz a conversa antes do prazo é a passagem para humano: o banco
+  // reemite o pedido quando `last_handoff_at` muda (`fn_routing_assignment_changed`).
+  if (input.esperaPelaIAAte) return { kind: "wait_ai", nextAttemptAt: input.esperaPelaIAAte };
+
+  const picked =
+    input.mode === "load" ? selectByLoad(input.eligibles) : selectRoundRobin(input.eligibles);
   if (picked) return { kind: "assign", userId: picked };
 
   // Sem elegível (acceptance 4): re-agenda com backoff da config (não hardcoded).
@@ -116,6 +171,11 @@ export function decideRouting(input: DecideRoutingInput): RoutingAction {
 export interface RegraDoNumero {
   distribution_mode: RoutingMode | null;
   default_assignee_user_id: string | null;
+  /**
+   * "Esperar a IA qualificar antes de distribuir" (#3966): o prazo máximo, em
+   * minutos. `null`/ausente = opção desligada, que é o padrão de fábrica.
+   */
+  ai_wait_minutes?: number | null;
 }
 
 export interface RoteamentoEfetivo {

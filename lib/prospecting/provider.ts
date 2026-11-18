@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { SearchInput } from "./schema";
+import type { Idioma } from "@/lib/i18n/idiomas";
 
 /**
  * De QUEM é a falha — e é isso que decide se a campanha inteira para.
@@ -26,6 +27,17 @@ export class ProspectingError extends Error {
      * retomada manual; não pausar uma que devia parar custa a lista inteira.
      */
     public escopo: EscopoDaFalha = "campanha",
+    /**
+     * O CÓDIGO de wire, quando a recusa é de um TIPO que a tela precisa
+     * distinguir e não só uma frase. Sem código, a rota responde
+     * `prospecting_unavailable` — que é o certo para falha genérica e o errado
+     * para conflito de conexão: o cliente precisa saber que o problema é "esta
+     * conexão já tem campanha" (e qual) para oferecer o caminho, em vez de
+     * tratar como indisponibilidade do provedor.
+     */
+    public codigo?: string,
+    /** Dados de apoio do código (nunca PII: aqui vai id e nome da campanha). */
+    public detalhes?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -97,7 +109,13 @@ export async function providerRequest(key: string, path: string, body?: unknown)
     );
   return response.json();
 }
-export async function startSearch(key: string, input: SearchInput) {
+/** O que a organização decide sobre a busca, além do formulário (`idioma.ts`). */
+export interface OpcoesDaBusca {
+  /** Idioma em que os dados voltam (rubro, endereço). Ausente = português do Brasil, como antes. */
+  idioma?: Idioma;
+}
+export async function startSearch(key: string, input: SearchInput, opcoes: OpcoesDaBusca = {}) {
+  const idioma = opcoes.idioma ?? "pt-BR";
   // No retries on POST: an ambiguous timeout must never start another paid run.
   return runSchema.parse(
     await providerRequest(
@@ -107,8 +125,13 @@ export async function startSearch(key: string, input: SearchInput) {
         searchStringsArray: [input.niche],
         locationQuery: input.location,
         maxCrawledPlacesPerSearch: input.limit,
-        language: "pt-BR",
-        countryCode: "br",
+        // Os códigos de idioma do produto são os mesmos do actor (`pt-BR`, `es`, e também os
+        // que ainda não estão visíveis no seletor) — conferido no esquema de entrada dele em
+        // 02/11/2026. O PAÍS só vai fixo para o português do
+        // Brasil, que é o comportamento de sempre; nos outros idiomas quem diz onde buscar é
+        // a `locationQuery` ("Montevideo, Uruguay"), sem um Brasil por cima.
+        language: idioma,
+        ...(idioma === "pt-BR" ? { countryCode: "br" } : {}),
         skipClosedPlaces: true,
         scrapeContacts: input.enrich,
         maxReviews: 0,

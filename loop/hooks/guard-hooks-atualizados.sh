@@ -75,7 +75,7 @@ if [ -n "$atrasados" ]; then
   echo "pre-commit BLOQUEADO: os guards deste checkout estão ATRASADOS em relação à ${base_remota}:" >&2
   printf '%b' "$atrasados" >&2
   echo "Esta branch não os tocou — eles só envelheceram, e guard velho é guard mais fraco:" >&2
-  echo "o freeze-invariants de antes de 20796abf7, por exemplo, não trata merge e acusa resolução legítima." >&2
+  echo "o freeze-invariants de antes de 20796abf7, por exemplo, não tratava merge e acusava resolução legítima." >&2
   echo "Conserto: git merge ${base_remota}   (ou 'git fetch origin main' antes, se a cópia local estiver velha)" >&2
   echo "Se você PRECISA commitar sem atualizar: DESKCOMM_GOV_HOOKS_ATRASADOS_OK=1, e diga no commit por quê." >&2
   exit 1

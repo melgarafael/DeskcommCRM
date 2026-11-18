@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -12,35 +12,85 @@ import {
 } from "@/components/ui/select";
 import { useUser } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
-import { ArrowsClockwise, CalendarBlank, ListChecks, Plus } from "@/lib/ui/icons";
+import { ArrowsClockwise, CalendarBlank, Kanban, ListChecks, Plus } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { useTasks } from "@/hooks/tasks/useTasks";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
+import { useAttendants } from "@/hooks/team/useAttendants";
+import { useSectors, type Sector } from "@/hooks/team/useSectors";
 import { responsavelDoFiltro, type FiltroDeResponsavel } from "@/lib/tarefas/filtro-de-responsavel";
 import type { NovaTarefa, SituacaoDaTarefa, Tarefa } from "@/lib/tarefas/tipos";
 
 import { CalendarioDeTarefas } from "./CalendarioDeTarefas";
 import { FormularioDeTarefa } from "./FormularioDeTarefa";
 import { ListaDeTarefas } from "./ListaDeTarefas";
+import { QuadroDeTarefas } from "./QuadroDeTarefas";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 /** "aberto" não é uma situação do banco: é o filtro que a tela abre por padrão. */
 type FiltroDeSituacao = "aberto" | SituacaoDaTarefa;
 
+/** Um funil do seletor. A lista vem da página (servidor): `GET /api/v1/pipelines` exige manager. */
+export interface FunilDoFiltro {
+  id: string;
+  name: string;
+}
+
 export function TarefasClient({
   podeEditar,
   minhasDeInicio = false,
+  funis = [],
+  setoresLigados = false,
 }: {
   podeEditar: boolean;
   minhasDeInicio?: boolean;
+  funis?: FunilDoFiltro[];
+  /** Módulo opcional de setores (doc 213), lido no servidor pela página. Ausente = desligado. */
+  setoresLigados?: boolean;
 }) {
   const t = useT();
   const usuario = useUser();
-  const [modo, setModo] = useState<"lista" | "calendario">("lista");
+  const [modo, setModo] = useState<"lista" | "calendario" | "quadro">("lista");
   const [situacao, setSituacao] = useState<FiltroDeSituacao>("aberto");
   const [responsavel, setResponsavel] = useState<FiltroDeResponsavel>(minhasDeInicio ? "eu" : "todos");
+  // Setor de atendimento (Fiscal, Contábil, DP, TI, etc.). "todos" = sem filtro.
+  const [setor, setSetor] = useState<string>("todos");
+  // Setores é módulo opcional (doc 213): desligado, as rotas respondem 404 e o
+  // pedido nem sai — sem setores, o seletor não aparece. O roster é agent+,
+  // pela mesma razão de `useAssignableMembers` logo abaixo.
+  const { data: setoresResp } = useSectors(setoresLigados);
+  const setores = useMemo(() => setoresResp?.data ?? [], [setoresResp]);
+  const { data: atendentesResp } = useAttendants(setoresLigados && podeEditar);
+  const atendentes = useMemo(() => atendentesResp?.data ?? [], [atendentesResp]);
+  // O chip da tarefa mostra o PRIMEIRO setor de quem a tem. Montado aqui, uma
+  // vez, para a lista e o quadro — eles não pedem setores por conta própria.
+  const setorDoResponsavel = useMemo(() => {
+    const porId = new Map(setores.map((s) => [s.id, s]));
+    const mapa = new Map<string, Sector>();
+    for (const a of atendentes) {
+      const setorDele = a.sector_ids?.[0] ? porId.get(a.sector_ids[0]) : undefined;
+      if (setorDele) mapa.set(a.user_id, setorDele);
+    }
+    return mapa;
+  }, [atendentes, setores]);
+
   // `/team/assignable` exige agent: o viewer tomaria 403 (e um authz.denied no
   // audit) a cada visita. Ele fica com Todos, Minhas e Sem responsável.
   const { data: membros } = useAssignableMembers(podeEditar);
+
+  // Se um setor foi filtrado, estreita a lista de responsáveis apenas aos membros daquele setor
+  const membrosDoSetor = useMemo(() => {
+    if (setor === "todos") return membros ?? [];
+    const idsNoSetor = new Set(
+      atendentes
+        .filter((a) => a.sector_ids?.includes(setor))
+        .map((a) => a.user_id),
+    );
+    return (membros ?? []).filter((m) => idsNoSetor.has(m.user_id));
+  }, [membros, atendentes, setor]);
+
+  // "todos" = sem filtro (a tela abre assim). Qualquer outro valor é o id de um funil.
+  const [funil, setFunil] = useState<string>("todos");
   const [emEdicao, setEmEdicao] = useState<Tarefa | null>(null);
   const [formAberto, setFormAberto] = useState(false);
   const [prazoSugerido, setPrazoSugerido] = useState<string | undefined>();
@@ -59,10 +109,22 @@ export function TarefasClient({
     editarTarefa,
     apagarTarefa,
     alternarConcluida,
-  } = useTasks({
-    ...(situacao === "aberto" ? { aberto: true } : { status: situacao }),
-    assigned_to: responsavelDoFiltro(responsavel),
-  });
+  } = useTasks(
+    {
+      ...(situacao === "aberto" ? { aberto: true } : { status: situacao }),
+      assigned_to: responsavelDoFiltro(responsavel),
+      pipeline_id: funil === "todos" ? undefined : funil,
+      sector_id: setor === "todos" ? undefined : setor,
+    },
+    /*
+     * No QUADRO esta busca fica parada. A visão em quadro faz a SUA própria
+     * consulta, com teto menor (`LIMITE_DO_QUADRO`), e as colunas são as
+     * situações — trazer também a lista de 500 linhas seria somar duas cargas
+     * para desenhar uma tela só. Voltar para Lista ou Calendário reativa e
+     * busca de novo; o cache continua lá, então a volta é instantânea.
+     */
+    { enabled: modo !== "quadro" },
+  );
 
   function abrirNova(dia?: string) {
     setEmEdicao(null);
@@ -96,21 +158,66 @@ export function TarefasClient({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Select
-            value={situacao}
-            onValueChange={(v) => setSituacao(v as FiltroDeSituacao)}
-          >
-            <SelectTrigger className="h-11 w-[168px] text-xs lg:h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="aberto">{t("Em aberto")}</SelectItem>
-              <SelectItem value="pending">{t("Pendente")}</SelectItem>
-              <SelectItem value="in_progress">{t("Em andamento")}</SelectItem>
-              <SelectItem value="done">{t("Concluída")}</SelectItem>
-              <SelectItem value="cancelled">{t("Cancelada")}</SelectItem>
-            </SelectContent>
-          </Select>
+          {/* No QUADRO o filtro de situação não aparece: as colunas SÃO as
+              situações, e filtrar por uma delas deixaria três colunas vazias
+              ao lado da única escolhida. Os outros filtros continuam valendo. */}
+          {modo !== "quadro" && (
+            <Select
+              value={situacao}
+              onValueChange={(v) => setSituacao(v as FiltroDeSituacao)}
+            >
+              <SelectTrigger
+                aria-label={t("Situação")}
+                className="h-11 w-[168px] text-xs lg:h-9"
+                data-testid="tarefas-filtro-situacao"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="aberto">{t("Em aberto")}</SelectItem>
+                <SelectItem value="pending">{t("Pendente")}</SelectItem>
+                <SelectItem value="in_progress">{t("Em andamento")}</SelectItem>
+                <SelectItem value="done">{t("Concluída")}</SelectItem>
+                <SelectItem value="cancelled">{t("Cancelada")}</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+
+          {setores.length > 0 && (
+            <Select
+              value={setor}
+              onValueChange={(novoSetor) => {
+                setSetor(novoSetor);
+                if (
+                  novoSetor !== "todos" &&
+                  responsavel !== "todos" &&
+                  responsavel !== "eu" &&
+                  responsavel !== "ninguem"
+                ) {
+                  const estaNoSetor = atendentes.some(
+                    (a) => a.user_id === responsavel && a.sector_ids?.includes(novoSetor),
+                  );
+                  if (!estaNoSetor) setResponsavel("todos");
+                }
+              }}
+            >
+              <SelectTrigger
+                aria-label={t("Setor")}
+                className="h-11 w-[168px] text-xs lg:h-9"
+                data-testid="tarefas-filtro-setor"
+              >
+                <SelectValue placeholder={t("Todos os setores")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">{t("Todos os setores")}</SelectItem>
+                {setores.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
 
           <Select value={responsavel} onValueChange={(v) => setResponsavel(v as FiltroDeResponsavel)}>
             <SelectTrigger aria-label={t("Responsável")} className="h-11 w-[168px] text-xs lg:h-9" data-testid="tarefas-filtro-responsavel">
@@ -119,18 +226,38 @@ export function TarefasClient({
             <SelectContent>
               <SelectItem value="todos">{t("Todos")}</SelectItem>
               <SelectItem value="eu">{t("Minhas")}</SelectItem>
-              {(membros ?? [])
+              {(membrosDoSetor ?? [])
                 .filter((m) => m.user_id !== usuario.id)
                 .map((m) => (
                   <SelectItem key={m.user_id} value={m.user_id}>
-                    {m.full_name ?? m.user_id.slice(0, 8)}
+                    {rotuloDoMembro(m, t)}
                   </SelectItem>
                 ))}
               <SelectItem value="ninguem">{t("Sem responsável")}</SelectItem>
             </SelectContent>
           </Select>
 
-          {/* O calendário tem 7 colunas: a 390px não cabe, e no celular fica a lista. */}
+          {/* Com um funil só não há o que escolher: o seletor aparece quando há dois ou mais. */}
+          {funis.length > 1 && (
+            <Select value={funil} onValueChange={setFunil}>
+              <SelectTrigger aria-label={t("Funil")} className="h-11 w-[168px] text-xs lg:h-9" data-testid="tarefas-filtro-funil">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">{t("Todos os funis")}</SelectItem>
+                {funis.map((f) => (
+                  <SelectItem key={f.id} value={f.id}>
+                    {f.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          {/* O calendário tem 7 colunas e o quadro tem colunas de 320px: a
+              390px nenhum dos dois cabe, e no celular fica a lista. Os três
+              modos entram e saem juntos porque a régua é a MESMA `md` — um
+              botão visível sem a visão correspondente prenderia a tela. */}
           <div className="hidden items-center gap-0.5 rounded-md border bg-muted p-0.5 md:flex">
             <button
               type="button"
@@ -159,6 +286,21 @@ export function TarefasClient({
             >
               <CalendarBlank size={14} aria-hidden />
               {t("Calendário")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setModo("quadro")}
+              aria-pressed={modo === "quadro"}
+              data-testid="tarefas-modo-quadro"
+              className={cn(
+                "flex min-h-11 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors lg:min-h-0",
+                modo === "quadro"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <Kanban size={14} aria-hidden />
+              {t("Quadro")}
             </button>
           </div>
 
@@ -202,6 +344,23 @@ export function TarefasClient({
           {/* A MESMA régua `md` que esconde o seletor esconde o calendário:
               escolhido no tablet deitado e girado para o celular, ele não pode
               ficar preso na tela sem o botão de voltar para a lista. */}
+          {/* O QUADRO: no celular continua a lista — as colunas têm 320px e a
+              régua é a mesma `md` do seletor. */}
+          {modo === "quadro" && (
+            <div data-testid="tarefas-quadro-wrap" className="hidden md:block">
+              <QuadroDeTarefas
+                podeEditar={podeEditar}
+                // A situação NÃO vai: no quadro as colunas são as situações.
+                filtros={{
+                  assigned_to: responsavelDoFiltro(responsavel),
+                  pipeline_id: funil === "todos" ? undefined : funil,
+                  sector_id: setor === "todos" ? undefined : setor,
+                }}
+                aoEditar={abrirEdicao}
+                setorDoResponsavel={setorDoResponsavel}
+              />
+            </div>
+          )}
           {modo === "calendario" && (
             <div data-testid="tarefas-calendario" className="hidden md:block">
               <CalendarioDeTarefas
@@ -212,13 +371,14 @@ export function TarefasClient({
               />
             </div>
           )}
-          <div data-testid="tarefas-lista" className={cn(modo === "calendario" && "md:hidden")}>
+          <div data-testid="tarefas-lista" className={cn(modo !== "lista" && "md:hidden")}>
             <ListaDeTarefas
               tarefas={tarefas}
               podeEditar={podeEditar}
               aoAlternarConcluida={alternarConcluida}
               aoEditar={abrirEdicao}
               aoApagar={(tarefa) => apagarTarefa(tarefa.id)}
+              setorDoResponsavel={setorDoResponsavel}
             />
           </div>
         </>

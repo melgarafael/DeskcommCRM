@@ -195,7 +195,7 @@ describe("a assinatura sai pela cadeia de envio, sem poluir messages.body", () =
   // WAHA, não zernio: o zernio passa pela janela de 24 h, que recusa texto livre
   // da IA sem inbound recente — e o que se mede aqui é só a assinatura.
   it.each([
-    ["DESLIGADO (padrão): a IA assina com o Nome da IA e o agente nem é lido", false, "*Assistente Virtual*\noi"],
+    ["DESLIGADO (padrão): a IA assina com o Nome da IA, mesmo com o nome do agente lido", false, "*Assistente Virtual*\noi"],
     ["LIGADO: a IA assina com o nome do agente que enviou", true, "*Bia da Locação*\noi"],
   ])("#3310 · interruptor por_agente %s", async (_rotulo, porAgente, esperado) => {
     vi.stubEnv("WAHA_API_BASE_URL", "http://waha.teste");
@@ -215,11 +215,17 @@ describe("a assinatura sai pela cadeia de envio, sem poluir messages.body", () =
     const { supabase, capturas } = dubleDe(conversaCompleta({ provider: "waha" }), {
       assinatura_mensagens: { humanos: false, ia: true, nome_ia: "Assistente Virtual", por_agente: porAgente },
     });
-    await sendMessageHandler(supabase, iaCtx, texto());
+    // O cliente tenta forjar o nome do balão: o servidor sobrescreve.
+    await sendMessageHandler(supabase, iaCtx, texto({ metadata: { ai_actor_name: "Forjado" } }));
 
     const sendText = fetchMock.mock.calls.find(([url]) => url.endsWith("/api/sendText"));
     expect(JSON.parse(sendText?.[1]?.body ?? "{}")).toEqual(expect.objectContaining({ text: esperado }));
     expect(capturas.inserts.messages!.at(-1)?.["body"]).toBe("oi");
-    expect(mockedNomeDoAgente).toHaveBeenCalledTimes(porAgente ? 1 : 0);
+    // #3649: o nome é lido UMA vez, ligado ou não — ele serve também ao balão
+    // ("IA · <nome>"), que o lê de `metadata.ai_actor_name`.
+    expect(mockedNomeDoAgente).toHaveBeenCalledTimes(1);
+    expect(
+      (capturas.inserts.messages!.at(-1)?.["metadata"] as Record<string, unknown>)["ai_actor_name"],
+    ).toBe("Bia da Locação");
   });
 });

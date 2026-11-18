@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { requireSupportWrite } from "@/lib/impersonate/support";
@@ -32,9 +33,17 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (desligada) return desligada;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
+  // 64 KB de folga para o envelope multipart; o tamanho do arquivo é conferido abaixo.
+  const corpo = await lerCorpoComTeto(req, TAMANHO_MAXIMO + 64 * 1024, {
+    requestId,
+    idioma: authz.user.idioma,
+    acimaDoTeto: t("O arquivo passa de 5 MB."),
+  });
+  if (!corpo.ok) return corpo.response;
+
   let form: FormData;
   try {
-    form = await req.formData();
+    form = await corpo.corpo.formData();
   } catch {
     return fail("invalid_request", t("Falha ao processar o envio do arquivo."), 400, { requestId });
   }

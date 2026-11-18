@@ -91,7 +91,7 @@ export async function POST(_req: NextRequest): Promise<Response> {
   const db = await createClient();
   const { data, error } = await db
     .from("config_aviso_de_caso")
-    .select("channel_session_id, telefone_destino, resposta_whatsapp_habilitada")
+    .select("channel_session_id, telefone_destino, resposta_whatsapp_habilitada, modelo_id")
     .eq("organization_id", orgId)
     .maybeSingle();
   if (error) {
@@ -103,6 +103,7 @@ export async function POST(_req: NextRequest): Promise<Response> {
     channel_session_id: string | null;
     telefone_destino: string;
     resposta_whatsapp_habilitada: boolean | null;
+    modelo_id?: string | null;
   } | null;
   if (!cfg?.channel_session_id) {
     return fail(
@@ -129,6 +130,9 @@ export async function POST(_req: NextRequest): Promise<Response> {
       channelSessionId: cfg.channel_session_id,
       telefone: cfg.telefone_destino,
       respostaWhatsappHabilitada: cfg.resposta_whatsapp_habilitada === true,
+      // O modelo SALVO (migration 9094): é com ele que o aviso real sai pela
+      // conexão que só manda modelo, e o teste prova esse mesmo caminho.
+      ...(cfg.modelo_id ? { modeloId: cfg.modelo_id } : {}),
     },
   );
 

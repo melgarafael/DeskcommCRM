@@ -1,0 +1,21 @@
+{
+  "head_fonte": "1041c3e75a573a6a6959df91b7b6667445be4ea2",
+  "checkout_ci": "c95d21486bc7f7b50f64261e8646e5a54511519b",
+  "base_ci": "271a327efe9d0f4532657f3007a6e751306986bd",
+  "run": 40499697633,
+  "job": 122174067862,
+  "job_conclusao": "success",
+  "artefato": 12733912254,
+  "nome_artefato": "evidencia-parte-1",
+  "arquivo_no_artefato": "evidence/registro-no-envio/linha-fixa.png",
+  "caso": "agente-papeis-operador.spec.ts:116 — o papel que confere mostra a lista inteira, aberta, e sem interruptor decorativo",
+  "resultado_caso": "PASS",
+  "duracao_caso_segundos": 1.9,
+  "captura": "Locator.screenshot da linha após as asserções; PNG original sem edição",
+  "sha256_png": "a831a49c1c5d263106627594f67d6ad6a0df06d9be64276f52ab9d2be759ca6d",
+  "bytes_png": 11625,
+  "largura": 910,
+  "altura": 101,
+  "fonte_actions": "https://github.com/melgarafael/DeskcommCRM/actions/runs/40499697633/job/122174067862",
+  "limite": "Prova de renderização dessa linha no painel. Não mede turno completo, PostgreSQL, WAHA, efeito por objeto ou resolução integral da issue3333."
+}

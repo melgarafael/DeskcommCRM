@@ -159,6 +159,12 @@ describe("a sétima cópia não nasce", () => {
   const LEITURAS_LEGITIMAS: ReadonlyArray<{ arquivo: string; trecho: string; motivo: string }> = [
     // ── prospecção (PR #963): nenhuma destas é nome de CONTATO ──────────────
     {
+      arquivo: "components/connections/CanalBotClient.tsx",
+      trecho: '{estado?.display_name ?? "—"}',
+      motivo:
+        "nome do ROBÔ no Telegram (channel_sessions.display_name), não de contato: o cartão do canal mostra com quem a instalação fala, não a quem ela escreve",
+    },
+    {
       arquivo: "app/app/prospecting/_client.tsx",
       trecho: "{c.display_name ?? c.phone_number ?? c.id}",
       motivo: "rótulo do CANAL na lista de conexões (channel_sessions), não de contato",
@@ -177,6 +183,11 @@ describe("a sétima cópia não nasce", () => {
       arquivo: "lib/prospecting/agent-setup.ts",
       trecho: "?.display_name ?? selected.modelId}`,",
       motivo: "o mesmo rótulo de modelo, no caminho em que a escolha já veio da tela",
+    },
+    {
+      arquivo: "app/api/v1/conversations/[id]/transfer/route.ts",
+      trecho: "display_name: linha?.display_name ?? null,",
+      motivo: "a prévia da transferência devolve as colunas do CANAL (channel_sessions) cruas; quem rotula é a tela",
     },
     {
       arquivo: "app/api/v1/channels/official/route.ts",

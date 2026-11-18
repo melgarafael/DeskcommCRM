@@ -15,9 +15,26 @@
  */
 import type pg from 'pg';
 
-import { lerJanelaDeAtendimento, type JanelaDeAtendimento } from './janela-de-atendimento';
-import { lerTextoDoAvisoForaDoHorario } from './aviso-fora-do-horario';
+import { lerFraseDoAvisoConfigurada } from '@/lib/escalacao/frase-do-aviso-configurada';
+
+import {
+  lerFechadoEmFeriadoNacional,
+  lerJanelaDeAtendimento,
+  type JanelaDeAtendimento,
+} from './janela-de-atendimento';
+import {
+  lerTextoDoAvisoDeFeriadoForaDoHorario,
+  lerTextoDoAvisoForaDoHorario,
+} from './aviso-fora-do-horario';
 import { lerFiltroDePalavraChave } from './palavra-chave-do-gatilho';
+import { lerModoDeConhecimento } from './modo-de-conhecimento';
+import {
+  avaliarPublico,
+  carregarFatosDoContato,
+  lerPublicoDoGatilho,
+  type DecisaoDoPublico,
+  type PublicoDoAgente,
+} from './publico-do-gatilho';
 
 export interface PublishedAgentConfig {
   operationMode?: 'automatic' | 'assisted';
@@ -30,6 +47,17 @@ export interface PublishedAgentConfig {
   provider: string;
   model: string;
   credentialId: string | null;
+  /**
+   * A RESERVA DE MODELO (#4600): provedor e modelo para onde a chamada cai
+   * quando o principal falha por cota (429), servidor (5xx) ou tempo esgotado.
+   * `ai_agent_versions.reserve_provider` / `reserve_model`, NULOS por padrão —
+   * sem configuração não há degrau, e o comportamento é o de antes.
+   *
+   * Opcionais na interface porque nascem depois das fixtures que montam este
+   * tipo à mão; quem consome lê com `?? null`.
+   */
+  reserveProvider?: string | null;
+  reserveModel?: string | null;
   maxSteps: number;
   historyMessageWindow: number;
   historyTokenWindow: number;
@@ -51,8 +79,19 @@ export interface PublishedAgentConfig {
   splitMaxChars: number;
   /** Janela de rajada inbound (ms) configurada na versão. `null` = usa a env. */
   inboundDebounceMs: number | null;
+  /** Intervalo mínimo (ms) entre uma resposta da IA e a próxima à mesma conversa. `null` = sem intervalo. */
+  replyMinIntervalMs: number | null;
   /** input multimodal (imagem/áudio/pdf) habilitado no turno (Onda 3). */
   multimodalInput: boolean;
+  /**
+   * O agente vê as fotos que o cliente envia (`ai_agent_versions.image_vision_enabled`,
+   * migration 9108, padrão LIGADO). Desligado, a foto entra no turno como o aviso
+   * `MARCADOR_IMAGEM_NAO_VISTA` (nem a descrição nem a imagem nativa), e ele deixa de
+   * contar como leitor em `haLeitorDaDescricao` (a régua do dreno quando o agente da
+   * conversa não vê). Opcional porque nasce depois das fixtures que montam este
+   * tipo à mão; quem consome lê com `?? true`, o comportamento de antes.
+   */
+  imageVisionEnabled?: boolean;
   /** tools open_human_case/provide_case_update habilitadas no turno (spec 15). */
   casesEnabled: boolean;
   /** JSON versionado com `followup.callback_enabled` e os fluxos normais. */
@@ -64,6 +103,24 @@ export interface PublishedAgentConfig {
    * Vazio = NENHUM: a ferramenta de busca some do turno.
    */
   knowledgeSourceIds: string[];
+  /**
+   * Skills que ESTE agente usa (`ai_agent_versions.skill_names`, migration 9107).
+   * `null` = todas as da organização e da plataforma (o comportamento de antes, e
+   * o default de toda versão); `[]` = nenhuma. Resolvido em `skillsDoAgente`.
+   *
+   * O clone sem a coluna não chega aqui com `undefined`: o SELECT abaixo a nomeia,
+   * e sem ela falharia com 42703. Quem garante a coluna é a ORDEM do `update.sh`
+   * (`reaplicar_baseline` antes do `pull`/`up` da imagem nova), como para
+   * `knowledge_source_ids` e `voz_*`. O `?? null` do mapeamento é só tipagem.
+   */
+  skillNames: string[] | null;
+  /**
+   * Como o agente lê a base de conhecimento (#4133), de `ai_agents.config`:
+   * `busca` (default, o caminho de sempre: `search_knowledge` + embedding) ou
+   * `leitura_direta` (índice no contexto + `ler_documento`, sem provedor de
+   * embedding). Ausente/torto = `busca`; ver `lerModoDeConhecimento`.
+   */
+  knowledgeMode?: 'busca' | 'leitura_direta';
   /**
    * LEGADO: a KB ativa do agente (`ai_agents.active_kb_version_id`).
    *
@@ -120,6 +177,27 @@ export interface PublishedAgentConfig {
    */
   avisoForaDoHorario?: string | null;
   /**
+   * A frase que o cliente lê quando a IA sai de campo (#3725), escrita pelo
+   * tenant em `ai_agents.config.aviso_de_handoff`. `null` = sem frase própria:
+   * sai o padrão do produto (curto e humano) de `textoDoAviso`. Lida por
+   * `lerFraseDoAvisoConfigurada`, que também recusa frase vazia/absurda — um
+   * aviso de passagem inválido não pode virar silêncio.
+   */
+  fraseDoAviso?: string | null;
+  /**
+   * Texto do aviso de FERIADO NACIONAL (#3877), da chave irmã
+   * `filters.business_hours.notice_feriado`. `null` = não configurado, e o
+   * feriado sai com o `notice` de sempre. Opcional pela mesma razão acima.
+   */
+  avisoDeFeriadoForaDoHorario?: string | null;
+  /**
+   * "Não atender em feriado nacional" (#3877, doc 316 A), da chave irmã
+   * `filters.business_hours.fechado_em_feriado_nacional`. Ligada, o feriado
+   * nacional conta como dia FECHADO da janela: sai o aviso e o turno espera o
+   * próximo dia útil. Opcional pela mesma razão acima; ausente = desligada.
+   */
+  naoAtenderEmFeriadoNacional?: boolean;
+  /**
    * `ai_agents.config.mcp_externo_no_atendimento` (#2147): o servidor MCP
    * externo também carrega em turno com contato, com a identidade dele em
    * cabeçalho. Opcional porque nasce depois das fixtures; ausente = desligado.
@@ -128,6 +206,34 @@ export interface PublishedAgentConfig {
   /** criadores (p/ mint do token efêmero de audit — padrão do runtime nativo). */
   versionCreatedBy: string | null;
   agentCreatedBy: string | null;
+  /**
+   * A resposta pode saír como nota de voz nesta versão (Fase 6b do plano de
+   * voz). Default do banco é FALSE — mesma doutrina de `operatorEnabled`:
+   * feature que gasta não se liga por migration, se liga na tela (que ainda
+   * não existe — Fase 7).
+   */
+  vozEnabled: boolean;
+  /** `'nunca' | 'espelhar' | 'sempre' | 'quando_pede'` — decidido em `voz-do-turno.ts`. */
+  vozQuando: 'nunca' | 'espelhar' | 'sempre' | 'quando_pede';
+  /**
+   * O PÚBLICO que a versão declara no `trigger_config` (#3722, fatia 2).
+   * `null`/ausente = atende todo mundo.
+   *
+   * Existe para o ROTEADOR: o fallback do router é carregado por
+   * `loadPublishedAgentConfigById`, e sem o público aqui ele assumiria o
+   * contato que a régua barrou. Opcional porque nasce depois das fixtures que
+   * montam este tipo à mão — ausente vale "sem público", o lado que não cala.
+   * Mora no jsonb, como `janelaDeAtendimento`/`filtroDePalavraChave`; nenhuma
+   * coluna nova, nenhuma migration.
+   */
+  publico?: PublicoDoAgente | null;
+  /**
+   * A voz PRÓPRIA deste agente (`ai_agents.config.voz_voice_id`, #4228), em
+   * `voice_id` do ElevenLabs. `null` = herda a voz da organização — mesma
+   * resolução de antes desta fatia. Opcional porque nasce depois das fixtures
+   * que montam este tipo à mão; quem consome lê com `?? null`.
+   */
+  vozVoiceId?: string | null;
 }
 
 interface Row {
@@ -141,6 +247,8 @@ interface Row {
   provider: string;
   model: string;
   credential_id: string | null;
+  reserve_provider: string | null;
+  reserve_model: string | null;
   max_steps: number;
   history_message_window: number;
   history_token_window: number;
@@ -151,7 +259,9 @@ interface Row {
   split_messages: boolean;
   split_max_chars: number;
   inbound_debounce_ms: number | null;
+  reply_min_interval_ms: number | null;
   multimodal_input: boolean;
+  image_vision_enabled: boolean | null;
   cases_enabled: boolean;
   followup: unknown;
   tool_ids: string[] | null;
@@ -162,9 +272,12 @@ interface Row {
   operator_tool_ids: string[] | null;
   pipeline_ids: string[] | null;
   knowledge_source_ids: string[] | null;
+  skill_names: string[] | null;
   trigger_config: unknown;
   version_created_by: string | null;
   agent_created_by: string | null;
+  voz_enabled: boolean | null;
+  voz_quando: string | null;
 }
 
 const SELECT_AGENT_CONFIG_COLUMNS = `a.operation_mode,a.paused_at,a.operation_revision::text,a.id as agent_id,
@@ -174,6 +287,8 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.operation_mode,a.paused_at,a.operation_re
             v.provider,
             v.model,
             v.credential_id,
+            v.reserve_provider,
+            v.reserve_model,
             v.max_steps,
             v.history_message_window,
             v.history_token_window,
@@ -184,7 +299,9 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.operation_mode,a.paused_at,a.operation_re
             v.split_messages,
             v.split_max_chars,
             v.inbound_debounce_ms,
+            v.reply_min_interval_ms,
             v.multimodal_input,
+            v.image_vision_enabled,
             v.cases_enabled,
             v.followup,
             v.tool_ids,
@@ -195,9 +312,19 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.operation_mode,a.paused_at,a.operation_re
             v.operator_tool_ids,
             v.pipeline_ids,
             v.knowledge_source_ids,
+            v.skill_names,
+            v.voz_enabled,
+            v.voz_quando,
             v.trigger_config,
             v.created_by as version_created_by,
             a.created_by as agent_created_by`;
+
+/** `config.voz_voice_id` como o turno precisa: string não vazia, ou `null` (= herda). */
+function lerVozDoAgente(bruto: unknown): string | null {
+  if (typeof bruto !== 'string') return null;
+  const limpo = bruto.trim();
+  return limpo === '' ? null : limpo;
+}
 
 /** Mapeamento Row (snake_case do banco) → PublishedAgentConfig, compartilhado
  * pelas duas variantes de loader (por channel_session e por agent id). */
@@ -206,6 +333,10 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     rag_top_k?: unknown;
     rag_similarity_threshold?: unknown;
     mcp_externo_no_atendimento?: unknown;
+    voz_voice_id?: unknown;
+    aviso_de_handoff?: unknown;
+    aviso_de_passagem?: unknown;
+    handoff_notice?: unknown;
   };
   const ragTopK =
     typeof cfg.rag_top_k === 'number' &&
@@ -235,6 +366,9 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     provider: r.provider,
     model: r.model,
     credentialId: r.credential_id,
+    // Nulos por padrão no banco: sem reserva configurada não há degrau nenhum.
+    reserveProvider: r.reserve_provider ?? null,
+    reserveModel: r.reserve_model ?? null,
     maxSteps: r.max_steps,
     historyMessageWindow: r.history_message_window,
     historyTokenWindow: r.history_token_window,
@@ -245,13 +379,22 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     splitMessages: r.split_messages,
     splitMaxChars: r.split_max_chars,
     inboundDebounceMs: r.inbound_debounce_ms ?? null,
+    replyMinIntervalMs: r.reply_min_interval_ms ?? null,
     multimodalInput: r.multimodal_input,
+    // `?? true`: só tipagem — a coluna é NOT NULL default true, e quem a garante
+    // num clone é a ORDEM do `update.sh` (baseline antes da imagem nova), como
+    // para `skill_names`.
+    imageVisionEnabled: r.image_vision_enabled ?? true,
     casesEnabled: r.cases_enabled,
     followup: r.followup,
     toolIds: r.tool_ids ?? [],
     // `?? []` cobre o clone sem a 0181: sem a coluna, o agente cai no ponteiro
     // legado abaixo em vez de ficar sem material nenhum.
     knowledgeSourceIds: r.knowledge_source_ids ?? [],
+    // `?? 'busca'` (dentro de `lerModoDeConhecimento`): o modo novo (#4133) não
+    // se liga por acidente — config ausente/torta mantém o caminho de sempre.
+    knowledgeMode: lerModoDeConhecimento(r.config),
+    skillNames: r.skill_names ?? null,
     activeKbVersionId: r.active_kb_version_id,
     ragTopK,
     ragSimilarityThreshold,
@@ -270,6 +413,12 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     // `null` (sem janela ⇒ atende sempre), nunca uma mordaça acidental.
     janelaDeAtendimento: lerJanelaDeAtendimento(r.trigger_config),
     avisoForaDoHorario: lerTextoDoAvisoForaDoHorario(r.trigger_config),
+    // #3725: `null` = sem frase própria, sai o padrão do produto. A leitura
+    // valida tamanho e conteúdo (ver `frase-do-aviso-configurada.ts`).
+    fraseDoAviso: lerFraseDoAvisoConfigurada(r.config),
+    avisoDeFeriadoForaDoHorario: lerTextoDoAvisoDeFeriadoForaDoHorario(r.trigger_config),
+    // `=== true` lá dentro: ausente/outro tipo é DESLIGADA (feriado = dia comum).
+    naoAtenderEmFeriadoNacional: lerFechadoEmFeriadoNacional(r.trigger_config),
     // `=== true`: jsonb ausente ou com outro tipo é DESLIGADO, o lado seguro.
     mcpExternoNoAtendimento: cfg.mcp_externo_no_atendimento === true,
     // Mesma leitura defensiva da linha acima: regex torta/valor vazio ⇒ `null`
@@ -277,14 +426,151 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     filtroDePalavraChave: lerFiltroDePalavraChave(r.trigger_config),
     versionCreatedBy: r.version_created_by,
     agentCreatedBy: r.agent_created_by,
+    // `?? false`: mesma direção segura de `operatorEnabled` — gasto novo nasce
+    // desligado, nunca ligado por acidente.
+    vozEnabled: r.voz_enabled ?? false,
+    // `?? 'espelhar'` é o default do BANCO, repetido aqui só por simetria com
+    // o resto do mapeamento — nunca deveria faltar (coluna NOT NULL), e um
+    // valor fora do vocabulário (CHECK do banco impede, mas TS não confia
+    // cegamente num texto livre) cai no mesmo default seguro. `quando_pede`
+    // (#4345) entra na lista: sem ele aqui, a versão que pede a leitura do
+    // turno voltaria a espelhar só o canal, em silêncio.
+    vozQuando:
+      r.voz_quando === 'nunca' ||
+      r.voz_quando === 'sempre' ||
+      r.voz_quando === 'quando_pede'
+        ? r.voz_quando
+        : 'espelhar',
+    // Mesma leitura defensiva de `janelaDeAtendimento`: lista torta ⇒ `null`
+    // (atende todo mundo), nunca uma mordaça acidental.
+    publico: lerPublicoDoGatilho(r.trigger_config),
+    // Leitura defensiva: jsonb livre. Texto vazio/espaço, número ou objeto ⇒
+    // `null` (herda a voz da organização), nunca um id torto indo à ElevenLabs.
+    vozVoiceId: lerVozDoAgente(cfg.voz_voice_id),
   };
 }
 
-export async function loadPublishedAgentConfig(
+/** Por que a seleção devolveu este agente (ou nenhum). Vai para o log do turno. */
+export type MotivoDaEscolha =
+  /** Nenhum agente publicado neste número. */
+  | 'sem_agente'
+  /** Nenhum candidato declarou público: o primeiro da ordem de sempre atende. */
+  | 'primeiro_da_fila'
+  /** Havia público e este foi o primeiro candidato que o contato cumpre. */
+  | 'publico_liberou'
+  /** Havia público e NENHUM candidato aceitou este contato. */
+  | 'publico_barrou'
+  /** Havia público e o chamador não trouxe o contato — a régua não foi aplicada. */
+  | 'sem_contato';
+
+export interface EscolhaDoNumero {
+  config: PublishedAgentConfig | null;
+  motivo: MotivoDaEscolha;
+  /**
+   * QUEM foi considerado e a decisão de cada um (#3722). Só existe quando
+   * algum candidato declarou público — quem não usa o recurso não ganha rastro
+   * (e não paga uma linha de log por turno).
+   */
+  rastro?: RastroDoPublico;
+}
+
+/** Um candidato no rastro: quem entrou na fila e o que a régua disse dele. */
+export interface CandidatoNoRastroDoPublico {
+  agentId: string;
+  agentName: string;
+  /** Posição na ordem de precedência (0 = o primeiro da fila de sempre). */
+  posicao: number;
+  /** `true` = pausado, que vem por último na ordem. */
+  pausado: boolean;
+  /**
+   * `true` = este agente NÃO declarou público: atende qualquer contato e a
+   * régua não o avalia. Distinto de "barrado" — é o agente genérico que a
+   * issue não quer que assuma quando outro barrou.
+   */
+  semPublico: boolean;
+  /**
+   * A decisão da régua. `null` em dois casos, ambos com `semPublico`
+   * desambiguando: sem público declarado, ou candidato que veio DEPOIS de quem
+   * ganhou e por isso não chegou a ser avaliado (a seleção para no primeiro
+   * elegível — o rastro não inventa decisão para quem não foi julgado).
+   */
+  decisao: DecisaoDoPublico | null;
+}
+
+/**
+ * O rastro da decisão do público em UM turno.
+ *
+ * Existe porque o motivo agregado (`publico_barrou`) responde "ninguém atendeu"
+ * e nada mais: não diz QUAL candidato barrou o contato nem QUAL item do
+ * público o barrou. Sem isso, a pergunta "por que o agente de vendas não
+ * respondeu este cliente?" só tinha como resposta abrir o banco.
+ */
+export interface RastroDoPublico {
+  /** `false` = o chamador não trouxe contato: a régua NÃO foi aplicada. */
+  contatoAvaliado: boolean;
+  /** A fila inteira, na ordem de precedência, com a decisão de cada um. */
+  candidatos: CandidatoNoRastroDoPublico[];
+  /** Quem ganhou. `null` = o público barrou todo mundo (silêncio). */
+  escolhidoAgentId: string | null;
+  /**
+   * De ONDE veio a fila (#3722, fatia 2). Ausente/`'numero'` = a seleção do
+   * agente do número (fatia 1), comportamento e formato de antes. `'roteador'`
+   * = a régua passou sobre os MEMBROS do roteador antes da pergunta do
+   * classificador; aí `escolhidoAgentId` é o agente que o turno de fato
+   * escolheu (ou `null` no silêncio).
+   */
+  origem?: 'numero' | 'roteador';
+  /** Quantos candidatos (membros e, quando avaliado, o fallback) o público barrou. */
+  barrados?: number;
+  /** Por que o turno ficou sem agente, quando foi o público. */
+  motivo?: 'publico_barrou';
+}
+
+/**
+ * QUAL agente do número atende este contato — o ponto único da escolha (#3722).
+ *
+ * Até esta entrega a resposta era uma linha de SQL (`limit 1`): o agente de
+ * maior prioridade do número atendia todo mundo, e o segundo publicado no mesmo
+ * número NUNCA era escolhido. Agora a mesma consulta traz TODOS os candidatos,
+ * na MESMA ordem de sempre (`pausado por último, priority desc, created_at
+ * asc`), e a escolha passa a ser o primeiro cujo PÚBLICO o contato cumpre.
+ *
+ * ## Precedência — quem ganha quando dois públicos se sobrepõem
+ *
+ * **O primeiro elegível na ordem de sempre.** Não existe pontuação de
+ * especificidade: um agente com `include_tags: [cliente]` e outro sem público
+ * nenhum, ambos no número, são resolvidos pela ordem (não-pausado, prioridade
+ * maior, mais antigo). Quem quiser que o agente de cliente vença põe
+ * prioridade maior nele — a tela já mostra esse campo. É a régua que o
+ * operador já conhece para desempatar dois agentes no mesmo número, estendida
+ * ao público; inventar uma segunda (especificidade, quantidade de critérios)
+ * seria uma regra que ninguém vê na tela.
+ *
+ * O pausado continua vindo por último, como antes: um pausado de prioridade
+ * maior não cala o número inteiro (`agente-pausado-nao-sequestra-o-numero`).
+ * E se o primeiro elegível for justamente um pausado, o turno para no
+ * `pausedAt` dele — o comportamento de antes, preservado de propósito: pausar
+ * significa "este agente não responde agora", não "passe para o próximo".
+ *
+ * ## Nenhum elegível = silêncio (e o genérico NÃO assume)
+ *
+ * `motivo: 'publico_barrou'` com `config: null`. Quem chama trata como
+ * silêncio — o turno termina sem modelo, sem caso e sem aviso, com o motivo no
+ * log, e a mensagem continua na caixa de entrada (mesma defesa do filtro de
+ * palavra-chave). O agente genérico não assume porque ele não tem público
+ * nenhum: assumir seria justamente o defeito da issue, agora com outro nome.
+ *
+ * ## Custo
+ *
+ * Os dados do contato só são lidos se ALGUM candidato declarou público. Quem
+ * não usa o recurso não paga consulta extra por turno.
+ */
+export async function escolherAgenteDoNumero(
   db: pg.Pool,
   organizationId: string,
   channelSessionId: string,
-): Promise<PublishedAgentConfig | null> {
+  contactId?: string | null,
+): Promise<EscolhaDoNumero> {
   const { rows } = await db.query<Row>(
     `select ${SELECT_AGENT_CONFIG_COLUMNS}
      from ai_agents a
@@ -300,13 +586,87 @@ export async function loadPublishedAgentConfig(
      -- prioridade maior calava o número inteiro, com outro agente publicado nele
      -- (produção, 2026-10-05). O pausado segue vindo quando é o único: null
      -- aqui vira o agente genérico, e pausar faria o número voltar a responder.
-     order by (a.paused_at is not null) asc, a.priority desc, a.created_at asc
-     limit 1`,
+     order by (a.paused_at is not null) asc, a.priority desc, a.created_at asc`,
     [organizationId, channelSessionId],
   );
-  const r = rows[0];
-  if (r === undefined) return null;
-  return mapAgentConfigRow(r);
+  // O público (#3722) é lido da linha crua, ao lado da config: quem o consome é
+  // só esta seleção, então ele não entra em `PublishedAgentConfig` (o turno não
+  // tem o que fazer com ele). Lista torta ⇒ `null` ⇒ atende todo mundo.
+  const candidatos = rows.map((r, posicao) => ({
+    config: mapAgentConfigRow(r),
+    publico: lerPublicoDoGatilho(r.trigger_config),
+    posicao,
+    // `!= null` cobre o fixture sem a coluna e o NULL do banco: pausado é
+    // "tem data", não "a chave existe".
+    pausado: r.paused_at != null,
+  }));
+  const primeiro = candidatos[0];
+  if (primeiro === undefined) return { config: null, motivo: 'sem_agente' };
+
+  // Ninguém declarou público: comportamento de antes, sem tocar em `contacts`.
+  // Sem público não há decisão a rastrear — e não inventar rastro aqui é o que
+  // mantém o log do turno silencioso para quem não usa o recurso.
+  if (!candidatos.some((c) => c.publico !== null)) {
+    return { config: primeiro.config, motivo: 'primeiro_da_fila' };
+  }
+
+  // A decisão de cada candidato, preenchida conforme a régua julga. Quem vem
+  // depois do escolhido fica `null` — a seleção para no primeiro elegível e o
+  // rastro não inventa decisão para quem não foi avaliado.
+  const decisoes: Array<DecisaoDoPublico | null> = candidatos.map(() => null);
+  const rastro = (escolhidoAgentId: string | null, contatoAvaliado: boolean): RastroDoPublico => ({
+    contatoAvaliado,
+    escolhidoAgentId,
+    candidatos: candidatos.map((c, i) => ({
+      agentId: c.config.agentId,
+      agentName: c.config.agentName,
+      posicao: c.posicao,
+      pausado: c.pausado,
+      semPublico: c.publico === null,
+      decisao: decisoes[i] ?? null,
+    })),
+  });
+
+  // Público configurado mas sem contato no chamador: a régua não pode ser
+  // aplicada, e chutar "barrou" calaria o número por um erro de fiação. Cai no
+  // primeiro da fila e o motivo + o rastro dizem que NADA foi avaliado.
+  if (contactId == null) {
+    return { config: primeiro.config, motivo: 'sem_contato', rastro: rastro(null, false) };
+  }
+
+  // Erro de leitura sobe de propósito: a fila re-tenta o job.
+  const fatos = await carregarFatosDoContato(db, organizationId, contactId);
+  for (const [i, candidato] of candidatos.entries()) {
+    if (candidato.publico !== null) {
+      const decisao = avaliarPublico(candidato.publico, fatos);
+      decisoes[i] = decisao;
+      if (!decisao.passa) continue;
+    }
+    return {
+      config: candidato.config,
+      motivo: 'publico_liberou',
+      rastro: rastro(candidato.config.agentId, true),
+    };
+  }
+  return { config: null, motivo: 'publico_barrou', rastro: rastro(null, true) };
+}
+
+/**
+ * Agente publicado do número, ou `null`.
+ *
+ * Delega para `escolherAgenteDoNumero` — a régua do público é UMA, no mesmo
+ * ponto da escolha. `contactId` é opcional porque há chamadores que não falam
+ * de um contato (checagem de vínculo da campanha, leitura de configuração);
+ * sem ele, o público não é aplicado e o motivo `sem_contato` fica no caminho
+ * com resultado.
+ */
+export async function loadPublishedAgentConfig(
+  db: pg.Pool,
+  organizationId: string,
+  channelSessionId: string,
+  contactId?: string | null,
+): Promise<PublishedAgentConfig | null> {
+  return (await escolherAgenteDoNumero(db, organizationId, channelSessionId, contactId)).config;
 }
 
 /**
@@ -333,6 +693,29 @@ export async function loadPublishedAgentConfigById(
   const r = rows[0];
   if (r === undefined) return null;
   return mapAgentConfigRow(r);
+}
+
+/**
+ * O override que o turno passa ao seam, montado num lugar só (#4600): provedor,
+ * credencial e — quando CONFIGURADA — a reserva de modelo da versão publicada.
+ *
+ * A reserva só entra no objeto quando os dois campos existem: um provedor sem
+ * modelo (ou o contrário) é configuração pela metade, e meia reserva não é
+ * reserva — o seam recebe o campo ausente e segue com o comportamento de hoje.
+ */
+export function overrideLlmDoAgente(
+  config: PublishedAgentConfig,
+  reservaDeModelo?: { provider: string; model: string },
+): {
+  provider: string;
+  credentialId: string | null;
+  reservaDeModelo?: { provider: string; model: string };
+} {
+  return {
+    provider: config.provider,
+    credentialId: config.credentialId,
+    ...(reservaDeModelo ? { reservaDeModelo } : {}),
+  };
 }
 
 /**
@@ -378,11 +761,12 @@ export async function loadConversationAgentConfig(
   conversationId: string,
   channelId: string,
 ) {
-  const { rows } = await pool.query<{ active_ai_agent_id: string | null }>(
-    'select active_ai_agent_id from conversations where organization_id=$1 and id=$2 and channel_session_id=$3',
+  const { rows } = await pool.query<{ active_ai_agent_id: string | null; contact_id: string | null }>(
+    'select active_ai_agent_id,contact_id from conversations where organization_id=$1 and id=$2 and channel_session_id=$3',
     [organizationId, conversationId, channelId],
   );
   return rows[0]?.active_ai_agent_id
     ? loadPublishedAgentConfigById(pool, organizationId, rows[0].active_ai_agent_id)
-    : loadPublishedAgentConfig(pool, organizationId, channelId);
+    : // #3722: o público do agente do número é do CONTATO desta conversa.
+      loadPublishedAgentConfig(pool, organizationId, channelId, rows[0]?.contact_id ?? null);
 }

@@ -125,6 +125,33 @@ describe("CaseDetail", () => {
     expect(screen.queryByText("lead_asked")).not.toBeInTheDocument();
   });
 
+  it("marca na linha do tempo a resposta do cliente fora do atendimento atual", () => {
+    useCaseMock.mockReturnValue({
+      isLoading: false,
+      data: {
+        ...BASE_CASE,
+        events: [
+          ...BASE_CASE.events,
+          {
+            id: "ev-3",
+            kind: "lead_provided" as const,
+            actor_kind: "lead" as const,
+            actor_user_id: null,
+            human_action: null,
+            body: "Primeira opção",
+            fora_da_fronteira: "true",
+            created_at: "2026-07-20T10:10:00.000Z",
+          },
+        ],
+      },
+    });
+    render(wrap(<CaseDetail caseId="case-1" />));
+
+    expect(
+      screen.getByText("O cliente respondeu fora do atendimento atual (sem aviso no WhatsApp)"),
+    ).toBeInTheDocument();
+  });
+
   it("sinaliza discretamente quando o caso veio do guardrail automático", () => {
     useCaseMock.mockReturnValue({
       isLoading: false,

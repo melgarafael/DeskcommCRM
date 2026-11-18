@@ -132,7 +132,8 @@ Todo objeto é **estrito**: chave desconhecida é recusada (é o que pega erro d
 | `appointment_no_show` | Falta confirmada pela equipe | Quando a equipe confirma a falta num compromisso. | opcional `event_type_ids` (vazio = todos os tipos) |
 
 Todos aceitam `cancel_on_reply` (`true`/`false`): `true` encerra a inscrição na primeira resposta do
-contato em vez de seguir o fluxo.
+contato em vez de seguir o fluxo. Ausente vale `false`, salvo em `appointment_no_show`, onde ausente
+vale `true`: a sequência de falta sempre para quando o paciente responde.
 
 Um roteiro de atendimento (`surface: "atendimento"`) só publica com gatilho `manual`: ele começa por
 palavra-gatilho (`settings.gatilhos`) ou pelo roteador.
@@ -142,7 +143,7 @@ palavra-gatilho (`settings.gatilhos`) ou pelo roteador.
 | `type` | Na tela | O que faz | `config` |
 |---|---|---|---|
 | `trigger` | Gatilho / Início do fluxo | Ponto de entrada. Um por fluxo. | `{}` |
-| `wait` | Aguardar | Pausa. | Fixa: `{ "mode": "fixed", "duration_ms": 300000…7776000000 }` (5 min a 90 dias), opcional `immune_to_reply: true` (a resposta do cliente **não** encurta a espera; para cadências longas). Inteligente: `{ "mode": "smart", "min_ms", "max_ms", "guidance"? }` (a IA escolhe dentro da faixa). |
+| `wait` | Aguardar | Pausa. | Fixa: `{ "mode": "fixed", "duration_ms": 300000…7776000000 }` (5 min a 90 dias), opcional `immune_to_reply: true` (a resposta do cliente **não** encurta a espera; para cadências longas), opcional `ate_o_horario: { "start": "09:00", "end": "18:00", "weekdays": [1,2,3,4,5] }` (a espera só **termina** nesses dias e horas, no fuso da organização; se vencer fora, continua até a próxima abertura — 0 = domingo). Inteligente: `{ "mode": "smart", "min_ms", "max_ms", "guidance"? }` (a IA escolhe dentro da faixa). |
 | `condition` | Condição | Decide o caminho pelo estado do lead. | `checks` (1–10 regras), `combinator` (`and`/`or`, padrão `and`), `branching` (`combined` = saídas Sim/Não; `per_check` = uma saída por regra, cada regra com `id`). |
 | `ai_classify` | Classificar (IA) | Espera a resposta e a IA escolhe uma classe. | `classes` (1–8 nomes), `grace_timeout_ms` (mínimo 15 min: prazo para responder), `target` (`last_reply`/`summary`), `hint` (dica para a IA, até 500), opcional `branches` (ids estáveis; ver [Saídas](#saídas-de-cada-caixa-ligações)). |
 | `match_reply` | Resposta (texto) | Espera a resposta e decide por texto, sem IA. | `branches` (1–8, cada uma `{ id, label, op: "eq"/"contains", pattern }`), `grace_timeout_ms` (mínimo 15 min), opcional `save_to` (`{ "kind": "contact_name" }` ou `{ "kind": "lead_custom", "key": "campo" }`) e `if_exists` (`skip`/`overwrite`/`confirm`). |

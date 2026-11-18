@@ -120,6 +120,16 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
      camada: null,
   },
   {
+    nome: "teto_de_respostas",
+    rotulo: "Parar a conversa que virou pingue-pongue",
+    oQueProtege:
+      "Se a mesma conversa já recebeu muitas respostas automáticas numa janela (padrão: 20 em 1 h), a próxima é barrada e a equipe é avisada na Central. É o que impede dois robôs de conversarem sozinhos — caso real de 216 respostas em uma hora para o mesmo contato.",
+    escolha: null,
+    porQueNaoSeDesliga:
+      "Não é escolha de estilo: conversa entre robôs queima cota do modelo e é risco de bloqueio do seu número. O número de respostas e a janela se ajustam na configuração da instalação, não no desligamento.",
+     camada: null,
+  },
+  {
     nome: "spinning",
     rotulo: "Variar o texto das mensagens iguais",
     oQueProtege:
@@ -137,6 +147,19 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
     porQueNaoSeDesliga:
       "Uma promessa escrita obriga o seu negócio. A conferência é uma regra fixa, não custa nada e não tem troca a oferecer.",
      camada: null,
+  },
+  {
+    nome: "concessao_sem_lastro",
+    rotulo: "Não confirmar condição que só o cliente citou",
+    oQueProtege:
+      "Barra a resposta que confirma preço, parcela, percentual ou concessão (aprovação, gratuidade, " +
+      "cortesia…) que só aparece no que o cliente escreveu, e em nada que a empresa enviou ou cadastrou. " +
+      "O assistente refaz sem repeti-la.",
+    escolha: null,
+    porQueNaoSeDesliga:
+      "O que o cliente escreve não é registro da sua empresa: confirmar uma condição que só ele trouxe " +
+      "obriga o negócio a algo que ninguém da equipe deu. Regra fixa, sem custo.",
+    camada: null,
   },
   {
     nome: "semantic_promise",
@@ -219,6 +242,31 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
     porQueNaoSeDesliga:
       "É a mesma promessa vazia do 'vou pedir pro responsável', só que sobre agenda: o cliente " +
       "fica esperando uma confirmação que nunca foi checada. Regra fixa, sem custo.",
+    camada: null,
+  },
+  {
+    nome: "horario_da_agenda",
+    rotulo: "Só oferecer horário que a agenda devolveu",
+    oQueProtege:
+      "Barra a resposta que cita dia e horário que a busca da agenda não devolveu nesta " +
+      'resposta, e o "está agendado" quando a marcação não foi gravada. O assistente refaz ' +
+      "com a agenda; se insistir, passa a conversa para a equipe.",
+    escolha: null,
+    porQueNaoSeDesliga:
+      "Horário inventado vira consulta marcada em cima de outra, e confirmação sem marcação " +
+      "vira paciente esperando uma consulta que não existe. Regra fixa, sem custo.",
+    camada: null,
+  },
+  {
+    nome: "registro_sem_efeito",
+    rotulo: "Conferir a escrita antes de afirmar registro",
+    oQueProtege:
+      "Recusa a confirmação de registro quando a ferramenta não confirmou nenhuma escrita " +
+      "neste turno. O controle ainda não identifica a qual item cada escrita se refere.",
+    escolha: null,
+    porQueNaoSeDesliga:
+      "É a mesma promessa vazia do 'vou pedir pro responsável': o cliente fica esperando um " +
+      "contato que nunca acontece. Regra fixa, sem custo.",
     camada: null,
   },
   {

@@ -39,6 +39,7 @@ import ts from "typescript";
 
 import {
   decidirBinding,
+  PONTOS_DO_AGENTE_COM_ESCOLHA_NO_PAINEL,
   PONTOS_DO_AGENTE_PUBLICADO,
   PONTOS_QUE_HERDAM_DO_AGENTE,
   type AgentePublicado,
@@ -316,6 +317,9 @@ describe("nenhum call site empresta o modelo do agente sem o provider dele", () 
     for (const [purpose, ocorrencias] of objetosPorPurpose) {
       if (!ocorrencias.some(({ objeto }) => objeto.includes("llmOverride"))) continue;
       if (PONTOS_DO_AGENTE_PUBLICADO.has(purpose)) continue;
+      // O agente escrevendo sozinho (`followup_turn`): É o agente, com o
+      // binding do painel na frente — declarado no conjunto dele, que a tela lê.
+      if (PONTOS_DO_AGENTE_COM_ESCOLHA_NO_PAINEL.has(purpose)) continue;
       if (HERDAM_DE_OUTRA_FONTE.has(purpose)) continue;
       if (!PONTOS_QUE_HERDAM_DO_AGENTE.has(purpose)) naoDeclarados.push(purpose);
     }
@@ -332,5 +336,16 @@ describe("nenhum call site empresta o modelo do agente sem o provider dele", () 
       (p) => !(objetosPorPurpose.get(p) ?? []).some(({ objeto }) => objeto.includes("llmOverride")),
     );
     expect(orfaos, `declarado mas nenhum call site herda: ${orfaos.join(", ")}`).toEqual([]);
+  });
+
+  it("o ponto do agente com escolha no painel recebe o par do agente — senão 'sem escolha' não seria a versão publicada", () => {
+    // Sem `llmOverride` no call site, o resolvedor não teria versão publicada
+    // para devolver quando o painel está vazio, e o follow-up cairia no padrão
+    // da organização — trocando de modelo sem ninguém ter escolhido nada.
+    const semOPar = [...PONTOS_DO_AGENTE_COM_ESCOLHA_NO_PAINEL].filter(
+      (p) => !(objetosPorPurpose.get(p) ?? []).some(({ objeto }) => objeto.includes("llmOverride")),
+    );
+    expect(PONTOS_DO_AGENTE_COM_ESCOLHA_NO_PAINEL.size).toBeGreaterThan(0);
+    expect(semOPar, `sem o par do agente no call site: ${semOPar.join(", ")}`).toEqual([]);
   });
 });

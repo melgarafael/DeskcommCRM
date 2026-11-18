@@ -80,7 +80,7 @@ export function AuditoriaDoCandidato({
   // presa em "A verificar".
   const site = siteEfetivo(data, new Date().toISOString());
   const previaAtual = previaValida(data);
-  const jaAprovada = !!previaAprovadaDoAgente(data, config.agent_id);
+  const jaAprovada = !!previaAprovadaDoAgente(data, config.agent_id, config.briefing_editado_em);
   // A1: quando a prévia chega, ela rola para a área visível da janela — o texto
   // caía fora do que o modal mostrava (medido: posição 777 numa janela de 726).
   useEffect(() => {

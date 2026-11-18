@@ -6,7 +6,9 @@ import { loadAuthUser } from "@/lib/auth/server";
 import { lerAssinaturaDasEntregas } from "@/lib/channels/assinatura-das-entregas";
 import { tagDeIdioma } from "@/lib/i18n/datas";
 import { carregarComportamentoDaInstalacao } from "@/lib/instalacao/comportamento-servidor";
+import { empresasParaMolde, lerMoldeDeIa, resumoDoMoldeNoBanco } from "@/lib/instalacao/molde-de-ia-servidor";
 import { MODULOS_AINDA_NAO_LIGAVEIS, MODULOS_OPCIONAIS_POR_FLAG, modulosLigados, type ModuloOpcional } from "@/lib/instalacao/modulos";
+import { empresasDosModulos, lerModulosDaEmpresa } from "@/lib/instalacao/modulos-por-empresa";
 import type { TipoDeSuspensao } from "@/lib/organizacao/operante";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -19,6 +21,8 @@ import {
 import { detectarServidor } from "@/lib/recursos-opcionais/estado";
 
 import { FormularioDeComportamento, FormularioDeModulos } from "./_form";
+import { FormularioDeModulosPorEmpresa } from "./_modulos-por-empresa";
+import { FormularioDoMoldeDeIa } from "./_molde-de-ia";
 
 export const metadata = { title: "Recursos opcionais" };
 
@@ -80,7 +84,11 @@ function instanteLegivel(iso: string | null, tag: string): string | null {
  * gravando pelos formulários de sempre; a lista de recursos é
  * `lib/recursos-opcionais/catalogo.ts`.
  */
-export default async function Page() {
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ empresa?: string | string[] }>;
+}) {
   const usuario = await loadAuthUser();
   if (!usuario?.is_platform_admin) notFound();
   const idioma = usuario.idioma;
@@ -88,18 +96,42 @@ export default async function Page() {
   // O valor EFETIVO (linha acima, `.env` como piso): a tela mostra o que está
   // valendo de verdade, e não o que a linha diria se ela existisse.
   const admin = createAdminClient();
-  const [comportamento, ligados, servidor, assinatura] = await Promise.all([
+  const [comportamento, ligados, servidor, assinatura, molde] = await Promise.all([
     carregarComportamentoDaInstalacao(),
     modulosLigados(admin),
     detectarServidor(),
     lerAssinaturaDasEntregas(admin),
+    lerMoldeDeIa(admin),
   ]);
+  // O molde de IA das empresas novas (migration 9096). Leitura que falhou vira
+  // "nenhum" na tela, com a lista travada: o seletor não oferece escolha sobre
+  // um estado que ninguém leu.
+  const moldeAtual = molde ?? null;
+  const [empresasDoMolde, resumoDoMolde] = await Promise.all([
+    molde === undefined ? Promise.resolve(null) : empresasParaMolde(admin, moldeAtual),
+    moldeAtual ? resumoDoMoldeNoBanco(admin, moldeAtual) : Promise.resolve(null),
+  ]);
+  // #3868: a EMPRESA escolhida no bloco "Por empresa" chega por query string, e o
+  // filtro é por formato de UUID — é identificador indo para consulta, e um valor
+  // arbitrário não deve nem virar `where`. A existência é conferida na leitura
+  // (`lerModulosDaEmpresa` responde `null` para empresa inexistente).
+  const params = await searchParams;
+  const pedida = typeof params.empresa === "string" ? params.empresa : null;
+  const empresaId = pedida && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pedida) ? pedida : null;
+  const [empresas, modulosDaEmpresa] = await Promise.all([
+    empresasDosModulos(admin),
+    empresaId ? lerModulosDaEmpresa(admin, empresaId, ligados) : Promise.resolve(null),
+  ]);
+
   // Spec da cobrança §7(h): o aviso de quantas o desligar libera só existe com ela ligada.
   const suspensasPorCobranca = ligados.includes("cobranca") ? await contarSuspensasPorCobranca(admin) : 0;
   // Módulo que ainda não se liga nesta versão só aparece se já estiver ligado
   // (pelo banco): dá para desligar, e quem nunca ligou não vê interruptor que recusa.
   const escondidos = MODULOS_AINDA_NAO_LIGAVEIS.filter((m) => !ligados.includes(m));
-  const fontes = { modulos: ligados, settings: null, servidor };
+  // `telefonia: null` porque esta tela é da INSTALAÇÃO: o sinal de telefonia é
+  // por organização (o tronco salvo) e não existe um "da instalação toda" para
+  // ler. `null` é "não lido", nunca "desligado".
+  const fontes = { modulos: ligados, settings: null, servidor, telefonia: null };
 
   // Os módulos que NÃO se ligam por interruptor aqui (módulo de tabela, ADR-0002)
   // aparecem com o caminho de onde se instalam — saem do catálogo, sem lista escrita.
@@ -120,7 +152,7 @@ export default async function Page() {
         <h1 className="text-2xl font-semibold tracking-tight">{traduzir("Recursos opcionais", idioma)}</h1>
         <p className="text-sm text-muted-foreground">
           {traduzir(
-            "Tudo o que se liga e desliga nesta instalação, num lugar só. Vale para todas as empresas hospedadas aqui.",
+            "Tudo o que se liga e desliga nesta instalação, num lugar só. Vale para todas as empresas hospedadas aqui, e o que cada empresa usa pode ser ajustado abaixo.",
             idioma,
           )}
         </p>
@@ -148,6 +180,14 @@ export default async function Page() {
             })}
           </ul>
         )}
+        {/* key por empresa: sem ela, trocar de empresa pelo seletor reaproveitava o
+            estado (e o `anterior` do rollback) da empresa de antes. */}
+        <FormularioDeModulosPorEmpresa
+          key={empresaId ?? "nenhuma"}
+          empresas={empresas}
+          empresaId={empresaId}
+          modulos={modulosDaEmpresa}
+        />
       </section>
 
       <section className="space-y-3" aria-labelledby="bloco-comportamento">
@@ -164,6 +204,7 @@ export default async function Page() {
             }
           }
         />
+        <FormularioDoMoldeDeIa inicial={moldeAtual} empresas={empresasDoMolde} resumoInicial={resumoDoMolde} />
         <ul className="space-y-3">
           {outrasChaves.map((r) => (
             <LinhaDoRecurso

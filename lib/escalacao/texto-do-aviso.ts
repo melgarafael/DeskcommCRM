@@ -85,6 +85,7 @@ export interface AvisoDeCaso {
   link: string;
   /** Só ensina comandos quando a organização habilitou o opt-in. */
   respostaWhatsappHabilitada?: boolean;
+  atualizacao?: { eventId: string; info: string; ask: string };
 }
 
 /**
@@ -108,7 +109,7 @@ export function montarAvisoDeCaso(aviso: AvisoDeCaso): string {
   const t = (texto: string): string => traduzir(texto, aviso.idioma);
   const failSafe = aviso.source === "guardrail_autofallback";
 
-  const linhas: string[] = [`🔔 ${aviso.marca}: ${t("novo caso esperando você")}`, ""];
+  const linhas: string[] = [`🔔 ${aviso.marca}: ${t(aviso.atualizacao ? "atualização do caso esperando você" : "novo caso esperando você")}`, ""];
 
   linhas.push(`${t("Tipo")}: ${t(tipoDeCasoLabel(aviso.kind ?? "outro"))}`);
 
@@ -125,22 +126,29 @@ export function montarAvisoDeCaso(aviso: AvisoDeCaso): string {
   const precisa = sanitizarTextoDoLead(aviso.summary, TETOS_DO_TEXTO_DO_LEAD.summary);
   if (precisa) {
     // A ETIQUETA é a defesa barata contra phishing no caso de fail-safe: ali o
-    // `summary` é a própria frase que a IA ia mandar ao cliente, e sem a
-    // etiqueta ela chega à equipe com cara de afirmação do sistema. Declarada
-    // como citação, ela volta a ser o que é.
-    if (failSafe) linhas.push(t("(resumo escrito pela IA a partir da conversa)"));
+    // `summary` é montado sem revisão — trecho copiado da conversa (#3725) ou a
+    // frase barrada da IA — e sem a etiqueta chega à equipe com cara de
+    // afirmação do sistema. Declarado como citação, volta a ser o que é.
+    if (failSafe) linhas.push(t("(montado automaticamente; confira na conversa)"));
     linhas.push(`${t("O que o cliente precisa")}: ${precisa}`);
   }
 
   const travou = sanitizarTextoDoLead(aviso.blocker, TETOS_DO_TEXTO_DO_LEAD.blocker);
   if (travou) linhas.push(`${t("Por que a IA travou")}: ${travou}`);
 
+  if (aviso.atualizacao) {
+    const pergunta = sanitizarTextoDoLead(aviso.atualizacao.ask, TETOS_DO_TEXTO_DO_LEAD.blocker);
+    const resposta = sanitizarTextoDoLead(aviso.atualizacao.info, TETOS_DO_TEXTO_DO_LEAD.summary);
+    if (pergunta) linhas.push(`${t("Pergunta da equipe")}: ${pergunta}`);
+    if (resposta) linhas.push(`${t("Nova informação do cliente")}: ${resposta}`);
+  }
   linhas.push("", `${t("Abrir")}: ${aviso.link}`, "");
+  const ciclo = aviso.atualizacao ? `ATUALIZACAO ${aviso.atualizacao.eventId} ` : "";
   if (aviso.respostaWhatsappHabilitada) {
     linhas.push(t("Para orientar a IA sem falar diretamente com o cliente, envie:"));
-    linhas.push(`RESPONDER ${aviso.caseId} <resposta ou decisão>`);
+    linhas.push(`RESPONDER ${aviso.caseId} ${ciclo}<resposta ou decisão>`);
     linhas.push(t("Para pedir que a IA esclareça algo com o cliente, envie:"));
-    linhas.push(`PERGUNTAR ${aviso.caseId} <pergunta ao cliente>`);
+    linhas.push(`PERGUNTAR ${aviso.caseId} ${ciclo}<pergunta ao cliente>`);
     linhas.push(t("A IA usa sua orientação e o histórico para continuar o atendimento."));
   } else {
     linhas.push(t("Responder aqui não chega ao cliente — abra o link para responder."));

@@ -2,6 +2,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { liberarEcoLocal, marcarEcoLocal } from "@/lib/kanban/local-echo";
+import { fundeRespostaNoCard } from "@/lib/kanban/owner";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import type { Lead } from "@/lib/types/leads";
 import type { BoardData } from "@/lib/kanban/types";
@@ -31,7 +32,10 @@ function gravaLeadNoQuadro(
   if (!lead) return;
   qc.setQueryData<BoardData>(queryKey, (atual) =>
     atual
-      ? { ...atual, leads: atual.leads.map((l) => (l.id === leadId ? { ...l, ...lead } : l)) }
+      ? {
+          ...atual,
+          leads: atual.leads.map((l) => (l.id === leadId ? fundeRespostaNoCard(l, lead) : l)),
+        }
       : atual,
   );
 }
@@ -87,6 +91,13 @@ export function useLoseLead(pipelineId: string) {
 interface MoveToPipelineArgs {
   leadId: string;
   targetPipelineId: string;
+  /**
+   * A etapa de ENTRADA no funil destino (issue #3643). Ausente ou `null` é o
+   * comportamento de sempre: o servidor escolhe a primeira etapa aberta
+   * (`escolheEtapaDeDestino`). Não vai como `null` no corpo porque o schema
+   * aceita `stage_id` só como uuid — e porque "não escolhi" não é um pedido.
+   */
+  targetStageId?: string | null;
 }
 
 /**
@@ -104,11 +115,16 @@ export function useMoveLeadToPipeline(pipelineId: string) {
   const qc = useQueryClient();
   const queryKey = ["board", pipelineId] as const;
   return useMutation({
-    mutationFn: async ({ leadId, targetPipelineId }: MoveToPipelineArgs) => {
+    mutationFn: async ({ leadId, targetPipelineId, targetStageId }: MoveToPipelineArgs) => {
       marcarEcoLocal(leadId);
       return apiClient.post<{ data: { lead: Lead; origem: Lead } }>(
         `/api/v1/leads/${leadId}/clone`,
-        { pipeline_id: targetPipelineId },
+        {
+          pipeline_id: targetPipelineId,
+          // Sem escolha, o corpo é EXATAMENTE o de antes: quem decide a etapa
+          // continua sendo o servidor.
+          ...(targetStageId ? { stage_id: targetStageId } : {}),
+        },
       );
     },
     onSuccess: (res, { leadId }) => {

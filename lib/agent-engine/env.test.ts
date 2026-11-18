@@ -94,3 +94,55 @@ describe("loadEnv — a chave da OpenRouter existe no contrato do worker", () =>
     expect("VAR_QUE_NAO_EXISTE_NO_SCHEMA" in env).toBe(false);
   });
 });
+
+/**
+ * Decisão do dono (doc 242, opção B): o recuo ocioso do laço do event_log para
+ * em 30s, não em 60s. 60s fazia o primeiro evento depois de um silêncio esperar
+ * até um minuto (automação, aviso ao atendente, primeiro salto do áudio).
+ * Voltar o default a 60s reprova aqui.
+ */
+describe("loadEnv — teto do recuo ocioso do event_log (#3693)", () => {
+  it("sem a variável no .env, o teto é 30s", () => {
+    expect(loadEnv(REQUIRED).EVENT_LOG_DRAIN_IDLE_MAX_INTERVAL_MS).toBe(30_000);
+  });
+
+  it("vazia no .env vale o mesmo default de 30s", () => {
+    const env = loadEnv({ ...REQUIRED, EVENT_LOG_DRAIN_IDLE_MAX_INTERVAL_MS: "" });
+    expect(env.EVENT_LOG_DRAIN_IDLE_MAX_INTERVAL_MS).toBe(30_000);
+  });
+});
+
+describe("AGENT_STOP_AFTER_FINAL_SEND — a parada do laço vem ligada", () => {
+  it("ausente ou vazia = 'on': a parada vale para quem não mexeu no .env", () => {
+    expect(loadEnv(REQUIRED).AGENT_STOP_AFTER_FINAL_SEND).toBe("on");
+    expect(loadEnv({ ...REQUIRED, AGENT_STOP_AFTER_FINAL_SEND: "" }).AGENT_STOP_AFTER_FINAL_SEND).toBe("on");
+  });
+
+  it("'off' volta ao laço de sempre", () => {
+    expect(loadEnv({ ...REQUIRED, AGENT_STOP_AFTER_FINAL_SEND: "off" }).AGENT_STOP_AFTER_FINAL_SEND).toBe("off");
+  });
+
+  it("aceita 'observe' e 'on', e recusa o resto nomeando a variável", () => {
+    expect(loadEnv({ ...REQUIRED, AGENT_STOP_AFTER_FINAL_SEND: "observe" }).AGENT_STOP_AFTER_FINAL_SEND).toBe("observe");
+    expect(loadEnv({ ...REQUIRED, AGENT_STOP_AFTER_FINAL_SEND: "on" }).AGENT_STOP_AFTER_FINAL_SEND).toBe("on");
+    expect(() => loadEnv({ ...REQUIRED, AGENT_STOP_AFTER_FINAL_SEND: "sim" })).toThrowError(
+      /AGENT_STOP_AFTER_FINAL_SEND/,
+    );
+  });
+});
+
+/**
+ * O knob do esquema enxuto (LLM_TOOL_SCHEMA_SEM_PADRAO) só funciona se o schema
+ * do worker o declara: `loadEnv` remove o resto, e a canária ligada no `.env`
+ * sumiria no boot sem pista nenhuma. Mesma família das chaves acima.
+ */
+describe("loadEnv — LLM_TOOL_SCHEMA_SEM_PADRAO existe no contrato do worker", () => {
+  it("'on' chega ao env do worker", () => {
+    expect(loadEnv({ ...REQUIRED, LLM_TOOL_SCHEMA_SEM_PADRAO: "on" }).LLM_TOOL_SCHEMA_SEM_PADRAO).toBe("on");
+  });
+
+  it("vazia ou ausente continua ausente — o default é a constante do seam, não o schema", () => {
+    expect(loadEnv({ ...REQUIRED, LLM_TOOL_SCHEMA_SEM_PADRAO: "" }).LLM_TOOL_SCHEMA_SEM_PADRAO).toBeUndefined();
+    expect(loadEnv(REQUIRED).LLM_TOOL_SCHEMA_SEM_PADRAO).toBeUndefined();
+  });
+});

@@ -4,6 +4,7 @@ import { useCallback, useMemo } from "react";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { useRefetchDeSeguranca } from "@/hooks/realtime/useRefetchDeSeguranca";
 import { agendarRecargaDasConversas } from "@/hooks/inbox/recargaDasConversas";
+import { aplicarAtualizacaoNaLista } from "@/lib/inbox/atualizacao-da-lista";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import {
@@ -111,6 +112,12 @@ export interface ConversationsFilters {
   unread?: boolean;
   channel_session_id?: string;
   /**
+   * A FILA (#3876): só as conversas classificadas neste setor. O `set` da
+   * serialização é a metade que o typecheck não pega — campo no tipo sem a linha
+   * do `qs.set` faz o seletor mudar de valor e a lista não mudar.
+   */
+  sector_id?: string;
+  /**
    * A etiqueta, ou VÁRIAS (#1274).
    *
    * `string` continua aceito porque é o que o resto da tela (e qualquer chamada
@@ -123,6 +130,12 @@ export interface ConversationsFilters {
   tagMode?: ModoDeEtiqueta;
   /** A aba "Grupos" do inbox (Task 10). Ausente = sem filtro, mostra tudo. */
   is_group?: boolean;
+  /**
+   * A aba "Pessoal" (#4434). `true` INVERTE a exclusão da spec 21: a lista
+   * devolve só o pessoal de quem chama. Ausente = o padrão de sempre — pessoal
+   * fora da lista de trabalho.
+   */
+  pessoais?: boolean;
 }
 
 interface ListResponse {
@@ -190,6 +203,8 @@ export function useConversationsRealtime(
       if (filters.search) qs.set("search", filters.search);
       if (filters.unread) qs.set("unread", "true");
       if (filters.channel_session_id) qs.set("channel_session_id", filters.channel_session_id);
+      // A FILA (#3876) — ver o comentário do campo em `ConversationsFilters`.
+      if (filters.sector_id) qs.set("sector_id", filters.sector_id);
       // `append`, e não `set` (#1274): o filtro aceita várias etiquetas e cada
       // uma viaja como um `tag` repetido — que é o que a rota lê com `getAll`.
       for (const marcador of marcadoresEscolhidos(
@@ -200,6 +215,10 @@ export function useConversationsRealtime(
       // `&modo=e` colado num link de hoje mudaria a URL sem mudar o sentido.
       if (filters.tagMode === "ou") qs.set("modo", "ou");
       if (filters.is_group !== undefined) qs.set("is_group", filters.is_group ? "true" : "false");
+      // A aba "Pessoal" (#4434). Só viaja quando LIGADA: ausente é o padrão de
+      // sempre (pessoal fora da lista), e um `&pessoais=false` colado num link
+      // de hoje mudaria a URL sem mudar o sentido.
+      if (filters.pessoais) qs.set("pessoais", "true");
       if (pageParam) qs.set("cursor", pageParam);
       qs.set("limit", "50");
       try {
@@ -235,7 +254,24 @@ export function useConversationsRealtime(
         : undefined,
   });
 
-  const onChange = useCallback(() => agendarRecargaDasConversas(qc), [qc]);
+  /**
+   * O EVENTO DE UMA CONVERSA NÃO DECLARA A LISTA INTEIRA VELHA (#2366).
+   *
+   * `aplicarAtualizacaoNaLista` resolve o caso comum — `UPDATE` de uma conversa
+   * que está na tela — mesclando a linha no lugar, sem rede e sem estado de
+   * carregamento. Ele devolve `false` só quando a resposta não está no evento:
+   * conversa nova, conversa fora da lista (pode ter entrado no filtro), evento
+   * que muda a POSIÇÃO da linha (reordenar é da rota), lista ainda sem dado, ou
+   * filtro que depende do join do contato (busca/etiqueta). Aí a recarga
+   * agrupada continua, como antes.
+   */
+  const onChange = useCallback(
+    (payload: unknown) => {
+      if (aplicarAtualizacaoNaLista(qc, queryKey, filters, payload)) return;
+      agendarRecargaDasConversas(qc);
+    },
+    [qc, queryKey, filters],
+  );
 
   // G4-01 (visibility_mode): a subscription postgres_changes HERDA a RLS de
   // SELECT de `conversations` — o Supabase Realtime avalia as policies do usuário

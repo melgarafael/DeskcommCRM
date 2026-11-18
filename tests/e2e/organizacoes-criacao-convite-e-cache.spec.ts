@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { test, expect, type Page } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, type Page } from "./helpers/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 
 const credentials = credenciaisSupabaseDeTeste();
@@ -180,6 +180,7 @@ test("org única oferece criação, responsável aceita e A→B→A não mistura
     }
     await page.screenshot({ path: "evidence/comunidade-360/inbox-volta-a.png" });
     guestContext = await browser.newContext();
+    guestContext.on("page", esperarARevelacaoNasCargas);
     const guest = await guestContext.newPage();
     await login(guest, guestEmail);
     // Usuário comum não ganha porta de administração de plataforma.

@@ -19,6 +19,14 @@ import {
   type ChannelProvider,
   type ChannelSessionRef,
 } from "@/lib/channels";
+import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import { env } from "@/lib/env";
+import {
+  adiarSemLeitorLigado,
+  CHAVE_ADIADA,
+  haLeitorDaDescricao,
+  MOTIVO_SEM_LEITOR,
+} from "@/lib/messaging/media/leitura-adiada";
 import { storagePathFor } from "@/lib/messaging/media/types";
 import { MENSAGEM_REDIGIDA } from "@/lib/lgpd/cascata";
 import { logger } from "@/lib/logger";
@@ -37,6 +45,7 @@ interface MessageMediaRow {
   id: string;
   organization_id: string;
   conversation_id: string;
+  type: string;
   media_url: string | null;
   media_mime: string | null;
   media_storage_path: string | null;
@@ -55,7 +64,7 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
     // Sem a coluna, o worker não tem como pedir o adapter e voltaria a
     // depender de uma função fixa de um canal só.
     .select(
-      "id, organization_id, conversation_id, channel_session_id, media_url, media_mime, media_storage_path, metadata",
+      "id, organization_id, conversation_id, channel_session_id, type, media_url, media_mime, media_storage_path, metadata",
     )
     .eq("id", messageId)
     .eq("organization_id", row.organization_id)
@@ -89,12 +98,13 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
   const markStatus = async (
     media_status: "stored" | "failed",
     patch: Record<string, unknown> = {},
-    derivacao: { status: "failed" | "skipped"; motivo: string } | null = null,
+    derivacao: { status: "failed" | "skipped"; motivo: string; adiada?: true } | null = null,
   ): Promise<boolean> => {
     const metadata = {
       ...(msg.metadata ?? {}),
       media_status,
       ...(derivacao ? { media_derived_motivo: derivacao.motivo } : {}),
+      ...(derivacao?.adiada ? { [CHAVE_ADIADA]: "sem_leitor" } : {}),
     };
     const { data: gravadas, error: updErr } = await admin
       .from("messages")
@@ -123,12 +133,15 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
     // O worker não pergunta QUAL canal é — o invariante 1 proíbe e o
     // `lint:channels` reprova. Ele pede a sessão, pede o adapter e testa a
     // presença do método.
-    const { data: sessao } = await admin
+    const { data: sessao, error: sessionErr } = await admin
       .from("channel_sessions")
       .select(`provider, ${CHANNEL_SESSION_REF_COLUMNS}`)
       .eq("organization_id", msg.organization_id)
       .eq("id", msg.channel_session_id)
       .maybeSingle();
+    // Leitura que falhou não prova ausência de suporte a mídia. O catch mantém
+    // as tentativas do dreno e só marca failed quando elas se esgotam.
+    if (sessionErr) throw new Error(`session lookup failed: ${sessionErr.message}`);
 
     const adapter = getAdapter(
       ((sessao?.provider as string) ?? DEFAULT_CHANNEL_PROVIDER) as ChannelProvider,
@@ -253,6 +266,32 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
   // de meses atrás. A chave é texto 'true' (contrato da 0760).
   const historicoImportado = msg.metadata?.historico_importado === "true";
 
+  // FOTO SÓ PASSA PELA VISÃO QUANDO ALGUÉM DA EMPRESA VAI LER A DESCRIÇÃO
+  // (`MEDIA_VISION_WITHOUT_READER=defer`, o padrão; a válvula `always` nem chega
+  // a perguntar). Quem lê a descrição de foto são IAs e integrações — o atendente
+  // vê a própria foto —, e o agente só conta com "ver as fotos" ligado (9108). Sem leitor, a foto fica `skipped` (terminal: o dreno não
+  // espera por ela) com a marca que o dreno e o cron `media-leitura-adiada` usam
+  // para reabri-la quando aparecer quem leia. Só foto: o áudio o humano lê na
+  // Inbox, o PDF é extraído sem IA, e o vídeo já é pulado sem custo quando
+  // nenhum agente o lê (media-derive-worker).
+  //
+  // Toda dúvida DERIVA: a pergunta ao banco que falha, e também a gravação da
+  // própria trava — o `media_storage_path` já está gravado, uma nova tentativa
+  // cairia em "already stored", e a derivação nunca mais seria pedida.
+  if (!isGroup && !historicoImportado && msg.type === "image" && (await semLeitor(msg))) {
+    try {
+      const gravou = await markStatus("stored", {}, { status: "skipped", motivo: MOTIVO_SEM_LEITOR, adiada: true });
+      return gravou
+        ? { consumer_key, status: "ok", detail: "leitura_adiada_sem_leitor" }
+        : { consumer_key, status: "skipped", detail: "message_redacted" };
+    } catch (err) {
+      logger.warn("[media-persist] não consegui adiar a leitura da foto — pedindo a derivação", {
+        message_id: msg.id,
+        detail: String(err).slice(0, 160),
+      });
+    }
+  }
+
   if (!isGroup && !historicoImportado) {
     // Dispara a derivação textual (Onda 3) — fire-and-forget, mesmo padrão do
     // resto do repo: falha de emit não reverte a persistência já concluída.
@@ -276,4 +315,18 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
   }
 
   return { consumer_key, status: "ok" };
+}
+
+/** A empresa NÃO tem quem leia a descrição? Knob desligado ou dúvida = tem (deriva). */
+async function semLeitor(msg: MessageMediaRow): Promise<boolean> {
+  if (!adiarSemLeitorLigado(env.MEDIA_VISION_WITHOUT_READER)) return false;
+  try {
+    return !(await haLeitorDaDescricao(getRequestPool(), msg.organization_id));
+  } catch (err) {
+    logger.warn("[media-persist] não consegui saber se a empresa lê a descrição — pedindo a derivação", {
+      message_id: msg.id,
+      detail: String(err).slice(0, 160),
+    });
+    return false;
+  }
 }

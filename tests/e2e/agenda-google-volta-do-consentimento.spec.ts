@@ -122,6 +122,7 @@ test.describe("a volta do consentimento do Google chega ao sistema", () => {
     expect(vinculo!.httpOnly).toBe(true);
 
     // A VOLTA, como o Google a faz: contexto novo, SEM sessão, só com o vínculo.
+    // dispensa-da-espera: o contexto só faz request de API (`anonimo.request.get`), nunca abre página.
     const anonimo = await page.context().browser()!.newContext();
     await anonimo.addCookies([{ ...vinculo!, sameSite: "Lax" }]);
     const volta = await anonimo.request.get(`${CALLBACK}?code=codigo-de-teste&state=${state}`, {

@@ -23,11 +23,12 @@
  * Pré-requisito: `.e2e-creds.json` (o helper roda o seed se faltar). Sem WAHA,
  * Resend, Nuvemshop nem Redis.
  */
+import { mkdirSync } from "node:fs";
 import * as zlib from "node:zlib";
 
-import { test, expect, type Locator, type Page, type TestInfo } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, type Locator, type Page, type TestInfo } from "./helpers/test";
 
-import { lerCreds } from "./helpers/login-admin";
+import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
 
 const creds = lerCreds();
 const ESPERA = 30_000;
@@ -229,9 +230,85 @@ for (const papel of ["viewer", "agent"] as const) {
   });
 }
 
+// A apresentação nasce desligada na empresa: sem a seção e com as rotas recusando.
+test("apresentação desligada não aparece para o gerente, e a rota recusa", async ({ page }) => {
+  await entrar(page, "manager");
+  await page.goto("/app/products");
+  await expect(linha(page)).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId(`editar-${CODIGO}`).click();
+  await expect(page.getByTestId("salvar-edicao")).toBeVisible();
+  await expect(linha(page).getByTestId("abrir-apresentacao-ia")).toHaveCount(0);
+  expect(produtoId).toBeTruthy();
+  const recusa = await page.request.get(`/api/v1/products/${produtoId}/ai-presentation`);
+  expect(recusa.status()).toBe(422);
+  expect((await recusa.json()).error.code).toBe("module_disabled");
+});
+
+test("admin liga a apresentação do catálogo em Configurações", async ({ page }) => {
+  await loginComoAdmin(page, creds);
+  await page.goto("/app/settings/tenant");
+  await page.getByTestId("catalogo-apresentacao-ligada").check();
+  const salvo = page.waitForResponse(r => r.request().method() === "PATCH" && r.url().endsWith("/api/v1/settings/catalogo"));
+  await page.getByTestId("catalogo-salvar").click();
+  expect((await salvo).status()).toBe(200);
+  await page.reload();
+  await expect(page.getByTestId("catalogo-apresentacao-ligada")).toBeChecked();
+});
+
+// A apresentação começa SEM linha: prova o primeiro save pela tela e o CAS
+// contra null antigo no servidor real. Áudio/entrega sequencial não são provados aqui.
+test("gerente cria a primeira apresentação, persiste e não sobrescreve com revisão antiga", async ({ page }, info) => {
+  await entrar(page, "manager");
+  await page.goto("/app/products");
+  await expect(linha(page)).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId(`editar-${CODIGO}`).click();
+  const abrir = linha(page).getByTestId("abrir-apresentacao-ia");
+  await expect(async () => {
+    if ((await abrir.getAttribute("aria-expanded")) !== "true") await abrir.click();
+    await expect(linha(page).getByTestId("painel-apresentacao-ia")).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 15_000 });
+  const apresentacao = linha(page).getByTestId("painel-apresentacao-ia");
+  await expect(apresentacao.getByTestId("apresentacao-texto")).toBeVisible();
+  expect(produtoId).toBeTruthy();
+  const caminho = `/api/v1/products/${produtoId}/ai-presentation`;
+  const inicial = await page.request.get(caminho);
+  expect(inicial.status()).toBe(200);
+  expect((await inicial.json()).data.updated_at).toBeNull();
+
+  await apresentacao.getByTestId("apresentacao-texto").fill("Apresentação sintética pela tela");
+  await apresentacao.getByTestId("apresentacao-usar-fotos").uncheck();
+  await apresentacao.getByTestId("apresentacao-ativa").check();
+  await expect(apresentacao.getByTestId("preview-apresentacao")).toContainText("Apresentação sintética pela tela");
+  const primeiroSave = page.waitForResponse(r => r.request().method() === "PATCH" && r.url().endsWith(caminho));
+  await apresentacao.getByTestId("salvar-apresentacao-ia").click();
+  expect((await primeiroSave).status(), "primeiro save com expected_updated_at:null deve criar").toBe(200);
+  await expect(page.getByText("Apresentação salva", { exact: true })).toBeVisible();
+  const salva = (await (await page.request.get(caminho)).json()).data;
+  expect(salva.updated_at).toEqual(expect.any(String));
+  expect(salva.text_content).toBe("Apresentação sintética pela tela");
+
+  const obsoleta = await page.request.patch(caminho, { data: {
+    enabled: true, kind: "text", title: null, text_content: "Não pode sobrescrever",
+    use_catalog_photos: false, show_price: false, expected_updated_at: null,
+  } });
+  expect(obsoleta.status()).toBe(409);
+  expect((await (await page.request.get(caminho)).json()).data.text_content).toBe(salva.text_content);
+
+  await page.reload();
+  await page.getByTestId(`editar-${CODIGO}`).click();
+  await linha(page).getByTestId("abrir-apresentacao-ia").click();
+  await expect(linha(page).getByTestId("apresentacao-texto")).toHaveValue(salva.text_content);
+  await expect(linha(page).getByTestId("apresentacao-ativa")).toBeChecked();
+  // O CI publica evidence/ também em sucesso; o attach abaixo fica preservado.
+  mkdirSync("evidence/catalogo-apresentacoes", { recursive: true });
+  await page.screenshot({ path: "evidence/catalogo-apresentacoes/primeiro-save-persistido.png", fullPage: true });
+  await evidencia(page, info, "06-apresentacao-inicial-persistida");
+});
+
 test.afterAll(async ({ browser }, info) => {
   if (!produtoId) return;
   const page = await browser.newPage({ baseURL: info.project.use.baseURL });
+  esperarARevelacaoNasCargas(page);
   await entrar(page, "manager");
   // Apaga o produto, e com ele a foto que sobrou no bucket.
   expect((await page.request.delete(`/api/v1/products/${produtoId}`)).ok()).toBe(true);

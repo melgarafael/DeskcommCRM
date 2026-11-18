@@ -167,6 +167,43 @@ describe("as recusas, cada uma com o seu código", () => {
     });
   });
 
+  it("canal que só manda modelo, COM o modelo salvo: o teste sai dentro do modelo (9094)", async () => {
+    const modelo = { id: "m-1", name: "aviso_da_equipe", language: "pt_BR", chave: "1", corpo: "Aviso: {{1}}" };
+    const carregaModeloDoAviso = vi.fn(async () => ({ ok: true as const, modelo }));
+    const opcoes: unknown[] = [];
+    const d = deps({
+      db: {
+        carregaCanal: vi.fn(async () => ({ ...canalSaudavel, aceitaMensagemLivre: false })),
+        marcaDaOrganizacao: vi.fn(async () => ({ nome: "Acme", idioma: "pt-BR" as const })),
+        destinoEhDaPropriaOrganizacao: vi.fn(async () => false),
+        carregaModeloDoAviso,
+      },
+    } as Partial<DepsDoAvisoDeTeste>);
+    d.deps.transporte.envia = vi.fn(async (_org, _canal, _to, _body, op) => {
+      opcoes.push(op);
+      return { externalId: "modelo.TESTE" };
+    });
+    const r = await enviarAvisoDeTeste(d.deps, { ...entrada, modeloId: "m-1" });
+    expect(r.enviado).toBe(true);
+    expect(carregaModeloDoAviso).toHaveBeenCalledWith(ORG, CANAL, "m-1");
+    expect(opcoes).toEqual([{ modelo }]);
+  });
+
+  it("canal que só manda modelo, com um modelo que NÃO serve mais: recusa, sem enviar", async () => {
+    const d = deps({
+      db: {
+        carregaCanal: vi.fn(async () => ({ ...canalSaudavel, aceitaMensagemLivre: false })),
+        marcaDaOrganizacao: vi.fn(),
+        destinoEhDaPropriaOrganizacao: vi.fn(),
+        carregaModeloDoAviso: vi.fn(async () => ({ ok: false as const, motivo: "nao_aprovado" as const })),
+      },
+    } as Partial<DepsDoAvisoDeTeste>);
+    await expect(enviarAvisoDeTeste(d.deps, { ...entrada, modeloId: "m-1" })).resolves.toMatchObject({
+      codigo: "canal_nao_aceita_aviso_livre",
+    });
+    expect(d.enviados).toHaveLength(0);
+  });
+
   it("canal PAUSADO pelo operador: o teste também não sai por ele (#2318)", async () => {
     const d = deps({
       db: {

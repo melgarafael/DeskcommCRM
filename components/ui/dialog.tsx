@@ -102,7 +102,15 @@ const DialogTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
-    className={cn("text-lg leading-none font-semibold tracking-tight", className)}
+    // `overflow-wrap:anywhere` e não `break-words`: o título pode trazer um
+    // identificador sem espaço (o nome técnico da sessão do canal, `org_0d20…_f0c0…`), e só
+    // o `anywhere` reduz a largura mínima do item — com `break-word` o grid do
+    // modal ainda alarga até caber a palavra inteira, e o texto sai cortado.
+    // `leading-tight` porque, quebrando, `leading-none` encosta as linhas.
+    className={cn(
+      "text-lg leading-tight font-semibold tracking-tight [overflow-wrap:anywhere]",
+      className,
+    )}
     {...props}
   />
 ));

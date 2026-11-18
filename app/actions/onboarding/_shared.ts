@@ -6,7 +6,8 @@
  * validated here, against the same operant-org rule as `resolveActiveOrg` —
  * never name an arbitrary org id.
  */
-import { supportWriteError } from "@/lib/impersonate/support";
+import { invalidarOrg } from "@/lib/auth/cache-curto";
+import { permanentAccessError, supportWriteError } from "@/lib/impersonate/support";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ehOperante } from "@/lib/organizacao/operante";
@@ -42,6 +43,12 @@ export async function requireOnboardingCtx(orgIdDaAba?: string): Promise<Onboard
   const user = await loadAuthUser();
   if (!user) throw new OnboardingError("auth_required", "Auth required.");
   if (supportWriteError(user.support)) throw new OnboardingError("forbidden", "Acompanhamento somente leitura ou encerrado.");
+  // `sendOnboardingInvites` emite convite pelo client de serviço, e o bloqueio de
+  // acesso permanente não pode depender de caminho de rota, que Server Action
+  // não tem. O layout do onboarding já expulsa toda sessão de acompanhamento,
+  // então nenhum uso legítimo passa por aqui.
+  const acessoPermanente = permanentAccessError(user.support);
+  if (acessoPermanente) throw new OnboardingError("forbidden", acessoPermanente);
 
   // A aba de boas-vindas foi aberta para UMA organização. Trocar de org ativa
   // em outra aba (o cookie `active_org`) NÃO pode redirecionar este submit
@@ -117,6 +124,23 @@ export async function patchOnboardingState(
 ): Promise<void> {
   const admin = createAdminClient();
   const { state } = await loadOnboardingState(orgId);
+  // #3696: nome e fuso da empresa viajam no snapshot de cada membro; o cabeçalho
+  // do passo seguinte lê dali. `finally`: a escrita condicional abaixo tem três saídas.
+  try {
+    await gravarPatchDoOnboarding(admin, orgId, state, patch, extra, opcoes);
+  } finally {
+    invalidarOrg(orgId);
+  }
+}
+
+async function gravarPatchDoOnboarding(
+  admin: ReturnType<typeof createAdminClient>,
+  orgId: string,
+  state: OnboardingState,
+  patch: Partial<OnboardingState>,
+  extra: { display_name?: string; timezone?: string } | undefined,
+  opcoes: { soNoWizard?: boolean } | undefined,
+): Promise<void> {
   const merged: OnboardingState = { ...state, ...patch };
   const update: Record<string, unknown> = { onboarding_state: merged };
   if (extra?.display_name) update.display_name = extra.display_name;

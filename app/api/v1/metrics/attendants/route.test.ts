@@ -18,11 +18,14 @@ import { requireRole } from "@/lib/auth/require-role";
 import type { AuthUser } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
 
+const servico = vi.hoisted(() => ({ ligado: false, admin: vi.fn() }));
+
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
-// O enriquecimento com nome/e-mail é do service role; aqui ele está desligado
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: servico.admin }));
+// O enriquecimento com nome/e-mail é do service role; desligado por padrão
 // para a rota ser medida no que é dela (a agregação), sem rede.
-vi.mock("@/lib/audit", () => ({ isServiceRoleConfigured: () => false }));
+vi.mock("@/lib/audit", () => ({ isServiceRoleConfigured: () => servico.ligado }));
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -86,6 +89,7 @@ function permitido(): void {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  servico.ligado = false;
 });
 
 describe("GET /api/v1/metrics/attendants — mediana e recorte por etiqueta", () => {
@@ -195,13 +199,16 @@ describe("GET /api/v1/metrics/attendants — mediana e recorte por etiqueta", ()
 
   it("`from` depois de `to` é 422, e a leitura não acontece", async () => {
     permitido();
-    vi.mocked(createClient).mockResolvedValue({ rpc: vi.fn() } as never);
+    // O portão (`resolveAuthDual`) abre o cliente de sessão antes da validação;
+    // o que não pode acontecer é a LEITURA.
+    const rpc = vi.fn();
+    vi.mocked(createClient).mockResolvedValue({ rpc } as never);
 
     const res = await chamar(
       "http://localhost/api/v1/metrics/attendants?from=2026-10-01T00:00:00.000Z&to=2026-09-01T00:00:00.000Z",
     );
     expect(res.status).toBe(422);
-    expect(createClient).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it("falha na RPC vira 500 com a razão, nunca dado pela metade", async () => {
@@ -222,5 +229,48 @@ describe("GET /api/v1/metrics/attendants — mediana e recorte por etiqueta", ()
     const res = await chamar();
     expect(res.status).toBe(403);
     expect(createClient).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /api/v1/metrics/attendants — nome e e-mail do atendente", () => {
+  it("só membro da organização ativa ganha nome e e-mail", async () => {
+    permitido();
+    servico.ligado = true;
+    const FORA = "44444444-4444-4444-8444-444444444444";
+    const usuarios: Record<string, { email: string; user_metadata: Record<string, unknown> }> = {
+      [OWNER]: { email: "ana@exemplo.com", user_metadata: { full_name: "Ana" } },
+      [FORA]: { email: "carol@exemplo.com", user_metadata: { full_name: "Carol" } },
+    };
+    let orgConsultada: unknown = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const vinculos: any = {
+      select: () => vinculos,
+      eq: (_col: string, v: unknown) => ((orgConsultada = v), vinculos),
+      in: async () => ({
+        data: orgConsultada === ORG_ID ? [{ user_id: OWNER }] : [],
+        error: null,
+      }),
+    };
+    servico.admin.mockReturnValue({
+      from: () => vinculos,
+      auth: {
+        admin: {
+          getUserById: async (id: string) => ({ data: { user: usuarios[id] ?? null }, error: null }),
+        },
+      },
+    });
+    const { client } = fakeSupabase({
+      data: { attendants: [atendente({}), atendente({ user_id: FORA })] },
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const res = await chamar();
+    expect(res.status).toBe(200);
+    const linhas = ((await res.json()) as { data: { attendants: Array<Record<string, unknown>> } })
+      .data.attendants;
+    const porId = new Map(linhas.map((l) => [l.user_id, l]));
+    expect(porId.get(OWNER)).toMatchObject({ name: "Ana", email: "ana@exemplo.com" });
+    expect(porId.get(FORA)).toMatchObject({ name: null, email: null });
   });
 });

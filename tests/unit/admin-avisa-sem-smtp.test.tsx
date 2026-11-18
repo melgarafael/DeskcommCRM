@@ -118,7 +118,7 @@ async function montarPainelDoAdmin() {
 beforeEach(() => {
   estado.banco = { data: null, error: null };
   estado.resend = false;
-  // O caso que a #2755 descreve: servidor único, onde o login só recebe o SMTP do CRM.
+  // O caso que a #2755 descreve: servidor único, onde o login só recebe o e-mail do CRM.
   vi.stubEnv("SINGLE_SERVER", "1");
 });
 
@@ -163,12 +163,12 @@ describe("painel do admin — o sinal de 'sem SMTP' (#2755, item 3)", () => {
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
-  it("servidor único com a Resend configurada e sem SMTP MANTÉM a tarja: o login só recebe o SMTP", async () => {
+  it("⭐ servidor único com a Resend e sem SMTP, sem tarja: o kit leva a Resend ao login (#3039)", async () => {
     estado.resend = true;
 
     await montarPainelDoAdmin();
 
-    expect(screen.getByRole("status")).toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("fora do servidor único COM a Resend, sem tarja: o login tem e-mail próprio e o resto sai pela Resend", async () => {

@@ -177,7 +177,7 @@
           "id": "p2",
           "titulo": "Nome e mensagem",
           "texto": "Em \"Título\" vai o nome curto que aparece no botão da Inbox. Em \"Mensagem\" vai o texto que o cliente vai receber. Escreva {{primeiro_nome}} onde quiser o primeiro nome do cliente, ou {{nome}} para o nome completo: na Inbox, ele é trocado sozinho pelo nome de quem está na conversa.",
-          "dica": "Se a Inbox não souber o nome do cliente (nem no cadastro, nem no WhatsApp), o {{primeiro_nome}} fica escrito do jeito que está, aparece um aviso amarelo e o envio fica travado até você apagar ou trocar essa parte.",
+          "dica": "Se a Inbox não souber o nome do cliente (nem no cadastro, nem no WhatsApp), o {{primeiro_nome}} fica escrito do jeito que está, aparece um aviso amarelo e o envio fica travado até você apagar ou trocar essa parte. Para não depender do nome, escreva um texto de reserva depois de uma barra: com {{primeiro_nome|\"cliente\"}}, a palavra \"cliente\" entra quando o nome falta.",
           "antes": [
             {
               "acao": "click",

@@ -7,6 +7,7 @@ import { invalidarCredencialDoGoogle } from "@/lib/agenda/google/config";
 import { FORMATO_DO_CLIENT_SECRET } from "@/lib/agenda/google/oauth";
 import { audit } from "@/lib/audit";
 import { escritaDeAdminOuRecusa } from "@/lib/auth/escritaDeAdminOuRecusa";
+import { respostaParaOperador } from "@/lib/erros/para-operador";
 import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptWebhookSecret } from "@/lib/webhooks/secrets";
@@ -136,7 +137,13 @@ export async function updateGoogleOAuth(input: GoogleOAuthInput): Promise<Update
     // #144 mediu em `organizations`, e a defesa é não escrever a query que o
     // permite.
     .upsert({ id: 1, ...valores }, { onConflict: "id" });
-  if (error) return { ok: false, error: error.message };
+  // #3747: o toast recebe a frase do operador; o texto do Postgres (com o nome
+  // da constraint e da relação) fica no `logger.error`, dentro do mapeador.
+  if (error) {
+    return respostaParaOperador(error, {
+      contexto: "[google.oauth] falha ao gravar a credencial da instalação",
+    });
+  }
 
   // No MESMO processo que renderiza (na VPS há um processo de app só), então a
   // credencial nova vale no próximo render sem esperar o TTL de 30s.

@@ -28,6 +28,7 @@ export function textoDaDemonstracao(texto: string): string {
   )
     return texto;
   throw new Error(
-    "texto demonstrativo sem tradução em espanhol; acrescente a entrada no catálogo do curso",
+    // o texto vai junto: sem ele, quem falha (às vezes um `limpar` de outro módulo) não aparece no erro
+    `texto demonstrativo sem tradução em espanhol; acrescente a entrada no catálogo do curso: ${JSON.stringify(texto.slice(0, 120))}`,
   );
 }

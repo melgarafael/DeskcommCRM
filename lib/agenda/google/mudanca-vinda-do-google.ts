@@ -31,6 +31,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { payloadDoAviso } from "@/lib/agenda/aviso-do-compromisso";
+import { aposVagaLiberada } from "@/lib/agenda/encaixe-supabase";
 import { gatilhoDaTransicao, type SituacaoAnterior } from "@/lib/agenda/laco";
 import { ENTIDADE_DO_AGENDAMENTO } from "@/lib/agenda/tipos";
 import { logger } from "@/lib/logger";
@@ -72,6 +73,9 @@ export async function emitirMudancaVindaDoGoogle(
 ): Promise<void> {
   const transicao = transicaoVindaDoGoogle(antes, depois);
   if (!transicao) return;
+  if (transicao === "cancelled") {
+    await aposVagaLiberada({ organizationId, appointmentId: depois.id, agora: new Date() });
+  }
   const gatilho = gatilhoDaTransicao(antes.status as SituacaoAnterior, transicao);
   if (!gatilho) return;
 

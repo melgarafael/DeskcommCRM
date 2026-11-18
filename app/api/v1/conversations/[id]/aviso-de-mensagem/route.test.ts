@@ -16,6 +16,12 @@ const estado = vi.hoisted(() => ({
   userId: "u-ana",
   role: "agent" as string,
   conversaVisivel: true as boolean,
+  sessao: null as { provider: string; social_platform: string | null } | null,
+  // A tradução transporte → rede é testada onde mora (lib/channels). Aqui
+  // interessa que os dois campos da sessão CHEGUEM nela.
+  marca: vi.fn((sessao?: { provider?: string | null } | null) =>
+    sessao?.provider === "transporte-qualquer" ? "whatsapp" : "unknown",
+  ),
   carregar: vi.fn(),
   adminCriado: vi.fn(),
   org: { data: { settings: {}, locale: "pt-BR" }, error: null } as { data: unknown; error: { message: string } | null },
@@ -28,13 +34,30 @@ vi.mock("@/lib/auth/require-role", () => ({
     org: { orgId: ORG, name: "Org", role: estado.role },
   })),
 }));
+vi.mock("@/lib/channels/presentation", () => ({ channelBrand: estado.marca }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
     from: () => {
+      let colunas = "";
       const q = {
-        select: () => q,
+        select: (c: string) => {
+          colunas = c;
+          return q;
+        },
         eq: () => q,
-        maybeSingle: async () => ({ data: estado.conversaVisivel ? { id: CONV } : null, error: null }),
+        // A sessão só volta se a consulta a pediu, como no PostgREST: sem isso,
+        // tirar o embed da rota continuaria verde.
+        maybeSingle: async () => ({
+          data: estado.conversaVisivel
+            ? {
+                id: CONV,
+                ...(colunas.includes("channel_sessions:channel_session_id")
+                  ? { channel_sessions: estado.sessao }
+                  : {}),
+              }
+            : null,
+          error: null,
+        }),
       };
       return q;
     },
@@ -62,13 +85,20 @@ async function pergunta(id = CONV) {
   const res = await GET(new NextRequest(`http://localhost/api/v1/conversations/${id}/aviso-de-mensagem`), {
     params: Promise.resolve({ id }),
   });
-  return { status: res.status, corpo: (await res.json()) as { data?: { avisar: boolean; conteudo?: string }; error?: { code: string } } };
+  return {
+    status: res.status,
+    corpo: (await res.json()) as {
+      data?: { avisar: boolean; conteudo?: string; canal?: string; cor_por_canal?: boolean };
+      error?: { code: string };
+    },
+  };
 }
 
 beforeEach(() => {
   estado.userId = "u-ana";
   estado.role = "agent";
   estado.conversaVisivel = true;
+  estado.sessao = null;
   estado.carregar.mockReset();
   estado.adminCriado.mockReset();
   estado.org = { data: { settings: {}, locale: "pt-BR" }, error: null };
@@ -80,29 +110,29 @@ describe("aviso-de-mensagem", () => {
     estado.carregar.mockResolvedValue({ tipo: "todos" });
     const { status, corpo } = await pergunta();
     expect(status).toBe(200);
-    expect(corpo.data).toEqual({ avisar: true, conteudo: "nome" });
+    expect(corpo.data).toEqual({ avisar: true, conteudo: "nome", canal: "unknown", cor_por_canal: true });
     // Os fatos são lidos na organização ATIVA da sessão, para ESTA conversa.
     expect(estado.carregar.mock.calls[0]!.slice(1)).toEqual([ORG, CONV]);
   });
 
   it("com responsável → avisa o responsável", async () => {
     estado.carregar.mockResolvedValue({ tipo: "restrito", userIds: ["u-ana", "u-admin"] });
-    expect((await pergunta()).corpo.data).toEqual({ avisar: true, conteudo: "nome" });
+    expect((await pergunta()).corpo.data).toEqual({ avisar: true, conteudo: "nome", canal: "unknown", cor_por_canal: true });
   });
 
   it("com responsável → avisa o admin", async () => {
     estado.userId = "u-admin";
     estado.role = "admin";
     estado.carregar.mockResolvedValue({ tipo: "restrito", userIds: ["u-ana", "u-admin"] });
-    expect((await pergunta()).corpo.data).toEqual({ avisar: true, conteudo: "nome" });
+    expect((await pergunta()).corpo.data).toEqual({ avisar: true, conteudo: "nome", canal: "unknown", cor_por_canal: true });
   });
 
   it("com responsável → NÃO avisa outro atendente (nem gerente que não é admin)", async () => {
     estado.carregar.mockResolvedValue({ tipo: "restrito", userIds: ["u-bia", "u-admin"] });
-    expect((await pergunta()).corpo.data).toEqual({ avisar: false, conteudo: "nome" });
+    expect((await pergunta()).corpo.data).toEqual({ avisar: false, conteudo: "nome", canal: "unknown", cor_por_canal: true });
     estado.role = "manager";
     estado.userId = "u-gerente";
-    expect((await pergunta()).corpo.data).toEqual({ avisar: false, conteudo: "nome" });
+    expect((await pergunta()).corpo.data).toEqual({ avisar: false, conteudo: "nome", canal: "unknown", cor_por_canal: true });
   });
 
   it("conversa que a sessão não enxerga → 404, sem ler nada com o service role", async () => {
@@ -134,12 +164,37 @@ describe("aviso-de-mensagem", () => {
   it("diz o que a bandeja pode mostrar, pela opção da empresa", async () => {
     estado.carregar.mockResolvedValue({ tipo: "todos" });
     estado.org = { data: { settings: { notificacoes: { conteudo_na_tela_bloqueada: "oculto" } }, locale: "pt-BR" }, error: null };
-    expect((await pergunta()).corpo.data).toEqual({ avisar: true, conteudo: "oculto" });
+    expect((await pergunta()).corpo.data).toEqual({ avisar: true, conteudo: "oculto", canal: "unknown", cor_por_canal: true });
   });
 
-  it("falha ao ler a opção da empresa → esconde o conteúdo", async () => {
+  it("diz de qual rede a conversa é, sem mostrar o transporte", async () => {
+    estado.carregar.mockResolvedValue({ tipo: "todos" });
+    estado.sessao = { provider: "transporte-qualquer", social_platform: "uma-rede" };
+    expect((await pergunta()).corpo.data?.canal).toBe("whatsapp");
+    expect(estado.marca).toHaveBeenCalledWith(estado.sessao);
+  });
+
+  it("conversa sem sessão de canal → canal 'unknown', e o aviso segue", async () => {
+    estado.carregar.mockResolvedValue({ tipo: "todos" });
+    expect((await pergunta()).corpo.data).toEqual({ avisar: true, conteudo: "nome", canal: "unknown", cor_por_canal: true });
+  });
+
+  it("falha ao ler a opção da empresa → esconde o conteúdo e o aviso sai neutro", async () => {
     estado.carregar.mockResolvedValue({ tipo: "todos" });
     estado.org = { data: null, error: { message: "fora" } };
-    expect((await pergunta()).corpo.data).toEqual({ avisar: true, conteudo: "oculto" });
+    expect((await pergunta()).corpo.data).toEqual({ avisar: true, conteudo: "oculto", canal: "unknown", cor_por_canal: false });
+  });
+
+  it("a empresa desligou a cor por canal → o veredito diz que o aviso sai neutro", async () => {
+    estado.carregar.mockResolvedValue({ tipo: "todos" });
+    estado.sessao = { provider: "transporte-qualquer", social_platform: "uma-rede" };
+    estado.org = {
+      data: { settings: { notificacoes: { cor_por_canal: false } }, locale: "pt-BR" },
+      error: null,
+    };
+    const { corpo } = await pergunta();
+    // O canal continua nomeado — desligar a COR não esconde de onde veio.
+    expect(corpo.data?.canal).toBe("whatsapp");
+    expect(corpo.data?.cor_por_canal).toBe(false);
   });
 });

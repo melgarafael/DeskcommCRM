@@ -10,6 +10,8 @@
 import { z } from "zod";
 
 import { normalizarTag, normalizarTags } from "@/lib/contacts/tag-normalizada";
+import { traduzir } from "@/lib/i18n/dicionario";
+import type { Idioma } from "@/lib/i18n/idiomas";
 import {
   MAXIMO_DE_ETIQUETAS_NO_FILTRO,
   MODOS_DE_ETIQUETA,
@@ -71,6 +73,15 @@ export const contactCreateSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  // Endereço da pessoa física (issue 3494): os mesmos campos que entrega e
+  // cobrança precisam, espelhando `companies`.
+  zip_code: z.string().max(16).optional().nullable(),
+  street: z.string().max(300).optional().nullable(),
+  number: z.string().max(40).optional().nullable(),
+  complement: z.string().max(120).optional().nullable(),
+  district: z.string().max(120).optional().nullable(),
+  city: z.string().max(120).optional().nullable(),
+  state: z.string().max(2, "UF com 2 letras (ex.: SP)").optional().nullable(),
   // O papel do contato (issue 3005): ausente = o default do BANCO ('cliente'),
   // e por isso `contactPatchSchema` também o deixa opcional — um PATCH que só
   // troca o nome não reescreve o tipo de um fornecedor.
@@ -85,10 +96,55 @@ export const contactCreateSchema = z.object({
 });
 export type ContactCreate = z.infer<typeof contactCreateSchema>;
 
+/**
+ * Tipo e WhatsApp de um número (Spec 31, B2). Os mesmos vocabulários do banco
+ * (`contacts_phone_type_check`, `contacts_phone_whatsapp_check`, e os da tabela
+ * `contact_phones`): uma palavra a mais aqui seria `23514` na gravação.
+ */
+export const TIPOS_DE_TELEFONE = ["fixo", "celular", "outro"] as const;
+export const WHATSAPP_DO_TELEFONE = ["sim", "nao", "nao_sei"] as const;
+export const telefoneTipoSchema = z.enum(TIPOS_DE_TELEFONE);
+export const telefoneWhatsappSchema = z.enum(WHATSAPP_DO_TELEFONE);
+export type TelefoneTipo = z.infer<typeof telefoneTipoSchema>;
+export type TelefoneWhatsapp = z.infer<typeof telefoneWhatsappSchema>;
+
 export const contactPatchSchema = contactCreateSchema.partial().extend({
   source: z.string().min(1).optional(),
+  // Tipo e WhatsApp do telefone PRINCIPAL. Ausente = a coluna fica como está.
+  phone_type: telefoneTipoSchema.optional(),
+  phone_whatsapp: telefoneWhatsappSchema.optional(),
 });
 export type ContactPatch = z.infer<typeof contactPatchSchema>;
+
+/**
+ * Telefone extra da ficha (Spec 31, B2): `POST /api/v1/contacts/{id}/phones`.
+ * O número passa pela MESMA leitura do canal (`normalizePhoneBR`, na rota), e
+ * não por esta régua de formato: quem recusa o número inválido é a rota, com
+ * `invalid_phone` (422), que é o código que a tela mostra.
+ */
+export const telefoneExtraCreateSchema = z.object({
+  phone_number: z.string().trim().min(1).max(40),
+  type: telefoneTipoSchema.optional(),
+  whatsapp: telefoneWhatsappSchema.optional(),
+  label: z.string().trim().max(60).optional(),
+});
+export type TelefoneExtraCreate = z.infer<typeof telefoneExtraCreateSchema>;
+
+/**
+ * `PATCH /api/v1/contacts/{id}/phones/{phoneId}`: pelo menos um campo. O número
+ * do extra não muda aqui (para trocar, remove-se e adiciona-se). `label: null`
+ * ou `""` apaga o rótulo.
+ */
+export const telefoneExtraPatchSchema = z
+  .object({
+    type: telefoneTipoSchema.optional(),
+    whatsapp: telefoneWhatsappSchema.optional(),
+    label: z.string().trim().max(60).nullable().optional(),
+  })
+  .refine((valor) => Object.values(valor).some((v) => v !== undefined), {
+    message: "Informe ao menos um campo para atualizar.",
+  });
+export type TelefoneExtraPatch = z.infer<typeof telefoneExtraPatchSchema>;
 
 /**
  * O documento do titular vem do PERFIL DO PAÍS da organização (issue #1033).
@@ -204,22 +260,38 @@ function normalizarTelefoneBR(valor: string): string {
  * do E.164 do perfil (sem o `+55`), em vez de escrito à mão: um exemplo
  * cravado envelhece calado no dia em que o perfil mudar.
  */
-function mensagemDoTelefone(perfil: PerfilDoPais): string {
+export function mensagemDoTelefone(perfil: PerfilDoPais, idioma: Idioma = "pt-BR"): string {
+  // #4242, item 1: a frase é a MESMA nos dois lados (schema e API), e passa pelo
+  // dicionário para a interface de quem opera em espanhol não receber português.
   if (perfil.codigo !== PAIS_PADRAO) {
-    return `Telefone deve estar em formato E.164 (${perfil.telefoneExemplo})`;
+    return traduzir("Telefone deve estar em formato E.164 ({exemplo})", idioma).replace(
+      "{exemplo}",
+      perfil.telefoneExemplo,
+    );
   }
   const exemploNacional = perfil.telefoneExemplo.replace(/^\+55/, "");
-  return `Telefone deve ter DDD + número (ex.: ${exemploNacional}) ou o formato E.164 (${perfil.telefoneExemplo})`;
+  return traduzir(
+    "Telefone deve ter DDD + número (ex.: {exemplo}) ou o formato E.164 ({exemploE164})",
+    idioma,
+  )
+    .replace("{exemplo}", exemploNacional)
+    .replace("{exemploE164}", perfil.telefoneExemplo);
 }
 
-/** O mesmo, para o PATCH (`app/api/v1/contacts/[id]/route.ts`). */
+/**
+ * O mesmo, para o PATCH (`app/api/v1/contacts/[id]/route.ts`).
+ *
+ * `null` é aceito SÓ aqui (Spec 31, B2): é o pedido de apagar o telefone
+ * principal, que o handler recusa com `primary_phone_has_extras` quando a ficha
+ * tem extra. A string vazia continua recusada, como sempre.
+ */
 export function contactPatchSchemaDoPais(perfil: PerfilDoPais) {
   return contactPatchSchema.extend({
     cpf: z
       .string()
       .refine(perfil.documento.valida, perfil.documento.mensagemInvalido)
       .optional(),
-    phone_number: telefoneDoPais(perfil),
+    phone_number: telefoneDoPais(perfil).or(z.null()),
   });
 }
 
@@ -331,6 +403,23 @@ export const contactsMergeSchema = z
     path: ["secondary_contact_ids"],
   });
 export type ContactsMergeInput = z.infer<typeof contactsMergeSchema>;
+
+/**
+ * POST /api/v1/contacts/duplicates/dismiss — "Não são a mesma empresa" (Spec 31, PR A).
+ *
+ * Exatamente DOIS ids, distintos. A organização não vem daqui: a rota a lê da sessão,
+ * e este schema não tem campo para ela (um `organization_id` no corpo é descartado).
+ * Comparar sem caixa: UUID é o mesmo id com maiúsculas ou minúsculas.
+ */
+export const contactsDismissDuplicateSchema = z
+  .object({
+    contact_ids: z.array(z.string().uuid()).length(2),
+  })
+  .refine((v) => v.contact_ids[0]?.toLowerCase() !== v.contact_ids[1]?.toLowerCase(), {
+    message: "Os dois contatos precisam ser diferentes.",
+    path: ["contact_ids"],
+  });
+export type ContactsDismissDuplicateInput = z.infer<typeof contactsDismissDuplicateSchema>;
 
 /**
  * POST /api/v1/contacts/bulk — as ações em lote da tela de Contatos (#2484, fatia F3).

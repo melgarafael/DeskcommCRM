@@ -32,8 +32,15 @@ export interface TemplateView {
   /** DERIVADOS do template pela API — nunca digitados, nunca contados à mão. */
   slots: TemplateSlotView[];
   previews: TemplatePreview[];
+  /**
+   * A definição crua, como a plataforma a devolveu. É o que o formulário de
+   * edição carrega (#3635): sem ela, editar exigiria redigitar o texto todo.
+   */
+  components: unknown[];
   /** Links de mídia salvos no modelo — o painel da janela fechada pré-preenche com eles. */
   savedValues: Record<string, string>;
+  /** Da conta oficial desta conexão: só estes têm Editar/Apagar (o espelho é da organização). */
+  daConexao: boolean;
 }
 
 export interface TemplatesPayload {

@@ -144,12 +144,15 @@ describe('#2555 a prévia avalia a janela de RESPOSTA, não a de disparo', () =>
 describe('o sandbox segue rebaixando o veto de pacing a aviso (#2555 não mexe no rebaixamento)', () => {
   it('cap estourado: candidato + aviso no Testar; o rascunho assistido continua vetado', async () => {
     // De DIA as duas janelas estão abertas, então o veredito abaixo é o CAP e
-    // não o horário: o teste mede o rebaixamento, não a janela.
+    // não o horário: o teste mede o rebaixamento, não a janela. O contexto é de
+    // DISPARO (`resposta` desligado) porque, desde a 9061, a resposta não é
+    // barrada pelo teto do dia — só o que o número inicia ainda bate no cap.
     const ctx = await contextoDaPrevia(DIA);
     const estourado: GateContext = {
       ...ctx,
       pacing: {
         ...ctx.pacing,
+        resposta: undefined,
         state: { lastSentAt: null, sentToday: 999, numberActivatedAt: null },
       },
     };
@@ -180,6 +183,28 @@ describe('o sandbox segue rebaixando o veto de pacing a aviso (#2555 não mexe n
 
     expect(pAssistido.result.candidates).toEqual([]);
     expect(pAssistido.result.impediments.map((i) => i.code)).toEqual(['warmup_cap']);
+    expect(pAssistido.result.warnings).toEqual([]);
+  });
+
+  it('cap estourado numa RESPOSTA: a prévia não avisa nem veta (9061)', async () => {
+    const ctx = await contextoDaPrevia(DIA);
+    expect(ctx.pacing.resposta).toBe(true);
+    const estourado: GateContext = {
+      ...ctx,
+      pacing: { ...ctx.pacing, state: { lastSentAt: null, sentToday: 999, numberActivatedAt: null } },
+    };
+
+    const pAssistido = previa('assisted');
+    const assistido = applyPreviewPolicy(
+      { send_message: definicao(vi.fn()) },
+      pAssistido,
+      estourado,
+      () => [],
+    );
+    await chamar(assistido, 'send_message', { body: RESPOSTA });
+
+    expect(pAssistido.result.candidates.map((c) => c.body)).toEqual([RESPOSTA]);
+    expect(pAssistido.result.impediments).toEqual([]);
     expect(pAssistido.result.warnings).toEqual([]);
   });
 });

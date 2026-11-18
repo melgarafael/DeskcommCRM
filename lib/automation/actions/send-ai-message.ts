@@ -1,5 +1,12 @@
 import { assertAgendaEffectSupabase } from "@/lib/agenda/efeito";
 import { protecaoAgendaSupabase } from "@/lib/agenda/protecao-followup";
+import {
+  AgendaPuladoError,
+  MOTIVO_DO_PULO,
+  decidirNoEnvio,
+  lerEscolhaNoEnvio,
+  type EscolhaNoEnvio,
+} from "@/lib/agenda/escolha-no-envio";
 /**
  * Ação `send_ai_message` — "Mensagem escrita pela IA".
  *
@@ -33,18 +40,68 @@ import { logger } from "@/lib/logger";
 import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { decidirPreGoLiveDoCanalViaSupabase } from "@/lib/ai/elegibilidade/consulta-pre-go-live";
 import { mensagemDeErro } from "@/lib/automation/actions/erro-legivel";
-import { comercialExigeHumanoViaSupabase, restricaoComercialBarra } from "@/lib/escalacao/assunto-comercial";
+import {
+  comercialExigeHumanoViaSupabase,
+  restricaoComercialBarra,
+  trechoComercialNaSaida,
+} from "@/lib/escalacao/assunto-comercial";
 import { triggerHandoff } from "@/lib/ai/handoff/orchestrator";
 
 const TIPO = "send_ai_message";
 
-async function postponeUntil(ctx: ActionCtx, config: Record<string, unknown>): Promise<string | null> {
-  const contato = checarGuardasDeContato(ctx);
-  if (contato.ok) {
-    const protection = (await protecaoAgendaSupabase(ctx.admin, ctx.organizationId, [contato.contact.id])).get(contato.contact.id)!;
-    if (protection.motivo === "leitura_indisponivel") throw new Error("agenda_read_failed");
-    if (protection.adiar) return protection.reavaliar_em;
+/**
+ * O cliente escreveu e ainda não foi respondido? É a mesma pergunta que o turno
+ * do agente faz (`temMensagemDoClienteSemResposta`): a última mensagem da
+ * conversa é dele. A leitura que falha vale como "esperando": o piso é a
+ * passagem à equipe, que era o comportamento de antes — nunca o silêncio.
+ */
+async function clienteEsperaResposta(ctx: ActionCtx, conversationId: string): Promise<boolean> {
+  try {
+    const { data, error } = await ctx.admin
+      .from("messages")
+      .select("direction")
+      .eq("organization_id", ctx.organizationId)
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) return true;
+    return (data as { direction?: string } | null)?.direction === "inbound";
+  } catch {
+    return true;
   }
+}
+
+/**
+ * #3813 — o pulo por compromisso é `skipped` COM MOTIVO, não falha.
+ *
+ * Devolver `null` para "não é pulo" mantém os dois `catch` deste arquivo (o da
+ * geração do texto e o do envio) com o desfecho que já tinham.
+ */
+function puloPorAgenda(err: unknown): ActionResultDetail | null {
+  if (!(err instanceof AgendaPuladoError)) return null;
+  return {
+    type: TIPO,
+    status: "skipped",
+    detail: { reason: MOTIVO_DO_PULO, appointment_id: err.protection.appointment_id },
+  };
+}
+
+async function postponeUntil(ctx: ActionCtx, config: Record<string, unknown>): Promise<string | null> {
+  const escolha = lerEscolhaNoEnvio(config);
+  const contato = checarGuardasDeContato(ctx);
+  // A GUARDA VEM ANTES DA ESPERA (#4365) — a irmã `send_whatsapp_message` tem o
+  // mesmo conserto e o mesmo motivo: contato que a ação recusaria não tem o que
+  // esperar, e adiar esconderia o motivo real (`contact_blocked`, `no_phone`)
+  // atrás de `fora_da_janela_de_envio`. Quem passa na guarda continua adiando
+  // pela régua do número logo abaixo.
+  if (!contato.ok) return null;
+  const protection = (await protecaoAgendaSupabase(ctx.admin, ctx.organizationId, [contato.contact.id])).get(contato.contact.id)!;
+  if (protection.motivo === "leitura_indisponivel") throw new Error("agenda_read_failed");
+  // #3813 — `enviar`/`nao_enviar` não adiam o evento; só o padrão adia.
+  const decisao = decidirNoEnvio(protection, escolha);
+  if (decisao.acao === "adiar") return decisao.reavaliar_em;
+  if (decisao.acao === "pular") ctx.anotarPuloPelaAgenda?.(decisao.appointment_id);
   const sessionId = typeof config.channel_session_id === "string" ? config.channel_session_id : null;
   if (!sessionId) return null;
   const foraDaJanela = await adiarAteAJanelaAbrir(ctx.admin, ctx.organizationId, sessionId);
@@ -68,6 +125,12 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
   const guarda = checarGuardasDeContato(ctx);
   if (!guarda.ok) return { type: TIPO, status: "skipped", detail: { reason: guarda.reason } };
   const contact = guarda.contact;
+
+  // #3813 — a escolha do passo da regra, no MESMO objeto para a guarda daqui e
+  // para a do handler de envio (escolha que vale só na primeira é desfeita pela
+  // segunda).
+  const escolha: EscolhaNoEnvio = lerEscolhaNoEnvio(config);
+  const contextoDeEnvio = { organizationId: ctx.organizationId, contactId: contact.id, escolhaNoEnvio: escolha };
 
   // Esta ação abre um primeiro contato e por isso ainda não tem conversa para
   // passar pelo gate comum. No pré-go-live ela precisa parar AQUI, antes da
@@ -108,9 +171,17 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
   let boundary: ServiceBoundary;
   try { boundary = await serviceForAutomation(ctx, contact.id, sessionId); }
   catch (error) { return { type: TIPO, status: "failed", error: mensagemDeErro(error) }; }
+  // Decisão de pular congelada na primeira avaliação do evento (ver send-whatsapp.ts).
+  if (ctx.puloCongeladoPelaAgenda) {
+    return {
+      type: TIPO,
+      status: "skipped",
+      detail: { reason: MOTIVO_DO_PULO, appointment_id: ctx.puloCongeladoPelaAgenda.appointment_id },
+    };
+  }
   let texto: string;
   try {
-    await assertAgendaEffectSupabase(ctx.admin, { organizationId: ctx.organizationId, contactId: contact.id });
+    await assertAgendaEffectSupabase(ctx.admin, contextoDeEnvio);
     const gerado = await gerarAbordagemDeFormulario(pool, llmEdgeConfigFromEnv(env), {
       tenantId: ctx.organizationId,
       agentId,
@@ -125,6 +196,9 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     }
     texto = gerado.texto;
   } catch (err) {
+    // #3813 — pulo por compromisso (escolha `nao_enviar`) antes da causa genérica.
+    const pulo = puloPorAgenda(err);
+    if (pulo) return pulo;
     // Teto de gasto atingido, credencial inválida, provider fora. A causa vai
     // inteira para o registro do run — é o que a tela mostra a quem pergunta
     // "por que a IA não escreveu?".
@@ -165,16 +239,25 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     // A regra e a falha FECHADA vivem em `lib/escalacao/assunto-comercial.ts`
     // (o dono): `restricaoComercialBarra` só vai ao banco quando o corpo tem cara
     // de preço, e leitura que estoura vale como camada LIGADA. O desfecho é o do
-    // veto de lá: motivo `commercial_requires_human` e passagem para a equipe
-    // pelo caminho de CRM que já existe (`triggerHandoff`), sem evento novo.
+    // veto de lá: motivo `commercial_requires_human`. Desde a Spec 34 só passa
+    // a conversa para a equipe quando o cliente tem mensagem esperando; sem
+    // ela, o texto é reescrito (bloco logo abaixo).
     //
     // Fica DEPOIS de `autorizarContatoParaIA` de propósito: o orquestrador só
     // passa bot→humano uma conversa que a IA poderia estar atendendo agora, e no
     // gate `allowlist` é este carimbo que a torna elegível. Antes dele, o pedido
     // viraria um silêncio — nem a mensagem, nem a equipe avisada.
-    if (
-      await restricaoComercialBarra(
-        texto,
+    // ─── Spec 34 — barrado, a automação reescreve UMA vez e não passa à equipe ──
+    //
+    // Esta ação dispara por regra (formulário, tag, etapa): quando chega aqui o
+    // cliente NÃO perguntou nada — o texto com preço foi invenção da IA. Passar a
+    // conversa para a equipe por isso pausava o automático de quem nunca pediu.
+    // Agora a IA escreve de novo, avisada do que a trava apontou; se a segunda
+    // também for barrada, nada é enviado, a conversa segue com a IA, e a aba
+    // Atividade mostra os dois textos e o trecho.
+    const barra = (corpo: string) =>
+      restricaoComercialBarra(
+        corpo,
         () => comercialExigeHumanoViaSupabase(ctx.admin, ctx.organizationId),
         (mensagem, contexto) =>
           logger.warn(`[automation.send_ai_message] ${mensagem}`, {
@@ -182,43 +265,84 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
             ruleId: ctx.ruleId,
             ...contexto,
           }),
-      )
-    ) {
-      logger.info("[automation.send_ai_message] mensagem não enviada — restrição comercial da organização", {
+      );
+    let vetoAnterior: { texto_barrado: string; trecho: string | null } | null = null;
+    if (await barra(texto)) {
+      // `message.received` também dispara automação: ali o cliente PERGUNTOU, e
+      // reescrever sem passar à equipe o deixaria sem resposta e sem ninguém
+      // sabendo. Com mensagem dele esperando, vale a regra do turno do agente:
+      // a passagem segue como sempre, agora com o motivo próprio.
+      if (await clienteEsperaResposta(ctx, conversationId)) {
+        logger.info("[automation.send_ai_message] mensagem não enviada — restrição comercial, cliente esperando resposta", {
+          organizationId: ctx.organizationId,
+          ruleId: ctx.ruleId,
+          conversationId,
+        });
+        const lead = ctx.context.lead as { id?: string } | undefined;
+        const passagem = await triggerHandoff({
+          serviceBoundary: boundary,
+          conversationId,
+          organizationId: ctx.organizationId,
+          reason: "restricao_comercial",
+          origem: "runtime_nativo",
+          motivoTexto: "Resposta comercial barrada; valores e negociação são exclusivos da equipe.",
+          leadId: lead?.id ?? null,
+          metadata: { source: "automation_rule", acao: TIPO, rule_id: ctx.ruleId },
+        });
+        // O motivo diz o que ACONTECEU: se o orquestrador recusou a passagem, a
+        // mensagem também não saiu e ninguém foi avisado por esta execução.
+        return {
+          type: TIPO,
+          status: "skipped",
+          detail: passagem.triggered
+            ? { reason: "commercial_requires_human", conversation_id: conversationId, passagem_para_a_equipe: true }
+            : {
+                reason: "commercial_requires_human_sem_passagem",
+                conversation_id: conversationId,
+                passagem_para_a_equipe: false,
+              },
+        };
+      }
+      const primeira = { texto, trecho: trechoComercialNaSaida(texto) };
+      logger.info("[automation.send_ai_message] texto barrado pela restrição comercial — escrevendo de novo", {
         organizationId: ctx.organizationId,
         ruleId: ctx.ruleId,
         conversationId,
       });
-      const lead = ctx.context.lead as { id?: string } | undefined;
-      const passagem = await triggerHandoff({
-        serviceBoundary: boundary,
-        conversationId,
-        organizationId: ctx.organizationId,
-        // O MESMO motivo e o MESMO texto que a cadeia usa ao vetar: quem lê a
-        // passagem na tela de atendimento vê a mesma frase, venha ela do agente
-        // do turno ou desta automação.
-        reason: "low_confidence",
-        origem: "runtime_nativo",
-        motivoTexto: "Resposta comercial barrada; valores e negociação são exclusivos da equipe.",
-        leadId: lead?.id ?? null,
-        metadata: { source: "automation_rule", acao: TIPO, rule_id: ctx.ruleId },
-      });
-      // O motivo diz o que ACONTECEU: a frase de `commercial_requires_human` na
-      // aba Atividade afirma que a conversa passou para a equipe, e o
-      // orquestrador pode recusar a passagem (conversa fora do atendimento da
-      // IA, falha de escrita). Nesse caso a mensagem também não sai, mas ninguém
-      // foi avisado por esta execução — e a tela precisa dizer isso.
-      return {
-        type: TIPO,
-        status: "skipped",
-        detail: passagem.triggered
-          ? { reason: "commercial_requires_human", conversation_id: conversationId, passagem_para_a_equipe: true }
-          : {
-              reason: "commercial_requires_human_sem_passagem",
-              conversation_id: conversationId,
-              passagem_para_a_equipe: false,
-            },
-      };
+      let gerado: Awaited<ReturnType<typeof gerarAbordagemDeFormulario>>;
+      try {
+        gerado = await gerarAbordagemDeFormulario(pool, llmEdgeConfigFromEnv(env), {
+          tenantId: ctx.organizationId,
+          agentId,
+          leadId: contact.id,
+          instrucao,
+          origem,
+          dados,
+          origemDaAbordagem,
+          tentativaBarrada: primeira,
+        });
+      } catch (err) {
+        const pulo = puloPorAgenda(err);
+        if (pulo) return pulo;
+        return { type: TIPO, status: "failed", error: mensagemDeErro(err) };
+      }
+      if (!gerado.ok) {
+        return { type: TIPO, status: "failed", error: gerado.reason, detail: { reason: gerado.reason } };
+      }
+      if (await barra(gerado.texto)) {
+        return {
+          type: TIPO,
+          status: "skipped",
+          detail: {
+            reason: "commercial_requires_human_duas_tentativas",
+            conversation_id: conversationId,
+            textos_barrados: [primeira.texto, gerado.texto],
+            trecho: trechoComercialNaSaida(gerado.texto),
+          },
+        };
+      }
+      vetoAnterior = { texto_barrado: primeira.texto, trecho: primeira.trecho };
+      texto = gerado.texto;
     }
 
     await espacarEnvio(sessionId);
@@ -227,7 +351,7 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
       {
         organization_id: ctx.organizationId,
         serviceBoundary: boundary,
-        proactiveContext: { organizationId: ctx.organizationId, contactId: contact.id },
+        proactiveContext: contextoDeEnvio,
         // Disparada por regra, ESCRITA pela IA: o carimbo segue a autoria (#652).
         // O `agent_id` é o agente publicado que escreveu (#3373) — sem ele, a
         // assinatura `por_agente` (#3310) não tem como saber quem assina e caía
@@ -253,9 +377,15 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     // O texto gerado entra no detalhe: sem ele, quem lê a Atividade não tem como
     // saber SE a instrução que escreveu produziu a mensagem que queria — e
     // ajustar a instrução às cegas é o que faz o dono desistir da IA.
-    desfecho.detail = { ...(desfecho.detail ?? {}), texto_gerado: texto };
+    desfecho.detail = {
+      ...(desfecho.detail ?? {}),
+      texto_gerado: texto,
+      ...(vetoAnterior !== null ? { veto_anterior: vetoAnterior } : {}),
+    };
     return desfecho;
   } catch (err) {
+    const pulo = puloPorAgenda(err);
+    if (pulo) return pulo;
     return {
       type: TIPO,
       status: "failed",

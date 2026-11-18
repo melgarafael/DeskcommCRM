@@ -83,7 +83,10 @@ const REGRAS: Array<[string, RegraGravada]> = [
     "contato novo de uma fonte, com condições de lista e de texto",
     {
       trigger_event: "lead.created",
-      trigger_config: { webhook_source_id: FONTE },
+      // O `false` explícito é o que a tela e o desenho gravam desde o #2974: a
+      // opção é ligada/desligada, e omitir o `false` impediria desligá-la (o
+      // `configAoSalvarDaTela` faz merge com o que está guardado).
+      trigger_config: { webhook_source_id: FONTE, uma_vez_por_contato: false },
       conditions: [
         { field: "lead.tags", op: "contains", value: "vip" },
         { field: "lead.source_metadata.utm_source", op: "eq", value: "google" },
@@ -112,6 +115,15 @@ const REGRAS: Array<[string, RegraGravada]> = [
   [
     "passo a IA decide no meio da fila (gravado pela API)",
     { trigger_event: "message.received", trigger_config: {}, conditions: [{ field: "contact.tags", op: "contains", value: "cliente" }], actions: [PASSO_DA_IA, ACOES_FIXAS[2]!] },
+  ],
+  [
+    "contato novo com o limite de uma vez por contato (#2974)",
+    {
+      trigger_event: "lead.created",
+      trigger_config: { webhook_source_id: FONTE, uma_vez_por_contato: true },
+      conditions: [],
+      actions: [ACOES_FIXAS[1]!],
+    },
   ],
 ];
 
@@ -450,5 +462,168 @@ describe("o desenho não destrói a regra que não representa (#2727)", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(createAutomationRuleSchema.parse(r.corpo).conditions).toEqual(QUALQUER_UMA.conditions);
+  });
+});
+
+/**
+ * #2974 — O LIMITE "NO MÁXIMO UMA VEZ POR CONTATO" VOLTA PELO DESENHO.
+ *
+ * A opção vive no `trigger_config` do gatilho de contato novo, e a caixa do
+ * gatilho é o único lugar que a desenha. Três coisas precisam fechar: ela volta
+ * ligada ao abrir; DESLIGAR grava `false` (o `configAoSalvarDaTela` faz merge
+ * com o guardado, então omitir a chave manteria o `true` e a opção não teria
+ * como ser desligada); e num gatilho que o desenho não desenha a configuração, o
+ * que está gravado ATRAVESSA o salvar em vez de sumir.
+ */
+describe("o limite de uma vez por contato sobrevive ao desenho (#2974)", () => {
+  const regraComLimite = (trigger_event: string, ligado: boolean): RegraGravada => ({
+    trigger_event,
+    trigger_config: { uma_vez_por_contato: ligado },
+    conditions: [],
+    actions: [ACOES_FIXAS[2]!],
+  });
+
+  const telaDoGatilho = (desenho: Desenho) => {
+    const caixa = desenho.caixas[0]!;
+    if (caixa.data.kind !== "gatilho") throw new Error("a primeira caixa é o gatilho");
+    return caixa.data.tela;
+  };
+
+  it("⭐ abrir e salvar sem mexer mantém o ligado", () => {
+    const regra = regraComLimite("lead.created", true);
+    const desenho = desenhoDaRegra(regra);
+    expect(telaDoGatilho(desenho).umaVezPorContato, "o desenho não mostrou a opção ligada").toBe(true);
+
+    expect(corpoDoDesenho({ nome: "x", desenho, regraGravada: regra }).trigger_config).toEqual({
+      // A caixa de fonte desenha "qualquer fonte" quando o gravado não é um id:
+      // o `null` é o valor da tela, e não uma chave inventada.
+      webhook_source_id: null,
+      uma_vez_por_contato: true,
+    });
+    expect(validarDesenho({ nome: "x", desenho, regraGravada: regra }).ok).toBe(true);
+  });
+
+  it("⭐ desligar na caixa grava `false` — o merge não mantém o `true` guardado", () => {
+    const regra = regraComLimite("lead.created", true);
+    const desenho = desenhoDaRegra(regra);
+    telaDoGatilho(desenho).umaVezPorContato = false;
+
+    expect(corpoDoDesenho({ nome: "x", desenho, regraGravada: regra }).trigger_config).toEqual({
+      webhook_source_id: null,
+      uma_vez_por_contato: false,
+    });
+  });
+
+  it("num gatilho que o desenho não configura, o gravado atravessa o salvar", () => {
+    const regra = regraComLimite("message.received", true);
+    const corpo = corpoDoDesenho({ nome: "x", desenho: desenhoDaRegra(regra), regraGravada: regra });
+    expect(corpo.trigger_config).toEqual({ uma_vez_por_contato: true });
+  });
+
+  it("o CONTROLE: gatilho sem configuração nenhuma continua saindo `{}`", () => {
+    const regra: RegraGravada = {
+      trigger_event: "message.received",
+      trigger_config: {},
+      conditions: [],
+      actions: [ACOES_FIXAS[2]!],
+    };
+    expect(corpoDoDesenho({ nome: "x", desenho: desenhoDaRegra(regra), regraGravada: regra }).trigger_config).toEqual({});
+  });
+});
+
+/**
+ * #2974, fatia 2 — O INTERVALO MÍNIMO POR CONTATO VOLTA PELO DESENHO.
+ *
+ * A chave `repetir_apos_horas` vive no MESMO `trigger_config` da de uma-vez, e
+ * três coisas precisam fechar no abrir/salvar:
+ *
+ *   - o N gravado volta no campo (como texto, e só se passar na régua 1..720);
+ *   - campo VAZIO não inventa a chave — o `trigger_config` de quem nunca ligou a
+ *     opção não ganha um `repetir_apos_horas: null` pelo simples fato de a tela
+ *     existir (é o que mantém o diff de uma regra antiga em zero);
+ *   - campo LIMPO apaga o N gravado: `configAoSalvarDaTela` faz merge com o que
+ *     está no banco, então omitir a chave a manteria para sempre — a opção não
+ *     teria como ser desligada, o mesmo defeito que o `false` explícito da
+ *     uma-vez veio consertar.
+ *
+ * E a tela não grava as duas réguas: com "uma vez por contato" ligado o campo do
+ * intervalo está desabilitado, e o salvar tira a chave (o motor continua
+ * resolvendo pela janela quando as duas chegam pela API — ver
+ * `intervaloPorContatoHoras`).
+ */
+describe("o intervalo mínimo por contato sobrevive ao desenho (#2974, fatia 2)", () => {
+  const regraComIntervalo = (trigger_config: Record<string, unknown>): RegraGravada => ({
+    trigger_event: "lead.created",
+    trigger_config,
+    conditions: [],
+    actions: [ACOES_FIXAS[2]!],
+  });
+
+  const telaDoGatilho = (desenho: Desenho) => {
+    const caixa = desenho.caixas[0]!;
+    if (caixa.data.kind !== "gatilho") throw new Error("a primeira caixa é o gatilho");
+    return caixa.data.tela;
+  };
+
+  const configDe = (regra: RegraGravada, desenho = desenhoDaRegra(regra)) =>
+    corpoDoDesenho({ nome: "x", desenho, regraGravada: regra }).trigger_config;
+
+  it("⭐ abrir e salvar preserva o N; com o campo vazio a chave NÃO é inventada", () => {
+    const regra = regraComIntervalo({ uma_vez_por_contato: false, repetir_apos_horas: 24 });
+    const desenho = desenhoDaRegra(regra);
+
+    expect(telaDoGatilho(desenho).repetirAposHoras, "o desenho não mostrou o N gravado").toBe("24");
+    expect(configDe(regra, desenho)).toEqual({
+      webhook_source_id: null,
+      uma_vez_por_contato: false,
+      repetir_apos_horas: 24,
+    });
+
+    const semIntervalo = regraComIntervalo({ uma_vez_por_contato: false });
+    const desenhoSem = desenhoDaRegra(semIntervalo);
+    expect(telaDoGatilho(desenhoSem).repetirAposHoras).toBe("");
+    const corpo = configDe(semIntervalo, desenhoSem);
+    expect(corpo).toEqual({ webhook_source_id: null, uma_vez_por_contato: false });
+    expect("repetir_apos_horas" in corpo, "a chave foi inventada num trigger_config que não a tinha").toBe(
+      false,
+    );
+  });
+
+  it("⭐ limpar o campo APAGA o N gravado — o merge não mantém o que a tela tirou", () => {
+    const regra = regraComIntervalo({ repetir_apos_horas: 48 });
+    const desenho = desenhoDaRegra(regra);
+    telaDoGatilho(desenho).repetirAposHoras = "";
+
+    const corpo = configDe(regra, desenho);
+    expect(corpo).toEqual({ webhook_source_id: null, uma_vez_por_contato: false });
+    expect("repetir_apos_horas" in corpo).toBe(false);
+  });
+
+  it("⭐ com “uma vez por contato” ligado o desenho não grava as duas réguas", () => {
+    const regra = regraComIntervalo({ uma_vez_por_contato: true, repetir_apos_horas: 24 });
+
+    expect(configDe(regra)).toEqual({
+      webhook_source_id: null,
+      uma_vez_por_contato: true,
+    });
+  });
+
+  it("valor guardado fora da régua abre como vazio e não é propagado", () => {
+    const regra = regraComIntervalo({ repetir_apos_horas: "sim" });
+    const desenho = desenhoDaRegra(regra);
+
+    expect(telaDoGatilho(desenho).repetirAposHoras).toBe("");
+    expect("repetir_apos_horas" in configDe(regra, desenho)).toBe(false);
+  });
+
+  it("o N que a tela grava passa pelo schema da API", () => {
+    const regra = regraComIntervalo({ repetir_apos_horas: 720 });
+    const resultado = validarDesenho({ nome: "x", desenho: desenhoDaRegra(regra), regraGravada: regra });
+
+    expect(resultado.ok).toBe(true);
+    if (!resultado.ok) return;
+    expect(createAutomationRuleSchema.parse(resultado.corpo).trigger_config).toMatchObject({
+      repetir_apos_horas: 720,
+    });
   });
 });

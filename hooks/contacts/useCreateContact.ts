@@ -18,17 +18,18 @@ import type { ContactCreate } from "@/lib/schemas/contacts";
  * O `import type` do handler é a ligação que faltava: se a rota mudar de forma,
  * quem lê aqui para de compilar em vez de ler `undefined` em produção.
  */
-export function useCreateContact() {
+export function useCreateContact(leadId?: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: ContactCreate) =>
       apiClient.post<{ data: CreateContactResult; meta?: { action?: string } }>(
-        "/api/v1/contacts",
+        leadId ? `/api/v1/leads/${leadId}/contact` : "/api/v1/contacts",
         input,
       ),
     onError: showApiError,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["contacts"] });
+      if (leadId) qc.invalidateQueries({ queryKey: ["leads"] });
     },
   });
 }

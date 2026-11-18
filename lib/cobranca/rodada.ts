@@ -34,6 +34,9 @@ export interface ResumoDaRodada {
 
 export const LIMITE_DA_RECONCILIACAO = 50;
 const LIMIAR_DO_AVISO_DE_IA = 0.8;
+// Teto de linhas por resposta do PostgREST (max_rows) numa instalação padrão.
+const PAGE_SIZE = 1000;
+const LOTE_DE_EMPRESAS = 200;
 
 interface Reconciliavel {
   organization_id: string;
@@ -56,7 +59,14 @@ export async function rodadaDaCobranca(admin: SupabaseClient, deps: Dependencias
     logger.error("cobranca.rodada_falhou", { organization_id: org, erro: e instanceof Error ? e.message : "desconhecido" });
   };
 
-  const { data: conjunto, error } = await admin.rpc("fn_cobranca_reconciliaveis");
+  // O PostgREST pode cortar a resposta antes de ela chegar aqui (max_rows).
+  // A prioridade e o recorte precisam valer no banco, inclusive para a
+  // assinatura nunca lida que ficou depois das primeiras 1.000 linhas.
+  const { data: conjunto, error } = await admin
+    .rpc("fn_cobranca_reconciliaveis")
+    .eq("precisa_reler", true)
+    .order("relida_em", { ascending: true, nullsFirst: true })
+    .limit(LIMITE_DA_RECONCILIACAO);
   if (error) throw new Error(`cobranca: reconciliáveis ilegíveis (${error.code ?? "sem_codigo"})`);
   const fila = ((conjunto ?? []) as Reconciliavel[])
     .filter((l) => l.precisa_reler)
@@ -80,12 +90,24 @@ export async function rodadaDaCobranca(admin: SupabaseClient, deps: Dependencias
     }
   }
 
-  const { data: todas, error: erroDaLista } = await admin
-    .from("cobranca_assinaturas")
-    .select("organization_id")
-    .not("organization_id", "is", null);
-  if (erroDaLista) throw new Error(`cobranca: assinaturas ilegíveis (${erroDaLista.code ?? "sem_codigo"})`);
-  for (const { organization_id: org } of (todas ?? []) as Array<{ organization_id: string }>) {
+  const todas: Array<{ organization_id: string }> = [];
+  let inicio = 0;
+  for (let pagina = 0; pagina < 100; pagina++) {
+    const { data: lote, error: erroDoLote } = await admin
+      .from("cobranca_assinaturas")
+      .select("organization_id")
+      .not("organization_id", "is", null)
+      // range sem ordem total não é paginação: o Postgres não garante a mesma ordem entre duas leituras
+      .order("organization_id", { ascending: true })
+      .range(inicio, inicio + PAGE_SIZE - 1);
+    if (erroDoLote) throw new Error(`cobranca: assinaturas ilegíveis (${erroDoLote.code ?? "sem_codigo"})`);
+    const linhasDoLote = (lote ?? []) as Array<{ organization_id: string }>;
+    if (linhasDoLote.length === 0) break;
+    todas.push(...linhasDoLote);
+    inicio += linhasDoLote.length;
+    if (linhasDoLote.length < PAGE_SIZE) break;
+  }
+  for (const { organization_id: org } of todas) {
     if (jaVistas.has(org)) continue;
     try {
       contar(await aplicarRegua(admin, org, deps));
@@ -107,21 +129,38 @@ async function avisarTetoDeIa(admin: SupabaseClient): Promise<number> {
   const tetoDoPlano = new Map(((planos ?? []) as Array<{ id: string; teto_ia_usd_cents: number }>).map((p) => [p.id, p.teto_ia_usd_cents]));
   if (tetoDoPlano.size === 0) return 0;
 
-  const { data: linhas, error: erroDasLinhas } = await admin
-    .from("cobranca_assinaturas")
-    .select("organization_id, plano_id")
-    .in("plano_id", [...tetoDoPlano.keys()]);
-  if (erroDasLinhas) throw new Error(`cobranca: assinaturas com teto ilegíveis (${erroDasLinhas.code ?? "sem_codigo"})`);
-  const comTeto = (linhas ?? []) as Array<{ organization_id: string; plano_id: string }>;
+  const comTeto: Array<{ organization_id: string; plano_id: string }> = [];
+  let inicioTeto = 0;
+  for (let pagina = 0; pagina < 100; pagina++) {
+    const { data: lote, error: erroDoLote } = await admin
+      .from("cobranca_assinaturas")
+      .select("organization_id, plano_id")
+      .in("plano_id", [...tetoDoPlano.keys()])
+      .order("organization_id", { ascending: true })
+      .range(inicioTeto, inicioTeto + PAGE_SIZE - 1);
+    if (erroDoLote) throw new Error(`cobranca: assinaturas com teto ilegíveis (${erroDoLote.code ?? "sem_codigo"})`);
+    const linhasDoLote = (lote ?? []) as Array<{ organization_id: string; plano_id: string }>;
+    if (linhasDoLote.length === 0) break;
+    comTeto.push(...linhasDoLote);
+    inicioTeto += linhasDoLote.length;
+    if (linhasDoLote.length < PAGE_SIZE) break;
+  }
   if (comTeto.length === 0) return 0;
 
-  const { data: orgs, error: erroDasOrgs } = await admin
-    .from("organizations")
-    .select("id, status, locale")
-    .in("id", comTeto.map((l) => l.organization_id));
-  if (erroDasOrgs) throw new Error(`cobranca: empresas ilegíveis (${erroDasOrgs.code ?? "sem_codigo"})`);
+  // Em lotes: um .in() único com todas as empresas também seria cortado em
+  // max_rows, e mil UUIDs na query string passam do limite de URL do proxy.
+  const ids = comTeto.map((l) => l.organization_id);
+  const orgs: Array<{ id: string; status: string; locale: string | null }> = [];
+  for (let i = 0; i < ids.length; i += LOTE_DE_EMPRESAS) {
+    const { data: lote, error: erroDasOrgs } = await admin
+      .from("organizations")
+      .select("id, status, locale")
+      .in("id", ids.slice(i, i + LOTE_DE_EMPRESAS));
+    if (erroDasOrgs) throw new Error(`cobranca: empresas ilegíveis (${erroDasOrgs.code ?? "sem_codigo"})`);
+    orgs.push(...((lote ?? []) as typeof orgs));
+  }
   const idiomaDe = new Map<string, Idioma>(
-    ((orgs ?? []) as Array<{ id: string; status: string; locale: string | null }>)
+    orgs
       .filter((o) => ehOperante(o.status))
       .map((o) => [o.id, normalizarIdioma(o.locale)]),
   );

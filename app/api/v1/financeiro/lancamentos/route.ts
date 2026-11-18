@@ -10,18 +10,24 @@
  * não vem do corpo: deixar quem chama escolher `'sale'` permitiria criar uma
  * entrada que o relatório conta como venda sem existir comanda nenhuma por trás.
  *
- * ⚠️ CLIENT DE SESSÃO. A RLS já diz que escrever exige `agent`, e a rota cobra o
- * mesmo degrau de propósito — pedir `manager` aqui criaria uma segunda régua, e
- * quem chamasse com um token de servidor passaria pela RLS mesmo assim.
+ * ⚠️ CLIENT DE SESSÃO na escrita. A RLS já diz que escrever exige `agent`, e a
+ * rota cobra o mesmo degrau de propósito — pedir `manager` aqui criaria uma
+ * segunda régua.
+ *
+ * ⚠️ COM TOKEN só a LEITURA (`mcp:read`, Spec 33 R2, doc 376): o GET usa a
+ * service role e filtra `organization_id` da linha do token. O POST segue só de
+ * sessão e recusa o Bearer com 401 no `requireRole`.
  */
 import { randomUUID } from "node:crypto";
 
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createClient } from "@/lib/supabase/server";
 
@@ -44,20 +50,32 @@ const criarSchema = z.object({
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("viewer", { requestId, resource: "financeiro" });
+  // Leitura do extrato: sessão OU token `mcp:read`.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "financeiro",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "financeiro_lancamentos_listar", requestId);
+  if (teto) return teto;
 
   const url = new URL(req.url);
   const de = url.searchParams.get("de");
   const ate = url.searchParams.get("ate");
   const status = url.searchParams.get("status");
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
+  // #4845 — o extrato é da EMPRESA ATIVA. A RLS de `financial_entries` libera
+  // todas as empresas de que a pessoa é membro, então o caixa da empresa A
+  // listava o dinheiro da B.
   let q = supabase
     .from("financial_entries")
     .select(
       "id, account_id, account_plan_id, sale_id, direction, amount_cents, currency, description, entry_date, status, paid_at, origin, reverses_entry_id, created_at",
     )
+    .eq("organization_id", authz.organizationId)
     .order("entry_date", { ascending: false })
     .limit(LIMITE_MAXIMO);
 
@@ -87,10 +105,52 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const supabase = await createClient();
+  const org = authz.org.orgId;
+
+  // ─── A CONTA E O PLANO SÃO DESTA EMPRESA (#4845) ───────────────────────
+  //
+  // A FK de `financial_entries.account_id` só exige que a conta EXISTA, e a RLS
+  // de escrita confere a empresa da LINHA — que esta rota já preenche — não a da
+  // conta apontada. Para quem é membro de duas empresas, o lançamento da A saía
+  // apontando para o caixa da B, e o extrato de uma citava a conta da outra.
+  // É a mesma conferência que `fn_honorarios_parcela_pagar` faz no banco antes de
+  // gravar (`conta_invalida`), e a mensagem é a que esta rota já usa para o 23503.
+  const { data: conta } = await supabase
+    .from("financial_accounts")
+    .select("id")
+    .eq("id", lido.data.account_id)
+    .eq("organization_id", org)
+    .maybeSingle();
+  if (!conta) {
+    return fail("validation_failed", "Conta ou plano de contas inválido.", 422, { requestId });
+  }
+  if (lido.data.account_plan_id) {
+    const { data: plano } = await supabase
+      .from("account_plans")
+      .select("id")
+      .eq("id", lido.data.account_plan_id)
+      .eq("organization_id", org)
+      .maybeSingle();
+    if (!plano) {
+      return fail("validation_failed", "Conta ou plano de contas inválido.", 422, { requestId });
+    }
+  }
+
+  // ─── A MOEDA É DA ORGANIZAÇÃO, NUNCA DO CORPO (#3379) ──────────────────
+  //
+  // `financial_entries.currency` tem `default 'BRL'` e este insert não mandava
+  // nada: numa organização em dólar o lançamento manual de `1,300` gravava
+  // 130000 centavos em BRL — o número certo depois do #3378, com o rótulo de
+  // outra unidade na lista, que é o pior desfecho porque parece certo. Mesmo
+  // leitor da comanda (`moedaDaOrganizacao`), e o corpo nem declara o campo: o
+  // Zod o descarta antes de chegar aqui.
+  const moeda = await moedaDaOrganizacao(supabase, authz.org.orgId);
+
   const { data, error } = await supabase
     .from("financial_entries")
     .insert({
       organization_id: authz.org.orgId,
+      currency: moeda,
       account_id: lido.data.account_id,
       account_plan_id: lido.data.account_plan_id ?? null,
       direction: lido.data.direction,
@@ -106,7 +166,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       origin: "manual",
       created_by_user_id: authz.user.id,
     })
-    .select("id, direction, amount_cents, status, entry_date")
+    .select("id, direction, amount_cents, currency, status, entry_date")
     .single();
 
   if (error) {

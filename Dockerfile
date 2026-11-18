@@ -26,6 +26,11 @@ ARG NEXT_PUBLIC_SUPABASE_URL=https://placeholder.supabase.co
 ARG NEXT_PUBLIC_SUPABASE_ANON_KEY=placeholder-anon-key
 ARG NEXT_PUBLIC_APP_URL=https://placeholder.invalid
 ARG NEXT_PUBLIC_ADMIN_URL=https://placeholder.invalid
+# Teto de heap do build. O PADRÃO (4096) é o de quem builda na VPS pelo override
+# docker-compose.build.yml (docs/runbooks/deploy.md §4) e não muda. O CI passa
+# 6144 por build-arg (publish-image.yml): em 17/11 o type check do `next build`
+# passou de 4 GB e o imagens-ok caiu por "heap out of memory" (#4390, #4832).
+ARG NODE_HEAP_MB=4096
 # O build do Next é faminto: o heap default do Node (~2GB) estoura. NODE_OPTIONS
 # eleva pra 4GB. Isso é custo de QUEM BUILDA — o CI —, não de quem instala: o
 # caminho normal do self-hoster é `docker compose pull`, e o install.sh não
@@ -37,7 +42,7 @@ ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
     NEXT_PUBLIC_ADMIN_URL=$NEXT_PUBLIC_ADMIN_URL \
     NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
-    NODE_OPTIONS=--max-old-space-size=4096
+    NODE_OPTIONS=--max-old-space-size=${NODE_HEAP_MB}
 
 # Turbopack (`pnpm build`): ~4min vs ~34min do webpack num VPS. O bloco `webpack:`
 # do Sentry (tree-shake + upload de sourcemap em build-time) é ignorado, mas o
@@ -70,7 +75,10 @@ RUN pnpm build
 # nenhum. Sem ele: "Setting up fake worker failed: Cannot find module
 # '/app/.next/server/chunks/pdf.worker.mjs'" — um SEGUNDO arquivo ausente,
 # de causa diferente dos dois symlinks, e só aparece testando o bundle real.
+# Preserve também os alvos dos links: o binding opcional instalado pertence
+# ao estágio de dependências da imagem, sem buscar binários da máquina do autor.
 RUN PDFJS_DIR=$(basename node_modules/.pnpm/pdfjs-dist@*) && \
+    cp -a node_modules/.pnpm/@napi-rs+canvas* .next/standalone/node_modules/.pnpm/ && \
     cp -a "node_modules/pdfjs-dist" ".next/standalone/node_modules/pdfjs-dist" && \
     mkdir -p ".next/standalone/node_modules/.pnpm/$PDFJS_DIR/node_modules/@napi-rs" && \
     cp -a "node_modules/.pnpm/$PDFJS_DIR/node_modules/@napi-rs/canvas" \

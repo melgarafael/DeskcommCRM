@@ -759,6 +759,46 @@ describe("applyReactivityEvent — inbound wake (waiting_reply, sem cancel_on_re
     expect(after.status).toBe("waiting_reply");
     expect(after.outcome).toBeNull();
   });
+
+  // Mensagem RECUPERADA de uma queda do número (Spec 32): é de antes da volta. Ela pode PARAR o
+  // fluxo que pede cancelamento na resposta, mas nunca acordar a espera, porque acordar faz o
+  // fluxo falar agora por causa de uma mensagem de horas ou dias atrás.
+  // Sabotagem: tirar o `semAcordar` do laço de reactToInbound faz o primeiro caso ficar vermelho.
+  it("semAcordar: espera SEM cancel_on_reply não acorda (nem evento, nem next_eval_at novo)", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const contactId = await seedContact(org);
+    const { pointerId, versionId } = await seedFlow(org, CLASSIFY_GRAPH);
+    const enrollmentId = await seedEnrollment({ org, pointerId, versionId, contactId, currentNodeId: "ac1", status: "waiting_reply" });
+    const antes = await getEnrollment(enrollmentId);
+
+    const row = eventRow({ organization_id: org, event_type: "message.received", payload: { contact_id: contactId } });
+    const summary = await applyReactivityEvent(reactivityDb(), () => new Date(), row, { semAcordar: true });
+    expect(summary.reacted).toBe(0);
+
+    const after = await getEnrollment(enrollmentId);
+    expect(after.status).toBe("waiting_reply");
+    expect(after.next_eval_at).toEqual(antes.next_eval_at);
+    expect(await getEvents(enrollmentId)).toEqual([]);
+  });
+
+  it("semAcordar: o fluxo que pede cancel_on_reply continua sendo cancelado", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const contactId = await seedContact(org);
+    const { pointerId, versionId } = await seedFlow(org, CLASSIFY_GRAPH, {
+      triggerConfig: { kind: "manual", cancel_on_reply: true },
+    });
+    const enrollmentId = await seedEnrollment({ org, pointerId, versionId, contactId, currentNodeId: "ac1", status: "waiting_reply" });
+
+    const row = eventRow({ organization_id: org, event_type: "message.received", payload: { contact_id: contactId } });
+    const summary = await applyReactivityEvent(reactivityDb(), () => new Date(), row, { semAcordar: true });
+    expect(summary).toEqual({ matched: true, reacted: 1 });
+
+    const after = await getEnrollment(enrollmentId);
+    expect(after.status).toBe("cancelled");
+    expect(after.outcome).toBe("replied");
+  });
 });
 
 // ---- 3. handoff aberto: pause/cancel/allow ----

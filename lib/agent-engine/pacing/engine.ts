@@ -15,7 +15,10 @@ import type { PacingKnobs, WarmupStep } from './defaults';
 export interface PacingState {
   /** Último envio deste número (qualquer dia) — base do throttle. */
   lastSentAt: Date | null;
-  /** Envios deste número desde a meia-noite LOCAL do tenant. */
+  /**
+   * DISPAROS deste número desde a meia-noite LOCAL do tenant (1ª mensagem,
+   * follow-up, campanha). Resposta a quem escreveu não entra (`pacing_ledger.resposta`).
+   */
   sentToday: number;
   /** Ativação do número (channel_knobs.number_activated_at); null = idade 0 (conservador). */
   numberActivatedAt: Date | null;
@@ -119,6 +122,17 @@ export function decidePacing(input: PacingInput): PacingDecision {
   // SEMPRE — desarmar as duas juntas acordaria cliente às 3h (invariante 3).
   if (!banRisk) return { allow: true, waitMs: 0 };
 
+  // RESPOSTA não passa pelo teto do dia. O teto (warm-up e limite do CRM) mede
+  // quantas pessoas o número ABORDA — 1ª mensagem e follow-up —, e é isso que
+  // leva a banimento. Quem escreveu está esperando: segurar a resposta até
+  // amanhã porque a prospecção do dia acabou perde o lead e não protege o
+  // número. Por isso a resposta também não entra na conta (`recordSend` grava
+  // `resposta`, `loadPacingState` só conta disparo). O espaçamento continua.
+  //
+  // `prospeccao` prevalece: abordagem fria nunca é resposta (ver o contrato do
+  // campo), então um chamador que declare as duas coisas não abre o teto.
+  if (!prospeccao && resposta) return { allow: true, waitMs: throttleWaitMs(now, state, knobs, rng) };
+
   // Clamp em >= 0: number_activated_at no futuro (typo do admin / clock skew
   // daemon↔DB) cai no degrau MAIS conservador — warm-up falha FECHADO, nunca
   // vira "número formado" por idade negativa.
@@ -142,12 +156,19 @@ export function decidePacing(input: PacingInput): PacingDecision {
     };
   }
 
-  let waitMs = 0;
-  if (state.lastSentAt) {
-    const requiredGapMs = knobs.throttleMs + jitterOf(rng, knobs);
-    waitMs = Math.max(0, requiredGapMs - (now.getTime() - state.lastSentAt.getTime()));
-  }
-  return { allow: true, waitMs };
+  return { allow: true, waitMs: throttleWaitMs(now, state, knobs, rng) };
+}
+
+/** Espera restante do espaçamento (throttle + jitter) desde o último envio do número. */
+function throttleWaitMs(
+  now: Date,
+  state: PacingState,
+  knobs: PacingKnobs,
+  rng: () => number,
+): number {
+  if (!state.lastSentAt) return 0;
+  const requiredGapMs = knobs.throttleMs + jitterOf(rng, knobs);
+  return Math.max(0, requiredGapMs - (now.getTime() - state.lastSentAt.getTime()));
 }
 
 /**

@@ -137,6 +137,12 @@ export const wahaPayloadSchema = z.looseObject({
    * silêncio — a mesma regressão que este arquivo existe para evitar.
    */
   reaction: z.unknown().optional(),
+  /**
+   * O pino (`WALocation` do WAHA: latitude, longitude, name, address…). `unknown`
+   * de propósito, como `replyTo`: quem lê é `lerLocalizacao`, que recusa
+   * coordenada fora da Terra em vez de recusar a mensagem inteira aqui.
+   */
+  location: z.unknown().optional(),
   _data: z.looseObject({
     notifyName: texto,
     pushName: texto,

@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Número oficial pelo provedor associado",
+    "subtitle": "Saúde do número, nova tentativa quando o provedor pede calma, pino pelo webhook e eventos de etapa pela conversa",
+    "output": "numero-oficial-do-provedor.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "provedor", "label": "Provedor associado" },
+    { "id": "servidor", "label": "Servidor" },
+    { "id": "barramento", "label": "Barramento (event_log)" },
+    { "id": "banco", "label": "Persistência" },
+    { "id": "operador", "label": "Operação" }
+  ],
+  "mainPath": ["sonda", "vigia", "motivo", "cartao"],
+  "nodes": [
+    { "id": "sonda", "lane": "provedor", "col": 1, "type": "external", "label": "GET /v1/accounts/{id}/health — inboundWebhookSubscribed, messagingRestriction" },
+    { "id": "vigia", "lane": "servidor", "col": 2, "type": "worker", "label": "cron channel-health → checkHealth (WORKING com o defeito no detalhe)" },
+    { "id": "motivo", "lane": "banco", "col": 3, "type": "database", "label": "channel_sessions.status_reason — numero_nao_recebe_mensagens / envio_restrito_<código>" },
+    { "id": "aviso", "lane": "banco", "col": 3, "type": "database", "label": "agent_inbox_items channel_number_alert (episódio em channel_session_health)" },
+    { "id": "cartao", "lane": "operador", "col": 4, "type": "frontend", "label": "Conexões: selo Atenção + DefeitoDoNumero" },
+    { "id": "central", "lane": "operador", "col": 4, "type": "frontend", "label": "Central de avisos — fecha sozinho quando a sonda volta limpa" },
+    { "id": "envio", "lane": "provedor", "col": 1, "type": "external", "label": "POST …/messages — 429 rate_limited (Retry-After) ou platformError 131056" },
+    { "id": "handler", "lane": "servidor", "col": 2, "type": "route", "label": "messages/_handler — queued + queued_reason throttled" },
+    { "id": "pedido", "lane": "barramento", "col": 3, "type": "queue", "label": "message.throttled_resend_requested (espera_ms)" },
+    { "id": "reenvio", "lane": "servidor", "col": 4, "type": "worker", "label": "reenvio-desacelerado.handler — trava por updated_at, mesma linha, ordem da conversa, até 4 tentativas" },
+    { "id": "webhook", "lane": "provedor", "col": 1, "type": "external", "label": "message.received com metadata.location" },
+    { "id": "ingestao", "lane": "servidor", "col": 2, "type": "route", "label": "canal-da-instalacao → ingestZernioInbound (sem consultar o provedor)" },
+    { "id": "pino", "lane": "barramento", "col": 3, "type": "queue", "label": "message.location_retry_requested — só sem coordenadas, 5 s depois" },
+    { "id": "mensagem", "lane": "banco", "col": 3, "type": "database", "label": "messages type location (link + endereço aproximado)" },
+    { "id": "regras", "lane": "operador", "col": 4, "type": "frontend", "label": "Conversões: etapa → LeadSubmitted, QualifiedLead, InitiateCheckout, AddToCart, ViewContent" },
+    { "id": "conversao", "lane": "provedor", "col": 1, "type": "external", "label": "POST /v1/whatsapp/conversions" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "vigia", "to": "sonda", "label": "pergunta a cada 5 min" },
+    { "id": "e2", "from": "vigia", "to": "motivo", "label": "motivoParaGravar: grava e limpa só o que é seu" },
+    { "id": "e3", "from": "vigia", "to": "aviso", "label": "sincronizarSaudeDaConexao, no idioma da organização" },
+    { "id": "e4", "from": "motivo", "to": "cartao", "label": "GET /channel-sessions e /channels/partner" },
+    { "id": "e5", "from": "aviso", "to": "central", "label": "crítico, com o que fazer" },
+    { "id": "e6", "from": "handler", "to": "envio", "label": "envio livre" },
+    { "id": "e7", "from": "handler", "to": "pedido", "label": "zernio_throttled → pede nova tentativa (só a mensagem da pessoa ou do agente; campanha e automação seguem failed)" },
+    { "id": "e8", "from": "pedido", "to": "reenvio", "label": "dreno do worker" },
+    { "id": "e9", "from": "reenvio", "to": "handler", "label": "sendMessageHandler com internalMessageId" },
+    { "id": "e10", "from": "webhook", "to": "ingestao", "label": "resposta < 5 s" },
+    { "id": "e11", "from": "ingestao", "to": "mensagem", "label": "coordenadas do próprio evento" },
+    { "id": "e12", "from": "ingestao", "to": "pino", "label": "evento sem metadata.location" },
+    { "id": "e13", "from": "pino", "to": "mensagem", "label": "busca na API fora da requisição" },
+    { "id": "e14", "from": "regras", "to": "conversao", "label": "conversoes.etapa_meta pela conversa, sem conexão direta" }
+  ]
+}

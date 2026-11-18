@@ -117,12 +117,25 @@ describe("isolamento entre organizações", () => {
 });
 
 describe("escrita por papel no banco (RLS por operação)", () => {
-  it("viewer e agent não criam empresa; manager cria", () => {
+  // Migration 9370: o piso do INSERT desceu de `manager` para `agent`, para o
+  // Atendente cadastrar o cliente novo sem passar por um Gerente. EXCLUIR segue `manager`.
+  it("viewer não cria empresa nem pessoa; agent e manager criam", () => {
     const criar = (nome: string) =>
       `insert into public.companies (organization_id, trade_name) values ('${GOV_ORG}', '${nome}')`;
+    const criarPessoa = (nome: string) =>
+      `insert into public.people (organization_id, full_name, normalized_name) values ('${GOV_ORG}', '${nome}', lower('${nome}'))`;
     expect(writeCountAs(GOV_VIEWER, criar("pelo viewer"))).toBe(0);
-    expect(writeCountAs(GOV_AGENT_A, criar("pelo agent"))).toBe(0);
+    expect(writeCountAs(GOV_AGENT_A, criar("pelo agent"))).toBe(1);
     expect(writeCountAs(GOV_MANAGER, criar("pelo manager"))).toBe(1);
+    expect(writeCountAs(GOV_VIEWER, criarPessoa("Pelo Viewer"))).toBe(0);
+    expect(writeCountAs(GOV_AGENT_A, criarPessoa("Pelo Agent"))).toBe(1);
+  });
+
+  it("agent não apaga empresa; manager apaga", () => {
+    const apagar = (nome: string) =>
+      `delete from public.companies where organization_id = '${GOV_ORG}' and trade_name = '${nome}'`;
+    expect(writeCountAs(GOV_AGENT_A, apagar("pelo agent"))).toBe(0);
+    expect(writeCountAs(GOV_MANAGER, apagar("pelo agent"))).toBe(1);
   });
 
   it("viewer não edita a pessoa; agent edita (o PATCH da rota é agent)", () => {
@@ -184,5 +197,34 @@ describe("LGPD: anonimizar o contato alcança pessoa, vínculo e planilha", () =
     expect(
       lastLine(sql(`select legal_name || '|' || email from public.companies where id = '${EMPRESA}';`)),
     ).toBe("Globo LTDA|contato@globo.invariant.test");
+  });
+});
+
+/**
+ * O CNPJ alfanumérico da Receita na COLUNA (#3495). O código passou a aceitar as
+ * 12 posições de dígito ou letra + 2 dígitos verificadores; se o CHECK continuasse
+ * `^\d{14}$`, o documento legítimo morreria no INSERT com 500 — por isso a régua
+ * de banco entra nesta suíte, e não só no teste de texto do schema.
+ */
+describe("normalized_cnpj aceita o CNPJ alfanumérico da Receita (#3495)", () => {
+  const inserir = (nome: string, documento: string) =>
+    sql(`insert into public.companies (organization_id, trade_name, normalized_cnpj)
+           values ('${GOV_ORG}', '${nome}', '${documento}');`);
+
+  it("aceita as 12 posições alfanuméricas em MAIÚSCULA + os 2 dígitos", () => {
+    expect(() => inserir("Alfa", "12ABC34501DE35")).not.toThrow();
+    expect(
+      lastLine(sql(`select count(*) from public.companies where normalized_cnpj = '12ABC34501DE35';`)),
+    ).toBe("1");
+  });
+
+  it("recusa a forma minúscula: a coluna guarda a única forma canônica", () => {
+    expect(() => inserir("Alfa minúscula", "12abc34501de35")).toThrow(
+      /companies_normalized_cnpj_digits/,
+    );
+  });
+
+  it("continua recusando 13 posições — o CHECK segue sendo cerca de formato", () => {
+    expect(() => inserir("Curta", "12ABC34501DE3")).toThrow(/companies_normalized_cnpj_digits/);
   });
 });

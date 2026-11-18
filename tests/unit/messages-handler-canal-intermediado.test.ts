@@ -627,3 +627,78 @@ describe("o MODELO do canal oficial sai pela credencial da sessão, não pelo .e
     });
   });
 });
+
+/**
+ * OS BOTÕES QUE O MODELO LEVOU, gravados na mensagem (a conversa os mostra).
+ *
+ * O balão não faz join: sem os textos na própria linha, a conversa do CRM
+ * mostrava só o corpo do modelo, e quem lia não sabia quais opções o cliente
+ * recebeu. Os botões vêm do ESPELHO da definição no momento do envio — nunca
+ * do `metadata` de entrada, que é do cliente da API.
+ */
+describe("o modelo enviado grava os botões que o cliente recebeu", () => {
+  const espelhoComBotoes: Row = {
+    name: "confirmacao_de_entrega",
+    language: "pt_BR",
+    status: "APPROVED",
+    contract_hash: "",
+    components: [
+      { type: "BODY", text: "Olá! Seu pedido sai hoje para entrega." },
+      {
+        type: "BUTTONS",
+        buttons: [
+          { type: "QUICK_REPLY", text: "Sim, confirmo" },
+          { type: "QUICK_REPLY", text: "Quero mudar algo" },
+        ],
+      },
+    ],
+  };
+  const modelo = (over: Partial<SendMessageInput> = {}) =>
+    texto({
+      type: "template",
+      body: "Olá! Seu pedido sai hoje para entrega.",
+      template_name: "confirmacao_de_entrega",
+      template_language: "pt_BR",
+      ...over,
+    });
+
+  function prepararCanal() {
+    vi.stubEnv("ZERNIO_API_KEY", "k");
+    vi.stubEnv("ZERNIO_ACCOUNT_ID", CONTA);
+    vi.stubGlobal("fetch", respostaOk("wamid.TPL"));
+  }
+
+  it("⭐ a linha nasce com os textos dos botões, na ordem da definição", async () => {
+    prepararCanal();
+    const { supabase, estado } = dubleDe(conversaCompleta({ providerConversationId: THREAD }), espelhoComBotoes);
+    await sendMessageHandler(supabase, ctx, modelo());
+    expect((estado.message?.metadata as Record<string, unknown>).template_buttons).toEqual([
+      "Sim, confirmo",
+      "Quero mudar algo",
+    ]);
+  });
+
+  it("botões mandados pelo cliente da API são descartados — só a definição fala", async () => {
+    prepararCanal();
+    const { supabase, estado } = dubleDe(conversaCompleta({ providerConversationId: THREAD }), espelhoComBotoes);
+    await sendMessageHandler(supabase, ctx, modelo({ metadata: { template_buttons: ["Botão forjado"], origem: "x" } }));
+    const metadata = estado.message?.metadata as Record<string, unknown>;
+    expect(metadata.template_buttons).toEqual(["Sim, confirmo", "Quero mudar algo"]);
+    expect(metadata.origem).toBe("x");
+  });
+
+  it("sem espelho (ou modelo sem botões): nada gravado, e o envio segue", async () => {
+    prepararCanal();
+    const { supabase, estado } = dubleDe(conversaCompleta({ providerConversationId: THREAD }));
+    const msg = await sendMessageHandler(supabase, ctx, modelo());
+    expect(msg.status).toBe("sent");
+    expect(estado.message?.metadata).not.toHaveProperty("template_buttons");
+  });
+
+  it("texto comum não grava botões — nem os que o cliente da API mandou", async () => {
+    prepararCanal();
+    const { supabase, estado } = dubleDe(conversaCompleta({ providerConversationId: THREAD }), espelhoComBotoes);
+    await sendMessageHandler(supabase, ctx, texto({ metadata: { template_buttons: ["Botão forjado"] } }));
+    expect(estado.message?.metadata).not.toHaveProperty("template_buttons");
+  });
+});

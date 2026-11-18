@@ -8,6 +8,8 @@ export interface ContatoDuplicado {
   id: string;
   name: string | null;
   display_name: string | null;
+  /** Nome salvo na agenda do celular. SÓ A EQUIPE vê; a varredura passou a lê-lo (spec 31). */
+  address_book_name: string | null;
   email: string | null;
   phone_number: string | null;
   created_at: string;
@@ -23,7 +25,12 @@ export interface GrupoDuplicado {
 
 interface DuplicatesResponse {
   data: GrupoDuplicado[];
-  meta?: { varreu_tudo?: boolean; contatos_varridos?: number };
+  meta?: {
+    varreu_tudo?: boolean;
+    contatos_varridos?: number;
+    /** #4138: a empresa ligou a sugestão por nome? Desligada, a seção nem vem. */
+    sugestao_por_nome?: boolean;
+  };
 }
 
 /**

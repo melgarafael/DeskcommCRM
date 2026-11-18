@@ -5,8 +5,14 @@ import { redirect } from "next/navigation";
 
 import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { invalidarUsuario } from "@/lib/auth/cache-curto";
+import { logger } from "@/lib/logger";
 import { resetPasswordSchema, type ResetPasswordInput } from "@/lib/auth/schemas";
 import { audit } from "@/lib/audit";
+import { mfaBloqueadoPorFalhas, registrarFalhaDeMfa } from "@/lib/auth/rate-limit";
+import { loadAuthUser } from "@/lib/auth/server";
+import { permanentAccessError } from "@/lib/impersonate/support";
 
 export type UpdatePasswordResult = {
   ok: false;
@@ -14,9 +20,11 @@ export type UpdatePasswordResult = {
     | "validation_error"
     | "session_expired"
     | "same_password"
+    | "password_too_long"
     | "update_failed"
     | "mfa_required"
-    | "mfa_invalid";
+    | "mfa_invalid"
+    | "mfa_locked";
   details?: Record<string, unknown>;
 };
 
@@ -54,6 +62,8 @@ export async function updatePassword(
   const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
   if (aal?.currentLevel === "aal1" && aal?.nextLevel === "aal2") {
     if (!parsed.data.mfa_code) return { ok: false, error: "mfa_required" };
+    // Mesmo balde por usuário do verifyMfa: o código conferido aqui é o mesmo.
+    if (await mfaBloqueadoPorFalhas(user.id)) return { ok: false, error: "mfa_locked" };
     const { data: factors } = await supabase.auth.mfa.listFactors();
     const totp = factors?.totp?.[0];
     if (!totp) return { ok: false, error: "update_failed" };
@@ -66,7 +76,10 @@ export async function updatePassword(
       challengeId: challenge.id,
       code: parsed.data.mfa_code,
     });
-    if (verifyErr) return { ok: false, error: "mfa_invalid" };
+    if (verifyErr) {
+      await registrarFalhaDeMfa(user.id);
+      return { ok: false, error: "mfa_invalid" };
+    }
   }
 
   const { error } = await supabase.auth.updateUser({ password: parsed.data.password });
@@ -74,6 +87,12 @@ export async function updatePassword(
   if (error) {
     if (/different from the old password/i.test(error.message)) {
       return { ok: false, error: "same_password" };
+    }
+    // O bcrypt corta em 72 bytes: o schema já recusa o caso normal, mas a
+    // versão do GoTrue pode divergir da nossa régua. Causa conhecida tem
+    // código próprio — não cai no genérico.
+    if (/cannot be longer than 72 characters/i.test(error.message)) {
+      return { ok: false, error: "password_too_long" };
     }
     await audit({
       action: "auth.password_reset_failed",
@@ -86,6 +105,8 @@ export async function updatePassword(
     return { ok: false, error: "update_failed" };
   }
 
+  await limparSenhaProvisoria(supabase, user.id, requestId);
+
   await audit({
     action: "auth.password_reset_completed",
     actorUserId: user.id,
@@ -97,4 +118,55 @@ export async function updatePassword(
 
   await supabase.auth.signOut();
   redirect("/login?reset=success");
+}
+
+/**
+ * A pessoa acabou de escolher a própria senha, então a senha provisória
+ * (#3876) deixou de valer: a marca sai, a mesma garantia da troca do primeiro
+ * acesso. Sem isto, quem recuperou a senha ainda passava pela tela de troca.
+ *
+ * A leitura é com a sessão (a RLS mostra à pessoa os próprios vínculos); a
+ * escrita é com o cliente de serviço, porque a sessão não escreve a marca
+ * (gatilho da migration 9381). A senha nova já valeu: uma falha aqui é
+ * registrada e não desfaz a recuperação — o pior caso é uma troca a mais.
+ */
+async function limparSenhaProvisoria(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  requestId: string | null,
+): Promise<void> {
+  // A marca mora no vínculo, e vínculo não se escreve em acompanhamento (a regra
+  // é uma só, `permanentAccessError`). Quem acompanha não tem vínculo marcado.
+  if (permanentAccessError((await loadAuthUser())?.support)) return;
+  const { data: marcados, error: leErr } = await supabase
+    .from("user_organizations")
+    .select("organization_id")
+    .eq("user_id", userId)
+    .eq("senha_provisoria", true);
+  const orgs = (marcados ?? []).map((v) => v.organization_id as string);
+  if (leErr || orgs.length === 0) {
+    if (leErr) {
+      logger.error("recuperação: marca da senha provisória não pôde ser lida", {
+        user_id: userId,
+        request_id: requestId,
+        code: leErr.code,
+      });
+    }
+    return;
+  }
+  const { error } = await createAdminClient()
+    .from("user_organizations")
+    .update({ senha_provisoria: false })
+    .in("organization_id", orgs)
+    .eq("user_id", userId)
+    .eq("senha_provisoria", true);
+  if (error) {
+    logger.error("recuperação: senha trocada, mas a marca da senha provisória não caiu", {
+      user_id: userId,
+      request_id: requestId,
+      code: error.code,
+    });
+    return;
+  }
+  invalidarUsuario(userId);
 }

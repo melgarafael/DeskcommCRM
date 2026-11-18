@@ -39,10 +39,14 @@ export interface McpContext {
    * saem do turno.
    */
   contatoDoTurno?: string;
+  /** Ferramentas da versão publicada do agente, postas pelo runtime (módulo `amigo`). */
+  amigoAgentToolIds?: readonly string[];
   organizationId: string;
   role: Role;
   actor: Actor;
   apiTokenId: string;
+  /** Escopos da linha autenticada; nunca argumentos da ferramenta. */
+  tokenScopes?: readonly string[];
   requestId: string;
   /** Service-role admin client. Tools devem filtrar `organization_id` em toda query. */
   supabase: SupabaseClient;
@@ -79,6 +83,44 @@ export interface McpToolDefinition<TInput extends z.ZodRawShape = z.ZodRawShape>
    */
   redigirParaAuditoria?: (args: Record<string, unknown>) => Record<string, unknown>;
   /**
+   * ESCRITA DELEGADA AO CONTATO (servidores MCP por agente, migration 9095).
+   *
+   * Só uma remota de servidor `oauth_por_contato`, com `escrita_delegada`
+   * ligada no cadastro, marcada `escrita` pelo admin em `tool_ids` E montada com
+   * o token do CONTATO DO TURNO recebe isto (`definirFerramentasDoServidorDoAgente`).
+   * A ponte (`lib/ai/runtime/tools.ts`) então não aplica a recusa
+   * `escrita_sem_escopo_do_turno`: a escrita acontece na conta do terceiro com a
+   * credencial que o próprio contato autorizou, e não alcança registro nenhum do
+   * CRM. Auditoria, papel e escopo continuam valendo. Nenhuma tool compilada
+   * declara isto.
+   */
+  escritaDelegadaAoContato?: true;
+  /**
+   * A ferramenta é de um SERVIDOR MCP EXTERNO (#4445) — e de qual conexão.
+   *
+   * A marca existe para a ponte (`lib/ai/runtime/tools.ts`) saber duas coisas
+   * que nenhuma outra ferramenta precisa saber:
+   *
+   * 1. a escrita dela acontece NO SISTEMA DO TERCEIRO, não em registro do CRM:
+   *    por isso ela não passa pela conferência `escritaCabeNoTurno` (que existe
+   *    para impedir escrita em registro de OUTRO cliente do CRM) e não entra no
+   *    escopo de funil;
+   * 2. rodar durante o atendimento exige LIBERAÇÃO EXPLÍCITA — `escritaLiberada`
+   *    abaixo, lida de `organizations.settings.mcp_externo_escrita` para ESTA
+   *    conexão (`lib/mcp/servidor-externo/escrita-liberada.ts`). Sem liberação, a
+   *    chamada volta ao modelo como recusa nomeada `escrita_nao_liberada`, e não
+   *    como erro genérico de escopo.
+   *
+   * A `conexao` é o que vai para a auditoria (`metadata.conexao`) e para a
+   * mensagem da recusa: `compartilhado` para o servidor da organização, o id do
+   * servidor para os servidores do agente. Nenhuma tool compilada declara isto.
+   */
+  remotoExterno?: {
+    conexao: string;
+    /** `true` só quando a configuração da organização liberou ESTE nome nesta conexão. */
+    escritaLiberada: boolean;
+  };
+  /**
    * O que a tool DECLARA quando a resposta é um vazio que NÃO é sucesso.
    *
    * Uma busca que não acha nada TERMINOU bem: não houve erro, houve ausência —
@@ -114,8 +156,5 @@ export interface McpToolDefinition<TInput extends z.ZodRawShape = z.ZodRawShape>
    * dá ao leitor uma chave estável.
    */
   termoBuscado?: (input: z.infer<z.ZodObject<TInput>>) => string | null;
-  handler: (
-    input: z.infer<z.ZodObject<TInput>>,
-    ctx: McpContext,
-  ) => Promise<unknown>;
+  handler: (input: z.infer<z.ZodObject<TInput>>, ctx: McpContext) => Promise<unknown>;
 }

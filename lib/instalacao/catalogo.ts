@@ -107,16 +107,27 @@ export interface ChaveDaInstalacao {
  * (vigiada por `pnpm lint:channels`) proíbe nomeá-lo fora daquela fronteira.
  * Este arquivo as consome como DADOS — continua sem nomear ninguém.
  */
-const DE_CANAL: readonly ChaveDaInstalacao[] = CHAVES_DE_CANAL_DA_INSTALACAO.map((c) => ({
-  chave: c.chave,
-  rotulo: c.rotulo,
-  explicacao: c.explicacao,
-  grupo: "whatsapp" as const,
-  natureza: "segredo" as const,
-  controle: "diagnostico" as const,
-  motivo: "pareada_com_conteiner" as const,
-  comoTrocar: c.comoTrocar,
-}));
+const DE_CANAL: readonly ChaveDaInstalacao[] = CHAVES_DE_CANAL_DA_INSTALACAO.map((c) =>
+  c.comoTrocar
+    ? {
+        chave: c.chave,
+        rotulo: c.rotulo,
+        explicacao: c.explicacao,
+        grupo: "whatsapp" as const,
+        natureza: "segredo" as const,
+        controle: "diagnostico" as const,
+        motivo: "pareada_com_conteiner" as const,
+        comoTrocar: c.comoTrocar,
+      }
+    : {
+        chave: c.chave,
+        rotulo: c.rotulo,
+        explicacao: c.explicacao,
+        grupo: "whatsapp" as const,
+        natureza: "segredo" as const,
+        controle: "edita" as const,
+      },
+);
 
 export const CATALOGO_DA_INSTALACAO: readonly ChaveDaInstalacao[] = [
   ...DE_CANAL,
@@ -220,6 +231,26 @@ export const CATALOGO_DA_INSTALACAO: readonly ChaveDaInstalacao[] = [
     rotulo: "Token dos avisos de pagamento do Asaas",
     explicacao:
       "Confere que um aviso de pagamento veio mesmo do Asaas. É criado quando você conecta a chave; se o Asaas pedir o cadastro manual do aviso, a tela mostra o token uma única vez.",
+    grupo: "integracao",
+    natureza: "segredo",
+    controle: "edita",
+    telaDona: "cobranca",
+  },
+  {
+    chave: "EFI_CLIENT",
+    rotulo: "Credencial do Efi Bank",
+    explicacao:
+      "Client-Id e Client-Secret da aplicação do Efi, separados por dois-pontos e precedidos do ambiente (teste ou producao). Homologação e produção são pares diferentes de chaves.",
+    grupo: "integracao",
+    natureza: "segredo",
+    controle: "edita",
+    telaDona: "cobranca",
+  },
+  {
+    chave: "EFI_WEBHOOK_TOKEN",
+    rotulo: "Token dos avisos de pagamento do Efi",
+    explicacao:
+      "Confere que um aviso de pagamento veio mesmo do Efi. É criado quando você conecta a credencial; o Efi não tem cadastro de aviso no painel, então a URL e o token viajam em cada cobrança.",
     grupo: "integracao",
     natureza: "segredo",
     controle: "edita",

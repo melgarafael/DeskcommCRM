@@ -6,6 +6,7 @@
 
 import type { InboxKind } from "@/lib/agent-engine/db/repository";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { preencher } from "@/lib/i18n/idioma-do-aviso";
 import type { Idioma } from "@/lib/i18n/idiomas";
 
 export type AgentInboxSeverity = "info" | "warn" | "critical";
@@ -27,6 +28,9 @@ export const KIND_LABEL = {
   appointment_outcome_required:"Confirme a presença no compromisso",
   appointment_recovery_review:"A recuperação precisa de uma decisão da equipe",
   routing_unassigned: "Conversa aguardando responsável",
+  // Diz o que ACONTECEU com o atendimento, não o nome do ajuste: a IA ficou com
+  // a conversa o prazo inteiro e não chamou ninguém.
+  routing_ia_wait_expired: "A IA não passou a conversa no prazo",
   qr_rescan: "Conexão do WhatsApp caiu — precisa escanear o QR de novo",
   job_dead: "Uma tarefa do assistente falhou e parou de tentar",
   event_dead: "Um evento recebido não pôde ser processado",
@@ -64,6 +68,9 @@ export const KIND_LABEL = {
   // por que importa agora — quem lê a Central quer saber se pode trabalhar, não
   // qual evento chegou.
   channel_template_review: "Um modelo de mensagem mudou de situação na revisão",
+  // Diz o CANAL porque a frase acima não diz, e as duas podem coexistir na
+  // mesma empresa: quem lê precisa saber em qual tela procurar o modelo.
+  channel_template_review_direct: "Um modelo do WhatsApp oficial mudou de situação na revisão",
   channel_number_alert: "Seu número de WhatsApp precisa de atenção",
   // "ninguém cumpriu" é um veredito que NENHUMA linha de código apura — o
   // sistema não sabe se a promessa foi cumprida, e agendar um retorno não é
@@ -119,6 +126,22 @@ export const KIND_LABEL = {
   // ainda dá tempo de concluir ou se já é o vencimento que aconteceu.
   task_due: "Uma tarefa está perto do vencimento",
   task_overdue: "Uma tarefa venceu sem conclusão",
+  // Diz o que a CONEXÃO fez e o que ficou para trás, não o mecanismo da
+  // recuperação. O resultado (quantas mensagens, por que parou) fica no corpo.
+  recuperacao_da_queda: "A conexão voltou de uma queda — recuperação das conversas",
+  // Diz o que o CLIENTE viveu: escreveu, o número estava fora, e ninguém respondeu.
+  cliente_sem_resposta_na_queda: "Um cliente escreveu enquanto o número estava fora e ainda não teve resposta",
+  // Diz o que o CLIENTE vive: a conta que respondia por assinatura do ChatGPT
+  // foi recusada e a IA parou. "Token expirado" é vocabulário de quem instalou;
+  // "parou de responder" é o que faz quem lê a Central agir — e a ação é uma
+  // só, reconectar em Credenciais.
+  assinatura_desconectada: "A conta do ChatGPT desconectou — a IA parou de responder",
+  // (#4696) O retorno COMBINADO com o cliente sumia sem aviso quando o
+  // atendimento mudava antes do disparo: o job ia para `failed` e a Central
+  // ficava vazia, então do lado de lá havia uma pessoa esperando uma mensagem
+  // que nunca sairia. O rótulo diz o que o CLIENTE deixa de receber — não
+  // "job descartado", que é vocabulário de fila.
+  followup_descartado: "Um retorno combinado com o cliente não vai sair",
   other: "Aviso do assistente",
 } as const satisfies Record<InboxKind, string>;
 
@@ -193,4 +216,144 @@ export function copyDaPromessaSemDono(
   };
 
   return { title, body: traduzir(CORPO[porque], idioma) };
+}
+
+/**
+ * Os textos da recuperação das conversas da queda (Spec 32, seção 4).
+ *
+ * Um motivo por texto, e o motivo é o que o administrador precisa saber para
+ * agir: a conta recuperou, parou no meio, ou nem começou e por quê. O título vai
+ * para a linha do aviso; o corpo, com os números e as datas já formatados pelo
+ * chamador (é lá que mora o fuso), vai para a coluna `body`.
+ *
+ * Como os avisos de `canal_pausado`, o texto é gravado em português e lido como
+ * veio: não passa por `t()` na escrita. A tradução de rótulo mora em `KIND_LABEL`.
+ */
+export type MotivoDoResumoDaRecuperacao =
+  | "concluida"
+  | "erro"
+  | "numero_mudou"
+  | "numero_nao_confirmado"
+  | "acervo_desligado";
+
+export interface DadosDoResumoDaRecuperacao {
+  mensagens?: number;
+  conversas?: number;
+  /** Início da janela, já formatado (ex.: "20/10/2026 08:00"). */
+  desde?: string;
+  /** Fim da janela, já formatado. */
+  ate?: string;
+  /** O erro já resumido para uma frase (`resumirErroDaImportacao`). */
+  erro?: string;
+}
+
+const TITULO_DO_RESUMO: Record<MotivoDoResumoDaRecuperacao, string> = {
+  concluida: "Conversas da queda recuperadas",
+  erro: "A recuperação das conversas da queda parou",
+  // Os três motivos que não recuperaram nada dizem o mesmo fato ao administrador.
+  // O que muda é o porquê, e esse vai no corpo.
+  numero_mudou: "As conversas da queda não foram recuperadas",
+  numero_nao_confirmado: "As conversas da queda não foram recuperadas",
+  acervo_desligado: "As conversas da queda não foram recuperadas",
+};
+
+/**
+ * O título e o corpo do resumo da recuperação, por motivo.
+ *
+ * Os motivos "número mudou" e "número não confirmado" existem para o mesmo
+ * cuidado: a recuperação traria mensagens de OUTRO aparelho, ou de um número que
+ * ninguém conferiu. Por isso o texto diz o motivo e não promete nada do conteúdo.
+ */
+export function copyDoResumoDaRecuperacao(
+  motivo: MotivoDoResumoDaRecuperacao,
+  dados: DadosDoResumoDaRecuperacao,
+  /**
+   * O idioma da ORGANIZAÇÃO: o aviso é linha gravada e a Central o mostra como
+   * veio. `pt-BR` (o padrão) é o texto de antes, byte a byte. Números, datas e o
+   * erro resumido são dado e entram nos marcadores depois da tradução.
+   */
+  idioma: Idioma = "pt-BR",
+): { title: string; body: string } {
+  const corpo = (): string => {
+    switch (motivo) {
+      case "concluida":
+        return preencher(
+          traduzir(
+            "Recuperamos {mensagens} mensagens de {conversas} conversas do período em que o número ficou fora ({desde} a {ate}).",
+            idioma,
+          ),
+          { mensagens: dados.mensagens ?? 0, conversas: dados.conversas ?? 0, desde: dados.desde ?? "", ate: dados.ate ?? "" },
+        );
+      case "erro":
+        return preencher(traduzir("A recuperação das conversas da queda parou: {erro}. Veja em Conexões.", idioma), {
+          erro: dados.erro ?? traduzir("motivo não registrado", idioma),
+        });
+      case "numero_mudou":
+        return traduzir(
+          "O número da conexão mudou na reconexão. As conversas do período fora do ar não foram recuperadas, para não trazer mensagens de outro aparelho.",
+          idioma,
+        );
+      case "numero_nao_confirmado":
+        return traduzir(
+          "Não conseguimos confirmar o número da conexão depois da volta. As conversas do período fora do ar não foram recuperadas.",
+          idioma,
+        );
+      case "acervo_desligado":
+        return traduzir(
+          "A conexão voltou, mas \"Guardar o histórico\" está desligado nela: não há como recuperar as conversas do período fora do ar.",
+          idioma,
+        );
+    }
+  };
+  return { title: traduzir(TITULO_DO_RESUMO[motivo], idioma), body: corpo() };
+}
+
+/** O título do aviso por cliente sem resposta: a conversa é a referência, e o nome do cliente não entra (sem PII). */
+export const TITULO_DO_CLIENTE_SEM_RESPOSTA_NA_QUEDA =
+  "Cliente escreveu na queda e ainda não teve resposta";
+
+/** O corpo do mesmo aviso. Não traz nome, número nem trecho de mensagem. */
+export const CORPO_DO_CLIENTE_SEM_RESPOSTA_NA_QUEDA =
+  "Este cliente escreveu enquanto o número estava fora do ar e ainda não teve resposta.";
+
+/**
+ * O retorno combinado que NÃO vai sair (#4696).
+ *
+ * ═══ A REGRA DE ESCRITA ═══
+ *
+ * Nenhuma frase daqui diz o código do erro. `service_boundary_stale` não é
+ * informação para quem abre a Central: o que a pessoa precisa saber é que uma
+ * mensagem PROMETIDA ao cliente não vai sair e por quê — e o "por quê" na
+ * língua de quem lê é "o atendimento mudou". Também não se afirma o que o
+ * sistema não apura: ele sabe que a fronteira mudou, não se o cliente ficou
+ * esperando no WhatsApp. O convite a agir é a única saída que o produto oferece
+ * de fato — abrir a conversa e retomar.
+ */
+export interface DadosDoRetornoDescartado {
+  /** Nome do contato, como está na ficha. */
+  contato: string;
+  /** O negócio a que o retorno pertencia, quando existe (nunca id nem etapa). */
+  negocio?: string | null;
+  /**
+   * O instante que estava combinado, JÁ FORMATADO no fuso da empresa (ex.:
+   * "12/11 às 15:00"). `null` quando o job não trouxe o instante — a frase
+   * então não inventa hora nenhuma.
+   */
+  quando: string | null;
+}
+
+export function copyDoRetornoDescartado(dados: DadosDoRetornoDescartado): {
+  title: string;
+  body: string;
+} {
+  const hora = dados.quando ? ` (${dados.quando})` : "";
+  const sobre = dados.negocio ? ` Era sobre ${dados.negocio}.` : "";
+  return {
+    title: `Retorno combinado com ${dados.contato} não vai sair`,
+    body:
+      `O atendimento de ${dados.contato} mudou antes do horário combinado${hora}: a conversa foi ` +
+      `encerrada ou virou outro atendimento, então o retorno que estava marcado não será ` +
+      `enviado.${sobre} Se ainda fizer sentido falar com essa pessoa, abra a conversa e ` +
+      `retome o contato.`,
+  };
 }

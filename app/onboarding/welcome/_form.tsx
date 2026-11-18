@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { useT } from "@/hooks/i18n/useT";
 
@@ -16,19 +16,27 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { FUSO_PADRAO, FUSOS_DO_ONBOARDING } from "@/lib/tempo/fusos";
+import { fusoDoNavegador } from "@/lib/tempo/fuso-do-navegador";
 
-
-export function WelcomeForm({
-  defaultOrgName,
-  orgId,
-}: {
-  defaultOrgName: string;
-  orgId: string;
-}) {
+export function WelcomeForm({ defaultOrgName, orgId }: { defaultOrgName: string; orgId: string }) {
   const t = useT();
   const [displayName, setDisplayName] = useState(defaultOrgName);
   const [oQueFaz, setOQueFaz] = useState("");
   const [timezone, setTimezone] = useState(FUSO_PADRAO);
+
+  // O fuso do NAVEGADOR (se for um oferecido) vem marcado no lugar de São
+  // Paulo: é o mesmo com que a empresa nasceu (`lib/auth/perfil-da-empresa-nova.ts`),
+  // e este passo regrava o fuso da empresa com o que estiver marcado. Num
+  // efeito, e não no estado inicial, porque o servidor não sabe o fuso do
+  // navegador — e a hidratação divergiria.
+  useEffect(() => {
+    const doNavegador = fusoDoNavegador();
+    // Uma leitura só, depois da hidratação, de um valor que só o navegador
+    // tem: não há prop nem estado anterior de onde derivar no render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (doNavegador && FUSOS_DO_ONBOARDING.some((f) => f.id === doNavegador))
+      setTimezone(doNavegador);
+  }, []);
   const [accepted, setAccepted] = useState(false);
   const [pending, startTransition] = useTransition();
 
@@ -43,7 +51,11 @@ export function WelcomeForm({
         startTransition(async () => {
           const res = await acceptWelcome(formData);
           if (res && !res.ok) {
-            toast.error(`Falha: ${res.error}`);
+            toast.error(
+              res.error === "organization_changed"
+                ? t("A empresa ativa mudou. Recarregue a página antes de continuar.")
+                : `Falha: ${res.error}`,
+            );
           }
         });
       }}
@@ -60,7 +72,9 @@ export function WelcomeForm({
           required
         />
         <p className="text-xs text-muted-foreground">
-          {t("É o nome que aparece para o seu time e nos relatórios. Pode ser clínica, loja, escritório — o que for seu.")}
+          {t(
+            "É o nome que aparece para o seu time e nos relatórios. Pode ser clínica, loja, escritório — o que for seu.",
+          )}
         </p>
       </div>
 

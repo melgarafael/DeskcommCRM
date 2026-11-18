@@ -164,6 +164,7 @@ function montarBanco(cenario: { funil: Row; lead?: Row; moedaOrg?: string }) {
     crm_lead_links: [],
     sales: [],
     sale_items: [],
+    commission_rules: [],
     organizations: [{ id: ORG, currency: cenario.moedaOrg ?? "BRL" }],
   };
 

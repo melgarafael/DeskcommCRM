@@ -39,12 +39,13 @@ export function ForgotPasswordForm() {
       } else if (res.error === "validation_error") {
         setServerError(t("Email inválido. Confira o campo."));
       } else if (res.error === "smtp_not_configured") {
-        // #2755 — sem SMTP a instalação não envia e-mail NENHUM: dizer
+        // #2755 — sem SMTP e sem Resend no CRM a recuperação nem é tentada: dizer
         // "tente novamente" mandava quem esqueceu a senha repetir um gesto que
-        // nunca vai funcionar. Dizemos o que é, e quem resolve é o administrador.
+        // nunca vai funcionar. A frase diz só o que o CRM sabe (#3039): o SMTP
+        // posto à mão no `.env` do Supabase ele não enxerga.
         setServerError(
           t(
-            "A recuperação de senha não está disponível nesta instalação: sem SMTP configurado não sai e-mail nenhum. Contate o administrador para configurar em /admin/email.",
+            "A recuperação de senha não está disponível nesta instalação: sem SMTP nem Resend configurados no CRM, não enviamos o e-mail de recuperação. Contate o administrador para configurar em /admin/email.",
           ),
         );
       } else {

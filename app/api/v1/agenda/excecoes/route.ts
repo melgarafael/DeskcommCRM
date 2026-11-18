@@ -35,14 +35,19 @@
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
+import { fusoDasExcecoes, instantesDaExcecao } from "@/lib/agenda/fechamentos-na-grade";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { createClient } from "@/lib/supabase/server";
+import { fusoUtilizavel } from "@/lib/tempo/fusos";
 
 export const dynamic = "force-dynamic";
 
@@ -65,18 +70,19 @@ const criarSchema = z
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "agenda" });
+  const authz = await resolveAuthDual(req, { requestId, resource: "agenda", role: "agent", scope: "mcp:read" });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "agenda_excecoes", requestId); if (teto) return teto;
 
   const url = new URL(req.url);
   const de = url.searchParams.get("de");
   const ate = url.searchParams.get("ate");
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   let q = supabase
     .from("calendar_availability_exceptions")
     .select(COLUNAS)
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .order("exception_date", { ascending: true })
     .limit(500);
   // Sem janela, devolve do dia de hoje em diante: a lista serve para conferir o
@@ -87,7 +93,63 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const { data, error } = await q;
   if (error) return fail("internal_error", error.message, 500, { requestId });
-  return ok(data ?? [], { requestId });
+  const linhas = (data ?? []) as LinhaListada[];
+  if (linhas.length === 0) return ok([], { requestId });
+
+  // `comeca`/`termina` são ACRÉSCIMO, para a grade da Agenda pintar a faixa
+  // fechada sem refazer a conta do motor (`lib/agenda/fechamentos-na-grade.ts`).
+  // Quem já lia esta rota (a lista de "Dias fora da rotina") segue igual.
+  const fusos = await fusosDasPessoas(supabase, authz.organizationId, [
+    ...new Set(linhas.map((l) => l.user_id)),
+  ]);
+  return ok(
+    linhas.map((l) => ({
+      ...l,
+      ...instantesDaExcecao(l, fusos.daPessoa.get(l.user_id) ?? fusos.daOrganizacao),
+    })),
+    { requestId },
+  );
+}
+
+type LinhaListada = {
+  id: string;
+  user_id: string;
+  exception_date: string;
+  is_unavailable: boolean;
+  start_minute: number;
+  end_minute: number;
+  reason: string | null;
+};
+
+/**
+ * O fuso em que o MOTOR lê as exceções de cada pessoa — o da jornada dela —, e o
+ * da organização para quem não tem jornada legível.
+ *
+ * Falha de leitura aqui NÃO derruba a lista: os instantes são enfeite da grade,
+ * e a lista de "Dias fora da rotina" não depende deles. Quem não teve o fuso
+ * lido cai no da organização, que é o que a pessoa viu ao cadastrar.
+ */
+async function fusosDasPessoas(
+  supabase: SupabaseClient,
+  orgId: string,
+  ids: string[],
+): Promise<{ daOrganizacao: string; daPessoa: Map<string, string> }> {
+  const [disponibilidades, organizacao] = await Promise.all([
+    supabase
+      .from("attendant_availability")
+      .select("user_id, schedule")
+      .eq("organization_id", orgId)
+      .in("user_id", ids),
+    supabase.from("organizations").select("timezone").eq("id", orgId).maybeSingle(),
+  ]);
+  const daOrganizacao = fusoUtilizavel(
+    (organizacao.data as { timezone?: string | null } | null)?.timezone,
+  );
+  const daPessoa = new Map<string, string>();
+  for (const d of (disponibilidades.data ?? []) as Array<{ user_id: string; schedule: unknown }>) {
+    daPessoa.set(d.user_id, fusoDasExcecoes(d.schedule, daOrganizacao));
+  }
+  return { daOrganizacao, daPessoa };
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -160,9 +222,20 @@ export async function DELETE(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "agenda" });
+  // Sessão OU token `mcp:write`. O token precisa de `manager`: a RLS da sessão
+  // deixa o atendente apagar só os bloqueios da própria agenda, e o token não é
+  // pessoa, então não há "própria agenda" para ele. Apagar o de qualquer pessoa
+  // da organização é papel de gerente, o mesmo que a RLS dá ao `manager`.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "agenda",
+    role: "agent",
+    scope: "mcp:write",
+    tokenRole: "manager",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "agenda_excecoes_apagar", requestId); if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const lido = apagarSchema.safeParse(await req.json().catch(() => ({})));
   if (!lido.success) return fail("validation_failed", t("id inválido."), 422, { requestId });
@@ -171,12 +244,12 @@ export async function DELETE(req: NextRequest): Promise<Response> {
   // CLAUDE.md. Um bloqueio não é fato histórico: é uma regra que vale enquanto
   // está lá. Guardá-lo desativado só criaria a pergunta "este feriado valeu ou
   // não?" para sempre — e o audit log acima já registra que existiu e por quem.
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data, error } = await supabase
     .from("calendar_availability_exceptions")
     .delete()
     .eq("id", lido.data.id)
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .select("id, exception_date")
     .maybeSingle();
 
@@ -187,8 +260,9 @@ export async function DELETE(req: NextRequest): Promise<Response> {
 
   void audit({
     action: "agenda.bloqueio_removido",
-    actorUserId: authz.user.id,
-    organizationId: authz.org.orgId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "calendar_availability_exception",
     resourceId: data.id,
     requestId,

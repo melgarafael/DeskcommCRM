@@ -130,6 +130,20 @@ describe("POST /api/v1/messages/{id}/retry", () => {
     expect((await POST(req({ confirmado: true }), ctx())).status).toBe(200);
   });
 
+  it("pulada pela agenda: 403 reenvio_indisponivel, sem envio e sem tocar na linha", async () => {
+    // #3848 — o fluxo decidiu não enviar porque o contato tem compromisso na
+    // agenda. A rota reenvia por `sendMessageHandler` SEM `proactiveContext`,
+    // isto é, sem reconferir a agenda: se passasse, mandaria em silêncio o que
+    // a regra proibiu. Quem recusa é a mesma regra que a tela lê
+    // (`reenvioDaMensagem`), não uma condição própria desta rota.
+    state.linha = { ...state.linha, error_code: "compromisso_na_agenda" };
+    const res = await POST(req({ confirmado: true }), ctx());
+    expect(res.status).toBe(403);
+    expect((await res.json()).error.code).toBe("reenvio_indisponivel");
+    expect(state.handler).not.toHaveBeenCalled();
+    expect(updates()).toHaveLength(0);
+  });
+
   it("janela de 24h fechada no canal oficial: 422", async () => {
     state.conversa = { ...state.conversa, last_inbound_at: "2026-01-01T00:00:00.000Z", channel_sessions: { provider: "meta_cloud" } };
     const res = await POST(req(), ctx());

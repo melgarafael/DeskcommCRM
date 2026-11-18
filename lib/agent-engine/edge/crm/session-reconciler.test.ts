@@ -2,9 +2,161 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type pg from "pg";
 import { createLogger } from "../../obs/logger";
 
-import { deveRetomarSessao, redriveQueued } from "./session-reconciler";
+import { deveRetomarSessao, redriveQueued, reconcileSessions } from "./session-reconciler";
 
 afterEach(() => vi.restoreAllMocks());
+
+/**
+ * ─── SESSÃO PRESA EM `STARTING` (#4870) ─────────────────────────────────────
+ *
+ * O número ficou dias sem receber mensagem. O espelho dizia `STARTING`, o
+ * reconciliador só religava `STOPPED` e nada avisava. Estes casos prendem o
+ * vigia: `STARTING` acima do prazo é reiniciada (stop + start, sem logout),
+ * `STARTING` recém-nascida é boot e não se toca, `WORKING` nunca é reiniciada,
+ * e no limite o vigia PARA e deixa o aviso para o operador.
+ *
+ * O banco falso abaixo responde o SELECT pelo SQL (não pela ordem das chamadas):
+ * assim os casos continuam válidos se um dia entrar mais uma consulta no tick.
+ */
+const minutos = (n: number) => n * 60_000;
+
+function bancoDaSessao(linha: { status: string; last_status_change_at: Date; metadata: unknown }) {
+  const escritas: Array<{ sql: string; params: unknown[] }> = [];
+  const query = vi.fn(async (sql: string, params?: unknown[]) => {
+    if (/select cs\.id/i.test(sql)) return { rows: [{ id: "canal-1", ...linha }] };
+    escritas.push({ sql, params: params ?? [] });
+    return { rows: [] };
+  });
+  return { pool: { query } as unknown as pg.Pool, escritas };
+}
+
+function transporteQueResponde(status: string) {
+  const chamadas: string[] = [];
+  const transport = vi.spyOn(globalThis, "fetch").mockImplementation(async (entrada) => {
+    const url = String(entrada);
+    chamadas.push(url);
+    if (url.includes("/api/sessions?all=true")) {
+      return new Response(JSON.stringify([{ name: "sessao-presa", status }]));
+    }
+    return new Response("{}", { status: 201 });
+  });
+  return { chamadas, transport };
+}
+
+describe("sessão presa em STARTING (#4870)", () => {
+  const cfg = {
+    wahaBaseUrl: "http://127.0.0.1:9999",
+    wahaApiKey: "test-key",
+    intervalMs: 1,
+    redriveMinAgeMs: 0,
+    redriveBatchSize: 1,
+    redriveSpacingMs: 0,
+  };
+
+  it("⭐ STARTING acima do prazo é reiniciada — stop e start, nunca logout", async () => {
+    const { chamadas, transport } = transporteQueResponde("STARTING");
+    const { pool, escritas } = bancoDaSessao({
+      status: "STARTING",
+      last_status_change_at: new Date(Date.now() - minutos(10)),
+      metadata: {},
+    });
+
+    expect(await reconcileSessions(pool, cfg, createLogger())).toBe(0);
+
+    expect(transport).toHaveBeenCalledTimes(3); // lista, stop, start
+    expect(chamadas[1]).toContain("/stop");
+    expect(chamadas[2]).toContain("/start");
+    expect(chamadas.join(" ")).not.toContain("/logout");
+    const contador = escritas.find((e) => e.sql.includes("jsonb_build_object"));
+    expect(contador, "contador do vigia não foi gravado").toBeDefined();
+    expect(JSON.parse(String(contador!.params[2]))).toMatchObject({ tentativas: 1, esgotado: false });
+  });
+
+  it("STARTING recém-nascida é boot: nada de restart", async () => {
+    const { chamadas } = transporteQueResponde("STARTING");
+    const { pool } = bancoDaSessao({
+      status: "STARTING",
+      last_status_change_at: new Date(Date.now() - 20_000),
+      metadata: {},
+    });
+
+    expect(await reconcileSessions(pool, cfg, createLogger())).toBe(0);
+    expect(chamadas).toHaveLength(1); // só a listagem
+  });
+
+  it("⭐ sessão CONECTADA nunca sofre restart", async () => {
+    const { chamadas } = transporteQueResponde("WORKING");
+    const { pool } = bancoDaSessao({
+      status: "WORKING",
+      last_status_change_at: new Date(Date.now() - minutos(600)),
+      metadata: {},
+    });
+
+    expect(await reconcileSessions(pool, cfg, createLogger())).toBe(0);
+    expect(chamadas).toHaveLength(1);
+  });
+
+  it("⭐ no limite o vigia para de tentar e marca o episódio como esgotado", async () => {
+    const { chamadas } = transporteQueResponde("STARTING");
+    const { pool, escritas } = bancoDaSessao({
+      status: "STARTING",
+      last_status_change_at: new Date(Date.now() - minutos(40)),
+      metadata: {
+        vigia_starting: {
+          tentativas: 3,
+          ultimo_restart_em: new Date(Date.now() - minutos(10)).toISOString(),
+          esgotado: false,
+        },
+      },
+    });
+
+    expect(await reconcileSessions(pool, cfg, createLogger())).toBe(0);
+
+    expect(chamadas).toHaveLength(1); // nada de stop/start
+    const contador = escritas.find((e) => e.sql.includes("jsonb_build_object"));
+    expect(JSON.parse(String(contador!.params[2]))).toMatchObject({ tentativas: 3, esgotado: true });
+  });
+
+  it("quando a sessão sai de STARTING, o contador é limpo para o próximo episódio", async () => {
+    transporteQueResponde("WORKING");
+    const { pool, escritas } = bancoDaSessao({
+      status: "WORKING",
+      last_status_change_at: new Date(Date.now() - minutos(1)),
+      metadata: { vigia_starting: { tentativas: 2, esgotado: true } },
+    });
+
+    expect(await reconcileSessions(pool, cfg, createLogger())).toBe(0);
+    expect(escritas.some((e) => e.sql.includes("- $2::text"))).toBe(true);
+  });
+
+  // O webhook de STARTING pode se perder (o update.sh reinicia app e WAHA juntos):
+  // o espelho segue no status ANTERIOR, e o carimbo dele não é a idade do boot.
+  it("⭐ espelho WORKING há 10 dias com o transporte entrando em STARTING é boot: nada de restart", async () => {
+    const { chamadas } = transporteQueResponde("STARTING");
+    const { pool } = bancoDaSessao({
+      status: "WORKING",
+      last_status_change_at: new Date(Date.now() - minutos(10 * 24 * 60)),
+      metadata: {},
+    });
+
+    expect(await reconcileSessions(pool, cfg, createLogger())).toBe(0);
+    expect(chamadas.some((u) => u.includes("/stop"))).toBe(false);
+  });
+
+  it("o reconciliador carimba last_status_change_at quando grava o status novo", async () => {
+    transporteQueResponde("STARTING");
+    const { pool, escritas } = bancoDaSessao({
+      status: "WORKING",
+      last_status_change_at: new Date(Date.now() - 1_000),
+      metadata: {},
+    });
+
+    await reconcileSessions(pool, cfg, createLogger());
+    const update = escritas.find((e) => /set status = \$2/.test(e.sql));
+    expect(update, "update de status do espelho não foi feito").toBeDefined();
+    expect(update!.sql).toContain("last_status_change_at = now()");
+  });
+});
 
 /**
  * A regra que decide se o watchdog RELIGA a sessão. Religar FAILED é o que o
@@ -213,5 +365,87 @@ describe("redrive × canal pausado (#2318)", () => {
     }, createLogger())).toBe(0);
     expect(send).not.toHaveBeenCalled();
     expect(query).toHaveBeenCalledWith(expect.stringContaining("error_code = 'channel_disabled'"), ["message-test", "org-test"]);
+  });
+});
+
+/**
+ * Spec 31 B1: o reenvio do watchdog também responde pelo número que a pessoa
+ * escreveu quando a ficha tem telefone extra. Mesma regra do envio normal, em SQL.
+ */
+describe("redrive × ficha com telefone extra (Spec 31 B1)", () => {
+  it.each([
+    ["número que segue como extra", "+5531988887777", "5531988887777@c.us", "5531988887777@c.us"],
+    ["nono dígito: o chat sem o 9 casa com o extra", "+5531988887777", "553188887777@c.us", "553188887777@c.us"],
+    ["última recebida pelo principal", "+5531900001111", "5527999998888@c.us", "5527999998888@c.us"],
+    ["@lid não tem número para comparar", "+5531900001111", "100000000000001@lid", "100000000000001@lid"],
+    // Sabotagem: tirar `chatSegueNaFicha` do reenvio manda para 5531988887777@c.us e deixa vermelho.
+    ["número que saiu da ficha cai no principal", "+5531900001111", "5531988887777@c.us", "5527999998888@c.us"],
+  ])("%s", async (_caso, extra, chatRecebido, chatEsperado) => {
+    const send = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ id: { id: "3EB0NEW" } }), { status: 200 }));
+    const consultas: string[] = [];
+    const query = vi.fn(async (sql: string) => {
+      consultas.push(sql);
+      if (/select\s+m\.id/i.test(sql)) {
+        return { rows: [{
+          id: "m-1", organization_id: "org-1", conversation_id: "conv-1", contact_id: "ficha-1",
+          body: "Olá", waha_session_name: "default", wa_identity: null, wa_lid: null,
+          phone_number: "+5527999998888", is_group: false, group_chat_id: null,
+        }] };
+      }
+      if (/from contact_phones/i.test(sql)) return { rows: [{ phone_number: extra }] };
+      if (/direction = 'inbound'/i.test(sql)) {
+        return { rows: [{ external_id: `false_${chatRecebido}_3EB0XYZ` }] };
+      }
+      if (/count\(\*\)/i.test(sql)) return { rows: [{ n: "0" }] };
+      if (/select\s+s\.metadata/i.test(sql)) {
+        return { rows: [{ metadata: {}, phone_number: "+5527999998888", operante: true }] };
+      }
+      return { rows: [] };
+    });
+
+    const reenviadas = await redriveQueued({ query } as unknown as pg.Pool, {
+      wahaBaseUrl: "http://127.0.0.1:9999", wahaApiKey: "test-key",
+      intervalMs: 1, redriveMinAgeMs: 0, redriveBatchSize: 10, redriveSpacingMs: 0,
+    }, createLogger());
+
+    expect(reenviadas).toBe(1);
+    const corpo = JSON.parse((send.mock.calls[0]![1] as { body: string }).body) as { chatId: string };
+    expect(corpo.chatId).toBe(chatEsperado);
+    // A consulta de extras e a das mensagens filtram pela organização da linha.
+    expect(consultas.some((s) => /from contact_phones[\s\S]*organization_id = \$1/i.test(s))).toBe(true);
+    // Sabotagem: deixar `chatIdOf` sem o `ultimoRecebido` manda o reenvio para o
+    // principal (5527999998888@c.us) e deixa este teste vermelho.
+  });
+});
+
+// A parada não cancela efeitos já iniciados: impede começar o próximo após await.
+describe("reconciliação durante a parada", () => {
+  const cfg = { wahaBaseUrl: "http://127.0.0.1:9999", wahaApiKey: "test-key", intervalMs: 1, redriveMinAgeMs: 0, redriveBatchSize: 1, redriveSpacingMs: 0 };
+  it("não consulta transporte com sinal já abortado", async () => {
+    const c = new AbortController(); c.abort();
+    const transport = vi.spyOn(globalThis, "fetch");
+    const query = vi.fn();
+    expect(await reconcileSessions({ query } as unknown as pg.Pool, cfg, createLogger(), c.signal)).toBe(0);
+    expect(transport).not.toHaveBeenCalled(); expect(query).not.toHaveBeenCalled();
+  });
+  it("não religa sessão quando a parada chega durante a leitura do banco", async () => {
+    const c = new AbortController();
+    const transport = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify([{ name: "synthetic", status: "STOPPED" }])));
+    const query = vi.fn(async () => { c.abort(); return { rows: [{ id: "synthetic-channel", status: "STOPPED" }] }; });
+    expect(await reconcileSessions({ query } as unknown as pg.Pool, cfg, createLogger(), c.signal)).toBe(0);
+    expect(transport).toHaveBeenCalledTimes(1); expect(query).toHaveBeenCalledTimes(1);
+  });
+  it("parada durante o start ainda grava o espelho da sessão já religada", async () => {
+    const c = new AbortController();
+    const transport = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ name: "synthetic", status: "STOPPED" }])))
+      .mockImplementationOnce(async () => { c.abort(); return new Response("{}", { status: 201 }); });
+    const query = vi.fn(async (sql: string) => sql.includes("update")
+      ? { rows: [{ id: "synthetic-channel", status: "STARTING" }] }
+      : { rows: [{ id: "synthetic-channel", status: "STOPPED" }] });
+    expect(await reconcileSessions({ query } as unknown as pg.Pool, cfg, createLogger(), c.signal)).toBe(1);
+    expect(transport).toHaveBeenCalledTimes(2); expect(query).toHaveBeenCalledTimes(2);
   });
 });

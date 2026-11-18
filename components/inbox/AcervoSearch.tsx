@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -24,10 +25,22 @@ import { ApiError } from "@/lib/api/types";
  *   - algo parecido abaixo do limiar (reformule a pergunta);
  *   - a base realmente não tem (peça para humano).
  * Mostrar "nenhum resultado" para as três seria prometer e desmentir depois.
+ *
+ * ─── A origem de cada trecho ────────────────────────────────────────────────
+ *
+ * O trecho sai com `knowledge_source_id` desde a F1 (#1869): sem ele o operador
+ * lê "Política de troca" e não tem por onde abrir o material. O link só existe
+ * para quem consegue abrir: a CONSULTA é `agent`+ (a rota de busca), a
+ * BIBLIOTECA é `manager`+ (`app/app/ai/knowledge/sources/page.tsx` manda o resto
+ * para /403 e o GET do conteúdo cobra `requireRole("manager")`). Quem pergunta
+ * sem poder abrir continua vendo o NOME — o que não pode é clicar num link que
+ * termina em 403, que é a mesma promessa-e-desmentido que esta tela evita.
  */
 
 type Trecho = {
   chunk_id: string;
+  /** Nulo quando a fonte foi apagada depois da indexação (FK `set null`). */
+  knowledge_source_id?: string | null;
   source_name?: string | null;
   content: string;
   similarity: number;
@@ -45,7 +58,7 @@ function percentual(n: number): string {
   return `${Math.round(Math.max(0, Math.min(1, n)) * 100)}%`;
 }
 
-export function AcervoSearch() {
+export function AcervoSearch({ podeAbrirFonte = false }: { podeAbrirFonte?: boolean }) {
   const t = useT();
   const [pergunta, setPergunta] = useState("");
   const [carregando, setCarregando] = useState(false);
@@ -64,11 +77,16 @@ export function AcervoSearch() {
       });
       setResultado(res.data);
     } catch (e) {
-      // 409 (sem chave de embedding) e 429 (limite por minuto) trazem uma frase
-      // que diz o que fazer, já traduzida pela rota. O resto fica genérico:
-      // mostrar stack para o atendente só polui — mas NÃO ficamos em silêncio.
+      // A rota JÁ traduz o estado em frase para o operador: 409 (sem chave de
+      // embedding), 429 (limite por minuto), 403 (papel), 500 (leitura do
+      // acervo). Antes só 409 e 429 chegavam à tela; o resto caía no genérico, e
+      // o operador lia "não consegui consultar" sem o motivo que a rota tinha
+      // dado. `ApiError` só carrega mensagem de envelope da casa — nunca stack —
+      // e, quando o envelope não traz frase, `message` é o CÓDIGO (`rate_limited`),
+      // que não se mostra: aí sim o genérico. Resposta SEM envelope (proxy, HTML
+      // de erro) traz o corpo cru ou `HTTP 502` em `message`: também genérico.
       setErro(
-        e instanceof ApiError && (e.status === 409 || e.status === 429) && e.message
+        e instanceof ApiError && !e.semEnvelope && e.message && e.message !== e.code
           ? e.message
           : t("Não consegui consultar o acervo."),
       );
@@ -130,11 +148,28 @@ export function AcervoSearch() {
                   data-testid="acervo-trecho"
                 >
                   <div className="mb-1 flex items-center justify-between gap-2">
-                    {tr.source_name && (
-                      <Badge variant="outline" className="truncate text-[10px]">
-                        {tr.source_name}
-                      </Badge>
-                    )}
+                    {/* A origem: link para o material quando o leitor pode abrir a
+                        biblioteca (`manager`+); o NOME para os demais. Ver o
+                        docblock do topo — link que dá 403 é promessa-e-desmentido. */}
+                    {tr.source_name &&
+                      (podeAbrirFonte && tr.knowledge_source_id ? (
+                        <Link
+                          href={`/app/ai/knowledge/sources/${tr.knowledge_source_id}`}
+                          className="truncate text-[10px] underline underline-offset-2 hover:text-accent"
+                          aria-label={`${t("Abrir o material de origem")}: ${tr.source_name}`}
+                          data-testid="acervo-fonte-link"
+                        >
+                          {tr.source_name}
+                        </Link>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className="truncate text-[10px]"
+                          data-testid="acervo-fonte"
+                        >
+                          {tr.source_name}
+                        </Badge>
+                      ))}
                     <span
                       className="shrink-0 text-muted-foreground"
                       title={t("Semelhança com a pergunta")}

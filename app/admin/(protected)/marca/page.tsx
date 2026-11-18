@@ -1,9 +1,11 @@
 import { notFound } from "next/navigation";
 
 import { CssPersonalizado } from "./_css-personalizado";
+import { TemaDaPlataforma } from "./_tema-da-plataforma";
 import { loadAuthUser } from "@/lib/auth/server";
 import {
   cssPersonalizadoDaInstalacao,
+  cssPersonalizadoEscuroDaInstalacao,
   validarCssPersonalizado,
 } from "@/lib/branding/css-personalizado";
 import { marcaDaInstalacao } from "@/lib/branding/instalacao";
@@ -11,6 +13,10 @@ import { logoDaCamada } from "@/lib/branding/logo";
 import { REGUA_DO_PRODUTO } from "@/lib/branding/regua-do-produto";
 import { camadaDaInstalacao, camadaDoAmbiente, resolverMarca } from "@/lib/branding/resolve";
 import { env } from "@/lib/env";
+import {
+  idDoTemaDaPlataforma,
+  temasInstaladosDaPlataforma,
+} from "@/lib/extensions/tema-da-plataforma";
 import { tagDeIdioma } from "@/lib/i18n/datas";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -65,11 +71,18 @@ export default async function Page() {
   if (!usuario?.is_platform_admin) notFound();
   const idioma = normalizarIdioma(usuario.locale);
 
-  const [linha, cssPersonalizado] = await Promise.all([
-    marcaDaInstalacao(),
-    cssPersonalizadoDaInstalacao(),
-  ]);
-  const validacaoCss = validarCssPersonalizado(cssPersonalizado);
+  const [linha, cssPersonalizado, cssPersonalizadoEscuro, temasInstalados, temaEscolhido] =
+    await Promise.all([
+      marcaDaInstalacao(),
+      cssPersonalizadoDaInstalacao(),
+      cssPersonalizadoEscuroDaInstalacao(),
+      temasInstaladosDaPlataforma(),
+      idDoTemaDaPlataforma(),
+    ]);
+  // Cada campo com o SEU escopo: é o mesmo prefixo que o layout aplica, então a
+  // tela relata exatamente o que está valendo (ou o erro do campo certo).
+  const validacaoCss = validarCssPersonalizado(cssPersonalizado, "claro");
+  const validacaoCssEscuro = validarCssPersonalizado(cssPersonalizadoEscuro, "escuro");
   // A MESMA pilha do `app/layout.tsx` — banco acima, arquivo de instalação
   // embaixo. Montar outra aqui faria a tela relatar uma precedência que o
   // produto não usa, que é a pior mentira possível numa tela de diagnóstico.
@@ -121,7 +134,23 @@ export default async function Page() {
         fallbackEm={instanteLegivel(linha?.fallback_at ?? null, tagDeIdioma(idioma))}
         fallbackMotivo={linha?.fallback_reason ?? null}
       />
-      <CssPersonalizado gravado={cssPersonalizado} erroAtual={validacaoCss.erro} />
+      <TemaDaPlataforma
+        // Só o que o seletor mostra: a LEITURA da plataforma reconfere o id no
+        // banco a cada render, então a tela não precisa entregar o tema inteiro.
+        temas={temasInstalados.map((tema) => ({
+          instalacaoId: tema.instalacaoId,
+          rotulo: tema.rotulo,
+          versao: tema.versao,
+          paleta: tema.tema.palette,
+        }))}
+        escolhido={temaEscolhido}
+      />
+      <CssPersonalizado
+        gravado={cssPersonalizado}
+        gravadoEscuro={cssPersonalizadoEscuro}
+        erroAtual={validacaoCss.erro}
+        erroAtualEscuro={validacaoCssEscuro.erro}
+      />
     </div>
   );
 }

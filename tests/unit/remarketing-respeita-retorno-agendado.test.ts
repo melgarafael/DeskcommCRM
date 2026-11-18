@@ -27,10 +27,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 
-import { runFollowupTick, type AdminClient, type FollowupJobRequest } from "@/lib/followup/engine";
+import {
+  createSupabaseAdminClient,
+  runFollowupTick,
+  type AdminClient,
+  type FollowupJobRequest,
+} from "@/lib/followup/engine";
 import type { FlowGraph } from "@/lib/followup/graph-schema";
 import type { EnrollmentRow } from "@/lib/followup/node-handlers";
-import { FOLGA_DEPOIS_DO_RETORNO_MS, reavaliarDepoisDoRetorno } from "@/lib/followup/retorno-segura-o-fluxo";
+import { folgaDepoisDoRetorno, reavaliarDepoisDoRetorno } from "@/lib/followup/retorno-segura-o-fluxo";
 import { createSupabaseSilenceSweepDb, runSilenceSweep, type SilenceSweepDb } from "@/lib/followup/silence-sweep";
 
 const AGORA = new Date("2026-09-25T15:00:00.000Z");
@@ -88,6 +93,22 @@ describe("varredura de silêncio", () => {
     expect(resumo.enrolled).toBe(1);
   });
 
+  it("⭐ cada fluxo pergunta com a própria folga: 40 min → 4 h, 3 dias → 3 dias", async () => {
+    for (const [gatilho, folga] of [
+      [40, 4 * 3_600_000],
+      [3 * 24 * 60, 72 * 3_600_000],
+    ] as const) {
+      const { db } = sweepDb(new Set());
+      const pergunta = vi.fn(async (_org: string, _folgaMs: number) => new Set<string>());
+      db.loadActiveSilencePointers = async () => [
+        { id: "ptr", organization_id: "org", active_version_id: "v1", threshold_minutes: gatilho, segments: [] },
+      ];
+      db.loadContatosComRetornoVivo = pergunta;
+      await runSilenceSweep({ db, gateDb, clock: () => AGORA });
+      expect(pergunta).toHaveBeenCalledWith("org", folga);
+    }
+  });
+
   it("controle: sem retorno nenhum, os dois entram", async () => {
     const { db, insert } = sweepDb(new Set());
     await runSilenceSweep({ db, gateDb, clock: () => AGORA });
@@ -105,7 +126,7 @@ describe("varredura de silêncio", () => {
       [], // nenhum retorno agendado (vivo)
       [{ contact_id: "contato-com-retorno", next_run_at: new Date(Date.now() - 2 * 3_600_000).toISOString() }],
     ]);
-    const comRetorno = await createSupabaseSilenceSweepDb(admin).loadContatosComRetornoVivo("org");
+    const comRetorno = await createSupabaseSilenceSweepDb(admin).loadContatosComRetornoVivo("org", folgaDepoisDoRetorno(60));
     expect(comRetorno.has("contato-com-retorno")).toBe(true);
 
     const { db, insert } = sweepDb(comRetorno);
@@ -178,7 +199,7 @@ describe("inscrição que já andava", () => {
   }
 
   it("⭐ fica segurada até a data da regra: nada vai para a fila e o dossiê diz por quê", async () => {
-    const ate = reavaliarDepoisDoRetorno(RETORNO);
+    const ate = reavaliarDepoisDoRetorno(RETORNO, 60);
     const l = loja(ate);
     await l.tick();
 
@@ -195,8 +216,37 @@ describe("inscrição que já andava", () => {
     expect(l.eventos.map((e) => e.event_type)).not.toContain("held_by_return");
   });
 
-  it("a regra devolve um dia depois do retorno — o tempo de a pessoa responder", () => {
-    expect(Date.parse(reavaliarDepoisDoRetorno(RETORNO)) - Date.parse(RETORNO)).toBe(FOLGA_DEPOIS_DO_RETORNO_MS);
-    expect(FOLGA_DEPOIS_DO_RETORNO_MS).toBe(24 * 3_600_000);
+  it("a regra devolve o gatilho do fluxo depois do retorno, nunca menos que 4 h", () => {
+    const HORA = 3_600_000;
+    const espera = (gatilhoMinutos: number) =>
+      Date.parse(reavaliarDepoisDoRetorno(RETORNO, gatilhoMinutos)) - Date.parse(RETORNO);
+    expect(espera(40)).toBe(4 * HORA); // o fluxo da #2907
+    expect(espera(60)).toBe(4 * HORA);
+    expect(espera(3 * 24 * 60)).toBe(72 * HORA);
+  });
+
+  it("⭐ o adaptador de produção lê o gatilho do fluxo da inscrição: fluxo de 3 dias segura 3 dias", async () => {
+    // 1ª consulta: o retorno vivo mais tardio (cron_jobs); 2ª: o pointer da inscrição.
+    const respostas: unknown[] = [
+      [{ next_run_at: RETORNO }],
+      { trigger_config: { kind: "silence", params: { threshold_minutes: 3 * 24 * 60 } } },
+    ];
+    let i = 0;
+    const from = () => {
+      const data = respostas[i++];
+      const chain: Record<string, unknown> = new Proxy(
+        {},
+        {
+          get(_t, prop) {
+            if (prop === "then") return (resolve: (v: unknown) => unknown) => resolve({ data, error: null });
+            return () => chain;
+          },
+        },
+      );
+      return chain;
+    };
+    const db = createSupabaseAdminClient({ from } as unknown as SupabaseClient);
+    const { enrollment } = loja(null);
+    expect(await db.retornoQueSeguraOFluxo!(enrollment)).toBe("2026-10-03T12:00:00.000Z");
   });
 });

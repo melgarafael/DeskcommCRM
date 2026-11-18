@@ -5,6 +5,7 @@
  * banco, então os clients nem são chamados.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { pedidoComTamanho } from "@/tests/helpers/pedido-com-tamanho";
 import { NextRequest } from "next/server";
 
 const deps = vi.hoisted(() => ({ role: vi.fn(), support: vi.fn(), audit: vi.fn(), client: vi.fn(), admin: vi.fn(), modulo: vi.fn() }));
@@ -24,9 +25,9 @@ const comoQuem = (idioma: "pt-BR" | "es") =>
     org: { orgId: "11111111-1111-4111-8111-111111111111", role: "manager" },
   });
 
-const importar = (file: unknown) =>
+const importar = async (file: unknown) =>
   POST(
-    new NextRequest("http://localhost/api/v1/ai/followup-flows/import", {
+    await pedidoComTamanho("http://localhost/api/v1/ai/followup-flows/import", {
       method: "POST",
       body: JSON.stringify({ file }),
       headers: { "content-type": "application/json" },
@@ -63,7 +64,7 @@ describe("POST /followup-flows/import — o corpo do pedido também lê no idiom
   ] as const)("%s", async (idioma, linha) => {
     comoQuem(idioma);
     const res = await POST(
-      new NextRequest("http://localhost/api/v1/ai/followup-flows/import", {
+      await pedidoComTamanho("http://localhost/api/v1/ai/followup-flows/import", {
         method: "POST",
         body: JSON.stringify({ file: ARQUIVO_SEM_GRAFO, name: 5 }),
         headers: { "content-type": "application/json" },

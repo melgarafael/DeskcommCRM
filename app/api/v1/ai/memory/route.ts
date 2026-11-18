@@ -32,11 +32,17 @@ export async function GET(_req: NextRequest): Promise<Response> {
 
   const admin = createAdminClient();
 
-  const { data: pointer } = await admin
+  const { data: pointer, error: pointerErr } = await admin
     .from("org_memory_pointers")
     .select("version_id")
     .eq("organization_id", org.orgId)
     .maybeSingle();
+  // #4171 — o ponteiro é a única fonte de "existe versão ativa". Engolir o erro
+  // devolvia `document: null` e a tela dizia "Nenhuma versão publicada ainda"
+  // para um banco que não respondeu. Mesmo desenho das leituras abaixo.
+  if (pointerErr) {
+    return fail("internal_error", t("Erro ao carregar a memória."), 500, { requestId });
+  }
 
   let document: {
     version_id: string;
@@ -46,12 +52,20 @@ export async function GET(_req: NextRequest): Promise<Response> {
   } | null = null;
 
   if (pointer?.version_id) {
-    const { data: ver } = await admin
+    const { data: ver, error: verErr } = await admin
       .from("org_memory_versions")
       .select("id, version_number, content, created_at")
       .eq("id", pointer.version_id as string)
       .eq("organization_id", org.orgId)
       .maybeSingle();
+    if (verErr) {
+      return fail(
+        "internal_error",
+        t("Erro ao carregar a versão ativa da memória."),
+        500,
+        { requestId },
+      );
+    }
     if (ver) {
       document = {
         version_id: ver.id as string,
@@ -73,7 +87,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
 
   const { data: entries, error: entriesErr } = await admin
     .from("org_memory_entries")
-    .select("id, title, body, source, status, created_at")
+    .select("id, title, body, source, status, created_at, valid_until")
     .eq("organization_id", org.orgId)
     .neq("status", "proposed")
     .order("created_at", { ascending: false });

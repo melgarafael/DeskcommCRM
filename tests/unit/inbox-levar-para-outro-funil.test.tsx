@@ -54,6 +54,9 @@ vi.mock("@/hooks/contacts/useContactTagVocabulary", () => ({
 vi.mock("@/hooks/contacts/useUpdateContact", () => ({
   useUpdateContact: () => ({ mutate: vi.fn(), isPending: false }),
 }));
+// A seção de tarefas do painel (#4630) aparece em toda conversa com contato e tem
+// testes próprios (tarefa-da-demanda-no-inbox, tarefas-da-demanda-no-painel).
+vi.mock("@/components/inbox/TarefasDaDemanda", () => ({ TarefasDaDemanda: () => null }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useAuth: () => ({
     user: { support: null, is_platform_admin: false },
@@ -114,8 +117,18 @@ function resumo(leads: Linha[]) {
   return { data: { leads, orders: [], activities: [], demandas: [], fatos: [], historico: [] } };
 }
 
-/** `GET /api/v1/leads/[id]/clone` — a lista JÁ vem sem o funil atual (a rota o exclui). */
-const DESTINOS = [{ id: "p-2", name: "Funil Destino" }];
+/**
+ * `GET /api/v1/leads/[id]/clone` — a lista JÁ vem sem o funil atual (a rota o
+ * exclui) e, desde a #3643, com as etapas de cada destino: é delas que sai o
+ * seletor de "Etapa de entrada".
+ */
+const DESTINOS = [
+  {
+    id: "p-2",
+    name: "Funil Destino",
+    stages: [{ id: "s-2", name: "Novo", position: 1000, is_won: false, is_lost: false }],
+  },
+];
 
 function implementarLeituras(leadsAtuais: () => Linha[]) {
   get.mockImplementation(async (url: string) =>

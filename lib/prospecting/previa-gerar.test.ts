@@ -160,7 +160,16 @@ describe("gerarPreviaDoCandidato", () => {
     // Igual ao envio (worker.ts): nesse modo a 1ª mensagem só cumprimenta.
     const fora = {
       ...DADOS,
-      site: { ...SITE_OK, classe: "fora-do-ar", problemas: ["http-503"], conteudo_resumo: "Página de erro" },
+      // Domínio morto é veredito PROVADO (citável); 503 seria medição barrada,
+      // que a leitura normaliza para `nao-medido` e não cita (#3723).
+      site: {
+        ...SITE_OK,
+        classe: "fora-do-ar",
+        problemas: ["dns-morto"],
+        final_url: null,
+        http_status: null,
+        conteudo_resumo: "Página de erro",
+      },
     } as unknown as Prospect;
     const chamada = async (exit_offer: "first_message" | "second_message") => {
       mocks.generate.mockClear();
@@ -182,5 +191,57 @@ describe("gerarPreviaDoCandidato", () => {
     mocks.generate.mockResolvedValue({ ok: false, reason: "sem_agente_publicado" });
     const r = await gerarPreviaDoCandidato(pool, ORG, linha());
     expect(r).toEqual({ ok: false, motivo: "ia_falhou", detalhe: "sem_agente_publicado" });
+  });
+});
+
+describe("gerarPreviaDoCandidato — o contexto da equipe (#4459 parte 2)", () => {
+  const comContexto = (contexto: Record<string, string>) =>
+    ({ ...DADOS, contexto_da_equipe: contexto }) as unknown as Prospect;
+  const args = () =>
+    mocks.generate.mock.calls.at(-1)![2] as {
+      dados: Record<string, string>;
+      instrucao: string;
+      comContextoDaEquipe?: boolean;
+    };
+
+  it("saída na 1ª: os três campos entram e o sinal é o mesmo na instrução e no modo", async () => {
+    await gerarPreviaDoCandidato(
+      pool,
+      ORG,
+      linha({
+        data: comContexto({ diagnostico: "D.", oferta: "O.", contexto: "C." }),
+        config: { ...CONFIG, exit_offer: "first_message" },
+      }),
+    );
+    expect(args().dados).toMatchObject({
+      "Diagnóstico da equipe": "D.",
+      "Oferta sugerida pela equipe": "O.",
+      "Contexto da equipe": "C.",
+    });
+    expect(args().comContextoDaEquipe).toBe(true);
+    expect(args().instrucao).toContain("planilha da sua equipe");
+  });
+
+  it("saída na 2ª sem `contexto`: diagnóstico e oferta saem, e nada liga", async () => {
+    await gerarPreviaDoCandidato(
+      pool,
+      ORG,
+      linha({
+        data: comContexto({ diagnostico: "D.", oferta: "O." }),
+        config: { ...CONFIG, exit_offer: "second_message" },
+      }),
+    );
+    expect(Object.keys(args().dados).some((k) => k.endsWith("da equipe"))).toBe(false);
+    expect(args().comContextoDaEquipe).toBe(false);
+    expect(args().instrucao).not.toContain("planilha da sua equipe");
+  });
+
+  it("texto só de espaços não liga as regras", async () => {
+    await gerarPreviaDoCandidato(
+      pool,
+      ORG,
+      linha({ data: comContexto({ contexto: "   " }), config: { ...CONFIG, exit_offer: "first_message" } }),
+    );
+    expect(args().comContextoDaEquipe).toBe(false);
   });
 });

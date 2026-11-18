@@ -304,7 +304,7 @@ test.describe("gatilho de etapa do funil", () => {
 
       // ---- 4. o movimento, no quadro, pelo teclado ----
       await page.goto(`/app/pipelines/${funil.id}`);
-      const card = page.getByRole("group", { name: `Lead: ${negocio.title}` });
+      const card = page.getByRole("group", { name: `Negócio: ${negocio.title}` });
       await expect(card).toBeVisible({ timeout: ESPERA });
       await page.screenshot({
         path: path.join(ARTIFACTS_DIR, "gatilho-etapa-03-antes-do-movimento.png"),

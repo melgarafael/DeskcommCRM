@@ -11,9 +11,11 @@
  * tick — gatilho TIME-DRIVEN (varredura periódica, não event-driven): acha
  * pointers `trigger_config.kind='silence'` ativos, decide o agente pelo grafo
  * (`decidirAgenteDoEnrollmentAutomatico`: texto fixo segue sem agente; nó de
- * IA exige agente publicado armando o pointer), acha contatos silenciosos e
- * cria enrollment. Falha do sweep NUNCA aborta a resposta do tick (try/catch
- * isolado, só loga) — o cron sempre devolve o resultado de `runFollowupTick`.
+ * IA exige agente publicado armando o pointer — e, desde o #3852, publicado no
+ * NÚMERO da conversa do silencioso; sem agente naquele número o contato de
+ * fluxo de IA não é inscrito), acha contatos silenciosos e cria enrollment.
+ * Falha do sweep NUNCA aborta a resposta do tick (try/catch isolado, só loga)
+ * — o cron sempre devolve o resultado de `runFollowupTick`.
  *
  * No fim, drena texto fixo pendente (`enviarTextoFixoPendente`) — o mesmo
  * atalho do relógio HTTP. Onde não há `agent-worker` (instalação sem o
@@ -30,9 +32,10 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { invalidarRetrato, recursoTemTrabalho } from "@/lib/cron/piso-ocioso";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createSupabaseAdminClient, runFollowupTick, type FollowupJobRequest } from "@/lib/followup/engine";
+import { createSupabaseAdminClient, runFollowupTick, type FollowupJobRequest, type TickSummary } from "@/lib/followup/engine";
 import { createSupabaseFollowupGateDb } from "@/lib/followup/agent-followup-gate";
 import { enviarTextoFixoPendente } from "@/lib/followup/enviar-texto-fixo";
 import { encerrarRoteirosVencidos } from "@/lib/followup/atendimento";
@@ -68,6 +71,28 @@ async function handle(req: NextRequest): Promise<Response> {
     enqueueJob,
   };
 
+  // ─── O QUE TEM TRABALHO NESTA INSTALAÇÃO (#3694, crédito: @webtecnica) ────
+  //
+  // Três das consultas vazias medidas na issue moram nesta rota: o claim do
+  // follow-up (1,0/min, 120/120 vazias), os pointers do silêncio (1,0/min) e a
+  // fila do follow-up (1,0/min). As três saem do retrato do piso ocioso
+  // (lib/cron/piso-ocioso.ts): uma leitura pelo pool `pg` por janela de 30 s,
+  // dividida com os outros crons de minuto, sem gastar requisição ao PostgREST.
+  //
+  // Não é o `if (await recursoOcioso(...)) return` das outras rotas: cada sinal
+  // desliga só a SUA etapa, e o resto da batida segue.
+  //
+  // O que NÃO é gated aqui, de propósito: a varredura de confirmação de
+  // presença (RPC, mutação de agenda) e `encerrarRoteirosVencidos` (RPC, muda
+  // estado de roteiro). As duas MUTAM mesmo sem nada vencido no follow-up, não
+  // estavam na medição da issue e ficam fora — rodada que fecha roteiro vencido
+  // é efeito, não consulta vazia.
+  const [followupLigado, silencioLigado, filaLigada] = await Promise.all([
+    recursoTemTrabalho("followup"),
+    recursoTemTrabalho("followup_silencio"),
+    recursoTemTrabalho("fila_followup"),
+  ]);
+
   // A varredura de confirmação de presença pega carona neste cron, mas é OUTRO
   // assunto: antes, um erro só nela devolvia 500 ANTES do motor rodar, e o
   // follow-up de todas as orgs parava junto com a agenda. Agora a falha fica
@@ -75,14 +100,34 @@ async function handle(req: NextRequest): Promise<Response> {
   // `confirmation_sweep`, sem esconder — mas sem derrubar o tick.
   const confirmationSweep = await varrerConfirmacoesDePresenca(admin, requestId);
 
-  let summary;
-  try {
-    summary = await runFollowupTick(deps);
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    logger.error("[followup-flow-worker.cron] runFollowupTick threw", { error: detail, requestId });
-    return fail("internal_error", detail, 500, { requestId });
+  // Tick que não chegou a rodar é indistinguível, na resposta, de um tick sem
+  // nada vencido — a não ser pelo `recursos` no fim do corpo, que diz por quê.
+  let summary: TickSummary = { claimed: 0, advanced: 0, scheduled: 0, failed: 0, dead: 0 };
+  if (followupLigado) {
+    try {
+      summary = await runFollowupTick(deps);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      logger.error("[followup-flow-worker.cron] runFollowupTick threw", { error: detail, requestId });
+      return fail("internal_error", detail, 500, { requestId });
+    }
   }
+
+  // ─── QUEM CRIA TRABALHO AVISA (#3694) ──────────────────────────────────────
+  //
+  // O retrato vale 30 s. Para o que NASCE FORA deste processo
+  // (gatilho no banco, `agent-worker` em outro contêiner) o atraso é o preço
+  // declarado do cache — no máximo um tique, porque o cron é de minuto. Para o
+  // que nasce AQUI, não: esta mesma batida inscreve contatos (varredura de
+  // silêncio) e enfileira `followup_turn` (tick), e a batida seguinte tem de
+  // enxergar isso na hora. Sem a invalidação, o cache responde o retrato de
+  // ANTES do trabalho que esta rota acabou de criar — e o motor fica parado o
+  // resto da janela, que é exatamente "sair cedo atrasando trabalho real".
+  //
+  // Medido no e2e `followup-journey.spec.ts`: o enrollment nascia na varredura e
+  // os POSTs seguintes (mais rápidos que a janela) liam `followup: false` do
+  // cache e devolviam 200 sem reclamar a inscrição.
+  let houveMovimento = Boolean(summary.claimed || summary.advanced || summary.scheduled);
 
   // Só audita tick que MEXEU em alguma coisa. Auditar toda batida enchia o
   // api_audit_log — que é append-only e tem retenção de 5 anos — de linhas
@@ -119,32 +164,35 @@ async function handle(req: NextRequest): Promise<Response> {
     });
   }
 
-  try {
-    const sweepSummary = await runSilenceSweep({
-      db: createSupabaseSilenceSweepDb(admin),
-      gateDb: createSupabaseFollowupGateDb(admin),
-      clock: () => new Date(),
-    });
-    // `skipped_cooldown` NÃO entra aqui de propósito (revisão do PR): por
-    // definição ele é "nada aconteceu" — incluí-lo faria o audit log escrever
-    // uma linha por tick (1×/min) durante toda a janela de cooldown de cada
-    // enrollment concluído, o mesmo anti-padrão que este arquivo já existe
-    // para evitar (ver "Audit log" no CLAUDE.md, o histórico do
-    // routing-worker/attendant-heartbeat).
-    if (sweepSummary.enrolled || sweepSummary.pointers_gated_out || sweepSummary.skipped_existing) {
-      void audit({
-        action: "followup.silence_sweep_run",
-        organizationId: null,
-        bypassedRls: true,
-        metadata: { ...sweepSummary },
-        requestId,
+  if (silencioLigado) {
+    try {
+      const sweepSummary = await runSilenceSweep({
+        db: createSupabaseSilenceSweepDb(admin),
+        gateDb: createSupabaseFollowupGateDb(admin),
+        clock: () => new Date(),
       });
+      // `skipped_cooldown` NÃO entra aqui de propósito (revisão do PR): por
+      // definição ele é "nada aconteceu" — incluí-lo faria o audit log escrever
+      // uma linha por tick (1×/min) durante toda a janela de cooldown de cada
+      // enrollment concluído, o mesmo anti-padrão que este arquivo já existe
+      // para evitar (ver "Audit log" no CLAUDE.md, o histórico do
+      // routing-worker/attendant-heartbeat).
+      if (sweepSummary.enrolled) houveMovimento = true;
+      if (sweepSummary.enrolled || sweepSummary.pointers_gated_out || sweepSummary.skipped_existing) {
+        void audit({
+          action: "followup.silence_sweep_run",
+          organizationId: null,
+          bypassedRls: true,
+          metadata: { ...sweepSummary },
+          requestId,
+        });
+      }
+    } catch (err) {
+      // Sweep falhando NUNCA aborta o tick — a resposta abaixo já reflete o
+      // resultado de runFollowupTick, que rodou (e foi auditado) antes disto.
+      const detail = err instanceof Error ? err.message : String(err);
+      logger.error("[followup-flow-worker.cron] runSilenceSweep threw", { error: detail, requestId });
     }
-  } catch (err) {
-    // Sweep falhando NUNCA aborta o tick — a resposta abaixo já reflete o
-    // resultado de runFollowupTick, que rodou (e foi auditado) antes disto.
-    const detail = err instanceof Error ? err.message : String(err);
-    logger.error("[followup-flow-worker.cron] runSilenceSweep threw", { error: detail, requestId });
   }
 
   // Roteiro de atendimento com o prazo vencido (0397). Audita só quando houve
@@ -169,14 +217,30 @@ async function handle(req: NextRequest): Promise<Response> {
   // quem consuma a fila. Sem este dreno o no_reply avança o grafo e a mensagem
   // seguinte fica pending. Teto: jobs sem fixed_body (mode ai_message) continuam
   // precisando do worker.
-  try {
-    await enviarTextoFixoPendente(admin);
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    logger.error("[followup-flow-worker.cron] enviarTextoFixoPendente threw", { error: detail, requestId });
+  if (filaLigada) {
+    try {
+      await enviarTextoFixoPendente(admin);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      logger.error("[followup-flow-worker.cron] enviarTextoFixoPendente threw", { error: detail, requestId });
+    }
   }
 
-  return ok({ ...summary, confirmation_sweep: confirmationSweep }, { requestId });
+  // Depois de TODAS as etapas que criam trabalho — varredura, tick e dreno —,
+  // uma invalidação só cobre a batida inteira: a seguinte relê os recursos e
+  // entra no tick sem esperar a janela vencer.
+  if (houveMovimento) invalidarRetrato();
+
+  return ok(
+    {
+      ...summary,
+      confirmation_sweep: confirmationSweep,
+      // Diz, sem ambiguidade, se a rodada rodou: tick de minuto com três `false`
+      // aqui é "nada ligado nesta instalação", não "o motor falhou calado".
+      recursos: { followup: followupLigado, followup_silencio: silencioLigado, fila_followup: filaLigada },
+    },
+    { requestId },
+  );
 }
 
 /**

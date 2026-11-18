@@ -21,14 +21,19 @@ import { fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { ROLE_RANK, type AuthUser, type Role } from "@/lib/auth/types";
-import { emitLeadActivity } from "@/lib/leads/activity-emitter";
+import { portaDaAplicacao, type Db } from "@/lib/db";
 import { createClient } from "@/lib/supabase/server";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
-vi.mock("@/lib/leads/activity-emitter", () => ({
-  emitLeadActivity: vi.fn(async () => ({ ok: true })),
+// `@/lib/db` é a PORTA do SQL: a conferência da demanda (#2818) e o INSERT da
+// timeline (#3715) não passam mais pelo cliente do Supabase. O dublê da porta
+// consome a MESMA fila de respostas do dublê do PostgREST, na ordem em que a
+// rota chama cada um — é o que mantém este arquivo legível.
+vi.mock("@/lib/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/db")>()),
+  portaDaAplicacao: vi.fn(),
 }));
 // Este teste isola o handler; a autoridade de suporte é exercitada na suíte
 // própria (mesmo recorte de `tarefas-rota-nao-tem-porta-dos-fundos`).
@@ -100,7 +105,26 @@ function fazerSupabase(respostas: Resposta[]) {
     return elo;
   };
   vi.mocked(createClient).mockResolvedValue({ from } as never);
-  return { inseridas, filtros };
+
+  // A PORTA: a régua da demanda e o INSERT da timeline saem por aqui. Ela puxa
+  // da mesma fila, então cada caso continua descrevendo UMA ordem de chamadas.
+  const consultas: Array<{ sql: string; parametros: readonly unknown[] }> = [];
+  const porta: Db = {
+    async query(sql, parametros = []) {
+      consultas.push({ sql, parametros });
+      const r = proxima();
+      if (r.error) throw new Error(r.error.message);
+      return [];
+    },
+    async queryOne(sql, parametros = []) {
+      consultas.push({ sql, parametros });
+      const r = proxima();
+      if (r.error) throw new Error(r.error.message);
+      return (r.data ?? null) as never;
+    },
+  };
+  vi.mocked(portaDaAplicacao).mockReturnValue(porta);
+  return { inseridas, filtros, consultas };
 }
 
 const LINHA = {
@@ -185,9 +209,11 @@ describe("POST /api/v1/tasks — criar a partir da conversa (#2818)", () => {
 
     expect(res.status).toBe(422);
     expect(espiao.inseridas).toHaveLength(0);
-    // A régua é a organização ATIVA da sessão, nunca algo vindo do corpo.
-    expect(espiao.filtros).toContainEqual(["organization_id", ORG]);
-    expect(espiao.filtros).toContainEqual(["id", DEMANDA]);
+    // A régua é a organização ATIVA da sessão, nunca algo vindo do corpo — e
+    // agora ela vai por PARÂMETRO vinculado no SQL, não por `.eq` do PostgREST.
+    const regua = espiao.consultas.find((c) => c.sql.includes("from demandas"));
+    expect(regua?.sql).toContain("organization_id = $1");
+    expect(regua?.parametros).toEqual([ORG, DEMANDA]);
   });
 
   it("⭐ demanda ENCERRADA é recusada com 409, e nada é gravado (#2842)", async () => {
@@ -290,8 +316,9 @@ describe("PATCH /api/v1/tasks/[id] — vincular e desvincular (#2818)", () => {
     const res = await PATCH(patch({ demanda_id: DEMANDA }), ctx);
 
     expect(res.status).toBe(422);
-    expect(espiao.filtros).toContainEqual(["organization_id", ORG]);
-    expect(espiao.filtros).toContainEqual(["id", DEMANDA]);
+    const regua = espiao.consultas.find((c) => c.sql.includes("from demandas"));
+    expect(regua?.sql).toContain("organization_id = $1");
+    expect(regua?.parametros).toEqual([ORG, DEMANDA]);
     expect(vi.mocked(audit)).not.toHaveBeenCalled();
   });
 

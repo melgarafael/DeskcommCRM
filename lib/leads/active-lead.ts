@@ -14,6 +14,14 @@ export interface LeadCandidate {
   /** ISO; null quando o lead nunca teve atividade. */
   last_activity_at: string | null;
   created_at: string;
+  /**
+   * Como o contato chega a este negócio (#3669). `principal` é
+   * `crm_leads.contact_id`; `relacionado` é a lista "Pessoas relacionadas"
+   * (`crm_lead_links`, `target_kind='contact'`, `link_kind='related'`, #3083).
+   * Ausente vale `principal`: é o que todo chamador anterior a este campo
+   * entrega, e por isso nenhum deles muda de comportamento.
+   */
+  via?: "principal" | "relacionado";
 }
 
 export type ActiveLeadResolution =
@@ -39,13 +47,22 @@ export type ActiveLeadResolution =
  * Mover o card errado do cliente errado é o único bug desta entrega visível
  * para o cliente final — não-roteado é barulho no log, roteado errado é dano.
  * Por isso "empatou" é ambíguo, e não "escolhe o primeiro".
+ *
+ * PESSOA RELACIONADA (#3669): o comprador ou o fixo da loja, ligado ao negócio
+ * do cliente pela lista "Pessoas relacionadas", também acha o negócio — é assim
+ * que a ligação do segundo número cai no card certo. Mas o negócio em que o
+ * contato é PRINCIPAL sempre vence: o relacionado só entra na conta quando não
+ * há nenhum aberto como principal. Assim, quem já tinha um negócio próprio
+ * continua exatamente como antes, e ninguém que não usa a lista muda nada.
  */
 export function resolveActiveLeadForContact(
   candidates: LeadCandidate[],
   opts: { defaultPipelineId?: string | null } = {},
 ): ActiveLeadResolution {
   assertMesmaOrg(candidates);
-  const abertos = candidates.filter((c) => c.status === "open");
+  const todosAbertos = semRepetir(candidates.filter((c) => c.status === "open"));
+  const comoPrincipal = todosAbertos.filter((c) => c.via !== "relacionado");
+  const abertos = comoPrincipal.length > 0 ? comoPrincipal : todosAbertos;
 
   if (abertos.length === 0) {
     return { routed: false, reason: "no_open_lead", candidateIds: [] };
@@ -108,6 +125,21 @@ function assertMesmaOrg(candidates: LeadCandidate[]): void {
         `(${[...orgs].join(", ")}). A lista tem de vir filtrada por organization_id.`,
     );
   }
+}
+
+/**
+ * O mesmo negócio duas vezes (principal E relacionado) conta uma vez só, como
+ * principal. A rota da lista recusa o principal como participante, mas o
+ * principal do negócio pode mudar depois do vínculo; sem isto, a cópia
+ * empataria consigo mesma e o roteamento viraria "ambíguo" por nada.
+ */
+function semRepetir(candidates: LeadCandidate[]): LeadCandidate[] {
+  const porId = new Map<string, LeadCandidate>();
+  for (const c of candidates) {
+    const visto = porId.get(c.id);
+    if (!visto || (visto.via === "relacionado" && c.via !== "relacionado")) porId.set(c.id, c);
+  }
+  return [...porId.values()];
 }
 
 /** Quando este negócio se mexeu pela última vez (cai para a criação). */

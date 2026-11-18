@@ -9,7 +9,7 @@
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
-import { fail } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { auditQuerySchema } from "@/lib/schemas/audit";
@@ -90,6 +90,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   let acabou = false;
   for (let pagina = 0; rows.length < TETO_DO_EXPORT && !acabou; pagina++) {
     const inicio = rows.length;
+    const ultima = rows[inicio - 1];
     let query = supabase
       .from("api_audit_log")
       .select(COLUNAS, pagina === 0 ? { count: "exact" } : undefined)
@@ -103,11 +104,19 @@ export async function GET(req: NextRequest): Promise<Response> {
     if (q.from) query = query.gte("created_at", q.from);
     if (q.to) query = query.lte("created_at", q.to);
 
+    // Um evento novo no topo não desloca a página seguinte. A continuação
+    // parte da última chave lida, com ID como desempate para a mesma data.
+    if (ultima) {
+      query = query.or(
+        `created_at.lt.${ultima.created_at},and(created_at.eq.${ultima.created_at},id.lt.${ultima.id})`,
+      );
+    }
+
     // `range` fecha a cadeia (dispara a requisição) — depois dele só o `await`.
     // A última página pede só o que falta até o teto: com `max_rows` menor que a
     // página, uma faixa cheia passaria das 10.000 (10.200 com `max_rows` 300).
     const pedaco = Math.min(TAMANHO_DA_PAGINA, TETO_DO_EXPORT - inicio);
-    query = query.range(inicio, inicio + pedaco - 1);
+    query = query.range(0, pedaco - 1);
 
     const { data, error, count } = await query;
     if (error) return fail("internal_error", error.message, 500, { requestId });
@@ -136,12 +145,12 @@ export async function GET(req: NextRequest): Promise<Response> {
     );
   }
   const csv = lines.join("\n") + "\n";
-  return new Response(csv, {
+  return comIdDaRequisicao(new Response(csv, {
     status: 200,
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": `attachment; filename="audit-${new Date().toISOString().slice(0, 10)}.csv"`,
       "X-Request-Id": requestId,
     },
-  });
+  }), requestId);
 }

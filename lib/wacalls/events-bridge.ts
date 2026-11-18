@@ -17,6 +17,9 @@ import type pg from 'pg';
 import { phoneLookupVariants } from '@/lib/channels/phone-variants';
 import { emitAgentActivityForContact } from '@/lib/leads/agent-activity';
 import { motivoDaChamadaEmPortugues } from '@/lib/wacalls/motivo-da-chamada';
+import { traduzir } from '@/lib/i18n/dicionario';
+import { preencher } from '@/lib/i18n/idioma-do-aviso';
+import { fatosDaOrganizacao } from '../agent-engine/agent/fatos-da-organizacao';
 
 import type { Logger } from '../agent-engine/obs/logger';
 
@@ -134,12 +137,22 @@ function donoValido(owner: unknown): string | null {
  * idêntica ao peer vence, para dois cadastros duplicados não sortearem.
  */
 const CONTATO_DO_PEER = (org: string, peer: string, variantes: string) => `
+  coalesce(
   (select id from contacts
     where organization_id = ${org}
       and (phone_number = any(${variantes}::text[]) or wa_lid = ${peer})
       and is_merged_into is null
     order by (phone_number = '+' || ${peer}) desc
-    limit 1)`;
+    limit 1),
+  -- Sem principal com o número: a ficha que o tem como EXTRA (\`contact_phones\`).
+  -- As variantes servem de chave sem risco: extra é sempre na forma canônica
+  -- (CHECK da tabela), então a grafia sem o nono nunca casa extra nenhum.
+  (select cp.contact_id from contact_phones cp
+     join contacts c on c.id = cp.contact_id and c.organization_id = cp.organization_id
+    where cp.organization_id = ${org}
+      and cp.phone_number = any(${variantes}::text[])
+      and c.is_merged_into is null
+    limit 1))`;
 
 /** `5511999999999@s.whatsapp.net` → `5511999999999`. JID sem o domínio. */
 function peerToPhone(jid: string): string {
@@ -433,14 +446,19 @@ async function handleCallEnded(
       answered: atendida,
     });
   }
+  // A Central e a linha do tempo mostram o texto como foi gravado: aviso e
+  // atividade nascem no idioma da organização. `fatosDaOrganizacao` nunca
+  // lança — no pior caso, português. Só lê quando algo vai ser escrito.
+  const vaiEscrever = (!atendida && recebida && !bloqueado) || (row.contact_id && !(bloqueado && recebida && !atendida));
+  const { idioma } = vaiEscrever ? await fatosDaOrganizacao(pool, sess.organizationId) : { idioma: 'pt-BR' as const };
   if (!atendida && recebida && !bloqueado) {
     await pool.query(
       `insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
        values ($1, 'voice_call_missed', 'warn', $2, $3, $4, $5)`,
       [
         sess.organizationId,
-        `Chamada perdida de ${row.peer_phone}`,
-        motivoDaChamadaEmPortugues(ev.reason),
+        preencher(traduzir('Chamada perdida de {telefone}', idioma), { telefone: row.peer_phone }),
+        motivoDaChamadaEmPortugues(ev.reason, idioma),
         row.contact_id ? 'contact' : null,
         row.contact_id,
       ],
@@ -487,10 +505,14 @@ async function handleCallEnded(
       // `fn_update_last_activity_at`: ninguém falou com ninguém.
       type: atendida ? 'voice_call' : recebida ? 'voice_call_missed' : 'voice_call_unanswered',
       reason: atendida
-        ? 'Chamada de voz atendida'
+        ? traduzir('Chamada de voz atendida', idioma)
         : recebida
-          ? `Chamada de voz perdida — ${motivoDaChamadaEmPortugues(ev.reason)}`
-          : `Chamada de voz sem resposta — ${motivoDaChamadaEmPortugues(ev.reason)}`,
+          ? preencher(traduzir('Chamada de voz perdida — {motivo}', idioma), {
+              motivo: motivoDaChamadaEmPortugues(ev.reason, idioma),
+            })
+          : preencher(traduzir('Chamada de voz sem resposta — {motivo}', idioma), {
+              motivo: motivoDaChamadaEmPortugues(ev.reason, idioma),
+            }),
       sourceModule: 'voice_calls',
       sourceId: row.id,
       // Quem atendeu assina. Sem isto a linha caía em `webhook_source` →

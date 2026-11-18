@@ -195,3 +195,52 @@ describe("fn_uso_de_ia não atravessa organização", () => {
     expect(autenticado).toBe("t");
   });
 });
+
+/**
+ * O FOLLOW-UP CONTINUA CONTANDO COMO TURNO (migration 9097, #3897).
+ *
+ * O #3897 deu ao follow-up o ponto de IA `followup_turn`: a chamada principal do
+ * job de follow-up passa a gravar `purpose = 'followup_turn'`, com ou sem modelo
+ * escolhido no painel. Contando só `agent_turn`, o follow-up sumia calado do
+ * cartão "Turnos do agente" e do custo médio por turno. Organização própria para
+ * não mexer nos totais dos casos acima. O `kind` do job é `watchdog` como lá: a
+ * função lê só `llm_calls.purpose`, e `followup_turn` em `job_queue` exigiria
+ * contato (`job_queue_turn_needs_contact`) sem mudar nada do que se mede.
+ */
+describe("fn_uso_de_ia conta o follow-up como turno", () => {
+  const ORG_C = randomUUID();
+  const RESPOSTA = randomUUID();
+  const FOLLOWUP = randomUUID();
+  const FOLLOWUP_QUE_FALHOU = randomUUID();
+
+  beforeAll(() => {
+    sql(`
+      insert into organizations (id, slug, legal_name, display_name)
+        values ('${ORG_C}', 'uso-ia-c-${ORG_C}', 'Uso C', 'Uso C');
+      insert into job_queue (id, organization_id, kind) values
+        ('${RESPOSTA}', '${ORG_C}', 'watchdog'), ('${FOLLOWUP}', '${ORG_C}', 'watchdog'),
+        ('${FOLLOWUP_QUE_FALHOU}', '${ORG_C}', 'watchdog');
+      insert into llm_calls (organization_id, job_id, purpose, provider, model, cost_cents, latency_ms, status, created_at) values
+        ('${ORG_C}', '${RESPOSTA}', 'agent_turn', 'anthropic', 'claude-x', 10, 1500, 'ok', '2026-08-02T12:00:00Z'),
+        ('${ORG_C}', '${FOLLOWUP}', 'followup_turn', 'openrouter', 'modelo-barato', 12, 1500, 'ok', '2026-08-02T13:00:00Z'),
+        ('${ORG_C}', '${FOLLOWUP}', 'classify', 'anthropic', 'claude-x', 3, 300, 'ok', '2026-08-02T13:00:01Z'),
+        ('${ORG_C}', '${FOLLOWUP_QUE_FALHOU}', 'followup_turn', 'openrouter', 'modelo-barato', null, 900, 'erro', '2026-08-02T14:00:00Z');
+    `);
+  });
+
+  afterAll(() => {
+    sql(`delete from organizations where id = '${ORG_C}';`);
+  });
+
+  it("o job com followup_turn ok é turno, e o custo dele (o job inteiro) entra na média", () => {
+    const uso = usoComo("dono", ORG_C);
+    expect(uso.totais.turnos).toBe(2);
+    expect(uso.totais.custo_dos_turnos_cents).toBe(10 + 12 + 3);
+  });
+
+  it("o custo por ponto continua separado: followup_turn tem linha própria", () => {
+    const uso = usoComo("dono", ORG_C);
+    const porPurpose = Object.fromEntries(uso.purposes.map((p) => [p.purpose, p.chamadas]));
+    expect(porPurpose).toEqual({ agent_turn: 1, classify: 1, followup_turn: 2 });
+  });
+});

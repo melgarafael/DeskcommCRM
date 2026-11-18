@@ -1,3 +1,5 @@
+import { PORTAS_DE_TOKEN } from "@/lib/auth/portas-de-token";
+
 /**
  * Paths that bypass auth check in middleware.
  * Match precedence: array order. First match wins.
@@ -26,6 +28,12 @@ export const PUBLIC_PATHS: RegExp[] = [
   // Retorno de OAuth social: documento público sem efeitos que reconecta a
   // navegação interna para manter os cookies de sessão sob SameSite=Strict.
   /^\/auth\/social-return$/,
+  // Volta da página de cadastro do provedor parceiro (conexão do número por um
+  // clique): mesma natureza da linha acima — documento sem efeito que só repassa
+  // à tela autenticada. O segmento é o estado assinado, no formato exato de
+  // `FORMATO_DO_ESTADO` (lib/channels/estado-da-volta.ts): nenhum outro sub-path
+  // nasce público de carona.
+  /^\/auth\/partner-return\/[A-Za-z0-9_-]{20,600}\.[0-9a-f]{64}$/,
   // Volta do provedor de pagamento (checkout, portal): mesma natureza da linha
   // acima — vem de outro site, o cookie Strict não viaja, e a rota é só a ponte
   // para um destino FIXO (`app/cobranca/volta/route.ts`), sem efeito.
@@ -75,6 +83,14 @@ export const PUBLIC_PATHS: RegExp[] = [
   // Ancorados com `$` de propósito — `/^\/api\/v1\/agenda\/google\// deixaria
   // qualquer sub-path futuro nascer público de carona.
   /^\/api\/v1\/agenda\/google\/callback$/,
+  // OAuth POR CONTATO de servidor MCP externo (migration 9095). Quem chega é o
+  // navegador do CLIENTE FINAL — nunca teve sessão nossa. A autoridade é o
+  // `state` de `mcp_oauth_pedidos` (256 bits, uso único, 10 min, amarrado a
+  // organização/servidor/contato/conversa), conferido DENTRO das rotas; nada
+  // da URL escolhe tenant. `iniciar` aceita um segmento só, em forma de state;
+  // `callback` um só, em forma de UUID (o servidor, conferido contra o state).
+  /^\/api\/v1\/mcp-oauth\/callback\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+  /^\/api\/v1\/mcp-oauth\/iniciar\/[A-Za-z0-9_-]{43}$/,
   // Volta do consentimento do Google Ads. Mesma natureza das duas linhas
   // acima: a identidade vem do `state` assinado
   // (`lib/plataformas-de-anuncio/google/estado.ts`), não da sessão — quem
@@ -82,7 +98,19 @@ export const PUBLIC_PATHS: RegExp[] = [
   /^\/api\/v1\/plataformas-de-anuncio\/google\/callback$/,
   /^\/api\/v1\/integrations\/nuvemshop\/callback$/,
   /^\/api\/internal\//,
+  // `/api/mcp` e o OAuth dele (`/api/mcp/oauth/{register,authorize,token,revoke}`,
+  // migration 9390): bearer ou nenhuma sessão por natureza. A autoridade mora
+  // dentro de cada rota — `dsk_` hasheado no MCP, PKCE e código de uso único no
+  // token, cliente autenticado na revogação. O `authorize` só confere o pedido
+  // e passa pela ponte same-origin até `/oauth/mcp/consentir`, que NÃO é
+  // pública: é lá que a sessão de quem administra a organização decide.
   /^\/api\/mcp(\/.*)?$/,
+  // Descoberta do OAuth do MCP (RFC 9728 e RFC 8414): documentos estáticos,
+  // sem banco e sem dado de organização. Sem estas linhas o proxy devolveria
+  // 307 para /login ao cliente de MCP, que lê isso como "não há OAuth aqui".
+  // Ancorados: só os dois documentos e a forma com o caminho do recurso.
+  /^\/\.well-known\/oauth-protected-resource(\/api\/mcp)?$/,
+  /^\/\.well-known\/oauth-authorization-server$/,
   // GET /api/v1/contacts aceita SESSÃO ou Bearer `dsk_...` (api_tokens) — a
   // MESMA dualidade de `/api/mcp` acima. Sem esta entrada, o proxy responde
   // 401 antes de o Bearer chegar à rota, porque `getUser()` aqui só enxerga
@@ -147,6 +175,19 @@ export const PUBLIC_PATHS: RegExp[] = [
   // cartão de fidelidade (a única das automações que não é texto) não teria
   // como sair depois do corte de gateway.
   /^\/api\/v1\/conversations\/[^/]+\/media$/,
+  // CONSUMIR RASCUNHO SUGERIDO SERVER-TO-SERVER. Mesma dualidade da linha
+  // acima: sessão OU Bearer `dsk_…` com escopo `mcp:write`, resolvidos por
+  // `lib/api/auth-dual.ts` DENTRO da rota
+  // (`app/api/v1/conversations/[id]/drafts/consume/route.ts`). O id é uma
+  // FORMA DE UUID, nunca `[^/]+` — `conversations/abc/drafts/consume` não
+  // entra aqui nem de carona.
+  /^\/api\/v1\/conversations\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/drafts\/consume$/i,
+  // ANEXO DA NOTA INTERNA SERVER-TO-SERVER. Mesma dualidade da rota irmã
+  // `media`: sessão OU Bearer `dsk_…`, resolvidos por `lib/api/auth-dual.ts`
+  // DENTRO da rota
+  // (`app/api/v1/conversations/[id]/notes/media/route.ts`). O id é uma FORMA
+  // DE UUID, nunca `[^/]+`.
+  /^\/api\/v1\/conversations\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/notes\/media$/i,
   // CONFIGURAÇÃO DE IA, FOLLOW-UP E AGENDA SERVER-TO-SERVER (issue #1875).
   // Mesma dualidade das linhas acima: sessão OU Bearer `dsk_…`, resolvidos por
   // `lib/api/auth-dual.ts` DENTRO de cada rota (a org sai da linha do token e
@@ -168,6 +209,12 @@ export const PUBLIC_PATHS: RegExp[] = [
   // A configuração de serviços valida sessão/Bearer e papel na própria rota.
   // Só este endpoint: nenhum sub-path futuro herda a passagem pela borda.
   /^\/api\/v1\/agenda\/servicos$/,
+  // ATUALIZAR FONTES DO SERVIÇO SERVER-TO-SERVER. Mesma dualidade das linhas
+  // acima: sessão OU Bearer `dsk_…`, resolvidos por `lib/api/auth-dual.ts`
+  // DENTRO da rota (`app/api/v1/agenda/servicos/atualizar/route.ts`). O
+  // segmento `atualizar` é literal, então sem `$` um sub-path futuro
+  // (`/atualizar/x`) entraria por engano — âncora de propósito.
+  /^\/api\/v1\/agenda\/servicos\/atualizar$/,
   // VERSÃO, PUBLICAÇÃO E TESTE DO AGENTE SERVER-TO-SERVER (issue #2052).
   // Mesma dualidade das linhas acima: sessão OU Bearer `dsk_…`, resolvidos por
   // `lib/api/auth-dual.ts` DENTRO de cada rota (a org sai da linha do token e
@@ -192,6 +239,13 @@ export const PUBLIC_PATHS: RegExp[] = [
   /^\/api\/v1\/ai\/routers\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
   /^\/api\/v1\/ai\/routers\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/members$/i,
   /^\/api\/v1\/ai\/routers\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/test$/i,
+  // AS ROTAS DAS FATIAS R DA SPEC 33 (configuração, operação, leitura). Mesma
+  // dualidade das linhas acima: sessão OU Bearer `dsk_…`, resolvidos por
+  // `lib/api/auth-dual.ts` DENTRO de cada rota, com a organização saindo da
+  // linha do token. Os modelos ficam em `lib/auth/portas-de-token/`, um arquivo
+  // por fatia, no formato do caminho da pasta; `portaDeToken` monta cada um
+  // ancorado nos dois lados e com o segmento dinâmico em forma de UUID.
+  ...PORTAS_DE_TOKEN,
   /^\/_next\//,
   /^\/favicon\.ico$/,
   // O ícone da aba (`app/icon.tsx`), que o `<head>` de TODA página pede —

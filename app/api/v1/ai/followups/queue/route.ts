@@ -177,7 +177,23 @@ export async function GET(req: NextRequest): Promise<Response> {
       .or(`name.ilike.%${safeQ}%,display_name.ilike.%${safeQ}%,phone_number.ilike.%${safeQ}%`)
       .limit(500); // ponytail: fila é escala MVP; sobe se virar hot path
     if (cErr) return fail("internal_error", cErr.message, 500, { requestId });
-    contactIds = (matches ?? []).map((m) => m.id);
+    // Ficha cujo telefone EXTRA casa o termo também entra: a busca acima olha só o
+    // principal. Mesmo critério de texto, filtrado por organização e pela lápide.
+    const { data: extras, error: eErr } = await supabase
+      .from("contact_phones")
+      .select("contact_id, contacts!inner(id)")
+      .eq("organization_id", activeOrg.orgId)
+      .eq("contacts.organization_id", activeOrg.orgId)
+      .is("contacts.is_merged_into", null)
+      .ilike("phone_number", `%${safeQ}%`)
+      .limit(500);
+    if (eErr) return fail("internal_error", eErr.message, 500, { requestId });
+    contactIds = [
+      ...new Set([
+        ...(matches ?? []).map((m) => m.id),
+        ...((extras ?? []) as { contact_id: string }[]).map((r) => r.contact_id),
+      ]),
+    ];
     if (contactIds.length === 0) {
       return ok<QueueRow[]>([], { requestId, meta: { cursor: null, has_more: false } });
     }

@@ -9,22 +9,27 @@ import {
   resolveActiveOrg,
 } from "@/lib/auth/server";
 import { DEFAULT_VISIBILITY_MODE, roleAtLeast, type VisibilityMode } from "@/lib/auth/types";
-import { clientePelaAgendaLigado } from "@/lib/schemas/settings";
+import { clientePelaAgendaLigado, clientePelaVendaLigado } from "@/lib/schemas/settings";
 import { AuthProvider } from "@/hooks/auth/AuthProvider";
 import { ProvedorDeCoresDasEtiquetas } from "@/components/tags/CoresDasEtiquetas";
 import { AppShell } from "./_components/AppShell";
 import { EstiloDaMarcaDaOrganizacao } from "./_components/EstiloDaMarcaDaOrganizacao";
 import { EstiloDoTemaDaExtensao } from "./_components/EstiloDoTemaDaExtensao";
+import { EstiloDaAparencia } from "./_components/EstiloDaAparencia";
+import "./aparencia.css";
 import { MfaEnrollGate } from "@/components/auth/MfaEnrollGate";
 import { cssDaMarca, ESCOPO_DA_ORGANIZACAO } from "@/lib/branding/css";
 import { cssDaExtensaoDeTema, linhaBrutaDeTema, temaAplicavel } from "@/lib/extensions/tema";
 import { marcaDaInstalacao } from "@/lib/branding/instalacao";
 import { resolverMarcaDaOrganizacao } from "@/lib/branding/organizacao";
+import { AJUSTES_PADRAO, aparenciaDeSettings, atributosDaAparencia, type Aparencia } from "@/lib/aparencia/ajustes";
+import { cssDaAparenciaDaOrganizacao } from "@/lib/aparencia/css";
 import { env } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { modulosLigados } from "@/lib/instalacao/modulos";
 import { capacidadesLigadas } from "@/lib/organizacao/capacidades";
+import { telefoniaEmUso } from "@/lib/telefonia/em-uso";
 import { ehOperante } from "@/lib/organizacao/operante";
 import {
   ImpersonateBanner,
@@ -73,6 +78,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // O tema de extensão, se a organização escolheu um. `null` = quem não
   // escolheu — e aí o `EstiloDoTemaDaExtensao` não renderiza nada.
   let cssDoTemaDaExtensao: string | null = null;
+  // A tela Aparência: template e ajustes, do MESMO `settings` lido abaixo.
+  let aparencia: Aparencia = AJUSTES_PADRAO;
+  let cssDaAparencia: string | null = null;
 
   // EPIC-02: gate /app/* on completed onboarding.
   // EPIC-11: gate /app/* on org not being suspended (S-11.08).
@@ -138,7 +146,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
      *    aplica. Vigiado por
      *    `tests/unit/faixa-respeita-os-canais-do-atendente.test.tsx`.
      */
-    const [orgRes, conexoes, isEnrolled, mfaRequired, modulos] = await Promise.all([
+    const [orgRes, conexoes, isEnrolled, mfaRequired, modulos, telefonia] = await Promise.all([
       admin
         .from("organizations")
         .select("onboarded_at, status, settings, timezone")
@@ -152,8 +160,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         user.id,
         activeOrg.orgId,
       ),
-      // Da INSTALAÇÃO: decide se a porta de um módulo opcional entra no menu.
-      modulosLigados(admin),
+      // Da INSTALAÇÃO, com a exceção DESTA empresa (#3868): decide se a porta de
+      // um módulo opcional entra no menu. Sem linha da empresa = herda a instalação.
+      modulosLigados(admin, activeOrg.orgId),
+      // Da ORGANIZAÇÃO (#1290): a telefonia não tem chave de instalação que o app
+      // leia — o que se mede é o tronco SIP que esta empresa salvou. Entra no
+      // mesmo `Promise.all`, então custa a consulta mais lenta, não uma espera.
+      telefoniaEmUso(admin, activeOrg.orgId),
     ]);
 
     const orgRow = orgRes.data;
@@ -179,9 +192,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       visibility_mode: mode ?? DEFAULT_VISIBILITY_MODE,
       // Mesma linha de `settings` já lida acima — nenhuma consulta a mais.
       cliente_pela_agenda: clientePelaAgendaLigado(orgRow?.settings),
+      // #3644 — a regra da venda também decide se o funil de clientes está em
+      // uso: o menu e o selo do quadro não podem sumir de uma organização que
+      // roteia por ela. Mesma linha de `settings`, nenhuma consulta a mais.
+      cliente_pela_venda: clientePelaVendaLigado(orgRow?.settings),
       modulos_ligados: modulos,
       // Mesma linha de `settings` já lida acima — nenhuma consulta a mais.
-      capacidades_ligadas: capacidadesLigadas(orgRow?.settings, modulos),
+      capacidades_ligadas: capacidadesLigadas(orgRow?.settings, modulos, telefonia),
     };
 
     // A faixa do teste grátis (spec da cobrança §9): uma consulta a mais SÓ com
@@ -226,6 +243,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       // os motivos para quem pode consertá-los — o admin daquela organização.
       cssDaOrganizacao = cssDaMarca(marca.cor, ESCOPO_DA_ORGANIZACAO).css;
     }
+
+    // A cor que a empresa definiu na tela Marca vence a cor de ação do template.
+    aparencia = aparenciaDeSettings(orgRow?.settings);
+    cssDaAparencia = cssDaAparenciaDaOrganizacao(aparencia, marca.origens.cor === "organizacao");
 
     cssDoTemaDaExtensao = await temaDaExtensao;
 
@@ -276,7 +297,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const collapsed = store.get("sidebar_collapsed")?.value === "1";
 
   const impersonating = user.support ? {
-    tenantId: user.support.organization_id, tenantName: user.support.name,
+    agencyId: user.support.agency_id, tenantId: user.support.organization_id, tenantName: user.support.name,
     expiresAt: user.support.expires_at, accessMode: user.support.access_mode,
   } : null;
 
@@ -333,7 +354,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         veria a tela de cadastro de MFA — a PRIMEIRA tela dele — com a cor da
         instalação, e depois o resto do produto com a dele.
       */}
-      <div data-marca-org="" className="contents">
+      <div data-marca-org="" {...atributosDaAparencia(aparencia)} className="contents">
+        <EstiloDaAparencia css={cssDaAparencia} />
         <EstiloDaMarcaDaOrganizacao css={cssDaOrganizacao} />
         <EstiloDoTemaDaExtensao css={cssDoTemaDaExtensao} />
         {/* As faixas medidas: a casca e o Inbox descontam a altura delas. */}
