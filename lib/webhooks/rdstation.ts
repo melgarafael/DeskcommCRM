@@ -28,6 +28,10 @@
  *
  * Só a RECEPÇÃO do webhook. NÃO integra com a API do RD Station.
  *
+ * As RESPOSTAS do formulário (o conteúdo das conversões) chegam ao card pelo
+ * mesmo mapeador e pelo mesmo `field_map` de um envio plano — ver
+ * `camposDoFormularioDoRd` e `mapRdStationPayload`.
+ *
  * ═══ BATCH ═══
  *
  * O RD real observado manda 1 item em `leads[]`. Este módulo lê o PRIMEIRO
@@ -35,8 +39,12 @@
  * (`webhooks/in/[token]`) cria 1 lead por request; suportar N exigiria mudança
  * estrutural na rota. Documentado no checkpoint.
  */
-import type { MappedLead } from "@/lib/webhooks/inbound";
-import { ehChaveDeAnuncio, normalizePhoneBR } from "@/lib/webhooks/inbound";
+import type { FieldMap, MappedLead } from "@/lib/webhooks/inbound";
+import {
+  ehChaveDeAnuncio,
+  mapInboundPayload,
+  normalizePhoneBR,
+} from "@/lib/webhooks/inbound";
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -116,16 +124,144 @@ export function isRdStationPayload(payload: unknown): payload is RdStationPayloa
 
 export interface RdStationMapped extends MappedLead {
   externalId: string | null;
+  /**
+   * As respostas do formulário, já achatadas e sem as chaves técnicas do RD
+   * (`camposDoFormularioDoRd`). É o equivalente, no envelope, ao corpo plano de
+   * um envio genérico — e é o que a rota passa para a tipagem dos campos
+   * configurados na fonte (`normalizarCamposNumericos`).
+   */
+  camposDoFormulario: Record<string, unknown>;
+}
+
+/**
+ * Chaves que o PRÓPRIO RD Station põe no conteúdo da conversão e que não são
+ * resposta de ninguém: identificador e endereço da conversão, token da conta,
+ * rastreio de tráfego e de navegador. Comparadas em minúsculas.
+ *
+ * Também entram aqui as chaves de onde `mapRdStationPayload` já tirou a
+ * IDENTIDADE (`Nome`, `email_lead`, `Celular`, `phone_lead`): o caminho genérico
+ * também não repete no card a chave que virou nome, telefone ou e-mail.
+ *
+ * Lista NOMEADA e FECHADA, na mesma postura de `CHAVES_DE_PLATAFORMA`
+ * (`inbound.ts`): um formulário pode ter um campo legítimo com qualquer outro
+ * nome, e descartá-lo em silêncio seria perder dado de cliente. O que ficar de
+ * fora da lista por engano aparece no card e no histórico, onde se vê; o que
+ * entrasse nela por engano sumiria sem rastro.
+ *
+ * `external_id` e `stage` são os campos RESERVADOS do contrato genérico (#2316):
+ * no envio plano eles saem do mapeamento antes de virar campo do card, e aqui
+ * também. No RD eles NÃO pedem nada — a idempotência do envelope é o
+ * `rdstation:evt|lead` e a etapa reservada só é lida do corpo de topo.
+ */
+export const CHAVES_TECNICAS_DO_RD: ReadonlySet<string> = new Set([
+  // identidade, já lida por `mapRdStationPayload`
+  "nome",
+  "email_lead",
+  "celular",
+  "phone_lead",
+  // a conversão e a conta
+  "identificador",
+  "conversion_identifier",
+  "conversion_url",
+  "event_type",
+  "token_rdstation",
+  "created_at",
+  // rastreio de tráfego e de navegador
+  "traffic_source",
+  "traffic_medium",
+  "traffic_campaign",
+  "traffic_value",
+  "user_agent",
+  "client_id",
+  "client_tracking_id",
+  "c_utmz",
+  // reservados do contrato genérico
+  "external_id",
+  "stage",
+]);
+
+/** Prefixo dos blocos internos do RD (`__cdp__original_event` e afins). */
+const PREFIXO_INTERNO_DO_RD = "__";
+
+function ehChaveTecnicaDoRd(chave: string): boolean {
+  const k = chave.trim().toLowerCase();
+  return k.startsWith(PREFIXO_INTERNO_DO_RD) || CHAVES_TECNICAS_DO_RD.has(k);
+}
+
+/**
+ * As respostas do formulário que chegaram no envelope, num objeto PLANO — a
+ * mesma forma de um envio genérico, para passar pelo mesmo mapeador.
+ *
+ * ─── De onde, e quem vence ───────────────────────────────────────────────────
+ *
+ * Três camadas, da mais fraca para a mais forte:
+ *
+ * 1. `leads[0].custom_fields` — os campos personalizados da ficha do lead no RD;
+ * 2. `first_conversion.content` — a primeira conversão;
+ * 3. `last_conversion.content` — a conversão que DISPAROU este webhook, e por
+ *    isso a resposta mais recente da pessoa.
+ *
+ * Uma camada só sobrepõe a anterior com VALOR: vazio ou ausente na última
+ * conversão quer dizer "não perguntado desta vez", não "apague".
+ *
+ * ─── O que não entra ─────────────────────────────────────────────────────────
+ *
+ * As chaves técnicas (`CHAVES_TECNICAS_DO_RD`, prefixo `__`) e todo valor que
+ * não seja texto, número ou booleano — objeto e lista aninhados são
+ * descartados, como no genérico. O resto vai como chegou, com a chave original
+ * (acentos e espaços inclusive): quem decide nome de campo, tipagem e destino é
+ * o mapeador genérico, não este módulo.
+ */
+export function camposDoFormularioDoRd(payload: unknown): Record<string, unknown> {
+  const lead = primeiroLead(payload) ?? {};
+  const camadas = [
+    isRecord(lead.custom_fields) ? lead.custom_fields : {},
+    conversaoContent(lead, "first_conversion"),
+    conversaoContent(lead, "last_conversion"),
+  ];
+  const campos: Record<string, unknown> = {};
+  for (const camada of camadas) {
+    for (const [chave, valor] of Object.entries(camada)) {
+      if (ehChaveTecnicaDoRd(chave)) continue;
+      if (typeof valor === "string") {
+        if (!valor.trim()) continue;
+      } else if (typeof valor !== "number" && typeof valor !== "boolean") {
+        continue;
+      }
+      campos[chave] = valor;
+    }
+  }
+  return campos;
 }
 
 /**
  * Extrai identidade + metadados seguros do envelope RD. Puro, sem I/O.
  * Reusa `normalizePhoneBR` — o telefone chega mascarado ("+55 (32) 9922-8971").
+ *
+ * ─── As respostas do formulário ──────────────────────────────────────────────
+ *
+ * Até aqui só a identidade e os `rd_*` chegavam ao card; as respostas do
+ * formulário (orçamento, cidade preferida, o aceite da política)
+ * ficavam no envelope e se perdiam. Agora elas saem achatadas
+ * (`camposDoFormularioDoRd`) e passam pelo MESMO `mapInboundPayload` de um envio
+ * plano, com o `field_map` da fonte: mesma regra de chave, mesma ida de `utm_*`
+ * e das chaves de anúncio para `source_metadata`, mesmo descarte das chaves de
+ * plataforma. Um mapeador só — um segundo, escrito aqui, divergiria do genérico
+ * na primeira mudança.
+ *
+ * A IDENTIDADE continua sendo a do RD (`lead.name`, `mobile_phone`…): o nome,
+ * o telefone e o e-mail que o mapeador genérico achar nas respostas NÃO a
+ * substituem — só saem do card, como saem no envio plano.
  */
-export function mapRdStationPayload(payload: unknown): RdStationMapped {
+export function mapRdStationPayload(
+  payload: unknown,
+  fieldMap: FieldMap = {},
+): RdStationMapped {
   const lead = primeiroLead(payload) ?? {};
   const first = conversaoContent(lead, "first_conversion");
   const last = conversaoContent(lead, "last_conversion");
+  const camposDoFormulario = camposDoFormularioDoRd(payload);
+  const doFormulario = mapInboundPayload(camposDoFormulario, fieldMap);
 
   const name = str(lead.name) ?? str(last.Nome) ?? str(first.Nome);
   const email =
@@ -137,7 +273,9 @@ export function mapRdStationPayload(payload: unknown): RdStationMapped {
     str(first.Celular) ??
     str(lead.phone);
 
-  const custom_fields: Record<string, string> = {};
+  // As respostas primeiro; os `rd_*` por cima — são a prova de origem do card e
+  // não podem ser sobrescritos por um campo de formulário de mesmo nome.
+  const custom_fields: Record<string, string> = { ...doFormulario.custom_fields };
   const setCf = (k: string, v: string | null): void => {
     if (v !== null) custom_fields[k] = v;
   };
@@ -170,9 +308,23 @@ export function mapRdStationPayload(payload: unknown): RdStationMapped {
     phone: normalizePhoneBR(phoneRaw),
     email,
     custom_fields,
-    source_metadata: chavesDeAnuncio(lead, first, last),
+    // `utm_*` das respostas, como no genérico. As chaves de anúncio seguem SÓ a
+    // régua de sempre do envelope (lead, primeira e última conversão): a ficha
+    // do lead (`custom_fields`) não passa a decidir atribuição.
+    source_metadata: {
+      ...semChavesDeAnuncio(doFormulario.source_metadata),
+      ...chavesDeAnuncio(lead, first, last),
+    },
     externalId,
+    camposDoFormulario,
   };
+}
+
+/** `source_metadata` do mapeador genérico sem as chaves de anúncio — essas seguem só a régua do envelope. */
+function semChavesDeAnuncio(metadata: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(metadata).filter(([chave]) => !ehChaveDeAnuncio(chave)),
+  );
 }
 
 /**
