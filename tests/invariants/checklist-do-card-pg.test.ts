@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Pool } from "pg";
 
 import { criarPorta } from "@/lib/db";
-import { lerChecklistDoNegocio, marcarItemDoChecklist } from "@/lib/tarefas/checklist";
+import { lerChecklistDoNegocio, marcarItemDoChecklist, type GravarSituacao } from "@/lib/tarefas/checklist";
 import { aplicarPlanoDeTarefas } from "@/lib/tarefas/plano";
 
 /**
@@ -35,6 +35,14 @@ const pool = new Pool({
 });
 
 const db = criarPorta(pool);
+
+/**
+ * O papel da sessão na rota: aqui o banco de teste não tem RLS de sessão, então
+ * a escrita é direta — o que a régua de permissão faz é provado no teste da
+ * rota. O que ESTE arquivo prova é o que a lib faz com o "sim" e o "não".
+ */
+const gravarDireto: GravarSituacao = async (tarefaId, alvo) =>
+  (await pool.query(`update crm_tasks set status = $2 where id = $1 returning id`, [tarefaId, alvo])).rowCount === 1;
 
 afterAll(async () => {
   await pool.end();
@@ -181,7 +189,7 @@ describe("checklist do card (#4717)", () => {
       usuarioId: DONO_A,
       concluido: true,
       origem: "teste:checklist",
-    });
+    }, gravarDireto);
 
     expect(marcado.ok).toBe(true);
     if (!marcado.ok) return;
@@ -232,7 +240,7 @@ describe("checklist do card (#4717)", () => {
       usuarioId: DONO_A,
       concluido: false,
       origem: "teste:checklist",
-    });
+    }, gravarDireto);
 
     expect(desmarcado.ok).toBe(true);
     if (!desmarcado.ok) return;
@@ -267,6 +275,7 @@ describe("checklist do card (#4717)", () => {
     if (!doNegocio.ok || !doNegocio.checklist) throw new Error("checklist ausente");
     const alvo = doNegocio.checklist.itens[0]!;
 
+    const naoDeviaGravar = vi.fn<GravarSituacao>(gravarDireto);
     const recusa = await marcarItemDoChecklist(db, {
       organizationId: ORG_B,
       leadId: LEAD_A,
@@ -274,7 +283,7 @@ describe("checklist do card (#4717)", () => {
       usuarioId: USER_B,
       concluido: true,
       origem: "teste:checklist",
-    });
+    }, naoDeviaGravar);
     expect(recusa.ok).toBe(false);
     if (recusa.ok) return;
     expect(recusa.codigo).toBe("negocio_fora_do_escopo");
@@ -289,9 +298,43 @@ describe("checklist do card (#4717)", () => {
       usuarioId: DONO_A,
       concluido: true,
       origem: "teste:checklist",
-    });
+    }, naoDeviaGravar);
     expect(fora.ok).toBe(false);
     if (fora.ok) return;
     expect(fora.codigo).toBe("item_fora_do_checklist");
+    expect(naoDeviaGravar).not.toHaveBeenCalled();
+  });
+
+  /**
+   * (f) Quando a escrita da sessão NÃO alcança a linha, a lib não grava autor
+   * nem data: o item continua aberto e a timeline não ganha uma conclusão que
+   * não aconteceu.
+   */
+  it("escrita recusada pela permissão da sessão não marca nem grava autor", async () => {
+    const antes = await lerChecklistDoNegocio(db, { organizationId: ORG_A, leadId: LEAD_A });
+    if (!antes.ok || !antes.checklist) throw new Error("checklist ausente");
+    const alvo = antes.checklist.itens[2]!;
+    expect(alvo.concluido).toBe(false);
+
+    const recusada = await marcarItemDoChecklist(db, {
+      organizationId: ORG_A,
+      leadId: LEAD_A,
+      tarefaId: alvo.tarefa_id,
+      usuarioId: DONO_A,
+      concluido: true,
+      origem: "teste:checklist",
+    }, async () => false);
+
+    expect(recusada.ok).toBe(false);
+    if (recusada.ok) return;
+    expect(recusada.codigo).toBe("item_fora_do_checklist");
+    expect(await statusDaTarefa(alvo.tarefa_id)).toBe("pending");
+    const { rows } = await pool.query(
+      `select count(*)::int as n
+         from crm_lead_activities
+        where organization_id = $1 and lead_id = $2 and type = 'task_completed' and source_id = $3`,
+      [ORG_A, LEAD_A, alvo.tarefa_id],
+    );
+    expect(rows[0].n).toBe(0);
   });
 });

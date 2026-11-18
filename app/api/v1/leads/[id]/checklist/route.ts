@@ -17,13 +17,16 @@
  *
  * A organização vem SEMPRE da sessão (`authz.org.orgId`) — nunca da URL. Um id
  * de negócio de outra organização não é lista vazia: é 404, porque quem não vê
- * o negócio não vê o checklist.
+ * o negócio não vê o checklist. "Ver o negócio" é a régua da SESSÃO
+ * (`negocioVisivel`), não só a organização: a leitura abaixo usa a porta da
+ * aplicação, que não passa por ela.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { negocioVisivel } from "@/lib/cadencias/visibilidade";
 import { portaDaAplicacao } from "@/lib/db";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { logger } from "@/lib/logger";
@@ -40,6 +43,14 @@ export async function GET(
   const authz = await requireRole("viewer", { requestId, resource: "crm_tasks" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
+
+  const visivel = await negocioVisivel(authz.org.orgId, id);
+  if (visivel === "erro") {
+    return fail("internal_error", t("Erro interno. Tente de novo em instantes."), 500, { requestId });
+  }
+  if (!visivel) {
+    return fail("resource_not_found", t("Negócio não encontrado."), 404, { requestId });
+  }
 
   const resultado = await lerChecklistDoNegocio(portaDaAplicacao(), {
     organizationId: authz.org.orgId,

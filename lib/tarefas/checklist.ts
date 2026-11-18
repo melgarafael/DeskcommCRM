@@ -36,6 +36,7 @@
  * recurso que não existe.
  */
 import type { Db } from "@/lib/db";
+import { logger } from "@/lib/logger";
 import { registraAtividadeDaTarefa } from "@/lib/tarefas/atividade";
 import type { PrioridadeDaTarefa, SituacaoDaTarefa } from "@/lib/tarefas/tipos";
 
@@ -96,7 +97,13 @@ export type CodigoDaMarcacao =
   | "falha";
 
 export type ResultadoDaMarcacao =
-  | { ok: true; checklist: ChecklistDoNegocio; item: ItemDoChecklist }
+  | {
+      ok: true;
+      checklist: ChecklistDoNegocio;
+      item: ItemDoChecklist;
+      /** A situação ANTES do gesto — `anterior === item.status` é "nada mudou". */
+      anterior: SituacaoDaTarefa;
+    }
   | { ok: false; codigo: CodigoDaMarcacao; erro?: string };
 
 function mensagemDoErro(err: unknown): string {
@@ -327,8 +334,14 @@ export async function lerChecklistDoNegocio(
         for (const linha of linhas) {
           nomes.set(linha.user_id, linha.full_name?.trim() || linha.email || null);
         }
-      } catch {
-        // Self-host sem a função (instalação antiga): segue sem nome.
+      } catch (err) {
+        // O nome é cortesia: sem ele o item segue dizendo QUEM pelo id. Mas a
+        // falha fica registrada — o baseline cria a função, então ela faltar é
+        // defeito de instalação, não estado normal.
+        logger.warn("[checklist] nomes de quem marcou indisponíveis", {
+          organization_id: organizationId,
+          error: mensagemDoErro(err),
+        });
       }
     }
 
@@ -346,6 +359,14 @@ export async function lerChecklistDoNegocio(
     return { ok: false, codigo: "falha", erro: mensagemDoErro(err) };
   }
 }
+
+/**
+ * Grava a nova situação da tarefa COM A PERMISSÃO DE QUEM PEDIU. Devolve
+ * `false` quando a escrita não alcançou a linha (a régua de escrita da sessão
+ * a recusou). Quem chama da rota passa o client da sessão; a lib não escolhe a
+ * permissão, porque a porta da aplicação não passa por ela.
+ */
+export type GravarSituacao = (tarefaId: string, alvo: SituacaoDaTarefa) => Promise<boolean>;
 
 /**
  * Marca (ou desmarca) UM item do checklist.
@@ -378,6 +399,7 @@ export async function marcarItemDoChecklist(
     /** De onde veio o gesto (`tela:inbox`), como no resto das atividades. */
     origem?: string;
   },
+  gravarSituacao: GravarSituacao,
 ): Promise<ResultadoDaMarcacao> {
   const { organizationId, leadId, tarefaId, usuarioId, concluido } = pedido;
 
@@ -414,14 +436,9 @@ export async function marcarItemDoChecklist(
     const alvo: SituacaoDaTarefa = concluido ? "done" : "pending";
 
     if (tarefa.status !== alvo) {
-      await db.query(
-        `update crm_tasks
-            set status = $2
-          where id = $1
-            and organization_id = $3
-            and lead_id = $4`,
-        [tarefaId, alvo, organizationId, leadId],
-      );
+      if (!(await gravarSituacao(tarefaId, alvo))) {
+        return { ok: false, codigo: "item_fora_do_checklist" };
+      }
 
       if (alvo === "done") {
         const atividade = await registraAtividadeDaTarefa(db, {
@@ -454,7 +471,7 @@ export async function marcarItemDoChecklist(
     if (!depois.checklist || !item) {
       return { ok: false, codigo: "item_fora_do_checklist" };
     }
-    return { ok: true, checklist: depois.checklist, item };
+    return { ok: true, checklist: depois.checklist, item, anterior: tarefa.status };
   } catch (err) {
     return { ok: false, codigo: "falha", erro: mensagemDoErro(err) };
   }
