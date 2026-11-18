@@ -20172,7 +20172,6 @@ export const DICIONARIO: Traducoes = {
   "O que o site já tem": { es: "Lo que el sitio ya tiene" },
   "WhatsApp": { es: "WhatsApp" },
   "Endereço e mapa": { es: "Dirección y mapa" },
-  "Mapa": { es: "Mapa" },
   "Completude do site": { es: "Completitud del sitio" },
   "Itens técnicos encontrados no site; não mede interesse de compra.": {
     es: "Elementos técnicos encontrados en el sitio; no mide el interés de compra.",
