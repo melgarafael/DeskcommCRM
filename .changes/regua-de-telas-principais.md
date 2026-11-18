@@ -1,5 +1,5 @@
 ---
-impacto: capacidade_nova
+impacto: nada_mudou
 secao: adicionado
 titulo: Nível `telas_principais` passa a ter régua medida, e um idioma novo aparece sem cobrar toda frase
 ---
