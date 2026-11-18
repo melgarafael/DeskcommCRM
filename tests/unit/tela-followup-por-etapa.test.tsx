@@ -227,6 +227,12 @@ describe("a tela: todas as linhas, cada uma com o seu prazo", () => {
     // num agregado: dois campos, um por etapa, com o mesmo prazo da regra.
     const emTodas = screen.getAllByTestId(`prazo-fluxo-${REGRA_QUALQUER}`) as HTMLInputElement[];
     expect(emTodas.map((campo) => campo.value)).toEqual(["30", "30"]);
+    // Cada cópia tem id próprio e o seu rótulo: com id repetido, o rótulo da 2ª
+    // etapa em diante focaria o campo da 1ª.
+    expect(new Set(emTodas.map((campo) => campo.id)).size).toBe(emTodas.length);
+    for (const campo of emTodas) {
+      expect(document.querySelectorAll(`label[for="${campo.id}"]`)).toHaveLength(1);
+    }
   });
 
   it("etapa que nenhum fluxo alcança não ganha campo de prazo", () => {

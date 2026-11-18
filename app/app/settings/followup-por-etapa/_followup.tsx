@@ -233,11 +233,11 @@ export function FollowupPorEtapaForm({
                           </Link>
                         </div>
                         <div className="flex flex-col gap-1">
-                          <Label htmlFor={`prazo-${fluxo.id}`} className="text-xs">
+                          <Label htmlFor={`prazo-${etapa.id}-${fluxo.id}`} className="text-xs">
                             {t("Prazo (dias)")}
                           </Label>
                           <input
-                            id={`prazo-${fluxo.id}`}
+                            id={`prazo-${etapa.id}-${fluxo.id}`}
                             data-testid={`prazo-fluxo-${fluxo.id}`}
                             className="w-full rounded-md border bg-background p-2 text-sm"
                             type="number"
