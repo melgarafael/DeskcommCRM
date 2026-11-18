@@ -298,8 +298,8 @@ async function abrirTimeline(page: Page, contactId: string): Promise<void> {
   await page.goto(`${BASE}/app/contacts/${contactId}`);
   await page.waitForLoadState("networkidle").catch(() => null);
   const aba = page
-    .getByRole("tab", { name: /timeline/i })
-    .or(page.getByRole("button", { name: /^Timeline$/i }));
+    .getByRole("tab", { name: /linha do tempo|timeline/i })
+    .or(page.getByRole("button", { name: /^(Linha do tempo|Timeline)$/i }));
   if ((await aba.count()) > 0) await aba.first().click();
   // Espera por CONTEÚDO, nunca por relógio: o fetch da timeline dispara depois
   // da hidratação, e ler antes dele devolve painel vazio — que passaria em toda
