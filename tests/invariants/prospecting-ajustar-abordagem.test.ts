@@ -1,14 +1,16 @@
 /**
  * TROCAR A FONTE DA ABORDAGEM E LEVAR A LISTA PARA OUTRA CAMPANHA, NUM POSTGRES DE VERDADE.
  *
- * Duas ações novas de `POST /api/v1/prospecting`, as duas sobre campanha que já foi iniciada:
- * `adjust_approach` (troca `config.fonte_da_abordagem` e, se vier, `config.instruction`) e
- * `move_list` (leva as empresas AINDA NÃO ABORDADAS para uma campanha nova em preparação).
+ * Duas mudanças de `POST /api/v1/prospecting`, as duas sobre campanha que já foi iniciada: o
+ * campo opcional `fonte_da_abordagem` do `edit_briefing` (troca `config.fonte_da_abordagem`) e
+ * a ação `move_list` (leva as empresas AINDA NÃO ABORDADAS para uma campanha nova em preparação).
  * O que só uma linha de verdade responde:
  *
- * 1. `adjust_approach` só mexe em campanha PAUSADA com configuração, troca só as chaves pedidas
- *    (o `||` entre jsonb preserva o resto — conexão, agente, funil, base legal, etiquetas) e a
- *    organização está no próprio `where`, não só na leitura de antes;
+ * 1. a fonte só muda em campanha PAUSADA com configuração, o `||` entre jsonb preserva o resto
+ *    (conexão, agente, funil, base legal, etiquetas), edição sem a fonte não a toca, e a
+ *    organização está no próprio `where` do update da fonte, não só na leitura de antes. O resto
+ *    do `edit_briefing` (texto congelado de quem já foi abordado, carimbo) é medido em
+ *    `prospecting-editar-instrucao.test.ts`;
  * 2. `move_list` MOVE (não copia) só quem nunca foi abordado: sem contato, sem conversa, sem a
  *    linha-tomba de supressão de LGPD, e com status `new`/`queued` ou `skipped` pelo operador.
  *    Quem o produto recusou, quem já foi enviado e quem falhou ficam, com o histórico;
@@ -29,9 +31,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { RAZAO_NAO_SELECIONADA } from "@/lib/prospecting/schema";
 import {
-  AJUSTE_DE_ABORDAGEM_SQL,
+  EDICAO_DA_FONTE_DA_ABORDAGEM_SQL,
   MOVER_LISTA_SQL,
-  adjustApproach,
+  editBriefing,
   moverListaParaNovaCampanha,
 } from "@/lib/prospecting/store";
 
@@ -44,7 +46,7 @@ const db = pool as unknown as pg.Pool;
 const ORG_A = "0c120000-0000-4000-8000-000000000001";
 const ORG_B = "0c120000-0000-4000-8000-000000000002";
 
-// adjust_approach
+// edit_briefing com a fonte
 const PAUSADA = "0c120000-1111-4000-8000-000000000001";
 const RODANDO = "0c120000-1111-4000-8000-000000000002";
 const RASCUNHO = "0c120000-1111-4000-8000-000000000003";
@@ -79,9 +81,16 @@ const CONFIG = {
   exit_offer: "second_message",
   contact_tags: ["clinica"],
 };
+// O texto que acompanha a troca da fonte: o `edit_briefing` sempre leva instrução, critérios e ofertas.
+const TEXTO = {
+  instruction: CONFIG.instruction,
+  qualification: CONFIG.qualification,
+  ofertas: ["site" as const],
+};
 const BUSCA = { name: "Clínicas em Campinas", segment: "clínica", location: "Campinas" };
 
 let canalA = "";
+let canalB = "";
 let contador = 0;
 const telefone = () => `+55119888${String(++contador).padStart(5, "0")}`;
 const cand = (n: number) => `0c120000-3333-4000-8000-${String(n).padStart(12, "0")}`;
@@ -208,20 +217,35 @@ beforeAll(async () => {
       [ORG_A],
     )
   ).rows[0].id;
+  // Segundo número da MESMA organização: a trava `prospecting_one_running_canal`
+  // (#3896) permite uma campanha `running` por número, não por organização.
+  // A campanha de origem "rodando mover" precisa estar `running` de verdade e,
+  // por isso, de um número próprio — senão o próprio fixture viola a trava que
+  // a suíte mede.
+  canalB = (
+    await pool.query(
+      "insert into channel_sessions(organization_id,waha_session_name,status,webhook_secret_encrypted) values($1,gen_random_uuid()::text,'WORKING',decode('00','hex')) returning id",
+      [ORG_A],
+    )
+  ).rows[0].id;
 
-  // --- adjust_approach: nasce SEM `fonte_da_abordagem`, como a configuração de antes da chave.
+  // --- edit_briefing com a fonte: nasce SEM `fonte_da_abordagem`, como a configuração de antes da chave.
   await campanha(PAUSADA, ORG_A, "pausada", "paused", CONFIG);
   await campanha(RODANDO, ORG_A, "rodando", "running", CONFIG);
   await campanha(RASCUNHO, ORG_A, "rascunho", "draft", null);
   await campanha(OUTRA_ORG, ORG_B, "da outra org", "paused", { ...CONFIG, instruction: "Da B." });
   await campanha(PAUSADA_SEM_CONFIG, ORG_A, "pausada sem configuração", "paused", null);
 
-  // Uma empresa na fila da pausada: trocar a abordagem não pode tocar na lista.
-  await candidato(50, PAUSADA, ORG_A, { status: "queued" });
+  // Uma empresa na fila da pausada, com prévia guardada: trocar a fonte não pode tocar na
+  // lista, mas a prévia (escrita com a fonte antiga) sai.
+  await candidato(50, PAUSADA, ORG_A, {
+    status: "queued",
+    data: { name: "Na fila", previa: { texto: "Olá!", fonte: "estrategia" } },
+  });
 
   // --- move_list
   await campanha(ORIGEM, ORG_A, "Campinas", "paused", CONFIG, BUSCA);
-  await campanha(ORIGEM_RODANDO, ORG_A, "rodando mover", "running", CONFIG, BUSCA);
+  await campanha(ORIGEM_RODANDO, ORG_A, "rodando mover", "running", { ...CONFIG, channel_session_id: canalB }, BUSCA);
   await campanha(ORIGEM_RASCUNHO, ORG_A, "rascunho mover", "draft", null, BUSCA);
   await campanha(ORIGEM_CONCLUIDA, ORG_A, "concluída", "completed", CONFIG, BUSCA);
   await campanha(ORIGEM_DA_ORG_B, ORG_B, "da B", "paused", CONFIG, BUSCA);
@@ -262,19 +286,17 @@ beforeAll(async () => {
 });
 afterAll(() => pool.end());
 
-describe("adjust_approach: troca a fonte da abordagem de uma campanha pausada", () => {
+describe("edit_briefing com a fonte: troca de onde vem a primeira mensagem numa campanha pausada", () => {
   it("campanha antiga (sem a chave) conta como `estrategia`, e a troca preserva todo o resto", async () => {
     expect(CONFIG).not.toHaveProperty("fonte_da_abordagem");
-    const r = await adjustApproach(db, ORG_A, PAUSADA, {
-      fonte_da_abordagem: "agente",
-      instruction: "Apresentar a automação de agendamento para clínicas.",
-    });
-    expect(r.previous).toEqual({ fonte_da_abordagem: "estrategia", instruction_changed: false });
-    expect(r.next).toEqual({ fonte_da_abordagem: "agente", instruction_changed: true });
+    const r = await editBriefing(db, ORG_A, PAUSADA, { ...TEXTO, fonte_da_abordagem: "agente" });
+    expect(r.previous).toMatchObject({ fonte_da_abordagem: "estrategia" });
+    expect(r.next).toMatchObject({ fonte_da_abordagem: "agente" });
     expect(await configDe(PAUSADA)).toEqual({
       ...CONFIG,
+      ofertas: ["site"],
       fonte_da_abordagem: "agente",
-      instruction: "Apresentar a automação de agendamento para clínicas.",
+      briefing_editado_em: expect.any(String),
     });
     const { rows } = await pool.query("select status from prospecting_campaigns where id = $1", [
       PAUSADA,
@@ -282,93 +304,78 @@ describe("adjust_approach: troca a fonte da abordagem de uma campanha pausada", 
     expect(rows[0]?.status).toBe("paused");
   });
 
-  it("sem instrução no pedido, a instrução gravada não é tocada", async () => {
-    const antes = await configDe(PAUSADA);
-    const r = await adjustApproach(db, ORG_A, PAUSADA, { fonte_da_abordagem: "estrategia" });
-    expect(r.previous.fonte_da_abordagem).toBe("agente");
-    expect(r.next).toEqual({ fonte_da_abordagem: "estrategia", instruction_changed: false });
-    expect(await configDe(PAUSADA)).toEqual({ ...antes, fonte_da_abordagem: "estrategia" });
+  it("sem a fonte no pedido, a fonte gravada não muda e a auditoria não a cita", async () => {
+    const r = await editBriefing(db, ORG_A, PAUSADA, TEXTO);
+    expect(r.previous).not.toHaveProperty("fonte_da_abordagem");
+    expect(r.next).not.toHaveProperty("fonte_da_abordagem");
+    expect((await configDe(PAUSADA))?.fonte_da_abordagem).toBe("agente");
   });
 
-  it("instrução igual à gravada não conta como mudança", async () => {
-    const atual = (await configDe(PAUSADA))?.instruction as string;
-    const r = await adjustApproach(db, ORG_A, PAUSADA, {
-      fonte_da_abordagem: "estrategia",
-      instruction: atual,
-    });
-    expect(r.next.instruction_changed).toBe(false);
+  it("de volta para `estrategia`: a auditoria diz de qual para qual", async () => {
+    const r = await editBriefing(db, ORG_A, PAUSADA, { ...TEXTO, fonte_da_abordagem: "estrategia" });
+    expect(r.previous).toMatchObject({ fonte_da_abordagem: "agente" });
+    expect(r.next).toMatchObject({ fonte_da_abordagem: "estrategia" });
+    expect((await configDe(PAUSADA))?.fonte_da_abordagem).toBe("estrategia");
   });
 
-  it("a lista não muda: a empresa na fila continua na mesma campanha, no mesmo estado", async () => {
+  it("a lista não muda: a empresa continua na mesma campanha, no mesmo estado, só sem a prévia velha", async () => {
     expect(await estado(50)).toMatchObject({
       campaign_id: PAUSADA,
       status: "queued",
       selected: true,
+      data: { name: "Na fila" },
     });
-    expect(AJUSTE_DE_ABORDAGEM_SQL).not.toMatch(/prospecting_candidates/);
+    expect((await estado(50))?.data).not.toHaveProperty("previa");
+    expect(EDICAO_DA_FONTE_DA_ABORDAGEM_SQL).not.toMatch(/prospecting_candidates/);
   });
 });
 
-describe("adjust_approach: quem não pode trocar não altera nada", () => {
+describe("edit_briefing com a fonte: quem não pode trocar não altera nada", () => {
   it("outra organização, com o id certo, recebe 404 e a linha não muda", async () => {
     const antes = await configDe(PAUSADA);
     await expect(
-      adjustApproach(db, ORG_B, PAUSADA, {
-        fonte_da_abordagem: "agente",
-        instruction: "x".repeat(20),
-      }),
+      editBriefing(db, ORG_B, PAUSADA, { ...TEXTO, fonte_da_abordagem: "agente" }),
     ).rejects.toMatchObject({ status: 404 });
     expect(await configDe(PAUSADA)).toEqual(antes);
   });
 
-  it("o update cru também recusa a organização errada — a guarda não mora só na leitura de antes", async () => {
+  it("o update cru da fonte também recusa a organização errada — a guarda não mora só na leitura de antes", async () => {
     const antes = await configDe(PAUSADA);
-    const { rows } = await pool.query(AJUSTE_DE_ABORDAGEM_SQL, [
-      ORG_B,
-      PAUSADA,
-      JSON.stringify({ fonte_da_abordagem: "agente" }),
-    ]);
-    expect(rows).toHaveLength(0);
+    const r = await pool.query(EDICAO_DA_FONTE_DA_ABORDAGEM_SQL, [ORG_B, PAUSADA, "agente"]);
+    expect(r.rowCount).toBe(0);
     expect(await configDe(PAUSADA)).toEqual(antes);
   });
 
   it("campanha rodando: 409 e a linha não muda", async () => {
     await expect(
-      adjustApproach(db, ORG_A, RODANDO, { fonte_da_abordagem: "agente" }),
+      editBriefing(db, ORG_A, RODANDO, { ...TEXTO, fonte_da_abordagem: "agente" }),
     ).rejects.toMatchObject({ status: 409 });
     expect(await configDe(RODANDO)).toEqual(CONFIG);
   });
 
-  it("o update cru também recusa campanha que não está pausada", async () => {
-    const { rows } = await pool.query(AJUSTE_DE_ABORDAGEM_SQL, [
-      ORG_A,
-      RODANDO,
-      JSON.stringify({ fonte_da_abordagem: "agente" }),
-    ]);
-    expect(rows).toHaveLength(0);
+  it("o update cru da fonte também recusa campanha que não está pausada", async () => {
+    const r = await pool.query(EDICAO_DA_FONTE_DA_ABORDAGEM_SQL, [ORG_A, RODANDO, "agente"]);
+    expect(r.rowCount).toBe(0);
     expect(await configDe(RODANDO)).toEqual(CONFIG);
   });
 
   it("rascunho sem configuração: 409 e a configuração continua nula", async () => {
     await expect(
-      adjustApproach(db, ORG_A, RASCUNHO, { fonte_da_abordagem: "agente" }),
+      editBriefing(db, ORG_A, RASCUNHO, { ...TEXTO, fonte_da_abordagem: "agente" }),
     ).rejects.toMatchObject({ status: 409 });
     expect(await configDe(RASCUNHO)).toBeNull();
   });
 
   it("o update cru recusa campanha pausada SEM configuração — `null || jsonb` criaria uma config de uma chave só", async () => {
-    const { rows } = await pool.query(AJUSTE_DE_ABORDAGEM_SQL, [
-      ORG_A,
-      PAUSADA_SEM_CONFIG,
-      JSON.stringify({ fonte_da_abordagem: "agente" }),
-    ]);
-    expect(rows).toHaveLength(0);
+    const r = await pool.query(EDICAO_DA_FONTE_DA_ABORDAGEM_SQL, [ORG_A, PAUSADA_SEM_CONFIG, "agente"]);
+    expect(r.rowCount).toBe(0);
     expect(await configDe(PAUSADA_SEM_CONFIG)).toBeNull();
   });
 
   it("campanha que não existe: 404", async () => {
     await expect(
-      adjustApproach(db, ORG_A, "0c120000-9999-4000-8000-000000000000", {
+      editBriefing(db, ORG_A, "0c120000-9999-4000-8000-000000000000", {
+        ...TEXTO,
         fonte_da_abordagem: "agente",
       }),
     ).rejects.toMatchObject({ status: 404 });
