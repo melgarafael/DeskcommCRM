@@ -27,6 +27,7 @@ import { POST } from "./route";
 vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn() }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn(async () => ({})) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },

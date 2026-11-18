@@ -160,6 +160,22 @@ describe("varredura de silêncio", () => {
 function fakeSupabase(respostas: unknown[][]) {
   const chamadas: { tabela: string; metodo: string; args: unknown[] }[] = [];
   let tabela = "";
+  // #4311 (resíduo): `organizations.status/settings` deixou de vir embutido na
+  // linha de conversa e passou a ser UMA leitura por organização no tick — o
+  // dublê serve essa tabela à parte, sem consumir a fila de respostas.
+  const ORG = { id: "org", status: "active", settings: {} };
+  const orgProxy: Record<string, unknown> = new Proxy(
+    {},
+    {
+      get(_t, prop) {
+        if (prop === "single" || prop === "maybeSingle") return async () => ({ data: ORG, error: null });
+        if (prop === "then") {
+          return (ok: (v: unknown) => unknown) => ok({ data: [ORG], error: null });
+        }
+        return () => orgProxy;
+      },
+    },
+  ) as Record<string, unknown>;
   const proxy: Record<string, unknown> = new Proxy(
     {},
     {
@@ -177,7 +193,7 @@ function fakeSupabase(respostas: unknown[][]) {
   const client = {
     from: (t: string) => {
       tabela = t;
-      return proxy;
+      return t === "organizations" ? orgProxy : proxy;
     },
   };
   return { client: client as never, chamadas };

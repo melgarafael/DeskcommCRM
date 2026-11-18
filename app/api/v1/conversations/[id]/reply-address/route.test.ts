@@ -8,6 +8,8 @@
  * - Procurar o `@lid` sem olhar o extra (só o principal): o caso "@lid do extra" cai.
  * - Ficha sem extra usando o chat mesmo assim: o caso "via principal" cai.
  * - Tirar o `is_personal` do select ou a guarda de `ehContatoPessoal`: o caso da spec 21, D10 cai.
+ * - #4434: fechar a porta para o DONO (voltar a `ehContatoPessoal`) ou abri-la por papel
+ *   (`admin`): caem, respectivamente, "o dono lê o endereço do seu" e "admin recebe 404".
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
@@ -31,7 +33,12 @@ const CONVERSA = "33333333-3333-4333-8333-333333333333";
 const CONTATO = "44444444-4444-4444-8444-444444444444";
 
 interface Montagem {
-  principal?: { phone_number: string; wa_lid?: string | null; is_personal?: boolean };
+  principal?: {
+    phone_number: string;
+    wa_lid?: string | null;
+    is_personal?: boolean;
+    personal_owner_user_id?: string | null;
+  };
   extras?: Array<{ phone_number: string; wa_lid: string | null }>;
   provider?: string;
   isGroup?: boolean;
@@ -67,13 +74,17 @@ function fakeSupabase(m: Montagem) {
           },
           limit: () => q,
           // Como o PostgREST: a coluna que o select não pediu não chega.
-          maybeSingle: async () => ({
-            data:
-              tabela === "contacts" && m.principal && !colunas.contacts?.includes("is_personal")
-                ? { ...m.principal, is_personal: undefined }
-                : respostas[tabela],
-            error: null,
-          }),
+          maybeSingle: async () => {
+            if (tabela !== "contacts" || !m.principal) {
+              return { data: respostas[tabela], error: null };
+            }
+            const ficha = { ...m.principal };
+            if (!colunas.contacts?.includes("is_personal")) ficha.is_personal = undefined;
+            if (!colunas.contacts?.includes("personal_owner_user_id")) {
+              ficha.personal_owner_user_id = undefined;
+            }
+            return { data: ficha, error: null };
+          },
           then: (ok: (v: unknown) => unknown, ko: (e: unknown) => unknown) =>
             Promise.resolve({ data: respostas[tabela], error: null }).then(ok, ko),
         };
@@ -189,6 +200,58 @@ describe("GET /api/v1/conversations/[id]/reply-address", () => {
     expect(corpo).toContain("not_found");
     expect(corpo).not.toContain("5511999998888");
     expect(corpo).not.toContain("5521977776666");
+  });
+
+  it("#4434: o DONO lê o endereço do seu — é a leitura que o cabeçalho pede em toda abertura", async () => {
+    vi.mocked(requireRole).mockResolvedValue({
+      ok: true,
+      user: { id: USER, idioma: "pt-BR" },
+      org: { orgId: ORG, role: "agent" },
+    } as never);
+    vi.mocked(enderecoDaUltimaRecebida).mockResolvedValue("5515999998888@c.us");
+    const { cliente } = fakeSupabase({
+      principal: {
+        phone_number: "+551****8888",
+        is_personal: true,
+        personal_owner_user_id: USER,
+      },
+      extras: [{ phone_number: "+551****8888", wa_lid: null }],
+    });
+    vi.mocked(createClient).mockResolvedValue(cliente as never);
+    const { GET } = await import("./route");
+
+    const res = await GET(req(), CONTEXTO);
+    const corpo = (await res.json()) as { data: Record<string, unknown> };
+
+    expect(res.status).toBe(200);
+    expect(corpo.data.phone_number).toBe("+551****8888");
+  });
+
+  it("#4434: admin NÃO herda a leitura do pessoal alheio — mesma 404, mesmo sem telefone", async () => {
+    vi.mocked(requireRole).mockResolvedValue({
+      ok: true,
+      user: { id: "55555555-5555-4555-8555-555555555555", idioma: "pt-BR" },
+      org: { orgId: ORG, role: "admin" },
+    } as never);
+    vi.mocked(enderecoDaUltimaRecebida).mockResolvedValue("5511999998888@c.us");
+    const { cliente } = fakeSupabase({
+      principal: {
+        phone_number: "+551****8888",
+        is_personal: true,
+        personal_owner_user_id: USER,
+      },
+      extras: [{ phone_number: "+552****6666", wa_lid: null }],
+    });
+    vi.mocked(createClient).mockResolvedValue(cliente as never);
+    const { GET } = await import("./route");
+
+    const res = await GET(req(), CONTEXTO);
+    const corpo = await res.text();
+
+    expect(res.status).toBe(404);
+    expect(corpo).toContain("not_found");
+    expect(corpo).not.toContain("5511999998888");
+    expect(corpo).not.toContain("552****6666");
   });
 
   it("todas as consultas filtram a organização da sessão", async () => {

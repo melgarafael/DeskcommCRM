@@ -15,6 +15,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { drainStorageRedactionQueue } from "@/lib/lgpd/storage-redaction-queue";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 import { recursoOcioso } from "@/lib/cron/piso-ocioso";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -34,8 +35,7 @@ const PASSOS_DEPOIS_DO_PORTAO = [
   "const url",
   "const limitParam",
   "const limit",
-  "const stats",
-  "return",
+  "try",
 ] as const;
 void PASSOS_DEPOIS_DO_PORTAO;
 
@@ -59,7 +59,14 @@ export async function GET(req: NextRequest): Promise<Response> {
       ? Math.min(limitParam, MAX_LIMIT)
       : DEFAULT_LIMIT;
 
-  const stats = await drainStorageRedactionQueue({ limit });
-
-  return ok(stats, { requestId });
+  try {
+    const stats = await drainStorageRedactionQueue({ limit });
+    return ok(stats, { requestId });
+  } catch (error) {
+    logger.error("[storage-redaction] queue drain failed", {
+      requestId,
+      error_message: error instanceof Error ? error.message : String(error),
+    });
+    return fail("internal_error", "storage_redaction_failed", 500, { requestId });
+  }
 }

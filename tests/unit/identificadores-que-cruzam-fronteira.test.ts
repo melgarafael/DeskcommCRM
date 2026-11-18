@@ -208,6 +208,7 @@ const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validado
   { arquivo: "app/api/v1/leads/[id]/attachments/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/ai/knowledge/sources/upload/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/ai/knowledge/sources/route.ts", fronteira: "storage.chave-de-objeto" },
+  { arquivo: "app/api/v1/ai/knowledge/sources/[id]/texto/route.ts", fronteira: "storage.chave-de-objeto" },
   // O PDF da proposta comercial (#1832): `<org>/<proposta>.pdf`, dois uuids.
   { arquivo: "lib/propostas/storage.ts", fronteira: "storage.chave-de-objeto" },
   // A foto do produto por URL na planilha (#3587, fatia 1): a chave é
