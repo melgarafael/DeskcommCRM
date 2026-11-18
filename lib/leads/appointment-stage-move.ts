@@ -161,7 +161,7 @@ export async function moverLeadParaEtapaDeAgendamento(
   // outro nome. A recusa não move, devolve o motivo e deixa `detalhe` com a
   // frase do que falta. O rastro é o warn DESTE módulo: o chamador não lê o
   // retorno.
-  const settings = await settingsDoFunil(admin, leadRow.pipeline_id);
+  const settings = await settingsDoFunil(admin, leadRow.pipeline_id, input.organizationId);
   const vereditoDeCampos = validaCamposExigidos({
     lead: leadRow as unknown as Record<string, unknown>,
     settingsDoFunil: settings,

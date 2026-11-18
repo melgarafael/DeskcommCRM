@@ -162,7 +162,7 @@ export async function moverLeadParaEtapaDeHandoff(
   // a frase com o que falta. O rastro é o warn DESTE módulo: o orquestrador
   // não lê o retorno.
   // Fail-open de `settingsDoFunil` vale aqui como em todos os caminhos.
-  const settings = await settingsDoFunil(admin, leadRow.pipeline_id);
+  const settings = await settingsDoFunil(admin, leadRow.pipeline_id, input.organizationId);
   const vereditoDeCampos = validaCamposExigidos({
     lead: leadRow as unknown as Record<string, unknown>,
     settingsDoFunil: settings,

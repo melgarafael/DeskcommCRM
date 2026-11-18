@@ -294,9 +294,13 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   // mapeador genérico só lê chave de topo). Detecta a forma UMA vez; alimenta
   // o idempotency key e o mapeamento de campos abaixo. Respondi tem
   // precedência: um payload nunca é dos dois.
+  //
+  // O `field_map` da fonte entra aqui também: as respostas do formulário que
+  // vêm no envelope passam pelo MESMO `mapInboundPayload` de um envio plano.
+  const fieldMap = (source.field_map ?? {}) as FieldMap;
   const rdStationMapped: RdStationMapped | null =
     respondiMapped === null && isRdStationPayload(payload)
-      ? mapRdStationPayload(payload)
+      ? mapRdStationPayload(payload, fieldMap)
       : null;
 
   // Elementor Pro manda `fields[<id>][value]` (colchetes, uma linha por
@@ -425,7 +429,6 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     return carimbado ? montarCardPorId(carimbado) : null;
   };
 
-  const fieldMap = (source.field_map ?? {}) as FieldMap;
   // external_id não é dado do lead — sai do payload antes do mapeamento pra
   // não virar custom_field (o log de recebimento acima preserva o original).
   // `stage` é o OUTRO campo reservado (#2316): é o jeito de quem integra pedir
@@ -457,7 +460,13 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   }
 
   const camposConfigurados = webhookFormFieldsSchema.safeParse(source.form_fields ?? []);
-  const tipagem = normalizarCamposNumericos(payload, camposConfigurados.success ? camposConfigurados.data : []);
+  // No envelope do RD as respostas não estão no topo do corpo: a tipagem lê o
+  // objeto PLANO que o mapeador do RD montou, que é o que o envio genérico
+  // teria mandado. Os outros caminhos seguem lendo o corpo cru, como antes.
+  const tipagem = normalizarCamposNumericos(
+    rdStationMapped?.camposDoFormulario ?? payload,
+    camposConfigurados.success ? camposConfigurados.data : [],
+  );
   if (tipagem.invalidKeys.length > 0) {
     await registrarCaptacao(admin, {
       ...fonteDaCaptacao,

@@ -4,12 +4,12 @@ import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { aplicarMudancas, mudancaSchema, type EstadoDaProposta } from "@/lib/propostas/assistente";
 import { resolverItensDaProposta } from "@/lib/propostas/itens";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
-import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { sePropostasDesligadas } from "@/lib/propostas/porta";
 
@@ -25,11 +25,13 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "crm_proposals" });
+  const authz = await resolveAuthDual(req, { requestId, resource: "crm_proposals", role: "agent", scope: "mcp:write" });
   if (!authz.ok) return authz.response;
-  const desligada = await sePropostasDesligadas(authz.org.orgId, requestId);
+  const teto = await tetoDeEscritaDoToken(authz, "proposals_assistente_aplicar", requestId);
+  if (teto) return teto;
+  const desligada = await sePropostasDesligadas(authz.organizationId, requestId);
   if (desligada) return desligada;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   const { id } = await ctx.params;
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
@@ -38,13 +40,13 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     return fail("validation_failed", t("Nenhuma mudança para aplicar."), 422, { requestId });
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   // Consolidado numa unica query (o texto original consultava crm_proposals
   // duas vezes) — ja traz lead_id/contact_id que so seriam usados depois.
   const { data: proposta } = await supabase
     .from("crm_proposals")
     .select("lead_id, contact_id, titulo, condicoes, valid_until, briefing_json, status, revision, moeda")
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("id", id)
     .maybeSingle();
   if (!proposta) return fail("not_found", t("Proposta não encontrada."), 404, { requestId });
@@ -55,7 +57,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   const { data: itens } = await supabase
     .from("crm_proposal_items")
     .select("id, product_id, descricao, quantidade, preco_unitario_cents, desconto_cents, position")
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("proposal_id", id)
     .order("position");
 
@@ -80,7 +82,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   // com product_id, furando a mesma regra que a criação/edição já cumprem.
   const resolvido = await resolverItensDaProposta(
     supabase,
-    authz.org.orgId,
+    authz.organizationId,
     estadoDepois.itens,
     (proposta as { moeda: string }).moeda,
   );
@@ -99,7 +101,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       pricing_status: resolvido.pricingStatus,
       revision: parsed.data.revision + 1,
     })
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("id", id)
     .eq("revision", parsed.data.revision)
     .select("id, revision")
@@ -108,11 +110,11 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     return fail("proposal_context_stale", t("A proposta mudou. Gere as sugestões de novo."), 409, { requestId });
   }
 
-  await supabase.from("crm_proposal_items").delete().eq("organization_id", authz.org.orgId).eq("proposal_id", id);
+  await supabase.from("crm_proposal_items").delete().eq("organization_id", authz.organizationId).eq("proposal_id", id);
   if (resolvido.itens.length > 0) {
     await supabase.from("crm_proposal_items").insert(
       resolvido.itens.map((it) => ({
-        organization_id: authz.org.orgId,
+        organization_id: authz.organizationId,
         proposal_id: id,
         product_id: it.product_id,
         descricao: it.descricao,
@@ -128,21 +130,22 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   // assistente — só não há negócio para registrar atividade nele.
   if (proposta.lead_id) {
     await emitLeadActivity(supabase, {
-      organizationId: authz.org.orgId,
+      organizationId: authz.organizationId,
       leadId: proposta.lead_id,
       contactId: proposta.contact_id,
       type: "proposal_drafted",
       sourceModule: "proposals",
       sourceId: id,
-      actor: { type: "user", id: authz.user.id },
+      actor: authz.actor,
       reason: `Proposta ajustada pelo assistente (${parsed.data.mudancas.length} mudança(s))`,
     });
   }
 
   void audit({
     action: "proposal.assistant_applied",
-    actorUserId: authz.user.id,
-    organizationId: authz.org.orgId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "crm_proposals",
     resourceId: id,
     requestId,
