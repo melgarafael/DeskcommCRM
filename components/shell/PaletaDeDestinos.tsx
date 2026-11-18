@@ -305,7 +305,8 @@ function Resultados({
                     {t(label)}
                   </h3>
                   <span className="text-[11px] text-muted-foreground">
-                    {itens.length} {itens.length === 1 ? t("ferramenta") : t("ferramentas")}
+                    {/* Só o número: o grupo pode ser de telas ou de registros (funis, fluxos, agentes) (#4593). */}
+                    {itens.length}
                   </span>
                 </div>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
