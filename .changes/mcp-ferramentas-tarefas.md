@@ -4,9 +4,12 @@ secao: adicionado
 titulo: Ferramentas MCP para criação, consulta e atualização de tarefas
 ---
 
-O endpoint MCP (`/api/mcp`) ganha suporte nativo para o ciclo de vida completo de tarefas da equipe (`crm_tasks`):
+O endpoint MCP (`/api/mcp`) ganha o ciclo de vida das tarefas da equipe (`crm_tasks`), com o mesmo desenho da rota `/api/v1/tasks`:
 
-- **`crm_create_task`**: Permite a agentes de IA e integrações abrirem tarefas vinculadas a contatos, demandas ativas ou negócios, validando responsabilidade dentro da organização e disparando o fechamento de laço no Sistema Vivo.
-- **`crm_list_tasks`**: Permite consultar tarefas pendentes ou em andamento com filtros por responsável (`me`, `ninguem` ou UUID), status, contato, demanda ou janela de vencimento, respeitando estritamente o isolamento multi-tenant (`organization_id`).
-- **`crm_update_task`**: Permite alterar status (`pending`, `in_progress`, `done`, `cancelled`), redefinir prazos, prioridades, descrições e responsáveis com validação e rastreamento.
-- **Catálogo Amigável**: As ferramentas foram devidamente catalogadas em `TOOL_CATALOG` com perfis de risco (`seguro` / `atencao`), agrupadas nos pacotes `organizar` e `atender`, com permissões RBAC mínimas de acesso (`viewer` para leitura, `agent` para escrita).
+- **`crm_create_task`**: abre uma tarefa ligada a um contato, a uma demanda em andamento ou a um negócio da organização, com prazo e responsável da equipe, e registra na linha do tempo do negócio.
+- **`crm_list_tasks`**: consulta as tarefas por responsável (`me`, `ninguem` ou o id), situação, contato, negócio, demanda ou janela de vencimento. Dentro de uma conversa, o agente vê só as tarefas do cliente daquela conversa.
+- **`crm_update_task`**: altera situação, prazo, prioridade, descrição, responsável e vínculos. A conclusão entra na linha do tempo do negócio só quando a tarefa fecha de fato, e o registro de auditoria guarda de qual situação para qual ela foi.
+
+As três ficam no pacote "Não perder o cliente" da configuração do agente. Ler exige `viewer`; criar e alterar exigem `agent`.
+
+Contribuição de @Villa-Nova-Cont (#4838).
