@@ -25,7 +25,13 @@ export default async function NewTenantPage() {
     if (error) throw new Error(`planos de cobrança: leitura falhou (${error.code})`);
     planos = (data ?? []) as PlanoParaEscolher[];
   }
-  return <NewTenantForm cobranca={{ ligada, planos }} moldeDeIa={await nomeDoMoldeDeIa(admin)} />;
+  return (
+    <NewTenantForm
+      cobranca={{ ligada, planos }}
+      moldeDeIa={await nomeDoMoldeDeIa(admin)}
+      agenciasLigado={await moduloLigado(admin, "agencias")}
+    />
+  );
 }
 
 /**

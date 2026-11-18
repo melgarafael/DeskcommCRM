@@ -268,7 +268,7 @@ test("cadastro manual: pessoa nova pela empresa, editar decisor e contato novo p
 
   // 1. Ficha da empresa: nome que não existe + cargo; o botão do RODAPÉ cria.
   await page.goto(`/app/companies/${empresaId}`);
-  await page.getByRole("button", { name: "Adicionar pessoa" }).click();
+  await page.getByRole("button", { name: "Adicionar pessoa", exact: true }).click();
   const dialogo = page.getByRole("dialog");
   await dialogo.getByPlaceholder("Buscar pessoa por nome ou e-mail").fill(PESSOA_NOVA);
   await dialogo.getByLabel("Cargo").fill("Gerente comercial");

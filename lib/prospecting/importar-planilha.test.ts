@@ -147,3 +147,50 @@ describe("importarPlanilha — a campanha em rascunho", () => {
     expect(sqls.some((q) => q.sql.includes("insert into prospecting_campaigns"))).toBe(false);
   });
 });
+
+describe("importarPlanilha — o contexto da equipe sai assinado por quem importou", () => {
+  const USUARIO = "44444444-4444-4444-8444-444444444444";
+  const comContexto = {
+    candidatos: [
+      {
+        linha: 2,
+        prospect: {
+          ...prospect(FONE_ENTRA),
+          contexto_da_equipe: { diagnostico: "Site fora do ar.", contexto: "Indicação do Pedro." },
+        },
+      },
+    ] as CandidatoNaPlanilha[],
+    erros: [],
+  };
+
+  it("carimba `por` (usuario:<id> da sessão) e `em` no candidato gravado", async () => {
+    const { pool, sqls } = dublê();
+    await importarPlanilha(pool, ORG, REQUEST_ID, CAMPOS, comContexto, USUARIO);
+    const insert = sqls.find((q) => q.sql.includes("insert into prospecting_candidates"));
+    const data = insert!.params?.[4] as Prospect;
+    expect(data.contexto_da_equipe).toMatchObject({
+      diagnostico: "Site fora do ar.",
+      contexto: "Indicação do Pedro.",
+      por: `usuario:${USUARIO}`,
+    });
+    expect(Number.isNaN(Date.parse(data.contexto_da_equipe!.em!))).toBe(false);
+  });
+
+  it("sem quem importou, o texto entra sem assinatura (nada inventado)", async () => {
+    const { pool, sqls } = dublê();
+    await importarPlanilha(pool, ORG, REQUEST_ID, CAMPOS, comContexto);
+    const insert = sqls.find((q) => q.sql.includes("insert into prospecting_candidates"));
+    const data = insert!.params?.[4] as Prospect;
+    expect(data.contexto_da_equipe).toEqual({
+      diagnostico: "Site fora do ar.",
+      contexto: "Indicação do Pedro.",
+    });
+  });
+
+  it("linha SEM contexto é gravada como antes: nenhuma chave nova", async () => {
+    const { pool, sqls } = dublê();
+    await importarPlanilha(pool, ORG, REQUEST_ID, CAMPOS, PLANILHA, USUARIO);
+    const insert = sqls.find((q) => q.sql.includes("insert into prospecting_candidates"));
+    expect(insert!.params?.[4]).not.toHaveProperty("contexto_da_equipe");
+  });
+});

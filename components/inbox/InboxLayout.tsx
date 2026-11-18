@@ -8,6 +8,7 @@ import { roleAtLeast } from "@/lib/auth/types";
 import { useBulkConversations, type AcaoEmLote } from "@/hooks/inbox/useBulkConversations";
 import { useSelecaoEmLote } from "@/hooks/inbox/useSelecaoEmLote";
 import { estadoDaJanela } from "@/lib/channels/janela";
+import { recusaNotaDeVoz } from "@/lib/channels/capabilities";
 import { motivoDaJanelaFechada, motivoDoContato } from "@/lib/inbox/motivo-do-envio-bloqueado";
 import { composerBloqueadoAteAssumir } from "@/lib/inbox/bloqueio-ate-assumir";
 import { JanelaFechadaAviso } from "@/components/inbox/JanelaFechadaAviso";
@@ -222,13 +223,28 @@ export function tabToFilter(
       // "Devolver ao automático"), então a aba vivia mostrando 2 enquanto o robô
       // atendia 47. Agora ela pergunta a régua do MOTOR.
       return { comando: ["automatico"] };
+    case "pessoal":
+      // A ABA PESSOAL (#4434) INVERTE a exclusão da spec 21: a lista devolve SÓ
+      // o pessoal de quem está olhando. Sem `status` de propósito — marcar um
+      // contato FECHA as conversas dele (rota de marcar, efeito 6), então
+      // filtrar por status deixaria a aba vazia justamente para quem acabou de
+      // marcar alguém.
+      return { pessoais: true };
     case "all":
     default:
       return {};
   }
 }
 
-const FILTER_TABS: InboxTab[] = ["unassigned", "mine", "all", "closed", "archived", "ai"];
+const FILTER_TABS: InboxTab[] = [
+  "unassigned",
+  "mine",
+  "all",
+  "closed",
+  "archived",
+  "ai",
+  "pessoal",
+];
 
 /**
  * Lê ?filter= (G4-02, deep-link). ?filter=all é HONRADO mesmo para agent — a
@@ -1182,6 +1198,9 @@ export function InboxLayout({
               // e o botão da faixa abre essa conversa. É a mesma seleção que a
               // faixa do número fora do ar e o cabeçalho já usam.
               onAbrirConversa={handleSelect}
+              // O microfone some no canal que recusa a nota de voz que ele grava
+              // (Instagram/Facebook): a pergunta é à capability, nunca ao provider.
+              recusaNotaDeVoz={recusaNotaDeVoz(selectedConversation.channel_sessions?.provider)}
               // O aviso é DA conversa da URL: trocar de conversa dentro da inbox
               // não pode deixar um texto sugerido no campo de outra pessoa.
               rascunho={rascunhoVivo}

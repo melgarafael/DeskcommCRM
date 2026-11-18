@@ -35,7 +35,9 @@ import { normalizarTags } from "@/lib/contacts/tag-normalizada";
 import { ProspectingAgentBuilder, type CreatedProspectingAgent } from "./_create-agent";
 import { AuditoriaDoCandidato, type PreviaDaAbordagem } from "./_auditoria-site";
 import { BaixarLista } from "./_baixar-lista";
+import { ArquivoDaAbordagem } from "@/components/prospecting/ArquivoDaAbordagem";
 import type { ProspectingAgentSetupInput } from "@/lib/prospecting/agent-setup-schema";
+import { TETO_DIARIO_DE_MIDIA_POR_NUMERO } from "@/lib/prospecting/midia-da-abordagem";
 import type { PersonalizacaoProspeccao } from "@/lib/prospecting/personalizar";
 import {
   pontuarCandidato,
@@ -593,8 +595,9 @@ export function ProspectingClient() {
   // com acento e em colunas.
   function baixarModelo() {
     const modelo =
-      "\uFEFFempresa;telefone;site;segmento;cidade;email;instagram\r\n" +
-      "Padaria Exemplo;(11) 90000-0000;https://www.example.com;padaria;São Paulo;contato@example.com;https://instagram.com/exemplo\r\n";
+      "\uFEFFempresa;telefone;site;segmento;cidade;email;instagram;diagnostico;oferta;contexto\r\n" +
+      "Padaria Exemplo;(11) 90000-0000;https://www.example.com;padaria;São Paulo;contato@example.com;https://instagram.com/exemplo;" +
+      "O site não mostra o cardápio nem o horário de funcionamento;Site com cardápio e pedidos pelo WhatsApp;Indicação da Ana, nossa cliente, que compra na padaria\r\n";
     const url = URL.createObjectURL(new Blob([modelo], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a");
     a.href = url;
@@ -1291,6 +1294,14 @@ export function ProspectingClient() {
                   {t("Baixar modelo")}
                 </button>
               </p>
+              {/* As três colunas opcionais viram dado da 1ª mensagem e a aba Diagnóstico do
+                  contato (lib/prospecting/contexto-da-equipe.ts): o aviso diz o que pode virar fato. */}
+              <p className="text-xs text-muted-foreground">
+                {t("Colunas opcionais, com o que a sua equipe já sabe de cada empresa: Diagnóstico, Oferta (o que oferecer) e Contexto.")}{" "}
+                {t(
+                  'O que você escrever em Contexto (uma indicação, um encontro, uma conversa) e em Diagnóstico (o que qualquer um vê de fora, como site, Google e redes) pode aparecer na primeira mensagem como fato. Escreva só o que é verdade. Recados para a equipe, como "falar com calma", não aparecem na mensagem. Não escreva CPF nem telefone de pessoas.',
+                )}
+              </p>
               {/* Não depende da chave do provedor: a planilha não faz busca paga.
                   Lado a lado só entre sm e lg: a partir de lg o formulário mora na
                   coluna de 320px e os dois botões juntos passam da borda do cartão. */}
@@ -1490,6 +1501,15 @@ export function ProspectingClient() {
                   <p className="mt-3 text-xs text-muted-foreground">
                     {campaign.skipped_count}{" "}
                     {t("resultados repetidos ou indisponíveis foram desconsiderados.")}
+                  </p>
+                )}
+                {/* Doc 358 › 2A: o mesmo arquivo para muitos números frios pesa no
+                    bloqueio. Quem configurou a mídia precisa ler isto na campanha. */}
+                {configCompleta?.midia_da_abordagem && (
+                  <p role="note" className="mt-3 rounded-md bg-muted/40 p-3 text-sm">
+                    {t(
+                      "Atenção: esta campanha manda o mesmo arquivo junto da primeira mensagem. Quando muita gente que não conhece você recebe o mesmo arquivo, aumenta o risco de o WhatsApp bloquear o seu número. Por segurança, cada número manda o arquivo em no máximo {teto} abordagens por dia; depois disso, as abordagens do dia saem só com o texto.",
+                    ).replace("{teto}", String(TETO_DIARIO_DE_MIDIA_POR_NUMERO))}
                   </p>
                 )}
                 {candidates.length > 0 && (
@@ -2181,6 +2201,11 @@ export function ProspectingClient() {
                               )}
                             </div>
                           </fieldset>
+                          <ArquivoDaAbordagem
+                            valor={config.midia_da_abordagem}
+                            onChange={(midia) => update("midia_da_abordagem", midia)}
+                            travado={!!configCompleta}
+                          />
                           <div>
                             <Label htmlFor="prospecting-contact-tags">
                               {t("Etiquetas do contato")}

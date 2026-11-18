@@ -253,6 +253,15 @@ describe("POST /api/v1/prospecting/importar", () => {
       "+5511999990003",
     ]);
     expect(planilha.candidatos.map((c: { linha: number }) => c.linha)).toEqual([2, 4]);
+    // O sexto é QUEM IMPORTOU — o usuário da sessão, que assina o contexto da equipe.
+    expect(deps.importar.mock.calls[0]![5]).toBe("user-1");
+  });
+
+  it("quem assina o contexto da equipe é a sessão: o formulário não tem campo para isso", async () => {
+    // O schema dos campos é estrito: um `importado_por` no corpo é recusado, não ignorado.
+    const res = await POST(await post(formulario({ extras: { importado_por: "intruso" } })));
+    expect(res.status).toBe(422);
+    expect(deps.importar).not.toHaveBeenCalled();
   });
 
   it("gerar_previa sem avaliar_site vira false", async () => {

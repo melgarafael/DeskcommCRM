@@ -433,3 +433,35 @@ describe("validateBearerToken — a tradução para MCP não mudou", () => {
     ).not.toBeInstanceOf(McpAuthError);
   });
 });
+
+describe("token da conexão OAuth (`aud:mcp`) só vale no `/api/mcp`", () => {
+  const doOAuth = () => linhaViva({ scopes: ["mcp:read", "mcp:write", "role:admin", "aud:mcp"] });
+
+  it("fora do `/api/mcp` é `wrong_audience`, e não registra uso", async () => {
+    const reg = armar(achou(doOAuth()));
+    expect(await reasonDe(PLAINTEXT)).toBe("wrong_audience");
+    expect(reg.updates).toEqual([]);
+  });
+
+  it("a casca traduz para 403, não para 401 — o token existe, a porta é que é outra", async () => {
+    armar(achou(doOAuth()));
+    expect(await recusaMcp(`Bearer ${PLAINTEXT}`)).toEqual({
+      mcpCode: -32002,
+      httpStatus: 403,
+      message: "This token only works on the MCP endpoint (/api/mcp).",
+    });
+  });
+
+  it("no `/api/mcp` (`portaDoMcp`) resolve normalmente", async () => {
+    armar(achou(doOAuth()));
+    await expect(validateBearerToken(`Bearer ${PLAINTEXT}`, { portaDoMcp: true })).resolves.toMatchObject({
+      role: "admin",
+      apiTokenId: TOKEN_ID,
+    });
+  });
+
+  it("token da tela, sem a marca, segue valendo fora do `/api/mcp`", async () => {
+    armar(achou(linhaViva({ scopes: ["mcp:read", "role:admin"] })));
+    await expect(resolveApiToken(PLAINTEXT)).resolves.toMatchObject({ id: TOKEN_ID });
+  });
+});
