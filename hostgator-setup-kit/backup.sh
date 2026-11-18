@@ -145,7 +145,7 @@ fi
 
 # Retenção: os N mais recentes de cada tipo (#4837). A quantidade vem do .env
 # (BACKUP_KEEP, padrão 14) porque 14 cópias de 1,6 GB são 22 GB num disco de
-# 96 GB. A poda mora em `armazenamento.sh`: apaga do mais antigo para o mais
+# 96 GB. A poda mora no `_common.sh`: apaga do mais antigo para o mais
 # novo e NUNCA o mais recente — nem quando a instalação tem um arquivo só.
 step "Limpando backups antigos (mantém $BACKUP_KEEP por tipo)"
 podar_backups "$BACKUP_DIR" "$BACKUP_KEEP"

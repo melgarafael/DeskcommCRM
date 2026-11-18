@@ -160,7 +160,6 @@ Atrás do proxy do Coolify (ou outro Traefik em rede Docker própria): veja [doc
 | `reset-mfa.sh` | Remove o MFA de um usuário travado |
 | `healthcheck.sh` | Diagnóstico dos serviços |
 | `preflight-upgrade.sh` | Sonda uma release numérica de um kit novo antes de usar o updater antigo |
-| `armazenamento.sh` | Biblioteca: espaço em disco, retenção de backup e poda de imagens (#4837) |
 
 No ARM64, o instalador e o updater recusam antecipadamente uma release cujas quatro
 imagens do CRM ou a WAHA efetiva não tenham variante nativa. No single-server,
