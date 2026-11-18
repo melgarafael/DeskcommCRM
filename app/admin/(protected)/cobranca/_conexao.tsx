@@ -116,7 +116,9 @@ export function ConexaoDaCobranca({
       {urlDoEscolhido === null && (
         // Antes do clique, não depois de um 422: o endereço vem da instalação, fora desta tela.
         <p role="alert" className="rounded-md border p-3 text-sm">
-          {asaas
+          {efi
+            ? t("O Efi só avisa pagamentos num endereço https público (ex.: https://crm.example.com). Configure o domínio do sistema com HTTPS e volte aqui.")
+            : asaas
             ? t("O Asaas só avisa pagamentos num endereço https público (ex.: https://crm.example.com). Configure o domínio do sistema com HTTPS e volte aqui.")
             : t("A Stripe só avisa pagamentos num endereço https público (ex.: https://crm.example.com). Configure o domínio do sistema com HTTPS e volte aqui.")}
         </p>
@@ -201,7 +203,7 @@ export function ConexaoDaCobranca({
       </Button>
       {urlDoEscolhido && (
         <p className="text-xs text-muted-foreground">
-          {t("Os avisos de pagamento chegam em")} <code>{urlDoEscolhido}</code>
+          {t("Os avisos de pagamento chegam em")} <code className="break-all">{urlDoEscolhido}</code>
         </p>
       )}
       {manual && (
