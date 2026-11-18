@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import { NAV_CATALOG } from "@/lib/navigation/catalogo";
@@ -144,5 +146,41 @@ describe("tela inicial: escolha que não vale cai na regra de sempre", () => {
         if (entrada !== "/app/settings/profile") expect(visiveis).toContain(entrada);
       }
     }
+  });
+});
+
+describe("tela inicial: o seletor do membro mede contra a EMPRESA, não contra quem vê", () => {
+  // Achado da triagem do #4869: `ActiveOrg.interface_settings` já é
+  // `combinarInterfaces(empresa, vínculo DE QUEM ESTÁ VENDO)`. Usado como "menu
+  // da empresa" no diálogo do membro, um admin com menu próprio mais curto
+  // esconderia do seletor portas que o membro enxerga.
+  const empresaCrua = { preset: "completa" } as const;
+  const vinculoDoAdminRestrito = { preset: "completa", destinos: ["/app/inbox"] } as const;
+  const vinculoDoMembro = { preset: "completa", inicio: "/app/kanban" } as const;
+  const opcoes = (visiveis: unknown) =>
+    destinosDaInterface(visiveis, false, "agent")
+      .filter((d) => !essencial(d, "agent"))
+      .map((d) => d.href);
+
+  it("a empresa crua oferece a porta que o menu combinado do admin esconderia", () => {
+    const certo = opcoes(combinarInterfaces(empresaCrua, vinculoDoMembro));
+    const doAdmin = opcoes(
+      combinarInterfaces(combinarInterfaces(empresaCrua, vinculoDoAdminRestrito), vinculoDoMembro),
+    );
+    expect(certo).toContain("/app/kanban");
+    expect(doAdmin).not.toContain("/app/kanban");
+    // E a entrada do membro é mesmo o Kanban — a tela que o seletor tem de mostrar.
+    expect(homeDaInterface(combinarInterfaces(empresaCrua, vinculoDoMembro), false, "agent")).toBe(
+      "/app/kanban",
+    );
+  });
+
+  it("a página da Equipe passa o menu CRU da organização, não o do ActiveOrg", () => {
+    // Componente de servidor com sessão: o contrato é lido na fonte, como em
+    // `setores-modulo-desligado.test.ts`.
+    const pagina = readFileSync("app/app/team/page.tsx", "utf8");
+    expect(pagina).not.toMatch(/interfaceDaEmpresa=\{activeOrg\??\.interface_settings\}/);
+    expect(pagina).toMatch(/\.from\("organizations"\)\s*\.select\("interface_settings"\)/);
+    expect(pagina).toContain("interfaceDaEmpresa={interfaceDaEmpresa}");
   });
 });
