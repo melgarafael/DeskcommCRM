@@ -3,10 +3,9 @@
  *
  * ─── O que esta tela é ─────────────────────────────────────────────────────
  *
- * O acompanhamento por etapa existia inteiro no servidor e só se montava no
- * construtor de fluxos: num produto self-host isso é o mesmo que não existir —
- * a única forma de configurar era `UPDATE` à mão no Postgres, o anti-exemplo de
- * "toda configuração tem superfície" (`docs/doctrine/restricao-de-canal.md`).
+ * O prazo de cada fluxo de "negócio parado na mesma etapa" já se editava no
+ * construtor, mas só fluxo por fluxo: nenhuma tela mostrava, etapa por etapa,
+ * quais desses fluxos alcançam cada uma e com que prazo.
  *
  * A tela mostra, para cada etapa aberta do funil, TODOS os fluxos de "negócio
  * parado na mesma etapa" que alcançam aquela etapa — com o prazo de cada um — e
@@ -36,6 +35,7 @@
  */
 import { redirect } from "next/navigation";
 
+import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { GATILHO_ETAPA_PARADA } from "@/lib/automation/gatilhos-de-tempo";
@@ -119,17 +119,14 @@ export default async function FollowupPorEtapaPage() {
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {traduzir("Follow-up por etapa", idioma)}
-        </h1>
+      <CabecalhoDaSubTela titulo={traduzir("Follow-up por etapa", idioma)} idioma={idioma}>
         <p className="max-w-2xl text-sm text-muted-foreground">
           {traduzir(
             "O que a operação espera de cada etapa do funil depois que a conversa chega.",
             idioma,
           )}
         </p>
-      </header>
+      </CabecalhoDaSubTela>
 
       <FollowupPorEtapaForm fluxos={fluxos} funis={catalogo} idioma={idioma} />
     </div>
