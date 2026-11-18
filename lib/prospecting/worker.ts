@@ -262,7 +262,10 @@ export async function sendNextCandidate(
     );
     return;
   }
+  // Aprovação da prévia é OPÇÃO da campanha, desligada por padrão: campanha sem
+  // a chave (inclusive as que já rodavam antes dela existir) envia como sempre.
   if (
+    cfg.exigir_aprovacao_da_previa &&
     (queued.automatic_sends ?? 0) === 0 &&
     !previaAprovadaDoAgente(queued.data, cfg.agent_id, cfg.briefing_editado_em)
   ) {

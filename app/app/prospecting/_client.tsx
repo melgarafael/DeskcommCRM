@@ -771,7 +771,10 @@ export function ProspectingClient() {
         action: "prever_abordagem",
         id: campaign.id,
         candidate_id: candidateId,
-        config,
+        // Só com a aprovação ligada a prévia é gerada com a configuração do
+        // formulário (é ela que a pessoa vai aprovar). Desligada, o pedido é o
+        // de sempre: a configuração gravada, ou o agente padrão da organização.
+        ...(config.exigir_aprovacao_da_previa ? { config } : {}),
       });
       return res.data;
     } finally {
@@ -828,8 +831,10 @@ export function ProspectingClient() {
   const temAgenteNaCampanha = !!campaign && campanhaGeraPrevia(campaign, data?.previa_padrao === true);
   const podeGerarPreviaAMao = !!campaign && campanhaPodeGerarPrevia(campaign, data?.previa_padrao === true);
   const marcadas = candidates.filter((c) => c.selected !== false);
+  // A MESMA regra de `exigirAprovacaoAntesDoPrimeiroContato`: só conta com a
+  // opção da campanha ligada.
   const aprovacoesPendentes =
-    config.agent_id
+    config.exigir_aprovacao_da_previa && config.agent_id
       ? marcadas.filter(
           (c) =>
             !!c.data.phone &&
@@ -2344,6 +2349,25 @@ export function ProspectingClient() {
                               )}
                             </p>
                           </div>
+                          <div>
+                            <label className="flex items-start gap-2 text-sm">
+                              <input
+                                type="checkbox"
+                                className="mt-1"
+                                checked={config.exigir_aprovacao_da_previa === true}
+                                disabled={busy}
+                                onChange={(e) =>
+                                  update("exigir_aprovacao_da_previa", e.target.checked)
+                                }
+                              />
+                              <span>{t("Aprovar a prévia de cada empresa antes do primeiro contato")}</span>
+                            </label>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {t(
+                                "Ligada, a campanha só inicia, retoma e envia a primeira mensagem de uma empresa depois que alguém da equipe revisar e aprovar a prévia dela. Desligada, o agente envia sozinho, como sempre.",
+                              )}
+                            </p>
+                          </div>
                           <p className="text-xs text-muted-foreground">
                             {(config.funnel_entry ?? "on_start") === "on_send"
                               ? t(
@@ -2681,6 +2705,7 @@ export function ProspectingClient() {
                                 config={config}
                                 podeAprovar={
                                   !!campaign &&
+                                  config.exigir_aprovacao_da_previa === true &&
                                   !!config.agent_id &&
                                   ["draft", "paused"].includes(campaign.status) &&
                                   c.selected !== false &&

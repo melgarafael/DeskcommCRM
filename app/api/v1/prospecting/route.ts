@@ -581,21 +581,21 @@ export async function POST(req: NextRequest) {
         if (arquivadaEm(c.config))
           throw new ProspectingError("Desarquive a campanha antes de retomar.", 409);
         const config = await validateConfig(db, org, c.config);
-        const candidatos = await db.query<{
-          id: string;
-          data: Prospect;
-          phone: string | null;
-          selected: boolean;
-          automatic_sends: number;
-        }>(
-          "select id,data,phone,selected,automatic_sends from prospecting_candidates where organization_id=$1 and campaign_id=$2 and status='queued' and selected is not false and coalesce(automatic_sends,0)=0",
-          [org, body.id],
-        );
-        exigirAprovacaoAntesDoPrimeiroContato(
-          candidatos.rows,
-          config.agent_id,
-          config.briefing_editado_em,
-        );
+        // Aprovação da prévia é OPÇÃO da campanha (desligada por padrão): só com
+        // ela ligada a retomada confere quem ainda não recebeu o primeiro contato.
+        if (config.exigir_aprovacao_da_previa) {
+          const candidatos = await db.query<{
+            id: string;
+            data: Prospect;
+            phone: string | null;
+            selected: boolean;
+            automatic_sends: number;
+          }>(
+            "select id,data,phone,selected,automatic_sends from prospecting_candidates where organization_id=$1 and campaign_id=$2 and status='queued' and selected is not false and coalesce(automatic_sends,0)=0",
+            [org, body.id],
+          );
+          exigirAprovacaoAntesDoPrimeiroContato(candidatos.rows, config);
+        }
         // A MESMA régua do `start` (#3896): a retomada também é do NÚMERO. Com
         // a checagem só no início, retomar uma campanha pausada continuava
         // travada pela organização — o caminho inverso do mesmo defeito.

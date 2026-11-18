@@ -20203,6 +20203,13 @@ export const DICIONARIO: Traducoes = {
   "Abra os detalhes de cada empresa selecionada, revise a prévia e aprove antes de iniciar.": {
     es: "Abre los detalles de cada empresa seleccionada, revisa la vista previa y apruébala antes de iniciar.",
   },
+  "Aprovar a prévia de cada empresa antes do primeiro contato": {
+    es: "Aprobar la vista previa de cada empresa antes del primer contacto",
+  },
+  "Ligada, a campanha só inicia, retoma e envia a primeira mensagem de uma empresa depois que alguém da equipe revisar e aprovar a prévia dela. Desligada, o agente envia sozinho, como sempre.":
+    {
+      es: "Activada, la campaña solo inicia, reanuda y envía el primer mensaje a una empresa después de que alguien del equipo revise y apruebe su vista previa. Desactivada, el agente envía solo, como siempre.",
+    },
   "O que esta campanha vende": { es: "Lo que vende esta campaña" },
   "Voz e vocabulário": { es: "Voz y vocabulario" },
   "A voz assina as mensagens; o vocabulário traduz o nicho para a dor dele.": {

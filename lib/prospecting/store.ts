@@ -1356,7 +1356,7 @@ export async function activateCampaign(
         [org, id],
       )
     ).rows;
-    exigirAprovacaoAntesDoPrimeiroContato(candidates, config.agent_id, config.briefing_editado_em);
+    exigirAprovacaoAntesDoPrimeiroContato(candidates, config);
     await enfileirarCandidatos(db, admin, org, c, config, candidates);
     try {
       await db.query(
@@ -1379,7 +1379,11 @@ export async function activateCampaign(
   });
 }
 
-/** A campanha não começa nem retoma enquanto houver primeiro contato sem revisão humana. */
+/**
+ * Com `exigir_aprovacao_da_previa` ligada, a campanha não começa nem retoma
+ * enquanto houver primeiro contato sem revisão humana. Desligada (o padrão,
+ * inclusive campanha gravada antes da opção existir), não confere nada.
+ */
 export function exigirAprovacaoAntesDoPrimeiroContato(
   candidatos: Array<{
     id: string;
@@ -1388,15 +1392,15 @@ export function exigirAprovacaoAntesDoPrimeiroContato(
     selected?: boolean | null;
     automatic_sends?: number | null;
   }>,
-  agentId: string,
-  briefingEditadoEm?: string,
+  config: Pick<CampaignConfig, "agent_id" | "briefing_editado_em" | "exigir_aprovacao_da_previa">,
 ): void {
+  if (!config.exigir_aprovacao_da_previa) return;
   const pendentes = candidatos.filter(
     (candidato) =>
       candidato.selected !== false &&
       !!candidato.phone &&
       (candidato.automatic_sends ?? 0) === 0 &&
-      !previaAprovadaDoAgente(candidato.data, agentId, briefingEditadoEm),
+      !previaAprovadaDoAgente(candidato.data, config.agent_id, config.briefing_editado_em),
   );
   if (pendentes.length > 0) {
     throw new ProspectingError(

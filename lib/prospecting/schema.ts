@@ -245,6 +245,12 @@ export const campaignConfigSchema = z
     // `editBriefing`. A prévia guarda o carimbo com que nasceu e o envio só usa a
     // que tem o carimbo atual (`previaDoAgente`). Ausente = nunca editada.
     briefing_editado_em: z.string().datetime().optional(),
+    // APROVAÇÃO HUMANA DA PRÉVIA ANTES DO PRIMEIRO CONTATO — opção da campanha.
+    // `true`: iniciar, retomar e o envio só seguem com a prévia de cada empresa
+    // ainda não abordada aprovada por uma pessoa. Sem `.default()`, pelo mesmo
+    // motivo de `usar_ficha_digital`: ausente = DESLIGADA, e configuração gravada
+    // antes desta chave existir segue byte a byte igual.
+    exigir_aprovacao_da_previa: z.boolean().optional(),
   })
   .strict();
 export const searchSchema = z
