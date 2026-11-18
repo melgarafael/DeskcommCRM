@@ -145,3 +145,43 @@ describe("POST /api/v1/financeiro/comandas — o vínculo é da empresa ativa", 
     expect(mundo.contar("sales")).toBe(1);
   });
 });
+
+describe("GET /api/v1/honorarios/contratos/[id]/parcelas — o contrato é da empresa ativa", () => {
+  async function listar(contratoId: string): Promise<Response> {
+    const { GET } = await import("@/app/api/v1/honorarios/contratos/[id]/parcelas/route");
+    return GET(
+      new NextRequest(`http://localhost/api/v1/honorarios/contratos/${contratoId}/parcelas`),
+      { params: Promise.resolve({ id: contratoId }) },
+    );
+  }
+
+  it("contrato de outra empresa → 404, sem nenhuma parcela dele", async () => {
+    const res = await listar(CONTRATO_DA_B);
+
+    expect(res.status).toBe(404);
+    const corpo = await res.json();
+    expect(corpo.error.code).toBe("not_found");
+    expect(JSON.stringify(corpo)).not.toContain("parcela-b");
+  });
+
+  it("contrato inexistente → o MESMO 404", async () => {
+    const res = await listar("88888888-8888-4888-8888-888888888888");
+
+    expect(res.status).toBe(404);
+    expect((await res.json()).error.code).toBe("not_found");
+  });
+
+  it("controle: o contrato da própria empresa lista as parcelas dele", async () => {
+    const res = await listar(CONTRATO_DA_A);
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.map((p: { id: string }) => p.id)).toEqual(["parcela-a"]);
+  });
+
+  it("a leitura das parcelas também filtra a empresa, não só a do contrato", async () => {
+    await listar(CONTRATO_DA_A);
+
+    const parcelas = mundo.chamadas.find((c) => c.tabela === "honorarios_parcelas");
+    expect(parcelas?.filtros).toContainEqual(["organization_id", A]);
+  });
+});
