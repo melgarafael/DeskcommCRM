@@ -38,6 +38,9 @@ import {
   type CanalParaAvaliar,
   type MotivoDaResolucao,
 } from "@/lib/channels/canal-mudo";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoAviso, preencher } from "@/lib/i18n/idioma-do-aviso";
+import type { Idioma } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
@@ -47,12 +50,15 @@ export const dynamic = "force-dynamic";
 /** Teto por rodada. Leitura de banco, sem rede — cabe folgado numa instalação real. */
 const LIMITE = 500;
 
-/** O que o corpo do aviso diz a quem abre a Central. Sem jargão e com a saída. */
-const CORPO_DO_AVISO =
-  "Este canal está em modo de teste e não tem nenhum número autorizado, " +
-  "então a IA não responde a ninguém nele — as mensagens chegam no Inbox e " +
-  "ficam sem resposta automática. Em Conexões, autorize os números de teste " +
-  "ou abra o canal ao público.";
+/**
+ * O que o corpo do aviso diz a quem abre a Central. Sem jargão e com a saída.
+ * Sai no idioma da organização: a Central mostra o texto como foi gravado.
+ */
+const corpoDoAviso = (idioma: Idioma): string =>
+  traduzir(
+    "Este canal está em modo de teste e não tem nenhum número autorizado, então a IA não responde a ninguém nele — as mensagens chegam no Inbox e ficam sem resposta automática. Em Conexões, autorize os números de teste ou abra o canal ao público.",
+    idioma,
+  );
 
 const MOTIVO_LEGIVEL: Record<MotivoDaResolucao, string> = {
   ganhou_numero: "o canal ganhou número autorizado",
@@ -63,6 +69,7 @@ const MOTIVO_LEGIVEL: Record<MotivoDaResolucao, string> = {
 interface AvisoAberto {
   id: string;
   ref_id: string | null;
+  organization_id?: string | null;
 }
 
 async function handle(req: NextRequest): Promise<Response> {
@@ -79,7 +86,7 @@ async function handle(req: NextRequest): Promise<Response> {
   // precisar ser fechado, inclusive de canal que sumiu da varredura (arquivado).
   const { data: abertosBruto, error: erroAvisos } = await admin
     .from("agent_inbox_items")
-    .select("id, ref_id")
+    .select("id, ref_id, organization_id")
     .eq("kind", KIND_CANAL_MUDO)
     .eq("status", "open")
     .limit(LIMITE);
@@ -114,13 +121,19 @@ async function handle(req: NextRequest): Promise<Response> {
   const canais = (canaisBruto ?? []) as CanalParaAvaliar[];
   let avisados = 0;
   let resolvidos = 0;
+  const idiomas = new Map<string, Idioma>();
 
   const resolver = async (aviso: AvisoAberto, motivo: MotivoDaResolucao): Promise<void> => {
+    const idioma = await idiomaDoAviso(admin, aviso.organization_id, idiomas);
     const { data } = await admin
       .from("agent_inbox_items")
       .update({
         status: "resolved",
-        body: `${CORPO_DO_AVISO}\n\nResolvido pelo sistema: ${MOTIVO_LEGIVEL[motivo]}.`,
+        body:
+          `${corpoDoAviso(idioma)}\n\n` +
+          preencher(traduzir("Resolvido pelo sistema: {motivo}.", idioma), {
+            motivo: traduzir(MOTIVO_LEGIVEL[motivo], idioma),
+          }),
       })
       .eq("id", aviso.id)
       // O `status` no filtro é a trava: duas rodadas simultâneas (cron + curl à
@@ -142,6 +155,7 @@ async function handle(req: NextRequest): Promise<Response> {
     }
     if (desfecho.acao === "aguardar" || aberto) continue;
 
+    const idioma = await idiomaDoAviso(admin, canal.organization_id, idiomas);
     const { data } = await admin
       .from("agent_inbox_items")
       .insert({
@@ -151,8 +165,10 @@ async function handle(req: NextRequest): Promise<Response> {
         // assim de propósito. Crítico aqui gastaria o alarme que a Central
         // reserva para o que já custou dinheiro ou cliente.
         severity: "warn",
-        title: "Este canal está em modo de teste — a IA não responde ninguém",
-        body: `${CORPO_DO_AVISO}\n\nAssim há ${desfecho.diasMudo} dia(s).`,
+        title: traduzir("Este canal está em modo de teste — a IA não responde ninguém", idioma),
+        body:
+          `${corpoDoAviso(idioma)}\n\n` +
+          preencher(traduzir("Assim há {dias} dia(s).", idioma), { dias: desfecho.diasMudo }),
         ref_kind: "channel_session",
         ref_id: canal.id,
       })

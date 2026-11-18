@@ -84,16 +84,65 @@ const candidato = (extra: Record<string, unknown> = {}) =>
     ...extra,
   }) as unknown as Candidate;
 
-/** Admin falso: `rpc` responde pela função chamada; o que foi pedido fica em `chamadas`. */
+/** Corrente mínima do PostgREST falso: todo elo devolve a si e o `await` resolve em lista vazia. */
+type CorrenteVazia = {
+  select: () => CorrenteVazia;
+  insert: () => CorrenteVazia;
+  update: () => CorrenteVazia;
+  delete: () => CorrenteVazia;
+  eq: () => CorrenteVazia;
+  in: () => CorrenteVazia;
+  is: () => CorrenteVazia;
+  limit: () => CorrenteVazia;
+  order: () => CorrenteVazia;
+  maybeSingle: () => Promise<{ data: null; error: null }>;
+  single: () => Promise<{ data: null; error: null }>;
+  then: (ok: (v: unknown) => unknown, erro?: (e: unknown) => unknown) => Promise<unknown>;
+};
+
+function correnteVazia(): CorrenteVazia {
+  const q: CorrenteVazia = {
+    select: () => q,
+    insert: () => q,
+    update: () => q,
+    delete: () => q,
+    eq: () => q,
+    in: () => q,
+    is: () => q,
+    limit: () => q,
+    order: () => q,
+    maybeSingle: async () => ({ data: null, error: null }),
+    single: async () => ({ data: null, error: null }),
+    then: (ok, erro) => Promise.resolve({ data: [], error: null }).then(ok, erro),
+  };
+  return q;
+}
+
+/**
+ * Admin falso: `rpc` responde pela função chamada; o que foi pedido fica em `chamadas`.
+ *
+ * `from` responde as tabelas do MÓDULO "Empresas e pessoas" (Refs #3198, fatia 2):
+ * a pegada confere `crm_b2b` antes de criar a empresa, e `modulosLigados` faz UMA
+ * leitura — duas consultas, `platform_config` e `modulos_instalados`
+ * (`lib/instalacao/modulos.ts`). Sem esta resposta o duplê não tinha `from`, as
+ * duas consultas lançavam e cada uma virava um aviso: três avisos onde o caso da
+ * junção espera um (Refs #4775). Vazio = módulo desligado, o padrão da instalação.
+ */
 function adminFalso(resposta: (nome: string) => { data?: unknown; error?: { message: string } | null } = () => ({ data: null, error: null })) {
   const chamadas: { nome: string; args: Record<string, unknown> }[] = [];
+  /** As tabelas pedidas ao `from` — é por aqui que se conta a leitura do módulo (#3731). */
+  const tabelas: string[] = [];
   const admin = {
     rpc: vi.fn(async (nome: string, args: Record<string, unknown>) => {
       chamadas.push({ nome, args });
       return resposta(nome);
     }),
+    from: vi.fn((tabela: string) => {
+      tabelas.push(tabela);
+      return correnteVazia();
+    }),
   };
-  return { admin: admin as never, chamadas };
+  return { admin: admin as never, chamadas, tabelas };
 }
 
 /** Banco falso da pegada: consultas que não importam respondem vazio; o `returning *` devolve o candidato na fila. */
@@ -275,7 +324,7 @@ describe("criarPegadaDoCandidato põe as etiquetas no contato antes do envio", (
 
   it("falha da junção: aviso no log e a empresa segue para a fila — a abordagem não cai", async () => {
     const { db } = bancoFalso();
-    const { admin } = adminFalso((nome) =>
+    const { admin, tabelas } = adminFalso((nome) =>
       nome === JUNCAO ? { data: null, error: { message: "conexão caiu" } } : { data: null, error: null },
     );
     const pegada = await criarPegadaDoCandidato(
@@ -289,6 +338,11 @@ describe("criarPegadaDoCandidato põe as etiquetas no contato antes do envio", (
     );
     expect(pegada.status).toBe("queued");
     expect(m.aviso).toHaveBeenCalledTimes(1);
+    // #3731: a checagem de estado custa UMA leitura por candidato, nunca uma por
+    // passo. `empresaDoCandidato` confere `crm_b2b` uma vez no caminho do envio
+    // (Refs #4775, Refs #3198) — uma segunda consulta a `platform_config` aqui é
+    // regressão: cada leitura a mais foi o que triplicou o aviso.
+    expect(tabelas.filter((t) => t === "platform_config")).toHaveLength(1);
     expect(m.aviso.mock.calls[0]?.[1]).toMatchObject({ erro: "conexão caiu", contact_id: CONTATO_NOVO });
   });
 });
