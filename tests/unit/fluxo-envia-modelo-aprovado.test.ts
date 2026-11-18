@@ -109,6 +109,8 @@ interface Cenario {
   contato?: { name: string | null; display_name?: string | null };
   /** `custom_fields` do negócio mais recente */
   negocio?: Record<string, unknown>;
+  /** #4835 — a conversa nunca teve saída: este passo seria o PRIMEIRO contato */
+  primeiroContato?: boolean;
 }
 
 function fakePool(c: Cenario) {
@@ -124,12 +126,30 @@ function fakePool(c: Cenario) {
       return c.modelo ? { rows: [{ name: "lembrete_cafeteira", language: "es" }] } : { rows: [] };
     }
     if (/from message_templates/.test(sql)) return { rows: c.texto ? [{ body: c.texto }] : [] };
+    // A reconferência da janela antes do modelo pago (#4835) lê a conexão e os
+    // DOIS lados da janela na mesma linha, a partir da conversa. Vem antes do
+    // ramo genérico de `conversations` porque o texto traz as duas tabelas.
+    if (/select s\.provider, c\.last_inbound_at, c\.last_outbound_at/.test(sql)) {
+      const ha = c.ultimoInboundHa;
+      return {
+        rows: [
+          {
+            provider: "zernio",
+            last_inbound_at: ha === null || ha === undefined ? null : new Date(Date.now() - ha * HORA),
+            // Um passo de retorno só existe porque já houve saída nesta conversa:
+            // não é o primeiro contato, e a carência não se aplica.
+            last_outbound_at: c.primeiroContato === true ? null : new Date(Date.now() - HORA),
+          },
+        ],
+      };
+    }
     if (/from channel_sessions s/.test(sql)) {
       const ha = c.ultimoInboundHa;
       return {
         rows: [{ provider: "zernio", last_inbound_at: ha === null || ha === undefined ? null : new Date(Date.now() - ha * HORA) }],
       };
     }
+    if (/update job_queue/.test(sql)) return { rows: [{ id: "job-1" }] };
     if (/from conversations/.test(sql)) return { rows: [{ id: CONVERSA, channel_session_id: CANAL, archived_at: null }] };
     if (/select name, display_name from contacts/.test(sql)) {
       return { rows: c.contato ? [{ display_name: null, ...c.contato }] : [] };
@@ -418,6 +438,66 @@ describe("passo de texto fixo com mídia (#2734)", () => {
 
     expect(send).toHaveBeenCalledTimes(1);
     expect(send.mock.calls[0]![0]).toMatchObject({ body: "Olha a oferta", media: { url: URL_DA_MIDIA, mime: "image/png", type: "image" } });
+    expect(resultado(completeFollowupTurn).kind).toBe("sent");
+  });
+});
+
+/**
+ * #4835 — a carência antes do modelo pago, no HANDLER (não na função pura).
+ * Sabotagens previstas: apagar o `throw JobSettledError` da espera; apagar o
+ * insert de `modelo_pago_dispensado`.
+ */
+describe("carência antes do modelo pago (#4835), pelo handler", () => {
+  const PASSO_IA = { prompt_hint: "Retomá la charla", fallback_template_id: MODELO_ID };
+  const VOLTA = { carencia_do_modelo: { esperou_em: "2026-10-20T14:59:50.000Z", espera_ms: 10_000 } };
+  const eventos = (pool: { query: ReturnType<typeof vi.fn> }) =>
+    pool.query.mock.calls.filter((c) => /modelo_pago_dispensado/.test(String(c[0])));
+  const reagendou = (pool: { query: ReturnType<typeof vi.fn> }) =>
+    pool.query.mock.calls.filter((c) => /update job_queue/.test(String(c[0])));
+
+  it("1ª passada, modelo puro, janela fechada, primeiro contato: devolve o job e NÃO envia", async () => {
+    const { d, send, completeFollowupTurn } = deps();
+    const pool = fakePool({ modelo: { status: "APPROVED" }, ultimoInboundHa: null, primeiroContato: true }) as never as { query: ReturnType<typeof vi.fn> };
+    await expect(criarHandler(d)(job({ template_id: MODELO_ID }), pool as never, { workerId: "w1" })).rejects.toThrow(/carência/);
+    expect(send).not.toHaveBeenCalled();
+    expect(runBeforeSend).not.toHaveBeenCalled();
+    expect(completeFollowupTurn).not.toHaveBeenCalled();
+    expect(reagendou(pool)).toHaveLength(1);
+  });
+
+  it("1ª passada, plano B da IA, janela fechada, primeiro contato: devolve o job e NÃO envia", async () => {
+    const { d, send } = deps();
+    const pool = fakePool({ modelo: { status: "APPROVED" }, ultimoInboundHa: null, primeiroContato: true }) as never as { query: ReturnType<typeof vi.fn> };
+    await expect(criarHandler(d)(job(PASSO_IA), pool as never, { workerId: "w1" })).rejects.toThrow(/carência/);
+    expect(send).not.toHaveBeenCalled();
+    expect(runAgentTurn).not.toHaveBeenCalled();
+    expect(reagendou(pool)).toHaveLength(1);
+  });
+
+  it("volta, modelo puro, o cliente escreveu: passo pulado, modelo não sai, e o evento é gravado", async () => {
+    const { d, send, completeFollowupTurn } = deps();
+    const pool = fakePool({ modelo: { status: "APPROVED" }, ultimoInboundHa: 0.001, primeiroContato: true }) as never as { query: ReturnType<typeof vi.fn> };
+    await criarHandler(d)(job({ template_id: MODELO_ID, ...VOLTA }), pool as never, { workerId: "w1" });
+    expect(send).not.toHaveBeenCalled();
+    expect(resultado(completeFollowupTurn).kind).toBe("skipped");
+    expect(eventos(pool)).toHaveLength(1);
+  });
+
+  it("volta, plano B da IA, o cliente escreveu: a IA escreve, nenhum modelo, e o evento é gravado", async () => {
+    const { d, send } = deps();
+    const pool = fakePool({ modelo: { status: "APPROVED" }, ultimoInboundHa: 0.001, primeiroContato: true }) as never as { query: ReturnType<typeof vi.fn> };
+    await criarHandler(d)(job({ ...PASSO_IA, ...VOLTA }), pool as never, { workerId: "w1" });
+    expect(send).not.toHaveBeenCalled();
+    expect(runAgentTurn).toHaveBeenCalledTimes(1);
+    expect(eventos(pool)).toHaveLength(1);
+  });
+
+  it("volta, janela continua fechada: o modelo sai, uma vez, sem novo reagendamento", async () => {
+    const { d, send, completeFollowupTurn } = deps();
+    const pool = fakePool({ modelo: { status: "APPROVED" }, ultimoInboundHa: null, primeiroContato: true }) as never as { query: ReturnType<typeof vi.fn> };
+    await criarHandler(d)(job({ template_id: MODELO_ID, ...VOLTA }), pool as never, { workerId: "w1" });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(reagendou(pool)).toHaveLength(0);
     expect(resultado(completeFollowupTurn).kind).toBe("sent");
   });
 });

@@ -114,11 +114,15 @@ export interface PickToolsInput {
    */
   servidoresDoAgente?: readonly ServidorDoAgenteNoTurno[];
   /**
-   * Coletor: recebe o nome de cada remota do `servidorMcpExterno` MONTADA como
-   * LEITURA (`category: "read"` de `definirFerramentasRemotas`). Quem passa é
-   * o turno, que registra o resultado delas como evidência da conferência de
-   * promessa. Os servidores do agente ficam fora de propósito. Ausente =
-   * ninguém pergunta.
+   * Coletor: recebe o nome de cada remota MONTADA como LEITURA
+   * (`category: "read"`) — do `servidorMcpExterno` da organização
+   * (`definirFerramentasRemotas`) e dos servidores MCP DO AGENTE
+   * (`definirFerramentasDoServidorDoAgente`, #4881). Quem passa é o turno, que
+   * registra o resultado delas como evidência da conferência de promessa. É o
+   * MESMO coletor e a MESMA evidência (`servidor_externo`) para os dois: quem
+   * lê a agenda do cliente pelo ERP da empresa e quem a lê pelo servidor do
+   * agente `oauth_por_contato` relatam um fato consultado, não uma promessa.
+   * Ausente = ninguém pergunta.
    */
   leiturasRemotas?: Set<string>;
   /**
@@ -934,6 +938,14 @@ export function pickToolsFromMcp(input: PickToolsInput): Record<string, Tool> {
         // — `readOnlyHint === true` exato). Sem as duas, a definição sai
         // `write` e NÃO recebe a marca: a prévia continua recusando.
         result[def.name] = def.category === "read" ? marcarLeituraRemota(montada) : montada;
+        // #4881 — a MESMA evidência da remota da organização: sem esta linha o
+        // `mcp.leiturasRemotas.has(name)` do turno era falso para o servidor do
+        // agente, `registrarLeituraRemota` nunca rodava, e a conferência de
+        // promessa vetava TODO fato de agenda que o agente relatava (inclusive o
+        // `oauth_por_contato` que devolveu a consulta). A leitura que falha não
+        // vira evidência de sucesso — quem recusa o `isError` é
+        // `registrarLeituraRemota`, no mesmo caminho da plataforma.
+        if (def.category === "read") input.leiturasRemotas?.add(def.name);
       }
     } else if (!input.contatoDoTurno || montado.contato !== input.contatoDoTurno) {
       continue;
