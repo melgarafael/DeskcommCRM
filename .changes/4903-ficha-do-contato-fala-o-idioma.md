@@ -10,8 +10,8 @@ ficavam como estavam.
 
 Agora os três seguem o idioma da tela pelo dicionário, que já tinha as chaves: em espanhol a aba
 diz "Línea de tiempo" e os rótulos "Correo" e "Etiquetas"; em português a aba passa a dizer
-"Linha do tempo", e "Email" e "Tags" continuam iguais. As duas sondas que clicavam na aba pelo
-nome "Timeline" agora clicam em "Linha do tempo".
+"Linha do tempo", e "Email" e "Tags" continuam iguais. As sondas e os roteiros de captura que
+procuravam a aba pelo nome "Timeline" agora a acham também como "Linha do tempo".
 
 Nada muda em quem já opera uma instalação: é só o texto da tela.
 
