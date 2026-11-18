@@ -425,6 +425,20 @@ export const NAV_CATALOG = [
     // Inbox e o funil, que continuam no menu.
   },
   {
+    // Módulo opcional `catalogo_servicos` (doc 212, #3480): a porta só existe
+    // depois que o administrador da instalação instala o módulo em
+    // `/admin/modulos`. Ao lado de Produtos porque é o mesmo catálogo — o
+    // serviço é item dele —, e no hub pelo mesmo motivo: cadastra-se quando
+    // muda preço, não toda manhã.
+    href: "/app/servicos",
+    label: "Serviços",
+    description: "Hora marcada, projeto ou plano recorrente, com variações, prazo e sinal.",
+    icon: "Storefront",
+    group: "crm",
+    section: "Preparar a venda",
+    modulo: "catalogo_servicos",
+  },
+  {
     href: "/app/imports",
     label: "Importações",
     description: "Lotes CSV/XLSX de empresas, pessoas e telefones.",
