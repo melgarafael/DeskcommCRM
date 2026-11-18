@@ -119,15 +119,15 @@ describe("transferir para fila (#4950)", () => {
     fireEvent.click(botao);
 
     await waitFor(() => expect(moverParaFila).toHaveBeenCalledTimes(1));
-    expect(moverParaFila.mock.calls[0][0]).toEqual({
+    expect(moverParaFila.mock.calls[0]![0]).toEqual({
       conversationId: "conv-1",
       sectorId: "setor-pedagogia",
     });
     // A ordem é o contrato: setor antes do release.
     await waitFor(() => expect(liberar).toHaveBeenCalledTimes(1));
-    expect(liberar.mock.calls[0][0]).toEqual({ conversation_id: "conv-1" });
-    expect(moverParaFila.mock.invocationCallOrder[0]).toBeLessThan(
-      liberar.mock.invocationCallOrder[0],
+    expect(liberar.mock.calls[0]![0]).toEqual({ conversation_id: "conv-1" });
+    expect(moverParaFila.mock.invocationCallOrder[0]!).toBeLessThan(
+      liberar.mock.invocationCallOrder[0]!,
     );
   });
 
