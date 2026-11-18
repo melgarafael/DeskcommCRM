@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -29,9 +30,11 @@ import { useTaxasDasEtapas } from "@/hooks/pipelines/useWinRates";
 import { LEAD_STAGES, type LeadStage } from "@/lib/agent-engine/agent/lead-state";
 import { ApiError } from "@/lib/api/types";
 import { ROTULO_DO_PASSO } from "@/lib/leads/agent-mapping";
+import { TETO_DA_DESCRICAO_DA_ETAPA } from "@/lib/leads/stage-editing";
 import type { TaxaDaEtapa } from "@/lib/metrics/taxa-da-etapa";
 import { Archive, CaretDown, CaretUp, Plus, Warning } from "@/lib/ui/icons";
 import { SeloDeAutoria } from "@/components/operacao/SeloDeAutoria";
+import { CorDaEtapa } from "./_cor-da-etapa";
 import { useT } from "@/hooks/i18n/useT";
 
 import { mensagemDeErro } from "./_mapping";
@@ -204,7 +207,17 @@ export const ROTULO = {
   chance: "Chance de fechamento (0 a 100)",
   ordem: "Ordem",
   papel: "O que acontece nesta coluna",
+  /**
+   * #4836 — o campo que faltava: o agente já LIA `crm_stages.description`
+   * (`crm_list_stages`), mas nenhuma tela escrevia nele. A frase diz QUEM lê o
+   * texto, porque "critério" sozinho parece nota interna.
+   */
+  criterio: "Critério da etapa (quando um negócio entra aqui)",
 } as const;
+
+/** A ajuda curta abaixo do campo — o que o assistente faz com o texto. */
+export const AJUDA_DO_CRITERIO =
+  "O assistente lê este texto para decidir quando mover o negócio para esta etapa.";
 
 /**
  * A frase da taxa histórica (issue #1753) — a CONTAGEM com a amostra à vista.
@@ -692,6 +705,22 @@ export function StagesSection({
                 </Button>
               </div>
 
+              {/* #4802 (item 2): a cor que o QUADRO já pintava e nenhuma tela
+                  escrevia. Mora aqui, na segunda linha, pelo mesmo motivo da
+                  janela abaixo: o cabeçalho já carrega nome, chance, ordem,
+                  papel e arquivar. Gravar aqui é gravar em `crm_stages.color`,
+                  a MESMA coluna que o `StageColumn` lê — pelo `PATCH` de etapa
+                  que já existia (auditado como os demais campos), não por um
+                  segundo caminho. */}
+              <div className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
+                <span className="font-medium">{t("Cor da etapa")}</span>
+                <CorDaEtapa
+                  etapa={etapa}
+                  desabilitado={ocupado}
+                  aoEscolher={(cor) => aplicar(etapa.id, { color: cor })}
+                />
+              </div>
+
               {/* #1532: a janela de "esfriando" é configuração da etapa, não
                   coluna do quadro — ela mora aqui, na segunda linha, com
                   rótulo próprio. Ganhar uma coluna no cabeçalho exigiria
@@ -708,6 +737,19 @@ export function StagesSection({
                   aoConfirmar={(valor) => aplicar(etapa.id, { expected_duration_hours: valor })}
                 />
               </div>
+
+              {/* #4836 — O CRITÉRIO DA ETAPA. O agente já lia este texto
+                  (`crm_list_stages` devolve `description`), mas não havia onde
+                  escrevê-lo: `crm_stages.description` ficava `null` em todo funil
+                  criado pela tela e o assistente recebia "sem critério" em TODAS
+                  as etapas. Mora na segunda linha, como a janela de esfriando, e
+                  não no cabeçalho: a linha de cima já carrega cinco controles. */}
+              <DescricaoDaEtapa
+                key={`criterio-${etapa.id}-${etapa.description ?? "sem"}`}
+                etapa={etapa}
+                desabilitado={ocupado}
+                aoConfirmar={(valor) => aplicar(etapa.id, { description: valor })}
+              />
 
               {/* Uma coluna que apareceu no quadro sem o dono ter criado precisa
                   dizer de onde veio — senão o assistente muda o funil e a única
@@ -1086,6 +1128,108 @@ function JanelaDaEtapa({
       />
       <span aria-hidden>{t("horas")}</span>
     </span>
+  );
+}
+
+/**
+ * O CRITÉRIO da etapa — quando um negócio entra aqui (#4836).
+ *
+ * ⚠️ ESTE CAMPO É A PONTE ENTRE A TELA E O ASSISTENTE. O agente já lia
+ * `crm_stages.description` por `crm_list_stages` e usava o texto para decidir
+ * quando mover o card; o que não existia era onde ESCREVER. Sem ele, todo funil
+ * criado pela tela ficava com `null` em todas as etapas e o modelo recebia
+ * "sem critério" sempre — a configuração existia só no banco de quem a editou
+ * por SQL.
+ *
+ * Mesmo contrato do nome e da janela: salva ao CONFIRMAR (sair do campo), nunca
+ * a cada tecla; rascunho local e Escape descarta. Vazio grava `null` — a coluna
+ * é nullable e `""` chegaria ao modelo como um critério que existe e não diz
+ * nada.
+ *
+ * ⚠️ O TETO É O MESMO DA API (`TETO_DA_DESCRICAO_DA_ETAPA`, medido depois do
+ * `trim`). Sem `maxLength` no `<textarea>` de propósito: o navegador truncaria a
+ * colagem em silêncio e o dono da clínica perderia o fim do texto sem saber. Aqui
+ * a recusa é visível — o contador fica vermelho e o blur devolve o valor gravado
+ * com um aviso.
+ */
+function DescricaoDaEtapa({
+  etapa,
+  desabilitado,
+  aoConfirmar,
+}: {
+  etapa: EtapaDoFunil;
+  desabilitado: boolean;
+  aoConfirmar: (valor: string | null) => void;
+}) {
+  const t = useT();
+  const gravada = etapa.description ?? "";
+  const [rascunho, setRascunho] = useState(gravada);
+  // Escape chama `blur()`, e o blur confirma — com o rascunho DESTA renderização,
+  // não com o restaurado. Mesmo conserto do JanelaDaEtapa (#2161).
+  const descartando = useRef(false);
+  const usados = rascunho.trim().length;
+  const excedeu = usados > TETO_DA_DESCRICAO_DA_ETAPA;
+
+  function confirmar() {
+    if (descartando.current) {
+      descartando.current = false;
+      return;
+    }
+    const texto = rascunho.trim();
+    if (texto.length > TETO_DA_DESCRICAO_DA_ETAPA) {
+      setRascunho(gravada);
+      toast.error(
+        t("O critério da etapa vai até {teto} caracteres.").replace(
+          "{teto}",
+          String(TETO_DA_DESCRICAO_DA_ETAPA),
+        ),
+      );
+      return;
+    }
+    if (texto === gravada) return;
+    aoConfirmar(texto === "" ? null : texto);
+  }
+
+  return (
+    <div className="space-y-1">
+      <label
+        className="block text-xs font-medium text-text-muted"
+        htmlFor={`criterio-${etapa.id}`}
+      >
+        {t(ROTULO.criterio)}
+      </label>
+      <Textarea
+        id={`criterio-${etapa.id}`}
+        value={rascunho}
+        rows={2}
+        disabled={desabilitado}
+        aria-describedby={`criterio-ajuda-${etapa.id}`}
+        data-testid={`criterio-${etapa.id}`}
+        onChange={(e) => setRascunho(e.target.value)}
+        onBlur={confirmar}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            descartando.current = true;
+            setRascunho(gravada);
+            e.currentTarget.blur();
+          }
+        }}
+        className="min-h-0 w-full resize-y text-sm"
+        placeholder={t("Ex.: entra aqui quando o cliente aprova o orçamento e pede o link de pagamento.")}
+      />
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p id={`criterio-ajuda-${etapa.id}`} className="text-xs leading-snug text-text-muted">
+          {t(AJUDA_DO_CRITERIO)}
+        </p>
+        <span
+          className={`text-xs tabular-nums ${excedeu ? "font-medium text-warning-fg" : "text-text-muted"}`}
+          data-testid={`criterio-contagem-${etapa.id}`}
+          aria-live="polite"
+        >
+          {usados}/{TETO_DA_DESCRICAO_DA_ETAPA}
+        </span>
+      </div>
+    </div>
   );
 }
 

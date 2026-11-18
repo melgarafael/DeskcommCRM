@@ -3,8 +3,11 @@
  * "UI not yet implemented" — a única saída de emergência para quem não achava
  * uma tela era uma promessa vazia.
  *
- * v1 busca só NAVEGAÇÃO. Contato, conversa e lead são outra fonte de dados e
- * outra feature.
+ * Desde a #4593 a paleta devolve também FUNIS, FLUXOS e AGENTES. As três fontes
+ * são mockadas aqui: estes casos provam a paleta (busca, teclado, papel, cores)
+ * sem rede; o casamento e o destino dos itens têm teste próprio em
+ * `lib/navigation/itens-da-paleta.test.ts`, e o caso do fim deste arquivo prova
+ * a LIGAÇÃO entre os dois — item na lista, clique no registro certo.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
@@ -19,8 +22,22 @@ const authRef: { user: Pick<AuthUser, "is_platform_admin">; activeOrg: ActiveOrg
   activeOrg: { orgId: "org-1", name: "Org", role: "admin" },
 };
 
+/** As três listas que a paleta lê (#4593) — vazias por padrão. */
+const fontes: {
+  funis: { id: string; name: string }[];
+  fluxos: { id: string; name: string }[];
+  agentes: { id: string; name: string; description?: string | null }[];
+} = { funis: [], fluxos: [], agentes: [] };
+
 vi.mock("@/hooks/auth/AuthProvider", () => ({ useAuth: () => authRef }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
+vi.mock("@/hooks/followup/useFollowupFlows", () => ({
+  useFollowupFlows: () => ({ data: fontes.fluxos }),
+}));
+vi.mock("@/hooks/ai/useAgents", () => ({ useAgentsList: () => ({ data: fontes.agentes }) }));
+vi.mock("@/hooks/pipelines/usePipelinesDaPaleta", () => ({
+  usePipelinesDaPaleta: () => ({ data: fontes.funis }),
+}));
 
 function comoPapel(role: ActiveOrg["role"]) {
   authRef.activeOrg = { orgId: "org-1", name: "Org", role };
@@ -30,6 +47,9 @@ afterEach(() => {
   cleanup();
   push.mockClear();
   comoPapel("admin");
+  fontes.funis = [];
+  fontes.fluxos = [];
+  fontes.agentes = [];
 });
 
 function abrir() {
@@ -145,5 +165,34 @@ describe("CommandPalette", () => {
     expect(opcoes[0]?.getAttribute("data-href")).toBe("/app/inbox");
     await user.keyboard("{ArrowDown}{Enter}");
     expect(push).toHaveBeenCalledWith(opcoes[1]?.getAttribute("data-href"));
+  });
+
+  it("devolve funil, fluxo e agente e abre o REGISTRO do item (#4593)", async () => {
+    fontes.funis = [{ id: "p1", name: "Prospecção (Site)" }];
+    fontes.fluxos = [{ id: "f1", name: "Kelly · retomada (oficinas mecânica)" }];
+    fontes.agentes = [
+      { id: "a1", name: "Kelly", description: "Retomada de pré-vendas por WhatsApp" },
+    ];
+    const user = userEvent.setup();
+    abrir();
+    const campo = screen.getByRole("combobox");
+
+    // O fluxo pelo trecho do nome — e o clique vai para o EDITOR do fluxo, não
+    // para a lista de Follow-ups.
+    await user.type(campo, "oficinas");
+    await user.click(screen.getByRole("option", { name: /oficinas mecânica/i }));
+    expect(push).toHaveBeenCalledWith("/app/ai/followups/f1");
+
+    // O funil pelo nome, sem acento — e o clique abre o quadro DAQUELE funil.
+    await user.clear(campo);
+    await user.type(campo, "prospeccao");
+    await user.click(screen.getByRole("option", { name: /Prospecção \(Site\)/ }));
+    expect(push).toHaveBeenCalledWith("/app/pipelines/p1");
+
+    // O agente pela DESCRIÇÃO, como na lista de Agentes.
+    await user.clear(campo);
+    await user.type(campo, "pre-vendas");
+    await user.click(screen.getByRole("option", { name: /Kelly/ }));
+    expect(push).toHaveBeenCalledWith("/app/ai/agents/a1");
   });
 });

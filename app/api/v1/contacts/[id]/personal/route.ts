@@ -556,6 +556,16 @@ export async function DELETE(req: NextRequest, ctx: Context): Promise<Response> 
     return ok({ contact: contato }, { requestId });
   }
 
+  // #4434 (doc 362 = A): desmarcar devolve a conversa à equipe, então é ACESSO.
+  // Contato com dono só o dono desmarca; papel nenhum abre esta porta, nem
+  // `admin`. Sem dono (legado ou marcado por token) segue a régua de antes.
+  const dono = (contato as { personal_owner_user_id?: string | null }).personal_owner_user_id ?? null;
+  if (dono !== null && !(authz.actor.type === "user" && authz.actor.id === dono)) {
+    return fail("forbidden", t("Só quem marcou o contato como pessoal pode desmarcá-lo."), 403, {
+      requestId,
+    });
+  }
+
   const { data: desmarcado, error: updateErro } = await admin
     .from("contacts")
     // #4434: desmarcar ZERA a posse. Sem isso, o contato voltaria a ser

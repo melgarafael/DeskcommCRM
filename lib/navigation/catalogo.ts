@@ -980,6 +980,15 @@ export const NAV_CATALOG = [
     sidebar: true,
   },
   {
+    href: "/app/ads/google",
+    label: "Google Ads",
+    description: "Resultados dos negócios atribuídos ao Google Ads e desempenho da conta de anúncios.",
+    icon: "Megaphone",
+    group: "analise",
+    section: "Os números do período",
+    minRole: "manager",
+  },
+  {
     // Irmã de "Desempenho", não a mesma coisa: lá é DESFECHO (funil agora,
     // ganho/perdido por atendente); aqui é o TRABALHO que aconteceu no
     // período, com quem fez cada coisa. Um mês inteiro atendido pela IA e um
@@ -1075,6 +1084,28 @@ export const NAV_CATALOG = [
     label: "Distribuição de atendimento",
     description: "Quem recebe cada cliente novo, e o que cada atendente enxerga.",
     icon: "UsersThree",
+    group: "organizacao",
+    section: "Sua empresa",
+    minRole: "manager",
+  },
+  {
+    // A tela da #3603. O prazo dos fluxos de etapa parada já se editava no
+    // construtor, mas só fluxo por fluxo: nenhuma tela mostrava quais deles
+    // alcançam cada etapa. A tela é uma JANELA para os fluxos de etapa parada:
+    // mostra os que alcançam cada etapa e edita o prazo NO PRÓPRIO FLUXO, sem
+    // chave paralela em `settings`.
+    //
+    // A entrada automática no funil NÃO está aqui: ela vive na main como um
+    // interruptor e a escolha de funil/etapa saiu da action. Uma tela que a
+    // oferecesse gravaria valor que ninguém lê.
+    //
+    // `manager` e não `admin`, pela mesma linha da matriz da spec 13 §4 que cobre
+    // "atendimento/routing": quem monta a régua comercial da empresa é o gerente,
+    // e nada aqui apaga conversa nem mexe em dinheiro.
+    href: "/app/settings/followup-por-etapa",
+    label: "Follow-up por etapa",
+    description: "O que a operação espera de cada etapa do funil depois que a conversa chega.",
+    icon: "FlowArrow",
     group: "organizacao",
     section: "Sua empresa",
     minRole: "manager",
