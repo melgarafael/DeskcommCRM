@@ -30,6 +30,15 @@ import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 import { CHANNEL_CAPABILITIES, PROVIDERS_DE_MENSAGEM } from "@/lib/channels/capabilities";
 
+/**
+ * Os dois lados da janela, pela CAPACIDADE e nunca pelo nome do provedor
+ * (doutrina `restricao-de-canal`, invariante 1): o canal oficial só aceita
+ * mensagem livre DENTRO da janela de 24 h, o pareado por QR aceita fora dela.
+ * A mesma régua que o teste de mídia usa mais abaixo.
+ */
+const CANAL_OFICIAL = PROVIDERS_DE_MENSAGEM.find((p) => !CHANNEL_CAPABILITIES[p].freeformOutsideWindow)!;
+const CANAL_POR_QR = PROVIDERS_DE_MENSAGEM.find((p) => CHANNEL_CAPABILITIES[p].freeformOutsideWindow)!;
+
 const boundary = { organization_id: "org-1", contact_id: "contact-1", conversation_id: "conv-1", service_revision: 1, demanda_id: null, demanda_revision: null };
 const JOB = {
   id: "job-1",
@@ -367,7 +376,7 @@ describe("enviarTextoFixoPendente · janela de disparo (#2658)", () => {
   it("03h: conexão por QR adia pelo horário de envio e grava janela_regulatoria=false", async () => {
     configurarJanelaReal();
     decidir.mockResolvedValue({ permite: true, motivo: "autorizado" });
-    CONFIG.provider = "waha";
+    CONFIG.provider = CANAL_POR_QR;
 
     const enviados = await comRelogoEm("2026-10-08T04:00:00Z", () => enviarTextoFixoPendente(admin()));
 
@@ -383,7 +392,7 @@ describe("enviarTextoFixoPendente · janela de disparo (#2658)", () => {
   it("03h: canal oficial adia no MESMO instante, pelo MESMO motivo, e marca o escopo", async () => {
     configurarJanelaReal();
     decidir.mockResolvedValue({ permite: true, motivo: "autorizado" });
-    CONFIG.provider = "meta_cloud";
+    CONFIG.provider = CANAL_OFICIAL;
 
     const enviados = await comRelogoEm("2026-10-08T04:00:00Z", () => enviarTextoFixoPendente(admin()));
 
@@ -690,7 +699,7 @@ describe("enviarTextoFixoPendente · mídia com legenda (#2734)", () => {
     // 24 h da API oficial não existe neste canal (capacidade, não nome), então
     // nada é recusado e nada é adiado por ela.
     decidir.mockResolvedValue({ permite: true });
-    CONFIG.provider = "waha";
+    CONFIG.provider = CANAL_POR_QR;
     CONFIG.ultimoInbound = new Date(Date.now() - 30 * HORA).toISOString();
     comMidia("https://cdn.exemplo.com/oferta.png");
 
