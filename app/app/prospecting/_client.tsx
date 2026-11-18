@@ -2196,7 +2196,11 @@ export function ProspectingClient() {
                                     ? t(
                                         "Inclua a palavra que a pessoa responde para sair; sem ela o pedido não é reconhecido.",
                                       )
-                                    : t("Use até 160 caracteres e nenhum link.")}
+                                    : problemaDoTextoDaSaida === "palavra_escondida"
+                                      ? t(
+                                          "A palavra está no texto, mas riscada, escondida ou em código. Tire a marcação de cima dela: é o que a pessoa vai responder.",
+                                        )
+                                      : t("Use até 160 caracteres e nenhum link.")}
                                 </p>
                               )}
                             </div>

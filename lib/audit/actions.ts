@@ -619,6 +619,11 @@ export const AUDIT_ACTIONS = [
   // as empresas deste servidor podiam ligar um banco de outro sistema?" só tem
   // resposta aqui.
   "platform.modulo_updated",
+  // Um módulo opcional dado ou NEGADO a UMA empresa (linha em
+  // `organization_modules`, migration 9416, issue #3868). A linha guarda o estado;
+  // a pergunta "desde quando este cliente tem cobrança/banco externo?" — e,
+  // principalmente, "quem tirou o módulo dele?" — só tem resposta aqui.
+  "organization.modulo_updated",
   // A lista de endereços da rede INTERNA que a instalação pode alcançar
   // (`platform_settings.internal_destinations`, migration 0324, decisão 22-d).
   // Auditável pela mesma razão da linha acima e com alcance maior: cada entrada
@@ -1532,6 +1537,11 @@ export const AUDIT_ACTIONS = [
   "ai.knowledge_source_created",
   "ai.knowledge_source_updated",
   "ai.knowledge_source_archived",
+  // De volta ao acervo (PATCH `{ status: 'active' }`). Arquivar era ida sem
+  // volta; a trilha guarda de onde para onde — `archived`/`is_active=false`
+  // para `active`/`is_active=true` —, porque "quem tirou do arquivo" não se
+  // responde com a linha atual.
+  "ai.knowledge_source_restored",
   "ai.knowledge_source_reindexed",
   "ai_models.synced",
   "ai_models.sync_failed",

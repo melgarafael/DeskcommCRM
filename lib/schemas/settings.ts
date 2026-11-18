@@ -1247,8 +1247,9 @@ export function ouvidoriaLigada(settings: unknown): boolean {
  * EXPLÍCITO liga (a régua de `ouvidoriaLigada`); ausente, `"true"` ou lixo é
  * desligado. Nunca lança: roda no fecho do negócio.
  *
- * ponytail: ainda sem porta de escrita — o interruptor na tela chega com o
- * #4264, quando todas as portas de ganho e de perda passarem pela mesma regra.
+ * ponytail: ainda sem porta de escrita — o interruptor na tela chega na fatia
+ * seguinte ao #4264 (issue #3602), que pôs todas as portas de ganho e de perda
+ * na mesma regra.
  */
 export function recorrenciaNoGanhoLigada(settings: unknown): boolean {
   const raiz =
