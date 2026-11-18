@@ -70,6 +70,10 @@ it("usa identidade do executor e consulta fresca; recusa links e valores inventa
   expect(textoAutorizadoPelaFonte("Seu portal: https://outro.example/projeto/123", atual)).toBe(
     false,
   );
+  expect(textoAutorizadoPelaFonte(RESPOSTA_SEM_DADOS, atual)).toBe(true);
+  expect(textoAutorizadoPelaFonte(`“${RESPOSTA_SEM_DADOS}”`, atual)).toBe(true);
+  expect(textoAutorizadoPelaFonte(`"${RESPOSTA_SEM_DADOS}"`, atual)).toBe(true);
+  expect(textoAutorizadoPelaFonte("“VALOR: R$ 900,00.”", atual)).toBe(true);
 });
 it.each(["indisponivel", "desatualizado", "escrita", "sem_identidade"])(
   "falha fechada: %s",

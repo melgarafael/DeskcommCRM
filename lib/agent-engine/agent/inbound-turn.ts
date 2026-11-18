@@ -4244,7 +4244,7 @@ async function executarTurnoDoAgente(
   registrarFonteConsultada = (fonte) => {
     if (fonte && agentConfig?.consultaObrigatoriaTool)
       evidenciasComerciais.registrarLeituraRemota(agentConfig.consultaObrigatoriaTool, {
-        dados: fonte.respostas_permitidas,
+        dados: [...fonte.respostas_permitidas, RESPOSTA_SEM_DADOS],
       });
   };
   registrarFonteConsultada(fonteObrigatoriaInicial);

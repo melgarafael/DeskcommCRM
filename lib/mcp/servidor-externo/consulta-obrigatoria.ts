@@ -17,8 +17,12 @@ export const fonteVerificadaSchema = z
 export type FonteVerificada = z.infer<typeof fonteVerificadaSchema>;
 export function textoAutorizadoPelaFonte(texto: string, fonte: FonteVerificada | null): boolean {
   // Ausência, falha e timeout só autorizam a resposta sem informações privadas.
+  const limpo = texto.trim().replace(/^[“"'](.*)[”"']$/s, '$1').trim();
   return (
-    texto.trim() === RESPOSTA_SEM_DADOS || !!fonte?.respostas_permitidas.includes(texto.trim())
+    limpo === RESPOSTA_SEM_DADOS ||
+    texto.trim() === RESPOSTA_SEM_DADOS ||
+    !!fonte?.respostas_permitidas.includes(texto.trim()) ||
+    !!fonte?.respostas_permitidas.includes(limpo)
   );
 }
 export interface ConfigConsulta {

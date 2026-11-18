@@ -2,6 +2,7 @@ import { comercialExigeHumano, contemAssuntoComercialNaSaida, restricaoComercial
 import { assertAgentOperationPg, type AgentOperationContext } from '@/lib/ai/agents/operation';
 import { assertApprovedReplyPg, type ApprovedReplyContext } from '@/lib/ai/replies/delivery';
 import { assertMeetingDeliveryPg, type MeetingDeliveryContext } from '@/lib/agenda/meet-delivery';
+import { RESPOSTA_SEM_DADOS } from '@/lib/mcp/servidor-externo/consulta-obrigatoria';
 /**
  * Cadeia de guardrails `before_send` (F2-13; edge-contract §2, blueprint 5.2) — o
  * seam determinístico entre a decisão do modelo (tool `send_message`) e o canal.
@@ -588,6 +589,10 @@ export const semanticPromiseGate: Gate = {
   name: 'semantic_promise',
   evaluate: (ctx) => {
     if (ctx.semanticPromise === null || !ctx.semanticPromise.isPromise) return { pass: true };
+    // A recusa canônica de ausência de dados cadastrados («Não tenho essa informação
+    // confirmada no cadastro...») é a resposta mandatória de encerramento seguro —
+    // nunca é promessa comercial de desconto, brinde ou prazo não autorizado.
+    if (ctx.body.includes(RESPOSTA_SEM_DADOS)) return { pass: true };
     return {
       pass: false,
       code: 'promise_semantic',
