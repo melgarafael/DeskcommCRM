@@ -10,6 +10,6 @@ O endpoint MCP (`/api/mcp`) ganha o ciclo de vida das tarefas da equipe (`crm_ta
 - **`crm_list_tasks`**: consulta as tarefas por responsável (`me`, `ninguem` ou o id), situação, contato, negócio, demanda ou janela de vencimento. Dentro de uma conversa, o agente vê só as tarefas do cliente daquela conversa.
 - **`crm_update_task`**: altera situação, prazo, prioridade, descrição, responsável e vínculos. A conclusão entra na linha do tempo do negócio só quando a tarefa fecha de fato, e o registro de auditoria guarda de qual situação para qual ela foi.
 
-As três ficam no pacote "Não perder o cliente" da configuração do agente. Ler exige `viewer`; criar e alterar exigem `agent`.
+As três ficam no pacote "Passar para um humano" da configuração do agente: a tarefa é o pedido que o agente deixa para alguém da equipe. Ler exige `viewer`; criar e alterar exigem `agent`.
 
 Contribuição de @Villa-Nova-Cont (#4838).
