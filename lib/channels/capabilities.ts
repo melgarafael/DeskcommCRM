@@ -253,16 +253,18 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
   // famílias de restrição mutuamente exclusivas, como a doutrina exige.
   //
   // `costPerMessage: false` e `groups: "none"` também vêm da doc: não há
-  // cobrança por mensagem nem grupos neste chat. `voiceNote: "server-convert"` é
-  // placeholder honesto — o canal não manda áudio, e a capability existe só
-  // para o tipo; a ausência de mídia é o contrato, não a conversão.
+  // cobrança por mensagem nem grupos neste chat. E `voiceNote: "none"` é a
+  // MESMA leitura, não um default: o chat é de texto, o adapter não manda áudio
+  // e `server-convert` afirmaria que o canal fala. A matriz de voz
+  // (`voz-em-canal-sem-nota-de-voz`) exige que quem não entrega declare `none`,
+  // como o bot do Telegram.
   olx: {
     freeformOutsideWindow: true,
     requiresTemplates: false,
     canManageTemplates: false,
     banRisk: false,
     minIntervalMs: null,
-    voiceNote: "server-convert",
+    voiceNote: "none",
     groups: "none",
     costPerMessage: false,
     alteraMensagemEnviada: false,

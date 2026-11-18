@@ -27,12 +27,16 @@ export const AI_TEST_SOCIAL_IDENTITIES_KEY = "ai_test_social_identities" as cons
 
 /**
  * As redes cuja identidade pode ser testadora: as de `CANAIS_DE_CONVERSA` que
- * entram pelo intermediário social. `whatsapp` tem a lista de telefones, e o
- * `telegram` (bot nativo) grava outra forma de identidade — a do robô, não a
- * de uma conta de 24 dígitos hexadecimais.
+ * entram pelo intermediário social. Ficam de fora as três que NÃO gravam
+ * `contacts.social_identity` nessa forma: `whatsapp` tem a lista de telefones,
+ * o `telegram` (bot nativo) grava a identidade do robô, e o `olx` (issue #2927)
+ * tem ingestão própria, com a conta amarrada à credencial do vendedor — o
+ * contato de lá entra por telefone ou `lid`, não por "conta conectada de 24
+ * dígitos hexadecimais". Sem esta exclusão, `olx` virava "rede social
+ * testadora" só porque a lista de canais de conversa cresceu.
  */
 export const REDES_COM_TESTADOR_SOCIAL: readonly string[] = CANAIS_DE_CONVERSA.filter(
-  (canal) => canal !== "whatsapp" && canal !== "telegram",
+  (canal) => canal !== "whatsapp" && canal !== "telegram" && canal !== "olx",
 );
 
 /** Teto da lista por canal — é lista de teste, não de público. O mesmo teto vive na RPC. */
