@@ -36,7 +36,7 @@ export async function abrirAcesso(
   // banco de outro sistema. Toda leitura passa por aqui — as rotas e as
   // ferramentas do agente —, então o módulo desligado recusa aqui também, e
   // nenhum caminho novo precisa lembrar de perguntar.
-  if (!(await moduloLigado(admin, "banco_externo"))) return { ok: false, motivo: "modulo_desligado" };
+  if (!(await moduloLigado(admin, "banco_externo", organizationId))) return { ok: false, motivo: "modulo_desligado" };
 
   const leitura = await carregarConexao(admin, organizationId, connectionId);
   if (!leitura.ok) return { ok: false, motivo: leitura.motivo };

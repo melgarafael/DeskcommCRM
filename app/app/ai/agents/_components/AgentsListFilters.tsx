@@ -32,8 +32,10 @@ export function AgentsListFilters({
   const t = useT();
   return (
     <div className="flex flex-wrap items-center gap-2">
+      {/* #4593: o filtro já casa com a DESCRIÇÃO (`lib/ai/agents/filtrar-agentes`).
+          O rótulo dizia só «nome» e escondia o recurso de quem o tinha na mão. */}
       <Input
-        placeholder={t("Buscar por nome…")}
+        placeholder={t("Buscar por nome ou descrição…")}
         value={query}
         onChange={(e) => onQueryChange(e.target.value)}
         className="w-full sm:w-64"
