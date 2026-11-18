@@ -36,6 +36,7 @@ import {
   FERRAMENTA_DE_PRODUTOS,
   juntarProdutos,
   limitesDoDia,
+  linhaDeUmDiaQueAcabou,
   type ProdutosPedidos,
   produtosDasChamadas,
   secoesDaConversa,
@@ -216,7 +217,7 @@ export async function montarOperacaoDoDia(entrada: EntradaDaOperacao): Promise<O
 
   // ── 1. Contadores: quem recebeu mensagem do cliente neste dia, e quem é novo ──
   const comEntrada = exigir<
-    Array<{ conversation_id: string; channel: string; primeira_entrada: string; nova: boolean }>
+    Array<{ conversation_id: string; channel: string; primeira_entrada: string; ultima_entrada: string; nova: boolean }>
   >(
     "conversas com entrada",
     await db.rpc("fn_operacao_conversas_com_entrada", {
@@ -230,8 +231,10 @@ export async function montarOperacaoDoDia(entrada: EntradaDaOperacao): Promise<O
   const novas = vazioPorCanal();
   const ativas = vazioPorCanal();
   const idsComEntrada = new Set<string>();
+  const ultimaEntradaNoDia = new Map<string, string>();
   for (const l of comEntrada) {
     idsComEntrada.add(l.conversation_id);
+    ultimaEntradaNoDia.set(l.conversation_id, l.ultima_entrada);
     contarCanal(ativas, l.channel);
     if (l.nova) contarCanal(novas, l.channel);
   }
@@ -373,8 +376,9 @@ export async function montarOperacaoDoDia(entrada: EntradaDaOperacao): Promise<O
     .eq("organization_id", orgId)
     .gte("stage_changed_at", ini)
     .lt("stage_changed_at", fimIso);
-  const mudaramDeEtapa = mudaram.error ? null : (mudaram.count ?? null);
-  if (mudaram.error) logger.warn("operacao-do-dia: contagem de mudança de etapa falhou", { orgId, causa: mudaram.error.message });
+  // Contagem que falhou não é "não registrado": lança, como as demais leituras.
+  if (mudaram.error) throw new LeituraDaOperacaoError("mudanças de etapa", mudaram.error.message);
+  const mudaramDeEtapa = mudaram.count ?? null;
 
   // ── 6. Falhas de operação ──
   type MensagemLida = {
@@ -572,7 +576,7 @@ export async function montarOperacaoDoDia(entrada: EntradaDaOperacao): Promise<O
     const ia = c.assignee_kind === "ai" || c.comando_da_conversa === "automatico";
     const pessoa = c.assigned_to_user_id ? c.assigned_to_user_name?.trim() || null : null;
     const produtos = produtosPorConversa.get(c.id);
-    return {
+    const linha: LinhaDeConversa = {
       conversation_id: c.id,
       contato: contatoDaLinha(c.contact_id, contatos.get(c.contact_id)),
       canal: c.channel,
@@ -591,6 +595,7 @@ export async function montarOperacaoDoDia(entrada: EntradaDaOperacao): Promise<O
       tags: c.tags ?? [],
       ...(produtos ? { produtos } : {}),
     };
+    return estadoDoMomento ? linha : linhaDeUmDiaQueAcabou(linha, fimIso, ultimaEntradaNoDia.get(c.id) ?? null);
   };
 
   const projetos: LinhaDeConversa[] = [];

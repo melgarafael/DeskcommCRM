@@ -143,7 +143,7 @@ function TabelaDeConversas({
               <td className="px-3 py-2 text-xs">
                 {l.comando && l.comando in ROTULO_DO_COMANDO
                   ? t(ROTULO_DO_COMANDO[l.comando as keyof typeof ROTULO_DO_COMANDO])
-                  : l.status}
+                  : (l.status ?? nr)}
                 {l.motivo_codigo && <div className="text-text-muted">{l.motivo_codigo}</div>}
               </td>
               <td className="px-3 py-2 text-xs">

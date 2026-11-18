@@ -78938,7 +78938,8 @@ update public.crm_lead_attachments a
 -- `conteudo` é o formato `OperacaoDoDia` (`lib/operacao/tipos.ts`, `versao`
 -- dentro do jsonb) passado por `congelar` (`lib/operacao/conteudo.ts`): SÓ
 -- FATOS — ids (conversa, contato, negócio, responsável), canal, situação,
--- etiquetas, instantes, códigos, termos e produtos da busca da IA. NUNCA nome,
+-- etiquetas, instantes, códigos, produtos do catálogo achados pela busca da IA
+-- (nunca o TERMO buscado, que é texto do cliente). NUNCA nome,
 -- telefone, @, prévia de mensagem ou resumo: a cascata de anonimização da LGPD
 -- (`fn_lgpd_cascade_redact_contact`) não alcança um jsonb guardado, então ele
 -- não pode ter o que ela precisaria apagar. A tela do relatório resolve o

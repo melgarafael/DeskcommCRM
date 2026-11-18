@@ -12,9 +12,11 @@
  *     o estado do momento. Não espera a hora de hoje: o dia perdido sai na
  *     primeira rodada em que a instalação estiver de pé.
  *   - Hoje já passou da hora e não tem linha? — gera o de hoje.
- *   - Hoje tem linha, mas do botão "Gerar agora" ANTES da hora? — regera uma
- *     vez por cima (a linha passa a `gerado_por = 'cron'`, e a condição deixa
- *     de valer: sem laço). O manual não cancela o automático.
+ *   - Hoje (ou ontem) tem linha, mas do botão "Gerar agora" ANTES da hora
+ *     marcada daquele dia? — regera uma vez por cima (a linha passa a
+ *     `gerado_por = 'cron'`, e a condição deixa de valer: sem laço). O manual
+ *     não cancela o automático, nem quando a instalação parou entre o clique
+ *     e a hora marcada.
  *
  * ═══ IDEMPOTENTE ═══
  *

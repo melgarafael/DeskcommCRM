@@ -19,6 +19,8 @@ import { silencioVigente, STATUS_ENCERRADOS } from "@/lib/inbox/comando-da-conve
 import { conversationTagSchema } from "@/lib/schemas/messaging";
 import { fusoUtilizavel } from "@/lib/tempo/fusos";
 
+import type { LinhaDeConversa } from "./tipos";
+
 // ─── O DIA NO FUSO DA ORGANIZAÇÃO ───────────────────────────────────────────
 
 const DIA_ISO = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -363,10 +365,10 @@ export interface RelatorioExistente {
  *     estava parada na hora, ou o cron falhou). Ele é gerado agora, já fechado
  *     — dia inteiro —, e só se ainda não existe linha (`on conflict do nothing`).
  *   - `hora_marcada`: hoje, a partir da hora marcada, sem linha.
- *   - `refazer_apos_manual`: hoje já tem linha, mas foi o botão "Gerar agora"
- *     ANTES da hora marcada. O manual não cancela o automático: o cron regera
- *     uma vez, por cima, e a linha passa a `gerado_por = 'cron'` — não há laço,
- *     porque a condição deixa de valer.
+ *   - `refazer_apos_manual`: hoje (ou ontem) já tem linha, mas foi o botão
+ *     "Gerar agora" ANTES da hora marcada daquele dia. O manual não cancela o
+ *     automático: o cron regera uma vez, por cima, e a linha passa a
+ *     `gerado_por = 'cron'` — não há laço, porque a condição deixa de valer.
  */
 export interface AcaoDoCron {
   dia: string;
@@ -414,15 +416,27 @@ export function decisaoDoCron(input: {
   const hoje = diaNoFuso(input.agora, input.fuso);
   const ontem = diaAnterior(hoje);
 
+  // Linha do botão "Gerar agora" de ANTES da hora marcada daquele dia: o cron
+  // ainda deve o automático dele. Vale para hoje e para ontem — se a instalação
+  // parou entre o manual e a hora marcada, o dia de ontem não pode ficar para
+  // sempre com o relatório cortado na hora do clique.
+  const manualAntesDaHora = (dia: string, marcadaDoDia: Date): boolean => {
+    const linha = input.existentes.get(dia);
+    return linha?.gerado_por === "usuario" && new Date(linha.gerado_em).getTime() < marcadaDoDia.getTime();
+  };
+
   const fimDeOntem = limitesDoDia(ontem, input.fuso).fim;
   const existiaOntem = !input.criadaEm || new Date(input.criadaEm).getTime() < fimDeOntem.getTime();
+  const marcadaDeOntem = instanteDaHoraMarcada(ontem, input.config.hora, input.fuso);
   if (existiaOntem && !input.existentes.has(ontem)) acoes.push({ dia: ontem, motivo: "dia_perdido" });
+  else if (manualAntesDaHora(ontem, marcadaDeOntem)) {
+    acoes.push({ dia: ontem, motivo: "refazer_apos_manual", substituirManualAntesDe: marcadaDeOntem.toISOString() });
+  }
 
   const marcada = instanteDaHoraMarcada(hoje, input.config.hora, input.fuso);
   if (input.agora.getTime() >= marcada.getTime()) {
-    const deHoje = input.existentes.get(hoje);
-    if (!deHoje) acoes.push({ dia: hoje, motivo: "hora_marcada" });
-    else if (deHoje.gerado_por === "usuario" && new Date(deHoje.gerado_em).getTime() < marcada.getTime()) {
+    if (!input.existentes.has(hoje)) acoes.push({ dia: hoje, motivo: "hora_marcada" });
+    else if (manualAntesDaHora(hoje, marcada)) {
       acoes.push({ dia: hoje, motivo: "refazer_apos_manual", substituirManualAntesDe: marcada.toISOString() });
     }
   }
@@ -452,4 +466,33 @@ export function corteDoDia(c: { inicio: string; fim: string; lido_em: string }):
   const lido = new Date(c.lido_em).getTime();
   const diaInteiro = lido >= new Date(c.fim).getTime();
   return { diaInteiro, ate: diaInteiro ? c.fim : c.lido_em, estadoDoMomento: !diaInteiro };
+}
+
+/**
+ * A linha de conversa num dia que JÁ ACABOU. Situação, comando, responsável,
+ * motivo da última passagem, próxima tarefa e espera são o estado de AGORA, não
+ * o daquele dia — saem, pela mesma régua do estado do momento. A última
+ * atividade fica, mas limitada ao dia: a última mensagem da conversa pode ser
+ * de hoje, e a tela mostra só "HH:MM". Fora do dia, vale a última entrada do
+ * cliente DENTRO dele (`ultimaEntradaNoDia`), ou nada.
+ */
+export function linhaDeUmDiaQueAcabou(
+  linha: LinhaDeConversa,
+  fimDoDia: string,
+  ultimaEntradaNoDia: string | null,
+): LinhaDeConversa {
+  const ultima = linha.ultima_atividade_em;
+  const dentro = ultima !== null && new Date(ultima).getTime() < new Date(fimDoDia).getTime();
+  return {
+    ...linha,
+    status: null,
+    comando: null,
+    motivo_codigo: null,
+    proxima_acao: null,
+    responsavel_user_id: null,
+    responsavel: null,
+    responsavel_tipo: null,
+    ultima_atividade_em: dentro ? ultima : ultimaEntradaNoDia,
+    esperando_desde: null,
+  };
 }

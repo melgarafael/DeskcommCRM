@@ -45,8 +45,8 @@ export interface LinhaDeConversa {
   /** Pessoal. Resumo da passagem para a equipe, quando houve; senão a prévia da última mensagem. */
   resumo?: string | null;
   resumo_origem?: "passagem" | "ultima_mensagem" | null;
-  /** `conversations.status`. */
-  status: string;
+  /** `conversations.status`. `null` num dia que já acabou: é o estado de agora, não o do dia. */
+  status: string | null;
   /** `conversations.comando_da_conversa`: humano | automatico | aguardando | encerrada | ninguem. */
   comando: string | null;
   /** Código do motivo da última passagem (`passagens_de_atendimento.motivo_codigo`). */

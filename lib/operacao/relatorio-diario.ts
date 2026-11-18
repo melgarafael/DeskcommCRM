@@ -13,8 +13,9 @@
  *     do dia, nunca duplica.
  *
  * O conteúdo é o formato da tela (`OperacaoDoDia`) passado por `congelar`:
- * só fatos (ids, canal, situação, etiquetas, instantes, códigos, termos e
- * produtos da busca), NUNCA nome, telefone, @, prévia ou resumo — a cascata de
+ * só fatos (ids, canal, situação, etiquetas, instantes, códigos, produtos do
+ * catálogo achados pela busca), NUNCA nome, telefone, @, prévia, resumo ou o
+ * termo buscado (texto do cliente) — a cascata de
  * anonimização da LGPD não alcança um jsonb guardado. Não há coluna de texto:
  * o texto do relatório é montado na leitura (`textoDoRelatorio` sobre o
  * conteúdo `hidratar`-ado), com o nome que o contato tem AGORA.
@@ -74,7 +75,7 @@ export async function gerarRelatorioDiario(input: {
   substituir: boolean;
   /**
    * Regerar por cima de uma linha MANUAL gravada antes deste instante (a hora
-   * marcada de hoje): `update` condicionado a `gerado_por = 'usuario'` e
+   * marcada daquele dia): `update` condicionado a `gerado_por = 'usuario'` e
    * `gerado_em <` o instante. Se alguém regerou depois da hora, ou outra rodada
    * já regerou, o update não acha linha e nada é gravado — sem laço.
    */

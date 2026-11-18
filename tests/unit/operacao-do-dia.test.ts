@@ -22,6 +22,7 @@ import {
   juntarProdutos,
   lerConfiguracao,
   limitesDoDia,
+  linhaDeUmDiaQueAcabou,
   minutosDeEspera,
   produtosDasChamadas,
   type RelatorioExistente,
@@ -273,6 +274,28 @@ describe("quando o cron gera o relatório", () => {
     expect(decisaoDoCron({ agora: depois, fuso: BEIRUTE, config, existentes: new Map([ontemFeito, tarde]) }).acoes).toEqual([]);
   });
 
+  it("'Gerar agora' antes da hora e a instalação parada na hora: o dia de ONTEM é regerado inteiro", () => {
+    // São Paulo (−03): manual às 15:00 do dia 16; parada das 20:50 do dia 16
+    // às 00:10 do dia 17. A rodada das 00:10 deve o automático do dia 16.
+    const SP = "America/Sao_Paulo";
+    const manualDe16 = manual("2026-11-16", "2026-11-16T18:00:00Z");
+    const decisao = decisaoDoCron({
+      agora: new Date("2026-11-17T03:10:00Z"),
+      fuso: SP,
+      config,
+      existentes: new Map([manualDe16]),
+    });
+    expect(decisao).toEqual({
+      acoes: [{ dia: "2026-11-16", motivo: "refazer_apos_manual", substituirManualAntesDe: "2026-11-17T00:00:00.000Z" }],
+    });
+    // Já regerado pelo cron, ou manual feito DEPOIS da hora de ontem: nada.
+    for (const linha of [cron("2026-11-16", "2026-11-17T03:10:00Z"), manual("2026-11-16", "2026-11-17T00:30:00Z")]) {
+      expect(
+        decisaoDoCron({ agora: new Date("2026-11-17T03:25:00Z"), fuso: SP, config, existentes: new Map([linha]) }),
+      ).toEqual({ acoes: [], motivo: "antes_da_hora" });
+    }
+  });
+
   it("depois da meia-noite local, o dia novo ainda está antes da hora (e o de ontem já existe)", () => {
     // 22:30Z = 00:30 do dia 16 em Beirute.
     expect(
@@ -315,6 +338,37 @@ describe("o corte do dia e o estado do momento", () => {
     const deHoje = textoDoRelatorio(hoje, { idioma: "pt-BR", baseUrl: "https://x.test", geradoEm: new Date(hoje.lido_em) });
     expect(deHoje).toContain("de 00:00 até 21:00");
     expect(deHoje).toContain("Aguardando uma pessoa (no momento da geração)");
+  });
+
+  it("num dia que acabou, a linha não carrega o estado de agora, e a última atividade fica no dia", () => {
+    // A conversa teve entrada no dia 15 (até 22:00Z), mas a última mensagem dela é de 00:05 do dia 16.
+    const deAgora = linha({
+      status: "open",
+      comando: "aguardando",
+      motivo_codigo: "pedido_de_humano",
+      proxima_acao: { titulo: "Ligar", vence_em: "2026-11-20" },
+      responsavel_user_id: "u1",
+      responsavel: "Nadia",
+      responsavel_tipo: "pessoa",
+      ultima_atividade_em: "2026-11-15T22:05:00Z",
+      esperando_desde: "2026-11-15T22:05:00Z",
+    });
+    expect(linhaDeUmDiaQueAcabou(deAgora, dia.fim, "2026-11-15T17:30:00Z")).toMatchObject({
+      status: null,
+      comando: null,
+      motivo_codigo: null,
+      proxima_acao: null,
+      responsavel_user_id: null,
+      responsavel: null,
+      responsavel_tipo: null,
+      esperando_desde: null,
+      ultima_atividade_em: "2026-11-15T17:30:00Z",
+    });
+    // Sem entrada do cliente no dia, a hora de fora não vira hora do dia.
+    expect(linhaDeUmDiaQueAcabou(deAgora, dia.fim, null).ultima_atividade_em).toBeNull();
+    // A última mensagem DENTRO do dia fica como está.
+    const noDia = linha({ ultima_atividade_em: "2026-11-15T20:00:00Z" });
+    expect(linhaDeUmDiaQueAcabou(noDia, dia.fim, "2026-11-15T17:30:00Z").ultima_atividade_em).toBe("2026-11-15T20:00:00Z");
   });
 });
 

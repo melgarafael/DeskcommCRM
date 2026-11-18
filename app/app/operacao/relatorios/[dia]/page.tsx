@@ -37,12 +37,14 @@ export default async function RelatorioDoDiaPage({ params }: { params: Promise<{
   const t = (texto: string) => traduzir(texto, user.idioma);
 
   const db = await createClient();
-  const { data } = await db
+  const { data, error } = await db
     .from(TABELA_DOS_RELATORIOS)
     .select("dia, fuso, gerado_em, gerado_por, conteudo")
     .eq("organization_id", activeOrg.orgId)
     .eq("dia", dia)
     .maybeSingle();
+  // Falha de banco não é "relatório não existe": lança, e a tela de erro diz que a leitura falhou.
+  if (error) throw new Error(`relatório do dia não lido: ${error.message}`);
   if (!data) notFound();
   const linha = data as { dia: string; fuso: string; gerado_em: string; gerado_por: string; conteudo: unknown };
   const guardado = lerConteudo(linha.conteudo);
