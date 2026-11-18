@@ -15,6 +15,7 @@ import { z } from "zod";
 
 import {
   listLeadsHandler,
+  countLeadsHandler,
   getLeadHandler,
   createLeadHandler,
   updateLeadHandler,
@@ -239,6 +240,43 @@ export const crmListLeads: McpToolDefinition<typeof listInputShape> = {
       cursor: result.cursor,
       has_more: result.has_more,
     };
+  },
+};
+
+// ---------------------------------------------------------------------------
+// count
+// ---------------------------------------------------------------------------
+const countInputShape = {
+  pipeline_id: z.string().uuid().optional(),
+  stage_id: z.string().uuid().optional(),
+  status: z.enum(["open", "won", "lost"]).optional(),
+};
+
+export const crmCountLeads: McpToolDefinition<typeof countInputShape> = {
+  name: "crm_count_leads",
+  description:
+    "Conta leads por pipeline, stage e status e devolve só números (total e, sem filtro de status, o total por status), nunca nomes nem ids. " +
+    "Para 'quantos leads?', use esta em vez de paginar crm_list_leads. Em atendimento, conta só os negócios do contato da conversa.",
+  inputSchema: countInputShape,
+  category: "read",
+  requiresRole: "agent",
+  requiresScope: "mcp:read",
+  handler: async (input, ctx) => {
+    return countLeadsHandler(
+      ctx.supabase,
+      {
+        organization_id: ctx.organizationId,
+        actor: ctx.actor,
+        requestId: ctx.requestId,
+      },
+      {
+        pipeline_id: input.pipeline_id,
+        stage_id: input.stage_id,
+        status: input.status,
+        // Mesmo escopo do turno da listagem, no WHERE.
+        contact_id: ctx.contatoDoTurno,
+      },
+    );
   },
 };
 

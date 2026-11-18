@@ -1243,9 +1243,25 @@ function throwOnDbError(
  * Tabela nova com RESTRICT para `contacts` entra aqui como uma linha, e o
  * teste que acompanha este handler (`tests/unit/contato-delete.test.ts`)
  * exercita a contagem com filtro de organização.
+ *
+ * `barraSe` é o recorte do que a exclusão NÃO resolve sozinha, num filtro `or`
+ * do PostgREST. Ele tem de dizer o MESMO que `fn_apagar_contato_com_historico`
+ * faz por dentro: a função desvincula o compromisso CANCELADO que não é reserva
+ * de serviço (migration 9405, achado A9 de `curso/ACHADOS.md`), então só barra o
+ * que não está cancelado ou o que é reserva de serviço. Contar a mais faz a tela
+ * pedir um gesto impossível ("cancele" o que já está cancelado); contar a menos
+ * faz a pré-checagem dizer "pode excluir" e a FK recusar depois.
  */
-const VINCULOS_RESTRICT_NAO_APAGADOS: ReadonlyArray<{ tabela: string; rotulo: string }> = [
-  { tabela: "calendar_appointments", rotulo: "compromisso(s) na agenda" },
+const VINCULOS_RESTRICT_NAO_APAGADOS: ReadonlyArray<{
+  tabela: string;
+  rotulo: string;
+  barraSe?: string;
+}> = [
+  {
+    tabela: "calendar_appointments",
+    rotulo: "compromisso(s) na agenda",
+    barraSe: "status.neq.cancelled,service_occurrence_id.not.is.null",
+  },
 ];
 
 /**
@@ -1294,11 +1310,12 @@ async function contarVinculosRestrict(
   // (texto em pt-BR) segue igual ao da auditoria.
   const por_tabela: Record<string, number> = {};
   for (const vinculo of VINCULOS_RESTRICT_NAO_APAGADOS) {
-    const { count, error } = await supabase
+    const consulta = supabase
       .from(vinculo.tabela)
       .select("id", { count: "exact", head: true })
       .eq("contact_id", contactId)
       .eq("organization_id", ctx.organization_id);
+    const { count, error } = await (vinculo.barraSe ? consulta.or(vinculo.barraSe) : consulta);
     if (error) {
       // Falha da CONTAGEM não autoriza seguir apagando: seguir aqui é cair no
       // defeito que esta pré-checagem existe para impedir (histórico
