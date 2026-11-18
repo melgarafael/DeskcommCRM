@@ -21,7 +21,7 @@ import {
 } from "@/lib/auth/requirePlatformAdmin";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { provedorDaInstalacao } from "@/lib/cobranca/configuracao";
-import { MOEDAS_DO_ASAAS } from "@/lib/cobranca/vocabulario";
+import { MOEDAS_DO_ASAAS, MOEDAS_DO_EFI } from "@/lib/cobranca/vocabulario";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { COLUNAS_DO_PLANO, novoPlanoSchema } from "@/lib/schemas/cobranca-plano";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -45,11 +45,16 @@ export async function POST(req: NextRequest) {
   if (!corpo.success) {
     return fail("validation_failed", "Plano inválido", 400, { requestId, details: corpo.error.flatten() });
   }
-  // Migration 9332: o Asaas não tem moeda e cobraria o número como real. Com ele
-  // conectado, plano fora de BRL nasce recusado aqui, com nome, e não no checkout.
+  // Migrations 9332/9333: Asaas e Efi não têm moeda e cobrariam o número como
+  // real. Com um deles conectado, plano fora de BRL nasce recusado aqui, com
+  // nome, e não no checkout — cada adaptador repete a guarda no último passo.
   const moeda = corpo.data.moeda ?? "BRL";
-  if (!MOEDAS_DO_ASAAS.includes(moeda) && (await provedorDaInstalacao()) === "asaas") {
+  const provedor = await provedorDaInstalacao();
+  if (provedor === "asaas" && !MOEDAS_DO_ASAAS.includes(moeda)) {
     return fail("validation_failed", "O Asaas cobra só em real. Para dólar ou euro, conecte a Stripe.", 422, { requestId });
+  }
+  if (provedor === "efi" && !MOEDAS_DO_EFI.includes(moeda)) {
+    return fail("validation_failed", "O Efi cobra só em real. Para dólar ou euro, conecte a Stripe.", 422, { requestId });
   }
 
   const { data: plano, error } = await admin
