@@ -21,12 +21,15 @@ import {
 } from "./conversations";
 import {
   crmListLeads,
+  crmCountLeads,
   crmGetLead,
   crmCreateLead,
   crmUpdateLead,
   crmMoveLeadStage,
   crmRetomarLead,
   crmProposeLeadFieldsFromDocument,
+  crmListLeadAttachments,
+  crmGetLeadAttachment,
 } from "./leads";
 import { crmGetPipelineForecast, crmListPipelines } from "./pipelines";
 import { crmSendMaterial, crmSendWhatsappMessage } from "./messages";
@@ -120,7 +123,13 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmGetConversationHistory,
   crmGetQueueStatus,
   crmListLeads,
+  crmCountLeads,
   crmGetLead,
+  // #4544 (item 2) — o documento anexado ao card: listar para descobrir o id,
+  // ler para tirar dali os valores. Entram logo depois do get_lead porque são a
+  // leitura do MESMO negócio, um nível abaixo.
+  crmListLeadAttachments,
+  crmGetLeadAttachment,
   crmListPipelines,
   crmGetPipelineForecast,
   crmSearchKnowledge,
