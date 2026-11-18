@@ -231,7 +231,47 @@ export const ESCOPO_DA_ORGANIZACAO = [
   ['[data-theme="dark"] body:has([data-marca-org])', "escuro"],
 ] as const;
 
-export type EscopoDaMarca = typeof ESCOPO_DA_INSTALACAO | typeof ESCOPO_DA_ORGANIZACAO;
+/**
+ * O escopo de um TEMPLATE da tela Aparência (`lib/aparencia/css.ts`), que deriva
+ * a cor de ação pelo MESMO gerador, só que escopada pelo id do template.
+ *
+ * Não é um seletor livre: só nasce em `escopoDeAparencia`, que monta os quatro
+ * seletores possíveis a partir de um atributo fixo e de um id no formato do
+ * catálogo — o seletor entra em `montarBloco` sem outra validação, e a marca do
+ * tipo é o que impede uma string solta de chegar lá.
+ */
+declare const ESCOPO_VALIDADO: unique symbol;
+export type EscopoDeAparencia = readonly [
+  readonly [string, "claro"],
+  readonly [string, "escuro"],
+] & { readonly [ESCOPO_VALIDADO]: true };
+
+const ID_DE_APARENCIA = /^[a-z][a-z0-9-]{1,31}$/;
+
+/**
+ * `sistema` pinta o `/app` da organização (o marcador carrega o id e o modo
+ * vem do `<html>`); `amostra` pinta a miniatura da galeria (o modo vem do
+ * próprio elemento, para claro e escuro aparecerem lado a lado).
+ */
+export function escopoDeAparencia(alvo: "sistema" | "amostra", id: string): EscopoDeAparencia {
+  if (!ID_DE_APARENCIA.test(id)) throw new Error(`id de aparência fora do formato: ${JSON.stringify(id)}`);
+  const pares =
+    alvo === "sistema"
+      ? ([
+          [`body:has([data-aparencia="${id}"])`, "claro"],
+          [`[data-theme="dark"] body:has([data-aparencia="${id}"])`, "escuro"],
+        ] as const)
+      : ([
+          [`[data-aparencia-amostra="${id}"][data-aparencia-modo="claro"]`, "claro"],
+          [`[data-aparencia-amostra="${id}"][data-aparencia-modo="escuro"]`, "escuro"],
+        ] as const);
+  return pares as unknown as EscopoDeAparencia;
+}
+
+export type EscopoDaMarca =
+  | typeof ESCOPO_DA_INSTALACAO
+  | typeof ESCOPO_DA_ORGANIZACAO
+  | EscopoDeAparencia;
 
 function montarBloco(seletor: string, decls: readonly Declaracao[]): string {
   const linhas = decls.map(([nome, valor]) => `  ${nome}: ${valor};`);

@@ -281,10 +281,18 @@ describe("GET /api/v1/pipelines/[id]/agent-mapping", () => {
       // Migration 0440: a tela de etapas lê daqui a chave «avisar na Central».
       // Ausente na fixture = etapa anterior à coluna = desligada.
       avisar_na_central: false,
+      // #4802 (item 2): a cor da etapa acompanha a MESMA leitura — é daqui que
+      // a tela de etapas mostra o tom atual. Ausente na fixture = etapa sem cor
+      // = o padrão de hoje (`null`, o ponto neutro do quadro).
+      color: null,
       // #1532: a janela de esfriando acompanha a mesma leitura — sem ela, a
       // tela de etapas nasceria sempre com o campo vazio e gravaria por cima
       // da configuração. Ausente na fixture = etapa sem janela = null.
       expected_duration_hours: null,
+      // #4836: o Critério da etapa (`crm_stages.description`) viaja na MESMA
+      // leitura porque a tela e o assistente leem daqui. Fixture sem a coluna
+      // = etapa sem critério = null.
+      description: null,
       last_change_actor_kind: null,
       last_change_at: null,
       // #3603: a lista de fluxos armados por etapa viaja na MESMA leitura — a

@@ -58,7 +58,7 @@ interface AnexoDaOrigem {
   created_by: string | null;
 }
 
-/** A linha que nasce no destino. */
+/** A linha que nasce no destino — o INSERT, com o vínculo que a torna repetível. */
 interface AnexoDoDestino {
   organization_id: string;
   lead_id: string;
@@ -68,6 +68,8 @@ interface AnexoDoDestino {
   mime_type: string;
   storage_path: string;
   created_by: string | null;
+  /** A linha de origem que esta reproduz — a chave da idempotência (#4544). */
+  clonado_do_attachment_id: string;
 }
 
 export interface ResultadoDaCopiaDeAnexos {
@@ -79,6 +81,8 @@ export interface ResultadoDaCopiaDeAnexos {
    * não pode acontecer é o número mentir.
    */
   falhas: number;
+  /** Anexos que JÁ estavam no card novo — a repetição não os duplica. */
+  jaEstavam: number;
 }
 
 export interface ArgsDaCopiaDeAnexos {
@@ -120,13 +124,22 @@ function extensaoDoCaminho(caminho: string): string {
  * Copia os anexos do negócio de ORIGEM para o card que acabou de nascer no
  * funil de destino.
  *
- * O `db` é quem INSERE a linha — o mesmo cliente que criou o card (sessão na
- * rota, `service_role` na automação), para a escrita respeitar a RLS de quem
+ * O `db` é quem lê e INSERE a linha — o mesmo cliente que criou o card (sessão
+ * na rota, `service_role` na automação), para a escrita respeitar a RLS de quem
  * pediu a troca. A cópia do arquivo é sempre pelo cliente de serviço.
  *
- * Chamar de novo para o mesmo par origem→destino duplica: idempotência é do
- * chamador, e os três chamadores só chegam aqui uma vez por card (a guarda de
- * continuação da automação e a checagem de origem do `/clone`).
+ * ── IDEMPOTENTE, e por isso REPETÍVEL (#4544, fatia 2) ─────────────────────
+ *
+ * A linha nova carrega `clonado_do_attachment_id`. Um par (card novo, anexo de
+ * origem) que já está lá não copia objeto nem grava linha: a segunda execução
+ * devolve `jaEstavam`, nunca uma segunda cópia. É isso que permite à automação
+ * REPETIR a cópia no card que já existe — sem essa garantia, uma falha de
+ * Storage na primeira execução deixava o voucher fora do card para sempre: a
+ * guarda de continuação responde `ja_existia` e nunca voltava a tentar.
+ *
+ * O índice único parcial `crm_lead_attachments_clonado_unico` (migration 9387)
+ * fecha a corrida entre duas execuções simultâneas: a que perder não deixa
+ * linha duplicada, e a contagem a trata como "já estava".
  */
 export async function copiarAnexosDoClone(
   db: SupabaseClient,
@@ -145,17 +158,48 @@ export async function copiarAnexosDoClone(
       origemLeadId: args.origemLeadId,
       erro: error.message,
     });
-    return { copiados: 0, falhas: 0 };
+    return { copiados: 0, falhas: 0, jaEstavam: 0 };
   }
 
   const anexos = (data ?? []) as AnexoDaOrigem[];
-  if (anexos.length === 0) return { copiados: 0, falhas: 0 };
+  if (anexos.length === 0) return { copiados: 0, falhas: 0, jaEstavam: 0 };
+
+  // O que o card novo JÁ tem de cópia. A falha desta leitura é RECUSA, não
+  // "não achei": seguir sem ela copiaria de novo o que já está lá, e o índice
+  // único recusaria as linhas — deixando objetos no bucket sem linha que os
+  // explique.
+  const { data: destino, error: destinoErr } = await db
+    .from("crm_lead_attachments")
+    .select("clonado_do_attachment_id")
+    .eq("organization_id", args.organizationId)
+    .eq("lead_id", args.destinoLeadId);
+
+  if (destinoErr) {
+    logger.warn("[anexos-do-clone] cópias já feitas neste card não lidas; nada copiado", {
+      organizationId: args.organizationId,
+      destinoLeadId: args.destinoLeadId,
+      erro: destinoErr.message,
+    });
+    return { copiados: 0, falhas: 0, jaEstavam: 0 };
+  }
+
+  const jaCopiados = new Set(
+    ((destino ?? []) as Array<{ clonado_do_attachment_id?: string | null }>)
+      .map((linha) => linha.clonado_do_attachment_id)
+      .filter((id): id is string => typeof id === "string" && id.length > 0),
+  );
 
   const copiar = copiarObjeto ?? copiarPeloAdmin();
-  const novas: AnexoDoDestino[] = [];
+  let copiados = 0;
   let falhas = 0;
+  let jaEstavam = 0;
 
   for (const anexo of anexos) {
+    if (jaCopiados.has(anexo.id)) {
+      jaEstavam += 1;
+      continue;
+    }
+
     // Id NOVO porque o caminho carrega o id do negócio e o do arquivo: reaproveitar
     // o caminho da origem violaria o check do banco (o lead é outro).
     const novoId = randomUUID();
@@ -177,7 +221,10 @@ export async function copiarAnexosDoClone(
       continue;
     }
 
-    novas.push({
+    // Uma LINHA por vez, e não um INSERT em lote: na repetição, as que já
+    // entraram são aproveitadas e o `23505` de uma corrida não derruba a
+    // gravação das outras.
+    const linha: AnexoDoDestino = {
       organization_id: args.organizationId,
       lead_id: args.destinoLeadId,
       field_key: anexo.field_key,
@@ -188,23 +235,35 @@ export async function copiarAnexosDoClone(
       // Quem subiu o arquivo na origem continua sendo quem subiu: a cópia não
       // inventa autoria.
       created_by: anexo.created_by,
-    });
-  }
+      clonado_do_attachment_id: anexo.id,
+    };
 
-  if (novas.length === 0) return { copiados: 0, falhas };
+    const { error: insertErr } = await db.from("crm_lead_attachments").insert(linha);
 
-  const { error: insertErr } = await db.from("crm_lead_attachments").insert(novas);
-  if (insertErr) {
-    // As linhas não entraram; os objetos copiados viram órfãos e a varredura de
-    // mídia os recolhe. Contados como falha, para o retorno não mentir.
-    logger.warn("[anexos-do-clone] linhas do anexo não gravadas no card novo", {
+    if (!insertErr) {
+      copiados += 1;
+      jaCopiados.add(anexo.id);
+      continue;
+    }
+
+    // 23505 = o índice único parcial: outra execução gravou este par primeiro.
+    // Não é falha — o anexo ESTÁ no card, que é o estado que esta rodada queria.
+    if (insertErr.code === "23505") {
+      jaEstavam += 1;
+      continue;
+    }
+
+    // Sem linha, o objeto copiado vira órfão e a varredura de mídia o recolhe
+    // (passo 2b de `fn_enfileirar_midia_vencida`). Contado como falha, para o
+    // retorno não mentir.
+    falhas += 1;
+    logger.warn("[anexos-do-clone] linha do anexo não gravada no card novo", {
       origemLeadId: args.origemLeadId,
       destinoLeadId: args.destinoLeadId,
-      quantidade: novas.length,
+      attachmentId: anexo.id,
       erro: insertErr.message,
     });
-    return { copiados: 0, falhas: falhas + novas.length };
   }
 
-  return { copiados: novas.length, falhas };
+  return { copiados, falhas, jaEstavam };
 }
