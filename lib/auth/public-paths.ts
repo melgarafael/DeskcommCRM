@@ -98,7 +98,19 @@ export const PUBLIC_PATHS: RegExp[] = [
   /^\/api\/v1\/plataformas-de-anuncio\/google\/callback$/,
   /^\/api\/v1\/integrations\/nuvemshop\/callback$/,
   /^\/api\/internal\//,
+  // `/api/mcp` e o OAuth dele (`/api/mcp/oauth/{register,authorize,token,revoke}`,
+  // migration 9390): bearer ou nenhuma sessão por natureza. A autoridade mora
+  // dentro de cada rota — `dsk_` hasheado no MCP, PKCE e código de uso único no
+  // token, cliente autenticado na revogação. O `authorize` só confere o pedido
+  // e passa pela ponte same-origin até `/oauth/mcp/consentir`, que NÃO é
+  // pública: é lá que a sessão de quem administra a organização decide.
   /^\/api\/mcp(\/.*)?$/,
+  // Descoberta do OAuth do MCP (RFC 9728 e RFC 8414): documentos estáticos,
+  // sem banco e sem dado de organização. Sem estas linhas o proxy devolveria
+  // 307 para /login ao cliente de MCP, que lê isso como "não há OAuth aqui".
+  // Ancorados: só os dois documentos e a forma com o caminho do recurso.
+  /^\/\.well-known\/oauth-protected-resource(\/api\/mcp)?$/,
+  /^\/\.well-known\/oauth-authorization-server$/,
   // GET /api/v1/contacts aceita SESSÃO ou Bearer `dsk_...` (api_tokens) — a
   // MESMA dualidade de `/api/mcp` acima. Sem esta entrada, o proxy responde
   // 401 antes de o Bearer chegar à rota, porque `getUser()` aqui só enxerga
@@ -106,19 +118,33 @@ export const PUBLIC_PATHS: RegExp[] = [
   // mora DENTRO da rota (`app/api/v1/contacts/route.ts`), igual aos casos de
   // `/api/v1/system/agent` e `/api/v1/cron/` acima — "público" aqui quer dizer
   // "o proxy não decide", não "sem autenticação". Ancorado com `$`: só o
-  // `GET` da listagem, não `/api/v1/contacts/import`, que ainda não tem suporte
-  // a Bearer. (O `[id]` passou a ter, pela linha LOGO ABAIXO — #4517.)
+  // `GET` da listagem, não `/api/v1/contacts/[id]` nem `/import`, que ainda
+  // não têm suporte a Bearer.
   /^\/api\/v1\/contacts$/,
-  // A FICHA EDITADA POR TOKEN (#4517). `PATCH /api/v1/contacts/{id}` cobra o
-  // escopo PRÓPRIO `contacts:write` e resolve a identidade por
-  // `lib/api/auth-dual.ts` DENTRO da rota, com a organização saindo da LINHA DO
-  // TOKEN. Sem esta linha, todo Bearer recebe 401 do proxy antes do handler e a
-  // porta é inalcançável em produção, por mais correta que a rota esteja.
+  // A FICHA POR TOKEN (#4517). `GET` e `PATCH` de `/api/v1/contacts/{id}` já
+  // resolvem a identidade por `lib/api/auth-dual.ts` DENTRO da rota (`mcp:read`
+  // e `mcp:write`, Spec 33 R2), mas sem esta entrada o `proxy.ts` responde 401
+  // ao Bearer ANTES do handler — a porta existia e era inalcançável.
   //
-  // O segmento é FORMA DE UUID, nunca `[^/]+`: os irmãos literais de
-  // `/api/v1/contacts/` (`bulk`, `duplicates`, `export`, `import`, `merge`) não
-  // têm porta de token, e um padrão largo os tornaria públicos de carona.
+  // O `DELETE` continua sem porta de token: ele entra por `requireRole`, então
+  // um Bearer é recusado pela própria rota. O segmento é FORMA DE UUID, nunca
+  // `[^/]+`: os irmãos literais de `/api/v1/contacts/` (`bulk`, `duplicates`,
+  // `export`, `import`, `merge`) não têm porta de token e um padrão largo os
+  // tornaria "públicos" de carona para o proxy.
   /^\/api\/v1\/contacts\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+  // COMANDOS DE CONVERSA POR TOKEN (#4517). Pausar/retomar a IA e fechar/reabrir
+  // são o que a integração fazia por transferência — e transferir troca o
+  // responsável do negócio, que é justamente o que a issue pede para NÃO
+  // acontecer. Cada rota resolve a identidade por `lib/api/auth-dual.ts` e cobra
+  // o escopo `conversations:write`; a organização vem da LINHA DO TOKEN.
+  //
+  // Sem estas quatro linhas, o `proxy.ts` responde 401 ao Bearer antes do
+  // handler. Âncoras `$` e id em FORMA DE UUID: nenhum sub-path futuro nasce
+  // público de carona.
+  /^\/api\/v1\/conversations\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/pause-ai$/i,
+  /^\/api\/v1\/conversations\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/reactivate-bot$/i,
+  /^\/api\/v1\/conversations\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/close$/i,
+  /^\/api\/v1\/conversations\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/reopen$/i,
   // FOTO DO CONTATO SERVER-TO-SERVER (issue #3420). Mesma dualidade da
   // listagem logo acima: sessão de navegador OU Bearer `dsk_…` com escopo
   // `contacts:read`, resolvido por `lib/api/auth-dual.ts` DENTRO da rota
@@ -135,19 +161,6 @@ export const PUBLIC_PATHS: RegExp[] = [
   // público por engano. Âncora `$`: nenhum sub-path futuro de `/avatar` nasce
   // público de carona.
   /^\/api\/v1\/contacts\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/avatar$/i,
-  // COMANDOS DE CONVERSA POR TOKEN (#4517). Pausar/retomar a IA e fechar/reabrir
-  // são as três coisas que a integração fazia por transferência — e transferir
-  // troca o responsável do negócio, que é justamente o que a issue pede para NÃO
-  // acontecer. Cada rota resolve a identidade por `lib/api/auth-dual.ts` e cobra
-  // o escopo `conversations:write`; a organização vem da LINHA DO TOKEN.
-  //
-  // Sem estas quatro linhas, o `proxy.ts` responde 401 ao Bearer antes do
-  // handler — a mesma armadilha das irmãs acima. Âncoras `$` e id em FORMA DE
-  // UUID: nenhum sub-path futuro nasce público de carona.
-  /^\/api\/v1\/conversations\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/pause-ai$/i,
-  /^\/api\/v1\/conversations\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/reactivate-bot$/i,
-  /^\/api\/v1\/conversations\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/close$/i,
-  /^\/api\/v1\/conversations\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/reopen$/i,
   // ENVIO SERVER-TO-SERVER. Mesma dualidade de `/api/v1/contacts` acima, com
   // `mcp:write` em vez de `mcp:read`: sessão de navegador OU Bearer `dsk_…`,
   // resolvidos por `lib/api/auth-dual.ts` DENTRO de cada rota, com a org saindo
@@ -175,35 +188,13 @@ export const PUBLIC_PATHS: RegExp[] = [
   // verbos porque o proxy filtra por PATH, não por método; quem decide o
   // método é a própria rota, como sempre foi.
   /^\/api\/v1\/agenda\/agendamentos$/,
-  // TAREFAS SERVER-TO-SERVER (issue #4516). Mesma dualidade das linhas acima:
-  // sessão OU Bearer `dsk_…`, resolvidos por `lib/api/auth-dual.ts` DENTRO de
-  // cada rota (`app/api/v1/tasks/route.ts` e `app/api/v1/tasks/[id]/route.ts`),
-  // com a organização saindo da LINHA DO TOKEN e nunca do corpo. A listagem
-  // cobra `tasks:read`, as escritas cobram `tasks:write` — escopos próprios, e
-  // não `mcp:read`/`mcp:write`, porque quem emite o token decide se a
-  // integração mexe na rotina da equipe.
-  //
-  // Sem estas duas linhas o proxy responde 401 ao Bearer ANTES do handler: ele
-  // só reconhece cookie, e chamar o autenticador na rota não muda isso — o
-  // `proxy.ts` roda primeiro. Foi o modo de falha medido em `/api/v1/contacts`
-  // (/3417) e é a razão de a lista existir.
-  //
-  // Âncoras `$` de propósito: `/api/v1/tasks/` tem só o filho `[id]`, e um
-  // padrão largo deixaria qualquer sub-path futuro nascer público de carona. O
-  // segmento do id é FORMA DE UUID, nunca `[^/]+`.
-  /^\/api\/v1\/tasks$/,
-  /^\/api\/v1\/tasks\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
   /^\/api\/v1\/conversations\/open-with-contact$/,
   // CRIAÇÃO DE RASCUNHO SUGERIDO SERVER-TO-SERVER (issue #1611). Mesma
   // dualidade da linha acima: sessão OU Bearer `dsk_…` com escopo `mcp:write`,
   // resolvida por `lib/api/auth-dual.ts` DENTRO da rota
   // (`app/api/v1/conversations/[id]/drafts/route.ts`). O `GET`/leitura do
   // rascunho é da sessão do atendente (caixa de entrada) e NÃO entra aqui.
-  //
-  // O segmento do id passou a ser FORMA DE UUID (#4517): era `[^/]+`, largo, e
-  // deixava `/conversations/abc/drafts` e qualquer id inventado entrarem por
-  // carona. A porta legítima continua aberta — conversa tem id do Postgres.
-  /^\/api\/v1\/conversations\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/drafts$/i,
+  /^\/api\/v1\/conversations\/[^/]+\/drafts$/,
   // Upload outbound: primeiro passo do envio de MÍDIA por token. Sem ele, o
   // cartão de fidelidade (a única das automações que não é texto) não teria
   // como sair depois do corte de gateway.

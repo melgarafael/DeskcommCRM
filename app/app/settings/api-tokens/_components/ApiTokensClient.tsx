@@ -77,7 +77,7 @@ const SCOPES: { id: string; label: string }[] = [
   // #4517 — pausar/retomar a IA e fechar/reabrir a conversa. Escopo separado de
   // `contacts:write` de propósito: desligar o atendimento automático muda QUEM
   // responde o cliente, não o cadastro. Sem esta linha, a permissão não existe
-  // para ser marcada e as ferramentas nascem inalcançáveis em produção.
+  // para ser marcada e as quatro rotas nascem inalcançáveis em produção.
   { id: "conversations:write", label: "Pausar e retomar o atendimento automático" },
   { id: "leads:read", label: "Ler leads" },
   { id: "leads:write", label: "Criar e editar leads" },
@@ -88,25 +88,20 @@ const SCOPES: { id: string; label: string }[] = [
       "Ler transcrições de áudios e textos extraídos de mídia no histórico MCP (pode conter dados pessoais)",
   },
   { id: "messages:write", label: "Enviar mensagens" },
-  // #4515: registrar comparecimento é escopo PRÓPRIO, nunca `mcp:write`. Quem
-  // emite o token decide se a integração diz que a pessoa veio ou faltou — o
-  // `no_show` devolve horário ao pool e o `completed` fecha a linha do tempo.
-  // Sem esta linha o escopo existiria na rota e ninguém conseguiria concedê-lo.
+  // #1613: sem esta linha o escopo existia na rota e ninguém conseguia concedê-lo.
+  { id: "messages:on_behalf", label: "Integração pode enviar em nome de um atendente" },
+  // #4515: registrar presença sempre foi decisão de gente, e o `mcp:write` não
+  // distingue "marcar reunião" de "declarar quem faltou". Sem esta linha o
+  // escopo existiria na rota e ninguém conseguiria concedê-lo — o mesmo defeito
+  // que o #1613 e o #2052 fecharam nos escopos vizinhos.
+  // O rótulo nomeia as DUAS caixas que a rota também cobra (`mcp:write` e o
+  // papel de gerente, em `despachar` de app/api/v1/agenda/agendamentos/route.ts):
+  // na prova pela tela do #4523, quem marcou só esta recebeu 403 sem saber por quê.
   {
     id: "agenda:attendance",
     label:
-      "Registrar comparecimento em compromisso: marcar como realizado ou como falta, só em compromisso que já começou",
+      "Marcar comparecimento na agenda (Realizado / Não compareceu) depois do horário, sem abrir a tela (exige também AGIR no CRM e tratar o token como gerente)",
   },
-  // #4516: as portas de tarefa por token. Leitura e escrita separadas porque
-  // consultar a lista de tarefas é inofensivo e apagar/concluir não é.
-  { id: "tasks:read", label: "Ler as tarefas da equipe" },
-  {
-    id: "tasks:write",
-    label:
-      "Criar, editar, concluir, reabrir e APAGAR tarefas da equipe (sem esta caixa o token só lê)",
-  },
-  // #1613: sem esta linha o escopo existia na rota e ninguém conseguia concedê-lo.
-  { id: "messages:on_behalf", label: "Integração pode enviar em nome de um atendente" },
   { id: "audit:read", label: "Ler o log de auditoria" },
 ];
 

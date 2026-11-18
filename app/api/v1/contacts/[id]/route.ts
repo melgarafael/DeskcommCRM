@@ -10,14 +10,15 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import type { Actor } from "@/lib/api/handlers/types";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail, noContent } from "@/lib/api/wrappers";
-import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
-import { ESCOPO_CONTATOS_ESCRITA } from "@/lib/api/escopos-do-token";
-import type { Actor } from "@/lib/api/handlers/types";
 import { orgAtivaDaApi, requireRole } from "@/lib/auth/require-role";
 import { loadAuthUser } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
+import type { Idioma } from "@/lib/i18n/idiomas";
+import { extractBearer } from "@/lib/mcp/auth";
 import { contactPatchSchemaDoPais, validateRequest } from "@/lib/schemas";
 import { perfilDaOrganizacao } from "@/lib/legal/perfil-do-pais";
 import { createClient } from "@/lib/supabase/server";
@@ -83,12 +84,73 @@ async function telefonesDaFicha(
   };
 }
 
+/**
+ * O corpo do GET, igual nos dois ramos (sessão e token): quem decide o cliente
+ * do banco e a organização é o portão, aqui só se lê a ficha.
+ *
+ * No token o ator não é pessoa (`api_token`), então o handler da ficha NUNCA
+ * decifra o CPF — `x-decrypt-purpose` chega, `cpf_decrypted` volta `null` e
+ * `decrypt_cpf` não é chamada.
+ */
+async function responderFicha(
+  supabase: SupabaseClient,
+  organizationId: string,
+  actor: Actor,
+  idioma: Idioma | undefined,
+  requestId: string,
+  contactId: string,
+  decryptPurpose: string | null,
+): Promise<Response> {
+  try {
+    const result = await getContactHandler(
+      supabase,
+      { organization_id: organizationId, actor, requestId, idioma },
+      { contactId, decryptPurpose },
+    );
+    const telefones = await telefonesDaFicha(supabase, organizationId, contactId, requestId);
+    return ok({ ...result, ...telefones }, { requestId });
+  } catch (err) {
+    if (err instanceof ApiError) {
+      return fail(err.code, err.message, err.status, { requestId });
+    }
+    throw err;
+  }
+}
+
+/**
+ * Sessão OU token de integração (Spec 33, R2). A ficha é lida com `mcp:read` e
+ * o papel da tool `crm_get_contact` (`agent`); a sessão segue com o portão de
+ * sempre (usuário autenticado + organização ativa), sem papel mínimo.
+ */
 export async function GET(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const requestId = randomUUID();
   const { id } = await ctx.params;
+  const decryptPurpose = req.headers.get("x-decrypt-purpose");
+
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "contacts",
+      role: "viewer",
+      scope: "mcp:read",
+      tokenRole: "agent",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "contacts", requestId);
+    if (teto) return teto;
+    return responderFicha(
+      authz.supabase,
+      authz.organizationId,
+      authz.actor,
+      authz.idioma,
+      requestId,
+      id,
+      decryptPurpose,
+    );
+  }
 
   const supabase = await createClient();
   const {
@@ -108,27 +170,15 @@ export async function GET(
     return fail("no_active_org", t("No active organization."), 403, { requestId });
   }
 
-  const decryptPurpose = req.headers.get("x-decrypt-purpose");
-
-  try {
-    const result = await getContactHandler(
-      supabase,
-      {
-        organization_id: activeOrg.orgId,
-        actor: { type: "user", id: user.id },
-        requestId,
-        idioma: authUser?.idioma,
-      },
-      { contactId: id, decryptPurpose },
-    );
-    const telefones = await telefonesDaFicha(supabase, activeOrg.orgId, id, requestId);
-    return ok({ ...result, ...telefones }, { requestId });
-  } catch (err) {
-    if (err instanceof ApiError) {
-      return fail(err.code, err.message, err.status, { requestId });
-    }
-    throw err;
-  }
+  return responderFicha(
+    supabase,
+    activeOrg.orgId,
+    { type: "user", id: user.id },
+    authUser?.idioma,
+    requestId,
+    id,
+    decryptPurpose,
+  );
 }
 
 export async function PATCH(
@@ -141,54 +191,30 @@ export async function PATCH(
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
-  /**
-   * ─── A PORTA DO TOKEN (#4517) ────────────────────────────────────────────
-   *
-   * `contacts:write` é o escopo PRÓPRIO da edição direta. Ele já existia na
-   * tela de tokens; o que faltava era uma rota que o cobrasse — até aqui, a
-   * edição por integração parava em `crm_propose_contact_field`, uma proposta
-   * que espera alguém abrir o CRM.
-   *
-   * Três decisões, e cada uma custa um defeito se invertida:
-   *
-   *  1. **`resolveAuthDual`, não `requireRole`.** A sessão continua entrando
-   *     pelo MESMO gate (`requireRole("agent")`, rank + MFA); o Bearer entra
-   *     pelo autenticador dos tokens, e a organização sai da LINHA DO TOKEN —
-   *     nunca do corpo, nunca do path.
-   *  2. **Sem o escopo é 403, e não proposta silenciosa.** Esta rota é a porta
-   *     da ESCRITA DIRETA; um 200 criando proposta por baixo esconderia da
-   *     integração que o dado não foi gravado. Quem quer propor usa a
-   *     ferramenta de proposta, que diz isso no retorno.
-   *  3. **Mesmo handler da tela.** `patchContactHandler` é o de sempre: a
-   *     régua do documento do país, o merge de consentimento, a trava de
-   *     anonimização e o audit são os mesmos. Não existe segunda regra.
-   */
+  // spec 13 §4: escrita é agent+ (viewer é read-only). Sessão OU token de
+  // integração (Spec 33, R2): `mcp:write` e papel `agent` na linha do token.
   const authz = await resolveAuthDual(req, {
     requestId,
     resource: "contacts",
     role: "agent",
-    scope: ESCOPO_CONTATOS_ESCRITA,
-    tokenRole: "agent",
+    scope: "mcp:write",
   });
   if (!authz.ok) return authz.response;
-  // #1999 — a rota está em `PUBLIC_PATHS`, então o `proxy.ts` não decide sobre
-  // ela e nada a montante conta as chamadas: o que não for contado aqui não é
-  // contado em nenhum lugar. A sessão passa sem teto (quem digita é uma pessoa).
   const teto = await tetoDeEscritaDoToken(authz, "contacts", requestId);
   if (teto) return teto;
   const supabase = authz.supabase;
-  const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
+  const organizationId = authz.organizationId;
 
   // O documento do titular é validado pela régua do PAÍS da organização (issue
   // #1033) — a mesma razão do POST: quem decide é a organização, não o corpo.
-  const perfil = await perfilDaOrganizacao(supabase, authz.organizationId);
+  const perfil = await perfilDaOrganizacao(supabase, organizationId);
 
   let input;
   try {
     input = await validateRequest(contactPatchSchemaDoPais(perfil), req);
   } catch (err) {
     if (err instanceof ApiError) {
-      return fail(err.code, t(err.message), err.status, {
+      return fail(err.code, err.message, err.status, {
         details: err.details as Record<string, unknown> | undefined,
         requestId,
       });
@@ -200,11 +226,10 @@ export async function PATCH(
     const contact = await patchContactHandler(
       supabase,
       {
-        organization_id: authz.organizationId,
-        actor: authz.actor as Actor,
+        organization_id: organizationId,
+        actor: authz.actor,
         requestId,
         idioma: authz.idioma,
-        ...(authz.apiTokenId !== undefined ? { apiTokenId: authz.apiTokenId } : {}),
       },
       id,
       input,
@@ -212,7 +237,7 @@ export async function PATCH(
     return ok(contact, { requestId });
   } catch (err) {
     if (err instanceof ApiError) {
-      return fail(err.code, t(err.message), err.status, { requestId });
+      return fail(err.code, err.message, err.status, { requestId });
     }
     throw err;
   }

@@ -1,5 +1,5 @@
 /**
- * ESCOPOS PRÓPRIOS DAS PORTAS DE ESCRITA POR TOKEN.
+ * ESCOPOS PRÓPRIOS DAS PORTAS DE ESCRITA POR TOKEN (#4517).
  *
  * `api_tokens.scopes` é jsonb (`supabase/baseline.sql`, tabela `api_tokens`) e o
  * gate é `ensureScope` em `lib/mcp/auth.ts`: uma string, comparada por inclusão.
@@ -11,25 +11,17 @@
  * ─── Por que escopo PRÓPRIO, e não `mcp:write` outra vez ────────────────────
  *
  * `mcp:write` é o "pode agir no CRM" genérico, e um token emitido para uma
- * integração de ligações o recebe junto de tudo o mais. Registrar comparecimento
- * e mexer em tarefa são poderes com efeito fora do registro (o `no_show`
- * devolve horário ao pool; a exclusão de tarefa some da rotina da equipe), e
- * quem emite o token decide se a integração os tem — a mesma decisão de produto
- * que abriu `config:read`/`config:write` no #2052 e `messages:on_behalf` no
- * #1613.
- *
- * Os nomes são os DA ISSUE (#4515, #4516): `agenda:attendance`, `tasks:read` e
- * `tasks:write`. Trocar por outro vocabulário quebraria a promessa feita ao
- * cliente que pediu a porta.
+ * integração de atendimento o recebe junto de tudo o mais. Pausar a IA muda QUEM
+ * responde o cliente; sobrescrever a ficha muda o cadastro que a equipe usa para
+ * decidir. Quem emite o token decide separadamente se a integração tem esses
+ * poderes — a mesma decisão de produto que abriu `config:read`/`config:write` no
+ * #2052 e `messages:on_behalf` no #1613.
  */
-export const ESCOPO_DESFECHO_DA_AGENDA = "agenda:attendance";
-export const ESCOPO_TAREFAS_LEITURA = "tasks:read";
-export const ESCOPO_TAREFAS_ESCRITA = "tasks:write";
 /**
  * A EDIÇÃO DIRETA DA FICHA (#4517). `contacts:write` já existia na TELA
- * (`ApiTokensClient.tsx`) e no token; o que faltava era uma porta que a
- * cobrasse — até aqui a edição por token parava em `crm_propose_contact_field`,
- * que cria uma proposta e espera alguém abrir o CRM.
+ * (`ApiTokensClient.tsx`) e no vocabulário dos tokens; o que faltava era a
+ * ferramenta que o cobrasse — até aqui a edição por token parava em
+ * `crm_propose_contact_field`, que cria uma proposta e espera alguém abrir o CRM.
  *
  * ⚠️ Sem este escopo o dado continua virando PROPOSTA. É o comportamento de
  * hoje, e continua sendo o de amanhã: quem emite o token decide se a integração

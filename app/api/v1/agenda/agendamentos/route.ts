@@ -23,9 +23,9 @@ import { donosDaAgenda } from "@/lib/agenda/donos-da-agenda";
 import { lerOcupacaoExterna } from "@/lib/agenda/ocupacao-externa";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import {
-  ESCOPO_DESFECHO_DA_AGENDA,
-  tokenTemEscopo,
-} from "@/lib/api/escopos-do-token";
+  RECUSA_DO_COMPARECIMENTO,
+  tokenTemEscopoDoComparecimento,
+} from "@/lib/agenda/comparecimento";
 import type { Actor } from "@/lib/api/handlers/types";
 import { ApiError } from "@/lib/api/types";
 import { chaveDaRequisicao } from "@/lib/api/idempotency";
@@ -35,6 +35,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
+import { amigoBookingContextSchema } from "@/lib/amigo/agenda";
 
 import {
   alterarAgendamentoHandler,
@@ -129,6 +130,7 @@ const convidadosDaEquipe = z
   .optional();
 
 const marcarSchema = z.object({
+  amigo: amigoBookingContextSchema.optional(),
   event_type_id: z.string().uuid(),
   starts_at: z.string().datetime({ offset: true }),
   owner_user_id: z.string().uuid().optional(),
@@ -388,18 +390,6 @@ export async function GET(req: NextRequest): Promise<Response> {
   return ok([...resultado.agendamentos, ...externos], { requestId });
 }
 
-/**
- * O status pedido é DESFECHO (`completed`/`no_show`)? Devolve o próprio status,
- * ou `null`.
- *
- * Um `confirmar`/`cancelar`/remarcação NÃO passa por aqui — só o desfecho pede o
- * escopo extra da #4515. Lê o corpo JÁ VALIDADO, então qualquer string fora do
- * enum já morreu no schema e não tem como furar o gate.
- */
-function statusDeDesfecho(status: unknown): "completed" | "no_show" | null {
-  return status === "completed" || status === "no_show" ? status : null;
-}
-
 export async function POST(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
@@ -451,10 +441,8 @@ async function despachar<T>(
       actor: Actor;
       requestId: string;
       idempotencyKey?: string;
-      /** Linha do token que autenticou (#4515) — só no ramo de Bearer. */
-      apiTokenId?: string;
-      /** O token pagou `agenda:attendance` e pode registrar desfecho (#4515). */
-      desfechoPorToken?: boolean;
+      /** Escopos do Bearer, só no modo token — o desfecho os lê (#4515). */
+      escoposDoToken?: readonly string[];
     },
     input: T,
   ) => Promise<Record<string, unknown>>,
@@ -499,23 +487,28 @@ async function despachar<T>(
   }
 
   /**
-   * O DESFECHO POR TOKEN PAGA ESCOPO PRÓPRIO (#4515).
+   * O DESFECHO PEDE UM ESCOPO PRÓPRIO NO TOKEN (#4515).
    *
-   * `mcp:write` é "pode agir no CRM"; registrar se a pessoa veio ou faltou tem
-   * efeito FORA do registro (o `no_show` devolve horário ao pool, o `completed`
-   * fecha a linha do tempo), e o dono do token decide se a integração o tem.
-   * Sem `agenda:attendance`, o Bearer fecha em 403 antes de o handler rodar —
-   * inclusive para o token que já tem `mcp:write`. A sessão de navegador não tem
-   * escopos e segue exatamente como era.
+   * `mcp:write` continua valendo para marcar, remarcar, cancelar e editar — o
+   * contrato que as integrações já usam não muda. O que muda é o que o CRM
+   * sempre tratou como decisão de gente: dizer que a pessoa VEIO ou FALTOU. Um
+   * token sem `agenda:attendance` recebe 403 com o nome do escopo, e o handler
+   * nem roda — recusar depois da escrita não seria recusa.
+   *
+   * A sessão de navegador não tem escopo (`authz.via === "session"`) e passa
+   * direto: a tela é o caminho de sempre.
    */
-  const desfecho = statusDeDesfecho((parsed.data as { status?: unknown }).status);
-  if (desfecho && authz.via === "token" && !tokenTemEscopo(authz.scopes, ESCOPO_DESFECHO_DA_AGENDA)) {
-    return fail(
-      "forbidden_role",
-      `Este token não pode registrar comparecimento. Peça a quem emitiu o token para incluir o escopo ${ESCOPO_DESFECHO_DA_AGENDA}.`,
-      403,
-      { requestId },
-    );
+  const pedeDesfecho =
+    typeof parsed.data === "object" &&
+    parsed.data !== null &&
+    ((parsed.data as { status?: unknown }).status === "completed" ||
+      (parsed.data as { status?: unknown }).status === "no_show");
+  if (authz.via === "token" && pedeDesfecho && !tokenTemEscopoDoComparecimento(authz.scopes)) {
+    // Sem `t()`: a frase é a MESMA que o handler e a ferramenta devolvem, e
+    // `t()` sobre chave montada em runtime sai em português de qualquer jeito
+    // (`i18n-espanhol-cobre-a-tela` proíbe a forma). Traduzir de verdade pede
+    // a frase no dicionário, como qualquer outra mensagem de erro.
+    return fail("forbidden_role", RECUSA_DO_COMPARECIMENTO, 403, { requestId });
   }
 
   try {
@@ -527,14 +520,10 @@ async function despachar<T>(
         organization_id: organizationId,
         actor,
         requestId,
+        // Os escopos só existem no ramo de token; é o que o handler lê para
+        // decidir o desfecho (#4515). Sessão fica sem o campo, de propósito.
+        ...(authz.via === "token" ? { escoposDoToken: authz.scopes } : {}),
         ...(idempotencyKey !== null ? { idempotencyKey } : {}),
-        // O rastro de QUEM agiu (#4515): só existe no ramo de token.
-        ...(authz.via === "token" && authz.apiTokenId !== undefined
-          ? { apiTokenId: authz.apiTokenId }
-          : {}),
-        // A exceção do desfecho é do TOKEN com escopo — nunca de um ator que se
-        // declarou pessoa no corpo.
-        ...(desfecho && authz.via === "token" ? { desfechoPorToken: true } : {}),
       },
       parsed.data,
     );

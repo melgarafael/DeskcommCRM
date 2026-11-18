@@ -196,6 +196,8 @@ describe("hubSections", () => {
       // #3933: a fila de ligações ativas, ao lado do histórico de chamadas. Só com o módulo ligado.
       "/app/cold-call",
       "/app/comandas",
+      // #4227: o módulo opcional Amigo (agenda da clínica). Só com o módulo instalado.
+      "/app/integrations/amigo",
       "/app/cadencias",
       "/app/products",
       "/app/imports",

@@ -12,14 +12,15 @@ import { isPublicPath } from "@/lib/auth/public-paths";
  * esta régua é explícita.
  *
  * O padrão tem de casar FORMA DE UUID e âncora `$`: `/api/v1/conversations/` tem
- * irmãos literais e sub-rotas que NÃO ganharam porta de token nesta issue
- * (`transfer`, `assign`, `sector`). Um `[^/]+` no meio os tornaria públicos por
- * carona.
+ * irmãos literais e sub-rotas, e um `[^/]+` no meio tornaria públicas por carona
+ * as que NÃO passam por esta porta. As que hoje TÊM porta de token por outra
+ * fatia — `transfer`, `sector`, `assign`, `drafts` e os irmãos de `/contacts/`
+ * (`import`, `bulk`, `merge`) — são abertas por `lib/auth/portas-de-token/`
+ * (Spec 33 R2) e pela #1611, com escopo próprio resolvido DENTRO da rota; esta
+ * régua não as cobre nem as fecha.
  *
- * `drafts` NÃO é uma delas: aquela porta é da #1611 (criação de rascunho
- * sugerido por token), medida em `rotas-bearer-tem-porta-no-proxy`. O que a
- * #4517 aperta ali é a FORMA do id (UUID, com `$`) — `/conversations/abc/drafts`
- * deixa de entrar de carona.
+ * O que a #4517 aperta é a FORMA do id nas SUAS quatro rotas: id inventado
+ * (`/conversations/abc/close`) e sub-path (`/pause-ai/extra`) continuam fechados.
  */
 const UUID = "01234567-89ab-4cde-8f01-234567890abc";
 
@@ -39,21 +40,17 @@ describe("#4517 — as portas novas são públicas para o Bearer", () => {
 
 describe("#4517 — e NADA além delas", () => {
   it.each([
-    // Irmãos literais de `/contacts/` — nenhum tem porta de token.
-    "/api/v1/contacts/import",
-    "/api/v1/contacts/bulk",
-    "/api/v1/contacts/merge",
     // Id que não é UUID: forma livre não é id do Postgres.
     "/api/v1/contacts/abc",
     "/api/v1/conversations/abc/pause-ai",
+    "/api/v1/conversations/abc/reactivate-bot",
+    "/api/v1/conversations/abc/close",
+    "/api/v1/conversations/abc/reopen",
     // Sub-rotas de conversa que NÃO ganharam escopo nesta issue.
-    `/api/v1/conversations/${UUID}/transfer`,
     `/api/v1/conversations/${UUID}/assign`,
-    `/api/v1/conversations/${UUID}/sector`,
-    // Id inventado na porta da #1611: forma livre não é id do Postgres.
-    "/api/v1/conversations/abc/drafts",
     // Sub-path inventado debaixo de uma porta que existe.
     `/api/v1/conversations/${UUID}/pause-ai/extra`,
+    `/api/v1/conversations/${UUID}/reopen/extra`,
     `/api/v1/contacts/${UUID}/avatar/extra`,
   ])("%s continua fechado", (caminho) => {
     expect(isPublicPath(caminho)).toBe(false);

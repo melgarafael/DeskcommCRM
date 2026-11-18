@@ -22,8 +22,8 @@ export function mensagemDeBloqueioPorVinculo(
   const n = porTabela?.calendar_appointments;
   if (typeof n !== "number" || n < 1) return null;
   return n === 1
-    ? t("Este contato tem 1 compromisso na Agenda. Cancele ou apague o compromisso antes de excluir.")
-    : t("Este contato tem {n} compromissos na Agenda. Cancele ou apague os compromissos antes de excluir.").replace(
+    ? t("Este contato tem 1 compromisso não cancelado na Agenda. Cancele o compromisso antes de excluir.")
+    : t("Este contato tem {n} compromissos não cancelados na Agenda. Cancele os compromissos antes de excluir.").replace(
         "{n}",
         String(n),
       );

@@ -209,6 +209,11 @@ export const POLITICAS_DE_AVISO = {
   // `conversation`: quem pode ver a conversa pode responder; não há "dono" a quem
   // mandar, porque a conversa recuperada pode não ter responsável.
   cliente_sem_resposta_na_queda: { refs: ["conversation"], orientacao: "Abra a conversa e responda o cliente — ele escreveu enquanto o número estava fora do ar." },
+  // (#4696) Aponta para a CONVERSA, e não para o contato: é ali que está o fio
+  // onde o retorno foi combinado e é ali que a pessoa pode retomar. A orientação
+  // não manda "revisar" nada — nada está quebrado; o atendimento mudou e a
+  // mensagem prometida deixou de fazer sentido no fio antigo.
+  followup_descartado: { refs: ["conversation"], orientacao: "Abra a conversa e veja o que ficou combinado. Se ainda fizer sentido, retome o contato por ali." },
   // (migration 9027, issue #3371) O aviso nasce SEM referência: o que o conserta
   // não é uma linha do banco, é o login da conta — e o login mora na tela de
   // Credenciais. O botão diz o que fazer ("Reconectar"), não "revisar", porque

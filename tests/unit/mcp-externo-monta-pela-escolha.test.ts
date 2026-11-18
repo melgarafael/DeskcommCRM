@@ -231,15 +231,12 @@ describe("o seletor de capacidades não apaga a escolha remota (#3586)", () => {
   });
 
   it("a remota conta no teto nas duas direções: vagas restantes e vaga exigida pelo pacote", () => {
-    // TETO - 1 nativas fora do pacote + 1 remota = teto cheio. A conta é
-    // DERIVADA do teto de propósito: fixar as nativas em 26 prendia o caso ao
-    // teto 27 que valia quando ele foi escrito, e o dia em que o teto subiu
-    // (27 → 31, #4515/#4516/#4517) o fixture reprovou sem que a regra tivesse
-    // mudado. O contrato medido continua sendo o mesmo: a remota ocupa uma das
-    // TETO vagas, e o pacote `atender` (1 automática + 1 crítica reservada)
-    // ainda exige TETO + 2. Se a remota sumisse da conta (ligarPacote a
-    // descartando, ou o seletor a filtrando), daria TETO + 1 — e o seletor
-    // deixaria ligar uma capacidade além do zod.
+    // (teto − 1) nativas fora do pacote + 1 remota = teto cheio. O pacote
+    // `atender` traz 1 automática e 1 crítica (reservada): teto + 2. Se a remota
+    // sumisse da conta (ligarPacote a descartando, ou o seletor a filtrando),
+    // daria teto + 1 — e o seletor deixaria ligar uma capacidade além do zod.
+    // O número sai da constante, não escrito à mão: quem subir o teto não deve
+    // precisar caçar `26` neste arquivo (foi o que o 27 → 29 cobrou).
     const nativas: CapacidadeSelecionavel[] = Array.from(
       { length: TETO_TOOLS_POR_AGENTE - 1 },
       (_, i) => ({

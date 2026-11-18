@@ -80,30 +80,45 @@ import { entraPorPacote, type ToolBundle, type ToolRisk } from "./pacotes";
  * que o bloco ⚠️ acima diz. O dia em que o `evoluir` exigir 28, o passo volta a
  * ser ele.
  *
- * ═══ 27 → 31: tasks, comandos de conversa e a ficha por token (#4515/#4516/#4517)
+ * ═══ Continua 27: o documento do negócio foi para o `reter`, não para o default ═
  *
- * O dia anunciado chegou: o `evoluir` passou a exigir 29. O catálogo cresceu de
- * 77 para 88 capacidades (+11) e as duas contas que ancoram o número foram
- * medidas no head de antes desta linha:
+ * As duas capacidades de leitura do anexo do card (`crm_list_lead_attachments` e
+ * `crm_get_lead_attachment`, #4544 item 2) nasceram com `pacotes: ["vender"]`,
+ * que é o default do onboarding, e a medição a partir do agente que nasce
+ * mostrou o que este comentário já previa: o `evoluir` — o menor segundo pacote
+ * — subia de 27 para 29 e NENHUM segundo pacote cabia no teto 27. Era o beco do
+ * D3 de novo, e o passo "natural" seria 29.
  *
- *  - `vender` — o pacote do onboarding — foi de 22 para 24 automáticas (a ficha
- *    editável e o desfecho do compromisso). O agente NASCE com 24, então tudo o
- *    que ele pode ganhar depois encareceu 2: evoluir 27 → 29, reter 32 → 34,
- *    escalar 36 → 42, atender 39 → 45, organizar 42 → 49. No teto 27 NENHUMA
- *    segunda jornada cabe — é o beco do defeito D3 outra vez, e o teste que o
- *    guarda (`tests/unit/pacote-reserva-vaga-da-critica.test.ts`) reprovou;
- *  - `atender` + o seed da e2e foi de 28 para 32, porque pausar, retomar,
- *    encerrar e reabrir a conversa entraram nele. A spec
- *    `tests/e2e/capacidades-do-agente.spec.ts` cobra o texto `/faltam? 1 vaga/`,
- *    que é `exigidas - teto`: com 32 exigidas, 31 é o ÚNICO teto que mantém a
- *    conta em 1. Foi esse vínculo, e não a folga, que fixou o passo.
+ * Não se subiu o teto. O `vender` é o default que TODO agente novo paga, e o
+ * mesmo número está sendo movido pelo #4534 (aberto, nosso, leva a 31): duas
+ * mudanças do mesmo teto em PRs diferentes são conflito e disputa de produto.
+ * A saída foi de PACOTE, não de constante: as duas foram para o `reter`, ao lado
+ * do `crm_propose_lead_fields_from_document`, que consome o id que a listagem
+ * devolve. Medido depois da mudança: onboarding 22 (era 24), evoluir 27 (voltou
+ * ao valor que 27 atende), reter 34.
  *
- * 31 é o menor número que satisfaz as DUAS pontas (uma jornada nova cabe, e a
- * recusa da e2e continua com 1 vaga). A folga depois de ligar `vender` cai de
- * 3 para 2 — as duas capacidades que o `vender` ganhou —, e é o mesmo
- * raciocínio de sempre: restaurar folga, não escolher qual pacote ganha vaga.
- * Subir além de 31 daria a segunda jornada a mais de um pacote, o que continua
- * sendo decisão contra um argumento que ninguém mediu.
+ * ═══ 27 → 31: a fatia #4517 entrou no catálogo ══════════════════════════════
+ *
+ * O #4517 acrescentou cinco capacidades: a ficha editável (`crm_update_contact`,
+ * pacote `vender`) e os quatro comandos de conversa — pausar, retomar, encerrar
+ * e reabrir — nos pacotes `atender` e `escalar`. Medido no head desta linha, com
+ * o catálogo que TEM handler (`catalogoComHandler`), em 2026-11-18:
+ *
+ *  - o agente NASCE com 23 automáticas do `vender` (26 com as 3 críticas);
+ *  - `evoluir` — o menor segundo pacote — passou a exigir 28 a partir do
+ *    default; `escalar` 41, `reter` 50, `atender` 50, `organizar` 48;
+ *  - `atender` SOZINHO passou a exigir 31 (29 automáticas + 2 críticas).
+ *
+ * Duas pontas, e 31 é o menor número que satisfaz as DUAS: nenhum pacote sozinho
+ * pode estourar o teto (senão a reserva da crítica o torna inatingível — é o
+ * caso do alarme `pacote-reserva-vaga-da-critica`), e o agente recém-nascido
+ * tem de conseguir ganhar ALGUMA jornada nova (o beco do D3). Subir além de 31
+ * daria a segunda jornada a mais de um pacote, o que continua sendo decisão
+ * contra um argumento — a heurística de degradação — que ninguém mediu.
+ *
+ * A conta do #4534 com a agenda e as tarefas empilhadas media 31 por outro
+ * caminho; este PR deixou de ser empilhado (o #4698 mergeou a agenda e o #4523 é
+ * dono das tarefas), então o número aqui é medido só com a fatia que sobrou.
  */
 export const TETO_TOOLS_POR_AGENTE = 31;
 
