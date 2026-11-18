@@ -1739,7 +1739,7 @@ export function ProspectingClient() {
                         {!briefing.usar_ficha_digital ? (
                           <p className="text-xs text-muted-foreground">
                             {t(
-                              "Desligada, a primeira mensagem abre pelo que a empresa é — o que vende, para quem, o ramo e a região — e não cita nota, avaliações, redes nem auditoria do site. A oferta é a que você escreveu na instrução.",
+                              "Desligada, a primeira mensagem abre pelo ramo e pela região da empresa, e não cita nota, avaliações, redes nem auditoria do site. A oferta é a que você escreveu na instrução.",
                             )}
                           </p>
                         ) : null}
@@ -2114,7 +2114,7 @@ export function ProspectingClient() {
                                 </label>
                                 <p className="text-xs text-muted-foreground">
                                   {t(
-                                    "Desligada, a primeira mensagem abre pelo que a empresa é — o que vende, para quem, o ramo e a região — e não cita nota, avaliações, redes nem auditoria do site. É o modo de quem vende consórcio, crédito, seguro, contabilidade ou consultoria: a oferta é a que você escreveu na instrução.",
+                                    "Desligada, a primeira mensagem abre pelo ramo e pela região da empresa, e não cita nota, avaliações, redes nem auditoria do site. É o modo de quem vende consórcio, crédito, seguro, contabilidade ou consultoria: a oferta é a que você escreveu na instrução.",
                                   )}
                                 </p>
                               </fieldset>

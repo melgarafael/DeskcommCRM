@@ -49,6 +49,7 @@ import {
   MAX_VALOR_DO_CONTEXTO_DA_EQUIPE,
   PROCEDENCIA_COM_CONTEXTO_DA_EQUIPE,
   REGRAS_COM_CONTEXTO_DA_EQUIPE,
+  ROTULOS_DO_CONTEXTO_DA_EQUIPE,
   SITUACAO_COM_CONTEXTO_DA_EQUIPE,
 } from '@/lib/prospecting/contexto-da-equipe';
 
@@ -248,9 +249,19 @@ export function blocoDeModo(
       // do "sem achado" saem INTEIRAS (inclusive a versão com contexto da equipe) —
       // os fatos que elas mandavam citar nem estão nos dados, e "abra pela rotina do
       // negócio" ainda deixaria a porta aberta para "vi que vocês não têm site".
+      //
+      // Com contexto da equipe, a indicação/encontro continua sendo o motivo: a linha
+      // semFicha substitui `motivoDoContato` inteira e, sem o prefixo, a regra que
+      // `semHistoricoInventado` autoriza perderia a prioridade. Os dados desta campanha
+      // são só Empresa, Segmento, Endereço e Telefone — "o que vende" e "para quem" não
+      // estão neles, então a linha não os pede.
       ...(semFicha
         ? [
-            "- Motivo do contato: abra pelo que a empresa É — o que ela vende, para quem, o ramo e a região —, nunca por um fato da ficha digital. Nota, número de avaliações, redes e auditoria do site NÃO estão nos dados desta campanha: citar qualquer um deles (nem dizer que ela não tem site) é inventar, e é proibido.",
+            "- Motivo do contato: " +
+              (comContexto
+                ? `UM só. Indicação, encontro ou conversa anterior do \`${ROTULOS_DO_CONTEXTO_DA_EQUIPE.contexto}\` É o motivo, sem somar outro fato. Sem isso, `
+                : "") +
+              "abra pelo que a empresa É — o ramo (`Segmento`) e a região (`Endereço`) —, sem inventar o que ela vende nem para quem, e sem fingir que pesquisou; nunca por um fato da ficha digital. Nota, número de avaliações, redes e auditoria do site NÃO estão nos dados desta campanha: citar qualquer um deles (nem dizer que ela não tem site) é inventar, e é proibido.",
           ]
         : [
             comContexto

@@ -20055,13 +20055,13 @@ export const DICIONARIO: Traducoes = {
   "Usar a ficha digital (site, avaliações, redes) como motivo do contato": {
     es: "Usar la ficha digital (sitio, reseñas, redes) como motivo del contacto",
   },
-  "Desligada, a primeira mensagem abre pelo que a empresa é — o que vende, para quem, o ramo e a região — e não cita nota, avaliações, redes nem auditoria do site. É o modo de quem vende consórcio, crédito, seguro, contabilidade ou consultoria: a oferta é a que você escreveu na instrução.":
+  "Desligada, a primeira mensagem abre pelo ramo e pela região da empresa, e não cita nota, avaliações, redes nem auditoria do site. É o modo de quem vende consórcio, crédito, seguro, contabilidade ou consultoria: a oferta é a que você escreveu na instrução.":
     {
-      es: "Desactivada, el primer mensaje abre por lo que la empresa es — lo que vende, para quién, el rubro y la región — y no cita nota, reseñas, redes ni auditoría del sitio. Es el modo de quien vende consorcio, crédito, seguro, contabilidad o consultoría: la oferta es la que escribiste en la instrucción.",
+      es: "Desactivada, el primer mensaje abre por el rubro y la región de la empresa, y no cita nota, reseñas, redes ni auditoría del sitio. Es el modo de quien vende consorcio, crédito, seguro, contabilidad o consultoría: la oferta es la que escribiste en la instrucción.",
     },
-  "Desligada, a primeira mensagem abre pelo que a empresa é — o que vende, para quem, o ramo e a região — e não cita nota, avaliações, redes nem auditoria do site. A oferta é a que você escreveu na instrução.":
+  "Desligada, a primeira mensagem abre pelo ramo e pela região da empresa, e não cita nota, avaliações, redes nem auditoria do site. A oferta é a que você escreveu na instrução.":
     {
-      es: "Desactivada, el primer mensaje abre por lo que la empresa es — lo que vende, para quién, el rubro y la región — y no cita nota, reseñas, redes ni auditoría del sitio. La oferta es la que escribiste en la instrucción.",
+      es: "Desactivada, el primer mensaje abre por el rubro y la región de la empresa, y no cita nota, reseñas, redes ni auditoría del sitio. La oferta es la que escribiste en la instrucción.",
     },
   "Site profissional": { es: "Sitio profesional" },
   "Automação do atendimento (CRM)": { es: "Automatización de la atención (CRM)" },

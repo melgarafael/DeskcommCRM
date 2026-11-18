@@ -141,7 +141,7 @@ export const campaignConfigSchema = z
     // da PRIMEIRA mensagem os fatos da ficha digital — `Ficha do Google` (nota e
     // avaliações), `Redes`, `Auditoria`/`Detalhe` do site e o próprio `Site` — e troca
     // a regra do motivo do contato no prompt frio: a abertura passa a ser pelo que a
-    // empresa É (o que vende, para quem, o ramo, a região). Serve a quem vende
+    // empresa É (o ramo e a região). Serve a quem vende
     // consórcio, crédito, seguro, contabilidade ou consultoria, público para o qual
     // "sua nota no Google" abre uma conversa que não é sobre o que ele compra.
     //

@@ -102,6 +102,25 @@ describe("campanha sem ficha digital: o que chega ao prompt", () => {
     expect(system).not.toContain("Ficha do Google");
   });
 
+  it("não pede o que os dados não trazem: o que ela vende, para quem", () => {
+    const system = blocoDeModo("prospeccao_fria", "n0nce", INSTRUCAO, { semFichaDigital: true });
+    expect(system).toContain("o ramo (`Segmento`) e a região (`Endereço`)");
+    expect(system).toContain("sem fingir que pesquisou");
+    expect(system).not.toContain("o que ela vende, para quem");
+  });
+
+  it("com contexto da equipe, a indicação continua sendo o motivo", () => {
+    const system = blocoDeModo("prospeccao_fria", "n0nce", INSTRUCAO, {
+      semFichaDigital: true,
+      comContextoDaEquipe: true,
+    });
+    expect(system).toContain("Indicação, encontro ou conversa anterior do `Contexto da equipe` É o motivo");
+    // …e a frase só existe nesse caso: sem contexto não há indicação nenhuma a citar.
+    expect(blocoDeModo("prospeccao_fria", "n0nce", INSTRUCAO, { semFichaDigital: true })).not.toContain(
+      "conversa anterior do `Contexto da equipe` É o motivo",
+    );
+  });
+
   it("a instrução não leva o bloco de estratégia (o ângulo é de site)", () => {
     const semEstrategia = instrucaoDeAbordagemFria(INSTRUCAO, "Quem decide a compra.", undefined, null);
     expect(semEstrategia).toBe(instrucaoDeAbordagemFria(INSTRUCAO, "Quem decide a compra."));
