@@ -18,6 +18,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   este campo" nos campos que o agente pode usar no atendimento; os demais seguem
   só no card. Nada a instalar: a definição do campo mora no próprio funil.
 
+  Contribuição de @webtecnica (#4684, #4669).
+
 ### Adicionado
 
 - **Editar etiquetas do lead ganha acrescentar e remover sem apagar as outras** Antes, a única forma de mexer nas etiquetas de um lead pela ferramenta era `tags`, e ela SUBSTITUI a lista inteira: o agente que queria acrescentar uma etiqueta mandava só ela e apagava, sem aviso, todas as que já estavam na ficha. Agora existem `tags_adicionar` e `tags_remover`, que fazem a união e a diferença sobre a lista atual, e a descrição de `tags` passou a dizer com todas as letras que ela troca a lista toda. Quando vêm juntas na mesma chamada, `tags` define a base, depois entram os acréscimos e por fim saem as remoções. As etiquetas são normalizadas por espaço e caixa antes de entrar na ficha, então `Cliente VIP` e `cliente vip ` não viram duas. Vale para a ferramenta do agente, para o servidor MCP e para a rota de leads, que compartilham o mesmo esquema. Quem já usava `tags` sozinho continua substituindo a lista inteira; a diferença é que a etiqueta nova agora entra normalizada (sem espaço nas pontas e em minúscula), e a grafia que já existe no negócio é mantida.
@@ -33,6 +35,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   Contribuição de @webtecnica, a partir da issue #4761.
 
 - **Curso de Credenciais passa a mostrar os dois passos de preparação da assinatura do ChatGPT** O curso ilustrado de Credenciais ganha a lição "Preparar a assinatura do ChatGPT", com os dois passos que faltavam: quem administra a instalação liga "Login do Codex por assinatura" em Recursos opcionais do Admin (a tela `/admin/sistema`), e depois a empresa conecta a conta em Credenciais, abrindo o link do Codex, entrando com a conta da assinatura e colando o endereço `localhost:1455` em que o navegador parou — a página não abrir é esperado. Antes disso o preparo aparecia só como dica escondida no passo dos provedores. A dica daquela lição passa a apontar para os dois passos. Não muda comportamento do produto nem tela alguma.
+
+  Contribuição de @webtecnica (#4816, #4762).
 
 - **A cor de cada etapa do funil passa a se escolher na tela, com a paleta do produto e um botão «Padrão»** A cor da etapa existia no banco desde o começo e o quadro Kanban já a pintava,
   mas nenhuma tela sabia gravá-la: para mudar o tom de uma coluna era preciso
@@ -55,6 +59,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   etapas, transferir negócios ao arquivar ou excluir um funil, relatórios de
   faturamento por funil e etapa, e a exportação dos relatórios de vendas.
 
+  Contribuição de @webtecnica (#4846, #4802).
+
 - **A campanha de prospecção pode abrir sem a ficha digital — para quem não vende site nem marketing** A primeira mensagem da campanha abria por um fato da ficha digital da empresa — a nota do Google, o número de avaliações, as redes ou a auditoria do site. Para quem prospecta vendendo consórcio, crédito, seguro, contabilidade ou consultoria, isso soava fora do contexto e derrubava a resposta; o contorno era limpar a ficha das empresas da fila por fora.
 
   Agora a campanha tem o interruptor "Usar a ficha digital (site, avaliações, redes) como motivo do contato", na criação e na edição com a campanha pausada. Desligado, a primeira mensagem perde `Ficha do Google`, `Redes`, `Auditoria` e o próprio `Site`, e o prompt passa a abrir pelo que a empresa é — o que vende, para quem, o ramo e a região —, com a oferta que o operador escreveu na instrução. O telefone continua na ficha: é como se chega na empresa, não vitrine.
@@ -70,6 +76,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   Fora da tela, o critério também pode ser gravado pela ferramenta `crm_update_stage`, por uma IA ou integração conectada por MCP com um token de papel gerente (`manager`), com o mesmo limite de 500 caracteres e a mesma regra de vazio. Quando o token é de um agente de IA, a etapa mostra "alterado pelo assistente"; quando é de uma integração comum, "alterado automaticamente pelo sistema". O agente que atende as conversas não alcança essa ferramenta. A gravação segue o registro de auditoria das outras alterações de etapa.
 
   A coluna do quadro ainda **não** exibe o critério como dica: ficou fora deste escopo.
+
+  Contribuição de @webtecnica (#4843, #4836).
 
 - **A empresa — ou a pessoa — escolhe a tela que abre depois de entrar** O menu enxuto já dizia o que aparece; a primeira tela continuava sendo regra fixa do produto: Inbox, se visível, senão a primeira área do menu. Agora quem administra a empresa escolhe a **tela inicial** em Configurações › Empresa › "Menu lateral", e cada pessoa pode ter a sua em Equipe › Interface do membro — a escolha do vínculo vence a da empresa.
 
@@ -103,7 +111,11 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   lado: o restante do painel fica no lugar. Nenhuma ação é necessária na
   atualização.
 
+  Contribuição de @VinhoAbencoado (#4840).
+
 - **Primeiro contato com a janela de 24 h fechada espera o cliente escrever antes de gastar modelo aprovado** Quando um lead acaba de chegar por uma integração e a janela de 24 h está fechada, o único envio possível era um modelo aprovado, que é pago — mesmo quando o cliente escrevia no WhatsApp poucos segundos depois e a janela abria de graça. Agora o primeiro contato que gastaria modelo espera 10 segundos e confere a janela outra vez: se o cliente escreveu nesse intervalo, o atendimento segue em texto livre, sem modelo pago; se nada chegou, o modelo sai normalmente. A espera só vale para o primeiro contato de um lead recém-chegado, é configurável em `FOLLOWUP_CARENCIA_DO_MODELO_MS` e `0` desliga e devolve o comportamento anterior. Cada modelo dispensado fica registrado na linha do tempo do acompanhamento, para o ganho poder ser medido. Não muda o motor de follow-up, os gatilhos nem o teto de envio.
+
+  Contribuição de @webtecnica (#4841, #4835).
 
 - **Efi Bank entra como provedor de cobrança, com boleto recorrente e link do próprio Efi** O DeskcommCRM já cobrava pela Stripe e pelo Asaas. Agora cobra também pelo **Efi Bank**: a tela
   de **Conexão** ganhou o provedor, e a credencial da aplicação (Client-Id e Client-Secret) é
@@ -126,6 +138,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   o adaptador repete a guarda antes de chamar a API, para o número não virar real por acidente. É a
   mesma régua do Asaas.
 
+  Contribuição de @webtecnica (#4095, #4056).
+
 - **O módulo opcional pode ser desligado para uma empresa sem desligá-lo para as outras** Em **Recursos opcionais › Módulos por empresa**, quem administra o servidor
   escolhe uma empresa e decide módulo por módulo entre **Herdar da instalação**
   (o padrão, que é o de hoje), **Ligado** e **Desligado**. Desligar `propostas`,
@@ -138,7 +152,11 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   chega módulo a módulo: até lá, o `Desligado` esconde a porta no menu daquela
   empresa, e a tela avisa disso.
 
+  Contribuição de @webtecnica (#4065, #3868).
+
 - **Painel de Google Ads com os resultados das campanhas no CRM** Em Análise → Google Ads, gerentes e administradores podem consultar os negócios atribuídos por conta, campanha, grupo, anúncio e palavra-chave. A aba de desempenho usa a conexão Google Ads da organização para consultar investimento, cliques, impressões e conversões. As duas visões permitem comparar o investimento de uma campanha com os negócios ganhos que têm atribuição correspondente.
+
+  Contribuição de @SerusoNakamoto (#4795).
 
 ### Alterado
 
@@ -151,6 +169,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   quem não é membro da organização continua sem ver nada. A atualização cria os
   índices e a função sozinha e não pede nenhuma ação de quem opera a instalação.
 
+  Contribuição de @webtecnica (#4653, #4326).
+
 ### Corrigido
 
 - **Envio pelo servidor MCP com chave de idempotência não sai mais em dobro nem descarta texto novo em silêncio** Quem integra pelo servidor MCP (n8n, automações, agentes externos) pode mandar uma chave de idempotência em cada envio, para que uma nova tentativa não repita a mensagem. Nas três ferramentas que enviam mensagem por esse caminho (enviar mensagem, enviar material da empresa, e abrir conversa e enviar), essa chave falhava em três situações. Uma nova tentativa que chegava antes de a primeira terminar mandava a mensagem outra vez. A mesma chave com outro texto recebia a resposta do envio anterior, como se o texto novo tivesse saído, e ele não saía. E a chave não vencia nunca, apesar do prazo de 24 horas informado na própria ferramenta. Agora as três seguem a regra que o envio pela API REST já seguia. A nova tentativa que chega durante o primeiro envio volta com um erro avisando que ele ainda está em andamento, sem enviar nada nem abrir a conversa de novo, e pode ser repetida com a mesma chave. A mesma chave com outro conteúdo volta com um erro de conflito, também sem enviar nada; para um envio novo, use uma chave nova. Passadas 24 horas, a mesma chave envia de novo. Repetir com a mesma chave e o mesmo conteúdo depois de o envio terminar continua devolvendo a resposta do primeiro envio, sem reenviar, e quem não manda chave não percebe diferença. Nas 24 horas seguintes à atualização, repetir uma chave usada antes dela pode voltar como conflito; nada é reenviado. Nenhuma ação é necessária na atualização. Contribuição de @tabaterral (#1613).
@@ -159,7 +179,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Agora, na hora de decidir se o texto ainda precisa de resposta, a reação não conta mais como mensagem nova e deixa de impedir a resposta ao texto. O mesmo vale para a reação que chega enquanto a IA ainda prepara a resposta: antes, o que a IA tinha pronto era descartado e ninguém respondia depois. E, quando o cliente escreve de novo nesse intervalo, uma reação antiga na conversa não faz mais a IA mandar duas respostas seguidas, uma delas já desatualizada. Nenhuma ação é necessária na atualização.
 
-  Crédito: correção de @tabaterral, medição de @hebervalverde (#2797).
+  Contribuição de @tabaterral (#4854), com medição de @hebervalverde (#2797).
 
 - **O documento enviado de novo pelo Inbox chega ao WhatsApp com o nome original do arquivo** Quando um documento enviado pelo Inbox precisava de uma nova tentativa, o arquivo chegava ao WhatsApp do cliente com um nome interno gerado pelo sistema, em vez do nome original. Isso acontecia em dois casos: ao usar o botão de repetir o envio de uma mensagem que falhou e na nova tentativa automática que o CRM faz quando o WhatsApp limita o ritmo de envios. Agora, na nova tentativa, o cliente recebe o documento com o nome original do arquivo. Quando o CRM não tem o nome original do arquivo, o documento sai como antes, com o nome interno. Nenhuma ação é necessária na atualização. Contribuição de @tabaterral (#4457).
 
@@ -182,6 +202,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   Contribuição de @webtecnica (#4684, issue #4669).
 
 - **No Inbox, o formulário manual do "Enviar contato" acompanha a tela em espanhol** Ao enviar um contato pelo Inbox com a instalação em espanhol, o formulário manual do diálogo **Enviar contato** mantinha três textos em português: o rótulo "Ou informe um contato", o campo "Nome (opcional)" e o botão "Enviar contato". Os três passam a sair pela função da tela (`t(...)`), com o espanhol que já estava no dicionário ("O indica un contacto", "Nombre (opcional)", "Enviar contacto"). Em português nada muda.
+
+  Contribuição de @webtecnica (#4810, #4806).
 
 - **Faturar em lote não grava mais a comanda na empresa errada** Quem participa de mais de uma empresa (ou é administrador da plataforma) podia faturar em lote um atendimento de outra empresa: a tela mostrava o atendimento e o clique criava, na empresa ativa, uma comanda finalizada com item, comissão e um lançamento pago no caixa — dinheiro de um serviço prestado na outra empresa, e o atendimento de origem continuava pendente lá, pronto para ser cobrado de novo.
 
@@ -214,6 +236,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   A citação pelo agente de IA continua fora: quem responde citando é a pessoa, pela tela.
 
+  Contribuição de @webtecnica (#4882, #4880).
+
 - **Ler a agenda pelo servidor MCP do próprio agente deixa de ser vetado como promessa** Um agente que usa um servidor MCP **do próprio agente** (cadastro por agente, inclusive `oauth_por_contato`) para consultar uma agenda externa lia o dado certo e, mesmo assim, toda resposta que relatava o que a leitura devolveu era vetada pela conferência semântica de promessa ("promessa/compromisso fora do playbook"). O agente reescrevia, era vetado de novo e a conversa caía para atendimento humano — com o contorno de desligar a conferência de promessa.
 
   A causa era a evidência não existir para esse caminho: a leitura do servidor MCP do agente já era marcada como leitura e executava, mas o nome dela não entrava na lista de leituras remotas do turno, e por isso o resultado nunca virava evidência `servidor_externo` da conferência. Agora a leitura do servidor do agente entra na MESMA lista e produz a MESMA evidência que a leitura do servidor MCP da organização já produzia — servidor, ferramenta e resultado consultado, só para o turno em questão. A conferência não mudou de critério: a frase sem a evidência continua vetada, e promessa comercial de verdade continua vetada.
@@ -221,6 +245,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   Ferramenta de escrita não gera essa evidência, leitura que falha não é registrada como sucesso, e a evidência continua restrita à organização e ao contato do turno.
 
   Ajuste a partir da issue #4881.
+
+  Contribuição de @webtecnica (#4884, #4881).
 
 - **Os rótulos Metadados e ID da requisição no detalhe da auditoria agora são traduzidos** No detalhe de uma entrada da auditoria, "Metadata" e "Request ID" apareciam sempre em inglês. Agora seguem o idioma da interface: "Metadados" e "ID da requisição" em português, "Metadatos" e "ID de la solicitud" em espanhol.
 
@@ -237,6 +263,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   Contribuição de @webtecnica, a partir dos achados das ondas das issues #4762 e #4761.
 
 - **Compromisso marcado, realizado, falta e reserva de serviço continuam barrando a exclusão do contato** A exclusão de um contato com compromisso CANCELADO na Agenda passou a ser permitida, e com isso a fronteira da decisão da 0177 ficou sem guarda no banco: só o compromisso cancelado sem reserva de serviço é desvinculado. Compromisso marcado, realizado ou com falta continua impedindo a exclusão, e reserva de serviço também — inclusive cancelada. Nada muda para quem usa o sistema; o que entra é a prova, contra a chave estrangeira de verdade, de que essas quatro portas continuam fechadas e de que a recusa desfaz tudo numa transação só. Nenhuma ação é necessária na atualização.
+
+  Contribuição de @webtecnica (#4807, #4765).
 
 ## [1.117.0] — 2026-11-18
 
