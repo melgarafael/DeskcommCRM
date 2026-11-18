@@ -66,6 +66,17 @@ export function explicarRecusaDoPlano(
         .replace("{n}", String(LIMITES_DO_PLANO.descricaoDoPasso));
     }
     if (campoDoPasso === "vence_em_dias") return frasePrazoDoPasso(t, passo);
+    // O caminho do prazo novo (`0.passos.2.prazo.campo` / `...prazo.dias`) chega
+    // aqui com o 4º pedaço = "prazo": a chave do campo é configuração do passo e
+    // o deslocamento vale de -365 a 365 (negativo = antes da data do card).
+    if (campoDoPasso === "prazo") {
+      // Negativo contado da aplicação: a régua é a do modo de sempre (0 a N).
+      // O código é nosso (`superRefine` de `plano.ts`), não frase do zod.
+      if (details?.[caminho] === "prazo_negativo_sem_campo") return frasePrazoDoPasso(t, passo);
+      return caminho.endsWith(".campo")
+        ? t("Escolha o campo de data do passo {p}.").replace("{p}", String(passo))
+        : t("O prazo do passo {p} pode ir de -365 a 365 dias.").replace("{p}", String(passo));
+    }
   }
   return null;
 }
