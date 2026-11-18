@@ -8,6 +8,9 @@ set -euo pipefail
 # mantém a escolha, já exportada em DESKCOMM_IDIOMA_CLI.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_i18n.sh"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_manifestos.sh"
+# Espaço, retenção de backup e poda de imagens (#4837) — só funções, nada roda
+# ao carregar. Fica fora daqui por assunto: _common.sh é o encanamento do kit.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/armazenamento.sh"
 
 COMPOSE="docker-compose.prod.yml"
 COMPOSE_TRAEFIK="docker-compose.traefik.yml"
