@@ -109,7 +109,11 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_confirm_appointment": { tokens: 318, motivo: BASE },
   "crm_set_appointment_outcome": { tokens: 263, motivo: BASE },
   "crm_create_lead": { tokens: 1003, motivo: "referencia_externa (Spec 25 R5): +70 do item escolhido e do funil opcional; a forma é conferida por refine, sem padrão no esquema" },
-  "crm_update_lead": { tokens: 817, motivo: BASE },
+  "crm_update_lead": {
+    tokens: 966,
+    motivo:
+      "#4666: a descrição diz que `tags` SUBSTITUI a lista inteira, e entram `tags_adicionar`/`tags_remover` — sem essas palavras o agente apagava etiqueta acreditando acrescentar",
+  },
   "crm_move_lead_stage": { tokens: 380, motivo: BASE },
   "crm_retomar_lead": { tokens: 394, motivo: BASE },
   "crm_propose_lead_fields_from_document": { tokens: 583, motivo: BASE },
@@ -207,10 +211,12 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // (2026-11-17, main de `0652fa6866`).
 // +55 na descrição de `crm_list_pipelines`, que passou a dizer que a lista traz
 // os CAMPOS do funil (#4667) — é o delta medido naquela entrada (63 → 118).
-// O total é MEDIDO no merge com a main (40581 = 40526 medidos nela + 55 deste
-// PR, remedido em 2026-11-18 sobre a main de `041cd76bc6`, que já trazia os
-// 40526 de `08d8aa8c02`), não somado à mão.
-const TETO_TOTAL = 40581;
+// +149 no `crm_update_lead` (#4666), que passou a dizer que `tags` substitui a
+// lista inteira e ganhou `tags_adicionar`/`tags_remover`. MEDIDO no merge com a
+// main pós-#4886 e #4684: 40675 (2026-11-18).
+// O total é MEDIDO no merge com a main (40730 = 40675 medidos nela + 55 deste
+// PR, remedido em 2026-11-18 sobre a main de `9da6943cc2`), não somado à mão.
+const TETO_TOTAL = 40730;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

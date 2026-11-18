@@ -53,6 +53,11 @@ export interface PatchDeEtapa {
    */
   expected_duration_hours?: number | null;
   /**
+   * A cor da etapa, `#rrggbb` (`crm_stages.color`). `null` volta ao padrão de
+   * hoje. Item 2 da #4802.
+   */
+  color?: string | null;
+  /**
    * O critério da etapa (#4836): quando um negócio entra nela, em texto livre.
    * `null` limpa (e texto vazio também vira `null` no servidor). Acima de 500
    * caracteres, depois do `trim`, a rota responde 422 — a MESMA constante que a
