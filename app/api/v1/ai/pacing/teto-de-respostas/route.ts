@@ -19,9 +19,11 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *
  * Os três campos são obrigatórios: um PATCH parcial deixaria o valor antigo de
  * um deles e o operador sairia da tela achando que gravou os três. Organização
- * que nunca gravou nada lê `null` e cai no padrão da instalação (20 em 60 min,
- * silêncio de 60 min) — o GET devolve o efetivo e o padrão lado a lado, para a
- * tela poder dizer "está no padrão" sem inventar número.
+ * que nunca gravou nada lê `null` e cai no padrão da instalação — o
+ * `TETO_DE_RESPOSTAS_POR_CONVERSA` / `TETO_DE_RESPOSTAS_JANELA_MIN` do `.env`, o
+ * MESMO que o worker lê (o `app` recebe o mesmo `env_file`); sem eles, 20 em
+ * 60 min — e o GET devolve o efetivo e o padrão lado a lado, para a tela poder
+ * dizer "está no padrão" sem inventar número.
  *
  * `silenciar_minutos: 0` = não pausa a conversa: o veto e o aviso na Central
  * continuam (a resposta não sai), o que não acontece é o `bot_silenced_until`.
@@ -32,11 +34,10 @@ import { z } from "zod";
 
 import {
   CHAVE_DO_TETO_NO_ANTI_BAN,
-  JANELA_DO_TETO_DE_RESPOSTAS_MINUTOS_PADRAO,
   SILENCIO_DO_TETO_DE_RESPOSTAS_MINUTOS_MAXIMO,
-  SILENCIO_DO_TETO_DE_RESPOSTAS_MINUTOS_PADRAO,
-  TETO_DE_RESPOSTAS_PADRAO,
+  knobsDoTetoDeRespostas,
   lerTetoDoAntiBan,
+  type TetoDeRespostasKnobs,
 } from "@/lib/agent-engine/agent/teto-de-respostas";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { ok, fail } from "@/lib/api/wrappers";
@@ -53,11 +54,18 @@ const tetoDaOrganizacaoSchema = z.strictObject({
   silenciar_minutos: z.number().int().min(0).max(SILENCIO_DO_TETO_DE_RESPOSTAS_MINUTOS_MAXIMO),
 });
 
-const PADRAO = {
-  por_conversa: TETO_DE_RESPOSTAS_PADRAO,
-  janela_minutos: JANELA_DO_TETO_DE_RESPOSTAS_MINUTOS_PADRAO,
-  silenciar_minutos: SILENCIO_DO_TETO_DE_RESPOSTAS_MINUTOS_PADRAO,
-} as const;
+/**
+ * O padrão da INSTALAÇÃO, lido do mesmo env que o worker usa como base do turno
+ * (`turnKnobsFromEnv`). Uma constante aqui faria a rota mostrar 20/60 numa
+ * instalação cujo turno aplica outro número. Ausente, vazio ou inválido cai no
+ * padrão do arquivo, como no `knobsDoTetoDeRespostas`.
+ */
+function baseDaInstalacao(): TetoDeRespostasKnobs {
+  return knobsDoTetoDeRespostas({
+    porConversa: Number(process.env.TETO_DE_RESPOSTAS_POR_CONVERSA),
+    janelaMinutos: Number(process.env.TETO_DE_RESPOSTAS_JANELA_MIN),
+  });
+}
 
 /** O valor gravado, ou `null` quando a organização nunca configurou. */
 async function lerGravado(organizationId: string): Promise<unknown> {
@@ -79,12 +87,13 @@ export async function GET(): Promise<Response> {
 
   try {
     const gravado = await lerGravado(authz.org.orgId);
+    const base = baseDaInstalacao();
     return ok(
       {
         // `efetivo` já resolve ausência e jsonb torto pelo padrão — é o número que
         // o turno vai usar, não uma segunda conta feita na tela.
-        efetivo: paraResposta(lerTetoDoAntiBan(gravado)),
-        padrao: PADRAO,
+        efetivo: paraResposta(lerTetoDoAntiBan(gravado, base)),
+        padrao: paraResposta(lerTetoDoAntiBan(null, base)),
         configurado: gravado !== null,
       },
       { requestId },
@@ -166,7 +175,15 @@ export async function PUT(req: NextRequest): Promise<Response> {
     metadata: { por_conversa, janela_minutos, silenciar_minutos },
   });
 
-  return ok({ efetivo: paraResposta(lerTetoDoAntiBan(gravado)), padrao: PADRAO, configurado: true }, { requestId });
+  const base = baseDaInstalacao();
+  return ok(
+    {
+      efetivo: paraResposta(lerTetoDoAntiBan(gravado, base)),
+      padrao: paraResposta(lerTetoDoAntiBan(null, base)),
+      configurado: true,
+    },
+    { requestId },
+  );
 }
 
 /** O nome que a resposta usa é o do jsonb — o mesmo que o turno lê. */
