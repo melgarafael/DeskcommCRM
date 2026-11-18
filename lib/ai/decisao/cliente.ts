@@ -51,6 +51,7 @@ import { z } from "zod";
 
 import { env } from "@/lib/env";
 
+import { caminhoDaChamada } from "./modelo";
 import { basePadraoDaOrigem, MODELO_DA_TYPESAFE, modeloDaOrigem, ORIGEM_PADRAO, type OrigemDoJev } from "./origem";
 
 /**
@@ -163,6 +164,12 @@ export interface EntradaDaDecisao {
    * e a base e o nome do modelo mudam juntos.
    */
   origem?: OrigemDoJev;
+  /**
+   * O modelo do decisor quando ele NÃO é o Jev (`./modelo`), conferido na
+   * escrita da configuração (`./catalogo`). Ausente é o Jev daquela origem, que
+   * continua sendo o padrão de toda instalação que nunca escolheu nada.
+   */
+  modelo?: string;
 }
 
 export interface DependenciasDaDecisao {
@@ -275,13 +282,19 @@ export async function decidir(
     questions[id] = paraOFornecedor(pergunta);
   }
   const origem = entrada.origem ?? ORIGEM_PADRAO;
-  const modelo = modeloDaOrigem(origem);
+  // O nome do Jev depende da origem (`typesafe/jev-1.13` na OpenRouter), e é
+  // por isso que o padrão sai de `modeloDaOrigem`; o escolhido vem pronto de
+  // quem leu a config (`./ponto`), que é quem sabe a origem que vale.
+  const modelo = entrada.modelo?.trim() || modeloDaOrigem(origem);
 
   const abortador = new AbortController();
   const relogio = setTimeout(() => abortador.abort(), entrada.tetoMs ?? TETO_PADRAO_MS);
   const inicio = Date.now();
   try {
-    const res = await (deps.fetchImpl ?? fetch)(`${deps.baseUrl ?? baseDaApiDoJev(origem)}/v1/systemone`, {
+    // O caminho depende do MODELO: o Jev responde no endpoint de compatibilidade
+    // da TypeSafe (`/v1/systemone`), os outros modelos de decisão da OpenRouter
+    // em `/api/alpha/decisions` — mesmo corpo, mesma resposta (`./modelo`).
+    const res = await (deps.fetchImpl ?? fetch)(`${deps.baseUrl ?? baseDaApiDoJev(origem)}${caminhoDaChamada(modelo)}`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${entrada.chave}`,

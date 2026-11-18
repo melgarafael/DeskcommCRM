@@ -256,6 +256,7 @@ export async function POST(req: NextRequest) {
         instruction: body.instruction,
         qualification: body.qualification,
         ofertas: body.ofertas,
+        usar_ficha_digital: body.usar_ficha_digital,
       });
       result = next;
       auditMetadata = { operation: body.action, previous, next };

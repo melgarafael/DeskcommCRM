@@ -15,7 +15,7 @@ import { provedorDaInstalacao } from "@/lib/cobranca/configuracao";
 import { modoDoProvedor } from "@/lib/cobranca/provedores";
 import { baseDeTesteDaCobranca } from "@/lib/cobranca/provedores/base-de-teste";
 import { urlDoWebhookDaCobranca } from "@/lib/cobranca/url";
-import type { Modo, ProvedorDeCobranca } from "@/lib/cobranca/vocabulario";
+import { PROVEDORES_DE_COBRANCA, type Modo, type ProvedorDeCobranca } from "@/lib/cobranca/vocabulario";
 import { emailConfigurado } from "@/lib/email/roteador";
 import { env } from "@/lib/env";
 import { estadoParaTela } from "@/lib/instalacao/config";
@@ -49,7 +49,7 @@ export interface PassoDoChecklist {
   href: string | null;
 }
 
-const CHAVE_DO_PROVEDOR: Record<ProvedorDeCobranca, string> = { stripe: "STRIPE_SECRET_KEY", asaas: "ASAAS_API_KEY" };
+const CHAVE_DO_PROVEDOR: Record<ProvedorDeCobranca, string> = { stripe: "STRIPE_SECRET_KEY", asaas: "ASAAS_API_KEY", efi: "EFI_CLIENT" };
 
 export async function lerVisaoGeral(admin: SupabaseClient): Promise<DadosDaVisaoGeral> {
   const provedor = await provedorDaInstalacao();
@@ -74,13 +74,13 @@ export async function lerVisaoGeral(admin: SupabaseClient): Promise<DadosDaVisao
     admin
       .from("webhook_events_log")
       .select("id", { count: "exact", head: true })
-      .in("provider", ["stripe", "asaas"])
+      .in("provider", [...PROVEDORES_DE_COBRANCA])
       .eq("valid_signature", true)
       .in("status", ["error", "dead"]),
     admin
       .from("webhook_events_log")
       .select("id", { count: "exact", head: true })
-      .in("provider", ["stripe", "asaas"])
+      .in("provider", [...PROVEDORES_DE_COBRANCA])
       .eq("valid_signature", false)
       .gte("received_at", desde24h),
     admin.from("cobranca_planos").select("id").eq("padrao_no_cadastro", true).is("arquivado_em", null).limit(1).maybeSingle(),

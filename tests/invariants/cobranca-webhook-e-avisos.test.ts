@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { PROVEDORES_DE_COBRANCA } from "@/lib/cobranca/vocabulario";
@@ -81,6 +83,30 @@ describe("inv. 8 — um evento de cobrança, uma linha", () => {
     expect(def).toContain("CREATE UNIQUE INDEX");
     expect(def).toContain("(provider, external_id)");
     expect(def).toContain("'stripe'::text, 'asaas'::text");
+    expect(def).toContain("'efi'::text");
+  });
+
+  it("⭐ todo provedor do vocabulário da cobrança tem a idempotência do 23505", () => {
+    for (const provedor of PROVEDORES_DE_COBRANCA) {
+      sql(`${evento(provedor, `evt_idem_${provedor}`)};`);
+      expect(erroDe(`${evento(provedor, `evt_idem_${provedor}`)};`), provedor).toContain("23505");
+    }
+  });
+
+  it("⭐ quem ATUALIZA com o índice antigo (sem 'efi') recebe o predicado novo ao reaplicar o baseline", () => {
+    // O `update.sh` só reaplica o baseline: `create unique index if not exists`
+    // deixaria o índice antigo de pé, e o aviso do Efi sem 23505.
+    const baseline = readFileSync("supabase/baseline.sql", "utf8");
+    const ancora = baseline.indexOf("indexname = 'uniq_webhook_events_log_cobranca'");
+    expect(ancora, "bloco que recria o índice no baseline").toBeGreaterThan(0);
+    const bloco = baseline.slice(baseline.lastIndexOf("do $$", ancora), baseline.indexOf("end $$;", ancora) + "end $$;".length);
+    sql(`drop index public.uniq_webhook_events_log_cobranca;
+      create unique index uniq_webhook_events_log_cobranca on public.webhook_events_log (provider, external_id)
+        where provider in ('stripe', 'asaas');`);
+    sql(bloco);
+    expect(valor(`select pg_get_indexdef('public.uniq_webhook_events_log_cobranca'::regclass);`)).toContain("'efi'::text");
+    sql(`${evento("efi", "evt_depois_do_update")};`);
+    expect(erroDe(`${evento("efi", "evt_depois_do_update")};`)).toContain("23505");
   });
 });
 
