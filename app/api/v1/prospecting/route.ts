@@ -154,7 +154,7 @@ export async function GET(req: NextRequest) {
     return ok(
       {
         configured,
-        campaigns: campaigns.rows,
+        campaigns,
         candidates: candidates.rows,
         previa_padrao: previaPadrao,
         personalizacao,
