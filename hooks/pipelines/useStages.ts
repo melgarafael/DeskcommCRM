@@ -3,6 +3,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
 
+import { chaveDoQuadro } from "@/hooks/kanban/useBoard";
+
 import { chaveDoFunil } from "./useAgentMapping";
 
 /**
@@ -50,12 +52,34 @@ export interface PatchDeEtapa {
    * inteiro a rota responde 422 — a coluna é `numeric` sem CHECK.
    */
   expected_duration_hours?: number | null;
+  /**
+   * A cor da etapa, `#rrggbb` (`crm_stages.color`). `null` volta ao padrão de
+   * hoje. Item 2 da #4802.
+   */
+  color?: string | null;
+  /**
+   * O critério da etapa (#4836): quando um negócio entra nela, em texto livre.
+   * `null` limpa (e texto vazio também vira `null` no servidor). Acima de 500
+   * caracteres, depois do `trim`, a rota responde 422 — a MESMA constante que a
+   * tela usa para limitar o campo.
+   */
+  description?: string | null;
 }
 
 function useReler(pipelineId: string) {
   const qc = useQueryClient();
   return () => {
     void qc.invalidateQueries({ queryKey: chaveDoFunil(pipelineId) });
+    /**
+     * ⚠️ E O QUADRO TAMBÉM (#3874). Renomear, reordenar ou desativar etapa aqui
+     * é uma escrita em `crm_stages` — a MESMA tabela que desenha o Kanban. Até
+     * esta linha, o quadro só relia quando ele mesmo escrevia (`useRenameStage`,
+     * do cabeçalho da coluna, invalida `chaveDoQuadro`); vindo de
+     * Configurações, o cache ficava com a ordem e o nome antigos até um F5.
+     * O sintoma era o pior tipo: a tela de etapas mostrava a coluna nova, o
+     * quadro mostrava a velha, e ninguém sabia em qual acreditar.
+     */
+    void qc.invalidateQueries({ queryKey: chaveDoQuadro(pipelineId) });
   };
 }
 

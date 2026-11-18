@@ -90,6 +90,9 @@ export async function gerarPreviaDoCandidato(
   // fonte que o worker usa (`estrategiaDoCandidato`), e a decisão de instrução e
   // dados também (`entradasDaAbordagem`).
   const personalizacao = opcoes.personalizacao ?? (await personalizacaoDaOrganizacao(pool, org));
+  // A estratégia continua sendo o diagnóstico que a TELA mostra. Se ela sobe para a
+  // instrução (sem ficha digital ou pelo prompt do agente, não sobe) quem decide é
+  // `entradasDaAbordagem`, a mesma decisão do envio.
   const estrategia = site
     ? estrategiaDoCandidato(linha.data, site, {
         ofertas,
@@ -99,7 +102,7 @@ export async function gerarPreviaDoCandidato(
       })
     : null;
   // A prévia gera DO ZERO: sem rascunho guardado (ver o cabeçalho).
-  const { instrucao, dados } = entradasDaAbordagem({
+  const { instrucao, dados, comContextoDaEquipe, semFichaDigital } = entradasDaAbordagem({
     config: cfg.data,
     data: linha.data,
     site,
@@ -115,6 +118,8 @@ export async function gerarPreviaDoCandidato(
     origem: "Pesquisa de empresas",
     origemDaAbordagem: "prospeccao_fria",
     dados,
+    comContextoDaEquipe,
+    semFichaDigital,
   });
   if (!gerado.ok) return { ok: false, motivo: "ia_falhou", detalhe: gerado.reason };
 
@@ -138,6 +143,8 @@ export async function gerarPreviaDoCandidato(
     gerada_em: new Date().toISOString(),
     agente_id: cfg.data.agent_id,
     ...(peloAgente ? { fonte: "agente" as const } : {}),
+    // O carimbo do texto com que a prévia foi escrita (#4570): o envio só a usa se ainda for o atual.
+    ...(cfg.data.briefing_editado_em ? { briefing_editado_em: cfg.data.briefing_editado_em } : {}),
   };
   return { ok: true, texto: gerado.texto, previa, estrategia, score };
 }

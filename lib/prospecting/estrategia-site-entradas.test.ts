@@ -160,3 +160,30 @@ describe("entradasDaAbordagem — modo `agente`", () => {
     expect(r.dados["Rascunho de abordagem"]).toBeUndefined();
   });
 });
+
+describe("entradasDaAbordagem — sem ficha digital (#4829)", () => {
+  const semFicha = { instruction: INSTRUCAO, qualification: QUALIFICACAO, usar_ficha_digital: false };
+
+  it("é o que o worker da main fazia: sem estratégia, sem os fatos da ficha e sem rascunho", () => {
+    const r = entradasDaAbordagem(base({ config: semFicha }));
+    expect(r.semFichaDigital).toBe(true);
+    expect(r.instrucao).toBe(instrucaoDeAbordagemFria(INSTRUCAO, QUALIFICACAO, VOZ, null, false, false));
+    expect(r.dados).toEqual(montarDadosDeAbordagem(DATA, null, null, { semFichaDigital: true }));
+    expect(r.dados["Site"]).toBeUndefined();
+    expect(r.dados["Rascunho de abordagem"]).toBeUndefined();
+  });
+
+  it("somada ao modo `agente`, mantém a linha do agente e continua sem a ficha", () => {
+    const r = entradasDaAbordagem(base({ config: { ...semFicha, fonte_da_abordagem: "agente" } }));
+    expect(r.instrucao.endsWith(LINHA_DA_FONTE_AGENTE)).toBe(true);
+    expect(r.dados).toEqual(montarDadosDeAbordagem(DATA, null, null, { semFichaDigital: true }));
+  });
+
+  it("ficha ligada (ausente ou `true`) devolve `semFichaDigital: false`", () => {
+    expect(entradasDaAbordagem(base()).semFichaDigital).toBe(false);
+    expect(
+      entradasDaAbordagem(base({ config: { instruction: INSTRUCAO, qualification: QUALIFICACAO, usar_ficha_digital: true } }))
+        .semFichaDigital,
+    ).toBe(false);
+  });
+});

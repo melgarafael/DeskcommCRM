@@ -22,6 +22,8 @@ import {
   diaDoCampo,
   funisComCamposDeData,
   itensDaCamada,
+  ROTULO_DO_MEIO,
+  TETO_DE_DIAS_DO_MEIO_POR_NEGOCIO,
   type NegocioComDatas,
 } from "@/lib/agenda/datas-dos-negocios";
 
@@ -171,21 +173,88 @@ describe("itensDaCamada — quem entra em que dia", () => {
     expect(dias).toEqual(["primeiro", "ultimo"]);
   });
 
-  it("com segundo campo, o retorno aparece no dia do retorno com o rótulo dele", () => {
+  it("com segundo campo, o dia da ida, os dias do meio e o dia do retorno aparecem, cada um com seu rótulo", () => {
     const itens = itensDaCamada([negocio()], { ...ESCOLHA, campoFim: "data_fim", rotuloFim: "Retorno" }, JANELA);
 
     expect(itens.map((i) => [i.dia, i.rotulos.join("+")])).toEqual([
       ["2026-03-10", "Embarque"],
+      // #3221: o intervalo inteiro, e não só as duas pontas.
+      ["2026-03-11", ROTULO_DO_MEIO],
+      ["2026-03-12", ROTULO_DO_MEIO],
+      ["2026-03-13", ROTULO_DO_MEIO],
+      ["2026-03-14", ROTULO_DO_MEIO],
       ["2026-03-15", "Retorno"],
     ]);
   });
 
-  it("os dias do MEIO do intervalo não entram: a camada marca datas, não ocupação", () => {
-    const itens = itensDaCamada([negocio()], { ...ESCOLHA, campoFim: "data_fim", rotuloFim: "Retorno" }, JANELA);
-    expect(itens.map((i) => i.dia)).not.toContain("2026-03-12");
+  // ─── Dias do MEIO (#3221): a regra 5 do módulo mudou nesta fatia ──────────
+  //
+  // Antes, só as DATAS declaradas pelo funil entravam. Agora o intervalo
+  // inteiro aparece, com um rótulo próprio nos dias do meio — é o que deixa a
+  // equipe ver quem está em viagem no dia 12, e não só quem embarca e volta.
+  it("10 a 14, janela 01 a 31: o intervalo inteiro entra, e 11 a 13 levam o rótulo do meio", () => {
+    const viagem = negocio({
+      id: "viagem",
+      campos: { data_inicio: "2026-03-10", data_fim: "2026-03-14" },
+    });
+
+    const itens = itensDaCamada(
+      [viagem],
+      { ...ESCOLHA, campoFim: "data_fim", rotuloFim: "Retorno" },
+      JANELA,
+    );
+
+    expect(itens.map((i) => i.dia)).toEqual([
+      "2026-03-10",
+      "2026-03-11",
+      "2026-03-12",
+      "2026-03-13",
+      "2026-03-14",
+    ]);
+    expect(itens.map((i) => i.rotulos)).toEqual([
+      ["Embarque"],
+      [ROTULO_DO_MEIO],
+      [ROTULO_DO_MEIO],
+      [ROTULO_DO_MEIO],
+      ["Retorno"],
+    ]);
   });
 
-  it("fim no MESMO dia é UMA ocorrência com os dois rótulos (decisão (b), default conservador)", () => {
+  it("a janela recorta o meio: 11 a 13 mostra 11, 12 e 13, sem as pontas de fora", () => {
+    const viagem = negocio({
+      id: "viagem",
+      campos: { data_inicio: "2026-03-10", data_fim: "2026-03-14" },
+    });
+
+    const itens = itensDaCamada(
+      [viagem],
+      { ...ESCOLHA, campoFim: "data_fim", rotuloFim: "Retorno" },
+      { de: "2026-03-11", ate: "2026-03-13" },
+    );
+
+    expect(itens.map((i) => [i.dia, i.rotulos[0]])).toEqual([
+      ["2026-03-11", ROTULO_DO_MEIO],
+      ["2026-03-12", ROTULO_DO_MEIO],
+      ["2026-03-13", ROTULO_DO_MEIO],
+    ]);
+  });
+
+  it("intervalo inteiro fora da janela não gera item do meio", () => {
+    const viagem = negocio({
+      id: "viagem",
+      campos: { data_inicio: "2026-03-10", data_fim: "2026-03-14" },
+    });
+
+    const itens = itensDaCamada(
+      [viagem],
+      { ...ESCOLHA, campoFim: "data_fim", rotuloFim: "Retorno" },
+      { de: "2026-04-01", ate: "2026-04-30" },
+    );
+
+    expect(itens).toEqual([]);
+  });
+
+  it("fim no MESMO dia continua UM item com os dois rótulos — e nenhum dia do meio", () => {
     const idaEvolta = negocio({
       id: "bate-volta",
       campos: { data_inicio: "2026-03-10", data_fim: "2026-03-10" },
@@ -199,9 +268,10 @@ describe("itensDaCamada — quem entra em que dia", () => {
 
     expect(itens).toHaveLength(1);
     expect(itens[0]!.rotulos).toEqual(["Embarque", "Retorno"]);
+    expect(itens.some((i) => i.rotulos.includes(ROTULO_DO_MEIO))).toBe(false);
   });
 
-  it("fim ANTES do início é dado errado: vale só o dia do embarque", () => {
+  it("fim ANTES do início continua sem fim e sem meio: só o dia do embarque", () => {
     const invertido = negocio({
       id: "invertido",
       campos: { data_inicio: "2026-03-20", data_fim: "2026-03-02" },
@@ -213,7 +283,53 @@ describe("itensDaCamada — quem entra em que dia", () => {
       JANELA,
     );
 
-    expect(itens.map((i) => i.dia)).toEqual(["2026-03-20"]);
+    expect(itens.map((i) => [i.dia, i.rotulos])).toEqual([["2026-03-20", ["Embarque"]]]);
+  });
+
+  it("o teto de dias por negócio é explícito: intervalo absurdo para de emitir, não explode", () => {
+    expect(TETO_DE_DIAS_DO_MEIO_POR_NEGOCIO).toBe(366);
+
+    const absurdo = negocio({
+      id: "absurdo",
+      campos: { data_inicio: "1990-01-01", data_fim: "2030-12-31" },
+    });
+
+    const inicio = performance.now();
+    const itens = itensDaCamada(
+      [absurdo],
+      { ...ESCOLHA, campoFim: "data_fim", rotuloFim: "Retorno" },
+      { de: "1990-01-01", ate: "2030-12-31" },
+    );
+    const decorrido = performance.now() - inicio;
+
+    const meio = itens.filter((i) => i.rotulos.includes(ROTULO_DO_MEIO));
+    expect(meio).toHaveLength(TETO_DE_DIAS_DO_MEIO_POR_NEGOCIO);
+    // O que o teto NÃO muda: as pontas continuam lá, uma vez cada.
+    expect(itens.filter((i) => i.dia === "1990-01-01")).toHaveLength(1);
+    expect(itens.filter((i) => i.dia === "2030-12-31")).toHaveLength(1);
+    // E o corte é uma parada, não uma varredura de 40 anos em laço.
+    expect(decorrido).toBeLessThan(1000);
+  });
+
+  it("nenhum negócio aparece duas vezes no mesmo dia com o mesmo rótulo", () => {
+    const itens = itensDaCamada(
+      [
+        negocio({ id: "viagem", campos: { data_inicio: "2026-03-10", data_fim: "2026-03-14" } }),
+        negocio({ id: "ponto", campos: { data_inicio: "2026-03-12" } }),
+        negocio({ id: "invertido", campos: { data_inicio: "2026-03-20", data_fim: "2026-03-02" } }),
+        negocio({ id: "bate-volta", campos: { data_inicio: "2026-03-10", data_fim: "2026-03-10" } }),
+      ],
+      { ...ESCOLHA, campoFim: "data_fim", rotuloFim: "Retorno" },
+      JANELA,
+    );
+
+    const chaves = itens.map((i) => `${i.negocio.id}|${i.dia}`);
+    expect(new Set(chaves).size).toBe(chaves.length);
+
+    const rotulosPorNegocioEDia = itens.map(
+      (i) => `${i.negocio.id}|${i.dia}|${i.rotulos.join("+")}`,
+    );
+    expect(new Set(rotulosPorNegocioEDia).size).toBe(rotulosPorNegocioEDia.length);
   });
 
   it("o mesmo campo nos dois seletores não duplica o item", () => {

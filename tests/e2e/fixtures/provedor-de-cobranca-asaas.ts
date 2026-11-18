@@ -21,7 +21,7 @@
  *  - a assinatura removida some da lista sem `includeDeleted=true`;
  *  - o aviso leva só o token estático em `asaas-access-token`, sem assinatura.
  * Páginas humanas: /i/:cobranca (a invoiceUrl), com Pix e cartão de teste.
- * Controle do teste: `pagar`, `vencer`, `recusarCriacaoDeWebhook`,
+ * Controle do teste: `pagar`, `vencer`, `recusarCriacaoDeWebhook`, `contaSemDominio`,
  * `enviarAvisoForjado` (token errado) e `enviarAvisoMentiroso` (token CERTO,
  * corpo que jura "pago": o token vazou).
  */
@@ -63,13 +63,14 @@ export interface CobrancaAsaas {
   status: "PENDING" | "OVERDUE" | "CONFIRMED" | "RECEIVED";
   dueDate: string;
   billingType: "UNDEFINED" | "PIX" | "CREDIT_CARD";
+  callback?: { successUrl: string; autoRedirect: boolean };
   paymentDate: string | null;
   confirmedDate: string | null;
   deleted: boolean;
   dateCreated: string;
   ordem: number;
 }
-interface ClienteAsaas { id: string; name: string; email: string; cpfCnpj: string; externalReference: string | null }
+interface ClienteAsaas { id: string; name: string; email: string; cpfCnpj: string; externalReference: string | null; dateCreated: string }
 interface WebhookAsaas { id: string; name: string; url: string; email: string; authToken: string; events: string[] }
 
 export interface ChamadaAsaas {
@@ -96,6 +97,12 @@ export interface DubleAsaas {
   assinaturasDe(cliente: string): readonly AssinaturaAsaas[];
   /** true = POST /v3/webhooks recusa (conta sem permissão): o app cai no passo a passo manual. */
   recusarCriacaoDeWebhook(recusar: boolean): void;
+  /**
+   * true = a conta não cadastrou domínio: todo pedido com `callback` (POST de
+   * assinatura, PUT de cobrança) é recusado com 400, como o sandbox recusou ao
+   * autor do #3595. ponytail: o status e o `code` reais não foram medidos.
+   */
+  contaSemDominio(sem: boolean): void;
   /** Paga como o pagador faria na invoiceUrl. Pix → RECEIVED; cartão → CONFIRMED. */
   pagar(cobranca: string, forma: "pix" | "cartao"): Promise<void>;
   /** A pendente mais antiga venceu ontem sem pagamento: OVERDUE. Devolve a invoiceUrl dela. */
@@ -176,6 +183,7 @@ function paginaHtml(res: ServerResponse, status: number, titulo: string, corpo: 
 export function criarDialetoAsaas(baseAtual: () => string): DialetoAsaas {
   let ordem = 0;
   let recusarWebhook = false;
+  let semDominio = false;
   const chamadas: ChamadaAsaas[] = [];
   const avisos: AvisoAsaasEntregue[] = [];
   const clientes = new Map<string, ClienteAsaas>();
@@ -192,7 +200,8 @@ export function criarDialetoAsaas(baseAtual: () => string): DialetoAsaas {
     return { object: "list", hasMore: offset + limit < dados.length, totalCount: dados.length, limit, offset, data: dados.slice(offset, offset + limit) };
   };
   const objCliente = (c: ClienteAsaas) => ({
-    object: "customer", id: c.id, name: c.name, email: c.email, cpfCnpj: c.cpfCnpj, externalReference: c.externalReference, deleted: false,
+    object: "customer", id: c.id, name: c.name, email: c.email, cpfCnpj: c.cpfCnpj, externalReference: c.externalReference,
+    dateCreated: c.dateCreated, deleted: false,
   });
   const objAssinatura = (a: AssinaturaAsaas) => ({
     object: "subscription", id: a.id, dateCreated: a.dateCreated, customer: a.customer, billingType: "UNDEFINED", cycle: a.cycle,
@@ -201,6 +210,7 @@ export function criarDialetoAsaas(baseAtual: () => string): DialetoAsaas {
   });
   const objCobranca = (c: CobrancaAsaas) => ({
     object: "payment", id: c.id, dateCreated: c.dateCreated, customer: c.customer, subscription: c.subscription, value: c.value,
+    callback: c.callback,
     netValue: c.value, billingType: c.billingType, status: c.status, dueDate: c.dueDate, originalDueDate: c.dueDate,
     paymentDate: c.paymentDate, clientPaymentDate: c.paymentDate, confirmedDate: c.confirmedDate, invoiceUrl: urlDaFatura(c), deleted: c.deleted,
   });
@@ -284,7 +294,9 @@ export function criarDialetoAsaas(baseAtual: () => string): DialetoAsaas {
     const c = corpo ?? {};
 
     if (metodo === "GET" && p === "/v3/customers") {
-      const dados = [...clientes.values()].filter((x) => !query.externalReference || x.externalReference === query.externalReference);
+      const dados = [...clientes.values()].filter((x) =>
+        (!query.externalReference || x.externalReference === query.externalReference) &&
+        (!query.cpfCnpj || x.cpfCnpj === query.cpfCnpj));
       return json(res, 200, lista(dados.map(objCliente), query));
     }
     const clienteUnico = /^\/v3\/customers\/([^/]+)$/.exec(p);
@@ -292,12 +304,24 @@ export function criarDialetoAsaas(baseAtual: () => string): DialetoAsaas {
       const x = clientes.get(clienteUnico[1] ?? "");
       return x ? json(res, 200, objCliente(x)) : erro(res, 404, "not_found", "Cliente não encontrado.");
     }
+    // O adaptador adota o cliente que já existe gravando o vínculo nele (#4768): só os campos enviados mudam.
+    if (metodo === "PUT" && clienteUnico) {
+      const x = clientes.get(clienteUnico[1] ?? "");
+      if (!x) return erro(res, 404, "not_found", "Cliente não encontrado.");
+      if (c.name !== undefined) x.name = texto(c.name);
+      if (c.email !== undefined) x.email = texto(c.email);
+      if (c.externalReference !== undefined) x.externalReference = texto(c.externalReference) || null;
+      return json(res, 200, objCliente(x));
+    }
     if (metodo === "POST" && p === "/v3/customers") {
       const nome = texto(c.name).trim();
       const doc = texto(c.cpfCnpj);
       if (nome === "") return erro(res, 400, "invalid_name", "O nome do cliente é obrigatório.");
       if (!documentoValido(doc)) return erro(res, 400, "invalid_cpfCnpj", "O CPF/CNPJ informado é inválido.");
-      const x: ClienteAsaas = { id: novoId("cus"), name: nome, email: texto(c.email), cpfCnpj: doc, externalReference: texto(c.externalReference) || null };
+      const x: ClienteAsaas = {
+        id: novoId("cus"), name: nome, email: texto(c.email), cpfCnpj: doc,
+        externalReference: texto(c.externalReference) || null, dateCreated: hojeEmSaoPaulo(),
+      };
       clientes.set(x.id, x);
       return json(res, 200, objCliente(x));
     }
@@ -341,6 +365,7 @@ export function criarDialetoAsaas(baseAtual: () => string): DialetoAsaas {
       const ciclo: CicloAsaas | null = c.cycle === "MONTHLY" ? "MONTHLY" : c.cycle === "YEARLY" ? "YEARLY" : null;
       const vencimento = texto(c.nextDueDate);
       if (!clientes.has(cliente)) return erro(res, 400, "invalid_customer", "Cliente inexistente.");
+      if (semDominio && c.callback !== undefined) return erro(res, 400, "invalid_callback", "Configuração de domínio ausente na conta.");
       if (c.billingType !== "UNDEFINED") return erro(res, 400, "invalid_billingType", "a spec manda billingType UNDEFINED (o pagador escolhe Pix, boleto ou cartão)");
       if (!emReais(valor)) return erro(res, 400, "invalid_value", "valor em reais, a partir de 5,00, com até 2 casas");
       if (ciclo === null) return erro(res, 400, "invalid_cycle", "ciclo inválido");
@@ -383,6 +408,23 @@ export function criarDialetoAsaas(baseAtual: () => string): DialetoAsaas {
         for (const x of removidas) await enviar("PAYMENT_DELETED", objCobranca(x));
         return json(res, 200, { deleted: true, id: a.id });
       }
+    }
+    const pagamentoUnico = /^\/v3\/payments\/([^/]+)$/.exec(p);
+    if (metodo === "PUT" && pagamentoUnico) {
+      const pagamento = cobrancas.get(pagamentoUnico[1] ?? "");
+      if (!pagamento || pagamento.deleted) return erro(res, 404, "not_found", "Cobrança não encontrada.");
+      if (semDominio && c.callback !== undefined) return erro(res, 400, "invalid_callback", "Configuração de domínio ausente na conta.");
+      const callback = c.callback;
+      if (callback === null || typeof callback !== "object" || Array.isArray(callback))
+        return erro(res, 400, "invalid_object", "callback inválido");
+      const { successUrl, autoRedirect } = callback as Record<string, unknown>;
+      if (typeof successUrl !== "string" || !URL.canParse(successUrl) || typeof autoRedirect !== "boolean")
+        return erro(res, 400, "invalid_object", "callback inválido");
+      const retorno = new URL(successUrl);
+      if (!["http:", "https:"].includes(retorno.protocol) || retorno.username || retorno.password || retorno.hash)
+        return erro(res, 400, "invalid_object", "callback inválido");
+      pagamento.callback = { successUrl, autoRedirect };
+      return json(res, 200, objCobranca(pagamento));
     }
     if (metodo === "GET" && p === "/v3/payments") {
       const dados = [...cobrancas.values()]
@@ -436,6 +478,9 @@ export function criarDialetoAsaas(baseAtual: () => string): DialetoAsaas {
     assinaturasDe,
     recusarCriacaoDeWebhook: (recusar) => {
       recusarWebhook = recusar;
+    },
+    contaSemDominio: (sem) => {
+      semDominio = sem;
     },
     pagar,
     async vencer(cliente) {

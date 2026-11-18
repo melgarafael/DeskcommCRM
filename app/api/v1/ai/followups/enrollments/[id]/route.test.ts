@@ -92,6 +92,23 @@ function adminDaInstalacao() {
   };
   return {
     from: () => vinculos,
+    // O nome sai de UMA consulta a `fn_nomes_dos_membros` (migration 9314): a
+    // função devolve só quem tem vínculo com a org pedida, com `full_name` e
+    // e-mail — a rota é quem decide expor apenas o nome.
+    rpc: async (funcao: string, args: { p_org: string; p_ids: string[] }) => {
+      if (funcao !== "fn_nomes_dos_membros") return { data: null, error: { message: "rpc inesperado" } };
+      const daOrg = args.p_org === ORG ? [MEMBRO, MEMBRO_SEM_NOME] : [];
+      return {
+        data: args.p_ids
+          .filter((id) => daOrg.includes(id))
+          .map((id) => ({
+            user_id: id,
+            full_name: (USUARIOS[id]?.user_metadata.full_name as string | undefined) ?? null,
+            email: USUARIOS[id]?.email ?? null,
+          })),
+        error: null,
+      };
+    },
     auth: {
       admin: {
         getUserById: async (id: string) => ({ data: { user: USUARIOS[id] ?? null }, error: null }),

@@ -22,6 +22,7 @@ function consulta(filtros: Array<(l: Linha) => boolean> = []) {
     select: () => q,
     eq: (c: string, v: unknown) => com((l) => l[c] === v),
     in: (c: string, vs: unknown[]) => com((l) => vs.includes(l[c])),
+    is: (c: string, v: unknown) => com((l) => (l[c] ?? null) === v),
     not: (c: string, _op: "in", lista: string) =>
       com((l) => !lista.slice(1, -1).split(",").includes(String(l[c]))),
     gt: (c: string, v: number) => com((l) => Number(l[c]) > v),
@@ -44,7 +45,13 @@ vi.mock("@/lib/auth/require-role", () => ({
 }));
 vi.mock("@/lib/channels/desativado", () => ({ idsDosCanaisDesativados: async () => [] }));
 vi.mock("@/lib/ai/agents/org-tem-automatico", () => ({ orgTemAutomatico: async () => false }));
-vi.mock("@/app/api/v1/conversations/_handler", () => ({ idsDeContatosPessoais: async () => [] }));
+// `idsDeContatosPessoaisVisiveis` (#4434) é novo no handler, e a rota de counts
+// o chama em TODA leitura: sem ele no dublê o vitest explode antes do caso.
+// Vazio é o cenário destes arquivos — nenhum contato pessoal marcado.
+vi.mock("@/app/api/v1/conversations/_handler", () => ({
+  idsDeContatosPessoais: async () => [],
+  idsDeContatosPessoaisVisiveis: async () => [],
+}));
 
 const { GET } = await import("@/app/api/v1/conversations/counts/route");
 

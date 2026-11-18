@@ -1,7 +1,8 @@
 /**
- * O schema da FONTE DA ABORDAGEM: `config.fonte_da_abordagem` (default `estrategia`) e as
- * ações `adjust_approach` e `move_list`. O efeito sobre linhas (só pausada, sem tocar quem
- * já tem contato) é dos invariantes de banco; aqui mora a forma aceita.
+ * O schema da FONTE DA ABORDAGEM: `config.fonte_da_abordagem` (default `estrategia`), o campo
+ * opcional `fonte_da_abordagem` de `edit_briefing` (a troca com a campanha pausada) e a ação
+ * `move_list`. O efeito sobre linhas (só pausada, sem tocar quem já tem contato) é dos
+ * invariantes de banco; aqui mora a forma aceita.
  */
 import { describe, expect, it } from "vitest";
 
@@ -55,58 +56,43 @@ describe("config.fonte_da_abordagem", () => {
   });
 });
 
-describe("a ação adjust_approach", () => {
-  const valido = { action: "adjust_approach", id: uuid("6"), fonte_da_abordagem: "agente" };
+describe("edit_briefing leva a fonte da abordagem", () => {
+  const valido = {
+    action: "edit_briefing",
+    id: uuid("6"),
+    instruction: CONFIG.instruction,
+    qualification: CONFIG.qualification,
+    ofertas: ["site"],
+  };
 
-  it("aceita o mínimo: id + fonte (a instrução é opcional)", () => {
-    expect(prospectingInputSchema.safeParse(valido).success).toBe(true);
-    expect(prospectingInputSchema.safeParse({ ...valido, fonte_da_abordagem: "estrategia" }).success).toBe(true);
-  });
-
-  it("aceita uma instrução nova de 10 a 2000 caracteres, aparada", () => {
-    const r = prospectingInputSchema.safeParse({ ...valido, instruction: "  Fale como a clínica fala.  " });
+  it("a fonte é opcional: sem ela, a edição de texto segue aceita e não mexe na fonte", () => {
+    const r = prospectingInputSchema.safeParse(valido);
     expect(r.success).toBe(true);
-    if (r.success && r.data.action === "adjust_approach") {
-      expect(r.data.instruction).toBe("Fale como a clínica fala.");
+    if (r.success && r.data.action === "edit_briefing") expect(r.data.fonte_da_abordagem).toBeUndefined();
+  });
+
+  it("aceita as duas fontes do vocabulário", () => {
+    for (const fonte of FONTES_DA_ABORDAGEM) {
+      const r = prospectingInputSchema.safeParse({ ...valido, fonte_da_abordagem: fonte });
+      expect(r.success).toBe(true);
+      if (r.success && r.data.action === "edit_briefing") expect(r.data.fonte_da_abordagem).toBe(fonte);
     }
-    expect(prospectingInputSchema.safeParse({ ...valido, instruction: "x".repeat(2000) }).success).toBe(true);
   });
 
-  it("recusa instrução curta demais, longa demais ou só espaços", () => {
-    expect(prospectingInputSchema.safeParse({ ...valido, instruction: "curta" }).success).toBe(false);
-    expect(prospectingInputSchema.safeParse({ ...valido, instruction: "x".repeat(2001) }).success).toBe(false);
-    expect(prospectingInputSchema.safeParse({ ...valido, instruction: "           " }).success).toBe(false);
-  });
-
-  it("exige a fonte, e ela precisa estar no vocabulário", () => {
-    expect(prospectingInputSchema.safeParse({ action: "adjust_approach", id: uuid("6") }).success).toBe(false);
-    expect(prospectingInputSchema.safeParse({ ...valido, fonte_da_abordagem: "site" }).success).toBe(false);
-  });
-
-  it("exige id uuid", () => {
-    expect(prospectingInputSchema.safeParse({ ...valido, id: "nao-e-uuid" }).success).toBe(false);
-    expect(
-      prospectingInputSchema.safeParse({ action: "adjust_approach", fonte_da_abordagem: "agente" }).success,
-    ).toBe(false);
-  });
-
-  it("recusa qualquer campo além dos três — conexão, agente, funil e base legal ficam fechados", () => {
-    for (const campo of [
-      "qualification",
-      "agent_id",
-      "channel_session_id",
-      "pipeline_id",
-      "stage_id",
-      "qualified_stage_id",
-      "legal_basis_ref",
-      "daily_limit",
-      "organization_id",
-    ]) {
+  it("recusa fonte fora do vocabulário", () => {
+    for (const v of ["site", "", null, 1]) {
       expect(
-        prospectingInputSchema.safeParse({ ...valido, [campo]: "x" }).success,
-        `o campo ${campo} não pode passar por adjust_approach`,
+        prospectingInputSchema.safeParse({ ...valido, fonte_da_abordagem: v }).success,
+        `fonte_da_abordagem=${JSON.stringify(v)} não pode passar`,
       ).toBe(false);
     }
+  });
+
+  it("a ação adjust_approach não existe mais: a troca passa por edit_briefing", () => {
+    expect(
+      prospectingInputSchema.safeParse({ action: "adjust_approach", id: uuid("6"), fonte_da_abordagem: "agente" })
+        .success,
+    ).toBe(false);
   });
 });
 

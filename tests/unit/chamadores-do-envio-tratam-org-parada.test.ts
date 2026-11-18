@@ -24,6 +24,7 @@ const CHAMADORES: Record<string, string> = {
   "lib/campanhas/rodada.ts": TRATA, // registrarExcecaoDoEnvio, tests/unit/suspensao-nao-dispara-campanha.test.ts
   "lib/prospecting/worker.ts": TRATA, // tests/unit/prospecting-worker.test.ts
   "lib/followup/enviar-texto-fixo.ts": TRATA, // lib/followup/enviar-texto-fixo.test.ts
+  "lib/agendamento-mensagem/envio.ts": TRATA, // catch de OrgNaoOperanteError vira desfecho org_parada: nada gravado, a ocorrência espera
   "lib/agent-engine/edge/crm/send-message.ts":
     "propaga o 403 como ApiError; sendWithLedger relança a suspensão e o agent-worker encerra o job terminal",
   "app/api/v1/messages/route.ts": "rota de API: o ApiError 403 org_suspended vira a resposta JSON de quem chamou",
@@ -40,8 +41,11 @@ const CHAMADORES: Record<string, string> = {
   "lib/campanhas/acoes.ts": "ação disparada da tela: o erro sobe para quem clicou, sem estado gravado",
   "lib/mcp/tools/messages.ts": "ferramenta MCP: o erro sobe ao cliente; o token da org parada já é recusado antes",
   "lib/mcp/tools/start-conversation.ts": "ferramenta MCP: o erro sobe ao cliente; o token da org parada já é recusado antes",
+  "lib/atendimento/satisfacao.ts": TRATA, // tests/unit/pesquisa-de-satisfacao-no-encerramento.test.ts (OrgNaoOperanteError => pedida:false, pedido fechado sem nota, encerramento intacto)
   "lib/inbox/encaminhar-mensagem.ts":
     "propaga o 403 org_suspended ao chamador da rota `forward`; nada é gravado — a linha do destino só nasce se o envio aceitar",
+  "lib/ouvidoria/whatsapp.ts":
+    "envio best-effort do fluxo: o 403 org_suspended (e qualquer falha de envio) vira log e o fluxo segue — sem fila, sem retentativa e sem desfecho gravado; a manifestação só nasce na confirmação",
 };
 
 const PORTA = "app/api/v1/messages/_handler.ts";

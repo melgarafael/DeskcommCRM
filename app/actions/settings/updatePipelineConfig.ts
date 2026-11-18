@@ -69,6 +69,12 @@ export async function updatePipelineConfig(
   const nextSettings: Record<string, unknown> = { ...currentSettings };
   if (parsed.data.fields !== undefined) nextSettings.fields = parsed.data.fields;
   if (parsed.data.lost_reasons !== undefined) nextSettings.lost_reasons = parsed.data.lost_reasons;
+  // #4437 — as categorias PRÓPRIAS do funil. A chave é gravada como veio,
+  // inclusive a lista VAZIA: `[]` é "escondi todas", e pular o vazio faria a
+  // tela esconder na aparência e a de fábrica voltar na próxima abertura.
+  if (parsed.data.lost_reason_categories !== undefined) {
+    nextSettings.lost_reason_categories = parsed.data.lost_reason_categories;
+  }
   if (parsed.data.won_reasons !== undefined) nextSettings.won_reasons = parsed.data.won_reasons;
   if (parsed.data.won_reason_required !== undefined) {
     nextSettings.won_reason_required = parsed.data.won_reason_required;
@@ -149,6 +155,10 @@ export async function updatePipelineConfig(
       vocabulary_changed: !!parsed.data.vocabulary,
       fields_count: parsed.data.fields?.length ?? null,
       lost_reasons_count: parsed.data.lost_reasons?.length ?? null,
+      // #4437: quantas categorias o funil declara. Quais são NÃO entram na
+      // auditoria — o vocabulário é do negócio e a contagem já responde à
+      // pergunta que a auditoria faz ("mudou a configuração?").
+      lost_reason_categories_count: parsed.data.lost_reason_categories?.length ?? null,
       won_reasons_count: parsed.data.won_reasons?.length ?? null,
       won_reason_required: parsed.data.won_reason_required ?? null,
       reabertura: parsed.data.reabertura ?? null,

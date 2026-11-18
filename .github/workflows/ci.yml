@@ -91,12 +91,14 @@ permissions:
 # esta política não converte cancelamento em prova nem dispensa os cinco gates.
 
 jobs:
-  # A suíte de unit em SEIS partes paralelas (duas até 22/09/2026, três até
-  # 23/10/2026), mais duas partes sem unit: a SÉTIMA com cercas e o kit bash
-  # menos o seu arquivo mais pesado, a OITAVA só com esse arquivo (desde
-  # 03/11/2026; antes cercas e kit inteiro moravam numa parte só, a 4 até 23/10
-  # e a 7 até 03/11) — ver o fim deste bloco. O check obrigatório `verify` é o
-  # agregador lá embaixo — mesmo padrão do `invariants`.
+  # A suíte de unit em SETE partes paralelas (duas até 22/09/2026, três até
+  # 23/10/2026, seis até 16/11/2026), mais duas partes sem unit: a OITAVA com
+  # cercas e o kit bash menos o seu arquivo mais pesado, a NONA só com esse
+  # arquivo (desde 16/11/2026; antes a 7 e a 8, e antes disso cercas e kit
+  # inteiro moravam numa parte só, a 4 até 23/10 e a 7 até 03/11) — ver o fim
+  # deste bloco. O typecheck, que era da parte 1 desde sempre, passou a morar na
+  # NONA em 16/11/2026. O check obrigatório `verify` é o agregador lá embaixo —
+  # mesmo padrão do `invariants`.
   #
   # Medido em 18/09/2026: o `verify` inteiro levava 712 s de mediana nos verdes e
   # 13 de 40 rodadas morreram no teto de 15 min (`cancelled`, 915 s). No #1190,
@@ -105,8 +107,9 @@ jobs:
   # e `import` 415 s (run do head d8af02fee). Custo por arquivo se divide por
   # arquivo: cada parte roda metade (`--shard`) e paga metade do jsdom.
   #
-  # Os passos de arquivo inteiro rodam cada um numa parte só: typecheck e as
-  # três auditorias na 1; lint na 2; cercas e kit bash na última (na 3 até
+  # Os passos de arquivo inteiro rodam cada um numa parte só: as três
+  # auditorias na 1; lint na 2; typecheck na 9 (era na 1 até 16/11/2026, ver o
+  # fim deste bloco); cercas e kit bash na última (na 3 até
   # 08/10/2026) — é o que equilibra as partes (a conta está no fim deste bloco). O `--shard` corta por CONTAGEM de
   # arquivos, não por tempo; quem
   # equilibra o relógio é onde moram estes passos. A divisão em partes é o
@@ -181,6 +184,39 @@ jobs:
   # ~2,6 de kit) e parte 8 em ~4; com a lentidão de 2× da janela de 03/11,
   # ~8 e ~7, os dois abaixo do orçamento de 12. Teste novo de kit cai na parte
   # 7 sozinho; se ela crescer, quem denuncia é o orçamento, por parte.
+  #
+  # A SÉTIMA PARTE DE UNIT E O TYPECHECK NA NONA (16/11/2026). A parte 1
+  # estourou o orçamento na `main` `e490c6baa5` (run 43953228646, check-run
+  # 133600925394): 13,7 min de job contra 12, SEM teste falhando. Medido passo a
+  # passo naquele job: preâmbulo 36 s (checkout 8 + preparar-node 28), typecheck
+  # 191 s, auditorias + acervo 3 s, `Unit tests` 591 s — o relógio é a suíte
+  # unitária (72% do job), não o typecheck. As outras partes do MESMO run:
+  # unit 344 (2), 353 (3), 548 (4), 596 (5), 305 (6), ou seja 2737 s de suíte em
+  # seis fatias com desequilíbrio de 1,95× (a 5 contra a 6) — `--shard` corta por
+  # contagem de arquivo, e o custo por arquivo varia.
+  #
+  # Por que as DUAS coisas, e não uma:
+  #   · só mais uma parte (7 shards): 2737/7 = 391 s de média, mas a fatia mais
+  #     pesada perde só 1/7 dos arquivos → 591 × 6/7 ≈ 507 s; com typecheck a
+  #     parte 1 ficaria em ~12,3 min, AINDA vermelha;
+  #   · só tirar o typecheck (movimento do #4534): a parte 1 ficaria em ~10,5 min
+  #     nesta instância — 1,5 min de folga, e a suíte soma dezenas de segundos por
+  #     dia (o cabeçalho acima mediu ~46 s/dia em 22/09). Isto é raspar o limite.
+  # Com as duas: a 1 fica em ~9,1 min (36 + 3 + 507) e a NONA em ~6,8 min
+  # (preâmbulo + kit pesado 182 s + typecheck 191 s), contra 3,7 min dela hoje.
+  # A parte com folga é a do kit pesado — é a mesma regra que pôs o lint na 2 em
+  # 22/09 e o typecheck na 8 no #4534: passo de arquivo inteiro mora onde sobra
+  # relógio. A 8 (cercas 152 s + kit menos 206 s) fica como está, em 6,7 min.
+  # PREVISÃO, não medição, para o shard: quem mede é o orçamento na primeira
+  # rodada das nove partes.
+  #
+  # O que NÃO muda: nenhuma parte perde passo, a suíte continua inteira (o
+  # `--shard` do vitest corta em fatias contíguas que somam todos os arquivos),
+  # o orçamento segue 12 e o teto 15. O typecheck divide job com o kit da NONA e
+  # roda ANTES dele (ordem do arquivo): typecheck vermelho pula o kit naquela
+  # rodada — o job já está vermelho, e é o mesmo desenho de hoje, em que
+  # typecheck vermelho na 1 já pulava o shard 1. Custo: um job a mais por rodada
+  # (preâmbulo ~25-35 s) na fila de runners.
   verify-parte:
     # Guarda de travamento. O DETECTOR de crescimento é o passo `Orçamento de
     # tempo` no fim de cada parte; a medição que justifica o número está em
@@ -196,7 +232,7 @@ jobs:
       # Sem fail-fast: um vermelho numa parte não esconde o da outra.
       fail-fast: false
       matrix:
-        parte: [1, 2, 3, 4, 5, 6, 7, 8]
+        parte: [1, 2, 3, 4, 5, 6, 7, 8, 9]
     steps:
       - uses: actions/checkout@v7
 
@@ -278,13 +314,21 @@ jobs:
       # em segundos; dentro da suíte longa, o mesmo vermelho chegava aos 7–12
       # minutos. Rodam UMA vez: o passo de unit abaixo pula o projeto `cercas`.
       # Seleção e medições: o bloco `projects` de vitest.config.ts.
-      # Na parte 7, junto do kit bash: o porquê e a conta estão no cabeçalho do job.
+      # Na parte 8, junto do kit bash: o porquê e a conta estão no cabeçalho do job.
       - name: Cercas estruturais
-        if: matrix.parte == 7
+        if: matrix.parte == 8
         run: pnpm cercas
 
       - name: Typecheck
-        if: matrix.parte == 1
+        if: matrix.parte == 9
+        # NA NONA, NÃO NA 1 (16/11/2026). O typecheck é custo FIXO de ~190 s e a
+        # parte 1 é a que carrega o shard mais pesado de unit: medido na `main`
+        # `e490c6baa5` (run 43953228646), parte 1 = 13,7 min (unit 591 s +
+        # typecheck 191 s) e a parte da 8, que só tinha o kit pesado, 3,7 min.
+        # Tirar o typecheck da 1 é o mesmo movimento do lint (1 → 2 em 22/09) e
+        # do #4534: o passo de arquivo inteiro mora na parte que tem folga. A
+        # conta inteira (por que a parte nova sozinha não bastava) está no
+        # cabeçalho do job.
         # O tsc do projeto inteiro passou a encostar no teto padrão do V8
         # (~4 GB): em 03/10 a main (run 37160218266) e os PRs #2229 e #2238
         # morreram com "JavaScript heap out of memory" (exit 134) neste passo,
@@ -383,13 +427,13 @@ jobs:
           echo "OK — ${total} migrations na árvore, nenhum NNNN nem timestamp repetido."
 
       # `--project produto` é o `pnpm test:unit` MENOS as cercas, que já
-      # rodaram acima; `--shard` divide os arquivos entre as partes 1 a 6. Juntos
-      # são a suíte inteira, uma vez só. As partes 7 e 8 não rodam unit: são
+      # rodaram acima; `--shard` divide os arquivos entre as partes 1 a 7. Juntos
+      # são a suíte inteira, uma vez só. As partes 8 e 9 não rodam unit: são
       # cercas e kit bash (cabeçalho do job). Localmente o comando continua sendo
       # `pnpm test:unit`, sem recorte.
-      - name: Unit tests (parte ${{ matrix.parte }}/6)
-        if: matrix.parte != 7 && matrix.parte != 8
-        run: pnpm test:unit --project produto --shard=${{ matrix.parte }}/6
+      - name: Unit tests (parte ${{ matrix.parte }}/7)
+        if: matrix.parte != 8 && matrix.parte != 9
+        run: pnpm test:unit --project produto --shard=${{ matrix.parte }}/7
 
       # O MAPA DA SKILL COBRE O MENU? — aviso, nunca reprova.
       #
@@ -447,16 +491,16 @@ jobs:
       # escolher OpenRouter travava o instalador num laço, escolher OpenAI
       # deixava o .env pela metade — passaram por todos os checks verdes. 15s.
       #
-      # Em DOIS pedaços desde 03/11/2026: a parte 8 roda só o arquivo mais pesado
-      # do kit, a 7 roda as cercas e todo o resto. O porquê e a medida estão no
+      # Em DOIS pedaços desde 03/11/2026: a parte 9 roda só o arquivo mais pesado
+      # do kit, a 8 roda as cercas e todo o resto. O porquê e a medida estão no
       # cabeçalho do job. O corte é feito sobre o próprio `pnpm test:shell`
       # (scripts/test-shell-parte.sh), então o package.json continua sendo a
-      # única lista e teste novo cai na parte 7 sem editar o CI.
+      # única lista e teste novo cai na parte 8 sem editar o CI.
       - name: Kit self-host (bash)
-        if: matrix.parte == 7 || matrix.parte == 8
+        if: matrix.parte == 8 || matrix.parte == 9
         env:
           KIT_PESADO: tests/shell/install-nao-deixa-temporario.test.sh
-        run: bash scripts/test-shell-parte.sh ${{ matrix.parte == 8 && 'so' || 'menos' }} "$KIT_PESADO"
+        run: bash scripts/test-shell-parte.sh ${{ matrix.parte == 9 && 'so' || 'menos' }} "$KIT_PESADO"
 
       - name: Orçamento de tempo do verify-parte
         if: always()
@@ -502,6 +546,14 @@ jobs:
           # com a fila carregada, e o conserto foi a OITAVA parte (o arquivo mais
           # pesado do kit), de novo sem subir este número. A conta das duas
           # partes contra o 12 está no cabeçalho do job.
+          #
+          # 16/11/2026: a parte 1 estourou com 13,7 min na `main` `e490c6baa5`
+          # (run 43953228646, check-run 133600925394) com `Unit tests` em 591 s e
+          # typecheck em 191 s — nenhum teste falhando. O conserto foi a SÉTIMA
+          # parte de unit E o typecheck para a NONA (a do kit pesado, que tinha
+          # 3,7 min): a parte nova sozinha deixaria a 1 em ~12,3 min, e só tirar
+          # o typecheck deixaria 1,5 min de folga. A conta está no cabeçalho do
+          # job.
           #
           # ── OS 100 CANCELADOS, E POR QUE ELES NÃO CENSURAM ESTA CONTA ────
           #
@@ -648,10 +700,33 @@ jobs:
     # medido — não há Docker onde esta matriz foi escrita —, e existe para o
     # vermelho continuar falando de schema: mantido em 20, a perna morreria por
     # relógio no meio da segunda passada.
-    timeout-minutes: 30
-    # Executor próprio para trabalho nosso quando EXECUTOR_PROPRIO=ligado; o
-    # porquê e a guarda contra fork: comentário do e2e-parte no e2e.yml.
-    runs-on: ${{ vars.EXECUTOR_PROPRIO == 'ligado' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && 'deskcomm-proprio' || 'ubuntu-latest' }}
+    timeout-minutes: 45
+    # 30 → 45 em 10/11/2026 (doc de decisão 302): cortada por relógio aos 30 min
+    # no pg15 e no pg17, também na `main`. Razão inteira em
+    # tests/unit/preambulo-do-ci-nao-come-o-relogio.test.ts (TETOS).
+    # RUNNERS PRÓPRIOS (VPS `deskcomm-vps`, aprovados pelo dono em 12/11/2026).
+    # Por quê: a fila do Actions (teto de jobs simultâneos) segura esta matriz,
+    # que é a perna mais longa do CI. Dois runners numa VPS dedicada
+    # (`vps-devops-1` e `-2`, rótulos `self-hosted, deskcomm-vps`) tiram as duas
+    # majors dessa fila.
+    # A expressão é só ROTEAMENTO: manda para lá push (a `main`) e PR de branch
+    # deste repositório, nunca de bot, e só com a variável de repositório
+    # `RUNNER_PROPRIO=ligado`. Todo o resto — fork, dependabot, dispatch, variável
+    # ausente — fica no `ubuntu-latest`. A TRAVA não mora aqui: num PR de fork o
+    # GitHub roda o ci.yml do fork, que pode reescrever este `runs-on`. Quem
+    # recusa fork e bot é o gancho de entrada no host
+    # (infra/executor-proprio/so-o-que-e-nosso.sh; ver o README de lá).
+    # Dois jobs no MESMO host dividem o daemon Docker e o usuário: porta e nome
+    # de contêiner já são únicos nos scripts (porta do daemon, `$$`), o HOME é
+    # do job (passo abaixo) e a limpeza no fim é `always()` aqui e no gancho de
+    # saída do host (infra/executor-proprio/limpa-depois.sh).
+    # RISCO: se os dois runners caírem, estas pernas ESPERAM na fila (até o
+    # GitHub desistir, ~24h) em vez de falhar — e o check `invariants` espera junto.
+    # COMO DESLIGAR, sem PR: `gh variable set RUNNER_PROPRIO --body desligado`
+    # (vale para os jobs NOVOS; os que já estão na fila do runner próprio têm de
+    # ser cancelados e reexecutados). Para desfazer de vez: `runs-on: ubuntu-latest`
+    # aqui e ajustar tests/unit/executor-proprio-so-roda-o-que-e-nosso.test.ts.
+    runs-on: ${{ vars.RUNNER_PROPRIO == 'ligado' && !endsWith(github.actor, '[bot]') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","deskcomm-vps"]') || 'ubuntu-latest' }}
     needs: [invariants-alcance]
     concurrency:
       group: ${{ github.workflow }}-invariants-majors-pg${{ matrix.pg }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt != '1' && format('-reentrada-{0}', github.sha) || '' }}
@@ -672,6 +747,24 @@ jobs:
       TEST_DB_IMAGE: pgvector/pgvector:pg${{ matrix.pg }}
     steps:
       - uses: actions/checkout@v7
+
+      # Os dois runners da VPS rodam como o MESMO usuário, e as duas majors
+      # começam no mesmo instante: com o HOME comum, o pnpm/action-setup
+      # instalaria o pnpm em `~/setup-pnpm` e o cache restauraria `~/.npm` e o
+      # store do pnpm nos MESMOS diretórios, ao mesmo tempo. O HOME vai para o
+      # RUNNER_TEMP, que é do job e que os ganchos do host esvaziam: tira o
+      # caminho ACIDENTAL de um job herdar cache do anterior. Não é barreira — o
+      # runner está no grupo `docker` (equivale a root no host); o risco inteiro
+      # está em infra/executor-proprio/README.md.
+      # Custo: cache frio a cada job, pago no teto de 5 min do preâmbulo.
+      - name: HOME próprio deste job (só no runner próprio)
+        if: runner.environment == 'self-hosted'
+        run: |
+          set -euo pipefail
+          casa="$RUNNER_TEMP/home"
+          mkdir -p "$casa"
+          echo "HOME=$casa" >> "$GITHUB_ENV"
+          echo "HOME=$casa"
 
       - uses: ./.github/actions/preparar-node
         # O teto do preâmbulo mora aqui porque passo de composite action não
@@ -694,6 +787,18 @@ jobs:
       # ele passa a ser gate, nas duas majors, pela mesma variável de imagem.
       - name: update.sh sobre banco COM DADOS (pg${{ matrix.pg }})
         run: pnpm test:db:update
+
+      # No runner próprio o que sobra fica no disco e na RAM para o próximo job.
+      # O trap dos scripts cobre a saída normal; job cancelado ou cortado por
+      # relógio pode matar o shell antes dele. Os dois scripts rotulam o
+      # contêiner com `deskcomm.worktree=<checkout>`, e o checkout é deste
+      # runner (cada runner roda um job por vez): o filtro não alcança o
+      # contêiner vivo do outro runner.
+      - name: Remover contêineres de banco deste job (só no runner próprio)
+        if: always() && runner.environment == 'self-hosted'
+        run: |
+          ids="$(docker ps -aq --filter "label=deskcomm.worktree=$GITHUB_WORKSPACE")"
+          [ -z "$ids" ] || docker rm -fv $ids
 
   # O NOME DESTE JOB É O CHECK OBRIGATÓRIO, e é por isso que ele existe — mesmo
   # padrão do `e2e` em e2e.yml e do `imagens-ok` em publish-image.yml.

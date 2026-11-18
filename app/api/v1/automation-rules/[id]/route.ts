@@ -13,9 +13,21 @@ import {
   MENSAGEM_CAMPO_DE_DATA_DO_CONTATO,
   campoDoGatilhoDeDataEhDoContato,
 } from "@/lib/automation/campo-do-gatilho-de-data";
+import {
+  CAMPO_DO_MOTIVO_DA_PERDA,
+  acoesDePerdaSemMotivo,
+  lerEtapasDasAcoes,
+  mensagemDaEtapaDePerdaSemMotivo,
+} from "@/lib/automation/motivo-da-perda-na-acao";
 import { autoriaDaMudanca } from "@/lib/operacao/autoria";
+import type { Conditions } from "@/lib/automation/conditions";
 import { updateAutomationRuleSchema } from "@/lib/schemas";
-import { acoesQueFechamLaco, MENSAGEM_DO_LACO_DE_LEAD } from "@/lib/schemas/webhooks";
+import {
+  acoesQueFechamLaco,
+  condicoesQueSoExistemNoNegocioAlterado,
+  MENSAGEM_DO_CAMPO_ALTERADO_FORA_DO_GATILHO,
+  MENSAGEM_DO_LACO_DE_LEAD,
+} from "@/lib/schemas/webhooks";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptRuleActionSecrets } from "@/lib/webhooks/secrets";
@@ -55,12 +67,26 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   const supabase = await createClient();
   const { data: existing, error: fetchErr } = await supabase
     .from("automation_rules")
-    .select("id, trigger_event, trigger_config, actions")
+    .select("id, trigger_event, trigger_config, actions, conditions")
     .eq("id", id)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
   if (!existing) return fail("not_found", t("Regra não encontrada."), 404, { requestId });
+
+  const webhookSourceId = parsed.data.trigger_config?.webhook_source_id;
+  if (typeof webhookSourceId === "string") {
+    const { data: source, error: sourceError } = await supabase
+      .from("webhook_sources")
+      .select("id")
+      .eq("id", webhookSourceId)
+      .eq("organization_id", activeOrg.orgId)
+      .maybeSingle();
+    if (sourceError) return fail("internal_error", sourceError.message, 500, { requestId });
+    if (!source) {
+      return fail("invalid_request", t("A fonte escolhida não pertence a esta empresa."), 422, { requestId });
+    }
+  }
 
   // O PATCH parcial (só o gatilho, ou só as ações) monta o laço de #1528 pela
   // porta do lado: o schema só o vê quando os dois vêm juntos. Desligar a regra
@@ -76,18 +102,45 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     return fail("invalid_request", t(MENSAGEM_DO_LACO_DE_LEAD), 400, { requestId });
   }
 
-  const webhookSourceId = parsed.data.trigger_config?.webhook_source_id;
-  if (typeof webhookSourceId === "string") {
-    const { data: source, error: sourceError } = await supabase
-      .from("webhook_sources")
-      .select("id")
-      .eq("id", webhookSourceId)
-      .eq("organization_id", activeOrg.orgId)
-      .maybeSingle();
-    if (sourceError) return fail("internal_error", sourceError.message, 500, { requestId });
-    if (!source) {
-      return fail("invalid_request", t("A fonte escolhida não pertence a esta empresa."), 422, { requestId });
+  // ── A ETAPA DE PERDA EXIGE MOTIVO — RECUSADA NO CADASTRO (#4297) ───────────
+  //
+  // Mesma régua do POST, e só quando o PATCH TRAZ ações: regra antiga que
+  // aponta para a etapa de perda sem motivo continua sendo salva quando o que
+  // muda é o nome ou o interruptor — ela é que falha em execução, com o código
+  // real no recibo (`lost_reason_required`). Regravar as ações é o momento de
+  // exigir o campo.
+  //
+  // Depois do laço do #1528 de propósito: aquele veto é estrutural e não custa
+  // banco, este custa uma leitura de `crm_stages` — e o que fecha a regra antes
+  // já respondeu.
+  if (parsed.data.actions !== undefined) {
+    const etapasDaRegra = await lerEtapasDasAcoes(supabase, activeOrg.orgId, parsed.data.actions);
+    if ("erro" in etapasDaRegra) return fail("internal_error", etapasDaRegra.erro, 500, { requestId });
+    const semMotivo = acoesDePerdaSemMotivo(parsed.data.actions, etapasDaRegra.etapas);
+    if (semMotivo.length > 0) {
+      return fail(
+        "invalid_request",
+        t(mensagemDaEtapaDePerdaSemMotivo(semMotivo.map((achado) => achado.etapa), authz.user.idioma)),
+        422,
+        { requestId, details: { campo: CAMPO_DO_MOTIVO_DA_PERDA } },
+      );
     }
+  }
+
+  // A condição `campo_alterado` (#1749) lê `event.fields`, que só o gatilho de
+  // "negócio alterado" carrega. O schema da criação cobra o par inteiro; aqui é
+  // o par MESCLADO — no PATCH parcial (só o gatilho, ou só as condições) o
+  // schema não vê os dois lados, e trocar `lead.updated` por outro gatilho
+  // deixaria a condição gravada e a regra decorativa, sem erro nenhum.
+  const condicoesGravadas = (existing as { conditions?: Conditions | null }).conditions ?? undefined;
+  if (
+    (parsed.data.trigger_event !== undefined || parsed.data.conditions !== undefined) &&
+    condicoesQueSoExistemNoNegocioAlterado(
+      parsed.data.trigger_event ?? gravada.trigger_event,
+      parsed.data.conditions ?? condicoesGravadas,
+    ).length
+  ) {
+    return fail("invalid_request", t(MENSAGEM_DO_CAMPO_ALTERADO_FORA_DO_GATILHO), 400, { requestId });
   }
 
   // Gatilho por data num campo do contato (#2791) nunca dispara: a regra que

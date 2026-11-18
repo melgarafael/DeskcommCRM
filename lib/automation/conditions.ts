@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { FatosDoContato } from "@/lib/automation/fatos-do-contato";
+import type { UpdateLeadInput } from "@/lib/schemas/leads";
 
 /**
  * Condições do motor de regras: filtros de campo combinados por grupos `all`
@@ -46,7 +47,8 @@ export type ConditionOp =
   | "gt"
   | "gte"
   | "lt"
-  | "lte";
+  | "lte"
+  | "campo_alterado";
 
 /**
  * Os operadores que NÃO pedem valor: "está vazio" e "está preenchido" perguntam
@@ -60,6 +62,135 @@ export const OPERADORES_SEM_VALOR: ReadonlySet<ConditionOp> = new Set<ConditionO
   "is_empty",
   "is_not_empty",
 ]);
+
+/**
+ * O CAMPO ONDE O EVENTO CARREGA OS NOMES DO QUE MUDOU (issue #1749).
+ *
+ * O gatilho "negócio alterado" (`lead.updated`) não carrega valor: o payload é
+ * `{ fields: ["expected_close_date", …] }` — os NOMES das colunas que a edição
+ * realmente mudou (`lib/leads/campos-alterados.ts`), nunca o antes-e-depois.
+ * Isso é §9 do briefing (nenhuma PII nova em log/evento) e é o que permite a
+ * regra perguntar "esta alteração mexeu no campo X?" sem que o dado do cliente
+ * viaje pelo barramento e apareça num webhook de saída.
+ *
+ * Por isso a condição `campo_alterado` lê ESTE caminho do contexto — e não o
+ * valor do campo: um campo apagado não tem valor, e mesmo o preenchido diria o
+ * que ele É hoje, não se ele MUDOU.
+ */
+export const CAMPO_DOS_CAMPOS_ALTERADOS = "event.fields";
+
+/**
+ * OS NOMES QUE PODEM APARECER EM `event.fields` — e como a tela os chama.
+ *
+ * `fields` sai de `camposAlterados` sobre o `patch` do `updateLeadHandler`, cujas
+ * chaves são as do `updateLeadSchema` (os derivados `updated_at`, `assigned_at` e
+ * `owner_kind` ficam de fora lá). O `Record` sobre `keyof UpdateLeadInput` é a
+ * amarra: campo novo no PATCH do negócio quebra o typecheck aqui até ganhar nome
+ * — sem ela, a condição "foi alterado" aceitaria texto livre e um nome errado
+ * (`data_prevista`) deixaria a regra salva sem nunca disparar.
+ *
+ * `tags_adicionar`/`tags_remover` ficam fora do `Record` (#4666) porque não são
+ * campos GRAVADOS: são a instrução de como compor `tags`, e o handler as resolve
+ * ANTES de montar o patch — o que chega a `event.fields` é sempre `tags`. Listá-las
+ * ofereceria na tela uma condição que nunca dispara; o `Exclude` explícito mantém a
+ * amarra para qualquer campo novo.
+ */
+export const CAMPOS_ALTERAVEIS_DO_NEGOCIO: Record<
+  Exclude<keyof UpdateLeadInput, "tags_adicionar" | "tags_remover">,
+  string
+> = {
+  title: "Título",
+  description: "Descrição",
+  contact_id: "Contato",
+  value_cents: "Valor",
+  recurring_value_cents: "Valor recorrente",
+  recurring_period: "Periodicidade",
+  recurring_months: "Duração (meses)",
+  currency: "Moeda",
+  owner_user_id: "Responsável",
+  owner_agent_id: "Agente responsável",
+  expected_close_date: "Data prevista de fechamento",
+  tags: "Tags",
+  custom_fields: "Campos personalizados",
+};
+
+function ehCampoAlteravelDoNegocio(nome: string): boolean {
+  return Object.hasOwn(CAMPOS_ALTERAVEIS_DO_NEGOCIO, nome);
+}
+
+/** O nome que a tela mostra no lugar da coluna (`expected_close_date`). */
+export function rotuloDoCampoAlterado(nome: string): string {
+  return ehCampoAlteravelDoNegocio(nome)
+    ? CAMPOS_ALTERAVEIS_DO_NEGOCIO[nome as keyof typeof CAMPOS_ALTERAVEIS_DO_NEGOCIO]
+    : nome;
+}
+
+/**
+ * Os editores oferecem este operador nesta linha? "Foi alterado" só existe
+ * sobre a lista de campos do evento, e essa linha só aceita ele: oferecer o par
+ * errado seria oferecer a regra que a porta recusa.
+ */
+export function operadorCabeNoCampo(op: ConditionOp, campo: string): boolean {
+  return (op === "campo_alterado") === (campo === CAMPO_DOS_CAMPOS_ALTERADOS);
+}
+
+/**
+ * As recusas da condição "foi alterado" — as mesmas frases na tela e na porta.
+ *
+ * A condição só faz sentido com a lista de nomes do `lead.updated`: em qualquer
+ * outro evento `event.fields` não existe, a avaliação seria sempre FALSA e a
+ * regra viveria salva e decorativa — o defeito que `tests/unit/
+ * aniversario-oferece-condicao-que-funciona.test.ts` já pagou uma vez.
+ */
+export const RECUSAS_DA_CONDICAO_DO_CAMPO_ALTERADO = {
+  campo:
+    "A condição “foi alterado” lê a lista de campos do evento " +
+    `(\`${CAMPO_DOS_CAMPOS_ALTERADOS}\`): use esse campo.`,
+  semCampo: "Escolha qual campo do negócio precisa ter sido alterado.",
+  campoDesconhecido: "Este campo não existe no negócio: escolha um campo da lista.",
+} as const;
+
+/**
+ * A condição "foi alterado" está preenchida de um jeito que o motor entende?
+ * `null` = sim; string = o que dizer a quem montou a regra.
+ *
+ * Uma condição de outro operador devolve `null`: esta função só opina sobre
+ * `campo_alterado`. Quem cobra que ela exista SÓ no gatilho certo é
+ * `condicoesQueSoExistemNoNegocioAlterado` (lib/schemas/webhooks.ts), porque o
+ * avaliador de condições não conhece o gatilho da regra.
+ */
+export function validarCondicaoDoCampoAlterado(cond: {
+  field: string;
+  op: string;
+  value: string;
+}): string | null {
+  if (cond.op !== "campo_alterado") return null;
+  if (cond.field !== CAMPO_DOS_CAMPOS_ALTERADOS) {
+    return RECUSAS_DA_CONDICAO_DO_CAMPO_ALTERADO.campo;
+  }
+  if (cond.value.trim() === "") return RECUSAS_DA_CONDICAO_DO_CAMPO_ALTERADO.semCampo;
+  if (!ehCampoAlteravelDoNegocio(cond.value.trim())) return RECUSAS_DA_CONDICAO_DO_CAMPO_ALTERADO.campoDesconhecido;
+  return null;
+}
+
+/**
+ * As condições de CAMPO da regra, achatando os grupos — na ordem em que estão
+ * gravadas. Quem precisa perguntar "alguma condição usa o operador X?" (a porta,
+ * com o gatilho da regra na mão) não deve reimplementar o passe de grupo: a
+ * forma guardada é jsonb e já teve duas (lista simples e `{all|any}`).
+ */
+export function condicoesDeCampo(conditions: Conditions): RuleCondition[] {
+  const achadas: RuleCondition[] = [];
+  const visita = (nos: readonly ConditionNode[]): void => {
+    for (const no of nos) {
+      if (ehGrupo(no)) visita(no.all ?? no.any ?? []);
+      else achadas.push(no);
+    }
+  };
+  if (Array.isArray(conditions)) visita(conditions);
+  else visita((conditions as ConditionGroup | null | undefined)?.all ?? (conditions as ConditionGroup | null | undefined)?.any ?? []);
+  return achadas;
+}
 
 /**
  * O teto de condições de UMA regra (#2727). Vale no TOPO: a lista simples e os
@@ -80,6 +211,7 @@ export const OPS_DE_CONDICAO = [
   "gte",
   "lt",
   "lte",
+  "campo_alterado",
 ] as const satisfies readonly ConditionOp[];
 
 export interface RuleCondition {
@@ -147,9 +279,9 @@ function ehVazio(valor: unknown): boolean {
  *
  * `NFD` separa a letra do sinal e a faixa `\u0300-\u036f` (Marcas Diacríticas
  * Combinantes) tira só o acento. NÃO use `\p{M}` às cegas: ele comeria o
- * `U+FE0F` (variation selector) que fecha emoji como o coração, e a regra
- * deixaria de casar o que o próprio cadastro tem — armadilha já medida em
- * `lib/contacts/busca-regex.ts`.
+ * `U+FE0F` (variation selector) que fecha emoji como o coração — armadilha
+ * medida na busca de contatos da #1835 (o módulo de regex que a tratava foi
+ * aposentado na #3918, fatia 2; a lição fica).
  *
  * A pontuação vira ESPAÇO (`\p{P}`), e os espaços se juntam — decisão do dono
  * do produto (16/10, doc 161, opção D). Assim "Olá! Vi o anúncio" casa "ola, vi
@@ -411,6 +543,9 @@ export function validarCondicaoDoContato(cond: {
  * (trocar de campo não pode apagar um "não" que já estava escrito).
  */
 export function valorPadraoDoCampo(campo: string, valorAtual: string): string | null {
+  // "Foi alterado" nasce sem campo escolhido: o valor de outra condição (ex.:
+  // "aprovado") não é nome de campo e seria recusado na hora de salvar.
+  if (campo === CAMPO_DOS_CAMPOS_ALTERADOS) return ehCampoAlteravelDoNegocio(valorAtual) ? valorAtual : "";
   if (!ehCampoDoContato(campo)) return null;
   return validarCondicaoDoContato({ field: campo, op: "eq", value: valorAtual }) === null
     ? valorAtual
@@ -502,6 +637,18 @@ function matches(
   // no banco, uma vez por avaliação.
   if (ehCampoDoContato(cond.field)) return avaliaCondicaoDoContato(cond, fatos);
 
+  // "Foi alterado" pergunta ao EVENTO, não à linha: o valor de hoje não diz se o
+  // campo mudou — e um campo apagado não tem valor nenhum para comparar. Quem
+  // responde é a lista de NOMES que o `lead.updated` carrega em `event.fields`.
+  // Sem a lista (evento de outro tipo, payload antigo), a resposta é FALSA: não
+  // é "não mudou", é "não sei" — e uma regra que decide no escuro é a loteria
+  // que o operador não consegue depurar.
+  if (cond.op === "campo_alterado") {
+    if (cond.value.trim() === "") return false;
+    const alterados = resolveField(context, CAMPO_DOS_CAMPOS_ALTERADOS);
+    return Array.isArray(alterados) ? contem(alterados, cond.value) : false;
+  }
+
   const raw = resolveField(context, cond.field);
   const ausente = raw === undefined || raw === null;
 
@@ -585,6 +732,11 @@ export const conditionSchema = z
   .superRefine((cond, ctx) => {
     const recusa = validarCondicaoDoContato(cond);
     if (recusa) ctx.addIssue({ code: z.ZodIssueCode.custom, message: recusa, path: [] });
+    // A condição "foi alterado" (#1749): lê `event.fields`, então o campo e o
+    // valor têm forma própria — a mesma conferência vale para a API e para a
+    // tela, que salvam pelo mesmo schema.
+    const recusaDoCampo = validarCondicaoDoCampoAlterado(cond);
+    if (recusaDoCampo) ctx.addIssue({ code: z.ZodIssueCode.custom, message: recusaDoCampo, path: [] });
   });
 
 /**

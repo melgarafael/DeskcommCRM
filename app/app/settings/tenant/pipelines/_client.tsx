@@ -40,7 +40,11 @@ import {
   diasParaReabrirPerdido,
 } from "@/lib/leads/janela-do-perdido";
 import { modoDeReabertura } from "@/lib/leads/reabertura";
-import { CATEGORIAS_DE_PERDA } from "@/lib/schemas/leads";
+import {
+  categoriasEditaveisDoFunil,
+  categoriasQueSobrevivemAoTexto,
+  rotulosDaCaixaDeMotivos,
+} from "@/lib/leads/motivos-de-perda-do-funil";
 import { rotuloDoTipo } from "@/lib/schemas/rotulos-do-campo";
 import { EditorDeAtalhos } from "./_atalhos-do-card";
 import { useMoedaDaOrgAtiva } from "@/hooks/auth/AuthProvider";
@@ -65,9 +69,11 @@ import {
 import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
 import { CaretDown, CaretUp, DragHandle, Plus, Trash } from "@/lib/ui/icons";
 import { entradaDoInboxDeclarada } from "@/lib/leads/entrada-do-inbox";
+import { funisQueCasam } from "@/lib/pipelines/filtrar-funis";
 import { RolagemDeChegada, type Chegada } from "@/lib/ui/rolagem-de-chegada";
 import { AgentMappingSection, ancoraDoMapeamento } from "./_mapping";
 import { StagesSection, ancoraDasEtapas } from "./_stages";
+import { CategoriasDePerda } from "./_categorias-de-perda";
 
 export interface PipelineRow {
   id: string;
@@ -451,6 +457,9 @@ export function PipelinesClient({
   const [funilAberto, setFunilAberto] = useState<string | null>(() =>
     pipelines.length === 1 ? (pipelines[0]?.id ?? null) : null,
   );
+  const [busca, setBusca] = useState("");
+  // `null` = sem busca. A régua é a de `filtrar-funis` (#4593).
+  const visiveis = funisQueCasam(pipelines, busca);
   const [chegada, setChegada] = useState<ChegadaAoFunil | null>(null);
   /**
    * A ÂNCORA ABRE O FUNIL QUE ELA APONTA.
@@ -496,6 +505,23 @@ export function PipelinesClient({
   }
   return (
     <div className="flex flex-col gap-4">
+      {/* A BUSCA SÓ APARECE COM MAIS DE UM FUNIL (#4593): com um só não há o
+          que procurar, e a tela fica como era antes — a mesma régua do funil
+          que nasce aberto. */}
+      {pipelines.length > 1 && (
+        <Input
+          placeholder={t("Buscar por nome…")}
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          className="w-full sm:w-64"
+          aria-label={t("Buscar funis")}
+        />
+      )}
+      {visiveis?.size === 0 && (
+        <Card className="p-8 text-center text-sm text-muted-foreground">
+          {t("Nenhum funil corresponde à busca.")}
+        </Card>
+      )}
       {pipelines.map((p) => (
         <CardDoFunil
           key={p.id}
@@ -510,6 +536,7 @@ export function PipelinesClient({
             setChegada(null);
             setFunilAberto((aberto) => (aberto === p.id ? null : p.id));
           }}
+          oculto={visiveis !== null && !visiveis.has(p.id)}
         />
       ))}
       {chegada && <RolagemDoFunil {...chegada} aoTerminar={() => setChegada(null)} />}
@@ -561,6 +588,7 @@ function CardDoFunil({
   ehFunilPadrao,
   aberto,
   aoAlternar,
+  oculto = false,
 }: {
   pipeline: PipelineRow;
   etapas: EtapaDoFunil[];
@@ -570,6 +598,11 @@ function CardDoFunil({
   /** Recolhido ou aberto — o estado é da LISTA (`PipelinesClient`), um por vez. */
   aberto: boolean;
   aoAlternar: () => void;
+  /**
+   * Fora da busca da lista (#4593). O card SÓ SE ESCONDE, não desmonta: o
+   * editor guarda rascunho não salvo, e a busca não pode apagá-lo em silêncio.
+   */
+  oculto?: boolean;
 }) {
   const t = useT();
   const [editorAberto, setEditorAberto] = useState(false);
@@ -578,7 +611,7 @@ function CardDoFunil({
   const [editorMontado, setEditorMontado] = useState(false);
   const idDoCorpo = `corpo-do-funil-${pipeline.id}`;
   return (
-    <Card className="space-y-6 p-6">
+    <Card className="space-y-6 p-6" hidden={oculto} data-testid={`card-do-funil-${pipeline.id}`}>
       {/* ─── O FUNIL RECOLHIDO, E O NOME É O BOTÃO (#4083) ──────────────────
           O pedido da comunidade foi literal: com ~10 funis a tela vira um rolo
           e cada um deveria vir FECHADO, abrindo um por vez. O modelo citado é o
@@ -944,6 +977,17 @@ function PipelineEditor({
   const [categorias, setCategorias] = useState<Record<string, string>>(() =>
     readCategorias(pipeline.settings),
   );
+  /**
+   * AS CATEGORIAS DO FUNIL (#4437) — a lista que esta tela edita.
+   *
+   * Nasce do que o funil declarou; se ele NUNCA declarou, nasce do catálogo
+   * efetivo (fábrica + categorias que os motivos já usam), que é o que faz o
+   * "Risco" gravado à mão no "Possível fraude" aparecer aqui — e o primeiro save
+   * o grava na lista, sem migration e sem tocar no motivo.
+   */
+  const [categoriasDoFunil, setCategoriasDoFunil] = useState<string[]>(() =>
+    categoriasEditaveisDoFunil(pipeline.settings),
+  );
   const [wonRequired, setWonRequired] = useState(
     (pipeline.settings as { won_reason_required?: unknown } | null)?.won_reason_required === true,
   );
@@ -1089,10 +1133,26 @@ function PipelineEditor({
     // #1537: motivo com categoria vira `{ label, categoria }`; sem categoria
     // continua string pura — formato que todo funil já tem e que o trigger
     // aceita igual.
+    //
+    // #4437: o mapa é lido pelo rótulo ATUAL porque quem edita a caixa já
+    // carregou a categoria de um motivo renomeado para o nome novo
+    // (`categoriasQueSobrevivemAoTexto`, no onChange da caixa). Ler por texto
+    // sem essa passada era exatamente o defeito que a issue descreve: mudou o
+    // rótulo, a chave não bate, e a categoria se perde no save.
     const motivosComCategoria = reasons.map((rotulo) => {
       const categoria = categorias[rotulo];
       return categoria ? { label: rotulo, categoria } : rotulo;
     });
+
+    // #4437 — a lista de categorias só vai no patch quando MUDOU. Um funil que
+    // ninguém tocou aqui continua sem a chave, e sem a chave vale a fábrica mais
+    // o que os motivos usam; salvar o vocabulário não reescreve o vocabulário de
+    // ninguém à toa. Quem escondeu/escondeu-todas manda a lista (inclusive `[]`),
+    // que é o único jeito de a decisão sobreviver ao F5.
+    const categoriasIniciais = categoriasEditaveisDoFunil(pipeline.settings);
+    const categoriasMudaram =
+      categoriasIniciais.length !== categoriasDoFunil.length ||
+      categoriasIniciais.some((categoria, i) => categoria !== categoriasDoFunil[i]);
 
     const wonReasons = wonReasonsText
       .split(",")
@@ -1162,6 +1222,7 @@ function PipelineEditor({
       vocabulary: { lead, deal, won, lost },
       fields: ok,
       lost_reasons: motivosComCategoria,
+      ...(categoriasMudaram ? { lost_reason_categories: categoriasDoFunil } : {}),
       won_reasons: wonReasons,
       won_reason_required: wonRequired,
       comanda_no_ganho: comandaNoGanho,
@@ -1209,6 +1270,35 @@ function PipelineEditor({
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
 
+  /**
+   * EDITAR A CAIXA CARREGA A CATEGORIA JUNTO (#4437).
+   *
+   * O mapa de categorias é indexado pelo TEXTO do motivo, porque é assim que o
+   * banco guarda o vínculo (`lost_reasons: [{ label, categoria }]`, e o trigger
+   * compara o rótulo por igualdade exata). Sem esta passada, renomear "Possível
+   * fraude" na caixa deixava a categoria "Risco" apontando para um rótulo que
+   * não existia mais, e o save devolvia o motivo sem categoria — o defeito que a
+   * issue relata. A régua do rename mora em `categoriasQueSobrevivemAoTexto`
+   * (função pura, testada): aqui só se liga a caixa a ela.
+   */
+  const aoEditarMotivosDePerda = (novo: string) => {
+    setCategorias((atual) =>
+      categoriasQueSobrevivemAoTexto(
+        rotulosDaCaixaDeMotivos(reasonsText),
+        rotulosDaCaixaDeMotivos(novo),
+        atual,
+      ),
+    );
+    setReasonsText(novo);
+  };
+
+  // Quantos motivos usam cada categoria — a consequência de esconder, à vista
+  // antes do clique (`_categorias-de-perda`). Lista pequena (teto de 50 motivos).
+  const usoDasCategorias: Record<string, number> = {};
+  for (const categoria of Object.values(categorias)) {
+    usoDasCategorias[categoria] = (usoDasCategorias[categoria] ?? 0) + 1;
+  }
+
   // ─── A ENTRADA DAS CONVERSAS DO INBOX (#3011) ──────────────────────────
   // Quem pode ser escolhido, o que está escolhido hoje, e o que fazer quando a
   // escolha deixou de valer. A escolha inválida CONTINUA à mostra no seletor
@@ -1254,20 +1344,50 @@ function PipelineEditor({
         </div>
       </div>
 
+      <CategoriasDePerda
+        categorias={categoriasDoFunil}
+        emUso={usoDasCategorias}
+        aoMudar={setCategoriasDoFunil}
+        aoRenomear={(de, para) =>
+          // Renomear a categoria carrega os motivos: sem isto o `categoria`
+          // gravado apontaria para um nome que não existe mais na lista, e o
+          // relatório agruparia num rótulo que ninguém consegue mais escolher.
+          setCategorias((atual) =>
+            Object.fromEntries(
+              Object.entries(atual).map(([motivo, categoria]) => [
+                motivo,
+                categoria === de ? para : categoria,
+              ]),
+            ),
+          )
+        }
+      />
+
       <div className="space-y-1">
         <Label className="text-xs">{t("Motivos de perda (separados por vírgula)")}</Label>
-        <Input value={reasonsText} onChange={(e) => setReasonsText(e.target.value)} />
+        <Input
+          aria-label={t("Motivos de perda")}
+          value={reasonsText}
+          onChange={(e) => aoEditarMotivosDePerda(e.target.value)}
+        />
         {/*
           #1537 — a categoria de CADA motivo, não um campo só: é ela que o
           relatório "Perdas" e o filtro do quadro agrupam. Só aparece para
           motivo já escrito na caixa de cima: a lista continua sendo texto e a
           ordem continua sendo a do texto; o que muda é que cada item ganhou
           um campo. `__sem__` porque o Select recusa value="".
+
+          #4437 — as opções são as categorias DESTE funil (`categoriasDoFunil`),
+          não a lista fixa do produto somada à categoria atual. A categoria
+          atual continua entrando à parte para o caso em que ela foi escondida:
+          o motivo que já a usa não pode abrir o menu com um valor que não está
+          entre as opções (o Select cairia em branco e o próximo save apagaria
+          o vínculo).
         */}
         {motivosDaCaixa.map((motivo) => {
           const opcoes = [
             ...new Set([
-              ...CATEGORIAS_DE_PERDA,
+              ...categoriasDoFunil,
               ...(categorias[motivo] ? [categorias[motivo]] : []),
             ]),
           ];
@@ -1285,7 +1405,10 @@ function PipelineEditor({
                   })
                 }
               >
-                <SelectTrigger className="h-8 w-56 text-xs">
+                <SelectTrigger
+                  className="h-8 w-56 text-xs"
+                  aria-label={`${t("Categoria do motivo")} ${motivo}`}
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1808,6 +1931,71 @@ function PipelineEditor({
                 )}
               </p>
             </div>
+            {/* ── NO RESUMO DA PASSAGEM (issue #4303) ────────────────────────
+                O interruptor que leva o valor deste campo ao cartão de
+                passagem para humano. Mesma disciplina de `multiple`: desmarcar
+                APAGA a chave, então o funil que ninguém tocou continua
+                idêntico ao de antes (ausente = desligado, ver o schema). Só
+                campo do NEGÓCIO: é o `crm_leads.custom_fields` que a passagem
+                lê — prometer o mesmo para campo do contato seria mentir. */}
+            {escopoDoCampo(f) === "negocio" && (
+              <div className="space-y-1 lg:col-span-4">
+                <label className="flex items-center gap-1 text-xs">
+                  <input
+                    type="checkbox"
+                    aria-label={`${t("Mostrar no resumo da passagem")} — ${f.label || i + 1}`}
+                    checked={f.mostrar_no_resumo_da_passagem === true}
+                    onChange={(ev) => {
+                      const next = [...fields];
+                      const { mostrar_no_resumo_da_passagem: _apagada, ...semOpcao } = f;
+                      next[i] = ev.target.checked
+                        ? { ...f, mostrar_no_resumo_da_passagem: true }
+                        : (semOpcao as CustomFieldDef);
+                      setFields(next);
+                    }}
+                  />
+                  {t("Mostrar no resumo da passagem")}
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "Quando a conversa passa para uma pessoa, o valor que este campo tem no card aparece no resumo do cartão de passagem. Desligado por padrão.",
+                  )}
+                </p>
+              </div>
+            )}
+            {/* ── A IA PODE LER (issue #4669) ───────────────────────────────
+                A marca que autoriza o valor deste campo a chegar ao MODELO: o
+                bloco do negócio do follow-up escrito por IA e a leitura
+                `crm_get_lead` de um turno. Mesma disciplina de `multiple` e de
+                `mostrar_no_resumo_da_passagem`: desmarcar APAGA a chave, porque
+                a definição é jsonb e a AUSÊNCIA é o desmarcado (ver o comentário
+                de `ia_pode_ler` no schema). Só campo do NEGÓCIO: é o
+                `crm_leads.custom_fields` que os dois caminhos leem. */}
+            {escopoDoCampo(f) === "negocio" && (
+              <div className="space-y-1 lg:col-span-4">
+                <label className="flex items-center gap-1 text-xs">
+                  <input
+                    type="checkbox"
+                    aria-label={`${t("A IA pode ler este campo")} — ${f.label || i + 1}`}
+                    checked={f.ia_pode_ler === true}
+                    onChange={(ev) => {
+                      const next = [...fields];
+                      const { ia_pode_ler: _apagada, ...semOpcao } = f;
+                      next[i] = ev.target.checked
+                        ? { ...f, ia_pode_ler: true }
+                        : (semOpcao as CustomFieldDef);
+                      setFields(next);
+                    }}
+                  />
+                  {t("A IA pode ler este campo")}
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "Ligado, o valor deste campo pode chegar ao assistente de IA: no follow-up escrito por IA e na leitura que o agente faz do negócio. Desligado, o valor fica só no card. Desligado por padrão.",
+                  )}
+                </p>
+              </div>
+            )}
             {/* ── QUANDO ESTE CAMPO APARECE (issues #2728 e #4041) ──────────
                 A condição que a ficha do contato, o dossiê e o painel do inbox
                 leem para ESCONDER o campo: UMA condição (o de sempre) ou uma

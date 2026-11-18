@@ -52,11 +52,11 @@ import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
- * Custo, medido em 127.0.0.1 contra o GoTrue local: é **uma requisição HTTP por
- * id único** (o dedupe reduz N, não o transforma em 1). ~60ms para 1, ~350ms para
- * 10, ~1,2s para 50 — e 50 exigiria uma página com 50 donos DISTINTOS. Se este
- * número virar problema, o conserto é desnormalizar o nome na linha (o repo já
- * faz isso em `conversation_notes.created_by_name`), não aumentar o paralelismo.
+ * Custo: **uma consulta ao banco** (`public.fn_nomes_dos_membros`, migration
+ * 9314), não mais uma requisição HTTP por id único. Antes desta fatia o caminho
+ * fazia `auth.admin.getUserById` uma vez por pessoa (~60ms para 1, ~350ms para
+ * 10, ~1,2s para 50, medidos em 127.0.0.1 contra o GoTrue local) só para ler um
+ * `full_name` que já está no banco.
  */
 export async function nomesDosAtendentes(
   orgId: string,
@@ -81,7 +81,9 @@ export async function nomesDosAtendentes(
 /**
  * O mesmo, com o admin client de quem chama — o MCP já recebe um no contexto
  * (`ctx.supabase`). A regra de vínculo é a mesma: não há segundo caminho para
- * o nome de uma pessoa.
+ * o nome de uma pessoa, e agora não há chamada HTTP nenhuma: UMA consulta a
+ * `fn_nomes_dos_membros` resolve nome (e o e-mail que outros leitores pedem) de
+ * todos os ids de uma vez.
  */
 export async function nomesDosAtendentesCom(
   admin: SupabaseClient,
@@ -90,31 +92,38 @@ export async function nomesDosAtendentesCom(
 ): Promise<Map<string, string | null>> {
   const unicos = [...new Set(userIds.filter((id): id is string => Boolean(id)))];
   if (unicos.length === 0) return new Map();
-  const membros = await membrosDaOrganizacao(admin, orgId, unicos);
 
-  const pares = await Promise.all(
-    unicos.map(async (id): Promise<readonly [string, string | null]> => {
-      if (!membros.has(id)) return [id, null] as const;
-      try {
-        const { data, error } = await admin.auth.admin.getUserById(id);
-        if (error) {
-          // O supabase-js NÃO lança aqui — é este ramo, e não o catch, que pega o
-          // caso real (403 not_admin, usuário apagado, GoTrue fora do ar).
-          logger.warn("[nome-do-atendente] lookup falhou", { user_id: id, erro: error.message });
-          return [id, null] as const;
-        }
-        const nome = (data?.user?.user_metadata?.full_name as string | undefined) ?? null;
-        return [id, nome] as const;
-      } catch (err) {
-        logger.warn("[nome-do-atendente] lookup lançou", {
-          user_id: id,
-          erro: err instanceof Error ? err.message : String(err),
-        });
-        return [id, null] as const;
-      }
-    }),
-  );
-  return new Map(pares);
+  // Todo id começa SEM nome — quem não tem (nem teve) vínculo com a organização
+  // não ganha linha na função, e o mapa continua com a chave para o chamador
+  // distinguir "sem nome" de "id não pedido".
+  const nomes = new Map<string, string | null>(unicos.map((id) => [id, null]));
+
+  try {
+    const { data, error } = await admin.rpc("fn_nomes_dos_membros", {
+      p_org: orgId,
+      p_ids: unicos,
+    });
+    if (error) {
+      // Falha de leitura degrada para "ninguém tem nome" (o chamador já trata a
+      // ausência), com uma linha de log — nunca um mapa parcial silencioso.
+      logger.warn("[nome-do-atendente] nomes não lidos: nenhum nome resolvido", {
+        organizationId: orgId,
+        erro: error.message,
+      });
+      return nomes;
+    }
+    for (const linha of (data ?? []) as Array<{ user_id?: string; full_name?: string | null }>) {
+      if (typeof linha.user_id !== "string") continue;
+      nomes.set(linha.user_id, linha.full_name ?? null);
+    }
+    return nomes;
+  } catch (err) {
+    logger.warn("[nome-do-atendente] leitura de nomes lançou", {
+      organizationId: orgId,
+      erro: err instanceof Error ? err.message : String(err),
+    });
+    return nomes;
+  }
 }
 
 /**

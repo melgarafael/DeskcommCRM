@@ -19,9 +19,13 @@ interface LinhaDeElegibilidade {
   force_human: boolean;
   ai_opt_out: boolean;
   assignee_kind: string | null;
+  /** `conversations.metadata` — o modo "IA com o dono" (#3967) mora aqui. */
+  conversation_metadata: unknown;
   bot_silenced_until: Date | string | null;
   ai_authorized_at: Date | string | null;
   phone_number: string | null;
+  /** `contacts.social_identity` — o testador de Instagram/Facebook casa por aqui. */
+  social_identity: string | null;
   org_status: string | null;
   /** `contacts.tags` — a régua de contato interno (#2353) e a da equipe (#3534). */
   contact_tags: string[] | null;
@@ -43,9 +47,11 @@ export async function decidirElegibilidadeDaConversa(
        ct.force_human               as force_human,
        ct.ai_opt_out                as ai_opt_out,
        cv.assignee_kind             as assignee_kind,
+       cv.metadata                  as conversation_metadata,
        cv.bot_silenced_until        as bot_silenced_until,
        ct.ai_authorized_at          as ai_authorized_at,
        ct.phone_number              as phone_number,
+       ct.social_identity           as social_identity,
        ct.tags                      as contact_tags,
        o.status                     as org_status,
        o.settings                   as org_settings
@@ -68,11 +74,14 @@ export async function decidirElegibilidadeDaConversa(
     aiGateMode: r.channel_metadata?.ai_gate_mode,
     aiTestPhoneNumbers: r.channel_metadata?.ai_test_phone_numbers,
     contactPhoneNumber: r.phone_number,
+    aiTestSocialIdentities: r.channel_metadata?.ai_test_social_identities,
+    contactSocialIdentity: r.social_identity,
     forceHuman: r.force_human,
     contactTags: r.contact_tags,
     orgSettings: r.org_settings,
     aiOptOut: r.ai_opt_out,
     assigneeKind: r.assignee_kind,
+    metadataDaConversa: r.conversation_metadata,
     botSilencedUntil: r.bot_silenced_until,
     aiAuthorizedAt: r.ai_authorized_at,
     agora: input.agora,

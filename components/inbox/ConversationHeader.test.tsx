@@ -19,6 +19,7 @@ const arquivarMutate = vi.hoisted(() => vi.fn());
 const startCall = vi.hoisted(() => vi.fn());
 const claimMutate = vi.hoisted(() => vi.fn());
 const resposta = vi.hoisted(() => ({ endereco: undefined as EnderecoDaResposta | undefined }));
+const iaComDonoMutate = vi.hoisted(() => vi.fn());
 
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useAuth: () => ({ user: { id: "u1", support: null } }),
@@ -39,6 +40,10 @@ vi.mock("@/hooks/inbox/useResumeAiAttendance", () => ({
 }));
 vi.mock("@/hooks/inbox/usePauseAiAttendance", () => ({
   usePauseAiAttendance: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+// "IA com o dono" (#3967) usa `useMutation`: sem o mock, exigiria QueryClientProvider.
+vi.mock("@/hooks/inbox/useIaComDono", () => ({
+  useIaComDono: () => ({ mutate: iaComDonoMutate, isPending: false }),
 }));
 // Spec 21, etapa 15: o cabeçalho chama os hooks de pessoal em toda
 // renderização (antes dos early returns) — sem este mock, o `useMutation` real
@@ -129,6 +134,66 @@ beforeEach(() => {
   startCall.mockReset();
   claimMutate.mockReset();
   resposta.endereco = undefined;
+  iaComDonoMutate.mockReset();
+});
+
+describe("ConversationHeader — 'IA com o dono' (#3967)", () => {
+  // Abre o ⋯ antes de perguntar: com o menu fechado o `queryByTestId` devolveria
+  // null em QUALQUER estado, e os casos de ausência passariam sem medir nada.
+  it("conversa SEM dono não mostra o interruptor (não há dono a preservar)", async () => {
+    render(<ConversationHeader conversation={conversa("open")} />);
+    await abrirOMenu();
+    expect(screen.queryByTestId("ia-com-o-dono")).toBeNull();
+  });
+
+  it("conversa com dono: desligado, liga com um clique", async () => {
+    const atual = conversa("claimed");
+    atual.assigned_to_user_id = "u1";
+    render(<ConversationHeader conversation={atual} />);
+    await abrirOMenu();
+
+    const item = screen.getByTestId("ia-com-o-dono");
+    expect(item).toHaveAttribute("role", "menuitemcheckbox");
+    expect(item).toHaveAttribute("aria-checked", "false");
+    expect(screen.queryByTestId("badge-ia-com-o-dono")).toBeNull();
+    fireEvent.click(item);
+    expect(iaComDonoMutate).toHaveBeenCalledWith({ conversation_id: "conv-1", ligado: true });
+  });
+
+  it("modo ligado: marcado no menu, com selo à vista, e o clique desliga", async () => {
+    const atual = conversa("claimed");
+    atual.assigned_to_user_id = "u1";
+    (atual as { metadata: unknown }).metadata = { ai_com_dono: true };
+    render(<ConversationHeader conversation={atual} />);
+    // O selo ANTES de abrir: é ele que diz o estado com o menu fechado.
+    expect(screen.getByTestId("badge-ia-com-o-dono")).toHaveTextContent("IA com o dono");
+    await abrirOMenu();
+
+    const item = screen.getByTestId("ia-com-o-dono");
+    expect(item).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(item);
+    expect(iaComDonoMutate).toHaveBeenCalledWith({ conversation_id: "conv-1", ligado: false });
+  });
+
+  it("modo ligado com o automático calado: quem fala é o selo do motivo, não o do modo", () => {
+    const atual = conversa("claimed");
+    atual.assigned_to_user_id = "u1";
+    (atual as { metadata: unknown }).metadata = { ai_com_dono: true };
+    atual.bot_silenced_until = "infinity";
+    render(<ConversationHeader conversation={atual} />);
+    expect(screen.getByTestId("badge-atendimento-humano")).toBeInTheDocument();
+    expect(screen.queryByTestId("badge-ia-com-o-dono")).toBeNull();
+  });
+
+  it("conversa encerrada não mostra o interruptor nem o selo", async () => {
+    const atual = conversa("closed");
+    atual.assigned_to_user_id = "u1";
+    (atual as { metadata: unknown }).metadata = { ai_com_dono: true };
+    render(<ConversationHeader conversation={atual} />);
+    expect(screen.queryByTestId("badge-ia-com-o-dono")).toBeNull();
+    await abrirOMenu();
+    expect(screen.queryByTestId("ia-com-o-dono")).toBeNull();
+  });
 });
 
 /**
@@ -428,6 +493,17 @@ describe("ConversationHeader — por qual número a resposta sai (Spec 31, B2)",
     expect(screen.getByTestId("resposta-sai-por")).toHaveTextContent(
       "A resposta sai por: +5511999990002",
     );
+  });
+
+  it("a linha tem o número inteiro no title, para o truncate de 768 px não escondê-lo (#4242, item 3)", () => {
+    resposta.endereco = doExtra;
+    render(<ConversationHeader conversation={comTelefone()} />);
+
+    const linha = screen.getByTestId("resposta-sai-por");
+    const titulo = linha.getAttribute("title") ?? "";
+    // Sabotagem: tirar o `title` faz este caso cair — sobra só o texto cortado.
+    expect(titulo).toBe(linha.textContent);
+    expect(titulo.replace(/\D/g, "")).toContain((doExtra.phone_number ?? "").replace(/\D/g, ""));
   });
 
   it.each<[string, Partial<EnderecoDaResposta>]>([

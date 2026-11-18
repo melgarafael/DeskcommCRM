@@ -51,19 +51,20 @@ function fazerSupabase() {
   };
   return {
     from: () => chain,
-    auth: {
-      admin: {
-        // `unknown` no retorno é de propósito: o caso `not_admin` (user null,
-        // error preenchado) é parte do contrato medida em `nome-do-atendente.ts`
-        // — o supabase-js NÃO lança, devolve o par `{ data, error }`.
-        getUserById: (
-          id: string,
-        ): Promise<{ data: { user: unknown }; error: unknown }> =>
-          Promise.resolve({
-            data: { user: { id, user_metadata: { full_name: NOME_ESPERADO } } },
-            error: null,
-          }),
-      },
+    // O nome vem de UMA consulta a `fn_nomes_dos_membros` (#4326, fatia 3) —
+    // zero chamadas HTTP ao GoTrue. Devolve `{ data, error }` como o
+    // supabase-js: falha é par, não exceção.
+    rpc: (
+      funcao: string,
+      args: { p_org: string; p_ids: string[] },
+    ): Promise<{ data: unknown; error: unknown }> => {
+      if (funcao !== "fn_nomes_dos_membros") {
+        return Promise.resolve({ data: null, error: { message: "rpc inesperado" } });
+      }
+      return Promise.resolve({
+        data: args.p_ids.map((id) => ({ user_id: id, full_name: NOME_ESPERADO, email: null })),
+        error: null,
+      });
     },
   };
 }
@@ -107,10 +108,10 @@ describe("crm_list_team_members", () => {
 
   it("lookup de nome que falha ⇒ `nome: null`, nunca a chamada inteira quebrando", async () => {
     const supabase = fazerSupabase();
-    // O supabase-js NÃO lança no 403 `not_admin`: devolve `{ data: null, error }`
-    // — é o ramo que o helper trata, e o campo tem de cair no null declarado.
-    supabase.auth.admin.getUserById = () =>
-      Promise.resolve({ data: { user: null }, error: { message: "not_admin" } });
+    // A leitura de nomes falha (org sem vínculo, função sem EXECUTE, banco fora):
+    // o campo cai no null declarado e a tool não quebra.
+    supabase.rpc = () =>
+      Promise.resolve({ data: null, error: { message: "permission denied for function" } });
 
     const res = (await crmListTeamMembers.handler({}, fazerCtx(supabase))) as {
       time: LinhaDoTime[];

@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { RouterListItem } from "@/hooks/ai/useRouters";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { RoutersClient } from "./_client";
+import { lerEstadoDosRoteadores } from "./estado-dos-numeros";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,13 @@ export default async function RoutersPage() {
     member_count: counts.get(r.id) ?? 0,
   }));
 
+  // #4340 — a lista conta o número, não só a linha de `ai_routers`: roteador
+  // apontando para número arquivado sai INATIVO, e número que ficou sem
+  // roteador (o novo, depois da troca) aparece com o aviso. Sem esta leitura a
+  // tela mostrava um roteador verde para um número que não existe mais e
+  // escondia justamente o número que recebe as conversas.
+  const estado = lerEstadoDosRoteadores(routers, channelSessions);
+
   return (
     <div className="flex h-full flex-col gap-6 p-6">
       <header>
@@ -53,7 +61,11 @@ export default async function RoutersPage() {
           )}
         </p>
       </header>
-      <RoutersClient initialState={{ routers }} channelSessions={channelSessions} />
+      <RoutersClient
+        initialState={{ routers: estado.itens }}
+        channelSessions={channelSessions}
+        numerosSemRoteador={estado.numerosSemRoteador}
+      />
     </div>
   );
 }

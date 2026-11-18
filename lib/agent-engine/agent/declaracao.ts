@@ -34,7 +34,11 @@
  * Por isso o campo é OPCIONAL no Zod e a coluna é NULLABLE: o "não sei" tem
  * representação própria, em vez de pegar carona no valor vazio.
  */
+import { preencher } from '@/lib/i18n/idioma-do-aviso';
+import { traduzir } from '@/lib/i18n/dicionario';
 import { z } from 'zod';
+
+import { falaDoMotor, type Idioma } from './idioma-do-turno';
 
 /**
  * Uma intenção lida da conversa. `evidencia` não é burocracia: sem ela o campo
@@ -101,6 +105,17 @@ export const DECLARACAO_INSTRUCTION =
   'Nunca invente: sem trecho que sustente, não declare.';
 
 /**
+ * A mesma instrução no idioma da organização (#4260, item 1).
+ *
+ * As CHAVES do JSON não mudam de língua: `intencoes`, `promessas` e
+ * `nada_a_declarar` são lidas por `declaracaoDoTurnoSchema` — traduzir a chave
+ * mudaria o contrato, não o idioma. `pt-BR` devolve a constante acima.
+ */
+export function instrucaoDeDeclaracao(idioma: Idioma = 'pt-BR'): string {
+  return falaDoMotor(DECLARACAO_INSTRUCTION, idioma);
+}
+
+/**
  * A declaração vista por um HUMANO que vai assumir a conversa.
  *
  * Existe porque o contrato tem **dois leitores** (invariante 2 do sistema vivo):
@@ -111,19 +126,27 @@ export const DECLARACAO_INSTRUCTION =
  * omite a seção. Um bloco com cabeçalho e nada embaixo é ruído na tela de quem
  * está no meio de um atendimento.
  */
-export function renderDeclaracaoParaHumano(declaracao: DeclaracaoDoTurno | null): string {
+export function renderDeclaracaoParaHumano(declaracao: DeclaracaoDoTurno | null, idioma: Idioma = 'pt-BR'): string {
   if (declaracao === null) return '';
+  // Os rótulos seguem o idioma da organização (o texto é gravado e mostrado
+  // como veio); o conteúdo é o que a IA escreveu e entra depois, por função.
+  const rotulo = (chave: string, texto: string): string => preencher(traduzir(chave, idioma), { texto });
   const linhas: string[] = [];
   if (declaracao.intencoes.length > 0) {
-    linhas.push(`O que a pessoa quer: ${declaracao.intencoes.map((i) => i.o_que).join('; ')}`);
+    linhas.push(rotulo('O que a pessoa quer: {texto}', declaracao.intencoes.map((i) => i.o_que).join('; ')));
   }
   if (declaracao.promessas.length > 0) {
     // O prazo entra colado na promessa, não numa lista à parte: quem assume
     // precisa ver "o quê" e "até quando" na mesma linha para agir.
     linhas.push(
-      `Prometido a ela: ${declaracao.promessas
-        .map((p) => (p.prazo === null ? p.o_que : `${p.o_que} (até ${p.prazo})`))
-        .join('; ')}`,
+      rotulo(
+        'Prometido a ela: {texto}',
+        declaracao.promessas
+          .map((p) =>
+            p.prazo === null ? p.o_que : preencher(traduzir('{o_que} (até {prazo})', idioma), { o_que: p.o_que, prazo: String(p.prazo) }),
+          )
+          .join('; '),
+      ),
     );
   }
   return linhas.join('\n');

@@ -240,6 +240,10 @@ export async function GET(req: NextRequest): Promise<Response> {
       rotulo: inicial.label,
       campoFim: final ? final.key : null,
       rotuloFim: final ? final.label : null,
+      // O rótulo do meio é do PRODUTO (não há campo para ele): o servidor
+      // assina a palavra no idioma de quem lê, como faz com as mensagens de
+      // erro — a tela nunca precisa traduzir o que recebe pronto.
+      rotuloMeio: t("Em andamento"),
     },
     { de, ate },
   );

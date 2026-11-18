@@ -78,7 +78,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     // e sem elas aqui, a tela de configurações do funil mostra os campos vazios
     // logo depois de salvar (issue #2999).
     .select(
-      "id, name, position, is_won, is_lost, expected_duration_hours, win_probability, avisar_na_central",
+      "id, name, position, color, is_won, is_lost, expected_duration_hours, win_probability, avisar_na_central",
     )
     .eq("organization_id", authz.org.orgId)
     .eq("pipeline_id", id)

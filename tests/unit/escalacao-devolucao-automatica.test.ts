@@ -41,6 +41,7 @@ function conversa(sobrescreve: Partial<ConversaEmHandoff> = {}): ConversaEmHando
     last_handoff_at: min(90),
     last_outbound_at: null,
     status_changed_at: min(90),
+    metadata: {},
     ...sobrescreve,
   };
 }

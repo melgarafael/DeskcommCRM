@@ -8,8 +8,13 @@
  * passagens saem das atividades `stage_changed` que o relógio de etapa já
  * grava (dependência declarada no corpo da issue).
  *
- * Escopo = a PRÓPRIA RLS, igual às rotas irmãs de métricas: leitura com o
- * client de sessão, então `crm_leads` (`fn_can_view_lead`) e
+ * Sessão OU token de servidor `dsk_…` com `mcp:read` (Spec 33, R3). Pelo token
+ * não há RLS por atendente: o cliente é o de serviço, a organização vem da
+ * LINHA do token e cada leitura abaixo filtra `organization_id` à mão; como o
+ * token vê a organização inteira, ele exige papel `manager`.
+ *
+ * Escopo na sessão = a PRÓPRIA RLS, igual às rotas irmãs de métricas: leitura
+ * com o client de sessão, então `crm_leads` (`fn_can_view_lead`) e
  * `crm_lead_activities` (policy que passa pelo mesmo `fn_can_view_lead`)
  * filtram sozinhos — atendente vê só os próprios negócios, gestor vê a
  * organização (spec 13, decisão G1-06e). A org vem do cookie validado, NUNCA
@@ -33,9 +38,10 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import {
   type AtividadeDeEtapa,
   type EtapaReferencia,
@@ -43,9 +49,9 @@ import {
   type LeadDaJanela,
   montarRelatorioDeFunil,
 } from "@/lib/metrics/funil";
+import { moedaDaOrganizacao } from "@/lib/metrics/moeda-da-organizacao";
 import { separarValoresDoPeriodo } from "@/lib/metrics/valores-do-periodo";
 import { lerPaginado } from "@/lib/supabase/pagina";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -117,10 +123,19 @@ export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
   // piso agent (vê as próprias); a RLS é quem garante o escopo de cada linha.
-  const authz = await requireRole("agent", { requestId, resource: "metrics" });
+  // O token vê a organização inteira, então exige `manager`.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "metrics",
+    role: "agent",
+    scope: "mcp:read",
+    tokenRole: "manager",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg } = authz;
+  // Está em PUBLIC_PATHS: o teto do token é a única contagem das chamadas dele.
+  const teto = await tetoDeEscritaDoToken(authz, "metrics", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const url = new URL(req.url);
   const parsed = querySchema.safeParse({
@@ -146,8 +161,8 @@ export async function GET(req: NextRequest): Promise<Response> {
   const de = from.toISOString();
   const ate = to.toISOString();
 
-  const supabase = await createClient();
-  const orgId = activeOrg.orgId;
+  const supabase = authz.supabase;
+  const orgId = authz.organizationId;
 
   // Seis leituras na mesma janela. A de leads vem em DOIS filtros (criados e
   // encerrados) e o resultado é unido por id: é a base declarada do relatório,
@@ -314,7 +329,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const valoresDoPeriodo = separarValoresDoPeriodo({
     negocios: leituraDeEncerrados.linhas,
     janela: { from: de, to: ate },
-    moedaDaOrganizacao: activeOrg.currency ?? null,
+    moedaDaOrganizacao: await moedaDaOrganizacao(orgId),
     truncado: leituraDeEncerrados.truncado,
   });
 

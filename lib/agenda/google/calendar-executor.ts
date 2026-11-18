@@ -44,7 +44,7 @@ export async function syncCalendar(
   org: string,
   calendarId: string,
   transport?: GoogleFetch,
-): Promise<"busy" | "complete" | "partial" | "failed"> {
+): Promise<"busy" | "complete" | "partial" | "deferred" | "failed"> {
   const raw = await googleRpc(db, "fn_google_calendar", {
     p_org: org,
     p_id: calendarId,
@@ -118,7 +118,8 @@ export async function syncCalendar(
           remote: event,
           token,
         });
-        if (result === "busy") return "partial";
+        // A página foi lida, mas o vínculo ocupado impede gravar o checkpoint.
+        if (result === "busy") return "deferred";
         if (result === "failed") throw new Error("Compromisso vinculado ainda não reconciliado.");
         pruneIds.add(eventId);
         continue;

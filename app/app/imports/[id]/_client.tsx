@@ -64,9 +64,9 @@ export function ImportDetailClient({ id }: { id: string }) {
               <TableHead>#</TableHead>
               <TableHead>{t("Status")}</TableHead>
               <TableHead>{t("Erro")}</TableHead>
-              <TableHead>Company</TableHead>
-              <TableHead>Person</TableHead>
-              <TableHead>Contact</TableHead>
+              <TableHead>{t("Empresa")}</TableHead>
+              <TableHead>{t("Pessoa")}</TableHead>
+              <TableHead>{t("Contato")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

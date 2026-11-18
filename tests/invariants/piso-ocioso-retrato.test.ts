@@ -46,6 +46,7 @@ const FILAS: RecursoDoCron[] = [
   "mcp_a_revogar",
   "lembrete_de_tarefa",
   "lembrete_de_agenda",
+  "roteamento",
 ];
 
 async function leitura(recurso: RecursoDoCron): Promise<boolean> {
@@ -172,6 +173,53 @@ describe("retrato do piso ocioso contra o baseline", () => {
       expect(await leitura("webhook_replay")).toBe(true);
     } finally {
       await pool.query("delete from webhook_events_log where id = any($1::uuid[])", [[aceita, captacao, velha]]);
+    }
+  });
+
+  it("evento de roteamento na fila mantém o routing-worker acordado — o recente em `processing` não", async () => {
+    // #3878: a rota fazia DUAS leituras de `event_log` por minuto, ociosas, só
+    // para descobrir que não havia `conversation.routing_requested` a drenar.
+    // O portão tem de enxergar exatamente as duas coisas que a rodada enxerga:
+    // o `pending` vencido e o `processing` acima da janela de 5 min — e NÃO o
+    // `processing` recente, que é um handler rodando (reclamá-lo seria tirar a
+    // linha de quem está com ela).
+    const inserir = async (status: string, idade: string): Promise<string> => {
+      const id = randomUUID();
+      await semFk(
+        `insert into event_log (id, organization_id, event_type, entity_kind, status, created_at, updated_at)
+         values ($1, $2, 'conversation.routing_requested', 'conversation', $3, now() - $4::interval, now() - $4::interval)`,
+        [id, randomUUID(), status, idade],
+      );
+      return id;
+    };
+    const apagar = (id: string) => pool.query("delete from event_log where id = $1", [id]);
+
+    const concluido = await inserir("done", "1 minute");
+    try {
+      expect(await leitura("roteamento")).toBe(false);
+    } finally {
+      await apagar(concluido);
+    }
+
+    const naFila = await inserir("pending", "1 minute");
+    try {
+      expect(await leitura("roteamento")).toBe(true);
+    } finally {
+      await apagar(naFila);
+    }
+
+    const processandoAgora = await inserir("processing", "1 minute");
+    try {
+      expect(await leitura("roteamento")).toBe(false);
+    } finally {
+      await apagar(processandoAgora);
+    }
+
+    const processandoPreso = await inserir("processing", "6 minutes");
+    try {
+      expect(await leitura("roteamento")).toBe(true);
+    } finally {
+      await apagar(processandoPreso);
     }
   });
 

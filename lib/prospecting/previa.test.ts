@@ -108,13 +108,23 @@ describe("previaDoAgente por fonte", () => {
 
   it("agente diferente do que escreveu: null, em qualquer fonte", () => {
     expect(previaDoAgente(comPrevia(previa()), OUTRO_AGENTE)).toBeNull();
-    expect(previaDoAgente(comPrevia(DO_AGENTE()), OUTRO_AGENTE, "agente")).toBeNull();
+    expect(previaDoAgente(comPrevia(DO_AGENTE()), OUTRO_AGENTE, undefined, "agente")).toBeNull();
   });
 
   it("mesma fonte e mesmo agente vence; fonte diferente não", () => {
-    expect(previaDoAgente(comPrevia(DO_AGENTE()), AGENTE, "agente")).toEqual(DO_AGENTE());
-    expect(previaDoAgente(comPrevia(DO_AGENTE()), AGENTE, "estrategia")).toBeNull();
-    expect(previaDoAgente(comPrevia(previa({ fonte: "estrategia" })), AGENTE, "agente")).toBeNull();
-    expect(previaDoAgente(comPrevia(previa({ fonte: "estrategia" })), AGENTE, "estrategia")).not.toBeNull();
+    expect(previaDoAgente(comPrevia(DO_AGENTE()), AGENTE, undefined, "agente")).toEqual(DO_AGENTE());
+    expect(previaDoAgente(comPrevia(DO_AGENTE()), AGENTE, undefined, "estrategia")).toBeNull();
+    expect(previaDoAgente(comPrevia(previa({ fonte: "estrategia" })), AGENTE, undefined, "agente")).toBeNull();
+    expect(previaDoAgente(comPrevia(previa({ fonte: "estrategia" })), AGENTE, undefined, "estrategia")).not.toBeNull();
+  });
+
+  it("a fonte e o carimbo da edição (`briefing_editado_em`) valem juntos: qualquer um diferente vence a prévia", () => {
+    const CARIMBO = "2026-11-15T12:00:00.000Z";
+    const OUTRO_CARIMBO = "2026-11-16T12:00:00.000Z";
+    const editada = { ...DO_AGENTE(), briefing_editado_em: CARIMBO };
+    expect(previaDoAgente(comPrevia(editada), AGENTE, CARIMBO, "agente")).toEqual(editada);
+    expect(previaDoAgente(comPrevia(editada), AGENTE, OUTRO_CARIMBO, "agente")).toBeNull();
+    expect(previaDoAgente(comPrevia(editada), AGENTE, CARIMBO, "estrategia")).toBeNull();
+    expect(previaDoAgente(comPrevia(DO_AGENTE()), AGENTE, CARIMBO, "agente")).toBeNull();
   });
 });

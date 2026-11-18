@@ -53,7 +53,7 @@ const h = vi.hoisted(() => ({
   /** `contacts` de mentira — a tabela que este teste mede. */
   contatos: [] as Array<Record<string, unknown>>,
   /** Toda RPC, com os argumentos: é como o evento emitido é lido de fora. */
-  rpc: [] as Array<{ fn: string; args: Record<string, unknown> }>,
+  rpc: [] as Array<{ fn: string; args: Record<string, unknown>; nomeNoMomento?: unknown }>,
   /** O que a rota pediu para criar no funil. */
   leads: [] as Array<Record<string, unknown>>,
   /** O que foi escrito no log — o desfecho que NÃO pode ser engolido. */
@@ -64,6 +64,13 @@ const h = vi.hoisted(() => ({
    * exercitar o `23505` da gravação sem depender de dois processos.
    */
   aoGravar: null as null | ((valores: Record<string, unknown>) => void),
+  /** O card que o `external_id` já aponta — `null` = envio sem card anterior. */
+  card: null as null | Record<string, unknown>,
+  /** `update_existing_lead_on_capture` da fonte (#2316). */
+  atualizaCard: false,
+  /** Cada linha de captação gravada — é onde o desfecho é lido. */
+  captacoes: [] as Array<Record<string, unknown>>,
+  auditar: vi.fn(async (..._args: unknown[]) => undefined),
 }));
 
 const FONTE = {
@@ -117,7 +124,12 @@ function resposta(
   filtros: Array<(l: Linha) => boolean>,
   unico: boolean,
 ) {
-  if (tabela === "webhook_sources") return { data: FONTE, error: null };
+  if (tabela === "webhook_sources") {
+    return { data: { ...FONTE, update_existing_lead_on_capture: h.atualizaCard }, error: null };
+  }
+  if (tabela === "crm_leads" && tipo === "select" && h.card) {
+    return { data: unico ? h.card : [h.card], error: null };
+  }
   if (tabela !== "contacts") return { data: unico ? null : [], error: null };
 
   if (tipo === "select") {
@@ -238,7 +250,10 @@ vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     from: (nome: string) => tabela(nome),
     rpc: async (fn: string, args: Record<string, unknown>) => {
-      h.rpc.push({ fn, args });
+      // O nome da ficha NO INSTANTE do evento: é como se prova que a regra
+      // disparada por `contact.phone_added` já encontra o nome de verdade.
+      const ficha = h.contatos.find((l) => l.id === args.p_entity_id);
+      h.rpc.push({ fn, args, nomeNoMomento: ficha?.name });
       return { data: null, error: null };
     },
   }),
@@ -258,7 +273,7 @@ vi.mock("@/lib/logger", () => ({
 vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({
   checkRateLimit: async () => ({ allowed: true }),
 }));
-vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+vi.mock("@/lib/audit", () => ({ audit: h.auditar }));
 vi.mock("@/lib/leads/activity-emitter", () => ({
   emitLeadActivity: vi.fn(async () => ({ ok: true })),
 }));
@@ -277,7 +292,9 @@ vi.mock("@/lib/channels/contato-por-telefone", () => ({
 
 vi.mock("@/lib/webhooks/captacao", async (original) => ({
   ...(await original<Record<string, unknown>>()),
-  registrarCaptacao: vi.fn(async () => undefined),
+  registrarCaptacao: vi.fn(async (_admin: unknown, linha: Record<string, unknown>) => {
+    h.captacoes.push(linha);
+  }),
 }));
 
 // O funil não é o assunto deste arquivo: o handler é dublê e guarda o que a
@@ -315,6 +332,10 @@ beforeEach(() => {
   h.leads.length = 0;
   h.logados.length = 0;
   h.aoGravar = null;
+  h.card = null;
+  h.atualizaCard = false;
+  h.captacoes.length = 0;
+  h.auditar.mockClear();
 });
 
 describe("envio só com nome e e-mail", () => {
@@ -494,5 +515,182 @@ describe("contato fora da operação não é completado", () => {
     await enviar({ nome: "Maria Teste", email: EMAIL, telefone: TELEFONE });
 
     expect(titular.email, "a captação preencheu a ficha de um titular anonimizado").toBeNull();
+  });
+});
+
+// O REENVIO COMPLETA O CONTATO DO CARD ───────────────────────────────────────
+//
+// A integração manda primeiro só o e-mail (a pessoa clicou no link) e depois o
+// cadastro com nome e telefone, sob o MESMO `external_id`. O segundo envio cai
+// no fast-path do reenvio (`fecharReenvio`), que atualizava o card e deixava o
+// contato com o e-mail no lugar do nome e SEM telefone — o follow-up pelo
+// WhatsApp nunca alcançava essa pessoa.
+//
+// Sabotagem medida (17/11, na vps-teste): com a rota de `origin/main` no lugar
+// da deste PR, os 11 casos deste bloco ficam VERMELHOS — inclusive os que
+// descrevem o que já ficava intocado, que não servem de controle contra a rota
+// antiga. Quem vigia o conserto são os casos ⭐ e o da colisão de telefone.
+describe("reenvio do mesmo external_id completa o contato do card", () => {
+  const EXTERNAL_ID = "gf-contact-3f9a1c0b7d2e4a51";
+
+  /** O estado depois do primeiro envio: contato só com e-mail, card desta fonte. */
+  function primeiroEnvioSoComEmail(dados: Linha = {}): Linha {
+    const ficha = contato({ name: EMAIL, email: EMAIL, source: "webhook", ...dados });
+    h.card = {
+      id: "lead-1",
+      contact_id: ficha.id,
+      webhook_source_id: FONTE.id,
+      title: EMAIL,
+      custom_fields: {},
+      pipeline_id: FUNIL,
+      stage_id: ETAPA,
+    };
+    return ficha;
+  }
+
+  const desfecho = () => h.captacoes.at(-1)?.outcome;
+
+  it("⭐ grava o telefone e o nome, e anuncia `contact.phone_added` uma vez", async () => {
+    h.atualizaCard = true;
+    const ficha = primeiroEnvioSoComEmail();
+
+    const r = await enviar({
+      external_id: EXTERNAL_ID,
+      name: "Maria Teste",
+      email: EMAIL,
+      whatsapp: "+55 11 98888-7777",
+    });
+
+    expect(r.status).toBe(200);
+    expect(h.contatos, "o reenvio criou outro contato").toHaveLength(1);
+    expect(ficha.phone_number, "o telefone do reenvio foi descartado").toBe(TELEFONE);
+    expect(ficha.name, "o nome provisório (o e-mail) ficou").toBe("Maria Teste");
+    expect(h.leads, "o reenvio criou outro card").toHaveLength(0);
+    const eventos = eventosDeTelefone();
+    expect(eventos).toHaveLength(1);
+    expect(eventos[0]!.args).toMatchObject({ p_entity_id: ficha.id, p_organization_id: ORG });
+    expect(eventos[0]!.nomeNoMomento, "o evento saiu antes do nome de verdade").toBe("Maria Teste");
+    expect(desfecho()).toBe("atualizado");
+    const auditoria = h.auditar.mock.calls
+      .map((c) => c[0] as Record<string, unknown>)
+      .find((e) => e.action === "contact.updated");
+    expect(auditoria, "mutação de contato sem trilha de auditoria").toMatchObject({
+      resourceType: "contact",
+      resourceId: ficha.id,
+      metadata: { filled: ["name", "phone_number"] },
+    });
+  });
+
+  it("nome provisório igual ao TELEFONE também é trocado", async () => {
+    h.atualizaCard = true;
+    const ficha = primeiroEnvioSoComEmail({ name: TELEFONE, phone_number: TELEFONE });
+
+    await enviar({ external_id: EXTERNAL_ID, name: "Maria Teste", email: EMAIL, whatsapp: TELEFONE });
+
+    expect(ficha.name).toBe("Maria Teste");
+    expect(eventosDeTelefone(), "o contato já tinha número").toHaveLength(0);
+  });
+
+  it("nome vazio (só espaços) é provisório e é trocado", async () => {
+    h.atualizaCard = true;
+    const ficha = primeiroEnvioSoComEmail({ name: "   " });
+
+    await enviar({ external_id: EXTERNAL_ID, name: "Maria Teste", email: EMAIL, whatsapp: TELEFONE });
+
+    expect(ficha.name).toBe("Maria Teste");
+  });
+
+  it("nome editado na tela entre a leitura e a gravação vence (compare-and-set)", async () => {
+    h.atualizaCard = true;
+    const ficha = primeiroEnvioSoComEmail();
+    h.aoGravar = () => {
+      ficha.name = "Maria (vendedor)";
+    };
+
+    await enviar({ external_id: EXTERNAL_ID, name: "Maria Teste", email: EMAIL, whatsapp: TELEFONE });
+
+    expect(ficha.name, "a edição da tela foi sobrescrita").toBe("Maria (vendedor)");
+    // O telefone é outra coluna: ele ainda entra.
+    expect(ficha.phone_number).toBe(TELEFONE);
+  });
+
+  it("⭐ só o contato mudou: o desfecho é `atualizado`, não `duplicado`", async () => {
+    h.atualizaCard = true;
+    primeiroEnvioSoComEmail();
+    // O título do card já é o nome: só o contato tem o que receber.
+    h.card!.title = "Maria Teste";
+
+    await enviar({ external_id: EXTERNAL_ID, name: "Maria Teste", email: EMAIL, whatsapp: TELEFONE });
+
+    expect(desfecho()).toBe("atualizado");
+  });
+
+  it("nome escrito na tela não é trocado; telefone existente não é sobrescrito", async () => {
+    h.atualizaCard = true;
+    const ficha = primeiroEnvioSoComEmail({ name: "Maria (vendedor)", phone_number: OUTRO_TELEFONE });
+
+    await enviar({ external_id: EXTERNAL_ID, name: "Maria Teste", email: EMAIL, whatsapp: TELEFONE });
+
+    expect(ficha.name).toBe("Maria (vendedor)");
+    expect(ficha.phone_number).toBe(OUTRO_TELEFONE);
+    expect(eventosDeTelefone()).toHaveLength(0);
+  });
+
+  it("telefone que já é de outro contato: ninguém é sobrescrito nem religado", async () => {
+    h.atualizaCard = true;
+    const ficha = primeiroEnvioSoComEmail();
+    const doWhats = contato({ name: "Outra pessoa", phone_number: TELEFONE });
+
+    const r = await enviar({ external_id: EXTERNAL_ID, name: "Maria Teste", email: EMAIL, whatsapp: TELEFONE });
+
+    expect(r.status).toBe(200);
+    expect(ficha.phone_number).toBeNull();
+    expect(doWhats.email).toBeNull();
+    expect(h.card!.contact_id, "o card foi religado a outro contato").toBe(ficha.id);
+    expect(eventosDeTelefone()).toHaveLength(0);
+    expect(erroDeGravacaoLogado().length, "o 23505 saiu em silêncio").toBeGreaterThan(0);
+  });
+
+  it("opção da fonte DESLIGADA: o contato fica como estava (`duplicado`)", async () => {
+    const ficha = primeiroEnvioSoComEmail();
+
+    await enviar({ external_id: EXTERNAL_ID, name: "Maria Teste", email: EMAIL, whatsapp: TELEFONE });
+
+    expect(ficha.phone_number).toBeNull();
+    expect(ficha.name).toBe(EMAIL);
+    expect(desfecho()).toBe("duplicado");
+  });
+
+  it("card de OUTRA fonte: o contato fica como estava", async () => {
+    h.atualizaCard = true;
+    const ficha = primeiroEnvioSoComEmail();
+    h.card!.webhook_source_id = "outra-fonte";
+
+    await enviar({ external_id: EXTERNAL_ID, name: "Maria Teste", email: EMAIL, whatsapp: TELEFONE });
+
+    expect(ficha.phone_number).toBeNull();
+    expect(ficha.name).toBe(EMAIL);
+  });
+
+  it("contato PESSOAL do card não é completado", async () => {
+    h.atualizaCard = true;
+    const ficha = primeiroEnvioSoComEmail({ is_personal: true });
+
+    await enviar({ external_id: EXTERNAL_ID, name: "Maria Teste", email: EMAIL, whatsapp: TELEFONE });
+
+    expect(ficha.phone_number).toBeNull();
+    expect(ficha.name).toBe(EMAIL);
+    expect(eventosDeTelefone()).toHaveLength(0);
+  });
+
+  it("contato ANONIMIZADO do card não é completado", async () => {
+    h.atualizaCard = true;
+    const ficha = primeiroEnvioSoComEmail({ is_anonymized: true });
+
+    await enviar({ external_id: EXTERNAL_ID, name: "Maria Teste", email: EMAIL, whatsapp: TELEFONE });
+
+    expect(ficha.phone_number).toBeNull();
+    expect(ficha.name).toBe(EMAIL);
+    expect(desfecho()).toBe("duplicado");
   });
 });

@@ -27,7 +27,8 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 
 import { MessageBubble } from "@/components/inbox/MessageBubble";
 import { NoteCard } from "@/components/inbox/NoteCard";
@@ -209,5 +210,77 @@ describe("nota interna com anexo apagado pela política de retenção", () => {
       /update public\.conversation_notes[\s\S]{0,600}?returning 1/.exec(corpo!)?.[0] ?? "";
     expect(trecho).toContain("media_expired_at = now()");
     expect(trecho).toContain("media_retention_days = v.retencao_dias");
+  });
+});
+
+/**
+ * O BOTÃO DE EXCLUIR A NOTA PRECISA SER ALCANÇÁVEL POR TECLADO (issue #4562).
+ *
+ * ## O defeito, medido antes de codar
+ *
+ * `components/inbox/NoteCard.tsx` desenhava o botão com
+ * `opacity-0 ... group-hover:opacity-100`: só o hover revelava. Quem navega por
+ * Tab chega ao botão (é um `button` nativo, sem `tabindex`), mas ele continua
+ * invisível — e em tela de toque, onde hover não existe, ele nunca aparece. O
+ * leitor de tela anunciava o nome; a vista não mostrava nada.
+ *
+ * ## O padrão que o repo já usa
+ *
+ * `components/inbox/MessageBubble.tsx` (botão de opções da mensagem) atende aos
+ * três públicos com uma classe só: visível por padrão, escondido apenas onde
+ * `hover` existe (`[@media(hover:hover)]`), revelado pelo hover do grupo **e**
+ * pelo foco do teclado (`focus-visible:opacity-100`). O botão da nota passa a
+ * usar o mesmo contrato — não um segundo desenho.
+ *
+ * ## O que este bloco mede
+ *
+ * Tab de verdade (`userEvent.tab()`, não `.focus()`), o nome acessível pelo
+ * role e o contrato de visibilidade nas classes — que é o limite do jsdom, que
+ * não aplica o CSS do Tailwind. Quem prova o pixel é o navegador; aqui se prova
+ * que o desenho não volta a esconder sem o foco.
+ */
+describe("botão Excluir nota alcançável por teclado (#4562)", () => {
+  function montarComExcluir() {
+    const onDelete = vi.fn();
+    render(<NoteCard note={nota()} onDelete={onDelete} />);
+    return onDelete;
+  }
+
+  it("o Tab pousa no botão, e ele tem nome acessível", async () => {
+    const user = userEvent.setup();
+    montarComExcluir();
+
+    // Tab, não `.focus()`: é o caminho de quem não tem mouse.
+    await user.tab();
+    const botao = screen.getByRole("button", { name: "Excluir nota" });
+    expect(botao).toHaveFocus();
+    expect(botao).not.toHaveAttribute("aria-hidden");
+    expect(botao).not.toHaveAttribute("tabindex", "-1");
+  });
+
+  it("com o foco ele fica visível: o teclado revela o que o hover revelava", async () => {
+    const user = userEvent.setup();
+    montarComExcluir();
+    await user.tab();
+    const botao = screen.getByRole("button", { name: "Excluir nota" });
+
+    const classes = botao.className.split(/\s+/);
+    // Sem `opacity-0` cru: em tela de toque, onde hover não existe, o botão
+    // precisa estar à vista — antes ele nunca aparecia no celular.
+    expect(classes, "voltou a esconder o botão no toque").not.toContain("opacity-0");
+    // Esconde só onde EXISTE hover, e o hover do grupo revela: para quem usa
+    // mouse a aparição continua sendo a mesma de hoje.
+    expect(classes).toContain("[@media(hover:hover)]:opacity-0");
+    expect(classes).toContain("[@media(hover:hover)]:group-hover:opacity-100");
+    // Teclado: o foco revela. Sem isto o Tab pousa num botão invisível.
+    expect(classes, "o foco do teclado não revela o botão").toContain("focus-visible:opacity-100");
+  });
+
+  it("do teclado o botão também age: Enter exclui a nota", async () => {
+    const user = userEvent.setup();
+    const onDelete = montarComExcluir();
+    await user.tab();
+    await user.keyboard("{Enter}");
+    expect(onDelete).toHaveBeenCalledTimes(1);
   });
 });

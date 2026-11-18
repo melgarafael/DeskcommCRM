@@ -83,7 +83,7 @@ const FRONTEIRAS: Fronteira[] = [
       "https://supabase.com/docs/guides/storage/uploads/file-limits — seção «File name restrictions»",
     lacuna:
       "a mesma página documenta o alfabeto do nome de arquivo e não documenta teto de comprimento da chave. Forma entra no teste; número, não.",
-    medir: () => [ORG, VERSAO, "minha skill", "SKILL.md", "assets", "referencia.md"],
+    medir: () => [ORG, VERSAO, "minha skill", "SKILL.md", "assets", "referencia.md", "externa-0123456789abcdef.jpg"],
   },
   {
     id: "api.idempotency-key",
@@ -168,6 +168,11 @@ const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validado
   // digitado por ninguém entra na chave.
   { arquivo: "lib/lgpd/emitir-atestado.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "workers/media-persist-worker.ts", fronteira: "storage.chave-de-objeto" },
+  // Spec 25 R4: a imagem que o agente manda por `imagem_url` é baixada pelo CRM e gravada em
+  // `${tenant}/${conversa}/externa-<16 hex do conteúdo>.jpg|png|webp`. Os dois ids vêm do turno
+  // e são conferidos como segmento simples (sem `/`, `\`, `.` nem `..`) antes de montar a chave;
+  // o nome sai do hash dos bytes e a extensão de uma lista de três.
+  { arquivo: "lib/agent-engine/agent/baixar-imagem-segura.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "lib/ai/skills/install.ts", fronteira: "storage.chave-de-objeto" },
   // Herança de arquivos do pacote no save textual (#2047): a chave é montada
   // com os MESMOS pedaços do install — org (uuid do JWT), name (vem da
@@ -203,6 +208,7 @@ const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validado
   { arquivo: "app/api/v1/leads/[id]/attachments/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/ai/knowledge/sources/upload/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/ai/knowledge/sources/route.ts", fronteira: "storage.chave-de-objeto" },
+  { arquivo: "app/api/v1/ai/knowledge/sources/[id]/texto/route.ts", fronteira: "storage.chave-de-objeto" },
   // O PDF da proposta comercial (#1832): `<org>/<proposta>.pdf`, dois uuids.
   { arquivo: "lib/propostas/storage.ts", fronteira: "storage.chave-de-objeto" },
   // A foto do produto por URL na planilha (#3587, fatia 1): a chave é
@@ -221,10 +227,14 @@ const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validado
   { arquivo: "lib/api/client.ts", fronteira: "api.idempotency-key", papel: "gerador" },
   { arquivo: "lib/api/idempotency.ts", fronteira: "api.idempotency-key", papel: "validador" },
   { arquivo: "lib/extensions/http.ts", fronteira: "api.idempotency-key", papel: "validador" },
+  { arquivo: "app/api/v1/agencia/clientes/route.ts", fronteira: "api.idempotency-key", papel: "validador" },
   { arquivo: "app/api/v1/admin/tenants/route.ts", fronteira: "api.idempotency-key", papel: "validador" },
   { arquivo: "app/api/v1/channel-sessions/route.ts", fronteira: "api.idempotency-key", papel: "validador" },
   { arquivo: "app/api/v1/lgpd/requests/[id]/approve/route.ts", fronteira: "api.idempotency-key", papel: "validador" },
   { arquivo: "app/api/v1/onboarding/whatsapp/session/route.ts", fronteira: "api.idempotency-key", papel: "validador" },
+  // Módulo `amigo` (#4227): a tela gera a chave e a rota de operações a valida.
+  { arquivo: "app/app/integrations/amigo/_api.ts", fronteira: "api.idempotency-key", papel: "gerador" },
+  { arquivo: "app/api/v1/integrations/amigo/execute/route.ts", fronteira: "api.idempotency-key", papel: "validador" },
 ];
 
 describe("todo identificador que cruza fronteira cabe no que o terceiro aceita", () => {

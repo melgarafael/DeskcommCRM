@@ -495,6 +495,13 @@ const PARES: Array<{
     simbolo: "ESTADOS_DA_ASSINATURA",
   },
   {
+    // Migration 9312 (#3509): o estado do recebimento do cliente final.
+    tabela: "pagamento_recebimentos",
+    coluna: "status",
+    arquivo: "lib/pagamentos/vocabulario.ts",
+    simbolo: "SITUACOES_DO_RECEBIMENTO",
+  },
+  {
     tabela: "cobranca_assinaturas",
     coluna: "provedor",
     arquivo: "lib/cobranca/vocabulario.ts",

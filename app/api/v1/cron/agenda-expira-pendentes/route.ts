@@ -48,12 +48,14 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
+import { patchDeExpiracao } from "@/lib/agenda/patch-de-expiracao";
 import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 import { agendaSettingsSchema } from "@/lib/schemas/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { aposVagaLiberada, varrerOfertasVencidas } from "@/lib/agenda/encaixe-supabase";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { AUTORIDADE_LOCAL } from "@/lib/agenda/autoridade";
 
 export const dynamic = "force-dynamic";
 
@@ -81,6 +83,8 @@ async function handle(req: NextRequest): Promise<Response> {
     .from("calendar_appointments")
     .select("id, organization_id, created_at, starts_at")
     .eq("status", "pending")
+    // Pendente de um sistema externo (9392) expira lá, não aqui.
+    .eq("authority", AUTORIDADE_LOCAL)
     .order("created_at", { ascending: true })
     .limit(LIMITE_DA_VARREDURA);
 
@@ -140,12 +144,10 @@ async function handle(req: NextRequest): Promise<Response> {
   // desta rota.
   const { data: efetivados, error: erroUpdate } = await admin
     .from("calendar_appointments")
-    .update({
-      status: "cancelled",
-      cancellation_reason: "Pedido expirado: ninguém confirmou dentro do prazo.",
-    })
+    .update(patchDeExpiracao(agora))
     .in("id", expirados)
     .eq("status", "pending")
+    .eq("authority", AUTORIDADE_LOCAL)
     .select("id");
 
   if (erroUpdate) {

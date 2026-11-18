@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -21,6 +20,7 @@ import {
   NOME_DE_AGENTE_EM_USO,
 } from "@/lib/ai/agents/nome-repetido";
 import type { AgentRow } from "@/hooks/ai/useAgent";
+import { useRecarregarListaDeAgentes } from "@/hooks/ai/useAgents";
 
 interface Props {
   agent: AgentRow;
@@ -30,7 +30,7 @@ interface Props {
 
 export function RenameAgentDialog({ agent, open, onOpenChange }: Props) {
   const t = useT();
-  const router = useRouter();
+  const recarregarLista = useRecarregarListaDeAgentes();
   const [name, setName] = useState(agent.name);
   const [isPending, startTransition] = useTransition();
   // Nome que a organização já usa (#3952): a frase fica no campo, e o diálogo
@@ -51,7 +51,7 @@ export function RenameAgentDialog({ agent, open, onOpenChange }: Props) {
       if (res.ok) {
         toast.success(t("Renomeado."));
         onOpenChange(false);
-        router.refresh();
+        await recarregarLista();
       } else if (res.error === CODIGO_NOME_DE_AGENTE_EM_USO) {
         setErroNoNome(t(NOME_DE_AGENTE_EM_USO));
       } else {

@@ -1,6 +1,12 @@
 /**
  * O FUSO DA ORGANIZAÇÃO — de onde o turno tira "que horas são aqui".
  *
+ * O fuso e o idioma são lidos JUNTOS numa query só, em `fatos-da-organizacao.ts`
+ * — módulo próprio, porque testes de terceiros substituem ESTE arquivo por um
+ * duble inteiro. Aqui ficam só `fusoDaOrganizacao` (a porta de quem quer apenas
+ * o fuso) e o reexport de compatibilidade de quem já importava
+ * `fatosDaOrganizacao` deste caminho.
+ *
  * ⚠️ A FONTE É `organizations.timezone`, E NÃO `channel_knobs.timezone`.
  *
  * As duas colunas guardam um IANA e hoje guardam o MESMO texto
@@ -28,13 +34,17 @@
  * (`tenantSchema` e o schema do onboarding são `z.string().max(64)` sem
  * `refine`, e a coluna não tem CHECK). Nos dois casos o turno segue com o
  * padrão do produto: derrubar o atendimento de um cliente por causa de um
- * acento no campo de configuração seria pior que uma hora de diferença.
+ * acento no campo de configuração seria pior que uma hora de diferença. A
+ * leitura e a degradação moram em `fatos-da-organizacao.ts`, onde o motivo
+ * está documentado por inteiro.
  */
 
-import { FUSO_PADRAO, fusoValido } from '@/lib/tempo/fusos';
+import { fatosDaOrganizacao } from './fatos-da-organizacao';
 
 import type { Queryable } from '../queue/queue';
 import type { Logger } from '../obs/logger';
+
+export { fatosDaOrganizacao, type FatosDaOrganizacao } from './fatos-da-organizacao';
 
 /**
  * O fuso IANA da organização, sempre utilizável.
@@ -49,29 +59,5 @@ export async function fusoDaOrganizacao(
   organizationId: string,
   log?: Logger,
 ): Promise<string> {
-  let bruto: string | null = null;
-  try {
-    const { rows } = await db.query<{ timezone: string | null }>(
-      'select timezone from organizations where id = $1',
-      [organizationId],
-    );
-    bruto = rows[0]?.timezone ?? null;
-  } catch (err) {
-    log?.warn('não consegui ler o fuso da organização — o turno segue no padrão', {
-      fuso_padrao: FUSO_PADRAO,
-      error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
-    });
-    return FUSO_PADRAO;
-  }
-
-  const tz = bruto?.trim() ?? '';
-  if (tz !== '' && fusoValido(tz)) return tz;
-
-  log?.warn('fuso da organização inutilizável — o turno segue no padrão', {
-    // O valor recusado vai ao log porque é ele que diz o que corrigir na tela.
-    // Não é PII: é um código IANA de configuração, não dado de pessoa.
-    fuso_recusado: tz,
-    fuso_padrao: FUSO_PADRAO,
-  });
-  return FUSO_PADRAO;
+  return (await fatosDaOrganizacao(db, organizationId, log)).fuso;
 }

@@ -154,6 +154,31 @@ beforeAll(() => {
  * arquivo tem de EXISTIR: exceção que aponta para teste que sumiu não prova nada.
  */
 const PROVA_DE_MODULO: Record<string, { readonly arquivo: string; readonly razao: string }> = {
+  amigo_connections: {
+    arquivo: "tests/invariants/amigo-modulo.test.ts",
+    razao:
+      "Duas organizações semeadas: a sessão da gestão de A lê exatamente a conexão de A (contagem 1), o atendente lê zero e a sessão não escreve.",
+  },
+  amigo_credentials: {
+    arquivo: "tests/invariants/amigo-modulo.test.ts",
+    razao:
+      "Sem grant nenhum para a sessão: authenticated e anon recebem permission denied ao ler o ciphertext, de qualquer organização.",
+  },
+  amigo_patient_links: {
+    arquivo: "tests/invariants/amigo-modulo.test.ts",
+    razao:
+      "Vínculo semeado em A e em B: a gestão de A não lê o de B, e a FK composta recusa vincular contato ou conexão de outra organização.",
+  },
+  amigo_appointment_links: {
+    arquivo: "tests/invariants/amigo-modulo.test.ts",
+    razao:
+      "Espelho semeado em A e em B: a gestão de A lê só o de A (contagem 1), o atendente lê zero; a FK composta recusa compromisso de outra organização.",
+  },
+  amigo_operations: {
+    arquivo: "tests/invariants/amigo-modulo.test.ts",
+    razao:
+      "Recibo semeado em A e em B: a gestão de A lê exatamente o de A (contagem 1) e zero quando filtra pela organização B.",
+  },
   email_cadences: {
     arquivo: "tests/invariants/cadencias-consentimento-isolamento.test.ts",
     razao:
@@ -250,6 +275,14 @@ const PROVA_DE_MODULO: Record<string, { readonly arquivo: string; readonly razao
       "Extrato de pontos semeado por organização (`insert into public.loyalty_ledger`) na " +
       "lista org-scoped: vizinho vê zero movimentações. A leitura é medida aqui; a decisão de " +
       "NÃO redigir (razão `manter` do #1504) mora no redact-unificado, e é outra régua.",
+  },
+  ouvidoria_manifestacoes: {
+    arquivo: "tests/invariants/ouvidoria-registro-privado.test.ts",
+    razao:
+      "JWT real (`set role authenticated` + claims): admin lê a manifestação da própria " +
+      "organização e zero do vizinho nos dois sentidos; agent e viewer da MESMA organização " +
+      "leem zero; authenticated e anon sem insert/update/delete (escrita só pelo service_role); " +
+      "protocolo único POR organização e forma fechada cobrada por CHECK.",
   },
 };
 

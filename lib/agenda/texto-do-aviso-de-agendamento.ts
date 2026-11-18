@@ -227,3 +227,53 @@ export function montarTesteDoAvisoDeAgendamento(entrada: { marca: string; idioma
     ),
   ].join("\n");
 }
+
+export interface LembreteAoDono {
+  marca: string;
+  idioma: Idioma;
+  /** O nome inteiro do contato — o corte para o primeiro nome é feito aqui. */
+  cliente: string | null;
+  servico: string | null;
+  inicio: Date;
+  fuso: string;
+  /** O degrau que motivou o lembrete, em minutos antes do início. */
+  degrauMin: number;
+  /** O link da reunião, só quando pronto. */
+  link: string | null;
+  /** O compromisso é Google Meet e o link ainda não ficou pronto. */
+  linkPendente: boolean;
+}
+
+/** "em 1 hora", "em 1 dia", "em 30 minutos" — a antecedência do degrau, na voz do dono. */
+function antecedencia(degrauMin: number, t: (texto: string) => string): string {
+  if (degrauMin % 1440 === 0) {
+    const dias = degrauMin / 1440;
+    return dias === 1 ? t("em 1 dia") : t("em {n} dias").replace("{n}", String(dias));
+  }
+  if (degrauMin % 60 === 0) {
+    const horas = degrauMin / 60;
+    return horas === 1 ? t("em 1 hora") : t("em {n} horas").replace("{n}", String(horas));
+  }
+  return t("em {n} minutos").replace("{n}", String(degrauMin));
+}
+
+/**
+ * O LEMBRETE AO DONO — mesmo formato do aviso de agendamento, mais o link.
+ *
+ * Ao contrário do aviso de "marcado", este LEVA o link da reunião: é o que o
+ * dono precisa na mão 1 hora antes. O link do Meet é endereço do Google, não
+ * da instalação — uma instalação sem domínio continua conseguindo avisar.
+ * Função total: nunca lança, nunca devolve vazio.
+ */
+export function montarLembreteAoDono(l: LembreteAoDono): string {
+  const t = (texto: string): string => traduzir(texto, l.idioma);
+  const linhas = [`⏰ ${l.marca}: ${t("lembrete de compromisso")} ${antecedencia(l.degrauMin, t)}`, ""];
+  const cliente = primeiroNome(l.cliente);
+  if (cliente) linhas.push(`${t("Cliente")}: ${cliente}`);
+  const servico = curto(l.servico);
+  if (servico) linhas.push(`${t("Serviço")}: ${servico}`);
+  linhas.push(`${t("Quando")}: ${diaEHora(l.inicio, l.fuso, l.idioma)}`);
+  if (l.link) linhas.push(`${t("Link da reunião:")} ${l.link}`);
+  else if (l.linkPendente) linhas.push(t("O link do Google Meet ainda está sendo criado; ele aparece no evento da sua agenda Google."));
+  return linhas.join("\n");
+}

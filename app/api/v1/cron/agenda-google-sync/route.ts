@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { refreshCatalog, syncCalendar } from "@/lib/agenda/google/calendar-executor";
 import { apenasDeMembrosAtivos } from "@/lib/agenda/google/membros";
 import { janelaDaRodada, LOTE_DE_CONEXOES } from "@/lib/agenda/google/rodizio-de-conexoes";
-import { ok } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
@@ -45,10 +45,10 @@ void PASSOS_DEPOIS_DO_PORTAO;
 
 async function executar(req: NextRequest) {
   if (!autorizaCron(req))
-    return NextResponse.json(
+    return comIdDaRequisicao(NextResponse.json(
       { error: { code: "unauthenticated", message: "cron secret inválido" } },
       { status: 401 },
-    );
+    ), req);
   // O PISO OCIOSO (#3731): instalação sem conexão Google saudável não tem
   // calendário a sincronizar, e a rodada de todo minuto ia ao banco (contagem +
   // leitura das conexões) só para descobrir isso. A saída vem antes das duas,
@@ -90,10 +90,10 @@ async function executar(req: NextRequest) {
     ? await conexoesElegiveis().range(janela.inicio, janela.fim)
     : await conexoesElegiveis().limit(LOTE_DE_CONEXOES);
   if (error)
-    return NextResponse.json(
+    return comIdDaRequisicao(NextResponse.json(
       { error: { code: "internal_error", message: "Não foi possível ler as conexões Google." } },
       { status: 500 },
-    );
+    ), req);
   const connections = await apenasDeMembrosAtivos(db, raw ?? []);
   const effects = new Map<string, number>();
   let remainingCalendars = 25;
@@ -173,6 +173,7 @@ async function executar(req: NextRequest) {
         const result = await syncCalendar(db, org, calendar.id);
         if (result !== "complete") complete = false;
         else completedCalendars += 1;
+        // A página adiada por vínculo ocupado também consumiu uma leitura do Google.
         if (result !== "busy") effects.set(org, (effects.get(org) ?? 0) + 1);
         // O marco da PRÓPRIA leitura desta agenda. `last_sync_at` é por agenda,
         // não por conta: quem só bloqueia horário foi lida na mesma rodada que a
@@ -180,8 +181,8 @@ async function executar(req: NextRequest) {
         // contrário. Só quem leu de verdade carimba: `busy` não leu nada (outra
         // rodada segura a aquisição ou a agenda está indisponível) e `failed`
         // não terminou — nesse caso é a `sync_error` da própria linha que conta
-        // o que houve, e um carimbo aqui mentiria. `partial` avançou um
-        // checkpoint do ciclo (página gravada no cursor), então é leitura real.
+        // o que houve. `deferred` leu a página e deixou o cursor parado para
+        // tentar de novo. `partial` gravou a página e avançou o checkpoint.
         if (result === "complete" || result === "partial") {
           const { error: stampError } = await db
             .from("calendar_connection_calendars")
@@ -231,7 +232,7 @@ async function executar(req: NextRequest) {
         metadata: { direcao: "volta", calendarios: quantidade },
       });
   }
-  return NextResponse.json({ data: { conexoes: connections.length, organizacoes: effects.size } });
+  return comIdDaRequisicao(NextResponse.json({ data: { conexoes: connections.length, organizacoes: effects.size } }), req);
 }
 export const GET = executar;
 export const POST = executar;

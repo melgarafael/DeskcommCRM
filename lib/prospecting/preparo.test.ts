@@ -269,6 +269,13 @@ describe("B) quem recebe prévia", () => {
     expect(sql).toContain("order by created_at desc");
   });
 
+  it("campanha ARQUIVADA (#4359) fica fora do preparo automático: nada invisível gasta auditoria nem prévia", async () => {
+    const { pool, sqls } = montar({ candidatos: { [C1]: [] } });
+    await rodar(pool);
+    const sql = sqls.find((s) => s.sql.includes("from prospecting_campaigns") && !s.sql.includes("join ai_agents"))!.sql;
+    expect(sql).toContain("arquivada_em");
+  });
+
   it("a seleção de candidatos filtra no SQL o que o TS também recusa (não trava a fila)", async () => {
     const { pool, sqls } = montar({ candidatos: { [C1]: [] } });
     await rodar(pool);

@@ -364,6 +364,17 @@ beforeAll(() => {
             values (v_org, 'RLS-' || v_org::text, 'Produto de invariante', 100);
         end if;
 
+        -- 9222 (#3587, fatia 2): a fonte do catálogo sincronizado. Guarda a URL
+        -- que o SERVIDOR busca e o mapeamento de campos — vazar a linha entrega
+        -- ao vizinho para onde a instalação faz requisição, que é metade do
+        -- caminho para o ERP dele. UMA linha por organização (índice único em
+        -- organization_id): o if not exists também é a idempotência das duas
+        -- passadas do seed.
+        if not exists (select 1 from public.catalog_feed_sources where organization_id = v_org) then
+          insert into public.catalog_feed_sources (organization_id, url)
+            values (v_org, 'https://rls-invariant.exemplo.test/feed.json');
+        end if;
+
         -- crm_tasks (migration 0210): o que o time combinou fazer, com prazo.
         -- Entra COM o vínculo de lead porque a tarefa presa a um negócio é o
         -- caso que cruza duas tabelas tenant-aware — se a policy vazasse, o
@@ -665,6 +676,50 @@ beforeAll(() => {
             (organization_id, preview_run_id, conversation_id, contact_id, is_dry_run, status, messages_sent)
           values (v_org, 'rls-invariant-' || v_org::text, v_conv, v_contact, true, 'completed', 0);
         end if;
+
+        -- migration 9312 (#3509, degrau 1) -- o recebimento do cliente final
+        -- registrado na conversa. A semente usa v_conv (a policy de leitura confere
+        -- o par conversa/organizacao) e o estado 'pendente', unico que nao exige
+        -- pago_em nem external_id.
+        if not exists (select 1 from public.pagamento_recebimentos where organization_id = v_org) then
+          insert into public.pagamento_recebimentos
+            (organization_id, conversation_id, provedor, aviso_token_hash, valor_cents, status)
+          values (v_org, v_conv, 'infinitepay',
+                  encode(sha256(convert_to('rls-invariant-' || v_org::text, 'UTF8')), 'hex'), 15000, 'pendente');
+        end if;
+
+        -- 9419 (#3764, fatia 1) — a identidade de rede social do contato.
+        -- Vazar a linha entrega ao vizinho o perfil de uma pessoa que não é
+        -- cliente dele. O identificador é distinto por organização porque o
+        -- unique é (organization_id, canal, identificador).
+        if not exists (select 1 from public.contact_identities where organization_id = v_org) then
+          insert into public.contact_identities (organization_id, contact_id, canal, identificador)
+          values (v_org, v_contact, 'instagram', 'rls_invariant_' || right(v_org::text, 1));
+        end if;
+
+        -- migration 9386 (#4612) -- a tabela de valores de negociacao e um
+        -- procedimento dela, com partida e limite. Leitura org-scoped sem gate de
+        -- papel (quem negocia precisa do preco); a escrita nao e concedida a
+        -- authenticated (medido em tabela-de-valores-negociacao.test.ts).
+        if not exists (select 1 from public.tabelas_de_valores where organization_id = v_org) then
+          insert into public.tabelas_de_valores (organization_id, nome)
+          values (v_org, 'RLS invariant');
+        end if;
+        if not exists (select 1 from public.tabela_de_valores_itens where organization_id = v_org) then
+          insert into public.tabela_de_valores_itens
+            (organization_id, tabela_id, codigo, descricao, valor_brl_partida_cents, valor_brl_limite_cents)
+          select v_org, t.id, '1010', 'RLS invariant', 10000, 15000
+            from public.tabelas_de_valores t
+           where t.organization_id = v_org
+           limit 1;
+        end if;
+
+        -- migration 9336 (#3118) -- a mensagem agendada da conversa semeada.
+        if not exists (select 1 from public.mensagens_agendadas where organization_id = v_org) then
+          insert into public.mensagens_agendadas
+            (organization_id, conversation_id, contact_id, channel_session_id, body, scheduled_at)
+          values (v_org, v_conv, v_contact, v_sess, 'rls invariant probe', now() + interval '1 day');
+        end if;
       end loop;
     end
     $seed$;
@@ -684,6 +739,10 @@ beforeAll(() => {
  * cabeçalho do caso de `contact_field_proposals` abaixo.
  */
 export const TABLES = [
+  // migration 9336 (#3118, primeira parte) — a mensagem agendada na conversa. A
+  // leitura exige a conversa visível pela sessão; a semente usa v_conv, sem dono,
+  // que o agent semeado enxerga (visibility_mode padrão).
+  "mensagens_agendadas",
   "conversations",
   "messages",
   "contacts",
@@ -708,6 +767,13 @@ export const TABLES = [
   // exige `manager` — esse segundo eixo é medido em
   // `tests/invariants/catalogo-so-gestor-muda-preco.test.ts`, não aqui.
   "catalog_products",
+  // migration 9222 (#3587, fatia 2) — a fonte do catálogo sincronizado: a URL
+  // do feed da revenda e o mapeamento de campos. A LEITURA é org-scoped sem
+  // gate de papel (o `agent` semeado é controle positivo legítimo: a tela de
+  // catálogo mostra a fonte para quem atende); a ESCRITA exige `manager`, e
+  // esse segundo eixo NÃO é medido aqui — mesmo eixo separado de
+  // `catalog_products` acima.
+  "catalog_feed_sources",
   // migration 0210 — as tarefas do CRM. A leitura é org-scoped sem gate de papel
   // (o `viewer` precisa ver o que o time combinou); a ESCRITA exige `agent`, e
   // esse segundo eixo NÃO é medido aqui — o usuário semeado é `agent`, então o
@@ -879,10 +945,35 @@ export const TABLES = [
   // migration 9043 — o segundo telefone da ficha (Spec 31 B1). Leitura por
   // organização; a escrita exige `agent`, o papel semeado aqui.
   "contact_phones",
+  // migration 9419 — as identidades de rede social do contato (#3764, fatia 1):
+  // os perfis de Instagram e Facebook que levam à MESMA ficha. Leitura por
+  // organização; a escrita exige `agent` (mesmo piso da 9043), e o eixo do
+  // `viewer` é medido em `identidades-do-contato.test.ts`.
+  "contact_identities",
   // ⚠️ `cobranca_assinaturas` (migration 0583) NÃO entra nesta lista, pelo mesmo
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A
   // prova vive em `tests/invariants/cobranca-isolamento.test.ts`.
+  // migration 9312 (#3509, degrau 1) — o recebimento do cliente final. A
+  // leitura é org-scoped E exige o par conversa/organização. A escrita é só do
+  // servidor; quem mede isso é `pagamento-recebimentos-escrita-so-do-servidor.test.ts`.
+  "pagamento_recebimentos",
+  // migration 9386 (#4612, fatia 1) — a tabela de valores de negociação e os
+  // procedimentos dela. Vazar a linha entrega ao vizinho o preço de partida E o
+  // LIMITE até onde a outra empresa aceita ir — o número que ela negocia para
+  // esconder. A LEITURA é org-scoped sem gate de papel (o `agent` semeado é
+  // controle positivo legítimo); a ESCRITA é só do servidor, e a recusa a
+  // `authenticated` é medida em `tabela-de-valores-negociacao.test.ts`.
+  "tabelas_de_valores",
+  "tabela_de_valores_itens",
+  // ⚠️ As quatro tabelas das agências (migrations 9373–9379, #4034) NÃO entram
+  // nesta lista, pelo mesmo motivo de `cobranca_assinaturas`: a leitura de
+  // `agencia_configuracoes` e `agencia_clientes` só existe para o `admin` direto
+  // de agência habilitada COM o módulo `agencias` ligado, e `agencia_sessoes` e
+  // `agencia_criacoes` não têm policy nenhuma (só o servidor). O `agent` semeado
+  // aqui leria 0 nas duas direções, e o controle positivo falharia por ACERTO. A
+  // prova, com TRÊS organizações (agência, cliente vinculado e cliente sem
+  // vínculo), vive em `tests/invariants/agencias.test.ts`.
 ] as const;
 
 describe("RLS tenant isolation (fn_user_org_ids pattern)", () => {

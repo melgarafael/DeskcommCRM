@@ -1,4 +1,4 @@
-import webpush from "web-push";
+import * as webpush from "web-push";
 
 import { roleAtLeast, type Role } from "@/lib/auth/types";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -47,10 +47,33 @@ async function membrosAtivos(
 }
 
 /**
+ * As inscrições da organização que calaram este tipo de aviso
+ * (`push_subscriptions.tipos_calados`). Falha de leitura devolve o conjunto
+ * vazio: um aviso a mais incomoda, um a menos deixa cliente sem resposta.
+ */
+async function inscricoesQueCalaram(
+  admin: Admin,
+  organizationId: string,
+  tipo: NonNullable<PushPayload["tipo"]>,
+): Promise<Set<string>> {
+  const { data, error } = await admin
+    .from("push_subscriptions")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .contains("tipos_calados", [tipo]);
+  if (error) {
+    logger.warn("push_tipos_calados_falhou", { detail: error.message });
+    return new Set();
+  }
+  return new Set(((data ?? []) as Array<{ id: string }>).map((l) => l.id));
+}
+
+/**
  * O FUNIL: todo push do produto sai daqui, e só daqui (vigiado por
  * `tests/unit/push-sai-so-pelo-funil.test.ts`). Só sai para inscrições de quem
  * tem vínculo ativo na organização (e o papel mínimo, quando pedido), e só para
- * serviço de push conhecido (`servicos-de-push.ts`). A regra de host mora no
+ * serviço de push conhecido (`servicos-de-push.ts`). Aparelho que calou o tipo
+ * do aviso (`payload.tipo`) não recebe. A regra de host mora no
  * envio, não só na rota de inscrição: vale para toda linha gravada, qualquer
  * que seja a origem. O conteúdo segue a opção da empresa sobre o que aparece
  * com a tela bloqueada (`./tela-bloqueada.ts`). Inscrição morta (404/410) é
@@ -67,7 +90,8 @@ async function enviarAsInscricoes(
   if (conhecidas.length === 0) return NADA;
   const membros = await membrosAtivos(admin, organizationId, papelMinimo);
   if (!membros) return NADA;
-  const rows = conhecidas.filter((i) => membros.has(i.user_id));
+  const caladas = payload.tipo ? await inscricoesQueCalaram(admin, organizationId, payload.tipo) : null;
+  const rows = conhecidas.filter((i) => membros.has(i.user_id) && !caladas?.has(i.id));
   if (rows.length === 0) return NADA;
 
   const { modo, idioma } = await lerTelaBloqueada(admin, organizationId);
@@ -105,9 +129,14 @@ async function enviarAsInscricoes(
   return { sent, gone };
 }
 
-export type DestinoDoPush = { soUsuario?: string; papelMinimo?: Role; excetoUsuario?: string };
+export type DestinoDoPush = {
+  soUsuario?: string;
+  soUsuarios?: ReadonlyArray<string>;
+  papelMinimo?: Role;
+  excetoUsuario?: string;
+};
 
-/** Push às inscrições da organização — ou só às de `soUsuario` (sem as de `excetoUsuario`), e só a quem alcança `papelMinimo`. */
+/** Push às inscrições da organização — ou só às de `soUsuario`/`soUsuarios` (sem as de `excetoUsuario`), e só a quem alcança `papelMinimo`. */
 export async function enviarPushDaOrg(
   organizationId: string,
   payload: PushPayload,
@@ -121,6 +150,7 @@ export async function enviarPushDaOrg(
     .select("id, user_id, endpoint, p256dh, auth")
     .eq("organization_id", organizationId);
   if (quem.soUsuario) query = query.eq("user_id", quem.soUsuario);
+  if (quem.soUsuarios) query = query.in("user_id", [...quem.soUsuarios]);
   const { data, error } = await query;
   if (error) {
     logger.warn("push_subscriptions_list_failed", { detail: error.message });

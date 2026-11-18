@@ -1,11 +1,12 @@
 import { comercialExigeHumano } from '@/lib/escalacao/assunto-comercial';
 /** Preview is an execution policy of the real turn, never a simulated queue job. */
 import type pg from 'pg';
-import { hasOpenCaseForContact } from './human-cases';
+import { hasOpenCaseForContact, openHumanCaseInputSchema } from './human-cases';
 import type { ToolSet } from '../edge/llm/run-model-call';
 import type { LeadContext, LeadContextResult } from '../edge/crm/get-lead-context';
 import type { PublishedAgentConfig } from './agent-config';
 import type { LeadCheckpointRow } from './inbound-turn';
+import type { FerramentaNoTraco } from './traco-do-turno';
 import { ferramentasDeAgendaDoAgente, temFerramentaDeAgenda } from './inbound-turn';
 import {
   BEFORE_SEND_GATES,
@@ -27,9 +28,12 @@ import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
 import { loadDisclosureTemplate, countPriorAcceptedSends } from '../guardrails/disclosure/template';
 import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
 import { getToolByName } from '@/lib/mcp/tools';
+import { ehLeituraRemota } from '@/lib/mcp/servidor-externo/leitura-remota';
 import type { Logger } from '../obs/logger';
 import type { Citation } from '@/lib/ai/citations/types';
 import type { FotosPreparadas, MidiaPreparada } from './fotos-do-produto';
+import type { AnexoDeMaterial, MaterialPreparado } from './materiais-da-empresa';
+import { formatoDeImagemPorUrl } from './imagem-por-url';
 import { countPayloadTokens } from '@/lib/ai/estimativa-de-tokens';
 import { renderNotesIndexBlock } from './lead-notes';
 
@@ -54,10 +58,34 @@ export interface TurnPreview {
   gateContext?: GateContext;
   result: PreviewResult;
 }
+/**
+ * O que o dry-run apurou sobre o MATERIAL que a resposta usaria (#4129).
+ *
+ * `anexo` é o que sairia no envio real; `falha` presente significa teste
+ * VERMELHO — o dry-run não degrada para só texto nem aprova com o arquivo
+ * pendente, a mesma régua do #2490 para as fotos do produto.
+ */
+export interface MaterialPreparadoNoTeste {
+  materialId: string;
+  /** Nome do material, quando o preparo chegou a resolvê-lo. */
+  nome: string | null;
+  anexo: AnexoDeMaterial | null;
+  falha?: { code: string; message: string };
+}
+
 export interface PreviewResult {
   checkpoint?: unknown;
   candidates: Array<{ body: string; citations: Citation[]; trace: GateTraceEntry[] }>;
   proposals: Array<{ tool: string; arguments: unknown }>;
+  /**
+   * #4424 — as ferramentas que o turno REALMENTE chamou (as de leitura rodam de
+   * verdade na prévia). É a mesma lista que o traço do turno grava; ela passou a
+   * viajar na resposta para o Testar mostrar, turno a turno, o que a IA usou —
+   * antes quem lia o painel só via as ações PROPOSTAS.
+   *
+   * Opcional: `reply-drafts` não a preenche nem a lê.
+   */
+  ferramentas?: FerramentaNoTraco[];
   impediments: Array<{ code: string; message: string }>;
   /**
    * O que NÃO impediu o candidato, mas o operador precisa ver sobre o ENVIO real:
@@ -74,6 +102,13 @@ export interface PreviewResult {
    * Falha aqui vira `falha` no registro E impedimento no teste — nunca candidato.
    */
   midia: MidiaPreparada[];
+  /**
+   * O material da empresa que a resposta USARIA (#4129), preparado pelo MESMO
+   * `prepararMaterialDaEmpresa` do envio real — mesma query, mesmos freios,
+   * mesma cópia. `anexo` é o que sairia; `falha` presente reprova o teste, como
+   * no #2490: mídia que ninguém preparou não atravessa o dry-run como aprovada.
+   */
+  materiais: MaterialPreparadoNoTeste[];
 }
 /**
  * Teto do bloco de notas INLINE da prévia (headline + corpo de cada nota).
@@ -132,6 +167,7 @@ export function newPreviewResult(): PreviewResult {
     impediments: [],
     warnings: [],
     midia: [],
+    materiais: [],
     restrictions: [
       'preview_no_client_effects',
       'writes_require_separate_authorization',
@@ -354,19 +390,57 @@ export function applyPreviewPolicy(
    * com a afirmação de fato sem conferência e sem observação para calibrar.
    */
   conferirAfirmacoes?: (candidata: string) => Promise<ConferenciaDeFato>,
+  /** A procedência da `imagem_url` no turno (`criarProcedenciaDeImagens().viu`), a mesma do envio real. */
+  imagemVistaNoTurno?: (url: string) => boolean,
+  /**
+   * #4129 — a `prepararMaterialDaEmpresa` do caminho de produção, injetada pelo
+   * turno que tem banco e Storage. Sem ela o `material_id` NÃO passa: o teste
+   * falha a mídia em vez de aprovar texto com o arquivo pendente.
+   *
+   * Fica por ÚLTIMO (e não junto do `prepararMidia`): os slots acima são
+   * chamados por POSIÇÃO, e enfiar este no meio deles deslocaria o conferidor e
+   * a procedência da `imagem_url` de quem já chamava assim.
+   */
+  prepararMaterial?: (materialId: string) => Promise<MaterialPreparado>,
 ): ToolSet {
+  /**
+   * #4592 — o caso humano que a prévia SIMULA abrir neste turno.
+   *
+   * No turno real, `openedCaseThisTurn` só vira `true` quando o `execute` de
+   * `open_human_case` grava o caso (`inbound-turn.ts`). Na prévia a ferramenta é
+   * uma PROPOSTA: nada é gravado, então a trava `case_promise_without_case`
+   * (`guardrails/human-promise.ts` + `casePromiseGate`) vetava a frase de espera
+   * mesmo com a ferramenta chamada — e o teste deixava de reproduzir a produção.
+   *
+   * Esta é a única coisa que a chamada muda aqui: um sinal PARA A TRAVA. O
+   * retorno ao modelo continua `proposal_only`, nenhum INSERT/UPDATE acontece, e
+   * o `execute` original da ferramenta nunca roda (como todo o resto da prévia).
+   * Vive no closure porque é por TURNO — `applyPreviewPolicy` é montado uma vez
+   * por turno de prévia.
+   */
+  let casoHumanoSimuladoNesteTurno = false;
   return Object.fromEntries(
     Object.entries(tools).map(([name, definition]) => {
       const nativeRead = [
         'get_lead_context',
         'get_lead_note',
         'search_knowledge',
+        // #4572 — o irmão do `search_knowledge` no modo `leitura_direta`: só
+        // leitura, escopado pela organização no closure. Fora daqui ele virava
+        // `unknown_preview_tool`, e o Testar dizia "preciso verificar" sobre o
+        // que a produção lê e responde.
+        'ler_documento',
         'read_skill_reference',
       ].includes(name);
       const catalog = getToolByName(name);
       if (
         nativeRead ||
-        (catalog?.category === 'read' && (p.contactId !== null || SCENARIO_READS.has(name)))
+        (catalog?.category === 'read' && (p.contactId !== null || SCENARIO_READS.has(name))) ||
+        // #2147/#4317 — leitura de servidor MCP externo (da organização ou do
+        // PRÓPRIO agente): só o objeto que `pickToolsFromMcp` marcou, com as
+        // duas metades (marca do admin E `readOnlyHint` do servidor). Nome
+        // igual ao catálogo nativo ou cópia do objeto continuam recusados.
+        (!catalog && ehLeituraRemota(definition))
       )
         return [name, definition];
       return [
@@ -379,6 +453,24 @@ export function applyPreviewPolicy(
                 args && typeof args === 'object' && 'body' in args && typeof args.body === 'string'
                   ? args.body
                   : '';
+              // Duas fotos na mesma mensagem não existem (Spec 25 R4): mesma recusa do envio
+              // real, antes de qualquer preparo de mídia.
+              const pediuFotoDoCatalogo =
+                args &&
+                typeof args === 'object' &&
+                'produto_codigo' in args &&
+                typeof args.produto_codigo === 'string' &&
+                args.produto_codigo.trim() !== '';
+              const pediuImagemPorUrl =
+                args && typeof args === 'object' && 'imagem_url' in args && typeof args.imagem_url === 'string'
+                  ? args.imagem_url.trim() !== ''
+                  : false;
+              if (pediuFotoDoCatalogo && pediuImagemPorUrl) {
+                const message =
+                  'Use imagem_url OU produto_codigo, não os dois na mesma mensagem. Mande de novo só com um deles.';
+                p.result.impediments.push({ code: 'imagem_e_produto_juntos', message });
+                return { ok: false, error: { code: 'imagem_e_produto_juntos', message } };
+              }
               // #2490 — A MESMA preparação do envio real, e na MESMA ordem: o
               // `produto_codigo` que `crm_search_products` devolveu resolve o
               // produto no catálogo e prepara as fotos ANTES da cadeia (é o que
@@ -414,6 +506,86 @@ export function applyPreviewPolicy(
                       'nenhuma imagem seria enviada no envio real — só o texto.',
                   });
               }
+              const materialId =
+                args && typeof args === 'object' && 'material_id' in args
+                  ? typeof args.material_id === 'string'
+                    ? args.material_id
+                    : undefined
+                  : undefined;
+              if (
+                materialId !== undefined &&
+                materialId.trim() !== '' &&
+                produtoCodigo !== undefined &&
+                produtoCodigo.trim() !== ''
+              ) {
+                // A MESMA recusa do turno real: as duas listas competem pela
+                // legenda, e o teste não pode aprovar o que a produção recusa.
+                const falha = {
+                  code: 'material_e_produto_juntos',
+                  message:
+                    'Escolha UM anexo: `material_id` (documento da empresa) OU `produto_codigo` (fotos do catálogo).',
+                };
+                p.result.impediments.push(falha);
+                return { ok: false, error: falha };
+              }
+              if (materialId !== undefined && materialId.trim() !== '') {
+                // #4129 — a MESMA `prepararMaterialDaEmpresa` do envio real: a
+                // lista do agente, os freios de reenvio e a cópia para a pasta
+                // `dry-run` da organização, como as fotos em #2490. Nada sai
+                // pelo canal e nada é gravado em conversa nenhuma.
+                const preparado = prepararMaterial
+                  ? await prepararMaterial(materialId.trim())
+                  : ({
+                      ok: false as const,
+                      code: 'material_nao_preparado',
+                      message:
+                        'A mídia desta resposta não foi preparada no teste — não há como afirmar ' +
+                        'que o material sairia no envio real. Corrija a preparação e execute o teste de novo.',
+                    } as const);
+                if (!preparado.ok) {
+                  p.result.materiais.push({
+                    materialId: materialId.trim(),
+                    nome: null,
+                    anexo: null,
+                    falha: { code: preparado.code, message: preparado.message },
+                  });
+                  p.result.impediments.push({ code: preparado.code, message: preparado.message });
+                  return { ok: false, error: { code: preparado.code, message: preparado.message } };
+                }
+                p.result.materiais.push({
+                  materialId: materialId.trim(),
+                  nome: preparado.material.nome,
+                  anexo: preparado.anexo,
+                });
+              }
+              // Foto por URL (Spec 25 R4): na prévia NADA é buscado nem enviado, e a guarda de
+              // rede (C6) não roda aqui — só o formato e a procedência são conferidos, sem rede.
+              // Quem decide a foto de verdade é o envio real. O retorno diz o que sairia.
+              const imagemUrl =
+                args && typeof args === 'object' && 'imagem_url' in args && typeof args.imagem_url === 'string'
+                  ? args.imagem_url.trim()
+                  : '';
+              let imagemPrevista: string | undefined;
+              if (imagemUrl !== '') {
+                const formato = formatoDeImagemPorUrl(imagemUrl);
+                if (formato.ok && imagemVistaNoTurno && !imagemVistaNoTurno(imagemUrl)) {
+                  imagemPrevista = 'recusada: url_fora_dos_resultados';
+                  p.result.warnings.push({
+                    code: 'imagem_recusada',
+                    message:
+                      'A imagem desta resposta seria recusada (url_fora_dos_resultados): o texto sairia sem foto.',
+                  });
+                } else if (formato.ok) {
+                  imagemPrevista = 'formato_aceito';
+                } else {
+                  imagemPrevista = `recusada_pelo_formato: ${formato.motivo}`;
+                  p.result.warnings.push({
+                    code: 'imagem_recusada',
+                    message:
+                      `A imagem desta resposta seria recusada (${formato.motivo}): o texto sairia sem foto.`,
+                  });
+                }
+              }
               const avisos: Array<{ code: string; message: string }> = [];
               // #2923 — as duas perguntas ao Jev da cadeia (promessa semântica,
               // F4-02, e conferência de fato, 6.3) saem juntas, como em
@@ -430,6 +602,15 @@ export function applyPreviewPolicy(
                 {
                   ...ctx,
                   ...liveContext?.(),
+                  // #4592 — leitura VIVA do sinal de caso, no instante do
+                  // `send_message`: o contexto deste gate foi montado ANTES de as
+                  // ferramentas rodarem (`previewGateContext`), então o valor
+                  // congelado (`openedCaseThisTurn: false`) é o que fazia a prévia
+                  // vetar o que a produção libera. Vem DEPOIS do `liveContext`
+                  // porque é o mesmo tipo de leitura fresca — e porque nenhum
+                  // chamador o preenche hoje (conferido: só o `agenda` e o
+                  // `lastroComercial` viajam por lá).
+                  ...(casoHumanoSimuladoNesteTurno ? { openedCaseThisTurn: true } : {}),
                   body,
                   semanticPromise,
                   factualClaim,
@@ -462,6 +643,8 @@ export function applyPreviewPolicy(
                 ok: true,
                 status: p.kind === 'sandbox' ? 'simulated' : 'awaiting_approval',
                 message: 'Resposta proposta. Nenhuma mensagem enviada. Encerre o turno.',
+                // Foto por URL: nada foi buscado nem enviado; `foto_prevista` diz o que o envio real faria.
+                ...(imagemPrevista !== undefined ? { foto_enviada: false, foto_prevista: imagemPrevista } : {}),
               };
             }
             if (catalog?.category === 'read')
@@ -484,6 +667,13 @@ export function applyPreviewPolicy(
                 'provide_case_update',
               ].includes(name)
             ) {
+              // #4592 — a MESMA whitelist que o turno real aplica antes de gravar
+              // (`openHumanCaseInputSchema`, `.strict()`): payload válido conta como
+              // caso aberto PARA A TRAVA deste turno; inválido não conta (a produção
+              // devolveria `invalid_payload` e não abriria nada). Nenhum dos dois
+              // grava: o retorno abaixo continua o de proposta, sem executar a tool.
+              if (name === 'open_human_case' && openHumanCaseInputSchema.safeParse(args).success)
+                casoHumanoSimuladoNesteTurno = true;
               p.result.proposals.push({ tool: name, arguments: args });
               return {
                 ok: true,

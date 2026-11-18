@@ -158,7 +158,7 @@ describe("montarAvisoDeCaso", () => {
     });
     expect(texto).toContain("Assunto: A IA prometeu algo e travou");
     expect(texto).not.toContain("Promessa não cumprida");
-    expect(texto).toContain("(resumo escrito pela IA a partir da conversa)");
+    expect(texto).toContain("(montado automaticamente; confira na conversa)");
   });
 
   it("espanhol: as frases fixas são traduzidas", () => {

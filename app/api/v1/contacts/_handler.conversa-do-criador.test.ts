@@ -35,6 +35,12 @@ const mantido = vi.hoisted(() => ({
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => mantido.db }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => mantido.db }));
+// A entrada automática no funil (#3603) também lê `organizations` dentro de
+// `ensureConversation`. Aqui a pergunta é a leitura do MODO de visibilidade;
+// a entrada tem a prova dela em `tests/unit/conversa-nova-entra-no-funil.test.ts`.
+vi.mock("@/lib/leads/entrada-automatica-no-funil", () => ({
+  abrirNegocioDaConversaNova: async () => ({ criado: false, motivo: "nao_configurado" }),
+}));
 
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 

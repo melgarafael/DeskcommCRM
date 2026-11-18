@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -191,10 +191,7 @@ describe("o handler HTTP", () => {
 describe("as guardas moram no corpo das funções do baseline", () => {
   const RAIZ = join(__dirname, "..", "..");
   const BASELINE = readFileSync(join(RAIZ, "supabase", "baseline.sql"), "utf8");
-  const MIGRATION = readFileSync(
-    join(RAIZ, "supabase", "migrations", "20261007131344_0587_retencao_das_tabelas_da_ia.sql"),
-    "utf8",
-  );
+  const MIGRACOES = join(RAIZ, "supabase", "migrations");
 
   function corpo(fonte: string, nome: Nova): string {
     const i = fonte.lastIndexOf(`create or replace function public.${nome}(`);
@@ -202,10 +199,49 @@ describe("as guardas moram no corpo das funções do baseline", () => {
     return fonte.slice(i, fonte.indexOf("$$;", i));
   }
 
-  it.each(NOMES)("%s: o corpo do baseline é o MESMO da migration", (nome) => {
-    // O kit aplica só o baseline; o Supabase CLI, só a migration. Corpos
-    // divergentes = clone e instalação nova podando com regras diferentes.
-    expect(corpo(BASELINE, nome)).toBe(corpo(MIGRATION, nome));
+  /**
+   * O corpo EFETIVO de cada função na cadeia: a ÚLTIMA migration que a define.
+   *
+   * O Supabase CLI aplica a cadeia EM ORDEM, então o corpo que uma instalação
+   * nova tem é o da última definidora. Esta cerca nasceu apontando para a 0587
+   * — a única definidora da família na época. Quando uma migration nova REDEFINE
+   * a função (a 9348 anula `input_text`/`output_text` vencidos), comparar com a
+   * 0587 passa a medir um estado que NENHUMA instalação tem, e o preço de
+   * satisfazê-la seria deixar o baseline com o corpo velho — exatamente a
+   * divergência entre kit e CLI que este caso existe para impedir. A referência
+   * virou a última definidora; a exigência continua byte a byte.
+   *
+   * Lê de trás para frente e para assim que as quatro foram achadas (a mais
+   * antiga delas é a 0587), então custa uma passada na cadeia, não uma lista.
+   */
+  function ultimasDefinidoras(): Map<Nova, { arquivo: string; fonte: string }> {
+    const arquivos = readdirSync(MIGRACOES)
+      .filter((f) => f.endsWith(".sql"))
+      .sort();
+    const achadas = new Map<Nova, { arquivo: string; fonte: string }>();
+    for (let i = arquivos.length - 1; i >= 0 && achadas.size < NOMES.length; i -= 1) {
+      const arquivo = arquivos[i]!;
+      const fonte = readFileSync(join(MIGRACOES, arquivo), "utf8");
+      for (const nome of NOMES) {
+        if (!achadas.has(nome) && fonte.includes(`create or replace function public.${nome}(`)) {
+          achadas.set(nome, { arquivo, fonte });
+        }
+      }
+    }
+    for (const nome of NOMES) {
+      // Controle do instrumento: cadeia sem definidora = esta cerca não mediria nada.
+      if (!achadas.has(nome)) throw new Error(`INSTRUMENTO: nenhuma migration define ${nome}`);
+    }
+    return achadas;
+  }
+  const DEFINIDORAS = ultimasDefinidoras();
+
+  it.each(NOMES)("%s: o corpo do baseline é o MESMO da última migration que a define", (nome) => {
+    // O kit aplica só o baseline; o Supabase CLI, só a cadeia — em ordem, então
+    // o corpo que vale é o da ÚLTIMA definidora. Corpos divergentes = clone e
+    // instalação nova podando com regras diferentes.
+    const definidora = DEFINIDORAS.get(nome)!;
+    expect(corpo(BASELINE, nome), definidora.arquivo).toBe(corpo(definidora.fonte, nome));
   });
 
   it.each(NOMES)("%s: revogada das duas origens e concedida só ao servidor", (nome) => {

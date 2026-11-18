@@ -1,7 +1,7 @@
 import { type NextRequest } from "next/server";
 import { falhaDaEscritaDePlatformAdmin, requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { ok, fail } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { randomUUID } from "node:crypto";
 
@@ -174,37 +174,41 @@ export async function GET(_req: NextRequest) {
 // T-04 enforcement: POST / PATCH / DELETE return 405 explicitly
 // ---------------------------------------------------------------------------
 
-function methodNotAllowed() {
-  return new Response(
-    JSON.stringify({
-      error: {
-        code: "method_not_allowed",
-        message: T04_MESSAGE,
+function methodNotAllowed(req: NextRequest) {
+  // #4107: o 405 também é resposta sob /api/ e leva o id da requisição.
+  return comIdDaRequisicao(
+    new Response(
+      JSON.stringify({
+        error: {
+          code: "method_not_allowed",
+          message: T04_MESSAGE,
+        },
+      }),
+      {
+        status: 405,
+        headers: {
+          "Content-Type": "application/json",
+          Allow: "GET",
+        },
       },
-    }),
-    {
-      status: 405,
-      headers: {
-        "Content-Type": "application/json",
-        Allow: "GET",
-      },
-    },
+    ),
+    req,
   );
 }
 
-export function POST() {
+export function POST(req: NextRequest) {
 
-  return methodNotAllowed();
+  return methodNotAllowed(req);
 }
 
-export function PATCH() {
+export function PATCH(req: NextRequest) {
 
-  return methodNotAllowed();
+  return methodNotAllowed(req);
 }
 
-export function DELETE() {
+export function DELETE(req: NextRequest) {
 
-  return methodNotAllowed();
+  return methodNotAllowed(req);
 }
 
 export type PlatformAdminRow = Awaited<
