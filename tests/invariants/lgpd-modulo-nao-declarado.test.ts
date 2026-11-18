@@ -86,6 +86,11 @@ interface Violacao {
  * padrão é o mesmo defeito de não decidir.
  */
 const ALLOWLIST: Record<string, string> = {
+  "amigo.amigo_patient_links":
+    "Vínculo contato ↔ paciente do Amigo (#4227): a linha inteira É o dado, e a seção declarada " +
+    "só sabe anular coluna. Fica fora da seção porque a anonimização a APAGA: o gatilho " +
+    "trg_amigo_redigir_titular (migration 9393) remove o vínculo do contato anonimizado e redige " +
+    "o espelho das consultas e os recibos daquele paciente; provado em amigo-modulo.test.ts.",
   "cadencias.email_cadences":
     "Configuração compartilhada da sequência por organização, sem vínculo com contacts. " +
     "name nomeia a cadência, e configuracao/passos guardam modelos, não a execução " +

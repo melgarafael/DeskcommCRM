@@ -46,6 +46,7 @@ import {
 import { useT } from "@/hooks/i18n/useT";
 import { normalizarVoiceId, problemaNoVoiceId } from "@/lib/ai/voz/voice-id";
 
+import { OndeOTextoEProcessado } from "../../_components/OndeOTextoEProcessado";
 import { CartaoDeMapas } from "./CartaoDeMapas";
 import { CartaoDoJev, jevNoPonto, useDadosDoJev, type DadosDoJev } from "./CartaoDoJev";
 
@@ -96,6 +97,12 @@ interface Provedor {
   ondePegarAChave: string;
   /** Aceita apontar para outro endpoint (é compatível com a API da OpenAI). */
   aceitaEndpointProprio: boolean;
+  /**
+   * Onde o texto é processado — vem do catálogo junto com a fonte (#4518). A
+   * rota devolve `PROVEDORES` inteiro, então o dado chega sem campo novo de API.
+   */
+  pais: string;
+  fonteDoPais: { url: string; consultadoEm: string } | null;
 }
 
 interface Dados {
@@ -289,6 +296,11 @@ function CartaoDoPadrao({ dados, aoSalvar }: { dados: Dados; aoSalvar: () => Pro
 
   const mudou = provider !== dados.padrao.provider || modelId !== (dados.padrao.defaultModel ?? "");
 
+  // A linha de residência segue a ESCOLHA na tela, não o que está gravado: quem
+  // troca o provedor no seletor precisa ver para onde o texto passa a ir antes
+  // de salvar.
+  const provedorEscolhido = dados.provedores.find((p) => p.id === provider);
+
   async function salvar() {
     setSalvando(true);
     try {
@@ -401,6 +413,8 @@ function CartaoDoPadrao({ dados, aoSalvar }: { dados: Dados; aoSalvar: () => Pro
           </Button>
         )}
       </div>
+
+      {provedorEscolhido && <OndeOTextoEProcessado provedor={provedorEscolhido} className="mt-3" />}
 
       {especialistas.length > 0 && (
         <p className="mt-3 text-xs text-muted-foreground" data-testid="padrao-especialistas">
@@ -569,79 +583,85 @@ function CartaoDeVoz({ podeEditar }: { podeEditar: boolean }) {
         </p>
       )}
 
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="min-w-64 space-y-1.5">
-          <Label className="text-xs" htmlFor="voz-voice-id">
-            {t("Voice ID")}
-          </Label>
-          {catalogo.length > 0 && (
-            <Select
-              value={naLista ? voiceId : ""}
-              onValueChange={(id) => {
-                setVoiceId(id);
+      {/* Sem credencial validada a voz não é oferecida (#4260, item 2): não há
+          catálogo a listar nem prévia a sintetizar, e salvar um id aqui só
+          deixaria uma escolha que o turno não consegue usar. O caminho é o
+          link acima, que leva a cadastrar a chave. */}
+      {temCredencial && (
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-64 space-y-1.5">
+            <Label className="text-xs" htmlFor="voz-voice-id">
+              {t("Voice ID")}
+            </Label>
+            {catalogo.length > 0 && (
+              <Select
+                value={naLista ? voiceId : ""}
+                onValueChange={(id) => {
+                  setVoiceId(id);
+                  setErroDeFormato(null);
+                }}
+                disabled={!podeEditar}
+              >
+                <SelectTrigger data-testid="voz-escolher-da-lista" aria-label={t("Escolher da lista")}>
+                  <SelectValue placeholder={t("escolha da lista")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {catalogo.map((voz) => (
+                    <SelectItem key={voz.id} value={voz.id}>
+                      {voz.nome === voz.id
+                        ? voz.id
+                        : `${voz.nome}${voz.idioma ? ` — ${voz.idioma}` : ""}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <Input
+              id="voz-voice-id"
+              value={voiceId}
+              onChange={(e) => {
+                setVoiceId(e.target.value);
                 setErroDeFormato(null);
               }}
+              placeholder="ex.: 21m00Tcm4TlvDq8ikWAM"
+              data-testid="voz-voice-id"
               disabled={!podeEditar}
-            >
-              <SelectTrigger data-testid="voz-escolher-da-lista" aria-label={t("Escolher da lista")}>
-                <SelectValue placeholder={t("escolha da lista")} />
-              </SelectTrigger>
-              <SelectContent>
-                {catalogo.map((voz) => (
-                  <SelectItem key={voz.id} value={voz.id}>
-                    {voz.nome === voz.id
-                      ? voz.id
-                      : `${voz.nome}${voz.idioma ? ` — ${voz.idioma}` : ""}`}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          <Input
-            id="voz-voice-id"
-            value={voiceId}
-            onChange={(e) => {
-              setVoiceId(e.target.value);
-              setErroDeFormato(null);
-            }}
-            placeholder="ex.: 21m00Tcm4TlvDq8ikWAM"
-            data-testid="voz-voice-id"
-            disabled={!podeEditar}
-            aria-invalid={erroDeFormato !== null}
-          />
-          <p className="text-xs text-muted-foreground">
-            {t(
-              "Escolha da lista ou cole o ID de qualquer voz da sua conta, inclusive uma que não apareça aqui.",
-            )}
-          </p>
-          {erroDeFormato !== null && (
-            <p className="text-xs text-destructive" role="alert" data-testid="voz-erro-de-formato">
-              {erroDeFormato}
+              aria-invalid={erroDeFormato !== null}
+            />
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Escolha da lista ou cole o ID de qualquer voz da sua conta, inclusive uma que não apareça aqui.",
+              )}
             </p>
-          )}
-        </div>
+            {erroDeFormato !== null && (
+              <p className="text-xs text-destructive" role="alert" data-testid="voz-erro-de-formato">
+                {erroDeFormato}
+              </p>
+            )}
+          </div>
 
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={ouvindo || voiceId.trim() === ""}
-          onClick={() => void ouvirPrevia()}
-          data-testid="voz-ouvir-previa"
-        >
-          {ouvindo ? t("Gerando…") : t("Ouvir prévia")}
-        </Button>
-
-        {podeEditar && (
           <Button
             size="sm"
-            disabled={salvando || voiceId.trim() === ""}
-            onClick={() => void salvar()}
-            data-testid="voz-salvar"
+            variant="outline"
+            disabled={ouvindo || voiceId.trim() === ""}
+            onClick={() => void ouvirPrevia()}
+            data-testid="voz-ouvir-previa"
           >
-            {salvando ? t("Salvando…") : t("Salvar voz")}
+            {ouvindo ? t("Gerando…") : t("Ouvir prévia")}
           </Button>
-        )}
-      </div>
+
+          {podeEditar && (
+            <Button
+              size="sm"
+              disabled={salvando || voiceId.trim() === ""}
+              onClick={() => void salvar()}
+              data-testid="voz-salvar"
+            >
+              {salvando ? t("Salvando…") : t("Salvar voz")}
+            </Button>
+          )}
+        </div>
+      )}
 
       {erroDoProvedor !== null && (
         <p className="text-xs text-destructive" role="alert" data-testid="voz-erro-do-provedor">
@@ -714,8 +734,8 @@ function CartaoDoPonto({
   // Endpoint próprio só faz sentido em provedor compatível com a API da OpenAI
   // — é a mesma condição que `lib/ai/pontos/provedores.ts` declara e que o
   // registry aplica junto da allowlist do egress.
-  const aceitaEndpointProprio =
-    dados.provedores.find((p) => p.id === provider)?.aceitaEndpointProprio === true;
+  const provedorDoPonto = dados.provedores.find((p) => p.id === provider);
+  const aceitaEndpointProprio = provedorDoPonto?.aceitaEndpointProprio === true;
 
   const editavel = dados.podeEditar && ponto.fixo === null && !ponto.mandadoPeloAgente;
 
@@ -847,6 +867,23 @@ function CartaoDoPonto({
             {t("Configurar no agente")}
           </Link>
         </p>
+      )}
+
+      {provedorDoPonto && (
+        <OndeOTextoEProcessado
+          provedor={provedorDoPonto}
+          // O que está na tela vence o gravado: com o campo preenchido (e o
+          // provedor aceitando), o destino é do operador — e a linha diz isso
+          // antes de o Salvar confirmar. Sem `aceitaEndpointProprio` a linha
+          // volta a falar do catálogo, para um `baseUrl` de provedor anterior
+          // não virar resposta do provedor novo.
+          enderecoProprio={
+            aceitaEndpointProprio
+              ? baseUrl.trim() || (provider === ponto.efetivo.provider ? ponto.efetivo.baseUrl : null)
+              : null
+          }
+          className="mt-2"
+        />
       )}
 
       {editavelComoMenu && opcoesFixas && (

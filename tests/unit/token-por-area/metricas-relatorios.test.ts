@@ -96,6 +96,8 @@ type Caso = {
   /** RPC → payload por organização (a função dublada devolve o da `p_org`). */
   rpc?: Record<string, Record<string, unknown>>;
   papel: Papel;
+  /** o papel exigido do TOKEN (`tokenRole` da rota), quando maior que o da sessão */
+  papelDoToken?: Papel;
   escopo: Escopo;
   recurso: string;
   /** marcas que só a organização A pode ver na resposta */
@@ -269,6 +271,7 @@ const CASOS: Caso[] = [
     linhas: {},
     rpc: { fn_attendant_metrics: RPC_ATENDENTES },
     papel: "agent",
+    papelDoToken: "manager",
     escopo: "mcp:read",
     recurso: "metrics",
     soDeA: ["Etapa-de-A", ATENDENTE_A],
@@ -304,6 +307,7 @@ const CASOS: Caso[] = [
     executar: async (req) => (await import("@/app/api/v1/metrics/serie/route")).GET(req),
     linhas: LINHAS_DA_SERIE,
     papel: "agent",
+    papelDoToken: "manager",
     escopo: "mcp:read",
     recurso: "metrics",
     soDeA: [],
@@ -357,6 +361,7 @@ const CASOS: Caso[] = [
     linhas: LINHAS_DAS_ETIQUETAS,
     rpc: { fn_tags_de_conversa_em_uso: RPC_ETIQUETAS },
     papel: "viewer",
+    papelDoToken: "manager",
     escopo: "mcp:read",
     recurso: "reports",
     soDeA: ["tag-de-a"],
@@ -511,7 +516,7 @@ beforeEach(() => {
 
 for (const c of CASOS) {
   const rotulo = `${c.metodo} ${c.caminho.split("?")[0]}`;
-  const papelDoToken = c.papel;
+  const papelDoToken = c.papelDoToken ?? c.papel;
   const nomesDeRpc = Object.keys(c.rpc ?? {});
 
   /** Tudo o que a rota leu ou chamou ficou dentro de `org`. */

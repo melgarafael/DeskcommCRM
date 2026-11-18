@@ -266,16 +266,28 @@ describe("painel de atendimento", () => {
     it("a consulta da fila é a da aba Fila: pede quem manda, não o filtro `assigned_to`", async () => {
       const url = consultas().fila;
       expect(url).not.toContain("assigned_to");
-      expect(parametros(url).comando).toEqual(["aguardando"]);
+      // Desde a #4012 a Fila pede `ninguem` SEMPRE, junto de `aguardando`: é o
+      // que o banco responde para a conversa sem dono numa empresa sem agente no
+      // ar, e ela espera uma pessoa. O comportamento mudou de propósito
+      // (`comandosDaFila`), e esta expectativa acompanha.
+      expect(parametros(url).comando).toEqual(["aguardando", "ninguem"]);
       expect(ehAFila(parametros(url))).toBe(true);
-      expect(parametros(consultas(false).fila).comando).toEqual(["aguardando", "automatico"]);
-      expect(parametros(consultas(true).fila).comando).toEqual(["aguardando"]);
+      // `automatico` só entra quando a tela SABE que não há automático — a
+      // janela entre o deploy e a migration aplicada. Com automático de pé, ou
+      // sem saber, ele fica FORA: é a conversa que o robô está atendendo.
+      expect(parametros(consultas(false).fila).comando).toEqual(["aguardando", "ninguem", "automatico"]);
+      expect(parametros(consultas(true).fila).comando).toEqual(["aguardando", "ninguem"]);
+      expect(parametros(consultas(true).fila).comando).not.toContain("automatico");
+      expect(parametros(url).comando).not.toContain("automatico");
 
       const chamadas = await chamadasAoBanco(url);
-      expect(chamadas).toContainEqual({ metodo: "in", args: ["comando_da_conversa", ["aguardando"]] });
+      expect(chamadas).toContainEqual({
+        metodo: "in",
+        args: ["comando_da_conversa", ["aguardando", "ninguem"]],
+      });
       expect(chamadas).toContainEqual({ metodo: "order", args: [ORDEM_DA_ESPERA.coluna, ORDEM_DA_ESPERA.opcoes] });
       // O único predicado sobre o dono é o `is null` do PRÉ-FILTRO (#4325):
-      // condição NECESSÁRIA de `aguardando`/`automatico`, que reduz as linhas
+      // condição NECESSÁRIA de `aguardando`/`automatico`/`ninguem`, que reduz as linhas
       // que a função avalia sem mudar a resposta. O filtro `assigned_to` da tela
       // — um usuário específico, via `.eq`/`.or` — continua PROIBIDO aqui: é ele
       // que fazia a Fila deixar de ser "quem manda" e virar "sem dono" (#990).

@@ -29,8 +29,9 @@ export const MODELOS_DA_LEITURA: readonly ModeloDePorta[] = [
   // Escopo `mcp:read` nos GET e `mcp:write` no PATCH de `metrics/atrito`. Papel da
   // sessão: agent em `attendants`, `serie`, `atrito` GET, `channels`, `funil` e
   // `metas` GET; manager em `lost` e no PATCH de `atrito`; viewer em `reports/*`. Papel
-  // do TOKEN: igual ao da sessão, exceto `atrito` GET, `channels`, `funil`,
-  // `metas` e `reports/activities`, que exigem `manager` (`tokenRole`): o token lê a
+  // do TOKEN: igual ao da sessão, exceto `attendants`, `serie`, `atrito` GET,
+  // `channels`, `funil`, `metas` e `reports/activities`, que exigem `manager`
+  // (`tokenRole`): o token lê a
   // organização inteira, e na sessão um agent só vê as conversas dele. Nenhuma
   // tool MCP faz estas ações, então não há `tokenRole` por causa de tool.
   "/api/v1/metrics/atrito",
@@ -87,4 +88,14 @@ export const MODELOS_DA_LEITURA: readonly ModeloDePorta[] = [
       objeto: "meu-objeto",
     },
   },
+
+  // EXPORTAR A LISTA DA CAMPANHA (issue #4360). Rota de LEITURA — dois `select`
+  // e o CSV — que aceita sessão OU Bearer `dsk_…` com `mcp:read`, resolvidos
+  // por `resolveAuthDual` DENTRO do handler. Sem esta porta o `proxy.ts`
+  // devolve 401 a quem chama com token e o ramo do Bearer fica inalcançável
+  // (mesma classe medida em `drafts/consume`). O segmento dinâmico é FORMA DE
+  // UUID, nunca `[^/]+`; `exportar` é literal e a expressão é ancorada nos dois
+  // lados — o irmão `/prospecting/[id]` (só-sessão) não nasce público de
+  // carona.
+  "/api/v1/prospecting/[id]/exportar",
 ];

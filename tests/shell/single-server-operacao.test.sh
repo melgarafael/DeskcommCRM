@@ -75,7 +75,7 @@ case " $* " in
       *" pg_dump "*) echo "-- dump" ;;
       *" tar czf - "*)
         # o snapshot sai pela saída padrão; quem grava o arquivo é o host
-        [ "${STORAGE_FALHA:-0}" = "1" ] && case " $* " in *volumes/storage:*) printf 'cortado'; exit 1;; esac
+        [ "${STORAGE_FALHA:-0}" = "1" ] && case " $* " in *volumes/storage*) printf 'cortado'; exit 1;; esac
         printf 'tgz' ;;
     esac ;;
 esac
@@ -278,7 +278,8 @@ echo "(b) backup e restore levam os anexos:"
 : > "$LOG"
 (cd "$PROJ" && bash "$KIT_DIR/backup.sh") > "$WORK/bk.out" 2>&1; rc=$?
 check "backup.sh single-server termina bem" test "$rc" -eq 0
-check "backup.sh salva o Storage do Supabase (somente leitura)" contem "$LOG" "-v $SB/volumes/storage:/data:ro"
+check "backup.sh salva o Storage do Supabase (somente leitura)" \
+  contem "$LOG" "--mount type=bind,\"source=$SB/volumes/storage\",target=/data,readonly"
 check "o arquivo dos anexos existe ao lado do dump" \
   bash -c 'ls "$1"/backups/storage-*.tgz >/dev/null 2>&1' _ "$PROJ"
 rm -f "$PROJ"/backups/storage-*.tgz

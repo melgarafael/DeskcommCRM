@@ -83,8 +83,8 @@ export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
   // no GET e `mcp:write` na escrita, com o papel que a sessão já exige
   // (`viewer` lê, `agent` escreve). Segmentos `[id]`, `[attachmentId]` e `[pid]`
   // em forma de UUID: nenhum desses diretórios tem irmão literal que dê carona
-  // além dos que ficaram só de sessão (`leads/[id]/conversion/retry` e
-  // `leads/at-risk`), listados na borda do teste da área.
+  // além do que ficou só de sessão (`leads/[id]/conversion/retry`), listado na
+  // borda do teste da área.
   "/api/v1/leads",
   "/api/v1/leads/[id]/attachments",
   "/api/v1/leads/[id]/attachments/[attachmentId]/media",
@@ -175,7 +175,6 @@ export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
   "/api/v1/people/[id]",
   "/api/v1/phone-numbers",
   "/api/v1/phone-numbers/[id]",
-
   // FINANCEIRO E HONORÁRIOS (R2, tarefa 8). Quem autentica é a própria rota, por
   // `resolveAuthDual` (sessão OU Bearer `dsk_…`, a organização vinda da linha do
   // token): `mcp:read` na leitura e `mcp:write` na escrita, com o papel que a

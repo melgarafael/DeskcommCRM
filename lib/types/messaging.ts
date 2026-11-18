@@ -71,6 +71,14 @@ export interface Conversation {
    * resposta de uma versão anterior, ainda em cache do react-query, não o tem.
    */
   comando_da_conversa?: string | null;
+  /**
+   * Há agente que vai responder ESTA conversa? (migration 9331, issue #4012) —
+   * outro campo CALCULADO, e a segunda metade do mesmo fato: `comando_da_conversa`
+   * já chega rebaixado a `aguardando` quando este é `false`, mas o cabeçalho e a
+   * linha recalculam localmente (para o "devolver" simulado), e sem o fato
+   * voltariam a dizer "Automático". Ausente = "não sei" (cache anterior).
+   */
+  automatico_da_conversa?: boolean | null;
   last_handoff_at: string | null;
   /**
    * Por que o automático está parado. Diferencia o handoff formal de uma pausa
@@ -167,6 +175,16 @@ export interface Message {
   edited_at: string | null;
   /** Quando o AUTOR apagou para todos. A linha fica; o texto não é mostrado. */
   revoked_at: string | null;
+  /**
+   * A linha apagada pelo CONTATO ainda tem texto guardado (#4500).
+   *
+   * Campo de PAYLOAD, calculado na leitura (`mascararTextoRetido`): o `body`
+   * dessa mensagem não sai mais no histórico — este booleano é o que resta dele,
+   * e é o que faz o botão "Ver texto retido" aparecer. Ausente = não há texto
+   * retido (ou a resposta é de antes desta mudança); nunca significa "o texto
+   * está logo abaixo".
+   */
+  texto_retido?: boolean;
   /** A mensagem que esta responde (citação). `null` = envio solto. */
   reply_to_message_id: string | null;
   created_at: string;

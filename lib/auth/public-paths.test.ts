@@ -52,9 +52,9 @@ describe("isPublicPath", () => {
   /**
    * `PATCH /api/v1/leads/[id]` aceita Bearer (auth-dual, monitoramento
    * processual). O que este bloco prova é a forma exata do segmento: UUID, não
-   * `[^/]+` — `/api/v1/leads/` tem irmãos LITERAIS no mesmo nível (`bulk`,
-   * `import`, `proposals`, `reactivations`), nenhum deles com
-   * suporte a Bearer, que um padrão largo tornaria público por engano.
+   * `[^/]+` — `/api/v1/leads/` tem irmãos LITERAIS no mesmo nível. Desde a
+   * Spec 33 (fatia 4) os que aceitam token têm porta PRÓPRIA, exata; um padrão
+   * largo daria carona a quem segue só de sessão (`[id]/conversion/retry`).
    */
   it("libera PATCH /api/v1/leads/[id] (bearer, forma de UUID)", () => {
     expect(isPublicPath("/api/v1/leads/11111111-1111-4111-8111-111111111111")).toBe(true);
@@ -77,6 +77,8 @@ describe("isPublicPath", () => {
     expect(isPublicPath("/api/v1/leads/11111111-1111-4111-8111-111111111111/clone")).toBe(true);
     // sub-path desconhecido sob [id] não ganha porta
     expect(isPublicPath("/api/v1/leads/11111111-1111-4111-8111-111111111111/x")).toBe(false);
+    // o irmão que segue só de sessão não ganha porta
+    expect(isPublicPath("/api/v1/leads/11111111-1111-4111-8111-111111111111/conversion/retry")).toBe(false);
   });
 
   /**
