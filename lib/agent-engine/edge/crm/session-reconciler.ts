@@ -257,7 +257,13 @@ export async function reconcileSessions(
       const estado = lerEstadoDoVigia(nossas[0]?.metadata);
       const decisao = decidirStartingPreso({
         status: wahaStatus,
-        msNoStatus: idadeNoStatusEmMs(nossas[0]?.last_status_change_at, agoraMs),
+        // O carimbo só mede o STARTING quando o espelho já está em STARTING: com o
+        // espelho em outro status, ele é a idade DESSE status, e um boot recém-
+        // -começado pareceria preso há dias.
+        msNoStatus:
+          nossas[0]?.status === 'STARTING'
+            ? idadeNoStatusEmMs(nossas[0]?.last_status_change_at, agoraMs)
+            : null,
         estado,
         agoraMs,
         limites: limitesDoStartingPreso(),
@@ -326,7 +332,7 @@ export async function reconcileSessions(
     // O desligamento espera este laço antes de fechar o pool.
     const { rows } = await pool.query<{ id: string; status: string }>(
       `update channel_sessions
-          set status = $2, updated_at = now()
+          set status = $2, last_status_change_at = now(), updated_at = now()
         where waha_session_name = $1
           and to_jsonb(channel_sessions) ->> 'archived_at' is null
           and status is distinct from $2

@@ -128,6 +128,34 @@ describe("sessão presa em STARTING (#4870)", () => {
     expect(await reconcileSessions(pool, cfg, createLogger())).toBe(0);
     expect(escritas.some((e) => e.sql.includes("- $2::text"))).toBe(true);
   });
+
+  // O webhook de STARTING pode se perder (o update.sh reinicia app e WAHA juntos):
+  // o espelho segue no status ANTERIOR, e o carimbo dele não é a idade do boot.
+  it("⭐ espelho WORKING há 10 dias com o transporte entrando em STARTING é boot: nada de restart", async () => {
+    const { chamadas } = transporteQueResponde("STARTING");
+    const { pool } = bancoDaSessao({
+      status: "WORKING",
+      last_status_change_at: new Date(Date.now() - minutos(10 * 24 * 60)),
+      metadata: {},
+    });
+
+    expect(await reconcileSessions(pool, cfg, createLogger())).toBe(0);
+    expect(chamadas.some((u) => u.includes("/stop"))).toBe(false);
+  });
+
+  it("o reconciliador carimba last_status_change_at quando grava o status novo", async () => {
+    transporteQueResponde("STARTING");
+    const { pool, escritas } = bancoDaSessao({
+      status: "WORKING",
+      last_status_change_at: new Date(Date.now() - 1_000),
+      metadata: {},
+    });
+
+    await reconcileSessions(pool, cfg, createLogger());
+    const update = escritas.find((e) => /set status = \$2/.test(e.sql));
+    expect(update, "update de status do espelho não foi feito").toBeDefined();
+    expect(update!.sql).toContain("last_status_change_at = now()");
+  });
 });
 
 /**
