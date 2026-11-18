@@ -107,7 +107,14 @@ const CONVERSA = "88888888-8888-4888-8888-888888888888";
 const CONTATO = "99999999-9999-4999-8999-999999999999";
 const SESSAO = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const PESSOA = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
-const AGORA = new Date("2026-11-14T12:00:00.000Z");
+/**
+ * O relógio do caminho de PRODUÇÃO — `portasDoMenu` não injeta `agora`, então
+ * `atenderMenuSemIa` lê o relógio de verdade. Uma data fixa aqui fazia o estado
+ * semeado nascer vencido e a suíte apodrecia 24 h depois de escrita: o menu era
+ * reenviado no lugar da escolha e as três opções reprovavam sem nada ter mudado
+ * no código. Quem mede VALIDADE usa datas explícitas (ver o caso da expiração).
+ */
+const AGORA = new Date();
 
 const MENU = {
   ativa: true,
@@ -273,8 +280,10 @@ describe("o modelo do menu", () => {
     const metadata = {
       [CHAVE_NO_METADATA]: { estado: "aguardando", atualizado_em: "2026-11-12T12:00:00.000Z", repeticao: 0 },
     };
-    expect(lerEstadoDoMenu(metadata, AGORA)).toBeNull();
-    expect(lerEstadoDoMenu(metadata, new Date("2026-11-13T12:00:00.000Z"))).not.toBeNull();
+    // 25 h depois: venceu. 23 h depois: ainda vale. As duas datas são fixas para
+    // o caso medir a VALIDADE, não o relógio de quem roda a suíte.
+    expect(lerEstadoDoMenu(metadata, new Date("2026-11-13T13:00:00.000Z"))).toBeNull();
+    expect(lerEstadoDoMenu(metadata, new Date("2026-11-13T11:00:00.000Z"))).not.toBeNull();
   });
 });
 
