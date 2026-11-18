@@ -590,6 +590,109 @@ describe("abordagem fria obedece o Estilo de resposta do agente (issue #2665)", 
     expect(String(reserva?.[0])).toContain("and false then now()");
   });
 
+  /**
+   * ─── O TEXTO PRÓPRIO DA SAÍDA, NO CAMINHO DE BOLHAS (#4370) ────────────────
+   *
+   * O pedido alcança os DOIS modos, e o de bolhas curtas é onde a personalização
+   * poderia virar texto livre: se a saída fosse fatiada junto com o texto do
+   * modelo, a instrução chegaria partida em duas mensagens (a pessoa leria
+   * "escrever PARAR que eu não" numa e "chamo mais" na outra). O corte é do texto
+   * do MODELO (`splitForSend`), e a saída entra na 1ª bolha já montada — é o que
+   * estes dois casos prendem.
+   */
+  const TEXTO_DO_DONO = "Se não fizer sentido pra vocês, é só escrever PARAR que eu não chamo mais.";
+
+  function campanhaComTextoDoDono(modo: "first_message" | "second_message") {
+    return {
+      ...campaign,
+      config: { ...campaign.config, exit_offer: modo, texto_da_saida: TEXTO_DO_DONO },
+    } as Campaign;
+  }
+
+  it("texto próprio da saída sai INTEIRO na 1ª bolha, uma vez, sem ser fatiado", async () => {
+    mocks.generate.mockResolvedValue({ ok: true, texto: textoDoModelo });
+    mocks.send.mockResolvedValue({ status: "sent", id: "balao" });
+    await sendNextCandidate(
+      {} as never,
+      database(undefined, candidate, versaoComEstilo) as never,
+      {} as never,
+      campanhaComTextoDoDono("first_message"),
+      dormir,
+    );
+
+    const corpos = mocks.send.mock.calls.map(([, , input]) => String(input?.body));
+    expect(corpos.length, "a abordagem saiu em uma mensagem só").toBeGreaterThan(1);
+    // Inteira na PRIMEIRA bolha: mesmo destino da frase padrão, pela mesma razão
+    // (a saída não pode depender de uma bolha posterior sair).
+    expect(corpos[0], "o texto do dono não está na 1ª bolha").toContain(TEXTO_DO_DONO);
+    // E em nenhuma outra: fatiada, a instrução chegaria pela metade — que é a
+    // forma mais cruel de prometer uma saída que não se consegue usar.
+    for (const corpo of corpos.slice(1))
+      expect(
+        corpo,
+        `a saída foi picada entre bolhas: ${corpo}`,
+      ).not.toContain(TEXTO_DO_DONO);
+
+    const tudo = corpos.join("\n");
+    // Uma vez só: nem duplicada, nem acompanhada da frase padrão.
+    expect(tudo.split(TEXTO_DO_DONO).length - 1, "a saída saiu mais de uma vez").toBe(1);
+    expect(tudo, "a frase padrão saiu junto do texto do dono").not.toContain(rodapeDeSaida(null));
+  });
+
+  it("exit_offer=second_message com texto próprio: ele NÃO sai na abordagem fria (é da 2ª mensagem)", async () => {
+    mocks.generate.mockResolvedValue({ ok: true, texto: textoDoModelo });
+    mocks.send.mockResolvedValue({ status: "sent", id: "balao" });
+    await sendNextCandidate(
+      {} as never,
+      database(undefined, candidate, versaoComEstilo) as never,
+      {} as never,
+      campanhaComTextoDoDono("second_message"),
+      dormir,
+    );
+
+    const corpos = mocks.send.mock.calls.map(([, , input]) => String(input?.body));
+    expect(corpos.length).toBeGreaterThan(1);
+    // Quem cola o texto na 2ª mensagem é `saida-configuravel.ts` — e ele lê o
+    // MESMO `texto_da_saida` (teste do bloco (4) no arquivo do #4370). Aqui se
+    // prende só o que o worker não pode fazer: oferecer a saída antes da hora.
+    for (const corpo of corpos)
+      expect(
+        corpo,
+        "a saída personalizada saiu na abordagem fria sem a configuração mandar",
+      ).not.toContain(TEXTO_DO_DONO);
+  });
+
+  it("campanha JÁ SALVA com a palavra riscada não pausa: sai a frase padrão (#4370, decisão (a))", async () => {
+    // A sonda do mantenedor: `texto_da_saida` gravado antes desta régua, com a
+    // palavra dentro de `~riscado~`. O envio faz `campaignConfigSchema.parse` a
+    // cada rodada (`worker.ts`); com o schema recusando, o `ZodError` não é
+    // `ProspectingError`, cai no `else` do tratamento e a campanha pausava com
+    // «Falha inesperada no envio». Aqui o envio inteiro roda com o texto riscado.
+    const escondido = "Se não quiser mais, responda ~PARAR~.";
+    const db = database(undefined, candidate, versaoComEstilo);
+    mocks.generate.mockResolvedValue({ ok: true, texto: textoDoModelo });
+    mocks.send.mockResolvedValue({ status: "sent", id: "balao" });
+    await sendNextCandidate(
+      {} as never,
+      db as never,
+      {} as never,
+      { ...campaign, config: { ...campaign.config, texto_da_saida: escondido } } as Campaign,
+      dormir,
+    );
+
+    const corpos = mocks.send.mock.calls.map(([, , input]) => String(input?.body));
+    const tudo = corpos.join("\n");
+    // O texto ilegível NÃO sai (é o defeito do #4370)...
+    expect(tudo, "o texto com a palavra riscada saiu").not.toContain(escondido);
+    // ...mas a saída NÃO some: a campanha volta para a frase padrão do idioma.
+    expect(corpos[0], "a saída não voltou para a frase padrão").toContain(rodapeDeSaida(null));
+    // E a campanha NÃO foi pausada por causa do texto gravado.
+    expect(
+      db.query.mock.calls.some(([q]) => String(q).includes("status='paused'")),
+      "a campanha foi pausada pela palavra riscada já salva",
+    ).toBe(false);
+  });
+
   it("sem o estilo ligado, a abordagem continua saindo em UMA mensagem (não regredir)", async () => {
     mocks.generate.mockResolvedValue({ ok: true, texto: textoDoModelo });
     await sendNextCandidate(

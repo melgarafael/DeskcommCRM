@@ -97,6 +97,35 @@ Authorization: Bearer dsk_xxxxxxxxxxxxxxxxxxxx
 - Para agentes (Spec 10), o runner mints um token efêmero (TTL 5min) escopado: `actor_type='ai_agent'`, `agent_run_id=run.id`. Não aparece na UI; é interno.
 - Token escopo: tools podem checar `tok.role >= manager` para mutations sensíveis (mesmas regras do REST).
 
+#### 2.2.1 OAuth 2.1 para clientes que não aceitam cabeçalho (migration 9390)
+
+O ChatGPT (e outros clientes de MCP) só oferece OAuth ou "sem autenticação" — não há onde colar o
+`dsk_`. O CRM é o servidor de autorização do próprio recurso, conforme a especificação de
+autorização do MCP:
+
+| Passo | Endereço | Norma |
+|---|---|---|
+| 401 do `/api/mcp` leva `WWW-Authenticate: Bearer resource_metadata="…"` | `app/api/mcp/route.ts` | RFC 9728 §5.1 |
+| Metadados do recurso | `GET /.well-known/oauth-protected-resource` (e `…/api/mcp`) | RFC 9728 |
+| Metadados do servidor | `GET /.well-known/oauth-authorization-server` | RFC 8414 |
+| Registro dinâmico | `POST /api/mcp/oauth/register` | RFC 7591 |
+| Autorização (ponte → `/oauth/mcp/consentir`) | `GET /api/mcp/oauth/authorize` | OAuth 2.1 + PKCE S256 + `resource` (RFC 8707) |
+| Token e renovação (rotação) | `POST /api/mcp/oauth/token` | OAuth 2.1 §4.1.3 / §4.3 |
+| Revogação | `POST /api/mcp/oauth/revoke` | RFC 7009 |
+
+- **O access token é um `dsk_` de `api_tokens`.** O `/api/mcp` valida pelo caminho de sempre: mesmo
+  ator (`api_token`), escopos `mcp:read` / `mcp:write` + `role:admin`, mesma auditoria e isolamento.
+  A marca `aud:mcp` prende o token ao `/api/mcp`: no `/api/v1` ele recebe 403 (`resolveApiToken`).
+  Uma conexão = uma linha de `api_tokens` (nome `<cliente> (OAuth)`); a renovação troca o hash na
+  mesma linha. Revogar na tela API Tokens desliga a conexão na renovação seguinte.
+- Só **admin** da organização escolhida autoriza (a régua de quem emite token na tela). A renovação
+  (a cada hora) re-confere que a pessoa segue admin; se não, revoga.
+- Prazos: código 5 min, access 1 h, refresh 60 dias (renovado a cada uso; cada refresh vale uma vez, e
+  reapresentar um já rotacionado desliga a conexão — a pessoa reconecta). Origem anunciada =
+  `NEXT_PUBLIC_APP_URL`, nunca o `Host`.
+- Mapa: `docs/architecture/mcp-oauth-servidor.architecture.json`. Prova de banco:
+  `tests/invariants/mcp-oauth-servidor.test.ts`.
+
 ### 2.3 Erros
 
 MCP error codes mapeados:
@@ -201,6 +230,25 @@ inputSchema: z.object({
   limit: z.number().int().min(1).max(50).default(10)
 })
 ```
+
+#### `crm_count_leads`
+**Maps to**: `countLeadsHandler` (`app/api/v1/leads/_handler.ts`) — sem rota REST própria.
+
+Conta negócios **sem listá-los**. Existe porque `crm_list_leads` só pagina por cursor e não informa o total: quem precisa de "quantos?" acabava paginando a lista inteira e levando todos os negócios ao modelo. Devolve só números — nenhum nome, contato ou id.
+
+```ts
+inputSchema: z.object({
+  pipeline_id: z.string().uuid().optional(),
+  stage_id: z.string().uuid().optional(),
+  status: z.enum(['open', 'won', 'lost']).optional()
+})
+outputSchema: z.object({
+  total: z.number().int(),
+  by_status: z.object({ open: z.number(), won: z.number(), lost: z.number() }).optional() // só sem filtro de status
+})
+```
+
+Mesma régua de visibilidade da listagem: `organization_id` na primeira cláusula (client service-role), negócio de contato pessoal não conta e, em conversa de atendimento, conta apenas os negócios do contato do turno. Contagem feita no banco (`head: true`, `count: 'exact'`).
 
 #### `crm_get_lead`
 **Maps to**: `GET /api/v1/leads/:id`
@@ -317,7 +365,7 @@ A versão do agente armazena `tool_ids text[]` (Spec 10 §3.2). Validação no p
 const VALID_TOOL_IDS = [
   'crm_search_contacts', 'crm_get_contact',
   'crm_list_conversations', 'crm_get_conversation', 'crm_get_conversation_history',
-  'crm_list_leads', 'crm_get_lead', 'crm_list_pipelines',
+  'crm_list_leads', 'crm_count_leads', 'crm_get_lead', 'crm_list_pipelines',
   'crm_send_whatsapp_message', 'crm_create_lead', 'crm_update_lead', 'crm_move_lead_stage',
   'crm_request_human_handoff'
 ]

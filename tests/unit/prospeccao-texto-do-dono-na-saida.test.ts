@@ -5,8 +5,13 @@ import path from "node:path";
 import type { ChannelSendResult } from "@/lib/agent-engine/channel-adapter";
 import { audit } from "@/lib/audit";
 import { campaignConfigSchema } from "@/lib/prospecting/schema";
+import { ProspectingError } from "@/lib/prospecting/provider";
+import { activateCampaign, validateConfig } from "@/lib/prospecting/store";
+import { ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
+import { traduzir } from "@/lib/i18n/dicionario";
 import {
   comSaida,
+  palavraDeSaida,
   problemaNoTextoDaSaida,
   problemaNoTextoDaSaidaNoIdioma,
   rodapeDeSaida,
@@ -17,6 +22,17 @@ import {
 import { enviarComSaidaConfiguravel } from "@/lib/prospecting/saida-configuravel";
 
 vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
+// O `store.ts` (o SALVAR e o `validateConfig`) puxa estes módulos; os dublês são
+// os mesmos do teste de ativação (`prospeccao-arquivar-campanha.test.ts`), que já
+// prova que `validateConfig` passa com eles.
+vi.mock("@/lib/atendimento/origem", () => ({
+  assertServiceBoundarySupabase: vi.fn(),
+  beginServiceAtOrigin: vi.fn(),
+}));
+vi.mock("@/lib/agent-engine/agent/router-config", () => ({ loadActiveRouter: async () => null }));
+vi.mock("@/lib/agent-engine/agent/agent-config", () => ({
+  loadPublishedAgentConfig: async () => ({ agentId: "00000000-0000-4000-8000-000000000001" }),
+}));
 const auditMock = vi.mocked(audit);
 
 /** O que o `audit` recebeu — o dublê não infere os parâmetros da função real. */
@@ -70,6 +86,44 @@ const BASE = {
   qualification: "Confirmar se quem responde decide sobre o site.",
   legal_basis_ref: "LIA-2026-11",
 };
+
+const ORG = "00000000-0000-4000-8000-0000000000a1";
+const CAMPANHA = "00000000-0000-4000-8000-0000000000a2";
+
+/**
+ * O banco mínimo do SALVAR (`activateCampaign`) e de `validateConfig`, com as
+ * mesmas respostas do teste de ativação. A régua do texto roda ANTES de
+ * qualquer `update`, então uma recusa tem de deixar `escritas` vazio.
+ */
+function bancoDoSalvar(locale: string | null = null) {
+  const escritas: Array<{ sql: string; params: unknown[] }> = [];
+  const query = vi.fn(async (sql: string, params: unknown[] = []) => {
+    if (/^(update|insert|delete)/i.test(sql)) escritas.push({ sql, params });
+    const rows = (() => {
+      if (sql.includes("pg_try_advisory_lock")) return [{ locked: true }];
+      if (sql.includes("select locale from organizations")) return [{ locale }];
+      if (sql.includes("from ai_agents a join ai_agent_versions"))
+        return [{ tool_ids: ["crm_move_lead_stage"], pipeline_ids: [BASE.pipeline_id] }];
+      if (sql.includes("from channel_sessions")) return [{ provider: "waha", status: "WORKING" }];
+      if (sql.includes("from crm_stages"))
+        return [{ id: BASE.stage_id }, { id: BASE.qualified_stage_id }];
+      if (sql.startsWith("select * from prospecting_campaigns"))
+        return [
+          {
+            id: CAMPANHA,
+            name: "Clinica",
+            status: "draft",
+            search_status: "succeeded",
+            config: null,
+          },
+        ];
+      return [];
+    })();
+    return { rows, rowCount: rows.length };
+  });
+  const pool = { connect: async () => ({ query, release: vi.fn() }) };
+  return { pool: pool as never, db: { query } as never, escritas };
+}
 
 /** db falso com respostas por trecho de SQL; a ORDEM decide o casamento. */
 function dbFalso(respostas: ReadonlyArray<readonly [string, unknown[]]>) {
@@ -155,6 +209,44 @@ describe("(2) a palavra exigida é a do IDIOMA da instalação", () => {
     expect(textoDaSaidaEfetivo(TEXTO_DO_DONO, "es-AR")).toBe(PADRAO_ES);
     expect(textoDaSaidaEfetivo(TEXTO_DO_DONO, "pt-BR")).toBe(TEXTO_DO_DONO);
     expect(comSaida("Hola", "es-AR", TEXTO_DO_DONO)).toBe(`Hola\n\n${PADRAO_ES}`);
+  });
+
+  it("texto que TROCA a palavra por sinônimo é recusado — o sinônimo não é resposta de saída", () => {
+    // O pedido é explícito: a PALAVRA reconhecida continua no texto; escrever em
+    // volta é livre, substituí-la por um sinônimo não. Estes três são os
+    // sinônimos que alguém escreveria de boa-fé — e nenhum deles descadastra:
+    // `cancelar` sozinho saiu do detector no #4579 (é resposta de menu), e
+    // "chega"/"que não" nunca estiveram lá.
+    for (const texto of [
+      "Se não quiser mais, responda CANCELAR.",
+      "Se não fizer sentido, é só escrever CHEGA.",
+      "Se não quiser mais, é só responder que não.",
+    ]) {
+      expect(
+        problemaNoTextoDaSaidaNoIdioma(texto, "pt-BR"),
+        `sinônimo aceito no lugar da palavra: ${texto}`,
+      ).toBe("sem_palavra");
+      // E a recusa acontece AO SALVAR: o schema tem de barrar o texto, no campo.
+      const recusado = campaignConfigSchema.safeParse({ ...BASE, texto_da_saida: texto });
+      expect(recusado.success, `o schema aceitou um sinônimo: ${texto}`).toBe(false);
+      const recusa = recusado.success
+        ? undefined
+        : recusado.error.issues.find((i) => i.path.join(".") === "texto_da_saida");
+      expect(recusa, `a recusa não é do campo texto_da_saida: ${texto}`).toBeDefined();
+    }
+    // Por que a recusa é a certa: nenhuma dessas respostas é pedido de saída. Se
+    // o rodapé ensinasse uma delas, a pessoa responderia e seguiria recebendo.
+    expect(ehPedidoDeOptOut("CANCELAR")).toBe(false);
+    expect(ehPedidoDeOptOut("CHEGA")).toBe(false);
+    expect(ehPedidoDeOptOut("que não")).toBe(false);
+    // `SAIR` é o caso de borda: o detector o reconhece SOZINHO (está em
+    // `PALAVRAS_DE_OPT_OUT`), mas ele não é a palavra que este idioma promete —
+    // a régua exige a do idioma da instalação (PARAR em pt, BAJA em es, STOP em
+    // en), para a campanha não ensinar duas saídas diferentes na mesma operação.
+    expect(ehPedidoDeOptOut("SAIR")).toBe(true);
+    expect(problemaNoTextoDaSaidaNoIdioma("Se não quiser mais, responda SAIR.", "pt-BR")).toBe(
+      "sem_palavra",
+    );
   });
 
   it("tamanho e link, sem palavra, e vazio como válido", () => {
@@ -286,5 +378,178 @@ describe("o caminho de envio lê o texto da CAMPANHA, não o do modelo", () => {
       "o modo `first_message` não usa o texto configurado da campanha",
     ).toMatch(/comSaida\([^)]*cfg\.texto_da_saida/);
     expect(worker).not.toMatch(/generated\.texto\s*\+\s*["'`]/);
+  });
+});
+
+/**
+ * ─── (5) A PALAVRA QUE ESTÁ LÁ E NÃO SE LÊ (#4370) ──────────────────────────
+ *
+ * O pedido diz "a PALAVRA continua presente", e o defeito que sobrava passa por
+ * aqui: `~PARAR~` TEM a palavra e o schema aceitava. No aparelho, `~x~` é
+ * riscado no WhatsApp, `||x||` é spoiler e crases viram código — a campanha
+ * inicia e a instrução manda responder algo que o cliente desenha como
+ * APAGADO. É a mesma família de erro que o rodapé existe para impedir (prometer
+ * uma saída que não se consegue usar), só que pela FORMA.
+ */
+describe("(5) a palavra não pode ir escondida por formatação", () => {
+  /** A régua que a tela e o servidor aplicam: o idioma é o da instalação. */
+  const noIdioma = (texto: string) => problemaNoTextoDaSaidaNoIdioma(texto, "pt-BR");
+
+  it("riscado, spoiler e código em cima da palavra são RECUSADOS ao salvar", () => {
+    for (const texto of [
+      "Se não quiser mais, responda ~PARAR~.",
+      "Se não quiser mais, responda ~~PARAR~~.",
+      "Se não quiser mais, responda ||PARAR||.",
+      "Se não quiser mais, responda `PARAR`.",
+      "Se não quiser mais, responda ```PARAR```.",
+      // O til de "cerca de" ANTES do riscado de verdade: sem a borda de letra, o
+      // padrão pareava o til solto com o que abre `~PARAR~` e deixava `PARAR~`
+      // de fora do par — a palavra riscada passava como legível.
+      "Custa ~R$ 50. Se não quiser mais, responda ~PARAR~.",
+    ])
+      expect(noIdioma(texto), `a palavra escondida passou: ${texto}`).toBe("palavra_escondida");
+  });
+
+  it("o schema NÃO recusa a palavra riscada — a recusa é do salvar (#4647, decisão (a))", () => {
+    // A sonda do mantenedor: este é o MESMO parse que o envio faz a cada rodada
+    // (`worker.ts`). Se ele lançar, o `ZodError` não é `ProspectingError` e a
+    // campanha pausa com «Falha inesperada no envio» — o efeito que a decisão
+    // (a) recusa. Aqui se mede o `parse` de verdade, não o olho.
+    const config = { ...BASE, texto_da_saida: "Se não quiser mais, responda ~PARAR~." };
+    let parsed: unknown = null;
+    expect(
+      () => {
+        parsed = campaignConfigSchema.parse(config);
+      },
+      "o schema que o envio faz lançou para a campanha já salva",
+    ).not.toThrow();
+    expect(parsed).not.toBeNull();
+    // E o texto que esse envio leva é a frase padrão do idioma: a palavra
+    // riscada não sai (é ilegível no aparelho), mas a saída não some.
+    expect(textoDaSaidaEfetivo(config.texto_da_saida, "pt-BR")).toBe(PADRAO_PT);
+  });
+
+  it("quem recusa a palavra riscada é o SALVAR — 422 com a frase que ensina o conserto", async () => {
+    const { pool, escritas } = bancoDoSalvar();
+    const erro = await activateCampaign(
+      pool,
+      {} as never,
+      ORG,
+      CAMPANHA,
+      campaignConfigSchema.parse({
+        ...BASE,
+        texto_da_saida: "Se não quiser mais, responda ~PARAR~.",
+      }),
+    ).catch((e: unknown) => e);
+    expect(erro).toBeInstanceOf(ProspectingError);
+    expect((erro as ProspectingError).status).toBe(422);
+    expect((erro as ProspectingError).escopo).toBe("campanha");
+    const mensagem = (erro as ProspectingError).message;
+    // A frase antiga mandaria INCLUIR uma palavra que já está no texto: conserto
+    // que não se acha lendo o aviso. A de agora nomeia a marcação.
+    expect(mensagem).toContain("riscada");
+    expect(mensagem, "a recusa manda incluir uma palavra que já está lá").not.toContain(
+      "precisa conter",
+    );
+    // E NADA foi gravado: a campanha não inicia com um texto que o cliente lê apagado.
+    expect(escritas).toEqual([]);
+  });
+
+  it("o ENVIO e a RETOMADA aceitam a campanha já salva com o texto riscado — não pausam", async () => {
+    const { db } = bancoDoSalvar();
+    const config = campaignConfigSchema.parse({
+      ...BASE,
+      texto_da_saida: "Se não quiser mais, responda ~PARAR~.",
+    });
+    // Sem `aoGravar` é o caminho do `worker.ts` (a cada envio) e o da rota de
+    // retomada: a campanha já existe, e o texto dela não pode impedir o envio.
+    await expect(validateConfig(db, ORG, config)).resolves.toBeDefined();
+  });
+
+  it("o servidor pega o caso que só a régua do IDIOMA vê", () => {
+    // pt instalado, BAJA legível e PARAR riscado: o schema genérico passa (há
+    // palavra de saída no texto) e é `validarTextoDaSaidaNoIdioma` quem recusa.
+    const misto = "Si no quieres más, escribe BAJA (o ~~PARAR~~ también vale).";
+    expect(problemaNoTextoDaSaida(misto), "o schema genérico já recusaria — o caso perde o sentido").toBeNull();
+    expect(noIdioma(misto)).toBe("palavra_escondida");
+  });
+
+  it("palavra LEGÍVEL continua aceita — negrito, acento, caixa e o til de 'cerca de'", () => {
+    expect(noIdioma("Se não quiser mais, responda *PARAR*.")).toBeNull();
+    expect(noIdioma("Se não for o caso, é só responder PARÁR.")).toBeNull();
+    expect(noIdioma("Se não quiser mais, pode responder parar.")).toBeNull();
+    // Um til solto (de "cerca de", sem par fechando) não é riscado; a palavra
+    // está fora dele e continua visível.
+    expect(noIdioma("Custa ~R$ 50 por mês. Para sair, responda PARAR.")).toBeNull();
+    // DOIS tis de "cerca de", com a palavra legível entre eles: o riscado do
+    // WhatsApp não fecha depois de espaço nem atravessa linha, então não há par.
+    // Medido na triagem: o padrão sem essa borda devolvia `palavra_escondida`.
+    expect(noIdioma("Planos de ~R$ 50. Para sair, responda PARAR. Entrega em ~3 dias.")).toBeNull();
+    expect(noIdioma("Custa ~50 reais.\nPara sair, responda PARAR.\nPrazo ~2 dias.")).toBeNull();
+  });
+
+  it("texto escondido gravado por fora não sai: cai na frase padrão de hoje", () => {
+    const escondido = "Se não quiser mais, responda ~PARAR~.";
+    expect(textoDaSaidaEfetivo(escondido, "pt-BR")).toBe(PADRAO_PT);
+    expect(comSaida("Oi, tudo bem?", "pt-BR", escondido)).toBe(`Oi, tudo bem?\n\n${PADRAO_PT}`);
+  });
+
+  it("o detector continua reconhecendo a resposta com o rodapé personalizado", () => {
+    // O rodapé é texto da EMPRESA: não é pedido de opt-out.
+    expect(ehPedidoDeOptOut(TEXTO_DO_DONO)).toBe(false);
+    // A resposta que ele ENSINA a dar é, e continua sendo, a palavra sozinha.
+    expect(ehPedidoDeOptOut("PARAR")).toBe(true);
+    expect(ehPedidoDeOptOut("parar.")).toBe(true);
+    expect(ehPedidoDeOptOut("Parar!")).toBe(true);
+  });
+
+  it("a palavra que o texto do dono ENSINA é a que o detector reconhece — nos três idiomas", () => {
+    // O laço é o ponto: a régua de aceitação (`problemaNoTextoDaSaidaNoIdioma`) e
+    // o detector são DOIS lados do mesmo contrato, e o que fecha o laço é a
+    // palavra que o texto manda responder. Sem este teste, um texto aceito com
+    // uma palavra que o detector não conhece passaria — a pessoa responderia e
+    // seguiria recebendo.
+    const casos = [
+      { locale: "pt-BR", texto: "Se não fizer sentido, é só responder PARAR.", resposta: "Parar!" },
+      { locale: "es-AR", texto: "Si no tiene sentido, escribí BAJA y no escribo más.", resposta: "baja." },
+      { locale: "en-US", texto: "If this isn't for you, reply STOP and I won't write again.", resposta: "STOP" },
+    ] as const;
+    for (const { locale, texto, resposta } of casos) {
+      expect(
+        problemaNoTextoDaSaidaNoIdioma(texto, locale),
+        `o texto com tom próprio foi recusado em ${locale}`,
+      ).toBeNull();
+      // A palavra do texto é a do idioma — o dono escreve EM VOLTA dela, não no
+      // lugar dela.
+      expect(texto).toContain(palavraDeSaida(locale));
+      // E ela, respondida sozinha (com caixa e pontuação do dia a dia), descadastra.
+      expect(ehPedidoDeOptOut(resposta), `a resposta ensinada em ${locale} não descadastra`).toBe(
+        true,
+      );
+    }
+  });
+
+  it("a recusa chega traduzida em espanhol e em inglês", () => {
+    const chave =
+      "A palavra está no texto, mas riscada, escondida ou em código. Tire a marcação de cima dela: é o que a pessoa vai responder.";
+    // pt-BR é a CHAVE do dicionário; o espanhol é coluna dele.
+    expect(traduzir(chave, "pt-BR")).toBe(chave);
+    expect(traduzir(chave, "es")).not.toBe(chave);
+    // O inglês deste produto mora no catálogo (`em_construcao`, ainda não
+    // carregado em runtime) — a frase tem de existir lá para o dia da promoção.
+    const en = JSON.parse(
+      fs.readFileSync(path.join(RAIZ, "lib/i18n/traducoes/en.json"), "utf8"),
+    ) as Record<string, string>;
+    expect(en[chave], "a frase da recusa não está no catálogo em inglês").toBeTruthy();
+    // As OUTRAS recusas do mesmo campo — inclusive a de "sem a palavra", que é a
+    // dos casos (2) e (3) — também precisam de inglês: sem elas, a validação que
+    // o pedido chama de clara só existiria em pt e es.
+    for (const outra of [
+      "Inclua a palavra que a pessoa responde para sair; sem ela o pedido não é reconhecido.",
+      "Use até 160 caracteres e nenhum link.",
+    ]) {
+      expect(en[outra], `sem inglês para a recusa: ${outra}`).toBeTruthy();
+      expect(traduzir(outra, "es"), `sem espanhol para a recusa: ${outra}`).not.toBe(outra);
+    }
   });
 });
