@@ -148,13 +148,17 @@ function ehFalhaDeDns(erro: unknown): boolean {
   );
 }
 
+/**
+ * O código do erro de certificado, venha de onde vier: o `fetch` o põe em
+ * `cause.code`; o `https.request` (a leitura com DNS fixado) o põe no próprio
+ * `erro.code`, sem `cause`. Ler só um dos dois faz certificado vencido virar
+ * "fora do ar" em vez de "SSL inválido".
+ */
 function codigoSsl(erro: unknown): string | null {
-  const causa = String(
-    (erro as { cause?: { code?: string; message?: string } })?.cause?.code ??
-      (erro as { cause?: { message?: string } })?.cause?.message ??
-      (erro as Error)?.message ??
-      "",
-  );
+  const e = erro as { code?: unknown; message?: unknown; cause?: { code?: unknown; message?: unknown } };
+  const causa = [e?.cause?.code, e?.code, e?.cause?.message, e?.message]
+    .filter((parte) => typeof parte === "string")
+    .join(" ");
   const m = /(CERT_[A-Z_]+|DEPTH_ZERO_SELF_SIGNED_CERT|UNABLE_TO_VERIFY_LEAF_SIGNATURE|ERR_TLS_CERT_ALTNAME_INVALID)/.exec(
     causa,
   );

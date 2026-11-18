@@ -73,6 +73,19 @@ describe("site-fetch", () => {
     expect(v.problemas).not.toContain("sem-https");
   });
 
+  // A leitura com DNS fixado usa `https.request`, que entrega o código do
+  // certificado em `erro.code`, SEM `cause` (o `fetch` o punha em `cause.code`).
+  for (const code of ["CERT_HAS_EXPIRED", "DEPTH_ZERO_SELF_SIGNED_CERT", "ERR_TLS_CERT_ALTNAME_INVALID"]) {
+    it(`erro de certificado em erro.code sem cause (${code}) vira ssl-invalido, não fora do ar`, async () => {
+      const falhaDeCertificado = (async () => {
+        throw Object.assign(new Error("falha de certificado"), { code });
+      }) as unknown as typeof fetch;
+      const v = await auditarSite("https://exemplo.com.br", AGORA, falhaDeCertificado, VERIFICADOR_LIBERADO);
+      expect(v.classe).toBe("ssl-invalido");
+      expect(v.problemas).toEqual(["ssl-invalido"]);
+    });
+  }
+
   describe("resposta de erro que não é prova de defeito (pedido da triagem do #2711)", () => {
     const respondeCom = (status: number, headers: Record<string, string> = {}) =>
       (async () => new Response("<html><title>Just a moment...</title></html>", { status, headers })) as unknown as typeof fetch;
