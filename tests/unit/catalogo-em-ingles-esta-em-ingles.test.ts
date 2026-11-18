@@ -78,9 +78,22 @@ const PALAVRAS_DO_PORTUGUES = new Set(
  */
 const DADO_GRAVADO_EM_PORTUGUES = ["Cliente Anonimizado #N"];
 
+/**
+ * O que a tradução NÃO pode mudar e por isso não é prosa: o placeholder
+ * (`{conversas}`, `{{empresa}}` — o nome tem de ser o da chave, senão o
+ * `.replace` fica sem alvo) e o trecho entre crases, que cita dado ou sintaxe
+ * literal (`de: "nós"`, `{{contato.<campo>}}`) que o modelo e a tela leem como é,
+ * e o endereço (URL), cujos parâmetros são do sistema de fora.
+ */
+const PLACEHOLDER = /\{\{?[^{}]*\}?\}/g;
+const TRECHO_DE_CODIGO = /`[^`]*`/g;
+/** Endereço é literal também: `?cliente={{erp_id}}` é o parâmetro que o sistema de fora espera. */
+const ENDERECO = /\bhttps?:\/\/\S+/g;
+
 /** As palavras em português que a tradução carrega sem serem nome próprio nem dado citado. */
 function sobraDePortugues(valor: string): string[] {
-  const semDado = DADO_GRAVADO_EM_PORTUGUES.reduce((texto, dado) => texto.split(dado).join(" "), valor);
+  const semLiteral = valor.replace(TRECHO_DE_CODIGO, " ").replace(ENDERECO, " ").replace(PLACEHOLDER, " ");
+  const semDado = DADO_GRAVADO_EM_PORTUGUES.reduce((texto, dado) => texto.split(dado).join(" "), semLiteral);
   return palavras(semDado).filter(
     (palavra) =>
       (LETRA_DO_PORTUGUES.test(palavra) && !NOMES_PROPRIOS_COM_ACENTO.has(palavra)) ||
@@ -104,6 +117,12 @@ describe("o catálogo em inglês", () => {
     // Nome próprio e dado citado passam.
     expect(sobraDePortugues("São Paulo (Brazil)")).toEqual([]);
     expect(sobraDePortugues('The name becomes "Cliente Anonimizado #N".')).toEqual([]);
+    // Placeholder e trecho entre crases são literais que a tradução preserva...
+    expect(sobraDePortugues("{feitas} of {conversas} conversations")).toEqual([]);
+    expect(sobraDePortugues('marked as ours (`de: "nós"`)')).toEqual([]);
+    // ...mas a prosa ao redor deles continua vigiada.
+    expect(sobraDePortugues("{feitas} de {conversas} conversas")).toEqual(["conversas"]);
+    expect(sobraDePortugues("`de: x` salvar")).toEqual(["salvar"]);
   });
 
   it("nenhuma tradução carrega palavra em português", () => {

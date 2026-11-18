@@ -105,9 +105,10 @@ export const REGISTRO_DE_IDIOMAS = [
     // resolve pela região de quem lê (data, número), em vez de impor os EUA.
     tagBcp47: "en",
     subtagsDoNavegador: ["en"],
-    // Catálogo em `lib/i18n/traducoes/en.json`, lido por `catalogos.ts` (fatia 4
-    // do PROG-022). Aparece quando o nível for promovido.
-    nivel: "em_construcao",
+    // Catálogo em `lib/i18n/traducoes/en.json`, lido por `catalogos.ts`.
+    // `completo`: toda frase de tela tem inglês, e o gate de
+    // `tests/unit/i18n-espanhol-cobre-a-tela` reprova a que faltar.
+    nivel: "completo",
     mantenedor: null,
   },
 ] as const satisfies readonly IdiomaRegistrado[];
