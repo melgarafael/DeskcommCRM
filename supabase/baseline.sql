@@ -18514,6 +18514,53 @@ create table if not exists public.crm_tasks (
   constraint crm_tasks_status_check check (status in ('pending','in_progress','done','cancelled'))
 );
 
+-- ---- prazo do passo do plano contado de um campo de data do card (migration 9404, #4717) ----
+-- A ORIGEM do prazo: qual plano, qual passo, qual campo de data, quantos dias e
+-- por que a tarefa está sem prazo. Nulo em tudo = tarefa avulsa ou plano no modo
+-- antigo (`vence_em_dias`). O porquê inteiro está no cabeçalho da 9404.
+alter table public.crm_tasks
+  add column if not exists plan_id text,
+  add column if not exists plan_step smallint,
+  add column if not exists prazo_campo text,
+  add column if not exists prazo_dias integer,
+  add column if not exists prazo_motivo text;
+
+alter table public.crm_tasks drop constraint if exists crm_tasks_prazo_campo_check;
+alter table public.crm_tasks
+  add constraint crm_tasks_prazo_campo_check
+  check (prazo_campo is null or length(btrim(prazo_campo)) between 1 and 64);
+
+alter table public.crm_tasks drop constraint if exists crm_tasks_prazo_dias_check;
+alter table public.crm_tasks
+  add constraint crm_tasks_prazo_dias_check
+  check (prazo_dias is null or prazo_dias between -365 and 365);
+
+alter table public.crm_tasks drop constraint if exists crm_tasks_prazo_motivo_check;
+alter table public.crm_tasks
+  add constraint crm_tasks_prazo_motivo_check
+  check (
+    prazo_motivo is null
+    or prazo_motivo in ('campo_de_data_vazio', 'campo_de_data_invalido')
+  );
+
+alter table public.crm_tasks drop constraint if exists crm_tasks_plan_step_check;
+alter table public.crm_tasks
+  add constraint crm_tasks_plan_step_check
+  check (plan_step is null or plan_step between 1 and 500);
+
+create index if not exists crm_tasks_plano_aberto_idx
+  on public.crm_tasks (organization_id, plan_id)
+  where plan_id is not null and status in ('pending', 'in_progress');
+
+comment on column public.crm_tasks.plan_id is
+  'Plano de tarefas que criou a linha (organizations.settings.task_plans[].id). Nulo = tarefa avulsa.';
+comment on column public.crm_tasks.prazo_campo is
+  'Chave do campo de DATA do negócio de onde o prazo conta (#4717). Nulo = prazo contado da aplicação.';
+comment on column public.crm_tasks.prazo_dias is
+  'Deslocamento em dias a partir do campo: negativo = antes, positivo = depois, 0 = o próprio dia.';
+comment on column public.crm_tasks.prazo_motivo is
+  'Por que a tarefa está sem prazo: campo_de_data_vazio | campo_de_data_invalido. Nulo = prazo calculado.';
+
 -- A consulta da tela: "o que vence, na minha organização, em ordem de prazo".
 create index if not exists crm_tasks_org_due_idx
   on public.crm_tasks (organization_id, due_date);
@@ -77178,6 +77225,134 @@ grant execute on function public.fn_guard_vinculo_de_clone_do_lead() to service_
 drop trigger if exists trg_guard_vinculo_de_clone_do_lead on public.crm_leads;
 create trigger trg_guard_vinculo_de_clone_do_lead before insert or update of source_metadata
   on public.crm_leads for each row execute function public.fn_guard_vinculo_de_clone_do_lead();
+
+-- ---- o prazo do plano recalculado quando a data do card muda (migration 9404, #4717) ----
+-- Espelho da 9404. Fica junto dos outros gatilhos de `crm_leads` e DEPOIS de
+-- todas as tabelas que ele lê (`organizations`, `crm_leads`, `crm_tasks`).
+--
+-- O lugar é DEPOIS do bloco da 9389 INTEIRO — gatilho incluído —, e não entre a
+-- função e o gatilho dela: o invariante `vinculo-de-clone-so-do-servidor`
+-- compara o texto que vai de `create or replace function
+-- public.fn_guard_vinculo_de_clone_do_lead` até o `execute function ...` do
+-- gatilho com o da migration, byte a byte. Um bloco alheio no meio daquele
+-- trecho muda o texto e reprova a cerca — sem que nada de segurança tenha
+-- mudado. Qualquer apêndice novo entra abaixo do fecho do bloco anterior.
+--
+-- `fn_prazo_do_campo` é a ÚNICA implementação da conta "dia do campo + N dias,
+-- às 09:00 no fuso da organização": a aplicação do plano
+-- (`lib/tarefas/prazo-relativo.ts`) e o gatilho abaixo chamam a MESMA função.
+create or replace function public.fn_fuso_valido(p_fuso text)
+returns text
+language sql
+stable
+set search_path = ''
+as $$
+  select coalesce(
+    (select name from pg_timezone_names where name = btrim(p_fuso)),
+    'America/Sao_Paulo'
+  )
+$$;
+
+create or replace function public.fn_prazo_do_campo(
+  p_dia date,
+  p_dias integer,
+  p_fuso text
+)
+returns timestamptz
+language sql
+stable
+set search_path = ''
+as $$
+  select (((p_dia + coalesce(p_dias, 0))::timestamp + time '09:00')
+    at time zone public.fn_fuso_valido(p_fuso))
+$$;
+
+revoke execute on function public.fn_fuso_valido(text) from public, anon, authenticated;
+revoke execute on function public.fn_prazo_do_campo(date, integer, text) from public, anon, authenticated;
+grant execute on function public.fn_fuso_valido(text) to service_role;
+grant execute on function public.fn_prazo_do_campo(date, integer, text) to service_role;
+
+create or replace function public.fn_recalcular_prazos_do_plano()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_fuso text := 'America/Sao_Paulo';
+  v_linha record;
+  v_texto text;
+  v_dia date;
+  v_novo timestamptz;
+  v_motivo text;
+begin
+  begin
+    select public.fn_fuso_valido(o.timezone) into v_fuso
+      from public.organizations o
+     where o.id = new.organization_id;
+
+    if v_fuso is null then
+      v_fuso := 'America/Sao_Paulo';
+    end if;
+
+    for v_linha in
+      select t.id, t.prazo_campo, t.prazo_dias
+        from public.crm_tasks t
+       where t.organization_id = new.organization_id
+         and t.lead_id = new.id
+         and t.plan_id is not null
+         and t.prazo_campo is not null
+         and t.status in ('pending', 'in_progress')
+    loop
+      v_texto := nullif(btrim(coalesce(new.custom_fields ->> v_linha.prazo_campo, '')), '');
+      v_dia := null;
+
+      if v_texto is not null and v_texto ~ '^\d{4}-\d{2}-\d{2}' then
+        begin
+          v_dia := substring(v_texto from 1 for 10)::date;
+        exception when others then
+          v_dia := null;
+        end;
+      end if;
+
+      if v_dia is null then
+        v_novo := null;
+        v_motivo := case
+          when v_texto is null then 'campo_de_data_vazio'
+          else 'campo_de_data_invalido'
+        end;
+      else
+        v_novo := public.fn_prazo_do_campo(v_dia, coalesce(v_linha.prazo_dias, 0), v_fuso);
+        v_motivo := null;
+      end if;
+
+      update public.crm_tasks
+         set due_date = v_novo,
+             prazo_motivo = v_motivo,
+             updated_at = now()
+       where id = v_linha.id
+         and organization_id = new.organization_id
+         and status in ('pending', 'in_progress')
+         and (due_date is distinct from v_novo
+              or prazo_motivo is distinct from v_motivo);
+    end loop;
+  exception when others then
+    null;
+  end;
+
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_recalcular_prazos_do_plano() from public, anon, authenticated;
+grant execute on function public.fn_recalcular_prazos_do_plano() to service_role;
+
+drop trigger if exists crm_leads_recalcula_prazos_do_plano on public.crm_leads;
+create trigger crm_leads_recalcula_prazos_do_plano
+  after update of custom_fields on public.crm_leads
+  for each row
+  when (old.custom_fields is distinct from new.custom_fields)
+  execute function public.fn_recalcular_prazos_do_plano();
 
 -- ---- a fila do push drena: o que já terminou sai, o que falta fazer fica (migration 9358, #4448) ----
 -- Espelho da 9358 (o porquê inteiro está no cabeçalho dela). Fica ACIMA da
