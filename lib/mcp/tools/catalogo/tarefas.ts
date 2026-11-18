@@ -9,7 +9,7 @@ export const TOOLS_TAREFAS = declararTools([
       "Agenda uma tarefa ou retorno vinculado a um cliente, atendimento ou negócio com prazo e responsável.",
     oQueToca: "Tarefas da equipe",
     risco: "atencao",
-    pacotes: ["organizar", "atender"],
+    pacotes: ["reter"],
   },
   {
     name: "crm_list_tasks",
@@ -19,7 +19,7 @@ export const TOOLS_TAREFAS = declararTools([
       "Consulta a lista de tarefas pendentes e agendamentos internos com filtros de prazo e setor.",
     oQueToca: "Tarefas da equipe",
     risco: "seguro",
-    pacotes: ["organizar", "atender"],
+    pacotes: ["reter"],
   },
   {
     name: "crm_update_task",
@@ -29,6 +29,6 @@ export const TOOLS_TAREFAS = declararTools([
       "Altera o status (ex: concluída), prazo, prioridade, responsável ou detalhes de uma tarefa.",
     oQueToca: "Tarefas da equipe",
     risco: "atencao",
-    pacotes: ["organizar", "atender"],
+    pacotes: ["reter"],
   },
 ]);

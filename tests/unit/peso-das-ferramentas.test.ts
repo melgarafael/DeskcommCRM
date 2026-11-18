@@ -136,6 +136,9 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_set_webhook_source_active": { tokens: 199, motivo: BASE },
   "crm_set_automation_rule_active": { tokens: 232, motivo: BASE },
   "crm_schedule_followup": { tokens: 539, motivo: BASE },
+  "crm_create_task": { tokens: 736, motivo: "capacidade nova (#4838): tarefa da equipe pelo MCP, no pacote reter; o peso é quase todo o regex que o zod gera para cada uuid e data — o mesmo das irmãs" },
+  "crm_list_tasks": { tokens: 901, motivo: "capacidade nova (#4838): tarefa da equipe pelo MCP, no pacote reter; o peso é quase todo o regex que o zod gera para cada uuid e data — o mesmo das irmãs" },
+  "crm_update_task": { tokens: 919, motivo: "capacidade nova (#4838): tarefa da equipe pelo MCP, no pacote reter; o peso é quase todo o regex que o zod gera para cada uuid e data — o mesmo das irmãs" },
   "crm_enroll_followup_flow": { tokens: 365, motivo: BASE },
   "crm_cancel_followup": { tokens: 254, motivo: BASE },
   "crm_close_demand": { tokens: 244, motivo: BASE },
@@ -212,7 +215,10 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +149 no `crm_update_lead` (#4666), que passou a dizer que `tags` substitui a
 // lista inteira e ganhou `tags_adicionar`/`tags_remover`. MEDIDO no merge com a
 // main pós-#4886 e #4684: 40675 (2026-11-18).
-const TETO_TOTAL = 40675;
+// +2556 com as três ferramentas de tarefa (#4838): 736 de `crm_create_task`, 901 de
+// `crm_list_tasks` e 919 de `crm_update_task` — a maior parte são os `pattern` de uuid e
+// data-hora. MEDIDO no merge com a main de `2d285fc9fd`: 43231 = 40675 + 2556 (2026-11-18).
+const TETO_TOTAL = 43231;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
