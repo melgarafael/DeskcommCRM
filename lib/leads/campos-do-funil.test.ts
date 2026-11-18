@@ -152,7 +152,7 @@ describe("camposPorEscopoDosFunis", () => {
       (c) => c.key === "codigo_parceiro",
     );
     expect(codigos).toHaveLength(1);
-    expect(codigos[0].label).toBe("Código do parceiro");
+    expect(codigos[0]?.label).toBe("Código do parceiro");
     // Rótulos iguais em chaves diferentes sobrevivem os dois.
     expect(
       camposPorEscopoDosFunis([funilVendas, funilSuporte], "contato").filter(
