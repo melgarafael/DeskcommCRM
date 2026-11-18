@@ -20,6 +20,38 @@ import {
 } from "@/lib/tarefas/tipos";
 import type { McpToolDefinition } from "../types";
 
+const VINCULO_INEXISTENTE = "O negócio, o contato ou a demanda vinculada não existe.";
+
+/**
+ * `ctx.supabase` é service role, e a chave estrangeira não passa pela RLS: sem
+ * esta conferência, um `lead_id`/`contact_id` de outra organização gravaria sem
+ * erro. A régua é a de `criarTarefaInterna` (`lib/tarefas/criar-tarefa.ts`):
+ * SQL na porta, com a organização no filtro. Id inexistente e id de outra
+ * organização recebem a MESMA recusa — a do 23503 abaixo.
+ */
+async function conferirVinculos(
+  organizationId: string,
+  vinculos: { lead_id?: string | null; contact_id?: string | null },
+): Promise<void> {
+  const conferencias = [
+    ["crm_leads", vinculos.lead_id],
+    ["contacts", vinculos.contact_id],
+  ] as const;
+  for (const [tabela, id] of conferencias) {
+    if (!id) continue;
+    let linha: { id: string } | null;
+    try {
+      linha = await portaDaAplicacao().queryOne<{ id: string }>(
+        `select id from ${tabela} where id = $1 and organization_id = $2 limit 1`,
+        [id, organizationId],
+      );
+    } catch {
+      throw new Error("Erro interno ao validar os vínculos da tarefa.");
+    }
+    if (!linha) throw new Error(VINCULO_INEXISTENTE);
+  }
+}
+
 const createInputShape = {
   title: z
     .string()
@@ -77,6 +109,8 @@ export const crmCreateTask: McpToolDefinition<typeof createInputShape> = {
       }
     }
 
+    await conferirVinculos(ctx.organizationId, input);
+
     // 3. Inserir em public.crm_tasks
     const { data, error } = await ctx.supabase
       .from("crm_tasks")
@@ -99,7 +133,7 @@ export const crmCreateTask: McpToolDefinition<typeof createInputShape> = {
 
     if (error) {
       if (error.code === "23503") {
-        throw new Error("O negócio, o contato ou a demanda vinculada não existe.");
+        throw new Error(VINCULO_INEXISTENTE);
       }
       throw new Error(`Erro ao salvar a tarefa: ${error.message}`);
     }
@@ -172,8 +206,12 @@ export const crmListTasks: McpToolDefinition<typeof listInputShape> = {
         query = query.eq("assigned_to", input.assigned_to);
       }
     }
-    if (input.contact_id) {
-      query = query.eq("contact_id", input.contact_id);
+    // No turno de atendimento, a lista é a do cliente da conversa: o título de
+    // tarefa da equipe nomeia OUTROS clientes. Mesmo recorte das leituras de
+    // `leads.ts` (#2158) — escopa quem a resposta alcança, não muda a pergunta.
+    const contatoDoFiltro = ctx.contatoDoTurno ?? input.contact_id;
+    if (contatoDoFiltro) {
+      query = query.eq("contact_id", contatoDoFiltro);
     }
     if (input.lead_id) {
       query = query.eq("lead_id", input.lead_id);
@@ -266,13 +304,28 @@ export const crmUpdateTask: McpToolDefinition<typeof updateInputShape> = {
       }
     }
 
-    // 3. Executar o UPDATE com filtro de isolamento por organization_id
-    const dadosUpdate: Record<string, unknown> = {
-      updated_at: new Date().toISOString(),
-    };
-    for (const [k, v] of camposParaAtualizar) {
-      dadosUpdate[k] = v;
+    await conferirVinculos(ctx.organizationId, updates);
+
+    // A situação ANTES da edição decide se esta é a vez em que a tarefa fechou
+    // (mesma régua da PATCH /api/v1/tasks/[id]): sem ler antes, concluir duas
+    // vezes gravaria duas linhas `task_completed` na timeline do negócio.
+    const { data: antes, error: erroDaLeitura } = await ctx.supabase
+      .from("crm_tasks")
+      .select("status")
+      .eq("id", task_id)
+      .eq("organization_id", ctx.organizationId)
+      .maybeSingle();
+    if (erroDaLeitura) {
+      throw new Error(`Erro ao ler a tarefa: ${erroDaLeitura.message}`);
     }
+    if (!antes) {
+      throw new Error("Tarefa não encontrada nesta organização.");
+    }
+    const statusAntes = (antes as { status: string }).status;
+
+    // 3. Executar o UPDATE com filtro de isolamento por organization_id.
+    // `updated_at` fica com o trigger `trg_crm_tasks_updated_at`.
+    const dadosUpdate = Object.fromEntries(camposParaAtualizar);
 
     const { data, error } = await ctx.supabase
       .from("crm_tasks")
@@ -286,7 +339,7 @@ export const crmUpdateTask: McpToolDefinition<typeof updateInputShape> = {
 
     if (error) {
       if (error.code === "23503") {
-        throw new Error("O negócio, o contato ou a demanda vinculada não existe.");
+        throw new Error(VINCULO_INEXISTENTE);
       }
       throw new Error(`Erro ao atualizar a tarefa: ${error.message}`);
     }
@@ -303,16 +356,16 @@ export const crmUpdateTask: McpToolDefinition<typeof updateInputShape> = {
       resourceType: "crm_tasks",
       resourceId: data.id,
       requestId: ctx.requestId,
+      // A transição só entra quando `status` veio: editar o título não grava
+      // um `de: "pending", para: "pending"` que não existiu.
       metadata: {
-        status: data.status,
-        due_date: data.due_date,
-        priority: data.priority,
-        campos_alterados: camposParaAtualizar.map(([k]) => k),
+        campos: camposParaAtualizar.map(([k]) => k),
+        ...(updates.status !== undefined ? { de: statusAntes, para: data.status } : {}),
       },
     });
 
-    // 5. Linha do tempo do negócio se lead_id presente e tarefa concluída
-    if (data.lead_id && updates.status === "done") {
+    // 5. Linha do tempo do negócio só na transição para concluída
+    if (data.status === "done" && statusAntes !== "done") {
       await registraAtividadeDaTarefa(portaDaAplicacao(), {
         organizationId: ctx.organizationId,
         tarefa: data as Tarefa,
