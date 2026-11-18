@@ -86,18 +86,22 @@ Duas palavras, duas coisas — e misturá-las é o que faz a operação perder o
 
 | Papel | Quem é | Quem define |
 |---|---|---|
-| **Dono** | o **setor** (`conversations.sector_id`) | **a administração geral** (admin/manager) — na política do canal (D1) ou no gesto de transferir de fila (D3) |
-| **Responsável** | a pessoa que está atendendo agora (`assigned_to_user_id`) | qualquer membro do setor **do próprio setor**, pelo `claim`/assumir; e a administração, ao transferir |
+| **Dono** | o **setor** (`conversations.sector_id`) | a administração, na política do canal (D1); e **quem atende**, no gesto de transferir de fila (D3) |
+| **Responsável** | a pessoa que está atendendo agora (`assigned_to_user_id`) | qualquer membro do setor, pelo `claim`/assumir; ou a pessoa escolhida por quem transfere |
 
 Consequência de desenho: **`assigned_to_user_id IS NULL` deixa de ser "conversa de ninguém"** e passa a
 ser "conversa da fila, aguardando alguém do setor assumir". Não é coluna nova: o estado já existe; o
 que muda é a leitura que o produto faz dele.
 
-E o limite de permissão que vem daí: **atendente não escolhe o dono**. Ele assume e devolve dentro dos
-setores **a que pertence**; **mover a conversa para um setor de fora da sua lista é gesto de
-administração** (admin/manager), igual ao que já vale para a política de distribuição do canal. Sem
-isso, "o setor é o dono" vira ficção no primeiro dia em que um atendente mover a conversa de
-Pedagogia para Secretaria para se livrar do atendimento.
+E o limite de permissão vem do que **já existe**, não de um degrau novo: transferir conversa é gesto de
+quem atende. `PUT /api/v1/conversations/[id]/sector` exige papel mínimo `agent`, e o diálogo de
+transferência para pessoa já está aberto para `agent` hoje. Mover para fila segue a mesma régua —
+**qualquer atendente move, para qualquer fila**, inclusive para um setor de que não é membro, porque é
+exatamente o que ele já faz quando transfere para um colega de outro time.
+
+Endurecer aqui seria criar uma assimetria que o produto não tem: "transfira para a Maria, da Direção,
+que ela muda de fila" — o caminho mais curto para a gambiarra e para o registro perdido. O que a
+administração define é a **fila de entrada do canal** (D1), que é configuração, não fluxo do dia a dia.
 
 **Pertencer a mais de um setor é o caso normal, não a exceção** — e ele já está resolvido no banco:
 `attendant_sector_members` é N:N desde a 9062, e `fn_conversation_sector_scope` devolve **uma linha por
@@ -107,8 +111,8 @@ setor" nem "vê a organização", e sim **"vê os seus setores"**.
 
 ### D3 — "Transferir para fila" no diálogo de transferência
 
-Terceira aba no `ReassignDialog`: `Atendente` · `Número` · **`Fila`**, visível para **admin/manager**
-(mover de fila é gesto de administração — ver D2). Escolher fila grava o setor
+Terceira aba no `ReassignDialog`: `Atendente` · `Número` · **`Fila`**, para `agent` em diante — mesma
+régua do `PUT /conversations/[id]/sector` (papel mínimo `agent`). Escolher fila grava o setor
 (`PUT /conversations/[id]/sector`) e, num segundo passo explícito, **libera o responsável**
 (`release`) — as duas rotas já existem e já auditam (`conversation.sector_changed`,
 `conversation.released`). O motivo continua sendo campo único para as três abas.
@@ -150,8 +154,7 @@ para orientar o "Assumir" de quem está em três setores. Fica registrado, não 
 |---|---|---|---|---|
 | Assumir conversa da **sua** fila | — | ✅ | ✅ | ✅ |
 | Devolver para a fila (release) | — | ✅ | ✅ | ✅ |
-| **Mover entre os setores de que a pessoa é membro** | — | ✅ (proposta) | ✅ | ✅ |
-| **Mover para um setor de fora da lista da pessoa** | — | — | ✅ | ✅ |
+| **Mover a conversa para qualquer fila** | — | ✅ | ✅ | ✅ |
 | Definir a **fila de entrada** do canal | — | — | — | ✅ |
 | Trocar o responsável por outra pessoa | — | — | ✅ | ✅ |
 | Ver conversas dos setores a que **pertence** (N:N) | — | ✅ | ✅ | ✅ |
@@ -161,9 +164,10 @@ Leitura: quanto mais a fila vira dono, mais o "assumir/devolver" é do atendente
 é dele. É o inverso do que acontece hoje, em que qualquer `agent` move a fila pelo ⋯ e nenhum gestor
 define qual fila recebe o quê — e em que o multi-setor não muda nada, porque a fila nunca foi dono.
 
-As duas linhas de "mover" são a mesma régua vista de dois lados: **a lista de setores da pessoa
-é o limite do que ela pode fazer sozinha**. Quem cobre Secretaria e Pedagogia transita entre as
-duas; para mandar à Direção, chama a administração.
+Quem pertence a vários setores vê e assume em todos eles — e pode mover a conversa para qualquer
+fila, como já pode transferir para qualquer colega. A diferença que a fila como dono introduz não é
+de permissão, é de **registro**: a passagem fica no histórico como troca de fila, com autor e
+motivo, em vez de sumir num acordo entre duas pessoas.
 
 ## Consequências
 
@@ -203,20 +207,16 @@ mexem em **disparo e fila** — e por isso estão aqui como proposta, não como 
    suficiente para "a conversa é da fila", ou você prefere um `owner_kind` explícito
    (`user` | `sector`)?
 2. **Transferir para fila**: mantém o responsável anterior até alguém do setor assumir (proposta —
-   evita conversa "solta" e o histórico diz quem entregou) ou libera na hora? E o atendente pode
-   mover para **outro** setor, ou só a administração (a coluna "mover para outra fila" da tabela
-   acima)?
+   evita conversa "solta" e o histórico diz quem entregou) ou libera na hora? E o atendente move para
+   **qualquer** fila (proposta, igual à transferência para pessoa), certo?
 3. **Rodízio**: `channel_routing_responsibles` vira subconjunto da fila (proposta) ou é ignorado
    quando há fila definida?
 4. **Privacidade**: `own_and_sector` já existe por organização. Vale abrir a opção **por setor**
    (`attendant_sectors.restrito`), para um setor fechado e outro aberto na mesma empresa, ou manter
    só o modo da organização?
-5. **Multi-setor**: pertencer a vários setores deve liberar o atendente a **mover entre eles**
-   (proposta, por analogia com "assumir"), ou mover é sempre da administração, mesmo entre setores
-   da própria pessoa?
-6. **Nome de produto**: manter **Setor** (o que já está em tela, módulo e endpoints), ou renomear
+5. **Nome de produto**: manter **Setor** (o que já está em tela, módulo e endpoints), ou renomear
    para **Fila**/**Departamento** como o mercado? É PR de rótulo, sem migração.
-7. **Escopo desta proposta**: seguir o fatiamento acima (1 já como código, 2–3 depois da sua
+6. **Escopo desta proposta**: seguir o fatiamento acima (1 já como código, 2–3 depois da sua
    decisão) ou você prefere uma fatia só com as quatro decisões juntas?
 
 ## O que este ADR NÃO propõe
