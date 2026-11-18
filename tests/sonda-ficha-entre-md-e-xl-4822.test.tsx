@@ -323,6 +323,32 @@ describe("gaveta da ficha — a porta da faixa do meio abre a MESMA ficha (#4822
     fireEvent.keyDown(gaveta, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
+
+  // Sem `SheetTrigger`, o Radix não sabe quem abriu a gaveta e o foco cai no
+  // `body` ao fechar: quem navega por teclado perde o lugar. Cada porta tem de
+  // receber o foco de volta — a do cabeçalho e a da barra do celular.
+  it.each(["acao-abrir-ficha", "ficha-no-celular"])(
+    "fechar com Esc devolve o foco à porta que abriu (%s)",
+    async (testid) => {
+      montar();
+      const porta = await screen.findByTestId(testid);
+      expect(porta.getAttribute("aria-haspopup")).toBe("dialog");
+      expect(porta.getAttribute("aria-expanded")).toBe("false");
+      porta.focus();
+      fireEvent.click(porta);
+      const gaveta = await screen.findByRole("dialog");
+      expect(porta.getAttribute("aria-expanded")).toBe("true");
+      fireEvent.keyDown(gaveta, { key: "Escape" });
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      await waitFor(() =>
+        expect(
+          (document.activeElement as HTMLElement | null)?.dataset.testid,
+          "o foco não voltou à porta que abriu a ficha",
+        ).toBe(testid),
+      );
+      expect(porta.getAttribute("aria-expanded")).toBe("false");
+    },
+  );
 });
 
 /* ─────────────────────────── as três faixas ─────────────────────────────── */

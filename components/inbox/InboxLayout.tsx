@@ -406,6 +406,16 @@ export function InboxLayout({
    */
   const [fichaAberta, setFichaAberta] = useState(false);
   /**
+   * QUEM ABRIU A GAVETA, para o foco voltar a ele ao fechar. Sem `SheetTrigger`
+   * o Radix não tem para onde devolver o foco (o `triggerRef` dele fica nulo e o
+   * foco cai no `body`); com duas portas, quem sabe qual foi usada é este ref.
+   */
+  const portaDaFicha = useRef<HTMLElement | null>(null);
+  const abrirFicha = useCallback((porta: HTMLElement) => {
+    portaDaFicha.current = porta;
+    setFichaAberta(true);
+  }, []);
+  /**
    * O PAINEL DO CONTATO RECOLHIDO (issue #3004).
    *
    * Antes só o menu da esquerda tinha como recolher; o painel do contato ficava
@@ -1076,7 +1086,9 @@ export function InboxLayout({
                 className="gap-1 px-2 xl:hidden"
                 data-testid="ficha-no-celular"
                 title={t("Ficha do contato")}
-                onClick={() => setFichaAberta(true)}
+                aria-haspopup="dialog"
+                aria-expanded={fichaAberta}
+                onClick={(e) => abrirFicha(e.currentTarget)}
               >
                 <IdentificationCard size={16} aria-hidden />
                 {t("Ficha")}
@@ -1091,7 +1103,7 @@ export function InboxLayout({
             (`CRMSidePanel`). Aqui o `Sheet` sobe para fora da barra e passa a
             ser UM só, controlado por `fichaAberta`; as duas portas (a barra do
             celular e o botão da faixa do meio no cabeçalho) só chamam
-            `setFichaAberta(true)`. Continua sendo a MESMA gaveta e o MESMO
+            `abrirFicha`, que guarda a porta para o foco voltar a ela. Continua sendo a MESMA gaveta e o MESMO
             `CRMSidePanel`: nenhum segundo painel é montado.
 
             Sem `SheetTrigger` porque são dois gatilhos em lugares diferentes da
@@ -1100,7 +1112,14 @@ export function InboxLayout({
             então onde o `Root` mora não muda o que aparece. */}
         {selectedConversation && (
           <Sheet open={fichaAberta} onOpenChange={setFichaAberta}>
-            <SheetContent side="right" className="w-[min(22rem,90vw)] overflow-y-auto p-0">
+            <SheetContent
+              side="right"
+              className="w-[min(22rem,90vw)] overflow-y-auto p-0"
+              onCloseAutoFocus={(e) => {
+                e.preventDefault();
+                portaDaFicha.current?.focus();
+              }}
+            >
               <SheetTitle className="sr-only">{t("Ficha do contato")}</SheetTitle>
               <CRMSidePanel conversation={selectedConversation} modulosIniciais={modulosDaLateral} />
             </SheetContent>
@@ -1124,7 +1143,8 @@ export function InboxLayout({
               }
               buscaAberta={buscaAberta}
               botaoBuscaRef={botaoBuscaRef}
-              onAbrirFicha={() => setFichaAberta(true)}
+              onAbrirFicha={abrirFicha}
+              fichaAberta={fichaAberta}
             />
             {buscaAberta && (
               <div className="flex items-center gap-2 border-b border-border px-4 py-1.5">

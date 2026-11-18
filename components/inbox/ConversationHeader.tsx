@@ -77,9 +77,11 @@ interface Props {
    * Opcional de propósito: o dono da gaveta é o `InboxLayout` (o estado e o
    * `CRMSidePanel` moram lá) e este cabeçalho só desenha a porta. Sem a prop o
    * botão não nasce — é o que mantém intactas as telas e os testes que montam o
-   * cabeçalho sem ficha.
+   * cabeçalho sem ficha. Recebe o botão que abriu, para o foco voltar a ele.
    */
-  onAbrirFicha?: () => void;
+  onAbrirFicha?: (porta: HTMLElement) => void;
+  /** Se a gaveta está aberta — vira o `aria-expanded` da porta. */
+  fichaAberta?: boolean;
 }
 
 /**
@@ -115,6 +117,7 @@ export function ConversationHeader({
   buscaAberta,
   botaoBuscaRef,
   onAbrirFicha,
+  fichaAberta,
 }: Props) {
   const t = useT();
   const { user, activeOrg } = useAuth();
@@ -659,7 +662,9 @@ export function ConversationHeader({
               className="gap-1 px-2"
               data-testid="acao-abrir-ficha"
               title={t("Ficha do contato")}
-              onClick={onAbrirFicha}
+              aria-haspopup="dialog"
+              aria-expanded={fichaAberta ?? false}
+              onClick={(e) => onAbrirFicha(e.currentTarget)}
             >
               <IdentificationCard size={16} aria-hidden />
               {t("Ficha")}
