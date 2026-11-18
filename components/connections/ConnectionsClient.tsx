@@ -50,6 +50,7 @@ import {
   Phone,
   Play,
   Plus,
+  QrCode,
   ShieldCheck,
   Trash,
   UsersThree,
@@ -205,7 +206,25 @@ export function frasesDoLoteDePausa(
   return { sucesso: `${cabeca} ${mudou}.`, erro: null };
 }
 
-export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean }) {
+export function ConnectionsClient({
+  wahaConfigured,
+  qrInicial,
+  aoFecharQrInicial,
+}: {
+  wahaConfigured: boolean;
+  /**
+   * Sessão que chega pedindo QR pela URL (`/app/connections?qr=<id>`), vinda da
+   * faixa de conexão caída. Abre o diálogo de pareamento direto, sem passar
+   * pela lista: a faixa diz "Escanear o QR" e o clique tem que escanear —
+   * navegar para a tela em que o selo não é clicável era um beco sem saída.
+   * O título serve para qualquer estado: o diálogo em si lê o status do
+   * transporte a cada 3s e mostra QR, pareado ou "Gerar novo QR" conforme o
+   * que a sessão está vivendo.
+   */
+  qrInicial?: string;
+  /** Tira o `?qr=` da URL quando o diálogo fecha, para o próximo clique na faixa abrir de novo. */
+  aoFecharQrInicial?: () => void;
+}) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
   const qc = useQueryClient();
@@ -221,7 +240,21 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
   const routing = useQuery({ queryKey: ["channel-routing-settings"], queryFn: () => apiClient.get<{ data: ChannelRoutingSettings }>("/api/v1/settings/routing/channels") });
   const [creating, setCreating] = useState(false);
   const [checking, setChecking] = useState(false);
-  const [qr, setQr] = useState<{ sessionId: string; title: string } | null>(null);
+  const [qr, setQr] = useState<{ sessionId: string; title: string } | null>(
+    qrInicial ? { sessionId: qrInicial, title: t("Escaneie o QR") } : null,
+  );
+  // Com a Central já aberta, o clique na faixa é navegação suave: o componente
+  // continua montado e o inicializador acima não roda de novo. O `?qr=` novo
+  // tem de abrir o diálogo do mesmo jeito (ajuste de estado no render, sem efeito).
+  const [qrInicialVisto, setQrInicialVisto] = useState(qrInicial);
+  if (qrInicial !== qrInicialVisto) {
+    setQrInicialVisto(qrInicial);
+    if (qrInicial) setQr({ sessionId: qrInicial, title: t("Escaneie o QR") });
+  }
+  const fecharQr = useCallback(() => {
+    setQr(null);
+    if (qrInicial) aoFecharQrInicial?.();
+  }, [qrInicial, aoFecharQrInicial]);
   const [antiBanId, setAntiBanId] = useState<string | null>(null);
   const [gruposId, setGruposId] = useState<string | null>(null);
   const [toDelete, setToDelete] = useState<ChannelSession | null>(null);
@@ -320,6 +353,38 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
     [invalidate],
   );
 
+  // Gera um QR NOVO para um número que NUNCA foi pareado. O caminho suave
+  // (stop + start) é o padrão de propósito — preserva a credencial —, mas para
+  // quem nunca pareou não há credencial a preservar, e o start comum pode
+  // voltar direto para FAILED sem nunca passar por SCAN_QR_CODE. Aí o `force`
+  // (stop + LOGOUT + start) é o único que devolve um QR.
+  //
+  // ⚠️ O `force` DESCARTA a credencial de forma irreversível. A guarda de
+  // `phone_number` é o que impede isto de alcançar um número já pareado: um
+  // canal com telefone tem credencial, e descartá-la obrigaria o operador a
+  // reescanear um número que estava funcionando. Perguntar nos DOIS lugares —
+  // no render do botão e aqui — é de propósito: a UI pode mudar, a guarda não.
+  const handleGerarQrNovo = useCallback(
+    async (c: ChannelSession) => {
+      if (c.phone_number != null) {
+        toast.error(
+          t("Este número já foi pareado — gerar um novo QR descartaria a credencial guardada."),
+        );
+        return;
+      }
+      setBusyId(c.id);
+      try {
+        await forcePair(c.id);
+        setQr({ sessionId: c.id, title: t("Gerar novo QR") });
+      } catch (err) {
+        toast.error(errMsg(err, "Não foi possível gerar um novo QR.", t));
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [forcePair, t],
+  );
+
   // Pausar = canal desativado pelo operador: a entrega é gravada mas não entra
   // na inbox, não dispara IA e não gera follow-up. Reativar volta tudo sem
   // reimportar nada. Diferente de excluir: o canal continua listado.
@@ -382,9 +447,9 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
 
   const handleConnected = useCallback(() => {
     toast.success(t("WhatsApp conectado!"));
-    setQr(null);
+    fecharQr();
     invalidate();
-  }, [invalidate, t]);
+  }, [fecharQr, invalidate, t]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -593,7 +658,24 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                       </p>
                     )}
                   </div>
-                  <Badge variant={info.variant}>{info.label}</Badge>
+                  {/* "Escaneie o QR" é o estado que a sessão está vivendo, e um
+                      selo não faz nada quando é clicado — quem está pareando não
+                      tem para onde ir a partir dele. Neste estado o selo vira o
+                      botão que abre o diálogo do QR; nos outros, continua sendo
+                      só leitura. */}
+                  {c.status === "SCAN_QR_CODE" ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busyId === c.id}
+                      onClick={() => setQr({ sessionId: c.id, title: t("Escaneie o QR") })}
+                    >
+                      <QrCode size={14} aria-hidden />
+                      {t("Mostrar o QR")}
+                    </Button>
+                  ) : (
+                    <Badge variant={info.variant}>{info.label}</Badge>
+                  )}
                   {pausado && <Badge variant="neutral">{t("Pausado")}</Badge>}
                 </div>
                 <DefeitoDoNumero status={c.status} motivo={c.status_reason} />
@@ -629,6 +711,33 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                         <ArrowsClockwise size={14} aria-hidden />
                       )}
                       {t("Reconectar")}
+                    </Button>
+                  )}
+                  {/* Nunca pareou (sem phone_number) e está em FAILED/STOPPED:
+                      o start suave costuma voltar direto para FAILED sem nunca
+                      passar por SCAN_QR_CODE — a credencial não existe para ser
+                      reaproveitada, e o buraco é o descrito na rota de
+                      reconectar. O `force` (stop + LOGOUT + start) é o único que
+                      devolve um QR, e SÓ aqui na ficha ele fica à mão sem
+                      precisar de uma tentativa suave fracassada antes.
+                      ⚠️ O `force` DESCARTA a credencial de forma irreversível; a
+                      guarda de `phone_number` é o que impede isto de alcançar um
+                      número já pareado. Perguntar nos DOIS lugares — no render
+                      e no clique — é de propósito: a UI pode mudar, a guarda não. */}
+                  {vivaNoTransporte && c.phone_number == null
+                    && (c.status === "FAILED" || c.status === "STOPPED") && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busyId === c.id || !wahaConfigured}
+                      onClick={() => void handleGerarQrNovo(c)}
+                    >
+                      {busyId === c.id ? (
+                        <CircleNotch size={14} className="animate-spin" aria-hidden />
+                      ) : (
+                        <QrCode size={14} aria-hidden />
+                      )}
+                      {t("Gerar novo QR")}
                     </Button>
                   )}
                   <Button variant="outline" size="sm" onClick={() => setAntiBanId(c.id)}>
@@ -712,7 +821,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
           sessionId={qr.sessionId}
           title={qr.title}
           wahaConfigured={wahaConfigured}
-          onClose={() => setQr(null)}
+          onClose={fecharQr}
           onConnected={handleConnected}
           onForcePair={forcePair}
         />

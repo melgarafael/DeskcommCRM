@@ -43,6 +43,9 @@ vi.mock("@/hooks/contacts/useUpdateContact", () => ({
   useUpdateContact: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 // O portão de "Levar para outro funil" é `pipeline.move_card` (agent+).
+// A seção de tarefas do painel (#4630) aparece em toda conversa com contato e tem
+// testes próprios (tarefa-da-demanda-no-inbox, tarefas-da-demanda-no-painel).
+vi.mock("@/components/inbox/TarefasDaDemanda", () => ({ TarefasDaDemanda: () => null }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useAuth: () => ({
     user: { support: null, is_platform_admin: false },
