@@ -142,7 +142,7 @@ export async function restartWahaSession(cfg: WatchdogConfig, name: string): Pro
 }
 
 /** Idade do status no espelho, ou `null` quando o carimbo não veio na leitura. */
-function idadeNoStatusEmMs(carimbo: unknown, agoraMs: number): number | null {
+export function idadeNoStatusEmMs(carimbo: unknown, agoraMs: number): number | null {
   if (carimbo === null || carimbo === undefined) return null;
   const ms =
     carimbo instanceof Date
