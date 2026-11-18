@@ -80712,6 +80712,60 @@ $$;
 revoke execute on function public.fn_mcp_oauth_registrar_cliente(text, bytea, text, text[], text, integer) from public, anon, authenticated;
 grant execute on function public.fn_mcp_oauth_registrar_cliente(text, bytea, text, text[], text, integer) to service_role;
 
+-- ---- compromisso cancelado não impede excluir o contato (migration 9405, achado A9) ----
+-- Espelho de supabase/migrations/20261116171852_9405_compromisso_cancelado_nao_barra_exclusao_do_contato.sql
+-- (o porquê inteiro está no cabeçalho dela). REDEFINE a função da 0488 (bloco mais acima):
+-- pela régua do `rfind`, a definição que vale é esta, a última. Fica ANTES da VARREDURA anon,
+-- como todo bloco que traz `create function`, e os `revoke`/`grant` repetem os da 0488.
+-- Compromisso CANCELADO do contato é desvinculado (contact_id e conversation_id a NULL) antes
+-- de o histórico sair; vivo, realizado, falta e reserva de serviço continuam barrando.
+create or replace function public.fn_apagar_contato_com_historico(
+  p_contact_id uuid,
+  p_organization_id uuid
+)
+returns boolean
+language plpgsql
+volatile
+security invoker
+set search_path to 'public', 'pg_temp'
+as $$
+begin
+  -- 9405: compromisso CANCELADO não segura a ficha. Ele fica na agenda, sem
+  -- o contato. Reserva de serviço fica de fora (ver cabeçalho da 9405).
+  update public.calendar_appointments
+     set contact_id = null,
+         conversation_id = null
+   where contact_id = p_contact_id
+     and organization_id = p_organization_id
+     and status = 'cancelled'
+     and service_occurrence_id is null;
+
+  -- RESTRICT da #752: o histórico sai antes da ficha, na mesma transação.
+  delete from public.messages
+   where contact_id = p_contact_id
+     and organization_id = p_organization_id;
+
+  delete from public.conversations
+   where contact_id = p_contact_id
+     and organization_id = p_organization_id;
+
+  delete from public.contacts
+   where id = p_contact_id
+     and organization_id = p_organization_id;
+
+  -- `found` é do DELETE da ficha: false = a ficha não estava acessível para quem
+  -- chamou (outra organização, RLS, corrida) — a rota devolve 404 nesse caso.
+  return found;
+end;
+$$;
+
+-- Mesmas permissões da 0488, repetidas: `create or replace` preserva a ACL, mas
+-- o bloco fica correto sozinho em quem aplica fora de ordem.
+revoke execute on function public.fn_apagar_contato_com_historico(uuid, uuid) from public, anon;
+grant  execute on function public.fn_apagar_contato_com_historico(uuid, uuid) to authenticated, service_role;
+
+notify pgrst, 'reload schema';
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.
