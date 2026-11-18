@@ -111,7 +111,7 @@ export async function capacidadesDaOrganizacao(
   try {
     const [{ data, error }, modulos, telefonia] = await Promise.all([
       db.from("organizations").select("settings").eq("id", organizationId).maybeSingle(),
-      modulosLigados(db),
+      modulosLigados(db, organizationId),
       telefoniaEmUso(db, organizationId),
     ]);
     if (error) {

@@ -8,6 +8,12 @@ import { describe, expect, it, vi } from "vitest";
  */
 const registrar = vi.hoisted(() => vi.fn().mockResolvedValue(null));
 vi.mock("@/lib/notifications/service_worker", () => ({ ensureNotifyServiceWorker: registrar }));
+// A casca lê o pathname para publicar a classe de seção do conteúdo (#4705).
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/app/inbox",
+  useRouter: () => ({ prefetch: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
 vi.mock("@/components/shell/Sidebar", () => ({ Sidebar: () => null }));
 vi.mock("@/components/shell/TopBar", () => ({ TopBar: () => null }));
 vi.mock("@/components/shell/BarraDeProgressoNavegacao", () => ({ BarraDeProgressoNavegacao: () => null }));

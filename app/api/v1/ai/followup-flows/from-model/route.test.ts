@@ -191,10 +191,16 @@ describe("POST /api/v1/ai/followup-flows/from-model", () => {
     expect(body.error.message).toContain(modeloPorId("clinica-consulta-retomada")!.nome);
   });
 
-  it("modelo inexistente é 404", async () => {
+  it("modelo inexistente é 404, com a mensagem do catálogo", async () => {
     deps.client.mockResolvedValue(clientFake().client);
     const res = await POST(req({ model_id: "clinica-nao-existe" }));
     expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error.code).toBe("not_found");
+    // A mensagem é contrato de API. Desde a #4688 ela nasce em
+    // `lib/followup/instalar-modelo.ts`; sem esta linha, trocar o texto lá
+    // passaria verde e o cliente veria outra frase sem ninguém notar.
+    expect(body.error.message).toBe("Este modelo não existe mais.");
   });
 
   it("não aceita grafo pelo body — o desenho é do catálogo", async () => {
