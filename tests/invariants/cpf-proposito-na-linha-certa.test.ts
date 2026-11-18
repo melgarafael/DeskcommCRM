@@ -17,16 +17,23 @@
  * 2. o propósito passado como PARÂMETRO chega à linha `contact.cpf_decrypted`;
  * 3. o parâmetro VENCE o GUC, e o GUC continua valendo quando o parâmetro é nulo
  *    — é o `coalesce(p_purpose, current_setting(...))` do corpo auditado;
- * 4. a chamada de UM argumento (a casca) continua devolvendo o CPF e auditando
- *    com o GUC, ou `null` quando o GUC não foi setado (o contrato da 0597);
+ * 4. a chamada de UM argumento (a assinatura da 0762, intocada) continua
+ *    devolvendo o CPF e auditando com o GUC, ou `null` quando o GUC não foi
+ *    setado (o contrato da 0597);
  * 5. a leitura NÃO grava `contact.updated` (contagem 0 para o contato);
  * 6. as guardas de tenancy e de papel continuam nas duas portas — a assinatura
- *    nova não é atalho para viewer nem para outra organização.
+ *    nova não é atalho para viewer nem para outra organização;
+ * 7. os corpos das duas assinaturas carregam a MESMA cadeia de guardas: a única
+ *    diferença permitida é a expressão do propósito (catraca de deriva — são
+ *    dois corpos, e um deles não pode ficar para trás).
  *
  * O caso 3 (`decrypt_cpf(id, null)` com GUC setado) é o que fica VERMELHO se
  * alguém trocar o `coalesce(p_purpose, ...)` por `p_purpose` puro: a linha sai
  * com `purpose` nulo em vez do GUC.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { motivoDoErro, sql } from "./psql-transporte";
@@ -90,6 +97,24 @@ function linhas(acao: string): string {
   );
 }
 
+/**
+ * O corpo da ÚLTIMA definição de `decrypt_cpf` com esta lista de argumentos, no
+ * `baseline.sql`. Serve à catraca de deriva: as duas assinaturas são dois corpos,
+ * e eles têm de carregar a mesma cadeia de guardas.
+ */
+function corpoDaAssinatura(assinatura: string): string {
+  const sqlTexto = readFileSync(join(process.cwd(), "supabase", "baseline.sql"), "utf8");
+  const marca = `function public.decrypt_cpf(${assinatura}) returns text`;
+  let corpo = "";
+  for (let i = sqlTexto.indexOf(marca); i !== -1; i = sqlTexto.indexOf(marca, i + 1)) {
+    const abre = sqlTexto.indexOf("$$", i);
+    const fim = sqlTexto.indexOf("$$;", abre + 2);
+    if (abre === -1 || fim === -1) continue;
+    corpo = sqlTexto.slice(abre + 2, fim);
+  }
+  return corpo;
+}
+
 beforeAll(() => {
   sql(`
     insert into auth.users (id, email) values
@@ -115,7 +140,7 @@ beforeAll(() => {
 });
 
 describe("o propósito da leitura do CPF sai na linha contact.cpf_decrypted (#4892)", () => {
-  it("as DUAS assinaturas existem — a casca de 1 argumento não some", () => {
+  it("as DUAS assinaturas existem — a de 1 argumento não some (é o export)", () => {
     // O texto devolvido é a própria prova do catálogo: são DUAS funções, e a de
     // um argumento continua registrada (é o que o export de contatos chama).
     expect(ultima(sql(`select to_regprocedure('public.decrypt_cpf(uuid)')::text;`))).toBe(
@@ -130,6 +155,31 @@ describe("o propósito da leitura do CPF sai na linha contact.cpf_decrypted (#48
                   and to_regprocedure('public.decrypt_cpf(uuid,text)') is not null;`),
       ),
     ).toBe("t");
+  });
+
+  it("as duas assinaturas carregam a MESMA cadeia de guardas — só o propósito pode diferir", () => {
+    // São dois corpos: se um ganhar guarda e o outro não, a porta mais fraca
+    // passa a ser a que o export (ou o SQL de sempre) usa. A única diferença
+    // aceita é a expressão do propósito.
+    const soAsGuardas = (corpo: string) =>
+      corpo
+        .replace(/--[^\n]*/g, "")
+        .replace(
+          /coalesce\s*\(\s*p_purpose\s*,\s*current_setting\s*\(\s*'app\.decrypt_purpose'\s*,\s*true\s*\)\s*\)|current_setting\s*\(\s*'app\.decrypt_purpose'\s*,\s*true\s*\)/g,
+          "<PROPOSITO>",
+        )
+        .replace(/\s+/g, " ")
+        .trim();
+
+    const uma = corpoDaAssinatura("p_contact_id uuid");
+    const duas = corpoDaAssinatura("p_contact_id uuid, p_purpose text");
+
+    expect(uma, "assinatura de 1 argumento ausente do baseline").not.toBe("");
+    expect(duas, "assinatura de 2 argumentos ausente do baseline").not.toBe("");
+    expect(
+      soAsGuardas(uma),
+      "as duas assinaturas divergiram: mexeu na guarda de uma, mexa na outra (só a expressão do propósito pode diferir)",
+    ).toBe(soAsGuardas(duas));
   });
 
   it("o propósito passado como PARÂMETRO chega à linha do decrypt", () => {
@@ -151,12 +201,12 @@ describe("o propósito da leitura do CPF sai na linha contact.cpf_decrypted (#48
     expect(ultimaTrilha("contact.cpf_decrypted")).toBe(`${GUC}|true`);
   });
 
-  it("a CASCA de 1 argumento devolve o CPF e repassa o GUC", () => {
+  it("a assinatura de 1 argumento devolve o CPF e repassa o GUC — a da 0762, intacta", () => {
     expect(ultima(comoUsuario(GERENTE, `public.decrypt_cpf('${CONTATO}')`, GUC))).toBe(CPF);
     expect(ultimaTrilha("contact.cpf_decrypted")).toBe(`${GUC}|true`);
   });
 
-  it("sem GUC e sem parâmetro, a casca audita purpose nulo — o contrato da 0597", () => {
+  it("sem GUC e sem parâmetro, a chamada de 1 argumento audita purpose nulo — o contrato da 0597", () => {
     expect(ultima(comoUsuario(GERENTE, `public.decrypt_cpf('${CONTATO}')`))).toBe(CPF);
     expect(ultimaTrilha("contact.cpf_decrypted")).toBe("<nulo>|true");
   });

@@ -81885,28 +81885,21 @@ grant select on table public.storage_redaction_queue to authenticated;
 -- `jsonb_build_object` usa `coalesce(p_purpose, current_setting(...))`, então o
 -- parâmetro vence o GUC e o GUC continua valendo para quem chama por SQL.
 --
--- ⚠️ SEM `default null`: com ele, `decrypt_cpf(id)` fica ambígua
--- ("function public.decrypt_cpf(uuid) is not unique", medido em PG 17.11) e o
--- export de contatos — que chama de um argumento — quebra. A assinatura de um
--- argumento continua existindo como CASCA `security invoker` que delega com
--- `null`; as guardas de tenancy/papel seguem SÓ no corpo definer, na ordem da
--- 0240/0762, sem afrouxar nada.
+-- ⚠️ SEM `default null`, e SEM casca. Com `p_purpose` DEFAULT, `decrypt_cpf(id)`
+-- fica ambígua ("function public.decrypt_cpf(uuid) is not unique", medido em PG
+-- 17.11) e o export de contatos — que chama de um argumento — quebra. A saída
+-- NÃO é uma casca de 1 argumento delegando para cá: casca sem guarda no meio da
+-- história é justamente o que a `baseline-funcao-intermediaria-sem-guarda`
+-- proíbe (uma atualização que morra naquele ponto deixaria `decrypt_cpf(id)`
+-- apontando para uma assinatura que ainda não existe). Então as DUAS assinaturas
+-- são implementações GUARDADAS completas: a de um argumento continua sendo,
+-- byte a byte, a da 0762 (lê o GUC, nada mais), e é ela que o export chama.
 --
--- ⚠️ Ordem: a casca PRIMEIRO e o corpo auditado DEPOIS. O corpo auditado tem de
--- ser a ÚLTIMA definição de `decrypt_cpf` do arquivo — é ele que instala a guarda
--- e é ele que `tests/unit/credencial-de-enfeite-nao-derruba-a-leitura.test.ts`
--- compara com a última migration (install × update). A casca é `plpgsql` porque
--- o corpo em `sql` resolveria a assinatura de dois argumentos no CREATE.
-create or replace function public.decrypt_cpf(p_contact_id uuid) returns text
-    language plpgsql
-    set search_path to ''
-    as $$
-begin
-  -- A casca não tem propósito próprio: quem chama por um argumento usa o GUC
-  -- `app.decrypt_purpose` (ou nada), como antes da 9423.
-  return public.decrypt_cpf(p_contact_id, null);
-end$$;
-
+-- ⚠️ Consequência: o corpo das duas tem de andar junto. A cadeia de guardas é a
+-- mesma nas duas (null → piso de 66 bytes → cara de pacote PGP → tenancy →
+-- papel → audit → decifra), e `tests/invariants/cpf-proposito-na-linha-certa.test.ts`
+-- compara os dois corpos com só a expressão do propósito mascarada: mexeu numa,
+-- tem de mexer na outra.
 create or replace function public.decrypt_cpf(p_contact_id uuid, p_purpose text) returns text
     language plpgsql security definer
     set search_path to 'public', 'private', 'extensions', 'pg_temp'
