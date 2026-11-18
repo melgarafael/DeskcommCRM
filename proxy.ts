@@ -6,6 +6,7 @@ import { fetchDoServidor } from "@/lib/supabase/fetch-do-servidor";
 import { urlDoSupabaseNoServidor } from "@/lib/supabase/url-do-servidor";
 import { isPublicPath } from "@/lib/auth/public-paths";
 import { respostaDePonte } from "@/lib/auth/ponte-de-volta";
+import { safeNext } from "@/lib/auth/safe-next";
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { validarIdentidade } from "@/lib/supabase/identidade-validada";
 import { CABECALHO_SEM_CSS, PARAMETRO_SEM_CSS } from "@/lib/branding/sem-css-personalizado";
@@ -162,7 +163,7 @@ export async function proxy(request: NextRequest) {
     // redirect normal. Mesmo mecanismo de `lib/auth/ponte-de-volta.ts`.
     if (navegacaoDeFora(request)) {
       const marca = await marcaDaSaida(null);
-      return respostaDePonte(pathname + search, marca.nome, "Abrindo…");
+      return respostaDePonte(safeNext(pathname + search, "/app"), marca.nome, "Abrindo…");
     }
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("next", pathname + search);

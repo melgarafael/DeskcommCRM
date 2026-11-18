@@ -17,10 +17,14 @@ vi.mock("@/lib/branding/saida", () => ({
   marcaDaSaida: async () => ({ nome: "CRM" }),
 }));
 
-async function abrir(headers: Record<string, string>, method = "GET") {
+async function abrir(
+  headers: Record<string, string>,
+  method = "GET",
+  url = "https://crm.exemplo/app/inbox?x=1",
+) {
   const { proxy } = await import("@/proxy");
   const { NextRequest } = await import("next/server");
-  return proxy(new NextRequest("https://crm.exemplo/app/inbox?x=1", { headers, method }));
+  return proxy(new NextRequest(url, { headers, method }));
 }
 
 describe("proxy: abertura de fora sem cookie passa pela ponte", () => {
@@ -30,6 +34,19 @@ describe("proxy: abertura de fora sem cookie passa pela ponte", () => {
     const html = await r.text();
     expect(html).toContain('window.location.replace("/app/inbox?x=1")');
     expect(r.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("destino protocol-relative não sai do site: a ponte usa o padrão", async () => {
+    // Hoje o Next normaliza `//` antes do proxy; a ponte não depende disso.
+    const r = await abrir(
+      { "sec-fetch-mode": "navigate", "sec-fetch-site": "none" },
+      "GET",
+      "https://crm.exemplo//evil.example/x",
+    );
+    expect(r.status).toBe(200);
+    const html = await r.text();
+    expect(html).toContain('window.location.replace("/app")');
+    expect(html).not.toContain("evil.example");
   });
 
   it("link vindo de outro site (cross-site): ponte", async () => {
