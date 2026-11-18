@@ -55,6 +55,10 @@ export async function GET(req: NextRequest): Promise<Response> {
   const limite = Math.min(Number(url.searchParams.get("limit")) || LIMITE_PADRAO, LIMITE_MAXIMO);
 
   const supabase = authz.supabase;
+  // #4845 — a lista é da EMPRESA ATIVA. A RLS de `sales` libera todas as empresas
+  // de que a pessoa é membro, então sem este filtro a tela mostrava número,
+  // contato, itens e valores da outra empresa — inclusive duas comandas "#1" de
+  // empresas diferentes na mesma lista.
   let q = supabase
     .from("sales")
     // Literal ÚNICO, e não concatenação: o supabase-js infere o tipo do

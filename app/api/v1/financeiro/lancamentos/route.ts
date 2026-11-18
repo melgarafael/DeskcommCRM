@@ -67,6 +67,9 @@ export async function GET(req: NextRequest): Promise<Response> {
   const status = url.searchParams.get("status");
 
   const supabase = authz.supabase;
+  // #4845 — o extrato é da EMPRESA ATIVA. A RLS de `financial_entries` libera
+  // todas as empresas de que a pessoa é membro, então o caixa da empresa A
+  // listava o dinheiro da B.
   let q = supabase
     .from("financial_entries")
     .select(
@@ -110,26 +113,33 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const supabase = authz.supabase;
   const atorUserId = authz.actor.type === "user" ? authz.actor.id : null;
+  const org = authz.organizationId;
 
-  // Só o token precisa desta conferência: a sessão passa pela RLS do banco.
-  if (authz.via === "token") {
-    const { data: conta } = await supabase
-      .from("financial_accounts")
+  // ─── A CONTA E O PLANO SÃO DESTA EMPRESA (#4845) ───────────────────────
+  //
+  // A FK de `financial_entries.account_id` só exige que a conta EXISTA, e a RLS
+  // de escrita confere a empresa da LINHA — que esta rota já preenche — não a da
+  // conta apontada. Para quem é membro de duas empresas, o lançamento da A saía
+  // apontando para o caixa da B, e o extrato de uma citava a conta da outra.
+  // É a mesma conferência que `fn_honorarios_parcela_pagar` faz no banco antes de
+  // gravar (`conta_invalida`), e a mensagem é a que esta rota já usa para o 23503.
+  const { data: conta } = await supabase
+    .from("financial_accounts")
+    .select("id")
+    .eq("id", lido.data.account_id)
+    .eq("organization_id", org)
+    .maybeSingle();
+  if (!conta) {
+    return fail("validation_failed", "Conta ou plano de contas inválido.", 422, { requestId });
+  }
+  if (lido.data.account_plan_id) {
+    const { data: plano } = await supabase
+      .from("account_plans")
       .select("id")
-      .eq("organization_id", authz.organizationId)
-      .eq("id", lido.data.account_id)
+      .eq("id", lido.data.account_plan_id)
+      .eq("organization_id", org)
       .maybeSingle();
-    let planoValido = true;
-    if (lido.data.account_plan_id) {
-      const { data: plano } = await supabase
-        .from("account_plans")
-        .select("id")
-        .eq("organization_id", authz.organizationId)
-        .eq("id", lido.data.account_plan_id)
-        .maybeSingle();
-      planoValido = Boolean(plano);
-    }
-    if (!conta || !planoValido) {
+    if (!plano) {
       return fail("validation_failed", "Conta ou plano de contas inválido.", 422, { requestId });
     }
   }

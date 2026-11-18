@@ -61,6 +61,10 @@ export async function GET(req: NextRequest): Promise<Response> {
   const leadId = url.searchParams.get("lead_id");
 
   const supabase = authz.supabase;
+  // #4845 — a lista é da EMPRESA ATIVA, e o `lead_id` NÃO substitui isto: o id do
+  // negócio de outra empresa passava pela RLS (a pessoa é membro das duas) e
+  // devolvia o contrato dela. Com o filtro, um `lead_id` de fora devolve lista
+  // vazia em vez do contrato alheio.
   let q = supabase
     .from("honorarios_contratos")
     .select(

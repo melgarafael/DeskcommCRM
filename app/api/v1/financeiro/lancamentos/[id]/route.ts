@@ -77,6 +77,10 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     .from("financial_entries")
     .select("id, status, origin, amount_cents, direction")
     .eq("id", id)
+    // #4845 — o lançamento tem de ser desta empresa ANTES da escrita. O id chega
+    // de uma lista que vazou, e a RLS só conhece as empresas de que a pessoa é
+    // membro: marcar como pago o lançamento da outra empresa era um UPDATE que
+    // passava. A recusa é o mesmo 404 do lançamento inexistente.
     .eq("organization_id", authz.organizationId)
     .maybeSingle();
   if (!atual) return fail("not_found", "Lançamento não encontrado.", 404, { requestId });
@@ -133,6 +137,8 @@ export async function DELETE(req: NextRequest, ctx: Ctx): Promise<Response> {
     .from("financial_entries")
     .select("id, status, origin, amount_cents")
     .eq("id", id)
+    // #4845 — conferência de empresa antes do DELETE, com a mesma resposta do
+    // lançamento inexistente: 404, sem dizer que o id existe na outra empresa.
     .eq("organization_id", authz.organizationId)
     .maybeSingle();
   if (!atual) return fail("not_found", "Lançamento não encontrado.", 404, { requestId });
