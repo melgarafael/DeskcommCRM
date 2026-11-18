@@ -52,6 +52,13 @@ export interface PatchDeEtapa {
    * inteiro a rota responde 422 — a coluna é `numeric` sem CHECK.
    */
   expected_duration_hours?: number | null;
+  /**
+   * O critério da etapa (#4836): quando um negócio entra nela, em texto livre.
+   * `null` limpa (e texto vazio também vira `null` no servidor). Acima de 500
+   * caracteres, depois do `trim`, a rota responde 422 — a MESMA constante que a
+   * tela usa para limitar o campo.
+   */
+  description?: string | null;
 }
 
 function useReler(pipelineId: string) {

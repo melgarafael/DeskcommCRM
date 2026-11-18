@@ -8,6 +8,14 @@ vi.mock("@/lib/leads/activity-emitter", () => ({
 vi.mock("@/lib/leads/activity-write-failure", () => ({
   registraFalhaDeAtividade: vi.fn(async () => undefined),
 }));
+// O financeiro do fecho (#3602, fatia 5): o cerco (`recorrencia-do-fecho`) roda
+// de verdade, e o que se observa são as duas funções do molde.
+const molde = vi.hoisted(() => ({
+  recorrenciaDoNegocio: vi.fn(async () => ({ estado: "criado" })),
+  desativaRecorrenciaDoNegocio: vi.fn(async () => ({ estado: "desativado" })),
+}));
+vi.mock("@/lib/financeiro/recorrencia-do-negocio", () => molde);
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({})) }));
 
 import { encerraDemanda } from "./encerramento";
 
@@ -455,5 +463,109 @@ describe("encerraDemanda", () => {
     await expect(
       encerraDemanda(db.client as never, ctx, { leadId: LEAD, desfecho: "lost", motivo: "price" }),
     ).rejects.toMatchObject({ code: "internal_error", status: 500 });
+  });
+});
+
+// ── O FINANCEIRO DO FECHO (#3602, fatia 5) ───────────────────────────────────
+//
+// `encerraDemanda` é a porta compartilhada do botão Ganhar/Perder: `/win`,
+// `/lose`, a origem do clone, `create_or_move_lead`, o `crm_close_demand` (MCP),
+// o cold call e a troca de funil. Uma chamada aqui cobre TODAS — e é o que se
+// mede: ganho com `recurring_value_cents` cria o molde UMA vez (a segunda
+// chamada não duplica), perda desativa, e negócio que já estava no desfecho
+// retorna antes de tocar no financeiro.
+describe("encerraDemanda — o financeiro do fecho (#3602, fatia 5)", () => {
+  const CRIADO_EM = "2026-03-05T23:30:00.000Z";
+  const ATOR = ctx.actor.type === "user" ? ctx.actor.id : null;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+  });
+
+  it("ganhar com recorrência declarada cria o molde UMA vez, com os dados do negócio", async () => {
+    const db = makeDb({
+      leads: [baseLead({ recurring_value_cents: 50_000, created_at: CRIADO_EM })],
+      stages: baseStages(),
+    });
+
+    await encerraDemanda(db.client as never, ctx, { leadId: LEAD, desfecho: "won" });
+
+    expect(molde.recorrenciaDoNegocio).toHaveBeenCalledTimes(1);
+    expect(molde.recorrenciaDoNegocio).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        organizationId: ORG,
+        leadId: LEAD,
+        pipelineId: PIPELINE,
+        valorCents: 50_000,
+        criadoEm: CRIADO_EM,
+        userId: ATOR,
+      }),
+    );
+    expect(molde.desativaRecorrenciaDoNegocio).not.toHaveBeenCalled();
+  });
+
+  it("ganhar DUAS vezes não duplica: a segunda chamada nem chega ao financeiro", async () => {
+    const db = makeDb({
+      leads: [baseLead({ recurring_value_cents: 50_000, created_at: CRIADO_EM })],
+      stages: baseStages(),
+    });
+
+    await encerraDemanda(db.client as never, ctx, { leadId: LEAD, desfecho: "won" });
+    const segunda = await encerraDemanda(db.client as never, ctx, {
+      leadId: LEAD,
+      desfecho: "won",
+    });
+
+    expect(segunda.jaEstava).toBe(true);
+    expect(molde.recorrenciaDoNegocio).toHaveBeenCalledTimes(1);
+  });
+
+  it("ganhar SEM recorrência declarada não toca no financeiro", async () => {
+    const db = makeDb({
+      leads: [baseLead({ recurring_value_cents: null, created_at: CRIADO_EM })],
+      stages: baseStages(),
+    });
+
+    await encerraDemanda(db.client as never, ctx, { leadId: LEAD, desfecho: "won" });
+
+    expect(molde.recorrenciaDoNegocio).not.toHaveBeenCalled();
+    expect(molde.desativaRecorrenciaDoNegocio).not.toHaveBeenCalled();
+  });
+
+  it("perder desativa o molde DAQUELE negócio, e não cria outro", async () => {
+    const db = makeDb({
+      leads: [baseLead({ recurring_value_cents: 50_000, created_at: CRIADO_EM })],
+      stages: baseStages(),
+    });
+
+    await encerraDemanda(db.client as never, ctx, {
+      leadId: LEAD,
+      desfecho: "lost",
+      motivo: "price",
+    });
+
+    expect(molde.desativaRecorrenciaDoNegocio).toHaveBeenCalledTimes(1);
+    expect(molde.desativaRecorrenciaDoNegocio).toHaveBeenCalledWith(expect.anything(), {
+      organizationId: ORG,
+      leadId: LEAD,
+    });
+    expect(molde.recorrenciaDoNegocio).not.toHaveBeenCalled();
+  });
+
+  it("financeiro fora do ar NÃO derruba o fecho: o negócio fecha igual", async () => {
+    molde.recorrenciaDoNegocio.mockRejectedValueOnce(new Error("banco fora"));
+    const db = makeDb({
+      leads: [baseLead({ recurring_value_cents: 50_000, created_at: CRIADO_EM })],
+      stages: baseStages(),
+    });
+
+    const result = await encerraDemanda(db.client as never, ctx, {
+      leadId: LEAD,
+      desfecho: "won",
+    });
+
+    expect(result.lead).toMatchObject({ status: "won", stage_id: WON_STAGE });
   });
 });
