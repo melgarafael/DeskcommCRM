@@ -7,12 +7,14 @@ import { loadAuthUser } from "@/lib/auth/server";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-import { POST } from "./route";
+import { DELETE, POST } from "./route";
 
 vi.mock("@/lib/auth/server", () => ({ loadAuthUser: vi.fn() }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
+// resolveAuthDual abre o cliente de sessão (cookies); a rota só usa o admin client.
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn(async () => ({})) }));
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const CONTATO = "22222222-2222-4222-8222-222222222222";
@@ -39,6 +41,7 @@ interface LinhaContato {
   organization_id: string;
   display_name: string | null;
   is_personal: boolean;
+  personal_owner_user_id?: string | null;
 }
 
 let contatos: Record<string, LinhaContato>;
@@ -223,5 +226,38 @@ describe("marcar contato como pessoal (spec 21, etapa 3)", () => {
     const resposta = await POST(req(), contexto());
     expect(resposta.status).toBe(500);
     expect(audit).not.toHaveBeenCalled();
+  });
+});
+
+describe("desmarcar segue o dono (#4434, doc 362 = A)", () => {
+  // O usuário da sessão no beforeEach é `ORG` (manager).
+  const del = () =>
+    new NextRequest(`http://localhost/api/v1/contacts/${CONTATO}/personal`, { method: "DELETE" });
+  const pessoalDe = (dono: string | null) => {
+    contatos[CONTATO] = { ...contatos[CONTATO]!, is_personal: true, personal_owner_user_id: dono };
+  };
+
+  it("pessoal de OUTRA pessoa: gerente recebe 403 e o contato segue pessoal", async () => {
+    pessoalDe(OUTRO);
+    const res = await DELETE(del(), contexto());
+    expect(res.status).toBe(403);
+    expect(contatos[CONTATO]!.is_personal).toBe(true);
+    expect(contatos[CONTATO]!.personal_owner_user_id).toBe(OUTRO);
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it("o próprio dono desmarca, e a posse zera", async () => {
+    pessoalDe(ORG);
+    const res = await DELETE(del(), contexto());
+    expect(res.status).toBe(200);
+    expect(contatos[CONTATO]!.is_personal).toBe(false);
+    expect(contatos[CONTATO]!.personal_owner_user_id).toBeNull();
+  });
+
+  it("legado sem dono: o gerente desmarca, como antes da 9360", async () => {
+    pessoalDe(null);
+    const res = await DELETE(del(), contexto());
+    expect(res.status).toBe(200);
+    expect(contatos[CONTATO]!.is_personal).toBe(false);
   });
 });

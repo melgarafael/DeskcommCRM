@@ -179,6 +179,14 @@ interface Props {
    * e o botão leva direto para lá.
    */
   onAbrirConversa?: (id: string) => void;
+  /**
+   * O canal desta conversa recusa a nota de voz que o gravador produz
+   * (`recusaNotaDeVoz` de `lib/channels/capabilities`). Com `true` o microfone
+   * não aparece e o lugar dele fica com o Enviar desabilitado — sem isso o
+   * atendente grava no Instagram, o áudio sobe e a bolha termina `failed`.
+   * Vem de fora porque é o `InboxLayout` que conhece o canal da conversa.
+   */
+  recusaNotaDeVoz?: boolean;
 }
 
 export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
@@ -201,6 +209,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     rascunho = null,
     usuarioId = null,
     onAbrirConversa,
+    recusaNotaDeVoz = false,
   },
   ref,
 ) {
@@ -621,6 +630,16 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
         // sozinha mandava transferir uma conversa que já é de quem está aqui.
         onError: (erro) => {
           restoreOnError();
+          // #4787: a citada foi apagada DEPOIS de escolhida. O servidor recusou
+          // (`citacao_apagada`) — e a citação não tem como ficar: sem tirá-la,
+          // todo Enter seguinte levaria a mesma recusa e a resposta ficaria
+          // presa atrás de uma mensagem que não existe mais. O TEXTO fica (o
+          // `restoreOnError` acima), então reenviar sem citação é um Enter.
+          // O aviso com o motivo é o toast da rota, que já saiu no onError de
+          // `useSendMessage` — aqui não se inventa uma segunda frase.
+          if (erro instanceof ApiError && erro.code === "citacao_apagada") {
+            onCancelarResposta?.();
+          }
           const aviso = erro instanceof ApiError ? avisoDaContinua(erro.code, erro.details) : null;
           if (aviso) setContinua({ conversationId, ...aviso });
         },
@@ -1371,7 +1390,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               onAbertoChange={setAgendaAberta}
             />
           ) : null}
-          {text.trim() || mode === "note" ? (
+          {text.trim() || mode === "note" || recusaNotaDeVoz ? (
             <Button
               type="button"
               size="icon"

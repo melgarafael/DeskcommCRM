@@ -39,6 +39,8 @@ vi.mock("@/lib/prospecting/guard", () => ({
   // cenário de verdade (guarda REAL + handler carimbando) mora em
   // `lib/prospecting/prospeccao-bolhas-com-guarda-real.test.ts`.
   assertProspectingContinuation: mocks.continuation,
+  // A leitura das marcas ANTES da vaga: aqui o contato é sempre limpo.
+  vetoDoContatoAntesDaVaga: vi.fn().mockResolvedValue(null),
 }));
 vi.mock("@/lib/agent-engine/pacing/store", () => ({
   loadChannelKnobs: mocks.knobs,
@@ -86,6 +88,10 @@ import { ProspectingError } from "@/lib/prospecting/provider";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 import { withProspectingLock } from "@/lib/prospecting/store";
 import type { Campaign } from "@/lib/prospecting/store";
+import {
+  ORIGEM_DOS_DADOS_COM_CONTEXTO_DA_EQUIPE,
+  ORIGEM_DOS_DADOS_DA_ABORDAGEM_FRIA,
+} from "@/lib/prospecting/contexto-da-equipe";
 const id = "10000000-0000-4000-8000-000000000001";
 const campaign = {
   id,
@@ -385,6 +391,53 @@ describe("gradual outreach", () => {
     const segunda = await dadosDoModo("second_message");
     expect(segunda["Empresa"]).toBe("Example");
     for (const chave of ["Auditoria", "Detalhe", "Rascunho de abordagem"]) expect(segunda).not.toHaveProperty(chave);
+  });
+
+  // #4459 parte 2: o contexto da equipe. O worker mede `temContextoDaEquipe` nos dados JÁ
+  // filtrados pelo modo e entrega o MESMO valor à instrução e ao modo (`comContextoDaEquipe`).
+  it("contexto da equipe: o mesmo sinal vai à instrução e ao modo, medido depois do filtro do modo", async () => {
+    const chamada = async (
+      modo: "first_message" | "second_message",
+      contexto: Record<string, string>,
+    ) => {
+      vi.clearAllMocks();
+      mocks.generate.mockResolvedValue({ ok: true, texto: "Olá. Falo com a Example?" });
+      const comModo = { ...campaign, config: { ...campaign.config, exit_offer: modo } } as Campaign;
+      const comContexto = {
+        ...candidate,
+        data: { name: "Example", socials: [], website: null, contexto_da_equipe: contexto },
+      };
+      await sendNextCandidate({} as never, database(undefined, comContexto) as never, {} as never, comModo);
+      return mocks.generate.mock.calls[0]?.[2] as {
+        dados: Record<string, string>;
+        instrucao: string;
+        comContextoDaEquipe?: boolean;
+      };
+    };
+    const tres = { diagnostico: "Sem site.", oferta: "Site simples.", contexto: "Indicação do Pedro." };
+
+    const primeira = await chamada("first_message", tres);
+    expect(primeira.dados).toMatchObject({
+      "Diagnóstico da equipe": "Sem site.",
+      "Oferta sugerida pela equipe": "Site simples.",
+      "Contexto da equipe": "Indicação do Pedro.",
+    });
+    expect(primeira.comContextoDaEquipe).toBe(true);
+    expect(primeira.instrucao).toContain(ORIGEM_DOS_DADOS_COM_CONTEXTO_DA_EQUIPE);
+
+    // Saída na 2ª: só o contexto fica — e ele basta para ligar as regras.
+    const segunda = await chamada("second_message", tres);
+    expect(segunda.dados["Contexto da equipe"]).toBe("Indicação do Pedro.");
+    expect(segunda.dados).not.toHaveProperty("Diagnóstico da equipe");
+    expect(segunda.dados).not.toHaveProperty("Oferta sugerida pela equipe");
+    expect(segunda.comContextoDaEquipe).toBe(true);
+
+    // Saída na 2ª SEM contexto: o filtro tira diagnóstico e oferta, e nada liga.
+    const semContexto = await chamada("second_message", { diagnostico: "Sem site.", oferta: "Site simples." });
+    expect(Object.keys(semContexto.dados).some((k) => k.endsWith("da equipe"))).toBe(false);
+    expect(semContexto.comContextoDaEquipe).toBe(false);
+    expect(semContexto.instrucao).toContain(ORIGEM_DOS_DADOS_DA_ABORDAGEM_FRIA);
+    expect(semContexto.instrucao).not.toContain(ORIGEM_DOS_DADOS_COM_CONTEXTO_DA_EQUIPE);
   });
 });
 
@@ -760,6 +813,25 @@ describe("tick da prospecção × organização que para no meio do envio", () =
     expect(gravou(db, "status='paused'")).toBe(false);
     expect(gravou(db, "update prospecting_candidates set status='failed',error=$3")).toBe(false);
     expect(gravou(db, "update prospecting_candidates set status='queued'")).toBe(true);
+  });
+
+  it("\"sempre atendimento humano\" (`autorizou:false`): NÃO envia, marca só a empresa e a campanha segue", async () => {
+    // `autorizarContatoParaIA` devolve `{ok:true, autorizou:false}` quando o
+    // contato tem `ai_opt_out`: o update casa 0 linhas. Só olhar `ok` mandava a
+    // abordagem a quem a operação trancou.
+    const { db, rodar } = tickComEnvioQueFalha(new Error("não devia chegar ao envio"));
+    // A rejeição de uso único do ajudante não pode sobrar para o caso seguinte:
+    // aqui o envio NÃO deve acontecer, então ela nunca seria consumida.
+    mocks.send.mockReset();
+    mocks.send.mockResolvedValue({ status: "sent" });
+    mocks.authorize.mockResolvedValue({ ok: true, autorizou: false });
+    await rodar();
+    expect(mocks.send).not.toHaveBeenCalled();
+    expect(gravou(db, "status='paused'")).toBe(false);
+    const falhou = db.query.mock.calls.find(([sql]) =>
+      String(sql).startsWith("update prospecting_candidates set status='failed',error=$3"),
+    ) as unknown[] | undefined;
+    expect((falhou?.[1] as unknown[] | undefined)?.[2]).toBe("A IA não pode atender este contato.");
   });
 
   it("controle: falha inesperada do envio continua pausando a campanha e marcando o candidato failed", async () => {

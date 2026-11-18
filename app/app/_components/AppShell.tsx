@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { TopBar } from "@/components/shell/TopBar";
 import { BarraInferior } from "@/components/shell/BarraInferior";
@@ -11,6 +12,7 @@ import { useCrmAlerts } from "@/hooks/notifications/useCrmAlerts";
 import { useNotifyOpenFromServiceWorker } from "@/lib/notifications/notify_open";
 import { ensureNotifyServiceWorker } from "@/lib/notifications/service_worker";
 import { estiloDaReserva, useOcupacaoDoRodape } from "@/lib/ui/rodape-ocupado";
+import { CLASSE_DA_SECAO, classeDaSecao } from "@/lib/navigation/classes-estaveis";
 
 interface AppShellProps {
   sidebarCollapsed: boolean;
@@ -48,6 +50,15 @@ export function AppShell({ sidebarCollapsed, podeAtender, children }: AppShellPr
   // o `p-6` inteiro é rodapé. Com o painel de chamada na tela, é ele que
   // decide a faixa que o conteúdo perde, e ninguém mais mede isso por fora.
   const ocupacaoDoRodape = useOcupacaoDoRodape();
+  /**
+   * A SEÇÃO DO CONTEÚDO (#4705). O menu já dizia em que grupo a pessoa está
+   * (`nav-grupo-<id>`), e o conteúdo não dizia nada: com CSS personalizado era
+   * impossível pintar a tela de CRM sem pintar todas. A classe vem do pathname
+   * pelo MESMO registro de navegação do menu (`classeDaSecao`) — uma regra só,
+   * nada por tela. Rota fora do registro fica só com `tela-secao`.
+   */
+  const caminho = usePathname();
+  const secao = classeDaSecao(caminho ?? "");
   return (
     /*
       `min-h-dvh`, e não `min-h-screen`: `100vh` no celular é a janela com a
@@ -63,7 +74,7 @@ export function AppShell({ sidebarCollapsed, podeAtender, children }: AppShellPr
       topo ficam ACIMA da casca, e sem o desconto o documento media a tela
       mais a faixa — rolável justo quando o WhatsApp está desconectado.
     */
-    <div className="flex min-h-[calc(100dvh-var(--faixas-de-cima,0px))] w-full bg-background">
+    <div data-casca="raiz" className="flex min-h-[calc(100dvh-var(--faixas-de-cima,0px))] w-full bg-background">
       <BarraDeProgressoNavegacao />
       <div className="hidden md:block">
         <Sidebar collapsed={sidebarCollapsed} />
@@ -87,7 +98,10 @@ export function AppShell({ sidebarCollapsed, podeAtender, children }: AppShellPr
         SEGUNDA medida da mesma coisa — a que discordava e deixava a barra por
         cima da lista.
       */}
-      <div className="flex min-h-[calc(100dvh-var(--faixas-de-cima,0px))] min-w-0 flex-1 flex-col">
+      <div
+        data-casca="conteudo"
+        className="flex min-h-[calc(100dvh-var(--faixas-de-cima,0px))] min-w-0 flex-1 flex-col"
+      >
         <TopBar />
         {/*
           O RODAPÉ DESCONTA O QUE AS PEÇAS FIXAS OCUPAM (issue #1305).
@@ -110,7 +124,9 @@ export function AppShell({ sidebarCollapsed, podeAtender, children }: AppShellPr
           peça fixa quem cobre isso é o terceiro termo do `max()` do contrato.
         */}
         <main
-          className="flex-1 overflow-auto p-4 pb-area-segura sm:p-6"
+          className={[CLASSE_DA_SECAO, secao, "flex-1 overflow-auto p-4 pb-area-segura sm:p-6"]
+            .filter(Boolean)
+            .join(" ")}
           style={estiloDaReserva(ocupacaoDoRodape)}
           data-rodape-ocupado={ocupacaoDoRodape}
         >

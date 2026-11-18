@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { resolverModelo, type ModeloResolvido } from "../modelos/resolver";
 import { montarDadosDoDocumento, type ContatoParaDocumento, type DadosDaPropostaParaDocumento } from "./montar-dados";
+import { lerNegocioDoDocumento } from "./negocio-do-documento";
 import { renderizarDocumento, type SecaoRenderizada } from "./renderer";
 import { ondePreencher, rotuloDaVariavel, type OndePreencher } from "./rotulos-das-variaveis";
 
@@ -41,7 +42,10 @@ export function lerSecoesEditadas(valor: unknown): Record<string, string> {
   return saida;
 }
 
-function camposFaltandoDe(secoes: SecaoDoDocumento[]): CampoFaltando[] {
+function camposFaltandoDe(
+  secoes: SecaoDoDocumento[],
+  rotulosDoNegocio?: Readonly<Record<string, string>>,
+): CampoFaltando[] {
   const porCaminho = new Map<string, CampoFaltando>();
   for (const secao of secoes) {
     for (const caminho of secao.faltantes) {
@@ -52,7 +56,7 @@ function camposFaltandoDe(secoes: SecaoDoDocumento[]): CampoFaltando[] {
       }
       porCaminho.set(caminho, {
         caminho,
-        rotulo: rotuloDaVariavel(caminho),
+        rotulo: rotuloDaVariavel(caminho, rotulosDoNegocio),
         onde: ondePreencher(caminho),
         secoes: [secao.id],
       });
@@ -65,6 +69,11 @@ function camposFaltandoDe(secoes: SecaoDoDocumento[]): CampoFaltando[] {
  * O ÚNICO lugar que resolve modelo + dados + reescritas + pendências (D1 da
  * spec de 26/09). A rota do documento, a trava de envio, o snapshot e o PDF
  * chamam esta função — antes o cálculo estava copiado em três pontos.
+ *
+ * É também o único lugar que lê o NEGÓCIO da proposta (#4533): `db` e
+ * `organizationId` já estão aqui, e a leitura do card (`crm_leads` +
+ * `pipelines.settings.fields`) é de apoio — falhar nela deixa o documento
+ * exatamente como era.
  *
  * Não lança para "sem modelo": devolve `null`, e quem chama segue o caminho
  * da proposta sem documento.
@@ -79,7 +88,14 @@ export async function montarDocumentoDaProposta(
   const modelo = await resolverModelo(db, organizationId, proposta.template_slug);
   if (!modelo) return null;
 
-  const renderizado = renderizarDocumento(modelo, montarDadosDoDocumento(proposta, contato));
+  // A leitura do card é de APOIO: `null` (sem `lead_id`, sem linha, banco
+  // recusando) devolve o documento de antes, com as três fontes de sempre.
+  const negocio = await lerNegocioDoDocumento(db, organizationId, proposta.lead_id ?? null, proposta.moeda);
+
+  const renderizado = renderizarDocumento(
+    modelo,
+    montarDadosDoDocumento(proposta, contato, negocio?.dados ?? null),
+  );
   const editadas = lerSecoesEditadas(proposta.secoes_editadas);
   const secoes: SecaoDoDocumento[] = renderizado.secoes.map((s) =>
     editadas[s.id] !== undefined
@@ -91,6 +107,6 @@ export async function montarDocumentoDaProposta(
     modelo,
     secoes,
     pendencias: secoes.flatMap((s) => s.faltantes),
-    camposFaltando: camposFaltandoDe(secoes),
+    camposFaltando: camposFaltandoDe(secoes, negocio?.rotulos),
   };
 }

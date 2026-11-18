@@ -34,6 +34,7 @@ export interface ResolverVozDoTurnoInput {
    * para quem converte, ogg/opus para o canal oficial, que exige opus e não
    * converte (`lib/ai/voz/formato.ts`). Até 02/11/2026 o `opus-only` respondia
    * sempre em texto; a ElevenLabs sintetiza em opus, então ele também fala.
+   * `none` (redes sociais) responde sempre em texto: o canal recusa o áudio.
    */
   voiceNote: ChannelCapabilities['voiceNote'];
   /** `messages.type` da mensagem inbound que disparou o turno — `null` quando não há (ex.: follow-up proativo). */
@@ -148,6 +149,11 @@ export async function resolverVozDoTurno(
   input: ResolverVozDoTurnoInput,
 ): Promise<VozResolvidaDoTurno | null> {
   if (!input.vozEnabled) return null;
+  // O canal da conversa não entrega nota de voz nossa (Instagram/Facebook): o
+  // turno sai em texto ANTES de qualquer custo — sem ler a voz, sem consumir
+  // orçamento, sem pedir à ElevenLabs um áudio que o canal recusaria.
+  const formato = formatoDaVozParaCanal(input.voiceNote);
+  if (formato === null) return null;
   const textosDaConversa =
     input.inboundTexts ?? (input.inboundText === undefined ? [] : [input.inboundText]);
   if (!deveFalar(input.vozQuando, input.inboundType, textosDaConversa)) return null;
@@ -214,7 +220,7 @@ export async function resolverVozDoTurno(
       apiKey: elevenlabs.apiKey,
       voiceId,
       modelId,
-      formato: formatoDaVozParaCanal(input.voiceNote),
+      formato,
     };
   } catch (err) {
     if (err instanceof LlmBudgetExceededError) {

@@ -33,6 +33,9 @@ function politica(over: Record<string, unknown> = {}) {
     ai_authorized_at: null,
     assignee_kind: "ai",
     bot_silenced_until: null,
+    ai_gate_mode: null,
+    ai_test_phone_numbers: null,
+    contact_phone_number: null,
     ...over,
   };
 }
