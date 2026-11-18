@@ -696,11 +696,25 @@ export function mensagemDoAgenteIncompleto(
  *
  * A recusa é da CAMPANHA (422, escopo `campanha`): é o mesmo escopo das outras
  * recusas de configuração, e o operador conserta o campo e tenta de novo.
+ *
+ * ## `aoGravar`: quem recusa a palavra ESCONDIDA é o salvar (#4370, decisão (a) do #4647)
+ *
+ * Esta função é chamada nos dois lados: no SALVAR (`activateCampaign`, com
+ * `aoGravar: true`) e no que só REVALIDA a configuração de uma campanha que já
+ * existe — o envio (`worker.ts`, a cada rodada) e a retomada
+ * (`POST /api/v1/prospecting`). A palavra riscada/escondida só é recusada no
+ * salvar: o campo `texto_da_saida` existe desde a v1.109.0 e campanha antiga
+ * pode tê-la gravada. Recusá-la no envio pausava a campanha (o `ProspectingError`
+ * de escopo `campanha` cai no ramo que PAUSA), quando o contrato é ela continuar
+ * enviando com a frase padrão — `textoDaSaidaEfetivo` já faz essa volta, e é o
+ * que o cabeçalho de `rodape-de-saida.ts` promete. Aqui só se diz o momento;
+ * as outras réguas (sem palavra, longo, link) valem nos dois.
  */
 async function validarTextoDaSaidaNoIdioma(
   db: pg.PoolClient,
   org: string,
   texto: string | undefined,
+  { aoGravar = false }: { aoGravar?: boolean } = {},
 ): Promise<void> {
   const proprio = (texto ?? "").trim();
   // Vazio é o contrato: usa a frase padrão, e nada há para recusar.
@@ -714,6 +728,21 @@ async function validarTextoDaSaidaNoIdioma(
       422,
       "campanha",
     );
+  // A palavra existe, mas dentro de marcação que a esconde (riscado, spoiler,
+  // código). O conserto não é "incluir a palavra" — ela já está lá: é tirar a
+  // marcação de cima dela. Por isso a frase não repete a de cima (#4370).
+  //
+  // Fora do salvar, NÃO recusa: campanha já salva segue com a frase padrão
+  // (ver `aoGravar` acima). Sair por aqui também impede que ela caia na frase
+  // de link, logo abaixo, que não tem nada a ver com o caso.
+  if (problema === "palavra_escondida") {
+    if (!aoGravar) return;
+    throw new ProspectingError(
+      `A palavra "${palavraDeSaida(idioma)}" está no texto, mas riscada, escondida ou dentro de código: deixe a palavra legível, sem marcação em cima dela, porque é o que a pessoa vai responder.`,
+      422,
+      "campanha",
+    );
+  }
   throw new ProspectingError(
     problema === "longo"
       ? `O texto da opção de parar tem até ${TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA} caracteres.`
@@ -723,9 +752,20 @@ async function validarTextoDaSaidaNoIdioma(
   );
 }
 
-export async function validateConfig(db: pg.PoolClient, org: string, input: CampaignConfig) {
+export async function validateConfig(
+  db: pg.PoolClient,
+  org: string,
+  input: CampaignConfig,
+  /**
+   * `aoGravar` só é `true` quando a configuração está entrando pela primeira vez
+   * (`activateCampaign`). No envio e na retomada fica `false`: campanha já salva
+   * com a palavra escondida continua, e o envio usa a frase padrão (#4370,
+   * decisão (a) do #4647).
+   */
+  opcoes: { aoGravar?: boolean } = {},
+) {
   const config = campaignConfigSchema.parse(input);
-  await validarTextoDaSaidaNoIdioma(db, org, config.texto_da_saida);
+  await validarTextoDaSaidaNoIdioma(db, org, config.texto_da_saida, opcoes);
   // A MÍDIA DA ABORDAGEM (#4581) é um arquivo que JÁ EXISTE — e tem de ser DESTA
   // organização. Tipo e tamanho já foram conferidos pelo schema (regra pura, sem
   // organização); a posse do caminho só pode ser conferida aqui, onde a
@@ -1264,7 +1304,12 @@ export async function activateCampaign(
   input: CampaignConfig,
 ) {
   return withProspectingLock(pool, org, async (db) => {
-    const config = await validateConfig(db, org, semMarcadorDeArquivamento(input));
+    // GRAVAÇÃO da configuração: aqui a palavra escondida é RECUSADA (`aoGravar`).
+    // O envio e a retomada usam a mesma `validateConfig` sem esta flag, porque
+    // campanha já salva segue com a frase padrão em vez de pausar (#4370).
+    const config = await validateConfig(db, org, semMarcadorDeArquivamento(input), {
+      aoGravar: true,
+    });
     const c = (
       await db.query<Campaign>(
         "select * from prospecting_campaigns where organization_id=$1 and id=$2",
