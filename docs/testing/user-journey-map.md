@@ -1228,7 +1228,7 @@ enfileirar) e pelo turno (`lib/agent-engine/agent/inbound-turn.ts`, decide
 rodar). Origens que autorizam: webhook do Respondi
 (`app/api/v1/webhooks/in/[token]`), match de campanha na ingestão
 (`lib/channels/pos-entrada.ts` × `organizations.settings.campanhas_whatsapp`),
-a retomada manual (`lib/escalacao/retomada.ts`). A campanha de ENTRADA tem um
+ação `send_ai_message`, a retomada manual (`lib/escalacao/retomada.ts`). A campanha de ENTRADA tem um
 segundo efeito além da elegibilidade: se ela declara `agent_id`, a conversa
 que chegou pela frase é atendida pelo agente dela — gravado em
 `conversations.campaign_entry_agent_id` na ingestão (migration 9415) e lido num

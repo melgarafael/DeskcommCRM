@@ -31,6 +31,11 @@ import { encontrarContatoPorTelefone } from "@/lib/channels/contato-por-telefone
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { marcarConversaComMensagem } from "@/lib/channels/marcar-conversa";
 import { emitirTelefoneGanho } from "@/lib/contacts/telefone-ganho";
+import {
+  ehCanalDeIdentidade,
+  normalizarIdentificador,
+  type CanalDeIdentidade,
+} from "@/lib/contacts/identidades";
 
 import { extrairAtribuicaoMeta } from "@/lib/channels/atribuicao-de-anuncio-oficial";
 import { estamparAtribuicaoDoContato, metadataDoAnuncio } from "@/lib/leads/atribuicao-de-anuncio";
@@ -319,7 +324,7 @@ export async function ingestZernioInbound(
   }
 
   const contactId = input.socialMessage
-    ? await upsertSocialContact(admin, input.organizationId, identity, msg.identity.displayName)
+    ? await contatoDaRedeSocial(admin, input.organizationId, identity, msg.identity.displayName, input.socialMessage)
     : await upsertContact(admin, input.organizationId, msg, identity);
   if (!contactId) return { status: "ignored", reason: "contato_nao_resolvido" };
 
@@ -1027,6 +1032,82 @@ export async function aplicarEdicaoZernio(
     .select("id");
 
   return (data ?? []).length > 0 ? "aplicado" : "sem_alvo";
+}
+
+/** A identidade que a DM entrega, na forma que `contact_identities` grava. */
+function identidadeDaDm(
+  social: SocialMessage,
+): { canal: CanalDeIdentidade; identificador: string } | null {
+  if (!ehCanalDeIdentidade(social.platform)) return null;
+  const identificador = normalizarIdentificador(social.platform, social.participantId);
+  return identificador ? { canal: social.platform, identificador } : null;
+}
+
+/**
+ * A ficha de quem escreveu pela rede social (#3764, fatia 1).
+ *
+ * Procura PRIMEIRO em `contact_identities`, porque é lá que a fusão deixa a
+ * identidade da ficha absorvida: `fn_mesclar_contatos` reponta a linha para a
+ * vencedora, enquanto o `social_identity` da absorvida só é herdado quando a
+ * vencedora não tem o seu. Sem esta busca, a próxima conversa daquela pessoa
+ * não achava ficha viva e criava uma nova — a duplicata que a fusão desfez.
+ *
+ * Achada a ficha pelo `social_identity` (ou criada), grava a identidade, para
+ * que a próxima busca e a próxima fusão já a encontrem na tabela. As fichas de
+ * antes da migration 9419 entram pela carga inicial dela.
+ *
+ * O identificador é o id do participante, e não o `@`: o `@` vem nulo às vezes
+ * e a pessoa pode trocá-lo; o id é a âncora que `social_identity` já usa.
+ * ponytail: a chave não leva a conta conectada (o `social_identity` leva) —
+ * assume que a rede não repete o id de participante entre duas contas; se
+ * repetir, a tabela ganha a coluna da conta e o unique passa a incluí-la.
+ */
+async function contatoDaRedeSocial(
+  admin: SupabaseClient,
+  org: string,
+  identity: string,
+  name: string | null,
+  social: SocialMessage,
+): Promise<string> {
+  const perfil = identidadeDaDm(social);
+  if (perfil) {
+    const { data, error } = await admin
+      .from("contact_identities")
+      .select("contact_id, contacts!inner(id)")
+      .eq("organization_id", org)
+      .eq("canal", perfil.canal)
+      .eq("identificador", perfil.identificador)
+      // A fusão reponta a linha, mas a ficha MESCLADA continua não sendo alvo
+      // (o mesmo motivo de `upsertSocialContact` logo abaixo).
+      .is("contacts.is_merged_into", null)
+      .maybeSingle();
+    if (error) throw new Error("social_identity_lookup_failed");
+    const dono = (data as { contact_id?: unknown } | null)?.contact_id;
+    if (typeof dono === "string") return dono;
+  }
+
+  const contactId = await upsertSocialContact(admin, org, identity, name);
+  if (perfil) {
+    const { error } = await admin.from("contact_identities").insert({
+      organization_id: org,
+      contact_id: contactId,
+      canal: perfil.canal,
+      identificador: perfil.identificador,
+    });
+    // 23505: a primeira mensagem concorrente já gravou. Qualquer outra falha
+    // não derruba a ingestão — a ficha já está resolvida pelo `social_identity`
+    // e a próxima DM tenta gravar de novo —, mas fica no log.
+    if (error && error.code !== "23505") {
+      logger.error("zernio: identidade da rede social não gravada", {
+        organization_id: org,
+        contact_id: contactId,
+        canal: perfil.canal,
+        code: error.code,
+        detail: error.message,
+      });
+    }
+  }
+  return contactId;
 }
 
 /** Concurrent first messages share a database uniqueness constraint. */
