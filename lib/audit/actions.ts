@@ -1231,6 +1231,7 @@ export const AUDIT_ACTIONS = [
   // mesma pergunta de LGPD do ligado — metadata.origem diz para qual, e
   // origem_anterior de onde saiu.
   "ai.jev.origem_alterada",
+  "ai.jev.modelo_alterado",
   // O pedido de descadastro é do cliente e o padrão é irreversível — mas a
   // regra W-02 do catálogo de negócio prevê o override: admin desbloqueia à
   // mão. Sem esta linha, a ação existiria sem rastro de QUEM a desfez, que é
