@@ -227,7 +227,7 @@ export function PainelGoogleAds({ linhas, hoje, nomesDasContas }: Props) {
   const periodo = dataCurta.formatRange(
     new Date(inicio + "T00:00:00Z"),
     new Date(hoje + "T00:00:00Z"),
-  );
+  ).replace(/[\u2009\u202F]/g, " ");
 
   return (
     <section

@@ -171,7 +171,8 @@ export function MidiaGoogleAds({ hoje, carregar, atribuicao }: Props) {
               {t("Conta")} {resultado.contaId.replace(/^(\d{3})(\d{3})(\d{4})$/, "$1-$2-$3")}
             </strong>
             <span>
-              {data.formatRange(new Date(de + "T00:00:00Z"), new Date(hoje + "T00:00:00Z"))}
+              {data.formatRange(new Date(de + "T00:00:00Z"), new Date(hoje + "T00:00:00Z"))
+                .replace(/[\u2009\u202F]/g, " ")}
             </span>
             {fuso && (
               <span>
