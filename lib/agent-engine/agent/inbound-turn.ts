@@ -1737,6 +1737,13 @@ export interface InboundTurnKnobs {
    */
   maxSendsPerTurn?: number;
   /**
+   * #4835 — carência (ms) antes de gastar MODELO APROVADO no primeiro contato de
+   * um lead recém-chegado, com a janela de 24 h fechada (FOLLOWUP_CARENCIA_DO_MODELO_MS).
+   * Ausente = `CARENCIA_PADRAO_MS` (10 s); `0` desliga e devolve o comportamento
+   * de antes. Ver `agent/carencia-antes-do-modelo.ts`.
+   */
+  carenciaDoModeloMs?: number;
+  /**
    * #4590 — N respostas automáticas por CONVERSA dentro de W minutos
    * (TETO_DE_RESPOSTAS_POR_CONVERSA / TETO_DE_RESPOSTAS_JANELA_MIN). Ausente =
    * os defaults de `agent/teto-de-respostas.ts` (20 em 60 min) — main.ts sempre
@@ -4806,6 +4813,11 @@ async function executarTurnoDoAgente(
               jobClaim: claimOfJob(liveJob()),
               agentOperation,
               seq,
+              // Uma mensagem física só: ela é o envio inteiro. Marcar mantém o
+              // `send_ledger` coerente no turno em que também houve um
+              // `send_message` — linha sem marca de um job misto cairia na régua
+              // anterior e voltaria a atravessar o envio seguinte (#4370, 9407).
+              envioSeq: seq,
               conversationId: input.conversationId,
               body: finalBody,
               template: { name: template_name, language, values },
@@ -5281,7 +5293,11 @@ async function executarTurnoDoAgente(
           // e foto com legenda continua sendo foto. `vozParaEsteTurno` já veio
           // resolvida (credencial + voice_id); `null` = toda razão de não falar, e
           // aí esta função devolve `null` e o texto segue em bolhas.
-          const enviarVoz = (texto: string): Promise<ChannelSendResult> | null => {
+          // `envioSeqDoEnvio` (#4370, migration 9407): a nota de voz é UMA
+          // mensagem física, mas ela pertence ao envio do `send_message` que a
+          // pediu — a fronteira vai junto para o ledger, senão o reprocesso desta
+          // bolha cai na régua antiga (`seq >= $3`) sozinho, misturando turno.
+          const enviarVoz = (texto: string, envioSeqDoEnvio: number): Promise<ChannelSendResult> | null => {
             const voz = vozParaEsteTurno;
             // Link ou resposta longa: `null` e o texto segue em bolhas (ver `textoParaFalar`).
             const falado = voz ? textoParaFalar(texto) : null;
@@ -5295,6 +5311,7 @@ async function executarTurnoDoAgente(
               jobClaim: claimOfJob(liveJob()),
               agentOperation,
               seq: seqDesteEnvio,
+              envioSeq: envioSeqDoEnvio,
               conversationId: input.conversationId,
               // `body` continua sendo o texto FALADO — é ele que entra no
               // hash de idempotência do ledger (ver o comentário de
@@ -5475,6 +5492,14 @@ async function executarTurnoDoAgente(
                 // número, e o call site estava cravando `1200 + rand*800` ignorando-a.
                 (pacingDoTurno?.knobs.throttleMs ?? 1200) +
                 Math.floor(Math.random() * (pacingDoTurno?.knobs.jitterMaxMs ?? 800));
+              // A FRONTEIRA do envio (#4370, migration 9407): o `seq` da 1ª bolha
+              // que este `send_message` vai emitir. `seq` ainda não avançou (quem
+              // avança é o `enviar` abaixo, uma vez por mensagem física), então
+              // `seq + 1` é exatamente a primeira bolha — e é o MESMO número que a
+              // saída configurável usa como âncora (`mensagem.seq`). As bolhas do
+              // envio levam todos esse `envioSeq` para o ledger; o reprocesso lê
+              // por ele e não mistura o envio seguinte.
+              const seqDoEnvio = seq + 1;
               const enviar = (
                 corpo: string,
                 media?: FotoParaEnvio,
@@ -5487,6 +5512,7 @@ async function executarTurnoDoAgente(
                   jobClaim: claimOfJob(liveJob()),
                   agentOperation,
                   seq,
+                  envioSeq: seqDoEnvio,
                   conversationId: input.conversationId,
                   body: corpo,
                   ...(media ? { media } : {}),
@@ -5496,7 +5522,7 @@ async function executarTurnoDoAgente(
                 });
               };
               // Saída configurável da prospecção (fora de prévia); ver saida-configuravel.ts.
-              const saida = { db: pool, organizationId: tenantId, conversationId: preview ? null : input.conversationId, via: "inbound_turn" as const, mensagem: { jobId: preview ? "" : liveJob().id, seq: seq + 1 }, avisar: (m: string, c: Record<string, unknown>) => runLog.warn(m, c) };
+              const saida = { db: pool, organizationId: tenantId, conversationId: preview ? null : input.conversationId, via: "inbound_turn" as const, mensagem: { jobId: preview ? "" : liveJob().id, seq: seqDoEnvio }, avisar: (m: string, c: Record<string, unknown>) => runLog.warn(m, c) };
               return enviarComSaidaConfiguravel(saida, finalBody, (finalBody) => {
                   corposEnviados.push(finalBody);
                   // Cada foto é uma mensagem física: só vão as que cabem no teto do turno,
@@ -5511,7 +5537,7 @@ async function executarTurnoDoAgente(
                       restantes: () => maxSendsPerTurn - seq,
                       enviarFoto: (foto, legenda) => enviar(legenda, foto).then(marcarFoto),
                       enviarTexto: (texto) =>
-                        enviarVoz(texto) ??
+                        enviarVoz(texto, seqDoEnvio) ??
                         sendInBubbles(texto, {
                           enabled: agentConfig?.splitMessages ?? false,
                           maxChars: agentConfig?.splitMaxChars ?? 600,
@@ -7559,6 +7585,9 @@ async function executarTurnoDoAgente(
                   jobClaim: claimOfJob(liveJob()),
                   agentOperation,
                   seq,
+                  // Uma mensagem física só: ela é o envio inteiro (ver o irmão
+                  // acima, no envio de template) — #4370, migration 9407.
+                  envioSeq: seq,
                   conversationId: input.conversationId,
                   body: finalBody,
                 });

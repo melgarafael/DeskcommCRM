@@ -99,6 +99,13 @@ export function useMoveCard(pipelineId: string, opcoes: OpcoesDeMove = {}) {
               ? {
                   ...l,
                   stage_id: args.stageId,
+                  // A ENTRADA NA ETAPA também, quando a etapa muda: o gatilho
+                  // da 0071 vai carimbar `stage_changed_at` agora, e sem isto
+                  // a barra de etapas e o rodapé do card mostravam, até a
+                  // resposta chegar, os dias da etapa ANTIGA na etapa nova.
+                  ...(args.stageId !== l.stage_id
+                    ? { stage_changed_at: new Date().toISOString() }
+                    : {}),
                   ...(args.positionInStage !== undefined
                     ? { position_in_stage: args.positionInStage }
                     : {}),

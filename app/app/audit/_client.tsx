@@ -108,8 +108,8 @@ export function AuditClient() {
               <TableHead>{t("Ator")}</TableHead>
               <TableHead>{t("Ação")}</TableHead>
               <TableHead>{t("Recurso")}</TableHead>
-              <TableHead>Request ID</TableHead>
-              <TableHead>Metadata</TableHead>
+              <TableHead>{t("ID da requisição")}</TableHead>
+              <TableHead>{t("Metadados")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
