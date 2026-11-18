@@ -85,12 +85,12 @@ describe("sem preferência, a faixa é a de hoje", () => {
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
 
     expect(faixa()).toEqual(["Automático", "Fila", "Minhas", "Todas", "Fechadas", "Arquivadas", "Pessoal"]);
-    expect(menu()).toHaveAccessibleName("Organizar abas");
+    expect(menu()).toHaveAccessibleName("Personalizar abas");
 
     await user.click(menu());
     expect(screen.queryByText("Abas ocultas")).toBeNull();
     expect(screen.queryAllByRole("menuitemradio")).toHaveLength(0);
-    expect(screen.getByRole("menuitem", { name: "Organizar abas…" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Personalizar abas…" })).toBeInTheDocument();
   });
 });
 
@@ -100,6 +100,9 @@ describe("com preferência, a faixa é a da pessoa", () => {
 
     expect(faixa()).toEqual(["Fila", "Minhas", "Automático", "Fechadas", "Pessoal"]);
     expect(menu()).toHaveTextContent("Mais");
+    // No celular a barra de baixo já tem um botão "Mais" (a navegação): este
+    // tem nome próprio, que começa pelo que está escrito nele.
+    expect(menu()).toHaveAccessibleName("Mais abas");
   });
 
   it("as ocultas continuam abrindo pelo menu, com o contador de cada uma", async () => {
@@ -124,6 +127,7 @@ describe("com preferência, a faixa é a da pessoa", () => {
     expect(menu()).toHaveTextContent("Arquivadas");
     expect(menu()).toHaveTextContent("1");
     expect(menu()).toHaveAttribute("data-state-aba", "active");
+    expect(menu()).toHaveAccessibleName("Arquivadas 1 · Mais abas");
     // Nenhuma aba da faixa finge estar aberta.
     expect(screen.getAllByRole("tab").filter((el) => el.getAttribute("aria-selected") === "true")).toHaveLength(0);
   });
@@ -152,8 +156,8 @@ describe("preferência não é permissão", () => {
 describe("o diálogo organiza e grava", () => {
   async function abrirDialogo(user: ReturnType<typeof userEvent.setup>) {
     await user.click(menu());
-    await user.click(screen.getByRole("menuitem", { name: "Organizar abas…" }));
-    return screen.getByRole("dialog", { name: "Organizar abas" });
+    await user.click(screen.getByRole("menuitem", { name: "Personalizar abas…" }));
+    return screen.getByRole("dialog", { name: "Personalizar abas" });
   }
 
   it("subir uma aba e ocultar outra: grava a lista inteira e a faixa acompanha", async () => {
@@ -162,7 +166,7 @@ describe("o diálogo organiza e grava", () => {
 
     const dialogo = await abrirDialogo(user);
     await user.click(within(dialogo).getByRole("button", { name: "Mover para cima · Fila" }));
-    await user.click(within(dialogo).getByRole("switch", { name: "Mostrar na faixa · Arquivadas" }));
+    await user.click(within(dialogo).getByRole("switch", { name: "Mostrar aba · Arquivadas" }));
     await user.click(within(dialogo).getByRole("button", { name: "Salvar" }));
 
     expect(h.salvar).toHaveBeenCalledTimes(1);
@@ -197,8 +201,13 @@ describe("o diálogo organiza e grava", () => {
     render(<InboxFilters value={VALUE} onChange={() => {}} abasIniciais={soMinhas} />);
 
     const dialogo = await abrirDialogo(user);
-    expect(within(dialogo).getByRole("switch", { name: "Mostrar na faixa · Minhas" })).toBeDisabled();
-    expect(within(dialogo).getByRole("switch", { name: "Mostrar na faixa · Fila" })).toBeEnabled();
+    const travada = within(dialogo).getByRole("switch", { name: "Mostrar aba · Minhas" });
+    expect(travada).toBeDisabled();
+    // O porquê da trava chega ao leitor de tela, não só "indisponível".
+    expect(travada).toHaveAccessibleDescription("Pelo menos uma aba precisa ficar visível.");
+    const livre = within(dialogo).getByRole("switch", { name: "Mostrar aba · Fila" });
+    expect(livre).toBeEnabled();
+    expect(livre).not.toHaveAccessibleDescription();
   });
 
   it("Cancelar não grava nem muda a faixa", async () => {
@@ -206,7 +215,7 @@ describe("o diálogo organiza e grava", () => {
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
 
     const dialogo = await abrirDialogo(user);
-    await user.click(within(dialogo).getByRole("switch", { name: "Mostrar na faixa · Fila" }));
+    await user.click(within(dialogo).getByRole("switch", { name: "Mostrar aba · Fila" }));
     await user.click(within(dialogo).getByRole("button", { name: "Cancelar" }));
 
     expect(h.salvar).not.toHaveBeenCalled();
@@ -219,14 +228,14 @@ describe("o diálogo organiza e grava", () => {
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
 
     const dialogo = await abrirDialogo(user);
-    await user.click(within(dialogo).getByRole("switch", { name: "Mostrar na faixa · Fila" }));
+    await user.click(within(dialogo).getByRole("switch", { name: "Mostrar aba · Fila" }));
     await user.click(within(dialogo).getByRole("button", { name: "Salvar" }));
 
     expect(h.salvar).toHaveBeenCalledTimes(1);
     expect(toast.error).toHaveBeenCalledWith("Não foi possível salvar as abas. Tente novamente.");
     // O diálogo fica para a pessoa tentar de novo, com a escolha dela intacta.
-    expect(screen.getByRole("dialog", { name: "Organizar abas" })).toBeInTheDocument();
-    expect(within(dialogo).getByRole("switch", { name: "Mostrar na faixa · Fila" })).not.toBeChecked();
+    expect(screen.getByRole("dialog", { name: "Personalizar abas" })).toBeInTheDocument();
+    expect(within(dialogo).getByRole("switch", { name: "Mostrar aba · Fila" })).not.toBeChecked();
 
     await user.click(within(dialogo).getByRole("button", { name: "Cancelar" }));
     expect(faixa()).toContain("Fila");

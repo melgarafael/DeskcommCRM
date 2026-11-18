@@ -389,6 +389,27 @@ export function InboxFilters({ value, onChange, filas: filasDaOrganizacao, abasI
     // `ConversationCounts`), então `undefined` some, não vira zero.
     pessoal: counts?.pessoal,
   };
+  // O NOME do botão do menu das abas, para o leitor de tela. Sem ocultas, é a
+  // porta do diálogo; com ocultas, "Mais abas" — no celular a barra de baixo já
+  // tem um "Mais" (a navegação), e dois controles com o mesmo nome na mesma tela
+  // é defeito. Com a aba aberta oculta, o nome dela, o contador e o "Mais abas":
+  // explícito, porque o nome calculado do conteúdo cola o rótulo no contador
+  // ("Arquivadas1"). O contador segue a mesma regra do visível (só depois de
+  // montar), para servidor e cliente não divergirem na hidratação.
+  const contadorDaAtiva = countFor[value.tab];
+  const nomeDoMenuDasAbas =
+    ocultas.length === 0
+      ? t("Personalizar abas")
+      : ativaOculta
+        ? [
+            rotuloDaAba(value.tab),
+            depoisDeMontar && typeof contadorDaAtiva === "number" && contadorDaAtiva > 0
+              ? String(contadorDaAtiva)
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" ") + ` · ${t("Mais abas")}`
+        : t("Mais abas");
   // Filtrar por um número que saiu da lista (o operador acabou de excluir o
   // canal) deixa o inbox mostrando um subconjunto — às vezes vazio — sem nada na
   // tela dizendo que há filtro. O número some do dropdown junto com o canal, e o
@@ -947,8 +968,8 @@ export function InboxFilters({ value, onChange, filas: filasDaOrganizacao, abasI
               <button
                 type="button"
                 data-testid="menu-das-abas"
-                aria-label={ocultas.length === 0 ? t("Organizar abas") : undefined}
-                title={ocultas.length === 0 ? t("Organizar abas") : undefined}
+                aria-label={nomeDoMenuDasAbas}
+                title={ocultas.length === 0 ? t("Personalizar abas") : undefined}
                 data-state-aba={ativaOculta ? "active" : undefined}
                 className={cn(
                   "flex shrink-0 items-center gap-1 self-start rounded-none border-b-2 border-transparent pb-2 pt-1 text-xs font-medium text-text-muted hover:text-text focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
@@ -958,10 +979,9 @@ export function InboxFilters({ value, onChange, filas: filasDaOrganizacao, abasI
                 {ativaOculta ? (
                   <>
                     {rotuloDaAba(value.tab)}
-                    {depoisDeMontar && typeof countFor[value.tab] === "number" && countFor[value.tab]! > 0 && (
-                      <span className="text-[11px] tabular-nums text-text-subtle">{countFor[value.tab]}</span>
+                    {depoisDeMontar && typeof contadorDaAtiva === "number" && contadorDaAtiva > 0 && (
+                      <span className="text-[11px] tabular-nums text-text-subtle">{contadorDaAtiva}</span>
                     )}
-                    <span className="sr-only"> · {t("Mais abas")}</span>
                     <CaretDown size={11} aria-hidden />
                   </>
                 ) : ocultas.length > 0 ? (
@@ -998,7 +1018,7 @@ export function InboxFilters({ value, onChange, filas: filasDaOrganizacao, abasI
                 </>
               )}
               <DropdownMenuItem className="text-xs" onSelect={() => setOrganizandoAbas(true)}>
-                {t("Organizar abas…")}
+                {t("Personalizar abas…")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

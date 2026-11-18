@@ -2518,6 +2518,30 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível salvar a lateral. Tente novamente.": {
     es: "No se pudo guardar la lateral. Inténtalo de nuevo.",
   },
+  // ─── Personalização das abas do Inbox (#3313) ───
+  // A mesma família da lateral acima: o mesmo verbo, o mesmo "vale para você".
+  // "Mais abas" é o NOME do botão para o leitor de tela: no celular a barra de
+  // baixo já tem um "Mais" (a navegação), e o texto visível continua "Mais".
+  // "A escolha enviada não é válida…" já está acima e é reaproveitada.
+  "Personalizar abas": { es: "Personalizar pestañas" },
+  "Personalizar abas…": { es: "Personalizar pestañas…" },
+  "Mais abas": { es: "Más pestañas" },
+  "Abas ocultas": { es: "Pestañas ocultas" },
+  "Escolha quais abas aparecem e em que ordem. As ocultas ficam no menu Mais, ao lado das abas. Vale para você — os colegas continuam com as deles.": {
+    es: "Elige qué pestañas aparecen y en qué orden. Las ocultas quedan en el menú Más, junto a las pestañas. Vale para ti: tus colegas mantienen las suyas.",
+  },
+  "Mostrar aba": { es: "Mostrar pestaña" },
+  "Pelo menos uma aba precisa ficar visível.": { es: "Al menos una pestaña debe quedar visible." },
+  "Abas do Inbox atualizadas.": { es: "Pestañas del Inbox actualizadas." },
+  "Sua sessão expirou. Entre novamente para salvar as abas.": {
+    es: "Tu sesión expiró. Vuelve a iniciar sesión para guardar las pestañas.",
+  },
+  "Este acesso é somente leitura: as abas não podem ser salvas.": {
+    es: "Este acceso es de solo lectura: no se pueden guardar las pestañas.",
+  },
+  "Não foi possível salvar as abas. Tente novamente.": {
+    es: "No se pudieron guardar las pestañas. Inténtalo de nuevo.",
+  },
   // ─── Painel do contato ───
   CONTATO: { es: "CONTACTO" },
   // O recolher do painel inteiro (#3004) — mesmo verbo do recolher da barra

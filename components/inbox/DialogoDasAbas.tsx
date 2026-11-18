@@ -22,7 +22,7 @@
  * intactas na gravação (`juntarComAsForaDoPapel`).
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useId, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -102,7 +102,7 @@ export function DialogoDasAbas({ aberto, onAbertoChange, abas, permitidas, rotul
         return;
       }
       onSalvas(resposta.abas);
-      toast.success(t("Abas da Inbox atualizadas."));
+      toast.success(t("Abas do Inbox atualizadas."));
       onAbertoChange(false);
     } catch {
       toast.error(t(MENSAGEM_DO_ERRO.falha));
@@ -112,15 +112,18 @@ export function DialogoDasAbas({ aberto, onAbertoChange, abas, permitidas, rotul
   }, [abas, onAbertoChange, onSalvas, rascunho, t]);
 
   const visiveis = rascunho.filter((a) => a.visivel).length;
+  // A dica da última visível é o PORQUÊ da chave travada: sem o vínculo, o
+  // leitor de tela anuncia só "indisponível".
+  const idDaDica = useId();
 
   return (
     <Dialog open={aberto} onOpenChange={onAbertoChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{t("Organizar abas")}</DialogTitle>
+          <DialogTitle>{t("Personalizar abas")}</DialogTitle>
           <DialogDescription>
             {t(
-              "Escolha a ordem das abas e quais ficam à vista. As ocultas continuam no menu ao lado das abas. Vale só para você.",
+              "Escolha quais abas aparecem e em que ordem. As ocultas ficam no menu Mais, ao lado das abas. Vale para você — os colegas continuam com as deles.",
             )}
           </DialogDescription>
         </DialogHeader>
@@ -160,7 +163,8 @@ export function DialogoDasAbas({ aberto, onAbertoChange, abas, permitidas, rotul
                   checked={aba.visivel}
                   disabled={ultimaVisivel}
                   onCheckedChange={(visivel) => alternar(aba.id, visivel)}
-                  aria-label={`${t("Mostrar na faixa")} · ${rotulo}`}
+                  aria-label={`${t("Mostrar aba")} · ${rotulo}`}
+                  aria-describedby={ultimaVisivel ? idDaDica : undefined}
                 />
               </li>
             );
@@ -168,8 +172,8 @@ export function DialogoDasAbas({ aberto, onAbertoChange, abas, permitidas, rotul
         </ul>
 
         {visiveis === 1 && (
-          <p className="text-xs text-muted-foreground">
-            {t("Pelo menos uma aba fica à vista.")}
+          <p id={idDaDica} className="text-xs text-muted-foreground">
+            {t("Pelo menos uma aba precisa ficar visível.")}
           </p>
         )}
 
