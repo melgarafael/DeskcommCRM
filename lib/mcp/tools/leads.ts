@@ -200,7 +200,7 @@ async function recortarParaOTurno(
   const funis = [...new Set(leads.map((l) => l.pipeline_id as string | null | undefined))];
   const settingsPorFunil = new Map(
     await Promise.all(
-      funis.map(async (id) => [id, await settingsDoFunil(ctx.supabase, id)] as const),
+      funis.map(async (id) => [id, await settingsDoFunil(ctx.supabase, id, ctx.organizationId)] as const),
     ),
   );
   return leads.map((l) =>
