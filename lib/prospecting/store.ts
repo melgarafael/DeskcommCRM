@@ -1619,6 +1619,17 @@ export const EDICAO_DO_BRIEFING_SQL =
 export const CONGELA_BRIEFING_DOS_ABORDADOS_SQL =
   "update prospecting_candidates set data = data || jsonb_build_object('briefing', jsonb_strip_nulls($3::jsonb)), updated_at = now() where organization_id = $1 and campaign_id = $2 and status in ('sending','sent') and not (data ? 'briefing')";
 
+/**
+ * O interruptor da ficha digital (#4829), gravado só quando a edição o manda.
+ *
+ * Vai em `update` PRÓPRIO, e não no `EDICAO_DO_BRIEFING_SQL`, por um motivo de dados e
+ * não de estilo: `false` é um valor VÁLIDO e `jsonb_strip_nulls` não o distingue de
+ * ausente. Um `coalesce` no SQL gravaria `true` por cima de uma config que só queria
+ * editar o texto — e o interruptor viraria estado de tela em vez de configuração.
+ */
+export const EDICAO_DA_FICHA_DIGITAL_SQL =
+  "update prospecting_campaigns set config = config || jsonb_build_object('usar_ficha_digital', $3::boolean) where organization_id = $1 and id = $2 and status = 'paused' and config is not null";
+
 /** Passo 2: a prévia escrita com o texto velho não sai para quem ainda está na fila. */
 export const DESCARTA_PREVIAS_DA_FILA_SQL =
   "update prospecting_candidates set data = data - 'previa', updated_at = now() where organization_id = $1 and campaign_id = $2 and status in ('new','queued') and data ? 'previa'";
@@ -1642,10 +1653,16 @@ export async function editBriefing(
     if (!c) throw new ProspectingError("Campanha não encontrada.", 404);
     if (c.status !== "paused" || !c.config)
       throw new ProspectingError(MENSAGEM_DE_CAMPANHA_PAUSADA_PARA_EDITAR, 409);
+    // O interruptor (#4829) só aparece no registro quando a campanha JÁ o tem: uma
+    // campanha de antes desta chave não ganha um campo nulo no histórico por causa de
+    // uma edição de texto.
+    const fichaAnterior =
+      typeof c.config.usar_ficha_digital === "boolean" ? c.config.usar_ficha_digital : undefined;
     const anterior = {
       instruction: c.config.instruction ?? null,
       qualification: c.config.qualification ?? null,
       ofertas: c.config.ofertas ?? null,
+      ...(fichaAnterior === undefined ? {} : { usar_ficha_digital: fichaAnterior }),
     };
     await db.query("begin");
     try {
@@ -1660,6 +1677,10 @@ export async function editBriefing(
       // Alguém retomou entre o select e o update: o `where` recusou, e é isso que vale.
       if (!changed.rows.length)
         throw new ProspectingError(MENSAGEM_DE_CAMPANHA_PAUSADA_PARA_EDITAR, 409);
+      // O interruptor só é tocado quando veio: cliente antigo da API edita o texto e
+      // não reescreve a ficha digital de ninguém.
+      if (briefing.usar_ficha_digital !== undefined)
+        await db.query(EDICAO_DA_FICHA_DIGITAL_SQL, [org, id, briefing.usar_ficha_digital]);
       await db.query(CONGELA_BRIEFING_DOS_ABORDADOS_SQL, [org, id, JSON.stringify(anterior)]);
       await db.query(DESCARTA_PREVIAS_DA_FILA_SQL, [org, id]);
       await db.query("commit");
@@ -1673,6 +1694,11 @@ export async function editBriefing(
         instruction: briefing.instruction,
         qualification: briefing.qualification,
         ofertas: briefing.ofertas,
+        // Ausente quando a edição não tocou no interruptor — o histórico não inventa
+        // um `true` que ninguém escolheu.
+        ...(briefing.usar_ficha_digital === undefined
+          ? {}
+          : { usar_ficha_digital: briefing.usar_ficha_digital }),
       },
     };
   });
