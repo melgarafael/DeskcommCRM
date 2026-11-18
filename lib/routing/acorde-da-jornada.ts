@@ -11,10 +11,12 @@
  * (salvar a política do número, revogar membro) e nenhum olha para o relógio; o
  * cron que poderia olhar (`attendant-heartbeat`) foi removido.
  *
- * Resultado: a conversa reenfileirada por `requeued_no_eligible` espera um
- * evento novo para ser redistribuída. Quando a fila ABRE, não há evento novo —
+ * Resultado: a conversa reenfileirada por `requeued_no_eligible` só é tentada
+ * de novo no backoff (`decide.ts`: `backoff_seconds` nas primeiras tentativas,
+ * depois `max(900, backoff_seconds)`). Quando a fila ABRE, não há evento novo —
  * ele é justamente a abertura. O atendente entra de plantão, a fila está com
- * gente disponível, e a conversa fica parada.
+ * gente disponível, e a conversa espera até 15 minutos (ou 1 hora) pela
+ * próxima tentativa.
  *
  * ─── O desenho ──────────────────────────────────────────────────────────────
  *

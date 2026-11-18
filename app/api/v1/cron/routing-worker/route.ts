@@ -51,8 +51,9 @@ async function handle(req: NextRequest): Promise<Response> {
   //
   // A jornada é DERIVADA na leitura (`estaDePlantao`): ninguém escreve nada
   // quando a janela vira e, por isso, ninguém avisava a distribuição. A conversa
-  // que voltou para a fila (`requeued_no_eligible`) esperava um evento novo — e
-  // quando a FILA abre não chega evento nenhum, porque a abertura é o evento.
+  // que voltou para a fila (`requeued_no_eligible`) esperava o backoff vencer
+  // (até 15 min) — quando a FILA abre não chega evento nenhum, porque a abertura
+  // é o evento.
   // Este passo faz a pergunta que faltava ("a jornada começou neste tick?") e
   // chama `fn_wake_channel_routing` por organização.
   //

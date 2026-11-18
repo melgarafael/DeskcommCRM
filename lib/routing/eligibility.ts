@@ -125,9 +125,10 @@ export function estaDePlantao(
  * A jornada é DERIVADA na leitura (`estaDePlantao`): ninguém escreve nada quando
  * a janela vira, e por isso ninguém AVISA o roteamento de que ela virou. Uma
  * conversa que não achou elegível volta para o `event_log` com backoff
- * (`requeued_no_eligible`) e só é redistribuída quando um evento novo chega.
- * Numa fila que ABRIU agora não chega evento nenhum: o atendente entra de
- * plantão, a conversa continua parada, e a tela mostra os dois disponíveis.
+ * (`requeued_no_eligible`) e só é tentada de novo quando o backoff vence (até
+ * 15 minutos, ou mais com `backoff_seconds` alto). Numa fila que ABRIU agora
+ * não chega evento nenhum: o atendente entra de plantão, a conversa espera a
+ * próxima tentativa, e a tela mostra os dois disponíveis.
  *
  * A conta é a mesma de `isWithinSchedule`, feita nos DOIS instantes que
  * interessam: o de um `janelaMs` atrás e o de agora. "Estava fora e passou para

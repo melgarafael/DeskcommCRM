@@ -10,8 +10,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * e `isWithinSchedule` calculam "está aberto AGORA?" a cada consulta, e ninguém
  * escreve nada quando a janela vira. Consequência medida: uma conversa que
  * espera a fila abrir volta para o `event_log` com backoff
- * (`requeued_no_eligible`) e só é redistribuída se um evento novo chegar. Numa
- * fila que ABRIU agora não chega evento nenhum — a conversa fica parada com o
+ * (`requeued_no_eligible`) e só é tentada de novo quando o backoff vence (até
+ * 15 minutos, ou mais com `backoff_seconds` alto). Numa fila que ABRIU agora
+ * não chega evento nenhum — a conversa espera a próxima tentativa com o
  * atendente de plantão do outro lado, e a tela mostra os dois disponíveis.
  *
  * Os quatro chamadores de `fn_wake_channel_routing` na `main` eram todos de

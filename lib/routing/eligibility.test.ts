@@ -142,8 +142,9 @@ describe("estaDePlantao — a regra inteira, com clock injetado", () => {
  *
  * O defeito que estes casos prendem: a jornada é DERIVADA na leitura, então
  * ninguém avisa o roteamento quando ela vira. Uma conversa que espera a fila
- * abrir (backoff do worker) só é redistribuída se algum evento novo chegar no
- * `event_log` — e numa fila que ABRIU agora não chega evento nenhum.
+ * abrir (backoff do worker) só é tentada de novo quando o backoff vence (até
+ * 15 minutos) — e numa fila que ABRIU agora não chega evento nenhum que a
+ * adiante.
  *
  * A regra é a mesma conta de `isWithinSchedule`, feita duas vezes: um minuto
  * atrás estava fora, agora está dentro. É o que a torna IDEMPOTENTE SEM COLUNA
