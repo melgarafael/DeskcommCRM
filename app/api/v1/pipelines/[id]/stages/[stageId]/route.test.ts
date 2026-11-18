@@ -228,6 +228,108 @@ describe("PATCH /api/v1/pipelines/[id]/stages/[stageId]", () => {
     expect(db.escritas[0]?.patch).toEqual(comAutoria({ win_probability: null }));
   });
 
+  /**
+   * #4836 — O CRITÉRIO DA ETAPA, escrito pelo PATCH.
+   *
+   * O agente já LIA `crm_stages.description` (`crm_list_stages`); o que faltava
+   * era onde escrever. Estes testes medem a escrita: texto aparado, autoria
+   * igual à dos outros campos, vazio virando `null` e o teto recusado ANTES do
+   * banco.
+   */
+  it("escrever o critério → UM update, com o texto aparado e a MESMA autoria dos outros campos", async () => {
+    authOk();
+    const db = makeDb({ stages: funil() });
+    const { PATCH } = await import("./route");
+    const res = await PATCH(
+      reqPatch({ description: "   Entra aqui quando o cliente aprova o orçamento.   " }),
+      ctx(),
+    );
+
+    expect(res.status).toBe(200);
+    expect(db.escritas).toHaveLength(1);
+    // `comAutoria` é o MESMO auxiliar dos outros campos: o critério não inventa
+    // um segundo mecanismo de `last_change_actor_kind`.
+    expect(db.escritas[0]?.patch).toEqual(
+      comAutoria({ description: "Entra aqui quando o cliente aprova o orçamento." }),
+    );
+    expect(db.escritas[0]?.filtros).toContainEqual(["id", "e2"]);
+    expect(db.escritas[0]?.filtros).toContainEqual(["organization_id", ORG_ID]);
+    expect(db.escritas[0]?.filtros).toContainEqual(["pipeline_id", PIPE]);
+
+    // O audit é o MESMO da rota (`pipeline.stage_updated`), com o pedido dentro.
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "pipeline.stage_updated",
+        organizationId: ORG_ID,
+        resourceType: "crm_stage",
+        resourceId: "e2",
+        metadata: expect.objectContaining({
+          pedido: { description: "   Entra aqui quando o cliente aprova o orçamento.   " },
+        }),
+      }),
+    );
+
+    const body = (await res.json()) as {
+      data: { etapas: Array<{ id: string; description: string | null }> };
+    };
+    expect(body.data.etapas.find((e) => e.id === "e2")?.description).toBe(
+      "Entra aqui quando o cliente aprova o orçamento.",
+    );
+  });
+
+  it("critério vazio → grava `null`, NUNCA string vazia", async () => {
+    authOk();
+    const db = makeDb({ stages: funil() });
+    const { PATCH } = await import("./route");
+    const res = await PATCH(reqPatch({ description: "   \n  " }), ctx());
+
+    expect(res.status).toBe(200);
+    expect(db.escritas[0]?.patch).toEqual(comAutoria({ description: null }));
+    // A linha do banco, depois da escrita: é o que `crm_list_stages` vai ler.
+    expect(db.tabelas.crm_stages.find((l) => l.id === "e2")?.description).toBeNull();
+  });
+
+  it("critério `null` explícito → limpa o texto gravado", async () => {
+    authOk();
+    const db = makeDb({
+      stages: funil().map((e) => (e.id === "e2" ? { ...e, description: "Critério antigo" } : e)),
+    });
+    const { PATCH } = await import("./route");
+    const res = await PATCH(reqPatch({ description: null }), ctx());
+
+    expect(res.status).toBe(200);
+    expect(db.escritas[0]?.patch).toEqual(comAutoria({ description: null }));
+  });
+
+  it("critério acima do teto → 422 da MESMA regra, e nenhuma escrita", async () => {
+    authOk();
+    const db = makeDb({ stages: funil() });
+    const { PATCH } = await import("./route");
+    const res = await PATCH(reqPatch({ description: "x".repeat(501) }), ctx());
+
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: { message: string } };
+    expect(body.error.message).toContain("500");
+    expect(db.escritas).toEqual([]);
+  });
+
+  /**
+   * A BORDA QUE PROVA O `trim` ANTES DA CONTAGEM: exatamente 500 caracteres com
+   * espaço sobrando passa (o texto aparado tem 500). Um `.max(500)` no Zod, que
+   * conta antes de aparar, reprovaria este caso — e a tela, que apara, aceitaria.
+   * As duas réguas têm de ser a mesma.
+   */
+  it("500 caracteres com espaço em volta → aceito (o teto conta depois do trim)", async () => {
+    authOk();
+    const db = makeDb({ stages: funil() });
+    const { PATCH } = await import("./route");
+    const texto = "y".repeat(500);
+    const res = await PATCH(reqPatch({ description: `  ${texto}  ` }), ctx());
+
+    expect(res.status).toBe(200);
+    expect(db.escritas[0]?.patch).toEqual(comAutoria({ description: texto }));
+  });
+
   it("chance fora de 0 a 100 → 422 do Zod e nenhuma escrita", async () => {
     authOk();
     const db = makeDb({ stages: funil() });

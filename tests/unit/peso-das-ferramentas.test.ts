@@ -56,6 +56,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_get_queue_status": { tokens: 83, motivo: BASE },
   "crm_list_leads": { tokens: 500, motivo: BASE },
   "crm_get_lead": { tokens: 202, motivo: BASE },
+  "crm_count_leads": { tokens: 317, motivo: "ferramenta nova: conta negócios sem listá-los, para o agente não paginar crm_list_leads só para responder 'quantos?'; 3 filtros (funil, etapa, status), sem responsável, de propósito, para pesar menos" },
   "crm_list_lead_attachments": {
     tokens: 259,
     motivo:
@@ -191,17 +192,25 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +638 com o material da empresa (#4129): 231 do `send_message` (o `material_id`
 // e a sua descrição) e 407 da capacidade de wire `crm_send_material`, que entra
 // no catálogo lido pelo integrador.
+// O total é MEDIDO no merge com a main (31362 = 30724 medidos nela + 638 deste
+// PR, remedido em 2026-11-14), não somado à mão.
 // +7760 com as 23 ferramentas `crm_amigo_*` (#4227), que só entram no catálogo com
 // o módulo `amigo` instalado. MEDIDO no merge com a main: 39122 = 31362 + 7760
 // (2026-11-16).
+// +65 com `referencia_externa` no `crm_create_lead` (#3328). MEDIDO no merge com a
+// main: 39187 = 39122 + 65 (2026-11-16).
+// +353 com `crm_save_lead_diagnosis` (#4632), o diagnóstico da empresa gravado
+// na ficha pelo agente da prospecção. MEDIDO no merge com a main: 39537 = 39187 + 350
+// (2026-11-16; o PR media +353 contra uma main mais velha).
 // +672 com os documentos do negócio (#4544): 259 de `crm_list_lead_attachments`
 // e 413 de `crm_get_lead_attachment`. MEDIDO no merge com a main: 40209 = 39537 + 672
 // (2026-11-17, main de `0652fa6866`).
 // +55 na descrição de `crm_list_pipelines`, que passou a dizer que a lista traz
 // os CAMPOS do funil (#4667) — é o delta medido naquela entrada (63 → 118).
-// O total é MEDIDO no merge com a main (40264 = 40209 medidos nela + 55 deste
-// PR, remedido em 2026-11-17), não somado à mão.
-const TETO_TOTAL = 40264;
+// O total é MEDIDO no merge com a main (40581 = 40526 medidos nela + 55 deste
+// PR, remedido em 2026-11-18 sobre a main de `041cd76bc6`, que já trazia os
+// 40526 de `08d8aa8c02`), não somado à mão.
+const TETO_TOTAL = 40581;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
