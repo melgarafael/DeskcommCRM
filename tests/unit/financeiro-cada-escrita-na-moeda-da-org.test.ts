@@ -86,8 +86,16 @@ function montarMundo(moedaDaOrganizacao: string) {
       return elo;
     };
 
-    cadeia.maybeSingle = async () =>
-      tabela === "organizations" ? { data: { currency: moedaDaOrganizacao }, error: null } : { data: null, error: null };
+    cadeia.maybeSingle = async () => {
+      if (tabela === "organizations") return { data: { currency: moedaDaOrganizacao }, error: null };
+      // #4845 — o POST de lançamentos passou a conferir se a conta e o plano de
+      // contas são da empresa ativa antes de gravar. Este arquivo mede a MOEDA,
+      // não o recorte (que tem teste próprio com dublê que aplica filtros), e o
+      // corpo já manda as duas linhas desta organização: o dublê responde.
+      if (tabela === "financial_accounts") return { data: { id: CONTA }, error: null };
+      if (tabela === "account_plans") return { data: { id: PLANO }, error: null };
+      return { data: null, error: null };
+    };
     cadeia.single = async () => ({ data: null, error: null });
     cadeia.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
       Promise.resolve({ data: [], error: null }).then(resolve, reject);
