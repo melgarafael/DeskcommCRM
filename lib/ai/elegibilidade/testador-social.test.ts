@@ -215,6 +215,9 @@ describe("o aviso de canal mudo", () => {
         {
           id: "c", organization_id: "o", status: "WORKING", archived_at: null,
           last_status_change_at: "2026-11-01T00:00:00Z",
+          // Obrigatório no tipo desde a #4909: é o que separa os dois avisos.
+          // Aqui há agente — o que faltava era autorizar a conta de teste.
+          tem_agente: true,
           metadata: { ai_gate: "allowlist", ai_test_phone_numbers: [], ai_test_social_identities: [TESTADOR] },
         },
         AGORA,

@@ -49,6 +49,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import {
   avaliarCanal,
+  COLUNAS_DA_SESSAO_NO_AVISO,
   DIAS_ATE_AVISAR,
   KIND_CANAL_MUDO,
   nomeDoCanal,
@@ -182,12 +183,11 @@ async function handle(req: NextRequest): Promise<Response> {
 
   // `display_name`/`phone_number`/`provider` entram na MESMA consulta: o aviso
   // precisa nomear o canal, e uma segunda ida ao banco por canal releria a
-  // mesma linha.
+  // mesma linha. A lista é do canal (`COLUNAS_DA_SESSAO_NO_AVISO`), não desta
+  // rota: quem nomeia a coluna do transporte é a fronteira, não a feature.
   const { data: canaisBruto, error: erroCanais } = await admin
     .from("channel_sessions")
-    .select(
-      "id, organization_id, status, archived_at, last_status_change_at, metadata, display_name, phone_number, waha_session_name, provider",
-    )
+    .select(COLUNAS_DA_SESSAO_NO_AVISO)
     .is("archived_at", null)
     .limit(LIMITE);
 

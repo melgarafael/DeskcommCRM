@@ -47,6 +47,23 @@ export const KIND_CANAL_MUDO = "canal_mudo_sem_numero" as const;
  */
 export const DIAS_ATE_AVISAR = 3;
 
+/**
+ * As colunas que o aviso lê de `channel_sessions`.
+ *
+ * Mora AQUI, e não na rota, porque uma delas é a coluna do TRANSPORTE
+ * (`waha_session_name`) e este é o lado da fronteira que pode nomeá-lo
+ * (`docs/doctrine/restricao-de-canal.md`, invariante 1: feature não nomeia
+ * provider). Mesmo desenho de `CHANNEL_SESSION_REF_COLUMNS` em `./session-ref`:
+ * a lista é do canal, não de quem pergunta. Uma segunda ida ao banco por canal
+ * releria a mesma linha, então tudo entra numa consulta só.
+ */
+// String literal, e NÃO array com `join`: o cliente tipado do Supabase lê o
+// tipo do literal para montar o `Row` da consulta — com `string` genérico ele
+// devolve `GenericStringError[]` e a conversão para `CanalParaAvaliar` para de
+// compilar (TS2352, medido).
+export const COLUNAS_DA_SESSAO_NO_AVISO =
+  "id, organization_id, status, archived_at, last_status_change_at, metadata, display_name, phone_number, waha_session_name, provider";
+
 /** O que o cron lê de cada conexão. Só isto, e nada de PII. */
 export interface CanalParaAvaliar {
   id: string;

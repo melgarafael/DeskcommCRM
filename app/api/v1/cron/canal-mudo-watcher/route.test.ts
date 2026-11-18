@@ -18,6 +18,7 @@ vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 
 import { audit } from "@/lib/audit";
+import { CHANNEL_PROVIDER_SOCIAL, DEFAULT_CHANNEL_PROVIDER } from "@/lib/channels/capabilities";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { GET } from "./route";
@@ -126,8 +127,10 @@ const canalMudo = (over: Record<string, unknown> = {}) => ({
   metadata: { ai_gate: "allowlist", ai_test_phone_numbers: [] },
   display_name: "WhatsApp principal",
   phone_number: null,
-  waha_session_name: null,
-  provider: "waha",
+  // O transporte vem da FRONTEIRA, não digitado aqui: o invariante 1 da
+  // doutrina de restrição de canal proíbe uma feature (teste de rota incluído)
+  // de nomear provider — ela pergunta pela CAPACIDADE.
+  provider: DEFAULT_CHANNEL_PROVIDER,
   ...over,
 });
 
@@ -259,11 +262,15 @@ describe("canal-mudo-watcher", () => {
     vi.mocked(createAdminClient).mockReturnValue(
       admin(
         [
-          canalMudo({ id: CANAL, display_name: "WhatsApp principal", provider: "waha" }),
+          canalMudo({
+            id: CANAL,
+            display_name: "WhatsApp principal",
+            provider: DEFAULT_CHANNEL_PROVIDER,
+          }),
           canalMudo({
             id: CANAL_INSTA,
             display_name: "Instagram da loja",
-            provider: "zernio_social",
+            provider: CHANNEL_PROVIDER_SOCIAL,
             metadata: { ai_gate: "allowlist", social_platform: "instagram" },
           }),
         ],
@@ -303,7 +310,12 @@ describe("canal-mudo-watcher", () => {
     const cap = vazio();
     vi.mocked(createAdminClient).mockReturnValue(
       admin(
-        [canalMudo({ display_name: "Instagram da loja", provider: "zernio_social" })],
+        [
+          canalMudo({
+            display_name: "Instagram da loja",
+            provider: CHANNEL_PROVIDER_SOCIAL,
+          }),
+        ],
         [],
         cap,
       ) as never,
