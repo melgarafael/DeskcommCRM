@@ -429,7 +429,7 @@ export function ContactDetailClient({
       <Tabs defaultValue="overview">
         <TabsList>
           <TabsTrigger value="overview">{t("Visão geral")}</TabsTrigger>
-          <TabsTrigger value="timeline">Timeline</TabsTrigger>
+          <TabsTrigger value="timeline">{t("Linha do tempo")}</TabsTrigger>
           <TabsTrigger value="diagnostico">{t("Diagnóstico")}</TabsTrigger>
           {isAdmin && <TabsTrigger value="lgpd">LGPD</TabsTrigger>}
         </TabsList>
@@ -456,7 +456,7 @@ export function ContactDetailClient({
                 </div>
               )}
               <div>
-                <dt className="text-xs uppercase text-muted-foreground">Email</dt>
+                <dt className="text-xs uppercase text-muted-foreground">{t("Email")}</dt>
                 <dd className="mt-1">{contact.email ?? "—"}</dd>
               </div>
               {/*
@@ -571,7 +571,7 @@ export function ContactDetailClient({
                 </div>
               )}
               <div>
-                <dt className="text-xs uppercase text-muted-foreground">Tags</dt>
+                <dt className="text-xs uppercase text-muted-foreground">{t("Tags")}</dt>
                 <dd className="mt-1 flex flex-wrap gap-1">
                   {contact.tags.length === 0
                     ? "—"
