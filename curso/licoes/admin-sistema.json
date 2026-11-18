@@ -676,7 +676,7 @@
             },
             {
               "alvo": {
-                "css": "section[aria-labelledby='bloco-servidor'] p"
+                "css": "#bloco-servidor + p"
               },
               "rotulo": "Só leitura: nada se ajusta aqui",
               "tipo": "caixa"
@@ -693,7 +693,7 @@
         {
           "id": "p3",
           "titulo": "Log ingerido: o aviso que ninguém procura",
-          "texto": "O aviso \"Log Ingestion Exceeded\" é da cota de log, de 1 GB por ciclo, e não pára nada na hora: chega por e-mail e no painel. O que conta é o que o Supabase ingere de todos os serviços do projeto, medido por byte — não é o que o seu contêiner escreve no docker logs. Hoje o excedente não vira fatura no grátis (a linha do plano diz \"Not billed\", com carência até o início de 2027; confira a data antes de contar com ela), mas o segundo estouro não tem carência: a restrição entra direto.",
+          "texto": "O aviso \"Log Ingestion Exceeded\" é da cota de log, de 1 GB por ciclo, e não pára nada na hora: chega por e-mail e no painel. O que conta é o que o Supabase ingere de todos os serviços do projeto, medido por byte — não é o que o seu contêiner escreve no docker logs. Hoje o excedente não vira fatura no grátis (a linha do plano diz \"Not billed\", com carência até o início de 2027; confira a data antes de contar com ela), e, quando a cobrança passar a valer, entra a regra geral do Supabase: depois da primeira carência, o segundo estouro não tem outra.",
           "antes": [],
           "destaques": []
         },
