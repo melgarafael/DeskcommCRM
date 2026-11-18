@@ -95,6 +95,15 @@ export const ApiErrorCodes = {
    */
   data_de_calendario_invalida: "data_de_calendario_invalida",
 
+  // 422 — FATURAMENTO EM LOTE (#4845): o lote trazia atendimento (ou cliente)
+  // que não é da empresa ativa. Código próprio, e não `validation_failed`,
+  // porque a tela precisa dizer o MOTIVO: o corpo está bem formado, os ids só
+  // não são desta empresa — e o lote inteiro foi recusado, sem gravar nada.
+  // A mensagem diz quantos ficaram de fora e nada sobre eles (nem nome, nem
+  // valor, nem a empresa de origem).
+  financeiro_agendamento_fora_da_empresa: "financeiro_agendamento_fora_da_empresa",
+  financeiro_contato_fora_da_empresa: "financeiro_contato_fora_da_empresa",
+
   // 409 — conflito
   idempotency_conflict: "idempotency_conflict",
   // Mesma chave, MESMO corpo, e a primeira execução ainda está em curso: o

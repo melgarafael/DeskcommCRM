@@ -56,10 +56,7 @@ import {
 import { ORIGEM_DA_PLANILHA } from "@/lib/leads/planilha";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
-import {
-  desativaRecorrenciaDoNegocio,
-  recorrenciaDoNegocio,
-} from "@/lib/financeiro/recorrencia-do-negocio";
+import { moveARecorrenciaNoFecho } from "@/lib/financeiro/recorrencia-do-fecho";
 import {
   decideMotivoDaPerda,
   recusaDeMotivoDaPerdaPeloBanco,
@@ -474,6 +471,73 @@ export async function listLeadsHandler(
 // ---------------------------------------------------------------------------
 // get
 // ---------------------------------------------------------------------------
+
+export interface CountLeadsQuery {
+  pipeline_id?: string;
+  stage_id?: string;
+  status?: "open" | "won" | "lost";
+  owner_user_id?: string;
+  /** Só os negócios deste contato — o escopo do turno do agente, igual à listagem. */
+  contact_id?: string;
+}
+
+export interface CountLeadsResult {
+  total: number;
+  /** Só quando a consulta não filtra por status: o mesmo total, aberto por status. */
+  by_status?: { open: number; won: number; lost: number };
+}
+
+/**
+ * Conta negócios SEM listá-los: devolve só números.
+ *
+ * Existe porque `listLeadsHandler` só pagina por cursor e não informa o total —
+ * quem precisa responder "quantos negócios?" acabava paginando a lista inteira
+ * (um agente de IA gastou dezenas de chamadas e levou todos os negócios ao
+ * modelo só para contar). Contar no banco (`head: true`, `count: exact`) não traz
+ * nenhuma linha.
+ *
+ * Mesma régua de visibilidade da listagem, para os números fecharem com a lista:
+ *  - `organization_id` é a PRIMEIRA cláusula (client service-role no MCP, RLS não vale);
+ *  - negócio de contato pessoal não conta (spec 21, a leitura exclui);
+ *  - os mesmos filtros de funil, etapa, status, responsável e contato do turno.
+ */
+export async function countLeadsHandler(
+  supabase: SB,
+  ctx: HandlerCtx,
+  q: CountLeadsQuery,
+): Promise<CountLeadsResult> {
+  const pessoais = await idsDeContatosPessoais(supabase, ctx.organization_id);
+
+  const contar = async (status?: "open" | "won" | "lost"): Promise<number> => {
+    let query = supabase
+      .from("crm_leads")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", ctx.organization_id);
+    if (q.pipeline_id) query = query.eq("pipeline_id", q.pipeline_id);
+    if (q.stage_id) query = query.eq("stage_id", q.stage_id);
+    if (status) query = query.eq("status", status);
+    if (q.owner_user_id) query = query.eq("owner_user_id", q.owner_user_id);
+    if (q.contact_id) query = query.eq("contact_id", q.contact_id);
+    if (pessoais.length > 0) {
+      query = query.not("contact_id", "in", `(${pessoais.join(",")})`);
+    }
+    const { count, error } = await query;
+    if (error) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
+    }
+    return count ?? 0;
+  };
+
+  if (q.status) return { total: await contar(q.status) };
+
+  const [total, open, won, lost] = await Promise.all([
+    contar(),
+    contar("open"),
+    contar("won"),
+    contar("lost"),
+  ]);
+  return { total, by_status: { open, won, lost } };
+}
 
 export async function getLeadHandler(
   supabase: SB,
@@ -1683,75 +1747,36 @@ export async function moveLeadHandler(
   // gera as contas a receber nunca ficava sabendo dela, e quem vendia "setup +
   // mensalidade" continuava lançando a mensalidade à mão — até esquecer.
   //
-  // ── Por que AQUI, e não na rota do quadro ─────────────────────────────────
+  // ── Por que AQUI, e não só na rota do quadro ──────────────────────────────
   //
   // Este handler é o escritor de etapa de tudo que NÃO é o arrasto (MCP
-  // `crm_move_lead_stage`, ações de automação, lote, IA). O arrasto e o botão
-  // Ganhar têm rota própria e convergem no mesmo `status = 'won'`; a fatia do
-  // molde nasce aqui, e o arrasto fica de fora desta onda, declarado no PR
-  // (é a próxima fatia, junto com a flag por funil).
-  //
-  // ── Por que admin client ──────────────────────────────────────────────────
-  //
-  // `recurring_entries` é tabela do módulo financeiro e a policy de escrita
-  // exige `manager` na organização: um agente de IA que move o card não tem
-  // esse papel, mas TEM o direito de fechar o negócio. Mesmo desenho do
-  // consumidor de `lead.won` (`comanda-do-ganho.handler.ts`). O isolamento por
-  // empresa não vem do RLS aqui: vem do `organization_id` do PRÓPRIO negócio,
-  // gravado assim nas duas funções (e provado em
-  // `tests/invariants/recorrencia-do-negocio.test.ts`).
+  // `crm_move_lead_stage`, ações de automação, IA). O arrasto, o botão
+  // Ganhar/Perder e o lote entram pela MESMA função do cerco
+  // (`lib/financeiro/recorrencia-do-fecho`), que guarda o "nunca derrubar o
+  // movimento" numa cópia só — fatia 5 da #3602.
   //
   // ── Falha BAIXA ───────────────────────────────────────────────────────────
   //
   // O card já moveu. Um financeiro que não nasceu vira log e um molde que
   // alguém cria à mão; derrubar o fecho do negócio por causa dele seria pior.
-  // Não é silêncio: cada desfecho de erro sai no `console.error` com o request.
+  // O `moveARecorrenciaNoFecho` não lança e loga cada desfecho de erro.
   if (!mesmaEtapa && (stage.is_won || stage.is_lost)) {
-    const financeiro = createAdminClient();
-    try {
-      if (stage.is_won) {
-        const valorRecorrente =
-          (lead as { recurring_value_cents?: number | string | null }).recurring_value_cents ?? null;
-        // Sem valor declarado não há receita mensal: nem chega ao banco (o
-        // caminho comum é o ganho de valor único).
-        if (valorRecorrente !== null) {
-          const desfecho = await recorrenciaDoNegocio(financeiro, {
-            organizationId: lead.organization_id,
-            leadId,
-            pipelineId: lead.pipeline_id,
-            valorCents: valorRecorrente,
-            criadoEm: (lead as { created_at?: string | null }).created_at ?? null,
-            meses: (lead as { recurring_months?: number | null }).recurring_months ?? null,
-            userId: ctx.actor.type === "user" ? ctx.actor.id : null,
-          });
-          if (desfecho.estado === "falhou") {
-            console.error("[lead.move] recorrência do negócio falhou", {
-              request_id: ctx.requestId,
-              lead_id: leadId,
-              erro: desfecho.erro,
-            });
-          }
-        }
-      } else {
-        const desfecho = await desativaRecorrenciaDoNegocio(financeiro, {
-          organizationId: lead.organization_id,
-          leadId,
-        });
-        if (desfecho.estado === "falhou") {
-          console.error("[lead.move] desativação da recorrência falhou", {
-            request_id: ctx.requestId,
-            lead_id: leadId,
-            erro: desfecho.erro,
-          });
-        }
-      }
-    } catch (erro) {
-      console.error("[lead.move] financeiro do fecho lançou", {
-        request_id: ctx.requestId,
-        lead_id: leadId,
-        erro: erro instanceof Error ? erro.message : String(erro),
-      });
-    }
+    await moveARecorrenciaNoFecho({
+      organizationId: lead.organization_id,
+      leadId,
+      pipelineId: lead.pipeline_id,
+      etapa: { is_won: stage.is_won === true, is_lost: stage.is_lost === true },
+      valorRecorrente:
+        (lead as { recurring_value_cents?: number | string | null }).recurring_value_cents ?? null,
+      // A duração do contrato veio com a fatia 3/4 (`crm_leads.recurring_months`)
+      // e continua sendo passada: o cerco da fatia 5 só mudou QUEM chama, não a
+      // regra do molde.
+      meses: (lead as { recurring_months?: number | null }).recurring_months ?? null,
+      criadoEm: (lead as { created_at?: string | null }).created_at ?? null,
+      userId: ctx.actor.type === "user" ? ctx.actor.id : null,
+      origem: "leads/_handler.moveLeadHandler",
+      requestId: ctx.requestId,
+    });
   }
 
   const a = actorAuditPayload(ctx.actor);

@@ -37,6 +37,7 @@ import { lerCampoDeMoeda, valorDoCampoDeMoeda } from "@/lib/leads/campo-de-moeda
 import { MOEDA_PADRAO, formatValorDoNegocio, simboloDaMoeda } from "@/lib/money";
 import { ConversationTagsEditor } from "./ConversationTagsEditor";
 import { ContactTagsEditor } from "./ContactTagsEditor";
+import { ChecklistDoCard } from "./ChecklistDoCard";
 import { TarefasDaDemanda } from "./TarefasDaDemanda";
 import { NovaTarefaDaConversa } from "./NovaTarefaDaConversa";
 import { FollowupDoContato } from "./FollowupDoContato";
@@ -1455,12 +1456,19 @@ export function CRMSidePanel({
        a seção mostra as tarefas abertas do contato (#4630). Só a demanda vigente AINDA ABERTA
        (`current_demanda_id` continua apontando depois de "Encerrar demanda"). */
     tarefas: (
-      <TarefasDaDemanda
-        demandaId={demandas?.find((d) => d.id === conversation.current_demanda_id)?.id ?? null}
-        contactId={contactId}
-        leadId={negocioAtivoId}
-        podeEditar={podeCriarTarefa}
-      />
+      <>
+        {/* O CHECKLIST DO CARD (#4717, FASE 1): o plano aplicado como lista
+            única do negócio, com estado, autor e progresso. Vem ANTES da lista
+            de tarefas porque é a visão do atendimento inteiro — a tarefa é o
+            item dela. A seção se auto-oculta quando nenhum plano foi aplicado. */}
+        <ChecklistDoCard leadId={negocioAtivoId} podeEditar={podeCriarTarefa} />
+        <TarefasDaDemanda
+          demandaId={demandas?.find((d) => d.id === conversation.current_demanda_id)?.id ?? null}
+          contactId={contactId}
+          leadId={negocioAtivoId}
+          podeEditar={podeCriarTarefa}
+        />
+      </>
     ),
 
     /* O FOLLOW-UP NA CONVERSA (#3178): a seção se AUTO-OCULTA quando não há

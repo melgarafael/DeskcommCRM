@@ -35,6 +35,7 @@ const rpcs: Array<{ nome: string; args: Record<string, unknown> | undefined }> =
 
 interface CadeiaContagem {
   eq: (coluna: string, valor: unknown) => CadeiaContagem;
+  or: (filtro: string) => CadeiaContagem;
   maybeSingle: () => Promise<{ data: null; error: null }>;
   then: (resolve: (valor: unknown) => unknown) => unknown;
 }
@@ -71,6 +72,10 @@ function clienteFalso(opts?: OpcoesFake): unknown {
             const cadeia: CadeiaContagem = {
               eq: (coluna, valor) => {
                 filtros.push([coluna, valor]);
+                return cadeia;
+              },
+              or: (filtro) => {
+                filtros.push(["or", filtro]);
                 return cadeia;
               },
               maybeSingle: async () => ({ data: null, error: null }),
@@ -145,12 +150,15 @@ describe("deleteContactHandler", () => {
 
     // A pré-checagem da #752 continua contando com os DOIS filtros (contato +
     // organização): sem o de organização, contato de outra org bloquearia.
+    // E conta só o que a função NÃO desvincula (migration 9405, achado A9):
+    // compromisso não cancelado, ou reserva de serviço.
     expect(contagens).toEqual([
       {
         tabela: "calendar_appointments",
         filtros: [
           ["contact_id", CONTATO],
           ["organization_id", ORG],
+          ["or", "status.neq.cancelled,service_occurrence_id.not.is.null"],
         ],
       },
     ]);

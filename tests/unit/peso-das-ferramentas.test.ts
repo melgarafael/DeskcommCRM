@@ -56,6 +56,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_get_queue_status": { tokens: 83, motivo: BASE },
   "crm_list_leads": { tokens: 500, motivo: BASE },
   "crm_get_lead": { tokens: 202, motivo: BASE },
+  "crm_count_leads": { tokens: 317, motivo: "ferramenta nova: conta negócios sem listá-los, para o agente não paginar crm_list_leads só para responder 'quantos?'; 3 filtros (funil, etapa, status), sem responsável, de propósito, para pesar menos" },
   "crm_list_lead_attachments": {
     tokens: 259,
     motivo:
@@ -210,8 +211,8 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // (2026-11-17, main de `0652fa6866`).
 // +149 no `crm_update_lead` (#4666), que passou a dizer que `tags` substitui a
 // lista inteira e ganhou `tags_adicionar`/`tags_remover`. MEDIDO no merge com a
-// main de `0652fa6866`: 40358 = 40209 + 149 (2026-11-17).
-const TETO_TOTAL = 40358;
+// main pós-#4886 e #4684: 40675 (2026-11-18).
+const TETO_TOTAL = 40675;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
