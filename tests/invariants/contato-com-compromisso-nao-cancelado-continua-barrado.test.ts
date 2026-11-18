@@ -19,18 +19,18 @@ import { GOV_AGENT_A, GOV_ORG, GOV_SESSION, lastLine, seedGov, sql } from "./gov
  * `contato-vinculos-dialogo.test.tsx`. Sobrava este vão: nada provava, contra a
  * FK real, que abrir a porta do cancelado não abriu as outras.
  *
- * Roda nos dois lados do merge do #4766, e é isso que se quer: na `main` de hoje
- * a função nem desvincula (a FK recusa todo mundo) e o arquivo passa; com a
- * 9405, continua passando porque o UPDATE é filtrado por `status='cancelled'`.
+ * Com a 9405 na `main`, a função desvincula só o cancelado comum: o UPDATE é
+ * filtrado por `status='cancelled'` e `service_occurrence_id is null`, e todo o
+ * resto continua preso à FK.
  */
 
 /** Namespace próprio: longe do `cccc…` de gov-helpers e do `dddd…` da #1862. */
 const N = "d4765000-0000-4000-8000-000000000";
 
 const CASOS = [
-  { chave: "marcado", status: "confirmed", cancelledAt: "null", rotulo: "compromisso marcado" },
-  { chave: "realizado", status: "completed", cancelledAt: "null", rotulo: "compromisso realizado" },
-  { chave: "falta", status: "no_show", cancelledAt: "null", rotulo: "compromisso com falta" },
+  { chave: "marcado", status: "confirmed", rotulo: "compromisso marcado" },
+  { chave: "realizado", status: "completed", rotulo: "compromisso realizado" },
+  { chave: "falta", status: "no_show", rotulo: "compromisso com falta" },
 ] as const;
 
 const CONTATO_SO_CANCELADO = `${N}001`;
@@ -59,15 +59,6 @@ function comoUsuario(userId: string, script: string): string {
 function erroDe(userId: string, script: string): string {
   try {
     comoUsuario(userId, script);
-    return "";
-  } catch (err) {
-    return String((err as { stderr?: string }).stderr ?? "");
-  }
-}
-
-function erroSemSessao(script: string): string {
-  try {
-    sql(script);
     return "";
   } catch (err) {
     return String((err as { stderr?: string }).stderr ?? "");
@@ -121,7 +112,7 @@ function semear(): void {
          starts_at, ends_at, status, cancelled_at)
         values ('${agenda}', '${GOV_ORG}', '${contato}', '${conversa}', '${GOV_AGENT_A}',
                 'A9 ${caso.rotulo}', now() + interval '1 day', now() + interval '1 day 1 hour',
-                '${caso.status}', ${caso.cancelledAt})
+                '${caso.status}', null)
         on conflict (id) do nothing;
     `);
   }
