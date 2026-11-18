@@ -52,6 +52,12 @@ interface FormShape {
   phone_number?: string;
   /** `AAAA-MM-DD` — a MESMA forma de `contactPatchSchema` e da coluna do banco. */
   birthdate?: string;
+  /**
+   * O documento do titular (CPF no Brasil). Abre SEMPRE vazio: o número gravado
+   * não vem para a tela (só `cpf_available`). Vazio = não mexe; preenchido =
+   * substitui, pelo mesmo PATCH e pela mesma régua do país do cadastro.
+   */
+  cpf?: string;
   // Endereço (issue 3494)
   zip_code?: string;
   street?: string;
@@ -109,11 +115,16 @@ export function EditContactDialog({
   const [serverError, setServerError] = useState<string | null>(null);
 
   const form = useForm<FormShape>({
+    // `onTouched`: o erro do documento nasce quando a pessoa SAI do campo, como
+    // no cadastro (#3496). Nenhum outro campo tem `validate`, então nada muda
+    // para eles.
+    mode: "onTouched",
     defaultValues: {
       name: contact.name ?? "",
       email: contact.email ?? "",
       phone_number: contact.phone_number ? phoneForDisplay(contact.phone_number) : "",
       birthdate: contact.birthdate ?? "",
+      cpf: "",
       zip_code: contact.zip_code ?? "",
       street: contact.street ?? "",
       number: contact.number ?? "",
@@ -130,6 +141,9 @@ export function EditContactDialog({
   });
 
   const customFields = useWatch({ control: form.control, name: "custom_fields" });
+  // Documento inválido impede salvar, como no cadastro (#3496): o aviso no campo
+  // e o botão desabilitado são o mesmo erro dito duas vezes.
+  const cpfError = form.formState.errors.cpf;
   const tags = useWatch({ control: form.control, name: "tags" }) ?? [];
   // O valor do `Select` de tipo. `useWatch` (e não `form.watch`) para o
   // componente re-renderizar quando o tipo muda — o gatilho do Radix lê daqui.
@@ -179,6 +193,7 @@ export function EditContactDialog({
         email: contact.email ?? "",
         phone_number: contact.phone_number ? phoneForDisplay(contact.phone_number) : "",
         birthdate: contact.birthdate ?? "",
+        cpf: "",
         zip_code: contact.zip_code ?? "",
         street: contact.street ?? "",
         number: contact.number ?? "",
@@ -254,6 +269,9 @@ export function EditContactDialog({
     // exigem), então o diálogo não normaliza nada — o que se digita é o que se
     // grava, e a ficha recarregada mostra a MESMA string.
     if (values.birthdate?.trim()) payload.birthdate = values.birthdate.trim();
+    // O documento só entra quando foi digitado: o campo abre vazio porque o
+    // número gravado não vem para a tela, e vazio quer dizer "não mexer".
+    if (values.cpf?.trim()) payload.cpf = values.cpf.trim();
     // Endereço (issue 3494): manda o que foi preenchido e `null` no campo que a
     // ficha tinha e foi esvaziado — sem isso, apagar só o Complemento e salvar
     // deixava o valor antigo no banco (medido na prova pela tela do #3670).
@@ -314,6 +332,36 @@ export function EditContactDialog({
           <div className="space-y-2">
             <Label htmlFor="ec-birthdate">{t("Data de nascimento")}</Label>
             <Input id="ec-birthdate" type="date" {...form.register("birthdate")} />
+          </div>
+          <div className="space-y-2">
+            {/* O documento do PAÍS da organização, com a régua do cadastro. O
+                número gravado não vem para a tela, então o campo abre vazio e a
+                dica diz se já há um: preencher troca, deixar vazio mantém. */}
+            <Label htmlFor="ec-cpf">{perfil.documento.rotulo}</Label>
+            <Input
+              id="ec-cpf"
+              placeholder={perfil.documento.exemplo}
+              aria-invalid={cpfError ? true : undefined}
+              aria-describedby={cpfError ? "ec-cpf-erro" : "ec-cpf-dica"}
+              {...form.register("cpf", {
+                validate: (valor) => {
+                  const texto = (valor ?? "").trim();
+                  if (texto.length === 0) return true;
+                  return perfil.documento.valida(texto) || perfil.documento.mensagemInvalido;
+                },
+              })}
+            />
+            {cpfError ? (
+              <p id="ec-cpf-erro" role="alert" className="text-sm text-error-fg">
+                {cpfError.message}
+              </p>
+            ) : (
+              <p id="ec-cpf-dica" className="text-xs text-muted-foreground">
+                {contact.cpf_available
+                  ? t("Já cadastrado. Preencha só para trocar.")
+                  : t("Opcional.")}
+              </p>
+            )}
           </div>
           {/* Endereço (issue 3494) — os MESMOS campos do cadastro, com o CEP
               preenchendo logradouro/bairro/cidade/UF (#3494, fatia 2). */}
@@ -403,7 +451,7 @@ export function EditContactDialog({
             >
               {t("Cancelar")}
             </Button>
-            <Button type="submit" disabled={update.isPending}>
+            <Button type="submit" disabled={update.isPending || Boolean(cpfError)}>
               {update.isPending ? t("Salvando…") : t("Salvar")}
             </Button>
           </DialogFooter>

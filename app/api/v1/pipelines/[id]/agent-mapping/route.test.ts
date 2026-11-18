@@ -289,6 +289,10 @@ describe("GET /api/v1/pipelines/[id]/agent-mapping", () => {
       // tela de etapas nasceria sempre com o campo vazio e gravaria por cima
       // da configuração. Ausente na fixture = etapa sem janela = null.
       expected_duration_hours: null,
+      // #4836: o Critério da etapa (`crm_stages.description`) viaja na MESMA
+      // leitura porque a tela e o assistente leem daqui. Fixture sem a coluna
+      // = etapa sem critério = null.
+      description: null,
       last_change_actor_kind: null,
       last_change_at: null,
       // #3603: a lista de fluxos armados por etapa viaja na MESMA leitura — a

@@ -31,7 +31,9 @@ import {
   posicaoEntre,
   slugDeNome,
   updatesDeMarcacao,
+  normalizarDescricaoDeEtapa,
   validarArquivamento,
+  validarDescricaoDeEtapa,
   validarJanelaDeEsfriamento,
   validarMarcacao,
   validarNomeDeEtapa,
@@ -53,7 +55,7 @@ export interface DepsDeEtapa {
 
 /** As colunas que a tela e as regras usam. `position` entra: a reordenação calcula em cima dela. */
 const COLUNAS =
-  "id, name, slug, position, color, is_won, is_lost, is_archived, win_probability, agent_stage_hint, avisar_na_central, expected_duration_hours, last_change_actor_kind, last_change_at";
+  "id, name, slug, description, position, color, is_won, is_lost, is_archived, win_probability, agent_stage_hint, avisar_na_central, expected_duration_hours, last_change_actor_kind, last_change_at";
 
 /** A etapa como sai para quem lê — inclui a autoria da última mudança de configuração. */
 export interface EtapaVisivel {
@@ -362,6 +364,17 @@ export interface PedidoDeEdicao {
    * banco, porque a coluna é `numeric` sem CHECK.
    */
   expected_duration_hours?: number | null;
+  /**
+   * O CRITÉRIO da etapa (`crm_stages.description`) — quando um negócio entra
+   * aqui, em texto livre. `null` limpa: a etapa volta a "sem critério" na
+   * leitura do agente (`crm_list_stages`).
+   *
+   * Vazio normaliza para `null` (`normalizarDescricaoDeEtapa`): a coluna é
+   * nullable, e `""` chegaria ao modelo como um critério que existe e não diz
+   * nada. O teto é `TETO_DA_DESCRICAO_DA_ETAPA`, medido depois do `trim` pela
+   * MESMA função que a tela usa.
+   */
+  description?: string | null;
 }
 
 export async function atualizarEtapa(
@@ -428,6 +441,16 @@ export async function atualizarEtapa(
     }
   }
 
+  // O critério é texto livre, mas o teto é o mesmo da tela — recusar AQUI, antes
+  // do banco, é o que faz o 422 chegar em português em vez de um corte silencioso
+  // (a coluna é `text` sem CHECK, então nada abaixo desta linha recusaria).
+  if (pedido.description !== undefined && pedido.description !== null) {
+    const veredito = validarDescricaoDeEtapa(pedido.description);
+    if (!veredito.ok) {
+      throw new ApiError(422, "unprocessable_entity", undefined, deps.requestId, veredito.erro);
+    }
+  }
+
   const temMarcacao = pedido.is_won !== undefined || pedido.is_lost !== undefined;
   if (temMarcacao) {
     const veredito = validarMarcacao(etapas, stageId, pedido);
@@ -443,6 +466,7 @@ export async function atualizarEtapa(
     avisar_na_central?: boolean;
     expected_duration_hours?: number | null;
     color?: string | null;
+    description?: string | null;
   } = {};
   if (pedido.name !== undefined) patchDoAlvo.name = pedido.name.trim();
   // `undefined` não viaja; `null` limpa a calibração de propósito.
@@ -472,6 +496,11 @@ export async function atualizarEtapa(
   // Mesmo contrato: `undefined` = "não mexe", `null` = "volta ao padrão de 24 h".
   if (pedido.expected_duration_hours !== undefined) {
     patchDoAlvo.expected_duration_hours = pedido.expected_duration_hours;
+  }
+  // `undefined` = "não mexe"; texto vazio vira `null` na MESMA função que a tela
+  // usa, senão a garantia "vazio grava nulo" dependeria de duas cópias da regra.
+  if (pedido.description !== undefined) {
+    patchDoAlvo.description = normalizarDescricaoDeEtapa(pedido.description);
   }
 
   if (pedido.depois_de !== undefined) {
