@@ -334,6 +334,34 @@ export const customFieldSchema = z.object({
    * da conversa (negócio), nunca campos do contato nem de outra organização.
    */
   mostrar_no_resumo_da_passagem: z.boolean().optional(),
+  /**
+   * A IA PODE LER ESTE CAMPO? (issue #4669)
+   *
+   * LIGADO, o valor deste campo pode chegar ao modelo: o bloco do negócio do
+   * follow-up escrito por IA (`lib/agent-engine/agent/negocio-do-followup.ts`)
+   * e a leitura `crm_get_lead` DENTRO de um turno de agente
+   * (`lib/mcp/tools/leads.ts`) o devolvem. DESLIGADO, o valor fica no card e
+   * não vai para o modelo por nenhum destes dois caminhos — documento, dado de
+   * saúde, observação interna.
+   *
+   * A AUSÊNCIA é DESMARCADO, e isso é a decisão desta fatia, não um detalhe:
+   * um campo que ninguém marcou NÃO está autorizado a ir para o modelo.
+   * `null` numa caixa de consentimento não é `sim` — e é o que o dono do funil
+   * espera ao ver a caixa vazia. Consequência declarada: as definições que já
+   * existem (sem a chave) param de ir ao modelo até alguém marcá-las; é o
+   * mesmo sentido dos outros booleanos opcionais daqui (`multiple`,
+   * `allow_new`, `mostrar_no_resumo_da_passagem`), cuja ausência também é
+   * "desligado". O interruptor mora na mesma fatia, na tela do funil
+   * (`app/app/settings/tenant/pipelines/_client.tsx`), e desmarcá-lo APAGA a
+   * chave — é o que faz da ausência o desmarcado também no que a tela grava.
+   *
+   * Sem `.default(false)` de propósito, igual a `escopo`: o `handleSave`
+   * regrava `fields` inteiro, e gravar a chave em cima de toda definição
+   * existente mudaria a forma do funil no primeiro salvamento. Quem lê só o
+   * `true` explícito — `campoLiberadoParaIa` em `lib/leads/campos-do-funil.ts` —
+   * é a régua única dos dois caminhos.
+   */
+  ia_pode_ler: z.boolean().optional(),
 });
 export type CustomFieldDef = z.infer<typeof customFieldSchema>;
 
@@ -1247,8 +1275,9 @@ export function ouvidoriaLigada(settings: unknown): boolean {
  * EXPLÍCITO liga (a régua de `ouvidoriaLigada`); ausente, `"true"` ou lixo é
  * desligado. Nunca lança: roda no fecho do negócio.
  *
- * ponytail: ainda sem porta de escrita — o interruptor na tela chega com o
- * #4264, quando todas as portas de ganho e de perda passarem pela mesma regra.
+ * ponytail: ainda sem porta de escrita — o interruptor na tela chega na fatia
+ * seguinte ao #4264 (issue #3602), que pôs todas as portas de ganho e de perda
+ * na mesma regra.
  */
 export function recorrenciaNoGanhoLigada(settings: unknown): boolean {
   const raiz =

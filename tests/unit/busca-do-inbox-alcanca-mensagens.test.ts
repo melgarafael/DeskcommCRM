@@ -64,6 +64,17 @@ function clienteFalso(base: {
 }) {
   const pedidos: Record<string, Pedido[]> = {};
   const client = {
+    // A main moveu o casamento de CONTATO para `fn_contatos_da_busca` (#4326):
+    // o dublê devolve os ids de `contacts` como a função devolveria — e nada
+    // quando o caso não passa contato nenhum, que é o de toda busca por texto.
+    rpc(funcao: string, args: Record<string, unknown>) {
+      pedidos.rpc ??= [];
+      pedidos.rpc.push({ metodo: funcao, args: [args] });
+      const casados = (base.contacts ?? []).map((c) => ({
+        contact_id: (c as { id: string }).id,
+      }));
+      return Promise.resolve({ data: casados, error: null });
+    },
     from(tabela: string) {
       pedidos[tabela] ??= [];
       const proxy: Record<string, unknown> = new Proxy(
