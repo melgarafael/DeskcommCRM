@@ -361,7 +361,7 @@ export async function criarProximaDaSerie(
     descricao: serie.description,
     // O prazo vem CALCULADO: a série não vence "em N dias", ela vence numa data
     // e hora do calendário da organização.
-    dueDate: quando,
+    venceEm: quando.toISOString(),
     // O dono é o da série — inclusive quando a série não tem dono. `exato`
     // existe para isso: a próxima não ganha um responsável que ninguém escolheu.
     atribuirA: { exato: serie.assigned_to },

@@ -251,7 +251,7 @@ function GuardrailFields({
           />
         </div>
         <div className="space-y-1 md:col-span-2">
-          <Label className="text-xs">Timezone</Label>
+          <Label className="text-xs">{t("Fuso horário")}</Label>
           <Input
             value={item.timezone ?? "America/Sao_Paulo"}
             onChange={(e) => onPatch({ timezone: e.target.value } as Partial<GuardrailItem>)}

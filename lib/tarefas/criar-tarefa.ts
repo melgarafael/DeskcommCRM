@@ -34,6 +34,7 @@ import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { truncar } from "@/lib/notifications/push_payload";
 import { enviarPushAoUsuario } from "@/lib/notifications/web_push";
 import { registraAtividadeDaTarefa } from "@/lib/tarefas/atividade";
+import type { MotivoSemPrazo } from "@/lib/tarefas/prazo-relativo";
 import { HREF_MINHAS_TAREFAS, PRIORIDADES_DA_TAREFA, type PrioridadeDaTarefa } from "@/lib/tarefas/tipos";
 
 /**
@@ -62,12 +63,34 @@ export interface PedidoDeTarefa {
   /**
    * De quantos dias o prazo cai a partir de agora. `0` = vence hoje.
    *
-   * Ignorado quando `dueDate` vem preenchido: a ocorrência de uma série não
+   * Ignorado quando `venceEm` vem preenchido: a ocorrência de uma série não
    * vence "em N dias", ela vence numa data e hora do calendário.
+   *
+   * Um dos dois prazos é obrigatório — este ou `venceEm` —, mas NENHUM dos dois
+   * é exigido pelo tipo: quem não manda prazo cria a tarefa sem prazo, que é um
+   * estado legítimo da coluna (`due_date` nulo).
    */
   venceEmDias?: number;
-  /** Prazo já calculado (instante). Vence `venceEmDias` quando presente. */
-  dueDate?: Date | null;
+  /**
+   * O prazo já calculado, em instante ISO. `null` = SEM prazo: o passo do plano
+   * apontava para um campo de data vazio (ou com lixo) e o prazo não foi
+   * inventado (#4717 item 4). Quando presente, ganha de `venceEmDias`.
+   *
+   * É por aqui que a OCORRÊNCIA de uma série recebe a data e hora que
+   * `proximaOcorrencia` calculou (#4595).
+   */
+  venceEm?: string | null;
+  /** Por que a tarefa nasceu sem prazo. Só faz sentido junto de `venceEm: null`. */
+  prazoMotivo?: MotivoSemPrazo | null;
+  /**
+   * O plano que criou a tarefa e o passo de onde ela veio.
+   *
+   * É o que deixa o gatilho do card (`crm_leads_recalcula_prazos_do_plano`)
+   * encontrar as tarefas AINDA ABERTAS do plano quando a data do campo muda —
+   * sem coluna de origem a marca da aplicação só sabe dizer "aplicado", não
+   * QUAIS linhas são daquele plano.
+   */
+  plano?: { id: string; passo: number; campo: string | null; dias: number };
   atribuirA: AtribuicaoDaTarefa;
   prioridade: PrioridadeDaTarefa;
   leadId?: string | null;
@@ -114,6 +137,8 @@ export type LeadDoPedido = {
   title?: string | null;
   contact_id?: string | null;
   owner_user_id?: string | null;
+  /** `crm_leads.custom_fields` — de onde o prazo de um passo de data é lido. */
+  custom_fields?: unknown;
 };
 
 export type ContatoDoPedido = {
@@ -264,9 +289,20 @@ export async function criarTarefaInterna(
   const assignedTo = donoDoPedido(pedido.atribuirA, lead);
   const titulo = interpolarTitulo(pedido.titulo, { lead, contact });
 
-  const dueDate = (
-    pedido.dueDate ?? new Date(agora.getTime() + (pedido.venceEmDias ?? 0) * 86_400_000)
-  ).toISOString();
+  // Três origens de prazo, nesta ordem de precedência:
+  //
+  //   1. `venceEm` — o instante JÁ calculado (passo de campo de data do plano,
+  //      #4717 item 4). `null` é resposta, não ausência: nasce sem prazo.
+  //   2. `venceEmDias` — o modo de sempre, com a MESMA conta de antes
+  //      (`agora + N × 24h`). Não mexer nesta linha é o que mantém o plano
+  //      antigo idêntico ao que era.
+  //   3. nenhum → sem prazo. A coluna aceita nulo de propósito.
+  const dueDate =
+    pedido.venceEm !== undefined
+      ? pedido.venceEm
+      : pedido.venceEmDias !== undefined
+        ? new Date(agora.getTime() + pedido.venceEmDias * 86_400_000).toISOString()
+        : null;
 
   // INSERT … RETURNING id: o `.insert().select("id").maybeSingle()` do
   // PostgREST devolvia a linha criada numa segunda ida (Prefer: return=
@@ -282,8 +318,10 @@ export async function criarTarefaInterna(
     const criadas = await db.query<{ id: string }>(
       `insert into crm_tasks
          (organization_id, title, description, due_date, priority, status,
-          lead_id, contact_id, demanda_id, assigned_to, created_by, recurrence_source_id)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          lead_id, contact_id, demanda_id, assigned_to, created_by,
+          plan_id, plan_step, prazo_campo, prazo_dias, prazo_motivo,
+          recurrence_source_id)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
        on conflict (recurrence_source_id, due_date)
          where recurrence_source_id is not null and due_date is not null
        do nothing
@@ -300,6 +338,11 @@ export async function criarTarefaInterna(
         pedido.demandaId ?? null,
         assignedTo,
         pedido.createdBy ?? null,
+        pedido.plano?.id ?? null,
+        pedido.plano?.passo ?? null,
+        pedido.plano?.campo ?? null,
+        pedido.plano?.dias ?? null,
+        pedido.prazoMotivo ?? null,
         pedido.recurrenceSourceId ?? null,
       ],
     );
@@ -332,7 +375,11 @@ export async function criarTarefaInterna(
       contact_id: contactId,
       assigned_to: assignedTo,
       prioridade: pedido.prioridade,
-      vence_em_dias: pedido.venceEmDias,
+      vence_em_dias: pedido.venceEmDias ?? null,
+      // "Nasceu sem prazo" tem de sobrar no audit: é a consequência de um campo
+      // do card vazio, e o motivo é o que explica a tarefa sem data na lista.
+      ...(pedido.prazoMotivo ? { sem_prazo: pedido.prazoMotivo } : {}),
+      ...(pedido.plano ? { plano_id: pedido.plano.id, plano_passo: pedido.plano.passo } : {}),
     },
     ...(pedido.requestId ? { requestId: pedido.requestId } : {}),
   });
