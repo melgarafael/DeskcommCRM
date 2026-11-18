@@ -744,7 +744,7 @@ function ModeloDoDecisor({ dados, recarregar }: { dados: DadosDoJev; recarregar:
           />
           <label htmlFor="jev-modelo-aceite" className="text-sm">
             {t(
-              "Concordo com o envio de cada mensagem dos clientes, uma de cada vez e sem o resto da conversa, para {fornecedor} (modelo {modelo}), pela OpenRouter, nos Estados Unidos, sabendo que o fornecedor pode processá-la em outro país. Ninguém conferiu os termos de privacidade, de retenção e de treino desse fornecedor: a empresa assume essa conferência, em especial nos modelos gratuitos.",
+              "Concordo com o envio de cada mensagem dos clientes, uma de cada vez e sem o resto da conversa, para {fornecedor} (modelo {modelo}), pela OpenRouter, nos Estados Unidos, sabendo que o fornecedor pode processá-la em outro país e que, se esse modelo falhar, a mensagem vai para o Jev, da TypeSafe AI, pela OpenRouter. Ninguém conferiu os termos de privacidade, de retenção e de treino desse fornecedor: a empresa assume essa conferência, em especial nos modelos gratuitos.",
             )
               .replace("{fornecedor}", fornecedorDoModelo(novo))
               .replace("{modelo}", novo)}
@@ -938,6 +938,7 @@ function ProntoParaLigar({ dados, recarregar }: { dados: DadosDoJev; recarregar:
   // O aceite é da empresa, e vale uma vez (D6): religar não pergunta de novo.
   const aceite = dados.config.aceite;
   const pedeAceite = aceite === null;
+  const fora = modeloDeFora(dados);
   // Cada tarefa diz como volta — a frase única de antes falava do clima como se
   // fosse o Jev inteiro, e errava quando as outras tarefas voltavam diferentes.
   const tarefas = tarefasDoCartao(dados).map((tarefa) => ({ tarefa, aoLigar: estadoAoLigar(tarefa, dados) }));
@@ -1046,14 +1047,22 @@ function ProntoParaLigar({ dados, recarregar }: { dados: DadosDoJev; recarregar:
 
       <div className="rounded-md border border-border p-3 text-sm">
         <p>
-          {/* O aceite nomeia QUEM recebe: via OpenRouter a mensagem passa por ela antes da TypeSafe. */}
-          {origemDoCartao(dados) === "openrouter"
+          {/* O aceite nomeia QUEM recebe: via OpenRouter a mensagem passa por ela antes da TypeSafe.
+              Com outro modelo valendo (doc 369), quem recebe é o fornecedor dele, e o Jev só
+              na recaída de `decidirNoPonto`. */}
+          {fora !== null
             ? t(
-                "Ao ligar, cada mensagem que o cliente manda vai para a TypeSafe AI, pela OpenRouter, nos Estados Unidos, uma de cada vez e sem o resto da conversa, para o Jev avaliar. Antes de sair, o sistema apaga CPF, telefone e e-mail do texto. Com o Jev desligado, nada é enviado.",
+                "Ao ligar, cada mensagem que o cliente manda vai para {fornecedor} (modelo {modelo}), pela OpenRouter, nos Estados Unidos, uma de cada vez e sem o resto da conversa, para o modelo escolhido avaliar; se esse modelo falhar, a mensagem vai para o Jev, da TypeSafe AI, pela OpenRouter. Antes de sair, o sistema apaga CPF, telefone e e-mail do texto. Com o Jev desligado, nada é enviado.",
               )
-            : t(
-                "Ao ligar, cada mensagem que o cliente manda vai para a TypeSafe AI, nos Estados Unidos, uma de cada vez e sem o resto da conversa, para o Jev avaliar. Antes de sair, o sistema apaga CPF, telefone e e-mail do texto. Com o Jev desligado, nada é enviado.",
-              )}
+                .replace("{fornecedor}", fornecedorDoModelo(fora))
+                .replace("{modelo}", fora)
+            : origemDoCartao(dados) === "openrouter"
+              ? t(
+                  "Ao ligar, cada mensagem que o cliente manda vai para a TypeSafe AI, pela OpenRouter, nos Estados Unidos, uma de cada vez e sem o resto da conversa, para o Jev avaliar. Antes de sair, o sistema apaga CPF, telefone e e-mail do texto. Com o Jev desligado, nada é enviado.",
+                )
+              : t(
+                  "Ao ligar, cada mensagem que o cliente manda vai para a TypeSafe AI, nos Estados Unidos, uma de cada vez e sem o resto da conversa, para o Jev avaliar. Antes de sair, o sistema apaga CPF, telefone e e-mail do texto. Com o Jev desligado, nada é enviado.",
+                )}
         </p>
         {aceite === null ? (
           <div className="mt-3 flex items-start gap-2">

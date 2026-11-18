@@ -799,7 +799,7 @@ export async function PATCH(req: NextRequest): Promise<Response> {
           return fail(
             "jev_exige_aceite",
             t(
-              "Com este modelo, cada mensagem dos clientes vai, uma de cada vez e sem o resto da conversa, para {fornecedor} (modelo {modelo}), pela OpenRouter, nos Estados Unidos, e o fornecedor pode processá-la em outro país. Ninguém conferiu os termos de privacidade, de retenção e de treino desse fornecedor: a empresa assume essa conferência, em especial nos modelos gratuitos. Para trocar, confirme que você está de acordo.",
+              "Com este modelo, cada mensagem dos clientes vai, uma de cada vez e sem o resto da conversa, para {fornecedor} (modelo {modelo}), pela OpenRouter, nos Estados Unidos, e o fornecedor pode processá-la em outro país; se esse modelo falhar, a mensagem vai para o Jev, da TypeSafe AI, pela OpenRouter. Ninguém conferiu os termos de privacidade, de retenção e de treino desse fornecedor: a empresa assume essa conferência, em especial nos modelos gratuitos. Para trocar, confirme que você está de acordo.",
             )
               .replace("{fornecedor}", fornecedorDoModelo(conferido.modelo))
               .replace("{modelo}", conferido.modelo),
@@ -807,6 +807,11 @@ export async function PATCH(req: NextRequest): Promise<Response> {
             { requestId },
           );
         }
+        // O texto aceito nomeia os DOIS destinos: o fornecedor do modelo e o
+        // Jev, da TypeSafe AI, pela OpenRouter — para onde `decidirNoPonto`
+        // refaz a chamada quando o modelo escolhido falha. Vale também quando
+        // não havia aceite gravado e este nasce aqui (`atual.aceite ?? …`): ele
+        // já cobre a recaída, sem depender de um aceite anterior da TypeSafe.
         mudanca.aceite = { ...(atual.aceite ?? { alcance: "mensagem" as const }), em: new Date().toISOString(), por: user.id };
       }
       mudanca.modelo = conferido.modelo;

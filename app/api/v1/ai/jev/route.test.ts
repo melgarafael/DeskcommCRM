@@ -15,6 +15,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { haQuemAtendaAOrganizacao } from "@/lib/ai/agents/quem-atende-a-sessao";
+import { MODELO_NA_OPENROUTER } from "@/lib/ai/decisao/origem";
 import { TAREFA_DO_FOLLOWUP } from "@/lib/ai/decisao/tarefas";
 import { resolverModeloDoPonto } from "@/lib/ai/gateway-binding";
 import { DEFAULT_SENTIMENT_THRESHOLD } from "@/lib/ai/prompts/sentiment";
@@ -788,6 +789,10 @@ describe("PATCH — trocar o MODELO do decisor pede aceite novo (doc 369)", () =
     expect(corpo.error.code).toBe("jev_exige_aceite");
     expect(corpo.error.message).toContain("para perplexity (modelo perplexity/decisor:free), pela OpenRouter");
     expect(corpo.error.message).toContain("a empresa assume essa conferência");
+    // A recaída de `decidirNoPonto` está no texto: o aceite cobre os dois destinos.
+    expect(corpo.error.message).toContain(
+      "se esse modelo falhar, a mensagem vai para o Jev, da TypeSafe AI, pela OpenRouter",
+    );
     expect(escritas()).toEqual([]);
     expect(audit).not.toHaveBeenCalled();
   });
@@ -842,9 +847,30 @@ describe("PATCH — trocar o MODELO do decisor pede aceite novo (doc 369)", () =
     expect("modelo" in jev).toBe(false);
   });
 
+  it("openrouter → typesafe → openrouter não reaproveita o modelo de fora sob o aceite que só nomeia a TypeSafe", async () => {
+    estado.credenciais.push(credencial());
+    estado.settings = { jev: { ...(estado.settings.jev as Linha), modelo: FORA } };
+    expect((await mudar({ origem: "typesafe" })).status).toBe(200);
+    // A volta à OpenRouter pede o aceite da origem, cujo texto nomeia só a
+    // TypeSafe AI — ele não pode trazer o modelo de fora de volta.
+    const volta = await mudar({ origem: "openrouter", aceite_lgpd: true });
+    expect(volta.status).toBe(200);
+    const jev = estado.settings.jev as Linha;
+    expect(jev.origem).toBe("openrouter");
+    expect("modelo" in jev).toBe(false);
+    expect((await ler()).corpo.data.modelo).toBe(MODELO_NA_OPENROUTER);
+  });
+
   it("sem aceite gravado (Jev nunca ligado), a troca com aceite grava um de cada mensagem", async () => {
     estado.settings = { jev: { ligado: false, modo: "observacao", origem: "openrouter", aceite: null } };
-    expect((await mudar({ modelo: FORA })).status).toBe(422);
+    // O aceite que nasce aqui, sem um da TypeSafe antes, foi dado a um texto
+    // que nomeia os DOIS destinos: o fornecedor e a recaída no Jev.
+    const recusa = await mudar({ modelo: FORA });
+    expect(recusa.status).toBe(422);
+    expect(recusa.corpo.error.message).toContain("para perplexity (modelo perplexity/decisor:free), pela OpenRouter");
+    expect(recusa.corpo.error.message).toContain(
+      "se esse modelo falhar, a mensagem vai para o Jev, da TypeSafe AI, pela OpenRouter",
+    );
     const { status } = await mudar({ modelo: FORA, aceite_lgpd: true });
     expect(status).toBe(200);
     expect((estado.settings.jev as Linha).aceite).toEqual(
