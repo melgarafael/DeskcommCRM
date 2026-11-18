@@ -2810,11 +2810,8 @@ STUB
   }
   telemetria_ok "template copiado (sem escolha): o --yes grava off, não consente por ninguém" \
     "$SENTRY_DO_TEMPLATE" '"off"'
-  # `comunidade` é o token do "sim" desde a #4798: vazio passou a significar
-  # DESLIGADO (lib/sentry/dsn.ts), então quem aceitou precisa de valor próprio —
-  # e o DSN do projeto não vai para o .env do cliente.
-  telemetria_ok "quem ACEITOU (SENTRY_DSN=comunidade) continua aceitando na reexecução" \
-    "SENTRY_DSN='comunidade'" '"comunidade"'
+  telemetria_ok "quem ACEITOU (chave declarada e vazia) continua aceitando na reexecução" \
+    "SENTRY_DSN=''" '""'
   telemetria_ok "DSN próprio sobrevive à reexecução" \
     "SENTRY_DSN='https://abc123@o0.ingest.sentry.io/42'" '"https://abc123@o0.ingest.sentry.io/42"'
 fi

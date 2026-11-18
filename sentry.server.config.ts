@@ -16,8 +16,8 @@ const community = isCommunityDsn(sentryDsn);
 
 // Sem DSN, sem Sentry: `init` com `dsn: undefined` ainda cria cliente e instala
 // integrações (o SDK só para de ENVIAR), e uma delas — a do AI SDK — é a que
-// trava a assinatura (#4798). Chave ausente aqui é processo sem instrumentação
-// nenhuma: nem envio, nem hook, nem span.
+// trava a assinatura (#4798). Com `SENTRY_DSN=off` o processo fica sem
+// instrumentação nenhuma: nem envio, nem hook, nem span.
 if (sentryDsn) {
   Sentry.init({
     dsn: sentryDsn,
@@ -36,12 +36,9 @@ if (sentryDsn) {
 }
 
 // Transparência de telemetria: uma linha no boot dizendo o que está ativo e como
-// ligar/desligar. Evita "telemetria silenciosa" num projeto open source self-host.
+// desligar. Evita "telemetria silenciosa" num projeto open source self-host.
 if (!sentryDsn) {
-  console.info(
-    "[telemetria] Desligada (SENTRY_DSN ausente ou vazio) — nenhum erro é enviado. " +
-      "Para ligar: SENTRY_DSN=<seu-dsn>, ou SENTRY_DSN=comunidade para o Sentry do projeto.",
-  );
+  console.info("[telemetria] Desligada (SENTRY_DSN=off) — nenhum erro é enviado.");
 } else if (sentryDsn === DEFAULT_SENTRY_DSN) {
   console.info(
     "[telemetria] Relatórios de erro anonimizados ATIVOS (Sentry da comunidade). " +

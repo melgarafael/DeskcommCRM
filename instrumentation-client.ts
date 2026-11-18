@@ -13,7 +13,7 @@ const sentryDsn = resolveSentryDsn(
 const community = isCommunityDsn(sentryDsn);
 
 // Sem DSN, sem Sentry no navegador também: nenhuma integração instalada, nada
-// coletado. Ver lib/sentry/dsn.ts (vazio = desligado).
+// coletado. Ver lib/sentry/dsn.ts (`off` = desligado).
 if (sentryDsn) {
   Sentry.init({
     dsn: sentryDsn,

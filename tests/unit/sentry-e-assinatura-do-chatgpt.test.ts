@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * A ASSINATURA RESPONDE, E O SILÊNCIO DO `.env` NÃO É CONSENTIMENTO (#4798).
+ * A ASSINATURA DO CHATGPT RESPONDE COM O SENTRY LIGADO (#4798).
  *
  * O defeito de produção: com o provedor `openai-assinatura` (Sign in with
  * ChatGPT) toda chamada "Responder o cliente" falhava em ~1 s com
@@ -22,9 +22,11 @@
  *   no stream, e é por isso que a chamada curta passava
  *   (getsentry/sentry-javascript#26403, vercel/ai#24970).
  *
- * E por que isso atingia TODA instalação: `SENTRY_DSN` vazio caía no DSN da
- * comunidade (`resolveSentryDsn`), então o `Sentry.init` rodava por default —
- * com `tracesSampleRate: 0`, que não desliga integração nenhuma.
+ * E por que isso atingia quase toda instalação: `SENTRY_DSN` vazio cai no DSN
+ * da comunidade (`resolveSentryDsn`), então o `Sentry.init` roda por padrão —
+ * com `tracesSampleRate: 0`, que não desliga integração nenhuma. O padrão da
+ * telemetria NÃO muda aqui (decisão do mantenedor no doc 371): o conserto é
+ * tirar a integração do AI SDK dos inits de servidor.
  *
  * Os quatro casos que a issue pede estão aqui, pelo nome. O dublê do
  * `streamText` tem dentes: ele lança o erro REAL quando a instrumentação é
@@ -112,8 +114,6 @@ vi.mock("ai", async (importOriginal) => ({
 import { generateText, streamText, tool, type ToolSet } from "ai";
 
 import {
-  DEFAULT_SENTRY_DSN,
-  DSN_DA_COMUNIDADE,
   INTEGRACAO_DO_SDK_DO_AI,
   integracoesDoServidor,
   resolveSentryDsn,
@@ -254,17 +254,10 @@ afterEach(() => {
 });
 
 /* ─────────────────────────────────────────────────────────────────────────────
- * (a) SEM DSN = TELEMETRIA DESLIGADA — e o DSN da comunidade não é usado.
+ * (a) SEM DSN (`SENTRY_DSN=off`), NENHUM Sentry É INICIALIZADO.
  * ────────────────────────────────────────────────────────────────────────────*/
-describe("(a) sem SENTRY_DSN nenhum Sentry é inicializado, e o DSN da comunidade não é usado", () => {
-  it("ausente, vazio e só-espaços resolvem para `undefined` — não para o DSN do projeto", () => {
-    expect(resolveSentryDsn(undefined)).toBeUndefined();
-    expect(resolveSentryDsn(null)).toBeUndefined();
-    expect(resolveSentryDsn("")).toBeUndefined();
-    expect(resolveSentryDsn("   ")).toBeUndefined();
-    // O DSN da comunidade só existe se alguém pedir POR NOME (`comunidade`, o
-    // token que o install.sh grava quando a pessoa aceita).
-    expect(resolveSentryDsn(DSN_DA_COMUNIDADE)).toBe(DEFAULT_SENTRY_DSN);
+describe("(a) sem DSN nenhum Sentry é inicializado, e nenhum init traz o DSN da comunidade literal", () => {
+  it("`off` resolve para `undefined`", () => {
     expect(resolveSentryDsn("off")).toBeUndefined();
   });
 

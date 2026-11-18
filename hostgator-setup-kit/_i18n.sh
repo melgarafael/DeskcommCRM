@@ -491,7 +491,7 @@ identifica su red y pon TRAEFIK_NETWORK=<nombre> en el .env antes de volver a in
 
   # ── install.sh: telemetria_no_banner() ───────────────────────────────────
   ["  Telemetria: DESLIGADA — nenhum relatório de erro sai desta instalação."]="  Telemetría: DESACTIVADA — ningún reporte de error sale de esta instalación."
-  ["  Para ligar, ponha SENTRY_DSN=comunidade (ou o seu DSN) no .env e rode: {1}"]="  Para activarla, pon SENTRY_DSN=comunidade (o tu DSN) en el .env y ejecuta: {1}"
+  ["  Para ligar, apague a linha SENTRY_DSN do .env e rode: {1}"]="  Para activarla, borra la línea SENTRY_DSN del .env y ejecuta: {1}"
   ["  Telemetria: LIGADA — só relatórios de erro anonimizados vão ao Sentry do"]="  Telemetría: ACTIVADA — solo reportes de error anonimizados van al Sentry del"
   ["  projeto. Para desligar, ponha SENTRY_DSN='off' no .env e rode: {1}"]="  proyecto. Para desactivarla, pon SENTRY_DSN='off' en el .env y ejecuta: {1}"
 

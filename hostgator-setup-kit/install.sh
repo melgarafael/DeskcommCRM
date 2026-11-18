@@ -1660,11 +1660,7 @@ if [ -z "${SENTRY_DSN+x}" ]; then
     printf '\n%s\n' "$(t "Você pode mudar depois no .env, a qualquer momento.")"
     read -r -p "$(t "  Enviar relatórios de erro anonimizados? (s/N) ")" _tel
     if resposta_sim "${_tel:-}"; then
-      # `comunidade` é o TOKEN do consentimento, não um DSN: o `.env` do cliente
-      # não leva a chave pública do ingest do projeto (#4798). Vazio aqui virou
-      # "desligado" em lib/sentry/dsn.ts — gravar vazio transformaria o "sim" em
-      # silêncio.
-      SENTRY_DSN="comunidade"
+      SENTRY_DSN=""
       c_grn "$(t "✓ Telemetria de erros ligada — obrigado, isso ajuda o projeto.")"
     else
       SENTRY_DSN="off"
@@ -2685,7 +2681,7 @@ fi
 telemetria_no_banner() {
   if [ "${SENTRY_DSN:-}" = "off" ]; then
     printf '%s\n' "$(t "  Telemetria: DESLIGADA — nenhum relatório de erro sai desta instalação.")"
-    printf '%s\n' "$(t "  Para ligar, ponha SENTRY_DSN=comunidade (ou o seu DSN) no .env e rode: {1}" "docker compose $(dc_files) up -d")"
+    printf '%s\n' "$(t "  Para ligar, apague a linha SENTRY_DSN do .env e rode: {1}" "docker compose $(dc_files) up -d")"
   else
     printf '%s\n' "$(t "  Telemetria: LIGADA — só relatórios de erro anonimizados vão ao Sentry do")"
     printf '%s\n' "$(t "  projeto. Para desligar, ponha SENTRY_DSN='off' no .env e rode: {1}" "docker compose $(dc_files) up -d")"

@@ -70,12 +70,9 @@ if (sentryDsn) {
 
 // Transparência de telemetria (mesma mensagem de sentry.server.config.ts,
 // adaptada para o processo worker): uma linha no boot dizendo o que está
-// ativo e como ligar/desligar.
+// ativo e como desligar.
 if (!sentryDsn) {
-  console.info(
-    "[telemetria] worker: Desligada (SENTRY_DSN ausente ou vazio) — nenhum erro é enviado. " +
-      "Para ligar: SENTRY_DSN=<seu-dsn>, ou SENTRY_DSN=comunidade para o Sentry do projeto.",
-  );
+  console.info("[telemetria] worker: Desligada (SENTRY_DSN=off) — nenhum erro é enviado.");
 } else if (sentryDsn === DEFAULT_SENTRY_DSN) {
   console.info(
     "[telemetria] worker: Relatórios de erro anonimizados ATIVOS (Sentry da comunidade). " +
