@@ -41,8 +41,8 @@ import type pg from "pg";
 import { logger } from "@/lib/logger";
 
 /**
- * `banco_externo`, `fluxos_atendimento`, `propostas`, `crm_b2b`, `cobranca`, `login_codex`, `setores`, `avisos`, `conferir_whatsapp`, `mcp_por_agente`, `cold_call`, `status_whatsapp`, `painel_atendimento`, `reservas_de_lugar`, `link_de_pagamento`, `canal_bot`, `campanha_por_email` e `revisao_por_km` ligam/desligam por uma linha em `platform_config`
- * (ver o resto deste arquivo). `honorarios`, `financeiro`, `lista_de_espera` e `ouvidoria` são MÓDULOS DE TABELA (ADR-0002): a fonte da
+ * `banco_externo`, `fluxos_atendimento`, `propostas`, `crm_b2b`, `cobranca`, `login_codex`, `setores`, `avisos`, `conferir_whatsapp`, `mcp_por_agente`, `cold_call`, `status_whatsapp`, `painel_atendimento`, `reservas_de_lugar`, `link_de_pagamento`, `canal_bot`, `campanha_por_email`, `revisao_por_km`, `agencias` e `catalogo_por_feed` ligam/desligam por uma linha em `platform_config`
+ * (ver o resto deste arquivo). `honorarios`, `financeiro`, `lista_de_espera`, `ouvidoria`, `cadencias` e `amigo` são MÓDULOS DE TABELA (ADR-0002): a fonte da
  * verdade é `modulos_instalados`, escrita só por `fn_modulo_instalar` (`lib/modulos/service.ts`),
  * nunca por esta tela. Os dois mecanismos convivem na mesma lista porque é isso que
  * `deModuloDesligado` (catálogo de tools MCP) precisa: "este módulo, seja qual for o mecanismo
@@ -88,12 +88,17 @@ export const MODULOS_OPCIONAIS = [
   // quem responde primeiro, e quem já atende por IA ou à mão não pode acordar
   // com um menu que não configurou.
   "menu_de_atendimento",
+  // #4461/#4613 (main): agências administram clientes; catálogo por feed.
+  // O `amigo` é módulo de TABELA — entra na lista geral, nunca na de flag.
+  "agencias",
+  "catalogo_por_feed",
+  "amigo",
 ] as const;
 export type ModuloOpcional = (typeof MODULOS_OPCIONAIS)[number];
 
 /** Os módulos de tabela do ADR-0002 dentro de `MODULOS_OPCIONAIS` — resolvidos por
  * `modulos_instalados.estado = 'ativo'`, nunca por `platform_config`. */
-const MODULOS_DE_TABELA = ["honorarios", "financeiro", "lista_de_espera", "cadencias", "ouvidoria"] as const satisfies readonly ModuloOpcional[];
+const MODULOS_DE_TABELA = ["honorarios", "financeiro", "lista_de_espera", "cadencias", "ouvidoria", "amigo"] as const satisfies readonly ModuloOpcional[];
 
 /**
  * Só os módulos por FLAG — os que a tela `/admin/sistema` liga e desliga via
@@ -122,6 +127,8 @@ export const MODULOS_OPCIONAIS_POR_FLAG = [
   "campanha_por_email",
   "revisao_por_km",
   "menu_de_atendimento",
+  "agencias",
+  "catalogo_por_feed",
 ] as const satisfies readonly ModuloOpcional[];
 
 /** A linha de cada módulo por FLAG em `platform_config`. O formato é o da CHECK da 0341.
@@ -215,6 +222,22 @@ export const CHAVE_DO_MODULO: Record<(typeof MODULOS_OPCIONAIS_POR_FLAG)[number]
   // decide se usa. Desligada aqui, `atenderMenuSemIa` devolve `tratado: false`
   // e a mensagem segue o caminho de hoje (`lib/atendimento/menu/atender.ts`).
   menu_de_atendimento: "MODULO_MENU_DE_ATENDIMENTO",
+  // Doc 321 (1A): a agência que administra as empresas dos clientes (#4034, de
+  // @micaelecamily8-cyber). É a única porta DE PROPÓSITO entre empresas, e serve
+  // a quem revende o CRM como agência, não à maioria. Desligado, as rotas de
+  // `/api/v1/agencia/*` respondem 404, as telas somem e o banco ignora as
+  // sessões de agência (`fn_agencias_ligado`, migration 9379): nenhuma policy
+  // nova concede acesso. Ligado, cada empresa-agência ainda precisa ser
+  // habilitada no painel dela, em /admin/tenants.
+  agencias: "MODULO_AGENCIAS",
+
+  // Doc 322 (A): o catálogo sincronizado por feed do #3587 (PR #4179 de
+  // @webtecnica) serve à revenda cujo sistema de estoque publica um feed, não à
+  // maioria (régua do núcleo enxuto). Ele faz o SERVIDOR buscar uma URL de fora
+  // a cada 2 h e reescrever preço no catálogo que a IA responde. Desligado, a
+  // rota responde 404, a seção some da tela de Produtos e o cron não lê nenhuma
+  // fonte — nem a de quem configurou antes de desligar (`sincronizarFontes`).
+  catalogo_por_feed: "MODULO_CATALOGO_POR_FEED",
 };
 
 const LIGADO = "ligado";
@@ -365,7 +388,7 @@ export const MODULOS_AINDA_NAO_LIGAVEIS: readonly ModuloOpcional[] = ["campanha_
  * Desligado por quem administra o servidor" diria à empresa que ela pode pedir
  * para ser cobrada (spec da cobrança §9).
  */
-export const MODULOS_SO_DA_INSTALACAO: readonly ModuloOpcional[] = ["cobranca"];
+export const MODULOS_SO_DA_INSTALACAO: readonly ModuloOpcional[] = ["cobranca", "agencias"];
 
 /**
  * Grava a escolha de quem administra a instalação. `semeado_do_env = false`

@@ -24,6 +24,12 @@ export interface ConversationCounts {
   /** A aba "Arquivadas" (#923). Opcional pelo mesmo motivo: cache antigo não tem. */
   archived?: number;
   /**
+   * A aba "Pessoal" (#4434): o pessoal DESTE usuário, em qualquer status. Opcional
+   * pelo mesmo motivo dos de cima — cache gravado antes deste deploy não tem o
+   * campo, e `undefined` some do badge em vez de virar zero.
+   */
+  pessoal?: number;
+  /**
    * Quantas conversas ESPERAM gente em cada fila (#3876), por id de setor. É o
    * número que o seletor mostra ao lado do nome de cada fila. Opcional pela
    * mesma razão dos de cima, e vazio quando a organização não usa setores.

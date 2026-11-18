@@ -10,6 +10,7 @@ import { PushProntoNesteEndereco } from "./_push-neste-endereco";
 import { TaskReminderPrefs } from "./_tarefas";
 import { SonsDosAvisos } from "./_sons";
 import { ConteudoNaTelaBloqueada } from "./_tela-bloqueada";
+import { CorPorCanalNoAviso } from "./_cor-por-canal";
 
 export const dynamic = "force-dynamic";
 
@@ -105,6 +106,11 @@ export default async function NotificationsPage() {
           </p>
         </Card>
       )}
+
+      {/* A cor do aviso de mensagem (#4094) vem antes do conteúdo da tela
+          bloqueada: é a primeira coisa que a pessoa vê quando um aviso toca, e
+          a que ela vem desligar. */}
+      <CorPorCanalNoAviso />
 
       <ConteudoNaTelaBloqueada />
 

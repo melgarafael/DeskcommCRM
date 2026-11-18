@@ -143,6 +143,11 @@ export const LEITORES_DA_DESCRICAO: Record<string, string> = {
   "lib/api/handlers/types.ts": "tipo",
   "lib/types/messaging.ts": "tipo",
   "lib/messaging/media/leitura-adiada.ts": "este mapa",
+  // A máscara do texto retido (#4500): lê a coluna só para saber se HÁ texto a
+  // esconder e devolve `null` no lugar. Não entrega descrição a ninguém — pelo
+  // contrário, é o caminho que a tira do payload —, então não pede componente
+  // novo no predicado.
+  "lib/messaging/texto-retido.ts": "só mascara",
 };
 
 /**

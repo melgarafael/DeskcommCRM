@@ -44,6 +44,21 @@
  *     org do negócio antes de entrar na lista: contato de outra org não entra, e
  *     sem entrar não vira id na consulta de conversas nem na de ligações.
  *
+ * ─── A LINHA DO TEMPO, E O CURSOR ───────────────────────────────────────────
+ *
+ * A primeira entrega desta fatia (PR #4117) trouxe as DUAS listas — conversas e
+ * ligações — e o defeito de tela estava resolvido. Faltava o que a vendedora
+ * realmente lê: a ordem dos fatos. Duas listas separadas obrigam a cruzar data
+ * de conversa com data de ligação de cabeça, e o limite de 50 por lista não
+ * deixa claro o que ficou de fora. Esta entrega acrescenta `linha_do_tempo`:
+ * conversas e ligações de TODOS os números, intercaladas, mais recente primeiro,
+ * cada item com o número de quem falou, e paginação por CURSOR (`?cursor=`).
+ *
+ * O cursor é de CHAVE, não offset: ele carrega a data, o tipo e o id do último
+ * item entregue, e a página seguinte pede só o que vem DEPOIS dele
+ * (`<`, `<=` e o desempate por id). Com offset, uma mensagem nova durante a
+ * rolagem empurraria a lista e repetiria item; com chave, não.
+ *
  * ─── O QUE FICA DE FORA, E POR QUÊ ──────────────────────────────────────────
  *
  *  - **Lápide de fusão** (`contacts.is_merged_into`): as conversas pertencem ao
@@ -112,7 +127,41 @@ export interface NumerosDoNegocio {
   numeros: NumeroDoNegocio[];
   conversas: ConversaDoNumero[];
   ligacoes: LigacaoDoNumero[];
+  /** Conversas e ligações intercaladas por data — a leitura principal da tela. */
+  linha_do_tempo: ItemDaLinhaDoTempo[];
 }
+
+export type TipoDeItem = "conversa" | "ligacao";
+
+/**
+ * Um fato da vida do cliente: ou a conversa de um número, ou a ligação de um
+ * número. O `contact_id`/`nome`/`telefone` são a ORIGEM do item — o requisito
+ * de a vendedora saber de quem era aquele WhatsApp.
+ */
+export interface ItemDaLinhaDoTempo {
+  tipo: TipoDeItem;
+  id: string;
+  contact_id: string;
+  nome: string | null;
+  telefone?: string;
+  /** Data do fato (ISO). `null` só na conversa que nunca teve mensagem. */
+  em: string | null;
+  conversa?: ConversaDoNumero;
+  ligacao?: LigacaoDoNumero;
+}
+
+/** O que o cursor de chave carrega: a posição do último item entregue. */
+interface CursorDaLinhaDoTempo {
+  em: string | null;
+  tipo: TipoDeItem;
+  id: string;
+}
+
+/** `null` = não veio cursor; objeto = veio e é válido. */
+type CursorLido = { ok: true; cursor: CursorDaLinhaDoTempo | null } | { ok: false };
+
+/** Conversa antes de ligação quando as datas empatam — ordem estável, e só isso. */
+const ORDEM_DO_TIPO: Record<TipoDeItem, number> = { conversa: 0, ligacao: 1 };
 
 interface RouteCtx {
   params: Promise<{ id: string }>;
@@ -139,6 +188,108 @@ function limiteDaQuery(raw: string | null): number {
   return Math.min(TETO_DO_LIMITE, Math.max(1, Math.trunc(n)));
 }
 
+function codificarCursor(cursor: CursorDaLinhaDoTempo): string {
+  return Buffer.from(JSON.stringify({ e: cursor.em, t: cursor.tipo, i: cursor.id }), "utf8").toString(
+    "base64url",
+  );
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ISO_DO_BANCO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$/;
+
+/**
+ * Cursor de fora é dado de fora: string vazia, base64 quebrado, tipo inventado e
+ * data impossível viram 400 (`invalid_cursor`), não uma página silenciosamente
+ * errada. Id sem forma de uuid também não passa — o id só entra em filtro.
+ */
+function lerCursor(bruto: string | null): CursorLido {
+  if (!bruto) return { ok: true, cursor: null };
+  let cru: unknown;
+  try {
+    cru = JSON.parse(Buffer.from(bruto, "base64url").toString("utf8"));
+  } catch {
+    return { ok: false };
+  }
+  const c = cru as { e?: unknown; t?: unknown; i?: unknown } | null;
+  if (!c || typeof c !== "object") return { ok: false };
+  if (c.t !== "conversa" && c.t !== "ligacao") return { ok: false };
+  if (typeof c.i !== "string" || !UUID.test(c.i)) return { ok: false };
+  const em = c.e;
+  // Só o ISO que o PostgREST devolve: `new Date` aceitaria "Jan 1 2026 (a,b)", e a
+  // vírgula e os parênteses iriam crus para dentro do `or()`. O texto original é
+  // o que segue, para não perder os microssegundos.
+  if (
+    em !== null &&
+    (typeof em !== "string" || !ISO_DO_BANCO.test(em) || Number.isNaN(new Date(em).getTime()))
+  ) {
+    return { ok: false };
+  }
+  return { ok: true, cursor: { em: em as string | null, tipo: c.t, id: c.i } };
+}
+
+/** O mínimo do builder do Supabase que o cursor usa. */
+interface ConsultaFiltravel {
+  or(filtro: string): ConsultaFiltravel;
+  lt(coluna: string, valor: string): ConsultaFiltravel;
+  lte(coluna: string, valor: string): ConsultaFiltravel;
+  is(coluna: string, valor: null): ConsultaFiltravel;
+}
+
+/**
+ * Aplica o cursor de CHAVE numa das duas consultas.
+ *
+ * A ordem é `em` desc → tipo asc → id desc. Sabendo de que tipo é o cursor, a
+ * condição de "o que vem depois" se reduz por fonte: fonte de tipo maior aceita
+ * `<=` (empate de data passa inteiro); fonte de tipo menor só aceita `<`; e a
+ * mesma fonte precisa do desempate por id. A conversa sem mensagem tem data
+ * nula e fica no FIM — por isso o `is.null` entra na fonte de conversa.
+ *
+ * `null` = não há nada depois do cursor nesta fonte: nem vale ir ao banco.
+ */
+function aplicarCursor<C extends ConsultaFiltravel>(
+  consulta: C,
+  tipo: TipoDeItem,
+  coluna: string,
+  cursor: CursorDaLinhaDoTempo | null,
+): C | null {
+  if (!cursor) return consulta;
+
+  const meu = ORDEM_DO_TIPO[tipo];
+  const dele = ORDEM_DO_TIPO[cursor.tipo];
+
+  // Cursor sem data: só a conversa sem mensagem chega aqui, e ela é a última.
+  if (cursor.em === null) {
+    if (meu !== dele) return null;
+    return consulta.is(coluna, null).lt("id", cursor.id) as C;
+  }
+
+  const semData = tipo === "conversa" ? `,${coluna}.is.null` : "";
+
+  if (meu > dele) return consulta.or(`${coluna}.lte.${cursor.em}${semData}`) as C;
+  if (meu < dele) {
+    return (tipo === "conversa"
+      ? consulta.or(`${coluna}.lt.${cursor.em},${coluna}.is.null`)
+      : consulta.lt(coluna, cursor.em)) as C;
+  }
+  return consulta.or(
+    `${coluna}.lt.${cursor.em},and(${coluna}.eq.${cursor.em},id.lt.${cursor.id})${semData}`,
+  ) as C;
+}
+
+/** `em` desc, tipo asc, id desc — o mesmo critério da consulta e do cursor. */
+function compararItens(a: ItemDaLinhaDoTempo, b: ItemDaLinhaDoTempo): number {
+  if (a.em !== b.em) {
+    if (a.em === null) return 1;
+    if (b.em === null) return -1;
+    // Data numérica, não string: o PostgREST devolve `timestamptz` com offset e
+    // fração variável, e comparar texto erraria a ordem nesses casos.
+    return Date.parse(b.em) - Date.parse(a.em);
+  }
+  if (a.tipo !== b.tipo) return ORDEM_DO_TIPO[a.tipo] - ORDEM_DO_TIPO[b.tipo];
+  if (a.id === b.id) return 0;
+  return a.id < b.id ? 1 : -1;
+}
+
 export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id: leadId } = await ctx.params;
@@ -155,6 +306,11 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
 
   const limite = limiteDaQuery(new URL(req.url).searchParams.get("limit"));
+  const cursorLido = lerCursor(new URL(req.url).searchParams.get("cursor"));
+  if (!cursorLido.ok) {
+    return fail("invalid_cursor", t("Cursor de paginação inválido."), 400, { requestId });
+  }
+  const cursor = cursorLido.cursor;
 
   // 1/5 — O NEGÓCIO, pela RLS do caller. É esta linha que prova a org.
   const { data: lead, error: leadErr } = await supabase
@@ -188,9 +344,9 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // Sem contato nenhum o negócio não tem número — e sem número não há conversa
   // nem ligação para consultar. Resposta vazia, e não 404: o negócio existe.
   if (alvos.length === 0) {
-    return ok<NumerosDoNegocio>({ numeros: [], conversas: [], ligacoes: [] }, {
+    return ok<NumerosDoNegocio>({ numeros: [], conversas: [], ligacoes: [], linha_do_tempo: [] }, {
       requestId,
-      meta: { limite, tem_mais_conversas: false, tem_mais_ligacoes: false },
+      meta: { limite, tem_mais_conversas: false, tem_mais_ligacoes: false, tem_mais: false, proximo_cursor: null },
     });
   }
 
@@ -232,31 +388,51 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   const ids = numeros.map((n) => n.contact_id);
   if (ids.length === 0) {
-    return ok<NumerosDoNegocio>({ numeros: [], conversas: [], ligacoes: [] }, {
+    return ok<NumerosDoNegocio>({ numeros: [], conversas: [], ligacoes: [], linha_do_tempo: [] }, {
       requestId,
-      meta: { limite, tem_mais_conversas: false, tem_mais_ligacoes: false },
+      meta: { limite, tem_mais_conversas: false, tem_mais_ligacoes: false, tem_mais: false, proximo_cursor: null },
     });
   }
 
   // 4/5 — TODAS as conversas dos números, numa consulta. `limite + 1` para
-  // saber se há mais sem um `count(*)` (que pagaria a tabela inteira).
-  const { data: conversasBrutas, error: conversasErr } = await supabase
-    .from("conversations")
-    .select("id, contact_id, last_message_preview, last_message_at, unread_count_for_assignee")
-    .eq("organization_id", orgId)
-    .in("contact_id", ids)
-    .order("last_message_at", { ascending: false, nullsFirst: false })
-    .limit(limite + 1);
+  // saber se há mais sem um `count(*)` (que pagaria a tabela inteira). Com
+  // cursor, o filtro é de CHAVE: a página seguinte continua de onde a anterior
+  // parou, sem offset e sem repetir item quando chega mensagem nova.
+  const consultaDeConversas = aplicarCursor(
+    supabase
+      .from("conversations")
+      .select("id, contact_id, last_message_preview, last_message_at, unread_count_for_assignee")
+      .eq("organization_id", orgId)
+      .in("contact_id", ids),
+    "conversa",
+    "last_message_at",
+    cursor,
+  );
+  const { data: conversasBrutas, error: conversasErr } = consultaDeConversas
+    ? await consultaDeConversas
+        .order("last_message_at", { ascending: false, nullsFirst: false })
+        .order("id", { ascending: false })
+        .limit(limite + 1)
+    : { data: [], error: null };
   if (conversasErr) return fail("internal_error", conversasErr.message, 500, { requestId });
 
   // 5/5 — TODAS as ligações dos números, também numa consulta.
-  const { data: ligacoesBrutas, error: ligacoesErr } = await supabase
-    .from("voice_calls")
-    .select("id, contact_id, direction, status, started_at, answered_at, duration_ms, end_reason")
-    .eq("organization_id", orgId)
-    .in("contact_id", ids)
-    .order("started_at", { ascending: false })
-    .limit(limite + 1);
+  const consultaDeLigacoes = aplicarCursor(
+    supabase
+      .from("voice_calls")
+      .select("id, contact_id, direction, status, started_at, answered_at, duration_ms, end_reason")
+      .eq("organization_id", orgId)
+      .in("contact_id", ids),
+    "ligacao",
+    "started_at",
+    cursor,
+  );
+  const { data: ligacoesBrutas, error: ligacoesErr } = consultaDeLigacoes
+    ? await consultaDeLigacoes
+        .order("started_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(limite + 1)
+    : { data: [], error: null };
   if (ligacoesErr) return fail("internal_error", ligacoesErr.message, 500, { requestId });
 
   const conversasTodas = (conversasBrutas ?? []) as unknown as {
@@ -296,8 +472,63 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     motivo_do_fim: l.end_reason,
   }));
 
+  // A LINHA DO TEMPO — a leitura principal. Conversas e ligações de todos os
+  // números num só fio, mais recente primeiro; cada item carrega o número de
+  // quem falou. As duas listas acima ficam como recorte por tipo, para quem já
+  // consome a rota sem a linha do tempo.
+  const porContactId = new Map(numeros.map((n) => [n.contact_id, n]));
+  const origemDe = (contactId: string) => {
+    const pessoa = porContactId.get(contactId);
+    return {
+      contact_id: contactId,
+      nome: pessoa?.nome ?? null,
+      ...(pessoa?.telefone ? { telefone: pessoa.telefone } : {}),
+    };
+  };
+
+  const linhaCompleta: ItemDaLinhaDoTempo[] = [
+    ...conversasTodas.map((c) => ({
+      tipo: "conversa" as const,
+      id: c.id,
+      ...origemDe(c.contact_id),
+      em: c.last_message_at,
+      conversa: {
+        id: c.id,
+        contact_id: c.contact_id,
+        previa: c.last_message_preview,
+        ultima_em: c.last_message_at,
+        nao_lidas: c.unread_count_for_assignee ?? 0,
+      } satisfies ConversaDoNumero,
+    })),
+    ...ligacoesTodas.map((l) => ({
+      tipo: "ligacao" as const,
+      id: l.id,
+      ...origemDe(l.contact_id),
+      em: l.started_at,
+      ligacao: {
+        id: l.id,
+        contact_id: l.contact_id,
+        direcao: l.direction === "inbound" ? ("inbound" as const) : ("outbound" as const),
+        atendida: l.answered_at !== null,
+        em_andamento: l.status !== "ended",
+        comecou_em: l.started_at,
+        duracao_ms: l.duration_ms,
+        motivo_do_fim: l.end_reason,
+      } satisfies LigacaoDoNumero,
+    })),
+  ].sort(compararItens);
+
+  const linhaDoTempo = linhaCompleta.slice(0, limite);
+  const ultimo = linhaDoTempo[linhaDoTempo.length - 1];
+  // Sem mais nada depois desta página não há cursor: um cursor que aponta para
+  // o vazio só faria a tela pedir uma página vazia.
+  const proximoCursor =
+    linhaCompleta.length > limite && ultimo
+      ? codificarCursor({ em: ultimo.em, tipo: ultimo.tipo, id: ultimo.id })
+      : null;
+
   return ok<NumerosDoNegocio>(
-    { numeros, conversas, ligacoes },
+    { numeros, conversas, ligacoes, linha_do_tempo: linhaDoTempo },
     {
       requestId,
       meta: {
@@ -306,6 +537,9 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
         // `limite` por pessoa.
         tem_mais_conversas: conversasTodas.length > limite,
         tem_mais_ligacoes: ligacoesTodas.length > limite,
+        // E o da linha do tempo é o do fio inteiro, misturado.
+        tem_mais: linhaCompleta.length > limite,
+        proximo_cursor: proximoCursor,
       },
     },
   );

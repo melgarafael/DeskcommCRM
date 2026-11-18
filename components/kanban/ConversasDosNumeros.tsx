@@ -7,6 +7,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { useConversasDosNumeros } from "@/hooks/leads/useConversasDosNumeros";
 import type {
   ConversaDoNumero,
+  ItemDaLinhaDoTempo,
   LigacaoDoNumero,
   NumeroDoNegocio,
 } from "@/app/api/v1/leads/[id]/conversas-e-ligacoes/route";
@@ -23,12 +24,14 @@ import { ChatCircle, Phone } from "@/lib/ui/icons";
  * via só o número do card. A conversa do comprador existia, o histórico da
  * ligação para ele existia, e o negócio não os mostrava.
  *
- * ─── Por que aqui, e não dentro do bloco de conversa ────────────────────────
+ * ─── Uma linha do tempo, não duas listas ────────────────────────────────────
  *
- * O bloco de cima (`ConversaNoDossie`) é o ATALHO: um clique para o inbox, com a
- * prévia da última mensagem. Ele fica como está. Este bloco é a LISTA — o que
- * aconteceu em cada número —, e é seção própria porque responde outra pergunta:
- * "com quem deste cliente eu já falei, e por onde?".
+ * A primeira entrega desta fatia mostrou conversa e ligação em DUAS listas
+ * separadas. O que a vendedora lê é a ordem dos fatos: "liguei, ele mandou o
+ * pedido, retornei". Aqui os dois tipos entram no MESMO fio, por data, cada
+ * linha com o nome e o telefone de quem falou — e o "carregar mais" pede a
+ * página seguinte por cursor, para um cliente com histórico longo não ficar
+ * preso nas 50 primeiras linhas.
  *
  * ─── Só aparece quando há outra pessoa ──────────────────────────────────────
  *
@@ -46,7 +49,8 @@ import { ChatCircle, Phone } from "@/lib/ui/icons";
 export function ConversasDosNumeros({ leadId }: { leadId: string | null }) {
   const t = useT();
   const tag = useTagDeIdioma();
-  const { data, isLoading, isError } = useConversasDosNumeros(leadId);
+  const { data, isLoading, isError, temMais, carregarMais, carregandoMais } =
+    useConversasDosNumeros(leadId);
 
   if (!leadId) return null;
   if (isError) {
@@ -60,10 +64,16 @@ export function ConversasDosNumeros({ leadId }: { leadId: string | null }) {
   // abertura do dossiê e não informa nada.
   if (isLoading || !data) return null;
 
-  const { numeros, conversas, ligacoes } = data.data;
+  const { numeros, linha_do_tempo, conversas, ligacoes } = data.data;
   const porId = new Map(numeros.map((n) => [n.contact_id, n]));
+  // Resposta antiga (cache de uma aba aberta antes da linha do tempo) ainda tem
+  // as duas listas: o fio é montado aqui, com o mesmo critério do servidor.
+  const itens =
+    linha_do_tempo && linha_do_tempo.length > 0
+      ? linha_do_tempo
+      : mesclarAsListas(conversas ?? [], ligacoes ?? [], porId);
 
-  if (conversas.length === 0 && ligacoes.length === 0) {
+  if (itens.length === 0) {
     return (
       <p className="text-xs text-text-muted" data-testid="numeros-sem-historico">
         {t("Nenhuma conversa ou ligação nos outros números ainda.")}
@@ -73,52 +83,51 @@ export function ConversasDosNumeros({ leadId }: { leadId: string | null }) {
 
   return (
     <div className="space-y-3" data-testid="conversas-dos-numeros">
-      {conversas.length > 0 && (
-        <section>
-          <h4 className="mb-1 text-[11px] font-medium tracking-wide text-text-muted uppercase">
-            {t("Conversas")} · {conversas.length}
-          </h4>
-          <ul className="space-y-1">
-            {conversas.map((conversa) => (
-              <li key={conversa.id} data-conversa={conversa.id}>
-                <ConversaDaLinha conversa={conversa} pessoa={porId.get(conversa.contact_id)} quando={quando(conversa.ultima_em, tag)} />
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <ul className="space-y-1">
+        {itens.map((item) => (
+          <ItemDaLinha key={item.id} item={item} pessoa={porId.get(item.contact_id)} tag={tag} />
+        ))}
+      </ul>
 
-      {ligacoes.length > 0 && (
-        <section>
-          <h4 className="mb-1 text-[11px] font-medium tracking-wide text-text-muted uppercase">
-            {t("Ligações")} · {ligacoes.length}
-          </h4>
-          <ul className="space-y-1">
-            {ligacoes.map((ligacao) => (
-              <li
-                key={ligacao.id}
-                data-ligacao={ligacao.id}
-                className="flex flex-wrap items-baseline gap-x-2 rounded-md border border-border bg-muted/30 px-2 py-1.5 text-xs"
-              >
-                <Phone size={13} weight="regular" className="shrink-0 text-text-muted" aria-hidden />
-                <span className="min-w-0 truncate font-medium text-text">{nomeDaPessoa(ligacao, porId)}</span>
-                <span className="text-text-muted">{ligacao.direcao === "inbound" ? t("Recebida") : t("Feita")}</span>
-                <span className={ligacao.atendida ? "text-text-muted" : "text-destructive"}>
-                  {ligacao.em_andamento ? t("Em andamento") : ligacao.atendida ? t("Atendida") : t("Não atendida")}
-                </span>
-                {ligacao.duracao_ms !== null && ligacao.atendida && (
-                  <span className="text-text-muted tabular-nums">{duracao(ligacao.duracao_ms)}</span>
-                )}
-                <span className="ml-auto text-text-muted tabular-nums">
-                  {quando(ligacao.comecou_em, tag)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
+      {temMais && (
+        <button
+          type="button"
+          onClick={carregarMais}
+          disabled={carregandoMais}
+          className="w-full rounded-md border border-border px-2 py-1 text-xs text-text-muted transition-colors hover:border-primary/40 hover:text-text disabled:opacity-60"
+          data-testid="numeros-carregar-mais"
+        >
+          {t("Carregar mais")}
+        </button>
       )}
     </div>
   );
+}
+
+function ItemDaLinha({
+  item,
+  pessoa,
+  tag,
+}: {
+  item: ItemDaLinhaDoTempo;
+  pessoa: NumeroDoNegocio | undefined;
+  tag: string;
+}) {
+  if (item.tipo === "conversa" && item.conversa) {
+    return (
+      <li data-conversa={item.conversa.id}>
+        <ConversaDaLinha
+          conversa={item.conversa}
+          pessoa={pessoa}
+          quando={quando(item.em, tag)}
+        />
+      </li>
+    );
+  }
+  if (item.tipo === "ligacao" && item.ligacao) {
+    return <LigacaoDaLinha ligacao={item.ligacao} pessoa={pessoa} tag={tag} />;
+  }
+  return null;
 }
 
 function ConversaDaLinha({
@@ -154,8 +163,75 @@ function ConversaDaLinha({
   );
 }
 
-function nomeDaPessoa(ligacao: LigacaoDoNumero, porId: Map<string, NumeroDoNegocio>): string {
-  return porId.get(ligacao.contact_id)?.nome ?? "—";
+function LigacaoDaLinha({
+  ligacao,
+  pessoa,
+  tag,
+}: {
+  ligacao: LigacaoDoNumero;
+  pessoa: NumeroDoNegocio | undefined;
+  tag: string;
+}) {
+  const t = useT();
+  return (
+    <li
+      data-ligacao={ligacao.id}
+      className="flex flex-wrap items-baseline gap-x-2 rounded-md border border-border bg-muted/30 px-2 py-1.5 text-xs"
+    >
+      <Phone size={13} weight="regular" className="shrink-0 text-text-muted" aria-hidden />
+      <span className="min-w-0 truncate font-medium text-text">{pessoa?.nome ?? "—"}</span>
+      {pessoa?.telefone && <span className="text-text-muted tabular-nums">{pessoa.telefone}</span>}
+      <span className="text-text-muted">{ligacao.direcao === "inbound" ? t("Recebida") : t("Feita")}</span>
+      <span className={ligacao.atendida ? "text-text-muted" : "text-destructive"}>
+        {ligacao.em_andamento ? t("Em andamento") : ligacao.atendida ? t("Atendida") : t("Não atendida")}
+      </span>
+      {ligacao.duracao_ms !== null && ligacao.atendida && (
+        <span className="text-text-muted tabular-nums">{duracao(ligacao.duracao_ms)}</span>
+      )}
+      <span className="ml-auto text-text-muted tabular-nums">{quando(ligacao.comecou_em, tag)}</span>
+    </li>
+  );
+}
+
+/**
+ * O fio montado no cliente, para resposta SEM `linha_do_tempo` — a aba aberta
+ * antes desta entrega, com a resposta velha em cache. Critério idêntico ao do
+ * servidor: `em` desc, conversa antes de ligação no empate, id desc.
+ */
+function mesclarAsListas(
+  conversas: ConversaDoNumero[],
+  ligacoes: LigacaoDoNumero[],
+  porId: Map<string, NumeroDoNegocio>,
+): ItemDaLinhaDoTempo[] {
+  const origem = (contactId: string) => {
+    const pessoa = porId.get(contactId);
+    return { contact_id: contactId, nome: pessoa?.nome ?? null };
+  };
+  const itens: ItemDaLinhaDoTempo[] = [
+    ...conversas.map((conversa) => ({
+      tipo: "conversa" as const,
+      id: conversa.id,
+      ...origem(conversa.contact_id),
+      em: conversa.ultima_em,
+      conversa,
+    })),
+    ...ligacoes.map((ligacao) => ({
+      tipo: "ligacao" as const,
+      id: ligacao.id,
+      ...origem(ligacao.contact_id),
+      em: ligacao.comecou_em,
+      ligacao,
+    })),
+  ];
+  return itens.sort((a, b) => {
+    if (a.em !== b.em) {
+      if (a.em === null) return 1;
+      if (b.em === null) return -1;
+      return a.em < b.em ? 1 : -1;
+    }
+    if (a.tipo !== b.tipo) return a.tipo === "conversa" ? -1 : 1;
+    return a.id < b.id ? 1 : -1;
+  });
 }
 
 /** `mm:ss` para ligações; `—` nunca, porque a linha só chama quando há duração. */

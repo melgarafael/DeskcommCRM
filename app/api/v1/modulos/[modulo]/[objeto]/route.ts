@@ -1,7 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { tabelaDoObjeto } from "@/lib/modulos/dados/tabela";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -12,25 +14,45 @@ const querySchema = z.object({
   limite: z.coerce.number().int().min(1).max(200).default(50),
 });
 
+const paramsSchema = z.object({
+  modulo: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/),
+  objeto: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/),
+});
+
 /**
  * GET /api/v1/modulos/{modulo}/{objeto} — as fichas que um módulo de dados guarda.
  *
  * A tabela do módulo é **server-only** (`revoke all from anon, authenticated` no compilador), então
  * esta rota é o ÚNICO caminho de leitura — e o filtro por organização existe só aqui, no código. Não
  * há RLS de navegador para salvar um esquecimento, e é por isso que a organização vem da SESSÃO e
- * nunca do pedido: `requireRole` a resolve, e o que vier na URL é ignorado.
+ * nunca do pedido: `resolveAuthDual` a resolve, e o que vier na URL é ignorado.
  *
  * O nome da tabela também não vem da URL: `tabelaDoObjeto` o deriva do que está instalado, e o que
  * não casa é 404.
  */
 export async function GET(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ modulo: string; objeto: string }> },
 ): Promise<Response> {
   const { modulo, objeto } = await params;
 
-  const autorizado = await requireRole("viewer", { resource: `modulos:${modulo}` });
-  if (!autorizado.ok) return autorizado.response;
+  const requestId = randomUUID();
+  const authz = await resolveAuthDual(request, {
+    requestId,
+    resource: `modulos:${modulo}`,
+    role: "viewer",
+    scope: "mcp:read",
+  });
+  if (!authz.ok) return authz.response;
+
+  // Validação DEPOIS da autenticação: quem não está logado recebe a recusa dele, não 400.
+  const parametros = paramsSchema.safeParse({ modulo, objeto });
+  if (!parametros.success) {
+    return fail("invalid_request", "Parâmetros inválidos.", 400, { requestId });
+  }
+
+  const teto = await tetoDeEscritaDoToken(authz, "modulos", requestId);
+  if (teto) return teto;
 
   const bruto = Object.fromEntries(new URL(request.url).searchParams);
   const query = querySchema.safeParse(bruto);
@@ -38,7 +60,7 @@ export async function GET(
     return fail("invalid_request", "Pedido inválido.", 400);
   }
 
-  const alvo = await tabelaDoObjeto(modulo, objeto);
+  const alvo = await tabelaDoObjeto(parametros.data.modulo, parametros.data.objeto);
   const admin = createAdminClient();
 
   /**
@@ -61,7 +83,7 @@ export async function GET(
     const { count, error } = await admin
       .from(alvo!.tabela)
       .select("id", { count: "exact", head: true })
-      .eq("organization_id", autorizado.org.orgId)
+      .eq("organization_id", authz.organizationId)
       .limit(1);
     // Falha de leitura NÃO abre a porta: na dúvida, o módulo não existe para esta empresa.
     if (error) return true;
@@ -75,7 +97,7 @@ export async function GET(
   let consulta = admin
     .from(alvo.tabela)
     .select("*")
-    .eq("organization_id", autorizado.org.orgId);
+    .eq("organization_id", authz.organizationId);
 
   // O recorte por contato só existe se o objeto DECLAROU a referência: pedir por contato num objeto
   // que não a tem devolveria a lista inteira da organização, o que seria uma surpresa silenciosa.

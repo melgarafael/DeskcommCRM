@@ -34,6 +34,8 @@ export const previaSalvaSchema = z.object({
   baseada_em: z.string().min(1).max(160),
   gerada_em: z.string().min(1).max(40),
   agente_id: z.string().uuid(),
+  /** `config.briefing_editado_em` da campanha com que a prévia foi escrita; ausente = texto nunca editado. */
+  briefing_editado_em: z.string().max(40).optional(),
 });
 export type PreviaSalva = z.infer<typeof previaSalvaSchema>;
 
@@ -76,10 +78,20 @@ export function previaValida(data: DadosDaPrevia): PreviaSalva | null {
  * pelo MESMO agente que vai enviar. A prévia pode ter nascido com o agente
  * padrão da organização (a campanha ainda não tinha o seu); se a pessoa escolheu
  * outro na etapa 2, o tom da prévia não é o dele — o envio escreve do zero.
+ *
+ * E escrita com o texto ATUAL da campanha (#4570, doc 358): `briefingEditadoEm`
+ * é o carimbo da `config` no envio. A prévia de antes da última edição — ou a que
+ * o preparo terminou de gerar com o texto velho durante a edição — não confere,
+ * e o envio escreve do zero.
  */
-export function previaDoAgente(data: DadosDaPrevia, agenteId: string): PreviaSalva | null {
+export function previaDoAgente(
+  data: DadosDaPrevia,
+  agenteId: string,
+  briefingEditadoEm?: string,
+): PreviaSalva | null {
   const previa = previaValida(data);
-  return previa && previa.agente_id === agenteId ? previa : null;
+  if (!previa || previa.agente_id !== agenteId) return null;
+  return previa.briefing_editado_em === briefingEditadoEm ? previa : null;
 }
 
 /**
