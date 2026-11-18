@@ -60,6 +60,15 @@ export interface ProvedorDeServico {
    * `desconhecido`/`operador`, que não têm documento a citar.
    */
   fonteDoPais: { url: string; consultadoEm: string } | null;
+  /**
+   * POR QUE não há `paisDeclarado` (#4518) — a mesma regra do catálogo irmão:
+   * `null` se e somente se a declaração existe, e uma frase quando não existe.
+   *
+   * O serviço de voz recebe o ÁUDIO do cliente, então a pergunta "onde isso é
+   * processado" vale para ele como vale para quem conversa — e calar sobre ela
+   * era a diferença entre não saber e não ter procurado.
+   */
+  motivoDaRegiaoNaoDeclarada: string | null;
 }
 
 export const PROVEDORES_DE_SERVICO = [
@@ -80,6 +89,10 @@ export const PROVEDORES_DE_SERVICO = [
     ondePegarAChave: "https://elevenlabs.io/app/settings/api-keys",
     prefixoDaChave: "sk_…",
     fonteDoPais: null,
+    // A ElevenLabs não publica, em fonte que este repo possa citar com data, o
+    // país de onde processa o áudio do cliente.
+    motivoDaRegiaoNaoDeclarada:
+      "não publica, em fonte citável com data, o país de onde processa o áudio",
   },
 ] as const satisfies readonly ProvedorDeServico[];
 // `as const satisfies`, mesma razão do arquivo irmão: anotar o tipo apagaria os

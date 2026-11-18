@@ -35,7 +35,13 @@ const VOCABULARIO: readonly PaisDoProvedor[] = ["US", "CN", "UE", "operador", "d
 /** O que este teste lê de cada entrada: os dois países e a fonte da declaração. */
 type DeclaracaoDePais = Pick<
   ProvedorSuportado,
-  "id" | "pais" | "sede" | "paisDeclarado" | "fonteDoPais"
+  "id" | "pais" | "sede" | "paisDeclarado" | "fonteDoPais" | "motivoDaRegiaoNaoDeclarada"
+>;
+
+/** O par do endpoint próprio — só existe onde existe `aceitaEndpointProprio`. */
+type EndpointProprio = Pick<
+  ProvedorSuportado,
+  "id" | "aceitaEndpointProprio" | "ondeExecutaComEndpointProprio"
 >;
 
 /**
@@ -163,5 +169,73 @@ describe("o catálogo declara onde o texto é processado", () => {
     // E o valor do `custom` diz exatamente "o servidor do operador", não "não sei":
     // a cláusula 9 tem frase própria para ele.
     expect(PROVEDORES.find((p) => p.id === "custom")?.pais).toBe("operador");
+  });
+
+  it("quem não declara a região diz POR QUE — e quem declara não dá motivo", () => {
+    // O #4518 pede a razão, não só a ausência: `fonteDoPais: null` dizia "não há
+    // fonte", e não dizia se é porque o provedor não publica a região, porque
+    // publica por projeto, ou porque ninguém conferiu. A tela e o documento
+    // (#4519/#4520) imprimem esta frase; se ela faltar, os dois voltam a
+    // inventar uma explicação própria, cada um com a sua.
+    const problemas: string[] = [];
+    for (const p of TODOS) {
+      const declara = p.paisDeclarado !== null;
+      const motivo = p.motivoDaRegiaoNaoDeclarada;
+      if (declara && motivo !== null) {
+        problemas.push(`${p.id}: declara a região e ainda assim dá motivo`);
+      }
+      if (!declara && (motivo === null || motivo.trim() === "")) {
+        problemas.push(`${p.id}: não declara a região e não diz por quê`);
+      }
+      // Frase de uma linha, mas frase: "n/a" não explica nada a quem assina o contrato.
+      if (motivo !== null && motivo.trim().length < 20) {
+        problemas.push(`${p.id}: motivo curto demais para explicar qualquer coisa (${motivo})`);
+      }
+    }
+    expect(problemas).toEqual([]);
+
+    // E a régua mede os DOIS lados — senão ela só reprovaria o caso que ninguém escreveu.
+    const semMotivo = TODOS.filter((p) => p.motivoDaRegiaoNaoDeclarada === null);
+    const comMotivo = TODOS.filter((p) => p.motivoDaRegiaoNaoDeclarada !== null);
+    expect(semMotivo.length, "nenhum provedor declara a região: o teste não mediu nada").toBeGreaterThan(0);
+    expect(comMotivo.length, "todos declaram a região: o teste não mediu nada").toBeGreaterThan(0);
+    expect(comMotivo.length + semMotivo.length).toBe(TODOS.length);
+  });
+
+  it("endpoint próprio: quem aceita diz o que acontece com o lugar — o país do provedor não é herdado", () => {
+    // A regra de honestidade do #4518: `aceitaEndpointProprio` diz que a base URL
+    // PODE ser trocada; sem uma frase sobre o que a troca faz com a pergunta
+    // "onde o texto é processado", o catálogo responderia com o país do provedor
+    // para uma chamada que sai para o host que o operador digitou.
+    //
+    // A lista é a de quem CONVERSA e a de quem DECIDE — as duas têm o flag; o
+    // serviço de voz não o tem, e por isso não entra. A varredura é do catálogo
+    // inteiro, e não dos dois ids que motivaram a regra (#4518 mediu o defeito
+    // no `custom` e na `requesty`; amanhã ele pode estar no `deepseek`).
+    const comEndpoint: readonly EndpointProprio[] = [...PROVEDORES, ...PROVEDORES_DE_DECISAO];
+    const problemas: string[] = [];
+    for (const p of comEndpoint) {
+      const frase = p.ondeExecutaComEndpointProprio;
+      if (p.aceitaEndpointProprio) {
+        if (frase === null || frase.trim() === "") {
+          problemas.push(`${p.id}: aceita endpoint próprio e não diz o que acontece com o lugar`);
+        }
+        continue;
+      }
+      if (frase !== null) {
+        problemas.push(`${p.id}: não aceita endpoint próprio e ainda assim descreve um`);
+      }
+    }
+    expect(problemas).toEqual([]);
+
+    // Os dois lados existem de verdade no catálogo (OpenAI, OpenRouter, DeepSeek,
+    // Requesty e o personalizado aceitam; Anthropic, Google, assinatura e Jev não).
+    expect(comEndpoint.filter((p) => p.aceitaEndpointProprio).length).toBeGreaterThan(0);
+    expect(comEndpoint.filter((p) => !p.aceitaEndpointProprio).length).toBeGreaterThan(0);
+    // E o caso extremo continua explícito: o personalizado aponta para o host do
+    // operador, que é onde ele digitou — não um país do catálogo.
+    expect(PROVEDORES.find((p) => p.id === "custom")?.ondeExecutaComEndpointProprio).toMatch(
+      /base URL/i,
+    );
   });
 });

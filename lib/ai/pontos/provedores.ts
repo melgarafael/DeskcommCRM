@@ -126,6 +126,34 @@ export interface ProvedorSuportado {
    * publica a região (a maioria). Fonte não se inventa para provar um país.
    */
   fonteDoPais: { url: string; consultadoEm: string } | null;
+  /**
+   * POR QUE não há `paisDeclarado` — em uma frase, o que o provedor publica (ou
+   * deixa de publicar) sobre a região de processamento (#4518).
+   *
+   * `null` se e somente se `paisDeclarado` existe: quem declarou não deve
+   * motivo, e quem não declarou não pode ficar calado. `fonteDoPais: null`
+   * sozinho já dizia "não há fonte", mas não dizia se é porque o provedor não
+   * publica a região, porque publica por projeto, ou porque ninguém conferiu —
+   * e a diferença entre dado ausente e dado que ninguém procurou é justamente
+   * a diferença entre informar e chutar.
+   *
+   * É TEXTO de dado, não de interface: não passa por `t()`, como o valor do
+   * país. Quem o imprime (a tela e o documento, #4519/#4520) cita a frase do
+   * catálogo em vez de inventar uma explicação própria.
+   */
+  motivoDaRegiaoNaoDeclarada: string | null;
+  /**
+   * O que acontece com o LUGAR quando o operador aponta o endpoint para outro
+   * host — `null` quando o provedor não aceita endpoint próprio (#4518).
+   *
+   * `aceitaEndpointProprio` diz que a base URL PODE ser trocada; este campo diz
+   * o que a troca faz com a pergunta "onde o texto é processado". Sem ele, o
+   * catálogo responderia com o país do provedor para uma chamada que, na
+   * prática, sai para o host que o operador digitou — a mesma herança indevida
+   * que o #4588 separou entre sede e declaração. É a regra de honestidade do
+   * #4518: o endpoint próprio não herda o país de ninguém.
+   */
+  ondeExecutaComEndpointProprio: string | null;
 }
 
 /**
@@ -157,6 +185,13 @@ export const PROVEDORES = [
     sede: "US",
     paisDeclarado: null,
     fonteDoPais: null,
+    // A Anthropic não publica a região de processamento da API: a política de
+    // privacidade fala em suboperadores, e a região concreta vem do contrato de
+    // cada operador — não de um documento que este catálogo possa citar.
+    motivoDaRegiaoNaoDeclarada:
+      "não publica a região de processamento da API; ela é a do contrato de cada operador",
+    // Sem endpoint próprio, não há o que dizer: a chamada vai para `api.anthropic.com`.
+    ondeExecutaComEndpointProprio: null,
     quandoUsar:
       "O padrão recomendado para conversar com o cliente: é o que melhor segue instruções longas e usa as ferramentas do CRM.",
     aceitaEndpointProprio: false,
@@ -174,6 +209,13 @@ export const PROVEDORES = [
     sede: "US",
     paisDeclarado: null,
     fonteDoPais: null,
+    // A OpenAI declara data residency por PROJETO/REGIÃO (EUA, Europa, Reino
+    // Unido, Japão…), então não há um país único que ela declare para a API.
+    motivoDaRegiaoNaoDeclarada:
+      "declara residência de dados por projeto e região (EUA, Europa, Reino Unido, Japão), não um país para a API",
+    // A base URL pode ser trocada: quem escolheu o host sabe onde ele fica.
+    ondeExecutaComEndpointProprio:
+      "o texto sai para o host que você configurou, e o CRM deixa de saber o país dele",
     quandoUsar:
       "Na configuração padrão, transcreve áudio. Para indexar material, uma chave OpenAI ou OpenRouter atende ao mesmo modelo de embedding.",
     aceitaEndpointProprio: true,
@@ -191,6 +233,11 @@ export const PROVEDORES = [
     sede: "US",
     paisDeclarado: null,
     fonteDoPais: null,
+    // A conta da assinatura não publica a região de processamento; a residência
+    // por projeto é da chave de API, que aqui não existe.
+    motivoDaRegiaoNaoDeclarada:
+      "a conta da assinatura não declara a região em que processa o texto; a residência por projeto é da API",
+    ondeExecutaComEndpointProprio: null,
     quandoUsar:
       "Conecte sua conta pessoal do ChatGPT dentro dos limites da assinatura; para operação em volume, prefira uma chave de API da organização. Uma chave da própria organização pode servir de reserva.",
     // A assinatura não se aponta para outro endereço nem sincroniza catálogo:
@@ -217,6 +264,11 @@ export const PROVEDORES = [
     sede: "US",
     paisDeclarado: null,
     fonteDoPais: null,
+    // A Gemini Developer API não publica a lista de países de processamento: a
+    // região explícita só existe no Vertex AI, que não é o caminho desta chave.
+    motivoDaRegiaoNaoDeclarada:
+      "a Gemini Developer API não publica a lista de países de processamento; a região explícita existe só no Vertex AI",
+    ondeExecutaComEndpointProprio: null,
     quandoUsar:
       "Alternativa com contexto muito longo e custo baixo para tarefas de classificação.",
     aceitaEndpointProprio: false,
@@ -235,6 +287,13 @@ export const PROVEDORES = [
     sede: "US",
     paisDeclarado: null,
     fonteDoPais: null,
+    // O roteamento escolhe o provedor por MODELO, a cada chamada: onde o texto é
+    // processado varia, e não há país fixo que a OpenRouter declare.
+    motivoDaRegiaoNaoDeclarada:
+      "o roteamento escolhe o provedor por modelo, a cada chamada; não há um país fixo a declarar",
+    // Além da base URL, o roteamento já varia por modelo: aqui o país é duplamente alheio ao catálogo.
+    ondeExecutaComEndpointProprio:
+      "com base URL própria, o texto sai para o host que você configurou; sem ela, o país depende do modelo escolhido",
     quandoUsar:
       "Uma chave só dá acesso a centenas de modelos de dezenas de fabricantes, inclusive os gratuitos. É o caminho mais simples para experimentar sem abrir conta em cada provedor.",
     aceitaEndpointProprio: true,
@@ -258,6 +317,13 @@ export const PROVEDORES = [
       url: "https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html",
       consultadoEm: "2026-11-12",
     },
+    // Não há motivo a dar: é a única entrada do catálogo cujo provedor declara,
+    // em documento próprio, o país onde processa — a declaração está acima.
+    motivoDaRegiaoNaoDeclarada: null,
+    // A DeepSeek aceita endpoint próprio como qualquer API compatível com a da
+    // OpenAI: apontada para fora, deixa de valer a declaração dela.
+    ondeExecutaComEndpointProprio:
+      "com base URL própria, o texto sai para o host que você configurou e a declaração da DeepSeek deixa de valer",
     quandoUsar:
       "Muito barata e desconta sozinha o trecho repetido da conversa, sem você configurar nada — o custo cai para quem atende com um roteiro que não muda.",
     aceitaEndpointProprio: true,
@@ -277,6 +343,13 @@ export const PROVEDORES = [
     sede: null,
     paisDeclarado: null,
     fonteDoPais: null,
+    // A Requesty oferece manter o tráfego na Europa, mas isso é opção de
+    // configuração, não declaração: o país da empresa que responde a API não
+    // está numa fonte que este repo possa citar com data.
+    motivoDaRegiaoNaoDeclarada:
+      "não tem, em fonte citável com data, o país da empresa que responde a API; o tráfego na Europa é opção de configuração",
+    ondeExecutaComEndpointProprio:
+      "com base URL própria, o texto sai para o host que você configurou; sem ela, para o nó que a Requesty escolher",
     quandoUsar:
       "Uma chave só para centenas de modelos de vários fabricantes, com a opção de manter o tráfego na Europa. Bom para comparar modelos sem abrir conta em cada provedor.",
     aceitaEndpointProprio: true,
@@ -293,6 +366,13 @@ export const PROVEDORES = [
     sede: null,
     paisDeclarado: null,
     fonteDoPais: null,
+    // Não há declaração a citar: não existe terceiro processando — o endpoint é
+    // do próprio operador (gateway, LiteLLM, proxy corporativo).
+    motivoDaRegiaoNaoDeclarada:
+      "o endpoint é do próprio operador: não há terceiro cuja região de processamento declarar",
+    // O caso do endpoint próprio, levado ao limite: o host é o que o operador digitou.
+    ondeExecutaComEndpointProprio:
+      "no host que você informar como base URL; o CRM não sabe onde ele fica",
     quandoUsar:
       "Endpoint seu que fala a API da OpenAI — OmniRouter, 9Router, LiteLLM hospedado ou proxy corporativo, num endereço público. Você informa o endereço (base URL) e a chave, e o CRM conversa com ele como conversa com a OpenAI.",
     aceitaEndpointProprio: true,
@@ -360,6 +440,11 @@ export const PROVEDORES_DE_DECISAO = [
     sede: "US",
     paisDeclarado: null,
     fonteDoPais: null,
+    // A TypeSafe AI não publica, em fonte citável, a região onde processa cada
+    // mensagem que o Jev recebe.
+    motivoDaRegiaoNaoDeclarada:
+      "não publica, em fonte citável, a região onde processa cada mensagem que recebe",
+    ondeExecutaComEndpointProprio: null,
     quandoUsar:
       "Não conversa com o cliente: toma decisões rápidas e baratas — como perceber se o cliente está irritado — geralmente em menos de um segundo. Trabalha junto com a sua IA principal.",
     aceitaEndpointProprio: false,
