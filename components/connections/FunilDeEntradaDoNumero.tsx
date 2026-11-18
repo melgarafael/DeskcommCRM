@@ -50,7 +50,9 @@ export function FunilDeEntradaDoNumero({ channelId }: { channelId: string }) {
     queryFn: () => apiClient.get<{ data: Entrada }>(`/api/v1/channel-sessions/${channelId}/entrada`),
     retry: false,
   });
-  const entrada = query.data?.data;
+  // Resposta sem a lista (servidor antigo, rota substituída) conta como "ainda não
+  // carregou": nunca quebra o cartão inteiro da conexão.
+  const entrada = Array.isArray(query.data?.data?.funis) ? query.data.data : undefined;
   // Sem permissão (não é administrador) ou rota indisponível: o cartão some, como
   // as outras ações que só o administrador vê.
   if (query.isError) return null;
