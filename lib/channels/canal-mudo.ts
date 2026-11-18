@@ -30,6 +30,10 @@
  * clique de alguém vira lista que ninguém lê.
  */
 
+// A tradução transporte→rede vem de `./presentation` (também sem estado): o
+// aviso não inventa uma segunda tabela para dizer que o canal é Instagram.
+import { channelBrand } from "./presentation";
+
 /** O kind do aviso em `agent_inbox_items` (vocabulário fechado por CHECK). */
 export const KIND_CANAL_MUDO = "canal_mudo_sem_numero" as const;
 
@@ -51,11 +55,45 @@ export interface CanalParaAvaliar {
   archived_at: string | null;
   last_status_change_at: string | null;
   metadata: Record<string, unknown> | null;
+  /**
+   * O nome que o operador vê em Conexões (`display_name`). Sem ele o aviso diz
+   * "este canal" e quem lê pensa no número principal — foi assim que um
+   * Instagram em teste virou "o aviso está errado, a IA responde no WhatsApp".
+   */
+  display_name?: string | null;
+  /** O número pareado — segunda escolha de nome, em canal de WhatsApp. */
+  phone_number?: string | null;
+  /** O nome da sessão no transporte — último recurso antes de "Canal sem nome". */
+  waha_session_name?: string | null;
+  /** O transporte (`waha`, `meta_cloud`, `zernio`, `zernio_social`, `telegram`, …). */
+  provider?: string | null;
+  /**
+   * Existe agente atendendo este canal — versão publicada presa a ele, vínculo
+   * em `ai_agent_version_channels` ou roteador ativo?
+   *
+   * Obrigatório de propósito: é o que separa os DOIS avisos. Sem agente, o que
+   * falta é publicar/ligar o agente; mandar "abra o canal ao público" ali manda
+   * a pessoa para o clique que não resolve nada (issue #4909). Quem lê as
+   * conexões é o cron, e ele não pode esquecer de perguntar.
+   */
+  tem_agente: boolean;
 }
 
+/**
+ * Qual dos dois avisos cabe — e a AÇÃO que cada um oferece.
+ *
+ * `falta_testador`: o canal já tem agente, só não tem ninguém autorizado a
+ * conversar com ele. `sem_agente`: nenhum agente publicado atende o canal, e
+ * abrir ao público não muda isso.
+ */
+export type CasoDoAviso = "falta_testador" | "sem_agente";
+
 export type DesfechoDoCanal =
-  /** Ligado, em modo de teste, sem número e assim há dias: o aviso é devido. */
-  | { acao: "avisar"; diasMudo: number }
+  /**
+   * Ligado, em modo de teste, sem número e assim há dias: o aviso é devido — e
+   * ele diz QUAL caso, porque o texto e a saída são diferentes.
+   */
+  | { acao: "avisar"; diasMudo: number; caso: CasoDoAviso }
   /** Não é (ou deixou de ser) o caso: aviso aberto deste canal se resolve. */
   | { acao: "resolver"; motivo: MotivoDaResolucao }
   /** Ainda é cedo — ou o canal nem está de pé. Não avisa nem resolve. */
@@ -94,6 +132,39 @@ export function emModoDeTeste(metadata: Record<string, unknown> | null): boolean
 }
 
 /**
+ * O NOME do canal, como o operador o vê em Conexões.
+ *
+ * `display_name` primeiro porque é o nome que ele mesmo deu; o número depois
+ * (canal de WhatsApp costuma se identificar por ele); o nome da sessão no
+ * transporte por último, porque é o menos legível. `null` quando não há nenhum
+ * — quem escreve o aviso decide a reserva, no idioma de quem vai ler.
+ */
+export function nomeDoCanal(canal: CanalParaAvaliar): string | null {
+  for (const bruto of [canal.display_name, canal.phone_number, canal.waha_session_name]) {
+    const nome = typeof bruto === "string" ? bruto.trim() : "";
+    if (nome !== "") return nome;
+  }
+  return null;
+}
+
+/**
+ * A REDE do canal — `whatsapp`, `instagram`, `messenger`, `telegram` ou
+ * `unknown`.
+ *
+ * Vem de `channelBrand` e não de uma tabela local: o transporte
+ * (`zernio_social` pode ser Instagram, Facebook ou Telegram) não diz a rede, e
+ * duas cópias dessa tradução divergem na primeira rede nova. O aviso diz
+ * "Instagram", que é o que a pessoa conectou — nunca "zernio_social".
+ */
+export function redeDoCanal(canal: CanalParaAvaliar): string {
+  const plataforma = canal.metadata?.["social_platform"];
+  return channelBrand({
+    provider: canal.provider ?? null,
+    social_platform: typeof plataforma === "string" ? plataforma : null,
+  });
+}
+
+/**
  * A decisão, para UM canal, num instante.
  *
  * Canal que não está `WORKING` não entra em nenhuma das duas pontas: parado ele
@@ -118,5 +189,9 @@ export function avaliarCanal(canal: CanalParaAvaliar, agora: Date): DesfechoDoCa
   if (Number.isNaN(inicio)) return { acao: "aguardar" };
 
   const diasMudo = Math.floor((agora.getTime() - inicio) / 86_400_000);
-  return diasMudo >= DIAS_ATE_AVISAR ? { acao: "avisar", diasMudo } : { acao: "aguardar" };
+  if (diasMudo < DIAS_ATE_AVISAR) return { acao: "aguardar" };
+  // O caso sai daqui, e não de quem escreve o texto: é a MESMA leitura que
+  // decide se o canal responde. Sem agente, "autorize um testador" seria a
+  // saída errada, e o aviso mandaria a pessoa para o clique que não resolve.
+  return { acao: "avisar", diasMudo, caso: canal.tem_agente ? "falta_testador" : "sem_agente" };
 }

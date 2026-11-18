@@ -24,6 +24,8 @@ import { GET } from "./route";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const CANAL = "22222222-2222-4222-8222-222222222222";
+const CANAL_INSTA = "33333333-3333-4333-8333-333333333333";
+const VERSAO = "44444444-4444-4444-8444-444444444444";
 const diasAtras = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString();
 
 interface Capturado {
@@ -31,22 +33,53 @@ interface Capturado {
   resolucoes: Array<{ patch: Record<string, unknown>; filtros: Array<[string, unknown]> }>;
 }
 
+/**
+ * QUEM ATENDE QUAL CANAL — o dublê das quatro tabelas que respondem isso.
+ *
+ * Default: ninguém tem agente. É o estado do relato da #4909 (Instagram sem
+ * nenhuma linha em `ai_agent_version_channels` nem em `ai_agent_versions.
+ * channel_session_id`), e o caso que o aviso antigo tratava errado.
+ */
+interface Extras {
+  agentes?: Array<{ published_version_id: string | null }>;
+  versoes?: Array<{ channel_session_id: string | null }>;
+  vinculos?: Array<{ channel_session_id: string }>;
+  roteadores?: Array<{ channel_session_id: string }>;
+  /** Tabela que responde com erro — o caminho de falha da rodada. */
+  erroEm?: string;
+}
+
+/** Consulta thenable e encadeável, como o builder do Supabase. */
+function consulta(linhas: unknown[], erro: string | null = null) {
+  const resultado = { data: erro === null ? linhas : null, error: erro === null ? null : { message: erro } };
+  const c: Record<string, unknown> = {
+    select: () => c,
+    is: () => c,
+    eq: () => c,
+    in: () => c,
+    limit: async () => resultado,
+    maybeSingle: async () => ({ data: linhas[0] ?? null, error: null }),
+    then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
+      Promise.resolve(resultado).then(resolve, reject),
+  };
+  return c;
+}
+
 function admin(
   canais: Array<Record<string, unknown>>,
   abertos: Array<{ id: string; ref_id: string | null }>,
   cap: Capturado,
+  extras: Extras = {},
 ) {
+  const erroDe = (tabela: string) => (extras.erroEm === tabela ? "banco fora do ar" : null);
   return {
     from(tabela: string) {
-      if (tabela === "channel_sessions") {
-        const c: Record<string, unknown> = {
-          select: () => c,
-          is: () => c,
-          limit: async () => ({ data: canais, error: null }),
-        };
-        return c;
-      }
-      // agent_inbox_items
+      if (tabela === "channel_sessions") return consulta(canais, erroDe(tabela));
+      if (tabela === "ai_agents") return consulta(extras.agentes ?? [], erroDe(tabela));
+      if (tabela === "ai_agent_versions") return consulta(extras.versoes ?? [], erroDe(tabela));
+      if (tabela === "ai_agent_version_channels") return consulta(extras.vinculos ?? [], erroDe(tabela));
+      if (tabela === "ai_routers") return consulta(extras.roteadores ?? [], erroDe(tabela));
+      // organizations (idioma do aviso) e agent_inbox_items.
       return {
         select: () => {
           const c: Record<string, unknown> = {
@@ -91,6 +124,10 @@ const canalMudo = (over: Record<string, unknown> = {}) => ({
   archived_at: null,
   last_status_change_at: diasAtras(5),
   metadata: { ai_gate: "allowlist", ai_test_phone_numbers: [] },
+  display_name: "WhatsApp principal",
+  phone_number: null,
+  waha_session_name: null,
+  provider: "waha",
   ...over,
 });
 
@@ -206,6 +243,106 @@ describe("canal-mudo-watcher", () => {
       action: "channel.canal_mudo_watcher_run",
       metadata: { avisados: 1, resolvidos: 0 },
     });
+  });
+
+  /**
+   * #4909 — DOIS CANAIS, DOIS AVISOS, CADA UM COM O SEU NOME.
+   *
+   * O relato veio de uma instalação com WhatsApp respondendo e um Instagram em
+   * teste. O aviso existia, estava certo, e mesmo assim o operador o leu como
+   * erro: nada nele dizia de qual canal se tratava. Este teste prende as duas
+   * metades da correção — o nome do canal no texto, e dois textos distintos
+   * para os dois motivos de o canal estar mudo.
+   */
+  it("dois canais em estados diferentes: dois textos, cada um nomeando o seu canal", async () => {
+    const cap = vazio();
+    vi.mocked(createAdminClient).mockReturnValue(
+      admin(
+        [
+          canalMudo({ id: CANAL, display_name: "WhatsApp principal", provider: "waha" }),
+          canalMudo({
+            id: CANAL_INSTA,
+            display_name: "Instagram da loja",
+            provider: "zernio_social",
+            metadata: { ai_gate: "allowlist", social_platform: "instagram" },
+          }),
+        ],
+        [],
+        cap,
+        { agentes: [{ published_version_id: VERSAO }], versoes: [{ channel_session_id: CANAL }] },
+      ) as never,
+    );
+
+    const r = await GET(req());
+    const corpo = (await r.json()) as { data: { avisados: number } };
+
+    expect(corpo.data.avisados).toBe(2);
+    expect(cap.avisos).toHaveLength(2);
+
+    const zap = cap.avisos.find((a) => a.ref_id === CANAL)!;
+    const insta = cap.avisos.find((a) => a.ref_id === CANAL_INSTA)!;
+
+    // Cada aviso nomeia o SEU canal, com a rede que a pessoa conectou.
+    expect(String(zap.title)).toContain("WhatsApp principal");
+    expect(String(zap.title)).toContain("(WhatsApp)");
+    expect(String(insta.title)).toContain("Instagram da loja");
+    expect(String(insta.title)).toContain("(Instagram)");
+    // E os dois são textos DIFERENTES — era o mesmo nos dois casos antes.
+    expect(zap.title).not.toBe(insta.title);
+
+    // O do WhatsApp tem agente: o que falta é liberar um testador.
+    expect(String(zap.title)).toMatch(/testador autorizado/);
+    expect(String(zap.body)).toMatch(/autorize os números de teste/);
+    // O do Instagram não tem agente nenhum: o que falta é ligar o agente.
+    expect(String(insta.title)).toMatch(/nenhum agente atende/);
+    expect(String(insta.body)).toMatch(/ligar um agente/);
+    expect(String(insta.body)).toMatch(/IA › Agentes/);
+  });
+
+  it("canal SEM agente não manda abrir ao público — a saída é ligar/publicar o agente", async () => {
+    const cap = vazio();
+    vi.mocked(createAdminClient).mockReturnValue(
+      admin(
+        [canalMudo({ display_name: "Instagram da loja", provider: "zernio_social" })],
+        [],
+        cap,
+      ) as never,
+    );
+
+    await GET(req());
+
+    const aviso = cap.avisos[0]!;
+    // A frase que mandava para o clique errado não pode voltar: abrir ao
+    // público um canal sem agente deixa o canal tão mudo quanto estava.
+    expect(String(aviso.body)).not.toMatch(/abr(?:a|ir)\b/i);
+    expect(String(aviso.body)).not.toMatch(/p[uú]blico/i);
+    expect(String(aviso.body)).toMatch(/publique uma versão do agente/);
+  });
+
+  it("roteador ativo no canal já conta como agente: o aviso é o de testador", async () => {
+    // "Tem agente" não é só versão presa ao número: o roteador é a outra forma
+    // de o runtime achar quem responde. Contar só a primeira mandaria a pessoa
+    // publicar um agente que ela já publicou.
+    const cap = vazio();
+    vi.mocked(createAdminClient).mockReturnValue(
+      admin([canalMudo()], [], cap, { roteadores: [{ channel_session_id: CANAL }] }) as never,
+    );
+
+    await GET(req());
+
+    expect(String(cap.avisos[0]!.title)).toMatch(/testador autorizado/);
+  });
+
+  it("sem saber quem atende o canal, a rodada falha e NÃO grava aviso escolhido no chute", async () => {
+    const cap = vazio();
+    vi.mocked(createAdminClient).mockReturnValue(
+      admin([canalMudo()], [], cap, { erroEm: "ai_agents" }) as never,
+    );
+
+    const r = await GET(req());
+
+    expect(r.status).toBe(500);
+    expect(cap.avisos).toHaveLength(0);
   });
 
   it("sem o segredo, 403 e não lê nada", async () => {

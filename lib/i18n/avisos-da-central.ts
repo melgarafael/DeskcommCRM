@@ -10,6 +10,22 @@
 export const TEXTOS_AVISOS_DA_CENTRAL = {
   "Este canal está em modo de teste — a IA não responde ninguém": { es: "Este canal está en modo de prueba — la IA no le responde a nadie" },
   "Este canal está em modo de teste e não tem nenhum número autorizado, então a IA não responde a ninguém nele — as mensagens chegam no Inbox e ficam sem resposta automática. Em Conexões, autorize os números de teste ou abra o canal ao público.": { es: "Este canal está en modo de prueba y no tiene ningún número autorizado, así que la IA no le responde a nadie en él — los mensajes llegan al Inbox y se quedan sin respuesta automática. En Conexiones, autoriza los números de prueba o abre el canal al público." },
+  // #4909 — o aviso do canal mudo passou a nomear o canal e a distinguir os
+  // dois casos. O título ANTIGO continua traduzido porque aviso já gravado não
+  // se reescreve: uma instalação que atualizou no meio ainda tem linhas com ele.
+  "{canal} ({tipo}) está em modo de teste e não tem testador autorizado — a IA não responde nele": {
+    es: "{canal} ({tipo}) está en modo de prueba y no tiene probador autorizado — la IA no responde en él",
+  },
+  "{canal} ({tipo}) está em modo de teste e nenhum agente atende este canal — a IA não responde nele": {
+    es: "{canal} ({tipo}) está en modo de prueba y ningún agente atiende este canal — la IA no responde en él",
+  },
+  "O canal {canal} ({tipo}) está em modo de teste e não tem nenhum testador autorizado, então a IA não responde a ninguém nele — as mensagens chegam no Inbox e ficam sem resposta automática. Este aviso é deste canal, não dos outros. Em Conexões, autorize os números de teste deste canal (em canal de rede social, as contas de teste) ou abra este canal ao público.": {
+    es: "El canal {canal} ({tipo}) está en modo de prueba y no tiene ningún probador autorizado, así que la IA no le responde a nadie en él — los mensajes llegan al Inbox y se quedan sin respuesta automática. Este aviso es de este canal, no de los otros. En Conexiones, autoriza los números de prueba de este canal (en un canal de red social, las cuentas de prueba) o abre este canal al público.",
+  },
+  "O canal {canal} ({tipo}) está em modo de teste e nenhum agente publicado atende este canal, então a IA não responde a ninguém nele — as mensagens chegam no Inbox e ficam sem resposta automática. Este aviso é deste canal, não dos outros. Nenhum ajuste de acesso ou de testador faz a IA responder este canal: o que falta é ligar um agente. Em IA › Agentes, publique uma versão do agente e ligue-o a este canal; em Conexões, autorize os testadores se quiser testar antes.": {
+    es: "El canal {canal} ({tipo}) está en modo de prueba y ningún agente publicado atiende este canal, así que la IA no le responde a nadie en él — los mensajes llegan al Inbox y se quedan sin respuesta automática. Este aviso es de este canal, no de los otros. Ningún ajuste de acceso o de probador hace que la IA responda en este canal: lo que falta es conectar un agente. En IA › Agentes, publica una versión del agente y conéctalo a este canal; en Conexiones, autoriza a los probadores si quieres probar antes.",
+  },
+  "Canal sem nome": { es: "Canal sin nombre" },
   "Assim há {dias} dia(s).": { es: "Así desde hace {dias} día(s)." },
   "Resolvido pelo sistema: {motivo}.": { es: "Resuelto por el sistema: {motivo}." },
   "o canal ganhou número autorizado": { es: "el canal recibió un número autorizado" },

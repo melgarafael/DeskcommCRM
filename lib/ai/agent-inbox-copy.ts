@@ -161,6 +161,70 @@ export function kindLabel(kind: string, t: (texto: string) => string = (texto) =
   return t((KIND_LABEL as Record<string, string>)[kind] ?? "Aviso do assistente");
 }
 
+/**
+ * O AVISO DO CANAL MUDO — DOIS TEXTOS, PORQUE SÃO DOIS PROBLEMAS.
+ *
+ * O defeito medido (#4909): a Central dizia "Este canal está em modo de teste —
+ * a IA não responde ninguém" sem dizer QUAL canal, e numa organização com
+ * WhatsApp funcionando e um Instagram em teste o operador leu o aviso como
+ * "errado". O aviso não estava errado; estava anônimo.
+ *
+ * O segundo defeito é pior que o anonimato: o texto mandava "abra o canal ao
+ * público" também quando NENHUM agente atendia o canal. Ali abrir ao público não
+ * faz a IA responder — o que falta é publicar/ligar o agente. Cada caso leva a
+ * AÇÃO certa, e é por isso que são duas frases, não uma.
+ *
+ * Nada aqui muda o `ai_gate` nem a decisão de responder: o texto descreve o que
+ * o runtime já faz.
+ */
+export type CasoDoAvisoDoCanalMudo = "falta_testador" | "sem_agente";
+
+/** O nome da rede na tela. `unknown` (rede que o produto não desenha) não vira "unknown". */
+const ROTULO_DA_REDE: Record<string, string> = {
+  whatsapp: "WhatsApp",
+  instagram: "Instagram",
+  messenger: "Messenger",
+  telegram: "Telegram",
+};
+
+const TITULO_DO_CANAL_MUDO: Record<CasoDoAvisoDoCanalMudo, string> = {
+  falta_testador:
+    "{canal} ({tipo}) está em modo de teste e não tem testador autorizado — a IA não responde nele",
+  sem_agente:
+    "{canal} ({tipo}) está em modo de teste e nenhum agente atende este canal — a IA não responde nele",
+};
+
+const CORPO_DO_CANAL_MUDO: Record<CasoDoAvisoDoCanalMudo, string> = {
+  falta_testador:
+    "O canal {canal} ({tipo}) está em modo de teste e não tem nenhum testador autorizado, então a IA não responde a ninguém nele — as mensagens chegam no Inbox e ficam sem resposta automática. Este aviso é deste canal, não dos outros. Em Conexões, autorize os números de teste deste canal (em canal de rede social, as contas de teste) ou abra este canal ao público.",
+  sem_agente:
+    "O canal {canal} ({tipo}) está em modo de teste e nenhum agente publicado atende este canal, então a IA não responde a ninguém nele — as mensagens chegam no Inbox e ficam sem resposta automática. Este aviso é deste canal, não dos outros. Nenhum ajuste de acesso ou de testador faz a IA responder este canal: o que falta é ligar um agente. Em IA › Agentes, publique uma versão do agente e ligue-o a este canal; em Conexões, autorize os testadores se quiser testar antes.",
+};
+
+/**
+ * O título e o corpo do aviso, no idioma da organização — a Central mostra a
+ * linha como foi gravada, então a tradução acontece aqui, na escrita.
+ *
+ * `nome` é o rótulo que o operador vê em Conexões (`nomeDoCanal`); quando o
+ * canal não tem nome nenhum, a frase usa a reserva traduzida em vez de um
+ * buraco — "(Instagram) está em modo de teste" continua dizendo qual é.
+ */
+export function copyDoCanalMudo(
+  caso: CasoDoAvisoDoCanalMudo,
+  nome: string | null,
+  rede: string,
+  idioma: Idioma,
+): { title: string; body: string } {
+  const valores = {
+    canal: nome ?? traduzir("Canal sem nome", idioma),
+    tipo: traduzir(ROTULO_DA_REDE[rede] ?? "Canal", idioma),
+  };
+  return {
+    title: preencher(traduzir(TITULO_DO_CANAL_MUDO[caso], idioma), valores),
+    body: preencher(traduzir(CORPO_DO_CANAL_MUDO[caso], idioma), valores),
+  };
+}
+
 /** Por que ninguém ficou responsável — o que muda é a AÇÃO que cabe a quem lê. */
 export type PromessaSemDono =
   | "operador_sem_ferramentas"

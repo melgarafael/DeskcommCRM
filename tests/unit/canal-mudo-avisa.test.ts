@@ -4,7 +4,9 @@ import {
   avaliarCanal,
   DIAS_ATE_AVISAR,
   emModoDeTeste,
+  nomeDoCanal,
   numerosAutorizados,
+  redeDoCanal,
   type CanalParaAvaliar,
 } from "@/lib/channels/canal-mudo";
 
@@ -32,6 +34,7 @@ function canal(over: Partial<CanalParaAvaliar> = {}): CanalParaAvaliar {
     archived_at: null,
     last_status_change_at: haDias(DIAS_ATE_AVISAR + 1),
     metadata: { ai_gate: "allowlist", ai_test_phone_numbers: [] },
+    tem_agente: true,
     ...over,
   };
 }
@@ -131,5 +134,75 @@ describe("leitura da metadata — o que o operador digitou pode chegar torto", (
     expect(emModoDeTeste({ ai_gate: "open" })).toBe(false);
     expect(emModoDeTeste({ ai_gate_mode: "pre_go_live" })).toBe(false);
     expect(emModoDeTeste(null)).toBe(false);
+  });
+});
+
+/**
+ * QUAL DOS DOIS PROBLEMAS (#4909).
+ *
+ * O aviso antigo era o mesmo texto para os dois estados, e a saída que ele
+ * oferecia — "abra o canal ao público" — só resolve um deles. Sem agente
+ * publicado, abrir ao público deixa o canal exatamente tão mudo quanto estava.
+ */
+describe("o aviso distingue os dois casos", () => {
+  it("canal COM agente atrás: o que falta é liberar um testador", () => {
+    const d = avaliarCanal(canal({ tem_agente: true }), AGORA);
+    expect(d).toMatchObject({ acao: "avisar", caso: "falta_testador" });
+  });
+
+  it("canal SEM agente publicado: o que falta é ligar/publicar o agente", () => {
+    const d = avaliarCanal(canal({ tem_agente: false }), AGORA);
+    expect(d).toMatchObject({ acao: "avisar", caso: "sem_agente" });
+  });
+
+  it("o caso não muda QUANDO avisa — a régua dos dias continua a mesma", () => {
+    // Se o caso entrasse na conta do tempo, um canal sem agente passaria a
+    // avisar em outra régua e o defeito viraria dois.
+    const recente = canal({ tem_agente: false, last_status_change_at: haDias(DIAS_ATE_AVISAR - 1) });
+    expect(avaliarCanal(recente, AGORA).acao).toBe("aguardar");
+  });
+
+  it("o caso não interfere nos dias mudos que o corpo do aviso informa", () => {
+    // A decisão de responder NÃO muda com este aviso: só o texto e a saída.
+    const d = avaliarCanal(canal({ tem_agente: false }), AGORA);
+    expect(d.acao === "avisar" && d.diasMudo).toBe(DIAS_ATE_AVISAR + 1);
+  });
+});
+
+describe("o nome e a rede do canal — o aviso diz QUAL canal", () => {
+  it("o nome é o `display_name`, que é o que o operador vê em Conexões", () => {
+    expect(nomeDoCanal(canal({ display_name: "  Instagram da loja  " }))).toBe(
+      "Instagram da loja",
+    );
+  });
+
+  it("sem nome, cai no número; sem número, no nome da sessão do transporte", () => {
+    expect(nomeDoCanal(canal({ display_name: null, phone_number: "+55 11 90000-0000" }))).toBe(
+      "+55 11 90000-0000",
+    );
+    expect(
+      nomeDoCanal(canal({ display_name: "  ", phone_number: null, waha_session_name: "loja-1" })),
+    ).toBe("loja-1");
+  });
+
+  it("canal sem nome nenhum devolve `null` — quem escreve escolhe a reserva", () => {
+    expect(nomeDoCanal(canal({ display_name: null, phone_number: null }))).toBeNull();
+  });
+
+  it("a rede vem do TRANSPORTE traduzido — `zernio_social` pode ser Instagram ou Messenger", () => {
+    expect(redeDoCanal(canal({ provider: "waha" }))).toBe("whatsapp");
+    expect(redeDoCanal(canal({ provider: "meta_cloud" }))).toBe("whatsapp");
+    expect(
+      redeDoCanal(canal({ provider: "zernio_social", metadata: { social_platform: "instagram" } })),
+    ).toBe("instagram");
+    expect(
+      redeDoCanal(canal({ provider: "zernio_social", metadata: { social_platform: "facebook" } })),
+    ).toBe("messenger");
+    expect(redeDoCanal(canal({ provider: "telegram" }))).toBe("telegram");
+  });
+
+  it("transporte desconhecido não vira palavra inventada — é `unknown`", () => {
+    expect(redeDoCanal(canal({ provider: "zernio_social", metadata: {} }))).toBe("unknown");
+    expect(redeDoCanal(canal({ provider: null }))).toBe("unknown");
   });
 });
