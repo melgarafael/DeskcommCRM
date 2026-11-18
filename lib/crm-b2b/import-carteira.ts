@@ -6,7 +6,7 @@
  * fora do que `authenticated` grava: a única porta é `fn_definir_carteira_do_cliente`
  * (service role, com o ator passado de fora). É por ela que isto passa — nunca um
  * UPDATE direto —, e é ela que decide a posse: o Atendente só é dono dele mesmo,
- * e só do contato que criou nesta importação (migration 9421); gerente e admin
+ * e só do contato que criou nesta importação (migration 9431); gerente e admin
  * escolhem qualquer membro ativo.
  *
  * Só entram os contatos CRIADOS pelo lote (`source_metadata.import_batch_id`). Um

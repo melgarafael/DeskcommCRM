@@ -99,7 +99,7 @@ begin
         from public.contacts c
        where c.id = p_contact
          and c.organization_id = p_org;
-      -- 9421 (A23, #4888): a IMPORTAÇÃO própria. Quem importa a planilha cria o
+      -- 9431 (A23, #4888): a IMPORTAÇÃO própria. Quem importa a planilha cria o
       -- contato e o recebe na carteira: contato SEM dono, criado por ele nesta
       -- importação (`source = 'import_csv'`, `created_by_user_id` = ele) e dono
       -- pedido = ele mesmo, com a origem `importacao`. Nada mais passa por aqui:
