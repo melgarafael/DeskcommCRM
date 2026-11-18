@@ -43,6 +43,8 @@ import { audit } from "@/lib/audit";
 import { nomesDosAtendentesCom } from "@/lib/users/nome-do-atendente";
 import type { McpContext, McpToolDefinition } from "../types";
 import { ApiError } from "@/lib/api/types";
+import { filtrarCamposLegiveisPelaIa } from "@/lib/leads/campos-do-funil";
+import { settingsDoFunil } from "@/lib/leads/campos-exigidos";
 
 /**
  * A recusa ÚNICA das leituras de negócio durante um turno: negócio de outro
@@ -182,6 +184,49 @@ async function enrichLeads(
   }));
 }
 
+/**
+ * O recorte do turno (#4669): DENTRO de um turno de agente o `custom_fields`
+ * de TODA resposta de negócio é o que o modelo lê — leitura e escrita, porque
+ * `crm_update_lead` e as irmãs devolvem a linha inteira (`select *`) e o modelo
+ * a lê do mesmo jeito. Só saem as chaves que o dono do funil marcou "A IA pode
+ * ler". Sem turno (token de pessoa) a ficha volta inteira: quem lê é uma
+ * pessoa, com a permissão dela. Um `settings` por funil distinto, sem N+1.
+ */
+async function recortarParaOTurno(
+  ctx: McpContext,
+  leads: Array<Record<string, unknown>>,
+): Promise<Array<Record<string, unknown>>> {
+  if (!ctx.contatoDoTurno || leads.length === 0) return leads;
+  const funis = [...new Set(leads.map((l) => l.pipeline_id as string | null | undefined))];
+  const settingsPorFunil = new Map(
+    await Promise.all(
+      funis.map(async (id) => [id, await settingsDoFunil(ctx.supabase, id, ctx.organizationId)] as const),
+    ),
+  );
+  return leads.map((l) =>
+    "custom_fields" in l
+      ? {
+          ...l,
+          custom_fields: filtrarCamposLegiveisPelaIa(
+            settingsPorFunil.get(l.pipeline_id as string | null | undefined) as
+              | Record<string, unknown>
+              | null,
+            l.custom_fields,
+          ),
+        }
+      : l,
+  );
+}
+
+/** O mesmo recorte para a resposta de UM negócio. */
+async function recortarUmParaOTurno(
+  ctx: McpContext,
+  lead: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const [recortado] = await recortarParaOTurno(ctx, [lead]);
+  return recortado ?? lead;
+}
+
 // ---------------------------------------------------------------------------
 // list
 // ---------------------------------------------------------------------------
@@ -236,7 +281,7 @@ export const crmListLeads: McpToolDefinition<typeof listInputShape> = {
       },
     );
     return {
-      leads: await enrichLeads(ctx, result.leads),
+      leads: await enrichLeads(ctx, await recortarParaOTurno(ctx, result.leads)),
       cursor: result.cursor,
       has_more: result.has_more,
     };
@@ -327,7 +372,7 @@ export const crmGetLead: McpToolDefinition<typeof getInputShape> = {
       // Defesa em profundidade — service-role bypassa RLS.
       throw new Error("not_found");
     }
-    const [enriched] = await enrichLeads(ctx, [lead]);
+    const [enriched] = await enrichLeads(ctx, await recortarParaOTurno(ctx, [lead]));
     return { lead: enriched };
   },
 };
@@ -512,7 +557,7 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
       },
     );
     return {
-      lead,
+      lead: await recortarUmParaOTurno(ctx, lead),
       ...(conferencia.recusados.length > 0
         ? {
             campos_nao_gravados: conferencia.recusados,
@@ -591,7 +636,7 @@ export const crmUpdateLead: McpToolDefinition<typeof updateInputShape> = {
         : { ...parsed, custom_fields: conferencia.custom_fields },
     );
     return {
-      lead,
+      lead: await recortarUmParaOTurno(ctx, lead),
       ...(conferencia.recusados.length > 0
         ? {
             campos_nao_gravados: conferencia.recusados,
@@ -663,7 +708,7 @@ export const crmMoveLeadStage: McpToolDefinition<typeof moveInputShape> = {
         lost_reason: input.lost_reason,
       },
     );
-    return { lead };
+    return { lead: await recortarUmParaOTurno(ctx, lead) };
   },
 };
 
@@ -704,7 +749,7 @@ export const crmRetomarLead: McpToolDefinition<typeof retomarInputShape> = {
       input.lead_id,
       { stage_id: input.stage_id },
     );
-    return { lead };
+    return { lead: await recortarUmParaOTurno(ctx, lead) };
   },
 };
 
