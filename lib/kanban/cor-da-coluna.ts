@@ -16,9 +16,13 @@ import type { CSSProperties } from "react";
  */
 const HEX_DE_SEIS = /^#[0-9a-fA-F]{6}$/;
 
-/** Quanto da cor da etapa entra no fundo da coluna e na borda dela. */
-export const PORCENTAGEM_DO_FUNDO = 28;
-export const PORCENTAGEM_DA_BORDA = 55;
+/**
+ * Quanto da cor da etapa entra no fundo da coluna e na borda dela. Tom leve de
+ * propósito (doc 382 do mantenedor, B): o guia visual pede acento discreto em área
+ * grande, e a borda continua o dobro do fundo para a fase ser reconhecível.
+ */
+export const PORCENTAGEM_DO_FUNDO = 18;
+export const PORCENTAGEM_DA_BORDA = 36;
 
 export function corDaEtapaValida(cor: string | null | undefined): cor is string {
   return typeof cor === "string" && HEX_DE_SEIS.test(cor);

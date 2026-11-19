@@ -5,10 +5,10 @@ import { bordaDaColuna, corDaEtapaValida, fundoDaColuna } from "./cor-da-coluna"
 describe("cor da etapa na coluna (#4802 item 2, continuação)", () => {
   it("hex de seis dígitos vira fundo pastel pela mistura com o tema, não cor chapada", () => {
     expect(fundoDaColuna("#0091ff")).toEqual({
-      backgroundColor: "color-mix(in srgb, #0091ff 28%, var(--color-surface-elevated))",
+      backgroundColor: "color-mix(in srgb, #0091ff 18%, var(--color-surface-elevated))",
     });
     expect(bordaDaColuna("#0091ff")).toEqual({
-      borderColor: "color-mix(in srgb, #0091ff 55%, var(--color-border))",
+      borderColor: "color-mix(in srgb, #0091ff 36%, var(--color-border))",
     });
   });
 

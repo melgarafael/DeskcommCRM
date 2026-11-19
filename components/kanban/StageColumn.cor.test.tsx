@@ -30,10 +30,10 @@ describe("StageColumn com a cor da etapa", () => {
     const { container } = montar("#ab4aba");
     const coluna = container.querySelector<HTMLElement>("[data-etapa-do-quadro]")!;
     const cabecalho = container.querySelector<HTMLElement>("[data-cabecalho-da-etapa]")!;
-    expect(coluna.getAttribute("style")).toContain("color-mix(in srgb, #ab4aba 28%");
-    expect(coluna.getAttribute("style")).toContain("color-mix(in srgb, #ab4aba 55%");
-    expect(cabecalho.getAttribute("style")).toContain("color-mix(in srgb, #ab4aba 55%");
-    expect(cabecalho.firstElementChild!.getAttribute("style")).toContain("color-mix(in srgb, #ab4aba 28%");
+    expect(coluna.getAttribute("style")).toContain("color-mix(in srgb, #ab4aba 18%");
+    expect(coluna.getAttribute("style")).toContain("color-mix(in srgb, #ab4aba 36%");
+    expect(cabecalho.getAttribute("style")).toContain("color-mix(in srgb, #ab4aba 36%");
+    expect(cabecalho.firstElementChild!.getAttribute("style")).toContain("color-mix(in srgb, #ab4aba 18%");
   });
 
   it("com a opção desligada (o padrão), a etapa colorida continua só na bolinha", () => {
