@@ -22503,6 +22503,12 @@ export const DICIONARIO: Traducoes = {
   "Progresso do checklist": { es: "Progreso de la lista de verificación" },
   "Não foi possível carregar o checklist.": { es: "No fue posible cargar la lista de verificación." },
   "alguém da equipe": { es: "alguien del equipo" },
+  "Um atendimento precisa de uma pessoa da equipe.": { es: "Una conversación necesita atención de una persona del equipo." },
+  "Responda pelo CRM; responder a este aviso não chega ao cliente.": { es: "Responde desde el CRM; responder a este aviso no le llega al cliente." },
+  "Aviso à equipe": { es: "Aviso al equipo" },
+  "aceito pelo canal de WhatsApp.": { es: "aceptado por el canal de WhatsApp." },
+  "entrega não confirmada; confira o WhatsApp. Não haverá reenvio automático.": { es: "entrega no confirmada; revisa WhatsApp. No habrá reenvío automático." },
+  "não enviado; acompanhe este atendimento pelo CRM.": { es: "no enviado; haz seguimiento de esta conversación desde el CRM." },
 };
 
 /**
