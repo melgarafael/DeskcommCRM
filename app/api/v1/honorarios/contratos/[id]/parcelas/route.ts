@@ -54,6 +54,33 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   const { id: contratoId } = await ctx.params;
 
   const supabase = authz.supabase;
+
+  // ─── O CONTRATO VEM DA URL E É RESOLVIDO DENTRO DA EMPRESA ATIVA (#4845) ───
+  //
+  // A lista de parcelas era lida só por `contrato_id`, confiando na RLS — que
+  // libera as parcelas de TODAS as empresas de que a pessoa é membro. O id de um
+  // contrato da outra empresa (que a lista de contratos mostrava até o #4859)
+  // abria o calendário de pagamento dela.
+  //
+  // Filtrar só as parcelas pela empresa devolveria `[]`, indistinguível de um
+  // contrato da própria empresa ainda sem parcela. Por isso o contrato é
+  // resolvido primeiro e a ausência é 404 — a mesma resposta de um id que não
+  // existe, que não confirma a existência do contrato em outra empresa.
+  const { data: contrato, error: erroContrato } = await supabase
+    .from("honorarios_contratos")
+    .select("id")
+    .eq("organization_id", authz.organizationId)
+    .eq("id", contratoId)
+    .maybeSingle();
+
+  if (erroContrato) {
+    if (moduloNaoInstalado(erroContrato)) {
+      return fail("module_not_installed", MODULO_NAO_INSTALADO, 409, { requestId });
+    }
+    return fail("internal_error", erroContrato.message, 500, { requestId });
+  }
+  if (!contrato) return fail("not_found", "Contrato não encontrado.", 404, { requestId });
+
   const { data, error } = await supabase
     .from("honorarios_parcelas")
     .select("id, contrato_id, numero, vencimento, valor_cents, currency, financial_entry_id, status")

@@ -313,6 +313,13 @@ const CASOS: readonly Caso[] = [
     params: { id: CONTRATO_A },
     linhas: {
       ...ORGS,
+      // O contrato é RESOLVIDO antes das parcelas (#4845): a rota confere que o
+      // id da URL é de um contrato da empresa ativa. Sem estas linhas o
+      // `maybeSingle` devolve null e a leitura legítima cai em 404.
+      honorarios_contratos: [
+        { id: CONTRATO_A, organization_id: ORG_A },
+        { id: CONTRATO_B, organization_id: ORG_B },
+      ],
       honorarios_parcelas: [
         { id: PARCELA_A, organization_id: ORG_A, contrato_id: CONTRATO_A, numero: 1, vencimento: "2026-12-01", valor_cents: 100, currency: "BRL", financial_entry_id: null, status: "pendente" },
         { id: PARCELA_B, organization_id: ORG_B, contrato_id: CONTRATO_B, numero: 1, vencimento: "2026-12-01", valor_cents: 200, currency: "BRL", financial_entry_id: null, status: "pendente" },
@@ -323,7 +330,9 @@ const CASOS: readonly Caso[] = [
     recurso: "honorarios_parcelas",
     recursoDoTeto: "honorarios_parcelas_listar",
     status: 200,
-    paraB: "lista_vazia",
+    // B pede as parcelas do CONTRATO_A: o contrato não é da empresa dele, então
+    // a resposta é 404 (a mesma de um id inexistente), e não uma lista vazia.
+    paraB: "404",
     colecao: { daA: PARCELA_A, daB: PARCELA_B },
   },
 ];

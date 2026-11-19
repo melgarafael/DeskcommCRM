@@ -150,6 +150,39 @@ export async function POST(req: NextRequest): Promise<Response> {
   const supabase = await createClient();
   const org = authz.org.orgId;
 
+  // ─── O ID VEM DE FORA E É RESOLVIDO DENTRO DA EMPRESA ATIVA (#4845) ────────
+  //
+  // `appointment_id` e `contact_id` chegam no CORPO. Até aqui a rota os repassava
+  // ao insert confiando na RLS — e a RLS de `calendar_appointments` libera TODAS
+  // as empresas de que a pessoa é membro (`fn_can_view_appointment`) e todas para
+  // o admin da plataforma. Quem participa de duas empresas abria, na A, uma
+  // comanda apontando para o atendimento (e o cliente) da B; a comanda nascia na
+  // A e o serviço ficava pendente na B.
+  //
+  // A recusa é 404 e não 403: a mensagem é a MESMA de um id inexistente, então a
+  // resposta não confirma que o registro existe em outra empresa.
+  if (lido.data.appointment_id) {
+    const { data: atendimento, error: erroAtendimento } = await supabase
+      .from("calendar_appointments")
+      .select("id")
+      .eq("organization_id", org)
+      .eq("id", lido.data.appointment_id)
+      .maybeSingle();
+    if (erroAtendimento) return fail("internal_error", erroAtendimento.message, 500, { requestId });
+    if (!atendimento) return fail("not_found", "Atendimento não encontrado.", 404, { requestId });
+  }
+
+  if (lido.data.contact_id) {
+    const { data: contato, error: erroContato } = await supabase
+      .from("contacts")
+      .select("id")
+      .eq("organization_id", org)
+      .eq("id", lido.data.contact_id)
+      .maybeSingle();
+    if (erroContato) return fail("internal_error", erroContato.message, 500, { requestId });
+    if (!contato) return fail("not_found", "Contato não encontrado.", 404, { requestId });
+  }
+
   // IDEMPOTÊNCIA POR AGENDAMENTO, antes de qualquer escrita.
   //
   // O índice único da 0243 é a garantia de verdade (duas requisições simultâneas
