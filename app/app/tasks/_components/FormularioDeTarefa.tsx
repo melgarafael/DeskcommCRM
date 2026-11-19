@@ -24,6 +24,7 @@ import { useUser } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import {
+  periodicidadeDaRegra,
   type NovaTarefa,
   type PeriodicidadeDaSerie,
   type PrioridadeDaTarefa,
@@ -158,7 +159,7 @@ export function FormularioDeTarefa({
   // tarefa, e pedir a mesma hora outra vez seria um campo a mais para errar.
   const regraDaTarefa = tarefa?.recurrence ?? null;
   const [repeticao, setRepeticao] = useState<EscolhaDaRepeticao>(
-    regraDaTarefa?.ativa ? regraDaTarefa.tipo : NAO_REPETE,
+    regraDaTarefa?.ativa ? periodicidadeDaRegra(regraDaTarefa) : NAO_REPETE,
   );
   const [diasDaSerie, setDiasDaSerie] = useState<number[]>(regraDaTarefa?.dias ?? []);
   const [diaDoMes, setDiaDoMes] = useState<number>(regraDaTarefa?.dia_do_mes ?? 1);

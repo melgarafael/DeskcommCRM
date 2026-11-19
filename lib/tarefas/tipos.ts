@@ -92,6 +92,17 @@ export interface RegraDeRecorrencia {
   ativa: boolean;
 }
 
+/**
+ * A periodicidade de uma regra COMO ELA CHEGA DO BANCO. A série gravada antes de
+ * `tipo` existir (1.114 a 1.116: `{"dias":[1],"hora":9,"ativa":true}`) não tem
+ * o campo, e sempre foi semanal. A API devolve `recurrence` cru, então a TELA
+ * precisa do mesmo critério de `normalizarRegra` (servidor). Ela não importa
+ * `lib/tarefas/recorrencia.ts`, porque esse módulo puxa banco e logger.
+ */
+export function periodicidadeDaRegra(regra: { tipo?: PeriodicidadeDaSerie }): PeriodicidadeDaSerie {
+  return regra.tipo ?? "semanal";
+}
+
 /** Uma linha de `crm_tasks`, como a API a devolve. */
 export interface Tarefa {
   id: string;
