@@ -12,8 +12,8 @@ num follow-up: essa seção só existe dentro da ficha.
 
 Agora o cabeçalho da conversa tem um botão "Ficha" entre 768 e 1279 px. Ele abre
 a gaveta que já existia — não há segundo painel — e a seção de follow-up vem
-junto. Abaixo de 768 px nada muda (a barra do celular continua com o botão dela)
-e a partir de 1280 px a ficha continua sendo a coluna da direita, sem botão
-duplicado. O corte de 1280 px não foi tocado: ele é decisão de layout medida.
+junto. Abaixo de 768 px nada muda e a partir de 1280 px a ficha continua sendo a
+coluna da direita, sem botão duplicado. O corte de 1280 px não foi tocado: ele é
+decisão de layout medida.
 
 Contribuição de @webtecnica, a partir da issue #4822.
