@@ -8,6 +8,261 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.119.0] — 2026-11-19
+
+### Adicionado
+
+- **O contato que veio da prospecção vira Empresa com um clique, na ficha** Com o módulo "Empresas e pessoas" ligado, a ficha de um contato que foi criado
+  pela prospecção ganha o cartão "Empresa da prospecção" com o botão "Transformar
+  em empresa". Ele cria a Empresa (ou reaproveita a que já existe para o mesmo
+  negócio do Google Maps, na mesma organização), liga o contato a ela e leva os
+  dados que a prospecção guardou: site, link do Maps e endereço. Depois do clique,
+  o cartão mostra a Empresa, com o link para a página dela. O cartão "Empresa" aparece
+  também na ficha de qualquer contato que já esteja ligado a uma empresa, venha ele
+  de onde vier.
+
+  O endereço só é separado em campos quando segue o formato brasileiro padrão; o
+  resto fica em branco para a equipe completar, e campo já preenchido não é
+  sobrescrito. Passados os 365 dias em que a prospecção guarda os dados, a Empresa
+  nasce só com nome, telefone e link do Maps. O botão é de Atendente para cima. Com
+  o módulo desligado, nada muda. Nenhuma ação na atualização.
+
+  Contribuição de @xofrd, a partir da issue #3198 (fatia 3).
+
+- **Catálogo de IA diz por que um provedor não declara onde processa, e o que o endpoint próprio muda** A cláusula de transferência internacional e a tela já mostravam, para cada provedor de IA, o país quando ele é conhecido. Faltavam duas respostas, e as duas eram escritas à mão em quem monta o contrato: **por que** um provedor não declara a região de processamento, e **o que acontece com o lugar** quando o operador aponta a base URL para outro endereço.
+
+  O catálogo inteiro (conversa, decisão e voz) passa a guardar as duas, com o motivo escrito por provedor. Com endpoint próprio, a execução passa a ser no host configurado e o país registrado deixa de valer; no provedor personalizado, o texto fica no servidor do operador, e o CRM não sabe onde ele está. Nada muda no que a cláusula gerada imprime hoje: nenhum país novo é afirmado sem fonte.
+
+  A partir da issue #4518.
+
+  Contribuição de @webtecnica (#4876, #4518).
+
+- **O teto de respostas por conversa passa a ser configurável pela empresa** O teto que impede dois robôs de conversarem sozinhos existia, mas só se ajustava no arquivo de configuração da instalação — uma empresa não podia apertar o próprio limite sem reiniciar o servidor. Agora ele se configura por empresa, pela API do anti-ban (ainda sem tela): quantas respostas automáticas cabem numa janela, a largura da janela em minutos e quanto tempo a conversa fica pausada ao bater o teto.
+
+  Quem não configurou segue com o mesmo teto (20 respostas da IA por conversa em 60 minutos, ou o número que estiver no arquivo de configuração da instalação), mas uma coisa muda em toda instalação: ao bater o teto, a conversa agora também é pausada, pelo mesmo tempo da janela, até 60 minutos (60 no padrão). Para não pausar, grave `silenciar_minutos: 0`. O disparo de campanha não é afetado.
+
+  Ao bater o teto, a resposta não sai, a conversa é pausada como pelo botão de pausar a IA (o atendente a devolve quando quiser) e um aviso abre na Central. A pausa vai a no máximo 24 horas e nunca desfaz uma pausa mais longa feita à mão. A conferência "Parar a conversa que virou pingue-pongue" da ficha do agente explica onde ajustar.
+
+  Contribuição de @webtecnica, a partir da issue #4590.
+
+- **A ferramenta crm_list_pipelines traz os campos de cada funil, com a chave que o agente deve gravar** Quem lê o CRM por MCP não tinha como saber a CHAVE de um campo do funil, e inventava uma em `custom_fields`, e o valor ficava órfão no card, sem aparecer na ficha. Agora `crm_list_pipelines` devolve, por funil, `campos` com `key`, `label`, `type`, `escopo` e, nos campos de lista, os `options[].value` aceitos, pela mesma leitura que a ficha usa; funil sem campo devolve `campos: []`. A descrição da ferramenta cresceu 55 tokens.
+
+  Contribuição de @webtecnica (#4667), com desenho convergente de @tabaterral (#4733).
+
+- **O modelo que o Jev usa para decidir passa a ser escolhido na tela dele, com aceite novo a cada troca** O Jev decide coisas como passar a conversa para uma pessoa, reconhecer quem pediu para sair da lista e medir o clima da conversa, e até aqui o modelo dessas decisões era fixo: o typesafe/jev-1.13. A tela dele, em Provedores de IA, ganhou o campo "Modelo do decisor": quem usa o Jev pela OpenRouter pode apontar outro modelo que declare a saída de decisões lá, e a escolha vale para todas as tarefas do Jev de uma vez. Dá para voltar ao Jev com um clique, e se o modelo escolhido falhar numa conversa o Jev responde no lugar dele. Contribuição de @webtecnica (issue #4710).
+
+  Trocar o modelo troca quem recebe a mensagem do cliente, então cada troca pede o "concordo" de novo, nomeando o fornecedor escolhido; voltar ao Jev não pede. Ninguém conferiu os termos de privacidade, retenção e treino dos fornecedores do catálogo: o aceite diz que a empresa assume essa conferência, em especial nos modelos gratuitos.
+
+  O Jev continua sendo o padrão de quem não mexer em nada, e a troca usa a mesma credencial OpenRouter da conversa. A orientação na tela é deixar a tarefa em Observando e comparar antes de deixar outro modelo decidir.
+
+- **Meta de vendas pode ser em valor vendido, além da quantidade, e por vendedor** A meta mensal do Desempenho agora escolhe o indicador: quantidade de vendas ganhas ou valor vendido, na moeda da organização. O realizado em valor é a soma do valor dos negócios ganhos fechados dentro da janela da meta — a mesma janela da contagem, sem segunda régua —, e o painel mostra o valor realizado, o percentual, o quanto falta e a projeção até o fim do mês. A meta pode ser da empresa inteira ou de um vendedor, nos mesmos três níveis de escopo (empresa, funil e vendedor). Metas já cadastradas continuam valendo por quantidade: o indicador novo só entra quando alguém escolhe valor ao salvar.
+
+  Contribuição de @webtecnica (#4820, #4796).
+
+- **As etapas do funil mudam de ordem arrastando a coluna, não só pelas setas** Em Configurações › Etapas do funil, cada etapa ganha uma alça à esquerda do número: arraste a coluna até o lugar certo e solte. Antes, a ordem só mudava pelas setas, uma casa por clique, e levar a última de oito colunas para o começo pedia sete cliques. A linha fica onde foi solta enquanto a mudança é gravada, e volta ao lugar de antes, com o motivo na tela, se o servidor recusar. As setas continuam, para quem usa teclado ou leitor de tela, e o quadro do funil passa a mostrar a ordem nova sem recarregar, como já acontecia com as setas. Nenhuma ação é pedida a quem opera a instalação. Contribuição de @officialasishkumar (#4802).
+
+- **O relatório de vendas do Desempenho sai em CSV, com o período no nome do arquivo** A tela de Desempenho mostrava o resultado de vendas por atendente — ganhos, perdidos, conversas e o tempo da primeira resposta — e não tinha porta de saída: levar o número para a gestão ou abrir numa planilha dependia de print ou digitação. Agora o botão "Exportar vendas", ao lado do filtro de atendente, baixa um CSV com a tabela da tela, no formato das outras exportações, que o Excel em português abre com acento e colunas certos.
+
+  O nome do arquivo traz o período (`vendas-por-atendente-AAAA-MM-DD_a_AAAA-MM-DD.csv`), e sai o recorte que está na tela. Exportar exige papel de gestão (`manager`), e cada arquivo baixado fica registrado na auditoria, sem o conteúdo da venda.
+
+  Contribuição de @webtecnica (#4849, #4802).
+
+- **Aviso de transferência pode incluir o primeiro nome do cliente** No Aviso no WhatsApp, a mensagem que avisa a equipe quando a IA passa um atendimento para uma pessoa pode agora mostrar o primeiro nome do cliente, além do link. A opção fica em IA › Avisos, abaixo do aviso de transferência, e nasce desligada: por padrão a mensagem continua mínima. O motivo da transferência não vai para o WhatsApp; ele continua no CRM, ao abrir a conversa. Crédito: @atendimentoreload-boop.
+
+  Contribuição de @atendimentoreload-boop (#4814).
+
+- **A conexão presa em "Conectando…" passa a ser religada sozinha — e avisa quando não volta** A sessão do WhatsApp no canal não oficial podia ficar dias em "Conectando…" sem receber mensagem nenhuma, e o produto não avisava ninguém.
+
+  Agora, passados cinco minutos em "Conectando…", o sistema reinicia a sessão como o botão Reconectar, sem pedir o QR de novo. As tentativas são espaçadas pelo mesmo prazo e param em três; se a sessão não voltar, a Central de avisos recebe o caso com o caminho para resolver à mão. Na Central, "Conectando…" acima de cinco minutos aparece como aviso e sobe para crítico quando as tentativas se esgotam. Uma conexão que funciona nunca é reiniciada por esse caminho.
+
+  Os três números podem ser ajustados por instalação, em milissegundos para o prazo e o intervalo e em tentativas para o limite (`WHATSAPP_STARTING_PRAZO_MS`, `WHATSAPP_STARTING_INTERVALO_MS` e `WHATSAPP_STARTING_LIMITE`); sem eles, valem os padrões acima.
+
+  Contribuição de @webtecnica (#4875, #4870).
+
+- **Rotas da agenda aceitam token de integração** As rotas de leitura da agenda (`agenda/configuracao`, `agenda/enderecos`, `agenda/excecoes`, `agenda/horarios-livres`, `agenda/pessoas` e `agenda/vinculos`), a de remoção de bloqueio (`agenda/excecoes` DELETE) e a de reativar tipo de agendamento (`agenda/tipos/reativar`) passam a aceitar o token `dsk_…` de servidor. A leitura exige o escopo `mcp:read`, a escrita exige `mcp:write`, e cada chamada conta no teto do token e da organização. Consultar horários livres pede papel `agent` no token; remover bloqueio de dia pede `manager`. Continuam somente de sessão a criação de bloqueio de dia, as agendas Google da pessoa, a decisão de conflito do Google e a leitura de um compromisso pelo id.
+
+  Contribuição de @paulolimajr77 (#4391, Spec 33, fatia 5 de 9).
+
+- **Catálogo de serviços como módulo opcional: serviço com tipo, variações, prazo e sinal** Novo módulo opcional, instalado em Módulos pelo administrador da instalação. Sem instalar, nada muda: a tabela do módulo não existe, as rotas de serviço respondem 404 e a busca de produtos do agente segue igual.
+
+  Depois de instalar, um item do catálogo pode ser serviço: hora marcada, projeto ou plano recorrente, com variações (cada uma com nome, código e preço próprios), prazo em dias úteis no projeto, sinal percentual ou fixo e instruções internas para o agente. O cadastro fica em CRM › Ver tudo em CRM › Serviços, que só aparece com o módulo instalado. O preço continua sendo o do item do catálogo. O agente passa a responder com "a partir de", as variações, o sinal calculado e o prazo, e não oferece o serviço marcado para não oferecer. O sinal fixo nunca passa do menor preço da família. Base de @webtecnica (#3480).
+
+  Contribuição de @webtecnica (#3480, #3372).
+
+- **Rotas de chamadas aceitam token de integração** A rota de histórico de chamadas (`calls`) passa a aceitar o token `dsk_…` de servidor para listagem (`mcp:read`, papel `viewer`), com suporte a paginação e filtros por contato e período. A consulta é filtrada pela organização da linha do token. A iniciação de novas ligações continua restrita à sessão autenticada de usuário.
+
+  Contribuição de @paulolimajr77 (#4391, Spec 33, fatia 5 de 9).
+
+- **O túnel da Cloudflare pode ficar fixo em http2 quando o provedor bloqueia UDP** Em instalações atrás do Cloudflare Tunnel (`REVERSE_PROXY=cloudflared`), o túnel tenta sempre o protocolo QUIC primeiro, que usa UDP. Em VPS cujo provedor descarta UDP de saída, cada reconexão passava minutos falhando antes de cair para http2, e o painel da Cloudflare marcava o túnel como "degraded" nessa janela. Agora dá para pôr `CLOUDFLARED_PROTOCOL=http2` no `.env` e o túnel conecta direto por http2. Sem a variável, nada muda: o padrão continua `auto`. Como confirmar se é o seu caso está em `docs/runbooks/deploy.md`, seção 5.
+
+  Contribuição de @a0001f (#4981).
+
+- **O quadro ganha a opção de pintar a coluna inteira com a cor da etapa, em tom pastel** Desde a escolha da cor da etapa em Configurações › Etapas do funil, o quadro mostrava o tom só numa bolinha ao lado do nome. Agora há um botão **Cor na coluna**, ao lado de «Compacta», que pinta a coluna inteira em tom pastel, nos temas claro e escuro. A escolha é de cada pessoa e fica no navegador; **o padrão continua sendo só a bolinha**. Etapa sem cor («Padrão») continua neutra. Continua o trabalho de @webtecnica no #4846 (item 2 da #4802). Nenhuma ação é necessária na VPS.
+
+  Contribuição de @xofrd (#4976).
+
+- **Em conversa de grupo, cada participante tem uma cor fixa no nome** Na Inbox, numa conversa de grupo do WhatsApp, o nome de quem mandou cada mensagem aparecia
+  sempre no mesmo cinza, e num grupo movimentado era difícil saber de relance quem estava
+  falando.
+
+  Agora o nome de cada participante sai numa cor própria, como no WhatsApp do celular, a
+  mesma em todo o fio e em outro computador, nos temas claro e escuro. O balão não muda de
+  cor, e duas pessoas podem cair na mesma cor. Mensagens da sua equipe e apagadas continuam
+  sem cor.
+
+  Nada muda em quem já opera uma instalação: é só a aparência da conversa.
+
+  Ideia e primeira versão de @kvgroup01 (#4027).
+
+  Contribuição de @kvgroup01 (#4027, entregue pelo #4962).
+
+- **Rotas de demandas aceitam token de integração** A rota de detalhe e gestão de demandas (`demandas/[id]`) passa a aceitar o token `dsk_…` de servidor. Integrações podem consultar dados da demanda (`mcp:read`, papel `agent`) e atualizar próximo passo ou encerrar a demanda (`mcp:write`, papel `agent`). A organização é isolada estritamente pela linha do token, impedindo acesso a demandas de outros tenants.
+
+  Contribuição de @paulolimajr77 (#4391, Spec 33, fatia 5 de 9).
+
+- **Financeiro e honorários aceitam token de integração para leitura** As rotas de leitura do catálogo financeiro, das comandas (a lista, uma comanda e a fila de faturamento), da fidelidade (saldo e extrato), do extrato de lançamentos e dos contratos e parcelas de honorários agora aceitam o token de integração (`Authorization: Bearer dsk_…`). A leitura pede a permissão `mcp:read` e o mesmo papel que a tela já exige; a organização é a do token, e cada chamada conta no teto do token e da organização: passou do limite, a resposta é 429 com `Retry-After`.
+
+  Toda escrita no financeiro e nos honorários continua só pela tela e recusa o token com 401: abrir, alterar e cancelar comanda, lançar e tirar item, finalizar, estornar e faturar em lote, catálogo, fidelidade, lançamentos e contratos e parcelas de honorários. Abrir a escrita por token virá numa fatia própria.
+
+  Contribuição de @paulolimajr77 (#4391).
+
+- **Cada número pode escolher o funil onde os contatos novos entram** Em Conexões, o cartão de cada número (WhatsApp, oficial ou rede social com caixa de entrada) ganha o botão **Funil de entrada**. Escolha o funil e, se quiser, a etapa: quem escrever pela primeira vez para aquele número vira negócio ali, e não no funil padrão da empresa. Serve, por exemplo, para o número de atacado alimentar o funil de atacado. Sem escolha, nada muda. Quem já é cliente e as campanhas com funil próprio seguem as regras delas, e se o funil escolhido for arquivado os contatos voltam a entrar no funil padrão. Crédito: @Denispds.
+
+  Contribuição de @Denispds (#4921).
+
+- **Operação do dia e relatório diário salvo no CRM** Nova tela em Análise › Operação do dia: num lugar só, quem chegou no dia (conversas
+  novas e conversas com mensagem do cliente, separadas por WhatsApp, Instagram e outros),
+  quem está esperando uma pessoa e há quanto tempo, os projetos grandes, as reclamações e
+  urgências e os pedidos de produto (pelas etiquetas da conversa e pelo que a IA buscou
+  no catálogo), os negócios ganhos, perdidos e em proposta, e o que falhou (mensagens com
+  falha ou presas, erros da IA, canais fora do ar e avisos abertos na Central). Cada linha
+  leva o contato, o canal, o resumo, a próxima tarefa, o responsável e o link da conversa.
+  A tela se atualiza sozinha a cada 30 segundos e deixa escolher um dia anterior.
+
+  Todo dia, na hora marcada (21h no fuso da empresa, por padrão), o CRM salva o relatório
+  do dia em Análise › Relatórios do dia, com o texto pronto para colar. Gestores podem
+  gerar ou regerar o relatório pelo botão "Gerar relatório agora"; o administrador escolhe
+  as etiquetas, as etapas que contam como proposta e a hora do relatório na mesma tela. O
+  fuso de Beirute (Líbano) passa a estar na lista de fusos.
+
+  Contribuição de @lebaneseforas-byte (#4722).
+
+- **Nível `telas_principais` passa a ter régua medida, e um idioma novo aparece sem cobrar toda frase** O nível `telas_principais` do registro de idiomas deixou de ser uma promessa sem critério: existe agora a régua que o confere: as frases das telas do menu lateral, com piso de dois terços. Medido nesta árvore: 16 telas e 4.573 frases distintas. O inglês está em 71,6% e o turco em 79,7%; o chinês, em 50,0%, e por isso ainda não aparece. Antes, o único caminho para um idioma novo aparecer era o nível `completo`, que não mudou: o espanhol continua cobrando toda frase de tela. Nenhum idioma é promovido nesta fatia.
+
+  Contribuição de @webtecnica (#4817, #4812).
+
+- **Rotas de tarefas aceitam token de integração** As rotas de tarefas (`tasks` e `tasks/[id]`) passam a aceitar o token `dsk_…` de servidor além da sessão de navegador. O token permite listar, criar e editar tarefas (inclusive com repetição semanal) ligadas a leads, contatos ou demandas da organização. A leitura exige `mcp:read` (papel `viewer`), a escrita `mcp:write` (papel `agent`), e apagar (`DELETE /api/v1/tasks/[id]`) exige papel `manager`. O filtro de funil (`pipeline_id`) e a atribuição dinâmica a si mesmo (`assigned_to=me`) continuam restritos à sessão da tela.
+
+  Contribuição de @paulolimajr77 (#4391, Spec 33, fatia 5 de 9).
+
+### Corrigido
+
+- **A tela de atualização para de consultar o servidor a cada 5 segundos quando não há atualização em curso** A tela **Configurações › Atualização** consultava a versão do sistema a cada 5 segundos, o tempo todo, enquanto estava aberta. No Supabase grátis isso gasta cota de tráfego (egress) e de Auth sem trazer informação nova. Agora ela só consulta a cada 5 segundos enquanto uma atualização está rodando; parada, a cada 5 minutos, que é o ritmo em que o agente do servidor informa o estado (#2235).
+
+  O comentário do `hostgator-setup-kit/backup.sh` e o runbook de custo do Supabase passam a explicar que o backup também conta no egress e ensinam a conferir quanto ele custa no painel (Settings › Usage › Egress, linha Shared Pooler). O backup continua diário por padrão.
+
+  Contribuição de @jlom2024 (#4803, #2235).
+
+- **A frase da opção de parar volta a sair inteira quando a abordagem vai em várias mensagens curtas** Na campanha de prospecção com "Responder em várias mensagens curtas" ligado, a frase que ensina a pessoa a parar de receber (a padrão ou a escrita pela empresa) é um parágrafo próprio e sai na última mensagem da resposta. O reenvio automático e o teto de caracteres da bolha às vezes a perdiam ou cortavam em duas. Agora a frase sai inteira uma vez, presa à mensagem certa, sem repetir o pedido de parar. Nada a fazer na VPS.
+
+  Contribuição de @webtecnica (#4654, #4370).
+
+- **No WhatsApp oficial, a mensagem que o CRM não sabe ler entra na conversa, sem texto, em vez de sumir** No WhatsApp oficial (pela Meta ou pelo Datafy), algumas mensagens de clientes de tipo que o CRM não reconhece (como a "não suportada" da Meta e o pedido feito pelo catálogo) se perdiam sem aviso.
+
+  Agora essa mensagem entra na conversa, sem texto: o CRM deixa de perdê-la, mas não passa a ler o que ela traz. Se a IA estiver ligada, ela é acionada e avisada de que a mensagem chegou sem texto. Num número usado ao mesmo tempo no app WhatsApp Business e no CRM, as mensagens desse tipo mandadas pela equipe no celular também entram, e a IA pausa como nas outras respostas dadas pelo celular. Nada muda para as mensagens que o CRM já lia. Nenhuma ação é necessária na atualização.
+
+  Contribuição de @tabaterral (#4580).
+
+- **Negócio aberto à mão num funil de item deixa de nascer sem o item conferido** Quando a empresa usa receita de banco externo, o negócio aberto pelo agente com
+  funil e etapa passados à mão e sem a referência do item nascia sem conferência,
+  até para item que não existe. Agora, quando o funil é destino de uma receita ativa
+  e a conversa está em andamento, a criação pede a referência e confere o item no
+  banco de origem; sem ela, o agente passa a conversa para a equipe. Criação com
+  referência e em funil que não é destino de receita continuam como antes. Fora do
+  atendimento (rota MCP, integração), nada é recusado.
+
+  Contribuição de @webtecnica (#4785), a partir da medição de @paulolimajr77 com IA real (#4763).
+
+- **A assinatura do ChatGPT volta a responder o cliente com o Sentry ligado** Com o provedor `openai-assinatura` (Sign in with ChatGPT), o agente voltou a responder o cliente: toda chamada "Responder o cliente" falhava em ~1 s com `Invalid state: The ReadableStream is locked`, e a aba Teste do agente dava `preview_failed`. Gemini e OpenAI por chave continuam iguais. Quem usava `SENTRY_DSN=off` como contorno pode tirar a linha; a escolha de telemetria continua a mesma de antes. Quem aponta `SENTRY_DSN` para o próprio Sentry segue recebendo os erros, mas deixa de receber os spans das chamadas de IA. Encontrado por @hubmorada (#4798), consertado por @webtecnica.
+
+  Contribuição de @webtecnica (#4815, #4798).
+
+- **Inbox ganha a porta da ficha do contato na faixa entre 768 e 1279 px** A ficha do contato só aparecia como terceira coluna a partir de 1280 px, e a
+  gaveta só abria pela barra do celular, que some a partir de 768 px. Numa janela
+  de notebook (~1230 px), não havia onde inscrever o contato num follow-up.
+
+  Agora o cabeçalho da conversa tem um botão "Ficha" entre 768 e 1279 px, que abre
+  a gaveta com a seção de follow-up. Abaixo de 768 px e a partir de 1280 px nada muda.
+
+  Contribuição de @webtecnica, a partir da issue #4822.
+
+- **A auditoria da leitura do CPF passa a guardar o motivo na linha certa** Quando alguém abre a ficha de um contato e pede para ver o CPF, o sistema registra a leitura na auditoria. Só que o motivo informado ficava numa segunda linha, registrada como se o contato tivesse sido **atualizado** — o que não aconteceu.
+
+  Agora o motivo sai na própria linha da leitura do CPF, e a linha de atualização deixa de ser gravada. Para quem lê o CPF por SQL nada muda. Nenhuma ação é necessária na atualização.
+
+  Contribuição de @webtecnica (#4897, #4892).
+
+- **A ficha do contato fala o idioma da tela na aba Linha do tempo e nos rótulos Email e Tags** Na ficha do contato, a aba "Timeline" e os rótulos "Email" e "Tags" estavam escritos direto no
+  código: com a tela em espanhol, a aba vizinha "Visão geral" virava "Resumen", mas esses três
+  ficavam como estavam.
+
+  Agora os três seguem o idioma da tela: em espanhol a aba diz "Línea de tiempo" e os rótulos
+  "Correo" e "Etiquetas"; em português a aba passa a dizer "Linha do tempo", e "Email" e "Tags"
+  continuam iguais.
+
+  Nada muda em quem já opera uma instalação: é só o texto da tela.
+
+  Contribuição de @yunshu0909, a partir da issue #4903.
+
+- **O rótulo Email no diálogo Editar contato agora acompanha o idioma da interface** No diálogo Editar contato, o rótulo "Email" aparecia fixo em português/inglês sem tradução. Agora passa por `t("Email")` e acompanha o idioma da interface ("Email" em português, "Correo" em espanhol).
+
+  Contribuição de @60507 (#4904).
+
+- **O rótulo Emails no formulário de convite da equipe agora acompanha o idioma da interface** No formulário de convite da equipe (Equipe › Convidar), o rótulo da caixa de endereços aparecia fixo como "Emails" sem tradução. Agora passa por `t("E-mails")` e acompanha o idioma da interface ("E-mails" em português, "Correos" em espanhol).
+
+  Contribuição de @60507 (#4905).
+
+- **Evento de duração zero no Google Agenda não trava mais a leitura, e a tela diz qual evento foi recusado (#4915)** Um evento de terceiro com início igual ao fim no Google Agenda travava a sincronização daquela agenda para sempre. Agora o evento de duração zero é descartado na leitura (ele não ocupa horário, e não vira "cancelado"), e os demais entram normalmente.
+
+  Quando algum evento não pode ser lido, a tela da agenda deixa de mostrar só «A leitura não terminou» e passa a dizer o dia e a hora dele, como aparecem no Google, para quem opera corrigir ou remover o evento lá. Nada muda para quem não tem evento assim.
+
+  Contribuição de @60507 (#4949), com a parte da tela de @webtecnica (#4920).
+
+- **A ligação pelo WhatsApp volta a parear o número** O WhatsApp passou a recusar a versão do componente de ligações (WaCalls) que a instalação usava. Ao parear o número para ligações, o QR não chegava, a sessão ficava em "conectando" para sempre sem mensagem de erro, e uma sessão pareada que caía não voltava. A imagem padrão agora é a do fork mantido pela DeskLabs, com a biblioteca do WhatsApp atualizada e com a falha de pareamento visível em vez de silenciosa. Quem usa o padrão recebe a imagem nova na próxima atualização, sem fazer nada.
+
+  Quem sobrescreveu `WACALLS_IMAGE` no `.env` continua na imagem que escolheu: troque para `ghcr.io/desklabs-opensource/wacalls@sha256:03f9e47fadc1afa909f512bbdda0fa4091d4646310f9a76ce3c752f05eafd1ff`, ou apague a linha para voltar ao padrão.
+
+  Ajuste a partir da issue #4937.
+
+- **O aviso de transferência no WhatsApp da equipe e o recibo na Central seguem o idioma da organização** Numa organização em espanhol, o corpo e o título do aviso na Central já saíam em espanhol, mas a
+  mensagem de transferência enviada ao WhatsApp da equipe e a linha de recibo na Central continuavam
+  em português. Agora as duas seguem o idioma da organização. Em português, nada muda.
+
+  Contribuição de @faru1983 (#4966).
+
+- **O botão do aviso "Número novo aguardando liberação" leva a Conexões** Na Central de avisos, o botão do aviso de número novo (e o de saúde do número degradada) mostrava "Este contexto não está disponível para você" em vez de abrir a conexão. Agora ele leva a Conexões, onde o número é liberado, para quem administra a empresa. Crédito: @xofrd.
+
+  Contribuição de @xofrd (#4926).
+
+- **Link do cliente com UUID não é confundido com vazamento de vocabulário interno** O detector de vocabulário interno passa a ignorar o UUID que faz parte de um
+  link `http(s)://`, para que links legítimos de portais e formulários com o
+  identificador no caminho cheguem ao cliente. O UUID solto no corpo da mensagem,
+  num caminho sem esquema ou colado a um «@», continua sendo barrado.
+
+  Contribuição de @ararquitetura (do #4951).
+
+- **App instalado no celular não pede login a cada abertura, e a chave de Push diz a verdade** No Android, abrir o CRM pelo ícone do app instalado mandava para a tela de
+  login a cada abertura, embora a sessão continuasse válida. Agora, com sessão, a
+  pessoa entra direto; sem sessão, vai ao login como antes. O cookie continua Strict.
+  Nada a fazer na atualização.
+
+  Junto: a chave de **Push** em Configurações › Notificações só aparece ligada
+  quando o aparelho já deu permissão. Antes ela vinha ligada num celular nunca
+  inscrito, e nenhum aviso chegava com o app fechado. Agora o primeiro toque liga,
+  pede a permissão e inscreve o aparelho.
+
+  Contribuição de @agencyspeedagend-del (#4811).
+
 ## [1.118.0] — 2026-11-18
 
 ### ⚠️ Requer atenção
@@ -17700,7 +17955,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.118.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.119.0...HEAD
+[1.119.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.118.0...v1.119.0
 [1.118.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.117.0...v1.118.0
 [1.117.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.116.0...v1.117.0
 [1.116.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.115.0...v1.116.0

@@ -75231,6 +75231,288 @@ grant  execute on function public.fn_definir_lembrete_do_aviso_de_agendamento(uu
 
 notify pgrst, 'reload schema';
 
+-- ---- catálogo de serviços como módulo opcional (migration 9432, #3480/#3372) ----
+--
+-- Espelho idempotente da migration 9432: cria só FUNÇÕES. A tabela
+-- `catalog_service_details` nasce em `fn_modulo_instalar('catalogo_servicos', …)`, e
+-- quem já instalou recebe as versões novas por `fn_reaplicar_modulos_instalados()` (D6).
+-- O porquê de cada peça está no cabeçalho da migration.
+-- ⚠️ ENTRA ANTES DO BLOCO DA VARREDURA anon: cria função.
+
+-- ─── 1 · a conferência dos vínculos ────────────────────────────────────────
+-- `catalog_products` não tem chave (organization_id, id), e uma provisionadora
+-- não pode acrescentá-la ao núcleo (D4). A conferência é gatilho na tabela do
+-- módulo: o detalhe nunca aponta para item ou principal de outra organização, e
+-- o vínculo não muda depois de criado (trocar a família de uma variação é
+-- apagar e cadastrar de novo, não editar).
+create or replace function public.fn_catalogo_servicos_conferir_vinculos()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $f$
+begin
+  if tg_op = 'UPDATE' then
+    if row(new.organization_id, new.product_id, new.pai_product_id)
+       is distinct from row(old.organization_id, old.product_id, old.pai_product_id) then
+      raise exception 'catalogo_servicos_vinculo_imutavel' using errcode = '23514';
+    end if;
+    return new;
+  end if;
+  if not exists (select 1 from public.catalog_products
+                  where organization_id = new.organization_id and id = new.product_id) then
+    raise exception 'catalogo_servicos_vinculo_invalido' using errcode = '23503';
+  end if;
+  -- A variação pertence a um PRINCIPAL da mesma organização: variação de
+  -- variação não existe, porque o principal é quem diz tipo, unidade e sinal.
+  if new.pai_product_id is not null
+     and not exists (select 1 from public.catalog_service_details
+                      where organization_id = new.organization_id
+                        and product_id = new.pai_product_id
+                        and pai_product_id is null) then
+    raise exception 'catalogo_servicos_vinculo_invalido' using errcode = '23503';
+  end if;
+  return new;
+end $f$;
+revoke execute on function public.fn_catalogo_servicos_conferir_vinculos() from public, anon, authenticated, service_role;
+
+-- ─── 2 · a provisionadora (ADR-0002, D2) ───────────────────────────────────
+-- Sem parâmetro, idempotente, só `service_role`. Escrita só pelo servidor:
+-- `authenticated` lê os detalhes da própria organização e não grava nada. Isso
+-- fecha o contorno que uma policy de escrita por papel abriria — gravar o sinal
+-- pelo PostgREST sem passar pela trava da família (`fn_catalogo_servicos_salvar`).
+--
+-- Os CHECKs são escritos para NUNCA darem NULL: toda comparação vem depois de um
+-- `is not null` na mesma conjunção. Um CHECK que resulta em NULL passa (é assim
+-- que o Postgres trata), e a versão anterior aceitava `tipo NULL + prazo 5`.
+create or replace function public.fn_catalogo_servicos_provisionar()
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $f$
+begin
+  create table if not exists public.catalog_service_details (
+    -- 1:1 com o item. Apagar o item apaga o detalhe; o preço nunca mora aqui.
+    product_id uuid not null,
+    organization_id uuid not null references public.organizations(id) on delete cascade,
+
+    -- Variação: aponta para o detalhe do principal. Apagar o principal apaga o
+    -- detalhe das variações, e os itens delas voltam a ser produtos comuns do
+    -- catálogo, com nome e preço intactos. Nenhum item é apagado em cascata.
+    pai_product_id uuid,
+
+    -- Só o principal tem tipo, unidade, prazo, sinal e instruções.
+    tipo text,
+    unidade text,
+    prazo_dias_uteis integer,
+    sinal_tipo text,
+    sinal_percentual numeric(5, 2),
+    sinal_cents bigint,
+    -- Orientam a conversa e NUNCA vão ao cliente.
+    instrucoes_ia text,
+    -- Só lê (oferecer na conversa): nasce ligado. No principal vale para a
+    -- família inteira; na variação, só para ela.
+    ia_oferece boolean not null default true,
+
+    -- Só cresce, e só por `fn_catalogo_servicos_salvar`. Edição com revisão velha = 409.
+    revision integer not null default 1,
+
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+
+    constraint catalog_service_details_pkey primary key (product_id),
+    constraint catalog_service_details_product_fkey
+      foreign key (product_id) references public.catalog_products(id) on delete cascade,
+    constraint catalog_service_details_pai_fkey
+      foreign key (pai_product_id) references public.catalog_service_details(product_id) on delete cascade,
+
+    -- Principal: tipo e unidade da mesma família. Variação: nada de serviço.
+    constraint catalog_service_details_forma_check check (
+      (pai_product_id is null and tipo is not null and unidade is not null and (
+           (tipo = 'hora_marcada' and unidade in ('sessao', 'hora'))
+        or (tipo = 'projeto' and unidade in ('valor_fechado', 'hora'))
+        or (tipo = 'recorrente' and unidade in ('mes', 'trimestre', 'ano'))
+      ))
+      or (pai_product_id is not null and tipo is null and unidade is null
+          and prazo_dias_uteis is null and sinal_tipo is null and sinal_percentual is null
+          and sinal_cents is null and instrucoes_ia is null)
+    ),
+    constraint catalog_service_details_prazo_check check (
+      prazo_dias_uteis is null
+      or (tipo is not null and tipo = 'projeto' and prazo_dias_uteis between 1 and 3650)
+    ),
+    constraint catalog_service_details_sinal_check check (
+      (sinal_tipo is null and sinal_percentual is null and sinal_cents is null)
+      or (sinal_tipo is not null and sinal_tipo = 'percentual' and sinal_percentual is not null
+          and sinal_percentual between 1 and 100 and sinal_cents is null)
+      or (sinal_tipo is not null and sinal_tipo = 'fixo' and sinal_cents is not null
+          and sinal_cents > 0 and sinal_percentual is null)
+    ),
+    constraint catalog_service_details_pai_check check (
+      pai_product_id is null or pai_product_id <> product_id
+    ),
+    constraint catalog_service_details_instrucoes_check check (
+      instrucoes_ia is null or length(instrucoes_ia) <= 2000
+    ),
+    constraint catalog_service_details_revision_check check (revision >= 1)
+  );
+
+  create index if not exists catalog_service_details_principais_idx
+    on public.catalog_service_details (organization_id, product_id)
+    where pai_product_id is null;
+  create index if not exists catalog_service_details_variacoes_idx
+    on public.catalog_service_details (organization_id, pai_product_id)
+    where pai_product_id is not null;
+
+  alter table public.catalog_service_details enable row level security;
+  drop policy if exists catalog_service_details_select on public.catalog_service_details;
+  create policy catalog_service_details_select
+    on public.catalog_service_details
+    for select using (
+      public.fn_is_platform_admin()
+      or organization_id in (select public.fn_user_org_ids())
+    );
+  revoke all on table public.catalog_service_details from anon, authenticated, service_role;
+  grant select on table public.catalog_service_details to authenticated;
+  grant select, insert, update, delete on table public.catalog_service_details to service_role;
+
+  drop trigger if exists trg_catalogo_servicos_conferir_vinculos on public.catalog_service_details;
+  create trigger trg_catalogo_servicos_conferir_vinculos
+    before insert or update on public.catalog_service_details
+    for each row execute function public.fn_catalogo_servicos_conferir_vinculos();
+
+  comment on table public.catalog_service_details is
+    'Catálogo de serviços (módulo opcional, ADR-0002): tipo, unidade, prazo, sinal e instruções de um item de catalog_products. Sem preço: o preço é o do item.';
+
+  perform public.fn_proteger_modulo_provisionado();
+end
+$f$;
+revoke execute on function public.fn_catalogo_servicos_provisionar() from public, anon, authenticated;
+grant execute on function public.fn_catalogo_servicos_provisionar() to service_role;
+
+-- ─── 3 · a escrita numa transação só, com a família travada ────────────────
+-- Item (`catalog_products`) e detalhe nascem e mudam juntos: não existe serviço
+-- pela metade, e o código repetido que derruba o item não deixa detalhe órfão.
+--
+-- O sinal FIXO não pode passar do menor preço da família (principal e
+-- variações). A regra lê linhas irmãs, então não cabe num CHECK; ela roda aqui,
+-- DEPOIS de gravar, sobre o estado final, com o principal travado — duas
+-- edições da mesma família (o sinal de um lado, o preço de uma variação do
+-- outro) passam em fila e a segunda vê a primeira. Recusa desfaz tudo.
+--
+-- `p_id` nulo cria; preenchido edita só as chaves presentes em `p_item` e
+-- `p_detalhe`. A organização vem do servidor (cookie validado), nunca do corpo.
+-- `record`, nunca `%rowtype`: a função existe onde a tabela não existe (D7).
+create or replace function public.fn_catalogo_servicos_salvar(
+  p_org uuid, p_id uuid, p_item jsonb, p_detalhe jsonb, p_expected_revision integer
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $f$
+declare
+  d record;
+  v_id uuid;
+  v_principal uuid;
+  v_sinal record;
+  v_menor bigint;
+  v_revisao integer;
+begin
+  if to_regclass('public.catalog_service_details') is null then
+    raise exception 'catalogo_servicos_nao_instalado' using errcode = 'P0002';
+  end if;
+
+  if p_id is null then
+    v_principal := nullif(p_detalhe->>'pai_product_id', '')::uuid;
+  else
+    select product_id, pai_product_id into d from public.catalog_service_details
+     where organization_id = p_org and product_id = p_id;
+    if not found then
+      raise exception 'servico_nao_encontrado' using errcode = 'P0002';
+    end if;
+    v_principal := coalesce(d.pai_product_id, d.product_id);
+  end if;
+
+  if v_principal is not null then
+    perform 1 from public.catalog_service_details
+     where organization_id = p_org and product_id = v_principal and pai_product_id is null
+     for update;
+    if not found then
+      raise exception 'servico_principal_nao_encontrado' using errcode = 'P0002';
+    end if;
+  end if;
+
+  if p_id is null then
+    insert into public.catalog_products
+      (organization_id, codigo, nome, descricao, preco_cents, moeda, origem, controla_estoque, quantidade)
+    values
+      (p_org, p_item->>'codigo', p_item->>'nome', nullif(p_item->>'descricao', ''),
+       (p_item->>'preco_cents')::bigint, p_item->>'moeda', 'manual', false, 0)
+    returning id into v_id;
+
+    insert into public.catalog_service_details
+      (product_id, organization_id, pai_product_id, tipo, unidade, prazo_dias_uteis,
+       sinal_tipo, sinal_percentual, sinal_cents, instrucoes_ia, ia_oferece)
+    values
+      (v_id, p_org, v_principal, p_detalhe->>'tipo', p_detalhe->>'unidade',
+       (p_detalhe->>'prazo_dias_uteis')::integer, p_detalhe->>'sinal_tipo',
+       (p_detalhe->>'sinal_percentual')::numeric, (p_detalhe->>'sinal_cents')::bigint,
+       nullif(p_detalhe->>'instrucoes_ia', ''), coalesce((p_detalhe->>'ia_oferece')::boolean, true));
+  else
+    v_id := p_id;
+    -- A revisão é lida DEPOIS da trava: a comparação vale para o estado que
+    -- esta transação vai mudar, não para um que outra acabou de trocar.
+    select revision into v_revisao from public.catalog_service_details
+     where organization_id = p_org and product_id = p_id;
+    if v_revisao is distinct from p_expected_revision then
+      raise exception 'servico_revisao_velha' using errcode = 'PT409', detail = coalesce(v_revisao::text, '');
+    end if;
+
+    update public.catalog_products set
+      codigo = case when p_item ? 'codigo' then p_item->>'codigo' else codigo end,
+      nome = case when p_item ? 'nome' then p_item->>'nome' else nome end,
+      descricao = case when p_item ? 'descricao' then nullif(p_item->>'descricao', '') else descricao end,
+      preco_cents = case when p_item ? 'preco_cents' then (p_item->>'preco_cents')::bigint else preco_cents end
+    where organization_id = p_org and id = p_id;
+
+    update public.catalog_service_details set
+      tipo = case when p_detalhe ? 'tipo' then p_detalhe->>'tipo' else tipo end,
+      unidade = case when p_detalhe ? 'unidade' then p_detalhe->>'unidade' else unidade end,
+      prazo_dias_uteis = case when p_detalhe ? 'prazo_dias_uteis' then (p_detalhe->>'prazo_dias_uteis')::integer else prazo_dias_uteis end,
+      sinal_tipo = case when p_detalhe ? 'sinal_tipo' then p_detalhe->>'sinal_tipo' else sinal_tipo end,
+      sinal_percentual = case when p_detalhe ? 'sinal_tipo' then (p_detalhe->>'sinal_percentual')::numeric else sinal_percentual end,
+      sinal_cents = case when p_detalhe ? 'sinal_tipo' then (p_detalhe->>'sinal_cents')::bigint else sinal_cents end,
+      instrucoes_ia = case when p_detalhe ? 'instrucoes_ia' then nullif(p_detalhe->>'instrucoes_ia', '') else instrucoes_ia end,
+      ia_oferece = case when p_detalhe ? 'ia_oferece' then (p_detalhe->>'ia_oferece')::boolean else ia_oferece end,
+      revision = revision + 1,
+      updated_at = now()
+    where organization_id = p_org and product_id = p_id;
+  end if;
+
+  v_principal := coalesce(v_principal, v_id);
+  select sinal_tipo, sinal_cents into v_sinal from public.catalog_service_details
+   where organization_id = p_org and product_id = v_principal;
+  if v_sinal.sinal_tipo = 'fixo' then
+    select min(p.preco_cents) into v_menor
+      from public.catalog_service_details s
+      join public.catalog_products p on p.organization_id = s.organization_id and p.id = s.product_id
+     where s.organization_id = p_org and (s.product_id = v_principal or s.pai_product_id = v_principal);
+    if v_menor is not null and v_sinal.sinal_cents > v_menor then
+      raise exception 'servico_sinal_acima_do_preco' using errcode = '23514';
+    end if;
+  end if;
+
+  select revision into v_revisao from public.catalog_service_details
+   where organization_id = p_org and product_id = v_id;
+  return jsonb_build_object('product_id', v_id, 'principal_id', v_principal, 'revision', v_revisao);
+end $f$;
+revoke execute on function public.fn_catalogo_servicos_salvar(uuid, uuid, jsonb, jsonb, integer) from public, anon, authenticated;
+grant execute on function public.fn_catalogo_servicos_salvar(uuid, uuid, jsonb, jsonb, integer) to service_role;
+
+notify pgrst, 'reload schema';
+
 -- ---- #4371: o dono entrega o PRÓPRIO card na transferência (migration 9322) ----
 --
 -- Espelho idêntico ao corpo da 9322 (relato de @aerosuiteapp). A régua do
@@ -81487,6 +81769,87 @@ grant execute on function public.fn_operacao_conversas_com_entrada(uuid, timesta
 comment on function public.fn_operacao_conversas_com_entrada(uuid, timestamptz, timestamptz, integer) is
   'Operação do dia: por conversa (sem grupo), a primeira e a última mensagem do cliente no intervalo [p_inicio, p_fim) e se ela é nova (nenhuma mensagem do cliente antes). security invoker: a RLS da sessão vale.';
 
+-- ---- o propósito da leitura do CPF sai na linha certa da trilha (migration 9423, #4892) ----
+-- Corpo IDÊNTICO ao da migration; ANTES da VARREDURA anon, porque cria função.
+-- (issue #4892) A assinatura de DOIS argumentos leva o propósito da leitura como
+-- PARÂMETRO (o PostgREST não tem como fixar o GUC `app.decrypt_purpose` na mesma
+-- transação da RPC) e o corpo auditado da 0762 troca UMA linha: o
+-- `jsonb_build_object` usa `coalesce(p_purpose, current_setting(...))`, então o
+-- parâmetro vence o GUC e o GUC continua valendo para quem chama por SQL.
+--
+-- ⚠️ SEM `default null`, e SEM casca. Com `p_purpose` DEFAULT, `decrypt_cpf(id)`
+-- fica ambígua ("function public.decrypt_cpf(uuid) is not unique", medido em PG
+-- 17.11) e o export de contatos — que chama de um argumento — quebra. A saída
+-- NÃO é uma casca de 1 argumento delegando para cá: casca sem guarda no meio da
+-- história é justamente o que a `baseline-funcao-intermediaria-sem-guarda`
+-- proíbe (uma atualização que morra naquele ponto deixaria `decrypt_cpf(id)`
+-- apontando para uma assinatura que ainda não existe). Então as DUAS assinaturas
+-- são implementações GUARDADAS completas: a de um argumento continua sendo,
+-- byte a byte, a da 0762 (lê o GUC, nada mais), e é ela que o export chama.
+--
+-- ⚠️ Consequência: o corpo das duas tem de andar junto. A cadeia de guardas é a
+-- mesma nas duas (null → piso de 66 bytes → cara de pacote PGP → tenancy →
+-- papel → audit → decifra), e `tests/invariants/cpf-proposito-na-linha-certa.test.ts`
+-- compara os dois corpos com só a expressão do propósito mascarada: mexeu numa,
+-- tem de mexer na outra.
+create or replace function public.decrypt_cpf(p_contact_id uuid, p_purpose text) returns text
+    language plpgsql security definer
+    set search_path to 'public', 'private', 'extensions', 'pg_temp'
+    as $$
+declare
+  v_cipher bytea;
+  v_org    uuid;
+begin
+  select cpf_encrypted, organization_id into v_cipher, v_org
+    from public.contacts where id = p_contact_id;
+
+  -- Guardas na MESMA ordem da 0240 (#754): null, depois o piso medido, depois a
+  -- cara de pacote PGP, e só então decifra — `get_byte` em bytea vazio estoura.
+  -- `contacts.cpf_encrypted` é nullable (não há linha de enfeite), mas cifra nova
+  -- carrega guarda nova: é o que a catraca `credencial-de-enfeite` cobra.
+  if v_cipher is null then return null; end if;
+  if octet_length(v_cipher) < 66 then
+    raise exception 'cpf_ciphertext_invalido';
+  end if;
+  if get_byte(v_cipher, 0) < 128 then
+    raise exception 'cpf_ciphertext_invalido';
+  end if;
+
+  -- Tenancy: só quem pertence à organização do contato (ou o poder de
+  -- plataforma com `scope = 'full'` e a sessão confirmada — ver a 0762).
+  -- `fn_user_org_ids()` devolve SETOF uuid — a spec 02 escrevia
+  -- `x.organization_id`, que não compila contra a assinatura real.
+  if not exists (
+    select 1 from public.fn_user_org_ids() o where o = v_org
+  ) and not public.fn_is_platform_admin_full() then
+    raise exception 'forbidden_org';
+  end if;
+
+  -- Papel: a mesma régua de getContactHandler (manager+), conferida também
+  -- dentro da função, como fazem as funções irmãs.
+  if not public.fn_role_at_least(v_org, 'manager') and not public.fn_is_platform_admin_full() then
+    raise exception 'forbidden_role';
+  end if;
+
+  -- Audit antes do plaintext: decrypt sem rastro é decrypt que a LGPD não vê.
+  -- (9423) O parâmetro VENCE o GUC: quem chama pelo PostgREST não tem como fixar
+  -- `app.decrypt_purpose` na transação da chamada.
+  insert into public.api_audit_log
+    (organization_id, actor_user_id, action, resource_type, resource_id, metadata)
+  values
+    (v_org, auth.uid(), 'contact.cpf_decrypted', 'contact', p_contact_id,
+     jsonb_build_object('purpose', coalesce(p_purpose, current_setting('app.decrypt_purpose', true))));
+
+  return pgp_sym_decrypt(v_cipher, private.fn_cpf_key());
+end$$;
+
+-- As DUAS origens de EXECUTE (CLAUDE.md), reafirmadas nas DUAS assinaturas.
+revoke execute on function public.decrypt_cpf(uuid) from public, anon;
+grant  execute on function public.decrypt_cpf(uuid) to authenticated, service_role;
+
+revoke execute on function public.decrypt_cpf(uuid, text) from public, anon;
+grant  execute on function public.decrypt_cpf(uuid, text) to authenticated, service_role;
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.
@@ -82321,6 +82684,8 @@ create trigger trg_contacts_fusao_e_anonimizacao_so_pelo_servidor_ao_criar
 -- Todo escritor da fila de remoção de arquivos é do servidor: a sessão só lê.
 revoke all on table public.storage_redaction_queue from authenticated;
 grant select on table public.storage_redaction_queue to authenticated;
+
+
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
@@ -87730,5 +88095,130 @@ create index if not exists idx_conversations_fila_espera
 
 comment on index public.idx_conversations_fila_espera is
   'Fila de espera do Inbox (#4325): casa o pré-filtro do comando (sem dono, fora do histórico encerrado) e a ordem ORDEM_DA_ESPERA (awaiting_since asc, id asc). Medido: lista da Fila 4.343 -> 685 buffers com 120 mil conversas.';
+
+notify pgrst, 'reload schema';
+
+-- ---- funil de entrada por número (migration 9430) ----
+-- Espelho de supabase/migrations/20261118150000_9430_funil_de_entrada_por_numero.sql.
+-- Cada conexão pode apontar o funil e a etapa onde a conversa nova vira negócio.
+-- Nulas = funil padrão da organização (comportamento de antes). Idempotente.
+alter table public.channel_sessions
+  add column if not exists entry_pipeline_id uuid,
+  add column if not exists entry_stage_id uuid;
+
+-- Chave composta com a organização (mesmo desenho de ai_router_members, #2155):
+-- o número nunca aponta para funil ou etapa de OUTRA empresa, e a etapa fica
+-- presa ao funil escolhido. `on delete set null` com lista de colunas zera só
+-- o destino quando o funil/etapa some; a conexão segue no funil padrão.
+-- Uma chave por tabela alvo: duas tornariam ambíguo o join do PostgREST.
+do $$ begin
+  alter table public.channel_sessions
+    add constraint channel_sessions_entry_pipeline_mesma_org
+    foreign key (organization_id, entry_pipeline_id)
+    references public.crm_pipelines (organization_id, id)
+    on delete set null (entry_pipeline_id);
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  alter table public.channel_sessions
+    add constraint channel_sessions_entry_stage_do_funil
+    foreign key (organization_id, entry_pipeline_id, entry_stage_id)
+    references public.crm_stages (organization_id, pipeline_id, id)
+    on delete set null (entry_stage_id);
+exception when duplicate_object then null; end $$;
+
+comment on column public.channel_sessions.entry_pipeline_id is
+  'Funil onde a conversa nova DESTE número vira negócio. Nulo = funil padrão da organização (crm_pipelines.is_default). Aplicado por lib/leads/nascimento-do-lead.ts (migration 9430).';
+comment on column public.channel_sessions.entry_stage_id is
+  'Etapa de entrada no funil escolhido para este número. Nula = a etapa de entrada do próprio funil. Ignorada sem entry_pipeline_id (migration 9430).';
+
+create index if not exists idx_channel_sessions_entry_pipeline
+  on public.channel_sessions (entry_pipeline_id) where entry_pipeline_id is not null;
+create index if not exists idx_channel_sessions_entry_stage
+  on public.channel_sessions (entry_stage_id) where entry_stage_id is not null;
+
+notify pgrst, 'reload schema';
+
+-- ---- meta mensal em valor e por vendedor (migration 9410, #4796) ----
+-- manifest: **Meta mensal em VALOR de venda (#4796, fatia 2 da #3025).** `crm_metas` ganha o indicador `valor_vendido` (alvo em CENTAVOS) e o dono opcional `vendedor_id`; a meta da empresa continua sendo `pipeline_id is null and vendedor_id is null`, e o índice único parcial é refeito para não confundir a meta da empresa com a do vendedor. Aditiva e retrocompatível: meta antiga, sem indicador, continua valendo por QUANTIDADE. Espelho no `baseline.sql`.
+-- ============================================================================
+-- 9410 — META MENSAL EM VALOR DE VENDA (#4796, fatia 2 da #3025)
+--
+-- ─── O que faltava ──────────────────────────────────────────────────────────
+-- A meta da 0756 conta VENDAS GANHAS. Numa agência de viagens, uma venda de
+-- R$ 3 mil e outra de R$ 80 mil contam igual nessa régua, e o gestor cobra o
+-- time pelo FATURAMENTO do mês. Aqui nasce o segundo indicador:
+-- `valor_vendido`, com o alvo em CENTAVOS — a mesma unidade de
+-- `crm_leads.value_cents`, porque R$ 500.000,00 com centavo não cabe em reais
+-- inteiros sem inventar arredondamento.
+--
+-- ─── Meta antiga NÃO muda de régua ──────────────────────────────────────────
+-- A constraint `crm_metas_indicador_conhecido` passa a aceitar os dois valores.
+-- Nenhuma linha é reescrita: quem foi gravado como `vendas_ganhas` (ou antes
+-- disso, quando o default era o único indicador) continua contando quantidade.
+-- O default da coluna segue `vendas_ganhas` — trocá-lo mudaria o significado
+-- das metas já cadastradas.
+--
+-- ─── Os três níveis: empresa, funil e vendedor ──────────────────────────────
+-- `vendedor_id` nulo + `pipeline_id` nulo = meta da EMPRESA;
+-- `pipeline_id` preenchido = meta do FUNIL (já existia);
+-- `vendedor_id` preenchido = meta do VENDEDOR (nasce agora).
+-- As duas dimensões não se combinam: uma linha com dono E funil tornaria
+-- "a meta do vendedor" ambígua, e o cadastro não oferece essa combinação.
+--
+-- ─── O índice da empresa precisou ser REFEITO, e é o ponto delicado ────────
+-- `crm_metas_uma_por_empresa_periodo_idx` era
+-- `(organization_id, periodo, indicador) where pipeline_id is null`. A meta do
+-- vendedor TAMBÉM tem `pipeline_id` nulo — com o índice antigo, cadastrar a
+-- meta de um vendedor colidiria com a meta da empresa e o INSERT estouraria na
+-- cara de quem salvou. O predicado ganha `and vendedor_id is null`, e o índice
+-- do vendedor é o seu par, também parcial.
+--
+-- ─── Leitura e escrita ─────────────────────────────────────────────────────
+-- As policies não mudam: leitura org-scoped, escrita `manager+`. O vendedor é
+-- um `auth.users` do próprio tenant; a FK impede um id inexistente, e a tela só
+-- oferece membros da organização. Nada de `delete`: corrigir é gravar por cima.
+-- ============================================================================
+
+alter table public.crm_metas
+  add column if not exists vendedor_id uuid references auth.users (id) on delete cascade;
+
+comment on column public.crm_metas.vendedor_id is
+  'Dono da meta individual (#4796). Nulo + pipeline_id nulo = meta da EMPRESA; preenchido = meta do VENDEDOR. As duas dimensões não se combinam.';
+
+alter table public.crm_metas
+  drop constraint if exists crm_metas_indicador_conhecido;
+
+alter table public.crm_metas
+  add constraint crm_metas_indicador_conhecido
+  check (indicador in ('vendas_ganhas', 'valor_vendido'));
+
+alter table public.crm_metas
+  drop constraint if exists crm_metas_dono_ou_funil;
+
+alter table public.crm_metas
+  add constraint crm_metas_dono_ou_funil
+  check (vendedor_id is null or pipeline_id is null);
+
+-- O índice da EMPRESA passa a excluir a meta do vendedor (as duas tinham
+-- `pipeline_id` nulo, e colidiriam).
+drop index if exists public.crm_metas_uma_por_empresa_periodo_idx;
+
+create unique index if not exists crm_metas_uma_por_empresa_periodo_idx
+  on public.crm_metas (organization_id, periodo, indicador)
+  where pipeline_id is null and vendedor_id is null;
+
+create unique index if not exists crm_metas_uma_por_vendedor_periodo_idx
+  on public.crm_metas (organization_id, periodo, indicador, vendedor_id)
+  where vendedor_id is not null;
+
+comment on column public.crm_metas.indicador is
+  'O que a meta mede (#4796): `vendas_ganhas` = QUANTIDADE de negócios ganhos na janela; `valor_vendido` = soma de value_cents dos mesmos ganhos, com o alvo em CENTAVOS.';
+
+comment on column public.crm_metas.alvo is
+  'Quanto se quer atingir no indicador, naquele mês: QUANTIDADE de vendas ganhas em `vendas_ganhas`, VALOR em CENTAVOS da moeda da organização em `valor_vendido`. É o denominador que a tela de Desempenho não tinha.';
+
+comment on table public.crm_metas is
+  'Meta mensal da organização por indicador (#3025 fatia 1, valor na #4796). `pipeline_id` nulo + `vendedor_id` nulo = meta da EMPRESA; `pipeline_id` preenchido = meta do funil; `vendedor_id` preenchido = meta do vendedor. Leitura org-scoped; escrita manager+ (Server Action definirMetaMensal, com auditoria).';
 
 notify pgrst, 'reload schema';

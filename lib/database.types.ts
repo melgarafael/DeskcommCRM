@@ -5531,6 +5531,8 @@ export type Database = {
           datafy_waba_id: string | null;
           display_name: string | null;
           engine: string;
+          entry_pipeline_id: string | null;
+          entry_stage_id: string | null;
           id: string;
           is_warmup_complete: boolean | null;
           last_health_check_at: string | null;
@@ -5574,6 +5576,8 @@ export type Database = {
           datafy_waba_id?: string | null;
           display_name?: string | null;
           engine?: string;
+          entry_pipeline_id?: string | null;
+          entry_stage_id?: string | null;
           id?: string;
           is_warmup_complete?: never;
           last_health_check_at?: string | null;
@@ -5616,6 +5620,8 @@ export type Database = {
           datafy_waba_id?: string | null;
           display_name?: string | null;
           engine?: string;
+          entry_pipeline_id?: string | null;
+          entry_stage_id?: string | null;
           id?: string;
           is_warmup_complete?: never;
           last_health_check_at?: string | null;
@@ -7488,6 +7494,7 @@ export type Database = {
           periodo: string;
           pipeline_id: string | null;
           updated_at: string;
+          vendedor_id: string | null;
         };
         ComputedFields: never;
         Insert: {
@@ -7500,6 +7507,7 @@ export type Database = {
           periodo: string;
           pipeline_id?: string | null;
           updated_at?: string;
+          vendedor_id?: string | null;
         };
         Update: {
           alvo?: number;
@@ -7511,6 +7519,7 @@ export type Database = {
           periodo?: string;
           pipeline_id?: string | null;
           updated_at?: string;
+          vendedor_id?: string | null;
         };
         Relationships: [
           {
@@ -15472,7 +15481,10 @@ export type Database = {
           error: true;
         } & "the function public.comando_da_conversa with parameter or with a single unnamed json/jsonb parameter, but no matches were found in the schema cache";
       };
-      decrypt_cpf: { Args: { p_contact_id: string }; Returns: string };
+      // (9423) Duas assinaturas: `decrypt_cpf(uuid)` (a da 0762, intacta) e
+      // `decrypt_cpf(uuid, text)` com o propósito da leitura. O argumento é opcional
+      // no cliente porque a chamada de um argumento continua válida — é o export.
+      decrypt_cpf: { Args: { p_contact_id: string; p_purpose?: string | null }; Returns: string };
       emit_event: {
         Args: {
           p_entity_id: string;

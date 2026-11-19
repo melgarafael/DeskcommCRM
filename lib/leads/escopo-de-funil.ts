@@ -51,6 +51,15 @@ export type AlvoDeFunil =
    */
   | "funil_vem_do_contato"
   /**
+   * O modelo informa `task_id`; o funil sai do negócio GRAVADO na tarefa e,
+   * se vier, também do `lead_id` novo que a edição quer pôr.
+   *
+   * Existe porque a edição de tarefa chega quase sempre só com `task_id` (mudar
+   * prazo ou status). Ler o funil do argumento, como `funil_vem_do_lead`, deixava
+   * passar sem checagem a tarefa de um negócio de outro funil.
+   */
+  | "funil_vem_da_tarefa"
+  /**
    * Não toca funil nenhum. Declarado — e não ausente — porque "não se aplica" e
    * "ninguém decidiu" precisam ser distinguíveis: a segunda é bloqueada.
    */
@@ -97,6 +106,12 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   // liberaria sempre, com aparência de escopado. É o teatro que o comentário
   // das ferramentas de agenda, logo abaixo, descreve.
   crm_enroll_followup_flow: "funil_vem_do_contato",
+  // #4838 — tarefa é retorno interno da equipe, da mesma família do follow-up.
+  // Criar: `lead_id` opcional, e com ele o funil sai do negócio; sem ele não
+  // há funil a checar. Editar: o alvo é a TAREFA já gravada, que pode estar
+  // presa a um negócio mesmo quando o argumento não traz `lead_id`.
+  crm_create_task: "funil_vem_do_lead",
+  crm_update_task: "funil_vem_da_tarefa",
 
   // ---- agenda: DECLARADAS `sem_funil`, e a declaração é o ponto ----
   //
@@ -263,6 +278,12 @@ export async function podeChamarFerramenta(entrada: {
    * e a ausência é tratada como `indisponivel`, nunca como liberação.
    */
   resolveLeadDoContato?: (contactId: string) => Promise<ResolucaoDeContato>;
+  /**
+   * Só é chamado por `funil_vem_da_tarefa`. `null` = a tarefa não existe nesta
+   * organização; `{ leadId: null }` = existe e não está presa a negócio.
+   * Ausente, o veredito é `indisponivel`, nunca liberação.
+   */
+  resolveLeadDaTarefa?: (taskId: string) => Promise<{ leadId: string | null } | null>;
 }): Promise<VereditoDoEscopo> {
   // Leitura não é escopada por funil — decisão declarada na spec 17 §5, com a
   // consequência escrita: a superfície de DESCOBERTA continua aberta (o modelo
@@ -375,6 +396,41 @@ export async function podeChamarFerramenta(entrada: {
       }
 
       return resolverPeloLead(entrada, r.leadId);
+    }
+
+    case "funil_vem_da_tarefa": {
+      const taskId = entrada.argumentos.task_id;
+      if (typeof taskId !== "string") {
+        return { permitido: false, motivo: "indisponivel", detalhe: "task_id ausente" };
+      }
+      if (!entrada.resolveLeadDaTarefa) {
+        // Falha FECHADA, como o resolvedor de contato: esquecer a dependência
+        // não pode fazer o escopo sumir.
+        return { permitido: false, motivo: "indisponivel", detalhe: "resolvedor de tarefa ausente" };
+      }
+      let tarefa: { leadId: string | null } | null;
+      try {
+        tarefa = await entrada.resolveLeadDaTarefa(taskId);
+      } catch (e) {
+        return {
+          permitido: false,
+          motivo: "indisponivel",
+          detalhe: e instanceof Error ? e.message.slice(0, 120) : "falha ao resolver a tarefa",
+        };
+      }
+      if (tarefa === null) {
+        return { permitido: false, motivo: "indisponivel", detalhe: "tarefa não encontrada" };
+      }
+      // Os dois negócios contam: o que a tarefa já tem e o que a edição quer pôr.
+      // Checar só o novo deixaria tirar a tarefa de um funil de fora; só o
+      // gravado deixaria prendê-la a um.
+      const novo = entrada.argumentos.lead_id;
+      for (const leadId of [tarefa.leadId, typeof novo === "string" ? novo : null]) {
+        if (leadId === null) continue;
+        const v = await resolverPeloLead(entrada, leadId);
+        if (!v.permitido) return v;
+      }
+      return { permitido: true };
     }
 
     default: {

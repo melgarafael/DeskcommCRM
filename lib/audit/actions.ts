@@ -395,6 +395,9 @@ export const AUDIT_ACTIONS = [
   // Rótulo interno do canal (channel_sessions.display_name); nada vai ao
   // provedor. Emitida por app/api/v1/channel-sessions/[id]/name.
   "channel.renamed",
+  // Funil de entrada do número (migration 9430): onde a conversa nova daquele
+  // número vira negócio. Emitida por app/api/v1/channel-sessions/[id]/entrada.
+  "channel.entry_pipeline_changed",
   // A janela de manutenção (#2388): criar, editar e cancelar são mutações da
   // tela e auditam como toda mutação. A pausa e a retomada que a janela aplica
   // saem como `channel.disabled`/`channel.enabled`, com `origem: schedule`.
@@ -919,6 +922,15 @@ export const AUDIT_ACTIONS = [
   "catalog_product.ai_presentation_audio_removed",
   /** A rodada da fonte de catálogo (#3587, fatia 2) — cria, atualiza e desativa em lote. */
   "catalog_products.synced_from_feed",
+
+  // O serviço no catálogo (#3372, migration 9419): sinal, prazo e preço do
+  // serviço são combinados com o cliente, e quem mudou precisa ficar registrado
+  // como no produto. A variação tem ação própria porque é outro preço — o valor
+  // que o cliente ouviu.
+  "catalog_service.created",
+  "catalog_service.updated",
+  "catalog_service.variation_created",
+  "catalog_service.variation_updated",
 
   // As tarefas do CRM (migration 0210). Tarefa é combinado de trabalho entre
   // pessoas do time — quem a criou, quem mudou o prazo e quem a apagou é
@@ -1465,6 +1477,11 @@ export const AUDIT_ACTIONS = [
   // LGPD art. 18, V. Audita o GESTO com o total de linhas e os filtros que
   // valiam, nunca o termo de busca.
   "contacts.exported",
+  // O relatório de vendas do Desempenho baixado em CSV (#4802, item 5).
+  // Mesmo porquê do export de contatos e do de auditoria: o arquivo SAIU, e
+  // quem administra precisa saber que saiu. Metadata: quantas linhas, a janela
+  // e o atendente filtrado — nunca valor de venda nem conteúdo de negócio.
+  "reports.sales_exported",
   // O operador carregou a imagem que a Resposta rápida passa a enviar junto
   // com o texto — `POST /message-templates/:id/midias` (#2526). A REMOÇÃO não
   // tem código próprio: ela acontece dentro do `template.updated` (campo

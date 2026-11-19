@@ -30,8 +30,7 @@ import {
   assertProspectingDelivery,
   vetoDoContatoAntesDaVaga,
 } from "./guard";
-import { instrucaoDeAbordagemFria, montarDadosDeAbordagem, estrategiaDoCandidato } from "./estrategia-site";
-import { temContextoDaEquipe } from "./contexto-da-equipe";
+import { entradasDaAbordagem, estrategiaDoCandidato } from "./estrategia-site";
 import {
   INTERVALO_MINIMO_ENTRE_TENTATIVAS_MIN,
   LIMITE_TENTATIVAS,
@@ -39,7 +38,7 @@ import {
 } from "./site-efetivo";
 import { previaDoAgente } from "./previa";
 import { blocoVozVendedor, personalizacaoDaOrganizacao } from "./personalizar";
-import { campaignConfigSchema, usaFichaDigital, type OfertaDaCampanha } from "./schema";
+import { campaignConfigSchema, type OfertaDaCampanha } from "./schema";
 import { prepararCandidatos } from "./preparo";
 import { provedoresQueConferemNumero } from "@/lib/channels";
 import { moduloLigado } from "@/lib/instalacao/modulos";
@@ -382,11 +381,9 @@ export async function sendNextCandidate(
     // de outro agente (a do padrão da organização), o envio escreve do zero.
     const personalizacao = await personalizacaoDaOrganizacao(db, c.organization_id);
     const site = siteEfetivo(p.data, new Date().toISOString());
-    // A campanha SEM ficha digital (#4829) não recebe os fatos da ficha: o veredito
-    // do site não vira ângulo de venda, e a prévia guardada de uma campanha que ainda
-    // usava a ficha não entra como rascunho. A estratégia continua sendo calculada —
-    // ela é o diagnóstico que a TELA mostra —, mas não sobe para a instrução.
-    const semFichaDigital = !usaFichaDigital(cfg);
+    // A estratégia continua sendo calculada — ela é o diagnóstico que a TELA mostra. Quem
+    // decide se ela sobe para a instrução (sem ficha digital, #4829, ou pelo prompt do
+    // agente, não sobe) é `entradasDaAbordagem`.
     const estrategia = site
       ? estrategiaDoCandidato(p.data, site, {
           ofertas: (cfg.ofertas ?? ["site"]) as OfertaDaCampanha[],
@@ -397,31 +394,25 @@ export async function sendNextCandidate(
       : null;
     // Modo "saída na 2ª": a 1ª mensagem só cumprimenta, então nada de ângulo de
     // venda — nem estratégia (na instrução) nem Auditoria/Detalhe/Rascunho (nos
-    // dados), que o prompt frio deixa citar "como o motivo do contato".
-    const soCumprimenta = cfg.exit_offer !== "first_message";
-    // Fonte única em `montarDadosDeAbordagem` (prévia da tela bebe da mesma).
-    const dados = soCumprimenta
-      ? montarDadosDeAbordagem(p.data, null, null, { soCumprimenta, semFichaDigital })
-      : montarDadosDeAbordagem(
-          p.data,
-          semFichaDigital ? null : site,
-          semFichaDigital ? null : previaDoAgente(p.data, cfg.agent_id, cfg.briefing_editado_em),
-          { semFichaDigital },
-        );
-    // Medido nos dados JÁ filtrados pelo modo; o mesmo valor vai à instrução e ao modo.
-    const comContextoDaEquipe = temContextoDaEquipe(dados);
+    // dados), que o prompt frio deixa citar "como o motivo do contato". Sem ficha
+    // digital, nem os fatos da ficha nem a prévia guardada. Pelo prompt do agente,
+    // sem estratégia nem auditoria. A decisão mora em `entradasDaAbordagem`, a MESMA
+    // que a prévia chama. A prévia guardada só entra se for da MESMA fonte e do texto
+    // ATUAL da campanha (`briefing_editado_em`).
+    const fonte = cfg.fonte_da_abordagem ?? "estrategia";
+    const { instrucao, dados, comContextoDaEquipe, semFichaDigital } = entradasDaAbordagem({
+      config: cfg,
+      data: p.data,
+      site,
+      estrategia,
+      voz: blocoVozVendedor(personalizacao),
+      previa: previaDoAgente(p.data, cfg.agent_id, cfg.briefing_editado_em, fonte),
+    });
     const generated = await gerarAbordagemDeFormulario(pool, llmEdgeConfigFromEnv(env), {
       tenantId: c.organization_id,
       agentId: cfg.agent_id,
       leadId: p.contact_id,
-      instrucao: instrucaoDeAbordagemFria(
-        cfg.instruction,
-        cfg.qualification,
-        blocoVozVendedor(personalizacao) || undefined,
-        semFichaDigital ? null : estrategia,
-        soCumprimenta,
-        comContextoDaEquipe,
-      ),
+      instrucao,
       origem: "Pesquisa de empresas",
       // NÃO é `automacao`: a pessoa não entrou em funil nenhum. O prompt do
       // ramo frio é o único que proíbe afirmar preenchimento — ver blocoDeModo.

@@ -1527,6 +1527,7 @@ async function nascerLeadDaConversaPeloCelular(
       // batiza é o cadastro (`rotuloDoContato`), como no caminho recebido.
       nomeDoContato: null,
       origem: ORIGEM_DO_WHATSAPP_OPERADOR,
+      channelSessionId: session.id,
     });
     logger.info(
       nascimento.criado

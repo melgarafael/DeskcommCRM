@@ -242,6 +242,16 @@ crons HTTP do app, e cada um deles fala com o PostgREST; numa instalação parad
 isso costuma ser a maior parte do que sobra. Se o seu número não fechar depois de
 ajustar os intervalos, meça o `app` separadamente antes de mexer em mais nada.
 
+**O backup (`backup.sh`) também conta no egress.** O `pg_dump` lê o banco
+inteiro a cada rodada, pela conexão de banco do `.env`. O kit recomenda rodar
+**todo dia** e esse continua sendo o padrão: backup é a rede de segurança do seu
+dado. Para saber quanto ele custa no seu caso, olhe no dia seguinte em
+**Settings → Usage → Egress**, na linha **Shared Pooler**. Na única medição que
+temos (#2235, banco de ~160 MB), essa linha foi **1%** do egress do dia de pico;
+o grosso era PostgREST, Auth e Realtime, isto é, telas abertas. Se no seu painel
+o backup pesar, passe o cron para semanal (`0 3 * * 0`): o `update.sh` já faz um
+backup antes de cada atualização.
+
 ## 4. Espaço em disco é outra cota (e ela não se resolve com intervalo)
 
 O plano free também limita o **banco** (500 MB), e `job_queue`, `api_audit_log`
