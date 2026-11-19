@@ -505,28 +505,20 @@ export async function getContactHandler(
     if (!roleAtLeast(role, "manager")) {
       cpfDecryptDenied = true;
     } else {
+      // (9423) O propósito vai como PARÂMETRO: o PostgREST abre a transação dele,
+      // e o GUC `app.decrypt_purpose` não tem como ser fixado na mesma transação
+      // desta chamada. A trilha da LEITURA é a linha `contact.cpf_decrypted`, e é
+      // ela que passa a carregar o motivo — antes o motivo ia para uma linha
+      // `contact.updated`, que anunciava uma atualização de ficha que não houve.
       const { data: dec, error: decErr } = await supabase.rpc("decrypt_cpf", {
         p_contact_id: input.contactId,
+        p_purpose: input.decryptPurpose,
       });
       if (decErr) {
         console.warn("[contacts.get] decrypt_cpf RPC unavailable", decErr.message);
       } else if (typeof dec === "string") {
         cpfDecrypted = dec;
       }
-      const a = actorAuditPayload(ctx.actor);
-      await audit({
-        action: "contact.updated",
-        actorUserId: a.actorUserId,
-        organizationId: contact.organization_id,
-        resourceType: "contact",
-        resourceId: contact.id,
-        requestId: ctx.requestId,
-        metadata: {
-          ...a.metadataActor,
-          decrypt_purpose: input.decryptPurpose,
-          success: !!cpfDecrypted,
-        },
-      });
     }
   }
 
