@@ -51,6 +51,8 @@ export interface EntradaDoSalvarAvisoDeAgendamento {
   ligado: boolean;
   /** Também lembrar antes de cada horário (migration 9326). */
   lembrar_antes?: boolean;
+  /** O resumo das 7h só sai em dia com agendamento (migration 9434). */
+  resumo_so_com_agendamento?: boolean;
   /** `true` = "eu sei que esse número é um cliente meu, e quero mesmo assim". */
   confirma_contato?: boolean;
 }

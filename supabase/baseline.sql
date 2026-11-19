@@ -82687,6 +82687,63 @@ grant select on table public.storage_redaction_queue to authenticated;
 
 
 
+-- ---- resumo das 7h só quando houver agendamento (migration 9434, #4988) ----
+-- Espelho idempotente da 9434 (ver o cabeçalho dela).
+-- 1. A ESCOLHA DO DONO. Nasce desligada: quem já recebe o resumo todo dia não
+--    deixa de recebê-lo sem pedir.
+alter table public.config_aviso_de_agendamento
+  add column if not exists resumo_so_com_agendamento boolean not null default false;
+
+comment on column public.config_aviso_de_agendamento.resumo_so_com_agendamento is
+  'O resumo das 7h só sai quando o dia tem agendamento ou houve mudança represada da madrugada. Não afeta os avisos de marcado/remarcado/cancelado nem o lembrete antes do horário. Motor em lib/agenda/aviso-de-agendamento.ts (aplicaResumoDoDia).';
+
+-- 2. A PORTA DE ESCRITA da escolha. Função própria, como a do lembrete (9326):
+--    trocar a assinatura de `fn_definir_aviso_de_agendamento` derrubaria a
+--    porta que todo clone já usa. Mesmas guardas: admin da organização,
+--    escrita de suporte permitida e MFA provado na sessão.
+create or replace function public.fn_definir_resumo_do_aviso_de_agendamento(
+  p_org uuid,
+  p_so_com_agendamento boolean
+) returns boolean
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_antes boolean;
+begin
+  if auth.uid() is null or p_org is null
+     or not public.fn_role_at_least(p_org, 'admin')
+     or not public.fn_support_write_allowed(p_org) then
+    raise exception 'aviso_de_agendamento_forbidden' using errcode = '42501';
+  end if;
+  if not public.fn_session_mfa_proven() then
+    raise exception 'aviso_de_agendamento_mfa_required' using errcode = '42501';
+  end if;
+
+  select resumo_so_com_agendamento into v_antes
+    from public.config_aviso_de_agendamento
+   where organization_id = p_org
+   for update;
+  if not found then
+    raise exception 'aviso_de_agendamento_sem_config' using errcode = '22023';
+  end if;
+
+  update public.config_aviso_de_agendamento
+     set resumo_so_com_agendamento = coalesce(p_so_com_agendamento, false),
+         atualizado_por            = auth.uid(),
+         updated_at                = now()
+   where organization_id = p_org;
+
+  return coalesce(v_antes, false);
+end;
+$$;
+-- AS DUAS ORIGENS DE EXECUTE (item 9 da doutrina de migrations).
+revoke all     on function public.fn_definir_resumo_do_aviso_de_agendamento(uuid,boolean) from public, anon;
+grant  execute on function public.fn_definir_resumo_do_aviso_de_agendamento(uuid,boolean) to authenticated;
+
+notify pgrst, 'reload schema';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
