@@ -377,9 +377,9 @@ flock -n 9 || exit 0
 #
 # Esta seção é a resposta, e ela roda ANTES do heartbeat de propósito: com o
 # app fora do ar o POST não tem resposta, e o `|| exit 0` logo abaixo encerraria
-# o agente — o cenário inteiro desta vigília. A marca que a autoriza nasce no
-# `update.sh` (passo 1.6), e quem a desarma é a própria vigília: app
-# respondendo, janela vencida ou volta já disparada.
+# o agente — o cenário inteiro desta vigília.
+# The updater arms the watchdog after backup and checkout. The agent closes
+# it when the window expires or it starts a rollback.
 DE_VOLTA="$(vigia_ler)" || DE_VOLTA=""
 if [ -n "$DE_VOLTA" ]; then
   if app_esta_no_ar; then

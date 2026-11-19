@@ -199,11 +199,11 @@ ENV
   (
     cd "$proj" || exit 1
     git init --quiet
-    printf 'instalada 0.8.0\n' > versao.txt
     git add -A && git commit --quiet -m "v0.8.0"
     git tag v0.8.0
-    printf 'publicada 0.9.0\n' > versao.txt
-    git add -A && git commit --quiet -m "v0.9.0"
+    # The watchdog scenarios need distinct release commits. Keep their trees
+    # identical so the checkout preflight has no files to reconcile.
+    git commit --allow-empty --quiet -m "v0.9.0"
     git tag v0.9.0
     # O que está INSTALADO é a 0.8.0: HEAD nela, como numa VPS que não atualizou.
     git checkout --quiet v0.8.0
