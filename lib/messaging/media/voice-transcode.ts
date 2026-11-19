@@ -30,11 +30,11 @@
  * de voz É o formato — chegar como arquivo anexo, sem a bolha e sem a onda,
  * muda o que a pessoa recebe.
  *
- * No webm do Chrome o codec já é opus dos dois lados e o que muda é o
- * CONTAINER: `-c:a copy`, sem reencodar, sem perda, e rápido o bastante para
- * caber no caminho do upload. A nota de voz do iPhone (`audio/mp4`, AAC) não
- * é opus: ela é REENCODADA em opus (`libopus`), que custa CPU — por isso só
- * entra quando o gravador do composer a marca como nota de voz.
+ * O webm do Chrome já é opus, e por meses ele só trocava de CONTAINER
+ * (`-c:a copy`). Não basta: a cópia preserva o quadro do gravador, e o de
+ * 2,5 ms é recusado com o mesmo `131053` (ver `transcodificarNotaDeVoz`).
+ * Hoje o webm é reencodado como o AAC do iPhone (`audio/mp4`), que custa CPU —
+ * e por isso o que não é webm só entra quando o composer o marca como nota de voz.
  */
 import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -138,6 +138,15 @@ export const ENTRADA_ACEITA = [
   "-format_whitelist", "ogg,matroska,webm,mov,mp4,m4a,3gp,3g2,mj2",
 ] as const;
 
+/**
+ * Opus mono de 24k em quadros de 20 ms: o que o WhatsApp grava e o que o canal
+ * oficial aceita. O `-frame_duration` é explícito porque o tamanho de quadro É a
+ * diferença entre a nota que chega e a recusada (`transcodificarNotaDeVoz`).
+ */
+export const CODEC_NOTA_DE_VOZ = [
+  "-c:a", "libopus", "-b:a", "24k", "-ac", "1", "-ar", "48000", "-frame_duration", "20",
+] as const;
+
 /** Roda ffmpeg; rejeita se sair diferente de zero. Injetável para teste. */
 async function runFfmpeg(args: string[], cwd: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
@@ -157,8 +166,8 @@ async function runFfmpeg(args: string[], cwd: string): Promise<void> {
 }
 
 /**
- * Nota de voz → Ogg/Opus: o webm só troca de container; o resto marcado como
- * nota de voz (o AAC do iPhone) é reencodado em opus.
+ * Nota de voz → Ogg/Opus de quadros de 20 ms: o webm do Chrome e o resto
+ * marcado como nota de voz (o AAC do iPhone) são reencodados em opus.
  *
  * Falha devolve o original INTACTO, não erro: um áudio que talvez não saia é
  * melhor que um envio que morre antes de tentar — e o canal que aceita webm
@@ -181,13 +190,13 @@ export async function transcodificarNotaDeVoz(
     const entrada = join(dir, "in.audio");
     const saida = join(dir, "out.ogg");
     await writeFile(entrada, input.buffer);
-    // webm: `-c:a copy` — o codec já é opus dos dois lados, reencodar custaria
-    // tempo e qualidade para chegar ao mesmo lugar. O resto (o AAC do iPhone)
-    // não é opus: copiar o container não serve, tem de reencodar.
-    const codec = ehWebm(baseDoMime(input.mime))
-      ? ["-c:a", "copy"]
-      : ["-c:a", "libopus", "-b:a", "24k", "-ac", "1", "-ar", "48000"];
-    await executar([...ENTRADA_ACEITA, "-i", entrada, "-vn", ...codec, "-f", "ogg", saida], dir);
+    // Tudo é REENCODADO, o webm inclusive. Copiar o container (`-c:a copy`)
+    // preservava o tamanho de quadro que o gravador escolheu, e o Chrome do
+    // celular às vezes grava opus em quadros de 2,5 ms: medido numa instalação
+    // em 18/11/2026, 5 de 5 notas de voz assim foram recusadas pelo canal
+    // oficial com `131053`, e as 16 em quadros de 60 ms do mesmo aparelho
+    // chegaram. Reencodar fixa 20 ms, e o arquivo de minuto cabe em ~200 KB.
+    await executar([...ENTRADA_ACEITA, "-i", entrada, "-vn", ...CODEC_NOTA_DE_VOZ, "-f", "ogg", saida], dir);
     const buffer = await readFile(saida);
     if (buffer.length === 0) return { buffer: input.buffer, mime: input.mime, convertido: false };
     return { buffer, mime: VOICE_MIME, convertido: true };

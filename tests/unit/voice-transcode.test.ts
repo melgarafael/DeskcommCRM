@@ -74,9 +74,10 @@ describe("a conversão", () => {
     await transcodificarNotaDeVoz(webm, { run });
     expect(run).toHaveBeenCalled();
     const args = run.mock.calls[0]?.[0] ?? [];
-    // `-c:a copy`: o codec já é opus dos dois lados; o que muda é o container.
-    // Reencodar custaria tempo e qualidade para chegar ao mesmo lugar.
-    expect(args).toContain("copy");
+    // REENCODA, não copia: a cópia preservava o quadro de 2,5 ms do Chrome do
+    // celular, que o canal oficial recusa com 131053 (medido em 18/11/2026).
+    expect(args).not.toContain("copy");
+    expect(args).toEqual(expect.arrayContaining(["-c:a", "libopus", "-frame_duration", "20"]));
     expect(args).toContain("ogg");
   });
 
@@ -185,10 +186,12 @@ describe("nota de voz gravada no iPhone (F2)", () => {
     expect(r.buffer.toString()).toBe("ogg-opus");
   });
 
-  it("webm com notaDeVoz continua trocando só o container", async () => {
+  it("webm com notaDeVoz também é reencodado em quadros de 20 ms", async () => {
     const run = vi.fn(async (_args: string[], _cwd: string) => {});
     await transcodificarNotaDeVoz({ ...webm, notaDeVoz: true }, { run });
-    expect(run.mock.calls[0]?.[0]).toContain("copy");
+    const args = run.mock.calls[0]?.[0] ?? [];
+    expect(args).not.toContain("copy");
+    expect(args).toEqual(expect.arrayContaining(["-frame_duration", "20"]));
   });
 
   it("ffmpeg falhando no AAC devolve o original — o WAHA segue convertendo sozinho", async () => {
