@@ -102,7 +102,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     if (!pai || pai.pai_product_id !== null) {
       return fail("validation_failed", t("Serviço principal não encontrado para esta variação."), 422, {
         requestId,
-        details: { pai_id: ["serviço principal inexistente ou que já é variação"] },
+        details: { pai_id: ["pai_invalido"] },
       });
     }
   }
@@ -140,7 +140,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     if (r.motivo === "nao_encontrado") {
       return fail("validation_failed", t("Serviço principal não encontrado para esta variação."), 422, {
         requestId,
-        details: { pai_id: ["serviço principal inexistente ou que já é variação"] },
+        details: { pai_id: ["pai_invalido"] },
       });
     }
     return fail("validation_failed", t("Este serviço não passou nas regras do cadastro."), 422, {

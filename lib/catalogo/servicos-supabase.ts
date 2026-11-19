@@ -19,6 +19,8 @@ import {
   type LinhaDoCatalogo,
 } from "@/lib/catalogo/servicos";
 
+import type { RegraDoServico } from "@/lib/schemas/servicos";
+
 export const MODULO_SERVICOS = "catalogo_servicos" as const;
 
 export const SERVICOS_POR_PAGINA = 50;
@@ -193,25 +195,27 @@ export async function sinaisFixosQueTravamPreco(
   return saida;
 }
 
-/**
- * A recusa do banco em campo e frase de quem cadastra. O texto do erro é o
- * nome da regra (`raise exception 'servico_sinal_acima_do_preco'`, ou o nome do
- * CHECK), então o que volta é estável e não vaza SQL.
- */
-export function camposDaRecusa(detalhe: string): Record<string, string[]> {
+/** Traduz a regra do banco para o código público, sem devolver o erro SQL. */
+export function camposDaRecusa(detalhe: string): Record<string, RegraDoServico[]> {
   if (detalhe.includes("servico_sinal_acima_do_preco")) {
-    return { sinal: ["o sinal fixo não pode passar do preço da menor variação"] };
+    return { sinal: ["sinal_fixo_acima_do_preco"] };
   }
   if (detalhe.includes("catalog_service_details_prazo_check")) {
-    return { prazo_dias_uteis: ["prazo em dias úteis só existe em projeto"] };
+    return { prazo_dias_uteis: ["prazo_fora_da_faixa"] };
   }
   if (detalhe.includes("catalog_service_details_sinal_check")) {
-    return { sinal: ["sinal percentual de 1 a 100, ou fixo maior que zero"] };
+    return { sinal: ["sinal_invalido"] };
   }
   if (detalhe.includes("catalog_service_details_forma_check")) {
-    return { tipo: ["tipo e unidade do serviço não combinam, ou a variação trouxe detalhe do principal"] };
+    return { tipo: ["forma_invalida"] };
   }
-  return { banco: ["o cadastro não passou numa regra do banco"] };
+  if (detalhe.includes("catalog_service_details_pai_check")) {
+    return { pai_id: ["pai_invalido"] };
+  }
+  if (detalhe.includes("catalog_service_details_instrucoes_check")) {
+    return { instrucoes_ia: ["instrucoes_longas"] };
+  }
+  return {};
 }
 
 export interface EscritaDoServico {
