@@ -17,17 +17,18 @@ import { VisoesGoogleAds } from "./_components/VisoesGoogleAds";
 export const metadata = { title: "Google Ads" };
 export const dynamic = "force-dynamic";
 
-const errosDoGoogle = new Map([
-  ["cancelado", "Você cancelou a autorização no Google."],
-  ["estado_invalido", "A autorização expirou. Inicie a conexão novamente."],
-  ["sem_codigo", "O Google não devolveu o código esperado. Tente de novo."],
-  ["google_ads_nao_configurado", "Peça ao administrador que configure as credenciais OAuth do Google Ads para consultar campanhas."],
-  ["sem_refresh_token", "O Google não devolveu a autorização de longa duração esperada. Tente conectar de novo."],
-  ["sem_permissao", "O Google recusou o acesso a esta conta. Confira o Customer ID, a conta de gerente (MCC) e se a conta autorizada tem acesso a ela."],
-  ["conta_indisponivel", "O Google não conseguiu consultar essa conta. Confira os IDs e o acesso do login escolhido."],
-  ["cifra_indisponivel", "A instalação está sem a chave mestra de criptografia."],
-  ["erro_ao_gravar", "Não foi possível salvar a conta de relatório. Tente novamente."],
-]);
+const errosDoGoogle: Record<string, string> = {
+  cancelado: "Você cancelou a autorização no Google.",
+  estado_invalido: "A autorização expirou. Inicie a conexão novamente.",
+  sem_codigo: "O Google não devolveu o código esperado. Tente de novo.",
+  google_ads_nao_configurado: "Peça ao administrador que configure as credenciais OAuth do Google Ads para consultar campanhas.",
+  sem_refresh_token: "O Google não devolveu a autorização de longa duração esperada. Tente conectar de novo.",
+  sem_permissao: "O Google recusou o acesso a esta conta. Confira o Customer ID, a conta de gerente (MCC) e se a conta autorizada tem acesso a ela.",
+  projeto_sem_acesso: "Solicite acesso de produção à Google Ads API no projeto Google Cloud usado na autorização.",
+  conta_indisponivel: "O Google não conseguiu consultar essa conta. Confira os IDs e o acesso do login escolhido.",
+  cifra_indisponivel: "A instalação está sem a chave mestra de criptografia.",
+  erro_ao_gravar: "Não foi possível salvar a conta de relatório. Tente novamente.",
+};
 
 export default async function GoogleAdsPage({ searchParams }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -59,9 +60,11 @@ export default async function GoogleAdsPage({ searchParams }: {
   const params = await searchParams;
   const midiaAberta = params.aba === "midia";
   const contaDoRetorno = midiaAberta && lista.ok ? lista.contas.find((c) => c.customerId === params.conta) : undefined;
-  const erro = midiaAberta && typeof params.erro === "string"
-    ? t(errosDoGoogle.get(params.erro) ?? "Não foi possível autorizar a leitura. Inicie a conexão novamente.")
-    : null;
+  const erro = midiaAberta && typeof params.erro === "string" && (
+    Object.hasOwn(errosDoGoogle, params.erro)
+      ? t(errosDoGoogle[params.erro]!)
+      : t("Não foi possível autorizar a leitura. Inicie a conexão novamente.")
+  );
   const midia = <>
     {erro && <p role="alert" className="mb-3 text-sm text-text">{erro}</p>}
     {!erro && params.ok === "1" && contaDoRetorno?.propria &&
