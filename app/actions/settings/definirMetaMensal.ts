@@ -59,6 +59,7 @@ export type DefinirMetaMensalResult =
       ok: false;
       error:
         | "validation_failed"
+        | "vendedor_fora_da_equipe"
         | "unauthenticated"
         | "forbidden_tenant"
         | "forbidden_role"
@@ -130,7 +131,9 @@ export async function definirMetaMensal(
 
   // O vendedor tem de ser MEMBRO ATIVO da organização: a FK só garante que o id
   // existe em `auth.users`, e a meta individual é de alguém DESTA empresa que
-  // ainda está nela (vínculo revogado não conta).
+  // ainda está nela (vínculo revogado não conta). A recusa tem código PRÓPRIO
+  // (#4986): com `validation_failed` a tela dizia "o mês e o alvo precisam estar
+  // preenchidos", com os dois preenchidos.
   if (vendedorId) {
     const { data: membro, error: erroMembro } = await supabase
       .from("user_organizations")
@@ -141,7 +144,7 @@ export async function definirMetaMensal(
       .maybeSingle();
     if (erroMembro) return { ok: false, error: "erro_ao_gravar", details: erroMembro.message };
     if (!membro) {
-      return { ok: false, error: "validation_failed", details: { vendedor_id: "não é membro da organização" } };
+      return { ok: false, error: "vendedor_fora_da_equipe" };
     }
   }
 
