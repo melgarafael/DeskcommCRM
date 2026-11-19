@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
 import { GET } from "@/app/api/v1/agenda/vinculos/route";
 import { VinculoDaMarcacao } from "@/components/agenda/VinculoDaMarcacao";
 
@@ -11,7 +12,7 @@ vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 vi.mock("@/components/contacts/NewContactDialog", () => ({ NewContactDialog: () => null }));
 vi.mock("@/lib/api/client", () => ({
   apiClient: {
-    get: async (url: string) => (await GET(new Request(`http://localhost${url}`))).json(),
+    get: async (url: string) => (await GET(new NextRequest(`http://localhost${url}`))).json(),
   },
 }));
 
@@ -80,12 +81,12 @@ beforeEach(() => {
     { ...contato, id: OUTRO_ID, organization_id: "org-b" },
     { ...contato, id: "anonimo", is_anonymized: true },
   ];
-  deps.role.mockResolvedValue({ ok: true, org: { orgId: "org-a" } });
+  deps.role.mockResolvedValue({ ok: true, user: { id: "user-a", idioma: "pt-BR" }, org: { orgId: "org-a" } });
   deps.from.mockImplementation(consulta);
 });
 async function buscar(params: Record<string, string> = {}) {
   const resposta = await GET(
-    new Request(`http://localhost/api/v1/agenda/vinculos?${new URLSearchParams(params)}`),
+    new NextRequest(`http://localhost/api/v1/agenda/vinculos?${new URLSearchParams(params)}`),
   );
   expect(resposta.status).toBe(200);
   return (await resposta.json()).data;

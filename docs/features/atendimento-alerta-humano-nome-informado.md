@@ -17,11 +17,16 @@ continuam disponíveis.
    **Avisar também nas transferências para atendimento humano** (ligada por padrão, como o aviso de
    Propostas) tira as transferências do número sem desligar os avisos de casos. Ela mora em
    `settings.crm.avisar_transferencia_no_whatsapp`; só o booleano `false` desliga.
+   Com ela ligada aparece **Incluir o primeiro nome do cliente na mensagem** (desligada por
+   padrão; `settings.crm.aviso_transferencia_com_nome`, só o booleano `true` liga).
 4. Consulte o resultado no item da transferência na Central. Abra a conversa pelo link do aviso
    e responda pelo CRM; responder ao aviso interno não envia uma resposta ao cliente.
 
-O texto externo é genérico: informa que um atendimento precisa de uma pessoa e inclui o link
-autenticado para a conversa. Não inclui nome, motivo livre, resumo nem transcrição. A origem do
+O texto externo é mínimo por padrão: informa que um atendimento precisa de uma pessoa e inclui o
+link autenticado para a conversa. Com a opção do nome ligada, acrescenta só o primeiro nome do
+cliente. Nunca inclui motivo, resumo nem transcrição: o motivo gravado costuma ser código interno
+(`requested_human`), e texto da IA sai com a cara da empresa (doc de decisão 372, mesma régua do
+176). A origem do
 link vem da URL pública da instalação, exige HTTPS e descarta caminho, query e fragmento.
 
 CONFIRMADO pelo código:
