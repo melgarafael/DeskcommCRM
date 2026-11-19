@@ -369,6 +369,9 @@ export class AudioSocketCallBridge {
   // tempo certo sozinho; AudioSocket é só bytes crus, o pacing é nosso.
   private outboundQueue = Buffer.alloc(0);
   private pacerTimer: NodeJS.Timeout | null = null;
+  private responseInProgress = false;
+  /** Descarta deltas atrasados em trânsito após barge-in até o próximo `response.created`. */
+  private ignorarAudioAteNovaResposta = false;
 
   private readonly realtimeModel: string;
 
@@ -587,9 +590,22 @@ export class AudioSocketCallBridge {
       switch (event.type) {
         case "response.created":
           this.isTalkspurtStart = true;
+          this.responseInProgress = true;
+          this.ignorarAudioAteNovaResposta = false;
           break;
         case "response.output_audio.delta":
+          if (this.ignorarAudioAteNovaResposta) break;
           this.sendAudioToAsterisk(Buffer.from(event.delta, "base64"));
+          break;
+        case "input_audio_buffer.speech_started":
+          if (!this.endCallRequested && (this.outboundQueue.length > 0 || this.responseInProgress)) {
+            console.info(`[realtime] call=${this.ctx.callId} barge-in: cliente interrompeu, limpando fila de áudio`);
+            this.outboundQueue = Buffer.alloc(0);
+            this.ignorarAudioAteNovaResposta = true;
+            if (this.responseInProgress && this.realtimeWs.readyState === WebSocket.OPEN) {
+              this.realtimeWs.send(JSON.stringify({ type: "response.cancel" }));
+            }
+          }
           break;
         case "response.output_audio_transcript.done": {
           // Visto ao vivo em 17/09: o modelo às vezes NARRA a function em vez
@@ -646,6 +662,7 @@ export class AudioSocketCallBridge {
           break;
         }
         case "response.done": {
+          this.responseInProgress = false;
           this.uso = somarUsoDaResposta(this.uso, event.response?.usage);
           const output = (event.response?.output ?? []) as Array<{ type?: string; name?: string }>;
           const pediuEncerrar = output.some(
