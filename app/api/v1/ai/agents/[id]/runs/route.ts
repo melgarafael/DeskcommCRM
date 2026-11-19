@@ -55,7 +55,9 @@ import { type NextRequest } from "next/server";
 
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
+import { logger } from "@/lib/logger";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { runsListQuerySchema } from "@/lib/ai/agents/validation";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -117,7 +119,7 @@ export interface ConteudoDoTeste {
   tool_calls: unknown;
 }
 
-type ClienteDeSessao = Awaited<ReturnType<typeof createClient>>;
+type ClienteDeSessao = SupabaseClient;
 
 /**
  * Busca, para as linhas de TESTE desta página, o que o run de prévia guardou:
