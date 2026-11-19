@@ -146,6 +146,15 @@ export const MODULOS_OPCIONAIS_POR_FLAG = [
  *    capacidade que a empresa use.
  *  - `honorarios` e `financeiro` já ficam fora por mecanismo: são módulos de
  *    TABELA (ADR-0002), provisionados por instalação (F3 do #3868).
+ *
+ * `catalogo_por_feed` entrou na camada no #4871 (F2), junto com o cron que o
+ * consome: é um módulo por FLAG cujo efeito é o SERVIDOR sair para a internet a
+ * cada 2 h e reescrever preço do catálogo de UMA empresa. Numa instalação que
+ * hospeda várias, a exceção da empresa é o que impede o feed da que desligou de
+ * continuar sendo buscado. `cadencias` NÃO entra: é módulo de TABELA, e desligar
+ * por empresa ali é a mesma conversa de `honorarios`/`financeiro` (F3) — o que a
+ * empresa desliga hoje é a capacidade dela (`settings.cadencias.enabled`), já
+ * lida por `cadenciasLigadas`.
  */
 export const MODULOS_POR_EMPRESA = [
   "banco_externo",
@@ -157,6 +166,7 @@ export const MODULOS_POR_EMPRESA = [
   "conferir_whatsapp",
   "mcp_por_agente",
   "cold_call",
+  "catalogo_por_feed",
 ] as const satisfies readonly (typeof MODULOS_OPCIONAIS_POR_FLAG)[number][];
 export type ModuloPorEmpresa = (typeof MODULOS_POR_EMPRESA)[number];
 
