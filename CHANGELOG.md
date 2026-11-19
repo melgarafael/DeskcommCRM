@@ -46,6 +46,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   A partir da issue #4518.
 
+  Contribuição de @webtecnica (#4876, #4518).
+
 - **O teto de respostas por conversa passa a ser configurável pela empresa** O teto que impede dois robôs de conversarem sozinhos existia, mas só se ajustava no arquivo de configuração da instalação — uma empresa não podia apertar o próprio limite sem reiniciar o servidor. Agora ele se configura por empresa, pela API do anti-ban (ainda sem tela): quantas respostas automáticas cabem numa janela, a largura da janela em minutos e quanto tempo a conversa fica pausada ao bater o teto.
 
   Quem não configurou segue com o mesmo teto (20 respostas da IA por conversa em 60 minutos, ou o número que estiver no arquivo de configuração da instalação), mas uma coisa muda em toda instalação: ao bater o teto, a conversa agora também é pausada, pelo mesmo tempo da janela, até 60 minutos (60 no padrão). Para não pausar, grave `silenciar_minutos: 0`. Quem atende de forma mais conversada sobe o número; quem faz prospecção aperta. O disparo de campanha não é afetado — o teto conta só as respostas a mensagens recebidas, e o disparo continua com o teto dele.
@@ -68,6 +70,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **Meta de vendas pode ser em valor vendido, além da quantidade, e por vendedor** A meta mensal do Desempenho agora escolhe o indicador: quantidade de vendas ganhas ou valor vendido, na moeda da organização. O realizado em valor é a soma do valor dos negócios ganhos fechados dentro da janela da meta — a mesma janela da contagem, sem segunda régua —, e o painel mostra o valor realizado, o percentual, o quanto falta e a projeção até o fim do mês. A meta pode ser da empresa inteira ou de um vendedor, nos mesmos três níveis de escopo (empresa, funil e vendedor). Metas já cadastradas continuam valendo por quantidade: o indicador novo só entra quando alguém escolhe valor ao salvar.
 
+  Contribuição de @webtecnica (#4820, #4796).
+
 - **As etapas do funil mudam de ordem arrastando a coluna, não só pelas setas** Em Configurações › Etapas do funil, cada etapa ganha uma alça à esquerda do número: arraste a coluna até o lugar certo e solte. Antes, a ordem só mudava pelas setas, uma casa por clique, e levar a última de oito colunas para o começo pedia sete cliques. A linha fica onde foi solta enquanto a mudança é gravada, e volta ao lugar de antes, com o motivo na tela, se o servidor recusar. As setas continuam, para quem usa teclado ou leitor de tela, e o quadro do funil passa a mostrar a ordem nova sem recarregar, como já acontecia com as setas. Nenhuma ação é pedida a quem opera a instalação. Contribuição de @officialasishkumar (#4802).
 
 - **O relatório de vendas do Desempenho sai em CSV, com o período no nome do arquivo** A tela de Desempenho mostrava o resultado de vendas por atendente — ganhos, perdidos, conversas e o tempo da primeira resposta — e não tinha porta de saída: levar o número para a gestão ou abrir numa planilha dependia de print ou digitação. Agora o botão "Exportar vendas", ao lado do filtro de atendente, baixa um CSV com a tabela da tela.
@@ -76,7 +80,11 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   O nome do arquivo diz o que é e qual é o período (`vendas-por-atendente-AAAA-MM-DD_a_AAAA-MM-DD.csv`), e o recorte que a pessoa está vendo é o que sai: com um atendente escolhido no filtro, o arquivo tem só a linha dele. Os números não são recalculados — a rota e a tela leem a mesma função, então o arquivo e a tela não têm como divergir. Exportar exige papel de gestão (`manager`), o mesmo piso das outras exportações, e cada arquivo baixado fica registrado na auditoria com a quantidade de linhas e o recorte, nunca com o conteúdo da venda.
 
+  Contribuição de @webtecnica (#4849, #4802).
+
 - **Aviso de transferência pode incluir o primeiro nome do cliente** No Aviso no WhatsApp, a mensagem que avisa a equipe quando a IA passa um atendimento para uma pessoa pode agora mostrar o primeiro nome do cliente, além do link. A opção fica em IA › Avisos, abaixo do aviso de transferência, e nasce desligada: por padrão a mensagem continua mínima. O motivo da transferência não vai para o WhatsApp; ele continua no CRM, ao abrir a conversa. Crédito: @atendimentoreload-boop.
+
+  Contribuição de @atendimentoreload-boop (#4814).
 
 - **A conexão presa em "Conectando…" passa a ser religada sozinha — e avisa quando não volta** A sessão do WhatsApp no canal não oficial podia ficar dias em "Conectando…" sem receber mensagem nenhuma, e o produto não avisava ninguém. O único sinal era a pausa da campanha de prospecção, que só existe para quem tem campanha ativa; quem não tinha descobria ao estranhar que ninguém escrevia.
 
@@ -86,19 +94,29 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Os três números podem ser ajustados por instalação, em milissegundos para o prazo e o intervalo e em tentativas para o limite (`WHATSAPP_STARTING_PRAZO_MS`, `WHATSAPP_STARTING_INTERVALO_MS` e `WHATSAPP_STARTING_LIMITE`); sem eles, valem os padrões acima.
 
-  Crédito: @webtecnica.
+  Contribuição de @webtecnica (#4875, #4870).
 
 - **Rotas da agenda aceitam token de integração** As rotas de leitura da agenda (`agenda/configuracao`, `agenda/enderecos`, `agenda/excecoes`, `agenda/horarios-livres`, `agenda/pessoas` e `agenda/vinculos`), a de remoção de bloqueio (`agenda/excecoes` DELETE) e a de reativar tipo de agendamento (`agenda/tipos/reativar`) passam a aceitar o token `dsk_…` de servidor. A leitura exige o escopo `mcp:read`, a escrita exige `mcp:write`, e cada chamada conta no próprio teto de escrita do token e da organização. A organização vem da linha do token. Consultar horários livres pede papel `agent` no token, o mesmo que a ferramenta de agenda da IA exige. Remover bloqueio de dia pelo token pede papel `manager`, já que o token não é pessoa e atua sobre toda a organização. Continuam somente de sessão a criação de bloqueio de dia, a leitura das agendas Google da pessoa, a seleção e a atualização dessas agendas, a decisão de conflito do Google, e a leitura de um compromisso pelo id.
+
+  Contribuição de @paulolimajr77 (#4391, Spec 33, fatia 5 de 9).
 
 - **Catálogo de serviços como módulo opcional: serviço com tipo, variações, prazo e sinal** Novo módulo opcional, instalado em Módulos pelo administrador da instalação. Sem instalar, nada muda: a tabela do módulo não existe, as rotas de serviço respondem 404 e a busca de produtos do agente segue igual.
 
   Depois de instalar, um item do catálogo pode ser serviço: hora marcada, projeto ou plano recorrente, com variações (cada uma com nome, código e preço próprios), prazo em dias úteis no projeto, sinal percentual ou fixo e instruções internas para o agente. O cadastro fica em CRM › Ver tudo em CRM › Serviços, que só aparece com o módulo instalado; lá se cria, edita e desativa o serviço e se acrescentam as variações. O preço continua sendo o do item do catálogo. O agente passa a responder com "a partir de", as variações, o sinal calculado e o prazo, e deixa de oferecer o serviço marcado para não oferecer. O sinal fixo nunca passa do menor preço da família, inclusive quando o preço muda pela tela de produtos ou pela planilha. Base de @webtecnica (#3480).
 
+  Contribuição de @webtecnica (#3480, #3372).
+
 - **Rotas de chamadas aceitam token de integração** A rota de histórico de chamadas (`calls`) passa a aceitar o token `dsk_…` de servidor para listagem (`mcp:read`, papel `viewer`), com suporte a paginação e filtros por contato e período. A consulta é filtrada pela organização da linha do token. A iniciação de novas ligações continua restrita à sessão autenticada de usuário.
+
+  Contribuição de @paulolimajr77 (#4391, Spec 33, fatia 5 de 9).
 
 - **O túnel da Cloudflare pode ficar fixo em http2 quando o provedor bloqueia UDP** Em instalações atrás do Cloudflare Tunnel (`REVERSE_PROXY=cloudflared`), o túnel tenta sempre o protocolo QUIC primeiro, que usa UDP. Em VPS cujo provedor descarta UDP de saída, cada reconexão passava minutos falhando antes de cair para http2, e o painel da Cloudflare marcava o túnel como "degraded" nessa janela. Agora dá para pôr `CLOUDFLARED_PROTOCOL=http2` no `.env` e o túnel conecta direto por http2. Sem a variável, nada muda: o padrão continua `auto`. Como confirmar se é o seu caso está em `docs/runbooks/deploy.md`, seção 5.
 
+  Contribuição de @a0001f (#4981).
+
 - **O quadro ganha a opção de pintar a coluna inteira com a cor da etapa, em tom pastel** Desde a escolha da cor da etapa em Configurações › Etapas do funil, o quadro mostrava o tom só numa bolinha ao lado do nome. Agora há um botão **Cor na coluna**, ao lado de «Compacta», que pinta a coluna inteira (com o cabeçalho preso no alto) em tom pastel, com uma borda no mesmo tom. O fundo é a cor da etapa misturada com o fundo do quadro, então segue o tema claro e o escuro e os cards continuam legíveis. A escolha é de cada pessoa e fica no navegador, como a densidade dos cards; **o padrão continua sendo só a bolinha**, então nada muda para quem não ligar. Etapa sem cor («Padrão») continua neutra. Continua o trabalho de @webtecnica no #4846 (item 2 da #4802). Nenhuma ação é necessária na VPS.
+
+  Contribuição de @xofrd (#4976).
 
 - **Em conversa de grupo, cada participante tem uma cor fixa no nome** Na Inbox, numa conversa de grupo do WhatsApp, o nome de quem mandou cada mensagem aparecia
   sempre no mesmo cinza, e num grupo movimentado era difícil saber de relance quem estava
@@ -115,7 +133,11 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Ideia e primeira versão de @kvgroup01 (#4027).
 
+  Contribuição de @kvgroup01 (#4027, entregue pelo #4962).
+
 - **Rotas de demandas aceitam token de integração** A rota de detalhe e gestão de demandas (`demandas/[id]`) passa a aceitar o token `dsk_…` de servidor. Integrações podem consultar dados da demanda (`mcp:read`, papel `agent`) e atualizar próximo passo ou encerrar a demanda (`mcp:write`, papel `agent`). A organização é isolada estritamente pela linha do token, impedindo acesso a demandas de outros tenants.
+
+  Contribuição de @paulolimajr77 (#4391, Spec 33, fatia 5 de 9).
 
 - **Financeiro e honorários aceitam token de integração para leitura** As rotas de leitura do catálogo financeiro, das comandas (a lista, uma comanda e a fila de faturamento), da fidelidade (saldo e extrato), do extrato de lançamentos e dos contratos e parcelas de honorários agora aceitam o token de integração (`Authorization: Bearer dsk_…`). A leitura pede a permissão `mcp:read` e o mesmo papel que a tela já exige; a organização é a do token, e cada chamada conta no teto do token e da organização: passou do limite, a resposta é 429 com `Retry-After`.
 
@@ -124,6 +146,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   Contribuição de @paulolimajr77 (#4391).
 
 - **Cada número pode escolher o funil onde os contatos novos entram** Em Conexões, o cartão de cada número (WhatsApp, oficial ou rede social com caixa de entrada) ganha o botão **Funil de entrada**. Escolha o funil e, se quiser, a etapa: quem escrever pela primeira vez para aquele número vira negócio ali, e não no funil padrão da empresa. Serve, por exemplo, para o número de atacado alimentar o funil de atacado. Sem escolha, nada muda. Quem já é cliente e as campanhas com funil próprio seguem as regras delas, e se o funil escolhido for arquivado os contatos voltam a entrar no funil padrão. Crédito: @Denispds.
+
+  Contribuição de @Denispds (#4921).
 
 - **Operação do dia e relatório diário salvo no CRM** Nova tela em Análise › Operação do dia: num lugar só, quem chegou no dia (conversas
   novas e conversas com mensagem do cliente, separadas por WhatsApp, Instagram e outros),
@@ -143,9 +167,15 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   proposta e a hora do relatório na mesma tela. O fuso de Beirute (Líbano) passa a estar
   na lista de fusos.
 
+  Contribuição de @lebaneseforas-byte (#4722).
+
 - **Nível `telas_principais` passa a ter régua medida, e um idioma novo aparece sem cobrar toda frase** O nível `telas_principais` do registro de idiomas deixou de ser uma promessa sem critério: existe agora a régua que o confere. As telas principais são os destinos do menu lateral, derivados de `lib/navigation/registry.ts` — nunca uma lista escrita à mão —, e a cobertura de frases é medida pelo grafo de imports de cada rota, para que a conta alcance o componente onde a tela de fato mora e não só a casca do `page.tsx`. Medido nesta árvore: 16 telas e 4.573 frases distintas, com piso de dois terços. O inglês está em 71,6% e o turco em 79,7%; o chinês, em 50,0%, e por isso ainda não aparece. Quem declara o nível é aprovado quando atende a régua e recusado quando não atende, com o número do que falta — antes, qualquer declaração era recusada, e o único caminho para um idioma novo aparecer era o nível `completo`, que cobra aquele idioma em todo PR que acrescentar uma frase em português. O nível `completo` não mudou: o espanhol continua cobrando toda frase de tela. Nenhum idioma é promovido nesta fatia, e nenhum catálogo entra no caminho do type check: o teste lê o catálogo como dado, não por `import`, porque pôr `en.json` no programa do TypeScript custa 18.944 tipos e 17 MB de heap medidos só no recorte.
 
+  Contribuição de @webtecnica (#4817, #4812).
+
 - **Rotas de tarefas aceitam token de integração** As rotas de tarefas (`tasks` e `tasks/[id]`) passam a aceitar o token `dsk_…` de servidor além da sessão de navegador. O token permite listar, criar e editar tarefas (inclusive tarefas com repetição semanal), associando-as a leads, contatos ou demandas da própria organização. A leitura exige o escopo `mcp:read` (com papel `viewer`) e a escrita exige `mcp:write` (com papel `agent`). Para apagar uma tarefa via token (`DELETE /api/v1/tasks/[id]`), exige-se papel mínimo `manager`, alinhado à régua de exclusões da organização. O filtro de funil (`pipeline_id`) e a atribuição dinâmica a si mesmo (`assigned_to=me`) continuam restritos à sessão da tela.
+
+  Contribuição de @paulolimajr77 (#4391, Spec 33, fatia 5 de 9).
 
 ### Corrigido
 
@@ -153,9 +183,11 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   O comentário do `hostgator-setup-kit/backup.sh` e o runbook de custo do Supabase passam a explicar que o backup também conta no egress e ensinam a conferir quanto ele custa no painel (Settings › Usage › Egress, linha Shared Pooler). O backup continua diário por padrão.
 
-  Crédito: @jlom2024 (#2235).
+  Contribuição de @jlom2024 (#4803, #2235).
 
 - **A frase da opção de parar volta a sair inteira quando a abordagem vai em várias mensagens curtas** Na campanha de prospecção com "Responder em várias mensagens curtas" ligado, a frase que ensina a pessoa a parar de receber (a padrão ou a escrita pela empresa) é um parágrafo próprio e sai na última mensagem da resposta. Dois caminhos a perdiam: o reenvio automático de uma mensagem que ficou na fila do canal lia só a primeira bolha e mandava a resposta sem a frase; e, quando o teto de caracteres da bolha era menor que a frase, ela era cortada em duas e o sistema deixava de amarrar a saída à mensagem que a carregava, oferecendo a saída de novo depois. Agora a frase sai inteira uma vez, e a saída continua presa à mensagem certa — inclusive quando o assistente manda mais de uma mensagem na mesma resposta: o reenvio lê só as mensagens daquele envio, então não perde a frase nem repete o pedido de parar. Nada a fazer na VPS.
+
+  Contribuição de @webtecnica (#4654, #4370).
 
 - **No WhatsApp oficial, a mensagem que o CRM não sabe ler entra na conversa, sem texto, em vez de sumir** No WhatsApp oficial (pela Meta ou pelo Datafy), algumas mensagens de clientes chegavam ao CRM e se perdiam. Isso acontecia com tipos de mensagem que o CRM não reconhecia, como a que a Meta marca como "não suportada" e o pedido feito pelo catálogo. A mensagem não aparecia na conversa e nenhum aviso surgia na tela.
 
@@ -186,6 +218,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **A assinatura do ChatGPT volta a responder o cliente com o Sentry ligado** Com o provedor `openai-assinatura` (Sign in with ChatGPT), o agente voltou a responder o cliente: toda chamada "Responder o cliente" falhava em ~1 s com `Invalid state: The ReadableStream is locked`, e a aba Teste do agente dava `preview_failed`. O defeito era da combinação do `ai` 7.0.168+ com a integração do Vercel AI SDK do Sentry — o Sentry trocava o stream da chamada por um stream espiado e travava o original, e só a assinatura usa `streamText` com ferramentas. A integração do AI SDK não é mais instalada no app, no edge nem no worker; chamadas curtas, Gemini e OpenAI por chave continuam iguais. Quem usava `SENTRY_DSN=off` como contorno pode tirar a linha; a escolha de telemetria continua a mesma de antes. Quem aponta `SENTRY_DSN` para o próprio Sentry segue recebendo os erros, mas deixa de receber os spans das chamadas de IA. Encontrado por @hubmorada (#4798), consertado por @webtecnica.
 
+  Contribuição de @webtecnica (#4815, #4798).
+
 - **Inbox ganha a porta da ficha do contato na faixa entre 768 e 1279 px** A ficha do contato só aparecia como terceira coluna a partir de 1280 px, e a
   gaveta que abre o mesmo painel tinha uma única porta — dentro da barra do
   celular, que some a partir de 768 px. Quem atendia numa janela de notebook
@@ -205,6 +239,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   Agora o motivo sai na própria linha da leitura do CPF, e a leitura da ficha deixa de gravar a linha de atualização.
 
   Para quem lê o CPF por SQL nada muda: as duas formas de chamada continuam valendo, e a finalidade declarada na sessão segue sendo registrada quando não vem outra. Nenhuma ação é necessária na atualização.
+
+  Contribuição de @webtecnica (#4897, #4892).
 
 - **A ficha do contato fala o idioma da tela na aba Linha do tempo e nos rótulos Email e Tags** Na ficha do contato, a aba "Timeline" e os rótulos "Email" e "Tags" estavam escritos direto no
   código: com a tela em espanhol, a aba vizinha "Visão geral" virava "Resumen", mas esses três
@@ -249,6 +285,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **O botão do aviso "Número novo aguardando liberação" leva a Conexões** Na Central de avisos, o botão do aviso de número novo (e o de saúde do número degradada) mostrava "Este contexto não está disponível para você" em vez de abrir a conexão. Agora ele leva a Conexões, onde o número é liberado, para quem administra a empresa. Crédito: @xofrd.
 
+  Contribuição de @xofrd (#4926).
+
 - **Link do cliente com UUID não é confundido com vazamento de vocabulário interno** O detector de vocabulário interno passa a ignorar o UUID que faz parte de um
   link `http(s)://`, para que links legítimos de portais e formulários com o
   identificador no caminho cheguem ao cliente. O UUID solto no corpo da mensagem,
@@ -272,6 +310,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   quando o aparelho já deu permissão. Antes ela vinha ligada por padrão num
   celular que nunca tinha sido inscrito — e nenhum aviso chegava com o app
   fechado. Agora o primeiro toque liga, pede a permissão e inscreve o aparelho.
+
+  Contribuição de @agencyspeedagend-del (#4811).
 
 ## [1.118.0] — 2026-11-18
 
