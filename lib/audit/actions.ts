@@ -204,6 +204,11 @@ export const AUDIT_ACTIONS = [
   "message.revoked_in_channel",
   "message.hidden_in_crm",
   "message.restored_in_crm",
+  // A mensagem recebida foi segurada de propósito (#4026): o efeito (IA,
+  // automação, aviso) para, a linha e o corpo NÃO mudam. O par
+  // marcar/liberar entra junto porque um sem o outro conta meia história.
+  "message.quarantined",
+  "message.quarantine_released",
   // O TEXTO RETIDO DE UMA APAGADA PELO CONTATO (#4500), por clique em "Ver
   // texto retido" (`api/v1/messages/[id]/texto-retido`). Três resultados, três
   // códigos: revelado, NEGADO (perfil não autorizado — o caso que mais precisa

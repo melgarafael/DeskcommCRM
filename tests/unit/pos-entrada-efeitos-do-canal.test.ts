@@ -1125,7 +1125,13 @@ describe("o clique Google é tratado pelo caminho comum dos canais", () => {
       expect(garantirLeadDaConversa).toHaveBeenCalledTimes(1);
       expect(filtrosDoRefGoogle).toMatchObject({ organization_id: "org-1", token: "K7M2P9", matched_at: null });
       expect(sequencia).not.toContain("update:meta_ads_click_refs");
-      expect(filtrosDeMessages).toEqual([]);
+      // A cerca desta suíte (64f21eff88) é que o REF nunca é resolvido lendo
+      // `messages`: a atribuição sai de `google_ads_click_refs`. A quarentena
+      // (#4026) passou a ler a PRÓPRIA linha da mensagem, por id — leitura que
+      // não tem relação com o clique. O que continua proibido é procurar o
+      // token em `messages`; a leitura por id é declarada abaixo, na cara.
+      expect(filtrosDeMessages.filter(([, valor]) => valor === "K7M2P9")).toEqual([]);
+      expect(filtrosDeMessages.filter(([coluna]) => coluna !== "organization_id" && coluna !== "id")).toEqual([]);
     },
   );
 

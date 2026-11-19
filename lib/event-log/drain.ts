@@ -14,6 +14,7 @@ import {
   MENSAGEM_QUE_NAO_ENTROU,
 } from "@/lib/event-log/aviso-de-evento-morto";
 import { dispatchEvent, getRegisteredHandlers, type EventRow } from "@/lib/event-log/dispatcher";
+import { lerQuarentenaDaMensagem } from "@/lib/channels/quarentena";
 import { logger } from "@/lib/logger";
 import { ehOperante } from "@/lib/organizacao/operante";
 
@@ -419,6 +420,11 @@ export async function drainEventLog(
     const results = await dispatchEvent(row, {
       orgParada: parados.has(row.organization_id),
       soHandlers: escopo?.handlers,
+      // A marca vive na linha da mensagem (#4026); a leitura é feita pelo mesmo
+      // módulo que a rota usa para gravar, então a régua é a mesma nos dois
+      // sentidos. Falha de leitura dentro do dispatcher é fail-open.
+      emQuarentena: async (organizationId, messageId) =>
+        (await lerQuarentenaDaMensagem(admin, { organizationId, messageId })).emQuarentena,
     });
 
     const okKeys = results
