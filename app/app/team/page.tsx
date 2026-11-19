@@ -14,6 +14,7 @@ import { SectorsClient } from "./_components/SectorsClient";
 import { fusoUtilizavel } from "@/lib/tempo/fusos";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Equipe" };
@@ -55,6 +56,22 @@ export default async function TeamPage({
   const isManager = !!activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
   // A porta de "criar com senha" só aparece onde a rota aceitaria (doc 310 A).
   const criaComSenha = isAdmin && (await podeCriarPessoaComSenha(user, createAdminClient()));
+  // #4864: o menu CRU da empresa, lido da linha da organização como faz a tela
+  // de Configurações. `activeOrg.interface_settings` NÃO serve: ele já vem
+  // combinado com o vínculo de QUEM ESTÁ VENDO (`combinarInterfaces` em
+  // `lib/auth/server.ts`), e um admin com menu próprio mais curto esconderia do
+  // seletor portas que o membro enxerga — e mostraria como "Padrão do sistema"
+  // uma tela inicial já gravada fora do menu dele.
+  const interfaceDaEmpresa =
+    isManager && activeOrg
+      ? (
+          await (await createClient())
+            .from("organizations")
+            .select("interface_settings")
+            .eq("id", activeOrg.orgId)
+            .maybeSingle()
+        ).data?.interface_settings
+      : undefined;
 
   return (
     <div className="flex h-full flex-col gap-6 md:p-6">
@@ -99,7 +116,14 @@ export default async function TeamPage({
             que fazer, como a da aba de atendimento.
           */}
           {isManager ? (
-            <TeamMembersClient currentUserId={user.id} canManage={isAdmin} />
+            <TeamMembersClient
+              currentUserId={user.id}
+              canManage={isAdmin}
+              // #4864: as opções de "tela inicial" do membro são a interseção com
+              // o menu da EMPRESA, não com o do gerente que está vendo — o
+              // vínculo escolhe menos, nunca mais.
+              interfaceDaEmpresa={interfaceDaEmpresa}
+            />
           ) : (
             <p className="text-sm text-muted-foreground">
               {t(

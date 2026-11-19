@@ -633,6 +633,92 @@
           ]
         }
       ]
+    },
+    {
+      "id": "quando-o-supabase-aperta",
+      "titulo": "Quando o Supabase aperta: cota, custo e compute",
+      "objetivo": "Descobrir qual dos cinco tetos do plano grátis do Supabase estourou, medir antes de pagar e escolher o compute e a região.",
+      "papel": "admin",
+      "busca": [
+        "bati no limite do supabase gratis",
+        "cota do supabase",
+        "log ingestion exceeded",
+        "crm lento no nano",
+        "custo do supabase",
+        "egress do supabase",
+        "região do supabase perto da vps",
+        "quanto custa o supabase"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O que depende de fora deste sistema",
+          "texto": "Esta tela é só leitura: ela lista o que a instalação usa e que não se configura aqui. O banco, o login e os arquivos do CRM moram no Supabase, e o painel dele fica fora do produto — nenhuma cota do Supabase tem tela aqui dentro. Quando a instalação inteira falha de uma vez, com login, mensagens e agente parados juntos, comece pelo painel do Supabase: o problema pode não ser do CRM, e sim de uma cota do plano grátis que estourou.",
+          "dica": "Quem instalou o sistema é quem tem acesso ao painel do Supabase. Se você não é essa pessoa, mostre a ela esta lição: o que se mede lá não aparece aqui.",
+          "rota": "/admin/sistema",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "#bloco-servidor"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Depende do servidor",
+                "exato": true
+              },
+              "rotulo": "O que depende do servidor",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "#bloco-servidor + p"
+              },
+              "rotulo": "Só leitura: nada se ajusta aqui",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Os cinco tetos do plano grátis",
+          "texto": "São cinco, e cada um estoura de um jeito: 500 MB de banco; 1 GB de storage; 50 mil usuários ativos no mês; 5 GB por mês de egress; e 1 GB de log ingerido por ciclo. Banco cheio não avisa: a página que lê o banco mostra \"Algo deu errado\" e a escrita devolve a mensagem genérica da rota. O storage começa no upload (\"Erro ao subir o arquivo.\") e, passada a carência, derruba o projeto inteiro com 402. O egress responde 402 em tudo até a virada do ciclo. Não confunda o 1 GB de storage com o teto por arquivo: o bucket de mídia do WhatsApp aceita 50 MB por arquivo, e acima disso a resposta é 413 — recusa do objeto, não da cota, e o resto do sistema segue.",
+          "antes": [],
+          "destaques": []
+        },
+        {
+          "id": "p3",
+          "titulo": "Log ingerido: o aviso que ninguém procura",
+          "texto": "O aviso \"Log Ingestion Exceeded\" é da cota de log, de 1 GB por ciclo, e não pára nada na hora: chega por e-mail e no painel. O que conta é o que o Supabase ingere de todos os serviços do projeto, medido por byte — não é o que o seu contêiner escreve no docker logs. Hoje o excedente não vira fatura no grátis (a linha do plano diz \"Not billed\", com carência até o início de 2027; confira a data antes de contar com ela), e, quando a cobrança passar a valer, entra a regra geral do Supabase: depois da primeira carência, o segundo estouro não tem outra.",
+          "antes": [],
+          "destaques": []
+        },
+        {
+          "id": "p4",
+          "titulo": "Como medir antes de pagar",
+          "texto": "O número oficial está em Settings → Usage do Supabase, nas linhas Database size, Storage, Auth, Egress e Logs Ingest. Dentro do CRM o que se mede é a origem. Na fila ociosa, com QUEUE_IDLE_MAX_INTERVAL_MS desligado, foram 3.880 consultas em 2h19, cerca de 28 por minuto; com 60000 cai para cerca de 1 por minuto. No banco, o cron data-retention roda às 04h40 e poda o que cresce sozinho; a poda de mídia roda às 05h20 e enfileira o que passou de organizations.media_retention_days, cujo padrão é 365 dias, com piso de 30. Ajustar retenção, porém, não muda uma linha de log ingerido: é outra cota.",
+          "antes": [],
+          "destaques": []
+        },
+        {
+          "id": "p5",
+          "titulo": "O Nano: fora do ar parado não é lentidão",
+          "texto": "Se o projeto fica fora do ar parado, sem ninguém usando, e toda chamada ao banco responde 522 ou 503 PGRST002, o ramo é memória, não cota: é o compute Nano, de 0,5 GB. Numa instalação medida, foram cerca de 6 horas fora até alguém clicar em Restart project no painel. O Micro tem 1 GB, o dobro, e é a menor unidade acima do Nano — mas só existe em plano pago, assinar não troca o compute e a troca causa uma queda de menos de 2 minutos. O que está medido é indisponibilidade; se o seu CRM só está lento, este não é o ramo que o runbook mede.",
+          "antes": [],
+          "destaques": []
+        },
+        {
+          "id": "p6",
+          "titulo": "A região, as saídas e o runbook",
+          "texto": "A região do projeto se escolhe na criação e não muda depois: a mais perto da VPS onde o CRM roda, e VPS no Brasil pede São Paulo; banco num continente e aplicação noutro somam dezenas de milissegundos por consulta, em toda página. As saídas, em ordem de custo: limpar o que o sistema já poda, subir de plano e, por último, autohospedar — que só está documentado para instalação nova, e migração com dados não tem passo a passo. O passo a passo completo está em docs/runbooks/custo-e-cota-do-supabase.md e, para o projeto fora do ar, em docs/runbooks/supabase-sem-memoria-no-free.md.",
+          "antes": [],
+          "destaques": []
+        }
+      ]
     }
   ]
 }
