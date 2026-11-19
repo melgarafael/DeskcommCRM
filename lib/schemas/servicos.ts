@@ -249,7 +249,7 @@ const REGRAS_DO_ITEM = {
 
 /** Os campos herdados mantêm o schema dos produtos e usam códigos no catálogo de serviços. */
 export function detalhesDaValidacaoDoServico(erro: z.ZodError): Record<string, unknown> {
-  const detalhes = erro.flatten().fieldErrors;
+  const detalhes: Record<string, string[] | undefined> = erro.flatten().fieldErrors;
   for (const [campo, regra] of Object.entries(REGRAS_DO_ITEM)) {
     if (detalhes[campo]?.length) detalhes[campo] = [regra];
   }
