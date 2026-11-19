@@ -78,7 +78,7 @@ const LIMITE_MAXIMO = 500;
 
 /** As colunas que a tela lê. Explícitas para o `select *` não vazar coluna nova. */
 const COLUNAS =
-  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, recurrence, created_at, updated_at, lead:crm_leads(id, title)";
+  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, recurrence, recurrence_source_id, created_at, updated_at, lead:crm_leads(id, title)";
 
 /**
  * Com o filtro de funil o `lead` vira INNER JOIN: o PostgREST só filtra pela coluna de um
@@ -374,7 +374,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (parsed.data.recurrence) {
     const regra = normalizarRegra(parsed.data.recurrence);
     if (!regra) {
-      return fail("validation_failed", t("Escolha pelo menos um dia da semana e um horário."), 422, {
+      return fail("validation_failed", t("Escolha a repetição e o horário."), 422, {
         requestId,
       });
     }

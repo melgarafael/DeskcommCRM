@@ -136,6 +136,16 @@ function Linha({
           >
             {rotuloDaPrioridade[tarefa.priority]}
           </span>
+          {/* A ROTINA (#4595): a série e cada ocorrência que ela gerou levam o
+              mesmo selo, e é por ele que se vê que são a mesma rotina sem abrir
+              uma por uma. A próxima herda `recurrence_source_id`, e a série é a
+              linha que carrega a regra — as duas condições são o mesmo "faz
+              parte de uma rotina", e por isso o mesmo selo. */}
+          {tarefa.recurrence || tarefa.recurrence_source_id ? (
+            <span className="rounded-full border border-border px-2 py-0.5 text-muted-foreground">
+              {t("Rotina")}
+            </span>
+          ) : null}
           <span
             className={cn(
               "flex items-center gap-1",

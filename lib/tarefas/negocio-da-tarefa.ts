@@ -34,7 +34,7 @@ import type { NegocioDaTarefa, Tarefa } from "@/lib/tarefas/tipos";
 
 /** As colunas que a tela lê, sem o negócio embutido. */
 export const COLUNAS_DA_TAREFA =
-  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, recurrence, created_at, updated_at";
+  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, recurrence, recurrence_source_id, created_at, updated_at";
 
 /**
  * Quantos ids de negócio vão em cada consulta. Os ids viajam na URL do
