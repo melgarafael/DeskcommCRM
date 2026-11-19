@@ -1254,6 +1254,17 @@ const VINCULOS_RESTRICT_NAO_APAGADOS: ReadonlyArray<{
     rotulo: "compromisso(s) na agenda",
     barraSe: "status.neq.cancelled,service_occurrence_id.not.is.null",
   },
+  // A6: o card ABERTO não é fechado pela exclusão (fechar como perdido lançaria
+  // a perda na métrica do dono e dispararia `lead.lost` — automações, push e
+  // webhooks — para um contato que some em seguida). Quem exclui fecha ou move
+  // cada negócio com o motivo real, e só então a ficha sai. Card ganho ou perdido
+  // é histórico de venda e não barra. `crm_leads.contact_id` é `on delete set
+  // null`: sem esta barra, o card aberto ficaria solto no Kanban.
+  {
+    tabela: "crm_leads",
+    rotulo: "negócio(s) aberto(s) no funil",
+    barraSe: "status.eq.open",
+  },
 ];
 
 /**

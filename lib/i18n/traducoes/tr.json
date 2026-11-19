@@ -638,6 +638,8 @@
   "Abrindo…": "Açılıyor…",
   "Abrir": "Aç",
   "Abrir API Oficial (Meta) na administração": "Yönetimde Resmî API'yi (Meta) aç",
+  "Este contato tem 1 negócio aberto no funil. Feche ou mova o negócio antes de excluir.": "Bu kişinin hunide 1 açık fırsatı var. Silmeden önce fırsatı kapatın veya taşıyın.",
+  "Este contato tem {n} negócios abertos no funil. Feche ou mova os negócios antes de excluir.": "Bu kişinin hunide {n} açık fırsatı var. Silmeden önce fırsatları kapatın veya taşıyın.",
   "Abrir Agenda": "Takvimi aç",
   "Abrir Conexões em outra aba": "Bağlantıları başka sekmede aç",
   "Abrir IA › Provedores": "AI › Sağlayıcılar'ı aç",
