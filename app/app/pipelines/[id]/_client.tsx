@@ -569,6 +569,7 @@ export function PipelinePageClient({
           vocabulary={data?.pipeline.vocabulary ?? null}
           tagsExistentes={tagsDoQuadro}
           onClear={() => setSelectedIds([])}
+          tituloDe={(id) => data?.leads.find((l) => l.id === id)?.title}
         />
       )}
     </div>

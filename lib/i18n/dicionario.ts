@@ -22459,6 +22459,24 @@ export const DICIONARIO: Traducoes = {
   "Progresso do checklist": { es: "Progreso de la lista de verificación" },
   "Não foi possível carregar o checklist.": { es: "No fue posible cargar la lista de verificación." },
   "alguém da equipe": { es: "alguien del equipo" },
+  // Levar vários negócios para outro funil, pela barra de seleção do quadro.
+  "Outro funil…": { es: "Otro embudo…" },
+  "Levar selecionados para outro funil": { es: "Llevar seleccionados a otro embudo" },
+  'Cada negócio é recriado no funil escolhido e encerra aqui como perdido, com o motivo "Levado para outro funil" — o mesmo que acontece ao levar um card só.': {
+    es: 'Cada negocio se recrea en el embudo elegido y se cierra aquí como perdido, con el motivo "Llevado a otro embudo" — lo mismo que ocurre al llevar una sola tarjeta.',
+  },
+  "negócios selecionados.": { es: "negocios seleccionados." },
+  "Só os 50 primeiros serão levados nesta vez.": { es: "Solo los 50 primeros se llevarán esta vez." },
+  "Levar": { es: "Llevar" },
+  "Levando": { es: "Llevando" },
+  "Levando…": { es: "Llevando…" },
+  "negócios levados.": { es: "negocios llevados." },
+  "Não foram levados:": { es: "No se llevaron:" },
+  "levados para": { es: "llevados a" },
+  "Não foi possível levar este negócio.": { es: "No fue posible llevar este negocio." },
+  "ficaram de fora pelo limite de 50 por vez. Selecione-os de novo para levar.": {
+    es: "quedaron fuera por el límite de 50 por vez. Selecciónelos de nuevo para llevarlos.",
+  },
 };
 
 /**
