@@ -87732,3 +87732,44 @@ comment on index public.idx_conversations_fila_espera is
   'Fila de espera do Inbox (#4325): casa o pré-filtro do comando (sem dono, fora do histórico encerrado) e a ordem ORDEM_DA_ESPERA (awaiting_since asc, id asc). Medido: lista da Fila 4.343 -> 685 buffers com 120 mil conversas.';
 
 notify pgrst, 'reload schema';
+
+-- ---- funil de entrada por número (migration 9430) ----
+-- Espelho de supabase/migrations/20261118150000_9430_funil_de_entrada_por_numero.sql.
+-- Cada conexão pode apontar o funil e a etapa onde a conversa nova vira negócio.
+-- Nulas = funil padrão da organização (comportamento de antes). Idempotente.
+alter table public.channel_sessions
+  add column if not exists entry_pipeline_id uuid,
+  add column if not exists entry_stage_id uuid;
+
+-- Chave composta com a organização (mesmo desenho de ai_router_members, #2155):
+-- o número nunca aponta para funil ou etapa de OUTRA empresa, e a etapa fica
+-- presa ao funil escolhido. `on delete set null` com lista de colunas zera só
+-- o destino quando o funil/etapa some; a conexão segue no funil padrão.
+-- Uma chave por tabela alvo: duas tornariam ambíguo o join do PostgREST.
+do $$ begin
+  alter table public.channel_sessions
+    add constraint channel_sessions_entry_pipeline_mesma_org
+    foreign key (organization_id, entry_pipeline_id)
+    references public.crm_pipelines (organization_id, id)
+    on delete set null (entry_pipeline_id);
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  alter table public.channel_sessions
+    add constraint channel_sessions_entry_stage_do_funil
+    foreign key (organization_id, entry_pipeline_id, entry_stage_id)
+    references public.crm_stages (organization_id, pipeline_id, id)
+    on delete set null (entry_stage_id);
+exception when duplicate_object then null; end $$;
+
+comment on column public.channel_sessions.entry_pipeline_id is
+  'Funil onde a conversa nova DESTE número vira negócio. Nulo = funil padrão da organização (crm_pipelines.is_default). Aplicado por lib/leads/nascimento-do-lead.ts (migration 9430).';
+comment on column public.channel_sessions.entry_stage_id is
+  'Etapa de entrada no funil escolhido para este número. Nula = a etapa de entrada do próprio funil. Ignorada sem entry_pipeline_id (migration 9430).';
+
+create index if not exists idx_channel_sessions_entry_pipeline
+  on public.channel_sessions (entry_pipeline_id) where entry_pipeline_id is not null;
+create index if not exists idx_channel_sessions_entry_stage
+  on public.channel_sessions (entry_stage_id) where entry_stage_id is not null;
+
+notify pgrst, 'reload schema';

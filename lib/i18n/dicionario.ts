@@ -22611,6 +22611,23 @@ export const DICIONARIO: Traducoes = {
   "Progresso do checklist": { es: "Progreso de la lista de verificación" },
   "Não foi possível carregar o checklist.": { es: "No fue posible cargar la lista de verificación." },
   "alguém da equipe": { es: "alguien del equipo" },
+  // Funil de entrada por número (migration 9430).
+  "Contatos novos entram no funil": { es: "Los contactos nuevos entran en el embudo" },
+  "Contatos novos entram no funil padrão": { es: "Los contactos nuevos entran en el embudo predeterminado" },
+  "Funil de entrada atualizado.": { es: "Embudo de entrada actualizado." },
+  "Não foi possível salvar o funil de entrada.": { es: "No fue posible guardar el embudo de entrada." },
+  "Funil de entrada deste número": { es: "Embudo de entrada de este número" },
+  "Quando alguém escreve pela primeira vez para este número, o negócio nasce no funil escolhido. Contatos que já têm negócio aberto não mudam de funil.": { es: "Cuando alguien escribe por primera vez a este número, el negocio nace en el embudo elegido. Los contactos que ya tienen un negocio abierto no cambian de embudo." },
+  "Funil padrão da empresa": { es: "Embudo predeterminado de la empresa" },
+  "Etapa de entrada do funil": { es: "Etapa de entrada del embudo" },
+  "Quem já é cliente e campanhas com funil próprio seguem as regras deles. Se o funil escolhido for arquivado, os contatos voltam a entrar no funil padrão.": { es: "Quien ya es cliente y las campañas con embudo propio siguen sus propias reglas. Si el embudo elegido se archiva, los contactos vuelven a entrar en el embudo predeterminado." },
+  "Funil não encontrado ou arquivado.": { es: "Embudo no encontrado o archivado." },
+  "Escolha uma etapa aberta deste funil (nem ganho nem perdido).": { es: "Elija una etapa abierta de este embudo (ni ganado ni perdido)." },
+  "Escolha um funil (ou nenhum, para usar o padrão).": { es: "Elija un embudo (o ninguno, para usar el predeterminado)." },
+  "Não foi possível ler o funil de entrada.": { es: "No fue posible leer el embudo de entrada." },
+  "Não foi possível conferir o funil.": { es: "No fue posible verificar el embudo." },
+  "Não foi possível conferir a etapa.": { es: "No fue posible verificar la etapa." },
+  "Não foi possível ler a conexão.": { es: "No fue posible leer la conexión." },
 };
 
 /**
