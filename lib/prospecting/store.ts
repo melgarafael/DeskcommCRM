@@ -1393,7 +1393,10 @@ export function exigirAprovacaoAntesDoPrimeiroContato(
     selected?: boolean | null;
     automatic_sends?: number | null;
   }>,
-  config: Pick<CampaignConfig, "agent_id" | "briefing_editado_em" | "exigir_aprovacao_da_previa">,
+  config: Pick<
+    CampaignConfig,
+    "agent_id" | "briefing_editado_em" | "exigir_aprovacao_da_previa" | "fonte_da_abordagem"
+  >,
 ): void {
   if (!config.exigir_aprovacao_da_previa) return;
   const pendentes = candidatos.filter(
@@ -1401,7 +1404,12 @@ export function exigirAprovacaoAntesDoPrimeiroContato(
       candidato.selected !== false &&
       !!candidato.phone &&
       (candidato.automatic_sends ?? 0) === 0 &&
-      !previaAprovadaDoAgente(candidato.data, config.agent_id, config.briefing_editado_em),
+      !previaAprovadaDoAgente(
+        candidato.data,
+        config.agent_id,
+        config.briefing_editado_em,
+        config.fonte_da_abordagem ?? "estrategia",
+      ),
   );
   if (pendentes.length > 0) {
     throw new ProspectingError(

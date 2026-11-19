@@ -266,7 +266,7 @@ export async function sendNextCandidate(
   if (
     cfg.exigir_aprovacao_da_previa &&
     (queued.automatic_sends ?? 0) === 0 &&
-    !previaAprovadaDoAgente(queued.data, cfg.agent_id, cfg.briefing_editado_em)
+    !previaAprovadaDoAgente(queued.data, cfg.agent_id, cfg.briefing_editado_em, cfg.fonte_da_abordagem ?? "estrategia")
   ) {
     const pause = await db.query(
       "update prospecting_campaigns set status='paused',error='A primeira abordagem aguarda revisão e aprovação humana da prévia.',updated_at=now() where organization_id=$1 and id=$2 and status='running' returning id",

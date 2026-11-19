@@ -212,6 +212,27 @@ describe("aprovação da prévia antes do primeiro contato é OPÇÃO da campanh
     expect(mocks.send).toHaveBeenCalledTimes(1);
   });
 
+  // Reprova do #3630: com a fonte "prompt do agente" (#4315) e a aprovação ligada, a
+  // prévia gravada pelo agente (`fonte: "agente"`, âncora `fonte:agente`) não valia
+  // como aprovada — a campanha pausava para sempre. A fonte da campanha chega ao gate.
+  it("ligada e pela fonte do agente: a prévia do agente aprovada por uma pessoa libera o envio", async () => {
+    const pelaFonteDoAgente = {
+      ...comAprovacao,
+      config: { ...comAprovacao.config!, fonte_da_abordagem: "agente" },
+    } as Campaign;
+    const aprovadaDoAgente = {
+      ...previaGerada,
+      fonte: "agente",
+      baseada_em: "fonte:agente",
+      aprovada_por: id,
+      aprovada_em: "2026-10-20T12:05:00.000Z",
+    };
+    const row = { ...candidate, automatic_sends: 0, data: { ...candidate.data, website: null, previa: aprovadaDoAgente } };
+    const db = database(undefined, row);
+    await sendNextCandidate({} as never, db as never, {} as never, pelaFonteDoAgente);
+    expect(db.query.mock.calls.some(([sql]) => pausaNoGate(sql))).toBe(false);
+  });
+
   it("desligada (campanha sem a chave): sem aprovação nenhuma, envia como sempre", async () => {
     expect(campaign.config).not.toHaveProperty("exigir_aprovacao_da_previa");
     const row = { ...candidate, automatic_sends: 0, data: { ...candidate.data, website: null, previa: previaGerada } };

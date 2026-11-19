@@ -871,6 +871,7 @@ export function ProspectingClient() {
   const temAgenteNaCampanha = !!campaign && campanhaGeraPrevia(campaign, data?.previa_padrao === true);
   const podeGerarPreviaAMao = !!campaign && campanhaPodeGerarPrevia(campaign, data?.previa_padrao === true);
   const marcadas = candidates.filter((c) => c.selected !== false);
+  const fonteDaCampanha: FonteDaAbordagem = config.fonte_da_abordagem ?? "estrategia";
   // A MESMA regra de `exigirAprovacaoAntesDoPrimeiroContato`: só conta com a
   // opção da campanha ligada.
   const aprovacoesPendentes =
@@ -880,7 +881,7 @@ export function ProspectingClient() {
             !!c.data.phone &&
             (c.status === "new" || c.status === "queued") &&
             (c.automatic_sends ?? 0) === 0 &&
-            !previaAprovadaDoAgente(c.data, config.agent_id, config.briefing_editado_em),
+            !previaAprovadaDoAgente(c.data, config.agent_id, config.briefing_editado_em, fonteDaCampanha),
         ).length
       : 0;
   const opcoes = opcoesDoPreparo(campaign?.search);
@@ -892,7 +893,6 @@ export function ProspectingClient() {
   const comTelefone = candidates.filter((c) => !!c.data.phone);
   const whatsappVerificados = comTelefone.filter((c) => c.data.whatsapp != null).length;
   const semWhatsapp = comTelefone.filter((c) => c.data.whatsapp?.existe === false).length;
-  const fonteDaCampanha: FonteDaAbordagem = config.fonte_da_abordagem ?? "estrategia";
   const previasProntas = marcadas.filter((c) => previaValida(c.data, fonteDaCampanha)).length;
   /**
    * O que o botão "Excluir desmarcadas" realmente apaga. Espelha o `where` do servidor: sem

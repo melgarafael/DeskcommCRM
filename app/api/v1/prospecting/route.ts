@@ -475,7 +475,7 @@ export async function POST(req: NextRequest) {
           throw new ProspectingError("Pause a campanha antes de aprovar a prévia.", 409);
         const configBruta = body.config ?? campaignConfigSchema.parse(linha.config);
         const config = await validateConfig(db, org, configBruta);
-        const previa = previaDoAgente(linha.data, config.agent_id, config.briefing_editado_em);
+        const previa = previaDoAgente(linha.data, config.agent_id, config.briefing_editado_em, config.fonte_da_abordagem ?? "estrategia");
         if (!previa)
           throw new ProspectingError("Gere uma nova prévia com o agente escolhido antes de aprová-la.", 409);
         const gravada = await aprovarPrevia(db, {

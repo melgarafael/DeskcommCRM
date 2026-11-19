@@ -81,8 +81,8 @@ export function AuditoriaDoCandidato({
   const [erroDaPrevia, setErroDaPrevia] = useState<string | null>(null);
   const [aprovando, setAprovando] = useState(false);
   const [aprovadaAgora, setAprovadaAgora] = useState(false);
-  const previaAtual = previaValida(data);
-  const jaAprovada = !!previaAprovadaDoAgente(data, config.agent_id, config.briefing_editado_em);
+  const previaAtual = previaValida(data, fonte);
+  const jaAprovada = !!previaAprovadaDoAgente(data, config.agent_id, config.briefing_editado_em, fonte);
   const previaRef = useRef<HTMLDivElement | null>(null);
   // O veredito da LEITURA (morada única em `site-efetivo.ts`): o gravado ou o
   // `sem-site` derivado do `website` vazio. Só depende de rede quem tem site

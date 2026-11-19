@@ -6,7 +6,14 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { ANCORA_DA_FONTE_AGENTE, chaveDaAuditoria, previaDoAgente, previaValida, type PreviaSalva } from "./previa";
+import {
+  ANCORA_DA_FONTE_AGENTE,
+  chaveDaAuditoria,
+  previaAprovadaDoAgente,
+  previaDoAgente,
+  previaValida,
+  type PreviaSalva,
+} from "./previa";
 import type { SiteEnrichment } from "./site-classify";
 
 const AGENTE = "55555555-5555-4555-8555-555555555555";
@@ -126,5 +133,18 @@ describe("previaDoAgente por fonte", () => {
     expect(previaDoAgente(comPrevia(editada), AGENTE, OUTRO_CARIMBO, "agente")).toBeNull();
     expect(previaDoAgente(comPrevia(editada), AGENTE, CARIMBO, "estrategia")).toBeNull();
     expect(previaDoAgente(comPrevia(DO_AGENTE()), AGENTE, CARIMBO, "agente")).toBeNull();
+  });
+});
+
+describe("previaAprovadaDoAgente respeita a fonte da campanha (reprova do #3630)", () => {
+  const aprovada = { ...DO_AGENTE(), aprovada_por: "66666666-6666-4666-8666-666666666666", aprovada_em: "2026-10-11T09:05:00.000Z" };
+  it("pela fonte do agente, a prévia do agente aprovada vale", () => {
+    expect(previaAprovadaDoAgente(comPrevia(aprovada), AGENTE, undefined, "agente")).toEqual(aprovada);
+  });
+  it("controle: conferida como estratégia (o padrão), a mesma prévia não vale", () => {
+    expect(previaAprovadaDoAgente(comPrevia(aprovada), AGENTE)).toBeNull();
+  });
+  it("sem aprovação, não vale em nenhuma fonte", () => {
+    expect(previaAprovadaDoAgente(comPrevia(DO_AGENTE()), AGENTE, undefined, "agente")).toBeNull();
   });
 });

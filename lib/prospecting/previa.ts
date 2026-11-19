@@ -121,8 +121,14 @@ export function previaAprovadaDoAgente(
   data: DadosDaPrevia,
   agenteId: string,
   briefingEditadoEm?: string,
+  /**
+   * A fonte da abordagem DA CAMPANHA. Sem ela, a prévia do prompt do agente
+   * (`fonte: "agente"`) nunca valia como aprovada, e a campanha com as duas opções
+   * ligadas não iniciava nunca (reprova do #3630).
+   */
+  fonte: "estrategia" | "agente" = "estrategia",
 ): PreviaSalva | null {
-  const previa = previaDoAgente(data, agenteId, briefingEditadoEm);
+  const previa = previaDoAgente(data, agenteId, briefingEditadoEm, fonte);
   return previa?.aprovada_por && previa.aprovada_em ? previa : null;
 }
 
