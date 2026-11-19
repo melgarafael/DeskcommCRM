@@ -6,8 +6,7 @@ titulo: Negócio aberto à mão num funil de item deixa de nascer sem o item con
 
 Quando a empresa usa receita de banco externo, o negócio aberto pelo agente com
 funil e etapa passados à mão e sem a referência do item nascia sem nenhuma
-conferência: numa conversa real, o agente abriu "Casa com piscina em Alphaville —
-AU-9999" para um imóvel que não existe. Agora, quando o funil informado é o
+conferência. Agora, quando o funil informado é o
 destino do interesse de uma receita ativa e a conversa está em andamento, a
 criação pede a referência do item e o item é conferido no banco de origem; sem
 ela, o agente recebe a explicação e passa a conversa para a equipe.

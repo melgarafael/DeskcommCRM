@@ -10,6 +10,4 @@ Quem não configurou segue com o mesmo teto (20 respostas da IA por conversa em 
 
 Ao bater o teto, a resposta não sai, a conversa é pausada pelo mesmo caminho do botão de pausar a IA e um aviso abre na Central. Pausar pode ser desligado — aí a resposta continua barrada e o aviso continua abrindo. O tempo de pausa é limitado (no máximo 24 horas) e nunca desfaz uma pausa mais longa que alguém já tinha feito à mão.
 
-A conferência "Parar a conversa que virou pingue-pongue" da ficha do agente explica o que a trava protege e onde ajustá-la, em português e espanhol.
-
 Contribuição de @webtecnica, a partir da issue #4590.
