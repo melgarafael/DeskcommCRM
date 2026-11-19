@@ -263,13 +263,6 @@ function FormularioDoServico({
     ? { "aria-invalid": true, "aria-describedby": campo("sinal-erro") }
     : {};
 
-  function atualizar(mudanca: Partial<Rascunho>) {
-    setR({ ...r, ...mudanca });
-    if (salvar.isError && (!erroSinal || "sinalTipo" in mudanca || "sinalValor" in mudanca || "preco" in mudanca)) {
-      salvar.reset();
-    }
-  }
-
   function enviar() {
     const saida = corpoDoRascunho(
       r,
@@ -286,20 +279,24 @@ function FormularioDoServico({
   function trocarTipo(tipo: TipoDeServico) {
     // Cada tipo só aceita a sua família de unidades: trocar o tipo leva a
     // unidade para a primeira compatível, em vez de deixar uma que a rota recusa.
-    atualizar({ tipo, unidade: UNIDADES_POR_TIPO[tipo].includes(r.unidade) ? r.unidade : UNIDADES_POR_TIPO[tipo][0]! });
+    setR({ ...r, tipo, unidade: UNIDADES_POR_TIPO[tipo].includes(r.unidade) ? r.unidade : UNIDADES_POR_TIPO[tipo][0]! });
   }
 
   return (
-    <section className="space-y-3 rounded-lg border border-border p-4" data-testid="form-servico">
+    <section
+      className="space-y-3 rounded-lg border border-border p-4"
+      data-testid="form-servico"
+      onChange={() => { if (salvar.isError) salvar.reset(); }}
+    >
       <h2 className="text-sm font-semibold">{servico ? t("Editar serviço") : t("Novo serviço")}</h2>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <Label htmlFor={campo("nome")}>{t("Nome")}</Label>
-          <Input id={campo("nome")} value={r.nome} onChange={(e) => atualizar({ nome: e.target.value })} />
+          <Input id={campo("nome")} value={r.nome} onChange={(e) => setR({ ...r, nome: e.target.value })} />
         </div>
         <div className="space-y-1">
           <Label htmlFor={campo("codigo")}>{t("Código")}</Label>
-          <Input id={campo("codigo")} value={r.codigo} onChange={(e) => atualizar({ codigo: e.target.value })} />
+          <Input id={campo("codigo")} value={r.codigo} onChange={(e) => setR({ ...r, codigo: e.target.value })} />
         </div>
         <div className="space-y-1">
           <Label htmlFor={campo("tipo")}>{t("Tipo")}</Label>
@@ -322,7 +319,7 @@ function FormularioDoServico({
             id={campo("unidade")}
             className={CAMPO}
             value={r.unidade}
-            onChange={(e) => atualizar({ unidade: e.target.value as UnidadeDeCobranca })}
+            onChange={(e) => setR({ ...r, unidade: e.target.value as UnidadeDeCobranca })}
           >
             {UNIDADES_POR_TIPO[r.tipo].map((unidade) => (
               <option key={unidade} value={unidade}>
@@ -338,7 +335,7 @@ function FormularioDoServico({
             inputMode="decimal"
             placeholder="0,00"
             value={r.preco}
-            onChange={(e) => atualizar({ preco: e.target.value })}
+            onChange={(e) => setR({ ...r, preco: e.target.value })}
           />
           {servico && servico.variacoes.length > 0 ? (
             <p className="text-xs text-text-muted">{t("Deixe em branco para manter o preço atual deste serviço.")}</p>
@@ -352,7 +349,7 @@ function FormularioDoServico({
               type="number"
               min={1}
               value={r.prazo}
-              onChange={(e) => atualizar({ prazo: e.target.value })}
+              onChange={(e) => setR({ ...r, prazo: e.target.value })}
             />
           </div>
         ) : null}
@@ -363,7 +360,7 @@ function FormularioDoServico({
             className={CAMPO}
             {...(!r.sinalTipo ? campoDoErroSinal : {})}
             value={r.sinalTipo}
-            onChange={(e) => atualizar({ sinalTipo: e.target.value as Rascunho["sinalTipo"], sinalValor: "" })}
+            onChange={(e) => setR({ ...r, sinalTipo: e.target.value as Rascunho["sinalTipo"], sinalValor: "" })}
           >
             <option value="">{t("Sem sinal")}</option>
             <option value="percentual">{t("Percentual do preço")}</option>
@@ -381,7 +378,7 @@ function FormularioDoServico({
               {...campoDoErroSinal}
               inputMode="decimal"
               value={r.sinalValor}
-              onChange={(e) => atualizar({ sinalValor: e.target.value })}
+              onChange={(e) => setR({ ...r, sinalValor: e.target.value })}
             />
             <AvisoDaRecusa id={campo("sinal-erro")} mensagem={erroSinal} />
           </div>
@@ -393,7 +390,7 @@ function FormularioDoServico({
           id={campo("descricao")}
           rows={2}
           value={r.descricao}
-          onChange={(e) => atualizar({ descricao: e.target.value })}
+          onChange={(e) => setR({ ...r, descricao: e.target.value })}
         />
       </div>
       <div className="space-y-1">
@@ -402,7 +399,7 @@ function FormularioDoServico({
           id={campo("instrucoes")}
           rows={2}
           value={r.instrucoes}
-          onChange={(e) => atualizar({ instrucoes: e.target.value })}
+          onChange={(e) => setR({ ...r, instrucoes: e.target.value })}
         />
         <p className="text-xs text-text-muted">{t("Orientam a conversa. O agente não repete este texto ao cliente.")}</p>
       </div>
@@ -412,7 +409,7 @@ function FormularioDoServico({
           type="checkbox"
           className="mt-1 size-4"
           checked={r.iaOferece}
-          onChange={(e) => atualizar({ iaOferece: e.target.checked })}
+          onChange={(e) => setR({ ...r, iaOferece: e.target.checked })}
         />
         <Label htmlFor={campo("ia-oferece")}>{t("O agente pode oferecer este serviço")}</Label>
       </div>
@@ -467,7 +464,11 @@ function NovaVariacao({ paiId, aoFechar }: { paiId: string; aoFechar: () => void
   }
 
   return (
-    <div className="space-y-3 rounded-md border border-border p-3" data-testid="form-variacao">
+    <div
+      className="space-y-3 rounded-md border border-border p-3"
+      data-testid="form-variacao"
+      onChange={() => { if (salvar.isError) salvar.reset(); }}
+    >
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="space-y-1">
           <Label htmlFor={campo("nome")}>{t("Nome da variação")}</Label>
@@ -486,10 +487,7 @@ function NovaVariacao({ paiId, aoFechar }: { paiId: string; aoFechar: () => void
             value={preco}
             aria-invalid={Boolean(erroPreco)}
             aria-describedby={erroPreco ? campo("preco-erro") : undefined}
-            onChange={(e) => {
-              setPreco(e.target.value);
-              if (salvar.isError) salvar.reset();
-            }}
+            onChange={(e) => setPreco(e.target.value)}
           />
           <AvisoDaRecusa id={campo("preco-erro")} mensagem={erroPreco} />
         </div>

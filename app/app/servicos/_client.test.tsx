@@ -229,6 +229,23 @@ describe("catálogo de serviços — a tela", () => {
     expect(preco).toHaveAccessibleDescription(motivo);
   });
 
+  it("limpa a recusa da variação quando a pessoa corrige o nome", async () => {
+    api.post.mockRejectedValueOnce(new ApiError(
+      422, "validation_failed", { nome: ["nome_invalido"] }, "req-variacao",
+    ));
+    montar([CONSULTORIA]);
+    fireEvent.click(await screen.findByRole("button", { name: "Nova variação" }));
+    const nome = screen.getByLabelText("Nome da variação");
+    fireEvent.change(nome, { target: { value: "A" } });
+    fireEvent.change(screen.getByLabelText("Código da variação"), { target: { value: "CONS-P" } });
+    fireEvent.change(screen.getByLabelText("Preço da variação"), { target: { value: "500,00" } });
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar variação" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Informe um nome de 2 a 200 caracteres.");
+    fireEvent.change(nome, { target: { value: "Pequena" } });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("preserva o aviso com ID quando a recusa não tem código conhecido", async () => {
     api.patch.mockRejectedValueOnce(new ApiError(
       422, "validation_failed", { sinal: ["regra_desconhecida"] }, "req-servico",
