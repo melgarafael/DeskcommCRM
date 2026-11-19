@@ -4756,9 +4756,9 @@ export const DICIONARIO: Traducoes = {
     {
       es: "Necesita una credencial de ElevenLabs registrada y una voz elegida en Agente de IA → Proveedores. Sin los dos, el agente sigue respondiendo en texto — activar esto no rompe nada.",
     },
-  "O canal escolhido não recebe nota de voz da IA (redes sociais como Instagram e Facebook). Nele, o agente responde em texto.":
+  "O canal escolhido não recebe nota de voz da IA (como o Facebook e o Telegram). Nele, o agente responde em texto.":
     {
-      es: "El canal elegido no recibe notas de voz de la IA (redes sociales como Instagram y Facebook). En él, el agente responde con texto.",
+      es: "El canal elegido no recibe notas de voz de la IA (como Facebook y Telegram). En él, el agente responde con texto.",
     },
   "Quando falar": { es: "Cuándo hablar" },
   "Voz deste agente": { es: "Voz de este agente" },

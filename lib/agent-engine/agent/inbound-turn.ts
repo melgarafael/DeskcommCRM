@@ -80,6 +80,7 @@ import { WahaChannelAdapter } from '../edge/channel/waha-adapter';
 import { applySendOutcome } from '../edge/crm/send-message';
 import { blocoDaRespostaFalada, resolverVozDoTurno } from './voz-do-turno';
 import { textoParaFalar } from '@/lib/ai/voz/texto-falavel';
+import { extensaoDoMime } from '@/lib/ai/voz/formato';
 import {
   LlmBudgetExceededError,
   runModelCall,
@@ -279,6 +280,7 @@ import { readSkillReference, skillHasReferences } from './skill-references';
 import { READ_ONLY_TOOLS, wrapToolsWithBreaker, type ToolBreakerThresholds } from './tool-breaker';
 import {
   loadChannelProvider,
+  loadNotaDeVozDoCanal,
   nomesDasFerramentas,
   runBeforeSend,
   tipoDeEnvio,
@@ -962,8 +964,9 @@ export async function uploadDeVoz(input: {
   mimeType: string;
 }): Promise<string> {
   // A extensão acompanha o formato: `.ogg` é a nota de voz em opus do canal
-  // oficial, e é ela que diz o formato a um retry (`mimeDoCaminhoDeVoz`).
-  const extensao = input.mimeType.toLowerCase().startsWith('audio/ogg') ? 'ogg' : 'mp3';
+  // oficial, `.wav` a da DM do Instagram, e é ela que diz o formato a um retry
+  // (`mimeDoCaminhoDeVoz`).
+  const extensao = extensaoDoMime(input.mimeType);
   const path = `${input.tenantId}/${input.conversationId}/voz-agente-${input.jobId}-${input.seq}.${extensao}`;
   const admin = createAdminClient();
   // `upsert: true`, e não `false`: este caminho só é chamado quando
@@ -3497,7 +3500,9 @@ async function executarTurnoDoAgente(
           // Voz por agente (#4228): sem chave no agente, `null` e a resolução cai
           // na voz da organização — o comportamento de antes, byte a byte.
           vozVoiceId: agentConfig.vozVoiceId ?? null,
-          voiceNote: capabilitiesOf(await loadChannelProvider(pool, tenantId, input.channelSessionId)).voiceNote,
+          // Provedor E rede da sessão: o mesmo provedor social serve Instagram
+          // (WAV, medido) e Facebook (texto, não medido).
+          voiceNote: await loadNotaDeVozDoCanal(pool, tenantId, input.channelSessionId),
           // #4345: a CONVERSA entra na decisão do `'quando_pede'` — o pedido de
           // áudio feito duas mensagens atrás continua valendo. A janela é a que
           // o turno já carregou em `openingContext.context.messages`: nenhuma
