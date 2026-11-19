@@ -124,7 +124,7 @@ function abrirEditor(extra: Record<string, unknown> = {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const v = versao();
   render(
-    <IdiomaProvider>
+    <IdiomaProvider locale={undefined}>
       <QueryClientProvider client={qc}>
         <AgentForm
           mode="edit"
