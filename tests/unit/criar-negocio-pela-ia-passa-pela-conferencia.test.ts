@@ -39,12 +39,23 @@ const conferir = vi.mocked(conferirCamposPersonalizados);
 const PIPE = "11111111-1111-4111-8111-111111111111";
 const ETAPA = "22222222-2222-4222-8222-222222222222";
 
+// O dublê do cliente: a guarda do funil à mão lê `external_db_connections`
+// (#4763, item 2). Sem conexão nenhuma a organização não tem receita ativa, e a
+// criação segue como sempre seguiu — é o que estes casos medem.
+const semConexoes = {
+  from: () => ({
+    select: () => ({
+      eq: () => ({ eq: async () => ({ data: [], error: null }) }),
+    }),
+  }),
+};
+
 const ctx = {
   organizationId: "33333333-3333-4333-8333-333333333333",
   role: "ai_operator",
   actor: { type: "ai_agent", id: "agent-1", agent_id: "agent-1", role: "ai_operator" },
   requestId: "req-1",
-  supabase: {},
+  supabase: semConexoes,
   contatoDoTurno: "44444444-4444-4444-8444-444444444444",
 } as unknown as McpContext;
 

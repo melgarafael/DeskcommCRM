@@ -1,6 +1,7 @@
 "use client";
 import { useRef, useState, type KeyboardEvent } from "react";
 import { toast } from "sonner";
+import { DragDropContext, Draggable, Droppable, type DropResult } from "@hello-pangea/dnd";
 import { format } from "date-fns";
 
 import { Button } from "@/components/ui/button";
@@ -32,7 +33,7 @@ import { ApiError } from "@/lib/api/types";
 import { ROTULO_DO_PASSO } from "@/lib/leads/agent-mapping";
 import { TETO_DA_DESCRICAO_DA_ETAPA } from "@/lib/leads/stage-editing";
 import type { TaxaDaEtapa } from "@/lib/metrics/taxa-da-etapa";
-import { Archive, CaretDown, CaretUp, Plus, Warning } from "@/lib/ui/icons";
+import { Archive, CaretDown, CaretUp, DragHandle, Plus, Warning } from "@/lib/ui/icons";
 import { SeloDeAutoria } from "@/components/operacao/SeloDeAutoria";
 import { CorDaEtapa } from "./_cor-da-etapa";
 import { useT } from "@/hooks/i18n/useT";
@@ -118,19 +119,27 @@ export function destinosPossiveis(etapas: EtapaDoFunil[], etapaId: string): Etap
 }
 
 /**
- * O vizinho da ESQUERDA depois de mover a etapa uma casa (`null` = primeira coluna).
+ * O vizinho da ESQUERDA depois de levar a etapa da casa `de` para a casa `para`
+ * (`null` = primeira coluna) — a única conta que o arrasto e as setas fazem (#4802).
  *
- * É o que o PATCH espera: quem clica na seta sabe onde a coluna vai parar, não
- * qual fração de `position` isso vira. Subir uma casa é "passar a ficar depois
- * de quem estava DUAS casas atrás" — daí o `i - 2`.
+ * É o que o PATCH espera: quem solta a coluna sabe onde ela vai parar, não qual
+ * fração de `position` isso vira. A conta é feita na lista SEM a etapa movida,
+ * porque é assim que a API mede (`ativas` sem o alvo em `stage-operations.ts`):
+ * na lista que ainda a contém, descer "depois da vizinha de baixo" e subir
+ * "depois de quem estava duas casas atrás" seriam dois casos; aqui é um só.
  */
+export function vizinhoAoSoltar(etapas: EtapaDoFunil[], de: number, para: number): string | null {
+  const semAMovida = etapas.filter((_, j) => j !== de);
+  return semAMovida[para - 1]?.id ?? null;
+}
+
+/** O vizinho da ESQUERDA depois de mover a etapa uma casa, pelas setas. */
 export function vizinhoAoMover(
   etapas: EtapaDoFunil[],
   i: number,
   direcao: "subir" | "descer",
 ): string | null {
-  if (direcao === "subir") return etapas[i - 2]?.id ?? null;
-  return etapas[i + 1]?.id ?? null;
+  return vizinhoAoSoltar(etapas, i, direcao === "subir" ? i - 1 : i + 1);
 }
 
 /** Passo do assistente que cada etapa representa — `mapeamento` do avesso. */
@@ -189,6 +198,9 @@ type Arquivamento = {
 // E o prefixo é o certo de qualquer jeito — no celular a linha empilha e largura
 // fixa espremeria os controles.
 const LARGURA = {
+  // A alça do arrasto e o número da coluna. Sem `sm:` de propósito: no celular
+  // a linha empilha e os dois continuam juntos, em cima de tudo.
+  posicao: "w-12",
   chance: "sm:w-[124px]",
   ordem: "sm:w-[76px]",
   papel: "sm:w-56",
@@ -489,6 +501,16 @@ export function StagesSection({
     );
   }
 
+  // O arrasto (#4802) só diz de qual casa para qual: a conta do vizinho é a
+  // mesma das setas (`vizinhoAoSoltar`), e o pedido é o mesmo PATCH.
+  function aoSoltarEtapa(resultado: DropResult) {
+    const { source, destination } = resultado;
+    if (!destination || destination.index === source.index) return;
+    const etapa = etapas[source.index];
+    if (!etapa) return;
+    aplicar(etapa.id, { depois_de: vizinhoAoSoltar(etapas, source.index, destination.index) });
+  }
+
   function criarEtapa() {
     const nome = (nova ?? "").trim();
     if (!nome) return;
@@ -509,7 +531,8 @@ export function StagesSection({
         <p className="max-w-3xl text-sm leading-relaxed text-text-muted">
           {t(
             "Estas são as colunas do seu quadro, na ordem em que o cliente avança. Você pode renomear, criar, reordenar e arquivar.",
-          )}
+          )}{" "}
+          {t("Para mudar a ordem, arraste a coluna pela alça ou use as setas.")}
         </p>
         <p className="max-w-3xl text-sm leading-relaxed text-text-muted">
           {t("Duas colunas têm papel especial: a")} <strong>{t("de fechamento")}</strong>{" "}
@@ -534,7 +557,7 @@ export function StagesSection({
         className="hidden gap-3 border border-transparent px-4 text-xs font-medium text-text-muted sm:flex"
         data-testid="etapas-cabecalho"
       >
-        <span className="w-6 shrink-0" />
+        <span className={`${LARGURA.posicao} shrink-0`} />
         <span className="min-w-0 flex-1">{t(ROTULO.nome)}</span>
         <span className={`${LARGURA.chance} shrink-0`}>{t(ROTULO.chance)}</span>
         <span className={`${LARGURA.ordem} shrink-0 text-center`}>{t(ROTULO.ordem)}</span>
@@ -542,7 +565,17 @@ export function StagesSection({
         <span className={`${LARGURA.arquivar} shrink-0`} />
       </div>
 
-      <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
+      {/* O arrasto é o mesmo desenho dos campos do card (#4043, `@hello-pangea/dnd`),
+          e as setas continuam porque arrastar sozinho exclui quem usa teclado.
+          Os invólucros ficam alinhados com a LISTA, sem reindentar a linha. */}
+      <DragDropContext onDragEnd={aoSoltarEtapa}>
+        <Droppable droppableId={`etapas-do-funil-${pipelineId}`}>
+          {(lista) => (
+      <ul
+        ref={lista.innerRef}
+        {...lista.droppableProps}
+        className="flex flex-col divide-y divide-border rounded-md border border-border"
+      >
         {etapas.map((etapa, i) => {
           const passo = passos.get(etapa.id) ?? null;
           const taxa = corpoDasTaxas?.taxas.find((linha) => linha.etapa_id === etapa.id) ?? null;
@@ -557,13 +590,33 @@ export function StagesSection({
           const destinos = destinosPossiveis(etapas, etapa.id);
 
           return (
-            <li
+            <Draggable
               key={`${etapa.id}:${etapa.name}`}
-              className="flex flex-col gap-3 p-4"
+              draggableId={etapa.id}
+              index={i}
+              isDragDisabled={ocupado}
+            >
+            {(arrastavel, instantaneo) => (
+            <li
+              ref={arrastavel.innerRef}
+              {...arrastavel.draggableProps}
+              className={`flex flex-col gap-3 p-4${
+                instantaneo.isDragging ? " bg-surface shadow-md ring-1 ring-accent/40" : ""
+              }`}
               data-testid={`etapa-${etapa.id}`}
             >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <span className="w-6 shrink-0 text-xs tabular-nums text-text-muted">
+                <span
+                  className={`flex ${LARGURA.posicao} shrink-0 items-center gap-1 text-xs tabular-nums text-text-muted`}
+                >
+                  <span
+                    {...arrastavel.dragHandleProps}
+                    aria-label={`${t("Arrastar para reordenar")} «${etapa.name}»`}
+                    data-testid={`arrastar-${etapa.id}`}
+                    className={ocupado ? "cursor-not-allowed opacity-50" : "cursor-grab"}
+                  >
+                    <DragHandle size={16} aria-hidden />
+                  </span>
                   {i + 1}.
                 </span>
 
@@ -952,9 +1005,15 @@ export function StagesSection({
                 </Card>
               )}
             </li>
+            )}
+            </Draggable>
           );
         })}
+        {lista.placeholder}
       </ul>
+          )}
+        </Droppable>
+      </DragDropContext>
 
       {nova === null ? (
         <Button variant="ghost" size="sm" data-testid="nova-etapa" onClick={() => setNova("")}>
