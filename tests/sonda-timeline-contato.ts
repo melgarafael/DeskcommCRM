@@ -48,7 +48,7 @@ async function main(): Promise<void> {
 
   await login(page, "admin");
   await page.goto(`${BASE}/app/contacts/${CONTATO_ID}`, { waitUntil: "networkidle" });
-  await page.getByRole("tab", { name: "Timeline" }).click();
+  await page.getByRole("tab", { name: "Linha do tempo" }).click();
 
   // Espera por CONTEÚDO, nunca por relógio (BRIEFING §7.1) — a busca só dispara
   // depois do clique, e um `waitForTimeout` ganha nesta máquina e perde na do CI.
