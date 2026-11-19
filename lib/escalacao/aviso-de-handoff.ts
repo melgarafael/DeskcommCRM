@@ -76,16 +76,17 @@ export function textoDoAvisoHandoff(
   const link = new URL('/app/inbox', origem.origin);
   link.searchParams.set('id', conversa);
 
-  const t = (texto: string): string => (extra?.idioma ? traduzir(texto, extra.idioma) : texto);
+  // `traduzir` devolve o texto como está em pt-BR: sem idioma, a mensagem é a de sempre.
+  const idioma: Idioma = extra?.idioma ?? 'pt-BR';
   const nome = primeiroNome(extra?.nome);
 
   const corpo = [
-    t('Um atendimento precisa de uma pessoa da equipe.'),
-    ...(nome ? ['', `${t('Cliente')}: ${nome}`] : []),
+    traduzir('Um atendimento precisa de uma pessoa da equipe.', idioma),
+    ...(nome ? ['', `${traduzir('Cliente', idioma)}: ${nome}`] : []),
     '',
-    `${t('Abrir conversa')}: ${link.href}`,
+    `${traduzir('Abrir conversa', idioma)}: ${link.href}`,
     '',
-    t('Responda pelo CRM; responder a este aviso não chega ao cliente.'),
+    traduzir('Responda pelo CRM; responder a este aviso não chega ao cliente.', idioma),
   ];
   return corpo.join('\n');
 }
@@ -97,13 +98,13 @@ export function corpoComResultadoHandoff(
   estado: EstadoEnvioHandoff,
   idioma?: Idioma,
 ): string {
-  const t = (texto: string): string => (idioma ? traduzir(texto, idioma) : texto);
-  const prefixo = `${t('Aviso à equipe')} (${eventoId}): `;
+  const lingua: Idioma = idioma ?? 'pt-BR';
+  const prefixo = `${traduzir('Aviso à equipe', lingua)} (${eventoId}): `;
   const mensagem = estado.estado === 'enviado'
-    ? t('aceito pelo canal de WhatsApp.')
+    ? traduzir('aceito pelo canal de WhatsApp.', lingua)
     : estado.estado === 'incerto' || estado.estado === 'reservado'
-      ? t('entrega não confirmada; confira o WhatsApp. Não haverá reenvio automático.')
-      : t('não enviado; acompanhe este atendimento pelo CRM.');
+      ? traduzir('entrega não confirmada; confira o WhatsApp. Não haverá reenvio automático.', lingua)
+      : traduzir('não enviado; acompanhe este atendimento pelo CRM.', lingua);
   return [...corpo.split('\n').filter((linha) => !linha.startsWith(prefixo)), `${prefixo}${mensagem}`].join('\n');
 }
 
