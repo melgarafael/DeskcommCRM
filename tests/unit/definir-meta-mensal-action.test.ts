@@ -23,6 +23,8 @@ let existente: { id: string; alvo: number } | null = null;
 const OUTRO = "33333333-3333-4333-8333-333333333333";
 /** Quem é membro da ORG: só o que estiver aqui sai da leitura de `user_organizations`. */
 let membros = new Set<string>();
+/** Membros com vínculo REVOGADO: só somem da leitura se a consulta filtrar `revoked_at is null`. */
+let revogados = new Set<string>();
 const inseridas: Array<Record<string, unknown>> = [];
 const atualizadas: Array<{ valores: Record<string, unknown>; filtros: Array<[string, unknown]> }> = [];
 const leiturasPorOrg: unknown[] = [];
@@ -67,9 +69,15 @@ function cadeiaDeMembros() {
       filtros.set(coluna, valor);
       return c;
     },
+    is: (coluna: string, valor: unknown) => {
+      filtros.set(`is:${coluna}`, valor);
+      return c;
+    },
     maybeSingle: async () => ({
       data:
-        filtros.get("organization_id") === ORG && membros.has(String(filtros.get("user_id")))
+        filtros.get("organization_id") === ORG &&
+        membros.has(String(filtros.get("user_id"))) &&
+        !(filtros.get("is:revoked_at") === null && revogados.has(String(filtros.get("user_id"))))
           ? { user_id: filtros.get("user_id") }
           : null,
       error: null,
@@ -109,6 +117,7 @@ beforeEach(() => {
   emDivida = false;
   existente = null;
   membros = new Set([USER]);
+  revogados = new Set();
   inseridas.length = 0;
   atualizadas.length = 0;
   leiturasPorOrg.length = 0;
@@ -192,6 +201,16 @@ describe("definirMetaMensal", () => {
   });
 
   it("vendedor que NÃO é membro da organização → validation_failed, e nada é gravado nem auditado", async () => {
+    const r = await definirMetaMensal({ periodo: "2026-10", indicador: "valor_vendido", vendedor_id: OUTRO, alvo: 15_000_000 });
+    expect(r).toEqual(expect.objectContaining({ ok: false, error: "validation_failed" }));
+    expect(inseridas).toEqual([]);
+    expect(atualizadas).toEqual([]);
+    expect(auditadas).toEqual([]);
+  });
+
+  it("vendedor com vínculo REVOGADO na organização → validation_failed, e nada é gravado nem auditado", async () => {
+    membros.add(OUTRO);
+    revogados.add(OUTRO);
     const r = await definirMetaMensal({ periodo: "2026-10", indicador: "valor_vendido", vendedor_id: OUTRO, alvo: 15_000_000 });
     expect(r).toEqual(expect.objectContaining({ ok: false, error: "validation_failed" }));
     expect(inseridas).toEqual([]);

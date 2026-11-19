@@ -128,14 +128,16 @@ export async function definirMetaMensal(
   const vendedorId = parsed.data.vendedor_id ?? null;
   const primeiroDia = `${periodo}-01`;
 
-  // O vendedor tem de ser MEMBRO da organização ativa: a FK só garante que o id
-  // existe em `auth.users`, e a meta individual é de alguém DESTA empresa.
+  // O vendedor tem de ser MEMBRO ATIVO da organização: a FK só garante que o id
+  // existe em `auth.users`, e a meta individual é de alguém DESTA empresa que
+  // ainda está nela (vínculo revogado não conta).
   if (vendedorId) {
     const { data: membro, error: erroMembro } = await supabase
       .from("user_organizations")
       .select("user_id")
       .eq("organization_id", orgId)
       .eq("user_id", vendedorId)
+      .is("revoked_at", null)
       .maybeSingle();
     if (erroMembro) return { ok: false, error: "erro_ao_gravar", details: erroMembro.message };
     if (!membro) {
