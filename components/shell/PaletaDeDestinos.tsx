@@ -149,22 +149,34 @@ function Resultados({
   // local (`normalize("NFD")` sem a tabela das letras que não decompõem), e duas
   // cópias divergem no primeiro ajuste: «Øyvind» achava na lista e não aqui.
   //
-  // O texto casado é o português (a chave) E o que a tela mostra no idioma
-  // ativo (#4999): em espanhol a paleta exibe "Productos", e quem lê isso
-  // digita "productos". O português segue casando para quem já se acostumou;
-  // em pt-BR o `t()` devolve a própria chave e nada muda.
+  // Casa também o que a tela MOSTRA no idioma ativo (#4999): em espanhol a
+  // paleta exibe "Productos", e quem lê isso digita "productos". Os dois textos
+  // são casados SEPARADOS — emendados, a junta entre um e outro inventaria
+  // casamentos ("crm produtos"). Ordem: primeiro o que casa pelo português,
+  // na ordem de sempre; depois o que só o idioma ativo acha, com o NOME antes
+  // da descrição — senão "agent" em espanhol punha Productos (cuja descrição
+  // traduzida fala de "agente") à frente de Agentes, e o Enter abria a errada.
+  // Em pt-BR o `t()` devolve a própria chave: nada novo casa, nada muda.
   const resultados = useMemo(() => {
     const termo = termoSemAcento(busca.trim());
-    const filtrados = destinos.filter((d) => {
-      const casaCategoria = categoriaAtiva === "todos" || d.group === categoriaAtiva;
-      if (!casaCategoria) return false;
-      if (!termo) return true;
-      const grupo = rotuloGrupo.get(d.group) ?? "";
-      return termoSemAcento(
-        `${d.label} ${d.description} ${grupo} ${t(d.label)} ${t(d.description)} ${t(rotuloGrupo.get(d.group) ?? "")}`,
-      ).includes(termo);
-    });
-    if (termo) return filtrados;
+    const daCategoria = destinos.filter(
+      (d) => categoriaAtiva === "todos" || d.group === categoriaAtiva,
+    );
+    if (termo) {
+      const posto = (d: DestinoDaPaleta): number => {
+        const grupo = rotuloGrupo.get(d.group) ?? "";
+        if (termoSemAcento(`${d.label} ${d.description} ${grupo}`).includes(termo)) return 0;
+        if (termoSemAcento(t(d.label)).includes(termo)) return 1;
+        const traduzido = `${t(d.label)} ${t(d.description)} ${t(rotuloGrupo.get(d.group) ?? "")}`;
+        return termoSemAcento(traduzido).includes(termo) ? 2 : -1;
+      };
+      return daCategoria
+        .map((d) => ({ d, p: posto(d) }))
+        .filter(({ p }) => p >= 0)
+        .sort((a, b) => a.p - b.p)
+        .map(({ d }) => d);
+    }
+    const filtrados = daCategoria;
     // O catálogo não é contíguo por grupo (a Prospecção, de CRM, vem antes do
     // Inbox). Sem reordenar, a 1ª seção seria a do 1º item e as setas, que
     // andam por este array, pulariam de uma seção para outra. Ordenado pelos

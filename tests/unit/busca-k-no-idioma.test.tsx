@@ -8,7 +8,9 @@
  *
  *   1. em es, o rótulo e a descrição traduzidos casam;
  *   2. o termo em português continua casando em es (quem já se acostumou);
- *   3. em pt-BR nada muda.
+ *   3. em pt-BR nada muda — nem casamento novo na junta de dois textos;
+ *   4. o que casa só pela DESCRIÇÃO traduzida não passa à frente do nome, e o
+ *      Enter abre a porta que a pessoa digitou.
  */
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -25,12 +27,16 @@ const authRef: { user: Pick<AuthUser, "is_platform_admin">; activeOrg: ActiveOrg
 };
 
 vi.mock("@/hooks/auth/AuthProvider", () => ({ useAuth: () => authRef }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+const push = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("@/hooks/followup/useFollowupFlows", () => ({ useFollowupFlows: () => ({ data: [] }) }));
 vi.mock("@/hooks/ai/useAgents", () => ({ useAgentsList: () => ({ data: [] }) }));
 vi.mock("@/hooks/pipelines/usePipelinesDaPaleta", () => ({ usePipelinesDaPaleta: () => ({ data: [] }) }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  push.mockClear();
+});
 
 function abrir(locale: "pt-BR" | "es") {
   return render(
@@ -67,5 +73,23 @@ describe("⌘K no idioma da tela", () => {
     await user.clear(screen.getByRole("combobox"));
     await user.type(screen.getByRole("combobox"), "productos");
     expect(screen.queryByRole("option", { name: /Produtos/ })).toBeNull();
+  });
+
+  it("em pt-BR, dois termos de campos diferentes não casam pela junta (crm produtos)", async () => {
+    const user = userEvent.setup();
+    abrir("pt-BR");
+    await user.type(screen.getByRole("combobox"), "crm produtos");
+    expect(screen.queryByRole("option", { name: /Produtos/ })).toBeNull();
+  });
+
+  it.each([
+    ["agent", "/app/ai/agents"],
+    ["ayuda", "/app/ajuda"],
+  ])("em es, %s + Enter abre a porta pelo nome, não a que só casa pela descrição traduzida", async (termo, href) => {
+    const user = userEvent.setup();
+    abrir("es");
+    await user.type(screen.getByRole("combobox"), termo);
+    await user.keyboard("{Enter}");
+    expect(push).toHaveBeenCalledWith(href);
   });
 });
