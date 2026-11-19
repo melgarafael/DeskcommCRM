@@ -39,7 +39,7 @@ const estado = vi.hoisted(() => ({
   papel: "viewer" as string,
   buscas: [] as string[],
   decifrou: 0,
-  /** (9420) Os argumentos com que a RPC `decrypt_cpf` foi chamada. */
+  /** (9423) Os argumentos com que a RPC `decrypt_cpf` foi chamada. */
   rpcArgs: [] as Array<{ funcao: string; args: unknown }>,
   /** Toda menção de `cpf_hash` feita pelo cliente da SESSÃO: tem de ficar vazia. */
   sessaoPediuOHash: [] as string[],
