@@ -1,4 +1,4 @@
-<!-- traduzido-de: docs/white-label.md@e402509d6d62 -->
+<!-- traduzido-de: docs/white-label.md@120e11feaad1 -->
 
 [🇧🇷 Português](white-label.md) · [🇺🇸 English](white-label.en.md) · 🇪🇸 Español
 
@@ -42,6 +42,8 @@ Ejemplo:
 
 **Color por sección del menú lateral.** El menú tiene clases estables, pensadas para este CSS. Todo grupo lleva `nav-grupo`, y cada uno lleva también la suya: `nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais`, `nav-grupo-analise` y `nav-grupo-organizacao` (la del pie, con Configuración y Ayuda). Cada destino tiene la suya: `nav-item-inbox`, `nav-item-kanban`, etcétera. Estas clases forman parte del contrato de la pantalla y no cambian entre versiones; las clases utilitarias de Tailwind, sí.
 
+**Color por sección del contenido.** El contenedor del contenido de toda pantalla lleva `tela-secao` y, cuando la ruta está en el registro de navegación, también la de la sección: `tela-secao-atendimento`, `tela-secao-crm`, `tela-secao-ia`, `tela-secao-canais`, `tela-secao-analise` y `tela-secao-organizacao` — con ella, `.tela-secao-crm .rounded-lg { border-top-color: #1d4ed8; }` vale solo en las pantallas de CRM. Una ruta fuera del registro queda solo con `tela-secao`.
+
 Para pintar el texto del menú, apunta a `text-muted-foreground` dentro del grupo, no a `rounded-md`. El título del grupo y los enlaces tienen las dos, pero el ítem de la pantalla abierta solo tiene `rounded-md`: ya tiene fondo en el color de destaque, y un color de texto elegido para el fondo del menú puede desaparecer sobre él. Como `text-muted-foreground` es de Tailwind, revisa el menú después de actualizar. El color del ejemplo es para el tema claro; en el oscuro, repite la regla en el campo **CSS del tema oscuro** con un color claro.
 
 ```css
@@ -54,7 +56,7 @@ Para pintar el texto del menú, apunta a `text-muted-foreground` dentro del grup
 }
 ```
 
-**Si el CSS deja las pantallas ilegibles.** Una hoja válida todavía puede ocultar texto (color transparente, fuente de tamaño cero) o cubrir la pantalla con una sombra — incluso el login y la propia página Marca. Para salir, abre la página con `?sem_css=1` en la dirección: carga sin el CSS personalizado, solo para ti. Entra por `/login?sem_css=1`, luego abre `/admin/marca?sem_css=1` escribiendo la dirección, borra el campo y guarda. Sin acceso a la pantalla, desde el servidor: `psql "$SUPABASE_DB_URL" -c "delete from public.platform_config where chave = 'APP_CUSTOM_CSS';"` — el CSS deja de aplicarse en hasta 30 segundos. Paso a paso en [`runbooks/css-personalizado.md`](runbooks/css-personalizado.md) (en portugués).
+**Si el CSS deja las pantallas ilegibles.** Una hoja válida todavía puede ocultar texto (color transparente, fuente de tamaño cero) o cubrir la pantalla con una sombra — incluso el login y la propia página Marca. Para salir, abre la página con `?sem_css=1` en la dirección: carga sin el CSS personalizado, solo para ti. Entra por `/login?sem_css=1`, luego abre `/admin/marca?sem_css=1` escribiendo la dirección, borra **los dos** campos (tema claro y tema oscuro) y guarda. Sin acceso a la pantalla, desde el servidor: `psql "$SUPABASE_DB_URL" -c "delete from public.platform_config where chave in ('APP_CUSTOM_CSS', 'APP_CUSTOM_CSS_DARK');"` — ambas hojas dejan de aplicarse en hasta 30 segundos. Borrar solo la clave del claro mantiene activa la del oscuro cuando el tema oscuro está encendido. Paso a paso en [`runbooks/css-personalizado.md`](runbooks/css-personalizado.md) (en portugués).
 
 El archivo se acepta **por sus bytes, no por su extensión**. Renombrar un `.svg` a `.png` no engaña: el sistema lee el contenido, lo rechaza y dice por qué. Esto no es quisquillosidad — SVG es XML y puede llevar script, que se ejecutaría si alguien abriera la imagen directamente por su dirección, en un bucket que es público por necesidad.
 

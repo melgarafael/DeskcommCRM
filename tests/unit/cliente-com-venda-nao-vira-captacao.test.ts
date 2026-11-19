@@ -490,6 +490,9 @@ describe("#3644 · o custo por mensagem recebida", () => {
       // continua custando as mesmas 2 leituras de antes).
       "conversations",
       "organizations",
+      // migration 9430: o número da conversa, para o funil de entrada por número —
+      // uma leitura por card criado, e só quando quem chama não trouxe o número
+      "conversations",
       "crm_pipelines",
       "crm_stages",
       // #4076: a opção reabrir_perdido_dias do funil de destino — uma leitura por card criado, não por mensagem

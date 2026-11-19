@@ -40,6 +40,7 @@ import { recusaDeCapacidadeParaOModelo } from "@/lib/mcp/recusa-para-o-modelo";
 import { tamanhoDoResultado } from "@/lib/mcp/resultado-bytes";
 import type { McpContext, McpToolDefinition } from "@/lib/mcp/types";
 import { resolveActiveLeadForContact, type LeadCandidate } from "@/lib/leads/active-lead";
+import { completarDestinoDoNegocio } from "@/lib/external-db/receitas/destino-pela-referencia";
 import { podeChamarFerramenta, recusaParaOModelo } from "@/lib/leads/escopo-de-funil";
 import { escritaCabeNoTurno } from "./escopo-das-escritas";
 import type { DesfechoDaEscrita, EfeitoDasEscrituras } from "./efeito-das-escritas";
@@ -113,11 +114,15 @@ export interface PickToolsInput {
    */
   servidoresDoAgente?: readonly ServidorDoAgenteNoTurno[];
   /**
-   * Coletor: recebe o nome de cada remota do `servidorMcpExterno` MONTADA como
-   * LEITURA (`category: "read"` de `definirFerramentasRemotas`). Quem passa é
-   * o turno, que registra o resultado delas como evidência da conferência de
-   * promessa. Os servidores do agente ficam fora de propósito. Ausente =
-   * ninguém pergunta.
+   * Coletor: recebe o nome de cada remota MONTADA como LEITURA
+   * (`category: "read"`) — do `servidorMcpExterno` da organização
+   * (`definirFerramentasRemotas`) e dos servidores MCP DO AGENTE
+   * (`definirFerramentasDoServidorDoAgente`, #4881). Quem passa é o turno, que
+   * registra o resultado delas como evidência da conferência de promessa. É o
+   * MESMO coletor e a MESMA evidência (`servidor_externo`) para os dois: quem
+   * lê a agenda do cliente pelo ERP da empresa e quem a lê pelo servidor do
+   * agente `oauth_por_contato` relatam um fato consultado, não uma promessa.
+   * Ausente = ninguém pergunta.
    */
   leiturasRemotas?: Set<string>;
   /**
@@ -346,6 +351,9 @@ function wrapMcpTool(
           campos: higiene.descartados.join(","),
         });
       }
+      // O registro de uma criação de negócio que seguiu sem item conferido
+      // (#4763, item 2): vira o `motivo` da auditoria desta chamada.
+      let motivoDoNegocioAMao: string | null = null;
       try {
         ensureScope(input.auth.scopes, def.requiresScope);
         ensureRole(input.auth.role, def.requiresRole);
@@ -386,6 +394,50 @@ function wrapMcpTool(
           });
           anotarEfeito("falhou");
           return recusaDaEscritaNaoLiberada(def.name, def.remotoExterno?.conexao ?? "desconhecida");
+        }
+
+        // Spec 25 (R5c): o agente pode abrir o negócio de um item do banco externo
+        // passando só a referência — o funil e a etapa saem da receita (sem referência
+        // nada muda: o handler recusa a ausência). Completado
+        // AQUI, antes do escopo de funil logo abaixo: a guarda julga o funil que vai
+        // ser escrito, e com o argumento ausente ela recusaria sempre.
+        //
+        // #4763, item 2: a guarda roda em TODA criação que tenha algo a
+        // conferir — com a referência, ou com o par funil+etapa à mão. Com o
+        // funil à mão e sem referência era aqui que o item deixava de ser
+        // olhado — a chamada passava direto para o escopo de funil, e o negócio
+        // "Casa com piscina — AU-9999" nasceu de um item que não existe. Quem
+        // decide se o funil exige a referência é a guarda (destino de receita
+        // ativa, num turno de conversa).
+        //
+        // Funil SEM etapa não entra: a guarda só devolveria a recusa de ensino
+        // (`funil_e_etapa_juntos`), que é do handler — antecipá-la aqui pula a
+        // ordem do wrap (escopo de escrita antes do handler) e o erro sai de um
+        // lugar que não valida o pedido.
+        const temReferencia = typeof argsRecord.referencia_externa === "string";
+        const temParDeFunil =
+          typeof argsRecord.pipeline_id === "string" && argsRecord.pipeline_id !== "" &&
+          typeof argsRecord.stage_id === "string" && argsRecord.stage_id !== "";
+        if (def.name === "crm_create_lead" && (temReferencia || temParDeFunil)) {
+          const completo = await completarDestinoDoNegocio(
+            input.supabase,
+            input.ctx.organizationId,
+            argsRecord,
+            { turnoComContato: !!input.contatoDoTurno },
+          );
+          if (!completo.ok) {
+            void auditMcpToolCall({
+              ctx: input.ctx,
+              toolName: def.name,
+              args: argsAudit,
+              durationMs: Date.now() - startedAt,
+              success: false,
+              errorMessage: `destino_do_interesse:${String(completo.resposta.erro)}`,
+            });
+            anotarEfeito("falhou");
+            return completo.resposta;
+          }
+          if (completo.declaracao !== undefined) motivoDoNegocioAMao = completo.declaracao;
         }
 
         // ── DE QUEM É O REGISTRO QUE ESTA ESCRITA ALCANÇA — do contato do turno
@@ -576,7 +628,11 @@ function wrapMcpTool(
             if (def.category === "write") await guardServiceEffect();
             return def.handler(
               argsRecord as never,
-              input.contatoDoTurno ? { ...input.ctx, contatoDoTurno: input.contatoDoTurno } : input.ctx,
+              {
+                ...input.ctx,
+                amigoAgentToolIds: input.toolIds,
+                ...(input.contatoDoTurno ? { contatoDoTurno: input.contatoDoTurno } : {}),
+              },
             );
           },
         );
@@ -649,6 +705,12 @@ function wrapMcpTool(
             ? desfechoExterno("ok")
             : { desfecho: "sem_resultado" as const, motivo: motivoDoVazio }),
           ...(termoBuscado === null ? {} : { termo: termoBuscado }),
+          // #4763, item 2: o negócio que nasceu sem item conferido deixa o
+          // registro na trilha. `success` continua verdadeiro — o negócio
+          // existe; o que o motivo diz é que ele não veio de um item olhado.
+          ...(motivoDoNegocioAMao === null || motivoDoVazio !== null
+            ? {}
+            : { motivo: motivoDoNegocioAMao }),
         });
         // O MESMO critério do audit: vazio declarado não é efeito (#484).
         anotarEfeito(motivoDoVazio === null ? "produziu_efeito" : "falhou");
@@ -904,6 +966,14 @@ export function pickToolsFromMcp(input: PickToolsInput): Record<string, Tool> {
         // — `readOnlyHint === true` exato). Sem as duas, a definição sai
         // `write` e NÃO recebe a marca: a prévia continua recusando.
         result[def.name] = def.category === "read" ? marcarLeituraRemota(montada) : montada;
+        // #4881 — a MESMA evidência da remota da organização: sem esta linha o
+        // `mcp.leiturasRemotas.has(name)` do turno era falso para o servidor do
+        // agente, `registrarLeituraRemota` nunca rodava, e a conferência de
+        // promessa vetava TODO fato de agenda que o agente relatava (inclusive o
+        // `oauth_por_contato` que devolveu a consulta). A leitura que falha não
+        // vira evidência de sucesso — quem recusa o `isError` é
+        // `registrarLeituraRemota`, no mesmo caminho da plataforma.
+        if (def.category === "read") input.leiturasRemotas?.add(def.name);
       }
     } else if (!input.contatoDoTurno || montado.contato !== input.contatoDoTurno) {
       continue;

@@ -36,6 +36,8 @@ import { allTools } from "@/lib/mcp/tools";
  */
 
 const BASE = "linha de base, medida quando a cerca nasceu (2026-10-31)";
+/** Módulo opcional `amigo` (#4227): só entram no catálogo com o módulo instalado. */
+const AMIGO = "módulo amigo, fora do catálogo de quem não instalou";
 
 const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_list_event_types": { tokens: 204, motivo: BASE },
@@ -54,7 +56,18 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_get_queue_status": { tokens: 83, motivo: BASE },
   "crm_list_leads": { tokens: 500, motivo: BASE },
   "crm_get_lead": { tokens: 202, motivo: BASE },
-  "crm_list_pipelines": { tokens: 63, motivo: BASE },
+  "crm_count_leads": { tokens: 317, motivo: "ferramenta nova: conta negócios sem listá-los, para o agente não paginar crm_list_leads só para responder 'quantos?'; 3 filtros (funil, etapa, status), sem responsável, de propósito, para pesar menos" },
+  "crm_list_lead_attachments": {
+    tokens: 259,
+    motivo:
+      "#4544: a descrição diz que o id vem daqui e vai para a leitura do documento — sem isso o agente inventava um id ou desistia de olhar o anexo",
+  },
+  "crm_get_lead_attachment": {
+    tokens: 413,
+    motivo:
+      "#4544: precisa dizer que imagem/binário NÃO é transcrito (senão o agente trata resposta vazia como documento sem dados) e que o teto é por chamada",
+  },
+  "crm_list_pipelines": { tokens: 118, motivo: "#4667: a descrição passou a dizer que a lista traz os CAMPOS do funil (key/label/type/escopo/options[].value) e que em `custom_fields` se usa a key daí; sem isso o agente inventava a chave" },
   "crm_get_pipeline_forecast": { tokens: 281, motivo: "#4322: a descrição passou a dizer que `truncado: true` marca valores parciais quando o funil passa do teto de leitura; sem isso o agente apresenta um recorte como o total" },
   "crm_search_knowledge": { tokens: 250, motivo: BASE },
   "crm_list_knowledge_sources": { tokens: 86, motivo: BASE },
@@ -95,11 +108,16 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_cancel_appointment": { tokens: 275, motivo: BASE },
   "crm_confirm_appointment": { tokens: 318, motivo: BASE },
   "crm_set_appointment_outcome": { tokens: 263, motivo: BASE },
-  "crm_create_lead": { tokens: 933, motivo: BASE },
-  "crm_update_lead": { tokens: 817, motivo: BASE },
+  "crm_create_lead": { tokens: 1003, motivo: "referencia_externa (Spec 25 R5): +70 do item escolhido e do funil opcional; a forma é conferida por refine, sem padrão no esquema" },
+  "crm_update_lead": {
+    tokens: 966,
+    motivo:
+      "#4666: a descrição diz que `tags` SUBSTITUI a lista inteira, e entram `tags_adicionar`/`tags_remover` — sem essas palavras o agente apagava etiqueta acreditando acrescentar",
+  },
   "crm_move_lead_stage": { tokens: 380, motivo: BASE },
   "crm_retomar_lead": { tokens: 394, motivo: BASE },
   "crm_propose_lead_fields_from_document": { tokens: 583, motivo: BASE },
+  "crm_save_lead_diagnosis": { tokens: 353, motivo: "capacidade nova (#4632, decisão D7): o agente qualificador grava o diagnóstico da empresa na ficha; a descrição diz QUANDO usar (o que ele concluiu da empresa, só do contato da conversa), que grava DIRETO com o selo e que não serve para dado pessoal nem para copiar a fala do cliente" },
   "crm_send_whatsapp_message": { tokens: 281, motivo: BASE },
   // #4129 — capacidade de WIRE que envia o material da empresa como documento.
   // O peso é quase todo a descrição: é ela que ensina o integrador que o
@@ -144,6 +162,29 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "provide_case_update": { tokens: 102, motivo: BASE },
   "send_template": { tokens: 227, motivo: BASE },
   "schedule_followup (com negócio)": { tokens: 314, motivo: BASE },
+  "crm_amigo_attendance_cancel": { tokens: 312, motivo: AMIGO },
+  "crm_amigo_attendance_create": { tokens: 460, motivo: AMIGO },
+  "crm_amigo_attendance_reschedule": { tokens: 595, motivo: AMIGO },
+  "crm_amigo_attendance_status": { tokens: 315, motivo: AMIGO },
+  "crm_amigo_attendances": { tokens: 465, motivo: AMIGO },
+  "crm_amigo_calendar": { tokens: 379, motivo: AMIGO },
+  "crm_amigo_doctor_dates": { tokens: 738, motivo: AMIGO },
+  "crm_amigo_doctors_available": { tokens: 238, motivo: AMIGO },
+  "crm_amigo_doctors": { tokens: 115, motivo: AMIGO },
+  "crm_amigo_events": { tokens: 185, motivo: AMIGO },
+  "crm_amigo_insurance_plans": { tokens: 210, motivo: AMIGO },
+  "crm_amigo_insurance_products": { tokens: 134, motivo: AMIGO },
+  "crm_amigo_insurances": { tokens: 149, motivo: AMIGO },
+  "crm_amigo_link_patient": { tokens: 366, motivo: AMIGO },
+  "crm_amigo_patient_attendances": { tokens: 573, motivo: AMIGO },
+  "crm_amigo_patient_birthdays": { tokens: 140, motivo: AMIGO },
+  "crm_amigo_patient_create": { tokens: 634, motivo: AMIGO },
+  "crm_amigo_patient_doctors": { tokens: 260, motivo: AMIGO },
+  "crm_amigo_patient_get": { tokens: 258, motivo: AMIGO },
+  "crm_amigo_patient_search": { tokens: 284, motivo: AMIGO },
+  "crm_amigo_patient_update": { tokens: 648, motivo: AMIGO },
+  "crm_amigo_places": { tokens: 158, motivo: AMIGO },
+  "crm_amigo_specialties": { tokens: 144, motivo: AMIGO },
 };
 
 // 29952 até 2026-11-05; +142 com `ler_documento` (#4133), que só é montada no
@@ -157,7 +198,25 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // no catálogo lido pelo integrador.
 // O total é MEDIDO no merge com a main (31362 = 30724 medidos nela + 638 deste
 // PR, remedido em 2026-11-14), não somado à mão.
-const TETO_TOTAL = 31362;
+// +7760 com as 23 ferramentas `crm_amigo_*` (#4227), que só entram no catálogo com
+// o módulo `amigo` instalado. MEDIDO no merge com a main: 39122 = 31362 + 7760
+// (2026-11-16).
+// +65 com `referencia_externa` no `crm_create_lead` (#3328). MEDIDO no merge com a
+// main: 39187 = 39122 + 65 (2026-11-16).
+// +353 com `crm_save_lead_diagnosis` (#4632), o diagnóstico da empresa gravado
+// na ficha pelo agente da prospecção. MEDIDO no merge com a main: 39537 = 39187 + 350
+// (2026-11-16; o PR media +353 contra uma main mais velha).
+// +672 com os documentos do negócio (#4544): 259 de `crm_list_lead_attachments`
+// e 413 de `crm_get_lead_attachment`. MEDIDO no merge com a main: 40209 = 39537 + 672
+// (2026-11-17, main de `0652fa6866`).
+// +55 na descrição de `crm_list_pipelines`, que passou a dizer que a lista traz
+// os CAMPOS do funil (#4667) — é o delta medido naquela entrada (63 → 118).
+// +149 no `crm_update_lead` (#4666), que passou a dizer que `tags` substitui a
+// lista inteira e ganhou `tags_adicionar`/`tags_remover`. MEDIDO no merge com a
+// main pós-#4886 e #4684: 40675 (2026-11-18).
+// O total é MEDIDO no merge com a main (40730 = 40675 medidos nela + 55 deste
+// PR, remedido em 2026-11-18 sobre a main de `9da6943cc2`), não somado à mão.
+const TETO_TOTAL = 40730;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

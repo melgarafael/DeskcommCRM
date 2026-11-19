@@ -3053,6 +3053,7 @@ export type Database = {
       };
       calendar_appointments: {
         Row: {
+          authority: string;
           cancellation_reason: string | null;
           cancelled_at: string | null;
           confirmation_next_at: string | null;
@@ -3065,6 +3066,8 @@ export type Database = {
           description: string | null;
           ends_at: string;
           event_type_id: string | null;
+          external_connection_id: string | null;
+          external_status: string | null;
           google_base_projection: Json | null;
           google_calendar_id: string | null;
           google_claim_epoch: number;
@@ -3100,6 +3103,7 @@ export type Database = {
           needs_google_push: boolean | null;
           notes: string | null;
           organization_id: string;
+          outcome_api_token_id: string | null;
           outcome_message_id: string | null;
           outcome_recorded_at: string | null;
           outcome_source_kind: string | null;
@@ -3138,6 +3142,7 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          authority?: string;
           cancellation_reason?: string | null;
           cancelled_at?: string | null;
           confirmation_next_at?: string | null;
@@ -3150,6 +3155,8 @@ export type Database = {
           description?: string | null;
           ends_at: string;
           event_type_id?: string | null;
+          external_connection_id?: string | null;
+          external_status?: string | null;
           google_base_projection?: Json | null;
           google_calendar_id?: string | null;
           google_claim_epoch?: number;
@@ -3185,6 +3192,7 @@ export type Database = {
           needs_google_push?: never;
           notes?: string | null;
           organization_id: string;
+          outcome_api_token_id?: string | null;
           outcome_message_id?: string | null;
           outcome_recorded_at?: string | null;
           outcome_source_kind?: string | null;
@@ -3222,6 +3230,7 @@ export type Database = {
           updated_at?: string;
         };
         Update: {
+          authority?: string;
           cancellation_reason?: string | null;
           cancelled_at?: string | null;
           confirmation_next_at?: string | null;
@@ -3234,6 +3243,8 @@ export type Database = {
           description?: string | null;
           ends_at?: string;
           event_type_id?: string | null;
+          external_connection_id?: string | null;
+          external_status?: string | null;
           google_base_projection?: Json | null;
           google_calendar_id?: string | null;
           google_claim_epoch?: number;
@@ -3269,6 +3280,7 @@ export type Database = {
           needs_google_push?: never;
           notes?: string | null;
           organization_id?: string;
+          outcome_api_token_id?: string | null;
           outcome_message_id?: string | null;
           outcome_recorded_at?: string | null;
           outcome_source_kind?: string | null;
@@ -3351,6 +3363,13 @@ export type Database = {
             columns: ["organization_id"];
             isOneToOne: false;
             referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "calendar_appointments_outcome_api_token_id_fkey";
+            columns: ["outcome_api_token_id"];
+            isOneToOne: false;
+            referencedRelation: "api_tokens";
             referencedColumns: ["id"];
           },
           {
@@ -3624,6 +3643,9 @@ export type Database = {
           description: string | null;
           destination_calendar_id: string | null;
           duration_minutes: number;
+          external_connection_id: string | null;
+          external_id: string | null;
+          external_provider: string | null;
           id: string;
           is_active: boolean;
           location_details: string | null;
@@ -3664,6 +3686,9 @@ export type Database = {
           description?: string | null;
           destination_calendar_id?: string | null;
           duration_minutes?: number;
+          external_connection_id?: string | null;
+          external_id?: string | null;
+          external_provider?: string | null;
           id?: string;
           is_active?: boolean;
           location_details?: string | null;
@@ -3703,6 +3728,9 @@ export type Database = {
           description?: string | null;
           destination_calendar_id?: string | null;
           duration_minutes?: number;
+          external_connection_id?: string | null;
+          external_id?: string | null;
+          external_provider?: string | null;
           id?: string;
           is_active?: boolean;
           location_details?: string | null;
@@ -5504,6 +5532,8 @@ export type Database = {
           datafy_waba_id: string | null;
           display_name: string | null;
           engine: string;
+          entry_pipeline_id: string | null;
+          entry_stage_id: string | null;
           id: string;
           is_warmup_complete: boolean | null;
           last_health_check_at: string | null;
@@ -5548,6 +5578,8 @@ export type Database = {
           datafy_waba_id?: string | null;
           display_name?: string | null;
           engine?: string;
+          entry_pipeline_id?: string | null;
+          entry_stage_id?: string | null;
           id?: string;
           is_warmup_complete?: never;
           last_health_check_at?: string | null;
@@ -5591,6 +5623,8 @@ export type Database = {
           datafy_waba_id?: string | null;
           display_name?: string | null;
           engine?: string;
+          entry_pipeline_id?: string | null;
+          entry_stage_id?: string | null;
           id?: string;
           is_warmup_complete?: never;
           last_health_check_at?: string | null;
@@ -5847,11 +5881,13 @@ export type Database = {
           legal_nature: string | null;
           main_cnae_code: string | null;
           main_cnae_description: string | null;
+          maps_url: string | null;
           normalized_cnpj: string | null;
           number: string | null;
           opened_at: string | null;
           organization_id: string;
           phone: string | null;
+          place_id: string | null;
           registration_status: string | null;
           secondary_cnaes: NonNullable<Json>;
           share_capital: number | null;
@@ -5859,6 +5895,7 @@ export type Database = {
           street: string | null;
           trade_name: string | null;
           updated_at: string;
+          website: string | null;
           zip_code: string | null;
         };
         ComputedFields: never;
@@ -5880,11 +5917,13 @@ export type Database = {
           legal_nature?: string | null;
           main_cnae_code?: string | null;
           main_cnae_description?: string | null;
+          maps_url?: string | null;
           normalized_cnpj?: string | null;
           number?: string | null;
           opened_at?: string | null;
           organization_id: string;
           phone?: string | null;
+          place_id?: string | null;
           registration_status?: string | null;
           secondary_cnaes?: NonNullable<Json>;
           share_capital?: number | null;
@@ -5892,6 +5931,7 @@ export type Database = {
           street?: string | null;
           trade_name?: string | null;
           updated_at?: string;
+          website?: string | null;
           zip_code?: string | null;
         };
         Update: {
@@ -5912,11 +5952,13 @@ export type Database = {
           legal_nature?: string | null;
           main_cnae_code?: string | null;
           main_cnae_description?: string | null;
+          maps_url?: string | null;
           normalized_cnpj?: string | null;
           number?: string | null;
           opened_at?: string | null;
           organization_id?: string;
           phone?: string | null;
+          place_id?: string | null;
           registration_status?: string | null;
           secondary_cnaes?: NonNullable<Json>;
           share_capital?: number | null;
@@ -5924,6 +5966,7 @@ export type Database = {
           street?: string | null;
           trade_name?: string | null;
           updated_at?: string;
+          website?: string | null;
           zip_code?: string | null;
         };
         Relationships: [
@@ -6315,6 +6358,7 @@ export type Database = {
           carteira_user_id: string | null;
           client_recognized_at: string | null;
           client_tag_by_system: string | null;
+          company_id: string | null;
           consent: NonNullable<Json>;
           contact_type: string;
           cpf_encrypted: string | null;
@@ -6378,6 +6422,7 @@ export type Database = {
           carteira_user_id?: string | null;
           client_recognized_at?: string | null;
           client_tag_by_system?: string | null;
+          company_id?: string | null;
           consent?: NonNullable<Json>;
           contact_type?: string;
           cpf_encrypted?: string | null;
@@ -6440,6 +6485,7 @@ export type Database = {
           carteira_user_id?: string | null;
           client_recognized_at?: string | null;
           client_tag_by_system?: string | null;
+          company_id?: string | null;
           consent?: NonNullable<Json>;
           contact_type?: string;
           cpf_encrypted?: string | null;
@@ -6479,6 +6525,13 @@ export type Database = {
           wa_lid?: never;
         };
         Relationships: [
+          {
+            foreignKeyName: "contacts_company_id_fkey";
+            columns: ["company_id"];
+            isOneToOne: false;
+            referencedRelation: "companies";
+            referencedColumns: ["id"];
+          },
           {
             foreignKeyName: "contacts_is_merged_into_fkey";
             columns: ["is_merged_into"];
@@ -6990,6 +7043,7 @@ export type Database = {
       };
       crm_lead_attachments: {
         Row: {
+          clonado_do_attachment_id: string | null;
           created_at: string;
           created_by: string | null;
           field_key: string;
@@ -7004,6 +7058,7 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          clonado_do_attachment_id?: string | null;
           created_at?: string;
           created_by?: string | null;
           field_key: string;
@@ -7017,6 +7072,7 @@ export type Database = {
           updated_at?: string;
         };
         Update: {
+          clonado_do_attachment_id?: string | null;
           created_at?: string;
           created_by?: string | null;
           field_key?: string;
@@ -7030,6 +7086,13 @@ export type Database = {
           updated_at?: string;
         };
         Relationships: [
+          {
+            foreignKeyName: "crm_lead_attachments_clonado_do_attachment_id_fkey";
+            columns: ["clonado_do_attachment_id"];
+            isOneToOne: false;
+            referencedRelation: "crm_lead_attachments";
+            referencedColumns: ["id"];
+          },
           {
             foreignKeyName: "crm_lead_attachments_lead_id_fkey";
             columns: ["lead_id"];
@@ -7434,6 +7497,7 @@ export type Database = {
           periodo: string;
           pipeline_id: string | null;
           updated_at: string;
+          vendedor_id: string | null;
         };
         ComputedFields: never;
         Insert: {
@@ -7446,6 +7510,7 @@ export type Database = {
           periodo: string;
           pipeline_id?: string | null;
           updated_at?: string;
+          vendedor_id?: string | null;
         };
         Update: {
           alvo?: number;
@@ -7457,6 +7522,7 @@ export type Database = {
           periodo?: string;
           pipeline_id?: string | null;
           updated_at?: string;
+          vendedor_id?: string | null;
         };
         Relationships: [
           {
@@ -13626,6 +13692,45 @@ export type Database = {
         };
         Relationships: [];
       };
+      relatorios_operacao_diarios: {
+        Row: {
+          conteudo: Json;
+          dia: string;
+          fuso: string;
+          gerado_em: string;
+          gerado_por: string;
+          id: string;
+          organization_id: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          conteudo: Json;
+          dia: string;
+          fuso: string;
+          gerado_em?: string;
+          gerado_por: string;
+          id?: string;
+          organization_id: string;
+        };
+        Update: {
+          conteudo?: Json;
+          dia?: string;
+          fuso?: string;
+          gerado_em?: string;
+          gerado_por?: string;
+          id?: string;
+          organization_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "relatorios_operacao_diarios_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       send_ledger: {
         Row: {
           body_hash: string;
@@ -15523,6 +15628,16 @@ export type Database = {
         Returns: boolean;
       };
       fn_appointment_recover: { Args: { p_event: string; p_org: string }; Returns: Json };
+      fn_appointment_record_attendance: {
+        Args: {
+          p_api_token: string;
+          p_id: string;
+          p_org: string;
+          p_patch: Json;
+          p_revision: number;
+        };
+        Returns: Json;
+      };
       fn_arquivos_da_organizacao: {
         Args: { p_apos_bucket?: string; p_apos_nome?: string; p_limite?: number; p_org: string };
         Returns: {
@@ -15785,13 +15900,28 @@ export type Database = {
         Returns: string;
       };
       fn_conferir_modulos_instalados: { Args: Record<PropertyKey, never>; Returns: undefined };
-      fn_configurar_pre_go_live_canal: {
-        Args: { p_canal: string; p_modo: string; p_numeros: string[]; p_org: string };
-        Returns: number;
-      };
+      fn_configurar_pre_go_live_canal:
+        | {
+            Args: { p_canal: string; p_modo: string; p_numeros: string[]; p_org: string };
+            Returns: number;
+          }
+        | {
+            Args: {
+              p_canal: string;
+              p_identidades: string[];
+              p_modo: string;
+              p_numeros: string[];
+              p_org: string;
+            };
+            Returns: number;
+          };
       fn_contar_mensagem_ignorada: { Args: { p_org: string }; Returns: undefined };
       fn_contato_adicionar_etiquetas: {
         Args: { p_contato: string; p_etiquetas: string[]; p_org: string };
+        Returns: Json;
+      };
+      fn_contato_anotar_campos: {
+        Args: { p_campos: Json; p_contato: string; p_org: string; p_remover: string[] };
         Returns: Json;
       };
       fn_contato_pessoal_remove_trechos_do_rag: {
@@ -15929,6 +16059,10 @@ export type Database = {
           p_origem?: string;
         };
         Returns: string;
+      };
+      fn_definir_aparencia_da_organizacao: {
+        Args: { p_aparencia: Json; p_org: string };
+        Returns: Json;
       };
       fn_definir_cliente_pela_agenda: { Args: { p_ligado: boolean; p_org: string }; Returns: Json };
       fn_definir_colegas_podem_mexer_na_agenda: {
@@ -16426,6 +16560,17 @@ export type Database = {
       fn_conversa_que_continua: {
         Args: { p_conversation_id: string; p_organization_id: string; p_user_id: string };
         Returns: string;
+      };
+      fn_operacao_conversas_com_entrada: {
+        Args: { p_fim: string; p_inicio: string; p_limite?: number; p_org: string };
+        Returns: {
+          channel: string;
+          conversation_id: string;
+          entradas: number;
+          nova: boolean;
+          primeira_entrada: string;
+          ultima_entrada: string;
+        }[];
       };
       fn_org_operante: { Args: { p_org: string }; Returns: boolean };
       fn_org_parada_descarta_fila: { Args: { p_org: string }; Returns: undefined };

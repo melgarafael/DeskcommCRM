@@ -14,8 +14,10 @@
  * - O Asaas não aceita chave de idempotência. GET, PUT e DELETE repetem em 429,
  *   5xx e rede; POST repete SÓ em 429 (recusado antes de processar). A
  *   idempotência do POST é a RELEITURA antes de criar: cliente pela
- *   `externalReference`, assinatura ACTIVE, webhook pela URL ou pelo nome.
- *   No máximo 3 tentativas e 5 s por espera.
+ *   `externalReference` (o vínculo com a organização) e, não achando, pelo
+ *   `cpfCnpj` — o cliente cadastrado direto no painel do Asaas não tem vínculo,
+ *   e, sem histórico na conta, é adotado em vez de duplicado (#4768); assinatura ACTIVE, webhook pela URL
+ *   ou pelo nome. No máximo 3 tentativas e 5 s por espera.
  * - Toda resposta passa por Zod lendo só o que é usado; forma inesperada vira
  *   `ErroDoProvedor(200, "resposta_invalida")`, que `sincronizar` grava como
  *   `leitura_invalida` sem tocar o estado.
@@ -129,6 +131,16 @@ function ler<T>(schema: z.ZodType<T>, dados: unknown): T {
 }
 
 const comId = z.object({ id: z.string().min(1), deleted: z.boolean().nullish() });
+/**
+ * O cliente como a listagem e o PUT devolvem: além do id, o vínculo que NÓS
+ * gravamos e a data de criação, que é o desempate quando o documento se repete.
+ */
+const clienteDoAsaas = comId.extend({
+  externalReference: z.string().nullish(),
+  /** Data civil `AAAA-MM-DD` (o Asaas não manda hora aqui): ordena como texto. */
+  dateCreated: z.string().nullish(),
+});
+type ClienteDoAsaas = z.infer<typeof clienteDoAsaas>;
 const UUID = z.string().uuid();
 const cobrancaDoAsaas = z.object({
   id: z.string().min(1),
@@ -485,20 +497,94 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
   }
 
   /**
-   * Busca pela `externalReference` (= org) antes de criar: o POST não tem chave
-   * de idempotência, e é a busca que cura o clique repetido e a resposta
-   * perdida. O documento vai só no corpo do POST. `notificationDisabled`: quem
-   * avisa o pagador é a régua do sistema, com a marca da empresa; os e-mails,
-   * SMS e WhatsApp do Asaas sairiam em dobro, com a marca dele, e alguns são cobrados.
+   * A lista de clientes da conta por um filtro da API (a única forma de busca que
+   * o Asaas oferece: `GET /customers` filtra por `externalReference`, `cpfCnpj`,
+   * `email`, `name` e `groupName`; o teto de `limit` é 100). Cliente removido não
+   * conta — a listagem só o mostra com `includeDeleted`.
+   */
+  async function clientesPor(filtro: Record<string, string>): Promise<ClienteDoAsaas[]> {
+    const consulta = new URLSearchParams({ ...filtro, limit: "100" });
+    const lidos = ler(listaDoAsaas(clienteDoAsaas), await chamar("GET", `/customers?${consulta}`)).data;
+    return lidos.filter((c) => c.deleted !== true);
+  }
+
+  /**
+   * O desempate quando MAIS DE UM cliente responde ao mesmo documento: o mais
+   * ANTIGO (`dateCreated` — o pagador original, não o duplicado que nasceu
+   * depois), e o menor id quando as datas empatam. A ordem da listagem do Asaas
+   * não entra: a escolha tem de ser a mesma em toda chamada.
+   */
+  function escolherCliente(candidatos: ClienteDoAsaas[]): ClienteDoAsaas {
+    const escolhido = [...candidatos].sort(
+      (a, b) => (a.dateCreated ?? "9999-12-31").localeCompare(b.dateCreated ?? "9999-12-31") || a.id.localeCompare(b.id),
+    )[0];
+    if (escolhido === undefined) throw new ErroDoProvedor(null, "resposta_invalida", false);
+    return escolhido;
+  }
+
+  /**
+   * Grava o vínculo da organização no cliente adotado (`PUT /customers/{id}` aceita
+   * `externalReference` e só altera os campos enviados). Chave sem permissão de
+   * editar cliente adota sem vínculo, e o cliente gravado na assinatura mantém a
+   * idempotência dali em diante.
+   */
+  async function vincularCliente(cliente: ClienteDoAsaas, orgId: string): Promise<void> {
+    try {
+      await chamar("PUT", `/customers/${encodeURIComponent(cliente.id)}`, { externalReference: orgId });
+    } catch (e) {
+      if (!(e instanceof ErroDoProvedor)) throw e;
+      logger.warn("cobranca.asaas.cliente_adotado_sem_vinculo", { status: e.status, codigo: e.codigo });
+    }
+  }
+
+  /** Se o cliente já teve assinatura (inclusive removida) ou cobrança na conta. */
+  async function temHistorico(clienteId: string): Promise<boolean> {
+    const cliente = encodeURIComponent(clienteId);
+    const [assinaturas, cobrancas] = await Promise.all([
+      chamar("GET", `/subscriptions?customer=${cliente}&includeDeleted=true&limit=1`),
+      chamar("GET", `/payments?customer=${cliente}&limit=1`),
+    ]);
+    return ler(listaDoAsaas(comId), assinaturas).data.length > 0 || ler(listaDoAsaas(comId), cobrancas).data.length > 0;
+  }
+
+  /**
+   * Busca pelo vínculo (`externalReference` = org) e, se não achar, pelo DOCUMENTO
+   * antes de criar: o POST não tem chave de idempotência, e é a busca que cura o
+   * clique repetido e a resposta perdida. O documento é o segundo caminho porque
+   * cliente cadastrado direto no painel do Asaas não tem `externalReference` — só
+   * a releitura por vínculo não o acha, e o POST criaria um duplicado com o mesmo
+   * CPF/CNPJ (#4768). Achado pelo documento, ele é ADOTADO (com o vínculo gravado
+   * nele) em vez de duplicado — só quando não tem vínculo nem assinatura ou
+   * cobrança na conta; nos outros casos, cria um novo, como antes. `notificationDisabled` fica só na criação: quem
+   * avisa o pagador é a régua do sistema, com a marca da empresa, e os e-mails,
+   * SMS e WhatsApp do Asaas sairiam em dobro; num cliente que já existe na conta,
+   * desligar notificação mudaria o comportamento das outras integrações dele.
    */
   async function garantirCliente(org: Parameters<AdaptadorDeCobranca["garantirCliente"]>[0]): Promise<string> {
     const orgId = uuidDaOrg(org.id);
     if (org.documento === null) throw new ErroDoProvedor(null, "documento_obrigatorio", false);
     const documento = documentoDoPagador(org.documento);
     if (documento === null) throw new ErroDoProvedor(null, "documento_invalido", false);
-    const consulta = new URLSearchParams({ externalReference: orgId, limit: "10" });
-    const achado = ler(listaDoAsaas(comId), await chamar("GET", `/customers?${consulta}`)).data.find((c) => c.deleted !== true);
-    if (achado) return achado.id;
+    const pelaOrg = await clientesPor({ externalReference: orgId });
+    if (pelaOrg.length > 0) {
+      if (pelaOrg.length > 1) logger.warn("cobranca.asaas.cliente_duplicado", { quantidade: pelaOrg.length, por: "externalReference" });
+      return escolherCliente(pelaOrg).id;
+    }
+    const peloDocumento = await clientesPor({ cpfCnpj: documento });
+    // Vínculo de OUTRA organização não é adotado: `cobranca_assinaturas` tem índice
+    // único em (provedor, provedor_cliente_id), e o mesmo cliente para duas empresas
+    // faria o checkout da segunda falhar em toda tentativa. Cria-se um novo, como antes.
+    const livres = peloDocumento.filter((c) => !c.externalReference);
+    if (livres.length < peloDocumento.length) logger.warn("cobranca.asaas.cliente_de_outra_organizacao", {});
+    if (livres.length > 0) {
+      if (livres.length > 1) logger.warn("cobranca.asaas.cliente_duplicado", { quantidade: livres.length, por: "documento" });
+      const adotado = escolherCliente(livres);
+      if (!(await temHistorico(adotado.id))) {
+        await vincularCliente(adotado, orgId);
+        return adotado.id;
+      }
+      logger.warn("cobranca.asaas.cliente_com_historico_nao_adotado", { quantidade: livres.length });
+    }
     return ler(
       comId,
       await chamar("POST", "/customers", {

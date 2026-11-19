@@ -67,6 +67,18 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
   // nenhuma de dado.
   const [janelaDaMeta] = useState(() => janelaDoMes(mesLocal()));
   const metasDoMes = useMetasDoMes(janelaDaMeta);
+  // #4796: a meta do vendedor precisa de NOME no painel. A lista da equipe é a
+  // mesma que o filtro de atendente já carrega; quem não pode vê-la (agent) cai
+  // no rótulo genérico "Vendedor", porque o número continua valendo.
+  const nomesDaEquipe = Object.fromEntries(
+    (team.data?.data ?? []).map((membro) => [
+      membro.user_id,
+      rotuloDoMembro(
+        { full_name: membro.full_name, email: membro.email, user_id: membro.user_id },
+        t,
+      ),
+    ]),
+  );
   const estadoDaMeta: EstadoDaMeta = metasDoMes.isLoading
     ? "carregando"
     : metasDoMes.isError || !metasDoMes.data
@@ -182,6 +194,7 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
         metas={metasDoMes.data?.data.metas ?? []}
         podeConfigurar={canCompare}
         valores={metasDoMes.data?.data.valores_do_periodo ?? null}
+        nomes={nomesDaEquipe}
       />
 
       <Card>

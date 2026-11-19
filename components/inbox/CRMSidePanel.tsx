@@ -37,6 +37,7 @@ import { lerCampoDeMoeda, valorDoCampoDeMoeda } from "@/lib/leads/campo-de-moeda
 import { MOEDA_PADRAO, formatValorDoNegocio, simboloDaMoeda } from "@/lib/money";
 import { ConversationTagsEditor } from "./ConversationTagsEditor";
 import { ContactTagsEditor } from "./ContactTagsEditor";
+import { ChecklistDoCard } from "./ChecklistDoCard";
 import { TarefasDaDemanda } from "./TarefasDaDemanda";
 import { NovaTarefaDaConversa } from "./NovaTarefaDaConversa";
 import { FollowupDoContato } from "./FollowupDoContato";
@@ -48,6 +49,8 @@ import {
 } from "@/lib/inbox/modulos-da-lateral";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import { LoseLeadDialog } from "@/components/kanban/LoseLeadDialog";
+import { BarraDeEtapas } from "@/components/kanban/BarraDeEtapas";
+import { diasNaEtapa } from "@/lib/kanban/barra-de-etapas";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
 import { MoveToOtherPipelineDialog } from "@/components/kanban/MoveToOtherPipelineDialog";
 import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
@@ -97,6 +100,9 @@ interface LeadRow {
   recurring_months?: number | null;
   currency: string | null;
   updated_at: string;
+  /** Entrada na etapa atual e nascimento do negócio: os dias da barra de etapas (`diasNaEtapa`). */
+  stage_changed_at?: string | null;
+  created_at?: string | null;
   pipeline_id: string;
   custom_fields: Record<string, unknown> | null;
   field_defs: CustomFieldDef[];
@@ -524,7 +530,12 @@ function InboxLeadEditor({
           <EtiquetasDoNegocio tags={ativo.tags} />
         </div>
       )}
-      <EtapaDoNegocio key={`etapa-${ativo.id}`} lead={ativo} onMovido={onSalvo} />
+      <EtapaDoNegocio
+        key={`etapa-${ativo.id}`}
+        lead={ativo}
+        onMovido={onSalvo}
+        podeMover={podeLevarParaOutroFunil}
+      />
       <ValorDoNegocio
         key={`valor-${ativo.id}`}
         lead={ativo}
@@ -705,7 +716,21 @@ function ValorDoNegocio({
  * não move direto: ela pede o motivo, então abre o mesmo `LoseLeadDialog` do
  * quadro (issue #2871).
  */
-function EtapaDoNegocio({ lead, onMovido }: { lead: LeadRow; onMovido: () => void }) {
+function EtapaDoNegocio({
+  lead,
+  onMovido,
+  podeMover,
+}: {
+  lead: LeadRow;
+  onMovido: () => void;
+  /**
+   * Quem clica na BARRA DE ETAPAS move o negócio: `pipeline.move_card` (`agent`+),
+   * a mesma régua do quadro e do "Levar para outro funil" deste painel. Abaixo
+   * disso a barra só mostra. O seletor segue como sempre — a rota de mover cobra
+   * o piso no servidor.
+   */
+  podeMover: boolean;
+}) {
   const t = useT();
   const mover = useBulkAction(lead.pipeline_id);
   const [perdendo, setPerdendo] = useState(false);
@@ -729,6 +754,17 @@ function EtapaDoNegocio({ lead, onMovido }: { lead: LeadRow; onMovido: () => voi
 
   return (
     <div className="space-y-1" data-testid="inbox-etapa-do-negocio">
+      {/* A BARRA DE ETAPAS, a mesma do dossiê do quadro: o caminho do negócio
+          no funil, a atual com os dias nela. O clique usa o MESMO `escolher`
+          do seletor abaixo (`/api/v1/leads/bulk`); ganho e perda ficam fora da
+          barra e continuam no seletor, onde a perda pede o motivo. */}
+      <BarraDeEtapas
+        etapaAtual={lead.stage_id}
+        etapas={etapas}
+        podeMover={podeMover && !mover.isPending}
+        onMudar={(stageId) => void escolher(stageId)}
+        dias={diasNaEtapa(lead)}
+      />
       <label className="block text-xs font-medium text-text" htmlFor={`etapa-${lead.id}`}>
         {t("Etapa do funil")}
       </label>
@@ -1455,12 +1491,19 @@ export function CRMSidePanel({
        a seção mostra as tarefas abertas do contato (#4630). Só a demanda vigente AINDA ABERTA
        (`current_demanda_id` continua apontando depois de "Encerrar demanda"). */
     tarefas: (
-      <TarefasDaDemanda
-        demandaId={demandas?.find((d) => d.id === conversation.current_demanda_id)?.id ?? null}
-        contactId={contactId}
-        leadId={negocioAtivoId}
-        podeEditar={podeCriarTarefa}
-      />
+      <>
+        {/* O CHECKLIST DO CARD (#4717, FASE 1): o plano aplicado como lista
+            única do negócio, com estado, autor e progresso. Vem ANTES da lista
+            de tarefas porque é a visão do atendimento inteiro — a tarefa é o
+            item dela. A seção se auto-oculta quando nenhum plano foi aplicado. */}
+        <ChecklistDoCard leadId={negocioAtivoId} podeEditar={podeCriarTarefa} />
+        <TarefasDaDemanda
+          demandaId={demandas?.find((d) => d.id === conversation.current_demanda_id)?.id ?? null}
+          contactId={contactId}
+          leadId={negocioAtivoId}
+          podeEditar={podeCriarTarefa}
+        />
+      </>
     ),
 
     /* O FOLLOW-UP NA CONVERSA (#3178): a seção se AUTO-OCULTA quando não há
@@ -1515,7 +1558,11 @@ export function CRMSidePanel({
         {sectionsLoading ? (
           <Skeleton className="mt-2 h-14 w-full" />
         ) : leads && leads.length > 0 ? (
-          <fieldset disabled={readonly}><InboxLeadEditor
+          /* `min-w-0`: o `fieldset` nasce com `min-width: min-content` (padrão
+             do navegador) e repassaria a largura da faixa em nowrap da barra de
+             etapas para a `aside`, que rolaria de lado inteira. Com ele, quem
+             rola é só a faixa (`BarraDeEtapas`). */
+          <fieldset disabled={readonly} className="min-w-0"><InboxLeadEditor
             leads={leads}
             selecionadoId={leadAtivoId}
             onSelecionar={setLeadAtivoId}
