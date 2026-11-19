@@ -248,6 +248,11 @@ export interface AudioSocketCallContext {
    */
   knowledgeSourceIdsPromise: Promise<string[]>;
   /**
+   * Contexto resumido do contato (nome, negócios em aberto, últimas mensagens).
+   * Dispara em paralelo com o WebSocket em `index.ts`; ausente ou vazio = sem bloco extra.
+   */
+  contactContextPromise?: Promise<string>;
+  /**
    * Busca na base de conhecimento da org (mesmo acervo do agente de texto).
    * Sempre fornecida — quem decide OFERECER a tool ao modelo ou não é o
    * tools[] montado em setupRealtime a partir de knowledgeSourceIdsPromise,
@@ -470,7 +475,10 @@ export class AudioSocketCallBridge {
       // Roda em paralelo com o handshake deste WS (index.ts dispara os dois
       // ao mesmo tempo) — só espera aqui, no momento em que já precisamos
       // saber se oferece a tool de RAG ou não.
-      const knowledgeSourceIds = await this.ctx.knowledgeSourceIdsPromise;
+      const [knowledgeSourceIds, contactContext] = await Promise.all([
+        this.ctx.knowledgeSourceIdsPromise,
+        this.ctx.contactContextPromise?.catch(() => "") ?? Promise.resolve(""),
+      ]);
 
       console.info(`[realtime] call=${this.ctx.callId} websocket aberto, enviando session.update`);
       this.realtimeWs.send(
@@ -482,6 +490,7 @@ export class AudioSocketCallBridge {
             output_modalities: ["audio"],
             instructions:
               this.ctx.agentInstructions +
+              (contactContext ? `\n\n${contactContext}` : "") +
               INSTRUCAO_ENCERRAR_CHAMADA +
               (this.ctx.agenda ? INSTRUCAO_AGENDA : "") +
               (this.ctx.falaPrimeiro ? INSTRUCAO_FALA_PRIMEIRO : ""),
