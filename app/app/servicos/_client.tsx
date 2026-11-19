@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useT } from "@/hooks/i18n/useT";
 import { apiClient } from "@/lib/api/client";
+import { ApiError } from "@/lib/api/types";
 import { centavosParaTexto } from "@/lib/catalogo/edicao-do-produto";
 import {
   TIPOS_DE_SERVICO,
@@ -36,6 +37,7 @@ import {
 } from "@/lib/catalogo/servicos";
 import { formatCents } from "@/lib/money";
 import { precoParaCentavos } from "@/lib/schemas/produtos";
+import type { RegraDoServico } from "@/lib/schemas/servicos";
 
 const CHAVE = ["catalogo", "servicos"];
 const CAMPO = "min-h-11 w-full rounded-md border border-border bg-background px-2 text-sm";
@@ -165,6 +167,65 @@ function corpoDoRascunho(
   return { corpo };
 }
 
+const MENSAGEM_DA_REGRA = {
+  variacao_herda_tipo: "Defina o tipo no serviço principal.",
+  variacao_herda_unidade: "Defina a unidade de cobrança no serviço principal.",
+  variacao_herda_prazo: "Defina o prazo no serviço principal.",
+  variacao_herda_sinal: "Defina o sinal no serviço principal.",
+  tipo_obrigatorio: "Escolha o tipo do serviço.",
+  tipo_invalido: "Escolha o tipo do serviço.",
+  unidade_obrigatoria: "Escolha a unidade de cobrança.",
+  unidade_invalida: "Escolha a unidade de cobrança.",
+  unidade_incompativel: "Escolha uma unidade de cobrança compatível com o tipo do serviço.",
+  prazo_so_em_projeto: "O prazo em dias úteis só pode ser informado para projetos.",
+  prazo_minimo: "Informe um prazo de pelo menos 1 dia útil.",
+  prazo_fora_da_faixa: "Informe de 1 a 3.650 dias úteis em serviços do tipo projeto.",
+  sinal_percentual_fora_da_faixa: "O sinal em percentual vai de 1 a 100.",
+  sinal_fixo_invalido: "Informe um sinal fixo maior que zero.",
+  sinal_fixo_acima_do_preco: "O sinal fixo não pode passar do menor preço entre o serviço e suas variações.",
+  sinal_invalido: "Informe um percentual de 1 a 100 ou um sinal fixo maior que zero.",
+  forma_invalida: "Confira o tipo e a cobrança. Preencha os detalhes no serviço principal.",
+  pai_invalido: "Serviço principal não encontrado para esta variação.",
+  servico_sem_estoque: "Serviços não controlam estoque.",
+  preco_negativo: "Informe um preço igual ou maior que zero.",
+  instrucoes_longas: "Use até 2.000 caracteres nas instruções para o agente.",
+  revisao_invalida: "Reabra o serviço antes de editar.",
+  codigo_invalido: "Informe um código de 1 a 60 caracteres.",
+  nome_invalido: "Informe um nome de 2 a 200 caracteres.",
+  descricao_invalida: "Use até 2.000 caracteres na descrição.",
+} as const satisfies Record<RegraDoServico, string>;
+
+function lerRecusa(erro: unknown) {
+  const regras: { campo: string; codigo: RegraDoServico }[] = [];
+  if (!(erro instanceof ApiError) || erro.status !== 422 || erro.code !== "validation_failed") {
+    return { regras, mostrarToast: true };
+  }
+
+  let temDetalheDesconhecido = false;
+  for (const [campo, codigos] of Object.entries(erro.details ?? {})) {
+    if (!Array.isArray(codigos)) {
+      temDetalheDesconhecido = true;
+      continue;
+    }
+    for (const codigo of codigos) {
+      if (typeof codigo === "string" && Object.hasOwn(MENSAGEM_DA_REGRA, codigo)) {
+        regras.push({ campo, codigo: codigo as RegraDoServico });
+      } else {
+        temDetalheDesconhecido = true;
+      }
+    }
+  }
+  return { regras, mostrarToast: temDetalheDesconhecido || regras.length === 0 };
+}
+
+function textoDasRecusas(codigos: RegraDoServico[], t: (texto: string) => string) {
+  return [...new Set(codigos.map((codigo) => t(MENSAGEM_DA_REGRA[codigo])))].join(" ");
+}
+
+function AvisoDaRecusa({ id, mensagem }: { id?: string; mensagem: string }) {
+  return mensagem ? <p id={id} role="alert" className="text-sm text-destructive">{mensagem}</p> : null;
+}
+
 function FormularioDoServico({
   servico,
   aoFechar,
@@ -189,11 +250,18 @@ function FormularioDoServico({
       aoFechar();
     },
     onError: (erro) => {
-      showApiError(erro);
+      if (lerRecusa(erro).mostrarToast) showApiError(erro);
       // 409 de revisão: outra pessoa salvou antes. Recarregar traz a versão nova.
       void qc.invalidateQueries({ queryKey: CHAVE });
     },
   });
+
+  const recusas = lerRecusa(salvar.error).regras;
+  const erroSinal = textoDasRecusas(recusas.filter((r) => r.campo === "sinal").map((r) => r.codigo), t);
+  const outrosErros = textoDasRecusas(recusas.filter((r) => r.campo !== "sinal").map((r) => r.codigo), t);
+  const campoDoErroSinal = erroSinal
+    ? { "aria-invalid": true, "aria-describedby": campo("sinal-erro") }
+    : {};
 
   function enviar() {
     const saida = corpoDoRascunho(
@@ -215,7 +283,11 @@ function FormularioDoServico({
   }
 
   return (
-    <section className="space-y-3 rounded-lg border border-border p-4" data-testid="form-servico">
+    <section
+      className="space-y-3 rounded-lg border border-border p-4"
+      data-testid="form-servico"
+      onChange={() => { if (salvar.isError) salvar.reset(); }}
+    >
       <h2 className="text-sm font-semibold">{servico ? t("Editar serviço") : t("Novo serviço")}</h2>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1">
@@ -286,6 +358,7 @@ function FormularioDoServico({
           <select
             id={campo("sinal-tipo")}
             className={CAMPO}
+            {...(!r.sinalTipo ? campoDoErroSinal : {})}
             value={r.sinalTipo}
             onChange={(e) => setR({ ...r, sinalTipo: e.target.value as Rascunho["sinalTipo"], sinalValor: "" })}
           >
@@ -293,6 +366,7 @@ function FormularioDoServico({
             <option value="percentual">{t("Percentual do preço")}</option>
             <option value="fixo">{t("Valor fixo")}</option>
           </select>
+          {!r.sinalTipo ? <AvisoDaRecusa id={campo("sinal-erro")} mensagem={erroSinal} /> : null}
         </div>
         {r.sinalTipo ? (
           <div className="space-y-1">
@@ -301,10 +375,12 @@ function FormularioDoServico({
             </Label>
             <Input
               id={campo("sinal-valor")}
+              {...campoDoErroSinal}
               inputMode="decimal"
               value={r.sinalValor}
               onChange={(e) => setR({ ...r, sinalValor: e.target.value })}
             />
+            <AvisoDaRecusa id={campo("sinal-erro")} mensagem={erroSinal} />
           </div>
         ) : null}
       </div>
@@ -337,6 +413,7 @@ function FormularioDoServico({
         />
         <Label htmlFor={campo("ia-oferece")}>{t("O agente pode oferecer este serviço")}</Label>
       </div>
+      <AvisoDaRecusa mensagem={outrosErros} />
       <div className="flex flex-wrap gap-2">
         <Button onClick={enviar} disabled={salvar.isPending}>
           {salvar.isPending ? t("Salvando…") : t("Salvar")}
@@ -364,8 +441,16 @@ function NovaVariacao({ paiId, aoFechar }: { paiId: string; aoFechar: () => void
       void qc.invalidateQueries({ queryKey: CHAVE });
       aoFechar();
     },
-    onError: (erro) => showApiError(erro),
+    onError: (erro) => {
+      if (lerRecusa(erro).mostrarToast) showApiError(erro);
+    },
   });
+
+  const regras = lerRecusa(salvar.error).regras.map((recusa) => recusa.codigo);
+  const erroPreco = regras.includes("sinal_fixo_acima_do_preco")
+    ? t("Aumente o preço da variação ou reduza o sinal fixo do serviço.")
+    : "";
+  const outrosErros = textoDasRecusas(regras.filter((regra) => regra !== "sinal_fixo_acima_do_preco"), t);
 
   function enviar() {
     const centavos = precoParaCentavos(preco);
@@ -379,7 +464,11 @@ function NovaVariacao({ paiId, aoFechar }: { paiId: string; aoFechar: () => void
   }
 
   return (
-    <div className="space-y-3 rounded-md border border-border p-3" data-testid="form-variacao">
+    <div
+      className="space-y-3 rounded-md border border-border p-3"
+      data-testid="form-variacao"
+      onChange={() => { if (salvar.isError) salvar.reset(); }}
+    >
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="space-y-1">
           <Label htmlFor={campo("nome")}>{t("Nome da variação")}</Label>
@@ -396,10 +485,14 @@ function NovaVariacao({ paiId, aoFechar }: { paiId: string; aoFechar: () => void
             inputMode="decimal"
             placeholder="0,00"
             value={preco}
+            aria-invalid={Boolean(erroPreco)}
+            aria-describedby={erroPreco ? campo("preco-erro") : undefined}
             onChange={(e) => setPreco(e.target.value)}
           />
+          <AvisoDaRecusa id={campo("preco-erro")} mensagem={erroPreco} />
         </div>
       </div>
+      <AvisoDaRecusa mensagem={outrosErros} />
       <div className="flex flex-wrap gap-2">
         <Button size="sm" onClick={enviar} disabled={salvar.isPending}>
           {t("Adicionar variação")}
