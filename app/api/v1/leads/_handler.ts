@@ -576,7 +576,10 @@ export async function countLeadsHandler(
       .select("id")
       .eq("organization_id", ctx.organization_id)
       .eq("pipeline_id", q.pipeline_id as string)
-      .order("position", { ascending: true });
+      // `id` desempata: etapas podem repetir `position` (medido num funil real, duas
+      // etapas com 5000), e sem desempate a ordem mudaria de uma chamada para outra.
+      .order("position", { ascending: true })
+      .order("id", { ascending: true });
     if (error) {
       throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
     }

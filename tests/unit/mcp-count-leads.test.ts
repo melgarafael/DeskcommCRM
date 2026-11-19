@@ -40,6 +40,7 @@ interface Call {
   opts: Record<string, unknown> | undefined;
   eqs: Record<string, unknown>;
   nots: Array<[string, string, string]>;
+  orders: string[];
 }
 
 type Counts = { all?: number; open?: number; won?: number; lost?: number };
@@ -58,7 +59,7 @@ function makeCtx(
 ): { ctx: McpContext; calls: Call[] } {
   const calls: Call[] = [];
   const from = (table: string) => {
-    const call: Call = { table, opts: undefined, eqs: {}, nots: [] };
+    const call: Call = { table, opts: undefined, eqs: {}, nots: [], orders: [] };
     calls.push(call);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const chain: any = {
@@ -75,7 +76,10 @@ function makeCtx(
         return chain;
       },
       limit: () => chain,
-      order: () => chain,
+      order: (col: string) => {
+        call.orders.push(col);
+        return chain;
+      },
       then: (res: (v: unknown) => unknown) => {
         if (table === "crm_stages") {
           return Promise.resolve({
@@ -204,6 +208,8 @@ describe("crm_count_leads", () => {
       // as etapas vêm do funil DA organização
       const stages = calls.find((c) => c.table === "crm_stages");
       expect(stages?.eqs).toMatchObject({ organization_id: ORG, pipeline_id: PIPE });
+      // ordem do quadro, com desempate por id (etapas podem repetir `position`)
+      expect(stages?.orders).toEqual(["position", "id"]);
       // toda contagem por etapa continua com organização, funil e head/count
       const porEtapa = soLeads(calls).filter((c) => c.eqs.stage_id);
       expect(porEtapa).toHaveLength(2);
