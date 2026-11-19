@@ -257,14 +257,24 @@ Mesma régua de visibilidade da listagem: `organization_id` na primeira cláusul
 **Maps to**: `GET /api/v1/pipelines`
 
 ```ts
-inputSchema: z.object({})  // sem args
+inputSchema: z.object({ include_archived: z.boolean().optional() })
 outputSchema: z.object({
   pipelines: z.array(z.object({
-    id, name, vocabulary: z.record(z.string()),
-    stages: z.array(z.object({ id, name, position }))
+    id, name, slug, description, is_default, is_archived, position,
+    vocabulary: z.record(z.string()),
+    // #4667: as DEFINIÇÕES dos campos personalizados, nunca valor de negócio.
+    campos: z.array(z.object({
+      key, label, type, escopo,
+      options: z.array(z.object({ value, label })).optional(),
+    })),
   }))
 })
 ```
+
+As etapas não vêm aqui: saem de `crm_list_stages`. A forma que vale é a do `map` em
+`lib/mcp/tools/pipelines.ts`; em dúvida, leia lá. Desde a #4667, `crm_update_lead` e
+`crm_create_lead` chamados pelo agente de IA recusam, em `custom_fields`, a chave que o funil
+não declara (`lib/mcp/conferencia-de-campos.ts`).
 
 ### 3.2 Write tools (mutations, role >= manager)
 
