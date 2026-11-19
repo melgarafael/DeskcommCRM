@@ -81,7 +81,6 @@ import {
   periodoPadrao,
   periodoPassaDoTeto,
 } from "@/lib/relatorios/janela";
-import { TAMANHO_MAXIMO_DA_TAG } from "@/lib/contacts/tag-normalizada";
 import {
   montarRelatorioComercial,
   normalizarTagDoRelatorio,
@@ -128,9 +127,10 @@ interface NegocioComContato extends NegocioBruto {
  * O teto de uma tag no filtro. NÃO é `TAMANHO_MAXIMO_DA_TAG` (40): esse é o teto
  * de quem normaliza, e a automação `add_tag` grava como veio, até 60
  * (`lib/automation/actions/remove-tag.ts`). Um teto menor que o do que existe no
- * banco faria uma tag real do ranking ser recusada como filtro.
+ * banco faria uma tag real do ranking ser recusada como filtro. 100 cobre os
+ * dois com folga.
  */
-const TAG_MAXIMA = Math.max(TAMANHO_MAXIMO_DA_TAG, 100);
+const TAG_MAXIMA = 100;
 
 const querySchema = z.object({
   // `iso.date` confere o CALENDÁRIO, não só o formato: `2026-99-99` passava no
