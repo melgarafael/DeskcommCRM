@@ -97,7 +97,7 @@ import { entraPorPacote, type ToolBundle, type ToolRisk } from "./pacotes";
  * devolve. Medido depois da mudança: onboarding 22 (era 24), evoluir 27 (voltou
  * ao valor que 27 atende), reter 34.
  *
- * ═══ 27 → 31: a fatia #4517 entrou no catálogo ══════════════════════════════
+ * ═══ 27 → 32: a fatia #4517 entrou, e o número passou a ser UM só ════════════
  *
  * O #4517 acrescentou cinco capacidades: a ficha editável (`crm_update_contact`,
  * pacote `vender`) e os quatro comandos de conversa — pausar, retomar, encerrar
@@ -109,18 +109,33 @@ import { entraPorPacote, type ToolBundle, type ToolRisk } from "./pacotes";
  *    default; `escalar` 41, `reter` 50, `atender` 50, `organizar` 48;
  *  - `atender` SOZINHO passou a exigir 31 (29 automáticas + 2 críticas).
  *
- * Duas pontas, e 31 é o menor número que satisfaz as DUAS: nenhum pacote sozinho
- * pode estourar o teto (senão a reserva da crítica o torna inatingível — é o
- * caso do alarme `pacote-reserva-vaga-da-critica`), e o agente recém-nascido
- * tem de conseguir ganhar ALGUMA jornada nova (o beco do D3). Subir além de 31
- * daria a segunda jornada a mais de um pacote, o que continua sendo decisão
- * contra um argumento — a heurística de degradação — que ninguém mediu.
- *
  * A conta do #4534 com a agenda e as tarefas empilhadas media 31 por outro
  * caminho; este PR deixou de ser empilhado (o #4698 mergeou a agenda e o #4523 é
  * dono das tarefas), então o número aqui é medido só com a fatia que sobrou.
+ *
+ * ═══ 31 próprio → 32, herdado da decisão do dono do produto (2026-11-19) ═════
+ *
+ * Este branch tinha subido o teto para 31 sozinho, e o #4523 chegava a 32 pelo
+ * organizar. Dois PRs movendo o MESMO número é disputa de produto, e ela foi
+ * resolvida pelo dono: **32, uma vez, num lugar só**. A medição que sustenta,
+ * com `vagasExigidasPeloPacote([], TOOL_CATALOG, pacote)` (automáticas +
+ * críticas) e a main mesclada em cada fatia:
+ *
+ *   pacote       main (teto 27)   #4523   #4534
+ *   atender              20        27      31
+ *   escalar              13        14      18
+ *   evoluir               5         5       5
+ *   organizar            22        32      27
+ *   reter                10        27      27
+ *   vender               24        25      26
+ *
+ * Com 32 a regra que importa continua verdadeira — nenhum pacote sozinho estoura
+ * o teto (31 do `atender` cabe, 32 do `organizar` cabe), então reservar a vaga
+ * da crítica segue sendo o que era: guardar a vaga, não escolher qual pacote
+ * perde. Aqui o número deixou de ser reivindicação própria e passou a ser o
+ * mesmo do #4523; o que este PR mantém é o que ele acrescentou de catálogo.
  */
-export const TETO_TOOLS_POR_AGENTE = 31;
+export const TETO_TOOLS_POR_AGENTE = 32;
 
 /** O mínimo que a regra precisa saber de uma capacidade. */
 export interface CapacidadeSelecionavel {
