@@ -382,6 +382,16 @@ describe("packaging — o caminho Cloudflare Tunnel (docker-compose.cloudflared.
     expect(servicos.get("app")!).toMatch(/^\s{6}IP_DO_CLIENTE_HEADER:\s*cf-connecting-ip\s*$/m);
   });
 
+  it("o protocolo do túnel é knob do .env, e o .env antigo segue em `auto`", () => {
+    // Numa VPS cujo provedor descarta UDP, o QUIC nunca conecta e cada
+    // reconexão deixa o túnel "degraded" por minutos antes do http2. O knob
+    // pula a tentativa; o default `auto` é o do próprio cloudflared, então quem
+    // não declara CLOUDFLARED_PROTOCOL não percebe diferença nenhuma.
+    expect(servicos.get("cloudflared")!).toMatch(
+      /^\s{6}TUNNEL_TRANSPORT_PROTOCOL:\s*\$\{CLOUDFLARED_PROTOCOL:-auto\}\s*$/m,
+    );
+  });
+
   it("a imagem do cloudflared está pinada — nunca :latest nem tag implícita", () => {
     const bloco = servicos.get("cloudflared")!;
     const ref = (bloco.match(/^\s{4}image:\s*(\S+)/m)?.[1] ?? "").replace(

@@ -322,7 +322,9 @@ import { CORRECAO_DO_TURNO_MUDO, PASSOS_DA_CORRECAO, turnoMudoPedeCorrecao } fro
 import {
   CODIGO_DO_TETO_DE_RESPOSTAS,
   avisarEquipeDoTetoDeRespostas,
-  knobsDoTetoDeRespostas,
+  lerTetoDoAntiBan,
+  resolverTetoDeRespostasDaOrganizacao,
+  silenciarConversaPeloTeto,
 } from './teto-de-respostas';
 import {
   desfechoSemCandidato,
@@ -4813,6 +4815,11 @@ async function executarTurnoDoAgente(
               jobClaim: claimOfJob(liveJob()),
               agentOperation,
               seq,
+              // Uma mensagem física só: ela é o envio inteiro. Marcar mantém o
+              // `send_ledger` coerente no turno em que também houve um
+              // `send_message` — linha sem marca de um job misto cairia na régua
+              // anterior e voltaria a atravessar o envio seguinte (#4370, 9407).
+              envioSeq: seq,
               conversationId: input.conversationId,
               body: finalBody,
               template: { name: template_name, language, values },
@@ -5288,7 +5295,11 @@ async function executarTurnoDoAgente(
           // e foto com legenda continua sendo foto. `vozParaEsteTurno` já veio
           // resolvida (credencial + voice_id); `null` = toda razão de não falar, e
           // aí esta função devolve `null` e o texto segue em bolhas.
-          const enviarVoz = (texto: string): Promise<ChannelSendResult> | null => {
+          // `envioSeqDoEnvio` (#4370, migration 9407): a nota de voz é UMA
+          // mensagem física, mas ela pertence ao envio do `send_message` que a
+          // pediu — a fronteira vai junto para o ledger, senão o reprocesso desta
+          // bolha cai na régua antiga (`seq >= $3`) sozinho, misturando turno.
+          const enviarVoz = (texto: string, envioSeqDoEnvio: number): Promise<ChannelSendResult> | null => {
             const voz = vozParaEsteTurno;
             // Link ou resposta longa: `null` e o texto segue em bolhas (ver `textoParaFalar`).
             const falado = voz ? textoParaFalar(texto) : null;
@@ -5302,6 +5313,7 @@ async function executarTurnoDoAgente(
               jobClaim: claimOfJob(liveJob()),
               agentOperation,
               seq: seqDesteEnvio,
+              envioSeq: envioSeqDoEnvio,
               conversationId: input.conversationId,
               // `body` continua sendo o texto FALADO — é ele que entra no
               // hash de idempotência do ledger (ver o comentário de
@@ -5322,6 +5334,19 @@ async function executarTurnoDoAgente(
           // janela (`resposta*`) e é o que arma o teto de respostas por conversa:
           // follow-up é retomada e não entra nessa conta.
           const eResposta = eTurnoDeResposta(liveJob());
+          // #4590 — os números do teto valem por ORGANIZAÇÃO desde esta fatia:
+          // `settings.anti_ban.teto_de_respostas` manda; o env da instalação é o
+          // padrão de quem nunca configurou. Uma leitura por chave primária, só no
+          // caminho de resposta em produção (`preview` não arma e não paga a
+          // consulta). `null` = não é turno de resposta: nada a resolver.
+          const tetoDoTurno =
+            eResposta && !preview
+              ? await resolverTetoDeRespostasDaOrganizacao(pool, {
+                  organizationId: tenantId,
+                  base: deps.knobs.tetoDeRespostas,
+                  log: runLog,
+                })
+              : null;
           // Args reusados EXATAMENTE (mesmo objeto) no re-run do fail-safe abaixo — só
           // hasOpenCase/openedCaseThisTurn mudam depois do auto-abre-caso.
           const beforeSendArgs = {
@@ -5343,11 +5368,12 @@ async function executarTurnoDoAgente(
             // Prévia não arma (o Testar não entrega nada ao cliente; um teto ali
             // esconderia justamente a resposta que o dono está testando) e follow-up
             // também não — ali não houve mensagem recebida agora.
-            ...(eResposta && !preview
+            ...(tetoDoTurno !== null
               ? {
                   tetoDeRespostas: {
                     conversationId: input.conversationId,
-                    ...knobsDoTetoDeRespostas(deps.knobs.tetoDeRespostas),
+                    porConversa: tetoDoTurno.porConversa,
+                    janelaMinutos: tetoDoTurno.janelaMinutos,
                   },
                 }
               : {}),
@@ -5482,6 +5508,14 @@ async function executarTurnoDoAgente(
                 // número, e o call site estava cravando `1200 + rand*800` ignorando-a.
                 (pacingDoTurno?.knobs.throttleMs ?? 1200) +
                 Math.floor(Math.random() * (pacingDoTurno?.knobs.jitterMaxMs ?? 800));
+              // A FRONTEIRA do envio (#4370, migration 9407): o `seq` da 1ª bolha
+              // que este `send_message` vai emitir. `seq` ainda não avançou (quem
+              // avança é o `enviar` abaixo, uma vez por mensagem física), então
+              // `seq + 1` é exatamente a primeira bolha — e é o MESMO número que a
+              // saída configurável usa como âncora (`mensagem.seq`). As bolhas do
+              // envio levam todos esse `envioSeq` para o ledger; o reprocesso lê
+              // por ele e não mistura o envio seguinte.
+              const seqDoEnvio = seq + 1;
               const enviar = (
                 corpo: string,
                 media?: FotoParaEnvio,
@@ -5494,6 +5528,7 @@ async function executarTurnoDoAgente(
                   jobClaim: claimOfJob(liveJob()),
                   agentOperation,
                   seq,
+                  envioSeq: seqDoEnvio,
                   conversationId: input.conversationId,
                   body: corpo,
                   ...(media ? { media } : {}),
@@ -5503,7 +5538,7 @@ async function executarTurnoDoAgente(
                 });
               };
               // Saída configurável da prospecção (fora de prévia); ver saida-configuravel.ts.
-              const saida = { db: pool, organizationId: tenantId, conversationId: preview ? null : input.conversationId, via: "inbound_turn" as const, mensagem: { jobId: preview ? "" : liveJob().id, seq: seq + 1 }, avisar: (m: string, c: Record<string, unknown>) => runLog.warn(m, c) };
+              const saida = { db: pool, organizationId: tenantId, conversationId: preview ? null : input.conversationId, via: "inbound_turn" as const, mensagem: { jobId: preview ? "" : liveJob().id, seq: seqDoEnvio }, avisar: (m: string, c: Record<string, unknown>) => runLog.warn(m, c) };
               return enviarComSaidaConfiguravel(saida, finalBody, (finalBody) => {
                   corposEnviados.push(finalBody);
                   // Cada foto é uma mensagem física: só vão as que cabem no teto do turno,
@@ -5518,7 +5553,7 @@ async function executarTurnoDoAgente(
                       restantes: () => maxSendsPerTurn - seq,
                       enviarFoto: (foto, legenda) => enviar(legenda, foto).then(marcarFoto),
                       enviarTexto: (texto) =>
-                        enviarVoz(texto) ??
+                        enviarVoz(texto, seqDoEnvio) ??
                         sendInBubbles(texto, {
                           enabled: agentConfig?.splitMessages ?? false,
                           maxChars: agentConfig?.splitMaxChars ?? 600,
@@ -5710,14 +5745,29 @@ async function executarTurnoDoAgente(
               pacingCapVeto = { code: chain.code, nextAllowedAt: chain.nextAllowedAt };
             }
             // #4590 — o teto calou a conversa: a equipe é avisada na Central, um
-            // aviso aberto por conversa (dedupe no repositório). Nunca lança.
+            // aviso aberto por conversa (dedupe no repositório), e a conversa é
+            // PAUSADA pelo caminho do atendente (`bot_silenced_until`, horizonte
+            // limitado e reversível). Os números são os da ORGANIZAÇÃO que armou o
+            // gate — não o env da instalação, que pode ser outro. Nunca lança.
             if (chain.code === CODIGO_DO_TETO_DE_RESPOSTAS && !preview) {
+              const tetoQueVale =
+                tetoDoTurno ??
+                lerTetoDoAntiBan(null, deps.knobs.tetoDeRespostas);
               await avisarEquipeDoTetoDeRespostas(pool, {
                 organizationId: tenantId,
                 conversationId: input.conversationId,
-                ...knobsDoTetoDeRespostas(deps.knobs.tetoDeRespostas),
+                porConversa: tetoQueVale.porConversa,
+                janelaMinutos: tetoQueVale.janelaMinutos,
                 log: runLog,
               });
+              if (tetoQueVale.silenciarMinutos > 0) {
+                await silenciarConversaPeloTeto(pool, {
+                  organizationId: tenantId,
+                  conversationId: input.conversationId,
+                  minutos: tetoQueVale.silenciarMinutos,
+                  log: runLog,
+                });
+              }
             }
             if (VETOS_IRREVOGAVEIS.has(chain.code)) vetoIrrevogavel = true;
             // Erro de ENSINO pt-br (mesmo shape de get_lead_context/breaker): o
@@ -7566,6 +7616,9 @@ async function executarTurnoDoAgente(
                   jobClaim: claimOfJob(liveJob()),
                   agentOperation,
                   seq,
+                  // Uma mensagem física só: ela é o envio inteiro (ver o irmão
+                  // acima, no envio de template) — #4370, migration 9407.
+                  envioSeq: seq,
                   conversationId: input.conversationId,
                   body: finalBody,
                 });
