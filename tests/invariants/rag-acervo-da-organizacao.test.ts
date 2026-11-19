@@ -13,6 +13,7 @@ import {
   sql,
   writeCountAs,
 } from "./gov-helpers";
+import { STATUS_DO_MATERIAL_CONSULTAVEL } from "../../lib/ai/knowledge/estado-do-material";
 
 /**
  * Migration 0181 — o acervo é da ORGANIZAÇÃO, e o agente escolhe o que lê.
@@ -207,6 +208,46 @@ describe("0181 — a busca devolve só o material que o agente pode ler", () => 
     sql(`
       update public.ai_knowledge_sources
          set status='ready', is_active=true
+       where id='${FONTE_B}';
+    `);
+    expect(trechosDe([FONTE_B])).toHaveLength(1);
+  });
+
+  it("o estado de volta é `ready`: `active` não existe no vocabulário do banco", () => {
+    // O inverso do soft-delete grava `status='ready'` + `is_active=true`, que é
+    // o par que a rota de desarquivar usa. `active` é a língua do PEDIDO da API,
+    // não da coluna: `ai_knowledge_sources_status_check` só aceita
+    // ready|archived|building|failed. A primeira versão da rota gravou `active`
+    // e o banco recusou com 23514 — a tela mostrava 500 e o material continuava
+    // arquivado. Este caso é a cerca contra repetir a troca de vocabulário.
+    sql(`
+      update public.ai_knowledge_sources
+         set status='archived', is_active=false
+       where id='${FONTE_B}';
+    `);
+    expect(trechosDe([FONTE_B])).toEqual([]);
+
+    let recusou = false;
+    try {
+      sql(`
+        update public.ai_knowledge_sources
+           set status='active', is_active=true
+         where id='${FONTE_B}';
+      `);
+    } catch (err) {
+      recusou = /ai_knowledge_sources_status_check|check constraint/i.test(
+        String((err as { stderr?: string }).stderr ?? err),
+      );
+    }
+    expect(recusou, "'active' passou pelo CHECK da coluna — vocabulário mudou").toBe(true);
+
+    // O update do desarquivar, com o MESMO valor que a rota grava
+    // (`PATCH_DE_RESTAURO`): o material volta para a busca do agente, pela
+    // função que o turno chama. Trocar o valor no código de produção derruba
+    // este caso — não é um literal de teste repetindo a si mesmo.
+    sql(`
+      update public.ai_knowledge_sources
+         set status='${STATUS_DO_MATERIAL_CONSULTAVEL}', is_active=true
        where id='${FONTE_B}';
     `);
     expect(trechosDe([FONTE_B])).toHaveLength(1);

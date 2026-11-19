@@ -312,6 +312,10 @@ export async function ingestMetaInbound(
         // `metadata` aqui, então nada já gravado é sobrescrito.
         ...(nomeDoArquivo ? { media_filename: nomeDoArquivo } : {}),
         ...(e.sharedContact ? { shared_contact: e.sharedContact } : {}),
+        // Tipo da Meta fora do vocabulário do banco: a linha entra como `text`
+        // e o tipo cru fica aqui (#4580). Só nesse caso — tipo conhecido não
+        // ganha a chave.
+        ...(e.rawType ? { raw_type: e.rawType } : {}),
         // O anúncio DESTA mensagem, não só o primeiro do contato: é o que mostra
         // na conversa que a pessoa voltou por outro anúncio. Ver `metadataDoAnuncio`.
         ...metadataDoAnuncio(atribuicao),
@@ -484,6 +488,8 @@ export async function ingestMetaEcho(
         // Mesma regra da recebida (#2613): nome só quando há nome.
         ...(nomeDoArquivo ? { media_filename: nomeDoArquivo } : {}),
         ...(e.sharedContact ? { shared_contact: e.sharedContact } : {}),
+        // Mesma regra da recebida (#4580): o tipo cru, só quando caiu em `text`.
+        ...(e.rawType ? { raw_type: e.rawType } : {}),
       },
     })
     .select("id")

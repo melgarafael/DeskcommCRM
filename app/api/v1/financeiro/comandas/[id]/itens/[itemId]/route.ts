@@ -45,6 +45,10 @@ export async function DELETE(_req: NextRequest, ctx: Ctx): Promise<Response> {
     .from("sales")
     .select("id, status, number")
     .eq("id", id)
+    // #4845 — a comanda tem de ser desta empresa antes de qualquer escrita: o id
+    // chega de uma lista que vazou, e a RLS libera as empresas todas de quem é
+    // membro das duas.
+    .eq("organization_id", authz.org.orgId)
     .maybeSingle();
   if (!comanda) return fail("not_found", "Comanda não encontrada.", 404, { requestId });
   if (comanda.status !== "open") {
@@ -66,6 +70,7 @@ export async function DELETE(_req: NextRequest, ctx: Ctx): Promise<Response> {
     .delete()
     .eq("id", itemId)
     .eq("sale_id", id)
+    .eq("organization_id", authz.org.orgId)
     .select("id")
     .maybeSingle();
 
