@@ -217,6 +217,14 @@ Notas:
   `REVERSE_PROXY=cloudflared` nesse modo: as APIs do Supabase dependem do Caddy.
 - A borda da Cloudflare corta HTTP acima de ~100s (504/524). O webhook do WAHA é interno e
   não passa pelo túnel.
+- **Túnel "degraded" com menos de 4 ligações, e o log cheio de `failed to dial to edge with
+  quic`:** o provedor da VPS descarta UDP de saída (porta 7844). O `cloudflared` tenta QUIC
+  primeiro e só depois cai para `http2`, e em cada ligação que cai fica minutos sem
+  reserva. Para confirmar, veja por qual protocolo as ligações registraram:
+  `docker compose -f docker-compose.prod.yml -f docker-compose.cloudflared.yml --env-file .env
+logs cloudflared | grep -oE "protocol=[a-z0-9]+" | sort | uniq -c`. Se só aparece `http2`,
+  ponha `CLOUDFLARED_PROTOCOL=http2` no `.env` e recrie o túnel (`… up -d cloudflared`).
+  Ausente, vale `auto` (o padrão do `cloudflared`).
 - Verificação: `docker compose -f docker-compose.prod.yml -f docker-compose.cloudflared.yml
 --env-file .env config --services` deve listar `cloudflared` e **não** listar `caddy`.
 

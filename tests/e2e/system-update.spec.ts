@@ -326,7 +326,7 @@ test("o dono vê a versão nova na sidebar e atualiza pela tela", async ({ page,
   await runProgress(request, data.run_id!, "backup");
   // ⏱️ 20s, e não os 5s do padrão. ESTE é o único ponto do arquivo em que a tela
   // descobre a mudança pelo POLL, sem recarga — e o poll é de 5 segundos
-  // (`useSystemVersion({ refetchInterval: 5_000 })`). Timeout de 5s contra ciclo
+  // enquanto há run `dispatched` (UpdatePanel; parado, 5 min — #2235). Timeout de 5s contra ciclo
   // de 5s é cara ou coroa: passou nas rodadas de CI de 16:25 e 16:54 e reprovou
   // na de 17:21, sem ninguém tocar neste teste entre elas. As demais asserções
   // do arquivo vêm depois de `page.reload()`, onde o dado já chega na carga.

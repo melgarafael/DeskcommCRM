@@ -395,6 +395,9 @@ export const AUDIT_ACTIONS = [
   // Rótulo interno do canal (channel_sessions.display_name); nada vai ao
   // provedor. Emitida por app/api/v1/channel-sessions/[id]/name.
   "channel.renamed",
+  // Funil de entrada do número (migration 9430): onde a conversa nova daquele
+  // número vira negócio. Emitida por app/api/v1/channel-sessions/[id]/entrada.
+  "channel.entry_pipeline_changed",
   // A janela de manutenção (#2388): criar, editar e cancelar são mutações da
   // tela e auditam como toda mutação. A pausa e a retomada que a janela aplica
   // saem como `channel.disabled`/`channel.enabled`, com `origem: schedule`.
