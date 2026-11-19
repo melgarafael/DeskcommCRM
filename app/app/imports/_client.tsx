@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { useT } from "@/hooks/i18n/useT";
+import { neutralizarFormula } from "@/lib/csv/neutralizar-formula";
 
 interface BatchRow {
   id: string;
@@ -28,7 +29,7 @@ interface BatchRow {
 }
 
 /** A prévia que a rota devolve com `previa=true` (A23, #4888). */
-interface Previa {
+export interface Previa {
   previa: {
     total: number;
     novas: number;
@@ -49,9 +50,13 @@ interface Previa {
   }>;
 }
 
-/** CSV (com BOM, para o Excel abrir o acento) das linhas que ficaram de fora. */
-function csvDasLinhasDeFora(p: Previa, t: (s: string) => string): string {
-  const aspas = (v: string) => `"${v.replace(/"/g, '""')}"`;
+/**
+ * CSV (com BOM, para o Excel abrir o acento) das linhas que ficaram de fora.
+ * Cada célula passa por `neutralizarFormula`, como todo export do produto: o
+ * nome do cadastro existente e as células da planilha são texto de terceiro.
+ */
+export function csvDasLinhasDeFora(p: Previa, t: (s: string) => string): string {
+  const aspas = (v: string) => `"${neutralizarFormula(v).replace(/"/g, '""')}"`;
   const cabecalho = [t("Linha"), t("Situação"), t("Motivo"), t("Já cadastrado como"), t("De quem é"), ...p.headers];
   const linhas = p.linhas_fora.map((l) =>
     [String(l.linha), l.status, l.motivo ?? "", l.existente_nome ?? "", l.de_quem ?? "", ...l.valores].map(aspas).join(","),
