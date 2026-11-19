@@ -30,12 +30,14 @@ vi.mock("@/hooks/auth/AuthProvider", () => ({ useAuth: () => authRef }));
 const push = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("@/hooks/followup/useFollowupFlows", () => ({ useFollowupFlows: () => ({ data: [] }) }));
-vi.mock("@/hooks/ai/useAgents", () => ({ useAgentsList: () => ({ data: [] }) }));
+const agentes: { id: string; name: string; description?: string | null }[] = [];
+vi.mock("@/hooks/ai/useAgents", () => ({ useAgentsList: () => ({ data: agentes }) }));
 vi.mock("@/hooks/pipelines/usePipelinesDaPaleta", () => ({ usePipelinesDaPaleta: () => ({ data: [] }) }));
 
 afterEach(() => {
   cleanup();
   push.mockClear();
+  agentes.length = 0;
 });
 
 function abrir(locale: "pt-BR" | "es") {
@@ -91,5 +93,14 @@ describe("⌘K no idioma da tela", () => {
     await user.type(screen.getByRole("combobox"), termo);
     await user.keyboard("{Enter}");
     expect(push).toHaveBeenCalledWith(href);
+  });
+
+  it("em es, o nome traduzido vem antes de um agente que só cita o termo na descrição", async () => {
+    agentes.push({ id: "ag-1", name: "Recepção", description: "Atiende consultas sobre productos." });
+    const user = userEvent.setup();
+    abrir("es");
+    await user.type(screen.getByRole("combobox"), "productos");
+    await user.keyboard("{Enter}");
+    expect(push).toHaveBeenCalledWith("/app/products");
   });
 });

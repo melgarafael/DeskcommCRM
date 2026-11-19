@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useT } from "@/hooks/i18n/useT";
+import { useIdioma } from "@/lib/i18n/IdiomaProvider";
 import { MagnifyingGlass } from "@/lib/ui/icons";
 import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
@@ -131,6 +132,7 @@ function Resultados({
   placeholder: string;
 }) {
   const t = useT();
+  const idioma = useIdioma();
   const router = useRouter();
   const [busca, setBusca] = useState("");
   const [destacado, setDestacado] = useState(0);
@@ -152,11 +154,11 @@ function Resultados({
   // Casa também o que a tela MOSTRA no idioma ativo (#4999): em espanhol a
   // paleta exibe "Productos", e quem lê isso digita "productos". Os dois textos
   // são casados SEPARADOS — emendados, a junta entre um e outro inventaria
-  // casamentos ("crm produtos"). Ordem: primeiro o que casa pelo português,
-  // na ordem de sempre; depois o que só o idioma ativo acha, com o NOME antes
-  // da descrição — senão "agent" em espanhol punha Productos (cuja descrição
-  // traduzida fala de "agente") à frente de Agentes, e o Enter abria a errada.
-  // Em pt-BR o `t()` devolve a própria chave: nada novo casa, nada muda.
+  // casamentos ("crm produtos"). Fora do português, o NOME que a tela mostra
+  // vem primeiro, depois o resto do português, depois o resto traduzido —
+  // senão "agent" em espanhol punha Productos (cuja descrição traduzida fala de
+  // "agente") à frente de Agentes, e o Enter abria a errada. Em pt-BR é a
+  // regra de sempre, sem posto: um texto só, na ordem do catálogo.
   const resultados = useMemo(() => {
     const termo = termoSemAcento(busca.trim());
     const daCategoria = destinos.filter(
@@ -165,9 +167,11 @@ function Resultados({
     if (termo) {
       const posto = (d: DestinoDaPaleta): number => {
         const grupo = rotuloGrupo.get(d.group) ?? "";
-        if (termoSemAcento(`${d.label} ${d.description} ${grupo}`).includes(termo)) return 0;
-        if (termoSemAcento(t(d.label)).includes(termo)) return 1;
-        const traduzido = `${t(d.label)} ${t(d.description)} ${t(rotuloGrupo.get(d.group) ?? "")}`;
+        const casaPortugues = termoSemAcento(`${d.label} ${d.description} ${grupo}`).includes(termo);
+        if (idioma === "pt-BR") return casaPortugues ? 0 : -1;
+        if (termoSemAcento(`${d.label} ${t(d.label)}`).includes(termo)) return 0;
+        if (casaPortugues) return 1;
+        const traduzido = `${t(d.description)} ${t(rotuloGrupo.get(d.group) ?? "")}`;
         return termoSemAcento(traduzido).includes(termo) ? 2 : -1;
       };
       return daCategoria
@@ -184,7 +188,7 @@ function Resultados({
     return [...filtrados].sort(
       (a, b) => (ordemGrupo.get(a.group) ?? 0) - (ordemGrupo.get(b.group) ?? 0),
     );
-  }, [busca, destinos, categoriaAtiva, rotuloGrupo, ordemGrupo, t]);
+  }, [busca, destinos, categoriaAtiva, rotuloGrupo, ordemGrupo, t, idioma]);
 
   // Agrupamento para exibição visual estruturada quando não há busca específica digitada
   const resultadosAgrupados = useMemo(() => {
