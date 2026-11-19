@@ -619,6 +619,11 @@ export const AUDIT_ACTIONS = [
   // as empresas deste servidor podiam ligar um banco de outro sistema?" só tem
   // resposta aqui.
   "platform.modulo_updated",
+  // Um módulo opcional dado ou NEGADO a UMA empresa (linha em
+  // `organization_modules`, migration 9416, issue #3868). A linha guarda o estado;
+  // a pergunta "desde quando este cliente tem cobrança/banco externo?" — e,
+  // principalmente, "quem tirou o módulo dele?" — só tem resposta aqui.
+  "organization.modulo_updated",
   // A lista de endereços da rede INTERNA que a instalação pode alcançar
   // (`platform_settings.internal_destinations`, migration 0324, decisão 22-d).
   // Auditável pela mesma razão da linha acima e com alcance maior: cada entrada
@@ -1226,6 +1231,7 @@ export const AUDIT_ACTIONS = [
   // mesma pergunta de LGPD do ligado — metadata.origem diz para qual, e
   // origem_anterior de onde saiu.
   "ai.jev.origem_alterada",
+  "ai.jev.modelo_alterado",
   // O pedido de descadastro é do cliente e o padrão é irreversível — mas a
   // regra W-02 do catálogo de negócio prevê o override: admin desbloqueia à
   // mão. Sem esta linha, a ação existiria sem rastro de QUEM a desfez, que é
@@ -1428,6 +1434,9 @@ export const AUDIT_ACTIONS = [
   // O admin ligou/desligou o aviso das transferências para atendimento humano
   // (#3784) — o mesmo número e o mesmo teto diário do Aviso de caso.
   "crm.aviso_de_transferencia_alterado",
+  // O admin ligou/desligou o PRIMEIRO nome do cliente na mensagem do aviso de
+  // transferência. Nasce desligado por privacidade.
+  "crm.aviso_nome_na_transferencia_alterado",
   // O admin da plataforma exportou o INVENTÁRIO das instalações em CSV (#2777).
   // É leitura, mas é leitura EM ESCALA DE PLATAFORMA: grava quem, quando, QUANTO
   // saiu, se o teto cortou e QUE filtros valiam — nunca o texto da busca, que é
@@ -1532,6 +1541,11 @@ export const AUDIT_ACTIONS = [
   "ai.knowledge_source_created",
   "ai.knowledge_source_updated",
   "ai.knowledge_source_archived",
+  // De volta ao acervo (PATCH `{ status: 'active' }`). Arquivar era ida sem
+  // volta; a trilha guarda de onde para onde — `archived`/`is_active=false`
+  // para `active`/`is_active=true` —, porque "quem tirou do arquivo" não se
+  // responde com a linha atual.
+  "ai.knowledge_source_restored",
   "ai.knowledge_source_reindexed",
   "ai_models.synced",
   "ai_models.sync_failed",

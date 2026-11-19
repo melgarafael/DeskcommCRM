@@ -7,6 +7,7 @@ import { atualizarInterfaceDaEmpresa } from "@/app/actions/settings/atualizarInt
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { InterfaceEditor } from "@/components/team/InterfaceEditor";
+import { TelaInicialSelect } from "@/components/team/TelaInicialSelect";
 import { useT } from "@/hooks/i18n/useT";
 import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
 import type { Role } from "@/lib/auth/types";
@@ -42,8 +43,11 @@ export function InterfaceDaEmpresaForm({ initial, role, camposDeCompra = [] }: P
         : atual.filter((k) => k !== chave);
       // Vazio sai como ausência, não como `[]`: a chave não fica gravada quando a
       // empresa não escolheu nada — e a leitura cai no padrão (data, título, valor).
+      // A tela inicial (#4864) viaja junto: tirar o último campo de compra não
+      // pode apagar a porta de entrada escolhida no mesmo jsonb.
       if (proximos.length === 0) {
-        return { preset: current.preset, ...(current.destinos ? { destinos: current.destinos } : {}) };
+        const { compras_campos: _semCampos, ...resto } = current;
+        return resto;
       }
       return { ...current, compras_campos: proximos };
     });
@@ -74,13 +78,35 @@ export function InterfaceDaEmpresaForm({ initial, role, camposDeCompra = [] }: P
         onChange={(next) =>
           setValue((current) => {
             // O editor de menu reconstrói `{preset, destinos}`: sem devolver o
-            // `compras_campos` por cima, trocar uma área apagaria a escolha dos
-            // campos de compra — que vive no MESMO jsonb.
-            const { compras_campos } = current;
-            return compras_campos ? { ...next, compras_campos } : next;
+            // `compras_campos` e a `inicio` (#4864) por cima, trocar uma área
+            // apagaria as duas escolhas — que vivem no MESMO jsonb.
+            const { compras_campos, inicio } = current;
+            return {
+              ...next,
+              ...(compras_campos ? { compras_campos } : {}),
+              ...(inicio ? { inicio } : {}),
+            };
           })
         }
         role={role}
+        disabled={isPending}
+      />
+      {/*
+        TELA INICIAL (#4864): por onde a empresa abre para todo mundo. Quem tem
+        operação de nicho — dona de loja, vendedora — entra direto na tela que
+        usa, em vez do Inbox. Cada vínculo pode trocar a sua em Equipe; a do
+        vínculo vence, e escolha inválida ou área oculta cai na regra de sempre.
+      */}
+      <TelaInicialSelect
+        value={value.inicio}
+        onChange={(inicio) =>
+          setValue((current) => {
+            const { inicio: _anterior, ...resto } = current;
+            return inicio ? { ...resto, inicio } : resto;
+          })
+        }
+        role={role}
+        visiveis={value}
         disabled={isPending}
       />
       {/*

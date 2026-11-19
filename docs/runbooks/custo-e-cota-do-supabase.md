@@ -383,6 +383,12 @@ ends in early 2027”). Ou seja: a cota existe e é ela que dispara o aviso, mas
 excedente hoje não vira dinheiro — e isso muda sozinho. Confira a data na página
 antes de contar com a carência.
 
+E a restrição também ainda não vale para este item: a nota do lançamento da
+cobrança de log diz que, por enquanto, os limites não são aplicados (“limits are
+not yet enforced”, [*changelog 50925*](https://supabase.com/changelog/50925-logs-usage-based-pricing),
+lida em 18/11/2026). O caminho do §5.2 — inclusive o segundo estouro sem
+carência — passa a valer para o log quando o Supabase começar a aplicá-los.
+
 ### 5.2. O que o aviso significa, e por que a segunda vez é pior
 
 O aviso não corta nada na hora. O caminho tem ordem, e a ordem é a informação:
