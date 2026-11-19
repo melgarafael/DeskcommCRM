@@ -142,7 +142,7 @@ export const ENTRADA_ACEITA = [
  * Opus mono de 24k em quadros de 20 ms, começando no instante ZERO: o que o
  * WhatsApp grava e o que o canal oficial aceita.
  *
- * O `asetpts=PTS-STARTPTS` é o que decide a recusa. O webm do Chrome às vezes
+ * O `aresample=first_pts=0` é o que decide a recusa. O webm do Chrome às vezes
  * começa alguns milissegundos ANTES do zero, e o ffmpeg leva esse início
  * negativo para o ogg (a primeira página com granule menor que o pre-skip).
  * Medido numa instalação em 19/11/2026, em 37 notas de voz de dois dias: as 11
@@ -150,9 +150,16 @@ export const ENTRADA_ACEITA = [
  * amostras), e as 26 entregues começavam todas em zero ou depois — com quadro
  * de 2,5, 20 ou 60 ms. O quadro de 2,5 ms, culpado na primeira correção, só
  * andava junto. Zerado o início, o arquivo recusado fica igual ao entregue.
+ *
+ * NÃO troque por `asetpts=PTS-STARTPTS`: foi a primeira tentativa, e ela segue
+ * negativa quando o webm de ENTRADA já começa antes do zero (o decodificador
+ * descarta o pre-skip antes do filtro ver o quadro). Uma nota assim foi
+ * recusada em produção com o `asetpts` no ar (19/11/2026, 13h23). O
+ * `aresample=first_pts=0` completa ou corta a borda e dá início 0 em todo caso
+ * medido (−13 ms, −0,5 ms, 0 ms e o arquivo recusado).
  */
 export const CODEC_NOTA_DE_VOZ = [
-  "-af", "asetpts=PTS-STARTPTS",
+  "-af", "aresample=first_pts=0",
   "-c:a", "libopus", "-b:a", "24k", "-ac", "1", "-ar", "48000", "-frame_duration", "20",
 ] as const;
 

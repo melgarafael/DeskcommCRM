@@ -88,7 +88,9 @@ describe("a conversão", () => {
     const run = vi.fn(async (_args: string[], _cwd: string) => {});
     await transcodificarNotaDeVoz(webm, { run });
     const args = run.mock.calls[0]?.[0] ?? [];
-    const filtro = args.indexOf("asetpts=PTS-STARTPTS");
+    const filtro = args.indexOf("aresample=first_pts=0");
+    // `asetpts=PTS-STARTPTS` NÃO serve: segue negativo com entrada negativa.
+    expect(args).not.toContain("asetpts=PTS-STARTPTS");
     expect(filtro).toBeGreaterThan(args.indexOf("-i"));
     expect(args[filtro - 1]).toBe("-af");
   });
