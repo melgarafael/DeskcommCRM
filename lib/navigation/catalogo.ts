@@ -980,6 +980,15 @@ export const NAV_CATALOG = [
     sidebar: true,
   },
   {
+    href: "/app/ads/google",
+    label: "Google Ads",
+    description: "Resultados dos negócios atribuídos ao Google Ads e desempenho da conta de anúncios.",
+    icon: "Megaphone",
+    group: "analise",
+    section: "Os números do período",
+    minRole: "manager",
+  },
+  {
     // Irmã de "Desempenho", não a mesma coisa: lá é DESFECHO (funil agora,
     // ganho/perdido por atendente); aqui é o TRABALHO que aconteceu no
     // período, com quem fez cada coisa. Um mês inteiro atendido pela IA e um
@@ -1005,6 +1014,31 @@ export const NAV_CATALOG = [
     section: "Os números do período",
     // Módulo opcional da instalação, desligado por padrão (#3403).
     modulo: "painel_atendimento",
+  },
+  {
+    // Irmã do Painel de atendimento, com outra pergunta: lá é a FILA de agora,
+    // por número; aqui é o DIA inteiro — quem chegou, quem espera, o que foi
+    // pedido (etiquetas e buscas de produto da IA), o que fechou e o que
+    // falhou. Viewer, como Desempenho: a RLS recorta o que cada um enxerga.
+    // Fora do sidebar: o menu está no limite medido (ver a Prospecção, acima).
+    href: "/app/operacao",
+    label: "Operação do dia",
+    description: "Quem chegou, quem espera uma pessoa, o que foi pedido e o que falhou hoje.",
+    icon: "ClipboardText",
+    group: "analise",
+    section: "Os números do período",
+  },
+  {
+    // Os dias guardados da tela acima. `manager`, a mesma régua da RLS de
+    // `relatorios_operacao_diarios`: o relatório reúne as conversas da equipe
+    // inteira, e o escopo de visibilidade de uma conversa não alcança o jsonb.
+    href: "/app/operacao/relatorios",
+    label: "Relatórios do dia",
+    description: "O relatório de cada dia, salvo sozinho na hora marcada, com o link de cada conversa.",
+    icon: "FileText",
+    group: "analise",
+    section: "O histórico que se consulta",
+    minRole: "manager",
   },
   {
     // Observabilidade, não configuração: por isso não fica junto dos agentes.

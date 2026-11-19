@@ -67,7 +67,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
     motivo:
       "#4544: precisa dizer que imagem/binário NÃO é transcrito (senão o agente trata resposta vazia como documento sem dados) e que o teto é por chamada",
   },
-  "crm_list_pipelines": { tokens: 63, motivo: BASE },
+  "crm_list_pipelines": { tokens: 118, motivo: "#4667: a descrição passou a dizer que a lista traz os CAMPOS do funil (key/label/type/escopo/options[].value) e que em `custom_fields` se usa a key daí; sem isso o agente inventava a chave" },
   "crm_get_pipeline_forecast": { tokens: 281, motivo: "#4322: a descrição passou a dizer que `truncado: true` marca valores parciais quando o funil passa do teto de leitura; sem isso o agente apresenta um recorte como o total" },
   "crm_search_knowledge": { tokens: 250, motivo: BASE },
   "crm_list_knowledge_sources": { tokens: 86, motivo: BASE },
@@ -109,7 +109,11 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_confirm_appointment": { tokens: 318, motivo: BASE },
   "crm_set_appointment_outcome": { tokens: 263, motivo: BASE },
   "crm_create_lead": { tokens: 1003, motivo: "referencia_externa (Spec 25 R5): +70 do item escolhido e do funil opcional; a forma é conferida por refine, sem padrão no esquema" },
-  "crm_update_lead": { tokens: 817, motivo: BASE },
+  "crm_update_lead": {
+    tokens: 966,
+    motivo:
+      "#4666: a descrição diz que `tags` SUBSTITUI a lista inteira, e entram `tags_adicionar`/`tags_remover` — sem essas palavras o agente apagava etiqueta acreditando acrescentar",
+  },
   "crm_move_lead_stage": { tokens: 380, motivo: BASE },
   "crm_retomar_lead": { tokens: 394, motivo: BASE },
   "crm_propose_lead_fields_from_document": { tokens: 583, motivo: BASE },
@@ -205,7 +209,14 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +672 com os documentos do negócio (#4544): 259 de `crm_list_lead_attachments`
 // e 413 de `crm_get_lead_attachment`. MEDIDO no merge com a main: 40209 = 39537 + 672
 // (2026-11-17, main de `0652fa6866`).
-const TETO_TOTAL = 40526;
+// +55 na descrição de `crm_list_pipelines`, que passou a dizer que a lista traz
+// os CAMPOS do funil (#4667) — é o delta medido naquela entrada (63 → 118).
+// +149 no `crm_update_lead` (#4666), que passou a dizer que `tags` substitui a
+// lista inteira e ganhou `tags_adicionar`/`tags_remover`. MEDIDO no merge com a
+// main pós-#4886 e #4684: 40675 (2026-11-18).
+// O total é MEDIDO no merge com a main (40730 = 40675 medidos nela + 55 deste
+// PR, remedido em 2026-11-18 sobre a main de `9da6943cc2`), não somado à mão.
+const TETO_TOTAL = 40730;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

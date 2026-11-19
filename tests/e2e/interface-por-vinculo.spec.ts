@@ -144,7 +144,7 @@ test("interface por membro atualiza ao vivo, preserva formulário e convite apli
     await member.screenshot({ path: `${evidence}/interface-mobile.png` });
     // Convite pela tela, sem serviço de e-mail e com configuração anterior ao aceite.
     await page.goto("/app/team/invite");
-    await page.getByLabel("Emails").fill(emails[3]!);
+    await page.getByLabel("E-mails", { exact: true }).fill(emails[3]!);
     await page.getByLabel("Perfil de interface").selectOption("simplificada");
     await page.getByText("Personalizar áreas visíveis", { exact: false }).click();
     for (const checkbox of await page.getByRole("checkbox").all())

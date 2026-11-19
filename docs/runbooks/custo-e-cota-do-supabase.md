@@ -99,11 +99,11 @@ como conferência no painel (**Settings → Usage → Auth**), não como primeir
 | 3 | **Autohospedar** o Supabase | a cota deixa de existir; o custo vira a VPS | só está documentado para instalação **nova** — migração com dados não tem passo a passo |
 
 **1. Limpar — custo zero, e o que exatamente sai.** O cron `data-retention` roda às 04h40
-(`docker/scheduler/entrypoint.sh:175`) e poda as tabelas que crescem sozinhas; o que ele apaga e as
+(`docker/scheduler/entrypoint.sh:181`) e poda as tabelas que crescem sozinhas; o que ele apaga e as
 alavancas (`JOB_QUEUE_RETENTION_DAYS`, `AUDIT_LOG_RETENTION_DAYS`, as de telemetria de IA) estão em
 §4.1 e §4.2. Para o storage há dois crons, e eles trabalham em par:
 
-- `media-retention`, às 05h20 (`docker/scheduler/entrypoint.sh:179`), enfileira o arquivo de mensagem
+- `media-retention`, às 05h20 (`docker/scheduler/entrypoint.sh:185`), enfileira o arquivo de mensagem
   mais velho que `organizations.media_retention_days` — padrão **365** dias, piso **30**
   (`supabase/migrations/20260926200200_0432_poda_de_midia.sql:35`) — e o órfão de conversa apagada;
   a rodada enfileira até 10 mil arquivos (`app/api/v1/cron/media-retention/route.ts:39-41`);
@@ -382,6 +382,12 @@ instalação no free mostra o mesmo texto (“Billing starts after the grace per
 ends in early 2027”). Ou seja: a cota existe e é ela que dispara o aviso, mas o
 excedente hoje não vira dinheiro — e isso muda sozinho. Confira a data na página
 antes de contar com a carência.
+
+E a restrição também ainda não vale para este item: a nota do lançamento da
+cobrança de log diz que, por enquanto, os limites não são aplicados (“limits are
+not yet enforced”, [*changelog 50925*](https://supabase.com/changelog/50925-logs-usage-based-pricing),
+lida em 18/11/2026). O caminho do §5.2 — inclusive o segundo estouro sem
+carência — passa a valer para o log quando o Supabase começar a aplicá-los.
 
 ### 5.2. O que o aviso significa, e por que a segunda vez é pior
 

@@ -126,6 +126,28 @@ export interface ProvedorSuportado {
    * publica a região (a maioria). Fonte não se inventa para provar um país.
    */
   fonteDoPais: { url: string; consultadoEm: string } | null;
+  /**
+   * POR QUE não há `paisDeclarado` — a razão, em uma frase, quando o provedor
+   * não publica onde processa (#4518).
+   *
+   * `null` se e somente se `paisDeclarado` existe: quem declara não deve
+   * motivo, e quem não declara não pode ficar calado. O `fonteDoPais: null`
+   * sozinho já dizia "não há fonte"; não dizia se é porque o provedor não
+   * publica, porque publica por projeto, ou porque ninguém conferiu — e a
+   * diferença é a mesma entre dado ausente e dado que ninguém procurou.
+   */
+  motivoDaRegiaoNaoDeclarada: string | null;
+  /**
+   * O que acontece com o LUGAR quando o operador aponta o endpoint para outro
+   * host — `null` quando o provedor não aceita endpoint próprio (#4518).
+   *
+   * `aceitaEndpointProprio` diz que a base URL PODE ser trocada; este campo diz
+   * o que a troca faz com a pergunta "onde o texto é processado". Sem ele o
+   * catálogo responderia com o país do provedor para uma chamada que, na
+   * prática, sai para o host que o operador configurou — a mesma herança
+   * indevida que o #4588 separou entre sede e declaração.
+   */
+  ondeExecutaComEndpointProprio: string | null;
 }
 
 /**
@@ -157,6 +179,14 @@ export const PROVEDORES = [
     sede: "US",
     paisDeclarado: null,
     fonteDoPais: null,
+    // A Anthropic não publica a região de processamento da API: o que existe é
+    // o contrato de cada operador, e a política de privacidade fala em
+    // suboperadores, não em país de execução.
+    motivoDaRegiaoNaoDeclarada:
+      "não publica a região de processamento da API; ela é a do contrato de cada operador",
+    // A API é a da própria Anthropic, em `api.anthropic.com`: não há base URL
+    // própria a apontar.
+    ondeExecutaComEndpointProprio: null,
     quandoUsar:
       "O padrão recomendado para conversar com o cliente: é o que melhor segue instruções longas e usa as ferramentas do CRM.",
     aceitaEndpointProprio: false,
@@ -174,6 +204,15 @@ export const PROVEDORES = [
     sede: "US",
     paisDeclarado: null,
     fonteDoPais: null,
+    // A OpenAI declara data residency por PROJETO/REGIÃO (EUA, Europa, Reino
+    // Unido, Japão…), não um país único da API — por isso não há declaração a
+    // registrar, e o motivo é este, não "não se sabe".
+    motivoDaRegiaoNaoDeclarada:
+      "declara residência de dados por projeto e região (EUA, Europa, Reino Unido, Japão), não um país único da API",
+    // Com base URL própria, o texto vai para o host configurado e o país
+    // registrado deixa de valer — é a execução em qualquer lugar.
+    ondeExecutaComEndpointProprio:
+      "vai para o host da base URL que você configurar, e o país do catálogo deixa de valer",
     quandoUsar:
       "Na configuração padrão, transcreve áudio. Para indexar material, uma chave OpenAI ou OpenRouter atende ao mesmo modelo de embedding.",
     aceitaEndpointProprio: true,
@@ -191,6 +230,13 @@ export const PROVEDORES = [
     sede: "US",
     paisDeclarado: null,
     fonteDoPais: null,
+    // A assinatura não publica a região da conta: o catálogo registra a sede da
+    // OpenAI e nada sobre onde a inferência roda.
+    motivoDaRegiaoNaoDeclarada:
+      "não publica a região de processamento da conta de assinatura",
+    // O endpoint é o do login da própria OpenAI (Sign in with ChatGPT), e não
+    // aceita base URL alternativa.
+    ondeExecutaComEndpointProprio: null,
     quandoUsar:
       "Conecte sua conta pessoal do ChatGPT dentro dos limites da assinatura; para operação em volume, prefira uma chave de API da organização. Uma chave da própria organização pode servir de reserva.",
     // A assinatura não se aponta para outro endereço nem sincroniza catálogo:
@@ -217,6 +263,11 @@ export const PROVEDORES = [
     sede: "US",
     paisDeclarado: null,
     fonteDoPais: null,
+    // A Gemini Developer API não publica a lista de países de processamento; a
+    // região explícita existe só no Vertex AI, que não é o caminho desta chave.
+    motivoDaRegiaoNaoDeclarada:
+      "não publica a lista de países da Gemini Developer API; a região explícita só existe no Vertex AI",
+    ondeExecutaComEndpointProprio: null,
     quandoUsar:
       "Alternativa com contexto muito longo e custo baixo para tarefas de classificação.",
     aceitaEndpointProprio: false,
@@ -235,6 +286,13 @@ export const PROVEDORES = [
     sede: "US",
     paisDeclarado: null,
     fonteDoPais: null,
+    // O roteamento escolhe o provedor por MODELO, a cada chamada: não existe um
+    // país único a declarar, e a variação é a resposta — não a ausência dela.
+    motivoDaRegiaoNaoDeclarada:
+      "escolhe o provedor por modelo a cada chamada, então a região varia e não há país único",
+    // Com base URL própria o roteamento do OpenRouter deixa de valer.
+    ondeExecutaComEndpointProprio:
+      "vai para o host da base URL que você configurar, e o roteamento do OpenRouter deixa de valer",
     quandoUsar:
       "Uma chave só dá acesso a centenas de modelos de dezenas de fabricantes, inclusive os gratuitos. É o caminho mais simples para experimentar sem abrir conta em cada provedor.",
     aceitaEndpointProprio: true,
@@ -258,6 +316,12 @@ export const PROVEDORES = [
       url: "https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html",
       consultadoEm: "2026-11-12",
     },
+    // Declaração existe: não há motivo de ausência a registrar.
+    motivoDaRegiaoNaoDeclarada: null,
+    // Com base URL própria, a declaração da DeepSeek sobre a China descreve o
+    // endpoint DELA, não o host que o operador apontar.
+    ondeExecutaComEndpointProprio:
+      "vai para o host da base URL que você configurar, e a declaração da DeepSeek sobre a China deixa de valer",
     quandoUsar:
       "Muito barata e desconta sozinha o trecho repetido da conversa, sem você configurar nada — o custo cai para quem atende com um roteiro que não muda.",
     aceitaEndpointProprio: true,
@@ -277,6 +341,12 @@ export const PROVEDORES = [
     sede: null,
     paisDeclarado: null,
     fonteDoPais: null,
+    // Nem sede nem declaração: a empresa não publica, em fonte que este repo
+    // possa citar com data, o país de onde responde a API.
+    motivoDaRegiaoNaoDeclarada:
+      "não publica, em fonte citável, o país de onde responde a API; oferece manter o tráfego na Europa por configuração",
+    ondeExecutaComEndpointProprio:
+      "vai para o host da base URL que você configurar, e a opção de manter o tráfego na Europa deixa de valer",
     quandoUsar:
       "Uma chave só para centenas de modelos de vários fabricantes, com a opção de manter o tráfego na Europa. Bom para comparar modelos sem abrir conta em cada provedor.",
     aceitaEndpointProprio: true,
@@ -293,6 +363,12 @@ export const PROVEDORES = [
     sede: null,
     paisDeclarado: null,
     fonteDoPais: null,
+    // Não há terceiro cujo país registrar: quem recebe o texto é o próprio
+    // operador, e o lugar é o servidor dele.
+    motivoDaRegiaoNaoDeclarada:
+      "o endpoint é do próprio operador: não há terceiro cujo país registrar",
+    ondeExecutaComEndpointProprio:
+      "é o próprio endpoint do operador: o texto fica onde o servidor dele estiver, e o CRM não sabe onde é",
     quandoUsar:
       "Endpoint seu que fala a API da OpenAI — OmniRouter, 9Router, LiteLLM hospedado ou proxy corporativo, num endereço público. Você informa o endereço (base URL) e a chave, e o CRM conversa com ele como conversa com a OpenAI.",
     aceitaEndpointProprio: true,
@@ -360,6 +436,12 @@ export const PROVEDORES_DE_DECISAO = [
     sede: "US",
     paisDeclarado: null,
     fonteDoPais: null,
+    // A TypeSafe AI não publica a região de processamento do Jev; registra-se a
+    // sede da empresa, e nada além dela.
+    motivoDaRegiaoNaoDeclarada:
+      "não publica a região de processamento do serviço de decisão",
+    // A chamada é a da API da TypeSafe: não aceita base URL própria.
+    ondeExecutaComEndpointProprio: null,
     quandoUsar:
       "Não conversa com o cliente: toma decisões rápidas e baratas — como perceber se o cliente está irritado — geralmente em menos de um segundo. Trabalha junto com a sua IA principal.",
     aceitaEndpointProprio: false,

@@ -91,6 +91,7 @@ function montarMundo(opts: MundoOpts = {}) {
   const AGENDAMENTOS = [
     {
       id: APPOINTMENT,
+      organization_id: ORG,
       title: "Corte",
       contact_id: CONTACT,
       event_type_id: "77777777-7777-4777-8777-777777777777",
@@ -98,6 +99,16 @@ function montarMundo(opts: MundoOpts = {}) {
       calendar_event_types: { name: "Corte", default_price_cents: 5000 },
     },
   ];
+
+  // #4845 — a rota do lote passou a conferir também a empresa do CONTATO do
+  // atendimento (a venda não pode nascer na A carregando o cliente da B). Este
+  // dublê respondia `[]` para toda tabela que não fosse `calendar_appointments`
+  // e `organizations`, então o contato do próprio atendimento — declarado
+  // acima com `contact_id: CONTACT` — "não existia em empresa nenhuma" e o
+  // lote era recusado com 422 `financeiro_contato_fora_da_empresa`. O mundo do
+  // teste é que estava incompleto: o contato DESTA empresa precisa estar na
+  // tabela, como estaria no banco de verdade.
+  const CONTATOS = [{ id: CONTACT, organization_id: ORG }];
 
   const from = (tabela: string) => {
     const cadeia: Record<string, unknown> = {};
@@ -130,10 +141,15 @@ function montarMundo(opts: MundoOpts = {}) {
         : { data: null, error: null };
     cadeia.single = async () => ({ data: null, error: null });
     cadeia.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
-      Promise.resolve({ data: tabela === "calendar_appointments" ? AGENDAMENTOS : [], error: null }).then(
-        resolve,
-        reject,
-      );
+      Promise.resolve({
+        data:
+          tabela === "calendar_appointments"
+            ? AGENDAMENTOS
+            : tabela === "contacts"
+              ? CONTATOS
+              : [],
+        error: null,
+      }).then(resolve, reject);
     return cadeia;
   };
 
