@@ -101,6 +101,8 @@ describe("AuditoriaDoCandidato: resumo na linha, total no modal", () => {
   it("abrir o modal mostra o total + ações, e a prévia renderiza a mensagem", async () => {
     const onPrevia = vi.fn(async () => ({
       mensagem: "Olá!",
+      estrategia: null,
+      score: null,
     }));
     render(<AuditoriaDoCandidato {...props(candidato({ ...SITE_OK }))} onPrevia={onPrevia} />);
     fireEvent.click(screen.getByRole("button", { name: "Ver detalhes" }));
@@ -137,6 +139,8 @@ describe("AuditoriaDoCandidato: resumo na linha, total no modal", () => {
 
   const PREVIA: PreviaDaAbordagem = {
     mensagem: "Olá, vi o site de vocês.",
+    estrategia: null,
+    score: null,
   };
 
   it("A1: a prévia pede rolagem para o próprio texto, com block=nearest", async () => {
