@@ -311,11 +311,15 @@ describe("POST /api/v1/agenda/servicos/atualizar — sessão de navegador", () =
     expect(checkRateLimit).not.toHaveBeenCalled();
 
     // A organização vem da sessão e o ator é a pessoa; as RPCs seguem pelo cliente admin.
+    // O ator da sessão carrega o papel EFETIVO, como os atores de token e de
+    // agente já carregavam: `Actor` declara `role?` para o usuário, e a RPC só
+    // lê `type`/`id`/`api_token_id` do jsonb. Quem lê `actor.role` (o dono da
+    // conversa, a régua do Amigo) recebe o mesmo papel que o portão já conferiu.
     const assertores = rpcsDeAssertActor(falso);
     expect(assertores).toHaveLength(1);
     expect(assertores[0]?.args).toEqual({
       p_org: ORG_A,
-      p_actor: { type: "user", id: USER_ID },
+      p_actor: { type: "user", id: USER_ID, role: "agent" },
       p_role: "agent",
     });
     expect(organizacoesRecebidas()).toEqual([ORG_A]);
