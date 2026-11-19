@@ -67141,6 +67141,22 @@ comment on column public.send_ledger.media_storage_path is
   'resintetizar (e pagar) de novo pela mesma mensagem lógica. NULL para toda '
   'mensagem que não é voz, e para voz cuja síntese ainda não terminou.';
 
+-- ---- O ledger do envio sabe onde o ENVIO termina (migration 9407) ----
+-- Espelho idêntico da 9407 (o porquê está no cabeçalho dela): o `seq` é o
+-- contador do TURNO, então duas chamadas de `send_message` no mesmo job não se
+-- separam por ele; `envio_seq` é o `seq` da primeira bolha do envio, gravado em
+-- todas as linhas dele na ESCRITA, e é por ele que o reprocesso lê.
+alter table public.send_ledger
+  add column if not exists envio_seq smallint;
+
+comment on column public.send_ledger.envio_seq is
+  'Migration 9407. O `seq` da PRIMEIRA mensagem física do ENVIO a que esta '
+  'linha pertence (#4370). O `seq` sozinho é o contador do TURNO inteiro e '
+  'não separa dois envios do mesmo job; o reprocesso da saída configurável '
+  'lê as bolhas por `envio_seq = <1ª bolha do envio>`. NULL = linha gravada '
+  'antes da 9407 (a consulta cai na régua anterior, `seq >= $3`) ou envio de '
+  'mensagem única fora do turno da prospecção.';
+
 -- ---- O agente aprende a falar: voz_enabled + voz_quando (migration 9052) ----
 -- Espelho idêntico da 9052 (o porquê está no cabeçalho dela). Fica ANTES da
 -- VARREDURA anon porque recria `fn_ai_agent_version_content_immutable`; o corpo

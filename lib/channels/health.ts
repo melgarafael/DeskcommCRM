@@ -34,6 +34,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
 
 import { PROVIDERS_DE_MENSAGEM } from "./capabilities";
+import { startingPresoHa, limitesDoStartingPreso } from "./starting-preso";
 import {
   DETALHE_NAO_RECEBE,
   PREFIXO_ENVIO_RESTRITO,
@@ -55,9 +56,12 @@ export const STATUS_SAUDAVEL = "WORKING";
  * propósito e não ser avisado é um incômodo pequeno; não ser avisado de uma
  * parada que ninguém pediu é o defeito que motivou este arquivo.
  *
- * `STARTING` NÃO entra: é o estado normal de todo boot, e avisar nele faria o
- * sistema gritar a cada reinício — o caminho mais curto para o operador aprender
- * a ignorar o aviso.
+ * `STARTING` NÃO entra NESTA LISTA: é o estado normal de todo boot, e avisar
+ * nele faria o sistema gritar a cada reinício — o caminho mais curto para o
+ * operador aprender a ignorar o aviso. Ele tem um caminho próprio, por IDADE:
+ * `STARTING` acima do prazo de `starting-preso.ts` (o mesmo que o vigia usa
+ * para reiniciar) avisa em `avisoDaConexao`. Trinta segundos de boot continuam
+ * em silêncio; três dias, não.
  */
 export const STATUS_QUE_AVISAM = ["SCAN_QR_CODE", "FAILED", "STOPPED"] as const;
 
@@ -245,6 +249,19 @@ export interface SaudeObservada {
   status: string | null;
   detail: string | null;
   defeitosSemMedida?: DefeitoDoNumero["tipo"][];
+  /**
+   * Há quantos SEGUNDOS a sessão está no status observado (`last_status_change_at`
+   * do espelho). Só o `STARTING` usa: os outros status avisam pelo estado, e
+   * `undefined` (quem não leu o carimbo) mantém o comportamento de sempre —
+   * nenhum aviso por idade, para não acusar um boot normal.
+   */
+  segundosNoStatus?: number | null;
+  /**
+   * O vigia do worker já gastou as tentativas de restart deste episódio
+   * (`metadata.vigia_starting.esgotado`). É o que transforma "presa" em "presa e
+   * sem tentativas" — o segundo nível do aviso.
+   */
+  restartsEsgotados?: boolean;
 }
 
 /**
@@ -312,6 +329,41 @@ export function avisoDaConexao(
     return defeito ? avisoDoDefeito(defeito, apelido, idioma) : null;
   }
   if (!status) return null;
+
+  // ─── `STARTING` PRESO (#4870) ─────────────────────────────────────────────
+  //
+  // `STARTING` sai em silêncio enquanto é boot. O defeito é quando ele NÃO
+  // acaba: a sessão fica dias sem receber mensagem e o único sinal é a pausa da
+  // campanha, que só existe para quem tem campanha ativa. A régua é a IDADE —
+  // a mesma do vigia que reinicia (`starting-preso.ts`), para os dois nunca
+  // discordarem sobre o que é "preso".
+  //
+  // Sem idade lida (`undefined`), nada muda: é o boot normal e é o que o
+  // webhook vê quando acabou de receber o evento.
+  if (status === "STARTING") {
+    const limites = limitesDoStartingPreso();
+    const segundos = saude.segundosNoStatus;
+    const msNoStatus = typeof segundos === "number" && Number.isFinite(segundos) ? segundos * 1000 : null;
+    if (!startingPresoHa(msNoStatus, limites.prazoMs)) return null;
+    const minutos = Math.max(1, Math.round(limites.prazoMs / 60_000));
+    if (saude.restartsEsgotados) {
+      return {
+        kind: "channel_number_alert",
+        severity: "critical",
+        title: `WhatsApp "${apelido}" não voltou depois das tentativas automáticas de religar`,
+        body: `A conexão está presa em "Conectando…" e as ${limites.limite} tentativas de religar não a trouxeram de volta. Nenhuma mensagem entra nem sai por este número. Abra Conexões e use Reconectar: no modo padrão ele não pede o QR de novo.`,
+        episodio: "STARTING_PRESO_ESGOTADO",
+      };
+    }
+    return {
+      kind: "channel_number_alert",
+      severity: "warn",
+      title: `WhatsApp "${apelido}" está preso em "Conectando…"`,
+      body: `A conexão está nesse estado há mais de ${minutos} minutos, e nesse estado nenhuma mensagem entra nem sai. O sistema vai tentar religá-la sozinho; se as tentativas acabarem sem volta, este aviso sobe para crítico.`,
+      episodio: "STARTING_PRESO",
+    };
+  }
+
   if (!(STATUS_QUE_AVISAM as readonly string[]).includes(status)) return null;
 
   if (status === "SCAN_QR_CODE") {
