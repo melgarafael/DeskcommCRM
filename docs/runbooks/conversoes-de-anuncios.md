@@ -38,7 +38,7 @@ Fontes oficiais consultadas em 24/09/2026 UTC:
 2. Clique em **Continuar no Google** e escolha um login com acesso à conta de anúncios informada. A consulta de campanhas usa a Google Ads API e o escopo OAuth `adwords`. Se a autorização anterior era só para Data Manager, use **Autorizar leitura desta conta**.
 3. Repita para as outras contas e use o seletor do painel para consultar cada uma. Você pode usar logins Google diferentes. **Reconectar para leitura** permite refazer a autorização da conta selecionada.
 
-No projeto Google Cloud do aplicativo OAuth, habilite a Google Ads API. Um projeto com acesso **Explorer** pode fazer as consultas sem informar um token de desenvolvedor. Confira a elegibilidade e os limites do seu projeto na [documentação de níveis de acesso do Google](https://developers.google.com/google-ads/api/docs/access-levels).
+No projeto Google Cloud do aplicativo OAuth, habilite a Google Ads API. Um projeto com acesso **Explorer** pode fazer as consultas sem informar um token de desenvolvedor. Confira a elegibilidade e os limites do seu projeto na [documentação de níveis de acesso do Google](https://developers.google.com/google-ads/api/docs/api-policy/access-levels).
 
 O painel dá preferência à autorização de leitura cadastrada para cada conta. Para a conta de conversões já existente, também aceita a autorização anterior se ela permitir consultar campanhas. **Remover acesso de leitura** retira a autorização específica de relatórios. A captura pelos links do site e a configuração em **Configurações → Conversões** têm funcionamento independente.
 
