@@ -840,15 +840,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     void upload
       .mutateAsync({ conversationId, file: arquivo, destino })
       .then((uploaded) => {
-        // Cada arquivo que SAIU deixa a fila, e a legenda com ele: se o
-        // próximo falhar, o retry do diálogo recomeça do que falhou, sem
-        // reenviar o que já foi nem repetir o texto (#2526, critério "falha
-        // no envio da mídia não causa duplicação do texto"). Zerar a
-        // `legendaInicial` é o que faz o diálogo repor a legenda VAZIA quando
-        // a fila encolhe.
+        // Remove each attachment after it is sent so a retry starts at the
+        // failed item. Keep the caption until its own attachment is sent.
         const proximo = () => {
           setPendingFiles((fila) => fila.slice(1));
-          setLegendaInicial(null);
+          setLegendaInicial(destino === "mensagem" && indice < indiceLegenda ? caption : null);
           enviarAnexos(caption, indice + 1);
         };
         if (destino === "nota") {
