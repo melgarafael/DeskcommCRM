@@ -4,6 +4,10 @@ import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { audit } from "@/lib/audit";
 import { processCompaniesPeopleImport } from "@/lib/crm-b2b/import-process";
+import { previaDaImportacao, totaisDaPrevia, type LinhaClassificada } from "@/lib/crm-b2b/import-previa";
+import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
+import { definirCarteiraDoLote } from "@/lib/crm-b2b/import-carteira";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { importColumnMappingSchema } from "@/lib/crm-b2b/schemas";
 import {
   IMPORT_MAX_BYTES,
@@ -29,10 +33,22 @@ export const dynamic = "force-dynamic";
  * POST /api/v1/imports — upload CSV/XLSX + processa companies/people/contacts.
  *
  * Sessão OU token de servidor `dsk_…` (Spec 33, R3): `mcp:read` no GET (piso
- * viewer) e `mcp:write` no POST (piso manager). A organização vem da sessão ou
+ * viewer) e `mcp:write` no POST (piso agent, A23 parte 2). A organização vem da sessão ou
  * da LINHA do token, nunca do corpo. Pelo token não há pessoa: as colunas de
  * autor (`created_by`, `created_by_user_id`) ficam nulas e o audit grava o id do
  * token em `actor_api_token_id`.
+ *
+ * PRÉVIA (A23, #4888): com `previa=true` nada é gravado — a resposta traz os totais
+ * por veredito e as linhas que ficariam de fora, com o motivo e de quem é o que já
+ * existe. Sem `previa`, o servidor classifica DE NOVO (a base pode ter mudado desde
+ * a prévia) e grava só as linhas `nova`; as demais ficam no lote com o motivo.
+ *
+ * DONO DA CARTEIRA (A23 parte 2): `dono_user_id` escolhe quem recebe os contatos
+ * criados pelo lote (origem `importacao`); sem ele, quem importa. O Atendente só é
+ * dono dele mesmo (403 `fora_da_posse` antes de gravar qualquer coisa); gerente e
+ * admin escolhem qualquer membro ativo. Por token não há pessoa, e nenhum dono é
+ * definido a menos que `dono_user_id` venha (e então o ator é o próprio dono pedido
+ * pelo token, que só gerente+ pode — o banco confere).
  *
  * O importador histórico de contatos (`/api/v1/contacts/import`) permanece.
  */
@@ -76,7 +92,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const authz = await resolveAuthDual(req, {
     requestId,
     resource: "imports",
-    role: "manager",
+    role: "agent",
     scope: "mcp:write",
   });
   if (!authz.ok) return authz.response;
@@ -129,6 +145,50 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
 
     const supabase = authz.supabase;
+
+    // A23 parte 2: o dono da carteira. Decidido ANTES de gravar qualquer coisa — o
+    // Atendente que pede outro dono recebe a recusa sem lote criado.
+    const donoPedido = (form.get("dono_user_id") as string | null)?.trim() || null;
+    const donoId = donoPedido ?? autorId;
+    if (autorId && donoPedido && donoPedido !== autorId && form.get("previa") !== "true") {
+      const { data: vinculo } = await supabase
+        .from("user_organizations")
+        .select("role")
+        .eq("organization_id", authz.organizationId)
+        .eq("user_id", autorId)
+        .maybeSingle();
+      if ((vinculo as { role?: string } | null)?.role === "agent") {
+        return fail(
+          "fora_da_posse",
+          "O atendente só pode ser dono dos contatos que ele mesmo importa.",
+          403,
+          { requestId },
+        );
+      }
+    }
+
+    // A23: a classificação vale para a prévia E para a gravação.
+    const classificadas = await previaDaImportacao(supabase, {
+      organizationId: authz.organizationId,
+      sheet: parsed.sheet,
+      mapping,
+    });
+    if (form.get("previa") === "true") {
+      const donos = await nomesDosAtendentes(
+        authz.organizationId,
+        classificadas.map((l) => l.existente?.donoId),
+      );
+      return ok(
+        {
+          previa: totaisDaPrevia(classificadas),
+          headers: parsed.sheet.headers,
+          suggested_mapping: suggestColumnMapping(parsed.sheet.headers),
+          linhas_fora: linhasDeFora(classificadas, parsed.sheet, donos),
+        },
+        { requestId },
+      );
+    }
+
     const { data: batch, error: batchErr } = await supabase
       .from("import_batches")
       .insert({
@@ -156,7 +216,19 @@ export async function POST(req: NextRequest): Promise<Response> {
       sheet: parsed.sheet,
       mapping,
       enrichCompanies: form.get("enrich") !== "false",
+      classificacao: new Map(classificadas.map((l) => [l.rowNumber, l])),
     });
+
+    // A23 parte 2: os contatos que o lote criou entram na carteira do dono.
+    const carteira =
+      donoId && summary.successful_rows > 0
+        ? await definirCarteiraDoLote(createAdminClient(), {
+            organizationId: authz.organizationId,
+            batchId: batch.id,
+            atorId: autorId ?? donoId,
+            donoId,
+          })
+        : null;
 
     await audit({
       organizationId: authz.organizationId,
@@ -166,7 +238,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       resourceType: "import_batches",
       resourceId: batch.id,
       requestId,
-      metadata: summary as unknown as Record<string, unknown>,
+      metadata: { ...summary, ...(carteira ? { carteira_dono: donoId, carteira } : {}) } as unknown as Record<string, unknown>,
     });
 
     return ok(
@@ -174,6 +246,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         batch_id: batch.id,
         suggested_mapping: suggestColumnMapping(parsed.sheet.headers),
         headers: parsed.sheet.headers,
+        ...(carteira ? { carteira: { dono_user_id: donoId, ...carteira } } : {}),
         ...summary,
       },
       { requestId, status: 201 },
@@ -181,4 +254,35 @@ export async function POST(req: NextRequest): Promise<Response> {
   } catch (e) {
     return handleRouteError(e, requestId);
   }
+}
+
+/** O que o CSV de "ficaram de fora" precisa: a linha original, o veredito e de quem é o que já existe. */
+function linhasDeFora(
+  classificadas: readonly LinhaClassificada[],
+  sheet: { headers: string[]; rows: string[][]; rowNumbers?: number[] },
+  donos: ReadonlyMap<string, string | null>,
+) {
+  const porNumero = new Map(classificadas.map((l) => [l.rowNumber, l]));
+  const fora: Array<{
+    linha: number;
+    status: string;
+    motivo: string | null;
+    existente_nome: string | null;
+    de_quem: string | null;
+    valores: string[];
+  }> = [];
+  sheet.rows.forEach((valores, i) => {
+    const numero = sheet.rowNumbers?.[i] ?? i + 2;
+    const v = porNumero.get(numero);
+    if (!v || v.status === "nova") return;
+    fora.push({
+      linha: numero,
+      status: v.status,
+      motivo: v.motivo,
+      existente_nome: v.existente?.nome ?? null,
+      de_quem: v.existente?.donoId ? (donos.get(v.existente.donoId) ?? null) : null,
+      valores,
+    });
+  });
+  return fora;
 }
