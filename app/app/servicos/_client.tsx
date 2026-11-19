@@ -190,20 +190,32 @@ const MENSAGEM_DA_REGRA = {
   preco_negativo: "Informe um preço igual ou maior que zero.",
   instrucoes_longas: "Use até 2.000 caracteres nas instruções para o agente.",
   revisao_invalida: "Reabra o serviço antes de editar.",
+  codigo_invalido: "Informe um código de 1 a 60 caracteres.",
+  nome_invalido: "Informe um nome de 2 a 200 caracteres.",
+  descricao_invalida: "Use até 2.000 caracteres na descrição.",
 } as const satisfies Record<RegraDoServico, string>;
 
-function recusasDaEscrita(erro: unknown): { campo: string; codigo: RegraDoServico }[] {
-  if (!(erro instanceof ApiError) || erro.status !== 422 || erro.code !== "validation_failed") return [];
-  const recusas: { campo: string; codigo: RegraDoServico }[] = [];
+function lerRecusa(erro: unknown) {
+  const regras: { campo: string; codigo: RegraDoServico }[] = [];
+  if (!(erro instanceof ApiError) || erro.status !== 422 || erro.code !== "validation_failed") {
+    return { regras, mostrarToast: true };
+  }
+
+  let temDetalheDesconhecido = false;
   for (const [campo, codigos] of Object.entries(erro.details ?? {})) {
-    if (!Array.isArray(codigos)) continue;
+    if (!Array.isArray(codigos)) {
+      temDetalheDesconhecido = true;
+      continue;
+    }
     for (const codigo of codigos) {
       if (typeof codigo === "string" && Object.hasOwn(MENSAGEM_DA_REGRA, codigo)) {
-        recusas.push({ campo, codigo: codigo as RegraDoServico });
+        regras.push({ campo, codigo: codigo as RegraDoServico });
+      } else {
+        temDetalheDesconhecido = true;
       }
     }
   }
-  return recusas;
+  return { regras, mostrarToast: temDetalheDesconhecido || regras.length === 0 };
 }
 
 function textoDasRecusas(codigos: RegraDoServico[], t: (texto: string) => string) {
@@ -238,13 +250,13 @@ function FormularioDoServico({
       aoFechar();
     },
     onError: (erro) => {
-      if (recusasDaEscrita(erro).length === 0) showApiError(erro);
+      if (lerRecusa(erro).mostrarToast) showApiError(erro);
       // 409 de revisão: outra pessoa salvou antes. Recarregar traz a versão nova.
       void qc.invalidateQueries({ queryKey: CHAVE });
     },
   });
 
-  const recusas = recusasDaEscrita(salvar.error);
+  const recusas = lerRecusa(salvar.error).regras;
   const erroSinal = textoDasRecusas(recusas.filter((r) => r.campo === "sinal").map((r) => r.codigo), t);
   const outrosErros = textoDasRecusas(recusas.filter((r) => r.campo !== "sinal").map((r) => r.codigo), t);
   const campoDoErroSinal = erroSinal
@@ -433,11 +445,11 @@ function NovaVariacao({ paiId, aoFechar }: { paiId: string; aoFechar: () => void
       aoFechar();
     },
     onError: (erro) => {
-      if (recusasDaEscrita(erro).length === 0) showApiError(erro);
+      if (lerRecusa(erro).mostrarToast) showApiError(erro);
     },
   });
 
-  const regras = recusasDaEscrita(salvar.error).map((recusa) => recusa.codigo);
+  const regras = lerRecusa(salvar.error).regras.map((recusa) => recusa.codigo);
   const erroPreco = regras.includes("sinal_fixo_acima_do_preco")
     ? t("Aumente o preço da variação ou reduza o sinal fixo do serviço.")
     : "";

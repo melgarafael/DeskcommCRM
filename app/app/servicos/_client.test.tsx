@@ -244,6 +244,25 @@ describe("catálogo de serviços — a tela", () => {
     expect(screen.getByTestId("form-servico")).toBeInTheDocument();
   });
 
+  it("mantém o aviso com ID quando a recusa mistura códigos conhecidos e desconhecidos", async () => {
+    api.patch.mockRejectedValueOnce(new ApiError(
+      422, "validation_failed", {
+        nome: ["nome_invalido"],
+        instrucoes_ia: ["instrucoes_longas"],
+        outro: ["regra_desconhecida"],
+      }, "req-servico",
+      "Dados inválidos.",
+    ));
+    montar([CONSULTORIA]);
+    fireEvent.click(await screen.findByRole("button", { name: "Editar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    const aviso = await screen.findByRole("alert");
+    expect(aviso).toHaveTextContent("Informe um nome de 2 a 200 caracteres.");
+    expect(aviso).toHaveTextContent("Use até 2.000 caracteres nas instruções para o agente.");
+    expect(toast.error).toHaveBeenCalledWith("Dados inválidos.", { description: "ID: req-servico" });
+  });
+
   it("desativar é o PATCH do item do catálogo, com { ativo: false }", async () => {
     montar([CONSULTORIA]);
     fireEvent.click(await screen.findByRole("button", { name: "Desativar" }));

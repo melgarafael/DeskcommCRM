@@ -38,7 +38,7 @@ import {
   salvarServico,
 } from "@/lib/catalogo/servicos-supabase";
 import { moduloLigado } from "@/lib/instalacao/modulos";
-import { servicoCreateSchema } from "@/lib/schemas/servicos";
+import { detalhesDaValidacaoDoServico, servicoCreateSchema } from "@/lib/schemas/servicos";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -87,7 +87,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (!parsed.success) {
     return fail("validation_failed", t("Dados inválidos."), 422, {
       requestId,
-      details: parsed.error.flatten().fieldErrors as Record<string, unknown>,
+      details: detalhesDaValidacaoDoServico(parsed.error),
     });
   }
   const input = parsed.data;

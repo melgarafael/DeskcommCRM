@@ -81,7 +81,10 @@ export type RegraDoServico =
   | "preco_negativo"
   | "prazo_fora_da_faixa"
   | "instrucoes_longas"
-  | "revisao_invalida";
+  | "revisao_invalida"
+  | "codigo_invalido"
+  | "nome_invalido"
+  | "descricao_invalida";
 
 export interface ProblemaDoServico {
   campo: string;
@@ -237,6 +240,21 @@ export const servicoPatchSchema = z.object({
   /** Revisão que quem edita viu. Velha = 409, como em toda escrita concorrente. */
   expected_revision: z.number().int().min(1, "revisao_invalida"),
 });
+
+const REGRAS_DO_ITEM = {
+  codigo: "codigo_invalido",
+  nome: "nome_invalido",
+  descricao: "descricao_invalida",
+} satisfies Record<string, RegraDoServico>;
+
+/** Os campos herdados mantêm o schema dos produtos e usam códigos no catálogo de serviços. */
+export function detalhesDaValidacaoDoServico(erro: z.ZodError): Record<string, unknown> {
+  const detalhes = erro.flatten().fieldErrors;
+  for (const [campo, regra] of Object.entries(REGRAS_DO_ITEM)) {
+    if (detalhes[campo]?.length) detalhes[campo] = [regra];
+  }
+  return detalhes;
+}
 
 export type ServicoCreate = z.infer<typeof servicoCreateSchema>;
 export type ServicoPatch = z.infer<typeof servicoPatchSchema>;

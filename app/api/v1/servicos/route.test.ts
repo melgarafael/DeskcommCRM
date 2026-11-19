@@ -58,6 +58,19 @@ describe("/api/v1/servicos", () => {
     expect(salvarServico).not.toHaveBeenCalled();
   });
 
+  it("devolve códigos para todos os campos recusados no mesmo cadastro", async () => {
+    const r = await post({
+      codigo: "SITE", nome: "A", preco_cents: 10_000, tipo: "projeto", unidade: "valor_fechado",
+      instrucoes_ia: "x".repeat(2001),
+    });
+    expect(r.status).toBe(422);
+    expect((await r.json()).error.details).toEqual({
+      nome: ["nome_invalido"],
+      instrucoes_ia: ["instrucoes_longas"],
+    });
+    expect(salvarServico).not.toHaveBeenCalled();
+  });
+
   it("o principal vai ao banco com o detalhe; a recusa do sinal volta no campo sinal", async () => {
     vi.mocked(salvarServico).mockResolvedValue({ ok: false, motivo: "regra", detalhe: "servico_sinal_acima_do_preco" });
     const r = await post({
