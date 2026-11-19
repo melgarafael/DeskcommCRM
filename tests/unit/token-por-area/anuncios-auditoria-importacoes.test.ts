@@ -348,7 +348,7 @@ const CASOS: Caso[] = [
     executar: async (req) => (await import("@/app/api/v1/imports/route")).POST(req),
     corpo: planilha,
     linhas: LINHAS_DAS_IMPORTACOES,
-    papel: "manager",
+    papel: "agent",
     escopo: "mcp:write",
     recurso: "imports",
     soDeA: [],
