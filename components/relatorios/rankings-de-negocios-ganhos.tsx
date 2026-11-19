@@ -40,7 +40,11 @@ import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { formatCents } from "@/lib/money";
 import type { RespostaDoRelatorioComercial } from "@/lib/relatorios/comercial";
 
-const CELULA_DE_NUMERO = "text-right tabular-nums";
+// O número nunca quebra nem é cortado: quem encolhe é o nome (`CELULA_DE_NOME`).
+// Medido na prova do #4941: a 1280 px com a barra lateral aberta, o valor saía "R$ 300,".
+const CELULA_DE_NUMERO = "whitespace-nowrap text-right tabular-nums";
+/** `w-full max-w-0` deixa a célula do nome ceder espaço e truncar, em qualquer largura do card. */
+const CELULA_DE_NOME = "w-full max-w-0 truncate";
 const CLASSE_DO_SELETOR =
   "rounded-md border border-border bg-surface-elevated p-2 text-sm text-text max-md:min-h-11";
 
@@ -181,12 +185,12 @@ export function RankingsDeNegociosGanhos({ de, ate }: { de: string; ate: string 
                     <TableBody>
                       {relatorio.tags.map((linha) => (
                         <TableRow key={linha.tag}>
-                          <TableCell className="max-w-[12rem] truncate">
+                          <TableCell className={CELULA_DE_NOME}>
                             <button
                               type="button"
                               title={t("Ver as vendas desta tag")}
                               onClick={() => setTag(linha.tag)}
-                              className="truncate text-left underline-offset-2 hover:underline"
+                              className="block max-w-full truncate text-left underline-offset-2 hover:underline"
                             >
                               {linha.tag}
                             </button>
@@ -224,7 +228,7 @@ export function RankingsDeNegociosGanhos({ de, ate }: { de: string; ate: string 
                     <TableBody>
                       {relatorio.clientes.map((linha) => (
                         <TableRow key={linha.contact_id}>
-                          <TableCell className="max-w-[12rem] truncate">
+                          <TableCell className={CELULA_DE_NOME}>
                             {nomeDoContato(linha.contact_id)}
                           </TableCell>
                           <TableCell className={CELULA_DE_NUMERO}>{linha.negocios}</TableCell>
@@ -255,7 +259,7 @@ export function RankingsDeNegociosGanhos({ de, ate }: { de: string; ate: string 
                   <TableBody>
                     {relatorio.funis.map((linha) => (
                       <TableRow key={linha.pipeline_id}>
-                        <TableCell className="max-w-[12rem] truncate">
+                        <TableCell className={CELULA_DE_NOME}>
                           {nomeDoFunil(linha.pipeline_id)}
                         </TableCell>
                         <TableCell className={CELULA_DE_NUMERO}>{linha.negocios}</TableCell>
