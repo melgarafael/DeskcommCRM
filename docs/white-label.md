@@ -40,6 +40,8 @@ Exemplo:
 
 **Cor por seção do menu lateral.** O menu tem classes estáveis, pensadas para este CSS. Todo grupo leva `nav-grupo`, e cada um leva também a sua: `nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais`, `nav-grupo-analise` e `nav-grupo-organizacao` (a do rodapé, com Configurações e Ajuda). Cada destino tem a dele: `nav-item-inbox`, `nav-item-kanban`, e assim por diante. Essas classes fazem parte do contrato da tela e não mudam entre versões; as classes utilitárias do Tailwind, sim.
 
+**Cor por seção do conteúdo.** O contêiner do conteúdo de toda tela leva `tela-secao` e, quando a rota está no registro de navegação, também a da seção: `tela-secao-atendimento`, `tela-secao-crm`, `tela-secao-ia`, `tela-secao-canais`, `tela-secao-analise` e `tela-secao-organizacao` — com ela, `.tela-secao-crm .rounded-lg { border-top-color: #1d4ed8; }` vale só nas telas de CRM. Rota fora do registro fica só com `tela-secao`.
+
 Para pintar o texto do menu, mire `text-muted-foreground` dentro do grupo, não `rounded-md`. O título do grupo e os links têm as duas, mas o item da tela aberta só tem `rounded-md`: ele já tem fundo na cor de destaque, e uma cor de texto escolhida para o fundo do menu pode sumir sobre esse fundo. Como `text-muted-foreground` é do Tailwind, confira o menu depois de atualizar. A cor do exemplo é para o tema claro; no escuro, repita a regra no campo **CSS do tema escuro** com uma cor clara.
 
 ```css
@@ -52,7 +54,7 @@ Para pintar o texto do menu, mire `text-muted-foreground` dentro do grupo, não 
 }
 ```
 
-**Se o CSS deixar as telas ilegíveis.** Uma folha válida ainda pode esconder texto (cor transparente, fonte de tamanho zero) ou cobrir a tela com uma sombra — inclusive o login e a própria página Marca. Para sair disso, abra a página com `?sem_css=1` no endereço: ela vem sem o CSS personalizado, só para você. Entre por `/login?sem_css=1`, depois abra `/admin/marca?sem_css=1` digitando o endereço, apague o conteúdo do campo e salve. Sem acesso à tela, pelo servidor: `psql "$SUPABASE_DB_URL" -c "delete from public.platform_config where chave = 'APP_CUSTOM_CSS';"` — o CSS deixa de valer em até 30 segundos. Passo a passo em [`runbooks/css-personalizado.md`](runbooks/css-personalizado.md).
+**Se o CSS deixar as telas ilegíveis.** Uma folha válida ainda pode esconder texto (cor transparente, fonte de tamanho zero) ou cobrir a tela com uma sombra — inclusive o login e a própria página Marca. Para sair disso, abra a página com `?sem_css=1` no endereço: ela vem sem o CSS personalizado, só para você. Entre por `/login?sem_css=1`, depois abra `/admin/marca?sem_css=1` digitando o endereço, apague o conteúdo dos **dois** campos (tema claro e tema escuro) e salve. Sem acesso à tela, pelo servidor: `psql "$SUPABASE_DB_URL" -c "delete from public.platform_config where chave in ('APP_CUSTOM_CSS', 'APP_CUSTOM_CSS_DARK');"` — as duas folhas deixam de valer em até 30 segundos. Apagar só a chave do claro mantém a do escuro valendo quando o tema escuro está ativo. Passo a passo em [`runbooks/css-personalizado.md`](runbooks/css-personalizado.md).
 
 O arquivo é aceito **pelos bytes, não pela extensão**. Renomear um `.svg` para `.png` não engana: o sistema lê o conteúdo, recusa e diz por quê. Isso não é preciosismo — SVG é XML e pode carregar script, que executaria se alguém abrisse a imagem direto pelo endereço dela, num bucket que é público por necessidade.
 

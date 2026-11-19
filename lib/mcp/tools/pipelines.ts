@@ -12,33 +12,35 @@ const listInputShape = {
   include_archived: z.boolean().optional().default(false),
 };
 
-/** Um campo personalizado como o agente precisa dele para escrever (#4667). */
-export interface CampoDoFunilParaOAgente {
-  key: string;
-  label: string;
-  type: string;
-  escopo: "negocio" | "contato";
-  /** Só o `value` de cada opção: é o que `custom_fields` grava. */
-  options?: string[];
-}
-
 /**
- * As DEFINIÇÕES dos campos do funil, nunca valor de negócio (#4667).
+ * OS CAMPOS DO FUNIL COMO O MODELO PRECISA LER (issue #4667).
  *
- * Sem esta lista o agente não tinha como saber a chave de um campo e inventava
- * uma em `custom_fields`. O `settings` já vinha do `listPipelinesHandler` e
- * morria no `map` da ferramenta. Vão os dois escopos: o `escopo` diz qual é do
- * negócio (o que `crm_update_lead` grava) e qual é do contato.
+ * A definição mora em `crm_pipelines.settings.fields[]` (`customFieldSchema`,
+ * `lib/schemas/settings.ts:184`) e a leitura é `camposDoFunil` — a MESMA que a
+ * ficha, o card e as regras usam, para a lista do modelo não divergir da tela.
+ *
+ * Sem ela o agente não tinha como saber a CHAVE de um campo e inventava uma em
+ * `custom_fields` (`"valor"` em vez de `valor_do_contrato`): a escrita passava,
+ * porque o schema aceita chave livre, e o valor ficava órfão no card — o
+ * defeito mudo que `lib/mcp/tools/leads.test.ts` documenta do outro lado.
+ *
+ * O mínimo que o modelo precisa para NÃO inventar: `key`, `label`, `type`, o
+ * `escopo` (negócio ou contato — muda ONDE o valor é gravado) e, nos campos de
+ * lista, os `options[].value` aceitos. `required`, `padrao` e `mostrar_quando`
+ * ficam de fora de propósito: é resposta de leitura que vai inteira em todo
+ * turno, e a régua de valor é do servidor (`lib/leads/campos-exigidos.ts`).
+ *
+ * `options` SÓ aparece quando o campo declara opções — `options: []` em todo
+ * campo de texto seria ruído pago em token por chamada.
  */
-export function camposDoFunilParaOAgente(settings: unknown): CampoDoFunilParaOAgente[] {
-  if (!settings || typeof settings !== "object" || Array.isArray(settings)) return [];
-  return camposDoFunil(settings as Record<string, unknown>).map((campo) => ({
+function camposParaOModelo(settings: Record<string, unknown> | null) {
+  return camposDoFunil(settings).map((campo) => ({
     key: campo.key,
     label: campo.label,
     type: campo.type,
     escopo: escopoDoCampo(campo),
     ...(campo.options && campo.options.length > 0
-      ? { options: campo.options.map((opcao) => opcao.value) }
+      ? { options: campo.options.map((o) => ({ value: o.value, label: o.label })) }
       : {}),
   }));
 }
@@ -46,7 +48,9 @@ export function camposDoFunilParaOAgente(settings: unknown): CampoDoFunilParaOAg
 export const crmListPipelines: McpToolDefinition<typeof listInputShape> = {
   name: "crm_list_pipelines",
   description:
-    "Lista os funis do CRM (vocabulary renomeia lead/deal/won/lost por tenant) e os campos de cada um (fields): em custom_fields, use só essas key.",
+    "Lista pipelines do CRM com seus stages (vocabulary inclusa para renomear lead/deal/won/lost por tenant) " +
+    "e, por funil, os CAMPOS em `campos`: key, label, type, escopo (negocio/contato) e options[].value. " +
+    "Em `custom_fields` use SEMPRE a key daqui — chave inventada não vira campo do funil.",
   inputSchema: listInputShape,
   category: "read",
   requiresRole: "agent",
@@ -72,7 +76,7 @@ export const crmListPipelines: McpToolDefinition<typeof listInputShape> = {
         is_archived: p.is_archived,
         position: p.position,
         vocabulary: p.vocabulary,
-        fields: camposDoFunilParaOAgente(p.settings),
+        campos: camposParaOModelo(p.settings),
       })),
     };
   },

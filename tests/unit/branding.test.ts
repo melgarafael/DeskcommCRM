@@ -873,6 +873,12 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "é o serviço da conta ChatGPT que o operador abre para conectar a assinatura. O produto não faz requests para este host; a consulta do catálogo e a inferência SIWC usam a API pública oficial em api.openai.com.",
   },
+  // ── Módulo opcional `amigo` (#4227): a API do sistema de clínicas ──
+  "amigobot-api.amigoapp.com.br": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "API do sistema de clínicas Amigo, origem FIXA do transporte (`lib/amigo/transport.ts`): só é chamada com o módulo `amigo` instalado e um token cadastrado pela empresa. Não há campo para URL livre — o host fixo é o que impede a credencial de ir a outro destino.",
+  },
   // ── Web Push: o serviço de push do navegador, destino do envio ──
   "fcm.googleapis.com": {
     categoria: "FORNECEDOR",
@@ -1028,6 +1034,16 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     categoria: "FORNECEDOR",
     motivo:
       "endpoint do SANDBOX do Asaas (`lib/cobranca/provedores/asaas.ts`): a chave `$aact_hmlg_` do dono só funciona aqui, e é com ela que ele testa antes de publicar.",
+  },
+  "cobrancas.api.efipay.com.br": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint de PRODUÇÃO da API de cobranças do Efi Bank (`lib/cobranca/provedores/efi.ts`): Pix e boleto recorrentes com que o DONO da instalação cobra as empresas dele, com a credencial Efi DELE. Destino do request, não marca.",
+  },
+  "cobrancas-h.api.efipay.com.br": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint de HOMOLOGAÇÃO da API de cobranças do Efi Bank (`lib/cobranca/provedores/efi.ts`): o par de credenciais de teste do dono só funciona aqui, e é com ele que ele testa antes de publicar.",
   },
   "www.tiendanube.com": {
     categoria: "FORNECEDOR",

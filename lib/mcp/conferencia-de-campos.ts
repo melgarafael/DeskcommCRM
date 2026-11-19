@@ -165,7 +165,7 @@ async function funilDaConferencia(ctx: McpContext, alvo: AlvoDaConferencia): Pro
         .eq("id", alvo.leadId)
         .maybeSingle();
       if (error || !data) return FUNIL_NAO_LIDO;
-      settings = await settingsDoFunil(ctx.supabase, (data as { pipeline_id?: string | null }).pipeline_id);
+      settings = await settingsDoFunil(ctx.supabase, (data as { pipeline_id?: string | null }).pipeline_id, ctx.organizationId);
     }
     const defs = defsDoPadraoDoFunil(settings);
     // `settingsDoFunil` devolve `null` tanto na falha quanto no funil ausente:

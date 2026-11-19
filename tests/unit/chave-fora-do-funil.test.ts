@@ -1,10 +1,10 @@
 /**
- * A CHAVE QUE O FUNIL NÃO DECLARA (#4667) — os dois lados da issue.
+ * A CHAVE QUE O FUNIL NÃO DECLARA (#4667, parte 2).
  *
- * 1. `crm_list_pipelines` não trazia `settings.fields`: o agente não tinha como
- *    saber a chave de um campo e inventava uma.
- * 2. `crm_update_lead` / `crm_create_lead` gravavam a chave inventada sem
- *    avisar, em `crm_leads.custom_fields`, onde card nenhum a mostra.
+ * `crm_update_lead` / `crm_create_lead` gravavam a chave inventada sem avisar,
+ * em `crm_leads.custom_fields`, onde card nenhum a mostra. (A parte 1, os
+ * campos em `crm_list_pipelines`, entrou pelo #4680 e tem os testes dela em
+ * `lib/mcp/tools/pipelines.test.ts`.)
  *
  * A recusa mora no degrau 0 da conferência (`lib/mcp/conferencia-de-campos`),
  * ao lado do padrão (#2730): determinística, ANTES do interruptor do Jev, e só
@@ -17,20 +17,13 @@ import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { conferirCamposPersonalizados } from "@/lib/mcp/conferencia-de-campos";
-import { camposDoFunilParaOAgente, crmListPipelines } from "@/lib/mcp/tools/pipelines";
 import type { McpContext } from "@/lib/mcp/types";
 
 vi.mock("@/lib/logger", () => ({
   logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-const pipelinesDaOrg = vi.hoisted(() => ({ lista: [] as Array<Record<string, unknown>> }));
-vi.mock("@/app/api/v1/pipelines/_handler", () => ({
-  listPipelinesHandler: vi.fn(async () => ({ pipelines: pipelinesDaOrg.lista })),
-}));
-
 const ORG = "11111111-1111-4111-8111-111111111111";
-const OUTRA_ORG = "99999999-9999-4999-8999-999999999999";
 const CONTATO = "33333333-3333-4333-8333-333333333333";
 const LEAD = "44444444-4444-4444-8444-444444444444";
 const FUNIL = "66666666-6666-4666-8666-666666666666";
@@ -225,67 +218,5 @@ describe("a catraca por origem continua valendo", () => {
 
     expect(resultado.estado).toBe("nao_conferida");
     expect(resultado.recusados).toEqual([]);
-  });
-});
-
-describe("crm_list_pipelines traz as definições dos campos", () => {
-  it("chave, rótulo, tipo, escopo e o value de cada opção", () => {
-    expect(camposDoFunilParaOAgente({ fields: CAMPOS })).toEqual([
-      { key: "orcamento_max", label: "Orçamento máximo", type: "currency", escopo: "negocio" },
-      {
-        key: "tipo_imovel",
-        label: "Tipo de imóvel",
-        type: "select",
-        escopo: "negocio",
-        options: ["apartamento", "casa"],
-      },
-      { key: "cpf", label: "CPF", type: "text", escopo: "contato" },
-    ]);
-  });
-
-  it("settings vazio, ilegível ou com definição inválida não derruba a lista", () => {
-    expect(camposDoFunilParaOAgente(null)).toEqual([]);
-    expect(camposDoFunilParaOAgente({})).toEqual([]);
-    expect(camposDoFunilParaOAgente([])).toEqual([]);
-    expect(camposDoFunilParaOAgente({ fields: [{ key: "sem tipo" }, CAMPOS[0]] })).toEqual([
-      { key: "orcamento_max", label: "Orçamento máximo", type: "currency", escopo: "negocio" },
-    ]);
-  });
-
-  it("a ferramenta devolve `fields` por funil, só da organização do contexto", async () => {
-    pipelinesDaOrg.lista = [
-      {
-        id: FUNIL,
-        organization_id: ORG,
-        name: "Vendas",
-        slug: "vendas",
-        description: null,
-        is_default: true,
-        is_archived: false,
-        position: 0,
-        vocabulary: {},
-        settings: { fields: CAMPOS },
-      },
-      {
-        id: "77777777-7777-4777-8777-777777777777",
-        organization_id: OUTRA_ORG,
-        name: "De outra empresa",
-        slug: "outra",
-        description: null,
-        is_default: true,
-        is_archived: false,
-        position: 0,
-        vocabulary: {},
-        settings: { fields: [{ key: "segredo", label: "Segredo", type: "text" }] },
-      },
-    ];
-
-    const r = (await crmListPipelines.handler({ include_archived: false }, ctx(bancoFalso(null, DESLIGADA)))) as {
-      pipelines: Array<{ id: string; fields: Array<{ key: string }> }>;
-    };
-
-    expect(r.pipelines).toHaveLength(1);
-    expect(r.pipelines[0]?.fields.map((c) => c.key)).toEqual(["orcamento_max", "tipo_imovel", "cpf"]);
-    expect(JSON.stringify(r)).not.toContain("segredo");
   });
 });

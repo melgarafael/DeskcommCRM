@@ -1,3 +1,4 @@
+import { normalizarIdioma } from "@/lib/i18n/idiomas";
 import { protecaoAgendaPg } from "@/lib/agenda/protecao-followup";
 import { calculaScore, type SinaisDoLead } from "@/lib/leads/score-formula";
 import { classifyRisk, resolveStageWindow } from "@/lib/leads/risk-radar";
@@ -86,7 +87,13 @@ export async function recalculaScoreDoLead(
     bandAnterior: lead.band_anterior,
   };
 
-  const calculado = calculaScore(sinais);
+  // O idioma da organização: a razão é gravada e mostrada como veio. Falha de
+  // leitura cai no padrão do produto — idioma nunca derruba a nota.
+  const idioma = await db
+    .query<{ locale: string | null }>("select locale from organizations where id = $1", [organizationId])
+    .then((r) => normalizarIdioma(r.rows[0]?.locale ?? null))
+    .catch(() => normalizarIdioma(null));
+  const calculado = calculaScore(sinais, idioma);
 
   if (calculado.score === null || calculado.band === null) {
     // APAGA em vez de deixar o número velho. Score que deixou de ter lastro é

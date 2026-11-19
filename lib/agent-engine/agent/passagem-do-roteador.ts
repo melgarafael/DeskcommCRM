@@ -88,6 +88,7 @@ export function montarBlocoDePassagemDoRoteador(
   passagem: PassagemRecebida | null | undefined,
   idioma: Idioma = 'pt-BR',
   clienteAvisado = false,
+  passagemSilenciosa = false,
 ): string {
   if (!passagem) return '';
   const nome = passagem.agenteAnteriorNome?.trim();
@@ -96,13 +97,27 @@ export function montarBlocoDePassagemDoRoteador(
   // cliente JÁ recebeu a mensagem antes deste turno (o turno a envia antes de
   // chamar o modelo). Dizer "ainda NÃO foi avisado" ali faria o agente novo se
   // apresentar DE NOVO, e o cliente leria duas passagens na mesma troca.
-  const situacaoDoCliente = clienteAvisado
-    ? 'O cliente JÁ foi avisado da troca por uma mensagem automática deste número.'
-    : 'O cliente ainda NÃO foi avisado da troca.';
-  const primeiraInstrucao = clienteAvisado
-    ? '- NÃO se apresente de novo nem repita o aviso da troca: o cliente já o recebeu. Retome o ' +
-      'atendimento dizendo em que ponto vocês estão.'
-    : '- Apresente-se ao cliente pelo seu nome e diga, em uma frase, que você vai continuar o atendimento.';
+  //
+  // #4750 — o TERCEIRO modo (`ai_routers.config.passagem_silenciosa`): a troca
+  // existe para o agente e NÃO para o cliente. Aqui nem "avisado" nem "ainda
+  // não avisado" serve: o primeiro é falso (nada foi enviado) e o segundo
+  // convida o modelo a anunciar, que é exatamente o que o dono do roteador
+  // desligou. O bloco diz o fato e proíbe o anúncio.
+  const situacaoDoCliente = passagemSilenciosa
+    ? 'A troca é SILENCIOSA: nenhuma mensagem sobre ela foi enviada ao cliente.'
+    : clienteAvisado
+      ? 'O cliente JÁ foi avisado da troca por uma mensagem automática deste número.'
+      : 'O cliente ainda NÃO foi avisado da troca.';
+  // O silêncio GANHA de `clienteAvisado`: são modos exclusivos de um mesmo
+  // roteador, e um valor inconsistente não pode fazer o agente se apresentar no
+  // modo que promete não anunciar nada.
+  const primeiraInstrucao = passagemSilenciosa
+    ? '- NÃO se apresente nem anuncie a troca: continue como se o atendimento sempre tivesse sido ' +
+      'seu, sem dizer que outra pessoa atendia antes.'
+    : clienteAvisado
+      ? '- NÃO se apresente de novo nem repita o aviso da troca: o cliente já o recebeu. Retome o ' +
+        'atendimento dizendo em que ponto vocês estão.'
+      : '- Apresente-se ao cliente pelo seu nome e diga, em uma frase, que você vai continuar o atendimento.';
   return [
     TITULO_DO_BLOCO_DE_PASSAGEM,
     'O roteador deste número trocou quem atende esta conversa: até a mensagem anterior quem ' +
@@ -170,6 +185,12 @@ export interface TrocaQuePedeAviso {
   outcome: string;
   /** `ai_routers.passagem_ao_cliente` — `null`/`''` = desligado. */
   textoConfigurado: string | null | undefined;
+  /**
+   * #4750 — `ai_routers.config.passagem_silenciosa`. Ligada, o modo é o
+   * SILENCIOSO: a troca acontece e NADA vai ao cliente, mesmo com frase
+   * cadastrada. Ausente é o mesmo que falsa (o comportamento de antes).
+   */
+  passagemSilenciosa?: boolean | null;
   /** O sticky que a conversa tinha antes do turno. */
   agenteAnteriorId: string | null | undefined;
   /** O agente que atende a partir deste turno. */
@@ -182,6 +203,7 @@ export type DesfechoDaPassagemAoCliente =
       enviado: false;
       motivo:
         | 'nao_e_troca'
+        | 'modo_silencioso'
         | 'sem_texto'
         | 'mesmo_agente'
         | 'na_fila'
@@ -197,6 +219,11 @@ export type DesfechoDaPassagemAoCliente =
  */
 export function textoDaPassagemAoCliente(troca: TrocaQuePedeAviso): string | null {
   if (troca.outcome !== 'reclassified') return null;
+  // #4750 — o modo SILENCIOSO vence a frase: ela é do modo AVISADO, e deixá-la
+  // sair aqui transformaria o modo que promete silêncio no modo que anuncia. A
+  // checagem vem antes do texto de propósito — frase cadastrada não é licença
+  // para falar quando o dono do roteador pediu silêncio.
+  if (troca.passagemSilenciosa === true) return null;
   const texto = troca.textoConfigurado?.trim() ?? '';
   if (texto === '') return null;
   const anterior = troca.agenteAnteriorId ?? null;
@@ -224,6 +251,7 @@ export async function avisarClienteDaTrocaDeAgente(
   troca: TrocaQuePedeAviso,
 ): Promise<DesfechoDaPassagemAoCliente> {
   if (troca.outcome !== 'reclassified') return { enviado: false, motivo: 'nao_e_troca' };
+  if (troca.passagemSilenciosa === true) return { enviado: false, motivo: 'modo_silencioso' };
   const texto = textoDaPassagemAoCliente(troca);
   if (texto === null) {
     const motivo =

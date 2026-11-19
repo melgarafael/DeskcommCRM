@@ -12,9 +12,19 @@
  * ─── O realizado é "negócio GANHO fechado dentro da janela" ─────────────────
  * `status = 'won'` e `closed_at` em `[from, to)` — o par que a tela chama de
  * venda. Não é `created_at` (o negócio pode ter nascido em julho e fechado em
- * setembro; a venda é de setembro) e não é `value_cents` (somar VALOR é a fatia
- * 2, declarada fora). A leitura é com o client de sessão, então a RLS escopa a
- * organização por si.
+ * setembro; a venda é de setembro). A leitura é com o client de sessão, então a
+ * RLS escopa a organização por si.
+ *
+ * ─── A META EM VALOR (fatia 2, issue #4796) ─────────────────────────────────
+ * Uma meta com `indicador = 'valor_vendido'` tem `alvo` em CENTAVOS da moeda da
+ * organização, e o realizado é a soma de `value_cents` dos MESMOS ganhos da
+ * MESMA janela — a régua de `lib/metrics/meta-em-valor.ts`, nunca uma segunda.
+ * Meta antiga, sem indicador, continua valendo por QUANTIDADE: o indicador
+ * desconhecido normaliza para `vendas_ganhas`, que era o único que existia.
+ *
+ * Valor nulo/zero não vira "venda de R$ 0" (o módulo conta esses cards como
+ * ignorados) e ganho em outra moeda não entra na soma — o alvo está na moeda da
+ * organização, e câmbio inventado produziria um número que não existe.
  *
  * ─── Contagem por `count` exato, não por linhas ─────────────────────────────
  * `.select("id", { count: "exact", head: true })`: o PostgREST conta no banco e
@@ -40,24 +50,39 @@
  * o resto da resposta é o de antes. Sai mesmo sem meta cadastrada: "não há
  * alvo" não é motivo para esconder quanto entrou no mês.
  *
- * A org vem do cookie validado (`requireRole`), NUNCA do query. Read-only ⇒ sem
- * audit.
+ * A org vem do cookie validado (`requireRole`) ou da LINHA do token, NUNCA do
+ * query. Read-only ⇒ sem audit.
+ *
+ * Sessão OU token de servidor `dsk_…` com `mcp:read` (Spec 33, R3). A meta é da
+ * empresa/funil, mas o realizado vem de `crm_leads`, que na sessão a RLS recorta
+ * por atendente; o token lê a organização inteira, então exige `manager`.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import {
+  INDICADORES_DE_META,
+  normalizarIndicador,
+  progressoDaMeta,
+  projetarFimDaJanela,
+  somarValorRealizado,
+} from "@/lib/metrics/meta-em-valor";
+import { moedaDaOrganizacao } from "@/lib/metrics/moeda-da-organizacao";
 import { type NegocioComValor, separarValoresDoPeriodo } from "@/lib/metrics/valores-do-periodo";
 import { lerPaginado } from "@/lib/supabase/pagina";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-/** O único indicador desta fatia: quantidade de vendas ganhas. */
-const INDICADOR_DA_FATIA = "vendas_ganhas";
+/** O negócio como a soma em valor precisa dele, além do que as parcelas usam. */
+type NegocioDaLeitura = NegocioComValor & {
+  pipeline_id?: string | null;
+  owner_user_id?: string | null;
+};
 
 const querySchema = z.object({
   from: z.string().datetime({ offset: true }).optional(),
@@ -69,6 +94,7 @@ interface MetaCrua {
   periodo: string;
   indicador: string;
   pipeline_id: string | null;
+  vendedor_id: string | null;
   alvo: number | string;
 }
 
@@ -94,10 +120,18 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   // Piso agent: o atendente vê a meta da empresa — é o número que a tela dele
   // mostra. A escrita é que exige manager (policy da tabela + Server Action).
-  const authz = await requireRole("agent", { requestId, resource: "metrics" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "metrics",
+    role: "agent",
+    scope: "mcp:read",
+    tokenRole: "manager",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg } = authz;
+  // Está em PUBLIC_PATHS: o teto do token é a única contagem das chamadas dele.
+  const teto = await tetoDeEscritaDoToken(authz, "metrics", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const url = new URL(req.url);
   const parsed = querySchema.safeParse({
@@ -128,8 +162,8 @@ export async function GET(req: NextRequest): Promise<Response> {
     ? primeiroDiaDoMes(parsed.data.from)
     : `${de.slice(0, 7)}-01`;
 
-  const supabase = await createClient();
-  const orgId = activeOrg.orgId;
+  const supabase = authz.supabase;
+  const orgId = authz.organizationId;
 
   // As metas do MÊS (o da janela) na organização ativa. `pipeline_id is null` é
   // a meta da empresa e vem primeiro; metas por funil (fatia seguinte) também
@@ -137,10 +171,10 @@ export async function GET(req: NextRequest): Promise<Response> {
   // esconder por causa do recorte da fatia.
   const { data: metasCruas, error: erroMetas } = await supabase
     .from("crm_metas")
-    .select("id, periodo, indicador, pipeline_id, alvo")
+    .select("id, periodo, indicador, pipeline_id, vendedor_id, alvo")
     .eq("organization_id", orgId)
     .eq("periodo", periodo)
-    .eq("indicador", INDICADOR_DA_FATIA);
+    .in("indicador", [...INDICADORES_DE_META]);
   if (erroMetas) {
     return fail("internal_error", `crm_metas: ${erroMetas.message}`, 500, { requestId });
   }
@@ -157,61 +191,20 @@ export async function GET(req: NextRequest): Promise<Response> {
     nomesDeFunil = new Map(((funis ?? []) as LinhaCrua[]).map((f) => [f.id, f.name]));
   }
 
-  const saida: Array<Record<string, unknown>> = [];
-  for (const meta of metas) {
-    const alvo = Number(meta.alvo);
-    // Linha impossível pelo schema (`crm_metas_alvo_positivo`, `alvo > 0`):
-    // se chegar aqui, NÃO se inventa percentual nem se mostra 0% — a resposta
-    // é uma falha de dados, não uma medida.
-    if (!Number.isInteger(alvo) || alvo <= 0) {
-      return fail(
-        "internal_error",
-        `crm_metas: alvo inválido (${String(meta.alvo)}) na meta ${meta.id}`,
-        500,
-        { requestId },
-      );
-    }
-
-    let consulta = supabase
-      .from("crm_leads")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", orgId)
-      .eq("status", "won")
-      .gte("closed_at", de)
-      .lt("closed_at", ate);
-    if (meta.pipeline_id) consulta = consulta.eq("pipeline_id", meta.pipeline_id);
-
-    const { count, error } = await consulta;
-    if (error) return fail("internal_error", `crm_leads: ${error.message}`, 500, { requestId });
-    const realizado = count ?? 0;
-
-    saida.push({
-      id: meta.id,
-      escopo: meta.pipeline_id ? "funil" : "empresa",
-      pipeline_id: meta.pipeline_id,
-      pipeline_nome: meta.pipeline_id ? (nomesDeFunil.get(meta.pipeline_id) ?? null) : null,
-      alvo,
-      realizado,
-      percentual: Math.round((realizado / alvo) * 100),
-      // "Quanto falta" nunca é negativo: passar da meta não vira dívida.
-      falta: Math.max(0, alvo - realizado),
-      atingida: realizado >= alvo,
-    });
-  }
-
-  // ─── Os ganhos da janela, em LINHAS, para as duas parcelas (#3602) ────────
+  // ─── Os ganhos da janela, em LINHAS, para VALOR e para as duas parcelas ──
   //
-  // Depois do laço de propósito: a PRIMEIRA leitura de `crm_leads` desta rota
-  // continua sendo a contagem `head: true` do realizado, que não traz linha
-  // nenhuma e por isso não serve para somar valor. Esta leitura é própria, e é
-  // PAGINADA: sem `.range()` o PostgREST corta a resposta em `max_rows` (1000)
-  // sem erro nenhum, e um mês com 1.200 vendas apareceria como se fossem 1.000.
-  // `truncado` viaja na resposta para ninguém ler um piso como se fosse o total.
-  const leituraDeValores = await lerPaginado<NegocioComValor>((inicio, fim, contar) =>
+  // A contagem por `head: true` não traz linha nenhuma e por isso não serve
+  // para somar valor. Esta leitura é própria e é PAGINADA: sem `.range()` o
+  // PostgREST corta a resposta em `max_rows` (1000) sem erro nenhum, e um mês
+  // com 1.200 vendas apareceria como se fossem 1.000. `truncado` viaja na
+  // resposta para ninguém ler um piso como se fosse o total — e uma meta em
+  // valor soma exatamente estas linhas, não outras.
+  const moeda = await moedaDaOrganizacao(orgId);
+  const leituraDeValores = await lerPaginado<NegocioDaLeitura>((inicio, fim, contar) =>
     supabase
       .from("crm_leads")
       .select(
-        "status, closed_at, currency, value_cents, recurring_value_cents, recurring_period",
+        "status, closed_at, pipeline_id, owner_user_id, currency, value_cents, recurring_value_cents, recurring_period",
         contar ? { count: "exact" } : undefined,
       )
       .eq("organization_id", orgId)
@@ -227,20 +220,103 @@ export async function GET(req: NextRequest): Promise<Response> {
       requestId,
     });
   }
+
+  const janela = { from: de, to: ate };
+  const agora = new Date();
+
+  const saida: Array<Record<string, unknown>> = [];
+  for (const meta of metas) {
+    const alvo = Number(meta.alvo);
+    const indicador = normalizarIndicador(meta.indicador);
+    // Linha impossível pelo schema (`crm_metas_alvo_positivo`, `alvo > 0`):
+    // se chegar aqui, NÃO se inventa percentual nem se mostra 0% — a resposta
+    // é uma falha de dados, não uma medida.
+    if (!Number.isInteger(alvo) || alvo <= 0) {
+      return fail(
+        "internal_error",
+        `crm_metas: alvo inválido (${String(meta.alvo)}) na meta ${meta.id}`,
+        500,
+        { requestId },
+      );
+    }
+
+    let realizado: number;
+    if (indicador === "valor_vendido") {
+      // A MESMA régua de janela da contagem, aplicada de novo sobre as linhas:
+      // `won` + `closed_at` em `[from, to)`. O recorte por vendedor e por funil
+      // é o da meta — nada de janela própria.
+      realizado = somarValorRealizado({
+        negocios: leituraDeValores.linhas,
+        janela,
+        moeda,
+        pipelineId: meta.pipeline_id,
+        vendedorId: meta.vendedor_id,
+      }).centavos;
+    } else {
+      let consulta = supabase
+        .from("crm_leads")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", orgId)
+        .eq("status", "won")
+        .gte("closed_at", de)
+        .lt("closed_at", ate);
+      if (meta.pipeline_id) consulta = consulta.eq("pipeline_id", meta.pipeline_id);
+      if (meta.vendedor_id) consulta = consulta.eq("owner_user_id", meta.vendedor_id);
+
+      const { count, error } = await consulta;
+      if (error) return fail("internal_error", `crm_leads: ${error.message}`, 500, { requestId });
+      realizado = count ?? 0;
+    }
+
+    const progresso = progressoDaMeta({ alvo, realizado });
+
+    saida.push({
+      id: meta.id,
+      // O vendedor manda no rótulo: a meta dele é a mais estreita das três.
+      escopo: meta.vendedor_id ? "vendedor" : meta.pipeline_id ? "funil" : "empresa",
+      indicador,
+      pipeline_id: meta.pipeline_id,
+      pipeline_nome: meta.pipeline_id ? (nomesDeFunil.get(meta.pipeline_id) ?? null) : null,
+      vendedor_id: meta.vendedor_id,
+      // Em valor, o número está em CENTAVOS da moeda da organização; em
+      // quantidade, `moeda` não se aplica (null).
+      moeda: indicador === "valor_vendido" ? moeda : null,
+      alvo,
+      realizado,
+      percentual: progresso.percentual,
+      // "Quanto falta" nunca é negativo: passar da meta não vira dívida.
+      falta: progresso.falta,
+      atingida: progresso.atingida,
+      // Projeção até o fim da janela no ritmo medido. `null` quando não há o
+      // que projetar (janela passada ou futura) — nada de número inventado.
+      projecao: projetarFimDaJanela({ realizado, janela, agora }),
+      // Em quantidade a contagem é `count` exato do banco (nunca piso); em
+      // valor a soma vem das linhas lidas, e o piso é declarado.
+      realizado_truncado: indicador === "valor_vendido" ? leituraDeValores.truncado : false,
+    });
+  }
+
   const valoresDoPeriodo = separarValoresDoPeriodo({
     negocios: leituraDeValores.linhas,
-    janela: { from: de, to: ate },
-    moedaDaOrganizacao: activeOrg.currency ?? null,
+    janela,
+    moedaDaOrganizacao: moeda,
     truncado: leituraDeValores.truncado,
   });
 
   const semMeta = saida.length === 0;
+  // O indicador no topo só existe quando as metas do mês são todas do mesmo
+  // tipo; com quantidade e valor no mesmo mês, o campo sai `null` e a verdade
+  // está em cada meta. (Antes da #4796 havia um valor só, fixo.)
+  const indicadores = Array.from(
+    new Set(saida.map((m) => String(m.indicador))),
+  ) as string[];
 
   return ok(
     {
       window: { from: de, to: ate },
       periodo,
-      indicador: INDICADOR_DA_FATIA,
+      indicador: indicadores.length === 1 ? indicadores[0] : null,
+      indicadores,
       metas: saida,
       // Duas parcelas SEPARADAS (nunca um total): o painel mostra as duas lado
       // a lado, e a org sem recorrência recebe zero nos dois sem nada mudar.

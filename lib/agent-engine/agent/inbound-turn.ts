@@ -322,7 +322,9 @@ import { CORRECAO_DO_TURNO_MUDO, PASSOS_DA_CORRECAO, turnoMudoPedeCorrecao } fro
 import {
   CODIGO_DO_TETO_DE_RESPOSTAS,
   avisarEquipeDoTetoDeRespostas,
-  knobsDoTetoDeRespostas,
+  lerTetoDoAntiBan,
+  resolverTetoDeRespostasDaOrganizacao,
+  silenciarConversaPeloTeto,
 } from './teto-de-respostas';
 import {
   desfechoSemCandidato,
@@ -356,9 +358,11 @@ import {
 import type { DependenciasDoPonto } from '@/lib/ai/decisao/ponto';
 import { perguntarUrgenciaAoJev, registrarUrgenciaDoJev } from '@/lib/ai/decisao/urgencia';
 import { fatosDaOrganizacao } from './fatos-da-organizacao';
+import { traduzir } from '@/lib/i18n/dicionario';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import { blocoDoFeriado, ehFeriadoNacionalNoFuso, lerFeriadoDoTurno } from './feriado-nacional';
 import { blocosNoIdioma, diretivaDeIdioma, ferramentasNoIdioma } from './idioma-do-turno';
+import type { Idioma } from './idioma-do-turno';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 import {
@@ -1180,8 +1184,9 @@ async function briefingDoCheckpointDuravel(
   leadId: string,
   log: Logger,
 ): Promise<BriefingDaPassagem> {
+  const idioma = (await fatosDaOrganizacao(pool, tenantId, log)).idioma;
   const montar = (checkpoint: Awaited<ReturnType<typeof latestCheckpoint>>) =>
-    montarBriefingDaPassagem({ checkpoint, motivo: { codigo: 'orcamento_de_ia' } });
+    montarBriefingDaPassagem({ checkpoint, motivo: { codigo: 'orcamento_de_ia' }, idioma });
   try {
     return montar(await latestCheckpoint(pool, tenantId, leadId));
   } catch (err) {
@@ -1497,6 +1502,113 @@ export function blocosDeAgendaResidentes(toolIds: readonly string[]): string[] {
 }
 
 /**
+ * O INTERESSE DO CLIENTE NUM ITEM DO BANCO EXTERNO, residente (Spec 25, R5c).
+ *
+ * ─── O que faltava, medido ──────────────────────────────────────────────────
+ *
+ * Numa imobiliária montada do zero no espelho (22/10/2026), o agente mostrou o
+ * imóvel e, no turno seguinte ("tenho interesse nesse"), escreveu "seu interesse
+ * está registrado" SEM chamar nada — três vezes, em três configurações. A
+ * orientação que `crm_consultar_receita` devolve ("abra o negócio com
+ * crm_create_lead…") vive no RESULTADO daquele turno, e resultado de ferramenta
+ * não acompanha a conversa: no turno em que o cliente escolhe, o agente só tem o
+ * prompt, as `description` das ferramentas e o que está escrito nas mensagens.
+ *
+ * Por isso o ensino mora aqui, no mesmo lugar do da agenda: residente, a cada
+ * turno. E é CONDICIONAL: nomear ferramenta que o agente não tem faz o modelo
+ * tentar chamá-la, então o bloco só entra com as DUAS pontas (consultar o banco
+ * externo e abrir o negócio).
+ *
+ * Ensino, não garantia: o funil e a etapa saem da receita
+ * (`completarDestinoDoNegocio`), e o escopo de funil do agente segue julgando.
+ */
+const INTERESSE_EXTERNO_SYSTEM_BLOCK =
+  '## Banco de dados externo — o cliente escolheu um item\n' +
+  'Quando você mostrar itens vindos de `crm_consultar_receita`, escreva ao lado de cada um o código ' +
+  'dele (cód. = o campo `id` da linha): é por ele que você acha o item no turno seguinte.\n' +
+  'Quando o cliente disser que tem interesse em UM item que você mostrou, chame `crm_create_lead` ' +
+  'NESTE turno, ANTES de responder, com o `contact_id` desta conversa, um `title` com o nome do item e ' +
+  '`referencia_externa` = `<receita>:<código>` (a receita é o campo `receita` da instância que a ' +
+  'consulta devolveu, por exemplo `wordpress-conteudo`; se não estiver à mão, chame `crm_consultar_receita` ' +
+  'com `acao: "listar"` para ver). NÃO informe `pipeline_id` nem `stage_id`: o sistema usa o funil e a ' +
+  'etapa que a empresa configurou para essa receita.\n' +
+  'Só diga ao cliente que o interesse foi registrado DEPOIS de `crm_create_lead` responder com sucesso. ' +
+  'Escrever "registrei" sem ter chamado a ferramenta é o defeito. Se ela responder que a receita não ' +
+  'tem funil configurado, passe a conversa para a equipe e diga ao cliente que a equipe dará continuidade.';
+
+/**
+ * O bloco do interesse num item do banco externo — a decisão num lugar só, testável.
+ * A régua é o que o agente TEM: as duas ferramentas que o texto nomeia.
+ */
+export function blocosDeInteresseExternoResidentes(toolIds: readonly string[]): string[] {
+  return toolIds.includes('crm_consultar_receita') && toolIds.includes('crm_create_lead')
+    ? [INTERESSE_EXTERNO_SYSTEM_BLOCK]
+    : [];
+}
+
+/**
+ * OS BLOCOS FIXOS DA PLATAFORMA — os primeiros bytes do `system` (#4668).
+ *
+ * São idênticos para todo agente de toda instalação: não dependem do prompt do
+ * dono, das ferramentas publicadas, do idioma da organização nem do turno. Por
+ * isso vêm ANTES de tudo o que pode variar — é o único trecho que o cache de
+ * prefixo do provedor consegue reaproveitar entre agentes diferentes.
+ */
+export const BLOCOS_FIXOS_DA_PLATAFORMA: readonly string[] = [
+  TRANSPARENCIA_SYSTEM_BLOCK,
+  AUTORIA_SYSTEM_BLOCK,
+];
+
+export interface BlocosDoSistemaDoTurno {
+  /** `composeSystemPrompt(playbook, memória da org, índice de skills)` — a parte do agente. */
+  promptDoAgente: string;
+  casosLigados: boolean;
+  toolIds: readonly string[];
+  previewKind: TurnPreview['kind'] | null;
+  idioma: Idioma;
+  blocoDaVoz: string | null;
+}
+
+/**
+ * A ORDEM DO `system` — e a ordem é dinheiro, não estilo (#4668).
+ *
+ * O cache de prefixo dos provedores só reaproveita o começo IGUAL do pedido. Com
+ * o prompt do agente na frente, cada agente diferente — e cada edição do prompt
+ * de um deles — invalidava também os blocos da plataforma, que são iguais para
+ * todos. Aqui a montagem obedece a quatro faixas, da mais estável para a mais
+ * volátil:
+ *
+ *   1. fixo da plataforma (`BLOCOS_FIXOS_DA_PLATAFORMA`): mesmos bytes em toda
+ *      instalação;
+ *   2. por-agente, do mais estável ao menos: o que a TELA habilita (casos,
+ *      agenda, interesse no banco externo) muda quando o dono mexe nas ferramentas; o prompt muda quando ele
+ *      reescreve o texto, e aí só invalida daqui para baixo;
+ *   3. por-turno (prévia, voz): tudo o que pode mudar entre dois turnos do MESMO
+ *      agente fica no fim.
+ *
+ * A diretiva de idioma é a EXCEÇÃO, e fecha o `system`: o texto dela diz "mesmo
+ * que as regras ACIMA estejam em português", e isso só é verdade se tudo o mais
+ * estiver acima dela. Na frente ela mentiria sobre o que está acima dela. É também
+ * a posição que ela já tinha antes desta reordenação. É curta: o que ela custa ao
+ * cache é só ela mesma.
+ *
+ * A regra que este arquivo não pode perder: bloco novo entra na faixa dele, e
+ * nada volátil (relógio, lead, contador) entra aqui — o por-turno tem sufixo
+ * próprio, depois do breakpoint.
+ */
+export function blocosDoSistemaDoTurno(input: BlocosDoSistemaDoTurno): string[] {
+  const blocos: string[] = [...BLOCOS_FIXOS_DA_PLATAFORMA];
+  if (input.casosLigados) blocos.push(CASES_SYSTEM_BLOCK);
+  blocos.push(...blocosDeAgendaResidentes(input.toolIds));
+  blocos.push(...blocosDeInteresseExternoResidentes(input.toolIds));
+  blocos.push(input.promptDoAgente);
+  if (input.previewKind !== null) blocos.push(blocoDoModoDePrevia(input.previewKind));
+  if (input.blocoDaVoz !== null) blocos.push(input.blocoDaVoz);
+  blocos.push(diretivaDeIdioma(input.idioma));
+  return blocos;
+}
+
+/**
  * Leituras de REGISTRO da organização cujo retorno o turno guarda: catálogo e conhecimento
  * viram evidência do classificador semântico; catálogo, pedidos e honorários dão lastro
  * aos valores (`guardrails/lastro-comercial.ts`). A ponte MCP já filtra organização e contato.
@@ -1626,6 +1738,13 @@ export interface InboundTurnKnobs {
    * testes que não exercitam o teto o omitem sem custo.
    */
   maxSendsPerTurn?: number;
+  /**
+   * #4835 — carência (ms) antes de gastar MODELO APROVADO no primeiro contato de
+   * um lead recém-chegado, com a janela de 24 h fechada (FOLLOWUP_CARENCIA_DO_MODELO_MS).
+   * Ausente = `CARENCIA_PADRAO_MS` (10 s); `0` desliga e devolve o comportamento
+   * de antes. Ver `agent/carencia-antes-do-modelo.ts`.
+   */
+  carenciaDoModeloMs?: number;
   /**
    * #4590 — N respostas automáticas por CONVERSA dentro de W minutos
    * (TETO_DE_RESPOSTAS_POR_CONVERSA / TETO_DE_RESPOSTAS_JANELA_MIN). Ausente =
@@ -2291,6 +2410,7 @@ export async function deteccoesDeterministicasDoAssistido(
       checkpoint: await latestCheckpoint(pool, tenantId, leadId),
       pendentesDoCliente: inboundsPendentes,
       motivo: { codigo: 'requested_human' },
+      idioma: (await fatosDaOrganizacao(pool, tenantId, log)).idioma,
     });
     const aviso = avisoDaEscalacao();
     const desfecho = contextoLido
@@ -2324,6 +2444,7 @@ export async function deteccoesDeterministicasDoAssistido(
       checkpoint: await latestCheckpoint(pool, tenantId, leadId),
       pendentesDoCliente: inboundsPendentes,
       motivo: { codigo: 'suspected_optout' },
+      idioma: (await fatosDaOrganizacao(pool, tenantId, log)).idioma,
     });
     const aviso = avisoDaEscalacao();
     const desfecho = contextoLido
@@ -2622,8 +2743,10 @@ async function escalarComercialAntesDoModelo(
       ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
     },
   );
+  const idiomaDoTurno = (await fatosDaOrganizacao(pool, tenantId)).idioma;
   const briefing = montarBriefingDaPassagem({ checkpoint: null, pendentesDoCliente: textos,
-    motivo: { codigo: 'restricao_comercial', texto: 'Valores e negociação: fora do escopo da IA.' } });
+    motivo: { codigo: 'restricao_comercial', texto: traduzir('Valores e negociação: fora do escopo da IA.', idiomaDoTurno) },
+    idioma: idiomaDoTurno });
   await performHumanHandoff(pool, { tenantId, leadId: turno.leadId, conversationId: turno.conversationId },
     { reason: 'restricao_comercial', conversationSummary: briefing.body,
       inboxTitle: 'Valores e negociação — atendimento humano necessário',
@@ -3339,31 +3462,10 @@ async function executarTurnoDoAgente(
     orgMemoryBlock: renderOrgMemory(orgMemory),
     skillIndex,
   });
-  // Spec 15 §5.2: bloco das tools de caso SEMPRE residente (não invalida o prefixo
-  // cacheável — mesmo espírito do índice de skills) quando a tela habilita. O bloco da
-  // Agenda segue o mesmo padrão, condicionado a `crm_book_appointment` estar entre as
-  // tools publicadas — ver comentário de `agendaSystemBlock`. `TRANSPARENCIA_SYSTEM_BLOCK`
-  // e `AUTORIA_SYSTEM_BLOCK` não dependem de nenhuma feature — todo agente publicado os recebe.
-  const blocosResidentes = [systemWithMemory, TRANSPARENCIA_SYSTEM_BLOCK, AUTORIA_SYSTEM_BLOCK];
-  if (agentConfig !== null && agentConfig.casesEnabled) blocosResidentes.push(CASES_SYSTEM_BLOCK);
-  // Spec 15 §5.2 / doutrina da Agenda: a régua é o que o agente TEM — ver
-  // `blocosDeAgendaResidentes`, que decidiu isto num lugar só para poder ser
-  // testada (o bloco da cadeia nomeia `crm_list_event_types`, e nomear
-  // ferramenta ausente faz o modelo tentar chamá-la).
-  if (agentConfig !== null) blocosResidentes.push(...blocosDeAgendaResidentes(agentConfig.toolIds));
-  // #3757: o bloco da prévia diz de QUEM é a voz. São duas prévias com donos
-  // diferentes — o "Testar" (sandbox) é do agente falando como agente, mas o
-  // "Sugerir resposta" (assisted) escreve o rascunho que o ATENDENTE humano vai
-  // revisar e enviar. Com um bloco só, o prompt de atendimento automático (que
-  // ensina a passar a vez a uma pessoa) vazava para a caixa do atendente e o
-  // rascunho saía em terceira pessoa — "vou avisar o atendente e ele responde".
-  // Vive em função de módulo (`blocoDoModoDePrevia`) para poder ser testada.
-  if (preview) blocosResidentes.push(blocoDoModoDePrevia(preview.kind));
-  // #4260, item 1: o único bloco NOVO é a diretiva de idioma, e ela entra por
-  // último para não deslocar nenhum dos de cima (o prefixo cacheável continua
-  // igual em `pt-BR`). A tradução dos blocos acima acontece DEPOIS da montagem,
-  // numa passada só — ver `blocosNoIdioma`.
-  blocosResidentes.push(diretivaDeIdioma(idiomaDaOrg));
+  // #4668: a montagem e a ORDEM do `system` moraram para
+  // `blocosDoSistemaDoTurno` (logo abaixo de `blocosDeAgendaResidentes`) e
+  // acontecem DEPOIS de a voz ser resolvida — aquela função é a ordem que o
+  // cache de prefixo enxerga, e é lá que um bloco novo escolhe a faixa dele.
   const openingContext = preview
     ? preview.context
     : await lerContextoDaConversa();
@@ -3420,12 +3522,21 @@ async function executarTurnoDoAgente(
   // modelo escrevia como sempre — três bolhas, lista e sigla — e a síntese lia
   // tudo numa nota de 35 segundos (medido numa instalação real em 03/11/2026, número
   // oficial). Por isso o `system` só é montado DEPOIS de a voz ser resolvida, e
-  // o bloco vai NO FIM: o prefixo dos turnos em texto continua o mesmo.
+  // o bloco vai no fim (só a diretiva de idioma vem depois): o prefixo dos
+  // turnos em texto continua o mesmo.
   const blocoDaVoz = blocoDaRespostaFalada(vozParaEsteTurno);
-  if (blocoDaVoz) blocosResidentes.push(blocoDaVoz);
-  // #4260, item 1: a passada de idioma vem DEPOIS da montagem — a ordem dos
-  // blocos e o `join` daqui continuam os de antes, e em `pt-BR` cada bloco volta
-  // igual. Mutação local, na mesma lista: o turno não guarda os blocos.
+  const blocosResidentes = blocosDoSistemaDoTurno({
+    promptDoAgente: systemWithMemory,
+    casosLigados: agentConfig !== null && agentConfig.casesEnabled,
+    toolIds: agentConfig?.toolIds ?? [],
+    previewKind: preview?.kind ?? null,
+    idioma: idiomaDaOrg,
+    blocoDaVoz,
+  });
+  // #4260, item 1: a passada de idioma vem DEPOIS da montagem — uma passada só,
+  // por dicionário (chave = o texto em português), nunca um `idioma` por `push`.
+  // Mudar a ORDEM dos blocos não muda esta régua: em `pt-BR` cada bloco volta
+  // igual, e em `es` cada um volta traduzido no mesmo lugar da lista.
   blocosNoIdioma(blocosResidentes, idiomaDaOrg).forEach((bloco, indice) => {
     blocosResidentes[indice] = bloco;
   });
@@ -3520,7 +3631,7 @@ async function executarTurnoDoAgente(
       motivo: 'outro',
     });
     const briefing = montarBriefingDaPassagem({ checkpoint: null, pendentesDoCliente: [],
-      motivo: { codigo: 'restricao_comercial', texto: 'Resposta comercial barrada; valores e negociação são exclusivos da equipe.' } });
+      motivo: { codigo: 'restricao_comercial', texto: traduzir('Resposta comercial barrada; valores e negociação são exclusivos da equipe.', idiomaDaOrg) }, idioma: idiomaDaOrg });
     await performHumanHandoff(pool, { tenantId, leadId, conversationId: input.conversationId },
       { reason: 'restricao_comercial', conversationSummary: briefing.body,
         inboxTitle: 'Valores e negociação — atendimento humano necessário',
@@ -3580,6 +3691,7 @@ async function executarTurnoDoAgente(
       checkpoint: previous,
       pendentesDoCliente: inboundsPendentes,
       motivo: { codigo: 'requested_human' },
+      idioma: idiomaDaOrg,
     });
     await performHumanHandoff(
       pool,
@@ -3619,6 +3731,7 @@ async function executarTurnoDoAgente(
       checkpoint: previous,
       pendentesDoCliente: inboundsPendentes,
       motivo: { codigo: 'suspected_optout' },
+      idioma: idiomaDaOrg,
     });
     await performHumanHandoff(
       pool,
@@ -4702,6 +4815,11 @@ async function executarTurnoDoAgente(
               jobClaim: claimOfJob(liveJob()),
               agentOperation,
               seq,
+              // Uma mensagem física só: ela é o envio inteiro. Marcar mantém o
+              // `send_ledger` coerente no turno em que também houve um
+              // `send_message` — linha sem marca de um job misto cairia na régua
+              // anterior e voltaria a atravessar o envio seguinte (#4370, 9407).
+              envioSeq: seq,
               conversationId: input.conversationId,
               body: finalBody,
               template: { name: template_name, language, values },
@@ -5177,7 +5295,11 @@ async function executarTurnoDoAgente(
           // e foto com legenda continua sendo foto. `vozParaEsteTurno` já veio
           // resolvida (credencial + voice_id); `null` = toda razão de não falar, e
           // aí esta função devolve `null` e o texto segue em bolhas.
-          const enviarVoz = (texto: string): Promise<ChannelSendResult> | null => {
+          // `envioSeqDoEnvio` (#4370, migration 9407): a nota de voz é UMA
+          // mensagem física, mas ela pertence ao envio do `send_message` que a
+          // pediu — a fronteira vai junto para o ledger, senão o reprocesso desta
+          // bolha cai na régua antiga (`seq >= $3`) sozinho, misturando turno.
+          const enviarVoz = (texto: string, envioSeqDoEnvio: number): Promise<ChannelSendResult> | null => {
             const voz = vozParaEsteTurno;
             // Link ou resposta longa: `null` e o texto segue em bolhas (ver `textoParaFalar`).
             const falado = voz ? textoParaFalar(texto) : null;
@@ -5191,6 +5313,7 @@ async function executarTurnoDoAgente(
               jobClaim: claimOfJob(liveJob()),
               agentOperation,
               seq: seqDesteEnvio,
+              envioSeq: envioSeqDoEnvio,
               conversationId: input.conversationId,
               // `body` continua sendo o texto FALADO — é ele que entra no
               // hash de idempotência do ledger (ver o comentário de
@@ -5211,6 +5334,19 @@ async function executarTurnoDoAgente(
           // janela (`resposta*`) e é o que arma o teto de respostas por conversa:
           // follow-up é retomada e não entra nessa conta.
           const eResposta = eTurnoDeResposta(liveJob());
+          // #4590 — os números do teto valem por ORGANIZAÇÃO desde esta fatia:
+          // `settings.anti_ban.teto_de_respostas` manda; o env da instalação é o
+          // padrão de quem nunca configurou. Uma leitura por chave primária, só no
+          // caminho de resposta em produção (`preview` não arma e não paga a
+          // consulta). `null` = não é turno de resposta: nada a resolver.
+          const tetoDoTurno =
+            eResposta && !preview
+              ? await resolverTetoDeRespostasDaOrganizacao(pool, {
+                  organizationId: tenantId,
+                  base: deps.knobs.tetoDeRespostas,
+                  log: runLog,
+                })
+              : null;
           // Args reusados EXATAMENTE (mesmo objeto) no re-run do fail-safe abaixo — só
           // hasOpenCase/openedCaseThisTurn mudam depois do auto-abre-caso.
           const beforeSendArgs = {
@@ -5232,11 +5368,12 @@ async function executarTurnoDoAgente(
             // Prévia não arma (o Testar não entrega nada ao cliente; um teto ali
             // esconderia justamente a resposta que o dono está testando) e follow-up
             // também não — ali não houve mensagem recebida agora.
-            ...(eResposta && !preview
+            ...(tetoDoTurno !== null
               ? {
                   tetoDeRespostas: {
                     conversationId: input.conversationId,
-                    ...knobsDoTetoDeRespostas(deps.knobs.tetoDeRespostas),
+                    porConversa: tetoDoTurno.porConversa,
+                    janelaMinutos: tetoDoTurno.janelaMinutos,
                   },
                 }
               : {}),
@@ -5371,6 +5508,14 @@ async function executarTurnoDoAgente(
                 // número, e o call site estava cravando `1200 + rand*800` ignorando-a.
                 (pacingDoTurno?.knobs.throttleMs ?? 1200) +
                 Math.floor(Math.random() * (pacingDoTurno?.knobs.jitterMaxMs ?? 800));
+              // A FRONTEIRA do envio (#4370, migration 9407): o `seq` da 1ª bolha
+              // que este `send_message` vai emitir. `seq` ainda não avançou (quem
+              // avança é o `enviar` abaixo, uma vez por mensagem física), então
+              // `seq + 1` é exatamente a primeira bolha — e é o MESMO número que a
+              // saída configurável usa como âncora (`mensagem.seq`). As bolhas do
+              // envio levam todos esse `envioSeq` para o ledger; o reprocesso lê
+              // por ele e não mistura o envio seguinte.
+              const seqDoEnvio = seq + 1;
               const enviar = (
                 corpo: string,
                 media?: FotoParaEnvio,
@@ -5383,6 +5528,7 @@ async function executarTurnoDoAgente(
                   jobClaim: claimOfJob(liveJob()),
                   agentOperation,
                   seq,
+                  envioSeq: seqDoEnvio,
                   conversationId: input.conversationId,
                   body: corpo,
                   ...(media ? { media } : {}),
@@ -5392,7 +5538,7 @@ async function executarTurnoDoAgente(
                 });
               };
               // Saída configurável da prospecção (fora de prévia); ver saida-configuravel.ts.
-              const saida = { db: pool, organizationId: tenantId, conversationId: preview ? null : input.conversationId, via: "inbound_turn" as const, mensagem: { jobId: preview ? "" : liveJob().id, seq: seq + 1 }, avisar: (m: string, c: Record<string, unknown>) => runLog.warn(m, c) };
+              const saida = { db: pool, organizationId: tenantId, conversationId: preview ? null : input.conversationId, via: "inbound_turn" as const, mensagem: { jobId: preview ? "" : liveJob().id, seq: seqDoEnvio }, avisar: (m: string, c: Record<string, unknown>) => runLog.warn(m, c) };
               return enviarComSaidaConfiguravel(saida, finalBody, (finalBody) => {
                   corposEnviados.push(finalBody);
                   // Cada foto é uma mensagem física: só vão as que cabem no teto do turno,
@@ -5407,7 +5553,7 @@ async function executarTurnoDoAgente(
                       restantes: () => maxSendsPerTurn - seq,
                       enviarFoto: (foto, legenda) => enviar(legenda, foto).then(marcarFoto),
                       enviarTexto: (texto) =>
-                        enviarVoz(texto) ??
+                        enviarVoz(texto, seqDoEnvio) ??
                         sendInBubbles(texto, {
                           enabled: agentConfig?.splitMessages ?? false,
                           maxChars: agentConfig?.splitMaxChars ?? 600,
@@ -5599,14 +5745,29 @@ async function executarTurnoDoAgente(
               pacingCapVeto = { code: chain.code, nextAllowedAt: chain.nextAllowedAt };
             }
             // #4590 — o teto calou a conversa: a equipe é avisada na Central, um
-            // aviso aberto por conversa (dedupe no repositório). Nunca lança.
+            // aviso aberto por conversa (dedupe no repositório), e a conversa é
+            // PAUSADA pelo caminho do atendente (`bot_silenced_until`, horizonte
+            // limitado e reversível). Os números são os da ORGANIZAÇÃO que armou o
+            // gate — não o env da instalação, que pode ser outro. Nunca lança.
             if (chain.code === CODIGO_DO_TETO_DE_RESPOSTAS && !preview) {
+              const tetoQueVale =
+                tetoDoTurno ??
+                lerTetoDoAntiBan(null, deps.knobs.tetoDeRespostas);
               await avisarEquipeDoTetoDeRespostas(pool, {
                 organizationId: tenantId,
                 conversationId: input.conversationId,
-                ...knobsDoTetoDeRespostas(deps.knobs.tetoDeRespostas),
+                porConversa: tetoQueVale.porConversa,
+                janelaMinutos: tetoQueVale.janelaMinutos,
                 log: runLog,
               });
+              if (tetoQueVale.silenciarMinutos > 0) {
+                await silenciarConversaPeloTeto(pool, {
+                  organizationId: tenantId,
+                  conversationId: input.conversationId,
+                  minutos: tetoQueVale.silenciarMinutos,
+                  log: runLog,
+                });
+              }
             }
             if (VETOS_IRREVOGAVEIS.has(chain.code)) vetoIrrevogavel = true;
             // Erro de ENSINO pt-br (mesmo shape de get_lead_context/breaker): o
@@ -5800,6 +5961,7 @@ async function executarTurnoDoAgente(
                 detalhe: mirror.detail,
                 etapaDeDestino: update.transition.to,
                 ...(mirror.stageName !== undefined ? { etapaDoFunil: mirror.stageName } : {}),
+                idioma: idiomaDaOrg,
               });
             }
           }
@@ -5939,7 +6101,7 @@ async function executarTurnoDoAgente(
             pool,
             { tenantId, leadId, conversationId: input.conversationId },
             {
-              conversationSummary: buildHandoffSummary(previous),
+              conversationSummary: buildHandoffSummary(previous, idiomaDaOrg),
               contextoDoTurno: { checkpoint: previous, pendentesDoCliente: inboundsPendentes },
               avisoAoLead: aviso,
               // #2210: com a mensagem na mão o handoff pergunta ao banco se a
@@ -6806,11 +6968,20 @@ async function executarTurnoDoAgente(
       outcome: routed.outcome,
       // `in`: o campo só existe no turno da troca; ausente = desligado.
       textoConfigurado: 'passagemAoClienteDoRouter' in routed ? routed.passagemAoClienteDoRouter : null,
+      // #4750 — o TERCEIRO modo (`config.passagem_silenciosa`): ligado, NADA
+      // vai ao cliente — nem a frase cadastrada. O silêncio vence a frase, e
+      // por isso o `enviar` abaixo nem é chamado.
+      passagemSilenciosa:
+        'passagemSilenciosaDoRouter' in routed && routed.passagemSilenciosaDoRouter === true,
       agenteAnteriorId: passagemRecebida?.agenteAnteriorId ?? null,
       agenteNovoId: routed.config?.agentId ?? null,
     };
+    const passagemSilenciosaDaTroca = trocaQuePedeAviso.passagemSilenciosa;
     let clienteAvisadoDaTroca = false;
-    if (textoDaPassagemAoCliente(trocaQuePedeAviso) !== null) {
+    if (
+      passagemSilenciosaDaTroca === false &&
+      textoDaPassagemAoCliente(trocaQuePedeAviso) !== null
+    ) {
       const desfechoDoAviso = await avisarClienteDaTrocaDeAgente(
         {
           log: runLog,
@@ -6868,8 +7039,11 @@ async function executarTurnoDoAgente(
             passagemRecebida,
             await idiomaDaOrganizacaoDoTurno(pool, tenantId, runLog),
             // Avisado o cliente, o agente novo NÃO repete o aviso: é o que
-            // impede duas mensagens de passagem na mesma troca.
+            // impede duas mensagens de passagem na mesma troca. No modo
+            // silencioso (#4750) também não: a instrução é continuar sem se
+            // apresentar nem anunciar a troca.
             clienteAvisadoDaTroca,
+            passagemSilenciosaDaTroca,
           );
     const openingBase = input.buildOpening({
       previous: effectivePrevious,
@@ -7442,6 +7616,9 @@ async function executarTurnoDoAgente(
                   jobClaim: claimOfJob(liveJob()),
                   agentOperation,
                   seq,
+                  // Uma mensagem física só: ela é o envio inteiro (ver o irmão
+                  // acima, no envio de template) — #4370, migration 9407.
+                  envioSeq: seq,
                   conversationId: input.conversationId,
                   body: finalBody,
                 });
@@ -7689,6 +7866,7 @@ async function executarTurnoDoAgente(
           }
         : null,
       content,
+      idiomaDaOrg,
     );
 
     if (mudanca.emit) {

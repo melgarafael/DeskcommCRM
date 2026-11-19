@@ -22,6 +22,12 @@ export const REFERENCIAS_DE_AVISO = {
   lead: { tabela: "crm_leads", papel: "agent", rotulo: "Abrir negócio", href: (id: string, pipelineId?: string) => `/app/pipelines/${pipelineId}?lead=${id}` },
   followup_enrollment: { tabela: "followup_enrollments", papel: "viewer", rotulo: "Abrir acompanhamento", href: (id: string) => `/app/ai/followups/enrollments/${id}` },
   channel_session: { tabela: "channel_sessions", papel: "admin", rotulo: "Revisar conexão", href: () => "/app/connections", ativo: true },
+  // O aviso de saúde/go-live do número (`lib/agent-engine/health/circuit.ts`,
+  // HEALTH_HOLD_REF_KIND) grava `ref_kind = 'number_health'` com o id da CONEXÃO
+  // em `ref_id`. Sem esta entrada o botão caía em "Este contexto não está
+  // disponível para você" para qualquer canal. O destino é o mesmo de
+  // `channel_session`: é em Conexões que se libera o número.
+  number_health: { tabela: "channel_sessions", papel: "admin", rotulo: "Revisar conexão", href: () => "/app/connections", ativo: true },
   ai_knowledge_source: { tabela: "ai_knowledge_sources", papel: "manager", rotulo: "Abrir base de conhecimento", href: () => "/app/ai/knowledge/sources" },
   agent_case: { tabela: "agent_cases", papel: "agent", rotulo: "Abrir atendimento", href: (id: string) => `/app/ai/cases?caso=${id}` },
   proposal: { tabela: "crm_proposals", papel: "agent", rotulo: "Abrir proposta", href: (id: string) => `/app/proposals/${id}` },
@@ -209,6 +215,11 @@ export const POLITICAS_DE_AVISO = {
   // `conversation`: quem pode ver a conversa pode responder; não há "dono" a quem
   // mandar, porque a conversa recuperada pode não ter responsável.
   cliente_sem_resposta_na_queda: { refs: ["conversation"], orientacao: "Abra a conversa e responda o cliente — ele escreveu enquanto o número estava fora do ar." },
+  // (#4696) Aponta para a CONVERSA, e não para o contato: é ali que está o fio
+  // onde o retorno foi combinado e é ali que a pessoa pode retomar. A orientação
+  // não manda "revisar" nada — nada está quebrado; o atendimento mudou e a
+  // mensagem prometida deixou de fazer sentido no fio antigo.
+  followup_descartado: { refs: ["conversation"], orientacao: "Abra a conversa e veja o que ficou combinado. Se ainda fizer sentido, retome o contato por ali." },
   // (migration 9027, issue #3371) O aviso nasce SEM referência: o que o conserta
   // não é uma linha do banco, é o login da conta — e o login mora na tela de
   // Credenciais. O botão diz o que fazer ("Reconectar"), não "revisar", porque
@@ -220,7 +231,7 @@ export const POLITICAS_DE_AVISO = {
   // `message_send_stuck` cala o aviso de automação aberto na mesma janela. A porta
   // passa pela MESMA conferência dos outros kinds: RLS de `conversations` no
   // client da request, papel `agent` da entrada `conversation`.
-  other: { refs: ["agenda_reminder_sender", "lead", "conversation", "channel_session", "appointment", "ai_agent", "ai_provider_credential", "agent_case", "automation_rule_run"], orientacao: "Confira a situação descrita neste aviso com a pessoa responsável." },
+  other: { refs: ["agenda_reminder_sender", "lead", "conversation", "channel_session", "number_health", "appointment", "ai_agent", "ai_provider_credential", "agent_case", "automation_rule_run"], orientacao: "Confira a situação descrita neste aviso com a pessoa responsável." },
 } satisfies Record<InboxKind, Politica>;
 
 /**

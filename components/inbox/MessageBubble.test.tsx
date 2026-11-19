@@ -773,8 +773,9 @@ describe("MessageBubble — mensagem que falhou", () => {
  *
  * O corpo que veio do WhatsApp fica cru no banco (`@75235009282237`); quem
  * resolve é a tela, pela lista `metadata.mentions`. O que se mede aqui é a
- * EXIBIÇÃO: nome para quem está no CRM, número para quem não está, e cada
- * ocorrência pelo próprio LID.
+ * EXIBIÇÃO: nome do contato quando está no CRM, palavra do dicionário quando
+ * não está — e cada ocorrência pelo próprio LID. O LID cru não aparece, e o
+ * nome do AUTOR (`group_sender`) nunca vira rótulo de menção.
  */
 describe("MessageBubble — menções de grupo (#3566)", () => {
   it("menção a contato do CRM aparece com o NOME", () => {
@@ -791,7 +792,26 @@ describe("MessageBubble — menções de grupo (#3566)", () => {
     expect(screen.queryByText(/75235009282237/)).toBeNull();
   });
 
-  it("menção a desconhecido continua com o número — o comportamento de hoje", () => {
+  it("menção a desconhecido NÃO recebe o nome do autor (`group_sender`)", () => {
+    render(
+      <MessageBubble
+        message={msg({
+          direction: "inbound",
+          body: "oi @99887766554433",
+          metadata: {
+            mentions: [{ lid: "99887766554433", phone: null, name: null }],
+            group_sender: { name: "João do Grupo", phone: null, lid: "11111111111111" },
+          },
+        })}
+      />,
+    );
+    // O `group_sender` é quem ESCREVEU; o mencionado é outra pessoa.
+    expect(screen.getByText("oi @Participante")).toBeInTheDocument();
+    expect(screen.queryByText(/@João do Grupo/)).toBeNull();
+    expect(screen.queryByText(/99887766554433/)).toBeNull();
+  });
+
+  it("sem contato no CRM a bolha mostra a palavra do dicionário, não dígitos", () => {
     render(
       <MessageBubble
         message={msg({
@@ -801,7 +821,8 @@ describe("MessageBubble — menções de grupo (#3566)", () => {
         })}
       />,
     );
-    expect(screen.getByText("oi @99887766554433")).toBeInTheDocument();
+    expect(screen.getByText("oi @Participante")).toBeInTheDocument();
+    expect(screen.queryByText(/99887766554433/)).toBeNull();
   });
 
   it("duas menções no mesmo texto saem cada uma com o seu nome", () => {
