@@ -82,7 +82,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_get_queue_status": { tokens: 83, motivo: BASE },
   "crm_list_leads": { tokens: 500, motivo: BASE },
   "crm_get_lead": { tokens: 202, motivo: BASE },
-  "crm_count_leads": { tokens: 317, motivo: "ferramenta nova: conta negócios sem listá-los, para o agente não paginar crm_list_leads só para responder 'quantos?'; 3 filtros (funil, etapa, status), sem responsável, de propósito, para pesar menos" },
+  "crm_count_leads": { tokens: 348, motivo: "#4996: ganhou por_etapa (+31 tokens): com ele o agente conta todas as etapas de um funil numa chamada, em vez de uma chamada por etapa (ou de paginar crm_list_leads). Base: 317 da ferramenta nova (3 filtros — funil, etapa, status —, sem responsável, de propósito, para pesar menos)" },
   "crm_list_lead_attachments": {
     tokens: 259,
     motivo:
