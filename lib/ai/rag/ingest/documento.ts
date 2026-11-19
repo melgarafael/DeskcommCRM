@@ -82,8 +82,17 @@ export function resolverExtensao(
 export async function extrairTextoDoArquivo(
   blobPath: string,
   extensaoDeclarada?: string,
+  opcoes?: {
+    /**
+     * O bucket onde o objeto mora. O padrão continua `ai-policy` (o acervo de
+     * conhecimento); os anexos de campo do negócio vivem em `internal-media` e
+     * passam por aqui com o bucket explícito — a EXTRAÇÃO é uma só, o bucket é
+     * do chamador (#4544).
+     */
+    bucket?: string;
+  },
 ): Promise<{ texto: string; extensao: ExtensaoAceita }> {
-  const extensao = resolverExtensao(extensaoDeclarada ?? blobPath);
+  const extensao = resolverExtensao(extensaoDeclarada ?? blobPath, extensaoDeclarada);
   if (!extensao) {
     const extBruta = (extensaoDeclarada ?? blobPath.split(".").pop() ?? "?").toLowerCase();
     // Excel (.xlsx/.xls) tem instrução própria — a genérica ("envie PDF...") não
@@ -106,7 +115,9 @@ export async function extrairTextoDoArquivo(
   }
 
   const admin = createAdminClient();
-  const { data: blob, error } = await admin.storage.from(BUCKET_DE_CONHECIMENTO).download(blobPath);
+  const { data: blob, error } = await admin.storage
+    .from(opcoes?.bucket ?? BUCKET_DE_CONHECIMENTO)
+    .download(blobPath);
 
   if (error || !blob) {
     throw new ErroDeExtracao(

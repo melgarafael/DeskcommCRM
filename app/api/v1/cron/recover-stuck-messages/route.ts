@@ -43,6 +43,8 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoAviso, preencher } from "@/lib/i18n/idioma-do-aviso";
 import { logger } from "@/lib/logger";
 import {
   emitirFalhaDeEntrega,
@@ -90,11 +92,10 @@ const ESPERA_COM_TENTATIVA_MS = (MAX_REENVIOS + 1) * TETO_DA_ESPERA_DA_FILA_MS;
  */
 const ESPERA_TETO_MS = 24 * 60 * 60 * 1000;
 
-/**
- * Fixo, sem a contagem: o dedup casa pelo título, e um título com número abriria
- * um segundo aviso quando 1 virasse 2, com o primeiro ainda aberto.
- */
-const TITULO_DA_ESPERA = "Mensagens ficaram esperando e não saíram";
+// O título do aviso de espera é FIXO, sem a contagem: o dedup casa pelo título,
+// e um título com número abriria um segundo aviso quando 1 virasse 2, com o
+// primeiro ainda aberto. Fixo POR ORGANIZAÇÃO — sai no idioma dela (ver
+// `avisarEsperaEsquecida`), e o idioma da organização não muda entre rodadas.
 
 interface EsperaRow {
   id: string;
@@ -220,6 +221,10 @@ async function avisarEsperaEsquecida(
   let avisadas = 0;
   for (const [orgId, linhas] of porOrg) {
     const n = linhas.length;
+    // A Central mostra o texto como foi gravado: o aviso nasce no idioma da
+    // organização — e o título traduzido é também o da busca do aviso aberto.
+    const idioma = await idiomaDoAviso(admin, orgId);
+    const titulo = traduzir("Mensagens ficaram esperando e não saíram", idioma);
 
     // Um aviso por organização: o mesmo enquanto estiver aberto, e outro só para
     // a mensagem que venceu depois dele (ver "O aviso não volta sozinho").
@@ -228,7 +233,7 @@ async function avisarEsperaEsquecida(
       .select("status, created_at")
       .eq("organization_id", orgId)
       .eq("kind", "message_send_stuck")
-      .eq("title", TITULO_DA_ESPERA)
+      .eq("title", titulo)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -250,12 +255,20 @@ async function avisarEsperaEsquecida(
       organization_id: orgId,
       kind: "message_send_stuck",
       severity: "critical",
-      title: TITULO_DA_ESPERA,
+      title: titulo,
       body:
-        `${n === 1 ? "Uma mensagem segue" : `${n} mensagens seguem`} aguardando envio, ` +
-        `e a conexão já está de pé. Abra a conversa para decidir o que fazer. ` +
-        `Nada foi reenviado automaticamente: o texto pode não fazer mais sentido ` +
-        `depois de tanto tempo.`,
+        n === 1
+          ? traduzir(
+              "Uma mensagem segue aguardando envio, e a conexão já está de pé. Abra a conversa para decidir o que fazer. Nada foi reenviado automaticamente: o texto pode não fazer mais sentido depois de tanto tempo.",
+              idioma,
+            )
+          : preencher(
+              traduzir(
+                "{n} mensagens seguem aguardando envio, e a conexão já está de pé. Abra a conversa para decidir o que fazer. Nada foi reenviado automaticamente: o texto pode não fazer mais sentido depois de tanto tempo.",
+                idioma,
+              ),
+              { n },
+            ),
       ref_kind: "conversation",
       ref_id: linhas[0]?.conversation_id ?? null,
     });
@@ -382,18 +395,22 @@ export async function recoverStuckMessages(
     // que trava não é uma mensagem, é o envio inteiro — N avisos idênticos
     // enterrariam a Central de avisos exatamente no dia em que ela mais precisa
     // ser lida.
+    const idioma = await idiomaDoAviso(admin, orgId);
     const { error: inboxErr } = await admin.from("agent_inbox_items").insert({
       organization_id: orgId,
       kind: "message_send_stuck",
       severity: "critical",
       title:
         n === 1
-          ? "Uma resposta não chegou ao cliente"
-          : `${n} respostas não chegaram ao cliente`,
-      body:
-        `Ficaram mais de ${STUCK_AFTER_MS / 60000} minutos aguardando envio e foram marcadas como falha. ` +
-        `Verifique se a conexão do WhatsApp está ativa e se o worker de envio está rodando. ` +
-        `Nada foi reenviado automaticamente — reenviar sem saber a causa arrisca mandar a mesma mensagem duas vezes.`,
+          ? traduzir("Uma resposta não chegou ao cliente", idioma)
+          : preencher(traduzir("{n} respostas não chegaram ao cliente", idioma), { n }),
+      body: preencher(
+        traduzir(
+          "Ficaram mais de {minutos} minutos aguardando envio e foram marcadas como falha. Verifique se a conexão do WhatsApp está ativa e se o worker de envio está rodando. Nada foi reenviado automaticamente — reenviar sem saber a causa arrisca mandar a mesma mensagem duas vezes.",
+          idioma,
+        ),
+        { minutos: STUCK_AFTER_MS / 60000 },
+      ),
       ref_kind: "conversation",
       ref_id: mensagens[0]?.conversation_id ?? null,
     });

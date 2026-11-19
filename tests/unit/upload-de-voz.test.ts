@@ -54,6 +54,26 @@ describe("uploadDeVoz", () => {
     });
   });
 
+  it("a voz da DM do Instagram sobe como .wav, com a etiqueta audio/wav", async () => {
+    uploadMock.mockResolvedValue({ error: null });
+    createAdminClientMock.mockReturnValue({ storage: { from: () => ({ upload: uploadMock }) } });
+
+    const path = await uploadDeVoz({
+      tenantId: "org1",
+      conversationId: "conv1",
+      jobId: "job1",
+      seq: 4,
+      audio: Buffer.from("RIFF"),
+      mimeType: "audio/wav",
+    });
+
+    expect(path).toBe("org1/conv1/voz-agente-job1-4.wav");
+    expect(uploadMock).toHaveBeenCalledWith("org1/conv1/voz-agente-job1-4.wav", expect.any(Buffer), {
+      contentType: "audio/wav",
+      upsert: true,
+    });
+  });
+
   // Achado na revisão de código, antes da Fase 7: com `upsert: false`, um
   // envio que sintetiza e sobe o áudio mas falha no TRANSPORTE (WAHA fora)
   // trava para sempre — o retry rotaciona o ledger e sintetiza de novo, mas

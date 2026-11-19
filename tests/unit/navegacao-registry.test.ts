@@ -196,8 +196,12 @@ describe("hubSections", () => {
       // #3933: a fila de ligações ativas, ao lado do histórico de chamadas. Só com o módulo ligado.
       "/app/cold-call",
       "/app/comandas",
+      // #4227: o módulo opcional Amigo (agenda da clínica). Só com o módulo instalado.
+      "/app/integrations/amigo",
       "/app/cadencias",
       "/app/products",
+      // #3480 (fatia 2): o catálogo de serviços, ao lado de Produtos. Só com o módulo instalado.
+      "/app/servicos",
       "/app/imports",
       "/app/settings/tenant/pipelines",
       "/app/proposals",
@@ -218,6 +222,17 @@ describe("hubSections", () => {
     expect(dest("/app/agenda/lista-de-espera").modulo).toBe("lista_de_espera");
     expect(hrefs([])).not.toContain("/app/agenda/lista-de-espera");
     expect(hrefs(["lista_de_espera"])).toContain("/app/agenda/lista-de-espera");
+  });
+
+  it("o catálogo de serviços só tem porta com o módulo catalogo_servicos instalado (#3480)", () => {
+    const hrefs = (modulos: readonly ModuloOpcional[]) =>
+      hubSections("crm", true, null, undefined, modulos).flatMap((s) => s.items.map((i) => i.href));
+    const busca = (modulos: readonly ModuloOpcional[]) => searchable(true, null, undefined, modulos).map((d) => d.href);
+    expect(dest("/app/servicos").modulo).toBe("catalogo_servicos");
+    expect(hrefs([])).not.toContain("/app/servicos");
+    expect(busca([])).not.toContain("/app/servicos");
+    expect(hrefs(["catalogo_servicos"])).toContain("/app/servicos");
+    expect(busca(["catalogo_servicos"])).toContain("/app/servicos");
   });
 
   it("agrupa a IA nas três etapas da jornada, na ordem", () => {

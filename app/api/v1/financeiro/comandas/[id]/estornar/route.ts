@@ -112,6 +112,8 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     // motivo — que é o que a obrigatoriedade do campo existe para garantir.
     await audit({
       action: "comanda.estornada",
+      actorUserId: authz.user.id,
+      organizationId: authz.org.orgId,
       resourceType: "sale",
       resourceId: id,
       requestId,

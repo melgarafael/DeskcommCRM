@@ -103,6 +103,10 @@ CRONS="
 # antes em avisar entre 30 e 45 minutos antes. Barato: só olha compromisso
 # confirmado, futuro e ainda não avisado.
 */5 * * * *|45|api/v1/cron/agenda-reminder
+# O ROBÔ DO AMIGO (módulo opcional, #4227). Sem webhook do fornecedor, relê a
+# agenda de uma conexão ativa por volta. Com o módulo desligado, a rota sai na
+# primeira linha sem tocar em tabela.
+*/5 * * * *|60|api/v1/cron/amigo-sync
 # O LEMBRETE DE TAREFA. A cada 5 minutos porque a antecedência é escolhida
 # pela PESSOA (15 min, 1 h que é o padrão, ou 1 dia): uma varredura mais lenta
 # transformaria avisar 15 minutos antes em avisar até 20. Barato: só tarefa
@@ -147,6 +151,12 @@ CRONS="
 # mais curto porque a janela é 7h–10h: se o número estiver parado às 7h, o
 # resumo sai assim que ele voltar. Quem não ligou o aviso não chega a ser varrido.
 */10 * * * *|60|api/v1/cron/agenda-resumo-do-dia
+# O RELATÓRIO DIÁRIO DA OPERAÇÃO. De quinze em quinze minutos pelo mesmo motivo
+# do resumo da agenda: a hora (21h por padrão) é a do relógio de CADA
+# organização, e a rodada só gera para quem passou da hora e ainda não tem o
+# relatório do dia local. Se a instalação estava parada na hora, sai na primeira
+# rodada depois. A linha única por organização e dia segura a repetição.
+*/15 * * * *|90|api/v1/cron/relatorio-operacao-diario
 # A DATA DO FUNIL (#989). Mesma cadência e mesmo motivo do aniversário: de hora
 # em hora, e quem decide o momento é o relógio de parede de CADA organização —
 # a rodada só age naquela que marca a hora da varredura. Minuto diferente do

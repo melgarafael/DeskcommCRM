@@ -48,6 +48,9 @@ export type ChannelProvider =
  */
 export type ProviderDeMensagem = Exclude<ChannelProvider, "wacalls">;
 
+/** O que o canal faz com a nota de voz da IA — ver `ChannelCapabilities.voiceNote`. */
+export type NotaDeVoz = "server-convert" | "opus-only" | "wav-only" | "none";
+
 export interface ChannelCapabilities {
   /** Pode enviar texto livre a qualquer momento? false = exige template fora da janela. */
   freeformOutsideWindow: boolean;
@@ -73,11 +76,16 @@ export interface ChannelCapabilities {
    * O que o canal faz com a NOTA DE VOZ que sai daqui:
    *   - 'server-convert' = o canal converte áudio (recebe mp3);
    *   - 'opus-only' = precisamos entregar ogg/opus mono;
+   *   - 'wav-only' = precisamos entregar WAV (PCM) — o que a DM do Instagram
+   *     aceita dos formatos que sabemos produzir sem ffmpeg;
    *   - 'none' = este canal não entrega nota de voz nossa — o agente responde
    *     em texto, e a tela do agente diz isso. Existe para não mentir com um
-   *     dos dois de cima num canal onde todo envio de áudio é recusado.
+   *     dos de cima num canal onde todo envio de áudio é recusado.
+   *
+   * Num provedor que serve várias redes, o valor daqui é o da rede NÃO medida;
+   * a rede medida sobrepõe por `notaDeVozDoCanal` (`./capabilities.ts`).
    */
-  voiceNote: "server-convert" | "opus-only" | "none";
+  voiceNote: NotaDeVoz;
   groups: "full" | "limited" | "none";
   /** Mensagem entregue gera custo → decisões de envio precisam considerar orçamento. */
   costPerMessage: boolean;

@@ -89,6 +89,26 @@ export function mediaPayload(env: OutboundEnvelope): Record<string, unknown> | n
   }
 }
 
+/**
+ * Citação → objeto `context` da Cloud API (#4880).
+ *
+ * O valor que chega em `replyToExternalId` JÁ é o identificador deste canal: é
+ * o `wamid` que a Graph devolveu no envio e que o handler gravou na linha. Não
+ * há prefixo a montar nem formato a corrigir — `idCompletoDaMensagem` existe no
+ * outro canal porque lá o id é curto e precisa do destinatário para virar
+ * endereço; aqui, reformatar quebraria a citação.
+ *
+ * Devolve `null` quando o campo falta, é `null` ou chega em branco. O `send` é
+ * que decide não pôr a chave: `context: {}` não é "sem citação", é corpo
+ * inválido — a Meta recusa `context` sem `message_id` (#100).
+ */
+export function contextPayload(env: OutboundEnvelope): { message_id: string } | null {
+  // `trim` só para o caso de espaço sobrando virar citação de um id que não
+  // existe; um `wamid` não tem espaço dentro, então nada de real é tocado.
+  const citado = env.replyToExternalId?.trim();
+  return citado ? { message_id: citado } : null;
+}
+
 export const metaCloudAdapter: ChannelAdapter = {
   provider: "meta_cloud",
 
@@ -355,7 +375,11 @@ export const metaCloudAdapter: ChannelAdapter = {
       mediaPayload(envelope) ??
       { type: "text", text: { body: envelope.body ?? "" } };
 
+    // Depois do `beforeSend` e antes do fetch: `beforeSend` é o último ponto que
+    // pode RECUSAR o envio, e resolver a citação para uma mensagem que não sai
+    // seria trabalho à toa. Uma leitura só, não uma por ramo de conteúdo.
     await envelope.beforeSend?.();
+    const contexto = contextPayload(envelope);
     const res = await fetch(
       `${graphBaseUrl()}/${creds.phoneNumberId}/messages`,
       {
@@ -369,6 +393,12 @@ export const metaCloudAdapter: ChannelAdapter = {
           recipient_type: "individual",
           to: envelope.to,
           ...corpo,
+          // Citação (#4880): `context` mora no nível de `messaging_product`/`to`,
+          // irmão de `type` — dentro de `text`/`image` a Meta ignora e o cliente
+          // recebe a mensagem solta, que é o defeito que a issue relata. Sem
+          // citação a chave não existe; nem vazia, porque `context: {}` é corpo
+          // inválido para a Graph.
+          ...(contexto ? { context: contexto } : {}),
         }),
       },
     );

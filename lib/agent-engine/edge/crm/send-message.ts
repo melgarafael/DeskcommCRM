@@ -59,6 +59,17 @@ export interface SendMessageInput {
   jobId: string;
   /** Posição da mensagem no turno (1..n) — com jobId forma a identidade da intenção. */
   seq: number;
+  /**
+   * `seq` da PRIMEIRA mensagem física do ENVIO (#4370, migration 9407).
+   *
+   * Vai para `send_ledger.envio_seq` e é o que permite ao reprocesso ler só as
+   * bolhas deste envio. `seq` continua sendo a identidade da intenção
+   * (`unique (job_id, seq)`), intocada; `envioSeq` é a fronteira. `input` desce
+   * inteiro até `sendWithLedger` como `Intent`, então o campo atravessa sem
+   * tradução. Ausente = NULL (follow-up de mensagem única, envio fixo). A nota de
+   * voz do `send_message` leva o mesmo `envioSeq` das bolhas que ela substitui.
+   */
+  envioSeq?: number;
   conversationId: string;
   body: string;
   /**

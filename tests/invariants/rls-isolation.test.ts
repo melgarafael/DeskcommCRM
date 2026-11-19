@@ -688,6 +688,32 @@ beforeAll(() => {
                   encode(sha256(convert_to('rls-invariant-' || v_org::text, 'UTF8')), 'hex'), 15000, 'pendente');
         end if;
 
+        -- 9419 (#3764, fatia 1) — a identidade de rede social do contato.
+        -- Vazar a linha entrega ao vizinho o perfil de uma pessoa que não é
+        -- cliente dele. O identificador é distinto por organização porque o
+        -- unique é (organization_id, canal, identificador).
+        if not exists (select 1 from public.contact_identities where organization_id = v_org) then
+          insert into public.contact_identities (organization_id, contact_id, canal, identificador)
+          values (v_org, v_contact, 'instagram', 'rls_invariant_' || right(v_org::text, 1));
+        end if;
+
+        -- migration 9386 (#4612) -- a tabela de valores de negociacao e um
+        -- procedimento dela, com partida e limite. Leitura org-scoped sem gate de
+        -- papel (quem negocia precisa do preco); a escrita nao e concedida a
+        -- authenticated (medido em tabela-de-valores-negociacao.test.ts).
+        if not exists (select 1 from public.tabelas_de_valores where organization_id = v_org) then
+          insert into public.tabelas_de_valores (organization_id, nome)
+          values (v_org, 'RLS invariant');
+        end if;
+        if not exists (select 1 from public.tabela_de_valores_itens where organization_id = v_org) then
+          insert into public.tabela_de_valores_itens
+            (organization_id, tabela_id, codigo, descricao, valor_brl_partida_cents, valor_brl_limite_cents)
+          select v_org, t.id, '1010', 'RLS invariant', 10000, 15000
+            from public.tabelas_de_valores t
+           where t.organization_id = v_org
+           limit 1;
+        end if;
+
         -- migration 9336 (#3118) -- a mensagem agendada da conversa semeada.
         if not exists (select 1 from public.mensagens_agendadas where organization_id = v_org) then
           insert into public.mensagens_agendadas
@@ -919,6 +945,11 @@ export const TABLES = [
   // migration 9043 — o segundo telefone da ficha (Spec 31 B1). Leitura por
   // organização; a escrita exige `agent`, o papel semeado aqui.
   "contact_phones",
+  // migration 9419 — as identidades de rede social do contato (#3764, fatia 1):
+  // os perfis de Instagram e Facebook que levam à MESMA ficha. Leitura por
+  // organização; a escrita exige `agent` (mesmo piso da 9043), e o eixo do
+  // `viewer` é medido em `identidades-do-contato.test.ts`.
+  "contact_identities",
   // ⚠️ `cobranca_assinaturas` (migration 0583) NÃO entra nesta lista, pelo mesmo
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A
@@ -927,6 +958,14 @@ export const TABLES = [
   // leitura é org-scoped E exige o par conversa/organização. A escrita é só do
   // servidor; quem mede isso é `pagamento-recebimentos-escrita-so-do-servidor.test.ts`.
   "pagamento_recebimentos",
+  // migration 9386 (#4612, fatia 1) — a tabela de valores de negociação e os
+  // procedimentos dela. Vazar a linha entrega ao vizinho o preço de partida E o
+  // LIMITE até onde a outra empresa aceita ir — o número que ela negocia para
+  // esconder. A LEITURA é org-scoped sem gate de papel (o `agent` semeado é
+  // controle positivo legítimo); a ESCRITA é só do servidor, e a recusa a
+  // `authenticated` é medida em `tabela-de-valores-negociacao.test.ts`.
+  "tabelas_de_valores",
+  "tabela_de_valores_itens",
   // ⚠️ As quatro tabelas das agências (migrations 9373–9379, #4034) NÃO entram
   // nesta lista, pelo mesmo motivo de `cobranca_assinaturas`: a leitura de
   // `agencia_configuracoes` e `agencia_clientes` só existe para o `admin` direto
