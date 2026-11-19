@@ -45,8 +45,10 @@ Exemplo:
 ```css
 .nav-grupo .rounded-md { background-color: #f4f1ea; }
 .nav-grupo .rounded-md:hover { background-color: #e9e4d8; }
-.nav-item-ativo { background-color: #2f6f8f; color: #ffffff; }
+.nav-grupo .nav-item-ativo, .nav-grupo .nav-item-ativo:hover { background-color: #2f6f8f; color: #ffffff; }
 ```
+
+Comece o seletor do item aberto por `.nav-grupo`, como na regra do grupo: com o mesmo peso, a regra que vem depois vence; só `.nav-item-ativo` perde para `.nav-grupo .rounded-md`, e o item aberto fica com texto branco sobre o fundo neutro.
 
 **Cor por seção do conteúdo.** O contêiner do conteúdo de toda tela leva `tela-secao` e, quando a rota está no registro de navegação, também a da seção: `tela-secao-atendimento`, `tela-secao-crm`, `tela-secao-ia`, `tela-secao-canais`, `tela-secao-analise` e `tela-secao-organizacao` — com ela, `.tela-secao-crm .rounded-lg { border-top-color: #1d4ed8; }` vale só nas telas de CRM. Rota fora do registro fica só com `tela-secao`.
 

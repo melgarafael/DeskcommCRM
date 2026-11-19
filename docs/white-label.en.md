@@ -1,4 +1,4 @@
-<!-- traduzido-de: docs/white-label.md@a54a06d2a219 -->
+<!-- traduzido-de: docs/white-label.md@464b4559f15f -->
 
 [🇧🇷 Português](white-label.md) · 🇺🇸 English · [🇪🇸 Español](white-label.es.md)
 
@@ -47,8 +47,10 @@ Example:
 ```css
 .nav-grupo .rounded-md { background-color: #f4f1ea; }
 .nav-grupo .rounded-md:hover { background-color: #e9e4d8; }
-.nav-item-ativo { background-color: #2f6f8f; color: #ffffff; }
+.nav-grupo .nav-item-ativo, .nav-grupo .nav-item-ativo:hover { background-color: #2f6f8f; color: #ffffff; }
 ```
+
+Start the open item's selector with `.nav-grupo`, as in the group rule: with equal weight, the later rule wins; `.nav-item-ativo` alone loses to `.nav-grupo .rounded-md`, and the open item ends up with white text on the neutral background.
 
 **Color per section of the content.** Every screen's content container carries `tela-secao` and, when the route is in the navigation registry, the section's class too: `tela-secao-atendimento`, `tela-secao-crm`, `tela-secao-ia`, `tela-secao-canais`, `tela-secao-analise` and `tela-secao-organizacao` — with it, `.tela-secao-crm .rounded-lg { border-top-color: #1d4ed8; }` applies only on CRM screens. A route outside the registry keeps only `tela-secao`.
 

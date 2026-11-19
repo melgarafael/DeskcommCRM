@@ -11,6 +11,8 @@
  * arquivo é a régua: acrescentar grupo ou destino sem classe, ou mudar o nome de
  * uma classe existente, reprova.
  */
+import { readFileSync } from "node:fs";
+
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -235,6 +237,19 @@ describe("o hub e o item aberto também são alvos estáveis do CSS do dono", ()
         escopo,
       );
       expect(grupo.erro, escopo).toBeNull();
+    }
+  });
+
+  it("o exemplo da doc passa no validador e não deixa `.nav-item-ativo` sozinho", () => {
+    // `.nav-grupo .rounded-md` tem duas classes; um `.nav-item-ativo` solto (uma)
+    // perde para ela e o item aberto fica com texto branco sobre o fundo neutro
+    // (medido no Chromium no #4877). O exemplo das três línguas tem de ser o que funciona.
+    for (const doc of ["docs/white-label.md", "docs/white-label.en.md", "docs/white-label.es.md"]) {
+      const texto = readFileSync(doc, "utf8");
+      const bloco = texto.match(/```css\n([^`]*nav-item-ativo[^`]*)```/)?.[1];
+      expect(bloco, doc).toBeDefined();
+      expect(validarCssPersonalizado(bloco ?? "", "claro").erro, doc).toBeNull();
+      expect(bloco, doc).not.toMatch(/^\.nav-item-ativo\s*\{/m);
     }
   });
 

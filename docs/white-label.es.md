@@ -1,4 +1,4 @@
-<!-- traduzido-de: docs/white-label.md@a54a06d2a219 -->
+<!-- traduzido-de: docs/white-label.md@464b4559f15f -->
 
 [🇧🇷 Português](white-label.md) · [🇺🇸 English](white-label.en.md) · 🇪🇸 Español
 
@@ -47,8 +47,10 @@ Ejemplo:
 ```css
 .nav-grupo .rounded-md { background-color: #f4f1ea; }
 .nav-grupo .rounded-md:hover { background-color: #e9e4d8; }
-.nav-item-ativo { background-color: #2f6f8f; color: #ffffff; }
+.nav-grupo .nav-item-ativo, .nav-grupo .nav-item-ativo:hover { background-color: #2f6f8f; color: #ffffff; }
 ```
+
+Empieza el selector del ítem abierto por `.nav-grupo`, como en la regla del grupo: con el mismo peso, gana la regla que viene después; `.nav-item-ativo` solo pierde ante `.nav-grupo .rounded-md`, y el ítem abierto queda con texto blanco sobre el fondo neutro.
 
 **Color por sección del contenido.** El contenedor del contenido de toda pantalla lleva `tela-secao` y, cuando la ruta está en el registro de navegación, también la de la sección: `tela-secao-atendimento`, `tela-secao-crm`, `tela-secao-ia`, `tela-secao-canais`, `tela-secao-analise` y `tela-secao-organizacao` — con ella, `.tela-secao-crm .rounded-lg { border-top-color: #1d4ed8; }` vale solo en las pantallas de CRM. Una ruta fuera del registro queda solo con `tela-secao`.
 
