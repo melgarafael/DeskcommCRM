@@ -42,12 +42,16 @@ import {
 } from "@/lib/auth/cache-curto";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
+/** A outra pessoa: mesmo instante, sessão diferente. Ver o caso de vazamento. */
+const OUTRO_USER_ID = "22222222-2222-4222-8222-222222222222";
 const relogio = { agora: Date.UTC(2026, 10, 11, 12, 0, 0) };
 const EXPIRACAO_DO_TOKEN_S = Math.floor(relogio.agora / 1000) + 3600;
 
 const estado = {
   /** idas a `/auth/v1/user` — a conta que o item 1 da #4326 quer derrubar. */
   usuarios: 0,
+  /** o `sub` de cada ida ao GoTrue, na ordem: prova QUEM aquela ida validou. */
+  identidades: [] as string[],
   /** chamadas a `fn_is_platform_admin` — autorização, que NÃO pode ser cacheada. */
   admins: 0,
   /** idas a `/auth/v1/token` — a renovação que o auth-js faz dentro da margem. */
@@ -64,12 +68,12 @@ function json(corpo: unknown, status = 200): Response {
 
 const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url");
 
-function tokenDeAcesso(exp: number): string {
-  return `${b64({ alg: "HS256" })}.${b64({ sub: USER_ID, exp })}.assinatura`;
+function tokenDeAcesso(exp: number, sub: string = USER_ID): string {
+  return `${b64({ alg: "HS256" })}.${b64({ sub, exp })}.assinatura`;
 }
 
-function cookieDeSessao(): { name: string; value: string } {
-  const token = tokenDeAcesso(EXPIRACAO_DO_TOKEN_S);
+function cookieDeSessao(sub: string = USER_ID): { name: string; value: string } {
+  const token = tokenDeAcesso(EXPIRACAO_DO_TOKEN_S, sub);
   // O formato que o `@supabase/ssr` grava (`base64-` + base64url do JSON) e o
   // que o `_isValidSession` do auth-js exige: access_token, refresh_token e
   // expires_at — sem qualquer um dos três, o cliente trata como "sem sessão".
@@ -81,14 +85,38 @@ function cookieDeSessao(): { name: string; value: string } {
       token_type: "bearer",
       expires_in: 3600,
       expires_at: EXPIRACAO_DO_TOKEN_S,
-      user: { id: USER_ID, email: "membro@example.com", user_metadata: {}, app_metadata: {} },
+      user: { id: sub, email: "membro@example.com", user_metadata: {}, app_metadata: {} },
     })}`,
   };
 }
 
+/**
+ * O `sub` do Bearer que a ida ao GoTrue carregou.
+ *
+ * É o que separa "duas pessoas na mesma janela" de "uma sessão reaproveitada":
+ * sem isto o dublê devolveria sempre o mesmo usuário, e um cache com a chave
+ * errada (o relógio, por exemplo) passaria verde.
+ */
+function subDoBearer(entrada: unknown, init?: RequestInit): string | null {
+  let auth: string | null = null;
+  if (entrada instanceof Request) auth = entrada.headers.get("authorization");
+  if (!auth && init?.headers) auth = new Headers(init.headers as HeadersInit).get("authorization");
+  const casou = /^Bearer\s+(.+)$/i.exec(auth ?? "");
+  const partes = casou?.[1]?.split(".") ?? [];
+  if (partes.length < 2) return null;
+  try {
+    const claims = JSON.parse(Buffer.from(partes[1]!, "base64url").toString("utf8")) as {
+      sub?: string;
+    };
+    return claims.sub ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** O GoTrue e o PostgREST dublados no único ponto que o SDK enxerga. */
 function dublarSupabase() {
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (entrada) => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (entrada, init) => {
     const url =
       typeof entrada === "string"
         ? entrada
@@ -97,10 +125,14 @@ function dublarSupabase() {
           : (entrada as Request).url;
     if (url.includes("/auth/v1/user")) {
       estado.usuarios += 1;
+      // O usuário é o DONO do token apresentado, não uma constante: é assim que
+      // o caso de duas sessões prova que cada uma recebeu a própria identidade.
+      const sub = subDoBearer(entrada, init) ?? USER_ID;
+      estado.identidades.push(sub);
       if (estado.goTrue === "revogado") {
         return json({ code: 401, msg: "invalid JWT: session revoked" }, 401);
       }
-      return json({ id: USER_ID, email: "membro@example.com", user_metadata: {}, app_metadata: {} });
+      return json({ id: sub, email: "membro@example.com", user_metadata: {}, app_metadata: {} });
     }
     if (url.includes("/auth/v1/token")) {
       estado.renovacoes += 1;
@@ -130,6 +162,7 @@ async function pedir(caminho: string, cookie: { name: string; value: string } | 
 
 beforeEach(() => {
   estado.usuarios = 0;
+  estado.identidades = [];
   estado.admins = 0;
   estado.renovacoes = 0;
   estado.goTrue = "ok";
@@ -201,6 +234,30 @@ describe("#4326 item 1 — o proxy valida a identidade uma vez por janela", () =
     expect(estado.usuarios).toBe(2);
     expect(depoisDaJanela.status).toBe(307);
     expect(depoisDaJanela.headers.get("location")).toContain("/login");
+  });
+
+  it("⭐ duas pessoas na MESMA janela não dividem identidade — a chave é a sessão, não o relógio", async () => {
+    // O cache é curto, mas é GLOBAL. Se a chave fosse o instante (ou uma
+    // constante), a segunda pessoa da janela receberia a identidade da primeira:
+    // um vazamento de sessão, não um ganho de latência. Aqui as duas sessões
+    // batem no GoTrue (cada uma paga a própria validação) e cada ida leva o
+    // `sub` do token da SUA sessão.
+    const cookieA = cookieDeSessao(USER_ID);
+    const cookieB = cookieDeSessao(OUTRO_USER_ID);
+
+    // Controle positivo: as duas chaves de cache são diferentes.
+    expect(sessaoDosCookies([cookieA])!.chave).not.toBe(sessaoDosCookies([cookieB])!.chave);
+
+    await pedir("/app/inbox", cookieA);
+    await pedir("/app/inbox", cookieB);
+
+    expect(estado.usuarios, "a segunda sessão foi servida pela entrada da primeira").toBe(2);
+    expect(estado.identidades).toEqual([USER_ID, OUTRO_USER_ID]);
+
+    // E o cachê continua valendo POR SESSÃO: repetir cada uma não volta ao GoTrue.
+    await pedir("/app/inbox", cookieA);
+    await pedir("/app/inbox", cookieB);
+    expect(estado.usuarios, "as duas sessões voltaram ao GoTrue dentro da janela").toBe(2);
   });
 
   it("logout: sem cookie de sessão o cache não serve nada — a requisição cai em /login", async () => {

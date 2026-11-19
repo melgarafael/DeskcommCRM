@@ -21,6 +21,7 @@ import {
 } from "./conversations";
 import {
   crmListLeads,
+  crmCountLeads,
   crmGetLead,
   crmCreateLead,
   crmUpdateLead,
@@ -100,6 +101,7 @@ import {
   crmProposeReactivation,
 } from "./retencao";
 import { crmDraftProposal, crmPrepararProposta } from "./propostas";
+import { crmCreateTask, crmListTasks, crmUpdateTask } from "./tarefas";
 import { crmSaveLeadDiagnosis } from "./diagnostico";
 
 // Cast via `unknown` porque McpToolDefinition<TInput> nao e covariante
@@ -122,6 +124,7 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmGetConversationHistory,
   crmGetQueueStatus,
   crmListLeads,
+  crmCountLeads,
   crmGetLead,
   // #4544 (item 2) — o documento anexado ao card: listar para descobrir o id,
   // ler para tirar dali os valores. Entram logo depois do get_lead porque são a
@@ -145,6 +148,7 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmConsultarReceita,
   crmListPrivacyRequests,
   crmGetProspectingSiteAudit,
+  crmListTasks,
   // read — organizar a operação (W4)
   crmListStages,
   crmListTags,
@@ -206,6 +210,8 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmCloseHumanCase,
   crmResumeAiAttendance,
   crmDraftProposal,
+  crmCreateTask,
+  crmUpdateTask,
   // handoff (special)
   crmRequestHumanHandoff,
 ] as unknown as ReadonlyArray<McpToolDefinition>;

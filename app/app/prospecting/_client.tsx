@@ -29,6 +29,7 @@ import {
   problemaNasEtiquetas,
   safePublicLink,
   type CampaignConfig,
+  type FonteDaAbordagem,
   type Prospect,
 } from "@/lib/prospecting/schema";
 import { normalizarTags } from "@/lib/contacts/tag-normalizada";
@@ -148,6 +149,8 @@ const emptyConfig: CampaignConfig = {
   // A saída é oferecida na primeira mensagem por padrão; config gravada antes desta chave
   // segue igual.
   exit_offer: "first_message",
+  // O ângulo da primeira mensagem vem da estratégia do site por padrão (o de sempre).
+  fonte_da_abordagem: "estrategia",
 };
 /** Campanhas que o preparo automático atende (`prepararCandidatos`). */
 const STATUS_COM_PREPARO = new Set(["draft", "running", "paused"]);
@@ -219,15 +222,18 @@ function PreviaNaLinha({
   temAgente,
   previaDesligada,
   agoraIso,
+  fonte = "estrategia",
 }: {
   candidato: Candidate;
   temAgente: boolean;
   /** O interruptor "Gerar a prévia" desta busca está desligado: ninguém a gera sozinho. */
   previaDesligada: boolean;
   agoraIso: string;
+  /** A fonte da abordagem da campanha: a prévia de outra fonte não vale. */
+  fonte?: FonteDaAbordagem;
 }) {
   const t = useT();
-  const pronta = previaValida(candidato.data);
+  const pronta = previaValida(candidato.data, fonte);
   if (pronta) {
     const trecho =
       pronta.texto.length > TRECHO_DA_PREVIA
@@ -257,7 +263,9 @@ function PreviaNaLinha({
   if (candidato.data.previa)
     return (
       <p className="mt-2 text-xs text-muted-foreground">
-        {t("Prévia desatualizada: o site foi verificado de novo. Abra Ver detalhes e gere outra.")}
+        {(candidato.data.previa.fonte ?? "estrategia") !== fonte
+          ? t("Prévia de outra abordagem: a campanha mudou a fonte. Abra Ver detalhes e gere outra.")
+          : t("Prévia desatualizada: o site foi verificado de novo. Abra Ver detalhes e gere outra.")}
       </p>
     );
   const status = candidato.status ?? candidato.progress;
@@ -371,8 +379,17 @@ export function ProspectingClient() {
     instruction: string;
     qualification: string;
     ofertas: OfertaDaCampanha[];
+    /** #4829: `false` = a abertura não cita a ficha digital. */
+    usar_ficha_digital: boolean;
+    /** De onde vem a primeira mensagem: estratégia do site ou prompt do agente. */
+    fonte_da_abordagem: FonteDaAbordagem;
+    /** A fonte que a campanha tinha ao abrir o formulário: o pedido só leva a fonte se ela mudou. */
+    fonte_gravada: FonteDaAbordagem;
   } | null>(null);
   const [confirmandoBriefing, setConfirmandoBriefing] = useState(false);
+  // Levar a lista para outra campanha: confirmação + recibo (repetir não cria outra).
+  const [confirmandoMover, setConfirmandoMover] = useState<string | null>(null);
+  const moverAttempt = useRef<{ campaignId: string; id: string } | null>(null);
   const campaign = data?.campaigns.find((c) => c.id === selected) ?? data?.campaigns[0];
   // #4359: a lista principal e o filtro das arquivadas são as duas metades do MESMO
   // conjunto. Uma campanha arquivada sai da principal e aparece no filtro — nunca
@@ -562,6 +579,9 @@ export function ProspectingClient() {
             instruction: c.config?.instruction ?? "",
             qualification: c.config?.qualification ?? "",
             ofertas: c.config?.ofertas ?? ["site"],
+            usar_ficha_digital: c.config?.usar_ficha_digital !== false,
+            fonte_da_abordagem: c.config?.fonte_da_abordagem ?? "estrategia",
+            fonte_gravada: c.config?.fonte_da_abordagem ?? "estrategia",
           },
     );
   }
@@ -583,12 +603,36 @@ export function ProspectingClient() {
         instruction: briefing.instruction.trim(),
         qualification: briefing.qualification.trim(),
         ofertas: briefing.ofertas,
+        usar_ficha_digital: briefing.usar_ficha_digital,
+        // A fonte só vai quando muda: o servidor só a grava (e a audita) quando ela
+        // vem no pedido, e salvar o texto não deve registrar uma troca que não houve.
+        ...(briefing.fonte_da_abordagem !== briefing.fonte_gravada
+          ? { fonte_da_abordagem: briefing.fonte_da_abordagem }
+          : {}),
       },
       t("Instrução e critérios atualizados. A campanha continua pausada."),
     );
     if (salvou) {
       setBriefing(null);
       setConfirmandoBriefing(false);
+    }
+  }
+  async function moverLista(campaignId: string) {
+    if (moverAttempt.current?.campaignId !== campaignId)
+      moverAttempt.current = { campaignId, id: randomId() };
+    const destino: { id: string | null } = { id: null };
+    const moveu = await perform(
+      { action: "move_list", id: campaignId, request_id: moverAttempt.current.id },
+      (resposta) => {
+        const r = (resposta as { data: { campaign_id: string; moved: number } }).data;
+        destino.id = r.campaign_id;
+        return `${t("Lista levada para uma campanha nova:")} ${r.moved} ${t("empresas. Escolha a conexão e o agente nela.")}`;
+      },
+    );
+    if (moveu) {
+      moverAttempt.current = null;
+      setConfirmandoMover(null);
+      if (destino.id) setSelected(destino.id);
     }
   }
   // O modelo é gerado aqui, no navegador: `;` e BOM UTF-8 para o Excel em português abrir
@@ -825,7 +869,8 @@ export function ProspectingClient() {
   const comTelefone = candidates.filter((c) => !!c.data.phone);
   const whatsappVerificados = comTelefone.filter((c) => c.data.whatsapp != null).length;
   const semWhatsapp = comTelefone.filter((c) => c.data.whatsapp?.existe === false).length;
-  const previasProntas = marcadas.filter((c) => previaValida(c.data)).length;
+  const fonteDaCampanha: FonteDaAbordagem = config.fonte_da_abordagem ?? "estrategia";
+  const previasProntas = marcadas.filter((c) => previaValida(c.data, fonteDaCampanha)).length;
   /**
    * O que o botão "Excluir desmarcadas" realmente apaga. Espelha o `where` do servidor: sem
    * negócio nem conversa (o que já virou registro do CRM não é daqui) e só o que o operador
@@ -959,9 +1004,17 @@ export function ProspectingClient() {
       */}
       {data && (
         <Card className="p-5">
-          <h2 className="text-lg font-semibold">{t("Voz e vocabulário")}</h2>
+          <details open={!personalizacaoInicial?.vendedor_nome}>
+          <summary className="cursor-pointer list-none">
+            <h2 className="inline text-lg font-semibold">{t("Voz e vocabulário")}</h2>
+            <span className="ml-2 text-sm text-muted-foreground">
+              {personalizacaoInicial?.vendedor_nome
+                ? `${t("Voz:")} ${personalizacaoInicial.vendedor_nome}`
+                : t("Sem voz definida")}
+            </span>
+          </summary>
           <p className="mt-1 text-sm text-muted-foreground">
-            {t("A voz assina as mensagens; o vocabulário traduz o nicho para a dor dele.")}
+            {t("A voz assina as mensagens; o vocabulário traduz o nicho para a dor dele. Vale para todas as campanhas.")}
           </p>
           <form
             key={formRev}
@@ -1048,6 +1101,7 @@ export function ProspectingClient() {
               {t("Salvar personalização")}
             </Button>
           </form>
+          </details>
         </Card>
       )}
       <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
@@ -1526,6 +1580,15 @@ export function ProspectingClient() {
                         {t("Ritmo:")} {configCompleta.daily_limit}{" "}
                         {t("abordagens em 24 horas, com pelo menos")}{" "}
                         {configCompleta.interval_minutes} {t("minutos entre elas.")}
+                        <br />
+                        {t("Primeira mensagem:")}{" "}
+                        {(configCompleta.fonte_da_abordagem ?? "estrategia") === "agente"
+                          ? t("prompt do agente")
+                          : t("estratégia do site")}
+                        {" · "}
+                        {data?.personalizacao?.vendedor_nome
+                          ? `${t("Voz:")} ${data.personalizacao.vendedor_nome}`
+                          : t("Sem voz definida")}
                       </p>
                       {campaign.status === "running" ? (
                         <Button
@@ -1549,9 +1612,19 @@ export function ProspectingClient() {
                           >
                             {t("Editar ritmo")}
                           </Button>
+                          <Button
+                            variant="outline"
+                            disabled={busy}
+                            onClick={() =>
+                              setConfirmandoMover((atual) => (atual === campaign.id ? null : campaign.id))
+                            }
+                          >
+                            {t("Usar lista em outra campanha")}
+                          </Button>
                           {/* #4570: instrução, critérios e ofertas são lidos a cada
                               turno; com a campanha parada dá para corrigir o texto
-                              sem criar outra campanha e sem perder a lista. */}
+                              (e de onde vem a primeira mensagem) sem criar outra
+                              campanha e sem perder a lista. */}
                           <Button
                             variant="outline"
                             disabled={busy}
@@ -1580,8 +1653,50 @@ export function ProspectingClient() {
                             </p>
                           )}
                         </div>
+                      ) : campaign.status === "completed" ? (
+                        <Button
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() =>
+                            setConfirmandoMover((atual) => (atual === campaign.id ? null : campaign.id))
+                          }
+                        >
+                          {t("Usar lista em outra campanha")}
+                        </Button>
                       ) : null}
                     </div>
+                    {confirmandoMover === campaign.id &&
+                      (campaign.status === "paused" || campaign.status === "completed") && (
+                        <div
+                          role="region"
+                          aria-label={t("Usar lista em outra campanha")}
+                          className="mt-4 space-y-3 rounded-md border p-4"
+                        >
+                          <p className="text-sm">
+                            {t(
+                              "As empresas que ainda não foram abordadas vão para uma campanha nova, em preparação, onde você escolhe outra conexão, outro agente e outra abordagem. Nenhuma busca é paga de novo.",
+                            )}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {t(
+                              "Quem já recebeu mensagem, já é contato ou pediu para não ser abordado fica nesta campanha, com o histórico.",
+                            )}
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            <Button disabled={busy} onClick={() => void moverLista(campaign.id)}>
+                              {t("Levar a lista")}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() => setConfirmandoMover(null)}
+                            >
+                              {t("Cancelar")}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     {campaign.status === "paused" && ritmo?.campaignId === campaign.id && (
                       <form
                         className="mt-4 space-y-3 rounded-md border p-4"
@@ -1699,7 +1814,7 @@ export function ProspectingClient() {
                                 type="checkbox"
                                 className="mt-1"
                                 checked={briefing.ofertas.includes(valor)}
-                                disabled={busy}
+                                disabled={busy || !briefing.usar_ficha_digital}
                                 onChange={() => {
                                   const ligadas = briefing.ofertas.includes(valor)
                                     ? briefing.ofertas.filter((o) => o !== valor)
@@ -1710,6 +1825,54 @@ export function ProspectingClient() {
                                 }}
                               />
                               <span>{rotulo}</span>
+                            </label>
+                          ))}
+                        </fieldset>
+                        {/* #4829: o interruptor da ficha digital, editável com a campanha
+                            pausada — é o modo de quem vende consórcio, crédito, seguro,
+                            contabilidade ou consultoria. */}
+                        <label className="flex items-start gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            className="mt-1"
+                            checked={briefing.usar_ficha_digital}
+                            disabled={busy}
+                            onChange={(e) =>
+                              setBriefing({ ...briefing, usar_ficha_digital: e.target.checked })
+                            }
+                          />
+                          <span>
+                            {t(
+                              "Usar a ficha digital (site, avaliações, redes) como motivo do contato",
+                            )}
+                          </span>
+                        </label>
+                        {!briefing.usar_ficha_digital ? (
+                          <p className="text-xs text-muted-foreground">
+                            {t(
+                              "Desligada, a primeira mensagem abre pelo ramo e pela região da empresa, e não cita nota, avaliações, redes nem auditoria do site. A oferta é a que você escreveu na instrução.",
+                            )}
+                          </p>
+                        ) : null}
+                        <fieldset className="space-y-2">
+                          <legend className="text-sm font-medium">
+                            {t("De onde vem a primeira mensagem")}
+                          </legend>
+                          {(
+                            [
+                              ["estrategia", t("Estratégia do site (ângulo pela auditoria)")],
+                              ["agente", t("Prompt do agente (sem ângulo de auditoria)")],
+                            ] as const
+                          ).map(([valor, rotulo]) => (
+                            <label key={valor} className="flex items-center gap-2 text-sm">
+                              <input
+                                type="radio"
+                                name="prospecting-fonte-edicao"
+                                checked={briefing.fonte_da_abordagem === valor}
+                                disabled={busy}
+                                onChange={() => setBriefing({ ...briefing, fonte_da_abordagem: valor })}
+                              />
+                              {rotulo}
                             </label>
                           ))}
                         </fieldset>
@@ -2043,7 +2206,7 @@ export function ProspectingClient() {
                                       type="checkbox"
                                       className="mt-1"
                                       checked={(config.ofertas ?? ["site"]).includes(valor)}
-                                      disabled={busy}
+                                      disabled={busy || config.usar_ficha_digital === false}
                                       onChange={() => {
                                         const atuais = config.ofertas ?? ["site"];
                                         const ligadas = atuais.includes(valor)
@@ -2057,6 +2220,36 @@ export function ProspectingClient() {
                                     <span>{rotulo}</span>
                                   </label>
                                 ))}
+                              </fieldset>
+                              {/* #4829: campanha que NÃO vende presença digital. Desligada,
+                                  a ficha digital (nota, avaliações, redes, auditoria) sai da
+                                  primeira mensagem e a abertura passa a ser pelo que a empresa
+                                  é; a oferta é a do texto da instrução. */}
+                              <fieldset className="space-y-2">
+                                <legend className="text-sm font-medium">
+                                  {t("Motivo do primeiro contato")}
+                                </legend>
+                                <label className="flex items-start gap-2 text-sm">
+                                  <input
+                                    type="checkbox"
+                                    className="mt-1"
+                                    checked={config.usar_ficha_digital !== false}
+                                    disabled={busy}
+                                    onChange={(e) =>
+                                      update("usar_ficha_digital", e.target.checked)
+                                    }
+                                  />
+                                  <span>
+                                    {t(
+                                      "Usar a ficha digital (site, avaliações, redes) como motivo do contato",
+                                    )}
+                                  </span>
+                                </label>
+                                <p className="text-xs text-muted-foreground">
+                                  {t(
+                                    "Desligada, a primeira mensagem abre pelo ramo e pela região da empresa, e não cita nota, avaliações, redes nem auditoria do site. É o modo de quem vende consórcio, crédito, seguro, contabilidade ou consultoria: a oferta é a que você escreveu na instrução.",
+                                  )}
+                                </p>
                               </fieldset>
                             </div>
                           )}
@@ -2196,10 +2389,53 @@ export function ProspectingClient() {
                                     ? t(
                                         "Inclua a palavra que a pessoa responde para sair; sem ela o pedido não é reconhecido.",
                                       )
-                                    : t("Use até 160 caracteres e nenhum link.")}
+                                    : problemaDoTextoDaSaida === "palavra_escondida"
+                                      ? t(
+                                          "A palavra está no texto, mas riscada, escondida ou em código. Tire a marcação de cima dela: é o que a pessoa vai responder.",
+                                        )
+                                      : t("Use até 160 caracteres e nenhum link.")}
                                 </p>
                               )}
                             </div>
+                          </fieldset>
+                          <fieldset className="space-y-2">
+                            <legend className="text-sm font-medium">
+                              {t("De onde vem a primeira mensagem")}
+                            </legend>
+                            <label className="flex items-start gap-2 text-sm">
+                              <input
+                                type="radio"
+                                name="prospecting-fonte-da-abordagem"
+                                checked={(config.fonte_da_abordagem ?? "estrategia") === "estrategia"}
+                                onChange={() => update("fonte_da_abordagem", "estrategia")}
+                                className="mt-1"
+                              />
+                              <span>
+                                {t("Estratégia do site (ângulo pela auditoria)")}
+                                <span className="block text-xs text-muted-foreground">
+                                  {t(
+                                    "A mensagem parte do que a auditoria achou no site de cada empresa e das ofertas marcadas.",
+                                  )}
+                                </span>
+                              </span>
+                            </label>
+                            <label className="flex items-start gap-2 text-sm">
+                              <input
+                                type="radio"
+                                name="prospecting-fonte-da-abordagem"
+                                checked={config.fonte_da_abordagem === "agente"}
+                                onChange={() => update("fonte_da_abordagem", "agente")}
+                                className="mt-1"
+                              />
+                              <span>
+                                {t("Prompt do agente (sem ângulo de auditoria)")}
+                                <span className="block text-xs text-muted-foreground">
+                                  {t(
+                                    "O roteiro do agente escolhido é a referência principal. A auditoria não entra na mensagem; as regras de transparência e a opção de parar continuam.",
+                                  )}
+                                </span>
+                              </span>
+                            </label>
                           </fieldset>
                           <ArquivoDaAbordagem
                             valor={config.midia_da_abordagem}
@@ -2588,12 +2824,14 @@ export function ProspectingClient() {
                                 sobrescritaVocabulario={data?.personalizacao?.vocabulario ?? null}
                                 onReanalisar={reanalisarSite}
                                 onPrevia={preverAbordagem}
+                                fonte={fonteDaCampanha}
                               />
                               <PreviaNaLinha
                                 candidato={c}
                                 temAgente={temAgenteNaCampanha}
                                 previaDesligada={!opcoes.gerarPrevia}
                                 agoraIso={agora}
+                                fonte={fonteDaCampanha}
                               />
                             </td>
                             <td className="p-4 align-top">
