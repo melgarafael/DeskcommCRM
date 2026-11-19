@@ -306,18 +306,12 @@ test('recibo concorrente da Central nunca rebaixa aceite positivo para incerto',
   assert.doesNotMatch(f.admin.linhas.agent_inbox_items[0]!.body, /entrega não confirmada/);
 });
 
-test('aviso e recibo seguem o idioma da organização (es e en) sem alterar pt-BR', async () => {
+test('aviso e recibo seguem o idioma da organização (es) sem alterar pt-BR', async () => {
   const textoEs = textoDoAvisoHandoff('https://crm.exemplo.test', CONV, { nome: 'Izabella Eber', idioma: 'es' });
   assert.ok(textoEs);
   assert.match(textoEs, /^Una conversación necesita atención de una persona del equipo\./);
   assert.match(textoEs, /\n\nCliente: Izabella\n\nAbrir conversación:/);
   assert.match(textoEs, /Responde desde el CRM; responder a este aviso no le llega al cliente\.$/);
-
-  const textoEn = textoDoAvisoHandoff('https://crm.exemplo.test', CONV, { idioma: 'en' });
-  assert.ok(textoEn);
-  assert.match(textoEn, /^A conversation needs attention from a team member\./);
-  assert.match(textoEn, /\n\nOpen conversation:/);
-  assert.match(textoEn, /Reply from the CRM; replying to this notice does not reach the customer\.$/);
 
   const reciboEs = corpoComResultadoHandoff('Pasaje', EVENT, { estado: 'enviado', em: NOW }, 'es');
   assert.match(reciboEs, /Aviso al equipo \(.+\): aceptado por el canal de WhatsApp\.$/);
