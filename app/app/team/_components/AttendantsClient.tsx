@@ -411,9 +411,9 @@ export function ScheduleDialog({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {DOW_LABELS.map((d, idx) => (
+                    {DOW_LABELS.map((_, idx) => (
                       <SelectItem key={idx} value={String(idx)}>
-                        {t(d)}
+                        {t(DOW_LABELS[idx] ?? "")}
                       </SelectItem>
                     ))}
                   </SelectContent>
