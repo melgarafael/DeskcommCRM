@@ -21,28 +21,17 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   também na ficha de qualquer contato que já esteja ligado a uma empresa, venha ele
   de onde vier.
 
-  Serve para quem prospectou antes de a prospecção passar a criar a Empresa sozinha,
-  ou com o módulo desligado. O endereço do Maps vem numa linha só, e o sistema só o
-  separa em rua, número, bairro, cidade, estado e CEP quando ele segue o formato
-  brasileiro padrão; o que não for reconhecido fica em branco, para a equipe
-  completar, e nada é chutado. Campo que a equipe já preencheu na Empresa não é
-  sobrescrito.
-
-  Passados os 365 dias em que a prospecção guarda os dados do candidato, a Empresa
-  nasce só com o nome, o telefone e o link do Maps que o contato guardou. Quem tem
-  papel de Atendente ou acima pode usar o botão, o mesmo piso de criar empresa e
-  pessoa pela tela. Com o módulo desligado, nada muda: não há cartão, botão nem
-  chamada. A atualização não pede nenhuma ação de quem opera a instalação.
+  O endereço só é separado em campos quando segue o formato brasileiro padrão; o
+  resto fica em branco para a equipe completar, e campo já preenchido não é
+  sobrescrito. Passados os 365 dias em que a prospecção guarda os dados, a Empresa
+  nasce só com nome, telefone e link do Maps. O botão é de Atendente para cima. Com
+  o módulo desligado, nada muda. Nenhuma ação na atualização.
 
   Contribuição de @xofrd, a partir da issue #3198 (fatia 3).
 
 - **Catálogo de IA diz por que um provedor não declara onde processa, e o que o endpoint próprio muda** A cláusula de transferência internacional e a tela já mostravam, para cada provedor de IA, o país quando ele é conhecido. Faltavam duas respostas, e as duas eram escritas à mão em quem monta o contrato: **por que** um provedor não declara a região de processamento, e **o que acontece com o lugar** quando o operador aponta a base URL para outro endereço.
 
-  O catálogo de provedores passa a guardar as duas. O motivo é por provedor — a OpenAI declara residência de dados por projeto e região, a Gemini Developer API não publica a lista de países, o OpenRouter escolhe o provedor por modelo a cada chamada, a Requesty e a ElevenLabs não têm fonte citável — em vez de uma frase igual para todos. E o provedor que aceita endpoint próprio diz, na própria entrada, que a execução passa a ser no host configurado e que o país registrado deixa de valer; o provedor personalizado declara que o texto fica no servidor do operador, e o CRM não sabe onde ele está.
-
-  Nada muda no que a cláusula gerada imprime hoje: nenhum país novo é afirmado sem fonte. A tela e o documento que passam a mostrar os dois campos são as issues seguintes.
-
-  Funciona para o catálogo inteiro — conversa, decisão e voz —, e o teste de completude reprova provedor que entre sem motivo ou sem a resposta do endpoint próprio.
+  O catálogo inteiro (conversa, decisão e voz) passa a guardar as duas, com o motivo escrito por provedor. Com endpoint próprio, a execução passa a ser no host configurado e o país registrado deixa de valer; no provedor personalizado, o texto fica no servidor do operador, e o CRM não sabe onde ele está. Nada muda no que a cláusula gerada imprime hoje: nenhum país novo é afirmado sem fonte.
 
   A partir da issue #4518.
 
@@ -50,23 +39,21 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **O teto de respostas por conversa passa a ser configurável pela empresa** O teto que impede dois robôs de conversarem sozinhos existia, mas só se ajustava no arquivo de configuração da instalação — uma empresa não podia apertar o próprio limite sem reiniciar o servidor. Agora ele se configura por empresa, pela API do anti-ban (ainda sem tela): quantas respostas automáticas cabem numa janela, a largura da janela em minutos e quanto tempo a conversa fica pausada ao bater o teto.
 
-  Quem não configurou segue com o mesmo teto (20 respostas da IA por conversa em 60 minutos, ou o número que estiver no arquivo de configuração da instalação), mas uma coisa muda em toda instalação: ao bater o teto, a conversa agora também é pausada, pelo mesmo tempo da janela, até 60 minutos (60 no padrão). Para não pausar, grave `silenciar_minutos: 0`. Quem atende de forma mais conversada sobe o número; quem faz prospecção aperta. O disparo de campanha não é afetado — o teto conta só as respostas a mensagens recebidas, e o disparo continua com o teto dele.
+  Quem não configurou segue com o mesmo teto (20 respostas da IA por conversa em 60 minutos, ou o número que estiver no arquivo de configuração da instalação), mas uma coisa muda em toda instalação: ao bater o teto, a conversa agora também é pausada, pelo mesmo tempo da janela, até 60 minutos (60 no padrão). Para não pausar, grave `silenciar_minutos: 0`. O disparo de campanha não é afetado.
 
-  Ao bater o teto, a resposta não sai, a conversa é pausada pelo mesmo caminho do botão de pausar a IA (o atendente devolve para a IA quando quiser, sem perder nada) e um aviso abre na Central. Pausar pode ser desligado — aí a resposta continua barrada e o aviso continua abrindo. O tempo de pausa é limitado (no máximo 24 horas) e nunca desfaz uma pausa mais longa que alguém já tinha feito à mão.
-
-  A conferência "Parar a conversa que virou pingue-pongue" da ficha do agente explica o que a trava protege e onde ajustá-la, em português e espanhol.
+  Ao bater o teto, a resposta não sai, a conversa é pausada como pelo botão de pausar a IA (o atendente a devolve quando quiser) e um aviso abre na Central. A pausa vai a no máximo 24 horas e nunca desfaz uma pausa mais longa feita à mão. A conferência "Parar a conversa que virou pingue-pongue" da ficha do agente explica onde ajustar.
 
   Contribuição de @webtecnica, a partir da issue #4590.
 
-- **A ferramenta crm_list_pipelines traz os campos de cada funil, com a chave que o agente deve gravar** Quem lê o CRM por MCP não tinha como saber a CHAVE de um campo do funil, e inventava uma em `custom_fields` — `"valor"` no lugar de `valor_do_contrato`. A escrita passava, porque o schema de `custom_fields` aceita chave livre, e o valor ficava órfão no card: um defeito mudo, que só aparece quando alguém abre a ficha e não vê o dado que o agente disse ter gravado. Agora `crm_list_pipelines` devolve, por funil, `campos` com `key`, `label`, `type`, `escopo` e, nos campos de lista, os `options[].value` aceitos; a descrição da ferramenta diz que em `custom_fields` se usa essa key. A leitura é `camposDoFunil` — a MESMA que a ficha, o card e as regras usam —, então a lista do modelo não diverge da tela: definição que não passa em `customFieldSchema` não entra. `escopo` vai junto porque ele muda ONDE o valor é gravado (`contacts.custom_fields` no campo de contato, `crm_leads.custom_fields` no de negócio). Funil sem campo devolve `campos: []`, nunca ausente. A descrição da ferramenta cresceu 55 tokens (63 → 118, medido), e a entrada no teto de peso foi remedida.
+- **A ferramenta crm_list_pipelines traz os campos de cada funil, com a chave que o agente deve gravar** Quem lê o CRM por MCP não tinha como saber a CHAVE de um campo do funil, e inventava uma em `custom_fields`, e o valor ficava órfão no card, sem aparecer na ficha. Agora `crm_list_pipelines` devolve, por funil, `campos` com `key`, `label`, `type`, `escopo` e, nos campos de lista, os `options[].value` aceitos, pela mesma leitura que a ficha usa; funil sem campo devolve `campos: []`. A descrição da ferramenta cresceu 55 tokens.
 
   Contribuição de @webtecnica (#4667), com desenho convergente de @tabaterral (#4733).
 
 - **O modelo que o Jev usa para decidir passa a ser escolhido na tela dele, com aceite novo a cada troca** O Jev decide coisas como passar a conversa para uma pessoa, reconhecer quem pediu para sair da lista e medir o clima da conversa, e até aqui o modelo dessas decisões era fixo: o typesafe/jev-1.13. A tela dele, em Provedores de IA, ganhou o campo "Modelo do decisor": quem usa o Jev pela OpenRouter pode apontar outro modelo que declare a saída de decisões lá, e a escolha vale para todas as tarefas do Jev de uma vez. Dá para voltar ao Jev com um clique, e se o modelo escolhido falhar numa conversa o Jev responde no lugar dele. Contribuição de @webtecnica (issue #4710).
 
-  Trocar o modelo troca quem recebe a mensagem do cliente, então cada troca pede o "concordo" de novo, e o texto nomeia o fornecedor do modelo escolhido e diz que, se esse modelo falhar, a mensagem vai para o Jev, da TypeSafe AI, pela OpenRouter; voltar ao Jev não pede. O aviso para a área da saúde e o texto de antes de ligar também passam a citar esse fornecedor. O que é enviado não muda: uma mensagem por vez, sem o resto da conversa. Ninguém conferiu os termos de privacidade, de retenção e de treino dos fornecedores do catálogo, e o aceite diz que a empresa assume essa conferência, em especial nos modelos gratuitos.
+  Trocar o modelo troca quem recebe a mensagem do cliente, então cada troca pede o "concordo" de novo, nomeando o fornecedor escolhido; voltar ao Jev não pede. Ninguém conferiu os termos de privacidade, retenção e treino dos fornecedores do catálogo: o aceite diz que a empresa assume essa conferência, em especial nos modelos gratuitos.
 
-  O Jev continua sendo o padrão de quem não mexer em nada. A troca usa a mesma credencial OpenRouter da conversa, sem segunda conta e sem segunda chave; quando a lista de modelos não pôde ser conferida no momento, nada é gravado e a tela diz por quê. Outro modelo muda as probabilidades das decisões, então a orientação na própria tela é deixar a tarefa em Observando e comparar antes de deixá-lo decidir.
+  O Jev continua sendo o padrão de quem não mexer em nada, e a troca usa a mesma credencial OpenRouter da conversa. A orientação na tela é deixar a tarefa em Observando e comparar antes de deixar outro modelo decidir.
 
 - **Meta de vendas pode ser em valor vendido, além da quantidade, e por vendedor** A meta mensal do Desempenho agora escolhe o indicador: quantidade de vendas ganhas ou valor vendido, na moeda da organização. O realizado em valor é a soma do valor dos negócios ganhos fechados dentro da janela da meta — a mesma janela da contagem, sem segunda régua —, e o painel mostra o valor realizado, o percentual, o quanto falta e a projeção até o fim do mês. A meta pode ser da empresa inteira ou de um vendedor, nos mesmos três níveis de escopo (empresa, funil e vendedor). Metas já cadastradas continuam valendo por quantidade: o indicador novo só entra quando alguém escolhe valor ao salvar.
 
@@ -74,11 +61,9 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **As etapas do funil mudam de ordem arrastando a coluna, não só pelas setas** Em Configurações › Etapas do funil, cada etapa ganha uma alça à esquerda do número: arraste a coluna até o lugar certo e solte. Antes, a ordem só mudava pelas setas, uma casa por clique, e levar a última de oito colunas para o começo pedia sete cliques. A linha fica onde foi solta enquanto a mudança é gravada, e volta ao lugar de antes, com o motivo na tela, se o servidor recusar. As setas continuam, para quem usa teclado ou leitor de tela, e o quadro do funil passa a mostrar a ordem nova sem recarregar, como já acontecia com as setas. Nenhuma ação é pedida a quem opera a instalação. Contribuição de @officialasishkumar (#4802).
 
-- **O relatório de vendas do Desempenho sai em CSV, com o período no nome do arquivo** A tela de Desempenho mostrava o resultado de vendas por atendente — ganhos, perdidos, conversas e o tempo da primeira resposta — e não tinha porta de saída: levar o número para a gestão ou abrir numa planilha dependia de print ou digitação. Agora o botão "Exportar vendas", ao lado do filtro de atendente, baixa um CSV com a tabela da tela.
+- **O relatório de vendas do Desempenho sai em CSV, com o período no nome do arquivo** A tela de Desempenho mostrava o resultado de vendas por atendente — ganhos, perdidos, conversas e o tempo da primeira resposta — e não tinha porta de saída: levar o número para a gestão ou abrir numa planilha dependia de print ou digitação. Agora o botão "Exportar vendas", ao lado do filtro de atendente, baixa um CSV com a tabela da tela, no formato das outras exportações, que o Excel em português abre com acento e colunas certos.
 
-  O arquivo sai no formato das exportações que o produto já tinha (contatos, conversas, auditoria): mesmo `Content-Type`, mesmo `Content-Disposition` de anexo, BOM na frente, `;` de separador e CRLF — o que faz o Excel em português abrir acento e colunas certos. O decimal vai com vírgula, e média não medida sai vazia em vez de zero.
-
-  O nome do arquivo diz o que é e qual é o período (`vendas-por-atendente-AAAA-MM-DD_a_AAAA-MM-DD.csv`), e o recorte que a pessoa está vendo é o que sai: com um atendente escolhido no filtro, o arquivo tem só a linha dele. Os números não são recalculados — a rota e a tela leem a mesma função, então o arquivo e a tela não têm como divergir. Exportar exige papel de gestão (`manager`), o mesmo piso das outras exportações, e cada arquivo baixado fica registrado na auditoria com a quantidade de linhas e o recorte, nunca com o conteúdo da venda.
+  O nome do arquivo traz o período (`vendas-por-atendente-AAAA-MM-DD_a_AAAA-MM-DD.csv`), e sai o recorte que está na tela. Exportar exige papel de gestão (`manager`), e cada arquivo baixado fica registrado na auditoria, sem o conteúdo da venda.
 
   Contribuição de @webtecnica (#4849, #4802).
 
@@ -86,23 +71,21 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Contribuição de @atendimentoreload-boop (#4814).
 
-- **A conexão presa em "Conectando…" passa a ser religada sozinha — e avisa quando não volta** A sessão do WhatsApp no canal não oficial podia ficar dias em "Conectando…" sem receber mensagem nenhuma, e o produto não avisava ninguém. O único sinal era a pausa da campanha de prospecção, que só existe para quem tem campanha ativa; quem não tinha descobria ao estranhar que ninguém escrevia.
+- **A conexão presa em "Conectando…" passa a ser religada sozinha — e avisa quando não volta** A sessão do WhatsApp no canal não oficial podia ficar dias em "Conectando…" sem receber mensagem nenhuma, e o produto não avisava ninguém.
 
-  Agora o vigia de sessão olha a idade do estado, não só o estado. Passados cinco minutos em "Conectando…" — sessenta vezes o pior boot medido, e portanto folga suficiente para um reinício normal terminar —, ele reinicia a sessão pelo próprio servidor de WhatsApp, sem descartar a credencial: é o mesmo stop e start do botão Reconectar, que não pede o QR de novo. As tentativas são espaçadas pelo mesmo prazo e param em três; se a sessão não voltar depois delas, o vigia para de insistir e a Central de avisos recebe o caso com o caminho para resolver à mão.
-
-  O aviso de saúde também passou a cobrir esse estado, pela mesma régua: "Conectando…" acima de cinco minutos aparece na Central como aviso, e sobe para crítico quando as tentativas automáticas se esgotam. Os dois consomem o mesmo prazo, o mesmo intervalo e o mesmo limite, então o que a tela diz e o que o sistema faz não podem divergir. Um boot normal — segundos, não minutos — continua em silêncio, e uma conexão que esteja funcionando nunca é reiniciada por esse caminho.
+  Agora, passados cinco minutos em "Conectando…", o sistema reinicia a sessão como o botão Reconectar, sem pedir o QR de novo. As tentativas são espaçadas pelo mesmo prazo e param em três; se a sessão não voltar, a Central de avisos recebe o caso com o caminho para resolver à mão. Na Central, "Conectando…" acima de cinco minutos aparece como aviso e sobe para crítico quando as tentativas se esgotam. Uma conexão que funciona nunca é reiniciada por esse caminho.
 
   Os três números podem ser ajustados por instalação, em milissegundos para o prazo e o intervalo e em tentativas para o limite (`WHATSAPP_STARTING_PRAZO_MS`, `WHATSAPP_STARTING_INTERVALO_MS` e `WHATSAPP_STARTING_LIMITE`); sem eles, valem os padrões acima.
 
   Contribuição de @webtecnica (#4875, #4870).
 
-- **Rotas da agenda aceitam token de integração** As rotas de leitura da agenda (`agenda/configuracao`, `agenda/enderecos`, `agenda/excecoes`, `agenda/horarios-livres`, `agenda/pessoas` e `agenda/vinculos`), a de remoção de bloqueio (`agenda/excecoes` DELETE) e a de reativar tipo de agendamento (`agenda/tipos/reativar`) passam a aceitar o token `dsk_…` de servidor. A leitura exige o escopo `mcp:read`, a escrita exige `mcp:write`, e cada chamada conta no próprio teto de escrita do token e da organização. A organização vem da linha do token. Consultar horários livres pede papel `agent` no token, o mesmo que a ferramenta de agenda da IA exige. Remover bloqueio de dia pelo token pede papel `manager`, já que o token não é pessoa e atua sobre toda a organização. Continuam somente de sessão a criação de bloqueio de dia, a leitura das agendas Google da pessoa, a seleção e a atualização dessas agendas, a decisão de conflito do Google, e a leitura de um compromisso pelo id.
+- **Rotas da agenda aceitam token de integração** As rotas de leitura da agenda (`agenda/configuracao`, `agenda/enderecos`, `agenda/excecoes`, `agenda/horarios-livres`, `agenda/pessoas` e `agenda/vinculos`), a de remoção de bloqueio (`agenda/excecoes` DELETE) e a de reativar tipo de agendamento (`agenda/tipos/reativar`) passam a aceitar o token `dsk_…` de servidor. A leitura exige o escopo `mcp:read`, a escrita exige `mcp:write`, e cada chamada conta no teto do token e da organização. Consultar horários livres pede papel `agent` no token; remover bloqueio de dia pede `manager`. Continuam somente de sessão a criação de bloqueio de dia, as agendas Google da pessoa, a decisão de conflito do Google e a leitura de um compromisso pelo id.
 
   Contribuição de @paulolimajr77 (#4391, Spec 33, fatia 5 de 9).
 
 - **Catálogo de serviços como módulo opcional: serviço com tipo, variações, prazo e sinal** Novo módulo opcional, instalado em Módulos pelo administrador da instalação. Sem instalar, nada muda: a tabela do módulo não existe, as rotas de serviço respondem 404 e a busca de produtos do agente segue igual.
 
-  Depois de instalar, um item do catálogo pode ser serviço: hora marcada, projeto ou plano recorrente, com variações (cada uma com nome, código e preço próprios), prazo em dias úteis no projeto, sinal percentual ou fixo e instruções internas para o agente. O cadastro fica em CRM › Ver tudo em CRM › Serviços, que só aparece com o módulo instalado; lá se cria, edita e desativa o serviço e se acrescentam as variações. O preço continua sendo o do item do catálogo. O agente passa a responder com "a partir de", as variações, o sinal calculado e o prazo, e deixa de oferecer o serviço marcado para não oferecer. O sinal fixo nunca passa do menor preço da família, inclusive quando o preço muda pela tela de produtos ou pela planilha. Base de @webtecnica (#3480).
+  Depois de instalar, um item do catálogo pode ser serviço: hora marcada, projeto ou plano recorrente, com variações (cada uma com nome, código e preço próprios), prazo em dias úteis no projeto, sinal percentual ou fixo e instruções internas para o agente. O cadastro fica em CRM › Ver tudo em CRM › Serviços, que só aparece com o módulo instalado. O preço continua sendo o do item do catálogo. O agente passa a responder com "a partir de", as variações, o sinal calculado e o prazo, e não oferece o serviço marcado para não oferecer. O sinal fixo nunca passa do menor preço da família. Base de @webtecnica (#3480).
 
   Contribuição de @webtecnica (#3480, #3372).
 
@@ -114,7 +97,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Contribuição de @a0001f (#4981).
 
-- **O quadro ganha a opção de pintar a coluna inteira com a cor da etapa, em tom pastel** Desde a escolha da cor da etapa em Configurações › Etapas do funil, o quadro mostrava o tom só numa bolinha ao lado do nome. Agora há um botão **Cor na coluna**, ao lado de «Compacta», que pinta a coluna inteira (com o cabeçalho preso no alto) em tom pastel, com uma borda no mesmo tom. O fundo é a cor da etapa misturada com o fundo do quadro, então segue o tema claro e o escuro e os cards continuam legíveis. A escolha é de cada pessoa e fica no navegador, como a densidade dos cards; **o padrão continua sendo só a bolinha**, então nada muda para quem não ligar. Etapa sem cor («Padrão») continua neutra. Continua o trabalho de @webtecnica no #4846 (item 2 da #4802). Nenhuma ação é necessária na VPS.
+- **O quadro ganha a opção de pintar a coluna inteira com a cor da etapa, em tom pastel** Desde a escolha da cor da etapa em Configurações › Etapas do funil, o quadro mostrava o tom só numa bolinha ao lado do nome. Agora há um botão **Cor na coluna**, ao lado de «Compacta», que pinta a coluna inteira em tom pastel, nos temas claro e escuro. A escolha é de cada pessoa e fica no navegador; **o padrão continua sendo só a bolinha**. Etapa sem cor («Padrão») continua neutra. Continua o trabalho de @webtecnica no #4846 (item 2 da #4802). Nenhuma ação é necessária na VPS.
 
   Contribuição de @xofrd (#4976).
 
@@ -122,12 +105,10 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   sempre no mesmo cinza, e num grupo movimentado era difícil saber de relance quem estava
   falando.
 
-  Agora o nome de cada participante sai numa cor própria, como no WhatsApp do celular. A cor
-  vem da identidade da pessoa no WhatsApp (e não da ordem em que ela aparece), então é a mesma
-  em todo o fio, depois de recarregar e em outro computador. O balão não muda de cor, e duas
-  pessoas podem eventualmente cair na mesma cor. Mensagens enviadas pela sua equipe e mensagens
-  apagadas continuam sem cor. Cada cor tem uma versão para o tema claro e outra para o escuro,
-  com contraste de leitura de pelo menos 4,5:1 contra o fundo do balão nos dois.
+  Agora o nome de cada participante sai numa cor própria, como no WhatsApp do celular, a
+  mesma em todo o fio e em outro computador, nos temas claro e escuro. O balão não muda de
+  cor, e duas pessoas podem cair na mesma cor. Mensagens da sua equipe e apagadas continuam
+  sem cor.
 
   Nada muda em quem já opera uma instalação: é só a aparência da conversa.
 
@@ -156,24 +137,21 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   no catálogo), os negócios ganhos, perdidos e em proposta, e o que falhou (mensagens com
   falha ou presas, erros da IA, canais fora do ar e avisos abertos na Central). Cada linha
   leva o contato, o canal, o resumo, a próxima tarefa, o responsável e o link da conversa.
-  A tela se atualiza sozinha a cada 30 segundos, mostra a hora da atualização no fuso da
-  empresa e deixa escolher um dia anterior. O que não foi registrado aparece como "não
-  registrado", nunca estimado.
+  A tela se atualiza sozinha a cada 30 segundos e deixa escolher um dia anterior.
 
   Todo dia, na hora marcada (21h no fuso da empresa, por padrão), o CRM salva o relatório
-  do dia em Análise › Relatórios do dia, com o texto pronto para colar e os links de cada
-  conversa. Gestores podem gerar ou regerar o relatório de um dia pelo botão "Gerar
-  relatório agora"; o administrador escolhe as etiquetas, as etapas que contam como
-  proposta e a hora do relatório na mesma tela. O fuso de Beirute (Líbano) passa a estar
-  na lista de fusos.
+  do dia em Análise › Relatórios do dia, com o texto pronto para colar. Gestores podem
+  gerar ou regerar o relatório pelo botão "Gerar relatório agora"; o administrador escolhe
+  as etiquetas, as etapas que contam como proposta e a hora do relatório na mesma tela. O
+  fuso de Beirute (Líbano) passa a estar na lista de fusos.
 
   Contribuição de @lebaneseforas-byte (#4722).
 
-- **Nível `telas_principais` passa a ter régua medida, e um idioma novo aparece sem cobrar toda frase** O nível `telas_principais` do registro de idiomas deixou de ser uma promessa sem critério: existe agora a régua que o confere. As telas principais são os destinos do menu lateral, derivados de `lib/navigation/registry.ts` — nunca uma lista escrita à mão —, e a cobertura de frases é medida pelo grafo de imports de cada rota, para que a conta alcance o componente onde a tela de fato mora e não só a casca do `page.tsx`. Medido nesta árvore: 16 telas e 4.573 frases distintas, com piso de dois terços. O inglês está em 71,6% e o turco em 79,7%; o chinês, em 50,0%, e por isso ainda não aparece. Quem declara o nível é aprovado quando atende a régua e recusado quando não atende, com o número do que falta — antes, qualquer declaração era recusada, e o único caminho para um idioma novo aparecer era o nível `completo`, que cobra aquele idioma em todo PR que acrescentar uma frase em português. O nível `completo` não mudou: o espanhol continua cobrando toda frase de tela. Nenhum idioma é promovido nesta fatia, e nenhum catálogo entra no caminho do type check: o teste lê o catálogo como dado, não por `import`, porque pôr `en.json` no programa do TypeScript custa 18.944 tipos e 17 MB de heap medidos só no recorte.
+- **Nível `telas_principais` passa a ter régua medida, e um idioma novo aparece sem cobrar toda frase** O nível `telas_principais` do registro de idiomas deixou de ser uma promessa sem critério: existe agora a régua que o confere: as frases das telas do menu lateral, com piso de dois terços. Medido nesta árvore: 16 telas e 4.573 frases distintas. O inglês está em 71,6% e o turco em 79,7%; o chinês, em 50,0%, e por isso ainda não aparece. Antes, o único caminho para um idioma novo aparecer era o nível `completo`, que não mudou: o espanhol continua cobrando toda frase de tela. Nenhum idioma é promovido nesta fatia.
 
   Contribuição de @webtecnica (#4817, #4812).
 
-- **Rotas de tarefas aceitam token de integração** As rotas de tarefas (`tasks` e `tasks/[id]`) passam a aceitar o token `dsk_…` de servidor além da sessão de navegador. O token permite listar, criar e editar tarefas (inclusive tarefas com repetição semanal), associando-as a leads, contatos ou demandas da própria organização. A leitura exige o escopo `mcp:read` (com papel `viewer`) e a escrita exige `mcp:write` (com papel `agent`). Para apagar uma tarefa via token (`DELETE /api/v1/tasks/[id]`), exige-se papel mínimo `manager`, alinhado à régua de exclusões da organização. O filtro de funil (`pipeline_id`) e a atribuição dinâmica a si mesmo (`assigned_to=me`) continuam restritos à sessão da tela.
+- **Rotas de tarefas aceitam token de integração** As rotas de tarefas (`tasks` e `tasks/[id]`) passam a aceitar o token `dsk_…` de servidor além da sessão de navegador. O token permite listar, criar e editar tarefas (inclusive com repetição semanal) ligadas a leads, contatos ou demandas da organização. A leitura exige `mcp:read` (papel `viewer`), a escrita `mcp:write` (papel `agent`), e apagar (`DELETE /api/v1/tasks/[id]`) exige papel `manager`. O filtro de funil (`pipeline_id`) e a atribuição dinâmica a si mesmo (`assigned_to=me`) continuam restritos à sessão da tela.
 
   Contribuição de @paulolimajr77 (#4391, Spec 33, fatia 5 de 9).
 
@@ -185,60 +163,42 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Contribuição de @jlom2024 (#4803, #2235).
 
-- **A frase da opção de parar volta a sair inteira quando a abordagem vai em várias mensagens curtas** Na campanha de prospecção com "Responder em várias mensagens curtas" ligado, a frase que ensina a pessoa a parar de receber (a padrão ou a escrita pela empresa) é um parágrafo próprio e sai na última mensagem da resposta. Dois caminhos a perdiam: o reenvio automático de uma mensagem que ficou na fila do canal lia só a primeira bolha e mandava a resposta sem a frase; e, quando o teto de caracteres da bolha era menor que a frase, ela era cortada em duas e o sistema deixava de amarrar a saída à mensagem que a carregava, oferecendo a saída de novo depois. Agora a frase sai inteira uma vez, e a saída continua presa à mensagem certa — inclusive quando o assistente manda mais de uma mensagem na mesma resposta: o reenvio lê só as mensagens daquele envio, então não perde a frase nem repete o pedido de parar. Nada a fazer na VPS.
+- **A frase da opção de parar volta a sair inteira quando a abordagem vai em várias mensagens curtas** Na campanha de prospecção com "Responder em várias mensagens curtas" ligado, a frase que ensina a pessoa a parar de receber (a padrão ou a escrita pela empresa) é um parágrafo próprio e sai na última mensagem da resposta. O reenvio automático e o teto de caracteres da bolha às vezes a perdiam ou cortavam em duas. Agora a frase sai inteira uma vez, presa à mensagem certa, sem repetir o pedido de parar. Nada a fazer na VPS.
 
   Contribuição de @webtecnica (#4654, #4370).
 
-- **No WhatsApp oficial, a mensagem que o CRM não sabe ler entra na conversa, sem texto, em vez de sumir** No WhatsApp oficial (pela Meta ou pelo Datafy), algumas mensagens de clientes chegavam ao CRM e se perdiam. Isso acontecia com tipos de mensagem que o CRM não reconhecia, como a que a Meta marca como "não suportada" e o pedido feito pelo catálogo. A mensagem não aparecia na conversa e nenhum aviso surgia na tela.
+- **No WhatsApp oficial, a mensagem que o CRM não sabe ler entra na conversa, sem texto, em vez de sumir** No WhatsApp oficial (pela Meta ou pelo Datafy), algumas mensagens de clientes de tipo que o CRM não reconhece (como a "não suportada" da Meta e o pedido feito pelo catálogo) se perdiam sem aviso.
 
-  Agora essa mensagem entra na conversa, sem texto. O contato, a conversa e o lead seguem como em qualquer mensagem recebida. O conteúdo continua sem aparecer: o CRM deixa de perder a mensagem, mas não passa a ler o que ela traz. Se a IA estiver ligada, ela é acionada como em qualquer mensagem e é avisada de que a última mensagem chegou sem texto.
-
-  Num número usado ao mesmo tempo no app WhatsApp Business e no CRM, a mesma falha atingia as mensagens que a equipe manda pelo celular, e a IA não pausava. Agora elas entram na conversa, e a IA pausa como já acontece com as outras respostas dadas pelo celular.
-
-  Nada muda para as mensagens que o CRM já lia: texto, foto, áudio, vídeo, documento, figurinha, localização, cartão de contato e clique em botão. Nenhuma ação é necessária na atualização.
+  Agora essa mensagem entra na conversa, sem texto: o CRM deixa de perdê-la, mas não passa a ler o que ela traz. Se a IA estiver ligada, ela é acionada e avisada de que a mensagem chegou sem texto. Num número usado ao mesmo tempo no app WhatsApp Business e no CRM, as mensagens desse tipo mandadas pela equipe no celular também entram, e a IA pausa como nas outras respostas dadas pelo celular. Nada muda para as mensagens que o CRM já lia. Nenhuma ação é necessária na atualização.
 
   Contribuição de @tabaterral (#4580).
 
 - **Negócio aberto à mão num funil de item deixa de nascer sem o item conferido** Quando a empresa usa receita de banco externo, o negócio aberto pelo agente com
-  funil e etapa passados à mão e sem a referência do item nascia sem nenhuma
-  conferência: numa conversa real, o agente abriu "Casa com piscina em Alphaville —
-  AU-9999" para um imóvel que não existe. Agora, quando o funil informado é o
-  destino do interesse de uma receita ativa e a conversa está em andamento, a
-  criação pede a referência do item e o item é conferido no banco de origem; sem
-  ela, o agente recebe a explicação e passa a conversa para a equipe em vez de
-  abrir o negócio.
-
-  O que não mudou: criação com referência continua idêntica, e a criação manual em
-  funil que não é destino de receita continua permitida — com o registro
-  `funil_a_mao_sem_item` na auditoria da chamada, para que esse negócio não se
-  confunda com um que veio de um item conferido. Fora do atendimento (rota MCP,
-  integração), nada é recusado.
+  funil e etapa passados à mão e sem a referência do item nascia sem conferência,
+  até para item que não existe. Agora, quando o funil é destino de uma receita ativa
+  e a conversa está em andamento, a criação pede a referência e confere o item no
+  banco de origem; sem ela, o agente passa a conversa para a equipe. Criação com
+  referência e em funil que não é destino de receita continuam como antes. Fora do
+  atendimento (rota MCP, integração), nada é recusado.
 
   Contribuição de @webtecnica (#4785), a partir da medição de @paulolimajr77 com IA real (#4763).
 
-- **A assinatura do ChatGPT volta a responder o cliente com o Sentry ligado** Com o provedor `openai-assinatura` (Sign in with ChatGPT), o agente voltou a responder o cliente: toda chamada "Responder o cliente" falhava em ~1 s com `Invalid state: The ReadableStream is locked`, e a aba Teste do agente dava `preview_failed`. O defeito era da combinação do `ai` 7.0.168+ com a integração do Vercel AI SDK do Sentry — o Sentry trocava o stream da chamada por um stream espiado e travava o original, e só a assinatura usa `streamText` com ferramentas. A integração do AI SDK não é mais instalada no app, no edge nem no worker; chamadas curtas, Gemini e OpenAI por chave continuam iguais. Quem usava `SENTRY_DSN=off` como contorno pode tirar a linha; a escolha de telemetria continua a mesma de antes. Quem aponta `SENTRY_DSN` para o próprio Sentry segue recebendo os erros, mas deixa de receber os spans das chamadas de IA. Encontrado por @hubmorada (#4798), consertado por @webtecnica.
+- **A assinatura do ChatGPT volta a responder o cliente com o Sentry ligado** Com o provedor `openai-assinatura` (Sign in with ChatGPT), o agente voltou a responder o cliente: toda chamada "Responder o cliente" falhava em ~1 s com `Invalid state: The ReadableStream is locked`, e a aba Teste do agente dava `preview_failed`. Gemini e OpenAI por chave continuam iguais. Quem usava `SENTRY_DSN=off` como contorno pode tirar a linha; a escolha de telemetria continua a mesma de antes. Quem aponta `SENTRY_DSN` para o próprio Sentry segue recebendo os erros, mas deixa de receber os spans das chamadas de IA. Encontrado por @hubmorada (#4798), consertado por @webtecnica.
 
   Contribuição de @webtecnica (#4815, #4798).
 
 - **Inbox ganha a porta da ficha do contato na faixa entre 768 e 1279 px** A ficha do contato só aparecia como terceira coluna a partir de 1280 px, e a
-  gaveta que abre o mesmo painel tinha uma única porta — dentro da barra do
-  celular, que some a partir de 768 px. Quem atendia numa janela de notebook
-  (~1230 px) ficava sem coluna e sem botão, e não achava onde inscrever o contato
-  num follow-up: essa seção só existe dentro da ficha.
+  gaveta só abria pela barra do celular, que some a partir de 768 px. Numa janela
+  de notebook (~1230 px), não havia onde inscrever o contato num follow-up.
 
-  Agora o cabeçalho da conversa tem um botão "Ficha" entre 768 e 1279 px. Ele abre
-  a gaveta que já existia — não há segundo painel — e a seção de follow-up vem
-  junto. Abaixo de 768 px nada muda (a barra do celular continua com o botão dela)
-  e a partir de 1280 px a ficha continua sendo a coluna da direita, sem botão
-  duplicado. O corte de 1280 px não foi tocado: ele é decisão de layout medida.
+  Agora o cabeçalho da conversa tem um botão "Ficha" entre 768 e 1279 px, que abre
+  a gaveta com a seção de follow-up. Abaixo de 768 px e a partir de 1280 px nada muda.
 
   Contribuição de @webtecnica, a partir da issue #4822.
 
-- **A auditoria da leitura do CPF passa a guardar o motivo na linha certa** Quando alguém abre a ficha de um contato e pede para ver o CPF, o sistema registra a leitura na auditoria. Só que o motivo informado (por exemplo, "conferência de cadastro") não ia para essa linha: ficava numa segunda linha, registrada como se o contato tivesse sido **atualizado** — o que não aconteceu. Quem filtrava a auditoria por leituras de CPF não encontrava o motivo de nenhuma delas.
+- **A auditoria da leitura do CPF passa a guardar o motivo na linha certa** Quando alguém abre a ficha de um contato e pede para ver o CPF, o sistema registra a leitura na auditoria. Só que o motivo informado ficava numa segunda linha, registrada como se o contato tivesse sido **atualizado** — o que não aconteceu.
 
-  Agora o motivo sai na própria linha da leitura do CPF, e a leitura da ficha deixa de gravar a linha de atualização.
-
-  Para quem lê o CPF por SQL nada muda: as duas formas de chamada continuam valendo, e a finalidade declarada na sessão segue sendo registrada quando não vem outra. Nenhuma ação é necessária na atualização.
+  Agora o motivo sai na própria linha da leitura do CPF, e a linha de atualização deixa de ser gravada. Para quem lê o CPF por SQL nada muda. Nenhuma ação é necessária na atualização.
 
   Contribuição de @webtecnica (#4897, #4892).
 
@@ -246,10 +206,9 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   código: com a tela em espanhol, a aba vizinha "Visão geral" virava "Resumen", mas esses três
   ficavam como estavam.
 
-  Agora os três seguem o idioma da tela pelo dicionário, que já tinha as chaves: em espanhol a aba
-  diz "Línea de tiempo" e os rótulos "Correo" e "Etiquetas"; em português a aba passa a dizer
-  "Linha do tempo", e "Email" e "Tags" continuam iguais. As sondas e os roteiros de captura que
-  procuravam a aba pelo nome "Timeline" agora a acham também como "Linha do tempo".
+  Agora os três seguem o idioma da tela: em espanhol a aba diz "Línea de tiempo" e os rótulos
+  "Correo" e "Etiquetas"; em português a aba passa a dizer "Linha do tempo", e "Email" e "Tags"
+  continuam iguais.
 
   Nada muda em quem já opera uma instalação: é só o texto da tela.
 
@@ -263,11 +222,9 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Contribuição de @60507 (#4905).
 
-- **Evento de duração zero no Google Agenda não trava mais a leitura, e a tela diz qual evento foi recusado (#4915)** Um evento de terceiro com início igual ao fim no Google Agenda travava a sincronização daquela agenda para sempre: o banco recusava a página inteira (`calendar_external_events_periodo_valido` exige fim depois do início), e a rodada seguinte relia a mesma página. Agora o evento de duração zero é descartado na leitura — ele não ocupa horário — e os demais eventos da página entram normalmente. Ele não vira "cancelado": o mesmo leitor alimenta os agendamentos vinculados, e cancelar ali derrubaria no CRM um compromisso que alguém só editou no Google.
+- **Evento de duração zero no Google Agenda não trava mais a leitura, e a tela diz qual evento foi recusado (#4915)** Um evento de terceiro com início igual ao fim no Google Agenda travava a sincronização daquela agenda para sempre. Agora o evento de duração zero é descartado na leitura (ele não ocupa horário, e não vira "cancelado"), e os demais entram normalmente.
 
-  Quando algum evento realmente não pode ser lido, a tela da agenda deixa de mostrar só «A leitura não terminou» e passa a dizer o dia e a hora dele (só o dia, se for de dia inteiro), do jeito que aparecem no Google, para quem opera corrigir ou remover esse evento lá. Título e participantes ficam de fora, porque a mensagem é gravada e aparece na tela. O log técnico registra a classe, o código e o nome da restrição do banco, também sem o texto livre do erro.
-
-  Nada muda para quem não tem evento assim: a leitura segue igual.
+  Quando algum evento não pode ser lido, a tela da agenda deixa de mostrar só «A leitura não terminou» e passa a dizer o dia e a hora dele, como aparecem no Google, para quem opera corrigir ou remover o evento lá. Nada muda para quem não tem evento assim.
 
   Contribuição de @60507 (#4949), com a parte da tela de @webtecnica (#4920).
 
@@ -294,22 +251,15 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Contribuição de @ararquitetura (do #4951).
 
-- **App instalado no celular não pede login a cada abertura, e a chave de Push diz a verdade** No Android, abrir o CRM pelo ícone do app instalado é uma navegação que vem
-  "de fora" do site, e o cookie de sessão (SameSite=Strict) não viaja nela. O
-  servidor não via ninguém logado e mandava para a tela de login a cada abertura,
-  embora a sessão continuasse válida.
-
-  Agora essa abertura passa por uma página-ponte do próprio CRM, que refaz a
-  navegação de dentro do site: com sessão, a pessoa entra direto; sem sessão,
-  vai ao login como antes. É o mesmo mecanismo que a volta do login com Google
-  já usava. O cookie continua Strict.
-
+- **App instalado no celular não pede login a cada abertura, e a chave de Push diz a verdade** No Android, abrir o CRM pelo ícone do app instalado mandava para a tela de
+  login a cada abertura, embora a sessão continuasse válida. Agora, com sessão, a
+  pessoa entra direto; sem sessão, vai ao login como antes. O cookie continua Strict.
   Nada a fazer na atualização.
 
   Junto: a chave de **Push** em Configurações › Notificações só aparece ligada
-  quando o aparelho já deu permissão. Antes ela vinha ligada por padrão num
-  celular que nunca tinha sido inscrito — e nenhum aviso chegava com o app
-  fechado. Agora o primeiro toque liga, pede a permissão e inscreve o aparelho.
+  quando o aparelho já deu permissão. Antes ela vinha ligada num celular nunca
+  inscrito, e nenhum aviso chegava com o app fechado. Agora o primeiro toque liga,
+  pede a permissão e inscreve o aparelho.
 
   Contribuição de @agencyspeedagend-del (#4811).
 
