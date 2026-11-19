@@ -61,12 +61,18 @@ export async function anexarNegocioDaTarefa(
   for (let i = 0; i < ids.length; i += TAMANHO_DO_LOTE) {
     const { data, error } = await db
       .from("crm_leads")
-      .select("id, title")
+      .select("id, title, contact_id")
       .eq("organization_id", organizationId)
       .in("id", ids.slice(i, i + TAMANHO_DO_LOTE));
     if (error) return null;
+    // O `contact_id` vai junto: é por ele que o selo acha o setor do NEGÓCIO
+    // (#4883). Sem ele, a lista pelo token perdia essa fonte que a sessão tem.
     for (const negocio of (data ?? []) as NegocioDaTarefa[]) {
-      porId.set(negocio.id, { id: negocio.id, title: negocio.title });
+      porId.set(negocio.id, {
+        id: negocio.id,
+        title: negocio.title,
+        contact_id: negocio.contact_id ?? null,
+      });
     }
   }
 

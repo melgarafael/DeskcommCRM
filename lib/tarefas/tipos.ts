@@ -21,6 +21,8 @@
  * por um `Record` de objetos deixaria o par cego.
  */
 
+import type { SetorDaTarefa } from "./setor-da-tarefa";
+
 /** Onde o aviso de tarefa leva: quem recebe é sempre o responsável. */
 export const HREF_MINHAS_TAREFAS = "/app/tasks?assigned_to=me";
 
@@ -53,6 +55,8 @@ export function tarefaEstaAberta(status: SituacaoDaTarefa): boolean {
 export interface NegocioDaTarefa {
   id: string;
   title: string;
+  /** O contato do card: é por ele que o setor do NEGÓCIO é achado (#4883). */
+  contact_id?: string | null;
 }
 
 /**
@@ -145,6 +149,13 @@ export interface Tarefa {
    * quando a tarefa é avulsa — ou quando o negócio não está mais visível.
    */
   lead?: NegocioDaTarefa | null;
+  /**
+   * DERIVADO (#4883): o setor que o SELO mostra, e de onde ele veio — conversa,
+   * negócio ou (fallback, declarado) responsável. Anexado pela rota quando a
+   * tela pede `?com_setor=true`; a tela não recalcula, só desenha. Ver
+   * `lib/tarefas/setor-da-tarefa.ts`.
+   */
+  setor?: SetorDaTarefa | null;
 }
 
 export interface NovaTarefa {
