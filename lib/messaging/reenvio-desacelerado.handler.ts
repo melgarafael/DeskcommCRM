@@ -44,6 +44,7 @@ import { ApiError } from "@/lib/api/types";
 import type { EventHandler, EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { logger } from "@/lib/logger";
 import { emitirFalhaDeEntrega } from "@/lib/messaging/falha-de-entrega";
+import { nomeOriginalDaMensagem } from "@/lib/messaging/media/nome-de-arquivo";
 import { isMediaPathOwnedBy } from "@/lib/messaging/media/upload-validation";
 import type { SendMessageInput } from "@/lib/schemas";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -125,10 +126,14 @@ function corpoDoReenvio(organizationId: string, m: LinhaDaMensagem): SendMessage
     m.media_storage_path &&
     isMediaPathOwnedBy(m.media_storage_path, organizationId, m.conversation_id)
   ) {
+    // O nome que a pessoa deu ao arquivo (#4457), lido da própria linha: sem
+    // ele, o documento sairia com o nome do objeto no bucket (`out-<uuid>.pdf`).
+    const nome = nomeOriginalDaMensagem(m.metadata);
     return {
       conversation_id: m.conversation_id,
       type: m.type,
       media_storage_path: m.media_storage_path,
+      ...(nome ? { media_filename: nome } : {}),
       ...(m.media_mime ? { media_mime: m.media_mime } : {}),
       ...(m.media_size_bytes ? { media_size_bytes: m.media_size_bytes } : {}),
       ...(m.body ? { body: m.body } : {}),

@@ -64,7 +64,7 @@ describe("no celular o botão de responder aparece", () => {
     const comRegra = [...BOLHA.matchAll(/\[@media\(hover:hover\)\]:opacity-0/g)];
     expect(comRegra.length, "apareceu gatilho novo; confira se ele segue a regra").toBe(1);
     expect(BOLHA).toMatch(/\{temMenu && \(\s*<DropdownMenu>/);
-    expect(BOLHA).toMatch(/const temMenu = Boolean\(onResponder \|\|/);
+    expect(BOLHA).toMatch(/const temMenu = Boolean\(podeResponder \|\|/);
   });
 
   it("o teclado também alcança", () => {

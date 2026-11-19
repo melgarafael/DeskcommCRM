@@ -74,10 +74,15 @@ export async function configPadraoDaOrganizacao(
       const {
         ofertas: _ofertasDaCampanhaAntiga,
         briefing_editado_em: _carimboDaCampanhaAntiga,
+        // O interruptor da ficha digital (#4829) também NÃO atravessa: ele é a régua
+        // da campanha antiga (que podia vender consórcio), e a prévia padrão nasce
+        // neutra — com a ficha digital ligada, como o padrão de sempre.
+        usar_ficha_digital: _fichaDaCampanhaAntiga,
         ...resto
       } = cfg.data;
       void _ofertasDaCampanhaAntiga;
       void _carimboDaCampanhaAntiga;
+      void _fichaDaCampanhaAntiga;
       return {
         config: { ...resto, instruction: INSTRUCAO_NEUTRA, qualification: QUALIFICACAO_NEUTRA },
         agenteId: cfg.data.agent_id,

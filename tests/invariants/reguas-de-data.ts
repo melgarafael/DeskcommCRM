@@ -51,13 +51,19 @@ import type pg from "pg";
 import { precisaRenovar } from "@/lib/agenda/google/oauth";
 import { falasDoSnapshot } from "@/lib/agent-engine/agent/conversa-do-caso/leitura";
 import { midiaDerivavelPendente } from "@/lib/agent-engine/edge/crm/midia-derivavel";
+import { idadeNoStatusEmMs } from "@/lib/agent-engine/edge/crm/session-reconciler";
 import { normalizarInstante } from "@/lib/ai/elegibilidade/gate";
+import { quandoCombinado } from "@/lib/atendimento/aviso-retorno-descartado";
 import { estaPresente } from "@/lib/atendimento/presenca";
 import { acaoDaAgenda } from "@/lib/channels/agenda-de-pausa";
+import { criarPorta } from "@/lib/db";
 import { serializarValor } from "@/lib/external-db/montagem";
 import { diaDoValor } from "@/lib/followup/condicao-por-data";
 import { camposAlterados } from "@/lib/leads/campos-alterados";
 import { diaDoPrazo } from "@/lib/lgpd/sla";
+import { montarChecklistDoNegocio } from "@/lib/tarefas/checklist";
+import { dataDaAbordagem } from "@/lib/prospecting/exportar";
+import { prazoDoCampoNoFuso } from "@/lib/tarefas/prazo-relativo";
 import { instanteDoBanco } from "@/lib/tempo/agora";
 
 /**
@@ -111,7 +117,7 @@ const mesmoInstante = (texto: string | null): boolean =>
   texto !== null && Date.parse(texto) === CHEGADA_MS;
 
 /**
- * A LISTA. Onze réguas, na ordem em que a varredura as encontrou.
+ * A LISTA. Treze réguas, na ordem em que a varredura as encontrou.
  *
  * A lista é curta porque é um CONTRATO: cada linha custa a prova de que a régua
  * aceita as duas formas e de que não desloca o instante.
@@ -247,6 +253,98 @@ export function reguasDeData(pool: pg.Pool): ReguaDeData[] {
           new Date(CHEGADA_MS - 3_600_000),
           5 * 60_000,
         ) === false,
+    },
+    {
+      nome: "montarChecklistDoNegocio",
+      onde: "lib/tarefas/checklist.ts:140",
+      // O checklist do card (#4717) lê `crm_lead_activities.created_at` da linha
+      // `task_completed` — `timestamptz`, `Date` no `pg` e string no PostgREST —
+      // e decide o "quando marcou" que o painel mostra. A normalização mora em
+      // `iso()` (privada, arquivo:linha do sítio que a catraca acusou); quem
+      // decide é esta régua. Recusar o `Date` não lançaria nada: a marca
+      // simplesmente não entraria no mapa e TODO item concluído apareceria sem
+      // autor/data.
+      entrada: "valor",
+      exercitar: (valorCru) => {
+        const checklist = montarChecklistDoNegocio({
+          negocioId: "ee390000-0000-4000-8000-000000000199",
+          aplicacoes: [
+            { payload: { plano_id: "plano-1", plano_nome: "Plano", tarefa_ids: ["tarefa-1"] } },
+          ],
+          tarefas: [{ id: "tarefa-1", title: "Passo do plano", status: "done", due_date: null }],
+          marcas: [
+            {
+              source_id: "tarefa-1",
+              performed_by_user_id: "ee390000-0000-4000-8000-000000000198",
+              // O valor CRU: `Date` do driver, string do cliente REST, e
+              // `null`/`undefined` quando o item nunca foi concluído.
+              created_at: valorCru as string,
+            },
+          ],
+        });
+        return checklist !== null && mesmoInstante(checklist.itens[0]?.marcado_em ?? null);
+      },
+    },
+    {
+      nome: "dataDaAbordagem",
+      onde: "lib/prospecting/exportar.ts:288",
+      // `prospecting_candidates.attempted_at` (timestamptz) e o `created_at` da
+      // trilha `prospecting.approach_sent`: é a coluna `abordada_em` do arquivo
+      // da campanha (#4632). Recusar o `Date` do driver deixaria a data da
+      // abordagem VAZIA justamente na lista que existe para dizer quando a
+      // empresa já foi tentada — e o modo de falha é mudo, porque o CSV continua
+      // bem formado. O dia civil é o de `CHEGADA` (2026-11-04), não outro.
+      entrada: "valor",
+      exercitar: (valorCru) =>
+        dataDaAbordagem({ data: {}, attempted_at: valorCru as string | Date }, "America/Sao_Paulo") ===
+        "2026-11-04",
+    },
+    {
+      nome: "quandoCombinado",
+      onde: "lib/atendimento/aviso-retorno-descartado.ts:88",
+      // (#4696) A hora do retorno combinado que vai para o aviso da Central: o
+      // `run_after` do job chega `Date` quando vem do driver e texto quando vem
+      // do payload clonado, e a frase tem de mostrar os DOIS como o mesmo
+      // "dd/mm às hh:mm" no fuso da empresa. Sem instante ela devolve `null` —
+      // a frase não inventa hora.
+      entrada: "valor",
+      exercitar: (valorCru) =>
+        quandoCombinado(valorCru as Date | string | null, "America/Sao_Paulo") !== null,
+    },
+    {
+      nome: "prazoDoCampoNoFuso",
+      onde: "lib/tarefas/prazo-relativo.ts:152",
+      // O prazo do passo do plano relativo a um campo de data (#4717 item 4).
+      // `fn_prazo_do_campo` devolve `timestamptz`: `Date` no driver `pg`, string
+      // no PostgREST — e é esse valor que vira `crm_tasks.due_date`
+      // (`lib/tarefas/plano.ts:342`). A normalização mora aqui, na borda de
+      // leitura, e é régua de CONSULTA: quem lê é a própria função, via `Db`.
+      // Recusar o `Date` não devolve "sem prazo": LANÇA ("não devolveu prazo") e
+      // a aplicação do plano inteira cai — nenhum passo do plano é criado.
+      entrada: "consulta",
+      exercitar: async () => {
+        // O valor cru é o que a consulta devolve: chamada real contra o banco.
+        // 2026-11-10 + 0 dias, 09:00 em America/Sao_Paulo = 12:00Z (o Brasil não
+        // tem horário de verão desde 2019). O epoch prova que ela viu o
+        // `timestamptz` do driver, e não caiu no `throw`.
+        const prazo = await prazoDoCampoNoFuso(criarPorta(pool), {
+          dia: "2026-11-10",
+          dias: 0,
+          fuso: "America/Sao_Paulo",
+        });
+        return Date.parse(prazo) === Date.parse("2026-11-10T12:00:00.000Z");
+      },
+    },
+    {
+      nome: "idadeNoStatusEmMs",
+      onde: "lib/agent-engine/edge/crm/session-reconciler.ts:145",
+      // (#4870) A idade do status no espelho `channel_sessions` é o que decide
+      // se a sessão presa em `STARTING` é reiniciada: `last_status_change_at`
+      // chega `Date` do driver `pg` e string do PostgREST/jsonb. Recusar o
+      // `Date` devolveria `null` e o vigia NUNCA reiniciaria — a trava ficaria
+      // muda, que é exatamente o defeito que ela veio fechar.
+      entrada: "valor",
+      exercitar: (valorCru) => idadeNoStatusEmMs(valorCru, CHEGADA_MS) === 0,
     },
   ];
 }

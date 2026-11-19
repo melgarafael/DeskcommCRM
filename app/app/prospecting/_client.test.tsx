@@ -807,7 +807,7 @@ describe("voz e vocabulário à vista (issue #4360)", () => {
  * abordadas), e foi ela que deixou a campanha CONCLUÍDA sem saída — justamente
  * a que se quer reaproveitar para outra oferta. Agora o botão aparece em
  * qualquer campanha com empresas, e abre um menu com "Só as não abordadas (N)"
- * e "Todas (M)".
+ * e "Incluir as empresas já abordadas (M)".
  *
  * Os números vêm do SERVIDOR (`?resumo=1`), da mesma régua do arquivo: quem
  * pediu para parar é achado também pelo telefone, e esse vínculo não está na
@@ -832,7 +832,7 @@ describe("baixar a lista da campanha (issue #4360)", () => {
     return user;
   }
 
-  it("campanha concluída: 'Todas (M)' baixa a lista inteira, e a tela diz quantas ficaram de fora", async () => {
+  it("campanha concluída: 'Incluir as empresas já abordadas (M)' baixa a lista inteira, e a tela diz quantas ficaram de fora", async () => {
     const base = fixture();
     const concluida = {
       ...base,
@@ -855,7 +855,7 @@ describe("baixar a lista da campanha (issue #4360)", () => {
     );
     await abrirMenu();
 
-    const todas = await screen.findByRole("menuitem", { name: "Todas (2)" });
+    const todas = await screen.findByRole("menuitem", { name: "Incluir as empresas já abordadas (2)" });
     expect(todas).toHaveAttribute("href", `/api/v1/prospecting/${COMPLETA}/exportar?quem=todas`);
     // Nada para abordar: o item existe, diz zero e não vira link de arquivo vazio.
     const soNaoAbordadas = screen.getByRole("menuitem", { name: "Só as não abordadas (0)" });
@@ -888,7 +888,7 @@ describe("baixar a lista da campanha (issue #4360)", () => {
       "href",
       `/api/v1/prospecting/${COMPLETA}/exportar?quem=nao_abordadas`,
     );
-    expect(screen.getByRole("menuitem", { name: "Todas (3)" })).toBeVisible();
+    expect(screen.getByRole("menuitem", { name: "Incluir as empresas já abordadas (3)" })).toBeVisible();
     expect(screen.getByTestId("baixar-lista-fora")).toHaveTextContent(
       "2 empresas ficam fora das duas listas porque pediram para parar, são contatos pessoais ou tiveram os dados apagados.",
     );
@@ -912,7 +912,7 @@ describe("baixar a lista da campanha (issue #4360)", () => {
     );
     // Sem a contagem ninguém sabe se há o que baixar: um `<a download>` ali
     // salvaria o corpo da recusa (422) como se fosse a planilha.
-    for (const nome of ["Todas", "Só as não abordadas"]) {
+    for (const nome of ["Incluir as empresas já abordadas", "Só as não abordadas"]) {
       const item = screen.getByRole("menuitem", { name: nome });
       expect(item).toHaveAttribute("aria-disabled", "true");
       expect(item).not.toHaveAttribute("href");
@@ -926,7 +926,7 @@ describe("baixar a lista da campanha (issue #4360)", () => {
     });
     await abrirMenu();
     expect(await screen.findByText("Contando as empresas…")).toBeVisible();
-    for (const nome of ["Todas", "Só as não abordadas"]) {
+    for (const nome of ["Incluir as empresas já abordadas", "Só as não abordadas"]) {
       const item = screen.getByRole("menuitem", { name: nome });
       expect(item).toHaveAttribute("aria-disabled", "true");
       expect(item).not.toHaveAttribute("href");
@@ -978,7 +978,7 @@ describe("baixar a lista da campanha (issue #4360)", () => {
     await fecharEReabrir(user);
     await waitFor(() => expect(pedidos).toHaveLength(2));
     expect(await screen.findByText("Contando as empresas…")).toBeVisible();
-    for (const nome of ["Todas", "Só as não abordadas"]) {
+    for (const nome of ["Incluir as empresas já abordadas", "Só as não abordadas"]) {
       const item = screen.getByRole("menuitem", { name: nome });
       expect(item).toHaveAttribute("aria-disabled", "true");
       expect(item).not.toHaveAttribute("href");
@@ -1004,7 +1004,7 @@ describe("baixar a lista da campanha (issue #4360)", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Não foi possível contar as empresas. Feche e abra o menu para tentar de novo.",
     );
-    for (const nome of ["Todas", "Só as não abordadas"]) {
+    for (const nome of ["Incluir as empresas já abordadas", "Só as não abordadas"]) {
       const item = screen.getByRole("menuitem", { name: nome });
       expect(item).toHaveAttribute("aria-disabled", "true");
       expect(item).not.toHaveAttribute("href");

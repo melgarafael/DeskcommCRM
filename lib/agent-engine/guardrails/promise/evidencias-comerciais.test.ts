@@ -34,6 +34,28 @@ describe("evidências comerciais do turno", () => {
     expect(e.ler()[0]!.conteudo).toContain("somente no anual");
   });
 
+  it("o serviço entra com variações, sinal e prazo, e sem as instruções internas (#3480)", () => {
+    const e = criarEvidenciasComerciaisDoTurno([]);
+    const servico = {
+      tipo: "projeto",
+      preco_a_partir: "a partir de Grátis",
+      prazo_dias_uteis: 15,
+      sinal: "sinal de R$ 300,00",
+      variacoes: [{ nome: "Site 5 páginas", preco: "R$ 4.500,00" }],
+      instrucoes_internas_nao_repita_ao_cliente: "SENTINELA-INTERNA",
+    };
+    // Sem descrição: o bloco do serviço basta para ser evidência.
+    e.registrarCatalogo({
+      produtos: [{ codigo: "SITE", nome: "Site", preco: "Grátis", disponivel: true, servico }],
+    });
+    const [lida] = e.ler();
+    expect(lida?.referencia).toBe("SITE");
+    expect(lida?.conteudo).toContain("sinal de R$ 300,00");
+    expect(lida?.conteudo).toContain("Site 5 páginas");
+    expect(lida?.conteudo).toContain('"prazo_dias_uteis":15');
+    expect(lida?.conteudo).not.toContain("SENTINELA-INTERNA");
+  });
+
   it("não aceita corpo de cliente, argumentos de ferramenta, erros ou produto indisponível", () => {
     const e = criarEvidenciasComerciaisDoTurno([]);
     for (const result of [

@@ -55,6 +55,11 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     .from("financial_entries")
     .select("id, status, origin, amount_cents, direction")
     .eq("id", id)
+    // #4845 — o lançamento tem de ser desta empresa ANTES da escrita. O id chega
+    // de uma lista que vazou, e a RLS só conhece as empresas de que a pessoa é
+    // membro: marcar como pago o lançamento da outra empresa era um UPDATE que
+    // passava. A recusa é o mesmo 404 do lançamento inexistente.
+    .eq("organization_id", authz.org.orgId)
     .maybeSingle();
   if (!atual) return fail("not_found", "Lançamento não encontrado.", 404, { requestId });
 
@@ -67,11 +72,14 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   const { error } = await supabase
     .from("financial_entries")
     .update({ status: "paid", paid_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("organization_id", authz.org.orgId);
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
   await audit({
     action: "financeiro.lancamento_pago",
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
     resourceType: "financial_entry",
     resourceId: id,
     requestId,
@@ -96,6 +104,9 @@ export async function DELETE(_req: NextRequest, ctx: Ctx): Promise<Response> {
     .from("financial_entries")
     .select("id, status, origin, amount_cents")
     .eq("id", id)
+    // #4845 — conferência de empresa antes do DELETE, com a mesma resposta do
+    // lançamento inexistente: 404, sem dizer que o id existe na outra empresa.
+    .eq("organization_id", authz.org.orgId)
     .maybeSingle();
   if (!atual) return fail("not_found", "Lançamento não encontrado.", 404, { requestId });
 
@@ -116,11 +127,17 @@ export async function DELETE(_req: NextRequest, ctx: Ctx): Promise<Response> {
     );
   }
 
-  const { error } = await supabase.from("financial_entries").delete().eq("id", id);
+  const { error } = await supabase
+    .from("financial_entries")
+    .delete()
+    .eq("id", id)
+    .eq("organization_id", authz.org.orgId);
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
   await audit({
     action: "financeiro.lancamento_removido",
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
     resourceType: "financial_entry",
     resourceId: id,
     requestId,
