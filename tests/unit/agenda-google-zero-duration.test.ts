@@ -159,8 +159,8 @@ describe("Issue #4915: eventos de duração zero na sincronização do Google", 
     expect(resultado.tipo).not.toBe("cancelado");
   });
 
-  it("quando um evento recusado trava a leitura, lança erro com a hora de parede do evento, sem título nem nome de pessoa", async () => {
-    // Evento com fim antes do início: doEventoDoGoogle recusa
+  it("evento recusado chega à TELA com o dia e a hora de parede dele, sem título nem pessoa", async () => {
+    // Fim antes do início: doEventoDoGoogle recusa (não é duração zero, que é podada).
     const eventoInvertido = {
       id: "evento-invertido",
       summary: "Segredo Confidencial do Cliente Fulano",
@@ -168,44 +168,45 @@ describe("Issue #4915: eventos de duração zero na sincronização do Google", 
       end: { dateTime: "2026-09-02T15:00:00-03:00" },
       creator: { displayName: "Maria Souza", email: "maria@empresa.test" },
     };
+    const transport = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [eventoInvertido], nextSyncToken: "new" })),
+      );
 
-    const transport = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          items: [eventoInvertido],
-          nextSyncToken: "new",
-        }),
-      ),
-    );
+    expect(await syncCalendar(db(), org, id, transport)).toBe("failed");
 
-    let erroLancado: Error | null = null;
-    // Captura o erro no nível de teste passando por db que captura actions
-    const outcome = await syncCalendar(db(), org, id, transport);
-    expect(outcome).toBe("failed");
+    // O que a tela mostra é a mensagem gravada pela ação "error" — não o erro lançado.
+    const gravada = String(actions.find((a) => a.action === "error")!.args.message);
+    expect(gravada).toContain("02/09/2026 às 16:00");
+    expect(gravada).toContain("instante_invalido");
+    expect(gravada).not.toContain("A leitura não terminou");
+    expect(gravada).not.toContain("Segredo Confidencial");
+    expect(gravada).not.toContain("Fulano");
+    expect(gravada).not.toContain("Maria");
+    expect(gravada).not.toContain("maria@empresa.test");
+    expect(batches).toHaveLength(0);
+  });
 
-    // Verifica que o logger registrou a recusa e que o erro original pode ser verificado
-    // Testamos diretamente a lógica de lançamento
-    try {
-      const read = doEventoDoGoogle(eventoInvertido, { fusoDoCalendario: "America/Sao_Paulo" });
-      if (read.tipo === "recusado") {
-        const horario = (
-          eventoInvertido.start?.dateTime ||
-          eventoInvertido.start?.date ||
-          "sem data"
-        ).trim();
-        throw new Error(`Evento inválido (${horario || "sem data"}). A leitura não foi concluída.`);
-      }
-    } catch (err) {
-      erroLancado = err as Error;
-    }
+  it("evento de dia inteiro recusado chega à tela só com o dia", async () => {
+    // `start.date` sem `end.date`: o parser recusa; não há hora para mostrar.
+    const diaInteiroSemFim = {
+      id: "dia-inteiro-sem-fim",
+      summary: "Folga da Maria",
+      start: { date: "2026-10-05" },
+      end: {},
+    };
+    const transport = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [diaInteiroSemFim], nextSyncToken: "new" })),
+      );
 
-    expect(erroLancado).not.toBeNull();
-    const msg = erroLancado!.message;
-    expect(msg).toContain("2026-09-02T16:00:00-03:00");
-    expect(msg).not.toContain("Segredo Confidencial");
-    expect(msg).not.toContain("Fulano");
-    expect(msg).not.toContain("Maria");
-    expect(msg).not.toContain("maria@empresa.test");
+    expect(await syncCalendar(db(), org, id, transport)).toBe("failed");
+
+    const gravada = String(actions.find((a) => a.action === "error")!.args.message);
+    expect(gravada).toContain("O evento de 05/10/2026 tem horário");
+    expect(gravada).not.toContain("Maria");
   });
 
   it("no catch de syncCalendar, grava logger.warn com class, code e constraint, sem texto livre de erro", async () => {
