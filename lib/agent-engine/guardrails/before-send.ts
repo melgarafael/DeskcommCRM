@@ -755,7 +755,7 @@ export const internalVocabularyGate: Gate = {
   name: 'internal_vocabulary',
   evaluate: (ctx) => {
     if (ctx.internalVocabularyEnforced !== true) return { pass: true };
-    const achado = detectarVazamentoInterno(ctx.body);
+    const achado = detectarVazamentoInterno(ctx.body, { linkDoCliente: true });
     if (!achado.achou) return { pass: true };
     return {
       pass: false,

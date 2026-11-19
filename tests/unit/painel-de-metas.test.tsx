@@ -28,13 +28,19 @@ afterEach(cleanup);
 const EMPRESA: MetaDaEmpresa = {
   id: "m1",
   escopo: "empresa",
+  // #4796: a meta da empresa continua por QUANTIDADE por padrão.
+  indicador: "vendas_ganhas",
   pipeline_id: null,
   pipeline_nome: null,
+  vendedor_id: null,
+  moeda: null,
   alvo: 10,
   realizado: 3,
   percentual: 30,
   falta: 7,
   atingida: false,
+  projecao: null,
+  realizado_truncado: false,
 };
 
 function comIdioma(no: ReactNode, locale: "pt-BR" | "es" = "pt-BR") {
@@ -148,6 +154,60 @@ describe("MetaDoMesPanel", () => {
       metas: [{ ...EMPRESA, escopo: "funil", pipeline_id: "f1", pipeline_nome: "Comercial" }],
     });
     expect(container.textContent).toContain("Comercial");
+  });
+
+  // ─── A meta em VALOR (#4796, fatia 2 da #3025) ────────────────────────────
+
+  it("meta em VALOR mostra reais, percentual, quanto falta e a projeção", () => {
+    const { container } = renderizar({
+      metas: [
+        {
+          ...EMPRESA,
+          indicador: "valor_vendido",
+          moeda: "BRL",
+          alvo: 50_000_000,
+          realizado: 12_500_000,
+          percentual: 25,
+          falta: 37_500_000,
+          projecao: 31_000_000,
+        },
+      ],
+    });
+    // Em reais, não em centavos e não em quantidade de vendas.
+    expect(container.querySelector('[data-meta="realizado"]')?.textContent).toContain("125.000,00");
+    expect(container.querySelector('[data-meta="alvo"]')?.textContent).toContain("500.000,00");
+    expect(container.querySelector('[data-meta="falta"]')?.textContent).toContain("375.000,00");
+    expect(container.querySelector('[data-meta="projecao"]')?.textContent).toContain("310.000,00");
+    expect(container.textContent).toContain("25%");
+    expect(container.textContent).toContain("vendidos");
+    expect(container.textContent).not.toContain("Vendas ganhas");
+  });
+
+  it("meta do VENDEDOR é rotulada com o nome dele; sem nome, rótulo genérico", () => {
+    const doVendedor: MetaDaEmpresa = {
+      ...EMPRESA,
+      id: "mv",
+      escopo: "vendedor",
+      vendedor_id: "u1",
+      indicador: "valor_vendido",
+      moeda: "BRL",
+      alvo: 10_000_000,
+      realizado: 5_000_000,
+      percentual: 50,
+      falta: 5_000_000,
+    };
+    const comNome = renderizar({ metas: [doVendedor], nomes: { u1: "Ana Souza" } });
+    expect(comNome.container.textContent).toContain("Ana Souza");
+    cleanup();
+    const semNome = renderizar({ metas: [doVendedor] });
+    expect(semNome.container.textContent).toContain("Vendedor");
+  });
+
+  it("leitura truncada em valor é declarada como piso, não como total", () => {
+    const { container } = renderizar({
+      metas: [{ ...EMPRESA, indicador: "valor_vendido", moeda: "BRL", realizado_truncado: true }],
+    });
+    expect(container.querySelector('[data-meta="piso"]')).not.toBeNull();
   });
 
   // ─── As duas parcelas do período (fatia 2, item 1, da #3602) ──────────────

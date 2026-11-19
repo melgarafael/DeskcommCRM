@@ -39,6 +39,10 @@ export const ofertasDaCampanhaSchema = z
   .max(3)
   .default(["site"]);
 
+/** Fonte do ângulo da primeira mensagem (`config.fonte_da_abordagem`). */
+export const FONTES_DA_ABORDAGEM = ["estrategia", "agente"] as const;
+export type FonteDaAbordagem = (typeof FONTES_DA_ABORDAGEM)[number];
+
 /**
  * O que se edita numa campanha já iniciada e pausada: o texto e as ofertas.
  * Mora aqui, e não dentro do schema da rota, para o servidor e a tela usarem a
@@ -62,6 +66,9 @@ export const briefingDaCampanhaSchema = z
     // Ausente = não mexe: o interruptor da ficha digital só é gravado quando a tela o
     // manda, e uma edição de texto antiga não o reescreve por acidente.
     usar_ficha_digital: z.boolean().optional(),
+    // Ausente = não mexe, pela mesma razão: de onde vem a primeira mensagem só muda
+    // quando a tela manda.
+    fonte_da_abordagem: z.enum(FONTES_DA_ABORDAGEM).optional(),
   })
   .strict();
 export type OfertaDaCampanha = (typeof OFERTAS_DA_CAMPANHA)[number];
@@ -167,6 +174,12 @@ export const campaignConfigSchema = z
     // O padrão é `first_message`: configuração gravada antes desta chave existir segue
     // igual, sem ninguém editar nada.
     exit_offer: z.enum(["first_message", "second_message"]).default("first_message"),
+    // DE ONDE VEM O ÂNGULO da primeira mensagem. `estrategia`: o bloco de estratégia e a
+    // auditoria do site entram por cima do prompt do agente (o de sempre). `agente`: o
+    // prompt do agente é a referência principal, sem ângulo de auditoria — as regras de
+    // transparência da abordagem fria e a saída continuam nos dois modos. O padrão é
+    // `estrategia`: configuração gravada antes desta chave existir segue igual.
+    fonte_da_abordagem: z.enum(FONTES_DA_ABORDAGEM).default("estrategia"),
     // TEXTO PRÓPRIO DA SAÍDA (#4370) — opcional, escrito pelo DONO da campanha e
     // nunca pelo modelo: a mesma redação sai em todos os envios e é auditável.
     // Vazio/ausente = a frase padrão de `rodape-de-saida.ts`, byte por byte.
@@ -308,6 +321,16 @@ export const prospectingInputSchema = z.discriminatedUnion("action", [
       selected: z.boolean(),
     })
     .strict(),
+  // Leva as empresas AINDA NÃO ABORDADAS de uma campanha pausada ou concluída para uma
+  // campanha nova em preparação — para trocar de número ou de agente sem perder a lista.
+  // `request_id` torna a repetição inofensiva (mesmo recibo, nenhuma campanha a mais).
+  z
+    .object({
+      action: z.literal("move_list"),
+      id: z.string().uuid(),
+      request_id: z.string().uuid(),
+    })
+    .strict(),
   // Trocar as etiquetas de contato DEPOIS de iniciada, com a campanha pausada (spec 27). Só vale
   // para os contatos criados dali em diante; quem já foi abordado não é reescrito. Mesma régua
   // de `adjust_pace`: lista vazia é um ajuste válido (tira as etiquetas), campo a mais é 422.
@@ -334,6 +357,10 @@ export const prospectingInputSchema = z.discriminatedUnion("action", [
       // Opcional: quem edita só o texto (ou um cliente antigo da API) não mexe no
       // interruptor. Quando vem, é ele que passa a valer para as próximas conversas.
       usar_ficha_digital: briefingDaCampanhaSchema.shape.usar_ficha_digital,
+      // Opcional pelo mesmo motivo: de onde vem a primeira mensagem (`estrategia` ou
+      // `agente`). Trocar a fonte não custa a lista — a fila fica e o próximo envio já sai
+      // pela fonte nova.
+      fonte_da_abordagem: briefingDaCampanhaSchema.shape.fonte_da_abordagem,
     })
     .strict(),
   // Reanálise manual da auditoria (spec 24): reescreve `data.site` na hora.
