@@ -65,6 +65,30 @@ const bodySchema = z
      * aqui é mandar a frase em português antes de tocar no banco.
      */
     expected_duration_hours: z.number().int().min(1).max(8760).nullable().optional(),
+    /**
+     * A cor da etapa, `#rrggbb` (`crm_stages.color`), ou `null` para voltar ao
+     * padrão de hoje. O CHECK `crm_stages_color_format` já recusa outro formato,
+     * mas com 23514 cru: aqui a recusa vira frase em português antes do banco.
+     * Item 2 da #4802 — a escrita que faltava para o campo que o Kanban pinta.
+     */
+    color: z
+      .string()
+      .regex(/^#[0-9a-fA-F]{6}$/, "A cor da etapa é um hex de seis dígitos, como #0091ff.")
+      .nullable()
+      .optional(),
+    /**
+     * O CRITÉRIO da etapa (`crm_stages.description`) — quando um negócio entra
+     * nela, em texto livre. `null` limpa e a etapa volta a "sem critério" na
+     * leitura do agente.
+     *
+     * ⚠️ SEM `.max()` AQUI, e é de propósito: o teto e o `trim` vivem em
+     * `validarDescricaoDeEtapa`/`normalizarDescricaoDeEtapa`
+     * (`lib/leads/stage-editing.ts`), a MESMA função que a tela e o MCP usam. Um
+     * `.max(500)` no Zod contaria ANTES do `trim`, então 500 caracteres com um
+     * espaço na ponta passariam na tela (que recorta) e tomariam 422 aqui — duas
+     * réguas para a mesma frase.
+     */
+    description: z.string().nullable().optional(),
   })
   .strict()
   .refine((b) => Object.keys(b).length > 0, { message: "Nada para alterar." });

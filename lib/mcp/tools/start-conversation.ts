@@ -25,11 +25,13 @@
  *     que `crm_send_whatsapp_message` chama — nenhum código de envio novo,
  *     mesmas guardas (bloqueio, mídia, template, boundary de atendimento).
  *
- * Idempotência: mesmo padrão de `crm_send_whatsapp_message` (tabela
- * `idempotency_keys`, TTL 24h) — a chave cobre o PAR abrir-conversa+enviar,
- * não só o envio, porque um retry não pode abrir uma segunda conversa.
+ * Idempotência: a mesma de `crm_send_whatsapp_message`
+ * (`lib/mcp/idempotencia-da-ferramenta.ts`, #1613 item B: chave reservada ANTES
+ * do efeito, TTL 24h) — a chave cobre o PAR abrir-conversa+enviar, não só o
+ * envio, porque um retry não pode abrir uma segunda conversa. O hash sai do
+ * pedido que CHEGOU (telefone ou `contact_id`), nunca do `conversation_id` que
+ * a abertura resolve.
  */
-import { createHash } from "node:crypto";
 import { z } from "zod";
 
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
@@ -38,6 +40,7 @@ import { encontrarContatoPorTelefone } from "@/lib/channels/contato-por-telefone
 import { sendMessageSchema } from "@/lib/schemas/messaging";
 import { depsDoRitmo, registrarEnvioPorToken, segurarEnvioPorToken } from "@/lib/messaging/ritmo-do-envio-por-token";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { enviarComChave } from "../idempotencia-da-ferramenta";
 import type { McpToolDefinition } from "../types";
 
 const ENDPOINT_TAG = "mcp:crm_start_conversation_and_send";
@@ -70,10 +73,6 @@ const inputShape = {
     .optional()
     .describe("Chave para deduplicação (24h TTL). Recomendado run_id+step."),
 };
-
-function hashRequest(input: Record<string, unknown>): string {
-  return createHash("sha256").update(JSON.stringify(input)).digest("hex");
-}
 
 export const crmStartConversationAndSend: McpToolDefinition<typeof inputShape> = {
   name: "crm_start_conversation_and_send",
@@ -135,95 +134,55 @@ export const crmStartConversationAndSend: McpToolDefinition<typeof inputShape> =
       }
     }
 
-    const requestHash = hashRequest({
-      channel_session_id: input.channel_session_id,
-      contact_id: input.contact_id,
-      phone_number: input.phone_number,
-      body: input.body,
-      media_url: input.media_url,
-      type: input.type,
-    });
-
-    if (input.idempotency_key) {
-      const { data: cached } = await ctx.supabase
-        .from("idempotency_keys")
-        .select("response_body")
-        .eq("organization_id", ctx.organizationId)
-        .eq("endpoint", ENDPOINT_TAG)
-        .eq("key", input.idempotency_key)
-        .maybeSingle();
-      if (cached) {
-        return {
-          ...(cached.response_body as Record<string, unknown>),
-          deduplicated: true,
-        };
-      }
-    }
-
-    // Freio anti-ban do número (#1491): aplicar ANTES de criar ou reabrir a conversa.
-    // Se o freio segurar o envio por teto diário ou espaçamento, recusa com 429
-    // sem deixar uma conversa vazia pendente no CRM.
-    const ritmo = await depsDoRitmo(createAdminClient());
-    const segurado = await segurarEnvioPorToken(ritmo, {
-      organizationId: ctx.organizationId,
-      channelSessionId: input.channel_session_id,
-      requestId: ctx.requestId,
-    });
-
-    // Referencia a mesma origem autorizada que `open-with-contact` usa —
-    // fn_service_begin decide reaproveitar a conversa aberta ou criar uma.
-    const opened = await openSharedContactConversation(ctx.supabase, ctx.organizationId, {
-      channel_session_id: input.channel_session_id,
-      contact_id: input.contact_id,
-      phone_number: input.phone_number,
-      name: input.name,
-    });
-
-    const parsed = { ...mensagem, conversation_id: opened.conversation_id };
-
-    const message = await sendMessageHandler(
-      ctx.supabase,
-      {
-        organization_id: ctx.organizationId,
-        actor: ctx.actor,
-        requestId: ctx.requestId,
-      },
-      parsed,
-    );
-    await registrarEnvioPorToken(ritmo, ctx.organizationId, segurado, message.status);
-
-    const response = {
-      contact_id: opened.contact_id,
-      conversation_id: opened.conversation_id,
-      message_id: message.id,
-      status: message.status,
-      external_id: message.external_id,
-      sent_at: message.sent_at,
-    };
-
-    if (input.idempotency_key) {
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-      await ctx.supabase
-        .from("idempotency_keys")
-        .insert({
-          organization_id: ctx.organizationId,
-          endpoint: ENDPOINT_TAG,
-          key: input.idempotency_key,
-          request_hash: requestHash,
-          response_body: response,
-          status_code: 200,
-          expires_at: expiresAt,
-        })
-        .then(({ error }) => {
-          if (error && error.code !== "23505") {
-            console.error(
-              "[mcp.start_conversation_and_send] idempotency cache failed",
-              error.message,
-            );
-          }
+    // A chave cobre o PAR: o freio, a abertura e o envio moram no mesmo efeito.
+    // O pedido que identifica a operação é o que CHEGOU (`argumentos: input`):
+    // telefone ou `contact_id`, nunca o `conversation_id` resolvido abaixo.
+    return enviarComChave({
+      ctx,
+      endpoint: ENDPOINT_TAG,
+      argumentos: input,
+      executar: async () => {
+        // Freio anti-ban do número (#1491): aplicar ANTES de criar ou reabrir a
+        // conversa. Se o freio segurar o envio por teto diário ou espaçamento,
+        // recusa com 429 sem deixar uma conversa vazia pendente no CRM.
+        const ritmo = await depsDoRitmo(createAdminClient());
+        const segurado = await segurarEnvioPorToken(ritmo, {
+          organizationId: ctx.organizationId,
+          channelSessionId: input.channel_session_id,
+          requestId: ctx.requestId,
         });
-    }
 
-    return response;
+        // Referencia a mesma origem autorizada que `open-with-contact` usa —
+        // fn_service_begin decide reaproveitar a conversa aberta ou criar uma.
+        const opened = await openSharedContactConversation(ctx.supabase, ctx.organizationId, {
+          channel_session_id: input.channel_session_id,
+          contact_id: input.contact_id,
+          phone_number: input.phone_number,
+          name: input.name,
+        });
+
+        const parsed = { ...mensagem, conversation_id: opened.conversation_id };
+
+        const message = await sendMessageHandler(
+          ctx.supabase,
+          {
+            organization_id: ctx.organizationId,
+            actor: ctx.actor,
+            requestId: ctx.requestId,
+          },
+          parsed,
+        );
+        await registrarEnvioPorToken(ritmo, ctx.organizationId, segurado, message.status);
+
+        return {
+          contact_id: opened.contact_id,
+          conversation_id: opened.conversation_id,
+          message_id: message.id,
+          status: message.status,
+          external_id: message.external_id,
+          sent_at: message.sent_at,
+        };
+      },
+    });
   },
 };

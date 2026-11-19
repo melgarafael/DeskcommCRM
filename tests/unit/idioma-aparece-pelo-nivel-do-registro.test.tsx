@@ -5,7 +5,12 @@ import { ProfileForm } from "@/app/app/settings/profile/_form";
 import { TenantForm } from "@/app/app/settings/tenant/_form";
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 import { IDIOMAS, IDIOMA_PADRAO, normalizarIdioma, parseAcceptLanguage } from "@/lib/i18n/idiomas";
-import { REGISTRO_DE_IDIOMAS, type IdiomaRegistrado, type NivelDeIdioma } from "@/lib/i18n/registro";
+import {
+  REGISTRO_DE_IDIOMAS,
+  nivelApareceParaQuemUsa,
+  type IdiomaRegistrado,
+  type NivelDeIdioma,
+} from "@/lib/i18n/registro";
 
 /**
  * UM IDIOMA SÓ APARECE QUANDO O REGISTRO DIZ QUE PODE.
@@ -65,17 +70,30 @@ describe("o registro de idiomas", () => {
     expect(nivel("es")).toBe("completo");
   });
 
-  it("nenhum idioma declara `telas_principais` enquanto a régua não existe", () => {
-    // O nível promete aparecer com as telas principais traduzidas, e o que são
-    // "telas principais" ainda não é medido (fatia 5 do PROG-022). Declará-lo
-    // hoje seria promover um idioma sem prova — o nível viraria decorativo.
-    const semRegua = REGISTRO_DE_IDIOMAS.filter(
-      (idioma: IdiomaRegistrado) => idioma.nivel === "telas_principais",
+  it("`telas_principais` é um nível que se CONQUISTA — a régua dele é medida", () => {
+    // Até esta fatia, o caso aqui era `expect(semRegua).toEqual([])`: o nível
+    // aparecia no tipo e nenhum idioma podia declará-lo, porque a régua de
+    // "telas principais" não existia. Agora existe, é medida a partir do
+    // registro de navegação (`lib/i18n/telas-principais.ts`) e mora em
+    // `tests/unit/i18n-telas-principais-tem-regua.test.ts`: quem declara o
+    // nível precisa cobrir 2/3 das frases das telas do menu lateral.
+    //
+    // O oráculo daqui é o TIPO, e é de propósito: `Idioma` inclui só nível que
+    // aparece, então declarar `telas_principais` tem o mesmo efeito de
+    // `completo` na visibilidade — e a diferença entre os dois é a régua, não
+    // esta lista.
+    expect(nivelApareceParaQuemUsa("telas_principais")).toBe(true);
+    expect(nivelApareceParaQuemUsa("em_construcao")).toBe(false);
+    // Nenhum idioma declara o nível hoje: o inglês do #4721 é a primeira
+    // promoção, e quem a autoriza é o gate da régua, não este arquivo. O nível
+    // é declarado como `NivelDeIdioma` para o filtro não ser estreitado a
+    // `never` enquanto nenhum idioma o usa — a lista vazia de hoje é o estado
+    // medido, não a única possibilidade do tipo.
+    const nivelDeTelasPrincipais: NivelDeIdioma = "telas_principais";
+    const declarantes = REGISTRO_DE_IDIOMAS.filter(
+      (idioma: IdiomaRegistrado) => idioma.nivel === nivelDeTelasPrincipais,
     );
-    expect(
-      semRegua.map((idioma) => idioma.codigo),
-      "`telas_principais` ainda não tem régua medida: use `em_construcao` até a fatia 5 do PROG-022",
-    ).toEqual([]);
+    expect(declarantes.map((idioma) => idioma.codigo)).toEqual([]);
   });
 });
 

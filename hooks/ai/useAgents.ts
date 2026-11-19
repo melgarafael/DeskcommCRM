@@ -11,7 +11,7 @@ interface ListResponse {
 
 export const agentsListQueryKey = ["ai", "agents", "list"] as const;
 
-export function useAgentsList(opts?: { initialData?: AgentRow[] }) {
+export function useAgentsList(opts?: { initialData?: AgentRow[]; enabled?: boolean }) {
   return useQuery({
     queryKey: agentsListQueryKey,
     queryFn: async () => {
@@ -24,6 +24,9 @@ export function useAgentsList(opts?: { initialData?: AgentRow[] }) {
       }
     },
     initialData: opts?.initialData,
+    // #4593: a paleta do topo monta esta query fora da tela de Agentes e não
+    // precisa pagar a leitura antes de a pessoa abrir a busca.
+    enabled: opts?.enabled ?? true,
   });
 }
 

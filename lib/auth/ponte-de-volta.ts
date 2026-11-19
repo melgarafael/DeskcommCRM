@@ -21,6 +21,10 @@ import { createHash } from "node:crypto";
  * mecanismo já usado em `app/auth/social-return/route.ts` e no retorno da agenda
  * (`app/api/v1/agenda/google/callback/route.ts`).
  *
+ * O `proxy.ts` usa a mesma ponte para a abertura VINDA DE FORA sem cookie (ícone
+ * do app instalado no Android, link de outro app ou site): a navegação chega
+ * cross-site ou `none`, o Strict retém a sessão, e a ponte a refaz same-origin.
+ *
  * ─── Por que NÃO afrouxar o cookie ──────────────────────────────────────────
  *
  * `Strict` é o que impede que qualquer site de terceiros dispare navegação
