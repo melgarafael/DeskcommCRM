@@ -265,9 +265,9 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
 
     // ═══ A PRÓXIMA OCORRÊNCIA (#4595) ═══
     //
-    // O gatilho é ESTE: a conclusão. Não há cron nem agendador — se ninguém
-    // concluir, não nasce próxima. Só entra quando a tarefa FECHOU agora: marcar
-    // "concluída" numa tarefa que já estava concluída não pode gerar uma segunda
+    // Um dos dois gatilhos — o outro é o agendador (`cron/task-recurrence`), e
+    // os dois caem no mesmo índice único. Só entra quando a tarefa FECHOU
+    // agora: marcar "concluída" numa tarefa que já estava concluída não pode gerar uma segunda
     // ocorrência, e é o `fechouAgora` que já separa as duas coisas (a mesma
     // régua que impede duas linhas na timeline do negócio).
     //

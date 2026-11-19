@@ -19,7 +19,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useUser } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
@@ -304,8 +303,7 @@ export function FormularioDeTarefa({
 
               O TIPO vai gravado, não inferido: "diária" e "semanal com os sete
               dias" produzem as mesmas datas, e sem o tipo a edição não saberia
-              qual mostrar. A próxima ocorrência nasce quando esta for
-              concluída — a tela diz isso, porque não há agendador. */}
+              qual mostrar. */}
           <div className="space-y-2 rounded-md border border-border p-3">
             <div className="space-y-1.5">
               <Label htmlFor="tarefa-repetir">{t("Repetir")}</Label>
@@ -362,11 +360,6 @@ export function FormularioDeTarefa({
                   {t("A tarefa volta todo mês nesse dia, no horário acima, no fuso da empresa.")}
                 </p>
               </>
-            ) : null}
-            {repeticao !== NAO_REPETE ? (
-              <p className="text-xs text-muted-foreground">
-                {t("A próxima é criada quando você concluir esta tarefa.")}
-              </p>
             ) : null}
           </div>
 

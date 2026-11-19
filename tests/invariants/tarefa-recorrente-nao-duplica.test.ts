@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Pool } from "pg";
 
+import { audit } from "@/lib/audit";
 import { criarPorta } from "@/lib/db";
-import { criarProximaDaSerie } from "@/lib/tarefas/recorrencia";
+import { criarProximaDaSerie, gerarOcorrencias } from "@/lib/tarefas/recorrencia";
 import type { RegraDeRecorrencia } from "@/lib/tarefas/tipos";
 
 /**
@@ -23,7 +24,11 @@ import type { RegraDeRecorrencia } from "@/lib/tarefas/tipos";
  *   4. **a hora é a do fuso da ORGANIZAÇÃO**: a mesma regra de 9h vira 12:00Z
  *      em `America/Sao_Paulo` e 13:00Z em `America/Manaus`;
  *   5. **conclusão atrasada** devolve a próxima ocorrência FUTURA, uma só — não
- *      um lote das que passaram enquanto ninguém cumpria o trabalho.
+ *      um lote das que passaram enquanto ninguém cumpria o trabalho;
+ *   6. **o agendador continua** (doc 374 = A): a rodada do `cron/task-recurrence`
+ *      cria a próxima da série sem ocorrência futura, pelo MESMO caminho da
+ *      conclusão, respeita organização parada e, junto com a conclusão, grava
+ *      uma só.
  *
  * A regra pura (dia da semana, dia do mês, estouro de semana) tem teste próprio
  * em `lib/tarefas/recorrencia.test.ts`; aqui só o que depende do banco.
@@ -63,8 +68,6 @@ const LEAD = "e4595000-0000-4000-8000-000000000501";
 
 /** Segunda-feira, 08:00 em Brasília — antes das 9h da série. */
 const SEGUNDA_8H = new Date("2026-11-16T11:00:00.000Z");
-/** Segunda-feira, 09:00 em Brasília — a hora exata da série. */
-const SEGUNDA_9H = new Date("2026-11-16T12:00:00.000Z");
 
 const REGRA_SEGUNDA_9H: RegraDeRecorrencia = {
   tipo: "semanal",
@@ -433,5 +436,94 @@ describe("a conclusão fora do dia da série", () => {
     );
     const [proxima] = await ocorrenciasDe(serie);
     expect(proxima!.due_date.toISOString()).toBe("2026-11-16T12:00:00.000Z");
+  });
+});
+
+describe("o agendador continua gerando (doc 374 = A)", () => {
+  /** Segunda anterior, 9h em Brasília: a série cujo prazo já passou. */
+  const SEGUNDA_PASSADA = new Date("2026-11-09T12:00:00.000Z");
+
+  it("gera a próxima da série sem ocorrência futura, e rodar de novo não duplica", async () => {
+    const serie = await criarSerie({ title: "Agendador: carteira", dueDate: SEGUNDA_PASSADA });
+
+    await gerarOcorrencias(db, SEGUNDA_8H);
+    await gerarOcorrencias(db, SEGUNDA_8H);
+
+    const ocorrencias = await ocorrenciasDe(serie);
+    expect(ocorrencias).toHaveLength(1);
+    expect(ocorrencias[0]!.due_date.toISOString()).toBe("2026-11-16T12:00:00.000Z");
+    expect(ocorrencias[0]!.status).toBe("pending");
+  });
+
+  it("passa pelo caminho único: a ocorrência do agendador é auditada", async () => {
+    const serie = await criarSerie({ title: "Agendador: auditada", dueDate: SEGUNDA_PASSADA });
+    vi.mocked(audit).mockClear();
+
+    await gerarOcorrencias(db, SEGUNDA_8H);
+
+    const [ocorrencia] = await ocorrenciasDe(serie);
+    expect(vi.mocked(audit)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "crm_task.created",
+        resourceId: ocorrencia!.id,
+        metadata: expect.objectContaining({ origem: "tarefa:recorrencia" }),
+      }),
+    );
+  });
+
+  it("agendador e conclusão JUNTOS gravam uma só", async () => {
+    const serie = await criarSerie({ title: "Agendador: corrida", dueDate: SEGUNDA_PASSADA });
+
+    await Promise.all([
+      gerarOcorrencias(db, SEGUNDA_8H),
+      criarProximaDaSerie(
+        db,
+        { id: serie, organization_id: ORG_SP, recurrence_source_id: null, due_date: SEGUNDA_PASSADA },
+        SEGUNDA_8H,
+      ),
+    ]);
+
+    expect(await ocorrenciasDe(serie)).toHaveLength(1);
+  });
+
+  it("diária e mensal também: o dia 31 cai no último dia de novembro", async () => {
+    const diaria = await criarSerie({
+      title: "Agendador: diária",
+      dueDate: SEGUNDA_PASSADA,
+      recurrence: { tipo: "diaria", dias: [], dia_do_mes: null, hora: 9, ativa: true },
+    });
+    const mensal = await criarSerie({
+      title: "Agendador: mensal",
+      dueDate: SEGUNDA_PASSADA,
+      recurrence: { tipo: "mensal", dias: [], dia_do_mes: 31, hora: 9, ativa: true },
+    });
+
+    await gerarOcorrencias(db, SEGUNDA_8H);
+
+    expect((await ocorrenciasDe(diaria))[0]!.due_date.toISOString()).toBe("2026-11-16T12:00:00.000Z");
+    expect((await ocorrenciasDe(mensal))[0]!.due_date.toISOString()).toBe("2026-11-30T12:00:00.000Z");
+  });
+
+  it("série desligada não gera", async () => {
+    const desligada = await criarSerie({
+      title: "Agendador: desligada",
+      dueDate: SEGUNDA_PASSADA,
+      recurrence: { ...REGRA_SEGUNDA_9H, ativa: false },
+    });
+    await gerarOcorrencias(db, SEGUNDA_8H);
+    expect(await ocorrenciasDe(desligada)).toHaveLength(0);
+  });
+
+  it("série de organização PARADA não gera — a suspensão vale para a recorrência", async () => {
+    const parada = await criarSerie({
+      title: "Agendador: org suspensa",
+      organizationId: ORG_MA,
+      dueDate: SEGUNDA_PASSADA,
+      withLead: false,
+    });
+
+    await gerarOcorrencias(db, SEGUNDA_8H, new Set([ORG_MA]));
+
+    expect(await ocorrenciasDe(parada)).toHaveLength(0);
   });
 });

@@ -5,14 +5,21 @@
  * a regra inteira entre a REGRA que a pessoa escolheu (diária, semanal em dias
  * escolhidos, mensal) e a PRÓXIMA tarefa que nasce quando ela CONCLUI a atual.
  *
- * ═══ O GATILHO É A CONCLUSÃO, E NÃO UM RELÓGIO ═══
+ * ═══ DOIS GATILHOS, UMA CRIAÇÃO ═══
  *
- * A saída 1 da issue é explícita: "criando a próxima ao concluir". Não existe
- * agendador para isto — se ninguém concluir, não nasce próxima. A geração por
- * cron que existia até aqui saiu por isso mesmo: ela criava a próxima sem que
- * ninguém tivesse feito o trabalho, e a lista virava uma pilha de ocorrências
- * não cumpridas, uma por semana. O gatilho por agenda é a SAÍDA 2 da issue e
- * fica fora desta fatia.
+ * A próxima nasce por dois caminhos, e os dois passam por `criarProximaDaSerie`
+ * → `criarTarefaInterna` (INSERT + audit + atividade + push):
+ *
+ *  • a CONCLUSÃO (`PATCH /api/v1/tasks/[id]`) — a saída 1 da issue, "criando a
+ *    próxima ao concluir";
+ *  • o AGENDADOR (`cron/task-recurrence`, a cada 10 min, aprovado no doc 352 e
+ *    entregue na 1.114) — cria a próxima da série que ficou sem ocorrência
+ *    futura. Fica por decisão do dono (doc 374 = A): quem já usa a 1.114 recebe
+ *    a tarefa sem concluir a anterior, e a falha de uma rodada tem nova
+ *    tentativa sozinha na rodada seguinte.
+ *
+ * Os dois chegam juntos no mesmo `on conflict` do índice único, e o segundo
+ * devolve `ja_existe` em vez de duplicar.
  *
  * ═══ O QUE JÁ EXISTIA, E POR QUE NENHUM DOS DOIS SERVE ═══
  *
@@ -26,8 +33,8 @@
  *
  * O que os dois emprestam, isso sim, é o DESENHO: a idempotência não é da
  * rotina, é do índice único — aqui `(recurrence_source_id, due_date)`, criado
- * pela migration 9369. Concluir duas vezes chega duas vezes no `on conflict do
- * nothing` e só a primeira grava.
+ * pela migration 9369. Concluir duas vezes (ou concluir enquanto o agendador
+ * roda) chega duas vezes no `on conflict do nothing` e só a primeira grava.
  *
  * ═══ A REGRA É JSON NA PRÓPRIA TAREFA ═══
  *
@@ -390,8 +397,8 @@ export async function criarProximaDaSerie(
  * A mesma criação, sem derrubar quem chamou — para a rota de conclusão.
  *
  * A falha vira log e o `PATCH` responde 200: a conclusão da tarefa é o que a
- * pessoa pediu, e já está gravada. O que se perde é a próxima, e ela volta na
- * próxima vez que a série for concluída.
+ * pessoa pediu, e já está gravada. A próxima que não nasceu aqui o agendador
+ * cria na rodada seguinte (`gerarOcorrencias`).
  */
 export async function criarProximaSemDerrubar(
   db: Db,
@@ -406,6 +413,13 @@ export async function criarProximaSemDerrubar(
         tarefa_id: resultado.tarefa_id,
         quando: resultado.quando,
       });
+    } else if (resultado.motivo === "falha") {
+      // `criarProximaDaSerie` devolve a falha de banco sem lançar: sem esta linha
+      // ela sumiria calada. O agendador tenta de novo na rodada seguinte.
+      logger.error("[tarefas] falha ao criar a próxima ocorrência", {
+        tarefa_id: concluida.id,
+        error: resultado.erro,
+      });
     }
     return resultado;
   } catch (err) {
@@ -415,6 +429,93 @@ export async function criarProximaSemDerrubar(
     });
     return null;
   }
+}
+
+/** Quantas séries a rodada do agendador examina por vez. */
+export const TAMANHO_DO_LOTE = 200;
+
+/**
+ * As séries que o agendador precisa olhar: com regra, sem vínculo de ocorrência
+ * e SEM ocorrência futura (nem a própria, nem uma já gerada).
+ *
+ * O `not exists` é a otimização — a trava de verdade é o índice único.
+ */
+async function lerSeriesSemProxima(
+  porta: Db,
+  agora: Date,
+): Promise<Array<{ id: string; organization_id: string }>> {
+  return porta.query<{ id: string; organization_id: string }>(
+    `select t.id, t.organization_id
+       from public.crm_tasks t
+      where t.recurrence is not null
+        and t.recurrence_source_id is null
+        -- Série desligada fora do lote: senão 200 delas ocupariam toda rodada.
+        -- Só o booleano false desliga, a mesma régua de normalizarRegra.
+        and t.recurrence->'ativa' is distinct from 'false'::jsonb
+        and not exists (
+          select 1
+            from public.crm_tasks ocorrencia
+           where (ocorrencia.id = t.id or ocorrencia.recurrence_source_id = t.id)
+             and ocorrencia.due_date > $1::timestamptz
+        )
+      order by t.created_at
+      limit $2`,
+    [agora.toISOString(), TAMANHO_DO_LOTE],
+  );
+}
+
+export interface ResultadoDaGeracao {
+  /** Quantas séries a rodada examinou (as que não tinham ocorrência futura). */
+  series: number;
+  /** Quantas ocorrências nasceram nesta rodada. */
+  criadas: number;
+  /** Quantas já existiam (a conclusão ou a rodada irmã chegou primeiro). */
+  ja_existiam: number;
+  /** Quantas falharam — ficam para a rodada seguinte. */
+  falhas: number;
+}
+
+/**
+ * A rodada do agendador (`cron/task-recurrence`): a próxima ocorrência de cada
+ * série que ficou sem uma futura.
+ *
+ * Uma por série por rodada, de propósito: agendador parado por uma semana não
+ * despeja sete tarefas atrasadas de uma vez. A criação é a MESMA da conclusão
+ * (`criarProximaDaSerie`, referência = agora), então a ocorrência do agendador
+ * também ganha audit, atividade e push.
+ */
+export async function gerarOcorrencias(
+  porta: Db,
+  agora: Date = new Date(),
+  orgsParadas: ReadonlySet<string> = new Set(),
+): Promise<ResultadoDaGeracao> {
+  const series = await lerSeriesSemProxima(porta, agora);
+
+  let criadas = 0;
+  let jaExistiam = 0;
+  let falhas = 0;
+  for (const serie of series) {
+    // Organização parada não gasta nem fala (`lib/organizacao/operante.ts`): a
+    // série dela continua guardada, e volta a gerar quando a org voltar.
+    if (orgsParadas.has(serie.organization_id)) continue;
+
+    const resultado = await criarProximaDaSerie(
+      porta,
+      { id: serie.id, organization_id: serie.organization_id, recurrence_source_id: null, due_date: null },
+      agora,
+    );
+    if (resultado.criada) criadas += 1;
+    else if (resultado.motivo === "ja_existe") jaExistiam += 1;
+    else if (resultado.motivo === "falha") {
+      falhas += 1;
+      logger.error("[task-recurrence] falha ao criar a próxima ocorrência", {
+        serie_id: serie.id,
+        error: resultado.erro,
+      });
+    }
+  }
+
+  return { series: series.length, criadas, ja_existiam: jaExistiam, falhas };
 }
 
 function mensagemDoErro(err: unknown): string {

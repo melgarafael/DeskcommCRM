@@ -15025,9 +15025,6 @@ export const DICIONARIO: Traducoes = {
   "A tarefa volta todo mês nesse dia, no horário acima, no fuso da empresa.": {
     es: "La tarea vuelve todos los meses en ese día, en el horario de arriba, en la zona horaria de la empresa.",
   },
-  "A próxima é criada quando você concluir esta tarefa.": {
-    es: "La siguiente se crea cuando completes esta tarea.",
-  },
   "Escolha um dia do mês entre 1 e 31.": { es: "Elige un día del mes entre 1 y 31." },
   "Escolha a repetição e o horário.": { es: "Elige la repetición y el horario." },
   "Repetir toda semana": { es: "Repetir cada semana" },
