@@ -96,6 +96,19 @@ function fazerSupabase(respostas: Resposta[]) {
 
   const from = (tabela: string) => {
     tabelas.push(tabela);
+    // #4737: a rota lê a OPÇÃO da organização (`organizations.settings`) antes
+    // da lista. É configuração da empresa, não segunda verdade de tarefa — e
+    // por isso não consome a fila de respostas nem entra em `filtros`; o
+    // invariante abaixo continua proibindo `crm_leads` e o fallback.
+    if (tabela === "organizations") {
+      const daOrganizacao: Record<string, unknown> = {};
+      for (const metodo of ["select", "eq", "limit", "maybeSingle", "single"]) {
+        daOrganizacao[metodo] = () => daOrganizacao;
+      }
+      daOrganizacao.then = (res: (v: unknown) => unknown) =>
+        Promise.resolve({ data: [{ settings: {} }], error: null }).then(res);
+      return daOrganizacao;
+    }
     const elo: Record<string, unknown> = {};
     const devolve = () => {
       const r = proxima();
@@ -178,7 +191,10 @@ describe("GET /api/v1/tasks", () => {
 
     await GET(new NextRequest("http://x/api/v1/tasks"));
 
-    expect(espiao.tabelas).toEqual(["crm_tasks"]);
+    // #4737: as duas tabelas são a OPÇÃO da organização (configuração, lida
+    // antes de tudo) e a lista. `crm_leads` — o fallback de custom_fields —
+    // continua fora, que é o que este invariante prende.
+    expect(espiao.tabelas).toEqual(["organizations", "crm_tasks"]);
   });
 
   it('"a tabela não existe" vira 500, nunca 200 com o dado em outro lugar', async () => {
@@ -190,7 +206,7 @@ describe("GET /api/v1/tasks", () => {
     const res = await GET(new NextRequest("http://x/api/v1/tasks"));
 
     expect(res.status).toBe(500);
-    expect(espiao.tabelas).toEqual(["crm_tasks"]);
+    expect(espiao.tabelas).toEqual(["organizations", "crm_tasks"]);
   });
 
   it('"minhas" filtra pelo id da SESSÃO', async () => {

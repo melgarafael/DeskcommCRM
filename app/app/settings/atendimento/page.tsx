@@ -35,6 +35,7 @@ import { TelefoneDeFichaVazia } from "./_telefoneDeFichaVazia";
 import { NomeInformado } from "./_nomeInformado";
 import { DuplicadosPorNome } from "./_duplicadosPorNome";
 import { PesquisaDeSatisfacao } from "./_pesquisaDeSatisfacao";
+import { TarefasDoAtendente } from "./_tarefasDoAtendente";
 import {
   fecharPedidosVencidos,
   lerOpcaoDaSatisfacao,
@@ -44,6 +45,7 @@ import {
 import { traduzir } from "@/lib/i18n/dicionario";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { lerEscopoDoAtendente } from "@/lib/tarefas/escopo-do-atendente";
 
 export const dynamic = "force-dynamic";
 
@@ -95,6 +97,10 @@ export default async function AtendimentoSettingsPage() {
   // (`lerOpcaoDaSatisfacao`), e o resultado pela MESMA função da rota
   // `/api/v1/metrics/satisfacao`, com a varredura de vencidos antes.
   const satisfacao = lerOpcaoDaSatisfacao(data?.settings);
+  // #4737 — a restrição do atendente, lida pela MESMA régua que a rota de
+  // tarefas aplica (`lerEscopoDoAtendente`): a tela não pode dizer desligado o
+  // que a lista trata como ligado.
+  const escopoTarefas = lerEscopoDoAtendente(data?.settings);
   const admin = createAdminClient();
   let resumoDaPesquisa: ResumoDaSatisfacao | null = null;
   try {
@@ -147,6 +153,11 @@ export default async function AtendimentoSettingsPage() {
         ligada={satisfacao.ligado}
         janelaHoras={satisfacao.janela_horas}
         resumo={resumoDaPesquisa}
+        idioma={idioma}
+        podeMudar={podeAdministrarEmpresa(user, activeOrg)}
+      />
+      <TarefasDoAtendente
+        ligada={escopoTarefas}
         idioma={idioma}
         podeMudar={podeAdministrarEmpresa(user, activeOrg)}
       />

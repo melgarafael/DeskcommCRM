@@ -34,6 +34,10 @@ import { portaDaAplicacao } from "@/lib/db";
 import { registraAtividadeDaTarefa } from "@/lib/tarefas/atividade";
 import { conferirDemanda } from "@/lib/tarefas/demanda";
 import {
+  atendenteRestritoNaOrganizacao,
+  tarefaForaDoEscopo,
+} from "@/lib/tarefas/escopo-do-atendente";
+import {
   anexarNegocioDaTarefa,
   COLUNAS_DA_TAREFA,
   conferirNegocioEContato,
@@ -122,6 +126,15 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
   }
 
   const supabase = authz.supabase;
+  // A pessoa da sessão. No ramo do TOKEN `restrito` é sempre `false`, e esta
+  // string nunca entra numa comparação — o token não é ninguém na fila.
+  const usuarioIdDaSessao = authz.actor.type === "user" ? authz.actor.id : "";
+  const restrito = await atendenteRestritoNaOrganizacao(supabase, {
+    organizationId,
+    papel: authz.role,
+    administraEmpresa: authz.administraEmpresa,
+    via: authz.via,
+  });
 
   if (doToken) {
     // Na sessão a RLS esconde o negócio de outra organização; a service role não.
@@ -166,13 +179,29 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
   // timeline do negócio — e a segunda seria mentira.
   const { data: antes, error: erroDaLeitura } = await supabase
     .from("crm_tasks")
-    .select("status")
+    .select("status, assigned_to")
     .eq("id", id)
     .eq("organization_id", organizationId)
     .maybeSingle();
 
   if (erroDaLeitura) {
     return fail("internal_error", t("Erro ao salvar a tarefa."), 500, { requestId });
+  }
+
+  // ═══ #4737: a tarefa de um COLEGA é recusa NOMEADA ═══
+  //
+  // O atendente restrito abre e altera as tarefas dele e as sem responsável.
+  // A de outro atendente recebe 403 com código próprio — e não 404 genérico,
+  // que faria a tela dizer "não existe" sobre uma tarefa que a colega vê.
+  // Tarefa SEM dono continua acessível: é a fila que ele pode assumir.
+  if (
+    tarefaForaDoEscopo({
+      restrito,
+      usuarioId: usuarioIdDaSessao,
+      assignedTo: (antes as { assigned_to?: string | null } | null)?.assigned_to,
+    })
+  ) {
+    return fail("forbidden_scope", t("Esta tarefa é de outro atendente."), 403, { requestId });
   }
 
   // ═══ A SÉRIE: desligar é gravar `null` (#4595) ═══
@@ -290,6 +319,35 @@ export async function DELETE(req: NextRequest, ctx: Contexto): Promise<Response>
   const organizationId = authz.organizationId;
 
   const supabase = authz.supabase;
+  const usuarioIdDaSessao = authz.actor.type === "user" ? authz.actor.id : "";
+  const restrito = await atendenteRestritoNaOrganizacao(supabase, {
+    organizationId,
+    papel: authz.role,
+    administraEmpresa: authz.administraEmpresa,
+    via: authz.via,
+  });
+
+  // ═══ #4737: não se apaga a tarefa de um COLEGA ═══
+  //
+  // O DELETE não tem `where` que distinga dono, então a leitura vem antes —
+  // e a recusa é NOMEADA (403), não o 404 de "não achei" que faria a tela
+  // concluir que a tarefa já não existia.
+  const { data: donaDaTarefa } = await supabase
+    .from("crm_tasks")
+    .select("assigned_to")
+    .eq("id", id)
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  if (
+    tarefaForaDoEscopo({
+      restrito,
+      usuarioId: usuarioIdDaSessao,
+      assignedTo: (donaDaTarefa as { assigned_to?: string | null } | null)?.assigned_to,
+    })
+  ) {
+    return fail("forbidden_scope", t("Esta tarefa é de outro atendente."), 403, { requestId });
+  }
+
   // `.select()` no delete para saber se ALGUMA linha saiu. Sem isso, apagar uma
   // tarefa de outra organização devolveria 200 — e a tela sumiria com a linha
   // do próprio usuário na próxima recarga, sem que nada tivesse sido apagado.
