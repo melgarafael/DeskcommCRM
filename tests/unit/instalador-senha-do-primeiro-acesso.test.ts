@@ -21,7 +21,7 @@ function trecho(fonte: string, inicio: string, fim: string) {
 function bash(script: string, variaveis: Record<string, string> = {}) {
   const resultado = spawnSync("bash", ["-c", script], {
     encoding: "utf8",
-    env: { PATH: process.env.PATH, KIT_DIR: kit, ...variaveis },
+    env: { NODE_ENV: "test", PATH: process.env.PATH ?? "", KIT_DIR: kit, ...variaveis },
   });
   expect(resultado.status, resultado.error?.message ?? resultado.stderr).toBe(0);
   return resultado.stdout;
