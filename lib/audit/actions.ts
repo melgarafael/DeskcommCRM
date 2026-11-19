@@ -1653,6 +1653,13 @@ export const AUDIT_ACTIONS = [
   // "quem moveu" no painel. Mover roteador em silêncio não existe: as duas
   // camadas são gravadas na mesma operação.
   "ai.router_channel_moved",
+  // Operação do dia: o relatório diário gravado (pelo cron, que só cria, ou pelo
+  // botão "Gerar agora", que regera). Metadata leva `dia`, `gerado_por` e as
+  // contagens — nunca nome nem telefone de contato.
+  "operacao.relatorio_gerado",
+  // A configuração da Operação do dia (etiquetas, etapas de proposta, hora do
+  // relatório). Metadata leva o antes e o depois do bloco `operacao_do_dia`.
+  "settings.operacao_do_dia_updated",
   // OAuth do MCP do CRM (migration 9390) — a conexão de um cliente como o
   // ChatGPT. `cliente_registrado` é da instalação (sem organização: o registro
   // dinâmico é aberto); `autorizado`/`negado` são da pessoa na tela de
