@@ -318,7 +318,7 @@ export function EditContactDialog({
             <Input id="ec-name" {...form.register("name")} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="ec-email">Email</Label>
+            <Label htmlFor="ec-email">{t("Email")}</Label>
             <Input id="ec-email" type="email" {...form.register("email")} />
           </div>
           <div className="space-y-2">

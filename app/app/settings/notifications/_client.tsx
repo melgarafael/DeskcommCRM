@@ -185,7 +185,11 @@ export function NotificationPrefsClient() {
               </td>
               <td className="px-4 py-3 text-center">
                 <Switch
-                  checked={pushEfetivo(prefs, cat, "push")}
+                  // Sem permissão concedida neste aparelho, nenhum aviso sai do
+                  // Push — e a inscrição só nasce no toque que pede a permissão.
+                  // Mostrar "ligado" aqui (o padrão das preferências) era dizer
+                  // que o celular avisa quando ele nunca foi inscrito.
+                  checked={permission === "granted" && pushEfetivo(prefs, cat, "push")}
                   disabled={denied || unsupported}
                   onCheckedChange={(on) => void onToggle(cat, "push", on)}
                   aria-label={`${t(LABELS[cat])} via push`}

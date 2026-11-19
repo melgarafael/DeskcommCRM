@@ -67,7 +67,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
     motivo:
       "#4544: precisa dizer que imagem/binário NÃO é transcrito (senão o agente trata resposta vazia como documento sem dados) e que o teto é por chamada",
   },
-  "crm_list_pipelines": { tokens: 63, motivo: BASE },
+  "crm_list_pipelines": { tokens: 118, motivo: "#4667: a descrição passou a dizer que a lista traz os CAMPOS do funil (key/label/type/escopo/options[].value) e que em `custom_fields` se usa a key daí; sem isso o agente inventava a chave" },
   "crm_get_pipeline_forecast": { tokens: 281, motivo: "#4322: a descrição passou a dizer que `truncado: true` marca valores parciais quando o funil passa do teto de leitura; sem isso o agente apresenta um recorte como o total" },
   "crm_search_knowledge": { tokens: 250, motivo: BASE },
   "crm_list_knowledge_sources": { tokens: 86, motivo: BASE },
@@ -136,6 +136,9 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_set_webhook_source_active": { tokens: 199, motivo: BASE },
   "crm_set_automation_rule_active": { tokens: 232, motivo: BASE },
   "crm_schedule_followup": { tokens: 539, motivo: BASE },
+  "crm_create_task": { tokens: 736, motivo: "capacidade nova (#4838): tarefa da equipe pelo MCP, no pacote escalar; o peso é quase todo o regex que o zod gera para cada uuid e data — o mesmo das irmãs" },
+  "crm_list_tasks": { tokens: 901, motivo: "capacidade nova (#4838): tarefa da equipe pelo MCP, no pacote escalar; o peso é quase todo o regex que o zod gera para cada uuid e data — o mesmo das irmãs" },
+  "crm_update_task": { tokens: 919, motivo: "capacidade nova (#4838): tarefa da equipe pelo MCP, no pacote escalar; o peso é quase todo o regex que o zod gera para cada uuid e data — o mesmo das irmãs" },
   "crm_enroll_followup_flow": { tokens: 365, motivo: BASE },
   "crm_cancel_followup": { tokens: 254, motivo: BASE },
   "crm_close_demand": { tokens: 244, motivo: BASE },
@@ -209,10 +212,15 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +672 com os documentos do negócio (#4544): 259 de `crm_list_lead_attachments`
 // e 413 de `crm_get_lead_attachment`. MEDIDO no merge com a main: 40209 = 39537 + 672
 // (2026-11-17, main de `0652fa6866`).
+// +55 na descrição de `crm_list_pipelines`, que passou a dizer que a lista traz
+// os CAMPOS do funil (#4667) — é o delta medido naquela entrada (63 → 118).
 // +149 no `crm_update_lead` (#4666), que passou a dizer que `tags` substitui a
 // lista inteira e ganhou `tags_adicionar`/`tags_remover`. MEDIDO no merge com a
 // main pós-#4886 e #4684: 40675 (2026-11-18).
-const TETO_TOTAL = 40675;
+// +2556 com as três ferramentas de tarefa (#4838): 736 de `crm_create_task`, 901 de
+// `crm_list_tasks` e 919 de `crm_update_task`. MEDIDO no merge com a main de 19/11
+// (que já tinha 40730): 43286 (2026-11-19), não somado à mão.
+const TETO_TOTAL = 43286;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

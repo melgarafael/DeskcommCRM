@@ -824,8 +824,8 @@ async function main(): Promise<void> {
     await abaA.waitForLoadState("networkidle").catch(() => null);
     // A página do contato abre em "Visão geral": a timeline é OUTRA aba. Ler sem
     // clicar mede a tela errada — e eu ia acusar o emissor por isso.
-    const abaTimeline = abaA.getByRole("tab", { name: /timeline/i }).or(
-      abaA.getByRole("button", { name: /^Timeline$/i }),
+    const abaTimeline = abaA.getByRole("tab", { name: /linha do tempo|timeline/i }).or(
+      abaA.getByRole("button", { name: /^(Linha do tempo|Timeline)$/i }),
     ).first();
     if ((await abaTimeline.count()) > 0) {
       await abaTimeline.click();
@@ -1030,7 +1030,7 @@ async function main(): Promise<void> {
 
       await abaA.goto(`${BASE}/app/contacts/${linha.contact_id}`);
       await abaA.waitForLoadState("networkidle").catch(() => null);
-      const abaTl = abaA.getByRole("tab", { name: /timeline/i }).first();
+      const abaTl = abaA.getByRole("tab", { name: /linha do tempo|timeline/i }).first();
       if ((await abaTl.count()) > 0) await abaTl.click();
       await abaA
         .waitForFunction(

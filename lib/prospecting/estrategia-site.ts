@@ -15,7 +15,7 @@ import {
   trocarMarcadores,
   type TradutorDeTexto,
 } from "@/lib/prospecting/site-classify";
-import type { OfertaDaCampanha } from "./schema";
+import { usaFichaDigital, type OfertaDaCampanha } from "./schema";
 import type { PreviaSalva } from "./previa";
 import { linhaDoTelefone, sinaisDaEmpresa } from "./sinais-da-empresa";
 import {
@@ -23,6 +23,7 @@ import {
   lerContextoDaEquipe,
   ORIGEM_DOS_DADOS_COM_CONTEXTO_DA_EQUIPE,
   ORIGEM_DOS_DADOS_DA_ABORDAGEM_FRIA,
+  temContextoDaEquipe,
 } from "./contexto-da-equipe";
 export type { OfertaDaCampanha } from "./schema";
 
@@ -499,7 +500,8 @@ export const ROTULOS_DO_CHECKLIST = {
   tel: "Telefone",
   mailto: "E-mail",
   social: "Redes sociais",
-  mapa: "Endereço e mapa",
+  endereco: "Endereço",
+  mapa: "Mapa",
   fotos: "Fotos",
   titulo: "Título",
   description: "Descrição no Google",
@@ -676,4 +678,72 @@ export function montarDadosDeAbordagem(
   // sobre ESTES dados — então o modo só-cumprimenta sem `Contexto da equipe` não liga nada.
   Object.assign(dados, dadosDoContextoDaEquipe(lerContextoDaEquipe(data.contexto_da_equipe), opcoes));
   return dados;
+}
+
+/**
+ * A linha que o modo `agente` acrescenta à instrução: o roteiro do PRÓPRIO agente (que já
+ * abre o `system`) passa a ser a referência principal. Só entra nesse modo, para que o modo
+ * `estrategia` continue byte a byte o de antes.
+ */
+export const LINHA_DA_FONTE_AGENTE =
+  "Use o roteiro de abordagem das suas próprias instruções (acima) como referência principal desta mensagem. Não use ângulo de auditoria de site.";
+
+/**
+ * INSTRUÇÃO e DADOS da primeira mensagem — a decisão única que o envio (`worker.ts`) e a
+ * prévia (`previa-gerar.ts`) chamam, para o par tela×envio não divergir.
+ *
+ * - `exit_offer` diferente de `first_message`: só cumprimenta; sem estratégia, sem auditoria
+ *   e sem rascunho (o de sempre).
+ * - Sem ficha digital (`usaFichaDigital`, #4829): sem estratégia, sem os fatos da ficha e
+ *   sem rascunho guardado.
+ * - `fonte_da_abordagem = "agente"`: sem estratégia e sem `Auditoria`/`Detalhe`, com a linha
+ *   que põe o roteiro do agente na frente. A moldura fria (transparência, uma pergunta por
+ *   vez, critérios), a voz e o rascunho guardado continuam.
+ * - `fonte_da_abordagem = "estrategia"` (ou ausente) com a ficha ligada: exatamente o que era.
+ *
+ * `comContextoDaEquipe` e `semFichaDigital` voltam junto porque `gerarAbordagemDeFormulario`
+ * precisa dos MESMOS valores que moldaram a instrução e os dados.
+ */
+export function entradasDaAbordagem(args: {
+  config: {
+    instruction: string;
+    qualification: string;
+    exit_offer?: "first_message" | "second_message";
+    fonte_da_abordagem?: "estrategia" | "agente";
+    usar_ficha_digital?: boolean | null;
+  };
+  data: Parameters<typeof montarDadosDeAbordagem>[0];
+  site: Parameters<typeof montarDadosDeAbordagem>[1];
+  estrategia: EstrategiaDoLead | null;
+  voz?: string;
+  previa?: PreviaSalva | null;
+}): {
+  instrucao: string;
+  dados: Record<string, string>;
+  comContextoDaEquipe: boolean;
+  semFichaDigital: boolean;
+} {
+  const soCumprimenta = (args.config.exit_offer ?? "first_message") !== "first_message";
+  const peloAgente = args.config.fonte_da_abordagem === "agente";
+  const semFichaDigital = !usaFichaDigital(args.config);
+  const dados = soCumprimenta
+    ? montarDadosDeAbordagem(args.data, null, null, { soCumprimenta, semFichaDigital })
+    : montarDadosDeAbordagem(
+        args.data,
+        peloAgente || semFichaDigital ? null : args.site,
+        semFichaDigital ? null : (args.previa ?? null),
+        { semFichaDigital },
+      );
+  // Medido nos dados JÁ filtrados pelo modo; o mesmo valor vai à instrução e ao modo.
+  const comContextoDaEquipe = temContextoDaEquipe(dados);
+  const instrucaoBase = instrucaoDeAbordagemFria(
+    args.config.instruction,
+    args.config.qualification,
+    args.voz || undefined,
+    peloAgente || semFichaDigital ? null : args.estrategia,
+    soCumprimenta,
+    comContextoDaEquipe,
+  );
+  const instrucao = peloAgente ? `${instrucaoBase}\n${LINHA_DA_FONTE_AGENTE}` : instrucaoBase;
+  return { instrucao, dados, comContextoDaEquipe, semFichaDigital };
 }
