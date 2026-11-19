@@ -148,14 +148,20 @@ function Resultados({
   // régua das listas de fluxos, funis e agentes (#4593). Havia aqui uma cópia
   // local (`normalize("NFD")` sem a tabela das letras que não decompõem), e duas
   // cópias divergem no primeiro ajuste: «Øyvind» achava na lista e não aqui.
+  //
+  // O texto casado é o português (a chave) E o que a tela mostra no idioma
+  // ativo (#4999): em espanhol a paleta exibe "Productos", e quem lê isso
+  // digita "productos". O português segue casando para quem já se acostumou;
+  // em pt-BR o `t()` devolve a própria chave e nada muda.
   const resultados = useMemo(() => {
     const termo = termoSemAcento(busca.trim());
     const filtrados = destinos.filter((d) => {
       const casaCategoria = categoriaAtiva === "todos" || d.group === categoriaAtiva;
       if (!casaCategoria) return false;
       if (!termo) return true;
+      const grupo = rotuloGrupo.get(d.group) ?? "";
       return termoSemAcento(
-        `${d.label} ${d.description} ${rotuloGrupo.get(d.group) ?? ""}`,
+        `${d.label} ${d.description} ${grupo} ${t(d.label)} ${t(d.description)} ${t(rotuloGrupo.get(d.group) ?? "")}`,
       ).includes(termo);
     });
     if (termo) return filtrados;
@@ -166,7 +172,7 @@ function Resultados({
     return [...filtrados].sort(
       (a, b) => (ordemGrupo.get(a.group) ?? 0) - (ordemGrupo.get(b.group) ?? 0),
     );
-  }, [busca, destinos, categoriaAtiva, rotuloGrupo, ordemGrupo]);
+  }, [busca, destinos, categoriaAtiva, rotuloGrupo, ordemGrupo, t]);
 
   // Agrupamento para exibição visual estruturada quando não há busca específica digitada
   const resultadosAgrupados = useMemo(() => {
