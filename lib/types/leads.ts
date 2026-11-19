@@ -43,6 +43,15 @@ export interface Lead {
   description: string | null;
   status: LeadStatus;
   lost_reason: string | null;
+  /**
+   * #4191 — a classificação HUMANA do negócio como não comercial. `nao_comercial_em`
+   * é a coluna que DECIDE (nula = comercial, o estado de sempre); `motivo` e `por`
+   * são o lastro de por quê e quem. Opcionais porque nem toda leitura pede as
+   * três — a ficha do negócio pede, e o quadro as entrega no contrato.
+   */
+  nao_comercial_em?: string | null;
+  nao_comercial_motivo?: string | null;
+  nao_comercial_por?: string | null;
   position_in_stage: number;
   /**
    * O VALOR ÚNICO do contrato — setup, implantação, matrícula (fatia 1 da

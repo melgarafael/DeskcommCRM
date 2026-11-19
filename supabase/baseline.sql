@@ -81487,6 +81487,78 @@ grant execute on function public.fn_operacao_conversas_com_entrada(uuid, timesta
 comment on function public.fn_operacao_conversas_com_entrada(uuid, timestamptz, timestamptz, integer) is
   'Operação do dia: por conversa (sem grupo), a primeira e a última mensagem do cliente no intervalo [p_inicio, p_fim) e se ela é nova (nenhuma mensagem do cliente antes). security invoker: a RLS da sessão vale.';
 
+-- ---- o negócio sai do follow-up e entra na anonimização (migration 9431) ----
+-- Espelho de supabase/migrations/20261119125000_9431_saida_do_followup_e_lgpd_do_nao_comercial.sql.
+-- #4195, itens 2 e 3 do que o mantenedor cobrou na #4191. Mora AQUI — antes do
+-- rótulo da cascata 9243 e do bloco da VARREDURA anon — por duas razões que o
+-- próprio arquivo cobra: cria FUNÇÃO (a VARREDURA anon proíbe `create function`
+-- depois dela) e o invariante `lgpd-alcanca-fichas-fundidas` compara, por
+-- IGUALDADE, o trecho do baseline que vai do primeiro comentário da 9243 até a
+-- VARREDURA — bloco novo nesse intervalo reprovaria aquele teste.
+--
+-- Idempotente: `add column if not exists`, constraint recriada por nome, índice
+-- `if not exists`, função `create or replace` e gatilho `drop`/`create`.
+
+alter table public.followup_enrollments
+  add column if not exists lead_id uuid;
+
+alter table public.followup_enrollments
+  drop constraint if exists followup_enrollments_lead_id_fkey;
+alter table public.followup_enrollments
+  add constraint followup_enrollments_lead_id_fkey
+  foreign key (lead_id) references public.crm_leads(id) on delete set null;
+
+create index if not exists idx_followup_enrollments_lead
+  on public.followup_enrollments (organization_id, lead_id)
+  where lead_id is not null;
+
+comment on column public.followup_enrollments.lead_id is
+  'O NEGÓCIO dono desta inscrição (#4195/#9431). Nulo = inscrição anterior à coluna ou fluxo sem negócio: a guarda de cobrança trata como legado e NÃO cala o contato por falta de vínculo.';
+
+update public.followup_enrollments e
+   set lead_id = d.lead_id
+  from public.demandas d
+ where e.lead_id is null
+   and e.service_boundary->>'demanda_id' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+   and d.id = (e.service_boundary->>'demanda_id')::uuid
+   and d.organization_id = e.organization_id
+   and d.contact_id = e.contact_id
+   and d.lead_id is not null;
+
+create or replace function public.fn_lgpd_redigir_classificacao_comercial()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  update public.crm_leads l
+     set nao_comercial_motivo = 'anonimizado',
+         nao_comercial_por = null
+   where l.contact_id = new.id
+     and l.organization_id = new.organization_id
+     and l.nao_comercial_em is not null
+     and (l.nao_comercial_motivo is distinct from 'anonimizado'
+          or l.nao_comercial_por is not null);
+  return null;
+end;
+$$;
+
+comment on function public.fn_lgpd_redigir_classificacao_comercial() is
+  'Redige motivo e autoria da classificação não comercial quando o contato é anonimizado (#4195). Mantém nao_comercial_em: a decisão é elegibilidade, não conteúdo.';
+
+revoke all on function public.fn_lgpd_redigir_classificacao_comercial() from public, anon, authenticated;
+
+drop trigger if exists trg_lgpd_redigir_classificacao_comercial on public.contacts;
+create trigger trg_lgpd_redigir_classificacao_comercial
+  after update of is_anonymized on public.contacts
+  for each row
+  when (new.is_anonymized is true and old.is_anonymized is distinct from true)
+  execute function public.fn_lgpd_redigir_classificacao_comercial();
+
+notify pgrst, 'reload schema';
+
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.

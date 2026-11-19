@@ -267,7 +267,10 @@ describe("#4191 — reverter a classificação", () => {
       nao_comercial_motivo: null,
       nao_comercial_por: null,
     });
-    expect(update?.filtros).toContainEqual(["not", "nao_comercial_em", "is:null"]);
+    // O filtro é o CAS: a classificação EXATA que a leitura viu (item 4 do
+    // mantenedor). `not(... is null)` aceitava qualquer classificação, inclusive
+    // uma mais nova que chegasse entre a leitura e a escrita.
+    expect(update?.filtros).toContainEqual(["eq", "nao_comercial_em", "2026-11-06T12:00:00.000Z"]);
     expect(emitLeadActivity).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({

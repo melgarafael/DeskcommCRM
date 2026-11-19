@@ -13779,6 +13779,37 @@ export const DICIONARIO: Traducoes = {
   "Só um negócio aberto pode ser classificado como não comercial. Este já tem desfecho (ganho ou perda).": { es: "Solo un negocio abierto puede clasificarse como no comercial. Este ya tiene desenlace (ganancia o pérdida)." },
   "Este negócio já foi classificado por outra pessoa com outro motivo. Reveja antes de mudar a classificação.": { es: "Este negocio ya fue clasificado por otra persona con otro motivo. Revise antes de cambiar la clasificación." },
   "Este negócio foi classificado por outra pessoa enquanto você decidia. Reveja antes de mudar a classificação.": { es: "Este negocio fue clasificado por otra persona mientras decidía. Revise antes de cambiar la clasificación." },
+  // #4191, item 1 — a TELA da classificação (bloco na ficha do negócio). As
+  // chaves são as frases portuguesas do componente
+  // `components/kanban/ClassificacaoComercial.tsx`; o teste
+  // `classificacao-comercial-chama-a-rota` cobra que a tela use `t()` e que
+  // cada chave daqui tenha espanhol.
+  "Classificação comercial": { es: "Clasificación comercial" },
+  "Comercial": { es: "Comercial" },
+  "Não comercial": { es: "No comercial" },
+  "Classificar como não comercial": { es: "Clasificar como no comercial" },
+  "Restaurar como comercial": { es: "Restaurar como comercial" },
+  "Confirmar classificação": { es: "Confirmar clasificación" },
+  "Motivo da classificação": { es: "Motivo de la clasificación" },
+  "Motivo apagado pela anonimização": { es: "Motivo borrado por la anonimización" },
+  "O negócio não será ganho, perdido nem apagado. A classificação pode ser desfeita.": {
+    es: "El negocio no será ganado, perdido ni eliminado. La clasificación puede deshacerse.",
+  },
+  "Restaurar não retoma follow-ups antigos. Uma demanda nova precisa ser iniciada pela equipe.": {
+    es: "Restaurar no retoma seguimientos antiguos. La demanda nueva tiene que iniciarla el equipo.",
+  },
+  "Histórico preservado. Este negócio fica fora do Radar e das métricas comerciais, e os follow-ups dele não enviam.": {
+    es: "Historial conservado. Este negocio queda fuera del Radar y de las métricas comerciales, y sus seguimientos no envían.",
+  },
+  "Este contato foi anonimizado. A classificação não pode ser restaurada.": {
+    es: "Este contacto fue anonimizado. La clasificación no puede restaurarse.",
+  },
+  "Escreva o que decide o caso (golpe, spam, contato sem finalidade comercial…).": {
+    es: "Escriba lo que decide el caso (estafa, spam, contacto sin finalidad comercial…).",
+  },
+  "Não foi possível confirmar o resultado. Recarregue antes de tentar novamente.": {
+    es: "No fue posible confirmar el resultado. Recargue antes de intentarlo de nuevo.",
+  },
   "Nenhuma conexão de parceiro ativa.": { es: "No hay ninguna conexión de partner activa." },
   "nenhuma organização ativa": { es: "no hay ninguna organización activa" },
   "Nenhuma organização ativa.": { es: "No hay ninguna organización activa." },

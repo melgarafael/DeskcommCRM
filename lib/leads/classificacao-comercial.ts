@@ -143,10 +143,14 @@ export async function classificaNegocioComoNaoComercial(
   }
 
   const agora = new Date().toISOString();
-  // `.is("nao_comercial_em", null)` é a trava da corrida: duas pessoas
-  // classificando ao mesmo tempo, a segunda não sobrescreve a primeira — o
-  // filtro devolve zero linhas e o conflito é relatado. Sem ele, o UPDATE por
-  // id faria a última gravação ganhar em silêncio, que é o que a issue proíbe.
+  // ─── COMPARE-AND-SET, não "escreve quem chegou por último" ────────────────
+  //
+  // O mantenedor mediu (17/11) que a trava era só `nao_comercial_em is null`:
+  // o `status` lido acima NÃO entrava no filtro, então um negócio fechado entre
+  // a leitura e a escrita era classificado assim mesmo e ficava `won` +
+  // `nao_comercial_em`, estado que a própria régua pura recusa. O filtro agora
+  // exige o MESMO estado que a leitura viu: ainda não classificado E com o
+  // mesmo `status`. Zero linhas = a corrida foi perdida, e a resposta diz isso.
   const { data: atualizado, error: updErr } = await supabase
     .from("crm_leads")
     .update({
@@ -157,6 +161,7 @@ export async function classificaNegocioComoNaoComercial(
     .eq("organization_id", input.organizationId)
     .eq("id", input.leadId)
     .is("nao_comercial_em", null)
+    .eq("status", linha.status)
     .select(COLUNAS_LIDAS)
     .maybeSingle();
 
@@ -164,7 +169,33 @@ export async function classificaNegocioComoNaoComercial(
     return { ok: false, codigo: "internal_error", mensagem: updErr.message, httpStatus: 500 };
   }
   if (atualizado === null) {
-    // Corrida perdida: alguém classificou entre a leitura e a escrita.
+    // Corrida perdida: a linha mudou entre a leitura e a escrita. Reler e dizer
+    // a VERDADE do estado novo — "conflito" para o que fechou e para o que já
+    // foi classificado; "já estava" quando a outra sessão gravou exatamente o
+    // que este pedido queria, porque aí não há o que desfazer nem o que mentir.
+    const { linha: agoraLinha, erro: erroDaReleitura } = await lerLead(
+      supabase,
+      input.organizationId,
+      input.leadId,
+    );
+    if (erroDaReleitura) {
+      return { ok: false, codigo: "internal_error", mensagem: erroDaReleitura, httpStatus: 500 };
+    }
+    if (agoraLinha === null) return naoEncontrado;
+    const depois = decidirClassificacao(estadoDa(agoraLinha), input.motivo);
+    if (depois.acao === "nada") {
+      return { ok: true, jaEstava: true, lead: agoraLinha as unknown as Record<string, unknown> };
+    }
+    if (depois.acao === "recusar") {
+      return {
+        ok: false,
+        codigo: depois.codigo,
+        mensagem: depois.mensagem,
+        httpStatus: depois.httpStatus,
+      };
+    }
+    // Filtro casou zero linhas e a releitura diz "dá para classificar": a linha
+    // mudou de novo entre a escrita e a releitura. Conflito, nunca sobrescrita.
     return {
       ok: false,
       codigo: "classificacao_conflitante",
@@ -200,9 +231,13 @@ export async function reverteClassificacaoNaoComercial(
   }
 
   const motivoAnterior = motivoParaATimeline(linha.nao_comercial_motivo);
-  // A trava é o INVERSO da classificação: só reverte quem ainda está
-  // classificado. Assim uma reversão atrasada não apaga uma classificação mais
-  // nova que chegou no meio.
+  // ─── COMPARE-AND-SET no sentido inverso ───────────────────────────────────
+  //
+  // Antes o filtro era `.not("nao_comercial_em", "is", null)` — "está
+  // classificado?" e nada mais. Uma reversão atrasada apagava uma classificação
+  // MAIS NOVA que chegou no meio (o ciclo A-B-A que o mantenedor descreveu). O
+  // filtro agora exige o carimbo EXATO que a leitura viu: se alguém reclassificou
+  // nesse meio-tempo, `nao_comercial_em` é outro instante e a escrita não casa.
   const { data: atualizado, error: updErr } = await supabase
     .from("crm_leads")
     .update({
@@ -212,7 +247,7 @@ export async function reverteClassificacaoNaoComercial(
     })
     .eq("organization_id", input.organizationId)
     .eq("id", input.leadId)
-    .not("nao_comercial_em", "is", null)
+    .eq("nao_comercial_em", linha.nao_comercial_em as string)
     .select(COLUNAS_LIDAS)
     .maybeSingle();
 
@@ -220,7 +255,28 @@ export async function reverteClassificacaoNaoComercial(
     return { ok: false, codigo: "internal_error", mensagem: updErr.message, httpStatus: 500 };
   }
   if (atualizado === null) {
-    return { ok: true, jaEstava: true, lead: linha as unknown as Record<string, unknown> };
+    // Zero linhas: a classificação que esta sessão leu não está mais lá. Reler
+    // para não mentir — "já estava comercial" só é verdade se o negócio está
+    // comercial AGORA.
+    const { linha: agoraLinha, erro: erroDaReleitura } = await lerLead(
+      supabase,
+      input.organizationId,
+      input.leadId,
+    );
+    if (erroDaReleitura) {
+      return { ok: false, codigo: "internal_error", mensagem: erroDaReleitura, httpStatus: 500 };
+    }
+    if (agoraLinha === null) return naoEncontrado;
+    if (!ehNaoComercial(agoraLinha)) {
+      return { ok: true, jaEstava: true, lead: agoraLinha as unknown as Record<string, unknown> };
+    }
+    return {
+      ok: false,
+      codigo: "classificacao_conflitante",
+      mensagem:
+        "Este negócio foi classificado por outra pessoa enquanto você decidia. Reveja antes de mudar a classificação.",
+      httpStatus: 409,
+    };
   }
 
   await registrarNaTimeline(supabase, {
@@ -279,6 +335,16 @@ async function registrarNaTimeline(
     });
   }
 
+  // ─── O MOTIVO NÃO ENTRA CRU NO AUDIT (item 3 do mantenedor) ────────────────
+  //
+  // `api_audit_log` é append-only de propósito (`revoke update` no baseline, e o
+  // cabeçalho de `lib/audit/actions.ts` diz que nada ali é reescrito) e a cascata
+  // de LGPD NÃO alcança essa tabela. Texto livre aqui é dado pessoal que a anonimização não
+  // apagaria nunca — e o motivo é texto escrito pela equipe, onde cabe CPF,
+  // nome e o que o contato disse. O audit registra QUE houve motivo, com o
+  // tamanho, sem a frase: o lastro de "quem decidiu" continua, o texto fica só
+  // na coluna (que o gatilho de LGPD redige) e na timeline (que a cascata
+  // apaga). A regra da casa vale igual: nunca texto livre em `metadata`.
   await audit({
     action: args.desfecho === "nao_comercial" ? "lead.non_commercial" : "lead.non_commercial_reverted",
     actorUserId: args.actorUserId,
@@ -286,7 +352,7 @@ async function registrarNaTimeline(
     resourceType: "crm_lead",
     resourceId: args.leadId,
     requestId: args.requestId,
-    metadata: { motivo: args.motivo },
+    metadata: { motivo_presente: true, motivo_caracteres: args.motivo.length },
   });
 }
 
