@@ -15481,7 +15481,10 @@ export type Database = {
           error: true;
         } & "the function public.comando_da_conversa with parameter or with a single unnamed json/jsonb parameter, but no matches were found in the schema cache";
       };
-      decrypt_cpf: { Args: { p_contact_id: string }; Returns: string };
+      // (9423) Duas assinaturas: `decrypt_cpf(uuid)` (a da 0762, intacta) e
+      // `decrypt_cpf(uuid, text)` com o propósito da leitura. O argumento é opcional
+      // no cliente porque a chamada de um argumento continua válida — é o export.
+      decrypt_cpf: { Args: { p_contact_id: string; p_purpose?: string | null }; Returns: string };
       emit_event: {
         Args: {
           p_entity_id: string;
