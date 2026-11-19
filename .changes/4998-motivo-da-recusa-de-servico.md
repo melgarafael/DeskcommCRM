@@ -13,7 +13,7 @@ as regras do cadastro de serviço que antes devolviam uma frase em português em
 `error.details` passam a devolver um código estável — cada campo traz uma lista de
 códigos, por exemplo `{"sinal": ["sinal_fixo_acima_do_preco"]}` ou
 `{"pai_id": ["pai_invalido"]}`. Quem comparava essas frases deve passar a comparar os
-códigos. Os erros de formato do corpo (tipo errado de um campo, corpo vazio) seguem
-como antes.
+códigos. Algumas recusas de formato ainda chegam com a mensagem padrão do validador
+(por exemplo `preco_cents` enviado como texto).
 
 Contribuição de @yunshu0909, a partir da issue #4998.
