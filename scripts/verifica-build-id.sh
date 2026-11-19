@@ -2,19 +2,25 @@
 # O BUILD_ID do servidor bate com o de `.next/static`? (#4967)
 #
 # POR QUE ESTE SCRIPT EXISTE
-# A imagem `ghcr.io/melgarafael/deskcommcrm:1.118.0` foi publicada com dois builds
-# dentro dela: `.next/BUILD_ID` dizia `L0Ae8OxIf-v2KzwJoCU0E` e `.next/static/`
-# trazia `K2qYwFMofIRXoOdBpIUbx`. O Next embute o build id nos caminhos dos chunks
-# que o HTML referencia, então toda rota que carrega chunk — `/login`, `/app/inbox`,
-# Funis — morria com ChunkLoadError: o arquivo pedido não existia naquela imagem.
+# A imagem 1.118.0 saiu com dois builds dentro dela: `.next/BUILD_ID` dizia
+# `L0Ae8OxIf-v2KzwJoCU0E` e `.next/static/` trazia `K2qYwFMofIRXoOdBpIUbx`. O Next
+# embute o build id nos caminhos dos chunks que o HTML referencia, então toda rota
+# que carrega chunk — `/login`, `/app/inbox`, Funis — morria com ChunkLoadError: o
+# arquivo pedido não existia naquela imagem.
+# (O namespace da imagem é `IMG_NS`, em `hostgator-setup-kit/_common.sh`: este
+# script não repete o literal — a catraca de `tests/unit/namespace-das-imagens.test.ts`
+# existe justamente para que ninguém volte a escrevê-lo à mão.)
 #
-# COMO OS DOIS SE SEPARAM
-# O `Dockerfile` copia `.next/standalone` e `.next/static` em dois `COPY --from=`
+# COMO OS DOIS SE SEPARAVAM
+# A receita antiga copiava `.next/standalone` e `.next/static` em dois `COPY --from=`
 # distintos. O BuildKit resolve CADA passo contra o snapshot que ele tiver: em
 # 18/11/2026 o cache do GHA devolveu o manifesto com blobs faltando
 # (`::error::blob sha256:...: not found` no log do job), o `RUN pnpm build`
 # REEXECUTOU (262,7 s) e o `COPY` do standalone veio do cache antigo enquanto o do
 # static veio do build novo — cada cópia de um build, a imagem com os dois.
+# A receita de hoje fecha isso na origem: `.next/static` é copiado para DENTRO do
+# standalone num `RUN` do estágio `build` e sai num `COPY` só. Esta sonda continua
+# valendo como a medida de fora: ela não confia na receita, confere a imagem.
 #
 # O QUE ESTE SCRIPT MEDE
 #   1. id do SERVIDOR: conteúdo de `<raiz>/.next/BUILD_ID` — é o que o `server.js`
