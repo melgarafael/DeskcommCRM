@@ -750,6 +750,84 @@ it("anti-backlog: ordena a última inbound por coalesce(sent_at, created_at), n�
 });
 
 /**
+ * #2797 — a REAÇÃO não supera o texto que ela segue.
+ *
+ * O cliente escreve e, segundos depois, reage (👍) a uma mensagem anterior. A
+ * reação é linha `inbound` em `messages` (`type = 'reaction'`, gravada por
+ * `lib/channels/reacao.ts`), mas não emite `ai_agent.dispatch_requested`: não
+ * tem turno próprio. Contada como "inbound mais recente", ela fazia o evento do
+ * texto sair como superado, sem job — e ninguém respondia (medido na 1.109.0,
+ * com a API oficial: o evento saiu `done`, sem linha em `job_queue`).
+ *
+ * O pool falso responde à consulta da última inbound a partir das linhas da
+ * conversa e só tira a reação quando a CONSULTA a exclui: é isso que estes
+ * casos distinguem. A ordem da consulta tem cerca própria
+ * (`tests/invariants/drain-recencia-inbound.test.ts`).
+ */
+const TEXTO_DO_EVENTO = '44444444-4444-4444-8444-444444444444';
+
+type LinhaDaConversa = { id: string; type: string; sent_at: string };
+
+function ultimaInboundDaConversa(sql: string, linhas: LinhaDaConversa[]): Array<{ id: string }> {
+  const excluiReacao = /\btype\s*(?:<>|!=)\s*'reaction'/.test(sql);
+  return linhas
+    .filter((l) => !(excluiReacao && l.type === 'reaction'))
+    .sort((a, b) => b.sent_at.localeCompare(a.sent_at))
+    .slice(0, 1)
+    .map((l) => ({ id: l.id }));
+}
+
+function poolDaConversa(calls: string[], jobs: unknown[][], linhas: LinhaDaConversa[]) {
+  const base = poolElegibilidade(calls);
+  const query = vi.fn().mockImplementation((sql: string, params?: unknown[]) => {
+    if (sql.includes('select id from messages') && sql.includes("direction = 'inbound'")) {
+      calls.push(sql);
+      return { rows: ultimaInboundDaConversa(sql, linhas) };
+    }
+    if (sql.includes('insert into job_queue')) {
+      calls.push(sql);
+      jobs.push(params ?? []);
+      return { rows: [{ id: 'job-do-texto' }] };
+    }
+    return base.query(sql, params);
+  });
+  return { query } as unknown as pg.Pool;
+}
+
+it('#2797: texto seguido de reação — o texto ainda ganha o inbound_turn', async () => {
+  const calls: string[] = [];
+  const jobs: unknown[][] = [];
+  await drainTick(
+    poolDaConversa(calls, jobs, [
+      { id: TEXTO_DO_EVENTO, type: 'text', sent_at: '2026-11-13T23:01:21.000Z' },
+      // gravada ANTES de o dreno consumir o evento do texto, como no caso medido
+      { id: 'reacao-depois-do-texto', type: 'reaction', sent_at: '2026-11-13T23:01:29.000Z' },
+    ]),
+    knobs,
+    log,
+  );
+  expect(jobs, 'a reação calou o texto: o evento saiu como superado, sem job').toHaveLength(1);
+  expect(jobs[0]?.[2]).toBe('inbound_turn');
+  expect((jobs[0]?.[4] as { inbound_message_id?: string }).inbound_message_id).toBe(TEXTO_DO_EVENTO);
+});
+
+it('#2797, controle: um TEXTO mais novo depois da reação continua superando o evento', async () => {
+  const calls: string[] = [];
+  const jobs: unknown[][] = [];
+  await drainTick(
+    poolDaConversa(calls, jobs, [
+      { id: TEXTO_DO_EVENTO, type: 'text', sent_at: '2026-11-13T23:01:21.000Z' },
+      { id: 'reacao-depois-do-texto', type: 'reaction', sent_at: '2026-11-13T23:01:29.000Z' },
+      { id: 'texto-mais-novo', type: 'text', sent_at: '2026-11-13T23:01:40.000Z' },
+    ]),
+    knobs,
+    log,
+  );
+  expect(jobs, 'o filtro da reação desligou o anti-backlog').toHaveLength(0);
+  expect(calls.some((s) => s.includes("status = 'done'"))).toBe(true);
+});
+
+/**
  * #2729 — a segunda camada da regra nº 12: o skip do grupo continua sendo a
  * primeira coisa depois do run-lock, e ele só abre para a chave POR GRUPO
  * `ia_responde = true`. `false`, `null` (linha gravada por uma versão anterior,

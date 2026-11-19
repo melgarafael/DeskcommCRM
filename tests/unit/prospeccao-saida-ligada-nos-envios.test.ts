@@ -31,7 +31,17 @@ describe("saída configurável ligada nos envios automáticos", () => {
     expect(trecho).toContain("preview ? null");
     // A intenção (job, seq da 1ª mensagem física) é o que faz a contagem valer
     // uma vez por mensagem: sem ela o reprocesso conta de novo.
-    expect(trecho).toContain("mensagem: { jobId: preview ? \"\" : liveJob().id, seq: seq + 1 }");
+    //
+    // O `seq` é `seqDoEnvio`, e não `seq + 1` escrito no lugar: desde a #4370 a
+    // MESMA âncora é a fronteira do envio no `send_ledger` (`envio_seq`), e ela
+    // nasce uma vez por `send_message` (`const seqDoEnvio = seq + 1`), antes das
+    // bolhas. Duas expressões seriam duas réguas para o mesmo número.
+    expect(trecho).toContain(
+      "mensagem: { jobId: preview ? \"\" : liveJob().id, seq: seqDoEnvio }",
+    );
+    expect(src).toContain("const seqDoEnvio = seq + 1;");
+    expect(src).toContain("envioSeq: seqDoEnvio,");
+    expect(src).toContain("enviarVoz(texto, seqDoEnvio)");
   });
 
   it("followup-turn usa enviarComSaidaConfiguravel com modelo === undefined", () => {
