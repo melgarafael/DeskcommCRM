@@ -46,6 +46,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { audit } from "@/lib/audit";
 import { adaptador } from "@/lib/cobranca/provedores";
 import { chaveDoProvedor, provedorDaInstalacao, segredoDoWebhook } from "@/lib/cobranca/configuracao";
+import type { ProvedorDeCobranca } from "@/lib/cobranca/vocabulario";
 import { byteaToBuffer, bufToBytea, decryptKey, encryptKey } from "@/lib/crypto/aes_gcm";
 
 import { modoDaChave } from "./modo-da-chave";
@@ -56,9 +57,17 @@ import {
   type ProvedorDePagamento,
 } from "./vocabulario";
 
-/** O gateway em vigor. `apiKey` é plaintext: só para o servidor que chama o provedor. */
+/**
+ * O gateway em vigor. `apiKey` é plaintext: só para o servidor que chama o provedor.
+ *
+ * `provider` é o vocabulário LARGO (`ProvedorDeCobranca`) de propósito: a linha
+ * da ORGANIZAÇÃO só aceita `PROVEDORES_DE_PAGAMENTO` (CHECK da migration 9409),
+ * mas a herança vem da instalação, que desde a #4944 também cobra com `efi`.
+ * Declarar o estreito aqui faria a herança de um Efi ser recusada por TIPO, não
+ * por regra — e o adaptador (`lib/cobranca/provedores`) sabe cobrar os três.
+ */
 export interface GatewayEfetivo {
-  readonly provider: ProvedorDePagamento;
+  readonly provider: ProvedorDeCobranca;
   readonly modo: ModoDePagamento;
   readonly apiKey: string;
   /** Só do MESMO escopo de `apiKey` — nunca o segredo da instalação para uma conta da organização. */
@@ -83,7 +92,8 @@ export type ResultadoDoGateway =
 export interface EstadoDoGatewayParaTela {
   /** `organizacao` = linha própria ligada; `instalacao` = herdando; `nenhuma` = ninguém configurou. */
   readonly origem: "organizacao" | "instalacao" | "nenhuma";
-  readonly provider: ProvedorDePagamento | null;
+  /** Largo pelo mesmo motivo de `GatewayEfetivo.provider`: a herança pode ser `efi`. */
+  readonly provider: ProvedorDeCobranca | null;
   readonly modo: ModoDePagamento | null;
   /** Só da chave da PRÓPRIA organização; herdada não expõe nem os 4 últimos. */
   readonly apiKeyLast4: string | null;

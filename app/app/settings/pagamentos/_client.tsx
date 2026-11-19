@@ -113,11 +113,31 @@ export function GatewayDaOrganizacaoClient({
    * disse estar em vigor (inclusive herdado — é a sugestão mais útil para quem
    * vai configurar o próprio); senão a linha da view, que já veio pronta no
    * primeiro render e evita o campo piscar vazio.
+   *
+   * A herança passa pelo MESMO guard da linha: o seletor só oferece
+   * `PROVEDORES_DE_PAGAMENTO` (stripe|asaas), e o gateway em vigor pode ser
+   * `efi` quando a instalação cobra com ele (#4944) — sugerir um provedor que a
+   * organização não pode gravar (CHECK da 9409) faria o PUT voltar
+   * `provedor_fora`.
    */
   const provedorNaTela: ProvedorDePagamento | "" =
     provedorEscolhido ??
-    estado?.provider ??
+    (ehProvedorDePagamento(estado?.provider) ? estado.provider : null) ??
     (ehProvedorDePagamento(initialRow?.provider) ? initialRow.provider : "");
+
+  /**
+   * O nome do provedor EM VIGOR para a linha de resumo. `Efi Bank` é nome
+   * próprio, igual ao seletor da Cobrança do revendedor — e só aparece na
+   * herança, porque a organização não pode gravar `efi` (CHECK da 9409).
+   */
+  const nomeDoProvedor: string =
+    estado?.provider === "stripe"
+      ? t("Stripe")
+      : estado?.provider === "asaas"
+        ? t("Asaas")
+        : estado?.provider === "efi"
+          ? "Efi Bank"
+          : "—";
 
   const salvar = useMutation({
     mutationFn: async () => {
@@ -185,7 +205,7 @@ export function GatewayDaOrganizacaoClient({
               </p>
               <p>
                 {t("Provedor")}:{" "}
-                {estado.provider === "stripe" ? t("Stripe") : estado.provider === "asaas" ? t("Asaas") : "—"}
+                {nomeDoProvedor}
                 {" · "}
                 {t("Modo")}:{" "}
                 {estado.modo === "teste" ? t("Teste") : estado.modo === "producao" ? t("Produção") : "—"}

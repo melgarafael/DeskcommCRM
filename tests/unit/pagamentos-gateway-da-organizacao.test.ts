@@ -70,6 +70,9 @@ const ORG_B = "bbbbbbbb-0000-4000-8000-000000000002";
 // Asaas nesta bancada, e uma chave com formato de outro provedor faria o
 // resolvedor recusar por modo desconhecido — defeito do fixture, não do código.
 const CHAVE_DA_INSTALACAO = "$aact_hmlg_instalacao000000";
+// Chave com o formato REAL do Efi (`modo:clientId:clientSecret`, migration 9418):
+// a instalação que cobra com Efi é herdada — ver o caso dedicado abaixo.
+const CHAVE_DA_INSTALACAO_EFI = "teste:cliente-do-efi-0001:segredo-do-efi-00000001";
 const CHAVE_DA_ORG_A = "sk_test_organizacao_a_1111";
 const CHAVE_DA_ORG_B = "sk_test_organizacao_b_2222";
 
@@ -192,6 +195,23 @@ describe("gatewayDaOrganizacao", () => {
     expect(r.gateway.webhookSecret).toBe("segredo-da-instalacao");
   });
 
+  it("instalação que cobra com Efi é herdada — a lista da ORGANIZAÇÃO não estreita a herança", async () => {
+    // #4944 pôs `efi` na instalação; `PROVEDORES_DE_PAGAMENTO` continua
+    // stripe|asaas (CHECK da migration 9409) e isso é do eixo da ORGANIZAÇÃO, não
+    // da herança. Recusar aqui seria `sem_gateway` para uma chave que o adaptador
+    // sabe cobrar (o `switch` de `adaptador()` cobre os três).
+    deps.provedorDaInstalacao.mockResolvedValue("efi");
+    deps.chaveDoProvedor.mockResolvedValue(CHAVE_DA_INSTALACAO_EFI);
+    const { client } = banco([]);
+
+    const r = await gatewayDaOrganizacao(client as never, ORG_A);
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error("esperava herança");
+    expect(r.gateway).toMatchObject({ provider: "efi", modo: "teste", origem: "instalacao" });
+    expect(r.gateway.apiKey).toBe(CHAVE_DA_INSTALACAO_EFI);
+  });
+
   it("configuração DESLIGADA herda a instalação e a linha continua no banco", async () => {
     const { client, estado } = banco([linhaDaOrg({ is_active: false })]);
 
@@ -285,6 +305,17 @@ describe("estadoParaTela — o segredo não sai daqui", () => {
     expect(estado.apiKeyLast4).toBeNull();
     expect(JSON.stringify(estado)).not.toContain(CHAVE_DA_INSTALACAO.slice(-4));
     expect(JSON.stringify(estado)).not.toContain(CHAVE_DA_INSTALACAO);
+  });
+
+  it("herdando Efi: a tela recebe o provedor herdado, sem last4 nenhum", async () => {
+    deps.provedorDaInstalacao.mockResolvedValue("efi");
+    deps.chaveDoProvedor.mockResolvedValue(CHAVE_DA_INSTALACAO_EFI);
+    const { client } = banco([]);
+
+    const estado = await estadoParaTela(client as never, ORG_A);
+
+    expect(estado).toMatchObject({ origem: "instalacao", provider: "efi", apiKeyLast4: null });
+    expect(JSON.stringify(estado)).not.toContain(CHAVE_DA_INSTALACAO_EFI);
   });
 
   it("linha de OUTRA organização não vaza nem o last4 (cai para a herança)", async () => {
