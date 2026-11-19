@@ -131,7 +131,9 @@ describe("Metas › De quem é a meta", () => {
     expect(screen.getByRole("button", { name: "Salvar meta" })).toBeDisabled();
     expect(screen.getByRole("alert")).toHaveTextContent(FRASE);
 
+    // Trocar o dono recarrega o alvo gravado daquela combinação (vazio aqui).
     await escolher("Empresa (todos)");
+    preencherAlvo("10");
     expect(screen.getByRole("button", { name: "Salvar meta" })).toBeEnabled();
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -145,7 +147,8 @@ describe("Metas › De quem é a meta", () => {
     await waitFor(() => expect(h.erro).toHaveBeenCalledWith(FRASE));
     expect(h.definir).toHaveBeenCalledWith(expect.objectContaining({ vendedor_id: ATIVA }));
     expect(h.refetch).toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Salvar meta" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Salvar meta" })).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent(FRASE);
 
     fireEvent.click(screen.getByRole("combobox", { name: "De quem é a meta" }));
     expect(await screen.findByRole("option", { name: "Empresa (todos)" })).toBeInTheDocument();
