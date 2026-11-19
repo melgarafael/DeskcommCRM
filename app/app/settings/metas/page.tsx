@@ -19,6 +19,7 @@ import { redirect } from "next/navigation";
 import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK, escreveComoPlatformAdmin } from "@/lib/auth/types";
+import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { mesLocal } from "@/lib/metas/periodo";
 import { createClient } from "@/lib/supabase/server";
@@ -54,6 +55,9 @@ export default async function MetaDeVendasPage() {
       vendedor_id: m.vendedor_id ?? null,
       alvo: Number(m.alvo),
     }));
+  // A unidade do alvo em valor: a moeda que a organização declarou (cai em BRL,
+  // o default da coluna, se a linha não vier).
+  const moeda = await moedaDaOrganizacao(supabase, activeOrg.orgId);
 
   const idioma = user.idioma;
   const t = (texto: string) => traduzir(texto, idioma);
@@ -63,12 +67,12 @@ export default async function MetaDeVendasPage() {
       <CabecalhoDaSubTela className="flex flex-col gap-2" titulo={t("Meta de vendas")} idioma={idioma}>
         <p className="max-w-2xl text-sm text-muted-foreground">
           {t(
-            "Quanto a empresa — ou um vendedor — quer vender neste mês, em quantidade de vendas ou em reais. O Desempenho passa a mostrar o quanto já foi feito contra esse número: o realizado, o percentual, o quanto falta e a projeção até o fim do mês.",
+            "Quanto a empresa — ou um vendedor — quer vender neste mês, em quantidade de vendas ou em valor. O Desempenho passa a mostrar o quanto já foi feito contra esse número: o realizado, o percentual, o quanto falta e a projeção até o fim do mês.",
           )}
         </p>
       </CabecalhoDaSubTela>
 
-      <FormularioDaMeta mes={mes} metas={metas} />
+      <FormularioDaMeta mes={mes} metas={metas} moeda={moeda} />
 
       <p className="max-w-2xl text-xs text-muted-foreground">
         {t(

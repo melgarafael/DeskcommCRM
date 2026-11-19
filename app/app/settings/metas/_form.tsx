@@ -4,9 +4,9 @@
  * O cadastro da meta mensal (issue #3025, fatia 1; meta em VALOR na #4796).
  *
  * ─── O que a pessoa escolhe aqui ───────────────────────────────────────────
- * O MÊS, o INDICADOR (quantidade de vendas ganhas ou valor vendido em R$) e de
- * QUEM é a meta (a empresa inteira ou um vendedor). O valor é digitado em
- * reais e convertido para CENTAVOS ao salvar: é a unidade de
+ * O MÊS, o INDICADOR (quantidade de vendas ganhas ou valor vendido) e de QUEM
+ * é a meta (a empresa inteira ou um vendedor). O valor é digitado na moeda da
+ * organização e convertido para CENTAVOS ao salvar: é a unidade de
  * `crm_leads.value_cents`, a mesma que a rota soma.
  *
  * ─── O default não muda o número de quem já usa ────────────────────────────
@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/select";
 import { useT } from "@/hooks/i18n/useT";
 import { useTeamMembers } from "@/hooks/team/useTeamMembers";
+import { simboloDaMoeda } from "@/lib/money";
 import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 const ERRO_EM_PORTUGUES: Record<string, string> = {
@@ -58,7 +59,25 @@ export interface MetaGravada {
   alvo: number;
 }
 
-export function FormularioDaMeta({ mes, metas }: { mes: string; metas: readonly MetaGravada[] }) {
+/** "R$", "€"… — código que o `Intl` recusa vira o próprio código, sem derrubar a tela. */
+function simboloOuCodigo(moeda: string): string {
+  try {
+    return simboloDaMoeda(moeda);
+  } catch {
+    return moeda;
+  }
+}
+
+export function FormularioDaMeta({
+  mes,
+  metas,
+  moeda,
+}: {
+  mes: string;
+  metas: readonly MetaGravada[];
+  /** Moeda da organização (ISO-4217): a unidade do alvo em valor, a mesma de `value_cents`. */
+  moeda: string;
+}) {
   const t = useT();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -70,6 +89,7 @@ export function FormularioDaMeta({ mes, metas }: { mes: string; metas: readonly 
   const [alvo, setAlvo] = useState("");
 
   const vendedorId = vendedor === EMPRESA ? null : vendedor;
+  const simbolo = simboloOuCodigo(moeda);
 
   // Ao trocar mês, indicador ou dono, o campo mostra o que JÁ está gravado para
   // aquela combinação — em vez de obrigar a pessoa a lembrar o número antigo.
@@ -149,7 +169,7 @@ export function FormularioDaMeta({ mes, metas }: { mes: string; metas: readonly 
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="vendas_ganhas">{t("Quantidade de vendas ganhas")}</SelectItem>
-              <SelectItem value="valor_vendido">{t("Valor vendido (R$)")}</SelectItem>
+              <SelectItem value="valor_vendido">{`${t("Valor vendido")} (${simbolo})`}</SelectItem>
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">
@@ -186,7 +206,9 @@ export function FormularioDaMeta({ mes, metas }: { mes: string; metas: readonly 
 
         <div className="flex flex-col gap-2">
           <Label htmlFor="alvo">
-            {indicador === "valor_vendido" ? t("Valor no mês (R$)") : t("Vendas ganhas no mês")}
+            {indicador === "valor_vendido"
+              ? `${t("Valor no mês")} (${simbolo})`
+              : t("Vendas ganhas no mês")}
           </Label>
           <Input
             id="alvo"

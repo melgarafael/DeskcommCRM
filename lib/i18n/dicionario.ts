@@ -21115,13 +21115,13 @@ export const DICIONARIO: Traducoes = {
   // cada campo faz; as do painel compõem número + unidade, como as vizinhas.
   "Indicador": { es: "Indicador" },
   "Quantidade de vendas ganhas": { es: "Cantidad de ventas ganadas" },
-  "Valor vendido (R$)": { es: "Valor vendido (R$)" },
+  "Valor vendido": { es: "Valor vendido" },
   "De quem é a meta": { es: "De quién es la meta" },
   "Empresa (todos)": { es: "Empresa (todos)" },
   "Empresa (total)": { es: "Empresa (total)" },
   "Vendedor": { es: "Vendedor" },
   "vendidos": { es: "vendidos" },
-  "Valor no mês (R$)": { es: "Valor del mes (R$)" },
+  "Valor no mês": { es: "Valor del mes" },
   "Informe um mês e um valor maior que zero.": {
     es: "Indica un mes y un valor mayor que cero.",
   },
@@ -21140,9 +21140,9 @@ export const DICIONARIO: Traducoes = {
     {
       es: "La meta de la empresa cuenta los negocios cerrados como ganados en el mes; la del vendedor cuenta solo los de él. Las metas por embudo y por trimestre quedan para las próximas etapas.",
     },
-  "Quanto a empresa — ou um vendedor — quer vender neste mês, em quantidade de vendas ou em reais. O Desempenho passa a mostrar o quanto já foi feito contra esse número: o realizado, o percentual, o quanto falta e a projeção até o fim do mês.":
+  "Quanto a empresa — ou um vendedor — quer vender neste mês, em quantidade de vendas ou em valor. O Desempenho passa a mostrar o quanto já foi feito contra esse número: o realizado, o percentual, o quanto falta e a projeção até o fim do mês.":
     {
-      es: "Cuánto quiere vender la empresa — o un vendedor — este mes, en cantidad de ventas o en reales. El Desempeño pasa a mostrar cuánto se hizo contra ese número: lo realizado, el porcentaje, cuánto falta y la proyección hasta el final del mes.",
+      es: "Cuánto quiere vender la empresa — o un vendedor — este mes, en cantidad de ventas o en valor. El Desempeño pasa a mostrar cuánto se hizo contra ese número: lo realizado, el porcentaje, cuánto falta y la proyección hasta el final del mes.",
     },
   "No ritmo atual, o mês fecha em": { es: "Al ritmo actual, el mes cierra en" },
   "Leitura parcial: o realizado em valor soma o que foi lido no período.": {
