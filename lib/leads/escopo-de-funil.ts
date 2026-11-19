@@ -140,6 +140,20 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   crm_confirm_appointment: "sem_funil",
   crm_set_appointment_outcome: "sem_funil",
 
+  // ---- tarefas (#4516) ----
+  // Criar e editar aceitam `lead_id` OPCIONAL: quando ele vem, o funil sai do
+  // negócio e o escopo vale; sem ele a tarefa é do contato (ou avulsa) e não há
+  // funil a julgar — o mesmo caminho medido em `crm_schedule_followup`.
+  crm_create_task: "funil_vem_do_lead",
+  crm_update_task: "funil_vem_do_lead",
+  // Concluir e apagar recebem só `task_id`: nenhum `lead_id` chega, e
+  // classificá-las `funil_vem_do_lead` liberaria 100% das vezes com aparência
+  // de escopado. Quem limita estas duas é a tabela de ESCRITA do turno
+  // (`escopo-das-escritas.ts`, dono `tarefa`) e o risco `critico` do apagar,
+  // que não entra por pacote.
+  crm_complete_task: "sem_funil",
+  crm_delete_task: "sem_funil",
+
   // ---- não têm funil, e isso é declarado ----
   crm_send_whatsapp_message: "sem_funil",
   // #4129 — envia o DOCUMENTO da empresa na conversa; não lê nem move negócio,
