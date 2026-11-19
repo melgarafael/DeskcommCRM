@@ -289,7 +289,15 @@ export function StageColumn({
           </div>
 
           {temTotal && (
-            <div className="border-b border-border px-3 py-1.5 text-[11px] text-text-muted tabular-nums">
+            <div
+              className={cn(
+                "border-b border-border px-3 py-1.5 text-[11px] tabular-nums",
+                // Sobre o fundo colorido, o cinza de apoio cai abaixo de 4,5:1 no tema
+                // escuro (2,77 na etapa amarela, medido na prova do #4976): o total
+                // usa a cor de texto principal, como o nome da etapa.
+                corNaColuna && stage.color ? "text-text" : "text-text-muted",
+              )}
+            >
               {formatSomaPorMoeda(totais, formatValorDoNegocio, { primeira })}
               {ponderados !== null && (
                 <span className="ml-2">
