@@ -35,8 +35,17 @@ const VOCABULARIO: readonly PaisDoProvedor[] = ["US", "CN", "UE", "operador", "d
 /** O que este teste lê de cada entrada: os dois países e a fonte da declaração. */
 type DeclaracaoDePais = Pick<
   ProvedorSuportado,
-  "id" | "pais" | "sede" | "paisDeclarado" | "fonteDoPais"
->;
+  "id" | "pais" | "sede" | "paisDeclarado" | "fonteDoPais" | "motivoDaRegiaoNaoDeclarada"
+> & {
+  /**
+   * Opcionais porque o catálogo de SERVIÇO não os tem: a ElevenLabs recebe o
+   * áudio por API própria e não aceita base URL alternativa. A régua abaixo
+   * lê a presença do campo, e não o valor do tipo, justamente para cobrar que
+   * quem aceita endpoint próprio responda — e que quem não aceita não invente.
+   */
+  aceitaEndpointProprio?: boolean;
+  ondeExecutaComEndpointProprio?: string | null;
+};
 
 /**
  * TUDO o que a tela de IA oferece, inclusive o provedor de voz: a tela de
@@ -163,5 +172,88 @@ describe("o catálogo declara onde o texto é processado", () => {
     // E o valor do `custom` diz exatamente "o servidor do operador", não "não sei":
     // a cláusula 9 tem frase própria para ele.
     expect(PROVEDORES.find((p) => p.id === "custom")?.pais).toBe("operador");
+  });
+});
+
+/**
+ * O QUE FALTA QUANDO NÃO HÁ DECLARAÇÃO — e o que o endpoint próprio faz com o
+ * lugar (#4518).
+ *
+ * `fonteDoPais: null` dizia que não há fonte e parava aí. Faltavam as duas
+ * respostas que a tela e o documento precisam para não chutar: POR QUE o
+ * provedor não declara a região, e o que acontece com o lugar quando o operador
+ * aponta a base URL para outro host. Sem a primeira, "não sei" fica
+ * indistinguível de "ninguém procurou"; sem a segunda, o catálogo herda o país
+ * do provedor para uma chamada que sai pelo endereço do operador.
+ *
+ * A régua é a do catálogo INTEIRO (`TODOS`): provedor novo entra na lista e
+ * reprova aqui se não responder — não há amostra, e não há entrada isenta.
+ */
+describe("#4518 — motivo da ausência e efeito do endpoint próprio", () => {
+  it("todo provedor tem o campo, e exatamente uma das duas respostas", () => {
+    const problemas: string[] = [];
+    for (const p of TODOS) {
+      // Presença EXPLÍCITA: `undefined` (campo esquecido) não pode passar como
+      // se fosse `null`, que é a resposta "há declaração, logo não há motivo".
+      if (!Object.prototype.hasOwnProperty.call(p, "motivoDaRegiaoNaoDeclarada")) {
+        problemas.push(`${p.id}: sem o campo motivoDaRegiaoNaoDeclarada`);
+        continue;
+      }
+      const temDeclaracao = p.paisDeclarado !== null;
+      const motivo = p.motivoDaRegiaoNaoDeclarada;
+      const temMotivo = typeof motivo === "string" && motivo.trim() !== "";
+      if (temDeclaracao === temMotivo) {
+        problemas.push(
+          `${p.id}: ${temDeclaracao ? "declara a região e ainda dá motivo" : "não declara a região e não diz por quê"}`,
+        );
+        continue;
+      }
+      // Motivo curto ou de preenchimento é a resposta de quem não conferiu.
+      if (temMotivo && (motivo.trim().length < 24 || /^(desconhecid[oa]|n\/a|na|tbd|todo)$/i.test(motivo.trim()))) {
+        problemas.push(`${p.id}: motivo vazio ou genérico ("${motivo}")`);
+      }
+    }
+    expect(problemas).toEqual([]);
+  });
+
+  it("o motivo é POR PROVEDOR — razão repetida é resposta de quem não procurou", () => {
+    const motivos = TODOS.map((p) => p.motivoDaRegiaoNaoDeclarada).filter(
+      (m): m is string => typeof m === "string",
+    );
+    const repetidos = motivos.filter((m, i) => motivos.indexOf(m) !== i);
+    expect(repetidos, "dois provedores com o mesmo motivo: um deles foi copiado").toEqual([]);
+  });
+
+  it("quem aceita endpoint próprio diz que a execução pode ser em qualquer lugar", () => {
+    const problemas: string[] = [];
+    for (const p of TODOS) {
+      const aceita = "aceitaEndpointProprio" in p && p.aceitaEndpointProprio === true;
+      const campo = "ondeExecutaComEndpointProprio" in p ? p.ondeExecutaComEndpointProprio : null;
+      if (aceita) {
+        if (typeof campo !== "string" || campo.trim().length < 24) {
+          problemas.push(`${p.id}: aceita endpoint próprio e não diz o que acontece com o lugar`);
+        }
+      } else if (campo !== null && campo !== undefined) {
+        problemas.push(`${p.id}: não aceita endpoint próprio e ainda descreve um efeito`);
+      }
+    }
+    expect(problemas).toEqual([]);
+    // E a régua tem os dois casos, senão mede o vazio.
+    expect(TODOS.filter((p) => "aceitaEndpointProprio" in p && p.aceitaEndpointProprio).length).toBeGreaterThan(0);
+    expect(TODOS.filter((p) => "aceitaEndpointProprio" in p && !p.aceitaEndpointProprio).length).toBeGreaterThan(0);
+  });
+
+  it("o provedor personalizado é o servidor do operador — o catálogo não sabe onde ele fica", () => {
+    const custom = PROVEDORES.find((p) => p.id === "custom");
+    expect(custom?.pais).toBe("operador");
+    expect(custom?.ondeExecutaComEndpointProprio).toMatch(/servidor do operador|n\u00e3o sabe onde/);
+  });
+
+  it("a régua mede o catálogo inteiro, não uma amostra", () => {
+    expect(TODOS.length).toBe(PROVEDORES.length + PROVEDORES_DE_DECISAO.length + PROVEDORES_DE_SERVICO.length);
+    expect(TODOS.length, "catálogo pequeno demais: a régua mediria o vazio").toBeGreaterThanOrEqual(8);
+    // Nenhum id repetido entre as três listas — o Map de cada catálogo ficaria
+    // com a última entrada e uma delas sumiria da cláusula.
+    expect(TODOS.map((p) => p.id).sort()).toEqual([...new Set(TODOS.map((p) => p.id))].sort());
   });
 });

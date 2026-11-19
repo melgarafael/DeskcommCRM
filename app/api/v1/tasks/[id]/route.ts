@@ -35,6 +35,9 @@ import { editarTarefaHandler, excluirTarefaHandler } from "../_handler";
 
 export const dynamic = "force-dynamic";
 
+/** O recurso do audit e o balde do teto por token (Spec 33 — o mesmo nome da main). */
+const RECURSO = "crm_tasks";
+
 const edicaoSchema = z
   .object({
     title: z.string().trim().min(1).max(255).optional(),
@@ -82,9 +85,10 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
 
   const authz = await resolveAuthDual(req, {
     requestId,
-    resource: "crm_tasks",
+    resource: RECURSO,
     role: "agent",
     scope: ESCOPO_TAREFAS_ESCRITA,
+    scopeAlternativo: "mcp:write",
     tokenRole: "agent",
   });
   if (!authz.ok) return authz.response;
@@ -98,7 +102,7 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
     });
   }
 
-  const tetoEstourado = await tetoDeEscritaDoToken(authz, "tasks", requestId);
+  const tetoEstourado = await tetoDeEscritaDoToken(authz, RECURSO, requestId);
   if (tetoEstourado) return tetoEstourado;
 
   try {
@@ -127,17 +131,20 @@ export async function DELETE(req: NextRequest, ctx: Contexto): Promise<Response>
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
+  // Apagar é o degrau de CIMA (Spec 33/R2): o token precisa de `manager`, senão
+  // a integração de leitura/escrita de rotina levaria embora a tarefa de alguém.
   const authz = await resolveAuthDual(req, {
     requestId,
-    resource: "crm_tasks",
+    resource: RECURSO,
     role: "agent",
     scope: ESCOPO_TAREFAS_ESCRITA,
-    tokenRole: "agent",
+    scopeAlternativo: "mcp:write",
+    tokenRole: "manager",
   });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
-  const tetoEstourado = await tetoDeEscritaDoToken(authz, "tasks", requestId);
+  const tetoEstourado = await tetoDeEscritaDoToken(authz, RECURSO, requestId);
   if (tetoEstourado) return tetoEstourado;
 
   try {

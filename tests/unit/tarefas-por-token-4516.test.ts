@@ -45,8 +45,10 @@ vi.mock("@/lib/tarefas/responsavel", () => ({
 vi.mock("@/lib/tarefas/demanda", () => ({
   conferirDemanda: vi.fn(async () => "ok"),
 }));
-vi.mock("@/lib/tarefas/vinculos", () => ({
-  conferirNegocioEContato: vi.fn(async () => "aceito"),
+vi.mock("@/lib/tarefas/negocio-da-tarefa", () => ({
+  COLUNAS_DA_TAREFA: "*",
+  anexarNegocioDaTarefa: vi.fn(async (_db: unknown, _org: string, tarefas: unknown[]) => tarefas),
+  conferirNegocioEContato: vi.fn(async () => "aceitos"),
 }));
 vi.mock("@/lib/db", () => ({ portaDaAplicacao: () => ({ fake: true }) }));
 
@@ -55,7 +57,7 @@ const { criarTarefaHandler, editarTarefaHandler, excluirTarefaHandler, listarTar
 const { audit } = await import("@/lib/audit");
 const { ApiError } = await import("@/lib/api/types");
 const { conferirDemanda } = await import("@/lib/tarefas/demanda");
-const { conferirNegocioEContato } = await import("@/lib/tarefas/vinculos");
+const { conferirNegocioEContato } = await import("@/lib/tarefas/negocio-da-tarefa");
 
 const ORG = "aaaaaaaa-4516-4000-8000-00000000000a";
 const OUTRA_ORG = "bbbbbbbb-4516-4000-8000-00000000000b";
@@ -373,9 +375,9 @@ describe("#4523 — conferência de demanda: 422 e 409 nos dois caminhos", () =>
  * O NEGÓCIO E O CONTATO DA TAREFA SÃO CONFERIDOS NA ORGANIZAÇÃO.
  *
  * `lead_id` e `contact_id` são FK que a RLS não cobre, e pelo token o client é
- * service-role. A régua (`lib/tarefas/vinculos.ts`, provada contra Postgres em
- * `tests/invariants/tarefas-piloto-pg.test.ts`) roda antes de qualquer escrita,
- * na criação e na edição.
+ * service-role. A régua (`lib/tarefas/negocio-da-tarefa.ts`, a mesma que a main
+ * usa no ramo do token da Spec 33) roda antes de qualquer escrita, na criação e
+ * na edição.
  */
 describe("negócio e contato fora da organização: 422, nada gravado", () => {
   const LEAD = "22222222-4523-4000-8000-000000000022";

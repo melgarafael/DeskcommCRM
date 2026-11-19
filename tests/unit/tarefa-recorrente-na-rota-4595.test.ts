@@ -49,8 +49,10 @@ vi.mock("@/lib/tarefas/atividade", () => ({
 }));
 vi.mock("@/lib/tarefas/demanda", () => ({ conferirDemanda: vi.fn(async () => "ok") }));
 vi.mock("@/lib/tarefas/responsavel", () => ({ conferirResponsavel: vi.fn(async () => "ok") }));
-vi.mock("@/lib/tarefas/vinculos", () => ({
-  conferirNegocioEContato: vi.fn(async () => "aceito"),
+vi.mock("@/lib/tarefas/negocio-da-tarefa", () => ({
+  COLUNAS_DA_TAREFA: "*",
+  anexarNegocioDaTarefa: vi.fn(async (_db: unknown, _org: string, tarefas: unknown[]) => tarefas),
+  conferirNegocioEContato: vi.fn(async () => "aceitos"),
 }));
 vi.mock("@/lib/db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/db")>()),

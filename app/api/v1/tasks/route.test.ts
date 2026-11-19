@@ -7,11 +7,12 @@
  * organização) vive em `tests/unit/tarefas-por-token-4516.test.ts`, com o
  * `_handler` real.
  *
- * ⚠️ `tasks:read`/`tasks:write` NÃO são `mcp:read`/`mcp:write`. Um token
- * emitido para uma integração de ligações recebe `mcp:write` junto de tudo o
- * mais; apagar e concluir tarefa mexe na rotina de gente, então quem emite o
- * token decide. O caso "token com mcp:write e SEM tasks:write → 403" é o que
- * impede o escopo novo de nascer decorativo.
+ * ⚠️ `tasks:read`/`tasks:write` são escopos PRÓPRIOS (#4516), e o `mcp:*` que a
+ * Spec 33 já entregou para estas rotas continua valendo: os tokens emitidos com
+ * aquele vocabulário estão no ar, e recusá-los seria 403 em produção no dia do
+ * deploy. A régua é o PAR declarado na rota — `tasks:read` OU `mcp:read` para
+ * ler, `tasks:write` OU `mcp:write` para escrever. O token sem nenhum dos dois
+ * do par leva 403, e é isso que impede a porta de nascer sem gate.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
@@ -99,14 +100,23 @@ beforeEach(() => {
 });
 
 describe("#4516 — GET /api/v1/tasks aceita Bearer com `tasks:read`", () => {
-  it("token sem `tasks:read` → 403, handler não roda", async () => {
-    tokenOk(["mcp:read"]);
+  it("token sem `tasks:read` e sem o `mcp:read` herdado → 403, handler não roda", async () => {
+    tokenOk(["mcp:write"]);
     const { GET } = await import("./route");
 
     const res = await GET(req("GET", "/api/v1/tasks", undefined, { authorization: "Bearer dsk_a_b" }));
 
     expect(res.status).toBe(403);
     expect(listarTarefasHandler).not.toHaveBeenCalled();
+  });
+
+  it("token com `mcp:read` (Spec 33, já emitido) continua lendo", async () => {
+    tokenOk(["mcp:read"]);
+    const { GET } = await import("./route");
+
+    const res = await GET(req("GET", "/api/v1/tasks", undefined, { authorization: "Bearer dsk_a_b" }));
+
+    expect(res.status).toBe(200);
   });
 
   it("token com `tasks:read` → 200, e a organização vem do TOKEN", async () => {
@@ -159,14 +169,23 @@ describe("#4516 — GET /api/v1/tasks aceita Bearer com `tasks:read`", () => {
 describe("#4516 — POST /api/v1/tasks aceita Bearer com `tasks:write`", () => {
   const CORPO = { title: "Ligar de volta para a Ana" };
 
-  it("token com `mcp:write` e SEM `tasks:write` → 403, handler não roda", async () => {
-    tokenOk(["mcp:write"]);
+  it("token com `mcp:read` e SEM `tasks:write`/`mcp:write` → 403, handler não roda", async () => {
+    tokenOk(["mcp:read"]);
     const { POST } = await import("./route");
 
     const res = await POST(req("POST", "/api/v1/tasks", CORPO, { authorization: "Bearer dsk_a_b" }));
 
     expect(res.status).toBe(403);
     expect(criarTarefaHandler).not.toHaveBeenCalled();
+  });
+
+  it("token com `mcp:write` (Spec 33, já emitido) continua escrevendo", async () => {
+    tokenOk(["mcp:write"]);
+    const { POST } = await import("./route");
+
+    const res = await POST(req("POST", "/api/v1/tasks", CORPO, { authorization: "Bearer dsk_a_b" }));
+
+    expect(res.status).toBe(201);
   });
 
   it("token com `tasks:write` e Idempotency-Key → 201, chave e procedência chegam ao handler", async () => {
@@ -203,10 +222,10 @@ describe("#4516 — POST /api/v1/tasks aceita Bearer com `tasks:write`", () => {
     expect(criarTarefaHandler).not.toHaveBeenCalled();
   });
 
-  it("token sem `tasks:write` não passa nem com sessão inválida na mesma requisição", async () => {
+  it("token sem escopo de escrita não passa nem com sessão inválida na mesma requisição", async () => {
     // O caminho do Bearer é EXCLUSIVO: se o token está presente, quem decide é
     // ele. Um cookie esquecido no cliente não pode rebaixar a checagem.
-    tokenOk(["mcp:write"]);
+    tokenOk(["mcp:read"]);
     vi.mocked(requireRole).mockResolvedValue({
       ok: false,
       response: fail("unauthenticated", "Auth required.", 401, {}),

@@ -7,7 +7,6 @@ import { criarTarefaInterna } from "@/lib/tarefas/criar-tarefa";
 import { conferirDemanda } from "@/lib/tarefas/demanda";
 import { aplicarPlanoDeTarefas } from "@/lib/tarefas/plano";
 import { conferirResponsavel } from "@/lib/tarefas/responsavel";
-import { conferirNegocioEContato } from "@/lib/tarefas/vinculos";
 
 /**
  * F1 do #3715 — `lib/tarefas` FALANDO SQL DIRETO, contra Postgres de verdade.
@@ -456,23 +455,15 @@ describe("conferirDemanda — a régua do vínculo com o atendimento", () => {
   });
 });
 
-describe("conferirNegocioEContato — o negócio e o contato da tarefa", () => {
-  it("negócio e contato da organização são aceitos", async () => {
-    expect(await conferirNegocioEContato(db, ORG_A, { lead_id: LEAD_A, contact_id: CONTATO_A })).toBe("aceito");
-  });
-
-  it("⭐ negócio ou contato de OUTRA organização é `fora_da_organizacao`", async () => {
-    expect(await conferirNegocioEContato(db, ORG_A, { lead_id: LEAD_B })).toBe("fora_da_organizacao");
-    expect(await conferirNegocioEContato(db, ORG_A, { contact_id: CONTATO_B })).toBe("fora_da_organizacao");
-    expect(await conferirNegocioEContato(db, ORG_A, { lead_id: LEAD_A, contact_id: CONTATO_B })).toBe(
-      "fora_da_organizacao",
-    );
-  });
-
-  it("erro do banco vira `falha_na_consulta`, nunca aceite (id fora do formato uuid)", async () => {
-    expect(await conferirNegocioEContato(db, ORG_A, { lead_id: "nao-e-um-uuid" })).toBe("falha_na_consulta");
-  });
-});
+/**
+ * A RÉGUA DO NEGÓCIO E DO CONTATO DA TAREFA mudou de casa no merge com a main:
+ * ela saiu do pool (`lib/tarefas/vinculos.ts`, que este bloco cobria) e passou a
+ * morar em `lib/tarefas/negocio-da-tarefa.ts`, sobre o client da chamada — é a
+ * mesma função que o ramo do token da Spec 33 usa na rota. A prova de isolamento
+ * que importa (negócio de outra organização não aparece nem grava) está em
+ * `tests/unit/token-por-area/tarefas-demandas.test.ts`, com o cliente admin falso
+ * que aponta cada cadeia sem filtro de organização.
+ */
 
 describe("conferirResponsavel — a régua da equipe, sobre SQL", () => {
   it("membro ativo é aceito", async () => {

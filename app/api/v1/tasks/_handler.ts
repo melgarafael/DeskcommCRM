@@ -33,9 +33,13 @@ import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { registraAtividadeDaTarefa } from "@/lib/tarefas/atividade";
 import { conferirDemanda } from "@/lib/tarefas/demanda";
+import {
+  anexarNegocioDaTarefa,
+  COLUNAS_DA_TAREFA,
+  conferirNegocioEContato,
+} from "@/lib/tarefas/negocio-da-tarefa";
 import { normalizarRegra, proximaOcorrencia, regraParaGravar } from "@/lib/tarefas/recorrencia";
 import { conferirResponsavel } from "@/lib/tarefas/responsavel";
-import { conferirNegocioEContato } from "@/lib/tarefas/vinculos";
 import {
   SITUACOES_ABERTAS_DA_TAREFA,
   type PrioridadeDaTarefa,
@@ -156,11 +160,31 @@ export async function listarTarefasHandler(
   ctx: HandlerCtx,
   filtros: FiltrosDaLista,
 ): Promise<{ tasks: Tarefa[] }> {
+  // `user` = sessão de navegador; qualquer outro ator (token de integração, agente
+  // nativo pela tool MCP) cai na service role, onde a RLS não está no caminho.
+  const doToken = ctx.actor.type !== "user";
+
+  // O filtro de funil depende do embed `lead:crm_leads!inner`, e é o embed que a
+  // service role transforma em vazamento: com ela o título do negócio de OUTRA
+  // organização sairia na lista. Em vez de reabrir o embed, o token recebe 422 —
+  // quem integra cruza por `lead_id` com `GET /api/v1/pipelines/[id]/leads`.
+  if (doToken && filtros.pipeline_id) {
+    throw new ApiError(
+      422,
+      "validation_failed",
+      { pipeline_id: ["Este filtro só vale para quem entrou pela tela; use `lead_id`."] },
+      ctx.requestId,
+      "Parâmetros inválidos.",
+    );
+  }
+
   // ⚠️ `organization_id` à mão mesmo com RLS ligada: é a regra do CLAUDE.md, e
   // ela não é redundante — pelo MCP o client é service-role e a RLS não vale.
   let query = supabase
     .from("crm_tasks")
-    .select(filtros.pipeline_id ? COLUNAS_NO_FUNIL : COLUNAS)
+    .select(
+      doToken ? COLUNAS_DA_TAREFA : filtros.pipeline_id ? COLUNAS_NO_FUNIL : COLUNAS,
+    )
     .eq("organization_id", ctx.organization_id)
     .order("due_date", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: false })
@@ -204,17 +228,32 @@ export async function listarTarefasHandler(
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, "Erro ao listar as tarefas.");
   }
 
-  return { tasks: (data ?? []) as unknown as Tarefa[] };
+  const tarefas = (data ?? []) as unknown as Tarefa[];
+  // Pela sessão o embed já trouxe o negócio (e a RLS de `crm_leads` decidiu o que
+  // podia aparecer). Pelo token a lista veio SEM embed: o negócio é juntado aqui,
+  // em consulta própria filtrada pela organização.
+  if (!doToken) return { tasks: tarefas };
+
+  const comNegocio = await anexarNegocioDaTarefa(supabase, ctx.organization_id, tarefas);
+  if (!comNegocio) {
+    throw new ApiError(500, "internal_error", undefined, ctx.requestId, "Erro ao listar as tarefas.");
+  }
+  return { tasks: comNegocio };
 }
 
 /**
- * O responsável, a demanda, o negócio e o contato têm FK que a RLS não cobre
- * (`lib/tarefas/responsavel.ts`, `demanda.ts` e `vinculos.ts` fazem SQL direto
- * na porta de `lib/db`): sem conferir, um id de fora da organização GRAVARIA sem
- * erro. A conferência vale igual para a tela e para o token — é a mesma regra,
- * no mesmo lugar.
+ * O responsável, a demanda, o negócio e o contato têm FK que a RLS não cobre:
+ * sem conferir, um id de fora da organização GRAVARIA sem erro. A conferência
+ * vale igual para a tela e para o token — é a mesma regra, no mesmo lugar.
+ *
+ * O negócio e o contato vão pelo client da chamada (`negocio-da-tarefa.ts`): ali
+ * a consulta filtra a organização, então a resposta vem certa nos DOIS caminhos,
+ * e no ramo do token a service role não vira porta dos fundos. Responsável e
+ * demanda continuam no SQL direto de `lib/db` (`responsavel.ts`, `demanda.ts`),
+ * que não passa por RLS e por isso também escreve o `organization_id` à mão.
  */
 async function confereVinculos(
+  supabase: SB,
   ctx: HandlerCtx,
   input: {
     assigned_to?: string | null;
@@ -224,7 +263,7 @@ async function confereVinculos(
   },
 ): Promise<void> {
   if (input.lead_id || input.contact_id) {
-    const veredito = await conferirNegocioEContato(portaDaAplicacao(), ctx.organization_id, input);
+    const veredito = await conferirNegocioEContato(supabase, ctx.organization_id, input);
     if (veredito === "falha_na_consulta") {
       throw new ApiError(500, "internal_error", undefined, ctx.requestId, "Erro ao salvar a tarefa.");
     }
@@ -295,8 +334,10 @@ export async function criarTarefaHandler(
     ctx.idempotencyKey ??
     (ctx.sourceJobId ? `agent-job:${ctx.sourceJobId}:${hashDoCorpo(input)}` : null);
 
+  const doToken = ctx.actor.type !== "user";
+
   const executar = async (): Promise<{ task: Tarefa }> => {
-    await confereVinculos(ctx, input);
+    await confereVinculos(supabase, ctx, input);
 
     // ═══ A SÉRIE QUE SE REPETE (#4595) ═══
     //
@@ -346,7 +387,7 @@ export async function criarTarefaHandler(
         organization_id: ctx.organization_id,
         created_by: pessoaDoAtor(ctx.actor),
       })
-      .select(COLUNAS)
+      .select(doToken ? COLUNAS_DA_TAREFA : COLUNAS)
       .single();
 
     if (error) {
@@ -390,7 +431,11 @@ export async function criarTarefaHandler(
       actor: ctx.actor,
     });
 
-    return { task: tarefa };
+    // A tarefa já está gravada: se a junção do negócio falhar, a resposta sai
+    // com `lead: null` em vez de um 500 que convidaria o cliente a criar de novo.
+    if (!doToken) return { task: tarefa };
+    const comNegocio = await anexarNegocioDaTarefa(supabase, ctx.organization_id, [tarefa]);
+    return { task: comNegocio?.[0] ?? { ...tarefa, lead: null } };
   };
 
   if (chave === null) return executar();
@@ -431,7 +476,8 @@ export async function editarTarefaHandler(
   input: EdicaoDaTarefa,
 ): Promise<{ task: Tarefa }> {
   const { id, ...campos } = input;
-  await confereVinculos(ctx, campos);
+  const doToken = ctx.actor.type !== "user";
+  await confereVinculos(supabase, ctx, campos);
 
   // A situação ANTES da edição decide se esta é a vez em que a tarefa fechou.
   // Sem ler antes, marcar "concluída" duas vezes emitiria duas linhas na
@@ -484,7 +530,7 @@ export async function editarTarefaHandler(
     .update(alteracao)
     .eq("id", id)
     .eq("organization_id", ctx.organization_id)
-    .select(COLUNAS)
+    .select(doToken ? COLUNAS_DA_TAREFA : COLUNAS)
     .single();
 
   if (error) {
@@ -543,7 +589,11 @@ export async function editarTarefaHandler(
     });
   }
 
-  return { task: tarefa };
+  // Mesma régua da criação: pelo token o `lead` não veio por embed, e um erro na
+  // junção não pode transformar uma edição JÁ GRAVADA em 500.
+  if (!doToken) return { task: tarefa };
+  const comNegocio = await anexarNegocioDaTarefa(supabase, ctx.organization_id, [tarefa]);
+  return { task: comNegocio?.[0] ?? { ...tarefa, lead: null } };
 }
 
 export async function excluirTarefaHandler(

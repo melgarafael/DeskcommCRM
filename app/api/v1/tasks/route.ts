@@ -23,14 +23,28 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *     sucesso silencioso, com o dado indo para um lugar que nenhuma lista,
  *     índice ou policy alcança. A 0210 fechou a lacuna.
  *
- * ─── A PORTA DO TOKEN (#4516) ──────────────────────────────────────────────
+ * ─── Sessão OU token (Spec 33, R2 — e a porta do #4516) ────────────────────
  *
- * Sessão de navegador OU Bearer `dsk_…`, resolvidos por `lib/api/auth-dual.ts`
- * DENTRO da rota: a organização sai da LINHA DO TOKEN, nunca de query ou corpo.
- * `GET` cobra `tasks:read` e as escritas cobram `tasks:write` — escopos próprios,
- * e não `mcp:read`/`mcp:write`, porque quem emite o token decide se a integração
- * mexe na rotina da equipe. O caminho está em `lib/auth/public-paths.ts`; sem
- * essa entrada o proxy responde 401 antes de o Bearer chegar aqui.
+ * As duas portas entram por `resolveAuthDual`: a sessão do navegador com o
+ * mesmo papel de sempre (viewer lê, agent cria), ou o Bearer `dsk_…` — com
+ * `tasks:read`/`tasks:write` (#4516) OU com o `mcp:read`/`mcp:write` que a
+ * Spec 33 já entregou para estas rotas. Os dois vocabulários valem de propósito:
+ * o escopo próprio é o que a tela de Tokens oferece a partir de agora, e o
+ * `mcp:*` é o que os tokens JÁ EMITIDOS carregam — exigir só o novo daria 403
+ * em integração que está no ar.
+ *
+ * A organização sai da LINHA DO TOKEN, nunca de query ou corpo. O caminho está
+ * em `lib/auth/public-paths.ts`; sem essa entrada o proxy responde 401 antes de
+ * o Bearer chegar aqui.
+ *
+ * No ramo do token o cliente é a service role, e a RLS deixa de proteger — é o
+ * que `_handler.ts` trata: `organization_id` explícito em cada cadeia, a lista
+ * lida SEM o embed `lead:crm_leads` (o negócio é juntado em consulta própria,
+ * filtrada pela organização — `lib/tarefas/negocio-da-tarefa.ts`), `lead_id` e
+ * `contact_id` do corpo conferidos na organização antes de gravar, e
+ * `created_by` só recebe id de pessoa. `pipeline_id` não existe para o token: o
+ * filtro de funil depende do embed, e ali dentro o negócio de outra organização
+ * sairia na resposta — quem integra cruza por `lead_id`.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -50,6 +64,9 @@ import { PRIORIDADES_DA_TAREFA, SITUACOES_DA_TAREFA } from "@/lib/tarefas/tipos"
 import { LIMITE_MAXIMO_DA_LISTA, criarTarefaHandler, listarTarefasHandler } from "./_handler";
 
 export const dynamic = "force-dynamic";
+
+/** O recurso do audit e o balde do teto por token (Spec 33 — o mesmo nome da main). */
+const RECURSO = "crm_tasks";
 
 const criacaoSchema = z.object({
   title: z.string().trim().min(1).max(255),
@@ -137,12 +154,17 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const authz = await resolveAuthDual(req, {
     requestId,
-    resource: "crm_tasks",
+    resource: RECURSO,
     role: "viewer",
     scope: ESCOPO_TAREFAS_LEITURA,
+    scopeAlternativo: "mcp:read",
     tokenRole: "viewer",
   });
   if (!authz.ok) return authz.response;
+  // Está em PUBLIC_PATHS: o Bearer chega aqui sem estrangulamento a montante, e
+  // o teto por token e por organização é o único que conta as chamadas.
+  const tetoEstourado = await tetoDeEscritaDoToken(authz, RECURSO, requestId);
+  if (tetoEstourado) return tetoEstourado;
   const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const parsed = listaSchema.safeParse(Object.fromEntries(new URL(req.url).searchParams));
@@ -161,6 +183,18 @@ export async function GET(req: NextRequest): Promise<Response> {
       422,
       { requestId },
     );
+  }
+
+  // O filtro de funil só existe com o negócio EMBUTIDO (`lead:crm_leads!inner`),
+  // e o embed é exatamente o que o ramo do token não usa: com a service role ele
+  // não passa pela RLS de `crm_leads` e devolveria negócio de outra organização.
+  // Em vez de reabrir o embed, o token recebe 422 — quem precisa do funil filtra
+  // pelos negócios (`GET /api/v1/pipelines/[id]/leads`) e cruza por `lead_id`.
+  if (filtros.pipeline_id && authz.via === "token") {
+    return fail("validation_failed", t("Parâmetros inválidos."), 422, {
+      requestId,
+      details: { pipeline_id: ["Este filtro só vale para quem entrou pela tela; use `lead_id`."] },
+    });
   }
 
   try {
@@ -199,9 +233,10 @@ export async function POST(req: NextRequest): Promise<Response> {
   // `agent` e não `manager`: criar tarefa é o gesto de quem ATENDE, todo dia.
   const authz = await resolveAuthDual(req, {
     requestId,
-    resource: "crm_tasks",
+    resource: RECURSO,
     role: "agent",
     scope: ESCOPO_TAREFAS_ESCRITA,
+    scopeAlternativo: "mcp:write",
     tokenRole: "agent",
   });
   if (!authz.ok) return authz.response;
@@ -218,7 +253,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     return fail("validation_failed", t("Idempotency-Key deve ser UUID"), 400, { requestId });
   }
 
-  const tetoEstourado = await tetoDeEscritaDoToken(authz, "tasks", requestId);
+  const tetoEstourado = await tetoDeEscritaDoToken(authz, RECURSO, requestId);
   if (tetoEstourado) return tetoEstourado;
 
   const parsed = criacaoSchema.safeParse(await req.json().catch(() => null));

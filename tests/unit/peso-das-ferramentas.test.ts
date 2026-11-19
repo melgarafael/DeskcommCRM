@@ -67,7 +67,11 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
     motivo:
       "#4544: precisa dizer que imagem/binário NÃO é transcrito (senão o agente trata resposta vazia como documento sem dados) e que o teto é por chamada",
   },
-  "crm_list_pipelines": { tokens: 63, motivo: BASE },
+  "crm_list_pipelines": {
+    tokens: 118,
+    motivo:
+      "#4667: a descrição passou a dizer que a lista traz os CAMPOS de cada funil; mede 118 (63 → 118, +55) na main pós-#4886, remedido no merge do #4523 (2026-11-19)",
+  },
   "crm_get_pipeline_forecast": { tokens: 281, motivo: "#4322: a descrição passou a dizer que `truncado: true` marca valores parciais quando o funil passa do teto de leitura; sem isso o agente apresenta um recorte como o total" },
   "crm_search_knowledge": { tokens: 250, motivo: BASE },
   "crm_list_knowledge_sources": { tokens: 86, motivo: BASE },
@@ -238,9 +242,13 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // lista inteira e ganhou `tags_adicionar`/`tags_remover`. MEDIDO no merge com a
 // main pós-#4886 e #4684: 40675 (2026-11-18).
 // +3274 com as cinco ferramentas do CRUD de tarefas por token (#4516), medida na
-// criação: 944 (`crm_list_tasks`) + 959 + 940 + 245 + 186. MEDIDO no merge com a
-// main de 18/11: 43949 = 40675 + 3274.
-const TETO_TOTAL = 43949;
+// criação: 944 (`crm_list_tasks`) + 959 + 940 + 245 + 186.
+// +55 na descrição de `crm_list_pipelines` (#4667), que a main já tinha mergeado
+// depois do ponto em que este PR saiu: 63 → 118.
+// MEDIDO no merge com a main de 2026-11-19 (`a8b6199286`), não somado à mão:
+// 44004 = 40675 (main pós-#4666) + 55 (#4667) + 3274 (#4516). É o teto de
+// CONTEXTO — não confundir com `TETO_TOOLS_POR_AGENTE`, que é o de capacidade.
+const TETO_TOTAL = 44004;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
