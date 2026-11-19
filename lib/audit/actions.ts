@@ -1468,6 +1468,11 @@ export const AUDIT_ACTIONS = [
   // LGPD art. 18, V. Audita o GESTO com o total de linhas e os filtros que
   // valiam, nunca o termo de busca.
   "contacts.exported",
+  // O relatório de vendas do Desempenho baixado em CSV (#4802, item 5).
+  // Mesmo porquê do export de contatos e do de auditoria: o arquivo SAIU, e
+  // quem administra precisa saber que saiu. Metadata: quantas linhas, a janela
+  // e o atendente filtrado — nunca valor de venda nem conteúdo de negócio.
+  "reports.sales_exported",
   // O operador carregou a imagem que a Resposta rápida passa a enviar junto
   // com o texto — `POST /message-templates/:id/midias` (#2526). A REMOÇÃO não
   // tem código próprio: ela acontece dentro do `template.updated` (campo
