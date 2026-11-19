@@ -19,7 +19,9 @@ import type { TeamMember } from "@/hooks/team/useTeamMembers";
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 
 const h = vi.hoisted(() => ({
-  membros: [] as TeamMember[],
+  // O resultado do hook é o MESMO objeto entre renders, como no react-query:
+  // só uma lista recarregada traz objeto novo.
+  equipe: { data: { data: [] as TeamMember[] } },
   resposta: { ok: true } as { ok: boolean; error?: string },
   erro: vi.fn(),
   refetch: vi.fn(async () => undefined),
@@ -27,7 +29,7 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("@/hooks/team/useTeamMembers", () => ({
-  useTeamMembers: () => ({ data: { data: h.membros }, isLoading: false, refetch: h.refetch }),
+  useTeamMembers: () => ({ data: h.equipe.data, isLoading: false, refetch: h.refetch }),
 }));
 vi.mock("@/app/actions/settings/definirMetaMensal", () => ({
   definirMetaMensal: vi.fn(async (entrada: unknown) => {
@@ -40,6 +42,7 @@ vi.mock("sonner", () => ({ toast: { error: h.erro, success: vi.fn() } }));
 
 const { FormularioDaMeta } = await import("@/app/app/settings/metas/_form");
 
+const METAS: readonly [] = [];
 const ATIVA = "11111111-1111-4111-8111-111111111111";
 const REVOGADO = "22222222-2222-4222-8222-222222222222";
 
@@ -60,7 +63,7 @@ function membro(user_id: string, full_name: string, revoked_at: string | null): 
 function arvore(locale: "pt-BR" | "es") {
   return createElement(IdiomaProvider, {
     locale,
-    children: <FormularioDaMeta mes="2026-11" metas={[]} moeda="BRL" />,
+    children: <FormularioDaMeta mes="2026-11" metas={METAS} moeda="BRL" />,
   });
 }
 
@@ -79,6 +82,10 @@ function preencherAlvo(valor: string) {
   return alvo;
 }
 
+function recarregar(membros: TeamMember[]) {
+  h.equipe = { data: { data: membros } };
+}
+
 const FRASE = "Essa pessoa não faz mais parte da equipe. Escolha outra pessoa ou a empresa.";
 
 beforeAll(() => {
@@ -90,7 +97,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  h.membros = [membro(ATIVA, "Ana Ativa", null), membro(REVOGADO, "Rui Revogado", "2026-11-01T12:00:00.000Z")];
+  recarregar([membro(ATIVA, "Ana Ativa", null), membro(REVOGADO, "Rui Revogado", "2026-11-01T12:00:00.000Z")]);
   h.resposta = { ok: true };
   h.erro.mockReset();
   h.refetch.mockClear();
@@ -126,7 +133,7 @@ describe("Metas › De quem é a meta", () => {
     preencherAlvo("10");
     expect(screen.getByRole("button", { name: "Salvar meta" })).toBeEnabled();
 
-    h.membros = [membro(ATIVA, "Ana Ativa", "2026-11-19T12:00:00.000Z")];
+    recarregar([membro(ATIVA, "Ana Ativa", "2026-11-19T12:00:00.000Z")]);
     tela.rerender(arvore("pt-BR"));
     expect(screen.getByRole("button", { name: "Salvar meta" })).toBeDisabled();
     expect(screen.getByRole("alert")).toHaveTextContent(FRASE);
@@ -140,7 +147,7 @@ describe("Metas › De quem é a meta", () => {
 
   it("o servidor recusa a pessoa escolhida: ela some do seletor, a lista recarrega e salvar trava", async () => {
     h.resposta = { ok: false, error: "vendedor_fora_da_equipe" };
-    formulario("pt-BR");
+    const tela = formulario("pt-BR");
     await escolher("Ana Ativa");
     const alvo = preencherAlvo("10");
     fireEvent.submit(alvo.closest("form")!);
@@ -153,5 +160,12 @@ describe("Metas › De quem é a meta", () => {
     fireEvent.click(screen.getByRole("combobox", { name: "De quem é a meta" }));
     expect(await screen.findByRole("option", { name: "Empresa (todos)" })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "Ana Ativa" })).toBeNull();
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+
+    // A lista recarregada é quem manda: o acesso de volta devolve a pessoa e o salvar.
+    recarregar([membro(ATIVA, "Ana Ativa", null)]);
+    tela.rerender(arvore("pt-BR"));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("button", { name: "Salvar meta" })).toBeEnabled();
   });
 });

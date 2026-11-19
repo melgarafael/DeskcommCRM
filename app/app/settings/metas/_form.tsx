@@ -93,9 +93,15 @@ export function FormularioDaMeta({
   const [indicador, setIndicador] = useState<IndicadorDaMeta>("vendas_ganhas");
   const [vendedor, setVendedor] = useState<string>(EMPRESA);
   const [alvo, setAlvo] = useState("");
-  // Quem o servidor já recusou como fora da equipe nesta tela: some do seletor
-  // na hora, sem esperar a lista da equipe voltar (#4986).
-  const [recusados, setRecusados] = useState<ReadonlySet<string>>(() => new Set());
+  // Quem o servidor recusou como fora da equipe: some do seletor na hora, sem
+  // esperar a lista da equipe voltar (#4986). Vale só enquanto a lista na tela é
+  // a MESMA da recusa — quando a lista recarregada chega, ela é quem manda (se a
+  // pessoa voltou a ter acesso, ela volta a aparecer).
+  const [recusa, setRecusa] = useState<{ ids: ReadonlySet<string>; lista: unknown }>(() => ({
+    ids: new Set(),
+    lista: undefined,
+  }));
+  const recusados: ReadonlySet<string> = recusa.lista === equipe.data ? recusa.ids : new Set();
 
   const vendedorId = vendedor === EMPRESA ? null : vendedor;
   const naEquipe = (equipe.data?.data ?? []).filter(
@@ -161,7 +167,11 @@ export function FormularioDaMeta({
         return;
       }
       if (resultado.error === "vendedor_fora_da_equipe" && vendedorId) {
-        setRecusados((atual) => new Set(atual).add(vendedorId));
+        const lista = equipe.data;
+        setRecusa((atual) => ({
+          ids: new Set(atual.lista === lista ? atual.ids : []).add(vendedorId),
+          lista,
+        }));
         void equipe.refetch();
       }
       toast.error(t(ERRO_EM_PORTUGUES[resultado.error] ?? "Não consegui salvar a meta agora."));
