@@ -95,8 +95,8 @@ function fazerSupabase(tabelas: Record<string, Resposta>) {
     const resposta: Resposta = tabelas[tabela] ?? { data: [], error: null };
     const anotados = (filtros[tabela] ??= []);
     const elo: Record<string, unknown> = {};
-    for (const metodo of ["order", "limit", "gte", "lte", "select"]) elo[metodo] = () => elo;
-    for (const metodo of ["eq", "in", "is"]) {
+    for (const metodo of ["order", "limit", "gte", "lte"]) elo[metodo] = () => elo;
+    for (const metodo of ["select", "eq", "in", "is"]) {
       elo[metodo] = (coluna: string, valor: unknown) => (anotados.push([metodo, coluna, valor]), elo);
     }
     elo.then = (res: (v: unknown) => unknown) => Promise.resolve(resposta).then(res);
@@ -394,6 +394,112 @@ describe("GET /api/v1/tasks?sector_id= — o filtro casa com o selo (#4883)", ()
     expect(moduloLigado).not.toHaveBeenCalled();
   });
 });
+
+describe("GET /api/v1/tasks — o selo aguenta a lista cheia e o token (#4883)", () => {
+  beforeEach(() => vi.mocked(moduloLigado).mockResolvedValue(true));
+
+  /** Um uuid v4 de mentira, distinto por índice e por prefixo. */
+  const uuid = (prefixo: string, i: number) =>
+    `${prefixo}${String(i).padStart(7, "0")}-0000-4000-8000-000000000000`;
+
+  it("250 tarefas de contatos distintos: nenhum .in() leva mais de 100 ids, e nenhum id fica de fora", async () => {
+    sessao();
+    const N = 250;
+    const contatos = Array.from({ length: N }, (_, i) => uuid("c", i));
+    const negocios = Array.from({ length: N }, (_, i) => uuid("d", i));
+    const pessoas = Array.from({ length: N }, (_, i) => uuid("e", i));
+    const conversasDosCards = Array.from({ length: N }, (_, i) => uuid("f", i));
+    const filtros = fazerSupabase({
+      crm_tasks: {
+        data: contatos.map((c, i) =>
+          tarefa({
+            id: `tarefa-${i}`,
+            contact_id: c,
+            lead_id: negocios[i],
+            assigned_to: pessoas[i],
+          }),
+        ),
+        error: null,
+      },
+      crm_lead_links: {
+        data: negocios.map((n, i) => ({ lead_id: n, target_id: conversasDosCards[i] })),
+        error: null,
+      },
+      conversations: {
+        data: [
+          {
+            id: CONVERSA_DO_CONTATO,
+            contact_id: contatos[N - 1],
+            sector_id: INTERNACIONAIS,
+            last_message_at: "2026-11-17T10:00:00Z",
+          },
+        ],
+        error: null,
+      },
+      attendant_sector_members: { data: [], error: null },
+    });
+
+    const { res, corpo } = await listar("?com_setor=true");
+    expect(res.status).toBe(200);
+    // A ÚLTIMA tarefa, que num .in() único cairia no mesmo lote das outras,
+    // continua achando o setor da sua conversa.
+    expect(corpo.data.tasks[N - 1].setor).toEqual({ id: INTERNACIONAIS, origem: "conversa" });
+
+    const lotes = (tabela: string, coluna: string) =>
+      (filtros[tabela] ?? [])
+        .filter(([metodo, col]) => metodo === "in" && col === coluna)
+        .map(([, , valor]) => valor as string[]);
+    const casos: Array<[string, string, string[]]> = [
+      ["conversations", "contact_id", contatos],
+      ["crm_lead_links", "lead_id", negocios],
+      ["conversations", "id", conversasDosCards],
+      ["attendant_sector_members", "user_id", pessoas],
+    ];
+    for (const [tabela, coluna, esperados] of casos) {
+      const deste = lotes(tabela, coluna);
+      expect(deste.length, `${tabela}.${coluna}`).toBeGreaterThan(1);
+      for (const lote of deste) expect(lote.length, `${tabela}.${coluna}`).toBeLessThanOrEqual(100);
+      expect(new Set(deste.flat()), `${tabela}.${coluna}`).toEqual(new Set(esperados));
+    }
+  });
+
+  it("pelo token, o negócio juntado traz o contato — e o selo acha o setor do NEGÓCIO como na sessão", async () => {
+    vi.mocked(resolveAuthDual).mockImplementation(
+      async () =>
+        ({
+          ok: true as const,
+          organizationId: ORG,
+          actor: { type: "user" as const, id: ANA },
+          supabase: await createClient(),
+          via: "token" as const,
+          scopes: ["mcp:read"],
+          apiTokenId: "tok-1",
+        }) as never,
+    );
+    const filtros = fazerSupabase({
+      crm_tasks: { data: [tarefa({ lead_id: NEGOCIO, assigned_to: null })], error: null },
+      crm_leads: { data: [{ id: NEGOCIO, title: "Peru", contact_id: CONTATO }], error: null },
+      conversations: {
+        data: [
+          {
+            id: CONVERSA_DO_CONTATO,
+            contact_id: CONTATO,
+            sector_id: CORPORATIVO,
+            last_message_at: "2026-11-16T09:00:00Z",
+          },
+        ],
+        error: null,
+      },
+    });
+
+    const { res, corpo } = await listar("?com_setor=true");
+    expect(res.status).toBe(200);
+    expect(filtros.crm_leads).toContainEqual(["select", "id, title, contact_id", undefined]);
+    expect(filtros.crm_leads).toContainEqual(["eq", "organization_id", ORG]);
+    expect(corpo.data.tasks[0].setor).toEqual({ id: CORPORATIVO, origem: "negocio" });
+  });
+});
+
 
 describe("GET /api/v1/tasks?contact_id= — a busca do painel da conversa (#4630)", () => {
   it("é uma consulta só, filtrada pela organização da sessão e pelo contato", async () => {
