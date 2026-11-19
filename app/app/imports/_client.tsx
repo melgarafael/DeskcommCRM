@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { useActiveOrg, useUser } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
 import { roleAtLeast } from "@/lib/auth/types";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 interface BatchRow {
   id: string;
@@ -209,7 +210,7 @@ export function ImportsListClient() {
                   .filter((m) => m.user_id !== usuario.id)
                   .map((m) => (
                     <option key={m.user_id} value={m.user_id}>
-                      {m.full_name ?? m.user_id.slice(0, 8)}
+                      {rotuloDoMembro(m, t)}
                     </option>
                   ))}
               </select>
