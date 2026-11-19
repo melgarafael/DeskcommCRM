@@ -190,11 +190,13 @@ type Props = (EditProps | CreateProps) & {
   /** Quanto de cada funil o assistente sabe percorrer (spec 17 passo 4). */
   cobertura?: CoberturaPorFunil;
   /**
-   * O funil de entrada que cada número escolheu (`channel_sessions.entry_pipeline_id`,
-   * #4921), por id do número. Ausente = não deu para ler: o aviso do funil de
-   * entrada volta a olhar só o funil padrão, como antes.
+   * Onde nasce o card das conversas novas de cada número (#4921), por id do
+   * número, já pela régua do nascimento do lead (nulo = funil padrão). Ausente:
+   * o aviso do funil de entrada olha só o funil padrão, como antes.
    */
   funilDeEntradaPorNumero?: Record<string, string | null>;
+  /** Números vivos dos roteadores ativos que levam conversa a este agente (#4940). */
+  numerosDoRoteador?: string[];
   /**
    * O acervo da organização, para o assistente escolher o que consulta (0181).
    *
@@ -1080,7 +1082,7 @@ export function AgentForm(props: Props) {
             funis={funis}
             cobertura={props.cobertura}
             numeros={numerosDoAgente(
-              [form.channel_session_id, props.routerMembership?.channelSessionId],
+              [form.channel_session_id, ...(props.numerosDoRoteador ?? [])],
               props.channelSessions,
               props.funilDeEntradaPorNumero,
             )}
@@ -1962,8 +1964,8 @@ export function AgentForm(props: Props) {
 
 /**
  * Os números que este assistente atende, para o aviso do funil de entrada
- * (#4940): o número escolhido no formulário (vale na hora, antes de salvar) e o
- * do roteador em que ele está. Sem o mapa de funis de entrada, devolve
+ * (#4940): o número escolhido no formulário (vale na hora, antes de salvar) e os
+ * dos roteadores ativos que levam conversa a ele. Sem o mapa de funis de entrada, devolve
  * `undefined` e o aviso fica na régua antiga (só o funil padrão).
  */
 function numerosDoAgente(
@@ -1973,12 +1975,17 @@ function numerosDoAgente(
 ): NumeroDoAgente[] | undefined {
   if (!funilDeEntradaPorNumero) return undefined;
   const unicos = [...new Set(ids.filter((id): id is string => Boolean(id)))];
-  return unicos.map((id) => {
+  // Só números vivos (a lista oferecível já exclui arquivado): número arquivado
+  // não recebe conversa nova.
+  return unicos.flatMap((id) => {
     const canal = canais.find((c) => c.id === id);
-    return {
-      id,
-      nome: canal ? `${canal.display_name}${canal.phone_number ? ` · ${canal.phone_number}` : ""}` : id,
-      funilDeEntradaId: funilDeEntradaPorNumero[id] ?? null,
-    };
+    if (!canal) return [];
+    return [
+      {
+        id,
+        nome: `${canal.display_name}${canal.phone_number ? ` · ${canal.phone_number}` : ""}`,
+        funilDeEntradaId: funilDeEntradaPorNumero[id] ?? null,
+      },
+    ];
   });
 }

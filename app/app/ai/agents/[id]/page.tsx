@@ -17,6 +17,7 @@ import { AgentTabs } from "./_components/AgentTabs";
 import { AgentEditorClient } from "./_client";
 import type { FunilDaResposta } from "@/hooks/pipelines/usePipelines";
 import { coberturaDoFunil, type EtapaDoMapa } from "@/lib/leads/agent-mapping";
+import { entradasDoAgente } from "@/lib/leads/entrada-dos-numeros-do-agente";
 import type { CoberturaPorFunil } from "./_components/FunisDoAgente";
 import { lerAmbiente } from "@/lib/instalacao/ambiente";
 import { moduloLigado } from "@/lib/instalacao/modulos";
@@ -167,22 +168,15 @@ export default async function AgentEditorPage({ params }: { params: Promise<{ id
     const c = coberturaDoFunil(etapasPorFunil.get(f.id) ?? []);
     cobertura[f.id] = { traduzidos: c.traduzidos, total: c.total, mudo: c.mudo };
   }
-  // O funil de entrada de cada número (#4921), para o aviso de "as conversas
-  // novas caem num funil que ele não pode mexer" (#4940). Consulta à parte, e
-  // não em `listSelectableChannels`: se o banco ainda não tem a migration 9430,
-  // só este aviso volta à régua antiga — os seletores de número seguem de pé.
-  const { data: entradasRes, error: entradasErro } = await supabase
-    .from("channel_sessions")
-    .select("id, entry_pipeline_id")
-    .eq("organization_id", activeOrg.orgId);
-  const funilDeEntradaPorNumero = entradasErro
-    ? undefined
-    : Object.fromEntries(
-        ((entradasRes ?? []) as Array<{ id: string; entry_pipeline_id: string | null }>).map((c) => [
-          c.id,
-          c.entry_pipeline_id,
-        ]),
-      );
+  // Onde nascem os cards das conversas novas de cada número e quais números
+  // chegam a este agente por roteador (#4940) — pela mesma régua do nascimento
+  // do lead, para o aviso do funil de entrada não discordar do que acontece.
+  const { funilDeEntradaPorNumero, numerosDoRoteador } = await entradasDoAgente(
+    supabase,
+    activeOrg.orgId,
+    id,
+    channelSessions,
+  );
   const credentials = (credentialsRes.data ?? []) as CredentialRow[];
   const routerMemberRow = routerMemberRes.data as {
     router_id: string;
@@ -263,6 +257,7 @@ export default async function AgentEditorPage({ params }: { params: Promise<{ id
         funis={funis}
         cobertura={cobertura}
         funilDeEntradaPorNumero={funilDeEntradaPorNumero}
+        numerosDoRoteador={numerosDoRoteador}
         materiais={materiais}
         skills={await skillsDisponiveis(createAdminClient(), activeOrg.orgId)}
         routerMembership={routerMembership}

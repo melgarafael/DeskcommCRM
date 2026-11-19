@@ -164,13 +164,21 @@ describe("aviso do funil de entrada pelo número do agente (#4940)", () => {
     expect(screen.queryByTestId("agente-entrada-de-fora")).toBeNull();
   });
 
-  it("conta também o número do roteador em que o agente está", () => {
+  it("conta também os números dos roteadores que levam conversa a ele", () => {
     abrirEditor({
       funilDeEntradaPorNumero: { [CANAL]: null, [ROTEADOR_CANAL]: ATACADO },
-      routerMembership: { routerId: "r1", routerName: "Geral", channelSessionId: ROTEADOR_CANAL, channelStatus: "WORKING" },
+      numerosDoRoteador: [ROTEADOR_CANAL],
     });
     const aviso = screen.getByTestId("agente-entrada-de-fora");
     expect(aviso.textContent).toContain("WhatsApp geral");
     expect(aviso.textContent).toContain("Pedidos de atacado");
+  });
+
+  it("ignora número que não está mais na lista viva (arquivado)", () => {
+    abrirEditor({
+      funilDeEntradaPorNumero: { [CANAL]: null, "88888888-8888-4888-8888-888888888888": ATACADO },
+      numerosDoRoteador: ["88888888-8888-4888-8888-888888888888"],
+    });
+    expect(screen.queryByTestId("agente-entrada-de-fora")).toBeNull();
   });
 });

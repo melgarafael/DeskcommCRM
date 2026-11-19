@@ -25,6 +25,8 @@ interface Props {
   cobertura?: CoberturaPorFunil;
   /** Funil de entrada escolhido por número (#4921) — ver `AgentForm`. */
   funilDeEntradaPorNumero?: Record<string, string | null>;
+  /** Números dos roteadores ativos que levam conversa a este agente (#4940). */
+  numerosDoRoteador?: string[];
   /** O acervo da organização, para a seção "o que ele consulta" (0181). */
   materiais?: MaterialDoAcervo[];
   /** As skills da organização, para a seção "quais skills ele usa" (9107). */
@@ -89,6 +91,7 @@ export function AgentTabs(props: Props) {
           funis={props.funis}
           cobertura={props.cobertura}
           funilDeEntradaPorNumero={props.funilDeEntradaPorNumero}
+          numerosDoRoteador={props.numerosDoRoteador}
           materiais={props.materiais}
           skills={props.skills}
           routerMembership={props.routerMembership}
