@@ -99,7 +99,9 @@ export interface RegraDeRecorrencia {
  * precisa do mesmo critério de `normalizarRegra` (servidor). Ela não importa
  * `lib/tarefas/recorrencia.ts`, porque esse módulo puxa banco e logger.
  */
-export function periodicidadeDaRegra(regra: { tipo?: PeriodicidadeDaSerie }): PeriodicidadeDaSerie {
+export function periodicidadeDaRegra(
+  regra: Pick<RegraDeRecorrencia, "ativa"> & { tipo?: PeriodicidadeDaSerie },
+): PeriodicidadeDaSerie {
   return regra.tipo ?? "semanal";
 }
 

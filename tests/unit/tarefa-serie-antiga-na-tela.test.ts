@@ -15,7 +15,7 @@ describe("a série gravada antes de `tipo` existir", () => {
 
   it("a periodicidade gravada continua valendo", () => {
     for (const tipo of ["diaria", "semanal", "mensal"] as const) {
-      expect(periodicidadeDaRegra({ tipo })).toBe(tipo);
+      expect(periodicidadeDaRegra({ tipo, ativa: true })).toBe(tipo);
     }
   });
 });
