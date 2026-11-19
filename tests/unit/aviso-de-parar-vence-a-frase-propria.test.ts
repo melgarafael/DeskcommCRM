@@ -93,10 +93,16 @@ describe("emissor do CRM (`avisarLeadDoCrm`)", () => {
       from(tabela: string) {
         const cadeia: Record<string, unknown> = {};
         let direcao = "";
+        /** A leitura da resposta de GENTE (guarda 3, `sent_via in (...)`) — aqui, ninguém da equipe falou. */
+        let filtroDeGente = false;
         Object.assign(cadeia, {
           select: () => cadeia,
           eq: (coluna: string, valor: unknown) => {
             if (coluna === "direction") direcao = String(valor);
+            return cadeia;
+          },
+          in: (coluna: string) => {
+            if (coluna === "sent_via") filtroDeGente = true;
             return cadeia;
           },
           order: () => cadeia,
@@ -104,9 +110,11 @@ describe("emissor do CRM (`avisarLeadDoCrm`)", () => {
             Object.assign(
               Promise.resolve({
                 data:
-                  direcao === "outbound"
+                  direcao === "outbound" && !filtroDeGente
                     ? [{ metadata: null, created_at: new Date().toISOString(), status: "sent" }]
-                    : null,
+                    : direcao === "outbound"
+                      ? []
+                      : null,
                 error: null,
               }),
               { maybeSingle: async () => ({ data: null, error: null }) },

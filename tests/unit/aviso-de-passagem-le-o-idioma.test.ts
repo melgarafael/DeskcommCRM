@@ -87,11 +87,17 @@ function adminComIdioma(locale: string | null | Error) {
     from: (tabela: string) => {
       if (tabela === "messages") {
         const falas = { data: [{ metadata: null, created_at: new Date().toISOString() }], error: null };
+        /** A leitura da resposta de GENTE (guarda 3, `sent_via in (...)`) — aqui, ninguém da equipe falou. */
+        let filtroDeGente = false;
         const cadeia = {
           select: () => cadeia,
           eq: () => cadeia,
+          in: (coluna: string) => {
+            if (coluna === "sent_via") filtroDeGente = true;
+            return cadeia;
+          },
           order: () => cadeia,
-          limit: async () => falas,
+          limit: async () => (filtroDeGente ? { data: [], error: null } : falas),
         };
         return cadeia;
       }

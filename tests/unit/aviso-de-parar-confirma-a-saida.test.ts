@@ -68,15 +68,26 @@ function banco() {
             if (coluna === "direction") direcao = String(valor);
             return cadeia;
           },
+          /** A resposta de gente (guarda 3): filtro por `sent_via`. */
+          in: (coluna: string, valores: unknown) => {
+            filtros.push([coluna, valores]);
+            return cadeia;
+          },
           order: () => cadeia,
           limit: () =>
             Object.assign(
               // leitura das falas da IA: aguardada direto
               Promise.resolve({
                 data:
-                  direcao === "outbound"
-                    ? [{ metadata: null, created_at: new Date().toISOString(), status: "sent" }]
-                    : null,
+                  direcao !== "outbound"
+                    ? null
+                    : // A leitura que filtra por `sent_via` é a da resposta de
+                      // uma PESSOA: nestes casos ninguém da equipe falou, e o
+                      // aviso tem a quem responder. A das FALAS DA IA (também
+                      // filtra `sent_via`, mas por `ai`) recebe a fala dela.
+                      filtros.some(([coluna, valores]) => coluna === "sent_via" && !(valores as unknown[]).includes("ai"))
+                      ? []
+                      : [{ metadata: null, created_at: new Date().toISOString(), status: "sent" }],
                 error: null,
               }),
               {

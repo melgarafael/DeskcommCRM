@@ -58,30 +58,39 @@ let filtros: [string, unknown][] = [];
  * Cliente supabase-js de mentira. `messages` devolve as falas dadas (ou o erro);
  * `organizations` devolve o idioma — o resto do caminho é o de sempre.
  *
- * A guarda 3 (#4797) pergunta ao BANCO se o cliente está esperando resposta:
- * `conversations.last_inbound_at` mais novo que `last_outbound_at`. A conversa
- * de mentira está com o cliente ESPERANDO (entrada de 2 h atrás, saída de 3 h) —
- * é a precondição para o aviso sair, e é o caso que estes testes medem.
+ * A guarda 3 (#4797/#4804) pergunta ao BANCO duas coisas: qual é a última
+ * mensagem do CLIENTE (`conversations.last_inbound_at`) e se uma PESSOA já
+ * respondeu depois dela (`messages`, `sent_via in ('user','crm','external_device')`).
+ * A conversa de mentira está com o cliente ESPERANDO (entrada de 2 h atrás) e
+ * NINGUÉM da equipe respondeu — é a precondição para o aviso sair, e é o caso
+ * que estes testes medem. Quem mede a espera já respondida é
+ * `aviso-so-com-mensagem-nova.test.ts`.
  */
 function banco(falas: Fala[] | { erro: string }) {
   filtros = [];
   return {
     from(tabela: string) {
       if (tabela === "messages") {
+        let filtroDeGente = false;
         const cadeia: Record<string, unknown> = {
           select: () => cadeia,
           eq: (coluna: string, valor: unknown) => {
             filtros.push([coluna, valor]);
             return cadeia;
           },
+          /** `sent_via in (...)`: a resposta de uma PESSOA, que nestes casos não existe. */
+          in: (coluna: string) => {
+            if (coluna === "sent_via") filtroDeGente = true;
+            return cadeia;
+          },
           gt: () => cadeia,
           order: () => cadeia,
-          // Só a guarda 1 lê `messages` agora: as falas da IA. A espera do
-          // cliente (guarda 3) vem de `conversations`, não de uma varredura.
           limit: async (n: number) =>
-            Array.isArray(falas)
-              ? { data: falas.slice(0, n), error: null }
-              : { data: null, error: { message: falas.erro } },
+            !Array.isArray(falas)
+              ? { data: null, error: { message: falas.erro } }
+              : filtroDeGente
+                ? { data: [], error: null }
+                : { data: falas.slice(0, n), error: null },
         };
         return cadeia;
       }
@@ -92,7 +101,6 @@ function banco(falas: Fala[] | { erro: string }) {
           maybeSingle: async () => ({
             data: {
               last_inbound_at: horasAtras(2),
-              last_outbound_at: horasAtras(3),
               channel_session_id: null,
             },
             error: null,

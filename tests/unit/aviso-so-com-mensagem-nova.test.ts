@@ -34,14 +34,19 @@
  *   (d) aviso legítimo fora de turno, com a janela fechada → não sai;
  *   (e) passagem interna (caso/Central) continua acontecendo — em
  *       `aviso-nao-impede-a-passagem-interna.test.ts`.
+ *   (f) o caso `b934ba2d`: a passagem LOGO DEPOIS de uma fala do automático
+ *       continua avisando — venha do sentimento ou do MCP.
  *
  * ─── SABOTAGEM ──────────────────────────────────────────────────────────────
  *
- * - Devolver o envio sem a guarda 3 (trocar `if (!foraDeTurno) {` por
+ * - Devolver o envio sem a guarda 3 (trocar `if (!conversa.esperando) {` por
  *   `if (false) {`) → (a) acusa: a frase volta a sair para quem já foi
- *   respondido.
+ *   respondido por uma pessoa.
  * - Fazer o conserto silenciar TAMBÉM o aviso legítimo (trocar
  *   `if (!conversa.esperando)` por `if (true)`) → (b) acusa.
+ * - Contar a fala do AUTOMÁTICO como resposta (tirar `direction`/`sent_via` da
+ *   leitura que acha a última resposta humana, isto é, deixar a guarda
+ *   comparar só as duas colunas da conversa) → (f) acusa: o `b934ba2d` volta.
  * - Remover a guarda de repetição (guarda 2, `avisosRecentes`) → (c) acusa.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -112,6 +117,11 @@ function banco(c: Cenario) {
             filtros.push(["eq", coluna, valor]);
             return cadeia;
           },
+          /** `sent_via in (...)`: é assim que a guarda 3 pergunta se uma PESSOA respondeu. */
+          in: (coluna: string, valores: unknown[]) => {
+            filtros.push(["in", coluna, valores]);
+            return cadeia;
+          },
           gt: (coluna: string, valor: unknown) => {
             filtros.push(["gt", coluna, valor]);
             return cadeia;
@@ -125,6 +135,7 @@ function banco(c: Cenario) {
               if (coluna === "organization_id" || coluna === "conversation_id") continue;
               linhas = linhas.filter((m) => {
                 const v = (m as unknown as Record<string, unknown>)[coluna];
+                if (op === "in") return (valor as unknown[]).includes(v ?? null);
                 return op === "eq" ? v === valor : new Date(String(v)) > new Date(String(valor));
               });
             }
@@ -185,11 +196,31 @@ const ENTRADA = {
 };
 
 const horasAtras = (h: number) => new Date(Date.now() - h * 60 * 60 * 1000).toISOString();
+const minutosAtras = (m: number) => new Date(Date.now() - m * 60 * 1000).toISOString();
 const diasAtras = (d: number) => horasAtras(d * 24);
 
 const falaDaIa = (created_at: string): Mensagem => ({
   direction: "outbound",
   sent_via: "ai",
+  created_at,
+  status: "sent",
+  metadata: null,
+});
+/** O cliente falando. `direction: "inbound"` da linha de `messages`. */
+const falaDoCliente = (created_at: string): Mensagem => ({
+  direction: "inbound",
+  created_at,
+  status: "delivered",
+  metadata: null,
+});
+/**
+ * A resposta de uma PESSOA — Inbox do CRM (`user`/`crm`) ou o aparelho
+ * conectado (`external_device`). É o vocabulário que o resto do produto usa
+ * para separar gente de máquina (`fn_mensagem_do_vendedor_e_atividade`).
+ */
+const falaHumana = (created_at: string, sent_via = "user"): Mensagem => ({
+  direction: "outbound",
+  sent_via,
   created_at,
   status: "sent",
   metadata: null,
@@ -216,7 +247,7 @@ describe("(a) passagem sem mensagem nova do cliente não toca o canal", () => {
     // última entrada do cliente (13/11 15:23). Ninguém espera resposta.
     const r = await avisarLeadDoCrm(
       banco({
-        mensagens: [falaDaIa(diasAtras(3.3))],
+        mensagens: [falaDaIa(diasAtras(3.3)), falaHumana(diasAtras(2.2))],
         lastInboundAt: diasAtras(3.35),
         lastOutboundAt: diasAtras(2.2),
       }),
@@ -230,7 +261,11 @@ describe("(a) passagem sem mensagem nova do cliente não toca o canal", () => {
   it("entrada e saída no MESMO instante são empate, não espera: não avisa", async () => {
     const instante = horasAtras(1);
     const r = await avisarLeadDoCrm(
-      banco({ mensagens: [falaDaIa(horasAtras(2))], lastInboundAt: instante, lastOutboundAt: instante }),
+      banco({
+        mensagens: [falaDaIa(horasAtras(2)), falaHumana(instante)],
+        lastInboundAt: instante,
+        lastOutboundAt: instante,
+      }),
       ENTRADA,
     );
     expect(r).toEqual({ avisado: false, porque: "sem_mensagem_nova_do_cliente" });
@@ -357,6 +392,80 @@ describe("(d) fora de turno, a janela de horário da organização manda", () =>
       ENTRADA,
     );
     expect(r).toEqual({ avisado: true });
+    expect(janela).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * (f) O CASO `b934ba2d` — o incidente que criou o Step 0.
+ *
+ * Produção, 26/08. O cliente disse que não conseguia acessar um curso; o agente
+ * respondeu e PERGUNTOU o e-mail dele — o envio do agente moveu
+ * `conversations.last_outbound_at`. Entre a pergunta e a resposta, o worker de
+ * sentimento disparou `triggerHandoff('low_sentiment')`. A guarda 3, escrita
+ * como "a última entrada é mais nova que a última saída?", viu a SAÍDA mais nova
+ * e não avisou: a conversa ficou silenciada (`bot_silenced_until = 'infinity'`)
+ * e o cliente respondeu o e-mail para o vazio.
+ *
+ * A régua certa é a do próprio Step 0 — "a pessoa falou e NINGUÉM respondeu":
+ * o que fecha a espera é uma PESSOA ter respondido, não o automático que está
+ * justamente saindo de campo. Os dois lados do mesmo critério estão aqui:
+ * a passagem logo depois da fala do automático avisa (do sentimento ou do MCP),
+ * e a conversa parada e já respondida por gente não avisa, venha de onde vier.
+ */
+describe("(f) a passagem logo depois da fala do automático continua avisando", () => {
+  it("o agente perguntou o e-mail e o envio dele moveu last_outbound_at: a frase SAI (sentimento)", async () => {
+    const r = await avisarLeadDoCrm(
+      banco({
+        mensagens: [falaDoCliente(minutosAtras(3)), falaDaIa(minutosAtras(1))],
+        // O relógio da conversa no instante da passagem: a saída (a pergunta da
+        // IA) é mais nova que a entrada. É exatamente o que a guarda antiga lia
+        // como "ninguém está esperando".
+        lastInboundAt: minutosAtras(3),
+        lastOutboundAt: minutosAtras(1),
+      }),
+      { ...ENTRADA, reason: "low_sentiment", origem: "sentimento" },
+    );
+
+    expect(r).toEqual({ avisado: true });
+    expect(enviar).toHaveBeenCalledTimes(1);
+    // A frase que sai é a de passagem — não o silêncio, e não a de opt-out.
+    const [, , corpo] = enviar.mock.calls[0] as [unknown, unknown, { body: string }];
+    expect(corpo.body).toMatch(/pessoa|equipe|atendente/i);
+  });
+
+  it("o mesmo instante pelo MCP externo também avisa — a automação saiu no meio da fala dela", async () => {
+    const r = await avisarLeadDoCrm(
+      banco({
+        mensagens: [falaDoCliente(minutosAtras(4)), falaDaIa(minutosAtras(2))],
+        lastInboundAt: minutosAtras(4),
+        lastOutboundAt: minutosAtras(2),
+      }),
+      { ...ENTRADA, origem: "mcp_externo" },
+    );
+
+    expect(r).toEqual({ avisado: true });
+    expect(enviar).toHaveBeenCalledTimes(1);
+  });
+
+  it("MCP numa conversa parada há dias e já respondida por uma pessoa: NÃO avisa", async () => {
+    // O caso 2 medido pelo mantenedor: às 15h, com a janela do canal ABERTA, o
+    // aviso sairia para um cliente calado há 3 dias e já respondido. A hora não
+    // segura nada aqui — quem segura é a guarda da espera, que agora vale para
+    // TODA origem (o `mcp_externo` não é mais isento dela).
+    const r = await avisarLeadDoCrm(
+      banco({
+        mensagens: [falaDaIa(diasAtras(3.3)), falaHumana(diasAtras(2.2), "external_device")],
+        lastInboundAt: diasAtras(3.35),
+        lastOutboundAt: diasAtras(2.2),
+      }),
+      { ...ENTRADA, origem: "mcp_externo" },
+    );
+
+    expect(r).toEqual({ avisado: false, porque: "sem_mensagem_nova_do_cliente" });
+    expect(enviar).not.toHaveBeenCalled();
+    // A janela nem chega a ser consultada: a guarda 3 vem antes, e é ela que
+    // decide — não a hora do dia.
     expect(janela).not.toHaveBeenCalled();
   });
 });

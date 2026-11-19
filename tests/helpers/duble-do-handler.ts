@@ -528,15 +528,17 @@ export function criarDubleDoHandler(
               },
               order: () => cadeia,
               limit: () => cadeia,
-              // A leitura em lote devolve as linhas como elas estão, sem casar
-              // filtro: é o acumulado do dublê legado, e é ele que faz o aviso
-              // ao lead enxergar as falas da IA em vez de esquecer cada insert.
+              // A leitura em lote casa os filtros como o PostgREST faria. Era
+              // frouxa ("devolve as linhas como estão") e isso passou a mentir
+              // para a guarda 3 do aviso ao lead (#4804): a leitura da resposta
+              // de uma PESSOA filtra por `sent_via` no banco, e um dublê que
+              // ignora o filtro devolvia a fala da IA como se fosse de gente.
               then: (
                 resolve: (v: { data: LinhaDoDuble[]; error: null }) => unknown,
                 reject?: (e: unknown) => unknown,
               ) =>
                 Promise.resolve({
-                  data: mensagens.map((r) => ({ ...r })),
+                  data: filtrarMensagens(filtros).map((r) => ({ ...r })),
                   error: null,
                 }).then(resolve, reject),
               maybeSingle: async () => {

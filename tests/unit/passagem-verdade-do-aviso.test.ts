@@ -58,22 +58,34 @@ const CONVERSA = "33333333-3333-4333-8333-333333333333";
  * a guarda deixar passar.
  */
 function bancoComFalaDaIa() {
-  const cadeia: Record<string, unknown> = {};
-  for (const m of ["select", "eq", "order"]) cadeia[m] = () => cadeia;
-  cadeia.limit = () =>
-    Promise.resolve({ data: [{ metadata: null, created_at: new Date().toISOString() }], error: null });
-  // Guarda 3 (#4797): o cliente precisa estar esperando resposta. Uma entrada
-  // mais nova que a última saída — a precondição destes casos, que medem o que
-  // acontece DEPOIS de o emissor decidir falar.
-  cadeia.maybeSingle = async () => ({
-    data: {
-      last_inbound_at: new Date().toISOString(),
-      last_outbound_at: new Date(Date.now() - 60_000).toISOString(),
-      channel_session_id: null,
+  return {
+    from: () => {
+      const cadeia: Record<string, unknown> = {};
+      /** A leitura da resposta de GENTE (guarda 3, `sent_via in (...)`) — aqui, ninguém da equipe falou. */
+      let filtroDeGente = false;
+      for (const m of ["select", "eq", "order"]) cadeia[m] = () => cadeia;
+      cadeia.in = (coluna: string) => {
+        if (coluna === "sent_via") filtroDeGente = true;
+        return cadeia;
+      };
+      cadeia.limit = () =>
+        Promise.resolve({
+          data: filtroDeGente ? [] : [{ metadata: null, created_at: new Date().toISOString() }],
+          error: null,
+        });
+      // Guarda 3 (#4797): o cliente precisa estar esperando resposta. Uma entrada
+      // mais nova que a última saída — a precondição destes casos, que medem o que
+      // acontece DEPOIS de o emissor decidir falar.
+      cadeia.maybeSingle = async () => ({
+        data: {
+          last_inbound_at: new Date().toISOString(),
+          channel_session_id: null,
+        },
+        error: null,
+      });
+      return cadeia;
     },
-    error: null,
-  });
-  return { from: () => cadeia } as never;
+  } as never;
 }
 
 function avisa() {
