@@ -259,9 +259,14 @@ it('falha no UPDATE não derruba a carona: devolve erroAoEstender e a mensagem j
  */
 it('INBOUND_BURST_MAX_MS: 45s por default, e nunca abaixo da janela de debounce', () => {
   // Só as três chaves que o schema exige; nenhuma delas entra nesta conta.
+  //
+  // O nome do banco é NEUTRO de propósito (`/db`, como em `lib/agent-engine/env.test.ts`):
+  // a catraca de marca (`tests/unit/branding.test.ts`) varre `lib/` inteiro, `.ts`
+  // inclusive, e reprova o nome do produto hardcoded em arquivo fora de
+  // `MARCA_CONGELADA`. Fixture de teste não é lugar de gravar a marca.
   const env = loadEnv({
     NODE_ENV: 'test',
-    SUPABASE_DB_URL: 'postgres://user:pass@127.0.0.1:5432/deskcomm',
+    SUPABASE_DB_URL: 'postgres://user:pass@127.0.0.1:5432/db',
     NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321',
     SUPABASE_SERVICE_ROLE_KEY: 'chave-de-teste',
   });
