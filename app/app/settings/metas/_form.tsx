@@ -14,6 +14,11 @@
  * deste campo existir — significa. Quem nunca abriu esta tela continua vendo
  * exatamente o mesmo percentual de antes.
  *
+ * ─── Só quem ESTÁ na equipe pode ter meta ─────────────────────────────────
+ * O seletor oferece só quem tem o vínculo vivo (`revoked_at` nulo), a mesma
+ * régua da action (#4986): oferecer um revogado era convidar a pessoa a salvar
+ * para ser recusada.
+ *
  * ─── Cada recusa vira uma frase que diz O QUE FAZER ────────────────────────
  * "forbidden_role" mandaria um atendente tentar de novo para falhar igual,
  * então ela diz quem pode.
@@ -41,6 +46,7 @@ import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 const ERRO_EM_PORTUGUES: Record<string, string> = {
   validation_failed: "Confira os campos: o mês e o alvo precisam estar preenchidos.",
+  vendedor_fora_da_equipe: "Essa pessoa não faz mais parte da equipe. Escolha outra pessoa ou a empresa.",
   unauthenticated: "Sua sessão expirou. Entre de novo.",
   forbidden_tenant: "Você não está em nenhuma organização ativa.",
   forbidden_role: "Só quem administra a empresa pode definir a meta.",
@@ -187,7 +193,7 @@ export function FormularioDaMeta({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={EMPRESA}>{t("Empresa (todos)")}</SelectItem>
-              {(equipe.data?.data ?? []).map((membro) => (
+              {(equipe.data?.data ?? []).filter((membro) => !membro.revoked_at).map((membro) => (
                 <SelectItem key={membro.user_id} value={membro.user_id}>
                   {rotuloDoMembro(
                     { full_name: membro.full_name, email: membro.email, user_id: membro.user_id },

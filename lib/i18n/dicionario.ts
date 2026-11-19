@@ -21132,6 +21132,10 @@ export const DICIONARIO: Traducoes = {
   "Confira os campos: o mês e o alvo precisam estar preenchidos.": {
     es: "Revisa los campos: el mes y el objetivo deben estar completos.",
   },
+  // #4986 — vendedor revogado ou fora da organização: a recusa diz o que é.
+  "Essa pessoa não faz mais parte da equipe. Escolha outra pessoa ou a empresa.": {
+    es: "Esta persona ya no forma parte del equipo. Elige a otra persona o la empresa.",
+  },
   "Meta antiga, sem indicador, continua contando vendas ganhas — escolher valor aqui não muda as metas já cadastradas.":
     {
       es: "Una meta antigua, sin indicador, sigue contando ventas ganadas: elegir valor aquí no cambia las metas ya registradas.",
