@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
 
 const deps = vi.hoisted(() => ({
   role: vi.fn(),
@@ -45,7 +46,7 @@ function clientQueInsere(resultado: {
 }
 
 function req(body: unknown) {
-  return new Request("http://localhost/api/v1/agenda/enderecos", {
+  return new NextRequest("http://localhost/api/v1/agenda/enderecos", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -135,7 +136,7 @@ function clientQueLista() {
 describe("GET /api/v1/agenda/enderecos", () => {
   it("recusa busca grande demais antes de consultar", async () => {
     const res = await GET(
-      new Request(`http://localhost/api/v1/agenda/enderecos?q=${"x".repeat(101)}`),
+      new NextRequest(`http://localhost/api/v1/agenda/enderecos?q=${"x".repeat(101)}`),
     );
     expect(res.status).toBe(422);
     expect(deps.criarClientDeSessao).not.toHaveBeenCalled();
@@ -146,7 +147,7 @@ describe("GET /api/v1/agenda/enderecos", () => {
     deps.criarClientDeSessao.mockResolvedValue(client);
 
     const res = await GET(
-      new Request(`http://localhost/api/v1/agenda/enderecos?organization_id=${"3".repeat(36)}`),
+      new NextRequest(`http://localhost/api/v1/agenda/enderecos?organization_id=${"3".repeat(36)}`),
     );
     expect(res.status).toBe(200);
     expect(orgs).toEqual([ORG, ORG, ORG]);

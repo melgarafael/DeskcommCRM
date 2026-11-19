@@ -29,14 +29,18 @@ import { readFileSync } from "node:fs";
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { resolveAuthDual } from "@/lib/api/auth-dual";
 import { fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { moduloLigado } from "@/lib/instalacao/modulos";
-import { ROLE_RANK, type AuthUser, type Role } from "@/lib/auth/types";
+import { ROLE_RANK, type Role } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
 import { setorDaTarefa, tarefaNoSetor } from "@/lib/tarefas/setor-da-tarefa";
 
-vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
+// A rota entra por `resolveAuthDual` (sessão OU token, Spec 33).
+vi.mock("@/lib/api/auth-dual", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api/auth-dual")>()),
+  resolveAuthDual: vi.fn(),
+}));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({})) }));
 vi.mock("@/lib/instalacao/modulos", async (importOriginal) => ({
@@ -61,20 +65,21 @@ const CONVERSA_DO_CONTATO = "66666666-6666-4666-8666-666666666666";
 const CONVERSA_DO_CARD = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
 function sessao(papel: Role = "agent") {
-  const user: AuthUser = {
-    id: ANA,
-    email: "ana@example.com",
-    full_name: "Ana",
-    avatar_url: null,
-    is_platform_admin: false,
-    idioma: "pt-BR" as const,
-    organizations: [{ organization_id: ORG, organization_name: "Org", role: papel }],
-  };
-  vi.mocked(requireRole).mockImplementation(async (min: Role) =>
-    ROLE_RANK[papel] >= ROLE_RANK[min]
-      ? { ok: true, user, org: { orgId: ORG, name: "Org", role: papel } }
-      : { ok: false, response: fail("forbidden_role", `Requer role >= ${min}.`, 403, {}) },
-  );
+  vi.mocked(resolveAuthDual).mockImplementation(async (_req, { role: min }) => {
+    if (ROLE_RANK[papel] < ROLE_RANK[min]) {
+      return { ok: false as const, response: fail("forbidden_role", `Requer role >= ${min}.`, 403, {}) };
+    }
+    return {
+      ok: true as const,
+      organizationId: ORG,
+      actor: { type: "user" as const, id: ANA, role: papel },
+      supabase: await createClient(),
+      idioma: "pt-BR" as const,
+      via: "session" as const,
+      role: papel,
+      administraEmpresa: ROLE_RANK[papel] >= ROLE_RANK.admin,
+    };
+  });
 }
 
 type Resposta = { data: unknown; error: unknown };
