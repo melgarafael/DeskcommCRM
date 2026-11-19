@@ -264,14 +264,10 @@ export const KanbanCard = memo(function KanbanCard({
                   aria-label={`${t("Tag")}: ${card.canonicalTag}`}
                 />
               )}
-              {/* A foto do contato — só quando há contato (ver FotoDoContato). */}
-              {lead.contact_id ? (
-                <FotoDoContato
-                  contactId={lead.contact_id}
-                  temFoto={lead.contact_has_avatar === true}
-                  nome={card.title}
-                  denso={denso}
-                />
+              {/* A foto do contato — só quando HÁ foto: sem ela, nada (o disco
+                  de iniciais do rodapé é o do responsável; ver FotoDoContato). */}
+              {lead.contact_id && lead.contact_has_avatar === true ? (
+                <FotoDoContato contactId={lead.contact_id} denso={denso} />
               ) : null}
               {/* O TÍTULO é o elemento ativável, não o card inteiro.
                   `role="group"` no card foi decisão da wave 2 (o dnd marca o

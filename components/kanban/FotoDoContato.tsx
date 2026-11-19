@@ -1,7 +1,7 @@
 "use client";
 
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { iniciaisDe } from "@/components/agenda/paleta";
+import { useState } from "react";
+
 import { cn } from "@/lib/utils";
 
 /**
@@ -12,53 +12,49 @@ import { cn } from "@/lib/utils";
  * (`ConversationListItem`). O card do funil era a única vitrine do contato sem
  * rosto — e é nele que o vendedor decide em quem mexer.
  *
- * Mesma regra da lista do Inbox:
+ * ─── Por que `<img>` nativa, e não o `Avatar` do Radix (revisão do #5007) ──
  *
- *  - a `<img>` só monta quando o quadro disse que HÁ foto (`contact_has_avatar`):
- *    sem isso o navegador pediria a rota para TODO card e levaria 404 na
- *    maioria, que não tem foto;
- *  - as iniciais ficam por baixo (`AvatarFallback`), então foto que não carrega
- *    nunca deixa o disco vazio;
- *  - contato anonimizado não chega aqui com foto: o quadro não marca
- *    `contact_has_avatar` para ele (`anexarDadosDoContato`).
+ * O `AvatarImage` do Radix pré-carrega com `new Image()` para TODO card
+ * montado, e isso anula o `loading="lazy"`. O quadro monta até 50 cards por
+ * coluna; cada foto passa por `/api/v1/contacts/[id]/avatar`, que devolve URL
+ * assinada nova a cada chamada — o navegador não reaproveita os bytes. Num quadro
+ * grande, cada abertura viraria muitos MB de tráfego do Supabase, que é a cota
+ * que mais aperta no plano grátis. A `<img loading="lazy">` nativa só pede a
+ * foto quando o card entra na tela.
  *
- * Negócio SEM contato não monta o componente (quem decide é o card): não há de
- * quem ser a foto, e um disco "?" afirmaria um contato que não existe.
+ * ─── Sem foto, sem disco ───────────────────────────────────────────────────
  *
- * Tamanho FIXO nos dois modos: o card tem orçamento de altura, e o disco cabe
- * na linha do título (h-10 normal, h-5 compacto) sem empurrar nada.
+ * O rodapé do card já tem o disco de iniciais do RESPONSÁVEL (`OwnerBadge`). Um
+ * segundo disco de iniciais, do contato, não diria quem é quem. Então:
+ *  - o componente só é montado quando o quadro disse que HÁ foto
+ *    (`contact_has_avatar`, que já vem falso para o contato anonimizado);
+ *  - se a imagem falhar (arquivo removido, rota fora), ela some — nunca um
+ *    ícone de imagem quebrada no card.
+ *
+ * Tamanho FIXO nos dois modos: o card tem orçamento de altura, e a foto cabe na
+ * linha do título (h-10 normal, h-5 compacto) sem empurrar nada.
  */
 interface Props {
   contactId: string;
-  temFoto: boolean;
-  /** O nome que o card já mostra — de onde saem as iniciais. */
-  nome: string;
   denso?: boolean;
 }
 
-export function FotoDoContato({ contactId, temFoto, nome, denso = false }: Props) {
+export function FotoDoContato({ contactId, denso = false }: Props) {
+  const [falhou, setFalhou] = useState(false);
+  if (falhou) return null;
   return (
-    <Avatar
+    // eslint-disable-next-line @next/next/no-img-element -- a rota devolve URL assinada por pedido; o otimizador do Next não tem o que guardar
+    <img
       data-testid="foto-do-contato"
-      className={cn("shrink-0", denso ? "h-5 w-5" : "mt-0.5 h-8 w-8")}
-    >
-      {temFoto ? (
-        <AvatarImage
-          src={`/api/v1/contacts/${contactId}/avatar`}
-          alt=""
-          className="object-cover"
-          loading="lazy"
-        />
-      ) : null}
-      <AvatarFallback
-        className={cn(
-          "bg-surface-elevated font-medium text-text-muted",
-          denso ? "text-[9px]" : "text-[11px]",
-        )}
-      >
-        {/* O telefone puro vira "+5" — iniciais de número não dizem nada. */}
-        {/^[\d\s()+-]+$/.test(nome.trim()) ? "" : iniciaisDe(nome)}
-      </AvatarFallback>
-    </Avatar>
+      src={`/api/v1/contacts/${contactId}/avatar`}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      onError={() => setFalhou(true)}
+      className={cn(
+        "shrink-0 rounded-full bg-surface-elevated object-cover",
+        denso ? "h-5 w-5" : "mt-0.5 h-8 w-8",
+      )}
+    />
   );
 }
