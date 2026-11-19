@@ -93,8 +93,21 @@ export function FormularioDaMeta({
   const [indicador, setIndicador] = useState<IndicadorDaMeta>("vendas_ganhas");
   const [vendedor, setVendedor] = useState<string>(EMPRESA);
   const [alvo, setAlvo] = useState("");
+  // Quem o servidor já recusou como fora da equipe nesta tela: some do seletor
+  // na hora, sem esperar a lista da equipe voltar (#4986).
+  const [recusados, setRecusados] = useState<ReadonlySet<string>>(() => new Set());
 
   const vendedorId = vendedor === EMPRESA ? null : vendedor;
+  const naEquipe = (equipe.data?.data ?? []).filter(
+    (membro) => !membro.revoked_at && !recusados.has(membro.user_id),
+  );
+  // A pessoa escolhida saiu da equipe com a tela aberta (lista recarregada ou
+  // recusa do servidor): salvar fica travado até escolher outra pessoa ou a
+  // empresa — nunca manda o id de quem já não está, nem troca o dono sozinho.
+  const vendedorSaiu =
+    vendedorId !== null &&
+    (recusados.has(vendedorId) ||
+      (equipe.data !== undefined && !naEquipe.some((membro) => membro.user_id === vendedorId)));
   const simbolo = simboloOuCodigo(moeda);
 
   // Ao trocar mês, indicador ou dono, o campo mostra o que JÁ está gravado para
@@ -118,10 +131,15 @@ export function FormularioDaMeta({
     /^\d{4}-\d{2}$/.test(periodo) &&
     alvo.trim() !== "" &&
     Number.isFinite(alvoEmUnidade) &&
-    alvoEmUnidade > 0;
+    alvoEmUnidade > 0 &&
+    !vendedorSaiu;
 
   function salvar(evento: React.FormEvent) {
     evento.preventDefault();
+    if (vendedorSaiu) {
+      toast.error(t("Essa pessoa não faz mais parte da equipe. Escolha outra pessoa ou a empresa."));
+      return;
+    }
     if (!podeSalvar) {
       toast.error(
         indicador === "valor_vendido"
@@ -141,6 +159,10 @@ export function FormularioDaMeta({
         toast.success(t("Meta salva."));
         router.refresh();
         return;
+      }
+      if (resultado.error === "vendedor_fora_da_equipe" && vendedorId) {
+        setRecusados((atual) => new Set(atual).add(vendedorId));
+        void equipe.refetch();
       }
       toast.error(t(ERRO_EM_PORTUGUES[resultado.error] ?? "Não consegui salvar a meta agora."));
     });
@@ -193,7 +215,7 @@ export function FormularioDaMeta({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={EMPRESA}>{t("Empresa (todos)")}</SelectItem>
-              {(equipe.data?.data ?? []).filter((membro) => !membro.revoked_at).map((membro) => (
+              {naEquipe.map((membro) => (
                 <SelectItem key={membro.user_id} value={membro.user_id}>
                   {rotuloDoMembro(
                     { full_name: membro.full_name, email: membro.email, user_id: membro.user_id },
@@ -203,6 +225,11 @@ export function FormularioDaMeta({
               ))}
             </SelectContent>
           </Select>
+          {vendedorSaiu ? (
+            <p role="alert" className="text-xs text-destructive">
+              {t("Essa pessoa não faz mais parte da equipe. Escolha outra pessoa ou a empresa.")}
+            </p>
+          ) : null}
           <p className="text-xs text-muted-foreground">
             {t(
               "A meta do vendedor soma só os negócios que ele fechou como ganho; a da empresa soma os da empresa inteira.",

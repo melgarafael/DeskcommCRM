@@ -22,13 +22,18 @@ const h = vi.hoisted(() => ({
   membros: [] as TeamMember[],
   resposta: { ok: true } as { ok: boolean; error?: string },
   erro: vi.fn(),
+  refetch: vi.fn(async () => undefined),
+  definir: vi.fn(),
 }));
 
 vi.mock("@/hooks/team/useTeamMembers", () => ({
-  useTeamMembers: () => ({ data: { data: h.membros }, isLoading: false }),
+  useTeamMembers: () => ({ data: { data: h.membros }, isLoading: false, refetch: h.refetch }),
 }));
 vi.mock("@/app/actions/settings/definirMetaMensal", () => ({
-  definirMetaMensal: vi.fn(async () => h.resposta),
+  definirMetaMensal: vi.fn(async (entrada: unknown) => {
+    h.definir(entrada);
+    return h.resposta;
+  }),
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("sonner", () => ({ toast: { error: h.erro, success: vi.fn() } }));
@@ -52,14 +57,29 @@ function membro(user_id: string, full_name: string, revoked_at: string | null): 
   };
 }
 
-function formulario(locale: "pt-BR" | "es") {
-  return render(
-    createElement(IdiomaProvider, {
-      locale,
-      children: <FormularioDaMeta mes="2026-11" metas={[]} moeda="BRL" />,
-    }),
-  );
+function arvore(locale: "pt-BR" | "es") {
+  return createElement(IdiomaProvider, {
+    locale,
+    children: <FormularioDaMeta mes="2026-11" metas={[]} moeda="BRL" />,
+  });
 }
+
+function formulario(locale: "pt-BR" | "es") {
+  return render(arvore(locale));
+}
+
+async function escolher(nome: string) {
+  fireEvent.click(screen.getByRole("combobox", { name: "De quem é a meta" }));
+  fireEvent.click(await screen.findByRole("option", { name: nome }));
+}
+
+function preencherAlvo(valor: string) {
+  const alvo = document.getElementById("alvo") as HTMLInputElement;
+  fireEvent.change(alvo, { target: { value: valor } });
+  return alvo;
+}
+
+const FRASE = "Essa pessoa não faz mais parte da equipe. Escolha outra pessoa ou a empresa.";
 
 beforeAll(() => {
   const proto = window.HTMLElement.prototype as unknown as Record<string, unknown>;
@@ -73,6 +93,8 @@ beforeEach(() => {
   h.membros = [membro(ATIVA, "Ana Ativa", null), membro(REVOGADO, "Rui Revogado", "2026-11-01T12:00:00.000Z")];
   h.resposta = { ok: true };
   h.erro.mockReset();
+  h.refetch.mockClear();
+  h.definir.mockClear();
 });
 
 afterEach(cleanup);
@@ -96,5 +118,37 @@ describe("Metas › De quem é a meta", () => {
     fireEvent.change(alvo, { target: { value: "10" } });
     fireEvent.submit(alvo.closest("form")!);
     await waitFor(() => expect(h.erro).toHaveBeenCalledWith(frase));
+  });
+
+  it("a pessoa escolhida é revogada com a tela aberta: some do seletor e salvar trava até escolher de novo", async () => {
+    const tela = formulario("pt-BR");
+    await escolher("Ana Ativa");
+    preencherAlvo("10");
+    expect(screen.getByRole("button", { name: "Salvar meta" })).toBeEnabled();
+
+    h.membros = [membro(ATIVA, "Ana Ativa", "2026-11-19T12:00:00.000Z")];
+    tela.rerender(arvore("pt-BR"));
+    expect(screen.getByRole("button", { name: "Salvar meta" })).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent(FRASE);
+
+    await escolher("Empresa (todos)");
+    expect(screen.getByRole("button", { name: "Salvar meta" })).toBeEnabled();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("o servidor recusa a pessoa escolhida: ela some do seletor, a lista recarrega e salvar trava", async () => {
+    h.resposta = { ok: false, error: "vendedor_fora_da_equipe" };
+    formulario("pt-BR");
+    await escolher("Ana Ativa");
+    const alvo = preencherAlvo("10");
+    fireEvent.submit(alvo.closest("form")!);
+    await waitFor(() => expect(h.erro).toHaveBeenCalledWith(FRASE));
+    expect(h.definir).toHaveBeenCalledWith(expect.objectContaining({ vendedor_id: ATIVA }));
+    expect(h.refetch).toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Salvar meta" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("combobox", { name: "De quem é a meta" }));
+    expect(await screen.findByRole("option", { name: "Empresa (todos)" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Ana Ativa" })).toBeNull();
   });
 });
