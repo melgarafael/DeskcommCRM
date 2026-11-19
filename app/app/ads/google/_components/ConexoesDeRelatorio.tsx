@@ -24,9 +24,9 @@ export function ConexoesDeRelatorio({ conta, remover }: { conta?: ContaDeRelator
       try {
         const resultado = await remover(conta.customerId);
         if (resultado.ok) setModo(null);
-        else setErro(resultado.detalhe);
+        else setErro(t(resultado.detalhe));
       } catch {
-        setErro("Não foi possível remover o acesso de leitura. Tente novamente.");
+        setErro(t("Não foi possível remover o acesso de leitura. Tente novamente."));
       }
     });
   }
@@ -37,7 +37,7 @@ export function ConexoesDeRelatorio({ conta, remover }: { conta?: ContaDeRelator
         <div className="flex flex-wrap gap-2">
           <button type="button" className={botao} onClick={() => setModo("nova")}>{t("Conectar conta de leitura")}</button>
           {conta && <button type="button" className={botao} onClick={() => setModo("reconectar")}>
-            {t(conta.propria ? "Reconectar para leitura" : "Autorizar leitura desta conta")}
+            {conta.propria ? t("Reconectar para leitura") : t("Autorizar leitura desta conta")}
           </button>}
           {conta?.propria && <button type="button" className={botao} onClick={() => setModo("remover")}>{t("Remover acesso de leitura")}</button>}
         </div>
@@ -76,7 +76,7 @@ export function ConexoesDeRelatorio({ conta, remover }: { conta?: ContaDeRelator
             <button className={botao} type="button" disabled={ocupado} onClick={confirmarRemocao}>{t("Confirmar remoção")}</button>
             <button className={botao} type="button" disabled={ocupado} onClick={() => { setModo(null); setErro(""); }}>{t("Cancelar")}</button>
           </div>
-          {erro && <p role="alert" className="mt-3 text-sm">{t(erro)}</p>}
+          {erro && <p role="alert" className="mt-3 text-sm">{erro}</p>}
         </div>
       )}
     </div>

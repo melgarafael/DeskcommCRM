@@ -163,7 +163,7 @@ export function MidiaGoogleAds({ hoje, carregar, atribuicao, contas, podeGerenci
       {podeGerenciar && <ConexoesDeRelatorio key={customerId + "/" + conta?.propria} conta={conta} remover={remover} />}
       {!conta && (
         <p className="m-0 rounded-lg border border-border bg-surface p-[18px] text-sm">
-          {t(podeGerenciar ? "Conecte uma conta de leitura para consultar as campanhas." : "Peça a um administrador que conecte uma conta de leitura ao painel.")}
+          {podeGerenciar ? t("Conecte uma conta de leitura para consultar as campanhas.") : t("Peça a um administrador que conecte uma conta de leitura ao painel.")}
         </p>
       )}
       {conta && !resultado && (
