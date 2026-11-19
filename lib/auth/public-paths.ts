@@ -121,6 +121,30 @@ export const PUBLIC_PATHS: RegExp[] = [
   // `GET` da listagem, não `/api/v1/contacts/[id]` nem `/import`, que ainda
   // não têm suporte a Bearer.
   /^\/api\/v1\/contacts$/,
+  // A FICHA POR TOKEN (#4517). `GET` e `PATCH` de `/api/v1/contacts/{id}` já
+  // resolvem a identidade por `lib/api/auth-dual.ts` DENTRO da rota (`mcp:read`
+  // e `mcp:write`, Spec 33 R2), mas sem esta entrada o `proxy.ts` responde 401
+  // ao Bearer ANTES do handler — a porta existia e era inalcançável.
+  //
+  // O `DELETE` continua sem porta de token: ele entra por `requireRole`, então
+  // um Bearer é recusado pela própria rota. O segmento é FORMA DE UUID, nunca
+  // `[^/]+`: os irmãos literais de `/api/v1/contacts/` (`bulk`, `duplicates`,
+  // `export`, `import`, `merge`) não têm porta de token e um padrão largo os
+  // tornaria "públicos" de carona para o proxy.
+  /^\/api\/v1\/contacts\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+  // COMANDOS DE CONVERSA POR TOKEN (#4517). Pausar/retomar a IA e fechar/reabrir
+  // são o que a integração fazia por transferência — e transferir troca o
+  // responsável do negócio, que é justamente o que a issue pede para NÃO
+  // acontecer. Cada rota resolve a identidade por `lib/api/auth-dual.ts` e cobra
+  // o escopo `conversations:write`; a organização vem da LINHA DO TOKEN.
+  //
+  // Sem estas quatro linhas, o `proxy.ts` responde 401 ao Bearer antes do
+  // handler. Âncoras `$` e id em FORMA DE UUID: nenhum sub-path futuro nasce
+  // público de carona.
+  /^\/api\/v1\/conversations\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/pause-ai$/i,
+  /^\/api\/v1\/conversations\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/reactivate-bot$/i,
+  /^\/api\/v1\/conversations\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/close$/i,
+  /^\/api\/v1\/conversations\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/reopen$/i,
   // FOTO DO CONTATO SERVER-TO-SERVER (issue #3420). Mesma dualidade da
   // listagem logo acima: sessão de navegador OU Bearer `dsk_…` com escopo
   // `contacts:read`, resolvido por `lib/api/auth-dual.ts` DENTRO da rota
