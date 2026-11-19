@@ -97,13 +97,14 @@ describe("PATCH /api/v1/servicos/[id]", () => {
     const r = await patch(PRINCIPAL_ID, { sinal: { tipo: "fixo", valor: 999_999 }, expected_revision: 3 });
     expect(r.status).toBe(422);
     expect((await r.json()).error.details.sinal).toEqual([
-      "o sinal fixo não pode passar do preço da menor variação",
+      "sinal_fixo_acima_do_preco",
     ]);
   });
 
   it("a régua roda sobre a linha mesclada: unidade nova contra o tipo gravado", async () => {
     const r = await patch(PRINCIPAL_ID, { unidade: "hora", expected_revision: 3 });
     expect(r.status).toBe(422);
+    expect((await r.json()).error.details).toEqual({ unidade: ["unidade_incompativel"] });
     expect(salvarServico).not.toHaveBeenCalled();
   });
 
