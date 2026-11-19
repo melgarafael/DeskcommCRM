@@ -32,6 +32,7 @@ interface Previa {
   previa: {
     total: number;
     novas: number;
+    anexadas: number;
     ja_existem: number;
     conflitos: number;
     repetidas: number;
@@ -147,17 +148,18 @@ export function ImportsListClient() {
       {previa ? (
         <Card className="space-y-3 p-4" data-testid="previa-da-importacao">
           <p className="text-sm font-medium">
-            {previa.previa.total} {t("linhas")}: {previa.previa.novas} {t("novas")}, {previa.previa.ja_existem}{" "}
+            {previa.previa.total} {t("linhas")}: {previa.previa.novas} {t("novas")}, {previa.previa.anexadas}{" "}
+            {t("anexadas à empresa que já existe")}, {previa.previa.ja_existem}{" "}
             {t("já existem")}, {previa.previa.conflitos + previa.previa.repetidas} {t("conflitos ou repetidas")},{" "}
             {previa.previa.sem_telefone} {t("sem telefone")}, {previa.previa.invalidas} {t("inválidas")}.
           </p>
           <div className="flex flex-wrap gap-2">
             <Button
-              disabled={uploading || previa.previa.novas === 0}
+              disabled={uploading || previa.previa.novas + previa.previa.anexadas === 0}
               onClick={() => void enviar("importar")}
               data-testid="importar-so-as-novas"
             >
-              {uploading ? t("Importando…") : `${t("Importar só as")} ${previa.previa.novas} ${t("novas")}`}
+              {uploading ? t("Importando…") : `${t("Importar só as")} ${previa.previa.novas + previa.previa.anexadas} ${t("novas")}`}
             </Button>
             <Button
               variant="outline"

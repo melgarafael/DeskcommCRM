@@ -232,7 +232,7 @@ function linhasDeFora(
   sheet.rows.forEach((valores, i) => {
     const numero = sheet.rowNumbers?.[i] ?? i + 2;
     const v = porNumero.get(numero);
-    if (!v || v.status === "nova") return;
+    if (!v || v.status === "nova" || v.status === "anexada") return;
     fora.push({
       linha: numero,
       status: v.status,

@@ -106,15 +106,58 @@ describe("contra a base", () => {
     ).toEqual(["ja_existe", "nova"]);
   });
 
-  it("empresa com CNPJ que já existe: a linha fica de fora e o motivo diz de quem é", () => {
+  it("empresa com CNPJ que já existe e linha COM telefone: é anexada (a empresa é reaproveitada, a pessoa é nova)", () => {
     const empresa = { tipo: "empresa" as const, id: "e1", nome: "Acme", donoId: "u-dono" };
     const [r] = classificarLinhas(
       [linha(2, { cnpj: "11.222.333/0001-81", phone: CEL })],
       base({ empresasPorCnpj: new Map([["11222333000181", empresa]]) }),
     );
+    expect(r?.status).toBe("anexada");
+    expect(r?.motivo).toMatch(/empresa já cadastrada/i);
+    expect(r?.existente?.nome).toBe("Acme");
+  });
+
+  it("a regra do telefone vale mais que a do CNPJ: sem telefone não entra, mesmo com a empresa na base", () => {
+    const empresa = { tipo: "empresa" as const, id: "e1", nome: "Acme", donoId: "u-dono" };
+    const [r] = classificarLinhas(
+      [linha(2, { cnpj: "11.222.333/0001-81", person_name: "Ana" })],
+      base({ empresasPorCnpj: new Map([["11222333000181", empresa]]) }),
+    );
+    expect(r?.status).toBe("sem_telefone");
+  });
+
+  it("celular que já é de um contato continua sendo 'já existe', mesmo com o CNPJ da empresa na base", () => {
+    const empresa = { tipo: "empresa" as const, id: "e1", nome: "Acme", donoId: null };
+    const contato = { tipo: "contato" as const, id: "c1", nome: "Ana", donoId: "u-dono" };
+    const [r] = classificarLinhas(
+      [linha(2, { cnpj: "11.222.333/0001-81", phone: CEL })],
+      base({
+        empresasPorCnpj: new Map([["11222333000181", empresa]]),
+        contatosPorCelular: new Map([[CEL, contato]]),
+      }),
+    );
     expect(r?.status).toBe("ja_existe");
-    expect(r?.motivo).toMatch(/empresa com este CNPJ/);
-    expect(r?.existente?.donoId).toBe("u-dono");
+  });
+
+  it("duas linhas anexadas ao mesmo celular: a segunda é repetida ou conflito, como qualquer linha", () => {
+    const empresa = { tipo: "empresa" as const, id: "e1", nome: "Acme", donoId: null };
+    const r = classificarLinhas(
+      [
+        linha(2, { cnpj: "11.222.333/0001-81", phone: CEL }),
+        linha(3, { cnpj: "11.222.333/0001-81", phone: CEL }),
+      ],
+      base({ empresasPorCnpj: new Map([["11222333000181", empresa]]) }),
+    );
+    expect(r.map((x) => x.status)).toEqual(["anexada", "repetida"]);
+  });
+
+  it("os totais contam as anexadas à parte", () => {
+    const t = totaisDaPrevia([
+      { rowNumber: 2, status: "nova", motivo: null },
+      { rowNumber: 3, status: "anexada", motivo: "x" },
+      { rowNumber: 4, status: "anexada", motivo: "x" },
+    ]);
+    expect(t).toMatchObject({ total: 3, novas: 1, anexadas: 2 });
   });
 });
 
@@ -178,6 +221,7 @@ describe("totaisDaPrevia", () => {
     expect(totaisDaPrevia(r)).toEqual({
       total: 4,
       novas: 1,
+      anexadas: 0,
       ja_existem: 0,
       conflitos: 0,
       repetidas: 1,

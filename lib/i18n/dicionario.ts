@@ -18490,6 +18490,7 @@ export const DICIONARIO: Traducoes = {
   "Conferir arquivo": { es: "Revisar archivo" },
   "novas": { es: "nuevas" },
   "já existem": { es: "ya existen" },
+  "anexadas à empresa que já existe": { es: "anexadas a la empresa que ya existe" },
   "conflitos ou repetidas": { es: "conflictos o repetidas" },
   "inválidas": { es: "inválidas" },
   "Importar só as": { es: "Importar solo las" },

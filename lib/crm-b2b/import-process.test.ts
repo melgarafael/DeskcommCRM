@@ -286,4 +286,27 @@ describe("importação com a prévia (A23, #4888): só a linha `nova` grava", ()
     expect(atualizacoes.map((a) => a.dados.status)).toEqual(expect.arrayContaining(["conflict", "failed", "success"]));
     expect(atualizacoes.some((a) => a.dados.error === "Já existe um contato com este celular ou e-mail.")).toBe(true);
   });
+
+  it("a linha anexada à empresa que já existe GRAVA (a prévia só avisou; a pessoa e o contato são novos)", async () => {
+    const db = banco();
+    const resultado = await processCompaniesPeopleImport(db.cliente, {
+      organizationId: "11111111-1111-4111-8111-111111111111",
+      userId: "22222222-2222-4222-8222-222222222222",
+      batchId: "33333333-3333-4333-8333-333333333333",
+      sheet: {
+        headers: ["Empresa", "CNPJ", "Pessoa", "Telefone"],
+        rows: [["Acme", "11.222.333/0001-81", "Pessoa nova", "85999990009"]],
+      },
+      mapping: { company_name: "Empresa", cnpj: "CNPJ", person_name: "Pessoa", phone: "Telefone" },
+      enrichCompanies: false,
+      classificacao: new Map([
+        [2, { rowNumber: 2, status: "anexada" as const, motivo: "Empresa já cadastrada com este CNPJ." }],
+      ]),
+    });
+
+    expect(resultado).toEqual({ successful_rows: 1, failed_rows: 0, conflict_rows: 0, processed_rows: 1 });
+    const criadas = (tabela: string) => db.escritas.filter((e) => e.tabela === tabela && e.operacao === "insert");
+    expect(criadas("people")).toHaveLength(1);
+    expect(criadas("contacts")).toHaveLength(1);
+  });
 });

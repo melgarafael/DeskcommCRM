@@ -19,9 +19,11 @@
  *   minúsculas. O NOME nunca entra: duas pessoas se chamam João.
  * - **E-mail de prefixo genérico** (`contato@`, `vendas@`…) NÃO conta: é caixa
  *   compartilhada, e juntaria pessoas diferentes. Nesses casos vale só o celular.
- * - **Empresa:** o mesmo CNPJ. A empresa existente NÃO é reaproveitada: a linha
- *   fica de fora e o motivo diz de quem ela é. Empresa sem CNPJ não é conferida
- *   por nome (pergunta em aberto na issue).
+ * - **Empresa:** o mesmo CNPJ. A empresa existente É reaproveitada: a linha entra
+ *   como `anexada` (a pessoa e o contato nascem ligados a ela, sem empresa
+ *   duplicada). Só vale para linha COM telefone, porque a regra do telefone vem
+ *   antes da do CNPJ. Empresa sem CNPJ nunca é conferida por nome (erro de
+ *   digitação juntaria empresas diferentes).
  *
  * ## Dentro da planilha
  *
@@ -44,6 +46,7 @@ type SB = SupabaseClient;
 
 export type StatusDaLinha =
   | "nova"
+  | "anexada"
   | "ja_existe"
   | "conflito"
   | "repetida"
@@ -186,6 +189,8 @@ export function classificarLinhas(
       });
       return;
     }
+    // A empresa com este CNPJ já existe: a linha entra ANEXADA a ela. O processador já
+    // reaproveita a empresa pelo CNPJ; aqui só avisamos, na prévia, que foi isso que houve.
     const empresa = cnpj ? existentes.empresasPorCnpj.get(cnpj) : undefined;
     if (empresa) {
       donaDoCelular.set(chaveCelular, idx);
@@ -193,8 +198,8 @@ export function classificarLinhas(
       assinaturas[idx] = assinatura;
       saida.push({
         rowNumber,
-        status: "ja_existe",
-        motivo: "Já existe uma empresa com este CNPJ.",
+        status: "anexada",
+        motivo: `Empresa já cadastrada com este CNPJ: a pessoa e o contato entram ligados a ela${empresa.nome ? ` (${empresa.nome})` : ""}.`,
         existente: empresa,
       });
       return;
@@ -212,6 +217,8 @@ export function classificarLinhas(
 export interface TotaisDaPrevia {
   total: number;
   novas: number;
+  /** Linha nova de empresa que já existe (mesmo CNPJ): entra, ligada a ela. */
+  anexadas: number;
   ja_existem: number;
   conflitos: number;
   repetidas: number;
@@ -223,6 +230,7 @@ export function totaisDaPrevia(linhas: readonly LinhaClassificada[]): TotaisDaPr
   const t: TotaisDaPrevia = {
     total: linhas.length,
     novas: 0,
+    anexadas: 0,
     ja_existem: 0,
     conflitos: 0,
     repetidas: 0,
@@ -231,6 +239,7 @@ export function totaisDaPrevia(linhas: readonly LinhaClassificada[]): TotaisDaPr
   };
   for (const l of linhas) {
     if (l.status === "nova") t.novas += 1;
+    else if (l.status === "anexada") t.anexadas += 1;
     else if (l.status === "ja_existe") t.ja_existem += 1;
     else if (l.status === "conflito") t.conflitos += 1;
     else if (l.status === "repetida") t.repetidas += 1;

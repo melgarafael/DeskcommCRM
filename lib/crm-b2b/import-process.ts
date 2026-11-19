@@ -107,9 +107,9 @@ export async function processCompaniesPeopleImport(
     }
     const rowId = rowRec.id as string;
 
-    // A23: a prévia já disse que esta linha não entra. Registra o motivo e segue.
+    // A23: a prévia já disse que esta linha não entra (só `nova` e `anexada` gravam). Registra o motivo e segue.
     const veredito = opts.classificacao?.get(rowNumber);
-    if (veredito && veredito.status !== "nova") {
+    if (veredito && veredito.status !== "nova" && veredito.status !== "anexada") {
       const statusDaLinha = veredito.status === "sem_telefone" || veredito.status === "invalida" ? "failed" : "conflict";
       await supabase
         .from("import_rows")

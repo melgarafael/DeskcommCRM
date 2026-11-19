@@ -74,6 +74,26 @@ beforeEach(() => {
   ];
 });
 
+describe("POST /api/v1/imports com previa=true: linha anexada", () => {
+  it("conta as anexadas à parte e NÃO as põe no CSV de fora (elas entram)", async () => {
+    h.classificadas = [
+      {
+        rowNumber: 2,
+        status: "anexada",
+        motivo: "Empresa já cadastrada com este CNPJ.",
+        existente: { tipo: "empresa", id: "e1", nome: "Acme", donoId: null },
+      },
+      { rowNumber: 3, status: "sem_telefone", motivo: "Linha sem telefone: não entra na importação." },
+    ];
+    const res = await POST(pedido({ previa: "true" }) as never);
+    const corpo = (await res.json()) as {
+      data: { previa: Record<string, number>; linhas_fora: Array<{ linha: number; status: string }> };
+    };
+    expect(corpo.data.previa).toMatchObject({ anexadas: 1, sem_telefone: 1, novas: 0 });
+    expect(corpo.data.linhas_fora.map((l) => [l.linha, l.status])).toEqual([[3, "sem_telefone"]]);
+  });
+});
+
 describe("POST /api/v1/imports com previa=true", () => {
   it("devolve os totais e as linhas de fora (com de quem é) e NÃO grava nada", async () => {
     const res = await POST(pedido({ previa: "true" }) as never);
