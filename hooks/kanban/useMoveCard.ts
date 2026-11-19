@@ -139,10 +139,13 @@ export function useMoveCard(pipelineId: string, opcoes: OpcoesDeMove = {}) {
     },
     onError: (err, args, ctx) => {
       if (ctx?.snapshot) qc.setQueryData(queryKey, ctx.snapshot);
-      if (err instanceof ApiError && err.status === 409) {
-        // Reconcile authoritative state — server already gave new updated_at.
-        qc.invalidateQueries({ queryKey });
-      }
+      // Relê em TODO erro, não só no 409. Rede caída, timeout ou 5xx podem
+      // chegar DEPOIS de a rota já ter gravado o movimento: o snapshot devolve
+      // o card à coluna antiga, e o evento de realtime desse lead cai na marca
+      // de eco (useBoard o ignora). Sem esta releitura, a tela ficaria errada
+      // até o próximo evento do funil. Erro é raro; o arraste que dá certo
+      // continua sem reler (#4788).
+      qc.invalidateQueries({ queryKey });
       if (err instanceof ApiError && err.code === "reabertura_cria_novo" && opcoes.onRetomada) {
         // NÃO toast: um "erro" genérico mentiria sobre uma recusa que tem
         // porta. O diálogo É a resposta — e ele leva a etapa que o operador
@@ -185,8 +188,8 @@ export function useMoveCard(pipelineId: string, opcoes: OpcoesDeMove = {}) {
       // por rajada (hooks/kanban/useBoard.ts), e a rede de segurança
       // (`useRefetchDeSeguranca`) confere a assinatura na volta para a aba.
       //
-      // Fail-safe preservado: quando o servidor NÃO confirma (erro/409), o
-      // `onError` acima devolve o snapshot e, no 409, relê — ali a releitura é
+      // Fail-safe preservado: quando o servidor NÃO confirma (qualquer erro), o
+      // `onError` acima devolve o snapshot e relê — ali a releitura é
       // obrigatória, porque o estado do servidor é desconhecido.
     },
   });

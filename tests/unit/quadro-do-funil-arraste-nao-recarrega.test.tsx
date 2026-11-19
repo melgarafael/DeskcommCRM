@@ -18,6 +18,7 @@ import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ApiError } from "@/lib/api/types";
 import type { BoardData } from "@/lib/kanban/types";
 
 const post = vi.hoisted(() => vi.fn());
@@ -165,6 +166,26 @@ describe("um arraste", () => {
     expect(cardNoCache().stage_id).toBe("s-1");
     expect(cardNoCache().updated_at).toBe("2026-09-15T12:00:02.000Z");
     expect(invalidar).not.toHaveBeenCalled();
+  });
+
+  // Erro ambíguo: a rota pode ter gravado antes de a resposta se perder. O
+  // snapshot devolve o card à coluna antiga, e o evento de realtime desse lead
+  // cai na marca de eco — só a releitura conserta a tela.
+  it.each([
+    ["rede caída", new TypeError("Failed to fetch")],
+    ["5xx", new ApiError(502, "bad_gateway", undefined, "req-1")],
+  ])("erro de %s devolve o snapshot e relê o quadro", async (_nome, erro) => {
+    post.mockRejectedValue(erro);
+
+    const { result } = renderHook(() => useMoveCard(PIPELINE), { wrapper });
+    await act(async () => {
+      await result.current
+        .mutateAsync({ leadId: LEAD, stageId: "s-2", positionInStage: 1500, expectedUpdatedAt: ANTES })
+        .catch(() => undefined);
+    });
+
+    expect(cardNoCache().stage_id).toBe("s-1");
+    expect(invalidar).toHaveBeenCalledTimes(1);
   });
 });
 
