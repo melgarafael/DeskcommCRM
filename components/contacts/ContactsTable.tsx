@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useActiveOrg } from "@/hooks/auth/AuthProvider";
 import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabulary";
-import { useDeleteContact, mensagemDeBloqueioPorVinculo, avisoDeCardsAbertos } from "@/hooks/contacts/useDeleteContact";
+import { useDeleteContact, mensagemDeBloqueioPorVinculo, destinoDoBloqueio } from "@/hooks/contacts/useDeleteContact";
 import type { ContactOrderBy } from "@/lib/schemas/contacts";
 import type { Contact } from "@/lib/types/contacts";
 import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
@@ -173,17 +173,16 @@ export function ContactsTable({
     enabled: alvoId !== null,
     retry: false,
     queryFn: async () => {
-      if (!alvoId) return { vinculos: [], por_tabela: {}, cards_abertos: 0 };
+      if (!alvoId) return { vinculos: [], por_tabela: {} };
       const corpo = await apiClient.get<{
-        data?: { vinculos: string[]; por_tabela: Record<string, number>; cards_abertos?: number };
+        data?: { vinculos: string[]; por_tabela: Record<string, number> };
       }>(`/api/v1/contacts/${alvoId}/vinculos`);
       // O MESMO formato do `error.details` do 409: a frase da tela é uma só,
       // servida pela mesma função dos dois caminhos.
-      return corpo.data ?? { vinculos: [], por_tabela: {}, cards_abertos: 0 };
+      return corpo.data ?? { vinculos: [], por_tabela: {} };
     },
   });
   const avisoDeVinculo = alvo ? mensagemDeBloqueioPorVinculo(vinculos.data, t) : null;
-  const avisoDeCards = alvo ? avisoDeCardsAbertos(vinculos.data?.cards_abertos, t) : null;
 
   async function iniciarConversa(c: Contact) {
     if (!c.phone_number || abrindo) return;
@@ -428,14 +427,10 @@ export function ContactsTable({
             {avisoDeVinculo ? (
               <span className="mt-2 block text-sm font-medium text-warning-fg">
                 {avisoDeVinculo}{" "}
-                <Link href="/app/agenda" className="underline">
-                  {t("Abrir Agenda")}
+                <Link href={destinoDoBloqueio(vinculos.data).href} className="underline">
+                  {t(destinoDoBloqueio(vinculos.data).rotulo)}
                 </Link>
               </span>
-            ) : null}
-            {/* A6: não barra — avisa que os negócios abertos fecham como perdidos. */}
-            {avisoDeCards ? (
-              <span className="mt-2 block text-sm font-medium text-warning-fg">{avisoDeCards}</span>
             ) : null}
           </AlertDialogDescription>
         </AlertDialogHeader>

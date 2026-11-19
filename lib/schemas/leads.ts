@@ -115,12 +115,6 @@ export const CANONICAL_LOST_REASONS = [
    * transferência, CONTA como perda — é oportunidade que foi embora.
    */
   "opted_out_of_messages",
-  /**
-   * Motivo do SISTEMA para o card que fechou porque o CONTATO foi excluído (A6,
-   * migration 9420): excluir a ficha encerra os negócios abertos dela em vez de
-   * deixá-los soltos no funil, sem contato. CONTA como perda, como o opt-out.
-   */
-  "contact_deleted",
 ] as const;
 
 /**
@@ -139,7 +133,6 @@ export const ROTULO_DO_MOTIVO_CANONICO: Record<(typeof CANONICAL_LOST_REASONS)[n
   other: "Outro motivo",
   moved_to_another_pipeline: "Levado para outro funil",
   opted_out_of_messages: "Pediu para não receber mensagens",
-  contact_deleted: "Contato excluído",
 };
 
 /** O rótulo pt-BR do motivo: o do canônico, ou o próprio texto do motivo do funil. */

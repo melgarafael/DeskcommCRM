@@ -27633,9 +27633,7 @@ declare
                               'cancelled_by_store','cancelled_by_customer','payment_failed','other',
                               'moved_to_another_pipeline',
                               -- migration 0513 (#2049): quem respondeu PARAR. Conta como perda.
-                              'opted_out_of_messages',
-                              -- migration 9420 (A6): o contato foi excluído e o card aberto fechou junto.
-                              'contact_deleted'];
+                              'opted_out_of_messages'];
   v_pipeline_extra text[];
 begin
   if new.status = 'lost' then
