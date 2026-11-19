@@ -362,7 +362,7 @@ async function withMarcadoresDoContato(
   const { data, error } = await buscaEmLotes(contactIds, (lote) =>
     supabase
       .from("contacts")
-      .select("id, tags, phone_number, email, custom_fields, is_anonymized")
+      .select("id, tags, phone_number, email, custom_fields, is_anonymized, avatar_storage_path")
       .eq("organization_id", organizationId)
       .in("id", lote),
   );
