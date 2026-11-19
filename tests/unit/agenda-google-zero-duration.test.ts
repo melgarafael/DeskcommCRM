@@ -179,7 +179,8 @@ describe("Issue #4915: eventos de duração zero na sincronização do Google", 
     // O que a tela mostra é a mensagem gravada pela ação "error" — não o erro lançado.
     const gravada = String(actions.find((a) => a.action === "error")!.args.message);
     expect(gravada).toContain("02/09/2026 às 16:00");
-    expect(gravada).toContain("instante_invalido");
+    // O motivo cru do parser é para o log; a tela não mostra código técnico.
+    expect(gravada).not.toContain("instante_invalido");
     expect(gravada).not.toContain("A leitura não terminou");
     expect(gravada).not.toContain("Segredo Confidencial");
     expect(gravada).not.toContain("Fulano");

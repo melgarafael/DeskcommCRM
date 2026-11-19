@@ -72,13 +72,13 @@ export function diagnosticoDeErro(erro: unknown): {
  */
 export class EventoRecusadoNaLeitura extends Error {
   constructor(
-    /** Motivo nomeado do parser — o que o programador precisa saber, sem texto de terceiro. */
+    /** Motivo nomeado do parser, para o log e o programador; fica FORA da frase da tela (código cru não é texto para quem opera). */
     readonly motivo: MotivoDeRecusa,
     /** Dia (e hora, quando o evento tem) de parede, pronto para a tela. */
     readonly quando: string,
   ) {
     super(
-      `O evento de ${quando} tem horário que a leitura não consegue usar (${motivo}). Corrija ou remova esse evento no Google Agenda.`,
+      `O evento de ${quando} tem horário que a leitura não consegue usar. Corrija ou remova esse evento no Google Agenda.`,
     );
     this.name = "EventoRecusadoNaLeitura";
   }
