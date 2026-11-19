@@ -139,11 +139,20 @@ export const ENTRADA_ACEITA = [
 ] as const;
 
 /**
- * Opus mono de 24k em quadros de 20 ms: o que o WhatsApp grava e o que o canal
- * oficial aceita. O `-frame_duration` é explícito porque o tamanho de quadro É a
- * diferença entre a nota que chega e a recusada (`transcodificarNotaDeVoz`).
+ * Opus mono de 24k em quadros de 20 ms, começando no instante ZERO: o que o
+ * WhatsApp grava e o que o canal oficial aceita.
+ *
+ * O `asetpts=PTS-STARTPTS` é o que decide a recusa. O webm do Chrome às vezes
+ * começa alguns milissegundos ANTES do zero, e o ffmpeg leva esse início
+ * negativo para o ogg (a primeira página com granule menor que o pre-skip).
+ * Medido numa instalação em 19/11/2026, em 37 notas de voz de dois dias: as 11
+ * recusadas com `131053` começavam todas em tempo negativo (−48 a −360
+ * amostras), e as 26 entregues começavam todas em zero ou depois — com quadro
+ * de 2,5, 20 ou 60 ms. O quadro de 2,5 ms, culpado na primeira correção, só
+ * andava junto. Zerado o início, o arquivo recusado fica igual ao entregue.
  */
 export const CODEC_NOTA_DE_VOZ = [
+  "-af", "asetpts=PTS-STARTPTS",
   "-c:a", "libopus", "-b:a", "24k", "-ac", "1", "-ar", "48000", "-frame_duration", "20",
 ] as const;
 
@@ -196,6 +205,8 @@ export async function transcodificarNotaDeVoz(
     // em 18/11/2026, 5 de 5 notas de voz assim foram recusadas pelo canal
     // oficial com `131053`, e as 16 em quadros de 60 ms do mesmo aparelho
     // chegaram. Reencodar fixa 20 ms, e o arquivo de minuto cabe em ~200 KB.
+    // A causa medida depois (19/11) foi o início negativo, que só reencodando
+    // dá para zerar: ver `CODEC_NOTA_DE_VOZ`.
     await executar([...ENTRADA_ACEITA, "-i", entrada, "-vn", ...CODEC_NOTA_DE_VOZ, "-f", "ogg", saida], dir);
     const buffer = await readFile(saida);
     if (buffer.length === 0) return { buffer: input.buffer, mime: input.mime, convertido: false };

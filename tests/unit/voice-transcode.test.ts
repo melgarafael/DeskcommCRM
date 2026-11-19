@@ -81,6 +81,18 @@ describe("a conversão", () => {
     expect(args).toContain("ogg");
   });
 
+  it("zera o início: nota que começa em tempo negativo é recusada com 131053", async () => {
+    // Medido em 19/11/2026: as 11 recusadas de 37 notas começavam antes do zero;
+    // as 26 entregues, em zero ou depois. O filtro vai DEPOIS do `-i`, senão o
+    // ffmpeg o aplica a nada.
+    const run = vi.fn(async (_args: string[], _cwd: string) => {});
+    await transcodificarNotaDeVoz(webm, { run });
+    const args = run.mock.calls[0]?.[0] ?? [];
+    const filtro = args.indexOf("asetpts=PTS-STARTPTS");
+    expect(filtro).toBeGreaterThan(args.indexOf("-i"));
+    expect(args[filtro - 1]).toBe("-af");
+  });
+
   it("NÃO chama ffmpeg quando não precisa — conversão à toa é custo puro", async () => {
     const run = vi.fn(async () => {});
     const r = await transcodificarNotaDeVoz(
