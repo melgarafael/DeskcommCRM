@@ -578,6 +578,28 @@ const PARES: Array<{
     arquivo: "lib/external-db/types.ts",
     simbolo: "TipoBanco",
   },
+  {
+    tabela: "organization_payment_gateways",
+    coluna: "provider",
+    // lib/pagamentos/vocabulario.ts → PROVEDORES_DE_PAGAMENTO.
+    //
+    // Par nascido com a tabela (#4058, fatia 1): a lista é o que a EMPRESA pode
+    // escolher para cobrar o cliente dela, e o CHECK é quem recusa o resto. Um
+    // valor que nascesse só num dos lados daria 23514 no upsert da tela — ou,
+    // pior, um provedor aceito pelo banco e sem adaptador no switch de
+    // lib/cobranca/provedores, que estoura na primeira cobrança.
+    arquivo: "lib/pagamentos/vocabulario.ts",
+    simbolo: "PROVEDORES_DE_PAGAMENTO",
+  },
+  {
+    tabela: "organization_payment_gateways",
+    coluna: "mode",
+    // lib/pagamentos/vocabulario.ts → MODOS_DE_PAGAMENTO. O modo é DERIVADO do
+    // prefixo da chave, e é o CHECK que impede um terceiro estado (nem teste,
+    // nem produção) de existir no banco sem que o resolvedor saiba lê-lo.
+    arquivo: "lib/pagamentos/vocabulario.ts",
+    simbolo: "MODOS_DE_PAGAMENTO",
+  },
 ];
 
 /** Tira um nível de parênteses externos, se ele envolver a expressão inteira. */
