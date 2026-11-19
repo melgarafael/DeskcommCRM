@@ -5,6 +5,9 @@ import { env } from "@/lib/env";
 import { fetchDoServidor } from "@/lib/supabase/fetch-do-servidor";
 import { urlDoSupabaseNoServidor } from "@/lib/supabase/url-do-servidor";
 import { isPublicPath } from "@/lib/auth/public-paths";
+import { respostaDePonte } from "@/lib/auth/ponte-de-volta";
+import { safeNext } from "@/lib/auth/safe-next";
+import { marcaDaSaida } from "@/lib/branding/saida";
 import { validarIdentidade } from "@/lib/supabase/identidade-validada";
 import { CABECALHO_SEM_CSS, PARAMETRO_SEM_CSS } from "@/lib/branding/sem-css-personalizado";
 import {
@@ -13,6 +16,18 @@ import {
 } from "@/lib/impersonate/cookie-edge";
 
 const COOKIE_NAME = "sb-deskcomm-auth";
+
+/**
+ * Navegação de documento cujo initiator NÃO é o nosso site — a única em que o
+ * cookie Strict some. Sem `Sec-Fetch-*` (navegador antigo) não há como saber:
+ * segue o redirect de sempre.
+ */
+function navegacaoDeFora(request: NextRequest): boolean {
+  if (request.method !== "GET") return false;
+  if (request.headers.get("sec-fetch-mode") !== "navigate") return false;
+  const site = request.headers.get("sec-fetch-site");
+  return site === "none" || site === "cross-site";
+}
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function proxy(request: NextRequest) {
@@ -138,6 +153,17 @@ export async function proxy(request: NextRequest) {
           },
         },
       );
+    }
+    // Abertura "de fora" (ícone do app instalado no Android, link vindo de outro
+    // app ou site): sob SameSite=Strict o navegador RETÉM o cookie de sessão
+    // nessa navegação, e um 302 não rompe a cadeia — a pessoa caía no /login a
+    // cada abertura, com a sessão viva no banco. A ponte devolve um documento
+    // nosso que refaz a mesma navegação como same-origin: se há sessão, o cookie
+    // viaja; se não há, este ramo roda de novo (agora same-origin) e cai no
+    // redirect normal. Mesmo mecanismo de `lib/auth/ponte-de-volta.ts`.
+    if (navegacaoDeFora(request)) {
+      const marca = await marcaDaSaida(null);
+      return respostaDePonte(safeNext(pathname + search, "/app"), marca.nome, "Abrindo…");
     }
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("next", pathname + search);

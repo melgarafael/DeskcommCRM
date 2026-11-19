@@ -1603,3 +1603,62 @@ describe("CartaoDoJev — o aviso da área da saúde (DEC-012 #2)", () => {
     expect(aviso).toHaveTextContent(/contrato da TypeSafe/);
   });
 });
+
+describe("o modelo do decisor pede aceite novo nomeando o fornecedor (doc 369)", () => {
+  const FORA = "perplexity/decisor:free";
+
+  it("escrever um modelo de fora mostra o aceite com o fornecedor, e salvar só sai com ele marcado", async () => {
+    montar(dados({ origem: "openrouter", config: { aceite: { em: "2026-09-01T12:00:00.000Z", por: "u" } } }));
+    const campo = screen.getByLabelText("Modelo do decisor");
+    fireEvent.change(campo, { target: { value: FORA } });
+    const caixa = screen.getByTestId("jev-modelo-aceite");
+    expect(caixa).toHaveTextContent("para perplexity (modelo perplexity/decisor:free), pela OpenRouter");
+    expect(caixa).toHaveTextContent("a empresa assume essa conferência");
+    // A recaída de `decidirNoPonto` (o modelo falha ⇒ o Jev responde) também
+    // está no texto aceito: o aceite cobre os dois destinos.
+    expect(caixa).toHaveTextContent("se esse modelo falhar, a mensagem vai para o Jev, da TypeSafe AI, pela OpenRouter");
+    const salvar = screen.getByRole("button", { name: "Salvar modelo do decisor" });
+    expect(salvar).toBeDisabled();
+    fireEvent.click(within(caixa).getByRole("checkbox"));
+    expect(salvar).toBeEnabled();
+    fireEvent.click(salvar);
+    await waitFor(() => expect(chamadas.some((c) => c.metodo === "PATCH")).toBe(true));
+    expect(chamadas.find((c) => c.metodo === "PATCH")?.corpo).toEqual({ modelo: FORA, aceite_lgpd: true });
+  });
+
+  it("voltar a escrever o Jev não pede aceite", () => {
+    montar(dados({ origem: "openrouter", modelo: FORA, modelo_escolhido: FORA }));
+    fireEvent.change(screen.getByLabelText("Modelo do decisor"), { target: { value: "typesafe/jev-1.13" } });
+    expect(screen.queryByTestId("jev-modelo-aceite")).toBeNull();
+    expect(screen.getByRole("button", { name: "Salvar modelo do decisor" })).toBeEnabled();
+  });
+
+  it("com um modelo de fora valendo, o aviso de dado de saúde cita o fornecedor dele, e não a TypeSafe", () => {
+    montar(dados({ origem: "openrouter", modelo: FORA, modelo_escolhido: FORA }));
+    const aviso = screen.getByTestId("jev-aviso-area-saude");
+    expect(aviso).toHaveTextContent("se os termos de perplexity, que recebe as mensagens pela OpenRouter");
+    expect(aviso).not.toHaveTextContent(/TypeSafe/);
+  });
+
+  it("com o Jev desligado e um modelo de fora valendo, o \"Ao ligar\" nomeia o fornecedor dele e a recaída no Jev", () => {
+    montar(
+      dados({
+        origem: "openrouter",
+        modelo: FORA,
+        modelo_escolhido: FORA,
+        config: { aceite: { em: "2026-09-01T12:00:00.000Z", por: "u" } },
+      }),
+    );
+    const paragrafo = screen.getByText(/^Ao ligar, cada mensagem/);
+    expect(paragrafo).toHaveTextContent("vai para perplexity (modelo perplexity/decisor:free), pela OpenRouter");
+    expect(paragrafo).toHaveTextContent("se esse modelo falhar, a mensagem vai para o Jev, da TypeSafe AI, pela OpenRouter");
+    expect(paragrafo).not.toHaveTextContent("vai para a TypeSafe AI, pela OpenRouter, nos Estados Unidos");
+  });
+
+  it("com o Jev valendo pela OpenRouter, o \"Ao ligar\" segue nomeando a TypeSafe AI", () => {
+    montar(dados({ origem: "openrouter", config: { aceite: { em: "2026-09-01T12:00:00.000Z", por: "u" } } }));
+    expect(screen.getByText(/^Ao ligar, cada mensagem/)).toHaveTextContent(
+      "vai para a TypeSafe AI, pela OpenRouter, nos Estados Unidos",
+    );
+  });
+});
