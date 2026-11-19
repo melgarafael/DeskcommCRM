@@ -99,9 +99,8 @@ describe("costCents — cada tarifa isolada, por modelo", () => {
     ["gpt-5.4-nano", 20, 125, 2, 20, 20],
     ["gpt-5.4-pro", 3000, 18000, 3000, 3000, 3000],
     // Google — leitura de cache a 0.1× a entrada (2.0 Flash não tem cache implícito, ver pricing.ts).
-    // 3.6/3.7/3.8 Flash têm virada em 2027-01-01T00:00:00Z; os casos datados ficam no describe abaixo.
+    // 3.5/3.6/3.7/3.8 Flash têm virada em 2027-01-01T00:00:00Z; os casos datados ficam no describe abaixo.
     ["gemini-3.1-flash-lite", 25, 150, 2.5, 25, 25],
-    ["gemini-3.5-flash", 150, 900, 15, 150, 150],
     ["gemini-3.5-flash-lite", 30, 250, 3, 30, 30],
     ["gemini-3.1-pro-preview", 200, 1200, 20, 200, 200],
     ["gemini-2.5-pro", 125, 1000, 12.5, 125, 125],
@@ -117,12 +116,17 @@ describe("costCents — cada tarifa isolada, por modelo", () => {
   });
 });
 
-describe("Gemini 3.6/3.7/3.8 Flash — a promo acaba em 2027-01-01T00:00:00Z", () => {
+describe("Gemini 3.5/3.6/3.7/3.8 Flash — a promo acaba em 2027-01-01T00:00:00Z", () => {
   // Página ai.google.dev/gemini-api/docs/pricing, lida em 2026-10-12 (Standard):
   // até 31/12/2026 entrada 0,75 / saída 3,75 / leitura de cache 0,075;
   // a partir de 01/01/2027, 1,50 / 7,50 / 0,15. Gravação segue a entrada
   // (o motor não usa cache explícito; a linha existe para não ficar stale).
-  const MODELOS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash"] as const;
+  //
+  // O 3.5 Flash entra na mesma lista desde 18/11/2026: a página de preços não tem
+  // mais seção dele, o endpoint está aposentado (19/05/2026) e roteia ao 3.6 Flash,
+  // que é quem o Google fatura (aistudio.google.com/docs/deprecations). Antes
+  // desta correção a tabela dizia 1,50/9,00 — entrada 2× e saída 2,4× o faturado.
+  const MODELOS = ["gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"] as const;
 
   it.each(MODELOS)("%s cobra a promo no instante anterior à virada", (model) => {
     expect(entrada(model, ANTES_DA_VIRADA)).toBeCloseTo(75, 6);
@@ -150,8 +154,10 @@ describe("Gemini 3.6/3.7/3.8 Flash — a promo acaba em 2027-01-01T00:00:00Z", (
   });
 
   it("um Gemini sem promoção não muda de preço na virada", () => {
-    expect(entrada("gemini-3.5-flash", ANTES_DA_VIRADA)).toBeCloseTo(150, 6);
-    expect(entrada("gemini-3.5-flash", VIRADA_2027)).toBeCloseTo(150, 6);
+    // O 3.5 Flash-Lite é o vizinho de tarifa fixa: 0,30/2,50 (Standard de
+    // aistudio.google.com/docs/pricing, 18/11/2026) em qualquer instante.
+    expect(entrada("gemini-3.5-flash-lite", ANTES_DA_VIRADA)).toBeCloseTo(30, 6);
+    expect(entrada("gemini-3.5-flash-lite", VIRADA_2027)).toBeCloseTo(30, 6);
     expect(entrada("gemini-3.1-flash-lite", VIRADA_2027)).toBeCloseTo(25, 6);
   });
 });
