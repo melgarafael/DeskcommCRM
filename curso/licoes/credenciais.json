@@ -350,7 +350,7 @@
           "id": "p3",
           "titulo": "Os provedores da lista",
           "texto": "A lista traz todos os provedores que o sistema sabe usar. Os de cima podem conversar com o cliente. O último, \"Jev (TypeSafe AI)\", não conversa: só toma decisões rápidas, como perceber se o cliente está irritado. Aqui escolhemos a Anthropic (Claude).",
-          "dica": "\"Provedor personalizado (compatível com OpenAI)\" é para quem tem um servidor próprio que fala como a OpenAI: o formulário pede também o \"Endereço (base URL)\" e testa a conexão antes de salvar. \"OpenAI pela assinatura (ChatGPT)\" não aceita chave colada: a conta se conecta por um painel de login próprio, que só aparece nesta tela quando quem administra o servidor liga \"Login do Codex por assinatura\" em Admin › Recursos opcionais.",
+          "dica": "\"Provedor personalizado (compatível com OpenAI)\" é para quem tem um servidor próprio que fala como a OpenAI: o formulário pede também o \"Endereço (base URL)\" e testa a conexão antes de salvar. \"OpenAI pela assinatura (ChatGPT)\" não aceita chave colada: a conta se conecta por um painel próprio, no topo desta tela, e o preparo tem dois passos — está na lição \"Preparar a assinatura do ChatGPT\", logo abaixo neste curso.",
           "antes": [
             {
               "acao": "click",
@@ -798,6 +798,95 @@
               "role": "alertdialog"
             }
           }
+        }
+      ]
+    },
+    {
+      "id": "credenciais-assinatura-do-chatgpt",
+      "titulo": "Preparar a assinatura do ChatGPT",
+      "objetivo": "Ligar o recurso na instalação e conectar a conta da assinatura do ChatGPT na empresa.",
+      "papel": "admin",
+      "busca": [
+        "assinatura do chatgpt",
+        "login do codex",
+        "codex por assinatura",
+        "openai pela assinatura",
+        "conectar a conta do chatgpt",
+        "onde ligo a assinatura",
+        "localhost:1455"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Quem administra a instalação liga o recurso",
+          "rota": "/admin/sistema",
+          "texto": "Esta parte não é da empresa: é de quem administra a instalação. No menu do Admin (\"Admin Plataforma\"), abra \"Recursos opcionais\" e desça até \"Módulos opcionais\". O quadro \"Login do Codex por assinatura\" é o desta foto, com a chave ligada à direita; na instalação nova ele vem desligado. Ligar não pede botão de salvar: vale no clique. Enquanto estiver desligado, a tela Credenciais não mostra o painel de conexão e a chamada da IA continua na chave de API da empresa.",
+          "dica": "Ligado, cada empresa conecta a própria conta; a chave de API da organização continua valendo como reserva quando a assinatura falha ou atinge o limite.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "switch",
+                "nome": "Login do Codex por assinatura",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.p-4:has(> div > label[for='modulo-login-codex'])"
+              },
+              "rotulo": "Login do Codex por assinatura",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Login do Codex por assinatura",
+                "exato": true
+              },
+              "rotulo": "Ligue aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "switch",
+            "nome": "Login do Codex por assinatura",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "A empresa conecta a conta da assinatura",
+          "rota": "/app/ai/credentials",
+          "texto": "Com o recurso ligado, a tela Credenciais ganha no topo o cartão \"Conectar a assinatura do ChatGPT\". Abra o \"Link de acesso\" e entre com a conta que tem a assinatura. No fim, o navegador para num endereço que começa em http://127.0.0.1:1455/auth/callback (o localhost:1455 deste computador) e a página pode não abrir: é esperado. Copie esse endereço inteiro da barra do navegador, cole em \"Endereço em que o navegador parou\" e clique em \"Conectar\".",
+          "dica": "O link vale 10 minutos e uma vez só: se a tela disser que o endereço não veio do link aberto aqui, abra o link de novo e cole o endereço novo. A conta conectada fica guardada com cifra e o token é renovado antes de vencer.",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Link de acesso"
+              },
+              "rotulo": "Abra e entre com a conta",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "Endereço em que o navegador parou"
+              },
+              "rotulo": "Cole o endereço do navegador",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Conectar",
+                "exato": true
+              },
+              "rotulo": "Conectar a conta",
+              "tipo": "seta"
+            }
+          ]
         }
       ]
     }

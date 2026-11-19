@@ -13,7 +13,28 @@ export type SendOutcome =
       crmMessageId: string | null;
     }
   | { kind: "blocked"; idempotencyKey: string };
-export type Intent = { tenantId: string; leadId: string | null; jobId: string; seq: number; body: string };
+/**
+ * A intenção de uma MENSAGEM FÍSICA no ledger.
+ *
+ * `seq` é o contador do TURNO (quem manda no `channel.send` é quem sabe o
+ * número), e `(jobId, seq)` é a identidade exactly-once da linha.
+ *
+ * `envioSeq` (migration 9407) é a FRONTEIRA do envio: o `seq` da primeira
+ * bolha do `send_message` a que esta linha pertence. O `seq` sozinho não separa
+ * dois envios do mesmo job — ele cresce entre eles —, e o reprocesso da saída
+ * configurável precisa das bolhas DESTE envio, não do turno (#4370, medido pelo
+ * mantenedor nos cenários B e C). Opcional de propósito: quem envia UMA
+ * mensagem por job (follow-up) não tem o que separar, e gravar NULL cai na
+ * régua anterior, que ali é idêntica.
+ */
+export type Intent = {
+  tenantId: string;
+  leadId: string | null;
+  jobId: string;
+  seq: number;
+  envioSeq?: number;
+  body: string;
+};
 export type Row = {
   id: string;
   status: SendLedgerStatus;
@@ -160,8 +181,12 @@ export function pgSendLedger(db: Queryable): LedgerStore {
   return {
     async create(i, hash) {
       const { rows } = await db.query<{ id: string }>(
-        "insert into send_ledger (organization_id, contact_id, job_id, seq, body_hash) values ($1, $2, $3, $4, $5) returning id",
-        [i.tenantId, i.leadId, i.jobId, i.seq, hash],
+        // `envio_seq` na ESCRITA (#4370, migration 9407): a fronteira do envio
+        // tem de estar na linha antes do envio sair. Gravá-la depois deixaria o
+        // envio interrompido por crash — justamente o que o reprocesso atende —
+        // sem a marca, e o reprocesso voltaria a ler o turno inteiro.
+        "insert into send_ledger (organization_id, contact_id, job_id, seq, envio_seq, body_hash) values ($1, $2, $3, $4, $5, $6) returning id",
+        [i.tenantId, i.leadId, i.jobId, i.seq, i.envioSeq ?? null, hash],
       );
       if (!rows[0]) throw new Error("send_ledger_insert_missing");
       return rows[0].id;
@@ -224,6 +249,8 @@ export function supabaseSendLedger(db: SupabaseClient): LedgerStore {
           contact_id: i.leadId,
           job_id: i.jobId,
           seq: i.seq,
+          // Fronteira do envio na ESCRITA — o porquê está em `pgSendLedger.create`.
+          envio_seq: i.envioSeq ?? null,
           body_hash: hash,
         })
         .select("id")

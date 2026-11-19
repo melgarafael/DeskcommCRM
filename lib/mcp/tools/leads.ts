@@ -451,12 +451,20 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
     // wrapper (`lib/ai/runtime/tools.ts`) já completou ANTES do escopo de funil;
     // aqui vale para quem chega por outra porta (MCP externo, rota). Sem nada
     // disso, a ausência é recusada com a mensagem de ensino.
+    //
+    // #4763, item 2: com funil à mão e sem referência, a guarda também consulta
+    // o destino das receitas ativas — o funil que é destino de item, num turno
+    // de conversa, recusa a criação sem a referência. `ctx.contatoDoTurno` é o
+    // contexto de confiança do turno (nunca vem dos argumentos da tool), e a
+    // ausência dele mantém rota e integração exatamente como estavam.
     const destinoArgs: Record<string, unknown> = {
       pipeline_id: input.pipeline_id,
       stage_id: input.stage_id,
       referencia_externa: input.referencia_externa,
     };
-    const completo = await completarDestinoDoNegocio(ctx.supabase, ctx.organizationId, destinoArgs);
+    const completo = await completarDestinoDoNegocio(ctx.supabase, ctx.organizationId, destinoArgs, {
+      turnoComContato: !!ctx.contatoDoTurno,
+    });
     if (!completo.ok) return completo.resposta;
     const pipelineId = destinoArgs.pipeline_id as string;
     const stageId = destinoArgs.stage_id as string;
@@ -587,7 +595,40 @@ const updateInputShape = {
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
-  tags: z.array(z.string()).optional(),
+  /**
+   * AS ETIQUETAS DO NEGÓCIO (#4666) — e a descrição de `tags` diz a verdade.
+   *
+   * `tags` SUBSTITUI a lista inteira, e é o contrato antigo: renomear ou
+   * reinterpretar o campo quebraria quem já o manda. O que faltava era
+   * `tags_adicionar`/`tags_remover` — o que o agente quase sempre quer — e a
+   * frase que avisa que a lista é substituída, porque sem ela o modelo apagava
+   * etiqueta acreditando acrescentar.
+   *
+   * A normalização NÃO mora no shape: `z.toJSONSchema` recusa `transform`
+   * ("Transforms cannot be represented in JSON Schema", medido no zod 4.6), e o
+   * shape bruto é justamente o que vira o esquema que o modelo lê. Ela mora em
+   * `updateLeadSchema` (`lib/schemas/leads.ts`), que é o schema que este handler
+   * parseia com `updateLeadSchema.parse(rest)` — a mesma régua para o MCP e para
+   * o PATCH REST, sem uma segunda regra.
+   */
+  tags: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Substitui a lista INTEIRA de etiquetas do negócio: o que não vier aqui é APAGADO. " +
+        "Para acrescentar use tags_adicionar; para tirar só algumas, tags_remover.",
+    ),
+  tags_adicionar: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Etiquetas a ACRESCENTAR à lista atual (união): as que já estão ficam. É o que usar " +
+        'para "marcar o negócio com X".',
+    ),
+  tags_remover: z
+    .array(z.string())
+    .optional()
+    .describe("Etiquetas a REMOVER da lista atual (diferença): as demais ficam."),
   /**
    * Os campos que o DONO declarou em `pipeline.settings.fields`.
    *
@@ -608,7 +649,8 @@ const updateInputShape = {
 export const crmUpdateLead: McpToolDefinition<typeof updateInputShape> = {
   name: "crm_update_lead",
   description:
-    "Atualiza campos editáveis de um lead. Stage transitions são via crm_move_lead_stage; status é gerenciado por triggers.",
+    "Atualiza campos editáveis de um lead. Stage transitions são via crm_move_lead_stage; status é gerenciado por triggers. " +
+    "`tags` SUBSTITUI a lista inteira de etiquetas; para acrescentar use `tags_adicionar`.",
   inputSchema: updateInputShape,
   category: "write",
   requiresRole: "agent",

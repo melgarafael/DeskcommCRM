@@ -5531,6 +5531,8 @@ export type Database = {
           datafy_waba_id: string | null;
           display_name: string | null;
           engine: string;
+          entry_pipeline_id: string | null;
+          entry_stage_id: string | null;
           id: string;
           is_warmup_complete: boolean | null;
           last_health_check_at: string | null;
@@ -5574,6 +5576,8 @@ export type Database = {
           datafy_waba_id?: string | null;
           display_name?: string | null;
           engine?: string;
+          entry_pipeline_id?: string | null;
+          entry_stage_id?: string | null;
           id?: string;
           is_warmup_complete?: never;
           last_health_check_at?: string | null;
@@ -5616,6 +5620,8 @@ export type Database = {
           datafy_waba_id?: string | null;
           display_name?: string | null;
           engine?: string;
+          entry_pipeline_id?: string | null;
+          entry_stage_id?: string | null;
           id?: string;
           is_warmup_complete?: never;
           last_health_check_at?: string | null;
@@ -13683,6 +13689,45 @@ export type Database = {
         };
         Relationships: [];
       };
+      relatorios_operacao_diarios: {
+        Row: {
+          conteudo: Json;
+          dia: string;
+          fuso: string;
+          gerado_em: string;
+          gerado_por: string;
+          id: string;
+          organization_id: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          conteudo: Json;
+          dia: string;
+          fuso: string;
+          gerado_em?: string;
+          gerado_por: string;
+          id?: string;
+          organization_id: string;
+        };
+        Update: {
+          conteudo?: Json;
+          dia?: string;
+          fuso?: string;
+          gerado_em?: string;
+          gerado_por?: string;
+          id?: string;
+          organization_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "relatorios_operacao_diarios_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       send_ledger: {
         Row: {
           body_hash: string;
@@ -16512,6 +16557,17 @@ export type Database = {
       fn_conversa_que_continua: {
         Args: { p_conversation_id: string; p_organization_id: string; p_user_id: string };
         Returns: string;
+      };
+      fn_operacao_conversas_com_entrada: {
+        Args: { p_fim: string; p_inicio: string; p_limite?: number; p_org: string };
+        Returns: {
+          channel: string;
+          conversation_id: string;
+          entradas: number;
+          nova: boolean;
+          primeira_entrada: string;
+          ultima_entrada: string;
+        }[];
       };
       fn_org_operante: { Args: { p_org: string }; Returns: boolean };
       fn_org_parada_descarta_fila: { Args: { p_org: string }; Returns: undefined };

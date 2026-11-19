@@ -11,7 +11,6 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { useLeadTimeline } from "@/hooks/leads/useLeadTimeline";
 import { useContatosRelacionados } from "@/hooks/leads/useContatosRelacionados";
 import type { Lead } from "@/lib/types/leads";
-import type { Stage } from "@/lib/kanban/types";
 import { ArrowLeft, ArrowsOutSimple } from "@/lib/ui/icons";
 import { ContatoDoNegocio } from "./ContatoDoNegocio";
 import { NiveisDaOrigem } from "@/components/contacts/NiveisDaOrigem";
@@ -27,6 +26,8 @@ import { PropostasDoNegocio } from "./PropostasDoNegocio";
 import { TarefasDoNegocio } from "./TarefasDoNegocio";
 import { OwnerBadge } from "./OwnerBadge";
 import { EtapaNoDossie } from "./EtapaNoDossie";
+import { BarraDeEtapas } from "./BarraDeEtapas";
+import { diasNaEtapa, type EtapaDaBarra } from "@/lib/kanban/barra-de-etapas";
 import { SecaoDoDossie, useSecoesRecolhidas } from "./SecaoDoDossie";
 import { resolveLeadOwner } from "@/lib/kanban/owner";
 import type { AtalhoDoCard } from "@/lib/leads/atalhos-do-card";
@@ -79,10 +80,12 @@ interface Props {
   ownerNames?: Map<string, string | null>;
   /**
    * As etapas do funil e quem move. Presentes (o quadro passa), o cabeçalho
-   * troca o nome da etapa por um seletor — ver `EtapaNoDossie`. Ausentes (o
-   * calendário, por enquanto), fica o texto de antes.
+   * troca o nome da etapa por um seletor — ver `EtapaNoDossie` — e ganha a
+   * barra de etapas no topo (`BarraDeEtapas`), que lê `is_won`/`is_lost` para
+   * deixar os desfechos de fora. Ausentes (o calendário, por enquanto), fica o
+   * texto de antes, sem barra.
    */
-  etapas?: Pick<Stage, "id" | "name">[];
+  etapas?: EtapaDaBarra[];
   onMudarEtapa?: (stageId: string) => void;
   /**
    * OS ATALHOS DO CARD (#3487): o que está em `crm_pipelines.settings.atalhos`,
@@ -261,6 +264,18 @@ export function LeadDossier({
   const cabecalhoVivo = (
     /* ① cabeçalho vivo */
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border pb-3 text-xs">
+      {/* A barra de etapas: o caminho do negócio no funil, no topo do
+          cabeçalho e em largura inteira. O clique usa o MESMO fio do seletor
+          abaixo (`onMudarEtapa`), e a mesma régua de permissão. */}
+      {etapas && (
+        <BarraDeEtapas
+          etapaAtual={lead.stage_id}
+          etapas={etapas}
+          podeMover={podeMoverCard}
+          onMudar={onMudarEtapa}
+          dias={diasNaEtapa(lead)}
+        />
+      )}
       <span className="font-medium text-text tabular-nums">
         {formatValor(lead.value_cents, lead.currency)}
       </span>
