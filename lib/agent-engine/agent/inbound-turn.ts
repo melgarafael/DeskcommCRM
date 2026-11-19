@@ -322,7 +322,9 @@ import { CORRECAO_DO_TURNO_MUDO, PASSOS_DA_CORRECAO, turnoMudoPedeCorrecao } fro
 import {
   CODIGO_DO_TETO_DE_RESPOSTAS,
   avisarEquipeDoTetoDeRespostas,
-  knobsDoTetoDeRespostas,
+  lerTetoDoAntiBan,
+  resolverTetoDeRespostasDaOrganizacao,
+  silenciarConversaPeloTeto,
 } from './teto-de-respostas';
 import {
   desfechoSemCandidato,
@@ -5332,6 +5334,19 @@ async function executarTurnoDoAgente(
           // janela (`resposta*`) e é o que arma o teto de respostas por conversa:
           // follow-up é retomada e não entra nessa conta.
           const eResposta = eTurnoDeResposta(liveJob());
+          // #4590 — os números do teto valem por ORGANIZAÇÃO desde esta fatia:
+          // `settings.anti_ban.teto_de_respostas` manda; o env da instalação é o
+          // padrão de quem nunca configurou. Uma leitura por chave primária, só no
+          // caminho de resposta em produção (`preview` não arma e não paga a
+          // consulta). `null` = não é turno de resposta: nada a resolver.
+          const tetoDoTurno =
+            eResposta && !preview
+              ? await resolverTetoDeRespostasDaOrganizacao(pool, {
+                  organizationId: tenantId,
+                  base: deps.knobs.tetoDeRespostas,
+                  log: runLog,
+                })
+              : null;
           // Args reusados EXATAMENTE (mesmo objeto) no re-run do fail-safe abaixo — só
           // hasOpenCase/openedCaseThisTurn mudam depois do auto-abre-caso.
           const beforeSendArgs = {
@@ -5353,11 +5368,12 @@ async function executarTurnoDoAgente(
             // Prévia não arma (o Testar não entrega nada ao cliente; um teto ali
             // esconderia justamente a resposta que o dono está testando) e follow-up
             // também não — ali não houve mensagem recebida agora.
-            ...(eResposta && !preview
+            ...(tetoDoTurno !== null
               ? {
                   tetoDeRespostas: {
                     conversationId: input.conversationId,
-                    ...knobsDoTetoDeRespostas(deps.knobs.tetoDeRespostas),
+                    porConversa: tetoDoTurno.porConversa,
+                    janelaMinutos: tetoDoTurno.janelaMinutos,
                   },
                 }
               : {}),
@@ -5729,14 +5745,29 @@ async function executarTurnoDoAgente(
               pacingCapVeto = { code: chain.code, nextAllowedAt: chain.nextAllowedAt };
             }
             // #4590 — o teto calou a conversa: a equipe é avisada na Central, um
-            // aviso aberto por conversa (dedupe no repositório). Nunca lança.
+            // aviso aberto por conversa (dedupe no repositório), e a conversa é
+            // PAUSADA pelo caminho do atendente (`bot_silenced_until`, horizonte
+            // limitado e reversível). Os números são os da ORGANIZAÇÃO que armou o
+            // gate — não o env da instalação, que pode ser outro. Nunca lança.
             if (chain.code === CODIGO_DO_TETO_DE_RESPOSTAS && !preview) {
+              const tetoQueVale =
+                tetoDoTurno ??
+                lerTetoDoAntiBan(null, deps.knobs.tetoDeRespostas);
               await avisarEquipeDoTetoDeRespostas(pool, {
                 organizationId: tenantId,
                 conversationId: input.conversationId,
-                ...knobsDoTetoDeRespostas(deps.knobs.tetoDeRespostas),
+                porConversa: tetoQueVale.porConversa,
+                janelaMinutos: tetoQueVale.janelaMinutos,
                 log: runLog,
               });
+              if (tetoQueVale.silenciarMinutos > 0) {
+                await silenciarConversaPeloTeto(pool, {
+                  organizationId: tenantId,
+                  conversationId: input.conversationId,
+                  minutos: tetoQueVale.silenciarMinutos,
+                  log: runLog,
+                });
+              }
             }
             if (VETOS_IRREVOGAVEIS.has(chain.code)) vetoIrrevogavel = true;
             // Erro de ENSINO pt-br (mesmo shape de get_lead_context/breaker): o
