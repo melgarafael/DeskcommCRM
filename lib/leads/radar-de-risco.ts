@@ -1,6 +1,6 @@
 import { protecaoAgendaSupabase, type ProtecaoAgenda } from "@/lib/agenda/protecao-followup";
 import { buscaEmLotes } from "@/lib/supabase/em-lotes";
-import { STATUS_VIVOS } from "@/lib/followup/inscricao-viva";
+import { STATUS_QUE_MORREM } from "@/lib/followup/saida-da-etapa";
 import type { Role } from "@/lib/auth/types";
 /**
  * O RADAR DE RISCO, montado — a lista de demandas abertas que esfriaram.
@@ -259,7 +259,10 @@ export async function carregaRadarDeRisco(
           .from("followup_enrollments")
           .select("contact_id, next_eval_at")
           .eq("organization_id", organizationId)
-          .in("status", [...STATUS_VIVOS])
+          // Os status com um toque POR VIR (o `dormente` é a cadência de retorno,
+          // "volte a falar daqui a 28 dias"). STATUS_VIVOS é o predicado do índice
+          // anti-spam e deixa o `dormente` de fora: é outra pergunta.
+          .in("status", [...STATUS_QUE_MORREM])
           .gt("next_eval_at", nowIso)
           .in("contact_id", lote),
       ),

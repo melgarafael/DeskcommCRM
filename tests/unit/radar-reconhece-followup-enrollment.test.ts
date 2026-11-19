@@ -188,4 +188,49 @@ describe("o radar de risco reconhece follow-up de followup_enrollments", () => {
     expect(radar.counts.em_voo).toBe(0);
     expect(radar.counts.em_risco).toBe(1);
   });
+
+  it("cadência dormente com retorno marcado ('volte daqui a 28 dias') também entra em 'em_voo'", async () => {
+    const db = bancoFalso({
+      crm_pipelines: [{ id: "funil-ativo", organization_id: ORG, is_archived: false }],
+      crm_leads: [
+        {
+          id: "lead-1",
+          organization_id: ORG,
+          status: "open",
+          title: "Corretor X",
+          pipeline_id: "funil-ativo",
+          contact_id: "ct-1",
+          owner_user_id: null,
+          owner_kind: null,
+          owner_agent_id: null,
+          stage_id: null,
+          last_activity_at: HA_36H,
+          created_at: HA_36H,
+        },
+      ],
+      contacts: [{ id: "ct-1", organization_id: ORG, name: "Corretor X", display_name: null }],
+      cron_jobs: [],
+      followup_enrollments: [
+        {
+          id: "enr-1",
+          organization_id: ORG,
+          contact_id: "ct-1",
+          status: "dormente",
+          next_eval_at: NO_FUTURO_1H,
+        },
+      ],
+      conversations: [],
+      demandas: [],
+    });
+
+    const radar = await carregaRadarDeRisco(db, { organizationId: ORG, now: AGORA });
+
+    expect(radar.items).toHaveLength(1);
+    expect(radar.items[0]!.id).toBe("lead-1");
+    expect(radar.items[0]!.risk).toBe("em_voo");
+    expect(radar.items[0]!.in_flight).toBe(true);
+    expect(radar.items[0]!.next_followup_at).toBe(NO_FUTURO_1H);
+    expect(radar.counts.em_voo).toBe(1);
+    expect(radar.counts.em_risco).toBe(0);
+  });
 });
