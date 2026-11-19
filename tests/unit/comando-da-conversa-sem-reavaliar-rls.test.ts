@@ -10,7 +10,7 @@
  *     `/rpc` — e sob `definer`, uma linha fabricada de `conversations` leria
  *     `force_human`/`is_blocked` de outro tenant);
  *  3. o apêndice no `baseline.sql`, antes da varredura anon (a definição do meio
- *     do arquivo ainda nasce namedada + invoker, como a 0203 a escreveu — sem o
+ *     do arquivo ainda nasce invoker e com o corpo da 0203 — sem o
  *     apêndice, todo `update.sh` DESFAZ a correção);
  *  4. `ct.organization_id = $1.organization_id` nas duas subconsultas (a policy de
  *     UPDATE de `conversations` não confere `contact_id` e a FK não passa pela
@@ -96,8 +96,12 @@ describe("a 0404 — comando_da_conversa sem reavaliar a RLS (issue #1571)", () 
 
   it("no baseline, o apêndice vem DEPOIS da definição da 0203 e é ele que aplica a virada", () => {
     const baseline = ler(path.join(RAIZ, "supabase", "baseline.sql"));
+    // Âncora no RÓTULO do bloco da 0203, e não na assinatura: desde o incidente
+    // da 1.118 → 1.119 o bloco recria a função SEM nome (ver
+    // baseline-parametro-nao-muda-de-nome.test.ts), mas continua invoker e com o
+    // corpo antigo — é ele que o apêndice da 0404 tem de vir depois para corrigir.
     const idxDef0203 = baseline.indexOf(
-      "create or replace function public.comando_da_conversa(c public.conversations)",
+      "-- ---- o banco passa a saber quem manda na conversa (migration 0203) ----",
     );
     // ⚠️ Âncora no COMENTÁRIO da 0404, e não no último `drop` do arquivo: a
     // partir da 0645 existe OUTRO drop de `comando_da_conversa` (o que move a

@@ -309,6 +309,60 @@ caso_1998=$(docker exec "$CONTAINER" psql -U postgres -d postgres -tAc "
   exit 1
 }
 
+# ── O BANCO QUE PAROU NA 1.119 (`cannot change name of input parameter "c"`) ──
+#
+# Relatado na comunidade: a atualização 1.118 → 1.119 parou com esse erro nas
+# linhas 70547 e 71097, e o banco ficou com `comando_da_conversa(c conversations)`:
+# o corpo antigo, invoker, com o parâmetro CHAMADO `c`. O bloco da 0203 dava esse
+# nome a cada reaplicação, e só os três `drop` do meio do arquivo o tiravam;
+# quando nenhum tinha efeito, os `create or replace` sem nome do fim quebravam.
+# Medido num pg17: com um objeto dependendo da função, ou com duas aplicações
+# do baseline ao mesmo tempo, que dão o par exato de erros do relato.
+#
+# Duas provas, as duas com Postgres de verdade:
+#  1. O banco PRESO se cura ao atualizar com ON_ERROR_STOP=1. Planta-se o estado
+#     de quem parou e o UPDATE abaixo tem de terminar com a função sem nome e
+#     SECURITY DEFINER.
+#  2. NENHUM `create function` do arquivo dá nome ao parâmetro durante o UPDATE.
+#     Um event trigger anota os nomes a cada criação. Só esta prova fica
+#     vermelha no baseline da v1.119.0, porque lá a prova 1 passa por sorte:
+#     sozinho, os `drop` funcionam. A corrida que deixa o `c` vivo depende de
+#     tempo e não cabe num gate.
+echo "==> PLANTANDO o banco que parou na atualização 1.118 → 1.119 (parâmetro \"c\")"
+psql_stop <<'SQL' >/dev/null
+create or replace function public.comando_da_conversa(c public.conversations)
+returns text language sql stable set search_path = public
+as $plantado$ select 'automatico'::text $plantado$;
+
+create schema if not exists vigia_do_parametro;
+create table vigia_do_parametro.criacoes (
+  ordem serial primary key,
+  nomes text not null
+);
+create or replace function vigia_do_parametro.anotar() returns event_trigger
+language plpgsql as $vigia$
+begin
+  insert into vigia_do_parametro.criacoes (nomes)
+  select coalesce(p.proargnames::text, '')
+    from pg_event_trigger_ddl_commands() c
+    join pg_proc p on p.oid = c.objid
+   where c.classid = 'pg_proc'::regclass
+     and p.oid = to_regprocedure('public.comando_da_conversa(public.conversations)');
+end
+$vigia$;
+create event trigger vigia_do_parametro_c on ddl_command_end
+  when tag in ('CREATE FUNCTION') execute function vigia_do_parametro.anotar();
+SQL
+nomes_plantados=$(docker exec "$CONTAINER" psql -U postgres -d postgres -tAc "
+  select coalesce(proargnames::text, '') from pg_proc
+   where oid = to_regprocedure('public.comando_da_conversa(public.conversations)');")
+[ "$nomes_plantados" = "{c}" ] || {
+  echo "FATAL: o estado do incidente não foi plantado (proargnames = '$nomes_plantados', esperado {c})." >&2
+  echo "       Sem ele, a cura do parâmetro \"c\" passa verde sem ter sido exercitada." >&2
+  exit 1
+}
+echo "    ✓ comando_da_conversa com o parâmetro \"c\", como ficou o banco de quem parou"
+
 echo "==> UPDATE: re-aplicando baseline.sql SOBRE OS DADOS, com ON_ERROR_STOP=1"
 # O OID é lido ANTES da passada que o aceite da issue #1086 mede: este banco já
 # está no estado final (o install acabou de rodar), então a view não pode ser
@@ -321,6 +375,35 @@ oid_antes=$(oid_da_view)
 }
 psql_stop < "$BASELINE" >/dev/null
 echo "    ✓ update ok — nenhuma constraint quebrou sobre dado existente"
+docker exec "$CONTAINER" psql -U postgres -d postgres -q -v ON_ERROR_STOP=1 \
+  -c "drop event trigger vigia_do_parametro_c;" >/dev/null
+comando_depois=$(docker exec "$CONTAINER" psql -U postgres -d postgres -tA -F'|' -c "
+  select coalesce(proargnames::text, '<sem nome>'), prosecdef,
+         (select count(*) from vigia_do_parametro.criacoes),
+         (select count(*) from vigia_do_parametro.criacoes where nomes <> '')
+    from pg_proc
+   where oid = to_regprocedure('public.comando_da_conversa(public.conversations)');")
+docker exec "$CONTAINER" psql -U postgres -d postgres -q -v ON_ERROR_STOP=1 \
+  -c "set client_min_messages = warning; drop schema vigia_do_parametro cascade;" >/dev/null
+IFS='|' read -r cmd_nomes cmd_definer cmd_criacoes cmd_nomeadas <<<"$comando_depois"
+[ "$cmd_nomes" = "<sem nome>" ] && [ "$cmd_definer" = "t" ] || {
+  echo "FATAL: depois do UPDATE, comando_da_conversa ficou com nomes=$cmd_nomes e definer=$cmd_definer." >&2
+  echo "       O esperado é <sem nome> e t: o banco que parou na 1.119 não se curou." >&2
+  exit 1
+}
+[ "${cmd_criacoes:-0}" -ge 1 ] || {
+  echo "FATAL: o vigia não anotou nenhuma criação de comando_da_conversa durante o UPDATE." >&2
+  echo "       Sem anotação, a prova de que o arquivo não dá nome ao parâmetro mede o vazio." >&2
+  exit 1
+}
+[ "$cmd_nomeadas" = "0" ] || {
+  echo "FATAL: $cmd_nomeadas de $cmd_criacoes criações de comando_da_conversa no UPDATE deram NOME ao parâmetro." >&2
+  echo "       É o defeito do incidente 1.118 → 1.119: se o \`drop\` seguinte não tiver efeito, o" >&2
+  echo "       \`create or replace\` sem nome do fim para a atualização com" >&2
+  echo "       'cannot change name of input parameter'. Tire o nome dessa definição." >&2
+  exit 1
+}
+echo "    ✓ parâmetro \"c\": o banco preso se curou, e nenhuma das $cmd_criacoes criações no UPDATE deu nome ao parâmetro"
 preco_1998=$(docker exec "$CONTAINER" psql -U postgres -d postgres -tAc "
   select count(*) || '/' || coalesce(min(prompt_cents_per_million_tokens)::int::text, '-')
     from public.ai_pricing where model = 'openai/gpt-4o-mini' and superseded_at is null;")
