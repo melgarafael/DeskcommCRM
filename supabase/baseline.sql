@@ -87731,6 +87731,20 @@ create index if not exists idx_conversations_fila_espera
 comment on index public.idx_conversations_fila_espera is
   'Fila de espera do Inbox (#4325): casa o pré-filtro do comando (sem dono, fora do histórico encerrado) e a ordem ORDEM_DA_ESPERA (awaiting_since asc, id asc). Medido: lista da Fila 4.343 -> 685 buffers com 120 mil conversas.';
 
+-- ---- 9411 — a campanha de prospecção ganha janela própria e pausa/retoma sozinha (issue #4830, saída 1) ----
+-- Espelho de supabase/migrations/20261117120000_9411_janela_da_campanha_de_prospeccao.sql.
+-- A janela mora em `config.janela` (jsonb, validada pelo schema estrito); a
+-- coluna abaixo é só o "quem pausou", que é estado do motor e não configuração.
+alter table public.prospecting_campaigns
+  add column if not exists pausada_pela_janela boolean not null default false;
+
+comment on column public.prospecting_campaigns.pausada_pela_janela is
+  'A campanha foi pausada pela JANELA dela (#4830)? true = o tick a retoma sozinho na próxima abertura; false = pausa de quem opera (ou início/retomada/arquivamento) e ninguém a retoma sem clique.';
+
+create index if not exists prospecting_janela_pausada
+  on public.prospecting_campaigns(organization_id)
+  where status = 'paused' and pausada_pela_janela;
+
 notify pgrst, 'reload schema';
 
 -- ---- funil de entrada por número (migration 9430) ----

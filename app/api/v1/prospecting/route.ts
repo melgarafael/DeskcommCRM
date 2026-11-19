@@ -227,8 +227,10 @@ export async function POST(req: NextRequest) {
       result = await activateCampaign(pool, admin, org, body.id, body.config);
     else if (body.action === "pause") {
       // Pause does not wait for the worker lock; the delivery guard sees it before sending.
+      // #4830: pausa MANUAL limpa a marca da pausa automática — uma campanha que
+      // a pessoa pausou não pode voltar sozinha quando a janela dela abrir.
       const changed = await pool.query(
-        "update prospecting_campaigns set status='paused',updated_at=now() where organization_id=$1 and id=$2 and status='running' returning id",
+        "update prospecting_campaigns set status='paused',pausada_pela_janela=false,updated_at=now() where organization_id=$1 and id=$2 and status='running' returning id",
         [org, body.id],
       );
       if (!changed.rows.length)
@@ -505,7 +507,7 @@ export async function POST(req: NextRequest) {
         await assertCanalLivre(db, org, body.id, config.channel_session_id);
         try {
           await db.query(
-            "update prospecting_campaigns set status='running',channel_session_id=$3,error=null,channel_down_since=null,next_send_at=greatest(next_send_at,now()+interval '1 minute'),updated_at=now() where organization_id=$1 and id=$2",
+            "update prospecting_campaigns set status='running',pausada_pela_janela=false,channel_session_id=$3,error=null,channel_down_since=null,next_send_at=greatest(next_send_at,now()+interval '1 minute'),updated_at=now() where organization_id=$1 and id=$2",
             [org, body.id, config.channel_session_id],
           );
         } catch (error) {
