@@ -21,8 +21,8 @@
  *   compartilhada, e juntaria pessoas diferentes. Nesses casos vale só o celular.
  * - **Empresa:** o mesmo CNPJ. A empresa existente É reaproveitada: a linha entra
  *   como `anexada` (a pessoa e o contato nascem ligados a ela, sem empresa
- *   duplicada). Só vale para linha COM telefone, porque a regra do telefone vem
- *   antes da do CNPJ. Empresa sem CNPJ nunca é conferida por nome (erro de
+ *   duplicada). Só vale para linha COM telefone; a linha só de empresa tem a
+ *   regra própria descrita abaixo. Empresa sem CNPJ nunca é conferida por nome (erro de
  *   digitação juntaria empresas diferentes).
  *
  * ## Dentro da planilha
@@ -30,8 +30,10 @@
  * - Linha IDÊNTICA a uma anterior: `repetida`, descartada com aviso.
  * - Mesmo celular ou e-mail com dados DIFERENTES, ou o celular de uma linha e o
  *   e-mail de OUTRA: `conflito`. A primeira linha do arquivo fica com a chave.
- * - Linha sem telefone não entra (`sem_telefone`): o contato é o que o produto
- *   atende, e uma pessoa sem número seria cadastro órfão.
+ * - Linha de pessoa/contato sem telefone não entra (`sem_telefone`): o contato é o que
+ *   o produto atende, e uma pessoa sem número seria cadastro órfão.
+ * - Linha SÓ de empresa (sem pessoa e sem telefone) entra sem telefone, como sempre
+ *   entrou: `nova` (ou `ja_existe` se o CNPJ já está na base; `repetida` se idêntica).
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -130,6 +132,7 @@ export function classificarLinhas(
   const donaDoCelular = new Map<string, number>(); // chave → índice da 1ª linha
   const donaDoEmail = new Map<string, number>();
   const assinaturas: string[] = [];
+  const assinaturasDeEmpresa = new Map<string, number>(); // linha só de empresa → nº da 1ª linha
   const saida: LinhaClassificada[] = [];
 
   linhas.forEach((linha, idx) => {
@@ -146,7 +149,33 @@ export function classificarLinhas(
     if (mapped.phone.trim() && !celular) return descartar("invalida", "Telefone inválido.");
     const algumaCoisa = Object.values(mapped).some((v) => v.trim() !== "");
     if (!algumaCoisa) return descartar("invalida", "Linha vazia — sem empresa, pessoa ou telefone.");
-    if (!celular) return descartar("sem_telefone", "Linha sem telefone: não entra na importação.");
+    if (!celular) {
+      // Só a linha de CONTATO/PESSOA exige telefone (decisão do mantenedor, doc 380, opção B).
+      // A linha só de EMPRESA (sem pessoa e sem telefone) entra como sempre entrou: listas B2B de
+      // empresas costumam chegar sem número.
+      const soEmpresa =
+        !mapped.person_name.trim() &&
+        (cnpj || mapped.company_name.trim() || mapped.legal_name.trim() || mapped.trade_name.trim());
+      if (!soEmpresa) return descartar("sem_telefone", "Linha sem telefone: não entra na importação.");
+
+      const assinaturaDaEmpresa = assinaturaDaLinha(mapped, null, cnpj);
+      const anterior = assinaturasDeEmpresa.get(assinaturaDaEmpresa);
+      if (anterior !== undefined) {
+        return descartar("repetida", `Repetida: idêntica à linha ${anterior}.`);
+      }
+      assinaturasDeEmpresa.set(assinaturaDaEmpresa, rowNumber);
+      const empresaDaBase = cnpj ? existentes.empresasPorCnpj.get(cnpj) : undefined;
+      if (empresaDaBase) {
+        return descartar(
+          "ja_existe",
+          `Empresa já cadastrada com este CNPJ${empresaDaBase.nome ? ` (${empresaDaBase.nome})` : ""}: a linha não traz pessoa nem telefone, então não há nada a acrescentar.`,
+          empresaDaBase,
+        );
+      }
+      assinaturas[idx] = "";
+      saida.push({ rowNumber, status: "nova", motivo: null });
+      return;
+    }
 
     const chaveCelular = canonicalPhoneBR(celular);
     const chaveEmail = emailQueIdentifica(mapped.email);

@@ -117,7 +117,32 @@ describe("contra a base", () => {
     expect(r?.existente?.nome).toBe("Acme");
   });
 
-  it("a regra do telefone vale mais que a do CNPJ: sem telefone não entra, mesmo com a empresa na base", () => {
+  it("linha SÓ de empresa, sem telefone, entra (nova); repetida e CNPJ já na base são avisadas", () => {
+    const empresa = { tipo: "empresa" as const, id: "e1", nome: "Acme", donoId: null };
+    const r = classificarLinhas(
+      [
+        linha(2, { company_name: "Beta Ltda", cnpj: "45.723.174/0001-10" }),
+        linha(3, { company_name: "Beta Ltda", cnpj: "45.723.174/0001-10" }),
+        linha(4, { cnpj: "11.222.333/0001-81" }),
+        linha(5, { company_name: "Gama" }),
+      ],
+      base({ empresasPorCnpj: new Map([["11222333000181", empresa]]) }),
+    );
+    expect(r.map((x) => x.status)).toEqual(["nova", "repetida", "ja_existe", "nova"]);
+    expect(r[2]?.existente).toEqual(empresa);
+  });
+
+  it("linha com pessoa e sem telefone não entra, nem com empresa; e-mail ou cargo soltos também não", () => {
+    expect(
+      statusDe([
+        linha(2, { company_name: "Beta", person_name: "Ana" }),
+        linha(3, { email: "x@y.com" }),
+        linha(4, { job_title: "Diretor" }),
+      ]),
+    ).toEqual(["sem_telefone", "sem_telefone", "sem_telefone"]);
+  });
+
+  it("a regra do telefone vale mais que a do CNPJ para a PESSOA: sem telefone não entra, mesmo com a empresa na base", () => {
     const empresa = { tipo: "empresa" as const, id: "e1", nome: "Acme", donoId: "u-dono" };
     const [r] = classificarLinhas(
       [linha(2, { cnpj: "11.222.333/0001-81", person_name: "Ana" })],
