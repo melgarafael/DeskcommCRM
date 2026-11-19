@@ -65,9 +65,6 @@ import { LIMITE_MAXIMO_DA_LISTA, criarTarefaHandler, listarTarefasHandler } from
 
 export const dynamic = "force-dynamic";
 
-/** O recurso do audit e o balde do teto por token (Spec 33 — o mesmo nome da main). */
-const RECURSO = "crm_tasks";
-
 const criacaoSchema = z.object({
   title: z.string().trim().min(1).max(255),
   description: z.string().max(5000).nullable().optional(),
@@ -154,7 +151,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const authz = await resolveAuthDual(req, {
     requestId,
-    resource: RECURSO,
+    resource: "crm_tasks",
     role: "viewer",
     scope: ESCOPO_TAREFAS_LEITURA,
     scopeAlternativo: "mcp:read",
@@ -163,7 +160,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (!authz.ok) return authz.response;
   // Está em PUBLIC_PATHS: o Bearer chega aqui sem estrangulamento a montante, e
   // o teto por token e por organização é o único que conta as chamadas.
-  const tetoEstourado = await tetoDeEscritaDoToken(authz, RECURSO, requestId);
+  const tetoEstourado = await tetoDeEscritaDoToken(authz, "crm_tasks", requestId);
   if (tetoEstourado) return tetoEstourado;
   const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
@@ -233,7 +230,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   // `agent` e não `manager`: criar tarefa é o gesto de quem ATENDE, todo dia.
   const authz = await resolveAuthDual(req, {
     requestId,
-    resource: RECURSO,
+    resource: "crm_tasks",
     role: "agent",
     scope: ESCOPO_TAREFAS_ESCRITA,
     scopeAlternativo: "mcp:write",
@@ -253,7 +250,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     return fail("validation_failed", t("Idempotency-Key deve ser UUID"), 400, { requestId });
   }
 
-  const tetoEstourado = await tetoDeEscritaDoToken(authz, RECURSO, requestId);
+  const tetoEstourado = await tetoDeEscritaDoToken(authz, "crm_tasks", requestId);
   if (tetoEstourado) return tetoEstourado;
 
   const parsed = criacaoSchema.safeParse(await req.json().catch(() => null));

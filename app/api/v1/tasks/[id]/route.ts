@@ -35,9 +35,6 @@ import { editarTarefaHandler, excluirTarefaHandler } from "../_handler";
 
 export const dynamic = "force-dynamic";
 
-/** O recurso do audit e o balde do teto por token (Spec 33 — o mesmo nome da main). */
-const RECURSO = "crm_tasks";
-
 const edicaoSchema = z
   .object({
     title: z.string().trim().min(1).max(255).optional(),
@@ -85,7 +82,7 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
 
   const authz = await resolveAuthDual(req, {
     requestId,
-    resource: RECURSO,
+    resource: "crm_tasks",
     role: "agent",
     scope: ESCOPO_TAREFAS_ESCRITA,
     scopeAlternativo: "mcp:write",
@@ -102,7 +99,7 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
     });
   }
 
-  const tetoEstourado = await tetoDeEscritaDoToken(authz, RECURSO, requestId);
+  const tetoEstourado = await tetoDeEscritaDoToken(authz, "crm_tasks", requestId);
   if (tetoEstourado) return tetoEstourado;
 
   try {
@@ -135,7 +132,7 @@ export async function DELETE(req: NextRequest, ctx: Contexto): Promise<Response>
   // a integração de leitura/escrita de rotina levaria embora a tarefa de alguém.
   const authz = await resolveAuthDual(req, {
     requestId,
-    resource: RECURSO,
+    resource: "crm_tasks",
     role: "agent",
     scope: ESCOPO_TAREFAS_ESCRITA,
     scopeAlternativo: "mcp:write",
@@ -144,7 +141,7 @@ export async function DELETE(req: NextRequest, ctx: Contexto): Promise<Response>
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
-  const tetoEstourado = await tetoDeEscritaDoToken(authz, RECURSO, requestId);
+  const tetoEstourado = await tetoDeEscritaDoToken(authz, "crm_tasks", requestId);
   if (tetoEstourado) return tetoEstourado;
 
   try {
