@@ -845,6 +845,8 @@
   "Revisar provedores de IA": "Review AI providers",
   "Revisar modelos do canal": "Review channel templates",
   "Abrir uma conversa afetada": "Open an affected conversation",
+  "Este contato tem 1 negócio aberto no funil. Feche ou mova o negócio antes de excluir.": "This contact has 1 open deal in the pipeline. Close or move the deal before deleting.",
+  "Este contato tem {n} negócios abertos no funil. Feche ou mova os negócios antes de excluir.": "This contact has {n} open deals in the pipeline. Close or move the deals before deleting.",
   "Abrir Agenda": "Open Calendar",
   "Este contato tem 1 compromisso não cancelado na Agenda. Cancele o compromisso antes de excluir.": "This contact has 1 appointment in the Calendar that is not cancelled. Cancel the appointment before deleting the contact.",
   "Este contato tem {n} compromissos não cancelados na Agenda. Cancele os compromissos antes de excluir.": "This contact has {n} appointments in the Calendar that are not cancelled. Cancel the appointments before deleting the contact.",

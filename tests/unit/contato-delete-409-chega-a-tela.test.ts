@@ -13,7 +13,7 @@ import { NextRequest } from "next/server";
 import { ApiError } from "@/lib/api/types";
 import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
-import { mensagemDeBloqueioPorVinculo } from "@/hooks/contacts/useDeleteContact";
+import { mensagemDeBloqueioPorVinculo, destinoDoBloqueio } from "@/hooks/contacts/useDeleteContact";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn(async () => ({})) }));
@@ -85,6 +85,20 @@ describe("mensagemDeBloqueioPorVinculo", () => {
     expect(mensagemDeBloqueioPorVinculo({ por_tabela: { calendar_appointments: 3 } }, es)).toBe(
       "Este contacto tiene 3 citas no canceladas en la Agenda. Cancela las citas antes de eliminar el contacto.",
     );
+  });
+
+  it("negócio aberto no funil (A6): singular, plural, espanhol e os dois barramentos juntos", () => {
+    expect(mensagemDeBloqueioPorVinculo({ por_tabela: { crm_leads: 1 } }, pt)).toBe(
+      "Este contato tem 1 negócio aberto no funil. Feche ou mova o negócio antes de excluir.",
+    );
+    expect(mensagemDeBloqueioPorVinculo({ por_tabela: { crm_leads: 2 } }, es)).toBe(
+      "Este contacto tiene 2 negocios abiertos en el embudo. Cierra o mueve los negocios antes de eliminarlo.",
+    );
+    expect(
+      mensagemDeBloqueioPorVinculo({ por_tabela: { calendar_appointments: 1, crm_leads: 1 } }, pt),
+    ).toContain("Cancele o compromisso antes de excluir. Este contato tem 1 negócio aberto");
+    expect(destinoDoBloqueio({ por_tabela: { crm_leads: 1 } }).href).toBe("/app/crm");
+    expect(destinoDoBloqueio({ por_tabela: { calendar_appointments: 1, crm_leads: 1 } }).href).toBe("/app/agenda");
   });
 
   it("sem contagem da Agenda devolve null (a tela cai no texto genérico)", () => {
