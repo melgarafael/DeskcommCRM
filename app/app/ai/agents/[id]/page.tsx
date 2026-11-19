@@ -167,6 +167,22 @@ export default async function AgentEditorPage({ params }: { params: Promise<{ id
     const c = coberturaDoFunil(etapasPorFunil.get(f.id) ?? []);
     cobertura[f.id] = { traduzidos: c.traduzidos, total: c.total, mudo: c.mudo };
   }
+  // O funil de entrada de cada número (#4921), para o aviso de "as conversas
+  // novas caem num funil que ele não pode mexer" (#4940). Consulta à parte, e
+  // não em `listSelectableChannels`: se o banco ainda não tem a migration 9430,
+  // só este aviso volta à régua antiga — os seletores de número seguem de pé.
+  const { data: entradasRes, error: entradasErro } = await supabase
+    .from("channel_sessions")
+    .select("id, entry_pipeline_id")
+    .eq("organization_id", activeOrg.orgId);
+  const funilDeEntradaPorNumero = entradasErro
+    ? undefined
+    : Object.fromEntries(
+        ((entradasRes ?? []) as Array<{ id: string; entry_pipeline_id: string | null }>).map((c) => [
+          c.id,
+          c.entry_pipeline_id,
+        ]),
+      );
   const credentials = (credentialsRes.data ?? []) as CredentialRow[];
   const routerMemberRow = routerMemberRes.data as {
     router_id: string;
@@ -246,6 +262,7 @@ export default async function AgentEditorPage({ params }: { params: Promise<{ id
         channelSessions={channelSessions}
         funis={funis}
         cobertura={cobertura}
+        funilDeEntradaPorNumero={funilDeEntradaPorNumero}
         materiais={materiais}
         skills={await skillsDisponiveis(createAdminClient(), activeOrg.orgId)}
         routerMembership={routerMembership}
