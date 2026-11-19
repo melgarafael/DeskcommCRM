@@ -16405,6 +16405,8 @@ export const DICIONARIO: Traducoes = {
   "Confortável": { es: "Cómoda" },
   "Compacta": { es: "Compacta" },
   "Cards compactos": { es: "Tarjetas compactas" },
+  "Cor na coluna": { es: "Color en la columna" },
+  "Pintar a coluna com a cor da etapa": { es: "Pintar la columna con el color de la etapa" },
   "Mostrar descrição nos cards": { es: "Mostrar descripción en las tarjetas" },
   "Paleta da extensão": { es: "Paleta de la extensión" },
   "Nenhuma (padrão do produto)": { es: "Ninguna (predeterminado del producto)" },
