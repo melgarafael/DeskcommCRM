@@ -175,13 +175,13 @@ describe("catálogo de serviços — a tela", () => {
       idioma: "pt-BR",
       rotuloSinal: "Valor do sinal",
       salvar: "Salvar",
-      motivo: "O sinal fixo não pode passar do preço da variação mais barata.",
+      motivo: "O sinal fixo não pode passar do menor preço entre o serviço e suas variações.",
     },
     {
       idioma: "es",
       rotuloSinal: "Monto del anticipo",
       salvar: "Guardar",
-      motivo: "El anticipo fijo no puede superar el precio de la variante más barata.",
+      motivo: "El anticipo fijo no puede superar el menor precio entre el servicio y sus variantes.",
     },
   ])("mostra a recusa de sinal ao lado do campo em $idioma e permite corrigir", async ({
     idioma, rotuloSinal, salvar, motivo,

@@ -65,7 +65,7 @@ describe("/api/v1/servicos", () => {
       prazo_dias_uteis: 15, sinal: { tipo: "fixo", valor: 20_000 },
     });
     expect(r.status).toBe(422);
-    expect((await r.json()).error.details.sinal).toBeDefined();
+    expect((await r.json()).error.details.sinal).toEqual(["sinal_fixo_acima_do_preco"]);
     expect(vi.mocked(salvarServico).mock.calls[0]![3].detalhe).toMatchObject({
       tipo: "projeto", unidade: "valor_fechado", prazo_dias_uteis: 15, sinal_tipo: "fixo", sinal_cents: 20_000,
     });
