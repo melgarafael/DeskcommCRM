@@ -81,18 +81,20 @@ function entradas(lista: string): { nome: string; tipo: string }[] {
   for (const parte of separarNoTopo(lista)) {
     let tokens = parte
       .trim()
-      .split(/\s+default\s+|\s*=\s*/i)[0]
+      .split(/\s+default\s+|\s*=\s*/i)[0]!
       .trim()
       .split(/\s+/)
       .filter(Boolean);
     let modo = "in";
-    if (tokens.length && MODOS.has(tokens[0].toLowerCase())) {
-      modo = tokens[0].toLowerCase();
+    const primeiro = (tokens[0] ?? "").toLowerCase();
+    if (MODOS.has(primeiro)) {
+      modo = primeiro;
       tokens = tokens.slice(1);
     }
     if (modo === "out") continue;
-    const temNome = tokens.length >= 2 && !INICIO_DE_TIPO.has(tokens[0].toLowerCase());
-    const nome = temNome ? tokens[0].replace(/"/g, "") : "";
+    const cabeca = tokens[0] ?? "";
+    const temNome = tokens.length >= 2 && !INICIO_DE_TIPO.has(cabeca.toLowerCase());
+    const nome = temNome ? cabeca.replace(/"/g, "") : "";
     const tipo = (temNome ? tokens.slice(1) : tokens)
       .join(" ")
       .toLowerCase()
@@ -108,7 +110,7 @@ function definicoes(): Map<string, Definicao[]> {
   const porAssinatura = new Map<string, Definicao[]>();
   for (const m of SQL.matchAll(cabecalho)) {
     const args = entradas(argumentosEm(m.index + m[0].length - 1));
-    const chave = `${m[1].toLowerCase()}.${m[2].toLowerCase()}(${args.map((a) => a.tipo).join(", ")})`;
+    const chave = `${m[1]!.toLowerCase()}.${m[2]!.toLowerCase()}(${args.map((a) => a.tipo).join(", ")})`;
     const linha = SQL.slice(0, m.index).split("\n").length + (m[0].startsWith("\n") ? 1 : 0);
     const lista = porAssinatura.get(chave) ?? [];
     lista.push({ linha, nomes: args.map((a) => a.nome) });
@@ -139,7 +141,8 @@ describe("baseline: nenhuma definição troca o nome de um parâmetro de funçã
   it("⭐ toda definição declara os mesmos nomes de entrada da última (a que o banco instala)", () => {
     const divergentes: string[] = [];
     for (const [assinatura, defs] of todas) {
-      const final = defs[defs.length - 1];
+      const final = defs.at(-1);
+      if (!final) continue;
       for (const d of defs) {
         if (d.nomes.join(",") !== final.nomes.join(",")) {
           divergentes.push(
