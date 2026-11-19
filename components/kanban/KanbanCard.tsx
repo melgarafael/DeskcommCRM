@@ -69,6 +69,12 @@ interface KanbanCardProps {
    * de escrita próprias).
    */
   somenteLeitura?: boolean;
+  /**
+   * O card está na coluna da etapa. A coluna já diz o nome, então o rodapé não
+   * repete "em <etapa>" — só o tempo, quando há. Fora da coluna, a etapa vai
+   * para uma linha própria, debaixo do responsável.
+   */
+  naColuna?: boolean;
 }
 
 function formatValor(cents: number | null, currency: string | null): string | null {
@@ -107,6 +113,7 @@ export const KanbanCard = memo(function KanbanCard({
   onMoverPara,
   denso = false,
   somenteLeitura = false,
+  naColuna = true,
 }: KanbanCardProps) {
   const t = useT();
   const value = formatValor(card.valueCents, card.currency);
@@ -148,11 +155,7 @@ export const KanbanCard = memo(function KanbanCard({
   // O título é o maior e mais natural alvo do card. Quem lê "Segurando Shift,
   // um clique seleciona tudo entre o card anterior e o que você clicou" e clica
   // no card clica no nome dele — e recebia o dossiê.
-  const decidirClique = (e: {
-    shiftKey: boolean;
-    metaKey: boolean;
-    ctrlKey: boolean;
-  }): void => {
+  const decidirClique = (e: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }): void => {
     if (e.shiftKey) {
       onSelect?.(card.id, "intervalo");
       return;
@@ -186,7 +189,7 @@ export const KanbanCard = memo(function KanbanCard({
           data-densidade={denso ? "compacta" : "confortavel"}
           className={cn(
             "group relative overflow-hidden rounded-md border border-border bg-surface",
-            denso ? "py-1.5 pl-2.5 pr-2" : "py-2.5 pl-3 pr-3",
+            denso ? "py-1.5 pr-2 pl-2.5" : "py-2.5 pr-3 pl-3",
             "shadow-xs transition-colors",
             "hover:border-border-strong",
             snapshot.isDragging && "rotate-1 shadow-md ring-1 ring-accent/40",
@@ -247,9 +250,7 @@ export const KanbanCard = memo(function KanbanCard({
                   className={cn(
                     "mt-1 h-4 w-4 shrink-0 cursor-pointer accent-accent transition-opacity",
                     "focus:opacity-100 focus-visible:outline-2 focus-visible:outline-accent",
-                    isSelected || isSelecting
-                      ? "opacity-100"
-                      : "opacity-0 group-hover:opacity-100",
+                    isSelected || isSelecting ? "opacity-100" : "opacity-0 group-hover:opacity-100",
                   )}
                 />
               )}
@@ -275,7 +276,7 @@ export const KanbanCard = memo(function KanbanCard({
                 // dossiê). O dado não some — some a segunda linha.
                 title={denso ? card.title : undefined}
                 className={cn(
-                  "text-sm font-medium leading-5 text-text",
+                  "text-sm leading-5 font-medium text-text",
                   denso ? "line-clamp-1 h-5" : "line-clamp-2 h-10",
                 )}
               >
@@ -331,12 +332,7 @@ export const KanbanCard = memo(function KanbanCard({
           </p>
 
           {/* ③ a linha do agente — um slot, três estados, nunca três blocos. */}
-          <div
-            className={cn(
-              "flex items-center gap-2 text-xs",
-              denso ? "mt-1 h-5" : "mt-1.5 h-6",
-            )}
-          >
+          <div className={cn("flex items-center gap-2 text-xs", denso ? "mt-1 h-5" : "mt-1.5 h-6")}>
             {state.slot.type === "awaiting" && (
               // A proposta do agente é a ÚNICA linha do card com ação: é o
               // ponto onde a decisão do humano entra. Sem os botões aqui, o
@@ -407,28 +403,40 @@ export const KanbanCard = memo(function KanbanCard({
               arquivo — quem não usa o recurso não vê card diferente. */}
           <ArquivosNoCard lead={lead} />
 
-          {/* ④ dono (+ selo de tarefas) · ⑤ tempo no estágio */}
+          {/* ④ dono (+ selo de tarefas) · ⑤ tempo no estágio.
+              O nome da etapa não divide esta linha: na coluna ele já está no
+              cabeçalho, e um nome longo desenhava por cima de "em <etapa>". */}
           <div
-            className={cn(
-              "flex items-center justify-between gap-2",
-              denso ? "mt-1 h-5" : "mt-1 h-6",
-            )}
+            className={cn("flex min-w-0 items-center gap-2", denso ? "mt-1 h-5" : "mt-1 h-6")}
+            data-testid="rodape-do-card"
           >
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
               <OwnerBadge
                 ownerKind={card.owner.kind}
                 ownerName={card.owner.name}
                 agentVersion={card.owner.agentVersion}
                 foraDaEquipe={card.owner.foraDaEquipe}
+                abreviarNome
               />
               <TarefasNoCard tarefas={lead.tarefas} />
             </div>
-            <span className="shrink-0 whitespace-nowrap text-[11px] tabular-nums text-text-muted">
+            {naColuna && state.showStageAge && age ? (
+              <span className="shrink-0 text-[11px] whitespace-nowrap text-text-muted tabular-nums">
+                {age}
+              </span>
+            ) : null}
+          </div>
+          {!naColuna && (
+            <p
+              className="mt-0.5 min-w-0 overflow-hidden text-[11px] text-ellipsis whitespace-nowrap text-text-muted"
+              data-testid="etapa-fora-da-coluna"
+              title={card.stageName}
+            >
               {state.showStageAge && age
                 ? `${age} ${t("em")} ${card.stageName}`
                 : `${t("em")} ${card.stageName}`}
-            </span>
-          </div>
+            </p>
+          )}
         </div>
       )}
     </Draggable>

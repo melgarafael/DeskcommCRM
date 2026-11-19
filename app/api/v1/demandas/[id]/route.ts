@@ -21,6 +21,14 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * obrigatório; a data é opcional — obrigá-la faria o atendente inventar uma
  * para se livrar do campo, e data inventada é pior que data ausente.
  *
+ * ## Sessão OU token (Spec 33, R2)
+ *
+ * Entra por `resolveAuthDual`. As duas escritas já usavam o cliente de serviço
+ * com `organization_id` à mão (a RPC recebe `p_org`, o `update` filtra a
+ * organização); no ramo do token a organização é a da LINHA DO TOKEN. Quem
+ * encerra grava `encerrada_por` e a atividade do negócio com o id da PESSOA da
+ * sessão, ou `null` quando é um token — nunca o id do token.
+ *
  * ## Piso `agent`, e não `manager`
  *
  * Quem atende é quem sabe o que vem a seguir. Exigir gerente aqui empurraria o
@@ -32,10 +40,11 @@ import { type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { audit } from "@/lib/audit";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 
 export const dynamic = "force-dynamic";
 
@@ -62,10 +71,24 @@ export async function PATCH(
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
-  const authz = await requireRole("agent", { requestId, resource: "demandas" });
+  // Sessão OU token (Spec 33, R2): `agent` na sessão, `mcp:write` no token. A
+  // organização sai da sessão ou da LINHA DO TOKEN, nunca do corpo nem do path.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "demandas",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg, user } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "demandas", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const organizationId = authz.organizationId;
+  // `encerrada_por` e `performed_by_user_id` têm FK para `auth.users`: o id de um
+  // token não é pessoa. Só a sessão assina; o token grava `null` (as duas colunas
+  // aceitam, e a função não cobra auth.uid()).
+  const autorId = authz.actor.type === "user" ? authz.actor.id : null;
+  const apiTokenId = authz.apiTokenId ?? null;
 
   let corpo: unknown;
   try {
@@ -87,16 +110,17 @@ export async function PATCH(
 
   if ("action" in parsed.data) {
     const { data, error } = await admin.rpc("fn_demanda_encerrar", {
-      p_org: activeOrg.orgId, p_demanda: id, p_expected: parsed.data.expected_revision,
-      p_desfecho: parsed.data.desfecho, p_actor: user.id,
+      p_org: organizationId, p_demanda: id, p_expected: parsed.data.expected_revision,
+      p_desfecho: parsed.data.desfecho, p_actor: autorId,
     });
     // PT409: revisão obsoleta (migration 0654). 40001: banco anterior à 0654.
     const conflito = error?.code === "PT409" || error?.code === "40001";
     if (error) return fail(conflito ? "conflict" : error.code === "P0002" ? "not_found" : "internal_error",
       conflito ? "Esta demanda mudou. Atualize antes de encerrar." : error.message,
       conflito ? 409 : error.code === "P0002" ? 404 : 500, { requestId });
-    void audit({ action: "demanda.encerrada", actorUserId: user.id, organizationId: activeOrg.orgId,
-      resourceType: "demanda", resourceId: id, requestId, metadata: { desfecho: parsed.data.desfecho } });
+    void audit({ action: "demanda.encerrada", actorUserId: autorId, actorApiTokenId: apiTokenId,
+      organizationId, resourceType: "demanda", resourceId: id, requestId,
+      metadata: { desfecho: parsed.data.desfecho } });
     return ok(data, { requestId });
   }
 
@@ -112,7 +136,7 @@ export async function PATCH(
       updated_at: new Date().toISOString(),
     })
     .eq("id", id)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .is("fechada_em", null)
     .select("id, proximo_passo, proximo_passo_em")
     .maybeSingle();
@@ -127,8 +151,9 @@ export async function PATCH(
 
   void audit({
     action: "demanda.proximo_passo_definido",
-    actorUserId: user.id,
-    organizationId: activeOrg.orgId,
+    actorUserId: autorId,
+    actorApiTokenId: apiTokenId,
+    organizationId,
     resourceType: "demanda",
     resourceId: id,
     requestId,

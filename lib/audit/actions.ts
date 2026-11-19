@@ -305,6 +305,8 @@ export const AUDIT_ACTIONS = [
   "ai_agent.reverted",
   "ai.dispatcher_run",
   "ai.pacing_knobs_updated",
+  /** Teto de respostas automáticas por conversa (#4590), ajustado pela empresa. */
+  "ai.teto_de_respostas_updated",
   "ai.inbox_item_status_changed",
   "ai.flywheel_proposal_applied",
   "ai.org_memory_published",
@@ -393,6 +395,9 @@ export const AUDIT_ACTIONS = [
   // Rótulo interno do canal (channel_sessions.display_name); nada vai ao
   // provedor. Emitida por app/api/v1/channel-sessions/[id]/name.
   "channel.renamed",
+  // Funil de entrada do número (migration 9430): onde a conversa nova daquele
+  // número vira negócio. Emitida por app/api/v1/channel-sessions/[id]/entrada.
+  "channel.entry_pipeline_changed",
   // A janela de manutenção (#2388): criar, editar e cancelar são mutações da
   // tela e auditam como toda mutação. A pausa e a retomada que a janela aplica
   // saem como `channel.disabled`/`channel.enabled`, com `origem: schedule`.
@@ -619,6 +624,11 @@ export const AUDIT_ACTIONS = [
   // as empresas deste servidor podiam ligar um banco de outro sistema?" só tem
   // resposta aqui.
   "platform.modulo_updated",
+  // Um módulo opcional dado ou NEGADO a UMA empresa (linha em
+  // `organization_modules`, migration 9416, issue #3868). A linha guarda o estado;
+  // a pergunta "desde quando este cliente tem cobrança/banco externo?" — e,
+  // principalmente, "quem tirou o módulo dele?" — só tem resposta aqui.
+  "organization.modulo_updated",
   // A lista de endereços da rede INTERNA que a instalação pode alcançar
   // (`platform_settings.internal_destinations`, migration 0324, decisão 22-d).
   // Auditável pela mesma razão da linha acima e com alcance maior: cada entrada
@@ -1235,6 +1245,7 @@ export const AUDIT_ACTIONS = [
   // mesma pergunta de LGPD do ligado — metadata.origem diz para qual, e
   // origem_anterior de onde saiu.
   "ai.jev.origem_alterada",
+  "ai.jev.modelo_alterado",
   // O pedido de descadastro é do cliente e o padrão é irreversível — mas a
   // regra W-02 do catálogo de negócio prevê o override: admin desbloqueia à
   // mão. Sem esta linha, a ação existiria sem rastro de QUEM a desfez, que é
@@ -1268,6 +1279,8 @@ export const AUDIT_ACTIONS = [
   "company_people.linked",
   "company_people.updated",
   "contacts.person_linked",
+  // #3198, fatia 3: o contato da prospecção virou (ou foi ligado a) uma Empresa.
+  "contacts.company_linked",
   "imports.companies_people",
   // A chave de Mapas da organização (0504, Agente de IA › Provedores): gravada ou
   // trocada, e removida. O metadata diz O QUE mudou — nunca a chave.
@@ -1437,6 +1450,9 @@ export const AUDIT_ACTIONS = [
   // O admin ligou/desligou o aviso das transferências para atendimento humano
   // (#3784) — o mesmo número e o mesmo teto diário do Aviso de caso.
   "crm.aviso_de_transferencia_alterado",
+  // O admin ligou/desligou o PRIMEIRO nome do cliente na mensagem do aviso de
+  // transferência. Nasce desligado por privacidade.
+  "crm.aviso_nome_na_transferencia_alterado",
   // O admin da plataforma exportou o INVENTÁRIO das instalações em CSV (#2777).
   // É leitura, mas é leitura EM ESCALA DE PLATAFORMA: grava quem, quando, QUANTO
   // saiu, se o teto cortou e QUE filtros valiam — nunca o texto da busca, que é
@@ -1541,6 +1557,11 @@ export const AUDIT_ACTIONS = [
   "ai.knowledge_source_created",
   "ai.knowledge_source_updated",
   "ai.knowledge_source_archived",
+  // De volta ao acervo (PATCH `{ status: 'active' }`). Arquivar era ida sem
+  // volta; a trilha guarda de onde para onde — `archived`/`is_active=false`
+  // para `active`/`is_active=true` —, porque "quem tirou do arquivo" não se
+  // responde com a linha atual.
+  "ai.knowledge_source_restored",
   "ai.knowledge_source_reindexed",
   "ai_models.synced",
   "ai_models.sync_failed",
@@ -1648,6 +1669,13 @@ export const AUDIT_ACTIONS = [
   // "quem moveu" no painel. Mover roteador em silêncio não existe: as duas
   // camadas são gravadas na mesma operação.
   "ai.router_channel_moved",
+  // Operação do dia: o relatório diário gravado (pelo cron, que só cria, ou pelo
+  // botão "Gerar agora", que regera). Metadata leva `dia`, `gerado_por` e as
+  // contagens — nunca nome nem telefone de contato.
+  "operacao.relatorio_gerado",
+  // A configuração da Operação do dia (etiquetas, etapas de proposta, hora do
+  // relatório). Metadata leva o antes e o depois do bloco `operacao_do_dia`.
+  "settings.operacao_do_dia_updated",
   // OAuth do MCP do CRM (migration 9390) — a conexão de um cliente como o
   // ChatGPT. `cliente_registrado` é da instalação (sem organização: o registro
   // dinâmico é aberto); `autorizado`/`negado` são da pessoa na tela de

@@ -1,0 +1,6 @@
+---
+impacto: nada_mudou
+secao: adicionado
+titulo: Nível `telas_principais` passa a ter régua medida, e um idioma novo aparece sem cobrar toda frase
+---
+O nível `telas_principais` do registro de idiomas deixou de ser uma promessa sem critério: existe agora a régua que o confere. As telas principais são os destinos do menu lateral, derivados de `lib/navigation/registry.ts` — nunca uma lista escrita à mão —, e a cobertura de frases é medida pelo grafo de imports de cada rota, para que a conta alcance o componente onde a tela de fato mora e não só a casca do `page.tsx`. Medido nesta árvore: 16 telas e 4.573 frases distintas, com piso de dois terços. O inglês está em 71,6% e o turco em 79,7%; o chinês, em 50,0%, e por isso ainda não aparece. Quem declara o nível é aprovado quando atende a régua e recusado quando não atende, com o número do que falta — antes, qualquer declaração era recusada, e o único caminho para um idioma novo aparecer era o nível `completo`, que cobra aquele idioma em todo PR que acrescentar uma frase em português. O nível `completo` não mudou: o espanhol continua cobrando toda frase de tela. Nenhum idioma é promovido nesta fatia, e nenhum catálogo entra no caminho do type check: o teste lê o catálogo como dado, não por `import`, porque pôr `en.json` no programa do TypeScript custa 18.944 tipos e 17 MB de heap medidos só no recorte.

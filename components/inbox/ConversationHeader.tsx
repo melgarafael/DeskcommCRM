@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { JanelaSelo } from "@/components/inbox/JanelaSelo";
 import { ChannelLogo } from "@/components/inbox/ChannelLogo";
-import { Phone, MagnifyingGlass, DotsThree, Pause, Archive, EyeSlash, UserCircle, UsersThree, Robot, Check, DownloadSimple, CalendarCheck } from "@/lib/ui/icons";
+import { Phone, MagnifyingGlass, DotsThree, Pause, Archive, EyeSlash, UserCircle, UsersThree, Robot, Check, DownloadSimple, CalendarCheck, IdentificationCard } from "@/lib/ui/icons";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { NovaTarefaDaConversa } from "@/components/inbox/NovaTarefaDaConversa";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
@@ -71,6 +71,17 @@ interface Props {
   botaoBuscaRef?: RefObject<HTMLButtonElement | null>;
   /** Seleciona outra conversa no Inbox — a aba Número do Transferir abre a do outro número. */
   onAbrirConversa?: (id: string) => void;
+  /**
+   * ABRE A FICHA DO CONTATO NA GAVETA (#4822).
+   *
+   * Opcional de propósito: o dono da gaveta é o `InboxLayout` (o estado e o
+   * `CRMSidePanel` moram lá) e este cabeçalho só desenha a porta. Sem a prop o
+   * botão não nasce — é o que mantém intactas as telas e os testes que montam o
+   * cabeçalho sem ficha. Recebe o botão que abriu, para o foco voltar a ele.
+   */
+  onAbrirFicha?: (porta: HTMLElement) => void;
+  /** Se a gaveta está aberta — vira o `aria-expanded` da porta. */
+  fichaAberta?: boolean;
 }
 
 /**
@@ -105,6 +116,8 @@ export function ConversationHeader({
   onBuscar,
   buscaAberta,
   botaoBuscaRef,
+  onAbrirFicha,
+  fichaAberta,
 }: Props) {
   const t = useT();
   const { user, activeOrg } = useAuth();
@@ -627,6 +640,37 @@ export function ConversationHeader({
           onClick={() => reopen.mutate({ conversation_id: conversation.id, expected_revision: conversation.service_revision })}>
           {t("Reabrir")}
         </Button>}
+        {/* ─── A PORTA DA FICHA ENTRE O TABLET E O MONITOR (#4822) ─────────────
+            A terceira coluna do Inbox só nasce no `xl` (1280px), e a decisão está
+            medida em `InboxLayout.tsx` — não se mexe nela aqui. O buraco era a
+            faixa do meio: abaixo de 768px a barra do celular tem a gaveta, e de
+            1280px para cima a coluna aparece sozinha; entre as duas o atendente
+            ficava sem nenhuma porta, e a seção de follow-up só existe dentro da
+            ficha. Este botão é a porta que faltava, e ele NÃO cria painel
+            nenhum: chama a mesma gaveta que o celular já abre.
+
+            `md:` para não aparecer onde a barra do celular já tem o botão (nada
+            muda abaixo de 768px) e `xl:hidden` para não duplicar a ficha onde a
+            coluna está à vista. O invólucro carrega as classes de exibição
+            porque `hidden` e `inline-flex` disputam a mesma propriedade e a
+            ordem no CSS compilado não é a ordem escrita aqui. */}
+        {onAbrirFicha && (
+          <div className="hidden md:block xl:hidden">
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1 px-2"
+              data-testid="acao-abrir-ficha"
+              title={t("Ficha do contato")}
+              aria-haspopup="dialog"
+              aria-expanded={fichaAberta ?? false}
+              onClick={(e) => onAbrirFicha(e.currentTarget)}
+            >
+              <IdentificationCard size={16} aria-hidden />
+              {t("Ficha")}
+            </Button>
+          </div>
+        )}
         {/* ─── O MENU ⋯ (#3003): o que NÃO é do dia a dia ──────────────────────
             A issue relata a confusão de quem está começando: a barra oferecia
             doze controles ao mesmo tempo e nenhum deles respondia "o que

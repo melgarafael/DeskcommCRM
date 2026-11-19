@@ -162,6 +162,10 @@ export async function ultimaInboundJaRespondida(
  * última lida; o drain pula o evento dela como superado, e descartar a resposta
  * por causa dela deixaria o cliente sem ninguém respondendo.
  *
+ * E pelo MESMO filtro do drain: a reação (👍) não conta, nem como "mais nova"
+ * nem como começo do teto (#2797). Ela é inbound, mas não tem turno próprio;
+ * descartar a resposta por causa dela também deixaria o cliente sem ninguém.
+ *
  * ## O teto
  *
  * Um cliente que escreve sem parar faria todo turno ficar obsoleto antes de
@@ -188,11 +192,13 @@ export async function respostaFicouObsoleta(
      pendente as (
        select min(m.created_at) as em from messages m cross join ultima_out o
         where m.organization_id = $1 and m.conversation_id = $2 and m.direction = 'inbound'
+          and m.type <> 'reaction'
           and (o.em is null or m.created_at > o.em)
      ),
      mais_nova as (
        select created_at as em from messages
         where organization_id = $1 and conversation_id = $2 and direction = 'inbound'
+          and type <> 'reaction'
         order by coalesce(sent_at, created_at) desc, created_at desc, id desc
         limit 1
      )
