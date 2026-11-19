@@ -312,6 +312,8 @@ export const DICIONARIO: Traducoes = {
   "Nenhuma campanha ativa neste período.": { es: "Ninguna campaña activa en este período." },
   "Avisar também nas transferências para atendimento humano": { es: "Avisar también en las transferencias a atención humana" },
   "Cada transferência manda uma mensagem ao mesmo número e conta no limite diário dele. Desligue para receber só os avisos de casos.": { es: "Cada transferencia envía un mensaje al mismo número y cuenta en su límite diario. Desactívalo para recibir solo los avisos de casos." },
+  "Incluir o primeiro nome do cliente na mensagem": { es: "Incluir el primer nombre del cliente en el mensaje" },
+  "Por padrão a mensagem leva só o link. Com esta opção, ela também mostra o primeiro nome do cliente. O motivo da transferência continua só no CRM, ao abrir a conversa.": { es: "Por defecto el mensaje lleva solo el enlace. Con esta opción, también muestra el primer nombre del cliente. El motivo de la transferencia sigue solo en el CRM, al abrir la conversación." },
   "Também param de sair, até você cadastrar um número de novo: os avisos de transferência para atendimento humano, os avisos da Agenda que usam o mesmo número dos casos e as automações com a ação \"Mensagem para a equipe\".": { es: "También dejan de salir, hasta que registres otro número: los avisos de transferencia a atención humana, los avisos de la Agenda que usan el mismo número que los casos y las automatizaciones con la acción \"Mensaje para el equipo\"." },
   "Nas transferências para atendimento humano, há uma tentativa de aviso por episódio, sem resumo da conversa. Depois de retomar o atendimento automático, uma nova transferência pode gerar outro aviso. Consulte o resultado na Central de alertas; responda ao cliente pelo CRM.": { es: "En las transferencias a atención humana hay un intento de aviso por episodio, sin resumen de la conversación. Después de reanudar la atención automática, una nueva transferencia puede generar otro aviso. Consulta el resultado en la Central de alertas; responde al cliente desde el CRM." },
   "Os avisos podem sair fora do horário comercial e respeitam a conexão e os limites de envio do número.": { es: "Los avisos pueden enviarse fuera del horario comercial y respetan la conexión y los límites de envío del número." },
@@ -1227,6 +1229,7 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível carregar o enriquecimento.": { es: "No se pudo cargar el enriquecimiento." },
   "Sem dados de enriquecimento para este contato.": { es: "Sin datos de enriquecimiento para este contacto." },
   "Avaliações no Google": { es: "Reseñas en Google" },
+  "E-mails": { es: "Correos" },
   "E-mails comerciais": { es: "Correos comerciales" },
   "Fonte: pesquisa de empresas": { es: "Fuente: búsqueda de empresas" },
   "Ver no Google Maps": { es: "Ver en Google Maps" },
@@ -6156,6 +6159,44 @@ export const DICIONARIO: Traducoes = {
   "Pegar a chave na OpenRouter": { es: "Obtener la clave en OpenRouter" },
   "Pegar uma chave nova na OpenRouter": { es: "Obtener una clave nueva en OpenRouter" },
   "Chave conferida na OpenRouter": { es: "Clave verificada en OpenRouter" },
+  // ── O modelo do decisor (issue #4710) ─────────────────────────────────────
+  // O padrão é o Jev, e a frase diz isso: quem nunca escolheu nada lê que segue
+  // nele, e quem escolheu lê o que a troca muda. O inglês mora no catálogo
+  // (`lib/i18n/traducoes/en.json`), como o resto das entradas em construção.
+  "Modelo do decisor": { es: "Modelo del decisor" },
+  "Modelo do decisor salvo.": { es: "Modelo del decisor guardado." },
+  "Salvar modelo do decisor": { es: "Guardar modelo del decisor" },
+  "Voltar ao Jev": { es: "Volver a Jev" },
+  "Respondendo com": { es: "Respondiendo con" },
+  "O Jev (typesafe/jev-1.13) é o padrão e o único calibrado para o corte de passagem para humano. Outro modelo muda as probabilidades: deixe a tarefa em Observando e compare antes de deixar decidir.": {
+    es: "Jev (typesafe/jev-1.13) es el predeterminado y el único calibrado para el corte de paso a una persona. Otro modelo cambia las probabilidades: deja la tarea en Observando y compara antes de dejarla decidir.",
+  },
+  "O Jev responde hoje com o modelo padrão. Para escolher outro modelo de decisão, troque a origem para a OpenRouter.": {
+    es: "Jev responde hoy con el modelo predeterminado. Para elegir otro modelo de decisión, cambia el origen a OpenRouter.",
+  },
+  "Este modelo não serve como decisor: ele não declara a saída de decisões (decisions) na OpenRouter. Confira o id — o do Jev é typesafe/jev-1.13 — ou escolha um da lista de modelos de decisão.": {
+    es: "Este modelo no sirve como decisor: no declara la salida de decisiones (decisions) en OpenRouter. Revisa el id — el de Jev es typesafe/jev-1.13 — o elige uno de la lista de modelos de decisión.",
+  },
+  "Os outros modelos de decisão são servidos pela OpenRouter. Para escolher um, troque a origem do Jev para a OpenRouter — é a mesma credencial que a sua IA de conversa usa.": {
+    es: "Los otros modelos de decisión los sirve OpenRouter. Para elegir uno, cambia el origen de Jev a OpenRouter: es la misma credencial que usa tu IA de conversación.",
+  },
+  "Não consegui conferir a lista de modelos de decisão na OpenRouter agora, então nada foi gravado. O Jev continua como padrão; tente de novo em instantes.": {
+    es: "No pude verificar ahora la lista de modelos de decisión en OpenRouter, así que no se guardó nada. Jev sigue como predeterminado; inténtalo de nuevo en unos instantes.",
+  },
+  // Doc 369: o aceite e o aviso de dado de saúde nomeiam o fornecedor do modelo
+  // escolhido. `{fornecedor}`/`{modelo}` são trocados DEPOIS da tradução.
+  "Com este modelo, cada mensagem dos clientes vai, uma de cada vez e sem o resto da conversa, para {fornecedor} (modelo {modelo}), pela OpenRouter, nos Estados Unidos, e o fornecedor pode processá-la em outro país; se esse modelo falhar, a mensagem vai para o Jev, da TypeSafe AI, pela OpenRouter. Ninguém conferiu os termos de privacidade, de retenção e de treino desse fornecedor: a empresa assume essa conferência, em especial nos modelos gratuitos. Para trocar, confirme que você está de acordo.": {
+    es: "Con este modelo, cada mensaje de los clientes va, uno por vez y sin el resto de la conversación, a {fornecedor} (modelo {modelo}), a través de OpenRouter, en Estados Unidos, y el proveedor puede procesarlo en otro país; si ese modelo falla, el mensaje va a Jev, de TypeSafe AI, a través de OpenRouter. Nadie revisó los términos de privacidad, de retención y de entrenamiento de ese proveedor: la empresa asume esa revisión, en especial en los modelos gratuitos. Para cambiar, confirma que estás de acuerdo.",
+  },
+  "Concordo com o envio de cada mensagem dos clientes, uma de cada vez e sem o resto da conversa, para {fornecedor} (modelo {modelo}), pela OpenRouter, nos Estados Unidos, sabendo que o fornecedor pode processá-la em outro país e que, se esse modelo falhar, a mensagem vai para o Jev, da TypeSafe AI, pela OpenRouter. Ninguém conferiu os termos de privacidade, de retenção e de treino desse fornecedor: a empresa assume essa conferência, em especial nos modelos gratuitos.": {
+    es: "Acepto el envío de cada mensaje de los clientes, uno por vez y sin el resto de la conversación, a {fornecedor} (modelo {modelo}), a través de OpenRouter, en Estados Unidos, sabiendo que el proveedor puede procesarlo en otro país y que, si ese modelo falla, el mensaje va a Jev, de TypeSafe AI, a través de OpenRouter. Nadie revisó los términos de privacidad, de retención y de entrenamiento de ese proveedor: la empresa asume esa revisión, en especial en los modelos gratuitos.",
+  },
+  "Ao ligar, cada mensagem que o cliente manda vai para {fornecedor} (modelo {modelo}), pela OpenRouter, nos Estados Unidos, uma de cada vez e sem o resto da conversa, para o modelo escolhido avaliar; se esse modelo falhar, a mensagem vai para o Jev, da TypeSafe AI, pela OpenRouter. Antes de sair, o sistema apaga CPF, telefone e e-mail do texto. Com o Jev desligado, nada é enviado.": {
+    es: "Al activarlo, cada mensaje que envía el cliente va a {fornecedor} (modelo {modelo}), a través de OpenRouter, en Estados Unidos, uno por vez y sin el resto de la conversación, para que el modelo elegido lo evalúe; si ese modelo falla, el mensaje va a Jev, de TypeSafe AI, a través de OpenRouter. Antes de salir, el sistema borra del texto el CPF, el teléfono y el correo. Con Jev desactivado, no se envía nada.",
+  },
+  "Se a sua empresa é da área da saúde: as mensagens que o Jev lê podem conter dado de saúde, que a LGPD trata como sensível. Antes de ligar, confira com quem cuida da LGPD da empresa se os termos de {fornecedor}, que recebe as mensagens pela OpenRouter, cobrem esse tipo de dado.": {
+    es: "Si tu empresa es del área de la salud: los mensajes que lee Jev pueden contener datos de salud, que la LGPD trata como sensibles. Antes de activarlo, consulta con quien se ocupa de la LGPD de la empresa si los términos de {fornecedor}, que recibe los mensajes a través de OpenRouter, cubren ese tipo de dato.",
+  },
   "Não precisa de uma segunda conta: o Jev via OpenRouter usa a credencial OpenRouter desta empresa, e quem cobra o uso é a própria OpenRouter. A chave começa com": {
     es: "No hace falta una segunda cuenta: Jev por OpenRouter usa la credencial de OpenRouter de esta empresa, y quien cobra el uso es la propia OpenRouter. La clave empieza con",
   },
@@ -9500,6 +9541,9 @@ export const DICIONARIO: Traducoes = {
   "de perda": { es: "de pérdida" },
   "é onde ele se perde. Cada funil precisa de uma de cada — por isso a marcação se muda de lugar, não se apaga.": {
     es: "es donde se pierde. Cada embudo necesita una de cada — por eso la marca se cambia de lugar, no se borra.",
+  },
+  "Para mudar a ordem, arraste a coluna pela alça ou use as setas.": {
+    es: "Para cambiar el orden, arrastra la columna por el asa o usa las flechas.",
   },
   Mover: { es: "Mover" },
   "uma coluna para trás": { es: "una columna hacia atrás" },
