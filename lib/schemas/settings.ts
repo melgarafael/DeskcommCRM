@@ -863,6 +863,18 @@ export const crmSettingsSchema = z
      */
     avisar_transferencia_no_whatsapp: z.boolean().catch(true),
     /**
+     * `aviso_transferencia_com_nome`: o aviso de transferência também leva o
+     * PRIMEIRO nome do cliente, além do link.
+     *
+     * ⚠️ NASCE DESLIGADA, ao contrário da vizinha `avisar_transferencia_no_whatsapp`:
+     * a mensagem padrão é mínima por decisão de privacidade. Só o booleano `true` liga.
+     *
+     * Só o nome, nunca o "resumo" (doc 372 = A, que segue o doc 176): texto escrito
+     * pela IA chega à equipe com a cara da empresa, e na maioria das passagens o
+     * `last_handoff_reason` nem é resumo — é código interno (`requested_human`).
+     */
+    aviso_transferencia_com_nome: z.boolean().catch(false),
+    /**
      * `cliente_pela_venda` (#3644): quem JÁ COMPROU (tem negócio `won` e nenhum
      * aberto) volta pelo funil de clientes, e não pelo de captação.
      *
@@ -912,6 +924,7 @@ export const crmSettingsSchema = z
     telefone_de_ficha_vazia: false,
     nome_informado_no_atendimento: false,
     avisar_transferencia_no_whatsapp: true,
+    aviso_transferencia_com_nome: false,
     cliente_pela_venda: false,
     pos_venda_dias: 0,
     duplicados_por_nome: false,
@@ -1167,6 +1180,15 @@ export function avisoDeTransferenciaLigado(settings: unknown): boolean {
       ? (settings as Record<string, unknown>).crm
       : undefined;
   return crmSettingsSchema.parse(crm ?? {}).avisar_transferencia_no_whatsapp;
+}
+
+/** Ausente DESLIGA; só o booleano `true` põe o primeiro nome no aviso de transferência. */
+export function avisoDeTransferenciaComNomeLigado(settings: unknown): boolean {
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
+  return crmSettingsSchema.parse(crm ?? {}).aviso_transferencia_com_nome === true;
 }
 
 /**

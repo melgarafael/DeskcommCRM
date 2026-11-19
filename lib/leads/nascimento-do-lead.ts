@@ -153,6 +153,101 @@ export interface DadosDoNascimento {
   origem?: OrigemDoNascimento;
   /** Clique provado desta mensagem; só afeta o card NOVO, nunca o primeiro toque. */
   atribuicaoDaMensagem?: AtribuicaoDeAnuncio;
+  /**
+   * O número (conexão) por onde a conversa chegou — o funil de entrada pode ser
+   * escolhido por número (migration 9430). Ausente, o nascimento lê o da
+   * própria conversa; sem nenhum dos dois, vale o funil padrão.
+   */
+  channelSessionId?: string | null;
+}
+
+/**
+ * O FUNIL DE ENTRADA DO NÚMERO (migration 9430).
+ *
+ * `channel_sessions.entry_pipeline_id` diz onde nasce a conversa nova daquele
+ * número — o número de atacado põe gente no funil de atacado. Nulo é o
+ * comportamento de antes: o funil padrão da organização.
+ *
+ * A FK é composta com a organização (o banco recusa funil ou etapa de outra
+ * empresa, e etapa de outro funil), mas arquivar o funil ou a etapa, ou virar
+ * a etapa de ganho/perda, não passa por ela. Por isso a leitura confere de novo: o funil
+ * tem de ser DESTA organização e não arquivado; a etapa, DESTE funil, aberta e
+ * não de ganho/perda. Etapa que não serve cai na etapa de entrada do próprio
+ * funil (`etapaDeEntrada`); funil que não serve devolve `null`, e quem chama
+ * segue para o funil padrão — errar o funil é visível e corrigível, não nascer
+ * é a pessoa sumir.
+ *
+ * ⚠️ O CAMINHO COMUM PAGA UMA CONSULTA, E SÓ QUANDO O CARD VAI NASCER. Quem
+ * chama já saiu no passo 2 se havia negócio aberto; esta leitura acontece uma
+ * vez por card novo, não por mensagem.
+ */
+export async function funilDoNumero(
+  db: SupabaseClient,
+  organizationId: string,
+  channelSessionId: string,
+): Promise<{ pipelineId: string; stageId: string } | null> {
+  const { data: numero } = await db
+    .from("channel_sessions")
+    .select("entry_pipeline_id, entry_stage_id")
+    .eq("organization_id", organizationId)
+    .eq("id", channelSessionId)
+    .maybeSingle();
+  const pipelineId = (numero as { entry_pipeline_id?: string | null } | null)?.entry_pipeline_id ?? null;
+  if (!pipelineId) return null;
+
+  const { data: funil } = await db
+    .from("crm_pipelines")
+    .select("id, settings")
+    .eq("organization_id", organizationId)
+    .eq("id", pipelineId)
+    .eq("is_archived", false)
+    .maybeSingle();
+  if (!funil) {
+    logger.warn("[nascimento-do-lead] funil de entrada do número não vale mais; usando o padrão", {
+      organizationId,
+      channel_session_id: channelSessionId,
+      entry_pipeline_id: pipelineId,
+    });
+    return null;
+  }
+
+  const etapaEscolhida = (numero as { entry_stage_id?: string | null } | null)?.entry_stage_id ?? null;
+  if (etapaEscolhida) {
+    const { data: etapa } = await db
+      .from("crm_stages")
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq("pipeline_id", pipelineId)
+      .eq("id", etapaEscolhida)
+      .eq("is_archived", false)
+      .eq("is_won", false)
+      .eq("is_lost", false)
+      .maybeSingle();
+    if (etapa?.id) return { pipelineId, stageId: etapa.id as string };
+    logger.warn("[nascimento-do-lead] etapa de entrada do número não vale mais; usando a do funil", {
+      organizationId,
+      channel_session_id: channelSessionId,
+      entry_stage_id: etapaEscolhida,
+    });
+  }
+
+  const stageId = await etapaDeEntrada(db, organizationId, pipelineId, (funil as { settings?: unknown }).settings);
+  return stageId ? { pipelineId, stageId } : null;
+}
+
+/** O número da conversa, quando quem chama não o trouxe. Falha de leitura = nenhum. */
+async function numeroDaConversa(
+  db: SupabaseClient,
+  organizationId: string,
+  conversationId: string,
+): Promise<string | null> {
+  const { data } = await db
+    .from("conversations")
+    .select("channel_session_id")
+    .eq("organization_id", organizationId)
+    .eq("id", conversationId)
+    .maybeSingle();
+  return (data as { channel_session_id?: string | null } | null)?.channel_session_id ?? null;
 }
 
 /**
@@ -516,7 +611,17 @@ export async function garantirLeadDaConversa(
   // escolha mais específica, e quem montou a campanha sabe onde quer medir o
   // resultado dela. Campanha sem funil declarado, ou conversa que não nasceu de
   // campanha, seguem a regra da 0262 sem diferença nenhuma.
+  //
+  // O NÚMERO vem logo abaixo da campanha (migration 9430): quem escreve para o
+  // número de atacado entra no funil de atacado. Ele NÃO passa na frente do
+  // funil de clientes — quem já é cliente segue a regra da 0262 —, e número
+  // sem escolha (ou com escolha que não serve mais) cai no funil padrão.
   const origemDaCampanha = await origemDeCampanhaDaConversa(db, organizationId, conversationId);
+  const numero =
+    origemDaCampanha?.pipelineId || ehCliente
+      ? null
+      : (dados.channelSessionId ?? (await numeroDaConversa(db, organizationId, conversationId)));
+  const doNumero = numero ? await funilDoNumero(db, organizationId, numero) : null;
   const destino = origemDaCampanha?.pipelineId
     ? await destinoDaCampanha(
         db,
@@ -524,7 +629,7 @@ export async function garantirLeadDaConversa(
         origemDaCampanha.pipelineId,
         origemDaCampanha.stageId,
       )
-    : await funilDeEntrada(db, organizationId, ehCliente);
+    : (doNumero ?? (await funilDeEntrada(db, organizationId, ehCliente)));
   if ("erro" in destino) return { criado: false, motivo: destino.erro };
 
   // 3c · #4076 · o perdido de MINUTOS atrás não vira card vazio.

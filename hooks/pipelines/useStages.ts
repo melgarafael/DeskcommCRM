@@ -5,7 +5,7 @@ import { apiClient } from "@/lib/api/client";
 
 import { chaveDoQuadro } from "@/hooks/kanban/useBoard";
 
-import { chaveDoFunil } from "./useAgentMapping";
+import { chaveDoFunil, type EstadoDoMapeamento, type EtapaDoFunil } from "./useAgentMapping";
 
 /**
  * Criar, editar e arquivar etapa do funil — a escrita da tela de etapas.
@@ -66,6 +66,27 @@ export interface PatchDeEtapa {
   description?: string | null;
 }
 
+/**
+ * A lista com a etapa `etapaId` logo depois de `depoisDe` (`null` = primeira) — a
+ * ordem que o PATCH de `depois_de` vai gravar, desenhada antes de ele voltar.
+ *
+ * Vizinha que não está na lista devolve a MESMA lista: a API recusa esse pedido
+ * com 422 ("não está mais no funil"), e inventar um lugar aqui mostraria uma
+ * ordem que o servidor nunca gravou.
+ */
+export function etapasComAMovida(
+  etapas: EtapaDoFunil[],
+  etapaId: string,
+  depoisDe: string | null,
+): EtapaDoFunil[] {
+  const movida = etapas.find((e) => e.id === etapaId);
+  if (!movida || depoisDe === etapaId) return etapas;
+  const resto = etapas.filter((e) => e.id !== etapaId);
+  const i = depoisDe === null ? -1 : resto.findIndex((e) => e.id === depoisDe);
+  if (depoisDe !== null && i < 0) return etapas;
+  return [...resto.slice(0, i + 1), movida, ...resto.slice(i + 1)];
+}
+
 function useReler(pipelineId: string) {
   const qc = useQueryClient();
   return () => {
@@ -92,10 +113,34 @@ export function useCriarEtapa(pipelineId: string) {
 }
 
 export function useEditarEtapa(pipelineId: string) {
+  const qc = useQueryClient();
   const reler = useReler(pipelineId);
   return useMutation({
     mutationFn: ({ stageId, patch }: { stageId: string; patch: PatchDeEtapa }) =>
       apiClient.patch<unknown>(daEtapa(pipelineId, stageId), patch),
+    /**
+     * ⚠️ REORDENAR MOSTRA A ORDEM NOVA NA HORA (#4802). Quem solta uma coluna
+     * arrastada vê a linha voltar ao lugar antigo e só depois pular para o novo
+     * se a lista esperar o PATCH e a releitura — parece que o arrasto falhou. A
+     * ordem desenhada aqui é só a do pedido em voo: a releitura do `onSettled`
+     * continua sendo a verdade, e a recusa devolve a lista de antes.
+     */
+    onMutate: async ({ stageId, patch }) => {
+      if (patch.depois_de === undefined) return { anterior: undefined };
+      const chave = chaveDoFunil(pipelineId);
+      await qc.cancelQueries({ queryKey: chave });
+      const anterior = qc.getQueryData<EstadoDoMapeamento>(chave);
+      if (anterior) {
+        qc.setQueryData<EstadoDoMapeamento>(chave, {
+          ...anterior,
+          etapas: etapasComAMovida(anterior.etapas, stageId, patch.depois_de),
+        });
+      }
+      return { anterior };
+    },
+    onError: (_erro, _pedido, contexto) => {
+      if (contexto?.anterior) qc.setQueryData(chaveDoFunil(pipelineId), contexto.anterior);
+    },
     onSettled: reler,
   });
 }

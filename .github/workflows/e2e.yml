@@ -1524,6 +1524,12 @@ jobs:
       # aplica um funil com nome novo e reaplica o mesmo arquivo em
       # Configurações › Funis. Só usa o seed de credenciais e arquiva pela API o
       # funil que criou. PREVISÃO, não medida no CI: ~30 s de caso.
+      #
+      # `operacao-do-dia` entrou em 2026-11-16: cria a PRÓPRIA organização
+      # sintética (fuso de Beirute, admin/viewer/agent sem MFA), semeia uma
+      # conversa `projeto` pelo service role, gera o relatório pela tela e
+      # apaga tudo no fim. Não fala com WAHA nem com o Graph. PREVISÃO, não
+      # medida no CI: ~60 s de caso (quatro logins).
       SPECS_PARTE_7: >-
         celular-toque-nos-controles.spec.ts
         agente-novo-e-uso.spec.ts
@@ -1540,6 +1546,7 @@ jobs:
         aviso-pelo-numero-oficial.spec.ts
         molde-de-ia-empresas-novas.spec.ts
         blueprint-de-funis.spec.ts
+        operacao-do-dia.spec.ts
       # Ambiente isolado: esta spec exige HMAC WAHA e Graph sintético no
       # processo next start. As demais partes preservam a configuração WAHA.
       #

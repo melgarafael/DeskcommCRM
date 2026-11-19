@@ -67139,6 +67139,22 @@ comment on column public.send_ledger.media_storage_path is
   'resintetizar (e pagar) de novo pela mesma mensagem lógica. NULL para toda '
   'mensagem que não é voz, e para voz cuja síntese ainda não terminou.';
 
+-- ---- O ledger do envio sabe onde o ENVIO termina (migration 9407) ----
+-- Espelho idêntico da 9407 (o porquê está no cabeçalho dela): o `seq` é o
+-- contador do TURNO, então duas chamadas de `send_message` no mesmo job não se
+-- separam por ele; `envio_seq` é o `seq` da primeira bolha do envio, gravado em
+-- todas as linhas dele na ESCRITA, e é por ele que o reprocesso lê.
+alter table public.send_ledger
+  add column if not exists envio_seq smallint;
+
+comment on column public.send_ledger.envio_seq is
+  'Migration 9407. O `seq` da PRIMEIRA mensagem física do ENVIO a que esta '
+  'linha pertence (#4370). O `seq` sozinho é o contador do TURNO inteiro e '
+  'não separa dois envios do mesmo job; o reprocesso da saída configurável '
+  'lê as bolhas por `envio_seq = <1ª bolha do envio>`. NULL = linha gravada '
+  'antes da 9407 (a consulta cai na régua anterior, `seq >= $3`) ou envio de '
+  'mensagem única fora do turno da prospecção.';
+
 -- ---- O agente aprende a falar: voz_enabled + voz_quando (migration 9052) ----
 -- Espelho idêntico da 9052 (o porquê está no cabeçalho dela). Fica ANTES da
 -- VARREDURA anon porque recria `fn_ai_agent_version_content_immutable`; o corpo
@@ -81308,6 +81324,169 @@ end $$;
 comment on column public.conversations.campaign_entry_agent_id is
   'Agente declarado pela campanha de ENTRADA (frase do anúncio) cujo match trouxe este contato. Lido por resolve-turn-agent num degrau acima do roteador, em todo turno desta conversa. Nulo = conversa não veio de campanha de entrada. Migration 9415.';
 
+-- ---- relatórios da Operação do dia + conversas com entrada (migration 9400) ----
+-- (Antes do rótulo da cascata da 9243 — pedido da triagem do #4722 — e,
+-- portanto, antes da VARREDURA anon: o bloco cria função, e
+-- tests/unit/varredura-anon-e-o-ultimo-bloco.test.ts proíbe função depois dela.)
+-- Espelho de supabase/migrations/20261116090000_9400_relatorios_operacao_diarios.sql.
+-- ═══ O RELATÓRIO DIÁRIO DA OPERAÇÃO ═══
+--
+-- Uma linha por organização e dia LOCAL (o fuso da organização decide o dia).
+-- A unicidade é a idempotência: o cron roda a cada 15 minutos e insere com
+-- `on conflict do nothing`, então repetir, atrasar ou rodar em duas réplicas
+-- nunca duplica. O botão "Gerar agora" regera o MESMO dia por cima.
+--
+-- `conteudo` é o formato `OperacaoDoDia` (`lib/operacao/tipos.ts`, `versao`
+-- dentro do jsonb) passado por `congelar` (`lib/operacao/conteudo.ts`): SÓ
+-- FATOS — ids (conversa, contato, negócio, responsável), canal, situação,
+-- etiquetas, instantes, códigos, produtos do catálogo achados pela busca da IA
+-- (nunca o TERMO buscado, que é texto do cliente). NUNCA nome,
+-- telefone, @, prévia de mensagem ou resumo: a cascata de anonimização da LGPD
+-- (`fn_lgpd_cascade_redact_contact`) não alcança um jsonb guardado, então ele
+-- não pode ter o que ela precisaria apagar. A tela do relatório resolve o
+-- pessoal AO VIVO pela RLS da sessão — contato anonimizado aparece anonimizado.
+--
+-- Sem coluna de texto, de propósito: um texto congelado útil teria o nome do
+-- cliente, e sem nome ele não diz nada. O texto é montado na leitura.
+
+create table if not exists public.relatorios_operacao_diarios (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  dia date not null,
+  fuso text not null,
+  gerado_em timestamptz not null default now(),
+  gerado_por text not null,
+  conteudo jsonb not null
+);
+
+-- Uma versão não publicada desta migration tinha `texto text not null` com
+-- o nome dos contatos. Quem a aplicou num banco de desenvolvimento perde a
+-- coluna aqui (idempotente; nenhuma instalação publicada a teve).
+alter table public.relatorios_operacao_diarios drop column if exists texto;
+
+comment on table public.relatorios_operacao_diarios is
+  'Relatório diário da Operação do dia: uma linha por organização e dia local, com SÓ fatos não pessoais em conteudo (ids, canal, situação, etiquetas, instantes, códigos, nomes de produto do catálogo). Nome, telefone e resumo são lidos ao vivo na tela. Quem escreve é o servidor (cron relatorio-operacao-diario e o botão Gerar agora); a sessão só lê, com papel manager ou acima.';
+
+-- O drop e o add num bloco só: um bloco DO é uma instrução, então o `update.sh`
+-- (que reaplica o baseline sem ON_ERROR_STOP) nunca deixa a tabela entre as
+-- duas, sem a constraint.
+do $$
+begin
+  alter table public.relatorios_operacao_diarios
+    drop constraint if exists relatorios_operacao_diarios_gerado_por_check;
+  alter table public.relatorios_operacao_diarios
+    add constraint relatorios_operacao_diarios_gerado_por_check check (gerado_por in ('cron', 'usuario'));
+end $$;
+
+-- ⚠️ É A IDEMPOTÊNCIA DO CRON, não otimização. Dados duplicados (impossíveis
+-- enquanto a tabela nasceu com a constraint) seriam podados antes de criá-la.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'relatorios_operacao_diarios_org_dia_key'
+       and conrelid = 'public.relatorios_operacao_diarios'::regclass
+  ) then
+    delete from public.relatorios_operacao_diarios a
+     using public.relatorios_operacao_diarios b
+     where a.organization_id = b.organization_id
+       and a.dia = b.dia
+       and a.gerado_em < b.gerado_em;
+    alter table public.relatorios_operacao_diarios
+      add constraint relatorios_operacao_diarios_org_dia_key unique (organization_id, dia);
+  end if;
+end $$;
+
+alter table public.relatorios_operacao_diarios enable row level security;
+
+-- GRANTS EXPLÍCITOS. O default ACL do Supabase concede tudo a anon e
+-- authenticated em toda tabela nova; aqui a sessão só lê.
+revoke all on public.relatorios_operacao_diarios from anon;
+revoke all on public.relatorios_operacao_diarios from authenticated;
+grant select on public.relatorios_operacao_diarios to authenticated;
+grant select, insert, update, delete on public.relatorios_operacao_diarios to service_role;
+
+-- Tenant + papel: o relatório reúne as conversas da equipe inteira, então a
+-- régua de visibilidade de uma conversa (`fn_can_view_conversation`) não
+-- protegeria o jsonb. Manager ou acima, como a tela.
+drop policy if exists tenant_isolation_relatorios_operacao_diarios_all on public.relatorios_operacao_diarios;
+create policy tenant_isolation_relatorios_operacao_diarios_all on public.relatorios_operacao_diarios
+  for all to authenticated
+  using (
+    organization_id in (select public.fn_user_org_ids())
+    and public.fn_role_at_least(organization_id, 'manager')
+  )
+  with check (
+    organization_id in (select public.fn_user_org_ids())
+    and public.fn_role_at_least(organization_id, 'manager')
+  );
+
+-- ═══ AS CONVERSAS COM MENSAGEM DO CLIENTE NUM INTERVALO ═══
+--
+-- `nova` = nenhuma mensagem do cliente ANTES do intervalo: é a primeira
+-- conversa daquela pessoa naquele número. `security invoker`: chamada pela
+-- sessão, a RLS de `messages` e `conversations` vale (inclusive o escopo de
+-- visibilidade); chamada pelo cron, o filtro `organization_id = p_org` escrito
+-- é o que isola. Grupo fica de fora.
+create or replace function public.fn_operacao_conversas_com_entrada(
+  p_org uuid,
+  p_inicio timestamptz,
+  p_fim timestamptz,
+  p_limite integer default 5000
+)
+returns table (
+  conversation_id uuid,
+  channel text,
+  primeira_entrada timestamptz,
+  ultima_entrada timestamptz,
+  entradas integer,
+  nova boolean
+)
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  with do_dia as (
+    select m.conversation_id,
+           min(m.sent_at) as primeira,
+           max(m.sent_at) as ultima,
+           count(*)::integer as n
+      from public.messages m
+     where m.organization_id = p_org
+       and m.direction = 'inbound'
+       and m.sent_at >= p_inicio
+       and m.sent_at < p_fim
+     group by m.conversation_id
+  )
+  select d.conversation_id,
+         c.channel,
+         d.primeira,
+         d.ultima,
+         d.n,
+         not exists (
+           select 1
+             from public.messages p
+            where p.conversation_id = d.conversation_id
+              and p.organization_id = p_org
+              and p.direction = 'inbound'
+              and p.sent_at < p_inicio
+         ) as nova
+    from do_dia d
+    join public.conversations c
+      on c.id = d.conversation_id
+     and c.organization_id = p_org
+   where not c.is_group
+   order by d.primeira
+   limit greatest(1, least(coalesce(p_limite, 5000), 20000));
+$$;
+
+revoke execute on function public.fn_operacao_conversas_com_entrada(uuid, timestamptz, timestamptz, integer) from public, anon;
+grant execute on function public.fn_operacao_conversas_com_entrada(uuid, timestamptz, timestamptz, integer) to authenticated, service_role;
+
+comment on function public.fn_operacao_conversas_com_entrada(uuid, timestamptz, timestamptz, integer) is
+  'Operação do dia: por conversa (sem grupo), a primeira e a última mensagem do cliente no intervalo [p_inicio, p_fim) e se ela é nova (nenhuma mensagem do cliente antes). security invoker: a RLS da sessão vale.';
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.
@@ -87551,5 +87730,46 @@ create index if not exists idx_conversations_fila_espera
 
 comment on index public.idx_conversations_fila_espera is
   'Fila de espera do Inbox (#4325): casa o pré-filtro do comando (sem dono, fora do histórico encerrado) e a ordem ORDEM_DA_ESPERA (awaiting_since asc, id asc). Medido: lista da Fila 4.343 -> 685 buffers com 120 mil conversas.';
+
+notify pgrst, 'reload schema';
+
+-- ---- funil de entrada por número (migration 9430) ----
+-- Espelho de supabase/migrations/20261118150000_9430_funil_de_entrada_por_numero.sql.
+-- Cada conexão pode apontar o funil e a etapa onde a conversa nova vira negócio.
+-- Nulas = funil padrão da organização (comportamento de antes). Idempotente.
+alter table public.channel_sessions
+  add column if not exists entry_pipeline_id uuid,
+  add column if not exists entry_stage_id uuid;
+
+-- Chave composta com a organização (mesmo desenho de ai_router_members, #2155):
+-- o número nunca aponta para funil ou etapa de OUTRA empresa, e a etapa fica
+-- presa ao funil escolhido. `on delete set null` com lista de colunas zera só
+-- o destino quando o funil/etapa some; a conexão segue no funil padrão.
+-- Uma chave por tabela alvo: duas tornariam ambíguo o join do PostgREST.
+do $$ begin
+  alter table public.channel_sessions
+    add constraint channel_sessions_entry_pipeline_mesma_org
+    foreign key (organization_id, entry_pipeline_id)
+    references public.crm_pipelines (organization_id, id)
+    on delete set null (entry_pipeline_id);
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  alter table public.channel_sessions
+    add constraint channel_sessions_entry_stage_do_funil
+    foreign key (organization_id, entry_pipeline_id, entry_stage_id)
+    references public.crm_stages (organization_id, pipeline_id, id)
+    on delete set null (entry_stage_id);
+exception when duplicate_object then null; end $$;
+
+comment on column public.channel_sessions.entry_pipeline_id is
+  'Funil onde a conversa nova DESTE número vira negócio. Nulo = funil padrão da organização (crm_pipelines.is_default). Aplicado por lib/leads/nascimento-do-lead.ts (migration 9430).';
+comment on column public.channel_sessions.entry_stage_id is
+  'Etapa de entrada no funil escolhido para este número. Nula = a etapa de entrada do próprio funil. Ignorada sem entry_pipeline_id (migration 9430).';
+
+create index if not exists idx_channel_sessions_entry_pipeline
+  on public.channel_sessions (entry_pipeline_id) where entry_pipeline_id is not null;
+create index if not exists idx_channel_sessions_entry_stage
+  on public.channel_sessions (entry_stage_id) where entry_stage_id is not null;
 
 notify pgrst, 'reload schema';

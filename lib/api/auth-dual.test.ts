@@ -192,6 +192,7 @@ describe("os caminhos de envio passam pelo proxy", () => {
     ).toBe(true);
     expect(isPublicPath("/api/v1/prospecting")).toBe(true);
     expect(isPublicPath("/api/v1/agenda/tipos")).toBe(true);
+    expect(isPublicPath("/api/v1/agenda/tipos/reativar")).toBe(true);
   });
 
   it("libera versão, publicação e teste do agente (issue #2052)", () => {
@@ -222,8 +223,8 @@ describe("os caminhos de envio passam pelo proxy", () => {
     // prospecting: só a raiz; os irmãos de /agents (chat, prepare, session) seguem só-sessão.
     expect(isPublicPath("/api/v1/prospecting/agents")).toBe(false);
     expect(isPublicPath("/api/v1/prospecting/agents/chat")).toBe(false);
-    // agenda/tipos: o irmão /reativar segue só-sessão.
-    expect(isPublicPath("/api/v1/agenda/tipos/reativar")).toBe(false);
+    // agenda/tipos: /reativar aceita token (Spec 33, fatia 5), mas outros irmãos seguem só-sessão.
+    expect(isPublicPath("/api/v1/agenda/tipos/xyz")).toBe(false);
   });
 
   it("não dá carona a sub-paths que não têm suporte a Bearer", () => {
