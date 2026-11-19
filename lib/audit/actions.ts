@@ -1267,6 +1267,8 @@ export const AUDIT_ACTIONS = [
   "company_people.linked",
   "company_people.updated",
   "contacts.person_linked",
+  // #3198, fatia 3: o contato da prospecção virou (ou foi ligado a) uma Empresa.
+  "contacts.company_linked",
   "imports.companies_people",
   // A chave de Mapas da organização (0504, Agente de IA › Provedores): gravada ou
   // trocada, e removida. O metadata diz O QUE mudou — nunca a chave.
