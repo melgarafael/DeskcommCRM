@@ -224,7 +224,10 @@ Notas:
   `docker compose -f docker-compose.prod.yml -f docker-compose.cloudflared.yml --env-file .env
 logs cloudflared | grep -oE "protocol=[a-z0-9]+" | sort | uniq -c`. Se só aparece `http2`,
   ponha `CLOUDFLARED_PROTOCOL=http2` no `.env` e recrie o túnel (`… up -d cloudflared`).
-  Ausente, vale `auto` (o padrão do `cloudflared`).
+  Ausente, vale `auto` (o padrão do `cloudflared`). **O valor vai em minúsculas e só aceita
+  `auto`, `http2` ou `quic`:** qualquer outro (`HTTP2`, `h2`) faz o `cloudflared` sair e
+  reiniciar em loop, e o domínio fica fora do ar. Depois de mudar, confirme que as ligações
+  novas vêm com `protocol=http2` e que o `failed to dial ... quic` sumiu do log.
 - Verificação: `docker compose -f docker-compose.prod.yml -f docker-compose.cloudflared.yml
 --env-file .env config --services` deve listar `cloudflared` e **não** listar `caddy`.
 
