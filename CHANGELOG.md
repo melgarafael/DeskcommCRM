@@ -93,9 +93,15 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **Prospecção mostra a completude do site e ganha a opção de aprovar a prévia antes do primeiro contato** Na prospecção, o raio-X de cada empresa passa a mostrar as fontes públicas consultadas e uma pontuação de completude técnica do site — separada da prioridade comercial. A campanha ganha uma opção nova, "Aprovar a prévia de cada empresa antes do primeiro contato", desligada por padrão: ligada, a campanha só inicia, retoma e envia a primeira mensagem de uma empresa depois que alguém da equipe revisar e aprovar a prévia dela. Campanhas que já existem, e as novas com a opção desligada, seguem enviando como antes. A leitura do site também passou a conectar só aos endereços que o CRM já conferiu como públicos, e um certificado vencido ou inválido continua aparecendo como "SSL inválido". Nada a fazer na VPS.
 
+  Contribuição de @rtarijon (#3630).
+
 - **Na prospecção, a primeira mensagem pode seguir o prompt do agente, e a lista pode ir para outra campanha** Na campanha de prospecção, o passo de configuração ganhou a escolha **De onde vem a primeira mensagem**: pela **estratégia do site** (o ângulo vem da auditoria, como sempre foi) ou pelo **prompt do agente**, sem ângulo de auditoria. Com a campanha **pausada**, a mesma escolha aparece em **Editar instrução e critérios** e pode ser trocada sem perder a fila, e **Usar lista em outra campanha** (também na campanha concluída) leva as empresas ainda não abordadas para uma campanha nova em preparação, onde se escolhe outra conexão e outro agente, sem pagar a busca de novo; quem já foi abordado, já é contato ou pediu para não ser abordado fica na campanha antiga. A prévia da abordagem passa a abrir no topo de **Ver detalhes**, o resumo mostra a fonte e a voz em vigor, e o cartão **Voz e vocabulário** deixa de sumir quando a chave de busca já está salva. A escolha nasce em **estratégia do site**, o comportamento de antes: campanha existente não muda sozinha. Não há migration nem variável nova, e não é preciso mexer em nada na VPS.
 
+  Contribuição de @alexsantosmkd-nowreadyia (#4315).
+
 - **No Instagram, o agente com nota de voz ligada volta a responder em áudio** A mensagem direta do Instagram não aceita os formatos de áudio que o agente produzia (mp3 e ogg), e por isso, nas redes sociais, o agente respondia em texto. Agora, numa conta de Instagram, o agente com "Enviar nota de voz" ligado manda o áudio num formato que o Instagram aceita, e o cliente ouve a resposta no aplicativo. Não precisa instalar nada nem mudar configuração: vale a mesma chave de voz e a mesma voz escolhida de antes. No Facebook, que ainda não foi testado com áudio, o agente segue respondendo em texto, e a tela do agente continua avisando isso ao lado da chave de voz. Crédito: @lebaneseforas-byte.
+
+  Contribuição de @lebaneseforas-byte (#4719).
 
 ### Alterado
 
@@ -113,7 +119,11 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   organização continuam decisão do mantenedor). Nenhuma rota, schema ou resposta
   mudou; uma cerca nova confere cada valor do guia contra o código que o cumpre.
 
+  Contribuição de @webtecnica (#4885).
+
 - **A Zona de perigo vira "Limpar dados de teste": apaga também empresas, pessoas e importações, e mostra o que vai sumir antes de confirmar** Na entrega de um CRM configurado e limpo, a Zona de perigo deixava para trás o que o módulo Empresas e pessoas guardou durante os testes: empresas, pessoas e lotes de importação. Agora o botão **Limpar dados de teste** (Configurações › Organização) apaga também esses três tipos, além das mensagens, conversas, negócios, contatos, propostas, pedidos e agendamentos de antes. Ao abrir a confirmação, a tela mostra **quantos registros de cada tipo serão apagados** e lembra de fazer um backup se ainda precisar de algum deles; a confirmação pelo nome da organização continua igual. Continuam de pé a equipe, as configurações, os funis, os agentes de IA, os canais, os tokens, os registros de LGPD e o log de auditoria. A prospecção fica de fora de propósito, porque a lista de quem pediu para não ser contatado mora lá e não pode cair junto.
+
+  Contribuição de @xofrd (#4898).
 
 ### Corrigido
 
@@ -122,6 +132,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   O conserto de comportamento já está na instalação; o que faltava era a medida do lado negativo. O teste de banco agora prova, no mesmo arquivo, que o atendente dono do card transfere e a colega passa a ver o negócio no filtro "Responsável", e que uma troca de responsável feita direto na tabela (fora da transferência) continua sendo recusada pelo banco — inclusive ao tentar tomar o card de um colega, ao "Assumir" uma conversa cujo negócio já tem dono e quando quem transfere não é o dono do card.
 
   Nenhuma regra de visibilidade foi afrouxada: a lista de permissões de escrita do negócio fica fixada no teste, então qualquer abertura futura aparece como falha em vez de virar card trocado em silêncio. Ajuste a partir da issue #4371.
+
+  Contribuição de @webtecnica (#4879).
 
 - **Sair da lista de conversas cancela a leitura em voo, e o retry do cliente passa a deixar rastro** A lista de conversas não repassava ao `fetch` o sinal de cancelamento que o
   react-query já mantinha. Sair da tela, trocar de aba ou trocar o filtro
@@ -195,9 +207,13 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **Excluir um contato com negócio aberto no funil pede para fechar o negócio antes, em vez de deixar o card solto** Antes, excluir um contato deixava o card aberto no Kanban, sem contato e sem ninguém a quem ligar. Agora a exclusão é recusada enquanto o contato tiver negócio **aberto**, no mesmo molde do compromisso na Agenda: a tela e a resposta dizem quantos negócios barram e levam ao funil, para quem exclui fechar ou mover cada um com o motivo real. Nada é fechado automaticamente, então nenhuma perda entra na métrica do dono do negócio e nenhuma automação ou webhook dispara por engano. Negócios ganhos ou perdidos não barram. Nenhuma ação é necessária na VPS.
 
+  Contribuição de @xofrd (#4896).
+
 - **A nota de voz gravada no Chrome do celular não é mais recusada pelo número oficial do WhatsApp** Parte das notas de voz gravadas pelo Chrome do celular aparecia como "falhou" no número oficial (API da Meta), com o erro `131053 — Media upload error`, e o "Tentar de novo" falhava outra vez. O Chrome às vezes começa a gravação alguns milissegundos antes do zero, o CRM levava esse início negativo para o arquivo, e a Meta recusa o áudio assim. Agora o som é regravado em opus mono, com quadros de 20 ms e começando exatamente no zero, o mesmo formato que o WhatsApp usa nas próprias notas de voz. De quebra, o arquivo fica bem menor: uma nota de 1 minuto passa de cerca de 1 MB para cerca de 200 KB.
 
   Os áudios que já falharam continuam guardados no formato antigo, e o "Tentar de novo" neles volta a falhar: é preciso gravar de novo.
+
+  Contribuição de @mbiero (#4994).
 
 - **Quando o canal recusa a resposta da IA, ela não é reenviada em laço** Quando uma rede social recusava a resposta da IA (por exemplo um áudio que o
   provedor não aceita), o sistema tentava o atendimento inteiro de novo, várias
@@ -213,6 +229,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   antes. Hoje a classificação vale para as redes sociais e para o WhatsApp
   intermediado; nos outros canais toda falha segue passageira, como sempre foi.
   Crédito: @lebaneseforas-byte.
+
+  Contribuição de @lebaneseforas-byte (#4723).
 
 - **Auditoria do financeiro com autor e empresa, e vínculos conferidos** As ações de comanda, lançamento, pontos de fidelidade e honorários passam a registrar, na trilha de auditoria, quem agiu e em qual empresa. Antes elas entravam sem autor e sem empresa, e não apareciam para quem consulta a trilha da própria organização.
 
