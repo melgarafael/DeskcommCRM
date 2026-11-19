@@ -60,6 +60,8 @@ import {
 } from "@/lib/tarefas/negocio-da-tarefa";
 import { normalizarRegra, proximaOcorrencia, regraDeRecorrenciaSchema, regraParaGravar } from "@/lib/tarefas/recorrencia";
 import { conferirResponsavel } from "@/lib/tarefas/responsavel";
+import { setorDaTarefa, tarefaNoSetor } from "@/lib/tarefas/setor-da-tarefa";
+import { lerFontesDoSetor } from "@/lib/tarefas/setores-da-tarefa";
 import {
   PRIORIDADES_DA_TAREFA,
   SITUACOES_ABERTAS_DA_TAREFA,
@@ -78,7 +80,7 @@ const LIMITE_MAXIMO = 500;
 
 /** As colunas que a tela lê. Explícitas para o `select *` não vazar coluna nova. */
 const COLUNAS =
-  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, recurrence, created_at, updated_at, lead:crm_leads(id, title)";
+  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, recurrence, recurrence_source_id, created_at, updated_at, lead:crm_leads(id, title, contact_id)";
 
 /**
  * Com o filtro de funil o `lead` vira INNER JOIN: o PostgREST só filtra pela coluna de um
@@ -137,10 +139,17 @@ const listaSchema = z.object({
    */
   pipeline_id: z.string().uuid().optional(),
   /**
-   * Só as tarefas atribuídas a membros DESTE setor (`attendant_sectors`).
-   * Permite que a equipe fiscal, contábil, dp, ti filtre sua respectiva fila.
+   * Só as tarefas que EXIBEM este setor (#4883). Não é mais "de quem é do
+   * setor": o selo da tarefa vem da conversa (ou do negócio), e o filtro casa
+   * com o selo — ver `lib/tarefas/setor-da-tarefa.ts`.
    */
   sector_id: z.string().uuid().optional(),
+  /**
+   * "true" = anexa a cada tarefa o setor que o selo mostra (`setor: { id,
+   * origem }`). A tela de Tarefas pede; as outras listas (painel do inbox,
+   * dossiê do negócio) não, e por isso não pagam as consultas de derivação.
+   */
+  com_setor: z.enum(["true", "false"]).optional(),
   /**
    * Teto de linhas desta busca (#4028). Existe porque a visão em QUADRO desenha
    * todas as colunas de uma vez e pediria a base inteira: ela manda um número
@@ -233,39 +242,67 @@ export async function GET(req: NextRequest): Promise<Response> {
   else if (responsavel) query = query.eq("assigned_to", responsavel);
   if (filtros.pipeline_id) query = query.eq("lead.pipeline_id", filtros.pipeline_id);
 
-  if (filtros.sector_id) {
-    // Setores é módulo opcional (doc 213): desligado, o filtro não existe —
-    // a mesma resposta das rotas de setor, em vez de filtrar por um dado que a
-    // instalação não mostra.
-    const desligado = await seSetoresDesligado(requestId);
-    if (desligado) return desligado;
-    const { data: membrosDoSetor, error: erroDoSetor } = await supabase
-      .from("attendant_sector_members")
-      .select("user_id")
-      .eq("sector_id", filtros.sector_id)
-      .eq("organization_id", organizationId);
-    if (erroDoSetor) {
-      return fail("internal_error", t("Erro ao listar as tarefas."), 500, { requestId });
-    }
-    const ids = (membrosDoSetor ?? []).map((m: { user_id: string }) => m.user_id);
-    // Setor sem ninguém: nenhuma tarefa é dele.
-    if (ids.length === 0) return ok({ tasks: [] as Tarefa[] }, { requestId });
-    query = query.in("assigned_to", ids);
-  }
-
   const { data, error } = await query;
   if (error) {
     return fail("internal_error", t("Erro ao listar as tarefas."), 500, { requestId });
   }
 
   const tarefas = (data ?? []) as unknown as Tarefa[];
-  if (!doToken) return ok({ tasks: tarefas }, { requestId });
 
-  const comNegocio = await anexarNegocioDaTarefa(supabase, organizationId, tarefas);
-  if (!comNegocio) {
+  // No ramo do TOKEN o negócio não vem por embed (a service role não passa pela
+  // RLS de `crm_leads`): ele é juntado em consulta própria. A derivação do
+  // setor, logo abaixo, roda sobre as MESMAS linhas — a lista é a mesma nas
+  // duas portas, e o selo não pode depender de por onde a pessoa entrou.
+  let lista: Tarefa[] = tarefas;
+  if (doToken) {
+    const comNegocio = await anexarNegocioDaTarefa(supabase, organizationId, tarefas);
+    if (!comNegocio) {
+      return fail("internal_error", t("Erro ao listar as tarefas."), 500, { requestId });
+    }
+    lista = comNegocio;
+  }
+
+  // ═══ O SETOR VEM DA CONVERSA (OU DO NEGÓCIO), NÃO DO RESPONSÁVEL (#4883) ═══
+  //
+  // O setor da tarefa não é coluna: é DERIVADO — conversa → negócio →
+  // responsável, nesta ordem (`lib/tarefas/setor-da-tarefa.ts`). Quando a tela
+  // pede `com_setor=true` ou filtra por `sector_id`, a rota lê as três fontes
+  // para as linhas desta página e ANEXA `setor` a cada tarefa. O chip desenha
+  // esse campo e o filtro usa `tarefaNoSetor`: a MESMA função, uma decisão só.
+  //
+  // O filtro roda aqui, e não no PostgREST, porque conversa e card não são
+  // embutíveis em `crm_tasks` (não há FK de `crm_tasks` para `conversations`).
+  // O corte continua sendo o de sempre (500): com o filtro ligado ele acontece
+  // ANTES de filtrar, então a 501ª tarefa de um setor pode ficar de fora —
+  // é o preço de não ter view/RPC, e está declarado no PR.
+  const querSetor = filtros.com_setor === "true" || Boolean(filtros.sector_id);
+  if (!querSetor) return ok({ tasks: lista }, { requestId });
+
+  // Setores é módulo opcional (doc 213): desligado, o filtro não existe — a
+  // mesma resposta das rotas de setor. O selo, sozinho, não vira 404: sem
+  // setores não há o que desenhar, e derrubar a lista inteira seria pior.
+  const desligado = await seSetoresDesligado(requestId);
+  if (desligado) {
+    return filtros.sector_id ? desligado : ok({ tasks: lista }, { requestId });
+  }
+
+  let fontes: Awaited<ReturnType<typeof lerFontesDoSetor>>;
+  try {
+    // A organização vai EXPLÍCITA: no ramo do token o client é a service role e
+    // a RLS não recorta estas consultas.
+    fontes = await lerFontesDoSetor(supabase, organizationId, lista);
+  } catch {
     return fail("internal_error", t("Erro ao listar as tarefas."), 500, { requestId });
   }
-  return ok({ tasks: comNegocio }, { requestId });
+  const comSetor = lista.map((tarefa) => ({
+    ...tarefa,
+    setor: setorDaTarefa(fontes.get(tarefa.id) ?? {}),
+  }));
+  const visiveis = filtros.sector_id
+    ? comSetor.filter((tarefa) => tarefaNoSetor(fontes.get(tarefa.id) ?? {}, filtros.sector_id))
+    : comSetor;
+
+  return ok({ tasks: visiveis }, { requestId });
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -374,7 +411,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (parsed.data.recurrence) {
     const regra = normalizarRegra(parsed.data.recurrence);
     if (!regra) {
-      return fail("validation_failed", t("Escolha pelo menos um dia da semana e um horário."), 422, {
+      return fail("validation_failed", t("Escolha a repetição e o horário."), 422, {
         requestId,
       });
     }

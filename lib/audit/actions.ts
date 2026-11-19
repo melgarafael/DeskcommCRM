@@ -1468,6 +1468,8 @@ export const AUDIT_ACTIONS = [
   // (`data.previa`) para o tick reusar — deixou de ser somente leitura, logo
   // tem trilha. `resource_id` = o candidato; o TEXTO não entra no metadata.
   "prospecting.preview_saved",
+  "prospecting.preview_approved",
+  "prospecting.approval_required",
   // B2 (spec 24): o PREPARO AUTOMÁTICO gerou prévias sozinho (tick, sem clique).
   // UMA linha por rodada e só quando ≥1 prévia foi gravada — rodada que não gerou
   // nada não é mutação. Metadata: contagens e ids de campanha; o TEXTO nunca entra.
@@ -1703,6 +1705,9 @@ export const AUDIT_ACTIONS = [
   // "Escrito pela IA"). Metadata leva só os NOMES dos campos e se a autoria é da
   // IA — nunca o texto, que mora na ficha e é alcançado pela anonimização.
   "contact.diagnosis_saved",
+  // A pessoa gravou as próprias abas da Inbox (#3313): a ordem da faixa e quais
+  // ficam no menu "Mais". Metadata com a ordem, as visíveis e as ocultas.
+  "user.inbox_tabs_updated",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

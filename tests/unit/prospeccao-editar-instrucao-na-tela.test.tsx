@@ -164,6 +164,26 @@ describe("o formulário nasce com o texto gravado e só salva depois de confirma
     });
   });
 
+  // #4315: a fonte da abordagem mora no mesmo formulário. Só vai no pedido quando muda —
+  // os dois casos acima são o controle de que salvar o texto não manda a fonte.
+  it("trocar a fonte para o prompt do agente manda `fonte_da_abordagem: 'agente'`", async () => {
+    abrir("paused");
+    fireEvent.click(await screen.findByRole("button", { name: "Editar instrução e critérios" }));
+    fireEvent.click(screen.getByRole("radio", { name: /Prompt do agente/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar instrução e critérios" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar alteração" }));
+
+    expect(api.post).toHaveBeenCalledWith("/api/v1/prospecting", {
+      action: "edit_briefing",
+      id: CAMPANHA,
+      instruction: INSTRUCAO,
+      qualification: CRITERIO,
+      ofertas: ["site"],
+      usar_ficha_digital: true,
+      fonte_da_abordagem: "agente",
+    });
+  });
+
   it("texto abaixo do piso não deixa salvar — o servidor recusaria com 422", async () => {
     abrir("paused");
     fireEvent.click(await screen.findByRole("button", { name: "Editar instrução e critérios" }));
