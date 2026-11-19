@@ -11,7 +11,7 @@
 # conferir o que ele faz — a vigília podia estar armando a marca errada, contando
 # duas vezes a mesma falha ou voltando de versão em laço, e a suíte ficava verde.
 #
-# ## Os seis pontos que este arquivo guarda
+# ## Behaviors covered
 #
 #   1. o `update.sh` ARMA a marca com a VERSÃO DE ORIGEM (de onde se saiu);
 #   2. uma sonda que responde ZERA a contagem;
@@ -25,6 +25,9 @@
 #      `update.sh --to` da volta termina com código 0, `false` quando não. É o
 #      campo — não o texto do motivo — que o painel lê para não tratar igual a
 #      volta que terminou e a que falhou (#3271).
+#   8. A failed safety backup leaves the agent with no rollback to run now or
+#      after subsequent failed health checks.
+#   9. A refused update preserves the watchdog from an earlier update.
 #
 # ## Sabotagem (a prova de que cada caso guarda a linha certa)
 #
@@ -126,7 +129,11 @@ case "$url" in
     exit 0 ;;
   *api/v1/system/agent*)
     printf '%s\n' "$*" >> "$POSTS_LOG"
-    printf '{"data":{"update_requested":false,"run_id":null,"to_version":""}}\n200'
+    if [ -f "$DUB/update-requested" ] && [[ "$*" == *'"kind":"heartbeat"'* ]]; then
+      printf '{"data":{"update_requested":true,"run_id":"33333333-3333-4333-8333-333333333333","to_version":"v0.9.0"}}\n200'
+    else
+      printf '{"data":{"update_requested":false,"run_id":null,"to_version":""}}\n200'
+    fi
     exit 0 ;;
 esac
 exit 0
@@ -158,11 +165,21 @@ montar_instalacao() {  # montar_instalacao <raiz>
   case "$proj/hostgator-setup-kit/backup.sh" in
     "$RAIZ"/*) echo "recuso plantar o dublê dentro do repo"; exit 1 ;;
   esac
-  printf '#!/usr/bin/env bash\nexit 0\n' > "$proj/hostgator-setup-kit/backup.sh"
+  cat > "$proj/hostgator-setup-kit/backup.sh" <<'STUB'
+#!/usr/bin/env bash
+if [ -f "$DUB/backup-fails" ]; then
+  printf 'Simulated backup failure.\n' >&2
+  exit 1
+fi
+STUB
   chmod +x "$proj/hostgator-setup-kit/backup.sh"
+  # The optional runtime collector is absent on legacy installations. Use
+  # that supported path when testing the updater behind a normal agent request.
+  [ "${2:-}" != legacy ] || rm "$proj/hostgator-setup-kit/_runtime.sh"
   printf 'select 1;\n' > "$proj/supabase/baseline.sql"
   printf 'services:\n  app:\n    image: ${APP_IMAGE:-x}\n' > "$proj/docker-compose.prod.yml"
   cp "$RAIZ/docker-compose.build.yml" "$proj/"
+  printf '.env\n' > "$proj/.gitignore"
   cat > "$proj/.env" <<ENV
 APP_IMAGE=${NS}/deskcommcrm:0.8.0
 APP_PULL_POLICY=missing
@@ -424,9 +441,69 @@ case "$VOLTA_RUIM" in
         "${VOLTA_RUIM:-<nenhum POST de rollback>}" ;;
 esac
 
+echo "── 8. A failed backup leaves nothing for the agent to roll back"
+preparar_vps
+R3="$WORK/inst3"; montar_instalacao "$R3" legacy
+AG="$R3/deskcommcrm"
+touch "$AG/.deskcomm-segredo-do-cron-trocado" "$DUB/backup-fails" "$DUB/update-requested"
+# Let a rollback succeed in the Docker double if the agent attempts one.
+printf 'sha-0.8.0\n' >> "$DUB/imagens-locais"
+rodar_agente ok
+if grep -q 'backup preventivo falhou' "$AG/.update.log" 2>/dev/null; then
+  ok "the agent ran the updater and reached the failed backup"
+else
+  nao "updater reached the failed backup" "backup failure in .update.log" \
+    "$(tail -4 "$AG/.update.log" "$WORK/agente-saida.txt" 2>/dev/null; grep '"kind":"run_result"' "$POSTS_LOG" | cut -c1-420)"
+fi
+if grep -q '"kind":"run_result".*"status":"failed"' "$POSTS_LOG"; then
+  ok "the agent reported the refusal to the panel"
+else
+  nao "result after the failed backup" "a failed run_result" "$(grep '"kind":"run_result"' "$POSTS_LOG" | cut -c1-250)"
+fi
+if grep -Eq '^compose .* up ' "$DOCKER_LOG"; then
+  nao "no immediate rollback" "no Compose up" "$(grep -E '^compose .* up ' "$DOCKER_LOG")"
+else
+  ok "the agent did not restart services"
+fi
+if [ -e "$AG/.update-vigia" ]; then
+  nao "no watchdog after the refused update" "no marker" "$(sed -n '2p' "$AG/.update-vigia")"
+else
+  ok "the refused update did not start a watchdog"
+fi
+
+rm "$DUB/update-requested"
+rodar_agente proxy
+rodar_agente proxy
+if grep -q '"kind":"rollback"' "$POSTS_LOG"; then
+  nao "no rollback after two failed health checks" "no rollback report" "a later agent tick reported a rollback"
+else
+  ok "later failed health checks did not trigger a rollback"
+fi
+[ "$(git -C "$AG" describe --tags --exact-match HEAD)" = v0.8.0 ] \
+  && ok "the original release is still checked out" \
+  || nao "release after refusing the update" "v0.8.0" "$(git -C "$AG" describe --tags --exact-match HEAD)"
+
+echo "── 9. A failed backup preserves a previous watchdog and its failure count"
+armar_marca 60 v0.7.0
+cp "$AG/.update-vigia" "$WORK/prior-vigia"
+printf '1\n' > "$AG/.update-vigia-falhas"
+RC=0
+( cd "$AG" && bash hostgator-setup-kit/update.sh --to v0.9.0 ) \
+  > "$WORK/backup-recusa.txt" 2>&1 < /dev/null || RC=$?
+if [ "$RC" -eq 3 ] && grep -q 'backup preventivo falhou' "$WORK/backup-recusa.txt"; then
+  ok "the noninteractive updater returned the refusal status (3)"
+else
+  nao "update refusal after the failed backup" "status 3 and a backup failure" "status $RC ($(tail -2 "$WORK/backup-recusa.txt"))"
+fi
+if cmp -s "$WORK/prior-vigia" "$AG/.update-vigia" && [ "$(cat "$AG/.update-vigia-falhas" 2>/dev/null)" = 1 ]; then
+  ok "the prior watchdog and its count were preserved"
+else
+  nao "preserve an earlier watchdog" "the original marker and failure count 1" "marker or count changed"
+fi
+
 echo
 if [ "$falhas" -eq 0 ]; then
-  echo "vigia-da-volta: os sete pontos da vigília estão de acordo."
+  echo "vigia-da-volta: all watchdog and backup refusal checks passed."
   exit 0
 fi
 echo "vigia-da-volta: $falhas caso(s) em desacordo."
