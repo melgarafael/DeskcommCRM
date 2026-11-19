@@ -17,7 +17,7 @@ import {
 } from "@/lib/prospecting/site-classify";
 import type { OfertaDaCampanha } from "./schema";
 import type { PreviaSalva } from "./previa";
-import { sinaisDaEmpresa } from "./sinais-da-empresa";
+import { linhaDoTelefone, sinaisDaEmpresa } from "./sinais-da-empresa";
 import {
   dadosDoContextoDaEquipe,
   lerContextoDaEquipe,
@@ -592,6 +592,14 @@ export function instrucaoDeAbordagemFria(
  * celular/fixo) e, quando há veredito medido, `Auditoria` e `Detalhe` +
  * `Rascunho de abordagem` quando a tela guardou uma prévia válida.
  *
+ * `opcoes.semFichaDigital` (#4829) é a campanha que NÃO vende presença digital:
+ * saem `Ficha do Google`, `Redes`, `Auditoria`, `Detalhe` e o próprio `Site`;
+ * ficam `Empresa`, `Segmento`, `Endereço` e `Telefone` — o que a empresa É e como
+ * se chega nela. O `Telefone` fica de propósito: é dado de contato, não vitrine
+ * (nota, avaliações e redes são o material que o prompt frio citava e soava fora
+ * de contexto para quem vende consórcio, crédito, seguro ou consultoria).
+ * Ausente = ligada, byte a byte o de antes.
+ *
  * Fonte única — worker e prévia bebem daqui. Era aqui que o #4459 doía: a
  * descoberta trazia cinco sinais e o prompt recebia a nota nua, as URLs cruas e
  * o veredito do site. Numa empresa sem site sobrava "não tem site", e a
@@ -623,24 +631,35 @@ export function montarDadosDeAbordagem(
     verificado_em: string;
   } | null,
   previa?: PreviaSalva | null,
-  opcoes: { soCumprimenta?: boolean } = {},
+  opcoes: { soCumprimenta?: boolean; semFichaDigital?: boolean } = {},
 ): Record<string, string> {
+  const semFicha = opcoes.semFichaDigital === true;
   const dados: Record<string, string> = {
     Empresa: data.name,
     Segmento: data.category ?? "",
     Endereço: data.address ?? "",
-    Site: data.website ?? "",
+  };
+  if (semFicha) {
+    // SEM FICHA DIGITAL (#4829): o que a empresa É e como se chega nela. O
+    // `Telefone` fica — é contato, não vitrine; o tipo (celular/fixo, WhatsApp
+    // conferido) diz COMO falar, não serve de motivo. Ficam de fora o `Site`,
+    // a `Ficha do Google`, as `Redes` e a `Auditoria`.
+    const telefone = linhaDoTelefone(data);
+    if (telefone) dados.Telefone = telefone;
+  } else {
+    dados.Site = data.website ?? "";
     // Cada linha traz a ORIGEM no próprio rótulo (`Ficha do Google`, `Redes`,
     // `Telefone`) e só existe quando o fato foi coletado — ausência não vira
     // "sem avaliações", que seria afirmação sobre o mundo, não sobre o nosso
     // dado (ver `sinais-da-empresa.ts`).
-    ...sinaisDaEmpresa(data),
-  };
+    Object.assign(dados, sinaisDaEmpresa(data));
+  }
   // Só o DEFINITIVO E MEDIDO é citável (`citavelNoArgumento`) — e com a data,
   // nunca "agora": o envio pode sair dias depois da medição, e "agora"
   // envelhece em mentira. `falta-*` fica de fora mesmo em veredito antigo: item
   // de checklist é melhoria e já tem morada própria na ficha da tela (#3723).
-  if (site && citavelNoArgumento(site)) {
+  // Sem ficha digital a auditoria NÃO entra: é o argumento de venda de site.
+  if (!semFicha && site && citavelNoArgumento(site)) {
     const problemas = problemasMedidos(site.problemas).map((p) => descreverProblema(p)).filter(Boolean);
     const dataMedicao = site.verificado_em.slice(0, 10).split("-").reverse().join("/");
     dados["Auditoria"] =

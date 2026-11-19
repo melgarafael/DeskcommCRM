@@ -58,6 +58,7 @@ import {
   motivoParaGravar,
   sincronizarSaudeDaConexao,
 } from "@/lib/channels/health";
+import { restartsEsgotados } from "@/lib/channels/starting-preso";
 import { normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
 import { ehNomeDeSessaoE2E } from "@/lib/channels/sessoes-e2e";
 import { logger } from "@/lib/logger";
@@ -81,7 +82,19 @@ type LinhaDeSessao = ChannelSessionRef & {
   archived_at: string | null;
   /** Observações ruins SEGUIDAS — é onde o anti-pisco guarda a contagem. */
   consecutive_health_fails: number | null;
+  /** Quando a sessão entrou no status atual — é a idade que o aviso de `STARTING` usa. */
+  last_status_change_at: string | null;
+  /** Onde o vigia do worker guarda as tentativas de restart (`vigia_starting`). */
+  metadata: Record<string, unknown> | null;
 };
+
+/** Segundos desde o carimbo, ou `null` quando ele não veio/é ilegível. */
+function segundosDesde(carimbo: string | null | undefined, agoraMs: number): number | null {
+  if (!carimbo) return null;
+  const ms = Date.parse(carimbo);
+  if (!Number.isFinite(ms)) return null;
+  return Math.max(0, Math.floor((agoraMs - ms) / 1000));
+}
 
 /** Falhou a leitura, o aviso sai em português — nunca deixa de sair. */
 async function idiomaDaOrganizacao(
@@ -135,7 +148,7 @@ async function handle(req: NextRequest): Promise<Response> {
   const { data, error } = await admin
     .from("channel_sessions")
     .select(
-      `id, organization_id, status, status_reason, display_name, phone_number, archived_at, consecutive_health_fails, ${CHANNEL_SESSION_REF_COLUMNS}`,
+      `id, organization_id, status, status_reason, display_name, phone_number, archived_at, consecutive_health_fails, last_status_change_at, metadata, ${CHANNEL_SESSION_REF_COLUMNS}`,
     )
     .is("archived_at", null)
     .limit(LIMITE);
@@ -235,8 +248,11 @@ async function handle(req: NextRequest): Promise<Response> {
       // gravar por cima com um erro de rede transitório trocaria informação boa
       // por ruído, e é o mesmo cuidado que a tela de conexões já toma.
       let statusFinal = s.status;
+      /** O status mudou NESTA rodada — a idade do status anterior não vale mais. */
+      let mudouAgora = false;
       if (saude.reachable && saude.status && saude.status !== s.status) {
         statusFinal = saude.status;
+        mudouAgora = true;
         const agora = new Date().toISOString();
         await admin
           .from("channel_sessions")
@@ -262,7 +278,15 @@ async function handle(req: NextRequest): Promise<Response> {
       const desfecho = await sincronizarSaudeDaConexao(
         admin,
         { id: s.id, organization_id: s.organization_id, status: statusFinal, status_reason: s.status_reason },
-        saude,
+        // A IDADE do status vai junto: é o que separa um boot de trinta segundos
+        // de uma sessão presa em `STARTING` há três dias (#4870). O contador do
+        // vigia (`vigia_starting.esgotado`) sobe o aviso para crítico quando as
+        // tentativas automáticas de restart acabaram.
+        {
+          ...saude,
+          segundosNoStatus: mudouAgora ? 0 : segundosDesde(s.last_status_change_at, Date.now()),
+          restartsEsgotados: restartsEsgotados(s.metadata),
+        },
         apelido,
         "varredura",
         // O aviso do número de pé com defeito sai no idioma da organização. A
