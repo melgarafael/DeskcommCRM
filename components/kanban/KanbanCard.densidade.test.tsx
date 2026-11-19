@@ -62,7 +62,7 @@ vi.mock("next/link", () => ({
 }));
 
 const AGORA = new Date("2026-10-27T12:00:00Z");
-/** 5 dias parado na etapa: dá idade para o rodapé escrever "5d em Negociação". */
+/** 5 dias parado na etapa: dá idade para o rodapé escrever "5d". */
 const ENTRADA_NA_ETAPA = "2026-10-22T12:00:00Z";
 
 const LEAD = {
@@ -150,8 +150,9 @@ describe("card compacto × confortável (#3461, item 2)", () => {
     // Valor e dono continuam no card.
     expect(within(cartao).getByText(/2\.500/)).toBeInTheDocument();
     expect(within(cartao).getByText(/Marcos/)).toBeInTheDocument();
-    // E o tempo na etapa também.
-    expect(within(cartao).getByText(/Negociação/)).toBeInTheDocument();
+    // O tempo na etapa continua. O nome da etapa não: a coluna já o mostra.
+    expect(within(cartao).getByText("5d")).toBeInTheDocument();
+    expect(within(cartao).queryByText(/Negociação/)).toBeNull();
   });
 
   it("o compacto tira do card a conversa e o contato — e é isto que o PR declara", () => {

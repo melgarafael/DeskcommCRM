@@ -32,6 +32,8 @@
  * como as outras opções por organização (`settings.crm.*`, `settings.satisfacao`).
  */
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 /** Onde a opção mora em `organizations.settings`. */
 export const BLOCO_DAS_TAREFAS = "tarefas";
 
@@ -50,6 +52,63 @@ export function lerEscopoDoAtendente(settings: unknown): boolean {
   const bloco = (settings as Record<string, unknown>)[BLOCO_DAS_TAREFAS];
   if (typeof bloco !== "object" || bloco === null || Array.isArray(bloco)) return false;
   return (bloco as Record<string, unknown>)[CHAVE_DO_ESCOPO_DO_ATENDENTE] === true;
+}
+
+/**
+ * A opção da organização, lida do BANCO — o único jeito honesto de decidir
+ * restrição numa rota.
+ *
+ * O `jsonb` é tolerante por construção (`lerEscopoDoAtendente`): organização
+ * que nunca ligou, ou com `settings` torto, continua com o comportamento de
+ * antes. A leitura é do banco da SESSÃO (`authz.supabase`); no ramo do token a
+ * chamada nem acontece, porque o escopo não se aplica a quem não é gente.
+ */
+async function escopoDoAtendenteLigado(
+  supabase: SupabaseClient,
+  organizationId: string,
+): Promise<boolean> {
+  // `.select("settings")` sem `single`: a resposta é um array de uma linha, e o
+  // array não transforma "organização sumiu" em erro que derrubaria a lista.
+  const { data } = await supabase
+    .from("organizations")
+    .select("settings")
+    .eq("id", organizationId);
+  return lerEscopoDoAtendente((data?.[0] as { settings?: unknown } | undefined)?.settings);
+}
+
+/**
+ * A régua COMPLETA, para as rotas: `atendenteRestrito` + a leitura da opção.
+ *
+ * É a MESMA função nas duas portas (lista e tarefa única), para a tela e a API
+ * não divergirem sobre quem está restrito.
+ *
+ * ─── Por que a leitura do `settings` é CONDICIONAL ─────────────────────────
+ *
+ * `atendenteRestrito` já responde `false` para quem não é `agent` e para quem
+ * administra a empresa. Ler o `jsonb` antes disso seria uma consulta por
+ * requisição cujo resultado ninguém usaria — e ainda mudaria a ORDEM das
+ * consultas da lista (a leitura da organização viria antes da consulta das
+ * tarefas). A guarda fica aqui, junto da regra, e não repetida em cada rota.
+ */
+export async function atendenteRestritoNaOrganizacao(
+  supabase: SupabaseClient,
+  entrada: {
+    organizationId: string;
+    /** `authz.role` — o papel EFETIVO que o `resolveAuthDual` já resolveu. */
+    papel: string | null | undefined;
+    /** `authz.administraEmpresa` — o atalho `podeAdministrarEmpresa`. */
+    administraEmpresa: boolean | undefined;
+    /** `authz.via`: token não é gente na fila e nunca é restringido. */
+    via: "session" | "token";
+  },
+): Promise<boolean> {
+  if (entrada.via === "token") return false;
+  if (entrada.papel !== "agent" || entrada.administraEmpresa) return false;
+  return atendenteRestrito({
+    papel: entrada.papel,
+    administraEmpresa: entrada.administraEmpresa,
+    escopoLigado: await escopoDoAtendenteLigado(supabase, entrada.organizationId),
+  });
 }
 
 /**

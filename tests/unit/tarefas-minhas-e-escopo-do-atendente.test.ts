@@ -33,9 +33,9 @@ import { readFileSync } from "node:fs";
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { resolveAuthDual } from "@/lib/api/auth-dual";
 import { fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
-import { ROLE_RANK, type AuthUser, type Role } from "@/lib/auth/types";
+import { ROLE_RANK, type Role } from "@/lib/auth/types";
 import { portaDaAplicacao } from "@/lib/db";
 import { createClient } from "@/lib/supabase/server";
 import { tarefaForaDoEscopo } from "@/lib/tarefas/escopo-do-atendente";
@@ -45,7 +45,13 @@ import {
   lerFiltroDoResponsavel,
 } from "@/lib/tarefas/preferencia-do-filtro";
 
-vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
+// A rota entra por `resolveAuthDual` (sessão OU token, Spec 33): a identidade
+// do teste é a MESMA forma que a rota consome, inclusive o papel EFETIVO —
+// que é o que a régua de escopo lê.
+vi.mock("@/lib/api/auth-dual", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api/auth-dual")>()),
+  resolveAuthDual: vi.fn(),
+}));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({
   audit: vi.fn(async () => undefined),
@@ -66,23 +72,26 @@ const BETO = "66666666-6666-4666-8666-666666666666";
 const TAREFA = "55555555-5555-4555-8555-555555555555";
 
 function sessao(papel: Role = "agent", isPlatformAdmin = false) {
-  const user: AuthUser = {
-    id: ANA,
-    email: "ana@example.com",
-    full_name: "Ana",
-    avatar_url: null,
-    is_platform_admin: isPlatformAdmin,
-    // A rota decide "administra a empresa" por `podeAdministrarEmpresa`, que
-    // cobra o scope `full` (`escreveComoPlatformAdmin`) — nunca lê a flag crua.
-    platform_admin_scope: isPlatformAdmin ? "full" : null,
-    idioma: "pt-BR" as const,
-    organizations: [{ organization_id: ORG, organization_name: "Org", role: papel }],
-  };
-  vi.mocked(requireRole).mockImplementation(async (min: Role) =>
-    ROLE_RANK[papel] >= ROLE_RANK[min]
-      ? { ok: true, user, org: { orgId: ORG, name: "Org", role: papel } }
-      : { ok: false, response: fail("forbidden_role", `Requer role >= ${min}.`, 403, {}) },
-  );
+  vi.mocked(resolveAuthDual).mockImplementation(async (req, { role: min }) => {
+    if (ROLE_RANK[papel] < ROLE_RANK[min]) {
+      return { ok: false as const, response: fail("forbidden_role", `Requer role >= ${min}.`, 403, {}) };
+    }
+    void req;
+    return {
+      ok: true as const,
+      organizationId: ORG,
+      actor: { type: "user" as const, id: ANA, role: papel },
+      // O client da rota vem daqui agora: o dublê de `createClient` é o do
+      // caso, e `sessao()` só o repassa — como o `resolveAuthDual` de verdade.
+      supabase: await createClient(),
+      idioma: "pt-BR" as const,
+      via: "session" as const,
+      // O papel EFETIVO e o atalho "administra a empresa", os dois que o
+      // `resolveAuthDual` resolve e a régua de escopo consome.
+      role: papel,
+      administraEmpresa: isPlatformAdmin || ROLE_RANK[papel] >= ROLE_RANK.admin,
+    };
+  });
 }
 
 /** Um elo de PostgREST que ANOTA o que a rota pediu — e devolve o que se mandar. */

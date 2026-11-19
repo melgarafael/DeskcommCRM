@@ -130,7 +130,7 @@ create policy tenant_isolation_voice_calls_all on voice_calls
 
 ### 3.1 Imagem e ativação — CONFIRMADO em `docker-compose.prod.yml`
 
-O serviço usa a imagem do upstream `ghcr.io/jotadev66/wacalls`, fixada por digest no compose. Não há imagem própria para reconstruir. O serviço pertence ao profile `voz`, desligado por padrão; `COMPOSE_PROFILES=voz` o inclui nas próximas atualizações da instalação.
+O serviço usa a imagem do fork mantido pela DeskLabs, `ghcr.io/desklabs-opensource/wacalls`, fixada por digest no compose. A imagem dos autores (`ghcr.io/jotadev66/wacalls`) parou num whatsmeow que o WhatsApp recusa (issue #4937), e os autores não aceitam mais PR. Não há imagem própria do DeskcommCRM para reconstruir. O serviço pertence ao profile `voz`, desligado por padrão; `COMPOSE_PROFILES=voz` o inclui nas próximas atualizações da instalação.
 
 A API é autenticada. `WACALLS_ADMIN_USER` e `WACALLS_ADMIN_PASSWORD` permitem o boot; `WACALLS_API_TOKEN` é a credencial compartilhada pelo serviço, pelo app e pelo worker. O instalador e o atualizador completam os segredos ausentes. `WACALLS_API_BASE_URL=http://wacalls:8080` aponta os clientes para a rede interna.
 
