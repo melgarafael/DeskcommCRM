@@ -305,6 +305,8 @@ export const AUDIT_ACTIONS = [
   "ai_agent.reverted",
   "ai.dispatcher_run",
   "ai.pacing_knobs_updated",
+  /** Teto de respostas automáticas por conversa (#4590), ajustado pela empresa. */
+  "ai.teto_de_respostas_updated",
   "ai.inbox_item_status_changed",
   "ai.flywheel_proposal_applied",
   "ai.org_memory_published",
@@ -393,6 +395,9 @@ export const AUDIT_ACTIONS = [
   // Rótulo interno do canal (channel_sessions.display_name); nada vai ao
   // provedor. Emitida por app/api/v1/channel-sessions/[id]/name.
   "channel.renamed",
+  // Funil de entrada do número (migration 9430): onde a conversa nova daquele
+  // número vira negócio. Emitida por app/api/v1/channel-sessions/[id]/entrada.
+  "channel.entry_pipeline_changed",
   // A janela de manutenção (#2388): criar, editar e cancelar são mutações da
   // tela e auditam como toda mutação. A pausa e a retomada que a janela aplica
   // saem como `channel.disabled`/`channel.enabled`, com `origem: schedule`.
@@ -918,6 +923,15 @@ export const AUDIT_ACTIONS = [
   /** A rodada da fonte de catálogo (#3587, fatia 2) — cria, atualiza e desativa em lote. */
   "catalog_products.synced_from_feed",
 
+  // O serviço no catálogo (#3372, migration 9419): sinal, prazo e preço do
+  // serviço são combinados com o cliente, e quem mudou precisa ficar registrado
+  // como no produto. A variação tem ação própria porque é outro preço — o valor
+  // que o cliente ouviu.
+  "catalog_service.created",
+  "catalog_service.updated",
+  "catalog_service.variation_created",
+  "catalog_service.variation_updated",
+
   // As tarefas do CRM (migration 0210). Tarefa é combinado de trabalho entre
   // pessoas do time — quem a criou, quem mudou o prazo e quem a apagou é
   // exatamente o que se disputa depois de um cliente ficar sem retorno.
@@ -1265,6 +1279,8 @@ export const AUDIT_ACTIONS = [
   "company_people.linked",
   "company_people.updated",
   "contacts.person_linked",
+  // #3198, fatia 3: o contato da prospecção virou (ou foi ligado a) uma Empresa.
+  "contacts.company_linked",
   "imports.companies_people",
   // A chave de Mapas da organização (0504, Agente de IA › Provedores): gravada ou
   // trocada, e removida. O metadata diz O QUE mudou — nunca a chave.
@@ -1452,6 +1468,8 @@ export const AUDIT_ACTIONS = [
   // (`data.previa`) para o tick reusar — deixou de ser somente leitura, logo
   // tem trilha. `resource_id` = o candidato; o TEXTO não entra no metadata.
   "prospecting.preview_saved",
+  "prospecting.preview_approved",
+  "prospecting.approval_required",
   // B2 (spec 24): o PREPARO AUTOMÁTICO gerou prévias sozinho (tick, sem clique).
   // UMA linha por rodada e só quando ≥1 prévia foi gravada — rodada que não gerou
   // nada não é mutação. Metadata: contagens e ids de campanha; o TEXTO nunca entra.
@@ -1461,6 +1479,11 @@ export const AUDIT_ACTIONS = [
   // LGPD art. 18, V. Audita o GESTO com o total de linhas e os filtros que
   // valiam, nunca o termo de busca.
   "contacts.exported",
+  // O relatório de vendas do Desempenho baixado em CSV (#4802, item 5).
+  // Mesmo porquê do export de contatos e do de auditoria: o arquivo SAIU, e
+  // quem administra precisa saber que saiu. Metadata: quantas linhas, a janela
+  // e o atendente filtrado — nunca valor de venda nem conteúdo de negócio.
+  "reports.sales_exported",
   // O operador carregou a imagem que a Resposta rápida passa a enviar junto
   // com o texto — `POST /message-templates/:id/midias` (#2526). A REMOÇÃO não
   // tem código próprio: ela acontece dentro do `template.updated` (campo
@@ -1653,6 +1676,13 @@ export const AUDIT_ACTIONS = [
   // "quem moveu" no painel. Mover roteador em silêncio não existe: as duas
   // camadas são gravadas na mesma operação.
   "ai.router_channel_moved",
+  // Operação do dia: o relatório diário gravado (pelo cron, que só cria, ou pelo
+  // botão "Gerar agora", que regera). Metadata leva `dia`, `gerado_por` e as
+  // contagens — nunca nome nem telefone de contato.
+  "operacao.relatorio_gerado",
+  // A configuração da Operação do dia (etiquetas, etapas de proposta, hora do
+  // relatório). Metadata leva o antes e o depois do bloco `operacao_do_dia`.
+  "settings.operacao_do_dia_updated",
   // OAuth do MCP do CRM (migration 9390) — a conexão de um cliente como o
   // ChatGPT. `cliente_registrado` é da instalação (sem organização: o registro
   // dinâmico é aberto); `autorizado`/`negado` são da pessoa na tela de

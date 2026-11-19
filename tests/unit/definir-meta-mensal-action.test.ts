@@ -20,6 +20,11 @@ const USER = "11111111-1111-4111-8111-111111111111";
 let papel = "manager";
 let emDivida = false;
 let existente: { id: string; alvo: number } | null = null;
+const OUTRO = "33333333-3333-4333-8333-333333333333";
+/** Quem é membro da ORG: só o que estiver aqui sai da leitura de `user_organizations`. */
+let membros = new Set<string>();
+/** Membros com vínculo REVOGADO: só somem da leitura se a consulta filtrar `revoked_at is null`. */
+let revogados = new Set<string>();
 const inseridas: Array<Record<string, unknown>> = [];
 const atualizadas: Array<{ valores: Record<string, unknown>; filtros: Array<[string, unknown]> }> = [];
 const leiturasPorOrg: unknown[] = [];
@@ -56,10 +61,35 @@ function cadeiaDeLeitura() {
   return c;
 }
 
+function cadeiaDeMembros() {
+  const filtros = new Map<string, unknown>();
+  const c = {
+    select: () => c,
+    eq: (coluna: string, valor: unknown) => {
+      filtros.set(coluna, valor);
+      return c;
+    },
+    is: (coluna: string, valor: unknown) => {
+      filtros.set(`is:${coluna}`, valor);
+      return c;
+    },
+    maybeSingle: async () => ({
+      data:
+        filtros.get("organization_id") === ORG &&
+        membros.has(String(filtros.get("user_id"))) &&
+        !(filtros.get("is:revoked_at") === null && revogados.has(String(filtros.get("user_id"))))
+          ? { user_id: filtros.get("user_id") }
+          : null,
+      error: null,
+    }),
+  };
+  return c;
+}
+
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
-    from: (_tabela: string) => ({
-      ...cadeiaDeLeitura(),
+    from: (tabela: string) => ({
+      ...(tabela === "user_organizations" ? cadeiaDeMembros() : cadeiaDeLeitura()),
       insert: async (linha: Record<string, unknown>) => {
         inseridas.push(linha);
         return { error: null };
@@ -86,6 +116,8 @@ beforeEach(() => {
   papel = "manager";
   emDivida = false;
   existente = null;
+  membros = new Set([USER]);
+  revogados = new Set();
   inseridas.length = 0;
   atualizadas.length = 0;
   leiturasPorOrg.length = 0;
@@ -159,6 +191,33 @@ describe("definirMetaMensal", () => {
         metadata: expect.objectContaining({ alvo: 25, alvo_anterior: 40 }),
       }),
     ]);
+  });
+
+  it("meta de vendedor MEMBRO da organização é gravada com o vendedor_id", async () => {
+    expect(
+      await definirMetaMensal({ periodo: "2026-10", indicador: "valor_vendido", vendedor_id: USER, alvo: 15_000_000 }),
+    ).toEqual({ ok: true });
+    expect(inseridas).toEqual([expect.objectContaining({ vendedor_id: USER, indicador: "valor_vendido" })]);
+  });
+
+  // #4986: a recusa tem código próprio — com `validation_failed` a tela dizia
+  // "o mês e o alvo precisam estar preenchidos", com os dois preenchidos.
+  it("vendedor que NÃO é membro da organização → vendedor_fora_da_equipe, e nada é gravado nem auditado", async () => {
+    const r = await definirMetaMensal({ periodo: "2026-10", indicador: "valor_vendido", vendedor_id: OUTRO, alvo: 15_000_000 });
+    expect(r).toEqual(expect.objectContaining({ ok: false, error: "vendedor_fora_da_equipe" }));
+    expect(inseridas).toEqual([]);
+    expect(atualizadas).toEqual([]);
+    expect(auditadas).toEqual([]);
+  });
+
+  it("vendedor com vínculo REVOGADO na organização → vendedor_fora_da_equipe, e nada é gravado nem auditado", async () => {
+    membros.add(OUTRO);
+    revogados.add(OUTRO);
+    const r = await definirMetaMensal({ periodo: "2026-10", indicador: "valor_vendido", vendedor_id: OUTRO, alvo: 15_000_000 });
+    expect(r).toEqual(expect.objectContaining({ ok: false, error: "vendedor_fora_da_equipe" }));
+    expect(inseridas).toEqual([]);
+    expect(atualizadas).toEqual([]);
+    expect(auditadas).toEqual([]);
   });
 
   it("mês fora do formato é recusado antes de qualquer leitura", async () => {

@@ -80,6 +80,7 @@ import { WahaChannelAdapter } from '../edge/channel/waha-adapter';
 import { applySendOutcome } from '../edge/crm/send-message';
 import { blocoDaRespostaFalada, resolverVozDoTurno } from './voz-do-turno';
 import { textoParaFalar } from '@/lib/ai/voz/texto-falavel';
+import { extensaoDoMime } from '@/lib/ai/voz/formato';
 import {
   LlmBudgetExceededError,
   runModelCall,
@@ -279,6 +280,7 @@ import { readSkillReference, skillHasReferences } from './skill-references';
 import { READ_ONLY_TOOLS, wrapToolsWithBreaker, type ToolBreakerThresholds } from './tool-breaker';
 import {
   loadChannelProvider,
+  loadNotaDeVozDoCanal,
   nomesDasFerramentas,
   runBeforeSend,
   tipoDeEnvio,
@@ -322,7 +324,9 @@ import { CORRECAO_DO_TURNO_MUDO, PASSOS_DA_CORRECAO, turnoMudoPedeCorrecao } fro
 import {
   CODIGO_DO_TETO_DE_RESPOSTAS,
   avisarEquipeDoTetoDeRespostas,
-  knobsDoTetoDeRespostas,
+  lerTetoDoAntiBan,
+  resolverTetoDeRespostasDaOrganizacao,
+  silenciarConversaPeloTeto,
 } from './teto-de-respostas';
 import {
   desfechoSemCandidato,
@@ -960,8 +964,9 @@ export async function uploadDeVoz(input: {
   mimeType: string;
 }): Promise<string> {
   // A extensão acompanha o formato: `.ogg` é a nota de voz em opus do canal
-  // oficial, e é ela que diz o formato a um retry (`mimeDoCaminhoDeVoz`).
-  const extensao = input.mimeType.toLowerCase().startsWith('audio/ogg') ? 'ogg' : 'mp3';
+  // oficial, `.wav` a da DM do Instagram, e é ela que diz o formato a um retry
+  // (`mimeDoCaminhoDeVoz`).
+  const extensao = extensaoDoMime(input.mimeType);
   const path = `${input.tenantId}/${input.conversationId}/voz-agente-${input.jobId}-${input.seq}.${extensao}`;
   const admin = createAdminClient();
   // `upsert: true`, e não `false`: este caminho só é chamado quando
@@ -3495,7 +3500,9 @@ async function executarTurnoDoAgente(
           // Voz por agente (#4228): sem chave no agente, `null` e a resolução cai
           // na voz da organização — o comportamento de antes, byte a byte.
           vozVoiceId: agentConfig.vozVoiceId ?? null,
-          voiceNote: capabilitiesOf(await loadChannelProvider(pool, tenantId, input.channelSessionId)).voiceNote,
+          // Provedor E rede da sessão: o mesmo provedor social serve Instagram
+          // (WAV, medido) e Facebook (texto, não medido).
+          voiceNote: await loadNotaDeVozDoCanal(pool, tenantId, input.channelSessionId),
           // #4345: a CONVERSA entra na decisão do `'quando_pede'` — o pedido de
           // áudio feito duas mensagens atrás continua valendo. A janela é a que
           // o turno já carregou em `openingContext.context.messages`: nenhuma
@@ -5332,6 +5339,19 @@ async function executarTurnoDoAgente(
           // janela (`resposta*`) e é o que arma o teto de respostas por conversa:
           // follow-up é retomada e não entra nessa conta.
           const eResposta = eTurnoDeResposta(liveJob());
+          // #4590 — os números do teto valem por ORGANIZAÇÃO desde esta fatia:
+          // `settings.anti_ban.teto_de_respostas` manda; o env da instalação é o
+          // padrão de quem nunca configurou. Uma leitura por chave primária, só no
+          // caminho de resposta em produção (`preview` não arma e não paga a
+          // consulta). `null` = não é turno de resposta: nada a resolver.
+          const tetoDoTurno =
+            eResposta && !preview
+              ? await resolverTetoDeRespostasDaOrganizacao(pool, {
+                  organizationId: tenantId,
+                  base: deps.knobs.tetoDeRespostas,
+                  log: runLog,
+                })
+              : null;
           // Args reusados EXATAMENTE (mesmo objeto) no re-run do fail-safe abaixo — só
           // hasOpenCase/openedCaseThisTurn mudam depois do auto-abre-caso.
           const beforeSendArgs = {
@@ -5353,11 +5373,12 @@ async function executarTurnoDoAgente(
             // Prévia não arma (o Testar não entrega nada ao cliente; um teto ali
             // esconderia justamente a resposta que o dono está testando) e follow-up
             // também não — ali não houve mensagem recebida agora.
-            ...(eResposta && !preview
+            ...(tetoDoTurno !== null
               ? {
                   tetoDeRespostas: {
                     conversationId: input.conversationId,
-                    ...knobsDoTetoDeRespostas(deps.knobs.tetoDeRespostas),
+                    porConversa: tetoDoTurno.porConversa,
+                    janelaMinutos: tetoDoTurno.janelaMinutos,
                   },
                 }
               : {}),
@@ -5729,14 +5750,29 @@ async function executarTurnoDoAgente(
               pacingCapVeto = { code: chain.code, nextAllowedAt: chain.nextAllowedAt };
             }
             // #4590 — o teto calou a conversa: a equipe é avisada na Central, um
-            // aviso aberto por conversa (dedupe no repositório). Nunca lança.
+            // aviso aberto por conversa (dedupe no repositório), e a conversa é
+            // PAUSADA pelo caminho do atendente (`bot_silenced_until`, horizonte
+            // limitado e reversível). Os números são os da ORGANIZAÇÃO que armou o
+            // gate — não o env da instalação, que pode ser outro. Nunca lança.
             if (chain.code === CODIGO_DO_TETO_DE_RESPOSTAS && !preview) {
+              const tetoQueVale =
+                tetoDoTurno ??
+                lerTetoDoAntiBan(null, deps.knobs.tetoDeRespostas);
               await avisarEquipeDoTetoDeRespostas(pool, {
                 organizationId: tenantId,
                 conversationId: input.conversationId,
-                ...knobsDoTetoDeRespostas(deps.knobs.tetoDeRespostas),
+                porConversa: tetoQueVale.porConversa,
+                janelaMinutos: tetoQueVale.janelaMinutos,
                 log: runLog,
               });
+              if (tetoQueVale.silenciarMinutos > 0) {
+                await silenciarConversaPeloTeto(pool, {
+                  organizationId: tenantId,
+                  conversationId: input.conversationId,
+                  minutos: tetoQueVale.silenciarMinutos,
+                  log: runLog,
+                });
+              }
             }
             if (VETOS_IRREVOGAVEIS.has(chain.code)) vetoIrrevogavel = true;
             // Erro de ENSINO pt-br (mesmo shape de get_lead_context/breaker): o

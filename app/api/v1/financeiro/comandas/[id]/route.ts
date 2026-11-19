@@ -166,6 +166,8 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   // a observação. Este é o padrão que o POST de abertura já segue.
   await audit({
     action: lido.data.cancel ? "comanda.cancelada" : "comanda.alterada",
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
     resourceType: "sale",
     resourceId: id,
     requestId,
