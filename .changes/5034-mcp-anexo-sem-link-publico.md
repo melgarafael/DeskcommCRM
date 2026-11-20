@@ -1,6 +1,6 @@
 ---
 impacto: capacidade_nova
-secao: novo
+secao: adicionado
 titulo: Pelo MCP, a mensagem de WhatsApp pode levar um arquivo já enviado ao CRM, sem link público
 ---
 
