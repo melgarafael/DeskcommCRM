@@ -1,5 +1,5 @@
 "use client";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type Query } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
 import type { RuntimeIdentity, RuntimeConfirmation } from "@/lib/system/runtime-identity";
@@ -96,7 +96,12 @@ export interface SystemVersion {
  * tela de atualização. Poll folgado (5 min) porque o agente do host só reporta
  * a cada 5 min — bater mais rápido não traria informação nova.
  */
-export function useSystemVersion(opts?: { refetchInterval?: number }) {
+export function useSystemVersion(opts?: {
+  refetchInterval?:
+    | number
+    | false
+    | ((query: Query<SystemVersion, Error, SystemVersion, readonly unknown[]>) => number | false | undefined);
+}) {
   return useQuery({
     queryKey: ["system-version"],
     queryFn: async () => {

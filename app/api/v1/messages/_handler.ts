@@ -82,6 +82,7 @@ import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
 import { mascararTextoRetido, perfisDoTextoRetido } from "@/lib/messaging/texto-retido";
 import { pedirReenvioDoDesacelerado, reenvioDesaceleradoAtende } from "@/lib/messaging/reenvio-desacelerado";
 import { esperaPedidaPeloCanal } from "@/lib/channels/erro-da-plataforma";
+import { CHAVE_DA_FALHA_DE_ENVIO, registroDaFalhaDeEnvio } from "@/lib/channels/falha-de-envio";
 import { aplicarAssinatura, configAssinatura, linhaDeAssinatura } from "@/lib/messaging/assinatura";
 import { nomeDoAgenteDeIA } from "@/lib/messaging/nome-do-agente-de-ia";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
@@ -1727,12 +1728,19 @@ export async function sendMessageHandler(
         return message;
       }
 
+      // A NATUREZA da recusa vai junto (`lib/channels/falha-de-envio.ts`): o
+      // motor do agente lê daqui se re-tentar o turno repetiria a mesma recusa
+      // (4xx do provedor) ou se a próxima tentativa pode sair (5xx, rede).
       const { data: updated } = await supabase
         .from("messages")
         .update({
           status: "failed",
           error_code: code,
           error_message: msg,
+          metadata: {
+            ...((message.metadata ?? {}) as Record<string, unknown>),
+            [CHAVE_DA_FALHA_DE_ENVIO]: registroDaFalhaDeEnvio(err),
+          },
         })
         .eq("id", message.id)
         .select(MSG_COLS)

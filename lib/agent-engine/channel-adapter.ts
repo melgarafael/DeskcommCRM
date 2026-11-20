@@ -127,8 +127,12 @@ export type ChannelSendResult =
   | { kind: 'queued'; idempotencyKey: string; messageId: string | null }
   /** veto PERMANENTE de negócio (opt-out/is_blocked, irrevogável — regra dura nº 2) */
   | { kind: 'blocked'; idempotencyKey: string }
-  /** o canal registrou a mensagem como falha (retry consome tentativa) */
-  | { kind: 'failed'; idempotencyKey: string; messageId: string | null }
+  /**
+   * o canal registrou a mensagem como falha. `permanente` = recusa definitiva
+   * deste conteúdo (4xx do provedor): o turno encerra sem retry. Ausente/false =
+   * transitória: o retry consome tentativa, como sempre.
+   */
+  | { kind: 'failed'; idempotencyKey: string; messageId: string | null; permanente?: boolean }
   /** transporte/tool indisponível (transiente) — o job re-tenta com a MESMA key */
   | { kind: 'unavailable'; reason: string };
 
