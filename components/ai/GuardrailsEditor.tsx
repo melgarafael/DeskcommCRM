@@ -21,11 +21,11 @@ interface Props {
 }
 
 const KIND_LABELS: Record<GuardrailKind, string> = {
-  regex_output_block: "Regex output block",
-  rag_must_hit: "RAG must hit",
-  regex_input_block: "Regex input block",
+  regex_output_block: "Bloqueio de saída por regex",
+  rag_must_hit: "Precisa achar no RAG",
+  regex_input_block: "Bloqueio de entrada por regex",
   window_check: "Janela horária",
-  contact_flag: "Contact flag",
+  contact_flag: "Marca do contato",
 };
 
 function defaultForKind(kind: GuardrailKind, t: (texto: string) => string = (texto) => texto): GuardrailItem {

@@ -176,6 +176,19 @@ const motivoDoLog = (log: ReturnType<typeof logDuble>) =>
     .find((p) => p?.purpose === "agent_turn")?.custo_origem;
 
 describe("#4697 — o nulo tem motivo, e sem uso não vira zero", () => {
+  it("usa os mesmos motivos da tabela para o Luna", async () => {
+    const chamada = { provider: "openai-assinatura", model: "gpt-6-luna" };
+    streamOk(COM_USO);
+    const comUso = await chamar(chamada);
+    expect(comUso.costCents).toBeCloseTo(0.015, 6);
+    expect(motivoDoLog(comUso.log)).toBe("equivalente_de_api_da_assinatura");
+
+    streamOk(SEM_USO);
+    const semUso = await chamar(chamada);
+    expect(semUso.costCents).toBeNull();
+    expect(motivoDoLog(semUso.log)).toBe("sem_uso");
+  });
+
   it("(a) chamada com usage completo grava custo", async () => {
     streamOk(COM_USO);
     const c = await chamar({ provider: "openai-assinatura", model: "gpt-6-astra" });
