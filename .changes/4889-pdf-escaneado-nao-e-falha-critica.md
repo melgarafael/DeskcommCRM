@@ -11,8 +11,10 @@ morto ocupava a única vaga de aviso da organização e escondia a próxima falh
 de verdade, como uma credencial de IA recusada.
 
 Agora a derivação reconhece o PDF sem texto selecionável e encerra na primeira
-tentativa: a mensagem fica marcada como lida sem sucesso, com a razão "o PDF
-não tem texto selecionável (é escaneado ou só imagem)" visível na conversa, e
-nada é enviado à Central. A leitura por imagem (OCR) continua fora deste
+tentativa: a mensagem fica marcada como não lida, com a razão registrada nela,
+e o agente passa a saber que não conseguiu ler o arquivo, em vez de supor o
+conteúdo. Nada é enviado à Central. A leitura por imagem (OCR) continua fora deste
 recorte, e erro de infraestrutura — chave errada, modelo sem visão, download
 que falhou — continua sendo tentado de novo e avisado como antes.
+
+Obrigado a @webtecnica pelo conserto e a @xofrd pelo diagnóstico na issue #4889.
