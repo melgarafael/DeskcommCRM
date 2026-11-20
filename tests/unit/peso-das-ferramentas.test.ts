@@ -119,9 +119,9 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_propose_lead_fields_from_document": { tokens: 583, motivo: BASE },
   "crm_save_lead_diagnosis": { tokens: 353, motivo: "capacidade nova (#4632, decisão D7): o agente qualificador grava o diagnóstico da empresa na ficha; a descrição diz QUANDO usar (o que ele concluiu da empresa, só do contato da conversa), que grava DIRETO com o selo e que não serve para dado pessoal nem para copiar a fala do cliente" },
   "crm_send_whatsapp_message": {
-    tokens: 312,
+    tokens: 320,
     motivo:
-      "#5034: media_storage_path e media_filename, para mandar arquivo já enviado ao CRM sem link público (documento de cliente não vai para a internet); a descrição ficou em uma frase curta",
+      "#5034: media_storage_path e media_filename, para mandar arquivo já enviado ao CRM sem link público (documento de cliente não vai para a internet); a descrição ficou em uma frase, com a rota de upload",
   },
   // #4129 — capacidade de WIRE que envia o material da empresa como documento.
   // O peso é quase todo a descrição: é ela que ensina o integrador que o
@@ -224,7 +224,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +2556 com as três ferramentas de tarefa (#4838): 736 de `crm_create_task`, 901 de
 // `crm_list_tasks` e 919 de `crm_update_task`. MEDIDO no merge com a main de 19/11
 // (que já tinha 40730): 43286 (2026-11-19), não somado à mão.
-const TETO_TOTAL = 43317;
+const TETO_TOTAL = 43325;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
