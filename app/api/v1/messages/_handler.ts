@@ -80,6 +80,8 @@ import {
 } from "@/lib/channels/numero-do-atendente";
 import { emitirFalhaDeEntrega } from "@/lib/messaging/falha-de-entrega";
 import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
+import { recebidasQueARespostaLe } from "@/lib/messaging/recebidas-a-ler";
+import { canalMarcaLidasPorMensagem } from "@/lib/channels/capabilities";
 import { mascararTextoRetido, perfisDoTextoRetido } from "@/lib/messaging/texto-retido";
 import { pedirReenvioDoDesacelerado, reenvioDesaceleradoAtende } from "@/lib/messaging/reenvio-desacelerado";
 import { esperaPedidaPeloCanal } from "@/lib/channels/erro-da-plataforma";
@@ -1359,6 +1361,23 @@ export async function sendMessageHandler(
       // adapter preserva o mesmo branch (e a mesma mensagem de erro de cada
       // método) do outro lado do seam.
       let externalId: string | null;
+      // As mensagens do cliente que ESTA resposta lê, para o canal marcá-las
+      // como lidas (visto azul, #2981): o NOWEB sem "Guardar histórico" só marca
+      // por mensagem (#5015). Template não passa por `adapter.send`, então não
+      // pergunta; grupo não leva visto; canal que não marca por id não paga a
+      // leitura (`marcaLidasPorMensagem`). Nada novo, falha ou leitura lenta =
+      // `undefined`, e o canal faz o pedido de antes.
+      const readExternalIds =
+        input.type === "template" ||
+        c.is_group ||
+        !canalMarcaLidasPorMensagem(c.channel_sessions?.provider ?? DEFAULT_CHANNEL_PROVIDER)
+          ? undefined
+          : await recebidasQueARespostaLe(supabase, {
+              organizationId: ctx.organization_id,
+              conversationId: c.id,
+              envioId: message.id,
+            });
+      const lidas = readExternalIds !== undefined ? { readExternalIds } : {};
       if (input.type === "template") {
         // Template é caminho próprio: não passa pelo `adapter.send` (que fala em
         // texto/mídia) porque o payload da plataforma é outro — e porque o envio
@@ -1454,6 +1473,7 @@ export async function sendMessageHandler(
           // O id que a PLATAFORMA conhece, lido da linha citada agora — não uma
           // cópia guardada no envio, que poderia divergir da linha.
           replyToExternalId: citada?.external_id ?? null,
+          ...lidas,
         }));
       } else if (input.media_url) {
         // A spec da proposta comercial já previa isto ("Enviar | sendFile com
@@ -1493,6 +1513,7 @@ export async function sendMessageHandler(
             caption: corpoDoCanal(input.body ?? null),
           },
           replyToExternalId: citada?.external_id ?? null,
+          ...lidas,
         }));
       } else if (input.type === "contact") {
         const sc = outboundMetadata.shared_contact as
@@ -1522,6 +1543,7 @@ export async function sendMessageHandler(
             whatsappId: phoneToWhatsappId(telefone),
             vcard: buildVcard(nome, telefone),
           },
+          ...lidas,
         }));
       } else {
         await checkBoundary();
@@ -1534,6 +1556,7 @@ export async function sendMessageHandler(
           kind: input.type,
           body: corpoDoCanal(input.body ?? "") ?? "",
           replyToExternalId: citada?.external_id ?? null,
+          ...lidas,
         }));
       }
 

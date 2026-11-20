@@ -14,7 +14,8 @@ import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidad
 import { comercialExigeHumanoViaSupabase, restricaoComercialBarra } from "@/lib/escalacao/assunto-comercial";
 import { ttlDaAutorizacaoMs } from "@/lib/ai/elegibilidade/gate";
 import { createSupabaseAdminClient, type FollowupJobRequest } from "@/lib/followup/engine";
-import { canalDaConversa, decidirAdiamentoPorJanela } from "@/lib/followup/janela-de-disparo";
+import { canalDaConversa, decidirAdiamentoPorJanela, providerDoCanalDaConversa } from "@/lib/followup/janela-de-disparo";
+import { aJanelaRegulatoriaSeAplica } from "@/lib/channels/janela";
 import { liberaEnvioComODonoViaSupabase } from "@/lib/followup/envio-com-o-dono";
 import { criarPacingDoCanal } from "@/lib/agent-engine/pacing/ledger-supabase";
 import { adiamentoPorRitmo } from "@/lib/followup/ritmo-do-texto-fixo";
@@ -270,7 +271,18 @@ export async function enviarTextoFixoPendente(
           job.organization_id,
           enrollmentId,
           nodeId,
-          { kind: "deferred", until: adiamento.until, reason: adiamento.reason },
+          {
+            kind: "deferred",
+            until: adiamento.until,
+            reason: adiamento.reason,
+            // O ESCOPO da janela viaja com o adiamento: o dossiê não pode
+            // chamar de "janela de 24 h" o horário de envio de uma conexão
+            // por QR, onde essa janela não existe. O provedor é lido AQUI, que
+            // é onde ele está disponível, e não adivinhado depois pelo nome.
+            janelaRegulatoria: aJanelaRegulatoriaSeAplica(
+              await providerDoCanalDaConversa(admin, job.organization_id as string, conversationId, contactId),
+            ),
+          },
           undefined,
           job.id,
           jobClaim,
@@ -316,7 +328,14 @@ export async function enviarTextoFixoPendente(
             job.organization_id,
             enrollmentId,
             nodeId,
-            { kind: "deferred", until: ritmo.until, reason: ritmo.reason },
+            {
+              kind: "deferred",
+              until: ritmo.until,
+              reason: ritmo.reason,
+              janelaRegulatoria: aJanelaRegulatoriaSeAplica(
+                await providerDoCanalDaConversa(admin, job.organization_id as string, conversationId, contactId),
+              ),
+            },
             undefined,
             job.id,
             jobClaim,
