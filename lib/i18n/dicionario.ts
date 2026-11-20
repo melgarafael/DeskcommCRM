@@ -5279,6 +5279,8 @@ export const DICIONARIO: Traducoes = {
   "Ação desconhecida para o link do Meet.": { es: "Acción desconocida para el enlace de Meet." },
   "Não foi possível registrar a ação. O motivo ficou registrado no servidor com o identificador abaixo.": { es: "No se pudo registrar la acción. El motivo quedó registrado en el servidor con el identificador de abajo." },
   "Custo da IA no período": { es: "Costo de la IA en el período" },
+  "Este período tem mais registros do que o painel consegue ler de uma vez. Estes números mostram só uma parte — encurte as datas para ver o período inteiro:": { es: "Este período tiene más registros de los que el panel puede leer de una vez. Estos números muestran solo una parte; acorta las fechas para ver el período completo:" },
+  "Não foi possível ler agora, e estes números aparecem zerados — recarregue a página em alguns instantes:": { es: "No se pudo leer ahora, y estos números aparecen en cero; recarga la página en unos instantes:" },
   "Custo no período": { es: "Costo en el período" },
   "Chamadas de IA": { es: "Llamadas a la IA" },
   "cada resposta do agente pode fazer várias": { es: "cada respuesta del agente puede hacer varias" },

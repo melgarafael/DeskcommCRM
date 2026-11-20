@@ -341,6 +341,74 @@ function Carregando() {
   );
 }
 
+/**
+ * De tabela para o nome do bloco na tela (#5016). A rota avisa pela TABELA que
+ * veio cortada ou falhou; o dono do negócio não sabe o que é `ai_router_decisions`,
+ * sabe o que é "Conversas encaminhadas". Os rótulos são os mesmos dos cards,
+ * então a tradução já existe. Uma tabela pode alimentar mais de um card, e três
+ * tabelas alimentam o mesmo (a taxa de ajuda): o aviso lista cada nome uma vez.
+ */
+const BLOCOS_DA_FONTE: Record<string, string[]> = {
+  org_memory_entries: ["Regras que você ensinou"],
+  flywheel_distiller_proposals: ["Melhorias que você aprovou"],
+  skill_pointers: ["Habilidades instaladas"],
+  skill_activations: ["Habilidades usadas"],
+  ai_router_decisions: ["Conversas encaminhadas"],
+  knowledge_searches: ["Consultas aos seus materiais"],
+  lead_state_transitions: [
+    "Negócios fechados pelo agente",
+    "Negócios perdidos pelo agente",
+    "Mudanças de passo no atendimento",
+  ],
+  llm_calls: ["Custo da IA no período"],
+  messages: ["Casos que precisaram de uma pessoa"],
+  agent_inbox_items: ["Casos que precisaram de uma pessoa"],
+  event_log: ["Casos que precisaram de uma pessoa"],
+  crm_stages: ["O que está travando"],
+};
+
+function nomesDosBlocos(fontes: EvolutionPayload["fontes_incompletas"], t: (s: string) => string): string {
+  const nomes: string[] = [];
+  for (const f of fontes) {
+    for (const nome of BLOCOS_DA_FONTE[f.fonte] ?? []) {
+      const traduzido = t(nome);
+      if (!nomes.includes(traduzido)) nomes.push(traduzido);
+    }
+  }
+  return nomes.join(", ");
+}
+
+/**
+ * Número cortado ou zerado por falha não pode passar por número exato (#5016):
+ * a rota devolve as fontes incompletas e esta faixa nomeia os blocos afetados.
+ * Sem fonte incompleta, não aparece nada.
+ */
+export function AvisoDeFontesIncompletas({ fontes }: { fontes: EvolutionPayload["fontes_incompletas"] }) {
+  const t = useT();
+  const cortadas = fontes.filter((f) => f.motivo === "cortada");
+  const falharam = fontes.filter((f) => f.motivo === "falhou");
+  if (cortadas.length === 0 && falharam.length === 0) return null;
+
+  return (
+    <Card className="flex flex-col gap-2 border-warning bg-warning-bg p-4 text-sm text-warning-fg" role="status">
+      {cortadas.length > 0 && (
+        <p data-testid="evolution-fontes-cortadas">
+          {t(
+            "Este período tem mais registros do que o painel consegue ler de uma vez. Estes números mostram só uma parte — encurte as datas para ver o período inteiro:",
+          )}{" "}
+          <strong>{nomesDosBlocos(cortadas, t)}</strong>
+        </p>
+      )}
+      {falharam.length > 0 && (
+        <p data-testid="evolution-fontes-falharam">
+          {t("Não foi possível ler agora, e estes números aparecem zerados — recarregue a página em alguns instantes:")}{" "}
+          <strong>{nomesDosBlocos(falharam, t)}</strong>
+        </p>
+      )}
+    </Card>
+  );
+}
+
 export function EvolutionClient({ defaultRange }: { defaultRange: { from: string; to: string } }) {
   const t = useT();
   const [from, setFrom] = React.useState(defaultRange.from);
@@ -395,7 +463,10 @@ export function EvolutionClient({ defaultRange }: { defaultRange: { from: string
       ) : !q.data ? (
         <Carregando />
       ) : (
-        <Conteudo payload={q.data} />
+        <>
+          <AvisoDeFontesIncompletas fontes={q.data.fontes_incompletas ?? []} />
+          <Conteudo payload={q.data} />
+        </>
       )}
     </div>
   );

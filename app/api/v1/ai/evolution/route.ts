@@ -22,14 +22,25 @@ import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
-import { aggregateEvolution, type EvolutionInput } from "@/lib/ai/evolution/aggregate";
+import {
+  aggregateEvolution,
+  type EvolutionInput,
+  type FonteIncompleta,
+} from "@/lib/ai/evolution/aggregate";
+import { usoDeIaSchema } from "@/lib/ai/usage/aggregate";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_RANGE_DAYS = 90;
-const ROW_CAP = 50_000;
+/**
+ * O teto de cada leitura é o `max_rows` do PostgREST (`supabase/config.toml`):
+ * 1.000. Pedir mais não traz mais — o servidor corta antes — e um teto maior
+ * que o do servidor nunca é atingido, então o aviso de corte nunca disparava
+ * (#5016). Com o mesmo número dos dois lados, "veio cheio" quer dizer "cortou".
+ */
+const ROW_CAP = 1_000;
 
 const querySchema = z.object({
   from: z.string().regex(DAY_RE).optional(),
@@ -83,12 +94,23 @@ export async function GET(req: NextRequest): Promise<Response> {
    * da tabela — sem os dois, a fonte muda vira um bloco zerado indistinguível de
    * "não aconteceu nada".
    */
-  function fonteFalhou(tabela: string, error: { message: string }): void {
+  /**
+   * O que a TELA fica sabendo (#5016): cada fonte cortada pelo teto ou que
+   * falhou. Antes isso só ia para o log, e o bloco mostrava o recorte (ou o
+   * zero) com cara de número exato. Uma entrada por tabela.
+   */
+  const fontesIncompletas: FonteIncompleta[] = [];
+  function marcarIncompleta(fonte: string, motivo: FonteIncompleta["motivo"]): void {
+    if (!fontesIncompletas.some((f) => f.fonte === fonte)) fontesIncompletas.push({ fonte, motivo });
+  }
+
+  function fonteFalhou(tabela: string, error: { message: string }, motivo: FonteIncompleta["motivo"] = "falhou"): void {
     console.warn(`[ai-evolution] leitura de ${tabela} falhou`, {
       requestId,
       table: tabela,
       error: error.message,
     });
+    marcarIncompleta(tabela, motivo);
   }
 
   /**
@@ -125,7 +147,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     // o canal de aviso em vez de calar — número truncado sem sinal é pior que
     // bloco zerado, porque parece completo.
     if (rows.length === ROW_CAP) {
-      fonteFalhou(tabela, { message: `row cap de ${ROW_CAP} atingido — período truncado` });
+      fonteFalhou(tabela, { message: `row cap de ${ROW_CAP} atingido — período truncado` }, "cortada");
     }
     return rows;
   }
@@ -143,6 +165,33 @@ export async function GET(req: NextRequest): Promise<Response> {
     return count ?? 0;
   }
 
+  /**
+   * O custo é SOMADO NO BANCO (#5016), pela mesma `fn_uso_de_ia` e a mesma janela
+   * da tela Uso de IA (`usage/route.ts`). Somar `llm_calls` aqui parava na
+   * milésima linha do período (o `max_rows`), e como a leitura é em ordem
+   * crescente, o card mostrava o custo dos dias MAIS ANTIGOS. `security invoker`:
+   * a RLS continua isolando a organização; `p_org` é defesa em profundidade.
+   * Falhou: o card zera e a tela é avisada, como qualquer outra fonte.
+   */
+  async function custoDoPeriodo(): Promise<number> {
+    const { data, error } = await supabase.rpc("fn_uso_de_ia", {
+      p_org: orgId,
+      p_desde: fromIso,
+      p_ate: toIso,
+    });
+    if (error) {
+      fonteFalhou("llm_calls", error);
+      return 0;
+    }
+    // `usoDeIaSchema` coage `numeric` (que pode chegar como string) para número.
+    const uso = usoDeIaSchema.safeParse(data);
+    if (!uso.success) {
+      fonteFalhou("llm_calls", { message: "fn_uso_de_ia devolveu formato inesperado" });
+      return 0;
+    }
+    return uso.data.totais.custo_cents;
+  }
+
   const [
     memoryEntries,
     proposalsApplied,
@@ -151,7 +200,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     routerDecisions,
     knowledgeSearches,
     stageTransitions,
-    llmCalls,
+    costCents,
     inboundCount,
     handoffInbox,
     handoffEvents,
@@ -184,7 +233,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       "created_at",
     ),
     ler<{ created_at: string; to_stage: string }>("lead_state_transitions", "created_at, to_stage", "created_at"),
-    ler<{ cost_cents: number | null }>("llm_calls", "cost_cents", "created_at"),
+    custoDoPeriodo(),
     contar("messages", "created_at", ["direction", "inbound"]),
     // ⚠️ DUAS FONTES DE HANDOFF, DE PROPÓSITO — não "simplifique" para uma.
     // Há dois runtimes no repo e cada um registra o handoff no seu lugar:
@@ -211,6 +260,9 @@ export async function GET(req: NextRequest): Promise<Response> {
   ]);
 
   if (stages.error) fonteFalhou("crm_stages", stages.error);
+  else if ((stages.data ?? []).length === ROW_CAP) {
+    fonteFalhou("crm_stages", { message: `row cap de ${ROW_CAP} atingido — funis truncados` }, "cortada");
+  }
 
   const porPipeline = new Map<string, Array<string | null>>();
   for (const r of (stages.data ?? []) as Array<{
@@ -233,13 +285,12 @@ export async function GET(req: NextRequest): Promise<Response> {
     routerDecisions,
     knowledgeSearches,
     stageTransitions,
-    // ⚠️ COERÇÃO OBRIGATÓRIA. `cost_cents` é `numeric`, e o agregador repassa este
-    // total sem tocar nele. Se uma linha vier como string, `acc + '12.5'` concatena
-    // em silêncio e o card mostra texto (ou NaN) — nunca um erro.
-    costCents: llmCalls.reduce((acc, c) => acc + Number(c.cost_cents ?? 0), 0),
+    // Já é número: `usoDeIaSchema` coage o `numeric` (ver `custoDoPeriodo`).
+    costCents,
     inboundCount,
     handoffCount: handoffInbox + handoffEvents,
     pipelines: [...porPipeline.entries()].map(([name, hints]) => ({ name, hints })),
+    fontesIncompletas,
   };
 
   return ok(aggregateEvolution(input), { requestId });
