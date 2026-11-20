@@ -630,6 +630,31 @@ describe("PUT /message-templates/[id]/ordem com token: renumeração só entre a
   });
 });
 
+/**
+ * A leitura do token já filtra `owner_user_id` nulo, e os blocos acima provam a
+ * recusa da pessoal por ela. A ESCRITA repete o filtro: se a resposta virar
+ * pessoal entre a leitura e o update, o update não a alcança. Sem estes casos,
+ * tirar o filtro da escrita passava verde (sabotado em 20/11, triagem do #4395).
+ */
+describe("modelos de mensagem: a escrita do token também filtra owner_user_id nulo", () => {
+  const casos: Array<[string, () => Promise<Response>]> = [
+    ["PATCH /message-templates/[id]", () =>
+      rotaModelo.PATCH(reqDe("PATCH", `/api/v1/message-templates/${TPL_A}`, TOKEN_A, { title: "Outro" }), comId(TPL_A))],
+    ["POST /message-templates/[id]/midias", () =>
+      rotaMidias.POST(reqMidia(`/api/v1/message-templates/${TPL_A}/midias`, TOKEN_A), comId(TPL_A))],
+    ["PUT /message-templates/[id]/ordem", () =>
+      rotaOrdem.PUT(reqDe("PUT", `/api/v1/message-templates/${TPL_A3}/ordem`, TOKEN_A, { depois_de: null }), comId(TPL_A3))],
+  ];
+  it.each(casos)("%s", async (_nome, chamar) => {
+    tokenDe(ORG_A, TOKEN_A, "admin");
+    const res = await chamar();
+    expect(res.status).toBe(200);
+    const escritas = cadeiasDeEscrita(falso.cadeias).filter((c) => c.tabela === "message_templates");
+    expect(escritas.length).toBeGreaterThan(0);
+    for (const c of escritas) expect(c.filtros).toContainEqual(["owner_user_id", null]);
+  });
+});
+
 describe("POST /message-templates com token", () => {
   it("shared: false é recusado (422): token não tem pessoa para ser dono", async () => {
     tokenDe(ORG_A, TOKEN_A, "admin");
