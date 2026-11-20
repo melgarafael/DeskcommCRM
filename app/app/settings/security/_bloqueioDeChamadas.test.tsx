@@ -17,7 +17,6 @@ vi.mock("sonner", () => ({ toast: { success: deps.success, error: deps.error } }
 import { BloqueioDeChamadas } from "./_bloqueioDeChamadas";
 
 const CHAVE = "Bloquear chamadas recebidas";
-const CAMPO = "Mensagem para quem ligou (opcional)";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -25,50 +24,28 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-describe("Bloquear chamadas recebidas — mensagem a quem ligou", () => {
-  it("mostra a mensagem já salva e deixa o botão desabilitado até haver mudança", () => {
-    render(<BloqueioDeChamadas ligado={true} mensagem="Escreva, por favor." />);
-    expect((screen.getByLabelText(CAMPO) as HTMLTextAreaElement).value).toBe("Escreva, por favor.");
-    expect((screen.getByRole("button", { name: "Salvar mensagem" }) as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  it("salvar a mensagem envia a chave atual e o texto digitado", async () => {
-    render(<BloqueioDeChamadas ligado={true} mensagem="" />);
-    fireEvent.change(screen.getByLabelText(CAMPO), { target: { value: "  Oi, escreva aqui.  " } });
-    fireEvent.click(screen.getByRole("button", { name: "Salvar mensagem" }));
-    await waitFor(() => expect(deps.definir).toHaveBeenCalledWith(true, "  Oi, escreva aqui.  "));
+describe("Bloquear chamadas recebidas — a tela", () => {
+  it("ligar a chave grava e atualiza a tela", async () => {
+    render(<BloqueioDeChamadas ligado={false} />);
+    const chave = screen.getByRole("switch", { name: CHAVE });
+    fireEvent.click(chave);
+    await waitFor(() => expect(deps.definir).toHaveBeenCalledWith(true));
     await waitFor(() => expect(deps.refresh).toHaveBeenCalledOnce());
-    // Depois de salvar, não há mais o que salvar.
-    await waitFor(() =>
-      expect((screen.getByRole("button", { name: "Salvar mensagem" }) as HTMLButtonElement).disabled).toBe(true),
-    );
+    expect(chave.getAttribute("aria-checked")).toBe("true");
   });
 
-  it("ligar a chave grava o texto JÁ SALVO, não o rascunho", async () => {
-    render(<BloqueioDeChamadas ligado={false} mensagem="Texto salvo" />);
-    fireEvent.change(screen.getByLabelText(CAMPO), { target: { value: "rascunho ainda não salvo" } });
+  it("desligar a chave grava false", async () => {
+    render(<BloqueioDeChamadas ligado={true} />);
     fireEvent.click(screen.getByRole("switch", { name: CHAVE }));
-    await waitFor(() => expect(deps.definir).toHaveBeenCalledWith(true, "Texto salvo"));
-  });
-
-  it("limpar o campo e salvar manda texto vazio (= não avisar)", async () => {
-    render(<BloqueioDeChamadas ligado={true} mensagem="Texto salvo" />);
-    fireEvent.change(screen.getByLabelText(CAMPO), { target: { value: "" } });
-    fireEvent.click(screen.getByRole("button", { name: "Salvar mensagem" }));
-    await waitFor(() => expect(deps.definir).toHaveBeenCalledWith(true, ""));
+    await waitFor(() => expect(deps.definir).toHaveBeenCalledWith(false));
   });
 
   it("falha ao gravar avisa o administrador e reverte a chave", async () => {
     deps.definir.mockResolvedValue({ ok: false, error: "forbidden_role" });
-    render(<BloqueioDeChamadas ligado={false} mensagem="" />);
+    render(<BloqueioDeChamadas ligado={false} />);
     const chave = screen.getByRole("switch", { name: CHAVE });
     fireEvent.click(chave);
     await waitFor(() => expect(deps.error).toHaveBeenCalledOnce());
     expect(chave.getAttribute("aria-checked")).toBe("false");
-  });
-
-  it("o campo respeita o teto de 500 caracteres", () => {
-    render(<BloqueioDeChamadas ligado={false} mensagem="" />);
-    expect((screen.getByLabelText(CAMPO) as HTMLTextAreaElement).maxLength).toBe(500);
   });
 });

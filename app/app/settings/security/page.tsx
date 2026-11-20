@@ -8,7 +8,7 @@ import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { empresaExigeMfa, politicaDaEmpresa, type PapelMinimoDeMfa } from "@/lib/auth/politica-mfa";
 import { listarDispositivosConfiaveis } from "@/lib/auth/dispositivo-confiavel";
-import { bloqueioDeChamadasLigado, mensagemDeRecusaDeChamadas } from "@/lib/organizacao/bloqueio-de-chamadas";
+import { bloqueioDeChamadasLigado } from "@/lib/organizacao/bloqueio-de-chamadas";
 import { BloqueioDeChamadas } from "./_bloqueioDeChamadas";
 import { SecurityClient } from "./_client";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -52,7 +52,6 @@ export default async function SecurityPage() {
   let papelMinimo: PapelMinimoDeMfa = "none";
   let diasDeCarencia = 0;
   let chamadasBloqueadas = false;
-  let mensagemDeRecusa = "";
   if (org) {
     const { data } = await createAdminClient()
       .from("organizations")
@@ -67,7 +66,6 @@ export default async function SecurityPage() {
     papelMinimo = cfg.papelMinimo ?? (empresaExigeMfa(data?.settings) ? "admin" : "none");
     diasDeCarencia = cfg.diasDeCarencia;
     chamadasBloqueadas = bloqueioDeChamadasLigado(data?.settings);
-    mensagemDeRecusa = mensagemDeRecusaDeChamadas(data?.settings) ?? "";
   }
 
   // A mesma função que o layout usa para decidir o bloqueio — a tela não pode
@@ -102,7 +100,7 @@ export default async function SecurityPage() {
         semCodigos={semCodigos}
       />
 
-      {org?.role === "admin" && <BloqueioDeChamadas ligado={chamadasBloqueadas} mensagem={mensagemDeRecusa} />}
+      {org?.role === "admin" && <BloqueioDeChamadas ligado={chamadasBloqueadas} />}
     </div>
   );
 }

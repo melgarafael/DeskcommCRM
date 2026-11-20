@@ -31,7 +31,7 @@ import {
 import { agenteAceitaComandoDeCelular, lerComandoDeControle } from "@/lib/escalacao/comando-de-canal";
 import { devolverAtendimentoAoAgente } from "@/lib/escalacao/retomada";
 import { getWahaClient } from "@/lib/waha/client";
-import { lerPoliticaDeChamadas } from "@/lib/organizacao/bloqueio-de-chamadas";
+import { lerBloqueioDeChamadas } from "@/lib/organizacao/bloqueio-de-chamadas";
 import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { estamparAtribuicaoDoContato, metadataDoAnuncio } from "@/lib/leads/atribuicao-de-anuncio";
@@ -2461,46 +2461,6 @@ async function handleReaction(admin: Admin, session: Session, p: WahaPayload): P
 }
 
 /**
- * Quem ligou e já foi avisado há pouco — `sessão|quem` → instante do aviso.
- * Quem insiste na ligação não recebe o mesmo texto a cada toque: um robô que
- * repete a frase em rajada é assinatura de spam para o WhatsApp. É memória do
- * processo (best-effort): reiniciar o app zera, e o pior caso é um aviso a mais.
- */
-const AVISO_DE_CHAMADA_INTERVALO_MS = 10 * 60 * 1000;
-const avisosDeChamada = new Map<string, number>();
-
-/**
- * Manda a mensagem da empresa a quem teve a ligação recusada. Falha macia: a
- * chamada já foi recusada, e o aviso é cortesia — nunca lança.
- */
-async function avisarQuemLigou(
-  waha: NonNullable<ReturnType<typeof getWahaClient>>,
-  session: Session,
-  sessionName: string,
-  from: string,
-  mensagem: string,
-): Promise<void> {
-  const agora = Date.now();
-  const chave = `${sessionName}|${from}`;
-  const ultimo = avisosDeChamada.get(chave);
-  if (ultimo !== undefined && agora - ultimo < AVISO_DE_CHAMADA_INTERVALO_MS) return;
-  for (const [k, quando] of avisosDeChamada) {
-    if (agora - quando >= AVISO_DE_CHAMADA_INTERVALO_MS) avisosDeChamada.delete(k);
-  }
-  avisosDeChamada.set(chave, agora);
-  try {
-    await waha.sendMessage(sessionName, from, mensagem);
-  } catch (err) {
-    avisosDeChamada.delete(chave);
-    logger.warn("waha.ingest: chamada recusada, mas não consegui avisar quem ligou", {
-      organization_id: session.organization_id,
-      channel_session_id: session.id,
-      detail: err instanceof Error ? err.message : String(err),
-    });
-  }
-}
-
-/**
  * Chamada de voz que chegou no número (`call.received`).
  *
  * Com "Bloquear chamadas recebidas" ligado na empresa, a ligação é recusada na
@@ -2523,8 +2483,7 @@ async function handleCallReceived(
   if (!sessionName || !callId || !from || extra.isGroup === true) return;
 
   try {
-    const politica = await lerPoliticaDeChamadas(admin, session.organization_id);
-    if (!politica.bloqueio) return;
+    if (!(await lerBloqueioDeChamadas(admin, session.organization_id))) return;
     const waha = getWahaClient();
     if (!waha) {
       logger.warn("waha.ingest: bloqueio de chamada ligado, mas o WAHA não está configurado", {
@@ -2538,9 +2497,6 @@ async function handleCallReceived(
       channel_session_id: session.id,
       call_id: callId,
     });
-    if (politica.mensagem) {
-      await avisarQuemLigou(waha, session, sessionName, from, politica.mensagem);
-    }
   } catch (err) {
     logger.warn("waha.ingest: não consegui recusar a chamada recebida", {
       organization_id: session.organization_id,

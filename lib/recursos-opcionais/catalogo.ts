@@ -83,12 +83,6 @@ export interface RecursoOpcional {
   capacidade?: CapacidadeDaOrganizacao;
   /** Só `servidor`: o que fazer, em uma linha. */
   comoLigar?: string;
-  /**
-   * Recurso EXTRA do produto (contratado à parte). `valorEmCentavos: null` =
-   * valor ainda a definir; a tela mostra "Recurso extra · valor a definir".
-   * Só rotula: a cobrança do revendedor (`lib/cobranca`) não conhece extras.
-   */
-  extra?: { valorEmCentavos: number | null };
   ler?: (f: FontesDeEstado) => EstadoDoRecurso;
 }
 
@@ -647,8 +641,6 @@ const DA_EMPRESA: RecursoOpcional[] = [
     padrao: "desligado",
     quemDecide: "admin",
     href: "/app/settings/security",
-    // A ligação feita e recebida dentro do chat. Valor ainda não definido.
-    extra: { valorEmCentavos: null },
   },
   {
     id: "bloqueio_de_chamadas",
