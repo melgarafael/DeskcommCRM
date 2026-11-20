@@ -33,6 +33,7 @@ import {
   rotuloDoTipo,
 } from "@/lib/ai/rag/tipos-de-fonte";
 import { BUCKET_DE_CONHECIMENTO } from "@/lib/ai/rag/ingest/documento";
+import { caminhoDaOrganizacao } from "@/lib/ai/knowledge/caminho-do-arquivo";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -71,19 +72,6 @@ const SELECT_COLUNAS =
   "id, agent_id, organization_id, source_type, name, status, last_index_status, " +
   "last_index_error, last_indexed_at, chunks_count, is_active, source_metadata, " +
   "active_kb_version_id, ingested_at, created_at, updated_at";
-
-/**
- * `blob_path` vindo do corpo aponta o indexador para um arquivo no bucket. Com
- * token de servidor, só vale o que está sob a organização da linha do token — o
- * indexador baixa com o admin client, que não olha prefixo nenhum.
- */
-function blobPathForaDaOrganizacao(blobPath: unknown, organizationId: string): boolean {
-  return (
-    typeof blobPath !== "string" ||
-    !blobPath.startsWith(`${organizationId}/`) ||
-    blobPath.includes("..")
-  );
-}
 
 // ---------------------------------------------------------------------------
 // GET
@@ -260,12 +248,12 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
-  // Token: `blob_path` do corpo só se estiver sob a organização da linha do token.
+  // `blob_path` do corpo só no formato que o upload grava, na pasta de quem
+  // chama, pela sessão ou pelo token. Nenhuma tela manda este campo.
   const blobPathDoCorpo = input.source_metadata?.blob_path;
   if (
-    authz.actor.type !== "user" &&
     blobPathDoCorpo !== undefined &&
-    blobPathForaDaOrganizacao(blobPathDoCorpo, authz.organizationId)
+    !caminhoDaOrganizacao(blobPathDoCorpo, authz.organizationId)
   ) {
     return fail("validation_failed", t("Caminho do arquivo fora da organização."), 422, {
       requestId,

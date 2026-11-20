@@ -125,7 +125,7 @@ const DOC_A = {
   id: ID_DOC_A,
   source_type: "documento",
   name: "Documento de A",
-  source_metadata: { blob_path: `${ORG_A}/doc.md`, ext: "md" },
+  source_metadata: { blob_path: `${ORG_A}/9b2f4c6e-1d3a-4e5b-8c7d-0a1b2c3d4e5f.md`, ext: "md" },
   active_kb_version_id: null,
 };
 
@@ -546,7 +546,7 @@ describe("GET /ai/knowledge/sources/[id]/conteudo — lê o conteúdo", () => {
     const corpo = (await res.json()) as { data: { origem: string; conteudo: string } };
     expect(corpo.data.origem).toBe("arquivo");
     expect(corpo.data.conteudo).toBe("conteúdo extraído");
-    expect(extrairTextoDoArquivo).toHaveBeenCalledWith(`${ORG_A}/doc.md`, "md");
+    expect(extrairTextoDoArquivo).toHaveBeenCalledWith(`${ORG_A}/9b2f4c6e-1d3a-4e5b-8c7d-0a1b2c3d4e5f.md`, "md");
     expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
   });
 
