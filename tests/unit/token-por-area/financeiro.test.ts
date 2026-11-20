@@ -1,19 +1,19 @@
 // @vitest-environment node
 /**
- * FINANCEIRO E HONORÁRIOS ACEITAM TOKEN (Spec 33, fatia R2, tarefa 8).
+ * FINANCEIRO E HONORÁRIOS ACEITAM TOKEN SÓ NA LEITURA (Spec 33, fatia R2,
+ * tarefa 8; doc 376).
  *
- * Os métodos convertidos (leitura de catálogo, comandas, itens, fila de
- * faturamento, fidelidade, lançamentos e contratos/parcelas de honorários)
- * recebem o Bearer `dsk_…` por `resolveAuthDual`. O cliente do token é a
- * service role: a RLS deixa de proteger, e o `.eq("organization_id", …)` de
- * CADA cadeia é a única barreira entre a organização do token e as demais. O
- * cliente falso (`../helpers/cliente-admin-falso`) vê isso.
+ * As leituras (catálogo, comandas, uma comanda, fila de faturamento,
+ * fidelidade, extrato e contratos/parcelas de honorários) recebem o Bearer
+ * `dsk_…` com `mcp:read` por `resolveAuthDual`. O cliente do token é a service
+ * role: a RLS deixa de proteger, e o `.eq("organization_id", …)` de CADA cadeia
+ * é a única barreira entre a organização do token e as demais. O cliente falso
+ * (`../helpers/cliente-admin-falso`) vê isso.
  *
- * FICAM DE FORA, só de sessão (funções do banco que exigem `auth.uid()`):
- * honorários `pagar`, comandas `estornar`/`finalizar`, `faturar-lote`. Eles têm
- * caso próprio: o token é recusado com 401 e nada é escrito. Catálogo
- * POST/PATCH/DELETE, fidelidade POST, lançamentos POST/PATCH/DELETE e parcelas
- * POST aceitam token desde a R2 (lote 2): ver `operacao-r2.test.ts`.
+ * TODA ESCRITA fica só de sessão: abrir, alterar e cancelar comanda, lançar e
+ * tirar item, estornar, finalizar, faturar em lote, catálogo, fidelidade,
+ * lançamentos, contrato, parcela e pagar parcela. Cada uma está na tabela
+ * `SO_SESSAO`: o token é recusado com 401 e nada é escrito.
  *
  * Seis testes por método convertido (receita R2), mais o 429 do teto por
  * organização e os casos de borda do proxy.
@@ -33,7 +33,6 @@ import {
   cadeiasDeEscrita,
   cadeiasForaDaOrganizacao,
   criarClienteAdminFalso,
-  linhasDaTabela,
   rpcsForaDaOrganizacao,
 } from "../helpers/cliente-admin-falso";
 
@@ -78,7 +77,6 @@ const CONTRATO_B = "b5555555-5555-4555-8555-555555555555";
 const SALE_A = "a1111111-1111-4111-8111-111111111111";
 const SALE_B = "b1111111-1111-4111-8111-111111111111";
 const ITEM_A = "a7777777-7777-4777-8777-777777777777";
-const ITEM_B = "b7777777-7777-4777-8777-777777777777";
 const PARCELA_A = "a8888888-8888-4888-8888-888888888888";
 const PARCELA_B = "b8888888-8888-4888-8888-888888888888";
 const PONTO_A = "a9999999-9999-4999-8999-999999999999";
@@ -104,11 +102,8 @@ type Caso = {
   rotulo?: string;
   status: number;
   colecao?: { daA: string; daB: string };
-  audita?: boolean;
   /** O que o token de B recebe quando pede o recurso de A. */
-  paraB?: "lista" | "lista_vazia" | "404" | "422" | "cria";
-  /** Tabela onde o método de B cria linha (só com `paraB: "cria"`). */
-  tabelaCriada?: string;
+  paraB?: "lista" | "lista_vazia" | "404";
   /** Quando a rota não chama `createAdminClient` antes do portão de sessão. */
   adminNaoChamado?: boolean;
 };
@@ -186,31 +181,6 @@ const CASOS: readonly Caso[] = [
     paraB: "lista",
     colecao: { daA: "comanda da A", daB: "comanda da B" },
   },
-  {
-    rota: "financeiro/comandas",
-    metodo: "POST",
-    caminho: "/api/v1/financeiro/comandas",
-    corpo: { contact_id: CONTATO_A, notes: "abertura da A" },
-    linhas: {
-      ...MODULOS,
-      ...ORGS,
-      contacts: [
-        { id: CONTATO_A, organization_id: ORG_A, name: "Cliente da A" },
-        { id: CONTATO_B, organization_id: ORG_B, name: "Cliente da B" },
-      ],
-      sales: [],
-      calendar_appointments: [],
-    },
-    rpc: { fn_proximo_numero_de_comanda: 7 },
-    papel: "agent",
-    escopo: "mcp:write",
-    recurso: "financeiro",
-    recursoDoTeto: "financeiro_comandas_abrir",
-    status: 200,
-    // O corpo referencia o contato de A: o token de B recebe 422, e nada é gravado.
-    paraB: "422",
-    audita: true,
-  },
 
   // ─── Uma comanda ─────────────────────────────────────────────────────────
   {
@@ -227,67 +197,7 @@ const CASOS: readonly Caso[] = [
     paraB: "404",
     colecao: { daA: "comanda da A", daB: "comanda da B" },
   },
-  {
-    rota: "financeiro/comandas/[id]",
-    metodo: "PATCH",
-    caminho: `/api/v1/financeiro/comandas/${SALE_A}`,
-    params: { id: SALE_A },
-    corpo: { discount_cents: 100 },
-    linhas: { ...MODULOS, ...ORGS, sales: [VENDA_A, VENDA_B] },
-    papel: "agent",
-    escopo: "mcp:write",
-    recurso: "financeiro",
-    recursoDoTeto: "financeiro_comanda_alterar",
-    status: 200,
-    paraB: "404",
-    audita: true,
-  },
 
-  // ─── Itens da comanda ────────────────────────────────────────────────────
-  {
-    rota: "financeiro/comandas/[id]/itens",
-    metodo: "POST",
-    caminho: `/api/v1/financeiro/comandas/${SALE_A}/itens`,
-    params: { id: SALE_A },
-    corpo: { description: "Corte", quantity: 1, unit_price_cents: 5000 },
-    linhas: {
-      ...MODULOS,
-      ...ORGS,
-      sales: [VENDA_A, VENDA_B],
-      sale_items: [],
-      commission_rules: [],
-      calendar_appointments: [],
-    },
-    papel: "agent",
-    escopo: "mcp:write",
-    recurso: "financeiro",
-    recursoDoTeto: "financeiro_comanda_item_incluir",
-    status: 200,
-    paraB: "404",
-    audita: true,
-  },
-  {
-    rota: "financeiro/comandas/[id]/itens/[itemId]",
-    metodo: "DELETE",
-    caminho: `/api/v1/financeiro/comandas/${SALE_A}/itens/${ITEM_A}`,
-    params: { id: SALE_A, itemId: ITEM_A },
-    linhas: {
-      ...MODULOS,
-      ...ORGS,
-      sales: [VENDA_A, VENDA_B],
-      sale_items: [
-        { id: ITEM_A, organization_id: ORG_A, sale_id: SALE_A, description: "Item da A" },
-        { id: ITEM_B, organization_id: ORG_B, sale_id: SALE_B, description: "Item da B" },
-      ],
-    },
-    papel: "agent",
-    escopo: "mcp:write",
-    recurso: "financeiro",
-    recursoDoTeto: "financeiro_comanda_item_remover",
-    status: 200,
-    paraB: "404",
-    audita: true,
-  },
 
   // ─── Fila de faturamento (leitura) ───────────────────────────────────────
   {
@@ -397,34 +307,18 @@ const CASOS: readonly Caso[] = [
     colecao: { daA: CONTRATO_A, daB: CONTRATO_B },
   },
   {
-    rota: "honorarios/contratos",
-    metodo: "POST",
-    caminho: "/api/v1/honorarios/contratos",
-    corpo: { modelo: "fixo", valor_fixo_cents: 500000 },
-    linhas: {
-      ...ORGS,
-      honorarios_contratos: [
-        { id: CONTRATO_A, organization_id: ORG_A, modelo: "fixo", valor_fixo_cents: 100 },
-        { id: CONTRATO_B, organization_id: ORG_B, modelo: "fixo", valor_fixo_cents: 200 },
-      ],
-    },
-    papel: "manager",
-    escopo: "mcp:write",
-    recurso: "honorarios_contratos",
-    recursoDoTeto: "honorarios_contratos_criar",
-    status: 200,
-    // Não referencia nada de A: o token de B cria o contrato na organização B.
-    paraB: "cria",
-    tabelaCriada: "honorarios_contratos",
-    audita: true,
-  },
-  {
     rota: "honorarios/contratos/[id]/parcelas",
     metodo: "GET",
     caminho: `/api/v1/honorarios/contratos/${CONTRATO_A}/parcelas`,
     params: { id: CONTRATO_A },
     linhas: {
       ...ORGS,
+      // A rota confere o CONTRATO contra a empresa antes de ler as parcelas:
+      // sem o contrato da A aqui, nem o token da própria A o alcançaria.
+      honorarios_contratos: [
+        { id: CONTRATO_A, organization_id: ORG_A, lead_id: null, modelo: "fixo", valor_fixo_cents: 100, percentual_exito: null, repasse_advogado_pct: null, created_at: "2026-11-01T10:00:00.000Z" },
+        { id: CONTRATO_B, organization_id: ORG_B, lead_id: null, modelo: "fixo", valor_fixo_cents: 200, percentual_exito: null, repasse_advogado_pct: null, created_at: "2026-11-01T10:00:00.000Z" },
+      ],
       honorarios_parcelas: [
         { id: PARCELA_A, organization_id: ORG_A, contrato_id: CONTRATO_A, numero: 1, vencimento: "2026-12-01", valor_cents: 100, currency: "BRL", financial_entry_id: null, status: "pendente" },
         { id: PARCELA_B, organization_id: ORG_B, contrato_id: CONTRATO_B, numero: 1, vencimento: "2026-12-01", valor_cents: 200, currency: "BRL", financial_entry_id: null, status: "pendente" },
@@ -435,7 +329,9 @@ const CASOS: readonly Caso[] = [
     recurso: "honorarios_parcelas",
     recursoDoTeto: "honorarios_parcelas_listar",
     status: 200,
-    paraB: "lista_vazia",
+    // Contrato de outra empresa responde o MESMO 404 do inexistente (a regra
+    // do #4859), em vez de 200 com lista vazia: o 404 não confirma que o id existe.
+    paraB: "404",
     colecao: { daA: PARCELA_A, daB: PARCELA_B },
   },
 ];
@@ -446,6 +342,21 @@ const CASOS: readonly Caso[] = [
  * de vazar para dinheiro por engano.
  */
 const SO_SESSAO: readonly Caso[] = [
+  // Escritas que voltaram a ser só de sessão (doc 376): no token, só a leitura.
+  { rota: "financeiro/comandas", metodo: "POST", caminho: "/api/v1/financeiro/comandas", corpo: { contact_id: CONTATO_A, notes: "abertura da A" }, linhas: { ...MODULOS, ...ORGS, contacts: [{ id: CONTATO_A, organization_id: ORG_A, name: "Cliente da A" }], sales: [] }, papel: "agent", escopo: "mcp:write", recurso: "financeiro", status: 401, adminNaoChamado: false },
+  { rota: "financeiro/comandas/[id]", metodo: "PATCH", caminho: `/api/v1/financeiro/comandas/${SALE_A}`, params: { id: SALE_A }, corpo: { discount_cents: 100 }, linhas: { ...MODULOS, ...ORGS, sales: [VENDA_A] }, papel: "agent", escopo: "mcp:write", recurso: "financeiro", status: 401, adminNaoChamado: false },
+  { rota: "financeiro/comandas/[id]", metodo: "PATCH", rotulo: "cancelar", caminho: `/api/v1/financeiro/comandas/${SALE_A}`, params: { id: SALE_A }, corpo: { cancel: true }, linhas: { ...MODULOS, ...ORGS, sales: [VENDA_A] }, papel: "agent", escopo: "mcp:write", recurso: "financeiro", status: 401, adminNaoChamado: false },
+  { rota: "financeiro/comandas/[id]/itens", metodo: "POST", caminho: `/api/v1/financeiro/comandas/${SALE_A}/itens`, params: { id: SALE_A }, corpo: { description: "Corte", quantity: 1, unit_price_cents: 5000 }, linhas: { ...MODULOS, ...ORGS, sales: [VENDA_A], sale_items: [] }, papel: "agent", escopo: "mcp:write", recurso: "financeiro", status: 401, adminNaoChamado: false },
+  { rota: "financeiro/comandas/[id]/itens/[itemId]", metodo: "DELETE", caminho: `/api/v1/financeiro/comandas/${SALE_A}/itens/${ITEM_A}`, params: { id: SALE_A, itemId: ITEM_A }, linhas: { ...MODULOS, ...ORGS, sales: [VENDA_A], sale_items: [{ id: ITEM_A, organization_id: ORG_A, sale_id: SALE_A, description: "Item da A" }] }, papel: "agent", escopo: "mcp:write", recurso: "financeiro", status: 401, adminNaoChamado: false },
+  { rota: "honorarios/contratos", metodo: "POST", caminho: "/api/v1/honorarios/contratos", corpo: { modelo: "fixo", valor_fixo_cents: 500000 }, linhas: { ...ORGS, honorarios_contratos: [] }, papel: "manager", escopo: "mcp:write", recurso: "honorarios_contratos", status: 401, adminNaoChamado: true },
+  { rota: "financeiro/catalogo/[tipo]", metodo: "POST", caminho: "/api/v1/financeiro/catalogo/contas", params: { tipo: "contas" }, corpo: { name: "Conta nova", kind: "cash" }, linhas: { ...ORGS, financial_accounts: [] }, papel: "manager", escopo: "mcp:write", recurso: "financeiro", status: 401, adminNaoChamado: true },
+  { rota: "financeiro/catalogo/[tipo]", metodo: "PATCH", caminho: "/api/v1/financeiro/catalogo/contas", params: { tipo: "contas" }, corpo: { id: CONTA_A, name: "Conta renomeada" }, linhas: { ...ORGS, financial_accounts: [{ id: CONTA_A, organization_id: ORG_A, name: "Conta da A", is_active: true }] }, papel: "manager", escopo: "mcp:write", recurso: "financeiro", status: 401, adminNaoChamado: true },
+  { rota: "financeiro/catalogo/[tipo]", metodo: "DELETE", caminho: "/api/v1/financeiro/catalogo/contas", params: { tipo: "contas" }, corpo: { id: CONTA_A }, linhas: { ...ORGS, financial_accounts: [{ id: CONTA_A, organization_id: ORG_A, name: "Conta da A", is_active: true }] }, papel: "manager", escopo: "mcp:write", recurso: "financeiro", status: 401, adminNaoChamado: true },
+  { rota: "financeiro/fidelidade", metodo: "POST", caminho: "/api/v1/financeiro/fidelidade", corpo: { contact_id: CONTATO_A, points: 5, reason: "compra da A" }, linhas: { ...MODULOS, ...ORGS, contacts: [{ id: CONTATO_A, organization_id: ORG_A, name: "Cliente da A" }], loyalty_points: [] }, papel: "agent", escopo: "mcp:write", recurso: "financeiro", status: 401, adminNaoChamado: false },
+  { rota: "financeiro/lancamentos", metodo: "POST", caminho: "/api/v1/financeiro/lancamentos", corpo: { account_id: CONTA_A, direction: "in", amount_cents: 100, description: "x", entry_date: "2026-11-01" }, linhas: { ...ORGS, financial_entries: [] }, papel: "agent", escopo: "mcp:write", recurso: "financeiro", status: 401, adminNaoChamado: true },
+  { rota: "financeiro/lancamentos/[id]", metodo: "PATCH", rotulo: "baixa", caminho: `/api/v1/financeiro/lancamentos/${LANC_A}`, params: { id: LANC_A }, corpo: { pay: true }, linhas: { ...ORGS, financial_entries: [{ id: LANC_A, organization_id: ORG_A, status: "pending" }] }, papel: "agent", escopo: "mcp:write", recurso: "financeiro", status: 401, adminNaoChamado: true },
+  { rota: "financeiro/lancamentos/[id]", metodo: "DELETE", caminho: `/api/v1/financeiro/lancamentos/${LANC_A}`, params: { id: LANC_A }, linhas: { ...ORGS, financial_entries: [{ id: LANC_A, organization_id: ORG_A, status: "pending" }] }, papel: "agent", escopo: "mcp:write", recurso: "financeiro", status: 401, adminNaoChamado: true },
+  { rota: "honorarios/contratos/[id]/parcelas", metodo: "POST", caminho: `/api/v1/honorarios/contratos/${CONTRATO_A}/parcelas`, params: { id: CONTRATO_A }, corpo: { numero: 2, vencimento: "2027-01-01", valor_cents: 100 }, linhas: { ...ORGS, honorarios_contratos: [{ id: CONTRATO_A, organization_id: ORG_A }], honorarios_parcelas: [] }, papel: "manager", escopo: "mcp:write", recurso: "honorarios_parcelas", status: 401, adminNaoChamado: true },
   // Comandas: finalizar, estornar e faturar em lote movem dinheiro.
   { rota: "financeiro/comandas/[id]/estornar", metodo: "POST", caminho: `/api/v1/financeiro/comandas/${SALE_A}/estornar`, params: { id: SALE_A }, corpo: { reason: "erro de lançamento" }, linhas: { ...MODULOS, ...ORGS, sales: [VENDA_A] }, papel: "manager", escopo: "mcp:write", recurso: "financeiro", status: 401, adminNaoChamado: false },
   { rota: "financeiro/comandas/[id]/finalizar", metodo: "POST", caminho: `/api/v1/financeiro/comandas/${SALE_A}/finalizar`, params: { id: SALE_A }, corpo: { payment_method_id: "a1212121-1212-4121-8121-121212121212", loyalty_points: 0 }, linhas: { ...MODULOS, ...ORGS, sales: [VENDA_A] }, papel: "agent", escopo: "mcp:write", recurso: "financeiro", status: 401, adminNaoChamado: false },
@@ -634,13 +545,7 @@ describe("financeiro e honorários aceitam token", () => {
 
       expect(requireRole).not.toHaveBeenCalled();
       expect(createClient).not.toHaveBeenCalled();
-      if (c.audita) {
-        expect(audit).toHaveBeenCalledWith(
-          expect.objectContaining({ organizationId: ORG_A, actorUserId: null, actorApiTokenId: TOKEN_A }),
-        );
-      } else {
-        expect(audit).not.toHaveBeenCalled();
-      }
+      expect(audit).not.toHaveBeenCalled();
     });
 
     it(`${n}: token de B não alcança o recurso de A`, async () => {
@@ -661,26 +566,6 @@ describe("financeiro e honorários aceitam token", () => {
           expect(lista).toEqual([]);
           if (c.colecao) expect(texto).not.toContain(c.colecao.daA);
           expect(audit).not.toHaveBeenCalled();
-          break;
-        }
-        case "422":
-          expect(res.status, texto).toBe(422);
-          expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
-          expect(audit).not.toHaveBeenCalled();
-          break;
-        case "cria": {
-          expect(res.status, texto).toBe(c.status);
-          expect(texto).not.toContain(c.colecao?.daA ?? CONTRATO_A);
-          const tabela = c.tabelaCriada ?? "";
-          const criadas = linhasDaTabela(falso, tabela).filter(
-            (l) => !(c.linhas[tabela] ?? []).some((antiga) => antiga.id === l.id),
-          );
-          expect(criadas).toHaveLength(1);
-          expect(criadas[0]?.organization_id).toBe(ORG_B);
-          expect(audit).toHaveBeenCalledWith(
-            expect.objectContaining({ organizationId: ORG_B, actorApiTokenId: TOKEN_B }),
-          );
-          expect(audit).not.toHaveBeenCalledWith(expect.objectContaining({ organizationId: ORG_A }));
           break;
         }
         default:
@@ -742,11 +627,6 @@ describe("financeiro e honorários aceitam token", () => {
       expect(requireRole).toHaveBeenCalledWith(c.papel, expect.objectContaining({ resource: c.recurso }));
       expect(validateBearerToken).not.toHaveBeenCalled();
       expect(checkRateLimit).not.toHaveBeenCalled();
-      if (c.audita) {
-        expect(audit).toHaveBeenCalledWith(
-          expect.objectContaining({ organizationId: ORG_A, actorUserId: PESSOA_DA_SESSAO }),
-        );
-      }
       // Sessão nunca leva o id de um token: a trilha só ganha `actorApiTokenId` com token.
       for (const [entrada] of vi.mocked(audit).mock.calls) {
         expect((entrada as { actorApiTokenId?: unknown }).actorApiTokenId ?? null).toBeNull();
@@ -785,33 +665,6 @@ describe("o que segue só de sessão em financeiro e honorários", () => {
   }
 });
 
-// ─── Cancelar comanda segue só de sessão, também no PATCH ───────────────────
-
-describe("cancelar comanda segue só de sessão", () => {
-  it("token de A com {cancel:true} na própria comanda → 403, a comanda segue aberta e nada é escrito", async () => {
-    const c: Caso = {
-      rota: "financeiro/comandas/[id]",
-      metodo: "PATCH",
-      caminho: `/api/v1/financeiro/comandas/${SALE_A}`,
-      params: { id: SALE_A },
-      corpo: { cancel: true },
-      linhas: { ...MODULOS, ...ORGS, sales: [VENDA_A, VENDA_B] },
-      papel: "agent",
-      escopo: "mcp:write",
-      recurso: "financeiro",
-      status: 403,
-    };
-    const { res, texto, falso } = await comoToken(c);
-
-    expect(res.status, texto).toBe(403);
-    expect(json<{ error: { code: string } }>(texto).error.code).toBe("forbidden");
-    expect(texto).toContain("Cancelar a comanda é só pela sessão.");
-    expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
-    expect(linhasDaTabela(falso, "sales").find((l) => l.id === SALE_A)?.status).toBe("open");
-    expect(audit).not.toHaveBeenCalled();
-  });
-});
-
 // ─── PUBLIC_PATHS: as portas de financeiro e honorários ─────────────────────
 
 describe("PUBLIC_PATHS — as portas de financeiro e honorários", () => {
@@ -826,11 +679,8 @@ describe("PUBLIC_PATHS — as portas de financeiro e honorários", () => {
     "/api/v1/financeiro/comandas",
     "/api/v1/financeiro/comandas/pendentes",
     `/api/v1/financeiro/comandas/${UUID}`,
-    `/api/v1/financeiro/comandas/${UUID}/itens`,
-    `/api/v1/financeiro/comandas/${UUID}/itens/${UUID}`,
     "/api/v1/financeiro/fidelidade",
     "/api/v1/financeiro/lancamentos",
-    `/api/v1/financeiro/lancamentos/${UUID}`,
     "/api/v1/honorarios/contratos",
     `/api/v1/honorarios/contratos/${UUID}/parcelas`,
   ])("libera %s para Bearer", (caminho) => {
@@ -849,7 +699,10 @@ describe("PUBLIC_PATHS — as portas de financeiro e honorários", () => {
     `/api/v1/financeiro/comandas/${UUID}/finalizar`,
     "/api/v1/financeiro/comandas/faturar-lote",
     `/api/v1/financeiro/comandas/${UUID}/itens/abc`,
-    // lançamento por id aceita token (R2 lote 2), mas só com id em forma de UUID
+    // caminhos que só têm escrita: seguem só de sessão (doc 376), sem porta
+    `/api/v1/financeiro/comandas/${UUID}/itens`,
+    `/api/v1/financeiro/comandas/${UUID}/itens/${UUID}`,
+    `/api/v1/financeiro/lancamentos/${UUID}`,
     "/api/v1/financeiro/lancamentos/abc",
     `/api/v1/financeiro/lancamentos/${UUID}/x`,
     `/api/v1/financeiro/fidelidade/${UUID}`,

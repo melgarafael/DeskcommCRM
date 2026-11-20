@@ -59,6 +59,17 @@ export interface SendMessageInput {
   jobId: string;
   /** Posição da mensagem no turno (1..n) — com jobId forma a identidade da intenção. */
   seq: number;
+  /**
+   * `seq` da PRIMEIRA mensagem física do ENVIO (#4370, migration 9407).
+   *
+   * Vai para `send_ledger.envio_seq` e é o que permite ao reprocesso ler só as
+   * bolhas deste envio. `seq` continua sendo a identidade da intenção
+   * (`unique (job_id, seq)`), intocada; `envioSeq` é a fronteira. `input` desce
+   * inteiro até `sendWithLedger` como `Intent`, então o campo atravessa sem
+   * tradução. Ausente = NULL (follow-up de mensagem única, envio fixo). A nota de
+   * voz do `send_message` leva o mesmo `envioSeq` das bolhas que ela substitui.
+   */
+  envioSeq?: number;
   conversationId: string;
   body: string;
   /**
@@ -109,8 +120,25 @@ export interface SendMessageInput {
    * aponta direto e o handler confere antes de buscar.
    */
   media?:
-    | { kind?: 'audio' | 'image'; storagePath: string; mime: string }
+    | {
+        storagePath: string;
+        mime: string;
+        /** Áudio × imagem do arquivo já no Storage (catálogo). Ausente = imagem. */
+        kind?: 'audio' | 'image';
+        /** Ausente = imagem (foto do produto). Ver `ChannelSendInput` no contrato do canal. */
+        type?: TipoDeMidiaComLegenda;
+        /** Nome do documento para o cliente; ausente = o basename do arquivo. */
+        filename?: string;
+      }
     | { url: string; mime: string; type: TipoDeMidiaComLegenda };
+  /**
+   * O material da empresa que ESTA mensagem carrega (#4129), quando houver.
+   *
+   * Vai para o `metadata` da linha: é por ele que a conversa sabe o que já
+   * recebeu (freio de 7 dias/3 em 24 h) e que a timeline mostra o documento da
+   * IA sem depender de cruzar o caminho do Storage.
+   */
+  materialId?: string;
 }
 
 /**
@@ -146,14 +174,23 @@ export function corpoDoEnvio(
               media_mime: input.media.mime,
             }
           : {
-              type: input.media.kind ?? 'image',
+              // Material da empresa (#4129) é documento; foto de produto não
+              // declara `type` e continua saindo como imagem. O `type` errado
+              // manda o PDF como foto — e o WhatsApp não entrega. `kind` é a
+              // marca do áudio/imagem do catálogo (apresentação); os dois
+              // convivem e `type` tem precedência por ser o mais específico.
+              type: input.media.type ?? input.media.kind ?? 'image',
               media_storage_path: input.media.storagePath,
               media_mime: input.media.mime,
+              ...(input.media.filename ? { media_filename: input.media.filename } : {}),
             }
         : { type: 'text' as const }),
     // Foto sem legenda vai sem `body`: o schema do envio pede corpo não vazio.
     ...(input.body !== '' || !input.media ? { body: input.body } : {}),
-    metadata: { idempotency_key: idempotencyKey },
+    metadata: {
+      idempotency_key: idempotencyKey,
+      ...(input.materialId ? { material_id: input.materialId } : {}),
+    },
   };
 }
 
@@ -279,9 +316,11 @@ export async function sendTurnMessage(
       // A linha já tinha desfecho TERMINAL antes de chegarmos aqui — não há
       // síntese a fazer nem envio a tentar; o resultado É esse desfecho.
       if (err instanceof VozLedgerTerminalError) {
-        return err.kind === 'already_sent'
-          ? { kind: 'already_sent', idempotencyKey: err.key, crmMessageId: err.crmMessageId }
-          : { kind: 'blocked', idempotencyKey: err.key };
+        if (err.kind === 'already_sent')
+          return { kind: 'already_sent', idempotencyKey: err.key, crmMessageId: err.crmMessageId };
+        if (err.kind === 'failed_permanent')
+          return { kind: 'failed', idempotencyKey: err.key, crmMessageId: err.crmMessageId, permanente: true };
+        return { kind: 'blocked', idempotencyKey: err.key };
       }
       // ⚠️ ACHADO NA REVISÃO, ANTES DA FASE 7: isto já foi `throw err` — e
       // derrubava o TURNO INTEIRO (o cliente não recebia resposta nenhuma)

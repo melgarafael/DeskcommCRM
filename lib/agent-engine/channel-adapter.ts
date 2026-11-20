@@ -28,6 +28,17 @@ export interface ChannelSendInput {
   jobId: string;
   /** posição da mensagem no turno (1..n) — com jobId forma a chave de idempotência */
   seq: number;
+  /**
+   * `seq` da PRIMEIRA mensagem física do ENVIO a que esta pertence (#4370).
+   *
+   * O `seq` é o contador do TURNO: entre dois `send_message` do mesmo job ele
+   * continua crescendo, então sozinho ele não diz onde um envio termina. Quem
+   * conhece a fronteira é quem chama (`agent/inbound-turn.ts`), e ela vai para o
+   * `send_ledger.envio_seq` na MESMA escrita da linha — o reprocesso da saída
+   * configurável lê as bolhas do envio por ela. Opcional: um adapter que a
+   * ignore continua enviando (e o ledger grava NULL, que é a régua anterior).
+   */
+  envioSeq?: number;
   /** referência da conversa no canal (conversation_id do CRM na v1) */
   conversationId: string;
   body: string;
@@ -72,8 +83,34 @@ export interface ChannelSendInput {
    * mensagens, como em toda mídia — e é ele que confere a URL antes de buscar.
    */
   media?:
-    | { kind?: 'audio' | 'image'; storagePath: string; mime: string }
+    | {
+        storagePath: string;
+        mime: string;
+        /**
+         * Áudio × imagem de um arquivo que já mora na pasta da conversa (catálogo,
+         * apresentação). Ausente nas fotos do produto, que sempre foram imagem.
+         */
+        kind?: 'audio' | 'image';
+        /**
+         * Presente só quando o arquivo da conversa NÃO é imagem: material da
+         * empresa (#4129) pode ser PDF/planilha e vai como DOCUMENTO. Ausente =
+         * imagem, o comportamento de sempre das fotos do produto — um agente
+         * antigo, recompilado, continua enviando foto como foto.
+         */
+        type?: TipoDeMidiaComLegenda;
+        /** Nome do documento para o cliente; ausente = o basename do arquivo. */
+        filename?: string;
+      }
     | { url: string; mime: string; type: TipoDeMidiaComLegenda };
+  /**
+   * O material da empresa que ESTA mensagem carrega (#4129), quando houver.
+   *
+   * Vai ao `metadata` da linha gravada pelo handler, e é por ele que os freios
+   * de reenvio contam (7 dias / 3 em 24 h) e que o Inbox mostra o documento da
+   * IA. Opcional pela mesma razão de `template`/`voz`: um adapter que o ignore
+   * ainda envia a mensagem — degrada, não quebra.
+   */
+  materialId?: string;
 }
 
 /**
@@ -90,8 +127,12 @@ export type ChannelSendResult =
   | { kind: 'queued'; idempotencyKey: string; messageId: string | null }
   /** veto PERMANENTE de negócio (opt-out/is_blocked, irrevogável — regra dura nº 2) */
   | { kind: 'blocked'; idempotencyKey: string }
-  /** o canal registrou a mensagem como falha (retry consome tentativa) */
-  | { kind: 'failed'; idempotencyKey: string; messageId: string | null }
+  /**
+   * o canal registrou a mensagem como falha. `permanente` = recusa definitiva
+   * deste conteúdo (4xx do provedor): o turno encerra sem retry. Ausente/false =
+   * transitória: o retry consome tentativa, como sempre.
+   */
+  | { kind: 'failed'; idempotencyKey: string; messageId: string | null; permanente?: boolean }
   /** transporte/tool indisponível (transiente) — o job re-tenta com a MESMA key */
   | { kind: 'unavailable'; reason: string };
 

@@ -2,29 +2,27 @@
 /**
  * OPERAÇÃO, LOTE 2 DA R2, ACEITA TOKEN (Spec 33, fatia R2, plano p6).
  *
- * As oito rotas (onze métodos) que sobraram da R2 passam a receber o Bearer
- * `dsk_…` por `resolveAuthDual`:
+ * As rotas que sobraram da R2 passam a receber o Bearer `dsk_…` por
+ * `resolveAuthDual`:
  *
  *  - `agenda/excecoes` DELETE (`tokenRole: manager`);
  *  - `contacts/duplicates/dismiss` POST (pool `pg`, receita A);
- *  - `financeiro/catalogo/[tipo]` POST, PATCH e DELETE;
- *  - `financeiro/fidelidade` POST;
- *  - `financeiro/lancamentos` POST;
- *  - `financeiro/lancamentos/[id]` PATCH e DELETE (ganharam o filtro de organização);
- *  - `honorarios/contratos/[id]/parcelas` POST;
  *  - `leads/at-risk` GET (receita B: a sessão segue com `requireRole`).
  *
+ * A escrita do financeiro e dos honorários (catálogo, fidelidade, lançamentos,
+ * parcelas) NÃO entra (doc 376): segue só de sessão, e o 401 do token está na
+ * tabela `SO_SESSAO` de `financeiro.test.ts`. As portas de leitura desses
+ * caminhos seguem listadas na borda do proxy abaixo.
+ *
  * O cliente do token é a service role: a RLS deixa de proteger, e o
- * `.eq("organization_id", …)` de CADA cadeia, mais a conferência das
- * referências do corpo (conta, plano de contas, contato, contrato, pessoa),
- * é a única barreira. O cliente falso (`../helpers/cliente-admin-falso`)
- * devolve vazio para a cadeia que esquece o filtro, e `cadeiasForaDaOrganizacao`
- * a aponta.
+ * `.eq("organization_id", …)` de CADA cadeia é a única barreira. O cliente
+ * falso (`../helpers/cliente-admin-falso`) devolve vazio para a cadeia que
+ * esquece o filtro, e `cadeiasForaDaOrganizacao` a aponta.
  *
  * Seis testes por método da tabela (alcança, B não alcança A, sem escopo, abaixo
- * do papel, teto, sessão), mais os casos próprios: referência de outra
- * organização, id de outra organização em `lancamentos/[id]` (token E sessão sem
- * RLS), o ator nulo no que é gravado, o pool do `dismiss` e a borda do proxy.
+ * do papel, teto, sessão), mais os casos próprios: o ator nulo no que é
+ * gravado, o pool do `dismiss`, o POST de exceção só de sessão e a borda do
+ * proxy.
  *
  * Não medido aqui: o SQL de `dispensarParDeContatos` (quem prova é o invariante
  * de banco do CI) e a RLS da sessão (o dublê da sessão a imita onde diz).
@@ -45,7 +43,6 @@ import {
   cadeiasDeEscrita,
   cadeiasForaDaOrganizacao,
   criarClienteAdminFalso,
-  linhasDaTabela,
   rpcsForaDaOrganizacao,
 } from "../helpers/cliente-admin-falso";
 
@@ -78,19 +75,9 @@ const ORG_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const TOKEN_A = "tok-a";
 const TOKEN_B = "tok-b";
 const PESSOA_DA_SESSAO = "c0000000-0000-4000-8000-000000000001";
-const ATENDENTE_A = "c1000000-0000-4000-8000-0000000000a1";
 
 const CONTATO_A = "a6666666-6666-4666-8666-666666666666";
 const CONTATO_A2 = "a6666667-6666-4666-8666-666666666666";
-const CONTATO_B = "b6666666-6666-4666-8666-666666666666";
-const CONTA_A = "a2222222-2222-4222-8222-222222222222";
-const CONTA_B = "b2222222-2222-4222-8222-222222222222";
-const PLANO_B = "b3333333-3333-4333-8333-333333333333";
-const FORMA_A = "a3333330-3333-4333-8333-333333333333";
-const LANC_A = "a4444444-4444-4444-8444-444444444444";
-const LANC_B = "b4444444-4444-4444-8444-444444444444";
-const CONTRATO_A = "a5555555-5555-4555-8555-555555555555";
-const CONTRATO_B = "b5555555-5555-4555-8555-555555555555";
 const EXC_A = "f6f6f6f6-f6f6-4f6f-8f6f-f6f6f6f6f6f6";
 const EXC_B = "7b7b7b7b-7b7b-47b7-87b7-7b7b7b7b7b7b";
 const LEAD_A = "a7777777-7777-4777-8777-777777777777";
@@ -125,50 +112,13 @@ type Caso = {
   /** A rota audita: com token, o ator é o token; com sessão, a pessoa. */
   audita?: boolean;
   /** O que o token de B recebe quando pede o recurso de A. */
-  paraB: "lista" | "404" | "422" | "cria";
+  paraB: "lista" | "404";
   /** A cadeia de escrita existe (update/delete filtrado), mas não alcança linha: o que vale é a linha de A intacta. */
   escritaNoOp?: boolean;
-  /** Tabela onde o método de B cria linha (só com `paraB: "cria"`). */
-  tabelaCriada?: string;
 };
 
-/** Módulo financeiro ligado nesta instalação (a flag é lida antes do portão). */
-const MODULOS = { modulos_instalados: [{ modulo: "financeiro", estado: "ativo" }] };
-const ORGS = {
-  organizations: [
-    { id: ORG_A, currency: "BRL" },
-    { id: ORG_B, currency: "BRL" },
-  ],
-};
 /** Tabelas GLOBAIS da instalação, sem `organization_id` no baseline. */
 const SEM_ORGANIZACAO: readonly string[] = ["platform_config", "modulos_instalados"];
-
-const CONTAS = {
-  financial_accounts: [
-    { id: CONTA_A, organization_id: ORG_A, name: "Conta da A", kind: "cash", currency: "BRL", is_active: true },
-    { id: CONTA_B, organization_id: ORG_B, name: "Conta da B", kind: "cash", currency: "BRL", is_active: true },
-  ],
-};
-
-const LANCAMENTO_A: Linha = {
-  id: LANC_A,
-  organization_id: ORG_A,
-  account_id: CONTA_A,
-  direction: "in",
-  amount_cents: 100,
-  currency: "BRL",
-  description: "Lançamento da A",
-  entry_date: "2026-11-01",
-  status: "pending",
-  origin: "manual",
-};
-const LANCAMENTO_B: Linha = {
-  ...LANCAMENTO_A,
-  id: LANC_B,
-  organization_id: ORG_B,
-  account_id: CONTA_B,
-  description: "Lançamento da B",
-};
 
 const CASOS: readonly Caso[] = [
   // ─── agenda/excecoes DELETE: manager no token ────────────────────────────
@@ -191,196 +141,6 @@ const CASOS: readonly Caso[] = [
     status: 200,
     paraB: "404",
     escritaNoOp: true,
-    audita: true,
-  },
-
-  // ─── financeiro/catalogo/[tipo]: criar ───────────────────────────────────
-  {
-    rota: "financeiro/catalogo/[tipo]",
-    metodo: "POST",
-    rotulo: "conta nova",
-    caminho: "/api/v1/financeiro/catalogo/contas",
-    params: { tipo: "contas" },
-    corpo: { name: "Conta nova", kind: "cash" },
-    linhas: { ...MODULOS, ...ORGS, ...CONTAS },
-    papel: "manager",
-    escopo: "mcp:write",
-    recurso: "financeiro",
-    recursoDoTeto: "financeiro_catalogo_criar",
-    status: 201,
-    paraB: "cria",
-    tabelaCriada: "financial_accounts",
-    audita: true,
-  },
-  {
-    rota: "financeiro/catalogo/[tipo]",
-    metodo: "POST",
-    rotulo: "forma de pagamento com a conta de A",
-    caminho: "/api/v1/financeiro/catalogo/formas_de_pagamento",
-    params: { tipo: "formas_de_pagamento" },
-    corpo: { name: "Dinheiro", account_id: CONTA_A },
-    linhas: { ...MODULOS, ...ORGS, ...CONTAS, payment_methods: [] },
-    papel: "manager",
-    escopo: "mcp:write",
-    recurso: "financeiro",
-    recursoDoTeto: "financeiro_catalogo_criar",
-    status: 201,
-    // A conta é de A: para o token de B a referência não existe na organização dele.
-    paraB: "422",
-    audita: true,
-  },
-  {
-    rota: "financeiro/catalogo/[tipo]",
-    metodo: "POST",
-    rotulo: "regra de comissão com a pessoa de A",
-    caminho: "/api/v1/financeiro/catalogo/regras_de_comissao",
-    params: { tipo: "regras_de_comissao" },
-    corpo: { name: "Ana em manicure", attendant_user_id: ATENDENTE_A, percent: 10 },
-    linhas: {
-      ...MODULOS,
-      ...ORGS,
-      user_organizations: [{ user_id: ATENDENTE_A, organization_id: ORG_A, revoked_at: null }],
-      commission_rules: [],
-    },
-    papel: "manager",
-    escopo: "mcp:write",
-    recurso: "financeiro",
-    recursoDoTeto: "financeiro_catalogo_criar",
-    status: 201,
-    paraB: "422",
-    audita: true,
-  },
-
-  // ─── financeiro/catalogo/[tipo]: alterar e inativar ──────────────────────
-  {
-    rota: "financeiro/catalogo/[tipo]",
-    metodo: "PATCH",
-    caminho: "/api/v1/financeiro/catalogo/contas",
-    params: { tipo: "contas" },
-    corpo: { id: CONTA_A, name: "Conta renomeada" },
-    linhas: { ...MODULOS, ...ORGS, ...CONTAS },
-    papel: "manager",
-    escopo: "mcp:write",
-    recurso: "financeiro",
-    recursoDoTeto: "financeiro_catalogo_alterar",
-    status: 200,
-    paraB: "404",
-    escritaNoOp: true,
-    audita: true,
-  },
-  {
-    rota: "financeiro/catalogo/[tipo]",
-    metodo: "DELETE",
-    caminho: "/api/v1/financeiro/catalogo/contas",
-    params: { tipo: "contas" },
-    corpo: { id: CONTA_A },
-    linhas: { ...MODULOS, ...ORGS, ...CONTAS },
-    papel: "manager",
-    escopo: "mcp:write",
-    recurso: "financeiro",
-    recursoDoTeto: "financeiro_catalogo_inativar",
-    status: 200,
-    paraB: "404",
-    escritaNoOp: true,
-    audita: true,
-  },
-
-  // ─── financeiro/fidelidade POST ──────────────────────────────────────────
-  {
-    rota: "financeiro/fidelidade",
-    metodo: "POST",
-    caminho: "/api/v1/financeiro/fidelidade",
-    corpo: { contact_id: CONTATO_A, points: 5, reason: "compra da A" },
-    linhas: {
-      ...MODULOS,
-      ...ORGS,
-      contacts: [
-        { id: CONTATO_A, organization_id: ORG_A, name: "Cliente da A" },
-        { id: CONTATO_B, organization_id: ORG_B, name: "Cliente da B" },
-      ],
-      loyalty_ledger: [],
-    },
-    papel: "agent",
-    escopo: "mcp:write",
-    recurso: "financeiro",
-    recursoDoTeto: "financeiro_fidelidade_movimento",
-    status: 200,
-    // O contato é de A: o ponto não pode cair no saldo dele pelo token de B.
-    paraB: "422",
-    audita: true,
-  },
-
-  // ─── financeiro/lancamentos POST ─────────────────────────────────────────
-  {
-    rota: "financeiro/lancamentos",
-    metodo: "POST",
-    caminho: "/api/v1/financeiro/lancamentos",
-    corpo: { account_id: CONTA_A, direction: "in", amount_cents: 100, description: "x", entry_date: "2026-11-01" },
-    linhas: { ...ORGS, ...CONTAS, account_plans: [], financial_entries: [] },
-    papel: "agent",
-    escopo: "mcp:write",
-    recurso: "financeiro",
-    recursoDoTeto: "financeiro_lancamentos_criar",
-    status: 200,
-    paraB: "422",
-    audita: true,
-  },
-
-  // ─── financeiro/lancamentos/[id]: pagar e apagar ─────────────────────────
-  {
-    rota: "financeiro/lancamentos/[id]",
-    metodo: "PATCH",
-    rotulo: "baixa",
-    caminho: `/api/v1/financeiro/lancamentos/${LANC_A}`,
-    params: { id: LANC_A },
-    corpo: { pay: true },
-    linhas: { ...ORGS, financial_entries: [LANCAMENTO_A, LANCAMENTO_B] },
-    papel: "agent",
-    escopo: "mcp:write",
-    recurso: "financeiro",
-    recursoDoTeto: "financeiro_lancamento_pagar",
-    status: 200,
-    paraB: "404",
-    audita: true,
-  },
-  {
-    rota: "financeiro/lancamentos/[id]",
-    metodo: "DELETE",
-    rotulo: "apagar",
-    caminho: `/api/v1/financeiro/lancamentos/${LANC_A}`,
-    params: { id: LANC_A },
-    linhas: { ...ORGS, financial_entries: [LANCAMENTO_A, LANCAMENTO_B] },
-    papel: "agent",
-    escopo: "mcp:write",
-    recurso: "financeiro",
-    recursoDoTeto: "financeiro_lancamento_remover",
-    status: 200,
-    paraB: "404",
-    audita: true,
-  },
-
-  // ─── honorarios/contratos/[id]/parcelas POST ─────────────────────────────
-  {
-    rota: "honorarios/contratos/[id]/parcelas",
-    metodo: "POST",
-    caminho: `/api/v1/honorarios/contratos/${CONTRATO_A}/parcelas`,
-    params: { id: CONTRATO_A },
-    corpo: { numero: 2, vencimento: "2027-01-01", valor_cents: 100 },
-    linhas: {
-      ...ORGS,
-      honorarios_contratos: [
-        { id: CONTRATO_A, organization_id: ORG_A, modelo: "fixo", valor_fixo_cents: 100 },
-        { id: CONTRATO_B, organization_id: ORG_B, modelo: "fixo", valor_fixo_cents: 200 },
-      ],
-      honorarios_parcelas: [],
-    },
-    papel: "manager",
-    escopo: "mcp:write",
-    recurso: "honorarios_parcelas",
-    recursoDoTeto: "honorarios_parcelas_criar",
-    status: 200,
-    // O contrato é de A: o token de B não cria parcela nele.
-    paraB: "422",
     audita: true,
   },
 
@@ -440,12 +200,6 @@ const CASOS: readonly Caso[] = [
 const CARREGA: Record<string, () => Promise<Record<string, unknown>>> = {
   "agenda/excecoes": () => import("@/app/api/v1/agenda/excecoes/route"),
   "contacts/duplicates/dismiss": () => import("@/app/api/v1/contacts/duplicates/dismiss/route"),
-  "financeiro/catalogo/[tipo]": () => import("@/app/api/v1/financeiro/catalogo/[tipo]/route"),
-  "financeiro/fidelidade": () => import("@/app/api/v1/financeiro/fidelidade/route"),
-  "financeiro/lancamentos": () => import("@/app/api/v1/financeiro/lancamentos/route"),
-  "financeiro/lancamentos/[id]": () => import("@/app/api/v1/financeiro/lancamentos/[id]/route"),
-  "honorarios/contratos/[id]/parcelas": () =>
-    import("@/app/api/v1/honorarios/contratos/[id]/parcelas/route"),
   "leads/at-risk": () => import("@/app/api/v1/leads/at-risk/route"),
 };
 
@@ -642,26 +396,6 @@ describe("operação (R2, lote 2) aceita token", () => {
           if (c.marcaA) expect(texto).not.toContain(c.marcaA);
           expect(audit).not.toHaveBeenCalled();
           break;
-        case "422":
-          expect(res.status, texto).toBe(422);
-          expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
-          expect(audit).not.toHaveBeenCalled();
-          break;
-        case "cria": {
-          expect(res.status, texto).toBe(c.status);
-          if (c.marcaA) expect(texto).not.toContain(c.marcaA);
-          const tabela = c.tabelaCriada ?? "";
-          const criadas = linhasDaTabela(falso, tabela).filter(
-            (l) => !(c.linhas[tabela] ?? []).some((antiga) => antiga.id === l.id),
-          );
-          expect(criadas).toHaveLength(1);
-          expect(criadas[0]?.organization_id).toBe(ORG_B);
-          expect(audit).toHaveBeenCalledWith(
-            expect.objectContaining({ organizationId: ORG_B, actorApiTokenId: TOKEN_B }),
-          );
-          expect(audit).not.toHaveBeenCalledWith(expect.objectContaining({ organizationId: ORG_A }));
-          break;
-        }
         default:
           expect(res.status, texto).toBe(404);
           // `escritaNoOp`: o update/delete existe, filtrado por B, e não alcança a linha de A.
@@ -832,248 +566,6 @@ describe("contacts/duplicates/dismiss aceita token (pool pg)", () => {
   });
 });
 
-// ─── Referências do corpo que são de outra organização ──────────────────────
-
-describe("referências do corpo são conferidas na organização do token", () => {
-  it("lancamentos POST: plano de contas de B com token de A → 422 e nada é gravado", async () => {
-    const c = CASOS.find((x) => x.rota === "financeiro/lancamentos" && x.metodo === "POST");
-    if (!c) throw new Error("caso ausente");
-    const { res, texto, falso } = await comoToken({
-      ...c,
-      corpo: { ...(c.corpo as object), account_plan_id: PLANO_B },
-      linhas: {
-        ...c.linhas,
-        account_plans: [{ id: PLANO_B, organization_id: ORG_B, name: "Plano da B", direction: "in" }],
-      },
-    });
-
-    expect(res.status, texto).toBe(422);
-    expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
-    expect(audit).not.toHaveBeenCalled();
-  });
-
-  it("lancamentos POST: conta de B com token de A → 422 e nada é gravado", async () => {
-    const c = CASOS.find((x) => x.rota === "financeiro/lancamentos" && x.metodo === "POST");
-    if (!c) throw new Error("caso ausente");
-    const { res, texto, falso } = await comoToken({
-      ...c,
-      corpo: { ...(c.corpo as object), account_id: CONTA_B },
-    });
-
-    expect(res.status, texto).toBe(422);
-    expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
-  });
-
-  it("lancamentos POST: o lançamento nasce na organização do token, na moeda dela, sem pessoa", async () => {
-    const c = CASOS.find((x) => x.rota === "financeiro/lancamentos" && x.metodo === "POST");
-    if (!c) throw new Error("caso ausente");
-    const { res, texto, falso } = await comoToken({
-      ...c,
-      // `organization_id` e `created_by_user_id` no corpo não existem no schema: são descartados.
-      corpo: { ...(c.corpo as object), organization_id: ORG_B, created_by_user_id: PESSOA_DA_SESSAO },
-    });
-
-    expect(res.status, texto).toBe(200);
-    const criadas = linhasDaTabela(falso, "financial_entries");
-    expect(criadas).toHaveLength(1);
-    expect(criadas[0]).toMatchObject({
-      organization_id: ORG_A,
-      account_id: CONTA_A,
-      origin: "manual",
-      created_by_user_id: null,
-    });
-  });
-
-  it("fidelidade POST: o ledger leva a organização do token e nenhuma pessoa", async () => {
-    const c = CASOS.find((x) => x.rota === "financeiro/fidelidade");
-    if (!c) throw new Error("caso ausente");
-    const { res, texto, falso } = await comoToken(c);
-
-    expect(res.status, texto).toBe(200);
-    const criadas = linhasDaTabela(falso, "loyalty_ledger");
-    expect(criadas).toHaveLength(1);
-    expect(criadas[0]).toMatchObject({
-      organization_id: ORG_A,
-      contact_id: CONTATO_A,
-      points: 5,
-      created_by_user_id: null,
-    });
-  });
-
-  it("catálogo POST: forma de pagamento com a conta de A grava na organização de A", async () => {
-    const c = CASOS.find((x) => x.rotulo === "forma de pagamento com a conta de A");
-    if (!c) throw new Error("caso ausente");
-    const { res, texto, falso } = await comoToken(c);
-
-    expect(res.status, texto).toBe(201);
-    expect(linhasDaTabela(falso, "payment_methods")).toEqual([
-      expect.objectContaining({ organization_id: ORG_A, account_id: CONTA_A, name: "Dinheiro" }),
-    ]);
-  });
-
-  it("catálogo PATCH: trocar a conta da forma de pagamento para a de B → 422, a forma fica como estava", async () => {
-    const linhas: Linhas = {
-      ...MODULOS,
-      ...ORGS,
-      ...CONTAS,
-      payment_methods: [
-        { id: FORMA_A, organization_id: ORG_A, name: "Dinheiro", account_id: CONTA_A, is_active: true },
-      ],
-    };
-    const { res, texto, falso } = await comoToken({
-      rota: "financeiro/catalogo/[tipo]",
-      metodo: "PATCH",
-      caminho: "/api/v1/financeiro/catalogo/formas_de_pagamento",
-      params: { tipo: "formas_de_pagamento" },
-      corpo: { id: FORMA_A, account_id: CONTA_B },
-      linhas,
-      papel: "manager",
-      escopo: "mcp:write",
-    });
-
-    expect(res.status, texto).toBe(422);
-    expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
-    expect(linhasDaTabela(falso, "payment_methods")[0]).toMatchObject({ account_id: CONTA_A });
-    expect(audit).not.toHaveBeenCalled();
-  });
-
-  it("catálogo POST: `organization_id` do corpo é ignorado, a linha leva o da linha do token", async () => {
-    const c = CASOS.find((x) => x.rotulo === "conta nova");
-    if (!c) throw new Error("caso ausente");
-    const { res, texto, falso } = await comoToken({
-      ...c,
-      corpo: { name: "Conta nova", kind: "cash", organization_id: ORG_B },
-    });
-
-    expect(res.status, texto).toBe(201);
-    const nova = linhasDaTabela(falso, "financial_accounts").find((l) => l.name === "Conta nova");
-    expect(nova?.organization_id).toBe(ORG_A);
-  });
-
-  it("catálogo DELETE (inativar): o token de A inativa a conta de A e só ela", async () => {
-    const c = CASOS.find((x) => x.rota === "financeiro/catalogo/[tipo]" && x.metodo === "DELETE");
-    if (!c) throw new Error("caso ausente");
-    const { res, texto, falso } = await comoToken(c);
-
-    expect(res.status, texto).toBe(200);
-    const contas = linhasDaTabela(falso, "financial_accounts");
-    expect(contas.find((l) => l.id === CONTA_A)?.is_active).toBe(false);
-    expect(contas.find((l) => l.id === CONTA_B)?.is_active).toBe(true);
-  });
-
-  it("parcelas POST: contrato de B com token de A → 422 e nenhuma parcela é criada", async () => {
-    const c = CASOS.find((x) => x.rota === "honorarios/contratos/[id]/parcelas");
-    if (!c) throw new Error("caso ausente");
-    const { res, texto, falso } = await comoToken({
-      ...c,
-      caminho: `/api/v1/honorarios/contratos/${CONTRATO_B}/parcelas`,
-      params: { id: CONTRATO_B },
-    });
-
-    expect(res.status, texto).toBe(422);
-    expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
-    expect(linhasDaTabela(falso, "honorarios_parcelas")).toEqual([]);
-  });
-
-  it("parcelas POST: a parcela nasce na organização do token", async () => {
-    const c = CASOS.find((x) => x.rota === "honorarios/contratos/[id]/parcelas");
-    if (!c) throw new Error("caso ausente");
-    const { res, texto, falso } = await comoToken(c);
-
-    expect(res.status, texto).toBe(200);
-    expect(linhasDaTabela(falso, "honorarios_parcelas")).toEqual([
-      expect.objectContaining({ organization_id: ORG_A, contrato_id: CONTRATO_A, numero: 2 }),
-    ]);
-  });
-});
-
-// ─── lancamentos/[id]: o filtro de organização que não existia ──────────────
-
-describe("financeiro/lancamentos/[id]: id de outra organização não alcança nada", () => {
-  const baseP = {
-    rota: "financeiro/lancamentos/[id]",
-    metodo: "PATCH" as const,
-    caminho: `/api/v1/financeiro/lancamentos/${LANC_A}`,
-    params: { id: LANC_A },
-    corpo: { pay: true },
-    linhas: { ...ORGS, financial_entries: [LANCAMENTO_A, LANCAMENTO_B] } as Linhas,
-    papel: "agent" as const,
-    escopo: "mcp:write" as const,
-  };
-  const baseD = { ...baseP, metodo: "DELETE" as const, corpo: undefined };
-
-  it("PATCH com token: pagar o lançamento de A marca só o de A", async () => {
-    const { res, texto, falso } = await comoToken(baseP);
-
-    expect(res.status, texto).toBe(200);
-    const linhas = linhasDaTabela(falso, "financial_entries");
-    expect(linhas.find((l) => l.id === LANC_A)?.status).toBe("paid");
-    expect(linhas.find((l) => l.id === LANC_B)?.status).toBe("pending");
-  });
-
-  it("PATCH com token de B no id de A → 404 e a linha de A segue pendente", async () => {
-    const { res, falso } = await comoToken(baseP, { org: ORG_B });
-
-    expect(res.status).toBe(404);
-    expect(linhasDaTabela(falso, "financial_entries").find((l) => l.id === LANC_A)?.status).toBe("pending");
-    expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
-    expect(audit).not.toHaveBeenCalled();
-  });
-
-  it("DELETE com token: apaga só o lançamento de A", async () => {
-    const { res, texto, falso } = await comoToken(baseD);
-
-    expect(res.status, texto).toBe(200);
-    expect(linhasDaTabela(falso, "financial_entries").map((l) => l.id)).toEqual([LANC_B]);
-  });
-
-  it("DELETE com token de B no id de A → 404 e o lançamento de A segue lá", async () => {
-    const { res, falso } = await comoToken(baseD, { org: ORG_B });
-
-    expect(res.status).toBe(404);
-    expect(linhasDaTabela(falso, "financial_entries").map((l) => l.id)).toEqual([LANC_A, LANC_B]);
-    expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
-    expect(audit).not.toHaveBeenCalled();
-  });
-
-  it("id fora da forma de UUID → 404 sem tocar no banco (PATCH e DELETE)", async () => {
-    for (const base of [baseP, baseD]) {
-      vi.mocked(checkRateLimit).mockResolvedValue({ allowed: true } as never);
-      const { res, falso } = await comoToken({
-        ...base,
-        caminho: "/api/v1/financeiro/lancamentos/abc",
-        params: { id: "abc" },
-      });
-      expect(res.status).toBe(404);
-      expect(falso.cadeias).toEqual([]);
-    }
-  });
-
-  // A sessão também ganhou o filtro: antes só a RLS cobria. Aqui o cliente da sessão
-  // NÃO simula a RLS, então quem segura a linha de B é o `eq("organization_id")` da rota.
-  it("sessão de A (sem RLS no dublê) no id de B → 404 e a linha de B intacta, no PATCH", async () => {
-    const { res, falso } = await comoSessao(
-      { ...baseP, caminho: `/api/v1/financeiro/lancamentos/${LANC_B}`, params: { id: LANC_B } },
-      { semRls: true },
-    );
-
-    expect(res.status).toBe(404);
-    expect(linhasDaTabela(falso, "financial_entries").find((l) => l.id === LANC_B)?.status).toBe("pending");
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
-  });
-
-  it("sessão de A (sem RLS no dublê) no id de B → 404 e a linha de B intacta, no DELETE", async () => {
-    const { res, falso } = await comoSessao(
-      { ...baseD, caminho: `/api/v1/financeiro/lancamentos/${LANC_B}`, params: { id: LANC_B } },
-      { semRls: true },
-    );
-
-    expect(res.status).toBe(404);
-    expect(linhasDaTabela(falso, "financial_entries").map((l) => l.id)).toEqual([LANC_A, LANC_B]);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
-  });
-});
-
 // ─── agenda/excecoes: o POST segue só de sessão ─────────────────────────────
 
 describe("agenda/excecoes POST segue só de sessão", () => {
@@ -1117,7 +609,6 @@ describe("PUBLIC_PATHS — as portas do lote 2 da R2", () => {
     "/api/v1/financeiro/catalogo/regras_de_comissao",
     "/api/v1/financeiro/fidelidade",
     "/api/v1/financeiro/lancamentos",
-    `/api/v1/financeiro/lancamentos/${UUID}`,
     `/api/v1/honorarios/contratos/${UUID}/parcelas`,
     "/api/v1/leads/at-risk",
   ])("libera %s para Bearer", (caminho) => {
@@ -1130,6 +621,8 @@ describe("PUBLIC_PATHS — as portas do lote 2 da R2", () => {
     "/api/v1/contacts/duplicates/dismiss/x",
     "/api/v1/leads/at-risk/x",
     `/api/v1/financeiro/lancamentos/${UUID}/x`,
+    // lançamento por id: só escrita, segue só de sessão (doc 376), sem porta
+    `/api/v1/financeiro/lancamentos/${UUID}`,
     // id fora da forma de UUID
     "/api/v1/financeiro/lancamentos/abc",
     "/api/v1/honorarios/contratos/abc/parcelas",

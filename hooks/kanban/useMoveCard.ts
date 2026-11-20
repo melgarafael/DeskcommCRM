@@ -2,6 +2,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { liberarEcoLocal, marcarEcoLocal } from "@/lib/kanban/local-echo";
+import { fundeRespostaNoCard } from "@/lib/kanban/owner";
 import { ApiError } from "@/lib/api/types";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import type { Lead } from "@/lib/types/leads";
@@ -10,7 +11,14 @@ import type { BoardData } from "@/lib/kanban/types";
 export interface MoveArgs {
   leadId: string;
   stageId: string;
-  positionInStage: number;
+  /**
+   * A POSIÇÃO NA ETAPA DE DESTINO — opcional desde a página inteira do negócio
+   * (#4151). Arrastar no quadro sempre a manda (o ponto entre dois cards está na
+   * tela). Quem move pela página não tem a coluna: ele só conhece a etapa, e o
+   * servidor posiciona pela régua de entrada (`posicaoDeEntradaNaEtapa`, #3461).
+   * Ver `position_in_stage` em `moveLeadSchema`.
+   */
+  positionInStage?: number;
   expectedUpdatedAt: string;
   /**
    * Os campos que o diálogo de campos obrigatórios coletou (issue #1536) —
@@ -69,7 +77,11 @@ export function useMoveCard(pipelineId: string, opcoes: OpcoesDeMove = {}) {
       marcarEcoLocal(args.leadId);
       return apiClient.post<{ data: Lead }>(`/api/v1/leads/${args.leadId}/move`, {
         stage_id: args.stageId,
-        position_in_stage: args.positionInStage,
+        // Omitida de propósito quando ausente: o servidor lê a etapa de destino
+        // e posiciona (#4151). Mandar `undefined` não é o mesmo que mandar 0.
+        ...(args.positionInStage !== undefined
+          ? { position_in_stage: args.positionInStage }
+          : {}),
         expected_updated_at: args.expectedUpdatedAt,
         ...(args.customFields ? { custom_fields: args.customFields } : {}),
         ...(args.wonReason !== undefined ? { won_reason: args.wonReason } : {}),
@@ -84,7 +96,20 @@ export function useMoveCard(pipelineId: string, opcoes: OpcoesDeMove = {}) {
           ...snapshot,
           leads: snapshot.leads.map((l) =>
             l.id === args.leadId
-              ? { ...l, stage_id: args.stageId, position_in_stage: args.positionInStage }
+              ? {
+                  ...l,
+                  stage_id: args.stageId,
+                  // A ENTRADA NA ETAPA também, quando a etapa muda: o gatilho
+                  // da 0071 vai carimbar `stage_changed_at` agora, e sem isto
+                  // a barra de etapas e o rodapé do card mostravam, até a
+                  // resposta chegar, os dias da etapa ANTIGA na etapa nova.
+                  ...(args.stageId !== l.stage_id
+                    ? { stage_changed_at: new Date().toISOString() }
+                    : {}),
+                  ...(args.positionInStage !== undefined
+                    ? { position_in_stage: args.positionInStage }
+                    : {}),
+                }
               : l,
           ),
         });
@@ -92,25 +117,35 @@ export function useMoveCard(pipelineId: string, opcoes: OpcoesDeMove = {}) {
       return { snapshot };
     },
     onSuccess: (res, args) => {
+      // A ÚNICA RECONCILIAÇÃO DO ARRASTE (#4788) — e ela é do CARD, não do quadro.
+      //
       // A resposta é o lead como o servidor o deixou, com o `updated_at` final.
-      // Sem gravá-la aqui, o cache seguia com o valor de antes até o refetch do
-      // `onSettled` chegar, e arrastar o mesmo card de novo nesse intervalo
-      // mandava `expected_updated_at` velho → 409 (issue #916).
+      // Gravá-la aqui é o que fecha o #916 (o segundo arrasto manda o carimbo
+      // novo, não o velho — 409) E o que dispensa reler o funil inteiro: o
+      // servidor já mandou o estado autoritativo da linha que mudou. É também a
+      // convergência: se a etapa que voltou for diferente da otimista (recusa
+      // parcial, regra de entrada, reabertura), o `fundeRespostaNoCard` corrige
+      // o card na tela sem nenhuma requisição a mais.
       qc.setQueryData<BoardData>(queryKey, (atual) =>
         atual
           ? {
               ...atual,
-              leads: atual.leads.map((l) => (l.id === args.leadId ? { ...l, ...res.data } : l)),
+              leads: atual.leads.map((l) =>
+                l.id === args.leadId ? fundeRespostaNoCard(l, res.data) : l,
+              ),
             }
           : atual,
       );
     },
     onError: (err, args, ctx) => {
       if (ctx?.snapshot) qc.setQueryData(queryKey, ctx.snapshot);
-      if (err instanceof ApiError && err.status === 409) {
-        // Reconcile authoritative state — server already gave new updated_at.
-        qc.invalidateQueries({ queryKey });
-      }
+      // Relê em TODO erro, não só no 409. Rede caída, timeout ou 5xx podem
+      // chegar DEPOIS de a rota já ter gravado o movimento: o snapshot devolve
+      // o card à coluna antiga, e o evento de realtime desse lead cai na marca
+      // de eco (useBoard o ignora). Sem esta releitura, a tela ficaria errada
+      // até o próximo evento do funil. Erro é raro; o arraste que dá certo
+      // continua sem reler (#4788).
+      qc.invalidateQueries({ queryKey });
       if (err instanceof ApiError && err.code === "reabertura_cria_novo" && opcoes.onRetomada) {
         // NÃO toast: um "erro" genérico mentiria sobre uma recusa que tem
         // porta. O diálogo É a resposta — e ele leva a etapa que o operador
@@ -140,7 +175,22 @@ export function useMoveCard(pipelineId: string, opcoes: OpcoesDeMove = {}) {
       // A marca fecha com a AÇÃO, não com o relógio: daqui em diante só a folga
       // curta do último evento da cascata (ver lib/kanban/local-echo.ts).
       liberarEcoLocal(args.leadId);
-      qc.invalidateQueries({ queryKey });
+      // ─── AQUI NÃO SE RELE O QUADRO (#4788) ────────────────────────────────
+      // Era esta linha, e só ela, que fazia TODO arraste recarregar o funil
+      // INTEIRO: num funil com milhares de negócios é uma leitura completa da
+      // rota do quadro (paginada, enriquecida por card) a cada card solto, e o
+      // operador sente como "o card trava ao arrastar".
+      //
+      // O que a substitui já é autoritativo: o `onSuccess` funde a resposta do
+      // servidor no card — etapa, posição, `updated_at`, `status` —, então a
+      // releitura não traria nada que a tela já não tenha. O que chegar de
+      // fora continua chegando pelo realtime, que reconcilia o quadro UMA vez
+      // por rajada (hooks/kanban/useBoard.ts), e a rede de segurança
+      // (`useRefetchDeSeguranca`) confere a assinatura na volta para a aba.
+      //
+      // Fail-safe preservado: quando o servidor NÃO confirma (qualquer erro), o
+      // `onError` acima devolve o snapshot e relê — ali a releitura é
+      // obrigatória, porque o estado do servidor é desconhecido.
     },
   });
 }

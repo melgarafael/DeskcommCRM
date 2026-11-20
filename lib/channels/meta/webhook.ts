@@ -110,8 +110,14 @@ export interface InboundMessageEvent {
   from: string;
   profileName: string | null;
   sentAt: Date;
-  /** `text` | `audio` | `image` | `video` | `document` | `sticker` | `contact` | … */
+  /** Sempre um valor de `messages_type_check` — ver `TIPO_NO_CRM`. */
   type: string;
+  /**
+   * O `type` cru da Meta, SÓ quando ele está fora do vocabulário do banco e
+   * `type` caiu em `text` (#4580). A ingestão o grava em `metadata.raw_type`.
+   * Ausente = o tipo era conhecido.
+   */
+  rawType?: string;
   text: string | null;
   /** Preenchido quando `type === "contact"` (cartão compartilhado). */
   sharedContact?: SharedContact | null;
@@ -170,8 +176,10 @@ export interface OutboundEchoEvent {
   /** `wa_id` do CLIENTE (o destinatário). Mesma ressalva do nono dígito. */
   to: string;
   sentAt: Date;
-  /** `text` | `image` | `video` | `document` | `contact` | … */
+  /** Sempre um valor de `messages_type_check` — ver `TIPO_NO_CRM`. */
   type: string;
+  /** O `type` cru, só quando caiu em `text` por estar fora do vocabulário — idem a recebida. */
+  rawType?: string;
   text: string | null;
   /** Preenchido quando `type === "contact"` (cartão compartilhado pelo app). */
   sharedContact?: SharedContact | null;
@@ -293,6 +301,48 @@ function textoDoClique(raw: Record<string, unknown>, tipo: string): string | nul
 }
 
 /**
+ * O `type` da Meta no vocabulário de `messages.type` (#4580).
+ *
+ * O CHECK `messages_type_check` aceita só os valores da direita, e qualquer
+ * outro faz o INSERT falhar. Como a rota responde 2xx do mesmo jeito (a Meta
+ * não re-entrega), tipo fora da lista era mensagem que SUMIA: `unsupported`,
+ * `order`, o `"unknown"` de payload sem `type`, e qualquer tipo que a Meta
+ * criar amanhã. Só sobrava uma linha no log do contêiner.
+ *
+ * UM mapa para a recebida e para o eco da coexistência: eram duas regras, e o
+ * eco já tinha divergido (não convertia botão nem resposta interativa).
+ *
+ * Desconhecido vira `text` e o tipo cru sai em `rawType`, que a ingestão grava
+ * em `metadata.raw_type` — o precedente do canal por QR (`mapWahaMessageType`).
+ * Sem marcador no corpo, de propósito: o corpo é o que o cliente escreveu, e um
+ * marcador chegaria ao agente como fala do cliente.
+ */
+const TIPO_NO_CRM: ReadonlyMap<string, string> = new Map([
+  ["text", "text"],
+  ["image", "image"],
+  ["video", "video"],
+  ["audio", "audio"],
+  ["document", "document"],
+  ["sticker", "sticker"],
+  ["location", "location"],
+  ["contact", "contact"],
+  ["reaction", "reaction"],
+  ["system", "system"],
+  ["template", "template"],
+  // A Meta manda o cartão como `contacts` (plural); o banco espera `contact`.
+  ["contacts", "contact"],
+  // Toque num botão de modelo (`button`) ou numa resposta interativa: entram
+  // como texto, com o rótulo tocado (`textoDoClique`).
+  ["button", "text"],
+  ["interactive", "text"],
+]);
+
+function noVocabularioDoCrm(tipo: string): { tipoCrm: string; rawType?: string } {
+  const tipoCrm = TIPO_NO_CRM.get(tipo);
+  return tipoCrm !== undefined ? { tipoCrm } : { tipoCrm: "text", rawType: tipo };
+}
+
+/**
  * Extrai os eventos que nos interessam. **Evento desconhecido é IGNORADO, não erro** —
  * a Meta re-entrega tudo que não recebe 2xx, então devolver falha para um evento que
  * não nos interessa vira auto-DDoS: ela re-tenta o mesmo payload em backoff por horas.
@@ -373,7 +423,7 @@ export function parseMetaWebhook(envelope: MetaWebhookEnvelope): MetaWebhookEven
           const corpoMidia =
             tipo !== "contacts" && !cliqueDeBotao ? (raw[tipo] as Record<string, unknown> | undefined) : undefined;
           const sharedContact = tipo === "contacts" ? parseMetaInboundContact(raw) : null;
-          const tipoCrm = tipo === "contacts" ? "contact" : cliqueDeBotao ? "text" : tipo;
+          const { tipoCrm, rawType } = noVocabularioDoCrm(tipo);
 
           out.push({
             kind: "inbound_message",
@@ -385,6 +435,7 @@ export function parseMetaWebhook(envelope: MetaWebhookEnvelope): MetaWebhookEven
             // A Meta manda epoch em SEGUNDOS, string. Passar direto ao Date daria 1970.
             sentAt: new Date(Number(str(raw.timestamp) ?? "0") * 1000),
             type: tipoCrm,
+            ...(rawType !== undefined ? { rawType } : {}),
             text: cliqueDeBotao
               ? textoDoClique(raw, tipo)
               : tipoCrm === "text"
@@ -438,11 +489,11 @@ export function parseMetaWebhook(envelope: MetaWebhookEnvelope): MetaWebhookEven
           if (!id || !to) continue; // payload capenga não vira linha meia-boca
           if (tipo === "revoke" || tipo === "edit") continue; // ver `OutboundEchoEvent`
 
-          // Cartão chega como `contacts`, que o CHECK de `messages.type` recusa —
-          // mesmo mapeamento da recebida, senão o insert falha e a IA não pausa.
+          // O tipo passa pelo MESMO mapa da recebida (`TIPO_NO_CRM`): fora do CHECK
+          // de `messages.type`, o insert falhava e a IA não pausava.
           const corpoMidia = tipo !== "contacts" ? (raw[tipo] as Record<string, unknown> | undefined) : undefined;
           const sharedContact = tipo === "contacts" ? parseMetaInboundContact(raw) : null;
-          const tipoCrm = tipo === "contacts" ? "contact" : tipo;
+          const { tipoCrm, rawType } = noVocabularioDoCrm(tipo);
           out.push({
             kind: "outbound_echo",
             wabaId,
@@ -451,6 +502,7 @@ export function parseMetaWebhook(envelope: MetaWebhookEnvelope): MetaWebhookEven
             to,
             sentAt: new Date(Number(str(raw.timestamp) ?? "0") * 1000),
             type: tipoCrm,
+            ...(rawType !== undefined ? { rawType } : {}),
             // Texto do balão: o corpo, o nome do cartão, ou a legenda da mídia.
             text:
               tipoCrm === "text"

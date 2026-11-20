@@ -64,4 +64,23 @@ describe("responsáveis por número na tela",()=>{
   await waitFor(()=>expect(fetcher).toHaveBeenCalled());
   expect(corpo()).toEqual({channel_session_id:"a",user_ids:["ana"],reset:false,distribution_mode:null,default_assignee_user_id:null});
  });
+ it("o prazo de espera pela IA é do número: digitado vai no corpo, apagado desliga (#3966)",async()=>{
+  render(<ChannelRoutingForm initial={initial}/>);
+  const a=within(screen.getByRole("group",{name:"Número A"}));
+  // Desligado de fábrica: o campo nasce vazio.
+  expect(a.getByTestId("espera-pela-ia-a")).toHaveValue(null);
+  fireEvent.change(a.getByTestId("espera-pela-ia-a"),{target:{value:"60"}});
+  fireEvent.click(a.getByRole("button",{name:"Salvar responsáveis"}));
+  await waitFor(()=>expect(fetcher).toHaveBeenCalledTimes(1));
+  expect(corpo().ai_wait_minutes).toBe(60);
+  // O número vizinho não foi tocado.
+  expect(within(screen.getByRole("group",{name:"Número B"})).getByTestId("espera-pela-ia-b")).toHaveValue(null);
+  // Espera o salvamento terminar: enquanto ele corre, o bloco fica travado.
+  await waitFor(()=>expect(a.getByRole("button",{name:"Salvar responsáveis"})).toBeEnabled());
+  fetcher.mockClear();
+  fireEvent.change(a.getByTestId("espera-pela-ia-a"),{target:{value:""}});
+  fireEvent.click(a.getByRole("button",{name:"Salvar responsáveis"}));
+  await waitFor(()=>expect(fetcher).toHaveBeenCalledTimes(1));
+  expect(corpo().ai_wait_minutes).toBeNull();
+ });
 });

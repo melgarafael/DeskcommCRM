@@ -168,10 +168,4 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   "/api/v1/message-template-groups",
   "/api/v1/message-template-groups/[id]",
   "/api/v1/message-template-groups/[id]/ordem",
-
-
-
-
-
-
 ];

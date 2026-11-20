@@ -8,6 +8,7 @@ import { zernioAdapter } from "../adapters/zernio";
 import { zernioCredsForAccountId } from "../zernio/credentials";
 import { socialMessageId, SOCIAL_PROVIDER } from "./catalog";
 import { socialRequest } from "./client";
+import { FalhaDeEnvioDoCanal } from "../falha-de-envio";
 import type { ChannelAdapter } from "../types";
 
 export const socialAdapter: ChannelAdapter = {
@@ -16,6 +17,10 @@ export const socialAdapter: ChannelAdapter = {
   // Recipient routing is exclusively the stored providerConversationId, never a phone.
   resolveRecipient: (input) => (input.isGroup ? null : "provider-thread"),
   templates: undefined,
+  // A ponte de conversão do espalhamento acima é de WhatsApp
+  // (`/v1/whatsapp/conversions`). Herdada, ela fazia a escolha do canal da venda
+  // parar numa conversa de Instagram/Facebook e pular a de WhatsApp que tem ponte.
+  reportConversion: undefined,
   async checkHealth(input) {
     const db = createAdminClient();
     const { data } = await db
@@ -102,15 +107,18 @@ export const socialAdapter: ChannelAdapter = {
     throw new Error("Esta rede não usa modelos de WhatsApp.");
   },
   async send(envelope) {
+    // As recusas abaixo são DEFINITIVAS para esta mensagem (`../falha-de-envio.ts`):
+    // re-tentar o turno só repetiria o mesmo balão vermelho. A recusa HTTP do
+    // provedor chega classificada pelo `upstreamStatus` de `socialRequest`.
     if (!envelope.providerConversationId)
-      throw new Error("Aguarde uma mensagem do cliente para responder nesta rede.");
+      throw new FalhaDeEnvioDoCanal("Aguarde uma mensagem do cliente para responder nesta rede.", "permanente");
     if (!["text", "image", "video", "audio"].includes(envelope.kind))
-      throw new Error("Este tipo de mensagem ainda não é suportado nesta rede.");
+      throw new FalhaDeEnvioDoCanal("Este tipo de mensagem ainda não é suportado nesta rede.", "permanente");
     const creds = await zernioCredsForAccountId(createAdminClient(), {
       organizationId: envelope.organizationId,
       accountId: envelope.sessionRef,
     });
-    if (!creds) throw new Error("Reconecte esta conta em Redes sociais.");
+    if (!creds) throw new FalhaDeEnvioDoCanal("Reconecte esta conta em Redes sociais.", "permanente");
     await envelope.beforeSend?.();
     const result = await socialRequest(
       creds.apiKey,
@@ -127,9 +135,13 @@ export const socialAdapter: ChannelAdapter = {
       },
     );
     const parsed = z.object({ data: z.object({ messageId: z.string().min(1) }) }).safeParse(result);
+    // O provedor respondeu sem o id: a mensagem PODE ter saído. Re-tentar
+    // arriscaria mandá-la duas vezes — e mandar duas vezes é pior que não
+    // mandar. Fica permanente, e quem opera confere a conversa (a frase diz).
     if (!parsed.success)
-      throw new Error(
+      throw new FalhaDeEnvioDoCanal(
         "Envio sem confirmação do provedor. Confira a conversa antes de tentar novamente.",
+        "permanente",
       );
     return { externalId: socialMessageId(creds.accountId, parsed.data.data.messageId) };
   },

@@ -59,6 +59,12 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const supabase = authz.supabase;
 
+  // #4845 — A EMPRESA ATIVA É O RECORTE, e a RLS não basta. Ela libera todas as
+  // empresas de que a pessoa é membro (`organization_id IN fn_user_org_ids()`) e,
+  // para `calendar_appointments`, todas as empresas quando quem olha é admin da
+  // plataforma (`fn_can_view_appointment` → `fn_is_platform_admin()`). Sem esta
+  // linha, o multiempresa via em "Atendimentos sem comanda" o serviço prestado na
+  // outra empresa — e o botão ao lado dele fatura de verdade.
   // Sem embed de `calendar_event_types`: o nome e o preço do tipo vêm da consulta
   // própria abaixo, com a organização (o embed traria a linha de outra organização).
   const { data: agendamentos, error } = await supabase
@@ -77,6 +83,10 @@ export async function GET(req: NextRequest): Promise<Response> {
   // Quais já têm comanda. Uma consulta só, e não uma por agendamento: a segunda
   // forma funciona em desenvolvimento e derruba a tela com trinta atendimentos.
   const ids = agendamentos.map((a) => a.id);
+  // #4845 — "JÁ FATURADO" É DESTA EMPRESA. A checagem anterior olhava as comandas
+  // de todas as empresas: um atendimento da A que já tinha comanda na A escondia
+  // o atendimento homônimo da B (e o contrário), então a lista mentia para os dois
+  // lados na mesma consulta.
   const { data: comandas } = await supabase
     .from("sales")
     .select("appointment_id")

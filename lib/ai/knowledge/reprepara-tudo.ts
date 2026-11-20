@@ -22,6 +22,8 @@ interface FonteRow {
   last_index_status: string | null;
 }
 
+const PAGE_SIZE = 500;
+
 export interface ResultadoDaFila {
   total: number;
   prioridade1: number;
@@ -38,16 +40,28 @@ export async function enfileirarTodosOsMateriais(p: {
   requestId: string;
   motivo: "manual_reindex_all" | "troca_de_provedor";
 }): Promise<ResultadoDaFila> {
-  const { data, error } = await p.leitura
-    .from("ai_knowledge_sources")
-    .select("id, agent_id, source_type, last_index_status")
-    .eq("organization_id", p.organizationId)
-    .neq("status", "archived");
-  if (error) {
-    throw new Error(`listar_materiais_falhou: ${error.message}`);
+  const fontes: FonteRow[] = [];
+  let depois: string | null = null;
+  for (;;) {
+    let consulta = p.leitura
+      .from("ai_knowledge_sources")
+      .select("id, agent_id, source_type, last_index_status")
+      .eq("organization_id", p.organizationId)
+      .neq("status", "archived")
+      .order("id", { ascending: true })
+      .limit(PAGE_SIZE);
+    if (depois) consulta = consulta.gt("id", depois);
+    const { data, error } = await consulta;
+    if (error) {
+      throw new Error(`listar_materiais_falhou: ${error.message}`);
+    }
+    const pagina = (data ?? []) as FonteRow[];
+    // Only an empty page proves completion: the API may cap rows below PAGE_SIZE.
+    if (pagina.length === 0) break;
+    fontes.push(...pagina);
+    depois = pagina[pagina.length - 1]!.id;
   }
 
-  const fontes = (data ?? []) as FonteRow[];
   if (fontes.length === 0) {
     return { total: 0, prioridade1: 0, prioridade2: 0, emitidos: 0 };
   }

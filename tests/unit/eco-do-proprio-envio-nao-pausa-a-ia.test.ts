@@ -11,7 +11,8 @@ import { parseSocialMessage } from "@/lib/channels/social/parser";
  * ## O risco, e por que ele é silencioso
  *
  * `lib/channels/zernio/ingest.ts` pausa a IA por 60 minutos quando chega uma
- * mensagem `outbound` de canal social — a leitura é "um humano assumiu e
+ * mensagem `outbound` de canal social — e, desde o #4749, também do WhatsApp
+ * pelo Zernio na conversa já existente. A leitura é "um humano assumiu e
  * respondeu pelo aplicativo do celular".
  *
  * Só que TODO envio nosso volta como `outbound` pelo webhook. A única coisa que
@@ -134,11 +135,15 @@ describe("a pausa da IA é a consequência, e está aninhada na proteção", () 
     ).toBeGreaterThan(-1);
   });
 
-  it("e só para mensagem de SAÍDA de canal social", () => {
-    const trecho = ingest.slice(
-      ingest.lastIndexOf("if (input.socialMessage", ingest.indexOf("await pausarIaPorAtendimentoManual(")),
-      ingest.indexOf("await pausarIaPorAtendimentoManual("),
-    );
-    expect(trecho).toMatch(/msg\.direction === "outbound"/);
+  // #4749: a condição era `input.socialMessage && msg.direction === "outbound"`,
+  // e o "só canal social" era o defeito — o WhatsApp pelo Zernio, na conversa
+  // existente, não pausava. A lei que fica é a de SAÍDA: a régua mora em
+  // `ehRespostaManual`, a mesma do ramo da conversa nova.
+  it("e só para mensagem de SAÍDA que é resposta de uma pessoa", () => {
+    const chamada = ingest.indexOf("await pausarIaPorAtendimentoManual(");
+    const trecho = ingest.slice(ingest.lastIndexOf("if (", chamada), chamada);
+    expect(trecho).toMatch(/^if \(ehRespostaManual\(msg\)\)/);
+    const regua = ingest.slice(ingest.indexOf("function ehRespostaManual("));
+    expect(regua.slice(0, regua.indexOf("\n}"))).toMatch(/msg\.direction === "outbound"/);
   });
 });

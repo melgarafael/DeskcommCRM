@@ -1,5 +1,6 @@
 import { protecaoAgendaSupabase, type ProtecaoAgenda } from "@/lib/agenda/protecao-followup";
 import { buscaEmLotes } from "@/lib/supabase/em-lotes";
+import { STATUS_QUE_MORREM } from "@/lib/followup/saida-da-etapa";
 import type { Role } from "@/lib/auth/types";
 /**
  * O RADAR DE RISCO, montado — a lista de demandas abertas que esfriaram.
@@ -242,7 +243,7 @@ export async function carregaRadarDeRisco(
     // `.in()` em lotes: a lista cresce com a base (o quadro quebrou com 415
     // leads, e aqui são os contatos de todos os negócios abertos). Um `.in()`
     // único com 430 uuids já passa do teto de header do Node.
-    const [followups, convs, contacts] = await Promise.all([
+    const [followups, enrollments, convs, contacts] = await Promise.all([
       buscaEmLotes(contactIds, (lote) =>
         admin
           .from("cron_jobs")
@@ -251,6 +252,18 @@ export async function carregaRadarDeRisco(
           .eq("kind", "at")
           .eq("enabled", true)
           .gt("next_run_at", nowIso)
+          .in("contact_id", lote),
+      ),
+      buscaEmLotes(contactIds, (lote) =>
+        admin
+          .from("followup_enrollments")
+          .select("contact_id, next_eval_at")
+          .eq("organization_id", organizationId)
+          // Os status com um toque POR VIR (o `dormente` é a cadência de retorno,
+          // "volte a falar daqui a 28 dias"). STATUS_VIVOS é o predicado do índice
+          // anti-spam e deixa o `dormente` de fora: é outra pergunta.
+          .in("status", [...STATUS_QUE_MORREM])
+          .gt("next_eval_at", nowIso)
           .in("contact_id", lote),
       ),
       buscaEmLotes(contactIds, (lote) =>
@@ -272,10 +285,16 @@ export async function carregaRadarDeRisco(
     // follow-up", senão um negócio que a IA prometeu retomar entra como
     // abandono. Nome e conversa são cosméticos e seguem como antes.
     if (followups.error) throw new Error(`radar_followups_indisponiveis: ${followups.error.message}`);
+    if (enrollments.error) throw new Error(`radar_followups_indisponiveis: ${enrollments.error.message}`);
 
     for (const f of followups.data) {
       const prev = followupByContact.get(f.contact_id);
       if (!prev || f.next_run_at < prev) followupByContact.set(f.contact_id, f.next_run_at);
+    }
+    for (const e of enrollments.data) {
+      if (!e.next_eval_at) continue;
+      const prev = followupByContact.get(e.contact_id);
+      if (!prev || e.next_eval_at < prev) followupByContact.set(e.contact_id, e.next_eval_at);
     }
     for (const c of convs.data) {
       if (!convByContact.has(c.contact_id)) {

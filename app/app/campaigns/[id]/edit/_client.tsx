@@ -35,7 +35,8 @@ import {
 import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSessions";
 import { useT } from "@/hooks/i18n/useT";
 import { useAgentesPublicados, useEtapas, useFunis } from "@/hooks/campanhas/useDestinoDaCampanha";
-import { DESCRICAO_DA_VARIAVEL, VARIAVEIS_DA_CAMPANHA } from "@/lib/campanhas/renderizador";
+import { PreviaComValores } from "@/components/variaveis/PreviaComValores";
+import { SeletorDeVariavel } from "@/components/variaveis/SeletorDeVariavel";
 
 import {
   ModeloDaCampanha,
@@ -408,20 +409,11 @@ export function EditarCampanha({ id }: { id: string }) {
               onChange={(e) => setTexto(e.target.value)}
               aria-label={t("Texto da mensagem")}
             />
-            <ul className="space-y-1 text-sm text-muted-foreground">
-              {VARIAVEIS_DA_CAMPANHA.map((v) => (
-                <li key={v}>
-                  <button
-                    type="button"
-                    className="rounded-md bg-surface-elevated px-1 font-mono text-xs"
-                    onClick={() => setTexto((atual) => `${atual}{{${v}}}`)}
-                  >
-                    {`{{${v}}}`}
-                  </button>{" "}
-                  — {t(DESCRICAO_DA_VARIAVEL[v])}
-                </li>
-              ))}
-            </ul>
+            <PreviaComValores texto={texto} fonte="campanha" />
+            <SeletorDeVariavel
+              fonte="campanha"
+              onInserir={(token) => setTexto((atual) => `${atual}${token}`)}
+            />
             <p className="text-sm text-muted-foreground">{t('Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.')}</p>
           </>
         )}

@@ -93,6 +93,14 @@ services:
     # iniciar um contêiner mudo que reinicia em loop — falha cedo e alto.
     environment:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN ausente no .env}
+      # Protocolo das ligações com a borda (`--protocol` do cloudflared, lido de
+      # TUNNEL_TRANSPORT_PROTOCOL): auto | http2 | quic. `auto` é o padrão do
+      # próprio cloudflared — tenta QUIC (UDP 7844) e cai para http2 (TCP).
+      # Numa VPS cujo provedor descarta UDP de saída, o QUIC NUNCA conecta, e
+      # cada ligação que cai passa minutos falhando nele antes do http2: o
+      # painel marca o túnel "degraded" nessa janela. `CLOUDFLARED_PROTOCOL=http2`
+      # no .env pula a tentativa. Ausente = `auto`, o comportamento de antes.
+      TUNNEL_TRANSPORT_PROTOCOL: ${CLOUDFLARED_PROTOCOL:-auto}
     # `tunnel run` lê o token de TUNNEL_TOKEN (o modo remotely-managed). Sem
     # `--no-autoupdate`, a imagem tenta se atualizar sozinha e só reinicia.
     command: tunnel --no-autoupdate run

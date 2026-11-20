@@ -821,6 +821,7 @@ jobs:
         mfa-dispositivo-confiavel.spec.ts
         agenda-tela-do-produto.spec.ts
         notificacoes-diz-o-que-falta.spec.ts
+        notificacoes-cada-tipo-no-push.spec.ts
         notificacoes-tela-bloqueada.spec.ts
         cobranca-asaas.spec.ts
         relogio-http-cron-externo.spec.ts
@@ -1351,6 +1352,7 @@ jobs:
       # cron `recover-stuck-messages` abre para a conversa dele. Não depende de
       # WAHA nem de vizinha. PREVISÃO, não medida: ~1 min de caso.
       SPECS_PARTE_5: >-
+        agencias-organizacoes.spec.ts
         extensoes-da-instalacao.spec.ts
         admin-credencial-google.spec.ts
         admin-gestao-de-tenants.spec.ts
@@ -1372,6 +1374,7 @@ jobs:
         i18n-espanhol-na-tela.spec.ts
         extensoes-declarativas.spec.ts
         marca-logo.spec.ts
+        aparencia-templates.spec.ts
         suporte-temporario.spec.ts
         olhar-telas-do-epico.spec.ts
         jev-decisoes-rapidas.spec.ts
@@ -1483,6 +1486,7 @@ jobs:
         suspensao-administrativa.spec.ts
         integracao-dados-fontes-liberadas.spec.ts
         atender-pelo-celular.spec.ts
+        inbox-baixar-midia-e-ordem.spec.ts
 
       # ─── PARTE 7 — nasceu em 2026-10-22, uma parte COMUM ───
       #
@@ -1515,6 +1519,17 @@ jobs:
       # (`platform_settings.molde_de_ia_org_id`, migration 9096) e a devolve a
       # nulo no fim: deixada escolhida, as empresas das specs seguintes desta
       # parte nasceriam com a IA do molde.
+      #
+      # `blueprint-de-funis` entrou em 2026-11-14 (#4283, @webtecnica): exporta,
+      # aplica um funil com nome novo e reaplica o mesmo arquivo em
+      # Configurações › Funis. Só usa o seed de credenciais e arquiva pela API o
+      # funil que criou. PREVISÃO, não medida no CI: ~30 s de caso.
+      #
+      # `operacao-do-dia` entrou em 2026-11-16: cria a PRÓPRIA organização
+      # sintética (fuso de Beirute, admin/viewer/agent sem MFA), semeia uma
+      # conversa `projeto` pelo service role, gera o relatório pela tela e
+      # apaga tudo no fim. Não fala com WAHA nem com o Graph. PREVISÃO, não
+      # medida no CI: ~60 s de caso (quatro logins).
       SPECS_PARTE_7: >-
         celular-toque-nos-controles.spec.ts
         agente-novo-e-uso.spec.ts
@@ -1530,6 +1545,8 @@ jobs:
         propostas-de-campos-do-card.spec.ts
         aviso-pelo-numero-oficial.spec.ts
         molde-de-ia-empresas-novas.spec.ts
+        blueprint-de-funis.spec.ts
+        operacao-do-dia.spec.ts
       # Ambiente isolado: esta spec exige HMAC WAHA e Graph sintético no
       # processo next start. As demais partes preservam a configuração WAHA.
       #
@@ -1566,6 +1583,8 @@ jobs:
         webhooks.spec.ts
         system-update.spec.ts
         respostas-rapidas-conteudos.spec.ts
+        b2b-vinculos-pela-tela.spec.ts
+        mcp-oauth-chatgpt.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #

@@ -102,8 +102,8 @@ describe("gerarPreviaDoCandidato", () => {
     expect(r.previa.texto).toBe(r.texto);
     expect(r.previa.baseada_em).toBe(`site-ok@${SITE_OK.verificado_em}`);
     expect(r.previa.agente_id).toBe(AGENTE);
-    expect(r.estrategia.cenario).toBeTruthy();
-    expect(r.score.valor).toBeGreaterThan(0);
+    expect(r.estrategia?.cenario).toBeTruthy();
+    expect(r.score?.valor).toBeGreaterThan(0);
     const chamada = mocks.generate.mock.calls[0]![2] as { tenantId: string; agentId: string };
     expect(chamada.tenantId).toBe(ORG);
     expect(chamada.agentId).toBe(AGENTE);
@@ -191,5 +191,57 @@ describe("gerarPreviaDoCandidato", () => {
     mocks.generate.mockResolvedValue({ ok: false, reason: "sem_agente_publicado" });
     const r = await gerarPreviaDoCandidato(pool, ORG, linha());
     expect(r).toEqual({ ok: false, motivo: "ia_falhou", detalhe: "sem_agente_publicado" });
+  });
+});
+
+describe("gerarPreviaDoCandidato — o contexto da equipe (#4459 parte 2)", () => {
+  const comContexto = (contexto: Record<string, string>) =>
+    ({ ...DADOS, contexto_da_equipe: contexto }) as unknown as Prospect;
+  const args = () =>
+    mocks.generate.mock.calls.at(-1)![2] as {
+      dados: Record<string, string>;
+      instrucao: string;
+      comContextoDaEquipe?: boolean;
+    };
+
+  it("saída na 1ª: os três campos entram e o sinal é o mesmo na instrução e no modo", async () => {
+    await gerarPreviaDoCandidato(
+      pool,
+      ORG,
+      linha({
+        data: comContexto({ diagnostico: "D.", oferta: "O.", contexto: "C." }),
+        config: { ...CONFIG, exit_offer: "first_message" },
+      }),
+    );
+    expect(args().dados).toMatchObject({
+      "Diagnóstico da equipe": "D.",
+      "Oferta sugerida pela equipe": "O.",
+      "Contexto da equipe": "C.",
+    });
+    expect(args().comContextoDaEquipe).toBe(true);
+    expect(args().instrucao).toContain("planilha da sua equipe");
+  });
+
+  it("saída na 2ª sem `contexto`: diagnóstico e oferta saem, e nada liga", async () => {
+    await gerarPreviaDoCandidato(
+      pool,
+      ORG,
+      linha({
+        data: comContexto({ diagnostico: "D.", oferta: "O." }),
+        config: { ...CONFIG, exit_offer: "second_message" },
+      }),
+    );
+    expect(Object.keys(args().dados).some((k) => k.endsWith("da equipe"))).toBe(false);
+    expect(args().comContextoDaEquipe).toBe(false);
+    expect(args().instrucao).not.toContain("planilha da sua equipe");
+  });
+
+  it("texto só de espaços não liga as regras", async () => {
+    await gerarPreviaDoCandidato(
+      pool,
+      ORG,
+      linha({ data: comContexto({ contexto: "   " }), config: { ...CONFIG, exit_offer: "first_message" } }),
+    );
+    expect(args().comContextoDaEquipe).toBe(false);
   });
 });

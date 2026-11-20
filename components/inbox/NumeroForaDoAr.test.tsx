@@ -26,10 +26,16 @@ vi.mock("@/hooks/inbox/useContinuarPorOutroNumero", () => ({
 vi.mock("@/hooks/inbox/useAssignableMembers", () => ({
   useAssignableMembers: () => ({ data: [], isLoading: false }),
 }));
-// A prévia do número para onde a transferência leva (#3642) só pergunta com um
-// atendente escolhido; aqui ninguém escolhe atendente, então ela não responde.
-vi.mock("@/hooks/inbox/useNumeroDaTransferencia", () => ({
-  useNumeroDaTransferencia: () => ({ data: null }),
+// A prévia da transferência — o número (#3642) e o negócio que acompanha
+// (#4312) — só pergunta com um atendente escolhido; aqui ninguém escolhe
+// atendente, então ela não responde.
+vi.mock("@/hooks/inbox/usePreviaDaTransferencia", () => ({
+  usePreviaDaTransferencia: () => ({ data: undefined, isSuccess: false }),
+}));
+// A lista das conversas do contato (#4312) é outra leitura, e aqui ela não tem
+// o que dizer: o contato tem uma conversa só.
+vi.mock("@/hooks/inbox/useConversasDoContato", () => ({
+  useConversasDoContato: () => ({ data: undefined, isSuccess: false }),
 }));
 vi.mock("@/hooks/inbox/useTransferConversation", () => ({
   useTransferConversation: () => ({ mutate: vi.fn(), isPending: false }),

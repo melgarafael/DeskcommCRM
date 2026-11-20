@@ -118,11 +118,13 @@ describe("abrirAcesso com o módulo desligado", () => {
     const { db, from } = banco();
     const acesso = await abrirAcesso(db, "org", "conexao");
     expect(acesso).toEqual({ ok: false, motivo: "modulo_desligado" });
-    // As DUAS consultas de `modulosLigados` (flag + módulo de tabela) — e mais nenhuma:
-    // a tabela de conexões nem é tocada quando o módulo já está desligado.
-    expect(from).toHaveBeenCalledTimes(2);
+    // As TRÊS consultas de `modulosLigados` com organização (#3868: flag da instalação,
+    // módulo de tabela e a linha da EMPRESA) — e mais nenhuma: a tabela de conexões nem
+    // é tocada quando o módulo já está desligado.
+    expect(from).toHaveBeenCalledTimes(3);
     expect(from).toHaveBeenCalledWith("platform_config");
     expect(from).toHaveBeenCalledWith("modulos_instalados");
+    expect(from).toHaveBeenCalledWith("organization_modules");
   });
 });
 
