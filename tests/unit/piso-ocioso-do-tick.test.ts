@@ -83,7 +83,11 @@ vi.mock("@/lib/agenda/google/calendar-executor", () => ({
 vi.mock("@/lib/agenda/google/membros", () => ({ apenasDeMembrosAtivos: async () => [] }));
 vi.mock("@/lib/agenda/google/candidates", () => ({ googlePushCandidates: async () => ({ data: [], error: null }) }));
 vi.mock("@/lib/agenda/google/sync-executor", () => ({ reconcileAppointment: vi.fn() }));
-vi.mock("@/lib/organizacao/operante", () => ({ idsDeOrgsParadas: async () => [], ehOperante: () => true }));
+vi.mock("@/lib/organizacao/operante", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/organizacao/operante")>()),
+  idsDeOrgsParadas: async () => [],
+  ehOperante: () => true,
+}));
 vi.mock("@/lib/agendamento-mensagem/envio", () => ({
   autorAindaTemAcesso: async () => true,
   encaminharAgendamento: h.enviarAgendadas,
