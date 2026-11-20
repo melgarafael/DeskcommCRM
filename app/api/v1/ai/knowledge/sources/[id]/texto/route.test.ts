@@ -14,7 +14,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const OUTRA_ORG = "33333333-3333-4333-8333-333333333333";
 const FONTE_ID = "66666666-6666-4666-8666-666666666666";
-const BLOB = `${ORG_ID}/abc.md`;
+const BLOB = `${ORG_ID}/9b2f4c6e-1d3a-4e5b-8c7d-0a1b2c3d4e5f.md`;
 
 type Fonte = {
   id: string;
@@ -168,7 +168,7 @@ describe("PUT /sources/[id]/texto", () => {
 
   it("arquivo enviado (PDF): recusa 422 e não toca no arquivo", async () => {
     estado.fonte = colado({
-      source_metadata: { blob_path: `${ORG_ID}/x.pdf`, ext: "pdf", filename: "manual.pdf" },
+      source_metadata: { blob_path: `${ORG_ID}/9b2f4c6e-1d3a-4e5b-8c7d-0a1b2c3d4e5f.pdf`, ext: "pdf", filename: "manual.pdf" },
     });
     const res = await put({ texto: "sobrescrever o PDF" });
     expect(res.status).toBe(422);
@@ -177,7 +177,7 @@ describe("PUT /sources/[id]/texto", () => {
 
   it("origem forjada num PDF (ext pdf): recusa 422", async () => {
     estado.fonte = colado({
-      source_metadata: { blob_path: `${ORG_ID}/x.pdf`, ext: "pdf", origem: "texto_colado" },
+      source_metadata: { blob_path: `${ORG_ID}/9b2f4c6e-1d3a-4e5b-8c7d-0a1b2c3d4e5f.pdf`, ext: "pdf", origem: "texto_colado" },
     });
     const res = await put({ texto: "x" });
     expect(res.status).toBe(422);
@@ -200,7 +200,7 @@ describe("PUT /sources/[id]/texto", () => {
 
   it("blob_path fora da pasta da organização da sessão: recusa e não escreve", async () => {
     estado.fonte = colado({
-      source_metadata: { blob_path: `${OUTRA_ORG}/abc.md`, ext: "md", origem: "texto_colado" },
+      source_metadata: { blob_path: `${OUTRA_ORG}/9b2f4c6e-1d3a-4e5b-8c7d-0a1b2c3d4e5f.md`, ext: "md", origem: "texto_colado" },
     });
     const res = await put({ texto: "x" });
     expect(res.status).toBe(422);
