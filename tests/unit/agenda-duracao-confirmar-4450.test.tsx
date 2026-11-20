@@ -80,12 +80,12 @@ function maria(ate = "14:30"): Agendamento {
   };
 }
 
-function elemento(agendamentos: Agendamento[]) {
+function elemento(agendamentos: Agendamento[], agora = new Date(`${DIA}T08:00:00`)) {
   return (
     <AgendaInterativa
       visao="dia"
       ancora={new Date(`${DIA}T12:00:00`)}
-      agora={new Date(`${DIA}T08:00:00`)}
+      agora={agora}
       fuso={FUSO}
       pessoas={PESSOAS}
       agendamentos={agendamentos}
@@ -174,7 +174,7 @@ describe("confirmar a nova duração", () => {
     );
   });
 
-  it("alguém mudou antes (409): não sobrescreve, e mostra o horário que vale agora", async () => {
+  it("alguém mudou antes (409): não sobrescreve, e só diz o horário novo quando ele chega", async () => {
     const conflito = new ApiError(409, "conflict", undefined, "req", "O compromisso mudou.");
     resposta = () => Promise.reject(conflito);
     const { rerender } = render(elemento([maria()]));
@@ -182,12 +182,70 @@ describe("confirmar a nova duração", () => {
     await act(async () => {
       fireEvent.click(screen.getByTestId("confirmar-duracao-botao"));
     });
+    // A lista ainda é a nossa: dizer "agora vai de 14:00 a 14:30" seria repetir
+    // o horário velho como se fosse o novo.
+    expect(screen.getByTestId("duracao-recusada")).toHaveTextContent("Confira o horário na grade");
+    expect(screen.getByTestId("duracao-recusada")).not.toHaveTextContent("14:30");
     // A lista recarregada traz o que o colega gravou: 14:00–14:45.
     rerender(elemento([{ ...maria("14:45"), revision: 4 }]));
     const aviso = screen.getByTestId("duracao-recusada");
     expect(aviso).toHaveTextContent("foi alterado por outra pessoa");
-    expect(aviso).toHaveTextContent("14:00");
-    expect(aviso).toHaveTextContent("14:45");
+    expect(aviso).toHaveTextContent("agora vai de 14:00 a 14:45");
     expect(rotuloDoCard()).toContain("14:00 às 14:45");
+  });
+
+  it("outro 409 (autoridade externa) não vira 'alguém mudou': mostra o motivo do servidor", async () => {
+    const externa = new ApiError(409, "agenda_autoridade_externa", undefined, "req", "Este compromisso é do Amigo.");
+    resposta = () => Promise.reject(externa);
+    render(elemento([maria()]));
+    puxarAte("15:00");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("confirmar-duracao-botao"));
+    });
+    expect(screen.getByTestId("duracao-recusada")).toHaveTextContent(
+      "A duração não foi alterada — Este compromisso é do Amigo.",
+    );
+  });
+
+  it("a lista recarregou antes do clique (colega gravou): não manda nada e mostra o horário dele", async () => {
+    const { rerender } = render(elemento([maria()]));
+    puxarAte("15:00");
+    rerender(elemento([{ ...maria("14:45"), revision: 4 }]));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("confirmar-duracao-botao"));
+    });
+    expect(chamadas).toHaveLength(0);
+    expect(screen.getByTestId("duracao-recusada")).toHaveTextContent("agora vai de 14:00 a 14:45");
+  });
+
+  it("a pergunta ficou aberta até o fim escolhido passar: recusa sem escrever", async () => {
+    const inicio = Date.now();
+    const relogio = vi.spyOn(Date, "now").mockReturnValue(inicio);
+    try {
+      render(elemento([maria()], new Date(`${DIA}T14:40:00`)));
+      puxarAte("14:45");
+      relogio.mockReturnValue(inicio + 10 * 60_000);
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("confirmar-duracao-botao"));
+      });
+      expect(chamadas).toHaveLength(0);
+      expect(screen.getByTestId("duracao-recusada")).toHaveTextContent(
+        "A duração não foi alterada — este horário já passou.",
+      );
+    } finally {
+      relogio.mockRestore();
+    }
+  });
+
+  it("depois de gravar, uma versão MAIS NOVA na lista vence o nosso otimismo", async () => {
+    const { rerender } = render(elemento([maria()]));
+    puxarAte("15:00");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("confirmar-duracao-botao"));
+    });
+    expect(rotuloDoCard()).toContain("14:00 às 15:00");
+    // Gravamos (rev 4) e um colega gravou de novo (rev 5) antes da nossa releitura.
+    rerender(elemento([{ ...maria("15:15"), revision: 5 }]));
+    expect(rotuloDoCard()).toContain("14:00 às 15:15");
   });
 });

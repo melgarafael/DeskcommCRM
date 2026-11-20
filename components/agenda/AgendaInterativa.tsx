@@ -60,6 +60,7 @@ export function AgendaInterativa({
   onAbrirAgendamento,
   donoId,
   onMarcarComProfissional,
+  ocupacao,
   className,
 }: {
   visao: VisaoDaAgenda;
@@ -132,6 +133,12 @@ export function AgendaInterativa({
    * `onMarcarEm`.
    */
   onMarcarComProfissional?: (instante: string, pessoaId: string) => void;
+  /**
+   * Tudo o que ocupa as agendas no período, SEM o filtro de profissional — a
+   * prévia da borda confere conflito na agenda do RESPONSÁVEL, que pode estar
+   * fora do filtro (#4450). Ausente = `agendamentos`.
+   */
+  ocupacao?: Agendamento[];
   className?: string;
 }) {
   const localeDaData = useLocaleDeData();
@@ -224,6 +231,13 @@ export function AgendaInterativa({
     termina: string;
     /** Para onde ele volta, se voltar. */
     antes: { comeca: string; termina: string };
+    /**
+     * Quem pôs este otimismo (#4450): a falha de um PATCH só desfaz o PRÓPRIO
+     * otimismo, não o de um segundo pedido confirmado logo depois.
+     */
+    pedido?: number;
+    /** A revisão que o PATCH levou — o servidor com uma MAIOR já é a verdade. */
+    revisao?: number;
   } | null>(null);
 
   /**
@@ -239,10 +253,17 @@ export function AgendaInterativa({
     // O FIM entra na conta desde a borda (#4450): mudar só a duração mantém o
     // início, e conferir só o início soltaria o otimismo no mesmo quadro — o card
     // piscaria de volta ao tamanho antigo até a busca chegar.
+    //
+    // E termina também quando a lista traz uma revisão MAIS NOVA que a do nosso
+    // pedido, mesmo com outro horário: alguém gravou depois de nós, e seguir
+    // desenhando o nosso fim por cima do dele seria mentir sobre a agenda.
     if (
       real &&
-      new Date(real.comeca).getTime() === new Date(otimista.comeca).getTime() &&
-      new Date(real.termina).getTime() === new Date(otimista.termina).getTime()
+      ((new Date(real.comeca).getTime() === new Date(otimista.comeca).getTime() &&
+        new Date(real.termina).getTime() === new Date(otimista.termina).getTime()) ||
+        (otimista.revisao !== undefined &&
+          real.revision !== undefined &&
+          real.revision > otimista.revisao))
     ) {
       setOtimista(null);
     }
@@ -256,6 +277,18 @@ export function AgendaInterativa({
           )
         : agendamentos,
     [agendamentos, otimista],
+  );
+
+  // A ocupação vê o mesmo otimismo que o desenho: um fim recém-confirmado já
+  // ocupa, antes de a lista recarregada chegar.
+  const ocupacaoDesenhada = React.useMemo(
+    () =>
+      ocupacao && otimista
+        ? ocupacao.map((a) =>
+            a.id === otimista.id ? { ...a, comeca: otimista.comeca, termina: otimista.termina } : a,
+          )
+        : (ocupacao ?? desenhados),
+    [ocupacao, otimista, desenhados],
   );
 
   const confirmar = React.useCallback(() => {
@@ -300,13 +333,44 @@ export function AgendaInterativa({
   // `starts_at` a rota não trata como remarcação: não há aviso de remarcação
   // nem notícia na timeline. O que PODE sair é a atualização do Google para os
   // convidados, quando a agenda está ligada — e a pergunta diz isso.
-  const [pendenteDuracao, setPendenteDuracao] = React.useState<{ id: string; duracaoMin: number } | null>(
-    null,
-  );
-  /** O compromisso que outra pessoa mudou antes do nosso PATCH (409). */
-  const [alteradoPorOutro, setAlteradoPorOutro] = React.useState<string | null>(null);
+  /**
+   * A proposta guarda o compromisso COMO ELE ERA quando a borda foi solta —
+   * revisão, início e fim. Confirmar compara com a lista de agora: se ela mudou
+   * (alguém gravou e a grade recarregou), a pergunta perdeu o objeto e NÃO vai
+   * para o servidor com a revisão nova, que passaria por cima do que o colega
+   * gravou.
+   */
+  const [pendenteDuracao, setPendenteDuracao] = React.useState<{
+    id: string;
+    duracaoMin: number;
+    revision?: number;
+    comeca: string;
+    termina: string;
+  } | null>(null);
+  /**
+   * Outra pessoa mudou o compromisso antes do nosso PATCH: o id e a versão que
+   * NÓS tínhamos. O horário "de agora" só é dito quando a lista já trouxe outra
+   * versão — antes disso, a lista ainda é a nossa, e dizê-la seria repetir o
+   * horário velho como se fosse o novo.
+   */
+  const [alteradoPorOutro, setAlteradoPorOutro] = React.useState<{
+    id: string;
+    revision?: number;
+    comeca: string;
+    termina: string;
+  } | null>(null);
   /** Por que a duração não mudou — separado de `recusa`, que é da remarcação. */
   const [recusaDaDuracao, setRecusaDaDuracao] = React.useState<string | null>(null);
+  const pedidos = React.useRef(0);
+
+  /** O mesmo relógio da grade: `agora` + o tempo corrido desde que ele chegou. */
+  const baseDoRelogio = React.useRef<{ agora: number; em: number | null }>({
+    agora: agora.getTime(),
+    em: null,
+  });
+  React.useEffect(() => {
+    baseDoRelogio.current = { agora: agora.getTime(), em: Date.now() };
+  }, [agora]);
 
   const horaDe = React.useCallback(
     (iso: string) => format(dataDeParede(new Date(iso), fuso), "HH:mm"),
@@ -315,30 +379,56 @@ export function AgendaInterativa({
 
   const confirmarDuracao = React.useCallback(() => {
     if (!pendenteDuracao) return;
-    const alvo = agendamentos.find((a) => a.id === pendenteDuracao.id);
-    if (!alvo) return;
-    const { duracaoMin } = pendenteDuracao;
-    const antes = { comeca: alvo.comeca, termina: alvo.termina };
-    setOtimista({
-      id: alvo.id,
-      comeca: alvo.comeca,
-      termina: new Date(new Date(alvo.comeca).getTime() + duracaoMin * 60_000).toISOString(),
-      antes,
-    });
+    const pedido = pendenteDuracao;
     setPendenteDuracao(null);
+    const alvo = agendamentos.find((a) => a.id === pedido.id);
+    if (
+      !alvo ||
+      alvo.revision !== pedido.revision ||
+      alvo.comeca !== pedido.comeca ||
+      alvo.termina !== pedido.termina
+    ) {
+      setRecusaDaDuracao(null);
+      setAlteradoPorOutro({ id: pedido.id, revision: pedido.revision, comeca: pedido.comeca, termina: pedido.termina });
+      return;
+    }
+    const fimNovo = new Date(new Date(pedido.comeca).getTime() + pedido.duracaoMin * 60_000);
+    // "Depois de agora" vale na hora de CONFIRMAR, não só na de soltar: a
+    // pergunta pode ficar aberta enquanto o relógio passa do fim escolhido.
+    const b = baseDoRelogio.current;
+    const agoraAgora = b.agora + (b.em === null ? 0 : Date.now() - b.em);
+    if (fimNovo.getTime() <= agoraAgora) {
+      setRecusaDaDuracao(
+        t("A duração não foi alterada — {motivo}.").replace("{motivo}", t("este horário já passou")),
+      );
+      return;
+    }
+    pedidos.current += 1;
+    const numero = pedidos.current;
+    setOtimista({
+      id: pedido.id,
+      comeca: pedido.comeca,
+      termina: fimNovo.toISOString(),
+      antes: { comeca: pedido.comeca, termina: pedido.termina },
+      pedido: numero,
+      revisao: pedido.revision,
+    });
     void remarcar
       .mutateAsync({
-        id: alvo.id,
-        // A revisão do card: se alguém mudou o compromisso depois de a grade
-        // carregar, a rota responde 409 em vez de sobrescrever o que ele gravou.
-        ...(alvo.revision !== undefined ? { revision: alvo.revision } : {}),
-        duration_minutes: duracaoMin,
+        id: pedido.id,
+        // A revisão de QUANDO a borda foi solta: se alguém mudou o compromisso
+        // depois, a rota responde 409 em vez de sobrescrever o que ele gravou.
+        ...(pedido.revision !== undefined ? { revision: pedido.revision } : {}),
+        duration_minutes: pedido.duracaoMin,
       })
       .catch((err: unknown) => {
-        setOtimista(null);
-        if (err instanceof ApiError && err.status === 409) {
+        setOtimista((o) => (o?.pedido === numero ? null : o));
+        // Só o 409 de REVISÃO (`conflict`) é "alguém mudou antes". Outros 409 —
+        // `agenda_autoridade_externa`, por exemplo — têm motivo próprio, e ele
+        // vai para a tela como veio.
+        if (err instanceof ApiError && err.status === 409 && err.code === "conflict") {
           setRecusaDaDuracao(null);
-          setAlteradoPorOutro(alvo.id);
+          setAlteradoPorOutro({ id: pedido.id, revision: pedido.revision, comeca: pedido.comeca, termina: pedido.termina });
           return;
         }
         const motivo =
@@ -352,9 +442,18 @@ export function AgendaInterativa({
   const pendenteDuracaoAlvo = pendenteDuracao
     ? agendamentos.find((a) => a.id === pendenteDuracao.id)
     : undefined;
-  const alteradoAgora = alteradoPorOutro
-    ? agendamentos.find((a) => a.id === alteradoPorOutro)
+  const atualDoAlterado = alteradoPorOutro
+    ? agendamentos.find((a) => a.id === alteradoPorOutro.id)
     : undefined;
+  // A lista já mostra OUTRA versão? Só então ela é "o horário de agora".
+  const alteradoAgora =
+    alteradoPorOutro &&
+    atualDoAlterado &&
+    (atualDoAlterado.revision !== alteradoPorOutro.revision ||
+      atualDoAlterado.comeca !== alteradoPorOutro.comeca ||
+      atualDoAlterado.termina !== alteradoPorOutro.termina)
+      ? atualDoAlterado
+      : undefined;
 
   return (
     <div className={cn("flex min-h-0 flex-col gap-2", className)}>
@@ -461,10 +560,10 @@ export function AgendaInterativa({
             {t("Mudar a duração de")} <span className="font-semibold">{pendenteDuracaoAlvo.titulo}</span>{" "}
             {t("para")}{" "}
             <span className="font-semibold tabular-nums">
-              {horaDe(pendenteDuracaoAlvo.comeca)}–
+              {horaDe(pendenteDuracao.comeca)}–
               {horaDe(
                 new Date(
-                  new Date(pendenteDuracaoAlvo.comeca).getTime() + pendenteDuracao.duracaoMin * 60_000,
+                  new Date(pendenteDuracao.comeca).getTime() + pendenteDuracao.duracaoMin * 60_000,
                 ).toISOString(),
               )}{" "}
               ({pendenteDuracao.duracaoMin} min)
@@ -580,12 +679,14 @@ export function AgendaInterativa({
                 horariosPorDia,
                 motivo,
                 duracaoMin: tipo.duracaoMin,
+                ocupacao: ocupacaoDesenhada,
                 onMarcarEm,
                 onMudarDuracao: ({ id, duracaoMin, razao }) => {
                   setPendente(null);
                   setRecusa(null);
                   setAlteradoPorOutro(null);
-                  if (duracaoMin === null) {
+                  const alvo = agendamentos.find((a) => a.id === id);
+                  if (duracaoMin === null || !alvo) {
                     // RECUSA EXPLÍCITA, sem tocar no servidor — a mesma régua do
                     // arraste: o fim proposto já passou ou cruza outro compromisso.
                     setPendenteDuracao(null);
@@ -595,7 +696,13 @@ export function AgendaInterativa({
                     return;
                   }
                   setRecusaDaDuracao(null);
-                  setPendenteDuracao({ id, duracaoMin });
+                  setPendenteDuracao({
+                    id,
+                    duracaoMin,
+                    revision: alvo.revision,
+                    comeca: alvo.comeca,
+                    termina: alvo.termina,
+                  });
                 },
                 onArrastarPara: ({ instante, razao, id }) => {
                   setPendenteDuracao(null);

@@ -97,6 +97,13 @@ export interface InteracaoDaGrade {
    * Ausente = a grade não oferece a borda.
    */
   onMudarDuracao?: (entrada: { id: string; duracaoMin: number | null; razao: string }) => void;
+  /**
+   * O que OCUPA a agenda de cada responsável, para a prévia da borda — a lista
+   * SEM o filtro de profissional. Com o Bruno isolado, o card em que ele é
+   * convidado aparece, mas o compromisso seguinte da Ana (a responsável) não; a
+   * prévia diria "pode" e o PATCH voltaria recusado. Ausente = `agendamentos`.
+   */
+  ocupacao?: Agendamento[];
 }
 
 /**
@@ -112,11 +119,18 @@ interface PropostaDeDuracao {
   /** `yyyy-MM-dd` da coluna onde o card está — o fantasma é desenhado nela. */
   dia: string;
   inicioMin: number;
+  /** A parada escolhida, em hora de PAREDE (minutos da régua desenhada). */
   fimMin: number;
   fimOriginalMin: number;
   /** ISO do início e do fim proposto — o rótulo sai deles, no fuso da grade. */
   comeca: string;
   termina: string;
+  /**
+   * A duração REAL, `termina - comeca`. Não é `fimMin - inicioMin`: na virada
+   * do horário de verão a parede pula uma hora que o relógio não anda, e é este
+   * número que vai para o PATCH.
+   */
+  duracaoMin: number;
   /** `""` quando o fim pode ser gravado; senão, a frase da recusa. */
   razao: string;
 }
@@ -675,9 +689,10 @@ function BlocoDeAgendamento({
       {borda && (
         /* A ALÇA DA BORDA DE BAIXO (#4450). Só mouse, trackpad e caneta: o
            DEDO segue arrastando o card inteiro, como sempre (a decisão de não
-           mexer no toque está no PR). Por isso ela some onde o ponteiro
-           principal é grosso, e o `pointerType` decide no `pointerdown` —
-           tela de toque em notebook conta como dedo quando é dedo. */
+           mexer no toque está no PR). Ela aparece quando HÁ um ponteiro fino
+           (`any-pointer`, não o principal: um tablet com mouse tem o toque como
+           principal), e o `pointerType` decide no `pointerdown` — o dedo cai no
+           arraste de sempre. */
         <span
           aria-hidden
           data-testid={`alca-duracao-${agendamento.id}`}
@@ -686,7 +701,7 @@ function BlocoDeAgendamento({
           onClick={(e) => {
             if (borda.moveu()) e.stopPropagation();
           }}
-          className="absolute inset-x-0 bottom-0 z-10 flex h-2 cursor-ns-resize items-end justify-center pointer-coarse:hidden"
+          className="absolute inset-x-0 bottom-0 z-10 hidden h-2 cursor-ns-resize items-end justify-center any-pointer-fine:flex"
         >
           <span className="mb-px h-0.5 w-6 rounded-full bg-transparent transition-colors duration-fast group-hover:bg-text-muted/60" />
         </span>
@@ -794,7 +809,7 @@ function FantasmaDoArraste({
 function FantasmaDaDuracao({ proposta, fuso }: { proposta: PropostaDeDuracao; fuso: string }) {
   const t = useT();
   const valido = proposta.razao === "";
-  const minutos = proposta.fimMin - proposta.inicioMin;
+  const minutos = proposta.duracaoMin;
   return (
     <div
       data-testid="fantasma-da-duracao"
@@ -807,16 +822,34 @@ function FantasmaDaDuracao({ proposta, fuso }: { proposta: PropostaDeDuracao; fu
       )}
       style={{
         top: pixelsDe(proposta.inicioMin - PRIMEIRA_HORA * 60),
-        height: Math.max(pixelsDe(minutos) - 2, 18),
+        height: Math.max(pixelsDe(proposta.fimMin - proposta.inicioMin) - 2, 18),
       }}
     >
       <span className="block truncate text-[10px] font-semibold leading-4 tabular-nums text-text">
-        {valido
-          ? `${rotuloHora(new Date(proposta.comeca), fuso)}–${rotuloHora(new Date(proposta.termina), fuso)} · ${minutos} min`
-          : t(proposta.razao)}
+        {textoDaPropostaDeDuracao(proposta, fuso, t)}
       </span>
     </div>
   );
+}
+
+/** O que a prévia diz — o mesmo texto no desenho e no anúncio do leitor de tela. */
+function textoDaPropostaDeDuracao(
+  proposta: PropostaDeDuracao,
+  fuso: string,
+  t: (s: string) => string,
+): string {
+  return proposta.razao === ""
+    ? `${rotuloHora(new Date(proposta.comeca), fuso)}–${rotuloHora(new Date(proposta.termina), fuso)} · ${proposta.duracaoMin} min`
+    : t(proposta.razao);
+}
+
+/** Dias de calendário entre duas chaves `yyyy-MM-dd` — sem fuso, só calendário. */
+function diasEntre(de: string, ate: string): number {
+  const utc = (k: string) => {
+    const [a = 1970, m = 1, d = 1] = k.split("-").map(Number);
+    return Date.UTC(a, m - 1, d);
+  };
+  return Math.round((utc(ate) - utc(de)) / 86_400_000);
 }
 
 function ColunaDeDia({
@@ -1167,6 +1200,7 @@ export function GradeDaAgenda({
   className?: string;
 }) {
   const dias = visao === "dia" ? [ancora] : diasDaSemanaDe(ancora);
+  const t = useT();
 
   const gradeRef = React.useRef<HTMLDivElement>(null);
   const [proposta, setProposta] = React.useState<PropostaDeRemarcacao | null>(null);
@@ -1366,25 +1400,57 @@ export function GradeDaAgenda({
   /** O gesto da borda em curso — numa ref pelo mesmo motivo de `gesto`. */
   const gestoDaBorda = React.useRef<{ id: string; y0: number; moveu: boolean } | null>(null);
   const onMudarDuracao = interacao?.onMudarDuracao;
+  const ocupacao = interacao?.ocupacao ?? agendamentos;
+
+  /**
+   * O RELÓGIO NA HORA DO GESTO, não o do último render.
+   *
+   * `agora` chega como prop e só muda quando a tela re-renderiza. Uma grade
+   * aberta há meia hora sem render nenhum julgaria "depois de agora" pelo
+   * relógio de meia hora atrás — e um fim que acabou de passar sairia verde.
+   * Daí `agora` + o tempo corrido desde que ele chegou: o teste continua
+   * injetando o relógio, e a tela real anda com o tempo.
+   */
+  const baseDoRelogio = React.useRef<{ agora: number; em: number | null }>({
+    agora: agora.getTime(),
+    em: null,
+  });
+  React.useEffect(() => {
+    baseDoRelogio.current = { agora: agora.getTime(), em: Date.now() };
+  }, [agora]);
+  const agoraNoGesto = React.useCallback(() => {
+    const b = baseDoRelogio.current;
+    return b.agora + (b.em === null ? 0 : Date.now() - b.em);
+  }, []);
 
   /**
    * As paradas possíveis do fim de um card, e de onde elas partem.
    *
-   * O fim original sai do intervalo REAL (`termina - comeca`), não da altura
-   * desenhada: o card de 10 minutos é desenhado com 15, e soltar a alça onde
-   * ela estava não pode virar 15 minutos gravados.
+   * As paradas são HORA DE PAREDE (é a régua desenhada); o instante de cada uma
+   * sai de `instanteDoMinuto`, no fuso da grade — nunca de "início + diferença de
+   * parede", que erra uma hora no dia da virada do horário de verão. O fim
+   * original é o instante REAL de `termina`, e na régua ele fica na posição de
+   * parede dele (dia seguinte = +1440), não em "início + duração".
    */
   const geometriaDoFim = React.useCallback(
     (a: Agendamento) => {
       const comeca = new Date(a.comeca);
+      const fimLido = new Date(a.termina);
+      const termina =
+        fimLido.getTime() > comeca.getTime() ? fimLido : new Date(comeca.getTime() + 15 * 60_000);
+      const dia = chaveDoDiaDoInstante(comeca, fuso);
       const inicioMin = minutoDoInstante(comeca, fuso);
-      const real = Math.round((new Date(a.termina).getTime() - comeca.getTime()) / 60_000);
-      const fimOriginalMin = inicioMin + (Number.isFinite(real) && real > 0 ? real : 15);
+      const fimOriginalMin =
+        diasEntre(dia, chaveDoDiaDoInstante(termina, fuso)) * 1440 + minutoDoInstante(termina, fuso);
+      const meioDia = new Date(`${dia}T12:00:00`);
       return {
         comeca,
+        dia,
         inicioMin,
         fimOriginalMin,
         paradas: paradasDoFim({ inicioMin, fimOriginalMin, limiteMin: limites.ultimo }),
+        instanteDaParada: (m: number) =>
+          m === fimOriginalMin ? termina : instanteDoMinuto(meioDia, m, fuso),
       };
     },
     [fuso, limites.ultimo],
@@ -1394,12 +1460,12 @@ export function GradeDaAgenda({
   const montarPropostaDeDuracao = React.useCallback(
     (a: Agendamento, fimMin: number): PropostaDeDuracao => {
       const geo = geometriaDoFim(a);
-      const fim = new Date(geo.comeca.getTime() + (fimMin - geo.inicioMin) * 60_000);
+      const fim = geo.instanteDaParada(fimMin);
       const original = fimMin === geo.fimOriginalMin;
       // Quem ocupa é o que o servidor contaria (`exigeSemSobreposicao`): o MESMO
       // responsável — compromisso ou Google dele —, fora quem cancelou ou faltou.
       // O colega ao lado na grade não é conflito, e a rota também não o vê.
-      const ocupado = agendamentos.some(
+      const ocupado = ocupacao.some(
         (b) =>
           b.id !== a.id &&
           b.responsavelId === a.responsavelId &&
@@ -1410,17 +1476,20 @@ export function GradeDaAgenda({
       );
       return {
         id: a.id,
-        dia: chaveDoDiaDoInstante(geo.comeca, fuso),
+        dia: geo.dia,
         inicioMin: geo.inicioMin,
         fimMin,
         fimOriginalMin: geo.fimOriginalMin,
         comeca: geo.comeca.toISOString(),
         termina: fim.toISOString(),
+        duracaoMin: Math.round((fim.getTime() - geo.comeca.getTime()) / 60_000),
         // Voltar ao fim original é "não mudar nada": não há o que recusar.
-        razao: original ? "" : razaoDoFim({ passado: fim.getTime() <= agora.getTime(), ocupado }),
+        razao: original
+          ? ""
+          : razaoDoFim({ passado: fim.getTime() <= agoraNoGesto(), ocupado }),
       };
     },
-    [agendamentos, agora, fuso, geometriaDoFim],
+    [ocupacao, agoraNoGesto, geometriaDoFim],
   );
 
   /**
@@ -1441,7 +1510,7 @@ export function GradeDaAgenda({
       }
       const geo = geometriaDoFim(a);
       const ultima = geo.paradas[geo.paradas.length - 1] ?? geo.fimOriginalMin;
-      return geo.comeca.getTime() + (ultima - geo.inicioMin) * 60_000 > agora.getTime();
+      return geo.instanteDaParada(ultima).getTime() > agora.getTime();
     },
     [onMudarDuracao, geometriaDoFim, agora],
   );
@@ -1452,7 +1521,7 @@ export function GradeDaAgenda({
       if (p.fimMin === p.fimOriginalMin) return;
       onMudarDuracao?.({
         id: p.id,
-        duracaoMin: p.razao === "" ? p.fimMin - p.inicioMin : null,
+        duracaoMin: p.razao === "" ? p.duracaoMin : null,
         razao: p.razao,
       });
     },
@@ -1465,29 +1534,30 @@ export function GradeDaAgenda({
       // como sempre arrastou.
       if (e.pointerType === "touch" || e.button !== 0 || !onMudarDuracao) return;
       e.stopPropagation();
-      const corpo = e.currentTarget.closest<HTMLElement>("[data-corpo-do-dia]");
-      if (!corpo) return;
       const geo = geometriaDoFim(a);
+      const ponteiro = e.pointerId;
       const g = { id: a.id, y0: e.clientY, moveu: false };
       gestoDaBorda.current = g;
       setProposta(null);
-      e.currentTarget.setPointerCapture?.(e.pointerId);
+      e.currentTarget.setPointerCapture?.(ponteiro);
 
+      // ⚠️ PELO DESLOCAMENTO, ancorado no fim original — não pela posição
+      // absoluta do ponteiro. A alça tem altura, e o card é desenhado 2px mais
+      // curto (e com no mínimo 15 minutos): pegar no meio dela já ficava 6px
+      // acima do fim, e voltar ao mesmo pixel encaixava em 14:15 e pedia
+      // confirmação de uma mudança que ninguém fez.
       const fimSob = (clientY: number) =>
-        paradaMaisProxima(
-          geo.paradas,
-          minutoSobY({
-            y: clientY - corpo.getBoundingClientRect().top,
-            alturaDaHoraPx: ALTURA_DA_HORA,
-            primeiraHora: PRIMEIRA_HORA,
-          }),
-        );
+        paradaMaisProxima(geo.paradas, geo.fimOriginalMin + ((clientY - g.y0) / ALTURA_DA_HORA) * 60);
       const mover = (ev: PointerEvent) => {
+        // Só o ponteiro que começou o gesto: um dedo encostando na tela no meio
+        // do arraste do mouse não mexe na prévia nem a encerra.
+        if (ev.pointerId !== ponteiro) return;
         if (!g.moveu && Math.abs(ev.clientY - g.y0) < 3) return;
         g.moveu = true;
         setPropostaDeDuracao(montarPropostaDeDuracao(a, fimSob(ev.clientY)));
       };
       const soltar = (ev: PointerEvent) => {
+        if (ev.pointerId !== ponteiro) return;
         window.removeEventListener("pointermove", mover);
         window.removeEventListener("pointerup", soltar);
         window.removeEventListener("pointercancel", soltar);
@@ -1575,6 +1645,12 @@ export function GradeDaAgenda({
         className,
       )}
     >
+      {/* A prévia da borda em VOZ: o fantasma é desenho (`aria-hidden`), e quem
+          ajusta com Alt+Shift+setas pelo leitor de tela precisa ouvir até que
+          horas, quanto tempo — ou por que não dá. */}
+      <div role="status" aria-live="polite" className="sr-only" data-testid="anuncio-da-duracao">
+        {propostaDeDuracao ? textoDaPropostaDeDuracao(propostaDeDuracao, fuso, t) : ""}
+      </div>
       {visao === "mes" ? (
         <VisaoDeMes
           ancora={ancora}

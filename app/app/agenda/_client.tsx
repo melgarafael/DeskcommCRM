@@ -646,6 +646,15 @@ export function AgendaClient({
     () => new Set(tiposIniciais.filter((t) => t.servico).map((t) => t.id)),
     [tiposIniciais],
   );
+  // O que ocupa, SEM o filtro de profissional: com o Bruno isolado, a borda de
+  // um card em que ele é convidado confere a agenda da RESPONSÁVEL (#4450).
+  const ocupacaoDaGrade = React.useMemo(
+    () =>
+      (agendamentosVivos ?? (naJanelaDoServidor ? agendamentosIniciais : [])).filter(
+        (a) => a.situacao !== "cancelled",
+      ),
+    [agendamentosVivos, naJanelaDoServidor, agendamentosIniciais],
+  );
   const agendamentosDaGrade = React.useMemo(
     () =>
       agendamentos
@@ -1641,6 +1650,7 @@ export function AgendaClient({
         agora={new Date()}
         pessoas={pessoas}
         agendamentos={agendamentosDaGrade}
+        ocupacao={ocupacaoDaGrade}
         fechamentos={fechamentosDaGrade}
         recorte={recorteDaGrade}
         tipos={tiposIniciais.map((t) => ({ id: t.id, nome: t.nome, duracaoMin: t.duracaoMin }))}

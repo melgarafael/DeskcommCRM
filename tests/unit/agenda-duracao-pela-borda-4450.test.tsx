@@ -76,13 +76,15 @@ function montar(o: {
   interacao?: InteracaoDaGrade;
   agora?: Date;
   onAbrir?: (id: string) => void;
+  fuso?: string;
+  dia?: string;
 }) {
   render(
     <GradeDaAgenda
       visao="dia"
-      ancora={new Date(`${DIA}T12:00:00`)}
+      ancora={new Date(`${o.dia ?? DIA}T12:00:00`)}
       agora={o.agora ?? AGORA_CEDO}
-      fuso={Intl.DateTimeFormat().resolvedOptions().timeZone}
+      fuso={o.fuso ?? Intl.DateTimeFormat().resolvedOptions().timeZone}
       pessoas={PESSOAS}
       agendamentos={o.agendamentos}
       interacao={o.interacao}
@@ -170,6 +172,63 @@ describe("puxar a borda de baixo (mouse)", () => {
     expect(inter.onMudarDuracao).not.toHaveBeenCalled();
   });
 
+  it("pegar a alça pelo MEIO e voltar ao mesmo pixel não muda nada (o gesto conta o deslocamento)", () => {
+    // A alça tem 8px e o card é desenhado 2px mais curto: o meio dela fica ~6px
+    // acima do fim. Ler a posição ABSOLUTA do ponteiro dava 14:22 e encaixava em
+    // 14:15 — uma confirmação de mudança que ninguém pediu.
+    const inter = interacao();
+    montar({ interacao: inter, agendamentos: [compromisso({ id: "a1", de: "14:00", ate: "14:30" })] });
+    const alca = screen.getByTestId("alca-duracao-a1");
+    const meio = y("14:30") - 6;
+    fireEvent.pointerDown(alca, { button: 0, pointerId: 1, pointerType: "mouse", clientX: 10, clientY: meio });
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 10, clientY: y("14:00") });
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 10, clientY: meio });
+    expect(screen.getByTestId("fantasma-da-duracao")).toHaveTextContent("14:00–14:30 · 30 min");
+    fireEvent.pointerUp(window, { pointerId: 1, clientX: 10, clientY: meio });
+    expect(inter.onMudarDuracao).not.toHaveBeenCalled();
+  });
+
+  it("um dedo encostando no meio do arraste do mouse não encerra nem move a prévia", () => {
+    const inter = interacao();
+    montar({ interacao: inter, agendamentos: [compromisso({ id: "a1", de: "14:00", ate: "14:30" })] });
+    puxar("a1", "14:30", "15:00");
+    fireEvent.pointerMove(window, { pointerId: 2, pointerType: "touch", clientX: 10, clientY: y("20:00") });
+    fireEvent.pointerUp(window, { pointerId: 2, pointerType: "touch", clientX: 10, clientY: y("20:00") });
+    expect(inter.onMudarDuracao).not.toHaveBeenCalled();
+    expect(screen.getByTestId("fantasma-da-duracao")).toHaveTextContent("14:00–15:00 · 60 min");
+    soltar("15:00");
+    expect(inter.onMudarDuracao).toHaveBeenCalledWith({ id: "a1", duracaoMin: 60, razao: "" });
+  });
+
+  it("na virada do horário de verão a duração é a do RELÓGIO, não a da parede", () => {
+    // Nova York, 14/03/2027: às 02:00 o relógio pula para 03:00. Um compromisso
+    // de 01:30 (06:30Z) a 08:30 (12:30Z) dura 6 horas. O fim em 08:45 de parede
+    // é 12:45Z: 375 minutos — e não 435, que a diferença de parede daria.
+    const inter = interacao({ horariosPorDia: {} });
+    montar({
+      interacao: inter,
+      fuso: "America/New_York",
+      dia: "2027-03-14",
+      agora: new Date("2027-03-14T05:00:00Z"),
+      agendamentos: [
+        {
+          id: "dst",
+          titulo: "Plantão",
+          responsavelId: "p1",
+          comeca: "2027-03-14T06:30:00.000Z",
+          termina: "2027-03-14T12:30:00.000Z",
+          origem: "ui",
+          situacao: "confirmed",
+        },
+      ],
+    });
+    const card = screen.getByTestId("agendamento-dst");
+    fireEvent.keyDown(card, { key: "ArrowDown", altKey: true, shiftKey: true });
+    expect(screen.getByTestId("fantasma-da-duracao")).toHaveTextContent("01:30–08:45 · 375 min");
+    fireEvent.keyDown(card, { key: "Enter" });
+    expect(inter.onMudarDuracao).toHaveBeenCalledWith({ id: "dst", duracaoMin: 375, razao: "" });
+  });
+
   it("o clique que fecha o gesto não abre o compromisso", () => {
     const onAbrir = vi.fn();
     montar({
@@ -218,6 +277,34 @@ describe("o que a borda recusa — e diz por quê", () => {
     });
     puxar("maria", "14:30", "14:45");
     expect(screen.getByTestId("fantasma-da-duracao")).toHaveAttribute("data-valido", "false");
+  });
+
+  it("confere a agenda da RESPONSÁVEL mesmo quando o filtro a esconde da grade", () => {
+    // Bruno isolado no filtro: o card em que ele é convidado aparece, o da Ana
+    // às 14:30 não. A prévia tem de ver a ocupação inteira, não a desenhada.
+    const visivel = compromisso({ id: "maria", de: "14:00", ate: "14:30", convidadosDaEquipe: ["p2"] });
+    const escondido = compromisso({ id: "joao", de: "14:30", ate: "15:00" });
+    const inter = interacao({ ocupacao: [visivel, escondido] });
+    montar({ interacao: inter, agendamentos: [visivel] });
+    puxar("maria", "14:30", "15:00");
+    expect(screen.getByTestId("fantasma-da-duracao")).toHaveAttribute("data-valido", "false");
+  });
+
+  it("'depois de agora' é o relógio da hora do gesto, não o do último render", () => {
+    // A grade foi desenhada às 14:40; o gesto acontece 10 minutos depois, sem
+    // novo render. 14:45 já passou.
+    const agoraNoRender = new Date(`${DIA}T14:40:00`);
+    const inicio = Date.now();
+    const relogio = vi.spyOn(Date, "now").mockReturnValue(inicio);
+    try {
+      const inter = interacao();
+      montar({ interacao: inter, agora: agoraNoRender, agendamentos: [compromisso({ id: "a1", de: "14:00", ate: "14:30" })] });
+      relogio.mockReturnValue(inicio + 10 * 60_000);
+      puxar("a1", "14:30", "14:45");
+      expect(screen.getByTestId("fantasma-da-duracao")).toHaveTextContent("este horário já passou");
+    } finally {
+      relogio.mockRestore();
+    }
   });
 
   it("compromisso de OUTRO responsável, ou que faltou, não bloqueia", () => {
@@ -315,6 +402,12 @@ describe("o mesmo gesto pelo teclado", () => {
     fireEvent.keyDown(card, { key: "Enter" });
     expect(inter.onMudarDuracao).toHaveBeenCalledWith({ id: "a1", duracaoMin: 60, razao: "" });
     expect(inter.onArrastarPara).not.toHaveBeenCalled();
+  });
+
+  it("o leitor de tela ouve a prévia: intervalo e minutos, ou o motivo", () => {
+    montar({ interacao: interacao(), agendamentos: [compromisso({ id: "a1", de: "14:00", ate: "14:30" })] });
+    fireEvent.keyDown(screen.getByTestId("agendamento-a1"), { key: "ArrowDown", altKey: true, shiftKey: true });
+    expect(screen.getByTestId("anuncio-da-duracao")).toHaveTextContent("14:00–14:45 · 45 min");
   });
 
   it("Esc desfaz sem entregar nada", () => {
