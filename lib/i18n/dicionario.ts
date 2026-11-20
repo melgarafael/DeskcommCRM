@@ -10449,6 +10449,9 @@ export const DICIONARIO: Traducoes = {
   "Campos definidos no funil padrão da organização.": {
     es: "Campos definidos en el embudo predeterminado de la organización.",
   },
+  "Campos personalizados definidos nos funis da organização.": {
+    es: "Campos personalizados definidos en los embudos de la organización.",
+  },
   // ─── Onde criar campo do contato (#4744, `ComoCriarCamposDoContato`) ───
   // Uma frase em pedaços: entre o primeiro e o segundo vem o NOME do funil
   // padrão (em negrito, sem tradução); o terceiro é o texto do link, no fim.

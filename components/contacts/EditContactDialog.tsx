@@ -91,13 +91,20 @@ interface Props {
   /** Definições vindas de `crm_pipelines.settings.fields[]`. Vazio = a seção some. */
   customFieldDefs?: CustomFieldDef[];
   /**
+   * As definições vieram de TODOS os funis, não só do padrão (issue #4929 —
+   * a lista de contatos não tem funil). Muda só a frase da seção, que sem isto
+   * diria "funil padrão" sobre campos que vieram de outro funil.
+   */
+  camposDeTodosOsFunis?: boolean;
+  /**
    * O funil padrão de onde `customFieldDefs` SAIU — presente só quando a leitura
    * terminou (#4744). Com ele e nenhum campo, o administrador vê onde criar.
    *
    * ⚠️ NÃO É `customFieldDefs.length === 0`. A lista de contatos abre este mesmo
-   * diálogo sem ler o funil (não passa definição nenhuma), e a ficha passa `[]`
-   * enquanto a leitura ainda corre: nos dois casos "vazio" não quer dizer "a
-   * empresa não tem campo", e a dica diria isso a quem já tem.
+   * diálogo sem funil único (passa a união dos funis, #4929, e `[]` enquanto a
+   * leitura corre), e a ficha passa `[]` enquanto a leitura ainda corre: nos dois
+   * casos "vazio" não quer dizer "a empresa não tem campo", e a dica diria isso a
+   * quem já tem.
    */
   funilDosCampos?: Pick<Pipeline, "name"> | null;
   /** Etiquetas já usadas na organização (`useContactTagVocabulary`). */
@@ -111,6 +118,7 @@ export function EditContactDialog({
   open,
   onOpenChange,
   customFieldDefs = [],
+  camposDeTodosOsFunis = false,
   funilDosCampos,
   vocabulario,
   canonicalTags,
@@ -442,7 +450,9 @@ export function EditContactDialog({
               <div>
                 <h3 className="text-sm font-medium">{t("Campos personalizados")}</h3>
                 <p className="text-xs text-muted-foreground">
-                  {t("Campos definidos no funil padrão da organização.")}
+                  {camposDeTodosOsFunis
+                    ? t("Campos personalizados definidos nos funis da organização.")
+                    : t("Campos definidos no funil padrão da organização.")}
                 </p>
               </div>
               <CustomFieldsEditor
