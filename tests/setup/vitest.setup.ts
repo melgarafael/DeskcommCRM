@@ -155,12 +155,26 @@ if (typeof globalThis.ResizeObserver === "undefined") {
  * desmonta explicitamente e espera um tique de macrotarefa. Com relógio falso
  * ligado não há o que esperar (o timer também é falso) — e esperar um
  * `setTimeout` falso travaria o hook até o teto do teste.
+ *
+ * A LEITURA QUE A TELA DEIXOU PARA TRÁS TAMBÉM NÃO PASSA DO CASO. Tela
+ * renderizada sem dublê de rede faz leitura real, que falha, e o `apiClient`
+ * repete com espera de ~200 ms e ~400 ms — e cada repetição escreve
+ * `request_retried`. Desmontar não cancela (a leitura não repassa `signal`),
+ * então a última linha às vezes cai com o worker fechando:
+ * `EnvironmentTeardownError: Closing rpc while "onUserConsoleLog" was pending`,
+ * com todos os testes verdes (medido em 20/11/2026: 7 jobs `verify-parte` em
+ * 6 runs, origem em cinco arquivos de tela diferentes). Com a tela já
+ * desmontada ninguém espera essas respostas: cancelar aqui encerra a cadeia
+ * pelo mesmo caminho do `signal`, e o tique abaixo deixa a rejeição assentar
+ * dentro do caso.
  */
 if (typeof document !== "undefined") {
   const { afterEach, vi } = await import("vitest");
   const { cleanup } = await import("@testing-library/react");
+  const { cancelarRequisicoesEmVoo } = await import("@/lib/api/requisicoes-em-voo");
   afterEach(async () => {
     cleanup();
+    cancelarRequisicoesEmVoo("o caso de teste terminou (tests/setup/vitest.setup.ts)");
     if (vi.isFakeTimers()) return;
     await new Promise((resolver) => setTimeout(resolver, 0));
   });
