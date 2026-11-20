@@ -1359,18 +1359,16 @@ export async function sendMessageHandler(
       // As mensagens do cliente que ESTA resposta lê, para o canal marcá-las
       // como lidas (visto azul, #2981): o NOWEB sem "Guardar histórico" só marca
       // por mensagem (#5015). Template não passa por `adapter.send`, então não
-      // pergunta; grupo não leva visto. Falha de leitura = `undefined`, e o canal
-      // volta ao pedido de antes.
+      // pergunta; grupo não leva visto. Nada novo, falha ou leitura lenta =
+      // `undefined`, e o canal faz o pedido de antes.
       const readExternalIds =
-        input.type === "template"
+        input.type === "template" || c.is_group
           ? undefined
-          : c.is_group
-            ? []
-            : await recebidasQueARespostaLe(supabase, {
-                organizationId: ctx.organization_id,
-                conversationId: c.id,
-                envioId: message.id,
-              });
+          : await recebidasQueARespostaLe(supabase, {
+              organizationId: ctx.organization_id,
+              conversationId: c.id,
+              envioId: message.id,
+            });
       const lidas = readExternalIds !== undefined ? { readExternalIds } : {};
       if (input.type === "template") {
         // Template é caminho próprio: não passa pelo `adapter.send` (que fala em

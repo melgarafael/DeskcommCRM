@@ -526,6 +526,26 @@ export function criarDubleDoHandler(
                 capturas.filtros.messages!.push({ coluna, valor: valores });
                 return cadeia;
               },
+              // `not(col, "is", null)` e `not(col, "in", "(a,b)")`, os dois que
+              // o PostgREST aceita aqui. Operador fora deles estoura: filtro
+              // ignorado em silêncio deixaria o teste verde medindo nada.
+              not: (coluna: string, operador: string, valor: unknown) => {
+                if (operador === "is" && valor === null) {
+                  filtros.push((r) => r[coluna] !== null && r[coluna] !== undefined);
+                } else if (operador === "in" && typeof valor === "string") {
+                  const lista = valor.replace(/^\(|\)$/g, "").split(",").map((v) => v.trim());
+                  filtros.push((r) => !lista.includes(String(r[coluna])));
+                } else {
+                  throw new Error(`[duble-do-handler] not(${coluna}, ${operador}) não implementado`);
+                }
+                capturas.filtros.messages!.push({ coluna, valor: `not.${operador}:${String(valor)}` });
+                return cadeia;
+              },
+              gt: (coluna: string, valor: unknown) => {
+                filtros.push((r) => String(r[coluna] ?? "") > String(valor));
+                capturas.filtros.messages!.push({ coluna, valor: `gt:${String(valor)}` });
+                return cadeia;
+              },
               order: () => cadeia,
               limit: () => cadeia,
               // A leitura em lote devolve as linhas como elas estão, sem casar

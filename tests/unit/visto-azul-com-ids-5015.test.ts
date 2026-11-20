@@ -19,10 +19,11 @@
  * ─── O que cada bloco prende ───────────────────────────────────────────────
  *
  * 1. O cliente põe os ids no corpo quando os recebe — e só então.
- * 2. O adapter repassa os ids do envelope; lista vazia = nada a marcar, sem pedido.
+ * 2. O adapter repassa os ids do envelope, recortados ao chat desta resposta;
+ *    sem ids, o pedido de antes (a conversa inteira), que vale para quem tem store.
  * 3. O handler de envio (por onde passam a resposta do agente, a do atendente,
  *    lembretes e propostas) acha as mensagens do cliente que ESTA resposta lê:
- *    as que chegaram depois do último envio que saiu de verdade.
+ *    as que o CRM recebeu depois do último envio que saiu de verdade.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -37,10 +38,16 @@ import { criarDubleDoHandler, type LinhaDoDuble } from "@/tests/helpers/duble-do
 
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
-    storage: { from: () => ({ createSignedUrl: async () => ({ data: null, error: null }) }) },
+    storage: {
+      from: () => ({
+        createSignedUrl: async () => ({ data: { signedUrl: "http://storage/assinada.pdf" }, error: null }),
+      }),
+    },
   }),
 }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => {}) }));
+// O nome do agente vem de `ai_agents`; aqui só importa que o envio da IA saia.
+vi.mock("@/lib/messaging/nome-do-agente-de-ia", () => ({ nomeDoAgenteDeIA: vi.fn(async () => "Bia") }));
 
 const ORG = "11111111-1111-4111-8111-111111115015";
 const CONV = "22222222-2222-4222-8222-222222225015";
@@ -134,13 +141,29 @@ describe("o adapter do canal por QR repassa os ids do envelope (#5015)", () => {
     });
   });
 
-  it("lista vazia = quem montou o envelope procurou e não há o que ler: nenhum pedido", async () => {
+  it("lista vazia = sem ids conhecidos: o pedido de antes, a conversa inteira", async () => {
     const pedidos = stubWaha();
     await envio({ readExternalIds: [] });
-    // Dá ao `void` do visto a chance de sair, se fosse sair.
-    await new Promise((r) => setTimeout(r, 20));
-    expect(pedidos.some((p) => p.url.includes("/api/sendText"))).toBe(true);
-    expect(doVisto(pedidos)).toHaveLength(0);
+    await vi.waitFor(() => expect(doVisto(pedidos)).toHaveLength(1));
+    expect(doVisto(pedidos)[0]!.body).toEqual({ session: "default", chatId: "5531999998888@c.us" });
+  });
+
+  it("ficha com dois números: responder a um não marca como lidas as do outro", async () => {
+    // A conversa juntou mensagens de dois chats; a resposta vai para o que
+    // escreveu por último. O WAHA lê cada id no chat que ele traz, então o
+    // recorte tem de acontecer antes do pedido.
+    const pedidos = stubWaha();
+    const DO_OUTRO = "false_5531977776666@c.us_3EB0OUTRO001";
+    await envio({ readExternalIds: [DO_OUTRO, IN1, IN2] });
+    await vi.waitFor(() => expect(doVisto(pedidos)).toHaveLength(1));
+    expect(doVisto(pedidos)[0]!.body?.messageIds).toEqual([IN1, IN2]);
+  });
+
+  it("o @lid da mensagem mais nova fica, mesmo com o envio saindo pelo @c.us", async () => {
+    const pedidos = stubWaha();
+    await envio({ readExternalIds: [IN1, IN_LID] });
+    await vi.waitFor(() => expect(doVisto(pedidos)).toHaveLength(1));
+    expect(doVisto(pedidos)[0]!.body?.messageIds).toEqual([IN1, IN_LID]);
   });
 });
 
@@ -171,7 +194,10 @@ describe("o envio pelo handler marca como lidas as mensagens que a resposta lê 
     created_at: sentAt,
   });
 
-  async function responder(mensagensIniciais: LinhaDoDuble[]) {
+  async function responder(
+    mensagensIniciais: LinhaDoDuble[],
+    opcoes: { ctx?: HandlerCtx; envio?: Partial<SendMessageInput> } = {},
+  ) {
     const pedidos = stubWaha();
     const { supabase } = criarDubleDoHandler({
       conversation: {
@@ -186,10 +212,11 @@ describe("o envio pelo handler marca como lidas as mensagens que a resposta lê 
       },
       mensagensIniciais,
     });
-    await sendMessageHandler(supabase, ctx, {
+    await sendMessageHandler(supabase, opcoes.ctx ?? ctx, {
       conversation_id: CONV,
       type: "text",
       body: "oi, tudo certo",
+      ...opcoes.envio,
     } as SendMessageInput);
     // O visto sai em `void` depois do envio: espera assentar.
     await new Promise((r) => setTimeout(r, 20));
@@ -229,11 +256,53 @@ describe("o envio pelo handler marca como lidas as mensagens que a resposta lê 
     expect(visto[0]!.body?.messageIds).toEqual([IN1]);
   });
 
-  it("nada chegou desde a última resposta: nenhum pedido de visto (a 2ª bolha não repete)", async () => {
+  it("nada chegou desde a última resposta (a 2ª bolha): o pedido de antes, sem ids", async () => {
+    // Quem tem o store ligado continua tendo o que tinha; quem não tem recebe a
+    // mesma recusa de antes, sem marcar nada errado.
     const visto = await responder([
       entrada(IN1, "2026-11-20T10:00:00.000Z"),
       saida("out-1", "2026-11-20T10:01:00.000Z", "sent"),
     ]);
-    expect(visto).toHaveLength(0);
+    expect(visto).toHaveLength(1);
+    expect(visto[0]!.body?.messageIds).toBeUndefined();
+  });
+
+  it("mensagem que chegou no MESMO segundo da resposta anterior não se perde", async () => {
+    // O webhook do WAHA traz a hora em segundos: a mensagem das 10:00:00.800 é
+    // gravada com `sent_at` 10:00:00, ANTES da resposta das 10:00:00.250. A ordem
+    // que vale é a em que o CRM viu as duas (`created_at`).
+    const visto = await responder([
+      { ...saida("out-1", "2026-11-20T10:00:00.250Z", "sent"), created_at: "2026-11-20T10:00:00.250Z" },
+      { ...entrada(IN2, "2026-11-20T10:00:00.000Z"), created_at: "2026-11-20T10:00:00.900Z" },
+    ]);
+    expect(visto[0]!.body?.messageIds).toEqual([IN2]);
+  });
+
+  it("o 👍 do atendente antes do texto não é a resposta: a mensagem continua por ler", async () => {
+    const visto = await responder([
+      entrada(IN1, "2026-11-20T10:00:00.000Z"),
+      { ...saida("out-reacao", "2026-11-20T10:01:00.000Z", "sent"), type: "reaction" },
+    ]);
+    expect(visto[0]!.body?.messageIds).toEqual([IN1]);
+  });
+
+  it("o envio de ARQUIVO também leva os ids", async () => {
+    const visto = await responder([entrada(IN1, "2026-11-20T10:00:00.000Z")], {
+      envio: {
+        type: "document",
+        media_storage_path: `${ORG}/${CONV}/contrato.pdf`,
+        media_mime: "application/pdf",
+      } as Partial<SendMessageInput>,
+    });
+    expect(visto, "o visto não saiu no envio de arquivo").toHaveLength(1);
+    expect(visto[0]!.body?.messageIds).toEqual([IN1]);
+  });
+
+  it("a resposta do AGENTE DE IA também leva os ids", async () => {
+    const visto = await responder([entrada(IN1, "2026-11-20T10:00:00.000Z")], {
+      ctx: { organization_id: ORG, actor: { type: "ai_agent", id: "agente-5015", role: "manager" }, requestId: "req-ia" },
+    });
+    expect(visto, "o visto não saiu na resposta da IA").toHaveLength(1);
+    expect(visto[0]!.body?.messageIds).toEqual([IN1]);
   });
 });

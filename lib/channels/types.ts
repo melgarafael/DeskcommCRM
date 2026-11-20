@@ -270,12 +270,9 @@ export interface OutboundEnvelope extends ChannelTenantScope {
    * do `replyToExternalId`, e pelo mesmo motivo (adapter não lê banco,
    * `docs/doctrine/restricao-de-canal.md`).
    *
-   * OPCIONAL, e os três estados querem dizer coisas diferentes:
-   *   `undefined` — quem montou não procurou: o canal faz o que fazia antes;
-   *   `[]`        — procurou e não há nada novo para ler (a 2ª bolha da mesma
-   *                 resposta, por exemplo): o canal não marca nada;
-   *   lista       — marcar estas.
-   * Canal que não marca leitura ignora o campo.
+   * OPCIONAL: `undefined` (ou lista vazia) = não há ids conhecidos, e o canal
+   * faz o que fazia antes — "li a conversa inteira", que vale para quem tem o
+   * store ligado. Canal que não marca leitura ignora o campo.
    */
   readExternalIds?: string[];
 }

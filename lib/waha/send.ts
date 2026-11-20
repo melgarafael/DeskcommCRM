@@ -33,8 +33,8 @@ export interface MarcarConversaComoLidaInput {
   chatId: string;
   /**
    * As mensagens recebidas que a resposta lê (`OutboundEnvelope.readExternalIds`,
-   * #5015). `undefined` = ninguém procurou, marca a conversa como antes; `[]` =
-   * nada novo para ler, não pede nada.
+   * #5015), já recortadas ao chat desta resposta. Sem ids, marca a conversa
+   * inteira, como antes.
    */
   messageIds?: readonly string[];
 }
@@ -130,10 +130,6 @@ export async function marcarConversaComoLida(
   // mensagens de OUTRAS pessoas, e o recibo aparece para todos os participantes.
   // "Respondi, então li" é sobre a conversa com o cliente, não sobre o grupo.
   if (input.chatId.endsWith("@g.us")) return false;
-  // Quem montou o envio procurou e não achou mensagem nova do cliente (a 2ª
-  // bolha da mesma resposta): não há o que ler, e sem ids o NOWEB sem store
-  // recusaria o pedido de qualquer jeito (#5015).
-  if (input.messageIds && input.messageIds.length === 0) return false;
   const client = getWahaClient();
   if (!client) return false;
   try {
