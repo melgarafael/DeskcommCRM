@@ -541,6 +541,22 @@ export function criarDubleDoHandler(
                 capturas.filtros.messages!.push({ coluna, valor: `not.${operador}:${String(valor)}` });
                 return cadeia;
               },
+              // `is(col, null)`, inclusive no caminho JSON `col->>chave`, que o
+              // PostgREST lê como texto (chave ausente = null).
+              is: (coluna: string, valor: null) => {
+                if (valor !== null) {
+                  throw new Error(`[duble-do-handler] is(${coluna}, ${String(valor)}) não implementado`);
+                }
+                const [base, chave] = coluna.split("->>");
+                filtros.push((r) => {
+                  const v = chave === undefined
+                    ? r[base!]
+                    : ((r[base!] ?? null) as Record<string, unknown> | null)?.[chave];
+                  return v === null || v === undefined;
+                });
+                capturas.filtros.messages!.push({ coluna, valor: "is:null" });
+                return cadeia;
+              },
               gt: (coluna: string, valor: unknown) => {
                 filtros.push((r) => String(r[coluna] ?? "") > String(valor));
                 capturas.filtros.messages!.push({ coluna, valor: `gt:${String(valor)}` });

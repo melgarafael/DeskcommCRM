@@ -278,6 +278,31 @@ describe("o envio pelo handler marca como lidas as mensagens que a resposta lê 
     expect(visto[0]!.body?.messageIds).toEqual([IN2]);
   });
 
+  it("microssegundos: o banco separa o que o milissegundo do JavaScript juntaria", async () => {
+    // O Postgres devolve microssegundos; `Date.parse` cortaria os dois para
+    // 10:00:00.250 e a mensagem pareceria da mesma hora da resposta.
+    const visto = await responder([
+      { ...saida("out-1", "2026-11-20T10:00:00Z", "sent"), created_at: "2026-11-20T10:00:00.2501+00:00" },
+      { ...entrada(IN2, "2026-11-20T10:00:00Z"), created_at: "2026-11-20T10:00:00.2509+00:00" },
+    ]);
+    expect(visto[0]!.body?.messageIds).toEqual([IN2]);
+  });
+
+  it("resposta antiga trazida pela importação do histórico não fecha a régua", async () => {
+    // A linha importada nasce com `created_at` da IMPORTAÇÃO: sem o recorte, ela
+    // pareceria a resposta mais recente e esconderia a mensagem de antes dela.
+    const visto = await responder([
+      entrada(IN1, "2026-11-20T10:00:00.000Z"),
+      {
+        ...saida("out-importada", "2026-11-01T09:00:00.000Z", "sent"),
+        created_at: "2026-11-20T10:01:00.000Z",
+        metadata: { historico_importado: "true" },
+      },
+      entrada(IN2, "2026-11-20T10:02:00.000Z"),
+    ]);
+    expect(visto[0]!.body?.messageIds).toEqual([IN1, IN2]);
+  });
+
   it("o 👍 do atendente antes do texto não é a resposta: a mensagem continua por ler", async () => {
     const visto = await responder([
       entrada(IN1, "2026-11-20T10:00:00.000Z"),
@@ -304,5 +329,19 @@ describe("o envio pelo handler marca como lidas as mensagens que a resposta lê 
     });
     expect(visto, "o visto não saiu na resposta da IA").toHaveLength(1);
     expect(visto[0]!.body?.messageIds).toEqual([IN1]);
+  });
+});
+
+describe("só o canal que marca por id paga a leitura do histórico (#5015)", () => {
+  it("a matriz diz: só o canal por QR marca lidas por id", async () => {
+    const { CHANNEL_CAPABILITIES, canalMarcaLidasPorMensagem } = await import("@/lib/channels/capabilities");
+    const marcam = Object.entries(CHANNEL_CAPABILITIES)
+      .filter(([, c]) => c.marcaLidasPorMensagem)
+      .map(([p]) => p);
+    expect(marcam).toEqual(["waha"]);
+    expect(canalMarcaLidasPorMensagem("waha")).toBe(true);
+    expect(canalMarcaLidasPorMensagem("telegram")).toBe(false);
+    expect(canalMarcaLidasPorMensagem("provider-que-nao-existe")).toBe(false);
+    expect(canalMarcaLidasPorMensagem(null)).toBe(false);
   });
 });

@@ -143,6 +143,15 @@ export interface ChannelCapabilities {
    * qualquer divergência entre as duas, nos dois sentidos.
    */
   reportaConversao: boolean;
+  /**
+   * O canal marca como lidas mensagens ESPECÍFICAS, pelos ids que o envelope
+   * traz em `readExternalIds` (o visto azul, #2981/#5015)?
+   *
+   * É a pergunta que o envio faz antes de ler o histórico da conversa atrás
+   * desses ids: canal que responde `false` ignora o campo, e a leitura seria
+   * trabalho jogado fora no caminho da resposta.
+   */
+  marcaLidasPorMensagem: boolean;
 }
 
 /**
