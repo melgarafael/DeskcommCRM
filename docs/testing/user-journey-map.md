@@ -4610,7 +4610,7 @@ Cobertura hoje, só por escrita (não executada): `tests/invariants/extensoes-co
 `app/api/v1/extensions/[id]/contexto/route.test.ts`, `lib/auth/modulo-autorizado.test.ts`,
 `lib/auth/portas-de-token/areas.test.ts`, `lib/api/auth-dual-modulo.test.ts`,
 `lib/api/auth-dual-contexto.test.ts`, `lib/audit/ator-modulo.test.ts` (rota e lib, `pnpm test:unit`, CI
-`verify`); `components/extensions/ConsentimentoPorArea.test.tsx`. Nenhuma delas abre `/admin/extensoes`
+`verify`); `components/extensions/ConsentimentoPorArea.test.tsx`. Nenhuma delas abre `/app/extensions`
 num navegador.
 
 Estado: **não executada.** Esta entrega escreve a jornada; nada foi rodado nesta máquina, e o veredito é o CI do PR interno.

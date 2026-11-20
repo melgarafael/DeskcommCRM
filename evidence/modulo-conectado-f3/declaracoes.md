@@ -17,9 +17,9 @@ Sim. O portão (`lib/auth/modulo-autorizado.ts`) só roda quando o ator é `modu
 
 ## Tela (item 14)
 
-**Nenhuma tela nova.** O cartão da extensão em `/admin/extensoes` ganha as caixas de consentimento por
+**Nenhuma tela nova.** O cartão da extensão em `/app/extensions` ganha as caixas de consentimento por
 área (`components/extensions/ConsentimentoPorArea.tsx`). A porta já existe em `lib/admin/navegacao.ts`
-(`grep -n '"/admin/extensoes"' lib/admin/navegacao.ts`).
+(`grep -n '"/app/extensions"' lib/navigation/catalogo.ts`).
 
 ## Env nova (item 9)
 
@@ -46,8 +46,8 @@ chamando a API com o token; só não há JWT de contexto de pessoa. Nenhum valor
 3. **Registro que emito.** `extension.consent_changed` (lista fechada de áreas, sem dado pessoal) e, nas
    mutações do módulo, as ações de sempre com `metadata.module`, `actor_api_token_id` e, quando há
    pessoa, `person_id` (`lib/audit/ator-modulo.ts`).
-4. **Onde apareço na tela.** O cartão em `/admin/extensoes`; a pessoa aparece nos registros de auditoria.
-5. **Por qual porta se chega.** `/admin/extensoes` (já existente). Nenhuma tela nova.
+4. **Onde apareço na tela.** O cartão em `/app/extensions`; a pessoa aparece nos registros de auditoria.
+5. **Por qual porta se chega.** `/app/extensions` (já existente). Nenhuma tela nova.
 6. **Anti-morte.** **Nenhum, com justificativa:** é decisão de acesso síncrona. Quem é recusado recebe o
    código de erro e pode repetir depois que o admin consentir. Nenhuma demanda de pessoa fica esperando.
 7. **Onde se configura.** O próprio cartão (áreas) e `MODULE_JWT_PRIVATE_KEY` (opcional, só para a pessoa).
