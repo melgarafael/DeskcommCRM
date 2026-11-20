@@ -38,7 +38,10 @@ import { useT } from "@/hooks/i18n/useT";
 import { useCommercialReport } from "@/hooks/reports/useCommercialReport";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { formatCents } from "@/lib/money";
-import type { RespostaDoRelatorioComercial } from "@/lib/relatorios/comercial";
+import {
+  normalizarTagDoRelatorio,
+  type RespostaDoRelatorioComercial,
+} from "@/lib/relatorios/comercial";
 
 // O número nunca quebra nem é cortado: quem encolhe é o nome (`CELULA_DE_NOME`).
 // Medido na prova do #4941: a 1280 px com a barra lateral aberta, o valor saía "R$ 300,".
@@ -53,13 +56,28 @@ export function RankingsDeNegociosGanhos({ de, ate }: { de: string; ate: string 
   const tagDeIdioma = useTagDeIdioma();
   const [pipelineId, setPipelineId] = useState<string>("");
   const [tag, setTag] = useState<string>("");
-  const { data, isLoading, isError, isFetching } = useCommercialReport({
+  const { data, isLoading, isError, isFetching, isPlaceholderData } = useCommercialReport({
     de,
     ate,
     pipelineId,
     tag,
   });
   const relatorio = data?.data;
+
+  // O FUNIL OU A TAG QUE SUMIU DO PERÍODO (revisão do #4941). Trocar o período
+  // no topo pode tirar das `opcoes` o funil escolhido: o `<select>` não tem a
+  // opção e mostra "Todos os funis", mas o recorte continuava aplicado — a tela
+  // dizia uma coisa e a lista mostrava outra. Zera o que saiu, ajustando o
+  // estado no render (o padrão do React para estado derivado de props), e SÓ
+  // com a resposta do período atual: a de `keepPreviousData` é do período
+  // anterior e zeraria um filtro válido.
+  if (relatorio && !isPlaceholderData) {
+    const funilSumiu = pipelineId !== "" && !relatorio.opcoes.pipeline_ids.includes(pipelineId);
+    const tagSumiu =
+      tag !== "" && !relatorio.opcoes.tags.includes(normalizarTagDoRelatorio(tag));
+    if (funilSumiu) setPipelineId("");
+    if (tagSumiu) setTag("");
+  }
 
   const moldura = (conteudo: ReactNode) => (
     <section data-testid="rankings-de-negocios-ganhos" className="flex flex-col gap-3">

@@ -234,7 +234,7 @@ export function InstalledExtensionCard({
     ) : null;
 
   // Rótulos em t() literal: passados por variável, escapavam do gate de espanhol.
-  const status =!extension.compatible
+  const status = !extension.compatible
     ? { label: t("Incompatível"), variant: "error" as const }
     : extension.enabled
       ? { label: t("Ativa"), variant: "success" as const }
