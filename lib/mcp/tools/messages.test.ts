@@ -11,6 +11,7 @@
  * (endpoint, chave), filtro de janela e recibo terminal na mesma linha.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 vi.mock("@/app/api/v1/messages/_handler", () => ({ sendMessageHandler: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({})) }));
@@ -104,6 +105,21 @@ describe("crm_send_whatsapp_message — arquivo já enviado ao CRM, sem link pú
     await expect(
       crmSendWhatsappMessage.handler({ conversation_id: CONVERSATION_ID, type: "document", media_storage_path: PATH } as never, ctx),
     ).resolves.toMatchObject({ message_id: "m1" });
+  });
+
+  it("os dois campos passam pela entrada da ferramenta (o schema que o servidor MCP usa)", () => {
+    const entrada = z.object(crmSendWhatsappMessage.inputSchema).parse({
+      conversation_id: CONVERSATION_ID, type: "document", media_storage_path: PATH, media_filename: "contrato.pdf",
+    });
+    expect(entrada).toMatchObject({ media_storage_path: PATH, media_filename: "contrato.pdf" });
+  });
+
+  it("o nome do arquivo não vai para a auditoria (pode ter nome de paciente)", () => {
+    const redigido = crmSendWhatsappMessage.redigirParaAuditoria?.({
+      conversation_id: CONVERSATION_ID, type: "document", media_storage_path: PATH, media_filename: "laudo-Maria-da-Silva.pdf",
+    });
+    expect(JSON.stringify(redigido ?? {})).not.toContain("Maria");
+    expect(redigido).toMatchObject({ conversation_id: CONVERSATION_ID, type: "document" });
   });
 
   it("caminho de outra conversa: a recusa do envio chega ao cliente MCP, nada sai", async () => {
