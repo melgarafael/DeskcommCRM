@@ -557,6 +557,27 @@ export function criarDubleDoHandler(
                 capturas.filtros.messages!.push({ coluna, valor: "is:null" });
                 return cadeia;
               },
+              // `or("a.is.null,a.neq.x")`: só `is.null` e `neq`, os dois que a
+              // leitura do #5015 usa. `->>` lê texto; NULL não casa `neq`.
+              or: (expressao: string) => {
+                const partes = expressao.split(",").map((parte) => {
+                  const [coluna, operador, ...resto] = parte.split(".");
+                  const alvo = resto.join(".");
+                  const [base, chave] = coluna!.split("->>");
+                  const ler = (r: LinhaDoDuble) => {
+                    const v = chave === undefined
+                      ? r[base!]
+                      : ((r[base!] ?? null) as Record<string, unknown> | null)?.[chave];
+                    return v === null || v === undefined ? null : String(v);
+                  };
+                  if (operador === "is" && alvo === "null") return (r: LinhaDoDuble) => ler(r) === null;
+                  if (operador === "neq") return (r: LinhaDoDuble) => ler(r) !== null && ler(r) !== alvo;
+                  throw new Error(`[duble-do-handler] or(${parte}) não implementado`);
+                });
+                filtros.push((r) => partes.some((f) => f(r)));
+                capturas.filtros.messages!.push({ coluna: "or", valor: expressao });
+                return cadeia;
+              },
               gt: (coluna: string, valor: unknown) => {
                 filtros.push((r) => String(r[coluna] ?? "") > String(valor));
                 capturas.filtros.messages!.push({ coluna, valor: `gt:${String(valor)}` });

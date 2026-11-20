@@ -24,7 +24,7 @@
  *   - A linha do próprio envio em curso (já inserida pelo handler) fica de fora
  *     pelo id.
  *   - Linha sem `external_id` não tem como ser endereçada.
- *   - Linha do acervo importado (`metadata.historico_importado`, ver
+ *   - Linha do acervo importado (`metadata.historico_importado = 'true'`, ver
  *     `lib/channels/historico/mapear.ts`) fica fora dos dois lados: o
  *     `created_at` dela é a hora da IMPORTAÇÃO, e uma resposta antiga importada
  *     agora pareceria a resposta mais recente.
@@ -79,11 +79,17 @@ export interface RecebidasALerInput {
 
 const COLUNAS = "id, direction, type, status, external_id, created_at, metadata";
 const IMPORTADA = "metadata->>historico_importado";
+/**
+ * Fora do acervo = a marca não é `'true'`. É a régua do repositório
+ * (`tests/invariants/historico-importado-nao-dispara.test.ts`): `is null` sozinho
+ * também tiraria `'false'`, e `neq` sozinho tiraria a linha sem a chave (NULL).
+ */
+const FORA_DO_ACERVO = `${IMPORTADA}.is.null,${IMPORTADA}.neq.true`;
 const hora = (l: LinhaDaConversa) => l.created_at ?? "";
 const maisNovaPrimeiro = (a: LinhaDaConversa, b: LinhaDaConversa) =>
   hora(a) < hora(b) ? 1 : hora(a) > hora(b) ? -1 : 0;
 const eFala = (l: LinhaDaConversa) => !NAO_E_FALA.includes(l.type ?? "");
-const doAcervo = (l: LinhaDaConversa) => l.metadata?.historico_importado === "true";
+const doAcervo = (l: LinhaDaConversa) => String(l.metadata?.historico_importado ?? "") === "true";
 
 async function ler(
   supabase: SupabaseClient,
@@ -99,7 +105,7 @@ async function ler(
     .eq("direction", "outbound")
     .in("status", SAIU)
     .not("type", "in", NAO_E_FALA_FILTRO)
-    .is(IMPORTADA, null)
+    .or(FORA_DO_ACERVO)
     .neq("id", input.envioId)
     .order("created_at", { ascending: false })
     .limit(1);
@@ -129,7 +135,7 @@ async function ler(
     .eq("direction", "inbound")
     .not("type", "in", NAO_E_FALA_FILTRO)
     .not("external_id", "is", null)
-    .is(IMPORTADA, null);
+    .or(FORA_DO_ACERVO);
   if (desde) consulta = consulta.gt("created_at", desde);
   const recebidas = await consulta.order("created_at", { ascending: false }).limit(MAXIMO_DE_IDS);
   if (recebidas.error || !Array.isArray(recebidas.data)) return undefined;
