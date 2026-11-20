@@ -119,7 +119,12 @@ const DESCRICAO_RESULTADO_SEM_ATIVIDADE =
 export function descricaoResultado(
   outcome: EvolutionPayload["outcome"],
   t: (texto: string) => string = (texto) => texto,
+  recebidasIncompletas = false,
 ): string {
+  // Contagem de mensagens que falhou dá 0, e 0 aqui viraria "não houve
+  // atendimento" — uma afirmação sem evidência (#5016). Sem a contagem, a frase
+  // neutra.
+  if (recebidasIncompletas) return t(DESCRICAO_RESULTADO);
   return t(outcome.messages_received > 0 ? DESCRICAO_RESULTADO : DESCRICAO_RESULTADO_SEM_ATIVIDADE);
 }
 
@@ -352,33 +357,51 @@ const ROTULO_DO_BLOCO = {
   regras: "Regras que você ensinou",
   melhorias: "Melhorias que você aprovou",
   instaladas: "Habilidades instaladas",
+  linhaDoTempo: "Linha do tempo do aprendizado",
   usadas: "Habilidades usadas",
+  maisUsadas: "Habilidades mais usadas",
   encaminhadas: "Conversas encaminhadas",
+  assuntos: "Assuntos mais procurados",
   materiais: "Consultas aos seus materiais",
+  equipe: "Consultas da equipe ao acervo",
   fechados: "Negócios fechados pelo agente",
   perdidos: "Negócios perdidos pelo agente",
   mudancas: "Mudanças de passo no atendimento",
   custo: "Custo da IA no período",
   ajuda: "Casos que precisaram de uma pessoa",
+  resultado: "O que mudou no resultado",
   travando: "O que está travando",
 } as const;
 
 type Bloco = keyof typeof ROTULO_DO_BLOCO;
 
+/**
+ * Cada tabela → TODO bloco da tela que ela alimenta. Faltar um aqui é o bloco
+ * mostrar recorte sem aviso — o defeito que esta faixa existe para impedir.
+ * `messages` também decide a frase do bloco de resultado ("não houve
+ * atendimento"), e `ai_router_decisions`, `knowledge_searches` e `crm_stages`
+ * alimentam as lacunas de "O que está travando".
+ */
 const BLOCOS_DA_FONTE: Record<string, Bloco[]> = {
-  org_memory_entries: ["regras"],
-  flywheel_distiller_proposals: ["melhorias"],
-  skill_pointers: ["instaladas"],
-  skill_activations: ["usadas"],
-  ai_router_decisions: ["encaminhadas"],
-  knowledge_searches: ["materiais"],
+  org_memory_entries: ["regras", "linhaDoTempo"],
+  flywheel_distiller_proposals: ["melhorias", "linhaDoTempo"],
+  skill_pointers: ["instaladas", "linhaDoTempo"],
+  skill_activations: ["usadas", "maisUsadas"],
+  ai_router_decisions: ["encaminhadas", "assuntos", "travando"],
+  knowledge_searches: ["materiais", "equipe", "travando"],
   lead_state_transitions: ["fechados", "perdidos", "mudancas"],
   llm_calls: ["custo"],
-  messages: ["ajuda"],
+  messages: ["ajuda", "resultado"],
   agent_inbox_items: ["ajuda"],
   event_log: ["ajuda"],
   crm_stages: ["travando"],
 };
+
+/** Fontes sem janela de data: encurtar o período não as completa. */
+const FONTES_SEM_DATA = new Set(["crm_stages"]);
+
+/** As fontes de onde "O que está travando" tira as lacunas e a boa notícia. */
+const FONTES_DAS_LACUNAS = new Set(["ai_router_decisions", "knowledge_searches", "crm_stages"]);
 
 function nomesDosBlocos(fontes: EvolutionPayload["fontes_incompletas"], t: (s: string) => string): string {
   const blocos: Bloco[] = [];
@@ -403,15 +426,16 @@ export function AvisoDeFontesIncompletas({ fontes }: { fontes: EvolutionPayload[
     <Card className="flex flex-col gap-2 border-warning bg-warning-bg p-4 text-sm text-warning-fg" role="status">
       {cortadas.length > 0 && (
         <p data-testid="evolution-fontes-cortadas">
-          {t(
-            "Este período tem mais registros do que o painel consegue ler de uma vez. Estes números mostram só uma parte — encurte as datas para ver o período inteiro:",
-          )}{" "}
+          {t("Este período tem mais registros do que o painel consegue ler de uma vez. Estes números mostram só uma parte:")}{" "}
           <strong>{nomesDosBlocos(cortadas, t)}</strong>
+          {cortadas.some((f) => !FONTES_SEM_DATA.has(f.fonte)) && (
+            <> {t("Encurte as datas para ver o período inteiro.")}</>
+          )}
         </p>
       )}
       {falharam.length > 0 && (
         <p data-testid="evolution-fontes-falharam">
-          {t("Não foi possível ler agora, e estes números aparecem zerados — recarregue a página em alguns instantes:")}{" "}
+          {t("Não foi possível ler agora, e estes números podem aparecer zerados ou incompletos — recarregue a página em alguns instantes:")}{" "}
           <strong>{nomesDosBlocos(falharam, t)}</strong>
         </p>
       )}
@@ -485,6 +509,9 @@ export function EvolutionClient({ defaultRange }: { defaultRange: { from: string
 function Conteudo({ payload }: { payload: NonNullable<ReturnType<typeof useEvolution>["data"]> }) {
   const t = useT();
   const { learned, activity, outcome, gaps } = payload;
+  const incompletas = payload.fontes_incompletas ?? [];
+  const recebidasIncompletas = incompletas.some((f) => f.fonte === "messages");
+  const lacunasIncompletas = incompletas.some((f) => FONTES_DAS_LACUNAS.has(f.fonte));
 
   const soma = (s: Array<{ value: number }>) => s.reduce((a, p) => a + p.value, 0);
   // Contagens SEPARADAS, não um booleano só: cada frase de "nada travando" é uma
@@ -656,7 +683,7 @@ function Conteudo({ payload }: { payload: NonNullable<ReturnType<typeof useEvolu
       <Bloco
         testId="bloco-resultado"
         titulo={t("O que mudou no resultado")}
-        descricao={descricaoResultado(outcome, t)}
+        descricao={descricaoResultado(outcome, t, recebidasIncompletas)}
       >
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <StatCard
@@ -694,7 +721,7 @@ function Conteudo({ payload }: { payload: NonNullable<ReturnType<typeof useEvolu
           "Cada linha aqui é uma coisa que está limitando seu agente, e o que fazer a respeito — às vezes você mesmo, às vezes quem cuida da sua instalação.",
         )}
       >
-        <EvolutionGaps gaps={gaps} buscas={buscas} decisoes={decisoes} />
+        <EvolutionGaps gaps={gaps} buscas={buscas} decisoes={decisoes} incompleto={lacunasIncompletas} />
       </Bloco>
     </>
   );

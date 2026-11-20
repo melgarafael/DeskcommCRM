@@ -36,9 +36,11 @@ const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_RANGE_DAYS = 90;
 /**
  * O teto de cada leitura é o `max_rows` do PostgREST (`supabase/config.toml`):
- * 1.000. Pedir mais não traz mais — o servidor corta antes — e um teto maior
- * que o do servidor nunca é atingido, então o aviso de corte nunca disparava
- * (#5016). Com o mesmo número dos dois lados, "veio cheio" quer dizer "cortou".
+ * 1.000. Pedir mais não traz mais — o servidor corta antes. Com 50.000 aqui,
+ * `rows.length === ROW_CAP` nunca era verdade e o aviso de corte nunca disparava
+ * (#5016). O corte agora é medido pelo `count` exato que volta junto com as
+ * linhas (vale também para instalação com `max_rows` menor); o teto só é a régua
+ * quando o `count` não vem.
  */
 const ROW_CAP = 1_000;
 
@@ -65,6 +67,15 @@ function resolveRange(qs: { from?: string; to?: string }): { from: Date; to: Dat
   if (diffDays > MAX_RANGE_DAYS - 1) from = new Date(to.getTime() - (MAX_RANGE_DAYS - 1) * 86_400_000);
   if (from.getTime() > to.getTime()) from = to;
   return { from: startOfUtcDay(from), to: startOfUtcDay(to) };
+}
+
+/**
+ * A página veio menor que o total? Com `count`, é a conta exata; sem ele (o
+ * PostgREST não devolveu), a única régua é ter batido o teto pedido.
+ */
+function veioCortada(linhas: number, count: number | null | undefined): boolean {
+  if (typeof count === "number") return count > linhas;
+  return linhas >= ROW_CAP;
 }
 
 export async function GET(req: NextRequest): Promise<Response> {
@@ -120,9 +131,12 @@ export async function GET(req: NextRequest): Promise<Response> {
    * card, duas respostas diferentes para a mesma pergunta na mesma tela.
    */
   function janela(tabela: string, colunas: string, colunaData: string, apenasContagem = false) {
+    // `count: "exact"` também nas leituras de linha: é o que diz se a página veio
+    // inteira (#5016). Sem ele, "1.000 linhas" não distingue "o período tem 1.000"
+    // de "o servidor parou em 1.000".
     return supabase
       .from(tabela)
-      .select(colunas, apenasContagem ? { count: "exact", head: true } : undefined)
+      .select(colunas, apenasContagem ? { count: "exact", head: true } : { count: "exact" })
       .eq("organization_id", orgId)
       .gte(colunaData, fromIso)
       .lte(colunaData, toIso);
@@ -135,7 +149,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     // está no predicado sai de graça nas duas tabelas quentes
     // (`idx_llm_calls_org_time`, `idx_ai_router_decisions_org_created`); nas
     // outras o volume é pequeno.
-    const { data, error } = await janela(tabela, colunas, colunaData)
+    const { data, error, count } = await janela(tabela, colunas, colunaData)
       .order(colunaData, { ascending: true })
       .limit(ROW_CAP);
     if (error) {
@@ -143,10 +157,10 @@ export async function GET(req: NextRequest): Promise<Response> {
       return [];
     }
     const rows = (data ?? []) as T[];
-    // Teto batido: o painel está mostrando um RECORTE, não o período. Reaproveita
-    // o canal de aviso em vez de calar — número truncado sem sinal é pior que
-    // bloco zerado, porque parece completo.
-    if (rows.length === ROW_CAP) {
+    // Página menor que o total: o painel está mostrando um RECORTE, não o
+    // período. Reaproveita o canal de aviso em vez de calar — número truncado sem
+    // sinal é pior que bloco zerado, porque parece completo.
+    if (veioCortada(rows.length, count)) {
       fonteFalhou(tabela, { message: `row cap de ${ROW_CAP} atingido — período truncado` }, "cortada");
     }
     return rows;
@@ -162,7 +176,13 @@ export async function GET(req: NextRequest): Promise<Response> {
       fonteFalhou(tabela, error);
       return 0;
     }
-    return count ?? 0;
+    // Sem `count` e sem erro não é "zero": é "não sei". Zero calado viraria a
+    // taxa de ajuda (ou o "não houve atendimento") com cara de fato.
+    if (typeof count !== "number") {
+      fonteFalhou(tabela, { message: "contagem veio sem count" });
+      return 0;
+    }
+    return count;
   }
 
   /**
@@ -183,9 +203,15 @@ export async function GET(req: NextRequest): Promise<Response> {
       fonteFalhou("llm_calls", error);
       return 0;
     }
-    // `usoDeIaSchema` coage `numeric` (que pode chegar como string) para número.
+    // `usoDeIaSchema` coage `numeric` (que pode chegar como string) para número —
+    // e coagiria `null` para 0 também. O custo é o número do card: só vale se
+    // veio um número de verdade; o resto é falha, nunca um zero calado.
+    const bruto = (data as { totais?: { custo_cents?: unknown } } | null)?.totais?.custo_cents;
+    const custoValido =
+      (typeof bruto === "number" || (typeof bruto === "string" && bruto.trim() !== "")) &&
+      Number.isFinite(Number(bruto));
     const uso = usoDeIaSchema.safeParse(data);
-    if (!uso.success) {
+    if (!uso.success || !custoValido) {
       fonteFalhou("llm_calls", { message: "fn_uso_de_ia devolveu formato inesperado" });
       return 0;
     }
@@ -252,7 +278,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     // Sem janela de data — é o estado ATUAL do funil, não um evento do período.
     supabase
       .from("crm_stages")
-      .select("agent_stage_hint, crm_pipelines!inner(name)")
+      .select("agent_stage_hint, crm_pipelines!inner(name)", { count: "exact" })
       .eq("organization_id", orgId)
       .eq("crm_pipelines.organization_id", orgId)
       .eq("is_archived", false)
@@ -260,7 +286,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   ]);
 
   if (stages.error) fonteFalhou("crm_stages", stages.error);
-  else if ((stages.data ?? []).length === ROW_CAP) {
+  else if (veioCortada((stages.data ?? []).length, stages.count)) {
     fonteFalhou("crm_stages", { message: `row cap de ${ROW_CAP} atingido — funis truncados` }, "cortada");
   }
 

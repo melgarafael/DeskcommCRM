@@ -98,7 +98,7 @@ describe("Painel de Evolução — aviso de fontes incompletas (#5016)", () => {
   it("funil cortado não manda encurtar as datas — ele não depende delas", () => {
     pinta([{ fonte: "crm_stages", motivo: "cortada" }]);
 
-    expect(screen.getByTestId("evolution-fontes-cortadas").textContent).not.toContain("Encurte as datas");
+    expect(screen.getByTestId("evolution-fontes-cortadas").textContent).not.toMatch(/encurte as datas/i);
   });
 
   it("nada cortado nem falho: nenhum aviso, e a boa notícia continua", () => {
