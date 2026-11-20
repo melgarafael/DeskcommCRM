@@ -133,4 +133,3 @@ describe("token de módulo no banco — created_by nulo", () => {
     expect(auth.apiTokenId).toBe(TOKEN_ID);
   });
 });
-});

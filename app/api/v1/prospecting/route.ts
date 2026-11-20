@@ -494,7 +494,7 @@ export async function POST(req: NextRequest) {
       await audit({
         action: "prospecting.preview_approved",
         organizationId: org,
-        actorUserId: auth.actor.id,
+        actorUserId: auth.actor.type === "user" ? auth.actor.id : null,
         resourceType: "prospecting",
         resourceId: body.candidate_id,
         metadata: { campaignId: body.id },
