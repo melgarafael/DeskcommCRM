@@ -5,11 +5,10 @@ import { randomUUID } from "node:crypto";
 import { tagsPageQuerySchema, tagsPageResultSchema } from "@/lib/schemas/tags";
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { normalizarTag } from "@/lib/contacts/tag-normalizada";
 import { logger } from "@/lib/logger";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -21,15 +20,25 @@ const TETO_DE_TAGS = 200;
 
 export async function GET(_req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("viewer", { requestId, resource: "contacts" });
+  // Sessão OU token de integração (Spec 33, R2): `mcp:read` e papel `viewer`. A
+  // organização sai da sessão ou da LINHA DO TOKEN; as duas leituras (a RPC do
+  // vocabulário e a tabela de contatos) levam essa organização.
+  const authz = await resolveAuthDual(_req, {
+    requestId,
+    resource: "contacts",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "contacts", requestId);
+  if (teto) return teto;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   if (_req.nextUrl.searchParams.has("busca")) {
     const query = tagsPageQuerySchema.safeParse({ busca: _req.nextUrl.searchParams.get("busca") });
     if (!query.success) return fail("validation_failed", "Confira a busca e a página.", 422, { requestId });
     const { data: result, error: readError } = await supabase.rpc("fn_vocabulario_de_tags_pagina", {
-      p_org: authz.org.orgId, p_busca: query.data.busca, p_offset: 0, p_limit: 200,
+      p_org: authz.organizationId, p_busca: query.data.busca, p_offset: 0, p_limit: 200,
     });
     const parsed = tagsPageResultSchema.safeParse(result);
     if (readError || !parsed.success) return fail("internal_error", "Não foi possível carregar as tags.", 500, { requestId });
@@ -40,7 +49,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
   const { data, error } = await supabase
     .from("contacts")
     .select("tags")
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .neq("tags", "{}")
     .order("updated_at", { ascending: false })
     .limit(CONTATOS_LIDOS);
@@ -54,7 +63,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
   if (error) {
     logger.error("contact-tags: leitura das tags do contato falhou", {
       requestId,
-      orgId: authz.org.orgId,
+      orgId: authz.organizationId,
       cause: error.message,
     });
     return fail("internal_error", "Não foi possível carregar as tags.", 500, { requestId });

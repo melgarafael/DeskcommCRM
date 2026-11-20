@@ -15,6 +15,9 @@ vi.mock("@/lib/auth/require-role", () => ({ requireRole: deps.role }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: deps.support }));
 vi.mock("@/lib/audit", () => ({ audit: deps.audit }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: deps.admin }));
+// `resolveAuthDual` (ramo de sessão) chama `createClient()`; sem a rota de sessão real,
+// o cliente do servidor não tem cookies. O handler só repassa o cliente, não o usa aqui.
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn(async () => ({})) }));
 
 import { DELETE, GET, PUT } from "@/app/api/v1/ai/mapas/route";
 import { POST as TESTAR } from "@/app/api/v1/ai/mapas/testar/route";

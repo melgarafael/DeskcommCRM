@@ -3,9 +3,10 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { SemChaveDeEmbeddingError } from "@/lib/ai/embed";
-import { requireRole } from "@/lib/auth/require-role";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import {
   KNOWLEDGE_SEARCH_AUTHOR_KINDS,
@@ -27,8 +28,9 @@ export const dynamic = "force-dynamic";
  * humano sobre o MESMO acervo — que é exatamente o defeito que a casa já corrigiu
  * uma vez (limiares 0,40 / 0,72 / 0,72 unificados na migração 0097).
  *
- * `organization_id` sai da sessão autenticada (`requireRole`), NUNCA do corpo —
- * mesma regra documentada em `lib/ai/knowledge/busca.ts`.
+ * `organization_id` sai da sessão autenticada ou da linha do token de servidor
+ * (`resolveAuthDual`), NUNCA do corpo — mesma regra documentada em
+ * `lib/ai/knowledge/busca.ts`.
  *
  * Devolve `motivo` junto de um `trechos` possivelmente vazio, porque "a base não
  * tem essa informação" e "a base tem algo perto, mas não o bastante" são situações
@@ -73,14 +75,25 @@ export async function POST(req: NextRequest): Promise<Response> {
   // escreve — quem está acompanhando em leitura veria linhas novas nascendo
   // métrica da própria instalação. `requireSupportWrite` (retorno não-nulo é a
   // recusa) cuida do MODO DE ACOMPANHAMENTO; o `requireRole` abaixo cuida do
-  // PAPEL. Um não substitui o outro.
+  // PAPEL (`resolveAuthDual`). Um não substitui o outro.
   const support = await requireSupportWrite();
   if (support) return support;
 
   // Papel mínimo do inbox: um atendente lê conversa e lê acervo.
-  const authz = await requireRole("agent", { requestId, resource: "ai_knowledge" });
+  // Sessão de navegador OU token de servidor (config:write + papel admin).
+  // PLANO: a tabela do plano R1 não traz escopo para esta rota (é POST, com
+  // gasto de embedding); usei config:write, o da escrita do plano.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_knowledge",
+    role: "agent",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "ai_knowledge", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   let bruto: unknown;
   try {
@@ -97,9 +110,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
   const { pergunta } = parsed.data;
 
-  const organizationId = authz.org.orgId;
+  const organizationId = authz.organizationId;
   const porUsuario = await checkRateLimit(
-    `acervo-busca:${authz.user.id}`,
+    `acervo-busca:${authz.actor.type === "user" ? authz.actor.id : (authz.apiTokenId ?? authz.actor.id)}`,
     TETO_POR_USUARIO,
     JANELA_SEGUNDOS,
   );
@@ -119,7 +132,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const agentId = parsed.data.agentId ?? null;
   const quantidade = numero(parsed.data.quantidade, QUANTIDADE_PADRAO, 1, QUANTIDADE_MAXIMA);
 
@@ -188,16 +201,19 @@ export async function POST(req: NextRequest): Promise<Response> {
         : t("Há algo parecido no acervo, mas ainda abaixo do limiar — tente outras palavras.")
       : null;
 
-    // (função logo abaixo, fora do handler — ela nunca pode derrubar a busca)
-    void registrarBuscaHumana(supabase, {
-      organizationId,
-      hits: resultado.trechos.length,
-      topScore: melhor,
-      threshold: limiar,
-      fontes: knowledgeSourceIds,
-      agentId: agentId ?? null,
-      userId: authz.user.id,
-    });
+    // Telemetria de busca HUMANA: só na sessão. Token de servidor não grava aqui
+    // (função logo abaixo, fora do handler — ela nunca pode derrubar a busca).
+    if (authz.actor.type === "user") {
+      void registrarBuscaHumana(supabase, {
+        organizationId,
+        hits: resultado.trechos.length,
+        topScore: melhor,
+        threshold: limiar,
+        fontes: knowledgeSourceIds,
+        agentId: agentId ?? null,
+        userId: authz.actor.id,
+      });
+    }
 
     return ok(
       {

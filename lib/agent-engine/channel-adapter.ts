@@ -28,6 +28,17 @@ export interface ChannelSendInput {
   jobId: string;
   /** posição da mensagem no turno (1..n) — com jobId forma a chave de idempotência */
   seq: number;
+  /**
+   * `seq` da PRIMEIRA mensagem física do ENVIO a que esta pertence (#4370).
+   *
+   * O `seq` é o contador do TURNO: entre dois `send_message` do mesmo job ele
+   * continua crescendo, então sozinho ele não diz onde um envio termina. Quem
+   * conhece a fronteira é quem chama (`agent/inbound-turn.ts`), e ela vai para o
+   * `send_ledger.envio_seq` na MESMA escrita da linha — o reprocesso da saída
+   * configurável lê as bolhas do envio por ela. Opcional: um adapter que a
+   * ignore continua enviando (e o ledger grava NULL, que é a régua anterior).
+   */
+  envioSeq?: number;
   /** referência da conversa no canal (conversation_id do CRM na v1) */
   conversationId: string;
   body: string;
@@ -116,8 +127,12 @@ export type ChannelSendResult =
   | { kind: 'queued'; idempotencyKey: string; messageId: string | null }
   /** veto PERMANENTE de negócio (opt-out/is_blocked, irrevogável — regra dura nº 2) */
   | { kind: 'blocked'; idempotencyKey: string }
-  /** o canal registrou a mensagem como falha (retry consome tentativa) */
-  | { kind: 'failed'; idempotencyKey: string; messageId: string | null }
+  /**
+   * o canal registrou a mensagem como falha. `permanente` = recusa definitiva
+   * deste conteúdo (4xx do provedor): o turno encerra sem retry. Ausente/false =
+   * transitória: o retry consome tentativa, como sempre.
+   */
+  | { kind: 'failed'; idempotencyKey: string; messageId: string | null; permanente?: boolean }
   /** transporte/tool indisponível (transiente) — o job re-tenta com a MESMA key */
   | { kind: 'unavailable'; reason: string };
 

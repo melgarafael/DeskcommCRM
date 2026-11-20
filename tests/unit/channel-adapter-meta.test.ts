@@ -274,6 +274,95 @@ describe("adapter meta_cloud — envio", () => {
   });
 });
 
+describe("adapter meta_cloud — citação (#4880)", () => {
+  /**
+   * O defeito medido na issue: o handler grava a citação (`replyToExternalId` no
+   * envelope, `reply_to_message_id` na linha) e este adapter descartava o campo
+   * — a mensagem chegava solta no canal oficial. O `wamid` citado JÁ é o id
+   * externo do canal; o adapter não prefixa nem reformata.
+   */
+  it("com replyToExternalId o corpo leva context.message_id, irmão de type/to", async () => {
+    configurar();
+    const spy = stubFetch({ messages: [{ id: "wamid.NOVA" }] });
+    const r = await a().send({
+      organizationId: ORG,
+      sessionRef: NUMERO_DO_ENV,
+      to: "5531998966398",
+      kind: "text",
+      body: "o link está aqui",
+      replyToExternalId: "wamid.HBgMNTUzMTk5ODk2NjM5OBUCABIYFj",
+    });
+
+    expect(r).toEqual({ externalId: "wamid.NOVA" });
+    const corpo = JSON.parse(spy.mock.calls[0]![1].body as string) as {
+      messaging_product?: unknown;
+      to?: unknown;
+      type?: unknown;
+      context?: { message_id?: unknown };
+      text?: { body?: unknown };
+    };
+    // A citação não substitui nem reordena o que já ia no corpo.
+    expect(corpo).toMatchObject({
+      messaging_product: "whatsapp",
+      to: "5531998966398",
+      type: "text",
+      text: { body: "o link está aqui" },
+    });
+    // E vem INTEIRA: prefixo ou normalização aqui quebraria a citação na Meta.
+    expect(corpo.context).toEqual({ message_id: "wamid.HBgMNTUzMTk5ODk2NjM5OBUCABIYFj" });
+  });
+
+  it("a citação também vale para mídia — o contexto é do envelope, não do texto", async () => {
+    configurar();
+    const spy = stubFetch({ messages: [{ id: "wamid.M" }] });
+    await a().send({
+      organizationId: ORG,
+      sessionRef: NUMERO_DO_ENV,
+      to: "5531",
+      kind: "image",
+      media: { url: "https://x/a.jpg", mime: "image/jpeg" },
+      replyToExternalId: "wamid.CITADA",
+    });
+    const corpo = JSON.parse(spy.mock.calls[0]![1].body as string) as {
+      type?: unknown;
+      image?: unknown;
+      context?: unknown;
+    };
+    expect(corpo).toMatchObject({ type: "image", image: { link: "https://x/a.jpg" } });
+    expect(corpo.context).toEqual({ message_id: "wamid.CITADA" });
+  });
+
+  it("sem o campo, a chave context NÃO existe no corpo — nem vazia", async () => {
+    // `context: {}` não é "sem citação": é corpo inválido para a Graph. A
+    // ausência da CHAVE é o contrato, e `toHaveProperty` é o que distingue
+    // ausente de `undefined`/vazio.
+    configurar();
+    const spy = stubFetch({ messages: [{ id: "wamid.S" }] });
+    await a().send({ organizationId: ORG, sessionRef: NUMERO_DO_ENV, to: "5531", kind: "text", body: "oi" });
+
+    const corpo = JSON.parse(spy.mock.calls[0]![1].body as string) as Record<string, unknown>;
+    expect(corpo).not.toHaveProperty("context");
+    expect(Object.keys(corpo).sort()).toEqual(["messaging_product", "recipient_type", "text", "to", "type"]);
+  });
+
+  it("id em branco ou null é o mesmo que não citar — o envio sai, solto", async () => {
+    configurar();
+    for (const replyToExternalId of [null, "", "   "]) {
+      const spy = stubFetch({ messages: [{ id: "wamid.V" }] });
+      const r = await a().send({
+        organizationId: ORG,
+        sessionRef: NUMERO_DO_ENV,
+        to: "5531",
+        kind: "text",
+        body: "oi",
+        replyToExternalId,
+      });
+      expect(r).toEqual({ externalId: "wamid.V" });
+      expect(JSON.parse(spy.mock.calls[0]![1].body as string)).not.toHaveProperty("context");
+    }
+  });
+});
+
 describe("adapter meta_cloud — mídia recebida", () => {
   it("resolve o media_id na Graph e baixa os bytes com a credencial da sessão", async () => {
     configurar();

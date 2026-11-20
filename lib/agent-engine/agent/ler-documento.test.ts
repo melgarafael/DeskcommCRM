@@ -126,7 +126,7 @@ describe("ler_documento — os três caminhos", () => {
       fonte: fonte({
         id: "b2",
         name: "Política de troca",
-        source_metadata: { blob_path: `${ORG}/pol.md`, ext: "md" },
+        source_metadata: { blob_path: `${ORG}/9b2f4c6e-1d3a-4e5b-8c7d-0a1b2c3d4e5f.md`, ext: "md" },
       }),
     });
     const out = await lerDocumentoDoMaterial(
@@ -138,7 +138,7 @@ describe("ler_documento — os três caminhos", () => {
     if (!out.ok) return;
     expect(out.origem).toBe("arquivo");
     expect(out.conteudo).toBe("Política de troca: 30 dias.");
-    expect(extrair).toHaveBeenCalledWith(`${ORG}/pol.md`, "md");
+    expect(extrair).toHaveBeenCalledWith(`${ORG}/9b2f4c6e-1d3a-4e5b-8c7d-0a1b2c3d4e5f.md`, "md");
   });
 
   it("chunks: cai no índice da versão ativa e declara o que não coube", async () => {
@@ -165,7 +165,7 @@ describe("ler_documento — os três caminhos", () => {
     const enorme = "x".repeat(TETO_DE_CARACTERES_DO_DOCUMENTO + 500);
     const extrair = vi.fn(async () => ({ texto: enorme, extensao: "md" as const }));
     const db = bancoFalso({
-      fonte: fonte({ id: "d4", source_metadata: { blob_path: `${ORG}/big.md` } }),
+      fonte: fonte({ id: "d4", source_metadata: { blob_path: `${ORG}/1c3e5a7b-2d4f-4a6b-9c8d-0e1f2a3b4c5d.md` } }),
     });
     const out = await lerDocumentoDoMaterial(
       db,

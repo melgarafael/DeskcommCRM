@@ -43,6 +43,12 @@ jobs:
           # com aspas vazias ela não era alcançada — o build seguia com o DSN
           # padrão embutido.
           SENTRY_DSN: "off"
+          # Teto de heap: o type check dentro do `next build` chega a ~4,0 GB, e o
+          # padrão do Node no runner é ~4,1 GB. Em 17/11 o build-and-size caiu com
+          # "JavaScript heap out of memory" em 3 runs em 2 h (44081371159,
+          # 44080911198, 44079629944), sem relação com os PRs. Mesmo conserto do
+          # #4809 no build do E2E; o runner tem 16 GB.
+          NODE_OPTIONS: --max-old-space-size=6144
 
       - name: Report bundle sizes
         run: |

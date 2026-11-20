@@ -41,10 +41,12 @@ import { Button } from "@/components/ui/button";
 import { SourceStatusBadge, deriveBadgeStatus } from "@/components/ai/SourceStatusBadge";
 import { TrechosDoMaterialDialog } from "@/components/ai/TrechosDoMaterialDialog";
 import { EditarFaqDialog } from "@/components/ai/EditarFaqDialog";
+import { EditarTextoDialog } from "@/components/ai/EditarTextoDialog";
 import {
   TIPO_DE_FONTE_POR_ID,
   canonizarTipoDeFonte,
   ePerguntaEResposta,
+  veioDeTextoColado,
 } from "@/lib/ai/rag/tipos-de-fonte";
 import type { SourceRow } from "@/hooks/ai/useKnowledgeSources";
 
@@ -103,6 +105,7 @@ export function KnowledgeSourceCard({
   const tagDoIdioma = useTagDeIdioma();
   const [vendoTrechos, setVendoTrechos] = useState(false);
   const [editando, setEditando] = useState(false);
+  const [editandoTexto, setEditandoTexto] = useState(false);
 
   const tipo = canonizarTipoDeFonte(source.source_type) ?? "faq";
   const meta = TIPO_DE_FONTE_POR_ID.get(tipo);
@@ -245,6 +248,30 @@ export function KnowledgeSourceCard({
                 nome={source.name}
                 aberto
                 onFechar={() => setEditando(false)}
+                onSalvo={onMudou}
+              />
+            ) : null}
+          </>
+        ) : null}
+
+        {/* Documento criado COLANDO texto (#4596): o texto é um `.md` guardado e
+            dá para regravar. Arquivo enviado (PDF etc.) não tem esta ação. */}
+        {veioDeTextoColado(source.source_type, source.source_metadata) && !arquivado ? (
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setEditandoTexto(true)}
+              data-testid={`material-editar-texto-${source.id}`}
+            >
+              {t("Editar texto")}
+            </Button>
+            {editandoTexto ? (
+              <EditarTextoDialog
+                sourceId={source.id}
+                nome={source.name}
+                aberto
+                onFechar={() => setEditandoTexto(false)}
                 onSalvo={onMudou}
               />
             ) : null}

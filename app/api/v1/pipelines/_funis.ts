@@ -24,9 +24,11 @@ import {
   type FunilEditavel,
   type RegraDeAutomacao,
 } from "@/lib/pipelines/pipeline-editing";
-import type { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
-type Supabase = Awaited<ReturnType<typeof createClient>>;
+// Aceita o cliente de sessão e o de token (service role, com o filtro de
+// organização escrito à mão em cada consulta): o mesmo `SupabaseClient` nos dois.
+type Supabase = SupabaseClient;
 
 /** `position` entra: a reordenação calcula em cima dela. */
 const COLUNAS =

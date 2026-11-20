@@ -88,9 +88,9 @@ import {
 import type { RespostasDaConversa, TetoDeRespostasArmado } from '../agent/teto-de-respostas';
 // Módulo PURO de propósito (`capabilities`, não `index`): o seam não arrasta o
 // adapter — e com ele o cliente HTTP do canal — para dentro do worker.
-import { capabilitiesOf, DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
+import { capabilitiesOf, DEFAULT_CHANNEL_PROVIDER, notaDeVozDoCanal } from '@/lib/channels/capabilities';
 import { isWindowOpen } from './messaging-window';
-import type { ChannelProvider } from '@/lib/channels/capabilities';
+import type { ChannelProvider, NotaDeVoz } from '@/lib/channels/capabilities';
 import { aplicarAjustesDeEstilo, lerAjustesDeEstiloDaOrg } from './ajustes-de-estilo-da-org';
 import type { AjusteDeEstilo, LeituraDosAjustes } from './ajustes-de-estilo-da-org';
 import { renderVetoDeAfirmacao, type ConferenciaDeFato } from './factual-claim';
@@ -755,7 +755,7 @@ export const internalVocabularyGate: Gate = {
   name: 'internal_vocabulary',
   evaluate: (ctx) => {
     if (ctx.internalVocabularyEnforced !== true) return { pass: true };
-    const achado = detectarVazamentoInterno(ctx.body);
+    const achado = detectarVazamentoInterno(ctx.body, { linkDoCliente: true });
     if (!achado.achou) return { pass: true };
     return {
       pass: false,
@@ -2093,6 +2093,28 @@ export async function loadChannelProvider(
   );
   const provider = rows[0]?.provider;
   return provider === undefined ? DEFAULT_CHANNEL_PROVIDER : (provider as ChannelProvider);
+}
+
+/**
+ * A nota de voz que ESTE canal entrega — o provedor E a rede da sessão.
+ *
+ * `loadChannelProvider` sozinho não basta para a voz: o provedor das redes
+ * sociais serve Instagram e Facebook, e só o Instagram aceita o nosso WAV
+ * (medido; ver `NOTA_DE_VOZ_POR_REDE_SOCIAL`). A rede mora na própria sessão.
+ * Sessão que não existe cai no provedor padrão, a mesma régua de lá.
+ */
+export async function loadNotaDeVozDoCanal(
+  db: Queryable,
+  organizationId: string,
+  channelSessionId: string,
+): Promise<NotaDeVoz> {
+  const { rows } = await db.query<{ provider: string; rede_social: string | null }>(
+    `select provider, metadata->>'social_platform' as rede_social from channel_sessions where organization_id = $1 and id = $2`,
+    [organizationId, channelSessionId],
+  );
+  const linha = rows[0];
+  if (!linha) return notaDeVozDoCanal(DEFAULT_CHANNEL_PROVIDER, null);
+  return notaDeVozDoCanal(linha.provider, linha.rede_social ?? null);
 }
 
 /**

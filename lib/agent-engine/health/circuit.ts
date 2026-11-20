@@ -36,6 +36,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import type pg from 'pg';
 
 import { traduzir } from '@/lib/i18n/dicionario';
+import { preencher } from '@/lib/i18n/idioma-do-aviso';
 import { normalizarIdioma, type Idioma } from '@/lib/i18n/idiomas';
 
 import type { Logger } from '../obs/logger';
@@ -198,21 +199,34 @@ export function textoDoGoLive(idioma: Idioma): { title: string; body: string } {
   return { title: traduzir(TITULO_DO_GO_LIVE, idioma), body: traduzir(CORPO_DO_GO_LIVE, idioma) };
 }
 
-/** Texto do diagnóstico do inbox_item de saúde degradada (pt-br; SÓ taxas/contagens — PII jamais). */
-function diagnosisBody(reason: Exclude<HoldReason, 'go_live'>, rates: SessionRates, k: HealthKnobs): string {
+/**
+ * Texto do diagnóstico do inbox_item de saúde degradada, no idioma da
+ * organização (a Central mostra o texto como foi gravado; `pt-BR` é o de
+ * antes). SÓ taxas/contagens — PII jamais.
+ */
+function diagnosisBody(
+  reason: Exclude<HoldReason, 'go_live'>,
+  rates: SessionRates,
+  k: HealthKnobs,
+  idioma: Idioma = 'pt-BR',
+): string {
   if (reason === 'block_rate') {
     const rate = rates.totalSends > 0 ? rates.blockedSends / rates.totalSends : 0;
-    return (
-      `Bloqueios em ${pct(rate)} dos ${rates.totalSends} últimos envios do número ` +
-      `(limiar ${pct(k.blockRateThreshold)}). Outbound em espera automática — a fila retém, nada é perdido. ` +
-      'Verifique o número (possível queima do WhatsApp) e resolva este item para retomar.'
+    return preencher(
+      traduzir(
+        'Bloqueios em {taxa} dos {envios} últimos envios do número (limiar {limiar}). Outbound em espera automática — a fila retém, nada é perdido. Verifique o número (possível queima do WhatsApp) e resolva este item para retomar.',
+        idioma,
+      ),
+      { taxa: pct(rate), envios: rates.totalSends, limiar: pct(k.blockRateThreshold) },
     );
   }
   const rate = rates.sentLeads > 0 ? rates.respondedLeads / rates.sentLeads : 0;
-  return (
-    `Taxa de resposta em ${pct(rate)} (${rates.respondedLeads} de ${rates.sentLeads} leads contatados ` +
-    `responderam; piso ${pct(k.responseRateFloor)}). Outbound em espera automática — a fila retém. ` +
-    'Verifique a abordagem/o número e resolva este item para retomar.'
+  return preencher(
+    traduzir(
+      'Taxa de resposta em {taxa} ({responderam} de {contatados} leads contatados responderam; piso {piso}). Outbound em espera automática — a fila retém. Verifique a abordagem/o número e resolva este item para retomar.',
+      idioma,
+    ),
+    { taxa: pct(rate), responderam: rates.respondedLeads, contatados: rates.sentLeads, piso: pct(k.responseRateFloor) },
   );
 }
 
@@ -307,12 +321,13 @@ async function evaluateSession(
         [tenantId, channelSessionId, reason],
       );
       delta.held = 1;
+      const idioma = await idiomaDaOrg();
       const item =
         reason === 'go_live'
-          ? textoDoGoLive(await idiomaDaOrg())
+          ? textoDoGoLive(idioma)
           : {
-              title: 'Saúde do número degradada — outbound em espera automática',
-              body: diagnosisBody(reason, rates, k),
+              title: traduzir('Saúde do número degradada — outbound em espera automática', idioma),
+              body: diagnosisBody(reason, rates, k, idioma),
             };
       // inbox item 1× por episódio: só cria se não há item aberto do número (dedup).
       const ins = await client.query(
