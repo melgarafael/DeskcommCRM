@@ -52,7 +52,7 @@ const FONTE = {
   name: "Tabela de preços",
   status: "ready",
   is_active: true,
-  source_metadata: { blob_path: "org-1/tabela.pdf", filename: "tabela.pdf", ext: "pdf" },
+  source_metadata: { blob_path: "org-1/0f8c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f.pdf", filename: "tabela.pdf", ext: "pdf" },
 };
 
 const EVENTO = {
@@ -147,7 +147,7 @@ describe("rag-indexer — só lê o arquivo da pasta da organização dona da fo
   it("blob_path de outra organização falha sem baixar nada", async () => {
     fonteDaVez = {
       ...FONTE,
-      source_metadata: { blob_path: "org-2/alheio.pdf", filename: "alheio.pdf", ext: "pdf" },
+      source_metadata: { blob_path: "org-2/0f8c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f.pdf", filename: "alheio.pdf", ext: "pdf" },
     };
     const resultado = await processRagIndexer(EVENTO as never);
 
@@ -157,11 +157,15 @@ describe("rag-indexer — só lê o arquivo da pasta da organização dona da fo
     expect(String(falha?.["last_index_error"])).toContain("fora da pasta desta organização");
   });
 
-  it("'..' no caminho também é recusado, mesmo começando pela pasta certa", async () => {
-    fonteDaVez = {
-      ...FONTE,
-      source_metadata: { blob_path: "org-1/../org-2/alheio.pdf", filename: "alheio.pdf", ext: "pdf" },
-    };
+  it.each([
+    "org-1/../org-2/0f8c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f.pdf",
+    "org-1/%2e%2e/org-2/0f8c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f.pdf",
+    "org-1/..%2forg-2%2f0f8c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f.pdf",
+    "org-1\\..\\org-2\\0f8c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f.pdf",
+    "org-1/qualquer-nome.pdf",
+    "org-1/0f8c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f.p%64f",
+  ])("caminho fora do formato <org>/<uuid>.<ext> é recusado: %s", async (blob_path) => {
+    fonteDaVez = { ...FONTE, source_metadata: { blob_path, filename: "x.pdf", ext: "pdf" } };
     await processRagIndexer(EVENTO as never);
     expect(extrairTextoDoArquivo).not.toHaveBeenCalled();
   });

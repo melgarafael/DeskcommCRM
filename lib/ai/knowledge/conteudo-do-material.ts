@@ -44,6 +44,7 @@
  */
 
 import { ErroDeExtracao, extrairTextoDoArquivo } from "@/lib/ai/rag/ingest/documento";
+import { caminhoDaOrganizacao } from "@/lib/ai/knowledge/caminho-do-arquivo";
 import { canonizarTipoDeFonte, type TipoDeFonteId } from "@/lib/ai/rag/tipos-de-fonte";
 import type { createClient } from "@/lib/supabase/server";
 
@@ -163,13 +164,9 @@ export async function lerMaterial(
   const nome = fonte.name;
   const tipo = canonizarTipoDeFonte(fonte.source_type ?? "") ?? "faq";
   const versaoAtiva = fonte.active_kb_version_id;
-  // Só o arquivo da pasta desta organização: o extrator baixa com o admin
-  // client, que não olha prefixo.
+  // Só o arquivo desta organização: o extrator baixa com o admin client.
   const caminho = fonte.source_metadata?.blob_path;
-  const blobPath =
-    typeof caminho === "string" && caminho.startsWith(`${p.orgId}/`) && !caminho.includes("..")
-      ? caminho
-      : null;
+  const blobPath = caminhoDaOrganizacao(caminho, p.orgId) ? caminho : null;
   const ext =
     typeof fonte.source_metadata?.ext === "string" ? fonte.source_metadata.ext : undefined;
 

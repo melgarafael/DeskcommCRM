@@ -45,6 +45,7 @@ import { acquireDebounce } from "@/lib/ai/rag/debounce";
 import { chunkText, computeContentHash } from "@/lib/ai/rag/chunker";
 import { canonizarTipoDeFonte } from "@/lib/ai/rag/tipos-de-fonte";
 import { extrairTextoDoArquivo, ErroDeExtracao } from "@/lib/ai/rag/ingest/documento";
+import { caminhoDaOrganizacao } from "@/lib/ai/knowledge/caminho-do-arquivo";
 import { estimateTokens } from "@/lib/ai/runtime/history";
 import { formatProductForRag, type NuvemshopProduct } from "@/lib/ai/rag/format-product";
 import {
@@ -225,9 +226,9 @@ async function pedacosDeDocumento(fonte: FonteRow): Promise<Pedaco[]> {
   };
   const blobPath = meta.blob_path;
   if (!blobPath) throw new ErroDeExtracao("a fonte não aponta para nenhum arquivo");
-  // O download é com o admin client, que não olha prefixo: a pasta da
-  // organização dona da fonte é a única que este worker lê.
-  if (!blobPath.startsWith(`${fonte.organization_id}/`) || blobPath.includes(".."))
+  // O download é com o admin client, que não olha a pasta: este worker só lê
+  // o arquivo da organização dona da fonte.
+  if (!caminhoDaOrganizacao(blobPath, fonte.organization_id))
     throw new ErroDeExtracao("o arquivo está fora da pasta desta organização");
 
   const { texto, extensao } = await extrairTextoDoArquivo(blobPath, meta.ext);

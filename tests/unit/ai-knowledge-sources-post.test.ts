@@ -238,7 +238,7 @@ describe("POST /api/v1/ai/knowledge/sources — blob_path pela sessão", () => {
         source_type: "faq",
         name: "FAQ",
         markdown_blob: MARKDOWN,
-        source_metadata: { blob_path: `${OUTRA_ORG}/arquivo.pdf` },
+        source_metadata: { blob_path: `${OUTRA_ORG}/${KS_ID}.pdf` },
       }),
     );
 
@@ -256,7 +256,7 @@ describe("POST /api/v1/ai/knowledge/sources — blob_path pela sessão", () => {
         source_type: "faq",
         name: "FAQ",
         markdown_blob: MARKDOWN,
-        source_metadata: { blob_path: `${ORG_ID}/arquivo.pdf` },
+        source_metadata: { blob_path: `${ORG_ID}/${KS_ID}.pdf` },
       }),
     );
 
