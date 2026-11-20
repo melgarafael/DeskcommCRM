@@ -400,6 +400,9 @@ const BLOCOS_DA_FONTE: Record<string, Bloco[]> = {
 /** Fontes sem janela de data: encurtar o período não as completa. */
 const FONTES_SEM_DATA = new Set(["crm_stages"]);
 
+/** As três contagens da taxa de ajuda. */
+const FONTES_DA_AJUDA = new Set(["messages", "agent_inbox_items", "event_log"]);
+
 /** As fontes de onde "O que está travando" tira as lacunas e a boa notícia. */
 const FONTES_DAS_LACUNAS = new Set(["ai_router_decisions", "knowledge_searches", "crm_stages"]);
 
@@ -429,7 +432,7 @@ export function AvisoDeFontesIncompletas({ fontes }: { fontes: EvolutionPayload[
           {t("Este período tem mais registros do que o painel consegue ler de uma vez. Estes números mostram só uma parte:")}{" "}
           <strong>{nomesDosBlocos(cortadas, t)}</strong>
           {cortadas.some((f) => !FONTES_SEM_DATA.has(f.fonte)) && (
-            <> {t("Encurte as datas para ver o período inteiro.")}</>
+            <> {t("Nos blocos que dependem das datas, encurte o período para ver tudo.")}</>
           )}
         </p>
       )}
@@ -511,6 +514,11 @@ function Conteudo({ payload }: { payload: NonNullable<ReturnType<typeof useEvolu
   const { learned, activity, outcome, gaps } = payload;
   const incompletas = payload.fontes_incompletas ?? [];
   const recebidasIncompletas = incompletas.some((f) => f.fonte === "messages");
+  // A taxa de ajuda é razão de três contagens: qualquer uma que falhou faz o
+  // número não querer dizer nada — um 0 ali seria "ninguém precisou de pessoa".
+  const ajudaIncompleta = incompletas.some(
+    (f) => f.motivo === "falhou" && FONTES_DA_AJUDA.has(f.fonte),
+  );
   const lacunasIncompletas = incompletas.some((f) => FONTES_DAS_LACUNAS.has(f.fonte));
 
   const soma = (s: Array<{ value: number }>) => s.reduce((a, p) => a + p.value, 0);
@@ -703,7 +711,7 @@ function Conteudo({ payload }: { payload: NonNullable<ReturnType<typeof useEvolu
           />
           <StatCard
             rotulo={t("Casos que precisaram de uma pessoa")}
-            valor={taxaDeAjuda(outcome.handoff_rate, t)}
+            valor={ajudaIncompleta ? t("Indisponível agora") : taxaDeAjuda(outcome.handoff_rate, t)}
             significa={t(SIGNIFICA_AJUDA)}
           />
           <StatCard

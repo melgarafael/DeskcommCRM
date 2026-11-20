@@ -74,7 +74,8 @@ function resolveRange(qs: { from?: string; to?: string }): { from: Date; to: Dat
  * PostgREST não devolveu), a única régua é ter batido o teto pedido.
  */
 function veioCortada(linhas: number, count: number | null | undefined): boolean {
-  if (typeof count === "number") return count > linhas;
+  // `Content-Range: 0-999/*` chega do cliente como `NaN`: não é total nenhum.
+  if (typeof count === "number" && Number.isFinite(count)) return count > linhas;
   return linhas >= ROW_CAP;
 }
 
@@ -178,7 +179,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     }
     // Sem `count` e sem erro não é "zero": é "não sei". Zero calado viraria a
     // taxa de ajuda (ou o "não houve atendimento") com cara de fato.
-    if (typeof count !== "number") {
+    if (typeof count !== "number" || !Number.isFinite(count)) {
       fonteFalhou(tabela, { message: "contagem veio sem count" });
       return 0;
     }
