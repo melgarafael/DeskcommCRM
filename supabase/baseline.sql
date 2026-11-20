@@ -69619,8 +69619,8 @@ begin
 end;
 $fn$;
 
--- ---- modulo conectado: perfil (migration 9434) ----
--- Espelho idempotente da 9434 (racional completo no arquivo da migration): o banco aceita o perfil
+-- ---- modulo conectado: perfil (migration 9436) ----
+-- Espelho idempotente da 9436 (racional completo no arquivo da migration): o banco aceita o perfil
 -- `connected` e a chave `service_origin` na entrada do catálogo. Só `create or replace` das três
 -- funções que já existiam, com o corpo da ÚLTIMA definição vigente mais a alteração; a ACL das três
 -- (revoke de public/anon/authenticated, grant a service_role) é a de antes e não muda.
@@ -69689,7 +69689,7 @@ begin
     if jsonb_typeof(v_entry) <> 'object' or not (v_entry ?& array['publisher','name','version','license','host_api','display','permissions','sha256','byte_length'])
       or v_entry - array['publisher','name','version','license','host_api','display','permissions','sha256','byte_length','publisher_label','homepage','repository','tags','published_at','service_origin'] <> '{}'::jsonb
       or exists (select 1 from jsonb_each(v_entry) e where e.value='null'::jsonb)
-      -- 9434: a origem do serviço de um módulo `connected`, mesma forma da origem do catálogo.
+      -- 9436: a origem do serviço de um módulo `connected`, mesma forma da origem do catálogo.
       or (v_entry ? 'service_origin' and (jsonb_typeof(v_entry->'service_origin') is distinct from 'string'
         or v_entry->>'service_origin' !~ '^https?://[^/@?#[:space:]]+$'))
       or jsonb_typeof(v_entry->'byte_length') is distinct from 'number'
@@ -69791,7 +69791,7 @@ begin
     ) then
     raise exception using errcode='P0001',message='extension_artifact_mismatch';
   end if;
-  -- 9434 — perfil `connected` (spec 33). Segundo `if` e não mais uma linha do primeiro: aqui a forma do
+  -- 9436 — perfil `connected` (spec 33). Segundo `if` e não mais uma linha do primeiro: aqui a forma do
   -- manifesto já foi provada (`permissions` é igual ao da entrada, que a admissão validou como array),
   -- então `jsonb_array_elements_text` não corre o risco de errar por tipo antes da recusa.
   -- As mesmas regras de `lib/extensions/manifest.ts`: `connected` só declara permissão de área, não
@@ -69884,12 +69884,12 @@ end $$;
 
 notify pgrst, 'reload schema';
 
--- ---- modulo conectado: interruptor (migration 9435) ----
--- Espelho idempotente da 9435 (racional completo no arquivo da migration): `disabled_at` e
+-- ---- modulo conectado: interruptor (migration 9437) ----
+-- Espelho idempotente da 9437 (racional completo no arquivo da migration): `disabled_at` e
 -- `disabled_by` na instalação e `fn_extensions_set_switch`, que liga e desliga um módulo `connected`
 -- sem desinstalar. O valor `'switch'` da CHECK de `kind` de `extension_operations` NÃO é recriado
 -- aqui: ele vive no bloco único da constraint, no apêndice da migration 0271 (uma constraint, um
--- bloco — tests/unit/baseline-constraint-reconstruida.test.ts). A migration 9435 faz o drop + add.
+-- bloco — tests/unit/baseline-constraint-reconstruida.test.ts). A migration 9437 faz o drop + add.
 
 alter table public.extension_installations
   add column if not exists disabled_at timestamptz,

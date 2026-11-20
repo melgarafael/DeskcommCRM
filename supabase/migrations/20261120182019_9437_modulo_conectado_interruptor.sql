@@ -1,6 +1,6 @@
 -- manifest: **Módulo conectado, F1 — o interruptor, por instalação (spec 33, D8).** `extension_installations` ganha `disabled_at` e `disabled_by` (CHECK `disabled_by is null or disabled_at is not null`); `extension_operations_kind_check` ganha o valor `'switch'` (a lista inteira vigente mais o novo); `fn_extensions_set_switch(p_actor, p_operation, p_installation, p_disabled, p_expected_installation_revision)` liga e desliga um módulo `connected` sem desinstalar, no molde de `fn_extensions_remove_installation` (recibo idempotente por impressão digital, `applied_now`, revisão da instalação como precondição, e a revisão sobe quando aplica); recusa instalação removida, revisão velha e pacote que não é `connected`. EXECUTE só para `service_role`. Espelho no apêndice do `supabase/baseline.sql`, antes da VARREDURA anon (0116); a CHECK de `kind` vive no bloco único da 0271.
 -- ============================================================================
--- 9435 — MÓDULO CONECTADO, F1: o interruptor da instalação.
+-- 9437 — MÓDULO CONECTADO, F1: o interruptor da instalação.
 --
 -- Um módulo `connected` é um serviço externo que lê/altera áreas do CRM (spec 33). Desligá-lo NÃO o
 -- desinstala: a instalação e o recibo continuam, e a instalação ganha `disabled_at` (quando) e

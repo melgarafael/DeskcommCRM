@@ -12,7 +12,7 @@ Pergunta-raiz: *se nenhuma organização desta instalação ativar isto, a opera
 Sim. Sem nenhum módulo `connected` instalado:
 
 - o perfil `connected` só é aceito quando a entrada do catálogo tem `service_origin`, e a regra que
-  liga os dois está em `fn_extensions_finish_install` (migration 9434, espelho no baseline);
+  liga os dois está em `fn_extensions_finish_install` (migration 9436, espelho no baseline);
 - o botão Ligar/Desligar só aparece para o perfil `connected` (`InstalledExtensionCard.tsx`);
 - a nota "Desligado nesta instalação" só aparece quando há `disabled_at`, que só um `connected` tem;
 - as 18 permissões de área são vocabulário novo que nenhuma operação lê ainda.
@@ -45,7 +45,7 @@ grep -c 'href:' lib/navigation/catalogo.ts               # rotas do /app; /admin
 ## Living System Checklist (item 13)
 
 1. **Quem me alimenta.** A entrada do catálogo admitida por `fn_extensions_admit_catalog` (que aceita
-   `service_origin`, migration 9434), o pacote lido por `parseManifest` (`lib/extensions/manifest.ts`),
+   `service_origin`, migration 9436), o pacote lido por `parseManifest` (`lib/extensions/manifest.ts`),
    e a instalação criada por `fn_extensions_finish_install`. O clique vem de `ExtensionsManager.tsx`,
    que chama `POST /api/v1/extensions/[id]/switch`.
 2. **Quem eu alimento.** `extension_installations.disabled_at`, lido por `lib/extensions/instalada.ts`,
@@ -107,8 +107,8 @@ a decisão, sem cortar o acesso do serviço. Sem seção no `CHANGELOG.md`.
 
 ## Migrations (tripla)
 
-- `supabase/migrations/20261120181559_9434_modulo_conectado_perfil.sql` (perfil, permissões, origem do serviço)
-- `supabase/migrations/20261120181659_9435_modulo_conectado_interruptor.sql` (interruptor)
+- `supabase/migrations/20261120181919_9436_modulo_conectado_perfil.sql` (perfil, permissões, origem do serviço)
+- `supabase/migrations/20261120182019_9437_modulo_conectado_interruptor.sql` (interruptor)
 - `supabase/baseline.sql`: apêndice idempotente com os dois blocos.
 - Cada migration tem `-- manifest:` na linha 1.
 
@@ -116,7 +116,7 @@ a decisão, sem cortar o acesso do serviço. Sem seção no `CHANGELOG.md`.
 
 - **Nada foi executado nesta máquina.** Nenhum `pnpm`, `vitest`, typecheck, lint, build, Docker ou
   Playwright. O veredito de cada tarefa é o CI do fork.
-- **As migrations 9434 e 9435 e o apêndice do baseline não foram aplicados** em nenhum Postgres. A ordem
+- **As migrations 9436 e 9437 e o apêndice do baseline não foram aplicados** em nenhum Postgres. A ordem
   das recusas em `fn_extensions_set_switch` nunca rodou.
 - **Sabotagens previstas, não rodadas.** Tirar `(profile = 'connected') = (entrada tem service_origin)`
   (esperado: o caso "declarative com service_origin" fica vermelho); tirar o incremento de revisão em

@@ -1,6 +1,6 @@
 -- manifest: **Módulo conectado, F1 — o banco aceita o perfil `connected` e a origem do serviço.** `fn_extensions_permissoes_validas` passa a aceitar as 26 permissões (as 8 de hoje + 18 `area.<área>.<leitura|escrita>`, espelho de `EXTENSION_PERMISSIONS`); `fn_extensions_admit_catalog` aceita a chave `service_origin` na entrada do catálogo (origem exata, mesmo regex de `origin`); `fn_extensions_finish_install` aceita `profile='connected'` (só permissão de área, `data` none, sem `density`, sem `crm_cards` nem `theme`), recusa permissão de área nos outros dois perfis e exige `(profile='connected') = (entrada tem service_origin)`. Só `create or replace` das três funções (corpos copiados das últimas definições do baseline); grants preservados; sem tabela nova; espelho no apêndice do `supabase/baseline.sql`.
 -- ============================================================================
--- 9434 — MÓDULO CONECTADO, F1: o perfil `connected` no banco.
+-- 9436 — MÓDULO CONECTADO, F1: o perfil `connected` no banco.
 --
 -- Um módulo `connected` é um serviço externo que lê/altera ÁREAS do CRM (spec 33). O manifesto
 -- continua com as treze chaves; o endereço do serviço NÃO mora no pacote (ADR-0003, D3) e sim na
@@ -82,7 +82,7 @@ begin
     if jsonb_typeof(v_entry) <> 'object' or not (v_entry ?& array['publisher','name','version','license','host_api','display','permissions','sha256','byte_length'])
       or v_entry - array['publisher','name','version','license','host_api','display','permissions','sha256','byte_length','publisher_label','homepage','repository','tags','published_at','service_origin'] <> '{}'::jsonb
       or exists (select 1 from jsonb_each(v_entry) e where e.value='null'::jsonb)
-      -- 9434: a origem do serviço de um módulo `connected`, mesma forma da origem do catálogo.
+      -- 9436: a origem do serviço de um módulo `connected`, mesma forma da origem do catálogo.
       or (v_entry ? 'service_origin' and (jsonb_typeof(v_entry->'service_origin') is distinct from 'string'
         or v_entry->>'service_origin' !~ '^https?://[^/@?#[:space:]]+$'))
       or jsonb_typeof(v_entry->'byte_length') is distinct from 'number'
@@ -184,7 +184,7 @@ begin
     ) then
     raise exception using errcode='P0001',message='extension_artifact_mismatch';
   end if;
-  -- 9434 — perfil `connected` (spec 33). Segundo `if` e não mais uma linha do primeiro: aqui a forma do
+  -- 9436 — perfil `connected` (spec 33). Segundo `if` e não mais uma linha do primeiro: aqui a forma do
   -- manifesto já foi provada (`permissions` é igual ao da entrada, que a admissão validou como array),
   -- então `jsonb_array_elements_text` não corre o risco de errar por tipo antes da recusa.
   -- As mesmas regras de `lib/extensions/manifest.ts`: `connected` só declara permissão de área, não

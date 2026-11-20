@@ -69,7 +69,7 @@ const installationRowSchema = z.object({
   version: z.string(),
   revision: z.number().int().positive(),
   removed_at: z.string().nullable(),
-  // O interruptor do módulo `connected` (migration 9435). Ausente numa linha lida antes da migration.
+  // O interruptor do módulo `connected` (migration 9437). Ausente numa linha lida antes da migration.
   disabled_at: z.string().nullish(),
 });
 const bindingRowSchema = z.object({
