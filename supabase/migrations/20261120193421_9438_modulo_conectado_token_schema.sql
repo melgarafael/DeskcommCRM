@@ -1,6 +1,6 @@
 -- manifest: **Módulo conectado, F2 — o schema do token do módulo (spec 33, decisões 1, 3 e 4).** `api_tokens` ganha `extension_installation_id` (FK para `extension_installations`) e `module_slug`; `created_by` passa a aceitar nulo, com a CHECK `api_tokens_dono_check` (`created_by is not null or extension_installation_id is not null`: token sem dono não existe) e o índice único parcial `api_tokens_modulo_vivo_idx` em `(organization_id, extension_installation_id)` para tokens vivos de módulo (um vivo por par organização × instalação). Duas tabelas só de servidor, RLS ligada e NENHUMA policy, privilégio só a `service_role`: `extension_installation_secrets` (o segredo da instalação, cifrado; apagar a instalação apaga o segredo, apagar quem girou só zera `rotated_by`) e `extension_token_nonces` (anti-repetição da assinatura de busca; chave `(installation_id, nonce)` e índice em `seen_at` para a limpeza). Nenhuma função aqui (as funções são a migration seguinte). Espelho idempotente no apêndice do `supabase/baseline.sql`, antes da VARREDURA anon (0116). Prova em `tests/invariants/extensoes-token-modulo.test.ts`.
 -- ============================================================================
--- 9117 — MÓDULO CONECTADO, F2: o schema do token do módulo.
+-- 9438 — MÓDULO CONECTADO, F2: o schema do token do módulo.
 --
 -- Um módulo `connected` busca um token curto (`dsk_…`) provando que tem o segredo da instalação. O
 -- token é uma linha de `api_tokens` como qualquer outra (o teto de 50 por organização e a validação

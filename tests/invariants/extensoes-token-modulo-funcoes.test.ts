@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { Pool } from "pg";
 
-// As funções do token do módulo `connected` (spec 33, F2, migration 9118). A ATIVAÇÃO reserva uma vaga viva
+// As funções do token do módulo `connected` (spec 33, F2, migration 9439). A ATIVAÇÃO reserva uma vaga viva
 // em `api_tokens` (dono: a instalação), a BUSCA troca o hash dessa vaga, e desativar, remover e desligar
 // revogam. Só o perfil `connected` tem token. O teto de 50 tokens ativos por organização vale na ativação:
 // a vaga conta, e teto cheio desfaz a ativação inteira (nada pela metade).

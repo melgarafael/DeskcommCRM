@@ -57,11 +57,11 @@ configurar a chave. Como a mensagem chega à tela, ver "O que NÃO foi medido".
 
 ## Migrations (tripla)
 
-- `supabase/migrations/20261105100000_9117_modulo_conectado_token_schema.sql` (`api_tokens` ganha
+- `supabase/migrations/20261120193421_9438_modulo_conectado_token_schema.sql` (`api_tokens` ganha
   `extension_installation_id` e `module_slug`; `created_by` passa a aceitar nulo com a CHECK
   `api_tokens_dono_check`; índice único parcial `api_tokens_modulo_vivo_idx`; tabelas
   `extension_installation_secrets` e `extension_token_nonces`, só de servidor).
-- `supabase/migrations/20261105110000_9118_modulo_conectado_token_funcoes.sql` (funções
+- `supabase/migrations/20261120193522_9439_modulo_conectado_token_funcoes.sql` (funções
   `fn_extensions_module_token_reserve`, `fn_extensions_module_token_rotate`,
   `fn_extensions_module_token_revoke`; redefinidas `fn_extensions_configure`,
   `fn_extensions_remove_installation` e `fn_extensions_set_switch`).
@@ -142,18 +142,18 @@ Só o que a F2 muda. Cada uma tem o comando que a produz hoje.
 
 - **Nada foi executado nesta máquina.** Nenhum `pnpm`, `vitest`, typecheck, lint, build, Docker ou
   Playwright. O veredito de cada tarefa é o CI do PR interno.
-- **As migrations 9117 e 9118 e o apêndice do baseline não foram aplicados** em nenhum Postgres. A ordem
+- **As migrations 9438 e 9439 e o apêndice do baseline não foram aplicados** em nenhum Postgres. A ordem
   das recusas em `fn_extensions_module_token_rotate` e a reconferência do teto quando a linha estava
   expirada nunca rodaram.
 - **O fluxo ponta a ponta com um módulo real não foi exercido.** Nenhum módulo `connected` existe no
-  laboratório (ver J67.1), então nenhuma busca real saiu de um módulo assinando com o segredo.
+  laboratório (ver J69.1), então nenhuma busca real saiu de um módulo assinando com o segredo.
 - **A concorrência entre buscas só é provada pelos invariantes de banco** (`tests/invariants/
   extensoes-token-modulo-funcoes.test.ts`). Nenhuma jornada em tela cobre duas buscas ao mesmo tempo.
 - **Mensagem de chave de cifra ausente na tela** não foi conferida: não se sabe se o operador vê o motivo
   ou só a falha genérica da instalação.
 - **Linha "Módulo <slug>" antes da primeira busca** (a vaga reservada) não foi vista em tela; a afirmação
   de que ela ainda não tem texto utilizável é previsão do desenho, não medição.
-- **Nenhuma jornada em navegador.** J68 é especificação: os casos estão com "NÃO EXECUTADO" e nenhum abriu
+- **Nenhuma jornada em navegador.** J70 é especificação: os casos estão com "NÃO EXECUTADO" e nenhum abriu
   `/admin/extensoes` nem `/app/settings/api-tokens`.
 - **`lib/database.types.ts` não foi regenerado.** O arquivo não está no diff da F2
   (`git diff --name-only f88438ad8 30a87a43a -- lib/database.types.ts` sai vazio), então os tipos gerados
