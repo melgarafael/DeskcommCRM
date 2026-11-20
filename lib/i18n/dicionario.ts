@@ -2611,6 +2611,30 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível salvar a lateral. Tente novamente.": {
     es: "No se pudo guardar la lateral. Inténtalo de nuevo.",
   },
+  // ─── Personalização das abas do Inbox (#3313) ───
+  // A mesma família da lateral acima: o mesmo verbo, o mesmo "vale para você".
+  // "Mais abas" é o NOME do botão para o leitor de tela: no celular a barra de
+  // baixo já tem um "Mais" (a navegação), e o texto visível continua "Mais".
+  // "A escolha enviada não é válida…" já está acima e é reaproveitada.
+  "Personalizar abas": { es: "Personalizar pestañas" },
+  "Personalizar abas…": { es: "Personalizar pestañas…" },
+  "Mais abas": { es: "Más pestañas" },
+  "Abas ocultas": { es: "Pestañas ocultas" },
+  "Escolha quais abas aparecem e em que ordem. As ocultas ficam no menu Mais, ao lado das abas. Vale para você — os colegas continuam com as deles.": {
+    es: "Elige qué pestañas aparecen y en qué orden. Las ocultas quedan en el menú Más, junto a las pestañas. Vale para ti: tus colegas mantienen las suyas.",
+  },
+  "Mostrar aba": { es: "Mostrar pestaña" },
+  "Pelo menos uma aba precisa ficar visível.": { es: "Al menos una pestaña debe quedar visible." },
+  "Abas do Inbox atualizadas.": { es: "Pestañas del Inbox actualizadas." },
+  "Sua sessão expirou. Entre novamente para salvar as abas.": {
+    es: "Tu sesión expiró. Vuelve a iniciar sesión para guardar las pestañas.",
+  },
+  "Este acesso é somente leitura: as abas não podem ser salvas.": {
+    es: "Este acceso es de solo lectura: no se pueden guardar las pestañas.",
+  },
+  "Não foi possível salvar as abas. Tente novamente.": {
+    es: "No se pudieron guardar las pestañas. Inténtalo de nuevo.",
+  },
   // ─── Painel do contato ───
   CONTATO: { es: "CONTACTO" },
   // O recolher do painel inteiro (#3004) — mesmo verbo do recolher da barra
@@ -4756,9 +4780,9 @@ export const DICIONARIO: Traducoes = {
     {
       es: "Necesita una credencial de ElevenLabs registrada y una voz elegida en Agente de IA → Proveedores. Sin los dos, el agente sigue respondiendo en texto — activar esto no rompe nada.",
     },
-  "O canal escolhido não recebe nota de voz da IA (redes sociais como Instagram e Facebook). Nele, o agente responde em texto.":
+  "O canal escolhido não recebe nota de voz da IA (como o Facebook e o Telegram). Nele, o agente responde em texto.":
     {
-      es: "El canal elegido no recibe notas de voz de la IA (redes sociales como Instagram y Facebook). En él, el agente responde con texto.",
+      es: "El canal elegido no recibe notas de voz de la IA (como Facebook y Telegram). En él, el agente responde con texto.",
     },
   "Quando falar": { es: "Cuándo hablar" },
   "Voz deste agente": { es: "Voz de este agente" },
@@ -10405,6 +10429,16 @@ export const DICIONARIO: Traducoes = {
   "Campos definidos no funil padrão da organização.": {
     es: "Campos definidos en el embudo predeterminado de la organización.",
   },
+  // ─── Onde criar campo do contato (#4744, `ComoCriarCamposDoContato`) ───
+  // Uma frase em pedaços: entre o primeiro e o segundo vem o NOME do funil
+  // padrão (em negrito, sem tradução); o terceiro é o texto do link, no fim.
+  "Você pode criar campos do contato na tela Etapas do funil: no funil": {
+    es: "Puedes crear campos del contacto en la pantalla Etapas del embudo: en el embudo",
+  },
+  ", clique em “Editar vocabulário e campos deste funil” e em “Adicionar campo”. Em “Este campo pertence a:”, troque para “Contato” e salve.": {
+    es: ", haz clic en “Editar vocabulario y campos de este embudo” y en “Agregar campo”. En “Este campo pertenece a:”, cambia a “Contacto” y guarda.",
+  },
+  "Abrir Etapas do funil em outra aba": { es: "Abrir Etapas del embudo en otra pestaña" },
   "Configure sua organização": { es: "Configura tu organización" },
   "Sua conta foi confirmada, mas a organização inicial ainda não foi criada. Informe o nome da sua empresa para concluir o primeiro acesso e abrir o onboarding do CRM.": {
     es: "Tu cuenta ya está confirmada, pero todavía no se creó la organización inicial. Escribe el nombre de tu empresa para completar el primer acceso y abrir la configuración inicial del CRM.",
@@ -15015,6 +15049,18 @@ export const DICIONARIO: Traducoes = {
   "Nova tarefa": { es: "Nueva tarea" },
   "Ninguém": { es: "Nadie" },
   // A tarefa que se repete (#4595): o seletor de dias e a hora da série.
+  "Não repete": { es: "No se repite" },
+  "Diária": { es: "Diaria" },
+  "Semanal": { es: "Semanal" },
+  "Rotina": { es: "Rutina" },
+  "A tarefa volta todo dia, no horário acima, no fuso da empresa.": {
+    es: "La tarea vuelve todos los días, en el horario de arriba, en la zona horaria de la empresa.",
+  },
+  "A tarefa volta todo mês nesse dia, no horário acima, no fuso da empresa.": {
+    es: "La tarea vuelve todos los meses en ese día, en el horario de arriba, en la zona horaria de la empresa.",
+  },
+  "Escolha um dia do mês entre 1 e 31.": { es: "Elige un día del mes entre 1 y 31." },
+  "Escolha a repetição e o horário.": { es: "Elige la repetición y el horario." },
   "Repetir toda semana": { es: "Repetir cada semana" },
   "A tarefa volta nos dias escolhidos, no horário acima, no fuso da empresa.": {
     es: "La tarea vuelve los días elegidos, en el horario de arriba, en la zona horaria de la empresa.",
@@ -20448,6 +20494,13 @@ export const DICIONARIO: Traducoes = {
   "O que o site já tem": { es: "Lo que el sitio ya tiene" },
   "WhatsApp": { es: "WhatsApp" },
   "Endereço e mapa": { es: "Dirección y mapa" },
+  "Completude do site": { es: "Completitud del sitio" },
+  "Itens técnicos encontrados no site; não mede interesse de compra.": {
+    es: "Elementos técnicos encontrados en el sitio; no mide el interés de compra.",
+  },
+  "Fontes públicas consultadas": { es: "Fuentes públicas consultadas" },
+  "Site auditado": { es: "Sitio auditado" },
+  "Google Maps": { es: "Google Maps" },
   "Descrição no Google": { es: "Descripción en Google" },
   "Estratégia de abordagem": { es: "Estrategia de abordaje" },
   "Objeções e respostas": { es: "Objeciones y respuestas" },
@@ -20458,6 +20511,26 @@ export const DICIONARIO: Traducoes = {
   "Recentes": { es: "Recientes" },
   "Score": { es: "Score" },
   "Score médio": { es: "Score medio" },
+  "Prioridade média": { es: "Prioridad media" },
+  "Prévia aprovada por uma pessoa": { es: "Vista previa aprobada por una persona" },
+  "Aprovar prévia": { es: "Aprobar vista previa" },
+  "Não foi possível aprovar a prévia.": { es: "No se pudo aprobar la vista previa." },
+  "Prévia aprovada. A campanha só fará o primeiro contato após esta aprovação.": {
+    es: "Vista previa aprobada. La campaña solo hará el primer contacto después de esta aprobación.",
+  },
+  "Revise e aprove as prévias pendentes antes de retomar a fila.": {
+    es: "Revisa y aprueba las vistas previas pendientes antes de reanudar la cola.",
+  },
+  "Abra os detalhes de cada empresa selecionada, revise a prévia e aprove antes de iniciar.": {
+    es: "Abre los detalles de cada empresa seleccionada, revisa la vista previa y apruébala antes de iniciar.",
+  },
+  "Aprovar a prévia de cada empresa antes do primeiro contato": {
+    es: "Aprobar la vista previa de cada empresa antes del primer contacto",
+  },
+  "Ligada, a campanha só inicia, retoma e envia a primeira mensagem de uma empresa depois que alguém da equipe revisar e aprovar a prévia dela. Desligada, o agente envia sozinho, como sempre.":
+    {
+      es: "Activada, la campaña solo inicia, reanuda y envía el primer mensaje a una empresa después de que alguien del equipo revise y apruebe su vista previa. Desactivada, el agente envía solo, como siempre.",
+    },
   "O que esta campanha vende": { es: "Lo que vende esta campaña" },
   "Voz e vocabulário": { es: "Voz y vocabulario" },
   "A voz assina as mensagens; o vocabulário traduz o nicho para a dor dele.": {
@@ -21513,6 +21586,11 @@ export const DICIONARIO: Traducoes = {
   "Setor atualizado.": { es: "Sector actualizado." },
   "Setor apagado.": { es: "Sector eliminado." },
   "Setor do atendente atualizado.": { es: "Sector del asesor actualizado." },
+  // O selo de setor da tarefa quando o setor é o do RESPONSÁVEL (#4883): o
+  // fallback existe, mas não pode passar por "o setor do atendimento".
+  "Setor do responsável — a tarefa não tem conversa nem negócio com setor": {
+    es: "Sector del responsable — la tarea no tiene conversación ni negocio con sector",
+  },
   "Já existe um setor com este nome.": { es: "Ya existe un sector con este nombre." },
   "Setor não encontrado.": { es: "Sector no encontrado." },
   // O módulo opcional dos setores (doc 213) em /admin/sistema e em Recursos opcionais.
@@ -22241,10 +22319,24 @@ export const DICIONARIO: Traducoes = {
   // contato ausente, leitura interrompida) em vez de esconder.
   "Tags que mais vendem": { es: "Etiquetas que más venden" },
   "Clientes que mais compram": { es: "Clientes que más compran" },
-  "Estes dois rankings somam os negócios marcados como ganhos no período — não as comandas dos números acima.":
+  "Estes blocos somam os negócios marcados como ganhos no período — não as comandas dos números acima.":
     {
-      es: "Estos dos rankings suman los negocios marcados como ganados en el período — no las comandas de los números de arriba.",
+      es: "Estos bloques suman los negocios marcados como ganados en el período — no las comandas de los números de arriba.",
     },
+  // O recorte por funil e tag e a lista de vendas (#4802, item 4). "Funil",
+  // "Tag", "Todos os funis", "Todas as tags", "Limpar filtros", "Atualizando…",
+  // "Vendas", "Data", "Negócio", "Tags", "sem valor" e "de" já existem.
+  "Funis que mais vendem": { es: "Embudos que más venden" },
+  "Funil sem nome": { es: "Embudo sin nombre" },
+  "Sem contato": { es: "Sin contacto" },
+  "Ver as vendas desta tag": { es: "Ver las ventas de esta etiqueta" },
+  "Mostrando as vendas mais recentes:": { es: "Mostrando las ventas más recientes:" },
+  "Nenhum negócio ganho neste recorte. Troque o funil ou a tag.": {
+    es: "Ningún negocio ganado en este recorte. Cambia el embudo o la etiqueta.",
+  },
+  "Essa contagem respeita o funil escolhido, mas não a tag.": {
+    es: "Ese conteo respeta el embudo elegido, pero no la etiqueta.",
+  },
   // "Tag", "Cliente", "Valor", "Contato", "Negócios" e "Negócios ganhos" já
   // existem neste dicionário: não se repetem aqui.
   "Nenhum negócio ganho no período.": { es: "Ningún negocio ganado en el período." },

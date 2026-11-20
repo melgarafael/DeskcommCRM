@@ -23,7 +23,8 @@ import {
   type OfertaDaCampanha,
   type Pontuacao,
 } from "@/lib/prospecting/estrategia-site";
-import type { Prospect } from "@/lib/prospecting/schema";
+import type { CampaignConfig, Prospect } from "@/lib/prospecting/schema";
+import { previaAprovadaDoAgente, previaValida } from "@/lib/prospecting/previa";
 
 /** Classes que `vereditoPuro` resolve sem rede: não há verificação a datar. */
 const SEM_REDE: ReadonlySet<ClasseDeSite> = new Set(["sem-site", "agregador"]);
@@ -51,6 +52,9 @@ export function AuditoriaDoCandidato({
   sobrescritaVocabulario,
   onReanalisar,
   onPrevia,
+  onAprovar,
+  config,
+  podeAprovar,
   fonte = "estrategia",
 }: {
   candidateId: string;
@@ -64,6 +68,9 @@ export function AuditoriaDoCandidato({
   sobrescritaVocabulario?: Record<string, string> | null;
   onReanalisar: (candidateId: string) => Promise<void>;
   onPrevia: (candidateId: string) => Promise<PreviaDaAbordagem | null>;
+  onAprovar: (candidateId: string, config: CampaignConfig) => Promise<boolean>;
+  config: CampaignConfig;
+  podeAprovar: boolean;
   /** A fonte da abordagem da campanha: pelo prompt do agente a auditoria não entra na mensagem. */
   fonte?: "estrategia" | "agente";
 }) {
@@ -72,6 +79,10 @@ export function AuditoriaDoCandidato({
   const [previa, setPrevia] = useState<PreviaDaAbordagem | null>(null);
   const [gerando, setGerando] = useState(false);
   const [erroDaPrevia, setErroDaPrevia] = useState<string | null>(null);
+  const [aprovando, setAprovando] = useState(false);
+  const [aprovadaAgora, setAprovadaAgora] = useState(false);
+  const previaAtual = previaValida(data, fonte);
+  const jaAprovada = !!previaAprovadaDoAgente(data, config.agent_id, config.briefing_editado_em, fonte);
   const previaRef = useRef<HTMLDivElement | null>(null);
   // O veredito da LEITURA (morada única em `site-efetivo.ts`): o gravado ou o
   // `sem-site` derivado do `website` vazio. Só depende de rede quem tem site
@@ -85,8 +96,10 @@ export function AuditoriaDoCandidato({
   }, [previa]);
   const peloAgente = fonte === "agente";
   function abrir() {
-    setPrevia(null);
+    // A prévia já gravada abre pronta: é ela que a pessoa aprova.
+    setPrevia(previaAtual ? { mensagem: previaAtual.texto, estrategia: null, score: null } : null);
     setErroDaPrevia(null);
+    setAprovadaAgora(false);
     setAberto(true);
   }
   // O bloco da PRÉVIA vem primeiro no diálogo: é o que o operador abre "Ver detalhes"
@@ -140,6 +153,25 @@ export function AuditoriaDoCandidato({
       {previa && (
         <div ref={previaRef} className="rounded-md border p-3 text-xs leading-relaxed">
           <p className="whitespace-pre-wrap">{previa.mensagem}</p>
+          {jaAprovada || aprovadaAgora ? (
+            <p className="mt-3 font-medium text-green-700">{t("Prévia aprovada por uma pessoa")}</p>
+          ) : podeAprovar ? (
+            <Button
+              type="button"
+              className="mt-3"
+              size="sm"
+              disabled={disabled || aprovando}
+              onClick={() => {
+                setAprovando(true);
+                void onAprovar(candidateId, config)
+                  .then((ok) => setAprovadaAgora(ok))
+                  .catch((erro: unknown) => setErroDaPrevia(erro instanceof Error ? erro.message : t("Não foi possível aprovar a prévia.")))
+                  .finally(() => setAprovando(false));
+              }}
+            >
+              {aprovando ? t("Aprovando…") : t("Aprovar prévia")}
+            </Button>
+          ) : null}
         </div>
       )}
     </section>
@@ -190,13 +222,14 @@ export function AuditoriaDoCandidato({
       nicho={nicho}
       status={status}
       sobrescritaVocabulario={sobrescritaVocabulario}
+      fontes={{ website: data.website, mapsUrl: data.maps_url, finalUrl: site.final_url }}
     />
   );
   return (
     <div className="space-y-1">
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="outline">
-          Score {score.valor}
+          {t("Prioridade")} {score.valor}
         </Badge>
         {mostraMotivo && (
           <span className="text-xs text-muted-foreground" title={score.motivo}>

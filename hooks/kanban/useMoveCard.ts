@@ -117,10 +117,15 @@ export function useMoveCard(pipelineId: string, opcoes: OpcoesDeMove = {}) {
       return { snapshot };
     },
     onSuccess: (res, args) => {
+      // A ÚNICA RECONCILIAÇÃO DO ARRASTE (#4788) — e ela é do CARD, não do quadro.
+      //
       // A resposta é o lead como o servidor o deixou, com o `updated_at` final.
-      // Sem gravá-la aqui, o cache seguia com o valor de antes até o refetch do
-      // `onSettled` chegar, e arrastar o mesmo card de novo nesse intervalo
-      // mandava `expected_updated_at` velho → 409 (issue #916).
+      // Gravá-la aqui é o que fecha o #916 (o segundo arrasto manda o carimbo
+      // novo, não o velho — 409) E o que dispensa reler o funil inteiro: o
+      // servidor já mandou o estado autoritativo da linha que mudou. É também a
+      // convergência: se a etapa que voltou for diferente da otimista (recusa
+      // parcial, regra de entrada, reabertura), o `fundeRespostaNoCard` corrige
+      // o card na tela sem nenhuma requisição a mais.
       qc.setQueryData<BoardData>(queryKey, (atual) =>
         atual
           ? {
@@ -134,10 +139,13 @@ export function useMoveCard(pipelineId: string, opcoes: OpcoesDeMove = {}) {
     },
     onError: (err, args, ctx) => {
       if (ctx?.snapshot) qc.setQueryData(queryKey, ctx.snapshot);
-      if (err instanceof ApiError && err.status === 409) {
-        // Reconcile authoritative state — server already gave new updated_at.
-        qc.invalidateQueries({ queryKey });
-      }
+      // Relê em TODO erro, não só no 409. Rede caída, timeout ou 5xx podem
+      // chegar DEPOIS de a rota já ter gravado o movimento: o snapshot devolve
+      // o card à coluna antiga, e o evento de realtime desse lead cai na marca
+      // de eco (useBoard o ignora). Sem esta releitura, a tela ficaria errada
+      // até o próximo evento do funil. Erro é raro; o arraste que dá certo
+      // continua sem reler (#4788).
+      qc.invalidateQueries({ queryKey });
       if (err instanceof ApiError && err.code === "reabertura_cria_novo" && opcoes.onRetomada) {
         // NÃO toast: um "erro" genérico mentiria sobre uma recusa que tem
         // porta. O diálogo É a resposta — e ele leva a etapa que o operador
@@ -167,7 +175,22 @@ export function useMoveCard(pipelineId: string, opcoes: OpcoesDeMove = {}) {
       // A marca fecha com a AÇÃO, não com o relógio: daqui em diante só a folga
       // curta do último evento da cascata (ver lib/kanban/local-echo.ts).
       liberarEcoLocal(args.leadId);
-      qc.invalidateQueries({ queryKey });
+      // ─── AQUI NÃO SE RELE O QUADRO (#4788) ────────────────────────────────
+      // Era esta linha, e só ela, que fazia TODO arraste recarregar o funil
+      // INTEIRO: num funil com milhares de negócios é uma leitura completa da
+      // rota do quadro (paginada, enriquecida por card) a cada card solto, e o
+      // operador sente como "o card trava ao arrastar".
+      //
+      // O que a substitui já é autoritativo: o `onSuccess` funde a resposta do
+      // servidor no card — etapa, posição, `updated_at`, `status` —, então a
+      // releitura não traria nada que a tela já não tenha. O que chegar de
+      // fora continua chegando pelo realtime, que reconcilia o quadro UMA vez
+      // por rajada (hooks/kanban/useBoard.ts), e a rede de segurança
+      // (`useRefetchDeSeguranca`) confere a assinatura na volta para a aba.
+      //
+      // Fail-safe preservado: quando o servidor NÃO confirma (qualquer erro), o
+      // `onError` acima devolve o snapshot e relê — ali a releitura é
+      // obrigatória, porque o estado do servidor é desconhecido.
     },
   });
 }

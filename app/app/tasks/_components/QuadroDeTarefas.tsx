@@ -29,6 +29,7 @@ import { Kanban, UserCircle } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 
 import { COR_DA_PRIORIDADE, COR_DA_SITUACAO, ESTILO_DA_URGENCIA } from "./estilo-da-prioridade";
+import { SeloDeSetor } from "./SeloDeSetor";
 
 const SEM_SETOR: ReadonlyMap<string, Sector> = new Map();
 
@@ -66,16 +67,17 @@ export function QuadroDeTarefas({
   podeEditar,
   filtros,
   aoEditar,
-  setorDoResponsavel = SEM_SETOR,
+  setores = SEM_SETOR,
 }: {
   podeEditar: boolean;
   /**
-   * O setor de cada responsável, para o chip da tarefa. Quem monta é a tela de
-   * Tarefas, que já busca setores e equipe — e só com o módulo opcional ligado
-   * (doc 213). Ausente = sem chip: a lista do painel do inbox e a do dossiê não
-   * pedem setores a ninguém.
+   * Os setores por id, para dar NOME ao que o servidor decidiu (#4883): a
+   * tarefa chega com `setor: { id, origem }`, e é aqui que o id vira chip.
+   * Quem monta é a tela de Tarefas, que já busca setores e equipe — e só com o
+   * módulo opcional ligado (doc 213). Ausente = sem chip: a lista do painel do
+   * inbox e a do dossiê não pedem setores a ninguém.
    */
-  setorDoResponsavel?: ReadonlyMap<string, Sector>;
+  setores?: ReadonlyMap<string, Sector>;
   /** Os filtros da tela (responsável e funil). A situação NÃO entra: as colunas são as situações. */
   filtros: FiltrosDeTarefa;
   aoEditar: (tarefa: Tarefa) => void;
@@ -320,22 +322,7 @@ export function QuadroDeTarefas({
                                   {nomeDoResponsavel(tarefa)}
                                 </span>
                               ) : null}
-                              {tarefa.assigned_to && setorDoResponsavel.get(tarefa.assigned_to) ? (
-                                <span
-                                  className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium border"
-                                  style={{
-                                    backgroundColor: setorDoResponsavel.get(tarefa.assigned_to)!.color
-                                      ? `${setorDoResponsavel.get(tarefa.assigned_to)!.color}18`
-                                      : undefined,
-                                    color: setorDoResponsavel.get(tarefa.assigned_to)!.color ?? undefined,
-                                    borderColor: setorDoResponsavel.get(tarefa.assigned_to)!.color
-                                      ? `${setorDoResponsavel.get(tarefa.assigned_to)!.color}35`
-                                      : undefined,
-                                  }}
-                                >
-                                  {setorDoResponsavel.get(tarefa.assigned_to)!.name}
-                                </span>
-                              ) : null}
+                              <SeloDeSetor setor={tarefa.setor} setores={setores} />
                               {tarefa.lead ? (
                                 <Link
                                   href={`/app/leads/${tarefa.lead.id}`}
