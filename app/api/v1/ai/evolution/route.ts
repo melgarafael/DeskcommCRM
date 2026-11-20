@@ -92,16 +92,24 @@ type LinhaDoFunil = { agent_stage_hint: string | null; crm_pipelines: { name: st
 async function lerFunilDoToken(
   db: SupabaseClient,
   orgId: string,
-): Promise<{ data: LinhaDoFunil[] | null; error: { message: string } | null; count?: number | null }> {
-  const { data: funis, error: errFunis } = await db
+): Promise<{
+  data: LinhaDoFunil[] | null;
+  error: { message: string } | null;
+  count?: number | null;
+  funisCortados?: boolean;
+}> {
+  const { data: funis, error: errFunis, count: totalDeFunis } = await db
     .from("crm_pipelines")
-    .select("id, name")
+    .select("id, name", { count: "exact" })
     .eq("organization_id", orgId);
   if (errFunis) return { data: null, error: errFunis };
   const nomePorFunil = new Map(
     ((funis ?? []) as Array<{ id: string; name: string }>).map((f) => [f.id, f.name] as const),
   );
-  if (nomePorFunil.size === 0) return { data: [], error: null, count: 0 };
+  // Lista de funis cortada: as etapas de 2ª consulta só cobrem os funis lidos, e o
+  // `count` delas sozinho diria "completo". O corte da 1ª consulta vai junto.
+  const funisCortados = veioCortada((funis ?? []).length, totalDeFunis);
+  if (nomePorFunil.size === 0) return { data: [], error: null, count: 0, funisCortados };
 
   const { data: etapas, error: errEtapas, count } = await db
     .from("crm_stages")
@@ -121,7 +129,7 @@ async function lerFunilDoToken(
   // `count` das etapas, como no embed da sessão: é ele que diz se a página veio
   // cortada. O `.in` acima só traz etapas de funis lidos, então cada etapa vira
   // uma linha e o tamanho da página é o mesmo.
-  return { data: linhas, error: null, count };
+  return { data: linhas, error: null, count, funisCortados };
 }
 
 export async function GET(req: NextRequest): Promise<Response> {
@@ -342,7 +350,10 @@ export async function GET(req: NextRequest): Promise<Response> {
   ]);
 
   if (stages.error) fonteFalhou("crm_stages", stages.error);
-  else if (veioCortada((stages.data ?? []).length, stages.count)) {
+  else if (
+    ("funisCortados" in stages && stages.funisCortados) ||
+    veioCortada((stages.data ?? []).length, stages.count)
+  ) {
     fonteFalhou("crm_stages", { message: `row cap de ${ROW_CAP} atingido — funis truncados` }, "cortada");
   }
 
