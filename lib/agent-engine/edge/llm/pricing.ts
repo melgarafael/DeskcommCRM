@@ -97,8 +97,10 @@ const USD_PER_MTOK: Record<string, Preco> = {
   // Gravação de cache: as linhas 5.6 e 6 cobram 1.25× a entrada; nas demais é 1×.
   // Linhas históricas preservadas; Terra6.1 usa tarifas próprias 30m/12h.
   // Fonte: developers.openai.com/api/docs/guides/prompt-caching, 28/10/2026.
-  // Fora da tabela: a faixa de contexto longo (> 272K tokens, preço 2×) da 5.4/5.5/5.6,
-  // e a da linha 6 (2× a entrada e o cache, 1.5× a saída).
+  // As tarifas abaixo são as de base. A faixa longa dos modelos cobertos fica
+  // em LIMIARES_DE_CONTEXTO_LONGO.
+  // Ainda sem cálculo de faixa longa: os demais modelos com essa tarifa nas
+  // linhas 5.4/5.5/5.6 e 6, incluindo gpt-6.1-sol e gpt-6-astra (catálogo 0646).
   'gpt-6-astra': { input: 10, output: 50, cacheRead: 1, cacheWrite5m: 12.5, cacheWrite1h: 12.5 },
   'gpt-6.1-sol': { input: 2, output: 10, cacheRead: 0.1, cacheWrite5m: 2.5, cacheWrite1h: 2.5 },
   'gpt-6.1-terra': { input: 1, output: 5, cacheRead: 0.05, cacheWrite30m: 1.25, cacheWrite12h: 2.5 },
@@ -192,6 +194,14 @@ export interface TokenUsage {
   /** OpenAI: parcela explicitamente gravada por 12h; ausente = padrão 30m. */
   cacheWrite12hTokens?: number;
 }
+
+// Tokens de entrada por requisição, incluindo cache. Catálogos 0646 (Luna) e
+// 9031 (6.1 Terra), e faixa da linha 5.6 na tabela Standard da OpenAI (#5018).
+const LIMIARES_DE_CONTEXTO_LONGO: ReadonlyMap<string, number> = new Map([
+  ['gpt-6.1-terra', 272_000],
+  ['gpt-6-luna', 272_000],
+  ['gpt-5.6-terra', 272_000],
+]);
 
 /**
  * O preço de um id, tolerando o sufixo de data do vendor (`-20250805` ou `-2024-08-06`).
@@ -298,9 +308,10 @@ export function costCents(
     return null;
   }
   const noCacheInput = Math.max(0, usage.inputTokens - usage.cacheReadTokens - usage.cacheWriteTokens);
-  const longoTerra = chaveDoModelo(model) === 'gpt-6.1-terra' && usage.inputTokens > 272_000;
-  const fatorEntrada = longoTerra ? 2 : 1;
-  const fatorSaida = longoTerra ? 1.5 : 1;
+  const limiar = LIMIARES_DE_CONTEXTO_LONGO.get(chaveDoModelo(model) ?? '');
+  const contextoLongo = limiar !== undefined && usage.inputTokens > limiar;
+  const fatorEntrada = contextoLongo ? 2 : 1;
+  const fatorSaida = contextoLongo ? 1.5 : 1;
   const usd =
     ((noCacheInput * p.input +
       usage.cacheReadTokens * p.cacheRead +
@@ -408,7 +419,7 @@ export function costCentsComVirada(
 }
 
 /** SDK usage de UMA requisição. O total de um tool loop não determina a faixa. */
-interface UsoDePassoTerra {
+interface UsoDePasso {
   inputTokens?: number;
   outputTokens?: number;
   inputTokenDetails?: { cacheReadTokens?: number; cacheWriteTokens?: number };
@@ -421,11 +432,11 @@ interface UsoDePassoTerra {
  * O SDK instalado pode omitir cache_write_tokens na normalização; o usage cru
  * documentado conserva a informação. Somamos custos por passo, não os contextos.
  */
-export function custoTerraPorPassos(model: string, result: {
-  usage: UsoDePassoTerra;
-  steps?: ReadonlyArray<{ usage?: UsoDePassoTerra }>;
+export function custoPorPassosComFaixaLonga(model: string, result: {
+  usage: UsoDePasso;
+  steps?: ReadonlyArray<{ usage?: UsoDePasso }>;
 }): number | undefined {
-  if (chaveDoModelo(model) !== 'gpt-6.1-terra') return undefined;
+  if (!LIMIARES_DE_CONTEXTO_LONGO.has(chaveDoModelo(model) ?? '')) return undefined;
   const passos = result.steps?.length ? result.steps.map(s => s.usage) : [result.usage];
   return passos.reduce((total, u) => {
     const raw = u?.raw as { input_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number } } | undefined;

@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import {
   MINIMO_DE_CASOS,
@@ -15,7 +16,6 @@ import {
   type EtapaMedida,
   type LeadEmMedicao,
 } from "@/lib/metrics/tempo-da-etapa";
-import { createClient } from "@/lib/supabase/server";
 
 /**
  * GET /api/v1/pipelines/[id]/stages/win-rates — a taxa histórica de ganho de
@@ -133,9 +133,17 @@ interface RouteCtx {
 
 export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "pipeline_stages" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "pipeline_stages",
+    role: "manager",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "pipelines.win-rates", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   const { id } = await ctx.params;
 
   const bruto = Number(req.nextUrl.searchParams.get("dias"));
@@ -144,14 +152,14 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const inicio = new Date(agora.getTime() - dias * 86400000);
   const janela: Janela = { inicio: inicio.toISOString(), fim: agora.toISOString() };
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
 
   // As etapas do funil trazem os DOIS papéis: é sabendo qual é a de ganho e
   // qual é a de perda que a conta decide o que é «encerrado».
   const { data: etapas, error: erroEtapas } = await supabase
     .from("crm_stages")
     .select("id, is_won, is_lost, position")
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("pipeline_id", id)
     .eq("is_archived", false)
     .order("position", { ascending: true });
@@ -192,7 +200,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     const { data, error, count } = await supabase
       .from("crm_lead_activities")
       .select("lead_id, payload, performed_at", pagina === 0 ? { count: "exact" } : undefined)
-      .eq("organization_id", authz.org.orgId)
+      .eq("organization_id", authz.organizationId)
       .eq("type", "stage_changed")
       .gte("performed_at", janela.inicio)
       .lte("performed_at", janela.fim)
@@ -220,7 +228,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     ? await supabase
         .from("crm_leads")
         .select("stage_id, stage_changed_at, created_at")
-        .eq("organization_id", authz.org.orgId)
+        .eq("organization_id", authz.organizationId)
         .eq("pipeline_id", id)
         .in("stage_id", etapasDeEspera)
         .limit(LIMITE_DE_NEGOCIOS)

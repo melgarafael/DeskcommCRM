@@ -28,7 +28,10 @@ import { redirect } from "next/navigation";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
-import { avisoDeTransferenciaLigado } from "@/lib/schemas/settings";
+import {
+  avisoDeTransferenciaComNomeLigado,
+  avisoDeTransferenciaLigado,
+} from "@/lib/schemas/settings";
 import { createClient } from "@/lib/supabase/server";
 
 import { AvisoDeTransferencia } from "./_components/AvisoDeTransferencia";
@@ -52,6 +55,7 @@ export default async function AvisoDeCasoPage() {
   const supabase = await createClient();
   const { data } = await supabase.from("organizations").select("settings").eq("id", activeOrg.orgId).maybeSingle();
   const transferencias = avisoDeTransferenciaLigado(data?.settings);
+  const comNome = avisoDeTransferenciaComNomeLigado(data?.settings);
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
@@ -67,7 +71,7 @@ export default async function AvisoDeCasoPage() {
         </p>
       </header>
       <AvisoNoWhatsApp />
-      <AvisoDeTransferencia ligada={transferencias} />
+      <AvisoDeTransferencia ligada={transferencias} comNome={comNome} />
     </div>
   );
 }
