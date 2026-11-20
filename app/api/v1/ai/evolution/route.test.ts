@@ -69,14 +69,17 @@ function fakeDb(
     espiao.tabelas.push(tabela);
     const rows = porTabela[tabela] ?? [];
     let head = false;
+    let pediuCount = false;
     const b: Record<string, unknown> = {};
     for (const m of ['not', 'limit', 'in']) b[m] = () => b;
     b.order = (col: string) => {
       espiao.order.push([tabela, col]);
       return b;
     };
-    b.select = (_colunas: string, opts?: { head?: boolean }) => {
+    b.select = (_colunas: string, opts?: { head?: boolean; count?: string }) => {
       head = opts?.head === true;
+      // Como o PostgREST: sem `count` pedido, não vem `count` nenhum.
+      pediuCount = opts?.count === "exact";
       return b;
     };
     b.eq = (col: string, val: unknown) => {
@@ -95,7 +98,11 @@ function fakeDb(
       resolve(
         erros[tabela]
           ? { data: null, count: null, error: { message: erros[tabela] } }
-          : { data: head ? null : rows, count: tabela in totais ? totais[tabela] : rows.length, error: null },
+          : {
+              data: head ? null : rows,
+              count: !pediuCount ? null : tabela in totais ? totais[tabela] : rows.length,
+              error: null,
+            },
       );
     return b;
   });
@@ -297,6 +304,24 @@ describe('GET /api/v1/ai/evolution', () => {
     const body = await (await GET(req('?from=2026-07-01&to=2026-07-03'))).json();
 
     expect(body.data.fontes_incompletas).toEqual([]);
+  });
+
+  it('total ilegível (Content-Range */*, NaN) com página cheia ainda é corte', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    fakeDb({ ai_router_decisions: decisoes(1_000) }, {}, { ai_router_decisions: Number.NaN });
+
+    const body = await (await GET(req('?from=2026-07-01&to=2026-07-03'))).json();
+
+    expect(body.data.fontes_incompletas).toEqual([{ fonte: 'ai_router_decisions', motivo: 'cortada' }]);
+  });
+
+  it('contagem com total ilegível (NaN) é falha, não um número', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    fakeDb({}, {}, { messages: Number.NaN });
+
+    const body = await (await GET(req('?from=2026-07-01&to=2026-07-03'))).json();
+
+    expect(body.data.fontes_incompletas).toContainEqual({ fonte: 'messages', motivo: 'falhou' });
   });
 
   it('contagem que volta sem count e sem erro é falha, não zero', async () => {

@@ -76,7 +76,12 @@ describe("Painel de Evolução — aviso de fontes incompletas (#5016)", () => {
     for (const bloco of ["Conversas encaminhadas", "Assuntos mais procurados", "O que está travando"]) {
       expect(cortadas.textContent).toContain(bloco);
     }
-    expect(cortadas.textContent).toContain("Encurte as datas");
+    expect(cortadas.textContent).toMatch(/encurte o período/i);
+    // Logo abaixo do período analisado, antes dos blocos.
+    const periodo = screen.getByText("Período analisado");
+    const primeiroBloco = screen.getByTestId("bloco-aprendeu");
+    expect(periodo.compareDocumentPosition(cortadas) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(cortadas.compareDocumentPosition(primeiroBloco) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(cortadas.textContent).not.toContain("ai_router_decisions");
 
     const falharam = screen.getByTestId("evolution-fontes-falharam");
@@ -98,7 +103,7 @@ describe("Painel de Evolução — aviso de fontes incompletas (#5016)", () => {
   it("funil cortado não manda encurtar as datas — ele não depende delas", () => {
     pinta([{ fonte: "crm_stages", motivo: "cortada" }]);
 
-    expect(screen.getByTestId("evolution-fontes-cortadas").textContent).not.toMatch(/encurte as datas/i);
+    expect(screen.getByTestId("evolution-fontes-cortadas").textContent).not.toMatch(/encurte/i);
   });
 
   it("nada cortado nem falho: nenhum aviso, e a boa notícia continua", () => {
@@ -117,6 +122,13 @@ describe("Painel de Evolução — aviso de fontes incompletas (#5016)", () => {
     expect(within(bloco).getByTestId("gaps-incompleto").textContent).toContain("Não dá para dizer que nada está travando");
   });
 
+  it("uma contagem da taxa de ajuda que falhou: o card não mostra número", () => {
+    pinta([{ fonte: "agent_inbox_items", motivo: "falhou" }]);
+
+    const resultado = screen.getByTestId("bloco-resultado").textContent ?? "";
+    expect(resultado).toContain("Indisponível agora");
+  });
+
   it("contagem de mensagens que falhou não vira 'não houve atendimento'", () => {
     pinta([{ fonte: "messages", motivo: "falhou" }], { inbound: 0 });
 
@@ -132,7 +144,10 @@ describe("Painel de Evolução — aviso de fontes incompletas (#5016)", () => {
       { locale: "es" },
     );
 
-    expect(screen.getByTestId("evolution-fontes-cortadas").textContent).toContain("Este período tiene más registros");
+    const cortadas = screen.getByTestId("evolution-fontes-cortadas").textContent ?? "";
+    expect(cortadas).toContain("Este período tiene más registros");
+    expect(cortadas).toContain("Conversaciones derivadas");
+    expect(cortadas).toContain("Temas más buscados");
     expect(screen.getByTestId("evolution-fontes-falharam").textContent).toContain("Costo de la IA en el período");
   });
 });
