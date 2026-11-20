@@ -39,6 +39,7 @@ import { tagsDaEquipeDaOrg, tagsInternasDaOrg } from "@/lib/schemas/settings";
 import type { LinhaDeVocabulario } from "@/lib/schemas/tags";
 import { createClient } from "@/lib/supabase/server";
 
+import { NovaTag } from "./_nova-tag";
 import { PainelDeTags } from "./_painel";
 import { TagsInternasForm } from "./_tags-internas-form";
 
@@ -109,6 +110,11 @@ export default async function TagsPage({ searchParams }: { searchParams: Promise
           )}
         </p>
       </CabecalhoDaSubTela>
+
+      {/* #5012 (T1): criar a etiqueta com nome e cor antes do primeiro uso.
+          Fica FORA do bloco da lista: funciona mesmo com a lista vazia ou com a
+          leitura falhando — a escrita tem portão próprio na rota. */}
+      <NovaTag idioma={idioma} />
 
       <form method="get" className="flex max-w-xl items-center gap-2">
         <Input name="busca" aria-label={t("Buscar etiquetas")} placeholder={t("Buscar etiquetas")}
