@@ -67,6 +67,8 @@ describe("a equipe no estado da tela", () => {
       [FILA, true],
     ]);
     expect(estado.nao_avisar_indisponivel).toBe(false);
+    // A FILA está entre os vínculos ativos lidos: há alguém marcado.
+    expect(estado.algum_membro_sem_aviso).toBe(true);
   });
 
   it("a marca não pôde ser lida: a equipe vem, e a resposta diz que a marca está indisponível", async () => {

@@ -75,6 +75,7 @@ function monta(opts: { modo?: "fixo" | "responsavel"; mundos: MundoDoAviso[] }) 
     reivindicadas: [] as Array<{ destino: string }>,
     patches: [] as Array<Record<string, unknown>>,
     canceladasDaAtualizacao: 0,
+    aberturasCanceladas: 0,
   };
   let leitura = 0;
   const deps: AvisoDeps = {
@@ -133,6 +134,9 @@ function monta(opts: { modo?: "fixo" | "responsavel"; mundos: MundoDoAviso[] }) 
       },
       async cancelaAtualizacao() {
         estado.canceladasDaAtualizacao += 1;
+      },
+      async cancelaAberturaPendente() {
+        estado.aberturasCanceladas += 1;
       },
       async carregaCanal() {
         return { id: CANAL, status: "WORKING", archived_at: null, aceitaMensagemLivre: true };
@@ -240,14 +244,33 @@ describe("aviso de caso no modo responsável, com a marca 'não enviar aviso de 
     expect(estado.enviados[0]?.to).toBe("5531998966398@c.us");
   });
 
-  it("marcado entre a reivindicação e o envio: a entrega vira cancelada e nada sai", async () => {
+  it("marcado entre a reivindicação e o envio: a entrega vira cancelada, nada sai, e o motivo é a marca", async () => {
     const { deps, estado } = monta({
       mundos: [mundo(), mundo({ naoAvisar: new Set([FILA]) })],
     });
     const r = await aplicaAvisoDeCaso(deps, evento());
-    expect(r.detail).toBe("envio_superado");
+    expect(r.detail).toBe("nao_avisar:responsavel_da_conversa");
     expect(estado.enviados).toHaveLength(0);
     expect(estado.patches).toContainEqual({ status: "cancelado", erro_codigo: null });
+  });
+
+  it("a abertura ficou represada (espaçamento) e a pessoa foi marcada antes da rodada seguinte: a entrega pendente é cancelada", async () => {
+    // Rodada 1: o pacing segura — a entrega nasce `pendente` e o evento volta depois.
+    const primeira = monta({ mundos: [mundo()] });
+    primeira.deps.pacing.decide = async () => ({
+      liberado: false,
+      motivo: "espacamento",
+      liberaEm: new Date(AGORA.getTime() + 5_000),
+    });
+    expect((await aplicaAvisoDeCaso(primeira.deps, evento())).status).toBe("retry");
+    expect(primeira.estado.reivindicadas).toHaveLength(1);
+
+    // Rodada 2: agora a fila está marcada.
+    const segunda = monta({ mundos: [mundo({ naoAvisar: new Set([FILA]) })] });
+    const r = await aplicaAvisoDeCaso(segunda.deps, evento());
+    expect(r.detail).toBe("nao_avisar:responsavel_da_conversa");
+    expect(segunda.estado.aberturasCanceladas).toBe(1);
+    expect(segunda.estado.enviados).toHaveLength(0);
   });
 
   describe("no aviso da resposta do cliente", () => {
@@ -370,6 +393,7 @@ describe("a leitura da marca (carregaMundoDoAviso)", () => {
         organizations: { data: { settings: { aviso_de_caso_nao_avisar: { user_ids: [FILA] }, outra: 1 } }, error: null },
       }),
       { organizationId: ORG, conversationId: CONVERSA, contactId: CONTATO },
+      { comMarca: true },
     );
     expect([...(m.naoAvisar ?? [])]).toEqual([FILA]);
   });
@@ -378,6 +402,7 @@ describe("a leitura da marca (carregaMundoDoAviso)", () => {
     const m = await carregaMundoDoAviso(
       adminFalso({ ...base, organizations: { data: { settings: { aviso_de_caso_nao_avisar: "todos" } }, error: null } }),
       { organizationId: ORG, conversationId: CONVERSA, contactId: CONTATO },
+      { comMarca: true },
     );
     expect([...(m.naoAvisar ?? [])]).toEqual([]);
   });
@@ -387,6 +412,7 @@ describe("a leitura da marca (carregaMundoDoAviso)", () => {
     const m = await carregaMundoDoAviso(
       adminFalso({ ...base, organizations: { data: null, error: { message: "statement timeout" } } }),
       { organizationId: ORG, conversationId: CONVERSA, contactId: CONTATO },
+      { comMarca: true },
     );
     expect([...(m.naoAvisar ?? [])]).toEqual([]);
     expect(m.whatsapps.get(FILA)).toBe(CELULAR_DA_FILA);
@@ -394,5 +420,49 @@ describe("a leitura da marca (carregaMundoDoAviso)", () => {
       expect.stringContaining("não enviar aviso"),
       expect.objectContaining({ causa: "statement timeout" }),
     );
+  });
+
+  it("quem saiu da equipe e ficou marcado não para a cadeia: é pulado como antes", async () => {
+    const m = await carregaMundoDoAviso(
+      adminFalso({
+        ...base,
+        // A FILA não está mais entre os vínculos ativos.
+        user_organizations: { data: [], error: null },
+        organizations: { data: { settings: { aviso_de_caso_nao_avisar: { user_ids: [FILA] } } }, error: null },
+      }),
+      { organizationId: ORG, conversationId: CONVERSA, contactId: CONTATO },
+      { comMarca: true },
+    );
+    expect([...(m.naoAvisar ?? [])]).toEqual([]);
+    const { deps, estado } = monta({ mundos: [m] });
+    expect((await aplicaAvisoDeCaso(deps, evento())).status).toBe("ok");
+    expect(estado.enviados[0]?.to).toBe("5531998966398@c.us");
+  });
+
+  it("a leitura do negócio falhou, mas a vez é de quem está marcado: nada sai (e quem não está marcado segue indo à empresa)", async () => {
+    const m = await carregaMundoDoAviso(
+      adminFalso({
+        ...base,
+        crm_leads: { data: null, error: { message: "statement timeout" } },
+        organizations: { data: { settings: { aviso_de_caso_nao_avisar: { user_ids: [FILA] } } }, error: null },
+      }),
+      { organizationId: ORG, conversationId: CONVERSA, contactId: CONTATO },
+      { comMarca: true },
+    );
+    // Os telefones continuam fora nesse ramo, como antes.
+    expect(m.whatsapps.size).toBe(0);
+    const { deps, estado } = monta({ mundos: [m] });
+    expect((await aplicaAvisoDeCaso(deps, evento())).detail).toBe("nao_avisar:responsavel_da_conversa");
+    expect(estado.enviados).toHaveLength(0);
+  });
+
+  it("sem `comMarca` (o aviso de proposta) a marca nem é lida", async () => {
+    const admin = adminFalso({
+      ...base,
+      organizations: { data: { settings: { aviso_de_caso_nao_avisar: { user_ids: [FILA] } } }, error: null },
+    });
+    const m = await carregaMundoDoAviso(admin, { organizationId: ORG, conversationId: CONVERSA, contactId: CONTATO });
+    expect(m.naoAvisar).toBeUndefined();
+    expect((admin as unknown as { from: ReturnType<typeof vi.fn> }).from).not.toHaveBeenCalledWith("organizations");
   });
 });

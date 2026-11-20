@@ -17254,8 +17254,10 @@ export const DICIONARIO: Traducoes = {
     { es: "Los casos de esta persona no generan aviso en WhatsApp. Siguen en el panel Casos." },
   "Não foi possível ler quem está com \"Não enviar aviso de caso\" ligado. Atualize a página para mudar essa opção; salvar agora não mexe nela.":
     { es: "No fue posible leer quién tiene \"No enviar aviso de caso\" activado. Actualiza la página para cambiar esa opción; guardar ahora no la modifica." },
-  "Os casos de quem está com \"Não enviar aviso de caso\" ligado não aparecem aqui: eles não geram aviso e ficam só no painel Casos.":
-    { es: "Los casos de quien tiene \"No enviar aviso de caso\" activado no aparecen aquí: no generan aviso y quedan solo en el panel Casos." },
+  "Quando a vez do aviso chega a alguém com \"Não enviar aviso de caso\" ligado, nenhuma linha entra aqui: o caso fica só no painel Casos. O que já estava na lista continua.":
+    { es: "Cuando el turno del aviso llega a alguien con \"No enviar aviso de caso\" activado, no entra ninguna línea aquí: el caso queda solo en el panel Casos. Lo que ya estaba en la lista sigue." },
+  "Não foi possível salvar \"Não enviar aviso de caso\". Tente de novo.":
+    { es: "No fue posible guardar \"No enviar aviso de caso\". Inténtalo de nuevo." },
   "O resto foi salvo, mas a marca \"Não enviar aviso de caso\" não. Salve de novo.":
     { es: "El resto se guardó, pero la opción \"No enviar aviso de caso\" no. Guarda de nuevo." },
   "Não foi possível ler os números da equipe agora. Atualize a página antes de salvar: sem eles a tela não sabe para quem os avisos vão.":

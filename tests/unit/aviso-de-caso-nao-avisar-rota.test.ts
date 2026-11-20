@@ -13,6 +13,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
+import { audit } from "@/lib/audit";
+import { mfaEmDivida } from "@/lib/auth/server";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -24,8 +26,9 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({})) }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/escalacao/tela-do-aviso", () => ({ lerEstadoDaTelaDeAviso: vi.fn() }));
+vi.mock("@/lib/auth/server", () => ({ mfaEmDivida: vi.fn(async () => false) }));
 
-const { PUT } = await import("@/app/api/v1/ai/cases/alerta/route");
+const { PUT, PATCH } = await import("@/app/api/v1/ai/cases/alerta/route");
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const USER = "22222222-2222-4222-8222-222222222222";
@@ -51,25 +54,58 @@ function put(body: unknown) {
   });
 }
 
+function patch(body: unknown) {
+  return new NextRequest("http://localhost/api/v1/ai/cases/alerta", {
+    method: "PATCH",
+    body: JSON.stringify(body),
+    headers: { "content-type": "application/json" },
+  });
+}
+
 /**
- * O client de serviço: `organizations` (ler e gravar `settings`) e
- * `user_organizations` (quem é membro ativo). Registra as gravações.
+ * O client de serviço: `organizations` (ler `settings` + `updated_at` e gravar
+ * com a condição do `updated_at`) e `user_organizations` (quem é membro ativo).
+ * `concorrentes` simula escritas de OUTRA requisição que chegam entre a nossa
+ * leitura e a nossa gravação: cada uma troca o `settings` e o carimbo.
  */
 function adminFalso(opts: {
   settings: Record<string, unknown> | null;
   ativos: string[];
   erroAoGravar?: { message: string } | null;
+  concorrentes?: Array<Record<string, unknown>>;
 }) {
+  const banco = { settings: opts.settings, updated_at: "2026-11-21T10:00:00.000000+00:00", versao: 0 };
+  const concorrentes = [...(opts.concorrentes ?? [])];
   const gravacoes: Array<Record<string, unknown>> = [];
   const from = vi.fn((tabela: string) => {
     const c: Record<string, unknown> = {};
     for (const m of ["select", "eq", "is", "in"]) c[m] = () => c;
     if (tabela === "organizations") {
-      c.maybeSingle = async () => ({ data: { settings: opts.settings }, error: null });
+      c.maybeSingle = async () => {
+        const lido = { settings: banco.settings, updated_at: banco.updated_at };
+        // Outra requisição grava DEPOIS da nossa leitura.
+        const outra = concorrentes.shift();
+        if (outra) {
+          banco.settings = outra;
+          banco.versao += 1;
+          banco.updated_at = `2026-11-21T10:00:0${banco.versao}.000000+00:00`;
+        }
+        return { data: lido, error: null };
+      };
       c.update = (valor: Record<string, unknown>) => {
-        gravacoes.push(valor);
+        const filtros: Record<string, unknown> = {};
         const u: Record<string, unknown> = {};
-        u.eq = async () => ({ error: opts.erroAoGravar ?? null });
+        u.eq = (col: string, v: unknown) => {
+          filtros[col] = v;
+          return u;
+        };
+        u.select = async () => {
+          if (opts.erroAoGravar) return { data: null, error: opts.erroAoGravar };
+          if (filtros.updated_at !== banco.updated_at) return { data: [], error: null };
+          gravacoes.push(valor);
+          banco.settings = valor.settings as Record<string, unknown>;
+          return { data: [{ id: ORG }], error: null };
+        };
         return u;
       };
     }
@@ -80,7 +116,7 @@ function adminFalso(opts: {
     return c;
   });
   vi.mocked(createAdminClient).mockReturnValue({ from } as never);
-  return { gravacoes, from };
+  return { gravacoes, from, banco };
 }
 
 beforeEach(() => {
@@ -99,6 +135,7 @@ beforeEach(() => {
     org: { orgId: ORG, name: "Org", role: "admin" },
   } as never);
   vi.mocked(createClient).mockResolvedValue({ rpc: vi.fn(async () => ({ data: {}, error: null })) } as never);
+  vi.mocked(mfaEmDivida).mockResolvedValue(false);
   vi.mocked(lerEstadoDaTelaDeAviso).mockResolvedValue({ config: null } as never);
 });
 
@@ -159,5 +196,62 @@ describe("PUT — a marca 'não enviar aviso de caso'", () => {
     adminFalso({ settings: {}, ativos: [FILA] });
     const r = await PUT(put({ ...CORPO, nao_avisar: [{ user_id: FILA, nao_avisar: true, extra: 1 }] }));
     expect(r.status).toBe(422);
+  });
+
+  it("outra escrita em organizations chegou no meio: relê e não apaga o que ela gravou", async () => {
+    const { gravacoes, banco } = adminFalso({
+      settings: { branding: { cor: "azul" } },
+      ativos: [FILA],
+      // Outro admin marcou a Ana (e outra tela mexeu em `mfa`) depois da nossa leitura.
+      concorrentes: [{ branding: { cor: "azul" }, mfa: { exigir: true }, aviso_de_caso_nao_avisar: { user_ids: [ANA] } }],
+    });
+    const r = await PUT(put({ ...CORPO, nao_avisar: [{ user_id: FILA, nao_avisar: true }] }));
+    expect(r.status).toBe(200);
+    expect(gravacoes).toHaveLength(1);
+    const settings = banco.settings as Record<string, unknown>;
+    expect(settings.mfa).toEqual({ exigir: true });
+    expect([...(settings.aviso_de_caso_nao_avisar as { user_ids: string[] }).user_ids].sort()).toEqual([ANA, FILA].sort());
+  });
+
+  it("a auditoria da marca conta o que de fato gravou — e não sai quando não gravou", async () => {
+    adminFalso({ settings: {}, ativos: [FILA] });
+    await PUT(
+      put({ ...CORPO, nao_avisar: [{ user_id: FILA, nao_avisar: true }, { user_id: CARLA_QUE_SAIU, nao_avisar: true }] }),
+    );
+    const daMarca = vi.mocked(audit).mock.calls.map((c) => c[0]).filter((e) => e.action === "ai.case_alert_nao_avisar_changed");
+    expect(daMarca).toHaveLength(1);
+    expect(daMarca[0]!.metadata).toEqual({ ligados: 1, desligados: 0, ignorados: 1 });
+
+    vi.mocked(audit).mockClear();
+    adminFalso({ settings: {}, ativos: [FILA], erroAoGravar: { message: "timeout" } });
+    await PUT(put({ ...CORPO, nao_avisar: [{ user_id: FILA, nao_avisar: true }] }));
+    expect(vi.mocked(audit).mock.calls.map((c) => c[0].action)).not.toContain("ai.case_alert_nao_avisar_changed");
+  });
+});
+
+describe("PATCH — só a marca, sem o RPC", () => {
+  it("grava a marca e NÃO chama o RPC (que tocaria a revisão dos avisos de resposta enfileirados)", async () => {
+    const rpc = vi.fn(async () => ({ data: {}, error: null }));
+    vi.mocked(createClient).mockResolvedValue({ rpc } as never);
+    const { gravacoes } = adminFalso({ settings: {}, ativos: [FILA] });
+    const r = await PATCH(patch({ nao_avisar: [{ user_id: FILA, nao_avisar: true }] }));
+    expect(r.status).toBe(200);
+    expect(rpc).not.toHaveBeenCalled();
+    expect((gravacoes[0]!.settings as Record<string, { user_ids: string[] }>).aviso_de_caso_nao_avisar!.user_ids).toEqual([FILA]);
+  });
+
+  it("exige admin e MFA, e recusa corpo vazio ou com outros campos", async () => {
+    adminFalso({ settings: {}, ativos: [FILA] });
+    expect((await PATCH(patch({ nao_avisar: [] }))).status).toBe(422);
+    expect((await PATCH(patch({ nao_avisar: [{ user_id: FILA, nao_avisar: true }], ligado: false }))).status).toBe(422);
+    vi.mocked(mfaEmDivida).mockResolvedValue(true);
+    expect((await PATCH(patch({ nao_avisar: [{ user_id: FILA, nao_avisar: true }] }))).status).toBe(403);
+  });
+
+  it("a gravação falhou: 500 com a frase da marca", async () => {
+    adminFalso({ settings: {}, ativos: [FILA], erroAoGravar: { message: "timeout" } });
+    const r = await PATCH(patch({ nao_avisar: [{ user_id: FILA, nao_avisar: true }] }));
+    expect(r.status).toBe(500);
+    expect(((await r.json()) as { error: { code: string } }).error.code).toBe("aviso_nao_avisar_nao_salvo");
   });
 });

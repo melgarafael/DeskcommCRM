@@ -119,6 +119,11 @@ export async function carregaWhatsappsDosMembros(
 export async function carregaMundoDoAviso(
   admin: SupabaseClient,
   entrada: { organizationId: string; conversationId: string | null; contactId: string | null },
+  /**
+   * `comMarca` lê também "Não enviar aviso de caso" (#4989). Só o aviso de
+   * CASO pede: o de proposta não respeita a marca e não deve esperar por ela.
+   */
+  opcoes: { comMarca?: boolean } = {},
 ): Promise<MundoDoAviso> {
   const { organizationId, conversationId, contactId } = entrada;
 
@@ -155,42 +160,66 @@ export async function carregaMundoDoAviso(
   // Falha de leitura NÃO derruba o aviso: quem chama trata cada linha ausente
   // como "este elo não existe", e a cadeia cai no número da empresa. Lançar
   // aqui transformaria um `42P01` num aviso que nunca sai.
-  if (conversa.error || contato.error || negocio.error) {
-    const linhaConversa = conversa.error ? null : (conversa.data as ConversaDoMundoDoAviso | null);
-    const linhaContato = contato.error ? null : (contato.data as ContatoDoMundoDoAviso | null);
-    const linhaNegocio = negocio.error ? null : (negocio.data as NegocioDoMundoDoAviso | null);
-    return {
-      conversa: linhaConversa,
-      negocio: linhaNegocio,
-      contato: linhaContato,
-      whatsapps: new Map(),
-    };
-  }
-
+  const falhou = Boolean(conversa.error || contato.error || negocio.error);
   const mundo: MundoDoAviso = {
-    conversa: (conversa.data as ConversaDoMundoDoAviso | null) ?? null,
-    negocio: (negocio.data as NegocioDoMundoDoAviso | null) ?? null,
-    contato: (contato.data as ContatoDoMundoDoAviso | null) ?? null,
+    conversa: conversa.error ? null : ((conversa.data as ConversaDoMundoDoAviso | null) ?? null),
+    negocio: negocio.error ? null : ((negocio.data as NegocioDoMundoDoAviso | null) ?? null),
+    contato: contato.error ? null : ((contato.data as ContatoDoMundoDoAviso | null) ?? null),
     whatsapps: new Map(),
   };
+  if (falhou && !opcoes.comMarca) return mundo;
+
   const ids = idsDaCadeiaDoAviso(mundo);
-  const [whatsapps, marca] = await Promise.all([
-    carregaWhatsappsDosMembros(admin, organizationId, ids),
-    // A marca "Não enviar aviso de caso" (#4989). Ler falhou = ninguém marcado,
-    // DECLARADO no log: o aviso segue a ordem de sempre em vez de sumir.
-    ids.length > 0 ? lerMembrosSemAviso(admin, organizationId) : Promise.resolve({ ids: new Set<string>() }),
-  ]);
-  mundo.whatsapps = whatsapps;
-  if (marca.ids === null) {
-    logger.warn("[aviso-de-caso] a marca de quem não recebe aviso (não enviar aviso de caso) não pôde ser lida; seguindo a ordem de sempre", {
-      organizationId,
-      causa: "causa" in marca ? marca.causa : "desconhecida",
-    });
+  if (!falhou) {
+    // O caminho normal: telefone dos elos, e a marca quando pedida.
+    const [whatsapps, marca] = await Promise.all([
+      carregaWhatsappsDosMembros(admin, organizationId, ids),
+      opcoes.comMarca && ids.length > 0 ? lerMarca(admin, organizationId) : Promise.resolve(new Set<string>()),
+    ]);
+    mundo.whatsapps = whatsapps;
+    if (opcoes.comMarca) mundo.naoAvisar = marcadosAtivos(marca, whatsapps);
+    return mundo;
+  }
+
+  // Uma leitura ACESSÓRIA falhou (ex.: o negócio). Os telefones continuam fora
+  // — é o comportamento de antes: quem não está marcado cai no número da
+  // empresa. Mas se a vez é de alguém MARCADO que foi lido, a marca vale: uma
+  // leitura de outro elo não pode jogar no celular do dono o caso que alguém
+  // pediu para não avisar.
+  try {
+    const [ativos, marca] = await Promise.all([
+      carregaWhatsappsDosMembros(admin, organizationId, ids),
+      ids.length > 0 ? lerMarca(admin, organizationId) : Promise.resolve(new Set<string>()),
+    ]);
+    mundo.naoAvisar = marcadosAtivos(marca, ativos);
+  } catch {
     mundo.naoAvisar = new Set();
-  } else {
-    mundo.naoAvisar = marca.ids;
   }
   return mundo;
+}
+
+/**
+ * A marca "Não enviar aviso de caso" (#4989). Ler falhou = ninguém marcado,
+ * DECLARADO no log: o aviso segue a ordem de sempre em vez de sumir.
+ */
+async function lerMarca(admin: SupabaseClient, organizationId: string): Promise<Set<string>> {
+  const marca = await lerMembrosSemAviso(admin, organizationId);
+  if (marca.ids !== null) return marca.ids;
+  logger.warn(
+    "[aviso-de-caso] a marca de quem não recebe aviso (não enviar aviso de caso) não pôde ser lida; seguindo a ordem de sempre",
+    { organizationId, causa: "causa" in marca ? marca.causa : "desconhecida" },
+  );
+  return new Set();
+}
+
+/**
+ * Só vale a marca de quem ainda é membro ATIVO: `carregaWhatsappsDosMembros`
+ * só devolve chave para vínculo ativo (valor `null` = ativo sem número). Quem
+ * saiu da equipe e ficou marcado não pode parar a cadeia — é pulado como
+ * sempre foi.
+ */
+function marcadosAtivos(marca: ReadonlySet<string>, ativos: ReadonlyMap<string, unknown>): Set<string> {
+  return new Set([...marca].filter((id) => ativos.has(id)));
 }
 
 /**

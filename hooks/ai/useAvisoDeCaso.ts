@@ -64,6 +64,8 @@ export interface EstadoDoAviso {
    * tela trava os interruptores. Opcional pelo mesmo motivo de cima.
    */
   nao_avisar_indisponivel?: boolean;
+  /** Algum membro ativo está com a marca (#4989), medido no servidor. */
+  algum_membro_sem_aviso?: boolean;
   conexoes: ConexaoParaAviso[];
   avisos: AvisoDaTela[];
   pode_ligar: boolean;
@@ -150,6 +152,24 @@ export interface EntradaDoSalvar {
    * pessoa mudou. Ausente = não mexe em ninguém.
    */
   nao_avisar?: Array<{ user_id: string; nao_avisar: boolean }>;
+}
+
+/**
+ * SÓ a marca "Não enviar aviso de caso" (#4989) — o `PATCH`, que não passa
+ * pelo RPC e por isso não invalida os avisos de resposta já enfileirados. A
+ * tela usa quando a marca é a única coisa que mudou.
+ */
+export function useSalvarMarcasDoAviso() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (entrada: { nao_avisar: Array<{ user_id: string; nao_avisar: boolean }> }) =>
+      apiClient
+        .patch<{ data: EstadoDoAviso }>("/api/v1/ai/cases/alerta", entrada)
+        .then((r) => r.data),
+    onSuccess: (estado) => {
+      qc.setQueryData(CHAVE_DO_AVISO, estado);
+    },
+  });
 }
 
 export function useSalvarAvisoDeCaso() {

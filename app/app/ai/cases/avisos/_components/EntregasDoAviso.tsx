@@ -94,7 +94,7 @@ export function EntregasDoAviso({
         {algumMembroSemAviso ? (
           <p className="text-xs text-muted-foreground" data-testid="entregas-sem-quem-nao-recebe">
             {t(
-              "Os casos de quem está com \"Não enviar aviso de caso\" ligado não aparecem aqui: eles não geram aviso e ficam só no painel Casos.",
+              "Quando a vez do aviso chega a alguém com \"Não enviar aviso de caso\" ligado, nenhuma linha entra aqui: o caso fica só no painel Casos. O que já estava na lista continua.",
             )}
           </p>
         ) : null}

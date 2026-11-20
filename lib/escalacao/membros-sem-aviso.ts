@@ -90,27 +90,66 @@ export async function lerMembrosSemAviso(
   }
 }
 
+/**
+ * Algum MEMBRO ATIVO está marcado? Medido no servidor, sem o teto de 200 da
+ * lista da tela: a frase da lista de entregas não pode sumir porque o único
+ * marcado ficou fora da página. `null` = não deu para saber.
+ */
+export async function algumMembroAtivoSemAviso(
+  admin: SupabaseClient,
+  organizationId: string,
+  marcados: ReadonlySet<string>,
+): Promise<boolean | null> {
+  if (marcados.size === 0) return false;
+  try {
+    const { data, error } = await admin
+      .from("user_organizations")
+      .select("user_id")
+      .eq("organization_id", organizationId)
+      .is("revoked_at", null)
+      .in("user_id", [...marcados])
+      .limit(1);
+    if (error) return null;
+    return (data ?? []).length > 0;
+  } catch {
+    return null;
+  }
+}
+
 /** Uma mudança vinda da tela: ligar ou desligar a marca de UM membro. */
 export interface MudancaDaMarca {
   user_id: string;
   nao_avisar: boolean;
 }
 
+/** O que a gravação fez de fato — é isso que a auditoria registra. */
+export type ResultadoDaMarca =
+  | { ok: true; ligados: number; desligados: number; ignorados: number }
+  | { ok: false };
+
+/** Quantas vezes relê e tenta de novo quando outra escrita em `organizations` chegou no meio. */
+const TENTATIVAS_DA_GRAVACAO = 3;
+
 /**
- * Aplica as mudanças e grava. `false` = não gravou (leitura ou escrita falhou);
- * nada foi alterado nesse caso.
+ * Aplica as mudanças e grava. `ok: false` = não gravou; nada foi alterado.
+ *
+ * ⚠️ ESCRITA CONDICIONAL. `settings` é um jsonb só para a organização inteira:
+ * ler, mesclar e gravar sem condição apagaria a escrita de quem chegou no meio
+ * (outro admin marcando outra pessoa, ou outra tela mexendo em outra chave). A
+ * gravação só casa se `updated_at` (tocado por `trg_organizations_touch`)
+ * ainda for o lido; se não casar, relê e reaplica SÓ as mudanças pedidas.
  */
 export async function gravarMembrosSemAviso(
   admin: ClienteAdmin,
   organizationId: string,
   mudancas: readonly MudancaDaMarca[],
-): Promise<boolean> {
-  if (mudancas.length === 0) return true;
+): Promise<ResultadoDaMarca> {
+  if (mudancas.length === 0) return { ok: true, ligados: 0, desligados: 0, ignorados: 0 };
   try {
     return await aplicarMudancas(admin, organizationId, mudancas);
   } catch {
     // Rede caída no meio: "não gravou" é a resposta honesta, e quem chama diz isso.
-    return false;
+    return { ok: false };
   }
 }
 
@@ -118,8 +157,7 @@ async function aplicarMudancas(
   admin: ClienteAdmin,
   organizationId: string,
   mudancas: readonly MudancaDaMarca[],
-): Promise<boolean> {
-
+): Promise<ResultadoDaMarca> {
   // Marcar só quem é membro ATIVO desta organização: um id inventado no corpo
   // não pode virar lixo permanente no `settings`.
   const aMarcar = [...new Set(mudancas.filter((m) => m.nao_avisar).map((m) => m.user_id))];
@@ -131,27 +169,38 @@ async function aplicarMudancas(
       .eq("organization_id", organizationId)
       .is("revoked_at", null)
       .in("user_id", aMarcar);
-    if (error) return false;
+    if (error) return { ok: false };
     ativos = new Set(((data ?? []) as Array<{ user_id: string }>).map((l) => l.user_id));
   }
+  const ligados = aMarcar.filter((id) => ativos.has(id)).length;
+  const ignorados = aMarcar.length - ligados;
+  const desligados = new Set(mudancas.filter((m) => !m.nao_avisar).map((m) => m.user_id)).size;
 
-  const { data: atual, error: erroLeitura } = await admin
-    .from("organizations")
-    .select("settings")
-    .eq("id", organizationId)
-    .maybeSingle();
-  if (erroLeitura) return false;
-  const settings = ((atual as { settings?: unknown } | null)?.settings ?? {}) as Record<string, unknown>;
+  for (let tentativa = 0; tentativa < TENTATIVAS_DA_GRAVACAO; tentativa += 1) {
+    const { data: atual, error: erroLeitura } = await admin
+      .from("organizations")
+      .select("settings, updated_at")
+      .eq("id", organizationId)
+      .maybeSingle();
+    if (erroLeitura || !atual) return { ok: false };
+    const linha = atual as { settings?: unknown; updated_at?: string | null };
+    const settings = (linha.settings ?? {}) as Record<string, unknown>;
 
-  const marcados = membrosSemAvisoDeclarados(settings);
-  for (const m of mudancas) {
-    if (m.nao_avisar && ativos.has(m.user_id)) marcados.add(m.user_id);
-    if (!m.nao_avisar) marcados.delete(m.user_id);
+    const marcados = membrosSemAvisoDeclarados(settings);
+    for (const m of mudancas) {
+      if (m.nao_avisar && ativos.has(m.user_id)) marcados.add(m.user_id);
+      if (!m.nao_avisar) marcados.delete(m.user_id);
+    }
+
+    const { data: gravadas, error } = await admin
+      .from("organizations")
+      .update({ settings: { ...settings, [CHAVE_DOS_MEMBROS_SEM_AVISO]: { user_ids: [...marcados] } } })
+      .eq("id", organizationId)
+      .eq("updated_at", linha.updated_at ?? "")
+      .select("id");
+    if (error) return { ok: false };
+    if ((gravadas ?? []).length === 1) return { ok: true, ligados, desligados, ignorados };
+    // Zero linhas: alguém gravou `organizations` entre a leitura e esta escrita.
   }
-
-  const { error } = await admin
-    .from("organizations")
-    .update({ settings: { ...settings, [CHAVE_DOS_MEMBROS_SEM_AVISO]: { user_ids: [...marcados] } } })
-    .eq("id", organizationId);
-  return !error;
+  return { ok: false };
 }

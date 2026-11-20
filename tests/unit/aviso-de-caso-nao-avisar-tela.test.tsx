@@ -24,15 +24,20 @@ import type { EstadoDoAviso } from "@/hooks/ai/useAvisoDeCaso";
 
 const consulta = vi.fn();
 const salvarRegistrado = vi.fn(async (_corpo: Record<string, unknown>) => undefined);
+const marcasRegistradas = vi.fn(async (_corpo: Record<string, unknown>) => undefined);
 vi.mock("@/hooks/ai/useAvisoDeCaso", () => ({
   CHAVE_DO_AVISO: ["ai-aviso-de-caso"],
   useAvisoDeCaso: () => consulta(),
   useSalvarAvisoDeCaso: () => ({ mutateAsync: salvarRegistrado, isPending: false }),
+  useSalvarMarcasDoAviso: () => ({ mutateAsync: marcasRegistradas, isPending: false }),
   useRemoverAvisoDeCaso: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useTestarAvisoDeCaso: () => ({ mutateAsync: vi.fn(), isPending: false, data: undefined }),
 }));
 
-beforeEach(() => salvarRegistrado.mockClear());
+beforeEach(() => {
+  salvarRegistrado.mockClear();
+  marcasRegistradas.mockClear();
+});
 
 import { AvisoNoWhatsApp } from "@/app/app/ai/cases/avisos/_components/AvisoNoWhatsApp";
 
@@ -60,6 +65,7 @@ function estado(patch: Partial<EstadoDoAviso> = {}, equipe?: Membro[]): EstadoDo
     conexoes: [{ id: CANAL, nome: "Plantão", status: "WORKING", aceitaMensagemLivre: true, atendeClientes: false }],
     avisos: [],
     pode_ligar: true,
+    algum_membro_sem_aviso: true,
     entregas: [],
     laco: {
       comAviso: { casos: 0, respondidos: 0, medianaMinutos: null },
@@ -70,13 +76,17 @@ function estado(patch: Partial<EstadoDoAviso> = {}, equipe?: Membro[]): EstadoDo
   } as EstadoDoAviso;
 }
 
-function montar(dados: EstadoDoAviso) {
-  consulta.mockReturnValue({ data: dados, isLoading: false, error: null });
-  return render(
+function arvore() {
+  return (
     <QueryClientProvider client={new QueryClient()}>
       <AvisoNoWhatsApp />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+}
+
+function montar(dados: EstadoDoAviso) {
+  consulta.mockReturnValue({ data: dados, isLoading: false, error: null });
+  return render(arvore());
 }
 
 function corpoEnviado() {
@@ -100,11 +110,22 @@ describe("a marca na lista da equipe", () => {
     expect(campo).toHaveValue("+5531977772222");
   });
 
-  it("salvar manda só quem a pessoa mexeu", async () => {
+  it("só a marca mudou: vai pelo PATCH, só com quem a pessoa mexeu, e o RPC da configuração não é chamado", async () => {
     montar(estado());
     const user = userEvent.setup({ delay: null });
     await user.click(screen.getByRole("switch", { name: "Não enviar aviso de caso: Ana" }));
     await user.click(screen.getByRole("button", { name: "Salvar" }));
+    expect(marcasRegistradas).toHaveBeenCalledWith({ nao_avisar: [{ user_id: ANA, nao_avisar: true }] });
+    expect(salvarRegistrado).not.toHaveBeenCalled();
+  });
+
+  it("a marca e outro campo mudaram: vai pelo PUT, com a marca de quem a pessoa mexeu", async () => {
+    montar(estado());
+    const user = userEvent.setup({ delay: null });
+    await user.click(screen.getByRole("switch", { name: "Não enviar aviso de caso: Ana" }));
+    await user.type(screen.getByLabelText("Como chamar esse número (opcional)"), "Plantão");
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+    expect(marcasRegistradas).not.toHaveBeenCalled();
     expect(corpoEnviado().nao_avisar).toEqual([{ user_id: ANA, nao_avisar: true }]);
   });
 
@@ -115,6 +136,24 @@ describe("a marca na lista da equipe", () => {
     await user.click(ana);
     await user.click(ana);
     await user.click(screen.getByRole("button", { name: "Salvar" }));
+    expect(marcasRegistradas).not.toHaveBeenCalled();
+    expect(corpoEnviado().nao_avisar).toBeUndefined();
+  });
+
+  it("a marca voltou numa releitura (sem nova gravação): a tela mostra o valor do servidor e salvar não a desfaz", async () => {
+    const semLer = estado({ nao_avisar_indisponivel: true }, [
+      { user_id: ANA, nome: "Ana", whatsapp: "+5531988881111", nao_avisar: false },
+      { user_id: FILA, nome: "Marketing · Fornecedores", whatsapp: "+5531977772222", nao_avisar: false },
+    ]);
+    const { rerender } = montar(semLer);
+    // A consulta é refeita (ex.: depois do teste) e a leitura da marca voltou;
+    // a configuração não mudou, então o formulário não renasce.
+    consulta.mockReturnValue({ data: estado(), isLoading: false, error: null });
+    rerender(arvore());
+    expect(screen.getByRole("switch", { name: "Não enviar aviso de caso: Marketing · Fornecedores" })).toBeChecked();
+    const user = userEvent.setup({ delay: null });
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+    expect(marcasRegistradas).not.toHaveBeenCalled();
     expect(corpoEnviado().nao_avisar).toBeUndefined();
   });
 
@@ -166,17 +205,20 @@ describe("as frases que mudam com a marca", () => {
     ).toBeInTheDocument();
   });
 
-  it("a lista dos últimos avisos avisa que os casos de quem está marcado não aparecem nela", () => {
-    montar(estado());
+  it("a lista dos últimos avisos avisa que os casos parados pela marca não entram nela — pelo que o SERVIDOR mediu", () => {
+    // Ninguém marcado entre os mostrados: o marcado está além do teto da lista.
+    montar(
+      estado({ algum_membro_sem_aviso: true }, [
+        { user_id: ANA, nome: "Ana", whatsapp: "+5531988881111", nao_avisar: false },
+      ]),
+    );
     expect(screen.getByTestId("entregas-sem-quem-nao-recebe").textContent).toContain(
-      "não aparecem aqui",
+      "nenhuma linha entra aqui",
     );
   });
 
   it("sem ninguém marcado, essa frase não aparece", () => {
-    montar(
-      estado({}, [{ user_id: ANA, nome: "Ana", whatsapp: "+5531988881111", nao_avisar: false }]),
-    );
+    montar(estado({ algum_membro_sem_aviso: false }));
     expect(screen.queryByTestId("entregas-sem-quem-nao-recebe")).toBeNull();
   });
 });

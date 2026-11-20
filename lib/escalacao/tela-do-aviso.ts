@@ -54,7 +54,7 @@ import {
   type ModoDoDestinoNaTela,
 } from "./estado-do-aviso";
 import { medirLacoDoAviso, type CasoParaOLaco, type LacoDoAviso } from "./laco-do-aviso";
-import { lerMembrosSemAviso } from "./membros-sem-aviso";
+import { algumMembroAtivoSemAviso, lerMembrosSemAviso } from "./membros-sem-aviso";
 import { urlPublicaUsavel } from "./url-publica";
 
 /** Uma entrega, como a tela a mostra. O destino sai MASCARADO — ver abaixo. */
@@ -106,6 +106,11 @@ export interface EstadoDaTelaDeAviso {
    * "desmarcar" quem nunca viu marcado.
    */
   nao_avisar_indisponivel: boolean;
+  /**
+   * Algum membro ATIVO está com a marca (#4989) — medido no servidor, sem o
+   * teto da lista. É o que liga a frase da lista de entregas.
+   */
+  algum_membro_sem_aviso: boolean;
   conexoes: ConexaoParaAviso[];
   avisos: AvisoDaTela[];
   pode_ligar: boolean;
@@ -171,6 +176,7 @@ export async function lerEstadoDaTelaDeAviso(entrada: {
     });
   }
   const marcados = semAviso.ids ?? new Set<string>();
+  const algumSemAviso = await algumMembroAtivoSemAviso(admin, orgId, marcados);
 
   const configNaTela: ConfiguracaoNaTela | null = config
     ? {
@@ -216,7 +222,8 @@ export async function lerEstadoDaTelaDeAviso(entrada: {
       : null,
     equipe: (equipe ?? []).map((m) => ({ ...m, nao_avisar: marcados.has(m.user_id) })),
     equipe_indisponivel: equipe === null,
-    nao_avisar_indisponivel: semAviso.ids === null,
+    nao_avisar_indisponivel: semAviso.ids === null || algumSemAviso === null,
+    algum_membro_sem_aviso: algumSemAviso === true,
     conexoes,
     avisos: avisosDaTela(fatos),
     pode_ligar: podeLigarOAviso(fatos),

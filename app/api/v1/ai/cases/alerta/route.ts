@@ -374,8 +374,6 @@ export async function PUT(req: NextRequest): Promise<Response> {
     return fail("internal_error", t("Não foi possível salvar o aviso."), 500, { requestId });
   }
 
-  const mudancasDaMarca = dados.nao_avisar ?? [];
-
   const resultado = (data ?? {}) as {
     trocou_numero?: boolean;
     antes_ligado?: boolean;
@@ -423,9 +421,6 @@ export async function PUT(req: NextRequest): Promise<Response> {
       membros_com_whatsapp: (dados.responsaveis ?? []).filter(
         (r) => typeof r.whatsapp === "string" && r.whatsapp !== "",
       ).length,
-      // #4989 — CONTAGEM de quem a pessoa marcou/desmarcou, nunca os ids.
-      nao_avisar_ligados: mudancasDaMarca.filter((m) => m.nao_avisar).length,
-      nao_avisar_desligados: mudancasDaMarca.filter((m) => !m.nao_avisar).length,
     },
   });
 
@@ -433,16 +428,14 @@ export async function PUT(req: NextRequest): Promise<Response> {
   // nada da tela foi aceito e a marca também não entra. Não está na mesma
   // transação porque o RPC é o da migration 0292 e mudá-lo pediria migration;
   // se esta gravação falhar, a resposta diz exatamente o que ficou de fora.
-  if (mudancasDaMarca.length > 0) {
-    const gravou = await gravarMembrosSemAviso(createAdminClient(), authz.org.orgId, mudancasDaMarca);
-    if (!gravou) {
-      return fail(
-        "aviso_nao_avisar_nao_salvo",
-        t("O resto foi salvo, mas a marca \"Não enviar aviso de caso\" não. Salve de novo."),
-        500,
-        { requestId },
-      );
-    }
+  const marca = await gravarMarca(authz, dados.nao_avisar ?? []);
+  if (!marca.ok) {
+    return fail(
+      "aviso_nao_avisar_nao_salvo",
+      t("O resto foi salvo, mas a marca \"Não enviar aviso de caso\" não. Salve de novo."),
+      500,
+      { requestId },
+    );
   }
 
   // A resposta é o ESTADO inteiro recalculado, e não um `{ ok: true }`: salvar
@@ -451,6 +444,101 @@ export async function PUT(req: NextRequest): Promise<Response> {
   // ou a fazer um GET logo atrás.
   const estado = await lerEstadoDaTelaDeAviso({
     db,
+    admin: createAdminClient(),
+    organizationId: authz.org.orgId,
+    urlPublica: env.NEXT_PUBLIC_APP_URL,
+  });
+  return ok(estado, { requestId });
+}
+
+/**
+ * Grava "Não enviar aviso de caso" (#4989) e audita o que de fato mudou. A
+ * auditoria vem DEPOIS da gravação e com as contagens do resultado: uma marca
+ * que não gravou, ou um id que não é membro ativo, não vira "ligou" num log
+ * append-only.
+ */
+async function gravarMarca(
+  authz: { org: { orgId: string }; user: { id: string } },
+  mudancas: ReadonlyArray<{ user_id: string; nao_avisar: boolean }>,
+): Promise<{ ok: boolean }> {
+  if (mudancas.length === 0) return { ok: true };
+  const resultado = await gravarMembrosSemAviso(createAdminClient(), authz.org.orgId, mudancas);
+  if (!resultado.ok) return { ok: false };
+  void audit({
+    action: "ai.case_alert_nao_avisar_changed",
+    organizationId: authz.org.orgId,
+    actorUserId: authz.user.id,
+    resourceType: "config_aviso_de_caso",
+    resourceId: authz.org.orgId,
+    metadata: {
+      ligados: resultado.ligados,
+      desligados: resultado.desligados,
+      // Pedidos para marcar quem não é (mais) membro ativo: não gravados.
+      ignorados: resultado.ignorados,
+    },
+  });
+  return { ok: true };
+}
+
+const corpoDaMarca = z
+  .object({
+    nao_avisar: z
+      .array(z.object({ user_id: z.string().uuid(), nao_avisar: z.boolean() }).strict())
+      .min(1)
+      .max(200),
+  })
+  .strict();
+
+/**
+ * `PATCH` — SÓ a marca "Não enviar aviso de caso" (#4989), sem o RPC.
+ *
+ * Existe porque o `PUT` sempre passa por `fn_definir_aviso_de_caso`, que toca
+ * `config_aviso_de_caso.updated_at` — e esse carimbo é a `config_revision` dos
+ * avisos de resposta do cliente já enfileirados (migration 9240). Marcar a
+ * fila não pode invalidar o aviso que a Ana está para receber. A tela usa o
+ * `PATCH` quando a única coisa que mudou foi a marca.
+ */
+export async function PATCH(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
+  const requestId = randomUUID();
+  const authz = await requireRole("admin", { requestId, resource: "config_aviso_de_caso" });
+  if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+
+  // A MESMA régua que o RPC cobra no PUT: sem ela o PATCH seria a porta dos
+  // fundos de uma configuração que só uma sessão provada muda.
+  if (await mfaEmDivida()) {
+    return fail("mfa_required", t("Confirme a verificação em duas etapas."), 403, { requestId });
+  }
+
+  let bruto: unknown;
+  try {
+    bruto = await req.json();
+  } catch {
+    return fail("invalid_request", t("Body inválido."), 400, { requestId });
+  }
+  const parsed = corpoDaMarca.safeParse(bruto);
+  if (!parsed.success) {
+    return fail("validation_failed", t("Body inválido."), 422, {
+      requestId,
+      details: parsed.error.flatten(),
+    });
+  }
+
+  const marca = await gravarMarca(authz, parsed.data.nao_avisar);
+  if (!marca.ok) {
+    return fail(
+      "aviso_nao_avisar_nao_salvo",
+      t("Não foi possível salvar \"Não enviar aviso de caso\". Tente de novo."),
+      500,
+      { requestId },
+    );
+  }
+
+  const estado = await lerEstadoDaTelaDeAviso({
+    db: await createClient(),
     admin: createAdminClient(),
     organizationId: authz.org.orgId,
     urlPublica: env.NEXT_PUBLIC_APP_URL,
