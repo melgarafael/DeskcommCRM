@@ -142,6 +142,11 @@ const ESCRITA_QUE_E_TRABALHO_DE_ATENDENTE: ReadonlyArray<string> = [
   // grava uma linha que uma PESSOA precisa revisar e enviar (`consumed_at` só
   // depois do clique); ela não envia nada ao cliente, então não muda a casa.
   "crm_create_conversation_draft",
+  // #4838 — `app/api/v1/tasks/` (POST) e `app/api/v1/tasks/[id]/` (PATCH)
+  // exigem `agent`: criar e concluir tarefa é o gesto de quem atende, todo dia.
+  // A tarefa é lembrete interno da equipe; nada sai para o cliente.
+  "crm_create_task",
+  "crm_update_task",
 ];
 
 function alcancavelPeloAgente(requiresRole: Role): boolean {

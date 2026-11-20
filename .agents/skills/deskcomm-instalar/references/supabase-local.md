@@ -33,9 +33,9 @@ ss -tlnp | grep -E ':(80|443|8000) '
 
 ## O dono da conta
 
-Sem preparo, o instalador cria o dono como `admin@<domínio>` com senha aleatória e mostra as duas no
-fim. Para o dono nascer com o e-mail da pessoa, crie antes o arquivo que o instalador lê
-(`.runtime/admin-credentials`, modo 600):
+Sem preparo, o instalador cria o dono como `admin@<domínio>` com senha aleatória. No fim, mostra o
+e-mail e indica onde encontrar a senha em `OWNER_PASSWORD`. Para usar o e-mail da pessoa, crie
+antes o arquivo que o instalador lê (`.runtime/admin-credentials`, modo 600):
 
 ```bash
 mkdir -p .runtime && chmod 700 .runtime

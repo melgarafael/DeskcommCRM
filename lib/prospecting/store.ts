@@ -19,6 +19,7 @@ import {
   razaoDeAbordarSelecionado,
   type CampaignConfig,
   type CampaignBriefing,
+  type FonteDaAbordagem,
   type CampaignPace,
   type SearchInput,
   type BuscaDaPlanilha,
@@ -46,6 +47,7 @@ import {
 import { lerContextoDaEquipe } from "@/lib/prospecting/contexto-da-equipe";
 import { defsDoPadraoDaOrg } from "@/lib/leads/padrao-do-campo";
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
+import { previaAprovadaDoAgente } from "./previa";
 import { motivoSemWhatsapp } from "./whatsapp";
 import { idiomaDaOrganizacao } from "./idioma";
 import { isMediaPathInOrganization } from "@/lib/messaging/media/upload-validation";
@@ -106,6 +108,7 @@ export interface Candidate {
   status: string;
   selected: boolean;
   phone: string | null;
+  automatic_sends?: number | null;
   contact_id: string | null;
   lead_id: string | null;
   conversation_id: string | null;
@@ -1354,6 +1357,7 @@ export async function activateCampaign(
         [org, id],
       )
     ).rows;
+    exigirAprovacaoAntesDoPrimeiroContato(candidates, config);
     await enfileirarCandidatos(db, admin, org, c, config, candidates);
     try {
       await db.query(
@@ -1374,6 +1378,45 @@ export async function activateCampaign(
     }
     return { started: true };
   });
+}
+
+/**
+ * Com `exigir_aprovacao_da_previa` ligada, a campanha não começa nem retoma
+ * enquanto houver primeiro contato sem revisão humana. Desligada (o padrão,
+ * inclusive campanha gravada antes da opção existir), não confere nada.
+ */
+export function exigirAprovacaoAntesDoPrimeiroContato(
+  candidatos: Array<{
+    id: string;
+    data: Prospect;
+    phone: string | null;
+    selected?: boolean | null;
+    automatic_sends?: number | null;
+  }>,
+  config: Pick<
+    CampaignConfig,
+    "agent_id" | "briefing_editado_em" | "exigir_aprovacao_da_previa" | "fonte_da_abordagem"
+  >,
+): void {
+  if (!config.exigir_aprovacao_da_previa) return;
+  const pendentes = candidatos.filter(
+    (candidato) =>
+      candidato.selected !== false &&
+      !!candidato.phone &&
+      (candidato.automatic_sends ?? 0) === 0 &&
+      !previaAprovadaDoAgente(
+        candidato.data,
+        config.agent_id,
+        config.briefing_editado_em,
+        config.fonte_da_abordagem ?? "estrategia",
+      ),
+  );
+  if (pendentes.length > 0) {
+    throw new ProspectingError(
+      `Revise e aprove a prévia de ${pendentes.length} empresa(s) antes de iniciar ou retomar a campanha.`,
+      409,
+    );
+  }
 }
 
 /**
@@ -1544,6 +1587,75 @@ export async function adjustPace(pool: pg.Pool, org: string, id: string, pace: C
 }
 
 /**
+ * Quem pode ir para a campanha nova: nunca abordado (sem contato, negócio nem conversa),
+ * fora da supressão de LGPD, e ainda na fila ou desmarcado pelo operador. Quem o PRODUTO
+ * recusou (sem telefone, sem WhatsApp, já era contato) fica — o motivo continua valendo.
+ */
+export const MOVER_LISTA_SQL =
+  "update prospecting_candidates set campaign_id=$3, status='new', selected=true, error=null, attempted_at=null, data = data - 'previa', updated_at=now() where organization_id=$1 and campaign_id=$2 and contact_id is null and lead_id is null and conversation_id is null and suppression_salt is null and (status in ('new','queued') or (status='skipped' and error=$4)) returning id";
+
+/**
+ * Leva a lista para uma campanha nova em preparação. MOVE, não copia: telefone e
+ * identificador da empresa são únicos por organização (`prospecting_phone_once_org`), e é
+ * isso que impede a mesma empresa de ser abordada duas vezes. Quem já foi abordado fica na
+ * campanha antiga, com o histórico intacto. A campanha nova nasce com a busca já concluída
+ * (nenhuma busca paga de novo) e sem configuração: conexão, agente e funil são escolhidos
+ * nela, do zero. Repetir com o mesmo `request_id` devolve a mesma campanha.
+ */
+export async function moverListaParaNovaCampanha(
+  pool: pg.Pool,
+  org: string,
+  id: string,
+  requestId: string,
+) {
+  return withProspectingLock(pool, org, async (db) => {
+    const prior = (
+      await db.query<{ id: string; result_count: number | null }>(
+        "select id, result_count from prospecting_campaigns where organization_id=$1 and request_id=$2",
+        [org, requestId],
+      )
+    ).rows[0];
+    if (prior) return { campaign_id: prior.id, moved: prior.result_count ?? 0, repeated: true };
+    const c = (
+      await db.query<{ status: string; name: string; search: unknown }>(
+        "select status, name, search from prospecting_campaigns where organization_id=$1 and id=$2",
+        [org, id],
+      )
+    ).rows[0];
+    if (!c) throw new ProspectingError("Campanha não encontrada.", 404);
+    if (c.status !== "paused" && c.status !== "completed")
+      throw new ProspectingError("Pause a campanha antes de levar a lista para outra.", 409);
+    await db.query("begin");
+    try {
+      const nome = `${c.name} — lista reaproveitada`.slice(0, 120);
+      const nova = (
+        await db.query<{ id: string }>(
+          "insert into prospecting_campaigns(organization_id,request_id,name,search,search_status) values($1,$2,$3,$4,'succeeded') returning id",
+          [org, requestId, nome, c.search],
+        )
+      ).rows[0]!;
+      const { rows } = await db.query<{ id: string }>(MOVER_LISTA_SQL, [
+        org,
+        id,
+        nova.id,
+        RAZAO_NAO_SELECIONADA,
+      ]);
+      if (!rows.length)
+        throw new ProspectingError("Não há empresas ainda não abordadas para levar.", 409);
+      await db.query(
+        "update prospecting_campaigns set result_count=$3, updated_at=now() where organization_id=$1 and id=$2",
+        [org, nova.id, rows.length],
+      );
+      await db.query("commit");
+      return { campaign_id: nova.id, moved: rows.length, repeated: false };
+    } catch (error) {
+      await db.query("rollback");
+      throw error;
+    }
+  });
+}
+
+/**
  * Troca as etiquetas de contato de uma campanha PAUSADA (spec 27). A nova lista vale para os
  * próximos envios: o contato criado daqui em diante a recebe, e o que a campanha já criou a
  * recebe de novo no reenvio (a junção é idempotente e é a única recuperação se a primeira
@@ -1580,7 +1692,8 @@ export async function adjustTags(pool: pg.Pool, org: string, id: string, etiquet
 }
 
 /**
- * Troca a INSTRUÇÃO, os CRITÉRIOS e as OFERTAS de uma campanha PAUSADA (#4570).
+ * Troca a INSTRUÇÃO, os CRITÉRIOS e as OFERTAS de uma campanha PAUSADA (#4570) — e,
+ * quando vêm, o interruptor da ficha digital (#4829) e a FONTE da primeira mensagem.
  *
  * O TEXTO NOVO VALE SÓ PARA QUEM AINDA NÃO FOI ABORDADO (decisão do dono, 15/11,
  * doc 358 › 1A). O contexto do turno é montado da `config` a cada turno
@@ -1631,6 +1744,15 @@ export const EDICAO_DA_FICHA_DIGITAL_SQL =
   "update prospecting_campaigns set config = config || jsonb_build_object('usar_ficha_digital', $3::boolean) where organization_id = $1 and id = $2 and status = 'paused' and config is not null";
 
 /** Passo 2: a prévia escrita com o texto velho não sai para quem ainda está na fila. */
+/**
+ * De onde vem a primeira mensagem (`estrategia` | `agente`), gravado só quando a edição o
+ * manda — `update` próprio pelo mesmo motivo do interruptor da ficha: edição só de texto
+ * não reescreve a fonte de ninguém. A prévia da outra fonte já não confere
+ * (`previaDoAgente`), e as da fila são descartadas logo abaixo.
+ */
+export const EDICAO_DA_FONTE_DA_ABORDAGEM_SQL =
+  "update prospecting_campaigns set config = config || jsonb_build_object('fonte_da_abordagem', $3::text) where organization_id = $1 and id = $2 and status = 'paused' and config is not null";
+
 export const DESCARTA_PREVIAS_DA_FILA_SQL =
   "update prospecting_candidates set data = data - 'previa', updated_at = now() where organization_id = $1 and campaign_id = $2 and status in ('new','queued') and data ? 'previa'";
 
@@ -1641,7 +1763,7 @@ export async function editBriefing(
   pool: pg.Pool,
   org: string,
   id: string,
-  briefing: CampaignBriefing,
+  briefing: CampaignBriefing & { fonte_da_abordagem?: FonteDaAbordagem },
 ) {
   return withProspectingLock(pool, org, async (db) => {
     const c = (
@@ -1681,6 +1803,8 @@ export async function editBriefing(
       // não reescreve a ficha digital de ninguém.
       if (briefing.usar_ficha_digital !== undefined)
         await db.query(EDICAO_DA_FICHA_DIGITAL_SQL, [org, id, briefing.usar_ficha_digital]);
+      if (briefing.fonte_da_abordagem !== undefined)
+        await db.query(EDICAO_DA_FONTE_DA_ABORDAGEM_SQL, [org, id, briefing.fonte_da_abordagem]);
       await db.query(CONGELA_BRIEFING_DOS_ABORDADOS_SQL, [org, id, JSON.stringify(anterior)]);
       await db.query(DESCARTA_PREVIAS_DA_FILA_SQL, [org, id]);
       await db.query("commit");
@@ -1688,8 +1812,17 @@ export async function editBriefing(
       await db.query("rollback");
       throw error;
     }
+    // A fonte fica FORA de `anterior`: ele é também o texto congelado de quem já foi
+    // abordado, e a fonte só decide a primeira mensagem. Na auditoria ela aparece quando
+    // a edição a mandou; ausente na config = `estrategia`, o padrão do schema.
+    const trocouFonte = briefing.fonte_da_abordagem !== undefined;
     return {
-      previous: anterior,
+      previous: {
+        ...anterior,
+        ...(trocouFonte
+          ? { fonte_da_abordagem: (c.config.fonte_da_abordagem as string | undefined) ?? "estrategia" }
+          : {}),
+      },
       next: {
         instruction: briefing.instruction,
         qualification: briefing.qualification,
@@ -1699,6 +1832,7 @@ export async function editBriefing(
         ...(briefing.usar_ficha_digital === undefined
           ? {}
           : { usar_ficha_digital: briefing.usar_ficha_digital }),
+        ...(trocouFonte ? { fonte_da_abordagem: briefing.fonte_da_abordagem } : {}),
       },
     };
   });
