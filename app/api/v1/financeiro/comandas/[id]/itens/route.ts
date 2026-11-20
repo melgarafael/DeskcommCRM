@@ -110,6 +110,8 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   await audit({
     action: "comanda.item_incluido",
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
     resourceType: "sale",
     resourceId: id,
     requestId,

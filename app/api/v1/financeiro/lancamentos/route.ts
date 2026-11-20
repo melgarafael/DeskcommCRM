@@ -180,6 +180,8 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   await audit({
     action: "financeiro.lancamento_criado",
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
     resourceType: "financial_entry",
     resourceId: data.id,
     requestId,

@@ -79,6 +79,25 @@ describe("Equipe › Atendentes no leitor de tela", () => {
     expect(screen.getByRole("combobox", { name: "Modo de enrutamiento" })).toBeInTheDocument();
   });
 
+  // #4752 — a caixa do dia ("Dia da semana", com "Seg" escolhido) e o campo
+  // do fim ("Fim") também estavam escritos direto; o do início já passava
+  // por t(). A janela de exemplo é segunda-feira (dow 1).
+  it("em espanhol, a caixa do dia se chama Día de la semana e mostra Lun", () => {
+    horario("es");
+    const dia = screen.getByRole("combobox", { name: "Día de la semana" });
+    expect(dia).toHaveTextContent("Lun");
+    expect(dia).not.toHaveTextContent("Seg");
+    expect(screen.getByLabelText("Inicio")).toHaveValue("08:00");
+    expect(screen.getByLabelText("Fin")).toHaveValue("12:00");
+    expect(screen.queryByLabelText("Fim")).toBeNull();
+  });
+
+  it("em português, a caixa do dia e o campo do fim seguem os de antes", () => {
+    horario("pt-BR");
+    expect(screen.getByRole("combobox", { name: "Dia da semana" })).toHaveTextContent("Seg");
+    expect(screen.getByLabelText("Fim")).toHaveValue("12:00");
+  });
+
   it("em português, os dois nomes seguem os de antes", () => {
     horario("pt-BR");
     expect(screen.getByRole("button", { name: "Remover janela" })).toBeInTheDocument();

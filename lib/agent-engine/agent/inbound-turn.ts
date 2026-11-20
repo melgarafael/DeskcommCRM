@@ -80,6 +80,7 @@ import { WahaChannelAdapter } from '../edge/channel/waha-adapter';
 import { applySendOutcome } from '../edge/crm/send-message';
 import { blocoDaRespostaFalada, resolverVozDoTurno } from './voz-do-turno';
 import { textoParaFalar } from '@/lib/ai/voz/texto-falavel';
+import { extensaoDoMime } from '@/lib/ai/voz/formato';
 import {
   LlmBudgetExceededError,
   runModelCall,
@@ -279,6 +280,7 @@ import { readSkillReference, skillHasReferences } from './skill-references';
 import { READ_ONLY_TOOLS, wrapToolsWithBreaker, type ToolBreakerThresholds } from './tool-breaker';
 import {
   loadChannelProvider,
+  loadNotaDeVozDoCanal,
   nomesDasFerramentas,
   runBeforeSend,
   tipoDeEnvio,
@@ -322,8 +324,15 @@ import { CORRECAO_DO_TURNO_MUDO, PASSOS_DA_CORRECAO, turnoMudoPedeCorrecao } fro
 import {
   CODIGO_DO_TETO_DE_RESPOSTAS,
   avisarEquipeDoTetoDeRespostas,
-  knobsDoTetoDeRespostas,
+  lerTetoDoAntiBan,
+  resolverTetoDeRespostasDaOrganizacao,
+  silenciarConversaPeloTeto,
 } from './teto-de-respostas';
+import {
+  avisarEquipeDaFalhaPermanenteDeEnvio,
+  desfechoDosEnvios,
+  ERRO_DA_FALHA_PERMANENTE,
+} from './falha-permanente-de-envio';
 import {
   desfechoSemCandidato,
   previaPedeCorrecaoDoTurnoMudo,
@@ -960,8 +969,9 @@ export async function uploadDeVoz(input: {
   mimeType: string;
 }): Promise<string> {
   // A extensão acompanha o formato: `.ogg` é a nota de voz em opus do canal
-  // oficial, e é ela que diz o formato a um retry (`mimeDoCaminhoDeVoz`).
-  const extensao = input.mimeType.toLowerCase().startsWith('audio/ogg') ? 'ogg' : 'mp3';
+  // oficial, `.wav` a da DM do Instagram, e é ela que diz o formato a um retry
+  // (`mimeDoCaminhoDeVoz`).
+  const extensao = extensaoDoMime(input.mimeType);
   const path = `${input.tenantId}/${input.conversationId}/voz-agente-${input.jobId}-${input.seq}.${extensao}`;
   const admin = createAdminClient();
   // `upsert: true`, e não `false`: este caminho só é chamado quando
@@ -3495,7 +3505,9 @@ async function executarTurnoDoAgente(
           // Voz por agente (#4228): sem chave no agente, `null` e a resolução cai
           // na voz da organização — o comportamento de antes, byte a byte.
           vozVoiceId: agentConfig.vozVoiceId ?? null,
-          voiceNote: capabilitiesOf(await loadChannelProvider(pool, tenantId, input.channelSessionId)).voiceNote,
+          // Provedor E rede da sessão: o mesmo provedor social serve Instagram
+          // (WAV, medido) e Facebook (texto, não medido).
+          voiceNote: await loadNotaDeVozDoCanal(pool, tenantId, input.channelSessionId),
           // #4345: a CONVERSA entra na decisão do `'quando_pede'` — o pedido de
           // áudio feito duas mensagens atrás continua valendo. A janela é a que
           // o turno já carregou em `openingContext.context.messages`: nenhuma
@@ -4459,6 +4471,10 @@ async function executarTurnoDoAgente(
     return { active: ferramentas.length > 0, ferramentas, efeitos: efeitosDoTurno };
   };
   const outcomes: ChannelSendResult[] = [];
+  // O canal recusou um envio DESTE turno em definitivo (`falha-permanente-de-envio.ts`).
+  // Daqui em diante nada mais sai neste turno: cada nova tentativa seria outro
+  // balão vermelho na conversa, com o mesmo destino.
+  let falhaPermanenteNoTurno = false;
   // Citações acumuladas por buscas de conhecimento DESTE turno — anexadas à
   // próxima outbound enviada (shape de lib/ai/citations/types, que a UI já lê).
   let pendingCitations: ReturnType<typeof citationsFromHits> = [];
@@ -4718,6 +4734,7 @@ async function executarTurnoDoAgente(
       ...AGENT_TOOL_DEFS.send_template,
       execute: async ({ template_name, language, values }) => {
         tentativasDeEnvio += 1;
+        if (falhaPermanenteNoTurno) return { ok: false, error: ERRO_DA_FALHA_PERMANENTE };
         if (seq >= maxSendsPerTurn) {
           return {
             ok: false,
@@ -4834,6 +4851,10 @@ async function executarTurnoDoAgente(
         }
         const outcome = chain.outcome;
         outcomes.push(outcome);
+        if (outcome.kind === 'failed' && outcome.permanente === true) {
+          falhaPermanenteNoTurno = true;
+          return { ok: false, error: ERRO_DA_FALHA_PERMANENTE };
+        }
         if (outcome.kind === 'sent' || outcome.kind === 'already_sent') {
           return {
             ok: true,
@@ -4922,6 +4943,8 @@ async function executarTurnoDoAgente(
         imagem_url,
       }) => {
         tentativasDeEnvio += 1;
+        // Recusa definitiva já neste turno: nem chama a cadeia (ver a declaração da flag).
+        if (falhaPermanenteNoTurno) return { ok: false, error: ERRO_DA_FALHA_PERMANENTE };
         // O texto sai no formato do WhatsApp — sem `\n` literal nem
         // `**negrito**` de Markdown na tela do cliente. Antes de qualquer gate,
         // para que o corpo vazio, as bolhas e a pausa humana meçam o que sai.
@@ -5332,6 +5355,19 @@ async function executarTurnoDoAgente(
           // janela (`resposta*`) e é o que arma o teto de respostas por conversa:
           // follow-up é retomada e não entra nessa conta.
           const eResposta = eTurnoDeResposta(liveJob());
+          // #4590 — os números do teto valem por ORGANIZAÇÃO desde esta fatia:
+          // `settings.anti_ban.teto_de_respostas` manda; o env da instalação é o
+          // padrão de quem nunca configurou. Uma leitura por chave primária, só no
+          // caminho de resposta em produção (`preview` não arma e não paga a
+          // consulta). `null` = não é turno de resposta: nada a resolver.
+          const tetoDoTurno =
+            eResposta && !preview
+              ? await resolverTetoDeRespostasDaOrganizacao(pool, {
+                  organizationId: tenantId,
+                  base: deps.knobs.tetoDeRespostas,
+                  log: runLog,
+                })
+              : null;
           // Args reusados EXATAMENTE (mesmo objeto) no re-run do fail-safe abaixo — só
           // hasOpenCase/openedCaseThisTurn mudam depois do auto-abre-caso.
           const beforeSendArgs = {
@@ -5353,11 +5389,12 @@ async function executarTurnoDoAgente(
             // Prévia não arma (o Testar não entrega nada ao cliente; um teto ali
             // esconderia justamente a resposta que o dono está testando) e follow-up
             // também não — ali não houve mensagem recebida agora.
-            ...(eResposta && !preview
+            ...(tetoDoTurno !== null
               ? {
                   tetoDeRespostas: {
                     conversationId: input.conversationId,
-                    ...knobsDoTetoDeRespostas(deps.knobs.tetoDeRespostas),
+                    porConversa: tetoDoTurno.porConversa,
+                    janelaMinutos: tetoDoTurno.janelaMinutos,
                   },
                 }
               : {}),
@@ -5729,14 +5766,29 @@ async function executarTurnoDoAgente(
               pacingCapVeto = { code: chain.code, nextAllowedAt: chain.nextAllowedAt };
             }
             // #4590 — o teto calou a conversa: a equipe é avisada na Central, um
-            // aviso aberto por conversa (dedupe no repositório). Nunca lança.
+            // aviso aberto por conversa (dedupe no repositório), e a conversa é
+            // PAUSADA pelo caminho do atendente (`bot_silenced_until`, horizonte
+            // limitado e reversível). Os números são os da ORGANIZAÇÃO que armou o
+            // gate — não o env da instalação, que pode ser outro. Nunca lança.
             if (chain.code === CODIGO_DO_TETO_DE_RESPOSTAS && !preview) {
+              const tetoQueVale =
+                tetoDoTurno ??
+                lerTetoDoAntiBan(null, deps.knobs.tetoDeRespostas);
               await avisarEquipeDoTetoDeRespostas(pool, {
                 organizationId: tenantId,
                 conversationId: input.conversationId,
-                ...knobsDoTetoDeRespostas(deps.knobs.tetoDeRespostas),
+                porConversa: tetoQueVale.porConversa,
+                janelaMinutos: tetoQueVale.janelaMinutos,
                 log: runLog,
               });
+              if (tetoQueVale.silenciarMinutos > 0) {
+                await silenciarConversaPeloTeto(pool, {
+                  organizationId: tenantId,
+                  conversationId: input.conversationId,
+                  minutos: tetoQueVale.silenciarMinutos,
+                  log: runLog,
+                });
+              }
             }
             if (VETOS_IRREVOGAVEIS.has(chain.code)) vetoIrrevogavel = true;
             // Erro de ENSINO pt-br (mesmo shape de get_lead_context/breaker): o
@@ -5828,6 +5880,10 @@ async function executarTurnoDoAgente(
                 },
               };
             case 'failed':
+              if (outcome.permanente === true) {
+                falhaPermanenteNoTurno = true;
+                return { ok: false, error: ERRO_DA_FALHA_PERMANENTE };
+              }
               return {
                 ok: false,
                 error: {
@@ -7287,14 +7343,38 @@ async function executarTurnoDoAgente(
       }
     }
 
+    // O fim do turno lê os envios: falha TRANSITÓRIA lança (a fila re-tenta);
+    // só recusa DEFINITIVA registra e segue, sem retry — um aviso por turno.
+    let falhaPermanenteAvisada = false;
+    const encerrarOuRetentarPelosEnvios = async (): Promise<void> => {
+      const desfecho = desfechoDosEnvios(outcomes);
+      if (desfecho === 'retentar') {
+        throw new Error('envio marcado como failed pelo CRM — run re-tentado pela fila');
+      }
+      if (desfecho !== 'falha_permanente' || falhaPermanenteAvisada) return;
+      falhaPermanenteAvisada = true;
+      runLog.error('canal recusou o envio em definitivo — turno encerrado sem retry', {
+        job_id: job?.id ?? null,
+        recusadas: outcomes.filter((o) => o.kind === 'failed').length,
+      });
+      if (!preview) {
+        await avisarEquipeDaFalhaPermanenteDeEnvio(pool, {
+          organizationId: tenantId,
+          conversationId: input.conversationId,
+          log: runLog,
+        });
+      }
+    };
+
     if (runError !== null) {
       throw runError; // job falha → retry da fila; o ledger segura duplicata de envio
     }
-    if (outcomes.some((o) => o.kind === 'failed')) {
-      // ponytail: retry re-roda o run inteiro (LLM incluso); seq N re-encontra a
-      // linha do ledger — 'accepted' pula, 'failed' rotaciona a key (F2-06).
-      throw new Error('envio marcado como failed pelo CRM — run re-tentado pela fila');
-    }
+    // ponytail: retry re-roda o run inteiro (LLM incluso); seq N re-encontra a
+    // linha do ledger — 'accepted' pula, 'failed' transitório rotaciona a key
+    // (F2-06), e o 'failed' PERMANENTE do mesmo corpo volta sem sair de novo.
+    // Só a falha transitória re-tenta: a recusa definitiva encerra o turno com
+    // aviso na Central (`falha-permanente-de-envio.ts`).
+    await encerrarOuRetentarPelosEnvios();
 
     // TURNO MUDO: o turno de resposta terminou sem mensagem ao cliente e sem
     // nenhuma razão para o silêncio (`turno-mudo.ts`). UMA correção, com a mesma
@@ -7419,9 +7499,7 @@ async function executarTurnoDoAgente(
       correcaoTentouEnviar = tentativasDeEnvio > tentativasAntesDaCorrecao;
       mensagensDoTurno = [...mensagensDoTurno, pedidoDeCorrecao, ...correcao.result.responseMessages];
       if (runError !== null) throw runError;
-      if (outcomes.some((o) => o.kind === 'failed')) {
-        throw new Error('envio marcado como failed pelo CRM — run re-tentado pela fila');
-      }
+      await encerrarOuRetentarPelosEnvios();
       runLog.info('correção do turno mudo concluída', { messages_sent: outcomes.length });
     }
 
@@ -7550,6 +7628,7 @@ async function executarTurnoDoAgente(
             // #1943: turno descartado como obsoleto → a pergunta do roteiro NÃO
             // sai (segue pendente para o turno seguinte). Também vigia o teto
             // de mensagens físicas do turno (F2-15b).
+            if (falhaPermanenteNoTurno) return false; // o canal já recusou neste turno
             if (!perguntaDoRoteiroPodeSair({ turnoDescartado, seq, maxSendsPerTurn })) return false;
             const chain = await runBeforeSend({
               pool,
