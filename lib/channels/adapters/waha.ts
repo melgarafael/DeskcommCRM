@@ -428,10 +428,14 @@ export const wahaAdapter: ChannelAdapter = {
     // "entregue" que chegasse durante o visto se perderia, e a mensagem ficaria
     // em "enviada" (o efeito descrito em `session-reconciler.ts`). O helper
     // nunca rejeita, então não há rejeição solta.
+    //
+    // Os ids das mensagens lidas vêm de quem montou o envelope (#5015): o NOWEB
+    // sem "Guardar histórico" só aceita marcar por mensagem.
     void marcarConversaComoLida({
       organizationId: envelope.organizationId,
       sessionName: envelope.sessionRef,
       chatId: to,
+      ...(envelope.readExternalIds !== undefined ? { messageIds: envelope.readExternalIds } : {}),
     });
 
     return { externalId: parseWahaMessageId(res) };

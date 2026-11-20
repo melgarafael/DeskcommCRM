@@ -259,6 +259,25 @@ export interface OutboundEnvelope extends ChannelTenantScope {
    * `undefined` = envio solto, que é o caso comum.
    */
   replyToExternalId?: string | null;
+  /**
+   * As mensagens do cliente que ESTA resposta lê, pelo id que o PROVIDER conhece
+   * (`messages.external_id` das linhas de entrada) — para o canal marcá-las como
+   * lidas depois do envio (o visto azul, #2981).
+   *
+   * Existe porque há transporte que só sabe marcar por mensagem: o NOWEB sem
+   * "Guardar histórico" recusa o "li a conversa inteira" (#5015). Quem monta o
+   * envelope lê o banco e resolve a lista; o adapter só repassa — mesma divisão
+   * do `replyToExternalId`, e pelo mesmo motivo (adapter não lê banco,
+   * `docs/doctrine/restricao-de-canal.md`).
+   *
+   * OPCIONAL, e os três estados querem dizer coisas diferentes:
+   *   `undefined` — quem montou não procurou: o canal faz o que fazia antes;
+   *   `[]`        — procurou e não há nada novo para ler (a 2ª bolha da mesma
+   *                 resposta, por exemplo): o canal não marca nada;
+   *   lista       — marcar estas.
+   * Canal que não marca leitura ignora o campo.
+   */
+  readExternalIds?: string[];
 }
 
 /**
