@@ -1646,6 +1646,37 @@ const AGENDA_TOOL_NAMES = new Set([
 ]);
 
 /**
+ * A leitura do CADASTRO da agenda (#4927): `crm_list_event_types` devolve os
+ * tipos de atendimento com a duração, e é dali que sai o "a consulta dura 1h30"
+ * que o agente repassa. O retorno vira evidência do turno pelo mesmo
+ * `registrarConsultaDeAgenda` das tools de agenda — mas a ferramenta fica FORA
+ * de `AGENDA_TOOL_NAMES` de propósito: listar os tipos não é checar a agenda, e
+ * armar o `agendaStallGate` aqui deixaria passar o "vou verificar" de um turno
+ * que listou os tipos e nunca procurou horário (o caso de `before-send.ts`:
+ * `crm_list_event_types` 7× e zero `crm_find_free_slots`).
+ *
+ * Devolve a ferramenta embrulhada, ou `null` quando ela não é deste ramo.
+ */
+export function comEvidenciaDoCadastroDaAgenda<T extends { execute?: unknown }>(
+  name: string,
+  mcpTool: T,
+  evidencias: Pick<ReturnType<typeof criarEvidenciasComerciaisDoTurno>, 'registrarConsultaDeAgenda'>,
+  aoDescartar: (tamanhos: number[]) => void,
+): T | null {
+  if (name !== 'crm_list_event_types' || typeof mcpTool.execute !== 'function') return null;
+  const executeOriginal = mcpTool.execute.bind(mcpTool) as (...args: unknown[]) => Promise<unknown>;
+  return {
+    ...mcpTool,
+    execute: async (...args: unknown[]) => {
+      const resultado = await executeOriginal(...args);
+      const descartadas = evidencias.registrarConsultaDeAgenda(name, resultado);
+      if (descartadas.length > 0) aoDescartar(descartadas);
+      return resultado;
+    },
+  };
+}
+
+/**
  * O agente consegue GRAVAR um horário sozinho (marcar ou remarcar)?
  *
  * Duas ferramentas MARCAM um horário novo: `crm_book_appointment` e, desde a issue
@@ -6534,6 +6565,21 @@ async function executarTurnoDoAgente(
                 return resultado;
               }) as typeof mcpTool.execute;
               rawTools[name] = mcpTool;
+              continue;
+            }
+            const cadastroDaAgenda = comEvidenciaDoCadastroDaAgenda(
+              name,
+              mcpTool,
+              evidenciasComerciais,
+              (tamanhos) =>
+                runLog.warn('tipo de atendimento acima do teto da evidência — fora da conferência de promessa', {
+                  ferramenta: name,
+                  descartadas: tamanhos.length,
+                  tamanhos,
+                }),
+            );
+            if (cadastroDaAgenda) {
+              rawTools[name] = cadastroDaAgenda;
               continue;
             }
             // Marca a EXECUÇÃO (não só a decisão de chamar) — é isso que o agendaStallGate

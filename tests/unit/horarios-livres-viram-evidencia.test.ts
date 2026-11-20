@@ -28,9 +28,11 @@
  * A variação entre execuções do #4665 é issue vizinha: aqui só se mede que as
  * DUAS redações da mesma frase têm o MESMO desfecho e a MESMA evidência.
  *
- * `inbound-turn.ts` não é importável em teste unitário (módulo do worker), então
- * a costura do turno é reproduzida na forma mínima — o `execute` da tool de
- * agenda chama `registrarConsultaDeAgenda`, como o ramo `AGENDA_TOOL_NAMES` faz.
+ * A costura do turno é reproduzida aqui na forma mínima — o `execute` de cada
+ * tool chama `registrarConsultaDeAgenda` direto. Isso prova o registrador e a
+ * conferência, não o loop do turno. Que `crm_list_event_types` chega ao
+ * registrador pelo `inbound-turn.ts` (ramo `comEvidenciaDoCadastroDaAgenda`,
+ * fora de `AGENDA_TOOL_NAMES`) é medido em `lib/agent-engine/agent/inbound-turn.test.ts`.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
