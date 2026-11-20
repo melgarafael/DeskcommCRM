@@ -756,6 +756,7 @@ export function ContactDetailClient({
           camposDoFunil(pipelineQuery.data?.pipeline.settings ?? null),
           "contato",
         )}
+        funilDosCampos={pipelineQuery.data?.pipeline ?? null}
         vocabulario={vocabularioDeEtiquetas.data}
         canonicalTags={canonicalTags}
       />
