@@ -97,6 +97,45 @@ function texto(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
 }
 
+/**
+ * O objeto de topo de um resultado de ferramenta: objeto, JSON em string ou o
+ * `content[].text` que a ponte MCP devolve. A mesma leitura de
+ * `guardrails/horario-da-agenda.ts` — aqui, porque a evidência precisa do
+ * payload e não do envelope.
+ */
+function objetoDoResultado(resultado: unknown): Record<string, unknown> | null {
+  let r: unknown = resultado;
+  if (typeof r === "string") {
+    try {
+      r = JSON.parse(r);
+    } catch {
+      return null;
+    }
+  }
+  if (r === null || typeof r !== "object" || Array.isArray(r)) return null;
+  const conteudo = (r as { content?: unknown }).content;
+  if (Array.isArray(conteudo)) {
+    const achado = conteudo.find(
+      (c): c is { text: string } => typeof (c as { text?: unknown } | null)?.text === "string",
+    );
+    return achado ? objetoDoResultado(achado.text) : null;
+  }
+  return r as Record<string, unknown>;
+}
+
+/**
+ * "90 minutos" não é como a pessoa fala, e o modelo repassa o que recebe: a
+ * evidência escreve as duas formas para a paráfrase ("a consulta dura 1h30")
+ * ser comparação de igual para igual, não conta de cabeça.
+ */
+function rotuloDeDuracao(minutos: number): string {
+  if (minutos <= 0) return "duração não informada";
+  const h = Math.floor(minutos / 60);
+  const m = minutos % 60;
+  const falado = h === 0 ? `${m}min` : m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, "0")}`;
+  return `duração ${minutos} minutos (${falado})`;
+}
+
 export function criarEvidenciasComerciaisDoTurno(fontesHabilitadas: readonly string[]) {
   const fontes = new Set(fontesHabilitadas);
   const evidencias = new Map<string, EvidenciaComercial>();
@@ -182,6 +221,8 @@ export function criarEvidenciasComerciaisDoTurno(fontesHabilitadas: readonly str
   }
 
   let consultasRemotas = 0;
+  /** Consultas de AGENDA do turno — numera as referências como as remotas. */
+  let consultasDeAgenda = 0;
 
   /**
    * Só retornos bem-sucedidos (`{ texto, dados? }` de `definirFerramentasRemotas`).
@@ -213,10 +254,107 @@ export function criarEvidenciasComerciaisDoTurno(fontesHabilitadas: readonly str
     return descartadas;
   }
 
+  /**
+   * O que uma tool de AGENDA devolveu: `horarios[]` de `crm_find_free_slots` (e da
+   * conjunta que consulta e marca) ou `tipos[]` de `crm_list_event_types`.
+   *
+   * É o sistema da empresa respondendo ao turno, e entra na MESMA origem
+   * `servidor_externo` — sustenta relatar data, horário, duração e situação do que
+   * ela registra, nunca condição comercial. Sem isto, a lista que o modelo copiou
+   * da ferramenta chegava à conferência sem lastro nenhum e caía em "confirma vaga
+   * sem comprovação": o turno era vetado até sobrar uma frase vaga, sem data e sem
+   * horário (#4927). O veto não muda — muda a evidência existir.
+   *
+   * Um item por horário/tipo: a lista inteira num só item bateria no teto e
+   * sumiria calada. O preço do tipo fica FORA de propósito: a origem
+   * `servidor_externo` não autoriza oferta, e mandá-lo convidaria o revisor a ler
+   * como política comercial o que é só o cadastro do atendimento.
+   */
+  function registrarConsultaDeAgenda(nome: string, resultado: unknown): number[] {
+    const r = objetoDoResultado(resultado);
+    if (!r || r.error || r.erro || r.ok === false || r.permitido === false) return [];
+    // ESCRITA já tem comprovante próprio (`bookingEvidence`, lido do banco): a
+    // reserva gravada não é uma segunda prova da lista de horários.
+    if (r.marcado === true || r.remarcado === true) return [];
+    const horarios = Array.isArray(r.horarios) ? r.horarios : [];
+    const tipos = Array.isArray(r.tipos) ? r.tipos : [];
+    const consultaConhecida =
+      horarios.length > 0 ||
+      tipos.length > 0 ||
+      typeof r.publicou_horarios === "boolean" ||
+      texto(r.fuso_da_regra) !== null;
+    if (!consultaConhecida) return [];
+
+    consultasDeAgenda += 1;
+    const descartadas: number[] = [];
+    const guardarOuDescartar = (evidencia: EvidenciaComercial) => {
+      if (!guardar(evidencia)) descartadas.push(JSON.stringify(evidencia).length);
+    };
+    // Cabeçalho: de ONDE veio a lista e o que ela cobre. `publicou_horarios:false`
+    // e `agenda_externa_nunca_lida:true` são ressalvas do REGISTRO — o revisor já
+    // sabe lê-las, e omiti-las faria uma lista incompleta parecer completa.
+    guardarOuDescartar({
+      origem: "servidor_externo",
+      referencia: `${nome}:${consultasDeAgenda}`,
+      titulo: `Consulta à agenda: ${nome}`,
+      conteudo: JSON.stringify({
+        consulta: nome,
+        ...(texto(r.fuso_da_regra) !== null ? { fuso: texto(r.fuso_da_regra) } : {}),
+        ...(typeof r.total_de_horarios === "number"
+          ? { total_de_horarios: r.total_de_horarios }
+          : {}),
+        ...(r.ha_mais === true ? { lista_cortada: true } : {}),
+        ...(r.publicou_horarios === false ? { publicou_horarios: false } : {}),
+        ...(r.agenda_externa_nunca_lida === true ? { agenda_externa_nunca_lida: true } : {}),
+        ...(r.fuso_suposto === true ? { fuso_suposto: true } : {}),
+      }),
+    });
+    horarios.forEach((h, i) => {
+      const item = objeto(h);
+      if (!item || item.disponivel === false) return;
+      const quando = texto(item.quando);
+      const inicio = texto(item.inicio);
+      if (!quando && !inicio) return;
+      const fim = texto(item.fim);
+      guardarOuDescartar({
+        origem: "servidor_externo",
+        referencia: `${nome}:${consultasDeAgenda}.${i + 1}`,
+        titulo: `Horário livre na agenda: ${quando ?? inicio}`,
+        conteudo:
+          `Horário livre devolvido pela agenda: ${quando ?? inicio}` +
+          (inicio !== null ? ` (início ${inicio}${fim !== null ? `, fim ${fim}` : ""})` : "") +
+          ".",
+      });
+    });
+    tipos.forEach((t, i) => {
+      const item = objeto(t);
+      if (!item) return;
+      const rotulo = texto(item.nome) ?? texto(item.slug);
+      if (!rotulo) return;
+      const slug = texto(item.slug);
+      const duracao = typeof item.duracao_minutos === "number" ? item.duracao_minutos : null;
+      const onde = texto(item.onde);
+      guardarOuDescartar({
+        origem: "servidor_externo",
+        referencia: `${nome}:${consultasDeAgenda}.t${i + 1}`,
+        titulo: `Atendimento cadastrado: ${rotulo}`,
+        conteudo:
+          `Atendimento "${rotulo}"` +
+          (slug !== null ? ` (slug ${slug})` : "") +
+          (duracao !== null ? `, ${rotuloDeDuracao(duracao)}` : "") +
+          (onde !== null ? `, ${onde}` : "") +
+          (item.precisa_confirmacao === true ? ", depende de confirmação da equipe" : "") +
+          ".",
+      });
+    });
+    return descartadas;
+  }
+
   return {
     registrarConhecimento,
     registrarCatalogo,
     registrarLeituraRemota,
+    registrarConsultaDeAgenda,
     // Relevância escolhe o CONTEXTO, nunca concede autorização. O classificador
     // recebe os trechos completos, inclusive condições/negações, e decide.
     ler: (candidata = ""): EvidenciaComercial[] => {
