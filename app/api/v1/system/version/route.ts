@@ -139,6 +139,43 @@ export async function GET(_req: NextRequest): Promise<Response> {
   }
 
   const latest = version?.latest_version ?? "";
+  // ⭐ #4955 — A RELEASE QUE EXISTE E O HOST AINDA NÃO PÔDE OFERECER.
+  //
+  // O agente do host tem DUAS coisas a dizer e diz as duas em lugares
+  // diferentes: `latest_version` é o que ele ANUNCIA (o que o botão instala) e
+  // `runtime_confirmation.published_release` é o que ele VIU publicado. São a
+  // mesma tag — até a hora em que a etiqueta sai na frente da imagem
+  // (`hostgator-setup-kit/agent.sh`, sonda `ausente` / release `incompleta`) e o
+  // agente, com razão, zera o anúncio para não acender um botão que derrubaria
+  // o sistema. Nesse instante as duas fontes divergem: `latest_version` vazio,
+  // `published_release` com a versão nova.
+  //
+  // Lido por UMA fonte só, isso vira mentira: `update_available` falso (a tela
+  // conclui "é a mais recente") com "Última release oficial: 1.118.0" impresso
+  // logo acima, na mesma tela, numa instalação 1.116.0. O defeito não é a
+  // divergência — é a tela escolher uma das duas e calar a outra.
+  //
+  // `published_release` já viaja em TODO batimento, inclusive nos de kit
+  // antigo: por isso o conserto mora aqui, e não no `agent.sh`. Quem ainda não
+  // atualizou o kit é exatamente quem mais precisa ver esta frase, e mexer no
+  // agente só consertaria as instalações que já tivessem rodado o kit novo.
+  //
+  // Só vale quando a comparação foi feita de verdade (`!compareFailed`): com o
+  // host sem conseguir comparar, a tela já diz "não sei" — e "saiu, está sendo
+  // preparada" seria uma afirmação que ninguém fez.
+  const officialLatest = observation.success
+    ? (observation.data.published_release ?? "")
+    : (version?.latest_version ?? "");
+  const compareFailed =
+    (version?.compare_failed ?? false) || !["legacy", "confirmed"].includes(identity.status);
+  const pendingRelease =
+    !latest &&
+    !compareFailed &&
+    !acabouDeInstalar &&
+    Boolean(officialLatest) &&
+    newerOfficialRelease(running, officialLatest) === true
+      ? officialLatest
+      : null;
   // A faixa INTEIRA entre o que está no ar e o que vai entrar, não só a seção
   // da versão-alvo. Mostrar só a alvo perdia aviso: quem pulava da 1.4.0 para a
   // 1.6.0 nunca lia a 1.4.1 nem a 1.5.0 — e a 1.4.1 existia para corrigir uma
@@ -168,9 +205,12 @@ export async function GET(_req: NextRequest): Promise<Response> {
     current_version: running,
     identity,
     runtime_services: observation.success ? observation.data.services : null,
-    official_latest_version: observation.success
-      ? (observation.data.published_release ?? "")
-      : (version?.latest_version ?? ""),
+    official_latest_version: officialLatest,
+    // #4955 — a release EXISTE (o host viu a tag publicada) e o host ainda não
+    // a anuncia porque não tem o que instalar com segurança: imagem ausente ou
+    // release incompleta. A tela diz isso — e nunca "é a mais recente" — sem
+    // precisar de campo novo no banco nem de kit novo na instalação.
+    pending_release_version: pendingRelease,
     manual_reconciliation_required: identity.customized === true,
     is_owner: true,
     force_update_supported: supportsForcedUpdate(
@@ -199,8 +239,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
     // Sem isto, a tela lê "sem versão nova anunciada" como "você está em dia" —
     // e uma instalação atrasada cujo host não conseguiu comparar é informada de
     // que está atualizada, em silêncio.
-    compare_failed:
-      (version?.compare_failed ?? false) || !["legacy", "confirmed"].includes(identity.status),
+    compare_failed: compareFailed,
     // Só importa quando `off_release` e sem `latest_version` — distingue "à
     // frente da última publicada" (existe release, já contida no HEAD) de
     // "este fork nunca teve release nenhuma". Default `true`: preserva "à
