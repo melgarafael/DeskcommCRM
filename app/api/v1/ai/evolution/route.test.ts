@@ -61,6 +61,8 @@ interface Espiao {
 function fakeDb(
   porTabela: Record<string, unknown[]> = {},
   erros: Record<string, string> = {},
+  /** `count` que o servidor devolve, quando não é o tamanho da página (corte, ou ausente). */
+  totais: Record<string, number | null> = {},
 ): Espiao {
   const espiao: Espiao = { eq: [], gte: [], lte: [], order: [], tabelas: [] };
   from.mockImplementation((tabela: string) => {
@@ -93,7 +95,7 @@ function fakeDb(
       resolve(
         erros[tabela]
           ? { data: null, count: null, error: { message: erros[tabela] } }
-          : { data: head ? null : rows, count: rows.length, error: null },
+          : { data: head ? null : rows, count: tabela in totais ? totais[tabela] : rows.length, error: null },
       );
     return b;
   });
@@ -112,6 +114,15 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
 });
+
+function decisoes(n: number) {
+  return Array.from({ length: n }, () => ({
+    created_at: '2026-07-02T10:00:00.000Z',
+    outcome: 'matched',
+    intent_name: null,
+    router_id: 'r1',
+  }));
+}
 
 describe('GET /api/v1/ai/evolution', () => {
   it('recusa quem não é manager', async () => {
@@ -197,14 +208,18 @@ describe('GET /api/v1/ai/evolution', () => {
     // O teto é o `max_rows` do PostgREST (supabase/config.toml): 1.000. Um teto
     // maior nunca é atingido — o servidor corta antes — e o aviso nunca sai (#5016).
     const ROW_CAP = 1_000;
-    const espiao = fakeDb({
-      ai_router_decisions: Array.from({ length: ROW_CAP }, () => ({
-        created_at: '2026-07-02T10:00:00.000Z',
-        outcome: 'matched',
-        intent_name: null,
-        router_id: 'r1',
-      })),
-    });
+    const espiao = fakeDb(
+      {
+        ai_router_decisions: Array.from({ length: ROW_CAP }, () => ({
+          created_at: '2026-07-02T10:00:00.000Z',
+          outcome: 'matched',
+          intent_name: null,
+          router_id: 'r1',
+        })),
+      },
+      {},
+      { ai_router_decisions: 1_500 },
+    );
 
     const r = await GET(req('?from=2026-07-01&to=2026-07-03'));
     expect(r.status).toBe(200);
@@ -259,19 +274,48 @@ describe('GET /api/v1/ai/evolution', () => {
 
   it('leitura que bate no teto entra em fontes_incompletas como cortada', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
-    fakeDb({
-      ai_router_decisions: Array.from({ length: 1_000 }, () => ({
-        created_at: '2026-07-02T10:00:00.000Z',
-        outcome: 'matched',
-        intent_name: null,
-        router_id: 'r1',
-      })),
-    });
+    fakeDb({ ai_router_decisions: decisoes(1_000) }, {}, { ai_router_decisions: 4_000 });
 
     const r = await GET(req('?from=2026-07-01&to=2026-07-03'));
     const body = await r.json();
 
     expect(body.data.fontes_incompletas).toEqual([{ fonte: 'ai_router_decisions', motivo: 'cortada' }]);
+  });
+
+  it('servidor com max_rows menor (500): o count exato acusa o corte', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    fakeDb({ knowledge_searches: Array.from({ length: 500 }, () => ({ created_at: '2026-07-02T10:00:00.000Z', hits: 1, top_score: 0.9, threshold: 0.5, author_kind: 'agent' })) }, {}, { knowledge_searches: 800 });
+
+    const body = await (await GET(req('?from=2026-07-01&to=2026-07-03'))).json();
+
+    expect(body.data.fontes_incompletas).toEqual([{ fonte: 'knowledge_searches', motivo: 'cortada' }]);
+  });
+
+  it('exatamente 1.000 linhas, e o período tem 1.000: não é corte', async () => {
+    fakeDb({ ai_router_decisions: decisoes(1_000) });
+
+    const body = await (await GET(req('?from=2026-07-01&to=2026-07-03'))).json();
+
+    expect(body.data.fontes_incompletas).toEqual([]);
+  });
+
+  it('contagem que volta sem count e sem erro é falha, não zero', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    fakeDb({ messages: [{}, {}] }, {}, { messages: null });
+
+    const body = await (await GET(req('?from=2026-07-01&to=2026-07-03'))).json();
+
+    expect(body.data.fontes_incompletas).toContainEqual({ fonte: 'messages', motivo: 'falhou' });
+  });
+
+  it('custo nulo na soma do banco é falha, não um zero calado', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    rpc.mockResolvedValue({ data: usoDoBanco(null as unknown as number), error: null });
+
+    const body = await (await GET(req('?from=2026-07-01&to=2026-07-03'))).json();
+
+    expect(body.data.outcome.cost_cents).toBe(0);
+    expect(body.data.fontes_incompletas).toContainEqual({ fonte: 'llm_calls', motivo: 'falhou' });
   });
 
   it('sem corte nem falha, fontes_incompletas vem vazia', async () => {

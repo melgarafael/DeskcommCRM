@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { render, screen, within } from "@testing-library/react";
 
-import { AvisoDeFontesIncompletas } from "@/app/app/ai/evolution/_client";
+import type { EvolutionPayload, FonteIncompleta } from "@/lib/ai/evolution/aggregate";
+import { aggregateEvolution } from "@/lib/ai/evolution/aggregate";
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 
 /**
@@ -10,19 +11,60 @@ import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
  * A rota lê cada fonte com o teto do PostgREST (1.000 linhas). Antes, bater o
  * teto ou falhar a leitura só ia para o log: a tela mostrava o recorte, ou o
  * zero, com cara de número exato. Agora a rota devolve `fontes_incompletas` e a
- * tela nomeia o bloco afetado — pelo nome que a pessoa vê na tela, nunca o da
+ * tela nomeia os blocos afetados — pelo nome que a pessoa vê na tela, nunca o da
  * tabela.
+ *
+ * Os casos rodam a PÁGINA (`EvolutionClient`) com o hook de dados trocado pelo
+ * payload: tirar a faixa da página reprova, não só o componente isolado.
  */
-function pinta(fontes: Array<{ fonte: string; motivo: "cortada" | "falhou" }>, locale = "pt-BR") {
+const resposta = vi.hoisted(() => ({ atual: null as unknown }));
+vi.mock("@/hooks/ai/useEvolution", () => ({
+  useEvolution: () => ({ data: resposta.atual, error: null }),
+}));
+
+// Gráfico fora do jsdom: o que se mede aqui são os textos.
+vi.mock("recharts", async (importOriginal) => {
+  const real = await importOriginal<typeof import("recharts")>();
+  return { ...real, ResponsiveContainer: () => null };
+});
+
+import { EvolutionClient } from "@/app/app/ai/evolution/_client";
+
+const RANGE = { from: "2026-07-01", to: "2026-07-03" };
+
+function payload(fontes: FonteIncompleta[], extra: { inbound?: number } = {}): EvolutionPayload {
+  return aggregateEvolution({
+    range: { from: new Date("2026-07-01T00:00:00Z"), to: new Date("2026-07-03T00:00:00Z") },
+    memoryEntries: [],
+    proposalsApplied: [],
+    skillInstalls: [],
+    skillActivations: [],
+    routerDecisions: [{ created_at: "2026-07-02T10:00:00.000Z", outcome: "classified", intent_name: "x", router_id: "r1" }],
+    knowledgeSearches: [],
+    stageTransitions: [],
+    costCents: 0,
+    inboundCount: extra.inbound ?? 10,
+    handoffCount: 0,
+    pipelines: [{ name: "Vendas", hints: ["new", "contacted", "qualifying", "qualified", "negotiating", "won", "lost"] }],
+    fontesIncompletas: fontes,
+  } as Parameters<typeof aggregateEvolution>[0]);
+}
+
+function pinta(fontes: FonteIncompleta[], opcoes: { locale?: string; inbound?: number } = {}) {
+  resposta.atual = payload(fontes, opcoes);
   return render(
-    <IdiomaProvider locale={locale}>
-      <AvisoDeFontesIncompletas fontes={fontes} />
+    <IdiomaProvider locale={opcoes.locale ?? "pt-BR"}>
+      <EvolutionClient defaultRange={RANGE} />
     </IdiomaProvider>,
   );
 }
 
-describe("AvisoDeFontesIncompletas", () => {
-  it("leitura cortada e leitura que falhou: cada uma no seu aviso, pelo nome do bloco", () => {
+beforeEach(() => {
+  resposta.atual = null;
+});
+
+describe("Painel de Evolução — aviso de fontes incompletas (#5016)", () => {
+  it("leitura cortada e leitura que falhou: cada uma no seu aviso, com todos os blocos afetados", () => {
     pinta([
       { fonte: "ai_router_decisions", motivo: "cortada" },
       { fonte: "llm_calls", motivo: "falhou" },
@@ -30,18 +72,21 @@ describe("AvisoDeFontesIncompletas", () => {
 
     const cortadas = screen.getByTestId("evolution-fontes-cortadas");
     expect(cortadas.textContent).toContain("mais registros do que o painel consegue ler");
-    expect(cortadas.textContent).toContain("Conversas encaminhadas");
+    // A tabela alimenta três blocos da tela: os três são nomeados.
+    for (const bloco of ["Conversas encaminhadas", "Assuntos mais procurados", "O que está travando"]) {
+      expect(cortadas.textContent).toContain(bloco);
+    }
+    expect(cortadas.textContent).toContain("Encurte as datas");
     expect(cortadas.textContent).not.toContain("ai_router_decisions");
 
     const falharam = screen.getByTestId("evolution-fontes-falharam");
-    expect(falharam.textContent).toContain("Não foi possível ler agora");
+    expect(falharam.textContent).toContain("podem aparecer zerados ou incompletos");
     expect(falharam.textContent).toContain("Custo da IA no período");
     expect(falharam.textContent).not.toContain("Conversas encaminhadas");
   });
 
   it("três tabelas do mesmo número aparecem como um bloco só", () => {
     pinta([
-      { fonte: "messages", motivo: "falhou" },
       { fonte: "agent_inbox_items", motivo: "falhou" },
       { fonte: "event_log", motivo: "falhou" },
     ]);
@@ -50,9 +95,32 @@ describe("AvisoDeFontesIncompletas", () => {
     expect(texto.split("Casos que precisaram de uma pessoa")).toHaveLength(2);
   });
 
-  it("nada cortado nem falho: nenhum aviso", () => {
-    const { container } = pinta([]);
-    expect(container.textContent).toBe("");
+  it("funil cortado não manda encurtar as datas — ele não depende delas", () => {
+    pinta([{ fonte: "crm_stages", motivo: "cortada" }]);
+
+    expect(screen.getByTestId("evolution-fontes-cortadas").textContent).not.toContain("Encurte as datas");
+  });
+
+  it("nada cortado nem falho: nenhum aviso, e a boa notícia continua", () => {
+    pinta([]);
+
+    expect(screen.queryByTestId("evolution-fontes-cortadas")).toBeNull();
+    expect(screen.queryByTestId("evolution-fontes-falharam")).toBeNull();
+    expect(screen.getByTestId("gaps-vazio")).toBeTruthy();
+  });
+
+  it("fonte das lacunas cortada: 'O que está travando' não diz que nada trava", () => {
+    pinta([{ fonte: "ai_router_decisions", motivo: "cortada" }]);
+
+    const bloco = screen.getByTestId("bloco-travando");
+    expect(within(bloco).queryByTestId("gaps-vazio")).toBeNull();
+    expect(within(bloco).getByTestId("gaps-incompleto").textContent).toContain("Não dá para dizer que nada está travando");
+  });
+
+  it("contagem de mensagens que falhou não vira 'não houve atendimento'", () => {
+    pinta([{ fonte: "messages", motivo: "falhou" }], { inbound: 0 });
+
+    expect(screen.getByTestId("bloco-resultado").textContent).not.toContain("Não houve atendimento neste período");
   });
 
   it("em espanhol, o aviso e os nomes dos blocos saem em espanhol", () => {
@@ -61,12 +129,10 @@ describe("AvisoDeFontesIncompletas", () => {
         { fonte: "ai_router_decisions", motivo: "cortada" },
         { fonte: "llm_calls", motivo: "falhou" },
       ],
-      "es",
+      { locale: "es" },
     );
 
-    expect(screen.getByTestId("evolution-fontes-cortadas").textContent).not.toContain(
-      "mais registros do que o painel consegue ler",
-    );
+    expect(screen.getByTestId("evolution-fontes-cortadas").textContent).toContain("Este período tiene más registros");
     expect(screen.getByTestId("evolution-fontes-falharam").textContent).toContain("Costo de la IA en el período");
   });
 });
