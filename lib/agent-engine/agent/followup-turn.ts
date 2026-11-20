@@ -1777,16 +1777,6 @@ async function sendFixedOutbound(
 }
 
 /**
- * ADIA o passo em que a janela de repetição recusou TODAS as redações — e devolve
- * `skipped` quando o teto já foi usado.
- *
- * `skipped` na ponte CANCELA a inscrição (é o desfecho de hoje), então chegar
- * nele só depois de a janela ter tido chance de andar. O que se conta é quantos
- * adiamentos POR REPETIÇÃO este passo já teve (`action_deferred` com
- * `reason: mass_identical` nos eventos da inscrição): os adiamentos por janela
- * (`outside_window`) e por ritmo são outra coisa e não gastam este teto.
- */
-/**
  * O canal desta conversa impõe a janela de 24 h? Lido do PROVEDOR (capability),
  * nunca do nome do canal, e só quando um adiamento está sendo registrado.
  *
@@ -1812,6 +1802,16 @@ async function janelaRegulatoriaDoCanal(
   }
 }
 
+/**
+ * ADIA o passo em que a janela de repetição recusou TODAS as redações — e devolve
+ * `skipped` quando o teto já foi usado.
+ *
+ * `skipped` na ponte CANCELA a inscrição (é o desfecho de hoje), então chegar
+ * nele só depois de a janela ter tido chance de andar. O que se conta é quantos
+ * adiamentos POR REPETIÇÃO este passo já teve (`action_deferred` com
+ * `reason: mass_identical` nos eventos da inscrição): os adiamentos por janela
+ * (`outside_window`) e por ritmo são outra coisa e não gastam este teto.
+ */
 async function adiarPorRepeticao(
   pool: pg.Pool,
   job: JobRow,
