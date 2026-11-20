@@ -113,7 +113,12 @@ const PASSOS = [
 
 export function UpdatePanel() {
   const t = useT();
-  const { data, isError } = useSystemVersion({ refetchInterval: 5_000 });
+  // Só faz poll rápido (5s) enquanto houver atualização em andamento (run despachado);
+  // parado, usa o intervalo relaxado de 5 min do hook (#2235).
+  const { data, isError } = useSystemVersion({
+    refetchInterval: (query) =>
+      query.state.data?.run?.status === "dispatched" ? 5_000 : 5 * 60_000,
+  });
   const queryClient = useQueryClient();
   const [erro, setErro] = useState<string | null>(null);
 

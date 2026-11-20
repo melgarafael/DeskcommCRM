@@ -1,0 +1,7 @@
+---
+impacto: capacidade_nova
+secao: adicionado
+titulo: Agentes, chamados e follow-ups da IA aceitam token de integração
+---
+
+As rotas de agentes de IA (`ai/agents/assignable` e, por agente, `duplicate`, `pause`, `proposals`, `proposals/[pid]/apply`, `reconcile`, `runs` e `tool-usage`), de chamados e roteamento (`ai/cases`, `ai/cases/[id]`, `ai/routing-results` e `ai/routing-results/[id]`), de fluxos de follow-up (`ai/followup-flows/[id]` e seus `disable`, `duplicate` e `export`, além de `import` e `modelos-aprovados`) e de follow-ups em andamento (`ai/followups/enrollments`, `enrollments/[id]` com `cancel`, `pause` e `snooze`, `promises/[id]/cancel` e `queue`) passam a aceitar o token `dsk_…` de servidor, além da sessão de navegador. A leitura pede o escopo `config:read`, a escrita pede `config:write`, e o token precisa ser de papel administrador em todas elas, porque pelo token a leitura alcança a organização inteira. A organização vem da linha do token, nunca do corpo ou da query, e cada chamada conta no teto do token e da organização: passou do limite, a resposta é 429 com `Retry-After`. O que a integração faz fica no histórico com o token como autor, nunca em nome de uma pessoa. Continuam só pela sessão: publicar e voltar versão de fluxo, inscrever um contato num follow-up, retomar e pular etapa de follow-up, o alerta de chamados, e conversar, responder e encerrar um chamado. Crédito: @paulolimajr77.

@@ -1,5 +1,5 @@
 /**
- * NOTA DE VOZ DA IA NUM CANAL QUE NÃO A ENTREGA — Instagram/Facebook.
+ * NOTA DE VOZ DA IA NUM CANAL QUE NÃO A ENTREGA — Facebook e Telegram.
  *
  * ─── O defeito, do jeito que o dono viveu ───────────────────────────────────
  *
@@ -13,6 +13,8 @@
  * A causa era a matriz: a rede social declarava `voiceNote: "server-convert"`
  * ("o canal converte áudio"), e a Meta não aceita mp3 (nem ogg/opus) em DM do
  * Instagram — só aac, m4a, wav e mp4. O canal passa a declarar `none`.
+ * Depois, medido o WAV no Instagram, a voz voltou SÓ nessa rede (por sessão,
+ * `notaDeVozDoCanal`) — ver `tests/unit/voz-wav-no-instagram.test.ts`.
  *
  * ─── O que se cobra aqui ───────────────────────────────────────────────────
  *
@@ -64,7 +66,8 @@ vi.mock("@/app/app/ai/agents/[id]/_actions", () => ({
 import { AgentForm } from "@/app/app/ai/agents/[id]/_components/AgentForm";
 
 describe("matriz — quem entrega nota de voz da IA", () => {
-  it("rede social (Instagram/Facebook) declara `none`: a Meta recusa mp3 e ogg/opus em DM", () => {
+  it("rede social declara `none` no PROVEDOR: é o valor da rede não medida (Facebook)", () => {
+    // O Instagram, medido, sobrepõe por rede — `tests/unit/voz-wav-no-instagram.test.ts`.
     expect(capabilitiesOf(CHANNEL_PROVIDER_SOCIAL).voiceNote).toBe("none");
   });
 
@@ -124,13 +127,13 @@ describe("lista de canais da tela — `enviaNotaDeVoz`", () => {
       dbCom([
         linha("pareado", "waha"),
         linha("oficial", "meta_cloud"),
-        linha("instagram", CHANNEL_PROVIDER_SOCIAL),
+        linha("social-sem-rede", CHANNEL_PROVIDER_SOCIAL),
         linha("futuro", "provedor_que_este_build_nao_conhece"),
       ]),
       ORG,
     );
     const porId = Object.fromEntries(canais.map((c) => [c.id, c.enviaNotaDeVoz]));
-    expect(porId).toEqual({ pareado: true, oficial: true, instagram: false, futuro: false });
+    expect(porId).toEqual({ pareado: true, oficial: true, "social-sem-rede": false, futuro: false });
   });
 });
 
@@ -197,7 +200,7 @@ function abrirEditor(opcoes: { vozEnabled: boolean; enviaNotaDeVoz: boolean }) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const canal = {
     id: CANAL,
-    display_name: "Instagram da loja",
+    display_name: "Facebook da loja",
     status: "WORKING",
     phone_number: null,
     aceitaMensagemLivre: false,

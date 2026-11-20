@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { apagarDadosOperacionaisDaOrganizacao } from "@/app/actions/settings/apagarDadosOperacionaisDaOrganizacao";
+import { contarDadosParaLimparDaOrganizacao } from "@/app/actions/settings/contarDadosParaLimparDaOrganizacao";
+import type { ContagensApagadas } from "@/lib/settings/apagar-dados-operacionais";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -38,10 +40,42 @@ interface Props {
 
 export function ZonaDePerigoDaOrganizacao({ displayName }: Props) {
   const t = useT();
+  // O rótulo de cada tipo na prévia, na ordem em que a tela os lista. Cada texto
+  // passa por t() como literal (a cerca de i18n não aceita t() sobre parâmetro).
+  const linhasDaPrevia: ReadonlyArray<readonly [keyof ContagensApagadas, string]> = [
+    ["messages", t("mensagens")],
+    ["conversations", t("conversas")],
+    ["contacts", t("contatos")],
+    ["crm_leads", t("negócios")],
+    ["crm_proposals", t("propostas")],
+    ["orders", t("pedidos")],
+    ["calendar_appointments", t("agendamentos")],
+    ["companies", t("empresas")],
+    ["people", t("pessoas")],
+    ["import_batches", t("importações")],
+  ];
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [digitado, setDigitado] = useState("");
   const [isPending, startTransition] = useTransition();
+  // A22: a contagem do que vai sumir, lida ao abrir o diálogo. `null` = ainda
+  // lendo; `"erro"` = não consegui contar (a tela não inventa zero).
+  const [previa, setPrevia] = useState<ContagensApagadas | "erro" | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let ativo = true;
+    void contarDadosParaLimparDaOrganizacao()
+      .then((r) => {
+        if (ativo) setPrevia(r.ok ? r.counts : "erro");
+      })
+      .catch(() => {
+        if (ativo) setPrevia("erro");
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [open]);
 
   const confere = digitado.trim() === displayName.trim();
 
@@ -54,7 +88,7 @@ export function ZonaDePerigoDaOrganizacao({ displayName }: Props) {
       if (resultado.ok) {
         const c = resultado.counts;
         toast.success(
-          `${t("Dados apagados")}: ${c.messages} ${t("mensagens")}, ${c.conversations} ${t("conversas")}, ${c.crm_leads} ${t("negócios")}, ${c.contacts} ${t("contatos")}.`,
+          `${t("Dados apagados")}: ${c.messages} ${t("mensagens")}, ${c.conversations} ${t("conversas")}, ${c.crm_leads} ${t("negócios")}, ${c.contacts} ${t("contatos")}, ${c.companies} ${t("empresas")}, ${c.people} ${t("pessoas")}.`,
         );
         setOpen(false);
         setDigitado("");
@@ -72,16 +106,16 @@ export function ZonaDePerigoDaOrganizacao({ displayName }: Props) {
     >
       <div>
         <h2 className="text-base font-semibold tracking-tight text-destructive">
-          {t("Zona de perigo")}
+          {t("Limpar dados de teste")}
         </h2>
         <p className="text-sm text-muted-foreground">
           {t(
-            "Apaga de vez as mensagens, conversas, negócios, contatos, agendamentos e pedidos desta organização. Serve para recomeçar os testes do zero antes de atender de verdade.",
+            "Apaga de vez as mensagens, conversas, negócios, contatos, agendamentos, pedidos, empresas, pessoas e importações desta organização. Serve para entregar o CRM configurado e limpo, depois de testar.",
           )}
         </p>
         <p className="mt-2 text-sm text-muted-foreground">
           {t(
-            "Continuam de pé: as pessoas da equipe, as configurações, os funis e etapas, os agentes de IA e os canais de WhatsApp já conectados.",
+            "Continuam de pé: as pessoas da equipe, as configurações, os funis e etapas, os agentes de IA, os canais de WhatsApp já conectados e o registro de auditoria.",
           )}
         </p>
       </div>
@@ -90,25 +124,48 @@ export function ZonaDePerigoDaOrganizacao({ displayName }: Props) {
         open={open}
         onOpenChange={(v) => {
           setOpen(v);
+          if (v) setPrevia(null); // abrir de novo recontando: a base muda entre uma abertura e outra
           if (!v) setDigitado("");
         }}
       >
         <AlertDialogTrigger asChild>
           <Button type="button" variant="destructive" data-testid="abrir-zona-de-perigo">
-            {t("Apagar todos os dados de atendimento")}
+            {t("Limpar dados de teste")}
           </Button>
         </AlertDialogTrigger>
 
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t("Apagar todos os dados de atendimento?")}</AlertDialogTitle>
+            <AlertDialogTitle>{t("Limpar os dados de teste?")}</AlertDialogTitle>
             <AlertDialogDescription>
               {t(
-                "Esta ação é irreversível. Mensagens, conversas, negócios, contatos, agendamentos e pedidos de",
+                "Esta ação é irreversível. Todos os dados de atendimento de",
               )}{" "}
-              <strong>{displayName}</strong> {t("serão apagados de vez.")}
+              <strong>{displayName}</strong> {t("serão apagados de vez, sejam de teste ou não.")}
             </AlertDialogDescription>
           </AlertDialogHeader>
+
+          {/* A22: o que vai sumir, contado agora, e o aviso de backup. */}
+          <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm" data-testid="previa-da-limpeza">
+            <p className="font-medium">{t("Vão ser apagados:")}</p>
+            {previa === null ? (
+              <p className="text-muted-foreground">{t("Contando…")}</p>
+            ) : previa === "erro" ? (
+              <p className="text-muted-foreground">{t("Não consegui contar agora. Você ainda pode apagar.")}</p>
+            ) : (
+              <ul className="grid grid-cols-2 gap-x-4 gap-y-1">
+                {linhasDaPrevia.map(([chave, rotulo]) => (
+                  <li key={chave} className="flex justify-between">
+                    <span>{rotulo}</span>
+                    <span className="tabular-nums">{previa[chave]}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="text-muted-foreground">
+              {t("Se você ainda precisa de algum desses dados, faça um backup antes de continuar.")}
+            </p>
+          </div>
 
           <div className="space-y-2 py-2">
             <Label htmlFor="confirm_nome_organizacao">

@@ -28,6 +28,7 @@ import type { AlvoDeConversa } from "@/components/channels/SeletorDeCanalParaCon
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import { camposDoFunil, camposPorEscopo } from "@/lib/leads/campos-do-funil";
 import { CustomFieldsEditor } from "@/components/contacts/CustomFieldsEditor";
+import { ComoCriarCamposDoContato } from "@/components/contacts/ComoCriarCamposDoContato";
 import { EtiquetasDoContato } from "@/components/contacts/EtiquetasDoContato";
 import { CamposDeEndereco } from "@/components/contacts/CamposDeEndereco";
 import {
@@ -91,6 +92,11 @@ export function NewContactDialog({
   // Mesma definição da ficha: campos do contato no funil padrão, sem defaults de nicho.
   const pipeline = useDefaultPipeline(open && Boolean(org));
   const campos = camposPorEscopo(camposDoFunil(pipeline.data?.pipeline?.settings), "contato");
+  // A dica de onde criar campo (#4744) espera o funil LIDO: enquanto a leitura
+  // corre, `campos` também é `[]`, e a dica piscaria para quem já tem campo.
+  // Só admin: `updatePipelineConfig` recusa os outros papéis.
+  const funilDosCampos = pipeline.data?.pipeline ?? null;
+  const podeCriarCampos = roleAtLeast(org?.role, "admin");
   /**
    * A CONVERSA A ABRIR DEPOIS DE SALVAR (#3483) — `null` = nada pendente.
    *
@@ -376,7 +382,7 @@ export function NewContactDialog({
               erroNoVocabulario={vocabulario.isError || buscaNoVocabulario.isError}
             />
           </div>
-          {campos.length > 0 && (
+          {campos.length > 0 ? (
             <div className="space-y-3 rounded-md border border-border p-3">
               <h3 className="text-sm font-medium">{t("Campos personalizados")}</h3>
               <CustomFieldsEditor
@@ -386,6 +392,9 @@ export function NewContactDialog({
                 onChange={(next) => form.setValue("custom_fields", next, { shouldDirty: true })}
               />
             </div>
+          ) : (
+            podeCriarCampos &&
+            funilDosCampos && <ComoCriarCamposDoContato nomeDoFunil={funilDosCampos.name} />
           )}
           {serverError && (
             <p className="text-sm text-error-fg">{serverError}</p>

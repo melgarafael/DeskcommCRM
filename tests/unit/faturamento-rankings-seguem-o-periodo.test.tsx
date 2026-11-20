@@ -45,12 +45,19 @@ const RANKINGS: RespostaDoRelatorioComercial = {
   total_etiquetagens: 1,
   clientes: [{ contact_id: "c1", centavos: 50_000, negocios: 1 }],
   negocios_sem_contato: 0,
+  // #4941: a resposta ganhou o recorte por funil e tag e a lista das vendas.
+  funis: [],
+  filtro: { pipeline_id: null, tag: null },
+  opcoes: { pipeline_ids: [], tags: ["plano"] },
+  vendas: [],
+  vendas_no_filtro: 1,
   excluidos: { outra_moeda: 0, sem_data_de_ganho: 0 },
   sem_dados: false,
   motivo: null,
   truncado: false,
   nota: null,
   contatos: { c1: { id: "c1", display_name: "Ana", name: "Ana", phone_number: null } },
+  nomes_dos_funis: {},
 };
 
 const FINANCEIRO_VAZIO = {
@@ -98,7 +105,8 @@ describe("faturamento — os rankings de negócios ganhos seguem o período da t
 
     expect(await screen.findByText("Tags que mais vendem")).toBeTruthy();
     expect(screen.getByText("Clientes que mais compram")).toBeTruthy();
-    expect(screen.getByText("plano")).toBeTruthy();
+    // A tag aparece no ranking (botão que filtra) e também no seletor de tag do recorte.
+    expect(screen.getByRole("button", { name: "plano" })).toBeTruthy();
     // Um número de faturamento só: o da tela. O bloco não traz o dele.
     expect(screen.queryByText("Faturamento do período")).toBeNull();
 
