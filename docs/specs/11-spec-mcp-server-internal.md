@@ -300,7 +300,8 @@ não serve para a rota REST). A resposta (`data`) traz `storage_path`, `kind`, `
 
 ```ts
 { conversation_id, type: kind /* 'image' | 'video' | 'audio' | 'document' */,
-  media_storage_path: storage_path, media_mime, media_filename /* o da resposta do upload; se veio null, omita */, body /* legenda, opcional */ }
+  media_storage_path: storage_path, media_mime, body /* legenda, opcional */,
+  ...(media_filename ? { media_filename } : {}) /* o nome da resposta do upload; null não é aceito, então fica de fora */ }
 ```
 
 O envio confere que o arquivo é da organização E desta conversa; caminho de outra conversa é recusado.
