@@ -68,6 +68,8 @@ export async function GET(req: NextRequest): Promise<Response> {
     resource: "metrics",
     role: "agent",
     scope: "mcp:read",
+    // O token lê a organização inteira; na sessão um agent vê só os negócios dele.
+    tokenRole: "manager",
   });
   if (!authz.ok) return authz.response;
   // Está em PUBLIC_PATHS: o teto do token é a única contagem das chamadas dele.

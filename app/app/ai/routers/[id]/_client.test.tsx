@@ -3,7 +3,7 @@
  * intenção aparecia com o módulo DESLIGADO — amarrar a um roteiro que a
  * instalação não roda.
  */
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -17,6 +17,7 @@ const {
   stagesMock,
   estagiosMock,
   routerDataMock,
+  refreshMock,
 } = vi.hoisted(() => ({
   authMock: vi.fn(),
   flowsMock: vi.fn(),
@@ -33,9 +34,11 @@ const {
   saveMock: vi.fn(async () => ({})),
   // #2415 — o que o React Query devolve no refetch: undefined = sem query em cache.
   routerDataMock: vi.fn((): { data: unknown } => ({ data: undefined })),
+  // #4340 — estável entre renders, para o teste ver o refresh depois de mover.
+  refreshMock: vi.fn(),
 }));
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: refreshMock }) }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({ useAuth: authMock, usePermission: () => true, usePaisDaOrgAtiva: () => "BR" }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 vi.mock("@/hooks/followup/useFollowupFlows", () => ({ useFollowupFlows: flowsMock }));
@@ -63,7 +66,7 @@ import { RouterEditorClient } from "./_client";
 
 afterEach(cleanup);
 
-function renderizar() {
+function renderizar(config: Record<string, unknown> = {}) {
   return render(
     <RouterEditorClient
       routerId="r1"
@@ -73,8 +76,9 @@ function renderizar() {
           name: "Roteador",
           channel_session_id: "s1",
           is_active: true,
-          config: {},
+          config,
           fallback_agent_id: null,
+          passagem_ao_cliente: null,
         },
         members: [
           {
@@ -299,6 +303,7 @@ describe("destino do funil/etapa do roteador (#2415)", () => {
     is_active: true,
     config: {},
     fallback_agent_id: null,
+    passagem_ao_cliente: null,
   };
   // O SSR legado chegava SEM os campos de destino (o defeito da issue).
   const MEMBRO_SEM_DESTINO = {
@@ -395,6 +400,7 @@ describe("destino do funil/etapa já gravado, na primeira renderização (#2569)
     is_active: true,
     config: {},
     fallback_agent_id: null,
+    passagem_ao_cliente: null,
   };
   const MEMBRO_COM_FUNIL_E_ETAPA = {
     id: "m1",
@@ -554,7 +560,7 @@ describe('regras por remetente', () => {
     const agentId = '11111111-1111-4111-8111-111111111111';
     const fallback = '22222222-2222-4222-8222-222222222222';
     render(<RouterEditorClient routerId="r1" initialState={{
-      router: { id: 'r1', name: 'R', channel_session_id: 's1', is_active: true, fallback_agent_id: fallback,
+      router: { id: 'r1', name: 'R', channel_session_id: 's1', is_active: true, fallback_agent_id: fallback, passagem_ao_cliente: null,
         config: { sender_routes: [{ phone: '+5511999998888', agent_id: agentId }] } }, members: [],
     }} agents={[{ id: agentId, name: 'Secretária' }, { id: fallback, name: 'Paciente' }]} channelSessions={[]} classifierModels={[]} />);
     const phone = screen.getByLabelText('Telefone com DDI');
@@ -564,5 +570,105 @@ describe('regras por remetente', () => {
     expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ config: expect.objectContaining({
       sender_routes: [{ phone: '+5511888887777', agent_id: agentId }],
     }) }));
+  });
+});
+
+describe("#4340 — mover o roteador para o número novo", () => {
+  function renderNumeroRemovido(numerosLivres: Array<{ id: string; rotulo: string }>) {
+    authMock.mockReturnValue({ activeOrg: { modulos_ligados: [] } });
+    flowsMock.mockReturnValue({ data: undefined });
+    routerDataMock.mockReturnValue({ data: undefined });
+    updateMock.mockClear();
+    return render(
+      <RouterEditorClient
+        routerId="r1"
+        initialState={{
+          router: {
+            id: "r1",
+            name: "Roteador do atendimento",
+            channel_session_id: "s1",
+            is_active: true,
+            config: {},
+            fallback_agent_id: null,
+            passagem_ao_cliente: null,
+          },
+          members: [],
+        }}
+        agents={[]}
+        // s1 não está entre os oferecíveis: o número antigo foi arquivado.
+        channelSessions={[]}
+        classifierModels={[]}
+        numeroRemovido
+        numerosLivres={numerosLivres}
+      />,
+    );
+  }
+
+  it("com um único número livre, o número já vem escolhido e o gesto é um clique", async () => {
+    renderNumeroRemovido([{ id: "s2", rotulo: "Atendimento · 5511999999999" }]);
+
+    const botao = screen.getByTestId("mover-roteador-de-numero") as HTMLButtonElement;
+    // Não há segundo campo a preencher: o único destino possível já está no
+    // seletor, então o botão nasce habilitado — o gesto é um clique só.
+    expect(botao.disabled).toBe(false);
+
+    fireEvent.click(botao);
+
+    expect(updateMock, "o clique não pediu a mudança do roteador").toHaveBeenCalledWith({
+      channel_session_id: "s2",
+    });
+    // O aviso e o selo vêm do SSR: sem refresh, o "número removido" fica na
+    // tela ao lado do toast de sucesso.
+    await waitFor(() =>
+      expect(refreshMock, "a tela não recarregou o SSR depois de mover").toHaveBeenCalled(),
+    );
+  });
+
+  it("sem número livre, a tela explica em vez de oferecer um destino impossível", () => {
+    renderNumeroRemovido([]);
+
+    expect(screen.queryByTestId("mover-roteador-de-numero")).toBeNull();
+    expect(screen.getByText("Nenhum número livre para mover: conecte o número novo em Canais.")).toBeTruthy();
+  });
+});
+
+describe("#4750 — interruptor da troca automática silenciosa", () => {
+  it("nasce desligado no roteador legado e explica o modo de hoje", () => {
+    authMock.mockReturnValue({ activeOrg: { modulos_ligados: [] } });
+    flowsMock.mockReturnValue({ data: undefined });
+    renderizar();
+    const interruptor = screen.getByTestId("passagem-silenciosa");
+    expect(interruptor.getAttribute("aria-checked")).toBe("false");
+    expect(
+      screen.getByText(
+        "Desligada: com frase abaixo, o cliente é avisado da troca; sem frase, o agente novo se apresenta com as palavras dele.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("grava a chave ligada pelo MESMO PATCH que a tela usa", async () => {
+    authMock.mockReturnValue({ activeOrg: { modulos_ligados: [] } });
+    flowsMock.mockReturnValue({ data: undefined });
+    updateMock.mockClear();
+    renderizar();
+    fireEvent.click(screen.getByTestId("passagem-silenciosa"));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    await waitFor(() =>
+      expect(updateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          config: expect.objectContaining({ passagem_silenciosa: true }),
+        }),
+      ),
+    );
+  });
+
+  it("lê a chave do config: roteador já silencioso nasce ligado e avisa que a frase não sai", () => {
+    authMock.mockReturnValue({ activeOrg: { modulos_ligados: [] } });
+    flowsMock.mockReturnValue({ data: undefined });
+    renderizar({ passagem_silenciosa: true });
+    expect(screen.getByTestId("passagem-silenciosa").getAttribute("aria-checked")).toBe("true");
+    expect(
+      screen.getByText("Com a troca silenciosa ligada, esta frase NÃO é enviada ao cliente."),
+    ).toBeTruthy();
   });
 });

@@ -160,6 +160,10 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
     razao: "PATCH app/api/v1/settings/routing/channels/route.ts usa createClient da sessão; RPC exige manager, suporte de escrita, MFA e canal/membros da org na mesma transação. Os dois últimos parâmetros (#2331) acrescentam o modo do número e o atendente de destino padrão à MESMA escrita dos responsáveis; a assinatura antiga de 4 argumentos foi derrubada na migration 0663, e a de 4 continua atendida pelos DEFAULTs. tests/invariants/channel-routing.test.ts prova viewer, tenants A/B, membro revogado, policy vazia, MFA platform aal1/aal2, modo fora da lista e destino que não é membro recusados sem gravar, e a entrega direta ao destino padrão.",
   },
   {
+    fn: "fn_set_channel_ai_wait(uuid,uuid,integer)",
+    razao: "PATCH app/api/v1/settings/routing/channels/route.ts usa createClient da sessão, logo depois de fn_set_channel_routing; a RPC repete as MESMAS guardas dela (manager, suporte de escrita, MFA provada) e só grava `ai_wait_minutes` (#3966, opção do número: esperar a IA qualificar, com prazo) numa regra de número que JÁ existe na org informada — não cria regra, então não muda quem pode receber o número. Faixa 15 a 10080 recusada na função e no CHECK. tests/invariants/roteamento-espera-a-qualificacao.test.ts prova viewer recusado, faixa recusada, número sem regra recusado e a gravação pelo gestor.",
+  },
+  {
     fn: "fn_reserve_channel_connection(uuid,uuid,text,text,boolean)",
     razao: "lib/channels/connect-waha.ts recebe createClient das rotas channel-sessions e onboarding/whatsapp/session; RPC exige admin, suporte e MFA, cria identidade org-owned com recibo privado. tests/invariants/channel-routing.test.ts prova lease/replay/ACL do recibo e MFA platform aal1/aal2.",
   },
@@ -227,6 +231,16 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "Só escreve uma chave de topo de organizations.settings " +
       "(google_meet_acesso_aberto) e devolve {ligado,mudou}; a leitura é " +
       "meetAbertoLigado (lib/schemas/settings.ts), sem nenhuma exposição.",
+  },
+  {
+    fn: "fn_definir_aparencia_da_organizacao(uuid,jsonb)",
+    razao:
+      "app/actions/settings/definirAparenciaDaOrganizacao.ts chama com createClient da sessão; " +
+      "auth.uid() exige admin da própria organização, suporte de escrita e MFA comprovado " +
+      "antes de gravar. Só escreve a chave settings.aparencia (jsonb_set), com forma validada " +
+      "(chaves conhecidas, texto curto em minúsculas, cor #rrggbb). " +
+      "tests/invariants/aparencia-da-organizacao.test.ts prova admin próprio, negação de " +
+      "manager/agent/viewer, admin de outra organização, anon, aal1 com fator e forma inválida.",
   },
   {
     fn: "fn_definir_cliente_pela_agenda(uuid,boolean)",
@@ -298,6 +312,16 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "função recusa tudo que não seja admin da própria organização.",
   },
   {
+    fn: "fn_definir_lembrete_do_aviso_de_agendamento(uuid,boolean)",
+    razao:
+      "A porta de escrita de `config_aviso_de_agendamento.lembrar_antes` (migration 9326). " +
+      "PUT app/api/v1/agenda/aviso/route.ts chama com createClient da sessão, logo depois de " +
+      "fn_definir_aviso_de_agendamento. Mesmas guardas da irmã: auth.uid(), " +
+      "fn_role_at_least(p_org,'admin'), fn_support_write_allowed(p_org) e " +
+      "fn_session_mfa_proven(); só atualiza a linha da organização pedida e recusa quem " +
+      "ainda não tem configuração. Prova: tests/invariants/lembrete-ao-dono-escrita.test.ts.",
+  },
+  {
     fn: "fn_definir_aviso_de_agendamento(uuid,boolean,uuid,text,boolean,boolean,text)",
     razao:
       "A ÚNICA porta de escrita de `config_aviso_de_agendamento` (migration 0707) — " +
@@ -330,6 +354,41 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "junção 'vip'+'VIP' sem duplicata e exclusão que informa — sem apagar — a " +
       "regra do agente; tests/invariants/tags-cor-de-etiqueta.test.ts prova a " +
       "cor.",
+  },
+  {
+    fn: "fn_agencia_abrir_cliente(uuid,uuid)",
+    razao:
+      "POST app/api/v1/agencia/clientes/[id]/abrir/route.ts → auth.db de " +
+      "requireAgencia (lib/agencias/require-agencia.ts), que é createClient da " +
+      "sessão. Precisa da sessão: grava em agencia_sessoes o auth.uid() e o " +
+      "session_id do JWT, que um client de serviço não tem. Definer porque " +
+      "authenticated não tem insert em agencia_sessoes. A guarda está no corpo: " +
+      "sessão Auth viva, fn_agencia_autoridade (admin direto de agência habilitada, " +
+      "módulo `agencias` ligado), sem acompanhamento aberto, aal2 se há fator, e " +
+      "vínculo em agencia_clientes com cliente ativo — cliente alheio levanta " +
+      "42501 (tests/invariants/agencias.test.ts, três organizações, #4034).",
+  },
+  {
+    fn: "fn_agencia_criar_cliente(uuid,uuid,text,text)",
+    razao:
+      "POST app/api/v1/agencia/clientes/route.ts → auth.db de requireAgencia, " +
+      "createClient da sessão. Precisa da sessão: o recibo idempotente e o " +
+      "organizations.created_by são de auth.uid(). Definer porque cria a " +
+      "organização, o vínculo e o recibo numa transação, sob a trava da " +
+      "hierarquia. A guarda está no corpo: sessão Auth viva, fn_agencia_pode_gerir " +
+      "(admin direto, agência habilitada e ativa, módulo ligado, sem " +
+      "acompanhamento), aal2 se há fator, e a cota no gatilho de hierarquia " +
+      "(tests/invariants/agencias.test.ts, #4034).",
+  },
+  {
+    fn: "fn_agencia_encerrar_sessao()",
+    razao:
+      "POST app/api/v1/agencia/sessao/encerrar/route.ts usa createClient da " +
+      "sessão. Precisa da sessão e de mais nada: encerra só a linha de " +
+      "agencia_sessoes com actor_user_id = auth.uid() e o session_id do próprio " +
+      "JWT, e por isso continua permitido depois da revogação (é a saída). Definer " +
+      "porque authenticated não tem update em agencia_sessoes; não alcança sessão " +
+      "de outra pessoa nem de outra organização (#4034).",
   },
 ];
 

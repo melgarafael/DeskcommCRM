@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
@@ -13,6 +14,8 @@ import { ZonaDePerigoDaOrganizacao } from "./_danger-zone";
 import { InboxDaEmpresaForm } from "./_inbox";
 import { TenantForm } from "./_form";
 import { InterfaceDaEmpresaForm } from "./_interface";
+import { PerfisDoTextoRetidoForm } from "./_permissoes";
+import { perfisDoTextoRetido } from "@/lib/messaging/texto-retido";
 import { camposDoNegocioDosFunis } from "@/lib/leads/compras-do-contato";
 import { capacidadesLigadas } from "@/lib/organizacao/capacidades";
 
@@ -71,12 +74,11 @@ export default async function TenantSettingsPage() {
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{traduzir("Organização", idioma)}</h1>
+      <CabecalhoDaSubTela titulo={traduzir("Organização", idioma)} idioma={idioma}>
         <p className="text-sm text-muted-foreground">
           {traduzir("Dados da empresa, retenção de mídia, DPO. Admin only.", idioma)}
         </p>
-      </header>
+      </CabecalhoDaSubTela>
       {row && (
         <TenantForm
           initial={{
@@ -119,9 +121,15 @@ export default async function TenantSettingsPage() {
         />
       )}
       {row && <InboxDaEmpresaForm initial={row.interface_settings} />}
+      {/* Permissões (#4500): quem pode revelar o texto de uma mensagem que o
+          contato apagou. Abre VAZIA — o admin marca e salva. */}
+      {row && <PerfisDoTextoRetidoForm inicial={perfisDoTextoRetido(row.settings)} />}
       {row && (
         <CatalogoDaEmpresaForm
-          inicial={capacidadesLigadas(row.settings, []).includes("apresentacao_do_catalogo")}
+          inicial={{
+            apresentacao: capacidadesLigadas(row.settings, []).includes("apresentacao_do_catalogo"),
+            capacidade: capacidadesLigadas(row.settings, []).includes("capacidade_do_produto"),
+          }}
         />
       )}
       {row && <ZonaDePerigoDaOrganizacao displayName={row.display_name} />}

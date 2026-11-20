@@ -23,9 +23,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { idsDoContatoEGemeos } from "@/lib/channels/contato-por-telefone";
 import { portaDaAplicacao } from "@/lib/db";
 import { logger } from "@/lib/logger";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoAviso, preencher } from "@/lib/i18n/idioma-do-aviso";
+import { IDIOMA_PADRAO, normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
 
 import { flowGraphSchema, type FlowGraph, type FlowNode, type ReplySaveTo } from "./graph-schema";
 import { TETO_DE_PASSOS_DO_MOTOR } from "./custo-no-motor";
+import { enviosJaFeitos, redacoesDoPasso, redacoesNaOrdemDaVez } from "./variacoes-do-passo";
 import {
   ACTION_RECHECK_MS,
   BACKOFF_MS,
@@ -57,6 +61,7 @@ import {
 import { interpolarDestino, persistirRespostaFollowupSupabase } from "./persistir-resposta";
 import { funilUnicoDasEtapas, idsDeEtapaCitados } from "./etapas-citadas";
 import { desvioAntesDoEnvio } from "./condicao-antes-do-envio";
+import { etiquetasDoLead } from "./etiquetas-do-lead";
 import { criarTarefaInterna as criarTarefaNoCrm } from "@/lib/tarefas/criar-tarefa";
 import { moveLeadHandler } from "@/app/api/v1/leads/_handler";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
@@ -114,6 +119,13 @@ export interface FollowupJobRequest {
     /** action (mode 'text') — corpo pronto; o turno envia sem chamar o modelo. */
     fixed_body?: string;
     /**
+     * action (mode 'text') — #4429: as redações do MESMO passo, na ordem da vez
+     * (a preferida primeiro, que é o `fixed_body`). O turno escolhe entre elas
+     * com a janela de repetição na mão, na hora do envio. Ausente = uma redação
+     * só (o passo de hoje e todo job já enfileirado), e aí nada muda.
+     */
+    fixed_variacoes?: string[];
+    /**
      * action (mode 'text') — #2734/#2972: mídia OPCIONAL (imagem, vídeo, áudio ou
      * documento) por URL. Presente,
      * o `fixed_body` vira a LEGENDA. O envio reusa o caminho de mídia do Inbox e das
@@ -159,6 +171,11 @@ export interface AdminClient {
    */
   loadLeadFacts(orgId: string, contactId: string, pipelineId?: string | null): Promise<{
     lead_stage: string | null;
+    /**
+     * As duas caixas de marcador, unidas — ver `etiquetas-do-lead.ts` (#4586).
+     * A condição «Etiqueta do contato» pergunta à etiqueta do NEGÓCIO e à do
+     * CONTATO, porque a campanha de prospecção só grava a do contato.
+     */
     tags: string[];
     contact_name?: string | null;
     custom_fields?: Record<string, unknown>;
@@ -205,6 +222,12 @@ export interface AdminClient {
   applyEnrollmentStep?(id:string,orgId:string,patch:EnrollmentPatch,event:{job_claim?:JobClaim;job_id?:string;node_id:string;event_type:string;payload:Record<string,unknown>;idempotency_key:string}):Promise<void>;
   updateEnrollment(id: string, orgId: string, patch: EnrollmentPatch): Promise<void>;
   loadFlowPointerName(orgId: string, pointerId: string): Promise<string | null>;
+  /**
+   * O `organizations.locale` cru, para o aviso da Central nascer no idioma da
+   * organização (a Central mostra o texto como foi gravado). Opcional: sem ele,
+   * ou se falhar, o aviso sai em português — exatamente o texto de antes.
+   */
+  loadOrgLocale?(orgId: string): Promise<string | null>;
   insertDeadInboxItem(item: { organization_id: string; title: string; body: string; ref_id: string }): Promise<void>;
   /**
    * Nó `internal_task` (#1540): grava a tarefa no CRM para o contato da
@@ -425,6 +448,8 @@ function turnPayloadExtras(
   smartWaits: EsperaAdaptativa[],
   events: EnrollmentEventRef[] = [],
   contexto?: Record<string, unknown> | null,
+  /** #4429 — o contato, semente estável do ponto de partida da rotação. */
+  semente?: string,
 ): Partial<FollowupJobRequest["payload"]> {
   if (node.type === "action" && node.config.mode === "ai_message") {
     return {
@@ -433,8 +458,24 @@ function turnPayloadExtras(
     };
   }
   if (node.type === "action" && node.config.mode === "text") {
+    // #4429 — QUAL REDAÇÃO SAI, ESCOLHIDO AQUI. O texto do passo deixou de ser
+    // um só: `variacoes` guarda outras redações do MESMO passo e a rotação anda
+    // um passo por mensagem já enviada nesta inscrição (`enviosJaFeitos`), com
+    // ponto de partida no hash do contato. Passo com uma redação só — o de
+    // hoje, e todo grafo já publicado — cai em `redacoes[0]`, que é o `body`:
+    // nenhuma diferença byte a byte no que sai.
+    const redacoes = redacoesDoPasso(node.config);
+    // A LISTA inteira vai no job, na ordem da vez (a preferida primeiro). O
+    // turno escolhe com a JANELA na mão — ela só está fresca na hora do envio, e
+    // é lá que vive o gate que mede (#4429, segunda metade). A escolha daqui
+    // segue sendo a da rotação: `ordem[0]` é, byte a byte, o `fixed_body` de
+    // antes, e é ele que sai quando a janela não pressiona nenhuma redação.
+    const ordem = redacoesNaOrdemDaVez(redacoes, semente ?? "", enviosJaFeitos(events));
     return {
-      fixed_body: interpolarVolta(node.config.body, events, contexto),
+      fixed_body: interpolarVolta(ordem[0]!, events, contexto),
+      ...(ordem.length > 1
+        ? { fixed_variacoes: ordem.map((redacao) => interpolarVolta(redacao, events, contexto)) }
+        : {}),
       ...(node.config.media_url ? { fixed_media_url: node.config.media_url } : {}),
     };
   }
@@ -457,6 +498,16 @@ function turnPayloadExtras(
   return {};
 }
 
+/** O idioma do aviso da Central. Nunca lança: aviso em português é melhor que aviso nenhum. */
+async function idiomaDoAvisoDoFluxo(db: AdminClient, orgId: string): Promise<Idioma> {
+  if (!db.loadOrgLocale) return IDIOMA_PADRAO;
+  try {
+    return normalizarIdioma(await db.loadOrgLocale(orgId));
+  } catch {
+    return IDIOMA_PADRAO;
+  }
+}
+
 async function markDead(
   db: AdminClient,
   clock: () => Date,
@@ -474,10 +525,15 @@ async function markDead(
   // status='dead' gravado e o aviso NUNCA sair — enrollment morto em
   // silêncio. Duplicata visível > perda silenciosa.
   const flowName = (await db.loadFlowPointerName(enrollment.organization_id, enrollment.pointer_id)) ?? enrollment.pointer_id;
+  const idioma = await idiomaDoAvisoDoFluxo(db, enrollment.organization_id);
   await db.insertDeadInboxItem({
     organization_id: enrollment.organization_id,
-    title: "Um fluxo de follow-up parou de tentar",
-    body: `O fluxo "${flowName}" (enrollment ${enrollment.id}) foi marcado como "dead": ${sanitized}`,
+    title: traduzir("Um fluxo de follow-up parou de tentar", idioma),
+    body: preencher(traduzir('O fluxo "{fluxo}" (enrollment {enrollment}) foi marcado como "dead": {motivo}', idioma), {
+      fluxo: flowName,
+      enrollment: enrollment.id,
+      motivo: sanitized,
+    }),
     ref_id: enrollment.id,
   });
 
@@ -577,13 +633,17 @@ async function adiarPelaVagaOcupada(
     const nome =
       (await db.loadFlowPointerName(enrollment.organization_id, enrollment.pointer_id)) ??
       enrollment.pointer_id;
+    const idioma = await idiomaDoAvisoDoFluxo(db, enrollment.organization_id);
     await db.insertDeadInboxItem({
       organization_id: enrollment.organization_id,
-      title: "Um retorno programado não pôde ser enviado",
-      body:
-        `O fluxo "${nome}" esperou 7 dias o outro acompanhamento deste contato terminar, ` +
-        `e o envio foi cancelado (enrollment ${enrollment.id}). ` +
-        `Fale com o contato por outro caminho se ainda fizer sentido.`,
+      title: traduzir("Um retorno programado não pôde ser enviado", idioma),
+      body: preencher(
+        traduzir(
+          'O fluxo "{fluxo}" esperou 7 dias o outro acompanhamento deste contato terminar, e o envio foi cancelado (enrollment {enrollment}). Fale com o contato por outro caminho se ainda fizer sentido.',
+          idioma,
+        ),
+        { fluxo: nome, enrollment: enrollment.id },
+      ),
       ref_id: enrollment.id,
     });
     await db.insertEnrollmentEvent({
@@ -839,7 +899,7 @@ async function applyResult(
             node_id: node.id,
             source_step_key: idemKey,
             purpose: result.purpose,
-            ...turnPayloadExtras(node, smartWaits, events, contexto),
+            ...turnPayloadExtras(node, smartWaits, events, contexto, enrollment.contact_id),
             ...(result.fixed_body ? { fixed_body: result.fixed_body } : {}),
           },
         });
@@ -1001,13 +1061,17 @@ async function processEnrollment(
       const nome =
         (await db.loadFlowPointerName(enrollment.organization_id, enrollment.pointer_id)) ??
         enrollment.pointer_id;
+      const idioma = await idiomaDoAvisoDoFluxo(db, enrollment.organization_id);
       await db.insertDeadInboxItem({
         organization_id: enrollment.organization_id,
-        title: "Um retorno programado não pôde ser enviado",
-        body:
-          `O fluxo "${nome}" esperava a data do retorno, mas ${causa.explica} ` +
-          `no meio da espera, e o envio foi cancelado ` +
-          `(enrollment ${enrollment.id}). Fale com o contato por outro caminho se ainda fizer sentido.`,
+        title: traduzir("Um retorno programado não pôde ser enviado", idioma),
+        body: preencher(
+          traduzir(
+            'O fluxo "{fluxo}" esperava a data do retorno, mas {causa} no meio da espera, e o envio foi cancelado (enrollment {enrollment}). Fale com o contato por outro caminho se ainda fizer sentido.',
+            idioma,
+          ),
+          { fluxo: nome, causa: traduzir(causa.explica, idioma), enrollment: enrollment.id },
+        ),
         ref_id: enrollment.id,
       });
     }
@@ -1405,7 +1469,7 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
           .order("updated_at", { ascending: false })
           .limit(1)
           .maybeSingle(),
-        admin.from("contacts").select("name").eq("organization_id", orgId).eq("id", contactId).maybeSingle(),
+        admin.from("contacts").select("name, tags").eq("organization_id", orgId).eq("id", contactId).maybeSingle(),
       ]);
       if (leadErr) throw new Error(leadErr.message);
       if (contactErr) throw new Error(contactErr.message);
@@ -1415,7 +1479,11 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
           : {};
       return {
         lead_stage: lead?.stage_id ?? null,
-        tags: lead?.tags ?? [],
+        // #4586 — as duas caixas. A campanha de prospecção grava a etiqueta do
+        // nicho no CONTATO; o #4606 passou a copiá-la para o card, mas só no
+        // nascimento (card antigo, e etiqueta posta no Inbox/ficha, ficam sem).
+        // Ler só `crm_leads.tags` fazia a condição responder «não tem».
+        tags: etiquetasDoLead(lead?.tags, contact?.tags),
         contact_name: contact?.name ?? null,
         custom_fields: custom,
       };
@@ -1510,6 +1578,10 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
         .maybeSingle();
       if (error) throw new Error(error.message);
       return data?.name ?? null;
+    },
+    async loadOrgLocale(orgId) {
+      const { data } = await admin.from("organizations").select("locale").eq("id", orgId).maybeSingle();
+      return (data as { locale?: string | null } | null)?.locale ?? null;
     },
     async insertDeadInboxItem(item) {
       const { error } = await admin.from("agent_inbox_items").insert({
@@ -1730,6 +1802,8 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
         if ((contato as { is_anonymized: boolean | null } | null)?.is_anonymized === true) return;
       }
 
+      // A Central mostra o texto como foi gravado: nasce no idioma da organização.
+      const idioma = await idiomaDoAviso(admin, item.organization_id);
       const { error } = await admin.from("agent_inbox_items").insert({
         organization_id: item.organization_id,
         // Reusa o kind da 0224 (mesma família: "a recuperação desta falta
@@ -1737,10 +1811,11 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
         // Central já sabe renderizar `ref_kind='appointment'`.
         kind: "appointment_recovery_review",
         severity: "warn",
-        title: "Cliente faltou e não respondeu à recuperação",
-        body:
-          "As mensagens de reengajamento pós-falta foram enviadas e o cliente não respondeu. " +
-          "Decida o próximo passo e mova o card no funil.",
+        title: traduzir("Cliente faltou e não respondeu à recuperação", idioma),
+        body: traduzir(
+          "As mensagens de reengajamento pós-falta foram enviadas e o cliente não respondeu. Decida o próximo passo e mova o card no funil.",
+          idioma,
+        ),
         ref_kind: "appointment",
         ref_id: item.appointment_id,
         appointment_revision: item.appointment_revision,

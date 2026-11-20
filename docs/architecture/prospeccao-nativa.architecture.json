@@ -165,6 +165,20 @@
       "col": 5,
       "type": "component",
       "label": "Consulta da análise do site na conversa (só leitura, por contato do turno)"
+    },
+    {
+      "id": "diagnosis-tool",
+      "lane": "app",
+      "col": 6,
+      "type": "component",
+      "label": "Diagnóstico gravado na ficha pela IA (crm_save_lead_diagnosis)"
+    },
+    {
+      "id": "diagnosis-tab",
+      "lane": "humano",
+      "col": 6,
+      "type": "component",
+      "label": "Aba Diagnóstico da ficha: selo Escrito pela IA; a equipe edita e assina"
     }
   ],
   "edges": [
@@ -176,7 +190,7 @@
     {
       "from": "operator",
       "to": "candidates",
-      "label": "planilha (CSV/XLSX)"
+      "label": "planilha (CSV/XLSX); diagnóstico, oferta e contexto da equipe assinados por quem importou"
     },
     {
       "from": "discovery",
@@ -186,7 +200,7 @@
     {
       "from": "candidates",
       "to": "crm",
-      "label": "ativação autorizada (o contato nasce com os links)"
+      "label": "ativação autorizada (o contato nasce com os links e a aba Diagnóstico com o texto da equipe)"
     },
     {
       "from": "crm",
@@ -196,7 +210,7 @@
     {
       "from": "queue",
       "to": "inbox",
-      "label": "primeira abordagem"
+      "label": "primeira abordagem (o texto da equipe vai como dado, dentro da cerca)"
     },
     {
       "from": "inbox",
@@ -342,6 +356,26 @@
       "from": "whatsapp-check",
       "to": "operator",
       "label": "a lista mostra Tem/Sem WhatsApp e o contador"
+    },
+    {
+      "from": "agent-setup",
+      "to": "diagnosis-tool",
+      "label": "o agente da prospecção nasce com a capacidade ligada, por nome"
+    },
+    {
+      "from": "inbound-turn",
+      "to": "diagnosis-tool",
+      "label": "o qualificador grava segmento, CNPJ, diagnóstico e oferta só do contato do turno"
+    },
+    {
+      "from": "diagnosis-tool",
+      "to": "diagnosis-tab",
+      "label": "mescla em contacts.custom_fields (fn_contato_anotar_campos) sem apagar os outros campos"
+    },
+    {
+      "from": "diagnosis-tab",
+      "to": "diagnosis-tool",
+      "label": "laço: o que a equipe assinou a IA não sobrescreve; auditoria contact.diagnosis_saved"
     }
   ]
 }

@@ -38,13 +38,14 @@ import {
   COLUNAS_DA_TAREFA,
   conferirNegocioEContato,
 } from "@/lib/tarefas/negocio-da-tarefa";
+import { normalizarRegra, regraDeRecorrenciaSchema, regraParaGravar } from "@/lib/tarefas/recorrencia";
 import { conferirResponsavel } from "@/lib/tarefas/responsavel";
 import { PRIORIDADES_DA_TAREFA, SITUACOES_DA_TAREFA, type Tarefa } from "@/lib/tarefas/tipos";
 
 export const dynamic = "force-dynamic";
 
 const COLUNAS =
-  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, created_at, updated_at, lead:crm_leads(id, title)";
+  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, recurrence, created_at, updated_at, lead:crm_leads(id, title)";
 
 const edicaoSchema = z
   .object({
@@ -58,6 +59,11 @@ const edicaoSchema = z
     /** Vincular (`<uuid>`) e desvincular (`null`) a demanda do atendimento (#2818). */
     demanda_id: z.string().uuid().nullable().optional(),
     assigned_to: z.string().uuid().nullable().optional(),
+    /**
+     * A SÉRIE (#4595). `null` DESLIGA a repetição — a série para de gerar e as
+     * ocorrências que já nasceram continuam na lista, como história.
+     */
+    recurrence: regraDeRecorrenciaSchema.nullable().optional(),
   })
   // PATCH vazio gravaria só o `updated_at` e devolveria 200: a tela diria
   // "salvo" sobre uma edição que não existiu.
@@ -158,16 +164,41 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
   // A situação ANTES da edição decide se esta é a vez em que a tarefa fechou.
   // Sem ler antes, marcar "concluída" duas vezes emitiria duas linhas na
   // timeline do negócio — e a segunda seria mentira.
-  const { data: antes } = await supabase
+  const { data: antes, error: erroDaLeitura } = await supabase
     .from("crm_tasks")
     .select("status")
     .eq("id", id)
     .eq("organization_id", organizationId)
     .maybeSingle();
 
+  if (erroDaLeitura) {
+    return fail("internal_error", t("Erro ao salvar a tarefa."), 500, { requestId });
+  }
+
+  // ═══ A SÉRIE: desligar é gravar `null` (#4595) ═══
+  //
+  // A tela manda a regra inteira de volta quando a pessoa muda dias ou hora, e
+  // `null` quando ela desmarca "repetir". Normalizar aqui é o que impede o JSON
+  // torto de chegar ao banco: dia fora de 0–6 ou lista vazia é recusa nomeada,
+  // não série que nunca gera.
+  const alteracao: Record<string, unknown> = { ...parsed.data };
+  if (parsed.data.recurrence !== undefined) {
+    if (parsed.data.recurrence === null) {
+      alteracao.recurrence = null;
+    } else {
+      const regra = normalizarRegra(parsed.data.recurrence);
+      if (!regra) {
+        return fail("validation_failed", t("Escolha pelo menos um dia da semana e um horário."), 422, {
+          requestId,
+        });
+      }
+      alteracao.recurrence = regraParaGravar(regra);
+    }
+  }
+
   const { data, error } = await supabase
     .from("crm_tasks")
-    .update(parsed.data)
+    .update(alteracao)
     .eq("id", id)
     .eq("organization_id", organizationId)
     .select(doToken ? COLUNAS_DA_TAREFA : COLUNAS)
@@ -242,11 +273,15 @@ export async function DELETE(req: NextRequest, ctx: Contexto): Promise<Response>
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
+  // Apagar tarefa: agente na sessão, mas o token precisa de `manager` (Spec 33, R2).
+  // A mesma régua do DELETE de agenda/excecoes e do lote da fatia 4: apagar recurso
+  // da organização via token é papel de gerência.
   const authz = await resolveAuthDual(req, {
     requestId,
     resource: "crm_tasks",
     role: "agent",
     scope: "mcp:write",
+    tokenRole: "manager",
   });
   if (!authz.ok) return authz.response;
   const teto = await tetoDeEscritaDoToken(authz, "crm_tasks", requestId);

@@ -177,6 +177,12 @@ export async function comandaDoGanho(
     if (status !== "open") return { estado: "ja_existia", comandaId: comandaVinculada };
     const numeroRecuperado = Number(numeroDaLinha);
 
+    const comissao = await percentualDoItem(supabase, entrada.organizationId, {
+      attendantUserId: entrada.userId,
+      eventTypeId: null,
+    });
+    if (!comissao.ok) return { estado: "falhou", erro: `commission: ${comissao.error}` };
+
     const { error: erroItemRetentado } = await supabase
       .from("sale_items")
       .insert({
@@ -187,10 +193,7 @@ export async function comandaDoGanho(
         unit_price_cents: valor,
         total_cents: valor,
         attendant_user_id: entrada.userId,
-        commission_percent: await percentualDoItem(supabase, entrada.organizationId, {
-          attendantUserId: entrada.userId,
-          eventTypeId: null,
-        }),
+        commission_percent: comissao.percent,
       })
       .select("id")
       .single();
@@ -204,6 +207,12 @@ export async function comandaDoGanho(
       valorCents: valor,
     };
   }
+
+  const comissao = await percentualDoItem(supabase, entrada.organizationId, {
+    attendantUserId: entrada.userId,
+    eventTypeId: null,
+  });
+  if (!comissao.ok) return { estado: "falhou", erro: `commission: ${comissao.error}` };
 
   const { data: numero, error: erroNumero } = await supabase.rpc("fn_proximo_numero_de_comanda", {
     p_org: entrada.organizationId,
@@ -327,10 +336,7 @@ export async function comandaDoGanho(
       unit_price_cents: valor,
       total_cents: valor,
       attendant_user_id: entrada.userId,
-      commission_percent: await percentualDoItem(supabase, entrada.organizationId, {
-        attendantUserId: entrada.userId,
-        eventTypeId: null,
-      }),
+      commission_percent: comissao.percent,
     })
     .select("id")
     .single();

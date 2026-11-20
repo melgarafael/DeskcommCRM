@@ -17,11 +17,13 @@ import type { NextRequest } from "next/server";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { requireRole } from "@/lib/auth/require-role";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { abrirComandaSchema } from "@/lib/financeiro/comanda";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +57,10 @@ export async function GET(req: NextRequest): Promise<Response> {
   const limite = Math.min(Number(url.searchParams.get("limit")) || LIMITE_PADRAO, LIMITE_MAXIMO);
 
   const supabase = authz.supabase;
+  // #4845 — a lista é da EMPRESA ATIVA. A RLS de `sales` libera todas as empresas
+  // de que a pessoa é membro, então sem este filtro a tela mostrava número,
+  // contato, itens e valores da outra empresa — inclusive duas comandas "#1" de
+  // empresas diferentes na mesma lista.
   let q = supabase
     .from("sales")
     // Literal ÚNICO, e não concatenação: o supabase-js infere o tipo do
@@ -131,15 +137,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
-  const authz = await resolveAuthDual(req, {
-    requestId,
-    resource: "financeiro",
-    role: "agent",
-    scope: "mcp:write",
-  });
+  const authz = await requireRole("agent", { requestId, resource: "financeiro" });
   if (!authz.ok) return authz.response;
-  const teto = await tetoDeEscritaDoToken(authz, "financeiro_comandas_abrir", requestId);
-  if (teto) return teto;
 
   const lido = abrirComandaSchema.safeParse(await req.json().catch(() => ({})));
   if (!lido.success) {
@@ -148,33 +147,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
-  const supabase = authz.supabase;
-  const org = authz.organizationId;
-  // Quem é o autor: só a pessoa da sessão. Token não é pessoa: a coluna fica nula.
-  const autor = authz.actor.type === "user" ? authz.actor.id : null;
-
-  // No token, o corpo é a única fonte destes ids: cada um tem de ser desta
-  // organização, senão a comanda nasceria amarrada a contato ou agendamento alheio.
-  if (authz.via === "token") {
-    if (lido.data.contact_id) {
-      const { data: contato } = await supabase
-        .from("contacts")
-        .select("id")
-        .eq("id", lido.data.contact_id)
-        .eq("organization_id", org)
-        .maybeSingle();
-      if (!contato) return fail("validation_failed", "Contato inválido para esta organização.", 422, { requestId });
-    }
-    if (lido.data.appointment_id) {
-      const { data: agenda } = await supabase
-        .from("calendar_appointments")
-        .select("id")
-        .eq("id", lido.data.appointment_id)
-        .eq("organization_id", org)
-        .maybeSingle();
-      if (!agenda) return fail("validation_failed", "Agendamento inválido para esta organização.", 422, { requestId });
-    }
-  }
+  const supabase = await createClient();
+  const org = authz.org.orgId;
 
   // IDEMPOTÊNCIA POR AGENDAMENTO, antes de qualquer escrita.
   //
@@ -212,8 +186,8 @@ export async function POST(req: NextRequest): Promise<Response> {
       number: numero as number,
       contact_id: lido.data.contact_id ?? null,
       appointment_id: lido.data.appointment_id ?? null,
-      attendant_user_id: autor,
-      created_by_user_id: autor,
+      attendant_user_id: authz.user.id,
+      created_by_user_id: authz.user.id,
       notes: lido.data.notes ?? null,
       currency: moeda,
     })
@@ -231,9 +205,6 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   await audit({
     action: "comanda.aberta",
-    organizationId: org,
-    actorUserId: autor,
-    actorApiTokenId: authz.apiTokenId ?? null,
     resourceType: "sale",
     resourceId: data.id,
     requestId,

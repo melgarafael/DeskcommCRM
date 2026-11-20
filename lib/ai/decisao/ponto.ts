@@ -40,7 +40,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 import { baseDaApiDoJev, decidir, TETO_PADRAO_MS, type Pergunta, type ResultadoDaDecisao } from "./cliente";
 import { lerConfigDoJev, type IdDaTarefa } from "./config";
-import { ORIGEM_PADRAO, provedorDaCredencial, type OrigemDoJev } from "./origem";
+import { modeloDaChamada } from "./modelo";
+import { modeloDaOrigem, ORIGEM_PADRAO, provedorDaCredencial, type OrigemDoJev } from "./origem";
 import { estadoEfetivoDaTarefa, TAREFAS_DO_JEV, type TarefaDoJev } from "./tarefas";
 
 interface EntradaComum {
@@ -82,10 +83,16 @@ export interface DependenciasDoPonto {
   hostsPermitidos?: readonly string[];
 }
 
-/** A chave do Jev e de onde ele responde com ela — as duas coisas andam juntas. */
+/**
+ * A chave do Jev, de onde ele responde com ela, e QUAL MODELO responde — as três
+ * coisas andam juntas. `modelo` ausente é o Jev daquela origem: é o que toda
+ * instalação que nunca escolheu nada recebe, e o que o teste de controle cobra.
+ */
 export interface DestinoDaChave {
   chave: string;
   origem: OrigemDoJev;
+  /** O modelo escolhido na config (`./modelo`), quando há um. */
+  modelo?: string;
 }
 
 /**
@@ -156,6 +163,9 @@ export async function destinoDasTarefas(
         tag: byteaToBuffer(data.api_key_tag),
       }),
       origem,
+      // A config já foi lida aqui em cima para a guarda das tarefas: o modelo
+      // sai dela, sem segunda leitura e sem segunda regra (`./modelo`).
+      modelo: modeloDaChamada(config),
     };
   } catch (erro) {
     logger.warn("chave do Jev não pôde ser lida; seguindo pelo caminho de sempre", {
@@ -272,15 +282,55 @@ export async function decidirNoPonto(
       { allowlist, fetchImpl: deps.fetchImpl, log: logger },
     );
 
-  return decidir(
-    {
-      chave: destino.chave,
-      estado: entrada.estado,
-      perguntas,
-      origem: destino.origem,
-      // O que sobrou do prazo — o turno espera, no máximo, o teto inteiro.
-      tetoMs: Math.max(1, teto - (Date.now() - inicio)),
-    },
-    { fetchImpl: fetchContido, baseUrl: base },
-  );
+  /**
+   * Uma tentativa, com o modelo pedido (ou o padrão, quando não há pedido). O
+   * teto é o que sobrou do prazo total: a segunda tentativa nunca estoura o
+   * turno.
+   */
+  const tentar = (modelo: string | undefined, tetoDaTentativa: number): Promise<ResultadoDaDecisao> =>
+    decidir(
+      {
+        chave: destino.chave,
+        estado: entrada.estado,
+        perguntas,
+        origem: destino.origem,
+        ...(modelo !== undefined ? { modelo } : {}),
+        tetoMs: Math.max(1, tetoDaTentativa),
+      },
+      { fetchImpl: fetchContido, baseUrl: base },
+    );
+
+  const modeloPadrao = modeloDaOrigem(destino.origem);
+  const escolhido = destino.modelo?.trim() ?? "";
+  const tentativaInicial = escolhido !== "" && escolhido !== modeloPadrao ? escolhido : undefined;
+  const resultado = await tentar(tentativaInicial, teto - (Date.now() - inicio));
+
+  /**
+   * O MODELO ESCOLHIDO FALHOU ⇒ o Jev responde.
+   *
+   * Quem escolheu outro modelo não pode perder o decisor: um id que o fornecedor
+   * aposentou (404), um endpoint alpha que mudou (400/422) ou uma indisponibilidade
+   * do modelo deixariam a tarefa muda até alguém abrir a tela. O Jev é o padrão
+   * calibrado e a credencial é a MESMA — então a segunda tentativa não custa
+   * chave nova, e é uma só. `sem_credencial` não entra: sem chave, o padrão
+   * também não responderia, e a ausência é configuração, não falha do modelo.
+   */
+  if (
+    !resultado.ok &&
+    tentativaInicial !== undefined &&
+    resultado.motivo !== "sem_credencial" &&
+    resultado.motivo !== "disjuntor_aberto"
+  ) {
+    const resta = teto - (Date.now() - inicio);
+    if (resta > 1) {
+      logger.warn("modelo de decisão escolhido não respondeu; usando o Jev", {
+        organizationId: entrada.organizationId,
+        modelo: tentativaInicial,
+        motivo: resultado.motivo,
+        status: resultado.status,
+      });
+      return tentar(undefined, resta);
+    }
+  }
+  return resultado;
 }

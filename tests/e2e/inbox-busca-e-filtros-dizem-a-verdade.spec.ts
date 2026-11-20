@@ -236,6 +236,9 @@ test("número e Não lidos sobrevivem à recarga e permanecem na sua organizaç�
       await page.getByTestId("tenant-switcher").click({ timeout: 3_000 });
       await expect(page.getByTestId(`tenant-switcher-item-${canais[1]!.org}`)).toBeVisible({ timeout: 3_000 });
       await page.keyboard.press("Escape");
+      // Escape inicia a saída: espere o menu antigo desmontar antes de reabrir.
+      // Durante a animação o item ainda existe e pode ser escolhido pelo locator.
+      await expect(page.getByTestId(`tenant-switcher-item-${canais[1]!.org}`)).toHaveCount(0);
     });
     await trocar(canais[0]!.org);
     await numero.click();

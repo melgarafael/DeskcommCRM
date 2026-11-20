@@ -118,14 +118,4 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   "/api/v1/ai/turn-traces",
   "/api/v1/ai/usage",
   "/api/v1/ai/voz",
-
-
-
-
-
-
-
-
-
-
 ];

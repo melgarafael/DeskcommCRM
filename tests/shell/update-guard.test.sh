@@ -289,8 +289,12 @@ run_update --to v1.1.0
 check "a atualização termina com sucesso" test "$RC" -eq 0
 check ".env aponta para a imagem da versão instalada" grep -q "^APP_IMAGE=${NS}/deskcommcrm:1.1.0$" .env
 check "a chave APP_IMAGE não duplicou" test "$(grep -c '^APP_IMAGE=' .env)" -eq 1
+# A ida para frente guarda de onde saiu: é o único alvo de volta que o agente
+# do host aceita do app (agent.sh). A reinstalação da mesma versão não regrava.
+check "a ida para frente grava a versão de onde saiu" grep -qx 'v0.9.0' .update-de-onde-vim
 run_update --to v1.1.0 --force
 check "segunda execução também não duplica" test "$(grep -c '^APP_IMAGE=' .env)" -eq 1
+check "reinstalar a mesma versão não troca a origem gravada" grep -qx 'v0.9.0' .update-de-onde-vim
 check "as outras chaves do .env sobreviveram" grep -q '^INTERNAL_SECRET=segredo$' .env
 check "a política de pull vira 'missing' — a tag é imutável, e 'always' derrubaria o CRM se o GHCR caísse" \
   grep -q '^APP_PULL_POLICY=missing$' .env
@@ -683,7 +687,11 @@ python3 - "$CASO11/hostgator-setup-kit/_common.sh" <<'PATCH'
 import sys
 p = sys.argv[1]
 s = open(p, encoding="utf-8").read()
-nova = 'local cron_line="* * * * * curl -fsS -H @\\"${cabecalho}\\" \\"${url_drain}\\" >/dev/null 2>&1 ${marcador}"'
+# A linha do kit ATUAL é a do vigia (#2235): o segundo dreno do host deixou de
+# rodar de minuto em minuto e passou a perguntar ao `docker` se o `scheduler`
+# desta instalação está no ar antes de drenar. O veículo da prova (uma linha de
+# cron que o conserto muda) continua o mesmo; o que mudou foi a forma dela.
+nova = 'local cron_line="*/15 * * * * \\"${vigia}\\" \\"${url_drain}\\" \\"${cabecalho}\\" \\"${projeto}\\" ${marcador}"'
 velha = 'local cron_line="* * * * * curl -fsS -H \\"Authorization: Bearer ${secret}\\" \\"${url_drain}\\" >/dev/null 2>&1 ${marcador}"'
 assert s.count(nova) == 1, "a linha nova do cron mudou de forma: %d ocorrência(s)" % s.count(nova)
 s = s.replace(nova, velha)
@@ -707,8 +715,8 @@ git checkout --quiet HEAD~1   # a instalação está no kit ANTIGO
 : > "$FAKE_CRONTAB"
 rm -f "$CASO11/.env.cron-drain"
 bash hostgator-setup-kit/update.sh --to v9.9.9 --skip-backup > "$WORK/saida11.txt" 2>&1
-check "a linha do cron aponta para o arquivo de cabeçalho (conserto aplicado nesta passada)" \
-  grep -q -- "-H @" "$FAKE_CRONTAB"
+check "a linha do cron é a do vigia e leva o arquivo de cabeçalho (conserto aplicado nesta passada)" \
+  bash -c "grep -q 'drain-watchdog.sh' \"$FAKE_CRONTAB\" && grep -q '.env.cron-drain' \"$FAKE_CRONTAB\""
 check "  e o segredo NÃO está escrito na linha do cron" \
   bash -c '! grep -q "Authorization: Bearer" "$FAKE_CRONTAB"'
 # `stat -c` (GNU) PRIMEIRO e `stat -f` (BSD) como reserva, nesta ordem: no Linux,

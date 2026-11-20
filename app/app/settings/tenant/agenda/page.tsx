@@ -1,3 +1,4 @@
+import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { tituloDaAgenda } from "@/lib/agenda/apresentacao";
 import { redirect } from "next/navigation";
 
@@ -108,14 +109,13 @@ export default async function TiposDeAgendamentoPage() {
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{tituloDaAgenda(org?.settings) ?? t("Agendamentos")}</h1>
+      <CabecalhoDaSubTela titulo={tituloDaAgenda(org?.settings) ?? t("Agendamentos")} idioma={user.idioma}>
         <p className="mt-1 text-sm text-text-muted">
           {t(
             "O que se pode marcar, quanto dura e quem atende. É isto que a tela de marcar e o agente de IA oferecem ao cliente.",
           )}
         </p>
-      </header>
+      </CabecalhoDaSubTela>
       <TiposDeAgendamentoClient
         tituloDaAgenda={tituloDaAgenda(org?.settings)}
         tiposIniciais={(tipos ?? []) as TipoRow[]}

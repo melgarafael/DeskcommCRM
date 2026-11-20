@@ -41,6 +41,47 @@ describe("quando avisar", () => {
     expect(avisoDaConexao({ reachable: true, status: "STARTING", detail: null }, "V")).toBeNull();
   });
 
+  // ─── `STARTING` PRESO (#4870) ─────────────────────────────────────────────
+  //
+  // `STARTING` recente é boot e cala; `STARTING` que NÃO acaba é o defeito que
+  // deixou um número dias sem receber mensagem. A régua é a idade, e é a MESMA
+  // do vigia que reinicia (`lib/channels/starting-preso.ts`) — duas réguas
+  // divergiriam no dia em que alguém mexesse na configuração.
+  it("STARTING dentro do prazo continua em silêncio", () => {
+    expect(
+      avisoDaConexao(
+        { reachable: true, status: "STARTING", detail: null, segundosNoStatus: 2 * 60 },
+        "Vendas",
+      ),
+    ).toBeNull();
+  });
+
+  it("⭐ STARTING acima do prazo avisa, sem afirmar que está caída", () => {
+    const a = avisoDaConexao(
+      { reachable: true, status: "STARTING", detail: null, segundosNoStatus: 6 * 60 },
+      "Vendas",
+    );
+    expect(a?.kind).toBe("channel_number_alert");
+    expect(a?.severity).toBe("warn");
+    expect(a?.episodio).toBe("STARTING_PRESO");
+    expect(a?.title).toContain("Vendas");
+    expect(a?.title).toContain("Conectando");
+    // Diz o que fazer sem prometer o que não sabe: a sessão pode voltar sozinha.
+    expect(a?.body).toContain("religá-la sozinho");
+  });
+
+  it("⭐ quando as tentativas automáticas acabam, o aviso vira crítico", () => {
+    const a = avisoDaConexao(
+      { reachable: true, status: "STARTING", detail: null, segundosNoStatus: 30 * 60, restartsEsgotados: true },
+      "Vendas",
+    );
+    expect(a?.severity).toBe("critical");
+    expect(a?.episodio).toBe("STARTING_PRESO_ESGOTADO");
+    // A ação é a que resolve sem terminal: Reconectar em Conexões, sem QR.
+    expect(a?.body).toContain("Reconectar");
+    expect(a?.body).toContain("QR");
+  });
+
   it("SCAN_QR_CODE pede o QR, e diz QUAL conexão caiu", () => {
     // Com dois números ligados, "WhatsApp desconectado" obriga a adivinhar.
     const a = avisoDaConexao({ reachable: true, status: "SCAN_QR_CODE", detail: null }, "Vendas");

@@ -163,6 +163,8 @@ export async function POST(req: NextRequest) {
         linhas: lido.sheet.rows.length,
       },
       planilha,
+      // Quem assina o contexto da equipe: o usuário da SESSÃO, nunca um campo do corpo.
+      auth.actor.type === "user" ? auth.actor.id : null,
     );
     if (!resultado.repetida) {
       await audit({

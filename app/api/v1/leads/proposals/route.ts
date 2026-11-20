@@ -131,14 +131,14 @@ async function responder(
   if (leadIds.length > 0) {
     const { data: leads, error: leadsErr } = await supabase
       .from("crm_leads")
-      .select("id, title, contact_id, pipeline_id")
+      .select("id, title, contact_id, stage_id")
       .eq("organization_id", orgId)
       .in("id", leadIds);
     if (leadsErr) return fail("internal", leadsErr.message, 500, { requestId });
 
-    // Consultas separadas (sem EMBED do PostgREST, que o service role ignora):
-    // estágios e contatos, cada uma filtrada pela organização do token.
-    const stageIds = [...new Set((leads ?? []).map((l) => l.pipeline_id).filter(Boolean))];
+    // Consultas separadas, cada uma filtrada pela organização: a etapa pelo
+    // `stage_id` do negócio (não pelo funil) e o contato pelo `contact_id`.
+    const stageIds = [...new Set((leads ?? []).map((l) => l.stage_id).filter(Boolean))];
     const stageMap = new Map<string, string>();
     if (stageIds.length > 0) {
       const { data: stages } = await supabase
@@ -167,14 +167,14 @@ async function responder(
       id: string;
       title: string | null;
       contact_id: string | null;
-      pipeline_id: string | null;
+      stage_id: string | null;
     }>) {
       const proposta = porLead.get(l.id);
       if (!proposta) continue;
       pendentes.push({
         lead_id: l.id,
         lead_title: l.title ?? traduzir("(sem título)", idioma),
-        stage_name: l.pipeline_id ? stageMap.get(l.pipeline_id) ?? null : null,
+        stage_name: l.stage_id ? stageMap.get(l.stage_id) ?? null : null,
         contact_name: l.contact_id ? nomeDoContato(contactMap.get(l.contact_id) ?? null) : null,
         next_action: proposta.label,
         seq: proposta.seq,

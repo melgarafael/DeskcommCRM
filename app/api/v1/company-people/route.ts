@@ -21,7 +21,7 @@ import { createClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
 /**
- * Com Bearer: `mcp:write` e papel `manager`, o da sessão. Empresa e pessoa do corpo
+ * Com Bearer: `mcp:write` e papel `agent`, o da sessão (a main abriu esta criação ao atendente em 0dc412c6d). Empresa e pessoa do corpo
  * têm de ser desta organização: a chave estrangeira não confere isso, e o vínculo
  * seria gravado com o id de outra organização.
  */
@@ -29,7 +29,7 @@ async function vincularPeloToken(req: NextRequest, requestId: string): Promise<R
   const authz = await resolveAuthDual(req, {
     requestId,
     resource: "company_people",
-    role: "manager",
+    role: "agent",
     scope: "mcp:write",
   });
   if (!authz.ok) return authz.response;
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
   if (extractBearer(req.headers.get("authorization"))) return vincularPeloToken(req, requestId);
-  const authz = await requireRole("manager", { requestId, resource: "company_people" });
+  const authz = await requireRole("agent", { requestId, resource: "company_people" });
   if (!authz.ok) return authz.response;
 
   try {

@@ -39,6 +39,15 @@
  * único): encaminhar a mesma mensagem duas vezes reaproveita o objeto em vez de
  * encher a cota do cliente com duplicatas.
  *
+ * ─── O nome que o cliente vê viaja junto (#4457) ────────────────────────────
+ *
+ * Esse nome do OBJETO não é o nome de ninguém: `{mensagem}.{ext}` na mídia
+ * recebida, `out-<uuid>.<ext>` na enviada. O nome que a pessoa deu ao arquivo
+ * mora em `metadata.media_filename` da origem — gravado pela ingestão (#2613) ou
+ * pelo envio (#4484) — e sai daqui junto com a mídia. Quem decide qual nome vai
+ * ao canal, e o grava na linha do destino, é o envio (`nomeDoAnexoParaEnviar`);
+ * este arquivo só não o deixa para trás.
+ *
  * ─── O que sobra para a URL crua, e por quê ─────────────────────────────────
  *
  * Quando a mensagem AINDA não tem objeto nosso — a janela entre a chegada e a
@@ -48,6 +57,7 @@
  * estranho), o encaminhamento RECUSA com motivo traduzido — nunca repassando o
  * texto técnico da guarda para a tela.
  */
+import { nomeOriginalDaMensagem } from "@/lib/messaging/media/nome-de-arquivo";
 import { isMediaPathOwnedBy } from "@/lib/messaging/media/upload-validation";
 import { assertUrlDeMidiaSegura } from "@/lib/messaging/media/url-de-midia-externa";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -62,6 +72,12 @@ export interface MidiaDaOrigem {
   media_url: string | null;
   media_storage_path: string | null;
   media_mime: string | null;
+  /**
+   * Lido só pelo nome original do arquivo (`media_filename`), por VALOR: o
+   * JSONB é entrada de fora. O resto do `metadata` da origem (quem enviou,
+   * agente, botões) é da mensagem de origem e não viaja.
+   */
+  metadata?: unknown;
 }
 
 /**
@@ -72,10 +88,18 @@ export interface MidiaDaOrigem {
  * que só tem texto.
  */
 export type MidiaParaEncaminhar =
-  /** Objeto nosso, já copiado para a pasta do destino. */
-  | { tipo: "copia"; media_storage_path: string; media_mime: string | null }
+  /**
+   * Objeto nosso, já copiado para a pasta do destino. `media_filename` é o nome
+   * original da origem, `null` quando ela não tinha um (nunca inventado).
+   */
+  | {
+      tipo: "copia";
+      media_storage_path: string;
+      media_mime: string | null;
+      media_filename: string | null;
+    }
   /** URL externa que passa na guarda anti-SSRF do envio. */
-  | { tipo: "externa"; media_url: string; media_mime: string | null }
+  | { tipo: "externa"; media_url: string; media_mime: string | null; media_filename: string | null }
   /** A mídia chegou e ainda não está no nosso Storage: tente de novo. */
   | { tipo: "aguardando" }
   /** Objeto nosso que não copiou: Storage indisponível ou objeto ausente. */
@@ -124,6 +148,10 @@ export async function resolverMidiaDoEncaminhamento(
   conversationIdDestino: string,
   copiar: CopiarObjeto = copiarObjetoNoStorage(),
 ): Promise<MidiaParaEncaminhar> {
+  // A mesma leitura que o balão e o download fazem da linha: limpa e `null`
+  // quando não há nome.
+  const media_filename = nomeOriginalDaMensagem(origem.metadata);
+
   if (origem.media_storage_path) {
     // Só caminho desta organização E desta conversa: um path de fora copiaria o
     // arquivo de outro cliente para dentro desta conversa.
@@ -135,7 +163,7 @@ export async function resolverMidiaDoEncaminhamento(
     const destino = `${origem.organization_id}/${conversationIdDestino}/${nome}`;
     const copiou = await copiar(origem.media_storage_path, destino);
     if (!copiou) return { tipo: "falhou" };
-    return { tipo: "copia", media_storage_path: destino, media_mime: origem.media_mime };
+    return { tipo: "copia", media_storage_path: destino, media_mime: origem.media_mime, media_filename };
   }
 
   if (origem.media_url) {
@@ -146,7 +174,7 @@ export async function resolverMidiaDoEncaminhamento(
     } catch {
       return { tipo: "aguardando" };
     }
-    return { tipo: "externa", media_url: origem.media_url, media_mime: origem.media_mime };
+    return { tipo: "externa", media_url: origem.media_url, media_mime: origem.media_mime, media_filename };
   }
 
   return { tipo: "sem_midia" };

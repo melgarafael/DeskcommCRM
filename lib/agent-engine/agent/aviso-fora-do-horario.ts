@@ -36,6 +36,34 @@
  * chave e não manda de novo, o próximo período tem chave nova. Sem tabela
  * nova, sem migration, e o registro vive na própria conversa.
  *
+ * ## O FERIADO NACIONAL (#3877, pedido 3) — o aviso passou a SABER o dia
+ *
+ * O aviso só conhecia a janela SEMANAL. Em 02/11/2026 (Finados, segunda) quem
+ * escrevia recebia o mesmo recado de uma segunda comum: "atendemos das 8h às
+ * 18h" num dia em que a empresa estava fechada. A régua do feriado já existe
+ * no repo (`feriado-nacional.ts` → `isHolidayBR`, no fuso da organização) e é
+ * ela que este módulo consulta — NÃO há segunda lista de datas aqui.
+ *
+ * O feriado entra por DOIS lugares, e os dois são opcionais:
+ *
+ *   1. **O dia conta como FECHADO — só com a opção do agente ligada.** A
+ *      chave `business_hours.fechado_em_feriado_nacional` ("não atender em
+ *      feriado nacional", doc de decisão 316, alternativa A) vem DESLIGADA:
+ *      sem ela o feriado é um dia comum da janela semanal e nada aqui muda.
+ *      Ligada, quem DECIDE é o turno (`inbound-turn.ts`): ele adia o job para
+ *      a próxima abertura que não é feriado (`msAteAJanelaAbrirPulandoFeriado`)
+ *      e passa o fato do dia em `ehFeriadoNacional` — por isso, dentro da
+ *      janela semanal num feriado, `preCheckDoAviso` deixa o aviso sair. Aviso
+ *      e adiamento andam juntos: o cliente não recebe "estamos fechados" e uma
+ *      resposta da IA logo depois.
+ *   2. **O TEXTO próprio**, `filters.business_hours.notice_feriado`. Existe e
+ *      hoje é feriado ⇒ sai esse; não existe ⇒ sai o `notice` de hoje, byte a
+ *      byte (`textoDoAvisoHoje`, provado no teste). Quem não configurou o
+ *      `notice` não recebe nada, nem no feriado. Com a opção desligada, ele só
+ *      troca o texto de quem escreve FORA do horário num dia de feriado.
+ *
+ * O fato do feriado no PROMPT é o pedido 1, entregue em `feriado-nacional.ts`.
+ *
  * ## Falha ABERTA, sempre
  *
  * Este módulo toca banco, pacing e canal dentro do RAMO EM QUE O TURNO VAI SER
@@ -69,25 +97,74 @@ export type DecisaoDoAviso =
   | { enviar: true; texto: string }
   | { enviar: false; motivo: string };
 
+/** A chave de hoje do texto do aviso (spec da tela: TriggerEditor). */
+export const CHAVE_DO_TEXTO_DO_AVISO = 'notice';
+
 /**
- * Texto do aviso lido de `trigger_config.filters.business_hours.notice`.
+ * A chave OPCIONAL do texto de FERIADO NACIONAL (#3877, pedido 3). Mesma
+ * família, mesmo teto, mesma leitura: quem não a escreve fica exatamente com o
+ * aviso de hoje.
+ */
+export const CHAVE_DO_TEXTO_DO_FERIADO = 'notice_feriado';
+
+/**
+ * Uma chave de texto de `trigger_config.filters.business_hours`.
  *
  * `null` = sem aviso (campo ausente, vazio, tipo errado) — a direção segura é
  * NÃO avisar, nunca improvisar frase. Mesma filosofia de
  * `lerJanelaDeAtendimento`: jsonb livre não pode virar mordaça nem fonte de
  * texto inesperado.
  */
-export function lerTextoDoAvisoForaDoHorario(triggerConfig: unknown): string | null {
+function lerTextoDoAviso(triggerConfig: unknown, chave: string): string | null {
   if (typeof triggerConfig !== 'object' || triggerConfig === null) return null;
   const filters = (triggerConfig as { filters?: unknown }).filters;
   if (typeof filters !== 'object' || filters === null) return null;
   const bh = (filters as { business_hours?: unknown }).business_hours;
   if (typeof bh !== 'object' || bh === null) return null;
-  const aviso = (bh as { notice?: unknown }).notice;
+  const aviso = (bh as Record<string, unknown>)[chave];
   if (typeof aviso !== 'string') return null;
   const texto = aviso.trim();
   if (texto === '') return null;
   return texto.slice(0, TAMANHO_MAXIMO_DO_TEXTO);
+}
+
+/** O texto do aviso de fora do horário (`business_hours.notice`). */
+export function lerTextoDoAvisoForaDoHorario(triggerConfig: unknown): string | null {
+  return lerTextoDoAviso(triggerConfig, CHAVE_DO_TEXTO_DO_AVISO);
+}
+
+/**
+ * O texto do aviso de FERIADO NACIONAL (`business_hours.notice_feriado`).
+ *
+ * Ausente/vazio ⇒ `null` ⇒ o aviso de feriado usa o `notice` de hoje. É a
+ * retrocompatibilidade dura: quem não escreveu esta chave não vê texto novo
+ * nenhum, e ninguém reescreve a frase da organização.
+ */
+export function lerTextoDoAvisoDeFeriadoForaDoHorario(triggerConfig: unknown): string | null {
+  return lerTextoDoAviso(triggerConfig, CHAVE_DO_TEXTO_DO_FERIADO);
+}
+
+/** Texto configurado que vale como aviso: string com conteúdo depois do trim. */
+function temTexto(texto: string | null | undefined): texto is string {
+  return typeof texto === 'string' && texto.trim() !== '';
+}
+
+/**
+ * O texto que sai HOJE: o de feriado quando existe E hoje é feriado nacional,
+ * senão o `notice` — sem reescrever, sem completar, sem inventar.
+ *
+ * É a única função que escolhe entre os dois; a decisão (enviar ou não) fica
+ * inteira em `decideAvisoForaDoHorario`.
+ */
+export function textoDoAvisoHoje(input: {
+  texto: string | null;
+  textoDeFeriado?: string | null;
+  ehFeriadoNacional?: boolean;
+}): string | null {
+  if (input.ehFeriadoNacional === true && temTexto(input.textoDeFeriado)) {
+    return input.textoDeFeriado;
+  }
+  return input.texto;
 }
 
 /**
@@ -106,7 +183,19 @@ export function chaveDoAviso(contactId: string, periodoInicio: Date): string {
 export interface PerguntaDeAviso {
   janela: JanelaDeAtendimento | null;
   agora: Date;
+  /** `filters.business_hours.notice` — o texto de sempre. */
   texto: string | null;
+  /**
+   * `filters.business_hours.notice_feriado` (#3877) — opcional. Ausente ⇒ o
+   * feriado usa `texto`, byte a byte.
+   */
+  textoDeFeriado?: string | null;
+  /**
+   * Hoje é feriado nacional NA ORGANIZAÇÃO (fuso + país)? É um FATO injetado,
+   * nunca um relógio lido aqui: a leitura de país/fuso mora na porta de
+   * produção (`lerFeriadoDoTurno`) e o teste passa o fato à mão.
+   */
+  ehFeriadoNacional?: boolean;
 }
 
 /**
@@ -119,11 +208,15 @@ export function preCheckDoAviso(input: PerguntaDeAviso): DecisaoDoAviso | null {
   // Sem janela declarada o turno nem entra neste ramo — mas a pergunta é do
   // aviso, então ela responde: sem janela não há "fora dela".
   if (input.janela === null) return { enviar: false, motivo: 'sem_janela' };
-  // Dentro da janela não há aviso: a IA vai responder agora.
-  if (msAteAJanelaAbrir(input.janela, input.agora) === null)
+  // Dentro da janela não há aviso: a IA vai responder agora — SALVO no feriado
+  // nacional, em que o dia inteiro está fechado mesmo que a janela semanal
+  // diga que abre (#3877). O turno só chega aqui dentro da janela com a opção
+  // "não atender em feriado nacional" ligada — e aí ele já adiou o turno.
+  if (msAteAJanelaAbrir(input.janela, input.agora) === null && input.ehFeriadoNacional !== true)
     return { enviar: false, motivo: 'dentro_da_janela' };
-  // Sem texto configurado não há o que dizer, e inventar é proibido.
-  if (input.texto === null || input.texto.trim() === '')
+  // Sem texto configurado não há o que dizer, e inventar é proibido. Ter SÓ o
+  // texto de feriado é configuração suficiente: fora do feriado ele não sai.
+  if (!temTexto(input.texto) && !temTexto(input.textoDeFeriado))
     return { enviar: false, motivo: 'sem_configuracao' };
   return null;
 }
@@ -160,7 +253,11 @@ export function decideAvisoForaDoHorario(input: DecisaoCompleta): DecisaoDoAviso
   // UMA vez por contato por período fechado.
   if (input.jaAvisado) return { enviar: false, motivo: 'ja_avisado_no_periodo' };
 
-  return { enviar: true, texto: input.texto as string };
+  // O texto de HOJE: o de feriado quando existe e hoje é feriado, senão o
+  // `notice`. Só o `notice_feriado` configurado não vaza em dia útil.
+  const texto = textoDoAvisoHoje(input);
+  if (texto === null) return { enviar: false, motivo: 'sem_configuracao' };
+  return { enviar: true, texto };
 }
 
 export interface PortasDoAviso {
@@ -170,6 +267,14 @@ export interface PortasDoAviso {
   ehNumeroInterno(organizationId: string, phoneNumber: string): Promise<boolean>;
   /** Já existe a linha com esta chave de aviso para ESTE contato? */
   jaAvisado(organizationId: string, contactId: string, chave: string): Promise<boolean>;
+  /**
+   * Hoje é feriado nacional NA ORGANIZAÇÃO? (#3877) Fuso e país vêm de
+   * `organizations`, e a régua é `lerFeriadoDoTurno` — a mesma do prompt.
+   *
+   * Opcional de propósito: sem a porta, o aviso é o de hoje. Falha ABERTA —
+   * qualquer erro aqui significa "não sei", e "não sei" não muda o recado.
+   */
+  ehFeriadoNacionalHoje?(organizationId: string, agora: Date): Promise<boolean>;
   pacing: {
     decide(
       organizationId: string,
@@ -193,30 +298,71 @@ export interface EntradaDoAviso {
   contactId: string;
   channelSessionId: string;
   texto: string | null;
+  /** `notice_feriado` — opcional; ausente = aviso de hoje, byte a byte. */
+  textoDeFeriado?: string | null;
   janela: JanelaDeAtendimento | null;
   agora: Date;
+  /**
+   * O fato do dia JÁ decidido por quem chama. O turno passa quando a opção
+   * "não atender em feriado nacional" está ligada: é a MESMA régua que adiou o
+   * turno, e o aviso não pode discordar dela. Ausente ⇒ a porta
+   * `ehFeriadoNacionalHoje` responde (só troca o texto fora do horário).
+   */
+  ehFeriadoNacional?: boolean;
 }
 
 /**
- * Orquestra: regra barata → fatos do banco → regra completa → pacing → envio →
- * contabilidade. Lança só para o chamador registrar (o turno é adiado de
+ * O FATO do dia, lido pela porta (#3877). `false` quando não há porta, quando a
+ * leitura falha ou quando o país não é o Brasil — falha ABERTA: "não sei" nunca
+ * muda o texto nem inventa feriado.
+ */
+async function perguntaSeHojeEhFeriado(
+  deps: PortasDoAviso,
+  entrada: EntradaDoAviso,
+): Promise<boolean> {
+  if (!deps.ehFeriadoNacionalHoje) return false;
+  try {
+    return (await deps.ehFeriadoNacionalHoje(entrada.organizationId, entrada.agora)) === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Orquestra: fato do dia → regra barata → fatos do banco → regra completa →
+ * pacing → envio → contabilidade. Lança só para o chamador registrar (o turno é adiado de
  * qualquer forma); NUNCA grava "já avisado" sem enviar.
  */
 export async function enviaAvisoForaDoHorario(
   deps: PortasDoAviso,
   entrada: EntradaDoAviso,
 ): Promise<DecisaoDoAviso> {
-  // 1. As três perguntas baratas, antes de tocar em banco.
-  const preco = preCheckDoAviso(entrada);
+  // 1. Sem NENHUM dos dois textos não há aviso: as perguntas baratas respondem
+  //    sem nenhuma ida ao banco. É o caminho de quem não ligou o recurso, e ele
+  //    continua byte a byte o de antes — inclusive no feriado.
+  if (!temTexto(entrada.texto) && !temTexto(entrada.textoDeFeriado)) {
+    const semTexto = preCheckDoAviso({ ...entrada, ehFeriadoNacional: false });
+    if (semTexto) return semTexto;
+  }
+
+  // 2. HOJE É FERIADO NACIONAL? (#3877) Uma leitura de configuração (país +
+  //    fuso), só quando existe aviso configurado. Falha ⇒ `false`, e o aviso
+  //    segue exatamente como antes: erro de leitura não inventa feriado nem
+  //    cala o recado.
+  const ehFeriadoNacional =
+    entrada.ehFeriadoNacional ?? (await perguntaSeHojeEhFeriado(deps, entrada));
+
+  // 3. As perguntas baratas, agora com o fato do dia.
+  const preco = preCheckDoAviso({ ...entrada, ehFeriadoNacional });
   if (preco) return preco;
 
-  // 2. O PERÍODO FECHADO vigente: sem régua não dá para prometer "só uma vez".
+  // 4. O PERÍODO FECHADO vigente: sem régua não dá para prometer "só uma vez".
   const janela = entrada.janela as JanelaDeAtendimento;
   const periodoInicio = inicioDoPeriodoFechado(janela, entrada.agora);
   if (periodoInicio === null) return { enviar: false, motivo: 'sem_periodo' };
   const chave = chaveDoAviso(entrada.contactId, periodoInicio);
 
-  // 3. Os fatos do banco, na ordem do mais barato ao mais caro.
+  // 5. Os fatos do banco, na ordem do mais barato ao mais caro.
   const contato = await deps.leContato(entrada.organizationId, entrada.contactId);
   const ehNumeroInterno =
     contato?.phoneNumber != null && contato.phoneNumber !== ''
@@ -224,18 +370,20 @@ export async function enviaAvisoForaDoHorario(
       : false;
   const jaAvisado = await deps.jaAvisado(entrada.organizationId, entrada.contactId, chave);
 
-  // 4. A regra completa.
+  // 6. A regra completa.
   const decisao = decideAvisoForaDoHorario({
     janela,
     agora: entrada.agora,
     texto: entrada.texto,
+    textoDeFeriado: entrada.textoDeFeriado ?? null,
+    ehFeriadoNacional,
     contato,
     ehNumeroInterno,
     jaAvisado,
   });
   if (!decisao.enviar) return decisao;
 
-  // 5. Pacing — resposta (não disparo), com warm-up, cap diário e throttle.
+  // 7. Pacing — resposta (não disparo), com warm-up, cap diário e throttle.
   const pacing = await deps.pacing.decide(
     entrada.organizationId,
     entrada.channelSessionId,
@@ -244,7 +392,7 @@ export async function enviaAvisoForaDoHorario(
   if (!pacing.liberado)
     return { enviar: false, motivo: `pacing:${pacing.motivo ?? 'vetado'}` };
 
-  // 6. O envio. Quem falhar aqui NÃO grava dedupe: o próximo contato do mesmo
+  // 8. O envio. Quem falhar aqui NÃO grava dedupe: o próximo contato do mesmo
   //    período tenta de novo (e, se a linha já tiver sido inserida, o dedupe
   //    alcança antes de qualquer duplicata).
   await deps.envia({
@@ -254,7 +402,7 @@ export async function enviaAvisoForaDoHorario(
     body: decisao.texto,
   });
 
-  // 7. Depois do envio, em seu PRÓPRIA try/catch: derrubar aqui reprocessaria o
+  // 9. Depois do envio, em seu PRÓPRIA try/catch: derrubar aqui reprocessaria o
   //    aviso e o contato receberia duas vezes.
   try {
     await deps.pacing.registraEnvio(
@@ -336,6 +484,32 @@ export function portasDeProducao(
           linha.phone_number !== null &&
           variantes.includes(linha.phone_number.replace(/\D/g, '')),
       );
+    },
+
+    /**
+     * Fuso + país da organização, e a régua única do feriado
+     * (`lerFeriadoDoTurno` → `isHolidayBR`). Duas leituras de chave primária em
+     * `organizations`, e só no caminho em que já há aviso para sair.
+     *
+     * País fora do Brasil ⇒ `null` ⇒ `false`: feriado brasileiro não muda o
+     * recado de uma clínica em Lisboa. Erro ⇒ `false` + log.
+     */
+    async ehFeriadoNacionalHoje(organizationId, agora) {
+      try {
+        const [{ fusoDaOrganizacao }, { lerFeriadoDoTurno }] = await Promise.all([
+          import('./fuso-da-org'),
+          import('./feriado-nacional'),
+        ]);
+        const fuso = await fusoDaOrganizacao(db, organizationId);
+        const feriado = await lerFeriadoDoTurno(db, organizationId, agora, fuso);
+        return feriado?.hoje === true;
+      } catch (err) {
+        log?.warn('[aviso-fora-do-horario] feriado nacional indisponível — aviso segue pela janela semanal', {
+          organization_id: organizationId,
+          error: (err instanceof Error ? err.message : String(err)).slice(0, 200),
+        });
+        return false;
+      }
     },
 
     async jaAvisado(organizationId, contactId, chave) {
