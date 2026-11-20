@@ -164,6 +164,34 @@
       "col": 17,
       "type": "ui",
       "label": "Auditoria da organização /app/audit"
+    },
+    {
+      "id": "connected_profile",
+      "lane": "db",
+      "col": 5,
+      "type": "database",
+      "label": "Perfil connected · service_origin na entrada do catálogo"
+    },
+    {
+      "id": "switch",
+      "lane": "app",
+      "col": 18,
+      "type": "service",
+      "label": "Interruptor do módulo connected · liga e desliga sem desinstalar"
+    },
+    {
+      "id": "installation_flag",
+      "lane": "db",
+      "col": 18,
+      "type": "database",
+      "label": "extension_installations · disabled_at e disabled_by"
+    },
+    {
+      "id": "switch_ui",
+      "lane": "human",
+      "col": 18,
+      "type": "ui",
+      "label": "Tela /admin/extensoes · Ligar ou Desligar no cartão"
     }
   ],
   "edges": [
@@ -346,6 +374,41 @@
       "from": "audit_view",
       "to": "manager",
       "label": "responsável volta à gestão para desfazer, remover ou reinstalar"
+    },
+    {
+      "from": "trust",
+      "to": "connected_profile",
+      "label": "admite entrada com service_origin (fn_extensions_admit_catalog)"
+    },
+    {
+      "from": "connected_profile",
+      "to": "artifact",
+      "label": "instala só com permissão de área (fn_extensions_finish_install)"
+    },
+    {
+      "from": "guards",
+      "to": "switch",
+      "label": "ligar ou desligar com a revisão exibida, só plataforma"
+    },
+    {
+      "from": "switch",
+      "to": "installation_flag",
+      "label": "grava disabled_at e sobe a revisão (fn_extensions_set_switch)"
+    },
+    {
+      "from": "switch",
+      "to": "audit",
+      "label": "extension.switched com operation_id e disabled, só quando aplica"
+    },
+    {
+      "from": "installation_flag",
+      "to": "switch_ui",
+      "label": "mostra Desligado nesta instalação, com a data"
+    },
+    {
+      "from": "switch_ui",
+      "to": "switch",
+      "label": "pede ligar ou desligar com a revisão que a tela viu"
     }
   ],
   "contracts": {

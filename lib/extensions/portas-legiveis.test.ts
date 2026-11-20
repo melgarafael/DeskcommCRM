@@ -12,6 +12,46 @@ import { nomeDaPorta, portasLegiveis } from "./portas-legiveis";
  * extensão que abre Conversas e Contatos, sem incluir Tarefas, caía no ramo "não recebe
  * acesso aos dados do CRM", que é o oposto do que ela faz.
  */
+describe("frase das permissões de área (módulo conectado, F1)", () => {
+  it("só leitura de contatos vira 'Lê Contatos.' e não diz que não lê", () => {
+    const frase = portasLegiveis(["area.contatos.leitura"]);
+    expect(frase).toBe("Lê Contatos.");
+    expect(frase).not.toContain("não lê seus dados");
+  });
+
+  it("leitura de contatos e agenda com escrita de agenda, na ordem que o código produz", () => {
+    const frase = portasLegiveis([
+      "area.contatos.leitura",
+      "area.agenda.leitura",
+      "area.agenda.escrita",
+    ]);
+    expect(frase).toBe("Lê Agenda e Contatos. Altera Agenda.");
+    expect(frase).not.toContain("não lê seus dados");
+  });
+
+  it("a ordem da lista de entrada não muda a frase", () => {
+    expect(
+      portasLegiveis(["area.agenda.escrita", "area.contatos.leitura", "area.agenda.leitura"]),
+    ).toBe("Lê Agenda e Contatos. Altera Agenda.");
+  });
+
+  it("áreas junto com portas de navegação: abre primeiro, depois lê e altera", () => {
+    const frase = portasLegiveis(["navigation.inbox", "area.contatos.leitura"]);
+    expect(frase).toBe("Abre Conversas. Lê Contatos.");
+    expect(frase).not.toContain("não lê seus dados");
+  });
+});
+
+describe("frases sem área continuam idênticas às de antes", () => {
+  it("uma porta de navegação mantém o texto exato com o limite", () => {
+    expect(portasLegiveis(["navigation.tasks"])).toBe("Abre Tarefas; não lê seus dados.");
+  });
+
+  it("lista vazia mantém o texto exato", () => {
+    expect(portasLegiveis([])).toBe("Não abre nenhuma tela e não lê seus dados.");
+  });
+});
+
 describe("as portas que a tela mostra", () => {
   it("toda permissão do vocabulário tem nome legível — nenhuma aparece como código", () => {
     for (const permissao of EXTENSION_PERMISSIONS) {
