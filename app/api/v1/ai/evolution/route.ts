@@ -92,7 +92,7 @@ type LinhaDoFunil = { agent_stage_hint: string | null; crm_pipelines: { name: st
 async function lerFunilDoToken(
   db: SupabaseClient,
   orgId: string,
-): Promise<{ data: LinhaDoFunil[] | null; error: { message: string } | null }> {
+): Promise<{ data: LinhaDoFunil[] | null; error: { message: string } | null; count?: number | null }> {
   const { data: funis, error: errFunis } = await db
     .from("crm_pipelines")
     .select("id, name")
@@ -101,11 +101,11 @@ async function lerFunilDoToken(
   const nomePorFunil = new Map(
     ((funis ?? []) as Array<{ id: string; name: string }>).map((f) => [f.id, f.name] as const),
   );
-  if (nomePorFunil.size === 0) return { data: [], error: null };
+  if (nomePorFunil.size === 0) return { data: [], error: null, count: 0 };
 
-  const { data: etapas, error: errEtapas } = await db
+  const { data: etapas, error: errEtapas, count } = await db
     .from("crm_stages")
-    .select("agent_stage_hint, pipeline_id")
+    .select("agent_stage_hint, pipeline_id", { count: "exact" })
     .eq("organization_id", orgId)
     .in("pipeline_id", [...nomePorFunil.keys()])
     .eq("is_archived", false)
@@ -118,7 +118,10 @@ async function lerFunilDoToken(
       return name === undefined ? [] : [{ agent_stage_hint: e.agent_stage_hint, crm_pipelines: { name } }];
     },
   );
-  return { data: linhas, error: null };
+  // `count` das etapas, como no embed da sessão: é ele que diz se a página veio
+  // cortada. O `.in` acima só traz etapas de funis lidos, então cada etapa vira
+  // uma linha e o tamanho da página é o mesmo.
+  return { data: linhas, error: null, count };
 }
 
 export async function GET(req: NextRequest): Promise<Response> {
@@ -339,7 +342,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   ]);
 
   if (stages.error) fonteFalhou("crm_stages", stages.error);
-  else if (veioCortada((stages.data ?? []).length, "count" in stages ? stages.count : undefined)) {
+  else if (veioCortada((stages.data ?? []).length, stages.count)) {
     fonteFalhou("crm_stages", { message: `row cap de ${ROW_CAP} atingido — funis truncados` }, "cortada");
   }
 
