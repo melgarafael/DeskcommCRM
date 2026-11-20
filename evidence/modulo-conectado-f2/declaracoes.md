@@ -29,7 +29,7 @@ Se o mantenedor classificar a mudança como "ambos", o consumidor real do ponto 
 conectado, descrito na spec 33. A spec não está nesta branch, e este PR não a nomeia além disso.
 
 Versão da API do host: **não sobe nesta F2.** `HOST_API_VERSION = 2` (verificação:
-`grep -n "HOST_API_VERSION =" lib/extensions/manifest.ts`, linha 150).
+`grep -n "HOST_API_VERSION =" lib/extensions/manifest.ts`).
 
 ## Tela (item 14)
 
@@ -41,7 +41,7 @@ Versão da API do host: **não sobe nesta F2.** `HOST_API_VERSION = 2` (verifica
   (`grep -n '"/app/extensions"' lib/navigation/catalogo.ts`).
 - `/app/settings/api-tokens`: linha "Módulo <slug>" (sem botão de copiar) e o botão Revogar, que
   desativa a ativação daquela organização (`app/app/settings/api-tokens/_components/ApiTokensClient.tsx`).
-  A porta já existe em `lib/navigation/catalogo.ts`, linha 1152
+  A porta já existe em `lib/navigation/catalogo.ts`
   (`grep -n "api-tokens" lib/navigation/catalogo.ts`).
 
 ## Env nova (item 9)
@@ -51,7 +51,7 @@ Verificação: `grep -n "AI_CRED_AES_KEY" .env.example lib/env.ts` (linhas 93 e 
 `git diff --stat f88438ad8 30a87a43a -- .env.example lib/env.ts` sai vazio.
 
 Chave ausente: a instalação `connected` falha **antes** de `fn_extensions_finish_install`, lançando
-`ChaveDeCifraAusenteError` (`lib/extensions/segredo-do-modulo.ts`, linha 38). O recibo fica em
+`ChaveDeCifraAusenteError` (`grep -n "class ChaveDeCifraAusenteError" lib/extensions/segredo-do-modulo.ts`). O recibo fica em
 preparação (`lib/extensions/service.ts`, linhas 890 a 891), e quem pediu repete o mesmo pedido depois de
 configurar a chave. Como a mensagem chega à tela, ver "O que NÃO foi medido".
 
@@ -90,13 +90,13 @@ configurar a chave. Como a mensagem chega à tela, ver "O que NÃO foi medido".
 4. **Onde apareço na tela.** Os dois lugares do item 14: o cartão em `/app/extensions` e a linha
    "Módulo <slug>" em `/app/settings/api-tokens`.
 5. **Por qual porta se chega.** `/app/extensions` (`lib/navigation/catalogo.ts`) e
-   `/app/settings/api-tokens` (`lib/navigation/catalogo.ts`, linha 1152). Nenhuma tela nova.
+   `/app/settings/api-tokens` (`grep -n "api-tokens" lib/navigation/catalogo.ts`). Nenhuma tela nova.
 6. **Anti-morte.** **Nenhum, com justificativa:** a busca é de máquina para máquina. Quem a recusa é o
    módulo, que recebe um código de erro (`module_auth_failed` 401, `rate_limited` 429,
    `internal_error` 503) e pode repetir. Nenhuma demanda de pessoa fica esperando resposta nesta fase.
 7. **Onde se configura.** O próprio cartão (gerar ou girar o segredo) e a tela de tokens (revogar).
    A falta de `AI_CRED_AES_KEY` recusa a instalação de módulo `connected` (item 9 acima). Como essa recusa
-aparece na tela, **não foi conferido**: o comentário de `lib/extensions/service.ts` (linha 144) diz que a
+aparece na tela, **não foi conferido**: um comentário de `lib/extensions/service.ts` diz que a
 instalação não grava nada, sem dizer a mensagem.
 8. **Continuidade IA↔humano.** Não se aplica nesta fase. A F2 não cria agente; o token do módulo tem só
    `mcp:read`, e a tela de tokens é a única ponte humana.
@@ -129,11 +129,11 @@ Só o que a F2 muda. Cada uma tem o comando que a produz hoje.
 
 | Afirmação | Antes da F2 | Comando que a produz | Situação |
 |---|---|---|---|
-| `api_tokens.created_by` é obrigatório | `NOT NULL` no baseline | `grep -n "alter column created_by drop not null" supabase/baseline.sql` | Mudou: a linha 69230 solta o `NOT NULL`. A CHECK `api_tokens_dono_check` garante o dono. |
+| `api_tokens.created_by` é obrigatório | `NOT NULL` no baseline | `grep -n "alter column created_by drop not null" supabase/baseline.sql` | Mudou: o baseline solta o `NOT NULL`. A CHECK `api_tokens_dono_check` garante o dono. |
 | Ativar ou desativar não cria nem revoga token | `fn_extensions_configure` não tocava `api_tokens` | `grep -n "fn_extensions_module_token_reserve(" supabase/baseline.sql` | Mudou: ativar reserva a vaga e desativar revoga. |
-| O ator da API é sempre pessoa | o tipo `Actor` não tinha variante de módulo | `grep -n '"module"' lib/api/handlers/types.ts` e `grep -n 'type: "module"' lib/mcp/auth.ts` | Mudou: escopo `actor:module:<slug>` vira ator `module` (`lib/mcp/auth.ts`, linha 105). |
+| O ator da API é sempre pessoa | o tipo `Actor` não tinha variante de módulo | `grep -n '"module"' lib/api/handlers/types.ts` e `grep -n 'type: "module"' lib/mcp/auth.ts` | Mudou: escopo `actor:module:<slug>` vira ator `module` (`grep -n PREFIXO_DE_MODULO lib/mcp/auth.ts`). |
 | Suspender a organização não revoga | `validateBearerToken` recusa com 403 `org_suspended` | `grep -n "org_suspended" lib/mcp/auth.ts` | **Mantida** (emenda 2 do plano): a F2 não revoga na suspensão. |
-| Auditoria lista as ações do módulo | `docs/specs/extensoes-declarativas-v1.md`, linha 134, cita só `extension.switched` | `grep -n "secret_rotated\|token_issued" docs/specs/extensoes-declarativas-v1.md` (sai vazio) e `grep -n "extension.secret_rotated\|extension.token_issued" lib/audit/actions.ts` | **Falsa após a F2 e NÃO corrigida aqui:** a spec está fora do escopo desta entrega (o plano manda não mexer na spec). Corrigir no PR da spec: acrescentar `extension.secret_rotated` e `extension.token_issued` à linha 134. |
+| Auditoria lista as ações do módulo | `docs/specs/extensoes-declarativas-v1.md` citava só `extension.switched` | `grep -n "secret_rotated\|token_issued" docs/specs/extensoes-declarativas-v1.md` (saía vazio) e `grep -n "extension.secret_rotated\|extension.token_issued" lib/audit/actions.ts` | **Corrigida neste PR:** a linha da auditoria da spec v1 passou a citar `extension.secret_rotated` e `extension.token_issued`. |
 | Versão da API do host | `HOST_API_VERSION = 2` | `grep -n "HOST_API_VERSION =" lib/extensions/manifest.ts` | Mantida. |
 | Chave de cifra existe | `AI_CRED_AES_KEY` já era usada | `grep -n "AI_CRED_AES_KEY" .env.example lib/env.ts` | Mantida; a F2 não cria env. |
 | Rota pública da busca | não existia | `grep -n "extensions/token" lib/auth/public-paths.ts` | Nova: o único caminho público desta fase. |
@@ -158,8 +158,8 @@ Só o que a F2 muda. Cada uma tem o comando que a produz hoje.
 - **`lib/database.types.ts` não foi regenerado.** O arquivo não está no diff da F2
   (`git diff --name-only f88438ad8 30a87a43a -- lib/database.types.ts` sai vazio), então os tipos gerados
   não conhecem as colunas nem as tabelas novas.
-- **Spec 33 e o plano não foram alterados**, como o plano pede. A linha 134 da spec v1 ficou falsa (ver a
-  tabela acima).
+- **Spec 33 e o plano não foram alterados**, como o plano pede. A linha da auditoria da spec v1 ficava falsa; foi corrigida no mesmo PR
+  (`grep -n "secret_rotated" docs/specs/extensoes-declarativas-v1.md`).
 - **Espelho `.claude/skills` não regenerado.** A F2 não tocou o guia `deskcomm-extensao`, então
   `pnpm skills:sync` não é exigido por esta entrega.
 - **Sistema Vivo da F1 não conferido no plano dela.** O plano da F1 não está nesta worktree; o molde usado
