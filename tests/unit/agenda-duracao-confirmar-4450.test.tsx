@@ -149,7 +149,7 @@ describe("confirmar a nova duração", () => {
     puxarAte("14:45");
     expect(screen.queryByTestId("confirmar-duracao")).toBeNull();
     expect(screen.getByTestId("duracao-recusada")).toHaveTextContent(
-      "A duração não foi alterada — já há um compromisso neste horário.",
+      "A duração de Consulta da Maria não foi alterada — já há um compromisso neste horário.",
     );
     expect(chamadas).toHaveLength(0);
   });
@@ -170,7 +170,7 @@ describe("confirmar a nova duração", () => {
     });
     expect(rotuloDoCard()).toContain("14:00 às 14:30");
     expect(screen.getByTestId("duracao-recusada")).toHaveTextContent(
-      "A duração não foi alterada — Este horário já está ocupado na agenda de quem atende.",
+      "A duração de Consulta da Maria não foi alterada — Este horário já está ocupado na agenda de quem atende.",
     );
   });
 
@@ -184,7 +184,7 @@ describe("confirmar a nova duração", () => {
     });
     // A lista ainda é a nossa: dizer "agora vai de 14:00 a 14:30" seria repetir
     // o horário velho como se fosse o novo.
-    expect(screen.getByTestId("duracao-recusada")).toHaveTextContent("Confira o horário na grade");
+    expect(screen.getByTestId("duracao-recusada")).toHaveTextContent("Confira o horário atual dele");
     expect(screen.getByTestId("duracao-recusada")).not.toHaveTextContent("14:30");
     // A lista recarregada traz o que o colega gravou: 14:00–14:45.
     rerender(elemento([{ ...maria("14:45"), revision: 4 }]));
@@ -203,7 +203,7 @@ describe("confirmar a nova duração", () => {
       fireEvent.click(screen.getByTestId("confirmar-duracao-botao"));
     });
     expect(screen.getByTestId("duracao-recusada")).toHaveTextContent(
-      "A duração não foi alterada — Este compromisso é do Amigo.",
+      "A duração de Consulta da Maria não foi alterada — Este compromisso é do Amigo.",
     );
   });
 
@@ -218,6 +218,55 @@ describe("confirmar a nova duração", () => {
     expect(screen.getByTestId("duracao-recusada")).toHaveTextContent("agora vai de 14:00 a 14:45");
   });
 
+  it("prévia do TECLADO aberta enquanto um colega muda o início: Enter não pergunta nem escreve", () => {
+    const { rerender } = render(elemento([maria()]));
+    const card = screen.getByTestId("agendamento-a1");
+    fireEvent.keyDown(card, { key: "ArrowDown", altKey: true, shiftKey: true });
+    fireEvent.keyDown(card, { key: "ArrowDown", altKey: true, shiftKey: true });
+    // O colega passou o início para 14:15 (rev 4); a prévia de 60 min continua aberta.
+    rerender(
+      elemento([{ ...maria("14:45"), comeca: `${DIA}T14:15:00.000`, revision: 4 }]),
+    );
+    fireEvent.keyDown(screen.getByTestId("agendamento-a1"), { key: "Enter" });
+    expect(screen.queryByTestId("confirmar-duracao")).toBeNull();
+    expect(chamadas).toHaveLength(0);
+    expect(screen.getByTestId("duracao-recusada")).toHaveTextContent("agora vai de 14:15 a 14:45");
+  });
+
+  it("dois cards: confirmar o segundo não desfaz o otimismo do primeiro, e a falha diz de quem é", async () => {
+    const joao: Agendamento = {
+      ...maria(),
+      id: "j1",
+      titulo: "Consulta do João",
+      comeca: `${DIA}T16:00:00.000`,
+      termina: `${DIA}T16:30:00.000`,
+    };
+    let rejeitarA: (e: unknown) => void = () => {};
+    resposta = () => new Promise((_, rej) => (rejeitarA = rej));
+    render(elemento([maria(), joao]));
+    puxarAte("15:00");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("confirmar-duracao-botao"));
+    });
+    resposta = () => new Promise(() => {});
+    const alcaB = screen.getByTestId("alca-duracao-j1");
+    fireEvent.pointerDown(alcaB, { button: 0, pointerId: 1, pointerType: "mouse", clientX: 10, clientY: y("16:30") });
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 10, clientY: y("17:00") });
+    fireEvent.pointerUp(window, { pointerId: 1, clientX: 10, clientY: y("17:00") });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("confirmar-duracao-botao"));
+    });
+    expect(rotuloDoCard()).toContain("14:00 às 15:00");
+    await act(async () => {
+      rejeitarA(new ApiError(422, "agenda_horario_indisponivel", undefined, "req", "Ocupado."));
+    });
+    expect(rotuloDoCard()).toContain("14:00 às 14:30");
+    expect(screen.getByTestId("agendamento-j1").getAttribute("aria-label")).toContain("16:00 às 17:00");
+    expect(screen.getByTestId("duracao-recusada")).toHaveTextContent(
+      "A duração de Consulta da Maria não foi alterada — Ocupado.",
+    );
+  });
+
   it("a pergunta ficou aberta até o fim escolhido passar: recusa sem escrever", async () => {
     const inicio = Date.now();
     const relogio = vi.spyOn(Date, "now").mockReturnValue(inicio);
@@ -230,7 +279,7 @@ describe("confirmar a nova duração", () => {
       });
       expect(chamadas).toHaveLength(0);
       expect(screen.getByTestId("duracao-recusada")).toHaveTextContent(
-        "A duração não foi alterada — este horário já passou.",
+        "A duração de Consulta da Maria não foi alterada — este horário já passou.",
       );
     } finally {
       relogio.mockRestore();

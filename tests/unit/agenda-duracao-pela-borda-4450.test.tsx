@@ -115,7 +115,7 @@ describe("puxar a borda de baixo (mouse)", () => {
     expect(previa).toHaveTextContent("14:00–15:00 · 60 min");
 
     soltar("15:00");
-    expect(inter.onMudarDuracao).toHaveBeenCalledWith({ id: "a1", duracaoMin: 60, razao: "" });
+    expect(inter.onMudarDuracao).toHaveBeenCalledWith(expect.objectContaining({ id: "a1", duracaoMin: 60, razao: "" }));
     expect(screen.queryByTestId("fantasma-da-duracao")).toBeNull();
   });
 
@@ -126,7 +126,7 @@ describe("puxar a borda de baixo (mouse)", () => {
     puxar("a1", "14:30", "14:50");
     expect(screen.getByTestId("fantasma-da-duracao")).toHaveTextContent("14:00–14:45 · 45 min");
     soltar("14:50");
-    expect(inter.onMudarDuracao).toHaveBeenCalledWith({ id: "a1", duracaoMin: 45, razao: "" });
+    expect(inter.onMudarDuracao).toHaveBeenCalledWith(expect.objectContaining({ id: "a1", duracaoMin: 45, razao: "" }));
   });
 
   it("encaixa no RELÓGIO, não na soma: 09:20–09:52 puxado para baixo para em 10:00", () => {
@@ -136,7 +136,7 @@ describe("puxar a borda de baixo (mouse)", () => {
     puxar("a1", "09:52", "10:02");
     expect(screen.getByTestId("fantasma-da-duracao")).toHaveTextContent("09:20–10:00 · 40 min");
     soltar("10:02");
-    expect(inter.onMudarDuracao).toHaveBeenCalledWith({ id: "a1", duracaoMin: 40, razao: "" });
+    expect(inter.onMudarDuracao).toHaveBeenCalledWith(expect.objectContaining({ id: "a1", duracaoMin: 40, razao: "" }));
   });
 
   it("o fim ORIGINAL é sempre um ponto de parada: voltar a ele e soltar não muda nada", () => {
@@ -157,7 +157,7 @@ describe("puxar a borda de baixo (mouse)", () => {
     puxar("a1", "10:30", "09:00");
     expect(screen.getByTestId("fantasma-da-duracao")).toHaveTextContent("09:20–09:45 · 25 min");
     soltar("09:00");
-    expect(inter.onMudarDuracao).toHaveBeenCalledWith({ id: "a1", duracaoMin: 25, razao: "" });
+    expect(inter.onMudarDuracao).toHaveBeenCalledWith(expect.objectContaining({ id: "a1", duracaoMin: 25, razao: "" }));
   });
 
   it("não encurta o que passa do fim da grade: 21:30–22:20 volta a parar em 22:20", () => {
@@ -197,7 +197,7 @@ describe("puxar a borda de baixo (mouse)", () => {
     expect(inter.onMudarDuracao).not.toHaveBeenCalled();
     expect(screen.getByTestId("fantasma-da-duracao")).toHaveTextContent("14:00–15:00 · 60 min");
     soltar("15:00");
-    expect(inter.onMudarDuracao).toHaveBeenCalledWith({ id: "a1", duracaoMin: 60, razao: "" });
+    expect(inter.onMudarDuracao).toHaveBeenCalledWith(expect.objectContaining({ id: "a1", duracaoMin: 60, razao: "" }));
   });
 
   it("na virada do horário de verão a duração é a do RELÓGIO, não a da parede", () => {
@@ -226,7 +226,63 @@ describe("puxar a borda de baixo (mouse)", () => {
     fireEvent.keyDown(card, { key: "ArrowDown", altKey: true, shiftKey: true });
     expect(screen.getByTestId("fantasma-da-duracao")).toHaveTextContent("01:30–08:45 · 375 min");
     fireEvent.keyDown(card, { key: "Enter" });
-    expect(inter.onMudarDuracao).toHaveBeenCalledWith({ id: "dst", duracaoMin: 375, razao: "" });
+    expect(inter.onMudarDuracao).toHaveBeenCalledWith(expect.objectContaining({ id: "dst", duracaoMin: 375, razao: "" }));
+  });
+
+  it("rolar a grade com o botão apertado conta como deslocamento", () => {
+    const inter = interacao();
+    montar({ interacao: inter, agendamentos: [compromisso({ id: "a1", de: "14:00", ate: "14:30" })] });
+    const rolagem = screen.getByTestId("grade-da-agenda").querySelector<HTMLElement>(".overflow-auto")!;
+    const alca = screen.getByTestId("alca-duracao-a1");
+    fireEvent.pointerDown(alca, { button: 0, pointerId: 1, pointerType: "mouse", clientX: 10, clientY: y("14:30") });
+    rolagem.scrollTop = 48; // uma hora de grade
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 10, clientY: y("14:30") + 4 });
+    expect(screen.getByTestId("fantasma-da-duracao")).toHaveTextContent("14:00–15:30 · 90 min");
+  });
+
+  it("um dedo no CARD durante o puxar da borda não começa um segundo gesto", () => {
+    const inter = interacao();
+    montar({ interacao: inter, agendamentos: [compromisso({ id: "a1", de: "14:00", ate: "14:30" })] });
+    puxar("a1", "14:30", "15:00");
+    fireEvent.pointerDown(screen.getByTestId("agendamento-a1"), {
+      button: 0,
+      pointerId: 2,
+      pointerType: "touch",
+      clientX: 10,
+      clientY: y("14:10"),
+    });
+    expect(screen.getByTestId("fantasma-da-duracao")).toHaveTextContent("14:00–15:00 · 60 min");
+    expect(screen.queryByTestId("fantasma-do-arraste")).toBeNull();
+    soltar("15:00");
+    expect(inter.onMudarDuracao).toHaveBeenCalledWith(expect.objectContaining({ id: "a1", duracaoMin: 60 }));
+  });
+
+  it("no outono (hora repetida) a borda nunca produz duração negativa", () => {
+    // Nova York, 07/11/2027: 01:00–02:00 acontece duas vezes. O compromisso
+    // começa na SEGUNDA 01:30 (06:30Z) e vai até 02:30 (07:30Z). Subindo a borda,
+    // 01:45 de parede cairia na PRIMEIRA 01:45 (05:45Z), antes do início.
+    const inter = interacao({ horariosPorDia: {} });
+    montar({
+      interacao: inter,
+      fuso: "America/New_York",
+      dia: "2027-11-07",
+      agora: new Date("2027-11-07T04:00:00Z"),
+      agendamentos: [
+        {
+          id: "outono",
+          titulo: "Plantão",
+          responsavelId: "p1",
+          comeca: "2027-11-07T06:30:00.000Z",
+          termina: "2027-11-07T07:30:00.000Z",
+          origem: "ui",
+          situacao: "confirmed",
+        },
+      ],
+    });
+    const card = screen.getByTestId("agendamento-outono");
+    for (let i = 0; i < 4; i += 1) fireEvent.keyDown(card, { key: "ArrowUp", altKey: true, shiftKey: true });
+    fireEvent.keyDown(card, { key: "Enter" });
+    expect(inter.onMudarDuracao).toHaveBeenCalledWith(expect.objectContaining({ id: "outono", duracaoMin: 30 }));
   });
 
   it("o clique que fecha o gesto não abre o compromisso", () => {
@@ -259,11 +315,11 @@ describe("o que a borda recusa — e diz por quê", () => {
     expect(previa).toHaveAttribute("data-valido", "false");
     expect(previa).toHaveTextContent("já há um compromisso neste horário");
     soltar("14:45");
-    expect(inter.onMudarDuracao).toHaveBeenCalledWith({
+    expect(inter.onMudarDuracao).toHaveBeenCalledWith(expect.objectContaining({
       id: "maria",
       duracaoMin: null,
       razao: "já há um compromisso neste horário",
-    });
+    }));
   });
 
   it("a ocupação do Google do mesmo responsável também conta", () => {
@@ -320,7 +376,7 @@ describe("o que a borda recusa — e diz por quê", () => {
     puxar("maria", "14:30", "15:00");
     expect(screen.getByTestId("fantasma-da-duracao")).toHaveAttribute("data-valido", "true");
     soltar("15:00");
-    expect(inter.onMudarDuracao).toHaveBeenCalledWith({ id: "maria", duracaoMin: 60, razao: "" });
+    expect(inter.onMudarDuracao).toHaveBeenCalledWith(expect.objectContaining({ id: "maria", duracaoMin: 60, razao: "" }));
   });
 
   it("o novo fim tem de ficar depois de agora: 14:15 às 14:40 é recusado, 15:00 passa", () => {
@@ -337,7 +393,7 @@ describe("o que a borda recusa — e diz por quê", () => {
     fireEvent.pointerMove(window, { pointerId: 1, clientX: 10, clientY: y("15:00") });
     expect(screen.getByTestId("fantasma-da-duracao")).toHaveAttribute("data-valido", "true");
     soltar("15:00");
-    expect(inter.onMudarDuracao).toHaveBeenCalledWith({ id: "a1", duracaoMin: 60, razao: "" });
+    expect(inter.onMudarDuracao).toHaveBeenCalledWith(expect.objectContaining({ id: "a1", duracaoMin: 60, razao: "" }));
   });
 });
 
@@ -400,8 +456,27 @@ describe("o mesmo gesto pelo teclado", () => {
     expect(screen.queryByTestId("fantasma-do-arraste")).toBeNull();
 
     fireEvent.keyDown(card, { key: "Enter" });
-    expect(inter.onMudarDuracao).toHaveBeenCalledWith({ id: "a1", duracaoMin: 60, razao: "" });
+    expect(inter.onMudarDuracao).toHaveBeenCalledWith(expect.objectContaining({ id: "a1", duracaoMin: 60, razao: "" }));
     expect(inter.onArrastarPara).not.toHaveBeenCalled();
+  });
+
+  it("Enter numa prévia do teclado que o relógio alcançou entrega a recusa", () => {
+    const inicio = Date.now();
+    const relogio = vi.spyOn(Date, "now").mockReturnValue(inicio);
+    try {
+      const inter = interacao();
+      montar({ interacao: inter, agora: new Date(`${DIA}T14:40:00`), agendamentos: [compromisso({ id: "a1", de: "14:00", ate: "14:30" })] });
+      const card = screen.getByTestId("agendamento-a1");
+      fireEvent.keyDown(card, { key: "ArrowDown", altKey: true, shiftKey: true });
+      expect(screen.getByTestId("fantasma-da-duracao")).toHaveTextContent("14:00–14:45 · 45 min");
+      relogio.mockReturnValue(inicio + 10 * 60_000);
+      fireEvent.keyDown(card, { key: "Enter" });
+      expect(inter.onMudarDuracao).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "a1", duracaoMin: null, razao: "este horário já passou" }),
+      );
+    } finally {
+      relogio.mockRestore();
+    }
   });
 
   it("o leitor de tela ouve a prévia: intervalo e minutos, ou o motivo", () => {

@@ -16941,13 +16941,13 @@ export const DICIONARIO: Traducoes = {
   },
   "Alterar duração": { es: "Cambiar duración" },
   "Duração alterada.": { es: "Duración cambiada." },
-  "A duração não foi alterada — {motivo}.": { es: "No se cambió la duración: {motivo}." },
+  "A duração de {nome} não foi alterada — {motivo}.": { es: "No se cambió la duración de {nome}: {motivo}." },
   "não consegui salvar agora": { es: "no pude guardar ahora" },
   "Este compromisso foi alterado por outra pessoa enquanto você ajustava — agora vai de {inicio} a {fim}. Ajuste de novo se ainda precisar.": {
     es: "Otra persona cambió esta cita mientras la ajustabas: ahora va de {inicio} a {fim}. Ajústala de nuevo si todavía lo necesitas.",
   },
-  "Este compromisso foi alterado por outra pessoa enquanto você ajustava. Confira o horário na grade.": {
-    es: "Otra persona cambió esta cita mientras la ajustabas. Revisa el horario en la agenda.",
+  "Este compromisso foi alterado por outra pessoa enquanto você ajustava. Confira o horário atual dele antes de ajustar de novo.": {
+    es: "Otra persona cambió esta cita mientras la ajustabas. Revisa su horario actual antes de ajustarla de nuevo.",
   },
   "o compromisso": { es: "la cita" },
   "Entendi": { es: "Entendido" },

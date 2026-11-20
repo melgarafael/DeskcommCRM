@@ -96,7 +96,17 @@ export interface InteracaoDaGrade {
    * fim não pode ser gravado — quem recebe RECUSA e diz `razao`, sem escrever.
    * Ausente = a grade não oferece a borda.
    */
-  onMudarDuracao?: (entrada: { id: string; duracaoMin: number | null; razao: string }) => void;
+  onMudarDuracao?: (entrada: {
+    id: string;
+    duracaoMin: number | null;
+    razao: string;
+    /**
+     * O compromisso COMO ELE ERA quando a prévia nasceu. A prévia do teclado
+     * sobrevive a uma recarga da lista; sem isto, o `Enter` depois de um colega
+     * mudar o início aplicaria a duração ao início NOVO, com a revisão nova.
+     */
+    base: { revision?: number; comeca: string; termina: string };
+  }) => void;
   /**
    * O que OCUPA a agenda de cada responsável, para a prévia da borda — a lista
    * SEM o filtro de profissional. Com o Bruno isolado, o card em que ele é
@@ -133,6 +143,8 @@ interface PropostaDeDuracao {
   duracaoMin: number;
   /** `""` quando o fim pode ser gravado; senão, a frase da recusa. */
   razao: string;
+  /** O card de onde a prévia partiu — vai junto na entrega (ver `onMudarDuracao`). */
+  base: { revision?: number; comeca: string; termina: string };
 }
 
 /** Onde um card arrastado está sendo proposto — o mesmo estado para ponteiro e teclado. */
@@ -825,7 +837,14 @@ function FantasmaDaDuracao({ proposta, fuso }: { proposta: PropostaDeDuracao; fu
         height: Math.max(pixelsDe(proposta.fimMin - proposta.inicioMin) - 2, 18),
       }}
     >
-      <span className="block truncate text-[10px] font-semibold leading-4 tabular-nums text-text">
+      <span
+        className={cn(
+          "block text-[10px] font-semibold leading-4 tabular-nums text-text",
+          // O motivo da recusa QUEBRA a linha em vez de cortar: na semana a
+          // coluna é estreita, e é lendo o motivo que se ajusta o gesto.
+          valido ? "truncate" : "whitespace-normal break-words",
+        )}
+      >
         {textoDaPropostaDeDuracao(proposta, fuso, t)}
       </span>
     </div>
@@ -1398,7 +1417,11 @@ export function GradeDaAgenda({
   // ─── A BORDA DE BAIXO: mudar a duração (#4450) ─────────────────────────
   const [propostaDeDuracao, setPropostaDeDuracao] = React.useState<PropostaDeDuracao | null>(null);
   /** O gesto da borda em curso — numa ref pelo mesmo motivo de `gesto`. */
-  const gestoDaBorda = React.useRef<{ id: string; y0: number; moveu: boolean } | null>(null);
+  const gestoDaBorda = React.useRef<{ id: string; y0: number; moveu: boolean; terminou: boolean } | null>(
+    null,
+  );
+  /** Há um puxar da borda EM CURSO (a ref sobrevive um tique depois de soltar, para o `click`). */
+  const bordaEmCurso = () => gestoDaBorda.current !== null && !gestoDaBorda.current.terminou;
   const onMudarDuracao = interacao?.onMudarDuracao;
   const ocupacao = interacao?.ocupacao ?? agendamentos;
 
@@ -1443,15 +1466,23 @@ export function GradeDaAgenda({
       const fimOriginalMin =
         diasEntre(dia, chaveDoDiaDoInstante(termina, fuso)) * 1440 + minutoDoInstante(termina, fuso);
       const meioDia = new Date(`${dia}T12:00:00`);
-      return {
-        comeca,
-        dia,
-        inicioMin,
-        fimOriginalMin,
-        paradas: paradasDoFim({ inicioMin, fimOriginalMin, limiteMin: limites.ultimo }),
-        instanteDaParada: (m: number) =>
-          m === fimOriginalMin ? termina : instanteDoMinuto(meioDia, m, fuso),
-      };
+      const instanteDaParada = (m: number) =>
+        m === fimOriginalMin ? termina : instanteDoMinuto(meioDia, m, fuso);
+      // ⚠️ Na virada do horário de verão a parede e o relógio discordam: na
+      // primavera 02:45 não existe (vira 03:45, depois de 03:00); no outono 01:45
+      // existe duas vezes, e a conversão pode cair ANTES do início. Fica só a
+      // parada cujo instante anda para a frente, a pelo menos 15 minutos do
+      // início — nunca uma duração negativa, nunca o fim voltando ao descer.
+      const paradas: number[] = [];
+      let ultimo = comeca.getTime() + 15 * 60_000 - 1;
+      for (const m of paradasDoFim({ inicioMin, fimOriginalMin, limiteMin: limites.ultimo })) {
+        const instante = instanteDaParada(m).getTime();
+        if (m === fimOriginalMin || instante > ultimo) {
+          paradas.push(m);
+          ultimo = Math.max(ultimo, instante);
+        }
+      }
+      return { comeca, dia, inicioMin, fimOriginalMin, paradas, instanteDaParada };
     },
     [fuso, limites.ultimo],
   );
@@ -1483,6 +1514,7 @@ export function GradeDaAgenda({
         comeca: geo.comeca.toISOString(),
         termina: fim.toISOString(),
         duracaoMin: Math.round((fim.getTime() - geo.comeca.getTime()) / 60_000),
+        base: { revision: a.revision, comeca: a.comeca, termina: a.termina },
         // Voltar ao fim original é "não mudar nada": não há o que recusar.
         razao: original
           ? ""
@@ -1519,13 +1551,18 @@ export function GradeDaAgenda({
   const entregarDuracao = React.useCallback(
     (p: PropostaDeDuracao) => {
       if (p.fimMin === p.fimOriginalMin) return;
+      // O relógio de NOVO na entrega: a prévia do teclado pode ter ficado aberta
+      // enquanto o fim escolhido passava.
+      const razao =
+        p.razao === "" && new Date(p.termina).getTime() <= agoraNoGesto() ? "este horário já passou" : p.razao;
       onMudarDuracao?.({
         id: p.id,
-        duracaoMin: p.razao === "" ? p.duracaoMin : null,
-        razao: p.razao,
+        duracaoMin: razao === "" ? p.duracaoMin : null,
+        razao,
+        base: p.base,
       });
     },
-    [onMudarDuracao],
+    [onMudarDuracao, agoraNoGesto],
   );
 
   const aoApontarBorda = React.useCallback(
@@ -1534,9 +1571,12 @@ export function GradeDaAgenda({
       // como sempre arrastou.
       if (e.pointerType === "touch" || e.button !== 0 || !onMudarDuracao) return;
       e.stopPropagation();
+      if (bordaEmCurso()) return;
       const geo = geometriaDoFim(a);
+      const rolagem = gradeRef.current;
+      const rolagem0 = rolagem?.scrollTop ?? 0;
       const ponteiro = e.pointerId;
-      const g = { id: a.id, y0: e.clientY, moveu: false };
+      const g = { id: a.id, y0: e.clientY, moveu: false, terminou: false };
       gestoDaBorda.current = g;
       setProposta(null);
       e.currentTarget.setPointerCapture?.(ponteiro);
@@ -1546,8 +1586,15 @@ export function GradeDaAgenda({
       // curto (e com no mínimo 15 minutos): pegar no meio dela já ficava 6px
       // acima do fim, e voltar ao mesmo pixel encaixava em 14:15 e pedia
       // confirmação de uma mudança que ninguém fez.
+      //
+      // A rolagem da grade ENTRA no deslocamento: rolar com o botão apertado
+      // muda a hora sob o ponteiro sem mudar o `clientY`.
       const fimSob = (clientY: number) =>
-        paradaMaisProxima(geo.paradas, geo.fimOriginalMin + ((clientY - g.y0) / ALTURA_DA_HORA) * 60);
+        paradaMaisProxima(
+          geo.paradas,
+          geo.fimOriginalMin +
+            ((clientY - g.y0 + (rolagem?.scrollTop ?? 0) - rolagem0) / ALTURA_DA_HORA) * 60,
+        );
       const mover = (ev: PointerEvent) => {
         // Só o ponteiro que começou o gesto: um dedo encostando na tela no meio
         // do arraste do mouse não mexe na prévia nem a encerra.
@@ -1558,6 +1605,7 @@ export function GradeDaAgenda({
       };
       const soltar = (ev: PointerEvent) => {
         if (ev.pointerId !== ponteiro) return;
+        g.terminou = true;
         window.removeEventListener("pointermove", mover);
         window.removeEventListener("pointerup", soltar);
         window.removeEventListener("pointercancel", soltar);
@@ -1619,6 +1667,9 @@ export function GradeDaAgenda({
   const arrasteDoCard = interacao?.onArrastarPara
     ? {
         aoApontar: (e: React.PointerEvent<HTMLButtonElement>, a: Agendamento) => {
+          // Um gesto por vez: um dedo no card enquanto o mouse puxa a borda não
+          // vira um segundo arraste nem apaga a prévia da borda.
+          if (bordaEmCurso()) return;
           setPropostaDeDuracao(null);
           aoApontar(e, a);
         },
