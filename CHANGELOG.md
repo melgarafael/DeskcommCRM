@@ -8,6 +8,151 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.121.0] — 2026-11-20
+
+### ⚠️ Requer atenção
+
+- **API de serviços devolve código, e não frase, no motivo da recusa** Se a sua integração compara as frases de `error.details` ao cadastrar ou alterar serviços,
+  passe a comparar os códigos. Quem usa só a tela do CRM não precisa fazer nada.
+
+### Adicionado
+
+- **Os ganhos do Desempenho ganham recorte por funil, e o card diz de qual funil é o número** O card «Ganhos por período» somava TODO negócio ganho da organização, sem olhar de que funil ele veio. Como todo funil precisa de uma etapa de ganho, o funil de suporte declara «Resolvido» como ganho — e os ganhos dos últimos 30 dias apareciam como 7 de suporte e nenhuma venda, tudo sob o mesmo título. Agora o card tem um seletor de funil: escolhido um, o número passa a ser o ganho daquele funil, com o nome dele escrito no card; sem escolha, a conta é a de antes — a organização inteira — e o card diz isso. A série continua saindo dos dados que já existem, sem migration e sem RPC.
+
+  Os ganhos por agente de IA na tabela por atendente ficam para uma entrega seguinte.
+
+  Contribuição de @webtecnica (#4931).
+
+- **Rotas de IA de configuração e leitura aceitam token de integração** As rotas de IA de configuração e leitura (`ai/automatico-ativo`, `ai/budget`, `ai/evolution`, `ai/guardrail-layers`, `ai/mapas`, `ai/mapas/testar`, `ai/operator-metrics`, `ai/pacing`, `ai/runs`, `ai/style-adjustments`, `ai/turn-traces`, `ai/usage` e `ai/voz`) passam a aceitar o token `dsk_…` de servidor. A leitura exige o escopo `config:read` e a escrita exige `config:write`, sempre com papel admin no token. A organização vem da linha do token. Continuam somente de sessão `ai/jev`, `ai/voz/preview` e a escrita de `ai/pacing`. Crédito: @paulolimajr77.
+
+- **Rotas do acervo de conhecimento aceitam token de integração** As rotas de configuração do acervo de IA (`ai/knowledge/sources`, `ai/knowledge/busca`, `ai/knowledge/reindex-all`, `ai/knowledge/sources/[id]`, `ai/knowledge/sources/[id]/conteudo`, `ai/knowledge/sources/[id]/reindex`, `ai/knowledge/sources/[id]/trechos` e `ai/knowledge/sources/upload`) passam a aceitar o token `dsk_…` de servidor, com papel admin no token e a organização vinda da linha do token. `ai/knowledge/chave` e `ai/knowledge/provedor` continuam somente de sessão. Crédito: @paulolimajr77.
+
+- **Atendentes, setores e destinos de transferência podem ser lidos pelo token de integração** As rotas de leitura `attendants/availability` (roster de atendimento), `team/assignable` (destinos de transferência de conversa) e `attendants/sectors` (lista de setores) passam a aceitar o token `dsk_…` de servidor, com escopo `config:read` e papel admin, filtrando a organização pela linha do token. No token, a lista não traz o e-mail de login. Pelo token é só leitura: criar, renomear e apagar setor, trocar as filas de uma pessoa, a lista de membros da equipe, convites, troca de papel, revogação e a disponibilidade de uma pessoa continuam somente pela tela. Crédito: @paulolimajr77.
+
+- **Regras de automação e pausas agendadas de canal aceitam token de integração** As rotas de automação (listar regras, excluir regra, histórico de execuções por regra e da organização) e a lista de pausas agendadas de canal passam a aceitar o token `dsk_…` de servidor. O token precisa de `config:read` para ler e de `config:write` para excluir regra, com papel admin, e a organização vem da linha do token. Criar e editar regra de automação, e agendar, editar e cancelar a pausa de canal, continuam somente pela tela. Crédito: @paulolimajr77.
+
+- **Corrigir como o assistente de IA responde direto do ChatGPT (ou outro aplicativo conectado)** Quem administra a empresa e conectou o CRM a um aplicativo como o ChatGPT agora
+  pode, pela conversa com o aplicativo: ver os assistentes e as instruções de cada
+  um, ver por que o assistente respondeu de um jeito numa conversa (qual versão
+  das instruções ele usou, o que consultou, se alguma regra barrou), gravar uma
+  correção — nas instruções e nas configurações (modelo, voz, ferramentas, palavras que
+  passam para uma pessoa, dividir mensagens, ler imagens) — como **rascunho** — num ou em vários assistentes de uma vez —, testar o
+  rascunho com uma mensagem simulada sem enviar nada a ninguém, publicar e voltar
+  a uma versão anterior.
+
+  Publicar e voltar atrás são marcados como ações de alto risco, para o aplicativo
+  pedir confirmação antes. Tudo segue as mesmas regras da tela do assistente
+  (validação, histórico de versões, registro de quem fez) e só funciona para
+  administradores. Os assistentes nunca enxergam nem alteram as próprias
+  instruções. Na tela do assistente, essas capacidades aparecem como não
+  marcáveis, com o motivo.
+
+  Contribuição de @lebaneseforas-byte (#4805).
+
+- **Integração com token passa a gerenciar os grupos de respostas rápidas e as respostas compartilhadas** Uma integração com token de API pode listar, criar, renomear, reordenar e apagar os grupos de respostas rápidas, e listar, criar, editar, reordenar e apagar as respostas compartilhadas da organização, além de enviar e ver as imagens delas. Para ler é preciso o escopo `config:read`; para alterar, `config:write`, e o token precisa ter papel de administrador. O token alcança só as respostas compartilhadas: criar uma resposta pessoal pelo token é recusado, e as pessoais continuam sendo de cada atendente. Crédito: @paulolimajr77.
+
+- **Funis do CRM aceitam token de integração** As rotas de funis (`pipelines`, `pipelines/default`, `pipelines/[id]`, `pipelines/[id]/agent-mapping`, `pipelines/[id]/board`, `pipelines/[id]/forecast`, `pipelines/[id]/leads`, `pipelines/[id]/stages`, `pipelines/[id]/stages/[stageId]` e `pipelines/[id]/stages/win-rates`) passam a aceitar o token `dsk_…` de servidor, desde que ele tenha `config:read` (leitura) ou `config:write` (escrita) e papel admin. Cada consulta filtra a organização da linha do token. Isso inclui a previsão do funil e criar, editar e apagar etapas. Crédito: @paulolimajr77.
+
+- **Produtos e vocabulário de etiquetas aceitam token de integração** As rotas de produtos (catálogo, cadastro, edição, remoção, fotos e importação da planilha) e as de etiquetas (cores e leitura do vocabulário) passam a aceitar o token `dsk_…` de servidor, além da sessão de navegador. Para ler é preciso o escopo `config:read`; para cadastrar, editar, remover, enviar foto ou importar, `config:write`. Como a configuração da loja e das etiquetas é decisão de gestão, o token precisa de papel `admin`. A organização sai da linha do token, nunca do corpo ou do caminho enviado pelo cliente, e cada chamada conta no teto de escrita do token. Pela API, a importação da planilha não aceita foto por link: se alguma linha trouxer foto, a importação inteira é recusada e nada é gravado. A foto do produto continua entrando pela tela de Produtos ou, pela API, no cadastro e na edição do produto.
+
+  Continuam só pela sessão de navegador a gravação do vocabulário de etiquetas (`POST /api/v1/tags/vocabulario`), que depende da sessão do usuário para conferir o papel. Crédito: @paulolimajr77.
+
+- **Rotas de configuração da organização aceitam token de integração** As rotas de configuração em `settings` (agenda de apresentação, campanhas, modelos de proposta, proposals, prospecção, roteamento, sons dos avisos e planos de tarefa) passam a aceitar o token `dsk_…` de servidor, filtrando a organização pela linha do token. A leitura exige `config:read` e a escrita exige `config:write`, e o token precisa de papel admin. A sessão de navegador continua igual. A configuração de canais pode ser lida pelo token, mas alterá-la e importar modelo de proposta por arquivo continuam somente pela sessão. Crédito: @paulolimajr77.
+
+- **Agentes, chamados e follow-ups da IA aceitam token de integração** As rotas de agentes de IA (`ai/agents/assignable` e, por agente, `duplicate`, `pause`, `proposals`, `proposals/[pid]/apply`, `reconcile`, `runs` e `tool-usage`), de chamados e roteamento (`ai/cases`, `ai/cases/[id]`, `ai/routing-results` e `ai/routing-results/[id]`), de fluxos de follow-up (`ai/followup-flows/[id]` e seus `disable`, `duplicate` e `export`, além de `import` e `modelos-aprovados`) e de follow-ups em andamento (`ai/followups/enrollments`, `enrollments/[id]` com `cancel`, `pause` e `snooze`, `promises/[id]/cancel` e `queue`) passam a aceitar o token `dsk_…` de servidor, além da sessão de navegador. A leitura pede o escopo `config:read`, a escrita pede `config:write`, e o token precisa ser de papel administrador em todas elas, porque pelo token a leitura alcança a organização inteira. A organização vem da linha do token, nunca do corpo ou da query, e cada chamada conta no teto do token e da organização: passou do limite, a resposta é 429 com `Retry-After`. O que a integração faz fica no histórico com o token como autor, nunca em nome de uma pessoa. Continuam só pela sessão: publicar e voltar versão de fluxo, inscrever um contato num follow-up, retomar e pular etapa de follow-up, o alerta de chamados, e conversar, responder e encerrar um chamado. Crédito: @paulolimajr77.
+
+- **Rotas de ia/memory e ia/skills aceitam token de integração** As rotas de `ai/memory` (GET/POST, entries GET/POST/PATCH, versions GET) e de `ai/skills` (lista, ver, atualizar e apagar uma skill, versões, importar `.zip`, instalar do catálogo e restaurar uma versão) passam a aceitar `Authorization: Bearer dsk_…` (token de integração), além da sessão do navegador. O token precisa de escopo `config:read` (leitura) ou `config:write` (escrita) e papel admin. A organização é resolvida da linha do token, nunca do corpo ou da query. Crédito: @paulolimajr77.
+
+### Alterado
+
+- **Sem campos do contato, o administrador passa a ver onde criá-los em Novo contato e em Editar contato pela ficha** Sem nenhum campo do contato criado, a janela Novo contato e a janela Editar contato aberta pela ficha do contato não diziam que dava para criar esses campos, nem onde. Agora, para administradores, essas janelas mostram a caixa Campos personalizados com a indicação de onde criá-los e um link que abre a tela Etapas do funil em outra aba. Para os demais papéis nada muda, e quem já tem campos do contato continua vendo a caixa como antes. Nenhuma ação é necessária na atualização. Contribuição de @tabaterral (#4744).
+
+- **API de serviços devolve código, e não frase, no motivo da recusa** Para quem integra pela API REST: desde a 1.120.0, em `POST /api/v1/servicos` e
+  `PATCH /api/v1/servicos/{id}`, as regras do cadastro de serviço que antes devolviam uma
+  frase em português em `error.details` passaram a devolver um código estável. Cada campo
+  traz uma lista de códigos, por exemplo `{"sinal": ["sinal_fixo_acima_do_preco"]}` ou
+  `{"pai_id": ["pai_invalido"]}`. Algumas recusas de formato ainda chegam com a mensagem
+  padrão do validador (por exemplo `preco_cents` enviado como texto).
+
+  Contribuição de @yunshu0909, a partir da issue #4998.
+
+- **Em Agente › Guardrails, os tipos de regra aparecem em português na tela em português** Os quatro tipos de regra ("Regex output block", "RAG must hit", "Regex input block" e "Contact flag") apareciam em inglês na tela em português. Agora o editor usa rótulos em português como chave do dicionário, e os textos em espanhol e turco continuam os mesmos. Nenhuma mudança na lógica dos guardrails nem na configuração das regras. Contribuição de @P-r-e-m-i-u-m (#5051).
+
+### Corrigido
+
+- **Quando a IA não consegue responder nem depois da correção automática, a Central avisa mesmo com os casos desligados** Quando o turno termina sem mensagem nenhuma ao cliente e a correção automática também falha (a resposta foi barrada de novo pelas regras de segurança, veio cortada no limite de tamanho ou gastou todas as etapas sem responder), a equipe ficava sabendo só se os casos estivessem ligados no agente. Com os casos desligados, que é o padrão, o único rastro era o log de erro do turno: o cliente ficava sem resposta e ninguém na Central sabia.
+
+  Agora, com os casos desligados, a Central abre um aviso crítico apontando para a conversa, com o mesmo texto que o caso teria: o que aconteceu com o cliente e por que a IA travou. É um aviso aberto por conversa e por causa, então turnos repetidos não empilham avisos. Com os casos ligados nada muda: o caso abre como antes e nenhum aviso a mais aparece.
+
+  Crédito: @shu-chen-dot-ca (#4665).
+
+- **O teste do agente passa a registrar os tokens e o custo que ele gastou** Ao testar um agente pelo botão Testar, a execução ficava registrada com zero tokens e custo zero, embora as chamadas ao modelo tivessem custado de verdade. Agora a execução de teste fecha com a soma das chamadas daquele teste, tanto quando dá certo quanto quando falha. Dois testes do mesmo agente feitos ao mesmo tempo não misturam os custos. As conferências internas do turno (por exemplo, o checkpoint) ainda não entram nessa soma. Nenhuma ação é necessária na atualização.
+
+  Crédito: @webtecnica.
+
+- **PDF escaneado não vira mais falha crítica da leitura de mídia** Quando um cliente mandava um PDF escaneado — sem camada de texto —, a leitura
+  da mídia falhava cinco vezes, o agente respondia como se tivesse lido o
+  arquivo e a Central abria um aviso de falha de processamento. Esse evento
+  morto ocupava a única vaga de aviso da organização e escondia a próxima falha
+  de verdade, como uma credencial de IA recusada.
+
+  Agora a derivação reconhece o PDF sem texto selecionável e encerra na primeira
+  tentativa: a mensagem fica marcada como não lida, com a razão registrada nela,
+  e o agente passa a saber que não conseguiu ler o arquivo, em vez de supor o
+  conteúdo. Nada é enviado à Central. A leitura por imagem (OCR) continua fora deste
+  recorte, e erro de infraestrutura — chave errada, modelo sem visão, download
+  que falhou — continua sendo tentado de novo e avisado como antes.
+
+  Obrigado a @webtecnica pelo conserto e a @xofrd pelo diagnóstico na issue #4889.
+
+- **O aviso de canal em modo de teste diz qual canal é** O aviso "Este canal está em modo de teste — a IA não responde ninguém" da
+  Central não dizia de qual conexão falava. Quem tem mais de um canal pensava no
+  principal, que respondia normalmente, e concluía que o aviso estava errado.
+  Agora o título traz o nome dado em Conexões (ou o número, quando não há nome).
+  No Instagram e no Facebook o aviso passa a falar em contas de teste, que é o que
+  essas conexões autorizam, e não em números. Os avisos já abertos continuam com o
+  texto antigo até se resolverem. Crédito: @tabaterral.
+
+- **O follow-up em número por QR não culpa mais a janela de 24 h da API oficial** O histórico do follow-up dizia "a janela estava fechada" para todo envio segurado, qualquer que fosse o motivo. Agora ele nomeia o que de fato segurou: o horário de envio da conexão, a faixa do acompanhamento, uma pessoa no comando da conversa, a trava contra repetir a mesma mensagem ou o ritmo do número. A frase da janela de 24 h fica reservada aos canais que espelham a API oficial, decidida pela capacidade do canal e não pelo nome do provedor. O adiamento em si não mudou: só o texto que explica por que ele aconteceu.
+
+  Contribuição de @webtecnica (#4923).
+
+- **A coluna Status dos tokens de API aparece traduzida em espanhol** Em Configurações › Tokens de API, com a tela em espanhol, todos os cabeçalhos
+  da tabela mudavam de idioma, menos "Status", que ficava escrito direto no
+  código. Agora ele aparece como "Estado", como as colunas vizinhas.
+
+  Issue #4990.
+
+  Contribuição de @fernandoobarbosa (#5064).
+
+- **Saiba onde encontrar a senha inicial depois de instalar** Na instalação com o Supabase na mesma VPS, o resumo do instalador aponta
+  onde encontrar a senha inicial: `OWNER_PASSWORD` no arquivo `.env` da pasta
+  do CRM ou em `.runtime/admin-credentials`. O valor fica fora da saída final.
+  O README também indica onde procurar no primeiro acesso.
+
+  Contribuição de @yunshu0909, a partir da issue #4993.
+
+- **O visto azul chega ao cliente também nas conexões por QR sem "Guardar histórico"** Nas conexões por QR Code (WAHA NOWEB) com "Guardar histórico" desligado, que é o padrão, o cliente ficava nos dois tiques cinza depois da resposta do agente ou do atendente. O pedido de "li a conversa" saía sem dizer quais mensagens, e o WAHA sem histórico guardado recusava esse pedido com erro 400. Como a marcação falha sem barulho, nada aparecia na tela.
+
+  Agora a resposta diz ao canal quais mensagens do cliente ela está lendo: as que o CRM recebeu depois do último envio que saiu de verdade (sem reações e mensagens de sistema, até 30), só do número que está sendo respondido. Com esses ids o WAHA marca a leitura sem precisar do histórico guardado. Quando não há mensagem nova do cliente, como na segunda bolha da mesma resposta, o pedido sai como antes, sem ids. Grupos continuam sem visto.
+
+  Fica de fora, declarado: o reenvio do watchdog depois que a conexão volta (`session-reconciler`) nunca pediu visto e continua sem pedir; e se o pedido de visto falhar numa conexão sem histórico guardado, ele não é refeito na resposta seguinte (refazer exigiria guardar o que já foi marcado, ou seja, coluna nova).
+
+  Contribuição de @yunshu0909, a partir da issue #5015.
+
+- **O custo da IA no Painel de Evolução conta o período inteiro, e o painel avisa quando um número é só uma parte** O card "Custo da IA no período" somava só as primeiras 1.000 chamadas do período (o
+  limite de linhas por leitura), então quem tem mais chamadas via o custo dos dias mais
+  antigos. Agora o custo é somado no banco, pela mesma conta da tela Uso de IA. E quando
+  outro bloco do painel bate nesse limite, ou não pôde ser lido, uma faixa no topo diz
+  quais números estão incompletos, em vez de mostrá-los como se fossem exatos; nesse caso
+  "O que está travando" também deixa de dizer que nada está travando.
+
+  Contribuição de @yunshu0909, a partir da issue #5016.
+
+- **Uso e orçamento contabiliza a faixa longa do GPT-6 Luna e do GPT-5.6 Terra** O custo exibido para GPT-6 Luna e GPT-5.6 Terra passa a incluir a tarifa de contexto longo quando uma requisição ultrapassa 272 mil tokens de entrada. A faixa é determinada por requisição, inclusive quando o agente faz várias chamadas no mesmo turno.
+
+  Contribuição de @yunshu0909, a partir da issue #5018.
+
 ## [1.120.1] — 2026-11-20
 
 ### Corrigido
@@ -18210,7 +18355,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.120.1...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.121.0...HEAD
+[1.121.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.120.1...v1.121.0
 [1.120.1]: https://github.com/melgarafael/DeskcommCRM/compare/v1.120.0...v1.120.1
 [1.120.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.119.0...v1.120.0
 [1.119.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.118.0...v1.119.0
