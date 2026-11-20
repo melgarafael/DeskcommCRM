@@ -363,7 +363,18 @@ async function extrairEmProcessoAParte(
 
   const texto = resposta.texto ?? "";
   if (texto.length === 0) {
-    throw new PdfExtractError("pdfjs-dist extracted no text (possibly image-only PDF)");
+    // O MESMO motivo do caminho em processo (#4889). Antes desta linha o filho
+    // respondia `{ ok: true, texto: "" }` e o pai lançava o erro sem o terceiro
+    // argumento — ou seja, `motivo` caía no padrão `"falha"`. Quem decide pelo
+    // motivo (`ingest/documento.ts`) classificava PDF escaneado como defeito de
+    // infraestrutura, e o worker de mídia tratava como erro real: cinco
+    // tentativas, aviso na Central e um `event_dead` aberto que esconde a
+    // próxima falha de verdade (índice único da migration 0491).
+    throw new PdfExtractError(
+      "pdfjs-dist extracted no text (possibly image-only PDF)",
+      undefined,
+      "sem_texto",
+    );
   }
   return texto;
 }
