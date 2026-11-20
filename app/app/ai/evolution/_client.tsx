@@ -348,34 +348,44 @@ function Carregando() {
  * então a tradução já existe. Uma tabela pode alimentar mais de um card, e três
  * tabelas alimentam o mesmo (a taxa de ajuda): o aviso lista cada nome uma vez.
  */
-const BLOCOS_DA_FONTE: Record<string, string[]> = {
-  org_memory_entries: ["Regras que você ensinou"],
-  flywheel_distiller_proposals: ["Melhorias que você aprovou"],
-  skill_pointers: ["Habilidades instaladas"],
-  skill_activations: ["Habilidades usadas"],
-  ai_router_decisions: ["Conversas encaminhadas"],
-  knowledge_searches: ["Consultas aos seus materiais"],
-  lead_state_transitions: [
-    "Negócios fechados pelo agente",
-    "Negócios perdidos pelo agente",
-    "Mudanças de passo no atendimento",
-  ],
-  llm_calls: ["Custo da IA no período"],
-  messages: ["Casos que precisaram de uma pessoa"],
-  agent_inbox_items: ["Casos que precisaram de uma pessoa"],
-  event_log: ["Casos que precisaram de uma pessoa"],
-  crm_stages: ["O que está travando"],
+const ROTULO_DO_BLOCO = {
+  regras: "Regras que você ensinou",
+  melhorias: "Melhorias que você aprovou",
+  instaladas: "Habilidades instaladas",
+  usadas: "Habilidades usadas",
+  encaminhadas: "Conversas encaminhadas",
+  materiais: "Consultas aos seus materiais",
+  fechados: "Negócios fechados pelo agente",
+  perdidos: "Negócios perdidos pelo agente",
+  mudancas: "Mudanças de passo no atendimento",
+  custo: "Custo da IA no período",
+  ajuda: "Casos que precisaram de uma pessoa",
+  travando: "O que está travando",
+} as const;
+
+type Bloco = keyof typeof ROTULO_DO_BLOCO;
+
+const BLOCOS_DA_FONTE: Record<string, Bloco[]> = {
+  org_memory_entries: ["regras"],
+  flywheel_distiller_proposals: ["melhorias"],
+  skill_pointers: ["instaladas"],
+  skill_activations: ["usadas"],
+  ai_router_decisions: ["encaminhadas"],
+  knowledge_searches: ["materiais"],
+  lead_state_transitions: ["fechados", "perdidos", "mudancas"],
+  llm_calls: ["custo"],
+  messages: ["ajuda"],
+  agent_inbox_items: ["ajuda"],
+  event_log: ["ajuda"],
+  crm_stages: ["travando"],
 };
 
 function nomesDosBlocos(fontes: EvolutionPayload["fontes_incompletas"], t: (s: string) => string): string {
-  const nomes: string[] = [];
+  const blocos: Bloco[] = [];
   for (const f of fontes) {
-    for (const nome of BLOCOS_DA_FONTE[f.fonte] ?? []) {
-      const traduzido = t(nome);
-      if (!nomes.includes(traduzido)) nomes.push(traduzido);
-    }
+    for (const b of BLOCOS_DA_FONTE[f.fonte] ?? []) if (!blocos.includes(b)) blocos.push(b);
   }
-  return nomes.join(", ");
+  return blocos.map((b) => t(ROTULO_DO_BLOCO[b])).join(", ");
 }
 
 /**
