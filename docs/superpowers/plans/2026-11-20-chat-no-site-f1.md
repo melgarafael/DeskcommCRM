@@ -52,7 +52,7 @@ públicas em `app/api/v1/webchat/`. A organização sai sempre da chave ou do to
 
 ---
 
-### Tarefa 1: banco: vocabulário, colunas e trava do plano
+### Task 1: banco: vocabulário, colunas e trava do plano
 
 **Arquivos:**
 - Criar: `supabase/migrations/<timestamp>_<NNNN>_canal_chat_no_site.sql`
@@ -84,7 +84,7 @@ públicas em `app/api/v1/webchat/`. A organização sai sempre da chave ou do to
 - [ ] **Passo 4:** empurrar; o `invariants` fica verde, inclusive o install e o update do baseline.
 - [ ] **Passo 5: commit** `feat(canais): o banco aceita o canal de chat no site`.
 
-### Tarefa 2: o canal no seam do TypeScript
+### Task 2: o canal no seam do TypeScript
 
 **Arquivos:**
 - Alterar:
@@ -122,7 +122,7 @@ públicas em `app/api/v1/webchat/`. A organização sai sempre da chave ou do to
   `canal-da-conversa-banco-x-catalogo` passam a ver `webchat` dos dois lados).
 - [ ] **Passo 5: commit** `feat(canais): o chat no site entra no seam de canais`.
 
-### Tarefa 3: o adaptador
+### Task 3: o adaptador
 
 **Arquivos:**
 - Criar: `lib/channels/adapters/webchat.ts`
@@ -144,7 +144,7 @@ públicas em `app/api/v1/webchat/`. A organização sai sempre da chave ou do to
 - [ ] **Passos 2 a 4:** vermelho, implementar, verde (pode ir no push da tarefa 2).
 - [ ] **Passo 5: commit** `feat(canais): adaptador do chat no site`.
 
-### Tarefa 4: o token de visitante
+### Task 4: o token de visitante
 
 **Arquivos:**
 - Criar: `lib/channels/webchat/token.ts`
@@ -172,7 +172,7 @@ públicas em `app/api/v1/webchat/`. A organização sai sempre da chave ou do to
 - [ ] **Passos 2 a 4:** vermelho, implementar, verde.
 - [ ] **Passo 5: commit** `feat(webchat): token assinado do visitante`.
 
-### Tarefa 5: a ingestão
+### Task 5: a ingestão
 
 **Arquivos:**
 - Criar: `lib/channels/webchat/ingest.ts`
@@ -198,7 +198,7 @@ públicas em `app/api/v1/webchat/`. A organização sai sempre da chave ou do to
   (`lib/channels/bot/ingest.ts:200-229`).
 - [ ] **Passo 5: commit** `feat(webchat): ingestão pelo pós-entrada`.
 
-### Tarefa 6: o módulo opcional
+### Task 6: o módulo opcional
 
 **Arquivos:**
 - Alterar:
@@ -221,7 +221,7 @@ públicas em `app/api/v1/webchat/`. A organização sai sempre da chave ou do to
 - [ ] **Passos 2 a 4:** vermelho, implementar, verde.
 - [ ] **Passo 5: commit** `feat(webchat): módulo opcional desligado de fábrica`.
 
-### Tarefa 7: a rota de quem administra
+### Task 7: a rota de quem administra
 
 **Arquivos:**
 - Criar:
@@ -251,7 +251,7 @@ públicas em `app/api/v1/webchat/`. A organização sai sempre da chave ou do to
 - [ ] **Passos 2 a 4:** vermelho, implementar, verde.
 - [ ] **Passo 5: commit** `feat(webchat): conexão criada por quem administra`.
 
-### Tarefa 8: as rotas públicas de sessão e de mensagens
+### Task 8: as rotas públicas de sessão e de mensagens
 
 **Arquivos:**
 - Criar:
@@ -283,7 +283,7 @@ públicas em `app/api/v1/webchat/`. A organização sai sempre da chave ou do to
   `webchat:<rota>:<ipDoCliente ou visitante>`.
 - [ ] **Passo 5: commit** `feat(webchat): rotas públicas de sessão e mensagem`.
 
-### Tarefa 9: a rota de eventos
+### Task 9: a rota de eventos
 
 **Arquivos:**
 - Criar:
@@ -310,7 +310,7 @@ públicas em `app/api/v1/webchat/`. A organização sai sempre da chave ou do to
 - [ ] **Passos 2 a 4:** vermelho, implementar, verde.
 - [ ] **Passo 5: commit** `feat(webchat): o visitante recebe as respostas por stream`.
 
-### Tarefa 10: isolamento em banco real e o fechamento
+### Task 10: isolamento em banco real e o fechamento
 
 **Arquivos:**
 - Criar:
