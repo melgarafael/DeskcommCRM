@@ -16314,15 +16314,10 @@ export const DICIONARIO: Traducoes = {
   "Morno": { es: "Tibio" },
   "Quente": { es: "Caliente" },
   // ─── components/ai/GuardrailsEditor.tsx (KIND_LABELS) ───
-  //
-  // As 4 chaves abaixo já nascem em INGLÊS, não em português — bug à parte de
-  // #651: a convenção do projeto é "a chave é o texto em português", e aqui
-  // não é. Fora do escopo deste PR (é a fonte que precisa mudar, não a
-  // tradução), sinalizado no PR para abrir issue própria.
-  "Regex output block": { es: "Bloqueo de salida por regex" },
-  "RAG must hit": { es: "RAG debe coincidir" },
-  "Regex input block": { es: "Bloqueo de entrada por regex" },
-  "Contact flag": { es: "Marca de contacto" },
+  "Bloqueio de saída por regex": { es: "Bloqueo de salida por regex" },
+  "Precisa achar no RAG": { es: "RAG debe coincidir" },
+  "Bloqueio de entrada por regex": { es: "Bloqueo de entrada por regex" },
+  "Marca do contato": { es: "Marca de contacto" },
   "Falha ao avançar:": { es: "Error al avanzar:" },
   "Nuvemshop": { es: "Nuvemshop" },
   "Billing": { es: "Facturación" },
