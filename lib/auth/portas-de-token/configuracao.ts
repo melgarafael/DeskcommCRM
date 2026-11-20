@@ -119,6 +119,23 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   "/api/v1/ai/usage",
   "/api/v1/ai/voz",
 
+  // pipelines. Quem autentica é a própria rota, por `resolveAuthDual`: token com
+  // `config:read` (GET) ou `config:write` (escrita) e papel admin (`tokenRole`).
+  // `[id]` é forma de UUID. `forecast` aceita token também (no token a previsão
+  // é da organização inteira, sem o recorte por pessoa da sessão). O POST de
+  // `stages` também (GET e POST dividem a mesma porta). `stages/[stageId]` (PATCH
+  // e DELETE da etapa) também; `[stageId]` é forma de UUID, então o irmão literal
+  // `win-rates` não cai de carona.
+  "/api/v1/pipelines",
+  "/api/v1/pipelines/default",
+  "/api/v1/pipelines/[id]",
+  "/api/v1/pipelines/[id]/agent-mapping",
+  "/api/v1/pipelines/[id]/board",
+  "/api/v1/pipelines/[id]/forecast",
+  "/api/v1/pipelines/[id]/leads",
+  "/api/v1/pipelines/[id]/stages",
+  "/api/v1/pipelines/[id]/stages/[stageId]",
+  "/api/v1/pipelines/[id]/stages/win-rates",
 
   // products e tags. Quem autentica é a própria rota, por `resolveAuthDual`: token
   // com `config:read` (GET) ou `config:write` (escrita) e papel admin (`tokenRole`).
@@ -168,4 +185,35 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   "/api/v1/message-template-groups",
   "/api/v1/message-template-groups/[id]",
   "/api/v1/message-template-groups/[id]/ordem",
+
+  // automation-rules (R1). Quem autentica é a própria rota, por `resolveAuthDual`:
+  // token com `config:read` (GET) ou `config:write` (DELETE) e papel admin
+  // (`tokenRole`). `[id]` é forma de UUID. O POST de `automation-rules` e o PATCH
+  // de `[id]` seguem só de sessão (ids de ação sem conferência; `authz.org.role`
+  // na autoria) e não entram de carona: o `[id]` ganha porta pelo DELETE.
+  "/api/v1/automation-rules",
+  "/api/v1/automation-rules/[id]",
+  "/api/v1/automation-rules/[id]/runs",
+  "/api/v1/automation-rules/runs",
+
+  // channel-schedules (R1), só leitura. Quem autentica é a própria rota, por
+  // `resolveAuthDual`: token com `config:read` e papel admin (`tokenRole`) no GET.
+  // Agendar, editar e cancelar a pausa (POST, e `[id]` inteiro) seguem só de
+  // sessão até o ok do mantenedor; `[id]` não tem porta.
+  "/api/v1/channel-schedules",
+
+  // attendants/availability e team/assignable (só GET, leitura). Quem autentica é a
+  // própria rota, por `resolveAuthDual`: token com `config:read` e papel admin
+  // (`tokenRole`). Caminhos literais, sem segmento dinâmico, então nenhum irmão entra
+  // de carona: `availability/[user_id]` (PATCH de pessoa) e `presence` seguem só de
+  // sessão, e `team` (lista com e-mail de login) também.
+  "/api/v1/attendants/availability",
+  "/api/v1/team/assignable",
+
+  // attendants/sectors (R1), só leitura. Quem autentica é a própria rota, por
+  // `resolveAuthDual`: token com `config:read` e papel admin (`tokenRole`) no GET.
+  // Caminho literal, sem segmento dinâmico. Criar, renomear e apagar setor (POST,
+  // `sectors/[id]`) e trocar as filas de uma pessoa (`sector/[user_id]`) seguem só
+  // de sessão até o ok do mantenedor, e não têm porta.
+  "/api/v1/attendants/sectors",
 ];
