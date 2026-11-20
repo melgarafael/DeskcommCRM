@@ -489,6 +489,14 @@ export async function aplicaAvisoDeCaso(
   // função única `resolverDestinoDoAviso`.
   const contactId = textoOuNulo(row.payload.contact_id);
   const destino: DestinoDoAviso = await destinoDoEnvio(deps, orgId, cfg, caso.conversation_id, contactId);
+  // "Não enviar aviso de caso" (#4989): a cadeia parou em alguém marcado. Nada
+  // sai e nenhuma entrega nasce — o caso segue no painel Casos. O motivo vai no
+  // desfecho do evento, separado de `sem_destino`, com o elo em que parou.
+  if (destino.origem === "nao_avisar") {
+    if (atualizacao) await deps.db.cancelaAtualizacao?.(orgId, caseId, caseEventId!);
+    const parou = destino.descartes.find((d) => d.motivo === "nao_avisar")?.elo ?? "responsavel";
+    return skipped(`nao_avisar:${parou}`);
+  }
   // Sem número não há aviso: `sem_destino` é a resposta honesta (a coluna é
   // `not null` com CHECK, então este ramo só existe para uma linha torta — e
   // mandar para `""` faria o transporte recusar com um erro que ninguém lê).

@@ -59,6 +59,11 @@ export interface EstadoDoAviso {
    * o campo — e `undefined` vale como "leu" (#3935).
    */
   equipe_indisponivel?: boolean;
+  /**
+   * `true` = a marca "Não enviar aviso de caso" (#4989) não pôde ser lida: a
+   * tela trava os interruptores. Opcional pelo mesmo motivo de cima.
+   */
+  nao_avisar_indisponivel?: boolean;
   conexoes: ConexaoParaAviso[];
   avisos: AvisoDaTela[];
   pode_ligar: boolean;
@@ -140,6 +145,11 @@ export interface EntradaDoSalvar {
   responsaveis?: Array<{ user_id: string; whatsapp?: string | null }>;
   /** `null` = sem modelo (texto livre). Ver a rota. */
   modelo_id?: string | null;
+  /**
+   * "Não enviar aviso de caso" (#4989): SÓ os membros cujo interruptor a
+   * pessoa mudou. Ausente = não mexe em ninguém.
+   */
+  nao_avisar?: Array<{ user_id: string; nao_avisar: boolean }>;
 }
 
 export function useSalvarAvisoDeCaso() {

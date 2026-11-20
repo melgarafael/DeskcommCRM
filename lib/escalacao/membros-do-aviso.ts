@@ -36,6 +36,7 @@ import { logger } from "@/lib/logger";
 
 import { idsDaCadeiaDoAviso, modoDoDestinoDoAviso, resolverDestinoDoAviso } from "./destino-do-aviso";
 import { normalizarTelefoneDeAviso, telefoneDeAvisoValido } from "./estado-do-aviso";
+import { lerMembrosSemAviso } from "./membros-sem-aviso";
 
 /** A linha da conversa, reduzida ao que a cadeia lê. */
 export type ConversaDoMundoDoAviso = {
@@ -54,6 +55,11 @@ export interface MundoDoAviso {
   contato: ContatoDoMundoDoAviso | null;
   /** `user_id` → WhatsApp do perfil do membro (ou `null` quando não cadastrou). */
   whatsapps: Map<string, string | null>;
+  /**
+   * Quem está marcado com "Não enviar aviso de caso" (#4989). Opcional porque
+   * os dublês anteriores não o têm: ausente = ninguém marcado.
+   */
+  naoAvisar?: ReadonlySet<string>;
 }
 
 /** O que o membro digitou, na forma que o banco aceita. */
@@ -168,7 +174,22 @@ export async function carregaMundoDoAviso(
     whatsapps: new Map(),
   };
   const ids = idsDaCadeiaDoAviso(mundo);
-  mundo.whatsapps = await carregaWhatsappsDosMembros(admin, organizationId, ids);
+  const [whatsapps, marca] = await Promise.all([
+    carregaWhatsappsDosMembros(admin, organizationId, ids),
+    // A marca "Não enviar aviso de caso" (#4989). Ler falhou = ninguém marcado,
+    // DECLARADO no log: o aviso segue a ordem de sempre em vez de sumir.
+    ids.length > 0 ? lerMembrosSemAviso(admin, organizationId) : Promise.resolve({ ids: new Set<string>() }),
+  ]);
+  mundo.whatsapps = whatsapps;
+  if (marca.ids === null) {
+    logger.warn("[aviso-de-caso] a marca de quem não recebe aviso (não enviar aviso de caso) não pôde ser lida; seguindo a ordem de sempre", {
+      organizationId,
+      causa: "causa" in marca ? marca.causa : "desconhecida",
+    });
+    mundo.naoAvisar = new Set();
+  } else {
+    mundo.naoAvisar = marca.ids;
+  }
   return mundo;
 }
 
@@ -182,6 +203,7 @@ export async function carregaMundoDoAviso(
 export function destinoDoAvisoComMundo(
   config: Record<string, unknown> | null | undefined,
   mundo: MundoDoAviso,
+  opcoes: { respeitaNaoAvisar?: boolean } = {},
 ) {
   return resolverDestinoDoAviso({
     config,
@@ -189,6 +211,9 @@ export function destinoDoAvisoComMundo(
     negocio: mundo.negocio,
     contato: mundo.contato,
     whatsapps: mundo.whatsapps,
+    // Só o aviso de CASO respeita a marca (#4989): a issue não fala do aviso
+    // de proposta, e ele continua na cadeia de sempre.
+    ...(opcoes.respeitaNaoAvisar && mundo.naoAvisar ? { naoAvisar: mundo.naoAvisar } : {}),
   });
 }
 
@@ -224,7 +249,7 @@ export async function resolveDestinoDoEnvio(entrada: {
   if (modoDoDestinoDoAviso(config) === "responsavel" && carregaMundo) {
     try {
       const mundo = await carregaMundo({ organizationId, conversationId, contactId });
-      return destinoDoAvisoComMundo(config, mundo);
+      return destinoDoAvisoComMundo(config, mundo, { respeitaNaoAvisar: aviso === "caso" });
     } catch (err) {
       logger.warn(`[aviso-de-${aviso}] destino do responsável não pôde ser lido; usando o número da empresa`, {
         organizationId,

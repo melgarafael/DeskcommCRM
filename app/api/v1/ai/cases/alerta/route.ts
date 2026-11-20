@@ -108,6 +108,7 @@ import { env } from "@/lib/env";
 import { mascara } from "@/lib/escalacao/aviso-ao-suporte";
 import { carregarModeloDoAviso, type MotivoDoModeloRecusado } from "@/lib/escalacao/modelo-do-aviso";
 import { limparCacheDoNumeroInterno } from "@/lib/escalacao/numero-interno-de-aviso";
+import { gravarMembrosSemAviso } from "@/lib/escalacao/membros-sem-aviso";
 import { lerEstadoDaTelaDeAviso } from "@/lib/escalacao/tela-do-aviso";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
@@ -177,6 +178,16 @@ const corpo = z
      * modelo de outra conexão de ficar para trás depois de trocar de número.
      */
     modelo_id: z.string().uuid().nullable().optional(),
+    /**
+     * "Não enviar aviso de caso" por membro (#4989). SÓ quem a pessoa mexeu na
+     * tela: membro ausente da lista fica como está (a mesma lição do #3935).
+     * Gravado em `organizations.settings` DEPOIS do RPC — ver
+     * `lib/escalacao/membros-sem-aviso.ts`.
+     */
+    nao_avisar: z
+      .array(z.object({ user_id: z.string().uuid(), nao_avisar: z.boolean() }).strict())
+      .max(200)
+      .optional(),
   })
   .strict();
 
@@ -363,6 +374,8 @@ export async function PUT(req: NextRequest): Promise<Response> {
     return fail("internal_error", t("Não foi possível salvar o aviso."), 500, { requestId });
   }
 
+  const mudancasDaMarca = dados.nao_avisar ?? [];
+
   const resultado = (data ?? {}) as {
     trocou_numero?: boolean;
     antes_ligado?: boolean;
@@ -410,8 +423,27 @@ export async function PUT(req: NextRequest): Promise<Response> {
       membros_com_whatsapp: (dados.responsaveis ?? []).filter(
         (r) => typeof r.whatsapp === "string" && r.whatsapp !== "",
       ).length,
+      // #4989 — CONTAGEM de quem a pessoa marcou/desmarcou, nunca os ids.
+      nao_avisar_ligados: mudancasDaMarca.filter((m) => m.nao_avisar).length,
+      nao_avisar_desligados: mudancasDaMarca.filter((m) => !m.nao_avisar).length,
     },
   });
+
+  // A marca "Não enviar aviso de caso" (#4989), DEPOIS do RPC: se ele recusou,
+  // nada da tela foi aceito e a marca também não entra. Não está na mesma
+  // transação porque o RPC é o da migration 0292 e mudá-lo pediria migration;
+  // se esta gravação falhar, a resposta diz exatamente o que ficou de fora.
+  if (mudancasDaMarca.length > 0) {
+    const gravou = await gravarMembrosSemAviso(createAdminClient(), authz.org.orgId, mudancasDaMarca);
+    if (!gravou) {
+      return fail(
+        "aviso_nao_avisar_nao_salvo",
+        t("O resto foi salvo, mas a marca \"Não enviar aviso de caso\" não. Salve de novo."),
+        500,
+        { requestId },
+      );
+    }
+  }
 
   // A resposta é o ESTADO inteiro recalculado, e não um `{ ok: true }`: salvar
   // pode mudar os alertas da tela (trocar de conexão muda o aquecimento, ligar

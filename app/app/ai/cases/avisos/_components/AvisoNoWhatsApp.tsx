@@ -97,6 +97,8 @@ const RASCUNHO_VAZIO = {
   destinoModo: "fixo" as "fixo" | "responsavel",
   /** `user_id` → WhatsApp do rascunho. Ausente = "não mexi". */
   whatsapps: {} as Record<string, string>,
+  /** `user_id` → "Não enviar aviso de caso" no rascunho (#4989). */
+  naoAvisar: {} as Record<string, boolean>,
   /** O modelo aprovado que leva o aviso pela conexão que só manda modelo. */
   modelo: "",
 };
@@ -113,7 +115,8 @@ function rascunhoDoEstado(estado: EstadoDoAviso | undefined): Rascunho {
    * escondê-la só porque a configuração foi removida.
    */
   const whatsapps = whatsappsDoRascunho(estado);
-  if (!estado?.config) return { ...RASCUNHO_VAZIO, whatsapps };
+  const naoAvisar = marcasDoRascunho(estado);
+  if (!estado?.config) return { ...RASCUNHO_VAZIO, whatsapps, naoAvisar };
   return {
     canal: estado.config.channel_session_id ?? "",
     telefone: estado.config.telefone,
@@ -122,8 +125,33 @@ function rascunhoDoEstado(estado: EstadoDoAviso | undefined): Rascunho {
     respostaWhatsappHabilitada: estado.config.resposta_whatsapp_habilitada,
     destinoModo: estado.config.destino_modo ?? "fixo",
     whatsapps,
+    naoAvisar,
     modelo: estado.config.modelo_id ?? "",
   };
+}
+
+/** A marca "Não enviar aviso de caso" (#4989) como está GRAVADA. */
+function marcasDoRascunho(estado: EstadoDoAviso | undefined): Record<string, boolean> {
+  const mapa: Record<string, boolean> = {};
+  for (const membro of estado?.equipe ?? []) mapa[membro.user_id] = membro.nao_avisar === true;
+  return mapa;
+}
+
+/**
+ * O QUE VAI PARA O BANCO sobre a marca (#4989): SÓ quem a pessoa mexeu — o
+ * interruptor que ficou diferente do que veio gravado. Ninguém mais viaja, e
+ * por isso um membro que a tela não mostrou não perde a marca por omissão (a
+ * lição do #3935). Lista vazia = `undefined`: a rota nem lê o `settings`.
+ */
+function marcasQueMudaram(
+  equipe: MembroDoAvisoNaTela[],
+  naoAvisar: Record<string, boolean>,
+): Array<{ user_id: string; nao_avisar: boolean }> | undefined {
+  const mudaram = equipe
+    .filter((m) => Object.prototype.hasOwnProperty.call(naoAvisar, m.user_id))
+    .filter((m) => naoAvisar[m.user_id] !== (m.nao_avisar === true))
+    .map((m) => ({ user_id: m.user_id, nao_avisar: naoAvisar[m.user_id] === true }));
+  return mudaram.length > 0 ? mudaram : undefined;
 }
 
 /**
@@ -230,7 +258,15 @@ export function AvisoNoWhatsApp() {
         )}
       </p>
 
-      <EntregasDoAviso entregas={estado.entregas} laco={estado.laco} />
+      <EntregasDoAviso
+        entregas={estado.entregas}
+        laco={estado.laco}
+        // O que está SALVO, não o rascunho: a lista fala de avisos que já saíram.
+        algumMembroSemAviso={
+          estado.config?.destino_modo === "responsavel" &&
+          (estado.equipe ?? []).some((m) => m.nao_avisar === true)
+        }
+      />
     </div>
   );
 }
@@ -284,6 +320,13 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
    */
   const equipeIndisponivel = estado.equipe_indisponivel === true;
   const salvarTravadoPelaEquipe = equipeIndisponivel && rascunho.destinoModo === "responsavel";
+  /**
+   * A marca "Não enviar aviso de caso" não pôde ser lida (#4989): os
+   * interruptores travam e salvar não manda nada sobre ela. Mostrá-los
+   * desligados deixaria alguém "desmarcar" quem nunca viu marcado.
+   */
+  const marcaIndisponivel = estado.nao_avisar_indisponivel === true;
+  const alguemSemAviso = equipe.some((m) => rascunho.naoAvisar[m.user_id] === true);
   const comNumero = equipe.filter((m) => (rascunho.whatsapps[m.user_id] ?? "").trim() !== "").length;
   const escolhida = oferecidas.find((c) => c.id === rascunho.canal);
   /** A conexão escolhida só manda modelo: o aviso precisa de um (migration 9094). */
@@ -330,6 +373,8 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
         // `whatsapp` (o banco não mexe), e quem foi exibido e está vazio vai com
         // `null` — "apague o meu" continua sendo um gesto explícito (#3935).
         responsaveis: responsaveisDoRascunho(equipe, rascunho.whatsapps),
+        // Só quem a pessoa mexeu (#4989); nada quando a marca não pôde ser lida.
+        nao_avisar: marcaIndisponivel ? undefined : marcasQueMudaram(equipe, rascunho.naoAvisar),
         // Sempre enviado, inclusive `null`: é o que tira o modelo de uma conexão
         // antiga quando a pessoa troca para uma de texto livre.
         modelo_id: precisaModelo ? rascunho.modelo : null,
@@ -509,7 +554,7 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
         <p className="text-xs text-muted-foreground">
           {rascunho.destinoModo === "responsavel"
             ? t(
-                "O aviso vai para quem está com a conversa; se essa pessoa não tiver WhatsApp cadastrado, para quem é dono do negócio; depois, para o dono da carteira do contato. Se ninguém tiver, vai para o número acima.",
+                "O aviso vai para quem está com a conversa; se essa pessoa não tiver WhatsApp cadastrado, para quem é dono do negócio; depois, para o dono da carteira do contato. Se ninguém tiver, vai para o número acima. Se nessa ordem a vez chegar a alguém com \"Não enviar aviso de caso\" ligado — mesmo depois de pular quem não tem número —, o aviso do caso não sai para ninguém, nem para o número acima.",
               )
             : t("Todo aviso vai para o número acima, como sempre foi.")}
         </p>
@@ -520,7 +565,7 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
           <p className="text-sm font-medium">{t("WhatsApp de cada pessoa da equipe")}</p>
           <p className="text-xs text-muted-foreground">
             {t(
-              "É este número que recebe o aviso quando a pessoa é a responsável. Sem número, ela é pulada — o aviso não fica sem destinatário.",
+              "É este número que recebe o aviso quando a pessoa é a responsável. Sem número, ela é pulada e o aviso segue para o próximo da ordem. Com \"Não enviar aviso de caso\" ligado, o aviso do caso para nela e não sai.",
             )}
           </p>
           <p
@@ -531,6 +576,13 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
               "A pessoa pode ser cliente da própria empresa — a equipe que viaja pela própria agência, por exemplo. Nesse caso o número ainda recebe o aviso e continua entrando no CRM: diferente de um número interno, que deixa de virar atendimento.",
             )}
           </p>
+          {marcaIndisponivel && !equipeIndisponivel ? (
+            <p className="text-xs text-destructive" data-testid="nao-avisar-indisponivel">
+              {t(
+                "Não foi possível ler quem está com \"Não enviar aviso de caso\" ligado. Atualize a página para mudar essa opção; salvar agora não mexe nela.",
+              )}
+            </p>
+          ) : null}
           {equipeIndisponivel ? (
             <p className="text-xs text-destructive" data-testid="equipe-indisponivel">
               {t(
@@ -545,45 +597,72 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
             equipe.map((membro) => {
               const valor = rascunho.whatsapps[membro.user_id] ?? "";
               const ok = valor.trim() === "" || telefoneDeAvisoValido(valor);
+              const semAviso = rascunho.naoAvisar[membro.user_id] === true;
+              const nome = membro.nome ?? t("Sem nome");
               return (
-                <div
-                  key={membro.user_id}
-                  className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3"
-                >
-                  <span className="w-full truncate text-sm sm:w-44">
-                    {membro.nome ?? t("Sem nome")}
-                  </span>
-                  <Input
-                    inputMode="tel"
-                    className="w-full sm:w-64"
-                    placeholder={telefoneExemplo}
-                    value={valor}
-                    onChange={(e) =>
-                      setRascunho((r) => ({
-                        ...r,
-                        whatsapps: {
-                          ...r.whatsapps,
-                          [membro.user_id]: normalizarTelefoneDeAviso(e.target.value),
-                        },
-                      }))
-                    }
-                    aria-invalid={!ok}
-                    aria-label={membro.nome ?? membro.user_id}
-                  />
-                  {ok ? null : (
-                    <span className="text-xs text-destructive">
-                      {t("Esse número ainda não está completo.")}
+                <div key={membro.user_id} className="flex flex-col gap-1">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                    <span className="w-full truncate text-sm sm:w-44">
+                      {nome}
                     </span>
-                  )}
+                    <Input
+                      inputMode="tel"
+                      className="w-full sm:w-64"
+                      placeholder={telefoneExemplo}
+                      value={valor}
+                      onChange={(e) =>
+                        setRascunho((r) => ({
+                          ...r,
+                          whatsapps: {
+                            ...r.whatsapps,
+                            [membro.user_id]: normalizarTelefoneDeAviso(e.target.value),
+                          },
+                        }))
+                      }
+                      aria-invalid={!ok}
+                      aria-label={membro.nome ?? membro.user_id}
+                    />
+                    {/* "Não enviar aviso de caso" (#4989). O número NÃO é travado nem
+                        riscado: ele continua valendo para o aviso de proposta, e
+                        desligar a marca o traz de volta como estava. */}
+                    <label className="flex items-center gap-2 text-xs">
+                      <Switch
+                        checked={semAviso}
+                        disabled={marcaIndisponivel}
+                        onCheckedChange={(v) =>
+                          setRascunho((r) => ({
+                            ...r,
+                            naoAvisar: { ...r.naoAvisar, [membro.user_id]: v },
+                          }))
+                        }
+                        aria-label={`${t("Não enviar aviso de caso")}: ${nome}`}
+                      />
+                      {t("Não enviar aviso de caso")}
+                    </label>
+                    {ok ? null : (
+                      <span className="text-xs text-destructive">
+                        {t("Esse número ainda não está completo.")}
+                      </span>
+                    )}
+                  </div>
+                  {semAviso ? (
+                    <p className="text-xs text-muted-foreground sm:pl-[11.75rem]">
+                      {t("Os casos desta pessoa não geram aviso no WhatsApp. Continuam no painel Casos.")}
+                    </p>
+                  ) : null}
                 </div>
               );
             })
           )}
           {comNumero === 0 ? (
             <p className="text-xs text-muted-foreground">
-              {t(
-                "Ninguém da equipe tem WhatsApp cadastrado: os avisos vão continuar saindo para o número acima.",
-              )}
+              {alguemSemAviso
+                ? t(
+                    "Ninguém da equipe tem WhatsApp cadastrado: os avisos vão continuar saindo para o número acima, menos os casos de quem está com \"Não enviar aviso de caso\" ligado.",
+                  )
+                : t(
+                    "Ninguém da equipe tem WhatsApp cadastrado: os avisos vão continuar saindo para o número acima.",
+                  )}
             </p>
           ) : null}
         </div>
