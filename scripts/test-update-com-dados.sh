@@ -358,6 +358,21 @@ drop view public.relatorio_do_operador;
 drop function public.comando_da_conversa(public.conversations);
 create function public.comando_da_conversa(c public.conversations) returns text
   language sql stable as $$ select 'automatico'::text $$;
+create view public.relatorio_do_operador as
+  select c.id, public.comando_da_conversa(c) as comando from public.conversations c;
+SQL
+# Com a view ainda lá, a cura não tem como tirar o nome. Quem está fora da
+# comunidade só vê as linhas ERROR que o update.sh lista na tela, então é nelas
+# que o nome da view e o que fazer têm de estar.
+tela=$(docker exec -i "$CONTAINER" psql -U postgres -d postgres -q -f - < "$BASELINE" 2>&1 | grep 'ERROR' || true)
+grep 'relatorio_do_operador' <<<"$tela" | grep -q 'remova-os' || {
+  echo "FATAL: preso com 'c' e com a view do operador, nenhuma linha ERROR nomeia a view e diz o que fazer." >&2
+  printf '%s\n' "$tela" | head -5 >&2
+  exit 1
+}
+echo "    ✓ com a view, a linha de erro da tela nomeia a view e diz o que fazer"
+psql_stop <<'SQL' >/dev/null
+drop view public.relatorio_do_operador;
 SQL
 psql_stop < "$BASELINE" >/dev/null
 [ "$(forma_do_comando)" = "(sem nome) definer=true" ] || {
