@@ -17713,21 +17713,57 @@ $fn_comando$;
 comment on function public.fn_comando_da_conversa(text, uuid, timestamptz, boolean, boolean, timestamptz)
   is 'Quem manda na conversa. Espelho SQL de comandoDaConversa() (lib/inbox/comando-da-conversa.ts); as duas são casadas por tests/invariants/comando-da-conversa-espelha-o-ts.test.ts.';
 
-create or replace function public.comando_da_conversa(c public.conversations)
+-- O parâmetro é SEM NOME, como o de todas as definições seguintes (0404). Ele
+-- era `c`, e cada update renomeava a função para `c` aqui e contava com os
+-- `drop` do apêndice para desfazer. Bastava o operador ter um objeto próprio
+-- sobre a função (uma view de relatório, por exemplo) para os `drop` falharem e
+-- o `create or replace` do apêndice parar em "cannot change name of input
+-- parameter c", com a função presa nesta versão antiga e invoker.
+--
+-- O bloco abaixo cura o banco que já ficou preso com o nome: sem dependente, ele
+-- derruba e o resto do arquivo recria; com dependente, a mensagem diz quais são.
+-- Os nomes e o que fazer vão na MENSAGEM, e não só no DETAIL/HINT: o update.sh
+-- mostra na tela apenas as linhas ERROR, e o resto fica no log.
+do $cura$
+begin
+  if exists (select 1 from pg_proc
+              where oid = to_regprocedure('public.comando_da_conversa(public.conversations)')
+                and proargnames is not null) then
+    drop function public.comando_da_conversa(public.conversations);
+  end if;
+exception when dependent_objects_still_exist then
+  raise exception using
+    message = format(
+      'a atualização de comando_da_conversa(conversations) parou porque objetos criados por você dependem dela: %s. Guarde a definição deles, remova-os, rode a atualização de novo e recrie-os',
+      (select string_agg(distinct coalesce(r.ev_class::regclass::text,
+                                           pg_describe_object(d.classid, d.objid, d.objsubid)), ', ')
+         from pg_depend d
+         left join pg_rewrite r on d.classid = 'pg_rewrite'::regclass and r.oid = d.objid
+        where d.refobjid = 'public.comando_da_conversa(public.conversations)'::regprocedure
+          and d.deptype = 'n')),
+    detail  = (select string_agg(pg_describe_object(d.classid, d.objid, d.objsubid), ', ')
+                 from pg_depend d
+                where d.refobjid = 'public.comando_da_conversa(public.conversations)'::regprocedure
+                  and d.deptype = 'n'),
+    hint    = 'Guarde a definição desses objetos, remova-os, rode a atualização de novo e recrie-os.';
+end
+$cura$;
+
+create or replace function public.comando_da_conversa(public.conversations)
 returns text
 language sql
 stable
 set search_path = public
 as $comando$
   select public.fn_comando_da_conversa(
-    c.status,
-    c.assigned_to_user_id,
-    c.bot_silenced_until,
+    $1.status,
+    $1.assigned_to_user_id,
+    $1.bot_silenced_until,
     -- `coalesce` porque `contact_id` é anulável no schema: contato ausente não pode
     -- virar `null` e derrubar a linha inteira para fora de todo filtro — o efeito
     -- seria uma conversa invisível em TODAS as abas.
-    coalesce((select ct.force_human from public.contacts ct where ct.id = c.contact_id), false),
-    coalesce((select ct.is_blocked  from public.contacts ct where ct.id = c.contact_id), false),
+    coalesce((select ct.force_human from public.contacts ct where ct.id = $1.contact_id), false),
+    coalesce((select ct.is_blocked  from public.contacts ct where ct.id = $1.contact_id), false),
     now()
   );
 $comando$;
@@ -38603,9 +38639,11 @@ create trigger trg_lead_so_liga_a_propria_empresa
 -- dela mesma. O DROP leva a ACL, então as DUAS origens de EXECUTE voltam
 -- explícitas; o `notify` é obrigatório porque a forma do schema mudou (o /rpc
 -- some) e sem ele o PostgREST serve o schema velho até reinício manual.
-drop function if exists public.comando_da_conversa(public.conversations);
-
-create function public.comando_da_conversa(public.conversations)
+-- Era DROP + CREATE. Virou `create or replace`: o parâmetro já é sem nome desde
+-- a primeira definição deste arquivo, e um objeto do operador sobre a função
+-- (view de relatório) fazia o DROP falhar e travava a atualização. Os grants
+-- logo abaixo continuam reafirmando as duas origens de EXECUTE.
+create or replace function public.comando_da_conversa(public.conversations)
 returns text
 language sql
 stable
@@ -42826,9 +42864,11 @@ comment on function public.fn_comando_da_conversa(text, uuid, timestamptz, boole
 -- DEPOIS do da 0404 de propósito: é a última definição que vale, e ela tem de
 -- carregar as duas decisões. DROP sem `cascade`, como na 0404 (nada depende
 -- dela); o DROP leva a ACL, então as duas origens de EXECUTE voltam explícitas.
-drop function if exists public.comando_da_conversa(public.conversations);
-
-create function public.comando_da_conversa(public.conversations)
+-- Era DROP + CREATE. Virou `create or replace`: o parâmetro já é sem nome desde
+-- a primeira definição deste arquivo, e um objeto do operador sobre a função
+-- (view de relatório) fazia o DROP falhar e travava a atualização. Os grants
+-- logo abaixo continuam reafirmando as duas origens de EXECUTE.
+create or replace function public.comando_da_conversa(public.conversations)
 returns text
 language sql
 stable
@@ -51894,9 +51934,11 @@ create index if not exists conversations_contact_id_idx
 
 -- O campo calculado: mesma assinatura, mesmo definer, parâmetro sem nome — o
 -- corpo é que deixa de resolver o contato por linha.
-drop function if exists public.comando_da_conversa(public.conversations);
-
-create function public.comando_da_conversa(public.conversations)
+-- Era DROP + CREATE. Virou `create or replace`: o parâmetro já é sem nome desde
+-- a primeira definição deste arquivo, e um objeto do operador sobre a função
+-- (view de relatório) fazia o DROP falhar e travava a atualização. Os grants
+-- logo abaixo continuam reafirmando as duas origens de EXECUTE.
+create or replace function public.comando_da_conversa(public.conversations)
 returns text
 language sql
 stable

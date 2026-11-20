@@ -200,6 +200,13 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   crm_create_webhook_source: "sem_funil",
   crm_set_webhook_source_active: "sem_funil",
   crm_set_automation_rule_active: "sem_funil",
+  // Editar os assistentes de IA (só admin, por um aplicativo conectado como o
+  // ChatGPT): mexem em `ai_agent_versions`, nunca em negócio. A barreira delas
+  // é o papel `admin` + `apenasHumano` — o turno do agente não as monta.
+  crm_save_ai_agent_draft: "sem_funil",
+  crm_test_ai_agent_version: "sem_funil",
+  crm_publish_ai_agent_version: "sem_funil",
+  crm_rollback_ai_agent: "sem_funil",
 };
 
 /**

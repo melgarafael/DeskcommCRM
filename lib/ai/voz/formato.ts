@@ -21,8 +21,15 @@
  * já pagou esse erro uma vez com o 131053.
  */
 import { VOICE_MIME } from "@/lib/messaging/media/voice-transcode";
+import type { NotaDeVoz } from "@/lib/channels/types";
 
-export type FormatoDaVoz = "mp3" | "ogg_opus";
+import { MIME_DO_WAV } from "./wav";
+
+/**
+ * `wav` é o da DM do Instagram (`voiceNote: "wav-only"`), que recusa mp3 e
+ * ogg/opus: PCM da própria ElevenLabs com 44 bytes de cabeçalho (`./wav.ts`).
+ */
+export type FormatoDaVoz = "mp3" | "ogg_opus" | "wav";
 
 /** O `output_format` da ElevenLabs para a nota de voz em opus — 32 kbps basta para fala. */
 export const SAIDA_OPUS_DA_ELEVENLABS = "opus_48000_32";
@@ -38,16 +45,35 @@ export const MIME_DA_NOTA_DE_VOZ_OPUS = VOICE_MIME;
  * áudio paga a ElevenLabs por uma bolha que falha, e o turno com mensagem
  * `failed` é re-tentado inteiro pela fila — cada volta, mais uma bolha falhada.
  */
-export function formatoDaVozParaCanal(
-  voiceNote: "server-convert" | "opus-only" | "none",
-): FormatoDaVoz | null {
-  if (voiceNote === "none") return null;
-  return voiceNote === "opus-only" ? "ogg_opus" : "mp3";
+export function formatoDaVozParaCanal(voiceNote: NotaDeVoz): FormatoDaVoz | null {
+  switch (voiceNote) {
+    case "none":
+      return null;
+    case "opus-only":
+      return "ogg_opus";
+    case "wav-only":
+      return "wav";
+    case "server-convert":
+      return "mp3";
+  }
 }
 
 /** A extensão do arquivo guardado — e a única coisa que diz o formato num retry. */
-export function extensaoDoFormato(formato: FormatoDaVoz): "ogg" | "mp3" {
-  return formato === "ogg_opus" ? "ogg" : "mp3";
+export function extensaoDoFormato(formato: FormatoDaVoz): "ogg" | "mp3" | "wav" {
+  if (formato === "ogg_opus") return "ogg";
+  return formato === "wav" ? "wav" : "mp3";
+}
+
+/**
+ * A extensão a partir do Content-Type que a síntese devolveu — o que
+ * `uploadDeVoz` tem na mão. Tudo que não é opus nem WAV segue `.mp3`, o de
+ * sempre.
+ */
+export function extensaoDoMime(mime: string): "ogg" | "mp3" | "wav" {
+  const m = mime.toLowerCase();
+  if (m.startsWith("audio/ogg")) return "ogg";
+  if (m.startsWith(MIME_DO_WAV) || m.startsWith("audio/x-wav") || m.startsWith("audio/wave")) return "wav";
+  return "mp3";
 }
 
 /**
@@ -58,7 +84,9 @@ export function extensaoDoFormato(formato: FormatoDaVoz): "ogg" | "mp3" {
  * é o caminho. Era `audio/mpeg` fixo — certo enquanto só existia mp3.
  */
 export function mimeDoCaminhoDeVoz(caminho: string): string {
-  return caminho.toLowerCase().endsWith(".ogg") ? MIME_DA_NOTA_DE_VOZ_OPUS : "audio/mpeg";
+  const c = caminho.toLowerCase();
+  if (c.endsWith(".ogg")) return MIME_DA_NOTA_DE_VOZ_OPUS;
+  return c.endsWith(".wav") ? MIME_DO_WAV : "audio/mpeg";
 }
 
 /** Os 4 primeiros bytes de todo arquivo OGG. */

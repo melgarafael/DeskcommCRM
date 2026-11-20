@@ -16,7 +16,6 @@ import { ArrowsClockwise, CalendarBlank, Kanban, ListChecks, Plus } from "@/lib/
 import { cn } from "@/lib/utils";
 import { useTasks } from "@/hooks/tasks/useTasks";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
-import { useAttendants } from "@/hooks/team/useAttendants";
 import { useSectors, type Sector } from "@/hooks/team/useSectors";
 import { responsavelDoFiltro, type FiltroDeResponsavel } from "@/lib/tarefas/filtro-de-responsavel";
 import type { NovaTarefa, SituacaoDaTarefa, Tarefa } from "@/lib/tarefas/tipos";
@@ -56,38 +55,33 @@ export function TarefasClient({
   // Setor de atendimento (Fiscal, Contábil, DP, TI, etc.). "todos" = sem filtro.
   const [setor, setSetor] = useState<string>("todos");
   // Setores é módulo opcional (doc 213): desligado, as rotas respondem 404 e o
-  // pedido nem sai — sem setores, o seletor não aparece. O roster é agent+,
-  // pela mesma razão de `useAssignableMembers` logo abaixo.
+  // pedido nem sai — sem setores, o seletor não aparece. O roster de setores por
+  // atendente não é mais pedido aqui (#4883): o mapa "responsável → setor" saiu
+  // junto com o selo que ele alimentava.
   const { data: setoresResp } = useSectors(setoresLigados);
   const setores = useMemo(() => setoresResp?.data ?? [], [setoresResp]);
-  const { data: atendentesResp } = useAttendants(setoresLigados && podeEditar);
-  const atendentes = useMemo(() => atendentesResp?.data ?? [], [atendentesResp]);
-  // O chip da tarefa mostra o PRIMEIRO setor de quem a tem. Montado aqui, uma
-  // vez, para a lista e o quadro — eles não pedem setores por conta própria.
-  const setorDoResponsavel = useMemo(() => {
-    const porId = new Map(setores.map((s) => [s.id, s]));
-    const mapa = new Map<string, Sector>();
-    for (const a of atendentes) {
-      const setorDele = a.sector_ids?.[0] ? porId.get(a.sector_ids[0]) : undefined;
-      if (setorDele) mapa.set(a.user_id, setorDele);
-    }
-    return mapa;
-  }, [atendentes, setores]);
+  // O SETOR DO SELO NÃO SAI DAQUI (#4883): quem decide é o servidor — setor da
+  // conversa, senão o do negócio, senão (fallback, declarado) o do responsável,
+  // em `lib/tarefas/setor-da-tarefa.ts`. A tela só dá NOME ao id que veio em
+  // `tarefa.setor`; o filtro usa a mesma decisão, na rota. Montado uma vez para
+  // a lista e o quadro — eles não pedem setores por conta própria.
+  const setoresPorId = useMemo(
+    () => new Map<string, Sector>(setores.map((s) => [s.id, s])),
+    [setores],
+  );
 
   // `/team/assignable` exige agent: o viewer tomaria 403 (e um authz.denied no
   // audit) a cada visita. Ele fica com Todos, Minhas e Sem responsável.
   const { data: membros } = useAssignableMembers(podeEditar);
 
-  // Se um setor foi filtrado, estreita a lista de responsáveis apenas aos membros daquele setor
-  const membrosDoSetor = useMemo(() => {
-    if (setor === "todos") return membros ?? [];
-    const idsNoSetor = new Set(
-      atendentes
-        .filter((a) => a.sector_ids?.includes(setor))
-        .map((a) => a.user_id),
-    );
-    return (membros ?? []).filter((m) => idsNoSetor.has(m.user_id));
-  }, [membros, atendentes, setor]);
+  /*
+   * O filtro de setor NÃO estreita mais a lista de responsáveis (#4883). Ele
+   * dizia "tarefas de quem é do setor", e aí limitar o seletor aos membros
+   * fazia sentido. Agora o setor vem da conversa (ou do negócio): a tarefa que
+   * EXIBE "Internacionais" pode estar com alguém de "Nacionais" — que é
+   * justamente o caso que este conserto existe para mostrar. Estreitar por
+   * vínculo esconderia essa combinação, repetindo o defeito no seletor.
+   */
 
   // "todos" = sem filtro (a tela abre assim). Qualquer outro valor é o id de um funil.
   const [funil, setFunil] = useState<string>("todos");
@@ -115,6 +109,9 @@ export function TarefasClient({
       assigned_to: responsavelDoFiltro(responsavel),
       pipeline_id: funil === "todos" ? undefined : funil,
       sector_id: setor === "todos" ? undefined : setor,
+      // O selo vem do servidor: conversa → negócio → responsável. Só a tela de
+      // Tarefas pede o campo derivado (as outras listas não têm setor a mostrar).
+      com_setor: setoresLigados,
     },
     /*
      * No QUADRO esta busca fica parada. A visão em quadro faz a SUA própria
@@ -186,20 +183,7 @@ export function TarefasClient({
           {setores.length > 0 && (
             <Select
               value={setor}
-              onValueChange={(novoSetor) => {
-                setSetor(novoSetor);
-                if (
-                  novoSetor !== "todos" &&
-                  responsavel !== "todos" &&
-                  responsavel !== "eu" &&
-                  responsavel !== "ninguem"
-                ) {
-                  const estaNoSetor = atendentes.some(
-                    (a) => a.user_id === responsavel && a.sector_ids?.includes(novoSetor),
-                  );
-                  if (!estaNoSetor) setResponsavel("todos");
-                }
-              }}
+              onValueChange={setSetor}
             >
               <SelectTrigger
                 aria-label={t("Setor")}
@@ -226,7 +210,7 @@ export function TarefasClient({
             <SelectContent>
               <SelectItem value="todos">{t("Todos")}</SelectItem>
               <SelectItem value="eu">{t("Minhas")}</SelectItem>
-              {(membrosDoSetor ?? [])
+              {(membros ?? [])
                 .filter((m) => m.user_id !== usuario.id)
                 .map((m) => (
                   <SelectItem key={m.user_id} value={m.user_id}>
@@ -355,9 +339,10 @@ export function TarefasClient({
                   assigned_to: responsavelDoFiltro(responsavel),
                   pipeline_id: funil === "todos" ? undefined : funil,
                   sector_id: setor === "todos" ? undefined : setor,
+                  com_setor: setoresLigados,
                 }}
                 aoEditar={abrirEdicao}
-                setorDoResponsavel={setorDoResponsavel}
+                setores={setoresPorId}
               />
             </div>
           )}
@@ -378,7 +363,7 @@ export function TarefasClient({
               aoAlternarConcluida={alternarConcluida}
               aoEditar={abrirEdicao}
               aoApagar={(tarefa) => apagarTarefa(tarefa.id)}
-              setorDoResponsavel={setorDoResponsavel}
+              setores={setoresPorId}
             />
           </div>
         </>
