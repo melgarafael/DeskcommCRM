@@ -69980,11 +69980,17 @@ alter table public.api_tokens
   add column if not exists extension_installation_id uuid references public.extension_installations(id),
   add column if not exists module_slug text;
 
-alter table public.api_tokens alter column created_by drop not null;
-
-alter table public.api_tokens drop constraint if exists api_tokens_dono_check;
-alter table public.api_tokens add constraint api_tokens_dono_check
-  check (created_by is not null or extension_installation_id is not null);
+-- Um bloco só: o update.sh reaplica sem ON_ERROR_STOP e em autocommit, e em comandos soltos uma
+-- falha no add deixaria created_by anulável SEM a CHECK (lição do #2670). Aqui ou entra tudo, ou
+-- fica o NOT NULL de antes.
+do $dono$
+begin
+  alter table public.api_tokens drop constraint if exists api_tokens_dono_check;
+  alter table public.api_tokens add constraint api_tokens_dono_check
+    check (created_by is not null or extension_installation_id is not null);
+  alter table public.api_tokens alter column created_by drop not null;
+end
+$dono$;
 
 create unique index if not exists api_tokens_modulo_vivo_idx
   on public.api_tokens (organization_id, extension_installation_id)
