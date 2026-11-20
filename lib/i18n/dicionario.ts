@@ -41,6 +41,7 @@ import { TEXTOS_PAINEL_GOOGLE_ADS } from "./painel-google-ads";
 import { TEXTOS_APARENCIA } from "./aparencia";
 import { TEXTOS_PROSPECCAO_ARQUIVO_DA_ABORDAGEM } from "./prospeccao-arquivo-da-abordagem";
 import { TEXTOS_CONTRATACAO } from "./contratacao";
+import { TEXTOS_MCP_AGENTES } from "./mcp-agentes";
 import { TEXTOS_MCP_OAUTH } from "./mcp-oauth";
 import { TEXTOS_TABELA_DE_VALORES } from "./tabela-de-valores";
 import { TEXTOS_DO_MOTOR_GRAVADO } from "./motor-gravado";
@@ -52,6 +53,7 @@ type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>
 export const DICIONARIO: Traducoes = {
   ...TEXTOS_PAINEL_GOOGLE_ADS,
   ...TEXTOS_CONTRATACAO,
+  ...TEXTOS_MCP_AGENTES,
   ...TEXTOS_MCP_OAUTH,
   ...TEXTOS_TABELA_DE_VALORES,
   ...TEXTOS_DO_MOTOR_GRAVADO,
