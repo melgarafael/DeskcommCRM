@@ -252,7 +252,8 @@ describe("blocoDoFeriado — a opção de feriado desligada não proíbe marcar 
 
     expect(bloco).toContain("Hoje (02/11/2026) e amanhã (03/11/2026) são feriados nacionais");
     expect(bloco).toContain(AGENDA);
-    expect(bloco).not.toMatch(/não prometa atendimento nesses dias/i);
+    // A proibição em bloco some; o cuidado fica só para o que a Agenda não mostra.
+    expect(bloco).not.toContain("Não prometa atendimento nesses dias e não convide");
   });
 
   it("sem opção informada vale o padrão de fábrica: desligada", () => {

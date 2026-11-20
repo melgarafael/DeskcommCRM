@@ -7126,8 +7126,12 @@ async function executarTurnoDoAgente(
     // atendimento. No sufixo por-lead, junto do relógio, pelo mesmo motivo: o
     // país não muda entre leads, mas o dia sim (virada de meia-noite), e o
     // prefixo estável (`stable-prefix.ts`) não pode carregar fato do dia.
+    //
+    // A opção "não atender em feriado nacional" muda o texto (#5039): desligada,
+    // o bloco não proíbe compromisso e manda seguir os horários livres da Agenda.
     const feriadoBlock = blocoDoFeriado(
       await lerFeriadoDoTurno(pool, tenantId, clock(), fusoDaOrg, runLog),
+      { fechadoEmFeriado: agentConfig?.naoAtenderEmFeriadoNacional === true },
     );
     const openingSuffixes = [
       agoraBlock,
