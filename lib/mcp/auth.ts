@@ -225,6 +225,16 @@ export async function resolveApiToken(
   if (scopes.includes(ESCOPO_SO_MCP) && !opcoes.portaDoMcp) {
     throw new ApiTokenError("wrong_audience", "This token only works on the MCP endpoint (/api/mcp).");
   }
+  // Token de MÓDULO conectado (spec 33): até o F3 não há consentimento por área nem corte de ferramenta,
+  // e quase toda rota de `/api/v1` aceita bearer. Aceitá-lo aqui deixaria um módulo ativado ler, como
+  // viewer, áreas que a organização nunca consentiu. Recusa em TODA porta (REST e `/api/mcp`) antes de
+  // registrar uso; o F3 troca esta linha pelo corte por área. Vigiado em `auth-ator-modulo.test.ts`.
+  if (moduloDosEscopos(scopes) !== null) {
+    throw new ApiTokenError(
+      "wrong_audience",
+      "Connected module tokens are not accepted yet: area consent arrives in a later release.",
+    );
+  }
 
   supabase
     .from("api_tokens")
