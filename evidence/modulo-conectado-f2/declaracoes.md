@@ -78,9 +78,10 @@ configurar a chave. Como a mensagem chega à tela, ver "O que NÃO foi medido".
    (`lib/extensions/service.ts`). A assinatura e o carimbo, enviados pelo módulo a
    `app/api/v1/extensions/token/route.ts`.
 2. **Quem eu alimento.** `api_tokens` (a linha do módulo), lida por `resolveApiToken` em `lib/mcp/auth.ts`
-   para autorizar `/api/v1`. O escopo é mínimo: `mcp:read`, `role:viewer`, `actor:module:<slug>`.
-   Os nonces são lidos só pela própria busca. A autoridade por área é da F3: nesta fase o token não
-   distingue área.
+   para RECUSÁ-LA: nesta fase o token de módulo é recusado com 403 `wrong_audience` em toda porta
+   (`/api/v1` e `/api/mcp`), antes de registrar uso. O escopo emitido é mínimo: `mcp:read`,
+   `role:viewer`, `actor:module:<slug>`. Os nonces são lidos só pela própria busca. A F3 troca a
+   recusa pelo corte por área.
 3. **Registro que emito.** `api_audit_log` com três ações novas ou reaproveitadas, todas em
    `lib/audit/actions.ts`: `extension.secret_rotated` (girar, `girar-segredo.ts`, sem o valor do segredo),
    `extension.token_issued` (busca bem-sucedida, ator módulo com `metadataDoModulo` de
