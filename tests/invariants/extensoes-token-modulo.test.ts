@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { Pool } from "pg";
 
-// O schema do token do módulo `connected` (spec 33, F2, migration 9438). O token do módulo é uma linha
+// O schema do token do módulo `connected` (spec 33, F2, migration 9440). O token do módulo é uma linha
 // de `api_tokens` cujo dono é a INSTALAÇÃO, não uma pessoa: `created_by` aceita nulo, mas a CHECK
 // `api_tokens_dono_check` não deixa nascer token sem nenhum dono, e o índice único parcial garante um
 // token vivo por (organização, instalação). O segredo da instalação e os nonces vivem em tabelas só de

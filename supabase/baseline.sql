@@ -69970,8 +69970,8 @@ grant execute on function public.fn_extensions_set_switch(uuid,uuid,uuid,boolean
 
 notify pgrst, 'reload schema';
 
--- ---- modulo conectado: schema do token do módulo (migration 9438) ----
--- Espelho idempotente da 9438 (racional completo no arquivo da migration): `api_tokens` ganha
+-- ---- modulo conectado: schema do token do módulo (migration 9440) ----
+-- Espelho idempotente da 9440 (racional completo no arquivo da migration): `api_tokens` ganha
 -- `extension_installation_id` e `module_slug`, `created_by` aceita nulo (CHECK de dono + índice único
 -- parcial: um token vivo de módulo por organização e instalação), e duas tabelas só de servidor, sem
 -- policy: `extension_installation_secrets` (segredo cifrado) e `extension_token_nonces` (anti-repetição).
@@ -70014,11 +70014,11 @@ grant select, insert, update, delete on public.extension_installation_secrets, p
 
 notify pgrst, 'reload schema';
 
--- ---- modulo conectado: funções do token do módulo (migration 9439) ----
--- Espelho idempotente da 9439 (racional completo no arquivo da migration): `fn_extensions_module_token_reserve`,
+-- ---- modulo conectado: funções do token do módulo (migration 9441) ----
+-- Espelho idempotente da 9441 (racional completo no arquivo da migration): `fn_extensions_module_token_reserve`,
 -- `_rotate` e `_revoke`, e a redefinição de `fn_extensions_configure`, `fn_extensions_remove_installation` e
 -- `fn_extensions_set_switch` (a última definição de cada uma neste arquivo é a base; só o trecho de token é novo).
--- Fica DEPOIS do apêndice da 9438 (usa as colunas dela) e ANTES da VARREDURA anon.
+-- Fica DEPOIS do apêndice da 9440 (usa as colunas dela) e ANTES da VARREDURA anon.
 
 -- A vaga do token: a ATIVAÇÃO do módulo `connected` numa organização cria uma linha viva em `api_tokens`
 -- (dono: a instalação, `created_by` nulo) cujo hash é a sha256 de um texto aleatório descartado, ou seja,
