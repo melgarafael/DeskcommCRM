@@ -1568,7 +1568,7 @@ export function AgentForm(props: Props) {
             {form.voz_enabled && channelSession?.enviaNotaDeVoz === false ? (
               <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="voz-canal-sem-nota">
                 {t(
-                  "O canal escolhido não recebe nota de voz da IA (redes sociais como Instagram e Facebook). Nele, o agente responde em texto.",
+                  "O canal escolhido não recebe nota de voz da IA (como o Facebook e o Telegram). Nele, o agente responde em texto.",
                 )}
               </p>
             ) : null}

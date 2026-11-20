@@ -24,6 +24,13 @@ vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+// `resolveAuthDual` (ramo de sessão) cria o cliente de sessão; o token não é usado aqui.
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn(async () => ({})) }));
+vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: vi.fn() }));
+vi.mock("@/lib/mcp/auth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/mcp/auth")>()),
+  validateBearerToken: vi.fn(),
+}));
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const OUTRA = "99999999-9999-4999-8999-999999999999";
@@ -184,7 +191,7 @@ describe("DELETE /api/v1/settings/sons", () => {
 describe("GET /api/v1/settings/sons", () => {
   it("qualquer membro ouve; caminho de OUTRA organização nunca é assinado", async () => {
     const b = banco({ sons_de_aviso: { venda: `${ORG}/venda-a.mp3`, pessoa: `${OUTRA}/pessoa-b.mp3` } });
-    const r = await GET();
+    const r = await GET(new NextRequest("http://localhost/api/v1/settings/sons"));
     expect(vi.mocked(requireRole).mock.calls[0]![0]).toBe("viewer");
     const corpo = (await r.json()) as { data: Record<string, string | null> };
     expect(corpo.data).toEqual({ venda: `https://assinada/${ORG}/venda-a.mp3`, pessoa: null });

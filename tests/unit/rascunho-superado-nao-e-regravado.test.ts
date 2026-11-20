@@ -432,7 +432,9 @@ describe("nenhum chamador de produção decide a publicada pelo palpite", () => 
     // "nenhum defeito". Ausência só vale se a sonda cobre a categoria.
     expect(arquivos.length, "a varredura não achou chamador nenhum: sonda cega").toBeGreaterThan(0);
     expect(arquivos).toContain("app/app/ai/agents/[id]/page.tsx");
-    expect(arquivos).toContain("app/app/ai/agents/[id]/_actions.ts");
+    // A régua do salvar rascunho saiu de `_actions.ts` para `lib/ai/agents/edicao.ts`,
+    // compartilhada pela tela e pelo MCP do CRM.
+    expect(arquivos).toContain("lib/ai/agents/edicao.ts");
   });
 
   it.each(arquivos)("%s passa o ponteiro em toda chamada", (arquivo) => {
@@ -460,7 +462,7 @@ describe("nenhum chamador de produção decide a publicada pelo palpite", () => 
     // rascunho superado volta a ser regravável. Nenhum símbolo some, nenhum tipo
     // reclama (o retorno do supabase-js é frouxo aqui) e o dublê dos outros
     // casos devolve a linha inteira, então nada disto aparece em comportamento.
-    const fonte = readFileSync(join(raiz, "app/app/ai/agents/[id]/_actions.ts"), "utf8");
+    const fonte = readFileSync(join(raiz, "lib/ai/agents/edicao.ts"), "utf8");
     // O arquivo tem mais de um SELECT em `ai_agents`; o que importa é o do
     // cadastro — reconhecido por trazer `name` e `priority`, os campos que só
     // ele pede. Casar pelo primeiro `.from("ai_agents")` mediria o do revert.

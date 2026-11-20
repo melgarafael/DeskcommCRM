@@ -18,15 +18,20 @@
  *   não citável. Definitivo e citável só o comprovado: HTTP/SSL do site,
  *   agregador, e o domínio inexistente (NXDOMAIN com certeza do resolvedor).
  *
- * Residual conhecido: DNS rebinding entre a verificação e o connect (TOCTOU),
- * declarado na guarda da casa. Fora do modelo de ameaça desta fase.
+ * O socket usa os endereços públicos já verificados, sem segunda resolução;
+ * isso fecha a janela de DNS rebinding/TOCTOU em cada salto.
  */
 import { lookup as lookupDns } from "node:dns/promises";
 import { isIP } from "node:net";
+import * as http from "node:http";
+import * as https from "node:https";
+import { Readable } from "node:stream";
 
 import {
   assertDestinoResolvidoSeguro,
   ipEhEspecial,
+  lookupFixo,
+  resolverDestinosPublicos,
 } from "@/lib/automation/outbound-ip";
 import {
   derivarClasse,
@@ -63,6 +68,41 @@ const MAX_CHARS_RESUMO = 1200;
 export const PRAZO_DO_LOTE_MS = 60_000;
 const UA_NAVEGADOR =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
+
+/** Fetch HTTP(S) com DNS validado e preso ao socket para evitar DNS rebinding. */
+export async function fetchDeSiteComDnsFixado(input: string | URL | Request, init: RequestInit = {}): Promise<Response> {
+  const request = input instanceof Request ? input : null;
+  const url = new URL(request?.url ?? input as string | URL);
+  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("unsafe_url:protocol");
+  const hostname = url.hostname.replace(/^\[|\]$/g, "");
+  const addresses = await resolverDestinosPublicos(hostname);
+  const transport = url.protocol === "https:" ? https : http;
+  const headers = new Headers(init.headers ?? request?.headers);
+  if (!headers.has("user-agent")) headers.set("user-agent", UA_NAVEGADOR);
+  if (!headers.has("accept-encoding")) headers.set("accept-encoding", "identity");
+  const signal = init.signal ?? request?.signal;
+
+  return await new Promise<Response>((resolve, reject) => {
+    const req = transport.request(url, {
+      method: "GET",
+      headers: Object.fromEntries(headers.entries()),
+      agent: false,
+      ...(signal ? { signal } : {}),
+      lookup: lookupFixo(hostname, addresses),
+      ...(url.protocol === "https:" && isIP(hostname) === 0 ? { servername: hostname } : {}),
+    }, (incoming) => {
+      const responseHeaders = new Headers();
+      for (const [name, value] of Object.entries(incoming.headers)) {
+        if (value !== undefined) responseHeaders.set(name, Array.isArray(value) ? value.join(", ") : value);
+      }
+      const status = incoming.statusCode ?? 502;
+      const body = status === 204 || status === 304 ? null : Readable.toWeb(incoming) as ReadableStream;
+      resolve(new Response(body, { status, statusText: incoming.statusMessage, headers: responseHeaders }));
+    });
+    req.once("error", reject);
+    req.end();
+  });
+}
 
 /**
  * True para literal IP que nunca pode ser alvo de fetch. Delegado à guarda da
@@ -108,13 +148,17 @@ function ehFalhaDeDns(erro: unknown): boolean {
   );
 }
 
+/**
+ * O código do erro de certificado, venha de onde vier: o `fetch` o põe em
+ * `cause.code`; o `https.request` (a leitura com DNS fixado) o põe no próprio
+ * `erro.code`, sem `cause`. Ler só um dos dois faz certificado vencido virar
+ * "fora do ar" em vez de "SSL inválido".
+ */
 function codigoSsl(erro: unknown): string | null {
-  const causa = String(
-    (erro as { cause?: { code?: string; message?: string } })?.cause?.code ??
-      (erro as { cause?: { message?: string } })?.cause?.message ??
-      (erro as Error)?.message ??
-      "",
-  );
+  const e = erro as { code?: unknown; message?: unknown; cause?: { code?: unknown; message?: unknown } };
+  const causa = [e?.cause?.code, e?.code, e?.cause?.message, e?.message]
+    .filter((parte) => typeof parte === "string")
+    .join(" ");
   const m = /(CERT_[A-Z_]+|DEPTH_ZERO_SELF_SIGNED_CERT|UNABLE_TO_VERIFY_LEAF_SIGNATURE|ERR_TLS_CERT_ALTNAME_INVALID)/.exec(
     causa,
   );
@@ -218,7 +262,7 @@ function medicaoBarrada(b: Pick<Busca, "status" | "desafioAntiRobo">): boolean {
 
 async function buscar(
   urlInicial: string,
-  fetchFn: typeof fetch = fetch,
+  fetchFn: typeof fetch = fetchDeSiteComDnsFixado,
   verificar: VerificadorDeHost = verificadorPadrao,
 ): Promise<Busca> {
   let atual = urlInicial.startsWith("http://") || urlInicial.startsWith("https://")
@@ -334,7 +378,7 @@ function anoDesatualizado(html: string): string | null {
 export async function auditarSite(
   url: string,
   agoraIso: string,
-  fetchFn: typeof fetch = fetch,
+  fetchFn: typeof fetch = fetchDeSiteComDnsFixado,
   verificar: VerificadorDeHost = verificadorPadrao,
   tentativasAnteriores = 0,
 ): Promise<SiteEnrichment> {
@@ -490,7 +534,7 @@ export async function auditarSites(
   urls: string[],
   agoraIso: string,
   paralelismo = 6,
-  fetchFn: typeof fetch = fetch,
+  fetchFn: typeof fetch = fetchDeSiteComDnsFixado,
   verificar: VerificadorDeHost = verificadorPadrao,
   tentativasAnteriores: number[] | number = 0,
   prazoMs = PRAZO_DO_LOTE_MS,

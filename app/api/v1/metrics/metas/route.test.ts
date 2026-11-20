@@ -107,6 +107,16 @@ function fakeSupabase(dados: Record<string, Linha[]>, erroEm?: string) {
         filtros.push((l) => !(coluna in l) || l[coluna] === valor);
         return builder;
       };
+      // `.in` entrou com a #4796: a rota lê os DOIS indicadores de meta.
+      // Coluna ausente passa, como no `.eq` — é assim que a meta antiga, sem o
+      // campo `indicador`, continua sendo lida por quantidade.
+      builder.in = (coluna: string, valores: unknown[]) => {
+        registro.filtros.push([coluna, valores]);
+        filtros.push(
+          (l) => !(coluna in l) || l[coluna] === undefined || valores.includes(l[coluna]),
+        );
+        return builder;
+      };
       builder.gte = (coluna: string, valor: unknown) => {
         registro.filtros.push([`${coluna} >=`, valor]);
         filtros.push(
@@ -330,7 +340,8 @@ describe("GET /api/v1/metrics/metas", () => {
     const dados = setembro();
     dados.crm_metas = [
       meta("m1", { periodo: "2026-08-01" }),
-      meta("m2", { indicador: "valor_vendido" }),
+      // Indicador desconhecido (nem quantidade, nem valor): não vira meta.
+      meta("m2", { indicador: "negocios_novos" }),
     ];
     const { client } = fakeSupabase(dados);
     vi.mocked(createClient).mockResolvedValue(client as never);
@@ -492,6 +503,126 @@ describe("GET /api/v1/metrics/metas", () => {
     };
     expect(valores.unico.centavos).toBe(300_000);
     expect(valores.recorrente_mensal.centavos).toBe(50_000);
+  });
+
+  // ─── A META EM VALOR (#4796, fatia 2 da #3025) ────────────────────────────
+
+  it("meta em VALOR: realizado é a soma de value_cents dos ganhos da janela", async () => {
+    permitido();
+    const dados = setembro();
+    dados.crm_metas = [
+      meta("mv", { indicador: "valor_vendido", alvo: 500_000_00 }),
+    ];
+    dados.crm_leads = [
+      lead("g1", { value_cents: 300_000 }),
+      lead("g2", { closed_at: "2026-09-20T12:00:00.000Z", value_cents: 800_000 }),
+      // Fora da janela (agosto), perdido e sem valor: nenhum entra.
+      lead("g4", { closed_at: "2026-08-31T23:00:00.000Z", value_cents: 5_000_000 }),
+      lead("p1", { status: "lost", value_cents: 900_000 }),
+      lead("s1", { value_cents: null }),
+      lead("s2", { value_cents: 0 }),
+    ];
+    const { consultas, client } = fakeSupabase(dados);
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const { status, data } = await chamar();
+    expect(status).toBe(200);
+
+    const m = (data.metas as Array<MetaNaResposta & { indicador: string; moeda: string | null }>)[0]!;
+    expect(m.indicador).toBe("valor_vendido");
+    // R$ 3.000 + R$ 8.000 = R$ 11.000 em centavos; o card sem preço NÃO vira
+    // venda de R$ 0 e o perdido não soma.
+    expect(m.realizado).toBe(1_100_000);
+    expect(m.alvo).toBe(50_000_000);
+    expect(m.percentual).toBe(2);
+    expect(m.falta).toBe(48_900_000);
+    expect(m.atingida).toBe(false);
+    // A moeda da organização não está declarada nesta fixture (o helper está
+    // mockado em `null`): a resposta diz `null` em vez de inventar "BRL".
+    expect(m.moeda).toBeNull();
+
+    // A soma em valor usa a MESMA janela da contagem: `won` + `closed_at`.
+    const leitura = consultas.find(
+      (c) => c.tabela === "crm_leads" && c.contou && c.faixas.length > 0,
+    )!;
+    expect(leitura.filtros).toContainEqual(["status", "won"]);
+    expect(leitura.filtros).toContainEqual(["closed_at >=", DE]);
+    expect(leitura.filtros).toContainEqual(["closed_at <", ATE]);
+  });
+
+  it("meta antiga, SEM indicador, continua valendo por QUANTIDADE", async () => {
+    permitido();
+    const dados = setembro();
+    // A linha legada não tem a coluna `indicador` — é o que a 0756 gravava
+    // antes de o campo existir. Ela NÃO pode passar a somar valor.
+    dados.crm_metas = [{ ...meta("antiga", { alvo: 10 }), indicador: undefined }];
+    dados.crm_leads = [lead("g1", { value_cents: 900_000 }), lead("g2", { value_cents: 100_000 })];
+    const { client } = fakeSupabase(dados);
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const { data } = await chamar();
+    const m = (data.metas as Array<MetaNaResposta & { indicador: string }>)[0]!;
+    expect(m.indicador).toBe("vendas_ganhas");
+    // Duas vendas, não R$ 10.000.
+    expect(m.realizado).toBe(2);
+    expect(m.alvo).toBe(10);
+  });
+
+  it("meta em valor do VENDEDOR soma só os negócios dele, na mesma janela", async () => {
+    permitido();
+    const dados = setembro();
+    dados.crm_metas = [
+      meta("me", { indicador: "valor_vendido", alvo: 100_000_00 }),
+      meta("mv", { indicador: "valor_vendido", alvo: 50_000_00, vendedor_id: "u1" }),
+    ];
+    dados.crm_leads = [
+      lead("g1", { owner_user_id: "u1", value_cents: 300_000 }),
+      lead("g2", { owner_user_id: "u2", value_cents: 800_000 }),
+    ];
+    const { client } = fakeSupabase(dados);
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const { data } = await chamar();
+    const metas = data.metas as Array<
+      MetaNaResposta & { indicador: string; escopo: string; vendedor_id: string | null }
+    >;
+    const daEmpresa = metas.find((m) => m.escopo === "empresa")!;
+    const doVendedor = metas.find((m) => m.escopo === "vendedor")!;
+    expect(daEmpresa.realizado).toBe(1_100_000);
+    expect(doVendedor.realizado).toBe(300_000);
+    expect(doVendedor.vendedor_id).toBe("u1");
+    expect(doVendedor.percentual).toBe(6);
+  });
+
+  it("meta em valor com janela ABERTA devolve projeção; janela fechada devolve null", async () => {
+    permitido();
+    const agora = new Date();
+    const inicioDoMes = new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth(), 1));
+    const fimDoMes = new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth() + 1, 1));
+    const periodoAtual = `${inicioDoMes.toISOString().slice(0, 7)}-01`;
+
+    const dados = setembro();
+    dados.crm_metas = [
+      meta("mv", {
+        indicador: "valor_vendido",
+        alvo: 100_000_00,
+        periodo: periodoAtual,
+      }),
+    ];
+    dados.crm_leads = [
+      lead("g1", { closed_at: inicioDoMes.toISOString(), value_cents: 1_000_000 }),
+    ];
+    const { client } = fakeSupabase(dados);
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const { data } = await chamar(
+      `http://localhost/api/v1/metrics/metas?from=${inicioDoMes.toISOString()}&to=${fimDoMes.toISOString()}`,
+    );
+    const m = (data.metas as Array<MetaNaResposta & { projecao: number | null }>)[0]!;
+    // A janela está em curso: a projeção existe e é MAIOR que o realizado de
+    // um dia (o mês não acabou).
+    expect(typeof m.projecao).toBe("number");
+    expect(m.projecao!).toBeGreaterThan(m.realizado);
   });
 
   it("janela inválida (from >= to) é recusada antes de qualquer leitura", async () => {

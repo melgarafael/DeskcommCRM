@@ -10,6 +10,7 @@ import { CARDS_POR_VEZ, cardsVisiveisDaColuna, colunaLimitada, limiteQueMostra }
 import { formatSomaPorMoeda, formatValorDoNegocio, MOEDA_PADRAO, somaPorMoeda } from "@/lib/money";
 import type { GestoDeSelecao } from "./KanbanCard";
 import { CardsDaColuna } from "./CardsDaColuna";
+import { bordaDaColuna, fundoDaColuna } from "@/lib/kanban/cor-da-coluna";
 
 interface StageColumnProps {
   stage: Stage;
@@ -56,6 +57,11 @@ interface StageColumnProps {
    * escrita) e sem abrir o dossiê, que tem ações próprias.
    */
   somenteLeitura?: boolean;
+  /**
+   * A cor da etapa pinta a COLUNA em tom pastel (preferência de quem olha, no
+   * navegador). Desligado, a cor fica só na bolinha do cabeçalho, como sempre foi.
+   */
+  corNaColuna?: boolean;
 }
 
 export function StageColumn({
@@ -78,6 +84,7 @@ export function StageColumn({
   abertoId = null,
   denso = false,
   somenteLeitura = false,
+  corNaColuna = false,
 }: StageColumnProps) {
   const t = useT();
   // O TOTAL É POR MOEDA (#1531). Antes ele somava todos os `value_cents` e
@@ -201,6 +208,8 @@ export function StageColumn({
         sempre, onde a graça é justamente ver várias etapas ao mesmo tempo.
       */
       className="bg-surface-elevated/40 flex min-h-full w-[85vw] max-w-80 shrink-0 snap-center flex-col rounded-lg border border-border md:w-80"
+      // Com `corNaColuna`, a cor da etapa pinta a coluna em tom pastel (a bolinha continua).
+      style={corNaColuna ? { ...fundoDaColuna(stage.color), ...bordaDaColuna(stage.color) } : undefined}
       data-etapa-do-quadro={stage.id}
     >
       {/* Cabeçalho e total PRESOS no alto do quadro enquanto os cards rolam: com
@@ -216,9 +225,10 @@ export function StageColumn({
           junto com o cabeçalho preso. */}
       <div
         className="sticky top-0 z-10 -mx-px -mt-px rounded-t-lg border-x border-t border-border bg-background"
+        style={corNaColuna ? bordaDaColuna(stage.color) : undefined}
         data-cabecalho-da-etapa
       >
-        <div className="bg-surface-elevated/40 rounded-t-lg">
+        <div className="bg-surface-elevated/40 rounded-t-lg" style={corNaColuna ? fundoDaColuna(stage.color) : undefined}>
           <div className="group/etapa flex items-center gap-2 border-b border-border px-3 py-2.5">
             {/* "Selecionar a etapa inteira" é o gesto que faz a ação em lote valer a
             pena: sem ele, mover trinta cards deixa de ser trinta arrastes e vira
@@ -279,7 +289,15 @@ export function StageColumn({
           </div>
 
           {temTotal && (
-            <div className="border-b border-border px-3 py-1.5 text-[11px] text-text-muted tabular-nums">
+            <div
+              className={cn(
+                "border-b border-border px-3 py-1.5 text-[11px] tabular-nums",
+                // Sobre o fundo colorido, o cinza de apoio cai abaixo de 4,5:1 no tema
+                // escuro (2,77 na etapa amarela, medido na prova do #4976): o total
+                // usa a cor de texto principal, como o nome da etapa.
+                corNaColuna && stage.color ? "text-text" : "text-text-muted",
+              )}
+            >
               {formatSomaPorMoeda(totais, formatValorDoNegocio, { primeira })}
               {ponderados !== null && (
                 <span className="ml-2">

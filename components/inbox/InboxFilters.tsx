@@ -1,7 +1,7 @@
 "use client";
 import { useT } from "@/hooks/i18n/useT";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CaretLeft, CaretRight, MagnifyingGlass } from "@/lib/ui/icons";
+import { CaretDown, CaretLeft, CaretRight, DotsThree, MagnifyingGlass } from "@/lib/ui/icons";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -38,7 +38,9 @@ import { useConversationCounts } from "@/hooks/inbox/useConversationCounts";
 import { useDepoisDeMontar } from "@/hooks/ui/useDepoisDeMontar";
 import { roleAtLeast, type Role, type VisibilityMode } from "@/lib/auth/types";
 import { SeletorDeAtendente } from "@/components/inbox/SeletorDeAtendente";
+import { DialogoDasAbas } from "@/components/inbox/DialogoDasAbas";
 import type { Sector } from "@/hooks/team/useSectors";
+import { abasPadrao, faixaDaPessoa, type AbaDaPessoa } from "@/lib/inbox/abas-da-inbox";
 
 export type InboxTab =
   | "unassigned"
@@ -201,10 +203,22 @@ interface Props {
    * provider. Ausente = organização sem Setores: o seletor não existe.
    */
   filas?: Pick<Sector, "id" | "name" | "color">[];
+  /**
+   * As abas DESTA PESSOA (#3313): a ordem da faixa e quais ficam no menu "Mais".
+   *
+   * Vêm do SERVIDOR (`app/app/inbox/page.tsx` -> `carregarAbasDaInbox`), pela
+   * mesma razão da lateral (#3008): a preferência mora no metadata da pessoa, e
+   * a faixa não pode nascer na ordem padrão e "pular" para a dela depois da
+   * hidratação. Ausente (os testes que montam a barra, ou quem nunca escolheu)
+   * = o padrão, que é a faixa de hoje.
+   */
+  abasIniciais?: AbaDaPessoa[];
 }
 
-export function InboxFilters({ value, onChange, filas: filasDaOrganizacao }: Props) {
+export function InboxFilters({ value, onChange, filas: filasDaOrganizacao, abasIniciais }: Props) {
   const t = useT();
+  const [abasDaPessoa, setAbasDaPessoa] = useState<AbaDaPessoa[]>(() => abasIniciais ?? abasPadrao());
+  const [organizandoAbas, setOrganizandoAbas] = useState(false);
   const [searchInput, setSearchInput] = useState(value.search);
   const tabsListRef = useRef<HTMLDivElement>(null);
   const [moreTabs, setMoreTabs] = useState({ left: false, right: false });
@@ -340,9 +354,18 @@ export function InboxFilters({ value, onChange, filas: filasDaOrganizacao }: Pro
   const podeFiltrarPorAtendente = roleAtLeast(activeOrg?.role, "manager");
   const mostrarSeletorDeAtendente = podeFiltrarPorAtendente && value.tab !== "mine";
 
-  const tabs = activeOrg
+  // O que o PAPEL permite (`visibleInboxTabs`), e só depois a preferência da
+  // pessoa: ela ordena e oculta dentro disso, nunca devolve uma aba que o papel
+  // tirou (#3313).
+  const permitidas = activeOrg
     ? visibleInboxTabs(activeOrg.role, activeOrg.visibility_mode)
     : INBOX_TABS.map((t) => t.value);
+  const { faixa: tabs, ocultas } = faixaDaPessoa(permitidas, abasDaPessoa);
+  const rotuloDaAba = (tab: InboxTab) => t(INBOX_TABS.find((x) => x.value === tab)!.label);
+  // A aba aberta pode ser uma das ocultas (o padrão "Fila", um `?filter=` de
+  // link, ou a escolhida no menu). Ela aparece no botão do menu, marcada como a
+  // aba ativa: a pessoa sempre vê onde está.
+  const ativaOculta = ocultas.includes(value.tab);
   const moveTab = (direction: -1 | 1) => {
     const next = tabs[tabs.indexOf(value.tab) + direction];
     if (next) onChange(comAba(value, next));
@@ -366,6 +389,27 @@ export function InboxFilters({ value, onChange, filas: filasDaOrganizacao }: Pro
     // `ConversationCounts`), então `undefined` some, não vira zero.
     pessoal: counts?.pessoal,
   };
+  // O NOME do botão do menu das abas, para o leitor de tela. Sem ocultas, é a
+  // porta do diálogo; com ocultas, "Mais abas" — no celular a barra de baixo já
+  // tem um "Mais" (a navegação), e dois controles com o mesmo nome na mesma tela
+  // é defeito. Com a aba aberta oculta, o nome dela, o contador e o "Mais abas":
+  // explícito, porque o nome calculado do conteúdo cola o rótulo no contador
+  // ("Arquivadas1"). O contador segue a mesma regra do visível (só depois de
+  // montar), para servidor e cliente não divergirem na hidratação.
+  const contadorDaAtiva = countFor[value.tab];
+  const nomeDoMenuDasAbas =
+    ocultas.length === 0
+      ? t("Personalizar abas")
+      : ativaOculta
+        ? [
+            rotuloDaAba(value.tab),
+            depoisDeMontar && typeof contadorDaAtiva === "number" && contadorDaAtiva > 0
+              ? String(contadorDaAtiva)
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" ") + ` · ${t("Mais abas")}`
+        : t("Mais abas");
   // Filtrar por um número que saiu da lista (o operador acabou de excluir o
   // canal) deixa o inbox mostrando um subconjunto — às vezes vazio — sem nada na
   // tela dizendo que há filtro. O número some do dropdown junto com o canal, e o
@@ -911,8 +955,83 @@ export function InboxFilters({ value, onChange, filas: filasDaOrganizacao }: Pro
           ) : (
             <span className="w-4 shrink-0" aria-hidden />
           )}
+          {/* O MENU DAS ABAS (#3313): as ocultas e a porta para organizar.
+              Fica FORA do `TabsList` — dentro dele seria um item a mais num
+              `tablist`, que o leitor de tela anunciaria como aba.
+
+              Três caras, um botão só:
+                - a aba aberta está oculta → o nome dela, marcado como ativa;
+                - há ocultas → "Mais";
+                - nenhuma oculta → só os três pontos (a porta para organizar). */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                data-testid="menu-das-abas"
+                aria-label={nomeDoMenuDasAbas}
+                title={ocultas.length === 0 ? t("Personalizar abas") : undefined}
+                data-state-aba={ativaOculta ? "active" : undefined}
+                className={cn(
+                  "flex shrink-0 items-center gap-1 self-start rounded-none border-b-2 border-transparent pb-2 pt-1 text-xs font-medium text-text-muted hover:text-text focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+                  ativaOculta && "border-accent text-text",
+                )}
+              >
+                {ativaOculta ? (
+                  <>
+                    {rotuloDaAba(value.tab)}
+                    {depoisDeMontar && typeof contadorDaAtiva === "number" && contadorDaAtiva > 0 && (
+                      <span className="text-[11px] tabular-nums text-text-subtle">{contadorDaAtiva}</span>
+                    )}
+                    <CaretDown size={11} aria-hidden />
+                  </>
+                ) : ocultas.length > 0 ? (
+                  <>
+                    {t("Mais")}
+                    <CaretDown size={11} aria-hidden />
+                  </>
+                ) : (
+                  <DotsThree size={14} weight="bold" aria-hidden />
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              {ocultas.length > 0 && (
+                <>
+                  <DropdownMenuLabel className="text-xs">{t("Abas ocultas")}</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={ativaOculta ? value.tab : ""}
+                    onValueChange={(v) => onChange(comAba(value, v as InboxTab))}
+                  >
+                    {ocultas.map((tab) => {
+                      const count = countFor[tab];
+                      return (
+                        <DropdownMenuRadioItem key={tab} value={tab} className="text-xs">
+                          <span className="flex-1">{rotuloDaAba(tab)}</span>
+                          {depoisDeMontar && typeof count === "number" && count > 0 && (
+                            <span className="text-[11px] tabular-nums text-text-subtle">{count}</span>
+                          )}
+                        </DropdownMenuRadioItem>
+                      );
+                    })}
+                  </DropdownMenuRadioGroup>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+              <DropdownMenuItem className="text-xs" onSelect={() => setOrganizandoAbas(true)}>
+                {t("Personalizar abas…")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </Tabs>
+      <DialogoDasAbas
+        aberto={organizandoAbas}
+        onAbertoChange={setOrganizandoAbas}
+        abas={abasDaPessoa}
+        permitidas={permitidas}
+        rotuloDe={rotuloDaAba}
+        onSalvas={setAbasDaPessoa}
+      />
     </div>
   );
 }

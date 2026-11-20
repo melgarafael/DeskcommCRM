@@ -235,11 +235,14 @@ describe("completarDestinoDoNegocio", () => {
     expect(r).toMatchObject({ ok: false, resposta: { erro: "item_inexistente" } });
   });
 
-  it("sem referência, a existência nem é perguntada", async () => {
+  it("sem referência, a existência do item nem é perguntada (#4763: o funil à mão olha o destino)", async () => {
     conferirItem.mockClear();
+    // Organização sem receita ativa: funil à mão segue como sempre foi.
+    const { cliente } = supabaseCom({});
 
-    await completarDestinoDoNegocio({ from: vi.fn() } as never, ORG, { pipeline_id: FUNIL, stage_id: ETAPA });
+    const r = await completarDestinoDoNegocio(cliente, ORG, { pipeline_id: FUNIL, stage_id: ETAPA });
 
+    expect(r).toEqual({ ok: true });
     expect(conferirItem).not.toHaveBeenCalled();
   });
 });
