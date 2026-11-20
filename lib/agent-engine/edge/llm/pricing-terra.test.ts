@@ -30,3 +30,42 @@ describe("GPT-6.1 Terra: Standard por requisição", () => {
     expect(costCents("openai/gpt-6.1-terra",usage(100_000))).toBeCloseTo(10);
   });
 });
+
+describe("faixa de contexto longo por modelo", () => {
+  it.each([
+    ["gpt-6-luna", 13.5, 12.2],
+    ["gpt-5.6-terra", 300, 274],
+  ])("%s aplica a tarifa longa à entrada, ao cache e à saída", (modelo, semCache, comCache) => {
+    expect(costCents(modelo, usage(300_000, 100_000))).toBeCloseTo(semCache);
+    expect(costCents(modelo, usage(300_000, 100_000, 100_000, 100_000))).toBeCloseTo(comCache);
+  });
+
+  it("cobra a faixa longa quando um passo do Luna passa de 272 mil tokens", () => {
+    const u = { inputTokens: 300_000, outputTokens: 100_000 };
+    expect(custoTerraPorPassos("gpt-6-luna", { usage: u, steps: [{ usage: u }] })).toBeCloseTo(13.5);
+  });
+
+  it.each([
+    [200_000, 7],
+    [272_000, 7.72],
+  ])("mantém a tarifa base do Luna com %i tokens de entrada", (inputTokens, esperado) => {
+    const u = { inputTokens, outputTokens: 100_000 };
+    expect(costCents("gpt-6-luna", usage(inputTokens, 100_000))).toBeCloseTo(esperado);
+    expect(custoTerraPorPassos("gpt-6-luna", { usage: u })).toBeCloseTo(esperado);
+  });
+
+  it.each([
+    ["gpt-6-luna", 8],
+    ["gpt-5.6-terra", 180],
+  ])("%s mantém a tarifa base em dois passos de 150 mil tokens", (modelo, esperado) => {
+    const passo = { inputTokens: 150_000, outputTokens: 50_000 };
+    expect(custoTerraPorPassos(modelo, {
+      usage: { inputTokens: 300_000, outputTokens: 100_000 },
+      steps: [{ usage: passo }, { usage: passo }],
+    })).toBeCloseTo(esperado);
+  });
+
+  it("mantém a tarifa base do Sol mesmo acima do limiar", () => {
+    expect(costCents("gpt-6.1-sol", usage(300_000, 100_000))).toBeCloseTo(160);
+  });
+});
