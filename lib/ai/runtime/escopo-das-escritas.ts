@@ -40,16 +40,40 @@ export type DonoDoCampo =
   | "compromisso"
   /** `cron_jobs.contact_id` (retorno: `kind='at'`, `job_kind='followup_turn'`). */
   | "retorno"
+  /** `demandas.contact_id`. */
+  | "demanda"
+  /** `crm_tasks.contact_id`. Tarefa sem contato não é do cliente do turno. */
+  | "tarefa"
   /** `agent_cases.conversation_id` → `conversations.contact_id`. */
   | "chamado"
   /** `target_id` cujo dono depende de `target_kind` (conversation|contact|lead). */
   | "alvo_de_tag"
   /** `lead_id`: quem guarda é `negocioDaEscritaDoTurno`, em `tools.ts`. */
   | "negocio"
+  /** Vínculos externos: número positivo e conexão ativa da organização. */
+  | "paciente_amigo"
+  | "consulta_amigo"
+  /** Escolha ainda sem vínculo: linkAmigoPatient verifica paciente/telefone no domínio. */
+  | "selecao_amigo"
+  /** Catálogo externo numérico; schemas e relações são conferidos pelo domínio. */
+  | "recurso_amigo"
+  | "negocio_do_contato"
   /** Não é registro de cliente: funil, etapa, usuário, fluxo. */
   | "configuracao";
 
 export const ESCOPO_DAS_ESCRITAS: Readonly<Record<string, Readonly<Record<string, DonoDoCampo>>>> = {
+  // Amigo não usa escritaDelegadaAoContato. A ponte confere vínculos atuais;
+  // o handler repete a autorização no domínio antes de acessar o provedor.
+  crm_amigo_patient_create: { connection_id: "configuracao", contact_id: "contato", insurance_id: "recurso_amigo" },
+  crm_amigo_patient_update: { connection_id: "configuracao", contact_id: "contato", patientId: "paciente_amigo", insurance_id: "recurso_amigo" },
+  crm_amigo_link_patient: { connection_id: "configuracao", contact_id: "contato", patient_id: "selecao_amigo", lead_id: "negocio_do_contato" },
+  crm_amigo_attendance_create: { connection_id: "configuracao",
+    contact_id: "contato", patient_id: "paciente_amigo", event_id: "recurso_amigo", user_id: "recurso_amigo",
+    place_id: "recurso_amigo", insurance_id: "recurso_amigo", insurance_product_id: "recurso_amigo",
+  },
+  crm_amigo_attendance_cancel: { connection_id: "configuracao", contact_id: "contato", patient_id: "paciente_amigo", id: "consulta_amigo" },
+  crm_amigo_attendance_reschedule: { connection_id: "configuracao", contact_id: "contato", patient_id: "paciente_amigo", id: "consulta_amigo" },
+  crm_amigo_attendance_status: { connection_id: "configuracao", contact_id: "contato", patient_id: "paciente_amigo", attendance_id: "consulta_amigo" },
   // ---- agenda ----
   crm_book_appointment: { contact_id: "contato", owner_user_id: "configuracao" },
   crm_find_and_book_appointment: { contact_id: "contato", owner_user_id: "configuracao" },
@@ -60,6 +84,9 @@ export const ESCOPO_DAS_ESCRITAS: Readonly<Record<string, Readonly<Record<string
 
   // ---- contato e conversa ----
   crm_propose_contact_field: { contact_id: "contato" },
+  // Diagnóstico da empresa na ficha (decisão D7): grava direto, então a cerca
+  // é a mesma da proposta — só a ficha do contato desta conversa.
+  crm_save_lead_diagnosis: { contact_id: "contato" },
   crm_create_conversation_draft: { conversation_id: "conversa" },
   crm_assign_conversation: { conversation_id: "conversa", to_user_id: "configuracao" },
   // #3881: a conversa vem do TURNO (o modelo não escolhe em qual conversa
@@ -68,6 +95,11 @@ export const ESCOPO_DAS_ESCRITAS: Readonly<Record<string, Readonly<Record<string
   crm_set_conversation_sector: { conversation_id: "conversa", sector_id: "configuracao" },
   crm_manage_tags: { target_id: "alvo_de_tag" },
   crm_send_whatsapp_message: { conversation_id: "conversa" },
+  // #4129 — irmã de `crm_send_whatsapp_message`: a conversa vem do turno e o
+  // material é CATÁLOGO da organização, não registro de cliente. Quem confere
+  // que o material é da organização é o preparo
+  // (`materialPertenceAOrganizacao`), com a linha lida por service role.
+  crm_send_material: { conversation_id: "conversa", material_id: "configuracao" },
   crm_request_human_handoff: { conversation_id: "conversa", target_user_id: "configuracao" },
   crm_resume_ai_attendance: { conversation_id: "conversa" },
 
@@ -106,6 +138,17 @@ export const ESCOPO_DAS_ESCRITAS: Readonly<Record<string, Readonly<Record<string
   crm_schedule_followup: { lead_id: "negocio", contact_id: "contato" },
   crm_cancel_followup: { followup_id: "retorno" },
   crm_enroll_followup_flow: { contact_id: "contato", flow_id: "configuracao" },
+  // #4838 — a tarefa da equipe, no turno, só se prende ao cliente da conversa:
+  // o contato, o negócio dele (guardado por `negocioDaEscritaDoTurno`) e a
+  // demanda dele. Editar exige que a TAREFA seja desse contato.
+  crm_create_task: { contact_id: "contato", lead_id: "negocio", demanda_id: "demanda", assigned_to: "configuracao" },
+  crm_update_task: {
+    task_id: "tarefa",
+    contact_id: "contato",
+    lead_id: "negocio",
+    demanda_id: "demanda",
+    assigned_to: "configuracao",
+  },
 
   // ---- sem registro de cliente ----
   crm_save_org_memory: {},
@@ -153,15 +196,26 @@ async function campoEhDoContato(
   args: Record<string, unknown>,
 ): Promise<boolean> {
   switch (dono) {
+    case "paciente_amigo":
+    case "consulta_amigo":
+    case "selecao_amigo":
+    case "recurso_amigo":
+      return false; // Conferidos como números em identificadorAmigoCabeNoTurno.
     case "negocio":
     case "configuracao":
       return true;
+    case "negocio_do_contato":
+      return existeDoContato(supabase, "crm_leads", organizationId, contato, id);
     case "contato":
       return id.toLowerCase() === contato.toLowerCase();
     case "conversa":
       return existeDoContato(supabase, "conversations", organizationId, contato, id);
     case "compromisso":
       return existeDoContato(supabase, "calendar_appointments", organizationId, contato, id);
+    case "demanda":
+      return existeDoContato(supabase, "demandas", organizationId, contato, id);
+    case "tarefa":
+      return existeDoContato(supabase, "crm_tasks", organizationId, contato, id);
     case "retorno":
       return existeDoContato(supabase, "cron_jobs", organizationId, contato, id, {
         kind: "at",
@@ -201,6 +255,31 @@ async function campoEhDoContato(
   }
 }
 
+async function identificadorAmigoCabeNoTurno(
+  db: SupabaseClient, organizationId: string, contato: string, dono: DonoDoCampo,
+  id: number, args: Record<string, unknown>,
+): Promise<boolean> {
+  if (dono === "recurso_amigo" || dono === "selecao_amigo") return true;
+  const { data: connection, error } = await db.from("amigo_connections").select("id")
+    .eq("organization_id", organizationId).eq("active", true).maybeSingle();
+  if (error) throw new Error("amigo_scope_lookup_failed");
+  if (!connection) return false;
+  let patientId = id;
+  if (dono === "consulta_amigo") {
+    const attendance = await db.from("amigo_appointment_links").select("patient_id")
+      .eq("organization_id", organizationId).eq("connection_id", connection.id)
+      .eq("attendance_id", id).maybeSingle();
+    if (attendance.error) throw new Error("amigo_scope_lookup_failed");
+    if (!attendance.data || attendance.data.patient_id !== args.patient_id) return false;
+    patientId = attendance.data.patient_id;
+  }
+  const link = await db.from("amigo_patient_links").select("patient_id")
+    .eq("organization_id", organizationId).eq("connection_id", connection.id)
+    .eq("contact_id", contato).eq("patient_id", patientId).maybeSingle();
+  if (link.error) throw new Error("amigo_scope_lookup_failed");
+  return link.data !== null;
+}
+
 /**
  * O veredito da ponte para uma escrita (`write` ou `handoff`) durante um turno.
  *
@@ -229,9 +308,21 @@ export async function escritaCabeNoTurno(
     };
   }
   try {
+    // As novas escritas externas sempre declaram responsável e paciente. Não
+    // herdam a vacuidade dos inputs legados nem aceitam ID numérico como UUID.
+    if (ferramenta.startsWith("crm_amigo_")) {
+      if (typeof args.contact_id !== "string" || args.contact_id.toLowerCase() !== contatoDoTurno.toLowerCase()) return FORA_DA_CONVERSA;
+      const campoPaciente = ferramenta === "crm_amigo_patient_update" ? "patientId" : "patient_id";
+      if (ferramenta !== "crm_amigo_patient_create" && !Number.isSafeInteger(args[campoPaciente])) return FORA_DA_CONVERSA;
+    }
     for (const [campo, dono] of Object.entries(campos)) {
       const valor = args[campo];
       if (valor === undefined || valor === null) continue;
+      if (["paciente_amigo", "consulta_amigo", "selecao_amigo", "recurso_amigo"].includes(dono)) {
+        if (typeof valor !== "number" || !Number.isSafeInteger(valor) || valor <= 0) return FORA_DA_CONVERSA;
+        if (!(await identificadorAmigoCabeNoTurno(supabase, organizationId, contatoDoTurno, dono, valor, args))) return FORA_DA_CONVERSA;
+        continue;
+      }
       if (typeof valor !== "string") return FORA_DA_CONVERSA;
       if (!(await campoEhDoContato(supabase, organizationId, contatoDoTurno, dono, valor, args))) {
         return FORA_DA_CONVERSA;

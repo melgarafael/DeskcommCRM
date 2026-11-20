@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useActiveOrg } from "@/hooks/auth/AuthProvider";
 import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabulary";
-import { useDeleteContact, mensagemDeBloqueioPorVinculo } from "@/hooks/contacts/useDeleteContact";
+import { useDeleteContact, mensagemDeBloqueioPorVinculo, destinoDoBloqueio } from "@/hooks/contacts/useDeleteContact";
 import type { ContactOrderBy } from "@/lib/schemas/contacts";
 import type { Contact } from "@/lib/types/contacts";
 import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
@@ -427,8 +427,8 @@ export function ContactsTable({
             {avisoDeVinculo ? (
               <span className="mt-2 block text-sm font-medium text-warning-fg">
                 {avisoDeVinculo}{" "}
-                <Link href="/app/agenda" className="underline">
-                  {t("Abrir Agenda")}
+                <Link href={destinoDoBloqueio(vinculos.data).href} className="underline">
+                  {t(destinoDoBloqueio(vinculos.data).rotulo)}
                 </Link>
               </span>
             ) : null}

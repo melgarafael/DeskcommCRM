@@ -8,7 +8,7 @@
  * manager+ ⇒ org-wide + filtro opcional `owner_user_id`. Piso de rota = agent.
  * org da org ativa (cookie validado), NUNCA do body/query. Read-only ⇒ sem audit.
  *
- * Sessão OU token de servidor `dsk_…` com `mcp:read` e papel agent+ (Spec 33,
+ * Sessão OU token de servidor `dsk_…` com `mcp:read` e papel manager+ (Spec 33,
  * R3). Pelo token não há pessoa nem RLS por atendente: o cliente é o de serviço,
  * a organização vem da LINHA do token e a leitura é a da organização inteira
  * (o `p_owner` da query continua restringindo, dentro dela).
@@ -24,11 +24,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { normalizarEtiqueta } from "@/lib/metrics/mediana-e-recorte-por-etiqueta";
+import { janelaDoRelatorio, lerRelatorioDeVendas } from "@/lib/relatorios/vendas";
 import { membrosDaOrganizacao } from "@/lib/users/nome-do-atendente";
 
 export const dynamic = "force-dynamic";
-
-const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 const querySchema = z.object({
   from: z.string().datetime({ offset: true }).optional(),
@@ -40,25 +39,6 @@ const querySchema = z.object({
   excluir_etiqueta: z.string().max(120).optional(),
 });
 
-interface AttendantRow {
-  user_id: string;
-  won: number;
-  lost: number;
-  conversations_handled: number;
-  avg_first_response_seconds: number | null;
-  /** #3212: a mediana entra AO LADO da média; `null` = não medida, nunca 0. */
-  median_first_response_seconds: number | null;
-}
-
-interface MetricsPayload {
-  funnel: { stage_id: string; stage_name: string; position: number; count: number }[];
-  attendants: AttendantRow[];
-  /** #3212: a etiqueta usada no recorte (`null` = sem recorte). */
-  excluded_tag?: string | null;
-  /** #3212: conversas da janela que a etiqueta tirou da conta. */
-  excluded_conversations?: number;
-}
-
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
@@ -68,6 +48,8 @@ export async function GET(req: NextRequest): Promise<Response> {
     resource: "metrics",
     role: "agent",
     scope: "mcp:read",
+    // O token lê a organização inteira; na sessão um agent vê só a linha dele.
+    tokenRole: "manager",
   });
   if (!authz.ok) return authz.response;
   // Está em PUBLIC_PATHS: o teto do token é a única contagem das chamadas dele.
@@ -89,15 +71,17 @@ export async function GET(req: NextRequest): Promise<Response> {
     });
   }
 
-  const to = parsed.data.to ? new Date(parsed.data.to) : new Date();
-  const from = parsed.data.from
-    ? new Date(parsed.data.from)
-    : new Date(to.getTime() - THIRTY_DAYS_MS);
-  if (from.getTime() >= to.getTime()) {
+  // A janela e a leitura moram em `lib/relatorios/vendas.ts` desde a #4802
+  // (item 5): a exportação (`/api/v1/reports/vendas/export`) chama a MESMA
+  // função, então o número do arquivo e o da tela não têm como divergir. O
+  // default de 30 dias é o de lá, e continua sendo o desta rota.
+  const janela = janelaDoRelatorio(parsed.data);
+  if (!janela) {
     return fail("validation_failed", t("Janela inválida: 'from' deve ser anterior a 'to'."), 422, {
       requestId,
     });
   }
+  const { from, to } = janela;
 
   // Sessão: o cliente do cookie (a RLS recorta). Token: o de serviço, e o
   // `p_org` abaixo — da sessão ou da linha do token, nunca da query — é o
@@ -107,16 +91,15 @@ export async function GET(req: NextRequest): Promise<Response> {
   // (`normalizarEtiqueta` = `btrim` da RPC): `""`/só-espaço viram `null`, e
   // `null` desliga o recorte em vez de excluir todo contato sem etiqueta.
   const excluirEtiqueta = normalizarEtiqueta(parsed.data.excluir_etiqueta);
-  const { data, error } = await supabase.rpc("fn_attendant_metrics", {
-    p_org: authz.organizationId,
-    p_from: from.toISOString(),
-    p_to: to.toISOString(),
-    p_owner: parsed.data.owner_user_id,
-    p_excluir_etiqueta: excluirEtiqueta,
+  const lido = await lerRelatorioDeVendas(supabase, {
+    orgId: authz.organizationId,
+    janela,
+    owner_user_id: parsed.data.owner_user_id,
+    excluir_etiqueta: excluirEtiqueta,
   });
-  if (error) return fail("internal_error", error.message, 500, { requestId });
+  if (!lido.ok) return fail("internal_error", lido.message, 500, { requestId });
 
-  const metrics = (data ?? { funnel: [], attendants: [] }) as unknown as MetricsPayload;
+  const metrics = lido.relatorio;
 
   // Enriquece cada atendente com nome/email (mesmo padrão de /api/v1/team).
   // Degrada com name=null quando o service role não está configurado (dev).

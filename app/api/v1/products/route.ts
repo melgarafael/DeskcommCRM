@@ -29,6 +29,7 @@ import {
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { guardarFotosPorUrl } from "@/lib/catalogo/fotos-por-url";
 import { apagarDoBucket } from "@/lib/catalogo/fotos-no-bucket";
+import { capacidadesDaOrganizacao } from "@/lib/organizacao/capacidades";
 import { COLUNAS_DO_PRODUTO, produtoCreateSchema } from "@/lib/schemas/produtos";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -136,6 +137,13 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const supabase = authz.supabase;
+  if (
+    parsed.data.capacidade &&
+    !(await capacidadesDaOrganizacao(supabase, authz.organizationId)).includes("capacidade_do_produto")
+  ) {
+    return fail("validation_failed", t("A capacidade do produto está desligada nesta empresa."), 422, { requestId });
+  }
+
   // A moeda vem da organização, nunca do corpo — ver `moedaDaOrganizacao()`.
   const moeda = await moedaDaOrganizacao(supabase, authz.organizationId);
 

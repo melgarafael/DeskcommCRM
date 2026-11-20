@@ -10,6 +10,7 @@ import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { hashCpf } from "@/lib/contacts/cpf";
+import { audit } from "@/lib/audit";
 import { roleAtLeast, type Role } from "@/lib/auth/types";
 import type * as PerfilDoPais from "@/lib/legal/perfil-do-pais";
 
@@ -38,6 +39,8 @@ const estado = vi.hoisted(() => ({
   papel: "viewer" as string,
   buscas: [] as string[],
   decifrou: 0,
+  /** (9423) Os argumentos com que a RPC `decrypt_cpf` foi chamada. */
+  rpcArgs: [] as Array<{ funcao: string; args: unknown }>,
   /** Toda menção de `cpf_hash` feita pelo cliente da SESSÃO: tem de ficar vazia. */
   sessaoPediuOHash: [] as string[],
   /** O que o cliente do SERVIDOR comparou com a coluna. */
@@ -137,8 +140,9 @@ function cadeia(tabela: string, quem: "sessao" | "servidor"): unknown {
 const clienteFalso = {
   auth: { getUser: async () => ({ data: { user: { id: USUARIO } }, error: null }) },
   from: (tabela: string) => cadeia(tabela, "sessao"),
-  rpc: async (funcao: string) => {
+  rpc: async (funcao: string, args?: unknown) => {
     if (funcao === "decrypt_cpf") estado.decifrou += 1;
+    estado.rpcArgs.push({ funcao, args });
     return {
       data: funcao === "encrypt_cpf" ? new Uint8Array([1]) : funcao === "decrypt_cpf" ? CPF : null,
       error: null,
@@ -230,6 +234,7 @@ beforeEach(() => {
   estado.papel = "viewer";
   estado.buscas.length = 0;
   estado.decifrou = 0;
+  estado.rpcArgs.length = 0;
 });
 
 describe.each(["viewer", "agent"])("leitura com o papel %s", (papel) => {
@@ -304,6 +309,31 @@ describe("o que é interno segue funcionando", () => {
     expect(estado.decifrou).toBe(1);
   });
 
+  it("o propósito da leitura vai na RPC, e a leitura não grava `contact.updated` (#4892)", async () => {
+    estado.papel = "manager";
+    const antes = vi.mocked(audit).mock.calls.length;
+
+    const { data } = await corpoSemOValor(
+      await detalhar(COM_CPF, { "x-decrypt-purpose": "ficha_do_contato" }),
+    );
+
+    expect(data.cpf_decrypted).toBe(CPF);
+    // O propósito é PARÂMETRO: o PostgREST não tem como fixar o GUC na mesma
+    // transação da RPC, então a única forma de a linha do decrypt carregar o
+    // motivo é ele vir no corpo da chamada.
+    expect(estado.rpcArgs).toContainEqual({
+      funcao: "decrypt_cpf",
+      args: { p_contact_id: COM_CPF, p_purpose: "ficha_do_contato" },
+    });
+    // A trilha da LEITURA é a de `decrypt_cpf`. `contact.updated` aqui anunciava
+    // uma atualização de ficha que não houve.
+    const novas = vi
+      .mocked(audit)
+      .mock.calls.slice(antes)
+      .map(([entrada]) => (entrada as { action: string }).action);
+    expect(novas).not.toContain("contact.updated");
+  });
+
   it("buscar pelo CPF acha a ficha, e quem compara é o servidor", async () => {
     await listar(`?search=${CPF}`);
     expect(estado.servidorComparou).toEqual([HASH]);
@@ -316,6 +346,9 @@ describe("o que é interno segue funcionando", () => {
     await listar(`?search=11144477735`);
     expect(estado.servidorComparou).toHaveLength(1);
     expect(estado.buscas.join(",")).not.toContain("id.in.");
-    expect(estado.buscas.join(",")).toContain("name.imatch.");
+    // "O resto" é a busca por nome. Desde a #3918 (fatia 2) ela sai pela coluna
+    // sem acento, e não mais por `name.imatch`: o que este caso prova é que a
+    // busca por nome CONTINUA quando o CPF não acha ninguém, não o operador.
+    expect(estado.buscas.join(",")).toContain("busca_sem_acento.like.");
   });
 });

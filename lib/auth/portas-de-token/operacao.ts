@@ -83,8 +83,8 @@ export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
   // no GET e `mcp:write` na escrita, com o papel que a sessão já exige
   // (`viewer` lê, `agent` escreve). Segmentos `[id]`, `[attachmentId]` e `[pid]`
   // em forma de UUID: nenhum desses diretórios tem irmão literal que dê carona
-  // além dos que ficaram só de sessão (`leads/[id]/conversion/retry` e
-  // `leads/at-risk`), listados na borda do teste da área.
+  // além do que ficou só de sessão (`leads/[id]/conversion/retry`), listado na
+  // borda do teste da área.
   "/api/v1/leads",
   "/api/v1/leads/[id]/attachments",
   "/api/v1/leads/[id]/attachments/[attachmentId]/media",
@@ -175,35 +175,27 @@ export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
   "/api/v1/people/[id]",
   "/api/v1/phone-numbers",
   "/api/v1/phone-numbers/[id]",
-
-  // FINANCEIRO E HONORÁRIOS (R2, tarefa 8). Quem autentica é a própria rota, por
-  // `resolveAuthDual` (sessão OU Bearer `dsk_…`, a organização vinda da linha do
-  // token): `mcp:read` na leitura e `mcp:write` na escrita, com o papel que a
-  // sessão já exige (`viewer` lê o catálogo, as comandas e o extrato; `agent`
-  // abre comanda e lança item; `manager` cria contrato de honorário). Não há
-  // `tokenRole`: nenhuma tool MCP faz estas ações com papel maior.
+  // FINANCEIRO E HONORÁRIOS (R2, tarefa 8). Só LEITURA por token (doc 376, que
+  // segue o doc 318: "começando só por leitura"). Quem autentica o GET é a própria
+  // rota, por `resolveAuthDual` (sessão OU Bearer `dsk_…` com `mcp:read`, a
+  // organização vinda da linha do token), com o papel que a sessão já exige
+  // (`viewer`). Não há `tokenRole`.
   //
-  // Só entram os caminhos com ao menos um método convertido. Ficam de sessão,
-  // e recusam o Bearer com 401 pelo `requireRole`: cancelar comanda, estornar,
-  // finalizar e faturar em lote (funções do banco que exigem `auth.uid()`) e
-  // pagar parcela de honorário. Os irmãos literais `estornar`, `finalizar`,
+  // Toda ESCRITA desses caminhos segue só de sessão e recusa o Bearer com 401
+  // pelo `requireRole`: abrir e alterar comanda, lançar e tirar item, lançamento
+  // (criar, pagar, apagar), fidelidade, catálogo, contrato e parcela de
+  // honorário. Abrir a escrita por token é fatia própria. Os caminhos que só têm
+  // escrita (`comandas/[id]/itens`, `comandas/[id]/itens/[itemId]`,
+  // `lancamentos/[id]`) e os irmãos literais `estornar`, `finalizar`,
   // `faturar-lote` e `pagar` não ganham porta; a borda do teste da área prova isso.
-  // R2 lote 2: catálogo POST/PATCH/DELETE (`manager`), fidelidade POST, lançamentos
-  // POST e `[id]` PATCH/DELETE (`agent`) e parcelas POST (`manager`) também aceitam
-  // token (`mcp:write`), com o filtro de organização e as referências conferidas.
   //
   // `[tipo]` do catálogo não é id: a classe é a mesma que `ehEntidadeDoCatalogo`
   // aceita na rota (`ENTIDADES_DO_CATALOGO`).
   "/api/v1/financeiro/comandas",
   "/api/v1/financeiro/comandas/pendentes",
   "/api/v1/financeiro/comandas/[id]",
-  "/api/v1/financeiro/comandas/[id]/itens",
-  "/api/v1/financeiro/comandas/[id]/itens/[itemId]",
   "/api/v1/financeiro/fidelidade",
   "/api/v1/financeiro/lancamentos",
-  // Lançamento por id (R2, lote 2): PATCH (pagar) e DELETE, `mcp:write`, `agent`. `[id]` em
-  // forma de UUID; filtro de organização na leitura, no update e no delete.
-  "/api/v1/financeiro/lancamentos/[id]",
   {
     caminho: "/api/v1/financeiro/catalogo/[tipo]",
     segmentos: {

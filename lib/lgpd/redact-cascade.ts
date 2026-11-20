@@ -13,6 +13,10 @@
  *   - Redacts `conversation_notes` and enqueues its attachment with the
  *     `internal-media` bucket (migration 0483) — notes are NOT in
  *     `whatsapp-media`, which belongs to the customer channel.
+ *   - Clears the profile picture and the attachments of the deals the contact
+ *     owns, enqueueing the files (a deal only linked to the contact keeps its
+ *     attachments, counted in `crm_lead_attachments_mantidos`), and repeats all
+ *     of this for the records merged into the contact (9243).
  *   - Inserts a dense `lgpd.redact_executed` audit row inside the TX.
  *
  * All tenant filtering is enforced at the RPC level (programmatic
@@ -20,7 +24,7 @@
  */
 
 import { logger } from "@/lib/logger";
-import { isLeadAttachmentPathOwnedBy } from "@/lib/messaging/media/upload-validation";
+import { isLeadAttachmentPathOwnedBy, isMediaPathInOrganization } from "@/lib/messaging/media/upload-validation";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export interface CascadeResult {
@@ -96,10 +100,9 @@ export async function cascadeRedactContact(args: CascadeArgs): Promise<CascadeRe
   // bucket: a pessoa "anonimizada" continuaria com o rosto guardado. Numa
   // auditoria LGPD isso é o mesmo que não ter anonimizado.
   //
-  // Fica no app, e não dentro da função SQL, de propósito: aquela função tem
-  // ~200 linhas e um `create or replace` exigiria copiá-la inteira só para
-  // acrescentar uma coluna — risco de divergir do original sem necessidade.
-  // Aqui o efeito é o mesmo e a mudança é auditável.
+  // Desde a 9243 a função SQL faz o mesmo, para as fichas fundidas neste contato
+  // e para quem não passa por aqui. Isto segue por causa da falha fechada: a fila
+  // fica preenchida antes da RPC, e a RPC então encontra o ponteiro já nulo.
   //
   // A fila é idempotente (`unique (bucket, object_path)`), então re-executar
   // uma anonimização não duplica nada.
@@ -133,12 +136,15 @@ export async function cascadeRedactContact(args: CascadeArgs): Promise<CascadeRe
     // anonimizado, auditoria afirmando que a redação ocorreu, e o rosto ainda no
     // bucket sem ninguém capaz de achá-lo. Melhor abortar a cascata e
     // reprocessar do que anonimizar pela metade.
-    await enfileirarMidiaNaFila(admin, {
-      organizationId: args.organizationId,
-      requestId: args.requestId,
-      bucket: "whatsapp-media",
-      objectPath: avatarPath,
-    });
+    // Só o caminho exato que o cron grava. O ponteiro sai de qualquer forma.
+    if (avatarPath === `${args.organizationId}/avatars/${args.contactId}.jpg`) {
+      await enfileirarMidiaNaFila(admin, {
+        organizationId: args.organizationId,
+        requestId: args.requestId,
+        bucket: "whatsapp-media",
+        objectPath: avatarPath,
+      });
+    }
 
     await admin
       .from("contacts")
@@ -192,7 +198,7 @@ export async function cascadeRedactContact(args: CascadeArgs): Promise<CascadeRe
     }
     for (const nota of notasComMidia ?? []) {
       const caminho = nota.media_storage_path;
-      if (!caminho) continue;
+      if (!caminho || !isMediaPathInOrganization(caminho, args.organizationId)) continue;
       await enfileirarMidiaNaFila(admin, {
         organizationId: args.organizationId,
         requestId: args.requestId,
@@ -211,6 +217,8 @@ export async function cascadeRedactContact(args: CascadeArgs): Promise<CascadeRe
   if (leadsErro) {
     throw new Error(`[lgpd-redact-cascade] leads do contato não lidos: ${leadsErro.message}`);
   }
+  // Só no negócio de que o contato é o titular: o negócio só ligado pela
+  // `crm_lead_links` tem outro titular e mantém os anexos, como no passo 5a da RPC.
   const idsDosLeads = (leadsDoContato ?? []).map((l) => l.id);
   if (idsDosLeads.length > 0) {
     const { data: anexosDosLeads, error: anexosErro } = await admin
@@ -223,7 +231,7 @@ export async function cascadeRedactContact(args: CascadeArgs): Promise<CascadeRe
     }
     for (const anexo of anexosDosLeads ?? []) {
       if (!anexo.storage_path) continue;
-      // A fila remove com o cliente admin: só o que mora sob o prefixo do negócio.
+      // Só o que mora sob o prefixo do negócio.
       if (!isLeadAttachmentPathOwnedBy(anexo.storage_path, args.organizationId, anexo.lead_id)) {
         logger.warn("[lgpd-redact-cascade] anexo com caminho fora do negócio; não enfileirado", {
           attachmentId: anexo.id,

@@ -20,8 +20,9 @@ import { chaveDeOrcamentoDaInstalacao } from '@/lib/instalacao/comportamento';
 import { logger } from '@/lib/logger';
 import type { ChannelCapabilities } from '@/lib/channels/types';
 import { formatoDaVozParaCanal, type FormatoDaVoz } from '@/lib/ai/voz/formato';
+import { lerPedidoDeAudio } from './pedido-de-audio';
 
-export type VozQuando = 'nunca' | 'espelhar' | 'sempre';
+export type VozQuando = 'nunca' | 'espelhar' | 'sempre' | 'quando_pede';
 
 export interface ResolverVozDoTurnoInput {
   pool: pg.Pool;
@@ -33,10 +34,25 @@ export interface ResolverVozDoTurnoInput {
    * para quem converte, ogg/opus para o canal oficial, que exige opus e não
    * converte (`lib/ai/voz/formato.ts`). Até 02/11/2026 o `opus-only` respondia
    * sempre em texto; a ElevenLabs sintetiza em opus, então ele também fala.
+   * `none` (redes sociais) responde sempre em texto: o canal recusa o áudio.
    */
   voiceNote: ChannelCapabilities['voiceNote'];
   /** `messages.type` da mensagem inbound que disparou o turno — `null` quando não há (ex.: follow-up proativo). */
   inboundType: string | null;
+  /**
+   * O TEXTO do turno (#4345) — o que o cliente escreveu, já composto por
+   * `corpoDaMensagem` (num áudio, a transcrição; sem transcrição, o marcador
+   * `[audio]`). Mantido para quem tem UM texto só; a decisão multi-turno lê
+   * `inboundTexts`.
+   */
+  inboundText?: string | null;
+  /**
+   * Os textos do cliente na CONVERSA (#4345), do mais antigo ao mais recente,
+   * como `textosDoClienteNoHistorico` devolve — o pedido de áudio feito duas
+   * mensagens atrás continua valendo. Ausente, cai em `[inboundText]`; sem
+   * nenhum dos dois, o turno só pode espelhar o canal.
+   */
+  inboundTexts?: readonly (string | null | undefined)[];
   /**
    * A voz PRÓPRIA deste agente (`ai_agents.config.voz_voice_id`, #4228) — a
    * escolha que a tela do agente grava. `null`/ausente = herda a voz da
@@ -72,9 +88,29 @@ interface VozSettings {
   model_id?: string;
 }
 
-function deveFalar(vozQuando: VozQuando, inboundType: string | null): boolean {
+/**
+ * "O agente fala NESTE turno?" — os quatro comportamentos de `voz_quando`.
+ *
+ * `'quando_pede'` (#4345) é o espelho MAIS a leitura da conversa: fala quando o
+ * cliente mandou áudio (como `'espelhar'`) OU quando pediu áudio por escrito /
+ * avisou que não consegue ler — na mensagem atual OU em qualquer uma das últimas
+ * que o turno carregou. Quem pediu texto vence o espelho — inclusive quando a
+ * correção veio depois do pedido.
+ */
+function deveFalar(
+  vozQuando: VozQuando,
+  inboundType: string | null,
+  inboundTexts: readonly (string | null | undefined)[],
+): boolean {
   if (vozQuando === 'nunca') return false;
   if (vozQuando === 'sempre') return true;
+  if (vozQuando === 'quando_pede') {
+    // A CONVERSA, não a mensagem: o pedido feito duas mensagens atrás continua
+    // valendo, e um "prefiro texto" posterior derruba (lerPedidoDeAudio).
+    const pedido = lerPedidoDeAudio(inboundTexts);
+    if (pedido === 'texto') return false;
+    return pedido === 'audio' || inboundType === 'audio';
+  }
   // 'espelhar': só quando o CLIENTE mandou áudio nesta mensagem.
   return inboundType === 'audio';
 }
@@ -113,7 +149,14 @@ export async function resolverVozDoTurno(
   input: ResolverVozDoTurnoInput,
 ): Promise<VozResolvidaDoTurno | null> {
   if (!input.vozEnabled) return null;
-  if (!deveFalar(input.vozQuando, input.inboundType)) return null;
+  // O canal da conversa não entrega nota de voz nossa (Instagram/Facebook): o
+  // turno sai em texto ANTES de qualquer custo — sem ler a voz, sem consumir
+  // orçamento, sem pedir à ElevenLabs um áudio que o canal recusaria.
+  const formato = formatoDaVozParaCanal(input.voiceNote);
+  if (formato === null) return null;
+  const textosDaConversa =
+    input.inboundTexts ?? (input.inboundText === undefined ? [] : [input.inboundText]);
+  if (!deveFalar(input.vozQuando, input.inboundType, textosDaConversa)) return null;
 
   try {
     const { rows } = await input.pool.query<{ settings: Record<string, unknown> | null }>(
@@ -177,7 +220,7 @@ export async function resolverVozDoTurno(
       apiKey: elevenlabs.apiKey,
       voiceId,
       modelId,
-      formato: formatoDaVozParaCanal(input.voiceNote),
+      formato,
     };
   } catch (err) {
     if (err instanceof LlmBudgetExceededError) {

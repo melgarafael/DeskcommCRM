@@ -263,7 +263,7 @@ type Caso = {
   /** O papel que a rota exige da sessão (a tabela do plano). */
   papel: Papel;
   escopo: "mcp:read" | "mcp:write";
-  papelDoToken?: "admin";
+  papelDoToken?: Papel;
   /** O `resource` do `resolveAuthDual` e do teto do token. */
   recurso: string;
   rpc?: Record<string, unknown>;
@@ -323,6 +323,7 @@ const APAGAR_TAREFA: Caso = {
   params: { id: TAREFA_A },
   linhas: LINHAS_DE_TAREFAS,
   papel: "agent",
+  papelDoToken: "manager",
   escopo: "mcp:write",
   recurso: "crm_tasks",
   status: 200,
@@ -709,7 +710,12 @@ describe("o ramo do token em tarefas, demandas e chamadas", () => {
     expect(texto).not.toContain("Negócio secreto da B");
     const tarefas = json<{ data: { tasks: Array<{ id: string; lead: unknown }> } }>(texto).data.tasks;
     expect(tarefas.find((t) => t.id === TAREFA_LEGADA_A)?.lead).toBeNull();
-    expect(tarefas.find((t) => t.id === TAREFA_A)?.lead).toEqual({ id: NEGOCIO_A, title: "Negócio da A" });
+    // O contato do negócio vem junto desde o #4883: é por ele que o selo acha o setor.
+    expect(tarefas.find((t) => t.id === TAREFA_A)?.lead).toEqual({
+      id: NEGOCIO_A,
+      title: "Negócio da A",
+      contact_id: CONTATO_A,
+    });
     expect(tarefas.find((t) => t.id === TAREFA_B)).toBeUndefined();
   });
 
@@ -756,6 +762,7 @@ describe("o ramo do token em tarefas, demandas e chamadas", () => {
     expect(json<{ data: { task: { lead: unknown } } }>(texto).data.task.lead).toEqual({
       id: NEGOCIO_A,
       title: "Negócio da A",
+      contact_id: CONTATO_A,
     });
     expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A, { tabelasSemOrganizacao: SEM_ORGANIZACAO })).toEqual([]);
   });

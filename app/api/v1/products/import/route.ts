@@ -50,8 +50,12 @@ import { guardarFotosPorUrl } from "@/lib/catalogo/fotos-por-url";
 import { apagarDoBucket } from "@/lib/catalogo/fotos-no-bucket";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { CSV_MAX_BYTES, CSV_MAX_DATA_ROWS, decodificarCsv } from "@/lib/contacts/csv";
+import { MODULO_SERVICOS, sinaisFixosQueTravamPreco } from "@/lib/catalogo/servicos-supabase";
+import { moduloLigado } from "@/lib/instalacao/modulos";
+import { capacidadesDaOrganizacao } from "@/lib/organizacao/capacidades";
 import { COLUNAS_DO_PRODUTO } from "@/lib/schemas/produtos";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -145,7 +149,10 @@ export async function POST(req: NextRequest): Promise<Response> {
   if ("erro" in decodificado) {
     return fail("validation_failed", t(decodificado.erro), 422, { requestId });
   }
-  const lido = lerPlanilha(decodificado.texto, t);
+  const supabase = authz.supabase;
+  const lido = lerPlanilha(decodificado.texto, t, {
+    capacidade: (await capacidadesDaOrganizacao(supabase, orgId)).includes("capacidade_do_produto"),
+  });
   // Problema do ARQUIVO (falta a coluna de preço) é 422 com a frase inteira —
   // e não um relatório com 300 erros idênticos.
   if ("erro" in lido) return fail("validation_failed", lido.erro, 422, { requestId });
@@ -189,8 +196,6 @@ export async function POST(req: NextRequest): Promise<Response> {
       );
     }
   }
-
-  const supabase = authz.supabase;
 
   // Os códigos já cadastrados na organização servem a duas coisas. Quem já
   // existia com o código IGUAL é atualizado, para o resumo dizer "3 novos, 12
@@ -245,7 +250,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const erros: ErroDaLinha[] = [...lido.erros];
-  const aceitos = lido.produtos.filter((p) => {
+  let aceitos = lido.produtos.filter((p) => {
     if (antigos.has(p.codigo)) return true;
     const outraCaixa = porChave.get(chaveDoCodigo(p.codigo));
     if (!outraCaixa) return true;
@@ -259,6 +264,37 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
     return false;
   });
+
+  // A porta do módulo de serviços (doc 212): o item que já existe pode ser
+  // serviço ou variação de um, com sinal FIXO na família. A planilha não baixa o
+  // preço para menos que ele — a linha é recusada com o motivo, as outras
+  // seguem. Com o módulo desligado, nada é consultado; sem conseguir conferir,
+  // nada é gravado (mesma regra da leitura do catálogo acima).
+  if (await moduloLigado(createAdminClient(), MODULO_SERVICOS)) {
+    let sinais: Map<string, number>;
+    try {
+      sinais = await sinaisFixosQueTravamPreco(
+        supabase,
+        orgId,
+        aceitos.flatMap((p) => idPorCodigo.get(p.codigo) ?? []),
+      );
+    } catch {
+      return fail(
+        "internal_error",
+        t("Não consegui conferir o que já está gravado, então nada foi alterado. Tente de novo em instantes."),
+        500,
+        { requestId },
+      );
+    }
+    aceitos = aceitos.filter((p) => {
+      const id = idPorCodigo.get(p.codigo);
+      const sinal = id === undefined ? undefined : sinais.get(id);
+      if (sinal === undefined || p.preco_cents >= sinal) return true;
+      erros.push({ linha: p.linha, motivo: `"${p.codigo}"` + t(": o preço ficaria abaixo do sinal fixo do serviço.") });
+      return false;
+    });
+  }
+
   let gravados = 0;
   /** Os códigos que REALMENTE entraram — a limpeza das fotos antigas depende disso. */
   const gravadosPorCodigo = new Set<string>();
@@ -284,6 +320,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     custo_cents: p.custo_cents,
     marca: p.marca ?? null,
     categoria: p.categoria ?? null,
+    ...(p.capacidade !== undefined ? { capacidade: p.capacidade } : {}),
     controla_estoque: p.controla_estoque,
     quantidade: p.quantidade,
     origem: "planilha",
@@ -410,7 +447,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const existentes = paraGravar.filter((p) => antigos.has(p.codigo));
-  const atualizados = existentes.length;
+  // Linha recusada pelo banco não conta como atualizada nem desconta um novo
+  // que entrou. O mesmo conjunto já governa a descrição e a troca das fotos.
+  const atualizados = existentes.filter((p) => gravadosPorCodigo.has(p.codigo)).length;
   const criados = Math.max(0, gravados - atualizados);
 
   await audit({

@@ -41,6 +41,10 @@ interface Delecao {
 }
 
 const delecoes: Delecao[] = [];
+/** A22: as contagens da prévia (`select(..., { head: true })`), com os filtros recebidos. */
+const contagens: Delecao[] = [];
+/** Quando setada, a contagem desta tabela devolve erro. */
+let contagemQueFalha: string | null = null;
 const auditadas: Array<Record<string, unknown>> = [];
 
 let papel = "admin";
@@ -104,7 +108,24 @@ function clienteFalso() {
           };
           return alvo;
         },
-        select(_colunas: string) {
+        select(_colunas: string, opcoes?: { count?: string; head?: boolean }) {
+          if (opcoes?.head) {
+            const contador = {
+              eq(coluna: string, valor: unknown) {
+                filtros[coluna] = valor;
+                return contador;
+              },
+              then(resolve: (r: unknown) => void) {
+                contagens.push({ tabela, filtros: { ...filtros } });
+                if (contagemQueFalha === tabela) {
+                  resolve({ count: null, error: { message: `contagem falhou em ${tabela}` } });
+                  return;
+                }
+                resolve({ count: linhasPorTabela[tabela] ?? 0, error: null });
+              },
+            };
+            return contador;
+          }
           return construtor;
         },
         async maybeSingle() {
@@ -154,9 +175,12 @@ function clienteFalso() {
 }
 
 import { apagarDadosOperacionaisDaOrganizacao } from "@/app/actions/settings/apagarDadosOperacionaisDaOrganizacao";
+import { contarDadosParaLimparDaOrganizacao } from "@/app/actions/settings/contarDadosParaLimparDaOrganizacao";
 
 beforeEach(() => {
   delecoes.length = 0;
+  contagens.length = 0;
+  contagemQueFalha = null;
   auditadas.length = 0;
   papel = "admin";
   ehPlatformAdmin = false;
@@ -191,7 +215,7 @@ describe("zona de perigo: o apagamento não sai da própria organização", () =
     }
   });
 
-  it("apaga exatamente as sete raízes declaradas — nem tabela a mais, nem a menos", async () => {
+  it("apaga exatamente as dez raízes declaradas — nem tabela a mais, nem a menos", async () => {
     await apagarDadosOperacionaisDaOrganizacao({ confirmNome: NOME_DA_ORG });
     expect(delecoes.map((d) => d.tabela)).toEqual([
       "messages",
@@ -201,6 +225,10 @@ describe("zona de perigo: o apagamento não sai da própria organização", () =
       "crm_proposals",
       "crm_leads",
       "contacts",
+      // A22 (#4887): o módulo Empresas e pessoas entra no reset.
+      "import_batches",
+      "people",
+      "companies",
     ]);
   });
 
@@ -213,6 +241,13 @@ describe("zona de perigo: o apagamento não sai da própria organização", () =
       expect(ordem.indexOf(restrita)).toBeGreaterThan(-1);
       expect(ordem.indexOf(restrita)).toBeLessThan(posContacts);
     }
+  });
+
+  it("a prospecção fica de fora: a tomba de opt-out (suppression_salt) não pode cair por cascata", async () => {
+    await apagarDadosOperacionaisDaOrganizacao({ confirmNome: NOME_DA_ORG });
+    const apagadas = new Set(delecoes.map((d) => d.tabela));
+    expect(apagadas.has("prospecting_campaigns")).toBe(false);
+    expect(apagadas.has("prospecting_candidates")).toBe(false);
   });
 
   it("nenhuma tabela que a feature promete PRESERVAR aparece no apagamento", async () => {
@@ -377,4 +412,39 @@ describe("zona de perigo: D10 — os PDFs de proposta somem junto (bucket `propo
     expect(r.ok).toBe(true);
     expect(removidosDoBucket).toEqual([]);
   });
+});
+
+describe("limpar dados de teste: a PRÉVIA (A22)", () => {
+  it("conta uma vez cada raiz, na mesma ordem do apagamento, só da organização da SESSÃO, sem apagar nada", async () => {
+    linhasPorTabela.people = 4;
+    linhasPorTabela.companies = 2;
+
+    const r = await contarDadosParaLimparDaOrganizacao();
+
+    expect(r.ok).toBe(true);
+    // A lista é a MESMA do apagamento: tabela nova nas raízes entra na prévia sozinha.
+    expect(contagens.map((c) => c.tabela)).toEqual(RAIZES_DO_APAGAMENTO.map((r) => r.tabela));
+    expect(contagens.every((c) => c.filtros.organization_id === ORG)).toBe(true);
+    expect(delecoes).toEqual([]);
+    if (r.ok) {
+      expect(r.counts.people).toBe(4);
+      expect(r.counts.companies).toBe(2);
+      expect(r.counts.contacts).toBe(0);
+    }
+  });
+
+  it("falha de contagem NÃO vira zero: devolve db_error", async () => {
+    contagemQueFalha = "people";
+    const r = await contarDadosParaLimparDaOrganizacao();
+    expect(r).toEqual({ ok: false, error: "db_error" });
+  });
+
+  for (const papelSemPoder of ["agent", "viewer", "manager"]) {
+    it(`${papelSemPoder} recebe forbidden_role e não conta nada`, async () => {
+      papel = papelSemPoder;
+      const r = await contarDadosParaLimparDaOrganizacao();
+      expect(r).toEqual({ ok: false, error: "forbidden_role" });
+      expect(contagens).toEqual([]);
+    });
+  }
 });

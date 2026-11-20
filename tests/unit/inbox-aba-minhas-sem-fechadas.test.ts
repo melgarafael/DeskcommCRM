@@ -46,15 +46,23 @@ describe("tabToFilter — o que cada aba significa", () => {
     //
     // `comandosDaFila` responde a pergunta certa e continua cobrindo a conversa
     // escalada (ela é `aguardando`, por causa do silêncio, não do status).
-    expect(tabToFilter("unassigned")).toEqual({ comando: ["aguardando"] });
+    // `ninguem` entrou na #4012: o BANCO passou a dizer que a conversa sem dono
+    // não tem robô por trás, e essa conversa espera uma pessoa em QUALQUER
+    // organização — inclusive na que tem agente, quando o agente não é daquele
+    // número. Deixá-la fora trocaria a mentira por um sumiço.
+    expect(tabToFilter("unassigned")).toEqual({ comando: ["aguardando", "ninguem"] });
   });
 
   it("numa org SEM automático, a Fila também traz o que ninguém está atendendo", () => {
     // O controle do caso acima. Sem ele, a Fila de uma instalação recém-instalada
     // — que ainda não publicou agente — nasceria VAZIA com clientes esperando,
     // que é o pior estado possível na primeira impressão.
+    // `automatico` continua aqui só pela JANELA entre o deploy deste código e a
+    // migration 9330 aplicada: nesse intervalo o banco ainda responde
+    // `automatico` para essas conversas, e sem o valor extra a Fila de uma
+    // instalação sem IA nasceria vazia — o P0 que o `ninguem` veio consertar.
     expect(tabToFilter("unassigned", false)).toEqual({
-      comando: ["aguardando", "automatico"],
+      comando: ["aguardando", "ninguem", "automatico"],
     });
   });
 

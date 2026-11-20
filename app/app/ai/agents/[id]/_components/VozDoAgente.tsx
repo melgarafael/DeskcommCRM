@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { showApiError } from "@/components/feedback/ApiErrorToast";
@@ -57,24 +57,29 @@ export function VozDoAgente({ agentId, inicial, disabled }: Props) {
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
 
-  const carregar = useCallback(async () => {
-    try {
-      const res = await apiClient.get<{
-        data: { voiceId: string | null; vozesDisponiveis: string[] };
-      }>("/api/v1/ai/voz");
-      setVozDaOrg(res.data.voiceId ?? "");
-      setVozes(res.data.vozesDisponiveis ?? []);
-    } catch (err) {
-      // Resposta incompleta não derruba o resto do editor: sem lista, cartão fica fora.
-      showApiError(err);
-    } finally {
-      setCarregando(false);
-    }
-  }, []);
-
   useEffect(() => {
-    void carregar();
-  }, [carregar]);
+    // A resposta pode chegar depois que a tela saiu: sem esta guarda, o setState
+    // tardio lançava fora do React e virava rejeição não tratada (verify da 1.108.0).
+    let vivo = true;
+    void (async () => {
+      try {
+        const res = await apiClient.get<{
+          data: { voiceId: string | null; vozesDisponiveis: string[] };
+        }>("/api/v1/ai/voz");
+        if (!vivo) return;
+        setVozDaOrg(res.data.voiceId ?? "");
+        setVozes(res.data.vozesDisponiveis ?? []);
+      } catch (err) {
+        // Resposta incompleta não derruba o resto do editor: sem lista, cartão fica fora.
+        if (vivo) showApiError(err);
+      } finally {
+        if (vivo) setCarregando(false);
+      }
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, []);
 
   async function escolher(valor: string) {
     const anterior = vozDoAgente;

@@ -358,9 +358,14 @@ function anotar(nome: string, dado: unknown): void {
   fs.writeFileSync(evidencia(nome), JSON.stringify(dado, null, 2) + "\n", "utf8");
 }
 
-/** O cabeçalho da barra lateral: o primeiro filho do `<aside>` (`h-14`, `border-b`). */
+/**
+ * O cabeçalho da barra lateral (`h-14`, `border-b`): o primeiro `div` do `<aside>`
+ * que tem essas duas classes. Não `aside > div` — a tela Aparência (#4635) pôs um
+ * painel (`data-casca="menu-painel"`) entre o `<aside>` e o conteúdo, e o "primeiro
+ * filho" passou a ser o menu inteiro (720px), sem o cabeçalho ter mudado um pixel.
+ */
 function cabecalhoDaBarra(page: Page): Locator {
-  return page.locator("aside > div").first();
+  return page.locator("aside div.h-14.border-b").first();
 }
 
 async function medirCaixa(alvo: Locator): Promise<Caixa> {

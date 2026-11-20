@@ -1,7 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { HandlerCtx } from "@/lib/api/handlers/types";
-import { createLeadHandler } from "@/app/api/v1/leads/_handler";
 import { ApiError } from "@/lib/api/types";
 import {
   camposComAnexo,
@@ -11,11 +10,11 @@ import {
 } from "@/lib/leads/campos-exigidos";
 import {
   escolheEtapaDeDestino,
-  montaPayloadDoClone,
   recusaTrocaDeFunil,
   type EtapaDoFunil,
   type OrigemParaClonar,
 } from "@/lib/leads/clonar-para-funil";
+import { criarCloneNoFunil } from "@/lib/leads/clone-com-anexos";
 import { encerraDemanda } from "@/lib/leads/encerramento";
 import { motivoDaPerdaDaOrigem } from "@/lib/leads/motivo-da-perda";
 
@@ -59,7 +58,10 @@ export async function transfereParaOFunil(
   pipelineId: string,
   stageId: string | null,
   razaoNaTimeline: string,
-): Promise<{ ok: true; clone: Record<string, unknown> } | { ok: false; error: string }> {
+): Promise<
+  | { ok: true; clone: Record<string, unknown>; anexos: { copiados: number; falhas: number } }
+  | { ok: false; error: string }
+> {
   const recusa = recusaTrocaDeFunil(origem, pipelineId);
   if (recusa) return { ok: false, error: recusa.code };
 
@@ -131,7 +133,10 @@ export async function transfereParaOFunil(
     );
   }
 
-  const clone = await createLeadHandler(admin, handlerCtx, montaPayloadDoClone(origem, destino.etapa));
+  // O card novo nasce COM os anexos da origem (#4544): `criarCloneNoFunil` é o
+  // passo único dos três caminhos de troca de funil — criar o clone e copiar o
+  // que estava pendurado nele, nesta ordem.
+  const { clone, anexos } = await criarCloneNoFunil(admin, handlerCtx, origem, destino.etapa);
 
   await encerraDemanda(admin, handlerCtx, {
     leadId: origem.id,
@@ -141,5 +146,5 @@ export async function transfereParaOFunil(
     payloadNaTimeline: { to_pipeline_id: pipelineId, to_lead_id: clone.id },
   });
 
-  return { ok: true, clone: clone as unknown as Record<string, unknown> };
+  return { ok: true, clone: clone as unknown as Record<string, unknown>, anexos };
 }

@@ -8,6 +8,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { createClient } from "@/lib/supabase/server";
 import { lerRascunho, type AvisoDeRascunho } from "@/lib/inbox/rascunho-sugerido";
 import { carregarModulosDaLateral } from "@/app/actions/inbox/modulosDaLateral";
+import { carregarAbasDaInbox } from "@/app/actions/inbox/abasDaInbox";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Inbox" };
@@ -51,7 +52,14 @@ export default async function InboxPage({
   // acima — a lateral não pode nascer completa e "pular" para a escolhida
   // depois da hidratação. Sem preferência gravada (o caso comum), devolve o
   // padrão do produto, que é exatamente a lateral de hoje.
-  const { modulos: modulosDaLateral } = await carregarModulosDaLateral();
+  //
+  // AS ABAS DESTA PESSOA (#3313): a ordem da faixa e as que ficam no menu
+  // "Mais" — a mesma casa e a mesma razão da lateral. As duas leituras correm
+  // juntas: são independentes, e em série a Inbox esperaria a soma das duas.
+  const [{ modulos: modulosDaLateral }, { abas: abasDaInbox }] = await Promise.all([
+    carregarModulosDaLateral(),
+    carregarAbasDaInbox(),
+  ]);
   // ?rascunho= é a ponta da caixa de entrada da issue #1611: o texto mora no
   // servidor, e a URL só carrega o ID. Aqui a leitura acontece com a SESSÃO do
   // atendente (RLS), então um rascunho de outra organização vira
@@ -76,6 +84,7 @@ export default async function InboxPage({
       rascunho={avisoDeRascunho}
       painelRecolhidoInicial={painelRecolhido}
       modulosDaLateral={modulosDaLateral}
+      abasDaInbox={abasDaInbox}
     />
   );
 }

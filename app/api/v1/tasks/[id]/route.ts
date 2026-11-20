@@ -38,13 +38,19 @@ import {
   COLUNAS_DA_TAREFA,
   conferirNegocioEContato,
 } from "@/lib/tarefas/negocio-da-tarefa";
+import {
+  criarProximaSemDerrubar,
+  normalizarRegra,
+  regraDeRecorrenciaSchema,
+  regraParaGravar,
+} from "@/lib/tarefas/recorrencia";
 import { conferirResponsavel } from "@/lib/tarefas/responsavel";
 import { PRIORIDADES_DA_TAREFA, SITUACOES_DA_TAREFA, type Tarefa } from "@/lib/tarefas/tipos";
 
 export const dynamic = "force-dynamic";
 
 const COLUNAS =
-  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, created_at, updated_at, lead:crm_leads(id, title)";
+  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, recurrence, recurrence_source_id, created_at, updated_at, lead:crm_leads(id, title)";
 
 const edicaoSchema = z
   .object({
@@ -58,6 +64,11 @@ const edicaoSchema = z
     /** Vincular (`<uuid>`) e desvincular (`null`) a demanda do atendimento (#2818). */
     demanda_id: z.string().uuid().nullable().optional(),
     assigned_to: z.string().uuid().nullable().optional(),
+    /**
+     * A SÉRIE (#4595). `null` DESLIGA a repetição — a série para de gerar e as
+     * ocorrências que já nasceram continuam na lista, como história.
+     */
+    recurrence: regraDeRecorrenciaSchema.nullable().optional(),
   })
   // PATCH vazio gravaria só o `updated_at` e devolveria 200: a tela diria
   // "salvo" sobre uma edição que não existiu.
@@ -158,16 +169,43 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
   // A situação ANTES da edição decide se esta é a vez em que a tarefa fechou.
   // Sem ler antes, marcar "concluída" duas vezes emitiria duas linhas na
   // timeline do negócio — e a segunda seria mentira.
-  const { data: antes } = await supabase
+  // A situação E a série ANTES da edição: a primeira decide se esta é a vez em
+  // que a tarefa fechou, e a segunda diz de qual rotina a próxima nasce (#4595).
+  const { data: antes, error: erroDaLeitura } = await supabase
     .from("crm_tasks")
-    .select("status")
+    .select("status, recurrence_source_id, due_date")
     .eq("id", id)
     .eq("organization_id", organizationId)
     .maybeSingle();
 
+  if (erroDaLeitura) {
+    return fail("internal_error", t("Erro ao salvar a tarefa."), 500, { requestId });
+  }
+
+  // ═══ A SÉRIE: desligar é gravar `null` (#4595) ═══
+  //
+  // A tela manda a regra inteira de volta quando a pessoa muda dias ou hora, e
+  // `null` quando ela desmarca "repetir". Normalizar aqui é o que impede o JSON
+  // torto de chegar ao banco: dia fora de 0–6 ou lista vazia é recusa nomeada,
+  // não série que nunca gera.
+  const alteracao: Record<string, unknown> = { ...parsed.data };
+  if (parsed.data.recurrence !== undefined) {
+    if (parsed.data.recurrence === null) {
+      alteracao.recurrence = null;
+    } else {
+      const regra = normalizarRegra(parsed.data.recurrence);
+      if (!regra) {
+        return fail("validation_failed", t("Escolha a repetição e o horário."), 422, {
+          requestId,
+        });
+      }
+      alteracao.recurrence = regraParaGravar(regra);
+    }
+  }
+
   const { data, error } = await supabase
     .from("crm_tasks")
-    .update(parsed.data)
+    .update(alteracao)
     .eq("id", id)
     .eq("organization_id", organizationId)
     .select(doToken ? COLUNAS_DA_TAREFA : COLUNAS)
@@ -224,6 +262,29 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
       tipo: "task_completed",
       actor: authz.actor,
     });
+
+    // ═══ A PRÓXIMA OCORRÊNCIA (#4595) ═══
+    //
+    // Um dos dois gatilhos — o outro é o agendador (`cron/task-recurrence`), e
+    // os dois caem no mesmo índice único. Só entra quando a tarefa FECHOU
+    // agora: marcar "concluída" numa tarefa que já estava concluída não pode gerar uma segunda
+    // ocorrência, e é o `fechouAgora` que já separa as duas coisas (a mesma
+    // régua que impede duas linhas na timeline do negócio).
+    //
+    // O prazo pode ter sido editado NESTE PATCH: vale o que ficou gravado, com o
+    // de antes como reserva. A criação não derruba a resposta — a conclusão já
+    // está gravada, e o que se perde, quando falha, é só a próxima.
+    await criarProximaSemDerrubar(portaDaAplicacao(), {
+      // `gravada` é a linha que o UPDATE devolveu (o nome da main); o `tarefa`
+      // desta função só existe DEPOIS, já com o negócio juntado.
+      id: gravada.id,
+      organization_id: organizationId,
+      recurrence_source_id:
+        gravada.recurrence_source_id ??
+        (antes as { recurrence_source_id?: string | null } | null)?.recurrence_source_id ??
+        null,
+      due_date: gravada.due_date ?? (antes as { due_date?: string | null } | null)?.due_date ?? null,
+    });
   }
 
   // A edição já está gravada: se a junção do negócio falhar, a resposta sai
@@ -242,11 +303,15 @@ export async function DELETE(req: NextRequest, ctx: Contexto): Promise<Response>
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
+  // Apagar tarefa: agente na sessão, mas o token precisa de `manager` (Spec 33, R2).
+  // A mesma régua do DELETE de agenda/excecoes e do lote da fatia 4: apagar recurso
+  // da organização via token é papel de gerência.
   const authz = await resolveAuthDual(req, {
     requestId,
     resource: "crm_tasks",
     role: "agent",
     scope: "mcp:write",
+    tokenRole: "manager",
   });
   if (!authz.ok) return authz.response;
   const teto = await tetoDeEscritaDoToken(authz, "crm_tasks", requestId);

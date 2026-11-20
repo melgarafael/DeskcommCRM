@@ -9,6 +9,7 @@ import {
 } from "@/lib/agenda/escolha-no-envio";
 import { registerAction } from "@/lib/automation/actions";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
+import { instanteDoEnvio } from "@/lib/automation/instante-do-envio";
 import { renderTemplate } from "@/lib/automation/template";
 import { serviceForAutomation } from "@/lib/atendimento/origem-automacao";
 import { checkDailyLimit, espacarEnvio } from "@/lib/automation/throttle";
@@ -23,14 +24,26 @@ import { mensagemDeErro } from "@/lib/automation/actions/erro-legivel";
 async function postponeUntil(ctx: ActionCtx, config: Record<string, unknown>): Promise<string | null> {
   const escolha = lerEscolhaNoEnvio(config);
   const contato = checarGuardasDeContato(ctx);
-  if (contato.ok) {
-    const protection = (await protecaoAgendaSupabase(ctx.admin, ctx.organizationId, [contato.contact.id])).get(contato.contact.id)!;
-    if (protection.motivo === "leitura_indisponivel") throw new Error("agenda_read_failed");
-    // #3813 — a escolha do passo manda: `enviar`/`nao_enviar` NÃO adiam o evento.
-    const decisao = decidirNoEnvio(protection, escolha);
-    if (decisao.acao === "adiar") return decisao.reavaliar_em;
-    if (decisao.acao === "pular") ctx.anotarPuloPelaAgenda?.(decisao.appointment_id);
-  }
+  // ═══ A GUARDA DO CONTATO VEM ANTES DA ESPERA (#4365) ═══
+  //
+  // Contato que a ação recusaria de qualquer jeito (bloqueado, sem telefone,
+  // sem consentimento, inexistente) não tem o que esperar: adiar só empurra o
+  // evento para a próxima abertura da janela, onde ele volta, é adiado de novo
+  // e — se a janela seguir fechada — nunca chega a ser julgado. O recibo saía
+  // `postponed/fora_da_janela_de_envio` para um contato que NUNCA seria
+  // enviado, escondendo o motivo real (o bloqueio) de quem olha a Atividade.
+  //
+  // Devolver `null` aqui NÃO fura a janela: quem passa na guarda continua
+  // adiando logo abaixo, pela régua do número — a proteção do número segue
+  // intacta. Sem espera, o motor executa a ação, ela reprova na mesma guarda e
+  // grava `skipped` com o motivo (`contact_blocked`, `no_phone`, ...).
+  if (!contato.ok) return null;
+  const protection = (await protecaoAgendaSupabase(ctx.admin, ctx.organizationId, [contato.contact.id])).get(contato.contact.id)!;
+  if (protection.motivo === "leitura_indisponivel") throw new Error("agenda_read_failed");
+  // #3813 — a escolha do passo manda: `enviar`/`nao_enviar` NÃO adiam o evento.
+  const decisao = decidirNoEnvio(protection, escolha);
+  if (decisao.acao === "adiar") return decisao.reavaliar_em;
+  if (decisao.acao === "pular") ctx.anotarPuloPelaAgenda?.(decisao.appointment_id);
   const sessionId = typeof config.channel_session_id === "string" ? config.channel_session_id : null;
   if (!sessionId) return null; // config inválida falha no execute, não adia
 
@@ -107,7 +120,10 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
       if (recusa) return { type: "send_whatsapp_message", status: "failed", error: recusa };
     }
     await espacarEnvio(sessionId);
-    const body = renderTemplate(template, ctx.context);
+    // #3687 — `{{saudacao}}` com o instante do envio, no fuso da organização;
+    // o token só custa leitura quando aparece no texto.
+    const agora = await instanteDoEnvio(ctx.admin, ctx.organizationId, template);
+    const body = renderTemplate(template, ctx.context, undefined, agora);
     const message = await sendMessageHandler(
       ctx.admin,
       {
