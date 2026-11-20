@@ -54,7 +54,7 @@ function camposDaConfig(): string[] {
   return [...src.slice(ini, fim).matchAll(/^ {2}(\w+)\??:/gm)].map((m) => m[1]!);
 }
 
-/** Find exact field reads outside the config loader in a single repository scan. */
+/** Busca as leituras exatas em uma só varredura, fora do módulo que carrega a configuração. */
 function camposConsumidos(campos: string[]): Set<string> {
   const padroes = campos.flatMap((campo) => [
     "-e", `agentConfig.${campo}`,
@@ -78,14 +78,14 @@ describe("knobs da versão publicada", () => {
   beforeAll(() => {
     campos = camposDaConfig();
     consumidos = camposConsumidos(campos);
-  });
+  }, 60_000);
 
   it("o instrumento enxerga (controle positivo)", () => {
     expect(campos.length, "a interface da config veio vazia — o parser quebrou").toBeGreaterThan(15);
     expect(campos).toContain("systemPrompt");
     expect(
       consumidos.has("systemPrompt"),
-      "The repository scan did not find any reads of systemPrompt",
+      "a busca no repositório não encontrou leituras de systemPrompt",
     ).toBe(true);
   });
 
