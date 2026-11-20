@@ -7,13 +7,14 @@
  *  - automation-rules GET (lista), automation-rules/[id]/runs GET,
  *    automation-rules/runs GET: receita A (manager; config:read; tokenRole admin).
  *  - automation-rules/[id] DELETE: receita A (manager; config:write; tokenRole admin).
- *  - channel-schedules GET/POST, channel-schedules/[id] PATCH/DELETE: receita B
- *    (admin; a sessão segue o portão de sempre, com `allowPlatformAdmin`, que
- *    `resolveAuthDual` não repassa).
+ *  - channel-schedules GET: receita B (admin; a sessão segue o portão de
+ *    sempre, com `allowPlatformAdmin`, que `resolveAuthDual` não repassa).
  *
  * Ficam só de sessão (token recebe 401 do `requireRole`, sem cliente admin):
  *  - automation-rules POST: ações carregam ids de outras tabelas sem conferência.
  *  - automation-rules/[id] PATCH: a autoria usa `authz.org.role`.
+ *  - channel-schedules POST e channel-schedules/[id] PATCH/DELETE: agendar a
+ *    pausa de canal pelo token espera o ok do mantenedor.
  *
  * Por caso, sete testes: token de A alcança; token de B não alcança; sem o
  * escopo; abaixo do papel; acima do teto do token; acima do teto da organização;
@@ -438,102 +439,6 @@ caso("GET /api/v1/channel-schedules (janelas e fuso)", {
   },
 });
 
-caso("POST /api/v1/channel-schedules (criar janela)", {
-  metodo: "POST",
-  recurso: "channel_schedules",
-  papel: "admin",
-  escopo: "config:write",
-  recursoDoTeto: "channel_schedules",
-  plataforma: true,
-  chamar: (token, de) =>
-    rotaHorarios.POST(
-      req("POST", "/api/v1/channel-schedules", token, corpoJanela(de === "A" ? CANAL_A : CANAL_B)),
-    ),
-  alcanca: async (res) => {
-    expect(res.status).toBe(200);
-    const corpo = await lerJson<{ data: { agenda: { organization_id: string; created_by: string | null } } }>(res);
-    expect(corpo.data.agenda.organization_id).toBe(ORG_A);
-    expect(corpo.data.agenda.created_by).toBeNull();
-    expect(falso.linhas.channel_schedules).toHaveLength(3);
-    expect(audit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: "channel.schedule_created",
-        organizationId: ORG_A,
-        actorUserId: null,
-        actorApiTokenId: TOKEN_A,
-      }),
-    );
-  },
-  naoAlcanca: async (res) => {
-    // O canal pedido é de A: para B ele não existe (404), e nada é gravado.
-    expect(res.status).toBe(404);
-    expect(falso.linhas.channel_schedules).toHaveLength(2);
-    expect(audit).not.toHaveBeenCalled();
-  },
-});
-
-caso("PATCH /api/v1/channel-schedules/[id] (editar horário)", {
-  metodo: "PATCH",
-  recurso: "channel_schedules",
-  papel: "admin",
-  escopo: "config:write",
-  recursoDoTeto: "channel_schedules_editar",
-  plataforma: true,
-  chamar: (token) =>
-    rotaHorario.PATCH(
-      req("PATCH", `/api/v1/channel-schedules/${JANELA_A}`, token, { starts_at: futuro(5), ends_at: futuro(6) }),
-      comId(JANELA_A),
-    ),
-  alcanca: async (res) => {
-    expect(res.status).toBe(200);
-    const corpo = await lerJson<{ data: { mudou: boolean } }>(res);
-    expect(corpo.data.mudou).toBe(true);
-    expect(audit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: "channel.schedule_updated",
-        organizationId: ORG_A,
-        actorUserId: null,
-        actorApiTokenId: TOKEN_A,
-        resourceId: JANELA_A,
-      }),
-    );
-  },
-  naoAlcanca: async (res) => {
-    expect(res.status).toBe(404);
-    expect(audit).not.toHaveBeenCalled();
-  },
-});
-
-caso("DELETE /api/v1/channel-schedules/[id] (cancelar janela)", {
-  metodo: "DELETE",
-  recurso: "channel_schedules",
-  papel: "admin",
-  escopo: "config:write",
-  recursoDoTeto: "channel_schedules_cancelar",
-  plataforma: true,
-  chamar: (token) => rotaHorario.DELETE(req("DELETE", `/api/v1/channel-schedules/${JANELA_A}`, token), comId(JANELA_A)),
-  alcanca: async (res) => {
-    expect(res.status).toBe(200);
-    const corpo = await lerJson<{ data: { status: string; mudou: boolean } }>(res);
-    expect(corpo.data.status).toBe("cancelled");
-    expect(corpo.data.mudou).toBe(true);
-    expect(audit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: "channel.schedule_cancelled",
-        organizationId: ORG_A,
-        actorUserId: null,
-        actorApiTokenId: TOKEN_A,
-        resourceId: JANELA_A,
-      }),
-    );
-  },
-  naoAlcanca: async (res) => {
-    expect(res.status).toBe(404);
-    expect(linhasDaTabela(falso, "channel_schedules").find((l) => l.id === JANELA_A)?.status).toBe("scheduled");
-    expect(audit).not.toHaveBeenCalled();
-  },
-});
-
 // ---------------------------------------------------------------------------
 // Métodos que ficam só de sessão
 // ---------------------------------------------------------------------------
@@ -567,6 +472,32 @@ describe("fica só de sessão: o token recebe 401 e o cliente admin nunca é mon
     expect(createAdminClient).not.toHaveBeenCalled();
     expect(falso.cadeias).toEqual([]);
   });
+
+  // Agendar, editar e cancelar a pausa de canal: só pela tela até o ok do
+  // mantenedor. A leitura (GET) segue pelo token, no caso acima.
+  it.each([
+    ["POST /api/v1/channel-schedules", () =>
+      rotaHorarios.POST(req("POST", "/api/v1/channel-schedules", TOKEN_A, corpoJanela(CANAL_A)))],
+    ["PATCH /api/v1/channel-schedules/[id]", () =>
+      rotaHorario.PATCH(
+        req("PATCH", `/api/v1/channel-schedules/${JANELA_A}`, TOKEN_A, { starts_at: futuro(5), ends_at: futuro(6) }),
+        comId(JANELA_A),
+      )],
+    ["DELETE /api/v1/channel-schedules/[id]", () =>
+      rotaHorario.DELETE(req("DELETE", `/api/v1/channel-schedules/${JANELA_A}`, TOKEN_A), comId(JANELA_A))],
+  ] as const)("%s: sem cookie, o requireRole responde 401 ao token", async (_rotulo, chamar) => {
+    vi.mocked(requireRole).mockResolvedValueOnce({
+      ok: false,
+      response: new Response(null, { status: 401 }),
+    } as never);
+    tokenDe(ORG_A, TOKEN_A, "admin");
+    const res = await chamar();
+    expect(res.status).toBe(401);
+    expect(requireRole).toHaveBeenCalledWith("admin", expect.objectContaining({ resource: "channel_schedules" }));
+    expect(createAdminClient).not.toHaveBeenCalled();
+    expect(falso.cadeias).toEqual([]);
+    expect(audit).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -585,9 +516,9 @@ describe("bloco de borda das portas", () => {
     expect(isPublicPath(`/api/v1/automation-rules/runs/${EXEC_A}/resend`)).toBe(false);
   });
 
-  it("channel-schedules: coleção e [id] com UUID entram; forma que não é UUID e sub-path não", () => {
+  it("channel-schedules: só a coleção (GET) entra; [id], que só escreve, e sub-path não", () => {
     expect(isPublicPath("/api/v1/channel-schedules")).toBe(true);
-    expect(isPublicPath(`/api/v1/channel-schedules/${JANELA_A}`)).toBe(true);
+    expect(isPublicPath(`/api/v1/channel-schedules/${JANELA_A}`)).toBe(false);
     expect(isPublicPath("/api/v1/channel-schedules/abc")).toBe(false);
     expect(isPublicPath(`/api/v1/channel-schedules/${JANELA_A}/x`)).toBe(false);
   });

@@ -9,26 +9,21 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * deixa de existir e a trilha é o único lugar onde a resposta "quem estava lá"
  * sobrevive.
  *
- * Admin client com org filtrada à mão (do portão): a tabela não concede escrita
- * a `authenticated`.
- *
- * Aceitam sessão de navegador (manager+) OU Bearer `dsk_…` (`config:write`, papel
- * admin via `tokenRole`). A organização vem do portão, nunca do corpo ou do path.
- * No token o `actorUserId` do audit é nulo e o `actorApiTokenId` leva o token.
+ * Admin client com org filtrada à mão (activeOrg do cookie): a tabela não
+ * concede escrita a `authenticated`.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
-import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
 import { seSetoresDesligado } from "@/lib/atendimento/setores-modulo";
+import { requireRole } from "@/lib/auth/require-role";
 import { sectorPatchSchema, validateRequest } from "@/lib/schemas";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
-import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 
 export const dynamic = "force-dynamic";
 
@@ -45,19 +40,9 @@ export async function PATCH(
   const requestId = randomUUID();
   const desligado = await seSetoresDesligado(requestId);
   if (desligado) return desligado;
-  const authz = await resolveAuthDual(req, {
-    requestId,
-    resource: "attendant_sectors",
-    role: "manager",
-    scope: "config:write",
-    tokenRole: "admin",
-  });
+  const authz = await requireRole("manager", { requestId, resource: "attendant_sectors" });
   if (!authz.ok) return authz.response;
-  const teto = await tetoDeEscritaDoToken(authz, "attendant_sectors", requestId);
-  if (teto) return teto;
-  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
-  const orgId = authz.organizationId;
-  const actorUserId = authz.actor.type === "user" ? authz.actor.id : null;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
   const { id } = await ctx.params;
   if (!idSchema.safeParse(id).success) {
@@ -88,7 +73,7 @@ export async function PATCH(
     const { data: atual, error: atualError } = await admin
       .from("attendant_sectors")
       .select("color")
-      .eq("organization_id", orgId)
+      .eq("organization_id", authz.org.orgId)
       .eq("id", id)
       .maybeSingle();
     if (atualError) return fail("internal_error", atualError.message, 500, { requestId });
@@ -99,7 +84,7 @@ export async function PATCH(
   const { data: row, error } = await admin
     .from("attendant_sectors")
     .update({ ...input, updated_at: new Date().toISOString() })
-    .eq("organization_id", orgId)
+    .eq("organization_id", authz.org.orgId)
     .eq("id", id)
     .select(SELECT_COLS)
     .maybeSingle();
@@ -114,9 +99,8 @@ export async function PATCH(
 
   void audit({
     action: "attendant.sector_updated",
-    actorUserId,
-    actorApiTokenId: authz.apiTokenId ?? null,
-    organizationId: orgId,
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
     resourceType: "attendant_sectors",
     resourceId: id,
     requestId,
@@ -135,7 +119,7 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  req: NextRequest,
+  _req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const supportDenied = await requireSupportWrite();
@@ -144,19 +128,9 @@ export async function DELETE(
   const requestId = randomUUID();
   const desligado = await seSetoresDesligado(requestId);
   if (desligado) return desligado;
-  const authz = await resolveAuthDual(req, {
-    requestId,
-    resource: "attendant_sectors",
-    role: "manager",
-    scope: "config:write",
-    tokenRole: "admin",
-  });
+  const authz = await requireRole("manager", { requestId, resource: "attendant_sectors" });
   if (!authz.ok) return authz.response;
-  const teto = await tetoDeEscritaDoToken(authz, "attendant_sectors", requestId);
-  if (teto) return teto;
-  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
-  const orgId = authz.organizationId;
-  const actorUserId = authz.actor.type === "user" ? authz.actor.id : null;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
   const { id } = await ctx.params;
   if (!idSchema.safeParse(id).success) {
@@ -167,14 +141,14 @@ export async function DELETE(
   const { data: members, error: membersError } = await admin
     .from("attendant_sector_members")
     .select("user_id")
-    .eq("organization_id", orgId)
+    .eq("organization_id", authz.org.orgId)
     .eq("sector_id", id);
   if (membersError) return fail("internal_error", membersError.message, 500, { requestId });
 
   const { data: row, error } = await admin
     .from("attendant_sectors")
     .delete()
-    .eq("organization_id", orgId)
+    .eq("organization_id", authz.org.orgId)
     .eq("id", id)
     .select("id, name")
     .maybeSingle();
@@ -183,9 +157,8 @@ export async function DELETE(
 
   void audit({
     action: "attendant.sector_deleted",
-    actorUserId,
-    actorApiTokenId: authz.apiTokenId ?? null,
-    organizationId: orgId,
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
     resourceType: "attendant_sectors",
     resourceId: id,
     requestId,

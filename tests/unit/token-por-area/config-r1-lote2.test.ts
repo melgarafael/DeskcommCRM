@@ -1,16 +1,17 @@
 // @vitest-environment node
 /**
- * Token de integração nas 8 rotas (10 métodos) do lote 2 da fatia R1 (Spec 33):
+ * Token de integração nas rotas do lote 2 da fatia R1 (Spec 33):
  *
- *   PUT    attendants/sector/[user_id]        config:write  manager (sessão)  admin (token)
- *   PATCH  attendants/sectors/[id]            config:write  manager           admin
- *   DELETE attendants/sectors/[id]            config:write  manager           admin
- *   GET    attendants/sectors                 config:read   viewer            admin
- *   POST   attendants/sectors                 config:write  manager           admin
+ *   GET    attendants/sectors                 config:read   viewer (sessão)   admin (token)
  *   POST   message-templates                  config:write  agent             admin
  *   PATCH  message-templates/[id]             config:write  agent             admin
  *   POST   message-templates/[id]/midias      config:write  agent             admin
  *   PUT    message-templates/[id]/ordem       config:write  agent             admin
+ *
+ * Ficam só de sessão (bloco próprio de 401 ao token): criar, renomear e apagar
+ * setor (`attendants/sectors` POST, `attendants/sectors/[id]` PATCH/DELETE) e
+ * trocar as filas de uma pessoa (`attendants/sector/[user_id]` PUT). A escrita
+ * da área de equipe pelo token espera o ok do mantenedor.
  *
  * Fica de FORA (PAREI, relatado): `automation-rules` POST. A ação da regra carrega
  * ids de outras tabelas (funil, etapa, canal, agente, pessoa, fluxo, aninhados em
@@ -270,71 +271,6 @@ async function corpoDe(res: Response): Promise<{ data: Linha }> {
 
 const CASOS: Caso[] = [
   {
-    nome: "PUT /attendants/sector/[user_id]",
-    papel: "manager",
-    resource: "attendant_sector_members",
-    escopo: "config:write",
-    escreve: true,
-    statusDeSucesso: 200,
-    acao: "attendant.sector_assigned",
-    chamar: (token) =>
-      rotaSetorDoAtendente.PUT(
-        reqDe("PUT", `/api/v1/attendants/sector/${ANA_A}`, token, { sector_ids: [SETOR_A2] }),
-        comUserId(ANA_A),
-      ),
-    verificaA: async (res, f) => {
-      expect((await corpoDe(res)).data).toEqual({ user_id: ANA_A, sector_ids: [SETOR_A2] });
-      const upserts = cadeiasDeEscrita(f.cadeias).filter((c) => c.tabela === "attendant_sector_members");
-      expect(upserts.some((c) => c.operacao === "upsert")).toBe(true);
-    },
-    // A pessoa é de A: para B ela não existe na organização.
-    verificaB: async (res, f) => {
-      expect(res.status).toBe(404);
-      expect(cadeiasDeEscrita(f.cadeias)).toEqual([]);
-    },
-  },
-  {
-    nome: "PATCH /attendants/sectors/[id]",
-    papel: "manager",
-    resource: "attendant_sectors",
-    escopo: "config:write",
-    escreve: true,
-    statusDeSucesso: 200,
-    acao: "attendant.sector_updated",
-    chamar: (token) =>
-      rotaSetor.PATCH(reqDe("PATCH", `/api/v1/attendants/sectors/${SETOR_A}`, token, { name: "Renomeada" }), comId(SETOR_A)),
-    verificaA: async (res, f) => {
-      expect((await corpoDe(res)).data.name).toBe("Renomeada");
-      expect(linhaDe(f, "attendant_sectors", SETOR_A)?.name).toBe("Renomeada");
-    },
-    verificaB: async (res, f) => {
-      expect(res.status).toBe(404);
-      // Qualquer escrita que o token de B tenha tentado ficou dentro de B.
-      expect(
-        cadeiasDeEscrita(f.cadeias).every((c) => c.filtros.some(([col, v]) => col === "organization_id" && v === ORG_B)),
-      ).toBe(true);
-      expect(linhaDe(f, "attendant_sectors", SETOR_A)?.name).toBe(`Fila ${MARCA_A}`);
-    },
-  },
-  {
-    nome: "DELETE /attendants/sectors/[id]",
-    papel: "manager",
-    resource: "attendant_sectors",
-    escopo: "config:write",
-    escreve: true,
-    statusDeSucesso: 200,
-    acao: "attendant.sector_deleted",
-    chamar: (token) => rotaSetor.DELETE(reqDe("DELETE", `/api/v1/attendants/sectors/${SETOR_A2}`, token), comId(SETOR_A2)),
-    verificaA: async (res, f) => {
-      expect((await corpoDe(res)).data).toEqual({ id: SETOR_A2, deleted: true });
-      expect(linhaDe(f, "attendant_sectors", SETOR_A2)).toBeUndefined();
-    },
-    verificaB: async (res, f) => {
-      expect(res.status).toBe(404);
-      expect(linhaDe(f, "attendant_sectors", SETOR_A2)).toBeDefined();
-    },
-  },
-  {
     nome: "GET /attendants/sectors",
     papel: "viewer",
     resource: "attendant_sectors",
@@ -352,27 +288,6 @@ const CASOS: Caso[] = [
       const texto = await res.text();
       expect(texto).toContain(MARCA_B);
       expect(texto).not.toContain(MARCA_A);
-    },
-  },
-  {
-    nome: "POST /attendants/sectors",
-    papel: "manager",
-    resource: "attendant_sectors",
-    escopo: "config:write",
-    escreve: true,
-    statusDeSucesso: 201,
-    acao: "attendant.sector_created",
-    chamar: (token) => rotaSetores.POST(reqDe("POST", "/api/v1/attendants/sectors", token, { name: "Nova fila" })),
-    verificaA: async (res, f) => {
-      expect((await corpoDe(res)).data.name).toBe("Nova fila");
-      const novas = (f.linhas.attendant_sectors ?? []).filter((l) => l.name === "Nova fila");
-      expect(novas.map((l) => l.organization_id)).toEqual([ORG_A]);
-    },
-    // A criação é da própria organização: com o token de B, a fila nasce em B.
-    verificaB: async (res, f) => {
-      expect(res.status).toBe(201);
-      const novas = (f.linhas.attendant_sectors ?? []).filter((l) => l.name === "Nova fila");
-      expect(novas.map((l) => l.organization_id)).toEqual([ORG_B]);
     },
   },
   {
@@ -580,6 +495,38 @@ describe.each(CASOS)("$nome", (caso) => {
     expect(requireRole).toHaveBeenCalledWith(caso.papel, expect.objectContaining({ resource: caso.resource }));
     expect(validateBearerToken).not.toHaveBeenCalled();
     expect(falso.cadeias).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Setores e filas: só de sessão
+// ---------------------------------------------------------------------------
+
+describe("setores e filas ficam só de sessão: o token recebe 401 e o cliente admin nunca é montado", () => {
+  it.each([
+    ["PUT /attendants/sector/[user_id]", "attendant_sector_members", () =>
+      rotaSetorDoAtendente.PUT(
+        reqDe("PUT", `/api/v1/attendants/sector/${ANA_A}`, TOKEN_A, { sector_ids: [SETOR_A2] }),
+        comUserId(ANA_A),
+      )],
+    ["PATCH /attendants/sectors/[id]", "attendant_sectors", () =>
+      rotaSetor.PATCH(reqDe("PATCH", `/api/v1/attendants/sectors/${SETOR_A}`, TOKEN_A, { name: "Renomeada" }), comId(SETOR_A))],
+    ["DELETE /attendants/sectors/[id]", "attendant_sectors", () =>
+      rotaSetor.DELETE(reqDe("DELETE", `/api/v1/attendants/sectors/${SETOR_A2}`, TOKEN_A), comId(SETOR_A2))],
+    ["POST /attendants/sectors", "attendant_sectors", () =>
+      rotaSetores.POST(reqDe("POST", "/api/v1/attendants/sectors", TOKEN_A, { name: "Nova fila" }))],
+  ] as const)("%s: sem cookie, o requireRole responde 401 ao token", async (_rotulo, resource, chamar) => {
+    vi.mocked(requireRole).mockResolvedValueOnce({
+      ok: false,
+      response: new Response(null, { status: 401 }),
+    } as never);
+    tokenDe(ORG_A, TOKEN_A, "admin");
+    const res = await chamar();
+    expect(res.status).toBe(401);
+    expect(requireRole).toHaveBeenCalledWith("manager", expect.objectContaining({ resource }));
+    expect(createAdminClient).not.toHaveBeenCalled();
+    expect(falso.cadeias).toEqual([]);
+    expect(audit).not.toHaveBeenCalled();
   });
 });
 
@@ -902,9 +849,7 @@ describe("PUBLIC_PATHS: borda do proxy para as portas do lote 2", () => {
   const UUID = "11111111-1111-4111-8111-111111111111";
 
   it.each([
-    `/api/v1/attendants/sector/${UUID}`,
     "/api/v1/attendants/sectors",
-    `/api/v1/attendants/sectors/${UUID}`,
     "/api/v1/message-templates",
     `/api/v1/message-templates/${UUID}`,
     `/api/v1/message-templates/${UUID}/midias`,
@@ -914,6 +859,9 @@ describe("PUBLIC_PATHS: borda do proxy para as portas do lote 2", () => {
   });
 
   it.each([
+    // Só escrevem, e a escrita da área de equipe pelo token espera o ok do mantenedor.
+    `/api/v1/attendants/sector/${UUID}`,
+    `/api/v1/attendants/sectors/${UUID}`,
     "/api/v1/attendants/sector",
     "/api/v1/attendants/sector/abc",
     `/api/v1/attendants/sector/${UUID}/x`,

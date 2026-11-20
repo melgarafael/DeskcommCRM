@@ -103,8 +103,6 @@ export type Chamador = {
   obterDb: () => SupabaseClient;
   /** Autor da linha e do audit: a pessoa da sessão, ou `null` quando o token não é uma pessoa. */
   autorId: string | null;
-  /** Só no ramo do token: o `api_tokens.id`, que vira `actor_api_token_id` no audit. */
-  tokenId?: string | null;
 };
 
 /** Cria a janela. Nada pausa agora — o cron aplica na hora marcada. */
@@ -113,26 +111,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
   const requestId = randomUUID();
 
-  // Token de integração (Spec 33, R1): só com Bearer. A sessão segue o portão de sempre.
-  if (extractBearer(req.headers.get("authorization"))) {
-    const authz = await resolveAuthDual(req, {
-      requestId,
-      resource: "channel_schedules",
-      role: "admin",
-      scope: "config:write",
-      tokenRole: "admin",
-    });
-    if (!authz.ok) return authz.response;
-    const teto = await tetoDeEscritaDoToken(authz, "channel_schedules", requestId);
-    if (teto) return teto;
-    return criarJanela(req, requestId, {
-      organizationId: authz.organizationId,
-      obterDb: () => authz.supabase,
-      autorId: authz.actor.type === "user" ? authz.actor.id : null,
-      tokenId: authz.apiTokenId ?? null,
-    });
-  }
-
+  // Só de sessão: agendar a pausa para o atendimento da organização, e a escrita
+  // pelo token de integração espera o ok do mantenedor (Spec 33). A leitura (GET)
+  // aceita o token.
   const auth = await requireRole("admin", {
     requestId,
     resource: "channel_schedules",
@@ -202,7 +183,6 @@ async function criarJanela(req: NextRequest, requestId: string, chamador: Chamad
     resourceId: agenda.id,
     requestId,
     metadata: { starts_at: agenda.starts_at, ends_at: agenda.ends_at, channel_session_id: canal },
-    actorApiTokenId: chamador.tokenId,
   });
   return ok({ agenda }, { requestId });
 }

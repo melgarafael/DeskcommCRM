@@ -14,9 +14,10 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * 409 `sector_name_taken`: é a idempotência natural da criação — repetir o
  * POST não cria um segundo "Suporte".
  *
- * Aceitam sessão de navegador OU Bearer `dsk_…` (`config:read` no GET,
- * `config:write` no POST; papel admin via `tokenRole`). A organização vem do
- * portão, nunca do corpo. No token o `actorUserId` do audit é nulo.
+ * O GET aceita sessão de navegador OU Bearer `dsk_…` (`config:read`, papel
+ * admin via `tokenRole`); a organização vem do portão, nunca do corpo. O POST
+ * segue só de sessão: a escrita de setores pelo token espera o ok do
+ * mantenedor (Spec 33).
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
@@ -26,11 +27,11 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
 import { seSetoresDesligado } from "@/lib/atendimento/setores-modulo";
+import { requireRole } from "@/lib/auth/require-role";
 import { roleAtLeast, type Role } from "@/lib/auth/types";
 import { sectorCreateSchema, validateRequest } from "@/lib/schemas";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
-import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 
 export const dynamic = "force-dynamic";
 
@@ -104,18 +105,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const desligado = await seSetoresDesligado(requestId);
   if (desligado) return desligado;
-  const authz = await resolveAuthDual(req, {
-    requestId,
-    resource: "attendant_sectors",
-    role: "manager",
-    scope: "config:write",
-    tokenRole: "admin",
-  });
+  const authz = await requireRole("manager", { requestId, resource: "attendant_sectors" });
   if (!authz.ok) return authz.response;
-  const teto = await tetoDeEscritaDoToken(authz, "attendant_sectors", requestId);
-  if (teto) return teto;
-  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
-  const orgId = authz.organizationId;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
   let input;
   try {
@@ -134,7 +126,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const { data: row, error } = await admin
     .from("attendant_sectors")
     .insert({
-      organization_id: orgId,
+      organization_id: authz.org.orgId,
       name: input.name,
       description: input.description,
       // Omitir horário na criação = `{}` no banco = 24/7 (default da coluna).
@@ -152,9 +144,8 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   void audit({
     action: "attendant.sector_created",
-    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
-    actorApiTokenId: authz.apiTokenId ?? null,
-    organizationId: orgId,
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
     resourceType: "attendant_sectors",
     resourceId: row.id,
     requestId,

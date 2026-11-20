@@ -196,11 +196,11 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   "/api/v1/automation-rules/[id]/runs",
   "/api/v1/automation-rules/runs",
 
-  // channel-schedules (R1). Quem autentica é a própria rota, por `resolveAuthDual`:
-  // token com `config:read` (GET) ou `config:write` (escrita) e papel admin
-  // (`tokenRole`). `[id]` é forma de UUID.
+  // channel-schedules (R1), só leitura. Quem autentica é a própria rota, por
+  // `resolveAuthDual`: token com `config:read` e papel admin (`tokenRole`) no GET.
+  // Agendar, editar e cancelar a pausa (POST, e `[id]` inteiro) seguem só de
+  // sessão até o ok do mantenedor; `[id]` não tem porta.
   "/api/v1/channel-schedules",
-  "/api/v1/channel-schedules/[id]",
 
   // attendants/availability e team/assignable (só GET, leitura). Quem autentica é a
   // própria rota, por `resolveAuthDual`: token com `config:read` e papel admin
@@ -210,18 +210,10 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   "/api/v1/attendants/availability",
   "/api/v1/team/assignable",
 
-  // attendants/sector (R1). Quem autentica é a própria rota, por `resolveAuthDual`:
-  // token com `config:write` e papel admin (`tokenRole`). `[user_id]` é forma de
-  // UUID (a rota recusa o resto com 404).
-  "/api/v1/attendants/sector/[user_id]",
-
-  // attendants/sectors/[id] (R1). Quem autentica é a própria rota, por
-  // `resolveAuthDual`: token com `config:write` e papel admin (`tokenRole`)
-  // no PATCH e no DELETE. `[id]` é forma de UUID (a rota recusa o resto com 404).
-  "/api/v1/attendants/sectors/[id]",
-
-  // attendants/sectors (R1). Quem autentica é a própria rota, por `resolveAuthDual`:
-  // token com `config:read` (GET) ou `config:write` (POST) e papel admin
-  // (`tokenRole`). Caminho literal, sem segmento dinâmico.
+  // attendants/sectors (R1), só leitura. Quem autentica é a própria rota, por
+  // `resolveAuthDual`: token com `config:read` e papel admin (`tokenRole`) no GET.
+  // Caminho literal, sem segmento dinâmico. Criar, renomear e apagar setor (POST,
+  // `sectors/[id]`) e trocar as filas de uma pessoa (`sector/[user_id]`) seguem só
+  // de sessão até o ok do mantenedor, e não têm porta.
   "/api/v1/attendants/sectors",
 ];
