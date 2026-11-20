@@ -510,6 +510,25 @@ describe("deriveMessageMedia", () => {
       },
     );
 
+    it("falha ao gravar o desfecho devolve error, sem avisar a Central", async () => {
+      // Sugerido por @xofrd na #4889. O dublê ignora o retorno de
+      // `updateEqMock`: quem decide o `{ error }` do update é `updateError`
+      // (zerado no beforeEach de fora).
+      vi.mocked(deriveMediaText).mockRejectedValue(
+        new PdfExtractError(SEM_TEXTO, undefined, "sem_texto"),
+      );
+      updateError = { message: "db fora" };
+
+      const r = await deriveMessageMedia(eventRow(0));
+
+      expect(r).toEqual({
+        consumer_key: "media_derive_v1",
+        status: "error",
+        detail: "failed_status_update_failed",
+      });
+      expect(inboxInsertMock).not.toHaveBeenCalled();
+    });
+
     it("erro REAL de extração (motivo falha) continua tentando e avisa na última", async () => {
       // O controle que dá sentido ao caso acima: o mesmo `PdfExtractError`,
       // com o outro motivo, tem de seguir o caminho de sempre.
