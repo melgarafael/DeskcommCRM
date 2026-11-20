@@ -17,7 +17,7 @@ import { beforeEach, describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import { customFieldSchema } from "@/lib/schemas/settings";
+import { customFieldSchema, MAX_CAMPOS_DO_NEGOCIO } from "@/lib/schemas/settings";
 
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
@@ -967,10 +967,18 @@ describe("o botão de acrescentar campo e a cota do negócio (#3111)", () => {
     expect(screen.getByRole("button", { name: /Adicionar campo/i })).toBeInTheDocument();
   });
 
-  it("50 campos do negócio escondem o botão, com ou sem contato junto", () => {
-    render(<PipelinesClient pipelines={[funilCom(50, 5)]} podeEditarConfig />);
+  it("o teto de campos do negócio esconde o botão, com ou sem contato junto", () => {
+    render(<PipelinesClient pipelines={[funilCom(MAX_CAMPOS_DO_NEGOCIO, 5)]} podeEditarConfig />);
     abrirEditores();
     expect(screen.queryByRole("button", { name: /Adicionar campo/i })).toBeNull();
+  });
+
+  it("um campo abaixo do teto ainda mostra o botão (#4780: o teto é 100)", () => {
+    render(
+      <PipelinesClient pipelines={[funilCom(MAX_CAMPOS_DO_NEGOCIO - 1, 5)]} podeEditarConfig />,
+    );
+    abrirEditores();
+    expect(screen.getByRole("button", { name: /Adicionar campo/i })).toBeInTheDocument();
   });
 });
 
