@@ -17713,21 +17713,57 @@ $fn_comando$;
 comment on function public.fn_comando_da_conversa(text, uuid, timestamptz, boolean, boolean, timestamptz)
   is 'Quem manda na conversa. Espelho SQL de comandoDaConversa() (lib/inbox/comando-da-conversa.ts); as duas são casadas por tests/invariants/comando-da-conversa-espelha-o-ts.test.ts.';
 
-create or replace function public.comando_da_conversa(c public.conversations)
+-- O parâmetro é SEM NOME, como o de todas as definições seguintes (0404). Ele
+-- era `c`, e cada update renomeava a função para `c` aqui e contava com os
+-- `drop` do apêndice para desfazer. Bastava o operador ter um objeto próprio
+-- sobre a função (uma view de relatório, por exemplo) para os `drop` falharem e
+-- o `create or replace` do apêndice parar em "cannot change name of input
+-- parameter c", com a função presa nesta versão antiga e invoker.
+--
+-- O bloco abaixo cura o banco que já ficou preso com o nome: sem dependente, ele
+-- derruba e o resto do arquivo recria; com dependente, a mensagem diz quais são.
+-- Os nomes e o que fazer vão na MENSAGEM, e não só no DETAIL/HINT: o update.sh
+-- mostra na tela apenas as linhas ERROR, e o resto fica no log.
+do $cura$
+begin
+  if exists (select 1 from pg_proc
+              where oid = to_regprocedure('public.comando_da_conversa(public.conversations)')
+                and proargnames is not null) then
+    drop function public.comando_da_conversa(public.conversations);
+  end if;
+exception when dependent_objects_still_exist then
+  raise exception using
+    message = format(
+      'a atualização de comando_da_conversa(conversations) parou porque objetos criados por você dependem dela: %s. Guarde a definição deles, remova-os, rode a atualização de novo e recrie-os',
+      (select string_agg(distinct coalesce(r.ev_class::regclass::text,
+                                           pg_describe_object(d.classid, d.objid, d.objsubid)), ', ')
+         from pg_depend d
+         left join pg_rewrite r on d.classid = 'pg_rewrite'::regclass and r.oid = d.objid
+        where d.refobjid = 'public.comando_da_conversa(public.conversations)'::regprocedure
+          and d.deptype = 'n')),
+    detail  = (select string_agg(pg_describe_object(d.classid, d.objid, d.objsubid), ', ')
+                 from pg_depend d
+                where d.refobjid = 'public.comando_da_conversa(public.conversations)'::regprocedure
+                  and d.deptype = 'n'),
+    hint    = 'Guarde a definição desses objetos, remova-os, rode a atualização de novo e recrie-os.';
+end
+$cura$;
+
+create or replace function public.comando_da_conversa(public.conversations)
 returns text
 language sql
 stable
 set search_path = public
 as $comando$
   select public.fn_comando_da_conversa(
-    c.status,
-    c.assigned_to_user_id,
-    c.bot_silenced_until,
+    $1.status,
+    $1.assigned_to_user_id,
+    $1.bot_silenced_until,
     -- `coalesce` porque `contact_id` é anulável no schema: contato ausente não pode
     -- virar `null` e derrubar a linha inteira para fora de todo filtro — o efeito
     -- seria uma conversa invisível em TODAS as abas.
-    coalesce((select ct.force_human from public.contacts ct where ct.id = c.contact_id), false),
-    coalesce((select ct.is_blocked  from public.contacts ct where ct.id = c.contact_id), false),
+    coalesce((select ct.force_human from public.contacts ct where ct.id = $1.contact_id), false),
+    coalesce((select ct.is_blocked  from public.contacts ct where ct.id = $1.contact_id), false),
     now()
   );
 $comando$;
@@ -38603,9 +38639,11 @@ create trigger trg_lead_so_liga_a_propria_empresa
 -- dela mesma. O DROP leva a ACL, então as DUAS origens de EXECUTE voltam
 -- explícitas; o `notify` é obrigatório porque a forma do schema mudou (o /rpc
 -- some) e sem ele o PostgREST serve o schema velho até reinício manual.
-drop function if exists public.comando_da_conversa(public.conversations);
-
-create function public.comando_da_conversa(public.conversations)
+-- Era DROP + CREATE. Virou `create or replace`: o parâmetro já é sem nome desde
+-- a primeira definição deste arquivo, e um objeto do operador sobre a função
+-- (view de relatório) fazia o DROP falhar e travava a atualização. Os grants
+-- logo abaixo continuam reafirmando as duas origens de EXECUTE.
+create or replace function public.comando_da_conversa(public.conversations)
 returns text
 language sql
 stable
@@ -42826,9 +42864,11 @@ comment on function public.fn_comando_da_conversa(text, uuid, timestamptz, boole
 -- DEPOIS do da 0404 de propósito: é a última definição que vale, e ela tem de
 -- carregar as duas decisões. DROP sem `cascade`, como na 0404 (nada depende
 -- dela); o DROP leva a ACL, então as duas origens de EXECUTE voltam explícitas.
-drop function if exists public.comando_da_conversa(public.conversations);
-
-create function public.comando_da_conversa(public.conversations)
+-- Era DROP + CREATE. Virou `create or replace`: o parâmetro já é sem nome desde
+-- a primeira definição deste arquivo, e um objeto do operador sobre a função
+-- (view de relatório) fazia o DROP falhar e travava a atualização. Os grants
+-- logo abaixo continuam reafirmando as duas origens de EXECUTE.
+create or replace function public.comando_da_conversa(public.conversations)
 returns text
 language sql
 stable
@@ -51894,9 +51934,11 @@ create index if not exists conversations_contact_id_idx
 
 -- O campo calculado: mesma assinatura, mesmo definer, parâmetro sem nome — o
 -- corpo é que deixa de resolver o contato por linha.
-drop function if exists public.comando_da_conversa(public.conversations);
-
-create function public.comando_da_conversa(public.conversations)
+-- Era DROP + CREATE. Virou `create or replace`: o parâmetro já é sem nome desde
+-- a primeira definição deste arquivo, e um objeto do operador sobre a função
+-- (view de relatório) fazia o DROP falhar e travava a atualização. Os grants
+-- logo abaixo continuam reafirmando as duas origens de EXECUTE.
+create or replace function public.comando_da_conversa(public.conversations)
 returns text
 language sql
 stable
@@ -81850,6 +81892,50 @@ grant  execute on function public.decrypt_cpf(uuid) to authenticated, service_ro
 revoke execute on function public.decrypt_cpf(uuid, text) from public, anon;
 grant  execute on function public.decrypt_cpf(uuid, text) to authenticated, service_role;
 
+-- manifest: Guarda autorizações de relatórios do Google Ads por organização e conta anunciante para consultar várias contas sem mudar o destino das conversões.
+
+create table if not exists public.google_ads_reporting_accounts (
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  customer_id text not null check (customer_id ~ '^[0-9]{10}$'),
+  login_customer_id text check (login_customer_id ~ '^[0-9]{10}$'),
+  label text not null check (char_length(btrim(label)) between 1 and 80),
+  refresh_token_encrypted bytea not null,
+  primary key (organization_id, customer_id)
+);
+
+-- O servidor verifica a organização e só entrega os metadados da conta à UI.
+alter table public.google_ads_reporting_accounts enable row level security;
+revoke all privileges on table public.google_ads_reporting_accounts from public, anon, authenticated;
+grant select, insert, update, delete on table public.google_ads_reporting_accounts to service_role;
+
+-- O retorno do Google não traz o cookie SameSite=Strict do CRM. Revalida no
+-- banco a sessão e o poder de quem iniciou antes de substituir sua credencial.
+create or replace function public.fn_google_ads_admin_do_relatorio(
+  p_org uuid, p_actor uuid, p_session uuid, p_suporte uuid
+) returns boolean language sql stable security definer set search_path = '' as $$
+  select public.fn_org_operante(p_org)
+    and exists (select 1 from auth.sessions s where s.id = p_session and s.user_id = p_actor
+      and (s.not_after is null or s.not_after > now()))
+    and case when p_suporte is not null then
+      public.fn_support_callback_write_allowed(p_org, p_actor, p_session)
+      and (exists (select 1 from public.platform_support_sessions s where s.id = p_suporte
+             and s.organization_id = p_org and s.actor_user_id = p_actor and s.auth_session_id = p_session
+             and s.ended_at is null and s.access_mode = 'full' and s.expires_at > now())
+        or exists (select 1 from public.agencia_sessoes s where s.id = p_suporte
+             and s.organization_id = p_org and s.actor_user_id = p_actor and s.auth_session_id = p_session
+             and s.ended_at is null and s.expires_at > now()))
+    else
+      exists (select 1 from public.user_organizations u where u.organization_id = p_org
+        and u.user_id = p_actor and u.role = 'admin' and u.accepted_at is not null and u.revoked_at is null)
+      or exists (select 1 from public.platform_admins a where a.user_id = p_actor
+        and a.revoked_at is null and a.scope = 'full')
+    end;
+$$;
+revoke all on function public.fn_google_ads_admin_do_relatorio(uuid,uuid,uuid,uuid) from public, anon, authenticated;
+grant execute on function public.fn_google_ads_admin_do_relatorio(uuid,uuid,uuid,uuid) to service_role;
+
+notify pgrst, 'reload schema';
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.
@@ -82686,50 +82772,6 @@ revoke all on table public.storage_redaction_queue from authenticated;
 grant select on table public.storage_redaction_queue to authenticated;
 
 
-
--- manifest: Guarda autorizações de relatórios do Google Ads por organização e conta anunciante para consultar várias contas sem mudar o destino das conversões.
-
-create table if not exists public.google_ads_reporting_accounts (
-  organization_id uuid not null references public.organizations(id) on delete cascade,
-  customer_id text not null check (customer_id ~ '^[0-9]{10}$'),
-  login_customer_id text check (login_customer_id ~ '^[0-9]{10}$'),
-  label text not null check (char_length(btrim(label)) between 1 and 80),
-  refresh_token_encrypted bytea not null,
-  primary key (organization_id, customer_id)
-);
-
--- O servidor verifica a organização e só entrega os metadados da conta à UI.
-alter table public.google_ads_reporting_accounts enable row level security;
-revoke all privileges on table public.google_ads_reporting_accounts from public, anon, authenticated;
-grant select, insert, update, delete on table public.google_ads_reporting_accounts to service_role;
-
--- O retorno do Google não traz o cookie SameSite=Strict do CRM. Revalida no
--- banco a sessão e o poder de quem iniciou antes de substituir sua credencial.
-create or replace function public.fn_google_ads_admin_do_relatorio(
-  p_org uuid, p_actor uuid, p_session uuid, p_suporte uuid
-) returns boolean language sql stable security definer set search_path = '' as $$
-  select public.fn_org_operante(p_org)
-    and exists (select 1 from auth.sessions s where s.id = p_session and s.user_id = p_actor
-      and (s.not_after is null or s.not_after > now()))
-    and case when p_suporte is not null then
-      public.fn_support_callback_write_allowed(p_org, p_actor, p_session)
-      and (exists (select 1 from public.platform_support_sessions s where s.id = p_suporte
-             and s.organization_id = p_org and s.actor_user_id = p_actor and s.auth_session_id = p_session
-             and s.ended_at is null and s.access_mode = 'full' and s.expires_at > now())
-        or exists (select 1 from public.agencia_sessoes s where s.id = p_suporte
-             and s.organization_id = p_org and s.actor_user_id = p_actor and s.auth_session_id = p_session
-             and s.ended_at is null and s.expires_at > now()))
-    else
-      exists (select 1 from public.user_organizations u where u.organization_id = p_org
-        and u.user_id = p_actor and u.role = 'admin' and u.accepted_at is not null and u.revoked_at is null)
-      or exists (select 1 from public.platform_admins a where a.user_id = p_actor
-        and a.revoked_at is null and a.scope = 'full')
-    end;
-$$;
-revoke all on function public.fn_google_ads_admin_do_relatorio(uuid,uuid,uuid,uuid) from public, anon, authenticated;
-grant execute on function public.fn_google_ads_admin_do_relatorio(uuid,uuid,uuid,uuid) to service_role;
-
-notify pgrst, 'reload schema';
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --

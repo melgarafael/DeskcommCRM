@@ -367,6 +367,27 @@ outputSchema: z.object({
 
 ---
 
+### 3.4 Editar os assistentes de IA (só admin, por aplicativo conectado)
+
+Para o dono corrigir pelo ChatGPT como o assistente responde. Todas pedem papel `admin`, são
+`apenasHumano` (o turno do agente não as monta) e ficam fora dos pacotes do seletor do assistente
+(`lib/mcp/tools/ferramentas-do-administrador.ts`). As regras são as da tela, em
+`lib/ai/agents/edicao.ts` e `lib/ai/agents/teste-da-versao.ts`.
+
+| Tool | Escopo | O que faz |
+|---|---|---|
+| `crm_list_ai_agents` | `mcp:read` | assistentes, canal, versão publicada e rascunho |
+| `crm_get_ai_agent_version` | `mcp:read` | instruções e configuração de uma versão (`publicada`, `rascunho` ou número) |
+| `crm_get_ai_agent_turn` | `mcp:read` | últimos turnos de uma conversa: versão usada, ferramentas, interrupção, mensagens |
+| `crm_save_ai_agent_draft` | `mcp:write` | correção como RASCUNHO, por troca exata / anexar / texto inteiro, em 1–5 assistentes |
+| `crm_test_ai_agent_version` | `mcp:write` | prévia (`is_dry_run`), nada é enviado |
+| `crm_publish_ai_agent_version` | `mcp:write` | `critico` → `destructiveHint`; número explícito, devolve o anterior |
+| `crm_rollback_ai_agent` | `mcp:write` | `critico`; clona uma versão antiga e publica |
+
+O servidor manda a cada cliente as dicas do protocolo (`annotations`) a partir do risco do
+catálogo: `readOnlyHint` para leitura, `destructiveHint` para `critico` (`dicasDaFerramenta`,
+`lib/mcp/server.ts`). O limite do texto de instruções é o da tela (20.000 caracteres).
+
 ## 4. Tool selection (per agent)
 
 A versão do agente armazena `tool_ids text[]` (Spec 10 §3.2). Validação no publish:

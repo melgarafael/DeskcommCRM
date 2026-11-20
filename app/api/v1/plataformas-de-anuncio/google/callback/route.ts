@@ -167,7 +167,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       actorAuthSessionId: estado.authSessionId,
       organizationId: estado.organizationId,
       resourceType: "google_ads_reporting_accounts",
-      metadata: { platform: "google_ads", customer_id: conta.customerId, purpose: "reporting" },
+      metadata: { platform: "google_ads", customer_id: conta.customerId, connection_purpose: "reporting" },
     });
     return responder({ ok: "1", conta: conta.customerId });
   }

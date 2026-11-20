@@ -137,6 +137,8 @@ Abra `https://<seu-domínio>` (o cadeado leva ~1 min pra aparecer), entre com o 
 **Google Authenticator** ou **Authy** à mão *se* você quiser ligar a verificação em duas etapas — ela é **opcional** e fica em Configurações › Segurança; o primeiro login **não** a exige. No onboarding,
 escaneie o QR code com o WhatsApp do seu número.
 
+**Não definiu uma senha?** A senha inicial está no arquivo `.env` da pasta do CRM, em `OWNER_PASSWORD`.
+
 > **Já instalou?** Continue no [**curso visual gratuito**](https://deskcomm.com.br/curso):
 > telas reais e indicações de onde clicar para aprender a usar a Inbox, organizar o funil e
 > configurar seus agentes de IA, no seu ritmo.
