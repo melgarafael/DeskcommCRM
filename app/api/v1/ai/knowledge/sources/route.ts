@@ -73,9 +73,11 @@ const SELECT_COLUNAS =
   "active_kb_version_id, ingested_at, created_at, updated_at";
 
 /**
- * `blob_path` vindo do corpo aponta o indexador para um arquivo no bucket. Com
- * token de servidor, só vale o que está sob a organização da linha do token — o
- * indexador baixa com o admin client, que não olha prefixo nenhum.
+ * `blob_path` vindo do corpo aponta o indexador para um arquivo no bucket. Só
+ * vale o que está sob a organização de quem chama, pela sessão ou pelo token:
+ * o indexador baixa com o admin client, que não olha prefixo nenhum. Nenhuma
+ * tela manda este campo (quem grava é a rota de upload), então a recusa só
+ * alcança quem escreve o caminho à mão.
  */
 function blobPathForaDaOrganizacao(blobPath: unknown, organizationId: string): boolean {
   return (
@@ -260,10 +262,9 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
-  // Token: `blob_path` do corpo só se estiver sob a organização da linha do token.
+  // `blob_path` do corpo só se estiver sob a organização de quem chama.
   const blobPathDoCorpo = input.source_metadata?.blob_path;
   if (
-    authz.actor.type !== "user" &&
     blobPathDoCorpo !== undefined &&
     blobPathForaDaOrganizacao(blobPathDoCorpo, authz.organizationId)
   ) {

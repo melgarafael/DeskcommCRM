@@ -225,6 +225,10 @@ async function pedacosDeDocumento(fonte: FonteRow): Promise<Pedaco[]> {
   };
   const blobPath = meta.blob_path;
   if (!blobPath) throw new ErroDeExtracao("a fonte não aponta para nenhum arquivo");
+  // O download é com o admin client, que não olha prefixo: a pasta da
+  // organização dona da fonte é a única que este worker lê.
+  if (!blobPath.startsWith(`${fonte.organization_id}/`) || blobPath.includes(".."))
+    throw new ErroDeExtracao("o arquivo está fora da pasta desta organização");
 
   const { texto, extensao } = await extrairTextoDoArquivo(blobPath, meta.ext);
   return chunkText(texto, { maxChars: 1600, overlapChars: 200 }).map((c) => ({

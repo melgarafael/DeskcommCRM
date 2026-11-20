@@ -163,8 +163,13 @@ export async function lerMaterial(
   const nome = fonte.name;
   const tipo = canonizarTipoDeFonte(fonte.source_type ?? "") ?? "faq";
   const versaoAtiva = fonte.active_kb_version_id;
+  // Só o arquivo da pasta desta organização: o extrator baixa com o admin
+  // client, que não olha prefixo.
+  const caminho = fonte.source_metadata?.blob_path;
   const blobPath =
-    typeof fonte.source_metadata?.blob_path === "string" ? fonte.source_metadata.blob_path : null;
+    typeof caminho === "string" && caminho.startsWith(`${p.orgId}/`) && !caminho.includes("..")
+      ? caminho
+      : null;
   const ext =
     typeof fonte.source_metadata?.ext === "string" ? fonte.source_metadata.ext : undefined;
 
