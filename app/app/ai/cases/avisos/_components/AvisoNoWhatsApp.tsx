@@ -136,6 +136,19 @@ function rascunhoDoEstado(estado: EstadoDoAviso | undefined): Rascunho {
  * viaja: um membro que a tela não mostrou não perde a marca por omissão (a
  * lição do #3935). Nada a mandar = `undefined`.
  */
+/**
+ * Tira dos toques só o que acabou de ser gravado com aquele valor: um
+ * interruptor mexido ENQUANTO a gravação ia e voltava continua pendente.
+ */
+function semOsGravados(
+  mexidas: Record<string, boolean>,
+  gravados: ReadonlyArray<{ user_id: string; nao_avisar: boolean }>,
+): Record<string, boolean> {
+  const resto = { ...mexidas };
+  for (const g of gravados) if (resto[g.user_id] === g.nao_avisar) delete resto[g.user_id];
+  return resto;
+}
+
 function marcasQueMudaram(
   equipe: MembroDoAvisoNaTela[],
   mexidas: Record<string, boolean>,
@@ -148,13 +161,15 @@ function marcasQueMudaram(
 }
 
 /**
- * O formulário, fora a marca, está como veio do servidor? É o que decide entre
- * o `PATCH` (só a marca, sem tocar a configuração) e o `PUT`. Comparar com o
- * rascunho que o próprio estado gera é a mesma régua do formulário.
+ * A pessoa mexeu em algo do formulário além da marca? Comparado com o rascunho
+ * em que o formulário NASCEU, e não com o estado de agora: uma releitura que
+ * trouxe o número novo de um colega não é edição desta pessoa — e mandar o
+ * `PUT` por causa dela tocaria a revisão da configuração e regravaria o número
+ * antigo. Sem configuração salva não há `PATCH`: o `PUT` é a primeira gravação.
  */
-function soAMarcaMudou(rascunho: Rascunho, estado: EstadoDoAviso): boolean {
+function soAMarcaMudou(rascunho: Rascunho, inicial: Rascunho, estado: EstadoDoAviso): boolean {
   if (!estado.config) return false;
-  return JSON.stringify(rascunho) === JSON.stringify(rascunhoDoEstado(estado));
+  return JSON.stringify(rascunho) === JSON.stringify(inicial);
 }
 
 /**
@@ -287,6 +302,8 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
   const remover = useRemoverAvisoDeCaso();
 
   const [rascunho, setRascunho] = useState<Rascunho>(() => rascunhoDoEstado(estado));
+  /** O rascunho em que o formulário nasceu — a régua de "a pessoa editou?". */
+  const [rascunhoInicial] = useState<Rascunho>(() => rascunhoDoEstado(estado));
   /** Os interruptores de "Não enviar aviso de caso" que a pessoa TOCOU (#4989). */
   const [marcasMexidas, setMarcasMexidas] = useState<Record<string, boolean>>({});
   /** A pergunta do número que já é cliente. `null` = não foi feita. */
@@ -373,10 +390,10 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
     // Só a marca mudou (#4989): o `PATCH`, que não passa pelo RPC — passar por
     // ele tocaria a revisão da configuração e derrubaria os avisos de resposta
     // do cliente já enfileirados para outras pessoas.
-    if (!confirma && marcasParaSalvar && soAMarcaMudou(rascunho, estado)) {
+    if (!confirma && marcasParaSalvar && soAMarcaMudou(rascunho, rascunhoInicial, estado)) {
       try {
         await salvarMarcas.mutateAsync({ nao_avisar: marcasParaSalvar });
-        setMarcasMexidas({});
+        setMarcasMexidas((atual) => semOsGravados(atual, marcasParaSalvar));
         toast.success(t("Aviso salvo."));
       } catch (erro) {
         toast.error(
@@ -407,7 +424,7 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
         ...(confirma ? { confirma_contato: true } : {}),
       });
       setConfirmarContato(null);
-      setMarcasMexidas({});
+      if (marcasParaSalvar) setMarcasMexidas((atual) => semOsGravados(atual, marcasParaSalvar));
       toast.success(t("Aviso salvo."));
     } catch (erro) {
       if (erro instanceof ApiError && erro.code === "aviso_numero_de_cliente") {
@@ -655,7 +672,7 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
                     <label className="flex items-center gap-2 text-xs">
                       <Switch
                         checked={semAviso}
-                        disabled={marcaIndisponivel}
+                        disabled={marcaIndisponivel || salvar.isPending || salvarMarcas.isPending}
                         onCheckedChange={(v) =>
                           setMarcasMexidas((atual) => ({ ...atual, [membro.user_id]: v }))
                         }
@@ -680,7 +697,7 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
           )}
           {comNumero === 0 ? (
             <p className="text-xs text-muted-foreground">
-              {alguemSemAviso || marcaIndisponivel
+              {alguemSemAviso || marcaIndisponivel || estado.algum_membro_sem_aviso === true
                 ? t(
                     "Ninguém da equipe tem WhatsApp cadastrado: os avisos vão continuar saindo para o número acima, menos os casos de quem está com \"Não enviar aviso de caso\" ligado.",
                   )

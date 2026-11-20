@@ -140,6 +140,24 @@ describe("a marca na lista da equipe", () => {
     expect(corpoEnviado().nao_avisar).toBeUndefined();
   });
 
+  it("a releitura trouxe o número novo de um colega: mexer só na marca continua indo pelo PATCH", async () => {
+    const { rerender } = montar(estado());
+    consulta.mockReturnValue({
+      data: estado({}, [
+        { user_id: ANA, nome: "Ana", whatsapp: "+5531911112222", nao_avisar: false },
+        { user_id: FILA, nome: "Marketing · Fornecedores", whatsapp: "+5531977772222", nao_avisar: true },
+      ]),
+      isLoading: false,
+      error: null,
+    });
+    rerender(arvore());
+    const user = userEvent.setup({ delay: null });
+    await user.click(screen.getByRole("switch", { name: "Não enviar aviso de caso: Marketing · Fornecedores" }));
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+    expect(salvarRegistrado).not.toHaveBeenCalled();
+    expect(marcasRegistradas).toHaveBeenCalledWith({ nao_avisar: [{ user_id: FILA, nao_avisar: false }] });
+  });
+
   it("a marca voltou numa releitura (sem nova gravação): a tela mostra o valor do servidor e salvar não a desfaz", async () => {
     const semLer = estado({ nao_avisar_indisponivel: true }, [
       { user_id: ANA, nome: "Ana", whatsapp: "+5531988881111", nao_avisar: false },
@@ -203,6 +221,15 @@ describe("as frases que mudam com a marca", () => {
         "Ninguém da equipe tem WhatsApp cadastrado: os avisos vão continuar saindo para o número acima, menos os casos de quem está com \"Não enviar aviso de caso\" ligado.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("ninguém com número e o único marcado está fora da lista mostrada: a frase não promete o número acima para todos", () => {
+    montar(
+      estado({ algum_membro_sem_aviso: true }, [
+        { user_id: ANA, nome: "Ana", whatsapp: null, nao_avisar: false },
+      ]),
+    );
+    expect(screen.getByText(/menos os casos de quem está com "Não enviar aviso de caso" ligado/)).toBeInTheDocument();
   });
 
   it("a lista dos últimos avisos avisa que os casos parados pela marca não entram nela — pelo que o SERVIDOR mediu", () => {

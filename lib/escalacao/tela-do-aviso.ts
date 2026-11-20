@@ -222,8 +222,9 @@ export async function lerEstadoDaTelaDeAviso(entrada: {
       : null,
     equipe: (equipe ?? []).map((m) => ({ ...m, nao_avisar: marcados.has(m.user_id) })),
     equipe_indisponivel: equipe === null,
-    nao_avisar_indisponivel: semAviso.ids === null || algumSemAviso === null,
-    algum_membro_sem_aviso: algumSemAviso === true,
+    nao_avisar_indisponivel: semAviso.ids === null,
+    // Não deu para conferir quem é ativo: na dúvida a frase aparece se há marca.
+    algum_membro_sem_aviso: algumSemAviso ?? marcados.size > 0,
     conexoes,
     avisos: avisosDaTela(fatos),
     pode_ligar: podeLigarOAviso(fatos),

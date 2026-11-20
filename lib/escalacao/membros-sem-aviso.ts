@@ -172,9 +172,7 @@ async function aplicarMudancas(
     if (error) return { ok: false };
     ativos = new Set(((data ?? []) as Array<{ user_id: string }>).map((l) => l.user_id));
   }
-  const ligados = aMarcar.filter((id) => ativos.has(id)).length;
-  const ignorados = aMarcar.length - ligados;
-  const desligados = new Set(mudancas.filter((m) => !m.nao_avisar).map((m) => m.user_id)).size;
+  const ignorados = aMarcar.filter((id) => !ativos.has(id)).length;
 
   for (let tentativa = 0; tentativa < TENTATIVAS_DA_GRAVACAO; tentativa += 1) {
     const { data: atual, error: erroLeitura } = await admin
@@ -187,9 +185,15 @@ async function aplicarMudancas(
     const settings = (linha.settings ?? {}) as Record<string, unknown>;
 
     const marcados = membrosSemAvisoDeclarados(settings);
+    // Contado contra o que ESTÁ gravado: ligar quem já estava ligado não é "ligou".
+    let ligados = 0;
+    let desligados = 0;
     for (const m of mudancas) {
-      if (m.nao_avisar && ativos.has(m.user_id)) marcados.add(m.user_id);
-      if (!m.nao_avisar) marcados.delete(m.user_id);
+      if (m.nao_avisar && ativos.has(m.user_id) && !marcados.has(m.user_id)) {
+        marcados.add(m.user_id);
+        ligados += 1;
+      }
+      if (!m.nao_avisar && marcados.delete(m.user_id)) desligados += 1;
     }
 
     const { data: gravadas, error } = await admin

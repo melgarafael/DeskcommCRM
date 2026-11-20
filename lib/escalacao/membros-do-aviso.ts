@@ -182,14 +182,21 @@ export async function carregaMundoDoAviso(
   }
 
   // Uma leitura ACESSÓRIA falhou (ex.: o negócio). Os telefones continuam fora
-  // — é o comportamento de antes: quem não está marcado cai no número da
-  // empresa. Mas se a vez é de alguém MARCADO que foi lido, a marca vale: uma
-  // leitura de outro elo não pode jogar no celular do dono o caso que alguém
-  // pediu para não avisar.
+  // — é o comportamento de antes: a cadeia cai no número da empresa. Uma
+  // exceção, e só uma: a PRIMEIRA pessoa lida da cadeia está marcada. Aí a
+  // vez é dela com certeza, e uma leitura de outro elo não pode jogar no
+  // celular do dono o caso que alguém pediu para não avisar. Marca de um elo
+  // seguinte não vale aqui: sem os telefones não dá para saber se a vez
+  // chegaria nele (o primeiro podia ter número).
+  const primeiro = ids[0];
+  if (!primeiro) {
+    mundo.naoAvisar = new Set();
+    return mundo;
+  }
   try {
     const [ativos, marca] = await Promise.all([
-      carregaWhatsappsDosMembros(admin, organizationId, ids),
-      ids.length > 0 ? lerMarca(admin, organizationId) : Promise.resolve(new Set<string>()),
+      carregaWhatsappsDosMembros(admin, organizationId, [primeiro]),
+      lerMarca(admin, organizationId),
     ]);
     mundo.naoAvisar = marcadosAtivos(marca, ativos);
   } catch {

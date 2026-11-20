@@ -465,4 +465,21 @@ describe("a leitura da marca (carregaMundoDoAviso)", () => {
     expect(m.naoAvisar).toBeUndefined();
     expect((admin as unknown as { from: ReturnType<typeof vi.fn> }).from).not.toHaveBeenCalledWith("organizations");
   });
+
+  it("a leitura da carteira falhou e quem está com a conversa NÃO está marcado: a marca de um elo seguinte não vale, e segue a regra de antes", async () => {
+    const m = await carregaMundoDoAviso(
+      adminFalso({
+        conversations: { data: { assigned_to_user_id: ANA, assignee_kind: "human" }, error: null },
+        contacts: { data: null, error: { message: "statement timeout" } },
+        crm_leads: { data: { owner_user_id: FILA, owner_kind: "human" }, error: null },
+        user_organizations: { data: [{ user_id: ANA, whatsapp_e164: CELULAR_DA_ANA }], error: null },
+        organizations: { data: { settings: { aviso_de_caso_nao_avisar: { user_ids: [FILA] } } }, error: null },
+      }),
+      { organizationId: ORG, conversationId: CONVERSA, contactId: CONTATO },
+      { comMarca: true },
+    );
+    const { deps, estado } = monta({ mundos: [m] });
+    expect((await aplicaAvisoDeCaso(deps, evento())).status).toBe("ok");
+    expect(estado.enviados[0]?.to).toBe("5531998966398@c.us");
+  });
 });

@@ -222,6 +222,15 @@ describe("PUT — a marca 'não enviar aviso de caso'", () => {
     expect(daMarca).toHaveLength(1);
     expect(daMarca[0]!.metadata).toEqual({ ligados: 1, desligados: 0, ignorados: 1 });
 
+    // Ligar quem já estava ligado não é "ligou"; desligar quem não estava, idem.
+    vi.mocked(audit).mockClear();
+    adminFalso({ settings: { aviso_de_caso_nao_avisar: { user_ids: [FILA] } }, ativos: [FILA] });
+    await PUT(
+      put({ ...CORPO, nao_avisar: [{ user_id: FILA, nao_avisar: true }, { user_id: ANA, nao_avisar: false }] }),
+    );
+    const repetida = vi.mocked(audit).mock.calls.map((c) => c[0]).filter((e) => e.action === "ai.case_alert_nao_avisar_changed");
+    expect(repetida[0]!.metadata).toEqual({ ligados: 0, desligados: 0, ignorados: 0 });
+
     vi.mocked(audit).mockClear();
     adminFalso({ settings: {}, ativos: [FILA], erroAoGravar: { message: "timeout" } });
     await PUT(put({ ...CORPO, nao_avisar: [{ user_id: FILA, nao_avisar: true }] }));
