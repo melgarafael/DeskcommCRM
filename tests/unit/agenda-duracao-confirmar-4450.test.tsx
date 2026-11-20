@@ -1,0 +1,175 @@
+/**
+ * PUXAR A BORDA PEDE CONFIRMAÇÃO, E A ESCRITA É SÓ A DURAÇÃO (#4450).
+ *
+ * A grade entrega "60 minutos para a1"; quem decide o que acontece com isso é
+ * a `AgendaInterativa`, e é aqui que mora o que o usuário sente:
+ *
+ * - a confirmação vem ANTES da escrita, e o card não finge que já mudou;
+ * - a frase não promete que ninguém fica sabendo — com o Google ligado, o
+ *   convidado recebe a atualização do Google;
+ * - o PATCH leva `duration_minutes` e a `revision` do card, e NÃO leva
+ *   `starts_at`: mudar o tempo não é remarcar;
+ * - recusa do servidor devolve o card e diz o motivo; a revisão que não bate
+ *   (alguém mudou antes) mostra o horário que vale agora em vez de sobrescrever.
+ */
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { ptBR } from "date-fns/locale";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { AgendaInterativa } from "@/components/agenda/AgendaInterativa";
+import type { Agendamento, Pessoa } from "@/components/agenda/tipos";
+import { ApiError } from "@/lib/api/types";
+
+const mutateAsync = vi.fn();
+
+vi.mock("@/hooks/agenda/useHorariosLivres", () => ({
+  useHorariosLivres: () => ({
+    data: { slots: [], fuso_da_regra: "UTC", publicou_horarios: true },
+    isError: false,
+    isLoading: false,
+  }),
+}));
+vi.mock("@/hooks/agenda/useHorariosLivresPorPessoa", () => ({
+  useHorariosLivresPorPessoa: () => ({}),
+}));
+vi.mock("@/hooks/i18n/useT", () => ({
+  useT: () => (chave: string) => chave,
+}));
+vi.mock("@/hooks/i18n/useLocaleDeData", () => ({
+  useLocaleDeData: () => ptBR,
+}));
+vi.mock("@/hooks/agenda/useRemarcarAgendamento", () => ({
+  useRemarcarAgendamento: () => ({ mutateAsync }),
+}));
+
+beforeEach(() => mutateAsync.mockReset());
+afterEach(cleanup);
+
+const DIA = "2026-08-26";
+const FUSO = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const PESSOAS: Pessoa[] = [{ id: "p1", nome: "Ana", trilha: 1 }];
+
+function y(hhmm: string): number {
+  const [h = 0, m = 0] = hhmm.split(":").map(Number);
+  return ((h * 60 + m - 7 * 60) / 60) * 48;
+}
+
+function maria(ate = "14:30"): Agendamento {
+  return {
+    id: "a1",
+    revision: 3,
+    titulo: "Consulta da Maria",
+    responsavelId: "p1",
+    comeca: `${DIA}T14:00:00.000`,
+    termina: `${DIA}T${ate}:00.000`,
+    origem: "ui",
+    situacao: "confirmed",
+  };
+}
+
+function elemento(agendamentos: Agendamento[]) {
+  return (
+    <AgendaInterativa
+      visao="dia"
+      ancora={new Date(`${DIA}T12:00:00`)}
+      agora={new Date(`${DIA}T08:00:00`)}
+      fuso={FUSO}
+      pessoas={PESSOAS}
+      agendamentos={agendamentos}
+      recorte={{ de: `${DIA}T00:00:00Z`, ate: `${DIA}T23:59:59Z` }}
+      tipos={[{ id: "t1", nome: "Consulta", duracaoMin: 30 }]}
+      tipo={{ id: "t1", duracaoMin: 30 }}
+      onEscolherTipo={vi.fn()}
+      onMarcarEm={vi.fn()}
+    />
+  );
+}
+
+function puxarAte(hhmm: string) {
+  const alca = screen.getByTestId("alca-duracao-a1");
+  fireEvent.pointerDown(alca, { button: 0, pointerId: 1, pointerType: "mouse", clientX: 10, clientY: y("14:30") });
+  fireEvent.pointerMove(window, { pointerId: 1, pointerType: "mouse", clientX: 10, clientY: y(hhmm) });
+  fireEvent.pointerUp(window, { pointerId: 1, clientX: 10, clientY: y(hhmm) });
+}
+
+const rotuloDoCard = () => screen.getByTestId("agendamento-a1").getAttribute("aria-label") ?? "";
+
+describe("confirmar a nova duração", () => {
+  it("pergunta antes, com o intervalo novo e o aviso do Google, sem redesenhar o card", () => {
+    render(elemento([maria()]));
+    puxarAte("15:00");
+
+    const barra = screen.getByTestId("confirmar-duracao");
+    expect(barra).toHaveTextContent("Consulta da Maria");
+    expect(barra).toHaveTextContent("14:00–15:00 (60 min)");
+    expect(barra).toHaveTextContent(
+      "Se a agenda estiver ligada ao Google Agenda, quem foi convidado pode receber um e-mail de atualização do Google.",
+    );
+    expect(rotuloDoCard()).toContain("14:00 às 14:30");
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("confirmar manda SÓ a duração e a revisão — sem `starts_at` — e o card cresce", async () => {
+    mutateAsync.mockResolvedValue({ data: { id: "a1" } });
+    render(elemento([maria()]));
+    puxarAte("15:00");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("confirmar-duracao-botao"));
+    });
+    expect(mutateAsync).toHaveBeenCalledWith({ id: "a1", revision: 3, duration_minutes: 60 });
+    expect(mutateAsync.mock.calls[0]?.[0]).not.toHaveProperty("starts_at");
+    expect(screen.queryByTestId("confirmar-duracao")).toBeNull();
+    expect(rotuloDoCard()).toContain("14:00 às 15:00");
+  });
+
+  it("Cancelar fecha a pergunta e não escreve nada", () => {
+    render(elemento([maria()]));
+    puxarAte("15:00");
+    fireEvent.click(screen.getByTestId("cancelar-duracao"));
+    expect(screen.queryByTestId("confirmar-duracao")).toBeNull();
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("destino recusado pela grade não pergunta nem escreve — diz o motivo", () => {
+    const joao: Agendamento = { ...maria(), id: "j1", titulo: "João", comeca: `${DIA}T14:30:00.000`, termina: `${DIA}T15:00:00.000` };
+    render(elemento([maria(), joao]));
+    puxarAte("14:45");
+    expect(screen.queryByTestId("confirmar-duracao")).toBeNull();
+    expect(screen.getByTestId("duracao-recusada")).toHaveTextContent(
+      "A duração não foi alterada — já há um compromisso neste horário.",
+    );
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("servidor recusou: o card volta e a frase traz o motivo do servidor", async () => {
+    mutateAsync.mockRejectedValue(
+      new ApiError(422, "agenda_horario_indisponivel", undefined, "req", "Este horário já está ocupado na agenda de quem atende."),
+    );
+    render(elemento([maria()]));
+    puxarAte("15:00");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("confirmar-duracao-botao"));
+    });
+    expect(rotuloDoCard()).toContain("14:00 às 14:30");
+    expect(screen.getByTestId("duracao-recusada")).toHaveTextContent(
+      "A duração não foi alterada — Este horário já está ocupado na agenda de quem atende.",
+    );
+  });
+
+  it("alguém mudou antes (409): não sobrescreve, e mostra o horário que vale agora", async () => {
+    mutateAsync.mockRejectedValue(new ApiError(409, "conflict", undefined, "req", "O compromisso mudou."));
+    const { rerender } = render(elemento([maria()]));
+    puxarAte("15:00");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("confirmar-duracao-botao"));
+    });
+    // A lista recarregada traz o que o colega gravou: 14:00–14:45.
+    rerender(elemento([{ ...maria("14:45"), revision: 4 }]));
+    const aviso = screen.getByTestId("duracao-recusada");
+    expect(aviso).toHaveTextContent("foi alterado por outra pessoa");
+    expect(aviso).toHaveTextContent("14:00");
+    expect(aviso).toHaveTextContent("14:45");
+    expect(rotuloDoCard()).toContain("14:00 às 14:45");
+  });
+});
