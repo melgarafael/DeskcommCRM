@@ -26,13 +26,16 @@
  */
 import { randomUUID } from "node:crypto";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { requireRole } from "@/lib/auth/require-role";
+import { extractBearer } from "@/lib/mcp/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -88,18 +91,43 @@ export type AgendaLinha = {
 const COLUNAS =
   "id, organization_id, channel_session_id, starts_at, ends_at, status, paused_channel_ids, created_by, created_at, updated_at";
 
+/**
+ * Quem chama a rota, já resolvido pelo portão do seu ramo (sessão ou token).
+ *
+ * O banco é preguiçoso de propósito: a sessão só cria o cliente admin depois da
+ * validação, como sempre foi. O token recebe o cliente que `resolveAuthDual` já
+ * montou.
+ */
+export type Chamador = {
+  organizationId: string;
+  obterDb: () => SupabaseClient;
+  /** Autor da linha e do audit: a pessoa da sessão, ou `null` quando o token não é uma pessoa. */
+  autorId: string | null;
+};
+
 /** Cria a janela. Nada pausa agora — o cron aplica na hora marcada. */
 export async function POST(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
   const requestId = randomUUID();
+
+  // Só de sessão: agendar a pausa para o atendimento da organização, e a escrita
+  // pelo token de integração espera o ok do mantenedor (Spec 33). A leitura (GET)
+  // aceita o token.
   const auth = await requireRole("admin", {
     requestId,
     resource: "channel_schedules",
     allowPlatformAdmin: true,
   });
   if (!auth.ok) return auth.response;
+  return criarJanela(req, requestId, {
+    organizationId: auth.org.orgId,
+    obterDb: () => createAdminClient(),
+    autorId: auth.user.id,
+  });
+}
 
+async function criarJanela(req: NextRequest, requestId: string, chamador: Chamador): Promise<Response> {
   const parsed = criarSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return fail(
@@ -115,13 +143,13 @@ export async function POST(req: NextRequest): Promise<Response> {
   const recusa = validarJanela(inicio, fim);
   if (recusa) return fail("validation_failed", recusa, 422, { requestId });
 
-  const db = createAdminClient();
+  const db = chamador.obterDb();
   const canal = parsed.data.channel_session_id ?? null;
   if (canal) {
     const { data: existe, error: erroCanal } = await db
       .from("channel_sessions")
       .select("id")
-      .eq("organization_id", auth.org.orgId)
+      .eq("organization_id", chamador.organizationId)
       .eq("id", canal)
       .is("archived_at", null)
       .maybeSingle();
@@ -132,12 +160,12 @@ export async function POST(req: NextRequest): Promise<Response> {
   const { data, error } = await db
     .from("channel_schedules")
     .insert({
-      organization_id: auth.org.orgId,
+      organization_id: chamador.organizationId,
       channel_session_id: canal,
       starts_at: inicio.toISOString(),
       ends_at: fim.toISOString(),
       status: "scheduled",
-      created_by: auth.user.id,
+      created_by: chamador.autorId,
     })
     .select(COLUNAS)
     .maybeSingle();
@@ -149,8 +177,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   const agenda = data as AgendaLinha;
   void audit({
     action: "channel.schedule_created",
-    actorUserId: auth.user.id,
-    organizationId: auth.org.orgId,
+    actorUserId: chamador.autorId,
+    organizationId: chamador.organizationId,
     resourceType: "channel_schedule",
     resourceId: agenda.id,
     requestId,
@@ -160,24 +188,50 @@ export async function POST(req: NextRequest): Promise<Response> {
 }
 
 /** Lista as janelas da organização, da mais recente para a mais antiga. */
-export async function GET(_req: NextRequest): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
+
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "channel_schedules",
+      role: "admin",
+      scope: "config:read",
+      tokenRole: "admin",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "channel_schedules_leitura", requestId);
+    if (teto) return teto;
+    return listarJanelas(requestId, {
+      organizationId: authz.organizationId,
+      obterDb: () => authz.supabase,
+      autorId: null,
+    });
+  }
+
   const auth = await requireRole("admin", {
     requestId,
     resource: "channel_schedules",
     allowPlatformAdmin: "leitura",
   });
   if (!auth.ok) return auth.response;
+  return listarJanelas(requestId, {
+    organizationId: auth.org.orgId,
+    obterDb: () => createAdminClient(),
+    autorId: auth.user.id,
+  });
+}
 
-  const db = createAdminClient();
+async function listarJanelas(requestId: string, chamador: Chamador): Promise<Response> {
+  const db = chamador.obterDb();
   const [agenda, org] = await Promise.all([
     db
       .from("channel_schedules")
       .select(COLUNAS)
-      .eq("organization_id", auth.org.orgId)
+      .eq("organization_id", chamador.organizationId)
       .order("starts_at", { ascending: false })
       .limit(100),
-    db.from("organizations").select("timezone").eq("id", auth.org.orgId).maybeSingle(),
+    db.from("organizations").select("timezone").eq("id", chamador.organizationId).maybeSingle(),
   ]);
   if (agenda.error) return fail("internal_error", "Não foi possível carregar as janelas.", 500, { requestId });
 

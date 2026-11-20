@@ -17722,6 +17722,8 @@ comment on function public.fn_comando_da_conversa(text, uuid, timestamptz, boole
 --
 -- O bloco abaixo cura o banco que já ficou preso com o nome: sem dependente, ele
 -- derruba e o resto do arquivo recria; com dependente, a mensagem diz quais são.
+-- Os nomes e o que fazer vão na MENSAGEM, e não só no DETAIL/HINT: o update.sh
+-- mostra na tela apenas as linhas ERROR, e o resto fica no log.
 do $cura$
 begin
   if exists (select 1 from pg_proc
@@ -17731,7 +17733,14 @@ begin
   end if;
 exception when dependent_objects_still_exist then
   raise exception using
-    message = 'comando_da_conversa(conversations) ainda tem o parâmetro com nome, e objetos do banco dependem dela',
+    message = format(
+      'a atualização de comando_da_conversa(conversations) parou porque objetos criados por você dependem dela: %s. Guarde a definição deles, remova-os, rode a atualização de novo e recrie-os',
+      (select string_agg(distinct coalesce(r.ev_class::regclass::text,
+                                           pg_describe_object(d.classid, d.objid, d.objsubid)), ', ')
+         from pg_depend d
+         left join pg_rewrite r on d.classid = 'pg_rewrite'::regclass and r.oid = d.objid
+        where d.refobjid = 'public.comando_da_conversa(public.conversations)'::regprocedure
+          and d.deptype = 'n')),
     detail  = (select string_agg(pg_describe_object(d.classid, d.objid, d.objsubid), ', ')
                  from pg_depend d
                 where d.refobjid = 'public.comando_da_conversa(public.conversations)'::regprocedure

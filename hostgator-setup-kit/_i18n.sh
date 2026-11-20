@@ -503,6 +503,7 @@ identifica su red y pon TRAEFIK_NETWORK=<nombre> en el .env antes de volver a in
   ["e-mail:"]="correo:"
   ["senha:"]="contraseña:"
   ["(a que você definiu)"]="(la que definiste)"
+  ["(a que você definiu ou a de OWNER_PASSWORD no .env da pasta do CRM)"]="(la que definiste o la de OWNER_PASSWORD en el .env de la carpeta del CRM)"
   ["Conecte o WhatsApp (2º passo do onboarding):"]="Conecta WhatsApp (2.º paso de la configuración inicial):"
   ["Deixe o WhatsApp JÁ ABERTO em Configurações → Aparelhos conectados"]="Deja WhatsApp YA ABIERTO en Configuración → Dispositivos vinculados"
   ["antes de abrir a tela — o QR code vale só uns minutos. Se expirar,"]="antes de abrir la pantalla — el código QR dura solo unos minutos. Si expira,"
