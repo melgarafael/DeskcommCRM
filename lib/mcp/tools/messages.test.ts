@@ -74,6 +74,51 @@ beforeEach(() => {
   mockedRegistrar.mockClear();
 });
 
+describe("crm_send_whatsapp_message — arquivo já enviado ao CRM, sem link público (#5034)", () => {
+  const PATH = `${ORG_ID}/${CONVERSATION_ID}/out-1.pdf`;
+  const enviado = { id: "m1", status: "sent", external_id: "x", sent_at: "2026-11-20T12:00:00.000Z" };
+
+  it("passa media_storage_path e media_filename ao mesmo envio do Inbox", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedSend.mockResolvedValue(enviado as any);
+
+    await crmSendWhatsappMessage.handler(
+      { conversation_id: CONVERSATION_ID, type: "document", media_storage_path: PATH, media_filename: "contrato.pdf",
+        media_mime: "application/pdf" } as never,
+      ctx,
+    );
+
+    expect(mockedSend).toHaveBeenCalledTimes(1);
+    expect(mockedSend.mock.calls[0]?.[2]).toMatchObject({
+      type: "document",
+      media_storage_path: PATH,
+      media_filename: "contrato.pdf",
+      media_mime: "application/pdf",
+    });
+  });
+
+  it("só o caminho, sem texto nem link, já é conteúdo", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedSend.mockResolvedValue(enviado as any);
+
+    await expect(
+      crmSendWhatsappMessage.handler({ conversation_id: CONVERSATION_ID, type: "document", media_storage_path: PATH } as never, ctx),
+    ).resolves.toMatchObject({ message_id: "m1" });
+  });
+
+  it("caminho de outra conversa: a recusa do envio chega ao cliente MCP, nada sai", async () => {
+    mockedSend.mockRejectedValue(new ApiError("validation_failed", "media_storage_path fora da conversa.", 422));
+
+    await expect(
+      crmSendWhatsappMessage.handler(
+        { conversation_id: CONVERSATION_ID, type: "document", media_storage_path: `${ORG_ID}/outra/out-1.pdf` } as never,
+        ctx,
+      ),
+    ).rejects.toThrow(/fora da conversa/);
+    expect(mockedRegistrar).not.toHaveBeenCalled();
+  });
+});
+
 describe("crm_send_whatsapp_message — freio anti-ban do número", () => {
   it("passa pelo freio ANTES de enviar e conta o envio que saiu", async () => {
     const segurado = { channelSessionId: SESSION_ID };
