@@ -20,10 +20,10 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, noContent, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { updateGrupoSchema } from "@/lib/schemas/templates";
-import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -38,10 +38,20 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "message_templates" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "message_templates",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user, org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "message_template_groups.item", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const { organizationId, apiTokenId } = authz;
+  // Autor só quando quem chama é uma pessoa; token não tem usuário, então NULL.
+  const autor = authz.actor.type === "user" ? authz.actor.id : null;
   const { id } = await params;
 
   const parsed = updateGrupoSchema.safeParse(await req.json().catch(() => null));
@@ -52,12 +62,12 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
     });
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data, error } = await supabase
     .from("message_template_groups")
     .update({ name: parsed.data.name, updated_at: new Date().toISOString() })
     .eq("id", id)
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", organizationId)
     .select(COLS)
     .maybeSingle();
   if (error) {
@@ -70,8 +80,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
 
   void audit({
     action: "template_group.updated",
-    actorUserId: user.id,
-    organizationId: org.orgId,
+    actorUserId: autor,
+    actorApiTokenId: apiTokenId ?? null,
+    organizationId,
     resourceType: "message_template_group",
     resourceId: data.id,
     requestId,
@@ -80,25 +91,35 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
   return ok(data, { requestId });
 }
 
-export async function DELETE(_req: NextRequest, { params }: RouteParams): Promise<Response> {
+export async function DELETE(req: NextRequest, { params }: RouteParams): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "message_templates" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "message_templates",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user, org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "message_template_groups.item", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const { organizationId, apiTokenId } = authz;
+  // Autor só quando quem chama é uma pessoa; token não tem usuário, então NULL.
+  const autor = authz.actor.type === "user" ? authz.actor.id : null;
   const { id } = await params;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   // `name` volta só para o audit: depois do delete a linha não existe, e o
   // recibo de "apagou o grupo X" precisa do nome para ser legível.
   const { data: apagado, error } = await supabase
     .from("message_template_groups")
     .delete()
     .eq("id", id)
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", organizationId)
     .select("id, name")
     .maybeSingle();
   if (error) return fail("internal_error", "Erro ao excluir o grupo.", 500, { requestId });
@@ -106,8 +127,9 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams): Promis
 
   void audit({
     action: "template_group.deleted",
-    actorUserId: user.id,
-    organizationId: org.orgId,
+    actorUserId: autor,
+    actorApiTokenId: apiTokenId ?? null,
+    organizationId,
     resourceType: "message_template_group",
     resourceId: apagado.id,
     requestId,
