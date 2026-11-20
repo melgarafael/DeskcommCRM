@@ -135,6 +135,8 @@ Abre `https://<tu-dominio>` (el candado tarda ~1 min en aparecer), entra con el 
 mano **Google Authenticator** o **Authy** *si* querés activar la verificación en dos pasos — es **opcional** y está en Configuración › Seguridad; el primer inicio de sesión **no** la exige. En el
 onboarding, escanea el código QR con el WhatsApp de tu número.
 
+**¿No definiste una contraseña?** Encontrá la contraseña inicial en `OWNER_PASSWORD`, en el archivo `.env` de la carpeta del CRM.
+
 ### 🤖 ¿Prefieres que una IA lo instale por ti?
 
 Suelta la carpeta `hostgator-setup-kit/` en el chat de **Claude Code** corriendo dentro del VPS

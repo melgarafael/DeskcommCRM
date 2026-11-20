@@ -134,6 +134,8 @@ Open `https://<your-domain>` (the padlock takes ~1 min to appear), sign in as th
 have **Google Authenticator** or **Authy** at hand *if* you want to turn on two-step verification — it is **optional** and lives in Settings › Security; the first login does **not** require it. During
 onboarding, scan the QR code with your WhatsApp number.
 
+**Didn't set a password?** Find the initial password under `OWNER_PASSWORD` in the `.env` file in your CRM folder.
+
 ### 🤖 Rather have an AI install it for you?
 
 The repository ships **assistant guides** that load on their own in Claude Code, Codex, Cursor,

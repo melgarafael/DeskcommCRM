@@ -63,6 +63,7 @@
 
 import { phoneLookupVariants } from "@/lib/channels/phone-variants";
 import { recusaRegistrada } from "@/lib/lgpd/recusa-registrada";
+import { dataIsoNoFuso } from "@/lib/propostas/data-no-fuso";
 
 /**
  * As marcas de um contato do CRM que tiram a empresa do arquivo
@@ -78,12 +79,40 @@ export type ContatoDaLista = {
   consent?: unknown;
 };
 
+/**
+ * A MARCA do que já foi tentado nesta empresa (issue #4632): quando a abordagem
+ * foi registrada e em que campanha ela saiu.
+ *
+ * Onde isso mora, medido: a linha de `prospecting_candidates` guarda o ESTADO
+ * atual da empresa naquela campanha (`status`, `attempted_at`, `channel_session_id`)
+ * e a única trilha que sobrevive à linha é a auditoria `prospecting.approach_sent`
+ * (`worker.ts`), com `campaign_id`, `contact_id`, `conversation_id` e
+ * `channel_session_id` no metadata. Ou seja: o registro de abordagem é POR
+ * EMPRESA+CAMPANHA na linha e POR CONTATO na trilha — não é por número. O número
+ * (`channel_session_id`) viaja junto, como dado da abordagem, e não é a chave
+ * de nada.
+ *
+ * Por isso a campanha da abordagem vem da trilha (`campanha`), e `campanha` só
+ * difere da campanha exportada quando a mesma empresa já foi tentada por OUTRA
+ * campanha — o caso que a #4632 veio resolver.
+ */
+export type AbordagemAnterior = {
+  /** Quando a abordagem foi registrada (`created_at` da trilha, ou `attempted_at`). */
+  em?: string | Date | null;
+  /** A campanha em que a abordagem saiu (`campaign_id` da trilha, já com nome). */
+  campanha?: string | null;
+};
+
 /** O mínimo de um candidato que a régua e o CSV leem (`prospecting_candidates`). */
 // `type` e não `interface`: `pg` exige `Record<string, any>` no genérico do
 // `query<>`, e só o alias ganha índice implícito.
 export type CandidatoDaLista = {
   status?: string;
   attempted_at?: string | Date | null;
+  /** Identidade da empresa na origem (`prospecting_candidates.place_id`): a chave do dedupe. */
+  place_id?: string | null;
+  /** O que já foi tentado com esta empresa, na trilha `prospecting.approach_sent`. */
+  abordagem?: AbordagemAnterior | null;
   /** Coluna `phone` da linha; `data.phone` é a mesma coisa no caminho da busca. */
   phone?: string | null;
   contact_id?: string | null;
@@ -157,6 +186,46 @@ export function naLista(c: CandidatoDaLista): boolean {
   return entraNaLista(c, "todas");
 }
 
+/**
+ * A chave da EMPRESA, para a mesma empresa não sair duas vezes no arquivo da
+ * mesma campanha: `place_id` é a identidade da origem; sem ele, o telefone; sem
+ * telefone, o nome normalizado. `prospecting_candidates` tem
+ * `unique (organization_id, place_id)` e `prospecting_phone_once_org`, então a
+ * duplicata não deveria existir no banco — esta é a rede embaixo do trapézio,
+ * para quando a leitura juntar linhas de duas campanhas.
+ */
+export function chaveDaEmpresa(c: CandidatoDaLista): string {
+  if (c.place_id) return `place:${c.place_id}`;
+  const telefone = telefonesDaEmpresa(c)[0];
+  if (telefone) return `fone:${telefone}`;
+  return `nome:${(c.data.name ?? "").trim().toLowerCase()}`;
+}
+
+/**
+ * UMA linha por empresa, na ordem da campanha. Se a mesma empresa aparece duas
+ * vezes (uma abordada e outra não), fica a ABORDADA: a lista da #4632 existe
+ * para mostrar o que já foi tentado, e a linha sem tentativa esconderia a marca.
+ */
+export function empresasDaLista(
+  candidatos: readonly CandidatoDaLista[],
+  quem: QualLista,
+): CandidatoDaLista[] {
+  const porChave = new Map<string, number>();
+  const saida: CandidatoDaLista[] = [];
+  for (const c of candidatos) {
+    if (!entraNaLista(c, quem)) continue;
+    const chave = chaveDaEmpresa(c);
+    const jaEsta = porChave.get(chave);
+    if (jaEsta === undefined) {
+      porChave.set(chave, saida.length);
+      saida.push(c);
+      continue;
+    }
+    if (!foiAbordada(saida[jaEsta]!) && foiAbordada(c)) saida[jaEsta] = c;
+  }
+  return saida;
+}
+
 /** O que aconteceu com a empresa, na coluna `situacao` do arquivo completo. */
 export const SITUACOES_DA_EMPRESA = [
   "respondeu",
@@ -195,6 +264,45 @@ export function situacaoDaEmpresa(c: CandidatoDaLista): SituacaoDaEmpresa {
   if (c.attempted_at != null || c.status === "sending") return "envio não confirmado";
   if (naoAbordada(c)) return "não abordada";
   return "fora da fila";
+}
+
+/** A empresa já teve TENTATIVA registrada? (a linha da campanha, ou a trilha) */
+export function foiAbordada(c: CandidatoDaLista): boolean {
+  // `attempted_at` é gravado ANTES da guarda, da IA e da autorização
+  // (`worker.ts`): tentativa, não envio. É a marca do que já foi tentado, e é
+  // isso que a coluna promete — quem separa "enviada" de "envio não confirmado"
+  // é `situacaoDaEmpresa`.
+  if (c.attempted_at != null) return true;
+  if (c.status === "sent" || c.status === "sending") return true;
+  return c.abordagem?.em != null;
+}
+
+/**
+ * `AAAA-MM-DD` (ou vazio). Data ISO e não `dd/mm/aaaa`: o arquivo é lido por
+ * planilha e por script, e a data ambígua é a que faz alguém achar que a
+ * abordagem foi em janeiro quando foi em dezembro.
+ *
+ * O dia é o do FUSO da organização, não o de UTC: `toISOString()` punha uma
+ * abordagem das 21:30 de Brasília no dia seguinte.
+ */
+export function dataDaAbordagem(c: CandidatoDaLista, fuso: string): string {
+  const marca = c.abordagem?.em ?? c.attempted_at;
+  if (marca == null) return "";
+  const data = marca instanceof Date ? marca : new Date(marca);
+  if (Number.isNaN(data.getTime())) return "";
+  return dataIsoNoFuso(data, fuso);
+}
+
+/**
+ * Em que campanha a abordagem saiu. Vem da TRILHA (`prospecting.approach_sent`)
+ * quando ela tem a passagem; sem trilha, a campanha da própria linha — que é o
+ * mesmo dado dito pelo lugar em que a empresa entrou. Empresa não abordada não
+ * tem campanha, e a coluna fica vazia: inventar o nome da campanha exportada ali
+ * diria "tentamos" de quem nunca recebeu nada.
+ */
+export function campanhaDaAbordagem(c: CandidatoDaLista, nomeDaCampanha: string): string {
+  if (!foiAbordada(c)) return "";
+  return c.abordagem?.campanha || nomeDaCampanha;
 }
 
 export interface ResumoDaLista {
@@ -276,6 +384,15 @@ export const COLUNAS_DA_LISTA = [
 
 export const COLUNA_DA_SITUACAO = "situacao";
 
+/**
+ * As duas colunas da MARCA do que já foi tentado (#4632), no fim do arquivo
+ * completo. `abordada_em` é a data (`AAAA-MM-DD`) e `campanha_anterior` é a
+ * campanha em que a abordagem saiu — o par que responde "esta empresa já foi
+ * tentada, quando e por qual oferta" sem precisar de lista paralela.
+ */
+export const COLUNA_DA_ABORDAGEM = "abordada_em";
+export const COLUNA_DA_CAMPANHA_ANTERIOR = "campanha_anterior";
+
 const SEPARADOR = ";";
 
 /**
@@ -333,6 +450,16 @@ export function csvDaLista(
   opcoes: {
     comSituacao?: boolean;
     /**
+     * Acrescenta a MARCA do que já foi tentado (`abordada_em` e
+     * `campanha_anterior`) — só faz sentido junto da lista inteira, porque quem
+     * nunca foi abordado sai com as duas colunas vazias.
+     */
+    comAbordagem?: boolean;
+    /** O nome da campanha exportada: a campanha da abordagem quando a trilha não tem a passagem. */
+    nomeDaCampanha?: string;
+    /** O fuso IANA da organização: o dia de `abordada_em`. Sem ele, o padrão do produto. */
+    fuso?: string;
+    /**
      * A situação no idioma de quem vai ler a planilha. A rota passa o idioma da
      * organização; o padrão é o português, como os nomes das colunas.
      */
@@ -340,12 +467,23 @@ export function csvDaLista(
   } = {},
 ): string {
   const comSituacao = opcoes.comSituacao === true;
+  const comAbordagem = opcoes.comAbordagem === true;
+  const nomeDaCampanha = opcoes.nomeDaCampanha ?? "";
+  const fuso = opcoes.fuso ?? "";
   const rotulo = opcoes.rotuloDaSituacao ?? ((s: SituacaoDaEmpresa) => s);
-  const cabecalho = comSituacao ? [...COLUNAS_DA_LISTA, COLUNA_DA_SITUACAO] : [...COLUNAS_DA_LISTA];
+  const cabecalho = [
+    ...COLUNAS_DA_LISTA,
+    ...(comSituacao ? [COLUNA_DA_SITUACAO] : []),
+    ...(comAbordagem ? [COLUNA_DA_ABORDAGEM, COLUNA_DA_CAMPANHA_ANTERIOR] : []),
+  ];
   const linhas = [
     cabecalho.join(SEPARADOR),
     ...candidatos.map((c) =>
-      (comSituacao ? [...valoresDaEmpresa(c), rotulo(situacaoDaEmpresa(c))] : valoresDaEmpresa(c))
+      [
+        ...valoresDaEmpresa(c),
+        ...(comSituacao ? [rotulo(situacaoDaEmpresa(c))] : []),
+        ...(comAbordagem ? [dataDaAbordagem(c, fuso), campanhaDaAbordagem(c, nomeDaCampanha)] : []),
+      ]
         .map(celula)
         .join(SEPARADOR),
     ),

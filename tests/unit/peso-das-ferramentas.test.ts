@@ -58,7 +58,18 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_get_queue_status": { tokens: 83, motivo: BASE },
   "crm_list_leads": { tokens: 500, motivo: BASE },
   "crm_get_lead": { tokens: 202, motivo: BASE },
-  "crm_list_pipelines": { tokens: 63, motivo: BASE },
+  "crm_count_leads": { tokens: 317, motivo: "ferramenta nova: conta negócios sem listá-los, para o agente não paginar crm_list_leads só para responder 'quantos?'; 3 filtros (funil, etapa, status), sem responsável, de propósito, para pesar menos" },
+  "crm_list_lead_attachments": {
+    tokens: 259,
+    motivo:
+      "#4544: a descrição diz que o id vem daqui e vai para a leitura do documento — sem isso o agente inventava um id ou desistia de olhar o anexo",
+  },
+  "crm_get_lead_attachment": {
+    tokens: 413,
+    motivo:
+      "#4544: precisa dizer que imagem/binário NÃO é transcrito (senão o agente trata resposta vazia como documento sem dados) e que o teto é por chamada",
+  },
+  "crm_list_pipelines": { tokens: 118, motivo: "#4667: a descrição passou a dizer que a lista traz os CAMPOS do funil (key/label/type/escopo/options[].value) e que em `custom_fields` se usa a key daí; sem isso o agente inventava a chave" },
   "crm_get_pipeline_forecast": { tokens: 281, motivo: "#4322: a descrição passou a dizer que `truncado: true` marca valores parciais quando o funil passa do teto de leitura; sem isso o agente apresenta um recorte como o total" },
   "crm_search_knowledge": { tokens: 250, motivo: BASE },
   "crm_list_knowledge_sources": { tokens: 86, motivo: BASE },
@@ -110,7 +121,11 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_confirm_appointment": { tokens: 318, motivo: BASE },
   "crm_set_appointment_outcome": { tokens: 263, motivo: BASE },
   "crm_create_lead": { tokens: 1003, motivo: "referencia_externa (Spec 25 R5): +70 do item escolhido e do funil opcional; a forma é conferida por refine, sem padrão no esquema" },
-  "crm_update_lead": { tokens: 817, motivo: BASE },
+  "crm_update_lead": {
+    tokens: 966,
+    motivo:
+      "#4666: a descrição diz que `tags` SUBSTITUI a lista inteira, e entram `tags_adicionar`/`tags_remover` — sem essas palavras o agente apagava etiqueta acreditando acrescentar",
+  },
   "crm_move_lead_stage": { tokens: 380, motivo: BASE },
   "crm_retomar_lead": { tokens: 394, motivo: BASE },
   "crm_propose_lead_fields_from_document": { tokens: 583, motivo: BASE },
@@ -133,6 +148,9 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_set_webhook_source_active": { tokens: 199, motivo: BASE },
   "crm_set_automation_rule_active": { tokens: 232, motivo: BASE },
   "crm_schedule_followup": { tokens: 539, motivo: BASE },
+  "crm_create_task": { tokens: 736, motivo: "capacidade nova (#4838): tarefa da equipe pelo MCP, no pacote escalar; o peso é quase todo o regex que o zod gera para cada uuid e data — o mesmo das irmãs" },
+  "crm_list_tasks": { tokens: 901, motivo: "capacidade nova (#4838): tarefa da equipe pelo MCP, no pacote escalar; o peso é quase todo o regex que o zod gera para cada uuid e data — o mesmo das irmãs" },
+  "crm_update_task": { tokens: 919, motivo: "capacidade nova (#4838): tarefa da equipe pelo MCP, no pacote escalar; o peso é quase todo o regex que o zod gera para cada uuid e data — o mesmo das irmãs" },
   "crm_enroll_followup_flow": { tokens: 365, motivo: BASE },
   "crm_cancel_followup": { tokens: 254, motivo: BASE },
   "crm_close_demand": { tokens: 244, motivo: BASE },
@@ -203,10 +221,22 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +353 com `crm_save_lead_diagnosis` (#4632), o diagnóstico da empresa gravado
 // na ficha pelo agente da prospecção. MEDIDO no merge com a main: 39537 = 39187 + 350
 // (2026-11-16; o PR media +353 contra uma main mais velha).
-// +2116 com as 7 ferramentas de editar os assistentes de IA (só admin, pelo
-// ChatGPT; nenhuma vai para o turno do agente). MEDIDO: 41653 = 39537 + 2116.
-// +478 com `configuracoes` no rascunho do assistente. MEDIDO: 42131 = 41653 + 478.
-const TETO_TOTAL = 42131;
+// +672 com os documentos do negócio (#4544): 259 de `crm_list_lead_attachments`
+// e 413 de `crm_get_lead_attachment`. MEDIDO no merge com a main: 40209 = 39537 + 672
+// (2026-11-17, main de `0652fa6866`).
+// +55 na descrição de `crm_list_pipelines`, que passou a dizer que a lista traz
+// os CAMPOS do funil (#4667) — é o delta medido naquela entrada (63 → 118).
+// +149 no `crm_update_lead` (#4666), que passou a dizer que `tags` substitui a
+// lista inteira e ganhou `tags_adicionar`/`tags_remover`. MEDIDO no merge com a
+// main pós-#4886 e #4684: 40675 (2026-11-18).
+// +2556 com as três ferramentas de tarefa (#4838): 736 de `crm_create_task`, 901 de
+// `crm_list_tasks` e 919 de `crm_update_task`. MEDIDO no merge com a main de 19/11
+// (que já tinha 40730): 43286 (2026-11-19), não somado à mão.
+// +2594 com as 7 ferramentas de editar os assistentes de IA (#4805; só admin, pelo
+// ChatGPT; nenhuma vai para o turno do agente): 2116 das ferramentas e 478 de
+// `configuracoes` no rascunho. MEDIDO no merge com a main de 20/11 (`4c7f1f2fd9`):
+// 45880 = 43286 + 2594 (2026-11-20), não somado à mão.
+const TETO_TOTAL = 45880;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

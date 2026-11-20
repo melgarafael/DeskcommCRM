@@ -16,6 +16,7 @@ const PAGINA_BOA = `<html><head><meta name="viewport" content="width=device-widt
 <link rel="icon" href="/f.ico"></head><body><h1>Bem-vindo à Vitta</h1>
 <a href="https://wa.me/551199">zap</a><a href="tel:+551199">tel</a><a href="mailto:a@b.com">m</a>
 <a href="https://instagram.com/x">ig</a><a href="https://google.com/maps?q=x">mapa</a>
+<address>Rua do Comércio, 123 - Sorocaba/SP</address>
 <img src="a.jpg"><img src="b.jpg"><img src="c.jpg"><p>Texto visível da clínica com serviços e contato.</p><p>Atendemos de segunda a sábado com hora marcada, convênios e pacotes promocionais para novos pacientes da região.</p><ul><li>Limpeza de pele</li><li>Harmonização facial</li><li>Massagem modeladora</li><li>Avaliação gratuita</li></ul></body></html>`;
 
 function fakeFetch(respostas: Record<string, { status: number; body: string; location?: string }>): typeof fetch {
@@ -71,6 +72,19 @@ describe("site-fetch", () => {
     expect(v.problemas).toContain("http-sem-redirecionar");
     expect(v.problemas).not.toContain("sem-https");
   });
+
+  // A leitura com DNS fixado usa `https.request`, que entrega o código do
+  // certificado em `erro.code`, SEM `cause` (o `fetch` o punha em `cause.code`).
+  for (const code of ["CERT_HAS_EXPIRED", "DEPTH_ZERO_SELF_SIGNED_CERT", "ERR_TLS_CERT_ALTNAME_INVALID"]) {
+    it(`erro de certificado em erro.code sem cause (${code}) vira ssl-invalido, não fora do ar`, async () => {
+      const falhaDeCertificado = (async () => {
+        throw Object.assign(new Error("falha de certificado"), { code });
+      }) as unknown as typeof fetch;
+      const v = await auditarSite("https://exemplo.com.br", AGORA, falhaDeCertificado, VERIFICADOR_LIBERADO);
+      expect(v.classe).toBe("ssl-invalido");
+      expect(v.problemas).toEqual(["ssl-invalido"]);
+    });
+  }
 
   describe("resposta de erro que não é prova de defeito (pedido da triagem do #2711)", () => {
     const respondeCom = (status: number, headers: Record<string, string> = {}) =>

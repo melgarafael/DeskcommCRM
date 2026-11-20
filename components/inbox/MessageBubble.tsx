@@ -5,7 +5,7 @@ import { format } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
 import { ArrowBendUpLeft, ArrowBendUpRight, CalendarX, CaretDown, Check, Checks, Clock, DownloadSimple, FileText, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
 import { mediaDownloadSrc } from "@/components/inbox/media/media-utils";
-import { lazy, Suspense, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -25,6 +25,7 @@ import {
   textoComMencoesResolvidas,
 } from "@/lib/messaging/mencoes-de-grupo";
 import { lerRemetenteDeGrupo, rotuloDoRemetente } from "@/lib/messaging/remetente-de-grupo";
+import { corDoParticipante } from "@/lib/messaging/cor-do-participante";
 import { motivoDaFalhaDaMensagem } from "@/lib/inbox/motivo-da-falha";
 import { primeiroNomeDeQuemEnviou } from "@/lib/inbox/nome-no-balao";
 import { hrefDoCompromisso, puloDaAgendaDaMensagem } from "@/lib/inbox/pulo-da-agenda";
@@ -329,12 +330,19 @@ export function MessageBubble({
   // Encaminhar vale para qualquer mensagem com conteúdo — recebida ou enviada.
   // Só não se encaminha o que foi apagado: o conteúdo saiu do ar de propósito.
   const podeEncaminhar = Boolean(onEncaminhar) && !apagada;
+  // RESPONDER CITANDO (#4787): a citação é o CONTEÚDO da mensagem num segundo
+  // lugar da tela — e, no envio, uma referência que sai para a plataforma. Se a
+  // linha foi apagada, citá-la é (a) mostrar de volta o que saiu do ar e (b)
+  // mandar ao canal um id que não existe mais lá. A régua é a MESMA régua de
+  // Encaminhar/Reagir/Baixar: o que foi apagado não ganha atalho de volta.
+  // O servidor recusa de novo (`citacao_apagada`) — aqui é a tela que não oferece.
+  const podeResponder = Boolean(onResponder) && !apagada;
   const podeReagir = Boolean(onReagir) && !apagada && !ocultaNoCrm;
   // Baixar vale para toda mídia que a tela mostra (foto, vídeo, áudio, documento,
   // figurinha). Não para a apagada nem para a oculta: o conteúdo saiu de cena de
   // propósito, e o menu não deve ser o atalho de volta a ele.
   const podeBaixar = hasMedia && !apagada && !ocultaNoCrm;
-  const temMenu = Boolean(onResponder || podeEncaminhar || podeBaixar || (podeEditar && onEditar) || podeApagar || podeOcultar || podeReagir);
+  const temMenu = Boolean(podeResponder || podeEncaminhar || podeBaixar || (podeEditar && onEditar) || podeApagar || podeOcultar || podeReagir);
   const cartaoDeDocumentoVisivel = hasMedia && message.type === "document"
     && !editando && !apagada && !ocultaNoCrm;
   const reenvio = onReenviar
@@ -442,6 +450,9 @@ export function MessageBubble({
   // `lerRemetenteDeGrupo` (Task 2): este componente não conhece o formato de
   // `metadata.group_sender`, só o resultado já validado.
   const remetente = !isOutbound ? lerRemetenteDeGrupo(message.metadata) : null;
+  // Cada pessoa do grupo tem uma cor fixa no NOME, como no WhatsApp do celular.
+  // A apagada fica de fora: ela já foi para o cinza de propósito (ver abaixo).
+  const corDoRemetente = remetente && !apagada ? corDoParticipante(remetente) : null;
   // #3566 — AS MENÇÕES do grupo. Em grupo o WhatsApp escreve `@<lid>` no texto,
   // e `metadata.mentions` guarda quem é cada identificador. O corpo GRAVADO
   // continua cru (é o dado do provedor, auditável); a troca acontece aqui, por
@@ -573,8 +584,8 @@ export function MessageBubble({
                 editorRef.current?.querySelector("textarea")?.focus({ preventScroll: true });
                 editorRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest", inline: "nearest" });
               }}>
-              {onResponder && (
-                <DropdownMenuItem onSelect={() => onResponder(message)}>
+              {podeResponder && (
+                <DropdownMenuItem onSelect={() => onResponder?.(message)}>
                   <ArrowBendUpLeft size={16} aria-hidden />{t("Responder a esta mensagem")}
                 </DropdownMenuItem>
               )}
@@ -694,7 +705,21 @@ export function MessageBubble({
           </CitacaoDaBolha>
         )}
         {remetente && (
-          <p className="mb-0.5 text-[11px] font-medium text-muted-foreground">
+          <p
+            className={cn(
+              "mb-0.5 text-[11px] font-medium text-muted-foreground",
+              corDoRemetente &&
+                "font-semibold text-[color:var(--cor-participante)] dark:text-[color:var(--cor-participante-escuro)]",
+            )}
+            style={
+              corDoRemetente
+                ? ({
+                    "--cor-participante": corDoRemetente.claro,
+                    "--cor-participante-escuro": corDoRemetente.escuro,
+                  } as CSSProperties)
+                : undefined
+            }
+          >
             {rotuloDoRemetente(remetente)}
           </p>
         )}

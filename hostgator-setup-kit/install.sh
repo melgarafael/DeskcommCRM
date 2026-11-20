@@ -2688,6 +2688,16 @@ telemetria_no_banner() {
   fi
 }
 
+senha_no_banner() {
+  # O install-single-server.sh preenche OWNER_PASSWORD antes de chamar --yes.
+  # Pode ser uma senha gerada pelo kit ou uma credencial preparada pela pessoa.
+  if [ "${SINGLE_SERVER:-0}" = "1" ]; then
+    t "(a que você definiu ou a de OWNER_PASSWORD no .env da pasta do CRM)"
+  else
+    t "(a que você definiu)"
+  fi
+}
+
 cat <<DONE
 
 $(c_grn "═══════════════════════════════════════════════════════")
@@ -2702,7 +2712,7 @@ $(pendencia_da_ia)
 
   2. $(t "Faça login com:")
        $(t "e-mail:") ${OWNER_EMAIL}
-       $(t "senha:")  $(t "(a que você definiu)")
+       $(t "senha:")  $(senha_no_banner)
 
   3. $(t "Conecte o WhatsApp (2º passo do onboarding):")
        $(t "Deixe o WhatsApp JÁ ABERTO em Configurações → Aparelhos conectados")
