@@ -6,7 +6,7 @@
  *
  * O visto azul (#2981) pedia ao canal "li esta conversa", sem dizer quais
  * mensagens. No NOWEB com "Guardar histórico" desligado — o padrão desde o #999 —
- * o WAHA só sabe marcar por mensagem e recusa o pedido sem ids com 400. O adapter
+ * o canal por QR só sabe marcar por mensagem e recusa o pedido sem ids com 400. O adapter
  * não lê banco (`docs/doctrine/restricao-de-canal.md`), então a lista é resolvida
  * aqui, por quem monta o envelope, como já é o `external_id` da citada.
  *
@@ -14,7 +14,7 @@
  *
  * "Respondi, então li" = as mensagens que o cliente mandou DEPOIS do último envio
  * nosso que saiu de verdade, na ordem em que o CRM as viu (`created_at`). Não é
- * `sent_at`: o webhook do WAHA traz a hora em SEGUNDOS, e uma mensagem que
+ * `sent_at`: o webhook do canal por QR traz a hora em SEGUNDOS, e uma mensagem que
  * chegou no mesmo segundo da resposta anterior pareceria mais velha que ela.
  *
  *   - Envio que falhou ou ainda está na fila não respondeu nada: não fecha a régua.
@@ -35,7 +35,7 @@
  * é a ordem do tempo.
  *
  * Os filtros vão para o banco ANTES do teto, para registros que não contam não
- * empurrarem para fora a mensagem que conta. Teto de 30: o mesmo que o WAHA
+ * empurrarem para fora a mensagem que conta. Teto de 30: o mesmo que o canal por QR
  * aplica ao "li a conversa" numa conversa individual. Devolve da mais antiga para
  * a mais nova.
  *
@@ -49,7 +49,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-/** O teto do próprio WAHA para "li a conversa" numa conversa individual. */
+/** O teto do próprio canal por QR para "li a conversa" numa conversa individual. */
 const MAXIMO_DE_IDS = 30;
 /** Quanto a leitura pode atrasar o envio, no pior caso. */
 const TETO_DA_LEITURA_MS = 2_000;
