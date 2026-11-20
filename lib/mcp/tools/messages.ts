@@ -33,6 +33,14 @@ const inputShape = {
   conversation_id: z.string().uuid(),
   body: z.string().min(1).max(4096).optional(),
   media_url: z.string().url().optional(),
+  // #5034: arquivo que o cliente MCP já subiu ao CRM (`POST /api/v1/conversations/{id}/media` devolve o
+  // `storage_path`). Sem link público: documento de cliente não precisa ir para a internet. A posse do
+  // arquivo (organização E esta conversa) é conferida pelo `sendMessageHandler`, a mesma régua do Inbox.
+  media_storage_path: z
+    .string()
+    .optional()
+    .describe("storage_path devolvido por POST /api/v1/conversations/{id}/media (arquivo desta conversa); dispensa media_url"),
+  media_filename: z.string().optional().describe("nome do arquivo que o cliente vê (documento)"),
   media_mime: z.string().optional(),
   type: z
     .enum(["text", "image", "audio", "document", "sticker", "video", "location", "contact"])
@@ -60,6 +68,8 @@ export const crmSendWhatsappMessage: McpToolDefinition<typeof inputShape> = {
       type: input.type,
       body: input.body,
       media_url: input.media_url,
+      media_storage_path: input.media_storage_path,
+      media_filename: input.media_filename,
       media_mime: input.media_mime,
     });
 

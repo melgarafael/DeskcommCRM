@@ -107,7 +107,7 @@ describe("crm_send_whatsapp_message — arquivo já enviado ao CRM, sem link pú
   });
 
   it("caminho de outra conversa: a recusa do envio chega ao cliente MCP, nada sai", async () => {
-    mockedSend.mockRejectedValue(new ApiError("validation_failed", "media_storage_path fora da conversa.", 422));
+    mockedSend.mockRejectedValue(new ApiError(422, "validation_failed", undefined, "req-1", "media_storage_path fora da conversa."));
 
     await expect(
       crmSendWhatsappMessage.handler(
