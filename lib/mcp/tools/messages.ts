@@ -63,9 +63,14 @@ export const crmSendWhatsappMessage: McpToolDefinition<typeof inputShape> = {
   requiresRole: "agent",
   requiresScope: "mcp:write",
   // #5034: o nome do arquivo pode carregar o nome do paciente ou do cliente, e a auditoria é só de
-  // acréscimo (não some quando a mensagem some). Fica o fato de que havia nome, não o nome.
-  redigirParaAuditoria: (args) =>
-    args.media_filename === undefined ? args : { ...args, media_filename: "[redigido]" },
+  // acréscimo (não some quando a mensagem some). O caminho também: quem erra e cola um caminho LOCAL
+  // ("C:/clientes/Maria/laudo.pdf") deixaria o nome na trilha mesmo com o envio recusado. Fica o fato
+  // de que havia, não o valor.
+  redigirParaAuditoria: (args) => ({
+    ...args,
+    ...(args.media_filename === undefined ? {} : { media_filename: "[redigido]" }),
+    ...(args.media_storage_path === undefined ? {} : { media_storage_path: "[redigido]" }),
+  }),
   handler: async (input, ctx) => {
     const parsed = sendMessageSchema.parse({
       conversation_id: input.conversation_id,

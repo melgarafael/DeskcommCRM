@@ -288,7 +288,7 @@ inputSchema: z.object({
   type: z.enum(['text', 'image', 'audio', 'document', 'sticker', 'video', 'location', 'contact']).default('text'),
   media_url: z.string().url().optional(),
   media_storage_path: z.string().optional(),   // #5034
-  media_filename: z.string().optional(),       // #5034 (fica fora da auditoria)
+  media_filename: z.string().optional(),       // #5034 (caminho e nome ficam fora da auditoria)
   media_mime: z.string().optional()
 })
 // Precisa de body, media_url ou media_storage_path.
@@ -296,11 +296,11 @@ inputSchema: z.object({
 
 **Arquivo sem link público (#5034)**: suba o arquivo com `POST /api/v1/conversations/{id}/media`
 (multipart, campo `file`; sessão do navegador ou token de integração com escrita — o token OAuth do MCP
-não serve para a rota REST). A resposta traz `storage_path`, `kind` e `media_mime`. Envie com:
+não serve para a rota REST). A resposta (`data`) traz `storage_path`, `kind`, `media_mime` e `media_filename` (o nome original). Envie com:
 
 ```ts
 { conversation_id, type: kind /* 'image' | 'video' | 'audio' | 'document' */,
-  media_storage_path: storage_path, media_mime, media_filename: 'contrato.pdf', body /* legenda, opcional */ }
+  media_storage_path: storage_path, media_mime, media_filename /* o da resposta do upload */, body /* legenda, opcional */ }
 ```
 
 O envio confere que o arquivo é da organização E desta conversa; caminho de outra conversa é recusado.
