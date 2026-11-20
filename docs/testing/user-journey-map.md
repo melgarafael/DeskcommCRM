@@ -4565,7 +4565,7 @@ Cobertura hoje, só por escrita (não executada): `tests/invariants/extensoes-to
 (rota, `pnpm test:unit`, CI `verify`); `lib/extensions/segredo-do-modulo.test.ts`;
 `lib/mcp/auth-ator-modulo.test.ts`; `tests/api/revogar-token-de-modulo-desativa-a-ativacao.test.ts`;
 `components/extensions/ExtensionsManager.test.tsx` e `tests/unit/tokens-lista-modulo-conectado.test.tsx`.
-Nenhuma delas abre `/admin/extensoes` nem `/app/settings/api-tokens` num navegador.
+Nenhuma delas abre `/app/extensions` nem `/app/settings/api-tokens` num navegador.
 
 Estado: **não executada.** Esta entrega escreve a jornada; nada foi rodado nesta máquina, e o veredito é o CI do PR interno.
 

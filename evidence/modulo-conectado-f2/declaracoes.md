@@ -35,10 +35,10 @@ Versão da API do host: **não sobe nesta F2.** `HOST_API_VERSION = 2` (verifica
 
 **Nenhuma tela nova.** Duas telas existentes ganham linha ou botão:
 
-- `/admin/extensoes`: cartão do módulo `connected` com "Gerar segredo" (sem segredo) ou "Gerar novo segredo"
+- `/app/extensions`: cartão do módulo `connected` com "Gerar segredo" (sem segredo) ou "Gerar novo segredo"
   (com segredo), e a caixa que mostra o segredo uma vez
-  (`components/extensions/InstalledExtensionCard.tsx`). A porta já existe em `lib/admin/navegacao.ts`,
-  linha 210 (`grep -n '"/admin/extensoes"' lib/admin/navegacao.ts`).
+  (`components/extensions/InstalledExtensionCard.tsx`). A porta já existe em `lib/navigation/catalogo.ts`
+  (`grep -n '"/app/extensions"' lib/navigation/catalogo.ts`).
 - `/app/settings/api-tokens`: linha "Módulo <slug>" (sem botão de copiar) e o botão Revogar, que
   desativa a ativação daquela organização (`app/app/settings/api-tokens/_components/ApiTokensClient.tsx`).
   A porta já existe em `lib/navigation/catalogo.ts`, linha 1152
@@ -87,9 +87,9 @@ configurar a chave. Como a mensagem chega à tela, ver "O que NÃO foi medido".
    `lib/audit/ator-modulo.ts`, sem o texto do token) e `extension.switched` (quando desligar revoga).
    Recibo: **nenhum novo** (emenda 3 do plano: girar não tem recibo, para o segredo não ficar em
    `extension_operations.result`).
-4. **Onde apareço na tela.** Os dois lugares do item 14: o cartão em `/admin/extensoes` e a linha
+4. **Onde apareço na tela.** Os dois lugares do item 14: o cartão em `/app/extensions` e a linha
    "Módulo <slug>" em `/app/settings/api-tokens`.
-5. **Por qual porta se chega.** `/admin/extensoes` (`lib/admin/navegacao.ts`, linha 210) e
+5. **Por qual porta se chega.** `/app/extensions` (`lib/navigation/catalogo.ts`) e
    `/app/settings/api-tokens` (`lib/navigation/catalogo.ts`, linha 1152). Nenhuma tela nova.
 6. **Anti-morte.** **Nenhum, com justificativa:** a busca é de máquina para máquina. Quem a recusa é o
    módulo, que recebe um código de erro (`module_auth_failed` 401, `rate_limited` 429,
@@ -154,7 +154,7 @@ Só o que a F2 muda. Cada uma tem o comando que a produz hoje.
 - **Linha "Módulo <slug>" antes da primeira busca** (a vaga reservada) não foi vista em tela; a afirmação
   de que ela ainda não tem texto utilizável é previsão do desenho, não medição.
 - **Nenhuma jornada em navegador.** J70 é especificação: os casos estão com "NÃO EXECUTADO" e nenhum abriu
-  `/admin/extensoes` nem `/app/settings/api-tokens`.
+  `/app/extensions` nem `/app/settings/api-tokens`.
 - **`lib/database.types.ts` não foi regenerado.** O arquivo não está no diff da F2
   (`git diff --name-only f88438ad8 30a87a43a -- lib/database.types.ts` sai vazio), então os tipos gerados
   não conhecem as colunas nem as tabelas novas.
