@@ -29,7 +29,13 @@ export type ChannelProvider =
    * telefone: é o `chat_id` que o próprio bot recebe no update. Ver
    * `./adapters/telegram.ts` e a ausência dele em `PROVIDERS_DE_TELEFONE`.
    */
-  | "telegram";
+  | "telegram"
+  /**
+   * Chat no site (Spec 36): o widget que o visitante abre no próprio site da
+   * empresa. Sem telefone e sem rede por trás — o endereço é o `visitante_id` da
+   * conversa. Ver `./adapters/webchat.ts` e a ausência dele em `PROVIDERS_DE_TELEFONE`.
+   */
+  | "webchat";
 
 /**
  * Os providers que transportam MENSAGEM — o subconjunto sobre o qual a matriz

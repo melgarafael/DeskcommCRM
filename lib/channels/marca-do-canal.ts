@@ -26,7 +26,7 @@ import type { Idioma } from "@/lib/i18n/idiomas";
 import { InstagramLogo, MessengerLogo, TelegramLogo, WhatsappLogo } from "@/lib/ui/icons";
 
 /** As redes que o produto sabe desenhar. Rede nova entra aqui E em `channelBrand`. */
-export type CanalConhecido = "whatsapp" | "instagram" | "messenger" | "telegram";
+export type CanalConhecido = "whatsapp" | "instagram" | "messenger" | "telegram" | "webchat";
 
 export interface MarcaDeCanal {
   /** `unknown` é o fallback: sem ícone, cor neutra, rótulo genérico. */
@@ -74,6 +74,14 @@ const MARCAS: Record<CanalConhecido, MarcaDeCanal> = {
     rotulo: "Telegram",
     cor: "var(--color-canal-telegram)",
     Icone: TelegramLogo,
+  },
+  // Chat no site (Spec 36): sem logo de rede. `Icone: null` cai no balão genérico
+  // de `ChannelLogo`, que é o que a conversa do site é.
+  webchat: {
+    id: "webchat",
+    rotulo: "Chat no site",
+    cor: "var(--color-canal-webchat)",
+    Icone: null,
   },
 };
 
