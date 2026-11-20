@@ -6,10 +6,12 @@
  *
  * Para cada organização que ligou o prazo em Configurações › Distribuição de
  * atendimento (`settings.routing.handoff_return_after_minutes`), varre as
- * conversas que estão com humano de forma durável — handoff formal
- * (`bot_silenced_until = 'infinity'`), `assignee_kind = 'user'` ou
- * `assigned_to_user_id` preenchido — e devolve as que passaram do prazo
- * contado do ÚLTIMO sinal humano. A regra pura (quem vence, o que fica de
+ * passagens formais (`bot_silenced_until = 'infinity'`) que NINGUÉM assumiu e
+ * devolve as que passaram do prazo sem resposta humana nenhuma depois da
+ * passagem. Conversa com dono humano, ou em que uma pessoa já respondeu ao
+ * cliente, não é devolvida por relógio: atendimento humano em curso só volta à
+ * IA por ação explícita de alguém (`pessoaNoComando`, em
+ * `lib/escalacao/devolucao-automatica.ts`). A regra pura (quem vence, o que fica de
  * fora, e por quê) mora em `lib/escalacao/devolucao-automatica.ts`.
  *
  * NÃO tem regra própria de devolução: cada conversa vencida passa por
@@ -42,6 +44,7 @@ import {
   selecionarVencidas,
   type ConversaEmHandoff,
 } from "@/lib/escalacao/devolucao-automatica";
+import { humanoRespondeuDepoisDe } from "@/lib/escalacao/handoff-tecnico";
 import { devolverAtendimentoAoAgente } from "@/lib/escalacao/retomada";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -149,7 +152,12 @@ export async function devolverHandoffsVencidos(
     // Grupo de WhatsApp é sempre de humano: o automático nunca o atende, então
     // "devolver ao agente" tiraria o grupo da fila humana sem ninguém responder.
     .eq("is_group", false)
-    .or("bot_silenced_until.eq.infinity,assignee_kind.eq.user,assigned_to_user_id.not.is.null")
+    // Só a passagem formal que NINGUÉM assumiu. Conversa com dono humano não é
+    // devolvida por relógio (`pessoaNoComando`), e trazê-la para a rodada só
+    // gastaria o teto de 500 linhas com conversas que seriam descartadas —
+    // empurrando para fora da varredura justamente as passagens esquecidas.
+    .is("assigned_to_user_id", null)
+    .eq("bot_silenced_until", "infinity")
     .limit(SCAN_LIMIT);
   if (error) throw new Error(`conversations: ${error.message}`);
   const conversas = (data ?? []) as ConversaEmHandoff[];
@@ -163,9 +171,29 @@ export async function devolverHandoffsVencidos(
   let devolvidas = 0;
   let falhas = 0;
   for (const { conversa, minutos } of vencidas) {
+    // Uma pessoa respondeu ao cliente DEPOIS da passagem — pelo Inbox ou pelo
+    // celular — sem clicar em Assumir: ela está atendendo, e o relógio não a
+    // tira da conversa. Contar a resposta só como "último sinal humano"
+    // reiniciava o prazo, e o técnico que passava do prazo sem escrever (porque
+    // estava resolvendo o problema) via a IA voltar no meio do atendimento.
+    // Sem carimbo da passagem não há como provar que ninguém respondeu: fica.
+    const desde = conversa.last_handoff_at ?? conversa.status_changed_at;
+    if (desde === null || (await humanoRespondeuDepoisDe(admin, conversa.organization_id, conversa.id, desde))) {
+      logger.info("[handoff-devolucao] não devolvida: há atendimento humano depois da passagem", {
+        conversation_id: conversa.id,
+        organization_id: conversa.organization_id,
+        requestId,
+      });
+      continue;
+    }
     const r = await devolverAtendimentoAoAgente(
       { supabase: admin, organizationId: conversa.organization_id, actor: ATOR_DO_CRON, requestId },
-      { conversationId: conversa.id, origem: { automatica: { minutos } } },
+      // `expectedAssignee: null` — a conversa foi lida SEM dono, e só é devolvida
+      // se continuar sem dono na hora da escrita. Quem assumiu entre a leitura e
+      // aqui ganha: `retomada.ts` recusa com `assignment_conflict` sem detalhe
+      // (a corrida benigna abaixo) e nada é solto. Sem isto, a retomada liberava
+      // o dono recém-chegado — o release do cron não exige precondição.
+      { conversationId: conversa.id, origem: { automatica: { minutos } }, expectedAssignee: null },
     );
     if (r.ok) {
       devolvidas++;

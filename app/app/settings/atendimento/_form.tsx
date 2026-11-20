@@ -344,7 +344,7 @@ export function AtendimentoForm({
             </span>
             <span className="block text-xs text-muted-foreground">
               {t(
-                "O tempo conta a partir do último sinal de uma pessoa na conversa: assumir, responder pela tela ou pelo celular. Só devolve onde há agente publicado. Desligado, vale a regra de sempre: a IA só volta quando alguém clica em Devolver.",
+                "Vale só para a conversa passada à equipe que ninguém assumiu nem respondeu: o tempo conta a partir da passagem. Conversa que uma pessoa assumiu, ou em que alguém respondeu pela tela ou pelo celular, não volta sozinha — só quando alguém clica em Devolver. Só devolve onde há agente publicado.",
               )}
             </span>
           </span>

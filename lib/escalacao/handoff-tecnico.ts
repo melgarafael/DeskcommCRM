@@ -324,7 +324,7 @@ export async function reagirAConclusaoDeDerivacao(
  * Erro de leitura conta como "respondeu": falhar fechado na ação — no pior
  * caso o motivo é corrigido e a conversa fica com o humano, como estava.
  */
-async function humanoRespondeuDepoisDe(
+export async function humanoRespondeuDepoisDe(
   admin: SupabaseClient,
   organizationId: string,
   conversationId: string,

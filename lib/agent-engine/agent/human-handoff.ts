@@ -408,6 +408,46 @@ export async function isLeadInHandoff(
   return rows[0]?.handoff === true;
 }
 
+/**
+ * A IA ainda pode ENTREGAR esta mensagem, agora?
+ *
+ * A pergunta é a do instante do envio, não a do começo do turno. O turno decide
+ * falar pelo gate completo (`isLeadInHandoff` + elegibilidade, que inclui o veto
+ * do dono humano), mas entre essa decisão e a entrega há o modelo, as tools e o
+ * ritmo de digitação — segundos a minutos. Uma pessoa que assume nesse meio-tempo
+ * não pode receber uma bolha da IA por cima da sua primeira frase.
+ *
+ * Por isso a reconferência lê as DUAS travas da conversa:
+ *   1. `isLeadInHandoff` — contato travado, sempre-humano, silêncio em vigor;
+ *   2. o dono humano (`assignee_kind = 'user'`), que é veto absoluto do gate
+ *      (`donoHumanoVetaIA`, `lib/ai/elegibilidade/ia-com-dono.ts`) e que o item 1
+ *      NÃO enxerga: o rodízio atribui sem gravar silêncio, e "Assumir" pode
+ *      chegar por um caminho que ainda não gravou o `'infinity'`.
+ * O modo "IA com o dono" (#3967) continua liberando o item 2 — é a mesma régua do
+ * gate, escrita em SQL sobre a mesma chave (`metadata.ai_com_dono = true`, só o
+ * booleano).
+ *
+ * `organization_id` entra nas duas leituras: o pool é de serviço e não passa
+ * pela RLS. Falha de leitura propaga — o envio não acontece com o estado
+ * desconhecido (a fila re-tenta o job pela MESMA chave de idempotência).
+ */
+export async function iaVetadaNoEnvio(
+  db: pg.Pool,
+  tenantId: string,
+  leadId: string,
+  conversationId: string,
+): Promise<boolean> {
+  if (await isLeadInHandoff(db, tenantId, leadId, { conversationId })) return true;
+  const { rows } = await db.query<{ veto: boolean }>(
+    `select (v.assignee_kind = 'user'
+             and coalesce(v.metadata -> 'ai_com_dono', 'false'::jsonb) is distinct from 'true'::jsonb) as veto
+       from conversations v
+      where v.organization_id = $1 and v.id = $2`,
+    [tenantId, conversationId],
+  );
+  return rows[0]?.veto === true;
+}
+
 export interface HandoffIds {
   tenantId: string;
   leadId: string;

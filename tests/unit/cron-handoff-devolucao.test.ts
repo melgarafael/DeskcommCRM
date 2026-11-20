@@ -35,12 +35,14 @@ interface Banco {
   conversations: Array<Record<string, unknown>>;
   ai_agents: Array<Record<string, unknown>>;
   ai_routers: Array<Record<string, unknown>>;
+  /** Saídas da conversa — o cron pergunta se GENTE respondeu depois da passagem. */
+  messages: Array<Record<string, unknown>>;
 }
 let banco: Banco;
 
 /** Um filtro que o código de produção pediu ao PostgREST, como ele o pediu. */
 interface Filtro {
-  metodo: "not" | "is" | "in" | "eq";
+  metodo: "not" | "is" | "in" | "eq" | "gt";
   args: unknown[];
 }
 let filtrosPorTabela: Record<string, Filtro[]>;
@@ -59,6 +61,9 @@ function navegarJsonb(coluna: string, linha: Record<string, unknown>): unknown {
   const partes = coluna.split(/(->>|->)/);
   let atual: unknown = linha[partes[0] ?? ""];
   if (atual === undefined) return SQL_NULL;
+  // Coluna comum (sem seta): o `null` da linha É o SQL NULL — é o que o
+  // PostgREST casa em `is.null`. Só DENTRO do jsonb o `null` do JSON é outra coisa.
+  if (partes.length === 1 && atual === null) return SQL_NULL;
   for (let i = 1; i < partes.length; i += 2) {
     const seta = partes[i];
     const chave = partes[i + 1] ?? "";
@@ -100,6 +105,11 @@ function passa(f: Filtro, linha: Record<string, unknown>): boolean {
       return navegarJsonb(coluna, linha) === a;
     case "in":
       return (a as unknown[]).includes(navegarJsonb(coluna, linha));
+    case "gt": {
+      // Só o que o cron pede: instante ISO contra instante ISO.
+      const v = navegarJsonb(coluna, linha);
+      return typeof v === "string" && Date.parse(v) > Date.parse(String(a));
+    }
   }
 }
 
@@ -144,7 +154,11 @@ vi.mock("@/lib/supabase/admin", () => ({
                 ? // Aplica os filtros modelados (org, status, is_group); o `.or`
                   // segue no-op — quem corta a faixa é `selecionarVencidas`.
                   aplicar(filtros, banco.conversations)
-                : banco[tabela],
+                : tabela === "messages"
+                  ? // A pergunta "gente respondeu depois da passagem?" é o filtro
+                    // inteiro (org, conversa, direção, sent_via, depois de) — aplicado.
+                    aplicar(filtros, banco.messages)
+                  : banco[tabela],
           error: null,
         });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -154,6 +168,7 @@ vi.mock("@/lib/supabase/admin", () => ({
         in: registrar("in"),
         is: registrar("is"),
         eq: registrar("eq"),
+        gt: registrar("gt"),
         or: () => chain,
         limit: () => resolver(),
         then: (res: (v: unknown) => unknown) => resolver().then(res),
@@ -180,7 +195,10 @@ function conversa(id: string, minutosParada: number): Record<string, unknown> {
     organization_id: ORG,
     channel_session_id: SESSAO,
     status: "pending",
-    assignee_kind: "user",
+    // A passagem formal que ninguém pegou. `assignee_kind: "user"` sem dono era o
+    // valor daqui, e é um estado que o CHECK `conversations_assignee_kind_coherence`
+    // recusa no banco — o dublê não pode provar nada com uma linha impossível.
+    assignee_kind: null,
     assigned_to_user_id: null,
     assigned_at: null,
     bot_silenced_until: "infinity",
@@ -209,6 +227,7 @@ beforeEach(() => {
       },
     ],
     ai_routers: [],
+    messages: [],
   };
 });
 
@@ -230,7 +249,12 @@ describe("GET /api/v1/cron/handoff-devolucao", () => {
     const [deps, input] = devolver.mock.calls[0] as [Record<string, unknown>, Record<string, unknown>];
     expect(deps.organizationId).toBe(ORG);
     expect(deps.actor).toEqual({ type: "webhook_source", id: "cron:handoff-devolucao" });
-    expect(input).toEqual({ conversationId: VENCIDA, origem: { automatica: { minutos: 60 } } });
+    expect(input).toEqual({
+      conversationId: VENCIDA,
+      origem: { automatica: { minutos: 60 } },
+      // A conversa foi lida sem dono e só é devolvida se continuar sem dono.
+      expectedAssignee: null,
+    });
 
     expect(auditar).toHaveBeenCalledTimes(1);
     expect(auditar.mock.calls[0]?.[0]).toMatchObject({
@@ -248,6 +272,84 @@ describe("GET /api/v1/cron/handoff-devolucao", () => {
     expect(devolver).not.toHaveBeenCalled();
     const corpo = (await res.json()) as { data: Record<string, number> };
     expect(corpo.data.examinadas).toBe(0);
+  });
+
+  /**
+   * ATENDIMENTO HUMANO EM CURSO NÃO VOLTA À IA POR RELÓGIO.
+   *
+   * O prazo é para a passagem que ninguém pegou. Antes desta regra ele também
+   * devolvia a conversa que uma pessoa assumiu (contando do último sinal dela),
+   * e a que uma pessoa respondeu sem clicar em Assumir — o técnico que passava do
+   * prazo resolvendo o problema via a IA voltar no meio do atendimento.
+   *
+   * ─── SABOTAGEM ────────────────────────────────────────────────────────────
+   *   - tirar `.is("assigned_to_user_id", null)` do route E `pessoaNoComando` de
+   *     `selecionarVencidas`: o caso do dono devolve a conversa.
+   *   - tirar a checagem `humanoRespondeuDepoisDe` do route: o caso da resposta
+   *     pelo Inbox (e o do celular) devolve.
+   */
+  it("conversa que uma pessoa ASSUMIU, parada há 30 dias: não é devolvida", async () => {
+    banco.conversations = [
+      {
+        ...conversa(VENCIDA, 30 * 24 * 60),
+        assignee_kind: "user",
+        assigned_to_user_id: "99999999-9999-4999-8999-999999999999",
+        assigned_at: min(30 * 24 * 60),
+      },
+    ];
+    const res = await chamar();
+    expect(res.status).toBe(200);
+    expect(filtrosPorTabela.conversations).toContainEqual({ metodo: "is", args: ["assigned_to_user_id", null] });
+    expect(devolver).not.toHaveBeenCalled();
+    expect(auditar).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["pelo Inbox", "user"],
+    ["pelo celular", "external_device"],
+  ])("uma pessoa respondeu %s depois da passagem, sem assumir: não é devolvida", async (_via, sentVia) => {
+    banco.conversations = [conversa(VENCIDA, 600)];
+    banco.messages = [
+      {
+        organization_id: ORG,
+        conversation_id: VENCIDA,
+        direction: "outbound",
+        sent_via: sentVia,
+        created_at: min(500),
+      },
+    ];
+    const res = await chamar();
+    expect(res.status).toBe(200);
+    expect(devolver).not.toHaveBeenCalled();
+    expect(filtrosPorTabela.messages).toContainEqual({ metodo: "eq", args: ["organization_id", ORG] });
+  });
+
+  it("o aviso da própria IA na passagem, ou uma resposta ANTES dela, não contam como atendimento", async () => {
+    banco.conversations = [conversa(VENCIDA, 600)];
+    banco.messages = [
+      // O "vou chamar alguém da equipe" sai como `ai`, colado na passagem.
+      { organization_id: ORG, conversation_id: VENCIDA, direction: "outbound", sent_via: "ai", created_at: min(599) },
+      // Uma resposta humana de antes da passagem é de outro momento.
+      { organization_id: ORG, conversation_id: VENCIDA, direction: "outbound", sent_via: "user", created_at: min(700) },
+    ];
+    await chamar();
+    expect(devolver).toHaveBeenCalledTimes(1);
+  });
+
+  it("isolamento: resposta humana numa conversa de OUTRA organização não segura esta", async () => {
+    banco.conversations = [conversa(VENCIDA, 600)];
+    banco.messages = [
+      {
+        organization_id: "77777777-7777-4777-8777-777777777777",
+        conversation_id: VENCIDA,
+        direction: "outbound",
+        sent_via: "user",
+        created_at: min(500),
+      },
+    ];
+    await chamar();
+    expect(devolver).toHaveBeenCalledTimes(1);
+    expect(devolver.mock.calls[0]?.[0]).toMatchObject({ organizationId: ORG });
   });
 
   it("nada vencido: nenhuma devolução e nenhuma linha de auditoria", async () => {
@@ -286,6 +388,7 @@ describe("GET /api/v1/cron/handoff-devolucao", () => {
     expect(devolver.mock.calls[0]?.[1]).toEqual({
       conversationId: VENCIDA,
       origem: { automatica: { minutos: 5000 } },
+      expectedAssignee: null,
     });
     expect(auditar).toHaveBeenCalledTimes(1);
   });

@@ -4,6 +4,7 @@ import {
   PRAZO_MAX_MINUTOS_DEVOLUCAO,
   avaliarDevolucao,
   lerPrazoDeDevolucaoMinutos,
+  pessoaNoComando,
   selecionarVencidas,
   ultimoSinalHumanoMs,
   type ConversaEmHandoff,
@@ -215,5 +216,37 @@ describe("selecionarVencidas — o lote", () => {
       ["a", 60],
       ["c", 15],
     ]);
+  });
+
+  /**
+   * O RELÓGIO NÃO TIRA A CONVERSA DE QUEM A ASSUMIU.
+   *
+   * `avaliarDevolucao` responde só "o prazo venceu?" (e o invariante congelado
+   * `reabertura-com-devolucao-automatica` a julga nesses termos). Quem decide
+   * devolver é o lote — e o lote não devolve conversa com dono humano, por mais
+   * velho que seja o último sinal dela.
+   *
+   * ─── SABOTAGEM ────────────────────────────────────────────────────────────
+   *   - tirar `if (pessoaNoComando(conversa)) continue;` de `selecionarVencidas`:
+   *     a conversa "assumida" volta para o lote e o primeiro expect acusa.
+   */
+  it("conversa com dono humano nunca entra no lote, mesmo com o prazo vencido há dias", () => {
+    const assumida = conversa({
+      id: "assumida",
+      assignee_kind: "user",
+      assigned_to_user_id: "11111111-1111-4111-8111-111111111111",
+      assigned_at: min(7 * 24 * 60),
+      last_handoff_at: min(7 * 24 * 60),
+    });
+    const esquecida = conversa({ id: "esquecida", assignee_kind: null, last_handoff_at: min(7 * 24 * 60) });
+
+    // A pergunta do relógio continua respondendo que venceu…
+    expect(avaliarDevolucao(assumida, selecao(60))).toEqual({ devolver: true, minutos: 60 });
+    // …mas o lote só leva a passagem que ninguém pegou.
+    expect(selecionarVencidas([assumida, esquecida], selecao(60)).map((v) => v.conversa.id)).toEqual([
+      "esquecida",
+    ]);
+    expect(pessoaNoComando(assumida)).toBe(true);
+    expect(pessoaNoComando(esquecida)).toBe(false);
   });
 });

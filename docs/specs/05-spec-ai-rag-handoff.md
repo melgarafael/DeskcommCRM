@@ -1107,11 +1107,18 @@ Próxima conversation no mesmo contact (status=resolved + nova abertura) começa
 
 **Retomada por prazo (opcional, por organização).** A IA-06 continua sendo o padrão, mas a
 organização pode ligar um prazo em Configurações › Distribuição de atendimento
-(`organizations.settings.routing.handoff_return_after_minutes`, 5 min – 24 h; `null` = nunca).
+(`organizations.settings.routing.handoff_return_after_minutes`, 5 min – 30 dias; `null` = nunca).
 Com o prazo ligado, o cron `app/api/v1/cron/handoff-devolucao` (a cada 5 min) devolve ao agente
-a conversa que está com humano de forma durável — `bot_silenced_until = 'infinity'`,
-`assignee_kind = 'user'` ou `assigned_to_user_id` preenchido — e ficou o prazo inteiro sem
-**nenhum sinal humano** (o maior entre `last_handoff_at`, `assigned_at` e `last_outbound_at`).
+**só a passagem formal que ninguém pegou** — `bot_silenced_until = 'infinity'`, sem dono humano
+(`assigned_to_user_id` nulo) e sem nenhuma mensagem humana (`sent_via` `user` ou
+`external_device`) depois de `last_handoff_at` — que ficou o prazo inteiro parada.
+**Atendimento humano em curso nunca volta à IA por relógio:** conversa que uma pessoa assumiu,
+ou em que alguém respondeu ao cliente depois da passagem, só volta por ação explícita de pessoa
+(botão "Devolver ao automático", encerrar marcando a devolução, `crm_resume_ai_attendance`
+chamada por gente, `#on` pelo celular). A escrita reconfere a ausência de dono
+(`expectedAssignee: null`), então quem assume entre a leitura e a devolução ganha. Até 2026-11
+o prazo também devolvia conversas com dono, contando do último sinal humano — e o técnico que
+passava do prazo resolvendo o problema via a IA voltar no meio do atendimento.
 A devolução passa pela MESMA função do botão (`devolverAtendimentoAoAgente`) e só acontece em
 sessão com agente publicado ou roteador ativo; a pausa por resposta pelo celular
 (`lib/escalacao/atendimento-manual.ts`, silêncio finito) não entra — vence sozinha. Regra pura e

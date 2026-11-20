@@ -31,6 +31,14 @@
  *
  * ## O que fica de fora, e por quê
  *
+ * - **Conversa que uma pessoa assumiu** (dono humano) e **conversa em que uma
+ *   pessoa respondeu depois da passagem**, mesmo sem clicar em Assumir. O prazo
+ *   vale só para a passagem que ninguém pegou; atendimento humano em curso só
+ *   volta à IA por ação explícita de alguém (`pessoaNoComando`, abaixo, e o
+ *   cron `handoff-devolucao`). Antes desta regra o prazo também devolvia
+ *   conversas com dono — e "contar do último sinal humano" não protegia o
+ *   técnico que passou o prazo sem escrever, ocupado resolvendo o problema.
+ *
  * - **Sessão sem agente publicado.** Devolver "para ninguém" tira a conversa
  *   da fila humana e ninguém responde — pior que deixá-la com a pessoa. O cron
  *   só devolve onde há quem atenda (`sessoesComAgente`).
@@ -174,6 +182,13 @@ export type MotivoDeNaoDevolver =
   | "sem_relogio"
   | "dentro_do_prazo";
 
+/**
+ * A pergunta do RELÓGIO: o prazo desta conversa venceu?
+ *
+ * Responder `devolver: true` aqui NÃO basta para devolver: o lote
+ * (`selecionarVencidas`) ainda descarta a conversa com dono humano, e o cron
+ * descarta a que recebeu resposta humana depois da passagem.
+ */
 export function avaliarDevolucao(
   c: ConversaEmHandoff,
   sel: Selecao,
@@ -200,13 +215,50 @@ export function avaliarDevolucao(
   return { devolver: true, minutos };
 }
 
-/** As conversas vencidas, com o prazo que venceu cada uma. */
+/**
+ * UMA PESSOA ASSUMIU ESTA CONVERSA — e relógio nenhum a tira dela.
+ *
+ * O prazo de `handoff_return_after_minutes` nasceu para a passagem que NINGUÉM
+ * pegou (a fila esquecida). Aplicado a uma conversa com dono, ele devolvia à IA,
+ * sozinho, um atendimento que uma pessoa tinha tomado para si — e o técnico que
+ * levou 40 minutos testando um equipamento voltava para a conversa com a IA
+ * respondendo por cima dele. A regra do produto passou a ser: depois que alguém
+ * assume, só uma AÇÃO EXPLÍCITA de pessoa devolve o atendimento ("Devolver ao
+ * automático", encerrar marcando a devolução, a tool `crm_resume_ai_attendance`
+ * chamada por gente, o `#on` do celular). Tempo não é ação.
+ *
+ * Por que o critério é só `assigned_to_user_id`: o CHECK
+ * `conversations_assignee_kind_coherence` (migration 0032) garante que
+ * `assignee_kind = 'user'` existe exatamente quando há esse id — ler os dois
+ * seria repetir a mesma pergunta, e ler só o `kind` aceitaria um estado que o
+ * banco recusa.
+ *
+ * Por que aqui, e não dentro de `avaliarDevolucao`: aquela função responde à
+ * pergunta do RELÓGIO ("o prazo venceu?"), e `tests/invariants/
+ * reabertura-com-devolucao-automatica.test.ts` — congelado — a julga exatamente
+ * nesses termos. A decisão de devolver é do LOTE, e o lote é quem ouve esta regra.
+ * O cron ainda a reconfere no momento da escrita (`expectedAssignee: null` em
+ * `devolverAtendimentoAoAgente`), porque alguém pode assumir entre a leitura e ela.
+ */
+export function pessoaNoComando(c: Pick<ConversaEmHandoff, "assigned_to_user_id">): boolean {
+  return c.assigned_to_user_id !== null;
+}
+
+/**
+ * As conversas vencidas, com o prazo que venceu cada uma.
+ *
+ * Conversa com dono humano NUNCA entra, por mais que o prazo tenha vencido —
+ * ver `pessoaNoComando`. A outra metade da regra ("uma pessoa respondeu depois
+ * da passagem, sem clicar em Assumir") precisa ler `messages` e por isso mora no
+ * cron, que a aplica sobre este lote.
+ */
 export function selecionarVencidas(
   conversas: readonly ConversaEmHandoff[],
   sel: Selecao,
 ): Array<{ conversa: ConversaEmHandoff; minutos: number }> {
   const out: Array<{ conversa: ConversaEmHandoff; minutos: number }> = [];
   for (const conversa of conversas) {
+    if (pessoaNoComando(conversa)) continue;
     const r = avaliarDevolucao(conversa, sel);
     if (r.devolver) out.push({ conversa, minutos: r.minutos });
   }
