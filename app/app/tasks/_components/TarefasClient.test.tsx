@@ -43,11 +43,16 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-function renderTela(minhasDeInicio: boolean) {
+const FUNIS = [
+  { id: "f-vendas", name: "Vendas" },
+  { id: "f-posvenda", name: "Pós-venda" },
+];
+
+function renderTela(minhasDeInicio: boolean, funis?: Array<{ id: string; name: string }>) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <TarefasClient podeEditar minhasDeInicio={minhasDeInicio} />
+      <TarefasClient podeEditar minhasDeInicio={minhasDeInicio} funis={funis} />
     </QueryClientProvider>,
   );
 }
@@ -83,6 +88,49 @@ describe("TarefasClient — seletor Responsável", () => {
 
     await waitFor(() => expect(fetchEspiao).toHaveBeenCalled());
     expect(urls()[0]).not.toContain("assigned_to");
+  });
+});
+
+describe("TarefasClient — seletor Funil", () => {
+  it("⭐ escolher um funil faz a busca sair com pipeline_id; 'Todos os funis' tira o filtro", async () => {
+    renderTela(false, FUNIS);
+    await waitFor(() => expect(fetchEspiao).toHaveBeenCalled());
+    expect(urls()[0]).not.toContain("pipeline_id");
+
+    await userEvent.click(screen.getByRole("combobox", { name: "Funil" }));
+    await userEvent.click(await screen.findByRole("option", { name: "Pós-venda" }));
+    await waitFor(() => expect(urls().at(-1)).toContain("pipeline_id=f-posvenda"));
+    expect(urls().at(-1)).toContain("aberto=true");
+
+    await userEvent.click(screen.getByRole("combobox", { name: "Funil" }));
+    await userEvent.click(await screen.findByRole("option", { name: "Todos os funis" }));
+    // A busca sem filtro já está em cache (a primeira da tela, 10 s de validade): a tela volta a
+    // ela sem pedir de novo. O que se prova é o seletor de volta em "Todos os funis" e que a tela
+    // NÃO pediu mais nenhuma busca com funil depois da escolha.
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Funil" }).textContent).toContain("Todos os funis"),
+    );
+    expect(urls().filter((u) => u.includes("pipeline_id"))).toHaveLength(1);
+  });
+
+  it("combina com o responsável: 'Minhas' + funil saem na mesma busca", async () => {
+    renderTela(true, FUNIS);
+    await waitFor(() => expect(fetchEspiao).toHaveBeenCalled());
+
+    await userEvent.click(screen.getByRole("combobox", { name: "Funil" }));
+    await userEvent.click(await screen.findByRole("option", { name: "Vendas" }));
+    await waitFor(() => expect(urls().at(-1)).toContain("pipeline_id=f-vendas"));
+    expect(urls().at(-1)).toContain("assigned_to=me");
+  });
+
+  it("com um funil só (ou nenhum) o seletor não aparece — não há o que escolher", async () => {
+    const { unmount } = renderTela(false, [FUNIS[0]!]);
+    await waitFor(() => expect(fetchEspiao).toHaveBeenCalled());
+    expect(screen.queryByRole("combobox", { name: "Funil" })).toBeNull();
+    unmount();
+
+    renderTela(false);
+    expect(screen.queryByRole("combobox", { name: "Funil" })).toBeNull();
   });
 });
 
@@ -123,3 +171,37 @@ describe("TarefasClient — o calendário não prende o celular", () => {
   });
 });
 
+describe("TarefasClient — o quadro também não prende o celular", () => {
+  /**
+   * As colunas do quadro têm 320 px: a 390 px elas não cabem, e a régua é a
+   * MESMA `md` que esconde o seletor de modo. Escolhido no tablet deitado e
+   * girado para o celular, o quadro não pode ficar preso na tela sem o botão
+   * que volta — quem responde no celular fica com a lista, montada por baixo.
+   * Este caso é o par do calendário logo acima: os dois modos entraram juntos e
+   * saem juntos.
+   */
+  it("no modo quadro, a lista continua montada para abaixo de md e o quadro só vale de md para cima", async () => {
+    renderTela(false);
+    await waitFor(() => expect(fetchEspiao).toHaveBeenCalled());
+    await userEvent.click(screen.getByRole("button", { name: "Quadro" }));
+
+    const lista = await screen.findByTestId("tarefas-lista");
+    expect(lista.className).toContain("md:hidden");
+    const quadro = screen.getByTestId("tarefas-quadro-wrap");
+    expect(quadro.className).toMatch(/(^|\s)hidden(\s|$)/);
+    expect(quadro.className).toContain("md:block");
+  });
+
+  it("o quadro faz a SUA consulta, com teto próprio — não a lista de 500 linhas", async () => {
+    renderTela(false);
+    await waitFor(() => expect(fetchEspiao).toHaveBeenCalled());
+    await userEvent.click(screen.getByRole("button", { name: "Quadro" }));
+
+    // O teto menor é o que impede um quadro com a base inteira de derrubar a
+    // aba; se o modo quadro voltasse a desenhar a lista carregada pela tela,
+    // esta URL não sairia.
+    await waitFor(() =>
+      expect(urls().some((u) => u.includes("limite=200"))).toBe(true),
+    );
+  });
+});

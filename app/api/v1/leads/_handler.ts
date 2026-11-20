@@ -1,6 +1,9 @@
+import { escritaComMarca, marcaDoAssistido } from "@/lib/automation/parada-no-assistido";
 import { guardServiceEffect } from "@/lib/atendimento/fronteira-server";
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { armarProximaRevisaoNoCard } from "@/lib/revisao-por-km/no-card";
+import { logger } from "@/lib/logger";
 import { idsDeContatosPessoais } from "@/app/api/v1/conversations/_handler";
 /**
  * Core handlers para /api/v1/leads.
@@ -18,6 +21,8 @@ import { resolveOwnerPatch, type OwnerPatch, type OwnerPatchInput } from "@/lib/
 import { emitLeadActivity, stageChangeReason } from "@/lib/leads/activity-emitter";
 import { listaLegivel } from "@/lib/leads/activity-vocabulary";
 import { camposAlterados } from "@/lib/leads/campos-alterados";
+import { etiquetasParaGravar } from "@/lib/leads/etiquetas-do-patch";
+import { chaveDeComparacaoDeEtiqueta } from "@/lib/contacts/etiquetas";
 import { valoresAntesDepois } from "@/lib/leads/valores-audit";
 import {
   mencionaRecorrencia,
@@ -51,6 +56,7 @@ import {
 import { ORIGEM_DA_PLANILHA } from "@/lib/leads/planilha";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
+import { moveARecorrenciaNoFecho } from "@/lib/financeiro/recorrencia-do-fecho";
 import {
   decideMotivoDaPerda,
   recusaDeMotivoDaPerdaPeloBanco,
@@ -306,7 +312,8 @@ function actorAuditPayload(actor: Actor): {
   if (actor.type === "webhook_source") {
     return {
       actorUserId: null,
-      metadataActor: { actor_type: "webhook_source", actor_id: actor.id },
+      // A marca HERDADA (doc 301 = B): a regra rodou por causa da IA no assistido.
+      metadataActor: { actor_type: "webhook_source", actor_id: actor.id, ...marcaDoAssistido(actor) },
     };
   }
   // TOKEN DE SERVIDOR é caso próprio, e não o `else` de `ai_agent`: sem esta
@@ -325,6 +332,8 @@ function actorAuditPayload(actor: Actor): {
       actor_type: "ai_agent",
       actor_id: actor.id,
       ...(actor.api_token_id ? { actor_api_token_id: actor.api_token_id } : {}),
+      // Doc 301 = B: a ação da IA no assistido segura a automação que fala com o cliente.
+      ...marcaDoAssistido(actor),
     },
   };
 }
@@ -463,6 +472,73 @@ export async function listLeadsHandler(
 // get
 // ---------------------------------------------------------------------------
 
+export interface CountLeadsQuery {
+  pipeline_id?: string;
+  stage_id?: string;
+  status?: "open" | "won" | "lost";
+  owner_user_id?: string;
+  /** Só os negócios deste contato — o escopo do turno do agente, igual à listagem. */
+  contact_id?: string;
+}
+
+export interface CountLeadsResult {
+  total: number;
+  /** Só quando a consulta não filtra por status: o mesmo total, aberto por status. */
+  by_status?: { open: number; won: number; lost: number };
+}
+
+/**
+ * Conta negócios SEM listá-los: devolve só números.
+ *
+ * Existe porque `listLeadsHandler` só pagina por cursor e não informa o total —
+ * quem precisa responder "quantos negócios?" acabava paginando a lista inteira
+ * (um agente de IA gastou dezenas de chamadas e levou todos os negócios ao
+ * modelo só para contar). Contar no banco (`head: true`, `count: exact`) não traz
+ * nenhuma linha.
+ *
+ * Mesma régua de visibilidade da listagem, para os números fecharem com a lista:
+ *  - `organization_id` é a PRIMEIRA cláusula (client service-role no MCP, RLS não vale);
+ *  - negócio de contato pessoal não conta (spec 21, a leitura exclui);
+ *  - os mesmos filtros de funil, etapa, status, responsável e contato do turno.
+ */
+export async function countLeadsHandler(
+  supabase: SB,
+  ctx: HandlerCtx,
+  q: CountLeadsQuery,
+): Promise<CountLeadsResult> {
+  const pessoais = await idsDeContatosPessoais(supabase, ctx.organization_id);
+
+  const contar = async (status?: "open" | "won" | "lost"): Promise<number> => {
+    let query = supabase
+      .from("crm_leads")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", ctx.organization_id);
+    if (q.pipeline_id) query = query.eq("pipeline_id", q.pipeline_id);
+    if (q.stage_id) query = query.eq("stage_id", q.stage_id);
+    if (status) query = query.eq("status", status);
+    if (q.owner_user_id) query = query.eq("owner_user_id", q.owner_user_id);
+    if (q.contact_id) query = query.eq("contact_id", q.contact_id);
+    if (pessoais.length > 0) {
+      query = query.not("contact_id", "in", `(${pessoais.join(",")})`);
+    }
+    const { count, error } = await query;
+    if (error) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
+    }
+    return count ?? 0;
+  };
+
+  if (q.status) return { total: await contar(q.status) };
+
+  const [total, open, won, lost] = await Promise.all([
+    contar(),
+    contar("open"),
+    contar("won"),
+    contar("lost"),
+  ]);
+  return { total, by_status: { open, won, lost } };
+}
+
 export async function getLeadHandler(
   supabase: SB,
   ctx: HandlerCtx,
@@ -598,6 +674,7 @@ export async function createLeadHandler(
     .from("crm_stages")
     .select("id, pipeline_id, organization_id")
     .eq("id", input.stage_id)
+    .eq("organization_id", ctx.organization_id)
     .maybeSingle();
 
   if (stageErr) {
@@ -641,7 +718,7 @@ export async function createLeadHandler(
       : camposDoCorpo;
   const settingsDaCriacao =
     opcoes.exigirCamposDaEtapa !== false || Object.keys(recorteInicial).length > 0
-      ? await settingsDoFunil(supabase, input.pipeline_id)
+      ? await settingsDoFunil(supabase, input.pipeline_id, ctx.organization_id)
       : null;
 
   // ── A OPÇÃO DO CAMPO DE SELEÇÃO (#3508) — o que veio vira o `value` ────────
@@ -751,6 +828,7 @@ export async function createLeadHandler(
     .from("crm_leads")
     .select("position_in_stage")
     .eq("stage_id", input.stage_id)
+    .eq("organization_id", ctx.organization_id)
     // O segundo argumento EXPLÍCITO (e não o default do supabase-js): os fakes
     // `FakeQuery` das suítes de invariante leem `opts.ascending` sem guarda, e
     // um `.order(col)` de um argumento só os derruba com `Cannot read
@@ -924,6 +1002,7 @@ export async function createLeadHandler(
   await audit({
     action: "lead.created",
     actorUserId: a.actorUserId,
+    actorApiTokenId: ctx.actor.type === "api_token" ? ctx.actor.id : null,
     organizationId: ctx.organization_id,
     resourceType: "crm_lead",
     resourceId: (lead as { id: string }).id,
@@ -989,25 +1068,31 @@ export async function updateLeadHandler(
   // Escopo `negocio` (#2852): o valor de um campo do CONTATO mora em
   // `contacts.custom_fields`, e o padrão dele é julgado na ficha do contato.
   // `settingsDoFunil` é fail-open: funil ilegível = lista vazia = grava como hoje.
+  //
+  // A variável vive FORA do bloco porque a revisão por quilometragem (#4376), no
+  // fim do handler, precisa dos mesmos `settings` — o funil que declara a régua
+  // é o mesmo que declara os campos. Ler duas vezes seria uma consulta a mais
+  // por PATCH, e a segunda leitura poderia ver outra versão do funil.
+  let settingsDaEdicao: unknown;
   if (input.custom_fields && Object.keys(input.custom_fields).length > 0) {
     const alterados = camposQueMudaram(
       input.custom_fields,
       (existing as { custom_fields?: unknown }).custom_fields,
     );
     if (Object.keys(alterados).length > 0) {
-      const settingsDoEdicao = await settingsDoFunil(supabase, existing.pipeline_id);
+      settingsDaEdicao = await settingsDoFunil(supabase, existing.pipeline_id, ctx.organization_id);
       // ── A OPÇÃO (#3508) — a mesma régua da criação, no MESMO recorte ──────
       //
       // Só o que MUDOU é julgado (ver o bloco acima), e o que casa vira o
       // `value` da opção. O que não casa: 422 aqui, e `manterForaDaLista` na
       // captação. Roda ANTES do padrão porque o padrão tem de julgar o valor que
       // será gravado, não o texto que chegou.
-      const { mudados } = canonizaOpcoesDoFunil(settingsDoEdicao, alterados, ctx, opcoes);
+      const { mudados } = canonizaOpcoesDoFunil(settingsDaEdicao, alterados, ctx, opcoes);
       if (Object.keys(mudados).length > 0) {
         input = { ...input, custom_fields: { ...input.custom_fields, ...mudados } };
       }
       const recusas = recusasDePadrao(
-        defsDoPadraoDoFunil(settingsDoEdicao, "negocio"),
+        defsDoPadraoDoFunil(settingsDaEdicao, "negocio"),
         // O `value` canônico já aplicado é o que a próxima régua lê.
         camposQueMudaram(input.custom_fields, (existing as { custom_fields?: unknown }).custom_fields),
         testaComPrazo,
@@ -1031,6 +1116,16 @@ export async function updateLeadHandler(
       | null
       | undefined,
   );
+
+  // ── AS ETIQUETAS DO NEGÓCIO (#4666) ────────────────────────────────────────
+  //
+  // `tags` continua SUBSTITUINDO a lista inteira (contrato antigo, declarado na
+  // descrição da ferramenta); `tags_adicionar`/`tags_remover` são a união e a
+  // diferença sobre o que está gravado — o que o agente quase sempre quer. A
+  // conta mora em `lib/leads/etiquetas-do-patch.ts`, com a MESMA régua da tela
+  // (`normalizarTag` + chave larga), e precisa de `existing`: é aqui, e não no
+  // zod, que a lista atual é conhecida.
+  const etiquetas = etiquetasParaGravar(input, (existing as { tags?: string[] | null }).tags ?? []);
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (input.title !== undefined) patch.title = input.title;
@@ -1074,7 +1169,7 @@ export async function updateLeadHandler(
   if (input.expected_close_date !== undefined) {
     patch.expected_close_date = input.expected_close_date;
   }
-  if (input.tags !== undefined) patch.tags = input.tags;
+  if (etiquetas !== undefined) patch.tags = etiquetas;
   // ⛔ `custom_fields` NÃO ENTRA NO `patch`, e a ausência é o conserto.
   //
   // Isto era `patch.custom_fields = { ...prev, ...input.custom_fields }`, com
@@ -1099,17 +1194,21 @@ export async function updateLeadHandler(
   // O filtro entra AQUI TAMBÉM, e não só no SELECT acima: entre ler e escrever
   // há uma janela, e defesa que depende de uma leitura anterior é defesa que
   // some quando alguém reordena o código.
-  const tagServiceOrigin = input.tags !== undefined
+  const tagServiceOrigin = etiquetas !== undefined
     ? ctx.serviceOrigin ?? await observeServiceOrigin(createAdminClient(), ctx.organization_id, input.contact_id ?? existing.contact_id)
     : null;
   await guardServiceEffect();
-  const { data: updated, error: updErr } = await supabase
-    .from("crm_leads")
-    .update(patch)
-    .eq("organization_id", ctx.organization_id)
-    .eq("id", leadId)
-    .select(LEAD_COLS)
-    .maybeSingle();
+  // Doc 301 = B: a troca de responsável vira `lead.assigned` pelo GATILHO, e o
+  // gatilho só vê a marca do assistido pelo cabeçalho (`escritaComMarca`).
+  const { data: updated, error: updErr } = await escritaComMarca(
+    supabase
+      .from("crm_leads")
+      .update(patch)
+      .eq("organization_id", ctx.organization_id)
+      .eq("id", leadId)
+      .select(LEAD_COLS),
+    ctx.actor,
+  ).maybeSingle();
 
   const recusaNoUpdate = recusaDaGuardaDoBanco(ctx, updErr);
   if (recusaNoUpdate) throw recusaNoUpdate;
@@ -1140,8 +1239,74 @@ export async function updateLeadHandler(
     }
     // A resposta é o que EXISTE no banco, não o que esta requisição mandou: sob
     // concorrência as duas coisas diferem, e é a do banco que vale.
-    (updated as Record<string, unknown>).custom_fields =
-      (mesclados as Record<string, unknown> | null) ?? {};
+    const camposMesclados = (mesclados as Record<string, unknown> | null) ?? {};
+    (updated as Record<string, unknown>).custom_fields = camposMesclados;
+
+    // ── A REVISÃO POR QUILOMETRAGEM (#4376) ────────────────────────────────
+    //
+    // O km que chegou pelo card (tela, API, MCP, webhook de entrada) vira a
+    // DATA PREVISTA da próxima revisão, gravada pelo mesmo `fn_lead_anotar_campos`
+    // — e o gatilho `lead.date_field_due` (#989) rearma sozinho porque a chave
+    // de disparo leva o valor da data (#1540).
+    //
+    // Roda DEPOIS da escrita do km, e só quando o funil declarou a régua
+    // (`pipelines.settings.revisao_por_km`) E a instalação ligou o módulo
+    // opcional `revisao_por_km` — o portão mora dentro do módulo
+    // (`lib/revisao-por-km/no-card.ts`), não aqui. A conta em si mora em
+    // `lib/revisao-por-km/conta.ts`; aqui é só a porta, no fuso da organização.
+    // Falha aqui NÃO derruba o PATCH: o km já está gravado, e a projeção é
+    // consequência — o log diz que ela não saiu.
+    if (settingsDaEdicao !== undefined) {
+      try {
+        const settingsDaLoja =
+          settingsDaEdicao !== null && typeof settingsDaEdicao === "object" && !Array.isArray(settingsDaEdicao)
+            ? (settingsDaEdicao as Record<string, unknown>)
+            : null;
+        const armacao = await armarProximaRevisaoNoCard({
+          settings: settingsDaLoja,
+          camposAnteriores:
+            existing.custom_fields &&
+            typeof existing.custom_fields === "object" &&
+            !Array.isArray(existing.custom_fields)
+              ? (existing.custom_fields as Record<string, unknown>)
+              : {},
+          campos: camposMesclados,
+          portas: {
+            fusoDaOrganizacao: async () => {
+              const { data } = await createAdminClient()
+                .from("organizations")
+                .select("timezone")
+                .eq("id", ctx.organization_id)
+                .maybeSingle();
+              return (data as { timezone?: string | null } | null)?.timezone ?? null;
+            },
+            gravarCampos: async (campos) => {
+              const { data, error } = await createAdminClient().rpc("fn_lead_anotar_campos", {
+                p_org: ctx.organization_id,
+                p_lead: leadId,
+                p_campos: campos,
+              });
+              if (error) return false;
+              return data !== null && data !== undefined;
+            },
+          },
+        });
+        if (armacao.status === "falhou") {
+          logger.warn("[leads.update] revisão por km não foi armada", {
+            organization_id: ctx.organization_id,
+            lead_id: leadId,
+            motivo: armacao.motivo,
+            detalhe: armacao.detalhe,
+          });
+        }
+      } catch (erro) {
+        logger.warn("[leads.update] revisão por km falhou", {
+          organization_id: ctx.organization_id,
+          lead_id: leadId,
+          error: erro instanceof Error ? erro.message : String(erro),
+        });
+      }
+    }
   }
 
   const a = actorAuditPayload(ctx.actor);
@@ -1228,29 +1393,39 @@ export async function updateLeadHandler(
     });
   }
 
-  await supabase
-    .rpc("emit_event", {
-      p_event_type: "lead.updated",
-      p_entity_kind: "crm_lead",
-      p_entity_id: leadId,
-      p_payload: { fields },
-      p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
-      p_organization_id: existing.organization_id,
-    })
-    .then(({ error }) => {
-      if (error) console.error("[lead.update] emit_event failed", error.message);
-    });
+  // A mesma guarda da timeline, agora também no barramento: desde a #1749 o
+  // `lead.updated` é gatilho de automação, e clicar Salvar sem mexer em nada
+  // dispararia toda regra "quando um negócio for alterado" sem condição.
+  if (fields.length > 0) {
+    await supabase
+      .rpc("emit_event", {
+        p_event_type: "lead.updated",
+        p_entity_kind: "crm_lead",
+        p_entity_id: leadId,
+        p_payload: { fields },
+        p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
+        p_organization_id: existing.organization_id,
+      })
+      .then(({ error }) => {
+        if (error) console.error("[lead.update] emit_event failed", error.message);
+      });
+  }
 
-  if (input.tags !== undefined) {
-    const prevTags: string[] = (existing as { tags?: string[] }).tags ?? [];
-    const addedTags = input.tags.filter((t) => !prevTags.includes(t));
+  if (etiquetas !== undefined) {
+    const prevTags = (existing as { tags?: string[] | null }).tags ?? [];
+    // A comparação é pela chave LARGA (sem caixa, sem acento) — a mesma da tela
+    // e do filtro: a etiqueta que casa com uma já gravada não é etiqueta NOVA,
+    // e anunciá-la como ganha faria a automação disparar duas vezes pelo mesmo
+    // marcador (#4666).
+    const jaTinha = new Set(prevTags.map(chaveDeComparacaoDeEtiqueta));
+    const addedTags = etiquetas.filter((t) => !jaTinha.has(chaveDeComparacaoDeEtiqueta(t)));
     if (addedTags.length) {
       await createAdminClient()
         .rpc("emit_event", {
           p_event_type: "lead.tag_added",
           p_entity_kind: "crm_lead",
           p_entity_id: leadId,
-          p_payload: { added_tags: addedTags, tags: input.tags, service_origin: tagServiceOrigin },
+          p_payload: { added_tags: addedTags, tags: etiquetas, service_origin: tagServiceOrigin },
           p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
           p_organization_id: existing.organization_id,
         })
@@ -1291,6 +1466,7 @@ export async function updateLeadHandler(
   await audit({
     action: "lead.updated",
     actorUserId: a.actorUserId,
+    actorApiTokenId: ctx.actor.type === "api_token" ? ctx.actor.id : null,
     organizationId: existing.organization_id,
     resourceType: "crm_lead",
     resourceId: leadId,
@@ -1344,6 +1520,7 @@ export async function moveLeadHandler(
     .from("crm_leads")
     .select("*")
     .eq("id", leadId)
+    .eq("organization_id", ctx.organization_id)
     .maybeSingle();
 
   if (selErr) {
@@ -1401,7 +1578,7 @@ export async function moveLeadHandler(
   // porque duas réguas para a mesma regra é como o defeito nasce.
   // Vem ANTES da régua de campos, como no arrasto: um encerrado que não reabre
   // não tem campo de etapa a pedir.
-  const settings = await settingsDoFunil(supabase, lead.pipeline_id);
+  const settings = await settingsDoFunil(supabase, lead.pipeline_id, ctx.organization_id);
   {
     const recusa = recusaReabertura({
       modo: modoDeReabertura(settings),
@@ -1439,6 +1616,7 @@ export async function moveLeadHandler(
       .from("crm_leads")
       .select("position_in_stage")
       .eq("stage_id", input.to_stage_id)
+      .eq("organization_id", ctx.organization_id)
       .order("position_in_stage", { ascending: mesmaEtapaJa ? false : true })
       .limit(1)
       .maybeSingle();
@@ -1522,21 +1700,25 @@ export async function moveLeadHandler(
   const serviceOrigin = ctx.serviceOrigin ?? await observeServiceOrigin(createAdminClient(), ctx.organization_id, lead.contact_id);
   const nowIso = new Date().toISOString();
   await guardServiceEffect();
-  const { data: updated, error: updErr } = await supabase
-    .from("crm_leads")
-    .update({
-      stage_id: input.to_stage_id,
-      position_in_stage: position,
-      updated_at: nowIso,
-      ...veredito.patch,
-      ...(stage.is_won && input.won_reason?.trim()
-        ? { won_reason: input.won_reason.trim() }
-        : {}),
-    })
-    .eq("id", leadId)
-    .eq("updated_at", lead.updated_at)
-    .select("*")
-    .maybeSingle();
+  // Doc 301 = B: etapa de ganho/perda vira `lead.won`/`lead.lost` pelo GATILHO,
+  // e o gatilho só vê a marca do assistido pelo cabeçalho (`escritaComMarca`).
+  const { data: updated, error: updErr } = await escritaComMarca(
+    supabase
+      .from("crm_leads")
+      .update({
+        stage_id: input.to_stage_id,
+        position_in_stage: position,
+        updated_at: nowIso,
+        ...veredito.patch,
+        ...(stage.is_won && input.won_reason?.trim()
+          ? { won_reason: input.won_reason.trim() }
+          : {}),
+      })
+      .eq("id", leadId)
+      .eq("updated_at", lead.updated_at)
+      .select("*"),
+    ctx.actor,
+  ).maybeSingle();
 
   if (updErr) {
     // Rede de segurança (#917) — mesma da rota de arrasto: recusa do banco por
@@ -1555,6 +1737,46 @@ export async function moveLeadHandler(
       ctx.requestId,
       traduzir("Lead foi modificado concorrentemente.", ctx.idioma ?? "pt-BR"),
     );
+  }
+
+  // ── O FINANCEIRO DO FECHO (#3602, fatias 3 e 4) ────────────────────────────
+  //
+  // Ganhar com `recurring_value_cents` declarado cria o molde da receita
+  // mensal (`recurring_entries`) ligado a este negócio; perder desativa o molde
+  // DELE. Sem isto, a recorrência do card era só um número na tela: o cron que
+  // gera as contas a receber nunca ficava sabendo dela, e quem vendia "setup +
+  // mensalidade" continuava lançando a mensalidade à mão — até esquecer.
+  //
+  // ── Por que AQUI, e não só na rota do quadro ──────────────────────────────
+  //
+  // Este handler é o escritor de etapa de tudo que NÃO é o arrasto (MCP
+  // `crm_move_lead_stage`, ações de automação, IA). O arrasto, o botão
+  // Ganhar/Perder e o lote entram pela MESMA função do cerco
+  // (`lib/financeiro/recorrencia-do-fecho`), que guarda o "nunca derrubar o
+  // movimento" numa cópia só — fatia 5 da #3602.
+  //
+  // ── Falha BAIXA ───────────────────────────────────────────────────────────
+  //
+  // O card já moveu. Um financeiro que não nasceu vira log e um molde que
+  // alguém cria à mão; derrubar o fecho do negócio por causa dele seria pior.
+  // O `moveARecorrenciaNoFecho` não lança e loga cada desfecho de erro.
+  if (!mesmaEtapa && (stage.is_won || stage.is_lost)) {
+    await moveARecorrenciaNoFecho({
+      organizationId: lead.organization_id,
+      leadId,
+      pipelineId: lead.pipeline_id,
+      etapa: { is_won: stage.is_won === true, is_lost: stage.is_lost === true },
+      valorRecorrente:
+        (lead as { recurring_value_cents?: number | string | null }).recurring_value_cents ?? null,
+      // A duração do contrato veio com a fatia 3/4 (`crm_leads.recurring_months`)
+      // e continua sendo passada: o cerco da fatia 5 só mudou QUEM chama, não a
+      // regra do molde.
+      meses: (lead as { recurring_months?: number | null }).recurring_months ?? null,
+      criadoEm: (lead as { created_at?: string | null }).created_at ?? null,
+      userId: ctx.actor.type === "user" ? ctx.actor.id : null,
+      origem: "leads/_handler.moveLeadHandler",
+      requestId: ctx.requestId,
+    });
   }
 
   const a = actorAuditPayload(ctx.actor);
@@ -1719,6 +1941,7 @@ export async function moveLeadHandler(
   await audit({
     action: "lead.moved",
     actorUserId: a.actorUserId,
+    actorApiTokenId: ctx.actor.type === "api_token" ? ctx.actor.id : null,
     organizationId: lead.organization_id,
     resourceType: "crm_lead",
     resourceId: leadId,
@@ -1776,6 +1999,7 @@ export async function retomarLeadHandler(
     .from("crm_leads")
     .select("*")
     .eq("id", leadId)
+    .eq("organization_id", ctx.organization_id)
     .maybeSingle();
   if (selErr) {
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, selErr.message);
@@ -1839,6 +2063,7 @@ export async function retomarLeadHandler(
     .from("crm_pipelines")
     .select("settings")
     .eq("id", origemTipada.pipeline_id)
+    .eq("organization_id", ctx.organization_id)
     .maybeSingle();
   if (funilErr) {
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, funilErr.message);

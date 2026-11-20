@@ -7,10 +7,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { audit } from "@/lib/audit";
 import { respostaParaOperador } from "@/lib/erros/para-operador";
-import {
-  pipelineConfigPatchSchema,
-  type PipelineConfigPatch,
-} from "@/lib/schemas/settings";
+import { pipelineConfigPatchSchema, type PipelineConfigPatch } from "@/lib/schemas/settings";
 import { loadAuthUser, mfaEmDivida, resolveActiveOrg } from "@/lib/auth/server";
 import { podeAdministrarEmpresa } from "@/lib/auth/pode-administrar-empresa";
 import {
@@ -19,8 +16,7 @@ import {
 } from "@/lib/automation/campo-do-gatilho-de-data";
 
 export type UpdatePipelineConfigResult =
-  | { ok: true }
-  | { ok: false; error: string; details?: unknown };
+  { ok: true } | { ok: false; error: string; details?: unknown };
 
 export async function updatePipelineConfig(
   pipelineId: string,
@@ -73,6 +69,12 @@ export async function updatePipelineConfig(
   const nextSettings: Record<string, unknown> = { ...currentSettings };
   if (parsed.data.fields !== undefined) nextSettings.fields = parsed.data.fields;
   if (parsed.data.lost_reasons !== undefined) nextSettings.lost_reasons = parsed.data.lost_reasons;
+  // #4437 — as categorias PRÓPRIAS do funil. A chave é gravada como veio,
+  // inclusive a lista VAZIA: `[]` é "escondi todas", e pular o vazio faria a
+  // tela esconder na aparência e a de fábrica voltar na próxima abertura.
+  if (parsed.data.lost_reason_categories !== undefined) {
+    nextSettings.lost_reason_categories = parsed.data.lost_reason_categories;
+  }
   if (parsed.data.won_reasons !== undefined) nextSettings.won_reasons = parsed.data.won_reasons;
   if (parsed.data.won_reason_required !== undefined) {
     nextSettings.won_reason_required = parsed.data.won_reason_required;
@@ -83,6 +85,12 @@ export async function updatePipelineConfig(
   if (parsed.data.reabertura !== undefined) nextSettings.reabertura = parsed.data.reabertura;
   if (parsed.data.reabertura_campos !== undefined) {
     nextSettings.reabertura_campos = parsed.data.reabertura_campos;
+  }
+  // #4076 — a janela em que o perdido recente volta a ser o MESMO card. `0` é
+  // o desligado e vai como veio: pular o zero deixaria a janela antiga gravada
+  // e quem desmarcasse a opção continuaria reabrindo card.
+  if (parsed.data.reabrir_perdido_dias !== undefined) {
+    nextSettings.reabrir_perdido_dias = parsed.data.reabrir_perdido_dias;
   }
   // A entrada do Inbox (issue #3011): a ETAPA em que a conversa nova vira card
   // neste funil. Grava o bloco inteiro, e não campo a campo, porque `ativa` e
@@ -147,9 +155,16 @@ export async function updatePipelineConfig(
       vocabulary_changed: !!parsed.data.vocabulary,
       fields_count: parsed.data.fields?.length ?? null,
       lost_reasons_count: parsed.data.lost_reasons?.length ?? null,
+      // #4437: quantas categorias o funil declara. Quais são NÃO entram na
+      // auditoria — o vocabulário é do negócio e a contagem já responde à
+      // pergunta que a auditoria faz ("mudou a configuração?").
+      lost_reason_categories_count: parsed.data.lost_reason_categories?.length ?? null,
       won_reasons_count: parsed.data.won_reasons?.length ?? null,
       won_reason_required: parsed.data.won_reason_required ?? null,
       reabertura: parsed.data.reabertura ?? null,
+      // #4076: a janela (ou `0`, o desligamento) — decisão de quem opera, e o
+      // efeito dela é reabrir card existente, então fica registrado.
+      reabrir_perdido_dias: parsed.data.reabrir_perdido_dias ?? null,
       entrada_do_inbox_ativa: parsed.data.entrada_do_inbox?.ativa ?? null,
       // #2995: quantos cards o quadro deixa de mostrar é decisão de quem opera
       // — a auditoria registra o número (ou `0`, o desligamento).

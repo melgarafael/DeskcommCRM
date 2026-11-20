@@ -49,7 +49,14 @@ export interface ResumoDaImportacao {
  *     pergunta a mais para uma resposta que já é a certa — e quem quiser outra
  *     etapa arrasta os cards, que é o gesto do quadro.
  */
-export function ImportarLeads({ funis }: { funis: FunilDaLista[] }) {
+export function ImportarLeads({
+  funis,
+  onImportado,
+}: {
+  funis: FunilDaLista[];
+  /** Depois de uma importação aceita. O quadro não precisa (ele mesmo recarrega); a fila do Cold Call sim. */
+  onImportado?: () => void;
+}) {
   const t = useT();
   const [aberto, setAberto] = useState(false);
   const [funilId, setFunilId] = useState(funis[0]?.id ?? "");
@@ -80,6 +87,7 @@ export function ImportarLeads({ funis }: { funis: FunilDaLista[] }) {
       // O resumo fica NA TELA, não num toast que some em quatro segundos: quem
       // importou 300 linhas precisa ler quais foram recusadas e por quê.
       setResumo(json.data);
+      onImportado?.();
     } catch {
       setErro(t("Não consegui enviar o arquivo."));
     } finally {

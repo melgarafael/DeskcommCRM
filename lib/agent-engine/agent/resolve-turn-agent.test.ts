@@ -27,10 +27,12 @@ function fakeConfig(agentId: string): PublishedAgentConfig {
     splitMessages: false,
     splitMaxChars: 900,
     inboundDebounceMs: null,
+    replyMinIntervalMs: null,
     multimodalInput: false,
     casesEnabled: false,
     toolIds: [],
     knowledgeSourceIds: [],
+    skillNames: null,
     activeKbVersionId: null,
     ragTopK: 5,
     ragSimilarityThreshold: 0.72,
@@ -92,6 +94,7 @@ function makeDeps(overrides: {
   loadPublishedAgentConfigById?: ReturnType<typeof vi.fn>;
   loadPublishedAgentConfig?: ReturnType<typeof vi.fn>;
   classifyIntent?: ReturnType<typeof vi.fn>;
+  carregarFatosDoCrmDoContato?: ReturnType<typeof vi.fn>;
   consultarJev?: ReturnType<typeof vi.fn>;
   temIaDeSempre?: ReturnType<typeof vi.fn>;
   agenteDaCampanha?: ReturnType<typeof vi.fn>;
@@ -102,6 +105,9 @@ function makeDeps(overrides: {
     loadPublishedAgentConfigById: overrides.loadPublishedAgentConfigById ?? vi.fn(),
     loadPublishedAgentConfig: overrides.loadPublishedAgentConfig ?? vi.fn(),
     classifyIntent: overrides.classifyIntent ?? vi.fn(),
+    carregarFatosDoCrmDoContato: overrides.carregarFatosDoCrmDoContato ?? vi.fn().mockResolvedValue({
+      fatos: { funis: [], etiquetas: [], funisOmitidos: 0, etiquetasOmitidas: 0 }, motivo: null,
+    }),
     consultarJev: overrides.consultarJev ?? jevFalso().consultarJev,
     // A empresa tem a IA de sempre, salvo o caso que prova o contrário (decisão B).
     temIaDeSempre: overrides.temIaDeSempre ?? vi.fn().mockResolvedValue(true),
@@ -135,6 +141,59 @@ describe('resolveTurnAgent', () => {
     expect(out.config?.agentId).toBe('agent-vendas');
     expect(out.intentName).toBe('vendas');
     expect(out.confidence).toBe(0.9);
+  });
+
+  it('#3917: o turno passa os fatos do CRM ao classificador e o log leva só contagens', async () => {
+    const fatos = {
+      funis: [{ funil: 'Experiência', etapas: ['Pós-viagem'] }],
+      etiquetas: ['viagem-fechada'],
+      funisOmitidos: 0,
+      etiquetasOmitidas: 0,
+    };
+    const carregarFatosDoCrmDoContato = vi.fn().mockResolvedValue({ fatos, motivo: null });
+    const classifyIntent = vi.fn().mockResolvedValue({ intentName: 'pos_venda', confidence: 0.9 });
+    const deps = makeDeps({
+      loadActiveRouter: vi.fn().mockResolvedValue(router({ sticky: false })),
+      classifyIntent,
+      loadPublishedAgentConfigById: idAwareLoader(),
+      carregarFatosDoCrmDoContato,
+    });
+    await resolveTurnAgent({} as never, {} as never,
+      { ...baseInput, signal: 'Bom dia! Tudo bem?', stickyAgentId: null, stickyIntent: null },
+      deps);
+    expect(carregarFatosDoCrmDoContato).toHaveBeenCalledWith({}, 'org-1', 'lead-1');
+    expect(classifyIntent.mock.calls[0]![2]).toMatchObject({ fatosDoCrm: fatos });
+    const log = deps as unknown as { log: { info: ReturnType<typeof vi.fn> } };
+    const linha = log.log.info.mock.calls.find((c) => String(c[0]).includes('#3917'));
+    expect(linha?.[1]).toMatchObject({ funis: 1, etapas: 1, etiquetas: 1 });
+    // PII não vai para o log: nem o nome da etiqueta, nem o do funil.
+    expect(JSON.stringify(log.log.info.mock.calls)).not.toContain('viagem-fechada');
+    expect(JSON.stringify(log.log.info.mock.calls)).not.toContain('Experiência');
+  });
+
+  it('#3917: leitura dos fatos que falha NÃO muda o roteamento — classifica sem eles', async () => {
+    const carregarFatosDoCrmDoContato = vi.fn().mockResolvedValue({
+      fatos: { funis: [], etiquetas: [], funisOmitidos: 0, etiquetasOmitidas: 0 },
+      motivo: 'falha_na_leitura',
+    });
+    const classifyIntent = vi.fn().mockResolvedValue({ intentName: 'vendas', confidence: 0.9 });
+    const deps = makeDeps({
+      loadActiveRouter: vi.fn().mockResolvedValue(router({ sticky: false })),
+      classifyIntent,
+      loadPublishedAgentConfigById: idAwareLoader(),
+      carregarFatosDoCrmDoContato,
+    });
+    const out = await resolveTurnAgent({} as never, {} as never,
+      { ...baseInput, signal: 'quanto custa?', stickyAgentId: null, stickyIntent: null },
+      deps);
+    expect(out.outcome).toBe('classified');
+    expect(out.config?.agentId).toBe('agent-vendas');
+    expect(classifyIntent.mock.calls[0]![2]).toMatchObject({
+      fatosDoCrm: { funis: [], etiquetas: [] },
+    });
+    const log = deps as unknown as { log: { warn: ReturnType<typeof vi.fn> } };
+    const aviso = log.log.warn.mock.calls.find((c) => String(c[0]).includes('#3917'));
+    expect(aviso?.[1]).toMatchObject({ motivo: 'falha_na_leitura' });
   });
 
   it('3. sticky + mesma intenção → sticky, NÃO troca de agente', async () => {
@@ -189,6 +248,31 @@ describe('resolveTurnAgent', () => {
     expect(out.config?.agentId).toBe('agent-suporte');
     expect(out.intentName).toBe('suporte');
   });
+
+  it('#4363: a troca automática diz ao novo agente de QUEM é a conversa que ele herdou', async () => {
+    const out = await resolveTurnAgent({} as never, {} as never,
+      { ...baseInput, signal: 'na verdade tenho um problema técnico', stickyAgentId: 'agent-vendas', stickyIntent: 'vendas' },
+      makeDeps({
+        loadActiveRouter: vi.fn().mockResolvedValue(router()),
+        classifyIntent: vi.fn().mockResolvedValue({ intentName: 'suporte', confidence: 0.8 }),
+        loadPublishedAgentConfigById: idAwareLoader(),
+      }));
+    expect(out.outcome).toBe('reclassified');
+    expect(out.passagemRecebida).toEqual({ agenteAnteriorId: 'agent-vendas', agenteAnteriorNome: 'agent-vendas' });
+  });
+
+  it('#4363 controle: sem troca (sticky) não há passagem a anunciar', async () => {
+    const out = await resolveTurnAgent({} as never, {} as never,
+      { ...baseInput, signal: 'e o preço?', stickyAgentId: 'agent-vendas', stickyIntent: 'vendas' },
+      makeDeps({
+        loadActiveRouter: vi.fn().mockResolvedValue(router()),
+        classifyIntent: vi.fn().mockResolvedValue({ intentName: 'vendas', confidence: 0.9 }),
+        loadPublishedAgentConfigById: idAwareLoader(),
+      }));
+    expect(out.outcome).toBe('sticky');
+    expect(out.passagemRecebida).toBeUndefined();
+  });
+
 
   it('5. sticky + intenção diferente com confiança ABAIXO do min → sticky (não troca)', async () => {
     const r = router();
@@ -565,13 +649,19 @@ describe('o Jev no roteador (onda 2 do Jev, bloco 2.2)', () => {
     expect(classifyIntent).toHaveBeenCalledOnce();
     const [, entrada] = jev.consultarJev.mock.calls[0]! as unknown as [unknown, Record<string, unknown>];
     // R4: só a última mensagem — o contexto das 4 anteriores fica com a IA de sempre.
-    expect(entrada).toEqual({
+    const { fatosDoCrmDoTurno, ...semFatos } = entrada as Record<string, unknown> & {
+      fatosDoCrmDoTurno?: unknown;
+    };
+    expect(semFatos).toEqual({
       organizationId: 'org-1',
       mensagem: 'meu pedido não chegou',
       membros: members,
       contactId: 'lead-1',
       jobId: 'job-1',
     });
+    // #3917: o que o Jev recebe de contexto do CRM é um GETTER do turno — não
+    // um valor lido por ele, e não o histórico da conversa (R4 continua).
+    expect(typeof fatosDoCrmDoTurno).toBe('function');
   });
 
   it('observando: o turno NÃO espera o Jev — vale a IA de sempre, e a observação sai quando ele responder', async () => {
@@ -882,5 +972,63 @@ describe('identidade antes de intenção e sticky', () => {
     const deps = makeDeps({ loadPublishedAgentConfig, loadActiveRouter: vi.fn().mockResolvedValue(router({ senderRoutes: rules, fallbackAgentId: publico })), loadPublishedAgentConfigById: vi.fn().mockResolvedValue(null) });
     await expect(resolveTurnAgent(db, cfg, { ...baseInput, signal: 'oi', stickyAgentId: null, stickyIntent: null }, deps)).rejects.toThrow('unpublished');
     expect(loadPublishedAgentConfig).not.toHaveBeenCalled();
+  });
+});
+
+describe('#3917 — os fatos do CRM são do TURNO, uma leitura para os dois caminhos', () => {
+  const FATOS = {
+    funis: [{ funil: 'Experiência', etapas: ['Pós-viagem'] }],
+    etiquetas: ['viagem-fechada'],
+    funisOmitidos: 0,
+    etiquetasOmitidas: 0,
+  };
+
+  it('a pergunta ao Jev recebe o getter do turno, e a leitura é UMA só para ele e para a IA de sempre', async () => {
+    const carregarFatosDoCrmDoContato = vi.fn().mockResolvedValue({ fatos: FATOS, motivo: null });
+    const classifyIntent = vi.fn().mockResolvedValue({ intentName: 'vendas', confidence: 0.9 });
+    const { jev, consultarJev } = jevFalso();
+    const out = await resolveTurnAgent({} as never, {} as never,
+      { ...baseInput, signal: 'Bom dia! Tudo bem?', stickyAgentId: null, stickyIntent: null },
+      makeDeps({
+        loadActiveRouter: vi.fn().mockResolvedValue(router({ sticky: false })),
+        loadPublishedAgentConfigById: idAwareLoader(),
+        classifyIntent,
+        consultarJev,
+        carregarFatosDoCrmDoContato,
+      }));
+    expect(out.outcome).toBe('classified');
+
+    // O turno entrega ao Jev um GETTER — ele lê o banco, o roteador não.
+    // O dublê não declara parâmetro, então a tupla dele é vazia para o tsc:
+    // o cast diz o que o teste sabe — a posição 1 é a entrada do roteador.
+    const entradaDoJev = (consultarJev.mock.calls[0] as unknown as [
+      unknown,
+      { fatosDoCrmDoTurno?: () => Promise<unknown> },
+    ])[1]!;
+    expect(typeof entradaDoJev.fatosDoCrmDoTurno).toBe('function');
+
+    // Pedir duas vezes (uma pelo Jev, outra pela classificação) NÃO é duas
+    // consultas: é a mesma promessa memoizada.
+    await entradaDoJev.fatosDoCrmDoTurno!();
+    await entradaDoJev.fatosDoCrmDoTurno!();
+    expect(carregarFatosDoCrmDoContato).toHaveBeenCalledTimes(1);
+    // E o classificador recebeu o MESMO bloco.
+    expect(classifyIntent.mock.calls[0]![2]).toMatchObject({ fatosDoCrm: FATOS });
+    expect(jev.observar).toHaveBeenCalled();
+  });
+
+  it('com a tarefa do Jev desligada, nada muda: a classificação continua recebendo os fatos', async () => {
+    const carregarFatosDoCrmDoContato = vi.fn().mockResolvedValue({ fatos: FATOS, motivo: null });
+    const classifyIntent = vi.fn().mockResolvedValue({ intentName: 'vendas', confidence: 0.9 });
+    await resolveTurnAgent({} as never, {} as never,
+      { ...baseInput, signal: 'quanto custa?', stickyAgentId: null, stickyIntent: null },
+      makeDeps({
+        loadActiveRouter: vi.fn().mockResolvedValue(router({ sticky: false })),
+        loadPublishedAgentConfigById: idAwareLoader(),
+        classifyIntent,
+        carregarFatosDoCrmDoContato,
+      }));
+    expect(carregarFatosDoCrmDoContato).toHaveBeenCalledTimes(1);
+    expect(classifyIntent.mock.calls[0]![2]).toMatchObject({ fatosDoCrm: FATOS });
   });
 });

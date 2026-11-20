@@ -16,6 +16,8 @@
 import type { ModuloOpcional } from "@/lib/instalacao/modulos";
 import type { CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
 import { TOOLS_AGENDAMENTO } from "./agendamento";
+import { TOOLS_AGENTES } from "./agentes";
+import { TOOLS_AMIGO } from "./amigo";
 import { TOOLS_ATENDIMENTO } from "./atendimento";
 import { TOOLS_COMERCIO } from "./comercio";
 import { TOOLS_DADOS_EXTERNOS } from "./dados-externos";
@@ -24,9 +26,11 @@ import { TOOLS_ESCALACAO } from "./escalacao";
 import { TOOLS_FUNIL } from "./funil";
 import { TOOLS_GOVERNANCA } from "./governanca";
 import { TOOLS_HONORARIOS } from "./honorarios";
+import { TOOLS_MARKETING } from "./marketing";
 import { TOOLS_OPERACAO } from "./operacao";
 import { TOOLS_RECEITAS_EXTERNAS } from "./receitas-externas";
 import { TOOLS_RETENCAO } from "./retencao";
+import { TOOLS_TAREFAS } from "./tarefas";
 import type { McpToolCatalogEntry } from "./tipos";
 
 export type { McpToolCatalogEntry } from "./tipos";
@@ -34,17 +38,21 @@ export { declararTools } from "./tipos";
 
 export const TOOL_CATALOG: ReadonlyArray<McpToolCatalogEntry> = [
   ...TOOLS_AGENDAMENTO,
+  ...TOOLS_AMIGO,
   ...TOOLS_ATENDIMENTO,
   ...TOOLS_ESCALACAO,
   ...TOOLS_FUNIL,
   ...TOOLS_GOVERNANCA,
   ...TOOLS_EVOLUCAO,
+  ...TOOLS_AGENTES,
   ...TOOLS_COMERCIO,
   ...TOOLS_DADOS_EXTERNOS,
   ...TOOLS_RECEITAS_EXTERNAS,
   ...TOOLS_HONORARIOS,
+  ...TOOLS_MARKETING,
   ...TOOLS_OPERACAO,
   ...TOOLS_RETENCAO,
+  ...TOOLS_TAREFAS,
 ];
 
 /**

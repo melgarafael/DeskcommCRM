@@ -45,6 +45,29 @@ export const interfaceSettingsSchema = z
      * decidindo o que cada pessoa alcança.
      */
     bloquearAteAssumir: z.boolean().optional(),
+    /**
+     * A TELA INICIAL (#4864) — por onde a pessoa ENTRA, não o que ela alcança.
+     *
+     * O menu enxuto já dizia o que aparece; a primeira tela continuava sendo
+     * regra fixa do produto (`homeDaInterface`: Inbox se visível, senão a
+     * primeira porta não essencial). Quem opera um nicho — dona de loja,
+     * vendedora — abre o sistema para UMA tela, e o Inbox é a tela errada.
+     *
+     * `inicio` é o href de uma porta do CATÁLOGO, nunca um caminho livre: o
+     * vocabulário fechado é o que impede a preferência de virar rota inventada
+     * e é a primeira das duas guardas. A segunda está em `homeDaInterface`, que
+     * só abre a porta escolhida se ela estiver VISÍVEL para o papel — escolha
+     * velha, porta oculta pela empresa ou módulo desligado caem na regra de
+     * sempre, e a entrada nunca devolve 404 nem tela vazia.
+     *
+     * Mora no mesmo jsonb (`interface_settings`) pelos mesmos motivos do menu:
+     * já atravessa servidor/navegador por `ActiveOrg.interface_settings`, já é
+     * gravado pela tela de Configurações e não precisa de coluna nova. Ausente =
+     * regra de sempre: quem não escolhe não vê diferença.
+     */
+    inicio: z
+      .enum(ids as [NavDestinationId, ...NavDestinationId[]])
+      .optional(),
   })
   .strict();
 export type InterfaceSettings = z.infer<typeof interfaceSettingsSchema>;
@@ -123,7 +146,7 @@ export function permitidos(
 ): NavMetadata[] {
   return (NAV_CATALOG as readonly NavMetadata[]).filter(
     (d) =>
-      canSee(d, platform, role) &&
+      !d.agenciaOnly && canSee(d, platform, role) &&
       (!modulos || !d.modulo || modulos.includes(d.modulo)) &&
       (!capacidades || !d.capacidade || capacidades.includes(d.capacidade)),
   );
@@ -142,10 +165,18 @@ export function lerInterface(raw: unknown): {
   const compras = Array.isArray(value.compras_campos)
     ? (value.compras_campos as unknown[]).filter((k): k is string => typeof k === "string")
     : undefined;
+  // Tela inicial (#4864): href de catálogo, e só ele. Um valor que não é porta
+  // conhecida é DESCARTADO aqui — e o resultado cai na regra de sempre, em vez
+  // de derrubar a leitura do menu inteiro por causa de uma chave velha.
+  const inicio =
+    typeof value.inicio === "string" && (ids as readonly string[]).includes(value.inicio)
+      ? (value.inicio as NavDestinationId)
+      : undefined;
   const parsed = interfaceSettingsSchema.safeParse({
     preset: value.preset,
     ...(destinos ? { destinos } : {}),
     ...(compras ? { compras_campos: compras } : {}),
+    ...(inicio ? { inicio } : {}),
     // A regra do Inbox (#3012) é ESTRANHA ao menu, mas viaja no mesmo objeto:
     // sem esta linha `lerInterface` a descartaria e a organização que ligou a
     // opção a veria desligada depois de qualquer releitura.
@@ -215,8 +246,22 @@ export function interfaceTemDestino(
 ): boolean {
   return destinosDaInterface(settings, platform, role).some((d) => !essencial(d, role, platform));
 }
+/**
+ * A primeira tela depois de entrar (#4864).
+ *
+ * A ESCOLHA MANDA, MAS NÃO ABRE PORTA QUE NÃO ESTÁ NA TELA. A preferência é
+ * apresentação: `destinosDaInterface` já resolveu o que a pessoa enxerga
+ * (empresa ∩ vínculo ∩ papel ∩ módulos), e `inicio` só vale DENTRO desse
+ * conjunto. Escolha velha, área que a empresa ocultou depois ou papel que perdeu
+ * a porta caem na regra de sempre — Inbox, senão a primeira porta não essencial,
+ * senão Perfil. Nunca 404, nunca tela vazia: um href fora de `visible` não é
+ * devolvido por nenhum caminho.
+ */
 export function homeDaInterface(raw: unknown, platform: boolean, role: Role | null): string {
   const visible = destinosDaInterface(raw, platform, role);
+  const { inicio } = lerInterface(raw).settings;
+  const escolhida = inicio ? visible.find((d) => d.href === inicio) : undefined;
+  if (escolhida) return escolhida.href;
   return (
     visible.find((d) => d.href === "/app/inbox")?.href ??
     visible.find((d) => !essencial(d, role, platform))?.href ??
@@ -289,7 +334,21 @@ export function combinarInterfaces(daEmpresa: unknown, doVinculo: unknown): Inte
    */
   const compras = sEmpresa.compras_campos ?? sVinculo.compras_campos;
   const comCompras = compras ? { compras_campos: compras } : {};
-  if (!empresa && !vinculo) return { ...INTERFACE_COMPLETA, ...comCompras, ...daOrganizacao };
+  /**
+   * A TELA INICIAL (#4864) atravessa a combinação, e NÃO entra na interseção de
+   * portas: não é limite, é destino. Vem do VÍNCULO quando ele escolheu — é a
+   * tela de ENTRADA daquela pessoa — e da EMPRESA quando não. O vínculo nunca
+   * abre nada com isso: se a porta que ele escolheu não sobrevive à interseção
+   * (a empresa ocultou a área depois), `homeDaInterface` a descarta e cai na
+   * regra de sempre.
+   *
+   * Sem esta carona, as saídas abaixo reconstruiriam o objeto do zero e a
+   * escolha salva sumiria do `ActiveOrg.interface_settings` — mesmo estrago que
+   * os comentários de `bloquearAteAssumir` e `compras_campos` descrevem.
+   */
+  const inicio = sVinculo.inicio ?? sEmpresa.inicio;
+  const comInicio = inicio ? { inicio } : {};
+  if (!empresa && !vinculo) return { ...INTERFACE_COMPLETA, ...comCompras, ...comInicio, ...daOrganizacao };
 
   /**
    * ⚠️ PRESET SOBREVIVE À COMBINAÇÃO, e sem isto a exceção da porta de módulo é CÓDIGO MORTO.
@@ -308,10 +367,10 @@ export function combinarInterfaces(daEmpresa: unknown, doVinculo: unknown): Inte
    * ter lista explícita para o resultado voltar a ser lista — aí existe decisão humana a respeitar.
    */
   const soPreset = sEmpresa.destinos === undefined && sVinculo.destinos === undefined;
-  if (soPreset) return { preset: "simplificada", ...comCompras, ...daOrganizacao };
+  if (soPreset) return { preset: "simplificada", ...comCompras, ...comInicio, ...daOrganizacao };
 
   const soUm = empresa ?? vinculo;
-  if (!empresa || !vinculo) return { preset: "completa", destinos: [...(soUm as readonly NavDestinationId[])], ...comCompras, ...daOrganizacao };
+  if (!empresa || !vinculo) return { preset: "completa", destinos: [...(soUm as readonly NavDestinationId[])], ...comCompras, ...comInicio, ...daOrganizacao };
   const comuns = empresa.filter((id) => vinculo.includes(id));
-  return { preset: "completa", destinos: [...(comuns.length > 0 ? comuns : SO_O_ESSENCIAL)], ...comCompras, ...daOrganizacao };
+  return { preset: "completa", destinos: [...(comuns.length > 0 ? comuns : SO_O_ESSENCIAL)], ...comCompras, ...comInicio, ...daOrganizacao };
 }

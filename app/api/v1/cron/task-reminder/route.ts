@@ -91,6 +91,7 @@ import { espacarEnvio } from "@/lib/automation/throttle";
 import { contatosDonosDosExtras } from "@/lib/channels/contato-por-telefone";
 import { phoneLookupVariants } from "@/lib/channels/phone-variants";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 import { logger } from "@/lib/logger";
 import { truncar } from "@/lib/notifications/push_payload";
 import { enviarPushAoUsuario } from "@/lib/notifications/web_push";
@@ -573,11 +574,34 @@ async function rodar(admin: ReturnType<typeof createAdminClient>, requestId: str
   return { examinadas: linhas.length, avisadas, pulados };
 }
 
+/**
+ * O QUE RODA DEPOIS DO PORTÃO DO PISO OCIOSO (#3773), na ordem do arquivo.
+ *
+ * O portão abaixo é saída antecipada da ROTA INTEIRA: em instalação ociosa a
+ * rota sai antes de tudo isto. `tests/unit/cron-passa-pelo-portao.test.ts` lê o
+ * AST deste arquivo e reprova quando o que está de fato abaixo do portão diverge
+ * desta lista — passo novo que não roda na instalação parada não pode nascer
+ * sem alguém ver.
+ */
+const PASSOS_DEPOIS_DO_PORTAO = [
+  "let resultado",
+  "try",
+  "if (resultado.avisadas > 0)",
+  "return",
+] as const;
+void PASSOS_DEPOIS_DO_PORTAO;
+
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   if (!autorizaCron(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
+
+  // O PISO OCIOSO (#3731): Sem tarefa com prazo na janela não há lembrete a decidir.
+  // A saída vem antes de qualquer consulta da rodada, e o portão responde de um
+  // retrato em memória (`lib/cron/piso-ocioso.ts`): esta rota ia ao PostgREST a
+  // cada batida só para descobrir que a fila está vazia.
+  if (await recursoOcioso("lembrete_de_tarefa")) return ok({ pulado: "recurso_ocioso" }, { requestId });
 
   let resultado: Rodada;
   try {

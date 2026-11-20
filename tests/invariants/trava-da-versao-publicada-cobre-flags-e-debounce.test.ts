@@ -33,6 +33,7 @@ afterAll(() => pool.end());
 const COLUNAS: Array<[string, unknown]> = [
   ["proposal_ai_draft_enabled", false],
   ["inbound_debounce_ms", 5000],
+  ["reply_min_interval_ms", 30000],
 ];
 
 async function linha(id: string) {

@@ -111,6 +111,8 @@ beforeEach(() => {
       {
         id: "reserva",
         organization_id: "org",
+        // `not null default 'local'` desde a 9392: o cron só lembra compromisso local.
+        authority: "local",
         contact_id: "cliente",
         conversation_id: "conversa-clinica",
         title: "Design",

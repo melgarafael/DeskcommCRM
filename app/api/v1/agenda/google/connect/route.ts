@@ -45,6 +45,7 @@ import {
   montarUrlDeConsentimento,
 } from "@/lib/agenda/google/oauth";
 import { env } from "@/lib/env";
+import { comIdDaRequisicao } from "@/lib/api/wrappers";
 
 export const dynamic = "force-dynamic";
 
@@ -77,9 +78,9 @@ async function escoposOpcionaisDaOrganizacao(orgId: string): Promise<string[]> {
 }
 
 /** Volta para a Agenda com um código que a tela sabe traduzir. */
-function voltarComErro(codigo: string): NextResponse {
+function voltarComErro(codigo: string, req: NextRequest): NextResponse {
   const base = env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-  return NextResponse.redirect(new URL(`/app/agenda?erro=${codigo}`, base));
+  return comIdDaRequisicao(NextResponse.redirect(new URL(`/app/agenda?erro=${codigo}`, base)), req);
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
@@ -95,7 +96,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!app) {
     // Não audita: não houve tentativa de conectar nada, e encher o audit log de
     // "a instalação não tem chave" é ruído numa tabela que se paga por linha.
-    return voltarComErro("google_nao_configurado");
+    return voltarComErro("google_nao_configurado", req);
   }
 
   // O nonce é gerado AQUI (em vez de deixar `emitirEstado` sortear) porque ele
@@ -121,7 +122,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       organizationId: org.orgId,
       metadata: { reason: "segredo_de_state_indisponivel" },
     });
-    return voltarComErro("segredo_indisponivel");
+    return voltarComErro("segredo_indisponivel", req);
   }
 
   // `contaSugerida` evita o erro mais comum do fluxo: autorizar com a conta
@@ -142,7 +143,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     metadata: { user_id: user.id },
   });
 
-  const resposta = NextResponse.redirect(url);
+  const resposta = comIdDaRequisicao(NextResponse.redirect(url), req);
 
   // ⚠️ `sameSite: "lax"` É O PONTO DESTE COOKIE, e trocá-lo por "strict" volta a
   // quebrar o fluxo inteiro. Lax é enviado em navegação top-level GET vinda de

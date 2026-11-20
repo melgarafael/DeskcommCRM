@@ -1,21 +1,25 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * PATCH  /api/v1/ai/knowledge/sources/[id]  — update knowledge source
+ *                                            `{ status: 'active' }` tira do arquivo
  * DELETE /api/v1/ai/knowledge/sources/[id]  — soft-delete (status='archived')
  *
- * Auth: cookie session. Role >= manager required.
- * organization_id is ALWAYS resolved from the authenticated session — never from body/path.
+ * Auth: cookie session OU token de servidor (`resolveAuthDual`). Role >= manager required.
+ * organization_id is ALWAYS resolved from the authenticated session or from the token row — never from body/path.
  */
 
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 import { canonizarTipoDeFonte } from "@/lib/ai/rag/tipos-de-fonte";
+import { PATCH_DE_RESTAURO, STATUS_DO_MATERIAL_CONSULTAVEL } from "@/lib/ai/knowledge/estado-do-material";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { caminhoDaOrganizacao } from "@/lib/ai/knowledge/caminho-do-arquivo";
 
 export const dynamic = "force-dynamic";
 
@@ -34,17 +38,14 @@ const patchSourceSchema = z.object({
   name: z.string().min(2).max(120).optional(),
   items: z.array(faqItemSchema).optional(),
   source_metadata: z.record(z.string(), z.unknown()).optional(),
+  /**
+   * "Tirar do arquivo". O único valor aceito é `active`: arquivar continua
+   * sendo o DELETE, e um `status: "archived"` por PATCH seria uma segunda
+   * porta para a mesma coisa, sem a auditoria nem a coerência de `is_active`
+   * que o DELETE grava.
+   */
+  status: z.literal("active").optional(),
 });
-
-// ---------------------------------------------------------------------------
-// Shared: resolve auth + role gate
-// ---------------------------------------------------------------------------
-
-async function resolveContext(requestId: string) {
-  const authz = await requireRole("manager", { requestId, resource: "ai_knowledge" });
-  if (!authz.ok) return { error: authz.response };
-  return { authUser: authz.user, activeOrg: authz.org };
-}
 
 // ---------------------------------------------------------------------------
 // GET — o material e o conteúdo que dá para editar
@@ -55,17 +56,24 @@ async function resolveContext(requestId: string) {
 // — o pior desfecho possível para um botão chamado "editar".
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const requestId = randomUUID();
   const { id: sourceId } = await params;
 
-  const ctx = await resolveContext(requestId);
-  if (ctx.error) return ctx.error;
-  const { activeOrg } = ctx as Exclude<typeof ctx, { error: Response }>;
-
-  const supabase = await createClient();
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_knowledge",
+    role: "manager",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
+  if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_knowledge", requestId);
+  if (teto) return teto;
+  const supabase = authz.supabase;
+  const activeOrg = { orgId: authz.organizationId };
   const { data: fonte, error } = await supabase
     .from("ai_knowledge_sources")
     .select(
@@ -109,9 +117,22 @@ export async function PATCH(
   const requestId = randomUUID();
   const { id: sourceId } = await params;
 
-  const ctx = await resolveContext(requestId);
-  if (ctx.error) return ctx.error;
-  const { authUser, activeOrg } = ctx as Exclude<typeof ctx, { error: Response }>;
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_knowledge",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
+  if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_knowledge", requestId);
+  if (teto) return teto;
+  const supabase = authz.supabase;
+  const activeOrg = { orgId: authz.organizationId };
+  // As recusas desta rota citam o material em conflito: o texto é traduzido
+  // AQUI, com «{nome}» por preencher, para quem escolheu espanhol não receber
+  // um 409 em português montado no servidor (#2559).
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   // Parse + validate body.
   let rawBody: unknown;
@@ -131,11 +152,30 @@ export async function PATCH(
 
   const input = parsed.data;
 
-  // Verify the source exists and belongs to the org (user-scoped client for RLS check).
-  const supabase = await createClient();
+  // Tirar do arquivo é uma ação só. Recusar o corpo misto ANTES de qualquer
+  // escrita é o que separa esta rota do defeito que o PATCH de `items` já teve:
+  // aplicar metade do pedido e responder 200 para a outra metade.
+  if (input.status !== undefined) {
+    const junto = (["name", "items", "source_metadata"] as const).filter(
+      (campo) => input[campo] !== undefined,
+    );
+    if (junto.length > 0) {
+      return fail(
+        "unprocessable_entity",
+        t(
+          'Para tirar do arquivo, envie apenas { "status": "active" }. Nome e conteúdo se alteram depois, com o material já de volta.',
+        ),
+        422,
+        { requestId },
+      );
+    }
+  }
+
+  // Verify the source exists and belongs to the org (o filtro explícito de organização
+  // é quem protege: o cliente do token é admin, sem RLS).
   const { data: existing, error: fetchErr } = await supabase
     .from("ai_knowledge_sources")
-    .select("id, source_type, agent_id")
+    .select("id, source_type, agent_id, name, status, is_active")
     .eq("id", sourceId)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
@@ -148,7 +188,14 @@ export async function PATCH(
     return fail("not_found", "Fonte de conhecimento não encontrada.", 404, { requestId });
   }
 
-  const ksRow = existing as { id: string; source_type: string; agent_id: string | null };
+  const ksRow = existing as {
+    id: string;
+    source_type: string;
+    agent_id: string | null;
+    name: string | null;
+    status: string | null;
+    is_active: boolean | null;
+  };
   const tipo = canonizarTipoDeFonte(ksRow.source_type);
 
   // `items` SÓ tem efeito em `faq`. A conferência vem antes de QUALQUER escrita.
@@ -168,12 +215,130 @@ export async function PATCH(
     );
   }
 
+  // `blob_path` do corpo só no formato que o upload grava, na pasta de quem
+  // chama, pela sessão ou pelo token. Nenhuma tela manda este campo.
+  const blobPathDoCorpo = input.source_metadata?.blob_path;
+  if (
+    blobPathDoCorpo !== undefined &&
+    !caminhoDaOrganizacao(blobPathDoCorpo, authz.organizationId)
+  ) {
+    return fail("validation_failed", "Caminho do arquivo fora da organização.", 422, {
+      requestId,
+    });
+  }
+
   // Build update payload (only provided fields).
   const updatePayload: Record<string, unknown> = {};
   if (input.name !== undefined) updatePayload.name = input.name;
   if (input.source_metadata !== undefined) updatePayload.source_metadata = input.source_metadata;
 
   const admin = createAdminClient();
+
+  // ---------------------------------------------------------------------------
+  // Tirar do arquivo — PATCH { status: 'active' }
+  // ---------------------------------------------------------------------------
+  //
+  // Arquivar era um caminho só de ida: o DELETE grava `archived` + `is_active`
+  // false e não havia rota de volta, então quem arquivava por engano recriava o
+  // material à mão e perdia o histórico do que o agente já sabia.
+  //
+  // O estado de volta é `ready`, NÃO `active`. São dois vocabulários diferentes,
+  // e trocá-los foi o defeito desta fatia na primeira tentativa:
+  //
+  //  * o pedido da API diz `status: "active"` — "está no acervo, não está
+  //    arquivado", na língua de quem chama;
+  //  * a COLUNA só aceita `ready | archived | building | failed`
+  //    (`ai_knowledge_sources_status_check`). Gravar `active` viola o CHECK com
+  //    23514 e a rota devolvia 500 — o material continuava arquivado;
+  //  * e mesmo que o CHECK aceitasse, o motor de busca só enxerga a fonte com
+  //    `s.is_active and s.status = 'ready'` (`fn_buscar_trechos_das_fontes`,
+  //    0181). `active` na coluna = material na tela e invisível para o agente.
+  //
+  // `is_active` vai JUNTO, e não é detalhe de simetria: o rag-indexer pula a
+  // fonte com `!is_active || status === 'archived'` (workers/rag-indexer.ts:707).
+  // Voltar só o `status` deixaria o material na lista, na cara do operador, e
+  // fora do que o agente consulta — pior que o arquivo, porque some sem aviso.
+  // `tests/invariants/rag-acervo-da-organizacao.test.ts` prova os dois estados
+  // contra um Postgres de verdade, pela própria função de busca.
+  if (input.status === "active") {
+    const nome = (ksRow.name ?? "").trim();
+
+    // Já está no acervo: nada a escrever, nada a emitir, nada a auditar. Uma
+    // trilha cheia de "restaurado" para o que nunca esteve arquivado esconde
+    // exatamente o registro que se quer ler depois.
+    if (ksRow.status !== "archived") {
+      return ok({ id: sourceId, status: ksRow.status, restored: false }, { requestId });
+    }
+
+    const { error: restoreErr } = await admin
+      .from("ai_knowledge_sources")
+      .update({ ...PATCH_DE_RESTAURO })
+      .eq("id", sourceId)
+      .eq("organization_id", activeOrg.orgId);
+
+    if (restoreErr) {
+      // O nome é a identidade do material ATIVO. O índice único
+      // `ai_knowledge_sources_nome_unico_por_org` — (organization_id,
+      // lower(btrim(name))) WHERE is_active, da 0181 — recusa dois ativos
+      // homônimos: quem arquivou "FAQ da loja" e criou outro com o mesmo nome
+      // bate aqui ao voltar. Sem esta tradução o 23505 saía como 500 e a tela
+      // dizia "erro inesperado" para um conflito que a pessoa resolve sozinha.
+      if (restoreErr.code === "23505") {
+        return fail(
+          "knowledge_source_name_in_use",
+          t(
+            "Já existe um material ativo chamado «{nome}». Renomeie um dos dois antes de tirar este material do arquivo.",
+          ).replace("{nome}", nome),
+          409,
+          { requestId },
+        );
+      }
+      console.error("[ai-knowledge-sources] tirar do arquivo falhou:", restoreErr.message);
+      return fail("internal_error", "Erro ao tirar o material do arquivo.", 500, { requestId });
+    }
+
+    // O worker só reindexa o que ele sabe que mudou. De volta ao acervo, o
+    // índice daquele material pode estar velho (ou nunca ter existido): o evento
+    // é o pedido de reindexação, igual ao que a criação e o reindex manual emitem.
+    const { error: emitErr } = await admin.rpc("emit_event" as never, {
+      p_event_type: "knowledge_source.updated",
+      p_entity_kind: "ai_knowledge_source",
+      p_entity_id: sourceId,
+      p_payload: {
+        knowledge_source_id: sourceId,
+        agent_id: ksRow.agent_id,
+        source_type: ksRow.source_type,
+        triggered_by: "restored",
+      },
+      p_organization_id: activeOrg.orgId,
+    } as never);
+
+    if (emitErr) {
+      console.warn("[ai-knowledge-sources] emit_event failed (non-blocking):", emitErr.message);
+    }
+
+    // De/para explícito: "quem tirou do arquivo" e "de onde para onde" é o que
+    // a trilha precisa responder; o texto do material continua fora dela.
+    void audit({
+      action: "ai.knowledge_source_restored",
+      actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+      actorApiTokenId: authz.apiTokenId ?? null,
+      organizationId: activeOrg.orgId,
+      resourceType: "ai_knowledge_source",
+      resourceId: sourceId,
+      requestId,
+      metadata: {
+        source_type: ksRow.source_type,
+        de: { status: "archived", is_active: false },
+        para: { ...PATCH_DE_RESTAURO },
+      },
+    });
+
+    return ok(
+      { id: sourceId, status: STATUS_DO_MATERIAL_CONSULTAVEL, restored: true },
+      { requestId },
+    );
+  }
 
   if (Object.keys(updatePayload).length > 0) {
     const { error: updateErr } = await admin
@@ -248,7 +413,8 @@ export async function PATCH(
   // append-only e a cascata da LGPD não a alcança.
   void audit({
     action: "ai.knowledge_source_updated",
-    actorUserId: authUser.id,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
     organizationId: activeOrg.orgId,
     resourceType: "ai_knowledge_source",
     resourceId: sourceId,
@@ -271,7 +437,7 @@ export async function PATCH(
 // ---------------------------------------------------------------------------
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const supportDenied = await requireSupportWrite();
@@ -280,12 +446,20 @@ export async function DELETE(
   const requestId = randomUUID();
   const { id: sourceId } = await params;
 
-  const ctx = await resolveContext(requestId);
-  if (ctx.error) return ctx.error;
-  const { authUser, activeOrg } = ctx as Exclude<typeof ctx, { error: Response }>;
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_knowledge",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
+  if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_knowledge", requestId);
+  if (teto) return teto;
+  const supabase = authz.supabase;
+  const activeOrg = { orgId: authz.organizationId };
 
-  // Verify ownership with user-scoped client.
-  const supabase = await createClient();
+  // Verify ownership: filtro explícito de organização (o cliente do token é admin, sem RLS).
   const { data: existing, error: fetchErr } = await supabase
     .from("ai_knowledge_sources")
     .select("id")
@@ -325,7 +499,8 @@ export async function DELETE(
   // trocas, e quando" só tem resposta aqui.
   void audit({
     action: "ai.knowledge_source_archived",
-    actorUserId: authUser.id,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
     organizationId: activeOrg.orgId,
     resourceType: "ai_knowledge_source",
     resourceId: sourceId,

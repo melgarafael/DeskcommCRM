@@ -15,6 +15,11 @@ export interface ModuloCatalogo {
 
 export const CATALOGO_DE_MODULOS: readonly ModuloCatalogo[] = [
   {
+    slug: "cadencias",
+    nome: "Cadências de e-mail",
+    descricao: "Sequências de e-mail por negócio, com envio pela instalação, descadastro e abertura somente com consentimento. Contribuição de Marcelo (@lmarceloc), PR #1738.",
+  },
+  {
     slug: "honorarios",
     nome: "Honorários (advocacia)",
     descricao:
@@ -34,6 +39,44 @@ export const CATALOGO_DE_MODULOS: readonly ModuloCatalogo[] = [
       "A comanda do atendimento: itens, forma de pagamento, comissões e fidelidade. O caixa " +
       "continua no sistema mesmo sem este módulo. Toda instalação anterior a esta versão " +
       "continua com Comandas ligada.",
+  },
+  {
+    slug: "lista_de_espera",
+    nome: "Lista de espera da agenda",
+    descricao:
+      "Quando um horário abre, a vaga é oferecida a uma pessoa por vez, entre quem aceitou ser " +
+      "avisado. Cada empresa escolhe os prazos da oferta antes de ligar.",
+  },
+  {
+    // Doc 212 (A/A): o detalhe de serviço nasce só aqui; o preço segue no item
+    // do catálogo, como em todo produto.
+    slug: "catalogo_servicos",
+    nome: "Catálogo de serviços",
+    descricao:
+      "Itens do catálogo que são serviço: hora marcada, projeto ou plano recorrente, com " +
+      "variações, prazo e sinal. O agente passa a responder 'a partir de', sinal e prazo. " +
+      "O preço continua o do item do catálogo.",
+  },
+  {
+    // #3611: volta ao catálogo junto com a tela de gestão (#3636) — antes dela,
+    // instalar daria uma tabela que ninguém conseguia abrir.
+    slug: "ouvidoria",
+    nome: "Ouvidoria",
+    descricao:
+      "Registro de manifestações (reclamações, denúncias, elogios, sugestões) com protocolo " +
+      "próprio, leitura restrita a administradores e sem cartão no funil. Quem não instala " +
+      "o módulo não carrega a tabela.",
+  },
+  {
+    // #4227 (doc 356): integração de um fornecedor, para um nicho — módulo
+    // desligado de fábrica, como cadências. Sem instalar, nenhuma tabela, tela,
+    // rota, ferramenta da IA ou robô existe.
+    slug: "amigo",
+    nome: "Amigo (sistema de clínicas)",
+    descricao:
+      "Liga a agenda ao sistema de clínicas Amigo: pacientes, convênios, vagas e consultas vêm de lá, " +
+      "e a IA marca, remarca e cancela pelo Amigo. Cada empresa cadastra o próprio token. " +
+      "Contribuição de @jadsonlsouza, PR #4227.",
   },
 ];
 

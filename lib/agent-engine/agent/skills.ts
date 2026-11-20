@@ -41,13 +41,20 @@ export const MAX_SKILL_BODY_LINES = 200;
  * near-miss (candidato ao golden). Sem sinal fraco, use só any_keywords.
  * `any_tags` (opcional): hard-match quando uma ETIQUETA da conversa ou do contato é igual a
  * uma delas. Serve para a prospecção, em que o cliente quase nunca escreve o nome do ramo.
- * `any_keywords` continua obrigatório: skill sem palavra-chave não passa no schema.
+ *
+ * O matcher é OPCIONAL (#4458): o ecossistema publica SKILL.md sem matcher nenhum
+ * (blader/humanizer é o caso real) e o CRM recusava o formato. Skill sem matcher — `{}` —
+ * NÃO entra no roteamento automático: `matchSkills` não tem palavra nem etiqueta para casar,
+ * então o corpo dela só é injetado quando o roteiro de atendimento a puxa PELO NOME
+ * (`skillsPuxadasPeloRoteiro`, nó `skill`). O que continua obrigatório é a FORMA: se uma
+ * chave do matcher aparece, ela precisa ser uma lista de pelo menos 1 texto não vazio —
+ * lista vazia ou item vazio seguem recusados, com o campo no nome do erro.
  * ponytail: matcher por keyword (substring normalizado) cobre os 4 tipos de skill do
  * blueprint; adicionar matcher temporal/por-stage quando uma skill precisar (ex.: D+30
  * "dias desde o último inbound") — o campo matcher é jsonb, extensível sem migration.
  */
 export const skillMatcherSchema = z.strictObject({
-  any_keywords: z.array(z.string().min(1).max(120)).min(1).max(50),
+  any_keywords: z.array(z.string().min(1).max(120)).min(1).max(50).optional(),
   probe_keywords: z.array(z.string().min(1).max(120)).max(50).optional(),
   // 40 = TAMANHO_MAXIMO_DA_TAG: etiqueta gravada nunca passa disso, então mais longa não casaria nunca.
   any_tags: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
@@ -78,6 +85,8 @@ export interface LoadedSkill {
    * para validar que um ref_path pedido pelo modelo é conhecido ANTES de tocar storage.
    */
   manifest: unknown[];
+  /** Skill da PLATAFORMA (`organization_id` nulo): texto nosso, não da organização. */
+  daPlataforma?: true;
 }
 
 function countLines(content: string): number {
@@ -205,6 +214,7 @@ export async function loadSkills(db: Queryable, tenantId: string): Promise<Loade
         body: r.body,
         matcher: r.matcher,
         manifest: r.manifest ?? [],
+        ...(r.organization_id === null ? { daPlataforma: true as const } : {}),
       });
     }
   }
@@ -223,6 +233,39 @@ export function renderSkillIndex(skills: readonly LoadedSkill[]): string {
   return skills.map((s) => `- ${s.name}: ${s.description}`).join('\n');
 }
 
+/**
+ * As skills que ESTE agente usa (`ai_agent_versions.skill_names`, migration 9107).
+ * `null` = todas as da organização e da plataforma (o comportamento de antes, e o
+ * default de toda versão); `[]` = nenhuma; nomes = só estas. Filtra sem reordenar:
+ * a ordem por nome de `loadSkills` é o que mantém o prefixo cacheável estável.
+ */
+export function skillsDoAgente(
+  skills: readonly LoadedSkill[],
+  nomes: readonly string[] | null,
+): LoadedSkill[] {
+  if (nomes === null) return [...skills];
+  const escolhidas = new Set(nomes);
+  return skills.filter((k) => escolhidas.has(k.name));
+}
+
+/**
+ * Skills que o roteiro de atendimento puxa neste passo (o nó `skill` diz "puxe
+ * isto aqui"). Resolve sobre TODAS as da organização, não sobre `skillsDoAgente`:
+ * nomear a skill no roteiro é configuração explícita e vale mesmo fora da lista
+ * do agente — a tela do agente diz isso. Nome que não existe some; a que o
+ * matcher já casou não repete (o match vence o empate por nome).
+ */
+export function skillsPuxadasPeloRoteiro(
+  daOrganizacao: readonly LoadedSkill[],
+  nomes: readonly string[],
+  jaCasadas: readonly LoadedSkill[],
+): LoadedSkill[] {
+  return nomes
+    .map((nome) => daOrganizacao.find((sk) => sk.name === nome))
+    .filter((sk): sk is LoadedSkill => sk !== undefined)
+    .filter((sk) => !jaCasadas.some((m) => m.name === sk.name));
+}
+
 /** Normaliza para o matching: minúsculas + remove acentos (matcher robusto a diacrítico). */
 function normalize(text: string): string {
   return text
@@ -237,11 +280,28 @@ export interface SkillMissCandidate {
   reason: 'probe_matched_without_hard_match';
 }
 
+/**
+ * Por onde a skill entrou no turno (spec 27, fatia 4): pela palavra da mensagem (`any_keywords`)
+ * ou pela etiqueta da conversa ou do contato (`any_tags`). Quando os dois casam, vale `etiqueta`.
+ */
+export type MotivoDoMatch = 'palavra' | 'etiqueta';
+
+/**
+ * O valor que `skill_activations.trigger` grava para um match: `tag` quando entrou pela etiqueta
+ * (CHECK da migration 9230), `hard` quando entrou pela palavra — como sempre. Sem motivo (skill
+ * que não casou) cai em `hard`, que é o valor de antes.
+ */
+export function gatilhoDaAtivacao(motivo: MotivoDoMatch | undefined): 'hard' | 'tag' {
+  return motivo === 'etiqueta' ? 'tag' : 'hard';
+}
+
 export interface SkillMatchResult {
   /** skills com hard-match — os corpos que serão injetados no turno. */
   matched: LoadedSkill[];
   /** near-misses: probe disparou sem hard-match — candidatos ao golden set. */
   missCandidates: SkillMissCandidate[];
+  /** O motivo de cada skill de `matched`. Aditivo: quem lê só `matched` não muda. */
+  motivos: ReadonlyMap<LoadedSkill, MotivoDoMatch>;
 }
 
 /**
@@ -266,16 +326,21 @@ export function matchSkills(
   const etiquetas = new Set(tags.map((t) => normalize(t.trim())).filter((t) => t !== ''));
   const matched: LoadedSkill[] = [];
   const missCandidates: SkillMissCandidate[] = [];
+  const motivos = new Map<LoadedSkill, MotivoDoMatch>();
   const hit = (keywords: readonly string[]): boolean => keywords.some((k) => norm.includes(normalize(k)));
   for (const skill of skills) {
     const porEtiqueta = (skill.matcher.any_tags ?? []).some((t) => etiquetas.has(normalize(t.trim())));
-    if (porEtiqueta || (temTexto && hit(skill.matcher.any_keywords))) {
+    // Skill sem matcher (#4458) chega aqui com `any_keywords` ausente: sem lista, não há
+    // palavra para casar — o corpo dela só entra pelo roteiro, que puxa pelo nome.
+    if (porEtiqueta || (temTexto && hit(skill.matcher.any_keywords ?? []))) {
       matched.push(skill);
+      // Etiqueta vence palavra quando os dois casam: é a telemetria que separa o `tag` do `hard`.
+      motivos.set(skill, porEtiqueta ? 'etiqueta' : 'palavra');
     } else if (temTexto && skill.matcher.probe_keywords !== undefined && hit(skill.matcher.probe_keywords)) {
       missCandidates.push({ skill: skill.name, reason: 'probe_matched_without_hard_match' });
     }
   }
-  return { matched, missCandidates };
+  return { matched, missCandidates, motivos };
 }
 
 /**

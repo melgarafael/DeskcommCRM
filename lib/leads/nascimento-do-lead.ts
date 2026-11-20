@@ -60,11 +60,19 @@ import { ORIGEM_DO_WHATSAPP } from "@/lib/channels/origem-do-negocio";
 
 import { lerRegrasDeCliente } from "@/lib/contacts/regras-de-cliente";
 import { ehContatoInterno, lerTagsInternas } from "@/lib/contacts/tags-internas";
-import { ehIdentificadorTecnico, rotuloDoContato, SEM_NOME } from "@/lib/contacts/rotulo-do-contato";
+import { ehContatoDaEquipe, lerTagsDaEquipe } from "@/lib/contacts/tags-da-equipe";
+import { campanhaDeProspeccaoDaConversa, recusaSemInteresseRecente } from "@/lib/lgpd/sem-interesse";
+import {
+  ehIdentificadorTecnico,
+  rotuloDoContato,
+  SEM_NOME,
+} from "@/lib/contacts/rotulo-do-contato";
 
 import { decidirPelaVenda, lerVendaAnterior } from "./cliente-pela-venda";
+import { reabrirPerdidoRecente } from "./reabrir-perdido";
 import { emitLeadActivity } from "./activity-emitter";
 import { removerProvaMetaLeadSubmitted } from "./prova-meta-lead-submitted";
+import { metadadosDaAtribuicao, type AtribuicaoDeAnuncio } from "./atribuicao-de-anuncio";
 
 /**
  * O rótulo que aparece no card do funil quando o lead nasceu de um clique em
@@ -113,14 +121,24 @@ export type MotivoSemLead =
   | "contato_bloqueado" // pediu para sair; criar oportunidade seria desrespeito registrado
   | "contato_pessoal" // marcado como pessoal (spec 21): não é oportunidade, nunca nasce
   | "contato_interno" // #2353: equipe/sócio/família/fornecedor — tag interna, não é negócio
+  | "contato_da_equipe" // #3534: equipe que CONTINUA sendo atendida — não é captação
+  | "sem_interesse_na_prospeccao" // D3: acabou de dizer "não tenho interesse" na conversa da prospecção
   | "sem_funil_de_entrada" // a organização não tem funil padrão — falha de configuração, visível
   | "sem_etapa" // o funil existe e não tem etapa utilizável
   | "pos_venda" // #3644: comprou dentro da janela de pós-venda — a conversa não é demanda
+  // #4076: o negócio PERDIDO recente voltou a aberto — a conversa é a MESMA
+  // demanda, não uma nova. Não é "nenhum card": `leadId` vem preenchido.
+  | "reaberto"
   | "erro"; // qualquer falha de escrita
 
 export type NascimentoDoLead =
   | { criado: true; leadId: string; pipelineId: string; stageId: string }
-  | { criado: false; motivo: MotivoSemLead; detalhe?: string };
+  /**
+   * `leadId` só vem em `motivo: "reaberto"` (#4076): o card existia e voltou a
+   * estar aberto. Quem chama NÃO deve tratá-lo como criação — o `lead.created`
+   * não é emitido, porque nada nasceu.
+   */
+  | { criado: false; motivo: MotivoSemLead; detalhe?: string; leadId?: string };
 
 export interface DadosDoNascimento {
   organizationId: string;
@@ -133,6 +151,103 @@ export interface DadosDoNascimento {
   nomeDoContato: string | null;
   /** Rotulo/source/motivo do canal de origem -- default preserva o WhatsApp. */
   origem?: OrigemDoNascimento;
+  /** Clique provado desta mensagem; só afeta o card NOVO, nunca o primeiro toque. */
+  atribuicaoDaMensagem?: AtribuicaoDeAnuncio;
+  /**
+   * O número (conexão) por onde a conversa chegou — o funil de entrada pode ser
+   * escolhido por número (migration 9430). Ausente, o nascimento lê o da
+   * própria conversa; sem nenhum dos dois, vale o funil padrão.
+   */
+  channelSessionId?: string | null;
+}
+
+/**
+ * O FUNIL DE ENTRADA DO NÚMERO (migration 9430).
+ *
+ * `channel_sessions.entry_pipeline_id` diz onde nasce a conversa nova daquele
+ * número — o número de atacado põe gente no funil de atacado. Nulo é o
+ * comportamento de antes: o funil padrão da organização.
+ *
+ * A FK é composta com a organização (o banco recusa funil ou etapa de outra
+ * empresa, e etapa de outro funil), mas arquivar o funil ou a etapa, ou virar
+ * a etapa de ganho/perda, não passa por ela. Por isso a leitura confere de novo: o funil
+ * tem de ser DESTA organização e não arquivado; a etapa, DESTE funil, aberta e
+ * não de ganho/perda. Etapa que não serve cai na etapa de entrada do próprio
+ * funil (`etapaDeEntrada`); funil que não serve devolve `null`, e quem chama
+ * segue para o funil padrão — errar o funil é visível e corrigível, não nascer
+ * é a pessoa sumir.
+ *
+ * ⚠️ O CAMINHO COMUM PAGA UMA CONSULTA, E SÓ QUANDO O CARD VAI NASCER. Quem
+ * chama já saiu no passo 2 se havia negócio aberto; esta leitura acontece uma
+ * vez por card novo, não por mensagem.
+ */
+export async function funilDoNumero(
+  db: SupabaseClient,
+  organizationId: string,
+  channelSessionId: string,
+): Promise<{ pipelineId: string; stageId: string } | null> {
+  const { data: numero } = await db
+    .from("channel_sessions")
+    .select("entry_pipeline_id, entry_stage_id")
+    .eq("organization_id", organizationId)
+    .eq("id", channelSessionId)
+    .maybeSingle();
+  const pipelineId = (numero as { entry_pipeline_id?: string | null } | null)?.entry_pipeline_id ?? null;
+  if (!pipelineId) return null;
+
+  const { data: funil } = await db
+    .from("crm_pipelines")
+    .select("id, settings")
+    .eq("organization_id", organizationId)
+    .eq("id", pipelineId)
+    .eq("is_archived", false)
+    .maybeSingle();
+  if (!funil) {
+    logger.warn("[nascimento-do-lead] funil de entrada do número não vale mais; usando o padrão", {
+      organizationId,
+      channel_session_id: channelSessionId,
+      entry_pipeline_id: pipelineId,
+    });
+    return null;
+  }
+
+  const etapaEscolhida = (numero as { entry_stage_id?: string | null } | null)?.entry_stage_id ?? null;
+  if (etapaEscolhida) {
+    const { data: etapa } = await db
+      .from("crm_stages")
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq("pipeline_id", pipelineId)
+      .eq("id", etapaEscolhida)
+      .eq("is_archived", false)
+      .eq("is_won", false)
+      .eq("is_lost", false)
+      .maybeSingle();
+    if (etapa?.id) return { pipelineId, stageId: etapa.id as string };
+    logger.warn("[nascimento-do-lead] etapa de entrada do número não vale mais; usando a do funil", {
+      organizationId,
+      channel_session_id: channelSessionId,
+      entry_stage_id: etapaEscolhida,
+    });
+  }
+
+  const stageId = await etapaDeEntrada(db, organizationId, pipelineId, (funil as { settings?: unknown }).settings);
+  return stageId ? { pipelineId, stageId } : null;
+}
+
+/** O número da conversa, quando quem chama não o trouxe. Falha de leitura = nenhum. */
+async function numeroDaConversa(
+  db: SupabaseClient,
+  organizationId: string,
+  conversationId: string,
+): Promise<string | null> {
+  const { data } = await db
+    .from("conversations")
+    .select("channel_session_id")
+    .eq("organization_id", organizationId)
+    .eq("id", conversationId)
+    .maybeSingle();
+  return (data as { channel_session_id?: string | null } | null)?.channel_session_id ?? null;
 }
 
 /**
@@ -351,6 +466,13 @@ async function destinoDaCampanha(
  * contato, novas mensagens alimentam o que já existe. Quando ele fecha (ganho ou
  * perdido) e a pessoa volta a escrever, nasce outro — que é o comportamento
  * certo: é uma demanda nova.
+ *
+ * ⚠️ UMA EXCEÇÃO, e ela é opt-in (#4076): o perdido de MINUTOS atrás. O autor da
+ * issue mediu 5 de 7 perdas virando card vazio em até 85 minutos, quase sempre
+ * por uma mensagem de despedida — a demanda não morreu, a conversa é a mesma.
+ * Com `settings.reabrir_perdido_dias` ligado no funil, o card PERDIDO dentro da
+ * janela volta a `aberto` (mesmo `id`, histórico intacto) em vez de nascer
+ * outro. Desligado — o padrão de todo funil de hoje —, nada muda aqui.
  */
 export async function garantirLeadDaConversa(
   db: SupabaseClient,
@@ -370,7 +492,9 @@ export async function garantirLeadDaConversa(
     // `first_service_at` viaja no select que JÁ existe: decidir o funil não custa
     // uma consulta a mais no caminho quente da ingestão. É por isso que o fato
     // mora numa coluna de `contacts`, e não é derivado da agenda a cada inbound.
-    .select("is_blocked,is_personal,display_name,name,phone_number,source,source_metadata,first_service_at,tags")
+    .select(
+      "is_blocked,is_personal,display_name,name,phone_number,source,source_metadata,first_service_at,tags,consent",
+    )
     .eq("organization_id", organizationId)
     .eq("id", contactId)
     .maybeSingle();
@@ -391,6 +515,34 @@ export async function garantirLeadDaConversa(
     const tagsInternas = await lerTagsInternas(db, organizationId);
     if (ehContatoInterno(tagsDoContato, tagsInternas))
       return { criado: false, motivo: "contato_interno" };
+    // 1c · #3534 · contato da EQUIPE (lista separada: `team_contact_tags`)
+    // também não vira card — o sócio que testa o agente não é oportunidade de
+    // captação. A DIFERENÇA para o interno é o que acontece depois: aqui a IA
+    // atende e a conversa segue o turno normal; lá a IA é vetada. Mesma leitura
+    // condicional do bloco acima (só quem tem etiqueta paga a consulta) e o
+    // mesmo fail-open: falha de leitura → lista vazia → o card nasce.
+    const tagsDaEquipe = await lerTagsDaEquipe(db, organizationId);
+    if (ehContatoDaEquipe(tagsDoContato, tagsDaEquipe))
+      return { criado: false, motivo: "contato_da_equipe" };
+  }
+
+  // 1d · D3 · quem ACABOU de dizer "não tenho interesse" NA PROSPECÇÃO não ganha card
+  // novo na mesma conversa. Sem isto, a mensagem que gravou a recusa (ou o "ok,
+  // obrigado" que vem depois) faria nascer — ou reabrir, pelo passo 3c — o negócio que
+  // a recusa acabou de encerrar. A trava vale só na janela da despedida
+  // (`JANELA_SEM_CARD_DEPOIS_DA_RECUSA_MS`): a conversa do WhatsApp é a mesma para
+  // sempre e o `prospecting_campaign_id` não sai dela, e uma trava sem prazo deixaria
+  // sem card quem volta semanas depois para comprar. A conversa só é lida quando a
+  // recusa é recente: o caminho comum não paga consulta a mais.
+  if (recusaSemInteresseRecente((contato as { consent?: unknown } | null)?.consent, Date.now())) {
+    const { data: conversa } = await db
+      .from("conversations")
+      .select("metadata")
+      .eq("organization_id", organizationId)
+      .eq("id", conversationId)
+      .maybeSingle();
+    if (campanhaDeProspeccaoDaConversa((conversa as { metadata?: unknown } | null)?.metadata))
+      return { criado: false, motivo: "sem_interesse_na_prospeccao" };
   }
 
   // 2 · já existe demanda aberta?
@@ -454,13 +606,22 @@ export async function garantirLeadDaConversa(
     return { criado: false, motivo: "pos_venda", detalhe: pelaVenda.motivo ?? undefined };
   }
 
-  const ehCliente =
-    (contato?.first_service_at != null && regras.pelaAgenda) || pelaVenda.cliente;
+  const ehCliente = (contato?.first_service_at != null && regras.pelaAgenda) || pelaVenda.cliente;
   // A CAMPANHA ganha do padrão quando declara funil (migration 0378): é a
   // escolha mais específica, e quem montou a campanha sabe onde quer medir o
   // resultado dela. Campanha sem funil declarado, ou conversa que não nasceu de
   // campanha, seguem a regra da 0262 sem diferença nenhuma.
+  //
+  // O NÚMERO vem logo abaixo da campanha (migration 9430): quem escreve para o
+  // número de atacado entra no funil de atacado. Ele NÃO passa na frente do
+  // funil de clientes — quem já é cliente segue a regra da 0262 —, e número
+  // sem escolha (ou com escolha que não serve mais) cai no funil padrão.
   const origemDaCampanha = await origemDeCampanhaDaConversa(db, organizationId, conversationId);
+  const numero =
+    origemDaCampanha?.pipelineId || ehCliente
+      ? null
+      : (dados.channelSessionId ?? (await numeroDaConversa(db, organizationId, conversationId)));
+  const doNumero = numero ? await funilDoNumero(db, organizationId, numero) : null;
   const destino = origemDaCampanha?.pipelineId
     ? await destinoDaCampanha(
         db,
@@ -468,8 +629,45 @@ export async function garantirLeadDaConversa(
         origemDaCampanha.pipelineId,
         origemDaCampanha.stageId,
       )
-    : await funilDeEntrada(db, organizationId, ehCliente);
+    : (doNumero ?? (await funilDeEntrada(db, organizationId, ehCliente)));
   if ("erro" in destino) return { criado: false, motivo: destino.erro };
+
+  // 3c · #4076 · o perdido de MINUTOS atrás não vira card vazio.
+  //
+  // Vem DEPOIS do pós-venda (3b) de propósito: aquela recusa é "a conversa não
+  // abre negócio nenhum", e reabrir um card ali criaria justamente o card que a
+  // regra de pós-venda acabou de recusar. Vem antes do insert (4), porque a
+  // decisão é entre reabrir e criar — e é aqui que o histórico comercial fica
+  // no card certo.
+  //
+  // `null` é "siga como hoje": opção desligada, nenhum perdido, perdido fora da
+  // janela, etapa de volta indisponível ou falha de leitura. O card novo é o
+  // desfecho seguro; não criar nada faria a pessoa sumir.
+  const reaberto = await reabrirPerdidoRecente(db, {
+    organizationId,
+    contactId,
+    conversationId,
+    pipelineId: destino.pipelineId,
+    stageIdDeEntrada: destino.stageId,
+  });
+  if (reaberto) {
+    logger.info("[nascimento-do-lead] negócio perdido reaberto — a conversa é a mesma demanda", {
+      organization_id: organizationId,
+      contact_id: contactId,
+      conversation_id: conversationId,
+      lead_id: reaberto.leadId,
+      pipeline_id: destino.pipelineId,
+      stage_id: reaberto.stageId,
+      perdido_em: reaberto.perdidoEm,
+      janela_dias: reaberto.dias,
+    });
+    return {
+      criado: false,
+      motivo: "reaberto",
+      detalhe: `janela de ${reaberto.dias} dias`,
+      leadId: reaberto.leadId,
+    };
+  }
 
   // 4 · o card.
   //
@@ -505,7 +703,11 @@ export async function garantirLeadDaConversa(
   // (DIRC-D): a origem que importa é a de QUANDO O NEGÓCIO NASCEU, e o
   // contato pode ganhar conversas/leads futuros por outros canais sem que
   // isso reescreva a origem deste.
-  const rotuloDeAnuncio = contato?.source ? ROTULO_DE_ANUNCIO[contato.source] : undefined;
+  const sourceDeOrigem = dados.atribuicaoDaMensagem?.plataforma ?? contato?.source;
+  const metadataDeOrigem = dados.atribuicaoDaMensagem
+    ? metadadosDaAtribuicao(dados.atribuicaoDaMensagem)
+    : (contato?.source_metadata ?? {});
+  const rotuloDeAnuncio = sourceDeOrigem ? ROTULO_DE_ANUNCIO[sourceDeOrigem] : undefined;
 
   // A origem da CAMPANHA vence a do anúncio: esta conversa nasceu porque NÓS
   // falamos com a pessoa. O anúncio que a trouxe meses atrás continua no
@@ -535,9 +737,9 @@ export async function garantirLeadDaConversa(
       // A campanha ganha: quem montou a lista sabe de onde o card veio. Sem ela,
       // vale a regra do upstream — anúncio mantém a origem do contato, e o resto
       // usa `origem.source`.
-      p_source: marca ? marca.source : rotuloDeAnuncio ? contato!.source : origem.source,
+      p_source: marca ? marca.source : rotuloDeAnuncio ? sourceDeOrigem : origem.source,
       p_source_metadata: removerProvaMetaLeadSubmitted(
-        marca ? marca.source_metadata : rotuloDeAnuncio ? (contato!.source_metadata ?? {}) : {},
+        marca ? marca.source_metadata : rotuloDeAnuncio ? metadataDeOrigem : {},
       ),
       // O ponto ao lado do título só acende se a organização cadastrar este
       // rótulo em `crm_pipelines.settings.canonical_tags` (Configurações do

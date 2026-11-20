@@ -126,6 +126,13 @@ export async function POST(req: NextRequest) {
       );
     }
   }
+  // Doc 321: a habilitação de agência só existe com o módulo `agencias` ligado.
+  // Recusada com nome, como o `plano_id` acima (a função SQL também a recusa).
+  if (parsed.data.agencia !== undefined && !(await moduloLigado(admin, "agencias"))) {
+    return fail("validation_error", "A gestão de agências está desligada nesta instalação.", 422, {
+      requestId,
+    });
+  }
   const normalizado = { ...parsed.data, owner_email: parsed.data.owner_email.trim().toLowerCase() };
   const request = cobrancaLigada ? { ...normalizado, plan: undefined } : normalizado;
   const { data: org, error } = await admin.rpc("fn_create_tenant_with_owner", {
@@ -146,6 +153,11 @@ export async function POST(req: NextRequest) {
         422,
         { requestId },
       );
+    }
+    if (error.code === "22023" && (error.message ?? "").includes("agencias_desligado")) {
+      return fail("validation_error", "A gestão de agências está desligada nesta instalação.", 422, {
+        requestId,
+      });
     }
     if (error.code === "23505" || error.code === "22023") {
       return fail("conflict", "Slug já existe ou a chave foi usada com outros dados", 409, {

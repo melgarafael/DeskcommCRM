@@ -26,6 +26,7 @@
  * atendimento.
  */
 import Link from "next/link";
+import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { tagsPageQuerySchema, tagsPageResultSchema } from "@/lib/schemas/tags";
@@ -34,7 +35,7 @@ import { redirect } from "next/navigation";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
-import { tagsInternasDaOrg } from "@/lib/schemas/settings";
+import { tagsDaEquipeDaOrg, tagsInternasDaOrg } from "@/lib/schemas/settings";
 import type { LinhaDeVocabulario } from "@/lib/schemas/tags";
 import { createClient } from "@/lib/supabase/server";
 
@@ -90,20 +91,24 @@ export default async function TagsPage({ searchParams }: { searchParams: Promise
   const tagsInternas = tagsInternasDaOrg(
     (linhaDaOrganizacao as { settings?: unknown } | null)?.settings,
   );
+  // #3534: a lista da equipe sai da MESMA leitura de `settings`, com a mesma
+  // régua de normalização — só muda a chave lida.
+  const tagsDaEquipe = tagsDaEquipeDaOrg(
+    (linhaDaOrganizacao as { settings?: unknown } | null)?.settings,
+  );
 
   const idioma = user.idioma;
   const t = (texto: string) => traduzir(texto, idioma);
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto md:p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{t("Tags")}</h1>
+      <CabecalhoDaSubTela titulo={t("Tags")} idioma={idioma}>
         <p className="max-w-2xl text-sm text-muted-foreground">
           {t(
             "As etiquetas que os agentes, o Inbox e o funil usam nesta organização. Renomear ou juntar corrige também as regras de agente que escrevem a etiqueta, na mesma operação.",
           )}
         </p>
-      </header>
+      </CabecalhoDaSubTela>
 
       <form method="get" className="flex max-w-xl items-center gap-2">
         <Input name="busca" aria-label={t("Buscar etiquetas")} placeholder={t("Buscar etiquetas")}
@@ -131,6 +136,9 @@ export default async function TagsPage({ searchParams }: { searchParams: Promise
       {/* #2353: a lista de contato interno não depende do vocabulário (que pode
           ter falhado acima) — vive em `settings` e é independente dele. */}
       <TagsInternasForm tags={tagsInternas} idioma={idioma} />
+      {/* #3534: a lista da EQUIPE, ao lado e não no lugar da interna. Contato
+          aqui continua sendo atendido; o que ele não tem é repasse por clima. */}
+      <TagsInternasForm tags={tagsDaEquipe} idioma={idioma} variante="equipe" />
     </div>
   );
 }

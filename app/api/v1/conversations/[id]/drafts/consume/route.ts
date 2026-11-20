@@ -40,9 +40,9 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     scope: "mcp:write",
   });
   if (!authz.ok) return authz.response;
-  // Fora de PUBLIC_PATHS hoje: o proxy recusa Bearer sem cookie antes daqui.
-  // O teto é defesa em profundidade e passa a valer no dia em que a rota
-  // entrar na lista — mesmo teto das irmãs que já usam resolveAuthDual.
+  // Está em PUBLIC_PATHS: o Bearer chega ao handler, e o teto de escrita do
+  // token é o único que conta as chamadas dele (sem o teto daqui não há
+  // contagem a montante). Mesmo teto das irmãs que já usam resolveAuthDual.
   const teto = await tetoDeEscritaDoToken(authz, "drafts.consume", requestId);
   if (teto) return teto;
   const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);

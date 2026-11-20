@@ -220,4 +220,22 @@ describe('aggregateEvolution', () => {
     expect(p.activity.by_skill['constructor']).toBe(1);
     expect(p.activity.by_skill['agendamento']).toBe(1);
   });
+
+  it("turno de número SEM roteador (router_id nulo) não vira lacuna nem atividade do roteador (#4340)", () => {
+    const p = aggregateEvolution({
+      ...base(),
+      routerDecisions: [
+        // Um roteador de verdade que não casou: esta é a lacuna real.
+        { created_at: '2026-07-01T10:00:00Z', outcome: 'no_match', intent_name: null, router_id: 'router-1' },
+        // Número que nunca teve roteador: três turnos, três linhas de rastro.
+        { created_at: '2026-07-01T11:00:00Z', outcome: 'no_match', intent_name: null, router_id: null },
+        { created_at: '2026-07-01T12:00:00Z', outcome: 'no_match', intent_name: null, router_id: null },
+        { created_at: '2026-07-02T09:00:00Z', outcome: 'no_match', intent_name: null, router_id: null },
+      ],
+    });
+
+    expect(p.gaps.router_no_match).toBe(1);
+    const total = p.activity.series.router_decisions.reduce((soma, dia) => soma + dia.value, 0);
+    expect(total).toBe(1);
+  });
 });

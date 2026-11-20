@@ -26,8 +26,8 @@
  *    fechada (o trigger `fn_crm_lead_close_on_stage` decide isso no banco,
  *    contra o `status: "open"` que o handler grava).
  */
-import { NextRequest } from "next/server";
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { pedidoComTamanho } from "@/tests/helpers/pedido-com-tamanho";
 
 import { ApiError } from "@/lib/api/types";
 import { fail } from "@/lib/api/wrappers";
@@ -193,7 +193,7 @@ function pedido(csv: string, campos: Record<string, string | null> = {}) {
   if (etapa !== null) corpo += parte("stage_id", etapa);
   corpo += `--${B}--\r\n`;
 
-  return new NextRequest("http://x/api/v1/leads/import", {
+  return pedidoComTamanho("http://x/api/v1/leads/import", {
     method: "POST",
     headers: { "content-type": `multipart/form-data; boundary=${B}` },
     body: corpo,
@@ -211,7 +211,7 @@ describe("POST /api/v1/leads/import", () => {
     fazerSupabase(null);
     const { POST } = await import("@/app/api/v1/leads/import/route");
 
-    const res = await POST(pedido("nome,valor\nAna,100\nBruno,200"));
+    const res = await POST(await pedido("nome,valor\nAna,100\nBruno,200"));
 
     expect(res.status).toBe(200);
     expect(vi.mocked(createLeadHandler)).toHaveBeenCalledTimes(2);
@@ -226,7 +226,7 @@ describe("POST /api/v1/leads/import", () => {
     fazerSupabase(null);
     const { POST } = await import("@/app/api/v1/leads/import/route");
 
-    await POST(pedido("nome,valor\nAna,100"));
+    await POST(await pedido("nome,valor\nAna,100"));
 
     expect(vi.mocked(createLeadHandler).mock.calls[0]![2]).toMatchObject({ via_planilha: true });
   });
@@ -239,7 +239,7 @@ describe("POST /api/v1/leads/import", () => {
     fazerSupabase(null);
     const { POST } = await import("@/app/api/v1/leads/import/route");
 
-    await POST(pedido("nome,valor\nAna,100"));
+    await POST(await pedido("nome,valor\nAna,100"));
 
     const [, , input] = vi.mocked(createLeadHandler).mock.calls[0]!;
     expect(input).not.toHaveProperty("currency");
@@ -249,7 +249,7 @@ describe("POST /api/v1/leads/import", () => {
     fazerSupabase(null);
     const { POST } = await import("@/app/api/v1/leads/import/route");
 
-    const res = await POST(pedido("nome,valor\nAna,100\nBruno,doze mil\nCarla,300"));
+    const res = await POST(await pedido("nome,valor\nAna,100\nBruno,doze mil\nCarla,300"));
     const corpo = (await res.json()) as { data: { criados: number; erros: { linha: number }[] } };
 
     expect(corpo.data.criados).toBe(2);
@@ -265,7 +265,7 @@ describe("POST /api/v1/leads/import", () => {
     );
     const { POST } = await import("@/app/api/v1/leads/import/route");
 
-    const res = await POST(pedido("nome\nAna\nBruno\nCarla"));
+    const res = await POST(await pedido("nome\nAna\nBruno\nCarla"));
 
     expect(res.status).toBe(404);
     expect(vi.mocked(createLeadHandler)).toHaveBeenCalledTimes(1);
@@ -276,7 +276,7 @@ describe("POST /api/v1/leads/import", () => {
     const { POST } = await import("@/app/api/v1/leads/import/route");
 
     await POST(
-      pedido(
+      await pedido(
         "nome,telefone\nAna,11988887777\nAna (2),(11) 98888-7777\nAna (3),+5511988887777",
       ),
     );
@@ -288,7 +288,7 @@ describe("POST /api/v1/leads/import", () => {
     const espiao = fazerSupabase({ id: "contato-existente" });
     const { POST } = await import("@/app/api/v1/leads/import/route");
 
-    await POST(pedido("nome,telefone\nAna,11988887777"));
+    await POST(await pedido("nome,telefone\nAna,11988887777"));
 
     expect(espiao.inseridos).toHaveLength(0);
     expect(vi.mocked(createLeadHandler).mock.calls[0]![2]).toMatchObject({
@@ -300,7 +300,7 @@ describe("POST /api/v1/leads/import", () => {
     fazerSupabase(null);
     const { POST } = await import("@/app/api/v1/leads/import/route");
 
-    await POST(pedido("nome\nAna\nBruno"));
+    await POST(await pedido("nome\nAna\nBruno"));
 
     expect(vi.mocked(audit)).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -314,7 +314,7 @@ describe("POST /api/v1/leads/import", () => {
   it("sem funil escolhido, 422 antes de ler o arquivo", async () => {
     fazerSupabase(null);
     const { POST } = await import("@/app/api/v1/leads/import/route");
-    const res = await POST(pedido("nome\nAna", { pipeline_id: null, stage_id: null }));
+    const res = await POST(await pedido("nome\nAna", { pipeline_id: null, stage_id: null }));
     expect(res.status).toBe(422);
     expect(vi.mocked(createLeadHandler)).not.toHaveBeenCalled();
   });
@@ -322,7 +322,7 @@ describe("POST /api/v1/leads/import", () => {
   it("planilha sem coluna que nomeie o negócio é recusada com 422", async () => {
     fazerSupabase(null);
     const { POST } = await import("@/app/api/v1/leads/import/route");
-    const res = await POST(pedido("valor,origem\n100,site"));
+    const res = await POST(await pedido("valor,origem\n100,site"));
     expect(res.status).toBe(422);
     expect(vi.mocked(createLeadHandler)).not.toHaveBeenCalled();
   });
@@ -331,7 +331,7 @@ describe("POST /api/v1/leads/import", () => {
     fazerSupabaseComEtapas([etapa({ id: ETAPA, position: 1000 })]);
     const { POST } = await import("@/app/api/v1/leads/import/route");
 
-    const res = await POST(pedido("nome\nAna", { stage_id: null }));
+    const res = await POST(await pedido("nome\nAna", { stage_id: null }));
 
     expect(res.status).toBe(200);
     expect(vi.mocked(createLeadHandler)).toHaveBeenCalledTimes(1);
@@ -350,7 +350,7 @@ describe("POST /api/v1/leads/import", () => {
     const espiao = fazerSupabaseComEtapas([etapa({ id: "so-ganho", position: 500, is_won: true })]);
     const { POST } = await import("@/app/api/v1/leads/import/route");
 
-    const res = await POST(pedido("nome\nAna", { stage_id: null }));
+    const res = await POST(await pedido("nome\nAna", { stage_id: null }));
     const corpo = (await res.json()) as { error: { message: string } };
 
     expect(res.status).toBe(422);
@@ -373,7 +373,7 @@ describe("POST /api/v1/leads/import", () => {
     ]);
     const { POST } = await import("@/app/api/v1/leads/import/route");
 
-    const res = await POST(pedido("nome\nAna", { stage_id: null }));
+    const res = await POST(await pedido("nome\nAna", { stage_id: null }));
 
     expect(res.status).toBe(200);
     expect(vi.mocked(createLeadHandler).mock.calls[0]![2]).toMatchObject({ stage_id: ETAPA });
@@ -389,7 +389,7 @@ describe("POST /api/v1/leads/import", () => {
     ]);
     const { POST } = await import("@/app/api/v1/leads/import/route");
 
-    const res = await POST(pedido("nome\nAna", { stage_id: null }));
+    const res = await POST(await pedido("nome\nAna", { stage_id: null }));
 
     expect(res.status).toBe(200);
     expect(vi.mocked(createLeadHandler).mock.calls[0]![2]).toMatchObject({ stage_id: ETAPA });
@@ -404,7 +404,7 @@ describe("POST /api/v1/leads/import", () => {
     ]);
     const { POST } = await import("@/app/api/v1/leads/import/route");
 
-    const res = await POST(pedido("nome\nAna", { stage_id: null }));
+    const res = await POST(await pedido("nome\nAna", { stage_id: null }));
 
     expect(res.status).toBe(200);
     expect(vi.mocked(createLeadHandler).mock.calls[0]![2]).toMatchObject({ stage_id: ETAPA });
@@ -414,7 +414,7 @@ describe("POST /api/v1/leads/import", () => {
     sessao("viewer");
     fazerSupabase(null);
     const { POST } = await import("@/app/api/v1/leads/import/route");
-    const res = await POST(pedido("nome\nAna"));
+    const res = await POST(await pedido("nome\nAna"));
     expect(res.status).toBe(403);
   });
 });

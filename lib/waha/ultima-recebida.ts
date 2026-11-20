@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { mesmoTelefoneNaLista } from "@/lib/channels/phone-variants";
 import { logger } from "@/lib/logger";
 import { chatIdFromWaMessageId } from "@/lib/waha/message-id";
 
@@ -26,6 +27,20 @@ export function chatIndividualDaMensagem(chat: string | null): string | null {
 }
 
 /**
+ * O chat (já validado por `chatIndividualDaMensagem`) é de um número da ficha? Se não
+ * for, o envio segue a regra de sempre, a mesma que `reply-address` mostra na tela.
+ *
+ * `@lid` não traz número para comparar e segue valendo: é o endereço que o WhatsApp deu.
+ */
+export function chatSegueNaFicha(
+  chat: string,
+  numerosDaFicha: ReadonlyArray<string | null | undefined>,
+): boolean {
+  if (chat.endsWith("@lid")) return true;
+  return mesmoTelefoneNaLista(numerosDaFicha, `+${chat.slice(0, chat.indexOf("@"))}`) !== undefined;
+}
+
+/**
  * O chat da última mensagem recebida na conversa — só quando a ficha tem telefone
  * extra. Ficha sem extra devolve null SEM olhar as mensagens: quem não tem telefone
  * extra continua exatamente como antes.
@@ -35,8 +50,11 @@ export function chatIndividualDaMensagem(chat: string | null): string | null {
  * ficha, que pode não ser o que ela usa nesta conversa. O endereço já está no
  * `external_id` do recebido (`chatIdFromWaMessageId`); nada novo é gravado.
  *
+ * Número que saiu da ficha também devolve null (`chatSegueNaFicha`).
+ *
  * Qualquer erro vira `null` com `warn`: o envio não pode cair por causa desta
- * leitura, e a regra de sempre é o recuo seguro.
+ * leitura, e a regra de sempre é o recuo seguro. Vale também para a leitura do
+ * principal: endereço não conferido não é usado.
  */
 export async function chatIdDaUltimaRecebida(
   admin: SupabaseClient,
@@ -46,10 +64,9 @@ export async function chatIdDaUltimaRecebida(
   try {
     const { data: extras, error: erroExtras } = await admin
       .from("contact_phones")
-      .select("id")
+      .select("phone_number")
       .eq("organization_id", args.organizationId)
-      .eq("contact_id", args.contactId)
-      .limit(1);
+      .eq("contact_id", args.contactId);
     if (erroExtras) throw erroExtras;
     if (!extras || extras.length === 0) return null;
 
@@ -66,7 +83,19 @@ export async function chatIdDaUltimaRecebida(
 
     const externalId = (recebidas?.[0] as { external_id?: unknown } | undefined)?.external_id;
     if (typeof externalId !== "string") return null;
-    return chatIndividualDaMensagem(chatIdFromWaMessageId(externalId));
+    const chat = chatIndividualDaMensagem(chatIdFromWaMessageId(externalId));
+    if (!chat) return null;
+    if (chatSegueNaFicha(chat, extras.map((e) => e.phone_number))) return chat;
+
+    // Só quem não bateu com um extra paga a leitura do principal.
+    const { data: ficha, error: erroFicha } = await admin
+      .from("contacts")
+      .select("phone_number")
+      .eq("organization_id", args.organizationId)
+      .eq("id", args.contactId)
+      .maybeSingle();
+    if (erroFicha) throw erroFicha;
+    return chatSegueNaFicha(chat, [ficha?.phone_number]) ? chat : null;
   } catch (erro) {
     // Só a organização no log: o chat e o contato carregam telefone.
     logger.warn("waha: endereço da última mensagem recebida indisponível; segue pela regra de hoje", {

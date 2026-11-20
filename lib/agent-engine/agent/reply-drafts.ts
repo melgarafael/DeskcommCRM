@@ -76,12 +76,19 @@ export async function generateReplyDraft(
           conversationId: input.conversationId,
           fuso: await fusoDaOrganizacao(pool, input.organizationId),
         },
-        { historyLimit: agent.historyMessageWindow, maxTokens: agent.historyTokenWindow },
+        {
+          historyLimit: agent.historyMessageWindow,
+          maxTokens: agent.historyTokenWindow,
+          // A prévia assistida ("Sugerir resposta") vê o que o turno real veria (9108).
+          verImagens: agent.imageVisionEnabled ?? true,
+        },
       );
       if (!context.ok || context.context.contact.is_blocked || context.lgpd.isAnonymized)
         throw new Error("reply_context_unavailable");
-      const { rows: notes } = await pool.query<{ headline: string; body: string }>(
-        "select headline,body from lead_notes where organization_id=$1 and contact_id=$2",
+      // Com id e na ordem de `getLeadNotesIndex`: acima do teto inline a prévia
+      // usa o índice do turno real, e o get_lead_note busca a nota pelo id.
+      const { rows: notes } = await pool.query<{ id: string; headline: string; body: string }>(
+        "select id::text as id,headline,body from lead_notes where organization_id=$1 and contact_id=$2 order by created_at, id",
         [input.organizationId, input.contactId],
       );
       const { rows: feedback } = await pool.query<{ feedback: unknown }>(

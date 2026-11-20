@@ -10,7 +10,8 @@ import { createClient } from "@/lib/supabase/server";
 import { idiomaDoVisitante } from "@/lib/i18n/idiomaAnonimo";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { lerCadastroNaTela, planoInicialDoSeletor } from "@/lib/cobranca/cadastro";
+import { lerCadastroNaTela, planoInicialDoSeletor, planosNaMoedaDoLink } from "@/lib/cobranca/cadastro";
+import { selecionarPlanoDoLink } from "@/lib/cobranca/selecao-do-link";
 import { tituloDaTelaPublica } from "@/lib/i18n/titulo-da-tela-publica";
 
 // A aba no idioma do visitante, como o corpo (`lib/i18n/titulo-da-tela-publica.ts`).
@@ -41,9 +42,9 @@ export const generateMetadata = () => tituloDaTelaPublica((t) => t("Criar conta"
 export default async function SignupPage({
   searchParams,
 }: {
-  searchParams: Promise<{ invite?: string }>;
+  searchParams: Promise<{ invite?: string; plano?: string | string[]; moeda?: string | string[] }>;
 }) {
-  const { invite } = await searchParams;
+  const { invite, plano, moeda } = await searchParams;
   const payload = invite ? verifyInviteToken(invite) : null;
   const convite = invite && payload ? { token: invite, email: payload.email } : undefined;
   const conviteExpirado = Boolean(invite) && !payload;
@@ -66,8 +67,18 @@ export default async function SignupPage({
   // Google fica (doc 146, opção B). O critério é o de `lib/cobranca/cadastro.ts`,
   // o mesmo do gatilho. Leitura que falha não esconde nada: quem recusa é a action.
   const cadastro = convite ? null : await lerCadastroNaTela(createAdminClient());
-  const planos = cadastro?.oferecidos ?? [];
-  const googleSemPlano = cadastro?.exigeEscolha ?? false;
+  // Migration 9332: o link escolhe a moeda (`?moeda=`, ou a do `?plano=`), e o
+  // seletor mostra só os planos nela. Sem pedido, a lista inteira, como sempre.
+  const planos = planosNaMoedaDoLink(cadastro?.oferecidos ?? [], { moeda, plano });
+  const selecao = selecionarPlanoDoLink(
+    plano,
+    planos,
+    planoInicialDoSeletor(planos, cadastro?.padraoId ?? null),
+    Boolean(invite),
+  );
+  // O Google atual cria no padrão; um link que escolheu um plano oferecido não
+  // pode perdê-la. Link inválido ou instalação sem plano seguem a regra de sempre.
+  const googleSemPlano = (cadastro?.exigeEscolha ?? false) || selecao.linkEscolheuPlano;
 
   // Convite VÁLIDO passa em qualquer modo — é o ponto inteiro do convite.
   const modo = convite ? null : await modoDeCadastro();
@@ -124,7 +135,12 @@ export default async function SignupPage({
         </p>
       )}
 
-      <SignupForm convite={convite} planos={planos} planoInicial={planoInicialDoSeletor(planos, cadastro?.padraoId ?? null)} />
+      {selecao.linkInvalido && (
+        <p role="alert" className="rounded-md border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm dark:border-amber-500/30 dark:bg-amber-950/20">
+          {t("O plano deste link não está disponível. Confira o plano e o período no seletor antes de continuar.")}
+        </p>
+      )}
+      <SignupForm convite={convite} planos={planos} planoInicial={selecao.planoInicial} />
       {/* O convite atravessa o Google na URL de retorno: sem ele, quem foi
           convidado e cria a conta com Google ganharia uma empresa própria. */}
       {googleSemPlano ? (

@@ -162,6 +162,15 @@ describe("ondeOModuloAparece: a tela pode dizer o que ligar vai mudar", () => {
       "setores",
       "avisos",
       "conferir_whatsapp",
+      "mcp_por_agente",
+      "status_whatsapp",
+      "reservas_de_lugar",
+      "link_de_pagamento",
+      "canal_bot",
+      "campanha_por_email",
+      "revisao_por_km",
+      "agencias",
+      "catalogo_por_feed",
     ]);
   });
 });

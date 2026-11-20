@@ -25,7 +25,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 export const dynamic = "force-dynamic";
 
 const VERSION_COLUMNS =
-  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, handoff_legal_enabled, proposal_ai_draft_enabled, cases_enabled, split_messages, split_max_chars, followup, voz_enabled, voz_quando, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,provisioning_origin,inbound_debounce_ms";
+  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, handoff_legal_enabled, proposal_ai_draft_enabled, cases_enabled, split_messages, split_max_chars, followup, voz_enabled, voz_quando, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,skill_names,image_vision_enabled,provisioning_origin,inbound_debounce_ms,reply_min_interval_ms";
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -150,6 +150,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       provider: v.provider,
       pipeline_ids: v.pipeline_ids,
       knowledge_source_ids: v.knowledge_source_ids,
+      skill_names: v.skill_names,
       credential_id: v.credential_id,
       channel_session_id: v.channel_session_id,
     });
@@ -180,11 +181,13 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
         handoff_keywords: v.handoff_keywords,
         handoff_tool_enabled: v.handoff_tool_enabled,
         handoff_legal_enabled: v.handoff_legal_enabled,
+        image_vision_enabled: v.image_vision_enabled,
         proposal_ai_draft_enabled: v.proposal_ai_draft_enabled,
         cases_enabled: v.cases_enabled,
         split_messages: v.split_messages,
         split_max_chars: v.split_max_chars,
         inbound_debounce_ms: v.inbound_debounce_ms,
+        reply_min_interval_ms: v.reply_min_interval_ms,
         followup: v.followup,
         voz_enabled: v.voz_enabled,
         voz_quando: v.voz_quando,
@@ -196,6 +199,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
         operator_tool_ids: v.operator_tool_ids,
         pipeline_ids: v.pipeline_ids,
         knowledge_source_ids: v.knowledge_source_ids,
+        skill_names: v.skill_names,
         status: "draft",
         created_by: authUserId,
       })

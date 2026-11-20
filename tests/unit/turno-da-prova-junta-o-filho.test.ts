@@ -75,4 +75,21 @@ describe("turno isolado da prova: deadline e junção antes da limpeza", () => {
       await resultado;
     }
   });
+
+  it("a falha do filho leva ao erro o código de saída e a cauda do stderr, sem a credencial", async () => {
+    const filho = iniciarFilhoDoTurno(
+      [
+        "-e",
+        'process.stderr.write("conectando em postgres://postgres:senha-secreta@127.0.0.1:54322/postgres\\n"); ' +
+          'process.stderr.write("A conversa não pertence à fixture de ofertas indicada.\\n"); process.exit(3);',
+      ],
+      10_000,
+    );
+    const erro = await filho.resultado.then(() => null, (e: unknown) => e as Error);
+    await filho.encerrar();
+    expect(erro?.message).toContain("código=3");
+    expect(erro?.message).toContain("morto_pelo_prazo=false");
+    expect(erro?.message).toContain("A conversa não pertence à fixture de ofertas indicada.");
+    expect(erro?.message).not.toContain("senha-secreta");
+  });
 });

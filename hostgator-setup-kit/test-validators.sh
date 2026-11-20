@@ -815,6 +815,90 @@ saude_ok "unhealthy AINDA QUE o redis esteja ok" nao      unhealthy "$UNHEALTHY"
 saude_ok "porta aberta, app mudo"                nao      ''        ''
 saude_ok "proxy devolveu HTML de erro"           nao      ''        '<html>502 Bad Gateway</html>'
 
+echo "healthcheck.sh: veredito pelo status GERAL e código de saída (#4087)"
+# O defeito: o healthcheck procurava `"status":"ok"` no JSON cru. `ok` é o
+# vocabulário dos CHECKS individuais, então um app com o BANCO FORA (status
+# geral `unhealthy`) mas com o Redis de pé casava no `checks.redis` e imprimia
+# "✓ app saudável" — e, pior, saía 0: nem cron nem monitor podiam usá-lo como
+# alarme. Medido com o payload UNHEALTHY acima, no script de antes da correção:
+#   ✓ app saudável
+#   EXIT=0
+# A prova abaixo é de ponta a ponta e sem Docker nem rede: `docker` e `crontab`
+# são dublês, e o dublê do `exec` devolve as DUAS linhas que app_health_probe
+# produz (status geral, corpo).
+diagnostico_ok() {  # diagnostico_ok <descrição> <0|1> <status> <corpo>
+  local desc="$1" esperado="$2" st="$3" corpo="$4" real rc
+  if ST="$st" CORPO="$corpo" bash -c '
+        . ./_common.sh
+        relatar_saude_do_app "$(printf "%s\n%s\n" "${ST}" "${CORPO}")"
+      ' >/dev/null 2>&1
+  then real=0; else real=1; fi
+  if [ "$real" = "$esperado" ]; then printf '  ✓ %s\n' "$desc"
+  else printf '  ✗ %s  (deu %s, esperava %s)\n' "$desc" "$real" "$esperado"; fail=1; fi
+}
+diagnostico_ok "healthy: todos os checks ok"                  0 healthy   "$HEALTHY"
+diagnostico_ok "unhealthy com redis ok (o caso do #4087)"     1 unhealthy "$UNHEALTHY"
+diagnostico_ok "degraded: não é 'saudável' no diagnóstico"    1 degraded  "$DEGRADED"
+diagnostico_ok "status fora do vocabulário (sem_status)"      1 sem_status '{"erro":"rota antiga"}'
+diagnostico_ok "app mudo: sonda vazia"                        1 ''        ''
+
+# Regressão do grep mentiroso: se alguém voltar a decidir pelo texto do JSON em
+# vez do status geral, o healthcheck volta a mentir. A varredura é no código,
+# não nos comentários — por isso o literal não aparece em comentário nenhum.
+if grep -qF '"status":"ok"' ./healthcheck.sh; then
+  printf '  ✗ healthcheck.sh voltou a procurar o status `ok` dos checks no JSON cru\n'; fail=1
+else
+  printf '  ✓ healthcheck.sh não decide mais pelo `ok` dos checks\n'
+fi
+if grep -q 'app_health_probe' ./healthcheck.sh && grep -q 'relatar_saude_do_app' ./healthcheck.sh; then
+  printf '  ✓ healthcheck.sh usa a sonda e o veredito do _common.sh\n'
+else
+  printf '  ✗ healthcheck.sh não usa app_health_probe/relatar_saude_do_app\n'; fail=1
+fi
+
+hc_dir="$(mktemp -d)"
+cp ./healthcheck.sh ./_common.sh ./_i18n.sh ./_manifestos.sh "$hc_dir/"
+printf 'NEXT_PUBLIC_SUPABASE_URL=\n' > "$hc_dir/.env"
+: > "$hc_dir/docker-compose.prod.yml"
+mkdir -p "$hc_dir/bin"
+cat > "$hc_dir/bin/docker" <<'DUBLE'
+#!/usr/bin/env bash
+# Dublê do `docker compose … exec`: devolve o que a sonda do Node devolveria.
+if [ -n "${HC_VAZIO:-}" ]; then exit 1; fi
+case " $* " in
+  *" exec "*) printf '%s\n%s\n' "${HC_STATUS:-sem_status}" "${HC_CORPO:-}" ;;
+esac
+exit 0
+DUBLE
+printf '#!/usr/bin/env bash\nexit 1\n' > "$hc_dir/bin/crontab"
+chmod +x "$hc_dir/bin/docker" "$hc_dir/bin/crontab"
+
+healthcheck_ok() {  # healthcheck_ok <descrição> <0|1> <disse saudável?> <status> <corpo>
+  local desc="$1" esperado="$2" verde_esperado="$3" st="$4" corpo="$5" out rc verde
+  out="$(cd "$hc_dir" && PATH="$hc_dir/bin:$PATH" HC_STATUS="$st" HC_CORPO="$corpo" \
+        bash healthcheck.sh 2>&1)"
+  rc=$?
+  if printf '%s' "$out" | grep -q '✓ app saudável'; then verde=sim; else verde=nao; fi
+  if [ "$rc" = "$esperado" ] && [ "$verde" = "$verde_esperado" ]; then
+    printf '  ✓ %s\n' "$desc"
+  else
+    printf '  ✗ %s  (saiu %s, esperava %s; "saudável": %s, esperava %s)\n' \
+      "$desc" "$rc" "$esperado" "$verde" "$verde_esperado"; fail=1
+  fi
+}
+healthcheck_ok "banco fora + redis ok ⇒ REPROVA (sai 1)"  1 nao unhealthy "$UNHEALTHY"
+healthcheck_ok "healthy de verdade ⇒ APROVA (sai 0)"      0 sim healthy   "$HEALTHY"
+healthcheck_ok "degraded ⇒ REPROVA (sai 1)"               1 nao degraded  "$DEGRADED"
+healthcheck_ok "status desconhecido ⇒ REPROVA (sai 1)"    1 nao sem_status '{"erro":"rota antiga"}'
+out_mudo="$(cd "$hc_dir" && PATH="$hc_dir/bin:$PATH" HC_VAZIO=1 bash healthcheck.sh 2>&1)"
+rc_mudo=$?
+if [ "$rc_mudo" = 1 ] && ! printf '%s' "$out_mudo" | grep -q '✓ app saudável'; then
+  printf '  ✓ app não respondeu ⇒ REPROVA (sai 1)\n'
+else
+  printf '  ✗ app não respondeu  (saiu %s; nunca pode sair 0)\n' "$rc_mudo"; fail=1
+fi
+rm -rf "$hc_dir"
+
 echo "rascunho das respostas (save_partial → load_env)"
 # Quem trava na connection string — a pergunta mais difícil, e a última das
 # credenciais — perdia as 11 respostas anteriores. O que importa aqui é o
@@ -1124,8 +1208,16 @@ TMP_CRON="$(mktemp -d)"
     '! grep -qF "segredo-novo-9f8e7d" "$TMP_CRON/crontab"'
   checa "a linha legada, com o segredo velho, foi substituída" \
     '! grep -qF "segredo-velho-a1b2c3" "$TMP_CRON/crontab"'
-  checa "a linha lê o cabeçalho do arquivo" \
-    'grep -F "$URL" "$TMP_CRON/crontab" | grep -qF -- "-H @\"$CAB\""'
+  # Desde a #2235 a linha do host não carrega mais o `curl`: ela chama o VIGIA
+  # (`hostgator-setup-kit/drain-watchdog.sh`), que só dispara o dreno quando o
+  # contêiner `scheduler` desta instalação não está de pé. O segredo continua
+  # fora da linha — quem lê o cabeçalho passou a ser o script, e as duas metades
+  # são cobradas separadamente para o segredo não voltar para o crontab por
+  # ninguém ter olhado o outro lado.
+  checa "a linha chama o vigia do dreno (e não um curl solto)" \
+    'grep -F "$URL" "$TMP_CRON/crontab" | grep -qF "drain-watchdog.sh" && ! grep -F "$URL" "$TMP_CRON/crontab" | grep -q "curl "'
+  checa "o vigia lê o cabeçalho do arquivo" \
+    'grep -qF -- "-H @\"\$cabecalho\"" ./drain-watchdog.sh' 
   checa "o arquivo tem o cabeçalho que a rota espera" \
     '[ "$(cat "$CAB")" = "Authorization: Bearer segredo-novo-9f8e7d" ]'
   # `stat -c` é GNU; no macOS o equivalente é `stat -f '%Lp'` (mesma forma usada mais

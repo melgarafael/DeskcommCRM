@@ -36,10 +36,16 @@ export interface CatalogSkill {
 export interface SkillsState {
   installed: InstalledSkill[];
   catalog: CatalogSkill[];
+  /**
+   * Agentes cuja versão publicada escolheu as próprias skills (9107). Uma skill
+   * instalada agora NÃO chega a eles — o aviso de instalação os nomeia.
+   */
+  agentes_com_lista_propria: Array<{ id: string; name: string; skill_names: string[] }>;
 }
 
 export interface SkillMatcher {
-  any_keywords: string[];
+  /** Ausente = skill sem ativação por palavra (#4458): só entra pelo roteiro, que puxa pelo nome. */
+  any_keywords?: string[];
   probe_keywords?: string[];
   any_tags?: string[];
 }

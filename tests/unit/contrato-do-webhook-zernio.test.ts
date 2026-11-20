@@ -1,5 +1,7 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
+import type * as NextServer from "next/server";
+import type * as EntradaAceita from "@/lib/channels/entrada-aceita";
 
 /**
  * O CONTRATO do webhook do canal intermediado — e por que o defeito aqui era
@@ -64,6 +66,20 @@ vi.mock("@/lib/channels/zernio/ingest", () => ({
     return { status: "ingested", reason: "mensagem" };
   },
   aplicarEdicaoZernio: async () => "aplicada",
+}));
+
+// A mensagem nova responde antes de processar: a marca de aceita é dublada e o
+// que a rota agenda no `after()` fica aqui, para o caso rodá-lo depois da resposta.
+const depois = vi.hoisted(() => ({ tarefas: [] as Array<() => Promise<unknown>> }));
+vi.mock("next/server", async (orig) => ({
+  ...(await orig<typeof NextServer>()),
+  after: (tarefa: () => Promise<unknown>) => {
+    depois.tarefas.push(tarefa);
+  },
+}));
+vi.mock("@/lib/channels/entrada-aceita", async (orig) => ({
+  ...(await orig<typeof EntradaAceita>()),
+  aceitarEntrada: async () => true,
 }));
 
 import { lerEnvelopeZernio } from "@/lib/channels/zernio/envelope";
@@ -188,13 +204,16 @@ describe("o payload fora do contrato é recusado, e o campo é nomeado", () => {
 });
 
 describe("a rota — o desfecho que o provider enxerga", () => {
-  it("payload real bem assinado: 200 e a mensagem é ingerida", async () => {
+  it("payload real bem assinado: 200 antes da ingestão, e a mensagem é ingerida depois", async () => {
     ingeridos.length = 0;
     arquivoFechado.length = 0;
+    depois.tarefas.length = 0;
 
     const res = await POST(pedido(REAL), ctx);
 
     expect(res.status).toBe(200);
+    expect(ingeridos, "a resposta esperou a ingestão").toHaveLength(0);
+    for (const tarefa of depois.tarefas.splice(0)) await tarefa();
     expect(ingeridos).toHaveLength(1);
     expect(arquivoFechado[0]).toMatchObject({ status: "processed" });
   });

@@ -45,7 +45,13 @@ export type MotivoDaRecusa =
   | "recusa_da_regra"
   /** Recusa que não é nem do funil nem da etapa da fonte — o rótulo não mente. */
   | "erro_inesperado"
-  | "campo_numerico_invalido";
+  | "campo_numerico_invalido"
+  /** Formulário da Meta (#3768): o aviso veio sem as respostas e a busca está desligada. */
+  | "lead_ads_sem_respostas"
+  /** Formulário da Meta: a busca das respostas falhou (token, permissão, tempo). */
+  | "lead_ads_busca_falhou"
+  /** Formulário da Meta: a fonte dona da página está pausada. */
+  | "lead_ads_fonte_pausada";
 
 /** O que a tela mostra para cada motivo, em português de gente. */
 export const MOTIVO_DA_RECUSA_LABEL: Record<MotivoDaRecusa, string> = {
@@ -63,6 +69,12 @@ export const MOTIVO_DA_RECUSA_LABEL: Record<MotivoDaRecusa, string> = {
     "Os dados chegaram, mas a criação do negócio falhou por outro motivo — não é nem o funil nem a etapa da fonte.",
   campo_numerico_invalido:
     "Uma resposta numérica não estava no formato aceito pelo formulário. Confira se o campo contém apenas números e use o formato BRL na pergunta de moeda.",
+  lead_ads_sem_respostas:
+    "O aviso da Meta chegou sem as respostas do formulário, e a busca das respostas está desligada nesta fonte. Cole o token da página e ligue a busca para os próximos entrarem.",
+  lead_ads_busca_falhou:
+    "A busca das respostas na Meta não deu certo: o token pode ter vencido, estar sem permissão de leads, ou a Meta não respondeu. Confira o token da página nesta fonte.",
+  lead_ads_fonte_pausada:
+    "A Meta avisou um lead da página desta fonte, mas a fonte está pausada. Reative-a para os próximos entrarem.",
 };
 
 /**

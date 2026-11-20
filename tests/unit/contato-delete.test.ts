@@ -9,6 +9,19 @@ vi.mock("@/lib/audit", () => ({
   hashEmail: (e: string) => e,
 }));
 
+// Os acessos OAuth do contato a servidores MCP (9095) são revogados no
+// terceiro ANTES da transação — a cascata leva o token junto.
+const ordem: string[] = [];
+const revogarAcessosSpy = vi.fn(async (_db: unknown, _org: string, _contato: string) => {
+  ordem.push("revogar_acessos_mcp");
+  return 0;
+});
+vi.mock("@/lib/mcp/servidor-externo/do-agente/revogacao", () => ({
+  revogarAcessosDoContato: (db: unknown, org: string, contato: string) => revogarAcessosSpy(db, org, contato),
+}));
+const ADMIN = { cliente: "admin" };
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ADMIN }));
+
 const ORG = "c05e7a00-0000-4000-8000-000000000001";
 const CONTATO = "c05e7a00-0000-4000-8000-0000000000c1";
 const USUARIO = "c05e7a00-0000-4000-8000-0000000000a1";
@@ -22,6 +35,7 @@ const rpcs: Array<{ nome: string; args: Record<string, unknown> | undefined }> =
 
 interface CadeiaContagem {
   eq: (coluna: string, valor: unknown) => CadeiaContagem;
+  or: (filtro: string) => CadeiaContagem;
   maybeSingle: () => Promise<{ data: null; error: null }>;
   then: (resolve: (valor: unknown) => unknown) => unknown;
 }
@@ -30,6 +44,8 @@ interface OpcoesFake {
   missing?: boolean;
   /** Quantos vínculos RESTRICT a pré-checagem encontra na agenda. */
   vinculos?: number;
+  /** Quantos negócios ABERTOS o contato tem (A6): barram a exclusão. */
+  cardsAbertos?: number;
   /** A contagem do vínculo falha (tabela/RLS fora do ar). */
   erroContagem?: { message: string };
   /** A função nova devolve erro (23503 de corrida, 42501 residual, 500…). */
@@ -60,13 +76,17 @@ function clienteFalso(opts?: OpcoesFake): unknown {
                 filtros.push([coluna, valor]);
                 return cadeia;
               },
+              or: (filtro) => {
+                filtros.push(["or", filtro]);
+                return cadeia;
+              },
               maybeSingle: async () => ({ data: null, error: null }),
               then: (resolve) => {
                 contagens.push({ tabela, filtros });
                 return resolve(
                   opts?.erroContagem
                     ? { count: null, error: opts.erroContagem }
-                    : { count: opts?.vinculos ?? 0, error: null },
+                    : { count: (tabela === "crm_leads" ? opts?.cardsAbertos : opts?.vinculos) ?? 0, error: null },
                 );
               },
             };
@@ -92,6 +112,7 @@ function clienteFalso(opts?: OpcoesFake): unknown {
     },
     rpc: (nome: string, args?: Record<string, unknown>) => {
       rpcs.push({ nome, args });
+      ordem.push(nome);
       if (nome !== FUNCAO) return Promise.resolve({ data: null, error: null });
       if (opts?.rpcErro) return Promise.resolve({ data: null, error: opts.rpcErro });
       return Promise.resolve({ data: opts?.rpcFalse ? false : true, error: null });
@@ -113,6 +134,8 @@ describe("deleteContactHandler", () => {
     chamadas.length = 0;
     contagens.length = 0;
     rpcs.length = 0;
+    ordem.length = 0;
+    revogarAcessosSpy.mockClear();
   });
 
   it("apaga a ficha inteira com UMA chamada de função — nenhuma tabela apagada pela rota", async () => {
@@ -129,12 +152,24 @@ describe("deleteContactHandler", () => {
 
     // A pré-checagem da #752 continua contando com os DOIS filtros (contato +
     // organização): sem o de organização, contato de outra org bloquearia.
+    // E conta só o que a função NÃO desvincula (migration 9405, achado A9):
+    // compromisso não cancelado, ou reserva de serviço.
     expect(contagens).toEqual([
       {
         tabela: "calendar_appointments",
         filtros: [
           ["contact_id", CONTATO],
           ["organization_id", ORG],
+          ["or", "status.neq.cancelled,service_occurrence_id.not.is.null"],
+        ],
+      },
+      // A6: negócio ABERTO também barra (ganho e perdido são histórico e não).
+      {
+        tabela: "crm_leads",
+        filtros: [
+          ["contact_id", CONTATO],
+          ["organization_id", ORG],
+          ["or", "status.eq.open"],
         ],
       },
     ]);
@@ -143,6 +178,15 @@ describe("deleteContactHandler", () => {
       resourceId: CONTATO,
       organizationId: ORG,
     });
+    // Revogou os acessos MCP do contato, pela organização do ctx, ANTES da transação.
+    expect(revogarAcessosSpy).toHaveBeenCalledWith(ADMIN, ORG, CONTATO);
+    expect(ordem.indexOf("revogar_acessos_mcp")).toBeLessThan(ordem.indexOf(FUNCAO));
+  });
+
+  it("falha ao revogar os acessos MCP no terceiro não barra a exclusão", async () => {
+    revogarAcessosSpy.mockRejectedValueOnce(new Error("terceiro fora"));
+    const { deleteContactHandler } = await import("@/app/api/v1/contacts/_handler");
+    await expect(deleteContactHandler(clienteFalso() as never, ctxFalso(), CONTATO)).resolves.toEqual({ id: CONTATO });
   });
 
   it("contato com compromisso na agenda: 409 e a função nem é chamada (issue #752)", async () => {
@@ -162,12 +206,35 @@ describe("deleteContactHandler", () => {
     // O ponto da issue: nada foi apagado antes de saber que a ficha não sai.
     expect(chamadas).toEqual([]);
     expect(rpcs.some((r) => r.nome === FUNCAO)).toBe(false);
+    // Nem os acessos MCP: a ficha fica, então o acesso que o cliente deu também.
+    expect(revogarAcessosSpy).not.toHaveBeenCalled();
     expect(auditSpy).not.toHaveBeenCalledWith(expect.objectContaining({ action: "contact.deleted" }));
     expect(ultimaAuditoria()).toMatchObject({
       action: "contact.delete_blocked",
       resourceId: CONTATO,
       organizationId: ORG,
       metadata: { motivo: "vinculo_restrict", vinculos: ["1 compromisso(s) na agenda"], apagados: [] },
+    });
+  });
+
+  it("contato com negócio aberto no funil: 409 e nada é apagado nem fechado (A6)", async () => {
+    const { deleteContactHandler } = await import("@/app/api/v1/contacts/_handler");
+    await expect(
+      deleteContactHandler(clienteFalso({ cardsAbertos: 2 }) as never, ctxFalso(), CONTATO),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: "state_conflict",
+      details: {
+        vinculos: ["2 negócio(s) aberto(s) no funil"],
+        por_tabela: { crm_leads: 2 },
+      },
+    });
+    expect(chamadas).toEqual([]);
+    expect(rpcs.some((r) => r.nome === FUNCAO)).toBe(false);
+    expect(revogarAcessosSpy).not.toHaveBeenCalled();
+    expect(ultimaAuditoria()).toMatchObject({
+      action: "contact.delete_blocked",
+      metadata: { motivo: "vinculo_restrict", vinculos: ["2 negócio(s) aberto(s) no funil"], apagados: [] },
     });
   });
 

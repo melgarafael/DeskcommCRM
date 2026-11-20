@@ -24,29 +24,36 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { createGrupoSchema } from "@/lib/schemas/templates";
-import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { posicaoEntre } from "@/lib/templates/ordem";
 
 export const dynamic = "force-dynamic";
 const COLS = "id, organization_id, name, ordem, created_at, updated_at";
 
-export async function GET(_req: NextRequest): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "message_templates" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "message_templates",
+    role: "agent",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const { org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "message_template_groups.lista", requestId);
+  if (teto) return teto;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   // `id` no fim é o desempate: dois grupos criados ao mesmo tempo podem dividir
   // a posição, e a lista não pode trocar de ordem entre duas aberturas da tela.
   const { data, error } = await supabase
     .from("message_template_groups")
     .select(COLS)
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", authz.organizationId)
     .order("ordem", { ascending: true })
     .order("name", { ascending: true })
     .order("id", { ascending: true });
@@ -59,10 +66,19 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "message_templates" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "message_templates",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user, org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "message_template_groups.lista", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  // Autor só quando quem chama é uma pessoa; token não tem usuário, então NULL.
+  const autor = authz.actor.type === "user" ? authz.actor.id : null;
 
   const parsed = createGrupoSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -72,13 +88,13 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   // A última posição da lista VISÍVEL (RLS + organização). `null` é lista
   // vazia, e `posicaoEntre(null, null)` devolve o primeiro passo.
   const { data: ultima, error: erroUltima } = await supabase
     .from("message_template_groups")
     .select("ordem")
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", authz.organizationId)
     .order("ordem", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -88,7 +104,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const { data, error } = await supabase
     .from("message_template_groups")
-    .insert({ organization_id: org.orgId, name: parsed.data.name, ordem })
+    .insert({ organization_id: authz.organizationId, name: parsed.data.name, ordem })
     .select(COLS)
     .single();
   if (error || !data) {
@@ -103,8 +119,9 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   void audit({
     action: "template_group.created",
-    actorUserId: user.id,
-    organizationId: org.orgId,
+    actorUserId: autor,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "message_template_group",
     resourceId: data.id,
     requestId,

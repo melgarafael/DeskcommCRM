@@ -25,6 +25,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { normalizarTags } from "@/lib/contacts/tag-normalizada";
+import {
+  CAMPOS_DO_ENDERECO,
+  type EnderecoDoContato,
+} from "@/lib/contacts/endereco-por-cep";
 import { camposQueMudaram, mensagemDaRecusa, recusasDePadrao } from "@/lib/leads/padrao-do-campo";
 import {
   contactPatchSchemaDoPais,
@@ -35,6 +39,10 @@ import {
 import { useUpdateContact } from "@/hooks/contacts/useUpdateContact";
 import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabulary";
 import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
+import { CamposDeEndereco } from "@/components/contacts/CamposDeEndereco";
+import { ComoCriarCamposDoContato } from "@/components/contacts/ComoCriarCamposDoContato";
+import type { Pipeline } from "@/lib/kanban/types";
+
 import { EtiquetasDoContato } from "@/components/contacts/EtiquetasDoContato";
 import { useDefinirCorDaEtiqueta } from "@/hooks/tags/useDefinirCorDaEtiqueta";
 import type { Contact } from "@/lib/types/contacts";
@@ -46,6 +54,12 @@ interface FormShape {
   phone_number?: string;
   /** `AAAA-MM-DD` — a MESMA forma de `contactPatchSchema` e da coluna do banco. */
   birthdate?: string;
+  /**
+   * O documento do titular (CPF no Brasil). Abre SEMPRE vazio: o número gravado
+   * não vem para a tela (só `cpf_available`). Vazio = não mexe; preenchido =
+   * substitui, pelo mesmo PATCH e pela mesma régua do país do cadastro.
+   */
+  cpf?: string;
   // Endereço (issue 3494)
   zip_code?: string;
   street?: string;
@@ -64,16 +78,6 @@ interface FormShape {
   custom_fields?: Record<string, unknown>;
 }
 
-const CAMPOS_DO_ENDERECO = [
-  "zip_code",
-  "street",
-  "number",
-  "complement",
-  "district",
-  "city",
-  "state",
-] as const;
-
 /** O rótulo de cada tipo, na língua da tela — a chave é o valor da coluna. */
 const ROTULO_DO_TIPO: Record<ContactType, string> = {
   cliente: "Cliente",
@@ -86,6 +90,16 @@ interface Props {
   onOpenChange: (v: boolean) => void;
   /** Definições vindas de `crm_pipelines.settings.fields[]`. Vazio = a seção some. */
   customFieldDefs?: CustomFieldDef[];
+  /**
+   * O funil padrão de onde `customFieldDefs` SAIU — presente só quando a leitura
+   * terminou (#4744). Com ele e nenhum campo, o administrador vê onde criar.
+   *
+   * ⚠️ NÃO É `customFieldDefs.length === 0`. A lista de contatos abre este mesmo
+   * diálogo sem ler o funil (não passa definição nenhuma), e a ficha passa `[]`
+   * enquanto a leitura ainda corre: nos dois casos "vazio" não quer dizer "a
+   * empresa não tem campo", e a dica diria isso a quem já tem.
+   */
+  funilDosCampos?: Pick<Pipeline, "name"> | null;
   /** Etiquetas já usadas na organização (`useContactTagVocabulary`). */
   vocabulario?: readonly string[] | null;
   /** `pipelines.settings.canonical_tags` do funil padrão. */
@@ -97,6 +111,7 @@ export function EditContactDialog({
   open,
   onOpenChange,
   customFieldDefs = [],
+  funilDosCampos,
   vocabulario,
   canonicalTags,
 }: Props) {
@@ -110,14 +125,22 @@ export function EditContactDialog({
   // papéis a paleta nem chega ao campo — a régua é "a tela não oferece o que a
   // escrita recusa" (#2718), a MESMA do `SeletorDeCorDaEtiqueta`.
   const podeDefinirCor = roleAtLeast(org?.role, "manager");
+  // Criar campo é `updatePipelineConfig`, que recusa abaixo de admin: a dica de
+  // onde criar só aparece para quem consegue criar (#4744, mesma régua do #2718).
+  const podeCriarCampos = roleAtLeast(org?.role, "admin");
   const [serverError, setServerError] = useState<string | null>(null);
 
   const form = useForm<FormShape>({
+    // `onTouched`: o erro do documento nasce quando a pessoa SAI do campo, como
+    // no cadastro (#3496). Nenhum outro campo tem `validate`, então nada muda
+    // para eles.
+    mode: "onTouched",
     defaultValues: {
       name: contact.name ?? "",
       email: contact.email ?? "",
       phone_number: contact.phone_number ? phoneForDisplay(contact.phone_number) : "",
       birthdate: contact.birthdate ?? "",
+      cpf: "",
       zip_code: contact.zip_code ?? "",
       street: contact.street ?? "",
       number: contact.number ?? "",
@@ -134,10 +157,29 @@ export function EditContactDialog({
   });
 
   const customFields = useWatch({ control: form.control, name: "custom_fields" });
+  // Documento inválido impede salvar, como no cadastro (#3496): o aviso no campo
+  // e o botão desabilitado são o mesmo erro dito duas vezes.
+  const cpfError = form.formState.errors.cpf;
   const tags = useWatch({ control: form.control, name: "tags" }) ?? [];
   // O valor do `Select` de tipo. `useWatch` (e não `form.watch`) para o
   // componente re-renderizar quando o tipo muda — o gatilho do Radix lê daqui.
   const tipoDeContato = useWatch({ control: form.control, name: "contact_type" }) ?? "cliente";
+  // Os sete campos do endereço como UM objeto — é o que `CamposDeEndereco` lê.
+  // `useWatch` com a lista (e não `form.watch`) para o componente re-renderizar
+  // quando o CEP preenche: `setValue` não redesenha sozinho quem lê o formulário
+  // por referência.
+  const [zipCode, street, number, complement, district, city, state] =
+    useWatch({ control: form.control, name: CAMPOS_DO_ENDERECO }) ?? [];
+  const endereco: EnderecoDoContato = {
+    zip_code: zipCode ?? "",
+    street: street ?? "",
+    number: number ?? "",
+    complement: complement ?? "",
+    district: district ?? "",
+    city: city ?? "",
+    state: state ?? "",
+  };
+
   // A etiqueta que o texto AINDA digitado no campo de etiquetas viraria — o
   // campo avisa pelo `onPendente`, e o `Salvar` inclui isto no payload. Sem
   // isso, quem digita e salva sem Enter perde o texto em silêncio (defeito
@@ -167,6 +209,7 @@ export function EditContactDialog({
         email: contact.email ?? "",
         phone_number: contact.phone_number ? phoneForDisplay(contact.phone_number) : "",
         birthdate: contact.birthdate ?? "",
+        cpf: "",
         zip_code: contact.zip_code ?? "",
         street: contact.street ?? "",
         number: contact.number ?? "",
@@ -242,6 +285,9 @@ export function EditContactDialog({
     // exigem), então o diálogo não normaliza nada — o que se digita é o que se
     // grava, e a ficha recarregada mostra a MESMA string.
     if (values.birthdate?.trim()) payload.birthdate = values.birthdate.trim();
+    // O documento só entra quando foi digitado: o campo abre vazio porque o
+    // número gravado não vem para a tela, e vazio quer dizer "não mexer".
+    if (values.cpf?.trim()) payload.cpf = values.cpf.trim();
     // Endereço (issue 3494): manda o que foi preenchido e `null` no campo que a
     // ficha tinha e foi esvaziado — sem isso, apagar só o Complemento e salvar
     // deixava o valor antigo no banco (medido na prova pela tela do #3670).
@@ -288,7 +334,7 @@ export function EditContactDialog({
             <Input id="ec-name" {...form.register("name")} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="ec-email">Email</Label>
+            <Label htmlFor="ec-email">{t("Email")}</Label>
             <Input id="ec-email" type="email" {...form.register("email")} />
           </div>
           <div className="space-y-2">
@@ -303,37 +349,45 @@ export function EditContactDialog({
             <Label htmlFor="ec-birthdate">{t("Data de nascimento")}</Label>
             <Input id="ec-birthdate" type="date" {...form.register("birthdate")} />
           </div>
-          {/* Endereço (issue 3494) */}
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="ec-zip">{t("CEP")}</Label>
-              <Input id="ec-zip" {...form.register("zip_code")} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ec-state">{t("UF")}</Label>
-              <Input id="ec-state" {...form.register("state")} />
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="ec-street">{t("Logradouro")}</Label>
-              <Input id="ec-street" {...form.register("street")} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ec-number">{t("Número")}</Label>
-              <Input id="ec-number" {...form.register("number")} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ec-complement">{t("Complemento")}</Label>
-              <Input id="ec-complement" {...form.register("complement")} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ec-district">{t("Bairro")}</Label>
-              <Input id="ec-district" {...form.register("district")} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ec-city">{t("Cidade")}</Label>
-              <Input id="ec-city" {...form.register("city")} />
-            </div>
+          <div className="space-y-2">
+            {/* O documento do PAÍS da organização, com a régua do cadastro. O
+                número gravado não vem para a tela, então o campo abre vazio e a
+                dica diz se já há um: preencher troca, deixar vazio mantém. */}
+            <Label htmlFor="ec-cpf">{perfil.documento.rotulo}</Label>
+            <Input
+              id="ec-cpf"
+              placeholder={perfil.documento.exemplo}
+              aria-invalid={cpfError ? true : undefined}
+              aria-describedby={cpfError ? "ec-cpf-erro" : "ec-cpf-dica"}
+              {...form.register("cpf", {
+                validate: (valor) => {
+                  const texto = (valor ?? "").trim();
+                  if (texto.length === 0) return true;
+                  return perfil.documento.valida(texto) || perfil.documento.mensagemInvalido;
+                },
+              })}
+            />
+            {cpfError ? (
+              <p id="ec-cpf-erro" role="alert" className="text-sm text-error-fg">
+                {cpfError.message}
+              </p>
+            ) : (
+              <p id="ec-cpf-dica" className="text-xs text-muted-foreground">
+                {contact.cpf_available
+                  ? t("Já cadastrado. Preencha só para trocar.")
+                  : t("Opcional.")}
+              </p>
+            )}
           </div>
+          {/* Endereço (issue 3494) — os MESMOS campos do cadastro, com o CEP
+              preenchendo logradouro/bairro/cidade/UF (#3494, fatia 2). */}
+          <CamposDeEndereco
+            idPrefix="ec"
+            valores={endereco}
+            onCampo={(campo, valor) => form.setValue(campo, valor, { shouldDirty: true })}
+            consultarCep={perfil.codigo === PAIS_PADRAO}
+            disabled={update.isPending}
+          />
           {/*
             O TIPO DE CONTATO (issue 3005, fatia 1). Não é campo de formulário
             comum (`form.register`): o `Select` do Radix devolve o valor pelo
@@ -383,7 +437,7 @@ export function EditContactDialog({
               erroNoVocabulario={erroNoVocabulario}
             />
           </div>
-          {customFieldDefs.length > 0 && (
+          {customFieldDefs.length > 0 ? (
             <div className="space-y-3 rounded-md border border-border p-3">
               <div>
                 <h3 className="text-sm font-medium">{t("Campos personalizados")}</h3>
@@ -398,6 +452,9 @@ export function EditContactDialog({
                 onChange={(next) => form.setValue("custom_fields", next, { shouldDirty: true })}
               />
             </div>
+          ) : (
+            podeCriarCampos &&
+            funilDosCampos && <ComoCriarCamposDoContato nomeDoFunil={funilDosCampos.name} />
           )}
           {serverError && (
             <p role="alert" className="text-sm text-error-fg">
@@ -413,7 +470,7 @@ export function EditContactDialog({
             >
               {t("Cancelar")}
             </Button>
-            <Button type="submit" disabled={update.isPending}>
+            <Button type="submit" disabled={update.isPending || Boolean(cpfError)}>
               {update.isPending ? t("Salvando…") : t("Salvar")}
             </Button>
           </DialogFooter>

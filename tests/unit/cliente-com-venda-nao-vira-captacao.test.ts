@@ -482,7 +482,18 @@ describe("#3644 · o custo por mensagem recebida", () => {
     });
     await garantirLeadDaConversa(adminFake(c), DADOS);
 
-    expect(c.consultas).toEqual(["contacts", "crm_leads", "organizations", "crm_pipelines", "crm_stages"]);
+    expect(c.consultas).toEqual([
+      "contacts",
+      "crm_leads",
+      "organizations",
+      // migration 9430: o número da conversa, para o funil de entrada por número —
+      // uma leitura por card criado, e só quando quem chama não trouxe o número
+      "conversations",
+      "crm_pipelines",
+      "crm_stages",
+      // #4076: a opção reabrir_perdido_dias do funil de destino — uma leitura por card criado, não por mensagem
+      "crm_pipelines",
+    ]);
   });
 
   it("criação de card com a chave LIGADA lê uma venda e um nome — número fixo, não por mensagem", async () => {
@@ -497,6 +508,8 @@ describe("#3644 · o custo por mensagem recebida", () => {
       "crm_pipelines", // nome do funil da venda (só para o texto)
       "crm_pipelines", // funil de clientes
       "crm_stages",
+      // #4076: a opção reabrir_perdido_dias do funil de destino — uma leitura por card criado, não por mensagem
+      "crm_pipelines",
     ]);
   });
 });

@@ -29,6 +29,9 @@ export class AgentSetupError extends Error {
   }
 }
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+
+/** A ferramenta com que o agente da prospecção grava o diagnóstico na ficha. */
+export const CAPACIDADE_DO_DIAGNOSTICO = "crm_save_lead_diagnosis";
 export function setupProposalHash(input: ProspectingAgentSetupInput) {
   return hash({ ...input, enable_router_continuity: false });
 }
@@ -245,7 +248,7 @@ interface SetupMetadata {
 // "O rascunho foi alterado" — o que a 0498 (inbound_debounce_ms) fez nas 5 specs de
 // tests/invariants/prospecting-agent-setup.test.ts.
 // ponytail: lista explícita; coluna nullable nova em ai_agent_versions entra aqui (#2004).
-const NULO_E_AUSENTE = new Set(["trigger_config", "inbound_debounce_ms"]);
+const NULO_E_AUSENTE = new Set(["trigger_config", "inbound_debounce_ms", "reply_min_interval_ms"]);
 
 function versionHash(row: Record<string, unknown>) {
   const keys = Object.keys(versionCreateSchema.shape);
@@ -377,15 +380,21 @@ export async function setupProspectingAgent(
         model: model.model,
         credential_id: model.credential_id,
         channel_session_id: input.channel_session_id,
-        tool_ids: capacidadesPadraoDoOnboarding().filter((id) =>
-          [
-            "crm_get_lead",
-            "crm_list_leads",
-            "crm_list_pipelines",
-            "crm_update_lead",
-            "crm_move_lead_stage",
-          ].includes(id),
-        ),
+        tool_ids: [
+          ...capacidadesPadraoDoOnboarding().filter((id) =>
+            [
+              "crm_get_lead",
+              "crm_list_leads",
+              "crm_list_pipelines",
+              "crm_update_lead",
+              "crm_move_lead_stage",
+            ].includes(id),
+          ),
+          // O qualificador grava o diagnóstico da empresa na ficha (decisão D7).
+          // Por NOME, e não pelo filtro acima: ela é do pacote "reter", fora do
+          // agente do onboarding (ver `lib/mcp/tools/catalogo/retencao.ts`).
+          CAPACIDADE_DO_DIAGNOSTICO,
+        ],
         pipeline_ids: [input.pipeline_id],
         knowledge_source_ids: [],
         handoff_tool_enabled: true,

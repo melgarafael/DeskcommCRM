@@ -13,6 +13,9 @@
  * (`lib/agent-engine/env.ts`), e é por isso que `costCents` recebe o TTL em vigor em vez de
  * supor a doutrina.
  *
+ * Preço por MINUTO de áudio (só `whisper-1`, só na OpenAI): `custoDeAudioCents`, pela
+ * duração que a própria OpenAI cobra (`usage.seconds` da transcrição).
+ *
  * Modelo fora da tabela → custo NULL (desconhecido): mais honesto que inventar 0 —
  * o budget soma coalesce(cost_cents, 0), então modelo sem preço não consome teto;
  * quem habilitar um modelo novo para uma org adiciona a linha de preço aqui.
@@ -94,8 +97,10 @@ const USD_PER_MTOK: Record<string, Preco> = {
   // Gravação de cache: as linhas 5.6 e 6 cobram 1.25× a entrada; nas demais é 1×.
   // Linhas históricas preservadas; Terra6.1 usa tarifas próprias 30m/12h.
   // Fonte: developers.openai.com/api/docs/guides/prompt-caching, 28/10/2026.
-  // Fora da tabela: a faixa de contexto longo (> 272K tokens, preço 2×) da 5.4/5.5/5.6,
-  // e a da linha 6 (2× a entrada e o cache, 1.5× a saída).
+  // As tarifas abaixo são as de base. A faixa longa dos modelos cobertos fica
+  // em LIMIARES_DE_CONTEXTO_LONGO.
+  // Ainda sem cálculo de faixa longa: os demais modelos com essa tarifa nas
+  // linhas 5.4/5.5/5.6 e 6, incluindo gpt-6.1-sol e gpt-6-astra (catálogo 0646).
   'gpt-6-astra': { input: 10, output: 50, cacheRead: 1, cacheWrite5m: 12.5, cacheWrite1h: 12.5 },
   'gpt-6.1-sol': { input: 2, output: 10, cacheRead: 0.1, cacheWrite5m: 2.5, cacheWrite1h: 2.5 },
   'gpt-6.1-terra': { input: 1, output: 5, cacheRead: 0.05, cacheWrite30m: 1.25, cacheWrite12h: 2.5 },
@@ -190,6 +195,14 @@ export interface TokenUsage {
   cacheWrite12hTokens?: number;
 }
 
+// Tokens de entrada por requisição, incluindo cache. Catálogos 0646 (Luna) e
+// 9031 (6.1 Terra), e faixa da linha 5.6 na tabela Standard da OpenAI (#5018).
+const LIMIARES_DE_CONTEXTO_LONGO: ReadonlyMap<string, number> = new Map([
+  ['gpt-6.1-terra', 272_000],
+  ['gpt-6-luna', 272_000],
+  ['gpt-5.6-terra', 272_000],
+]);
+
 /**
  * O preço de um id, tolerando o sufixo de data do vendor (`-20250805` ou `-2024-08-06`).
  *
@@ -234,7 +247,14 @@ function chaveDoModelo(model: string): string | undefined {
   // na MESMA ordem da tolerância do sufixo de data, para um id com prefixo+sufixo
   // (`anthropic/claude-sonnet-5-20250929`) casar também. O id completo segue
   // tentado PRIMEIRO: um id que a tabela conheça com barra vence o recorte.
+  //
+  // O catálogo do OpenRouter escreve a versão com PONTO (`anthropic/claude-haiku-5.5`)
+  // e a tabela indexa com HÍFEN (`claude-haiku-5-5`). Por isso as variantes com o
+  // ponto trocado por hífen entram no FIM: o id exato, o sem data e o sem prefixo
+  // continuam vencendo, e um id que a tabela já conhece COM ponto (`gpt-6.1-terra`)
+  // não é reescrito (issue #1931).
   const semPrefixo = model.includes("/") ? model.slice(model.indexOf("/") + 1) : model;
+  const comHifen = (id: string) => id.replace(/\./g, "-");
   const candidatos = [
     model,
     model.replace(/-\d{8}$/, ""),
@@ -242,6 +262,10 @@ function chaveDoModelo(model: string): string | undefined {
     semPrefixo,
     semPrefixo.replace(/-\d{8}$/, ""),
     semPrefixo.replace(/-\d{4}-\d{2}-\d{2}$/, ""),
+    comHifen(semPrefixo),
+    comHifen(semPrefixo.replace(/-\d{8}$/, "")),
+    comHifen(semPrefixo.replace(/-\d{4}-\d{2}-\d{2}$/, "")),
+    comHifen(model),
   ];
   return candidatos.find((id) => USD_PER_MTOK[id] !== undefined);
 }
@@ -284,9 +308,10 @@ export function costCents(
     return null;
   }
   const noCacheInput = Math.max(0, usage.inputTokens - usage.cacheReadTokens - usage.cacheWriteTokens);
-  const longoTerra = chaveDoModelo(model) === 'gpt-6.1-terra' && usage.inputTokens > 272_000;
-  const fatorEntrada = longoTerra ? 2 : 1;
-  const fatorSaida = longoTerra ? 1.5 : 1;
+  const limiar = LIMIARES_DE_CONTEXTO_LONGO.get(chaveDoModelo(model) ?? '');
+  const contextoLongo = limiar !== undefined && usage.inputTokens > limiar;
+  const fatorEntrada = contextoLongo ? 2 : 1;
+  const fatorSaida = contextoLongo ? 1.5 : 1;
   const usd =
     ((noCacheInput * p.input +
       usage.cacheReadTokens * p.cacheRead +
@@ -294,6 +319,23 @@ export function costCents(
       usage.outputTokens * p.output * fatorSaida) /
     1_000_000;
   return usd * 100;
+}
+
+// US$ por minuto, só modelos cobrados por DURAÇÃO e só da OpenAI. Fonte:
+// https://developers.openai.com/api/docs/pricing, linha "Whisper | Transcription |
+// $0.006 / minute", conferida em 31/10/2026. `Map`, e não objeto, para que uma chave do
+// protótipo (`constructor`) nunca case como modelo.
+const USD_POR_MINUTO_DE_AUDIO: ReadonlyMap<string, number> = new Map([['whisper-1', 0.006]]);
+
+/**
+ * Custo em CENTS de uma transcrição cobrada por duração, ou null. Recebe `unknown` porque
+ * o número vem do JSON da resposta: fora do formato (não número, infinito, negativo) ou
+ * modelo sem preço por minuto devolve null, e nunca lança — a chamada já foi paga.
+ */
+export function custoDeAudioCents(model: string, segundos: unknown): number | null {
+  const usd = USD_POR_MINUTO_DE_AUDIO.get(model);
+  if (usd === undefined || typeof segundos !== 'number' || !Number.isFinite(segundos) || segundos < 0) return null;
+  return (segundos / 60) * usd * 100;
 }
 
 /** A gravação de cache em USD × milhão de tokens: dividida por TTL quando o provedor disse. */
@@ -377,7 +419,7 @@ export function costCentsComVirada(
 }
 
 /** SDK usage de UMA requisição. O total de um tool loop não determina a faixa. */
-interface UsoDePassoTerra {
+interface UsoDePasso {
   inputTokens?: number;
   outputTokens?: number;
   inputTokenDetails?: { cacheReadTokens?: number; cacheWriteTokens?: number };
@@ -390,11 +432,11 @@ interface UsoDePassoTerra {
  * O SDK instalado pode omitir cache_write_tokens na normalização; o usage cru
  * documentado conserva a informação. Somamos custos por passo, não os contextos.
  */
-export function custoTerraPorPassos(model: string, result: {
-  usage: UsoDePassoTerra;
-  steps?: ReadonlyArray<{ usage?: UsoDePassoTerra }>;
+export function custoPorPassosComFaixaLonga(model: string, result: {
+  usage: UsoDePasso;
+  steps?: ReadonlyArray<{ usage?: UsoDePasso }>;
 }): number | undefined {
-  if (chaveDoModelo(model) !== 'gpt-6.1-terra') return undefined;
+  if (!LIMIARES_DE_CONTEXTO_LONGO.has(chaveDoModelo(model) ?? '')) return undefined;
   const passos = result.steps?.length ? result.steps.map(s => s.usage) : [result.usage];
   return passos.reduce((total, u) => {
     const raw = u?.raw as { input_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number } } | undefined;
@@ -405,6 +447,69 @@ export function custoTerraPorPassos(model: string, result: {
       cacheWriteTokens: raw?.input_tokens_details?.cache_write_tokens ?? u?.inputTokenDetails?.cacheWriteTokens ?? 0,
     }) ?? 0);
   }, 0);
+}
+
+/**
+ * O custo que a OpenRouter COBROU, em centavos, somado por passo — lido do corpo
+ * cru de cada resposta (`step.response.body`, que o seam só pede na OpenRouter
+ * oficial). `undefined` quando algum passo não traz `usage.cost` numérico e não
+ * negativo, ou é BYOK sem `upstream_inference_cost` numérico e não negativo: aí
+ * vale a tabela, como antes, e nunca um número pela metade. Fora do BYOK,
+ * upstream ausente ou negativo conta 0.
+ *
+ * A regra de BYOK (doc usage-accounting: `cost` é o cobrado na conta da
+ * OpenRouter; `cost_details.upstream_inference_cost`, o cobrado pelo provedor de
+ * origem):
+ *   - `is_byok` true  → cost + upstream (a taxa dela mais a conta da sua chave);
+ *   - `is_byok` false → cost (o upstream já está dentro dele);
+ *   - sem o campo     → max(cost, upstream). O exemplo de Chat Completions da doc
+ *     traz cost 0,95 e upstream 19 sem a flag — 0,95 é 5% de 19, a taxa de BYOK:
+ *     "só cost" gravaria 5% do gasto (e 0 dentro da franquia), e o teto nunca
+ *     fecharia; "somar sempre" dobraria a resposta sem BYOK que traga os dois.
+ *     O max nunca dobra e, no BYOK sem flag, subconta no máximo a taxa.
+ */
+export function custoInformadoPeloOpenRouter(result: {
+  response?: { body?: unknown };
+  steps?: ReadonlyArray<{ response?: { body?: unknown } }>;
+}): number | undefined {
+  const corpos = result.steps?.length ? result.steps.map((s) => s.response?.body) : [result.response?.body];
+  let total = 0;
+  for (const bruto of corpos) {
+    const usage = (corpoComoObjeto(bruto) as { usage?: UsoDaOpenRouter | null } | undefined)?.usage;
+    const cost = usage?.cost;
+    // Custo negativo não é fatura: um número assim abateria o gasto do mês e
+    // furaria o teto. Volta à tabela.
+    if (typeof cost !== 'number' || !Number.isFinite(cost) || cost < 0) return undefined;
+    const upBruto = usage?.cost_details?.upstream_inference_cost;
+    const upValido = typeof upBruto === 'number' && Number.isFinite(upBruto) && upBruto >= 0;
+    // BYOK sem upstream legível: o `cost` é só a taxa dela (0 dentro da franquia),
+    // e gravá-lo sozinho seria a mesma porta do custo negativo. Volta à tabela.
+    if (usage?.is_byok === true && !upValido) return undefined;
+    const up = upValido ? upBruto : 0;
+    total += usage?.is_byok === true ? cost + up : usage?.is_byok === false ? cost : Math.max(cost, up);
+  }
+  return total * 100;
+}
+
+/** Os campos de `usage` que a OpenRouter devolve e o custo lê — tudo `unknown` até conferir. */
+interface UsoDaOpenRouter {
+  cost?: unknown;
+  is_byok?: unknown;
+  cost_details?: { upstream_inference_cost?: unknown } | null;
+}
+
+/** O corpo cru do passo: objeto, ou texto JSON. Qualquer outra coisa não tem custo a ler. */
+export function corpoComoObjeto(bruto: unknown): object | undefined {
+  if (typeof bruto === 'string') {
+    try {
+      const json: unknown = JSON.parse(bruto);
+      return json !== null && typeof json === 'object' ? json : undefined;
+    } catch {
+      // Texto que não é JSON não traz `usage.cost`: o custo volta à tabela.
+      return undefined;
+    }
+  }
+  return bruto !== null && typeof bruto === 'object' ? bruto : undefined;
 }
 
 /**

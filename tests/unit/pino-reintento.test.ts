@@ -110,13 +110,23 @@ describe("a nova busca do pino", () => {
     expect(consumidores.map((h) => h.key)).toEqual([pinoReintentoHandler.key]);
   });
 
-  it("espera 1 minuto antes da primeira tentativa — sem tocar o banco nem a API", async () => {
+  it("espera um instante antes da primeira tentativa — sem tocar o banco nem a API", async () => {
     const admin = adminFalso();
     const f = vi.spyOn(globalThis, "fetch");
-    const r = await tratarNovaBuscaDoPino(evento(), { admin: admin as never, agora: () => CRIADO + 5_000 });
+    const r = await tratarNovaBuscaDoPino(evento(), { admin: admin as never, agora: () => CRIADO + 1_000 });
     expect(r).toMatchObject({ status: "retry", retry_at: new Date(CRIADO + ESPERA_INICIAL_MS).toISOString() });
     expect(f).not.toHaveBeenCalled();
     expect(admin.updates).toHaveLength(0);
+  });
+
+  // A ingestão não pergunta mais à API dentro da requisição (27/10/2026): esta
+  // busca é a única, e precisa chegar ANTES do turno do agente, que espera a
+  // rajada do cliente (`INBOUND_DEBOUNCE_MS`, 8 s por padrão em
+  // `lib/agent-engine/env.ts`) e confirma a cidade pelo pino. Com o minuto de
+  // antes, o agente lia "📍 Location" sem link e pedia o pino de novo.
+  it("⭐ a primeira tentativa chega antes do turno do agente (debounce padrão de 8 s)", () => {
+    expect(ESPERA_INICIAL_MS).toBeGreaterThan(0);
+    expect(ESPERA_INICIAL_MS).toBeLessThan(8_000);
   });
 
   it("⭐ recupera o pino: tipo location, corpo com o link, metadata antiga preservada — e só se ainda não for location", async () => {

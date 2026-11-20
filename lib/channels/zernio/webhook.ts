@@ -24,7 +24,7 @@
  * saber o que está guardando.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { Localizacao } from "@/lib/messaging/localizacao";
+import { lerLocalizacao, type Localizacao } from "@/lib/messaging/localizacao";
 
 /** Assinatura HMAC-SHA256 no header `X-Zernio-Signature`. */
 export function verifyZernioSignature(
@@ -91,10 +91,29 @@ export interface ZernioInboundMessage {
    */
   referral: unknown;
   /**
-   * Coordenadas do pino, quando a mensagem é uma localização. O webhook NÃO as
-   * traz — quem preenche é a ingestão, pela API (`./localizacao.ts`).
+   * Coordenadas do pino, quando a mensagem é uma localização.
+   *
+   * Vêm do PRÓPRIO webhook, em `metadata.location` (no nível do evento, ao lado
+   * de `metadata.referral`). Este campo dizia que o webhook não as trazia — e
+   * em 24/09/2026 não trazia. Medido de novo em 27/10/2026 no log de entregas
+   * do provedor (30 dias): os 50 pinos recebidos chegaram TODOS com
+   * `metadata.location` (`latitude`/`longitude` numéricos; 7 também com `name`
+   * e `address`). Ausente, quem tenta de novo é `./pino-reintento.handler.ts`,
+   * fora do caminho da requisição (`./localizacao.ts`).
    */
   location?: Localizacao | null;
+  /**
+   * Que superfície do provedor produziu a saída (`message.sentVia`): `api`,
+   * `human` (o painel dele), `broadcast`, `sequence`, `workflow`… `null` quando
+   * ele não sabe — mensagem digitada no aplicativo do celular, ou anterior ao
+   * campo. Fonte: a especificação do provedor, evento `message.sent`.
+   */
+  sentVia?: string | null;
+  /**
+   * A transmissão que mandou esta mensagem (`message.broadcastId`, só com
+   * `sentVia = broadcast`). É por ele que o eco volta à campanha (migration 0712).
+   */
+  broadcastId?: string | null;
 }
 
 export interface ZernioIdentity {
@@ -258,7 +277,28 @@ export function parseZernioInbound(payload: unknown): ZernioInboundMessage | nul
     // veio e nenhuma venda chegava à Meta. As outras duas ficam como fallback
     // (forma documentada da Cloud API).
     referral: obj(p.metadata)?.referral ?? m.referral ?? p.referral ?? null,
+    ...pinoDoEvento(p, m, Boolean(deStatus)),
+    ...(saida ? { sentVia: str(m.sentVia), broadcastId: str(m.broadcastId) } : {}),
   };
+}
+
+/**
+ * O pino que o evento já traz — `metadata.location`, no nível do EVENTO, como o
+ * `referral` (medido em 27/10/2026, 50 de 50 pinos). `message.metadata` fica de
+ * reserva: é onde a forma documentada do eco de saída o põe.
+ *
+ * Só em evento que CRIA mensagem: um evento de desfecho não tem pino a gravar. E
+ * a chave só aparece quando há coordenadas válidas — `lerLocalizacao` recusa
+ * (0, 0) e lixo —, para quem compara a leitura inteira não ganhar um `null` novo.
+ */
+function pinoDoEvento(
+  p: Bruto,
+  m: Bruto,
+  deStatus: boolean,
+): { location?: Localizacao } {
+  if (deStatus) return {};
+  const location = lerLocalizacao(obj(p.metadata)?.location ?? obj(m.metadata)?.location);
+  return location ? { location } : {};
 }
 
 /** O outro lado da conversa, na forma que `resolveZernioIdentity` entende. */

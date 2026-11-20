@@ -22,8 +22,25 @@ import { telefoniaEmUso } from "@/lib/telefonia/em-uso";
  * menu de todo mundo e levava a uma tela vazia para quem nunca ligou o módulo.
  * Ela é uma capacidade da ORGANIZAÇÃO, com o mesmo desenho de `propostas` — não
  * uma segunda régua: o menu lê `capacidades_ligadas` e mais nada.
+ *
+ * `apresentacao_do_catalogo` (#3525): a sequência de texto, áudio e fotos que o
+ * agente envia por produto. A seção da edição, as rotas e a ferramenta do agente
+ * perguntam aqui. Desligar não apaga o que foi guardado, e o job que já gravou o
+ * snapshot termina. A chave mora em `settings.catalogo.apresentacao`.
+ *
+ * `capacidade_do_produto` (#3472) é o campo opcional do catálogo: a capacidade
+ * que uma loja de celulares cadastra não faz sentido para uma clínica, então a
+ * tela, a API, a planilha e a busca do agente perguntam aqui antes de mostrá-lo.
+ * Desligar não apaga o que foi guardado. A chave mora em
+ * `settings.catalogo.capacidade`.
  */
-export const CAPACIDADES_DA_ORGANIZACAO = ["propostas", "telefonia"] as const;
+export const CAPACIDADES_DA_ORGANIZACAO = [
+  "propostas",
+  "telefonia",
+  "cadencias",
+  "apresentacao_do_catalogo",
+  "capacidade_do_produto",
+] as const;
 export type CapacidadeDaOrganizacao = (typeof CAPACIDADES_DA_ORGANIZACAO)[number];
 
 /**
@@ -40,6 +57,9 @@ export type CapacidadeDaOrganizacao = (typeof CAPACIDADES_DA_ORGANIZACAO)[number
 const MODULO_DA_CAPACIDADE: Record<CapacidadeDaOrganizacao, ModuloOpcional | null> = {
   propostas: "propostas",
   telefonia: null,
+  cadencias: "cadencias",
+  apresentacao_do_catalogo: null,
+  capacidade_do_produto: null,
 };
 
 function objeto(v: unknown): Record<string, unknown> | null {
@@ -73,6 +93,13 @@ export function capacidadesLigadas(
   // também não funciona — mas esse estado o app não enxerga, e fingir que
   // enxerga seria pior que o defeito.
   if (telefoniaEmUsoDaOrganizacao) daEmpresa.push("telefonia");
+  const cadencias = objeto(objeto(settings)?.cadencias);
+  const moduloDeCadencias = MODULO_DA_CAPACIDADE.cadencias;
+  if (cadencias?.enabled === true && moduloDeCadencias && modulos.includes(moduloDeCadencias)) {
+    daEmpresa.push("cadencias");
+  }
+  if (objeto(objeto(settings)?.catalogo)?.apresentacao === true) daEmpresa.push("apresentacao_do_catalogo");
+  if (objeto(objeto(settings)?.catalogo)?.capacidade === true) daEmpresa.push("capacidade_do_produto");
   return daEmpresa;
 }
 
@@ -84,7 +111,7 @@ export async function capacidadesDaOrganizacao(
   try {
     const [{ data, error }, modulos, telefonia] = await Promise.all([
       db.from("organizations").select("settings").eq("id", organizationId).maybeSingle(),
-      modulosLigados(db),
+      modulosLigados(db, organizationId),
       telefoniaEmUso(db, organizationId),
     ]);
     if (error) {

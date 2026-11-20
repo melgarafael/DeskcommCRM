@@ -32,11 +32,37 @@ export interface FiltrosDeTarefa {
   aberto?: boolean;
   /** De quem é: `me` (a rota resolve quem é), `ninguem` (sem responsável) ou o id de um membro. Ausente = de todos. */
   assigned_to?: string;
+  /** Só as tarefas de negócios deste funil. Ausente = de todos os funis (e as tarefas soltas também). */
+  pipeline_id?: string;
+  /**
+   * Só as tarefas que EXIBEM este setor (#4883): o selo vem da conversa (ou do
+   * negócio), e o filtro casa com ele — não com o setor de quem tem a tarefa.
+   */
+  sector_id?: string;
+  /**
+   * `true` = a rota anexa a cada tarefa o setor que o SELO mostra (`tarefa.setor`,
+   * com a origem). A tela de Tarefas pede; as outras listas, não.
+   */
+  com_setor?: boolean;
+  /**
+   * Teto de linhas desta busca. Ausente = o teto da rota (500). O QUADRO pede
+   * um número menor (`LIMITE_DO_QUADRO`): ele desenha todas as colunas de uma
+   * vez e não pode carregar a base inteira. A rota recusa acima do máximo dela
+   * — o teto não é do navegador.
+   */
+  limite?: number;
 }
 
 export interface OpcoesDeTarefas {
   /** `false` segura a consulta — o dossiê fechado não precisa das tarefas dele. */
   enabled?: boolean;
+  /**
+   * Recarga periódica, em ms. Ausente = sem intervalo (o default da tela, que
+   * só muda quando alguém desta aba mexe ou a janela volta ao foco). O contador
+   * do menu pede 60 s porque as tarefas nascem de automação, sem gesto nenhum
+   * aqui — mesmo intervalo do contador de Casos.
+   */
+  refetchInterval?: number;
 }
 
 async function leJson<T>(res: Response, oQueFalhou: string): Promise<T> {
@@ -62,6 +88,10 @@ export function useTasks(filtros: FiltrosDeTarefa = {}, opcoes: OpcoesDeTarefas 
   if (filtros.demanda_id) params.set("demanda_id", filtros.demanda_id);
   if (filtros.aberto) params.set("aberto", "true");
   if (filtros.assigned_to) params.set("assigned_to", filtros.assigned_to);
+  if (filtros.pipeline_id) params.set("pipeline_id", filtros.pipeline_id);
+  if (filtros.sector_id) params.set("sector_id", filtros.sector_id);
+  if (filtros.com_setor) params.set("com_setor", "true");
+  if (filtros.limite) params.set("limite", String(filtros.limite));
   const qs = params.toString();
 
   const query = useQuery({
@@ -72,6 +102,7 @@ export function useTasks(filtros: FiltrosDeTarefa = {}, opcoes: OpcoesDeTarefas 
     },
     staleTime: 10_000,
     refetchOnWindowFocus: true,
+    refetchInterval: opcoes.refetchInterval,
     enabled: opcoes.enabled ?? true,
   });
 

@@ -53,6 +53,12 @@ export interface EstadoDoAviso {
   config: ConfigDoAvisoNaTela | null;
   /** A equipe e o WhatsApp de cada um (#3803). */
   equipe: MembroDoAvisoNaTela[];
+  /**
+   * `true` = a leitura dos números da equipe falhou, e `equipe` está vazia por
+   * isso. Opcional porque um pacote de JS antigo no navegador de alguém não tem
+   * o campo — e `undefined` vale como "leu" (#3935).
+   */
+  equipe_indisponivel?: boolean;
   conexoes: ConexaoParaAviso[];
   avisos: AvisoDaTela[];
   pode_ligar: boolean;
@@ -121,11 +127,17 @@ export interface EntradaDoSalvar {
   /** COMO escolher quem recebe (#3803). Ausente = `fixo`, o default do banco. */
   destino_modo?: "fixo" | "responsavel";
   /**
-   * O WhatsApp de cada pessoa da equipe. `null` LIMPA o número de quem não tem
-   * mais celular cadastrado — é a diferença entre "não mexi" (campo omitido) e
-   * "esta pessoa não tem número" (nulo explícito).
+   * O WhatsApp de cada pessoa da equipe. Três estados, e a diferença entre eles
+   * é a diferença entre salvar e apagar (#3935):
+   *
+   * · chave `whatsapp` AUSENTE = "a tela não falou deste membro" → o banco não
+   *   toca no número gravado;
+   * · `null` = "esta pessoa não tem número" → apaga o número gravado;
+   * · string = o número novo.
+   *
+   * A lista inteira omitida também não toca em nada.
    */
-  responsaveis?: Array<{ user_id: string; whatsapp: string | null }>;
+  responsaveis?: Array<{ user_id: string; whatsapp?: string | null }>;
   /** `null` = sem modelo (texto livre). Ver a rota. */
   modelo_id?: string | null;
 }

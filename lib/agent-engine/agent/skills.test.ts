@@ -1,5 +1,17 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { loadSkills, matchSkills, recentInboundSignal, skillMatcherSchema, type LoadedSkill } from './skills';
+import {
+  gatilhoDaAtivacao,
+  loadSkills,
+  matchSkills,
+  recentInboundSignal,
+  renderMatchedSkillBodies,
+  skillMatcherSchema,
+  skillsDoAgente,
+  skillsPuxadasPeloRoteiro,
+  type LoadedSkill,
+} from './skills';
 
 const skill = (name: string, matcher: LoadedSkill['matcher']): LoadedSkill => ({
   versionId: `v-${name}`,
@@ -96,6 +108,47 @@ describe('matchSkills — etiqueta da conversa ou do contato (any_tags)', () => 
   });
 });
 
+describe('matchSkills — o motivo de cada match (spec 27, fatia 4)', () => {
+  const prospeccao = skill('prospec-odonto', { any_keywords: ['dentista'], any_tags: ['odonto'] });
+  const frete = skill('frete', { any_keywords: ['frete'] });
+  const soEtiqueta = skill('so-etiqueta', { any_keywords: ['nunca-aparece'], any_tags: ['vip'] });
+
+  it('entrou pela palavra da mensagem: motivo `palavra`', () => {
+    const r = matchSkills([frete], 'quanto custa o frete?');
+    expect(r.motivos.get(frete)).toBe('palavra');
+  });
+
+  it('entrou só pela etiqueta: motivo `etiqueta`', () => {
+    const r = matchSkills([soEtiqueta], 'Olá', ['vip']);
+    expect(r.matched).toEqual([soEtiqueta]);
+    expect(r.motivos.get(soEtiqueta)).toBe('etiqueta');
+  });
+
+  it('palavra E etiqueta casam: vale `etiqueta` (a etiqueta é a que a telemetria precisa ver)', () => {
+    const r = matchSkills([prospeccao], 'quero um dentista', ['odonto']);
+    expect(r.matched).toEqual([prospeccao]);
+    expect(r.motivos.get(prospeccao)).toBe('etiqueta');
+  });
+
+  it('skill que não entrou não tem motivo; `matched` tem o mesmo formato de antes', () => {
+    const r = matchSkills([prospeccao, frete], 'quanto custa o frete?');
+    expect(r.matched).toEqual([frete]);
+    expect(r.motivos.has(prospeccao)).toBe(false);
+    expect([...r.motivos.keys()]).toEqual([frete]);
+  });
+
+  it('o motivo sai no mesmo objeto que está em `matched` (é por ele que o motor grava)', () => {
+    const r = matchSkills([frete], 'frete');
+    expect(r.motivos.get(r.matched[0]!)).toBe('palavra');
+  });
+
+  it('o gatilho gravado: `tag` quando entrou pela etiqueta, `hard` pela palavra ou sem motivo', () => {
+    expect(gatilhoDaAtivacao('etiqueta')).toBe('tag');
+    expect(gatilhoDaAtivacao('palavra')).toBe('hard');
+    expect(gatilhoDaAtivacao(undefined)).toBe('hard');
+  });
+});
+
 describe('skillMatcherSchema — any_tags', () => {
   it('aceita any_tags opcional e recusa mais de 20 etiquetas', () => {
     expect(skillMatcherSchema.safeParse({ any_keywords: ['a'], any_tags: ['odonto'] }).success).toBe(true);
@@ -106,7 +159,100 @@ describe('skillMatcherSchema — any_tags', () => {
     expect(skillMatcherSchema.safeParse({ any_keywords: ['a'], any_tags: vinteUm }).success).toBe(false);
   });
 
-  it('continua exigindo any_keywords: skill só com etiqueta não passa', () => {
-    expect(skillMatcherSchema.safeParse({ any_tags: ['odonto'] }).success).toBe(false);
+  it('#4458: skill sem nenhum sinal (matcher {}) passa — ela fica fora do roteamento automático', () => {
+    expect(skillMatcherSchema.safeParse({}).success).toBe(true);
+    // etiqueta sozinha é sinal legítimo: entra por etiqueta, sem palavra-chave.
+    expect(skillMatcherSchema.safeParse({ any_tags: ['odonto'] }).success).toBe(true);
+  });
+
+  it('#4458: lista declarada e vazia (ou item vazio) NÃO passa — erro claro continua', () => {
+    expect(skillMatcherSchema.safeParse({ any_keywords: [] }).success).toBe(false);
+    expect(skillMatcherSchema.safeParse({ any_keywords: [''] }).success).toBe(false);
+    expect(skillMatcherSchema.safeParse({ any_keywords: ['a'], any_tags: [''] }).success).toBe(false);
+  });
+});
+
+describe('skill sem matcher — só uso explícito, nunca pelo roteamento automático (#4458)', () => {
+  const semMatcher = skill('humanizer', {});
+
+  it('não casa por palavra nem por etiqueta: o turno não injeta o corpo sozinho', () => {
+    const r = matchSkills([semMatcher], 'reescreve esse texto, por favor', ['odonto']);
+    expect(r.matched).toEqual([]);
+    expect(r.missCandidates).toEqual([]);
+    expect(renderMatchedSkillBodies(r.matched)).toBe('');
+  });
+
+  it('e não vira near-miss: sem probe, não polui o golden', () => {
+    const r = matchSkills([semMatcher], 'texto com cara de IA');
+    expect(r.missCandidates).toEqual([]);
+  });
+
+  it('entra quando o roteiro do atendimento puxa a skill pelo nome (uso explícito)', () => {
+    const puxadas = skillsPuxadasPeloRoteiro([semMatcher], ['humanizer'], []);
+    expect(puxadas.map((s) => s.name)).toEqual(['humanizer']);
+    expect(renderMatchedSkillBodies(puxadas)).toContain('corpo de humanizer');
+  });
+});
+
+describe('skillsDoAgente (skills por agente, 9107)', () => {
+  const todas = [
+    skill('agendamento', { any_keywords: ['horário'] }),
+    skill('objecao-preco', { any_keywords: ['caro'] }),
+    skill('visita', { any_keywords: ['visita'] }),
+  ];
+
+  it('null = todas, na mesma ordem (o comportamento de antes)', () => {
+    expect(skillsDoAgente(todas, null).map((s) => s.name)).toEqual([
+      'agendamento',
+      'objecao-preco',
+      'visita',
+    ]);
+  });
+
+  it('lista = só as marcadas, sem reordenar', () => {
+    expect(skillsDoAgente(todas, ['visita', 'agendamento']).map((s) => s.name)).toEqual([
+      'agendamento',
+      'visita',
+    ]);
+  });
+
+  it('[] = nenhuma', () => {
+    expect(skillsDoAgente(todas, [])).toEqual([]);
+  });
+
+  it('nome que não existe não lança e não traz nada', () => {
+    expect(skillsDoAgente(todas, ['nao-existe'])).toEqual([]);
+  });
+
+  it('o matcher sobre a lista filtrada não injeta skill de fora dela', () => {
+    const doAgente = skillsDoAgente(todas, ['visita']);
+    expect(matchSkills(doAgente, 'achei caro, mas quero uma visita').matched.map((s) => s.name)).toEqual([
+      'visita',
+    ]);
+  });
+
+  // O nó `skill` do roteiro de atendimento é a exceção declarada na tela do agente:
+  // a skill que ele nomeia chega mesmo fora da lista. Sem isto, restringir a lista
+  // calaria em silêncio o passo do roteiro que depende dela.
+  it('roteiro puxa skill de FORA da lista do agente', () => {
+    const doAgente = skillsDoAgente(todas, ['visita']);
+    const casadas = matchSkills(doAgente, 'quero uma visita').matched;
+    expect(skillsPuxadasPeloRoteiro(todas, ['objecao-preco'], casadas).map((s) => s.name)).toEqual([
+      'objecao-preco',
+    ]);
+  });
+
+  it('roteiro com lista vazia no agente ainda puxa a skill que nomeia', () => {
+    expect(skillsPuxadasPeloRoteiro(todas, ['agendamento'], []).map((s) => s.name)).toEqual(['agendamento']);
+  });
+
+  it('roteiro: nome inexistente some e a já casada não repete', () => {
+    const casadas = matchSkills(todas, 'quero uma visita').matched;
+    expect(skillsPuxadasPeloRoteiro(todas, ['visita', 'nao-existe'], casadas)).toEqual([]);
+  });
+
+  it('o turno resolve o roteiro sobre as skills da organização, não sobre as do agente', () => {
+    const fonte = readFileSync(join(process.cwd(), 'lib/agent-engine/agent/inbound-turn.ts'), 'utf8');
+    expect(fonte).toMatch(/skillsPuxadasPeloRoteiro\(skills, roteiro\?\.skills \?\? \[\], skillMatch\.matched\)/);
   });
 });

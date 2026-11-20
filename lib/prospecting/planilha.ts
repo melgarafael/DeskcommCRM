@@ -6,6 +6,7 @@ import type {
 } from "@/lib/prospecting/importacao-previa";
 import { TEXTO_DO_MOTIVO } from "@/lib/prospecting/importacao-previa";
 import { normalizeProspectPhone, safePublicLink } from "@/lib/prospecting/schema";
+import { contextoDaLinha } from "@/lib/prospecting/contexto-da-equipe";
 
 /**
  * A PLANILHA DE PROSPECÇÃO — a lista própria do operador como segunda porta de entrada
@@ -20,7 +21,17 @@ import { normalizeProspectPhone, safePublicLink } from "@/lib/prospecting/schema
 /** Dez dias de fila no teto de 50 por dia; a tela de candidatos já lista até 5.000. */
 export const PLANILHA_MAX_LINHAS = 500;
 
-type Campo = "name" | "phone" | "website" | "category" | "address" | "emails" | "socials";
+type Campo =
+  | "name"
+  | "phone"
+  | "website"
+  | "category"
+  | "address"
+  | "emails"
+  | "socials"
+  | "diagnostico"
+  | "oferta"
+  | "contexto";
 
 /** Formas aceitas de cada coluna, sem acento e sem caixa (inclui espanhol). */
 const COLUNAS: Record<Campo, readonly string[]> = {
@@ -31,6 +42,14 @@ const COLUNAS: Record<Campo, readonly string[]> = {
   address: ["endereco", "cidade", "local", "direccion"],
   emails: ["email", "e-mail", "correo"],
   socials: ["instagram", "facebook", "linkedin", "redes"],
+  // O que a EQUIPE já sabe da empresa (opcionais; `lib/prospecting/contexto-da-equipe.ts`).
+  // Em espanhol, "diagnóstico", "oferta" e "contexto" se escrevem igual.
+  diagnostico: ["diagnostico", "diagnostico da equipe"],
+  oferta: ["oferta", "oferta sugerida", "oferta sugerida pela equipe"],
+  // "observação" fica de FORA de propósito: é o nome mais comum de coluna de nota
+  // interna, e uma planilha antiga passaria a mandar essas notas para a IA dizer ao
+  // cliente como fato. Quem usa esse nome vê a coluna em "colunas ignoradas".
+  contexto: ["contexto", "contexto da equipe", "o que sabemos"],
 };
 
 /** Campos que aceitam mais de uma coluna (nos demais vale só a primeira). */
@@ -110,7 +129,7 @@ export function lerPlanilhaDeProspeccao(sheet: SheetMatrix): LeituraDaPlanilhaDe
   const telefonesVistos = new Map<string, number>();
 
   sheet.rows.forEach((bruto, i) => {
-    const linha = i + 2;
+    const linha = sheet.rowNumbers?.[i] ?? i + 2;
     if (bruto.every((c) => c.trim() === "")) return;
 
     const name = primeiro(bruto, "name").replace(/\s+/g, " ").slice(0, 200);
@@ -159,6 +178,12 @@ export function lerPlanilhaDeProspeccao(sheet: SheetMatrix): LeituraDaPlanilhaDe
       ),
     ].slice(0, 15);
 
+    const contexto = contextoDaLinha({
+      diagnostico: primeiro(bruto, "diagnostico"),
+      oferta: primeiro(bruto, "oferta"),
+      contexto: primeiro(bruto, "contexto"),
+    });
+
     candidatos.push({
       linha,
       prospect: {
@@ -174,6 +199,9 @@ export function lerPlanilhaDeProspeccao(sheet: SheetMatrix): LeituraDaPlanilhaDe
         reviews: null,
         emails,
         socials,
+        // Só com algum texto: sem as colunas (ou com elas vazias) o candidato nasce
+        // SEM a chave, igual ao de antes.
+        ...(contexto ? { contexto_da_equipe: contexto } : {}),
       },
     });
   });

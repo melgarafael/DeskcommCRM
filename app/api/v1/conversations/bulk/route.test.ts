@@ -41,18 +41,6 @@ const LEAD_DE_TERCEIRO = "aaaaaaaa-7777-4000-8000-000000000003";
 
 type Linha = Record<string, unknown>;
 
-/**
- * A linha do dublê por id — `linhas[0]` é opcional para o compilador
- * (`noUncheckedIndexedAccess`) e um `?.` transformaria linha ausente em asserção
- * fraca. Aqui, linha que falta estoura.
- */
-function linhaDe(linhas: Linha[], id: string): Linha {
-  const achada = linhas.find((l) => l.id === id);
-  if (!achada) throw new Error(`dublê sem a linha ${id}`);
-  return achada;
-}
-
-
 /** Estado mutável do dublê, recriado a cada teste. */
 interface Estado {
   conversas: Linha[];
@@ -461,10 +449,10 @@ describe("POST /api/v1/conversations/bulk", () => {
     );
   });
 
-  it("transfer em lote: cada conversa leva o negócio aberto do SEU contato — e só o dele (#3177)", async () => {
-    // A2 é de OUTRO contato: o lote transfere duas conversas, mas o funil só
-    // recebe o dono em quem é daquele contato. O negócio de terceiro (nem da
-    // conversa, nem do contato) fica intacto — "sem transferir a mais".
+  it("transfer em lote: o negócio aberto é do banco — o lote não escreve no funil (#4019)", async () => {
+    // A régua mora na `fn_conversation_assign` (migration 9208), uma chamada por
+    // item com `p_reason = 'transfer'`. O efeito no card, por contato, é medido
+    // em Postgres: tests/invariants/negocio-aberto-acompanha-o-dono.test.ts.
     estado.conversas = [conversa(CONV_A, ORG_A), conversa(CONV_A2, ORG_A, { contact_id: OUTRO_CONTATO })];
     estado.leads = [
       negocioDoFunil(LEAD_DA_CONV_A, "aaaaaaaa-5555-4000-8000-000000000009", USER),
@@ -479,31 +467,11 @@ describe("POST /api/v1/conversations/bulk", () => {
     expect(res.status).toBe(200);
     const corpo = await corpoDe(res);
     expect(corpo.data.feitos).toBe(2);
-    expect(estado.leads.map((l) => l.owner_user_id)).toEqual([
-      DESTINATARIO,
-      DESTINATARIO,
-      null,
-    ]);
-    expect(estado.escritasDeLead).toHaveLength(2);
-    // A sincronia é da ROTA de uma; o lote não a repete por conta própria.
-    expect(estado.rpcs.filter((r) => r.nome === "fn_conversation_assign")).toHaveLength(2);
-  });
-
-  it("duas conversas do MESMO contato: o card é escrito UMA vez (#3177)", async () => {
-    // Idempotência medida: o segundo item já encontra o responsável certo e não
-    // regrava (regravar emitiria um `lead.assigned` que não houve).
-    estado.leads = [
-      negocioDoFunil(LEAD_DA_CONV_A, "aaaaaaaa-5555-4000-8000-000000000009", USER),
-    ];
-
-    const res = await POST(
-      req({ action: "transfer", ids: [CONV_A, CONV_A2], to_user_id: DESTINATARIO }),
-    );
-
-    const corpo = await corpoDe(res);
-    expect(corpo.data.feitos).toBe(2);
-    expect(estado.escritasDeLead).toHaveLength(1);
-    expect(linhaDe(estado.leads, LEAD_DA_CONV_A).owner_user_id).toBe(DESTINATARIO);
+    const assigns = estado.rpcs.filter((r) => r.nome === "fn_conversation_assign");
+    expect(assigns).toHaveLength(2);
+    expect(assigns.every((r) => r.params.p_reason === "transfer")).toBe(true);
+    expect(estado.escritasDeLead).toHaveLength(0);
+    expect(estado.leads.map((l) => l.owner_user_id)).toEqual([USER, USER, null]);
   });
 
   it("archive vai pelo PATCH de status (#923) e audita conversation.archived", async () => {

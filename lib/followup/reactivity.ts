@@ -54,8 +54,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import { inboundEhDestaPergunta } from "@/lib/followup/aplicar-inbound";
+import type { HandlerCtx } from "@/lib/api/handlers/types";
+import { moveLeadHandler } from "@/app/api/v1/leads/_handler";
 import type { EnrollmentPatch } from "./engine";
 import { triggerConfigSchema } from "./api-schemas";
+import { atorDoProprioFluxo } from "./saida-da-etapa";
 import type { EnrollmentOutcome, EnrollmentStatus } from "./node-handlers";
 import { idsDoContatoEGemeos } from "@/lib/channels/contato-por-telefone";
 
@@ -149,6 +152,29 @@ export interface ReactivityAdminClient {
   }): Promise<{ inserted: boolean }>;
   updateEnrollment(id: string, orgId: string, patch: EnrollmentPatch): Promise<void>;
   /**
+   * #3974 — "quando o cliente responder, mover o card para a etapa X": leva o
+   * negócio do contato que está em `etapa_de_origem` para `etapa_de_destino`.
+   *
+   * OPCIONAL pela mesma razão de `loadContactPersonal`: os dublês de teste
+   * implementam só o que medem. Ausente, a opção fica INERTE — é o que mantém
+   * os testes antigos de reatividade medindo exatamente o de antes, e o que
+   * garante que nenhum caminho de produção funcione "pela metade" (o adapter
+   * real, em `createSupabaseReactivityClient`, sempre implementa).
+   *
+   * `ok:false` NÃO é erro de programação: `sem_negocio_na_etapa` é o contato
+   * sem card naquela etapa (caminho normal) e `recusado` é a recusa do escritor
+   * de etapa da casa (`moveLeadHandler`), com a mensagem dele. Os dois viram
+   * linha na trilha da inscrição — o operador vê por que o card não andou.
+   */
+  moverCardAoResponder?(input: {
+    organization_id: string;
+    enrollment_id: string;
+    contact_id: string;
+    /** A etapa que armou o fluxo — é o card DESTA etapa que se move. */
+    etapa_de_origem: string;
+    etapa_de_destino: string;
+  }): Promise<ResultadoDaMudancaDeEtapa>;
+  /**
    * O relógio do BANCO (`fn_agora()`, migration 0147).
    *
    * ⚠️ NÃO É PRECIOSISMO. Quem acorda um enrollment grava `next_eval_at` e o
@@ -187,6 +213,110 @@ function parseCancelOnReply(raw: unknown): boolean {
 
 function strOrNull(v: unknown): string | null {
   return typeof v === "string" && v.trim().length > 0 ? v : null;
+}
+
+/**
+ * #3974 — o resultado do escritor de etapa: `ok` ou o motivo, sempre legível.
+ *
+ * `sem_negocio_na_etapa` é caminho NORMAL (contato sem card naquela etapa, ou o
+ * card já saiu — e aí `saida-da-etapa.ts` já teria encerrado a inscrição);
+ * `recusado` é a recusa do `moveLeadHandler` (etapa arquivada/removida, troca de
+ * funil, negócio encerrado), com a mensagem dele. Nenhum dos dois é exceção: a
+ * reação a uma mensagem recebida não pode derrubar o dreno do `event_log`.
+ */
+export type ResultadoDaMudancaDeEtapa =
+  | { ok: true }
+  | { ok: false; motivo: "sem_negocio_na_etapa" | "recusado"; erro?: string };
+
+/** A linha de trilha gravada quando a resposta MANDA o card andar. */
+export const EVENTO_DE_MUDANCA_AO_RESPONDER = "move_to_stage_on_reply";
+/** A linha de trilha quando ele NÃO andou — recusa ou contato sem card na etapa. */
+export const EVENTO_DE_MUDANCA_FALHOU = "move_to_stage_on_reply_failed";
+
+/**
+ * A etapa de destino declarada no gatilho de ETAPA, junto com a etapa de
+ * origem que o próprio gatilho carrega (`params.stage_id`).
+ *
+ * `null` para qualquer outro `kind` — e isso é uma porta, não um detalhe: um
+ * `move_to_stage_on_reply` gravado à mão num `manual` não passa no
+ * `strictObject` do schema e, mesmo que passasse, não há card identificado
+ * naquele gatilho para mover.
+ */
+function mudancaAoResponder(raw: unknown): { origem: string; destino: string } | null {
+  const parsed = triggerConfigSchema.safeParse(raw);
+  if (!parsed.success || parsed.data.kind !== "stage_change") return null;
+  const destino = parsed.data.move_to_stage_on_reply;
+  if (!destino) return null;
+  return { origem: parsed.data.params.stage_id, destino };
+}
+
+/**
+ * Move o card ao responder, com a trilha ANTES do efeito.
+ *
+ * A linha idempotente entra primeiro (mesma doutrina de `applyStep` e de
+ * `saida-da-etapa.ts`): um re-drain do MESMO evento não move o card duas vezes.
+ * O efeito em si é delegado ao `moverCardAoResponder` do client — em produção,
+ * o `moveLeadHandler` da casa, o mesmo escritor de etapa do board, do lote, da
+ * automação e do nó `move_lead` do próprio fluxo.
+ *
+ * Falha de MOVE não cancela nada e não sobe: vira linha na trilha da inscrição.
+ */
+async function moverCardAoResponder(
+  db: ReactivityAdminClient,
+  row: EventRow,
+  e: LiveEnrollmentRef,
+  contactId: string,
+  mudanca: { origem: string; destino: string },
+): Promise<boolean> {
+  const escritor = db.moverCardAoResponder;
+  if (!escritor) return false;
+
+  const chave = `reactivity:${row.id}:${e.id}:move_to_stage`;
+  const { inserted } = await db.insertEnrollmentEvent({
+    organization_id: row.organization_id,
+    enrollment_id: e.id,
+    node_id: e.current_node_id,
+    event_type: EVENTO_DE_MUDANCA_AO_RESPONDER,
+    payload: { de_stage_id: mudanca.origem, para_stage_id: mudanca.destino },
+    idempotency_key: chave,
+  });
+  if (!inserted) return false;
+
+  let resultado: ResultadoDaMudancaDeEtapa;
+  try {
+    resultado = await escritor({
+      organization_id: row.organization_id,
+      enrollment_id: e.id,
+      contact_id: contactId,
+      etapa_de_origem: mudanca.origem,
+      etapa_de_destino: mudanca.destino,
+    });
+  } catch (err) {
+    resultado = { ok: false, motivo: "recusado", erro: err instanceof Error ? err.message : String(err) };
+  }
+  if (resultado.ok) return true;
+
+  // A recusa NÃO é silêncio: quem montou o fluxo vê, na trilha da inscrição,
+  // que o card não andou e por quê. Chave própria (`:falha`) para o replay não
+  // duplicar; o registro tem try/catch para nunca derrubar a reação.
+  try {
+    await db.insertEnrollmentEvent({
+      organization_id: row.organization_id,
+      enrollment_id: e.id,
+      node_id: e.current_node_id,
+      event_type: EVENTO_DE_MUDANCA_FALHOU,
+      payload: {
+        para_stage_id: mudanca.destino,
+        motivo: resultado.motivo,
+        ...(resultado.erro ? { erro: resultado.erro } : {}),
+      },
+      idempotency_key: `${chave}:falha`,
+    });
+  } catch {
+    /* perder o registro não pode impedir a reação — o log do dreno já tem a
+       linha do erro do escritor quando ele lançou. */
+  }
+  return false;
 }
 
 /** Grava o evento de auditoria (idempotente por `idempotencyKey`) e — só se
@@ -302,6 +432,19 @@ async function reactToInbound(
   const esperaAtiva = live.filter((e) => e.status === "active");
   let reacted = 0;
   for (const e of waitingReply) {
+    // #3974 — "quando o cliente responder, mover o card para a etapa X": irmã
+    // de `cancel_on_reply`, e ortogonal a ela. Vem ANTES do ramo de
+    // cancelamento porque as duas podem estar ligadas: o card anda e a
+    // inscrição é encerrada na mesma resposta.
+    //
+    // `semAcordar` corta o movimento pelo mesmo motivo que corta o despertar:
+    // mensagem recuperada de uma queda do número é ANTIGA, e mexer no card por
+    // causa dela é produzir um efeito novo — o que a recuperação nunca faz.
+    if (!opcoes.semAcordar) {
+      const mudanca = mudancaAoResponder(e.trigger_config);
+      if (mudanca && (await moverCardAoResponder(db, row, e, contactId, mudanca))) reacted++;
+    }
+
     if (parseCancelOnReply(e.trigger_config)) {
       const key = `reactivity:${row.id}:${e.id}:reactivity_replied`;
       const applied = await applyStep(
@@ -327,6 +470,13 @@ async function reactToInbound(
   // acordar o próximo nó e disparar a próxima mensagem imediatamente. Sem a
   // verificação abaixo, a opção funcionava apenas para nós `waiting_reply`.
   for (const e of esperaAtiva) {
+    // Mesma opção do laço acima, e pelo mesmo motivo: a espera por tempo fixo
+    // fica `active`, e a resposta do cliente também tira o card da etapa.
+    if (!opcoes.semAcordar) {
+      const mudanca = mudancaAoResponder(e.trigger_config);
+      if (mudanca && (await moverCardAoResponder(db, row, e, contactId, mudanca))) reacted++;
+    }
+
     if (parseCancelOnReply(e.trigger_config)) {
       const key = `reactivity:${row.id}:${e.id}:reactivity_replied`;
       const applied = await applyStep(
@@ -579,6 +729,54 @@ export function createSupabaseReactivityClient(admin: SupabaseClient): Reactivit
     async updateEnrollment(id, orgId, patch) {
       const { error } = await admin.from("followup_enrollments").update(patch).eq("id", id).eq("organization_id", orgId);
       if (error) throw new Error(error.message);
+    },
+    /**
+     * #3974 — o card que este gatilho armou vai para a etapa escolhida.
+     *
+     * QUEM se move: o negócio ABERTO do contato que está NA ETAPA DE ORIGEM do
+     * gatilho (`params.stage_id`), o mais recente. É o card que o fluxo armou, e
+     * é ele que a resposta tira da etapa — um contato com dois negócios em funis
+     * diferentes não faz o card do outro funil andar (e mover entre funis é
+     * recusado por desenho, então "o mais recente de qualquer funil" terminaria
+     * em recusa muda).
+     *
+     * O escritor é o `moveLeadHandler` da casa — o MESMO do board, do lote, da
+     * automação e do nó `move_lead` do próprio fluxo: valida etapa, organização,
+     * troca de funil e negócio encerrado, além de emitir `lead.stage_changed`.
+     * O ator é o próprio enrollment (`followup:<id>`), como no `move_lead`: com
+     * isso `saida-da-etapa.ts` POUPA esta inscrição, e o fluxo que move o card e
+     * depois fala dele não morre por ter sido obedecido.
+     *
+     * A recusa sobe como `ok:false` (não como exceção): quem chama registra o
+     * motivo na trilha da inscrição.
+     */
+    async moverCardAoResponder(input) {
+      const { data: lead, error } = await admin
+        .from("crm_leads")
+        .select("id")
+        .eq("organization_id", input.organization_id)
+        .eq("contact_id", input.contact_id)
+        .eq("stage_id", input.etapa_de_origem)
+        .eq("status", "open")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!lead) return { ok: false, motivo: "sem_negocio_na_etapa" };
+
+      const handlerCtx: HandlerCtx = {
+        organization_id: input.organization_id,
+        actor: { type: "webhook_source", id: atorDoProprioFluxo(input.enrollment_id) },
+        requestId: `followup:${input.enrollment_id}`,
+      };
+      try {
+        await moveLeadHandler(admin, handlerCtx, (lead as { id: string }).id, {
+          to_stage_id: input.etapa_de_destino,
+        });
+      } catch (err) {
+        return { ok: false, motivo: "recusado", erro: err instanceof Error ? err.message : String(err) };
+      }
+      return { ok: true };
     },
     async agoraNoBanco() {
       const { data, error } = await admin.rpc("fn_agora" as never);

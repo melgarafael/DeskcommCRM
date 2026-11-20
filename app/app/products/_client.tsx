@@ -37,6 +37,7 @@ interface Rascunho {
   nome: string;
   marca: string;
   categoria: string;
+  capacidade: string;
   preco: string;
   custo: string;
   quantidade: string;
@@ -49,6 +50,7 @@ const VAZIO: Rascunho = {
   nome: "",
   marca: "",
   categoria: "",
+  capacidade: "",
   preco: "",
   custo: "",
   quantidade: "0",
@@ -70,6 +72,7 @@ function doRascunho(
     nome: r.nome.trim(),
     ...(r.marca.trim() ? { marca: r.marca.trim() } : {}),
     ...(r.categoria.trim() ? { categoria: r.categoria.trim() } : {}),
+    ...(r.capacidade.trim() ? { capacidade: r.capacidade.trim() } : {}),
     preco_cents,
     custo_cents,
     controla_estoque: r.controla_estoque,
@@ -223,6 +226,9 @@ export function ProdutosClient({
   buscaInicial,
   urlsDasFotos,
   podeEditar,
+  capacidadeLigada = false,
+  apresentacaoLigada = false,
+  fonteDoFeed = null,
   textos,
 }: {
   /** A página atual, já filtrada no servidor (ver `lib/catalogo/busca-da-tela.ts`). */
@@ -234,6 +240,11 @@ export function ProdutosClient({
   buscaInicial: string;
   urlsDasFotos: Record<string, string>;
   podeEditar: boolean;
+  /** A chave da empresa (`capacidade_do_produto`). Desligada, o campo não aparece. */
+  capacidadeLigada?: boolean;
+  apresentacaoLigada?: boolean;
+  /** A seção do módulo `catalogo_por_feed`; `null` com o módulo desligado. */
+  fonteDoFeed?: React.ReactNode;
   textos: Textos;
 }) {
   const t = useT();
@@ -344,6 +355,8 @@ export function ProdutosClient({
         <h1 className="text-2xl font-semibold">{textos.titulo}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{textos.subtitulo}</p>
       </header>
+
+      {fonteDoFeed}
 
       <div className="mb-4 flex items-center gap-3">
         <input
@@ -481,6 +494,19 @@ export function ProdutosClient({
                 className="mt-1 h-9 w-full rounded-md border px-3"
               />
             </label>
+            {capacidadeLigada ? (
+              <label className="text-sm">
+                {t("Capacidade")} <span className="text-muted-foreground">{t("(opcional)")}</span>
+                <input
+                  value={rascunho.capacidade}
+                  onChange={(e) => setRascunho({ ...rascunho, capacidade: e.target.value })}
+                  placeholder={t("Ex.: 128GB")}
+                  maxLength={60}
+                  className="mt-1 h-9 w-full rounded-md border px-3"
+                  data-testid="produto-capacidade"
+                />
+              </label>
+            ) : null}
             <label className="text-sm">
               {t("Preço de venda")}
               <input
@@ -573,7 +599,17 @@ export function ProdutosClient({
             const capa = p.fotos?.[0] ? urlsDasFotos[p.fotos[0]] : undefined;
             return (
             <li key={p.id} data-testid={`produto-${p.codigo}`}>
-            <div className="flex items-center gap-4 p-3">
+            {/*
+              A linha não cabia em 375 px: preço (shrink-0) + os três botões de
+              ação somam mais que a largura útil, e a coluna do nome — `flex-1`
+              com `min-w-0` — encolhia até 0 px, levando o nome junto. Abaixo de
+              `md` a linha passa a quebrar: nome e preço em cima, ações embaixo,
+              ancoradas à direita e com `flex-wrap` próprio se ainda faltar
+              espaço. Tudo em `max-md:` — de `md` para cima a lista é a de sempre.
+            */}
+            <div
+              className="flex items-center gap-4 p-3 max-md:flex-wrap max-md:gap-x-3 max-md:gap-y-1"
+            >
               {capa ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={capa} alt="" className="h-10 w-10 shrink-0 rounded-md object-cover" />
@@ -585,6 +621,7 @@ export function ProdutosClient({
                 <p className="text-xs text-muted-foreground">
                   {p.codigo}
                   {p.marca ? ` · ${p.marca}` : ""}
+                  {capacidadeLigada && p.capacidade ? ` · ${p.capacidade}` : ""}
                   {p.controla_estoque
                     ? ` · ${p.quantidade} ${t("em estoque")}`
                     : ` · ${t("sem controle de estoque")}`}
@@ -596,7 +633,13 @@ export function ProdutosClient({
                 {formatCents(p.preco_cents, p.moeda)}
               </span>
               {podeEditar ? (
-                <>
+                // Grupo próprio para as ações: sozinhas elas não cabem ao lado do
+                // preço em 375 px, e como itens soltos da linha quebravam em
+                // qualquer lugar. Aqui elas descem juntas (w-full abaixo de `md`)
+                // e, se nem assim couberem, quebram entre si em vez de vazar.
+                <div
+                  className="flex items-center gap-4 max-md:w-full max-md:flex-wrap max-md:justify-end max-md:gap-x-2 max-md:gap-y-1"
+                >
                   <Button
                     variant="ghost"
                     size="sm"
@@ -623,7 +666,7 @@ export function ProdutosClient({
                   >
                     {t(p.ativo ? "Desativar" : "Reativar")}
                   </Button>
-                </>
+                </div>
               ) : null}
             </div>
             {podeEditar && fotosAbertas === p.id ? (
@@ -633,7 +676,14 @@ export function ProdutosClient({
               // `key` porque o painel fica na MESMA posição do DOM ao trocar de
               // produto: sem ela o React reaproveita o estado e o formulário
               // abriria preenchido com o produto anterior.
-              <EdicaoDoProduto key={p.id} produto={p} aoFechar={() => setEditando(null)} />
+              <EdicaoDoProduto
+                key={p.id}
+                produto={p}
+                capacidadeLigada={capacidadeLigada}
+                urlsDasFotos={urlsDasFotos}
+                apresentacaoLigada={apresentacaoLigada}
+                aoFechar={() => setEditando(null)}
+              />
             ) : null}
             </li>
             );

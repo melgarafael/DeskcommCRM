@@ -45,27 +45,29 @@ function admin(pendentes: Array<Record<string, unknown>>, capturado: Record<stri
       }
       // calendar_appointments
       return {
-        select: () => ({
-          eq: (col: string, val: string) => {
-            capturado.selectEq = { col, val };
-            return {
-              order: () => ({ limit: async () => ({ data: pendentes, error: null }) }),
-            };
-          },
-        }),
+        select: () => {
+          const leitura = {
+            eq: (col: string, val: string) => {
+              ((capturado.selectEq ??= []) as unknown[]).push({ col, val });
+              return leitura;
+            },
+            order: () => ({ limit: async () => ({ data: pendentes, error: null }) }),
+          };
+          return leitura;
+        },
         update: (patch: Record<string, unknown>) => {
           capturado.patch = patch;
           return {
             in: (_c: string, ids: string[]) => {
               capturado.ids = ids;
-              return {
+              const escrita = {
                 eq: (col: string, val: string) => {
-                  capturado.updateEq = { col, val };
-                  return {
-                    select: async () => ({ data: ids.map((id) => ({ id })), error: null }),
-                  };
+                  ((capturado.updateEq ??= []) as unknown[]).push({ col, val });
+                  return escrita;
                 },
+                select: async () => ({ data: ids.map((id) => ({ id })), error: null }),
               };
+              return escrita;
             },
           };
         },
@@ -120,9 +122,17 @@ describe("agenda-expira-pendentes", () => {
 
     // Se alguém confirmar entre a leitura e a escrita, o UPDATE não alcança a
     // linha. Sem este `.eq` o compromisso recém-confirmado seria cancelado.
-    expect(capturado.selectEq).toEqual({ col: "status", val: "pending" });
-    expect(capturado.updateEq).toEqual({ col: "status", val: "pending" });
+    // E só compromisso LOCAL (migration 9392): o pendente de um sistema externo
+    // expira lá, e cancelá-lo aqui divergiria de quem manda nele.
+    const guarda = [
+      { col: "status", val: "pending" },
+      { col: "authority", val: "local" },
+    ];
+    expect(capturado.selectEq).toEqual(guarda);
+    expect(capturado.updateEq).toEqual(guarda);
     expect((capturado.patch as Record<string, string>).status).toBe("cancelled");
+    // A constraint real exige cancelled_at com status cancelled (o 500 de produção).
+    expect((capturado.patch as Record<string, string>).cancelled_at).toEqual(expect.any(String));
   });
 
   it("rodada que não expirou nada NÃO audita", async () => {

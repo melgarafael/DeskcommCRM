@@ -149,6 +149,36 @@ export function isoLocalComOffset(instante: Date, fuso: string): string {
   );
 }
 
+/**
+ * O INSTANTE QUE VEIO DO BANCO — duas formas na entrada, uma na saída.
+ *
+ * Não é zelo de tipo: é a fronteira que o dublê esconde. O driver `pg` converte
+ * `timestamptz` em `Date` (parser do OID 1184, e o repositório NÃO troca esse
+ * parser), enquanto o PostgREST e o `jsonb` gravado por `JSON.stringify`
+ * entregam a MESMA coluna como string ISO. Quem decide por
+ * `typeof valor === "string"` acerta num leitor e fica INERTE no outro — e o
+ * dublê de pool dos testes de unidade devolve string, então a fronteira não
+ * aparece em teste nenhum. O caso medido está em
+ * `lib/agent-engine/edge/crm/midia-derivavel.ts` (#3846): a régua da mídia
+ * pendente respondia "nada pendente" contra Postgres de verdade.
+ *
+ * Por isso a normalização mora AQUI, uma vez: quem lê carimbo do banco passa o
+ * valor cru por esta função e recebe ISO 8601 — ou `null` quando a hora é
+ * ilegível ou ausente. `null` é a única resposta para "não dá para ler", e quem
+ * chama decide o que fazer com a ausência; nenhuma comparação silenciosa
+ * acontece sobre `NaN`.
+ */
+export function instanteDoBanco(valor: unknown): string | null {
+  if (valor instanceof Date) {
+    return Number.isNaN(valor.getTime()) ? null : valor.toISOString();
+  }
+  if (typeof valor === "string" && valor.trim() !== "") {
+    const ms = Date.parse(valor);
+    return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+  }
+  return null;
+}
+
 export function rotuloLocal(instante: Date, fuso: string): string {
   const fusoEmVigor = fusoValido(fuso) ? fuso : FUSO_PADRAO;
   const p = partesNoFuso(instante, fusoEmVigor);

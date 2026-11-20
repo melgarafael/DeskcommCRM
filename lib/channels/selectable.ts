@@ -20,9 +20,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { nomeDoCanal } from "@/lib/channels/estado";
+import {
+  lerIdentidadesSociaisDeTeste,
+  lerModoDeAcessoDaIa,
+  lerNumerosDeTeste,
+} from "@/lib/ai/elegibilidade/pre-go-live";
+import type { AcessoDaAiDoCanal } from "@/lib/ai/elegibilidade/aviso-do-modo-de-teste";
 
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "./archived";
-import { PROVIDERS_DE_MENSAGEM, capabilitiesOf, transportaMensagem } from "./capabilities";
+import { PROVIDERS_DE_MENSAGEM, capabilitiesOf, notaDeVozDoCanal, transportaMensagem } from "./capabilities";
 import type { ProviderDeMensagem } from "./types";
 
 /** Um canal oferecível como destino, já com o rótulo resolvido para a tela. */
@@ -46,11 +52,40 @@ export interface SelectableChannel {
    * quem já consumia `SelectableChannel` não muda uma linha.
    */
   aceitaMensagemLivre: boolean;
+  /**
+   * O canal devolve a venda à Meta pela conversa (capability `reportaConversao`)?
+   * É o que decide se a chave "Enviar vendas pelo canal da conversa" tem o que
+   * acionar. Também de CAPACIDADE, nunca de provedor.
+   */
+  reportaConversao: boolean;
+  /**
+   * A IA consegue responder com NOTA DE VOZ por este canal (capability
+   * `voiceNote` diferente de `none`)? A tela do agente usa para avisar, ao lado
+   * de "Enviar nota de voz", que neste canal a resposta sai em texto — sem isso
+   * o dono liga a voz numa conta de Instagram e não entende por que ela não fala.
+   * Também de CAPACIDADE, nunca de provedor.
+   */
+  enviaNotaDeVoz: boolean;
+  /**
+   * Como o acesso da IA está NESTE canal — modo e quantos números de teste estão
+   * autorizados. Sem isto, a tela do agente não tinha como saber que o número
+   * escolhido está em modo de teste com a lista vazia, que é o estado de fábrica
+   * de todo canal: a IA não responde ninguém e a tela dizia que estava tudo
+   * certo (#3976).
+   *
+   * Contagem, nunca a lista: os telefones autorizados são PII e exigem
+   * administrador (`/api/v1/channel-sessions/[id]/ai-access`). Quem decide a
+   * frase é `decidirAvisoDoModoDeTeste` — a tela não reescreve a regra.
+   */
+  acessoDaAi: AcessoDaAiDoCanal;
 }
 
 // `provider` entra no `select` por causa de `aceitaMensagemLivre`. Ele é lido
 // aqui e MORRE aqui: o DTO leva a capacidade, nunca o nome do provedor.
-const COLUNAS = "id, display_name, status, phone_number, waha_session_name, provider";
+//
+// `metadata` entra SÓ para derivar `acessoDaAi` (modo e contagem). O DTO leva o
+// resumo, nunca a metadata crua — é ela que carrega os telefones de teste.
+const COLUNAS = "id, display_name, status, phone_number, waha_session_name, provider, metadata";
 
 interface LinhaCanal {
   id: string;
@@ -59,6 +94,7 @@ interface LinhaCanal {
   phone_number: string | null;
   waha_session_name: string | null;
   provider: string | null;
+  metadata: Record<string, unknown> | null;
 }
 
 /**
@@ -78,6 +114,27 @@ function aceitaMensagemLivre(provider: string | null): boolean {
   } catch {
     return false;
   }
+}
+
+/** Mesma régua de `aceitaMensagemLivre`: provedor desconhecido deste build responde `false`. */
+function reportaConversao(provider: string | null): boolean {
+  if (!transportaMensagem(provider)) return false;
+  try {
+    return capabilitiesOf(provider as ProviderDeMensagem).reportaConversao;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Mesma régua: provedor desconhecido deste build responde `false` (não promete
+ * voz). A rede da sessão entra porque o MESMO provedor social fala no Instagram
+ * e cala no Facebook — a régua é a do turno (`notaDeVozDoCanal`).
+ */
+function enviaNotaDeVoz(provider: string | null, metadata: Record<string, unknown> | null): boolean {
+  if (!transportaMensagem(provider)) return false;
+  const rede = metadata?.social_platform;
+  return notaDeVozDoCanal(provider, typeof rede === "string" ? rede : null) !== "none";
 }
 
 /**
@@ -123,5 +180,18 @@ export async function listSelectableChannels(
     status: c.status,
     phone_number: c.phone_number ?? null,
     aceitaMensagemLivre: aceitaMensagemLivre(c.provider),
+    reportaConversao: reportaConversao(c.provider),
+    enviaNotaDeVoz: enviaNotaDeVoz(c.provider, c.metadata),
+    acessoDaAi: {
+      // O MESMO leitor do runtime (`gate.ts` → `lerModoDeAcessoDaIa`): a tela
+      // não pode chamar de "modo de teste" um canal que o motor trata de outro
+      // jeito, nem o contrário.
+      mode: lerModoDeAcessoDaIa(c.metadata),
+      // Testadores de QUALQUER lista: telefone ou conta de rede social. Contar
+      // só telefones faria a tela do agente dizer "a IA não responde ninguém"
+      // num canal de Instagram com conta de teste autorizada.
+      testNumbersCount:
+        lerNumerosDeTeste(c.metadata).length + lerIdentidadesSociaisDeTeste(c.metadata).length,
+    },
   }));
 }

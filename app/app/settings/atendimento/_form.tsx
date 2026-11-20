@@ -68,22 +68,58 @@ export const MODO_COPY: Record<RoutingMode, { titulo: string; corpo: string }> =
   },
 };
 
+/**
+ * O TEXTO DIZ O QUE O MODO ESCONDE **E** O QUE ELE NÃO ESCONDE (issue #4381).
+ *
+ * Medido no banco (baseline + RLS) com o papel `agent`, uma organização por
+ * modo, quatro linhas por tabela:
+ *
+ *   · `all`                   — vê conversa, negócio, contato e tarefa de todos;
+ *   · `own_and_unassigned`    — conversas e negócios PRÓPRIOS + os sem dono; os
+ *                               do colega ficam fora;
+ *   · `own`                   — só conversas e negócios próprios, nem a fila;
+ *   · `contacts` nos três     — a leitura é por ORGANIZAÇÃO
+ *                               (`tenant_isolation_contacts_read`), então a
+ *                               lista inteira continua visível, inclusive a do
+ *                               cliente que está na carteira de um colega;
+ *   · agenda e tarefas        — eixo PRÓPRIO (opção "Atendentes podem mexer na
+ *                               agenda dos colegas", ligada por padrão): no
+ *                               padrão o atendente continua vendo as da equipe
+ *                               nos três modos. Por isso o texto abaixo fala de
+ *                               conversas e negócios, e não promete recorte em
+ *                               agenda/tarefas.
+ *
+ * Era a linha de `contacts` que faltava: o texto antigo prometia "vê apenas o que
+ * foi direcionado a ele" sem ressalva, e quem lia concluía que ver Contatos era
+ * falha de permissão. Esconder contatos por RLS é decisão de produto (issue
+ * #4381, saída 2), não deste texto.
+ */
 const VISIBILIDADE_COPY: Record<VisibilityMode, { titulo: string; corpo: string }> = {
   all: {
     titulo: "Todos veem tudo",
-    corpo: "Qualquer atendente abre a conversa e o negócio de qualquer colega.",
+    corpo:
+      "Qualquer atendente abre a conversa e o negócio de qualquer colega. Contatos, empresas " +
+      "e pessoas continuam visíveis para a empresa toda.",
   },
   own_and_unassigned: {
     titulo: "Os seus, mais os que ainda não têm dono",
     corpo:
-      "O atendente vê a própria carteira e a fila de quem chegou agora. Não vê o que já é " +
-      "de um colega.",
+      "O atendente vê a própria carteira e a fila de quem chegou agora — conversas e negócios " +
+      "sem dono. O que já é de um colega fica fora. Contatos, empresas e pessoas continuam " +
+      "visíveis para a empresa toda, mesmo os de clientes que estão com um colega.",
   },
   own: {
     titulo: "Só os seus",
     corpo:
-      "O atendente vê apenas o que foi direcionado a ele — nem a fila. Combine com o " +
-      "rodízio: sem alguém distribuindo, ninguém recebe nada e as telas ficam vazias.",
+      "O atendente vê apenas as conversas e os negócios direcionados a ele — nem a fila. " +
+      "Contatos, empresas e pessoas continuam visíveis para a empresa toda: a lista de " +
+      "Contatos não é recortada por este modo. Combine com o rodízio: sem alguém distribuindo, " +
+      "ninguém recebe nada e as telas ficam vazias.",
+  },
+  own_and_sector: {
+    titulo: "Os seus e os do seu setor",
+    corpo:
+      "O atendente vê a própria carteira e as conversas que estão no setor dele, inclusive as que estão com um colega do mesmo setor — é o modo para cobrir férias e ausências. As conversas dos outros setores continuam fora do alcance dele.",
   },
 };
 
@@ -131,7 +167,14 @@ function Escolha({
   );
 }
 
-export function AtendimentoForm({ initial }: { initial: AtendimentoConfig }) {
+export function AtendimentoForm({
+  initial,
+  setoresLigado = false,
+}: {
+  initial: AtendimentoConfig;
+  /** Módulo opcional `setores` (doc 213): desligado, o modo do setor não é oferecido. */
+  setoresLigado?: boolean;
+}) {
   const t = useT();
   const [form, setForm] = useState<AtendimentoConfig>(initial);
   const [salvo, setSalvo] = useState<AtendimentoConfig>(initial);
@@ -235,7 +278,9 @@ export function AtendimentoForm({ initial }: { initial: AtendimentoConfig }) {
           </p>
         </div>
         <div className="space-y-2">
-          {VISIBILITY_MODES.map((v) => (
+          {VISIBILITY_MODES.filter(
+            (v) => v !== "own_and_sector" || setoresLigado || initial.visibility_mode === v,
+          ).map((v) => (
             <Escolha
               key={v}
               nome="visibilidade"
@@ -248,6 +293,17 @@ export function AtendimentoForm({ initial }: { initial: AtendimentoConfig }) {
             />
           ))}
         </div>
+
+        {form.visibility_mode === "own_and_sector" ? (
+          <p
+            data-testid="aviso-modo-do-setor"
+            className="rounded-md border border-border bg-muted/40 p-3 text-xs"
+          >
+            {t(
+              "Este modo usa os setores de atendimento: quem não está em nenhum setor vê só as conversas que são dele. No funil, os negócios continuam restritos aos seus.",
+            )}
+          </p>
+        ) : null}
 
         {combinacaoMorta ? (
           <p

@@ -34,8 +34,20 @@ export const previaSalvaSchema = z.object({
   baseada_em: z.string().min(1).max(160),
   gerada_em: z.string().min(1).max(40),
   agente_id: z.string().uuid(),
+  /**
+   * De qual fonte da abordagem a copy nasceu (`config.fonte_da_abordagem`). Ausente = a
+   * prévia é anterior à opção, e foi escrita com a estratégia do site.
+   */
+  fonte: z.enum(["estrategia", "agente"]).optional(),
+  /** `config.briefing_editado_em` da campanha com que a prévia foi escrita; ausente = texto nunca editado. */
+  briefing_editado_em: z.string().max(40).optional(),
+  aprovada_por: z.string().uuid().optional(),
+  aprovada_em: z.string().max(40).optional(),
 });
 export type PreviaSalva = z.infer<typeof previaSalvaSchema>;
+
+/** Âncora da prévia escrita pelo prompt do agente: não depende de auditoria nenhuma. */
+export const ANCORA_DA_FONTE_AGENTE = "fonte:agente";
 
 /** O que `chaveDaAuditoria` e `previaValida` precisam de um candidato. */
 export interface DadosDaPrevia {
@@ -62,10 +74,18 @@ export function chaveDaAuditoria(data: Pick<DadosDaPrevia, "website" | "site">):
  * atual. `null` em qualquer outro caso — o envio então escreve do zero, que é
  * mais honesto do que mandar uma copy presa a uma medição que mudou.
  */
-export function previaValida(data: DadosDaPrevia): PreviaSalva | null {
+export function previaValida(
+  data: DadosDaPrevia,
+  fonte: "estrategia" | "agente" = "estrategia",
+): PreviaSalva | null {
   if (!data.previa) return null;
   const parsed = previaSalvaSchema.safeParse(data.previa);
   if (!parsed.success) return null;
+  // Trocar a fonte da campanha vence a prévia da outra fonte: ela foi escrita com outro
+  // ângulo. A prévia do agente não cita auditoria, então não vence quando o site muda.
+  const fonteDaPrevia = parsed.data.fonte ?? "estrategia";
+  if (fonteDaPrevia !== fonte) return null;
+  if (fonte === "agente") return parsed.data.baseada_em === ANCORA_DA_FONTE_AGENTE ? parsed.data : null;
   const chave = chaveDaAuditoria(data);
   if (!chave || parsed.data.baseada_em !== chave) return null;
   return parsed.data;
@@ -76,10 +96,70 @@ export function previaValida(data: DadosDaPrevia): PreviaSalva | null {
  * pelo MESMO agente que vai enviar. A prévia pode ter nascido com o agente
  * padrão da organização (a campanha ainda não tinha o seu); se a pessoa escolheu
  * outro na etapa 2, o tom da prévia não é o dele — o envio escreve do zero.
+ *
+ * E escrita com o texto ATUAL da campanha (#4570, doc 358): `briefingEditadoEm`
+ * é o carimbo da `config` no envio. A prévia de antes da última edição — ou a que
+ * o preparo terminou de gerar com o texto velho durante a edição — não confere,
+ * e o envio escreve do zero.
+ *
+ * E escrita pela MESMA fonte da abordagem (`fonte`, ver `previaValida`): trocar de
+ * `estrategia` para `agente` (ou o contrário) vence a prévia da outra.
  */
-export function previaDoAgente(data: DadosDaPrevia, agenteId: string): PreviaSalva | null {
-  const previa = previaValida(data);
-  return previa && previa.agente_id === agenteId ? previa : null;
+export function previaDoAgente(
+  data: DadosDaPrevia,
+  agenteId: string,
+  briefingEditadoEm?: string,
+  fonte: "estrategia" | "agente" = "estrategia",
+): PreviaSalva | null {
+  const previa = previaValida(data, fonte);
+  if (!previa || previa.agente_id !== agenteId) return null;
+  return previa.briefing_editado_em === briefingEditadoEm ? previa : null;
+}
+
+/** A prévia só libera o primeiro contato se a pessoa atual a aprovou. */
+export function previaAprovadaDoAgente(
+  data: DadosDaPrevia,
+  agenteId: string,
+  briefingEditadoEm?: string,
+  /**
+   * A fonte da abordagem DA CAMPANHA. Sem ela, a prévia do prompt do agente
+   * (`fonte: "agente"`) nunca valia como aprovada, e a campanha com as duas opções
+   * ligadas não iniciava nunca (reprova do #3630).
+   */
+  fonte: "estrategia" | "agente" = "estrategia",
+): PreviaSalva | null {
+  const previa = previaDoAgente(data, agenteId, briefingEditadoEm, fonte);
+  return previa?.aprovada_por && previa.aprovada_em ? previa : null;
+}
+
+/** Marca como aprovada apenas a prévia exata que a pessoa acabou de revisar. */
+export async function aprovarPrevia(
+  db: { query: (sql: string, params?: unknown[]) => Promise<{ rowCount?: number | null }> },
+  args: {
+    organizationId: string;
+    campaignId: string;
+    candidateId: string;
+    agentId: string;
+    baseadaEm: string;
+    geradaEm: string;
+    approverUserId: string;
+    approvedAt: string;
+  },
+): Promise<boolean> {
+  const result = await db.query(
+    "update prospecting_candidates set data=jsonb_set(data,'{previa}',(data->'previa') || jsonb_build_object('aprovada_por',$7::text,'aprovada_em',$8::text),true),updated_at=now() where organization_id=$1 and campaign_id=$2 and id=$3 and selected is not false and status in ('new','queued') and data->'previa'->>'agente_id'=$4 and data->'previa'->>'baseada_em'=$5 and data->'previa'->>'gerada_em'=$6",
+    [
+      args.organizationId,
+      args.campaignId,
+      args.candidateId,
+      args.agentId,
+      args.baseadaEm,
+      args.geradaEm,
+      args.approverUserId,
+      args.approvedAt,
+    ],
+  );
+  return (result.rowCount ?? 0) > 0;
 }
 
 /**

@@ -24,6 +24,7 @@
  * UM statement de 54 B, e o teto só é atingido quando não há nada agendado.
  */
 import type { Logger } from '../obs/logger';
+import { proximoIntervaloOcioso } from './recuo';
 import type { SonecaDaFila } from './soneca';
 
 export interface IntervalosDaFila {
@@ -71,12 +72,14 @@ export function intervaloDeEspera(
   rodadasOciosas = 0,
 ): number {
   if (faltaMs === null) {
-    // `2 ** 30` estoura para Infinity bem antes de qualquer contador real; o
-    // `Math.min` com o teto já o domina, mas clampar o expoente mantém o número
-    // finito e a leitura óbvia.
-    const fator = 2 ** Math.min(Math.max(rodadasOciosas, 0), 30);
-    const teto = Math.max(intervalos.ociosoMaxMs ?? intervalos.ociosoMs, intervalos.ociosoMs);
-    return Math.min(intervalos.ociosoMs * fator, teto);
+    // O recuo é a função PURA de `./recuo.ts` (#3878): dobra por rodada ociosa,
+    // nunca passa do teto e volta ao piso na primeira rodada com trabalho (quem
+    // zera o contador é o call site). Aqui ficam só os dois outros estados.
+    return proximoIntervaloOcioso({
+      passadasVazias: rodadasOciosas,
+      baseMs: intervalos.ociosoMs,
+      tetoMs: intervalos.ociosoMaxMs,
+    });
   }
   if (faltaMs <= 0) return intervalos.retryMs;
   return Math.min(faltaMs, intervalos.ociosoMs);

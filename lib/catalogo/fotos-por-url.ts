@@ -125,7 +125,11 @@ async function baixar(
 
     const desvio = resposta.headers.get("location");
     if (resposta.status >= 300 && resposta.status < 400 && desvio) {
-      alvo = new URL(desvio, alvo).toString();
+      try {
+        alvo = new URL(desvio, alvo).toString();
+      } catch {
+        return { motivo: frase(t("não consegui baixar a foto: {url}"), { url: alvo }) };
+      }
       continue;
     }
     if (!resposta.ok) {
@@ -144,7 +148,14 @@ async function baixar(
       await resposta.body?.cancel().catch(() => undefined);
       return { motivo: frase(t("a foto passa de 5 MB: {url}"), { url: alvo }) };
     }
-    const bytes = await lerAteOTeto(resposta);
+    let bytes: Uint8Array | null;
+    try {
+      bytes = await lerAteOTeto(resposta);
+    } catch {
+      // Headers válidos não garantem corpo completo: o prazo ou a conexão
+      // podem falhar durante a leitura. A recusa permite limpar fotos parciais.
+      return { motivo: frase(t("não consegui baixar a foto: {url}"), { url: alvo }) };
+    }
     if (!bytes) {
       return { motivo: frase(t("a foto passa de 5 MB: {url}"), { url: alvo }) };
     }

@@ -26,6 +26,11 @@ export interface BuildNativeMediaPartsArgs {
   provider: string;
   model: string;
   multimodalInput: boolean;
+  /**
+   * O agente vê imagens (`image_vision_enabled`, 9108)? `false` = nenhuma imagem
+   * nativa (o PDF segue a regra dele). Ausente = vê.
+   */
+  verImagens?: boolean;
   admin: SupabaseClient;
   /** teto de mídias anexadas (default 1: só a inbound mais recente). */
   maxItems?: number;
@@ -62,7 +67,9 @@ export async function buildNativeMediaParts(args: BuildNativeMediaPartsArgs): Pr
     return (data?.supports_vision as boolean | null) ?? null;
   };
   const caps = {
-    image: (await visaoEmVigor({ provider: args.provider, modelId: args.model, catalogo })).enxerga,
+    image:
+      args.verImagens !== false &&
+      (await visaoEmVigor({ provider: args.provider, modelId: args.model, catalogo })).enxerga,
     pdf: modelCapabilities(args.provider, args.model).pdf,
   };
   if (!caps.image && !caps.pdf) return [];

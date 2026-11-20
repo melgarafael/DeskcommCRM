@@ -148,6 +148,83 @@ describe("gravarMensagemDeGrupo", () => {
     );
   });
 
+  // ── #3566 — a PRÉVIA da lista da Inbox também resolve a menção ────────────
+  //
+  // A bolha resolve `@<lid>` → `@<nome>` desde o #3591 (`textoComMencoesResolvidas`),
+  // mas a coluna que a LISTA mostra (`conversations.last_message_preview`) era
+  // montada do corpo cru: a Inbox continuava exibindo `@75235009282237` — e a
+  // busca por conteúdo da conversa (`ilike` nessa coluna) não achava o nome.
+  // O rótulo já está resolvido aqui (`rotulosDasMencoes`), antes do carimbo:
+  // não é leitura nova, é a mesma régua aplicada à prévia.
+  it("#3566: prévia da lista mostra o NOME do mencionado, e o corpo continua cru", async () => {
+    const d = db(ligado());
+    await gravarMensagemDeGrupo(
+      d,
+      entrada({
+        body: "oi @75235009282237, pode vir?",
+        mencoes: [{ name: null, phone: null, lid: "75235009282237" }],
+      }),
+    );
+    expect(d.marcarConversa).toHaveBeenCalledWith(
+      ORG,
+      "v",
+      "oi @Maria Exemplo, pode vir?",
+      "2026-09-23T12:00:00.000Z",
+      "inbound",
+    );
+    // A prévia resolve; o dado do provedor NÃO (#3591): a bolha troca na leitura.
+    expect(d.inserirMensagem.mock.calls[0]![0]!.body).toBe("oi @75235009282237, pode vir?");
+  });
+
+  it("#3566: menção a quem NÃO está no CRM sai como \"Participante\" — nunca o LID, nunca o nome do AUTOR", async () => {
+    const d = db(ligado());
+    await gravarMensagemDeGrupo(
+      d,
+      entrada({
+        body: "oi @99887766554433",
+        mencoes: [{ name: null, phone: null, lid: "99887766554433" }],
+      }),
+    );
+    // `entrada()` traz `group_sender: { name: "Maria", ... }`, que é quem
+    // ESCREVEU: o nome do autor não pode virar o rótulo de quem foi mencionado.
+    // O corpo gravado continua cru (conferido no caso do metadata, acima).
+    expect(d.marcarConversa).toHaveBeenCalledWith(
+      ORG,
+      "v",
+      "oi @Participante",
+      "2026-09-23T12:00:00.000Z",
+      "inbound",
+    );
+  });
+
+  it("#3566: sem contato e sem participante a prévia mostra a palavra do dicionário, nunca dígitos", async () => {
+    const d = db(ligado());
+    await gravarMensagemDeGrupo(
+      d,
+      entrada({
+        body: "oi @99887766554433",
+        remetente: null,
+        mencoes: [{ name: null, phone: null, lid: "99887766554433" }],
+      }),
+    );
+    const [,, preview] = d.marcarConversa.mock.calls[0]!;
+    expect(preview).toBe("oi @Participante");
+    expect(String(preview)).not.toMatch(/\d/);
+  });
+
+  it("#3566: sem menção a prévia continua byte a byte igual e nenhum contato é lido", async () => {
+    const d = db(ligado());
+    await gravarMensagemDeGrupo(d, entrada({ body: "bom dia a todos" }));
+    expect(d.marcarConversa).toHaveBeenCalledWith(
+      ORG,
+      "v",
+      "bom dia a todos",
+      "2026-09-23T12:00:00.000Z",
+      "inbound",
+    );
+    expect(d.rotulosDasMencoes).not.toHaveBeenCalled();
+  });
+
   it("mídia anunciada sem URL entra, como na conversa individual", async () => {
     const d = db(ligado());
     await expect(

@@ -399,8 +399,12 @@ describe("aviso da conexão do Google — o contrato com quem ESCREVE o código"
     const achados = new Set<string>();
     for (const rota of ROTAS) {
       const fonte = readFileSync(resolve(process.cwd(), rota), "utf-8");
-      for (const [, codigo] of fonte.matchAll(/voltar\("erro=([a-z_]+)"\)/g)) achados.add(codigo!);
-      for (const [, codigo] of fonte.matchAll(/voltarComErro\("([a-z_]+)"\)/g)) achados.add(codigo!);
+      // #4107: a rota passou a carimbar o X-Request-Id e as saídas ganharam o
+      // segundo argumento — `voltar("erro=x", req)`. A varredura segue a FORMA
+      // atual (aceita o argumento opcional) para continuar enxergando os códigos;
+      // o controle de vacuidade abaixo é quem garante que ela não ficou cega.
+      for (const [, codigo] of fonte.matchAll(/voltar\("erro=([a-z_]+)"(?:,\s*[A-Za-z_$]+)?\)/g)) achados.add(codigo!);
+      for (const [, codigo] of fonte.matchAll(/voltarComErro\("([a-z_]+)"(?:,\s*[A-Za-z_$]+)?\)/g)) achados.add(codigo!);
     }
     return [...achados];
   }

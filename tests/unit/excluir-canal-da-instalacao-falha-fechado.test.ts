@@ -83,6 +83,7 @@ vi.mock("@/lib/supabase/server", () => ({
 
 import { DELETE } from "@/app/api/v1/channel-sessions/[id]/route";
 import { PARTNER_CHANNEL_PROVIDER } from "@/lib/channels/connect";
+import { CHANNEL_PROVIDER_META } from "@/lib/channels/capabilities";
 
 async function excluir(): Promise<Response> {
   return DELETE(new NextRequest(`https://crm.test/api/v1/channel-sessions/${CANAL}`, { method: "DELETE" }), {
@@ -131,5 +132,14 @@ describe("exclusão de canal do provedor parceiro com o provedor fora do ar", ()
     const r = await excluir();
     expect(r.status).toBe(200);
     expect(h.escritas).toEqual(["delete"]);
+  });
+});
+
+describe("exclusão do canal oficial (migration 9104)", () => {
+  it("a linha que tem a credencial zerada é escrita pelo service role, o único que o gatilho deixa gravar meta_*", async () => {
+    h.sessao = { ...sessao(false), provider: CHANNEL_PROVIDER_META, meta_phone_number_id: "9104-pn" };
+    const r = await excluir();
+    expect(r.status).toBe(200);
+    expect(h.escritas).toEqual(["admin:delete"]);
   });
 });

@@ -51,7 +51,7 @@ function contato(i: number, parcial: Partial<Contact> = {}): Contact {
     email: `c${n}@exemplo.com`,
     email_normalized: `c${n}@exemplo.com`,
     phone_number: `+55119${n}`,
-    cpf_hash: null,
+    cpf_available: false,
     birthdate: null,
     is_blocked: false,
     is_personal: false,
@@ -211,9 +211,9 @@ describe("o CSV de contatos", () => {
 
   it("decifra o CPF de quem tem cifra — e só dele", async () => {
     devolvePaginas([
-      contato(1, { cpf_hash: "hash-1" }),
+      contato(1, { cpf_available: true }),
       contato(2),
-      contato(3, { cpf_hash: "hash-3" }),
+      contato(3, { cpf_available: true }),
     ]);
     RPC.mockImplementation(async (_funcao: string, { p_contact_id }: { p_contact_id: string }) => ({
       data: p_contact_id.endsWith("000001") ? "52998224725" : "39053344705",
@@ -231,7 +231,7 @@ describe("o CSV de contatos", () => {
   });
 
   it("o vCard NÃO decifra CPF — cartão não tem documento", async () => {
-    devolvePaginas([contato(1, { cpf_hash: "hash-1" })]);
+    devolvePaginas([contato(1, { cpf_available: true })]);
 
     await chamar("?formato=vcf");
 

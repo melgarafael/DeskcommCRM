@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { EntradaDeMensagem } from "@/lib/channels/pos-entrada";
 import { acelerarFollowupDoInbound, drenarEventosDoInbound } from "@/lib/dev/kick-local-pipeline";
+import * as desvios from "@/lib/modulos/desvios-da-entrada";
 import { palavraDeSaida } from "@/lib/prospecting/rodape-de-saida";
 
 /**
@@ -85,6 +86,9 @@ let filtrosDeMessages: Array<[string, unknown]> = [];
  * ref que NÃO casa: já consumido, de outra organização, ou nunca gravado.
  */
 let refCasado: { utm: Record<string, string> } | null = null;
+let refGoogleCasado: { gclid: string; query_raw: Record<string, unknown> } | null = null;
+let filtrosDoRefGoogle: Record<string, unknown> = {};
+let caminhoWaha: "sem conversa" | "pessoal" | "módulo" | "reentrega" | "comercial" = "comercial";
 /** Os `.eq()`/`.is()` do consumo do ref — provam a organização e a trava de uso único. */
 let filtrosDoRef: Record<string, unknown> = {};
 /** Os negócios ABERTOS do contato, como a leitura de `crm_leads` os devolve. */
@@ -119,7 +123,37 @@ function cadeia(rotulo: string): Record<string, unknown> {
 const admin = {
   from(tabela: string) {
     return {
+      insert() {
+        return {
+          select: () => ({
+            async maybeSingle() {
+              if (caminhoWaha === "reentrega") return { data: null, error: { code: "23505" } };
+              return { data: { id: "msg-1" }, error: null };
+            },
+          }),
+        };
+      },
       update(payload: Record<string, unknown>) {
+        if (tabela === "google_ads_click_refs") {
+          const consumo = {
+            eq(coluna: string, valor: unknown) {
+              filtrosDoRefGoogle[coluna] = valor;
+              return consumo;
+            },
+            is(coluna: string, valor: unknown) {
+              filtrosDoRefGoogle[coluna] = valor;
+              return consumo;
+            },
+            select() { return consumo; },
+            async maybeSingle() {
+              sequencia.push("update:google_ads_click_refs");
+              const data = refGoogleCasado;
+              refGoogleCasado = null;
+              return { data, error: null };
+            },
+          };
+          return consumo;
+        }
         if (tabela === "meta_ads_click_refs") {
           const consumo = {
             eq(coluna: string, valor: unknown) {
@@ -163,6 +197,9 @@ const admin = {
             return consulta;
           },
           async maybeSingle() {
+            if (tabela === "contacts" && _colunas === "is_personal") {
+              return { data: { is_personal: caminhoWaha === "pessoal" }, error: null };
+            }
             if (tabela !== "messages") return { data: null, count: null, error: null };
             sequencia.push("select:messages");
             return {
@@ -205,6 +242,10 @@ const admin = {
     rpcChamadas.push({ nome, args });
     ultimaRpc = args;
     sequencia.push(`rpc:${args.p_event_type ?? nome}`);
+    if (nome === "fn_upsert_wa_contact") return { data: "contato-1", error: null };
+    if (nome === "fn_upsert_wa_conversation") {
+      return { data: caminhoWaha === "sem conversa" ? null : "conversa-1", error: null };
+    }
     return { error: rpcErro };
   },
 } as never;
@@ -237,6 +278,9 @@ beforeEach(() => {
   rpcChamadas = [];
   filtrosDeMessages = [];
   refCasado = { utm: { utm_campaign: "black-friday", utm_ad: "video-depoimento-v3" } };
+  refGoogleCasado = null;
+  caminhoWaha = "comercial";
+  filtrosDoRefGoogle = {};
   filtrosDoRef = {};
   leadsAbertos = [];
   leadsErro = null;
@@ -330,6 +374,14 @@ describe("opt-out", () => {
     "preciso sair mais cedo da consulta",
     "quero parar o tratamento por enquanto",
     "dá pra parar o sangramento em casa?",
+    // #4579 — no atendimento, "cancelar" sozinho é a resposta a um menu
+    // ("confirmar, remarcar ou cancelar?") e "cancelar a inscrição" é a
+    // matrícula do curso. Nenhuma das duas pode gravar `is_blocked` na
+    // ingestão nem marcar negócio como perdido.
+    "cancelar",
+    "Cancelar.",
+    "quero cancelar a inscrição",
+    "posso cancelar a inscrição e voltar depois?",
   ])("NÃO bloqueia quem usa a palavra falando de outra coisa: %s", async (texto) => {
     // A palavra ISOLADA não é o sinal — a INTENÇÃO de parar de receber mensagem é.
     // Medido numa clínica: "tem como parar a dor?" bloqueava o paciente na ingestão,
@@ -338,6 +390,9 @@ describe("opt-out", () => {
     expect(sequencia, `bloqueou "${texto}", que não é pedido de descadastro`).not.toContain(
       "update:contacts",
     );
+    expect(sequencia, `encerrou demandas de "${texto}", que não é pedido de descadastro`).not.toContain(
+      "encerra:lead-a",
+    );
   });
 
   it.each([
@@ -345,7 +400,7 @@ describe("opt-out", () => {
     "para de me mandar isso",
     "não quero mais receber nada de vocês",
     "me tira dessa lista",
-    "quero cancelar a inscrição",
+    "quero cancelar a inscrição das mensagens",
   ])("bloqueia o pedido de descadastro escrito por extenso: %s", async (texto) => {
     // O outro lado do mesmo defeito: a regex antiga só via a palavra solta, então
     // "não quero mais receber" — opt-out inequívoco — passava batido.
@@ -692,8 +747,10 @@ describe("os dois canais usam o mesmo passo", () => {
     // A ingestão resolve a conversa por dois caminhos — thread conhecida e
     // âncora — e o primeiro é o mais comum. Chamar só no segundo deixaria a
     // maioria das mensagens sem nenhum dos três efeitos.
+    // A terceira chamada é a retomada do reprocessamento, provada em
+    // `channel-ingest-zernio.test.ts`.
     const chamadas = [...ZERNIO.matchAll(/await efeitosDaEntrada\(/g)];
-    expect(chamadas.length, "faltou o passo em um dos caminhos").toBe(2);
+    expect(chamadas.length, "faltou o passo em um dos caminhos").toBe(3);
   });
 
   it("o canal intermediado só aplica os efeitos na ENTRADA", () => {
@@ -973,6 +1030,114 @@ describe("o ref curto da página que veio no texto", () => {
 
     expect(sequencia).not.toContain("update:meta_ads_click_refs");
     expect(nomesDeRpc()).toContain("fn_estampar_atribuicao_de_anuncio");
+  });
+});
+
+describe("referência Google recebida pelo webhook WAHA (#4631)", () => {
+  const textoComRef = "Olá [ref:K7M2P9]";
+  const clique = { gclid: "clique", query_raw: { utm_campaign: "Campanha atual" } };
+
+  async function receber(texto = textoComRef) {
+    const { dispatchWahaEvent } = await import("@/lib/waha/ingest");
+    await dispatchWahaEvent(admin, { id: "sessao-1", organization_id: "org-1" } as never, {
+      event: "message.any",
+      session: "default",
+      payload: { id: "id-sintetico", from: "5511999999999@c.us", fromMe: false, body: texto },
+    }, "req-1");
+  }
+
+  it.each(["sem conversa", "pessoal", "módulo"] as const)(
+    "%s: registra a origem do contato sem abrir negócio nem acionar o agente",
+    async (caminho) => {
+      caminhoWaha = caminho;
+      refGoogleCasado = clique;
+      if (caminho === "módulo") {
+        vi.spyOn(desvios, "moduloQueAssumeAEntrada").mockResolvedValueOnce({ modulo: "ouvidoria", motivo: "tratado" });
+      }
+      await receber();
+      expect(rpcChamadas.filter(({ nome }) => nome === "fn_estampar_atribuicao_de_anuncio")).toEqual([
+        { nome: "fn_estampar_atribuicao_de_anuncio", args: expect.objectContaining({
+          p_org: "org-1", p_contact: "contato-1", p_platform: "google_ads",
+          p_metadata: expect.objectContaining({ utm_campaign: "Campanha atual" }),
+        }) },
+      ]);
+      expect(garantirLeadDaConversa).not.toHaveBeenCalled();
+      expect(sequencia).not.toContain("rpc:ai_agent.dispatch_requested");
+    },
+  );
+
+  it("usa o clique uma única vez e leva a campanha da mensagem ao negócio", async () => {
+    refGoogleCasado = clique;
+    await receber();
+    expect(sequencia.filter((passo) => passo === "update:google_ads_click_refs")).toHaveLength(1);
+    expect(garantirLeadDaConversa).toHaveBeenCalledExactlyOnceWith(admin, expect.objectContaining({
+      atribuicaoDaMensagem: expect.objectContaining({
+        plataforma: "google_ads", metadadosDaCampanha: { utm_campaign: "Campanha atual" },
+      }),
+    }));
+  });
+
+  it("a entrega duplicada não consome um clique ainda livre", async () => {
+    caminhoWaha = "reentrega";
+    refGoogleCasado = clique;
+    await receber();
+    expect(sequencia).toContain("rpc:fn_upsert_wa_conversation");
+    expect(sequencia).not.toContain("update:google_ads_click_refs");
+    expect(garantirLeadDaConversa).not.toHaveBeenCalled();
+    expect(refGoogleCasado).toEqual(clique);
+  });
+
+  it("quando o recibo é de site, consulta o Google uma vez e conserva a origem do site", async () => {
+    await receber();
+    expect(sequencia.filter((passo) => passo === "update:google_ads_click_refs")).toHaveLength(1);
+    expect(sequencia).toContain("update:meta_ads_click_refs");
+    expect(rpcChamadas).toContainEqual({
+      nome: "fn_estampar_atribuicao_de_anuncio",
+      args: expect.objectContaining({ p_platform: "site" }),
+    });
+  });
+
+  it("sem referência, segue o atendimento sem consultar os recibos do Google", async () => {
+    await receber("Bom dia");
+    expect(garantirLeadDaConversa).toHaveBeenCalledTimes(1);
+    expect(sequencia).not.toContain("update:google_ads_click_refs");
+  });
+});
+
+describe("o clique Google é tratado pelo caminho comum dos canais", () => {
+  it.each(["waha_webhook", "meta_cloud_webhook", "zernio_webhook"])(
+    "%s leva a campanha ao nascimento, inclusive contato antigo ainda sem origem",
+    async (origem) => {
+      historicoDoContato = { id: "mensagem-antiga", count: 10 };
+      refGoogleCasado = { gclid: "clique", query_raw: {
+        utm_campaign: "Campanha atual", utm_adset: "Grupo", campaignid: "123", adgroupid: "456",
+      } };
+      garantirLeadDaConversa.mockImplementationOnce(async (...args: unknown[]) => {
+        expect(sequencia).toContain("rpc:fn_estampar_atribuicao_de_anuncio");
+        expect(args[1]).toMatchObject({ atribuicaoDaMensagem: {
+          plataforma: "google_ads", metadadosDaCampanha: {
+            utm_campaign: "Campanha atual", utm_adset: "Grupo", google_campaign_id: "123", google_adgroup_id: "456",
+          },
+        } });
+        return { criado: true, leadId: "lead-1" } as never;
+      });
+      await rodar({ origem, texto: "Olá [ref:K7M2P9]" });
+      expect(garantirLeadDaConversa).toHaveBeenCalledTimes(1);
+      expect(filtrosDoRefGoogle).toMatchObject({ organization_id: "org-1", token: "K7M2P9", matched_at: null });
+      expect(sequencia).not.toContain("update:meta_ads_click_refs");
+      expect(filtrosDeMessages).toEqual([]);
+    },
+  );
+
+  it("sem ref não consulta a tabela de cliques Google", async () => {
+    await rodar();
+    expect(sequencia).not.toContain("update:google_ads_click_refs");
+  });
+  it("ref recebido em rede social não consome clique reservado ao WhatsApp", async () => {
+    refGoogleCasado = { gclid: "clique", query_raw: { utm_campaign: "Real" } };
+    await rodar({ canal: "instagram", texto: "Olá [ref:K7M2P9]" });
+    expect(sequencia).not.toContain("update:google_ads_click_refs");
+    expect(refGoogleCasado).not.toBeNull();
   });
 });
 

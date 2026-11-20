@@ -3,8 +3,10 @@ import { NextRequest } from "next/server";
 
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { fail } from "@/lib/api/wrappers";
 import type { AuthUser } from "@/lib/auth/types";
+import { validateBearerToken } from "@/lib/mcp/auth";
 
 /**
  * Task 5 (Fase 2 skills instaláveis) — GET /api/v1/ai/skills:
@@ -12,10 +14,20 @@ import type { AuthUser } from "@/lib/auth/types";
  *  - installed = pointers da org (join descrição + source manual/catalog pelo
  *    forked_from_version_id); catalog = pointers de plataforma cujo name NÃO
  *    está em installed.
+ *
+ * O handler agora resolve auth por `resolveAuthDual` (sessão OU token).
+ * Na sessão, `createClient()` é usado; no token, `createAdminClient()` e
+ * `validateBearerToken()`. Os testes de sessão mantêm `requireRole` e ganham
+ * `createClient` mockado com o mesmo dublê que `createAdminClient`.
  */
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
+vi.mock("@/lib/mcp/auth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/mcp/auth")>()),
+  validateBearerToken: vi.fn(),
+}));
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -34,11 +46,31 @@ interface Stubs {
   }>;
   versionsError?: unknown;
   rejectNullVersionIds?: boolean;
+  /** Skills por agente (9107): agentes vivos e a versão publicada de cada um. */
+  agentes?: Array<{ id: string; name: string; published_version_id: string }>;
+  versoesDosAgentes?: Array<{ id: string; skill_names: string[] }>;
+  agentesError?: unknown;
 }
 
 function makeAdminStub(cfg: Stubs) {
   return {
     from(table: string) {
+      if (table === "ai_agents" || table === "ai_agent_versions") {
+        const resposta =
+          table === "ai_agents"
+            ? { data: cfg.agentes ?? [], error: cfg.agentesError ?? null }
+            : { data: cfg.versoesDosAgentes ?? [], error: null };
+        const q = {
+          select: () => q,
+          eq: () => q,
+          is: () => q,
+          not: () => q,
+          in: () => q,
+          then: (onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) =>
+            Promise.resolve(resposta).then(onF, onR),
+        };
+        return q;
+      }
       if (table !== "skill_pointers" && table !== "skill_versions") {
         throw new Error(`unexpected table ${table}`);
       }
@@ -55,20 +87,29 @@ function makeAdminStub(cfg: Stubs) {
           if (col === "organization_id") isNullOrg = true;
           return b;
         },
-        in(_column: string, values: unknown[]) {
-          if (cfg.rejectNullVersionIds && values.some((value) => value === null)) {
-            return Promise.resolve({
-              data: null,
-              error: { message: "invalid input syntax for type uuid" },
-            });
-          }
-          return Promise.resolve({ data: cfg.versions ?? [], error: cfg.versionsError ?? null });
+        in(_column: string, _values: unknown[]) {
+          return b;
+        },
+        or(_expression: string) {
+          return b;
         },
         then(onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) {
           if (table === "skill_pointers" && !isNullOrg) {
             return Promise.resolve({
               data: cfg.orgPointers ?? [],
               error: cfg.orgPointersError ?? null,
+            }).then(onF, onR);
+          }
+          if (table === "skill_versions") {
+            if (cfg.rejectNullVersionIds) {
+              return Promise.resolve({
+                data: null,
+                error: { message: "invalid input syntax for type uuid" },
+              }).then(onF, onR);
+            }
+            return Promise.resolve({
+              data: cfg.versions ?? [],
+              error: cfg.versionsError ?? null,
             }).then(onF, onR);
           }
           return Promise.resolve({
@@ -97,6 +138,8 @@ function mockAuthzOk() {
     user,
     org: { orgId: ORG_ID, name: "Org", role: "agent" },
   });
+  vi.mocked(createClient).mockResolvedValue(makeAdminStub({}) as never);
+  vi.mocked(validateBearerToken).mockResolvedValue(null as never);
 }
 
 function getReq() {
@@ -105,6 +148,39 @@ function getReq() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+describe("GET /api/v1/ai/skills — agentes com lista própria (9107)", () => {
+  it("devolve os agentes cuja versão publicada escolheu as próprias skills", async () => {
+    mockAuthzOk();
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeAdminStub({
+        agentes: [
+          { id: "a-lia", name: "Lia", published_version_id: "v-lia" },
+          { id: "a-nina", name: "Nina", published_version_id: "v-nina" },
+        ],
+        // A Nina não vem: versão com `skill_names` null (todas) fica fora da consulta.
+        versoesDosAgentes: [{ id: "v-lia", skill_names: ["visita-ao-imovel"] }],
+      }) as never,
+    );
+    const { GET } = await import("./route");
+    const res = await GET(getReq());
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { agentes_com_lista_propria: unknown } };
+    expect(body.data.agentes_com_lista_propria).toEqual([
+      { id: "a-lia", name: "Lia", skill_names: ["visita-ao-imovel"] },
+    ]);
+  });
+
+  it("erro ao ler os agentes vira 500 — nunca uma lista vazia que diria 'vale para todos'", async () => {
+    mockAuthzOk();
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeAdminStub({ agentesError: { message: "connection terminated" } }) as never,
+    );
+    const { GET } = await import("./route");
+    const res = await GET(getReq());
+    expect(res.status).toBe(500);
+  });
 });
 
 describe("GET /api/v1/ai/skills", () => {

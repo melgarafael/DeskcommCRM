@@ -43,6 +43,12 @@ import {
   type FerramentaRemota,
 } from "./chamada";
 import { escolhasRemotas } from "./ids";
+import {
+  CONEXAO_COMPARTILHADA,
+  escritasLiberadasDaConexao,
+  lerEscritaLiberada,
+} from "./escrita-liberada";
+import { TIMEOUT_DA_DESCOBERTA_NO_TURNO_MS } from "./tempos-do-turno";
 import { hostDoEndpoint, lerEndpointMcpExterno, type ServidorMcpExterno } from "./registro";
 import { abrirChaveMcpExterno } from "./segredo";
 
@@ -69,6 +75,13 @@ export interface ServidorMcpExternoMontado {
   contato?: string;
   /** A identidade do contato (`CABECALHOS_DO_CONTATO`), lida do banco. */
   cabecalhos?: Readonly<Record<string, string>>;
+  /**
+   * As ferramentas de ESCRITA liberadas para ESTA conexão (#4445), já filtradas
+   * de `organizations.settings.mcp_externo_escrita` por
+   * `escrita-liberada.ts`. Ausente/vazia = nenhuma escrita roda no atendimento,
+   * que é o estado em que toda instalação nasce.
+   */
+  escritasLiberadas?: readonly string[];
 }
 
 export interface OpcoesDeCarga {
@@ -83,6 +96,12 @@ export interface OpcoesDeCarga {
   conversaDoTurno?: string;
   /** `fetch` de saída para a descoberta — teste stuba o ERP em `127.0.0.1`. */
   fetch?: FetchLike;
+  /**
+   * Teto da descoberta (`initialize` + `tools/list`). Ausente = o default do
+   * cliente (15 s por passo). O TURNO passa o dele, curto — ver
+   * `tempos-do-turno.ts`; o cadastro ("Testar conexão") segue sem passar nada.
+   */
+  timeoutMs?: number;
 }
 
 /** Canal como texto curto de banco — nada que quebre a linha do cabeçalho. */
@@ -99,7 +118,7 @@ const CANAL_VALIDO = /^[a-z_]{1,32}$/;
  * ela não resolve — ele é contexto, não identidade, e por isso a falha dele
  * não fecha a carga.
  */
-async function cabecalhosDoContato(
+export async function cabecalhosDoContato(
   supabase: SupabaseClient,
   organizationId: string,
   contatoId: string,
@@ -198,6 +217,7 @@ export async function carregarServidorMcpExterno(
     const ferramentas = await listarFerramentasDoServidor(servidor, {
       ...(opcoes?.fetch ? { fetch: opcoes.fetch } : {}),
       ...(cabecalhos ? { cabecalhos } : {}),
+      ...(opcoes?.timeoutMs !== undefined ? { timeoutMs: opcoes.timeoutMs } : {}),
     });
     if (ferramentas.length === 0) {
       logger.warn("servidor MCP externo registrado nao anunciou nenhuma ferramenta", {
@@ -208,9 +228,17 @@ export async function carregarServidorMcpExterno(
       });
       return null;
     }
+    // A liberação de ESCRITA (#4445) vem do MESMO jsonb, lida pela MESMA
+    // linha da organização deste turno — lista explícita por conexão
+    // (`compartilhado`, aqui). Sem bolso configurado, `[]`: nenhuma
+    // escrita remota roda no atendimento, e o turno é o de antes.
+    const escritasLiberadas = escritasLiberadasDaConexao(
+      lerEscritaLiberada(linha?.settings),
+      CONEXAO_COMPARTILHADA,
+    );
     return contato && cabecalhos
-      ? { servidor, ferramentas, contato, cabecalhos }
-      : { servidor, ferramentas };
+      ? { servidor, ferramentas, contato, cabecalhos, escritasLiberadas }
+      : { servidor, ferramentas, escritasLiberadas };
   } catch (err) {
     logger.warn("servidor MCP externo registrado nao respondeu — turno segue sem as ferramentas dele", {
       organization_id: organizationId,
@@ -243,5 +271,11 @@ export async function carregarServidorMcpExternoDoTurno(
   opcoes?: OpcoesDeCarga,
 ): Promise<ServidorMcpExternoMontado | null> {
   if (escolhasRemotas(toolIds).length === 0) return null;
-  return carregarServidorMcpExterno(supabase, organizationId, opcoes);
+  // O orçamento do TURNO, e não o do cadastro: descoberta de ERP mudo aqui
+  // acontece ANTES do primeiro token, com o cliente esperando. Ver
+  // `tempos-do-turno.ts` — o "Testar conexão" da tela não passa por esta porta.
+  return carregarServidorMcpExterno(supabase, organizationId, {
+    ...opcoes,
+    timeoutMs: opcoes?.timeoutMs ?? TIMEOUT_DA_DESCOBERTA_NO_TURNO_MS,
+  });
 }

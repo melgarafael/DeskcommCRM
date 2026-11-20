@@ -39,21 +39,34 @@ import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 // O `@sentry/nextjs` funciona fora do Next — aqui é só `Sentry.init` puro,
 // sem `instrumentation.ts` porque o worker não é um processo Next.
 import * as Sentry from "@sentry/nextjs";
-import { resolveSentryDsn, isCommunityDsn, DEFAULT_SENTRY_DSN } from "@/lib/sentry/dsn";
+import {
+  resolveSentryDsn,
+  isCommunityDsn,
+  DEFAULT_SENTRY_DSN,
+  integracoesDoServidor,
+} from "@/lib/sentry/dsn";
 import { opcoesDePrivacidade } from "@/lib/sentry/privacidade";
 
 const sentryDsn = resolveSentryDsn(process.env.SENTRY_DSN);
 const sentryCommunity = isCommunityDsn(sentryDsn);
 
-Sentry.init({
-  dsn: sentryDsn,
+// O worker é quem roda o turno do agente, inclusive o ramo da assinatura do
+// ChatGPT (`streamText` com tools, run-model-call.ts:1131). Sem DSN, nada de
+// Sentry aqui; com DSN, sem a integração do AI SDK — é ela que trava o stream
+// (#4798). Ver `integracoesDoServidor`, com o porquê e o tradeoff.
+if (sentryDsn) {
+  Sentry.init({
+    dsn: sentryDsn,
 
-  // No Sentry da comunidade, só erro (issue #100). Ver isCommunityDsn().
-  tracesSampleRate: sentryCommunity ? 0 : 1,
+    // No Sentry da comunidade, só erro (issue #100). Ver isCommunityDsn().
+    tracesSampleRate: sentryCommunity ? 0 : 1,
 
-  // Coleta restrita + scrub, num ponto só (Sentry 11 coleta amplo por default).
-  ...opcoesDePrivacidade,
-});
+    integrations: integracoesDoServidor,
+
+    // Coleta restrita + scrub, num ponto só (Sentry 11 coleta amplo por default).
+    ...opcoesDePrivacidade,
+  });
+}
 
 // Transparência de telemetria (mesma mensagem de sentry.server.config.ts,
 // adaptada para o processo worker): uma linha no boot dizendo o que está
@@ -81,6 +94,7 @@ import {
 } from "@/lib/agent-engine/agent/followup-turn";
 import { createCaseReplyTurnHandler } from "@/lib/agent-engine/agent/case-reply-turn";
 import { createOperatorTurnHandler } from "@/lib/agent-engine/agent/operator-turn";
+import { createHistoryAnalysisHandler } from "@/lib/agent-engine/agent/history-analysis";
 import { completeTurnForEnrollment, createPgAdminClient } from "@/lib/followup/turn-bridge";
 import { seedPlatformPlaybook } from "@/lib/agent-engine/agent/playbook-seed";
 import { runCronLoop } from "@/lib/agent-engine/cron/scheduler";
@@ -644,6 +658,22 @@ export async function startWorker(
       },
     );
   }
+  // Teto abaixo do piso (#3878): o laço grampeia no piso — recuo nunca acelera —
+  // mas o operador precisa saber que o valor que ele escreveu não está em vigor.
+  // Sem esta linha, `QUEUE_IDLE_MAX_INTERVAL_MS=500` com piso 2000 pareceria
+  // "recuo ligado" e não faria nada.
+  if (
+    env.QUEUE_IDLE_MAX_INTERVAL_MS !== undefined &&
+    env.QUEUE_IDLE_MAX_INTERVAL_MS < env.QUEUE_POLL_INTERVAL_MS
+  ) {
+    log.warn(
+      "QUEUE_IDLE_MAX_INTERVAL_MS abaixo de QUEUE_POLL_INTERVAL_MS — o piso manda: o recuo não acelera a fila",
+      {
+        poll_ocioso_ms: env.QUEUE_POLL_INTERVAL_MS,
+        poll_ocioso_teto_ms: env.QUEUE_IDLE_MAX_INTERVAL_MS,
+      },
+    );
+  }
   await stopped;
 }
 
@@ -688,6 +718,9 @@ export async function main(): Promise<void> {
   // worker que não conhecesse o kind faria os jobs morrerem em 'dead' sem que
   // ninguém entendesse por quê.
   handlers.set("operator_turn", createOperatorTurnHandler(turnDeps));
+  // Histórico importado: só checkpoint/BANT/score. O handler não recebe
+  // adapter de canal nem tools, portanto não tem por onde falar com o cliente.
+  handlers.set("history_analysis", createHistoryAnalysisHandler(turnDeps));
   await startWorker(env, handlers, log);
 }
 

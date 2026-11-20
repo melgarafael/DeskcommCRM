@@ -18,6 +18,10 @@ import { ROLE_RANK } from "@/lib/auth/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Role } from "@/lib/auth/types";
 import { duplicateAgentWithVersion } from "@/lib/ai/agents/duplicate";
+import {
+  CODIGO_NOME_DE_AGENTE_EM_USO,
+  ehNomeDeAgenteRepetido,
+} from "@/lib/ai/agents/nome-repetido";
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -198,7 +202,13 @@ export async function renameAgentAction(id: string, name: string): Promise<Actio
     .update({ name: trimmed, updated_at: new Date().toISOString() })
     .eq("id", id)
     .eq("organization_id", activeOrg.orgId);
-  if (error) return { ok: false, error: "internal_error", message: error.message };
+  if (error) {
+    // Renomear para um nome já usado na organização fura o mesmo índice
+    // `ai_agents_name_unique` da criação (#3952): o diálogo marca o campo com a
+    // frase em vez de dizer "Falha: internal_error".
+    if (ehNomeDeAgenteRepetido(error)) return { ok: false, error: CODIGO_NOME_DE_AGENTE_EM_USO };
+    return { ok: false, error: "internal_error", message: error.message };
+  }
 
   void audit({
     action: "ai_agent.updated",

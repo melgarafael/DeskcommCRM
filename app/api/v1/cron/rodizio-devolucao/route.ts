@@ -32,26 +32,23 @@
  *
  * ## As três escritas, e por que NESTA ordem
  *
- * 1. A marca em `conversations.metadata` vem PRIMEIRO. Soltar o dono não é um
- *    evento local: `fn_conversation_assign` faz o UPDATE de `conversations` e o
- *    gatilho `trg_routing_assignment_changed` (`after update of
- *    assigned_to_user_id,status`) JÁ chama `fn_request_channel_routing` na
- *    MESMA transação. Ou seja: o pedido de rodízio nasce no commit do release —
- *    a frase antiga deste cabeçalho (que o gatilho de emissão era só AFTER
- *    INSERT) estava errada. Com o pedido nascendo ali, marcar DEPOIS deixava uma
- *    janela em que o `routing-worker` (1×/min) pegava o pedido sem a exclusão de
- *    24 h e reentregava a conversa à MESMA pessoa. Marcando antes, o pedido
- *    nunca existe sem a marca.
+ * 1. A marca em `conversations.metadata` vem PRIMEIRO. Desde a migration 9346
+ *    (#3937 — decisão do mantenedor: "Liberar" não pede rodízio) o gatilho
+ *    `trg_routing_assignment_changed` NÃO emite mais nada quando a conversa só
+ *    perde o dono; ele emite apenas na REABERTURA (`old.status` terminal). Quem
+ *    pede o rodízio nesta devolução é o passo 3, explícito. A ordem continua
+ *    marca → release → pedido e o motivo do passo 1 não mudou: o pedido nunca
+ *    pode existir sem a exclusão de 24 h, senão o `routing-worker` (1×/min)
+ *    reentrega a conversa à MESMA pessoa.
  * 2. `fn_conversation_assign(..., 'release')` com `p_enforce_expected: true` e o
  *    dono LIDO como esperado: quem assumiu a conversa entre a leitura e a
  *    escrita ganha a corrida (0 linhas) — e a marca é DESFEITA, porque marcar
  *    uma devolução que não aconteceu tiraria a pessoa da conversa sem devolvê-la.
  *    É a MESMA função do botão "Liberar" da tela — não há régua paralela de
  *    atribuição aqui.
- * 3. `fn_request_channel_routing` — REDUNDANTE e inofensivo: o gatilho do passo 2
- *    já pediu o rodízio. Fica como cinto de segurança para o caso de o gatilho
- *    não existir (banco antigo) e é idempotente: o `on conflict` do índice único
- *    de evento ativo só reancora `next_attempt_at`.
+ * 3. `fn_request_channel_routing` — DEPOIS da 9346 é ele quem pede o rodízio (o
+ *    gatilho do passo 2 deixou de emitir no release). Continua idempotente: o
+ *    `on conflict` do índice único de evento ativo só reancora `next_attempt_at`.
  *
  * ## A trava das 3 horas
  *
@@ -71,6 +68,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 import {
   avaliarEntregaAoRodizio,
   CHAVE_DA_DEVOLUCAO_AO_RODIZIO,
@@ -241,9 +239,9 @@ async function devolverAoRodizio(
   const liberada = Array.isArray(liberadas) ? liberadas[0] : liberadas;
   if (!liberada) return desfazerMarca("assignment_conflict");
 
-  // (3) Devolve a conversa AO RODÍZIO. Redundante: o gatilho do release já
-  // pediu, na transação do passo 2. Fica como cinto de segurança para banco sem
-  // o gatilho, e o `on conflict` do índice único de evento ativo o torna inócuo.
+  // (3) Devolve a conversa AO RODÍZIO. Desde a 9346 (#3937) é ESTE passo quem
+  // pede — o gatilho do release deixou de emitir no unassign. O `on conflict` do
+  // índice único de evento ativo mantém a chamada idempotente.
   const { error: routingErr } = await admin.rpc("fn_request_channel_routing", {
     p_org: conversa.organization_id,
     p_conversation: conversa.id,
@@ -345,12 +343,35 @@ export async function devolverConversasAoRodizio(
   return { organizacoes: prazoPorOrg.size, examinadas: linhas.length, devolvidas, falhas };
 }
 
+/**
+ * O QUE RODA DEPOIS DO PORTÃO DO PISO OCIOSO (#3773), na ordem do arquivo.
+ *
+ * O portão abaixo é saída antecipada da ROTA INTEIRA: em instalação ociosa a
+ * rota sai antes de tudo isto. `tests/unit/cron-passa-pelo-portao.test.ts` lê o
+ * AST deste arquivo e reprova quando o que está de fato abaixo do portão diverge
+ * desta lista — passo novo que não roda na instalação parada não pode nascer
+ * sem alguém ver.
+ */
+const PASSOS_DEPOIS_DO_PORTAO = [
+  "let resultado",
+  "try",
+  "if (resultado.devolvidas > 0 || resultado.falhas > 0)",
+  "return",
+] as const;
+void PASSOS_DEPOIS_DO_PORTAO;
+
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
   if (!autorizaCron(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
+
+  // O PISO OCIOSO (#3731): Sem conversa atribuída não há entrega do rodízio para desfazer.
+  // A saída vem antes de qualquer consulta da rodada, e o portão responde de um
+  // retrato em memória (`lib/cron/piso-ocioso.ts`): esta rota ia ao PostgREST a
+  // cada batida só para descobrir que a fila está vazia.
+  if (await recursoOcioso("devolucao_ao_rodizio")) return ok({ pulado: "recurso_ocioso" }, { requestId });
 
   let resultado: DevolucaoAoRodizioResultado;
   try {

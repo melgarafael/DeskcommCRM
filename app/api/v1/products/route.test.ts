@@ -7,6 +7,8 @@ import { createClient } from "@/lib/supabase/server";
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
+vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: vi.fn() }));
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
@@ -20,7 +22,7 @@ let orgIdLido: string | null = null;
  * Supabase de mentira com as DUAS tabelas que a rota toca: lê a moeda em
  * `organizations` e grava em `catalog_products`.
  */
-function supabaseCom(moedaDaOrg: string | null) {
+function supabaseCom(moedaDaOrg: string | null, capacidadeLigada = false) {
   return {
     from: (tabela: string) => {
       if (tabela === "organizations") {
@@ -30,7 +32,10 @@ function supabaseCom(moedaDaOrg: string | null) {
               orgIdLido = valor;
               return {
                 maybeSingle: async () => ({
-                  data: moedaDaOrg === null ? null : { currency: moedaDaOrg },
+                  data:
+                    moedaDaOrg === null
+                      ? null
+                      : { currency: moedaDaOrg, settings: { catalogo: { capacidade: capacidadeLigada } } },
                   error: null,
                 }),
               };
@@ -180,6 +185,28 @@ function supabaseDeLeitura(linhas: unknown[], total: number) {
 function listar(qs: string): NextRequest {
   return new NextRequest(`http://localhost/api/v1/products${qs}`, { method: "GET" });
 }
+
+describe("POST /api/v1/products — a capacidade obedece à chave da empresa", () => {
+  it("desligada, recusa com 422 e não grava", async () => {
+    vi.mocked(createClient).mockResolvedValue(supabaseCom("BRL") as never);
+    const { POST } = await import("./route");
+
+    const resposta = await POST(pedido({ ...PRODUTO, capacidade: "256GB" }));
+
+    expect(resposta.status).toBe(422);
+    expect(inserido).toBeNull();
+  });
+
+  it("ligada, grava", async () => {
+    vi.mocked(createClient).mockResolvedValue(supabaseCom("BRL", true) as never);
+    const { POST } = await import("./route");
+
+    const resposta = await POST(pedido({ ...PRODUTO, capacidade: "256GB" }));
+
+    expect(resposta.status).toBe(201);
+    expect(inserido).toMatchObject({ capacidade: "256GB" });
+  });
+});
 
 describe("GET /api/v1/products — o catálogo inteiro, não os 500 primeiros", () => {
   it("sem `pagina`, responde como sempre: até 500 linhas e sem `meta`", async () => {

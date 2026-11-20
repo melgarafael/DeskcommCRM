@@ -92,6 +92,12 @@ const ESCRITORES: Record<string, { agenda: "agora" | "futuro" | "nenhum"; nota: 
       "ele é conduzido pelo turno do agente e não tem relógio (o CHECK `relogio_coerente` o põe " +
       "no grupo sem relógio). Omitir a coluna daria o default now() — nulo é não agendar.",
   },
+  "encerrar-pela-recusa.ts": {
+    agenda: "nenhum",
+    nota:
+      "Só DESAGENDA: o \"não tenho interesse\" na prospecção cancela a inscrição da prospecção " +
+      "gravando `next_eval_at = null`. Mesmo caso de `saida-da-etapa.ts` — `null` não tem relógio.",
+  },
   "saida-da-etapa.ts": {
     agenda: "nenhum",
     nota:

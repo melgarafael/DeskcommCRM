@@ -388,6 +388,9 @@ describe("códigos que o handler grava", () => {
       notConfigured: "zernio_not_configured",
       sendFailed: "zernio_error",
       unknownError: "zernio_unknown",
+      // O pedido de DESACELERAR do canal (131056, 429). Código próprio porque o
+      // desfecho é outro: `queued` e nova tentativa, não `failed`.
+      throttled: "zernio_throttled",
     });
   });
 });

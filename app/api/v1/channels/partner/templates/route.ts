@@ -53,6 +53,7 @@ import type { Idioma } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { acaoApagarSchema, acaoEditarSchema, executarGestao } from "@/lib/channels/gestao-de-modelos";
+import { limparModelosDeOutraConta } from "@/lib/channels/modelos-de-outra-conta";
 
 export const dynamic = "force-dynamic";
 
@@ -259,6 +260,36 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
     const admin = createAdminClient();
     const agora = new Date().toISOString();
+
+    // ─── SINCRONIZAR É ESPELHAR, NÃO SÓ ACRESCENTAR ──────────────────────────
+    //
+    // O laço abaixo faz `upsert` do que o provedor devolveu. Sozinho, ele nunca
+    // TIRA nada — e foi assim que uma instalação real ficou com os modelos de
+    // uma conta anterior listados sob o número novo: a linha da conexão foi
+    // reapontada para outra conta, e os modelos velhos seguiram ali, com o
+    // `waba_id` antigo, porque nada os apagava.
+    //
+    // Modelo aprovado pertence a uma conta ESPECÍFICA: usar um da conta errada
+    // é recusa certa da plataforma, com a tela dizendo "aprovado". Por isso o
+    // que não é desta conta sai — e só isso. Modelo desta conta que o provedor
+    // não devolveu FICA: a lista pode vir curta por erro transitório, e apagar
+    // por ausência trocaria um defeito visível por perda silenciosa.
+    const apagados = await limparModelosDeOutraConta(admin, {
+      organizationId: r.ctx.orgId,
+      sessionId: r.ctx.sessionId,
+      accountId: r.ctx.sessionRef,
+    });
+    if (apagados > 0) {
+      await audit({
+        action: "template.deleted",
+        actorUserId: r.ctx.userId,
+        organizationId: r.ctx.orgId,
+        resourceType: "channel_session",
+        resourceId: r.ctx.sessionId,
+        requestId,
+        metadata: { motivo: "conta_trocada", apagados },
+      });
+    }
 
     let gravadas = 0;
     for (const t of remotas) {

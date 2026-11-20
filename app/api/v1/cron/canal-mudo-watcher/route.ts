@@ -38,6 +38,10 @@ import {
   type CanalParaAvaliar,
   type MotivoDaResolucao,
 } from "@/lib/channels/canal-mudo";
+import { REDES_COM_TESTADOR_SOCIAL } from "@/lib/ai/elegibilidade/pre-go-live";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoAviso, preencher } from "@/lib/i18n/idioma-do-aviso";
+import type { Idioma } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
@@ -47,12 +51,61 @@ export const dynamic = "force-dynamic";
 /** Teto por rodada. Leitura de banco, sem rede — cabe folgado numa instalação real. */
 const LIMITE = 500;
 
-/** O que o corpo do aviso diz a quem abre a Central. Sem jargão e com a saída. */
-const CORPO_DO_AVISO =
-  "Este canal está em modo de teste e não tem nenhum número autorizado, " +
-  "então a IA não responde a ninguém nele — as mensagens chegam no Inbox e " +
-  "ficam sem resposta automática. Em Conexões, autorize os números de teste " +
-  "ou abra o canal ao público.";
+/**
+ * O que o cron lê de cada conexão: a regra (`CanalParaAvaliar`) e o que o
+ * TEXTO precisa — o nome e a rede. Sem o nome, quem tem dois canais lê "este
+ * canal" e pensa no principal, que responde normalmente (#4909).
+ */
+type CanalLido = CanalParaAvaliar & {
+  display_name?: string | null;
+  phone_number?: string | null;
+};
+
+/**
+ * Rede social (Instagram, Facebook…) autoriza CONTAS de teste, não números
+ * (`ai_test_social_identities`). A lista de redes é a mesma do pré-go-live.
+ */
+function ehCanalSocial(canal: CanalLido | undefined): boolean {
+  const rede = canal?.metadata?.["social_platform"];
+  return typeof rede === "string" && REDES_COM_TESTADOR_SOCIAL.includes(rede);
+}
+
+/** Como a pessoa reconhece a conexão: o nome dado em Conexões, ou o número. */
+function nomeDoCanal(canal: CanalLido): string | null {
+  for (const v of [canal.display_name, canal.phone_number]) {
+    if (typeof v === "string" && v.trim() !== "") return v.trim();
+  }
+  return null;
+}
+
+/** O título diz QUAL canal; sem nome gravado, fica a frase de antes. */
+function tituloDoAviso(canal: CanalLido, idioma: Idioma): string {
+  const nome = nomeDoCanal(canal);
+  if (nome === null) {
+    return traduzir("Este canal está em modo de teste — a IA não responde ninguém", idioma);
+  }
+  return preencher(
+    traduzir("O canal «{canal}» está em modo de teste — a IA não responde ninguém nele", idioma),
+    { canal: nome },
+  );
+}
+
+/**
+ * O que o corpo do aviso diz a quem abre a Central. Sem jargão e com a saída.
+ * Sai no idioma da organização: a Central mostra o texto como foi gravado.
+ * Em rede social a lista é de contas, e mandar "autorizar números" mandaria
+ * procurar um campo que aquela conexão não tem.
+ */
+const corpoDoAviso = (idioma: Idioma, social: boolean): string =>
+  social
+    ? traduzir(
+        "Este canal está em modo de teste e não tem nenhuma conta de teste autorizada, então a IA não responde a ninguém nele — as mensagens chegam no Inbox e ficam sem resposta automática. Em Conexões, autorize as contas de teste ou abra o canal ao público.",
+        idioma,
+      )
+    : traduzir(
+        "Este canal está em modo de teste e não tem nenhum número autorizado, então a IA não responde a ninguém nele — as mensagens chegam no Inbox e ficam sem resposta automática. Em Conexões, autorize os números de teste ou abra o canal ao público.",
+        idioma,
+      );
 
 const MOTIVO_LEGIVEL: Record<MotivoDaResolucao, string> = {
   ganhou_numero: "o canal ganhou número autorizado",
@@ -60,9 +113,15 @@ const MOTIVO_LEGIVEL: Record<MotivoDaResolucao, string> = {
   canal_arquivado: "o canal foi arquivado",
 };
 
+const motivoLegivel = (motivo: MotivoDaResolucao, social: boolean): string =>
+  social && motivo === "ganhou_numero"
+    ? "o canal ganhou conta de teste autorizada"
+    : MOTIVO_LEGIVEL[motivo];
+
 interface AvisoAberto {
   id: string;
   ref_id: string | null;
+  organization_id?: string | null;
 }
 
 async function handle(req: NextRequest): Promise<Response> {
@@ -79,7 +138,7 @@ async function handle(req: NextRequest): Promise<Response> {
   // precisar ser fechado, inclusive de canal que sumiu da varredura (arquivado).
   const { data: abertosBruto, error: erroAvisos } = await admin
     .from("agent_inbox_items")
-    .select("id, ref_id")
+    .select("id, ref_id, organization_id")
     .eq("kind", KIND_CANAL_MUDO)
     .eq("status", "open")
     .limit(LIMITE);
@@ -99,7 +158,9 @@ async function handle(req: NextRequest): Promise<Response> {
 
   const { data: canaisBruto, error: erroCanais } = await admin
     .from("channel_sessions")
-    .select("id, organization_id, status, archived_at, last_status_change_at, metadata")
+    .select(
+      "id, organization_id, status, archived_at, last_status_change_at, metadata, display_name, phone_number",
+    )
     .is("archived_at", null)
     .limit(LIMITE);
 
@@ -111,16 +172,27 @@ async function handle(req: NextRequest): Promise<Response> {
     return fail("internal_error", erroCanais.message, 500, { requestId });
   }
 
-  const canais = (canaisBruto ?? []) as CanalParaAvaliar[];
+  const canais = (canaisBruto ?? []) as CanalLido[];
   let avisados = 0;
   let resolvidos = 0;
+  const idiomas = new Map<string, Idioma>();
 
-  const resolver = async (aviso: AvisoAberto, motivo: MotivoDaResolucao): Promise<void> => {
+  const resolver = async (
+    aviso: AvisoAberto,
+    motivo: MotivoDaResolucao,
+    canal?: CanalLido,
+  ): Promise<void> => {
+    const social = ehCanalSocial(canal);
+    const idioma = await idiomaDoAviso(admin, aviso.organization_id, idiomas);
     const { data } = await admin
       .from("agent_inbox_items")
       .update({
         status: "resolved",
-        body: `${CORPO_DO_AVISO}\n\nResolvido pelo sistema: ${MOTIVO_LEGIVEL[motivo]}.`,
+        body:
+          `${corpoDoAviso(idioma, social)}\n\n` +
+          preencher(traduzir("Resolvido pelo sistema: {motivo}.", idioma), {
+            motivo: traduzir(motivoLegivel(motivo, social), idioma),
+          }),
       })
       .eq("id", aviso.id)
       // O `status` no filtro é a trava: duas rodadas simultâneas (cron + curl à
@@ -137,11 +209,12 @@ async function handle(req: NextRequest): Promise<Response> {
     abertos.delete(canal.id);
 
     if (desfecho.acao === "resolver") {
-      if (aberto) await resolver(aberto, desfecho.motivo);
+      if (aberto) await resolver(aberto, desfecho.motivo, canal);
       continue;
     }
     if (desfecho.acao === "aguardar" || aberto) continue;
 
+    const idioma = await idiomaDoAviso(admin, canal.organization_id, idiomas);
     const { data } = await admin
       .from("agent_inbox_items")
       .insert({
@@ -151,8 +224,10 @@ async function handle(req: NextRequest): Promise<Response> {
         // assim de propósito. Crítico aqui gastaria o alarme que a Central
         // reserva para o que já custou dinheiro ou cliente.
         severity: "warn",
-        title: "Este canal está em modo de teste — a IA não responde ninguém",
-        body: `${CORPO_DO_AVISO}\n\nAssim há ${desfecho.diasMudo} dia(s).`,
+        title: tituloDoAviso(canal, idioma),
+        body:
+          `${corpoDoAviso(idioma, ehCanalSocial(canal))}\n\n` +
+          preencher(traduzir("Assim há {dias} dia(s).", idioma), { dias: desfecho.diasMudo }),
         ref_kind: "channel_session",
         ref_id: canal.id,
       })

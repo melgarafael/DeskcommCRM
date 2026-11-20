@@ -258,3 +258,69 @@ describe("o custo é atribuído ao ponto certo", () => {
     expect(params).toContain("gpt-5-mini");
   });
 });
+
+/**
+ * A RESERVA DE FORMATO DO FECHAMENTO (`fecharOTurno`): depois de duas recusas no
+ * modelo do ponto, a 3ª chamada tem de ir ao modelo do AGENTE. Sem a flag, o
+ * binding do `checkpoint` venceria de novo e a reserva repetiria o modelo que
+ * acabou de errar. A flag só existe para o fechamento: em qualquer outro ponto
+ * ela seria uma porta para ignorar em silêncio a escolha do operador.
+ */
+describe("a reserva de formato do fechamento passa por cima do binding do ponto — e só dele", () => {
+  const BINDING_DO_CHECKPOINT: LinhaBinding = {
+    provider: "openai",
+    credential_id: null,
+    model_id: "gpt-5-mini",
+    base_url: null,
+    is_enabled: true,
+  };
+
+  async function fechamento(opts: { purpose?: string; reservaDeFormato?: true; semOverride?: boolean }) {
+    const { pool, inserts } = poolFalso({ binding: BINDING_DO_CHECKPOINT });
+    const { registry, chamadas } = registrySpiao();
+    const chamada = runModelCall(
+      pool,
+      cfg,
+      {
+        tenantId: ORG,
+        purpose: opts.purpose ?? "checkpoint",
+        model: "claude-do-agente",
+        ...(opts.semOverride ? {} : { llmOverride: { provider: "anthropic", credentialId: null } }),
+        ...(opts.reservaDeFormato ? { reservaDeFormato: opts.reservaDeFormato } : {}),
+        messages: [{ role: "user", content: "oi" }],
+      },
+      { registry },
+    );
+    return { chamada, chamadas, inserts };
+  }
+
+  it("⭐ com a flag, a chamada vai ao modelo e ao provedor do agente, e a linha grava a origem reserva_de_formato", async () => {
+    const { chamada, chamadas, inserts } = await fechamento({ reservaDeFormato: true });
+    const resultado = await chamada;
+    expect(chamadas).toHaveLength(1);
+    expect(chamadas[0]).toMatchObject({ provider: "anthropic", modelId: "claude-do-agente", apiKey: "chave-anthropic" });
+    expect(resultado.origem).toBe("reserva_de_formato");
+    expect(resultado.model).toBe("claude-do-agente");
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]!.params).toContain("reserva_de_formato");
+  });
+
+  it("cerca: sem a flag, o binding do fechamento continua vencendo", async () => {
+    const { chamada, chamadas } = await fechamento({});
+    const resultado = await chamada;
+    expect(chamadas[0]).toMatchObject({ provider: "openai", modelId: "gpt-5-mini" });
+    expect(resultado.origem).toBe("binding");
+  });
+
+  it("cerca: a flag fora do fechamento LANÇA antes de qualquer chamada ao provedor", async () => {
+    const { chamada, chamadas } = await fechamento({ purpose: "stage_classifier", reservaDeFormato: true });
+    await expect(chamada).rejects.toThrow("reservaDeFormato só existe para o fechamento do turno");
+    expect(chamadas).toHaveLength(0);
+  });
+
+  it("cerca: a flag sem o override do agente LANÇA antes de qualquer chamada ao provedor", async () => {
+    const { chamada, chamadas } = await fechamento({ reservaDeFormato: true, semOverride: true });
+    await expect(chamada).rejects.toThrow("reservaDeFormato só existe para o fechamento do turno");
+    expect(chamadas).toHaveLength(0);
+  });
+});

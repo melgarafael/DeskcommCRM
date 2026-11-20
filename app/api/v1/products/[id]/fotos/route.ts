@@ -7,7 +7,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * manda junto quando apresenta o produto (`send_message` com `produto_codigo`).
  *
  * O arquivo vai para `catalog-photos` pelo service role (o bucket não tem policy
- * nenhuma); é o `requireRole("manager")` daqui que autoriza. O caminho é gerado
+ * nenhuma); é o portão `manager` daqui (sessão, ou token `config:write`) que autoriza. O caminho é gerado
  * AQUI, nunca aceito do cliente — e o PUT só aceita caminhos que já estão na
  * linha. Regras e tetos em `lib/catalogo/fotos.ts`.
  */
@@ -15,9 +15,12 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { audit } from "@/lib/audit";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import {
   BUCKET_DAS_FOTOS,
   conferirNovaOrdem,
@@ -28,17 +31,19 @@ import {
 } from "@/lib/catalogo/fotos";
 import { apagarDoBucket } from "@/lib/catalogo/fotos-no-bucket";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 const ordemSchema = z.object({ fotos: z.array(z.string().min(1).max(300)).max(MAXIMO_DE_FOTOS) });
 
-/** As fotos gravadas HOJE, lidas pela sessão do usuário (RLS + org do cookie). */
-async function fotosAtuais(orgId: string, id: string): Promise<string[] | null> {
-  const supabase = await createClient();
+/**
+ * As fotos gravadas HOJE, lidas pelo cliente que a rota resolveu (sessão do
+ * usuário, ou o admin no ramo do token), sempre com o filtro de organização.
+ */
+async function fotosAtuais(supabase: SupabaseClient, orgId: string, id: string): Promise<string[] | null> {
   const { data } = await supabase
     .from("catalog_products")
     .select("fotos")
@@ -48,8 +53,7 @@ async function fotosAtuais(orgId: string, id: string): Promise<string[] | null> 
   return data ? ((data as { fotos: string[] | null }).fotos ?? []) : null;
 }
 
-async function gravarFotos(orgId: string, id: string, fotos: string[]): Promise<boolean> {
-  const supabase = await createClient();
+async function gravarFotos(supabase: SupabaseClient, orgId: string, id: string, fotos: string[]): Promise<boolean> {
   const { data, error } = await supabase
     .from("catalog_products")
     .update({ fotos })
@@ -68,26 +72,35 @@ export async function POST(
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "catalog_products" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "catalog_products",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const orgId = authz.org.orgId;
+  const teto = await tetoDeEscritaDoToken(authz, "products.fotos", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const orgId = authz.organizationId;
   const { id } = await params;
 
-  const atuais = await fotosAtuais(orgId, id);
+  const atuais = await fotosAtuais(authz.supabase, orgId, id);
   if (atuais === null) return fail("not_found", t("Produto não encontrado."), 404, { requestId });
   if (atuais.length >= MAXIMO_DE_FOTOS) {
     return fail("validation_failed", t("Cada produto tem no máximo 5 fotos."), 422, { requestId });
   }
 
-  // Recusa pelo Content-Length declarado ANTES de bufferizar o corpo (como a rota de
-  // mídia da conversa); o file.size abaixo continua sendo o check autoritativo.
-  const declarado = Number(req.headers.get("content-length") ?? 0);
-  if (declarado > TAMANHO_MAXIMO_DA_FOTO + 1_048_576) {
-    return fail("payload_too_large", t("A foto precisa ter até 5 MB."), 413, { requestId });
-  }
-
-  const form = await req.formData().catch(() => null);
+  // O teto vale também para o envio sem tamanho declarado; o file.size abaixo
+  // continua sendo o check autoritativo da foto.
+  const corpo = await lerCorpoComTeto(req, TAMANHO_MAXIMO_DA_FOTO + 1_048_576, {
+    requestId,
+    idioma: authz.idioma,
+    acimaDoTeto: t("A foto precisa ter até 5 MB."),
+  });
+  if (!corpo.ok) return corpo.response;
+  const form = await corpo.corpo.formData().catch(() => null);
   const file = form?.get("file");
   if (!(file instanceof File)) {
     return fail("validation_failed", t("Campo 'file' (multipart) obrigatório."), 422, { requestId });
@@ -117,14 +130,15 @@ export async function POST(
   // MESMO produto podem perder um caminho (o arquivo fica órfão no bucket, o
   // produto segue íntegro). Se virar queixa, `array_append` numa RPC.
   const fotos = [...atuais, caminho];
-  if (!(await gravarFotos(orgId, id, fotos))) {
+  if (!(await gravarFotos(authz.supabase, orgId, id, fotos))) {
     await apagarDoBucket(orgId, id, [caminho], requestId);
     return fail("internal_error", "Erro ao salvar a foto.", 500, { requestId });
   }
 
   await audit({
     organizationId: orgId,
-    actorUserId: authz.user.id,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
     action: "catalog_product.photo_added",
     resourceType: "catalog_products",
     resourceId: id,
@@ -142,10 +156,18 @@ export async function PUT(
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "catalog_products" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "catalog_products",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const orgId = authz.org.orgId;
+  const teto = await tetoDeEscritaDoToken(authz, "products.fotos", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const orgId = authz.organizationId;
   const { id } = await params;
 
   const parsed = ordemSchema.safeParse(await req.json().catch(() => null));
@@ -156,7 +178,7 @@ export async function PUT(
     });
   }
 
-  const atuais = await fotosAtuais(orgId, id);
+  const atuais = await fotosAtuais(authz.supabase, orgId, id);
   if (atuais === null) return fail("not_found", t("Produto não encontrado."), 404, { requestId });
 
   const conferida = conferirNovaOrdem(atuais, parsed.data.fotos);
@@ -165,14 +187,15 @@ export async function PUT(
     return fail("conflict", t("As fotos mudaram. Recarregue a página."), 409, { requestId });
   }
 
-  if (!(await gravarFotos(orgId, id, parsed.data.fotos))) {
+  if (!(await gravarFotos(authz.supabase, orgId, id, parsed.data.fotos))) {
     return fail("internal_error", "Erro ao salvar as fotos.", 500, { requestId });
   }
   await apagarDoBucket(orgId, id, conferida.removidas, requestId);
 
   await audit({
     organizationId: orgId,
-    actorUserId: authz.user.id,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
     action: "catalog_product.photos_updated",
     resourceType: "catalog_products",
     resourceId: id,

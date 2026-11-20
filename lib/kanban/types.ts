@@ -46,4 +46,11 @@ export interface BoardData {
   pipeline: Pipeline;
   stages: Stage[];
   leads: Lead[];
+  /**
+   * A leitura do quadro NÃO provou o fim (#4321): veio um recorte, não o funil
+   * inteiro. Ausente é o caso normal — quando o fim é provado pelo `count` da
+   * primeira página, o corpo é exatamente o de sempre. Presente, a tela tem de
+   * dizer que há mais cards do que os que estão na mão.
+   */
+  truncado?: true;
 }

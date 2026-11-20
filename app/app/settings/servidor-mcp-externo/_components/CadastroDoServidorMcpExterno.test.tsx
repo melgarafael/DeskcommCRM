@@ -38,6 +38,8 @@ import { CadastroDoServidorMcpExterno } from "./CadastroDoServidorMcpExterno";
 
 const ENDERECO = "https://erp.loja/mcp";
 const CHAVE = "segredo-do-erp-abcd";
+/** A lista de escrita liberada (#4445) da conexão compartilhada: vai no salvar. */
+const LIBERADAS_CONEXAO = "criar_titulo";
 /** O de sempre: o endereço de metadados da nuvem que o guard recusa. */
 const ENDERECO_INSEGURO = "http://169.254.169.254/mcp";
 
@@ -51,6 +53,11 @@ function abrir() {
 function digitar(endpoint: string, chave = CHAVE) {
   fireEvent.change(screen.getByTestId("endpoint"), { target: { value: endpoint } });
   fireEvent.change(screen.getByTestId("chave"), { target: { value: chave } });
+}
+
+/** O campo da liberação de escrita (#4445), que entra no mesmo salvar. */
+function digitarLiberacao(conexao: string) {
+  fireEvent.change(screen.getByTestId("escritas-conexao"), { target: { value: conexao } });
 }
 
 const valorDoCampoDaChave = () => (screen.getByTestId("chave") as HTMLInputElement).value;
@@ -71,9 +78,18 @@ describe("cadastro: a chave só aparece na criação", () => {
     expect(screen.queryByTestId("chave-criada")).toBeNull();
 
     digitar(ENDERECO);
+    digitarLiberacao(LIBERADAS_CONEXAO);
     fireEvent.click(screen.getByTestId("salvar"));
 
-    await waitFor(() => expect(cadastro()).toHaveBeenCalledWith({ endpoint: ENDERECO, chave: CHAVE }));
+    // O salvar leva TRÊS campos desde a #4445: endereço, chave e a lista de
+    // escrita liberada, exatamente como foi digitada.
+    await waitFor(() =>
+      expect(cadastro()).toHaveBeenCalledWith({
+        endpoint: ENDERECO,
+        chave: CHAVE,
+        escritasLiberadasConexao: LIBERADAS_CONEXAO,
+      }),
+    );
     await waitFor(() => expect(screen.getByTestId("chave-criada")).toBeInTheDocument());
     expect(screen.getByTestId("chave-criada").textContent).toContain("abcd");
     // A chave sai da tela junto com a revelação: deixá-la no campo faria o
@@ -81,6 +97,32 @@ describe("cadastro: a chave só aparece na criação", () => {
     expect(valorDoCampoDaChave()).toBe("");
     expect(screen.getByTestId("aviso").textContent).toContain("Configuração salva");
     expect(screen.queryByTestId("erro")).toBeNull();
+  });
+});
+
+describe("a lista de escrita JÁ GRAVADA abre preenchida (doc de decisão 347)", () => {
+  it("trocar só endereço e chave salva a lista que já estava lá, e não a apaga", async () => {
+    // Antes, o campo abria em branco: salvar o endereço de novo mandava "" e a
+    // action, que trata "" como revogar, apagava as liberações.
+    render(<CadastroDoServidorMcpExterno liberadasIniciais="criar_titulo" />);
+    expect((screen.getByTestId("escritas-conexao") as HTMLTextAreaElement).value).toBe("criar_titulo");
+
+    digitar(ENDERECO);
+    fireEvent.click(screen.getByTestId("salvar"));
+
+    await waitFor(() =>
+      expect(cadastro()).toHaveBeenCalledWith({
+        endpoint: ENDERECO,
+        chave: CHAVE,
+        escritasLiberadasConexao: "criar_titulo",
+      }),
+    );
+  });
+
+  it("não há campo de liberação para toda conexão da empresa", () => {
+    abrir();
+    expect(screen.queryByTestId("escritas-organizacao")).toBeNull();
+    expect(screen.queryByText("Para toda conexão MCP desta empresa")).toBeNull();
   });
 });
 
@@ -94,7 +136,13 @@ describe("recusa do anti-SSRF: a tela diz o motivo, e nada mais", () => {
     // O endereço vai como foi digitado: quem recusa é o guard da action, não
     // uma regra paralela escrita nesta tela.
     await waitFor(() =>
-      expect(cadastro()).toHaveBeenCalledWith({ endpoint: ENDERECO_INSEGURO, chave: CHAVE }),
+      expect(cadastro()).toHaveBeenCalledWith({
+        endpoint: ENDERECO_INSEGURO,
+        chave: CHAVE,
+        // Nada digitado na lista de escrita: ela vai vazia, e quem recusa o
+        // endereço inseguro é a action — a tela não inventa liberação.
+        escritasLiberadasConexao: "",
+      }),
     );
     await waitFor(() => expect(screen.getByTestId("erro")).toBeInTheDocument());
     expect(screen.getByRole("alert").textContent).toContain("recusado por segurança");

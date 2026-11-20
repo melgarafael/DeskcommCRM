@@ -1,5 +1,8 @@
 import { tituloDaAgenda } from "@/lib/agenda/apresentacao";
+import { traduzir } from "@/lib/i18n/dicionario";
+import Link from "next/link";
 import { redirect } from "next/navigation";
+import { agendaAuthority } from "@/lib/amigo/agenda";
 import { headers } from "next/headers";
 
 import {
@@ -8,10 +11,12 @@ import {
   googleEstaConfigurado,
   origemLocalDosCabecalhos,
 } from "@/lib/agenda/google/config";
+import { funisComCamposDeData } from "@/lib/agenda/datas-dos-negocios";
+import { lerEscolhaDaCamada } from "@/lib/agenda/preferencia-da-camada";
 import { donosDaAgenda } from "@/lib/agenda/donos-da-agenda";
 import { lerOcupacaoExterna } from "@/lib/agenda/ocupacao-externa";
 import { PROVEDOR_GOOGLE } from "@/lib/agenda/tipos";
-import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
+import { requireAuth, resolveActiveOrg, metadadosDaSessao } from "@/lib/auth/server";
 import { diaDeHojeNoFuso, semanaSemente } from "@/lib/agenda/semana-semente";
 import { fusoUtilizavel } from "@/lib/tempo/fusos";
 import { nomeDoContato, type ContatoNomeavel } from "@/lib/contacts/rotulo-do-contato";
@@ -92,6 +97,10 @@ export default async function AgendaPage() {
    * indistinguível, para quem olha, de uma agenda sem compromissos.
    */
   const supabase = await createClient();
+  // Módulo `amigo` com a conexão ativa: a agenda é a do Amigo. A grade continua
+  // mostrando os espelhos (e remarcar/cancelar por ela vai ao Amigo), mas marcar
+  // de novo é pela tela do Amigo, com paciente, unidade e médico escolhidos.
+  const agendaNoAmigo = (await agendaAuthority(supabase, activeOrg.orgId)).provider === "amigo";
 
   /**
    * O RELÓGIO É DA ORGANIZAÇÃO — decisão do dono do produto (2026-09-20, #1350):
@@ -127,25 +136,45 @@ export default async function AgendaPage() {
   // organizações via seis tipos onde há três — e clicar no da outra org dava
   // "Tipo de agendamento não encontrado", porque a rota que marca ESCAPA a org
   // certa e não achava o tipo que esta tela ofereceu.
-  const [{ data: tipos }, { data: linhas }, { data: apresentacao }] = await Promise.all([
+  const [{ data: tipos }, { data: linhas }, { data: apresentacao }, { data: funis }] = await Promise.all([
     supabase
       .from("calendar_event_types")
       .select(
         "id, name, duration_minutes, location_kind, location_details, is_active, default_owner_user_id, service_enabled, booking_mode",
       )
       .eq("organization_id", activeOrg.orgId)
+      // Tipo que veio de sistema externo (9392) não se marca pela grade local.
+      .is("external_provider", null)
       .eq("is_active", true)
       .order("name"),
     supabase
       .from("calendar_appointments")
       .select(
-        "id, revision, title, starts_at, ends_at, status, owner_user_id, contact_id, event_type_id, location_kind, contacts(name, display_name)",
+        "id, revision, title, starts_at, ends_at, status, owner_user_id, team_guest_user_ids, contact_id, event_type_id, location_kind, contacts(name, display_name)",
       )
       .eq("organization_id", activeOrg.orgId)
       .gte("starts_at", inicio.toISOString())
       .lt("starts_at", fim.toISOString())
       .order("starts_at"),
     supabase.from("organizations").select("settings").eq("id", activeOrg.orgId).maybeSingle(),
+    // ─── OS FUNIS, para a camada "Datas dos negócios" (#3221) ────────────────
+    //
+    // Só `id`, `name` e `settings`: os campos de data moram em `settings.fields`,
+    // e é deles que sai a lista de campos que a camada oferece. Descoberta no
+    // servidor, e não no cliente, porque a MESMA régua já existe
+    // (`camposDeDataDoNegocio`) e porque a RLS de `crm_pipelines` é quem decide
+    // quais funis esta pessoa enxerga — funil que ela não vê não aparece na
+    // escolha da camada.
+    //
+    // Arquivado fica de fora pela mesma razão do seletor de troca rápida do
+    // quadro: funil arquivado não recebe negócio novo, e oferecê-lo seria um
+    // destino que não existe.
+    supabase
+      .from("crm_pipelines")
+      .select("id, name, settings")
+      .eq("organization_id", activeOrg.orgId)
+      .eq("is_archived", false)
+      .order("position"),
   ]);
 
   /**
@@ -248,7 +277,45 @@ export default async function AgendaPage() {
   const googleConfigurado = await googleEstaConfigurado();
   const faltaNoGoogle = googleConfigurado ? [] : await faltaParaConectarOGoogle();
 
+  // ─── A CAMADA "DATAS DOS NEGÓCIOS" (#3221, escolha guardada pela #4436) ────
+  //
+  // Os funis que declaram campo de data: a matéria-prima da camada, resolvida
+  // aqui com a mesma régua que o Calendário do funil usa.
+  const funisComDatas = funisComCamposDeData(
+    (
+      (funis ?? []) as Array<{
+        id: string;
+        name: string;
+        settings: Record<string, unknown> | null;
+      }>
+    ).map((f) => ({ id: f.id, nome: f.name, settings: f.settings })),
+  );
+
+  /**
+   * A ESCOLHA DA PESSOA (#4436), lida do `raw_user_meta_data` — e só quando há
+   * camada a oferecer. Instalação que não usa campo de data não paga nem a
+   * leitura: `funisComDatas` vazio e a camada nem aparece.
+   *
+   * `lerEscolhaDaCamada` sanea contra ESTA lista: funil arquivado não está nela
+   * (a consulta acima filtra `is_archived = false`) e campo que sumiu não está
+   * nos `campos`. O que sobra é só escolha que ainda existe — o resto volta ao
+   * padrão sem erro na tela.
+   */
+  const escolhaDaCamada =
+    funisComDatas.length > 0
+      ? lerEscolhaDaCamada(await metadadosDaSessao(), funisComDatas)
+      : undefined;
+
   return (
+    <>
+    {agendaNoAmigo && (
+      <p className="px-6 pt-4 text-sm text-muted-foreground">
+        {traduzir("A agenda desta clínica está no Amigo: as consultas daqui espelham as de lá.", user.idioma)}{" "}
+        <Link href="/app/integrations/amigo?aba=agenda" className="underline">
+          {traduzir("Marcar uma consulta no Amigo", user.idioma)}
+        </Link>
+      </p>
+    )}
     <AgendaClient
       tituloDaAgenda={tituloDaAgenda(apresentacao?.settings)}
       // O fuso RESOLVIDO da organização: a régua da grade inteira. `page.tsx`
@@ -267,6 +334,18 @@ export default async function AgendaPage() {
       // uma pessoa chamada "Você" para a jornada de OUTRA pessoa — ver o painel
       // em `_client.tsx`.
       usuarioId={user.id}
+      // A CAMADA "Datas dos negócios" (#3221) — os funis que declaram campo de
+      // data do negócio, e só eles.
+      //
+      // Lista vazia é o estado de quem não usa campo de data: a camada não
+      // aparece, e a Agenda fica exatamente como era. Quem escolhe o que ver é
+      // a pessoa (a camada nasce desligada), e a escolha de QUAIS campos são
+      // datas não é feita aqui — ela vem do funil, pela mesma função que o
+      // Calendário do funil usa (`camposDeDataDoNegocio`).
+      funisComDatas={funisComDatas}
+      // A escolha que a pessoa deixou (#4436): a camada volta ligada no funil
+      // e no campo dela, em qualquer aparelho. Saneada logo acima.
+      escolhaDaCamada={escolhaDaCamada}
       googleConfigurado={googleConfigurado}
       contaConectada={conexoes?.map((c) => c.account_email).join(", ") || null}
       enderecoDeRetorno={enderecoDeRetorno(origemLocal ?? undefined)}
@@ -280,7 +359,7 @@ export default async function AgendaPage() {
       // O piso da rota de marcar é `agent`; `viewer` — e o acompanhamento só de
       // leitura, que `resolveActiveOrg` resolve como `viewer` — levaria 403. A
       // tela esconder é cortesia: quem decide segue sendo a rota.
-      podeMarcar={ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent}
+      podeMarcar={!agendaNoAmigo && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent}
       tiposIniciais={(tipos ?? []).map((t) => ({
         id: t.id,
         nome: t.name,
@@ -304,6 +383,8 @@ export default async function AgendaPage() {
           revision: a.revision,
           titulo: a.title ?? "Agendamento",
           responsavelId: a.owner_user_id ?? "",
+          convidadosDaEquipe: a.team_guest_user_ids,
+          tipoId: a.event_type_id,
           comeca: a.starts_at,
           termina: a.ends_at,
           origem: "ui" as const,
@@ -348,5 +429,6 @@ export default async function AgendaPage() {
         }) as AgendamentoDaTela[],
       )}
     />
+    </>
   );
 }

@@ -44,6 +44,10 @@ vi.mock("@/lib/auth/require-role", () => ({
     org: { orgId: "11111111-1111-4111-8111-111111111111", role: "admin" },
   }),
 }));
+// A rota autentica por `resolveAuthDual` (Spec 33, R1): o ramo sessão chama o
+// `requireRole` acima e abre o client de cookie, que fora de um request do Next
+// lança. Nada aqui lê por ele.
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({}) }));
 // Agente não encontrado: o corpo que PASSA pela validação chega aqui e volta 404.
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => {
@@ -151,6 +155,9 @@ describe("só as superfícies de CHAVE pedem a união", () => {
     "app/app/ai/credentials/_components/CredentialCard.tsx",
     "app/app/ai/credentials/_components/CredentialsList.tsx",
     "app/app/ai/credentials/_components/RotateCredentialDialog.tsx",
+    // a cláusula 9 lista os SUBOPERADORES com chave ativa (o Jev recebe cada
+    // mensagem); nunca escolhe modelo de conversa
+    "lib/legal/operador.ts",
   ].sort();
 
   const usam = arquivosDeCodigo(["app", "lib", "components", "hooks", "workers"])

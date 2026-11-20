@@ -11,6 +11,21 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * tipo por lugar nenhum**: nem rota, nem tela. Uma organização recebia três
  * tipos semeados e ficava com eles para sempre.
  *
+ * ─── A REGRA DE ALTERAR/DESATIVAR NÃO MORA MAIS AQUI ─────────────────────
+ *
+ * `PATCH` e `DELETE` são borda: `requireSupportWrite`, `resolveAuthDual`,
+ * `tetoDeEscritaDoToken`, o Zod e a resposta. A regra — o filtro de campo
+ * `undefined`, a conferência do canal e do modelo do lembrete, o `update` com
+ * `organization_id` no filtro, o 404 e a auditoria — está em
+ * `lib/agenda/tipos-de-agendamento.ts`, ao lado de `consulta.ts`. Motivo: quem
+ * não é rota (servidor MCP, automação) precisava do MESMO comportamento e só
+ * tinha dois caminhos ruins, chamar esta API por HTTP ou copiar a regra. Ver a
+ * issue #4688.
+ *
+ * O `POST` continua com a regra aqui: ele repete a conferência do canal e do
+ * modelo, e agora usa os MESMOS ajudantes exportados do módulo — mas o fluxo de
+ * criação fica fora deste pedido para o PR continuar pequeno.
+ *
  * ─── Desativar, nunca apagar ─────────────────────────────────────────────
  *
  * `calendar_appointments.event_type_id` aponta para cá. Apagar o tipo levaria
@@ -23,7 +38,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *
  * Reativar é `POST /api/v1/agenda/tipos/reativar`. `is_active` está fora de
  * `camposDoTipo` DE PROPÓSITO: aceitá-lo no PATCH deixaria o mesmo pedido que
- * muda a duração poder desligar o tipo, e a trilha registraria a religada como
+ * muda a duração desligar o tipo, e a trilha registraria a religada como
  * `agenda.tipo_alterado { campos: ["is_active"] }` — indistinguível de uma
  * alteração de campo qualquer.
  *
@@ -46,245 +61,23 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { listaTiposDeAtendimento } from "@/lib/agenda/consulta";
-import { TETO_DE_LEMBRETES_EXTRAS } from "@/lib/agenda/lembretes";
-import { variaveisQueOLembretePreenche } from "@/lib/agenda/lembrete-por-modelo";
-import { transportaMensagem } from "@/lib/channels/capabilities";
+import {
+  alterarSchema,
+  alterarTipoDeAgendamento,
+  camposDoTipo,
+  desativarSchema,
+  desativarTipoDeAgendamento,
+  recusaDoCanalDoLembrete,
+  recusaDoModeloDoLembrete,
+} from "@/lib/agenda/tipos-de-agendamento";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
-
-/** As dez do CHECK da tabela. Fora daqui o Postgres recusa — melhor recusar antes. */
-const CATEGORIAS = [
-  "consulta",
-  "procedimento",
-  "retorno",
-  "visita",
-  "vistoria",
-  "reuniao",
-  "call",
-  "orcamento",
-  "demonstracao",
-  "outro",
-] as const;
-
-const LOCAIS = ["in_person", "phone", "whatsapp", "video_link", "google_meet"] as const;
-
-/**
- * Os limites são os MESMOS do CHECK do banco, e isso é deliberado.
- *
- * Zod aqui não substitui a constraint: ela é a verdade e continua valendo para
- * quem escrever por SQL. O que a validação faz é transformar um 500 de constraint
- * — que aparece como "erro interno" para quem está usando — numa recusa 422 que
- * diz o que está fora.
- */
-const camposDoTipo = {
-  name: z.string().trim().min(2).max(80),
-  category: z.enum(CATEGORIAS),
-  duration_minutes: z.number().int().min(5).max(1440),
-  location_kind: z.enum(LOCAIS),
-  description: z.string().trim().max(500).nullish(),
-  location_details: z.string().trim().max(300).nullish(),
-  default_owner_user_id: z.string().uuid().nullish(),
-  requires_confirmation: z.boolean().optional(),
-  buffer_before_minutes: z.number().int().min(0).max(720).optional(),
-  buffer_after_minutes: z.number().int().min(0).max(720).optional(),
-  minimum_notice_minutes: z.number().int().min(0).max(43_200).optional(),
-  booking_window_days: z.number().int().min(1).max(365).optional(),
-  /**
-   * O LEMBRETE — os dois campos que o cron `agenda-reminder` lê e que ninguém
-   * conseguia escrever.
-   *
-   * A 0177 criou as colunas, a 0194 as pôs em `default false` deixando escrito
-   * que ligar por padrão "fica com o dono do produto NO DIA em que o disparador
-   * nascer", e o `99c33257` fez o disparador nascer. Faltava a outra metade do
-   * par: `reminder_enabled` não estava em schema nenhum aqui nem na tela, então
-   * a rodada do cron devolvia zero linhas em TODA instalação — capacidade que
-   * existe e não tem como ser usada (invariante 6 do Sistema Vivo).
-   *
-   * **Continua nascendo desligado.** Não há `.default(true)`: quem não manda o
-   * campo não liga nada, e o default da coluna segue sendo `false`. Mandar
-   * mensagem para o telefone de um cliente é irreversível.
-   */
-  reminder_enabled: z.boolean().optional(),
-  reminder_channel_session_id: z.string().uuid().nullish(),
-  /**
-   * O modelo aprovado que sai quando a janela de 24 h do cliente fechou
-   * (`lib/agenda/lembrete-por-modelo.ts`). Nulo = como antes: fora da janela o
-   * lembrete não sai e a equipe recebe o aviso. Conferido em
-   * `recusaDoModeloDoLembrete` antes de gravar.
-   */
-  reminder_meta_template_id: z.string().uuid().nullish(),
-  /**
-   * ⚠️ ESTA FAIXA É MAIS ESTREITA QUE O CHECK DO BANCO, E ISSO CONTRARIA O
-   * PARÁGRAFO ACIMA DE PROPÓSITO.
-   *
-   * A coluna aceita `between 0 and 43200`, e os campos vizinhos copiam o CHECK
-   * porque lá a borda do banco É a borda do sentido: `buffer_after_minutes = 0`
-   * é "sem folga", uma configuração legítima. Aqui as duas bordas do CHECK
-   * produzem lembrete que não lembra:
-   *
-   * - **0 min** nunca sai. `estaNaHora` recusa `comeca <= agora`, então um
-   *   lembrete marcado para o próprio instante do compromisso é descartado em
-   *   toda rodada até a linha sair da varredura. O piso é 15 min porque o cron
-   *   roda a cada 5: abaixo de três ciclos, uma rodada atrasada come a
-   *   antecedência inteira e o aviso chega depois de a pessoa já ter saído.
-   * - **43200 min (30 dias)** não é lembrete, é convite. O teto é 10080 (7
-   *   dias), que cobre o "semana que vem" de clínica e imobiliária.
-   *
-   * A borda continua sendo do banco para quem escreve por SQL — aqui a recusa é
-   * só antes, com nome. Uma linha semeada fora desta faixa (só por SQL direto;
-   * o default da 0177 é 1440) segue valendo no banco e o cron a respeita: o que
-   * ela perde é poder ser reenviada por esta rota sem entrar na faixa.
-   */
-  /**
-   * O PREÇO PADRÃO do serviço, em centavos.
-   *
-   * Opcional e sem default: nem todo negócio tem preço fixo, e obrigar um número
-   * faria quem cobra por hora inventar um. Vazio significa "digite na hora".
-   *
-   * É semente do item da comanda, nunca o preço dele — o item congela o seu.
-   */
-  default_price_cents: z.number().int().min(0).max(100_000_000).nullish(),
-  reminder_minutes_before: z
-    .number()
-    .int()
-    .min(15, { message: "O lembrete precisa sair pelo menos 15 minutos antes do compromisso." })
-    .max(10_080, { message: "O lembrete não pode sair mais de 7 dias (10080 minutos) antes." })
-    .optional(),
-  /**
-   * Os degraus ADICIONAIS — o "e de novo três horas antes" que faltava.
-   *
-   * `reminder_minutes_before` continua sendo o degrau principal; estes somam a
-   * ele. Vazio é o comportamento anterior, um lembrete só, e por isso o campo
-   * não tem `.default()`: quem não manda não ganha aviso nenhum a mais.
-   *
-   * O teto é o mesmo do CHECK (`fn_degraus_de_lembrete_validos`): guarda contra
-   * laço de formulário, não contra a operação. Quem decide quantos avisos o
-   * cliente recebe é quem edita o tipo.
-   */
-  reminder_extra_offsets_minutes: z
-    .array(
-      z
-        .number()
-        .int()
-        .min(15, { message: "O lembrete precisa sair pelo menos 15 minutos antes do compromisso." })
-        .max(10_080, { message: "O lembrete não pode sair mais de 7 dias (10080 minutos) antes." }),
-    )
-    .max(TETO_DE_LEMBRETES_EXTRAS, {
-      message: `No máximo ${TETO_DE_LEMBRETES_EXTRAS} lembretes adicionais por tipo.`,
-    })
-    // Duplicata não é erro de quem preenche, é ruído: dois degraus iguais
-    // produziriam o mesmo aviso duas vezes se algum dia alguém lesse a lista
-    // sem deduplicar. Some aqui, uma vez, em vez de virar guarda em cada leitor.
-    .transform((v) => [...new Set(v)].sort((a, b) => b - a))
-    .optional(),
-};
 
 const criarSchema = z.object(camposDoTipo);
 // Somente a criação pode nascer como serviço em rascunho. O PATCH legado não
 // ganha uma porta de ativação: a programação é validada pelo núcleo de serviços.
 const criarComRascunhoSchema = criarSchema.extend({ service_draft: z.boolean().optional() });
-// `.partial()` em vez de repetir os doze campos como opcionais: repetir criaria
-// duas listas para manter em sincronia, e a segunda envelhece calada.
-const alterarSchema = criarSchema.partial().extend({
-  id: z.string().uuid(),
-  /**
-   * O TEXTO que o cron manda. Vazio/nulo = a frase padrão. Distinto de
-   * `reminder_template_name` (nome do template no provedor oficial).
-   *
-   * Mora só no PATCH de propósito: o tipo nasce com a frase de fábrica, e
-   * quem quer outra escreve depois. No POST, o campo nem entra — senão um
-   * `""` no nascimento gravaria nulo por cima do default, e a ausência no
-   * formulário de criação deixaria de ser ausência.
-   *
-   * Transforma string em branco em `null` para o PATCH poder VOLTAR ao padrão
-   * sem um campo-sentinela: quem apaga o textarea está pedindo o texto de
-   * fábrica, não uma mensagem vazia no WhatsApp.
-   */
-  reminder_body: z
-    .string()
-    .max(1000, { message: "A mensagem do lembrete cabe em 1000 caracteres." })
-    .nullish()
-    .transform((v) => (v == null ? v : v.trim() === "" ? null : v.trim())),
-  /**
-   * Texto de cada extra. Chave = minutos antes. String em branco some do mapa
-   * (cai na frase de fábrica). Mora só no PATCH pelo mesmo motivo de
-   * `reminder_body`: o tipo nasce sem texto próprio.
-   */
-  reminder_bodies: z
-    .record(
-      z.string().regex(/^\d+$/),
-      z.string().max(1000, { message: "A mensagem do lembrete cabe em 1000 caracteres." }),
-    )
-    .optional()
-    .transform((v) => {
-      if (!v) return v;
-      const out: Record<string, string> = {};
-      for (const [k, corpo] of Object.entries(v)) {
-        const t = corpo.trim();
-        if (t) out[k] = t;
-      }
-      return out;
-    }),
-});
-const desativarSchema = z.object({ id: z.string().uuid() });
-
-/**
- * O MODELO DO LEMBRETE FORA DA JANELA — conferido antes de gravar.
- *
- * Três recusas, cada uma com o que fazer, em vez do erro cru do banco:
- *   - de outra organização (a FK composta da 9092 também recusaria, mas como 500);
- *   - com variável que o lembrete não tem de onde preencher — o cron nunca o
- *     mandaria, e a escolha ficaria gravada sem efeito;
- *   - de OUTRO número que o escolhido no mesmo pedido: o modelo só sai pelo número
- *     dono dele, e o lembrete nunca troca de número sozinho.
- *
- * O status (aprovado, pausado) NÃO é recusa aqui: muda depois da escolha, e quem
- * confere na hora de mandar é o cron (`lerModeloDoLembrete`).
- */
-async function recusaDoModeloDoLembrete(
-  admin: ReturnType<typeof createAdminClient>,
-  organizationId: string,
-  campos: { reminder_meta_template_id?: string | null; reminder_channel_session_id?: string | null },
-  t: (texto: string) => string,
-  requestId: string,
-): Promise<Response | null> {
-  if (!campos.reminder_meta_template_id) return null;
-  const { data: modelo, error } = await admin
-    .from("meta_templates")
-    .select("id, name, language, channel_session_id, parameter_format, components")
-    .eq("organization_id", organizationId)
-    .eq("id", campos.reminder_meta_template_id)
-    .maybeSingle();
-  if (error)
-    return fail("internal_error", t("Não foi possível consultar o modelo do lembrete."), 500, {
-      requestId,
-    });
-  if (!modelo)
-    return fail("validation_failed", t("Escolha um modelo aprovado desta organização."), 422, {
-      requestId,
-    });
-  if (variaveisQueOLembretePreenche(modelo) === null)
-    return fail(
-      "validation_failed",
-      t(
-        "Este modelo não serve para o lembrete: ele só pode ter variáveis de texto no corpo, de {{1}} a {{4}}, sem pular número.",
-      ),
-      422,
-      { requestId },
-    );
-  if (
-    campos.reminder_channel_session_id &&
-    modelo.channel_session_id !== campos.reminder_channel_session_id
-  )
-    return fail(
-      "validation_failed",
-      t("O modelo escolhido é de outro número. Escolha um modelo do número que envia os lembretes."),
-      422,
-      { requestId },
-    );
-  return null;
-}
 
 /**
  * O slug sai do NOME, e é estável depois de criado.
@@ -350,6 +143,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       // ligado — só como pedir que ligue. Um PATCH cego sobre um estado que a
       // leitura não conta é o mesmo controle decorativo, do outro lado.
       reminder_enabled: t.lembreteLigado,
+      levar_dados_do_negocio: t.levarDadosDoNegocio,
       reminder_channel_session_id: t.lembreteCanalId ?? null,
       reminder_meta_template_id: t.lembreteModeloId ?? null,
       reminder_minutes_before: t.lembreteAntecedenciaMin,
@@ -393,28 +187,14 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const admin = createAdminClient();
-  if (lido.data.reminder_channel_session_id) {
-    const { data: canal, error: erroCanal } = await admin
-      .from("channel_sessions")
-      .select("id, provider, archived_at")
-      .eq("organization_id", authz.organizationId)
-      .eq("id", lido.data.reminder_channel_session_id)
-      .maybeSingle();
-    if (erroCanal)
-      return fail("internal_error", t("Não foi possível consultar o canal do lembrete."), 500, {
-        requestId,
-      });
-    if (!canal || canal.archived_at || !transportaMensagem(canal.provider)) {
-      return fail(
-        "validation_failed",
-        t("Escolha um canal de mensagem não arquivado desta organização."),
-        422,
-        { requestId },
-      );
-    }
+  const recusaDoCanal = await recusaDoCanalDoLembrete(admin, authz.organizationId, lido.data, t);
+  if (recusaDoCanal) {
+    return fail(recusaDoCanal.code, recusaDoCanal.message, recusaDoCanal.status, { requestId });
   }
-  const recusaDoModelo = await recusaDoModeloDoLembrete(admin, authz.organizationId, lido.data, t, requestId);
-  if (recusaDoModelo) return recusaDoModelo;
+  const recusaDoModelo = await recusaDoModeloDoLembrete(admin, authz.organizationId, lido.data, t);
+  if (recusaDoModelo) {
+    return fail(recusaDoModelo.code, recusaDoModelo.message, recusaDoModelo.status, { requestId });
+  }
   const { service_draft, ...fields } = lido.data;
   const { data, error } = await admin
     .from("calendar_event_types")
@@ -473,58 +253,15 @@ export async function PATCH(req: NextRequest): Promise<Response> {
       requestId,
     });
   }
-  const { id, ...bruto } = lido.data;
-  const campos = Object.fromEntries(Object.entries(bruto).filter(([, v]) => v !== undefined));
-  if (Object.keys(campos).length === 0) {
-    // Recusa em vez de UPDATE vazio: "alterei" sobre nada é a mesma família de
-    // mentira que o "Marcado ✓" sem linha no banco.
-    return fail("validation_failed", t("Nenhum campo para alterar."), 422, { requestId });
-  }
 
-  const admin = createAdminClient();
-  if (lido.data.reminder_channel_session_id) {
-    const { data: canal, error: erroCanal } = await admin
-      .from("channel_sessions")
-      .select("id, provider, archived_at")
-      .eq("organization_id", authz.organizationId)
-      .eq("id", lido.data.reminder_channel_session_id)
-      .maybeSingle();
-    if (erroCanal)
-      return fail("internal_error", t("Não foi possível consultar o canal do lembrete."), 500, {
-        requestId,
-      });
-    if (!canal || canal.archived_at || !transportaMensagem(canal.provider)) {
-      return fail(
-        "validation_failed",
-        t("Escolha um canal de mensagem não arquivado desta organização."),
-        422,
-        { requestId },
-      );
-    }
-  }
-  const recusaDoModelo = await recusaDoModeloDoLembrete(admin, authz.organizationId, lido.data, t, requestId);
-  if (recusaDoModelo) return recusaDoModelo;
-  const { data, error } = await admin
-    .from("calendar_event_types")
-    .update(campos)
-    .eq("id", id)
-    .eq("organization_id", authz.organizationId)
-    .select("id")
-    .maybeSingle();
+  const r = await alterarTipoDeAgendamento(
+    createAdminClient(),
+    { organizationId: authz.organizationId, actor: authz.actor, apiTokenId: authz.apiTokenId ?? null, t },
+    lido.data,
+  );
+  if (!r.ok) return fail(r.code, r.message, r.status, { requestId });
 
-  if (error) return fail("internal_error", error.message, 500, { requestId });
-  if (!data) return fail("not_found", t("Tipo de agendamento não encontrado."), 404, { requestId });
-
-  await audit({
-    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
-    actorApiTokenId: authz.apiTokenId ?? null,
-    action: "agenda.tipo_alterado",
-    organizationId: authz.organizationId,
-    resourceType: "calendar_event_types",
-    resourceId: id,
-    metadata: { campos: Object.keys(campos) },
-  });
-  return ok(data, { requestId });
+  return ok(r.data, { requestId });
 }
 
 export async function DELETE(req: NextRequest): Promise<Response> {
@@ -547,26 +284,12 @@ export async function DELETE(req: NextRequest): Promise<Response> {
   const lido = desativarSchema.safeParse(await req.json().catch(() => ({})));
   if (!lido.success) return fail("validation_failed", t("corpo inválido"), 422, { requestId });
 
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("calendar_event_types")
-    .update({ is_active: false })
-    .eq("id", lido.data.id)
-    .eq("organization_id", authz.organizationId)
-    .select("id")
-    .maybeSingle();
+  const r = await desativarTipoDeAgendamento(
+    createAdminClient(),
+    { organizationId: authz.organizationId, actor: authz.actor, apiTokenId: authz.apiTokenId ?? null, t },
+    lido.data,
+  );
+  if (!r.ok) return fail(r.code, r.message, r.status, { requestId });
 
-  if (error) return fail("internal_error", error.message, 500, { requestId });
-  if (!data) return fail("not_found", t("Tipo de agendamento não encontrado."), 404, { requestId });
-
-  await audit({
-    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
-    actorApiTokenId: authz.apiTokenId ?? null,
-    action: "agenda.tipo_desativado",
-    organizationId: authz.organizationId,
-    resourceType: "calendar_event_types",
-    resourceId: lido.data.id,
-    metadata: {},
-  });
-  return ok(data, { requestId });
+  return ok(r.data, { requestId });
 }
