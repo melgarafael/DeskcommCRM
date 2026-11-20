@@ -26,7 +26,7 @@ vi.mock("@/app/api/v1/messages/_handler", async () => {
   const { isMediaPathOwnedBy } = await import("@/lib/messaging/media/upload-validation");
   const { ApiError } = await import("@/lib/api/types");
   return {
-    sendMessageHandler: vi.fn(async (_db: unknown, ctx: { organization_id: string }, input: Record<string, string>) => {
+    sendMessageHandler: vi.fn(async (_db: unknown, ctx: { organization_id: string }, input: { conversation_id: string; media_storage_path?: string }) => {
       if (input.media_storage_path && !isMediaPathOwnedBy(input.media_storage_path, ctx.organization_id, input.conversation_id)) {
         throw new ApiError(422, "invalid_media_path", undefined, "req-1", "media_storage_path fora da conversa.");
       }
