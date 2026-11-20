@@ -1,9 +1,9 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 /**
  * A atualização confere as regras de isolamento antes de dizer "deu certo".
@@ -355,8 +355,6 @@ describe.skipIf(!temAwk)("recriar o que falta: o comando INTEIRO, nunca o nome",
       comparacao: string,
       locale: string | undefined,
     ): { faltando: string[]; stderr: string } {
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "colacao-"));
-      const err = path.join(dir, "err");
       // A linha REAL do script, com as listas que vierem — nunca uma cópia da
       // régua. `esperadas`/`existentes` são ordenadas antes, como no script.
       const script = [
@@ -378,20 +376,17 @@ describe.skipIf(!temAwk)("recriar o que falta: o comando INTEIRO, nunca o nome",
         env.LC_CTYPE = colacao;
       }
       env.LC_MESSAGES = "C";
-      try {
-        const out = execFileSync(BASH, ["-c", script], {
-          encoding: "utf8",
-          maxBuffer: 64 * 1024 * 1024,
-          env,
-          stdio: ["ignore", "pipe", fs.openSync(err, "w")],
-        });
-        return {
-          faltando: out.split("\n").map((l) => l.trim()).filter(Boolean),
-          stderr: fs.readFileSync(err, "utf8"),
-        };
-      } finally {
-        fs.rmSync(dir, { recursive: true, force: true });
-      }
+      const resultado = spawnSync(BASH, ["-c", script], {
+        encoding: "utf8",
+        maxBuffer: 64 * 1024 * 1024,
+        env,
+      });
+      if (resultado.error) throw resultado.error;
+      if (resultado.status !== 0) throw new Error(`Collation check failed: ${resultado.stderr}`);
+      return {
+        faltando: resultado.stdout.split("\n").map((l) => l.trim()).filter(Boolean),
+        stderr: resultado.stderr,
+      };
     }
 
     /** As regras que a conferência ESPERA — a régua awk do próprio script. */
@@ -451,6 +446,17 @@ describe.skipIf(!temAwk)("recriar o que falta: o comando INTEIRO, nunca o nome",
       return undefined;
     }
 
+    let regras: string[];
+    let noBanco: string[];
+    let hostil: string | undefined;
+
+    // Probe the available locales once for both comparisons.
+    beforeAll(() => {
+      regras = esperadas();
+      noBanco = todasAsPoliticasDePublic();
+      hostil = localeHostil(regras, noBanco);
+    }, 60_000);
+
     it("GUARDA DE VACUIDADE: o script tem o pin, e a linha foi achada", () => {
       // Sem este caso, um `match` que devolvesse o fallback sem pin faria os
       // casos abaixo medirem uma régua que não é a do script — e o de baixo
@@ -474,14 +480,11 @@ describe.skipIf(!temAwk)("recriar o que falta: o comando INTEIRO, nunca o nome",
     });
 
     it("⛔ com o banco ÍNTEGRO, a conferência não acusa nada — em qualquer locale", () => {
-      const regras = esperadas();
-      const noBanco = todasAsPoliticasDePublic();
       expect(regras.length).toBeGreaterThan(50); // o baseline real tem centenas
       // A forma do banco íntegro: tudo que a régua espera ESTÁ lá, e há mais.
       expect(noBanco.length).toBeGreaterThan(regras.length);
       for (const r of regras) expect(noBanco).toContain(r);
 
-      const hostil = localeHostil(regras, noBanco);
       // O ambiente que reproduz o defeito, quando existe. Onde não existe (uma
       // imagem sem locale UTF-8 gerado), o caso do pin segue de pé, e o PR
       // declara o que não foi medido.
@@ -502,9 +505,6 @@ describe.skipIf(!temAwk)("recriar o que falta: o comando INTEIRO, nunca o nome",
       // A metade que importa: prova que o caso acima sabe ficar vermelho. Se
       // aqui der vazio, este ambiente não exercita o defeito — e o verde do
       // caso anterior não é prova de nada nele.
-      const regras = esperadas();
-      const noBanco = todasAsPoliticasDePublic();
-      const hostil = localeHostil(regras, noBanco);
       if (!hostil) return; // declarado no PR: sem locale hostil, não medido
 
       const r = comparar(regras, noBanco, "sort -u", semPin(linhaDeComparacao()), hostil);
