@@ -79,6 +79,9 @@ vi.mock("@/lib/catalogo/fotos-por-url", () => ({ guardarFotosPorUrl: vi.fn() }))
 
 const ORG_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const ORG_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+// Tabelas da INSTALAÇÃO, sem `organization_id` (conferidas no baseline): o
+// `moduloLigado` do PATCH e da importação lê a flag do módulo de serviços nelas.
+const SEM_ORGANIZACAO = ["platform_config", "modulos_instalados"] as const;
 const TOKEN_A = "tok-a";
 const TOKEN_B = "tok-b";
 const TODOS_OS_ESCOPOS = ["config:read", "config:write"];
@@ -153,7 +156,7 @@ const RPCS = {
 };
 
 function novoFalso() {
-  return criarClienteAdminFalso({ orgDona: ORG_A, linhas: LINHAS, rpc: RPCS });
+  return criarClienteAdminFalso({ orgDona: ORG_A, linhas: LINHAS, rpc: RPCS, tabelasSemOrganizacao: SEM_ORGANIZACAO });
 }
 
 let falso: ReturnType<typeof novoFalso>;
@@ -282,7 +285,7 @@ describe("GET /api/v1/products — catálogo", () => {
     expect(res.status).toBe(200);
     const corpo = (await res.json()) as { data: Array<{ id: string }> };
     expect(corpo.data.map((p) => p.id)).toEqual([PROD_A]);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
+    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A, { tabelasSemOrganizacao: SEM_ORGANIZACAO })).toEqual([]);
     expect(rpcsForaDaOrganizacao(falso.rpcs, ORG_A)).toEqual([]);
   });
 
@@ -292,7 +295,7 @@ describe("GET /api/v1/products — catálogo", () => {
     expect(res.status).toBe(200);
     const corpo = (await res.json()) as { data: Array<{ id: string }> };
     expect(corpo.data.map((p) => p.id)).toEqual([PROD_B]);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B)).toEqual([]);
+    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B, { tabelasSemOrganizacao: SEM_ORGANIZACAO })).toEqual([]);
   });
 
   it("ramo paginado (pagina + busca): token de A recebe só o catálogo de A, com meta", async () => {
@@ -305,7 +308,7 @@ describe("GET /api/v1/products — catálogo", () => {
     };
     expect(corpo.data.map((p) => p.id)).toEqual([PROD_A]);
     expect(corpo.meta).toMatchObject({ total: 1, pagina: 1, has_more: false });
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
+    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A, { tabelasSemOrganizacao: SEM_ORGANIZACAO })).toEqual([]);
   });
 
   it("ramo paginado (pagina + busca): token de B recebe só o catálogo de B", async () => {
@@ -315,7 +318,7 @@ describe("GET /api/v1/products — catálogo", () => {
     const corpo = (await res.json()) as { data: Array<{ id: string }>; meta: { total: number } };
     expect(corpo.data.map((p) => p.id)).toEqual([PROD_B]);
     expect(corpo.meta.total).toBe(1);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B)).toEqual([]);
+    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B, { tabelasSemOrganizacao: SEM_ORGANIZACAO })).toEqual([]);
   });
 
   casosDeNegacao({
@@ -336,7 +339,7 @@ describe("POST /api/v1/products — cadastro de produto", () => {
     tokenDe(ORG_A, TOKEN_A, "admin");
     const res = await rotaProdutos.POST(pedidoJson("POST", CAMINHO_PRODUTOS, CORPO, TOKEN_A));
     expect(res.status).toBe(201);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
+    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A, { tabelasSemOrganizacao: SEM_ORGANIZACAO })).toEqual([]);
     expect(audit).toHaveBeenCalledWith(
       expect.objectContaining({ organizationId: ORG_A, actorUserId: null, actorApiTokenId: TOKEN_A }),
     );
@@ -352,7 +355,7 @@ describe("POST /api/v1/products — cadastro de produto", () => {
       organization_id: ORG_A,
       preco_cents: 1000,
     });
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B)).toEqual([]);
+    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B, { tabelasSemOrganizacao: SEM_ORGANIZACAO })).toEqual([]);
   });
 
   it("corpo inválido com token: 422 (sem nome), nada gravado e sem audit", async () => {
@@ -383,7 +386,7 @@ describe("PATCH /api/v1/products/[id] — preço e dados do produto", () => {
     );
     expect(res.status).toBe(200);
     expect(linhasDaTabela(falso, "catalog_products").find((p) => p.id === PROD_A)?.preco_cents).toBe(2000);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
+    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A, { tabelasSemOrganizacao: SEM_ORGANIZACAO })).toEqual([]);
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ actorUserId: null, actorApiTokenId: TOKEN_A }));
   });
 
@@ -395,7 +398,7 @@ describe("PATCH /api/v1/products/[id] — preço e dados do produto", () => {
     );
     expect(res.status).toBe(404);
     expect(linhasDaTabela(falso, "catalog_products").find((p) => p.id === PROD_A)?.preco_cents).toBe(1000);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B)).toEqual([]);
+    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B, { tabelasSemOrganizacao: SEM_ORGANIZACAO })).toEqual([]);
     expect(audit).not.toHaveBeenCalled();
   });
 
@@ -416,7 +419,7 @@ describe("DELETE /api/v1/products/[id] — remoção do produto", () => {
     const res = await rotaProduto.DELETE(pedido("DELETE", caminhoProduto(PROD_A), TOKEN_A), paramsDe(PROD_A));
     expect(res.status).toBe(200);
     expect(linhasDaTabela(falso, "catalog_products").some((p) => p.id === PROD_A)).toBe(false);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
+    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A, { tabelasSemOrganizacao: SEM_ORGANIZACAO })).toEqual([]);
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ actorApiTokenId: TOKEN_A }));
     // A foto do produto sai do Storage, e só com caminho do prefixo de A.
     const removidos = falso.uploads.filter((u) => u.operacao === "remove").map((u) => u.caminho);
@@ -429,7 +432,7 @@ describe("DELETE /api/v1/products/[id] — remoção do produto", () => {
     const res = await rotaProduto.DELETE(pedido("DELETE", caminhoProduto(PROD_A), TOKEN_B), paramsDe(PROD_A));
     expect(res.status).toBe(404);
     expect(linhasDaTabela(falso, "catalog_products").some((p) => p.id === PROD_A)).toBe(true);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B)).toEqual([]);
+    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B, { tabelasSemOrganizacao: SEM_ORGANIZACAO })).toEqual([]);
     expect(audit).not.toHaveBeenCalled();
   });
 
@@ -453,7 +456,7 @@ describe("POST /api/v1/products/[id]/fotos — sobe uma foto", () => {
     expect(res.status).toBe(200);
     expect(falso.uploads.length).toBe(1);
     expect(arquivosForaDaOrganizacao(falso.uploads, ORG_A)).toEqual([]);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
+    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A, { tabelasSemOrganizacao: SEM_ORGANIZACAO })).toEqual([]);
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ actorApiTokenId: TOKEN_A }));
   });
 
@@ -485,7 +488,7 @@ describe("PUT /api/v1/products/[id]/fotos — reordena e remove fotos", () => {
       paramsDe(PROD_A),
     );
     expect(res.status).toBe(200);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
+    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A, { tabelasSemOrganizacao: SEM_ORGANIZACAO })).toEqual([]);
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ actorApiTokenId: TOKEN_A }));
   });
 
@@ -508,7 +511,7 @@ describe("PUT /api/v1/products/[id]/fotos — reordena e remove fotos", () => {
     const removidos = falso.uploads.filter((u) => u.operacao === "remove").map((u) => u.caminho);
     expect(removidos).toEqual([FOTO_A]);
     expect(removidos.every((c) => c.startsWith(`${ORG_A}/${PROD_A}/`))).toBe(true);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
+    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A, { tabelasSemOrganizacao: SEM_ORGANIZACAO })).toEqual([]);
   });
 
   it("token de B manda a foto de A no produto de B: 409, nada gravado e nada removido", async () => {
@@ -573,7 +576,7 @@ describe("POST /api/v1/products/import — importação da planilha", () => {
     const res = await rotaImportar.POST(pedido("POST", CAMINHO_IMPORTAR, TOKEN_A, planilha()));
     expect(res.status).toBe(200);
     expect(linhasDaTabela(falso, "catalog_products").some((p) => p.codigo === "P-NOVO" && p.organization_id === ORG_A)).toBe(true);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
+    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A, { tabelasSemOrganizacao: SEM_ORGANIZACAO })).toEqual([]);
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ actorApiTokenId: TOKEN_A }));
   });
 
@@ -583,7 +586,7 @@ describe("POST /api/v1/products/import — importação da planilha", () => {
     expect(res.status).toBe(200);
     expect(linhasDaTabela(falso, "catalog_products").some((p) => p.codigo === "P-NOVO" && p.organization_id === ORG_B)).toBe(true);
     expect(linhasDaTabela(falso, "catalog_products").find((p) => p.id === PROD_A)).toMatchObject({ preco_cents: 1000 });
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B)).toEqual([]);
+    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B, { tabelasSemOrganizacao: SEM_ORGANIZACAO })).toEqual([]);
   });
 
   it("token de B importa o código P-A (de A): cria a linha em B e a de A fica intacta", async () => {
@@ -601,7 +604,7 @@ describe("POST /api/v1/products/import — importação da planilha", () => {
       preco_cents: 1000,
     });
     // Nenhuma escrita da importação de B sai da organização de B.
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B)).toEqual([]);
+    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B, { tabelasSemOrganizacao: SEM_ORGANIZACAO })).toEqual([]);
   });
 
   it("token com foto por URL na planilha: 422 foto_por_url_so_na_sessao, nada baixado nem gravado", async () => {
@@ -638,7 +641,7 @@ describe("GET /api/v1/tags/cores — cores das etiquetas", () => {
     expect(res.status).toBe(200);
     const corpo = (await res.json()) as { data: Array<{ tag: string }> };
     expect(corpo.data.map((e) => e.tag)).toEqual(["Reclamação"]);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
+    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A, { tabelasSemOrganizacao: SEM_ORGANIZACAO })).toEqual([]);
   });
 
   it("token de B não recebe as etiquetas de A", async () => {
@@ -647,7 +650,7 @@ describe("GET /api/v1/tags/cores — cores das etiquetas", () => {
     expect(res.status).toBe(200);
     const corpo = (await res.json()) as { data: Array<{ tag: string }> };
     expect(corpo.data.map((e) => e.tag)).toEqual(["Lead quente"]);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B)).toEqual([]);
+    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B, { tabelasSemOrganizacao: SEM_ORGANIZACAO })).toEqual([]);
   });
 
   casosDeNegacao({
