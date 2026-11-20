@@ -100,10 +100,11 @@ export interface AdiamentoLegivel {
 /**
  * A frase do adiamento.
  *
- * Os textos do canal oficial mantêm a redação que o dossiê já mostrava — a
- * correção é de ALCANCE (quem lê a frase da janela) e de PRECISÃO (o motivo
- * nomeado), não de estilo. Quem só lia "horário permitido" em canal oficial
- * continua lendo exatamente isso.
+ * A frase antiga ("a janela estava fechada") sobrevive só nos motivos de janela
+ * de 24 h, e só em canal que tem essa janela. Todo outro motivo — inclusive
+ * `outside_window` no canal oficial — passa a nomear o que de fato segurou o
+ * envio. O título "Segurou o envio até o horário permitido" se mantém nos dois
+ * grupos de horário.
  */
 export function descreverAdiamento(entrada: EntradaDoAdiamento): AdiamentoLegivel {
   const { quando, janelaRegulatoria } = entrada;
