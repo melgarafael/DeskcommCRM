@@ -82,6 +82,22 @@ export const SQL_ERRORS: Readonly<Record<string, { message: string; status: numb
     message: "A configuração mudou em outra sessão. Recarregue antes de salvar.",
     status: 409,
   },
+  extension_consent_not_applicable: {
+    message: "Só um módulo conectado tem áreas para consentir.",
+    status: 409,
+  },
+  extension_not_activated: {
+    message: "Ative o módulo nesta organização antes de consentir áreas.",
+    status: 409,
+  },
+  extension_area_not_declared: {
+    message: "O módulo não declarou esta área no pacote. Ela não pode ser consentida.",
+    status: 409,
+  },
+  extension_area_requires_admin: {
+    message: "Só um administrador da organização pode consentir esta área.",
+    status: 409,
+  },
   extension_active_limit: {
     message: "O limite de extensões ativas foi atingido. Desative uma antes de ativar outra.",
     status: 409,

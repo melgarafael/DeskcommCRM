@@ -20,6 +20,13 @@ export function auditDoModulo(actor: Actor): AuditDoModulo | null {
 }
 
 /** Para espalhar (`...metadataDoModulo(actor)`) na metadata de quem monta o audit. */
-export function metadataDoModulo(actor: Actor): { actor_api_token_id?: string; module?: string } {
-  return auditDoModulo(actor) ?? {};
+export function metadataDoModulo(actor: Actor): {
+  actor_api_token_id?: string;
+  module?: string;
+  person_id?: string;
+} {
+  const base = auditDoModulo(actor);
+  if (!base) return {};
+  // A pessoa do JWT de contexto (F3) só é ATRIBUIÇÃO: vai para a metadata, nunca para `actor_user_id`.
+  return actor.type === "module" && actor.pessoaId ? { ...base, person_id: actor.pessoaId } : base;
 }

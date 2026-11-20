@@ -4,8 +4,6 @@
  * O ator decide duas coisas que não aparecem como erro de tipo: o que o audit grava (token em
  * `actor_api_token_id`, módulo em `metadata.module`) e o que NÃO vai para coluna de pessoa. Um escopo
  * malformado não pode virar módulo, e `created_by` nulo (token de módulo) não pode quebrar a resolução.
- *
- * Até o F3 (consentimento por área), o token de módulo é RECUSADO em toda porta: ver `resolveApiToken`.
  */
 import { createHash } from "node:crypto";
 
@@ -79,7 +77,6 @@ describe("token de módulo no banco — created_by nulo", () => {
             return c;
           },
           update: () => {
-            filtros.push(["last_used_at", "update"]);
             const c: Record<string, unknown> = {};
             c.eq = () => c;
             c.then = (resolver: (v: unknown) => unknown) => resolver({ error: null });
@@ -103,33 +100,20 @@ describe("token de módulo no banco — created_by nulo", () => {
 
   beforeEach(() => vi.clearAllMocks());
 
-  it("`resolveApiToken` RECUSA o token de módulo até o F3, sem registrar uso", async () => {
+  it("`resolveApiToken` devolve `createdBy: null` sem quebrar", async () => {
     const filtros = adminComLinha(linhaDoModulo());
-    await expect(resolveApiToken(PLAINTEXT)).rejects.toMatchObject({
-      name: "ApiTokenError",
-      reason: "wrong_audience",
-    });
+    const resolvido = await resolveApiToken(PLAINTEXT);
+    expect(resolvido.createdBy).toBeNull();
+    expect(resolvido.id).toBe(TOKEN_ID);
+    expect(resolvido.organizationId).toBe(ORG_ID);
     expect(filtros).toContainEqual(["token_hash", HASH]);
-    expect(filtros).not.toContainEqual(["last_used_at", "update"]);
   });
 
-  it("`validateBearerToken` recusa com 403 (REST e `/api/mcp`) e não debita o balde", async () => {
+  it("`validateBearerToken` entrega o ator `module` e o papel viewer", async () => {
     adminComLinha(linhaDoModulo());
-    await expect(validateBearerToken(`Bearer ${PLAINTEXT}`)).rejects.toMatchObject({
-      name: "McpAuthError",
-      httpStatus: 403,
-    });
-    await expect(
-      validateBearerToken(`Bearer ${PLAINTEXT}`, { permiteOrgSuspensa: true, portaDoMcp: true }),
-    ).rejects.toMatchObject({ name: "McpAuthError", httpStatus: 403 });
-    const { registrarFalhaDeToken } = await import("@/lib/auth/rate-limit");
-    expect(registrarFalhaDeToken).not.toHaveBeenCalled();
-  });
-
-  it("par de vacuidade: o MESMO token sem o escopo de módulo continua aceito", async () => {
-    adminComLinha({ ...linhaDoModulo(), scopes: ["mcp:read", "role:viewer"] });
     const auth = await validateBearerToken(`Bearer ${PLAINTEXT}`);
-    expect(auth.actor).toEqual({ type: "api_token", id: TOKEN_ID, role: "viewer" });
+    expect(auth.actor).toEqual({ type: "module", id: TOKEN_ID, slug: SLUG });
+    expect(auth.role).toBe("viewer");
     expect(auth.apiTokenId).toBe(TOKEN_ID);
   });
 });
