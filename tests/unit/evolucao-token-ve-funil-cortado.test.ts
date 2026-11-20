@@ -61,6 +61,16 @@ describe("GET /api/v1/ai/evolution pelo token de integração", () => {
     expect(body.data.fontes_incompletas).toContainEqual({ fonte: "crm_stages", motivo: "cortada" });
   });
 
+  it("lista de funis cortada (500 de 800): crm_stages entra em fontes_incompletas mesmo com as etapas completas", async () => {
+    const funis = Array.from({ length: 500 }, (_, i) => ({ id: `p${i}`, name: `Funil ${i}` }));
+    const etapas = funis.map((f) => ({ agent_stage_hint: "qualificar", pipeline_id: f.id }));
+    fakeDb({ crm_pipelines: funis, crm_stages: etapas }, { crm_pipelines: 800 });
+
+    const r = await GET(new NextRequest("http://localhost:3000/api/v1/ai/evolution"));
+    const body = (await r.json()) as { data: { fontes_incompletas: Array<{ fonte: string; motivo: string }> } };
+    expect(body.data.fontes_incompletas).toContainEqual({ fonte: "crm_stages", motivo: "cortada" });
+  });
+
   it("todas as etapas lidas: o funil não aparece como cortado", async () => {
     const etapas = [{ agent_stage_hint: "qualificar", pipeline_id: "p1" }];
     fakeDb({ crm_pipelines: [{ id: "p1", name: "Funil A" }], crm_stages: etapas }, {});
