@@ -39,6 +39,14 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import type { createAdminClient } from "@/lib/supabase/admin";
+
+/**
+ * O client de SERVIÇO, pelo tipo: escrever em `organizations` com o de sessão
+ * casa zero linhas e devolve sucesso (`escrita-em-organizations-usa-cliente-admin`).
+ */
+type ClienteAdmin = ReturnType<typeof createAdminClient>;
+
 /** A chave em `organizations.settings`. */
 export const CHAVE_DOS_MEMBROS_SEM_AVISO = "aviso_de_caso_nao_avisar";
 
@@ -93,7 +101,7 @@ export interface MudancaDaMarca {
  * nada foi alterado nesse caso.
  */
 export async function gravarMembrosSemAviso(
-  admin: SupabaseClient,
+  admin: ClienteAdmin,
   organizationId: string,
   mudancas: readonly MudancaDaMarca[],
 ): Promise<boolean> {
@@ -107,7 +115,7 @@ export async function gravarMembrosSemAviso(
 }
 
 async function aplicarMudancas(
-  admin: SupabaseClient,
+  admin: ClienteAdmin,
   organizationId: string,
   mudancas: readonly MudancaDaMarca[],
 ): Promise<boolean> {
