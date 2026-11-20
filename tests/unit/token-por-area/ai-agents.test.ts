@@ -281,6 +281,29 @@ function execucaoDe(l: Lado): Linha {
   };
 }
 
+/** Id do run de prévia de cada lado (`ai_agent_runs.id`), citado por `llm_calls.preview_run_id`. */
+const runDePreviaDe = (l: Lado): string => `${l.rotulo.toLowerCase()}7000000-0000-4000-8000-000000000001`;
+
+/**
+ * Chamada de TESTE na tela (`agent_preview`, sem contato): é a única que leva a
+ * rota a ler `ai_agent_runs` para buscar o texto da prévia. Sem ela no fixture,
+ * a segunda consulta de `runs` nunca roda e a cadeia dela fica fora da régua.
+ */
+function execucaoDePreviaDe(l: Lado): Linha {
+  return { ...execucaoDe(l), purpose: "agent_preview", preview_run_id: runDePreviaDe(l) };
+}
+
+function runDePreviaLinha(l: Lado): Linha {
+  return {
+    id: runDePreviaDe(l),
+    organization_id: l.org,
+    agent_id: l.agente,
+    input_text: `pergunta de teste ${l.rotulo}`,
+    output_text: `resposta de teste ${l.rotulo}`,
+    tool_calls: [],
+  };
+}
+
 // ─── A tabela de casos ───────────────────────────────────────────────────────
 
 const CASOS: Caso[] = [
@@ -593,6 +616,28 @@ const CASOS: Caso[] = [
     statusDeB: 200,
     listaVaziaParaB: true,
     naoEsperaNaRespostaDeB: [B.execucao],
+  },
+  {
+    rota: "app/api/v1/ai/agents/[id]/runs/route.ts",
+    carregar: () =>
+      import("@/app/api/v1/ai/agents/[id]/runs/route") as unknown as Promise<ModuloDeRota>,
+    metodo: "GET",
+    caminho: `/api/v1/ai/agents/${A.agente}/runs`,
+    params: { id: A.agente },
+    variante: "com o texto da prévia",
+    linhas: {
+      llm_calls: [execucaoDePreviaDe(A), execucaoDePreviaDe(B)],
+      ai_agent_runs: [runDePreviaLinha(A), runDePreviaLinha(B)],
+    },
+    papel: "manager",
+    escopo: "config:read",
+    papelDoToken: "admin",
+    resource: "ai_agents",
+    // O texto da prévia chegou: a segunda consulta (`ai_agent_runs`) rodou de verdade.
+    esperaNaResposta: [A.execucao, "resposta de teste A"],
+    statusDeB: 200,
+    listaVaziaParaB: true,
+    naoEsperaNaRespostaDeB: [B.execucao, "resposta de teste A"],
   },
   {
     rota: "app/api/v1/ai/agents/[id]/tool-usage/route.ts",

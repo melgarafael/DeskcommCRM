@@ -132,10 +132,10 @@ type ClienteDeSessao = SupabaseClient;
  * `llm_calls.preview_run_id`, então a busca é `in (ids)` sobre a PK: UMA
  * consulta por página, indexada, e não um `select` por linha.
  *
- * Filtrar por organização aqui seria o reflexo errado: `id` já é único, o valor
- * veio de uma linha que a RLS do chamador liberou, e a policy de
- * `ai_agent_runs` decide o resto. Um filtro por organização A MAIS não protegeria
- * nada e daria a impressão de que a proteção mora nesta consulta.
+ * O filtro por organização é obrigatório aqui, embora `id` já seja único: pela
+ * sessão a policy de `ai_agent_runs` repete o recorte, mas pelo token (Spec 33)
+ * o cliente é a service role, que ignora a RLS, e esta consulta passa a ser a
+ * única barreira entre a página e o run de outra organização.
  *
  * Falhar aqui NÃO derruba a lista: a aba continua com custo, tokens e status, e
  * a linha do teste volta sem texto — o estado de antes do conserto. O aviso vai
@@ -144,6 +144,7 @@ type ClienteDeSessao = SupabaseClient;
  */
 async function textosDoTeste(
   supabase: ClienteDeSessao,
+  organizationId: string,
   chamadas: readonly LlmCallRow[],
   requestId: string,
 ): Promise<Map<string, ConteudoDoTeste>> {
@@ -161,6 +162,7 @@ async function textosDoTeste(
   const { data, error } = await supabase
     .from("ai_agent_runs")
     .select("id, input_text, output_text, tool_calls")
+    .eq("organization_id", organizationId)
     .in("id", ids);
 
   if (error) {
@@ -318,7 +320,7 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   const chamadas = (data ?? []) as unknown as LlmCallRow[];
   // #4426: as linhas de TESTE levam a pergunta e a resposta; as reais ficam sem
   // texto (o mapa só tem as prévias desta página).
-  const textos = await textosDoTeste(supabase, chamadas, requestId);
+  const textos = await textosDoTeste(supabase, organizationId, chamadas, requestId);
   const rows = chamadas.map((c) =>
     paraLinhaDeExecucao(c, (c.preview_run_id && textos.get(c.preview_run_id)) || null),
   );
