@@ -47,6 +47,7 @@ import {
 import { lerContextoDaEquipe } from "@/lib/prospecting/contexto-da-equipe";
 import { defsDoPadraoDaOrg } from "@/lib/leads/padrao-do-campo";
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
+import { previaAprovadaDoAgente } from "./previa";
 import { motivoSemWhatsapp } from "./whatsapp";
 import { idiomaDaOrganizacao } from "./idioma";
 import { isMediaPathInOrganization } from "@/lib/messaging/media/upload-validation";
@@ -107,6 +108,7 @@ export interface Candidate {
   status: string;
   selected: boolean;
   phone: string | null;
+  automatic_sends?: number | null;
   contact_id: string | null;
   lead_id: string | null;
   conversation_id: string | null;
@@ -1355,6 +1357,7 @@ export async function activateCampaign(
         [org, id],
       )
     ).rows;
+    exigirAprovacaoAntesDoPrimeiroContato(candidates, config);
     await enfileirarCandidatos(db, admin, org, c, config, candidates);
     try {
       await db.query(
@@ -1375,6 +1378,45 @@ export async function activateCampaign(
     }
     return { started: true };
   });
+}
+
+/**
+ * Com `exigir_aprovacao_da_previa` ligada, a campanha não começa nem retoma
+ * enquanto houver primeiro contato sem revisão humana. Desligada (o padrão,
+ * inclusive campanha gravada antes da opção existir), não confere nada.
+ */
+export function exigirAprovacaoAntesDoPrimeiroContato(
+  candidatos: Array<{
+    id: string;
+    data: Prospect;
+    phone: string | null;
+    selected?: boolean | null;
+    automatic_sends?: number | null;
+  }>,
+  config: Pick<
+    CampaignConfig,
+    "agent_id" | "briefing_editado_em" | "exigir_aprovacao_da_previa" | "fonte_da_abordagem"
+  >,
+): void {
+  if (!config.exigir_aprovacao_da_previa) return;
+  const pendentes = candidatos.filter(
+    (candidato) =>
+      candidato.selected !== false &&
+      !!candidato.phone &&
+      (candidato.automatic_sends ?? 0) === 0 &&
+      !previaAprovadaDoAgente(
+        candidato.data,
+        config.agent_id,
+        config.briefing_editado_em,
+        config.fonte_da_abordagem ?? "estrategia",
+      ),
+  );
+  if (pendentes.length > 0) {
+    throw new ProspectingError(
+      `Revise e aprove a prévia de ${pendentes.length} empresa(s) antes de iniciar ou retomar a campanha.`,
+      409,
+    );
+  }
 }
 
 /**

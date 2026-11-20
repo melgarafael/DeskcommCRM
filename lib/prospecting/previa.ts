@@ -41,6 +41,8 @@ export const previaSalvaSchema = z.object({
   fonte: z.enum(["estrategia", "agente"]).optional(),
   /** `config.briefing_editado_em` da campanha com que a prévia foi escrita; ausente = texto nunca editado. */
   briefing_editado_em: z.string().max(40).optional(),
+  aprovada_por: z.string().uuid().optional(),
+  aprovada_em: z.string().max(40).optional(),
 });
 export type PreviaSalva = z.infer<typeof previaSalvaSchema>;
 
@@ -112,6 +114,52 @@ export function previaDoAgente(
   const previa = previaValida(data, fonte);
   if (!previa || previa.agente_id !== agenteId) return null;
   return previa.briefing_editado_em === briefingEditadoEm ? previa : null;
+}
+
+/** A prévia só libera o primeiro contato se a pessoa atual a aprovou. */
+export function previaAprovadaDoAgente(
+  data: DadosDaPrevia,
+  agenteId: string,
+  briefingEditadoEm?: string,
+  /**
+   * A fonte da abordagem DA CAMPANHA. Sem ela, a prévia do prompt do agente
+   * (`fonte: "agente"`) nunca valia como aprovada, e a campanha com as duas opções
+   * ligadas não iniciava nunca (reprova do #3630).
+   */
+  fonte: "estrategia" | "agente" = "estrategia",
+): PreviaSalva | null {
+  const previa = previaDoAgente(data, agenteId, briefingEditadoEm, fonte);
+  return previa?.aprovada_por && previa.aprovada_em ? previa : null;
+}
+
+/** Marca como aprovada apenas a prévia exata que a pessoa acabou de revisar. */
+export async function aprovarPrevia(
+  db: { query: (sql: string, params?: unknown[]) => Promise<{ rowCount?: number | null }> },
+  args: {
+    organizationId: string;
+    campaignId: string;
+    candidateId: string;
+    agentId: string;
+    baseadaEm: string;
+    geradaEm: string;
+    approverUserId: string;
+    approvedAt: string;
+  },
+): Promise<boolean> {
+  const result = await db.query(
+    "update prospecting_candidates set data=jsonb_set(data,'{previa}',(data->'previa') || jsonb_build_object('aprovada_por',$7::text,'aprovada_em',$8::text),true),updated_at=now() where organization_id=$1 and campaign_id=$2 and id=$3 and selected is not false and status in ('new','queued') and data->'previa'->>'agente_id'=$4 and data->'previa'->>'baseada_em'=$5 and data->'previa'->>'gerada_em'=$6",
+    [
+      args.organizationId,
+      args.campaignId,
+      args.candidateId,
+      args.agentId,
+      args.baseadaEm,
+      args.geradaEm,
+      args.approverUserId,
+      args.approvedAt,
+    ],
+  );
+  return (result.rowCount ?? 0) > 0;
 }
 
 /**
