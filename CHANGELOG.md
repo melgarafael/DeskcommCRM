@@ -21,6 +21,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Os ganhos por agente de IA na tabela por atendente ficam para uma entrega seguinte.
 
+  Contribuição de @webtecnica (#4931).
+
 - **Rotas de IA de configuração e leitura aceitam token de integração** As rotas de IA de configuração e leitura (`ai/automatico-ativo`, `ai/budget`, `ai/evolution`, `ai/guardrail-layers`, `ai/mapas`, `ai/mapas/testar`, `ai/operator-metrics`, `ai/pacing`, `ai/runs`, `ai/style-adjustments`, `ai/turn-traces`, `ai/usage` e `ai/voz`) passam a aceitar o token `dsk_…` de servidor. A leitura exige o escopo `config:read` e a escrita exige `config:write`, sempre com papel admin no token. A organização vem da linha do token. Continuam somente de sessão `ai/jev`, `ai/voz/preview` e a escrita de `ai/pacing`. Crédito: @paulolimajr77.
 
 - **Rotas do acervo de conhecimento aceitam token de integração** As rotas de configuração do acervo de IA (`ai/knowledge/sources`, `ai/knowledge/busca`, `ai/knowledge/reindex-all`, `ai/knowledge/sources/[id]`, `ai/knowledge/sources/[id]/conteudo`, `ai/knowledge/sources/[id]/reindex`, `ai/knowledge/sources/[id]/trechos` e `ai/knowledge/sources/upload`) passam a aceitar o token `dsk_…` de servidor, com papel admin no token e a organização vinda da linha do token. `ai/knowledge/chave` e `ai/knowledge/provedor` continuam somente de sessão. Crédito: @paulolimajr77.
@@ -44,6 +46,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   administradores. Os assistentes nunca enxergam nem alteram as próprias
   instruções. Na tela do assistente, essas capacidades aparecem como não
   marcáveis, com o motivo.
+
+  Contribuição de @lebaneseforas-byte (#4805).
 
 - **Integração com token passa a gerenciar os grupos de respostas rápidas e as respostas compartilhadas** Uma integração com token de API pode listar, criar, renomear, reordenar e apagar os grupos de respostas rápidas, e listar, criar, editar, reordenar e apagar as respostas compartilhadas da organização, além de enviar e ver as imagens delas. Para ler é preciso o escopo `config:read`; para alterar, `config:write`, e o token precisa ter papel de administrador. O token alcança só as respostas compartilhadas: criar uma resposta pessoal pelo token é recusado, e as pessoais continuam sendo de cada atendente. Crédito: @paulolimajr77.
 
@@ -111,11 +115,15 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **O follow-up em número por QR não culpa mais a janela de 24 h da API oficial** O histórico do follow-up dizia "a janela estava fechada" para todo envio segurado, qualquer que fosse o motivo. Agora ele nomeia o que de fato segurou: o horário de envio da conexão, a faixa do acompanhamento, uma pessoa no comando da conversa, a trava contra repetir a mesma mensagem ou o ritmo do número. A frase da janela de 24 h fica reservada aos canais que espelham a API oficial, decidida pela capacidade do canal e não pelo nome do provedor. O adiamento em si não mudou: só o texto que explica por que ele aconteceu.
 
+  Contribuição de @webtecnica (#4923).
+
 - **A coluna Status dos tokens de API aparece traduzida em espanhol** Em Configurações › Tokens de API, com a tela em espanhol, todos os cabeçalhos
   da tabela mudavam de idioma, menos "Status", que ficava escrito direto no
   código. Agora ele aparece como "Estado", como as colunas vizinhas.
 
   Issue #4990.
+
+  Contribuição de @fernandoobarbosa (#5064).
 
 - **Saiba onde encontrar a senha inicial depois de instalar** Na instalação com o Supabase na mesma VPS, o resumo do instalador aponta
   onde encontrar a senha inicial: `OWNER_PASSWORD` no arquivo `.env` da pasta
