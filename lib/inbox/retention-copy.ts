@@ -76,10 +76,12 @@ export function retentionCopy(
       // próximo passo em linguagem de quem escreve o prompt, e a terceira diz o
       // que o gate isenta (curtas e links de pagamento), senão o medo de repetir
       // um link de cobrança faz o operador parar de cobrar.
+      // O mesmo código chega de um passo de follow-up com uma redação só, cujo
+      // texto mora no passo e não no prompt — daí a saída das outras redações.
       return make(
         "protection",
         t(
-          "A mesma mensagem estava se repetindo em massa por este número — o envio foi segurado para não parecer robô para o WhatsApp. Para liberar: no prompt, descreva o objetivo de cada mensagem em vez do texto exato e peça para personalizar com o nome e o contexto do lead. Mensagens curtas e links de pagamento não entram nessa conta.",
+          "A mesma mensagem estava se repetindo em massa por este número — o envio foi segurado para não parecer robô para o WhatsApp. Para liberar: no prompt, descreva o objetivo de cada mensagem em vez do texto exato e peça para personalizar com o nome e o contexto do lead; se for um passo de follow-up com texto fixo, acrescente outras redações ao passo. Mensagens curtas e links de pagamento não entram nessa conta.",
         ),
       );
     case "contato_bloqueado":

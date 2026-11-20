@@ -51,6 +51,18 @@ describe("o aviso de mass_identical diz o que fazer", () => {
     expect(description).toContain("personalizar com o nome e o contexto do lead");
   });
 
+  // O mesmo trace mass_identical chega quando quem colidiu foi um passo de
+  // follow-up com uma redação só (followup-turn.ts passa pelo runBeforeSend com
+  // o spinning armado) — e esse texto mora no passo, não no prompt. Sem esta
+  // frase, o aviso manda o operador mexer no lugar que não controla o envio.
+  it("diz a saída do follow-up de texto fixo: outras redações no passo, em pt e es", () => {
+    expect(retentionCopy("mass_identical", ctx).description).toContain(
+      "se for um passo de follow-up com texto fixo, acrescente outras redações ao passo",
+    );
+    const es = retentionCopy("mass_identical", ctx, (texto) => traduzir(texto, "es")).description;
+    expect(es).toContain("si es un paso de seguimiento con texto fijo, agrega otras redacciones al paso");
+  });
+
   it("diz o que a trava NÃO conta — curtas e links de pagamento", () => {
     expect(retentionCopy("mass_identical", ctx).description).toContain(
       "Mensagens curtas e links de pagamento não entram nessa conta.",
