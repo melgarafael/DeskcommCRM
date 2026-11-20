@@ -25,7 +25,12 @@
  *  - SÉRIE = um ponto por DIA da janela; acima de `DIAS_DA_SERIE_DIARIA` dias,
  *    um ponto por MÊS (400 pontos não cabem num gráfico legível). Dia sem venda
  *    é ponto zero, não buraco — o gráfico tem de mostrar o vale.
+ *  - RECORTE (funil e tag) = a MESMA regra da lista de vendas do Faturamento
+ *    (`passaNoFiltro` de `comercial.ts`, tag normalizada). Vale para ganhos E
+ *    perdidos: a conversão de "Atacado" é a dos negócios de Atacado. Os
+ *    cartões e a lista abaixo deles nunca contam com réguas diferentes.
  */
+import { passaNoFiltro, type FiltroDoRelatorio } from "./comercial";
 import { dataNoFuso, proximoDia, type JanelaDoRelatorio } from "./janela";
 
 /** Acima disto a série vira mensal. */
@@ -36,6 +41,8 @@ export interface NegocioDoPainel {
   closed_at: string | null;
   value_cents: number | null;
   currency: string | null;
+  pipeline_id?: string | null;
+  tags?: string[] | null;
 }
 
 export type GranularidadeDoPainel = "dia" | "mes";
@@ -83,8 +90,11 @@ export function montarPainelDeVendas(entrada: {
   negocios: readonly NegocioDoPainel[];
   janela: JanelaDoRelatorio;
   moedaDaOrganizacao: string;
+  /** Funil e tag JÁ normalizada (`normalizarTagDoRelatorio`). Ausente = sem recorte. */
+  filtro?: FiltroDoRelatorio;
 }): PainelDeVendas {
   const { janela } = entrada;
+  const filtro: FiltroDoRelatorio = entrada.filtro ?? { pipeline_id: null, tag: null };
   const moeda = entrada.moedaDaOrganizacao.trim().toUpperCase();
   const granularidade: GranularidadeDoPainel =
     diasDaJanela(janela.de, janela.ate) > DIAS_DA_SERIE_DIARIA ? "mes" : "dia";
@@ -111,6 +121,7 @@ export function montarPainelDeVendas(entrada: {
     // Janela SEMIABERTA, como a consulta: quem fechou à meia-noite do dia
     // seguinte é do dia seguinte.
     if (!Number.isFinite(instante) || instante < inicio || instante >= fim) continue;
+    if (!passaNoFiltro({ pipeline_id: negocio.pipeline_id ?? null, tags: negocio.tags ?? null }, filtro)) continue;
 
     if (negocio.status === "lost") {
       perdidos++;

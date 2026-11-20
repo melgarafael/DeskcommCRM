@@ -40,6 +40,7 @@ import {
   periodoPadrao,
   periodoPassaDoTeto,
 } from "@/lib/relatorios/janela";
+import { normalizarTagDoRelatorio } from "@/lib/relatorios/comercial";
 import { montarPainelDeVendas, type NegocioDoPainel } from "@/lib/relatorios/painel-de-vendas";
 import { lerPaginado } from "@/lib/supabase/pagina";
 import { createClient } from "@/lib/supabase/server";
@@ -49,6 +50,10 @@ export const dynamic = "force-dynamic";
 const querySchema = z.object({
   de: z.iso.date({ message: "Data inicial inválida." }).optional(),
   ate: z.iso.date({ message: "Data final inválida." }).optional(),
+  // O recorte — o MESMO de `/api/v1/reports/comercial`, com a mesma régua:
+  // funil inexistente ou de outra organização não é erro, é recorte vazio.
+  pipeline_id: z.uuid({ message: "Funil inválido." }).optional(),
+  tag: z.string().trim().min(1, { message: "Tag inválida." }).max(100, { message: "Tag inválida." }).optional(),
 });
 
 export async function GET(req: NextRequest): Promise<Response> {
@@ -68,6 +73,8 @@ export async function GET(req: NextRequest): Promise<Response> {
   const parsed = querySchema.safeParse({
     de: url.searchParams.get("de") || undefined,
     ate: url.searchParams.get("ate") || undefined,
+    pipeline_id: url.searchParams.get("pipeline_id") || undefined,
+    tag: url.searchParams.get("tag") || undefined,
   });
   if (!parsed.success) {
     return fail("validation_failed", t("Query inválida."), 422, {
@@ -96,7 +103,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const leitura = await lerPaginado<NegocioDoPainel>(async (inicio, fim, contar) => {
     const { data, error, count } = await supabase
       .from("crm_leads")
-      .select("status, closed_at, value_cents, currency", contar ? { count: "exact" } : undefined)
+      .select("status, closed_at, value_cents, currency, pipeline_id, tags", contar ? { count: "exact" } : undefined)
       .eq("organization_id", org.orgId)
       .in("status", ["won", "lost"])
       .gte("closed_at", janela.from)
@@ -115,6 +122,10 @@ export async function GET(req: NextRequest): Promise<Response> {
     negocios: leitura.linhas,
     janela,
     moedaDaOrganizacao: org.currency?.trim() || MOEDA_PADRAO,
+    filtro: {
+      pipeline_id: parsed.data.pipeline_id ?? null,
+      tag: parsed.data.tag ? normalizarTagDoRelatorio(parsed.data.tag) : null,
+    },
   });
 
   return ok({ janela, ...painel, truncado: leitura.truncado }, { requestId });

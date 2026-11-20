@@ -264,3 +264,25 @@ describe("RankingsDeNegociosGanhos", () => {
     expect(lista.textContent).toContain("sem valor preenchido");
   });
 });
+
+describe("controlado pela tela de fora (o painel de vendas)", () => {
+  it("usa o recorte recebido, não desenha seletores e entrega o clique na tag a quem controla", () => {
+    responder(comVendas());
+    const aoMudarRecorte = vi.fn();
+    render(
+      <RankingsDeNegociosGanhos
+        {...PERIODO}
+        recorte={{ pipelineId: FUNIL_A, tag: "" }}
+        aoMudarRecorte={aoMudarRecorte}
+      />,
+    );
+
+    expect(vi.mocked(useCommercialReport)).toHaveBeenLastCalledWith({ ...PERIODO, pipelineId: FUNIL_A, tag: "" });
+    // Os seletores moram no topo do painel: aqui, nenhum.
+    expect(screen.queryByTestId("recorte-funil")).toBeNull();
+    expect(screen.queryByTestId("recorte-tag")).toBeNull();
+
+    fireEvent.click(screen.getByTitle("Ver as vendas desta tag"));
+    expect(aoMudarRecorte).toHaveBeenCalledWith({ pipelineId: FUNIL_A, tag: "recompra" });
+  });
+});

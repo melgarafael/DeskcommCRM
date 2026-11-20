@@ -157,3 +157,32 @@ describe("GET /api/v1/reports/painel-de-vendas", () => {
     expect(db.from).not.toHaveBeenCalled();
   });
 });
+
+describe("GET /api/v1/reports/painel-de-vendas — o recorte", () => {
+  const FUNIL = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
+  it("funil e tag chegam à conta, com a tag normalizada", async () => {
+    authOk();
+    makeDb([
+      { status: "won", closed_at: "2026-11-03T15:00:00.000Z", value_cents: 30_000, currency: "BRL", pipeline_id: FUNIL, tags: ["atacado"] },
+      { status: "won", closed_at: "2026-11-04T15:00:00.000Z", value_cents: 10_000, currency: "BRL", pipeline_id: FUNIL, tags: ["varejo"] },
+    ]);
+
+    const res = await GET(pedir(`?de=2026-11-01&ate=2026-11-19&pipeline_id=${FUNIL}&tag=%20ATACADO%20`));
+    const corpo = (await res.json()) as { data: { vendas: number; vendido_centavos: number } };
+
+    expect(res.status).toBe(200);
+    expect(corpo.data.vendas).toBe(1);
+    expect(corpo.data.vendido_centavos).toBe(30_000);
+  });
+
+  it("funil que não é uuid é 422, sem consulta", async () => {
+    authOk();
+    const { db } = makeDb([]);
+
+    const res = await GET(pedir("?pipeline_id=nao-e-uuid"));
+
+    expect(res.status).toBe(422);
+    expect(db.from).not.toHaveBeenCalled();
+  });
+});

@@ -24,7 +24,12 @@ import {
   YAxis,
 } from "recharts";
 
-import { RankingsDeNegociosGanhos } from "@/components/relatorios/rankings-de-negocios-ganhos";
+import {
+  RankingsDeNegociosGanhos,
+  type RecorteDeVendas,
+} from "@/components/relatorios/rankings-de-negocios-ganhos";
+import { useCommercialReport } from "@/hooks/reports/useCommercialReport";
+import { normalizarTagDoRelatorio } from "@/lib/relatorios/comercial";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
@@ -40,6 +45,9 @@ import {
 import { cn } from "@/lib/utils";
 
 type Metrica = "valor" | "vendas";
+
+const CLASSE_DO_SELETOR =
+  "rounded-md border border-border bg-surface-elevated p-2 text-sm text-text max-md:min-h-11";
 
 function Cartao({ titulo, valor, detalhe, testId }: { titulo: string; valor: ReactNode; detalhe?: ReactNode; testId: string }) {
   return (
@@ -57,9 +65,27 @@ export function PainelDeVendas({ periodoInicial, tz }: { periodoInicial: Periodo
   const t = useT();
   const tagDeIdioma = useTagDeIdioma();
   const [periodo, setPeriodo] = useState<Periodo>(periodoInicial);
+  const [recorte, setRecorte] = useState<RecorteDeVendas>({ pipelineId: "", tag: "" });
   const [metrica, setMetrica] = useState<Metrica>("valor");
-  const { data, isLoading, isError, isFetching } = usePainelDeVendas(periodo);
+  const { data, isLoading, isError, isFetching } = usePainelDeVendas({ ...periodo, ...recorte });
   const painel = data?.data;
+
+  // As OPÇÕES de funil e tag são as do período inteiro, da mesma resposta que
+  // a lista de vendas abaixo usa (mesma chave de cache: uma requisição só).
+  const comercial = useCommercialReport({ ...periodo, ...recorte });
+  const opcoes = comercial.data?.data;
+
+  // Funil ou tag que sumiu do período novo é zerado — só com a resposta do
+  // período atual, nunca com a anterior de `keepPreviousData` (mesma régua da
+  // lista de vendas).
+  if (opcoes && !comercial.isPlaceholderData) {
+    const funilSumiu = recorte.pipelineId !== "" && !opcoes.opcoes.pipeline_ids.includes(recorte.pipelineId);
+    const tagSumiu = recorte.tag !== "" && !opcoes.opcoes.tags.includes(normalizarTagDoRelatorio(recorte.tag));
+    if (funilSumiu || tagSumiu) {
+      setRecorte({ pipelineId: funilSumiu ? "" : recorte.pipelineId, tag: tagSumiu ? "" : recorte.tag });
+    }
+  }
+  const comRecorte = recorte.pipelineId !== "" || recorte.tag !== "";
 
   const rotuloDoAtalho: Record<AtalhoDePeriodo, string> = {
     hoje: t("Hoje"),
@@ -130,6 +156,52 @@ export function PainelDeVendas({ periodoInicial, tz }: { periodoInicial: Periodo
           />
         </div>
         {isFetching && !isLoading ? <span className="text-xs text-text-muted">{t("Atualizando…")}</span> : null}
+      </div>
+
+      {/* ── O recorte: vale para os cartões, o gráfico e a lista ────────────── */}
+      <div className="flex flex-wrap items-end gap-3" data-testid="recorte-do-painel">
+        <label className="flex flex-col gap-1 text-xs text-text-muted">
+          {t("Funil")}
+          <select
+            value={recorte.pipelineId}
+            data-testid="painel-funil"
+            onChange={(e) => setRecorte((r) => ({ ...r, pipelineId: e.target.value }))}
+            className={CLASSE_DO_SELETOR}
+          >
+            <option value="">{t("Todos os funis")}</option>
+            {(opcoes?.opcoes.pipeline_ids ?? []).map((id) => (
+              <option key={id} value={id}>
+                {opcoes?.nomes_dos_funis[id] ?? t("Funil sem nome")}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-text-muted">
+          {t("Tag")}
+          <select
+            value={recorte.tag}
+            data-testid="painel-tag"
+            onChange={(e) => setRecorte((r) => ({ ...r, tag: e.target.value }))}
+            className={CLASSE_DO_SELETOR}
+          >
+            <option value="">{t("Todas as tags")}</option>
+            {(opcoes?.opcoes.tags ?? []).map((tag) => (
+              <option key={tag} value={tag}>
+                {tag}
+              </option>
+            ))}
+          </select>
+        </label>
+        {comRecorte && (
+          <button
+            type="button"
+            data-testid="painel-limpar"
+            onClick={() => setRecorte({ pipelineId: "", tag: "" })}
+            className="rounded-md border border-border px-3 py-2 text-sm hover:bg-surface-elevated max-md:min-h-11"
+          >
+            {t("Limpar filtros")}
+          </button>
+        )}
       </div>
 
       {isLoading ? (
@@ -267,7 +339,12 @@ export function PainelDeVendas({ periodoInicial, tz }: { periodoInicial: Periodo
       )}
 
       {/* ── As vendas, por funil e tag, no MESMO período ─────────────────── */}
-      <RankingsDeNegociosGanhos de={periodo.de} ate={periodo.ate} />
+      <RankingsDeNegociosGanhos
+        de={periodo.de}
+        ate={periodo.ate}
+        recorte={recorte}
+        aoMudarRecorte={setRecorte}
+      />
     </div>
   );
 }

@@ -300,7 +300,10 @@ function tagsDoNegocio(tags: string[] | null): string[] {
 }
 
 /** O negócio passa no recorte da tela? Sem recorte, todos passam. */
-function passaNoFiltro(negocio: NegocioBruto, filtro: FiltroDoRelatorio): boolean {
+export function passaNoFiltro(
+  negocio: Pick<NegocioBruto, "pipeline_id" | "tags">,
+  filtro: FiltroDoRelatorio,
+): boolean {
   if (filtro.pipeline_id !== null && negocio.pipeline_id !== filtro.pipeline_id) return false;
   if (filtro.tag !== null && !tagsDoNegocio(negocio.tags).includes(filtro.tag)) return false;
   return true;

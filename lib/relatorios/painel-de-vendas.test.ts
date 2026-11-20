@@ -107,3 +107,52 @@ describe("montarPainelDeVendas — a série", () => {
     ]);
   });
 });
+
+describe("montarPainelDeVendas — o recorte por funil e tag", () => {
+  const FUNIL_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const FUNIL_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const negocios: NegocioDoPainel[] = [
+    { ...ganho("2026-11-03T15:00:00Z", 30_000), pipeline_id: FUNIL_A, tags: ["Atacado"] },
+    { ...ganho("2026-11-04T15:00:00Z", 10_000), pipeline_id: FUNIL_A, tags: ["varejo"] },
+    { ...ganho("2026-11-05T15:00:00Z", 50_000), pipeline_id: FUNIL_B, tags: [" atacado "] },
+    { ...perdido("2026-11-06T15:00:00Z"), pipeline_id: FUNIL_A, tags: ["atacado"] },
+    { ...perdido("2026-11-07T15:00:00Z"), pipeline_id: FUNIL_B, tags: ["varejo"] },
+  ];
+
+  it("por tag (normalizada): cartões, série e conversão só do recorte", () => {
+    const painel = montarPainelDeVendas({
+      negocios,
+      janela: NOVEMBRO,
+      moedaDaOrganizacao: "BRL",
+      filtro: { pipeline_id: null, tag: "atacado" },
+    });
+
+    // "Atacado" e " atacado " são a mesma tag, como na lista de vendas.
+    expect(painel.vendas).toBe(2);
+    expect(painel.vendido_centavos).toBe(80_000);
+    // O perdido de atacado entra; o de varejo, não: a conversão é a do recorte.
+    expect(painel.perdidos).toBe(1);
+    expect(painel.conversao).toBeCloseTo(2 / 3);
+    expect(painel.serie.reduce((s, p) => s + p.centavos, 0)).toBe(80_000);
+  });
+
+  it("por funil e tag juntos", () => {
+    const painel = montarPainelDeVendas({
+      negocios,
+      janela: NOVEMBRO,
+      moedaDaOrganizacao: "BRL",
+      filtro: { pipeline_id: FUNIL_A, tag: "atacado" },
+    });
+
+    expect(painel.vendas).toBe(1);
+    expect(painel.vendido_centavos).toBe(30_000);
+    expect(painel.perdidos).toBe(1);
+  });
+
+  it("sem recorte, conta tudo", () => {
+    const painel = montarPainelDeVendas({ negocios, janela: NOVEMBRO, moedaDaOrganizacao: "BRL" });
+
+    expect(painel.vendas).toBe(3);
+    expect(painel.perdidos).toBe(2);
+  });
+});
