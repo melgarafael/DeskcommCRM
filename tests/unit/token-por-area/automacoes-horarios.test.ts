@@ -36,7 +36,6 @@ import {
   cadeiasDeEscrita,
   cadeiasForaDaOrganizacao,
   criarClienteAdminFalso,
-  linhasDaTabela,
   rpcsForaDaOrganizacao,
 } from "@/tests/unit/helpers/cliente-admin-falso";
 

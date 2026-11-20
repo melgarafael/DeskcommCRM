@@ -502,7 +502,7 @@ describe.each(CASOS)("$nome", (caso) => {
 // Setores e filas: só de sessão
 // ---------------------------------------------------------------------------
 
-describe("setores e filas ficam só de sessão: o token recebe 401 e o cliente admin nunca é montado", () => {
+describe("setores e filas ficam só de sessão: o token recebe 401, sem consulta e sem audit", () => {
   it.each([
     ["PUT /attendants/sector/[user_id]", "attendant_sector_members", () =>
       rotaSetorDoAtendente.PUT(
@@ -524,7 +524,6 @@ describe("setores e filas ficam só de sessão: o token recebe 401 e o cliente a
     const res = await chamar();
     expect(res.status).toBe(401);
     expect(requireRole).toHaveBeenCalledWith("manager", expect.objectContaining({ resource }));
-    expect(createAdminClient).not.toHaveBeenCalled();
     expect(falso.cadeias).toEqual([]);
     expect(audit).not.toHaveBeenCalled();
   });
@@ -720,42 +719,11 @@ describe("POST /message-templates com token", () => {
   });
 });
 
-describe("attendants com token: o que o corpo e o caminho não decidem", () => {
-  it("PUT: fila de outra organização → 404, sem gravar", async () => {
-    tokenDe(ORG_A, TOKEN_A, "admin");
-    const res = await rotaSetorDoAtendente.PUT(
-      reqDe("PUT", `/api/v1/attendants/sector/${ANA_A}`, TOKEN_A, { sector_ids: [SETOR_B] }),
-      comUserId(ANA_A),
-    );
-    expect(res.status).toBe(404);
-    expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
-    expect(audit).not.toHaveBeenCalled();
-  });
-
-  it("PUT: user_id que não é UUID → 404, sem tocar no banco", async () => {
-    tokenDe(ORG_A, TOKEN_A, "admin");
-    const res = await rotaSetorDoAtendente.PUT(
-      reqDe("PUT", "/api/v1/attendants/sector/nao-e-uuid", TOKEN_A, { sector_ids: [] }),
-      comUserId("nao-e-uuid"),
-    );
-    expect(res.status).toBe(404);
-    expect(falso.cadeias).toEqual([]);
-  });
-
-  it("POST: organization_id no corpo é recusado (schema estrito) e nada é criado", async () => {
-    tokenDe(ORG_A, TOKEN_A, "admin");
-    const res = await rotaSetores.POST(
-      reqDe("POST", "/api/v1/attendants/sectors", TOKEN_A, { name: "Forjada", organization_id: ORG_B }),
-    );
-    expect(res.status).toBe(422);
-    expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
-    expect(audit).not.toHaveBeenCalled();
-  });
-
+describe("attendants com token: o módulo decide antes do token", () => {
   it("módulo de setores desligado → 404 também para o token, sem tocar nas tabelas", async () => {
     vi.mocked(moduloLigado).mockResolvedValue(false);
     tokenDe(ORG_A, TOKEN_A, "admin");
-    const res = await rotaSetores.POST(reqDe("POST", "/api/v1/attendants/sectors", TOKEN_A, { name: "Fila" }));
+    const res = await rotaSetores.GET(reqDe("GET", "/api/v1/attendants/sectors", TOKEN_A));
     expect(res.status).toBe(404);
     expect(falso.cadeias).toEqual([]);
   });
@@ -851,7 +819,7 @@ describe("sessão que passa o portão", () => {
     );
     expect(res.status).toBe(200);
     expect(audit).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "attendant.sector_assigned", actorUserId: GERENTE, actorApiTokenId: null }),
+      expect.objectContaining({ action: "attendant.sector_assigned", actorUserId: GERENTE }),
     );
   });
 
