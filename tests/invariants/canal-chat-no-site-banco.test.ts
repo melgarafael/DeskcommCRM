@@ -112,6 +112,14 @@ describe("chat no site · origens permitidas (fn_webchat_origens_validas)", () =
     expect(msg).toMatch(/channel_sessions_webchat_allowed_origins_check/);
   });
 
+  it("recusa elemento NULL na lista de origens (NULL não é origem)", () => {
+    const org = novaOrg();
+    const msg = erroDe(
+      insercao(org, { provider: "'webchat'", webchat_public_key: `'wck_null_${sequencia}'`, webchat_allowed_origins: "ARRAY[NULL]::text[]" }),
+    );
+    expect(msg).toMatch(/channel_sessions_webchat_allowed_origins_check/);
+  });
+
   it("aceita https com host e com porta", () => {
     const org = novaOrg();
     expect(
@@ -154,5 +162,30 @@ describe("chat no site · o plano não conta o canal webchat como número", () =
     );
     expect(msg).not.toContain("PT402");
     expect(msg).toBe("");
+  });
+});
+
+describe("chat no site · reviver a vaga não conta o webchat", () => {
+  const PLANO = uuid(P, 91_000);
+  const ORG = uuid(P, 91_001);
+  const CHAT_ATIVO = uuid(P, 91_002);
+  const WAHA_MORTO = uuid(P, 91_003);
+
+  beforeAll(() => {
+    criarPlano({ id: PLANO, nome: "Um número (reviver chat)", maxCanais: 1 });
+    criarOrg(ORG, "webchat-banco-reviver");
+    assinar(ORG, PLANO);
+    chaveDeCobranca("ligado");
+  });
+
+  it("com teto 1 e um webchat ativo, reviver a linha WAHA morta sem número não dá PT402", () => {
+    // O chat ativo não pode ocupar a vaga: se contasse, a conta daria 1 >= 1 e o reviver
+    // recusaria. A linha WAHA morta sem número também não ocupa (0809).
+    sql(`${insercao(ORG, { id: `'${CHAT_ATIVO}'`, provider: "'webchat'", webchat_public_key: "'wck_reviver_ativo'" })};`);
+    sql(`${insercao(ORG, { id: `'${WAHA_MORTO}'`, waha_session_name: `'reviver-morto'`, status: "'FAILED'" })};`);
+    expect(
+      erroDe(`set role service_role; select public.fn_vaga_ao_reviver_canal('${ORG}', '${WAHA_MORTO}')`),
+    ).toBe("");
+    expect(sql(`select status from public.channel_sessions where id = '${WAHA_MORTO}';`).trim().split("\n").at(-1)).toBe("STARTING");
   });
 });

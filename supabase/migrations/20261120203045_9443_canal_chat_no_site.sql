@@ -42,7 +42,7 @@ as $$
   select coalesce(cardinality(origens), 0) <= 20
      and not exists (
        select 1 from unnest(origens) as o
-        where o !~* '^https://[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:[0-9]{1,5})?$'
+        where o is null or o !~* '^https://[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:[0-9]{1,5})?$'
      );
 $$;
 
@@ -151,5 +151,68 @@ end;
 $$;
 
 revoke execute on function public.fn_trava_canais_do_plano() from public, anon, authenticated;
+
+-- O reviver (9036) conta a vaga com a MESMA régua do gatilho: voz e chat no site
+-- (webchat) não são número de WhatsApp. Última definição do arquivo (rfind).
+create or replace function public.fn_vaga_ao_reviver_canal(p_org uuid, p_canal uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_canal public.channel_sessions;
+  v_limite integer;
+  v_em_uso integer;
+begin
+  -- A MESMA trava de `fn_trava_canais_do_plano` e da reserva: contagem e
+  -- tomada da vaga nunca correm em paralelo com outra conexão da empresa.
+  perform pg_advisory_xact_lock(hashtextextended(p_org::text, 2281));
+
+  select * into v_canal
+    from public.channel_sessions
+   where organization_id = p_org and id = p_canal
+   for update;
+
+  -- Só interessa a linha que hoje NÃO ocupa vaga (WAHA morta e sem número, 0809) e
+  -- vai voltar a ocupar. Número pareado, conexão em curso, arquivada e voz
+  -- seguem como antes: reconectar um número que já é da empresa nunca é recusado.
+  if not found
+     or v_canal.archived_at is not null
+     or v_canal.provider <> 'waha'
+     or v_canal.phone_number is not null
+     or v_canal.status not in ('FAILED', 'STOPPED') then
+    return;
+  end if;
+
+  v_limite := public.fn_limite_do_plano(p_org, 'canais');
+  if v_limite is not null then
+    select count(*) into v_em_uso
+      from public.channel_sessions cs
+     where cs.organization_id = p_org
+       and cs.archived_at is null
+       and cs.provider not in ('wacalls', 'webchat')
+       and (cs.provider <> 'waha' or cs.phone_number is not null or cs.status not in ('FAILED', 'STOPPED'))
+       and cs.id <> p_canal;
+
+    if v_em_uso >= v_limite then
+      raise exception 'limite_do_plano:canais:%', v_limite
+        using errcode = 'PT402',
+              detail = jsonb_build_object('recurso', 'canais', 'limite', v_limite, 'em_uso', v_em_uso)::text;
+    end if;
+  end if;
+
+  -- A vaga é TOMADA aqui, ainda dentro da trava: a linha passa a ser conexão
+  -- em curso, que ocupa. Conferir e tomar são um passo só.
+  update public.channel_sessions
+     set status = 'STARTING',
+         status_reason = 'connection_pending',
+         last_status_change_at = now()
+   where organization_id = p_org and id = p_canal;
+end;
+$$;
+
+revoke execute on function public.fn_vaga_ao_reviver_canal(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.fn_vaga_ao_reviver_canal(uuid, uuid) to service_role;
 
 notify pgrst, 'reload schema';
