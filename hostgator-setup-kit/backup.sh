@@ -3,6 +3,11 @@
 # Supabase free NÃO tem backup automático — rode isto num cron diário.
 #
 #   crontab -e →  0 3 * * *  cd /caminho/deskcommcrm && bash hostgator-setup-kit/backup.sh
+#
+# Custo no plano free (#2235): o pg_dump lê o banco inteiro, e cada rodada conta
+# no egress do Supabase (cota de 5 GB/mês). Confira no dia seguinte em
+# Settings → Usage → Egress, na linha "Shared Pooler". Se ela pesar, rode semanal
+# (0 3 * * 0): o update.sh já faz um backup antes de cada atualização.
 source "$(dirname "$0")/_common.sh"
 enter_project
 

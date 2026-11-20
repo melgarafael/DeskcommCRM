@@ -48,6 +48,16 @@ export const CATALOGO_DE_MODULOS: readonly ModuloCatalogo[] = [
       "avisado. Cada empresa escolhe os prazos da oferta antes de ligar.",
   },
   {
+    // Doc 212 (A/A): o detalhe de serviço nasce só aqui; o preço segue no item
+    // do catálogo, como em todo produto.
+    slug: "catalogo_servicos",
+    nome: "Catálogo de serviços",
+    descricao:
+      "Itens do catálogo que são serviço: hora marcada, projeto ou plano recorrente, com " +
+      "variações, prazo e sinal. O agente passa a responder 'a partir de', sinal e prazo. " +
+      "O preço continua o do item do catálogo.",
+  },
+  {
     // #3611: volta ao catálogo junto com a tela de gestão (#3636) — antes dela,
     // instalar daria uma tabela que ninguém conseguia abrir.
     slug: "ouvidoria",

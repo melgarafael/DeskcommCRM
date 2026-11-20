@@ -31,6 +31,15 @@ import { canonicalWahaExternalId, chatIdFromWaMessageId, parseWahaMessageId, wah
 import { chatIndividualDaMensagem, chatSegueNaFicha } from '@/lib/waha/ultima-recebida';
 import { lerNumerosDeTeste, numeroPodeTestar, preGoLiveAtivo } from '@/lib/ai/elegibilidade/pre-go-live';
 import { canalDesativado } from '@/lib/channels/desativado';
+import {
+  CHAVE_DO_VIGIA_DE_STARTING,
+  decidirStartingPreso,
+  estadoParaMetadata,
+  lerEstadoDoVigia,
+  limitesDoStartingPreso,
+  temEstadoDoVigia,
+  type EstadoDoVigiaDeStarting,
+} from '@/lib/channels/starting-preso';
 
 import type { Logger } from '../../obs/logger';
 
@@ -93,6 +102,107 @@ async function fetchWahaSessions(cfg: WatchdogConfig): Promise<WahaSession[] | n
   }
 }
 
+/**
+ * Para a sessão no transporte, SEM logout.
+ *
+ * É metade do restart manual que o operador faz em Conexões (stop + start):
+ * `logout` descartaria a credencial e obrigaria a escanear o QR de novo — o
+ * preço que ninguém quer pagar por uma trava que pode ceder no próximo start.
+ * 404/409/422 contam como "já está parada", que é o efeito desejado.
+ */
+async function stopWahaSession(cfg: WatchdogConfig, name: string): Promise<boolean> {
+  try {
+    const res = await fetch(
+      `${cfg.wahaBaseUrl}/api/sessions/${encodeURIComponent(name)}/stop`,
+      {
+        method: 'POST',
+        headers: { 'X-Api-Key': cfg.wahaApiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+    return res.ok || res.status === 404 || res.status === 409 || res.status === 422;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Reinicia a sessão presa em `STARTING`: stop + start, como o botão Reconectar
+ * no modo padrão.
+ *
+ * `start` sozinho não serve: o WAHA responde 422 para uma sessão que ele já
+ * considera subindo, e é exatamente esse o estado do defeito — o `start` seria
+ * aceito como sucesso sem mexer em nada, e o vigia mentiria para si mesmo a cada
+ * tick. Parar primeiro é o que devolve ao transporte a chance de subir limpo.
+ */
+export async function restartWahaSession(cfg: WatchdogConfig, name: string): Promise<boolean> {
+  if (!(await stopWahaSession(cfg, name))) return false;
+  return startWahaSession(cfg, name);
+}
+
+/** Idade do status no espelho, ou `null` quando o carimbo não veio na leitura. */
+export function idadeNoStatusEmMs(carimbo: unknown, agoraMs: number): number | null {
+  if (carimbo === null || carimbo === undefined) return null;
+  const ms =
+    carimbo instanceof Date
+      ? carimbo.getTime()
+      : typeof carimbo === 'string'
+        ? Date.parse(carimbo)
+        : Number.NaN;
+  if (!Number.isFinite(ms)) return null;
+  return Math.max(0, agoraMs - ms);
+}
+
+/**
+ * Grava o contador do vigia em `channel_sessions.metadata`.
+ *
+ * `||` de jsonb e não escrita do blob inteiro: `metadata` é compartilhado com
+ * `ai_gate`, `pre_go_live` e o resto, e sobrescrevê-lo apagaria configuração de
+ * canal por causa de um contador.
+ */
+async function gravarEstadoDoVigia(
+  pool: pg.Pool,
+  ids: string[],
+  estado: EstadoDoVigiaDeStarting,
+  log: Logger,
+): Promise<void> {
+  if (ids.length === 0) return;
+  try {
+    await pool.query(
+      `update channel_sessions
+          set metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object($2::text, $3::jsonb)
+        where id = any($1::uuid[])`,
+      [ids, CHAVE_DO_VIGIA_DE_STARTING, JSON.stringify(estadoParaMetadata(estado))],
+    );
+  } catch (err) {
+    // Sem contador o vigia não sabe onde parou; seguir sem gravar reiniciaria o
+    // limite a cada tick. O tick não cai por isso, mas o operador precisa saber.
+    log.warn('watchdog: não consegui gravar o contador do STARTING preso', {
+      channel_session_ids: ids,
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+    });
+  }
+}
+
+/** Limpa o contador quando a sessão saiu de `STARTING` — o próximo episódio começa do zero. */
+async function limparEstadoDoVigia(pool: pg.Pool, ids: string[], log: Logger): Promise<void> {
+  if (ids.length === 0) return;
+  try {
+    await pool.query(
+      `update channel_sessions
+          set metadata = coalesce(metadata, '{}'::jsonb) - $2::text
+        where id = any($1::uuid[]) and metadata ? $2::text`,
+      [ids, CHAVE_DO_VIGIA_DE_STARTING],
+    );
+  } catch (err) {
+    log.warn('watchdog: não consegui limpar o contador do STARTING preso', {
+      channel_session_ids: ids,
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+    });
+  }
+}
+
 /** Corrige o espelho channel_sessions para o status REAL do WAHA e retoma STOPPED. */
 export async function reconcileSessions(
   pool: pg.Pool,
@@ -113,18 +223,85 @@ export async function reconcileSessions(
     // Arquivada não é nossa: a exclusão desloga o aparelho. Uma sessão STOPPED
     // órfã no transporte não pode voltar a receber mensagem num canal que a UI
     // já não mostra.
-    const { rows: nossas } = await pool.query<{ id: string; status: string }>(
+    const { rows: nossas } = await pool.query<{
+      id: string;
+      status: string;
+      last_status_change_at: Date | string | null;
+      metadata: unknown;
+    }>(
       // `to_jsonb(cs) ->> 'archived_at'` em vez de `cs.archived_at`, como em
       // `agent/followup-turn.ts:254` e pelo mesmo motivo: a coluna nasce na
       // migration 0106 e, num clone que subiu o código sem aplicá-la,
       // referenciá-la direto derruba o tick INTEIRO com 42703 — levando junto o
       // redrive das mensagens em fila, que roda depois desta função.
-      `select cs.id, cs.status from channel_sessions cs
+      `select cs.id, cs.status, cs.last_status_change_at, cs.metadata from channel_sessions cs
        where cs.waha_session_name = $1 and to_jsonb(cs) ->> 'archived_at' is null`,
       [s.name],
     );
     if (signal?.aborted) break;
     if (nossas.length === 0) continue;
+
+    // ─── SESSÃO PRESA EM `STARTING` (#4870) ────────────────────────────────
+    //
+    // `STARTING` é o estado normal de todo boot e o estado do defeito quando não
+    // sai dele: a sessão fica dias sem receber, e nada religa nem avisa. O
+    // relógio é o `last_status_change_at` do espelho (sobrevive a deploy), o
+    // prazo/intervalo/limite vêm de `starting-preso.ts` — o MESMO que o aviso de
+    // saúde usa — e o contador mora em `metadata`.
+    //
+    // `WORKING` nunca entra aqui: a guarda é `wahaStatus === 'STARTING'`, e
+    // `decidirStartingPreso` repete a checagem. Uma sessão conectada não pode
+    // sofrer restart por este caminho hoje nem depois.
+    if (wahaStatus === 'STARTING') {
+      const agoraMs = Date.now();
+      const estado = lerEstadoDoVigia(nossas[0]?.metadata);
+      const decisao = decidirStartingPreso({
+        status: wahaStatus,
+        // O carimbo só mede o STARTING quando o espelho já está em STARTING: com o
+        // espelho em outro status, ele é a idade DESSE status, e um boot recém-
+        // -começado pareceria preso há dias.
+        msNoStatus:
+          nossas[0]?.status === 'STARTING'
+            ? idadeNoStatusEmMs(nossas[0]?.last_status_change_at, agoraMs)
+            : null,
+        estado,
+        agoraMs,
+        limites: limitesDoStartingPreso(),
+      });
+      if (decisao.acao === 'reiniciar') {
+        if (signal?.aborted) break;
+        const reiniciou = await restartWahaSession(cfg, s.name);
+        if (reiniciou) {
+          await gravarEstadoDoVigia(
+            pool,
+            nossas.map((n) => n.id),
+            { tentativas: decisao.tentativas, ultimoRestartEm: agoraMs, esgotado: false },
+            log,
+          );
+          log.warn('watchdog: sessão presa em STARTING foi reiniciada', {
+            waha_session: s.name,
+            tentativa: decisao.tentativas,
+          });
+        }
+      } else if (decisao.acao === 'esgotado' && decisao.avisarAgora) {
+        await gravarEstadoDoVigia(
+          pool,
+          nossas.map((n) => n.id),
+          { tentativas: decisao.tentativas, ultimoRestartEm: estado.ultimoRestartEm, esgotado: true },
+          log,
+        );
+        // O aviso que o operador lê é o da Central, e ele sai pelo aviso de
+        // saúde (`restartsEsgotados`). Este log é a prova no `.log` do worker.
+        log.error('watchdog: sessão presa em STARTING estourou o limite de restarts', {
+          waha_session: s.name,
+          tentativas: decisao.tentativas,
+        });
+      }
+    } else if (temEstadoDoVigia(nossas[0]?.metadata)) {
+      // Saiu de `STARTING` (voltou a `WORKING`, caiu para `STOPPED`, virou
+      // `FAILED`): o episódio acabou, e o próximo começa com o limite inteiro.
+      await limparEstadoDoVigia(pool, nossas.map((n) => n.id), log);
+    }
 
     let nextStatus = wahaStatus;
     if (deveRetomarSessao(wahaStatus)) {
@@ -155,7 +332,7 @@ export async function reconcileSessions(
     // O desligamento espera este laço antes de fechar o pool.
     const { rows } = await pool.query<{ id: string; status: string }>(
       `update channel_sessions
-          set status = $2, updated_at = now()
+          set status = $2, last_status_change_at = now(), updated_at = now()
         where waha_session_name = $1
           and to_jsonb(channel_sessions) ->> 'archived_at' is null
           and status is distinct from $2

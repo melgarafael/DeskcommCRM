@@ -13,10 +13,13 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { extractBearer } from "@/lib/mcp/auth";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 import {
   chaveDeMapasSchema,
   estadoDaChaveDeMapas,
@@ -28,20 +31,42 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 const putSchema = z.object({ api_key: chaveDeMapasSchema }).strict();
 
+/** Quem chama, pelo portão que o trouxe (sessão de navegador ou token de integração). */
+type QuemChama = { idioma: Idioma; orgId: string; autor: string | null; apiTokenId: string | null };
+
 function corpoDoEstado(e: Awaited<ReturnType<typeof estadoDaChaveDeMapas>>) {
   return { provider: PROVEDOR_DE_MAPAS, configurada: e.configurada, ultimos4: e.ultimos4, atualizada_em: e.atualizadaEm };
 }
 
-export async function GET(): Promise<Response> {
-  const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "ai_maps" });
-  if (!authz.ok) return authz.response;
+async function lerEstado(orgId: string, idioma: Idioma, requestId: string): Promise<Response> {
   try {
-    const estado = await estadoDaChaveDeMapas(createAdminClient(), authz.org.orgId);
+    const estado = await estadoDaChaveDeMapas(createAdminClient(), orgId);
     return ok(corpoDoEstado(estado), { requestId });
   } catch {
-    return fail("internal_error", traduzir("Não consegui ler a configuração de mapas.", authz.user.idioma), 500, { requestId });
+    return fail("internal_error", traduzir("Não consegui ler a configuração de mapas.", idioma), 500, { requestId });
   }
+}
+
+export async function GET(req?: NextRequest): Promise<Response> {
+  const requestId = randomUUID();
+  // Token de integração (Bearer). Sem Bearer, a sessão segue como era.
+  if (req && extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "ai_maps",
+      role: "manager",
+      scope: "config:read",
+      tokenRole: "admin",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "ai_maps", requestId);
+    if (teto) return teto;
+    return lerEstado(authz.organizationId, authz.idioma ?? IDIOMA_PADRAO, requestId);
+  }
+
+  const authz = await requireRole("manager", { requestId, resource: "ai_maps" });
+  if (!authz.ok) return authz.response;
+  return lerEstado(authz.org.orgId, authz.user.idioma, requestId);
 }
 
 export async function PUT(req: NextRequest): Promise<Response> {
@@ -49,9 +74,30 @@ export async function PUT(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("admin", { requestId, resource: "ai_maps" });
-  if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  let quem: QuemChama;
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "ai_maps",
+      role: "admin",
+      scope: "config:write",
+      tokenRole: "admin",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "ai_maps", requestId);
+    if (teto) return teto;
+    quem = {
+      idioma: authz.idioma ?? IDIOMA_PADRAO,
+      orgId: authz.organizationId,
+      autor: authz.actor.type === "user" ? authz.actor.id : null,
+      apiTokenId: authz.apiTokenId ?? null,
+    };
+  } else {
+    const authz = await requireRole("admin", { requestId, resource: "ai_maps" });
+    if (!authz.ok) return authz.response;
+    quem = { idioma: authz.user.idioma, orgId: authz.org.orgId, autor: authz.user.id, apiTokenId: null };
+  }
+  const t = (texto: string) => traduzir(texto, quem.idioma);
 
   let bruto: unknown;
   try {
@@ -67,11 +113,11 @@ export async function PUT(req: NextRequest): Promise<Response> {
   }
 
   const admin = createAdminClient();
-  const anterior = await estadoDaChaveDeMapas(admin, authz.org.orgId).catch(() => null);
+  const anterior = await estadoDaChaveDeMapas(admin, quem.orgId).catch(() => null);
   const r = await guardarChaveDeMapas(admin, {
-    organizationId: authz.org.orgId,
+    organizationId: quem.orgId,
     chave: parsed.data.api_key,
-    atorId: authz.user.id,
+    atorId: quem.autor,
   });
   if (!r.ok) {
     return fail(
@@ -86,8 +132,9 @@ export async function PUT(req: NextRequest): Promise<Response> {
 
   await audit({
     action: "ai.maps_credential_saved",
-    actorUserId: authz.user.id,
-    organizationId: authz.org.orgId,
+    actorUserId: quem.autor,
+    actorApiTokenId: quem.apiTokenId,
+    organizationId: quem.orgId,
     resourceType: "map_provider_credential",
     resourceId: null,
     requestId,
@@ -95,30 +142,52 @@ export async function PUT(req: NextRequest): Promise<Response> {
     metadata: { provider: PROVEDOR_DE_MAPAS, last4: r.ultimos4, trocou: Boolean(anterior?.configurada) },
   });
 
-  const estado = await estadoDaChaveDeMapas(admin, authz.org.orgId);
+  const estado = await estadoDaChaveDeMapas(admin, quem.orgId);
   return ok(corpoDoEstado(estado), { requestId });
 }
 
-export async function DELETE(): Promise<Response> {
+export async function DELETE(req?: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("admin", { requestId, resource: "ai_maps" });
-  if (!authz.ok) return authz.response;
+  let quem: QuemChama;
+  if (req && extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "ai_maps",
+      role: "admin",
+      scope: "config:write",
+      tokenRole: "admin",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "ai_maps", requestId);
+    if (teto) return teto;
+    quem = {
+      idioma: authz.idioma ?? IDIOMA_PADRAO,
+      orgId: authz.organizationId,
+      autor: authz.actor.type === "user" ? authz.actor.id : null,
+      apiTokenId: authz.apiTokenId ?? null,
+    };
+  } else {
+    const authz = await requireRole("admin", { requestId, resource: "ai_maps" });
+    if (!authz.ok) return authz.response;
+    quem = { idioma: authz.user.idioma, orgId: authz.org.orgId, autor: authz.user.id, apiTokenId: null };
+  }
 
   const admin = createAdminClient();
   let removeu: boolean;
   try {
-    removeu = await removerChaveDeMapas(admin, authz.org.orgId);
+    removeu = await removerChaveDeMapas(admin, quem.orgId);
   } catch {
-    return fail("internal_error", traduzir("Não consegui remover a chave.", authz.user.idioma), 500, { requestId });
+    return fail("internal_error", traduzir("Não consegui remover a chave.", quem.idioma), 500, { requestId });
   }
   if (removeu) {
     await audit({
       action: "ai.maps_credential_removed",
-      actorUserId: authz.user.id,
-      organizationId: authz.org.orgId,
+      actorUserId: quem.autor,
+      actorApiTokenId: quem.apiTokenId,
+      organizationId: quem.orgId,
       resourceType: "map_provider_credential",
       resourceId: null,
       requestId,
