@@ -84,7 +84,7 @@ beforeEach(() => {
 
 describe("o botão de exportar vendas", () => {
   it("⭐ está na barra do filtro e baixa o arquivo — sem filtro, o conjunto inteiro", () => {
-    render(<MetricsClient canCompare currentUserId={ANA} />);
+    render(<MetricsClient canCompare currentUserId={ANA} funis={[]} />);
 
     const botao = screen.getByRole("button", { name: /Exportar vendas/ });
     botao.click();
@@ -93,7 +93,7 @@ describe("o botão de exportar vendas", () => {
   });
 
   it("⭐ para quem não é manager+ a porta não existe — o mesmo gate da rota", () => {
-    render(<MetricsClient canCompare={false} currentUserId={ANA} />);
+    render(<MetricsClient canCompare={false} currentUserId={ANA} funis={[]} />);
 
     expect(screen.queryByRole("button", { name: /Exportar vendas/ })).toBeNull();
   });
