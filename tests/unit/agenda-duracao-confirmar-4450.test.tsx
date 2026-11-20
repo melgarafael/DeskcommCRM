@@ -20,7 +20,17 @@ import { AgendaInterativa } from "@/components/agenda/AgendaInterativa";
 import type { Agendamento, Pessoa } from "@/components/agenda/tipos";
 import { ApiError } from "@/lib/api/types";
 
-const mutateAsync = vi.fn();
+/**
+ * O PATCH, registrado à mão em vez de `vi.fn`: o espião do vitest observa a
+ * promessa devolvida e, quando ela é rejeitada, a observação dele vira rejeição
+ * não tratada — o caso de recusa reprovaria pela ferramenta, não pela tela.
+ */
+const chamadas: unknown[] = [];
+let resposta: () => Promise<unknown> = () => Promise.resolve({ data: { id: "a1" } });
+function mutateAsync(entrada: unknown) {
+  chamadas.push(entrada);
+  return resposta();
+}
 
 vi.mock("@/hooks/agenda/useHorariosLivres", () => ({
   useHorariosLivres: () => ({
@@ -42,7 +52,10 @@ vi.mock("@/hooks/agenda/useRemarcarAgendamento", () => ({
   useRemarcarAgendamento: () => ({ mutateAsync }),
 }));
 
-beforeEach(() => mutateAsync.mockReset());
+beforeEach(() => {
+  chamadas.length = 0;
+  resposta = () => Promise.resolve({ data: { id: "a1" } });
+});
 afterEach(cleanup);
 
 const DIA = "2026-08-26";
@@ -106,19 +119,18 @@ describe("confirmar a nova duração", () => {
       "Se a agenda estiver ligada ao Google Agenda, quem foi convidado pode receber um e-mail de atualização do Google.",
     );
     expect(rotuloDoCard()).toContain("14:00 às 14:30");
-    expect(mutateAsync).not.toHaveBeenCalled();
+    expect(chamadas).toHaveLength(0);
   });
 
   it("confirmar manda SÓ a duração e a revisão — sem `starts_at` — e o card cresce", async () => {
-    mutateAsync.mockResolvedValue({ data: { id: "a1" } });
     render(elemento([maria()]));
     puxarAte("15:00");
 
     await act(async () => {
       fireEvent.click(screen.getByTestId("confirmar-duracao-botao"));
     });
-    expect(mutateAsync).toHaveBeenCalledWith({ id: "a1", revision: 3, duration_minutes: 60 });
-    expect(mutateAsync.mock.calls[0]?.[0]).not.toHaveProperty("starts_at");
+    expect(chamadas).toEqual([{ id: "a1", revision: 3, duration_minutes: 60 }]);
+    expect(chamadas[0]).not.toHaveProperty("starts_at");
     expect(screen.queryByTestId("confirmar-duracao")).toBeNull();
     expect(rotuloDoCard()).toContain("14:00 às 15:00");
   });
@@ -128,7 +140,7 @@ describe("confirmar a nova duração", () => {
     puxarAte("15:00");
     fireEvent.click(screen.getByTestId("cancelar-duracao"));
     expect(screen.queryByTestId("confirmar-duracao")).toBeNull();
-    expect(mutateAsync).not.toHaveBeenCalled();
+    expect(chamadas).toHaveLength(0);
   });
 
   it("destino recusado pela grade não pergunta nem escreve — diz o motivo", () => {
@@ -139,13 +151,18 @@ describe("confirmar a nova duração", () => {
     expect(screen.getByTestId("duracao-recusada")).toHaveTextContent(
       "A duração não foi alterada — já há um compromisso neste horário.",
     );
-    expect(mutateAsync).not.toHaveBeenCalled();
+    expect(chamadas).toHaveLength(0);
   });
 
   it("servidor recusou: o card volta e a frase traz o motivo do servidor", async () => {
-    mutateAsync.mockRejectedValue(
-      new ApiError(422, "agenda_horario_indisponivel", undefined, "req", "Este horário já está ocupado na agenda de quem atende."),
+    const recusa = new ApiError(
+      422,
+      "agenda_horario_indisponivel",
+      undefined,
+      "req",
+      "Este horário já está ocupado na agenda de quem atende.",
     );
+    resposta = () => Promise.reject(recusa);
     render(elemento([maria()]));
     puxarAte("15:00");
     await act(async () => {
@@ -158,7 +175,8 @@ describe("confirmar a nova duração", () => {
   });
 
   it("alguém mudou antes (409): não sobrescreve, e mostra o horário que vale agora", async () => {
-    mutateAsync.mockRejectedValue(new ApiError(409, "conflict", undefined, "req", "O compromisso mudou."));
+    const conflito = new ApiError(409, "conflict", undefined, "req", "O compromisso mudou.");
+    resposta = () => Promise.reject(conflito);
     const { rerender } = render(elemento([maria()]));
     puxarAte("15:00");
     await act(async () => {

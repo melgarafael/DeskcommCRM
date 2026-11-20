@@ -12,12 +12,20 @@
  * NÃO ganha a alça. O relógio é injetado, como nas irmãs.
  */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { GradeDaAgenda, type InteracaoDaGrade } from "@/components/agenda/GradeDaAgenda";
 import type { Agendamento, Pessoa } from "@/components/agenda/tipos";
 
 afterEach(cleanup);
+
+// O jsdom não implementa a captura de ponteiro; o arraste do card a chama ao
+// pegar (e o dedo na alça CAI nele, que é o que um dos casos prova).
+beforeAll(() => {
+  if (!HTMLElement.prototype.setPointerCapture) {
+    HTMLElement.prototype.setPointerCapture = () => {};
+  }
+});
 
 const DIA = "2026-08-26";
 const AGORA_CEDO = new Date(`${DIA}T08:00:00`);
@@ -287,6 +295,7 @@ describe("quem ganha a alça", () => {
     montar({ interacao: inter, agendamentos: [compromisso({ id: "a1", de: "14:00", ate: "14:30" })] });
     puxar("a1", "14:30", "15:00", "touch");
     expect(screen.queryByTestId("fantasma-da-duracao")).toBeNull();
+    expect(screen.getByTestId("fantasma-do-arraste")).toBeInTheDocument();
     soltar("15:00");
     expect(inter.onMudarDuracao).not.toHaveBeenCalled();
   });

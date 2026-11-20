@@ -637,9 +637,23 @@ export function AgendaClient({
   // histórico, que lê `agendamentos` (cheio) e o separa sozinha em `separar()`.
   // Mesma fonte, dois recortes: a grade responde "o que está de pé", o
   // histórico responde "o que aconteceu", cancelado incluso.
+  //
+  // A grade também precisa saber de quem a duração é a do SERVIÇO (#4450): a
+  // borda de baixo do card não aparece ali, porque a rota recusa
+  // `duration_minutes` com `agenda_duracao_do_servico`. A lista de tipos desta
+  // tela já diz quais são serviço; a vaga de ocorrência vem marcada da rota.
+  const tiposDeServico = React.useMemo(
+    () => new Set(tiposIniciais.filter((t) => t.servico).map((t) => t.id)),
+    [tiposIniciais],
+  );
   const agendamentosDaGrade = React.useMemo(
-    () => agendamentos.filter((a) => a.situacao !== "cancelled"),
-    [agendamentos],
+    () =>
+      agendamentos
+        .filter((a) => a.situacao !== "cancelled")
+        .map((a) =>
+          a.tipoId && tiposDeServico.has(a.tipoId) && !a.duracaoFixa ? { ...a, duracaoFixa: true } : a,
+        ),
+    [agendamentos, tiposDeServico],
   );
 
   // As faixas FECHADAS em "Dias fora da rotina" — e pela MESMA pessoa isolada que

@@ -16933,6 +16933,22 @@ export const DICIONARIO: Traducoes = {
   "{data} às {hora} — {motivo}": { es: "{data} a las {hora} — {motivo}" },
   "A remarcação não foi aceita — o compromisso voltou para {data}.": { es: "No se aceptó la reprogramación: la cita volvió a {data}." },
   "Não dá para remarcar para esse horário — {motivo}.": { es: "No se puede reprogramar para ese horario: {motivo}." },
+  // A borda de baixo do card (#4450): mudar só o tempo do compromisso.
+  "Arraste para mudar a duração": { es: "Arrastra para cambiar la duración" },
+  "Mudar a duração de": { es: "Cambiar la duración de" },
+  "Se a agenda estiver ligada ao Google Agenda, quem foi convidado pode receber um e-mail de atualização do Google.": {
+    es: "Si la agenda está conectada a Google Calendar, los invitados pueden recibir un correo de actualización de Google.",
+  },
+  "Alterar duração": { es: "Cambiar duración" },
+  "Duração alterada.": { es: "Duración cambiada." },
+  "A duração não foi alterada — {motivo}.": { es: "No se cambió la duración: {motivo}." },
+  "não consegui salvar agora": { es: "no pude guardar ahora" },
+  "Este compromisso foi alterado por outra pessoa enquanto você ajustava — agora vai de {inicio} a {fim}. Ajuste de novo se ainda precisar.": {
+    es: "Otra persona cambió esta cita mientras la ajustabas: ahora va de {inicio} a {fim}. Ajústala de nuevo si todavía lo necesitas.",
+  },
+  "Este compromisso foi alterado por outra pessoa enquanto você ajustava. Confira o horário na grade.": {
+    es: "Otra persona cambió esta cita mientras la ajustabas. Revisa el horario en la agenda.",
+  },
   "o compromisso": { es: "la cita" },
   "Entendi": { es: "Entendido" },
   "e-mail do convidado inválido": { es: "correo del invitado no válido" },

@@ -20,8 +20,12 @@ import {
   celulaQueContem,
   horarioNaCelula,
   minutoSobY,
+  paradaMaisProxima,
+  paradaVizinha,
+  paradasDoFim,
   publicadoVizinho,
   razaoDoBloco,
+  razaoDoFim,
   type HorarioPublicado,
   type MotivoDaGradeTravada,
 } from "@/lib/agenda/grade-interativa";
@@ -86,6 +90,35 @@ export interface InteracaoDaGrade {
    * em vez de remarcar em silêncio ou aproximar para o horário mais perto.
    */
   onArrastarPara?: (entrada: { id: string; instante: string | null; razao: string }) => void;
+  /**
+   * A borda de baixo de um card foi puxada (ou ajustada pelo teclado) e solta
+   * num fim DIFERENTE do original (#4450). `duracaoMin` nulo quer dizer que o
+   * fim não pode ser gravado — quem recebe RECUSA e diz `razao`, sem escrever.
+   * Ausente = a grade não oferece a borda.
+   */
+  onMudarDuracao?: (entrada: { id: string; duracaoMin: number | null; razao: string }) => void;
+}
+
+/**
+ * Onde a borda de baixo de um card está sendo proposta — o mesmo estado para
+ * ponteiro e teclado, como `PropostaDeRemarcacao`.
+ *
+ * Os minutos contam da meia-noite do dia do INÍCIO, e o fim pode passar de
+ * 1440: um compromisso que vira a noite tem o fim original como parada, e a
+ * conta não pode dobrá-lo de volta para o começo do dia.
+ */
+interface PropostaDeDuracao {
+  id: string;
+  /** `yyyy-MM-dd` da coluna onde o card está — o fantasma é desenhado nela. */
+  dia: string;
+  inicioMin: number;
+  fimMin: number;
+  fimOriginalMin: number;
+  /** ISO do início e do fim proposto — o rótulo sai deles, no fuso da grade. */
+  comeca: string;
+  termina: string;
+  /** `""` quando o fim pode ser gravado; senão, a frase da recusa. */
+  razao: string;
 }
 
 /** Onde um card arrastado está sendo proposto — o mesmo estado para ponteiro e teclado. */
@@ -460,6 +493,7 @@ function BlocoDeAgendamento({
   coluna,
   colunas,
   arraste,
+  borda,
 }: {
   agendamento: Agendamento;
   pessoa: Pessoa | undefined;
@@ -493,6 +527,19 @@ function BlocoDeAgendamento({
     /** Houve arraste de verdade: o clique que vem a seguir não deve abrir nada. */
     moveu: () => boolean;
   };
+  /**
+   * A BORDA DE BAIXO (#4450) — presente só quando ESTE card pode mudar de
+   * duração (ver `podeMudarDuracao` na grade). Ausente, não há alça: prometer o
+   * gesto num serviço, num desfecho já registrado ou num dia que acabou seria o
+   * controle decorativo de novo.
+   */
+  borda?: {
+    /** Este card está com uma proposta de duração aberta. */
+    ativo: boolean;
+    aoApontar: (e: React.PointerEvent<HTMLSpanElement>, a: Agendamento) => void;
+    aoTeclar: (e: React.KeyboardEvent<HTMLButtonElement>, a: Agendamento) => void;
+    moveu: () => boolean;
+  };
 }) {
   const t = useT();
   const comeca = new Date(agendamento.comeca);
@@ -523,12 +570,16 @@ function BlocoDeAgendamento({
       // arrastar um card para outro horário abriria o painel de remarcação por
       // cima da confirmação que o arraste acabou de pedir — duas perguntas na
       // tela ao mesmo tempo, e a de baixo é a que o usuário pediu.
-      onClick={doGoogle ? undefined : () => { if (!arraste?.moveu()) onAbrir?.(agendamento.id); }}
+      onClick={
+        doGoogle ? undefined : () => { if (!arraste?.moveu() && !borda?.moveu()) onAbrir?.(agendamento.id); }
+      }
       onPointerDown={
         arraste && !doGoogle && !cancelado ? (e) => arraste.aoApontar(e, agendamento) : undefined
       }
       onKeyDown={
-        arraste && !doGoogle && !cancelado ? (e) => arraste.aoTeclar(e, agendamento) : undefined
+        (arraste || borda) && !doGoogle && !cancelado
+          ? (e) => (borda ?? arraste)?.aoTeclar(e, agendamento)
+          : undefined
       }
       // "com" nesta tela significa QUEM SERÁ ATENDIDO — é o vocabulário do
       // próprio subtítulo ("O que está marcado, com quem, e quem atende"). O
@@ -551,7 +602,7 @@ function BlocoDeAgendamento({
         doGoogle ? `, ${t("ocupado na agenda do Google")}` : ""
       }`}
       className={cn(
-        "absolute flex flex-col items-start overflow-hidden rounded-sm px-1.5 py-0.5 text-left",
+        "group absolute flex flex-col items-start overflow-hidden rounded-sm px-1.5 py-0.5 text-left",
         "border border-border/60 transition-colors duration-fast ease-out",
         doGoogle ? "cursor-default" : "cursor-pointer hover:border-border-strong",
         // `grab` só quando remarcar é possível: o cursor é a única pista de que
@@ -577,7 +628,7 @@ function BlocoDeAgendamento({
         // Enquanto a proposta está aberta o card original esmaece e o fantasma
         // mostra onde ele cairia. Sumir com o original faria perder a
         // referência de onde ele estava — que é o que se desfaz ao cancelar.
-        arraste?.ativo && "opacity-40",
+        (arraste?.ativo || borda?.ativo) && "opacity-40",
       )}
       style={{
         top: pixelsDe(minutosDesdeOTopo(comeca, fuso)),
@@ -619,6 +670,25 @@ function BlocoDeAgendamento({
           className="ml-1 truncate text-[10px] leading-3 text-text-muted"
         >
           {t("Com a equipe:")} {convidados.map((p) => p.nome).join(", ")}
+        </span>
+      )}
+      {borda && (
+        /* A ALÇA DA BORDA DE BAIXO (#4450). Só mouse, trackpad e caneta: o
+           DEDO segue arrastando o card inteiro, como sempre (a decisão de não
+           mexer no toque está no PR). Por isso ela some onde o ponteiro
+           principal é grosso, e o `pointerType` decide no `pointerdown` —
+           tela de toque em notebook conta como dedo quando é dedo. */
+        <span
+          aria-hidden
+          data-testid={`alca-duracao-${agendamento.id}`}
+          title={t("Arraste para mudar a duração")}
+          onPointerDown={(e) => borda.aoApontar(e, agendamento)}
+          onClick={(e) => {
+            if (borda.moveu()) e.stopPropagation();
+          }}
+          className="absolute inset-x-0 bottom-0 z-10 flex h-2 cursor-ns-resize items-end justify-center pointer-coarse:hidden"
+        >
+          <span className="mb-px h-0.5 w-6 rounded-full bg-transparent transition-colors duration-fast group-hover:bg-text-muted/60" />
         </span>
       )}
     </button>
@@ -713,6 +783,42 @@ function FantasmaDoArraste({
   );
 }
 
+/**
+ * O NOVO TAMANHO, antes de gravar — o fantasma da borda (#4450).
+ *
+ * Mesma linguagem do fantasma do arraste: tracejado na accent quando pode,
+ * no erro com o motivo quando não pode. O rótulo diz o intervalo e a conta em
+ * minutos, porque é isso que a pessoa está decidindo — "até que horas" e
+ * "quanto tempo" — e o encaixe de 15 em 15 não é visível só pelo ponteiro.
+ */
+function FantasmaDaDuracao({ proposta, fuso }: { proposta: PropostaDeDuracao; fuso: string }) {
+  const t = useT();
+  const valido = proposta.razao === "";
+  const minutos = proposta.fimMin - proposta.inicioMin;
+  return (
+    <div
+      data-testid="fantasma-da-duracao"
+      data-valido={valido}
+      data-duracao={minutos}
+      aria-hidden
+      className={cn(
+        "pointer-events-none absolute inset-x-0.5 z-20 rounded-sm border-2 border-dashed px-1.5 py-0.5",
+        valido ? "border-accent bg-accent-soft" : "border-error bg-error-bg",
+      )}
+      style={{
+        top: pixelsDe(proposta.inicioMin - PRIMEIRA_HORA * 60),
+        height: Math.max(pixelsDe(minutos) - 2, 18),
+      }}
+    >
+      <span className="block truncate text-[10px] font-semibold leading-4 tabular-nums text-text">
+        {valido
+          ? `${rotuloHora(new Date(proposta.comeca), fuso)}–${rotuloHora(new Date(proposta.termina), fuso)} · ${minutos} min`
+          : t(proposta.razao)}
+      </span>
+    </div>
+  );
+}
+
 function ColunaDeDia({
   dia,
   agora,
@@ -726,6 +832,8 @@ function ColunaDeDia({
   interacao,
   proposta,
   arrasteDoCard,
+  propostaDeDuracao,
+  bordaDoCard,
 }: {
   dia: Date;
   agora: Date;
@@ -746,6 +854,13 @@ function ColunaDeDia({
   proposta?: PropostaDeRemarcacao | null;
   arrasteDoCard?: {
     aoApontar: (e: React.PointerEvent<HTMLButtonElement>, a: Agendamento) => void;
+    aoTeclar: (e: React.KeyboardEvent<HTMLButtonElement>, a: Agendamento) => void;
+    moveu: () => boolean;
+  };
+  propostaDeDuracao?: PropostaDeDuracao | null;
+  bordaDoCard?: {
+    pode: (a: Agendamento) => boolean;
+    aoApontar: (e: React.PointerEvent<HTMLSpanElement>, a: Agendamento) => void;
     aoTeclar: (e: React.KeyboardEvent<HTMLButtonElement>, a: Agendamento) => void;
     moveu: () => boolean;
   };
@@ -844,8 +959,21 @@ function ColunaDeDia({
                 ? { ...arrasteDoCard, ativo: proposta?.id === agendamento.id }
                 : undefined
             }
+            borda={
+              bordaDoCard?.pode(agendamento)
+                ? {
+                    aoApontar: bordaDoCard.aoApontar,
+                    aoTeclar: bordaDoCard.aoTeclar,
+                    moveu: bordaDoCard.moveu,
+                    ativo: propostaDeDuracao?.id === agendamento.id,
+                  }
+                : undefined
+            }
           />
         ))}
+        {propostaDeDuracao && propostaDeDuracao.dia === chaveDoDia(dia) && (
+          <FantasmaDaDuracao proposta={propostaDeDuracao} fuso={fuso} />
+        )}
         {proposta && proposta.dia === chaveDoDia(dia) && (
           <FantasmaDoArraste
             proposta={proposta}
@@ -1233,8 +1361,209 @@ export function GradeDaAgenda({
     [interacao, proposta, montarProposta, limites.primeiro, limites.ultimo, fuso],
   );
 
+  // ─── A BORDA DE BAIXO: mudar a duração (#4450) ─────────────────────────
+  const [propostaDeDuracao, setPropostaDeDuracao] = React.useState<PropostaDeDuracao | null>(null);
+  /** O gesto da borda em curso — numa ref pelo mesmo motivo de `gesto`. */
+  const gestoDaBorda = React.useRef<{ id: string; y0: number; moveu: boolean } | null>(null);
+  const onMudarDuracao = interacao?.onMudarDuracao;
+
+  /**
+   * As paradas possíveis do fim de um card, e de onde elas partem.
+   *
+   * O fim original sai do intervalo REAL (`termina - comeca`), não da altura
+   * desenhada: o card de 10 minutos é desenhado com 15, e soltar a alça onde
+   * ela estava não pode virar 15 minutos gravados.
+   */
+  const geometriaDoFim = React.useCallback(
+    (a: Agendamento) => {
+      const comeca = new Date(a.comeca);
+      const inicioMin = minutoDoInstante(comeca, fuso);
+      const real = Math.round((new Date(a.termina).getTime() - comeca.getTime()) / 60_000);
+      const fimOriginalMin = inicioMin + (Number.isFinite(real) && real > 0 ? real : 15);
+      return {
+        comeca,
+        inicioMin,
+        fimOriginalMin,
+        paradas: paradasDoFim({ inicioMin, fimOriginalMin, limiteMin: limites.ultimo }),
+      };
+    },
+    [fuso, limites.ultimo],
+  );
+
+  /** A proposta para um fim — a mesma conta para o ponteiro e para o teclado. */
+  const montarPropostaDeDuracao = React.useCallback(
+    (a: Agendamento, fimMin: number): PropostaDeDuracao => {
+      const geo = geometriaDoFim(a);
+      const fim = new Date(geo.comeca.getTime() + (fimMin - geo.inicioMin) * 60_000);
+      const original = fimMin === geo.fimOriginalMin;
+      // Quem ocupa é o que o servidor contaria (`exigeSemSobreposicao`): o MESMO
+      // responsável — compromisso ou Google dele —, fora quem cancelou ou faltou.
+      // O colega ao lado na grade não é conflito, e a rota também não o vê.
+      const ocupado = agendamentos.some(
+        (b) =>
+          b.id !== a.id &&
+          b.responsavelId === a.responsavelId &&
+          b.situacao !== "cancelled" &&
+          b.situacao !== "no_show" &&
+          new Date(b.comeca) < fim &&
+          new Date(b.termina) > geo.comeca,
+      );
+      return {
+        id: a.id,
+        dia: chaveDoDiaDoInstante(geo.comeca, fuso),
+        inicioMin: geo.inicioMin,
+        fimMin,
+        fimOriginalMin: geo.fimOriginalMin,
+        comeca: geo.comeca.toISOString(),
+        termina: fim.toISOString(),
+        // Voltar ao fim original é "não mudar nada": não há o que recusar.
+        razao: original ? "" : razaoDoFim({ passado: fim.getTime() <= agora.getTime(), ocupado }),
+      };
+    },
+    [agendamentos, agora, fuso, geometriaDoFim],
+  );
+
+  /**
+   * Este card oferece a borda?
+   *
+   * Não para: ocupação do Google e cancelado (já não se movem); serviço (a rota
+   * recusa `agenda_duracao_do_servico`); desfecho registrado — "realizado" e
+   * "faltou" são histórico, e mexer neles pela borda contornaria a regra de que
+   * o fim novo fica depois de agora; e o card sem NENHUM fim possível depois de
+   * agora (o dia que acabou), onde a alça só serviria para mostrar vermelho.
+   */
+  const podeMudarDuracao = React.useCallback(
+    (a: Agendamento) => {
+      if (!onMudarDuracao) return false;
+      if (a.origem === "google_sync" || a.duracaoFixa) return false;
+      if (a.situacao === "cancelled" || a.situacao === "completed" || a.situacao === "no_show") {
+        return false;
+      }
+      const geo = geometriaDoFim(a);
+      const ultima = geo.paradas[geo.paradas.length - 1] ?? geo.fimOriginalMin;
+      return geo.comeca.getTime() + (ultima - geo.inicioMin) * 60_000 > agora.getTime();
+    },
+    [onMudarDuracao, geometriaDoFim, agora],
+  );
+
+  /** Entrega a proposta — ou nada, quando o fim é o original. */
+  const entregarDuracao = React.useCallback(
+    (p: PropostaDeDuracao) => {
+      if (p.fimMin === p.fimOriginalMin) return;
+      onMudarDuracao?.({
+        id: p.id,
+        duracaoMin: p.razao === "" ? p.fimMin - p.inicioMin : null,
+        razao: p.razao,
+      });
+    },
+    [onMudarDuracao],
+  );
+
+  const aoApontarBorda = React.useCallback(
+    (e: React.PointerEvent<HTMLSpanElement>, a: Agendamento) => {
+      // O DEDO não puxa a borda: o evento segue para o card, que arrasta inteiro
+      // como sempre arrastou.
+      if (e.pointerType === "touch" || e.button !== 0 || !onMudarDuracao) return;
+      e.stopPropagation();
+      const corpo = e.currentTarget.closest<HTMLElement>("[data-corpo-do-dia]");
+      if (!corpo) return;
+      const geo = geometriaDoFim(a);
+      const g = { id: a.id, y0: e.clientY, moveu: false };
+      gestoDaBorda.current = g;
+      setProposta(null);
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+
+      const fimSob = (clientY: number) =>
+        paradaMaisProxima(
+          geo.paradas,
+          minutoSobY({
+            y: clientY - corpo.getBoundingClientRect().top,
+            alturaDaHoraPx: ALTURA_DA_HORA,
+            primeiraHora: PRIMEIRA_HORA,
+          }),
+        );
+      const mover = (ev: PointerEvent) => {
+        if (!g.moveu && Math.abs(ev.clientY - g.y0) < 3) return;
+        g.moveu = true;
+        setPropostaDeDuracao(montarPropostaDeDuracao(a, fimSob(ev.clientY)));
+      };
+      const soltar = (ev: PointerEvent) => {
+        window.removeEventListener("pointermove", mover);
+        window.removeEventListener("pointerup", soltar);
+        window.removeEventListener("pointercancel", soltar);
+        const p = g.moveu ? montarPropostaDeDuracao(a, fimSob(ev.clientY)) : null;
+        setPropostaDeDuracao(null);
+        // Como no arraste: a ref zera depois do `click` que o `pointerup` dispara.
+        setTimeout(() => {
+          gestoDaBorda.current = null;
+        }, 0);
+        if (p && ev.type === "pointerup") entregarDuracao(p);
+      };
+      window.addEventListener("pointermove", mover);
+      window.addEventListener("pointerup", soltar);
+      window.addEventListener("pointercancel", soltar);
+    },
+    [onMudarDuracao, geometriaDoFim, montarPropostaDeDuracao, entregarDuracao],
+  );
+
+  /**
+   * O teclado do card: `Alt+Shift+↑/↓` é a borda, `Alt+↑/↓/←/→` é o arraste.
+   *
+   * ⚠️ O Shift é conferido PRIMEIRO. `aoTeclar` olha só `altKey` e a seta, então
+   * `Alt+Shift+↓` cairia nele e moveria o card em vez de esticá-lo.
+   */
+  const aoTeclarNoCard = React.useCallback(
+    (e: React.KeyboardEvent<HTMLButtonElement>, a: Agendamento) => {
+      const atual = propostaDeDuracao?.id === a.id ? propostaDeDuracao : null;
+      if (e.altKey && e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+        if (!podeMudarDuracao(a)) return;
+        e.preventDefault();
+        const geo = geometriaDoFim(a);
+        const fim = paradaVizinha(
+          geo.paradas,
+          atual ? atual.fimMin : geo.fimOriginalMin,
+          e.key === "ArrowDown" ? 1 : -1,
+        );
+        setProposta(null);
+        setPropostaDeDuracao(montarPropostaDeDuracao(a, fim));
+        return;
+      }
+      if (atual && e.key === "Enter") {
+        // `preventDefault`: `Enter` num `<button>` vira clique e abriria o painel.
+        e.preventDefault();
+        setPropostaDeDuracao(null);
+        entregarDuracao(atual);
+        return;
+      }
+      if (atual && e.key === "Escape") {
+        e.preventDefault();
+        setPropostaDeDuracao(null);
+        return;
+      }
+      if (e.altKey && e.key.startsWith("Arrow")) setPropostaDeDuracao(null);
+      aoTeclar(e, a);
+    },
+    [propostaDeDuracao, podeMudarDuracao, geometriaDoFim, montarPropostaDeDuracao, entregarDuracao, aoTeclar],
+  );
+
   const arrasteDoCard = interacao?.onArrastarPara
-    ? { aoApontar, aoTeclar, moveu: () => gesto.current?.moveu === true }
+    ? {
+        aoApontar: (e: React.PointerEvent<HTMLButtonElement>, a: Agendamento) => {
+          setPropostaDeDuracao(null);
+          aoApontar(e, a);
+        },
+        aoTeclar: aoTeclarNoCard,
+        moveu: () => gesto.current?.moveu === true || gestoDaBorda.current?.moveu === true,
+      }
+    : undefined;
+
+  const bordaDoCard = onMudarDuracao
+    ? {
+        pode: podeMudarDuracao,
+        aoApontar: aoApontarBorda,
+        aoTeclar: aoTeclarNoCard,
+        moveu: () => gestoDaBorda.current?.moveu === true,
+      }
     : undefined;
 
   return (
@@ -1277,6 +1606,8 @@ export function GradeDaAgenda({
                 interacao={interacao}
                 proposta={proposta}
                 arrasteDoCard={arrasteDoCard}
+                propostaDeDuracao={propostaDeDuracao}
+                bordaDoCard={bordaDoCard}
               />
             ))}
           </div>
