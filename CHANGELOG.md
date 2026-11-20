@@ -20,7 +20,11 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Ficou de fora, declarado: o recorte de encerrados antigos da rota continua em memória (`closed_at` já existe na tabela, então levá-lo para o filtro da consulta não precisa de migration — mas mexe na prova de paginação e não é o que trava o arraste; além disso só é calculado quando o funil liga `ocultar_encerrados_dias`). Nenhuma migration, nenhuma coluna nova.
 
+  Contribuição de @webtecnica (#4911).
+
 - **Radar de risco passa a reconhecer follow-ups ativos de cadência como em voo** Demandas abertas com follow-up ativo na cadência moderna (`followup_enrollments`) apareciam no Radar de risco como "em risco" ou "crítico" (sem próximo passo), porque o radar consultava apenas a tabela legada de agendamentos pontuais (`cron_jobs`). Agora o radar consulta tanto `cron_jobs` quanto `followup_enrollments` (com status ativo/em espera) e considera o retorno mais próximo no futuro, exibindo a demanda corretamente como "em voo".
+
+  Contribuição de @paulolimajr77 (#4980).
 
 - **Quando uma view sua trava a atualização, a tela diz qual é e o que fazer** Se a atualização anterior ficou presa por uma view criada por você sobre a
   Inbox, a mensagem de erro que aparece na tela passa a trazer o nome dessa view
