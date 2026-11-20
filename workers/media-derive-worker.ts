@@ -1183,7 +1183,6 @@ function custoComCatalogo(
       // `0` ("de graça") — vira nulo com motivo `sem_uso`.
       temUso: haUsoMedido(uso),
       informadoPeloProvedor: undefined,
-      porPassosDoTerra: undefined,
       daTabelaDoMotor,
       doCatalogoDaInstalacao,
     });
@@ -1294,7 +1293,6 @@ function comCustoRegistrado(
             // falta é a TARIFA. Marcar `sem_uso` mentiria sobre o motivo.
             temUso: true,
             informadoPeloProvedor: undefined,
-            porPassosDoTerra: undefined,
             daTabelaDoMotor: null,
           }).costCents,
         );
