@@ -14,6 +14,7 @@ import { randomUUID } from "node:crypto";
 
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
@@ -28,6 +29,10 @@ export const dynamic = "force-dynamic";
 
 const LIMITE_PADRAO = 50;
 const LIMITE_MAXIMO = 200;
+/** Quantas comandas entram em cada consulta de itens: o `.in` não cresce sem teto. */
+const COMANDAS_POR_LOTE = 50;
+/** Teto de linhas por resposta do PostgREST (`max_rows`): o tamanho da página dos itens. */
+const PAGINA_DE_ITENS = 1000;
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
@@ -36,14 +41,22 @@ export async function GET(req: NextRequest): Promise<Response> {
   // mesmo molde da cobrança desligada (falha fechada, dois lados).
   const admin = createAdminClient();
   if (!(await moduloLigado(admin, "financeiro"))) return fail("not_found", "Not found", 404, { requestId });
-  const authz = await requireRole("viewer", { requestId, resource: "financeiro" });
+  // Leitura: sessão OU token `mcp:read`. O papel mínimo é o da sessão.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "financeiro",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "financeiro_comandas_listar", requestId);
+  if (teto) return teto;
 
   const url = new URL(req.url);
   const status = url.searchParams.get("status");
   const limite = Math.min(Number(url.searchParams.get("limit")) || LIMITE_PADRAO, LIMITE_MAXIMO);
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   // #4845 — a lista é da EMPRESA ATIVA. A RLS de `sales` libera todas as empresas
   // de que a pessoa é membro, então sem este filtro a tela mostrava número,
   // contato, itens e valores da outra empresa — inclusive duas comandas "#1" de
@@ -51,12 +64,12 @@ export async function GET(req: NextRequest): Promise<Response> {
   let q = supabase
     .from("sales")
     // Literal ÚNICO, e não concatenação: o supabase-js infere o tipo do
-    // resultado a partir do TEXTO do select, e um `+` no meio o reduz a `string`
-    // — o embed `sale_items(...)` deixa de existir para o TypeScript.
+    // resultado a partir do TEXTO do select. Sem embed de `sale_items`: no token
+    // o embed traria item de outra organização; os itens vêm abaixo, com a organização.
     .select(
-      "id, number, status, contact_id, attendant_user_id, appointment_id, discount_cents, total_cents, currency, payment_method_id, notes, finalized_at, cancelled_at, reversed_at, created_at, sale_items(id, description, quantity, unit_price_cents, discount_cents, total_cents, commission_percent, attendant_user_id, event_type_id)",
+      "id, number, status, contact_id, attendant_user_id, appointment_id, discount_cents, total_cents, currency, payment_method_id, notes, finalized_at, cancelled_at, reversed_at, created_at",
     )
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .order("number", { ascending: false })
     .limit(limite);
 
@@ -67,14 +80,45 @@ export async function GET(req: NextRequest): Promise<Response> {
   const { data, error } = await q;
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
+  const vendas = data ?? [];
+  // Os itens vêm em lotes de comandas, e cada lote pagina por `range`: o PostgREST
+  // corta toda resposta em `max_rows` (1000 linhas), e um `.in` sem paginação
+  // perdia itens em silêncio, o que deixava o total da comanda aberta menor.
+  // A página avança pelo que VEIO, não pelo tamanho pedido, porque o `max_rows` da
+  // instalação pode ser menor. Só a página vazia encerra o lote.
+  const itens: Array<{ sale_id: string; total_cents: number }> = [];
+  for (let i = 0; i < vendas.length; i += COMANDAS_POR_LOTE) {
+    const lote = vendas.slice(i, i + COMANDAS_POR_LOTE).map((v) => v.id);
+    let de = 0;
+    for (;;) {
+      const { data: pagina, error: erroItens } = await supabase
+        .from("sale_items")
+        .select(
+          "id, sale_id, description, quantity, unit_price_cents, discount_cents, total_cents, commission_percent, attendant_user_id, event_type_id",
+        )
+        .eq("organization_id", authz.organizationId)
+        .in("sale_id", lote)
+        .order("id", { ascending: true })
+        .range(de, de + PAGINA_DE_ITENS - 1);
+      if (erroItens) return fail("internal_error", erroItens.message, 500, { requestId });
+      const lidas = (pagina ?? []) as Array<{ sale_id: string; total_cents: number }>;
+      if (lidas.length === 0) break;
+      itens.push(...lidas);
+      de += lidas.length;
+    }
+  }
+
   // O total de uma comanda ABERTA é derivado dos itens, sempre. `total_cents` só
   // é gravado na finalização, e ler a coluna antes disso mostraria zero numa
   // comanda com itens — o tipo de número errado que o operador acredita.
-  const comandas = (data ?? []).map((c) => {
-    const itens = (c.sale_items ?? []) as Array<{ total_cents: number }>;
-    const soma = itens.reduce((acc, i) => acc + Number(i.total_cents), 0);
+  const comandas = vendas.map((c) => {
+    const meus = itens
+      .filter((i) => i.sale_id === c.id)
+      .map(({ sale_id: _venda, ...item }) => item);
+    const soma = meus.reduce((acc, i) => acc + Number(i.total_cents), 0);
     return {
       ...c,
+      sale_items: meus,
       total_cents:
         c.status === "open" ? Math.max(soma - Number(c.discount_cents ?? 0), 0) : c.total_cents,
     };
@@ -105,6 +149,43 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const supabase = await createClient();
   const org = authz.org.orgId;
+
+  // O VÍNCULO É DA EMPRESA ATIVA. A RLS de `sales` confere a empresa da própria
+  // comanda, não a do cliente nem a do atendimento que ela carrega — e a RLS de
+  // `contacts`/`calendar_appointments` libera toda empresa de que a pessoa é
+  // membro. Mesma regra e mesmos códigos do faturamento em lote (#4845): confere
+  // antes de gravar, e a recusa não distingue "não existe" de "é de outra empresa".
+  if (lido.data.contact_id) {
+    const { data: contato, error: erroContato } = await supabase
+      .from("contacts")
+      .select("id")
+      .eq("id", lido.data.contact_id)
+      .eq("organization_id", org)
+      .maybeSingle();
+    if (erroContato) return fail("internal_error", erroContato.message, 500, { requestId });
+    if (!contato) {
+      return fail("financeiro_contato_fora_da_empresa", "O cliente informado não pertence a esta empresa.", 422, {
+        requestId,
+      });
+    }
+  }
+  if (lido.data.appointment_id) {
+    const { data: agendamento, error: erroAgendamento } = await supabase
+      .from("calendar_appointments")
+      .select("id")
+      .eq("id", lido.data.appointment_id)
+      .eq("organization_id", org)
+      .maybeSingle();
+    if (erroAgendamento) return fail("internal_error", erroAgendamento.message, 500, { requestId });
+    if (!agendamento) {
+      return fail(
+        "financeiro_agendamento_fora_da_empresa",
+        "O atendimento informado não pertence a esta empresa.",
+        422,
+        { requestId },
+      );
+    }
+  }
 
   // IDEMPOTÊNCIA POR AGENDAMENTO, antes de qualquer escrita.
   //
@@ -161,6 +242,8 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   await audit({
     action: "comanda.aberta",
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
     resourceType: "sale",
     resourceId: data.id,
     requestId,

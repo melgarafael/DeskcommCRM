@@ -16,8 +16,15 @@
  * negócios ganhos, com teto de páginas declarado. Misturar as duas poria um
  * `reduce` na rota que proíbe `reduce`, ou exigiria migration.
  *
- * Não há funil, conversão, meta nem ticket médio aqui: são outras perguntas, com
+ * Não há conversão, meta nem ticket médio aqui: são outras perguntas, com
  * outras rotas (`/metrics/funil`, `/metrics/metas`).
+ *
+ * ─── O recorte: `pipeline_id` e `tag` (#4802, item 4) ───────────────────────
+ *
+ * Opcionais. Valem para os rankings e para a lista de vendas, e são aplicados
+ * EM MEMÓRIA sobre a mesma leitura do período — não no SQL — porque a resposta
+ * também traz as `opcoes` dos seletores (os funis e as tags do período inteiro).
+ * Por isso o número de consultas não muda com o filtro: continuam DUAS.
  *
  * ─── SÓ LEITURA ─────────────────────────────────────────────────────────────
  *
@@ -76,7 +83,9 @@ import {
 } from "@/lib/relatorios/janela";
 import {
   montarRelatorioComercial,
+  normalizarTagDoRelatorio,
   type ContatoDoRelatorio,
+  type FiltroDoRelatorio,
   type NegocioBruto,
   type RespostaDoRelatorioComercial,
 } from "@/lib/relatorios/comercial";
@@ -94,22 +103,50 @@ const MOEDA_PADRAO = "BRL";
  * da tela ser fixo.
  */
 const SELECT_DE_NEGOCIOS =
-  "id, status, value_cents, currency, contact_id, tags, closed_at, contacts!crm_leads_contact_id_fkey(id, display_name, name, phone_number)";
+  "id, status, value_cents, currency, contact_id, tags, closed_at, pipeline_id, title, " +
+  "contacts!crm_leads_contact_id_fkey(id, display_name, name, phone_number), " +
+  "crm_pipelines!crm_leads_pipeline_id_fkey(id, name)";
+
+/** O funil como o recurso embutido chega — só o nome, para a tela escrever. */
+interface FunilEmbutido {
+  id: string;
+  name: string | null;
+}
 
 /**
- * A linha como o recurso embutido do contato chega. O PostgREST tipa o lado
- * "muitos" como lista mesmo com `contact_id` único; a leitura aceita as duas
- * formas e normaliza (uma linha com contato sempre traz exatamente um).
+ * A linha como os recursos embutidos chegam. O PostgREST tipa o lado "muitos"
+ * como lista mesmo com a FK única; a leitura aceita as duas formas e normaliza
+ * (uma linha com contato ou funil sempre traz exatamente um).
  */
 interface NegocioComContato extends NegocioBruto {
   contacts: ContatoDoRelatorio | ContatoDoRelatorio[] | null;
+  crm_pipelines?: FunilEmbutido | FunilEmbutido[] | null;
 }
+
+/**
+ * O teto de uma tag no filtro. NÃO é `TAMANHO_MAXIMO_DA_TAG` (40): esse é o teto
+ * de quem normaliza, e a automação `add_tag` grava como veio, até 60
+ * (`lib/automation/actions/remove-tag.ts`). Um teto menor que o do que existe no
+ * banco faria uma tag real do ranking ser recusada como filtro. 100 cobre os
+ * dois com folga.
+ */
+const TAG_MAXIMA = 100;
 
 const querySchema = z.object({
   // `iso.date` confere o CALENDÁRIO, não só o formato: `2026-99-99` passava no
   // regex e virava `NaN` dias, furando o teto de 366.
   de: z.iso.date({ message: "Data inicial inválida." }).optional(),
   ate: z.iso.date({ message: "Data final inválida." }).optional(),
+  // O recorte da tela (#4802, item 4). Funil inexistente ou de outra
+  // organização não é erro: a RLS e o `organization_id` já tiram a linha, e o
+  // resultado é o recorte vazio — o mesmo que um funil sem venda no período.
+  pipeline_id: z.uuid({ message: "Funil inválido." }).optional(),
+  tag: z
+    .string()
+    .trim()
+    .min(1, { message: "Tag inválida." })
+    .max(TAG_MAXIMA, { message: "Tag inválida." })
+    .optional(),
 });
 
 export async function GET(req: NextRequest): Promise<Response> {
@@ -129,6 +166,8 @@ export async function GET(req: NextRequest): Promise<Response> {
   const parsed = querySchema.safeParse({
     de: url.searchParams.get("de") ?? undefined,
     ate: url.searchParams.get("ate") ?? undefined,
+    pipeline_id: url.searchParams.get("pipeline_id") || undefined,
+    tag: url.searchParams.get("tag") || undefined,
   });
   if (!parsed.success) {
     return fail("validation_failed", t("Query inválida."), 422, {
@@ -189,21 +228,45 @@ export async function GET(req: NextRequest): Promise<Response> {
     return fail("internal_error", leitura.erro, 500, { requestId });
   }
 
+  // O recorte da tela. Ele NÃO vai para a consulta 1: a leitura do período é a
+  // mesma com ou sem filtro, porque os seletores oferecem os funis e as tags do
+  // período inteiro (`opcoes`) — filtrar no SQL sumiria com as outras opções.
+  // A conta aplica o recorte em memória, com a MESMA régua de tag dos rankings.
+  const filtro: FiltroDoRelatorio = {
+    pipeline_id: parsed.data.pipeline_id ?? null,
+    tag: parsed.data.tag ? normalizarTagDoRelatorio(parsed.data.tag) : null,
+  };
+
   // ─── CONSULTA 2: quantos ganhos não têm data (o ausente, declarado) ───────
-  const semData = await supabase
+  // Respeita o FUNIL escolhido. A TAG não entra: o banco compara o texto como
+  // foi gravado ("Cliente " ≠ "cliente"), e uma contagem com outra régua que a
+  // dos rankings seria um número que não bate com eles. A tela diz isso.
+  let consultaSemData = supabase
     .from("crm_leads")
     .select("id", { count: "exact", head: true })
     .eq("organization_id", org.orgId)
     .eq("status", "won")
     .is("closed_at", null);
+  if (filtro.pipeline_id) consultaSemData = consultaSemData.eq("pipeline_id", filtro.pipeline_id);
+  const semData = await consultaSemData;
   if (semData.error) return fail("internal_error", semData.error.message, 500, { requestId });
 
   const negocios = leitura.linhas;
   const contatos: Record<string, ContatoDoRelatorio | null> = {};
+  const nomesDosFunis: Record<string, string | null> = {};
   for (const negocio of negocios) {
-    if (!negocio.contact_id) continue;
-    const embutido = negocio.contacts;
-    contatos[negocio.contact_id] = Array.isArray(embutido) ? (embutido[0] ?? null) : (embutido ?? null);
+    if (negocio.contact_id) {
+      const embutido = negocio.contacts;
+      contatos[negocio.contact_id] = Array.isArray(embutido)
+        ? (embutido[0] ?? null)
+        : (embutido ?? null);
+    }
+    if (negocio.pipeline_id) {
+      const funil = Array.isArray(negocio.crm_pipelines)
+        ? (negocio.crm_pipelines[0] ?? null)
+        : (negocio.crm_pipelines ?? null);
+      nomesDosFunis[negocio.pipeline_id] = funil?.name?.trim() || null;
+    }
   }
 
   const relatorio = montarRelatorioComercial({
@@ -213,8 +276,13 @@ export async function GET(req: NextRequest): Promise<Response> {
     padrao: padraoSemParametro,
     semDataDeGanho: semData.count ?? 0,
     truncado: leitura.truncado,
+    filtro,
   });
 
-  const corpo: RespostaDoRelatorioComercial = { ...relatorio, contatos };
+  const corpo: RespostaDoRelatorioComercial = {
+    ...relatorio,
+    contatos,
+    nomes_dos_funis: nomesDosFunis,
+  };
   return ok(corpo, { requestId });
 }

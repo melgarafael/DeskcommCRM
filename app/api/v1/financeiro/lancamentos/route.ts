@@ -10,15 +10,20 @@
  * não vem do corpo: deixar quem chama escolher `'sale'` permitiria criar uma
  * entrada que o relatório conta como venda sem existir comanda nenhuma por trás.
  *
- * ⚠️ CLIENT DE SESSÃO. A RLS já diz que escrever exige `agent`, e a rota cobra o
- * mesmo degrau de propósito — pedir `manager` aqui criaria uma segunda régua, e
- * quem chamasse com um token de servidor passaria pela RLS mesmo assim.
+ * ⚠️ CLIENT DE SESSÃO na escrita. A RLS já diz que escrever exige `agent`, e a
+ * rota cobra o mesmo degrau de propósito — pedir `manager` aqui criaria uma
+ * segunda régua.
+ *
+ * ⚠️ COM TOKEN só a LEITURA (`mcp:read`, Spec 33 R2, doc 376): o GET usa a
+ * service role e filtra `organization_id` da linha do token. O POST segue só de
+ * sessão e recusa o Bearer com 401 no `requireRole`.
  */
 import { randomUUID } from "node:crypto";
 
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
@@ -45,15 +50,23 @@ const criarSchema = z.object({
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("viewer", { requestId, resource: "financeiro" });
+  // Leitura do extrato: sessão OU token `mcp:read`.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "financeiro",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "financeiro_lancamentos_listar", requestId);
+  if (teto) return teto;
 
   const url = new URL(req.url);
   const de = url.searchParams.get("de");
   const ate = url.searchParams.get("ate");
   const status = url.searchParams.get("status");
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   // #4845 — o extrato é da EMPRESA ATIVA. A RLS de `financial_entries` libera
   // todas as empresas de que a pessoa é membro, então o caixa da empresa A
   // listava o dinheiro da B.
@@ -62,7 +75,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     .select(
       "id, account_id, account_plan_id, sale_id, direction, amount_cents, currency, description, entry_date, status, paid_at, origin, reverses_entry_id, created_at",
     )
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .order("entry_date", { ascending: false })
     .limit(LIMITE_MAXIMO);
 
@@ -167,6 +180,8 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   await audit({
     action: "financeiro.lancamento_criado",
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
     resourceType: "financial_entry",
     resourceId: data.id,
     requestId,

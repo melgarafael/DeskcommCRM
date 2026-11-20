@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
- * Reset dos dados de ATENDIMENTO de uma organização — o motor da "Zona de
+ * Reset dos dados de TESTE de uma organização (tela "Limpar dados de teste") — o motor da "Zona de
  * perigo" de Configurações › Organização.
  *
  * Extraído da contribuição de @maugarciasa (PR #556). O original delegava tudo
@@ -29,6 +29,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  *   de `crm_leads` → crm_lead_activities, crm_lead_links, crm_lead_scores,
  *     crm_lead_risk_states, crm_lead_reactivations
  *
+ * ⚠️ FORA desta lista, de propósito: a prospecção (`prospecting_campaigns` /
+ * `prospecting_candidates`). Candidato com `suppression_salt` é a TOMBA de quem
+ * exerceu opt-out ou exclusão (migration 0370) e é ela que recusa reimportar a
+ * pessoa; apagar a campanha leva a tomba por cascata. Entra num PR próprio, que
+ * apague só o que não é supressão.
+ *
  * O que SOBREVIVE de propósito (e é o ponto da feature): usuários, convites,
  * a organização e suas configurações, funis e etapas, agentes de IA e suas
  * credenciais, canais de WhatsApp, tokens de API, `api_audit_log` (append-only)
@@ -52,7 +58,12 @@ export type TabelaOperacional =
   // ocupando o bucket sem nenhuma linha apontando pra ele.
   | "crm_proposals"
   | "crm_leads"
-  | "contacts";
+  | "contacts"
+  // A22 (issue #4887): o módulo "Empresas e pessoas" nasceu depois do reset, e a
+  // base de teste deixava empresas, pessoas e lotes de importação para trás.
+  | "import_batches"
+  | "people"
+  | "companies";
 
 /**
  * A ordem é a do apagamento e é significativa: quem tem FK RESTRICT para
@@ -65,7 +76,15 @@ export const RAIZES_DO_APAGAMENTO: readonly Raiz[] = [
   { tabela: "orders", porque: "FK SET NULL para contacts; ninguém a referencia" },
   { tabela: "crm_proposals", porque: "FK SET NULL para contacts e crm_leads (D10) — raiz própria" },
   { tabela: "crm_leads", porque: "FK SET NULL para contacts" },
-  { tabela: "contacts", porque: "a raiz do grafo — sempre por último" },
+  { tabela: "contacts", porque: "a raiz do grafo do atendimento — vem depois de quem o referencia" },
+  // A22. Nenhuma FK RESTRICT aponta para as três abaixo (medido no baseline:
+  // `company_people` cai em CASCADE com a empresa ou a pessoa; `contacts.person_id`,
+  // `contacts.company_id` e `import_rows.company_id/person_id` são SET NULL; as
+  // `import_rows` caem em CASCADE com o lote). Vêm DEPOIS de `contacts` só para o
+  // `set null` não reescrever linha que a linha seguinte vai apagar.
+  { tabela: "import_batches", porque: "as import_rows caem em CASCADE com o lote" },
+  { tabela: "people", porque: "company_people cai em CASCADE; contacts.person_id é SET NULL" },
+  { tabela: "companies", porque: "company_people cai em CASCADE; contacts.company_id é SET NULL" },
 ] as const;
 
 export type ContagensApagadas = Record<TabelaOperacional, number>;
@@ -88,7 +107,40 @@ function contagensZeradas(): ContagensApagadas {
     crm_proposals: 0,
     crm_leads: 0,
     contacts: 0,
+    import_batches: 0,
+    people: 0,
+    companies: 0,
   };
+}
+
+export type ResultadoDaPrevia =
+  | { readonly ok: true; readonly counts: ContagensApagadas }
+  | { readonly ok: false; readonly falha: FalhaAoApagar };
+
+/**
+ * A PRÉVIA do reset: quantas linhas cada raiz tem HOJE na organização, sem
+ * apagar nada (A22). É a mesma lista, na mesma ordem e com o mesmo filtro de
+ * `organization_id` do apagamento — uma lista própria para a tela viraria uma
+ * segunda verdade, e a primeira tabela nova acrescentada às raízes sumiria da
+ * prévia. É contagem exata de cabeçalho (`head: true`), sem trazer linha.
+ *
+ * ⚠️ Falha de contagem NÃO vira zero: a tela diria "nada a apagar" de uma base
+ * cheia. Devolve a falha, e a tela mostra que não conseguiu contar.
+ */
+export async function contarDadosParaLimparDaOrg(
+  client: SupabaseClient,
+  organizationId: string,
+): Promise<ResultadoDaPrevia> {
+  const counts = contagensZeradas();
+  for (const { tabela } of RAIZES_DO_APAGAMENTO) {
+    const { count, error } = await client
+      .from(tabela)
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", organizationId);
+    if (error) return { ok: false, falha: { tabela, mensagem: error.message } };
+    counts[tabela] = count ?? 0;
+  }
+  return { ok: true, counts };
 }
 
 /**

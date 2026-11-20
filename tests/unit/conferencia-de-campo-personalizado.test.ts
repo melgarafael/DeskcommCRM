@@ -151,6 +151,18 @@ function jev(r: RespostasDoJev): typeof fetch {
 
 const CHAVE = { buscarChave: () => Promise.resolve("chave-teste") };
 
+/**
+ * O funil da imobiliária fictícia, com os QUATRO campos que os exemplos
+ * escrevem. Declarar todos é condição desde a #4667: a chave que o funil não
+ * declara é recusada antes do Jev, e estes casos medem o Jev, não a chave.
+ */
+const CAMPOS_DA_IMOBILIARIA = [
+  { key: "quartos", label: "Quartos", type: "number" },
+  { key: "bairro", label: "Bairro", type: "text" },
+  { key: "orcamento_max", label: "Orçamento máximo", type: "currency" },
+  { key: "tipo_imovel", label: "Tipo de imóvel", type: "text" },
+];
+
 async function turno(
   mensagens: string[],
   campos: Record<string, unknown>,
@@ -167,7 +179,7 @@ async function turno(
       body,
       created_at: `2026-09-01T10:0${i}:00.000Z`,
     })),
-    pipelineSettings: { fields: [{ key: "quartos", label: "Quartos", type: "number" }] },
+    pipelineSettings: { fields: CAMPOS_DA_IMOBILIARIA },
   };
   const resultado = await conferirCamposPersonalizados(ctxDoAgente(bancoFalso(f)), { leadId: LEAD }, campos, {
     ...CHAVE,
