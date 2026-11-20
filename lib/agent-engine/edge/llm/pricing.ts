@@ -99,6 +99,8 @@ const USD_PER_MTOK: Record<string, Preco> = {
   // Fonte: developers.openai.com/api/docs/guides/prompt-caching, 28/10/2026.
   // As tarifas abaixo são as de base. A faixa longa dos modelos cobertos fica
   // em LIMIARES_DE_CONTEXTO_LONGO.
+  // Ainda sem cálculo de faixa longa: os demais modelos com essa tarifa nas
+  // linhas 5.4/5.5/5.6 e 6, incluindo gpt-6.1-sol e gpt-6-astra (catálogo 0646).
   'gpt-6-astra': { input: 10, output: 50, cacheRead: 1, cacheWrite5m: 12.5, cacheWrite1h: 12.5 },
   'gpt-6.1-sol': { input: 2, output: 10, cacheRead: 0.1, cacheWrite5m: 2.5, cacheWrite1h: 2.5 },
   'gpt-6.1-terra': { input: 1, output: 5, cacheRead: 0.05, cacheWrite30m: 1.25, cacheWrite12h: 2.5 },

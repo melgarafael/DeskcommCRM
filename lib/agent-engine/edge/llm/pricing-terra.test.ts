@@ -64,8 +64,4 @@ describe("faixa de contexto longo por modelo", () => {
       steps: [{ usage: passo }, { usage: passo }],
     })).toBeCloseTo(esperado);
   });
-
-  it("mantém a tarifa base do Sol mesmo acima do limiar", () => {
-    expect(costCents("gpt-6.1-sol", usage(300_000, 100_000))).toBeCloseTo(160);
-  });
 });
