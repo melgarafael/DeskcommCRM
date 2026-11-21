@@ -22914,7 +22914,7 @@ export const DICIONARIO: Traducoes = {
   "ficaram de fora pelo limite de 50 por vez. Selecione-os de novo para levar.": {
     es: "quedaron fuera por el límite de 50 por vez. Selecciónelos de nuevo para llevarlos.",
   },
-  // Orken CRM — o painel de vendas (Análise › Vendas).
+  // O painel de vendas (Análise › Vendas).
   "Este mês": { es: "Este mes" },
   "Mês passado": { es: "Mes pasado" },
   "Data inicial": { es: "Fecha inicial" },
@@ -22939,6 +22939,9 @@ export const DICIONARIO: Traducoes = {
   },
   "Quanto você vendeu, o ticket médio e a conversão, com o gráfico do período.": {
     es: "Cuánto vendió, el ticket promedio y la conversión, con el gráfico del período.",
+  },
+  "As vendas do período, por tag, cliente e funil, com o mesmo recorte dos cartões.": {
+    es: "Las ventas del período, por etiqueta, cliente y embudo, con el mismo recorte de las tarjetas.",
   },
 };
 

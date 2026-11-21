@@ -286,3 +286,16 @@ describe("controlado pela tela de fora (o painel de vendas)", () => {
     expect(aoMudarRecorte).toHaveBeenCalledWith({ pipelineId: FUNIL_A, tag: "recompra" });
   });
 });
+
+describe("a frase de baixo do título", () => {
+  it("no Faturamento fala das comandas; no painel, do mesmo recorte dos cartões", () => {
+    responder(comVendas());
+    const { unmount } = render(<RankingsDeNegociosGanhos {...PERIODO} />);
+    expect(screen.getByText(/não as comandas dos números acima/)).toBeTruthy();
+    unmount();
+
+    render(<RankingsDeNegociosGanhos {...PERIODO} recorte={{ pipelineId: "", tag: "" }} aoMudarRecorte={vi.fn()} />);
+    expect(screen.queryByText(/comandas/)).toBeNull();
+    expect(screen.getByText(/mesmo recorte dos cartões/)).toBeTruthy();
+  });
+});

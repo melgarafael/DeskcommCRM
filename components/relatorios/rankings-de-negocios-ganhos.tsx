@@ -96,9 +96,14 @@ export function RankingsDeNegociosGanhos({
       <div>
         <h2 className="text-base font-semibold">{t("Negócios ganhos")}</h2>
         <p className="text-xs text-text-muted">
-          {t(
-            "Estes blocos somam os negócios marcados como ganhos no período — não as comandas dos números acima.",
-          )}
+          {/* "Os números acima" só existem no Faturamento (as comandas). No
+              painel de vendas, acima estão os cartões dos MESMOS negócios —
+              a frase do Faturamento ali diria o contrário do que a tela mostra. */}
+          {controlado
+            ? t("As vendas do período, por tag, cliente e funil, com o mesmo recorte dos cartões.")
+            : t(
+                "Estes blocos somam os negócios marcados como ganhos no período — não as comandas dos números acima.",
+              )}
         </p>
       </div>
       {conteudo}
