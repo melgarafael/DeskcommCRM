@@ -87,6 +87,16 @@ function ganho(id: string, closedAt: string, organizationId = ORG_ID): Linha {
   return { id, organization_id: organizationId, status: "won", closed_at: closedAt };
 }
 
+/** Um ganho de um funil: é o `pipeline_id` do negócio que o recorte usa (#4918). */
+function ganhoDoFunil(id: string, closedAt: string, pipelineId: string): Linha {
+  return { ...ganho(id, closedAt), pipeline_id: pipelineId };
+}
+
+/** Uma linha de `crm_pipelines`, para a rota conferir o funil pedido. */
+function funil(id: string, name: string): Linha {
+  return { id, name, organization_id: ORG_ID };
+}
+
 async function chamar(query: string): Promise<Response> {
   const { GET } = await import("./route");
   return GET(new NextRequest(`http://localhost/api/v1/metrics/serie?${query}`));
@@ -96,6 +106,7 @@ type Corpo = {
   baldes: Array<{ balde: string; ganhos: number }>;
   total: number;
   truncado: boolean;
+  funil: { id: string; name: string } | null;
 };
 
 beforeEach(() => {
@@ -195,5 +206,94 @@ describe("GET /api/v1/metrics/serie", () => {
     expect(res.status).toBe(200);
     const corpo = ((await res.json()) as { data: Corpo }).data;
     expect(corpo.baldes.find((b) => b.ganhos === 1)?.balde).toBe("2026-10-21");
+  });
+
+  // ─── RECORTE POR FUNIL (#4918) ────────────────────────────────────────────
+  //
+  // Todo funil precisa de uma etapa de ganho: o de suporte declara «Resolvido»
+  // como ganho, então o `won` da organização somava 7 tickets resolvidos com
+  // zero vendas, sob o título «Ganhos por período». O recorte é `?pipeline_id=`,
+  // e o que estes casos prendem é: sem filtro NADA mudou; com filtro, cada
+  // funil responde pelo SEU conjunto.
+
+  const VENDAS = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const SUPORTE = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+
+  function doisFunis() {
+    return fakeSupabase({
+      organizations: [{ id: ORG_ID, timezone: "UTC" }],
+      crm_pipelines: [funil(VENDAS, "Vendas"), funil(SUPORTE, "Suporte")],
+      crm_leads: [
+        ganhoDoFunil("v1", "2026-10-05T12:00:00.000Z", VENDAS),
+        ganhoDoFunil("v2", "2026-10-06T12:00:00.000Z", VENDAS),
+        ganhoDoFunil("s1", "2026-10-07T12:00:00.000Z", SUPORTE),
+        // Perdido do funil de suporte: NUNCA entra na conta de ganhos.
+        { ...ganho("s2", "2026-10-07T13:00:00.000Z"), pipeline_id: SUPORTE, status: "lost" },
+      ],
+    });
+  }
+
+  it("sem ?pipeline_id= o número é o de hoje: todo ganho da organização, funil: null", async () => {
+    permitido();
+    const { client } = doisFunis();
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const res = await chamar(JANELA);
+    expect(res.status).toBe(200);
+    const corpo = ((await res.json()) as { data: Corpo }).data;
+    // 2 de vendas + 1 de suporte — a soma que a tela mostrava antes do recorte.
+    expect(corpo.total).toBe(3);
+    expect(corpo.funil).toBeNull();
+  });
+
+  it("⭐ dois funis com ganhos diferentes: cada recorte bate com o SEU conjunto", async () => {
+    permitido();
+    const { client } = doisFunis();
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const suporte = ((await (await chamar(`${JANELA}&pipeline_id=${SUPORTE}`)).json()) as {
+      data: Corpo;
+    }).data;
+    const vendas = ((await (await chamar(`${JANELA}&pipeline_id=${VENDAS}`)).json()) as {
+      data: Corpo;
+    }).data;
+
+    // Números DIFERENTES, e cada um é o seu conjunto — não o total da org.
+    expect(suporte.total).toBe(1);
+    expect(vendas.total).toBe(2);
+    expect(suporte.funil).toEqual({ id: SUPORTE, name: "Suporte" });
+    expect(vendas.funil).toEqual({ id: VENDAS, name: "Vendas" });
+
+    // O balde conta o dia certo do funil certo: nada de vazamento entre funis.
+    expect(suporte.baldes.filter((b) => b.ganhos > 0)).toEqual([
+      { balde: "2026-10-07", ganhos: 1 },
+    ]);
+    expect(vendas.baldes.filter((b) => b.ganhos > 0)).toEqual([
+      { balde: "2026-10-05", ganhos: 1 },
+      { balde: "2026-10-06", ganhos: 1 },
+    ]);
+
+    // E a soma dos dois recortes é exatamente o número sem filtro.
+    expect(suporte.total + vendas.total).toBe(3);
+  });
+
+  it("funil de outra organização é recusado (422) e não lê negócio nenhum", async () => {
+    permitido();
+    const { consultas, client } = doisFunis();
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const res = await chamar(`${JANELA}&pipeline_id=cccccccc-cccc-4ccc-8ccc-cccccccccccc`);
+    expect(res.status).toBe(422);
+    expect(consultas.filter((c) => c.tabela === "crm_leads")).toHaveLength(0);
+  });
+
+  it("pipeline_id que não é UUID é recusado (422) na validação, sem tocar no banco", async () => {
+    permitido();
+    const { consultas, client } = doisFunis();
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const res = await chamar(`${JANELA}&pipeline_id=funil-de-suporte`);
+    expect(res.status).toBe(422);
+    expect(consultas).toHaveLength(0);
   });
 });

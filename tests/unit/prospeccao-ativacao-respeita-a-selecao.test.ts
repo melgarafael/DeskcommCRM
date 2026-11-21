@@ -51,6 +51,7 @@ const config = {
   legal_basis_ref: "legítimo interesse",
   ofertas: ["site" as const],
   exit_offer: "first_message" as const,
+  fonte_da_abordagem: "estrategia" as const,
   // O caminho de sempre: contato, negócio e conversa nascem ao iniciar (#2105).
   funnel_entry: "on_start" as const,
 };
@@ -140,6 +141,45 @@ describe("activateCampaign respeita a seleção do operador (#1896)", () => {
     expect(motivos.some((m) => m.includes("Sem telefone brasileiro válido."))).toBe(true);
     expect(motivos.some((m) => m.includes("Contato já existe no CRM"))).toBe(true);
     expect(motivos.some((m) => m.includes(RAZAO_NAO_SELECIONADA))).toBe(false);
+  });
+
+  describe("aprovação da prévia antes do primeiro contato (opção da campanha)", () => {
+    const comAprovacao = { ...config, exigir_aprovacao_da_previa: true };
+    const previa = {
+      texto: "Prévia revisada pela pessoa.",
+      baseada_em: "sem-site@derivado",
+      gerada_em: "2026-10-20T12:00:00.000Z",
+      agente_id: AGENT,
+    };
+    const comPrevia = (id: string, p: Record<string, unknown> | null) => ({
+      ...candidato(id, true, "+5511999990003"),
+      data: { key: `place-${id}`, name: `Empresa ${id}`, website: null, previa: p },
+    });
+
+    it("ligada: não inicia se uma empresa selecionada com telefone não teve a prévia aprovada", async () => {
+      const { pool, campanhaAtualizada } = fakePool([comPrevia("pendente", previa)]);
+      await expect(
+        activateCampaign(pool, {} as SupabaseClient, ORG, CAMP, comAprovacao),
+      ).rejects.toMatchObject({ status: 409, message: expect.stringContaining("Revise e aprove a prévia") });
+      expect(campanhaAtualizada.some((u) => u.sql.includes("status='running'"))).toBe(false);
+    });
+
+    it("ligada: com a prévia aprovada por uma pessoa, inicia", async () => {
+      const aprovada = { ...previa, aprovada_por: ORG, aprovada_em: "2026-10-20T12:05:00.000Z" };
+      const { pool, campanhaAtualizada } = fakePool([comPrevia("ok", aprovada)]);
+      await expect(
+        activateCampaign(pool, {} as SupabaseClient, ORG, CAMP, comAprovacao),
+      ).resolves.toEqual({ started: true });
+      expect(campanhaAtualizada.some((u) => u.sql.includes("status='running'"))).toBe(true);
+    });
+
+    it("desligada (sem a chave): a mesma empresa sem aprovação inicia como sempre", async () => {
+      const { pool, campanhaAtualizada } = fakePool([comPrevia("pendente", previa)]);
+      await expect(activateCampaign(pool, {} as SupabaseClient, ORG, CAMP, config)).resolves.toEqual({
+        started: true,
+      });
+      expect(campanhaAtualizada.some((u) => u.sql.includes("status='running'"))).toBe(true);
+    });
   });
 
   it("A3: config PARCIAL salva (sem agent_id) não lança nem trava a ativação", async () => {

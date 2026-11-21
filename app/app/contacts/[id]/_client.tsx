@@ -64,6 +64,7 @@ import { PAIS_PADRAO, perfilDoPais } from "@/lib/legal/perfil-do-pais";
 import { DialButton } from "@/components/voice/DialButton";
 import { ListaDeLinks } from "@/components/contacts/ListaDeLinks";
 import { AcessosMcpDoContato } from "@/components/contacts/AcessosMcpDoContato";
+import { EmpresaDaProspeccao } from "@/components/crm-b2b/EmpresaDaProspeccao";
 import { PessoaDoContato } from "@/components/crm-b2b/PessoaDoContato";
 import { linksParaExibir } from "@/lib/leads/links-de-contato";
 import { DiagnosticoDoContato } from "@/components/contacts/DiagnosticoDoContato";
@@ -600,6 +601,16 @@ export function ContactDetailClient({
                 )}
                 nomeSugerido={nomeDoContato(contact) ?? ""}
               />
+              {/* #3198, fatia 3: o contato que veio da prospecção vira Empresa. */}
+              <div className="mt-4">
+                <EmpresaDaProspeccao
+                  contactId={contactId}
+                  podeCriar={Boolean(
+                    (user.is_platform_admin && !user.support) ||
+                      (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent),
+                  )}
+                />
+              </div>
             </div>
           )}
           {/* CARTEIRA DO CLIENTE (#2591): de quem é este cliente. Fica na Visão
@@ -745,6 +756,7 @@ export function ContactDetailClient({
           camposDoFunil(pipelineQuery.data?.pipeline.settings ?? null),
           "contato",
         )}
+        funilDosCampos={pipelineQuery.data?.pipeline ?? null}
         vocabulario={vocabularioDeEtiquetas.data}
         canonicalTags={canonicalTags}
       />

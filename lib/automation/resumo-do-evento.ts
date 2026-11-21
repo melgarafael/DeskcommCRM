@@ -29,7 +29,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { env } from "@/lib/env";
 import { linkDoNegocio, urlPublicaUsavel } from "@/lib/escalacao/url-publica";
+import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMAS, type Idioma } from "@/lib/i18n/idiomas";
+import { nomeLegivel } from "@/lib/kanban/nome-do-dono";
+import { logger } from "@/lib/logger";
+import { nomesDosAtendentesCom } from "@/lib/users/nome-do-atendente";
 
 import {
   montarResumoParaAEquipe,
@@ -63,6 +67,83 @@ export function contatoDoContexto(bruto: unknown): ContatoDoResumo | null {
     display_name: typeof c.display_name === "string" ? c.display_name : null,
     phone_number: typeof c.phone_number === "string" ? c.phone_number : null,
   };
+}
+
+/**
+ * Quem responde pelo negócio e em que funil ele está — só os IDS, lidos do
+ * contexto que o motor já hidratou (`crm_leads.*`). Os nomes vêm do banco.
+ */
+export function donoEFunilDoContexto(bruto: unknown): {
+  ownerKind: string | null;
+  ownerUserId: string | null;
+  pipelineId: string | null;
+} {
+  const l = typeof bruto === "object" && bruto !== null ? (bruto as Record<string, unknown>) : {};
+  const texto = (v: unknown): string | null => (typeof v === "string" && v !== "" ? v : null);
+  return {
+    ownerKind: texto(l.owner_kind),
+    ownerUserId: texto(l.owner_user_id),
+    pipelineId: texto(l.pipeline_id),
+  };
+}
+
+/**
+ * O nome do responsável: o do membro da equipe (a MESMA porta do card do funil,
+ * `fn_nomes_dos_membros`, com o e-mail recusado por `nomeLegivel`), ou o rótulo
+ * do agente de IA. Nunca lança: sem nome, a linha some.
+ */
+async function nomeDoResponsavel(
+  admin: Admin,
+  organizationId: string,
+  dono: { ownerKind: string | null; ownerUserId: string | null },
+  idioma: Idioma,
+): Promise<string | null> {
+  if (dono.ownerKind === "ai") return traduzir("Agente de IA", idioma);
+  if (!dono.ownerUserId) return null;
+  try {
+    const nomes = await nomesDosAtendentesCom(admin, organizationId, [dono.ownerUserId]);
+    return nomeLegivel(nomes.get(dono.ownerUserId));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `crm_pipelines.name`, filtrado pela organização à mão (o admin bypassa a RLS).
+ *
+ * Na falha, a linha "Funil" some do aviso — o aviso sai mesmo assim, porque o
+ * nome é cortesia. Mas a falha é DITA no log (revisão do #5006): o `error` do
+ * PostgREST é lido e, com a exceção, vira `logger.warn`, como já faz
+ * `nomesDosAtendentesCom`. Sem isso, quem investigasse "por que o aviso veio sem
+ * funil?" não teria por onde começar.
+ */
+async function nomeDoFunil(admin: Admin, organizationId: string, pipelineId: string | null): Promise<string | null> {
+  if (!pipelineId) return null;
+  try {
+    const { data, error } = await admin
+      .from("crm_pipelines")
+      .select("name")
+      .eq("organization_id", organizationId)
+      .eq("id", pipelineId)
+      .maybeSingle();
+    if (error) {
+      logger.warn("[resumo-do-evento] nome do funil não lido: a linha Funil sai do aviso", {
+        organizationId,
+        pipelineId,
+        erro: error.message,
+      });
+      return null;
+    }
+    const nome = (data as { name?: string | null } | null)?.name;
+    return typeof nome === "string" ? nome : null;
+  } catch (err) {
+    logger.warn("[resumo-do-evento] leitura do nome do funil lançou: a linha Funil sai do aviso", {
+      organizationId,
+      pipelineId,
+      erro: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
 }
 
 /** `organizations.locale` pode trazer o que for; o catálogo decide o que é idioma. */
@@ -109,12 +190,21 @@ export async function carregarResumoParaAEquipe(entrada: {
   // Sem endereço público (o padrão `localhost`, o placeholder do build) não há
   // atalho: um link que não abre no celular é pior que nenhum.
   const base = env.NEXT_PUBLIC_APP_URL;
+  const idioma = await idiomaDaOrganizacao(admin, organizationId);
+  const dono = donoEFunilDoContexto(contexto.lead);
+  const [pontuacao, responsavel, funil] = await Promise.all([
+    pontuacaoDoLead(admin, organizationId, lead.id),
+    nomeDoResponsavel(admin, organizationId, dono, idioma),
+    nomeDoFunil(admin, organizationId, dono.pipelineId),
+  ]);
   return montarResumoParaAEquipe({
-    idioma: await idiomaDaOrganizacao(admin, organizationId),
+    idioma,
     regra: entrada.regra,
     lead,
     contato: contatoDoContexto(contexto.contact),
-    pontuacao: await pontuacaoDoLead(admin, organizationId, lead.id),
+    pontuacao,
     link: urlPublicaUsavel(base) ? linkDoNegocio(base, lead.id) : null,
+    responsavel,
+    funil,
   });
 }

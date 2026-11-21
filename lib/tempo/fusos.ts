@@ -63,6 +63,10 @@ export const FUSOS_OFERECIDOS: { codigo: string; rotulo: string }[] = [
   { codigo: "Europe/Rome", rotulo: "Roma (Itália)" },
   { codigo: "America/New_York", rotulo: "Nova York (EUA)" },
   { codigo: "America/Los_Angeles", rotulo: "Los Angeles (EUA)" },
+  // Aditivo, a pedido de quem opera do Líbano. Sem Beirute, o "dia" da Operação
+  // do dia e do relatório diário seria cortado na meia-noite de outro fuso — e o
+  // Líbano tem horário de verão, que nenhum deslocamento fixo acompanha.
+  { codigo: "Asia/Beirut", rotulo: "Beirute (Líbano)" },
   { codigo: "UTC", rotulo: "UTC" },
 ];
 
@@ -99,6 +103,7 @@ export const FUSOS_DO_ONBOARDING: { id: string; cidade: string }[] = [
   { id: "Europe/Rome", cidade: "Roma" },
   { id: "America/New_York", cidade: "Nova York" },
   { id: "America/Los_Angeles", cidade: "Los Angeles" },
+  { id: "Asia/Beirut", cidade: "Beirute" },
   { id: "UTC", cidade: "Outro (horário universal)" },
 ];
 

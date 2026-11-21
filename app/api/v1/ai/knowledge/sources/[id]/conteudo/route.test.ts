@@ -134,7 +134,7 @@ describe("ler o material na tela (#3059)", () => {
         id: FONTE,
         name: "Política de troca",
         source_type: "documento",
-        source_metadata: { blob_path: `${ORG_DA_SESSAO}/abc.md`, ext: "md" },
+        source_metadata: { blob_path: `${ORG_DA_SESSAO}/9b2f4c6e-1d3a-4e5b-8c7d-0a1b2c3d4e5f.md`, ext: "md" },
         active_kb_version_id: VERSAO,
       },
       trechos: [{ id: "t1", position: 0, content: "pedaço do índice" }],
@@ -152,7 +152,7 @@ describe("ler o material na tela (#3059)", () => {
     expect(corpo.data.origem).toBe("arquivo");
     expect(corpo.data.motivo).toBeNull();
     // O caminho do blob vem de `source_metadata`, com a extensão declarada.
-    expect(extrairMock).toHaveBeenCalledWith(`${ORG_DA_SESSAO}/abc.md`, "md");
+    expect(extrairMock).toHaveBeenCalledWith(`${ORG_DA_SESSAO}/9b2f4c6e-1d3a-4e5b-8c7d-0a1b2c3d4e5f.md`, "md");
     // E o índice NÃO é lido: o texto guardado é a fonte da verdade.
     expect(db.__tabelas).not.toContain("ai_chunks");
   });
@@ -226,7 +226,7 @@ describe("ler o material na tela (#3059)", () => {
         id: FONTE,
         name: "Manual antigo",
         source_type: "documento",
-        source_metadata: { blob_path: `${ORG_DA_SESSAO}/velho.pdf`, ext: "pdf" },
+        source_metadata: { blob_path: `${ORG_DA_SESSAO}/9b2f4c6e-1d3a-4e5b-8c7d-0a1b2c3d4e5f.pdf`, ext: "pdf" },
         active_kb_version_id: VERSAO,
       },
       trechos: [{ id: "t1", position: 0, content: "O texto que sobrou do arquivo." }],

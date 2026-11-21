@@ -52,7 +52,7 @@ import { logger } from "@/lib/logger";
 
 /**
  * `banco_externo`, `fluxos_atendimento`, `propostas`, `crm_b2b`, `cobranca`, `login_codex`, `setores`, `avisos`, `conferir_whatsapp`, `mcp_por_agente`, `cold_call`, `status_whatsapp`, `painel_atendimento`, `reservas_de_lugar`, `link_de_pagamento`, `canal_bot`, `campanha_por_email`, `revisao_por_km`, `agencias` e `catalogo_por_feed` ligam/desligam por uma linha em `platform_config`
- * (ver o resto deste arquivo). `honorarios`, `financeiro`, `lista_de_espera`, `ouvidoria`, `cadencias` e `amigo` são MÓDULOS DE TABELA (ADR-0002): a fonte da
+ * (ver o resto deste arquivo). `honorarios`, `financeiro`, `lista_de_espera`, `cadencias`, `ouvidoria`, `amigo` e `catalogo_servicos` são MÓDULOS DE TABELA (ADR-0002): a fonte da
  * verdade é `modulos_instalados`, escrita só por `fn_modulo_instalar` (`lib/modulos/service.ts`),
  * nunca por esta tela. Os dois mecanismos convivem na mesma lista porque é isso que
  * `deModuloDesligado` (catálogo de tools MCP) precisa: "este módulo, seja qual for o mecanismo
@@ -74,6 +74,10 @@ export const MODULOS_OPCIONAIS = [
   // Doc 208 (A): a lista de espera da agenda. A tabela nasce só onde o módulo é
   // instalado, e cada organização ainda escolhe os prazos antes de ligar.
   "lista_de_espera",
+  // Doc 212 (A/A): o catálogo de serviços do #3480 — tipo, unidade, prazo, sinal
+  // e variações de um item do catálogo. O preço continua no item; o detalhe nasce
+  // só onde o módulo é instalado.
+  "catalogo_servicos",
   // #3611 (fatia 1, PR #3625): a tabela `ouvidoria_manifestacoes` nasce só em
   // `fn_ouvidoria_provisionar`. Sem esta linha a chave da empresa
   // (`settings.ouvidoria.ativa`) ligava uma porta para uma tabela que não existe.
@@ -100,7 +104,7 @@ export type ModuloOpcional = (typeof MODULOS_OPCIONAIS)[number];
 
 /** Os módulos de tabela do ADR-0002 dentro de `MODULOS_OPCIONAIS` — resolvidos por
  * `modulos_instalados.estado = 'ativo'`, nunca por `platform_config`. */
-const MODULOS_DE_TABELA = ["honorarios", "financeiro", "lista_de_espera", "cadencias", "ouvidoria", "amigo"] as const satisfies readonly ModuloOpcional[];
+const MODULOS_DE_TABELA = ["honorarios", "financeiro", "lista_de_espera", "cadencias", "ouvidoria", "amigo", "catalogo_servicos"] as const satisfies readonly ModuloOpcional[];
 
 /**
  * Só os módulos por FLAG — os que a tela `/admin/sistema` liga e desliga via
@@ -295,6 +299,55 @@ export async function modulosLigados(
   const desligados = daEmpresa === null ? null : daEmpresa.ok ? daEmpresa.desligados : "todos";
   const flags = desligados === "todos" ? [] : porFlag.filter((m) => !desligados?.has(m));
   return [...flags, ...porTabela];
+}
+
+/**
+ * As EMPRESAS que desligaram um módulo, em UMA leitura — para os TRABALHOS DE
+ * FUNDO (#4871).
+ *
+ * Um cron não tem "a empresa do request": a mesma execução percorre muitas
+ * empresas (`proposal-acceptance-rate` lê `organizations` inteira; o tick da
+ * prospecção pega até 20 organizações por rodada). Perguntar
+ * `modulosLigados(db, org)` dentro do laço custaria três idas ao banco por
+ * empresa, a cada minuto; esta leitura resolve a rodada inteira de uma vez, e
+ * a decisão de cada empresa passa a ser uma consulta em memória.
+ *
+ * Devolve só as empresas que TÊM linha e NÃO estão `ligado` — a mesma régua de
+ * `modulosDesligadosNaEmpresa`: só `ligado` liga. Empresa sem linha não aparece,
+ * porque ela HERDA a instalação; e a instalação continua sendo o TETO de quem
+ * chama, que segue consultando `modulosLigados(db)` sem organização.
+ *
+ * `null` = a leitura falhou, e é DIFERENTE de um `Set` vazio de propósito: vazio
+ * é "ninguém desligou", `null` é "não sei" — e quem grava aviso ou fala com o
+ * cliente não pode tratar "não sei" como "pode". Falha fechada, como o
+ * `ok:false` de `modulosLigados`: o chamador não processa ninguém.
+ */
+export async function empresasComModuloDesligado(
+  db: SupabaseClient,
+  modulo: ModuloPorEmpresa,
+): Promise<Set<string> | null> {
+  try {
+    const { data, error } = await db
+      .from("organization_modules")
+      .select("organization_id, estado")
+      .eq("modulo", modulo);
+    if (error) {
+      logger.warn("módulos da empresa: leitura em lote recusada — ninguém será processado nesta rodada", {
+        modulo,
+        codigo: error.code,
+        detalhe: error.message,
+      });
+      return null;
+    }
+    const linhas = (data ?? []) as Array<{ organization_id: string; estado: string }>;
+    return new Set(linhas.filter((l) => l.estado !== LIGADO).map((l) => l.organization_id));
+  } catch (erro) {
+    logger.warn("módulos da empresa: leitura em lote falhou — ninguém será processado nesta rodada", {
+      modulo,
+      detalhe: erro instanceof Error ? erro.message : String(erro),
+    });
+    return null;
+  }
 }
 
 /** As linhas da EMPRESA que tiram módulo (só `desligado` sai da lista; `ligado`
