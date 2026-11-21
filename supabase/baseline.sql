@@ -63829,6 +63829,78 @@ revoke execute on function public.fn_mover_leads_em_lote(uuid, uuid[], uuid, tex
 grant  execute on function public.fn_mover_leads_em_lote(uuid, uuid[], uuid, text)
   to authenticated, service_role;
 
+-- ── 3. Trocar de funil NÃO reabre negócio encerrado ────────────────────
+-- O QUE ESTE BLOCO FECHA (#4852). A transferência em massa só aceita etapa de
+-- ANDAMENTO no destino, e `fn_crm_lead_close_on_stage` reabria TODO ganho ou
+-- perdido que entrava numa etapa aberta (`status='open'`, `closed_at=null`).
+-- Resultado medido no funil de origem: as vendas fechadas deixavam de contar
+-- como fechadas no instante em que o funil era arquivado — o oposto do que a
+-- escolha "transferir todos" promete, e uma perda de dado silenciosa (a data de
+-- fechamento some, e a CHECK `crm_leads_closed_at_consistency` só deixa voltar
+-- atrás reabrindo o negócio de verdade).
+--
+-- A REGRA: reabrir é o negócio ENCERRADO que volta a andar NO MESMO funil. Um
+-- negócio que MUDA DE FUNIL não voltou a andar — ele foi arquivado do lado do
+-- destino, e a etapa aberta de lá é onde ele passa a morar, não a etapa em que
+-- foi fechado. Então `status`, `closed_at` e `lost_from_stage_id` ficam como
+-- estavam. Sem a guarda de `pipeline_id`, `tg_op='UPDATE'` e a troca de etapa
+-- bastam para reabrir, que é o defeito.
+--
+-- ⚠️ ISTO É INERTE PARA TODO O RESTO: antes da 9412 `crm_leads.pipeline_id` era
+-- imutável (P-01) e nenhum caminho de escrita mudava os dois campos na mesma
+-- linha. A condição só existe para o movimento entre funis que esta migration
+-- passa a permitir — arrasto, lote do quadro, encerramento e automação seguem
+-- reabrindo exatamente como antes (o invariante do banco mede os dois lados).
+create or replace function public.fn_crm_lead_close_on_stage() returns trigger
+    language plpgsql
+    set search_path to 'public', 'pg_temp'
+    as $$
+declare
+  v_is_won  boolean;
+  v_is_lost boolean;
+begin
+  if tg_op = 'UPDATE'
+     and new.stage_id is not distinct from old.stage_id
+     and new.status   is not distinct from old.status then
+    return new;
+  end if;
+
+  select is_won, is_lost into v_is_won, v_is_lost
+    from public.crm_stages where id = new.stage_id;
+
+  if v_is_won then
+    new.status := 'won';
+    new.closed_at := coalesce(new.closed_at, now());
+  elsif v_is_lost then
+    new.status := 'lost';
+    new.closed_at := coalesce(new.closed_at, now());
+    -- #1537: DE QUEM ERA a etapa que este negócio deixou — a perda sem a
+    -- etapa de origem não diz em que momento o funil vazou. Só na transição:
+    -- um card já perdido arrastado entre etapas de perda mantém a origem
+    -- verdadeira (a etapa ABERTA em que morreu), e reabrir não a herda.
+    -- Todo caminho de perda MOVE a etapa (quadro, 0209 em lote, 0263 em lote,
+    -- encerramento) e este gatilho é o único escritor de `status` (P-02), então
+    -- a transição de status SEM troca de etapa não existe para escrever aqui.
+    if tg_op = 'UPDATE' and old.status is distinct from 'lost' then
+      new.lost_from_stage_id := coalesce(new.lost_from_stage_id, old.stage_id);
+    end if;
+  else
+    -- #4852: o `and new.pipeline_id is not distinct from old.pipeline_id` é a
+    -- guarda inteira. Sem ele, a transferência entre funis reabriria todo
+    -- encerrado que aterrissa numa etapa de andamento do destino.
+    if tg_op = 'UPDATE' and old.status in ('won','lost')
+       and new.pipeline_id is not distinct from old.pipeline_id then
+      new.status := 'open';
+      new.closed_at := null;
+      -- #1537: reabriu — a origem da perda passada não pertence a um negócio
+      -- que voltou a ser aberto. Se morrer de novo, nasce a nova origem.
+      new.lost_from_stage_id := null;
+    end if;
+  end if;
+  return new;
+end$$;
+
+
 -- ─── O quarto escritor: o card que nasce da conversa ───────────────────────
 --
 -- Cópia da ÚLTIMA definição (9045 — pessoa relacionada não abre outro negócio)
@@ -74724,6 +74796,24 @@ do $crm_lead_activities_select$ begin
                     )
                )
           )
+      )
+      -- #4852: a linha que SOBREVIVEU ao negócio (`lead_id` anulado pelo
+      -- ON DELETE SET NULL da 9412) não tem lead-pai para o `exists` acima. Sem
+      -- este braço ela fica na tabela e o admin da própria empresa conta ZERO
+      -- pelo contato — o histórico "preservado" que ninguém lê. O escopo é a
+      -- ORGANIZAÇÃO da linha, e só para quem já lê a organização inteira
+      -- (`org_wide_read`: viewer/manager/admin, ou `visibility_mode = 'all'`):
+      -- o histórico de um negócio apagado é registro da empresa, não do funil de
+      -- quem o tinha. Agente restrito continua sem vê-lo — a alternativa seria
+      -- abrir, por um braço novo, tudo o que o `exists` fecha.
+      or (
+        crm_lead_activities.lead_id is null
+        and (
+          (select public.fn_is_platform_admin())
+          or crm_lead_activities.organization_id in (
+               select s.organization_id from public.fn_lead_scope() s where s.org_wide_read
+             )
+        )
       )
     );
 end $crm_lead_activities_select$;

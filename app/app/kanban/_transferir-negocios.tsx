@@ -158,6 +158,26 @@ export function TransferirNegocios({
           />
           {t("Remover os negócios da estrutura dos funis, mantendo contatos e históricos")}
         </label>
+
+        {/*
+          #4852: a confirmação de "remover" NOMEIA o que vai junto e avisa que não
+          tem volta. A opção acima promete o que fica (contatos, histórico), e a
+          promessa é verdadeira — o que faltava era o outro lado da frase: a única
+          parte desta tela que apaga de verdade. Medido nas FKs de `crm_leads`: em
+          CASCATA vão anexos (e os arquivos no armazenamento), vínculos,
+          reativações, escores de risco, propostas de campo e as conversões de
+          anúncio; propostas, tarefas e o histórico ficam, apontando para nada.
+        */}
+        {modo === "remover" && (
+          <p
+            className="rounded-md border border-danger/40 bg-danger/5 px-2 py-1 text-xs text-danger"
+            data-testid={`aviso-remover-${funilId}`}
+          >
+            {t(
+              "Não tem volta: os negócios são apagados, e com eles os anexos (e os arquivos no armazenamento), os vínculos, as reativações, os escores de risco, as propostas de campo e as conversões de anúncio. Contatos, conversas e o histórico continuam.",
+            )}
+          </p>
+        )}
       </fieldset>
 
       {modo !== "remover" && (

@@ -325,3 +325,271 @@ describe("POST /api/v1/pipelines/[id]/negocios — remover da estrutura", () => 
     expect((await POST(reqPost({ escolha: "cancelar" }), ctx())).status).toBe(422);
   });
 });
+
+describe("POST /api/v1/pipelines/[id]/negocios — o pedido do #4852", () => {
+  /**
+   * A etapa de destino sempre é de ANDAMENTO (as de fechamento são recusadas
+   * antes), então o caso "encerrado" é o que a rota tem de garantir: um ganho ou
+   * perdido que aterrissa numa etapa aberta do OUTRO funil continua encerrado.
+   *
+   * Quem escreve `status`/`closed_at` é o gatilho do banco
+   * (`fn_crm_lead_close_on_stage`, com a guarda de `pipeline_id` da migration
+   * 9412 §3) — e o dublê espelha o gatilho de propósito: sem isso este teste
+   * passaria com qualquer código de rota, medindo o dublê em vez do produto.
+   */
+  it("(a) negócio GANHO continua ganho, com a data de fechamento, depois de transferido", async () => {
+    authOk();
+    const FECHADO_EM = "2026-11-18T10:55:11.000Z";
+    const db = makeDb({
+      pipelines: doisFunis(),
+      stages: [etapa({ id: "e-origem", name: "Novo" }), ...etapasDoDestino()],
+      leads: [
+        negocio("l-won", "e-origem", { status: "won", closed_at: FECHADO_EM }),
+        negocio("l-open", "e-origem", { status: "open", closed_at: null }),
+      ],
+    });
+
+    const { POST } = await import("./route");
+    const res = await POST(reqPost({ escolha: "transferir", funil_id: DESTINO }), ctx());
+    expect(res.status).toBe(200);
+
+    const ganho = db.tabelas.crm_leads.find((l) => l.id === "l-won");
+    // Encerrado continua encerrado...
+    expect(ganho?.status).toBe("won");
+    // ...e com a MESMA data: perder `closed_at` é perder a venda do relatório.
+    expect(ganho?.closed_at).toBe(FECHADO_EM);
+    // O negócio mudou de funil de verdade.
+    expect(ganho?.pipeline_id).toBe(DESTINO);
+    expect(ganho?.stage_id).toBe(ETAPA_NOVO);
+    // O aberto continua aberto e sem data de fechamento.
+    expect(db.tabelas.crm_leads.find((l) => l.id === "l-open")?.status).toBe("open");
+
+    const corpo = (await res.json()) as { data: { encerrados_preservados: number } };
+    expect(corpo.data.encerrados_preservados).toBe(1);
+  });
+
+  it("(a2) negócio PERDIDO continua perdido, com o motivo da perda intacto", async () => {
+    authOk();
+    const db = makeDb({
+      pipelines: doisFunis(),
+      stages: [etapa({ id: "e-origem", name: "Novo" }), ...etapasDoDestino()],
+      leads: [
+        negocio("l-lost", "e-origem", {
+          status: "lost",
+          closed_at: "2026-11-10T12:00:00.000Z",
+          custom_fields: { motivo: "sem-verba" },
+        }),
+      ],
+    });
+
+    const { POST } = await import("./route");
+    expect((await POST(reqPost({ escolha: "transferir", funil_id: DESTINO }), ctx())).status).toBe(200);
+
+    const perdido = db.tabelas.crm_leads.find((l) => l.id === "l-lost");
+    expect(perdido?.status).toBe("lost");
+    expect(perdido?.closed_at).toBe("2026-11-10T12:00:00.000Z");
+    expect(perdido?.custom_fields).toEqual({ motivo: "sem-verba" });
+  });
+
+  it("(b) destino que RETOMA COMO NOVO NEGÓCIO recusa o encerrado (409, mesma porta do quadro)", async () => {
+    authOk();
+    const db = makeDb({
+      pipelines: [
+        funilRow({ id: PIPE, name: "Pedidos", slug: "pedidos", position: 1000, is_default: true }),
+        funilRow({
+          id: DESTINO,
+          name: "Clínica",
+          slug: "clinica",
+          position: 2000,
+          settings: { reabertura: "novo_negocio" },
+        }),
+      ],
+      stages: [etapa({ id: "e-origem", name: "Novo" }), ...etapasDoDestino()],
+      leads: [
+        negocio("l-won", "e-origem", { status: "won", closed_at: "2026-11-18T10:55:11.000Z" }),
+        negocio("l-open", "e-origem", { status: "open" }),
+      ],
+    });
+
+    const { POST } = await import("./route");
+    const res = await POST(reqPost({ escolha: "transferir", funil_id: DESTINO }), ctx());
+
+    expect(res.status).toBe(409);
+    const corpo = (await res.json()) as {
+      error: { code: string; details: { lead_ids: string[]; use: string } };
+    };
+    expect(corpo.error.code).toBe("reabertura_cria_novo");
+    // Nomeia QUEM ofende — o operador precisa saber qual card resolver.
+    expect(corpo.error.details.lead_ids).toEqual(["l-won"]);
+    expect(corpo.error.details.use).toBe("/api/v1/leads/{id}/retomar");
+    // E não escreveu NADA: nem RPC, nem escrita, nem timeline.
+    expect(db.rpcs.filter((r) => r.nome === "fn_mover_leads_em_lote")).toHaveLength(0);
+    expect(db.escritas).toHaveLength(0);
+    expect(db.tabelas.crm_leads.find((l) => l.id === "l-won")?.pipeline_id).toBe(PIPE);
+  });
+
+  it("(b2) o MESMO destino novo_negocio aceita o lote sem encerrado", async () => {
+    authOk();
+    const db = makeDb({
+      pipelines: [
+        funilRow({ id: PIPE, name: "Pedidos", slug: "pedidos", position: 1000, is_default: true }),
+        funilRow({
+          id: DESTINO,
+          name: "Clínica",
+          slug: "clinica",
+          position: 2000,
+          settings: { reabertura: "novo_negocio" },
+        }),
+      ],
+      stages: [etapa({ id: "e-origem", name: "Novo" }), ...etapasDoDestino()],
+      leads: [negocio("l-open", "e-origem", { status: "open" })],
+    });
+
+    const { POST } = await import("./route");
+    expect((await POST(reqPost({ escolha: "transferir", funil_id: DESTINO }), ctx())).status).toBe(200);
+    expect(db.tabelas.crm_leads.find((l) => l.id === "l-open")?.pipeline_id).toBe(DESTINO);
+  });
+
+  it("(c) os campos obrigatórios do DESTINO valem como no lote do quadro", async () => {
+    authOk();
+    const db = makeDb({
+      pipelines: [
+        funilRow({ id: PIPE, name: "Pedidos", slug: "pedidos", position: 1000, is_default: true }),
+        funilRow({
+          id: DESTINO,
+          name: "Clínica",
+          slug: "clinica",
+          position: 2000,
+          // A etapa que RECEBE o lote exige o campo — declarado no funil de destino,
+          // não no de origem.
+          settings: {
+            fields: [
+              {
+                key: "convenio",
+                label: "Convênio",
+                type: "text",
+                obrigatorio_em: { etapas: [ETAPA_NOVO] },
+              },
+            ],
+          },
+        }),
+      ],
+      stages: [etapa({ id: "e-origem", name: "Novo" }), ...etapasDoDestino()],
+      leads: [
+        negocio("l-sem-campo", "e-origem", { status: "open" }),
+        negocio("l-com-campo", "e-origem", {
+          status: "open",
+          custom_fields: { convenio: "Unimed" },
+        }),
+      ],
+    });
+
+    const { POST } = await import("./route");
+    const res = await POST(reqPost({ escolha: "transferir", funil_id: DESTINO }), ctx());
+
+    expect(res.status).toBe(422);
+    const corpo = (await res.json()) as {
+      error: {
+        code: string;
+        details: { lead_ids: string[]; faltando: Record<string, { chave: string }[]> };
+      };
+    };
+    // O MESMO código, o MESMO formato de `details` do `POST /leads/bulk`.
+    expect(corpo.error.code).toBe("required_fields_missing");
+    expect(corpo.error.details.lead_ids).toEqual(["l-sem-campo"]);
+    expect(corpo.error.details.faltando["l-sem-campo"]?.[0]?.chave).toBe("convenio");
+    // O card que TEM o campo não entra na recusa...
+    expect(corpo.error.details.faltando["l-com-campo"]).toBeUndefined();
+    // ...e nada se moveu: a função do banco move o lote inteiro, então a recusa
+    // tem de vir ANTES dela.
+    expect(db.rpcs.filter((r) => r.nome === "fn_mover_leads_em_lote")).toHaveLength(0);
+    expect(db.tabelas.crm_leads.every((l) => l.pipeline_id === PIPE)).toBe(true);
+  });
+
+  it("(c2) com os campos do destino preenchidos, o lote passa", async () => {
+    authOk();
+    const db = makeDb({
+      pipelines: [
+        funilRow({ id: PIPE, name: "Pedidos", slug: "pedidos", position: 1000, is_default: true }),
+        funilRow({
+          id: DESTINO,
+          name: "Clínica",
+          slug: "clinica",
+          position: 2000,
+          settings: {
+            fields: [
+              {
+                key: "convenio",
+                label: "Convênio",
+                type: "text",
+                obrigatorio_em: { etapas: [ETAPA_NOVO] },
+              },
+            ],
+          },
+        }),
+      ],
+      stages: [etapa({ id: "e-origem", name: "Novo" }), ...etapasDoDestino()],
+      leads: [negocio("l1", "e-origem", { status: "open", custom_fields: { convenio: "Unimed" } })],
+    });
+
+    const { POST } = await import("./route");
+    expect((await POST(reqPost({ escolha: "transferir", funil_id: DESTINO }), ctx())).status).toBe(200);
+    expect(db.tabelas.crm_leads.find((l) => l.id === "l1")?.stage_id).toBe(ETAPA_NOVO);
+  });
+
+  it("(d) uma linha de `stage_changed` POR NEGÓCIO, com a etapa de origem", async () => {
+    authOk();
+    const db = makeDb({
+      pipelines: doisFunis(),
+      stages: [etapa({ id: "e-origem", name: "Novo" }), ...etapasDoDestino()],
+      leads: [
+        negocio("l1", "e-origem", { status: "open", contact_id: CONTATO }),
+        negocio("l2", "e-origem", { status: "open" }),
+        negocio("l3", "e-origem", { status: "won", closed_at: "2026-11-18T10:55:11.000Z" }),
+      ],
+      contacts: [{ id: CONTATO, organization_id: ORG_ID, name: "Ana" }],
+    });
+
+    const { POST } = await import("./route");
+    expect(
+      (await POST(reqPost({ escolha: "transferir", funil_id: DESTINO, etapa_id: ETAPA_ANDAMENTO }), ctx()))
+        .status,
+    ).toBe(200);
+
+    const atividades = db.tabelas.crm_lead_activities;
+    // N negócios, N timelines: uma linha em CADA uma — nunca uma agregada.
+    expect(atividades).toHaveLength(3);
+    expect(new Set(atividades.map((a) => a.lead_id))).toEqual(new Set(["l1", "l2", "l3"]));
+    for (const a of atividades) {
+      expect(a.type).toBe("stage_changed");
+      expect(a.contact_id).toBe(
+        a.lead_id === "l1" ? CONTATO : null,
+      );
+      const payload = a.payload as Record<string, unknown>;
+      expect(payload.from_stage_id).toBe("e-origem");
+      expect(payload.to_stage_id).toBe(ETAPA_ANDAMENTO);
+      expect(payload.from_pipeline_id).toBe(PIPE);
+      expect(payload.bulk).toBe(true);
+      expect(payload.transferencia_de_funil).toBe(true);
+    }
+    // A frase da timeline nomeia a passagem de etapa.
+    expect(atividades.find((a) => a.lead_id === "l1")?.reason).toBe("Movido de Novo para Em andamento");
+  });
+
+  it("(d2) a transferência NÃO emite `lead.stage_changed` — disparar em massa mandaria mensagem a centenas de contatos", async () => {
+    authOk();
+    const db = makeDb({
+      pipelines: doisFunis(),
+      stages: [etapa({ id: "e-origem", name: "Novo" }), ...etapasDoDestino()],
+      leads: [negocio("l1", "e-origem", { status: "open" }), negocio("l2", "e-origem")],
+    });
+
+    const { POST } = await import("./route");
+    await POST(reqPost({ escolha: "transferir", funil_id: DESTINO }), ctx());
+
+    const eventos = db.rpcs.filter(
+      (r) => r.nome === "emit_event" && (r.args as { p_event_type?: string }).p_event_type === "lead.stage_changed",
+    );
+    expect(eventos).toHaveLength(0);
+  });
+});

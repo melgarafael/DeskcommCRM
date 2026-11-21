@@ -29,12 +29,11 @@ import {
   modoDeReabertura,
   recusaReabertura,
 } from "@/lib/leads/reabertura";
+import { settingsDoFunil } from "@/lib/leads/campos-exigidos";
 import {
-  camposComAnexo,
-  recusaDeCamposObrigatorios,
-  settingsDoFunil,
-  validaCamposExigidos,
-} from "@/lib/leads/campos-exigidos";
+  recusaDeCamposDoLote,
+  type NegocioDoLote,
+} from "@/lib/leads/campos-obrigatorios-em-lote";
 import { createClient } from "@/lib/supabase/server";
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -253,39 +252,30 @@ export async function POST(req: NextRequest): Promise<Response> {
       // `details.faltando`, por card.
       // O lote pode cruzar funis: a régua é a do funil de CADA card (cache
       // montado acima), nunca a do primeiro da lista.
-      const leadIdsSemCampos: string[] = [];
-      const faltandoPorCard: Record<string, { chave: string; rotulo: string }[]> = {};
-      for (const linha of visible) {
-        const funilId = (linha as { pipeline_id?: string | null }).pipeline_id ?? null;
-        const settingsDaLinha = settingsPorFunil.get(funilId ?? "") ?? null;
-        const veredito = validaCamposExigidos({
-          lead: linha as unknown as Record<string, unknown>,
-          settingsDoFunil: settingsDaLinha,
-          // ponytail: uma ida ao banco por card, e só em funil com campo de arquivo exigível.
-          camposComAnexo: await camposComAnexo(supabase, settingsDaLinha, organizationId, linha.id),
-          destino: {
-            stageId: etapaDeDestino.id,
-            desfecho: etapaDeDestino.is_won
-              ? "won"
-              : etapaDeDestino.is_lost
-                ? "lost"
-                : null,
-          },
-          motivoDeGanho: (linha as { won_reason?: string | null }).won_reason ?? null,
-        });
-        if (veredito.faltando.length > 0) {
-          leadIdsSemCampos.push(linha.id);
-          faltandoPorCard[linha.id] = veredito.faltando;
-        }
-      }
-      if (leadIdsSemCampos.length > 0) {
-        const recusa = recusaDeCamposObrigatorios(
-          Object.values(faltandoPorCard).flat(),
-          user.idioma,
-        );
-        return fail(recusa.codigo, recusa.mensagem, 422, {
+      const camposDoLote = await recusaDeCamposDoLote({
+        supabase,
+        organizationId,
+        negocios: visible as unknown as NegocioDoLote[],
+        // O lote pode cruzar funis: a régua é a do funil de CADA card (cache
+        // montado acima), nunca a do primeiro da lista.
+        settingsDoFunilDe: (funilId) => settingsPorFunil.get(funilId ?? "") ?? null,
+        destino: {
+          stageId: etapaDeDestino.id,
+          desfecho: etapaDeDestino.is_won
+            ? "won"
+            : etapaDeDestino.is_lost
+              ? "lost"
+              : null,
+        },
+        idioma: user.idioma,
+      });
+      if (camposDoLote.recusa) {
+        return fail(camposDoLote.recusa.codigo, camposDoLote.recusa.mensagem, 422, {
           requestId,
-          details: { lead_ids: leadIdsSemCampos, faltando: faltandoPorCard },
+          details: {
+            lead_ids: camposDoLote.recusa.lead_ids,
+            faltando: camposDoLote.faltandoPorCard,
+          },
         });
       }
 

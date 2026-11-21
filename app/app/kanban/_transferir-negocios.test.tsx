@@ -122,6 +122,26 @@ describe("transferência em massa", () => {
     expect(botao.disabled).toBe(true);
   });
 
+  it("#4852: escolher 'remover' NOMEIA o que vai junto e avisa que não tem volta", async () => {
+    const usuario = userEvent.setup();
+    montar();
+
+    // Antes de escolher, o aviso não existe (ele não é decoração da tela).
+    expect(screen.queryByTestId("aviso-remover-f-origem")).toBeNull();
+
+    await usuario.click(screen.getByTestId("escolha-remover-f-origem"));
+
+    const aviso = screen.getByTestId("aviso-remover-f-origem");
+    const texto = aviso.textContent ?? "";
+    // A frase tem de dizer as DUAS coisas: o que é apagado junto e que não volta.
+    expect(texto).toContain("Não tem volta");
+    for (const junto of ["anexos", "vínculos", "reativações", "escores de risco", "conversões de anúncio"]) {
+      expect(texto).toContain(junto);
+    }
+    // E continua prometendo só o que de fato fica.
+    expect(texto).toContain("Contatos, conversas e o histórico continuam");
+  });
+
   it("remover manda só a escolha — nada de funil de destino", async () => {
     const usuario = userEvent.setup();
     mover.mockImplementation((_pedido: unknown, opts: { onSuccess?: (r: unknown) => void }) => {

@@ -11861,6 +11861,10 @@ export const DICIONARIO: Traducoes = {
   "Remover os negócios da estrutura dos funis, mantendo contatos e históricos": {
     es: "Quitar los negocios de la estructura de los embudos, conservando contactos e historiales",
   },
+  "Não tem volta: os negócios são apagados, e com eles os anexos (e os arquivos no armazenamento), os vínculos, as reativações, os escores de risco, as propostas de campo e as conversões de anúncio. Contatos, conversas e o histórico continuam.":
+    {
+      es: "No hay vuelta atrás: los negocios se eliminan y con ellos los adjuntos (y los archivos del almacenamiento), los vínculos, las reactivaciones, las puntuaciones de riesgo, las propuestas de campo y las conversiones de anuncios. Los contactos, las conversaciones y el historial se conservan.",
+    },
   "Nenhum outro funil disponível": { es: "Ningún otro embudo disponible" },
   "Remover os negócios e continuar": { es: "Quitar los negocios y continuar" },
   "Transferir e continuar": { es: "Transferir y continuar" },
