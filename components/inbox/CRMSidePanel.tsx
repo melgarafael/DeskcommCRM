@@ -1639,7 +1639,10 @@ export function CRMSidePanel({
                   activeOrg?.currency ??
                   MOEDA_PADRAO
                 ).toUpperCase()}
-                somenteLeitura={readonly}
+                // Apagar venda é `agent`+, o mesmo piso do campo Valor ao lado
+                // (`podeEditarValor`): com `readonly` sozinho, o viewer via a lixeira
+                // e levava 403 ao clicar (prova pela tela do #5087).
+                somenteLeitura={readonly || !podeEditarValor}
                 semRegistrar
                 aoMudar={recarregar}
               />
