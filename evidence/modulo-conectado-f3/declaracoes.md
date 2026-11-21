@@ -29,7 +29,7 @@ chamando a API com o token; só não há JWT de contexto de pessoa. Nenhum valor
 
 ## Migrations (tripla)
 
-- `supabase/migrations/20261105120000_9119_modulo_conectado_consentimento.sql` (permissões `area.*` na
+- `supabase/migrations/20261120221500_9442_modulo_conectado_consentimento.sql` (permissões `area.*` na
   CHECK e `fn_extensions_set_consent`).
 - `supabase/baseline.sql`: apêndice idempotente depois do apêndice da 9441
   (`grep -n "fn_extensions_set_consent" supabase/baseline.sql`).
