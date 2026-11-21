@@ -1,12 +1,14 @@
 /**
- * DUPLO DE BANCO para os testes da #4023 (satisfação).
+ * DUPLO DE BANCO para os testes da #4023 (satisfação) e da #4026 (quarentena).
  *
  * Um `SupabaseClient` de mentira que guarda LINHAS de verdade em memória — é o
- * que permite provar o pedido e a nota em vez de só conferir que uma função foi
- * chamada. Cobre apenas o subconjunto que a fatia usa: `select/insert/update`
- * com `eq`, `gt`, `order`, `limit`, `maybeSingle` e `rpc` — e, fora da tabela
- * do pedido, só o que a pesquisa lê: o contato (os portões do envio) e as
- * mensagens ENVIADAS depois da pergunta (a conversa seguiu?).
+ * que permite provar o pedido e a nota (e o invariante da quarentena, "a
+ * mensagem continua lá") em vez de só conferir que uma função foi chamada.
+ * Cobre apenas o subconjunto que as duas fatias usam: `select/insert/update`
+ * com `eq`, `gt`, `order`, `limit`, `maybeSingle` e `rpc` — e, fora da tabela do
+ * pedido e da fila, só o que elas leem: o contato (os portões do envio) e as
+ * mensagens (as ENVIADAS depois da pergunta, e a retida que precisa continuar
+ * existindo).
  *
  * Não é genérico de propósito: um duplo genérico acabaria reimplementando
  * PostgREST, e o que se quer medir aqui é o comportamento do NOSSO código.
@@ -27,14 +29,39 @@ export interface LinhaSatisfacao {
   mensagem_da_resposta_id?: string | null;
 }
 
-/** Uma mensagem já gravada na conversa — só as colunas que a pesquisa lê. */
+/** Uma linha de `quarentena_de_entrada` — só as colunas que a fatia usa. */
+export interface LinhaQuarentena {
+  id: string;
+  organization_id: string;
+  conversation_id: string;
+  contact_id: string | null;
+  message_id: string;
+  channel_session_id: string | null;
+  veredito: string;
+  confianca: number;
+  sinais: string[];
+  status: "em_quarentena" | "liberada";
+  liberada_por?: string | null;
+  liberada_em?: string | null;
+  created_at?: string;
+}
+
+/**
+ * Uma mensagem já gravada na conversa — só as colunas que as duas fatias leem.
+ *
+ * `direction`/`sent_at` são o que a pesquisa olha (a conversa seguiu depois da
+ * pergunta?); `body` é o que o caso da quarentena confere continuar existindo
+ * depois de a mensagem ser retida. Os campos opcionais existem porque cada caso
+ * semeia só o que usa — o `casa` compara apenas as colunas filtradas.
+ */
 export interface MensagemDaConversa {
   id: string;
   organization_id: string;
   conversation_id: string;
-  direction: "inbound" | "outbound";
-  sent_at: string;
+  direction?: "inbound" | "outbound";
+  sent_at?: string;
   metadata?: Record<string, unknown> | null;
+  body?: string;
 }
 
 export interface EstadoDoBanco {
@@ -43,6 +70,7 @@ export interface EstadoDoBanco {
   contato: { is_blocked: boolean; is_personal: boolean } | null;
   mensagens: MensagemDaConversa[];
   pedidos: LinhaSatisfacao[];
+  quarentena: LinhaQuarentena[];
   atualizacoes: Array<{ tabela: string; filtros: Filtros; valores: Filtros }>;
   rpcs: Array<{ nome: string; args: Filtros }>;
   erroDeInsert: { tabela: string; code: string } | null;
@@ -62,12 +90,14 @@ export function bancoFake(inicial: {
   contato?: { is_blocked: boolean; is_personal: boolean } | null;
   mensagens?: MensagemDaConversa[];
   pedidos?: LinhaSatisfacao[];
+  quarentena?: LinhaQuarentena[];
 } = {}): DuploDeBanco {
   const estado: EstadoDoBanco = {
     settings: inicial.settings ?? {},
     contato: inicial.contato === undefined ? { is_blocked: false, is_personal: false } : inicial.contato,
     mensagens: [...(inicial.mensagens ?? [])],
     pedidos: [...(inicial.pedidos ?? [])],
+    quarentena: [...(inicial.quarentena ?? [])],
     atualizacoes: [],
     rpcs: [],
     erroDeInsert: null,
@@ -147,6 +177,40 @@ export function bancoFake(inicial: {
       return { data: achado ?? null, error: null };
     }
 
+    if (tabela === "quarentena_de_entrada") {
+      if (op === "insert") {
+        const mensagem = valores.message_id as string;
+        // O índice único `quarentena_uma_por_mensagem`: reentrega não duplica.
+        if (estado.quarentena.some((q) => q.message_id === mensagem)) {
+          return { data: null, error: { code: "23505", message: "duplicate key value" } };
+        }
+        const linha: LinhaQuarentena = {
+          id: novoId("quarentena"),
+          organization_id: valores.organization_id as string,
+          conversation_id: valores.conversation_id as string,
+          contact_id: (valores.contact_id as string | null) ?? null,
+          message_id: mensagem,
+          channel_session_id: (valores.channel_session_id as string | null) ?? null,
+          veredito: valores.veredito as string,
+          confianca: valores.confianca as number,
+          sinais: (valores.sinais as string[]) ?? [],
+          status: "em_quarentena",
+          created_at: new Date().toISOString(),
+        };
+        estado.quarentena.push(linha);
+        return { data: linha, error: null };
+      }
+      if (op === "update") {
+        const alvo = estado.quarentena.find((q) => casa(q as unknown as Record<string, unknown>, filtros));
+        if (!alvo) return { data: null, error: null };
+        Object.assign(alvo, valores);
+        estado.atualizacoes.push({ tabela, filtros, valores });
+        return { data: alvo, error: null };
+      }
+      const lista = estado.quarentena.filter((q) => casa(q as unknown as Record<string, unknown>, filtros));
+      return { data: lista[0] ?? null, error: null };
+    }
+
     return { data: null, error: null };
   }
 
@@ -216,6 +280,19 @@ export function bancoFake(inicial: {
             aguardando: daOrg.filter((p) => p.status === "aguardando").length,
             media: respondidas.length ? Math.round((soma / respondidas.length) * 100) / 100 : null,
             notas: {},
+          },
+          error: null,
+        };
+      }
+      if (nome === "fn_quarentena_resumo") {
+        const org = args.p_org as string;
+        const daOrg = estado.quarentena.filter((q) => q.organization_id === org);
+        return {
+          data: {
+            em_quarentena: daOrg.filter((q) => q.status === "em_quarentena").length,
+            liberadas: daOrg.filter((q) => q.status === "liberada").length,
+            // A linha só conta como perdida se a MENSAGEM não existe mais.
+            perdidas: daOrg.filter((q) => !estado.mensagens.some((m) => m.id === q.message_id)).length,
           },
           error: null,
         };

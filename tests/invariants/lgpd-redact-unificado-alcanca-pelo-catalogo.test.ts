@@ -333,6 +333,11 @@ const DECISOES: Record<string, Decisao> = {
     razao:
       "Pesquisa de satisfacao (#4023): a linha guarda a NOTA (1 a 5), o estado e marcas de tempo — nenhum texto e nenhum dado pessoal. A anonimizacao reescreve o CONTATO e a linha passa a apontar para `Cliente Anonimizado #N`, que nao identifica ninguem; o texto da resposta mora em `messages`, que a cascata ja redige (`mensagem_da_resposta_id` e so um ponteiro, sem FK). No expurgo do contato, `contact_id` zera por `on delete set null` e a nota continua servindo a media da empresa. Apagar a linha na anonimizacao destruiria a serie historica de qualidade do atendimento sem proteger ninguem.",
   },
+  quarentena_de_entrada: {
+    decidida: "manter",
+    razao:
+      "Fila de quarentena do filtro de spam (#4026): guarda `veredito`, `confianca`, os NOMES dos sinais lexicos que produziram o corte e `message_id` — o conteudo da mensagem mora em `messages`, que a cascata ja redige. O que fica aqui e o porque do corte, que e a prova de que a triagem foi feita; apagar a linha faria a mensagem voltar a ser classificavel como nova. `contact_id` zera sozinho no expurgo (`on delete set null`).",
+  },
   automation_rule_contact_claims: {
     decidida: "manter",
     razao:

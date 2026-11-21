@@ -1637,6 +1637,12 @@ export const AUDIT_ACTIONS = [
   // `resource_id` = a conversa; metadata com o pedido e se a conversa voltou a
   // ficar encerrada — nunca a nota nem o texto, que são do cliente.
   "satisfacao.nota_recebida",
+  // #4026: a organização ligou/desligou o filtro de spam da entrada e, quando
+  // ligado, mudou o limiar em `organizations.settings.filtro_de_spam`.
+  "settings.filtro_de_spam_alterado",
+  // #4026: uma pessoa da equipe LIBEROU uma mensagem retida. `resource_id` = a
+  // linha da quarentena; metadata com a mensagem e a conversa, nunca o corpo.
+  "quarentena.mensagem_liberada",
   // A CONTA Resend da organização (#3287): conectar e desconectar. Códigos
   // próprios (não um `org.branding_updated`) porque a pergunta depois é outra —
   // "quem ligou/desligou a conta de e-mail própria, e quando" muda por qual
