@@ -22974,6 +22974,9 @@ export const DICIONARIO: Traducoes = {
   "Por onde o sistema abre depois de entrar. Sem escolha, abre o Inbox — ou a primeira área do menu, quando o Inbox estiver oculto. A escolha não muda permissões: se a área for ocultada depois, a entrada volta ao padrão.": {
     es: "Por dónde se abre el sistema después de entrar. Sin elección, abre el Inbox — o la primera área del menú, cuando el Inbox esté oculto. La elección no cambia permisos: si el área se oculta después, la entrada vuelve al estándar.",
   },
+  // #852 fatia S3 — o contato do negócio escolhido no "Editar lead" do funil.
+  "Contato do negócio": { es: "Contacto del negocio" },
+  "Escolher contato": { es: "Elegir contacto" },
   // #4717 fase 1 — checklist de etapas do card, no painel do Inbox.
   "Checklist do card": { es: "Lista de verificación del negocio" },
   "concluídas": { es: "completadas" },
