@@ -177,12 +177,12 @@ describe("montarPainelDeVendas — vendas registradas", () => {
   ]);
   const vendasRegistradas = [
     // card ABERTO, em qualquer etapa: conta
-    { id: "r1", lead_id: LEAD_ABERTO, contact_id: "c1", valor_cents: 18_000, moeda: "BRL", data: "2026-11-20", tags: [] },
+    { id: "r1", lead_id: LEAD_ABERTO, contact_id: "c1", valor_cents: 18_000, currency: "BRL", data: "2026-11-20", tags: [] },
     // recompra no mesmo negócio
-    { id: "r2", lead_id: LEAD_ABERTO, contact_id: "c1", valor_cents: 12_000, moeda: "BRL", data: "2026-11-15", tags: ["recompra"] },
-    { id: "r3", lead_id: LEAD_GANHO_COM_VENDA, contact_id: "c3", valor_cents: 7_000, moeda: "BRL", data: "2026-11-10", tags: [] },
+    { id: "r2", lead_id: LEAD_ABERTO, contact_id: "c1", valor_cents: 12_000, currency: "BRL", data: "2026-11-15", tags: ["recompra"] },
+    { id: "r3", lead_id: LEAD_GANHO_COM_VENDA, contact_id: "c3", valor_cents: 7_000, currency: "BRL", data: "2026-11-10", tags: [] },
     // fora da janela
-    { id: "r4", lead_id: LEAD_ABERTO, contact_id: "c1", valor_cents: 50_000, moeda: "BRL", data: "2026-10-31", tags: [] },
+    { id: "r4", lead_id: LEAD_ABERTO, contact_id: "c1", valor_cents: 50_000, currency: "BRL", data: "2026-10-31", tags: [] },
   ];
 
   function painel(filtro?: { pipeline_id: string | null; tag: string | null }) {

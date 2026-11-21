@@ -1,7 +1,7 @@
 /**
  * VENDAS REGISTRADAS — o contrato de entrada e as réguas puras.
  *
- * A venda é um registro próprio (`public.vendas_registradas`, migration 9443):
+ * A venda é um registro próprio (`public.vendas_registradas`, migration 9449):
  * valor, dia, tags e observação, ligada ao negócio e ao contato. O mesmo
  * negócio aceita várias vendas (recompra), e a venda conta no painel de vendas
  * em QUALQUER etapa do card — o dinheiro entrou quando o vendedor registrou, e
@@ -25,7 +25,7 @@ export interface VendaRegistrada {
   lead_id: string | null;
   contact_id: string | null;
   valor_cents: number;
-  moeda: string;
+  currency: string;
   data: string;
   tags: string[];
   observacao: string | null;

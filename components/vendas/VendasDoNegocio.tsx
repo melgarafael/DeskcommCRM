@@ -49,7 +49,7 @@ export function VendasDoNegocio({
   const [aberto, setAberto] = useState(false);
 
   const dia = new Intl.DateTimeFormat(tagDeIdioma, { dateStyle: "short", timeZone: "UTC" });
-  const total = (vendas ?? []).reduce((soma, v) => soma + (v.moeda === moeda ? v.valor_cents : 0), 0);
+  const total = (vendas ?? []).reduce((soma, v) => soma + (v.currency === moeda ? v.valor_cents : 0), 0);
 
   return (
     <div className="flex flex-col gap-2" data-testid="vendas-do-negocio">
@@ -70,7 +70,7 @@ export function VendasDoNegocio({
               <li key={v.id} className="flex items-start justify-between gap-2 p-2 text-sm" data-testid="venda-registrada">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-baseline gap-2">
-                    <span className="font-medium tabular-nums">{formatCents(v.valor_cents, v.moeda)}</span>
+                    <span className="font-medium tabular-nums">{formatCents(v.valor_cents, v.currency)}</span>
                     <span className="text-xs text-text-muted">{dia.format(new Date(`${v.data}T00:00:00Z`))}</span>
                   </div>
                   {v.tags.length > 0 && (

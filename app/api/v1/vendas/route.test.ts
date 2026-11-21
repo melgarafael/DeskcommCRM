@@ -1,7 +1,8 @@
 /**
  * /api/v1/vendas — registrar e listar vendas.
  *
- *  1. registrar: grava com a organização do COOKIE, a moeda da organização, a
+ *  1. registrar: grava com a organização do COOKIE, a moeda do NEGÓCIO (a da
+ *     organização quando o negócio não tem), a
  *     tag normalizada, o contato herdado do negócio, e audita;
  *  2. negócio de outra organização (ou invisível pela RLS) → 404, nada gravado;
  *  3. contato que não é o do negócio → 422; contato de outra organização → 404;
@@ -32,6 +33,7 @@ const CONTATO = "33333333-3333-4333-8333-333333333333";
 const OUTRO_CONTATO = "44444444-4444-4444-8444-444444444444";
 const USUARIO = "55555555-5555-4555-8555-555555555555";
 const LEAD_DE_FORA = "66666666-6666-4666-8666-666666666666";
+const LEAD_EM_DOLAR = "77777777-7777-4777-8777-777777777777";
 
 type Linha = Record<string, unknown>;
 
@@ -79,6 +81,7 @@ function auth(role = "agent") {
 const LEADS = [
   { id: LEAD, organization_id: ORG, contact_id: CONTATO },
   { id: LEAD_DE_FORA, organization_id: OUTRA_ORG, contact_id: CONTATO },
+  { id: LEAD_EM_DOLAR, organization_id: ORG, contact_id: CONTATO, currency: "usd" },
 ];
 const CONTATOS = [
   { id: CONTATO, organization_id: ORG },
@@ -115,12 +118,22 @@ describe("POST /api/v1/vendas", () => {
       lead_id: LEAD,
       contact_id: CONTATO,
       valor_cents: 18_000,
-      moeda: "BRL",
+      currency: "BRL",
       data: "2026-11-20",
       tags: ["atacado"],
       created_by: USUARIO,
     });
     expect(vi.mocked(audit)).toHaveBeenCalledWith(expect.objectContaining({ action: "venda.registrada", organizationId: ORG }));
+  });
+
+  it("negócio em outra moeda: a venda é gravada na moeda do NEGÓCIO, a que a soma do Valor conta", async () => {
+    auth();
+    const { admin } = montar();
+
+    const res = await postar({ lead_id: LEAD_EM_DOLAR, valor_cents: 5_000, data: "2026-11-20" });
+
+    expect(res.status).toBe(201);
+    expect(admin.inserts[0]!.linha.currency).toBe("USD");
   });
 
   it("ignora organization_id do corpo: a org é sempre a do cookie", async () => {

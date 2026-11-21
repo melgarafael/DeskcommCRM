@@ -90,14 +90,14 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
   const moedaDoValor = lead.currency ?? org?.currency ?? MOEDA_PADRAO;
   const edit = useEditLead(pipelineId);
   // Com venda registrada, o Valor É a soma das vendas na moeda do negócio —
-  // o banco grava isso em `value_cents` (migration 9445). Aqui a soma sai da
+  // o banco grava isso em `value_cents` (migration 9450). Aqui a soma sai da
   // mesma lista, para o campo acompanhar a venda recém-registrada sem esperar
   // o negócio ser relido.
   const { data: vendas } = useVendasDoNegocio(lead.id);
   const vendasDoNegocio = Array.isArray(vendas) ? vendas : [];
   const valorPelasVendas = vendasDoNegocio.length > 0;
   const somaDasVendas = vendasDoNegocio.reduce(
-    (soma, v) => soma + (v.moeda.toUpperCase() === moedaDoValor.toUpperCase() ? v.valor_cents : 0),
+    (soma, v) => soma + (v.currency.toUpperCase() === moedaDoValor.toUpperCase() ? v.valor_cents : 0),
     0,
   );
   const [customFields, setCustomFields] = useState<Record<string, unknown>>(lead.custom_fields ?? {});
@@ -132,6 +132,18 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
     setCamposCarregados(lead.custom_fields ?? {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lead.id]);
+
+  // O Valor relido do banco entra no campo quando a pessoa não o mexeu: apagar
+  // a última venda devolve o valor digitado (decisão 2B do doc 396), e o campo
+  // volta editável com ELE — não com a soma que estava em memória, que um
+  // Salvar gravaria por cima.
+  useEffect(() => {
+    const doBanco = centsToReais(lead.value_cents);
+    const carregado = form.formState.defaultValues?.valueReais;
+    if (carregado === doBanco || form.getValues("valueReais") !== carregado) return;
+    form.resetField("valueReais", { defaultValue: doBanco });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lead.value_cents]);
 
   useImperativeHandle(controle, () => ({
     confirmarCampo(confirmacao) {

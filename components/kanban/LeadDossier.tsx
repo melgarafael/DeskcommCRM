@@ -492,7 +492,7 @@ export function LeadDossier({
       <VendasDoNegocio
         leadId={lead.id}
         titulo={lead.title}
-        moeda={(activeOrg?.currency ?? MOEDA_PADRAO).toUpperCase()}
+        moeda={(lead.currency ?? activeOrg?.currency ?? MOEDA_PADRAO).toUpperCase()}
         somenteLeitura={!podeEditarTarefas}
         semRegistrar
       />

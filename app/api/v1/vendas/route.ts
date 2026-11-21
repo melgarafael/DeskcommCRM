@@ -30,7 +30,7 @@ import { criarVendaSchema, type VendaRegistrada } from "@/lib/vendas/registradas
 
 export const dynamic = "force-dynamic";
 
-const COLUNAS = "id, lead_id, contact_id, valor_cents, moeda, data, tags, observacao, created_by, created_at";
+const COLUNAS = "id, lead_id, contact_id, valor_cents, currency, data, tags, observacao, created_by, created_at";
 
 const listarSchema = z
   .object({
@@ -89,17 +89,21 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   // O NEGÓCIO: desta organização E visível a quem registra (sessão + RLS).
   let contactId = venda.contact_id ?? null;
+  // A moeda da venda é a do NEGÓCIO (a soma do Valor só conta essa); venda só de
+  // contato fica na da organização.
+  let moedaDoNegocio: string | null = null;
   if (venda.lead_id) {
     const sessao = await createClient();
     const { data: lead, error } = await sessao
       .from("crm_leads")
-      .select("id, contact_id")
+      .select("id, contact_id, currency")
       .eq("organization_id", orgId)
       .eq("id", venda.lead_id)
       .maybeSingle();
     if (error) return fail("internal_error", "Não foi possível conferir o negócio.", 500, { requestId });
     if (!lead) return fail("not_found", "Negócio não encontrado.", 404, { requestId });
     const doNegocio = (lead as { contact_id: string | null }).contact_id;
+    moedaDoNegocio = (lead as { currency: string | null }).currency?.trim() || null;
     if (contactId && doNegocio && contactId !== doNegocio) {
       return fail("validation_failed", "O contato não é o deste negócio.", 422, { requestId });
     }
@@ -125,7 +129,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       lead_id: venda.lead_id ?? null,
       contact_id: contactId,
       valor_cents: venda.valor_cents,
-      moeda: (authz.org.currency?.trim() || MOEDA_PADRAO).toUpperCase(),
+      currency: (moedaDoNegocio || authz.org.currency?.trim() || MOEDA_PADRAO).toUpperCase(),
       data: venda.data,
       tags: venda.tags,
       observacao: venda.observacao,

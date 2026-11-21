@@ -79,8 +79,8 @@ describe("RegistrarVendaDialog", () => {
 
 describe("VendasDoNegocio", () => {
   const vendas = [
-    { id: "v1", lead_id: LEAD, contact_id: "c1", valor_cents: 18_000, moeda: "BRL", data: "2026-11-20", tags: ["atacado"], observacao: "Kit", created_by: "u1", created_at: "" },
-    { id: "v2", lead_id: LEAD, contact_id: "c1", valor_cents: 12_000, moeda: "BRL", data: "2026-11-15", tags: [], observacao: null, created_by: "u1", created_at: "" },
+    { id: "v1", lead_id: LEAD, contact_id: "c1", valor_cents: 18_000, currency: "BRL", data: "2026-11-20", tags: ["atacado"], observacao: "Kit", created_by: "u1", created_at: "" },
+    { id: "v2", lead_id: LEAD, contact_id: "c1", valor_cents: 12_000, currency: "BRL", data: "2026-11-15", tags: [], observacao: null, created_by: "u1", created_at: "" },
   ];
 
   it("lista as vendas, soma o total e apaga só depois de confirmar", () => {

@@ -624,17 +624,24 @@ function ValorDoNegocio({
   const t = useT();
   const edit = useEditLead(lead.pipeline_id);
   // Com venda registrada, o valor é a SOMA das vendas (o banco grava em
-  // `value_cents`, migration 9445): o campo vira leitura e o "+" registra mais.
+  // `value_cents`, migration 9450): o campo vira leitura e o "+" registra mais.
   const { data: vendas } = useVendasDoNegocio(lead.id);
   const vendasDoNegocio = Array.isArray(vendas) ? vendas : [];
   const valorPelasVendas = vendasDoNegocio.length > 0;
   const somaDasVendas = vendasDoNegocio.reduce(
-    (soma, v) => soma + (v.moeda.toUpperCase() === moeda.toUpperCase() ? v.valor_cents : 0),
+    (soma, v) => soma + (v.currency.toUpperCase() === moeda.toUpperCase() ? v.valor_cents : 0),
     0,
   );
-  const [texto, setTexto] = useState(() =>
-    lead.value_cents == null ? "" : valorDoCampoDeMoeda(lead.value_cents / 100, moeda),
-  );
+  const textoDoBanco = lead.value_cents == null ? "" : valorDoCampoDeMoeda(lead.value_cents / 100, moeda);
+  const [texto, setTexto] = useState(textoDoBanco);
+  // O valor relido entra no campo quando a pessoa não o mexeu: apagar a última
+  // venda devolve o valor digitado (decisão 2B do doc 396), e o campo volta com
+  // ELE, não com a soma que estava em memória.
+  const [textoCarregado, setTextoCarregado] = useState(textoDoBanco);
+  if (textoCarregado !== textoDoBanco) {
+    setTextoCarregado(textoDoBanco);
+    if (texto === textoCarregado) setTexto(textoDoBanco);
+  }
   const [erro, setErro] = useState<string | null>(null);
   // O eco do quadro: dinheiro nunca é interpretado em silêncio.
   const entendido = texto.trim() === "" ? null : lerCampoDeMoeda(texto, moeda);
@@ -1627,7 +1634,11 @@ export function CRMSidePanel({
               <VendasDoNegocio
                 leadId={negocioAtivoId}
                 titulo={leads.find((l) => l.id === negocioAtivoId)?.title ?? null}
-                moeda={(activeOrg?.currency ?? MOEDA_PADRAO).toUpperCase()}
+                moeda={(
+                  leads.find((l) => l.id === negocioAtivoId)?.currency ??
+                  activeOrg?.currency ??
+                  MOEDA_PADRAO
+                ).toUpperCase()}
                 somenteLeitura={readonly}
                 semRegistrar
                 aoMudar={recarregar}

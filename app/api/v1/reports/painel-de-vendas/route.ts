@@ -131,7 +131,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const registradas = await lerPaginado<VendaRegistradaDoPainel>(async (inicio, fim, contar) => {
     const { data, error, count } = await supabase
       .from("vendas_registradas")
-      .select("id, lead_id, contact_id, valor_cents, moeda, data, tags", contar ? { count: "exact" } : undefined)
+      .select("id, lead_id, contact_id, valor_cents, currency, data, tags", contar ? { count: "exact" } : undefined)
       .eq("organization_id", org.orgId)
       .gte("data", de)
       .lte("data", ate)

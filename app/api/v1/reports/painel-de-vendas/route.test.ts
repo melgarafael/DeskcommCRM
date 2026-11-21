@@ -216,8 +216,8 @@ describe("GET /api/v1/reports/painel-de-vendas — vendas registradas", () => {
         { id: LEAD, status: "open", pipeline_id: FUNIL, tags: ["atacado"], contact_id: "c1", title: "Dãm Dãm Baby" },
       ],
       vendas_registradas: [
-        { id: "r1", lead_id: LEAD, contact_id: "c1", valor_cents: 18_000, moeda: "BRL", data: "2026-11-19", tags: [] },
-        { id: "r2", lead_id: GANHO, contact_id: "c2", valor_cents: 7_000, moeda: "BRL", data: "2026-11-05", tags: [] },
+        { id: "r1", lead_id: LEAD, contact_id: "c1", valor_cents: 18_000, currency: "BRL", data: "2026-11-19", tags: [] },
+        { id: "r2", lead_id: GANHO, contact_id: "c2", valor_cents: 7_000, currency: "BRL", data: "2026-11-05", tags: [] },
       ],
       contacts: [{ id: "c1", display_name: "Dãm Dãm Baby", name: null, phone_number: null }],
       crm_pipelines: [{ id: FUNIL, name: "Pedidos" }],

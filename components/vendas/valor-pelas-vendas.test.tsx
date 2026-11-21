@@ -6,8 +6,10 @@
  *  2. com venda registrada, o Valor mostra a SOMA das vendas na moeda do
  *     negócio, em leitura, com o "+" para registrar mais;
  *  3. salvar o formulário com venda registrada NÃO manda `value_cents` — a
- *     soma é do banco (migration 9445), e um Salvar de ficha aberta antes da
- *     venda a apagaria.
+ *     soma é do banco (migration 9450), e um Salvar de ficha aberta antes da
+ *     venda a apagaria;
+ *  4. apagar a última venda devolve o valor digitado (decisão 2B do doc 396):
+ *     o campo volta editável com o valor RELIDO, não com a soma em memória.
  */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,7 +18,7 @@ import { LeadFieldsForm } from "@/components/kanban/LeadFieldsForm";
 import type { Lead } from "@/lib/types/leads";
 
 const estado = vi.hoisted(() => ({
-  vendas: [] as Array<{ id: string; valor_cents: number; moeda: string }>,
+  vendas: [] as Array<{ id: string; valor_cents: number; currency: string }>,
   editarLead: vi.fn(),
 }));
 
@@ -88,9 +90,9 @@ describe("o Valor do negócio e as vendas registradas", () => {
 
   it("com vendas: o Valor é a soma na moeda do negócio, em leitura", () => {
     estado.vendas = [
-      { id: "v1", valor_cents: 18_000, moeda: "BRL" },
-      { id: "v2", valor_cents: 12_000, moeda: "BRL" },
-      { id: "v3", valor_cents: 5_000, moeda: "USD" }, // outra moeda não entra
+      { id: "v1", valor_cents: 18_000, currency: "BRL" },
+      { id: "v2", valor_cents: 12_000, currency: "BRL" },
+      { id: "v3", valor_cents: 5_000, currency: "USD" }, // outra moeda não entra
     ];
     render(<LeadFieldsForm lead={negocio} pipelineId={negocio.pipeline_id} />);
 
@@ -102,12 +104,25 @@ describe("o Valor do negócio e as vendas registradas", () => {
   });
 
   it("com vendas: salvar o formulário não reescreve o valor", async () => {
-    estado.vendas = [{ id: "v1", valor_cents: 18_000, moeda: "BRL" }];
+    estado.vendas = [{ id: "v1", valor_cents: 18_000, currency: "BRL" }];
     render(<LeadFieldsForm lead={negocio} pipelineId={negocio.pipeline_id} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
 
     await waitFor(() => expect(estado.editarLead).toHaveBeenCalled());
     expect(estado.editarLead.mock.calls[0]![0].patch).not.toHaveProperty("value_cents");
+  });
+
+  it("apagar a última venda: o campo volta editável com o valor devolvido pelo banco", () => {
+    estado.vendas = [{ id: "v1", valor_cents: 18_000, currency: "BRL" }];
+    const { rerender } = render(<LeadFieldsForm lead={negocio} pipelineId={negocio.pipeline_id} />);
+
+    // A venda saiu e o banco devolveu o valor digitado antes dela (R$ 500).
+    estado.vendas = [];
+    rerender(<LeadFieldsForm lead={{ ...negocio, value_cents: 50_000 }} pipelineId={negocio.pipeline_id} />);
+
+    const campo = screen.getByLabelText(/^Valor \(/) as HTMLInputElement;
+    expect(campo.readOnly).toBe(false);
+    expect(campo.value).toMatch(/^500/);
   });
 });

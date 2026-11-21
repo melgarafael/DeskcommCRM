@@ -9,7 +9,7 @@
  *
  * ─── O que é uma VENDA aqui (duas origens, nunca em dobro) ──────────────────
  *
- *  - VENDA REGISTRADA (`vendas_registradas`, migration 9443): o vendedor
+ *  - VENDA REGISTRADA (`vendas_registradas`, migration 9449): o vendedor
  *    registrou "vendeu R$ 180 em 20/11" no negócio. Conta pela DATA dela, em
  *    QUALQUER etapa do card, e o mesmo negócio pode ter várias (recompra).
  *  - NEGÓCIO GANHO SEM VENDA REGISTRADA: o card foi para a etapa de ganho e
@@ -66,7 +66,7 @@ export interface VendaRegistradaDoPainel {
   lead_id: string | null;
   contact_id: string | null;
   valor_cents: number;
-  moeda: string;
+  currency: string;
   /** AAAA-MM-DD — o dia da venda na parede da empresa. */
   data: string;
   tags: string[];
@@ -221,7 +221,7 @@ export function montarPainelDeVendas(entrada: {
   for (const v of entrada.vendasRegistradas ?? []) {
     if (v.data < janela.de || v.data > janela.ate) continue;
     const negocio = v.lead_id ? entrada.negociosDasVendas?.get(v.lead_id) : undefined;
-    const centavos = centavosNaMoeda(v.valor_cents, v.moeda);
+    const centavos = centavosNaMoeda(v.valor_cents, v.currency);
     if (centavos === null) outraMoeda++;
     todas.push({
       id: v.id,
