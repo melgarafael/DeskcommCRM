@@ -54,7 +54,6 @@ import { SOCIAL_NETWORKS } from "./social/catalog";
  * O valor é o do provider `webchat`, e a coluna `conversations.channel` o aceita
  * pelo mesmo CHECK que o Telegram ganhou (migração 9443).
  */
- */
 export const CANAIS_DE_CONVERSA = [
   "whatsapp",
   "telegram",

@@ -9,8 +9,8 @@
  * O chat não passa por plataforma nenhuma: a resposta do atendente é gravada no
  * banco pelo handler, e o widget do visitante a lê de lá. Por isso `send` não
  * faz chamada de rede — ele devolve o id que o próprio canal dá à mensagem, no
- * formato `wc:<sessão>:out:<uuid>`, e o handler grava esse id em
- * `messages.external_id`.
+ * formato `wc:out:<uuid>` (sem a chave da sessão, que não sai no id), e o handler
+ * grava esse id em `messages.external_id`.
  *
  * ─── O destinatário NÃO sai do contato ───────────────────────────────────
  *
@@ -53,7 +53,7 @@ export const webchatAdapter: ChannelAdapter = {
     if (!envelope.body || envelope.body.trim().length === 0) {
       throw new Error("webchat_empty_body: mensagem de texto sem corpo.");
     }
-    return { externalId: `wc:${envelope.sessionRef}:out:${crypto.randomUUID()}` };
+    return { externalId: `wc:out:${crypto.randomUUID()}` };
   },
 
   codes: {

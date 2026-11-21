@@ -8,16 +8,16 @@ import type { OutboundEnvelope } from "@/lib/channels/types";
  *
  * 1. o `send` de texto NÃO fala com nenhum terceiro: o handler já gravou a
  *    mensagem, e o adapter só devolve o id próprio do canal;
- * 2. o `externalId` segue `wc:<sessão>:out:<uuid>`;
+ * 2. o `externalId` segue `wc:out:<uuid>`, e a chave da sessão nunca entra nele;
  * 3. mídia e corpo vazio são recusados nomeando o motivo, como no Telegram.
  */
 
-const SESSAO = "3f1c2d4e-5a6b-4c7d-8e9f-0a1b2c3d4e5f";
+const CHAVE = "wck_C0nhecidaPeloWidget-abcDEF123_xyz";
 const VISITANTE = "9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
 
 const ENVELOPE: OutboundEnvelope = {
   organizationId: "org-1",
-  sessionRef: SESSAO,
+  sessionRef: CHAVE,
   to: "provider-chat",
   kind: "text",
   body: "Olá, posso ajudar?",
@@ -37,7 +37,8 @@ describe("webchatAdapter.send", () => {
 
     const r = await webchatAdapter.send(ENVELOPE);
 
-    expect(r.externalId).toMatch(/^wc:[0-9a-f-]{36}:out:[0-9a-f-]{36}$/);
+    expect(r.externalId).toMatch(/^wc:out:[0-9a-f-]{36}$/);
+    expect(r.externalId).not.toContain(CHAVE);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
