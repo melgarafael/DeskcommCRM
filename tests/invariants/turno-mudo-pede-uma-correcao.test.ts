@@ -199,6 +199,23 @@ async function contarCasos(conversa: string): Promise<number> {
   return rows[0]?.n ?? 0;
 }
 
+/**
+ * Avisos `other` da Central que apontam para a conversa — o rastro do desfecho
+ * terminal quando os casos estão desligados (#4665). Só `other`: o agente com
+ * agenda destes fixtures também abre `capabilities_missing` na mesma conversa.
+ */
+async function avisosDaConversa(
+  conversa: string,
+): Promise<Array<{ kind: string; severity: string; title: string; body: string | null }>> {
+  const { rows } = await pool.query<{ kind: string; severity: string; title: string; body: string | null }>(
+    `select kind, severity, title, body from agent_inbox_items
+      where organization_id = $1 and kind = 'other' and ref_kind = 'conversation' and ref_id = $2
+        and status = 'open'`,
+    [ORG, conversa],
+  );
+  return rows;
+}
+
 beforeAll(async () => {
   m = {
     createInboundTurnHandler: (await import("@/lib/agent-engine/agent/inbound-turn")).createInboundTurnHandler,
@@ -300,6 +317,7 @@ beforeEach(async () => {
   await pool.query("delete from messages where organization_id = $1", [ORG]);
   await pool.query("delete from job_queue where organization_id = $1", [ORG]);
   await pool.query("delete from event_log where organization_id = $1", [ORG]);
+  await pool.query("delete from agent_inbox_items where organization_id = $1", [ORG]);
   await pool.query("delete from conversations where organization_id = $1", [ORG]);
   await pool.query("delete from contacts where organization_id = $1", [ORG]);
   await pool.query(
@@ -490,5 +508,83 @@ describe("o turno de resposta que terminou sem mensagem ao cliente", () => {
 
     expect(enviados).toEqual([]);
     expect(await contarCasos(conversa), "correção truncada não virou caso").toBe(1);
+  });
+
+  it("⭐ #4665 veto que se repete na correção, casos DESLIGADOS: abre aviso na Central", async () => {
+    // O mesmo turno do cenário acima, numa sessão cujo agente tem a agenda armada
+    // e `cases_enabled` no padrão (false). Antes, o único rastro era o log de erro
+    // do turno: o cliente sem resposta e ninguém na Central sabendo.
+    const { fake, prompts } = modelo([
+      enviar("Seu agendamento está confirmado para amanhã às 9h"),
+      texto("(o envio foi barrado; encerro)"),
+      enviar("Pronto, confirmado para amanhã às 9h!"),
+      texto("(barrado de novo)"),
+    ]);
+    const conversa = crypto.randomUUID();
+    await turno(fake, { sessao: SESSION_VETO, conversa });
+
+    expect(enviados, "a confirmação passou sem veto — o agenda_stall não estava armado").toEqual([]);
+    expect(prompts[2], "a correção do turno mudo não foi pedida").toContain(MARCA_DA_CORRECAO);
+    expect(await contarCasos(conversa), "caso abriu com casos desligados").toBe(0);
+    const avisos = await avisosDaConversa(conversa);
+    expect(avisos, "o cliente ficou sem resposta e nada apareceu na Central").toHaveLength(1);
+    expect(avisos[0]).toMatchObject({
+      kind: "other",
+      severity: "critical",
+      title: "A correção automática da IA também falhou — nenhuma mensagem saiu",
+    });
+    // O mesmo texto do caso: o que aconteceu com o cliente e por que a IA travou.
+    expect(avisos[0]!.body).toContain("O cliente ficou sem resposta neste turno");
+    expect(avisos[0]!.body).toContain("as regras de segurança barraram a mensagem");
+  });
+
+  it("#4665 saída truncada numa sessão SEM casos ligados também avisa a Central", async () => {
+    const { fake } = modelo([cortado("Claro, o seu pedido fica"), texto("(nada)")]);
+    await turno(fake);
+
+    expect(enviados).toEqual([]);
+    const avisos = await avisosDaConversa(CONV);
+    expect(avisos).toHaveLength(1);
+    expect(avisos[0]!.title).toBe("Resposta do agente truncada — nenhuma mensagem saiu");
+    expect(avisos[0]!.body).toContain("veio cortada no limite de tamanho");
+  });
+
+  it("#4665 controle: com casos ligados o caso abre e a Central não ganha aviso duplicado", async () => {
+    const { fake } = modelo([
+      enviar("Seu agendamento está confirmado para amanhã às 9h"),
+      texto("(o envio foi barrado; encerro)"),
+      enviar("Pronto, confirmado para amanhã às 9h!"),
+      texto("(barrado de novo)"),
+    ]);
+    const conversa = crypto.randomUUID();
+    await turno(fake, { sessao: SESSION_VETO_CASOS, conversa });
+
+    expect(await contarCasos(conversa)).toBe(1);
+    expect(
+      await avisosDaConversa(conversa),
+      "o caso já avisa o time — um aviso a mais seria duplicado",
+    ).toEqual([]);
+  });
+
+  it("#4665 controle: silêncio ESCOLHIDO na correção, casos desligados, não avisa a Central", async () => {
+    const { fake, prompts } = modelo([
+      enviar("Seu agendamento está confirmado para amanhã às 9h"),
+      texto("(o envio foi barrado; encerro)"),
+      texto("(decidi não responder)"),
+    ]);
+    const conversa = crypto.randomUUID();
+    await turno(fake, { sessao: SESSION_VETO, conversa });
+
+    expect(prompts[2]).toContain(MARCA_DA_CORRECAO);
+    expect(await avisosDaConversa(conversa), "silêncio escolhido virou aviso à toa").toEqual([]);
+  });
+
+  it("#4665 o mesmo turno de novo na mesma conversa não empilha um segundo aviso", async () => {
+    const roteiro = () =>
+      modelo([cortado("Claro, o seu pedido fica"), texto("(nada)")]).fake;
+    await turno(roteiro());
+    await turno(roteiro());
+
+    expect(await avisosDaConversa(CONV)).toHaveLength(1);
   });
 });

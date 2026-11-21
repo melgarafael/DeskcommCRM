@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { ROLE_RANK } from "@/lib/auth/types";
+import { createClient } from "@/lib/supabase/server";
 
 import { MetricsClient } from "./_components/MetricsClient";
 
@@ -19,6 +20,21 @@ export default async function MetricsPage() {
   const idioma = user.idioma;
   const t = (texto: string) => traduzir(texto, idioma);
 
+  // Os funis do seletor de recorte dos ganhos (#4918) — lidos AQUI, com o
+  // client de sessão, pelo mesmo motivo do Kanban: `GET /api/v1/pipelines`
+  // exige manager+ e esta tela é aberta a qualquer papel. `is_archived` NÃO
+  // corta a lista: ganho de funil arquivado continua sendo ganho do período, e
+  // esconder o funil esconderia justamente o número que se quer explicar.
+  const supabase = await createClient();
+  const { data: funisDaOrg } = activeOrg
+    ? await supabase
+        .from("crm_pipelines")
+        .select("id, name")
+        .eq("organization_id", activeOrg.orgId)
+        .order("position")
+    : { data: [] };
+  const funis = (funisDaOrg ?? []) as Array<{ id: string; name: string }>;
+
   return (
     <div className="flex h-full flex-col gap-6 md:p-6">
       <header>
@@ -30,7 +46,7 @@ export default async function MetricsPage() {
         </p>
       </header>
 
-      <MetricsClient canCompare={canCompare} currentUserId={user.id} />
+      <MetricsClient canCompare={canCompare} currentUserId={user.id} funis={funis} />
     </div>
   );
 }
