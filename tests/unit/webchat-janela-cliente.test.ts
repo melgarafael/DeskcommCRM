@@ -156,7 +156,14 @@ const SOMENTE_CONVERSA = {
 };
 
 /** HTML real da janela, gerado por `montarJanela`. */
-function htmlDaJanela(config: typeof CONFIG_PADRAO): string {
+interface ConfigDoHtml {
+  titulo: string;
+  saudacao: string;
+  coleta: unknown;
+  controlador: { razaoSocial: string; politicaUrl: string | null };
+}
+
+function htmlDaJanela(config: ConfigDoHtml): string {
   return montarJanela({
     chave: "wck_teste",
     marca: MARCA,
@@ -270,8 +277,9 @@ async function abrirJanela(
   config: typeof CONFIG_PADRAO | typeof SOMENTE_CONVERSA = CONFIG_PADRAO,
   extras: Record<string, unknown> = {},
   configBruta?: string,
+  htmlConfig: ConfigDoHtml = CONFIG_PADRAO,
 ) {
-  montarDom(htmlDaJanela(CONFIG_PADRAO));
+  montarDom(htmlDaJanela(htmlConfig));
   document.getElementById("webchat-config")!.textContent = configBruta ?? JSON.stringify(config);
   const agendados: Agendado[] = [];
   const pai = { postMessage: vi.fn() };
@@ -600,14 +608,24 @@ describe("janela no DOM", () => {
     expect(r.chamadas.filter((c) => c.url.endsWith("/eventos"))).toHaveLength(2);
   });
 
-  it("Reconectando aparece durante o aviso, antes da conversa", async () => {
+  it("Reconectando aparece na tela enquanto o aviso está visível (fora do rodapé escondido)", async () => {
     await abrirJanela(roteador({ sessao: () => Promise.reject(new Error("rede")) }).fn);
-    const status = Array.from(document.querySelectorAll('[role="status"]')).map((p) => p.textContent);
-    expect(status).toContain("Reconectando…");
+    const status = Array.from(document.querySelectorAll('[role="status"]')).find(
+      (p) => p.textContent === "Reconectando…",
+    ) as HTMLElement | undefined;
+    expect(status).toBeDefined();
+    // O status não mora no rodapé (que fica oculto no aviso) e o aviso está no passo, visível.
+    expect(status!.closest(".rodape")).toBeNull();
+    expect(document.querySelector(".passo .aviso")).not.toBeNull();
+    expect((document.querySelector(".rodape") as HTMLElement).style.display).toBe("none");
   });
 
-  it("link da política sai com target e rel seguros", async () => {
-    await abrirJanela(roteador().fn);
+  it("o JS monta o link da política a partir da configuração, com target e rel seguros", async () => {
+    // O HTML do servidor vem SEM link: o link que aparece tem de ter sido montado pelo script.
+    await abrirJanela(roteador().fn, CONFIG_PADRAO, {}, JSON.stringify(CONFIG_PADRAO), {
+      ...CONFIG_PADRAO,
+      controlador: { razaoSocial: "Loja Exemplo Ltda", politicaUrl: null },
+    });
     const link = document.querySelector(".aviso a") as HTMLAnchorElement | null;
     expect(link).not.toBeNull();
     expect(link!.getAttribute("href")).toBe("https://loja.exemplo.com.br/privacidade");
@@ -615,12 +633,13 @@ describe("janela no DOM", () => {
     expect(link!.getAttribute("rel")).toBe("noopener noreferrer");
   });
 
-  it("política que não é http(s) não gera link", async () => {
+  it("o JS omite o link quando a política não é http(s), mesmo com o HTML trazendo link", async () => {
     await abrirJanela(roteador().fn, CONFIG_PADRAO, {}, JSON.stringify({
       ...CONFIG_PADRAO,
       controlador: { razaoSocial: "Loja", politicaUrl: "javascript:alert(1)" },
-    }));
+    }), CONFIG_PADRAO);
     expect(document.querySelector(".aviso a")).toBeNull();
+    expect(document.querySelector('a[href^="javascript"]')).toBeNull();
   });
 
   it("a lista de mensagens tem role log", async () => {
@@ -650,16 +669,105 @@ describe("janela no DOM", () => {
     expect(corposDeMensagens(r.chamadas)).toHaveLength(0);
   });
 
-  it("Shift+Enter não envia: quebra linha no campo de texto", async () => {
+  it("Enter envia, Shift+Enter não envia e deixa a quebra de linha (não é cancelado)", async () => {
     const r = roteador();
     await abrirJanela(r.fn, SOMENTE_CONVERSA);
     botao("Aceitar e continuar").click();
     await esperarTudo();
     const campo = document.getElementById("webchat-texto") as HTMLTextAreaElement;
     campo.value = "linha um";
-    campo.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", shiftKey: true, bubbles: true }));
+    const naoCancelado = campo.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", shiftKey: true, bubbles: true, cancelable: true }),
+    );
     await esperarTudo();
     expect(corposDeMensagens(r.chamadas)).toHaveLength(0);
+    expect(campo.value).toBe("linha um");
+    expect(naoCancelado).toBe(true);
+
+    campo.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    await esperarTudo();
+    expect(corposDeMensagens(r.chamadas)).toHaveLength(1);
+  });
+
+  it("Enter durante composição de IME não envia", async () => {
+    const r = roteador();
+    await abrirJanela(r.fn, SOMENTE_CONVERSA);
+    botao("Aceitar e continuar").click();
+    await esperarTudo();
+    const campo = document.getElementById("webchat-texto") as HTMLTextAreaElement;
+    campo.value = "ni";
+    campo.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true }));
+    await esperarTudo();
+    expect(corposDeMensagens(r.chamadas)).toHaveLength(0);
+  });
+
+  it("422 com flag guardada (forjada ou obsoleta) apaga a flag, volta ao aviso/coleta e reenvia com aceite, contato e o MESMO mensagem_id", async () => {
+    const armazenamento = memoria();
+    armazenamento.mapa.set("webchat:wck_teste:iniciada", "1");
+    armazenamento.mapa.set("webchat:wck_teste", "T0");
+    const r = roteador({
+      mensagens: (_corpo, n) =>
+        n === 1
+          ? json(422, { error: { code: "validation_failed", message: "x" } })
+          : json(201, { data: { mensagem_id: "x", status: "queued" } }),
+    });
+    await abrirJanela(r.fn, CONFIG_PADRAO, { armazenamento });
+    expect(temTexto("Aceitar e continuar")).toBe(false);
+
+    digitarEEnviar("Oi");
+    await esperarTudo();
+    expect(armazenamento.mapa.has("webchat:wck_teste:iniciada")).toBe(false);
+    expect(temTexto("Confira os dados e tente de novo.")).toBe(true);
+    expect(document.querySelector("form.coleta")).not.toBeNull();
+
+    (document.querySelector('input[name="nome"]') as HTMLInputElement).value = "Ana";
+    enviarColeta();
+    await esperarTudo();
+    expect(temTexto("Confira os dados")).toBe(false);
+    const falha = Array.from(document.querySelectorAll(".msg-estado")).find((el) =>
+      el.textContent?.includes("tentar de novo"),
+    ) as HTMLElement;
+    falha.click();
+    await esperarTudo();
+
+    const [primeira, reenvio] = corposDeMensagens(r.chamadas);
+    expect(primeira.aceite).toBeUndefined();
+    expect(reenvio.mensagem_id).toBe(primeira.mensagem_id);
+    expect(reenvio.aceite).toEqual({ versao: "v1" });
+    expect(reenvio.contato).toEqual({ nome: "Ana" });
+  });
+
+  it("a flag não é gravada após 5xx nem após 422", async () => {
+    const armazenamento = memoria();
+    await abrirJanela(roteador({
+      mensagens: () => json(500, { error: { code: "internal_error", message: "x" } }),
+    }).fn, SOMENTE_CONVERSA, { armazenamento });
+    botao("Aceitar e continuar").click();
+    await esperarTudo();
+    digitarEEnviar("Oi");
+    await esperarTudo();
+    expect(armazenamento.mapa.has("webchat:wck_teste:iniciada")).toBe(false);
+  });
+
+  it("401 no envio apaga o token e a flag juntos", async () => {
+    const armazenamento = memoria();
+    armazenamento.mapa.set("webchat:wck_teste:iniciada", "1");
+    armazenamento.mapa.set("webchat:wck_teste", "T0");
+    await abrirJanela(roteador({
+      mensagens: () => json(401, { error: { code: "unauthenticated", message: "x" } }),
+    }).fn, CONFIG_PADRAO, { armazenamento });
+    digitarEEnviar("Oi");
+    await esperarTudo();
+    expect(armazenamento.mapa.has("webchat:wck_teste")).toBe(false);
+    expect(armazenamento.mapa.has("webchat:wck_teste:iniciada")).toBe(false);
+    expect(temTexto("Chat indisponível")).toBe(true);
+  });
+
+  it("token guardado sem flag pede o aviso de novo", async () => {
+    const armazenamento = memoria();
+    armazenamento.mapa.set("webchat:wck_teste", "T0");
+    await abrirJanela(roteador().fn, CONFIG_PADRAO, { armazenamento });
+    expect(botao("Aceitar e continuar")).toBeDefined();
   });
 
   it("401 no envio marca a mensagem como não enviada antes de mostrar Chat indisponível", async () => {

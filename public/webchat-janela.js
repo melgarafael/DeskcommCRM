@@ -254,10 +254,21 @@
     }
   }
 
+  /** Apaga o token e a flag juntos: um token novo nunca herda a flag do anterior. */
   function apagarTokenNo(arm, chave) {
     if (!arm) return;
     try {
       arm.removeItem(PREFIXO_TOKEN + chave);
+      arm.removeItem(chaveDaFlag(chave));
+    } catch (erro) {
+      // Sem armazenamento: nada a apagar.
+    }
+  }
+
+  function apagarFlagIniciada(arm, chave) {
+    if (!arm) return;
+    try {
+      arm.removeItem(chaveDaFlag(chave));
     } catch (erro) {
       // Sem armazenamento: nada a apagar.
     }
@@ -317,6 +328,7 @@
   function criarLinha(doc, tipo, texto, hora) {
     var linha = criar(doc, "div", "msg msg-" + tipo, null);
     estilo(linha, tipo === "visitante" ? ESTILO_VISITANTE : ESTILO_ATENDENTE);
+    linha.style.whiteSpace = "pre-wrap";
     var p = criar(doc, "p", "msg-texto", texto);
     estilo(p, { margin: "0", whiteSpace: "pre-wrap", wordBreak: "break-word" });
     linha.appendChild(p);
@@ -427,6 +439,8 @@
       contexto: null,
       fluxoIniciado: false,
       valoresColeta: null,
+      // Nenhum envio deu 2xx nesta carga da janela: um 422 agora é o da primeira mensagem.
+      cargaComEnvioOk: false,
     };
     var configLida = lerConfig(ui.configNo);
     var config = configLida || {};
@@ -647,6 +661,7 @@
       ui.rodape.insertBefore(ui.aviso, ui.form);
       estilo(ui.rodape, { display: "block" });
       estilo(ui.form, { display: "flex" });
+      mostrarStatus("");
       ui.texto.focus();
       // Voltar à coleta (422 na primeira mensagem) passa de novo por aqui: o fluxo abre uma vez só.
       if (!estado.fluxoIniciado) {
@@ -720,6 +735,7 @@
             m.estado = "enviada";
             atualizarEstado(m);
             estado.primeiraEnviada = true;
+            estado.cargaComEnvioOk = true;
             gravarFlagIniciada(armazenamento, chave);
             var novo = r.corpo && r.corpo.data && r.corpo.data.token_novo;
             if (typeof novo === "string" && novo !== "") trocarToken(novo);
@@ -738,7 +754,11 @@
             indisponivel();
             return;
           }
-          if (r.status === 422 && !estado.primeiraEnviada) {
+          if (r.status === 422 && !estado.cargaComEnvioOk) {
+            // Primeira mensagem da carga recusada: a flag (guardada ou não) não vale mais. Pede o
+            // aceite de novo; o reenvio usa o mesmo mensagem_id (ultimaFalha).
+            apagarFlagIniciada(armazenamento, chave);
+            estado.primeiraEnviada = false;
             mostrarStatus("Confira os dados e tente de novo.");
             voltarParaPreenchimento();
             return;
