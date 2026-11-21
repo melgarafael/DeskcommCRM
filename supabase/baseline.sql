@@ -70337,6 +70337,90 @@ grant execute on function public.fn_extensions_set_switch(uuid,uuid,uuid,boolean
 notify pgrst, 'reload schema';
 
 
+-- ---- modulo conectado: consentimento por área (migration 9442) ----
+-- Espelho idempotente da 9442 (racional completo no arquivo da migration): `organization_extensions.consented_areas`
+-- (com CHECK nas 18 permissões `area.*`) e `fn_extensions_set_consent`. Fica DEPOIS do apêndice da 9441 e ANTES
+-- da VARREDURA anon.
+
+alter table public.organization_extensions
+  add column if not exists consented_areas text[] not null default '{}';
+-- Num bloco só: o update.sh reaplica sem ON_ERROR_STOP e em autocommit. Solto, um add que falhe (lista
+-- encolhida numa versão futura, por exemplo) deixaria a coluna SEM a CHECK (lição do #2670).
+do $consentidas$
+begin
+  alter table public.organization_extensions drop constraint if exists organization_extensions_consented_areas_check;
+  alter table public.organization_extensions add constraint organization_extensions_consented_areas_check
+    check (consented_areas <@ array[
+      'area.contatos.leitura','area.contatos.escrita',
+      'area.negocios.leitura','area.negocios.escrita',
+      'area.conversas.leitura','area.conversas.escrita',
+      'area.agenda.leitura','area.agenda.escrita',
+      'area.funis.leitura','area.funis.escrita',
+      'area.agentes_ia.leitura','area.agentes_ia.escrita',
+      'area.catalogo.leitura','area.catalogo.escrita',
+      'area.configuracao.leitura','area.configuracao.escrita',
+      'area.analise.leitura','area.analise.escrita'
+    ]::text[]);
+end
+$consentidas$;
+
+create or replace function public.fn_extensions_set_consent(p_actor uuid, p_organization uuid, p_installation uuid,
+  p_expected_revision integer, p_areas text[])
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  v_manifest jsonb; v_removed_at timestamptz; v_declaradas text[]; v_link public.organization_extensions; v_role text;
+begin
+  if p_organization is null or p_installation is null or p_expected_revision is null or p_expected_revision < 0
+    or p_areas is null or array_position(p_areas, null) is not null
+    or cardinality(p_areas) <> (select count(distinct a) from unnest(p_areas) a) then
+    raise exception using errcode='P0001',message='extension_invalid_input';
+  end if;
+  perform public.fn_extensions_assert_actor(p_actor,p_organization);
+  -- A organização é travada como em `fn_extensions_configure`: consentir e ativar/desativar/remover não se cruzam.
+  perform 1 from public.organizations where id=p_organization for update;
+  perform public.fn_extensions_assert_actor(p_actor,p_organization);
+  select i.removed_at, a.manifest into v_removed_at, v_manifest
+    from public.extension_installations i join public.extension_artifacts a on a.id=i.artifact_id
+    where i.id=p_installation for share of i;
+  if not found then raise exception using errcode='P0001',message='extension_installation_not_found'; end if;
+  if v_removed_at is not null then raise exception using errcode='P0001',message='extension_removed'; end if;
+  -- O perfil vem do ARTEFATO admitido. Só o `connected` tem áreas.
+  if v_manifest->>'profile' is distinct from 'connected' then
+    raise exception using errcode='P0001',message='extension_consent_not_applicable';
+  end if;
+  select * into v_link from public.organization_extensions
+    where organization_id=p_organization and installation_id=p_installation for update;
+  if not found then raise exception using errcode='P0001',message='extension_not_activated'; end if;
+  if v_link.revision <> p_expected_revision then
+    raise exception using errcode='P0001',message='extension_revision_conflict';
+  end if;
+  -- "Declarado" = as permissões `area.*` do manifesto do artefato desta instalação.
+  select coalesce(array_agg(distinct p), array[]::text[]) into v_declaradas
+    from jsonb_array_elements_text(coalesce(v_manifest->'permissions','[]'::jsonb)) p where p like 'area.%';
+  if exists (select 1 from unnest(p_areas) a where a <> all (v_declaradas)) then
+    raise exception using errcode='PT409',message='extension_area_not_declared';
+  end if;
+  -- Decisão 5 da spec 33: configuração e agentes de IA só por quem administra a organização.
+  if exists (select 1 from unnest(p_areas) a where a ~ '^area\.(configuracao|agentes_ia)\.') then
+    select u.role into v_role from public.user_organizations u
+      where u.user_id=p_actor and u.organization_id=p_organization and u.revoked_at is null and u.accepted_at is not null;
+    if v_role is distinct from 'admin' and v_role is distinct from 'owner' then
+      raise exception using errcode='PT409',message='extension_area_requires_admin';
+    end if;
+  end if;
+  update public.organization_extensions
+    set consented_areas=(select coalesce(array_agg(a order by a), array[]::text[]) from unnest(p_areas) a),
+        revision=revision+1, updated_by=p_actor, updated_at=now()
+    where organization_id=p_organization and installation_id=p_installation
+    returning * into v_link;
+  return jsonb_build_object('organization_extension', to_jsonb(v_link));
+end $$;
+
+revoke execute on function public.fn_extensions_set_consent(uuid,uuid,uuid,integer,text[]) from public, anon, authenticated;
+grant execute on function public.fn_extensions_set_consent(uuid,uuid,uuid,integer,text[]) to service_role;
+
+notify pgrst, 'reload schema';
+
 -- Integridade de organização, funil e etapa (9111)
 -- manifest: Exige a mesma organização/funil/etapa em todo caminho SQL, sem reparar legado automaticamente.
 -- Operator controls statement/lock timeout; applying/validating takes locks and needs a reviewed target window.
@@ -82607,6 +82691,63 @@ grant  execute on function public.decrypt_cpf(uuid) to authenticated, service_ro
 
 revoke execute on function public.decrypt_cpf(uuid, text) from public, anon;
 grant  execute on function public.decrypt_cpf(uuid, text) to authenticated, service_role;
+
+-- ---- resumo das 7h só quando houver agendamento (migration 9434, #4988) ----
+-- Espelho idempotente da 9434 (ver o cabeçalho dela).
+-- 1. A ESCOLHA DO DONO. Nasce desligada: quem já recebe o resumo todo dia não
+--    deixa de recebê-lo sem pedir.
+alter table public.config_aviso_de_agendamento
+  add column if not exists resumo_so_com_agendamento boolean not null default false;
+
+comment on column public.config_aviso_de_agendamento.resumo_so_com_agendamento is
+  'O resumo das 7h só sai quando o dia tem agendamento ou houve mudança represada da madrugada. Não afeta os avisos de marcado/remarcado/cancelado nem o lembrete antes do horário. Motor em lib/agenda/aviso-de-agendamento.ts (aplicaResumoDoDia).';
+
+-- 2. A PORTA DE ESCRITA da escolha. Função própria, como a do lembrete (9326):
+--    trocar a assinatura de `fn_definir_aviso_de_agendamento` derrubaria a
+--    porta que todo clone já usa. Mesmas guardas: admin da organização,
+--    escrita de suporte permitida e MFA provado na sessão.
+create or replace function public.fn_definir_resumo_do_aviso_de_agendamento(
+  p_org uuid,
+  p_so_com_agendamento boolean
+) returns boolean
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_antes boolean;
+begin
+  if auth.uid() is null or p_org is null
+     or not public.fn_role_at_least(p_org, 'admin')
+     or not public.fn_support_write_allowed(p_org) then
+    raise exception 'aviso_de_agendamento_forbidden' using errcode = '42501';
+  end if;
+  if not public.fn_session_mfa_proven() then
+    raise exception 'aviso_de_agendamento_mfa_required' using errcode = '42501';
+  end if;
+
+  select resumo_so_com_agendamento into v_antes
+    from public.config_aviso_de_agendamento
+   where organization_id = p_org
+   for update;
+  if not found then
+    raise exception 'aviso_de_agendamento_sem_config' using errcode = '22023';
+  end if;
+
+  update public.config_aviso_de_agendamento
+     set resumo_so_com_agendamento = coalesce(p_so_com_agendamento, false),
+         atualizado_por            = auth.uid(),
+         updated_at                = now()
+   where organization_id = p_org;
+
+  return coalesce(v_antes, false);
+end;
+$$;
+-- AS DUAS ORIGENS DE EXECUTE (item 9 da doutrina de migrations).
+revoke all     on function public.fn_definir_resumo_do_aviso_de_agendamento(uuid,boolean) from public, anon;
+grant  execute on function public.fn_definir_resumo_do_aviso_de_agendamento(uuid,boolean) to authenticated;
+
+notify pgrst, 'reload schema';
 
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
