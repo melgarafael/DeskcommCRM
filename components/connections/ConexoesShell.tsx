@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { RedesSociaisClient } from "./RedesSociaisClient";
 import { CanalBotClient } from "./CanalBotClient";
+import { CanalChatClient } from "./CanalChatClient";
 import { CanalGraphParceiroClient } from "./CanalGraphParceiroClient";
 import { CanalOficialClient } from "./CanalOficialClient";
 import { CanalParceiroClient } from "./CanalParceiroClient";
@@ -49,6 +50,7 @@ export function ConexoesShell({
   wacallsConfigured,
   graphParceiro = null,
   bot = null,
+  chat = null,
 }: {
   wahaConfigured: boolean;
   wacallsConfigured: boolean;
@@ -64,6 +66,11 @@ export function ConexoesShell({
    * doc 216): desligado = `null`, e a aba nem é montada, nem por `?aba=`.
    */
   bot?: { label: string } | null;
+  /**
+   * O chat no site (spec 36, F2) é MÓDULO OPCIONAL da instalação (`canal_webchat`): desligado =
+   * `null`, e a aba nem é montada, nem por `?aba=`. O rótulo vem do servidor pelo mesmo motivo.
+   */
+  chat?: { label: string } | null;
 }) {
   const t = useT();
   const router = useRouter();
@@ -84,7 +91,9 @@ export function ConexoesShell({
               ? "graph"
               : abaParam === "bot" && bot
                 ? "bot"
-                : "numeros";
+                : abaParam === "chat" && chat
+                  ? "chat"
+                  : "numeros";
   const sub = params.get("sub") === "templates" ? "templates" : "conexao";
 
   const irPara = (proximaAba: string, proximaSub?: string): void => {
@@ -122,11 +131,18 @@ export function ConexoesShell({
         <TabsTrigger value="voz">{t("Chamada de voz")}</TabsTrigger>
         {graphParceiro && <TabsTrigger value="graph">{graphParceiro.label}</TabsTrigger>}
         {bot && <TabsTrigger value="bot">{bot.label}</TabsTrigger>}
+        {chat && <TabsTrigger value="chat">{chat.label}</TabsTrigger>}
       </TabsList>
 
       {bot && (
         <TabsContent value="bot" className="mt-0">
           <CanalBotClient />
+        </TabsContent>
+      )}
+
+      {chat && (
+        <TabsContent value="chat" className="mt-0">
+          <CanalChatClient />
         </TabsContent>
       )}
 
