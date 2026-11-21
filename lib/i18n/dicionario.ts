@@ -3309,6 +3309,9 @@ export const DICIONARIO: Traducoes = {
   "Este modelo é a variante de lote e não responde no chat. Escolha outro da lista.": {
     es: "Este modelo es la variante por lotes y no responde en el chat. Elige otro de la lista.",
   },
+  "Este modelo foi aposentado pelo provedor. Escolha outro modelo.": {
+    es: "El proveedor ha retirado este modelo. Elige otro modelo.",
+  },
   "Digite o identificador do modelo": { es: "Escribe el identificador del modelo" },
   "Conecte a assinatura do ChatGPT em IA › Credenciais para listar os modelos.": {
     es: "Conecta la suscripción de ChatGPT en IA › Credenciales para listar los modelos.",
@@ -23034,6 +23037,9 @@ export const DICIONARIO: Traducoes = {
   "Levando…": { es: "Llevando…" },
   "negócios levados.": { es: "negocios llevados." },
   "Não foram levados:": { es: "No se llevaron:" },
+  "O negócio já foi criado no funil de destino. Confira-o antes de tentar novamente.": {
+    es: "El negocio ya se creó en el embudo de destino. Revíselo antes de volver a intentarlo.",
+  },
   "levados para": { es: "llevados a" },
   "Não foi possível levar este negócio.": { es: "No fue posible llevar este negocio." },
   "ficaram de fora pelo limite de 50 por vez. Selecione-os de novo para levar.": {
