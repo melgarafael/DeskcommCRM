@@ -53,6 +53,7 @@ import {
 } from "@/lib/voip/ariClient";
 import { AudioSocketCallBridge } from "./audioSocketBridge";
 import { montarAgendaDaVoz } from "./agenda-da-voz";
+import { carregarContextoDoContatoNaVoz } from "./contexto-do-contato";
 import { idsDaLinhaDoCanal, uuidDoAudioSocketDeEntrada } from "./canal-de-entrada";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveVoiceAgent } from "@/lib/ai/agents";
@@ -436,6 +437,16 @@ export async function handleAudioSocketConnection(socket: net.Socket, uuid: stri
   // contato das tools de agenda e o `contact_id` de qualquer marcação.
   const contactIdDaChamada = (callRow.contact_id as string | null | undefined) ?? null;
 
+  // Carrega resumo do contato e última conversa em paralelo com o handshake WS
+  // (mesmo padrão de `knowledgeSourceIdsPromise`) para a IA já cumprimentar pelo
+  // nome e retomar assuntos pendentes sem perguntar o que já está no CRM.
+  const contactContextPromise = contactIdDaChamada
+    ? carregarContextoDoContatoNaVoz(supabaseAdmin, {
+        organizationId: callRow.organization_id,
+        contactId: contactIdDaChamada,
+      }).catch(() => "")
+    : Promise.resolve("");
+
   const bridge = new AudioSocketCallBridge(socket, {
     callId: callRow.id,
     organizationId: callRow.organization_id,
@@ -449,6 +460,7 @@ export async function handleAudioSocketConnection(socket: net.Socket, uuid: stri
     // Recebida: quem atende fala primeiro. Feita por nós: quem atende diz "alô".
     falaPrimeiro: callRow.direction === "inbound",
     knowledgeSourceIdsPromise,
+    contactContextPromise,
     searchKnowledge: async (pergunta: string) => {
       const knowledgeSourceIds = await knowledgeSourceIdsPromise;
       if (knowledgeSourceIds.length === 0) return { trechos: [] };
