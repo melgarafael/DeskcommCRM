@@ -44,6 +44,7 @@ export default async function ConnectionsPage() {
       <ConexoesShell
         wahaConfigured={wahaConfigured}
         wacallsConfigured={wacallsConfigured}
+        podeCriarAgenteDeVoz={ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin}
         graphParceiro={canalGraphParceiroLigado() ? { label: GRAPH_PARTNER_LABEL } : null}
         bot={roboLigado ? { label: ROTULO_DO_ROBO } : null}
       />
