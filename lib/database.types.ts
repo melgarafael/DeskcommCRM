@@ -7348,6 +7348,8 @@ export type Database = {
           tags: string[];
           title: string;
           updated_at: string;
+          valor_digitado_cents: number | null;
+          valor_pelas_vendas: boolean;
           value_cents: number | null;
           webhook_source_id: string | null;
           won_reason: string | null;
@@ -7386,6 +7388,8 @@ export type Database = {
           tags?: string[];
           title: string;
           updated_at?: string;
+          valor_digitado_cents?: number | null;
+          valor_pelas_vendas?: boolean;
           value_cents?: number | null;
           webhook_source_id?: string | null;
           won_reason?: string | null;
@@ -7423,6 +7427,8 @@ export type Database = {
           tags?: string[];
           title?: string;
           updated_at?: string;
+          valor_digitado_cents?: number | null;
+          valor_pelas_vendas?: boolean;
           value_cents?: number | null;
           webhook_source_id?: string | null;
           won_reason?: string | null;
@@ -14326,10 +14332,10 @@ export type Database = {
           contact_id: string | null;
           created_at: string;
           created_by: string | null;
+          currency: string;
           data: string;
           id: string;
           lead_id: string | null;
-          moeda: string;
           observacao: string | null;
           organization_id: string;
           tags: string[];
@@ -14341,10 +14347,10 @@ export type Database = {
           contact_id?: string | null;
           created_at?: string;
           created_by?: string | null;
+          currency?: string;
           data: string;
           id?: string;
           lead_id?: string | null;
-          moeda?: string;
           observacao?: string | null;
           organization_id: string;
           tags?: string[];
@@ -14355,10 +14361,10 @@ export type Database = {
           contact_id?: string | null;
           created_at?: string;
           created_by?: string | null;
+          currency?: string;
           data?: string;
           id?: string;
           lead_id?: string | null;
-          moeda?: string;
           observacao?: string | null;
           organization_id?: string;
           tags?: string[];
