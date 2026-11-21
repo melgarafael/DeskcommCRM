@@ -85,6 +85,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { STATUS_ENCERRADOS } from "@/lib/inbox/comando-da-conversa";
 import { dataNoFuso, inicioDoDia, proximoDia } from "@/lib/relatorios/janela";
 import { fusoValido } from "@/lib/reports/atividades";
+import { lerPaginado } from "@/lib/supabase/pagina";
 
 export const dynamic = "force-dynamic";
 
@@ -95,11 +96,6 @@ export const dynamic = "force-dynamic";
  */
 const DIAS_MAXIMOS = 90;
 
-/**
- * `max_rows = 1000` é o teto do SERVIDOR — um `.limit(5000)` devolve 1000 e não
- * diz nada. Só `range` com `count` exato sabe o tamanho de verdade.
- */
-const TAMANHO_DA_PAGINA = 1000;
 const PAGINAS_MAXIMAS = 10;
 const MAXIMO_DE_TAGS_PEDIDAS = 100;
 
@@ -253,32 +249,20 @@ export async function GET(req: NextRequest): Promise<Response> {
   const naJanela =
     `and(service_started_at.gte.${janela.de},service_started_at.lt.${janela.ate}),` +
     `and(service_started_at.is.null,created_at.gte.${janela.de},created_at.lt.${janela.ate})`;
-  const conversas: ConversaBruta[] = [];
-  let totalNoBanco: number | null = null;
-  let paginaCheia = false;
-
-  for (let pagina = 0; pagina < PAGINAS_MAXIMAS; pagina++) {
-    const inicio = pagina * TAMANHO_DA_PAGINA;
+  const leitura = await lerPaginado<ConversaBruta>(async (inicio, fim, contar) => {
     const { data, error, count } = await supabase
       .from("conversations")
-      .select(COLUNAS, { count: "exact" })
+      .select(COLUNAS, contar ? { count: "exact" } : undefined)
       .eq("organization_id", authz.organizationId)
       .or(naJanela)
       .order("service_started_at", { ascending: false })
       .order("created_at", { ascending: false })
       .order("id", { ascending: false })
-      .range(inicio, inicio + TAMANHO_DA_PAGINA - 1);
-    if (error) return fail("internal_error", error.message, 500, { requestId });
-
-    if (totalNoBanco === null) totalNoBanco = count;
-    const lote = (data ?? []) as unknown as ConversaBruta[];
-    conversas.push(...lote);
-    paginaCheia = lote.length >= TAMANHO_DA_PAGINA;
-    if (!paginaCheia) break;
-    if (totalNoBanco !== null && conversas.length >= totalNoBanco) break;
-  }
-  const truncado =
-    totalNoBanco === null ? paginaCheia : conversas.length < totalNoBanco;
+      .range(inicio, fim);
+    return { data: (data ?? []) as unknown as ConversaBruta[], error, count };
+  }, PAGINAS_MAXIMAS);
+  if (leitura.erro !== null) return fail("internal_error", leitura.erro, 500, { requestId });
+  const { linhas: conversas, truncado } = leitura;
 
   // ─── A CONTA ───────────────────────────────────────────────────────────────
   const agora = Date.now();

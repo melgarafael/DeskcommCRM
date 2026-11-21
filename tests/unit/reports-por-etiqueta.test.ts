@@ -96,7 +96,7 @@ function alternativasDe(expr: string): Filtro[][] {
 const linhaCasa = (linha: Conversa, filtros: Filtro[]) =>
   filtros.every((f) => casada(linha[f.col as keyof Conversa], f.valor, f.op));
 
-function clientFalso() {
+function clientFalso(maxRows = 1_000) {
   return {
     async rpc(nome: string, args: { p_org?: string }) {
       chamadasDeRpc.push({ nome, p_org: args.p_org });
@@ -116,8 +116,10 @@ function clientFalso() {
       let alternativas: Filtro[][] = [];
       let de = 0;
       let ate = Number.MAX_SAFE_INTEGER;
+      let contar = false;
       const cadeia = {
-        select() {
+        select(_colunas: string, opcoes?: { count?: string }) {
+          contar = opcoes?.count === "exact";
           return cadeia;
         },
         eq(col: string, valor: unknown) {
@@ -165,9 +167,9 @@ function clientFalso() {
             }
             return 0;
           });
-          const pagina = ordenado.slice(de, Math.min(ate + 1, ordenado.length));
+          const pagina = ordenado.slice(de, Math.min(ate + 1, de + maxRows));
           leituras.push({ filtros: [...filtros], alternativas, ordens: [...ordens], de, ate });
-          return Promise.resolve(resolver({ data: pagina, error: null, count: alvo.length }));
+          return Promise.resolve(resolver({ data: pagina, error: null, count: contar ? alvo.length : null }));
         },
       };
       return cadeia;
@@ -508,6 +510,29 @@ describe("a janela é do fuso de quem lê, e o pedido é validado", () => {
 });
 
 describe("a leitura não soma página parcial como se fosse o total", () => {
+  it("includes every conversation when PostgREST returns pages below the requested size", async () => {
+    tabela = Array.from({ length: 235 }, (_, index) => ({
+      id: `short-page-${index}`,
+      organization_id: ORG,
+      tags: ["dúvida"],
+      status: "open",
+      created_at: "2026-09-10T12:00:00Z",
+      service_started_at: "2026-09-10T12:00:00Z",
+      awaiting_since: null,
+      last_outbound_at: null,
+    }));
+    vi.mocked(createClient).mockResolvedValue(clientFalso(100) as never);
+
+    const { status, data } = await relatorio("?de=2026-09-01&ate=2026-09-30");
+
+    expect(status).toBe(200);
+    expect({ total: data.total_etiquetagens, truncado: data.truncado }).toEqual({
+      total: 235,
+      truncado: false,
+    });
+    expect(leituras.map((l) => l.de)).toEqual([0, 100, 200]);
+  });
+
   it("⭐ o corte da leitura chega à tela como `truncado`, nunca como número exato", async () => {
     // 10.500 conversas na janela: o `max_rows = 1000` corta cada página e a rota
     // só páginas PAGINAS_MAXIMAS (10) vezes — 10.000 de 10.500 lidas, e isso
