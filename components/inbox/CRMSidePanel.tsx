@@ -49,8 +49,6 @@ import {
 } from "@/lib/inbox/modulos-da-lateral";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import { LoseLeadDialog } from "@/components/kanban/LoseLeadDialog";
-import { BarraDeEtapas } from "@/components/kanban/BarraDeEtapas";
-import { diasNaEtapa } from "@/lib/kanban/barra-de-etapas";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
 import { MoveToOtherPipelineDialog } from "@/components/kanban/MoveToOtherPipelineDialog";
 import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
@@ -536,13 +534,6 @@ function InboxLeadEditor({
         onMovido={onSalvo}
         podeMover={podeLevarParaOutroFunil}
       />
-      <ValorDoNegocio
-        key={`valor-${ativo.id}`}
-        lead={ativo}
-        moeda={ativo.currency ?? moedaDaOrg}
-        podeEditar={podeEditarValor}
-        onSalvo={onSalvo}
-      />
       {/*
         ABRIR O NEGÓCIO NO QUADRO DO FUNIL (issue #3004).
 
@@ -577,6 +568,18 @@ function InboxLeadEditor({
         valores={ativo.custom_fields ?? {}}
         onSalvo={onSalvo}
       />
+      {/* Tudo que é FUNIL fica acima (etapa, abrir, levar, campos); o VALOR do
+          negócio fica aqui embaixo, separado por uma linha. Antes ele ficava
+          no meio dos botões do funil. */}
+      <div className="border-t border-border pt-3">
+        <ValorDoNegocio
+          key={`valor-${ativo.id}`}
+          lead={ativo}
+          moeda={ativo.currency ?? moedaDaOrg}
+          podeEditar={podeEditarValor}
+          onSalvo={onSalvo}
+        />
+      </div>
     </div>
   );
 }
@@ -719,7 +722,6 @@ function ValorDoNegocio({
 function EtapaDoNegocio({
   lead,
   onMovido,
-  podeMover,
 }: {
   lead: LeadRow;
   onMovido: () => void;
@@ -754,17 +756,9 @@ function EtapaDoNegocio({
 
   return (
     <div className="space-y-1" data-testid="inbox-etapa-do-negocio">
-      {/* A BARRA DE ETAPAS, a mesma do dossiê do quadro: o caminho do negócio
-          no funil, a atual com os dias nela. O clique usa o MESMO `escolher`
-          do seletor abaixo (`/api/v1/leads/bulk`); ganho e perda ficam fora da
-          barra e continuam no seletor, onde a perda pede o motivo. */}
-      <BarraDeEtapas
-        etapaAtual={lead.stage_id}
-        etapas={etapas}
-        podeMover={podeMover && !mover.isPending}
-        onMudar={(stageId) => void escolher(stageId)}
-        dias={diasNaEtapa(lead)}
-      />
+      {/* Só o seletor de etapa: a barra rolável de etapas que
+          ficava aqui em cima repetia a mesma escolha e poluía a coluna estreita
+          do Inbox. No dossiê do quadro a barra continua. */}
       <label className="block text-xs font-medium text-text" htmlFor={`etapa-${lead.id}`}>
         {t("Etapa do funil")}
       </label>
