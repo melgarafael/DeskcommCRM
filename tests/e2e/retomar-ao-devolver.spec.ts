@@ -199,6 +199,9 @@ async function devolverPelaTela(conversationId: string, foto: string): Promise<v
   );
   await botao.click();
   expect((await resposta).status()).toBe(200);
+  // A foto só depois de a TELA dizer que o automático voltou: o 200 chega antes
+  // do re-render, e a captura mostrava o botão de devolver ainda no cabeçalho.
+  await expect(botao, "o cabeçalho ainda oferece devolver depois da devolução").toBeHidden({ timeout: ESPERA });
   await pagina.screenshot({ path: path.join(EVIDENCIA, foto), fullPage: true });
 }
 
