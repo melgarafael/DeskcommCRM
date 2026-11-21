@@ -18,14 +18,10 @@
  * 30 inteiro) e exclusivo como instante — que é o que impede a venda da
  * meia-noite do dia 1º de outubro de contar em setembro E em outubro.
  *
- * ─── Duas passadas, porque o offset depende do instante ─────────────────────
- *
- * `data + 'T00:00:00Z' - offset` erra na fronteira de horário de verão: o
- * deslocamento medido à meia-noite UTC pode não ser o do instante encontrado
- * depois de subtraído. `inicioDoDia` mede duas vezes e só aceita a segunda
- * quando ela confirma a primeira (o mesmo algoritmo de
- * `app/api/v1/reports/tags/route.ts`, escrito uma vez para os dois).
+ * Use the agenda's time conversion so a skipped midnight starts the report at
+ * the first local hour of the selected day.
  */
+import { instanteDe } from "@/lib/agenda/fuso";
 import { fusoValido } from "@/lib/reports/atividades";
 
 /** Fuso de reserva: organização sem `timezone` configurado. */
@@ -103,20 +99,10 @@ export function dataNoFuso(instante: Date, tz: string): string {
   return `${p.ano}-${dois(p.mes)}-${dois(p.dia)}`;
 }
 
-/** `2026-09-01` em `tz` → instante UTC do começo daquele dia LOCAL. */
+/** The UTC instant at the start of the local calendar day. */
 export function inicioDoDia(data: string, tz: string): Date {
-  const pretendido = Date.parse(`${data}T00:00:00Z`);
-  const primeira = deslocamentoDe(pretendido, tz);
-  const tentativa = pretendido - primeira;
-  const segunda = deslocamentoDe(tentativa, tz);
-  return new Date(segunda === primeira ? tentativa : pretendido - segunda);
-}
-
-/** Quanto o relógio local está à frente do UTC naquele instante, em ms. */
-function deslocamentoDe(instanteUtcMs: number, tz: string): number {
-  const p = partesLocais(new Date(instanteUtcMs), tz);
-  const localComoUtc = Date.UTC(p.ano, p.mes - 1, p.dia, p.hora, p.minuto, p.segundo);
-  return localComoUtc - instanteUtcMs;
+  const [ano, mes, dia] = data.split("-").map(Number) as [number, number, number];
+  return instanteDe({ ano, mes, dia }, tz);
 }
 
 /**

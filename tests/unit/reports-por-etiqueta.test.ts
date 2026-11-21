@@ -452,6 +452,30 @@ describe("a janela é do fuso de quem lê, e o pedido é validado", () => {
     });
   });
 
+  it("counts conversations on their local dates across a skipped midnight", async () => {
+    // These are 23:30 on September 5 and 01:30 on September 6 in Santiago.
+    tabela = ["2026-09-06T03:30:00Z", "2026-09-06T04:30:00Z"].map((inicio, index) => ({
+      id: `c${index}`,
+      organization_id: ORG,
+      tags: ["dúvida"],
+      status: "open",
+      created_at: inicio,
+      service_started_at: inicio,
+      awaiting_since: null,
+      last_outbound_at: null,
+    }));
+
+    const anterior = await relatorio("?de=2026-09-05&ate=2026-09-05&tz=America/Santiago");
+    const seguinte = await relatorio("?de=2026-09-06&ate=2026-09-06&tz=America/Santiago");
+
+    expect([anterior.status, seguinte.status]).toEqual([200, 200]);
+    expect([anterior.data.total_etiquetagens, seguinte.data.total_etiquetagens]).toEqual([1, 1]);
+    expect([anterior.data.janela.ate, seguinte.data.janela.de]).toEqual([
+      "2026-09-06T04:00:00.000Z",
+      "2026-09-06T04:00:00.000Z",
+    ]);
+  });
+
   it.each([
     ["?de=2026-09-30&ate=2026-09-01", 422, "A data inicial é depois da final."],
     ["?de=2026-01-01&ate=2026-09-30", 422, "no máximo 90"],

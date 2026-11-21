@@ -83,6 +83,7 @@ import { z } from "zod";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { STATUS_ENCERRADOS } from "@/lib/inbox/comando-da-conversa";
+import { dataNoFuso, inicioDoDia, proximoDia } from "@/lib/relatorios/janela";
 import { fusoValido } from "@/lib/reports/atividades";
 
 export const dynamic = "force-dynamic";
@@ -432,63 +433,4 @@ function etiquetasPedidas(brutas: string | undefined): string[] {
 function diasDeJanela(de: string, ate: string): number {
   const ms = Date.parse(`${ate}T00:00:00Z`) - Date.parse(`${de}T00:00:00Z`);
   return Math.round(ms / 86_400_000) + 1;
-}
-
-function proximoDia(data: string): string {
-  const [ano, mes, dia] = data.split("-").map(Number) as [number, number, number];
-  return new Date(Date.UTC(ano, mes - 1, dia + 1)).toISOString().slice(0, 10);
-}
-
-function partesLocais(
-  instante: Date,
-  tz: string,
-): { ano: number; mes: number; dia: number; hora: number; minuto: number; segundo: number } {
-  const formato = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    hourCycle: "h23",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-  const partes: Record<string, string> = {};
-  for (const parte of formato.formatToParts(instante)) partes[parte.type] = parte.value;
-  return {
-    ano: Number(partes.year),
-    mes: Number(partes.month),
-    dia: Number(partes.day),
-    hora: Number(partes.hour),
-    minuto: Number(partes.minute),
-    segundo: Number(partes.second),
-  };
-}
-
-function dataNoFuso(instante: Date, tz: string): string {
-  const p = partesLocais(instante, tz);
-  const dois = (n: number) => String(n).padStart(2, "0");
-  return `${p.ano}-${dois(p.mes)}-${dois(p.dia)}`;
-}
-
-/**
- * `2026-09-01` em `tz` → o instante UTC do começo daquele dia LOCAL.
- *
- * Duas passadas porque uma só erra na fronteira de horário de verão: o
- * deslocamento medido em `T00:00Z` pode não ser o do instante que sobra depois
- * de subtraído. Recusar fuso inválido já aconteceu antes (`fusoValido`): a
- * entrada é do navegador e vai para `Intl`, que levanta exceção com nome torto.
- */
-function inicioDoDia(data: string, tz: string): Date {
-  const pretendido = Date.parse(`${data}T00:00:00Z`);
-  const primeira = deslocamentoDe(pretendido, tz);
-  const tentativa = pretendido - primeira;
-  const segunda = deslocamentoDe(tentativa, tz);
-  return new Date(segunda === primeira ? tentativa : pretendido - segunda);
-}
-
-function deslocamentoDe(instanteUtcMs: number, tz: string): number {
-  const p = partesLocais(new Date(instanteUtcMs), tz);
-  const localComoUtc = Date.UTC(p.ano, p.mes - 1, p.dia, p.hora, p.minuto, p.segundo);
-  return localComoUtc - instanteUtcMs;
 }
