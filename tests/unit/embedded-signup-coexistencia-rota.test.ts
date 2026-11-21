@@ -5,10 +5,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * Embedded Signup, rota: coexistência com o app WhatsApp Business.
  * - coexistência NÃO chama `/register` e marca `meta_coexistencia`;
  * - sem `phone_number_id`, o número vem de `/{waba}/phone_numbers`;
- * - mais de um número (ou nenhum) é recusado, sem gravar canal.
+ * - mais de um número (ou nenhum) é recusado, sem gravar canal;
+ * - o `/register` só roda DEPOIS de a gravação ser aceita, e o PIN é guardado.
  */
 
 const gravar = vi.fn(async (_: unknown) => new Response(JSON.stringify({ data: { connected: true } }), { status: 200 }));
+const mesclar = vi.fn(async (_org: string, _extra: Record<string, unknown>) => true);
 
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
 vi.mock("@/lib/auth/require-role", () => ({
@@ -22,7 +24,13 @@ vi.mock("@/lib/channels/meta/app", () => ({
   embeddedSignupDaInstalacao: async () => ({ appId: "123456", configId: "654321" }),
   appDaMeta: async () => ({ appSecret: "segredo-de-teste" }),
 }));
-vi.mock("@/lib/channels/meta/gravar-canal-oficial", () => ({ gravarCanalOficial: (i: unknown) => gravar(i) }));
+vi.mock("@/lib/channels/meta/gravar-canal-oficial", () => ({
+  gravarCanalOficial: (i: unknown) => {
+    chamadas.push("gravar");
+    return gravar(i);
+  },
+  mesclarNoMetadataDoCanalOficial: (org: string, extra: Record<string, unknown>) => mesclar(org, extra),
+}));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
 vi.mock("@/lib/webhooks/secrets", () => ({ encryptWebhookSecret: async () => "pin-cifrado" }));
 
@@ -36,6 +44,7 @@ beforeEach(() => {
   chamadas = [];
   numerosDaConta = [{ id: "555555" }];
   gravar.mockClear();
+  mesclar.mockClear();
   vi.stubGlobal(
     "fetch",
     vi.fn(async (entrada: URL | string, init?: RequestInit) => {
@@ -74,11 +83,36 @@ describe("POST embedded-signup", () => {
     expect((gravar.mock.calls[0]![0] as { phoneNumberId: string }).phoneNumberId).toBe("777777");
   });
 
-  it("modo padrão continua registrando o número", async () => {
+  it("modo padrão registra o número DEPOIS de gravar e guarda o PIN", async () => {
     await pedir({ waba_id: "222222", phone_number_id: "777777" });
-    expect(chamadas.some((c) => c.includes("/register"))).toBe(true);
+    const registro = chamadas.findIndex((c) => c.includes("/register"));
+    expect(registro).toBeGreaterThan(chamadas.indexOf("gravar"));
     const extra = (gravar.mock.calls[0]![0] as { metadataExtra: Record<string, unknown> }).metadataExtra;
-    expect(extra).toEqual({ meta_registro_pin_cifrado: "pin-cifrado" });
+    expect(extra).toEqual({ meta_coexistencia: false });
+    expect(mesclar).toHaveBeenCalledWith("22222222-2222-4222-8222-222222222222", {
+      meta_registro_pin_cifrado: "pin-cifrado",
+    });
+  });
+
+  it("gravação recusada (ex.: limite do plano): o número NÃO é registrado", async () => {
+    gravar.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "plan_limit" } }), { status: 409 }));
+    const r = await pedir({ waba_id: "222222", phone_number_id: "777777" });
+    expect(r.status).toBe(409);
+    expect(chamadas.some((c) => c.includes("/register"))).toBe(false);
+    expect(mesclar).not.toHaveBeenCalled();
+  });
+
+  it("registro recusado pela Meta: a conexão segue e nenhum PIN é guardado", async () => {
+    vi.mocked(fetch).mockImplementation(async (entrada: URL | string | Request) => {
+      const url = String(entrada);
+      chamadas.push(new URL(url).pathname);
+      if (url.includes("/oauth/access_token")) return json({ access_token: "token-de-teste" });
+      return json({ error: { message: "recusado" } }, 400);
+    });
+    const r = await pedir({ waba_id: "222222", phone_number_id: "777777" });
+    expect(r.status).toBe(200);
+    expect(chamadas.some((c) => c.includes("/register"))).toBe(true);
+    expect(mesclar).not.toHaveBeenCalled();
   });
 
   it("mais de um número na conta: recusa e não grava", async () => {

@@ -45,7 +45,10 @@ export async function gravarCanalOficial(input: {
   token: string;
   /** Constante de código de quem chama — nunca lida do corpo do request. */
   origem: OrigemDaConexaoOficial;
-  /** Chaves extras para o `metadata` de um canal NOVO (ex.: o PIN do registro). */
+  /**
+   * Chaves extras para o `metadata` do canal (ex.: a marca de coexistência).
+   * Entram no canal novo E na reconexão — mescladas sobre o que já existe.
+   */
   metadataExtra?: Record<string, unknown>;
 }): Promise<NextResponse> {
   const { req, requestId, orgId, userId, phoneNumberId, wabaId, token, origem } = input;
@@ -84,15 +87,17 @@ export async function gravarCanalOficial(input: {
       .eq("provider", CHANNEL_PROVIDER_META)
       .maybeSingle();
   const { data: existenteRaw } = await queryTolerantToMissingArchived(
-    () => buscarExistente(`id, ${ARCHIVED_AT}, webhook_path_token, display_name`),
-    () => buscarExistente("id, webhook_path_token, display_name"),
+    () => buscarExistente(`id, ${ARCHIVED_AT}, webhook_path_token, display_name, metadata`),
+    () => buscarExistente("id, webhook_path_token, display_name, metadata"),
   );
   const existente = existenteRaw as {
     id: string;
     archived_at?: string | null;
     webhook_path_token?: string | null;
     display_name?: string | null;
+    metadata?: Record<string, unknown> | null;
   } | null;
+  const metadataExtra = input.metadataExtra ?? {};
 
   const linha = {
     organization_id: orgId,
@@ -122,7 +127,12 @@ export async function gravarCanalOficial(input: {
         channelSessionId: existente.id,
         archivedAt: existente.archived_at ?? null,
       },
-      linha,
+      // A reconexão mescla o `metadataExtra` sobre o que já existe: sem isso a
+      // marca de coexistência só valeria para o canal novo, e o resto do
+      // `metadata` (a configuração do pré-go-live) não pode ser apagado.
+      Object.keys(metadataExtra).length > 0
+        ? { ...linha, metadata: { ...(existente.metadata ?? {}), ...metadataExtra } }
+        : linha,
       {
         userId,
         requestId,
@@ -135,7 +145,7 @@ export async function gravarCanalOficial(input: {
       .insert({
         ...linha,
         webhook_secret_encrypted: cifrado,
-        metadata: { ...metadataInicialDoCanal(), ...(input.metadataExtra ?? {}) },
+        metadata: { ...metadataInicialDoCanal(), ...metadataExtra },
       })
       .select("id, webhook_path_token")
       .maybeSingle();
@@ -194,4 +204,30 @@ export async function gravarCanalOficial(input: {
       ? { registrado: webhook.registrado, url: webhook.url, erro: webhook.erro, em: webhook.em }
       : null,
   });
+}
+
+/**
+ * Mescla chaves no `metadata` do canal oficial da organização DEPOIS de gravado —
+ * para o que só existe depois de a conexão ser aceita (o PIN do registro do
+ * número). `false` quando não há canal ou a escrita foi recusada.
+ */
+export async function mesclarNoMetadataDoCanalOficial(
+  orgId: string,
+  extra: Record<string, unknown>,
+): Promise<boolean> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("channel_sessions")
+    .select("id, metadata")
+    .eq("organization_id", orgId)
+    .eq("provider", CHANNEL_PROVIDER_META)
+    .maybeSingle();
+  const canal = data as { id: string; metadata?: Record<string, unknown> | null } | null;
+  if (!canal) return false;
+  const { error } = await admin
+    .from("channel_sessions")
+    .update({ metadata: { ...(canal.metadata ?? {}), ...extra } })
+    .eq("organization_id", orgId)
+    .eq("id", canal.id);
+  return !error;
 }

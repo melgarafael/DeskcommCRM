@@ -8,12 +8,14 @@
  *
  * 1. troca o `code` pelo token da empresa (`/oauth/access_token`, com o App ID e o
  *    App Secret da instalação — o segredo nunca sai do servidor);
- * 2. registra o número na Cloud API (`/{phone}/register`), best-effort — exceto na
- *    coexistência (`modo`), onde o número já está registrado e o registro NÃO é
- *    chamado; sem `phone_number_id`, o número vem de `/{waba}/phone_numbers`;
+ * 2. sem `phone_number_id`, acha o número em `/{waba}/phone_numbers`;
  * 3. grava o canal pelo MESMO caminho do token colado à mão
  *    (`gravarCanalOficial`), com a origem `embedded_signup` — validação com a Meta
- *    antes de gravar, cifra, webhook do número apontado para esta instalação.
+ *    antes de gravar, cifra, webhook do número apontado para esta instalação;
+ * 4. só com a conexão aceita, registra o número na Cloud API
+ *    (`/{phone}/register`), best-effort, e guarda o PIN cifrado no canal — exceto
+ *    na coexistência (`modo`), onde o número já está registrado e o registro NÃO
+ *    é chamado.
  */
 import { randomInt, randomUUID } from "node:crypto";
 import type { NextRequest, NextResponse } from "next/server";
@@ -23,7 +25,7 @@ import { fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { appDaMeta, embeddedSignupDaInstalacao } from "@/lib/channels/meta/app";
 import { graphBaseUrl } from "@/lib/channels/meta/graph-base";
-import { gravarCanalOficial } from "@/lib/channels/meta/gravar-canal-oficial";
+import { gravarCanalOficial, mesclarNoMetadataDoCanalOficial } from "@/lib/channels/meta/gravar-canal-oficial";
 import { ORIGEM_DO_EMBEDDED_SIGNUP } from "@/lib/channels/meta/origem-da-conexao";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
@@ -175,28 +177,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     phone_number_id = achado.phoneNumberId;
   }
 
-  // Registro na Cloud API — best-effort, e NUNCA na coexistência: o número já está
-  // registrado (roda no app WhatsApp Business) e o registro o tiraria de lá. O PIN
-  // é o da verificação em duas etapas do NÚMERO (não da conta de ninguém); guardado
-  // cifrado no canal para quem precisar registrar de novo.
-  const metadataExtra: Record<string, unknown> = {};
-  if (coexistencia) {
-    metadataExtra.meta_coexistencia = true;
-  } else {
-    const pin = String(randomInt(0, 1_000_000)).padStart(6, "0");
-    const registro = await registrarNumero({ phoneNumberId: phone_number_id, token: troca.token, pin });
-    if (registro.ok) {
-      const pinCifrado = await encryptWebhookSecret(createAdminClient(), pin);
-      if (pinCifrado) metadataExtra.meta_registro_pin_cifrado = pinCifrado;
-    } else {
-      logger.info("[meta.embedded] registro do número não aplicado (segue a conexão)", {
-        requestId,
-        motivo: registro.motivo,
-      });
-    }
-  }
-
-  return gravarCanalOficial({
+  const resposta = await gravarCanalOficial({
     req,
     requestId,
     orgId: authz.org.orgId,
@@ -206,6 +187,32 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     wabaId: waba_id,
     token: troca.token,
     origem: ORIGEM_DO_EMBEDDED_SIGNUP,
-    metadataExtra,
+    // Explícito nos dois modos: um número que saiu da coexistência e voltou pela
+    // Cloud API não pode carregar a marca antiga na reconexão.
+    metadataExtra: { meta_coexistencia: coexistencia },
   });
+
+  // Registro na Cloud API — DEPOIS de a conexão ser aceita, best-effort, e NUNCA
+  // na coexistência: o número já está registrado (roda no app WhatsApp Business)
+  // e o registro o tiraria de lá. O PIN vira o da verificação em duas etapas do
+  // NÚMERO; registrar antes de gravar deixaria, numa gravação recusada (credencial,
+  // cifra, limite do plano), um PIN aplicado que ninguém guardou.
+  if (coexistencia || !resposta.ok) return resposta;
+  const pin = String(randomInt(0, 1_000_000)).padStart(6, "0");
+  const registro = await registrarNumero({ phoneNumberId: phone_number_id, token: troca.token, pin });
+  if (!registro.ok) {
+    logger.info("[meta.embedded] registro do número não aplicado (segue a conexão)", {
+      requestId,
+      motivo: registro.motivo,
+    });
+    return resposta;
+  }
+  const pinCifrado = await encryptWebhookSecret(createAdminClient(), pin);
+  const guardado = pinCifrado
+    ? await mesclarNoMetadataDoCanalOficial(authz.org.orgId, { meta_registro_pin_cifrado: pinCifrado })
+    : false;
+  if (!guardado) {
+    logger.error("[meta.embedded] número registrado, mas o PIN do registro não foi guardado", { requestId });
+  }
+  return resposta;
 }
