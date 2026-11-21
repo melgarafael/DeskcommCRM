@@ -102,6 +102,16 @@ setup_update_agent_cron
 PAR_VAPID_CRIADO=""
 PAR_LIGADO_AGORA=""
 completar_par_vapid .env
+
+# ── 0++. O consentimento de telemetria de quem já disse "sim" (#4936) ───────
+# Antes desta versão, o "sim" do install.sh virava `SENTRY_DSN=""` no .env. A
+# partir dela, vazio significa DESLIGADO e o aceite é `SENTRY_DSN=comunidade`.
+# Converter aqui é o que impede a atualização de apagar, em silêncio, o
+# consentimento de quem já havia aceitado — e sem pedir edição manual do .env,
+# que a doutrina de empacotamento proíbe (docs/doctrine/packaging.md).
+# Fica junto do par VAPID, ANTES das saídas de "nada a atualizar": aquelas saem
+# do script sem passar pelo `up -d`, e a conversão precisa ter acontecido.
+migrar_consentimento_de_telemetria .env
 subir_para_ler_o_par() {
   [ -n "$PAR_VAPID_CRIADO" ] || return 0
   PAR_VAPID_CRIADO=""

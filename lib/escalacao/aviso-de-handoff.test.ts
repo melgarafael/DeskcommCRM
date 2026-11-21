@@ -25,7 +25,7 @@ type Linhas = {
   conversations: { id: string; organization_id: string; contact_id: string; status: string;
     bot_silenced_until: string | null; last_handoff_reason?: string | null; metadata: Record<string, unknown> }[];
   agent_inbox_items: { id: string; organization_id: string; ref_kind: string; ref_id: string; body: string }[];
-  organizations: { id: string; settings: Record<string, unknown> }[];
+  organizations: { id: string; locale?: string | null; settings: Record<string, unknown> }[];
 };
 type Linha = Linhas[keyof Linhas][number];
 type Alteracao = { metadata?: Record<string, { estado?: string }>; body?: string };
@@ -304,4 +304,22 @@ test('recibo concorrente da Central nunca rebaixa aceite positivo para incerto',
   assert.equal(f.marca()!.estado, 'enviado');
   assert.match(f.admin.linhas.agent_inbox_items[0]!.body, /aceito pelo canal de WhatsApp/);
   assert.doesNotMatch(f.admin.linhas.agent_inbox_items[0]!.body, /entrega não confirmada/);
+});
+
+test('aviso e recibo seguem o idioma da organização (es) sem alterar pt-BR', async () => {
+  const textoEs = textoDoAvisoHandoff('https://crm.exemplo.test', CONV, { nome: 'Izabella Eber', idioma: 'es' });
+  assert.ok(textoEs);
+  assert.match(textoEs, /^Una conversación necesita atención de una persona del equipo\./);
+  assert.match(textoEs, /\n\nCliente: Izabella\n\nAbrir conversación:/);
+  assert.match(textoEs, /Responde desde el CRM; responder a este aviso no le llega al cliente\.$/);
+
+  const reciboEs = corpoComResultadoHandoff('Pasaje', EVENT, { estado: 'enviado', em: NOW }, 'es');
+  assert.match(reciboEs, /Aviso al equipo \(.+\): aceptado por el canal de WhatsApp\.$/);
+
+  const f = fixture();
+  f.admin.linhas.organizations[0]!.locale = 'es';
+  assert.equal((await aplicaAvisoHandoff(f.deps, f.row)).status, 'ok');
+  const enviado = f.chamadas[0]![3] as string;
+  assert.match(enviado, /^Una conversación necesita atención de una persona del equipo\./);
+  assert.match(f.admin.linhas.agent_inbox_items[0]!.body, /Aviso al equipo \(.+\): aceptado por el canal de WhatsApp\./);
 });

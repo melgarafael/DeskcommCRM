@@ -29,6 +29,7 @@ import { EtapaNoDossie } from "./EtapaNoDossie";
 import { BarraDeEtapas } from "./BarraDeEtapas";
 import { diasNaEtapa, type EtapaDaBarra } from "@/lib/kanban/barra-de-etapas";
 import { SecaoDoDossie, useSecoesRecolhidas } from "./SecaoDoDossie";
+import { VendasDoNegocio } from "@/components/vendas/VendasDoNegocio";
 import { resolveLeadOwner } from "@/lib/kanban/owner";
 import type { AtalhoDoCard } from "@/lib/leads/atalhos-do-card";
 import { formatValorDoNegocio, MOEDA_PADRAO } from "@/lib/money";
@@ -477,6 +478,27 @@ export function LeadDossier({
     </SecaoDoDossie>
   );
 
+  /* As VENDAS registradas: cada compra do cliente neste negócio,
+     com valor, data e tags — várias por negócio (recompra). Conta no painel de
+     vendas em qualquer etapa do card. Escrever é `agent`+, a mesma régua da
+     rota; o leitor vê a lista sem o botão. */
+  const vendas = (
+    <SecaoDoDossie
+      id="vendas"
+      titulo={t("Vendas")}
+      recolhida={fechadas.has("vendas")}
+      aoAlternar={alternar}
+    >
+      <VendasDoNegocio
+        leadId={lead.id}
+        titulo={lead.title}
+        moeda={(lead.currency ?? activeOrg?.currency ?? MOEDA_PADRAO).toUpperCase()}
+        somenteLeitura={!podeEditarTarefas}
+        semRegistrar
+      />
+    </SecaoDoDossie>
+  );
+
   /* N1 — seção "Propostas", depois da linha do tempo. Some sozinha
      (null) quando a capacidade está desligada — ver PropostasDoNegocio. */
   const propostas = (
@@ -546,6 +568,7 @@ export function LeadDossier({
             {contato}
             {numeros}
             {dadosDoNegocio}
+            {vendas}
           </div>
           {/* O que se acompanha. */}
           <div className="flex min-w-0 flex-col gap-4">
@@ -603,6 +626,7 @@ export function LeadDossier({
         {contato}
         {numeros}
         {dadosDoNegocio}
+        {vendas}
         {tarefas}
         {linhaDoTempo}
         {propostas}

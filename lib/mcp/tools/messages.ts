@@ -33,6 +33,11 @@ const inputShape = {
   conversation_id: z.string().uuid(),
   body: z.string().min(1).max(4096).optional(),
   media_url: z.string().url().optional(),
+  // #5034: arquivo que o cliente MCP já subiu ao CRM (`POST /api/v1/conversations/{id}/media` devolve o
+  // `storage_path`). Sem link público: documento de cliente não precisa ir para a internet. A posse do
+  // arquivo (organização E esta conversa) é conferida pelo `sendMessageHandler`, a mesma régua do Inbox.
+  media_storage_path: z.string().optional().describe("storage_path de POST /api/v1/conversations/{id}/media; dispensa media_url"),
+  media_filename: z.string().optional(),
   media_mime: z.string().optional(),
   type: z
     .enum(["text", "image", "audio", "document", "sticker", "video", "location", "contact"])
@@ -54,12 +59,23 @@ export const crmSendWhatsappMessage: McpToolDefinition<typeof inputShape> = {
   category: "write",
   requiresRole: "agent",
   requiresScope: "mcp:write",
+  // #5034: o nome do arquivo pode carregar o nome do paciente ou do cliente, e a auditoria é só de
+  // acréscimo (não some quando a mensagem some). O caminho também: quem erra e cola um caminho LOCAL
+  // ("C:/clientes/Maria/laudo.pdf") deixaria o nome na trilha mesmo com o envio recusado. Fica o fato
+  // de que havia, não o valor.
+  redigirParaAuditoria: (args) => ({
+    ...args,
+    ...(args.media_filename === undefined ? {} : { media_filename: "[redigido]" }),
+    ...(args.media_storage_path === undefined ? {} : { media_storage_path: "[redigido]" }),
+  }),
   handler: async (input, ctx) => {
     const parsed = sendMessageSchema.parse({
       conversation_id: input.conversation_id,
       type: input.type,
       body: input.body,
       media_url: input.media_url,
+      media_storage_path: input.media_storage_path,
+      media_filename: input.media_filename,
       media_mime: input.media_mime,
     });
 

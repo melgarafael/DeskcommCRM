@@ -30,6 +30,7 @@ import { toast } from "sonner";
 
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
+import { modeloAposentadoNoProvedor } from "@/lib/agent-engine/edge/llm/modelos-aposentados";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -270,6 +271,16 @@ export function PainelDeProvedores() {
   );
 }
 
+/**
+ * O catálogo ainda lista os Gemini que o Google aposentou: eles saem das opções
+ * novas, como no seletor do agente (#5100). O já salvo fica, porque o seletor só
+ * mostra um valor que esteja entre as opções, e quem o usa precisa vê-lo para trocar.
+ */
+function semAposentados(modelos: Modelo[], provider: string, salvo: string | null): Modelo[] {
+  if (provider !== "google") return modelos;
+  return modelos.filter((m) => !modeloAposentadoNoProvedor(m.model_id) || m.model_id === salvo);
+}
+
 /** O que o grupo usa hoje, sem obrigar a abrir ponto a ponto. */
 function CartaoDoPadrao({ dados, aoSalvar }: { dados: Dados; aoSalvar: () => Promise<void> }) {
   const t = useT();
@@ -278,8 +289,13 @@ function CartaoDoPadrao({ dados, aoSalvar }: { dados: Dados; aoSalvar: () => Pro
   const [salvando, setSalvando] = useState(false);
 
   const modelosDoProvedor = useMemo(
-    () => dados.modelos.filter((m) => m.provider === provider),
-    [dados.modelos, provider],
+    () =>
+      semAposentados(
+        dados.modelos.filter((m) => m.provider === provider),
+        provider,
+        dados.padrao.defaultModel,
+      ),
+    [dados.modelos, dados.padrao.defaultModel, provider],
   );
 
   // Quantos pontos herdam HOJE. É o número que explica por que esta caixa
@@ -400,6 +416,11 @@ function CartaoDoPadrao({ dados, aoSalvar }: { dados: Dados; aoSalvar: () => Pro
               </SelectContent>
             </Select>
           )}
+          {provider === "google" && modeloAposentadoNoProvedor(modelId) ? (
+            <p role="alert" className="mt-1 text-sm text-destructive">
+              {t("Este modelo foi aposentado pelo provedor. Escolha outro modelo.")}
+            </p>
+          ) : null}
         </div>
 
         {dados.podeEditar && (
@@ -729,7 +750,11 @@ function CartaoDoPonto({
   const [baseUrl, setBaseUrl] = useState(ponto.efetivo.baseUrl ?? "");
   const [salvando, setSalvando] = useState(false);
 
-  const modelosDoProvider = dados.modelos.filter((m) => m.provider === provider);
+  const modelosDoProvider = semAposentados(
+    dados.modelos.filter((m) => m.provider === provider),
+    provider,
+    ponto.efetivo.modelId,
+  );
   const credsDoProvider = dados.credenciais.filter((c) => c.provider === provider);
   // Endpoint próprio só faz sentido em provedor compatível com a API da OpenAI
   // — é a mesma condição que `lib/ai/pontos/provedores.ts` declara e que o
@@ -1007,6 +1032,11 @@ function CartaoDoPonto({
                 </SelectContent>
               </Select>
             )}
+            {provider === "google" && modeloAposentadoNoProvedor(modelId) ? (
+              <p role="alert" className="mt-1 text-sm text-destructive">
+                {t("Este modelo foi aposentado pelo provedor. Escolha outro modelo.")}
+              </p>
+            ) : null}
           </div>
 
           <div>

@@ -33,19 +33,11 @@ import {
 import {
   agentMcpCreateSchema,
   agentMcpPatchSchema,
-  PUBLISH_ERROR_CODES,
   versionCreateSchema,
-  versionPatchSchema,
 } from "@/lib/ai/agents/validation";
-import { publishAgentVersion } from "@/lib/ai/agents/publish";
-import { escolherVersoesDaTela } from "@/lib/ai/agents/versoes-da-tela";
-import { toolIdAceito } from "@/lib/mcp/servidor-externo/ids";
-import { VALID_TOOL_IDS } from "@/lib/mcp/tools";
+import { publicarVersao, reverterParaVersao, salvarRascunhoDaVersao } from "@/lib/ai/agents/edicao";
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-const VERSION_COLUMNS =
-  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, handoff_legal_enabled, proposal_ai_draft_enabled, cases_enabled, split_messages, split_max_chars, followup, voz_enabled, voz_quando, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,skill_names,image_vision_enabled,provisioning_origin,inbound_debounce_ms,reply_min_interval_ms";
 
 type ActionResult<T = void> =
   | { ok: true; data?: T }
@@ -156,251 +148,59 @@ export async function saveAgentDraftAction(
     return { ok: false, error: "validation_failed", details: cadastroParsed.error.flatten() };
   }
 
-  const v = parsed.data;
   const requestId = randomUUID();
   const admin = createAdminClient();
 
-  // Sanity: o agent existe e é da org? não está arquivado?
-  const { data: agent } = await admin
-    .from("ai_agents")
-    .select("id, kind, archived_at, name, description, priority, published_version_id")
-    .eq("id", agentId)
-    .eq("organization_id", activeOrg.orgId)
-    .maybeSingle();
-  if (!agent) return { ok: false, error: "not_found" };
-  if (agent.archived_at) return { ok: false, error: "agent_archived" };
-
-  // O escopo aponta para coisas que EXISTEM nesta organização. Marcar um
-  // material apagado (ou de outra organização) produz uma configuração muda: a
-  // tela mostra a marcação, o assistente não acha nada, e ninguém vê erro.
-  const escopo = await validarEscopoDaVersao(admin, activeOrg.orgId, {
-    provider: v.provider,
-    pipeline_ids: v.pipeline_ids,
-    knowledge_source_ids: v.knowledge_source_ids,
-    skill_names: v.skill_names,
-    credential_id: v.credential_id,
-    channel_session_id: v.channel_session_id,
+  // A regra inteira (agente da organização, escopo, QUAL rascunho recebe a
+  // escrita, PATCH ou INSERT, auditoria) mora em `lib/ai/agents/edicao.ts` — a
+  // mesma que o MCP do CRM usa. Aqui só sobra o que é da tela: o cadastro do
+  // agente (nome, descrição, ordem) e o revalidate.
+  const salvo = await salvarRascunhoDaVersao(admin, {
+    orgId: activeOrg.orgId,
+    agentId,
+    payload,
+    ator: { userId: authUser.id, apiTokenId: null, requestId },
   });
-  if (!escopo.ok) {
-    return { ok: false, error: codigoDoEscopo(escopo), message: mensagemDoEscopo(escopo) };
-  }
+  if (!salvo.ok) return salvo;
+  const { agente } = salvo.data;
 
-  // Em QUAL rascunho esta escrita cai — pela MESMA régua que a tela usa para
-  // decidir qual versão abrir (`escolherVersoesDaTela`, chamada em `page.tsx`).
-  // Uma segunda régua aqui é o defeito, não uma economia de consulta.
-  //
-  // Era "o rascunho de maior version_number, sem perguntar se ainda vale", e as
-  // duas respostas divergiam no rascunho SUPERADO — o rascunho ANTERIOR à
-  // publicada, estado que `revertToVersionAction` cria toda vez que alguém com
-  // trabalho em andamento reverte pelo Histórico. Medido com [v5 draft, v6
-  // publicada]: a tela responde `draft = null` (e chama a v5 de
-  // `draftObsoleto`), o servidor respondia `draft = v5`. Dois estragos de uma
-  // vez:
-  //
-  //   1. O trabalho ia para uma versão que a tela não reabre e o botão não
-  //      publica (`props.draft` é nulo enquanto o rascunho for superado). Aviso
-  //      verde "Rascunho v5 salvo.", recarrega, e a tela volta a mostrar a v6 —
-  //      o mesmo desfecho do defeito que o PR #502 consertou, por outra porta.
-  //   2. O rascunho superado é um RETRATO. A tela promete "ele continua no
-  //      Histórico" (`AgentForm.tsx`, `title` do badge) e o `VersionHistory` o
-  //      lista. Regravá-lo trocava o conteúdo daquela linha por um texto que
-  //      ninguém rascunhou ali, sem erro e sem volta — e o gatilho
-  //      `fn_ai_agent_version_content_immutable` não pega este caso, porque ele
-  //      congela conteúdo de `status <> 'draft'` e o rascunho superado ainda é
-  //      `draft`.
-  const { data: versoes } = await admin
-    .from("ai_agent_versions")
-    .select("id, version_number, status")
-    .eq("organization_id", activeOrg.orgId)
-    .eq("agent_id", agentId)
-    .order("version_number", { ascending: false });
-
-  const { draft: existingDraft } = escolherVersoesDaTela(
-    versoes ?? [],
-    // MEDIDA, não palpite. O ponteiro é o que o motor executa (`agent-config.ts`
-    // faz `join … on v.id = a.published_version_id`); `status = 'published'` é
-    // rótulo, e os dois já divergem em produção. `?? null` é obrigatório e não
-    // enfeite: no schema a coluna é `uuid` NULL sem default (procure por
-    // `"published_version_id" "uuid"` em `supabase/baseline.sql`; a FK é `on
-    // delete set null`), então `null` é o dado "não há publicada" —
-    // enquanto `undefined` faria a régua cair no palpite. Medido com [v8
-    // published, v7 draft, v6 published] e ponteiro em v6: pela medida o
-    // rascunho vigente é a v7; pelo palpite não há rascunho vigente nenhum, e
-    // cada salvamento nasceria uma versão nova.
-    agent.published_version_id ?? null,
-  );
-
-  if (existingDraft) {
-    // PATCH na draft existente — não infla a sequência de versions.
-    const patchValidated = versionPatchSchema.safeParse(payload);
-    if (!patchValidated.success) {
-      return { ok: false, error: "validation_failed", details: patchValidated.error.flatten() };
-    }
-    const update: Record<string, unknown> = { ...patchValidated.data };
-    const { data: updated, error } = await admin
-      .from("ai_agent_versions")
-      .update(update)
-      .eq("id", existingDraft.id)
-      .eq("organization_id", activeOrg.orgId)
-      .select(VERSION_COLUMNS)
-      .single();
-
-    if (error || !updated) {
-      return { ok: false, error: "internal_error", message: error?.message };
-    }
-
-    void audit({
-      action: "ai_agent.version_updated",
+  if (cadastroParsed?.success) {
+    const r = await gravarCadastroDoAgente(admin, {
+      agentId,
+      orgId: activeOrg.orgId,
       actorUserId: authUser.id,
-      organizationId: activeOrg.orgId,
-      resourceType: "ai_agent_version",
-      resourceId: existingDraft.id,
       requestId,
-      metadata: { agent_id: agentId, fields: Object.keys(update) },
+      atual: agente,
+      pedido: cadastroParsed.data,
     });
-
-    if (cadastroParsed?.success) {
-      const r = await gravarCadastroDoAgente(admin, {
-        agentId,
-        orgId: activeOrg.orgId,
-        actorUserId: authUser.id,
-        requestId,
-        atual: agent,
-        pedido: cadastroParsed.data,
-      });
-      // As duas escritas não são atômicas. O desfecho tem de dizer o que
-      // gravou: um toast verde genérico aqui reproduz o defeito com outra cara.
-      if ("erro" in r) {
-        if (ehNomeDeAgenteRepetido(r.doBanco)) {
-          // O rascunho FOI salvo — o que não entrou foi o nome do cadastro. Dizer
-          // só "já existe um agente com esse nome" faria a pessoa achar que
-          // perdeu o trabalho; dizer só "o cadastro não" mandaria procurar
-          // defeito onde há um nome para trocar.
-          return {
-            ok: false,
-            error: CODIGO_NOME_DE_AGENTE_EM_USO,
-            message: `${NOME_DE_AGENTE_EM_USO} ${RASCUNHO_SALVO_NOME_NAO_MUDOU}`,
-          };
-        }
+    // As duas escritas não são atômicas. O desfecho tem de dizer o que
+    // gravou: um toast verde genérico aqui reproduz o defeito com outra cara.
+    if ("erro" in r) {
+      if (ehNomeDeAgenteRepetido(r.doBanco)) {
+        // O rascunho FOI salvo — o que não entrou foi o nome do cadastro. Dizer
+        // só "já existe um agente com esse nome" faria a pessoa achar que
+        // perdeu o trabalho; dizer só "o cadastro não" mandaria procurar
+        // defeito onde há um nome para trocar.
         return {
           ok: false,
-          error: "internal_error",
-          message: `O rascunho foi salvo, mas o cadastro do agente não: ${r.erro}`,
+          error: CODIGO_NOME_DE_AGENTE_EM_USO,
+          message: `${NOME_DE_AGENTE_EM_USO} ${RASCUNHO_SALVO_NOME_NAO_MUDOU}`,
         };
       }
-      if (r.mudou.length > 0) revalidatePath("/app/ai/agents");
+      return {
+        ok: false,
+        error: "internal_error",
+        message: `O rascunho foi salvo, mas o cadastro do agente não: ${r.erro}`,
+      };
     }
-
-    revalidatePath(`/app/ai/agents/${agentId}`);
-    return {
-      ok: true,
-      data: {
-        version_id: existingDraft.id,
-        version_number: existingDraft.version_number,
-      },
-    };
+    if (r.mudou.length > 0) revalidatePath("/app/ai/agents");
   }
 
-  // Cria draft v(max+1) com retry em 23505.
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const { data: maxRow } = await admin
-      .from("ai_agent_versions")
-      .select("version_number")
-      .eq("agent_id", agentId)
-      .eq("organization_id", activeOrg.orgId)
-      .order("version_number", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const nextNumber = (maxRow?.version_number ?? 0) + 1;
-
-    const { data: created, error } = await admin
-      .from("ai_agent_versions")
-      .insert({
-        organization_id: activeOrg.orgId,
-        agent_id: agentId,
-        version_number: nextNumber,
-        system_prompt: v.system_prompt,
-        provider: v.provider,
-        model: v.model,
-        credential_id: v.credential_id,
-        tool_ids: v.tool_ids,
-        trigger_config: v.trigger_config ?? undefined,
-        channel_session_id: v.channel_session_id,
-        max_steps: v.max_steps,
-        token_budget: v.token_budget,
-        cost_budget_cents: v.cost_budget_cents,
-        history_message_window: v.history_message_window,
-        history_token_window: v.history_token_window,
-        handoff_keywords: v.handoff_keywords,
-        handoff_tool_enabled: v.handoff_tool_enabled,
-        handoff_legal_enabled: v.handoff_legal_enabled,
-        image_vision_enabled: v.image_vision_enabled,
-        proposal_ai_draft_enabled: v.proposal_ai_draft_enabled,
-        cases_enabled: v.cases_enabled,
-        operator_enabled: v.operator_enabled,
-        operator_model: v.operator_model,
-        operator_tool_ids: v.operator_tool_ids,
-        pipeline_ids: v.pipeline_ids,
-        knowledge_source_ids: v.knowledge_source_ids,
-        skill_names: v.skill_names,
-        split_messages: v.split_messages,
-        split_max_chars: v.split_max_chars,
-        inbound_debounce_ms: v.inbound_debounce_ms ?? null,
-        reply_min_interval_ms: v.reply_min_interval_ms ?? null,
-        followup: v.followup,
-        voz_enabled: v.voz_enabled,
-        voz_quando: v.voz_quando,
-        status: "draft",
-        created_by: authUser.id,
-      })
-      .select("id, version_number")
-      .single();
-
-    if (!error && created) {
-      void audit({
-        action: "ai_agent.version_created",
-        actorUserId: authUser.id,
-        organizationId: activeOrg.orgId,
-        resourceType: "ai_agent_version",
-        resourceId: created.id,
-        requestId,
-        metadata: { agent_id: agentId, version_number: created.version_number },
-      });
-      if (cadastroParsed?.success) {
-        const r = await gravarCadastroDoAgente(admin, {
-          agentId,
-          orgId: activeOrg.orgId,
-          actorUserId: authUser.id,
-          requestId,
-          atual: agent,
-          pedido: cadastroParsed.data,
-        });
-        if ("erro" in r) {
-          if (ehNomeDeAgenteRepetido(r.doBanco)) {
-            // Mesmo desfecho do ramo de cima: rascunho salvo, nome não.
-            return {
-              ok: false,
-              error: CODIGO_NOME_DE_AGENTE_EM_USO,
-              message: `${NOME_DE_AGENTE_EM_USO} ${RASCUNHO_SALVO_NOME_NAO_MUDOU}`,
-            };
-          }
-          return {
-            ok: false,
-            error: "internal_error",
-            message: `O rascunho foi salvo, mas o cadastro do agente não: ${r.erro}`,
-          };
-        }
-        if (r.mudou.length > 0) revalidatePath("/app/ai/agents");
-      }
-
-      revalidatePath(`/app/ai/agents/${agentId}`);
-      return { ok: true, data: { version_id: created.id, version_number: created.version_number } };
-    }
-    if (error?.code !== "23505") {
-      return { ok: false, error: "internal_error", message: error?.message };
-    }
-  }
-  return { ok: false, error: "internal_error", message: "Conflito de versionamento." };
+  revalidatePath(`/app/ai/agents/${agentId}`);
+  return {
+    ok: true,
+    data: { version_id: salvo.data.version_id, version_number: salvo.data.version_number },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -421,75 +221,21 @@ export async function publishAgentAction(
   const requestId = randomUUID();
   const admin = createAdminClient();
 
-  // Tool ids check (espelha publish/route.ts).
-  const valid = new Set<string>(VALID_TOOL_IDS as readonly string[]);
-  const { data: targetV } = await admin
-    .from("ai_agent_versions")
-    .select("id, agent_id, tool_ids")
-    .eq("id", versionId)
-    .eq("organization_id", activeOrg.orgId)
-    .maybeSingle();
-  if (!targetV || targetV.agent_id !== agentId) {
-    return { ok: false, error: "version_not_found" };
-  }
-  const tools = (targetV.tool_ids ?? []) as string[];
-  const invalid = tools.filter((t) => !toolIdAceito(t, valid));
-  if (invalid.length > 0) {
-    return { ok: false, error: "tool_id_invalid", details: { invalid } };
-  }
-
-  const result = await publishAgentVersion(admin, {
+  // Ferramentas aceitas, `fn_publish_ai_agent_version`, `event_log` e a
+  // auditoria `ai_agent.published`: `lib/ai/agents/edicao.ts`, a mesma do MCP.
+  const r = await publicarVersao(admin, {
     orgId: activeOrg.orgId,
     agentId,
     versionId,
-    quemPublicou: { actorUserId: authUser.id, requestId },
+    ator: { userId: authUser.id, apiTokenId: null, requestId },
   });
-
-  if (!result.ok) {
-    if (PUBLISH_ERROR_CODES.has(result.code as string)) {
-      return { ok: false, error: result.code };
-    }
-    return { ok: false, error: "internal_error" };
-  }
-
-  void admin
-    .from("event_log")
-    .insert({
-      organization_id: activeOrg.orgId,
-      event_type: "ai_agent.published",
-      // `entity_kind` é NOT NULL sem default (`baseline.sql`): sem esta linha o
-      // insert viola a constraint e o evento de publicação NUNCA é gravado. E o
-      // insert é `void` + `.then()`, então a violação cai num `console.error`
-      // que ninguém lê — o Sistema Vivo perde o registro em silêncio. Visto no
-      // log do CI de hoje: `null value in column "entity_kind" ... violates
-      // not-null constraint`.
-      entity_kind: "ai_agent",
-      payload: {
-        agent_id: result.agent_id,
-        version_id: result.version_id,
-        previous_version_id: result.previous_version_id,
-        published_at: result.published_at,
-      },
-    })
-    .then(({ error }) => {
-      if (error) console.error("[saveAgentDraftAction/publish] event_log error", error.message);
-    });
-
-  void audit({
-    action: "ai_agent.published",
-    actorUserId: authUser.id,
-    organizationId: activeOrg.orgId,
-    resourceType: "ai_agent",
-    resourceId: agentId,
-    requestId,
-    metadata: { version_id: result.version_id, previous_version_id: result.previous_version_id },
-  });
+  if (!r.ok) return r;
 
   revalidatePath(`/app/ai/agents/${agentId}`);
   revalidatePath("/app/ai/agents");
   return {
     ok: true,
-    data: { version_id: result.version_id, previous_version_id: result.previous_version_id },
+    data: { version_id: r.data.version_id, previous_version_id: r.data.previous_version_id },
   };
 }
 
@@ -522,229 +268,19 @@ export async function revertToVersionAction(
   const requestId = randomUUID();
   const admin = createAdminClient();
 
-  const { data: agent } = await admin
-    .from("ai_agents")
-    .select("id, archived_at")
-    .eq("id", agentId)
-    .eq("organization_id", activeOrg.orgId)
-    .maybeSingle();
-  if (!agent) return { ok: false, error: "not_found" };
-  if (agent.archived_at) return { ok: false, error: "agent_archived" };
-
-  const { data: source } = await admin
-    .from("ai_agent_versions")
-    .select(VERSION_COLUMNS)
-    .eq("id", versionId)
-    .eq("organization_id", activeOrg.orgId)
-    .eq("agent_id", agentId)
-    .maybeSingle();
-  if (!source) return { ok: false, error: "version_not_found" };
-
-  // Espelha tool_id check do publish.
-  const tools = ((source as { tool_ids: string[] | null }).tool_ids ?? []) as string[];
-  const valid = new Set<string>(VALID_TOOL_IDS as readonly string[]);
-  const invalid = tools.filter((t) => !toolIdAceito(t, valid));
-  if (invalid.length > 0) {
-    return { ok: false, error: "tool_id_invalid", details: { invalid } };
-  }
-
-  // Voltar a uma versão de quando a assinatura estava ligada regravaria o
-  // provedor que a instalação desligou — a mesma régua do salvar.
-  const escopo = await validarEscopoDaVersao(admin, activeOrg.orgId, {
-    provider: (source as { provider: string }).provider,
-  });
-  if (!escopo.ok) {
-    return { ok: false, error: codigoDoEscopo(escopo), message: mensagemDoEscopo(escopo) };
-  }
-
-  // Cria draft idêntica com retry em 23505 (race no version_number).
-  type SourceRow = {
-    system_prompt: string;
-    provider: string;
-    model: string;
-    credential_id: string;
-    tool_ids: string[];
-    trigger_config: Record<string, unknown> | null;
-    // Nulo desde a 0239: a versão de origem pode ser um rascunho de quem ainda
-    // não conectou o WhatsApp, e duplicá-la copia o "sem número" adiante.
-    channel_session_id: string | null;
-    max_steps: number;
-    token_budget: number;
-    cost_budget_cents: number;
-    history_message_window: number;
-    history_token_window: number;
-    handoff_keywords: string[];
-    handoff_tool_enabled: boolean;
-    handoff_legal_enabled: boolean;
-    image_vision_enabled: boolean | null;
-    proposal_ai_draft_enabled: boolean;
-    cases_enabled: boolean;
-    operator_enabled: boolean;
-    operator_model: string | null;
-    operator_tool_ids: string[];
-    pipeline_ids: string[];
-    knowledge_source_ids: string[];
-    skill_names: string[] | null;
-    split_messages: boolean;
-    split_max_chars: number;
-    inbound_debounce_ms: number | null;
-    reply_min_interval_ms: number | null;
-    followup: unknown;
-    voz_enabled: boolean;
-    voz_quando: "nunca" | "espelhar" | "sempre" | "quando_pede";
-  };
-  const src = source as unknown as SourceRow;
-
-  let createdId: string | null = null;
-  let createdNumber: number | null = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const { data: maxRow } = await admin
-      .from("ai_agent_versions")
-      .select("version_number")
-      .eq("agent_id", agentId)
-      .eq("organization_id", activeOrg.orgId)
-      .order("version_number", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const nextNumber = (maxRow?.version_number ?? 0) + 1;
-
-    const { data: created, error } = await admin
-      .from("ai_agent_versions")
-      .insert({
-        organization_id: activeOrg.orgId,
-        agent_id: agentId,
-        version_number: nextNumber,
-        system_prompt: src.system_prompt,
-        provider: src.provider,
-        model: src.model,
-        credential_id: src.credential_id,
-        tool_ids: src.tool_ids,
-        trigger_config: src.trigger_config ?? undefined,
-        channel_session_id: src.channel_session_id,
-        max_steps: src.max_steps,
-        token_budget: src.token_budget,
-        cost_budget_cents: src.cost_budget_cents,
-        history_message_window: src.history_message_window,
-        history_token_window: src.history_token_window,
-        handoff_keywords: src.handoff_keywords,
-        handoff_tool_enabled: src.handoff_tool_enabled,
-        // Reverter/duplicar leva a chave junto: voltar para uma versão sem ela
-        // seria publicar uma configuração que nunca existiu (mesma régua de
-        // `pipeline_ids` logo abaixo).
-        handoff_legal_enabled: src.handoff_legal_enabled,
-        // A visão de foto vai junto pela mesma régua (9108).
-        image_vision_enabled: src.image_vision_enabled ?? true,
-        proposal_ai_draft_enabled: src.proposal_ai_draft_enabled,
-        cases_enabled: src.cases_enabled,
-        operator_enabled: src.operator_enabled,
-        operator_model: src.operator_model,
-        operator_tool_ids: src.operator_tool_ids,
-        // O revert leva o escopo junto: voltar para uma versão e NÃO voltar a
-        // permissão dela seria publicar uma configuração que nunca existiu.
-        // Vale igual para o acervo: reverter e o assistente esquecer o material
-        // que aquela versão consultava é publicar uma configuração inventada.
-        pipeline_ids: src.pipeline_ids,
-        knowledge_source_ids: src.knowledge_source_ids ?? [],
-        // As skills vão junto pela mesma régua: reverter e o agente voltar a usar
-        // todas (ou outra lista) seria publicar uma configuração que nunca existiu.
-        skill_names: src.skill_names ?? null,
-        split_messages: src.split_messages,
-        split_max_chars: src.split_max_chars,
-        inbound_debounce_ms: src.inbound_debounce_ms ?? null,
-        reply_min_interval_ms: src.reply_min_interval_ms ?? null,
-        followup: src.followup,
-        // A voz vai junto pela mesma régua: reverter para uma versão que falava
-        // e ela voltar calada seria publicar uma configuração que nunca existiu.
-        voz_enabled: src.voz_enabled,
-        voz_quando: src.voz_quando,
-        status: "draft",
-        created_by: authUser.id,
-      })
-      .select("id, version_number")
-      .single();
-
-    if (!error && created) {
-      createdId = created.id;
-      createdNumber = created.version_number;
-      break;
-    }
-    if (error?.code !== "23505") {
-      return { ok: false, error: "internal_error", message: error?.message };
-    }
-  }
-  if (!createdId || createdNumber == null) {
-    return { ok: false, error: "internal_error", message: "Conflito de versionamento." };
-  }
-
-  const result = await publishAgentVersion(admin, {
+  // Clonar a origem num rascunho novo, publicar, apagar o clone se a
+  // publicação recusar, `ai_agent.reverted`: `lib/ai/agents/edicao.ts`.
+  const r = await reverterParaVersao(admin, {
     orgId: activeOrg.orgId,
     agentId,
-    versionId: createdId,
-    quemPublicou: { actorUserId: authUser.id, requestId },
+    versionId,
+    ator: { userId: authUser.id, apiTokenId: null, requestId },
   });
-  if (!result.ok) {
-    // Rollback: remove draft órfã para não deixar lixo (a draft só existe
-    // como veículo do publish; sem publish, não tem razão de ser).
-    await admin
-      .from("ai_agent_versions")
-      .delete()
-      .eq("id", createdId)
-      .eq("organization_id", activeOrg.orgId)
-      .eq("status", "draft");
-    if (PUBLISH_ERROR_CODES.has(result.code as string)) {
-      return { ok: false, error: result.code };
-    }
-    return { ok: false, error: "internal_error" };
-  }
-
-  void admin
-    .from("event_log")
-    .insert({
-      organization_id: activeOrg.orgId,
-      event_type: "ai_agent.published",
-      // `entity_kind` é NOT NULL sem default (`baseline.sql`): sem esta linha o
-      // insert viola a constraint e o evento de publicação NUNCA é gravado. E o
-      // insert é `void` + `.then()`, então a violação cai num `console.error`
-      // que ninguém lê — o Sistema Vivo perde o registro em silêncio. Visto no
-      // log do CI de hoje: `null value in column "entity_kind" ... violates
-      // not-null constraint`.
-      entity_kind: "ai_agent",
-      payload: {
-        agent_id: result.agent_id,
-        version_id: result.version_id,
-        previous_version_id: result.previous_version_id,
-        published_at: result.published_at,
-      },
-    })
-    .then(({ error }) => {
-      if (error) console.error("[revertToVersionAction/event_log] error", error.message);
-    });
-
-  void audit({
-    action: "ai_agent.reverted",
-    actorUserId: authUser.id,
-    organizationId: activeOrg.orgId,
-    resourceType: "ai_agent",
-    resourceId: agentId,
-    requestId,
-    metadata: {
-      from_version_id: versionId,
-      new_version_id: createdId,
-      new_version_number: createdNumber,
-      previous_version_id: result.previous_version_id,
-    },
-  });
+  if (!r.ok) return r;
 
   revalidatePath(`/app/ai/agents/${agentId}`);
   revalidatePath("/app/ai/agents");
-  return {
-    ok: true,
-    data: {
-      new_version_id: createdId,
-      new_version_number: createdNumber,
-      previous_version_id: result.previous_version_id,
-    },
-  };
+  return { ok: true, data: r.data };
 }
 
 // ---------------------------------------------------------------------------

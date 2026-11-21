@@ -34,6 +34,9 @@ export const CLASSES_DE_GRUPO: Readonly<Record<NavGroupId, string>> = Object.fre
   canais: "nav-grupo-canais",
   analise: "nav-grupo-analise",
   organizacao: "nav-grupo-organizacao",
+  // O grupo GERADO "Módulos" (Spec 33, F4): só aparece no menu quando a organização tem módulo
+  // conectado ativo, e então leva a mesma convenção dos outros grupos.
+  modulos: "nav-grupo-modulos",
 });
 
 const PREFIXO_DO_ITEM = "nav-item-";
@@ -54,19 +57,50 @@ export function classeDoItem(href: string): string {
   return `${PREFIXO_DO_ITEM}${slug}`;
 }
 
+/**
+ * A classe do ITEM DA TELA ABERTA — `nav-item-ativo`.
+ *
+ * Ela existe porque o item aberto é o único do menu que já tem fundo na cor de
+ * destaque. Quem pinta o menu por `.nav-grupo-crm .rounded-md:hover` acerta nele
+ * também, e a cor de texto escolhida para o fundo do menu some sobre o fundo de
+ * destaque — é literalmente o "sem quebrar o contraste" do título da #4463.
+ *
+ * O único marcador que existia era `aria-current="page"`, e atributo é o que o
+ * validador de `/admin/marca` recusa de propósito; `:not()` também não está na
+ * allowlist de pseudo-classes. Sem uma CLASSE, o dono não tinha como dar cor ao
+ * item aberto NEM como tirá-lo de uma regra do grupo — a doc só sabia recomendar
+ * `text-muted-foreground`, que é utilitária do Tailwind e muda com o design.
+ *
+ * O nome NÃO colide com nenhum destino: `classeDoItem` sempre carrega o slug do
+ * `href` depois do prefixo, e nenhuma rota se chama "ativo".
+ */
+export const CLASSE_DO_ITEM_ATIVO = "nav-item-ativo";
+
 export function classeDoGrupo(id: NavGroupId): string {
   return CLASSES_DE_GRUPO[id];
 }
 
 /**
- * O mapa href → classe de TODOS os destinos do catálogo, montado uma vez.
+ * O mapa href → classe de TODOS os destinos do catálogo E dos hubs dos grupos,
+ * montado uma vez.
  *
  * Serve à régua (unicidade e forma) e a quem precisa do nome sem renderizar o
  * menu. O componente deriva a classe de `classeDoItem(item.href)` para valer
- * também para destino que ainda não está no catálogo (hub, item futuro).
+ * também para destino que ainda não está no catálogo (item futuro).
+ *
+ * Os HUBS entram porque são destino como qualquer outro — e são a ÚNICA porta de
+ * três grupos (CRM, IA, Análise), então ficar de fora do mapa era a diferença
+ * entre "o contrato promete" e "o menu desenha" (#4463). O `Object.fromEntries`
+ * deduplica href repetido (o hub de Organização é `/app/settings`, que pode
+ * também estar no catálogo) sem mudar o valor: `classeDoItem` é pura.
  */
 export const CLASSES_DE_ITEM: Readonly<Record<string, string>> = Object.freeze(
-  Object.fromEntries(NAV_CATALOG.map((destino) => [destino.href, classeDoItem(destino.href)])),
+  Object.fromEntries(
+    [
+      ...NAV_CATALOG.map((destino) => destino.href),
+      ...NAV_GROUPS.flatMap((grupo) => (grupo.hub ? [grupo.hub.href] : [])),
+    ].map((href) => [href, classeDoItem(href)]),
+  ),
 );
 
 /**

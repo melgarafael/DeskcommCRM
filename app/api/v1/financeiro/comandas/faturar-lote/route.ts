@@ -291,6 +291,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (faturados > 0) {
     await audit({
       action: "comanda.faturada_em_lote",
+      actorUserId: authz.user.id,
+      organizationId: authz.org.orgId,
       resourceType: "sale",
       requestId,
       metadata: {

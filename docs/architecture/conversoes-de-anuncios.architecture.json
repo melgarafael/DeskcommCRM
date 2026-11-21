@@ -247,9 +247,54 @@
       "col": 4,
       "type": "component",
       "label": "Claim/lease por (organização, ctwa_clid)"
+    },
+    {
+      "id": "painel-google",
+      "lane": "tela",
+      "col": 0,
+      "type": "component",
+      "label": "Google Ads · seleção da conta de relatórios"
+    },
+    {
+      "id": "contas-relatorio-google",
+      "lane": "dados",
+      "col": 1,
+      "type": "component",
+      "label": "google_ads_reporting_accounts · autorização por organização e conta"
+    },
+    {
+      "id": "consulta-google",
+      "lane": "motor",
+      "col": 2,
+      "type": "component",
+      "label": "Google Ads API · leitura das campanhas da conta selecionada"
     }
   ],
   "edges": [
+    {
+      "id": "painel-contas-google",
+      "from": "painel-google",
+      "to": "contas-relatorio-google",
+      "label": "administrador autoriza com OAuth adwords"
+    },
+    {
+      "id": "conta-consulta-google",
+      "from": "contas-relatorio-google",
+      "to": "consulta-google",
+      "label": "credencial da conta e MCC opcional"
+    },
+    {
+      "id": "legado-consulta-google",
+      "from": "conexao",
+      "to": "consulta-google",
+      "label": "autorização anterior apenas para a mesma conta"
+    },
+    {
+      "id": "resultado-painel-google",
+      "from": "consulta-google",
+      "to": "painel-google",
+      "label": "métricas do período"
+    },
     {
       "id": "clique-google-fichas",
       "from": "captura",
