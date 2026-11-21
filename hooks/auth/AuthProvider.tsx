@@ -152,6 +152,8 @@ const ACTION_MIN_ROLE: Record<string, Role> = {
   "pipeline.view": "viewer",
   "pipeline.create": "manager",
   "pipeline.move_card": "agent",
+  // O piso de `POST /api/v1/vendas` (`requireRole("agent")`).
+  "vendas.registrar": "agent",
   "team.invite": "admin",
   "team.change_role": "admin",
   "settings.write": "admin",

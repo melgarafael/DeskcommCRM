@@ -41,7 +41,12 @@ import {
   periodoPassaDoTeto,
 } from "@/lib/relatorios/janela";
 import { normalizarTagDoRelatorio } from "@/lib/relatorios/comercial";
-import { montarPainelDeVendas, type NegocioDoPainel } from "@/lib/relatorios/painel-de-vendas";
+import {
+  montarPainelDeVendas,
+  type NegocioDaVenda,
+  type NegocioDoPainel,
+  type VendaRegistradaDoPainel,
+} from "@/lib/relatorios/painel-de-vendas";
 import { lerPaginado } from "@/lib/supabase/pagina";
 import { createClient } from "@/lib/supabase/server";
 
@@ -100,10 +105,14 @@ export async function GET(req: NextRequest): Promise<Response> {
   const janela = janelaDoRelatorio(de, ate, tz);
   const supabase = await createClient();
 
+  // ─── 1. Negócios ganhos e perdidos fechados na janela ─────────────────────
   const leitura = await lerPaginado<NegocioDoPainel>(async (inicio, fim, contar) => {
     const { data, error, count } = await supabase
       .from("crm_leads")
-      .select("status, closed_at, value_cents, currency, pipeline_id, tags", contar ? { count: "exact" } : undefined)
+      .select(
+        "id, status, closed_at, value_cents, currency, pipeline_id, tags, contact_id, title",
+        contar ? { count: "exact" } : undefined,
+      )
       .eq("organization_id", org.orgId)
       .in("status", ["won", "lost"])
       .gte("closed_at", janela.from)
@@ -118,6 +127,49 @@ export async function GET(req: NextRequest): Promise<Response> {
     return fail("internal_error", leitura.erro, 500, { requestId });
   }
 
+  // ─── 2. Vendas registradas com DATA dentro do período ────────────────────
+  const registradas = await lerPaginado<VendaRegistradaDoPainel>(async (inicio, fim, contar) => {
+    const { data, error, count } = await supabase
+      .from("vendas_registradas")
+      .select("id, lead_id, contact_id, valor_cents, currency, data, tags", contar ? { count: "exact" } : undefined)
+      .eq("organization_id", org.orgId)
+      .gte("data", de)
+      .lte("data", ate)
+      .order("data", { ascending: false })
+      .order("id", { ascending: true })
+      .range(inicio, fim);
+    return { data: (data ?? []) as VendaRegistradaDoPainel[], error, count: count ?? null };
+  });
+  if (registradas.erro) return fail("internal_error", registradas.erro, 500, { requestId });
+
+  // ─── 3. O negócio de cada venda registrada (funil, tags, título) ─────────
+  const negociosDasVendas = new Map<string, NegocioDaVenda>();
+  const idsDosNegocios = [...new Set(registradas.linhas.map((v) => v.lead_id).filter((id): id is string => !!id))];
+  for (let i = 0; i < idsDosNegocios.length; i += LOTE) {
+    const { data, error } = await supabase
+      .from("crm_leads")
+      .select("id, pipeline_id, tags, title, contact_id")
+      .eq("organization_id", org.orgId)
+      .in("id", idsDosNegocios.slice(i, i + LOTE));
+    if (error) return fail("internal_error", error.message, 500, { requestId });
+    for (const n of (data ?? []) as Array<NegocioDaVenda & { id: string }>) negociosDasVendas.set(n.id, n);
+  }
+
+  // ─── 4. Quais negócios GANHOS da janela têm venda registrada (qualquer data) ─
+  const comVendaRegistrada = new Set<string>();
+  const idsGanhos = leitura.linhas.filter((n) => n.status === "won" && n.id).map((n) => n.id as string);
+  for (let i = 0; i < idsGanhos.length; i += LOTE) {
+    const { data, error } = await supabase
+      .from("vendas_registradas")
+      .select("lead_id")
+      .eq("organization_id", org.orgId)
+      .in("lead_id", idsGanhos.slice(i, i + LOTE));
+    if (error) return fail("internal_error", error.message, 500, { requestId });
+    for (const linha of (data ?? []) as Array<{ lead_id: string | null }>) {
+      if (linha.lead_id) comVendaRegistrada.add(linha.lead_id);
+    }
+  }
+
   const painel = montarPainelDeVendas({
     negocios: leitura.linhas,
     janela,
@@ -126,7 +178,59 @@ export async function GET(req: NextRequest): Promise<Response> {
       pipeline_id: parsed.data.pipeline_id ?? null,
       tag: parsed.data.tag ? normalizarTagDoRelatorio(parsed.data.tag) : null,
     },
+    vendasRegistradas: registradas.linhas,
+    negociosDasVendas,
+    negociosComVendaRegistrada: comVendaRegistrada,
   });
 
-  return ok({ janela, ...painel, truncado: leitura.truncado }, { requestId });
+  // ─── 5. Os nomes que a tela escreve: clientes e funis ───────────────────
+  const idsDeContato = [
+    ...new Set([
+      ...painel.lista.map((v) => v.contact_id),
+      ...painel.rankings.clientes.map((c) => c.chave),
+    ].filter((id): id is string => !!id)),
+  ];
+  const contatos: Record<string, { display_name: string | null; name: string | null; phone_number: string | null }> = {};
+  for (let i = 0; i < idsDeContato.length; i += LOTE) {
+    const { data, error } = await supabase
+      .from("contacts")
+      .select("id, display_name, name, phone_number")
+      .eq("organization_id", org.orgId)
+      .in("id", idsDeContato.slice(i, i + LOTE));
+    if (error) return fail("internal_error", error.message, 500, { requestId });
+    for (const c of (data ?? []) as Array<{ id: string; display_name: string | null; name: string | null; phone_number: string | null }>) {
+      contatos[c.id] = { display_name: c.display_name, name: c.name, phone_number: c.phone_number };
+    }
+  }
+  const idsDeFunil = [
+    ...new Set([
+      ...painel.opcoes.pipeline_ids,
+      ...painel.lista.map((v) => v.pipeline_id),
+      ...painel.rankings.funis.map((f) => f.chave),
+    ].filter((id): id is string => !!id)),
+  ];
+  const nomesDosFunis: Record<string, string | null> = {};
+  if (idsDeFunil.length > 0) {
+    const { data, error } = await supabase
+      .from("crm_pipelines")
+      .select("id, name")
+      .eq("organization_id", org.orgId)
+      .in("id", idsDeFunil);
+    if (error) return fail("internal_error", error.message, 500, { requestId });
+    for (const f of (data ?? []) as Array<{ id: string; name: string | null }>) nomesDosFunis[f.id] = f.name?.trim() || null;
+  }
+
+  return ok(
+    {
+      janela,
+      ...painel,
+      contatos,
+      nomes_dos_funis: nomesDosFunis,
+      truncado: leitura.truncado || registradas.truncado,
+    },
+    { requestId },
+  );
 }
+
+/** Quantos ids entram em cada `.in(...)`: a URL do PostgREST não cresce sem teto. */
+const LOTE = 200;

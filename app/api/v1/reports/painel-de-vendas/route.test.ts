@@ -23,40 +23,57 @@ import { GET } from "./route";
 
 const ORG = "11111111-1111-1111-1111-111111111111";
 
-function makeDb(linhas: Record<string, unknown>[], erro: string | null = null) {
+type Linha = Record<string, unknown>;
+
+/**
+ * PostgREST em memória, POR TABELA. Um array solto é `crm_leads` (o caso de
+ * sempre). `in` filtra as linhas que têm a coluna; `eq` só é registrado (as
+ * linhas do teste são todas da organização pedida).
+ */
+function makeDb(entrada: Linha[] | Record<string, Linha[]>, erro: string | null = null) {
+  const tabelas: Record<string, Linha[]> = Array.isArray(entrada) ? { crm_leads: entrada } : entrada;
   const ops: string[] = [];
-  let faixa: [number, number] | null = null;
-  const b: Record<string, unknown> = {
-    select: () => b,
-    eq(c: string, v: unknown) {
-      ops.push(`eq:${c}=${String(v)}`);
-      return b;
-    },
-    in(c: string, v: unknown[]) {
-      ops.push(`in:${c}=${v.join(",")}`);
-      return b;
-    },
-    gte(c: string, v: unknown) {
-      ops.push(`gte:${c}=${String(v)}`);
-      return b;
-    },
-    lt(c: string, v: unknown) {
-      ops.push(`lt:${c}=${String(v)}`);
-      return b;
-    },
-    order: () => b,
-    range(i: number, f: number) {
-      faixa = [i, f];
-      return b;
-    },
-    then(ok: (v: unknown) => unknown, falha?: (e: unknown) => unknown) {
-      const resposta = erro
-        ? { data: null, error: { message: erro }, count: null }
-        : { data: faixa ? linhas.slice(faixa[0], faixa[1] + 1) : linhas, error: null, count: linhas.length };
-      return Promise.resolve(resposta).then(ok, falha);
-    },
-  };
-  const db = { from: vi.fn(() => b) };
+  function from(tabela: string) {
+    let linhas = [...(tabelas[tabela] ?? [])];
+    let faixa: [number, number] | null = null;
+    const b: Record<string, unknown> = {
+      select: () => b,
+      eq(c: string, v: unknown) {
+        ops.push(`eq:${c}=${String(v)}`);
+        return b;
+      },
+      in(c: string, v: unknown[]) {
+        ops.push(`in:${c}=${v.join(",")}`);
+        linhas = linhas.filter((l) => !(c in l) || v.includes(l[c]));
+        return b;
+      },
+      gte(c: string, v: unknown) {
+        ops.push(`gte:${c}=${String(v)}`);
+        return b;
+      },
+      lte(c: string, v: unknown) {
+        ops.push(`lte:${c}=${String(v)}`);
+        return b;
+      },
+      lt(c: string, v: unknown) {
+        ops.push(`lt:${c}=${String(v)}`);
+        return b;
+      },
+      order: () => b,
+      range(i: number, f: number) {
+        faixa = [i, f];
+        return b;
+      },
+      then(ok: (v: unknown) => unknown, falha?: (e: unknown) => unknown) {
+        const resposta = erro
+          ? { data: null, error: { message: erro }, count: null }
+          : { data: faixa ? linhas.slice(faixa[0], faixa[1] + 1) : linhas, error: null, count: linhas.length };
+        return Promise.resolve(resposta).then(ok, falha);
+      },
+    };
+    return b;
+  }
+  const db = { from: vi.fn(from) };
   vi.mocked(createClient).mockResolvedValue(db as never);
   return { db, ops };
 }
@@ -88,8 +105,8 @@ describe("GET /api/v1/reports/painel-de-vendas", () => {
     const corpo = (await res.json()) as { data: Record<string, unknown> };
 
     expect(res.status).toBe(200);
-    expect(db.from).toHaveBeenCalledTimes(1);
-    expect(db.from).toHaveBeenCalledWith("crm_leads");
+    expect(db.from).toHaveBeenNthCalledWith(1, "crm_leads");
+    expect(db.from).toHaveBeenCalledWith("vendas_registradas");
     expect(ops).toContain(`eq:organization_id=${ORG}`);
     expect(ops).toContain("in:status=won,lost");
     // 01/11 00h em São Paulo = 03h UTC; o fim é 00h de 20/11, aberto.
@@ -184,5 +201,37 @@ describe("GET /api/v1/reports/painel-de-vendas — o recorte", () => {
 
     expect(res.status).toBe(422);
     expect(db.from).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /api/v1/reports/painel-de-vendas — vendas registradas", () => {
+  it("soma as vendas registradas do período, não conta em dobro o ganho que tem venda, e devolve os nomes", async () => {
+    authOk();
+    const LEAD = "aaaaaaaa-0000-4000-8000-000000000001";
+    const GANHO = "aaaaaaaa-0000-4000-8000-000000000002";
+    const FUNIL = "ffffffff-0000-4000-8000-000000000001";
+    const { ops } = makeDb({
+      crm_leads: [
+        { id: GANHO, status: "won", closed_at: "2026-11-05T15:00:00.000Z", value_cents: 99_999, currency: "BRL", pipeline_id: FUNIL, tags: [], contact_id: "c2", title: "Ganho" },
+        { id: LEAD, status: "open", pipeline_id: FUNIL, tags: ["atacado"], contact_id: "c1", title: "Dãm Dãm Baby" },
+      ],
+      vendas_registradas: [
+        { id: "r1", lead_id: LEAD, contact_id: "c1", valor_cents: 18_000, currency: "BRL", data: "2026-11-19", tags: [] },
+        { id: "r2", lead_id: GANHO, contact_id: "c2", valor_cents: 7_000, currency: "BRL", data: "2026-11-05", tags: [] },
+      ],
+      contacts: [{ id: "c1", display_name: "Dãm Dãm Baby", name: null, phone_number: null }],
+      crm_pipelines: [{ id: FUNIL, name: "Pedidos" }],
+    });
+
+    const res = await GET(pedir());
+    const corpo = (await res.json()) as { data: Record<string, unknown> };
+
+    expect(res.status).toBe(200);
+    // a data da venda registrada é filtrada como DATA (de/até), não instante
+    expect(ops).toContain("gte:data=2026-11-01");
+    expect(ops).toContain("lte:data=2026-11-19");
+    expect(corpo.data).toMatchObject({ vendas: 2, vendido_centavos: 25_000 });
+    expect(corpo.data.nomes_dos_funis).toEqual({ [FUNIL]: "Pedidos" });
+    expect((corpo.data.contatos as Record<string, unknown>).c1).toMatchObject({ display_name: "Dãm Dãm Baby" });
   });
 });

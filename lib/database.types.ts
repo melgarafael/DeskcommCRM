@@ -7348,6 +7348,8 @@ export type Database = {
           tags: string[];
           title: string;
           updated_at: string;
+          valor_digitado_cents: number | null;
+          valor_pelas_vendas: boolean;
           value_cents: number | null;
           webhook_source_id: string | null;
           won_reason: string | null;
@@ -7386,6 +7388,8 @@ export type Database = {
           tags?: string[];
           title: string;
           updated_at?: string;
+          valor_digitado_cents?: number | null;
+          valor_pelas_vendas?: boolean;
           value_cents?: number | null;
           webhook_source_id?: string | null;
           won_reason?: string | null;
@@ -7423,6 +7427,8 @@ export type Database = {
           tags?: string[];
           title?: string;
           updated_at?: string;
+          valor_digitado_cents?: number | null;
+          valor_pelas_vendas?: boolean;
           value_cents?: number | null;
           webhook_source_id?: string | null;
           won_reason?: string | null;
@@ -14320,6 +14326,74 @@ export type Database = {
           user_id?: string;
         };
         Relationships: [];
+      };
+      vendas_registradas: {
+        Row: {
+          contact_id: string | null;
+          created_at: string;
+          created_by: string | null;
+          currency: string;
+          data: string;
+          id: string;
+          lead_id: string | null;
+          observacao: string | null;
+          organization_id: string;
+          tags: string[];
+          updated_at: string;
+          valor_cents: number;
+        };
+        ComputedFields: never;
+        Insert: {
+          contact_id?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          currency?: string;
+          data: string;
+          id?: string;
+          lead_id?: string | null;
+          observacao?: string | null;
+          organization_id: string;
+          tags?: string[];
+          updated_at?: string;
+          valor_cents: number;
+        };
+        Update: {
+          contact_id?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          currency?: string;
+          data?: string;
+          id?: string;
+          lead_id?: string | null;
+          observacao?: string | null;
+          organization_id?: string;
+          tags?: string[];
+          updated_at?: string;
+          valor_cents?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "vendas_registradas_lead_fk";
+            columns: ["lead_id"];
+            isOneToOne: false;
+            referencedRelation: "crm_leads";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "vendas_registradas_contact_fk";
+            columns: ["contact_id"];
+            isOneToOne: false;
+            referencedRelation: "contacts";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "vendas_registradas_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       voice_calls: {
         Row: {

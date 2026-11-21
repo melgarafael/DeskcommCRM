@@ -23120,6 +23120,30 @@ export const DICIONARIO: Traducoes = {
   "As vendas do período, por tag, cliente e funil, com o mesmo recorte dos cartões.": {
     es: "Las ventas del período, por etiqueta, cliente y embudo, con el mismo recorte de las tarjetas.",
   },
+  // Vendas registradas no negócio (valor, data e tags; várias por negócio).
+  "venda registrada": { es: "venta registrada" },
+  "card ganho": { es: "tarjeta ganada" },
+  "outra moeda": { es: "otra moneda" },
+  "Registrar venda": { es: "Registrar venta" },
+  "Venda registrada.": { es: "Venta registrada." },
+  "A venda entra no painel de vendas na hora, em qualquer etapa do card.": {
+    es: "La venta entra en el panel de ventas al instante, en cualquier etapa de la tarjeta.",
+  },
+  "Data da venda": { es: "Fecha de la venta" },
+  "Tags (separe por vírgula)": { es: "Etiquetas (separe con comas)" },
+  "atacado, recompra": { es: "mayorista, recompra" },
+  "Observação (opcional)": { es: "Observación (opcional)" },
+  "O que foi vendido": { es: "Qué se vendió" },
+  "Registrar": { es: "Registrar" },
+  "Não foi possível carregar as vendas.": { es: "No fue posible cargar las ventas." },
+  "Nenhuma venda registrada neste negócio.": { es: "Ninguna venta registrada en este negocio." },
+  "Nenhuma venda ainda. Use o + ao lado do Valor para registrar.": { es: "Ninguna venta todavía. Usa el + junto al Valor para registrar." },
+  "Soma de": { es: "Suma de" },
+  "venda(s) registrada(s)": { es: "venta(s) registrada(s)" },
+  "Apagar venda": { es: "Borrar venta" },
+  "Apagar esta venda? Ela sai do painel de vendas.": { es: "¿Borrar esta venta? Sale del panel de ventas." },
+  "venda(s)": { es: "venta(s)" },
+  "total": { es: "total" },
 };
 
 /**
