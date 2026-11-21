@@ -195,7 +195,12 @@ function PainelDoModulo({ estado, aoFechar }: { estado: Estado; aoFechar: () => 
   );
 }
 
-/** O botão do topo. Sem módulo, não existe. */
+/**
+ * O botão do topo. Sem módulo, não existe. Abaixo de `md` também não: no celular não há
+ * painel ao lado (o botão só levaria à rota, que o menu já leva), e o botão a mais
+ * espremia a busca até 0 px e punha o Buscar por cima do seletor de organização
+ * (medido na prova do #5089 em 320, 360, 375 e 390 px).
+ */
 export function BotaoDoPainelDoModulo() {
   const t = useT();
   const { modulos, slugAberto, abrir } = usePainelDoModulo();
@@ -208,6 +213,7 @@ export function BotaoDoPainelDoModulo() {
       <Button
         variant="ghost"
         size="sm"
+        className="hidden md:inline-flex"
         aria-label={`${rotulo}: ${unico.titulo}`}
         aria-pressed={slugAberto === unico.slug}
         onClick={() => abrir(unico.slug)}
@@ -219,7 +225,7 @@ export function BotaoDoPainelDoModulo() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" aria-label={rotulo}>
+        <Button variant="ghost" size="sm" className="hidden md:inline-flex" aria-label={rotulo}>
           <PuzzlePiece size={18} aria-hidden />
         </Button>
       </DropdownMenuTrigger>

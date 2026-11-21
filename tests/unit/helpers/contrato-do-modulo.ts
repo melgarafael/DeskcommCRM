@@ -208,14 +208,21 @@ export function derivarContrato(d: Dependencias): Contrato {
 }
 
 export interface Diferencas {
-  /** Mudanças que um módulo já escrito pode sentir: exigem subir `host_api`. */
+  /** Rota, área ou permissão que um módulo já escrito perde: exigem subir `host_api`. */
   quebras: string[];
+  /**
+   * Schema de corpo ou de resposta que mudou ou saiu de uma rota que continua existindo. Pelo texto não
+   * dá para separar campo opcional novo (aditivo) de campo obrigatório novo (incompatível): quem muda
+   * decide, regenera o instantâneo e diz no PR; só sobe `host_api` se a mudança for incompatível.
+   */
+  revisar: string[];
   /** Acréscimos: não quebram quem já existe, mas o instantâneo precisa ser regenerado. */
   acrescimos: string[];
 }
 
 export function compararContratos(antes: Contrato, agora: Contrato): Diferencas {
   const quebras: string[] = [];
+  const revisar: string[] = [];
   const acrescimos: string[] = [];
   const lista = (rotulo: string, a: readonly string[], b: readonly string[], ordenada: boolean) => {
     const q0 = quebras.length;
@@ -235,7 +242,7 @@ export function compararContratos(antes: Contrato, agora: Contrato): Diferencas 
     const a = antes.formatos[modelo];
     const b = agora.formatos[modelo];
     if (a && !b) {
-      quebras.push(`formato de ${modelo}: deixou de declarar schema`);
+      revisar.push(`formato de ${modelo}: deixou de declarar schema`);
       continue;
     }
     if (!a && b) {
@@ -245,14 +252,14 @@ export function compararContratos(antes: Contrato, agora: Contrato): Diferencas 
     if (!a || !b) continue;
     for (const c of a.corpo) {
       const novo = b.corpo.find((x) => x.nome === c.nome);
-      if (!novo) quebras.push(`formato de ${modelo}: o schema de corpo "${c.nome}" saiu`);
-      else if (novo.hash !== c.hash) quebras.push(`formato de ${modelo}: o schema de corpo "${c.nome}" mudou`);
+      if (!novo) revisar.push(`formato de ${modelo}: o schema de corpo "${c.nome}" saiu`);
+      else if (novo.hash !== c.hash) revisar.push(`formato de ${modelo}: o schema de corpo "${c.nome}" mudou`);
     }
     for (const c of b.corpo) {
       if (!a.corpo.some((x) => x.nome === c.nome)) acrescimos.push(`formato de ${modelo}: novo schema de corpo "${c.nome}"`);
     }
-    for (const r of a.resposta) if (!b.resposta.includes(r)) quebras.push(`formato de ${modelo}: o schema de resposta "${r}" saiu`);
+    for (const r of a.resposta) if (!b.resposta.includes(r)) revisar.push(`formato de ${modelo}: o schema de resposta "${r}" saiu`);
     for (const r of b.resposta) if (!a.resposta.includes(r)) acrescimos.push(`formato de ${modelo}: novo schema de resposta "${r}"`);
   }
-  return { quebras, acrescimos };
+  return { quebras, revisar, acrescimos };
 }

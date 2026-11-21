@@ -36,10 +36,13 @@ o CRM nunca depende de módulo conectado: ele não tem tabela no banco do CRM e 
   `tests/unit/__contrato__/modulo-contrato.json`: as 9 áreas, as 18 permissões, a lista ordenada
   `MÉTODO /api/v1/modelo` por área (derivada de `areaDaPorta` varrendo `app/api/v1/**/route.ts`) e os
   schemas Zod de corpo das rotas liberadas (nome, origem, hash do texto da definição).
-- A regra: quebra (rota, área ou schema que saiu ou mudou) sem `HOST_API_VERSION` maior que a do
+- A regra: quebra (rota, área ou permissão que saiu) sem `HOST_API_VERSION` maior que a do
   instantâneo reprova com a frase "suba HOST_API_VERSION (lib/extensions/manifest.ts) e regenere o
-  instantâneo"; acréscimo reprova pedindo só para regenerar. `UPDATE_CONTRATO=1` reescreve o instantâneo e se
-  recusa a gravar quebra sem subir a versão. Nenhum script novo no `package.json`.
+  instantâneo"; acréscimo reprova pedindo só para regenerar. Schema que mudou ou saiu de uma rota que
+  continua cai em "revisar": reprova pedindo para regenerar e, só se ficou incompatível, subir a versão
+  (o hash do texto não separa campo opcional novo de campo obrigatório novo, e subir suspende os módulos
+  de toda instalação). `UPDATE_CONTRATO=1` reescreve o instantâneo e se recusa a gravar quebra sem subir a
+  versão; acréscimo e "revisar" ele grava. Nenhum script novo no `package.json`.
 - A derivação mora em `tests/unit/helpers/contrato-do-modulo.ts` (sem importar o repositório; recebe as
   funções por parâmetro), para o teste e a regeneração usarem o mesmo código.
 
