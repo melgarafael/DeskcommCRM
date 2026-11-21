@@ -421,7 +421,7 @@ Resposta retorna `*_safe` view (sem campos cifrados).
 
 ```
 GET    /api/v1/ai/agents                         [manager+]
-POST   /api/v1/ai/agents                         [admin]   (kind='mcp_agent')
+POST   /api/v1/ai/agents                         [admin]
 GET    /api/v1/ai/agents/:id                     [manager+]
 PATCH  /api/v1/ai/agents/:id                     [admin]   (name, description, priority)
 DELETE /api/v1/ai/agents/:id                     [admin]   (soft delete: archived_at)
@@ -461,6 +461,13 @@ Resposta 201:
   }
 }
 ```
+
+**Agente de telefonia.** Envie `{"name": "Recepção", "channel": "voice"}` ao
+mesmo POST. `description` e `system_prompt` são opcionais. A resposta 201 traz
+`{ data: agente }` com `channel: "voice"` e `is_active: false`. A voz usa a
+configuração do cadastro, sem criar a versão acima. Configure e ative o agente
+no editor de voz ou pelo PATCH do agente antes de selecioná-lo em Conexões ›
+Telefone. O PATCH do cadastro mantém o canal definido na criação.
 
 ### 4.4 Versões
 
