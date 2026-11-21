@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Chat no site (canal webchat)",
+    "subtitle": "Parte 1 (Spec 36, F1): conexão pela organização, chave pública, token de visitante, entrada pela ingestão do canal, respostas pelo handler comum entregues por stream; módulo canal_webchat desligado de fábrica; a janela (F2) ainda não existe",
+    "output": "canal-do-chat-no-site.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "operador", "label": "Quem administra" },
+    { "id": "visitante", "label": "Visitante" },
+    { "id": "servidor", "label": "Servidor" },
+    { "id": "banco", "label": "Persistência" }
+  ],
+  "mainPath": ["admin", "conexao_rota", "sessao_banco", "chave_rota", "token", "visitante", "mensagens_rota", "ingest", "contato_banco", "posentrada", "resposta", "eventos_rota"],
+  "nodes": [
+    { "id": "admin", "lane": "operador", "col": 1, "type": "frontend", "label": "Quem administra chama a rota direto (a tela de Conexões é da F2)" },
+    { "id": "conexao_rota", "lane": "servidor", "col": 2, "type": "route", "label": "POST /api/v1/channels/webchat cria a conexão (uma por organização); PATCH muda domínios e janela; POST .../girar troca a chave" },
+    { "id": "modulo", "lane": "banco", "col": 3, "type": "database", "label": "platform_config MODULO_CANAL_WEBCHAT, desligado de fábrica; organization_modules pode desligar por empresa" },
+    { "id": "sessao_banco", "lane": "banco", "col": 3, "type": "database", "label": "channel_sessions provider webchat: webchat_public_key única entre ativas, webchat_allowed_origins com CHECK, uma ativa por organização" },
+    { "id": "chave_rota", "lane": "servidor", "col": 2, "type": "route", "label": "POST /api/v1/webchat/sessao: resolve a chave (conexaoPelaChave), limite 30 por minuto por IP e 10 por IP e chave" },
+    { "id": "token", "lane": "servidor", "col": 2, "type": "service", "label": "Token de visitante: HMAC-SHA256 com INTERNAL_SECRET e prefixo webchat-visitante:v1:, validade de 30 dias" },
+    { "id": "visitante", "lane": "visitante", "col": 1, "type": "external", "label": "Visitante: guarda o token e manda Authorization Bearer, nunca na URL" },
+    { "id": "mensagens_rota", "lane": "servidor", "col": 2, "type": "route", "label": "POST /api/v1/webchat/mensagens: conexão vem do id assinado no token (conexaoPeloId); corpo até 8.192 bytes, senão 413" },
+    { "id": "ingest", "lane": "servidor", "col": 2, "type": "service", "label": "ingerirMensagemDoChat: contato por social_identity, conversa do canal webchat, mensagem idempotente pelo 23505" },
+    { "id": "contato_banco", "lane": "banco", "col": 3, "type": "database", "label": "contacts.social_identity webchat:<sessão>:<visitante>; conversations channel webchat; messages wc:<sessão>:<visitante>:<mensagem>" },
+    { "id": "posentrada", "lane": "servidor", "col": 2, "type": "service", "label": "Pós-entrada comum (opt-out, lead, agente), o mesmo caminho dos outros canais" },
+    { "id": "resposta", "lane": "servidor", "col": 2, "type": "service", "label": "Handler de envio com o adaptador webchat: só texto, externalId wc:out:<uuid>, sem falar com terceiro" },
+    { "id": "eventos_rota", "lane": "servidor", "col": 2, "type": "route", "label": "GET /api/v1/webchat/eventos: stream text/event-stream, lê o estado sent a cada 2 s, marca delivered; sem cursor, abre 6 vezes por minuto por visitante" },
+    { "id": "anonimizar", "lane": "operador", "col": 1, "type": "frontend", "label": "Anonimizar o contato (pedido LGPD ou botão da ficha)" },
+    { "id": "redact", "lane": "banco", "col": 3, "type": "database", "label": "trg_redigir_conversas_ao_anonimizar: ao virar is_anonymized, zera contacts.social_identity e redige as mensagens" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "admin", "to": "conexao_rota", "label": "cria, muda domínios, gira a chave" },
+    { "id": "e2", "from": "conexao_rota", "to": "sessao_banco", "label": "grava; auditoria channel.webchat_*" },
+    { "id": "e3", "from": "conexao_rota", "to": "modulo", "label": "só com o módulo ligado" },
+    { "id": "e4", "from": "visitante", "to": "chave_rota", "label": "chave pública wck_" },
+    { "id": "e5", "from": "chave_rota", "to": "sessao_banco", "label": "conexão ativa, organização operante" },
+    { "id": "e6", "from": "chave_rota", "to": "modulo", "label": "moduloLigado com a organização" },
+    { "id": "e7", "from": "chave_rota", "to": "token", "label": "assina o token" },
+    { "id": "e8", "from": "token", "to": "visitante", "label": "devolve o token" },
+    { "id": "e9", "from": "visitante", "to": "mensagens_rota", "label": "mensagem com o token" },
+    { "id": "e10", "from": "mensagens_rota", "to": "sessao_banco", "label": "confere a conexão do token" },
+    { "id": "e11", "from": "mensagens_rota", "to": "ingest", "label": "conexão e visitante vêm do token, nunca do corpo" },
+    { "id": "e12", "from": "ingest", "to": "contato_banco", "label": "idempotente por external_id da organização" },
+    { "id": "e13", "from": "ingest", "to": "posentrada", "label": "efeitos da mensagem que entrou" },
+    { "id": "e14", "from": "posentrada", "to": "resposta", "label": "agente ou equipe responde" },
+    { "id": "e15", "from": "resposta", "to": "contato_banco", "label": "a mensagem de saída fica sent" },
+    { "id": "e16", "from": "eventos_rota", "to": "contato_banco", "label": "lê as saídas sent da conversa do token e marca delivered" },
+    { "id": "e17", "from": "visitante", "to": "eventos_rota", "label": "abre o stream com o token" },
+    { "id": "e18", "from": "eventos_rota", "to": "visitante", "label": "event: mensagem a cada resposta" },
+    { "id": "e19", "from": "eventos_rota", "to": "modulo", "label": "moduloLigado com a organização" },
+    { "id": "e20", "from": "anonimizar", "to": "redact", "label": "is_anonymized = true" },
+    { "id": "e21", "from": "redact", "to": "contato_banco", "label": "social_identity = null, mensagens redigidas" }
+  ]
+}

@@ -3,7 +3,7 @@ title: "Spec Técnica 36 — Chat no site: o visitante conversa pela página, e 
 parent: 00-prd-master.md
 type: spec
 scope: canais (seam), ingestão pública, Inbox, agente, LGPD
-status: draft
+status: parte 1 implementada
 version: 0.2.0
 owner: arquitetura
 created_at: 2026-11-20
@@ -15,8 +15,11 @@ related:
 
 # Spec 36 — Chat no site
 
-Status: **PROPOSTA**. Esta spec detalha a issue #1333 (19/09/2026) e responde às seis perguntas
-dela com uma decisão cada. O mantenedor pode trocar qualquer uma na revisão.
+Status: **parte 1 implementada** (F1, Tasks 1 a 10): o canal, as rotas, o token de visitante, a
+ingestão, a entrega das respostas por stream, o isolamento entre organizações em banco real e o
+mapa. Desligado de fábrica e sem tela. As F2 a F5 seguem propostas. Esta spec detalha a issue #1333
+(19/09/2026) e responde às seis perguntas dela com uma decisão cada. O mantenedor pode trocar
+qualquer uma na revisão.
 
 O código citado é o da `main` em `478d6700a4` (20/11/2026, release 1.121.0). Conferido de novo em
 `55a41601d9` (20/11/2026): nenhum dos arquivos citados mudou. A #1333 foi escrita sobre
@@ -94,7 +97,7 @@ O código citado é o da `main` em `478d6700a4` (20/11/2026, release 1.121.0). C
    numa conexão, pela lista de domínios. Mais de uma conexão fica para quando um pedido for medido,
    por exemplo um agente diferente por site.
 3. **Stream próprio da instalação para o visitante?** Sim, sem serviço novo: uma rota que lê o
-   banco por cursor e entrega em `text/event-stream`. O Realtime do Supabase não serve aqui: ele
+   banco pelo estado das mensagens (`sent`) e entrega em `text/event-stream`, sem cursor. O Realtime do Supabase não serve aqui: ele
    herda a RLS, e o visitante não tem sessão.
 4. **Onde ficam as configurações?** O que decide a segurança vai em colunas com CHECK: a chave
    pública e a lista de domínios. A aparência, os textos e a coleta vão em
@@ -183,7 +186,7 @@ reprova sem o `webchat`.
 - `lib/channels/adapters/webchat.ts`:
   - `send()`: recusa o que não é texto, com o código do adaptador, como o do Telegram. Para texto,
     não fala com nenhum terceiro: o handler já gravou a mensagem, e o adaptador devolve um
-    `externalId` próprio, `wc:<channel_session_id>:out:<uuid>`.
+    `externalId` próprio, `wc:out:<uuid>` (o UUID é gerado pelo adaptador).
   - `resolveRecipient`: devolve o marcador `"provider-chat"`, como o Telegram. O endereço é
     `conversations.provider_conversation_id`, que guarda o `visitante_id`.
   - `isConfigured()`: devolve `true`, como o Telegram. Módulo e conexão são conferidos nas rotas
@@ -221,9 +224,8 @@ prova chama a rota direto.
 **O token de visitante.**
 
 - Formato: `base64url(JSON {v:1, cs:<channel_session_id>, vis:<visitante_id>, iat, exp})` + `.` +
-  HMAC-SHA256 em base64url. A chave é derivada de `INTERNAL_SECRET` com o prefixo
-  `deskcomm:webchat-visitante:v1`, como `lib/cadencias/token.ts` faz. Não há variável de ambiente
-  nova.
+  HMAC-SHA256 em base64url. A chave é derivada de `INTERNAL_SECRET` com o prefixo de domínio
+  `webchat-visitante:v1:`, como `lib/cadencias/token.ts` faz. Não há variável de ambiente nova.
 - Validade de 30 dias. Quando faltar menos de 7, a rota de mensagens devolve um token novo junto da
   resposta, com o mesmo `visitante_id`.
 - Trocar o `INTERNAL_SECRET` invalida todos os tokens: o visitante começa outra conversa. Custo
@@ -235,23 +237,29 @@ prova chama a rota direto.
   URL. Por isso a janela lê os eventos com `fetch` e um stream, e não com `EventSource`, que não
   manda cabeçalho.
 - A conversa e a conexão saem **do token**, nunca do pedido. A rota confere que a conexão do token
-  é a da chave e está ativa.
+  está ativa e que o módulo segue ligado.
+- **Girar a chave não corta token já emitido.** `POST .../girar` troca só `webchat_public_key`: a
+  chave antiga para de valer em `sessao` (404) no mesmo UPDATE, mas o token segue valendo, porque
+  as rotas de mensagens e de eventos resolvem a conexão pelo id assinado no token. Para cortar tokens,
+  arquivar a conexão ou desligar o módulo.
 
 **Rotas públicas.** Entram em `lib/auth/public-paths.ts`, ancoradas nos dois lados, com os casos em
 `lib/auth/public-paths.test.ts`. Todo corpo passa por Zod.
 
 | Rota | O que faz | Limites (balde por `ipDoCliente` e por visitante) |
 |---|---|---|
-| `POST /api/v1/webchat/sessao` | recebe a chave; devolve o token de visitante (novo ou o mesmo, se vier um válido) e a configuração pública: textos, cores e o aviso de LGPD | 10 por minuto por IP e chave |
-| `POST /api/v1/webchat/mensagens` | recebe o token, o UUID da mensagem e o texto (até 2.000 caracteres); grava e responde 201 sem esperar a IA | 20 por minuto por visitante; 600 por minuto por conexão |
-| `GET /api/v1/webchat/eventos?depois=<cursor>` | stream `text/event-stream` com as mensagens de saída depois do cursor | 6 aberturas por minuto por visitante; fecha em 60 s, e a janela reabre |
+| `POST /api/v1/webchat/sessao` | recebe a chave; devolve o token de visitante (novo ou o mesmo, se vier um válido) e a configuração pública: textos, cores e o aviso de LGPD | 30 por minuto por IP, em qualquer chave; 10 por minuto por IP e chave; corpo até 8.192 bytes (413) |
+| `POST /api/v1/webchat/mensagens` | recebe o token, o UUID da mensagem e o texto (até 2.000 caracteres); grava e responde 201 sem esperar a IA | 20 por minuto por visitante; 600 por minuto por conexão; corpo até 8.192 bytes (413) |
+| `GET /api/v1/webchat/eventos` | stream `text/event-stream` com as respostas ainda não entregues (`status = 'sent'`) | 6 aberturas por minuto por visitante; fecha em 60 s, e a janela reabre |
 
 - **O que a rota de eventos entrega:** só mensagens da conversa do token, com `direction =
-  'outbound'`, `type = 'text'` e estado diferente de `failed` e `queued`. Nunca `system`, nunca nota
-  interna. O cursor é opaco: `created_at` e `id` da última mensagem entregue, assinados.
+  'outbound'`, `type = 'text'` e `status = 'sent'`, em ordem de `created_at` e `id`. Nunca `system`,
+  nunca nota interna. Depois de escrever cada resposta no stream, a rota a marca `delivered`, e só
+  onde ela ainda está `sent`. `sending`, `queued` e `failed` ficam como estão: são do worker de envio.
+  Não há cursor. Uma resposta que chega `sent` atrasada, depois de outra mais nova, sai na leitura
+  seguinte.
 - A rota de eventos lê o banco a cada 2 segundos enquanto está aberta, filtrando `organization_id` e
-  `conversation_id` à mão, porque usa o cliente admin. Cada leitura entregue marca a mensagem como
-  entregue. **A medir:** a carga é de 30 leituras por minuto por visitante com a janela aberta. Se
+  `conversation_id` à mão, porque usa o cliente admin. **A medir:** a carga é de 30 leituras por minuto por visitante com a janela aberta. Se
   pesar, a troca é por `LISTEN/NOTIFY`, numa fatia própria. Sem `UPSTASH_*`, o limite fica em memória
   por processo, como em todo o produto, e isso fica escrito.
 - Chave que não existe, conexão arquivada, conexão de organização suspensa e módulo desligado
@@ -265,10 +273,15 @@ prova chama a rota direto.
   só cresce e vive 5 anos. Recusas vão ao registro estruturado e a um contador do dia em
   `channel_sessions.metadata.webchat.recusas`, que a tela da F2 mostra.
 - **O que não é gravado:** IP do visitante. O `visitante_id` mora só na `social_identity` do contato
-  e no `provider_conversation_id` da conversa. Anonimizar o contato limpa a `social_identity`, e o
-  visitante que voltar com o mesmo token começa um contato novo. **Para o implementador:** conferir
-  que o redact de hoje limpa a `social_identity`; se não limpa, entra nesta fatia, porque vale para
-  o Telegram também.
+  e no `provider_conversation_id` da conversa.
+- **Resultado da anonimização (medido):** anonimizar o contato limpa a `social_identity`. O gatilho
+  `trg_redigir_conversas_ao_anonimizar` (migração 0494, última definição no baseline) zera
+  `contacts.social_identity` quando `is_anonymized` vira verdadeiro, na mesma transação. Nenhuma
+  função precisou de conserto. O invariante `tests/invariants/webchat-nao-alcanca-outro-tenant.test.ts`
+  prova a limpeza e que o contato de outra organização fica intacto. O visitante que voltar com o
+  mesmo token começa um contato novo.
+- **Pendência conhecida (ver abaixo):** a rota de eventos lê a conversa mais antiga do visitante. Com
+  o contato anonimizado, a volta cria uma conversa nova, e as respostas dela não saem no stream.
 
 **Testes que entram na F1** (os que hoje reprovam um provider novo, mais os novos):
 
@@ -277,9 +290,10 @@ prova chama a rota direto.
   `tests/invariants/channel-provider-schema.test.ts`,
   `tests/invariants/canal-da-conversa-banco-x-catalogo.test.ts` e
   `lib/ai/elegibilidade/testador-social.test.ts:60`;
-- o isolamento entre organizações num **invariante com Postgres real** (`tests/invariants/`,
-  `pnpm test:db`), e não só no dublê: chave de A não grava em B; token de A não lê eventos de B;
-  token de um visitante não lê a conversa de outro da mesma organização;
+- o isolamento entre organizações num **invariante com Postgres real**
+  (`tests/invariants/webchat-nao-alcanca-outro-tenant.test.ts`, `pnpm test:db`), e não só no dublê:
+  chave de A não grava em B; a leitura das respostas de A não traz nada de B; dois visitantes de uma
+  mesma organização não leem a conversa um do outro; anonimizar limpa a `social_identity`;
 - os casos das rotas, em `tests/unit/`, listados em [Como provar](#como-provar).
 
 **Definição de pronto da F1:** fragmento em `.changes/` (`capacidade_nova`), textos novos em
@@ -337,6 +351,14 @@ prova chama a rota direto.
 - A Inbox filtra por canal e mostra o selo "Chat no site", e o relatório por canal ganha a linha do
   canal novo.
 
+## Pendências da parte 1
+
+- **Volta depois de anonimizar.** `conversaDoVisitante` (`lib/channels/webchat/eventos.ts`) devolve a
+  conversa mais antiga do visitante nesta conexão. Depois de anonimizar o contato, a volta com o mesmo
+  token cria uma conversa nova (`fn_upsert_wa_conversation` é por contato), e a rota de eventos
+  continua lendo a antiga: as respostas da conversa nova não saem. Conserto provável: ler a conversa
+  do visitante pelo contato vivo, ou a mais recente. Não corrigido na parte 1.
+
 ## Fora desta spec (de propósito)
 
 - **Anti-robô de serviço externo** (Turnstile e parecidos): ele manda dado do visitante para fora.
@@ -353,7 +375,7 @@ Cada prova tem uma sabotagem: tirar a regra e ver o teste ficar vermelho.
 
 | O que precisa ser verdade | Prova | Sabotagem |
 |---|---|---|
-| A chave da organização A nunca grava nem lê na B | invariante com Postgres real, duas organizações | tirar o filtro de `organization_id` da rota de eventos |
+| A chave da organização A nunca grava nem lê na B | invariante com Postgres real, duas organizações (`tests/invariants/webchat-nao-alcanca-outro-tenant.test.ts`) | tirar o filtro de `organization_id` em `lerSaidasNovas` (`lib/channels/webchat/eventos.ts`) |
 | O token de um visitante não lê a conversa de outro | invariante, dois visitantes da mesma organização | resolver a conversa por parâmetro do pedido, e não pelo token |
 | Token adulterado ou de outra conexão é recusado | caso direto | aceitar o token sem conferir a assinatura ou a conexão |
 | Site fora da lista não consegue mostrar a janela | `frame-ancestors` da resposta de `/chat/<chave>` só lista os domínios cadastrados | montar o cabeçalho com `*` |
@@ -392,8 +414,8 @@ ausentes:
 8. **Continuidade IA↔humano:** a mesma de qualquer canal.
 9. **Laço de retorno:** a recusa por origem e o teto do anônimo aparecem na tela da conexão, e a
    pessoa ajusta a lista ou o teto.
-10. **Mapa:** `docs/architecture/canal-do-chat-no-site.architecture.json`, novo, ao lado de
-    `canal-do-robo.architecture.json`.
+10. **Mapa:** `docs/architecture/canal-do-chat-no-site.architecture.json`, feito na parte 1, ao lado de
+    `canal-do-robo.architecture.json`. A janela e a tela da conexão entram no mapa quando existirem.
 
 ## Destino
 
@@ -413,7 +435,7 @@ script, colado à mão.
    cookie de terceiro dentro de iframe. Perder o armazenamento só começa outra conversa.
 2. **A chave e os domínios vão em coluna; a aparência vai em `metadata.webchat`, com schema
    central.** O que decide a segurança não mora em jsonb.
-3. **A rota de eventos lê o banco por cursor**, sem serviço novo. A troca por `LISTEN/NOTIFY` fica
+3. **A rota de eventos lê o banco pelo estado da mensagem (`sent`), sem cursor e sem serviço novo.** A troca por `LISTEN/NOTIFY` fica
    para quando a carga for medida. O token vai em cabeçalho, então a janela lê com `fetch`, e não
    com `EventSource`.
 4. **Só texto, da F1 à F5.**
