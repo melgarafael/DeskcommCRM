@@ -16,6 +16,8 @@ import {
   agendarRetomadaAoDevolver,
   decidirRetomadaAoDevolver,
   lerRetomarAoDevolver,
+  opcaoDoAgenteDaConversa,
+  type AgenteComVersao,
   type FatosDaRetomada,
   type RetomadaAoDevolverDb,
 } from "./retomada-ao-devolver";
@@ -179,5 +181,55 @@ describe("agendarRetomadaAoDevolver", () => {
   it("o mesmo evento entregue de novo vira `ja_enfileirado`, não um segundo turno", async () => {
     const { db } = dbFalso({ jaEnfileirado: true });
     expect(await agendarRetomadaAoDevolver(db, entrada)).toEqual({ kind: "ja_enfileirado" });
+  });
+});
+
+describe("opcaoDoAgenteDaConversa: vale a opção de QUEM atenderia, nunca a do vizinho", () => {
+  // Revisão do PR #5105: com `.some()` sobre todos os publicados no número, a
+  // opção de um agente pausado ou de menor prioridade acordava o turno do outro.
+  function agente(id: string, p: { prioridade?: number; pausado?: boolean; liga?: boolean; assistido?: boolean; sessao?: string | null; nasceu?: string }): AgenteComVersao {
+    return {
+      id,
+      channel: "whatsapp",
+      kind: "agent",
+      is_active: true,
+      paused_at: p.pausado ? "2026-11-20T10:00:00Z" : null,
+      operation_mode: p.assistido ? "assisted" : "autonomous",
+      published_version_id: `versao-${id}`,
+      archived_at: null,
+      priority: p.prioridade ?? 0,
+      created_at: p.nasceu ?? "2026-01-01T00:00:00Z",
+      versao: {
+        status: "published",
+        channel_session_id: p.sessao === undefined ? SESSAO : p.sessao,
+        trigger_config: { resume_on_handback: p.liga === true },
+      },
+    };
+  }
+  const semGrude = { channelSessionId: SESSAO, activeAgentId: null };
+
+  it("dois agentes no número: vale a opção do de MAIOR prioridade, não a do outro", () => {
+    const atende = agente("a", { prioridade: 10, liga: false });
+    const vizinho = agente("b", { prioridade: 1, liga: true });
+    expect(opcaoDoAgenteDaConversa([vizinho, atende], semGrude)).toBe(false);
+    // Controle: a opção do que ATENDE liga a retomada.
+    expect(opcaoDoAgenteDaConversa([agente("b", { prioridade: 1 }), agente("a", { prioridade: 10, liga: true })], semGrude)).toBe(true);
+  });
+
+  it("agente PAUSADO com a opção ligada não acorda o turno do que está no ar", () => {
+    const pausado = agente("p", { prioridade: 99, pausado: true, liga: true });
+    const noAr = agente("n", { prioridade: 1, liga: false });
+    expect(opcaoDoAgenteDaConversa([pausado, noAr], semGrude)).toBe(false);
+  });
+
+  it("o agente grudado na conversa decide, mesmo com outro de prioridade maior no número", () => {
+    const grudado = agente("g", { prioridade: 1, liga: true, sessao: null });
+    const maior = agente("m", { prioridade: 50, liga: false });
+    expect(opcaoDoAgenteDaConversa([maior, grudado], { channelSessionId: SESSAO, activeAgentId: "g" })).toBe(true);
+  });
+
+  it("quem atende no modo assistido não retoma sozinho; sem agente, ninguém", () => {
+    expect(opcaoDoAgenteDaConversa([agente("s", { liga: true, assistido: true })], semGrude)).toBeNull();
+    expect(opcaoDoAgenteDaConversa([agente("x", { liga: true, sessao: "outro-numero" }), agente("y", { liga: true, sessao: "outro-numero" })], semGrude)).toBeNull();
   });
 });

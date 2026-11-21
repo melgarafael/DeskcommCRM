@@ -41,6 +41,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
 import { readServiceBoundarySupabase } from "@/lib/atendimento/origem";
 
+import { resolverAgenteDaConversa, type CandidatoDeAgente } from "@/lib/ai/agents/agente-da-conversa";
+
 import { ultimaFalaEDaEquipe, type MensagemParaRegua } from "./fala-da-equipe";
 
 export type UltimaMensagem = MensagemParaRegua;
@@ -234,36 +236,19 @@ export function createSupabaseRetomadaAoDevolverDb(admin: SupabaseClient): Retom
     },
 
     async opcaoDoAgente(orgId, channelSessionId, activeAgentId) {
-      // O agente que está com a conversa (roteador incluso) decide; sem ele, o
-      // agente publicado direto no número.
-      let query = admin
+      const { data, error } = await admin
         .from("ai_agents")
         .select(
-          "id, operation_mode, versao:ai_agent_versions!ai_agents_published_version_id_fkey(status, channel_session_id, trigger_config)",
+          "id, channel, kind, is_active, paused_at, operation_mode, published_version_id, archived_at, priority, created_at, " +
+            "versao:ai_agent_versions!ai_agents_published_version_id_fkey(status, channel_session_id, trigger_config)",
         )
         .eq("organization_id", orgId)
-        .is("archived_at", null)
-        .not("published_version_id", "is", null);
-      if (activeAgentId !== null) query = query.eq("id", activeAgentId);
-      const { data, error } = await query;
+        .is("archived_at", null);
       if (error) throw new Error(error.message);
-      type Versao = { status: string; channel_session_id: string | null; trigger_config: unknown };
-      const linhas = (data ?? []) as Array<{ operation_mode: string | null; versao: Versao | Versao[] | null }>;
-      const versoes = linhas
-        // Modo assistido rascunha para a equipe aprovar — não fala sozinho com o
-        // cliente, então não "retoma" nada.
-        .filter((a) => a.operation_mode !== "assisted")
-        .map((a) => (Array.isArray(a.versao) ? a.versao[0] : a.versao))
-        .filter(
-          (v): v is Versao =>
-            !!v &&
-            v.status === "published" &&
-            // Com agente ativo, ele vale mesmo sem número próprio (especialista
-            // de roteador). Sem agente ativo, só o publicado neste número.
-            (activeAgentId !== null || v.channel_session_id === channelSessionId),
-        );
-      if (versoes.length === 0) return null;
-      return versoes.some((v) => lerRetomarAoDevolver(v.trigger_config));
+      return opcaoDoAgenteDaConversa((data ?? []) as unknown as AgenteComVersao[], {
+        channelSessionId,
+        activeAgentId,
+      });
     },
 
     async ultimaMensagem(orgId, conversationId) {
@@ -322,4 +307,53 @@ export function createSupabaseRetomadaAoDevolverDb(admin: SupabaseClient): Retom
 export function lerRetomarAoDevolver(triggerConfig: unknown): boolean {
   if (typeof triggerConfig !== "object" || triggerConfig === null) return false;
   return (triggerConfig as { resume_on_handback?: unknown }).resume_on_handback === true;
+}
+
+interface VersaoDoAgente {
+  status: string;
+  channel_session_id: string | null;
+  trigger_config: unknown;
+}
+
+/** Uma linha de `ai_agents` com a versão publicada embutida (PostgREST pode devolver array). */
+export interface AgenteComVersao extends CandidatoDeAgente {
+  versao: VersaoDoAgente | VersaoDoAgente[] | null;
+}
+
+/**
+ * A opção de QUEM atenderia esta conversa — nunca a de um vizinho.
+ *
+ * Antes isto olhava todos os agentes publicados no número com `.some()`: com
+ * dois agentes no mesmo número, a opção ligada num agente PAUSADO ou de menor
+ * prioridade acordava a retomada do outro (apontado na revisão do PR #5105).
+ * Agora a pergunta "quem atende?" é respondida por `resolverAgenteDaConversa`
+ * (`lib/ai/agents/agente-da-conversa.ts`) — a régua que já existe, na ordem do
+ * motor: o agente grudado na conversa; senão o publicado no número por
+ * `priority desc, created_at asc`, pausado fora. Uma quarta régua seria o
+ * defeito que aquele arquivo documenta.
+ *
+ * `null` = ninguém atenderia (ou quem atende rascunha para a equipe no modo
+ * assistido, e por isso não "retoma" nada sozinho).
+ */
+export function opcaoDoAgenteDaConversa(
+  agentes: readonly AgenteComVersao[],
+  conversa: { channelSessionId: string; activeAgentId: string | null },
+): boolean | null {
+  const versaoDe = (a: AgenteComVersao): VersaoDoAgente | null =>
+    (Array.isArray(a.versao) ? a.versao[0] : a.versao) ?? null;
+  const versoesPublicadasNaSessao = agentes
+    .filter((a) => {
+      const v = versaoDe(a);
+      return v !== null && v.status === "published" && v.channel_session_id === conversa.channelSessionId;
+    })
+    .map((a) => a.published_version_id)
+    .filter((id): id is string => typeof id === "string");
+  const { agente } = resolverAgenteDaConversa(agentes, {
+    active_ai_agent_id: conversa.activeAgentId,
+    versoesPublicadasNaSessao,
+  });
+  if (agente === null || agente.operation_mode === "assisted") return null;
+  const versao = versaoDe(agente);
+  if (versao === null || versao.status !== "published") return null;
+  return lerRetomarAoDevolver(versao.trigger_config);
 }
