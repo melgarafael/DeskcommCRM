@@ -39,11 +39,26 @@ import {
   newerOfficialRelease,
   supportsForcedUpdate,
 } from "@/lib/system/runtime-identity";
-import { ehVersaoPublicada, isRunStale } from "@/lib/system/update-run";
+import { ehVersaoPublicada, isRunStale, runAbandonado } from "@/lib/system/update-run";
+import { normalizarJanela } from "@/lib/system/janela-de-manutencao";
 
 export const dynamic = "force-dynamic";
 
 const RUN_IN_PROGRESS_MESSAGE = "Já existe uma atualização em andamento.";
+
+/**
+ * A resposta ao segundo clique quando o pedido está ESPERANDO A JANELA (#4334).
+ *
+ * Antes esta requisição fechava o run como "Run abandonado: o agente do host
+ * não reportou o desfecho a tempo (agente parado ou travado)" — e o agendamento
+ * morria em silêncio, com a tela culpando o servidor por um atraso que era o
+ * desenho. A frase agora diz o que está acontecendo e o que NÃO aconteceu: o
+ * pedido continua de pé. Ela nomeia a janela porque é ela que explica a espera,
+ * e é a mesma linha do `.env` que o operador pode ajustar.
+ */
+const mensagemAguardandoJanela = (janela: string) =>
+  `A atualização está agendada para a janela de manutenção (${janela}). O pedido continua de pé e é executado quando a janela abrir — aguardar não o cancela.`;
+
 const SEM_FALHA_PARA_DESFAZER = "Não há nenhuma atualização com falha para desfazer agora.";
 const SEM_FALHA_PARA_FORCAR = "Não há nenhuma atualização com falha para forçar agora.";
 
@@ -264,20 +279,44 @@ export async function POST(req: NextRequest): Promise<Response> {
     .limit(1)
     .maybeSingle();
 
+  // A janela de manutenção, lida UMA vez por requisição: a mesma leitura decide
+  // se o run pode ser fechado e o que a recusa diz (#4334). Ausente, vazia ou
+  // recusada → `null` → o comportamento de sempre.
+  const janela = normalizarJanela(process.env.SYSTEM_UPDATE_WINDOW);
+
   if (running) {
     if (!isRunStale(running.dispatched_at, new Date())) {
       return fail("state_conflict", RUN_IN_PROGRESS_MESSAGE, 409);
     }
-    // Run "dispatched" vencido (>15min, RUN_STALE_AFTER_MS): o agente do host
-    // morreu no meio (crash, VPS reiniciada, bug) sem nunca reportar o
-    // desfecho. Sem isto, o índice único parcial (migration 0090) + o 409
-    // acima travariam QUALQUER novo pedido pra sempre — o botão morreria em
-    // silêncio até alguém abrir o banco à mão. Fechamos como `failed` (não é
-    // o agente reportando via run_result; é o PRÓPRIO app declarando
-    // inconclusivo) e seguimos com o pedido novo. `.eq("status","dispatched")`
-    // faz a escrita só valer se ainda estiver "dispatched" nesse instante —
-    // se o agente reportar o desfecho real bem nesse meio-tempo, esta escrita
-    // não pega nada e o run real prevalece.
+    // ── A SEGUNDA PORTA DO RUN (#4334) ──────────────────────────────────────
+    //
+    // O bloco abaixo fechava TODO run com mais de 15 min como "agente parado ou
+    // travado". Com a janela de manutenção ligada (o #4350), o clique fora da
+    // janela fica `dispatched` DE PROPÓSITO até ela abrir — e o segundo clique
+    // das 10h15 cancelava o agendamento da madrugada em silêncio, culpando um
+    // agente que ainda nem tinha tido a hora.
+    //
+    // `runAbandonado` é o relógio certo: ele só considera o tempo em que a
+    // janela já esteve aberta desde a despacho. Sem janela configurada ele é
+    // `isRunStale`, byte a byte — a única mudança de comportamento é para quem
+    // configurou a janela.
+    if (!runAbandonado(running.dispatched_at, new Date(), janela)) {
+      logger.info("[system/update] run aguardando a janela de manutenção", {
+        runId: running.id,
+        dispatched_at: running.dispatched_at,
+        janela,
+      });
+      return fail("state_conflict", mensagemAguardandoJanela(janela ?? ""), 409);
+    }
+    // Run "dispatched" vencido: a janela já abriu (ou não há janela) e o agente
+    // do host não reportou o desfecho. Sem isto, o índice único parcial
+    // (migration 0090) + o 409 acima travariam QUALQUER novo pedido pra sempre
+    // — o botão morreria em silêncio até alguém abrir o banco à mão. Fechamos
+    // como `failed` (não é o agente reportando via run_result; é o PRÓPRIO app
+    // declarando inconclusivo) e seguimos com o pedido novo.
+    // `.eq("status","dispatched")` faz a escrita só valer se ainda estiver
+    // "dispatched" nesse instante — se o agente reportar o desfecho real bem
+    // nesse meio-tempo, esta escrita não pega nada e o run real prevalece.
     const { error: staleError } = await db
       .from("system_update_runs")
       .update({
