@@ -13,9 +13,12 @@ const FONTE_GLOBAL = "/((?!chat/).*)";
 const FONTE_DO_CHAT = "/chat/:path*";
 
 /**
- * Aproximação do casamento de `source` do Next (path-to-regexp) só para as duas formas usadas
- * aqui: o grupo sem nome com lookahead e `:path*` no fim. Não é o motor do Next; é a régua
- * mínima para provar que a FONTE escrita casa, ou não, cada caminho.
+ * Tradução MANUAL, só para as duas fontes usadas neste arquivo (o grupo sem nome com lookahead
+ * e `:path*` no fim), feita à mão a partir do `source` escrito em `next.config.ts`.
+ *
+ * ATENÇÃO: isto NÃO prova o roteamento do Next. Quem prova se a fonte casa de verdade é o
+ * build do CI, que lê a configuração pelo motor do Next. Este teste só confere a intenção
+ * escrita na configuração, e pode divergir do motor sem avisar.
  */
 function casa(source: string, caminho: string): boolean {
   const regex =
@@ -61,9 +64,9 @@ describe("cabeçalhos do painel não atravessam para a janela do chat", () => {
     expect(janela.get("permissions-policy")).toBeDefined();
   });
 
-  it("o prefixo /chat sem chave também fica fora do DENY", async () => {
-    const janela = await cabecalhosDe("/chat");
-    expect(janela.has("x-frame-options")).toBe(false);
+  it("/chat sem barra continua com o DENY global (não é rota; o source não exclui sem a barra)", async () => {
+    const semBarra = await cabecalhosDe("/chat");
+    expect(semBarra.get("x-frame-options")).toBe("DENY");
   });
 
   it("uma rota que só começa com 'chat' (sem a barra) continua recebendo o cabeçalho global", async () => {

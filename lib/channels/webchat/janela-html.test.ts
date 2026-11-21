@@ -81,6 +81,53 @@ describe("montarJanela: política de conteúdo", () => {
   });
 });
 
+/** Luminância relativa WCAG de um hex #rrggbb. Só para o teste medir o lado do texto. */
+function luminancia(hex: string): number {
+  const canal = (i: number): number => {
+    const c = parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * canal(0) + 0.7152 * canal(1) + 0.0722 * canal(2);
+}
+
+function corDoTexto(html: string): string {
+  const casou = /--cor-texto: (#[0-9a-fA-F]{6})/.exec(html);
+  expect(casou).not.toBeNull();
+  return casou![1]!;
+}
+
+describe("montarJanela: cor da configuração", () => {
+  it("a cor da configuração sobrepõe a da marca", () => {
+    const { html } = janela({ config: { cor: "#0b3d91" } });
+    expect(html).toContain("--cor: #0b3d91");
+    expect(html).not.toContain("--cor: #506d48");
+  });
+
+  it("sem cor na configuração, vale a cor da marca", () => {
+    const { html } = janela({ config: {} });
+    expect(html).toContain("--cor: #506d48");
+    expect(html).toContain("--cor-texto: #ffffff");
+  });
+
+  it.each(["red", "#12", "#gggggg", "rgb(0,0,0)"])("cor inválida (%j) é ignorada e usa a marca", (cor) => {
+    const { html } = janela({ config: { cor } as never });
+    expect(html).toContain("--cor: #506d48");
+    expect(html).toContain("--cor-texto: #ffffff");
+  });
+
+  it("cor clara da configuração dá texto escuro", () => {
+    const { html } = janela({ config: { cor: "#ffeb3b" } });
+    expect(html).toContain("--cor: #ffeb3b");
+    expect(luminancia(corDoTexto(html))).toBeLessThan(0.1);
+  });
+
+  it("cor escura da configuração dá texto claro", () => {
+    const { html } = janela({ config: { cor: "#0b3d91" } });
+    expect(html).toContain("--cor: #0b3d91");
+    expect(luminancia(corDoTexto(html))).toBeGreaterThan(0.8);
+  });
+});
+
 describe("montarJanela: HTML", () => {
   it("título com <script> sai escapado, e a tag crua não aparece", () => {
     const { html } = janela({ config: { titulo: "<script>alert(1)</script>" } });

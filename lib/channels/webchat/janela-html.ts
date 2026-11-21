@@ -13,6 +13,7 @@
  * `<script type="application/json">`, com `<`, `>` e `&` escapados, para que nenhum valor
  * feche a tag.
  */
+import { melhorFrenteSobre } from "@/lib/branding/contraste";
 import type { MarcaDeSaida } from "@/lib/branding/saida";
 
 import { TEXTO_DO_AVISO_VERSAO, type ConfiguracaoDoChat } from "./config";
@@ -117,8 +118,17 @@ export function montarJanela(entrada: EntradaDaJanela): JanelaMontada {
   const origens = origensValidas(entrada.origens);
 
   const titulo = config.titulo ?? marca.nome;
-  const cor = HEX.test(marca.accent) ? marca.accent : "#000000";
-  const corTexto = HEX.test(marca.accentFg) ? marca.accentFg : "#ffffff";
+  // A cor da configuração do chat sobrepõe a da marca quando é um hex válido. Sem ela, vale a
+  // marca. Com cor da configuração, o texto sobre o botão é calculado (contraste); sem ela, é o
+  // `accentFg` da marca, que já vem calculado.
+  const corDaConfig = config.cor !== undefined && HEX.test(config.cor) ? config.cor : null;
+  const cor = corDaConfig ?? (HEX.test(marca.accent) ? marca.accent : "#000000");
+  const corTexto =
+    corDaConfig !== null
+      ? melhorFrenteSobre(corDaConfig)
+      : HEX.test(marca.accentFg)
+        ? marca.accentFg
+        : "#ffffff";
   const politica = politicaProvedora(controlador.politicaUrl);
   const nomeDoControlador = controlador.razaoSocial ?? marca.nome;
 
@@ -139,6 +149,7 @@ export function montarJanela(entrada: EntradaDaJanela): JanelaMontada {
     chave,
     titulo,
     saudacao: config.saudacao ?? null,
+    cor,
     coleta: {
       nome: config.coleta?.nome ?? "opcional",
       telefone: config.coleta?.telefone ?? "opcional",
