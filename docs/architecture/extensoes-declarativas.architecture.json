@@ -322,6 +322,27 @@
       "col": 25,
       "type": "ui",
       "label": "Painel lateral do módulo · mesmo quadro, pedido pela Server Action moduloParaOPainel"
+    },
+    {
+      "id": "module_events_table",
+      "lane": "db",
+      "col": 26,
+      "type": "database",
+      "label": "extension_module_events · contato anonimizado, módulo desativado e organização suspensa; só identificadores, escritos por gatilho"
+    },
+    {
+      "id": "module_events_route",
+      "lane": "app",
+      "col": 27,
+      "type": "service",
+      "label": "GET /api/v1/extensions/events · leitura por cursor opaco, assinada com a mesma prova da busca de token"
+    },
+    {
+      "id": "module_events_cursor",
+      "lane": "db",
+      "col": 28,
+      "type": "database",
+      "label": "extension_module_cursors · último evento lido e quando, por organização e instalação; vira o atraso em /admin/extensoes"
     }
   ],
   "edges": [
@@ -694,6 +715,41 @@
       "from": "module_frame",
       "to": "module",
       "label": "o iframe carrega /embed do serviço do módulo, em outra origem"
+    },
+    {
+      "from": "installation_flag",
+      "to": "module_events_table",
+      "label": "desligar ou remover o módulo grava um module_disabled por organização ainda ligada (gatilho, nunca HTTP)"
+    },
+    {
+      "from": "module_events_table",
+      "to": "module_events_route",
+      "label": "a rota lê só os eventos da organização assinada; module_disabled só do par certo"
+    },
+    {
+      "from": "module",
+      "to": "module_events_route",
+      "label": "o módulo busca os eventos com a assinatura X-Module-*, mesmo depois de o token ser revogado"
+    },
+    {
+      "from": "token_route",
+      "to": "module_events_route",
+      "label": "a prova (carimbo, segredo, assinatura, nonce) é a mesma, extraída para um só lugar"
+    },
+    {
+      "from": "module_events_route",
+      "to": "module",
+      "label": "devolve os eventos e um cursor opaco que liga organização, instalação e posição"
+    },
+    {
+      "from": "module_events_route",
+      "to": "module_events_cursor",
+      "label": "o cursor recebido reconhece o anterior; o cursor só avança"
+    },
+    {
+      "from": "module_events_cursor",
+      "to": "switch_ui",
+      "label": "/admin/extensoes mostra o último cursor, quando foi lido e o atraso, com o selo atrasado"
     }
   ],
   "contracts": {
