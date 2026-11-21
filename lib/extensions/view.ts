@@ -25,6 +25,11 @@ export interface ExtensionOperationView {
   organizations_affected: number | null;
   created_at: string;
   updated_at: string;
+  /**
+   * Só na resposta de instalar um módulo `connected`: `true` quando a instalação foi gravada mas o
+   * segredo ainda não existe (a gravação falhou). Quem administra gera o primeiro ao girar o segredo.
+   */
+  secret_pending?: boolean;
 }
 
 /** A versão para a qual "Desfazer a última troca" volta. Só quem administra a instalação a vê. */
@@ -77,6 +82,11 @@ export interface InstalledExtensionView {
    * Só significa algo para o perfil `connected`; a F1 guarda e mostra, a F2/F4 leem para negar acesso.
    */
   disabled_at: string | null;
+  /**
+   * Só para quem administra a instalação e só no perfil `connected`: `true` quando a instalação
+   * ainda não tem segredo. O botão de segredo vira "Gerar segredo". Ausente = não se sabe.
+   */
+  secret_pending?: boolean;
 }
 
 export interface RemovedInstallationView {
