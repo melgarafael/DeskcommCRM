@@ -21,7 +21,12 @@ export type ChannelSessionRef =
    * provider — o token (que também o identificaria) é segredo cifrado e não
    * pode virar `sessionRef`, que atravessa log, URL de webhook e métrica.
    */
-  | { provider: "telegram"; telegram_bot_id: string };
+  | { provider: "telegram"; telegram_bot_id: string }
+  /**
+   * Chat da OLX (#2927): a OLX endereça por thread/conta de vendedor, não por
+   * telefone — `olx_seller_id` é a coluna própria da sessão.
+   */
+  | { provider: "olx"; olx_seller_id: string };
 
 /**
  * Colunas que um `select` do PostgREST precisa trazer para `resolveSessionRef`
@@ -29,7 +34,7 @@ export type ChannelSessionRef =
  * nomeia coluna de provider, e ela some da feature junto com a decisão.
  */
 export const CHANNEL_SESSION_REF_COLUMNS =
-  "provider, waha_session_name, meta_phone_number_id, zernio_account_id, datafy_phone_number_id, telegram_bot_id";
+  "provider, waha_session_name, meta_phone_number_id, zernio_account_id, datafy_phone_number_id, telegram_bot_id, olx_seller_id";
 
 export function resolveSessionRef(session: ChannelSessionRef): string {
   switch (session.provider) {
@@ -39,6 +44,11 @@ export function resolveSessionRef(session: ChannelSessionRef): string {
     // parceiro, porque os dois podem conviver e endereçam servidores diferentes.
     case "datafy":
       return session.datafy_phone_number_id;
+    // O id da conta de vendedor da OLX (issue #2927). É ele que identifica a
+    // sessão do chat: a OLX não endereça por telefone, e sim pela conta/thread
+    // que o webhook entrega.
+    case "olx":
+      return session.olx_seller_id;
     case "waha":
       return session.waha_session_name;
     // O bot do Telegram não endereça por telefone: o id do robô é a chave que a

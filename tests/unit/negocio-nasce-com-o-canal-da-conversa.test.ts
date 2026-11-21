@@ -51,6 +51,14 @@ describe("a origem do negócio sai do canal da conversa", () => {
     }
   });
 
+  it("o chat da OLX é OLX (#2927) — canal próprio, fora do catálogo social", () => {
+    expect(origemDoNegocioPeloCanal("olx")).toEqual({
+      rotulo: "OLX",
+      source: "olx",
+      motivo: "primeira mensagem recebida no chat da OLX",
+    });
+  });
+
   it("rede sem atendimento não inventa origem", () => {
     // Não chega mensagem dela (a ingestão recusa antes), mas se chegar, cai no
     // padrão em vez de gravar um `source` que nenhum relatório conhece.
@@ -68,6 +76,7 @@ describe("o motivo do nascimento tem tradução", () => {
   const motivos = [
     ORIGEM_DO_WHATSAPP.motivo,
     ...SOCIAL_NETWORKS.filter((r) => r.inbox).map((r) => origemDoNegocioPeloCanal(r.id).motivo),
+    origemDoNegocioPeloCanal("olx").motivo,
     // `workers/voice-agent/index.ts` e o cliente que volta (`nascimento-do-lead.ts`).
     "primeira ligação recebida",
     "cliente conhecido voltou a escrever",

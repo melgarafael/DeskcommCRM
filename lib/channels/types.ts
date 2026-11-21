@@ -29,7 +29,13 @@ export type ChannelProvider =
    * telefone: é o `chat_id` que o próprio bot recebe no update. Ver
    * `./adapters/telegram.ts` e a ausência dele em `PROVIDERS_DE_TELEFONE`.
    */
-  | "telegram";
+  | "telegram"
+  /**
+   * Chat do vendedor da OLX (#2927). Também entra com o TIPO: a OLX endereça por
+   * thread/conta de vendedor (`olx_seller_id`), não por telefone nem por
+   * `chat_id`. Canal opcional da instalação — nasce desligado.
+   */
+  | "olx";
 
 /**
  * Os providers que transportam MENSAGEM — o subconjunto sobre o qual a matriz

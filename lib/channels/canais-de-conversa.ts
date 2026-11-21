@@ -37,7 +37,7 @@ import { SOCIAL_NETWORKS } from "./social/catalog";
  *
  * Ele precede as redes sociais e não tem entrada em `SOCIAL_NETWORKS` — o canal
  * dele é o WAHA/Meta, não o intermediário social. Fica explícito aqui, e é a
- * única parte escrita à mão.
+ * primeira das partes escritas à mão.
  *
  * ## `telegram` é o segundo, pelo motivo inverso
  *
@@ -47,10 +47,17 @@ import { SOCIAL_NETWORKS } from "./social/catalog";
  * adapter. Derivar do catálogo daria o valor certo pelo motivo errado, e no dia
  * em que o parceiro ligasse `inbox` ali o nosso valor viraria refém da decisão
  * dele.
+ *
+ * ## `olx` também é escrito à mão
+ *
+ * O chat da OLX (issue #2927) é canal opcional da instalação, com provider e
+ * ingestão próprios (`lib/channels/olx/ingest.ts`), e não passa pelo catálogo
+ * do parceiro. Sem ele aqui, a conversa nascia `whatsapp`.
  */
 export const CANAIS_DE_CONVERSA = [
   "whatsapp",
   "telegram",
+  "olx",
   ...SOCIAL_NETWORKS.filter((rede) => rede.inbox).map((rede) => rede.id),
 ] as const satisfies readonly string[];
 

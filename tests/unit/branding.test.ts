@@ -996,6 +996,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "endpoint da Bot API do Telegram (canal nativo do #3440): é para onde `lib/channels/bot/credentials.ts` envia `sendMessage` e registra o webhook. Endpoint padrão fixo de propósito — instalação que não configura nada tem de funcionar —, com override por TELEGRAM_API_BASE_URL para a prova em tela.",
   },
+  "apps.olx.com.br": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "raiz da API de chat do canal do chat de vendedor (#2927): o POST que registra o webhook na conta do vendedor e o POST que envia a mensagem, ambos em `lib/channels/chat-de-vendedor/` e `lib/channels/adapters/olx.ts`. Domínio do fornecedor, trocável só por `OLX_API_BASE_URL` (homologação).",
+  },
   "www.googleapis.com": {
     categoria: "FORNECEDOR",
     motivo:
