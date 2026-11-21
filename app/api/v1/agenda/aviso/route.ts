@@ -69,6 +69,11 @@ const corpo = z
      * mexe na escolha salva — o formulário antigo continua valendo.
      */
     lembrar_antes: z.boolean().optional(),
+    /**
+     * O resumo das 7h só sai em dia com agendamento (migration 9434, #4988).
+     * Ausente = não mexe na escolha salva, como `lembrar_antes`.
+     */
+    resumo_so_com_agendamento: z.boolean().optional(),
     /** `true` = "eu sei que este número é um cliente meu, e quero mesmo assim". */
     confirma_contato: z.boolean().optional(),
   })
@@ -251,6 +256,24 @@ export async function PUT(req: NextRequest): Promise<Response> {
     antesLembrava = Boolean(lembrete.data);
   }
 
+  // O resumo só em dia com agendamento é a terceira porta (9434), pelo mesmo
+  // motivo da do lembrete: a assinatura da primeira não muda.
+  let antesSoComAgendamento: boolean | null = null;
+  if (dados.resumo_so_com_agendamento !== undefined) {
+    const resumo = await db.rpc(
+      "fn_definir_resumo_do_aviso_de_agendamento" as never,
+      { p_org: authz.org.orgId, p_so_com_agendamento: dados.resumo_so_com_agendamento } as never,
+    );
+    if (resumo.error) {
+      const recusa = Object.entries(RECUSAS_DO_RPC).find(([nome]) =>
+        (resumo.error?.message ?? "").includes(nome),
+      )?.[1];
+      if (recusa) return fail(recusa.code, t(recusa.frase), recusa.status, { requestId });
+      return fail("internal_error", t("Não foi possível salvar o aviso."), 500, { requestId });
+    }
+    antesSoComAgendamento = Boolean(resumo.data);
+  }
+
   // O número entra MASCARADO: `api_audit_log` é append-only e a cascata de
   // LGPD não o alcança.
   void audit({
@@ -270,6 +293,12 @@ export async function PUT(req: NextRequest): Promise<Response> {
       com_grupo: Boolean(dados.grupo),
       ...(dados.lembrar_antes !== undefined
         ? { antes_lembrava: antesLembrava, depois_lembra: dados.lembrar_antes }
+        : {}),
+      ...(dados.resumo_so_com_agendamento !== undefined
+        ? {
+            antes_resumo_so_com_agendamento: antesSoComAgendamento,
+            depois_resumo_so_com_agendamento: dados.resumo_so_com_agendamento,
+          }
         : {}),
     },
   });

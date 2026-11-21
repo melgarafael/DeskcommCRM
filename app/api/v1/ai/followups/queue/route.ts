@@ -24,10 +24,10 @@
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { statusDaPromessaNaFila } from "@/lib/followup/retorno";
-import { createClient } from "@/lib/supabase/server";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -78,6 +78,33 @@ function resolveContactName(c: ContactRow | null): string {
 
 function embedded<T>(v: T | T[] | null): T | null {
   return Array.isArray(v) ? (v[0] ?? null) : v;
+}
+
+/** Linha crua de enrollment: na sessão traz os embeds; no token vem sem eles. */
+interface EnrollmentBruto {
+  id: string;
+  pointer_id: string | null;
+  contact_id: string;
+  status: string;
+  current_node_id: string;
+  next_eval_at: string | null;
+  outcome: string | null;
+  agent_id: string | null;
+  contacts?: ContactRow | ContactRow[] | null;
+  followup_flow_pointers?: { name: string } | { name: string }[] | null;
+  ai_agents?: { name: string } | { name: string }[] | null;
+}
+
+/** Linha crua de promessa (`cron_jobs`): na sessão traz o embed de contato; no token vem sem ele. */
+interface PromiseBruta {
+  id: string;
+  contact_id: string;
+  next_run_at: string | null;
+  enabled: boolean;
+  cancelled_at: string | null;
+  last_error: string | null;
+  payload: unknown;
+  contacts?: ContactRow | ContactRow[] | null;
 }
 
 export interface QueueRow {
@@ -134,10 +161,18 @@ function sortCompare(a: { next_fire_at: string | null; id: string }, b: { next_f
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("viewer", { requestId, resource: "followup_queue" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "followup_queue",
+    role: "viewer",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "followup_queue", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const { organizationId } = authz;
 
   const sp = req.nextUrl.searchParams;
   const status = sp.get("status");
@@ -158,7 +193,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const limitParam = Number(sp.get("limit") ?? "20");
   const limit = Number.isFinite(limitParam) ? Math.min(100, Math.max(1, Math.trunc(limitParam))) : 20;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
 
   // `q` resolve pra um conjunto de contact_ids ANTES das 2 queries (mesma
   // filtragem aplicada às duas fontes). Sem match → resultado vazio direto.
@@ -173,7 +208,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     const { data: matches, error: cErr } = await supabase
       .from("contacts")
       .select("id")
-      .eq("organization_id", activeOrg.orgId)
+      .eq("organization_id", organizationId)
       .or(`name.ilike.%${safeQ}%,display_name.ilike.%${safeQ}%,phone_number.ilike.%${safeQ}%`)
       .limit(500); // ponytail: fila é escala MVP; sobe se virar hot path
     if (cErr) return fail("internal_error", cErr.message, 500, { requestId });
@@ -182,8 +217,8 @@ export async function GET(req: NextRequest): Promise<Response> {
     const { data: extras, error: eErr } = await supabase
       .from("contact_phones")
       .select("contact_id, contacts!inner(id)")
-      .eq("organization_id", activeOrg.orgId)
-      .eq("contacts.organization_id", activeOrg.orgId)
+      .eq("organization_id", organizationId)
+      .eq("contacts.organization_id", organizationId)
       .is("contacts.is_merged_into", null)
       .ilike("phone_number", `%${safeQ}%`)
       .limit(500);
@@ -205,12 +240,14 @@ export async function GET(req: NextRequest): Promise<Response> {
   let enrollQuery = supabase
     .from("followup_enrollments")
     .select(
-      `id, pointer_id, contact_id, status, current_node_id, next_eval_at, outcome, updated_at, agent_id,
+      authz.via === "session"
+        ? `id, pointer_id, contact_id, status, current_node_id, next_eval_at, outcome, updated_at, agent_id,
        contacts:contact_id(id, name, display_name, phone_number),
        followup_flow_pointers:pointer_id(name),
-       ai_agents:agent_id(name)`,
+       ai_agents:agent_id(name)`
+        : "id, pointer_id, contact_id, status, current_node_id, next_eval_at, outcome, updated_at, agent_id",
     )
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .order("next_eval_at", { ascending: true, nullsFirst: false })
     .order("id", { ascending: true })
     .limit(limit + 1);
@@ -230,9 +267,11 @@ export async function GET(req: NextRequest): Promise<Response> {
   let promiseQuery = supabase
     .from("cron_jobs")
     .select(
-      "id, contact_id, next_run_at, enabled, cancelled_at, last_error, payload, contacts:contact_id(id, name, display_name, phone_number)",
+      authz.via === "session"
+        ? "id, contact_id, next_run_at, enabled, cancelled_at, last_error, payload, contacts:contact_id(id, name, display_name, phone_number)"
+        : "id, contact_id, next_run_at, enabled, cancelled_at, last_error, payload",
     )
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .eq("kind", "at")
     .eq("job_kind", "followup_turn")
     .order("next_run_at", { ascending: true, nullsFirst: false })
@@ -255,12 +294,83 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (enrollRes.error) return fail("internal_error", enrollRes.error.message, 500, { requestId });
   if (promiseRes.error) return fail("internal_error", promiseRes.error.message, 500, { requestId });
 
-  const enrollRows: QueueRow[] = (enrollRes.data ?? []).map((e) =>
-    enrollmentToQueueRow(e as Parameters<typeof enrollmentToQueueRow>[0]),
+  const enrollBrutos = (enrollRes.data ?? []) as unknown as EnrollmentBruto[];
+  const promiseBrutas = (promiseRes.data ?? []) as unknown as PromiseBruta[];
+
+  // Token: a service role ignora RLS e o embed do PostgREST não filtra por
+  // organização. Por isso o relacionado vem em consulta própria, com
+  // `organization_id` na mão; relacionado de outra organização não entra e
+  // vira null. Sessão: já vem embutido (RLS da sessão).
+  const contatosPorId = new Map<string, ContactRow>();
+  const fluxosPorId = new Map<string, { name: string }>();
+  const agentesPorId = new Map<string, { name: string }>();
+  if (authz.via === "token") {
+    const idsDeContato = [
+      ...new Set([...enrollBrutos.map((e) => e.contact_id), ...promiseBrutas.map((j) => j.contact_id)]),
+    ];
+    const idsDeFluxo = [...new Set(enrollBrutos.map((e) => e.pointer_id).filter((v): v is string => v !== null))];
+    const idsDeAgente = [...new Set(enrollBrutos.map((e) => e.agent_id).filter((v): v is string => v !== null))];
+
+    if (idsDeContato.length > 0) {
+      const { data, error } = await supabase
+        .from("contacts")
+        .select("id, name, display_name, phone_number")
+        .in("id", idsDeContato)
+        .eq("organization_id", organizationId);
+      if (error) return fail("internal_error", error.message, 500, { requestId });
+      for (const c of (data ?? []) as ContactRow[]) contatosPorId.set(c.id, c);
+    }
+    if (idsDeFluxo.length > 0) {
+      const { data, error } = await supabase
+        .from("followup_flow_pointers")
+        .select("id, name")
+        .in("id", idsDeFluxo)
+        .eq("organization_id", organizationId);
+      if (error) return fail("internal_error", error.message, 500, { requestId });
+      for (const f of (data ?? []) as Array<{ id: string; name: string }>) {
+        fluxosPorId.set(f.id, { name: f.name });
+      }
+    }
+    if (idsDeAgente.length > 0) {
+      const { data, error } = await supabase
+        .from("ai_agents")
+        .select("id, name")
+        .in("id", idsDeAgente)
+        .eq("organization_id", organizationId);
+      if (error) return fail("internal_error", error.message, 500, { requestId });
+      for (const a of (data ?? []) as Array<{ id: string; name: string }>) {
+        agentesPorId.set(a.id, { name: a.name });
+      }
+    }
+  }
+
+  const enrollRows: QueueRow[] = enrollBrutos.map((e) =>
+    enrollmentToQueueRow({
+      id: e.id,
+      contact_id: e.contact_id,
+      current_node_id: e.current_node_id,
+      next_eval_at: e.next_eval_at,
+      status: e.status,
+      outcome: e.outcome,
+      contacts: authz.via === "session" ? (e.contacts ?? null) : (contatosPorId.get(e.contact_id) ?? null),
+      followup_flow_pointers:
+        authz.via === "session"
+          ? (e.followup_flow_pointers ?? null)
+          : e.pointer_id !== null
+            ? (fluxosPorId.get(e.pointer_id) ?? null)
+            : null,
+      ai_agents:
+        authz.via === "session"
+          ? (e.ai_agents ?? null)
+          : e.agent_id !== null
+            ? (agentesPorId.get(e.agent_id) ?? null)
+            : null,
+    }),
   );
 
-  const promiseRows: QueueRow[] = (promiseRes.data ?? []).map((j) => {
-    const contact = embedded(j.contacts as ContactRow | ContactRow[] | null);
+  const promiseRows: QueueRow[] = promiseBrutas.map((j) => {
+    const contact =
+      authz.via === "session" ? embedded(j.contacts ?? null) : (contatosPorId.get(j.contact_id) ?? null);
     const payload = (j.payload ?? {}) as { reason?: string; promise?: string };
     return {
       source: "promise",

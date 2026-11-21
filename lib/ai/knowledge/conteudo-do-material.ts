@@ -44,6 +44,7 @@
  */
 
 import { ErroDeExtracao, extrairTextoDoArquivo } from "@/lib/ai/rag/ingest/documento";
+import { caminhoDaOrganizacao } from "@/lib/ai/knowledge/caminho-do-arquivo";
 import { canonizarTipoDeFonte, type TipoDeFonteId } from "@/lib/ai/rag/tipos-de-fonte";
 import type { createClient } from "@/lib/supabase/server";
 
@@ -163,8 +164,9 @@ export async function lerMaterial(
   const nome = fonte.name;
   const tipo = canonizarTipoDeFonte(fonte.source_type ?? "") ?? "faq";
   const versaoAtiva = fonte.active_kb_version_id;
-  const blobPath =
-    typeof fonte.source_metadata?.blob_path === "string" ? fonte.source_metadata.blob_path : null;
+  // Só o arquivo desta organização: o extrator baixa com o admin client.
+  const caminho = fonte.source_metadata?.blob_path;
+  const blobPath = caminhoDaOrganizacao(caminho, p.orgId) ? caminho : null;
   const ext =
     typeof fonte.source_metadata?.ext === "string" ? fonte.source_metadata.ext : undefined;
 

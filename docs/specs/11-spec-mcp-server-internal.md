@@ -284,9 +284,29 @@ não declara (`lib/mcp/conferencia-de-campos.ts`).
 ```ts
 inputSchema: z.object({
   conversation_id: z.string().uuid(),
-  body: z.string().min(1).max(4096),
-  media_url: z.string().url().optional()
+  body: z.string().min(1).max(4096).optional(),
+  type: z.enum(['text', 'image', 'audio', 'document', 'sticker', 'video', 'location', 'contact']).default('text'),
+  media_url: z.string().url().optional(),
+  media_storage_path: z.string().optional(),   // #5034
+  media_filename: z.string().optional(),       // #5034 (caminho e nome ficam fora da auditoria)
+  media_mime: z.string().optional()
 })
+// Precisa de body, media_url ou media_storage_path.
+```
+
+**Arquivo sem link público (#5034)**: suba o arquivo com `POST /api/v1/conversations/{id}/media`
+(multipart, campo `file`; sessão do navegador ou token de integração com escrita — o token OAuth do MCP
+não serve para a rota REST). A resposta (`data`) traz `storage_path`, `kind`, `media_mime` e `media_filename` (o nome original). Envie com:
+
+```ts
+{ conversation_id, type: kind /* 'image' | 'video' | 'audio' | 'document' */,
+  media_storage_path: storage_path, media_mime, body /* legenda, opcional */,
+  ...(media_filename ? { media_filename } : {}) /* o nome da resposta do upload; null não é aceito, então fica de fora */ }
+```
+
+O envio confere que o arquivo é da organização E desta conversa; caminho de outra conversa é recusado.
+
+```ts
 
 outputSchema: z.object({
   message_id: z.string().uuid(),
@@ -366,6 +386,27 @@ outputSchema: z.object({
 6. Resposta `next_action` é uma string sugerindo ao agente o que dizer ao usuário ("Vou conectar você com um atendente humano agora") — agente integra na resposta final
 
 ---
+
+### 3.4 Editar os assistentes de IA (só admin, por aplicativo conectado)
+
+Para o dono corrigir pelo ChatGPT como o assistente responde. Todas pedem papel `admin`, são
+`apenasHumano` (o turno do agente não as monta) e ficam fora dos pacotes do seletor do assistente
+(`lib/mcp/tools/ferramentas-do-administrador.ts`). As regras são as da tela, em
+`lib/ai/agents/edicao.ts` e `lib/ai/agents/teste-da-versao.ts`.
+
+| Tool | Escopo | O que faz |
+|---|---|---|
+| `crm_list_ai_agents` | `mcp:read` | assistentes, canal, versão publicada e rascunho |
+| `crm_get_ai_agent_version` | `mcp:read` | instruções e configuração de uma versão (`publicada`, `rascunho` ou número) |
+| `crm_get_ai_agent_turn` | `mcp:read` | últimos turnos de uma conversa: versão usada, ferramentas, interrupção, mensagens |
+| `crm_save_ai_agent_draft` | `mcp:write` | correção como RASCUNHO, por troca exata / anexar / texto inteiro, em 1–5 assistentes |
+| `crm_test_ai_agent_version` | `mcp:write` | prévia (`is_dry_run`), nada é enviado |
+| `crm_publish_ai_agent_version` | `mcp:write` | `critico` → `destructiveHint`; número explícito, devolve o anterior |
+| `crm_rollback_ai_agent` | `mcp:write` | `critico`; clona uma versão antiga e publica |
+
+O servidor manda a cada cliente as dicas do protocolo (`annotations`) a partir do risco do
+catálogo: `readOnlyHint` para leitura, `destructiveHint` para `critico` (`dicasDaFerramenta`,
+`lib/mcp/server.ts`). O limite do texto de instruções é o da tela (20.000 caracteres).
 
 ## 4. Tool selection (per agent)
 

@@ -221,3 +221,46 @@ describe("POST /api/v1/ai/knowledge/sources — tipo pedido é o tipo gravado", 
     expect(escritas[0]).toMatchObject({ linhas: { source_type: "catalogo" } });
   });
 });
+
+describe("POST /api/v1/ai/knowledge/sources — blob_path pela sessão", () => {
+  // Nenhuma tela manda `blob_path`: quem grava é a rota de upload, sempre sob
+  // `<orgId>/`. Pela sessão valia qualquer caminho, e o indexador baixa com o
+  // admin client, que não olha prefixo.
+  const OUTRA_ORG = "44444444-4444-4444-8444-444444444444";
+
+  it("caminho na pasta de outra organização → 422, e nada é gravado", async () => {
+    sessaoOk();
+    const { escritas } = dublarBanco();
+    const { POST } = await import("@/app/api/v1/ai/knowledge/sources/route");
+    const res = await POST(
+      req({
+        agent_id: AGENT_ID,
+        source_type: "faq",
+        name: "FAQ",
+        markdown_blob: MARKDOWN,
+        source_metadata: { blob_path: `${OUTRA_ORG}/${KS_ID}.pdf` },
+      }),
+    );
+
+    expect(res.status).toBe(422);
+    expect(escritas).toHaveLength(0);
+  });
+
+  it("caminho na pasta da própria organização continua aceito", async () => {
+    sessaoOk();
+    const { escritas } = dublarBanco();
+    const { POST } = await import("@/app/api/v1/ai/knowledge/sources/route");
+    const res = await POST(
+      req({
+        agent_id: AGENT_ID,
+        source_type: "faq",
+        name: "FAQ",
+        markdown_blob: MARKDOWN,
+        source_metadata: { blob_path: `${ORG_ID}/${KS_ID}.pdf` },
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    expect(escritas.some((e) => e.tabela === "ai_knowledge_sources")).toBe(true);
+  });
+});
