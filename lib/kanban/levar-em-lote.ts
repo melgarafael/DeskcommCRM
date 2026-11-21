@@ -20,11 +20,14 @@
  *  - o teto é o MESMO da ação em lote (`MAX_BULK` da `leads/bulk`): 50.
  */
 
+import { ApiError } from "@/lib/api/types";
+
 export const MAXIMO_DO_LOTE_ENTRE_FUNIS = 50;
 
 export interface RecusaNoLote {
   leadId: string;
   motivo: string;
+  cloneId?: string;
 }
 
 export interface ResultadoDoLote {
@@ -62,7 +65,12 @@ export async function levarEmLote(entrada: {
       await entrada.levar(leadId);
       resultado.levados.push(leadId);
     } catch (erro) {
-      resultado.recusados.push({ leadId, motivo: motivoDaFalha(erro, entrada.motivoGenerico) });
+      const cloneId = erro instanceof ApiError ? erro.details?.cloned_lead_id : undefined;
+      resultado.recusados.push({
+        leadId,
+        motivo: motivoDaFalha(erro, entrada.motivoGenerico),
+        ...(typeof cloneId === "string" && cloneId ? { cloneId } : {}),
+      });
     }
     entrada.aoProgredir?.(i + 1, lote.length);
   }

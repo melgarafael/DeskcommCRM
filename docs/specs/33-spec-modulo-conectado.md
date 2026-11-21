@@ -198,6 +198,21 @@ não seja espaço, ponto, hífen ou parênteses. Telefones secundários (`contac
 consumidores (medido). No quadro, a rota lê o nome do contato e o anexa ao negócio só para módulo sem `contatos`
 (`anexarNomeDoContato`), antes do filtro; sessão e módulo com `contatos` não recebem leitura nem campo a mais.
 
+**Texto livre digitado pela equipe** (título do negócio, observação, descrição). Para módulo sem
+`contatos`, dentro de cada registro que traz um contato, os identificadores DESSE contato viram
+`[contato]` em todo valor string do registro e dos filhos dele (`lib/modulo/redigir-contato.ts`). É
+filtro por lista, sem adivinhar: o nome inteiro e cada parte com 3 ou mais letras, como palavra inteira
+e sem diferenciar maiúscula nem acento; o telefone pelos últimos 8 dígitos, com qualquer separador e com
+código do país e DDD na frente; o e-mail sem diferenciar maiúscula. A regra vale para baixo, nunca para
+irmãos (num quadro, o contato do negócio A não filtra o título do negócio B), e o objeto que teve texto
+trocado ganha `text_redacted: true`. Chaves `id`, `*_id`, `redacted` e `text_redacted` não são filtradas.
+**Limite que sobra:** só sai o que está escrito igual ao cadastro. Um apelido ("Cida" para "Aparecida")
+passa, e o nome de OUTRA pessoa, que não seja o contato ligado ao registro, também passa.
+Também não são filtrados: nome (ou parte) com menos de 3 letras; telefone com menos de 8 dígitos; separador que
+não seja espaço, ponto, hífen ou parênteses. Telefones secundários (`contact_phones`) não vêm por nenhum dos 3
+consumidores (medido). No quadro, a rota lê o nome do contato e o anexa ao negócio só para módulo sem `contatos`
+(`anexarNomeDoContato`), antes do filtro; sessão e módulo com `contatos` não recebem leitura nem campo a mais.
+
 **Nunca há área** para credencial, token, LGPD, cobrança, webhook, administração da instalação,
 extensões e envio de mensagem (D6). Além dos prefixos que já saem do recorte, ficam fora, por nome:
 

@@ -38,6 +38,7 @@ const AGENTE_LEGADO = {
   id: "88888888-8888-4888-8888-888888888888",
   organization_id: ORG_ID,
   kind: "rag_bot",
+  channel: "whatsapp",
   is_active: true,
   published_version_id: null,
   archived_at: null,
@@ -169,16 +170,17 @@ describe("guard determinístico do bot — assignee_kind (G3-02)", () => {
 });
 
 describe("sem candidato legado, o worker não olha a conversa", () => {
-  it("org só com agente publicado: uma consulta e sai", async () => {
-    // O caso de quase toda instalação: o engine atende, e este worker recebe
-    // `message.received` de cada mensagem mesmo assim.
+  it.each([
+    ["um agente publicado", { kind: "mcp_agent", published_version_id: "99999999-9999-4999-8999-999999999999" }],
+    ["um agente de voz ativo", { channel: "voice" }],
+  ])("org só com %s: uma consulta e sai", async (_caso, agente) => {
     const queried: string[] = [];
     vi.mocked(createAdminClient).mockReturnValue(
       makeAdminStub(
         {
           conversations: convRow("ai"),
           messages: { id: MSG_ID, body: "quero falar com um atendente", direction: "inbound", organization_id: ORG_ID },
-          ai_agents: { ...AGENTE_LEGADO, kind: "mcp_agent", published_version_id: "99999999-9999-4999-8999-999999999999" },
+          ai_agents: { ...AGENTE_LEGADO, ...agente },
         },
         queried,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
