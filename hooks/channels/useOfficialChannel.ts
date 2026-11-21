@@ -5,6 +5,12 @@ import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { apiClient } from "@/lib/api/client";
 
 export interface OfficialChannelState {
+  /**
+   * A janela da Meta (Embedded Signup, #4074). `null`/ausente = a instalação não
+   * cadastrou App ID, Configuration ID e chave secreta em `/admin/meta`, e o botão
+   * não aparece.
+   */
+  embeddedSignup?: { appId: string; configId: string; graphVersion: string } | null;
   channel_session_id?: string | null;
   connected: boolean;
   /** Existe token gravado? O token em si NUNCA volta — ver a rota. */
@@ -84,6 +90,30 @@ export function useConnectOfficialChannel() {
     mutationFn: async (input: ConnectInput) =>
       apiClient.post<{ data: { connected: boolean; displayName: string; phoneNumber: string | null } }>(
         "/api/v1/channels/official",
+        input,
+      ),
+    onError: showApiError,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["official-channel"] });
+    },
+  });
+}
+
+export interface EmbeddedSignupInput {
+  code: string;
+  /** Na coexistência a Meta pode não mandar o número; o servidor o busca pela conta. */
+  phone_number_id?: string;
+  waba_id: string;
+  modo?: "coexistencia" | "padrao";
+}
+
+/** Conecta o número escolhido na janela da Meta (Embedded Signup, #4074). */
+export function useConnectOfficialEmbeddedSignup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: EmbeddedSignupInput) =>
+      apiClient.post<{ data: { connected: boolean; displayName: string; phoneNumber: string | null } }>(
+        "/api/v1/channels/official/embedded-signup",
         input,
       ),
     onError: showApiError,
