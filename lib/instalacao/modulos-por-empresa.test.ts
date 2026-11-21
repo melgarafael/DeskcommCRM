@@ -257,3 +257,50 @@ describe("a tela: três estados por módulo (herda / ligado / desligado)", () =>
     expect(modulos.find((m) => m.modulo === "propostas")).toMatchObject({ estado: "desligado", efetivo: false });
   });
 });
+
+/**
+ * A ARMADILHA MEDIDA NA F2 (#4871), do lado que NÃO se conserta na camada.
+ *
+ * Passar `organizacaoId` para `moduloLigado` é NO-OP quando o módulo não está em
+ * `MODULOS_POR_EMPRESA` — e é por isso que os trabalhos de fundo desta família
+ * precisam saber QUAL mecanismo governa o módulo deles antes de trocar a
+ * chamada. Para `amigo` (TABELA, ADR-0002), a linha da empresa não decide nada:
+ * a permissão da empresa é o que ela tem na PRÓPRIA tabela (`amigo_connections`
+ * com `active`), e desligar por empresa em `organization_modules` é a F3 do
+ * #3868 — outra conversa.
+ *
+ * O teste fica aqui, e não num comentário, porque o engano é silencioso: a
+ * chamada compila, o cron passa a receber a organização e continua agindo igual,
+ * com cara de consertado.
+ */
+describe("módulo de TABELA × a camada por empresa (#4871)", () => {
+  it("`amigo` NÃO está em MODULOS_POR_EMPRESA — a linha da empresa não tem como ser oferecida", async () => {
+    const { MODULOS_POR_EMPRESA } = await import("./modulos");
+    expect(MODULOS_POR_EMPRESA).not.toContain("amigo");
+    expect(MODULOS_POR_EMPRESA).not.toContain("cadencias");
+  });
+
+  it("passar a empresa para um módulo de tabela é NO-OP: a linha `desligado` não tira o módulo", async () => {
+    const { db } = banco({
+      modulos_instalados: { data: [{ modulo: "amigo", estado: "ativo" }] },
+      organization_modules: {
+        data: [{ organization_id: "empresa-a", modulo: "amigo", estado: "desligado" }],
+      },
+    });
+
+    // É o comportamento ERRADO se alguém achar que a camada governa o `amigo` —
+    // e é o certo pelo ADR-0002: quem desliga o Amigo da empresa é a conexão dela.
+    expect(await moduloLigado(db, "amigo", "empresa-a")).toBe(true);
+    expect(await modulosLigados(db, "empresa-a")).toEqual(["amigo"]);
+  });
+
+  it("o MESMO pedido com `propostas` (módulo por FLAG) respeita a linha `desligado` da empresa", async () => {
+    const { db } = banco({
+      ...INSTALACAO_COM_PROPOSTAS,
+      organization_modules: {
+        data: [{ organization_id: "empresa-a", modulo: "propostas", estado: "desligado" }],
+      },
+    });
+    expect(await moduloLigado(db, "propostas", "empresa-a")).toBe(false);
+  });
+});
