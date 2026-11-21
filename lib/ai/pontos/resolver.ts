@@ -407,8 +407,17 @@ export interface ModeloDoCatalogoEconomico {
  * - `habilitados` não vazio restringe a escolha: a organização que limitou os
  *   modelos tomaria `LlmModelNotEnabledError` em todo turno.
  * - Desempate determinístico: menor saída, depois o id em ordem DECRESCENTE —
- *   entre `gemini-2.0-flash` e `gemini-2.5-flash-lite` (mesmo preço), a versão
- *   mais nova.
+ *   entre dois ids do MESMO preço, a versão mais nova. O par que motivou a regra
+ *   era `gemini-2.0-flash` × `gemini-2.5-flash-lite` (10/40 cada); os dois são
+ *   404 desde 18/11/2026 (#4925), e por isso existe `aposentadoNoProvedor`.
+ * - `aposentadoNoProvedor`: candidato que o provedor não serve mais sai da
+ *   corrida, INDEPENDENTE de ter preço. São dois eixos: preço respondo "quanto
+ *   custa", este responde "ainda existe". Antes dele, os Gemini aposentados eram
+ *   os mais baratos do Google (10/40) e o tier econômico os escolhia — 404 em
+ *   todo turno, escondido pelo fail-open. Com o filtro, o econômico do Google é
+ *   o `gemini-3.1-flash-lite` (25/150), o mais barato que o provedor ainda serve.
+ *   Também NÃO depende de `temPrecoNoMotor`: se o modelo ATUAL é um aposentado,
+ *   a troca continua acontecendo quando há um vivo mais barato.
  * - `temPrecoNoMotor`: o catálogo ter preço não basta — quem COBRA é a tabela do
  *   motor (`precoDoModelo`). Se o atual é cobrado e o candidato não, a troca faz
  *   o custo sair null e a chamada some do teto. Vem de quem chama para este
@@ -420,6 +429,7 @@ export function escolherModeloEconomico(
   modeloAtual: string | null,
   habilitados: readonly string[] = [],
   temPrecoNoMotor?: (modelId: string) => boolean,
+  aposentadoNoProvedor?: (modelId: string) => boolean,
 ): string | null {
   if (!PROVEDORES_COM_CATALOGO_CURADO.has(provider) || modeloAtual === null) return null;
   const doProvedor = catalogo.filter(
@@ -435,6 +445,7 @@ export function escolherModeloEconomico(
   const exigePrecoNoMotor = temPrecoNoMotor !== undefined && temPrecoNoMotor(modeloAtual);
   const candidatos = doProvedor
     .filter((m) => habilitados.length === 0 || habilitados.includes(m.model_id))
+    .filter((m) => aposentadoNoProvedor === undefined || !aposentadoNoProvedor(m.model_id))
     .filter((m) => !exigePrecoNoMotor || temPrecoNoMotor(m.model_id))
     .sort(
       (a, b) =>

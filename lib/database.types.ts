@@ -6050,6 +6050,7 @@ export type Database = {
           ligado: boolean;
           lembrar_antes: boolean;
           organization_id: string;
+          resumo_so_com_agendamento: boolean;
           telefone_destino: string | null;
           updated_at: string;
           usa_numero_do_aviso_de_caso: boolean;
@@ -6063,6 +6064,7 @@ export type Database = {
           ligado?: boolean;
           lembrar_antes?: boolean;
           organization_id: string;
+          resumo_so_com_agendamento?: boolean;
           telefone_destino?: string | null;
           updated_at?: string;
           usa_numero_do_aviso_de_caso?: boolean;
@@ -6075,6 +6077,7 @@ export type Database = {
           ligado?: boolean;
           lembrar_antes?: boolean;
           organization_id?: string;
+          resumo_so_com_agendamento?: boolean;
           telefone_destino?: string | null;
           updated_at?: string;
           usa_numero_do_aviso_de_caso?: boolean;
@@ -8679,6 +8682,8 @@ export type Database = {
         Row: {
           artifact_id: string;
           catalog_id: string;
+          disabled_at: string | null;
+          disabled_by: string | null;
           id: string;
           installed_at: string;
           installed_by: string | null;
@@ -8694,6 +8699,8 @@ export type Database = {
         Insert: {
           artifact_id: string;
           catalog_id: string;
+          disabled_at?: string | null;
+          disabled_by?: string | null;
           id?: string;
           installed_at?: string;
           installed_by?: string | null;
@@ -8708,6 +8715,8 @@ export type Database = {
         Update: {
           artifact_id?: string;
           catalog_id?: string;
+          disabled_at?: string | null;
+          disabled_by?: string | null;
           id?: string;
           installed_at?: string;
           installed_by?: string | null;
@@ -16029,6 +16038,13 @@ export type Database = {
         };
         Returns: boolean;
       };
+      fn_definir_resumo_do_aviso_de_agendamento: {
+        Args: {
+          p_org: string;
+          p_so_com_agendamento: boolean;
+        };
+        Returns: boolean;
+      };
       fn_definir_aviso_de_caso: {
         Args: {
           p_channel: string;
@@ -16295,6 +16311,16 @@ export type Database = {
       fn_extensions_revert_install: {
         Args: {
           p_actor: string;
+          p_expected_installation_revision: number;
+          p_installation: string;
+          p_operation: string;
+        };
+        Returns: Json;
+      };
+      fn_extensions_set_switch: {
+        Args: {
+          p_actor: string;
+          p_disabled: boolean;
           p_expected_installation_revision: number;
           p_installation: string;
           p_operation: string;
