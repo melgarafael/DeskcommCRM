@@ -47,6 +47,25 @@ PERMISSOES = [
     # O consentimento para um tema de extensão pintar o produto (ADR-0003, #1095).
     # A ordem espelha `EXTENSION_PERMISSIONS` em `lib/extensions/capacidades.ts` —
     # `tests/unit/catalogo-de-ensaio-espelha-o-vocabulario.test.ts` compara as duas.
+    # Áreas do CRM do módulo conectado (spec 33, F1): mesma ordem das 9 áreas, leitura e escrita.
+    "area.contatos.leitura",
+    "area.contatos.escrita",
+    "area.negocios.leitura",
+    "area.negocios.escrita",
+    "area.conversas.leitura",
+    "area.conversas.escrita",
+    "area.agenda.leitura",
+    "area.agenda.escrita",
+    "area.funis.leitura",
+    "area.funis.escrita",
+    "area.agentes_ia.leitura",
+    "area.agentes_ia.escrita",
+    "area.catalogo.leitura",
+    "area.catalogo.escrita",
+    "area.configuracao.leitura",
+    "area.configuracao.escrita",
+    "area.analise.leitura",
+    "area.analise.escrita",
 ]
 CAPACIDADES = [
     "tasks.open",

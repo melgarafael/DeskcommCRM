@@ -11,8 +11,8 @@ import { type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import {
   ETAPAS_INICIAIS,
   posicaoEntre,
@@ -20,24 +20,32 @@ import {
   validarNomeDeFunil,
   type FunilEditavel,
 } from "@/lib/pipelines/pipeline-editing";
-import { createClient } from "@/lib/supabase/server";
 import { conflitoDoBanco, corpo, lerFunis } from "./_funis";
 import { listPipelinesHandler } from "./_handler";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "pipelines" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "pipelines",
+    role: "manager",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "pipelines", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   try {
     const { pipelines } = await listPipelinesHandler(supabase, {
-      organization_id: authz.org.orgId,
-      actor: { type: "user", id: authz.user.id },
+      organization_id: authz.organizationId,
+      actor: authz.actor,
       requestId,
     });
     return ok(pipelines, { requestId });
@@ -73,10 +81,18 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "crm_pipelines" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_pipelines",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const orgId = authz.org.orgId;
+  const teto = await tetoDeEscritaDoToken(authz, "pipelines", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const orgId = authz.organizationId;
 
   let json: unknown;
   try {
@@ -95,7 +111,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const name = parsed.data.name.trim();
   const description = parsed.data.description?.trim() || null;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
 
   let funis: FunilEditavel[];
   try {
@@ -165,7 +181,8 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   void audit({
     action: "pipeline.created",
-    actorUserId: authz.user.id,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
     organizationId: orgId,
     resourceType: "crm_pipeline",
     resourceId: pipelineId,

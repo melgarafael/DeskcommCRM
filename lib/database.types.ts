@@ -5531,6 +5531,8 @@ export type Database = {
           datafy_waba_id: string | null;
           display_name: string | null;
           engine: string;
+          entry_pipeline_id: string | null;
+          entry_stage_id: string | null;
           id: string;
           is_warmup_complete: boolean | null;
           last_health_check_at: string | null;
@@ -5574,6 +5576,8 @@ export type Database = {
           datafy_waba_id?: string | null;
           display_name?: string | null;
           engine?: string;
+          entry_pipeline_id?: string | null;
+          entry_stage_id?: string | null;
           id?: string;
           is_warmup_complete?: never;
           last_health_check_at?: string | null;
@@ -5616,6 +5620,8 @@ export type Database = {
           datafy_waba_id?: string | null;
           display_name?: string | null;
           engine?: string;
+          entry_pipeline_id?: string | null;
+          entry_stage_id?: string | null;
           id?: string;
           is_warmup_complete?: never;
           last_health_check_at?: string | null;
@@ -6044,6 +6050,7 @@ export type Database = {
           ligado: boolean;
           lembrar_antes: boolean;
           organization_id: string;
+          resumo_so_com_agendamento: boolean;
           telefone_destino: string | null;
           updated_at: string;
           usa_numero_do_aviso_de_caso: boolean;
@@ -6057,6 +6064,7 @@ export type Database = {
           ligado?: boolean;
           lembrar_antes?: boolean;
           organization_id: string;
+          resumo_so_com_agendamento?: boolean;
           telefone_destino?: string | null;
           updated_at?: string;
           usa_numero_do_aviso_de_caso?: boolean;
@@ -6069,6 +6077,7 @@ export type Database = {
           ligado?: boolean;
           lembrar_antes?: boolean;
           organization_id?: string;
+          resumo_so_com_agendamento?: boolean;
           telefone_destino?: string | null;
           updated_at?: string;
           usa_numero_do_aviso_de_caso?: boolean;
@@ -7488,6 +7497,7 @@ export type Database = {
           periodo: string;
           pipeline_id: string | null;
           updated_at: string;
+          vendedor_id: string | null;
         };
         ComputedFields: never;
         Insert: {
@@ -7500,6 +7510,7 @@ export type Database = {
           periodo: string;
           pipeline_id?: string | null;
           updated_at?: string;
+          vendedor_id?: string | null;
         };
         Update: {
           alvo?: number;
@@ -7511,6 +7522,7 @@ export type Database = {
           periodo?: string;
           pipeline_id?: string | null;
           updated_at?: string;
+          vendedor_id?: string | null;
         };
         Relationships: [
           {
@@ -8670,6 +8682,8 @@ export type Database = {
         Row: {
           artifact_id: string;
           catalog_id: string;
+          disabled_at: string | null;
+          disabled_by: string | null;
           id: string;
           installed_at: string;
           installed_by: string | null;
@@ -8685,6 +8699,8 @@ export type Database = {
         Insert: {
           artifact_id: string;
           catalog_id: string;
+          disabled_at?: string | null;
+          disabled_by?: string | null;
           id?: string;
           installed_at?: string;
           installed_by?: string | null;
@@ -8699,6 +8715,8 @@ export type Database = {
         Update: {
           artifact_id?: string;
           catalog_id?: string;
+          disabled_at?: string | null;
+          disabled_by?: string | null;
           id?: string;
           installed_at?: string;
           installed_by?: string | null;
@@ -13680,6 +13698,45 @@ export type Database = {
         };
         Relationships: [];
       };
+      relatorios_operacao_diarios: {
+        Row: {
+          conteudo: Json;
+          dia: string;
+          fuso: string;
+          gerado_em: string;
+          gerado_por: string;
+          id: string;
+          organization_id: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          conteudo: Json;
+          dia: string;
+          fuso: string;
+          gerado_em?: string;
+          gerado_por: string;
+          id?: string;
+          organization_id: string;
+        };
+        Update: {
+          conteudo?: Json;
+          dia?: string;
+          fuso?: string;
+          gerado_em?: string;
+          gerado_por?: string;
+          id?: string;
+          organization_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "relatorios_operacao_diarios_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       send_ledger: {
         Row: {
           body_hash: string;
@@ -15433,7 +15490,10 @@ export type Database = {
           error: true;
         } & "the function public.comando_da_conversa with parameter or with a single unnamed json/jsonb parameter, but no matches were found in the schema cache";
       };
-      decrypt_cpf: { Args: { p_contact_id: string }; Returns: string };
+      // (9423) Duas assinaturas: `decrypt_cpf(uuid)` (a da 0762, intacta) e
+      // `decrypt_cpf(uuid, text)` com o propósito da leitura. O argumento é opcional
+      // no cliente porque a chamada de um argumento continua válida — é o export.
+      decrypt_cpf: { Args: { p_contact_id: string; p_purpose?: string | null }; Returns: string };
       emit_event: {
         Args: {
           p_entity_id: string;
@@ -15978,6 +16038,13 @@ export type Database = {
         };
         Returns: boolean;
       };
+      fn_definir_resumo_do_aviso_de_agendamento: {
+        Args: {
+          p_org: string;
+          p_so_com_agendamento: boolean;
+        };
+        Returns: boolean;
+      };
       fn_definir_aviso_de_caso: {
         Args: {
           p_channel: string;
@@ -16250,6 +16317,16 @@ export type Database = {
         };
         Returns: Json;
       };
+      fn_extensions_set_switch: {
+        Args: {
+          p_actor: string;
+          p_disabled: boolean;
+          p_expected_installation_revision: number;
+          p_installation: string;
+          p_operation: string;
+        };
+        Returns: Json;
+      };
       fn_finalizar_comanda: {
         Args: {
           p_loyalty_points?: number;
@@ -16509,6 +16586,17 @@ export type Database = {
       fn_conversa_que_continua: {
         Args: { p_conversation_id: string; p_organization_id: string; p_user_id: string };
         Returns: string;
+      };
+      fn_operacao_conversas_com_entrada: {
+        Args: { p_fim: string; p_inicio: string; p_limite?: number; p_org: string };
+        Returns: {
+          channel: string;
+          conversation_id: string;
+          entradas: number;
+          nova: boolean;
+          primeira_entrada: string;
+          ultima_entrada: string;
+        }[];
       };
       fn_org_operante: { Args: { p_org: string }; Returns: boolean };
       fn_org_parada_descarta_fila: { Args: { p_org: string }; Returns: undefined };

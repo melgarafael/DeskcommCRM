@@ -526,6 +526,63 @@ export function criarDubleDoHandler(
                 capturas.filtros.messages!.push({ coluna, valor: valores });
                 return cadeia;
               },
+              // `not(col, "is", null)` e `not(col, "in", "(a,b)")`, os dois que
+              // o PostgREST aceita aqui. Operador fora deles estoura: filtro
+              // ignorado em silêncio deixaria o teste verde medindo nada.
+              not: (coluna: string, operador: string, valor: unknown) => {
+                if (operador === "is" && valor === null) {
+                  filtros.push((r) => r[coluna] !== null && r[coluna] !== undefined);
+                } else if (operador === "in" && typeof valor === "string") {
+                  const lista = valor.replace(/^\(|\)$/g, "").split(",").map((v) => v.trim());
+                  filtros.push((r) => !lista.includes(String(r[coluna])));
+                } else {
+                  throw new Error(`[duble-do-handler] not(${coluna}, ${operador}) não implementado`);
+                }
+                capturas.filtros.messages!.push({ coluna, valor: `not.${operador}:${String(valor)}` });
+                return cadeia;
+              },
+              // `is(col, null)`, inclusive no caminho JSON `col->>chave`, que o
+              // PostgREST lê como texto (chave ausente = null).
+              is: (coluna: string, valor: null) => {
+                if (valor !== null) {
+                  throw new Error(`[duble-do-handler] is(${coluna}, ${String(valor)}) não implementado`);
+                }
+                const [base, chave] = coluna.split("->>");
+                filtros.push((r) => {
+                  const v = chave === undefined
+                    ? r[base!]
+                    : ((r[base!] ?? null) as Record<string, unknown> | null)?.[chave];
+                  return v === null || v === undefined;
+                });
+                capturas.filtros.messages!.push({ coluna, valor: "is:null" });
+                return cadeia;
+              },
+              // `or("a.is.null,a.neq.x")`: só `is.null` e `neq`, os dois que a
+              // leitura do #5015 usa. `->>` lê texto; NULL não casa `neq`.
+              or: (expressao: string) => {
+                const partes = expressao.split(",").map((parte) => {
+                  const [coluna, operador, ...resto] = parte.split(".");
+                  const alvo = resto.join(".");
+                  const [base, chave] = coluna!.split("->>");
+                  const ler = (r: LinhaDoDuble) => {
+                    const v = chave === undefined
+                      ? r[base!]
+                      : ((r[base!] ?? null) as Record<string, unknown> | null)?.[chave];
+                    return v === null || v === undefined ? null : String(v);
+                  };
+                  if (operador === "is" && alvo === "null") return (r: LinhaDoDuble) => ler(r) === null;
+                  if (operador === "neq") return (r: LinhaDoDuble) => ler(r) !== null && ler(r) !== alvo;
+                  throw new Error(`[duble-do-handler] or(${parte}) não implementado`);
+                });
+                filtros.push((r) => partes.some((f) => f(r)));
+                capturas.filtros.messages!.push({ coluna: "or", valor: expressao });
+                return cadeia;
+              },
+              gt: (coluna: string, valor: unknown) => {
+                filtros.push((r) => String(r[coluna] ?? "") > String(valor));
+                capturas.filtros.messages!.push({ coluna, valor: `gt:${String(valor)}` });
+                return cadeia;
+              },
               order: () => cadeia,
               limit: () => cadeia,
               // A leitura em lote devolve as linhas como elas estão, sem casar

@@ -12,6 +12,8 @@ import { createClient } from "@/lib/supabase/server";
 import { type RespostaDoRelatorioComercial } from "@/lib/relatorios/comercial";
 
 const ORG = "11111111-1111-1111-1111-111111111111";
+const FUNIL_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const FUNIL_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
 /**
  * O dublê do banco: registra CADA consulta montada, na ordem, com a tabela e os
@@ -113,6 +115,9 @@ function ganho(patch: Record<string, unknown> = {}) {
     tags: ["plano"],
     closed_at: "2026-09-10T15:00:00.000Z",
     contacts: { id: "c1", display_name: "Ana", name: "Ana", phone_number: "+55 11 9" },
+    pipeline_id: FUNIL_A,
+    title: "Plano anual",
+    crm_pipelines: { id: FUNIL_A, name: "Vendas" },
     ...patch,
   };
 }
@@ -258,6 +263,73 @@ describe("GET /api/v1/reports/comercial", () => {
     expect(res.status).toBe(422);
     const corpo = (await res.json()) as { error: { details?: { maximo_dias?: number } } };
     expect(corpo.error.details?.maximo_dias).toBe(400);
+  });
+
+  // ─── O recorte por funil e tag (#4802, item 4) ─────────────────────────────
+
+  it("recorta por funil e por tag, e devolve o nome do funil do mesmo pedido", async () => {
+    authOk();
+    makeDb([
+      ganho({ id: "a", tags: ["Cliente "] }),
+      ganho({ id: "b", tags: ["revenda"] }),
+      ganho({
+        id: "c",
+        pipeline_id: FUNIL_B,
+        tags: ["cliente"],
+        crm_pipelines: [{ id: FUNIL_B, name: "Recompra" }],
+      }),
+    ]);
+
+    const { GET } = await import("./route");
+    const res = await GET(pedir(`?de=2026-09-01&ate=2026-09-30&pipeline_id=${FUNIL_A}&tag=CLIENTE`));
+
+    expect(res.status).toBe(200);
+    const corpo = (await res.json()) as { data: RespostaDoRelatorioComercial };
+    // A tag do filtro sai normalizada, e acha "Cliente " gravado com espaço.
+    expect(corpo.data.filtro).toEqual({ pipeline_id: FUNIL_A, tag: "cliente" });
+    expect(corpo.data.vendas.map((v) => v.id)).toEqual(["a"]);
+    // As opções são do período inteiro, não do recorte.
+    expect(corpo.data.opcoes.pipeline_ids).toEqual([FUNIL_A, FUNIL_B]);
+    // O nome vem do recurso embutido, nas duas formas que o PostgREST devolve.
+    expect(corpo.data.nomes_dos_funis).toEqual({ [FUNIL_A]: "Vendas", [FUNIL_B]: "Recompra" });
+  });
+
+  it("com recorte continuam DUAS consultas, e a contagem sem data respeita o funil", async () => {
+    authOk();
+    const { consultas } = makeDb([ganho()], { semData: 1 });
+
+    const { GET } = await import("./route");
+    await GET(pedir(`?de=2026-09-01&ate=2026-09-30&pipeline_id=${FUNIL_A}&tag=plano`));
+
+    expect(consultas).toHaveLength(2);
+    // A leitura do período NÃO leva o recorte: as opções precisam do período inteiro.
+    expect(consultas[0]?.ops.join(" ")).not.toContain("eq:pipeline_id");
+    // A contagem de ganhos sem data leva o funil escolhido.
+    expect(consultas[1]?.ops).toContain(`eq:pipeline_id=${FUNIL_A}`);
+    expect(consultas[1]?.ops).toContain("is:closed_at=null");
+  });
+
+  it("funil que não é uuid → 422, sem ler o banco", async () => {
+    authOk();
+    const { db } = makeDb([ganho()]);
+
+    const { GET } = await import("./route");
+    const res = await GET(pedir("?de=2026-09-01&ate=2026-09-30&pipeline_id=nao-e-uuid"));
+
+    expect(res.status).toBe(422);
+    expect(db.from).not.toHaveBeenCalled();
+  });
+
+  it("parâmetros de recorte vazios contam como sem recorte", async () => {
+    authOk();
+    makeDb([ganho()]);
+
+    const { GET } = await import("./route");
+    const res = await GET(pedir("?de=2026-09-01&ate=2026-09-30&pipeline_id=&tag="));
+
+    expect(res.status).toBe(200);
+    const corpo = (await res.json()) as { data: RespostaDoRelatorioComercial };
+    expect(corpo.data.filtro).toEqual({ pipeline_id: null, tag: null });
   });
 
   it("sem auth repassa a resposta do requireRole e não lê o banco", async () => {

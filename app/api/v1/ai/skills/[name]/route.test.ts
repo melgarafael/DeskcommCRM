@@ -6,6 +6,8 @@ import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fail } from "@/lib/api/wrappers";
 import type { AuthUser } from "@/lib/auth/types";
+import { createClient } from "@/lib/supabase/server";
+import { validateBearerToken } from "@/lib/mcp/auth";
 
 /**
  * Task 5 — DELETE /api/v1/ai/skills/[name]: remove SÓ o skill_pointers da org
@@ -13,8 +15,19 @@ import type { AuthUser } from "@/lib/auth/types";
  */
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+vi.mock("@/lib/mcp/auth", () => ({
+  validateBearerToken: vi.fn(),
+  // Mesma lógica pura de lib/mcp/auth.ts: o ramo de token do resolveAuthDual a usa.
+  extractBearer: (authHeader: string | null) => {
+    if (!authHeader) return null;
+    const m = /^Bearer\s+(.+)$/i.exec(authHeader.trim());
+    if (!m) return null;
+    return m[1]!.trim();
+  },
+}));
 vi.mock("@/lib/ai/skills/db", () => ({ getSkillsPool: vi.fn(() => ({})) }));
 vi.mock("@/lib/agent-engine/agent/skills", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/agent-engine/agent/skills")>();
@@ -41,10 +54,32 @@ function mockAuthzOk() {
     user,
     org: { orgId: ORG_ID, name: "Org", role: "manager" },
   });
+  // `resolveAuthDual` na sessão chama `await createClient()`. Cada teste que
+  // exercita GET ou DELETE deve sobrescrever `createClient` com o dublê
+  // específico (mesmo objeto que antes passava a `createAdminClient`).
+  vi.mocked(createClient).mockResolvedValue(
+    makeAdminGetStub({ pointer: null }) as never,
+  );
+  vi.mocked(validateBearerToken).mockResolvedValue(null as never);
 }
 
 function makeAdminStub(deletedRows: Array<{ name: string }> | null, error: unknown = null) {
   const eqCalls: Array<[string, unknown]> = [];
+  // O `.select()` serve às duas pontas do DELETE: a leitura de existência
+  // (`.select().eq().eq().maybeSingle()`) e a escrita (`.delete().eq().eq().select()`,
+  // awaited direto). Por isso o objeto aceita `.eq`, `.maybeSingle` e é thenable.
+  const filtro = {
+    eq(col: string, val: unknown) {
+      eqCalls.push([col, val]);
+      return filtro;
+    },
+    maybeSingle() {
+      return Promise.resolve({ data: deletedRows?.[0] ?? null, error });
+    },
+    then(onOk: (v: unknown) => unknown, onErr?: (e: unknown) => unknown) {
+      return Promise.resolve({ data: deletedRows, error }).then(onOk, onErr);
+    },
+  };
   return {
     from() {
       const b = {
@@ -56,7 +91,7 @@ function makeAdminStub(deletedRows: Array<{ name: string }> | null, error: unkno
           return b;
         },
         select() {
-          return Promise.resolve({ data: deletedRows, error });
+          return filtro;
         },
       };
       return b;
@@ -87,6 +122,7 @@ describe("DELETE /api/v1/ai/skills/[name]", () => {
   it("pointer existe na org → remove, responde {name}, audita", async () => {
     mockAuthzOk();
     const stub = makeAdminStub([{ name: "frete-gratis" }]);
+    vi.mocked(createClient).mockResolvedValue(stub as never);
     vi.mocked(createAdminClient).mockReturnValue(stub as never);
 
     const { DELETE } = await import("./route");
@@ -126,6 +162,9 @@ function makeAdminGetStub(input: {
           return b;
         },
         eq() {
+          return b;
+        },
+        or() {
           return b;
         },
         async maybeSingle() {
