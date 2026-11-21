@@ -3,7 +3,7 @@
  * #3868).
  *
  * A rota decidia o 404 só pela instalação. Agora ela passa a organização do
- * request (`authz.org.orgId`), e o teste NÃO dubla `moduloLigado`: o dublê de
+ * request (`authz.organizationId`, resolvido por `resolveAuthDual`), e o teste NÃO dubla `moduloLigado`: o dublê de
  * banco aplica os filtros de verdade, então perder o `organization_id` é o que
  * fica vermelho.
  *
@@ -32,6 +32,11 @@ vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async (
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => mocks.banco.cliente }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn(async () => mocks.banco.cliente) }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: vi.fn() }));
+vi.mock("@/lib/mcp/auth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/mcp/auth")>()),
+  validateBearerToken: vi.fn(),
+}));
 
 import { GET, PATCH } from "@/app/api/v1/settings/proposals/route";
 
@@ -55,6 +60,11 @@ function mundo(opcoes: { instalacaoLigada: boolean; linhaDaEmpresa?: "ligado" | 
   return banco;
 }
 
+function ler() {
+  // Sem `Authorization`, `resolveAuthDual` segue pela sessão de navegador (`requireRole`).
+  return GET(new Request("http://localhost/api/v1/settings/proposals") as never);
+}
+
 async function patch(corpo: unknown) {
   const req = new Request("http://localhost/api/v1/settings/proposals", {
     method: "PATCH",
@@ -73,7 +83,7 @@ describe("a rota de Propostas consulta a empresa, não só a instalação", () =
   it("instalação ligada + empresa desligada: GET e PATCH respondem 404, e o PATCH não escreve", async () => {
     const banco = mundo({ instalacaoLigada: true, linhaDaEmpresa: "desligado" });
 
-    const leitura = await GET();
+    const leitura = await ler();
     expect(leitura.status).toBe(404);
 
     const escrita = await patch({ enabled: true, default_valid_days: 15, default_conditions: null });
@@ -86,19 +96,19 @@ describe("a rota de Propostas consulta a empresa, não só a instalação", () =
 
   it("instalação ligada + empresa ligada: GET 200 e PATCH 200", async () => {
     mundo({ instalacaoLigada: true, linhaDaEmpresa: "ligado" });
-    expect((await GET()).status).toBe(200);
+    expect((await ler()).status).toBe(200);
     const escrita = await patch({ enabled: true, default_valid_days: 15, default_conditions: null });
     expect(escrita.status).toBe(200);
   });
 
   it("instalação ligada + empresa sem linha: herda a instalação (controle)", async () => {
     mundo({ instalacaoLigada: true });
-    expect((await GET()).status).toBe(200);
+    expect((await ler()).status).toBe(200);
   });
 
   it("instalação DESLIGADA + empresa ligada: 404 — a instalação continua sendo o teto", async () => {
     mundo({ instalacaoLigada: false, linhaDaEmpresa: "ligado" });
-    expect((await GET()).status).toBe(404);
+    expect((await ler()).status).toBe(404);
     expect((await patch({ enabled: true, default_valid_days: 15, default_conditions: null })).status).toBe(404);
   });
 });
