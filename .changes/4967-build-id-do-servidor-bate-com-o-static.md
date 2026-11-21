@@ -10,4 +10,4 @@ A causa foi medida no log da publicação: o cache de build do GitHub veio incom
 
 Agora os estáticos viajam dentro do mesmo diretório que o servidor, copiado uma vez só, e a esteira confere os dois identificadores dentro da imagem antes de deixar a publicação seguir: se não baterem, a esteira reprova, a versão pública e o canal `stable` não são criados e a imagem não chega a quem instala. A verificação também roda no PR, quando a imagem é construída sem ser publicada.
 
-Nada muda para quem já tem o produto instalado: a `1.117.0` está íntegra e a atualização não exige passo nenhum. Republicar a `1.118.0` é ato do mantenedor no registro de imagens dele.
+Nada muda para quem já tem o produto instalado; a atualização não exige passo nenhum.
