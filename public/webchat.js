@@ -43,8 +43,23 @@
   }
 
   /**
+   * Referrer reduzido a origem + caminho: sem query e sem fragmento, cortado em 200 caracteres.
+   * Não é URL http(s) válida: string vazia.
+   */
+  function referrerLimpo(ref) {
+    if (typeof ref !== "string" || ref === "") return "";
+    try {
+      var url = new URL(ref);
+      if (url.protocol !== "http:" && url.protocol !== "https:") return "";
+      return (url.origin + url.pathname).slice(0, LIMITE_DO_VALOR);
+    } catch (erro) {
+      return "";
+    }
+  }
+
+  /**
    * O que vai ao iframe: `href` sem fragmento e sem parâmetro que não seja utm_*,
-   * `referrer` da página e os `utm_*` (aparados e cortados em 200 caracteres).
+   * `referrer` reduzido a origem + caminho e os `utm_*` (aparados e cortados em 200 caracteres).
    * Token, e-mail e demais parâmetros do site não saem daqui.
    */
   function montarContexto(loc, doc) {
@@ -66,7 +81,7 @@
 
     return {
       href: href.href,
-      referrer: doc && typeof doc.referrer === "string" ? doc.referrer : "",
+      referrer: referrerLimpo(doc ? doc.referrer : ""),
       utm: utm,
     };
   }

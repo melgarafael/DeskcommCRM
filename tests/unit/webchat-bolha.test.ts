@@ -77,6 +77,42 @@ describe("montarContexto", () => {
     expect(contexto.utm).not.toHaveProperty("utm_medium");
   });
 
+  it("reduz o referrer a origem e caminho, sem query nem fragmento", () => {
+    const contexto = modulo.montarContexto(
+      { href: "https://loja.exemplo.com.br/" },
+      { referrer: "https://busca.exemplo.com.br/resultado?token=abc#x" },
+    );
+
+    expect(contexto.referrer).toBe("https://busca.exemplo.com.br/resultado");
+    expect(contexto.referrer).not.toContain("token");
+    expect(contexto.referrer).not.toContain("#");
+  });
+
+  it("referrer inválido ou que não é http(s) vira vazio", () => {
+    const ruim = (ref: string) =>
+      modulo.montarContexto({ href: "https://loja.exemplo.com.br/" }, { referrer: ref }).referrer;
+
+    expect(ruim("nao e url")).toBe("");
+    expect(ruim("javascript:alert(1)")).toBe("");
+  });
+
+  it("referrer vazio continua vazio", () => {
+    expect(
+      modulo.montarContexto({ href: "https://loja.exemplo.com.br/" }, { referrer: "" }).referrer,
+    ).toBe("");
+  });
+
+  it("corta o referrer reduzido em 200 caracteres", () => {
+    const caminho = "a".repeat(300);
+    const contexto = modulo.montarContexto(
+      { href: "https://loja.exemplo.com.br/" },
+      { referrer: `https://busca.exemplo.com.br/${caminho}?q=1` },
+    );
+
+    expect(contexto.referrer).toHaveLength(200);
+    expect(contexto.referrer.startsWith("https://busca.exemplo.com.br/")).toBe(true);
+  });
+
   it("sem parâmetro algum devolve utm vazio e href sem query", () => {
     const contexto = modulo.montarContexto(
       { href: "https://loja.exemplo.com.br/contato" },
