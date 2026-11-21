@@ -9615,6 +9615,11 @@ $$;
 revoke execute on function public.fn_webchat_origens_validas(text[]) from public, anon;
 grant  execute on function public.fn_webchat_origens_validas(text[]) to authenticated, service_role;
 
+-- Cada troca de restrição vai num bloco `do` só: o update.sh reaplica sem
+-- ON_ERROR_STOP e em autocommit, e um drop solto seguido de um add que falha
+-- deixaria a tabela sem a regra.
+do $x$
+begin
 alter table public.channel_sessions
   drop constraint if exists channel_sessions_provider_check;
 
@@ -9625,7 +9630,11 @@ alter table public.channel_sessions
   -- por migration).
   -- 'webchat' (9444, chat no site) somado aqui também.
   check (provider = any (array['waha'::text, 'meta_cloud'::text, 'zernio'::text, 'wacalls'::text, 'zernio_social'::text, 'datafy'::text, 'telegram'::text, 'webchat'::text]));
+end
+$x$;
 
+do $x$
+begin
 alter table public.channel_sessions
   drop constraint if exists channel_sessions_provider_ref_check;
 
@@ -9643,13 +9652,19 @@ alter table public.channel_sessions
     -- Chat no site (9444): endereça pela chave pública do widget.
     (provider = 'webchat'    and webchat_public_key   is not null)
   );
+end
+$x$;
 
+do $x$
+begin
 alter table public.channel_sessions
   drop constraint if exists channel_sessions_webchat_allowed_origins_check;
 
 alter table public.channel_sessions
   add constraint channel_sessions_webchat_allowed_origins_check
   check (public.fn_webchat_origens_validas(webchat_allowed_origins));
+end
+$x$;
 
 comment on column public.channel_sessions.zernio_account_id is
   'Identificador da conta conectada NO INTERMEDIÁRIO (accountId), não o phone_number_id da Meta. É o que endereça envio e webhook. Espelhado em lib/channels/session-ref.ts.';
@@ -35745,9 +35760,13 @@ comment on column public.contacts.social_identity is
 -- afirmava o contrário ("incluídas no bloco único acima") e era falsa: o
 -- apêndice não tocava constraint nenhuma, e toda VPS de cliente batia 23514 na
 -- primeira conexão de rede social.
+do $x$
+begin
 alter table public.conversations drop constraint if exists conversations_channel_check;
 alter table public.conversations add constraint conversations_channel_check
   check (channel in ('whatsapp', 'instagram', 'facebook', 'telegram', 'webchat'));
+end
+$x$;
 
 
 -- APÊNDICE 20260921030100_0369_prospeccao_nativa.sql
