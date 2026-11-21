@@ -6050,6 +6050,7 @@ export type Database = {
           ligado: boolean;
           lembrar_antes: boolean;
           organization_id: string;
+          resumo_so_com_agendamento: boolean;
           telefone_destino: string | null;
           updated_at: string;
           usa_numero_do_aviso_de_caso: boolean;
@@ -6063,6 +6064,7 @@ export type Database = {
           ligado?: boolean;
           lembrar_antes?: boolean;
           organization_id: string;
+          resumo_so_com_agendamento?: boolean;
           telefone_destino?: string | null;
           updated_at?: string;
           usa_numero_do_aviso_de_caso?: boolean;
@@ -6075,6 +6077,7 @@ export type Database = {
           ligado?: boolean;
           lembrar_antes?: boolean;
           organization_id?: string;
+          resumo_so_com_agendamento?: boolean;
           telefone_destino?: string | null;
           updated_at?: string;
           usa_numero_do_aviso_de_caso?: boolean;
@@ -16032,6 +16035,13 @@ export type Database = {
         Args: {
           p_lembrar: boolean;
           p_org: string;
+        };
+        Returns: boolean;
+      };
+      fn_definir_resumo_do_aviso_de_agendamento: {
+        Args: {
+          p_org: string;
+          p_so_com_agendamento: boolean;
         };
         Returns: boolean;
       };

@@ -126,7 +126,8 @@ describe("módulo Propostas desligado na INSTALAÇÃO (doc 79)", () => {
     const res = await mundo.PATCH({ enabled: true, default_valid_days: 15, default_conditions: null });
     expect(res.status).toBe(404);
     expect(mundo.gravado).toBeNull();
-    expect(moduloLigado).toHaveBeenCalledWith(expect.anything(), "propostas");
+    // #4871: o gate pergunta pela EMPRESA do request, não só pela instalação.
+    expect(moduloLigado).toHaveBeenCalledWith(expect.anything(), "propostas", ORG_ID);
     vi.mocked(moduloLigado).mockResolvedValue(true);
   });
 });

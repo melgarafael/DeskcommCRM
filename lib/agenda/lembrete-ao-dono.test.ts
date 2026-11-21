@@ -86,6 +86,7 @@ function dbDoAviso(agora: Date): AvisoDeAgendamentoDb {
     nomeDoProfissional: async () => null,
     reivindicaAviso: nada,
     reivindicaResumo: nada,
+    resumoJaReivindicado: nada,
     atualizaEntrega: async (_o, id, patch) => {
       const e = mundo.entregas.find((x) => x.id === id);
       if (e) Object.assign(e, patch, { updated_at: agora.toISOString() });
