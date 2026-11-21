@@ -83005,8 +83005,8 @@ grant  execute on function public.fn_definir_resumo_do_aviso_de_agendamento(uuid
 
 notify pgrst, 'reload schema';
 
--- ---- contas de relatório do Google Ads (migration 9438, #5041) ----
--- Espelho idempotente de supabase/migrations/20261120182020_9438_contas_de_relatorio_do_google_ads.sql.
+-- ---- contas de relatório do Google Ads (migration 9448, #5041) ----
+-- Espelho idempotente de supabase/migrations/20261121152735_9448_contas_de_relatorio_do_google_ads.sql.
 -- Cria função: precisa ficar antes da VARREDURA anon (0116).
 -- manifest: Guarda autorizações de relatórios do Google Ads por organização e conta anunciante para consultar várias contas sem mudar o destino das conversões.
 
