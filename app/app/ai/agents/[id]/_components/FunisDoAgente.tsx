@@ -31,8 +31,24 @@ export interface CoberturaPorFunil {
   [pipelineId: string]: { traduzidos: number; total: number; mudo: boolean };
 }
 
+/**
+ * Um número que este assistente atende (o que ele escolheu e o do roteador em
+ * que ele está), com o funil de entrada que o número escolheu (#4921).
+ */
+export interface NumeroDoAgente {
+  id: string;
+  nome: string;
+  /** `channel_sessions.entry_pipeline_id`. Nulo = o funil padrão da organização. */
+  funilDeEntradaId: string | null;
+}
+
 interface Props {
   funis: FunilDaResposta[];
+  /**
+   * Opcional: quando ausente (ou vazio), o funil de entrada é o padrão da
+   * organização, como antes do #4921.
+   */
+  numeros?: NumeroDoAgente[];
   /**
    * Opcional: quando ausente, a tela não fala de tradução nenhuma. É melhor
    * calar do que exibir "0 de 5" para todo funil só porque o dado não chegou.
@@ -43,7 +59,7 @@ interface Props {
   disabled?: boolean;
 }
 
-export function FunisDoAgente({ funis, value, onChange, cobertura, disabled = false }: Props) {
+export function FunisDoAgente({ funis, value, onChange, cobertura, numeros, disabled = false }: Props) {
   const t = useT();
   const marcados = new Set(value);
 
@@ -54,12 +70,17 @@ export function FunisDoAgente({ funis, value, onChange, cobertura, disabled = fa
     onChange([...proximo]);
   }
 
-  const funilDeEntrada = funis.find((f) => f.is_default);
   // O aviso mais importante desta tela, e o menos óbvio: o funil de entrada é
   // onde o sistema cria um card por conversa nova (spec 17 passo 1). Se ele
   // ficar de fora, o assistente conversa e os cards se acumulam sem que ele
   // possa tocá-los.
-  const entradaDeFora = Boolean(funilDeEntrada && !marcados.has(funilDeEntrada.id) && value.length > 0);
+  //
+  // Desde o #4921 cada número escolhe o seu funil de entrada. A régua é a de
+  // `lib/leads/nascimento-do-lead.ts`: vale o funil que o número escolheu se ele
+  // ainda existe (a lista só traz funis não arquivados); senão, o padrão.
+  const entradas = funisDeEntrada(funis, numeros);
+  const entradasDeFora = value.length > 0 ? entradas.filter((e) => !marcados.has(e.funil.id)) : [];
+  const ehEntrada = new Set(entradas.map((e) => e.funil.id));
 
   // Funis que o assistente cuida e não sabe percorrer: promessa que não se
   // cumpre. O dono marcou achando que ele ia organizar, e ele não vai.
@@ -101,7 +122,7 @@ export function FunisDoAgente({ funis, value, onChange, cobertura, disabled = fa
               />
               <Label htmlFor={`funil-${f.id}`} className="text-sm font-normal">
                 {f.name}
-                {f.is_default ? (
+                {ehEntrada.has(f.id) ? (
                   <span className="ml-2 text-xs text-muted-foreground">
                     {t("(é para cá que vão as conversas novas)")}
                   </span>
@@ -151,12 +172,51 @@ export function FunisDoAgente({ funis, value, onChange, cobertura, disabled = fa
         </p>
       ) : null}
 
-      {entradaDeFora ? (
-        <p data-testid="agente-entrada-de-fora" className="text-xs text-warning-fg">
-          {t("As conversas novas viram negócio em")} <strong>{funilDeEntrada?.name}</strong>
-          {t(", que não está marcado. O assistente vai atender e os negócios vão se acumular ali sem que ele possa organizá-los.")}
-        </p>
+      {entradasDeFora.length > 0 ? (
+        <div data-testid="agente-entrada-de-fora" className="space-y-1">
+          {entradasDeFora.map(({ funil, numerosQueEscolheram }) => (
+            <p key={funil.id} className="text-xs text-warning-fg">
+              {numerosQueEscolheram.length > 0 ? (
+                <>
+                  {t("As conversas novas do número")} <strong>{numerosQueEscolheram.join(", ")}</strong>{" "}
+                  {t("viram negócio em")} <strong>{funil.name}</strong>
+                </>
+              ) : (
+                <>
+                  {t("As conversas novas viram negócio em")} <strong>{funil.name}</strong>
+                </>
+              )}
+              {t(", que não está marcado. O assistente vai atender e os negócios vão se acumular ali sem que ele possa organizá-los.")}
+            </p>
+          ))}
+        </div>
       ) : null}
     </Card>
   );
+}
+
+/**
+ * Os funis onde nascem os cards das conversas novas deste assistente.
+ *
+ * Sem números conhecidos, é o padrão da organização (o comportamento de antes do
+ * #4921). Com números, é o funil que cada um escolheu, ou o padrão para quem não
+ * escolheu ou escolheu um funil que não existe mais. `numerosQueEscolheram` só
+ * leva quem escolheu de propósito: é o que a frase do aviso nomeia.
+ */
+function funisDeEntrada(
+  funis: FunilDaResposta[],
+  numeros: NumeroDoAgente[] | undefined,
+): Array<{ funil: FunilDaResposta; numerosQueEscolheram: string[] }> {
+  const padrao = funis.find((f) => f.is_default);
+  if (!numeros || numeros.length === 0) return padrao ? [{ funil: padrao, numerosQueEscolheram: [] }] : [];
+  const porFunil = new Map<string, { funil: FunilDaResposta; numerosQueEscolheram: string[] }>();
+  for (const numero of numeros) {
+    const escolhido = numero.funilDeEntradaId ? funis.find((f) => f.id === numero.funilDeEntradaId) : undefined;
+    const funil = escolhido ?? padrao;
+    if (!funil) continue;
+    const item = porFunil.get(funil.id) ?? { funil, numerosQueEscolheram: [] };
+    if (escolhido && !item.numerosQueEscolheram.includes(numero.nome)) item.numerosQueEscolheram.push(numero.nome);
+    porFunil.set(funil.id, item);
+  }
+  return [...porFunil.values()];
 }

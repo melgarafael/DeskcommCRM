@@ -13,7 +13,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { apiClient } from "@/lib/api/client";
-import { ModelPicker, type ModelOption } from "./ModelPicker";
+import { ModelPicker, type ModelOption, type Provider } from "./ModelPicker";
 
 vi.mock("@/lib/api/client", () => ({ apiClient: { get: vi.fn() } }));
 
@@ -56,11 +56,11 @@ const CATALOGO: ModelOption[] = [
   },
 ];
 
-function montar(value: string, onChange = vi.fn()) {
+function montar(value: string, onChange = vi.fn(), provider: Provider = "openrouter") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <ModelPicker provider="openrouter" value={value} onChange={onChange} id="modelo" />
+      <ModelPicker provider={provider} value={value} onChange={onChange} id="modelo" />
     </QueryClientProvider>,
   );
   return onChange;
@@ -68,7 +68,9 @@ function montar(value: string, onChange = vi.fn()) {
 
 async function abrir() {
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("combobox"));
+  const gatilho = screen.getByRole("combobox");
+  await waitFor(() => expect(gatilho).toBeEnabled());
+  await user.click(gatilho);
   return user;
 }
 
@@ -177,5 +179,52 @@ describe("ModelPicker — busca, preço e modelo salvo", () => {
     expect(gatilho).toHaveTextContent("Carregando…");
     await waitFor(() => expect(gatilho).toHaveTextContent("OpenAI: GPT-6 Luna"));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});
+
+const GEMINI_APOSENTADOS = [
+  "gemini-2.0-flash",
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-2.5-pro",
+];
+const GEMINI_DISPONIVEL = "gemini-3.8-flash";
+
+describe("ModelPicker — modelos aposentados pelo Google", () => {
+  beforeEach(() => {
+    const models: ModelOption[] = [...GEMINI_APOSENTADOS, GEMINI_DISPONIVEL].map((id) => ({
+      provider: "google",
+      model_id: id,
+      display_name: id,
+      context_window: 1_000_000,
+      is_default_for_provider: false,
+    }));
+    vi.mocked(apiClient.get).mockResolvedValue({ data: { models } } as never);
+  });
+
+  it("não oferece os quatro Gemini aposentados para uma nova escolha", async () => {
+    montar("", vi.fn(), "google");
+    await abrir();
+
+    const lista = screen.getByRole("listbox");
+    expect(within(lista).getByText(GEMINI_DISPONIVEL)).toBeVisible();
+    for (const id of GEMINI_APOSENTADOS) {
+      expect(within(lista).queryByText(id, { exact: true })).not.toBeInTheDocument();
+    }
+  });
+
+  it("mostra o Gemini aposentado já salvo, com aviso e opção de trocar", async () => {
+    const salvo = "gemini-2.5-flash";
+    const onChange = montar(salvo, vi.fn(), "google");
+
+    await waitFor(() => expect(screen.getByRole("combobox")).toHaveTextContent(salvo));
+    expect(screen.getByRole("alert")).toHaveTextContent("aposentado pelo provedor");
+    expect(onChange).not.toHaveBeenCalled();
+
+    const user = await abrir();
+    const lista = within(screen.getByRole("listbox"));
+    expect(lista.queryByText(salvo)).not.toBeInTheDocument();
+    await user.click(lista.getByText(GEMINI_DISPONIVEL));
+    expect(onChange).toHaveBeenCalledWith(GEMINI_DISPONIVEL, { contextWindow: 1_000_000 });
   });
 });

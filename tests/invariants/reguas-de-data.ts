@@ -51,6 +51,7 @@ import type pg from "pg";
 import { precisaRenovar } from "@/lib/agenda/google/oauth";
 import { falasDoSnapshot } from "@/lib/agent-engine/agent/conversa-do-caso/leitura";
 import { midiaDerivavelPendente } from "@/lib/agent-engine/edge/crm/midia-derivavel";
+import { idadeNoStatusEmMs } from "@/lib/agent-engine/edge/crm/session-reconciler";
 import { normalizarInstante } from "@/lib/ai/elegibilidade/gate";
 import { quandoCombinado } from "@/lib/atendimento/aviso-retorno-descartado";
 import { estaPresente } from "@/lib/atendimento/presenca";
@@ -116,7 +117,7 @@ const mesmoInstante = (texto: string | null): boolean =>
   texto !== null && Date.parse(texto) === CHEGADA_MS;
 
 /**
- * A LISTA. Doze réguas, na ordem em que a varredura as encontrou.
+ * A LISTA. Treze réguas, na ordem em que a varredura as encontrou.
  *
  * A lista é curta porque é um CONTRATO: cada linha custa a prova de que a régua
  * aceita as duas formas e de que não desloca o instante.
@@ -333,6 +334,17 @@ export function reguasDeData(pool: pg.Pool): ReguaDeData[] {
         });
         return Date.parse(prazo) === Date.parse("2026-11-10T12:00:00.000Z");
       },
+    },
+    {
+      nome: "idadeNoStatusEmMs",
+      onde: "lib/agent-engine/edge/crm/session-reconciler.ts:145",
+      // (#4870) A idade do status no espelho `channel_sessions` é o que decide
+      // se a sessão presa em `STARTING` é reiniciada: `last_status_change_at`
+      // chega `Date` do driver `pg` e string do PostgREST/jsonb. Recusar o
+      // `Date` devolveria `null` e o vigia NUNCA reiniciaria — a trava ficaria
+      // muda, que é exatamente o defeito que ela veio fechar.
+      entrada: "valor",
+      exercitar: (valorCru) => idadeNoStatusEmMs(valorCru, CHEGADA_MS) === 0,
     },
   ];
 }

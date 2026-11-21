@@ -23,9 +23,9 @@ const NOW = '2026-10-24T12:00:00.000Z';
 type Linhas = {
   event_log: EventRow[];
   conversations: { id: string; organization_id: string; contact_id: string; status: string;
-    bot_silenced_until: string | null; metadata: Record<string, unknown> }[];
+    bot_silenced_until: string | null; last_handoff_reason?: string | null; metadata: Record<string, unknown> }[];
   agent_inbox_items: { id: string; organization_id: string; ref_kind: string; ref_id: string; body: string }[];
-  organizations: { id: string; settings: Record<string, unknown> }[];
+  organizations: { id: string; locale?: string | null; settings: Record<string, unknown> }[];
 };
 type Linha = Linhas[keyof Linhas][number];
 type Alteracao = { metadata?: Record<string, { estado?: string }>; body?: string };
@@ -69,7 +69,8 @@ function fixture() {
   const admin = banco({
     event_log: [structuredClone(row)],
     conversations: [{ id: CONV, organization_id: ORG, contact_id: CONTACT,
-      status: 'pending', bot_silenced_until: 'infinity', metadata: { [MARCA_EPISODIO_HANDOFF]: EVENT } }],
+      status: 'pending', bot_silenced_until: 'infinity', last_handoff_reason: null,
+      metadata: { [MARCA_EPISODIO_HANDOFF]: EVENT } }],
     agent_inbox_items: [{ id: CENTRAL, organization_id: ORG, ref_kind: 'conversation', ref_id: CONV,
       body: 'Uma pessoa precisa assumir esta conversa.' }],
     // Sem a chave: ausente é ligado, como o aviso de Propostas.
@@ -85,7 +86,7 @@ function fixture() {
     db: { carregaConfig: async org => { assert.equal(org, ORG); return structuredClone(config); },
       carregaCanal: async (org, id) => { assert.equal(org, ORG); assert.equal(id, CHANNEL); return canal; },
       contatoAnonimizado: async () => false, destinoEhDaPropriaOrganizacao: async () => false,
-      registraJidDoAviso: async () => {} },
+      nomeDoContato: async () => 'Maria Fernanda Teste', registraJidDoAviso: async () => {} },
     transporte: { configurado: async () => true, resolveDestino: async () => 'destino-configurado',
       envia: async (...args) => { chamadas.push(args); return { externalId: 'recibo' }; } },
     pacing: { decide: async () => ({ liberado: true }), registraEnvio: async (...args) => { pacing.push(args); } },
@@ -237,6 +238,44 @@ test('link usa a rota real e remove query e fragmento da configuração', () => 
   assert.equal(textoDoAvisoHandoff('https://user:password@crm.exemplo.test', CONV), null);
 });
 
+test('sem o opt-in, a mensagem NÃO leva nome nem motivo (mínima por padrão)', async () => {
+  const f = fixture();
+  f.admin.linhas.conversations[0]!.last_handoff_reason = 'Quer orçamento do quarto da bebê.';
+  assert.equal((await aplicaAvisoHandoff(f.deps, f.row)).status, 'ok');
+  const enviado = f.chamadas[0]![3] as string;
+  assert.doesNotMatch(enviado, /Cliente:|Resumo:|Maria|quarto/);
+  assert.match(enviado, /Um atendimento precisa de uma pessoa da equipe\./);
+});
+
+// Doc 372 = A: a opção põe SÓ o primeiro nome. O motivo gravado na conversa —
+// texto livre da IA ou código interno como `requested_human` — nunca sai.
+for (const motivo of ['Quer o quarto da bebê, já mandou fotos.', 'requested_human']) {
+  test(`com o opt-in ligado, a mensagem leva só o PRIMEIRO nome, nunca o motivo (${motivo})`, async () => {
+    const f = fixture();
+    f.admin.linhas.organizations[0]!.settings = { crm: { aviso_transferencia_com_nome: true } };
+    f.admin.linhas.conversations[0]!.last_handoff_reason = motivo;
+    assert.equal((await aplicaAvisoHandoff(f.deps, f.row)).status, 'ok');
+    const enviado = f.chamadas[0]![3] as string;
+    assert.match(enviado, /^Cliente: Maria$/m);
+    assert.doesNotMatch(enviado, /Fernanda|Resumo|quarto|requested_?human/);
+  });
+}
+
+test('a chave antiga do rascunho (com_resumo) NÃO liga o nome', async () => {
+  const f = fixture();
+  f.admin.linhas.organizations[0]!.settings = { crm: { aviso_transferencia_com_resumo: true } };
+  assert.equal((await aplicaAvisoHandoff(f.deps, f.row)).status, 'ok');
+  assert.doesNotMatch(f.chamadas[0]![3] as string, /Cliente:/);
+});
+
+test('textoDoAvisoHandoff com nome põe o primeiro nome entre a abertura e o link', () => {
+  const texto = textoDoAvisoHandoff('https://crm.exemplo.test', CONV, { nome: 'Izabella Eber' });
+  assert.ok(texto);
+  assert.match(texto, /\n\nCliente: Izabella\n\nAbrir conversa:/);
+  assert.equal(textoDoAvisoHandoff('https://crm.exemplo.test', CONV, { nome: '  ' }),
+    textoDoAvisoHandoff('https://crm.exemplo.test', CONV));
+});
+
 test('evento sem Central e eventos do dreno HTTP nunca enviam', async () => {
   const f = fixture();
   assert.equal((await aplicaAvisoHandoff(f.deps, { ...f.row, payload: {} })).detail, 'evento_invalido');
@@ -265,4 +304,22 @@ test('recibo concorrente da Central nunca rebaixa aceite positivo para incerto',
   assert.equal(f.marca()!.estado, 'enviado');
   assert.match(f.admin.linhas.agent_inbox_items[0]!.body, /aceito pelo canal de WhatsApp/);
   assert.doesNotMatch(f.admin.linhas.agent_inbox_items[0]!.body, /entrega não confirmada/);
+});
+
+test('aviso e recibo seguem o idioma da organização (es) sem alterar pt-BR', async () => {
+  const textoEs = textoDoAvisoHandoff('https://crm.exemplo.test', CONV, { nome: 'Izabella Eber', idioma: 'es' });
+  assert.ok(textoEs);
+  assert.match(textoEs, /^Una conversación necesita atención de una persona del equipo\./);
+  assert.match(textoEs, /\n\nCliente: Izabella\n\nAbrir conversación:/);
+  assert.match(textoEs, /Responde desde el CRM; responder a este aviso no le llega al cliente\.$/);
+
+  const reciboEs = corpoComResultadoHandoff('Pasaje', EVENT, { estado: 'enviado', em: NOW }, 'es');
+  assert.match(reciboEs, /Aviso al equipo \(.+\): aceptado por el canal de WhatsApp\.$/);
+
+  const f = fixture();
+  f.admin.linhas.organizations[0]!.locale = 'es';
+  assert.equal((await aplicaAvisoHandoff(f.deps, f.row)).status, 'ok');
+  const enviado = f.chamadas[0]![3] as string;
+  assert.match(enviado, /^Una conversación necesita atención de una persona del equipo\./);
+  assert.match(f.admin.linhas.agent_inbox_items[0]!.body, /Aviso al equipo \(.+\): aceptado por el canal de WhatsApp\./);
 });

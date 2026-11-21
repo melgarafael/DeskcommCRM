@@ -83,6 +83,15 @@ const PROIBIDOS = /(dados-de-mentira|fixtures?|mock|stub|dados-falsos|seed-de-te
  */
 const PERMITIDOS: Record<string, string> = {};
 
+/**
+ * Exceção por ARESTA (arquivo → especificador), com o mesmo motivo cobrado: o
+ * módulo casa o nome da categoria, mas não é dado de tela.
+ */
+const ARESTAS_PERMITIDAS: Record<string, string> = {
+  "lib/agent-engine/agent/request-deps.ts → ./preview-fixture":
+    "provedor de modelo FALSO do QA (INTERNAL_AGENT_RUN_STUB), não dado de tela: nenhuma tela renderiza o que ele devolve; a tela do assistente chega a ele só pelo import sob demanda de lib/ai/agents/teste-da-versao.ts nas ferramentas MCP (#4805)",
+};
+
 function arquivosDeTela(dir: string): string[] {
   const achados: string[] = [];
   for (const entrada of readdirSync(dir)) {
@@ -168,7 +177,8 @@ function arestasDe(arquivo: string): { proibidos: string[]; locais: string[] } {
   if (fonte !== null) {
     for (const especificador of importesDe(fonte)) {
       if (PROIBIDOS.test(especificador)) {
-        arestas.proibidos.push(`${relativoEmBarraNormal(RAIZ, arquivo)} → ${especificador}`);
+        const aresta = `${relativoEmBarraNormal(RAIZ, arquivo)} → ${especificador}`;
+        if (!ARESTAS_PERMITIDAS[aresta]) arestas.proibidos.push(aresta);
         continue;
       }
       const local = resolverLocal(especificador, arquivo);
@@ -218,7 +228,7 @@ describe("tela alcançável não come dado de mentira", () => {
   });
 
   it("toda exceção explica o porquê", () => {
-    for (const [rota, motivo] of Object.entries(PERMITIDOS)) {
+    for (const [rota, motivo] of Object.entries({ ...PERMITIDOS, ...ARESTAS_PERMITIDAS })) {
       expect(motivo.length, `${rota} está na allowlist sem motivo escrito`).toBeGreaterThan(30);
     }
   });

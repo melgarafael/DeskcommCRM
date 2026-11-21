@@ -331,8 +331,7 @@ cat <<EOF
 
 Credenciais iniciais (arquivo protegido com permissao 600):
   usuario: ${owner_email}
-  senha:   ${owner_password}
-  arquivo: ${CREDENTIALS_FILE}
+  arquivo: ${CREDENTIALS_FILE} (OWNER_PASSWORD)
 
 Supabase, banco, Auth, APIs, CRM, WhatsApp, Redis e proxy estao nesta VPS.
 A IA inicia desativada; configure um provedor depois em Agente de IA.

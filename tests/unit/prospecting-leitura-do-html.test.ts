@@ -84,13 +84,11 @@ function montarChecklistAntigo(html: string): RaioXDoSite {
     ["tel", minusculo.includes('href="tel:') || minusculo.includes("href='tel:") || temWhatsapp],
     ["mailto", minusculo.includes("mailto:")],
     ["social", minusculo.includes("instagram.com") || minusculo.includes("facebook.com")],
-    [
-      "mapa",
-      minusculo.includes("google.com/maps") ||
-        minusculo.includes("maps.google") ||
-        minusculo.includes("<address") ||
-        /\b\d{5}-\d{3}\b/.test(fonte),
-    ],
+    // #3630 separou de propósito "Endereço" (`<address>` ou CEP) de "Mapa" (link do
+    // Google Maps). A cópia acompanha essa regra nova; o que este arquivo mede é a
+    // leitura do HTML com custo proporcional, não o desenho do checklist.
+    ["endereco", /<address\b/i.test(fonte) || /\b\d{5}-\d{3}\b/.test(fonte)],
+    ["mapa", minusculo.includes("google.com/maps") || minusculo.includes("maps.google")],
     ["fotos", (minusculo.match(/<img\b/g) ?? []).length >= 3],
     [
       "titulo",

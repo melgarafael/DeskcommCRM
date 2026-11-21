@@ -31,10 +31,11 @@ export async function lerPaginado<T>(
     fim: number,
     contar: boolean,
   ) => PromiseLike<{ data: T[] | null; error: { message: string } | null; count: number | null }>,
+  maxPaginas = PAGINAS_MAXIMAS,
 ): Promise<{ linhas: T[]; truncado: boolean; erro: string | null }> {
   const linhas: T[] = [];
   let total: number | null = null;
-  for (let i = 0; i < PAGINAS_MAXIMAS; i++) {
+  for (let i = 0; i < maxPaginas; i++) {
     const { data, error, count } = await pagina(
       linhas.length,
       linhas.length + TAMANHO_DA_PAGINA - 1,

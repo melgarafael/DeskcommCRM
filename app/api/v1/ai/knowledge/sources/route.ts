@@ -8,19 +8,22 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * escolha da versão publicada de cada assistente
  * (`ai_agent_versions.knowledge_source_ids`).
  *
- * Auth: sessão por cookie, papel >= manager para escrever.
- * `organization_id` SEMPRE sai da sessão autenticada — nunca do corpo.
+ * Auth: sessão por cookie OU token de servidor (`resolveAuthDual`), papel >= manager
+ * para escrever. `organization_id` SEMPRE sai da sessão autenticada ou da linha do
+ * token — nunca do corpo.
  */
 
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { audit } from "@/lib/audit";
 import { loadAuthUser } from "@/lib/auth/server";
-import { orgAtivaDaApi, requireRole } from "@/lib/auth/require-role";
+import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { extractBearer } from "@/lib/mcp/auth";
 import { parseFaqMarkdown } from "@/lib/ai/rag/ingest/faq";
 import { temChaveDeEmbedding } from "@/lib/ai/embeddings/chave";
 import {
@@ -30,6 +33,8 @@ import {
   rotuloDoTipo,
 } from "@/lib/ai/rag/tipos-de-fonte";
 import { BUCKET_DE_CONHECIMENTO } from "@/lib/ai/rag/ingest/documento";
+import { caminhoDaOrganizacao } from "@/lib/ai/knowledge/caminho-do-arquivo";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -72,25 +77,47 @@ const SELECT_COLUNAS =
 // GET
 // ---------------------------------------------------------------------------
 
-export async function GET(_req: NextRequest): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
-  const authUser = await loadAuthUser();
-  if (!authUser) {
-    return fail("unauthenticated", "Auth required.", 401, { requestId });
-  }
-  const ativa = await orgAtivaDaApi(authUser, requestId);
-  if (!ativa.ok) return ativa.response;
-  const activeOrg = ativa.org;
-  if (!activeOrg) {
-    return fail("forbidden", "Nenhuma organização ativa.", 403, { requestId });
+  const bearer = extractBearer(req.headers.get("authorization"));
+  let supabase: Awaited<ReturnType<typeof createClient>>;
+  let organizationId: string;
+
+  if (bearer) {
+    // Token de servidor: config:read + papel admin (tokenRole).
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "ai_knowledge",
+      role: "viewer",
+      scope: "config:read",
+      tokenRole: "admin",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "ai_knowledge", requestId);
+    if (teto) return teto;
+    supabase = authz.supabase;
+    organizationId = authz.organizationId;
+  } else {
+    // Sessão de navegador: caminho antigo, byte a byte igual ao de hoje.
+    const authUser = await loadAuthUser();
+    if (!authUser) {
+      return fail("unauthenticated", "Auth required.", 401, { requestId });
+    }
+    const ativa = await orgAtivaDaApi(authUser, requestId);
+    if (!ativa.ok) return ativa.response;
+    const activeOrg = ativa.org;
+    if (!activeOrg) {
+      return fail("forbidden", "Nenhuma organização ativa.", 403, { requestId });
+    }
+    supabase = await createClient();
+    organizationId = activeOrg.orgId;
   }
 
-  const supabase = await createClient();
   const { data, error } = await supabase
     .from("ai_knowledge_sources")
     .select(SELECT_COLUNAS)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -113,10 +140,17 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const requestId = randomUUID();
 
-  const authz = await requireRole("manager", { requestId, resource: "ai_knowledge" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_knowledge",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_knowledge", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   let rawBody: unknown;
   try {
@@ -159,7 +193,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
 
   // `agent_id` é HISTÓRICO. Continua validado — mandar o id de um agente de
   // outra organização tem de doer — mas não decide mais quem lê o material.
@@ -168,7 +202,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       .from("ai_agents")
       .select("id")
       .eq("id", input.agent_id)
-      .eq("organization_id", activeOrg.orgId)
+      .eq("organization_id", authz.organizationId)
       .maybeSingle();
 
     if (agentErr) {
@@ -214,6 +248,18 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
+  // `blob_path` do corpo só no formato que o upload grava, na pasta de quem
+  // chama, pela sessão ou pelo token. Nenhuma tela manda este campo.
+  const blobPathDoCorpo = input.source_metadata?.blob_path;
+  if (
+    blobPathDoCorpo !== undefined &&
+    !caminhoDaOrganizacao(blobPathDoCorpo, authz.organizationId)
+  ) {
+    return fail("validation_failed", t("Caminho do arquivo fora da organização."), 422, {
+      requestId,
+    });
+  }
+
   const admin = createAdminClient();
 
   // TEXTO COLADO DE DOCUMENTO VIRA ARQUIVO.
@@ -227,7 +273,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   // extração. Um destino, um caminho, um lugar para consertar.
   let metadata: Record<string, unknown> = { ...(input.source_metadata ?? {}) };
   if (tipo === "documento" && input.markdown_blob) {
-    const blobPath = `${activeOrg.orgId}/${randomUUID()}.md`;
+    const blobPath = `${authz.organizationId}/${randomUUID()}.md`;
     const { error: upErr } = await admin.storage
       .from(BUCKET_DE_CONHECIMENTO)
       .upload(blobPath, Buffer.from(input.markdown_blob, "utf8"), {
@@ -244,7 +290,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const { data: ks, error: ksErr } = await admin
     .from("ai_knowledge_sources")
     .insert({
-      organization_id: activeOrg.orgId,
+      organization_id: authz.organizationId,
       agent_id: input.agent_id ?? null,
       source_type: tipo,
       name: input.name,
@@ -277,7 +323,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   let itemsCount = 0;
   if (faqItems.length > 0) {
     const rows = faqItems.map((item, idx) => ({
-      organization_id: activeOrg.orgId,
+      organization_id: authz.organizationId,
       knowledge_source_id: ksId,
       question: item.question,
       answer: item.answer,
@@ -291,7 +337,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     if (itemsErr) {
       // Fonte sem item nenhum é fonte vazia: melhor desfazer do que deixar uma
       // linha que promete conteúdo e nunca vai indexar nada.
-      await admin.from("ai_knowledge_sources").delete().eq("organization_id", activeOrg.orgId).eq("id", ksId);
+      await admin.from("ai_knowledge_sources").delete().eq("organization_id", authz.organizationId).eq("id", ksId);
       console.error("[ai-knowledge-sources] insert dos itens falhou:", itemsErr.message);
       return fail("internal_error", t("Erro ao gravar o conteúdo do material."), 500, { requestId });
     }
@@ -307,7 +353,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       agent_id: input.agent_id ?? null,
       source_type: tipo,
     },
-    p_organization_id: activeOrg.orgId,
+    p_organization_id: authz.organizationId,
   } as never);
 
   if (emitErr) {
@@ -318,8 +364,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   // nunca com o texto (a tabela é append-only e a cascata da LGPD não a alcança).
   void audit({
     action: "ai.knowledge_source_created",
-    actorUserId: authz.user.id,
-    organizationId: activeOrg.orgId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "ai_knowledge_source",
     resourceId: ksId,
     requestId,
@@ -329,7 +376,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   // A resposta DIZ se a indexação vai acontecer. Sem isto a tela prometia
   // "começa em instantes" para uma organização sem chave de embedding, e o
   // material ficava parado sem que nada na tela mudasse.
-  const temChave = await temChaveDeEmbedding(activeOrg.orgId);
+  const temChave = await temChaveDeEmbedding(authz.organizationId);
 
   return ok(
     { id: ksId, items_count: itemsCount, indexacao_habilitada: temChave },
