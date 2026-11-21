@@ -11,10 +11,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 vi.mock("@/lib/auth/cron-auth", () => ({ autorizaCron: vi.fn(() => true) }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
-vi.mock("@/lib/organizacao/operante", () => ({
-  idsDeOrgsParadas: vi.fn(async () => []),
-  OrgNaoOperanteError: class extends Error {},
-}));
 vi.mock("@/lib/atendimento/origem", () => ({
   beginServiceAtOrigin: vi.fn(async () => ({ conversation_id: "conversation-1" })),
 }));
@@ -99,6 +95,7 @@ beforeEach(() => {
   appointment = {
     id: "scheduled-1",
     organization_id: "org-1",
+    organizations: { status: "active" },
     contact_id: "contact-1",
     channel_session_id: "session-1",
     created_by_user_id: "user-1",

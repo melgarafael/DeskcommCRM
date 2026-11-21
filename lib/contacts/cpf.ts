@@ -67,7 +67,12 @@ export async function camposCpfParaGravar(
   supabase: SupabaseClient,
   raw: string,
 ): Promise<{ cpf_hash?: string; cpf_encrypted?: Uint8Array }> {
-  const enc = await encryptCpfSql(supabase, raw);
+  // A cifra guarda SÓ OS DÍGITOS — a mesma forma que o hash já usava. Antes ela
+  // guardava o texto como chegou: o cadastro pela tela gravava `000.000.000-00`
+  // e a importação, os 11 dígitos. A busca não sentia (o hash normaliza), mas o
+  // export saía com formatos misturados e a ficha herdaria a mistura. A máscara
+  // é coisa de EXIBIÇÃO (`lib/contacts/formatar-cpf.ts`), não de armazenamento.
+  const enc = await encryptCpfSql(supabase, normalizeCpf(raw));
   if (!enc) return {};
   return { cpf_hash: hashCpf(raw), cpf_encrypted: enc };
 }

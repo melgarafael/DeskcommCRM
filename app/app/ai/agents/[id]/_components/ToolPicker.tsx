@@ -310,6 +310,8 @@ export function ToolPicker({ value: valorSalvo, onChange, disabled, ocultar }: P
       onChange(value.filter((x) => x !== name));
       return;
     }
+    // Desmarcar o que já veio marcado segue livre; LIGAR o que não é marcável, não.
+    if (porNome.get(name)?.marcavel === false) return;
     aplicar(
       [...catalogo.map((c) => c.name), ...remotas, ...orfas].filter(
         (n) => value.includes(n) || n === name,
@@ -459,7 +461,7 @@ export function ToolPicker({ value: valorSalvo, onChange, disabled, ocultar }: P
                   key={capacidade.name}
                   capacidade={capacidade}
                   marcada={marcada}
-                  bloqueada={!marcada && cheio}
+                  bloqueada={!marcada && (cheio || !capacidade.marcavel)}
                   onToggle={() => alternarCapacidade(capacidade.name)}
                   disabled={disabled}
                   mostrarNomeTecnico

@@ -52,8 +52,11 @@ function dubleLista(linhas: Array<Record<string, unknown>>) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // `GET /calls` entra por `resolveAuthDual` (Spec 33, R2): na sessão ele lê
+  // `user.id` e `user.idioma` do que o `requireRole` devolve, como a rota real.
   vi.mocked(requireRole).mockResolvedValue({
     ok: true,
+    user: { id: "11111111-1111-4111-8111-111111111111", idioma: "pt-BR" },
     org: { orgId: ORG, role: "manager" },
   } as never);
 });

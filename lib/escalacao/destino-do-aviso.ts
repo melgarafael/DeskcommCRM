@@ -44,10 +44,29 @@
  * ─── O número nunca fica vazio ─────────────────────────────────────────────
  *
  * `telefone_destino` é `not null` com CHECK E.164 (migration 0292) e continua
- * sendo o ÚLTIMO elo da cadeia. Só há um jeito de a resolução devolver `null`:
- * a configuração existir sem número — o que o banco não permite. Ainda assim o
+ * sendo o ÚLTIMO elo da cadeia. Há dois jeitos de a resolução devolver `null`:
+ * a configuração existir sem número — o que o banco não permite — e a cadeia
+ * parar em alguém marcado com "Não enviar aviso de caso" (#4989, abaixo),
+ * que é de propósito e tem origem própria (`nao_avisar`). Ainda assim o
  * tipo diz `string | null`, porque o chamador precisa tratar esse caso em vez
  * de mandar uma mensagem para `""` e receber um erro do transporte.
+ *
+ * ─── "Não enviar aviso de caso": a cadeia PARA (#4989) ─────────────────────
+ *
+ * "Sem número" pula para o próximo elo; "não enviar aviso de caso" é outra
+ * coisa: a pessoa existe, é a vez dela, e ela (ou a fila que ela representa)
+ * não deve gerar aviso. Quem está marcado NÃO entra nos vetados por telefone —
+ * então a cadeia escolhe essa pessoa como escolheria qualquer outra, e é aqui,
+ * depois, que a escolha vira `origem: "nao_avisar"`, `telefone: null` e um
+ * descarte `nao_avisar` com o elo. Sem número da empresa: o caso continua no
+ * painel, só não sai WhatsApp. A marca vale mesmo para quem não tem número
+ * (não vira `sem_telefone`), e alcança também o elo seguinte a quem foi pulado
+ * por falta de número: a cadeia anda até a primeira pessoa que serve, e se
+ * essa pessoa está marcada, para ali.
+ *
+ * `naoAvisar` é opcional e só o aviso de CASO o passa (a issue não fala do
+ * aviso de proposta, que usa a mesma cadeia). Ausente = o comportamento de
+ * antes, byte a byte.
  *
  * ─── Fora de escopo (declarado na issue) ───────────────────────────────────
  *
@@ -83,16 +102,23 @@ export const CADEIA_DO_AVISO: readonly CandidatoDoDestino[] = [
 /** Os elos possíveis, na voz do aviso (inclui o desfecho). */
 export type EloDoAviso = CandidatoDoDestino | "numero_da_empresa";
 
-/** Por que um elo foi tentado e não serviu. */
-export type MotivoDoDescarteDoAviso = "ausente" | "id_invalido" | "sem_telefone" | "recusado";
+/**
+ * Por que um elo foi tentado e não serviu. `nao_avisar` é o elo em que a
+ * cadeia PAROU por causa da marca (#4989) — não um "pulou para o próximo".
+ */
+export type MotivoDoDescarteDoAviso = "ausente" | "id_invalido" | "sem_telefone" | "recusado" | "nao_avisar";
 
 export type DescarteDoAviso = { elo: EloDoAviso; motivo: MotivoDoDescarteDoAviso };
 
 export type DestinoDoAviso = {
   /** O número que recebe. `null` só quando a configuração não tem número. */
   telefone: string | null;
-  /** Qual elo decidiu. `sem_destino` = nem o número da empresa pôde ser lido. */
-  origem: EloDoAviso | "sem_destino";
+  /**
+   * Qual elo decidiu. `sem_destino` = nem o número da empresa pôde ser lido.
+   * `nao_avisar` = a cadeia chegou em alguém marcado com "Não enviar aviso de
+   * caso" (#4989): `telefone` é `null` e nada deve sair.
+   */
+  origem: EloDoAviso | "sem_destino" | "nao_avisar";
   /** Quem recebe, quando o destino é uma pessoa da equipe. */
   user_id: string | null;
   /** Os elos tentados antes, com o motivo de cada um. */
@@ -148,9 +174,17 @@ export function idsDaCadeiaDoAviso(entrada: {
   return [...new Set(ids)];
 }
 
-/** Os elos cujo id veio da cadeia e não tem telefone utilizável no perfil. */
-function semTelefone(ids: readonly string[], whatsapps: WhatsappsDosMembros): Set<string> {
-  return new Set(ids.filter((id) => texto(whatsapps.get(id)) === null));
+/**
+ * Os elos cujo id veio da cadeia e não tem telefone utilizável no perfil —
+ * exceto quem está marcado com "Não enviar aviso de caso": esse não é pulado,
+ * é onde a cadeia para (#4989).
+ */
+function semTelefone(
+  ids: readonly string[],
+  whatsapps: WhatsappsDosMembros,
+  naoAvisar: ReadonlySet<string>,
+): Set<string> {
+  return new Set(ids.filter((id) => !naoAvisar.has(id) && texto(whatsapps.get(id)) === null));
 }
 
 /** `user_id` → WhatsApp do perfil do membro (`user_organizations.whatsapp_e164`). */
@@ -202,6 +236,8 @@ export function resolverDestinoDoAviso(entrada: {
   negocio?: NegocioDoDestino;
   contato?: ContatoDoDestino;
   whatsapps: WhatsappsDosMembros;
+  /** Quem NÃO recebe aviso de caso (#4989). Só o aviso de caso passa. */
+  naoAvisar?: ReadonlySet<string>;
 }): DestinoDoAviso {
   const daConfig = (entrada.config ?? null) as Record<string, unknown> | null;
   const numeroDaEmpresa = texto(daConfig?.telefone_destino);
@@ -215,7 +251,8 @@ export function resolverDestinoDoAviso(entrada: {
   }
 
   const ids = idsDaCadeiaDoAviso(entrada);
-  const vetados = semTelefone(ids, entrada.whatsapps);
+  const naoAvisar = entrada.naoAvisar ?? new Set<string>();
+  const vetados = semTelefone(ids, entrada.whatsapps, naoAvisar);
   const idsPorElo = new Map<EloDoAviso, string>();
   const daConversa = entrada.conversa as { assigned_to_user_id?: unknown; assignee_kind?: unknown } | null | undefined;
   const doNegocio = entrada.negocio as { owner_user_id?: unknown; owner_kind?: unknown } | null | undefined;
@@ -242,6 +279,17 @@ export function resolverDestinoDoAviso(entrada: {
   );
 
   const descartes = descartesDoAviso(cadeia.descartes, vetados, idsPorElo);
+
+  // A vez é de quem está marcado: a cadeia para aqui, sem número da empresa.
+  if (cadeia.user_id && naoAvisar.has(cadeia.user_id)) {
+    const elo = cadeia.motivo as EloDoAviso;
+    return {
+      telefone: null,
+      origem: "nao_avisar",
+      user_id: cadeia.user_id,
+      descartes: [...descartes, { elo, motivo: "nao_avisar" }],
+    };
+  }
 
   if (cadeia.user_id) {
     return {

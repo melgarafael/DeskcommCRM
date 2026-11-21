@@ -241,7 +241,12 @@ services:
       # O WAHA trata reação como evento PRÓPRIO — sem assiná-lo, um gesto que o
       # CRM recebe pela API oficial nunca chegaria pelo canal por QR. `message.any`
       # NÃO o cobre (a reação não vem como mensagem).
-      WHATSAPP_HOOK_EVENTS: "message.any,message.ack,message.edited,message.revoked,message.reaction,session.status,state.change"
+      #
+      # `call.received` entra: é a ligação de voz que chega no número. Só tem
+      # efeito quando a empresa liga "Bloquear chamadas recebidas" em
+      # Configurações › Segurança — aí ela é recusada na hora
+      # (lib/organizacao/bloqueio-de-chamadas.ts). Desligado, o evento é ignorado.
+      WHATSAPP_HOOK_EVENTS: "message.any,message.ack,message.edited,message.revoked,message.reaction,session.status,state.change,call.received"
       # Nome EXATO da doc do WAHA (events#hmac-authentication): WHATSAPP_HOOK_HMAC
       # não existe nele — sem o _KEY ele ignora e nunca assina.
       WHATSAPP_HOOK_HMAC_KEY: ${WAHA_HMAC_SECRET}
@@ -343,18 +348,24 @@ services:
   #      em serviço de profile inativo não sobe — o CRM inteiro deixaria de
   #      subir em toda instalação que não usa a feature.
   #
-  # ═══ POR QUE A IMAGEM É DO UPSTREAM, PINADA POR DIGEST ═══
+  # ═══ DE ONDE VEM A IMAGEM, PINADA POR DIGEST ═══
   #
-  # WaCalls (github.com/JotaDev66/WaCalls, MIT) é peça UPSTREAM, e a doutrina
-  # (docs/doctrine/packaging.md) é explícita: peça upstream se REFERENCIA, nunca
-  # se republica — "a regra vale para todas, não só a licenciada, porque a
-  # exceção é o que apaga a regra". Construir e publicar `deskcomm-wacalls`
-  # seria republicar.
+  # WaCalls (github.com/JotaDev66/WaCalls, MIT) é peça de terceiro, e a doutrina
+  # (docs/doctrine/packaging.md) manda referenciá-la, nunca republicá-la. Até
+  # 18/11/2026 o compose apontava a imagem dos autores (`ghcr.io/jotadev66/wacalls`).
+  # Ela parou no whatsmeow de 13/07 (d8960d9), que o WhatsApp passou a recusar
+  # com "Client outdated (405)": a sessão ficava em "connecting" para sempre,
+  # sem QR e sem log (issue #4937). Os autores não mantêm mais o projeto nem
+  # aceitam PR, e o conserto saiu no fork mantido pela DeskLabs
+  # (github.com/DeskLabs-OpenSource/WaCalls, PR #1, revisão a6f66b9). O CI desse
+  # fork publica `ghcr.io/desklabs-opensource/wacalls`: é a mesma peça, mantida
+  # num fork público com o código à vista, e não uma imagem montada por nós a
+  # partir do código alheio.
   #
-  # O digest é o pin mais forte que existe e o único disponível aqui: `:latest`
-  # e `:latest-pure` NÃO existem neste registry (404 medido em 2026-09-08); as
-  # tags publicadas são `develop` e `sha-*`. Ele resolve para
-  # `sha-d16a076`/`develop`, index OCI multi-arch (linux/amd64 + linux/arm64).
+  # Medido em 18/11 numa cópia descartável: com esta imagem, `POST /api/sessions`
+  # chega a `state=qr` em menos de 25 s ("scan the QR code to pair this
+  # session"); a imagem anterior fica em `connecting`. O índice é multi-arch
+  # (linux/amd64 + linux/arm64) e embute o whatsmeow 19d6135, de 16/11.
   #
   # `pull_policy: missing` porque o digest é imutável: com `always`, um GHCR
   # fora do ar impediria o contêiner de subir mesmo com a imagem já no disco.
@@ -366,7 +377,7 @@ services:
   wacalls:
     profiles: ["voz"]
     mem_limit: 256m
-    image: ${WACALLS_IMAGE:-ghcr.io/jotadev66/wacalls@sha256:9ff52ef9455cf42125a911c38bb8c855f0cc205516cada2054e5c05546909022}
+    image: ${WACALLS_IMAGE:-ghcr.io/desklabs-opensource/wacalls@sha256:03f9e47fadc1afa909f512bbdda0fa4091d4646310f9a76ce3c752f05eafd1ff}
     pull_policy: ${WACALLS_PULL_POLICY:-missing}
     restart: unless-stopped
     environment:

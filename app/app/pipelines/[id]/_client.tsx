@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useT } from "@/hooks/i18n/useT";
 import { useBoard } from "@/hooks/kanban/useBoard";
 import { useDensidadeDoQuadro } from "@/hooks/kanban/useDensidadeDoQuadro";
+import { useCorDaEtapaNoQuadro } from "@/hooks/kanban/useCorDaEtapaNoQuadro";
 
 function formatError(err: unknown, t: (texto: string) => string): string {
   if (err instanceof Error) return err.message;
@@ -230,6 +231,8 @@ export function PipelinePageClient({
    * coluna do funil nem parâmetro de URL.
    */
   const { compacta: cardsCompactos, alternar: alternarDensidade } = useDensidadeDoQuadro();
+  // Cor da etapa só na bolinha (padrão) ou na coluna inteira: preferência de quem olha.
+  const { naColuna: corNaColuna, alternar: alternarCorNaColuna } = useCorDaEtapaNoQuadro();
 
   /**
    * Motivo e categoria da perda (#1537): a categoria NÃO vem no lead — ela é
@@ -399,6 +402,21 @@ export function PipelinePageClient({
               {t("Compacta")}
             </Button>
           )}
+          {/* A COR DA ETAPA NA COLUNA: mesma família da densidade ("como eu olho
+              este funil"), mesmo molde — interruptor, só no Quadro, preferência
+              gravada no navegador. Desligado é a bolinha de sempre. */}
+          {visao === "quadro" && (
+            <Button
+              variant="outline"
+              size="sm"
+              aria-pressed={corNaColuna}
+              title={t("Pintar a coluna com a cor da etapa")}
+              data-testid="cor-da-etapa-no-quadro"
+              onClick={alternarCorNaColuna}
+            >
+              {t("Cor na coluna")}
+            </Button>
+          )}
           {/* Funil arquivado abre só no quadro, e o quadro é leitura (#1298):
               a Lista e o Calendário têm ações de negócio, e oferecê-las num
               funil que não recebe mais escrita seria a mesma promessa falsa
@@ -558,6 +576,7 @@ export function PipelinePageClient({
           hrefDoNegocio={hrefDoNegocio}
           podeRenomearEtapa={!arquivado && ROLE_RANK[role] >= ROLE_RANK.manager}
           denso={cardsCompactos}
+          corNaColuna={corNaColuna}
           somenteLeitura={arquivado}
         />
       )}
@@ -569,6 +588,7 @@ export function PipelinePageClient({
           vocabulary={data?.pipeline.vocabulary ?? null}
           tagsExistentes={tagsDoQuadro}
           onClear={() => setSelectedIds([])}
+          tituloDe={(id) => data?.leads.find((l) => l.id === id)?.title}
         />
       )}
     </div>

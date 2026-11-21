@@ -57,6 +57,9 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     .from("sales")
     .select("id, status, number, attendant_user_id, calendar_appointments(owner_user_id)")
     .eq("id", id)
+    // #4845 — o item nasce com `organization_id` DESTA empresa: incluir item numa
+    // comanda da outra empresa criava uma linha da A dentro de uma venda da B.
+    .eq("organization_id", org)
     .maybeSingle();
   if (!comanda) return fail("not_found", "Comanda não encontrada.", 404, { requestId });
   if (comanda.status !== "open") {
@@ -107,6 +110,8 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   await audit({
     action: "comanda.item_incluido",
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
     resourceType: "sale",
     resourceId: id,
     requestId,

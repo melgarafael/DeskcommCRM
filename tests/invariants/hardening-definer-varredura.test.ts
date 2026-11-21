@@ -82,13 +82,31 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
   {
     fn: "decrypt_cpf(uuid)",
     razao:
-      "GET app/api/v1/contacts/[id]/route.ts → getContactHandler (_handler.ts:418) " +
-      "é o único call site, com o client de sessão — e ele só CHEGA ali depois de " +
-      "ler user_organizations do contato e exigir roleAtLeast(manager). Definer " +
-      "porque lê contacts.cpf_encrypted e ESCREVE o audit contact.cpf_decrypted em " +
-      "api_audit_log antes de devolver o texto. A guarda de tenant é a da casa: " +
-      "fora de fn_user_org_ids() a função levanta forbidden_org (platform admin " +
-      "passa), então cross-org nunca lê CPF (#2522).",
+      "GET app/api/v1/contacts/export/route.ts é o call site que ficou com a assinatura de " +
+      "UM argumento (até a 9423 o handler da ficha também chamava por aqui): client de " +
+      "sessão, manager+ pela própria rota. Definer porque lê contacts.cpf_encrypted e " +
+      "ESCREVE o audit contact.cpf_decrypted em api_audit_log antes de devolver o texto — " +
+      "o propósito da trilha vem do GUC `app.decrypt_purpose`, quando setado. A guarda de " +
+      "tenant é a da casa: fora de fn_user_org_ids() a função levanta forbidden_org " +
+      "(platform admin passa), então cross-org nunca lê CPF (#2522). Desde a 9423 esta " +
+      "assinatura é a da 0762, byte a byte; quem quer o propósito como PARÂMETRO usa a de " +
+      "dois argumentos.",
+  },
+  {
+    fn: "decrypt_cpf(uuid,text)",
+    razao:
+      "(9423) GET app/api/v1/contacts/[id]/route.ts → getContactHandler passa o propósito " +
+      "da leitura (`x-decrypt-purpose`) como PARÂMETRO: o PostgREST abre a transação " +
+      "dele, e o GUC `app.decrypt_purpose` não tem como ser fixado na mesma transação da " +
+      "RPC — era por isso que a linha `contact.cpf_decrypted` nascia com purpose nulo. " +
+      "Definer porque lê contacts.cpf_encrypted e ESCREVE o audit em api_audit_log antes " +
+      "de devolver o texto (mesmo corpo da 0762, com `coalesce(p_purpose, " +
+      "current_setting(...))` no lugar do GUC puro). As guardas são as da casa, dentro " +
+      "da função: fora de `fn_user_org_ids()` levanta forbidden_org, e abaixo de manager " +
+      "levanta forbidden_role (#2522, #4892). A assinatura de UM argumento continua no " +
+      "catálogo com o corpo da 0762 (lê o GUC `app.decrypt_purpose`) e também é definer — " +
+      "quem chama `decrypt_cpf(id)`, como o export de contatos, não passa por aqui na " +
+      "trilha do propósito justamente porque a chamada não leva parâmetro.",
   },
   {
     fn: "fn_honorarios_parcela_pagar(uuid,uuid,uuid,uuid)",
@@ -320,6 +338,16 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "fn_role_at_least(p_org,'admin'), fn_support_write_allowed(p_org) e " +
       "fn_session_mfa_proven(); só atualiza a linha da organização pedida e recusa quem " +
       "ainda não tem configuração. Prova: tests/invariants/lembrete-ao-dono-escrita.test.ts.",
+  },
+  {
+    fn: "fn_definir_resumo_do_aviso_de_agendamento(uuid,boolean)",
+    razao:
+      "A porta de escrita de `config_aviso_de_agendamento.resumo_so_com_agendamento` " +
+      "(migration 9434, #4988). PUT app/api/v1/agenda/aviso/route.ts chama com createClient " +
+      "da sessão, depois de fn_definir_aviso_de_agendamento. Mesmas guardas da irmã do " +
+      "lembrete: auth.uid(), fn_role_at_least(p_org,'admin'), fn_support_write_allowed(p_org) " +
+      "e fn_session_mfa_proven(); só atualiza a linha da organização pedida e recusa quem " +
+      "ainda não tem configuração. Prova: tests/invariants/resumo-so-com-agendamento-escrita.test.ts.",
   },
   {
     fn: "fn_definir_aviso_de_agendamento(uuid,boolean,uuid,text,boolean,boolean,text)",

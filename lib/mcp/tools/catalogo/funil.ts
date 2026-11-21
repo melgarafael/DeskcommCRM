@@ -25,6 +25,21 @@ export const TOOLS_FUNIL = declararTools([
     pacotes: ["vender"],
   },
   {
+    name: "crm_count_leads",
+    category: "read",
+    rotulo: "Contar oportunidades do funil",
+    explicacao:
+      "Conta quantas oportunidades de venda existem, por funil, etapa ou situação, sem abrir nenhuma delas: devolve só números.",
+    oQueToca: "Funil de vendas",
+    risco: "seguro",
+    // "reter" e não "vender": "vender" é o pacote padrão do onboarding e cada
+    // capacidade ali sobe a exigência de TODOS os outros pacotes; "organizar" já
+    // está no teto sozinho. A saída é de PACOTE, não de constante (o teto está
+    // sendo movido por outro PR). Medido: "reter" sozinho fecha em 27 de 27.
+    // Trava: tests/unit/pacote-reserva-vaga-da-critica.test.ts.
+    pacotes: ["reter"],
+  },
+  {
     name: "crm_get_lead",
     category: "read",
     rotulo: "Ver uma oportunidade",

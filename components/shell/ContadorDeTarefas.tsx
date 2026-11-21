@@ -2,7 +2,8 @@
 
 import { useT } from "@/hooks/i18n/useT";
 import { useTasks } from "@/hooks/tasks/useTasks";
-import { tarefaEstaAberta } from "@/lib/tarefas/tipos";
+import { resumoDasTarefas } from "@/lib/tarefas/tipos";
+import { Warning } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 
 /**
@@ -25,6 +26,16 @@ import { cn } from "@/lib/utils";
  * trabalho encerrado. Gerente e administrador também veem só as suas aqui — a
  * visão da equipe é a tela, como antes.
  *
+ * ─── Vencida tem marca própria (#3938) ──────────────────────────────────────
+ *
+ * O número sozinho não diz se o que sobrou já estourou o prazo, e tarefa
+ * atrasada é a única que pede ação AGORA. Quando alguma venceu, o selo ganha o
+ * mesmo tratamento do selo do card (`components/kanban/TarefasNoCard.tsx`): o
+ * ícone de aviso e o "· N atrasada(s)" no rótulo acessível — pela
+ * MESMA régua de `resumoDasTarefas`, que conta com `estaEncerrada` +
+ * `estaAtrasada`, as regras da lista. Nada de segunda contagem: se as duas
+ * divergissem, o menu diria "1 atrasada" sobre uma tela sem nenhuma.
+ *
  * ─── Zero, erro e primeiro carregamento ─────────────────────────────────────
  *
  * Nada é desenhado nos três: número que nunca some ensina a ignorar o número
@@ -39,20 +50,35 @@ import { cn } from "@/lib/utils";
 export function ContadorDeTarefas({ compacto }: { compacto: boolean }) {
   const t = useT();
   const { tarefas } = useTasks({ aberto: true, assigned_to: "me" }, { refetchInterval: 60_000 });
-  const emAberto = tarefas.filter((tarefa) => tarefaEstaAberta(tarefa.status)).length;
-  if (emAberto === 0) return null;
-  const rotulo = emAberto === 1 ? t("1 tarefa em aberto") : `${emAberto} ${t("tarefas em aberto")}`;
+  const { abertas, atrasadas } = resumoDasTarefas(tarefas);
+  if (abertas === 0) return null;
+
+  const contagem = abertas === 1 ? t("1 tarefa em aberto") : `${abertas} ${t("tarefas em aberto")}`;
+  const rotulo =
+    atrasadas > 0
+      ? `${contagem} · ${atrasadas} ${atrasadas === 1 ? t("atrasada") : t("atrasadas")}`
+      : contagem;
+
   return (
     <span
       data-testid="contador-de-tarefas"
+      data-atrasadas={atrasadas}
       aria-label={rotulo}
       title={rotulo}
       className={cn(
-        "rounded-full bg-red-600 text-[10px] leading-none font-semibold text-white tabular-nums",
+        // O vermelho é o mesmo com ou sem atraso: `bg-destructive` no tema escuro
+        // dá 3,48:1 com texto branco de 10 px, abaixo do AA. O atraso se distingue
+        // pelo ícone de aviso e pelo "· N atrasada(s)", que não dependem de cor.
+        "flex items-center gap-0.5 rounded-full bg-red-600 text-[10px] leading-none font-semibold text-white tabular-nums",
         compacto ? "absolute top-1 right-1 h-2 w-2" : "ml-auto px-1.5 py-0.5",
       )}
     >
-      {compacto ? null : emAberto}
+      {compacto ? null : (
+        <>
+          {atrasadas > 0 && <Warning size={10} aria-hidden />}
+          {abertas}
+        </>
+      )}
     </span>
   );
 }

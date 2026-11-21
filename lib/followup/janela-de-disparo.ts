@@ -86,6 +86,34 @@ export async function canalDaConversa(
 }
 
 /**
+ * O provedor do canal desta conversa, para decidir o ESCOPO da janela.
+ *
+ * Devolve `null` quando a conversa não tem sessão (não há canal) E quando a
+ * leitura falha: este dado só escolhe a FRASE do adiamento, e transformar uma
+ * falha de leitura em erro derrubaria um envio que já ia ser adiado. `null` lê
+ * como "sem janela regulatória" — a leitura conservadora aqui é NÃO anunciar a
+ * janela de 24 h, e é a direção de `canalAceitaTextoLivreAgora`.
+ */
+export async function providerDoCanalDaConversa(
+  admin: SupabaseClient,
+  organizationId: string,
+  conversationId: string,
+  contactId: string,
+): Promise<string | null> {
+  const sessionId = await canalDaConversa(admin, organizationId, conversationId, contactId);
+  if (sessionId === null) return null;
+  const { data, error } = await admin
+    .from("channel_sessions")
+    .select("provider")
+    .eq("organization_id", organizationId)
+    .eq("id", sessionId)
+    .maybeSingle();
+  if (error) return null;
+  const provider = (data as { provider?: string | null } | null)?.provider;
+  return typeof provider === "string" && provider !== "" ? provider : null;
+}
+
+/**
  * A configuração PUBLICADA do follow-up do agente pinado no enrollment — o
  * espelho em Supabase de `followupPublicadoDoEnrollment`
  * (`lib/agent-engine/agent/janela-de-followup.ts`, que fala `pg`): as MESMAS
