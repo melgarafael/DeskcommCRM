@@ -36,7 +36,7 @@ import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { atendimentoConfigPatchSchema, routingConfigSchema, validateRequest } from "@/lib/schemas";
-import { mesclarSettingsDeAtendimento } from "@/lib/schemas/routing";
+import { destinoDoHandoffDaOrg, mesclarSettingsDeAtendimento } from "@/lib/schemas/routing";
 import { DEFAULT_VISIBILITY_MODE, type VisibilityMode } from "@/lib/auth/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -67,7 +67,11 @@ export async function GET(req: NextRequest): Promise<Response> {
   // a chave não existe (`coalesce(..., 'own_and_unassigned')`). Divergir aqui
   // faria a tela mostrar um estado que o banco não pratica.
   const visibility_mode = (settings.visibility_mode as VisibilityMode | undefined) ?? DEFAULT_VISIBILITY_MODE;
-  return ok({ ...routing, visibility_mode }, { requestId });
+  // #3804 item 3 — o destino do handoff da IA, lido pela MESMA árvore que o
+  // handoff varre. `null` = desligado (comportamento de hoje) e é isso que a
+  // tela precisa mostrar para não mentir sobre o que o produto faz.
+  const destino_do_handoff = destinoDoHandoffDaOrg(settings);
+  return ok({ ...routing, visibility_mode, destino_do_handoff }, { requestId });
 }
 
 export async function PATCH(req: NextRequest): Promise<Response> {
@@ -126,7 +130,7 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   const { visibility_mode } = input;
   // A mescla (não-destrutiva em dois níveis) mora em `lib/schemas/routing.ts`,
   // onde o teste a lê pela mesma função.
-  const { settings: nextSettings, routing } = mesclarSettingsDeAtendimento(currentSettings, input);
+  const { settings: nextSettings, routing, destino_do_handoff } = mesclarSettingsDeAtendimento(currentSettings, input);
 
   const { error: updErr } = await supabase
     .from("organizations")
@@ -142,7 +146,13 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     resourceType: "organization",
     resourceId: activeOrg.orgId,
     requestId,
-    metadata: { routing, ...(visibility_mode !== undefined ? { visibility_mode } : {}) },
+    metadata: {
+      routing,
+      ...(visibility_mode !== undefined ? { visibility_mode } : {}),
+      // O destino do handoff muda para QUEM a IA entrega a conversa — é a
+      // decisão mais visível desta rota, e a auditoria tem que mostrá-la.
+      ...(destino_do_handoff !== null ? { destino_do_handoff } : {}),
+    },
   });
 
   return ok(
@@ -151,6 +161,7 @@ export async function PATCH(req: NextRequest): Promise<Response> {
       visibility_mode:
         visibility_mode ??
         ((currentSettings.visibility_mode as VisibilityMode | undefined) ?? DEFAULT_VISIBILITY_MODE),
+      destino_do_handoff,
     },
     { requestId },
   );

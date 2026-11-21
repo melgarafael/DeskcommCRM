@@ -22,7 +22,13 @@ import {
   PRAZO_MIN_MINUTOS,
 } from "@/lib/escalacao/devolucao-automatica";
 import { PRAZO_PADRAO_DO_SILENCIO_MINUTOS } from "@/lib/escalacao/atendimento-manual";
-import { ROUTING_MODES, VISIBILITY_MODES, type RoutingMode } from "@/lib/schemas/routing";
+import {
+  ROUTING_MODES,
+  VISIBILITY_MODES,
+  type DestinoDoHandoffConfig,
+  type RoutingMode,
+} from "@/lib/schemas/routing";
+import { DESTINOS_DO_ATRIBUTO } from "@/lib/schemas/webhooks";
 import { useT } from "@/hooks/i18n/useT";
 
 export interface AtendimentoConfig {
@@ -36,6 +42,11 @@ export interface AtendimentoConfig {
   conversation_stays_with_attendant: boolean;
   /** Minutos de silêncio da IA após resposta pelo celular. `null` = o padrão de 60. */
   manual_reply_silence_minutes: number | null;
+  /**
+   * #3804 item 3 — para QUEM vai a conversa quando a IA a passa para uma pessoa.
+   * `null` = desligado: a conversa fica na fila da Central, como hoje.
+   */
+  destino_do_handoff: DestinoDoHandoffConfig | null;
 }
 
 /**
@@ -190,6 +201,13 @@ export function AtendimentoForm({
   const combinacaoMorta = form.visibility_mode === "own" && form.mode === "manual";
 
   const devolveSozinho = form.handoff_return_after_minutes !== null;
+
+  /**
+   * O destino do handoff em vigor (#3804 item 3). Lido do RASCUNHO: os campos
+   * de destino e de fallback têm que refletir o que está na tela, não o que
+   * estava salvo. `null` = desligado, e aí o bloco de escolha nem aparece.
+   */
+  const handoffComDestino = form.destino_do_handoff;
 
   function salvar(e: React.FormEvent) {
     e.preventDefault();
@@ -439,6 +457,139 @@ export function AtendimentoForm({
             </span>
           </span>
         </label>
+      </Card>
+
+      <Card className="space-y-4 p-4" data-testid="destino-do-handoff">
+        <div>
+          <h2 className="text-sm font-semibold">
+            {t("Quando a IA passa a conversa para uma pessoa, para quem ela vai?")}
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Desligado, a conversa cai na fila da Central e alguém a assume — o de sempre. Ligado, ela vai direto para quem já é dono do assunto: o responsável do negócio e, se não houver, o dono da carteira do cliente.",
+            )}
+          </p>
+        </div>
+        <label className="flex cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            data-testid="destino-do-handoff-ligado"
+            checked={handoffComDestino !== null}
+            disabled={isPending}
+            onChange={(e) =>
+              setForm((f) => ({
+                ...f,
+                destino_do_handoff: e.target.checked
+                  ? {
+                      modo: "destino",
+                      // A ordem é a da TENTATIVA: primeiro quem está com o
+                      // negócio (no pós-venda, quem vendeu), depois quem cuida
+                      // do cliente. A mesma ordem da ação de atribuir.
+                      destinos: [...DESTINOS_DO_ATRIBUTO],
+                      fallback: { modo: "rodizio" },
+                    }
+                  : null,
+              }))
+            }
+            className="mt-1 h-4 w-4 shrink-0 accent-primary"
+          />
+          <span className="space-y-1">
+            <span className="block text-sm font-medium">
+              {t("Entregar a quem é o responsável do negócio ou o dono da carteira")}
+            </span>
+            <span className="block text-xs text-muted-foreground">
+              {t(
+                "O pós-venda de quem vendeu: uma configuração só para a equipe toda, sem uma pessoa escolhida na regra.",
+              )}
+            </span>
+          </span>
+        </label>
+
+        {handoffComDestino !== null ? (
+          <div className="space-y-4 border-t pt-4">
+            <div className="space-y-1">
+              <Label>{t("Destinos, na ordem em que são tentados")}</Label>
+              <ul className="space-y-1" data-testid="destinos-do-handoff">
+                {DESTINOS_DO_ATRIBUTO.map((destino, i) => {
+                  const ligado = handoffComDestino.destinos.includes(destino);
+                  return (
+                    <li
+                      key={destino}
+                      className="flex items-start justify-between gap-3 rounded-md border p-3"
+                    >
+                      <div className="space-y-0.5">
+                        <Label htmlFor={`handoff-destino-${destino}`}>
+                          {i + 1}.{" "}
+                          {destino === "responsavel_do_negocio"
+                            ? t("Responsável do negócio")
+                            : t("Dono da carteira do contato")}
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          {destino === "responsavel_do_negocio"
+                            ? t("Quem está com o negócio hoje — no pós-venda, quem vendeu.")
+                            : t("Quem cuida do cliente, mesmo quando o negócio está com outra pessoa.")}
+                        </p>
+                      </div>
+                      <input
+                        id={`handoff-destino-${destino}`}
+                        type="checkbox"
+                        data-testid={`handoff-destino-${destino}`}
+                        checked={ligado}
+                        // Pelo menos um destino: desligar o último deixaria a
+                        // configuração sem o que tentar, e o schema recusa.
+                        disabled={isPending || (ligado && handoffComDestino.destinos.length === 1)}
+                        onChange={() => {
+                          const proximos = ligado
+                            ? handoffComDestino.destinos.filter((d) => d !== destino)
+                            : [...handoffComDestino.destinos, destino];
+                          setForm((f) => ({
+                            ...f,
+                            destino_do_handoff: {
+                              ...handoffComDestino,
+                              destinos: DESTINOS_DO_ATRIBUTO.filter((d) => proximos.includes(d)),
+                            },
+                          }));
+                        }}
+                        className="mt-1 h-4 w-4 shrink-0 accent-primary"
+                      />
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Quem não puder receber (saiu da equipe ou é só leitor) é pulado, e a entrega segue para o próximo. A Atividade mostra qual destino decidiu.",
+                )}
+              </p>
+            </div>
+            <div className="max-w-sm space-y-1">
+              <Label htmlFor="handoff-fallback">{t("Se nenhum destino servir")}</Label>
+              <select
+                id="handoff-fallback"
+                value={handoffComDestino.fallback === null ? "fila" : handoffComDestino.fallback.modo}
+                disabled={isPending}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    destino_do_handoff: {
+                      ...handoffComDestino,
+                      fallback: e.target.value === "rodizio" ? { modo: "rodizio" } : null,
+                    },
+                  }))
+                }
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="rodizio">{t("Mandar para o rodízio de atendentes")}</option>
+                <option value="fila">{t("Deixar na fila da Central")}</option>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Sem nenhum dos dois, ninguém recebe e a conversa fica na fila. Nada vai para uma pessoa escolhida no escuro.",
+                )}
+              </p>
+            </div>
+          </div>
+        ) : null}
       </Card>
 
       <div className="flex items-center gap-3">

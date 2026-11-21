@@ -22,6 +22,7 @@ import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { DEFAULT_VISIBILITY_MODE, ROLE_RANK, type VisibilityMode } from "@/lib/auth/types";
 import { routingConfigSchema } from "@/lib/schemas";
+import { destinoDoHandoffDaOrg } from "@/lib/schemas/routing";
 import { createClient } from "@/lib/supabase/server";
 import { loadChannelRoutingSettings } from "@/lib/routing/channel-policies";
 import { configAssinatura } from "@/lib/messaging/assinatura";
@@ -121,7 +122,13 @@ export default async function AtendimentoSettingsPage() {
       </CabecalhoDaSubTela>
 
       <AtendimentoForm
-        initial={{ ...routing, visibility_mode: settings.visibility_mode ?? DEFAULT_VISIBILITY_MODE }}
+        initial={{
+          ...routing,
+          visibility_mode: settings.visibility_mode ?? DEFAULT_VISIBILITY_MODE,
+          // #3804 item 3 — o destino do handoff da IA, lido pela mesma régua da
+          // rota: a tela não pode mostrar desligado o que o handoff pratica.
+          destino_do_handoff: destinoDoHandoffDaOrg(settings),
+        }}
         setoresLigado={await moduloLigado(admin, "setores")}
       />
       <ChannelRoutingForm initial={channels} />

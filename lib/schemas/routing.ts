@@ -11,7 +11,13 @@ import { z } from "zod";
 
 import { VISIBILITY_MODES as MODOS_DE_VISIBILIDADE } from "@/lib/auth/types";
 import { PRAZO_MAX_MINUTOS, PRAZO_MAX_MINUTOS_DEVOLUCAO, PRAZO_MIN_MINUTOS } from "@/lib/escalacao/devolucao-automatica";
+import {
+  ARVORE_DO_DESTINO_DO_HANDOFF,
+  CHAVE_DO_DESTINO_DO_HANDOFF,
+} from "@/lib/escalacao/destino-do-handoff";
 import { fusoValido } from "@/lib/tempo/fusos";
+
+import { DESTINOS_DO_ATRIBUTO } from "./webhooks";
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -138,6 +144,80 @@ export const VISIBILITY_MODES = MODOS_DE_VISIBILIDADE;
 export type VisibilityModeInput = (typeof VISIBILITY_MODES)[number];
 
 /**
+ * O DESTINO do handoff da IA (#3804, item 3) — a chave que a TELA grava.
+ *
+ * ─── Por que esta chave existe aqui, e não em `settings.routing` ──────────
+ *
+ * Quem lê é `configDoDestinoDoHandoff` (`lib/escalacao/destino-do-handoff`),
+ * que procura `settings.atendimento.destino_do_handoff` — e o nome da árvore
+ * vem da MESMA constante exportada por lá, importada acima. A rota de
+ * atendimento grava, então, no lugar exato que o handoff lê: sem isso a
+ * configuração existia no código e não existia no produto (num self-host,
+ * `UPDATE` à mão no jsonb — o mesmo defeito que a #144 registrou sobre
+ * `visibility_mode`).
+ *
+ * ─── O vocabulário é o do resolvedor, não um novo ────────────────────────
+ *
+ * `destinos` usa `DESTINOS_DO_ATRIBUTO` (`lib/schemas/webhooks`), que é o mesmo
+ * `CandidatoDoDestino` de `lib/automation/destino-do-atribuir`. Uma lista
+ * própria aqui seria a segunda declaração do vocabulário — e divergiria na
+ * primeira vez que alguém acrescentasse um elo.
+ */
+export const destinoDoHandoffSchema = z.object({
+  modo: z.literal("destino"),
+  /** A cadeia, na ordem em que é tentada: responsável do negócio, carteira. */
+  destinos: z
+    .array(z.enum(DESTINOS_DO_ATRIBUTO))
+    .min(1)
+    .max(DESTINOS_DO_ATRIBUTO.length)
+    .superRefine((destinos, ctx) => {
+      if (new Set(destinos).size !== destinos.length) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Cada destino entra uma vez só: a ordem deles é a ordem em que são tentados.",
+        });
+      }
+    }),
+  /**
+   * `null` = sem fallback, e isso é um comportamento DECLARADO: a conversa fica
+   * na fila da Central, como hoje. Nunca uma pessoa escolhida no escuro.
+   *
+   * No handoff não há `fila` de rodízio: quem enfileira é o roteamento do canal
+   * (`fn_request_channel_routing`), que já decide disponibilidade e horário —
+   * carregar uma fila aqui seria uma segunda régua de distribuição.
+   */
+  fallback: z
+    .discriminatedUnion("modo", [
+      z.object({ modo: z.literal("fixo"), user_id: z.string().uuid() }),
+      z.object({ modo: z.literal("rodizio") }),
+    ])
+    .nullable()
+    .default(null),
+});
+export type DestinoDoHandoffConfig = z.infer<typeof destinoDoHandoffSchema>;
+
+/**
+ * A configuração de destino do handoff da organização, ou `null` (desligada).
+ *
+ * Lê PELA MESMA árvore e chave de `configDoDestinoDoHandoff`, e devolve o valor
+ * VALIDADO — é o que a tela e o GET mostram. jsonb torto de outra versão vira
+ * `null` (handoff de hoje) em vez de derrubar a tela que serve para consertá-lo.
+ */
+export function destinoDoHandoffDaOrg(settings: unknown): DestinoDoHandoffConfig | null {
+  const registro =
+    settings !== null && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)
+      : null;
+  const arvore = registro?.[ARVORE_DO_DESTINO_DO_HANDOFF];
+  const bruto =
+    arvore !== null && typeof arvore === "object" && !Array.isArray(arvore)
+      ? (arvore as Record<string, unknown>)[CHAVE_DO_DESTINO_DO_HANDOFF]
+      : undefined;
+  const lido = destinoDoHandoffSchema.safeParse(bruto);
+  return lido.success ? lido.data : null;
+}
+
+/**
  * Corpo do PATCH de `/api/v1/settings/routing`.
  *
  * `visibility_mode` é OPCIONAL de propósito: um cliente que só quer mudar o modo
@@ -184,6 +264,13 @@ export const atendimentoConfigPatchSchema = routingConfigSchema.extend({
     .max(PRAZO_MAX_MINUTOS)
     .nullable()
     .optional(),
+  /**
+   * Opcional pela mesma razão das outras chaves: cliente antigo, que só conhece
+   * o modo de roteamento, não pode DESLIGAR a entrega ao dono por omissão.
+   * Omitido preserva o que já valia; `null` desliga de propósito (a tela manda
+   * `null` quando a caixa é desmarcada).
+   */
+  destino_do_handoff: destinoDoHandoffSchema.nullable().optional(),
 });
 export type AtendimentoConfigPatch = z.infer<typeof atendimentoConfigPatchSchema>;
 
@@ -202,9 +289,10 @@ export type AtendimentoConfigPatch = z.infer<typeof atendimentoConfigPatchSchema
 export function mesclarSettingsDeAtendimento(
   atual: Record<string, unknown>,
   input: AtendimentoConfigPatch,
-): { settings: Record<string, unknown>; routing: RoutingConfig } {
+): { settings: Record<string, unknown>; routing: RoutingConfig; destino_do_handoff: DestinoDoHandoffConfig | null } {
   const {
     visibility_mode,
+    destino_do_handoff,
     handoff_return_after_minutes,
     conversation_stays_with_attendant,
     manual_reply_silence_minutes,
@@ -233,7 +321,24 @@ export function mesclarSettingsDeAtendimento(
   };
   const settings: Record<string, unknown> = { ...atual, routing };
   if (visibility_mode !== undefined) settings.visibility_mode = visibility_mode;
-  return { settings, routing };
+  /**
+   * O destino do handoff mora em `settings.atendimento` (a árvore que o leitor
+   * do handoff varre), e a mescla é DENTRO dela: outras folhas de `atendimento`
+   * que não são desta tela ficam como estavam. `null` APAGA a chave em vez de
+   * gravar `{ modo: null }` — desligado é a ausência, que é o que
+   * `configDoDestinoDoHandoff` lê como "não configurado".
+   */
+  if (destino_do_handoff !== undefined) {
+    const arvoreAtual = atual[ARVORE_DO_DESTINO_DO_HANDOFF];
+    const arvore =
+      arvoreAtual !== null && typeof arvoreAtual === "object" && !Array.isArray(arvoreAtual)
+        ? { ...(arvoreAtual as Record<string, unknown>) }
+        : {};
+    if (destino_do_handoff === null) delete arvore[CHAVE_DO_DESTINO_DO_HANDOFF];
+    else arvore[CHAVE_DO_DESTINO_DO_HANDOFF] = destino_do_handoff;
+    settings[ARVORE_DO_DESTINO_DO_HANDOFF] = arvore;
+  }
+  return { settings, routing, destino_do_handoff: destinoDoHandoffDaOrg(settings) };
 }
 
 /** Uma janela de disponibilidade: dow 0=domingo … 6=sábado, "HH:MM"–"HH:MM". */
