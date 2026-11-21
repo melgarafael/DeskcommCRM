@@ -1079,7 +1079,10 @@ describe("R4: 'Suas campanhas' agrupa por nicho (#4956/PR9)", () => {
     // O cabeçalho "Suas campanhas" existe ANTES de a resposta chegar; esperar o
     // primeiro cartão é o que garante que os grupos já foram desenhados.
     await screen.findByRole("button", { name: new RegExp(campanhas[0]!.name) });
-    return screen.getAllByRole("group");
+    // Só os grupos da LISTA: a página tem outros `role="group"` implícitos (o
+    // `<details>` de "Voz e vocabulário", os `<fieldset>` do detalhe).
+    const lista = screen.getByRole("heading", { name: "Suas campanhas" }).closest("section")!;
+    return within(lista).getAllByRole("group");
   }
 
   it("nicho repetido: um cabeçalho só, com as campanhas na ordem da lista", async () => {
