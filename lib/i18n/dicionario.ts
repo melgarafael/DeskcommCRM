@@ -13788,7 +13788,7 @@ export const DICIONARIO: Traducoes = {
   "Comercial": { es: "Comercial" },
   "Não comercial": { es: "No comercial" },
   "Classificar como não comercial": { es: "Clasificar como no comercial" },
-  "Restaurar como comercial": { es: "Restaurar como comercial" },
+  "Restaurar como comercial": { es: "Volver a marcar como comercial" },
   "Confirmar classificação": { es: "Confirmar clasificación" },
   "Motivo da classificação": { es: "Motivo de la clasificación" },
   "Motivo apagado pela anonimização": { es: "Motivo borrado por la anonimización" },
