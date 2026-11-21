@@ -23039,6 +23039,12 @@ export const DICIONARIO: Traducoes = {
   "ficaram de fora pelo limite de 50 por vez. Selecione-os de novo para levar.": {
     es: "quedaron fuera por el límite de 50 por vez. Selecciónelos de nuevo para llevarlos.",
   },
+  "Anotações do cliente": { es: "Notas del cliente" },
+  "Editar anotação": { es: "Editar nota" },
+  "Anotação salva.": { es: "Nota guardada." },
+  "Adicionar anotação": { es: "Agregar nota" },
+  "Nenhuma anotação sobre este cliente.": { es: "Ninguna nota sobre este cliente." },
+  "Ex.: empresa de enxoval em Recife, compra no atacado todo mês, entregar à tarde.": { es: "Ej.: empresa de ajuares en Recife, compra al por mayor cada mes, entregar por la tarde." },
 };
 
 /**
