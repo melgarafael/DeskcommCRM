@@ -64,6 +64,8 @@ import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { AtalhosDoNegocio } from "@/components/kanban/AtalhosDoCard";
 import type { AtalhoDoCard } from "@/lib/leads/atalhos-do-card";
 import { VendasDoNegocio } from "@/components/vendas/VendasDoNegocio";
+import { BotaoRegistrarVenda } from "@/components/vendas/BotaoRegistrarVenda";
+import { useVendasDoNegocio } from "@/hooks/vendas/useVendasRegistradas";
 
 interface Props {
   conversation: ConversationWithContact | null;
@@ -621,6 +623,15 @@ function ValorDoNegocio({
 }) {
   const t = useT();
   const edit = useEditLead(lead.pipeline_id);
+  // Com venda registrada, o valor é a SOMA das vendas (o banco grava em
+  // `value_cents`, migration 9445): o campo vira leitura e o "+" registra mais.
+  const { data: vendas } = useVendasDoNegocio(lead.id);
+  const vendasDoNegocio = Array.isArray(vendas) ? vendas : [];
+  const valorPelasVendas = vendasDoNegocio.length > 0;
+  const somaDasVendas = vendasDoNegocio.reduce(
+    (soma, v) => soma + (v.moeda.toUpperCase() === moeda.toUpperCase() ? v.valor_cents : 0),
+    0,
+  );
   const [texto, setTexto] = useState(() =>
     lead.value_cents == null ? "" : valorDoCampoDeMoeda(lead.value_cents / 100, moeda),
   );
@@ -656,6 +667,39 @@ function ValorDoNegocio({
         <span className="block text-xs font-medium text-text">{t("Valor do negócio")}</span>
         <p className="text-xs text-muted-foreground" data-testid="inbox-valor-somente-leitura">
           {formatMoney(lead.value_cents, lead.currency)}
+        </p>
+      </div>
+    );
+  }
+
+  const maisVenda = (
+    <BotaoRegistrarVenda
+      leadId={lead.id}
+      titulo={lead.title}
+      moeda={moeda.toUpperCase()}
+      className="size-8 border border-border"
+      testId="inbox-valor-registrar-venda"
+      aoRegistrar={onSalvo}
+    />
+  );
+
+  if (valorPelasVendas) {
+    return (
+      <div className="space-y-1" data-testid="inbox-valor-do-negocio">
+        <span className="block text-xs font-medium text-text">
+          {t("Valor do negócio")} ({simboloDaMoeda(moeda)})
+        </span>
+        <div className="flex items-center gap-1">
+          <p
+            className="flex h-8 flex-1 items-center rounded-md border border-border bg-surface-elevated px-3 text-xs"
+            data-testid="inbox-valor-pelas-vendas"
+          >
+            {formatValorDoNegocio(somaDasVendas, moeda)}
+          </p>
+          {maisVenda}
+        </div>
+        <p className="text-[10px] text-muted-foreground">
+          {t("Soma de")} {vendasDoNegocio.length} {t("venda(s) registrada(s)")}
         </p>
       </div>
     );
@@ -697,6 +741,7 @@ function ValorDoNegocio({
         >
           {t("Salvar")}
         </Button>
+        {maisVenda}
       </div>
       {entendido !== null && (
         <p className="text-[10px] text-muted-foreground">= {formatValorDoNegocio(entendido, moeda)}</p>
@@ -1584,6 +1629,8 @@ export function CRMSidePanel({
                 titulo={leads.find((l) => l.id === negocioAtivoId)?.title ?? null}
                 moeda={(activeOrg?.currency ?? MOEDA_PADRAO).toUpperCase()}
                 somenteLeitura={readonly}
+                semRegistrar
+                aoMudar={recarregar}
               />
             </div>
           )}

@@ -21,9 +21,11 @@ interface Props {
   titulo?: string | null;
   moeda?: string;
   className?: string;
+  aoRegistrar?: () => void;
+  testId?: string;
 }
 
-export function BotaoRegistrarVenda({ leadId, titulo, moeda, className }: Props) {
+export function BotaoRegistrarVenda({ leadId, titulo, moeda, className, aoRegistrar, testId = "card-registrar-venda" }: Props) {
   const t = useT();
   const [aberto, setAberto] = useState(false);
   const parar = (e: MouseEvent) => e.stopPropagation();
@@ -32,7 +34,7 @@ export function BotaoRegistrarVenda({ leadId, titulo, moeda, className }: Props)
     <>
       <button
         type="button"
-        data-testid="card-registrar-venda"
+        data-testid={testId}
         title={t("Registrar venda")}
         aria-label={t("Registrar venda")}
         onMouseDown={parar}
@@ -41,7 +43,7 @@ export function BotaoRegistrarVenda({ leadId, titulo, moeda, className }: Props)
           setAberto(true);
         }}
         className={cn(
-          "shrink-0 rounded-md p-1 text-text-muted transition-colors hover:bg-surface-elevated hover:text-accent",
+          "inline-flex shrink-0 items-center justify-center rounded-md p-1 text-text-muted transition-colors hover:bg-surface-elevated hover:text-accent",
           className,
         )}
       >
@@ -50,7 +52,14 @@ export function BotaoRegistrarVenda({ leadId, titulo, moeda, className }: Props)
       {aberto && (
         // O diálogo vive num portal; o `div` só segura a propagação do clique.
         <div onClick={parar} onMouseDown={parar}>
-          <RegistrarVendaDialog open onOpenChange={setAberto} leadId={leadId} titulo={titulo} moeda={moeda} />
+          <RegistrarVendaDialog
+            open
+            onOpenChange={setAberto}
+            leadId={leadId}
+            titulo={titulo}
+            moeda={moeda}
+            aoRegistrar={aoRegistrar}
+          />
         </div>
       )}
     </>

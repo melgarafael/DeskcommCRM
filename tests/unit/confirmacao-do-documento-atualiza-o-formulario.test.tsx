@@ -13,6 +13,12 @@ import type { Lead } from "@/lib/types/leads";
  */
 
 // A seção de vendas tem consulta própria (TanStack Query); aqui ela não é o assunto.
+// O Valor do negócio consulta as vendas registradas (TanStack Query); aqui o negócio não tem venda.
+vi.mock("@/hooks/vendas/useVendasRegistradas", () => ({
+  useVendasDoNegocio: () => ({ data: [] }),
+  useRegistrarVenda: () => ({ mutateAsync: async () => ({}), isPending: false }),
+  useApagarVenda: () => ({ mutate: () => {}, isPending: false }),
+}));
 vi.mock("@/components/vendas/VendasDoNegocio", () => ({ VendasDoNegocio: () => null }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (chave: string) => chave }));
 vi.mock("@/hooks/i18n/useLocaleDeData", () => ({ useTagDeIdioma: () => "pt-BR" }));

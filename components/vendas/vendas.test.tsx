@@ -97,7 +97,7 @@ describe("VendasDoNegocio", () => {
 
     confirmar.mockReturnValueOnce(true);
     fireEvent.click(screen.getAllByLabelText("Apagar venda")[0]!);
-    expect(apagar.mutate).toHaveBeenCalledWith("v1");
+    expect(apagar.mutate).toHaveBeenCalledWith("v1", expect.anything());
   });
 
   it("somente leitura: sem registrar e sem lixeira", () => {

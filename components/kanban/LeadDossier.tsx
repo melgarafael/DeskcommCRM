@@ -494,6 +494,7 @@ export function LeadDossier({
         titulo={lead.title}
         moeda={(activeOrg?.currency ?? MOEDA_PADRAO).toUpperCase()}
         somenteLeitura={!podeEditarTarefas}
+        semRegistrar
       />
     </SecaoDoDossie>
   );

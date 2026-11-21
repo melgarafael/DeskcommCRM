@@ -31,14 +31,17 @@ export interface NovaVenda {
 }
 
 /**
- * Registrar ou apagar uma venda mexe em TRÊS lugares da tela: a lista do
- * negócio, o painel de vendas (cartões, gráfico, lista) e o relatório de
- * negócios ganhos. As três chaves são invalidadas juntas.
+ * Registrar ou apagar uma venda mexe em vários lugares da tela: a lista do
+ * negócio, o painel de vendas (cartões, gráfico, lista), o relatório de
+ * negócios ganhos e o VALOR do negócio — que o banco recalcula pela soma das
+ * vendas (migration 9445) e o quadro e a página do negócio mostram.
  */
 function invalidarVendas(qc: ReturnType<typeof useQueryClient>) {
   void qc.invalidateQueries({ queryKey: ["vendas"] });
   void qc.invalidateQueries({ queryKey: ["reports", "painel-de-vendas"] });
   void qc.invalidateQueries({ queryKey: ["reports", "comercial"] });
+  void qc.invalidateQueries({ queryKey: ["board"] });
+  void qc.invalidateQueries({ queryKey: ["lead"] });
 }
 
 export function useRegistrarVenda() {

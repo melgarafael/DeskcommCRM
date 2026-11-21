@@ -49,9 +49,11 @@ interface Props {
   /** O nome do negócio, só para o título dizer de quem é a venda. */
   titulo?: string | null;
   moeda?: string;
+  /** Depois de gravar — para quem mostra o valor fora do TanStack Query (o Inbox). */
+  aoRegistrar?: () => void;
 }
 
-export function RegistrarVendaDialog({ open, onOpenChange, leadId, titulo, moeda = "BRL" }: Props) {
+export function RegistrarVendaDialog({ open, onOpenChange, leadId, titulo, moeda = "BRL", aoRegistrar }: Props) {
   const t = useT();
   const registrar = useRegistrarVenda();
   const [valor, setValor] = useState("");
@@ -87,6 +89,7 @@ export function RegistrarVendaDialog({ open, onOpenChange, leadId, titulo, moeda
         ...(observacao.trim() ? { observacao: observacao.trim() } : {}),
       });
       toast.success(t("Venda registrada."));
+      aoRegistrar?.();
       onOpenChange(false);
     } catch {
       // o erro já virou toast em `useRegistrarVenda`

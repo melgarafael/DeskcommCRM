@@ -25,9 +25,23 @@ interface Props {
   moeda?: string;
   /** Sem permissão de escrita (leitor, funil arquivado): só a lista. */
   somenteLeitura?: boolean;
+  /**
+   * O botão de registrar mora no campo Valor (o "+" ao lado dele): aqui fica só
+   * o histórico, para não haver dois lugares para a mesma coisa.
+   */
+  semRegistrar?: boolean;
+  /** Depois de apagar — para quem mostra o valor fora do TanStack Query (o Inbox). */
+  aoMudar?: () => void;
 }
 
-export function VendasDoNegocio({ leadId, titulo, moeda = "BRL", somenteLeitura = false }: Props) {
+export function VendasDoNegocio({
+  leadId,
+  titulo,
+  moeda = "BRL",
+  somenteLeitura = false,
+  semRegistrar = false,
+  aoMudar,
+}: Props) {
   const t = useT();
   const tagDeIdioma = useTagDeIdioma();
   const { data: vendas, isLoading, isError } = useVendasDoNegocio(leadId);
@@ -44,7 +58,11 @@ export function VendasDoNegocio({ leadId, titulo, moeda = "BRL", somenteLeitura 
       ) : isError ? (
         <p className="text-sm text-danger">{t("Não foi possível carregar as vendas.")}</p>
       ) : (vendas ?? []).length === 0 ? (
-        <p className="text-sm text-text-muted">{t("Nenhuma venda registrada neste negócio.")}</p>
+        <p className="text-sm text-text-muted">
+          {semRegistrar && !somenteLeitura
+            ? t("Nenhuma venda ainda. Use o + ao lado do Valor para registrar.")
+            : t("Nenhuma venda registrada neste negócio.")}
+        </p>
       ) : (
         <>
           <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
@@ -73,7 +91,7 @@ export function VendasDoNegocio({ leadId, titulo, moeda = "BRL", somenteLeitura 
                     aria-label={t("Apagar venda")}
                     disabled={apagar.isPending}
                     onClick={() => {
-                      if (window.confirm(t("Apagar esta venda? Ela sai do painel de vendas."))) apagar.mutate(v.id);
+                      if (window.confirm(t("Apagar esta venda? Ela sai do painel de vendas."))) apagar.mutate(v.id, { onSuccess: () => aoMudar?.() });
                     }}
                     className="shrink-0 rounded-md p-1 text-text-muted hover:bg-surface-elevated hover:text-danger"
                   >
@@ -89,7 +107,7 @@ export function VendasDoNegocio({ leadId, titulo, moeda = "BRL", somenteLeitura 
         </>
       )}
 
-      {!somenteLeitura && (
+      {!somenteLeitura && !semRegistrar && (
         <Button size="sm" variant="outline" onClick={() => setAberto(true)} data-testid="abrir-registrar-venda">
           <Plus className="mr-1 size-4" />
           {t("Registrar venda")}

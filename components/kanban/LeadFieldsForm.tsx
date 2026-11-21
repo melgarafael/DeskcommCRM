@@ -13,7 +13,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { useEditLead } from "@/hooks/kanban/useUpdateLead";
 import type { Lead } from "@/lib/types/leads";
 import { updateLeadSchema, type UpdateLeadInput } from "@/lib/schemas/leads";
-import { MOEDA_PADRAO, parseReaisToCents, simboloDaMoeda } from "@/lib/money";
+import { MOEDA_PADRAO, formatCents, parseReaisToCents, simboloDaMoeda } from "@/lib/money";
+import { BotaoRegistrarVenda } from "@/components/vendas/BotaoRegistrarVenda";
+import { useVendasDoNegocio } from "@/hooks/vendas/useVendasRegistradas";
 import { soChavesAlteradas } from "@/lib/leads/custom-fields-so-diff";
 import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
 import { ContactTagsEditor } from "@/components/inbox/ContactTagsEditor";
@@ -87,6 +89,17 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
   // reescreve o que nasceu antes, e o cartão e o dossiê mostram a persistida.
   const moedaDoValor = lead.currency ?? org?.currency ?? MOEDA_PADRAO;
   const edit = useEditLead(pipelineId);
+  // Com venda registrada, o Valor É a soma das vendas na moeda do negócio —
+  // o banco grava isso em `value_cents` (migration 9445). Aqui a soma sai da
+  // mesma lista, para o campo acompanhar a venda recém-registrada sem esperar
+  // o negócio ser relido.
+  const { data: vendas } = useVendasDoNegocio(lead.id);
+  const vendasDoNegocio = Array.isArray(vendas) ? vendas : [];
+  const valorPelasVendas = vendasDoNegocio.length > 0;
+  const somaDasVendas = vendasDoNegocio.reduce(
+    (soma, v) => soma + (v.moeda.toUpperCase() === moedaDoValor.toUpperCase() ? v.valor_cents : 0),
+    0,
+  );
   const [customFields, setCustomFields] = useState<Record<string, unknown>>(lead.custom_fields ?? {});
   // A RÉGUA do diff (issue #2132): o valor carregado ao abrir. Só o que a
   // pessoa mudar daqui vai viajar — devolver o objeto inteiro sobrescrevia o
@@ -173,7 +186,9 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
     const patch: Record<string, unknown> = {
       title: values.title.trim(),
       description: values.description.trim() ? values.description.trim() : null,
-      value_cents: valueCents,
+      // Com venda registrada, o valor é do banco (a soma): o formulário não o
+      // reescreve — um Salvar com a ficha aberta antes da venda apagaria a soma.
+      ...(valorPelasVendas ? {} : { value_cents: valueCents }),
       ...leitura.trio,
       expected_close_date: values.expected_close_date || null,
       // Só o que a pessoa alterou (issue #2132) — o merge continua do servidor.
@@ -225,13 +240,41 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
             {/* O rótulo segue a moeda do NEGÓCIO (a organização é a reserva):
                   `R$` em duro mentia para quem opera em euro. */}
             <Label htmlFor="valueReais">{t("Valor")} ({simboloDaMoeda(moedaDoValor)})</Label>
-            <Input
-              id="valueReais"
-              inputMode="decimal"
-              placeholder="0,00"
-              {...form.register("valueReais")}
-            />
-            <EcoDoValor control={form.control} moeda={moedaDoValor} />
+            <div className="flex items-center gap-1">
+              {valorPelasVendas ? (
+                <Input
+                  id="valueReais"
+                  readOnly
+                  aria-readonly
+                  data-testid="valor-pelas-vendas"
+                  value={formatCents(somaDasVendas, moedaDoValor)}
+                  className="bg-surface-elevated"
+                />
+              ) : (
+                <Input
+                  id="valueReais"
+                  inputMode="decimal"
+                  placeholder="0,00"
+                  {...form.register("valueReais")}
+                />
+              )}
+              {/* A ÚNICA porta de "registrar venda" no negócio: o "+" mora no
+                  próprio Valor, e cada venda soma nele. */}
+              <BotaoRegistrarVenda
+                leadId={lead.id}
+                titulo={lead.title}
+                moeda={moedaDoValor.toUpperCase()}
+                className="size-9 border border-border"
+                testId="valor-registrar-venda"
+              />
+            </div>
+            {valorPelasVendas ? (
+              <p className="text-xs text-text-muted" data-testid="valor-pelas-vendas-legenda">
+                {t("Soma de")} {vendasDoNegocio.length} {t("venda(s) registrada(s)")}
+              </p>
+            ) : (
+              <EcoDoValor control={form.control} moeda={moedaDoValor} />
+            )}
             {form.formState.errors.valueReais && (
               <p className="text-xs text-error-fg">
                 {t(form.formState.errors.valueReais.message ?? "")}
