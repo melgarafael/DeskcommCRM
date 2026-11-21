@@ -1576,7 +1576,7 @@ export function GradeDaAgenda({
       const rolagem = gradeRef.current;
       const rolagem0 = rolagem?.scrollTop ?? 0;
       const ponteiro = e.pointerId;
-      const g = { id: a.id, y0: e.clientY, moveu: false, terminou: false };
+      const g = { id: a.id, y0: e.clientY, moveu: false, terminou: false, cancelado: false };
       gestoDaBorda.current = g;
       setProposta(null);
       e.currentTarget.setPointerCapture?.(ponteiro);
@@ -1598,10 +1598,18 @@ export function GradeDaAgenda({
       const mover = (ev: PointerEvent) => {
         // Só o ponteiro que começou o gesto: um dedo encostando na tela no meio
         // do arraste do mouse não mexe na prévia nem a encerra.
-        if (ev.pointerId !== ponteiro) return;
+        if (ev.pointerId !== ponteiro || g.cancelado) return;
         if (!g.moveu && Math.abs(ev.clientY - g.y0) < 3) return;
         g.moveu = true;
         setPropostaDeDuracao(montarPropostaDeDuracao(a, fimSob(ev.clientY)));
+      };
+      // Esc desfaz a prévia, como no teclado. O gesto segue até soltar o botão:
+      // o `click` que o `pointerup` dispara ainda não pode abrir o card.
+      const cancelar = (ev: KeyboardEvent) => {
+        if (ev.key !== "Escape") return;
+        ev.preventDefault();
+        g.cancelado = true;
+        setPropostaDeDuracao(null);
       };
       const soltar = (ev: PointerEvent) => {
         if (ev.pointerId !== ponteiro) return;
@@ -1609,7 +1617,8 @@ export function GradeDaAgenda({
         window.removeEventListener("pointermove", mover);
         window.removeEventListener("pointerup", soltar);
         window.removeEventListener("pointercancel", soltar);
-        const p = g.moveu ? montarPropostaDeDuracao(a, fimSob(ev.clientY)) : null;
+        window.removeEventListener("keydown", cancelar);
+        const p = g.moveu && !g.cancelado ? montarPropostaDeDuracao(a, fimSob(ev.clientY)) : null;
         setPropostaDeDuracao(null);
         // Como no arraste: a ref zera depois do `click` que o `pointerup` dispara.
         setTimeout(() => {
@@ -1620,6 +1629,7 @@ export function GradeDaAgenda({
       window.addEventListener("pointermove", mover);
       window.addEventListener("pointerup", soltar);
       window.addEventListener("pointercancel", soltar);
+      window.addEventListener("keydown", cancelar);
     },
     [onMudarDuracao, geometriaDoFim, montarPropostaDeDuracao, entregarDuracao],
   );
