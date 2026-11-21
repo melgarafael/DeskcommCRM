@@ -18,6 +18,8 @@
 import type { ApiDeConversaoGoogle } from "../types";
 import { env } from "@/lib/env";
 
+type UsoDoGoogleAds = ApiDeConversaoGoogle | "relatorio";
+
 /** O caminho da rota de callback. Tem de estar registrado no console do Google. */
 export const CAMINHO_DO_CALLBACK = "/api/v1/plataformas-de-anuncio/google/callback";
 
@@ -48,7 +50,7 @@ export function enderecoDeRetorno(urlDaAplicacao: string = env.NEXT_PUBLIC_APP_U
 
 /** A configuração em vigor, ou `null` quando a instalação não tem app OAuth de Ads. */
 export function configuracaoDoGoogleAds(
-  api: ApiDeConversaoGoogle = "google_ads",
+  api: UsoDoGoogleAds = "google_ads",
 ): AppDoGoogleAdsConfigurado | null {
   const clientId = texto(env.GOOGLE_ADS_OAUTH_CLIENT_ID);
   const clientSecret = texto(env.GOOGLE_ADS_OAUTH_CLIENT_SECRET);
@@ -58,15 +60,15 @@ export function configuracaoDoGoogleAds(
 }
 
 /** Conectar o Google Ads está disponível nesta instalação? */
-export function googleAdsEstaConfigurado(api: ApiDeConversaoGoogle = "google_ads"): boolean {
+export function googleAdsEstaConfigurado(api: UsoDoGoogleAds = "google_ads"): boolean {
   return configuracaoDoGoogleAds(api) !== null;
 }
 
 /** O que falta, pelo nome — para a tela dizer em vez de só desabilitar o botão. */
-export function faltaParaConectarOGoogleAds(api: ApiDeConversaoGoogle = "google_ads"): string[] {
+export function faltaParaConectarOGoogleAds(api: UsoDoGoogleAds = "google_ads"): string[] {
   if (googleAdsEstaConfigurado(api)) return [];
   return VARIAVEIS_DO_GOOGLE_ADS.filter(
     (nome) =>
-      !(api === "data_manager" && nome === "GOOGLE_ADS_DEVELOPER_TOKEN") && !texto(env[nome]),
+      (api === "google_ads" || nome !== "GOOGLE_ADS_DEVELOPER_TOKEN") && !texto(env[nome]),
   );
 }
