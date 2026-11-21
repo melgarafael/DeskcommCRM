@@ -62,6 +62,7 @@ import { fonteDeTemplates } from "@/lib/channels/templates-fonte";
 import { useT } from "@/hooks/i18n/useT";
 import { AgendaDePausa } from "@/components/connections/AgendaDePausa";
 import { RenomearConexao } from "./RenomearConexao";
+import { FunilDeEntradaDoNumero } from "./FunilDeEntradaDoNumero";
 import { DefeitoDoNumero, numeroComDefeito } from "./DefeitoDoNumero";
 
 type Variant = "success" | "warning" | "error" | "neutral";
@@ -685,6 +686,7 @@ export function ConnectionsClient({
                     : t("Ainda não verificado")}
                 </p>
                 <ChannelAiAccess channelId={c.id} />
+                <FunilDeEntradaDoNumero channelId={c.id} />
                 {dependeDoTransporte(c) && <ChannelAcervo channelId={c.id} />}
                 {dependeDoTransporte(c) && <ChannelHistorico channelId={c.id} />}
                 <p className="text-xs text-muted-foreground">{t(!policy ? "Consulte os responsáveis em Atendimento." : policy.mode === "legacy_unconfigured" ? "Usa todos os atendentes elegíveis da organização." : policy.mode === "restricted_empty" ? "Ninguém configurado — as conversas ficarão na fila." : "Somente as pessoas selecionadas recebem este número.")}</p>

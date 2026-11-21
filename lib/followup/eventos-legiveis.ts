@@ -37,6 +37,7 @@ import {
   fraseDoRamo,
   type NomesDeValor,
 } from "./vocabulario";
+import { descreverAdiamento } from "./adiamento-legivel";
 
 // ---------------------------------------------------------------------------
 // Duração
@@ -423,12 +424,21 @@ export function descreveEvento(
       // Adiar NÃO é falhar, e o dossiê tem de dizer isso com todas as letras:
       // sem esta linha o operador vê o passo parado por horas e lê defeito onde
       // há obediência à janela que ele mesmo configurou.
-      const ate = quandoLegivel(p.until, idioma);
-      return {
-        titulo: "Segurou o envio até o horário permitido",
-        detalhe: ate ? `a janela estava fechada; envia em ${ate}` : "a janela estava fechada",
-        ...motor,
-      };
+      //
+      // E o dossiê tem de dizer POR QUE adiou. A frase única ("a janela estava
+      // fechada") mentia em dois sentidos: chamava de janela o horário de envio
+      // da conexão, a faixa do acompanhamento e até a pessoa no comando; e
+      // anunciava a janela de 24 h da Meta numa conexão por QR, onde ela não
+      // existe. O motivo está em `payload.reason`, e o escopo do canal em
+      // `payload.janela_regulatoria` — gravado por quem tinha o provedor em mãos
+      // (ver `aJanelaRegulatoriaSeAplica`). Evento antigo, sem o campo, mantém a
+      // leitura conservadora (escopo regulatório), que é a de antes deste fix.
+      const adiamento = descreverAdiamento({
+        reason: p.reason,
+        quando: quandoLegivel(p.until, idioma),
+        janelaRegulatoria: p.janela_regulatoria !== false,
+      });
+      return { ...adiamento, ...motor };
     }
     case "condition_revalidated": {
       // O operador tem de ler ISTO e não "o fluxo parou": o envio não saiu

@@ -42,7 +42,15 @@ export function idsDeEtapaCitados(nodes: readonly FlowNode[]): string[] {
   return [...ids];
 }
 
-type Linha = { id: string; name: string; is_archived: boolean; is_lost: boolean | null; crm_pipelines: { name: string; settings: unknown } | { name: string; settings?: unknown }[] | null };
+type Linha = {
+  id: string;
+  name: string;
+  is_archived: boolean;
+  is_lost: boolean | null;
+  pipeline_id: string | null;
+};
+
+type Funil = { id: string; name: string; settings: unknown };
 
 export async function carregaEtapasCitadas(
   client: SupabaseClient,
@@ -53,22 +61,38 @@ export async function carregaEtapasCitadas(
   const ids = idsDeEtapaCitados(nodes);
   if (ids.length === 0) return { ok: true, etapas };
 
+  // O funil vem em consulta PRÓPRIA, filtrada pela organização: um embed
+  // (`crm_pipelines(name, settings)`) atravessa a FK sem conferir a organização,
+  // e no ramo do token (service role) a RLS da tabela de dentro não vale.
   const { data, error } = await client
     .from("crm_stages")
-    .select("id, name, is_archived, is_lost, crm_pipelines(name, settings)")
+    .select("id, name, is_archived, is_lost, pipeline_id")
     .eq("organization_id", orgId)
     .in("id", ids);
   // Erro NÃO vira mapa vazio: vazio leria como "nenhuma dessas etapas existe" e
   // o publish recusaria um fluxo certo dizendo que a etapa foi apagada.
   if (error) return { ok: false, mensagem: error.message };
 
-  for (const linha of (data ?? []) as Linha[]) {
-    const funil = Array.isArray(linha.crm_pipelines) ? linha.crm_pipelines[0] : linha.crm_pipelines;
+  const linhas = (data ?? []) as Linha[];
+  const idsFunil = [...new Set(linhas.map((l) => l.pipeline_id).filter((v): v is string => !!v))];
+  const funisPorId = new Map<string, Funil>();
+  if (idsFunil.length > 0) {
+    const { data: funis, error: funisError } = await client
+      .from("crm_pipelines")
+      .select("id, name, settings")
+      .eq("organization_id", orgId)
+      .in("id", idsFunil);
+    if (funisError) return { ok: false, mensagem: funisError.message };
+    for (const f of (funis ?? []) as Funil[]) funisPorId.set(String(f.id), f);
+  }
+
+  for (const linha of linhas) {
+    const funil = linha.pipeline_id ? funisPorId.get(String(linha.pipeline_id)) : undefined;
     etapas.set(linha.id, {
-      nome: funil?.name ? `${linha.name} · ${funil.name}` : linha.name,
+      nome: funil ? `${linha.name} · ${String(funil.name)}` : linha.name,
       arquivada: linha.is_archived,
       isPerda: linha.is_lost === true,
-      settingsDoFunil: (funil as { settings?: unknown } | undefined)?.settings ?? null,
+      settingsDoFunil: funil?.settings ?? null,
     });
   }
   return { ok: true, etapas };

@@ -3,17 +3,20 @@
 import { useT } from "@/hooks/i18n/useT";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { useAttendantMetrics, type AttendantMetric } from "@/hooks/metrics/useAttendantMetrics";
 import { EmptyState } from "@/components/empty/EmptyState";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatarDuracao } from "@/lib/metrics/canais";
-import { WarningOctagon } from "@/lib/ui/icons";
+import { urlDaExportacao } from "@/lib/relatorios/vendas-csv";
+import { DownloadSimple, WarningOctagon } from "@/lib/ui/icons";
 import { AtritoPanel } from "./AtritoPanel";
 import { CanaisPanel } from "./CanaisPanel";
 import { MetaDoMesPanel, type EstadoDaMeta } from "./MetaDoMesPanel";
 import { PerdasPanel } from "./PerdasPanel";
 import { PrevisaoPanel } from "./PrevisaoPanel";
 import { SeriePanel } from "./SeriePanel";
+import { type FunilDaSerie } from "@/hooks/metrics/useSerieTemporal";
 import { useMetasDoMes } from "@/hooks/metrics/useMetasDoMes";
 import { janelaDoMes, mesLocal } from "@/lib/metas/periodo";
 import { useTeamMembers } from "@/hooks/team/useTeamMembers";
@@ -51,9 +54,16 @@ function attendantLabel(a: AttendantMetric, t: (texto: string) => string): strin
 interface Props {
   canCompare: boolean;
   currentUserId: string;
+  /**
+   * Os funis da organização, para o recorte dos ganhos (#4918). Vêm do
+   * componente de SERVIDOR, como no Kanban: `GET /api/v1/pipelines` exige
+   * manager+ e `/app/metrics` é de qualquer papel — um agent que pedisse a
+   * lista por ali levaria 403 e ficaria sem o seletor.
+   */
+  funis: FunilDaSerie[];
 }
 
-export function MetricsClient({ canCompare, currentUserId }: Props) {
+export function MetricsClient({ canCompare, currentUserId, funis }: Props) {
   const t = useT();
   const [owner, setOwner] = useState<string>(ALL);
   const selectedOwner = owner === ALL ? null : owner;
@@ -61,12 +71,41 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
   // Opções do filtro: só manager+ (a rota /team é manager+). Agent nem vê o filtro.
   const team = useTeamMembers({ enabled: canCompare });
 
+  // O MESMO gate da rota de exportação (`requireRole("manager")`, o piso de
+  // `contacts/export` e `audit/export`): um botão que só devolve 403 é
+  // armadilha — quem não pode exportar nem vê a porta.
+  const podeExportar = canCompare;
+
+  /**
+   * Exportar é exportar o QUE A TELA ESTÁ MOSTRANDO (#4802, item 5): o
+   * atendente escolhido no filtro viaja na query, e o arquivo sai com os MESMOS
+   * números da tabela abaixo — a rota chama a mesma leitura desta tela
+   * (`lib/relatorios/vendas.ts`), não um recálculo. O
+   * `Content-Disposition: attachment` da resposta faz o navegador baixar, o
+   * mesmo gesto do "Exportar CSV" de Contatos e do Audit Log.
+   */
+  const exportarVendas = () => {
+    window.location.href = urlDaExportacao(selectedOwner);
+  };
+
   // A meta é MENSAL e a janela é o mês corrente de quem está olhando a tela
   // (o mês é o dele, não um instante UTC — ver `lib/metas/periodo.ts`). Fixada
   // uma vez por montagem: remontar a cada render refaria o pedido sem mudança
   // nenhuma de dado.
   const [janelaDaMeta] = useState(() => janelaDoMes(mesLocal()));
   const metasDoMes = useMetasDoMes(janelaDaMeta);
+  // #4796: a meta do vendedor precisa de NOME no painel. A lista da equipe é a
+  // mesma que o filtro de atendente já carrega; quem não pode vê-la (agent) cai
+  // no rótulo genérico "Vendedor", porque o número continua valendo.
+  const nomesDaEquipe = Object.fromEntries(
+    (team.data?.data ?? []).map((membro) => [
+      membro.user_id,
+      rotuloDoMembro(
+        { full_name: membro.full_name, email: membro.email, user_id: membro.user_id },
+        t,
+      ),
+    ]),
+  );
   const estadoDaMeta: EstadoDaMeta = metasDoMes.isLoading
     ? "carregando"
     : metasDoMes.isError || !metasDoMes.data
@@ -151,6 +190,18 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
                 ))}
             </SelectContent>
           </Select>
+          {/*
+            A porta do RELATÓRIO para fora da tela (#4802, item 5). Fica colada
+            no filtro de propósito: é o recorte VISÍVEL que sai no arquivo, e um
+            botão longe do filtro sugeriria que o arquivo é sempre o mundo
+            inteiro. O plano de papel é o mesmo da rota — agent não vê a porta.
+          */}
+          {podeExportar ? (
+            <Button variant="outline" onClick={exportarVendas}>
+              <DownloadSimple size={16} weight="bold" aria-hidden />
+              <span>{t("Exportar vendas")}</span>
+            </Button>
+          ) : null}
         </div>
       ) : null}
 
@@ -182,6 +233,7 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
         metas={metasDoMes.data?.data.metas ?? []}
         podeConfigurar={canCompare}
         valores={metasDoMes.data?.data.valores_do_periodo ?? null}
+        nomes={nomesDaEquipe}
       />
 
       <Card>
@@ -274,7 +326,7 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
           operação (rodízio #1330). Fora do filtro de atendente a RLS é quem
           escopa: agent vê as próprias conversas, manager+ a organização. */}
       <CanaisPanel owner={selectedOwner} />
-      <SeriePanel />
+      <SeriePanel funis={funis} />
     </div>
   );
 }

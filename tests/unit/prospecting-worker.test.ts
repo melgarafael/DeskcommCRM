@@ -168,6 +168,80 @@ beforeEach(() => {
   mocks.authorize.mockResolvedValue({ ok: true });
   mocks.send.mockResolvedValue({ status: "sent" });
 });
+describe("aprovação da prévia antes do primeiro contato é OPÇÃO da campanha", () => {
+  const comAprovacao = {
+    ...campaign,
+    config: { ...campaign.config!, exigir_aprovacao_da_previa: true },
+  } as Campaign;
+  const previaGerada = {
+    texto: "Prévia revisada pela pessoa.",
+    baseada_em: "sem-site@derivado",
+    gerada_em: "2026-10-20T12:00:00.000Z",
+    agente_id: id,
+  };
+  const pausaNoGate = (sql: string) => sql.includes("aguarda revisão e aprovação humana");
+  /** O UPDATE da pausa devolve a campanha, como o `returning id` faz no banco. */
+  function bancoQuePausa(row: Record<string, unknown>) {
+    const db = database(undefined, row);
+    const original = db.query.getMockImplementation()!;
+    db.query.mockImplementation(async (sql: string, params?: unknown[]) =>
+      pausaNoGate(sql) ? { rows: [{ id }], rowCount: 1 } : original(sql, params),
+    );
+    return db;
+  }
+
+  it("ligada: primeiro contato sem prévia aprovada pausa a campanha, audita e não envia", async () => {
+    const row = { ...candidate, automatic_sends: 0, data: { ...candidate.data, website: null, previa: previaGerada } };
+    const db = bancoQuePausa(row);
+    await sendNextCandidate({} as never, db as never, {} as never, comAprovacao);
+    expect(db.query.mock.calls.some(([sql]) => pausaNoGate(sql))).toBe(true);
+    expect(mocks.preflight).not.toHaveBeenCalled();
+    expect(mocks.generate).not.toHaveBeenCalled();
+    expect(mocks.send).not.toHaveBeenCalled();
+    expect(mocks.audit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "prospecting.approval_required", resourceId: campaign.id }),
+    );
+  });
+
+  it("ligada: com a prévia aprovada por uma pessoa, envia", async () => {
+    const aprovada = { ...previaGerada, aprovada_por: id, aprovada_em: "2026-10-20T12:05:00.000Z" };
+    const row = { ...candidate, automatic_sends: 0, data: { ...candidate.data, website: null, previa: aprovada } };
+    const db = database(undefined, row);
+    await sendNextCandidate({} as never, db as never, {} as never, comAprovacao);
+    expect(db.query.mock.calls.some(([sql]) => pausaNoGate(sql))).toBe(false);
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+  });
+
+  // Reprova do #3630: com a fonte "prompt do agente" (#4315) e a aprovação ligada, a
+  // prévia gravada pelo agente (`fonte: "agente"`, âncora `fonte:agente`) não valia
+  // como aprovada — a campanha pausava para sempre. A fonte da campanha chega ao gate.
+  it("ligada e pela fonte do agente: a prévia do agente aprovada por uma pessoa libera o envio", async () => {
+    const pelaFonteDoAgente = {
+      ...comAprovacao,
+      config: { ...comAprovacao.config!, fonte_da_abordagem: "agente" },
+    } as Campaign;
+    const aprovadaDoAgente = {
+      ...previaGerada,
+      fonte: "agente",
+      baseada_em: "fonte:agente",
+      aprovada_por: id,
+      aprovada_em: "2026-10-20T12:05:00.000Z",
+    };
+    const row = { ...candidate, automatic_sends: 0, data: { ...candidate.data, website: null, previa: aprovadaDoAgente } };
+    const db = database(undefined, row);
+    await sendNextCandidate({} as never, db as never, {} as never, pelaFonteDoAgente);
+    expect(db.query.mock.calls.some(([sql]) => pausaNoGate(sql))).toBe(false);
+  });
+
+  it("desligada (campanha sem a chave): sem aprovação nenhuma, envia como sempre", async () => {
+    expect(campaign.config).not.toHaveProperty("exigir_aprovacao_da_previa");
+    const row = { ...candidate, automatic_sends: 0, data: { ...candidate.data, website: null, previa: previaGerada } };
+    const db = database(undefined, row);
+    await sendNextCandidate({} as never, db as never, {} as never, campaign);
+    expect(db.query.mock.calls.some(([sql]) => pausaNoGate(sql))).toBe(false);
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+  });
+});
 describe("gradual outreach", () => {
   it("sends one candidate with stable identity and the mandatory last-moment guard", async () => {
     const db = database();

@@ -357,3 +357,94 @@ describe("VACUIDADE — nenhuma escrita escapa da tabela", () => {
     );
   });
 });
+
+describe("`funil_vem_da_tarefa` — editar tarefa confere o negócio GRAVADO nela", () => {
+  const LEAD_DA_TAREFA = "11111111-0000-4000-8000-00000000000a";
+  const LEAD_NOVO = "22222222-0000-4000-8000-00000000000b";
+  const TAREFA = "33333333-0000-4000-8000-00000000000c";
+  const funilDe = (mapa: Record<string, string>) => async (leadId: string) => mapa[leadId] ?? null;
+  const base = {
+    ferramenta: "crm_update_task",
+    escopo: [FUNIL_A],
+    ehEscrita: true,
+  };
+
+  it("a edição só com task_id, de tarefa presa a negócio de OUTRO funil, é recusada", async () => {
+    const v = await podeChamarFerramenta({
+      ...base,
+      argumentos: { task_id: TAREFA, status: "done" },
+      resolvePipelineDoLead: funilDe({ [LEAD_DA_TAREFA]: FUNIL_B }),
+      resolveLeadDaTarefa: async () => ({ leadId: LEAD_DA_TAREFA }),
+    });
+    expect(v.permitido).toBe(false);
+    if (v.permitido) return;
+    expect(v.motivo).toBe("funil_fora_do_escopo");
+  });
+
+  it("tarefa presa a negócio do funil do agente passa", async () => {
+    const v = await podeChamarFerramenta({
+      ...base,
+      argumentos: { task_id: TAREFA, status: "done" },
+      resolvePipelineDoLead: funilDe({ [LEAD_DA_TAREFA]: FUNIL_A }),
+      resolveLeadDaTarefa: async () => ({ leadId: LEAD_DA_TAREFA }),
+    });
+    expect(v.permitido).toBe(true);
+  });
+
+  it("prender a tarefa a um negócio de outro funil é recusado, mesmo sem negócio gravado", async () => {
+    const v = await podeChamarFerramenta({
+      ...base,
+      argumentos: { task_id: TAREFA, lead_id: LEAD_NOVO },
+      resolvePipelineDoLead: funilDe({ [LEAD_NOVO]: FUNIL_B }),
+      resolveLeadDaTarefa: async () => ({ leadId: null }),
+    });
+    expect(v.permitido).toBe(false);
+  });
+
+  it("tarefa sem negócio e sem lead_id novo passa: não há funil envolvido", async () => {
+    const v = await podeChamarFerramenta({
+      ...base,
+      argumentos: { task_id: TAREFA, status: "done" },
+      resolvePipelineDoLead: funilDe({}),
+      resolveLeadDaTarefa: async () => ({ leadId: null }),
+    });
+    expect(v.permitido).toBe(true);
+  });
+
+  it("falha FECHADA: sem resolvedor, sem task_id, tarefa inexistente ou erro de consulta", async () => {
+    const sem = await podeChamarFerramenta({
+      ...base,
+      argumentos: { task_id: TAREFA },
+      resolvePipelineDoLead: funilDe({}),
+    });
+    const semId = await podeChamarFerramenta({
+      ...base,
+      argumentos: { status: "done" },
+      resolvePipelineDoLead: funilDe({}),
+      resolveLeadDaTarefa: async () => ({ leadId: null }),
+    });
+    const inexistente = await podeChamarFerramenta({
+      ...base,
+      argumentos: { task_id: TAREFA },
+      resolvePipelineDoLead: funilDe({}),
+      resolveLeadDaTarefa: async () => null,
+    });
+    const erro = await podeChamarFerramenta({
+      ...base,
+      argumentos: { task_id: TAREFA },
+      resolvePipelineDoLead: funilDe({}),
+      resolveLeadDaTarefa: async () => {
+        throw new Error("timeout");
+      },
+    });
+    for (const v of [sem, semId, inexistente, erro]) {
+      expect(v.permitido).toBe(false);
+      if (v.permitido) continue;
+      expect(v.motivo).toBe("indisponivel");
+    }
+  });
+
+  it("crm_update_task está classificada como funil_vem_da_tarefa", () => {
+    expect(ALVO_DE_FUNIL.crm_update_task).toBe("funil_vem_da_tarefa");
+  });
+});

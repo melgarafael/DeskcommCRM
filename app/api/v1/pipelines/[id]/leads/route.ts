@@ -49,10 +49,10 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { donoDoFiltro, lerFiltrosDaLista } from "@/lib/kanban/filtros-da-lista";
-import { createClient } from "@/lib/supabase/server";
 import type { Lead } from "@/lib/types/leads";
 
 export const dynamic = "force-dynamic";
@@ -96,10 +96,18 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   // `viewer` é o piso: ler a lista do funil é a mesma permissão de abrir o
   // quadro. A ESCRITA continua onde sempre esteve, nas rotas de lead.
-  const authz = await requireRole("viewer", { requestId, resource: "crm_leads" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_leads",
+    role: "viewer",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const orgId = authz.org.orgId;
+  const teto = await tetoDeEscritaDoToken(authz, "pipelines.leads", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const orgId = authz.organizationId;
 
   const params = req.nextUrl.searchParams;
   const pagina = paginaPedida(params.get("page"));
@@ -115,7 +123,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   }
   const filtros = lidos.filtros;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
 
   const { data: funil, error: funilErr } = await supabase
     .from("crm_pipelines")

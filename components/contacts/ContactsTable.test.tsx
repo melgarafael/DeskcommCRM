@@ -3,6 +3,8 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ContactsTable } from "./ContactsTable";
+import { apiClient } from "@/lib/api/client";
+import { camposPorEscopoDosFunis } from "@/lib/leads/campos-do-funil";
 import type { Contact } from "@/lib/types/contacts";
 import { contrasteNoTema, tokenDaClasse } from "@/tests/setup/contraste-do-utilitario";
 
@@ -14,7 +16,13 @@ vi.mock("sonner", () => ({
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({
-  useActiveOrg: () => ({ country: "BR", cliente_pela_agenda: false }),
+  // `orgId` existe para os hooks de leitura da organização (vocabulário e, desde
+  // a #4929, as definições de campo do contato) rodarem como na tela.
+  useActiveOrg: () => ({
+    country: "BR",
+    orgId: "00000000-0000-4000-8000-000000000002",
+    cliente_pela_agenda: false,
+  }),
 }));
 vi.mock("@/components/channels/SeletorDeCanalParaConversa", () => ({
   useConversaNovaComEscolhaDeCanal: () => ({
@@ -229,5 +237,79 @@ describe("ContactsTable — seleção múltipla (#2484, F3)", () => {
         expect(contrasteNoTema(borda, "surface", tema), `${borda} no ${tema}`).toBeGreaterThanOrEqual(3);
       }
     }
+  });
+});
+
+// Issue #4929 — o lápis da lista abria o MESMO `EditContactDialog` da ficha, mas
+// SEM `customFieldDefs`: quem editava pela lista não via os campos personalizados
+// do contato, e quem abria a ficha via. A lista não tem funil único, então a
+// definição é a união dos campos de escopo `contato` de TODOS os funis — a mesma
+// que o PATCH valida —, uma chamada só.
+describe("ContactsTable — campos personalizados no lápis (issue #4929)", () => {
+  const funilVendas = {
+    fields: [
+      { key: "codigo_parceiro", label: "Código do parceiro", type: "text", escopo: "contato" },
+      { key: "valor_da_venda", label: "Valor da venda", type: "currency" },
+    ],
+  };
+  const funilSuporte = {
+    fields: [
+      { key: "aniversario", label: "Aniversário do cliente", type: "date", escopo: "contato" },
+      { key: "sla_do_chamado", label: "SLA do chamado", type: "number" },
+    ],
+  };
+
+  // A rota responde o que o SERVIDOR responde: o recorte de escopo e a união por
+  // chave rodam pela função de produção, não por uma lista escrita à mão aqui.
+  function responderComoOServidor() {
+    const definicoes = camposPorEscopoDosFunis([funilVendas, funilSuporte], "contato");
+    vi.mocked(apiClient.get).mockImplementation(async (url: string) =>
+      url === "/api/v1/contacts/campos-de-contato" ? { data: { definicoes } } : { data: [] },
+    );
+  }
+
+  beforeEach(() => vi.clearAllMocks());
+  afterEach(() => cleanup());
+
+  it("o campo personalizado do contato APARECE ao abrir pelo lápis, como na ficha", async () => {
+    responderComoOServidor();
+    const user = userEvent.setup();
+    renderTabela();
+    await user.click(screen.getByRole("button", { name: "Editar contato Web Speed" }));
+
+    expect(await screen.findByText("Campos personalizados")).toBeInTheDocument();
+    expect(await screen.findByText("Código do parceiro")).toBeInTheDocument();
+    // Os dois funis entram: o campo que só o segundo declara também aparece.
+    expect(screen.getByText("Aniversário do cliente")).toBeInTheDocument();
+    // E o diálogo diz de onde vieram os campos, sem repetir a frase da ficha.
+    expect(
+      screen.getByText("Campos personalizados definidos nos funis da organização."),
+    ).toBeInTheDocument();
+  });
+
+  it("campo de escopo `negocio` NÃO aparece no diálogo de contato", async () => {
+    responderComoOServidor();
+    const user = userEvent.setup();
+    renderTabela();
+    await user.click(screen.getByRole("button", { name: "Editar contato Web Speed" }));
+
+    await screen.findByText("Código do parceiro");
+    expect(screen.queryByText("Valor da venda")).toBeNull();
+    expect(screen.queryByText("SLA do chamado")).toBeNull();
+  });
+
+  it("sem definição do contato a seção não nasce — o diálogo abre como antes", async () => {
+    // Organização sem campo de contato declarado: a rota responde lista vazia.
+    vi.mocked(apiClient.get).mockImplementation(async (url: string) =>
+      url === "/api/v1/contacts/campos-de-contato"
+        ? { data: { definicoes: [] } }
+        : { data: [] },
+    );
+    const user = userEvent.setup();
+    renderTabela();
+    await user.click(screen.getByRole("button", { name: "Editar contato Web Speed" }));
+
+    expect(await screen.findByText("Editar contato")).toBeInTheDocument();
+    expect(screen.queryByText("Campos personalizados")).toBeNull();
   });
 });
