@@ -815,6 +815,43 @@ saude_ok "unhealthy AINDA QUE o redis esteja ok" nao      unhealthy "$UNHEALTHY"
 saude_ok "porta aberta, app mudo"                nao      ''        ''
 saude_ok "proxy devolveu HTML de erro"           nao      ''        '<html>502 Bad Gateway</html>'
 
+wait_recovers_after_probe_timeout() (
+  local dir deadline body rc=0
+  deadline="$(command -v timeout)"
+  dir="$(mktemp -d)" || return 1
+  [ -n "$dir" ] && [ "$dir" != / ] && [ -d "$dir" ] || return 1
+  trap 'rm -rf "$dir"' EXIT
+  # The first Docker invocation stalls. Scale the per-probe deadline down so
+  # the test finishes quickly, using the real timeout to stop the child.
+  cat > "$dir/docker" <<'STUB'
+#!/usr/bin/env bash
+if mkdir "$PROBE_TEST_DIR/first-attempt" 2>/dev/null; then
+  exec sleep 12
+fi
+printf 'healthy\n%s\n' "$PROBE_TEST_BODY"
+STUB
+  cat > "$dir/timeout" <<'STUB'
+#!/usr/bin/env bash
+[ "$1" = 30 ] || exit 2
+shift
+exec "$PROBE_TEST_TIMEOUT" 1s "$@"
+STUB
+  chmod +x "$dir/docker" "$dir/timeout"
+  # An outer deadline keeps the test bounded even if the first probe regresses.
+  body="$(PROBE_TEST_DIR="$dir" PROBE_TEST_TIMEOUT="$deadline" PROBE_TEST_BODY="$HEALTHY" \
+    PATH="$dir:$PATH" "$deadline" 6s bash -c '. ./_common.sh; wait_app_healthy 2 0')" || rc=$?
+  if [ "$rc" -ne 0 ] || [ "$body" != "$HEALTHY" ]; then
+    printf '  ✗ the second health probe should recover after the first stalls (exit %s)\n' "$rc"
+    return 1
+  fi
+  printf '  ✓ the second health probe recovered after the first timed out\n'
+)
+if command -v timeout >/dev/null 2>&1; then
+  wait_recovers_after_probe_timeout || fail=1
+else
+  printf '  - skipped the stalled Docker probe fixture because coreutils timeout is unavailable\n'
+fi
+
 echo "healthcheck.sh: veredito pelo status GERAL e código de saída (#4087)"
 # O defeito: o healthcheck procurava `"status":"ok"` no JSON cru. `ok` é o
 # vocabulário dos CHECKS individuais, então um app com o BANCO FORA (status

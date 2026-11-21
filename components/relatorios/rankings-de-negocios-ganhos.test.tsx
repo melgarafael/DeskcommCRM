@@ -264,3 +264,66 @@ describe("RankingsDeNegociosGanhos", () => {
     expect(lista.textContent).toContain("sem valor preenchido");
   });
 });
+
+describe("o funil ou a tag que sumiu do período (revisão do #4941)", () => {
+  function responderComo(payload: RespostaDoRelatorioComercial, isPlaceholderData: boolean) {
+    vi.mocked(useCommercialReport).mockReturnValue({
+      data: { data: payload },
+      isLoading: false,
+      isError: false,
+      isPlaceholderData,
+    } as never);
+  }
+
+  it("período novo sem o funil escolhido: o recorte é zerado, e o seletor diz a verdade", () => {
+    responder(comVendas());
+    const { rerender } = render(<RankingsDeNegociosGanhos {...PERIODO} />);
+    fireEvent.change(screen.getByTestId("recorte-funil"), { target: { value: FUNIL_B } });
+
+    // O período mudou no topo: a resposta NOVA não tem o FUNIL_B nas opções.
+    const outroPeriodo = { de: "2026-10-01", ate: "2026-10-31" };
+    responderComo(comVendas({ opcoes: { pipeline_ids: [FUNIL_A], tags: ["recompra"] } }), false);
+    rerender(<RankingsDeNegociosGanhos {...outroPeriodo} />);
+
+    expect(vi.mocked(useCommercialReport)).toHaveBeenLastCalledWith({
+      ...outroPeriodo,
+      pipelineId: "",
+      tag: "",
+    });
+    expect((screen.getByTestId("recorte-funil") as HTMLSelectElement).value).toBe("");
+  });
+
+  it("a tag que sumiu também é zerada, e o funil que continua fica", () => {
+    responder(comVendas());
+    const { rerender } = render(<RankingsDeNegociosGanhos {...PERIODO} />);
+    fireEvent.change(screen.getByTestId("recorte-funil"), { target: { value: FUNIL_A } });
+    fireEvent.click(screen.getByTitle("Ver as vendas desta tag"));
+
+    responderComo(comVendas({ opcoes: { pipeline_ids: [FUNIL_A], tags: [] } }), false);
+    rerender(<RankingsDeNegociosGanhos de="2026-10-01" ate="2026-10-31" />);
+
+    expect(vi.mocked(useCommercialReport)).toHaveBeenLastCalledWith({
+      de: "2026-10-01",
+      ate: "2026-10-31",
+      pipelineId: FUNIL_A,
+      tag: "",
+    });
+  });
+
+  it("a resposta ANTIGA (enquanto o período novo carrega) não zera um filtro válido", () => {
+    responder(comVendas());
+    const { rerender } = render(<RankingsDeNegociosGanhos {...PERIODO} />);
+    fireEvent.change(screen.getByTestId("recorte-funil"), { target: { value: FUNIL_B } });
+
+    // keepPreviousData: ainda é a resposta do período anterior, sem o FUNIL_B.
+    responderComo(comVendas({ opcoes: { pipeline_ids: [FUNIL_A], tags: ["recompra"] } }), true);
+    rerender(<RankingsDeNegociosGanhos de="2026-10-01" ate="2026-10-31" />);
+
+    expect(vi.mocked(useCommercialReport)).toHaveBeenLastCalledWith({
+      de: "2026-10-01",
+      ate: "2026-10-31",
+      pipelineId: FUNIL_B,
+      tag: "",
+    });
+  });
+});

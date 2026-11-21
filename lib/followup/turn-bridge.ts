@@ -57,7 +57,7 @@ export type TurnResult =
    * turno já re-agendou o job para esse instante — o que falta é o enrollment
    * saber disso. Ver `EVENTO_ACAO_ADIADA` em node-handlers.ts.
    */
-  | { kind: "deferred"; until: Date; reason: string }
+  | { kind: "deferred"; until: Date; reason: string; janelaRegulatoria?: boolean }
   /** Plano de tempo do fluxo inteiro, proposto no acionamento — cru, antes do clamp. */
   | { kind: "planned"; propostas: PropostaDeEspera[]; modelo: string };
 
@@ -199,7 +199,15 @@ export async function completeTurnForEnrollment(
     const evento = {
       node_id: node.id,
       event_type: EVENTO_ACAO_ADIADA,
-      payload: { until: result.until.toISOString(), next_eval_at: voltaEm.toISOString(), reason: result.reason },
+      payload: {
+        until: result.until.toISOString(),
+        next_eval_at: voltaEm.toISOString(),
+        reason: result.reason,
+        // O ESCOPO vai junto com o motivo: é o que permite o dossiê não culpar
+        // a janela de 24 h numa conexão por QR. Quem sabe o provedor é o turno
+        // que adiou (ele já leu o canal); a ponte só transporta.
+        janela_regulatoria: result.janelaRegulatoria !== false,
+      },
       idempotency_key: `${node.id}:${enrollment.steps_taken}:adiado:${jobId ?? "inline"}:${result.reason}:${result.until.toISOString()}`,
     };
     await db.assertServiceBoundary?.(enrollment);

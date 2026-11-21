@@ -277,6 +277,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Build e push (imagem genérica — sem segredos)
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -298,6 +299,38 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}-${{ matrix.arch }}
           # Sem build-args de segredo: a imagem é genérica (NEXT_PUBLIC_* viram
           # placeholder; valores reais entram em runtime no VPS do usuário).
+
+      # O BUILD_ID do servidor TEM de ser o mesmo que o de `.next/static` (#4967).
+      #
+      # O QUE MEDE: entra na imagem que acabou de ir para o GHCR e compara
+      # `/app/.next/BUILD_ID` com o diretório `.next/static/<BUILD_ID>/` que tem
+      # `_buildManifest.js`. Divergindo, todo chunk que o HTML referencia existe só
+      # no OUTRO build — ChunkLoadError em `/login`, `/app/inbox` e Funis, com o
+      # container subindo normal e o `/health` verde.
+      #
+      # TRAVA DECLARADA, e não é contorno: a divergência só é observável DEPOIS que
+      # a imagem existe, e construir e publicar são o MESMO passo do
+      # build-push-action. O ponto mais cedo possível é este — mesmo job, logo
+      # depois do push, antes de `juntar-manifestos` e `promover-stable`, que
+      # dependem deste job pelo `if` padrão (success). Logo a tag MULTIARCH
+      # (`1.118.0`) e o canal `stable` NÃO chegam a existir: só a tag por
+      # arquitetura (`1.118.0-amd64`) foi empurrada, e essa nenhum self-hoster
+      # instala. Uma verificação "antes do push" aqui teria de olhar uma imagem
+      # que ainda não existe — seria um passo que finge medir.
+      - name: O BUILD_ID do servidor bate com o de .next/static?
+        # Só o app tem `next build`; worker, scheduler e voice-agent não têm `.next`
+        # e a sonda sairia 2 ("não deu para medir") — reprovaria a imagem certa.
+        if: github.event_name != 'pull_request' && matrix.name == 'deskcommcrm'
+        env:
+          # Regra do repo para workflow que constrói imagem. Este passo é shell e
+          # não compila, mas o teto acompanha o do `ci.yml` — nunca abaixo dele.
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: |
+          set -euo pipefail
+          # Pelo DIGEST: é exatamente o byte que este job empurrou, não uma tag que
+          # outro run pode ter movido entretanto.
+          bash scripts/verifica-build-id.sh \
+            "${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.name }}@${{ steps.build.outputs.digest }}"
 
   juntar-manifestos:
     needs: [build-and-push]
@@ -417,6 +450,18 @@ jobs:
           # este job — sem isto o segundo push do mesmo PR reconstruiria do
           # zero. Fora de PR continua só lendo: quem grava é o build-and-push.
           cache-to: ${{ github.event_name == 'pull_request' && format('type=gha,mode=max,scope=deskcommcrm-{0}', matrix.arch) || '' }}
+
+      # A MESMA verificação do `build-and-push`, aqui porque este é o único lugar
+      # em que a imagem é materializada SEM publicar nada — e o único em que um PR
+      # reprova por BUILD_ID divergente (em pull_request o `build-and-push` é
+      # pulado). Roda ANTES do boot de propósito: a imagem #4967 sobe perfeitamente,
+      # então "o container chega a servir" não enxerga este defeito — ele só aparece
+      # quando o browser pede um chunk.
+      - name: O BUILD_ID do servidor bate com o de .next/static?
+        env:
+          # Mesmo teto do `ci.yml` para workflow que constrói imagem.
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: bash scripts/verifica-build-id.sh deskcomm-smoke:pr
 
       - name: O container chega a servir?
         run: |

@@ -1,4 +1,4 @@
-<!-- traduzido-de: docs/white-label.md@464b4559f15f -->
+<!-- traduzido-de: docs/white-label.md@b4c1c13cdced -->
 
 [🇧🇷 Português](white-label.md) · 🇺🇸 English · [🇪🇸 Español](white-label.es.md)
 
@@ -40,7 +40,7 @@ Example:
 }
 ```
 
-**Color per section of the side menu.** The menu has stable classes meant for this CSS. Every group has `nav-grupo`, and each one also has its own: `nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais`, `nav-grupo-analise` and `nav-grupo-organizacao` (the footer, with Settings and Help). Each destination has its own too: `nav-item-inbox`, `nav-item-kanban`, `nav-item-crm` (the "See all in CRM" link), and so on. The item of the open screen — and only it — also carries `nav-item-ativo`. These classes are part of the screen contract and do not change between releases; the Tailwind utility classes do.
+**Color per section of the side menu.** The menu has stable classes meant for this CSS. Every group has `nav-grupo`, and each one also has its own: `nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais`, `nav-grupo-analise` and `nav-grupo-organizacao` (the footer, with Settings and Help), plus `nav-grupo-modulos` on the Modules group, which only shows up when the organization has an active connected module. Each destination has its own too: `nav-item-inbox`, `nav-item-kanban`, `nav-item-crm` (the "See all in CRM" link), and so on. The item of the open screen — and only it — also carries `nav-item-ativo`. These classes are part of the screen contract and do not change between releases; the Tailwind utility classes do.
 
 `nav-item-ativo` is what solves the contrast of the open item: it is the only one that already has a background in the accent color, and a rule that paints the whole menu (`.nav-grupo-crm .rounded-md:hover`) reaches it too. Since the validator accepts neither attribute selectors nor `:not()`, use the class: give the open item its own color, or repeat the menu's neutral background on it.
 

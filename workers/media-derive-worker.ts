@@ -7,7 +7,7 @@
 import { generateText } from "ai";
 import type pg from "pg";
 
-import { extractPdfText } from "@/lib/ai/rag/extractors/pdf";
+import { extractPdfText, PdfExtractError } from "@/lib/ai/rag/extractors/pdf";
 import { provedorDaChamada } from "@/lib/ai/log-invocation";
 import { visaoEmVigor } from "@/lib/ai/pontos/capacidade-em-vigor";
 import { PONTO_TRANSCRICAO_DE_AUDIO, PONTO_VISAO_DE_IMAGEM } from "@/lib/ai/pontos/registro";
@@ -566,6 +566,36 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
         "Envie um áudio menor, de até 25 MB, para que o conteúdo possa ser transcrito.",
       );
       return { consumer_key, status: "skipped", detail: "transcription_audio_too_large" };
+    }
+    // ─── PDF escaneado não é falha de infraestrutura (#4889) ────────────────
+    //
+    // O extrator distingue os dois casos por `motivo`: `sem_texto` = o arquivo
+    // abriu inteiro e não tem letra selecionável; `falha` = a engine não
+    // conseguiu ler. Aqui os dois caíam no MESMO `catch`, e o PDF sem texto
+    // custava o que só o erro real deveria custar: cinco tentativas, descrição
+    // inventada pelo agente, aviso de "a leitura deu erro em todas as
+    // tentativas" e um `event_dead` aberto. Com o índice único
+    // `agent_inbox_event_dead_aberto_unico` (migration 0491), esse evento morto
+    // silencioso ocupa a única vaga da organização e ESCONDE a próxima falha de
+    // verdade — foi o que a issue mediu.
+    //
+    // Desfecho TERMINAL: `failed` com a razão (para o turno seguinte saber que
+    // existe arquivo ilegível, em vez de supor o conteúdo), `skipped` para o
+    // dreno não recontar, e NADA na Central — não há o que o operador consertar
+    // num PDF que o cliente mandou escaneado. O `motivo` é contrato do erro;
+    // a frase inglesa não decide nada aqui.
+    if (err instanceof PdfExtractError && err.motivo === "sem_texto") {
+      const motivo = "o PDF não tem texto selecionável (é escaneado ou só imagem)";
+      logger.info("[media-derive] PDF sem texto: derivação encerrada sem nova tentativa", {
+        message_id: msg.id,
+      });
+      try {
+        const { error } = await markFailed(motivo);
+        if (error) return { consumer_key, status: "error", detail: "failed_status_update_failed" };
+      } catch {
+        return { consumer_key, status: "error", detail: "failed_status_update_failed" };
+      }
+      return { consumer_key, status: "skipped", detail: "pdf_sem_texto" };
     }
     const detail = err instanceof Error ? err.message : String(err);
     if (row.attempts >= DRAIN_MAX_ATTEMPTS - 1) {
@@ -1183,7 +1213,6 @@ function custoComCatalogo(
       // `0` ("de graça") — vira nulo com motivo `sem_uso`.
       temUso: haUsoMedido(uso),
       informadoPeloProvedor: undefined,
-      porPassosDoTerra: undefined,
       daTabelaDoMotor,
       doCatalogoDaInstalacao,
     });
@@ -1294,7 +1323,6 @@ function comCustoRegistrado(
             // falta é a TARIFA. Marcar `sem_uso` mentiria sobre o motivo.
             temUso: true,
             informadoPeloProvedor: undefined,
-            porPassosDoTerra: undefined,
             daTabelaDoMotor: null,
           }).costCents,
         );

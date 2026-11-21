@@ -11,6 +11,7 @@ import { CODIGO_ORG_DIVERGENTE, HEADER_ORG_DA_ABA, orgDaAba } from "@/lib/auth/o
 import { CODIGO_SENHA_PROVISORIA } from "@/lib/auth/senha-provisoria";
 import { randomId } from "@/lib/random-id";
 import { registrarRetentativa } from "@/lib/api/registro-de-retentativa";
+import { entrarEmVoo, sairDeVoo } from "@/lib/api/requisicoes-em-voo";
 
 type HttpMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 
@@ -273,6 +274,26 @@ async function request<T>(
   path: string,
   body: unknown,
   opts: RequestOpts = {},
+): Promise<T> {
+  // Toda requisição pode ser encerrada de fora (`lib/api/requisicoes-em-voo.ts`),
+  // pelo mesmo caminho de quem cancela pelo próprio `signal`.
+  const controle = new AbortController();
+  entrarEmVoo(controle);
+  try {
+    return await executarRequisicao<T>(method, path, body, {
+      ...opts,
+      signal: combineSignals([opts.signal, controle.signal]),
+    });
+  } finally {
+    sairDeVoo(controle);
+  }
+}
+
+async function executarRequisicao<T>(
+  method: HttpMethod,
+  path: string,
+  body: unknown,
+  opts: RequestOpts,
 ): Promise<T> {
   const requestId = randomId();
   const headers: Record<string, string> = {

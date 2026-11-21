@@ -570,6 +570,17 @@ describe("Passo 0 — o WhatsApp vem antes do site e da prévia (whatsapp.ts)", 
       dormir: async () => {},
     });
 
+  it("a pergunta do módulo leva a ORGANIZAÇÃO (#4871): a linha da empresa vale para o trabalho de fundo", async () => {
+    const { pool } = montar({ candidatos: { [C1]: [cand("w1", { phone: "+551****0001" })] } });
+    const conferirWhatsapp = vi.fn(async (_admin: unknown, _org: string) => false);
+    await prepararCandidatos(pool as never, {} as never, ORG, "req-1", Date.now() + 60_000, {
+      conferirWhatsapp,
+      consultaWhatsapp: (async () => async () => true) as never,
+      dormir: async () => {},
+    });
+    expect(conferirWhatsapp).toHaveBeenCalledWith({}, ORG);
+  });
+
   it("módulo conferir_whatsapp desligado (o padrão): nenhuma consulta sai, e o preparo segue igual", async () => {
     const { pool, sqls } = montar({ candidatos: { [C1]: [cand("w1", { phone: "+5511987650001" })] } });
     const consulta = vi.fn(async () => async () => true);

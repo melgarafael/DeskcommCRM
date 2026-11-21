@@ -86,6 +86,23 @@ RUN PDFJS_DIR=$(basename node_modules/.pnpm/pdfjs-dist@*) && \
     cp "node_modules/.pnpm/$PDFJS_DIR/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs" \
        ".next/standalone/.next/server/chunks/pdf.worker.mjs"
 
+# `.next/static` entra no PRÓPRIO standalone para que servidor e estáticos saiam de
+# UMA cópia só (#4967). O `output: standalone` não leva `.next/static`, e a receita
+# antiga o copiava num `COPY --from=build` SEPARADO. O BuildKit resolve cada `COPY`
+# contra o snapshot que ele tiver para aquele passo, e em 18/11/2026 isso entregou
+# uma imagem de DOIS builds: o cache do GHA veio com blobs faltando
+# (`ERROR: blob sha256:…: not found`, run 44382924945), o `RUN pnpm build`
+# REEXECUTOU por 262,7 s, o `COPY` do standalone foi servido do snapshot antigo
+# (DONE 6,3 s) e o do static do build novo (DONE 1,7 s). A 1.118.0 saiu com
+# `.next/BUILD_ID` `L0Ae8OxIf-v2KzwJoCU0E` e `.next/static/`
+# `K2qYwFMofIRXoOdBpIUbx`, e todo chunk referenciado pelo HTML virou ChunkLoadError.
+# Com os dois no MESMO diretório copiado, um único `COPY` decide os dois: ou o
+# snapshot inteiro vem do cache (coerente, ainda que velho) ou é refeito do build
+# novo (coerente). Imagem com os dois ids trocados deixa de ser representável.
+# O caminho final NÃO muda: continua `/app/.next/static`, que é onde o `server.js`
+# do standalone procura (medido nas imagens 1.117.0 e 1.118.0).
+RUN cp -a .next/static .next/standalone/.next/static
+
 # ---- runner: imagem slim de produção ----
 FROM node:22-alpine AS runner
 WORKDIR /app
@@ -132,8 +149,10 @@ ARG APP_VERSION=dev
 ENV APP_VERSION=$APP_VERSION
 # O output standalone NÃO inclui public/ nem .next/static — copiar explicitamente,
 # senão CSS/JS/assets retornam 404 (app "sem estilo").
+# `.next/static` NÃO tem `COPY` próprio: ele já vem dentro do standalone (o passo
+# `cp -a` do estágio `build`), de propósito — dois `COPY` independentes podiam ser
+# servidos de snapshots diferentes e montar a imagem de dois builds (#4967).
 COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=build --chown=nextjs:nodejs /app/public ./public
 USER nextjs
 EXPOSE 3000

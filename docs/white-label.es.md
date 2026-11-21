@@ -1,4 +1,4 @@
-<!-- traduzido-de: docs/white-label.md@464b4559f15f -->
+<!-- traduzido-de: docs/white-label.md@b4c1c13cdced -->
 
 [🇧🇷 Português](white-label.md) · [🇺🇸 English](white-label.en.md) · 🇪🇸 Español
 
@@ -40,7 +40,7 @@ Ejemplo:
 }
 ```
 
-**Color por sección del menú lateral.** El menú tiene clases estables, pensadas para este CSS. Todo grupo lleva `nav-grupo`, y cada uno lleva también la suya: `nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais`, `nav-grupo-analise` y `nav-grupo-organizacao` (la del pie, con Configuración y Ayuda). Cada destino tiene la suya: `nav-item-inbox`, `nav-item-kanban`, `nav-item-crm` (el enlace "Ver todo en CRM") y así sucesivamente. El ítem de la pantalla abierta — y solo él — lleva también `nav-item-ativo`. Estas clases forman parte del contrato de la pantalla y no cambian entre versiones; las clases utilitarias de Tailwind, sí.
+**Color por sección del menú lateral.** El menú tiene clases estables, pensadas para este CSS. Todo grupo lleva `nav-grupo`, y cada uno lleva también la suya: `nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais`, `nav-grupo-analise` y `nav-grupo-organizacao` (la del pie, con Configuración y Ayuda), más `nav-grupo-modulos` en el grupo Módulos, que solo aparece cuando la organización tiene un módulo conectado activo. Cada destino tiene la suya: `nav-item-inbox`, `nav-item-kanban`, `nav-item-crm` (el enlace "Ver todo en CRM") y así sucesivamente. El ítem de la pantalla abierta — y solo él — lleva también `nav-item-ativo`. Estas clases forman parte del contrato de la pantalla y no cambian entre versiones; las clases utilitarias de Tailwind, sí.
 
 `nav-item-ativo` es lo que resuelve el contraste del ítem abierto: es el único que ya tiene fondo en el color de destaque, y una regla que pinta el menú entero (`.nav-grupo-crm .rounded-md:hover`) también lo alcanza. Como el validador no acepta selector por atributo ni `:not()`, usa la clase: dale al ítem abierto un color propio, o repite en él el fondo neutro del menú.
 
