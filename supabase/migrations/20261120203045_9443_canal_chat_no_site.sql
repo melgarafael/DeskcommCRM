@@ -7,9 +7,9 @@
 --      e `webchat_allowed_origins` (as origens que podem abrir o widget, not null
 --      com default vazio).
 --   2. `fn_webchat_origens_validas(text[])`: no máximo 20 itens, cada um
---      `https://` + host + porta opcional, sem caminho. A exceção de
---      `http://localhost` (instalação em loopback) NÃO está aqui: é regra da rota,
---      porque depende da instalação e não do banco.
+--      `https://` + host + porta opcional, sem caminho; e `http://localhost` +
+--      porta opcional, para a instalação em loopback. O banco aceita o localhost;
+--      QUEM decide se ele vale é a rota, porque depende da instalação.
 --   3. `'webchat'` no vocabulário de `channel_sessions.provider` e no ramo do
 --      `channel_sessions_provider_ref_check` (exige a chave pública).
 --   4. `'webchat'` em `conversations_channel_check`: sem ele a primeira mensagem
@@ -42,7 +42,9 @@ as $$
   select coalesce(cardinality(origens), 0) <= 20
      and not exists (
        select 1 from unnest(origens) as o
-        where o is null or o !~* '^https://[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:[0-9]{1,5})?$'
+        where o is null
+           or (o !~* '^https://[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:[0-9]{1,5})?$'
+               and o !~* '^http://localhost(:[0-9]{1,5})?$')
      );
 $$;
 
@@ -86,13 +88,19 @@ create unique index if not exists channel_sessions_webchat_public_key_ativa_uniq
   on public.channel_sessions (webchat_public_key)
   where archived_at is null;
 
+-- Uma conexão de chat ATIVA por organização. Sem isto, dois POST simultâneos passam pela
+-- checagem da rota e criam duas caixas de entrada para a mesma empresa.
+create unique index if not exists channel_sessions_webchat_org_ativa_unique
+  on public.channel_sessions (organization_id)
+  where provider = 'webchat' and archived_at is null;
+
 do $$
 begin
   if to_regclass('public.channel_sessions') is not null then
     comment on column public.channel_sessions.webchat_public_key is
       'Chave pública do widget do chat no site (wck_...). Identifica a conexão para o navegador do visitante; NÃO é segredo e não dá acesso ao CRM. Única entre conexões não arquivadas.';
     comment on column public.channel_sessions.webchat_allowed_origins is
-      'Origens (https://host[:porta]) que podem abrir o widget desta conexão. Máximo 20, sem caminho. A exceção de loopback é regra da rota, não do banco.';
+      'Origens (https://host[:porta]) que podem abrir o widget desta conexão. Máximo 20, sem caminho. O localhost (loopback) passa no banco; a rota decide se vale.';
   end if;
 end
 $$;

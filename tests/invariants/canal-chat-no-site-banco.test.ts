@@ -112,6 +112,13 @@ describe("chat no site · origens permitidas (fn_webchat_origens_validas)", () =
     expect(msg).toMatch(/channel_sessions_webchat_allowed_origins_check/);
   });
 
+  it("aceita http://localhost:3000 (o banco aceita o loopback; a rota decide quando vale)", () => {
+    const org = novaOrg();
+    expect(
+      erroDe(insercao(org, { provider: "'webchat'", webchat_public_key: `'wck_localhost_${sequencia}'`, webchat_allowed_origins: arrayDe(["http://localhost:3000"]) })),
+    ).toBe("");
+  });
+
   it("recusa elemento NULL na lista de origens (NULL não é origem)", () => {
     const org = novaOrg();
     const msg = erroDe(
@@ -139,6 +146,25 @@ describe("chat no site · a chave pública é única entre conexões ativas", ()
     expect(erroDe(insercao(org, { provider: "'webchat'", webchat_public_key: chave }))).toBe("");
     const msg = erroDe(insercao(novaOrg(), { provider: "'webchat'", webchat_public_key: chave }));
     expect(msg).toMatch(/channel_sessions_webchat_public_key_ativa_unique|duplicate key/);
+  });
+});
+
+describe("chat no site · uma conexão ativa por organização", () => {
+  it("a segunda conexão webchat ATIVA da mesma organização dá 23505", () => {
+    const org = novaOrg();
+    expect(erroDe(insercao(org, { provider: "'webchat'", webchat_public_key: `'wck_org_um_${sequencia}'` }))).toBe("");
+    const msg = erroDe(insercao(org, { provider: "'webchat'", webchat_public_key: `'wck_org_dois_${sequencia}'` }));
+    expect(msg).toMatch(/23505|channel_sessions_webchat_org_ativa_unique/);
+  });
+
+  it("uma conexão ARQUIVADA mais uma ATIVA da mesma organização passa", () => {
+    const org = novaOrg();
+    expect(
+      erroDe(
+        insercao(org, { provider: "'webchat'", webchat_public_key: `'wck_arq_${sequencia}'`, archived_at: "now()" }),
+      ),
+    ).toBe("");
+    expect(erroDe(insercao(org, { provider: "'webchat'", webchat_public_key: `'wck_ativa_${sequencia}'` }))).toBe("");
   });
 });
 

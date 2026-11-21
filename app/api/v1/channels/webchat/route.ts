@@ -9,6 +9,7 @@ import {
   configuracaoDoChatSchema,
   instalacaoEmLoopback,
   origensPermitidasSchema,
+  type ConfiguracaoDoChat,
 } from "@/lib/channels/webchat/config";
 import {
   acharConexaoDoChat,
@@ -124,8 +125,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       webchat_public_key: chave,
       webchat_allowed_origins: origens,
       // Este canal não recebe webhook de terceiro, então não há segredo a guardar. A coluna é
-      // NOT NULL: vazio é o valor honesto, e a chave não entra aqui.
-      webhook_secret_encrypted: "\\x",
+      // NOT NULL e o WAHA grava um byte de enfeite (`\x00`, lib/waha/webhook-auth.ts): é o
+      // precedente. A chave não entra aqui.
+      webhook_secret_encrypted: "\\x00",
       display_name: NOME_DA_CONEXAO_DO_CHAT,
       status: "WORKING",
       metadata: {},
@@ -176,10 +178,12 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
   }
   if (!conexao) return fail("not_found", "Not found", 404, { requestId });
 
+  // A configuração MESCLA com a atual: quem manda só o título não apaga a cor nem a coleta.
+  const configDepois: ConfiguracaoDoChat = { ...conexao.config, ...parsed.data.config };
   const patch: Record<string, unknown> = {};
   if (parsed.data.allowed_origins !== undefined) patch.webchat_allowed_origins = parsed.data.allowed_origins;
   if (parsed.data.config !== undefined) {
-    patch.metadata = { ...conexao.metadata, webchat: parsed.data.config };
+    patch.metadata = { ...conexao.metadata, webchat: configDepois };
   }
 
   const { error } = await admin
@@ -207,7 +211,7 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     {
       id: conexao.id,
       allowed_origins: parsed.data.allowed_origins ?? conexao.allowedOrigins,
-      config: parsed.data.config ?? conexao.config,
+      config: parsed.data.config !== undefined ? configDepois : conexao.config,
     },
     { requestId },
   );

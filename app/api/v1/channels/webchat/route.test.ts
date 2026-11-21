@@ -272,6 +272,23 @@ describe("PATCH muda domínios e configuração", () => {
     ]);
   });
 
+  it("config mescla com a atual: mandar só o título não apaga cor nem coleta", async () => {
+    await criar();
+    await atualizar({ config: { titulo: "Fale conosco", cor: "#1a4fd6", coleta: { email: "obrigatorio" } } });
+    const res = await atualizar({ config: { titulo: "Atendimento" } });
+    expect(res.status).toBe(200);
+    expect((conexao()?.metadata as Record<string, unknown>).webchat).toEqual({
+      titulo: "Atendimento",
+      cor: "#1a4fd6",
+      coleta: { email: "obrigatorio" },
+    });
+    expect((await corpoDe(res)).data.config).toEqual({
+      titulo: "Atendimento",
+      cor: "#1a4fd6",
+      coleta: { email: "obrigatorio" },
+    });
+  });
+
   it("corpo vazio e campo fora do schema dão 422", async () => {
     await criar();
     expect((await atualizar({})).status).toBe(422);

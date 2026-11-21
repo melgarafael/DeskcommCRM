@@ -9605,7 +9605,9 @@ as $$
   select coalesce(cardinality(origens), 0) <= 20
      and not exists (
        select 1 from unnest(origens) as o
-        where o is null or o !~* '^https://[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:[0-9]{1,5})?$'
+        where o is null
+           or (o !~* '^https://[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:[0-9]{1,5})?$'
+               and o !~* '^http://localhost(:[0-9]{1,5})?$')
      );
 $$;
 
@@ -88308,13 +88310,19 @@ create unique index if not exists channel_sessions_webchat_public_key_ativa_uniq
   on public.channel_sessions (webchat_public_key)
   where archived_at is null;
 
+-- Uma conexão de chat ATIVA por organização. Sem isto, dois POST simultâneos passam pela
+-- checagem da rota e criam duas caixas de entrada para a mesma empresa.
+create unique index if not exists channel_sessions_webchat_org_ativa_unique
+  on public.channel_sessions (organization_id)
+  where provider = 'webchat' and archived_at is null;
+
 do $canal_do_chat$
 begin
   if to_regclass('public.channel_sessions') is not null then
     comment on column public.channel_sessions.webchat_public_key is
       'Chave pública do widget do chat no site (wck_...). Identifica a conexão para o navegador do visitante; NÃO é segredo e não dá acesso ao CRM. Única entre conexões não arquivadas.';
     comment on column public.channel_sessions.webchat_allowed_origins is
-      'Origens (https://host[:porta]) que podem abrir o widget desta conexão. Máximo 20, sem caminho. A exceção de loopback é regra da rota, não do banco.';
+      'Origens (https://host[:porta]) que podem abrir o widget desta conexão. Máximo 20, sem caminho. O localhost (loopback) passa no banco; a rota decide se vale.';
   end if;
 end
 $canal_do_chat$;
