@@ -280,8 +280,10 @@ prova chama a rota direto.
   função precisou de conserto. O invariante `tests/invariants/webchat-nao-alcanca-outro-tenant.test.ts`
   prova a limpeza e que o contato de outra organização fica intacto. O visitante que voltar com o
   mesmo token começa um contato novo.
-- **Pendência conhecida (ver abaixo):** a rota de eventos lê a conversa mais antiga do visitante. Com
-  o contato anonimizado, a volta cria uma conversa nova, e as respostas dela não saem no stream.
+- **A volta depois de anonimizar:** o visitante que volta com o mesmo token ganha um contato novo e
+  uma conversa nova. A rota de eventos segue a conversa mais recente do visitante na conexão
+  (`conversaDoVisitante`, a mesma regra de achar a conversa da ingestão), e por isso as respostas
+  dela saem no stream. O invariante prova o caso.
 
 **Testes que entram na F1** (os que hoje reprovam um provider novo, mais os novos):
 
@@ -350,14 +352,6 @@ prova chama a rota direto.
   com a mesma guarda de primeiro toque do banco.
 - A Inbox filtra por canal e mostra o selo "Chat no site", e o relatório por canal ganha a linha do
   canal novo.
-
-## Pendências da parte 1
-
-- **Volta depois de anonimizar.** `conversaDoVisitante` (`lib/channels/webchat/eventos.ts`) devolve a
-  conversa mais antiga do visitante nesta conexão. Depois de anonimizar o contato, a volta com o mesmo
-  token cria uma conversa nova (`fn_upsert_wa_conversation` é por contato), e a rota de eventos
-  continua lendo a antiga: as respostas da conversa nova não saem. Conserto provável: ler a conversa
-  do visitante pelo contato vivo, ou a mais recente. Não corrigido na parte 1.
 
 ## Fora desta spec (de propósito)
 

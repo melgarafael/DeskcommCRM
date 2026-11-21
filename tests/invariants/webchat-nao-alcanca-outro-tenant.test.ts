@@ -283,4 +283,42 @@ describe("chat no site · anonimizar o contato limpa a identidade social", () =>
     );
     expect(contatoDeB).toHaveLength(1);
   });
+
+  it("depois de anonimizar, o visitante que volta recebe a resposta da conversa nova pela leitura", async () => {
+    const conexaoA = await conexaoDe(CHAVE_A);
+    const conversaAntiga = (await conversaDoVisitante(admin, {
+      organizationId: conexaoA.organizationId,
+      channelSessionId: conexaoA.id,
+      visitanteId: VISITANTE_A1,
+    }))!;
+    const [antiga] = await consulta("select contact_id from conversations where id = $1", [conversaAntiga]);
+    await consulta(
+      "update contacts set is_anonymized = true, anonymized_at = now() where id = $1 and organization_id = $2",
+      [antiga?.contact_id as string, ORG_A],
+    );
+
+    const volta = await ingerirMensagemDoChat(admin, {
+      organizationId: conexaoA.organizationId,
+      channelSessionId: conexaoA.id,
+      visitanteId: VISITANTE_A1,
+      mensagemId: "m-a1-volta",
+      texto: "voltei depois de anonimizar",
+      agora: new Date(),
+    });
+    expect(volta.conversationId).not.toBe(conversaAntiga);
+
+    await gravarSaida(ORG_A, volta.conversationId, "resposta na conversa nova");
+
+    const maisRecente = await conversaDoVisitante(admin, {
+      organizationId: conexaoA.organizationId,
+      channelSessionId: conexaoA.id,
+      visitanteId: VISITANTE_A1,
+    });
+    expect(maisRecente).toBe(volta.conversationId);
+
+    const textos = (
+      await lerSaidasNovas(admin, { organizationId: ORG_A, conversationId: maisRecente!, limite: 50 })
+    ).map((s) => s.texto);
+    expect(textos).toContain("resposta na conversa nova");
+  });
 });

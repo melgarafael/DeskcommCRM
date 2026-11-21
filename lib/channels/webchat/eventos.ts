@@ -32,8 +32,9 @@ export interface ConversaDoVisitanteParams {
 
 /**
  * A conversa deste visitante nesta conexão, ou `null` enquanto ela ainda não existe. Se houver
- * mais de uma, vale a mais antiga: a leitura é ordenada e cortada em 1, sem `maybeSingle` que
- * quebraria com duas.
+ * mais de uma (o visitante voltou depois de o contato ser anonimizado, e a ingestão abriu conversa
+ * nova), vale a MAIS RECENTE: é a que a ingestão usa para o contato vivo. A leitura é ordenada e
+ * cortada em 1, sem `maybeSingle` que quebraria com duas.
  */
 export async function conversaDoVisitante(
   admin: SupabaseClient,
@@ -46,7 +47,7 @@ export async function conversaDoVisitante(
     .eq("channel", "webchat")
     .eq("channel_session_id", p.channelSessionId)
     .eq("provider_conversation_id", p.visitanteId)
-    .order("created_at", { ascending: true })
+    .order("created_at", { ascending: false })
     .limit(1);
   if (error) throw new Error("webchat_conversa_lookup_failed");
   const linhas = (data ?? []) as Array<{ id: string }>;
