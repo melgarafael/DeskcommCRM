@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -561,5 +563,105 @@ describe("captação passa `manterForaDaLista` nas três escritas (#3508)", () =
 
     expect(h.atualizarLead).toHaveBeenCalledTimes(1);
     expect(h.atualizarLead.mock.calls[0]?.[4]).toEqual({ manterForaDaLista: true });
+  });
+});
+
+/**
+ * #4901 — a COMPRA APROVADA do Hotmart move o card aberto do comprador.
+ *
+ * O aviso 2.0.0 traz o comprador em `data.buyer`, dois níveis abaixo da raiz, e
+ * o mapeador genérico só olha chave de topo: até aqui a rota devolvia 400
+ * `sem_campo_mapeavel` e a compra não alcançava contato nenhum. O leitor
+ * dedicado (`lib/webhooks/hotmart.ts`, com teste próprio) resolve a identidade;
+ * este bloco guarda o CAMINHO COMPLETO na rota — a compra casa o contato pelo
+ * telefone composto (DDD do `checkout_phone_code`), adota o card aberto do
+ * contato no funil (#3101) e o leva para a etapa da fonte, que é a de ganho.
+ *
+ * O corpo é o MESMO fixture do teste do leitor: se um dos dois mudar sozinho, o
+ * outro reprova.
+ */
+const COMPRA_DO_HOTMART = JSON.parse(
+  readFileSync("tests/fixtures/webhooks/hotmart-compra-aprovada.json", "utf8"),
+) as Record<string, unknown>;
+
+describe("compra aprovada do Hotmart (#4901)", () => {
+  it("⭐ casa o contato pelo telefone do bloco e move o card aberto para a etapa da fonte", async () => {
+    // A fonte da loja aponta para a etapa de GANHO do funil: é para ela que a
+    // compra aprovada leva o card que a conversa abriu.
+    m.fonte = { ...FONTE, default_stage_id: "stage-2" };
+
+    const res = await enviar(COMPRA_DO_HOTMART);
+
+    expect(
+      h.criarLead,
+      "a compra abriu um SEGUNDO card: o comprador já tinha o card da conversa aberto no funil",
+    ).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ data: { lead_id: CARD_DA_CONVERSA } });
+
+    // O contato foi procurado pelo telefone COMPOSTO (`checkout_phone_code` +
+    // `checkout_phone`) — sem isso a compra de um comprador brasileiro não casa
+    // com o contato que a conversa criou.
+    const buscaPorTelefone = h.banco.cadeias.find(
+      (c) =>
+        c.tabela === "contacts" &&
+        operacao(c) === "select" &&
+        (valorDoFiltro(c, "in", "phone_number") as unknown[] | undefined)?.includes(
+          "+5531999999999",
+        ),
+    );
+    expect(
+      buscaPorTelefone,
+      "o telefone do bloco `data.buyer` não chegou à busca de contato",
+    ).toBeDefined();
+
+    // O dado da compra entra no card que já existe — e o nome do comprador
+    // atualiza o título, como no reenvio (#2316).
+    expect(h.atualizarLead.mock.calls[0]?.[2]).toBe(CARD_DA_CONVERSA);
+    expect(h.atualizarLead.mock.calls[0]?.[3]).toEqual({
+      title: "Comprador De Teste",
+      custom_fields: {
+        hotmart_event: "PURCHASE_APPROVED",
+        hotmart_transaction: "HP00000000000001",
+        hotmart_status: "APPROVED",
+        hotmart_produto: "Curso de Exemplo",
+        hotmart_oferta: "n82b9jqz",
+        hotmart_preco: "150.6",
+        hotmart_moeda: "BRL",
+      },
+    });
+
+    // E o card vai para a etapa de ganho da fonte.
+    expect(h.moverLead.mock.calls[0]?.[2]).toBe(CARD_DA_CONVERSA);
+    expect(h.moverLead.mock.calls[0]?.[3]).toEqual({ to_stage_id: "stage-2" });
+    expect(desfecho()).toBe("atualizado");
+  });
+
+  it("⭐ carga sem o bloco `buyer`: recusa limpa (`sem_campo_mapeavel`), sem card e sem erro", async () => {
+    const semComprador = JSON.parse(JSON.stringify(COMPRA_DO_HOTMART)) as Record<string, unknown>;
+    delete (semComprador.data as Record<string, unknown>).buyer;
+
+    const res = await enviar(semComprador);
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({
+      error: { message: "Nenhum campo mapeável (nome/telefone/email)." },
+    });
+    expect(h.criarLead).not.toHaveBeenCalled();
+    expect(h.atualizarLead).not.toHaveBeenCalled();
+    const chamadas = h.registrar.mock.calls as unknown as Array<[unknown, { rejectReason?: string }]>;
+    expect(chamadas.at(-1)?.[1]?.rejectReason).toBe("sem_campo_mapeavel");
+  });
+
+  it("o leitor do Hotmart não rouba a carga plana do caminho genérico", async () => {
+    m.fonte = { ...FONTE, reuse_open_lead_on_capture: false };
+    m.cardAberto = null;
+
+    await enviar({ nome: "Joana", telefone: "+553****3302", evento: "trial_iniciado" });
+
+    const leadInput = h.criarLead.mock.calls[0]?.[2] as Record<string, unknown>;
+    expect(leadInput.title).toBe("Joana");
+    expect(leadInput.external_id).toBeUndefined();
+    expect(leadInput.custom_fields).toEqual({ evento: "trial_iniciado" });
   });
 });
