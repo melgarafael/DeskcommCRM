@@ -17,6 +17,7 @@ import { audit } from "@/lib/audit";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 import { logger } from "@/lib/logger";
+import { acordarCanaisQueAbriram } from "@/lib/routing/acorde-da-jornada";
 import { runRoutingWorker } from "@/lib/routing/worker";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +45,32 @@ async function handle(req: NextRequest): Promise<Response> {
 
   if (!autorizaCron(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
+  }
+
+  // ─── PORTA 3 DO ROTEAMENTO: A JORNADA QUE ABRE ACORDA O CANAL (#3916) ──────
+  //
+  // A jornada é DERIVADA na leitura (`estaDePlantao`): ninguém escreve nada
+  // quando a janela vira e, por isso, ninguém avisava a distribuição. A conversa
+  // que voltou para a fila (`requeued_no_eligible`) esperava o backoff vencer
+  // (até 15 min) — quando a FILA abre não chega evento nenhum, porque a abertura
+  // é o evento.
+  // Este passo faz a pergunta que faltava ("a jornada começou neste tick?") e
+  // chama `fn_wake_channel_routing` por organização.
+  //
+  // ANTES do portão do piso ocioso, e é a decisão: atrás dele o passo só rodaria
+  // quando a fila já tivesse trabalho, e o caso desta porta é o de fila VAZIA —
+  // a instalação ociosa é justamente onde a abertura da jornada é o único
+  // trabalho do minuto. Custa 2 SELECT por tick pelo pool `pg` (fora da cota do
+  // PostgREST) e 1+K idas por abertura; não escreve, não grava estado e não pede
+  // migration. Falha na leitura é log + lista vazia: o acorde não derruba o
+  // tick, que segue para a rodada logo abaixo — a rodada que drena o que ele
+  // acabou de enfileirar.
+  const acordadas = await acordarCanaisQueAbriram();
+  if (acordadas.length > 0) {
+    logger.info("[routing-worker.cron] jornada abriu — canais acordados", {
+      organizacoes: acordadas.length,
+      requestId,
+    });
   }
 
   // ─── O PISO OCIOSO DA ÚLTIMA ROTA DE MINUTO A MINUTO (#3878) ───────────────

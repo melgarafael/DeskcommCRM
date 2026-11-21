@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { estaDePlantao, isAttendantEligible, isWithinSchedule } from "./eligibility";
+import { abriuOHorario, estaDePlantao, isAttendantEligible, isWithinSchedule, localMoment } from "./eligibility";
 import { availabilityScheduleSchema } from "@/lib/schemas/routing";
 
 /**
@@ -134,5 +134,78 @@ describe("estaDePlantao — a regra inteira, com clock injetado", () => {
         JSON.stringify({ linha, now }),
       ).toBe(estaDePlantao(linha, now));
     }
+  });
+});
+
+/**
+ * PORTA 3 DO ROTEAMENTO (#3916): A JORNADA ABRIU AGORA?
+ *
+ * O defeito que estes casos prendem: a jornada é DERIVADA na leitura, então
+ * ninguém avisa o roteamento quando ela vira. Uma conversa que espera a fila
+ * abrir (backoff do worker) só é tentada de novo quando o backoff vence (até
+ * 15 minutos) — e numa fila que ABRIU agora não chega evento nenhum que a
+ * adiante.
+ *
+ * A regra é a mesma conta de `isWithinSchedule`, feita duas vezes: um minuto
+ * atrás estava fora, agora está dentro. É o que a torna IDEMPOTENTE SEM COLUNA
+ * DE ESTADO: não existe "já avisei" gravado, e o segundo tick seguido dá
+ * `false` por construção, não por memória.
+ *
+ * A janela é a cadência do crontab (`* * * * *`), 60 s: com ela, exatamente UM
+ * tick da abertura responde `true`. Janela maior daria dois acordes na virada
+ * de um minuto para o outro; menor perderia a abertura quando o tick atrasa.
+ */
+describe("abriuOHorario — a porta 3 do roteamento (a jornada começa)", () => {
+  const JANELA_DE_TICK = 60_000;
+  const SEG_0800_BRT = new Date("2026-07-13T11:00:00Z"); // seg 08:00 em São Paulo
+  const SEG_0801_BRT = new Date("2026-07-13T11:01:00Z");
+  const SEG_1400_BRT_2 = new Date("2026-07-13T17:00:00Z");
+
+  it("ABRIU AGORA: 08:00 com janela 08:00–18:00 ⇒ true (07:59 estava fora)", () => {
+    expect(abriuOHorario(schedule8to18Mon, SEG_0800_BRT, JANELA_DE_TICK)).toBe(true);
+  });
+
+  it("JÁ ESTAVA ABERTO: o tick seguinte (08:01) e o meio da tarde ⇒ false, sem estado gravado", () => {
+    // O controle negativo é o que impede "acorda em todo tick": 08:01 só é
+    // diferente de 08:00 porque 08:00 JÁ estava dentro — nada foi lembrado.
+    expect(abriuOHorario(schedule8to18Mon, SEG_0801_BRT, JANELA_DE_TICK)).toBe(false);
+    expect(abriuOHorario(schedule8to18Mon, SEG_1400_BRT_2, JANELA_DE_TICK)).toBe(false);
+  });
+
+  it("FECHADO: fora da janela (19:00) e dia sem janela ⇒ false nos dois lados da conta", () => {
+    expect(abriuOHorario(schedule8to18Mon, MON_1900_BRT, JANELA_DE_TICK)).toBe(false);
+    // Terça 08:00 com jornada que só publica segunda: o dia abre sem jornada —
+    // nada a acordar, porque não existe janela para abrir.
+    expect(abriuOHorario(schedule8to18Mon, new Date("2026-07-14T11:00:00Z"), JANELA_DE_TICK)).toBe(
+      false,
+    );
+  });
+
+  it("VIRADA DE DIA/FUSO: segunda 08:00 em Tóquio é DOMINGO 23:00 em UTC", () => {
+    const tokyo8to12Mon = availabilityScheduleSchema.parse({
+      timezone: "Asia/Tokyo",
+      windows: [{ dow: 1, start: "08:00", end: "12:00" }],
+    });
+    // Seg 2026-07-13 08:00 JST == dom 2026-07-12 23:00Z.
+    const aberturaEmToquio = new Date("2026-07-12T23:00:00Z");
+    // A prova de que o caso é de FUSO e não de horário: em UTC este instante é
+    // domingo (dow 0) às 23:00 — quem lesse o relógio sem o fuso da jornada
+    // diria "fechado" e nunca acordaria a segunda-feira japonesa.
+    expect(localMoment(aberturaEmToquio, "UTC")).toEqual({ dow: 0, hhmm: "23:00" });
+    expect(isWithinSchedule(tokyo8to12Mon, aberturaEmToquio)).toBe(true);
+    expect(abriuOHorario(tokyo8to12Mon, aberturaEmToquio, JANELA_DE_TICK)).toBe(true);
+    // E o tick seguinte já está aberto dos dois lados.
+    expect(abriuOHorario(tokyo8to12Mon, new Date("2026-07-12T23:01:00Z"), JANELA_DE_TICK)).toBe(
+      false,
+    );
+  });
+
+  it("24/7 (windows vazio) nunca ABRE — sem restrição não há virada a avisar", () => {
+    const semJanela = availabilityScheduleSchema.parse({
+      timezone: "America/Sao_Paulo",
+      windows: [],
+    });
+    expect(abriuOHorario(semJanela, SEG_0800_BRT, JANELA_DE_TICK)).toBe(false);
+    expect(abriuOHorario(null, SEG_0800_BRT, JANELA_DE_TICK)).toBe(false);
   });
 });

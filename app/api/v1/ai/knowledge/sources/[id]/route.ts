@@ -4,21 +4,22 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *                                            `{ status: 'active' }` tira do arquivo
  * DELETE /api/v1/ai/knowledge/sources/[id]  — soft-delete (status='archived')
  *
- * Auth: cookie session. Role >= manager required.
- * organization_id is ALWAYS resolved from the authenticated session — never from body/path.
+ * Auth: cookie session OU token de servidor (`resolveAuthDual`). Role >= manager required.
+ * organization_id is ALWAYS resolved from the authenticated session or from the token row — never from body/path.
  */
 
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 import { canonizarTipoDeFonte } from "@/lib/ai/rag/tipos-de-fonte";
 import { PATCH_DE_RESTAURO, STATUS_DO_MATERIAL_CONSULTAVEL } from "@/lib/ai/knowledge/estado-do-material";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { caminhoDaOrganizacao } from "@/lib/ai/knowledge/caminho-do-arquivo";
 
 export const dynamic = "force-dynamic";
 
@@ -47,16 +48,6 @@ const patchSourceSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
-// Shared: resolve auth + role gate
-// ---------------------------------------------------------------------------
-
-async function resolveContext(requestId: string) {
-  const authz = await requireRole("manager", { requestId, resource: "ai_knowledge" });
-  if (!authz.ok) return { error: authz.response };
-  return { authUser: authz.user, activeOrg: authz.org };
-}
-
-// ---------------------------------------------------------------------------
 // GET — o material e o conteúdo que dá para editar
 // ---------------------------------------------------------------------------
 //
@@ -65,17 +56,24 @@ async function resolveContext(requestId: string) {
 // — o pior desfecho possível para um botão chamado "editar".
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const requestId = randomUUID();
   const { id: sourceId } = await params;
 
-  const ctx = await resolveContext(requestId);
-  if (ctx.error) return ctx.error;
-  const { activeOrg } = ctx as Exclude<typeof ctx, { error: Response }>;
-
-  const supabase = await createClient();
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_knowledge",
+    role: "manager",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
+  if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_knowledge", requestId);
+  if (teto) return teto;
+  const supabase = authz.supabase;
+  const activeOrg = { orgId: authz.organizationId };
   const { data: fonte, error } = await supabase
     .from("ai_knowledge_sources")
     .select(
@@ -119,13 +117,22 @@ export async function PATCH(
   const requestId = randomUUID();
   const { id: sourceId } = await params;
 
-  const ctx = await resolveContext(requestId);
-  if (ctx.error) return ctx.error;
-  const { authUser, activeOrg } = ctx as Exclude<typeof ctx, { error: Response }>;
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_knowledge",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
+  if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_knowledge", requestId);
+  if (teto) return teto;
+  const supabase = authz.supabase;
+  const activeOrg = { orgId: authz.organizationId };
   // As recusas desta rota citam o material em conflito: o texto é traduzido
   // AQUI, com «{nome}» por preencher, para quem escolheu espanhol não receber
   // um 409 em português montado no servidor (#2559).
-  const t = (texto: string) => traduzir(texto, authUser.idioma);
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   // Parse + validate body.
   let rawBody: unknown;
@@ -164,8 +171,8 @@ export async function PATCH(
     }
   }
 
-  // Verify the source exists and belongs to the org (user-scoped client for RLS check).
-  const supabase = await createClient();
+  // Verify the source exists and belongs to the org (o filtro explícito de organização
+  // é quem protege: o cliente do token é admin, sem RLS).
   const { data: existing, error: fetchErr } = await supabase
     .from("ai_knowledge_sources")
     .select("id, source_type, agent_id, name, status, is_active")
@@ -206,6 +213,18 @@ export async function PATCH(
       422,
       { requestId },
     );
+  }
+
+  // `blob_path` do corpo só no formato que o upload grava, na pasta de quem
+  // chama, pela sessão ou pelo token. Nenhuma tela manda este campo.
+  const blobPathDoCorpo = input.source_metadata?.blob_path;
+  if (
+    blobPathDoCorpo !== undefined &&
+    !caminhoDaOrganizacao(blobPathDoCorpo, authz.organizationId)
+  ) {
+    return fail("validation_failed", "Caminho do arquivo fora da organização.", 422, {
+      requestId,
+    });
   }
 
   // Build update payload (only provided fields).
@@ -302,7 +321,8 @@ export async function PATCH(
     // a trilha precisa responder; o texto do material continua fora dela.
     void audit({
       action: "ai.knowledge_source_restored",
-      actorUserId: authUser.id,
+      actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+      actorApiTokenId: authz.apiTokenId ?? null,
       organizationId: activeOrg.orgId,
       resourceType: "ai_knowledge_source",
       resourceId: sourceId,
@@ -393,7 +413,8 @@ export async function PATCH(
   // append-only e a cascata da LGPD não a alcança.
   void audit({
     action: "ai.knowledge_source_updated",
-    actorUserId: authUser.id,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
     organizationId: activeOrg.orgId,
     resourceType: "ai_knowledge_source",
     resourceId: sourceId,
@@ -416,7 +437,7 @@ export async function PATCH(
 // ---------------------------------------------------------------------------
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const supportDenied = await requireSupportWrite();
@@ -425,12 +446,20 @@ export async function DELETE(
   const requestId = randomUUID();
   const { id: sourceId } = await params;
 
-  const ctx = await resolveContext(requestId);
-  if (ctx.error) return ctx.error;
-  const { authUser, activeOrg } = ctx as Exclude<typeof ctx, { error: Response }>;
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_knowledge",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
+  if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_knowledge", requestId);
+  if (teto) return teto;
+  const supabase = authz.supabase;
+  const activeOrg = { orgId: authz.organizationId };
 
-  // Verify ownership with user-scoped client.
-  const supabase = await createClient();
+  // Verify ownership: filtro explícito de organização (o cliente do token é admin, sem RLS).
   const { data: existing, error: fetchErr } = await supabase
     .from("ai_knowledge_sources")
     .select("id")
@@ -470,7 +499,8 @@ export async function DELETE(
   // trocas, e quando" só tem resposta aqui.
   void audit({
     action: "ai.knowledge_source_archived",
-    actorUserId: authUser.id,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
     organizationId: activeOrg.orgId,
     resourceType: "ai_knowledge_source",
     resourceId: sourceId,

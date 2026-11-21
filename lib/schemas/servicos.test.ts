@@ -137,7 +137,7 @@ describe("problemasDoServico — o sinal fixo e a menor variação", () => {
     );
     expect(problemas).toContainEqual({
       campo: "sinal",
-      mensagem: "o sinal fixo não pode passar do preço da menor variação",
+      codigo: "sinal_fixo_acima_do_preco",
     });
   });
 

@@ -32,6 +32,7 @@ import {
 } from "@/lib/catalogo/servicos-supabase";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import {
+  detalhesDaValidacaoDoServico,
   problemasDoServico,
   servicoPatchSchema,
   type EntradaDeServico,
@@ -100,7 +101,7 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
   if (!parsed.success) {
     return fail("validation_failed", t("Dados inválidos."), 422, {
       requestId,
-      details: parsed.error.flatten().fieldErrors as Record<string, unknown>,
+      details: detalhesDaValidacaoDoServico(parsed.error),
     });
   }
   const patch = parsed.data;
@@ -136,9 +137,11 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
   };
   const problemas = problemasDoServico(mesclado);
   if (problemas.length > 0) {
+    const details: Record<string, string[]> = {};
+    for (const { campo, codigo } of problemas) (details[campo] ??= []).push(codigo);
     return fail("validation_failed", t("Este serviço não passou nas regras do cadastro."), 422, {
       requestId,
-      details: Object.fromEntries(problemas.map((p) => [p.campo, [p.mensagem]])),
+      details,
     });
   }
 

@@ -71,11 +71,13 @@ import {
 } from "@/app/actions/settings/atualizarInterfaceDaEmpresa";
 import { atualizarLembreteDeCasoParado } from "@/app/actions/settings/atualizarLembreteDeCasoParado";
 import { conectarLoginCodex, desconectarLoginCodexAgora } from "@/app/actions/settings/conectarLoginCodex";
+import { contarDadosParaLimparDaOrganizacao } from "@/app/actions/settings/contarDadosParaLimparDaOrganizacao";
 import { updatePipelineConfig } from "@/app/actions/settings/updatePipelineConfig";
 import { updateTenant } from "@/app/actions/settings/updateTenant";
 
 const ACOES: Array<[string, () => Promise<{ ok: boolean; error?: string }>]> = [
   ["connectNuvemshop", () => connectNuvemshop()],
+  ["contarDadosParaLimparDaOrganizacao", () => contarDadosParaLimparDaOrganizacao()],
   ["disconnectNuvemshop", () => disconnectNuvemshop()],
   ["atualizarInterfaceDaEmpresa", () => atualizarInterfaceDaEmpresa({ preset: "completa" })],
   ["atualizarBloqueioAteAssumir", () => atualizarBloqueioAteAssumir(true)],

@@ -705,6 +705,38 @@ export function UpdatePanel() {
     );
   }
 
+  // ⭐ #4955 — A RELEASE SAIU, MAS AINDA NÃO PODE SER INSTALADA.
+  //
+  // O host viu a tag publicada e, de propósito, NÃO a anunciou: a imagem dela
+  // ainda não existe no registro (ou a release está incompleta) e acender o
+  // botão ali pararia o sistema para instalar o que não existe. O silêncio dele
+  // era honesto — a mentira era desta tela, que lia `latest_version` vazio como
+  // "está em dia" e imprimia "Última release oficial: 1.118.0" logo acima, numa
+  // instalação 1.116.0.
+  //
+  // A partir de agora o estado tem nome: a versão saiu, ainda está sendo
+  // preparada, e o botão aparece sozinho quando ficar pronta (a sonda do host
+  // roda a cada 5 minutos e a tela recarrega junto). O que este estado NUNCA
+  // faz é dizer "não há nada a fazer" com uma release mais nova na mesma tela.
+  const preparando = semV(data.pending_release_version ?? undefined);
+  if (!data.update_available && !data.off_release && preparando) {
+    return (
+      <Layout semSmtp={semSmtp} titulo={`${t("A versão")} ${preparando} ${t("já saiu")}`}>
+        <p className="text-sm">
+          {t(
+            "Ela foi publicada oficialmente, mas a imagem que esta instalação precisa baixar ainda não está pronta — isso costuma levar poucos minutos.",
+          )}
+        </p>
+        <p className="mt-3 text-sm text-muted-foreground">
+          {t(
+            "Assim que estiver pronta, o botão Atualizar agora aparece aqui sozinho; você não precisa fazer nada. Por enquanto, a sua instalação segue na versão",
+          )}{" "}
+          <strong>{versao}</strong>.
+        </p>
+      </Layout>
+    );
+  }
+
   if (!data.update_available && !data.off_release) {
     return (
       <Layout semSmtp={semSmtp} titulo={`${t("Você está na versão")} ${versao}`}>

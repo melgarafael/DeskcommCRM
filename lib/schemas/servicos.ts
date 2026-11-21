@@ -32,16 +32,19 @@ const baseDoItem = produtoCreateSchema.pick({ codigo: true, nome: true, descrica
 export const sinalDoServicoSchema = z.discriminatedUnion("tipo", [
   z.object({
     tipo: z.literal("percentual"),
-    valor: z.number().min(1, "o sinal vai de 1 a 100").max(100, "o sinal vai de 1 a 100"),
+    valor: z.number().min(1, "sinal_percentual_fora_da_faixa").max(100, "sinal_percentual_fora_da_faixa"),
   }),
   z.object({
     tipo: z.literal("fixo"),
-    valor: z.number().int().min(1, "o sinal fixo precisa ser maior que zero"),
+    valor: z.number().int().min(1, "sinal_fixo_invalido"),
   }),
 ]);
 
-const tipoSchema = z.enum(TIPOS_DE_SERVICO, { message: "tipo de serviço desconhecido" });
-const unidadeSchema = z.enum(UNIDADES_DE_COBRANCA, { message: "unidade de cobrança desconhecida" });
+const tipoSchema = z.enum(TIPOS_DE_SERVICO, { message: "tipo_invalido" });
+const unidadeSchema = z.enum(UNIDADES_DE_COBRANCA, { message: "unidade_invalida" });
+const precoSchema = z.number().int().min(0, "preco_negativo");
+const prazoSchema = z.number().int().min(1, "prazo_minimo").max(3650, "prazo_fora_da_faixa").nullish();
+const instrucoesSchema = z.string().trim().max(2000, "instrucoes_longas").nullish();
 
 /** A linha final que a régua examina: o create inteiro ou o PATCH já mesclado. */
 export interface EntradaDeServico {
@@ -55,9 +58,37 @@ export interface EntradaDeServico {
   quantidade?: number;
 }
 
+/** Códigos do detalhe 422 que a tela traduz. */
+export type RegraDoServico =
+  | "variacao_herda_tipo"
+  | "variacao_herda_unidade"
+  | "variacao_herda_prazo"
+  | "variacao_herda_sinal"
+  | "tipo_obrigatorio"
+  | "unidade_obrigatoria"
+  | "prazo_so_em_projeto"
+  | "prazo_minimo"
+  | "sinal_percentual_fora_da_faixa"
+  | "sinal_fixo_invalido"
+  | "sinal_fixo_acima_do_preco"
+  | "servico_sem_estoque"
+  | "unidade_incompativel"
+  | "sinal_invalido"
+  | "forma_invalida"
+  | "pai_invalido"
+  | "tipo_invalido"
+  | "unidade_invalida"
+  | "preco_negativo"
+  | "prazo_fora_da_faixa"
+  | "instrucoes_longas"
+  | "revisao_invalida"
+  | "codigo_invalido"
+  | "nome_invalido"
+  | "descricao_invalida";
+
 export interface ProblemaDoServico {
   campo: string;
-  mensagem: string;
+  codigo: RegraDoServico;
 }
 
 /**
@@ -80,55 +111,55 @@ export function problemasDoServico(
     // nela criaria dois lugares dizendo de que tipo é o mesmo serviço, e o dia
     // em que discordarem o preço da variação passa a valer em outra unidade.
     if (entrada.tipo) {
-      problemas.push({ campo: "tipo", mensagem: "a variação herda o tipo do serviço principal" });
+      problemas.push({ campo: "tipo", codigo: "variacao_herda_tipo" });
     }
     if (entrada.unidade) {
       problemas.push({
         campo: "unidade",
-        mensagem: "a variação herda a unidade do serviço principal",
+        codigo: "variacao_herda_unidade",
       });
     }
     if (entrada.prazo_dias_uteis !== null && entrada.prazo_dias_uteis !== undefined) {
       problemas.push({
         campo: "prazo_dias_uteis",
-        mensagem: "o prazo é do serviço principal, não da variação",
+        codigo: "variacao_herda_prazo",
       });
     }
     if (entrada.sinal) {
       problemas.push({
         campo: "sinal",
-        mensagem: "o sinal é do serviço principal e vale para todas as variações",
+        codigo: "variacao_herda_sinal",
       });
     }
   } else {
     if (!entrada.tipo) {
       problemas.push({
         campo: "tipo",
-        mensagem: "todo serviço precisa de um tipo: hora marcada, projeto ou recorrente",
+        codigo: "tipo_obrigatorio",
       });
     }
     if (!entrada.unidade) {
       problemas.push({
         campo: "unidade",
-        mensagem: "todo serviço precisa de uma unidade de cobrança",
+        codigo: "unidade_obrigatoria",
       });
     }
     if (entrada.tipo && entrada.unidade && !unidadeCompativel(entrada.tipo, entrada.unidade)) {
       problemas.push({
         campo: "unidade",
-        mensagem: `um serviço do tipo ${entrada.tipo} não se cobra por ${entrada.unidade}`,
+        codigo: "unidade_incompativel",
       });
     }
     if (entrada.prazo_dias_uteis !== null && entrada.prazo_dias_uteis !== undefined) {
       if (entrada.tipo !== "projeto") {
         problemas.push({
           campo: "prazo_dias_uteis",
-          mensagem: "prazo em dias úteis só existe em projeto",
+          codigo: "prazo_so_em_projeto",
         });
       } else if (!Number.isInteger(entrada.prazo_dias_uteis) || entrada.prazo_dias_uteis < 1) {
         problemas.push({
           campo: "prazo_dias_uteis",
-          mensagem: "o prazo precisa ser de ao menos 1 dia útil",
+          codigo: "prazo_minimo",
         });
       }
     }
@@ -137,10 +168,10 @@ export function problemasDoServico(
   if (entrada.sinal) {
     if (entrada.sinal.tipo === "percentual") {
       if (!(entrada.sinal.valor >= 1 && entrada.sinal.valor <= 100)) {
-        problemas.push({ campo: "sinal", mensagem: "o sinal vai de 1 a 100" });
+        problemas.push({ campo: "sinal", codigo: "sinal_percentual_fora_da_faixa" });
       }
     } else if (!Number.isInteger(entrada.sinal.valor) || entrada.sinal.valor < 1) {
-      problemas.push({ campo: "sinal", mensagem: "o sinal fixo precisa ser maior que zero" });
+      problemas.push({ campo: "sinal", codigo: "sinal_fixo_invalido" });
     }
   }
 
@@ -156,7 +187,7 @@ export function problemasDoServico(
   ) {
     problemas.push({
       campo: "sinal",
-      mensagem: "o sinal fixo não pode passar do preço da menor variação",
+      codigo: "sinal_fixo_acima_do_preco",
     });
   }
 
@@ -164,7 +195,7 @@ export function problemasDoServico(
   // unidade em prateleira, e um serviço com `quantidade` faria a busca do
   // agente escondê-lo por "sem estoque".
   if (!ehVariacao && (entrada.controla_estoque === true || (entrada.quantidade ?? 0) > 0)) {
-    problemas.push({ campo: "controla_estoque", mensagem: "serviço não controla estoque" });
+    problemas.push({ campo: "controla_estoque", codigo: "servico_sem_estoque" });
   }
 
   return problemas;
@@ -176,18 +207,18 @@ export function problemasDoServico(
  */
 export const servicoCreateSchema = baseDoItem
   .extend({
-    preco_cents: z.number().int().min(0, "preço não pode ser negativo"),
+    preco_cents: precoSchema,
     tipo: tipoSchema.optional(),
     unidade: unidadeSchema.optional(),
-    prazo_dias_uteis: z.number().int().min(1).max(3650, "prazo fora de faixa").nullish(),
+    prazo_dias_uteis: prazoSchema,
     sinal: sinalDoServicoSchema.nullish(),
-    instrucoes_ia: z.string().trim().max(2000, "as instruções passam de 2000 caracteres").nullish(),
+    instrucoes_ia: instrucoesSchema,
     ia_oferece: z.boolean().default(true),
-    pai_id: z.uuid("variação sem serviço principal válido").nullish(),
+    pai_id: z.uuid("pai_invalido").nullish(),
   })
   .superRefine((valor, ctx) => {
     for (const problema of problemasDoServico(valor)) {
-      ctx.addIssue({ code: "custom", path: [problema.campo], message: problema.mensagem });
+      ctx.addIssue({ code: "custom", path: [problema.campo], message: problema.codigo });
     }
   });
 
@@ -199,16 +230,31 @@ export const servicoPatchSchema = z.object({
   codigo: baseDoItem.shape.codigo.optional(),
   nome: baseDoItem.shape.nome.optional(),
   descricao: z.string().trim().max(2000).nullish(),
-  preco_cents: z.number().int().min(0, "preço não pode ser negativo").optional(),
+  preco_cents: precoSchema.optional(),
   tipo: tipoSchema.optional(),
   unidade: unidadeSchema.optional(),
-  prazo_dias_uteis: z.number().int().min(1).max(3650).nullish(),
+  prazo_dias_uteis: prazoSchema,
   sinal: sinalDoServicoSchema.nullish(),
-  instrucoes_ia: z.string().trim().max(2000).nullish(),
+  instrucoes_ia: instrucoesSchema,
   ia_oferece: z.boolean().optional(),
   /** Revisão que quem edita viu. Velha = 409, como em toda escrita concorrente. */
-  expected_revision: z.number().int().min(1, "revisão inválida"),
+  expected_revision: z.number().int().min(1, "revisao_invalida"),
 });
+
+const REGRAS_DO_ITEM = {
+  codigo: "codigo_invalido",
+  nome: "nome_invalido",
+  descricao: "descricao_invalida",
+} satisfies Record<string, RegraDoServico>;
+
+/** Os campos herdados mantêm o schema dos produtos e usam códigos no catálogo de serviços. */
+export function detalhesDaValidacaoDoServico(erro: z.ZodError): Record<string, unknown> {
+  const detalhes: Record<string, string[] | undefined> = erro.flatten().fieldErrors;
+  for (const [campo, regra] of Object.entries(REGRAS_DO_ITEM)) {
+    if (detalhes[campo]?.length) detalhes[campo] = [regra];
+  }
+  return detalhes;
+}
 
 export type ServicoCreate = z.infer<typeof servicoCreateSchema>;
 export type ServicoPatch = z.infer<typeof servicoPatchSchema>;

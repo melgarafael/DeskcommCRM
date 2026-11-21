@@ -15,6 +15,7 @@ import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import { ApiError } from "@/lib/api/types";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
+import { metadataDoModulo } from "@/lib/audit/ator-modulo";
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
 import { roleAtLeast } from "@/lib/auth/types";
@@ -142,6 +143,7 @@ function actorAuditPayload(actor: Actor): {
       ...(actor.type === "ai_agent" && actor.api_token_id
         ? { actor_api_token_id: actor.api_token_id }
         : {}),
+      ...metadataDoModulo(actor),
     },
   };
 }
@@ -1253,6 +1255,17 @@ const VINCULOS_RESTRICT_NAO_APAGADOS: ReadonlyArray<{
     tabela: "calendar_appointments",
     rotulo: "compromisso(s) na agenda",
     barraSe: "status.neq.cancelled,service_occurrence_id.not.is.null",
+  },
+  // A6: o card ABERTO não é fechado pela exclusão (fechar como perdido lançaria
+  // a perda na métrica do dono e dispararia `lead.lost` — automações, push e
+  // webhooks — para um contato que some em seguida). Quem exclui fecha ou move
+  // cada negócio com o motivo real, e só então a ficha sai. Card ganho ou perdido
+  // é histórico de venda e não barra. `crm_leads.contact_id` é `on delete set
+  // null`: sem esta barra, o card aberto ficaria solto no Kanban.
+  {
+    tabela: "crm_leads",
+    rotulo: "negócio(s) aberto(s) no funil",
+    barraSe: "status.eq.open",
   },
 ];
 
