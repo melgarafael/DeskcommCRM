@@ -174,7 +174,7 @@ const CONVERSA_DO_VISITANTE = {
 };
 
 function preparar(
-  opcao: "ok" | "inexistente" | "modulo_desligado" = "ok",
+  opcao: "ok" | "inexistente" | "modulo_desligado" | "pausado" = "ok",
   conversas: Linha[] = [
     CONVERSA_DO_VISITANTE,
     {
@@ -198,7 +198,7 @@ function preparar(
               provider: "webchat",
               webchat_public_key: CHAVE,
               archived_at: null,
-              metadata: {},
+              metadata: opcao === "pausado" ? { webchat: { pausado: true } } : {},
             },
           ],
     organizations: [{ id: ORG, status: "active" }],
@@ -425,5 +425,15 @@ describe("GET /api/v1/webchat/eventos", () => {
 
     preparar("ok");
     expect((await GET(abrir(tokenDeVisitante(OUTRA_CS)))).status).toBe(404);
+  });
+
+  it("chat pausado dá o mesmo 404 e o mesmo corpo de conexão inexistente, mesmo com o token válido", async () => {
+    preparar("inexistente");
+    const inexistente = await (await GET(abrir(tokenDeVisitante()))).json();
+
+    preparar("pausado");
+    const res = await GET(abrir(tokenDeVisitante()));
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual(inexistente);
   });
 });

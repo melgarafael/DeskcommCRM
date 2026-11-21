@@ -23,7 +23,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 /**
  * GET   /api/v1/channels/webchat — estado da conexão do chat no site.
  * POST  /api/v1/channels/webchat — cria a conexão (uma por organização), com a chave `wck_`.
- * PATCH /api/v1/channels/webchat — muda a lista de domínios e a configuração (aparência, textos, coleta).
+ * PATCH /api/v1/channels/webchat — muda a lista de domínios e a configuração (aparência, textos, coleta,
+ *   pausa). Pausar é `config.pausado: true`; a mudança de valor emite `channel.webchat_paused` além do `updated`.
  *
  * O giro da chave é `POST .../girar`. Molde: `app/api/v1/channels/bot/route.ts`.
  *
@@ -206,6 +207,20 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     // Os NOMES dos campos mudados, nunca a chave: a lista de domínios fica no registro da conexão.
     metadata: { canal: "webchat", campos: Object.keys(parsed.data) },
   });
+
+  // Pausa (Task 7): audit próprio só quando o valor MUDA. Repetir o valor atual não é evento.
+  const pausadoNovo = parsed.data.config?.pausado;
+  if (pausadoNovo !== undefined && pausadoNovo !== (conexao.config.pausado === true)) {
+    void audit({
+      action: "channel.webchat_paused",
+      actorUserId: authz.user.id,
+      organizationId: orgId,
+      resourceType: "channel_session",
+      resourceId: conexao.id,
+      requestId,
+      metadata: { canal: "webchat", pausado: pausadoNovo },
+    });
+  }
 
   return ok(
     {

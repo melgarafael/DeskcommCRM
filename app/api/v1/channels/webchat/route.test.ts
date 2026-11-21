@@ -297,6 +297,85 @@ describe("PATCH muda domínios e configuração", () => {
   });
 });
 
+describe("PATCH pausa e retoma o chat", () => {
+  const pausadoNaConexao = () => (conexao()?.metadata as Record<string, unknown>).webchat as Record<string, unknown>;
+
+  it("pausar muda a configuração e emite os dois audits: updated e paused com o valor", async () => {
+    await criar();
+    h.estado.auditorias.length = 0;
+    const res = await atualizar({ config: { pausado: true } });
+    expect(res.status).toBe(200);
+    expect(pausadoNaConexao()).toEqual({ pausado: true });
+    expect(h.estado.auditorias).toEqual([
+      expect.objectContaining({ action: "channel.webchat_updated" }),
+      expect.objectContaining({
+        action: "channel.webchat_paused",
+        resourceId: conexao()?.id,
+        metadata: { canal: "webchat", pausado: true },
+      }),
+    ]);
+  });
+
+  it("retomar grava pausado false e emite channel.webchat_paused com false", async () => {
+    await criar();
+    await atualizar({ config: { pausado: true } });
+    h.estado.auditorias.length = 0;
+    expect((await atualizar({ config: { pausado: false } })).status).toBe(200);
+    expect(pausadoNaConexao()).toEqual({ pausado: false });
+    expect(h.estado.auditorias).toEqual([
+      expect.objectContaining({ action: "channel.webchat_updated" }),
+      expect.objectContaining({ action: "channel.webchat_paused", metadata: { canal: "webchat", pausado: false } }),
+    ]);
+  });
+
+  it("pausar de novo, já pausado, NÃO emite channel.webchat_paused", async () => {
+    await criar();
+    await atualizar({ config: { pausado: true } });
+    h.estado.auditorias.length = 0;
+    expect((await atualizar({ config: { pausado: true } })).status).toBe(200);
+    expect(h.estado.auditorias).toEqual([expect.objectContaining({ action: "channel.webchat_updated" })]);
+  });
+
+  it("retomar um chat que nunca foi pausado NÃO emite channel.webchat_paused", async () => {
+    await criar();
+    h.estado.auditorias.length = 0;
+    expect((await atualizar({ config: { pausado: false } })).status).toBe(200);
+    expect(h.estado.auditorias.map((e) => e.action)).toEqual(["channel.webchat_updated"]);
+  });
+
+  it("mudar só a aparência não emite channel.webchat_paused e mantém a pausa", async () => {
+    await criar();
+    await atualizar({ config: { pausado: true } });
+    h.estado.auditorias.length = 0;
+    expect((await atualizar({ config: { titulo: "Atendimento" } })).status).toBe(200);
+    expect(pausadoNaConexao()).toEqual({ pausado: true, titulo: "Atendimento" });
+    expect(h.estado.auditorias.map((e) => e.action)).toEqual(["channel.webchat_updated"]);
+  });
+
+  it("pausado que não é booleano dá 422 e não grava", async () => {
+    await criar();
+    expect((await atualizar({ config: { pausado: "sim" } })).status).toBe(422);
+    expect(conexao()?.metadata).toEqual({});
+    expect(h.estado.auditorias).toHaveLength(1);
+  });
+
+  it("em acompanhamento de suporte, pausar dá 403 antes do efeito e sem audit", async () => {
+    await criar();
+    h.estado.auditorias.length = 0;
+    h.estado.suporte = true;
+    expect((await atualizar({ config: { pausado: true } })).status).toBe(403);
+    expect(conexao()?.metadata).toEqual({});
+    expect(h.estado.auditorias).toHaveLength(0);
+  });
+
+  it("o audit de pausa não leva a chave pública", async () => {
+    await criar();
+    const chave = conexao()?.webchat_public_key as string;
+    await atualizar({ config: { pausado: true } });
+    expect(JSON.stringify(h.estado.auditorias)).not.toContain(chave);
+  });
+});
+
 describe("girar a chave", () => {
   it("troca a chave, invalida a antiga e audita sem mostrar nenhuma das duas", async () => {
     await criar();

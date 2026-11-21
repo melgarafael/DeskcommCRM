@@ -237,3 +237,32 @@ it("depois de salvar, os domínios voltam como o servidor guardou (sem duplicata
   await waitFor(() => expect(dominios.value).toBe("https://loja.exemplo.com.br\nhttps://outra.exemplo.com.br"));
   expect((screen.getByRole("button", { name: "Salvar domínios" }) as HTMLButtonElement).disabled).toBe(true);
 });
+
+it("pausar o chat pede confirmação antes do PATCH e só então manda pausado true", async () => {
+  h.get.mockResolvedValue({ data: comConexao });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  mount();
+  await screen.findByRole("button", { name: "Pausar o chat" });
+  expect(screen.queryByText("Pausado")).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "Pausar o chat" }));
+  const dialogo = await screen.findByRole("alertdialog");
+  expect(within(dialogo).getByText(/chat indisponível/)).toBeTruthy();
+  expect(h.patch).not.toHaveBeenCalled();
+
+  fireEvent.click(within(dialogo).getByRole("button", { name: "Sim, pausar o chat" }));
+  await waitFor(() => expect(h.patch).toHaveBeenCalledWith(ROTA, { config: { pausado: true } }));
+  await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Chat pausado. A janela não abre até você retomar."));
+});
+
+it("com o chat pausado, mostra o Badge Pausado e retomar não pede confirmação", async () => {
+  h.get.mockResolvedValue({ data: { ...comConexao, config: { ...comConexao.config, pausado: true } } });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  mount();
+  expect(await screen.findByText("Pausado")).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "Retomar o chat" }));
+  await waitFor(() => expect(h.patch).toHaveBeenCalledWith(ROTA, { config: { pausado: false } }));
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Chat retomado. A janela volta a abrir no seu site."));
+});

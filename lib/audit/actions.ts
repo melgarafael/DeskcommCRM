@@ -1730,6 +1730,8 @@ export const AUDIT_ACTIONS = [
   "channel.webchat_created",
   "channel.webchat_updated",
   "channel.webchat_key_rotated",
+  // Pausa do chat (Task 7): emitida só quando o valor MUDA. Metadata leva o canal e o novo valor.
+  "channel.webchat_paused",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

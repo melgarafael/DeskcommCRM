@@ -4,7 +4,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { conexaoPelaChave } from "@/lib/channels/webchat/conexao-pela-chave";
+import { conexaoPelaChave, conexaoPeloId } from "@/lib/channels/webchat/conexao-pela-chave";
 
 const h = vi.hoisted(() => ({
   moduloLigado: true,
@@ -99,5 +99,27 @@ describe("conexaoPelaChave: origens da conexão", () => {
 
   it("chave inexistente continua devolvendo null", async () => {
     expect(await conexaoPelaChave(bancoCom(null), CHAVE)).toBeNull();
+  });
+});
+
+describe("conexaoPelaChave e conexaoPeloId: chat pausado", () => {
+  beforeEach(() => {
+    h.moduloLigado = true;
+  });
+
+  it("chat pausado devolve null pela chave e pelo id, o mesmo caso de chave inexistente", async () => {
+    const pausada = { ...conexaoBase, metadata: { webchat: { pausado: true } } };
+    expect(await conexaoPelaChave(bancoCom(pausada), CHAVE)).toBeNull();
+    expect(await conexaoPeloId(bancoCom(pausada), CS)).toBeNull();
+  });
+
+  it("pausado false segue entregando a conexão", async () => {
+    const retomada = { ...conexaoBase, metadata: { webchat: { pausado: false } } };
+    expect(await conexaoPelaChave(bancoCom(retomada), CHAVE)).toEqual({
+      id: CS,
+      organizationId: ORG,
+      config: { pausado: false },
+      allowedOrigins: [],
+    });
   });
 });

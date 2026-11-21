@@ -47,6 +47,12 @@ export const configuracaoDoChatSchema = z
       .partial()
       .strict()
       .optional(),
+    /**
+     * Pausa do chat (F2, Task 7). Fica na configuração, não em `channel_sessions.status`: o status
+     * da conexão mexe em saúde do canal, vagas do plano e seletores. Pausado, a conexão pública
+     * some (`conexaoPor` devolve `null`) e a organização continua vendo a conexão para retomar.
+     */
+    pausado: z.boolean().optional(),
   })
   .strict();
 

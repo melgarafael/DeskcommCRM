@@ -28,8 +28,8 @@ import { useT } from "@/hooks/i18n/useT";
  * `canal_webchat` (a aba nem é montada sem isso; ver `ConexoesShell`).
  *
  * Molde: `CanalBotClient`. Sem conexão, a tela pede só os domínios e cria a conexão. Com
- * conexão, mostra aparência, coleta, domínios, o código para colar e o giro da chave. A pausa
- * do chat entra numa tarefa própria.
+ * conexão, mostra aparência, coleta, domínios, o código para colar, a pausa e o giro da chave.
+ * A pausa é `config.pausado` (não é o status da conexão): pausado, a janela não abre no site.
  *
  * A chave pública não é segredo (está no código do site), mas não vai para log nem para
  * `console`. Textos de tela passam por `t()`.
@@ -189,6 +189,8 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
   const [dominios, setDominios] = useState(() => estado.allowed_origins.join("\n"));
   const [ocupado, setOcupado] = useState(false);
   const [girarAberto, setGirarAberto] = useState(false);
+  const [pausaAberta, setPausaAberta] = useState(false);
+  const pausado = estado.config.pausado === true;
 
   // Aparência: campo em branco é "não mudar". Só vai o que foi preenchido.
   const corPreenchida = cor.trim() !== "";
@@ -231,6 +233,25 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
       await aoMudar();
     } catch {
       toast.error(t("Não foi possível gerar a chave. Tente de novo."));
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  // Pausa e retoma. Só o pausar pede confirmação (no diálogo); o retomar vai direto.
+  const alternarPausa = async (novo: boolean) => {
+    setOcupado(true);
+    try {
+      await apiClient.patch(ROTA, { config: { pausado: novo } });
+      setPausaAberta(false);
+      toast.success(
+        novo
+          ? t("Chat pausado. A janela não abre até você retomar.")
+          : t("Chat retomado. A janela volta a abrir no seu site."),
+      );
+      await aoMudar();
+    } catch (e) {
+      toast.error(avisoDeErro(e, t));
     } finally {
       setOcupado(false);
     }
@@ -446,6 +467,29 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
       </section>
 
       <section className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <h4 className="text-sm font-medium">{t("Disponibilidade")}</h4>
+          {pausado && <Badge variant="outline">{t("Pausado")}</Badge>}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Com o chat pausado, a janela não abre no seu site e ninguém consegue começar uma conversa. As conversas já feitas continuam no Inbox.",
+          )}
+        </p>
+        <div>
+          {pausado ? (
+            <Button variant="outline" onClick={() => alternarPausa(false)} disabled={ocupado}>
+              {t("Retomar o chat")}
+            </Button>
+          ) : (
+            <Button variant="outline" onClick={() => setPausaAberta(true)} disabled={ocupado}>
+              {t("Pausar o chat")}
+            </Button>
+          )}
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3">
         <h4 className="text-sm font-medium">{t("Chave do chat")}</h4>
         <p className="text-xs text-muted-foreground">
           {t("Gere uma chave nova só se achar que o código vazou.")}
@@ -471,6 +515,25 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
             <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
             <Button onClick={girar} disabled={ocupado}>
               {ocupado ? t("Gerando…") : t("Sim, gerar nova chave")}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={pausaAberta} onOpenChange={setPausaAberta}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Pausar o chat?")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(
+                "Enquanto estiver pausado, a janela do chat não abre e quem está conversando vê 'chat indisponível'. As conversas já feitas continuam no Inbox.",
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
+            <Button onClick={() => alternarPausa(true)} disabled={ocupado}>
+              {t("Sim, pausar o chat")}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

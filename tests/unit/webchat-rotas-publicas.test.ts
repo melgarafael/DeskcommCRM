@@ -187,6 +187,23 @@ describe("POST /api/v1/webchat/sessao", () => {
     for (const r of respostas) expect(r).toEqual(primeira);
   });
 
+  it("chat pausado dá o mesmo 404 e o mesmo corpo de chave inexistente", async () => {
+    h.contador.clear();
+    cenario("inexistente");
+    const inexistente = await resposta(await sessao(pedido("sessao", { chave: CHAVE })));
+    h.contador.clear();
+    cenario("ok", { webchat: { pausado: true } });
+    const pausado = await resposta(await sessao(pedido("sessao", { chave: CHAVE })));
+    expect(pausado.status).toBe(404);
+    expect(pausado).toEqual(inexistente);
+  });
+
+  it("retomar o chat (pausado false) volta a abrir a janela da sessão", async () => {
+    cenario("ok", { webchat: { pausado: false } });
+    const r = await resposta(await sessao(pedido("sessao", { chave: CHAVE })));
+    expect(r.status).toBe(200);
+  });
+
   it("sem token devolve um token novo, para um visitante novo", async () => {
     const r = await resposta(await sessao(pedido("sessao", { chave: CHAVE })));
     const dados = (r.body as { data: { token: string; visitante_id: string } }).data;
@@ -365,6 +382,22 @@ describe("POST /api/v1/webchat/mensagens", () => {
     expect(primeira).toBeDefined();
     expect(primeira!.status).toBe(404);
     for (const r of respostas) expect(r).toEqual(primeira);
+    expect(h.ingerir).not.toHaveBeenCalled();
+  });
+
+  it("chat pausado dá o mesmo 404 de chave inexistente e a mensagem não chega à ingestão", async () => {
+    h.contador.clear();
+    cenario("inexistente");
+    const inexistente = await resposta(
+      await mensagens(pedido("mensagens", { mensagem_id: randomUUID(), texto: "oi" }, tokenDeVisitante())),
+    );
+    h.contador.clear();
+    cenario("ok", { webchat: { pausado: true } });
+    const pausado = await resposta(
+      await mensagens(pedido("mensagens", { mensagem_id: randomUUID(), texto: "oi" }, tokenDeVisitante())),
+    );
+    expect(pausado.status).toBe(404);
+    expect(pausado).toEqual(inexistente);
     expect(h.ingerir).not.toHaveBeenCalled();
   });
 

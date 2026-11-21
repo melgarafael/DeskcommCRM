@@ -163,6 +163,15 @@ describe("GET /chat/<chave>", () => {
     );
   });
 
+  it("chat pausado dá o mesmo 404 e o mesmo corpo de chave inexistente", async () => {
+    cenario("inexistente");
+    const inexistente = await resposta(CHAVE);
+    cenario("ok", { webchat: { pausado: true } });
+    const pausado = await resposta(CHAVE);
+    expect(pausado.status).toBe(404);
+    expect(pausado).toEqual(inexistente);
+  });
+
   it("módulo desligado dá 404 mesmo com a chave correta", async () => {
     cenario("modulo_desligado");
     const r = await resposta(CHAVE);

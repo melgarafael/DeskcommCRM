@@ -6,8 +6,8 @@
  * organização sai da LINHA da conexão, nunca do pedido.
  *
  * Devolve `null` nos quatro casos que a rota responde com o mesmo 404: chave (ou conexão)
- * inexistente, conexão arquivada, organização que não opera e módulo desligado. A rota
- * não distingue um do outro. LANÇA quando a consulta falha: "não existe" e "não consegui
+ * inexistente, conexão arquivada, organização que não opera, módulo desligado e chat pausado
+ * (`config.pausado`). A rota não distingue um do outro. LANÇA quando a consulta falha: "não existe" e "não consegui
  * perguntar" levam a desfechos diferentes.
  *
  * O cliente é de service role: toda consulta filtra o que importa à mão.
@@ -80,13 +80,16 @@ async function conexaoPor(
   const metadata = (linha.metadata as Record<string, unknown> | null) ?? {};
   // Configuração que não passa no schema vira a padrão: não derruba a entrada do visitante.
   const lida = configuracaoDoChatSchema.safeParse(metadata.webchat ?? {});
+  const config: ConfiguracaoDoChat = lida.success ? lida.data : {};
+  // Chat pausado pela organização (Task 7): para o visitante, é a conexão que não existe.
+  if (config.pausado === true) return null;
   const origens = Array.isArray(linha.webchat_allowed_origins)
     ? linha.webchat_allowed_origins.filter((o): o is string => typeof o === "string")
     : [];
   return {
     id: linha.id as string,
     organizationId,
-    config: lida.success ? lida.data : {},
+    config,
     allowedOrigins: origens,
   };
 }
