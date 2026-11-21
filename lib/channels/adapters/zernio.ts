@@ -44,6 +44,7 @@ import type { TemplateContract } from "../meta/template-contract";
 import { assertDestinoResolvidoSeguro } from "@/lib/automation/outbound-ip";
 import { assertSafeOutboundUrl } from "@/lib/automation/outbound-url";
 import { zernioMediaFetchInit } from "../zernio/webhook";
+import { FalhaDeEnvioDoCanal, naturezaDoStatusHttp } from "../falha-de-envio";
 import { DETALHE_NAO_RECEBE, PREFIXO_ENVIO_RESTRITO } from "../defeito-do-numero";
 import { marcaDeEspera, segundosDoRetryAfter } from "../erro-da-plataforma";
 import type {
@@ -264,7 +265,16 @@ export const zernioAdapter: ChannelAdapter = {
         const espera = res.status === 429 ? segundosDoRetryAfter(res.headers?.get("retry-after")) : null;
         throw new Error(`zernio_throttled: ${res.status} ${detalhe}${marcaDeEspera(espera)}`.trim());
       }
-      throw new Error(`zernio_send_failed: ${res.status} ${detalhe}`.trim());
+      // A recusa leva a natureza (`../falha-de-envio.ts`): um 4xx é a resposta
+      // do provedor para ESTE conteúdo, e re-tentar o turno só a repetiria. O
+      // texto não muda — é ele que a tela e a campanha leem. O limite de
+      // velocidade da plataforma (130429) chega às vezes num 400 e não é
+      // recusa do conteúdo: segue transitório.
+      throw new FalhaDeEnvioDoCanal(
+        `zernio_send_failed: ${res.status} ${detalhe}`.trim(),
+        codigoDaPlataforma === "130429" ? "transitoria" : naturezaDoStatusHttp(res.status),
+        res.status,
+      );
     }
 
     // 201 ao abrir a conversa, 200 ao responder nela — os dois caminhos

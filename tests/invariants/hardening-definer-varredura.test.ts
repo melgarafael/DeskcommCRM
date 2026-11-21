@@ -340,6 +340,16 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "ainda não tem configuração. Prova: tests/invariants/lembrete-ao-dono-escrita.test.ts.",
   },
   {
+    fn: "fn_definir_resumo_do_aviso_de_agendamento(uuid,boolean)",
+    razao:
+      "A porta de escrita de `config_aviso_de_agendamento.resumo_so_com_agendamento` " +
+      "(migration 9434, #4988). PUT app/api/v1/agenda/aviso/route.ts chama com createClient " +
+      "da sessão, depois de fn_definir_aviso_de_agendamento. Mesmas guardas da irmã do " +
+      "lembrete: auth.uid(), fn_role_at_least(p_org,'admin'), fn_support_write_allowed(p_org) " +
+      "e fn_session_mfa_proven(); só atualiza a linha da organização pedida e recusa quem " +
+      "ainda não tem configuração. Prova: tests/invariants/resumo-so-com-agendamento-escrita.test.ts.",
+  },
+  {
     fn: "fn_definir_aviso_de_agendamento(uuid,boolean,uuid,text,boolean,boolean,text)",
     razao:
       "A ÚNICA porta de escrita de `config_aviso_de_agendamento` (migration 0707) — " +

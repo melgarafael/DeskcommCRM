@@ -41,9 +41,9 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { comIdDaRequisicao, fail, ok } from "@/lib/api/wrappers";
 import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
-import { requireRole } from "@/lib/auth/require-role";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { chaveDoCodigo, lerPlanilha, type ErroDaLinha } from "@/lib/catalogo/planilha";
 import { guardarFotosPorUrl } from "@/lib/catalogo/fotos-por-url";
@@ -54,8 +54,8 @@ import { MODULO_SERVICOS, sinaisFixosQueTravamPreco } from "@/lib/catalogo/servi
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { capacidadesDaOrganizacao } from "@/lib/organizacao/capacidades";
 import { COLUNAS_DO_PRODUTO } from "@/lib/schemas/produtos";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -89,15 +89,23 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const requestId = randomUUID();
   // Preço de venda é escrita de gestão: o mesmo papel do POST unitário.
-  const authz = await requireRole("manager", { requestId, resource: "catalog_products" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "catalog_products",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const orgId = authz.org.orgId;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "products.import", requestId);
+  if (teto) return teto;
+  const orgId = authz.organizationId;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   // 64 KB de folga para o envelope multipart; o tamanho do CSV é conferido abaixo.
   const corpo = await lerCorpoComTeto(req, CSV_MAX_BYTES + 64 * 1024, {
     requestId,
-    idioma: authz.user.idioma,
+    idioma: authz.idioma,
     acimaDoTeto: t("Arquivo maior que ") + `${Math.floor(CSV_MAX_BYTES / 1024 / 1024)}MB.`,
   });
   if (!corpo.ok) return corpo.response;
@@ -141,7 +149,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   if ("erro" in decodificado) {
     return fail("validation_failed", t(decodificado.erro), 422, { requestId });
   }
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const lido = lerPlanilha(decodificado.texto, t, {
     capacidade: (await capacidadesDaOrganizacao(supabase, orgId)).includes("capacidade_do_produto"),
   });
@@ -170,6 +178,23 @@ export async function POST(req: NextRequest): Promise<Response> {
       } satisfies ResumoDaImportacao,
       { requestId },
     );
+  }
+
+  // Foto por URL só na sessão. Um token pode disparar 500 linhas × 5 links, e cada
+  // link é um download feito pelo servidor: essa conta não entra por token. Recusa
+  // antes de ler o catálogo e antes de baixar qualquer coisa.
+  if (authz.via === "token") {
+    const linhasComFoto = lido.produtos.filter((p) => p.fotos && p.fotos.length > 0).map((p) => p.linha);
+    if (linhasComFoto.length > 0) {
+      return fail(
+        "foto_por_url_so_na_sessao",
+        t(
+          "Foto por link não é aceita pela API. Tire a coluna de foto da planilha ou importe as fotos pela tela de Produtos.",
+        ),
+        422,
+        { requestId, details: { linhas: linhasComFoto } },
+      );
+    }
   }
 
   // Os códigos já cadastrados na organização servem a duas coisas. Quem já
@@ -429,13 +454,14 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   await audit({
     organizationId: orgId,
-    actorUserId: authz.user.id,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
     action: "catalog_product.imported",
     resourceType: "catalog_products",
     resourceId: null,
     requestId,
     metadata: {
-      actor_type: "user",
+      actor_type: authz.actor.type,
       total_linhas: totalLinhas,
       criados,
       atualizados,
@@ -469,10 +495,18 @@ export async function POST(req: NextRequest): Promise<Response> {
  * e a linha voltaria recusada. O formato `link1|link2` é explicado na tela de
  * Produtos, ao lado do link do modelo.
  */
-export async function GET(): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "catalog_products" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "catalog_products",
+    role: "manager",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "products.import", requestId);
+  if (teto) return teto;
 
   const modelo = [
     "codigo,nome,marca,categoria,preco,custo,estoque,descricao,foto",

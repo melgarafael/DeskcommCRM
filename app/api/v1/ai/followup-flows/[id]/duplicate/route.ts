@@ -9,14 +9,19 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * passo extra da instalação de modelo.
  *
  * Nome recebe sufixo " (cópia)" (ou " (cópia N)" se o primeiro já existir).
+ *
+ * Sessão OU token de integração (Spec 33, R1): `config:write` e papel admin
+ * (`tokenRole`). A organização sai de `authz.organizationId` e, no ramo do
+ * token, o cliente é a service role: todo `organization_id` abaixo é escrito à
+ * mão e é a única barreira entre duas organizações.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { nomeDaCopia } from "@/lib/followup/nome-da-copia";
 import { rascunhoDoFluxo } from "@/lib/followup/rascunho";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -30,7 +35,7 @@ const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
-export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
@@ -40,17 +45,26 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
     return fail("invalid_request", "id inválido.", 400, { requestId });
   }
 
-  const authz = await requireRole("manager", { requestId, resource: "followup_flows" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "followup_flows",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user, org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "followup_flows", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const { organizationId } = authz;
+  const actorUserId = authz.actor.type === "user" ? authz.actor.id : null;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data: origem, error: fetchErr } = await supabase
     .from("followup_flow_pointers")
     .select(SOURCE_COLUMNS)
     .eq("id", id)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
   if (!origem) return fail("not_found", t("Fluxo não encontrado."), 404, { requestId });
@@ -58,13 +72,13 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   const { data: nomes, error: nomesErr } = await supabase
     .from("followup_flow_pointers")
     .select("name")
-    .eq("organization_id", activeOrg.orgId);
+    .eq("organization_id", organizationId);
   if (nomesErr) return fail("internal_error", nomesErr.message, 500, { requestId });
 
   const draft_graph = await rascunhoDoFluxo(
     supabase,
     origem as { draft_graph: unknown; active_version_id: string | null },
-    activeOrg.orgId,
+    organizationId,
   );
 
   const nome = nomeDaCopia(
@@ -75,7 +89,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   const { data: copia, error: insErr } = await supabase
     .from("followup_flow_pointers")
     .insert({
-      organization_id: activeOrg.orgId,
+      organization_id: organizationId,
       name: nome,
       status: "draft",
       draft_graph,
@@ -99,8 +113,9 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
 
   void audit({
     action: "followup_flow.duplicated",
-    actorUserId: user.id,
-    organizationId: activeOrg.orgId,
+    actorUserId,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId,
     resourceType: "followup_flow_pointer",
     resourceId: copia.id,
     requestId,

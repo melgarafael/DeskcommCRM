@@ -23,14 +23,18 @@
  * 2. SEM configuração, tudo sai idêntico ao de antes: `https://graph.facebook.com`
  *    com a versão da instalação. Quem não configurou nada não percebe mudança.
  *
- * A catraca do fim é o que impede este arquivo de envelhecer: qualquer literal
- * de URL da Graph fora dos dois módulos de base reprova a suíte, inclusive em
- * `scripts/` — que é onde o último tinha ficado.
+ * A catraca do fim é o que impede este arquivo de envelhecer: qualquer forma do
+ * host escrito à mão fora dos dois módulos de base reprova a suíte — URL com
+ * esquema, protocolo-relativo (`//graph.facebook.com`) ou o host sozinho numa
+ * string — em `components/`, `hooks/`, `workers/` e nos `.mjs` de `scripts/`,
+ * que é onde o último tinha ficado.
  */
-import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { semComentarios } from "./helpers/sem-comentarios";
+import { arquivosDeCodigo, caminhoRelativo } from "./helpers/varrer-codigo";
 
 /**
  * A credencial da sessão, resolvida pelo mesmo caminho do dublê do arquivo irmão:
@@ -207,36 +211,117 @@ describe("sem configuração, o comportamento é o de antes — a régua", () =>
   });
 });
 
+/**
+ * As linhas de um fonte que escrevem o host À MÃO, já sem comentário.
+ *
+ * Atalho seguro antes do parse: tirar comentário só troca caractere por espaço,
+ * e espaço não é borda do padrão — então um arquivo sem casamento no texto cru
+ * não tem casamento depois. Parsear só quem casa cru poupa segundos numa
+ * varredura de mais de mil arquivos.
+ */
+function linhasComHost(fonte: string, arquivo?: string): string[] {
+  if (!LITERAL_DO_HOST.test(fonte)) return [];
+  return semComentarios(fonte, arquivo)
+    .split("\n")
+    .filter((linha) => LITERAL_DO_HOST.test(linha));
+}
+
+/**
+ * O HOST, e não a URL inteira.
+ *
+ * A primeira versão desta catraca (16/09) exigia `https://` logo depois de uma
+ * aspa — `["'`]https:\/\/graph\.facebook\.com`. Medido nesta onda, com o
+ * repositório na mão: plantar `` const SONDA = `${"https:"}//graph.facebook.com/v22.0/x` ``
+ * em `lib/channels/meta/send-template.ts` deixava os SEIS casos verdes e a
+ * varredura passava. Duas formas escapavam, e as duas são jeitos que o código
+ * escreve de verdade:
+ *
+ * - endereço PROTOCOLO-RELATIVO (`//graph.facebook.com`) — o irmão do defeito
+ *   que a catraca da versão já tinha registrado;
+ * - o host SOZINHO em string (`"graph.facebook.com"`), que é a forma de
+ *   allowlist e de comparação de `hostname`.
+ *
+ * Além do padrão, a varredura herdou da irmã o que ela já tinha certo: as raízes
+ * `components/`, `hooks/` e `workers/` e os `.mjs` de `scripts/` — onde um
+ * endereço de fornecedor já se escondeu uma vez.
+ *
+ * Quem separa código de prosa continua sendo o PARSER (`semComentarios`), não a
+ * borda da regex: comentário que cita o endereço não reprova. A borda antiga
+ * reprovava JSDoc (aspa + `https://`) e deixava passar código — o pior dos dois
+ * mundos.
+ */
+const LITERAL_DO_HOST = /graph\.facebook\.com/;
+
+/** Linhas que TÊM de reprovar. A segunda é a sabotagem que a versão anterior deixava passar. */
+const E_HOST_DA_GRAPH = [
+  'const BASE = "https://graph.facebook.com/v22.0";',
+  'const SONDA = `${"https:"}//graph.facebook.com/v22.0/x`;',
+  "const url = `${protocolo}//graph.facebook.com/${VERSAO}/${id}`;",
+  'const HOST = "graph.facebook.com";',
+];
+
+/** Linhas que NÃO podem reprovar — senão a catraca vira ruído e alguém a desliga. */
+const NAO_E_HOST_DA_GRAPH = [
+  'const DOC = "https://developers.facebook.com/docs/whatsapp";',
+  "// a Meta reescreveu o next para https://graph.facebook.com/v25.0/abc",
+  "/**",
+  " * TRANSPORTE (`meta_cloud`, `graph.facebook.com`), que é outra coisa.",
+  " * `https://graph.facebook.com/v22.0` — o endereço medido, em prosa",
+  " */",
+  'const perfis = ["facebook.com", "instagram.com"];',
+];
+
 describe("CATRACA: o literal só existe nos dois módulos de base", () => {
-  /**
-   * O padrão exige o host DENTRO de string de URL (`"https://…`, `'https://…`,
-   * `` `https://… ``). Comentário que cita o domínio não entra — a doutrina fala
-   * dele em prosa, e prosa não é chamada de rede.
-   */
-  const LITERAL = /["'`]https:\/\/graph\.facebook\.com/;
+  /** Onde mora código que chama a Graph valendo — as mesmas raízes da irmã. */
+  const RAIZES = ["app", "lib", "components", "hooks", "workers", "scripts"];
+  const CODIGO = /\.(ts|tsx|mjs|js)$/;
   const PERMITIDOS = new Set([
     "lib/channels/meta/graph-base.ts",
     "lib/plataformas-de-anuncio/meta/graph-base.ts",
   ]);
-  const RAIZES = ["lib", "app", "scripts"];
 
-  function arquivos(dir: string, achados: string[] = []): string[] {
-    for (const entrada of readdirSync(dir, { withFileTypes: true })) {
-      const caminho = join(dir, entrada.name);
-      if (entrada.isDirectory()) arquivos(caminho, achados);
-      else if (/\.(ts|tsx)$/.test(entrada.name) && !/\.test\./.test(entrada.name)) achados.push(caminho);
-    }
-    return achados;
-  }
+  it("a régua reconhece as formas de código e ignora prosa — verde aqui não é verde de nada", () => {
+    const pegas = (linhas: string[]) => linhasComHost(linhas.join("\n"), "trecho.ts");
 
-  it("nenhum arquivo de produção fora dos dois graph-base carrega o host em URL", () => {
-    const comLiteral = RAIZES.flatMap((raiz) => arquivos(join(process.cwd(), raiz)))
-      .filter((caminho) => LITERAL.test(readFileSync(caminho, "utf8")))
-      .map((caminho) => caminho.slice(process.cwd().length + 1).replace(/\\/g, "/"));
+    // As três formas que o código escreve: URL com esquema, protocolo-relativo e
+    // host sozinho.
+    expect(pegas(E_HOST_DA_GRAPH)).toEqual(E_HOST_DA_GRAPH);
+    // Prosa, outro domínio da Meta, e a palavra solta "facebook.com".
+    expect(pegas(NAO_E_HOST_DA_GRAPH)).toEqual([]);
+  });
 
-    expect(comLiteral.filter((c) => !PERMITIDOS.has(c)).sort()).toEqual([]);
-    // Controle de vacuidade: os dois módulos de base PRECISAM aparecer, senão a
-    // catraca estaria medindo o conjunto vazio.
-    expect(comLiteral.sort()).toEqual([...PERMITIDOS].sort());
+  it("`/*` dentro de string não abre comentário que esconde o endereço", () => {
+    // O defeito medido na catraca irmã: glob de MIME antes, JSDoc depois, o
+    // endereço escrito à mão no meio. Com regex de comentário, o `/*` de dentro
+    // da string sumia com ele.
+    const fonte = [
+      'const ACEITOS = ["image/*", "audio/*"];',
+      'const URL_DA_GRAPH = "https://graph.facebook.com/v22.0/x";',
+      "/** Confere o número antes de gravar. */",
+      "export async function validar() {}",
+    ].join("\n");
+
+    expect(linhasComHost(fonte, "validate-credentials.ts")).toEqual([
+      'const URL_DA_GRAPH = "https://graph.facebook.com/v22.0/x";',
+    ]);
+  });
+
+  it("nenhum arquivo de produção fora dos dois graph-base carrega o host", () => {
+    const arquivos = arquivosDeCodigo(RAIZES, CODIGO);
+
+    // Controles de vacuidade: a varredura olhou muita coisa e alcançou os dois
+    // módulos que ela precisa ver. Sem isto, uma raiz renomeada devolveria lista
+    // vazia e o teste passaria sem ter olhado nada.
+    expect(arquivos.length).toBeGreaterThan(1000);
+    expect(arquivos.map(caminhoRelativo)).toContain("lib/channels/meta/graph-base.ts");
+
+    const comLiteral = arquivos
+      .filter((caminho) => linhasComHost(readFileSync(caminho, "utf8"), caminho).length > 0)
+      .map(caminhoRelativo)
+      .sort();
+
+    // A igualdade é a asserção E o controle positivo: os dois módulos de base têm
+    // de aparecer na lista.
+    expect(comLiteral).toEqual([...PERMITIDOS].sort());
   });
 });

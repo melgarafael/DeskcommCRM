@@ -3,8 +3,10 @@
  *
  * Abaixo de `md` o botão mostra só o ícone, que é `aria-hidden`. Com o rótulo em
  * `hidden md:inline` (`display: none`), o leitor de tela anunciava um botão sem
- * nome. `max-md:sr-only` esconde o texto do olho e o mantém na árvore de
- * acessibilidade; no computador o rótulo segue à vista como antes.
+ * nome. `max-lg:sr-only` esconde o texto do olho e o mantém na árvore de
+ * acessibilidade; de `lg` para cima o rótulo segue à vista. (O corte era `md`; subiu
+ * para `lg` no #5089, porque com o rótulo o botão não encolhe e, com o botão do
+ * módulo conectado no topo, passava por cima do seletor de organização em 768–830 px.)
  *
  * O jsdom não aplica as classes do Tailwind, então o nome acessível aqui sai do
  * texto de qualquer jeito: o que este caso segura é a CLASSE, que é o que decide
@@ -19,12 +21,12 @@ vi.mock("@/components/shell/CommandPalette", () => ({ CommandPalette: () => null
 import { SearchTrigger } from "./SearchTrigger";
 
 describe("lupa da busca no topo", () => {
-  it("o rótulo fica na árvore de acessibilidade abaixo de md", () => {
+  it("o rótulo fica na árvore de acessibilidade abaixo de lg", () => {
     render(<SearchTrigger />);
     const botao = screen.getByRole("button", { name: /Buscar\.\.\./ });
     const rotulo = within(botao).getByText("Buscar...");
     const c = (rotulo.getAttribute("class") ?? "").split(/\s+/);
-    expect(c).toContain("max-md:sr-only");
+    expect(c).toContain("max-lg:sr-only");
     // `hidden` é `display: none`: tira o texto da árvore e o botão fica sem nome.
     expect(c).not.toContain("hidden");
   });

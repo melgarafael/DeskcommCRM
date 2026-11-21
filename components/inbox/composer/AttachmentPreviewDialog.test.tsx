@@ -124,6 +124,27 @@ describe("o diálogo pede legenda só onde ela chega (#3151)", () => {
   });
 });
 
+it("blocks dismissal while sending and restores it when sending finishes", () => {
+  const onCancel = vi.fn();
+  const props = { files: [DOCUMENTO], onCancel, onSend: vi.fn() };
+  const { rerender } = render(<AttachmentPreviewDialog {...props} sending />);
+
+  expect(screen.getByRole("button", { name: "Cancelar" })).toBeDisabled();
+  const close = screen.getByRole("button", { name: "Fechar" });
+  fireEvent.keyDown(document, { key: "Escape" });
+  fireEvent.click(close);
+  expect(onCancel).not.toHaveBeenCalled();
+  expect(close).toBeDisabled();
+
+  rerender(<AttachmentPreviewDialog {...props} sending={false} />);
+
+  expect(close).toBeEnabled();
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(onCancel).toHaveBeenCalledTimes(1);
+  fireEvent.click(close);
+  expect(onCancel).toHaveBeenCalledTimes(2);
+});
+
 describe("a régua pura do envio (#3151)", () => {
   it("anexoLevaLegenda: áudio não leva; imagem, vídeo e documento levam", () => {
     expect(anexoLevaLegenda(AUDIO)).toBe(false);

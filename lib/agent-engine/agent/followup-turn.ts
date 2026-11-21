@@ -42,7 +42,7 @@ import { WahaChannelAdapter } from '../edge/channel/waha-adapter';
 import { applySendOutcome } from '../edge/crm/send-message';
 import { runBeforeSend } from '../guardrails/before-send';
 import { definicaoNaConexao } from '@/lib/channels/linha-do-espelho';
-import { estadoDaJanela } from '@/lib/channels/janela';
+import { aJanelaRegulatoriaSeAplica, estadoDaJanela } from '@/lib/channels/janela';
 import { renderTemplateBody } from '@/lib/channels/meta/render-template';
 import { contextoDoContato, renderizarTextoDeFollowup } from '@/lib/automation/texto-do-followup';
 import { classificarMidiaComLegenda, type TipoDeMidiaComLegenda } from '@/lib/messaging/media/midia-com-legenda';
@@ -192,8 +192,12 @@ export type FollowupFlowTurnResult =
   | { kind: 'classified'; class: string }
   /** Classificar sem resposta ao envio do fluxo: nada a concluir, só o rastro da espera. */
   | { kind: 'awaiting_reply' }
-  /** O envio ficou estacionado até `until` (janela fechada) — nem saiu, nem foi recusado. */
-  | { kind: 'deferred'; until: Date; reason: string }
+  /**
+   * O envio ficou estacionado até `until` (janela fechada) — nem saiu, nem foi
+   * recusado. `janelaRegulatoria` é o ESCOPO do canal deste turno: só ele
+   * autoriza o dossiê a falar em janela de 24 h (ver `aJanelaRegulatoriaSeAplica`).
+   */
+  | { kind: 'deferred'; until: Date; reason: string; janelaRegulatoria?: boolean }
   | { kind: 'planned'; propostas: PropostaDeEsperaBruta[]; modelo: string };
 
 /**
@@ -538,7 +542,12 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
             organizationId: tenantId,
             enrollmentId: payload.followup_enrollment_id,
             nodeId: payload.node_id,
-            result: { kind: 'deferred', until: pessoa.ate, reason: 'pessoa_no_comando' },
+            result: {
+              kind: 'deferred',
+              until: pessoa.ate,
+              reason: 'pessoa_no_comando',
+              janelaRegulatoria: await janelaRegulatoriaDoCanal(pool, tenantId, target.channelSessionId),
+            },
           });
           return;
         }
@@ -666,7 +675,12 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
             organizationId: tenantId,
             enrollmentId: payload.followup_enrollment_id,
             nodeId: payload.node_id,
-            result: { kind: 'deferred', until: proximaAbertura, reason: 'followup_send_window' },
+            result: {
+              kind: 'deferred',
+              until: proximaAbertura,
+              reason: 'followup_send_window',
+              janelaRegulatoria: await janelaRegulatoriaDoCanal(pool, tenantId, target.channelSessionId),
+            },
           });
           return;
         }
@@ -745,7 +759,7 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
  */
 type EnvioFixoDesfecho =
   | { kind: "sent" }
-  | { kind: "deferred"; until: Date; reason: string }
+  | { kind: "deferred"; until: Date; reason: string; janelaRegulatoria: boolean }
   | { kind: "skipped" };
 
 interface ReentrySendTarget {
@@ -1037,7 +1051,7 @@ async function runFlowDrivenTurn(
       } else if (desfecho.kind === 'skipped') {
         await complete(pool,{jobId:job.id,jobClaim:claimOfJob(job),organizationId:target.tenantId,enrollmentId,nodeId,result:{kind:'skipped',reason:'O envio foi recusado pelas regras do atendimento.'}});
       } else {
-        await complete(pool,{jobId:job.id,jobClaim:claimOfJob(job),organizationId:target.tenantId,enrollmentId,nodeId,result:{kind:'deferred',until:desfecho.until,reason:desfecho.reason}});
+        await complete(pool,{jobId:job.id,jobClaim:claimOfJob(job),organizationId:target.tenantId,enrollmentId,nodeId,result:{kind:'deferred',until:desfecho.until,reason:desfecho.reason,janelaRegulatoria:desfecho.janelaRegulatoria}});
       }
       return;
     }
@@ -1066,7 +1080,12 @@ async function runFlowDrivenTurn(
         organizationId: target.tenantId,
         enrollmentId,
         nodeId,
-        result: { kind: 'deferred', until: aberturaAntiBan, reason: 'outside_window' },
+        result: {
+          kind: 'deferred',
+          until: aberturaAntiBan,
+          reason: 'outside_window',
+          janelaRegulatoria: await janelaRegulatoriaDoCanal(pool, target.tenantId, target.channelSessionId),
+        },
       });
       return;
     }
@@ -1716,7 +1735,12 @@ async function sendFixedOutbound(
         code: chain.code,
         next_run_at: chain.nextAllowedAt.toISOString(),
       });
-      return { kind: "deferred", until: chain.nextAllowedAt, reason: chain.code };
+      return {
+        kind: "deferred",
+        until: chain.nextAllowedAt,
+        reason: chain.code,
+        janelaRegulatoria: await janelaRegulatoriaDoCanal(pool, tenantId, target.channelSessionId),
+      };
     }
     /**
      * #4429 — A COLISÃO DE REPETIÇÃO ADIA, COMO A JANELA. O veto pode chegar por
@@ -1749,6 +1773,32 @@ async function sendFixedOutbound(
       throw new Error('envio fixo: CRM marcou o envio como failed — run re-tentado pela fila');
     case 'unavailable':
       throw new Error(`envio fixo: canal indisponível (${outcome.reason}) — run re-tentado pela fila`);
+  }
+}
+
+/**
+ * O canal desta conversa impõe a janela de 24 h? Lido do PROVEDOR (capability),
+ * nunca do nome do canal, e só quando um adiamento está sendo registrado.
+ *
+ * O dado serve ao dossiê: `action_deferred` daqui carrega `janela_regulatoria`
+ * junto com o motivo, para a linha do tempo não anunciar a janela da Meta numa
+ * conexão por QR — que é o defeito medido na #4913. Falha de leitura responde
+ * `false`: o adiamento já está decidido, e o erro não pode derrubá-lo.
+ */
+async function janelaRegulatoriaDoCanal(
+  pool: pg.Pool,
+  tenantId: string,
+  channelSessionId: string | null | undefined,
+): Promise<boolean> {
+  if (!channelSessionId) return false;
+  try {
+    const { rows } = await pool.query<{ provider: string | null }>(
+      `select provider from channel_sessions where organization_id = $1 and id = $2 limit 1`,
+      [tenantId, channelSessionId],
+    );
+    return aJanelaRegulatoriaSeAplica(rows[0]?.provider);
+  } catch {
+    return false;
   }
 }
 
@@ -1799,7 +1849,12 @@ async function adiarPorRepeticao(
     adiamento: adiamentos + 1,
     teto: MAX_ADIAMENTOS_POR_REPETICAO,
   });
-  return { kind: 'deferred', until, reason: motivo };
+  return {
+    kind: 'deferred',
+    until,
+    reason: motivo,
+    janelaRegulatoria: await janelaRegulatoriaDoCanal(pool, target.tenantId, target.channelSessionId),
+  };
 }
 
 /** Quantos adiamentos POR REPETIÇÃO este passo já teve — o teto de `adiarPorRepeticao`. */

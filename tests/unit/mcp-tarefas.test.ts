@@ -20,6 +20,10 @@ const registraAtividadeDaTarefa = vi.fn();
 vi.mock("@/lib/tarefas/atividade", () => ({
   registraAtividadeDaTarefa: (...a: unknown[]) => registraAtividadeDaTarefa(...a),
 }));
+const criarProximaSemDerrubar = vi.fn();
+vi.mock("@/lib/tarefas/recorrencia", () => ({
+  criarProximaSemDerrubar: (...a: unknown[]) => criarProximaSemDerrubar(...a),
+}));
 
 import { TOOL_CATALOG } from "@/lib/mcp/tools/catalogo";
 import { allTools } from "@/lib/mcp/tools";
@@ -66,6 +70,7 @@ beforeEach(() => {
   queryOne.mockReset();
   audit.mockReset();
   registraAtividadeDaTarefa.mockReset();
+  criarProximaSemDerrubar.mockReset();
 });
 
 describe("MCP Tools — Tarefas (crm_create_task, crm_list_tasks e crm_update_task)", () => {
@@ -285,6 +290,30 @@ describe("MCP Tools — Tarefas (crm_create_task, crm_list_tasks e crm_update_ta
       await crmUpdateTask.handler({ task_id: TAREFA, status: "done" }, contexto(supabase));
 
       expect(registraAtividadeDaTarefa).not.toHaveBeenCalled();
+      expect(criarProximaSemDerrubar).not.toHaveBeenCalled();
+    });
+
+    it("creates the next occurrence when MCP completes a recurring task", async () => {
+      const dueDate = "2026-11-23T12:00:00.000Z";
+      const tarefa = { id: TAREFA, organization_id: ORG, title: "Tarefa", status: "done", due_date: dueDate };
+      const { supabase, chamadas } = bancoFalso([
+        { data: { status: "pending" }, error: null },
+        { data: { ...tarefa, recurrence_source_id: OUTRO_ID }, error: null },
+      ]);
+
+      const resultado = await crmUpdateTask.handler(
+        { task_id: TAREFA, status: "done", due_date: dueDate },
+        contexto(supabase),
+      );
+
+      expect(criarProximaSemDerrubar).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
+        id: TAREFA,
+        organization_id: ORG,
+        recurrence_source_id: OUTRO_ID,
+        due_date: dueDate,
+      });
+      expect(chamadas).toContainEqual(["select", [expect.stringContaining("recurrence_source_id")]]);
+      expect(resultado).toEqual({ task: tarefa });
     });
 
     it("crm_list_tasks no turno lista só as tarefas do contato da conversa", async () => {

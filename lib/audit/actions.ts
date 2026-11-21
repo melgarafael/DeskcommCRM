@@ -1034,6 +1034,22 @@ export const AUDIT_ACTIONS = [
   "extension.update_failed",
   "extension.reverted",
   "extension.removed",
+  // O interruptor, por instalação, do módulo `connected` (spec 33, D8): ligar ou desligar sem
+  // desinstalar. `metadata.disabled` diz o sentido. Uma linha só, da instância: não há vínculo por
+  // organização a desligar.
+  "extension.switched",
+  // O segredo do módulo `connected` foi gerado de novo (spec 33, F2, tarefa 4): o módulo atual deixa de
+  // funcionar até receber o novo e os tokens vivos da instalação foram revogados. `metadata` leva só a
+  // contagem de organizações; o segredo, em claro ou cifrado, NUNCA entra na linha.
+  "extension.secret_rotated",
+  // A organização mudou as áreas do CRM que um módulo `connected` pode alcançar (spec 33, F3, tarefa 5).
+  // `metadata` leva a lista fechada de permissões `area.*` consentidas depois da mudança e a revisão do
+  // vínculo; nenhum dado pessoal, segredo ou token.
+  "extension.consent_changed",
+  // O módulo `connected` buscou um token curto (spec 33, F2, tarefa 5). Uma linha por busca bem-sucedida,
+  // na organização do par. `metadata` leva só o id da instalação e o slug do módulo; o texto do token e o
+  // hash NUNCA entram na linha.
+  "extension.token_issued",
   // Nome próprio, e não `extension.deactivated`: na auditoria da organização, "nós desligamos" e
   // "o responsável pela instalação removeu" precisam ser distinguíveis sem abrir os metadados.
   "extension.deactivated_by_removal",
@@ -1264,6 +1280,7 @@ export const AUDIT_ACTIONS = [
   // "Enviar vendas pelo canal da conversa" (doc 76, PR #1819): ligar faz o
   // valor da venda e o telefone do cliente saírem para o provedor do canal.
   "conversions.report_via_channel_updated",
+  "calls.block_incoming_updated",
   // "Deduzir a origem do site pelo horário do clique" (doc 259, PR #3906):
   // ligar faz a Origem passar a aceitar palpite, além de prova.
   "conversions.site_origin_by_click_time_updated",
@@ -1541,6 +1558,11 @@ export const AUDIT_ACTIONS = [
   // mesma razão do `ai.case_alert_settings_changed`: `api_audit_log` é
   // append-only e a cascata de LGPD não o alcança.
   "ai.case_alert_settings_removed",
+  // "Não enviar aviso de caso" por membro (#4989): quem ligou/desligou a marca
+  // que faz o aviso de caso PARAR numa pessoa. Código próprio pela mesma razão
+  // do `_removed`: a pergunta depois é outra ("quem calou os avisos desta
+  // fila?"), e o painel filtra por `action`. Só CONTAGENS, nunca ids.
+  "ai.case_alert_nao_avisar_changed",
   "lgpd.atestado_emitido",
   // A cadência do lembrete de caso parado (migration 0766): ligado, intervalo e
   // teto, escolhidos na Central por quem administra. Audita porque desligar
@@ -1705,6 +1727,9 @@ export const AUDIT_ACTIONS = [
   // "Escrito pela IA"). Metadata leva só os NOMES dos campos e se a autoria é da
   // IA — nunca o texto, que mora na ficha e é alcançado pela anonimização.
   "contact.diagnosis_saved",
+  // A pessoa gravou as próprias abas da Inbox (#3313): a ordem da faixa e quais
+  // ficam no menu "Mais". Metadata com a ordem, as visíveis e as ocultas.
+  "user.inbox_tabs_updated",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

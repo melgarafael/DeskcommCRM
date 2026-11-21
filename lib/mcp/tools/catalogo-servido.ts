@@ -16,6 +16,7 @@
 import type { McpToolCatalogEntry } from "./catalogo";
 import type { ToolBundle, ToolRisk } from "./pacotes";
 import { IDS_DO_HARNESS, motivoDoHarness } from "./ferramentas-do-harness";
+import { IDS_DO_ADMINISTRADOR, MOTIVO_SO_DO_ADMINISTRADOR } from "./ferramentas-do-administrador";
 
 /** Só o que a junção precisa de um handler — mantém a função testável sem zod. */
 export interface HandlerDeclarado {
@@ -76,8 +77,10 @@ export function juntarCatalogoComHandlers(
       o_que_toca: entrada.oQueToca,
       risco: entrada.risco,
       pacotes: entrada.pacotes,
-      marcavel: !IDS_DO_HARNESS.has(handler.name),
-      motivo_nao_marcavel: motivoDoHarness(handler.name),
+      marcavel: !IDS_DO_HARNESS.has(handler.name) && !IDS_DO_ADMINISTRADOR.has(handler.name),
+      motivo_nao_marcavel:
+        motivoDoHarness(handler.name) ??
+        (IDS_DO_ADMINISTRADOR.has(handler.name) ? MOTIVO_SO_DO_ADMINISTRADOR : null),
     };
   });
 }

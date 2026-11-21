@@ -34,8 +34,6 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 import { portaDaAplicacao } from "@/lib/db";
 import { logger } from "@/lib/logger";
-import { idsDeOrgsParadas } from "@/lib/organizacao/operante";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { gerarOcorrencias } from "@/lib/tarefas/recorrencia";
 
 export const dynamic = "force-dynamic";
@@ -48,15 +46,10 @@ async function handle(req: NextRequest): Promise<Response> {
   }
 
   try {
-    // Organização parada (suspensa, redigida, arquivada) não gasta nem fala —
-    // a série dela fica guardada e volta a gerar quando a org voltar. A lista
-    // vem da MESMA régua dos outros crons, não de uma condição escrita aqui.
-    const paradas = new Set(await idsDeOrgsParadas(createAdminClient()));
-    const resultado = await gerarOcorrencias(portaDaAplicacao(), new Date(), paradas);
+    const resultado = await gerarOcorrencias(portaDaAplicacao());
     if (resultado.criadas > 0) {
       logger.info("[task-recurrence] ocorrências geradas", {
         ...resultado,
-        orgs_paradas: paradas.size,
         requestId,
       });
     }
