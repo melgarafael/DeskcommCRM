@@ -560,12 +560,17 @@
         {
           "nome": "agentCreateSchema",
           "origem": "@/lib/ai/guardrails-schema",
-          "hash": "c2e5ac95cf75516a"
+          "hash": "2d60e3aa13d0828b"
         },
         {
           "nome": "agentMcpCreateSchema",
           "origem": "@/lib/ai/agents/validation",
           "hash": "0973df2a57fee0b8"
+        },
+        {
+          "nome": "agenteDeVozCreateSchema",
+          "origem": "@/lib/ai/guardrails-schema",
+          "hash": "3eaa867f7e1a3cdc"
         }
       ],
       "resposta": []

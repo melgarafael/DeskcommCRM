@@ -2261,4 +2261,65 @@ describe("segredo do módulo conectado (spec 33, F2, tarefa 4)", () => {
     expect(screen.queryByTestId(`extension-secret-reveal-${INSTALLATION}`)).toBeNull();
     await waitFor(() => expect(screen.getByTestId(`extension-secret-${INSTALLATION}`)).toBeEnabled());
   });
+
+  describe("cartão do módulo conectado (issue #5079)", () => {
+    it("não mostra as opções de cartão da extensão declarativa e mantém a ativação nesta organização", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockImplementation(() =>
+          Promise.resolve(
+            json({
+              data: list(ORG_A, {
+                can_install: true,
+                installations: [
+                  installation({
+                    profile: "connected",
+                    permissions: ["area.contatos.leitura"],
+                  }),
+                ],
+              }),
+            }),
+          ),
+        ),
+      );
+      renderManager();
+
+      expect(await screen.findByTestId(`extension-installed-${INSTALLATION}`)).toBeVisible();
+      expect(screen.queryByTestId(`extension-density-${INSTALLATION}`)).toBeNull();
+      expect(screen.queryByTestId(`extension-description-${INSTALLATION}`)).toBeNull();
+      expect(screen.queryByText("Densidade dos cards")).toBeNull();
+      expect(screen.queryByText("Mostrar descrição nos cards")).toBeNull();
+      // Ativar nesta organização é o que libera o consentimento e o menu do módulo (spec 33).
+      expect(screen.getByText("Nesta organização")).toBeVisible();
+      expect(screen.getByTestId(`extension-enabled-${INSTALLATION}`)).toBeVisible();
+      expect(screen.getByTestId(`extension-save-${INSTALLATION}`)).toBeVisible();
+    });
+
+    it("mostra opções declarativas para extensões declarativas normais", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockImplementation(() =>
+          Promise.resolve(
+            json({
+              data: list(ORG_A, {
+                can_install: true,
+                installations: [
+                  installation({
+                    profile: "declarative",
+                  }),
+                ],
+              }),
+            }),
+          ),
+        ),
+      );
+      renderManager();
+
+      expect(await screen.findByTestId(`extension-installed-${INSTALLATION}`)).toBeVisible();
+      expect(screen.getByTestId(`extension-density-${INSTALLATION}`)).toBeVisible();
+      expect(screen.getByTestId(`extension-description-${INSTALLATION}`)).toBeVisible();
+      expect(screen.getByTestId(`extension-save-${INSTALLATION}`)).toBeVisible();
+      expect(screen.getByText("Nesta organização")).toBeVisible();
+    });
+  });
 });
