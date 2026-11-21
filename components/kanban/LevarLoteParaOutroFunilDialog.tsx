@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -108,8 +109,10 @@ export function LevarLoteParaOutroFunilDialog({
     });
     setResultado(r);
     await qc.invalidateQueries({ queryKey: ["board", pipelineId] });
-    if (r.levados.length > 0) {
+    if (r.levados.length > 0 || r.recusados.some((recusa) => recusa.cloneId)) {
       await qc.invalidateQueries({ queryKey: ["board", destinoId] });
+    }
+    if (r.levados.length > 0) {
       toast.success(`${r.levados.length} ${t("levados para")} ${destino?.name ?? ""}`.trim());
     }
   }
@@ -141,6 +144,17 @@ export function LevarLoteParaOutroFunilDialog({
                       <span className="font-medium">{tituloDe?.(r.leadId) ?? r.leadId}</span>
                       {" — "}
                       {r.motivo}
+                      {r.cloneId && (
+                        <p className="mt-1">
+                          {t("O negócio já foi criado no funil de destino. Confira-o antes de tentar novamente.")}{" "}
+                          <Link
+                            href={`/app/leads/${encodeURIComponent(r.cloneId)}`}
+                            className="font-medium text-primary underline underline-offset-2"
+                          >
+                            {t("Abrir negócio")}
+                          </Link>
+                        </p>
+                      )}
                     </li>
                   ))}
                 </ul>

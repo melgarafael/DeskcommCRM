@@ -71,6 +71,13 @@ vi.mock("@/components/contacts/RoteirosDoContato", () => ({ RoteirosDoContato: (
 // O bloco Carteira busca a própria rota; o dublê de `get` deste arquivo devolve
 // o resumo do painel para TODA URL, então o cartão sai da cena aqui.
 vi.mock("@/components/contacts/CartaoDaCarteira", () => ({ CartaoDaCarteira: () => null }));
+// A lista de vendas do negócio vira um dublê que só mostra o que recebeu: o que
+// interessa aqui é o painel decidir quem pode APAGAR venda (#5087).
+vi.mock("@/components/vendas/VendasDoNegocio", () => ({
+  VendasDoNegocio: (p: { somenteLeitura?: boolean }) => (
+    <div data-testid="vendas-do-negocio" data-somente-leitura={String(Boolean(p.somenteLeitura))} />
+  ),
+}));
 
 // O Select do Radix pede estas APIs do navegador, que o jsdom não implementa.
 window.HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -124,6 +131,21 @@ beforeEach(() => {
   post.mockReset();
   get.mockResolvedValue(resumo([NEGOCIO]));
   patch.mockResolvedValue({ data: { ...NEGOCIO, value_cents: 123456 } });
+});
+
+describe("painel do inbox — quem pode apagar venda (#5087)", () => {
+  it("viewer: a lista de vendas vem só para leitura, sem lixeira", async () => {
+    estado.papel = "viewer";
+    renderPainel();
+    const lista = await screen.findByTestId("vendas-do-negocio");
+    expect(lista.getAttribute("data-somente-leitura")).toBe("true");
+  });
+
+  it("agent: a lista de vendas permite apagar", async () => {
+    renderPainel();
+    const lista = await screen.findByTestId("vendas-do-negocio");
+    expect(lista.getAttribute("data-somente-leitura")).toBe("false");
+  });
 });
 
 describe("painel do inbox — valor do negócio editável", () => {

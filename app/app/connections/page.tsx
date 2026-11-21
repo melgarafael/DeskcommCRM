@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
+import { supportWriteError } from "@/lib/impersonate/support";
 import { ConexoesShell } from "@/components/connections/ConexoesShell";
 import { ROTULO_DO_CANAL as ROTULO_DO_ROBO } from "@/lib/channels/bot/connect";
 import { canalGraphParceiroLigado, GRAPH_PARTNER_LABEL } from "@/lib/channels/graph-parceiro/credentials";
@@ -44,6 +45,9 @@ export default async function ConnectionsPage() {
       <ConexoesShell
         wahaConfigured={wahaConfigured}
         wacallsConfigured={wacallsConfigured}
+        podeCriarAgenteDeVoz={
+          ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin && !supportWriteError(user.support, activeOrg.orgId)
+        }
         graphParceiro={canalGraphParceiroLigado() ? { label: GRAPH_PARTNER_LABEL } : null}
         bot={roboLigado ? { label: ROTULO_DO_ROBO } : null}
       />
