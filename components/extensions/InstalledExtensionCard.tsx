@@ -280,7 +280,7 @@ export function InstalledExtensionCard({
 
       {desligadoAqui}
 
-      {canInstall ? (
+      {canInstall && extension.profile !== "connected" ? (
         <h3 className="mt-4 text-sm font-semibold">{t("Nesta organização")}</h3>
       ) : null}
 
@@ -322,7 +322,7 @@ export function InstalledExtensionCard({
             </div>
           ) : null}
         </div>
-      ) : canManage ? (
+      ) : extension.profile === "connected" ? null : canManage ? (
         <div className="mt-4 space-y-4 border-t border-border pt-4">
           <div className="flex items-center justify-between gap-4">
             <div>
