@@ -16,9 +16,19 @@ const h = vi.hoisted(() => ({
   banco: null as unknown,
   moduloLigado: true,
   contador: new Map<string, number>(),
+  consultas: 0,
   ingerir: vi.fn(),
+  logErro: vi.fn(),
 }));
 
+vi.mock("@/lib/logger", () => ({
+  logger: {
+    error: (...args: unknown[]) => h.logErro(...args),
+    warn: vi.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
 vi.mock("@/lib/env", () => ({ env: { NEXT_PUBLIC_APP_URL: "https://crm.example.com" } }));
 vi.mock("@/lib/webhooks/url-publica", () => ({ enderecoDaPropriaMaquina: () => false }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => h.banco }));
@@ -48,6 +58,7 @@ type Cenario = "ok" | "inexistente" | "arquivada" | "org_suspensa" | "modulo_des
 function bancoFalso(tabelas: Record<string, Array<Record<string, unknown>>>) {
   return {
     from(nome: string) {
+      h.consultas += 1;
       const filtros: Array<(linha: Record<string, unknown>) => boolean> = [];
       const consulta = {
         select: () => consulta,
@@ -90,13 +101,17 @@ function cenario(opcao: Cenario): void {
 }
 
 function pedido(rota: "sessao" | "mensagens", corpo: unknown, token?: string): Request {
+  return pedidoBruto(rota, JSON.stringify(corpo), token);
+}
+
+function pedidoBruto(rota: "sessao" | "mensagens", corpo: string, token?: string): Request {
   return new Request(`https://crm.example.com/api/v1/webchat/${rota}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify(corpo),
+    body: corpo,
   });
 }
 
@@ -115,7 +130,43 @@ beforeAll(() => {
 describe("POST /api/v1/webchat/sessao", () => {
   beforeEach(() => {
     h.contador.clear();
+    h.consultas = 0;
+    h.logErro.mockClear();
     cenario("ok");
+  });
+
+  it("o 31º pedido do mesmo IP, com chaves diferentes, dá 429 e não consulta o banco", async () => {
+    for (let i = 0; i < 30; i++) {
+      await sessao(pedido("sessao", { chave: `wck_${String(i).padStart(43, "x")}` }));
+    }
+    const consultasAntes = h.consultas;
+    const r = await sessao(pedido("sessao", { chave: `wck_${"y".repeat(43)}` }));
+    expect(r.status).toBe(429);
+    expect(r.headers.get("Retry-After")).toBe("60");
+    expect(h.consultas).toBe(consultasAntes);
+  });
+
+  it("corpo de 9 KB dá 413, antes de qualquer consulta", async () => {
+    const r = await sessao(pedido("sessao", { chave: CHAVE, pad: "x".repeat(9 * 1024) }));
+    expect(r.status).toBe(413);
+    expect(h.consultas).toBe(0);
+  });
+
+  it("JSON que não lê dá 422", async () => {
+    const r = await sessao(pedidoBruto("sessao", "{nao-e-json"));
+    expect(r.status).toBe(422);
+  });
+
+  it("erro inesperado do banco vira 500 registrado, sem a chave no log", async () => {
+    h.banco = {
+      from: () => {
+        throw new Error("falha de teste");
+      },
+    };
+    const r = await sessao(pedido("sessao", { chave: CHAVE }));
+    expect(r.status).toBe(500);
+    expect(h.logErro).toHaveBeenCalled();
+    expect(JSON.stringify(h.logErro.mock.calls)).not.toContain(CHAVE);
   });
 
   it("com a conexão ativa, responde 200 com token e visitante", async () => {
@@ -168,6 +219,8 @@ describe("POST /api/v1/webchat/sessao", () => {
 describe("POST /api/v1/webchat/mensagens", () => {
   beforeEach(() => {
     h.contador.clear();
+    h.consultas = 0;
+    h.logErro.mockClear();
     cenario("ok");
     h.ingerir.mockReset();
     h.ingerir.mockImplementation(async (_banco: unknown, p: { mensagemId: string }) => ({
@@ -183,7 +236,51 @@ describe("POST /api/v1/webchat/mensagens", () => {
     expect(h.ingerir).not.toHaveBeenCalled();
   });
 
-  it.each(["", "   ", "a".repeat(2001), "oi\u0000tudo"])(
+  it("INTERNAL_SECRET ausente dá 500 (defeito de configuração), não 401, e registra", async () => {
+    const antes = process.env.INTERNAL_SECRET;
+    process.env.INTERNAL_SECRET = "";
+    try {
+      const r = await mensagens(
+        pedido("mensagens", { mensagem_id: randomUUID(), texto: "oi" }, "abc.def"),
+      );
+      expect(r.status).toBe(500);
+      expect(h.logErro).toHaveBeenCalled();
+    } finally {
+      process.env.INTERNAL_SECRET = antes;
+    }
+  });
+
+  it("corpo de 9 KB dá 413", async () => {
+    const r = await mensagens(
+      pedido("mensagens", { mensagem_id: randomUUID(), texto: "x".repeat(9 * 1024) }, tokenDeVisitante()),
+    );
+    expect(r.status).toBe(413);
+    expect(h.ingerir).not.toHaveBeenCalled();
+  });
+
+  it("erro inesperado vira 500 registrado, sem o token nem o texto no log", async () => {
+    h.banco = {
+      from: () => {
+        throw new Error("falha de teste");
+      },
+    };
+    const r = await mensagens(
+      pedido("mensagens", { mensagem_id: randomUUID(), texto: "segredo-do-visitante" }, tokenDeVisitante()),
+    );
+    expect(r.status).toBe(500);
+    const registro = JSON.stringify(h.logErro.mock.calls);
+    expect(registro).not.toContain("segredo-do-visitante");
+    expect(registro).not.toContain(tokenDeVisitante().split(".")[0]);
+  });
+
+  it("aceita emoji composto (U+200D) e o texto sai como enviado", async () => {
+    const r = await mensagens(
+      pedido("mensagens", { mensagem_id: randomUUID(), texto: "👨‍👩 oi" }, tokenDeVisitante()),
+    );
+    expect(r.status).toBe(201);
+  });
+
+  it.each(["", "   ", "a".repeat(2001), "oi\u0000tudo", "oi‮tudo", "oi\u0085tudo", "oi⁦x"])(
     "texto inválido (%j) dá 422 e nada é gravado",
     async (texto) => {
       const r = await resposta(

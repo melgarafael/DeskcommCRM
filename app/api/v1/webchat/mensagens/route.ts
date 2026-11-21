@@ -12,13 +12,20 @@ import { z } from "zod";
 import { fail, ok } from "@/lib/api/wrappers";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { conexaoPeloId, tokenDoBearer } from "@/lib/channels/webchat/conexao-pela-chave";
+import { descreverErro, lerCorpoJson } from "@/lib/channels/webchat/entrada-publica";
 import { ingerirMensagemDoChat } from "@/lib/channels/webchat/ingest";
 import { assinarTokenDeVisitante, lerTokenDeVisitante } from "@/lib/channels/webchat/token";
+import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const TEXTO_MAXIMO = 2000;
-/** Caracteres de controle proibidos. Tab e quebra de linha passam: são texto normal. */
-const CONTROLE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
+/**
+ * Caracteres proibidos: controles C0 (menos tab e quebra de linha, que são texto normal),
+ * DEL e C1, e os de direção (embedding e isolamento bidi, que trocam a ordem do que se lê).
+ * U+200D não entra: emoji composto usa.
+ */
+const PROIBIDOS =
+  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F‪-‮⁦-⁩]/;
 
 const corpoSchema = z
   .object({
@@ -26,7 +33,7 @@ const corpoSchema = z
     texto: z
       .string()
       .transform((t) => t.trim())
-      .pipe(z.string().min(1).max(TEXTO_MAXIMO).refine((t) => !CONTROLE.test(t))),
+      .pipe(z.string().min(1).max(TEXTO_MAXIMO).refine((t) => !PROIBIDOS.test(t))),
   })
   .strict();
 
@@ -35,6 +42,12 @@ const LIMITE_POR_VISITANTE = 20;
 const LIMITE_POR_CONEXAO = 600;
 const JANELA_SEGUNDOS = 60;
 
+function recusaPorLimite() {
+  return fail("rate_limited", "Too many requests.", 429, {
+    headers: { "Retry-After": String(JANELA_SEGUNDOS) },
+  });
+}
+
 export async function POST(req: Request) {
   try {
     const token = tokenDoBearer(req.headers);
@@ -42,20 +55,33 @@ export async function POST(req: Request) {
 
     const agora = new Date();
     const visitante = lerTokenDeVisitante(token, agora);
-    if (!visitante.ok) return fail("unauthenticated", "Invalid token.", 401);
+    if (!visitante.ok) {
+      // Sem segredo no servidor, nenhum token pode ser conferido: é defeito de configuração,
+      // não credencial errada. Por isso 500 e registro, e não 401.
+      if (visitante.motivo === "segredo_ausente") {
+        logger.error("webchat: INTERNAL_SECRET ausente; token de visitante não pode ser conferido", {
+          rota: "mensagens",
+          motivo: visitante.motivo,
+        });
+        return fail("internal_error", "Internal error.", 500);
+      }
+      return fail("unauthenticated", "Invalid token.", 401);
+    }
 
     const tetoVisitante = await checkRateLimit(
       `webchat:mensagens:visitante:${visitante.visitanteId}`,
       LIMITE_POR_VISITANTE,
       JANELA_SEGUNDOS,
     );
-    if (!tetoVisitante.allowed) {
-      return fail("rate_limited", "Too many requests.", 429, {
-        headers: { "Retry-After": String(JANELA_SEGUNDOS) },
-      });
-    }
+    if (!tetoVisitante.allowed) return recusaPorLimite();
 
-    const lido = corpoSchema.safeParse(await req.json().catch(() => null));
+    const leitura = await lerCorpoJson(req);
+    if (!leitura.ok) {
+      return leitura.motivo === "grande"
+        ? fail("payload_too_large", "Payload too large.", 413)
+        : fail("validation_failed", "Dados inválidos.", 422);
+    }
+    const lido = corpoSchema.safeParse(leitura.valor);
     if (!lido.success) return fail("validation_failed", "Dados inválidos.", 422);
     const corpo = lido.data;
 
@@ -64,11 +90,7 @@ export async function POST(req: Request) {
       LIMITE_POR_CONEXAO,
       JANELA_SEGUNDOS,
     );
-    if (!tetoConexao.allowed) {
-      return fail("rate_limited", "Too many requests.", 429, {
-        headers: { "Retry-After": String(JANELA_SEGUNDOS) },
-      });
-    }
+    if (!tetoConexao.allowed) return recusaPorLimite();
 
     const admin = createAdminClient();
     const conexao = await conexaoPeloId(admin, visitante.channelSessionId);
@@ -101,7 +123,11 @@ export async function POST(req: Request) {
       },
       { status: 201 },
     );
-  } catch {
+  } catch (erro) {
+    logger.error("webchat: erro na rota pública de mensagens", {
+      rota: "mensagens",
+      ...descreverErro(erro),
+    });
     return fail("internal_error", "Internal error.", 500);
   }
 }

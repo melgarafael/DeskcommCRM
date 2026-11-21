@@ -15,29 +15,49 @@ import { z } from "zod";
 import { fail, ok } from "@/lib/api/wrappers";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { conexaoPelaChave, tokenDoBearer } from "@/lib/channels/webchat/conexao-pela-chave";
+import { descreverErro, lerCorpoJson } from "@/lib/channels/webchat/entrada-publica";
 import { assinarTokenDeVisitante, lerTokenDeVisitante } from "@/lib/channels/webchat/token";
 import { ipDoCliente } from "@/lib/http/ip-do-cliente";
+import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const corpoSchema = z.object({ chave: z.string().min(1).max(128) }).strict();
 
+/** Por IP, em qualquer chave: 30 aberturas por minuto. Barra quem troca de chave a cada pedido. */
+const LIMITE_POR_IP = 30;
 /** Por IP e chave: 10 aberturas de janela por minuto. */
-const LIMITE_POR_MINUTO = 10;
+const LIMITE_POR_IP_E_CHAVE = 10;
 const JANELA_SEGUNDOS = 60;
+
+function recusaPorLimite() {
+  return fail("rate_limited", "Too many requests.", 429, {
+    headers: { "Retry-After": String(JANELA_SEGUNDOS) },
+  });
+}
 
 export async function POST(req: Request) {
   try {
-    const lido = corpoSchema.safeParse(await req.json().catch(() => null));
+    // O balde por IP vem ANTES de qualquer leitura de corpo e de qualquer consulta ao banco.
+    const ip = ipDoCliente(req.headers) ?? "sem-ip";
+    const tetoIp = await checkRateLimit(`webchat:sessao:ip:${ip}`, LIMITE_POR_IP, JANELA_SEGUNDOS);
+    if (!tetoIp.allowed) return recusaPorLimite();
+
+    const leitura = await lerCorpoJson(req);
+    if (!leitura.ok) {
+      return leitura.motivo === "grande"
+        ? fail("payload_too_large", "Payload too large.", 413)
+        : fail("validation_failed", "Dados inválidos.", 422);
+    }
+    const lido = corpoSchema.safeParse(leitura.valor);
     if (!lido.success) return fail("validation_failed", "Dados inválidos.", 422);
     const { chave } = lido.data;
 
-    const ip = ipDoCliente(req.headers) ?? "sem-ip";
-    const teto = await checkRateLimit(`webchat:sessao:${ip}:${chave}`, LIMITE_POR_MINUTO, JANELA_SEGUNDOS);
-    if (!teto.allowed) {
-      return fail("rate_limited", "Too many requests.", 429, {
-        headers: { "Retry-After": String(JANELA_SEGUNDOS) },
-      });
-    }
+    const teto = await checkRateLimit(
+      `webchat:sessao:${ip}:${chave}`,
+      LIMITE_POR_IP_E_CHAVE,
+      JANELA_SEGUNDOS,
+    );
+    if (!teto.allowed) return recusaPorLimite();
 
     const admin = createAdminClient();
     const conexao = await conexaoPelaChave(admin, chave);
@@ -59,7 +79,8 @@ export async function POST(req: Request) {
       visitante_id: visitanteId,
       configuracao: conexao.config,
     });
-  } catch {
+  } catch (erro) {
+    logger.error("webchat: erro na rota pública de sessão", { rota: "sessao", ...descreverErro(erro) });
     return fail("internal_error", "Internal error.", 500);
   }
 }
