@@ -93,7 +93,7 @@ it("o Continuar no Google navega pela URL, porque o envio nativo do formulário 
   const original = window.location;
   Object.defineProperty(window, "location", { configurable: true, value: { ...original, assign } });
   try {
-    render(<MidiaGoogleAds {...props} podeGerenciar />);
+    render(<MidiaGoogleAds {...props} carregar={carregar} podeGerenciar />);
     fireEvent.click(screen.getByRole("button", { name: "Reconectar para leitura" }));
     const form = screen.getByRole("form", { name: "Autorização de relatórios" }) as HTMLFormElement;
     const evento = new Event("submit", { bubbles: true, cancelable: true });
