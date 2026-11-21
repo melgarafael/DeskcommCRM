@@ -40,6 +40,7 @@ export async function lerControladorDoChat(
     if (error) {
       logger.warn("chat no site: não consegui ler o controlador dos dados", {
         leitor: "controlador-do-chat",
+        organizationId,
       });
       return { ...SEM_CONTROLADOR };
     }
@@ -57,6 +58,7 @@ export async function lerControladorDoChat(
     // Não registra a mensagem da exceção: ela pode trazer detalhe de conexão.
     logger.warn("chat no site: leitura do controlador dos dados falhou", {
       leitor: "controlador-do-chat",
+      organizationId,
     });
     return { ...SEM_CONTROLADOR };
   }

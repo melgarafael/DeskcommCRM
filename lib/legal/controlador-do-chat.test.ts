@@ -70,6 +70,18 @@ describe("lerControladorDoChat", () => {
     expect(consulta.eq).toHaveBeenCalledWith("id", ORG);
   });
 
+  it("devolve política http como está: a régua única (urlDePoliticaSegura) aceita http e https", async () => {
+    const { cliente } = clienteQueDevolve({
+      data: { legal_name: "Empresa", privacy_policy_url: "http://exemplo.test/privacidade" },
+      error: null,
+    });
+
+    expect(await lerControladorDoChat(cliente, ORG)).toEqual({
+      razaoSocial: "Empresa",
+      politicaUrl: "http://exemplo.test/privacidade",
+    });
+  });
+
   it("RECUSA javascript: como política, mesmo que o banco a devolva", async () => {
     const { cliente } = clienteQueDevolve({
       data: { legal_name: "Empresa", privacy_policy_url: "javascript:alert(1)" },
@@ -113,6 +125,7 @@ describe("lerControladorDoChat", () => {
 
     expect(controlador).toEqual({ razaoSocial: null, politicaUrl: null });
     expect(mocks.warn).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(mocks.warn.mock.calls)).toContain(ORG);
     expect(JSON.stringify(mocks.warn.mock.calls)).not.toContain("segredo@example.test");
   });
 
