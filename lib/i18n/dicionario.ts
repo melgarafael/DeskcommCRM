@@ -3310,7 +3310,6 @@ export const DICIONARIO: Traducoes = {
     es: "Este modelo es la variante por lotes y no responde en el chat. Elige otro de la lista.",
   },
   "Este modelo foi aposentado pelo provedor. Escolha outro modelo.": {
-    en: "This model was retired by the provider. Choose another model.",
     es: "El proveedor ha retirado este modelo. Elige otro modelo.",
   },
   "Digite o identificador do modelo": { es: "Escribe el identificador del modelo" },
