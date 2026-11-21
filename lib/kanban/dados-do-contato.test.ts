@@ -102,4 +102,23 @@ describe("anexarDadosDoContato — o que o card do funil recebe do contato", () 
       "um@exemplo.com",
     ]);
   });
+
+  it("FOTO: marca que há foto, sem levar o caminho do arquivo ao payload", () => {
+    const [comFoto] = anexarDadosDoContato(
+      [lead("l1", "c1")],
+      [contato("c1", { avatar_storage_path: "org/c1/avatar.jpg" })],
+    );
+
+    expect(comFoto).toMatchObject({ contact_has_avatar: true });
+    expect(JSON.stringify(comFoto)).not.toContain("avatar.jpg");
+  });
+
+  it("FOTO: contato anonimizado não ganha foto no card, mesmo com arquivo na linha", () => {
+    const original = [lead("l1", "c1")];
+    const leads = anexarDadosDoContato(original, [
+      contato("c1", { avatar_storage_path: "org/c1/avatar.jpg", is_anonymized: true }),
+    ]);
+
+    expect(leads[0]?.contact_has_avatar).toBeUndefined();
+  });
 });

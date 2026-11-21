@@ -1,5 +1,6 @@
 import { ApiError } from "@/lib/api/types";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
+import { CHAVE_DA_FALHA_DE_ENVIO, falhaPermanenteNaMensagem } from "@/lib/channels/falha-de-envio";
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Queryable } from "../../queue/queue";
@@ -8,11 +9,24 @@ export type SendLedgerStatus = "requested" | "accepted" | "queued" | "vetoed" | 
 export type SendOutcome =
   | { kind: "sent"; idempotencyKey: string; crmMessageId: string }
   | {
-      kind: "already_sent" | "queued" | "failed";
+      kind: "already_sent" | "queued";
       idempotencyKey: string;
       crmMessageId: string | null;
     }
+  | {
+      kind: "failed";
+      idempotencyKey: string;
+      crmMessageId: string | null;
+      /**
+       * O canal recusou ESTE conteúdo em definitivo (`lib/channels/falha-de-envio.ts`):
+       * re-tentar o turno só repetiria a recusa. `false` = transitória — a fila
+       * re-tenta, como sempre.
+       */
+      permanente: boolean;
+    }
   | { kind: "blocked"; idempotencyKey: string };
+/** A linha de `messages` que o ledger lê: o status e — só na `failed` — a natureza da recusa. */
+export type MensagemDoLedger = { id: string; status: string; metadata?: unknown };
 /**
  * A intenção de uma MENSAGEM FÍSICA no ledger.
  *
@@ -46,6 +60,8 @@ export type Row = {
    * sintetizado ainda").
    */
   media_storage_path?: string | null;
+  /** Opcional no TYPE pela mesma razão de `media_storage_path`: dublês antigos não o têm. */
+  body_hash?: string | null;
 };
 export interface LedgerStore {
   create(input: Intent, hash: string): Promise<string>;
@@ -54,7 +70,7 @@ export interface LedgerStore {
   /** Pela PK primeiro: o envio grava `messages.id = chave` (`internalMessageId`). O
    * `metadata->>'idempotency_key'` não tem índice e só alcança linha gravada antes
    * dessa convenção, então fica de reserva para quando a PK não acha. */
-  message(org: string, key: string): Promise<{ id: string; status: string } | null>;
+  message(org: string, key: string): Promise<MensagemDoLedger | null>;
   update(
     org: string,
     key: string,
@@ -89,7 +105,8 @@ export function bodyHash(body: string): string {
 type ResolucaoDeChave =
   | { kind: "key"; key: string; row: Row | null }
   | { kind: "already_sent"; key: string; crmMessageId: string | null }
-  | { kind: "blocked"; key: string };
+  | { kind: "blocked"; key: string }
+  | { kind: "failed_permanent"; key: string; crmMessageId: string | null };
 
 export async function resolverChaveDoLedger(
   store: LedgerStore,
@@ -107,7 +124,18 @@ export async function resolverChaveDoLedger(
     if (prior.status === "accepted")
       return { kind: "already_sent", key: prior.id, crmMessageId: prior.crm_message_id };
     if (prior.status === "vetoed") return { kind: "blocked", key: prior.id };
-    if (prior.status === "failed") return { kind: "key", key: await store.rotate(input, hash), row: null };
+    if (prior.status === "failed") {
+      // A MESMA intenção, com o MESMO corpo, já foi recusada em definitivo pelo
+      // canal: mandar de novo só deixaria outro balão vermelho na conversa. O
+      // desfecho é o que já se sabe — nada sai. Corpo diferente é pedido novo
+      // (o turno re-rodado escreveu outra coisa) e segue rotacionando.
+      if (prior.body_hash === hash) {
+        const recusada = await store.message(input.tenantId, prior.crm_message_id ?? prior.id);
+        if (recusada?.status === "failed" && falhaPermanenteNaMensagem(recusada.metadata))
+          return { kind: "failed_permanent", key: prior.id, crmMessageId: recusada.id };
+      }
+      return { kind: "key", key: await store.rotate(input, hash), row: null };
+    }
     return { kind: "key", key: prior.id, row: prior };
   }
 }
@@ -118,13 +146,15 @@ export async function resolverChaveDoLedger(
 export async function sendWithLedger(
   store: LedgerStore,
   input: Intent,
-  send: (key: string, messageId: string) => Promise<{ id: string; status: string }>,
+  send: (key: string, messageId: string) => Promise<MensagemDoLedger>,
 ): Promise<SendOutcome> {
   const hash = bodyHash(input.body);
   const resolucao = await resolverChaveDoLedger(store, input, hash);
   if (resolucao.kind === "already_sent")
     return { kind: "already_sent", idempotencyKey: resolucao.key, crmMessageId: resolucao.crmMessageId };
   if (resolucao.kind === "blocked") return { kind: "blocked", idempotencyKey: resolucao.key };
+  if (resolucao.kind === "failed_permanent")
+    return { kind: "failed", idempotencyKey: resolucao.key, crmMessageId: resolucao.crmMessageId, permanente: true };
   const key = resolucao.key;
   // Chave saída de `create` ou `rotate` é um uuid que acabou de nascer (`row`
   // null): nenhuma mensagem pode carregá-la ainda. Procurar seria uma leitura
@@ -152,16 +182,21 @@ export async function sendWithLedger(
     : message.status === "failed"
       ? "failed"
       : "queued";
+  const permanente = status === "failed" && falhaPermanenteNaMensagem(message.metadata);
   await store.update(
     input.tenantId,
     key,
     status,
     message.id,
-    status === "failed" ? "handler marcou a mensagem como failed" : null,
+    status !== "failed"
+      ? null
+      : permanente
+        ? "canal recusou a mensagem em definitivo — não re-tentar o mesmo conteúdo"
+        : "handler marcou a mensagem como failed",
   );
-  return status === "accepted"
-    ? { kind: "sent", idempotencyKey: key, crmMessageId: message.id }
-    : { kind: status, idempotencyKey: key, crmMessageId: message.id };
+  if (status === "accepted") return { kind: "sent", idempotencyKey: key, crmMessageId: message.id };
+  if (status === "failed") return { kind: "failed", idempotencyKey: key, crmMessageId: message.id, permanente };
+  return { kind: "queued", idempotencyKey: key, crmMessageId: message.id };
 }
 /** Reconcilia um recibo já existente sem criar intenção nem chamar o canal.
  * Consumidores determinísticos consultam isto antes dos gates de um NOVO envio. */
@@ -212,14 +247,16 @@ export function pgSendLedger(db: Queryable): LedgerStore {
       return rows[0].id;
     },
     async message(org, key) {
-      const { rows } = await db.query<{ id: string; status: string }>(
-        "select id,status from messages where organization_id=$1 and id=$2",
-        [org, key],
+      // Só a chave da natureza da recusa sai do `metadata` — o resto (PII de
+      // contato compartilhado, botões) não tem por que atravessar o ledger.
+      const { rows } = await db.query<MensagemDoLedger>(
+        "select id,status,jsonb_build_object($3::text, metadata->($3::text)) as metadata from messages where organization_id=$1 and id=$2",
+        [org, key, CHAVE_DA_FALHA_DE_ENVIO],
       );
       if (rows[0]) return rows[0];
-      const legado = await db.query<{ id: string; status: string }>(
-        "select id,status from messages where organization_id=$1 and metadata->>'idempotency_key'=$2 limit 1",
-        [org, key],
+      const legado = await db.query<MensagemDoLedger>(
+        "select id,status,jsonb_build_object($3::text, metadata->($3::text)) as metadata from messages where organization_id=$1 and metadata->>'idempotency_key'=$2 limit 1",
+        [org, key, CHAVE_DA_FALHA_DE_ENVIO],
       );
       return legado.rows[0] ?? null;
     },
@@ -237,6 +274,14 @@ export function pgSendLedger(db: Queryable): LedgerStore {
       if (!rows[0]) throw new Error("send_ledger_set_media_path_missing");
       return rows[0].media_storage_path;
     },
+  };
+}
+/** A linha do PostgREST (`falha_de_envio` como coluna) no formato do caminho `pg`. */
+function comNatureza(linha: Record<string, unknown>): MensagemDoLedger {
+  return {
+    id: String(linha.id),
+    status: String(linha.status),
+    metadata: { [CHAVE_DA_FALHA_DE_ENVIO]: linha[CHAVE_DA_FALHA_DE_ENVIO] ?? null },
   };
 }
 export function supabaseSendLedger(db: SupabaseClient): LedgerStore {
@@ -261,7 +306,7 @@ export function supabaseSendLedger(db: SupabaseClient): LedgerStore {
     async find(i) {
       const { data, error } = await db
         .from("send_ledger")
-        .select("id,status,crm_message_id,media_storage_path")
+        .select("id,status,crm_message_id,media_storage_path,body_hash")
         .eq("organization_id", i.tenantId)
         .eq("job_id", i.jobId)
         .eq("seq", i.seq)
@@ -292,23 +337,25 @@ export function supabaseSendLedger(db: SupabaseClient): LedgerStore {
       return data.id;
     },
     async message(org, key) {
+      // `metadata->falha_de_envio` vem com o nome da chave — o leitor central
+      // recebe o mesmo formato do caminho `pg`.
       const porId = await db
         .from("messages")
-        .select("id,status")
+        .select(`id,status,${CHAVE_DA_FALHA_DE_ENVIO}:metadata->${CHAVE_DA_FALHA_DE_ENVIO}`)
         .eq("organization_id", org)
         .eq("id", key)
         .maybeSingle();
       if (porId.error) throw porId.error;
-      if (porId.data) return porId.data;
+      if (porId.data) return comNatureza(porId.data as unknown as Record<string, unknown>);
       const { data, error } = await db
         .from("messages")
-        .select("id,status")
+        .select(`id,status,${CHAVE_DA_FALHA_DE_ENVIO}:metadata->${CHAVE_DA_FALHA_DE_ENVIO}`)
         .eq("organization_id", org)
         .eq("metadata->>idempotency_key", key)
         .limit(1)
         .maybeSingle();
       if (error) throw error;
-      return data;
+      return data ? comNatureza(data as unknown as Record<string, unknown>) : null;
     },
     async update(org, key, status, id, errorText) {
       const { error } = await db

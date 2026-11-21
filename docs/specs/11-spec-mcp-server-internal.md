@@ -257,14 +257,24 @@ Mesma régua de visibilidade da listagem: `organization_id` na primeira cláusul
 **Maps to**: `GET /api/v1/pipelines`
 
 ```ts
-inputSchema: z.object({})  // sem args
+inputSchema: z.object({ include_archived: z.boolean().optional() })
 outputSchema: z.object({
   pipelines: z.array(z.object({
-    id, name, vocabulary: z.record(z.string()),
-    stages: z.array(z.object({ id, name, position }))
+    id, name, slug, description, is_default, is_archived, position,
+    vocabulary: z.record(z.string()),
+    // #4667: as DEFINIÇÕES dos campos personalizados, nunca valor de negócio.
+    campos: z.array(z.object({
+      key, label, type, escopo,
+      options: z.array(z.object({ value, label })).optional(),
+    })),
   }))
 })
 ```
+
+As etapas não vêm aqui: saem de `crm_list_stages`. A forma que vale é a do `map` em
+`lib/mcp/tools/pipelines.ts`; em dúvida, leia lá. Desde a #4667, `crm_update_lead` e
+`crm_create_lead` chamados pelo agente de IA recusam, em `custom_fields`, a chave que o funil
+não declara (`lib/mcp/conferencia-de-campos.ts`).
 
 ### 3.2 Write tools (mutations, role >= manager)
 
@@ -274,9 +284,29 @@ outputSchema: z.object({
 ```ts
 inputSchema: z.object({
   conversation_id: z.string().uuid(),
-  body: z.string().min(1).max(4096),
-  media_url: z.string().url().optional()
+  body: z.string().min(1).max(4096).optional(),
+  type: z.enum(['text', 'image', 'audio', 'document', 'sticker', 'video', 'location', 'contact']).default('text'),
+  media_url: z.string().url().optional(),
+  media_storage_path: z.string().optional(),   // #5034
+  media_filename: z.string().optional(),       // #5034 (caminho e nome ficam fora da auditoria)
+  media_mime: z.string().optional()
 })
+// Precisa de body, media_url ou media_storage_path.
+```
+
+**Arquivo sem link público (#5034)**: suba o arquivo com `POST /api/v1/conversations/{id}/media`
+(multipart, campo `file`; sessão do navegador ou token de integração com escrita — o token OAuth do MCP
+não serve para a rota REST). A resposta (`data`) traz `storage_path`, `kind`, `media_mime` e `media_filename` (o nome original). Envie com:
+
+```ts
+{ conversation_id, type: kind /* 'image' | 'video' | 'audio' | 'document' */,
+  media_storage_path: storage_path, media_mime, body /* legenda, opcional */,
+  ...(media_filename ? { media_filename } : {}) /* o nome da resposta do upload; null não é aceito, então fica de fora */ }
+```
+
+O envio confere que o arquivo é da organização E desta conversa; caminho de outra conversa é recusado.
+
+```ts
 
 outputSchema: z.object({
   message_id: z.string().uuid(),
@@ -356,6 +386,27 @@ outputSchema: z.object({
 6. Resposta `next_action` é uma string sugerindo ao agente o que dizer ao usuário ("Vou conectar você com um atendente humano agora") — agente integra na resposta final
 
 ---
+
+### 3.4 Editar os assistentes de IA (só admin, por aplicativo conectado)
+
+Para o dono corrigir pelo ChatGPT como o assistente responde. Todas pedem papel `admin`, são
+`apenasHumano` (o turno do agente não as monta) e ficam fora dos pacotes do seletor do assistente
+(`lib/mcp/tools/ferramentas-do-administrador.ts`). As regras são as da tela, em
+`lib/ai/agents/edicao.ts` e `lib/ai/agents/teste-da-versao.ts`.
+
+| Tool | Escopo | O que faz |
+|---|---|---|
+| `crm_list_ai_agents` | `mcp:read` | assistentes, canal, versão publicada e rascunho |
+| `crm_get_ai_agent_version` | `mcp:read` | instruções e configuração de uma versão (`publicada`, `rascunho` ou número) |
+| `crm_get_ai_agent_turn` | `mcp:read` | últimos turnos de uma conversa: versão usada, ferramentas, interrupção, mensagens |
+| `crm_save_ai_agent_draft` | `mcp:write` | correção como RASCUNHO, por troca exata / anexar / texto inteiro, em 1–5 assistentes |
+| `crm_test_ai_agent_version` | `mcp:write` | prévia (`is_dry_run`), nada é enviado |
+| `crm_publish_ai_agent_version` | `mcp:write` | `critico` → `destructiveHint`; número explícito, devolve o anterior |
+| `crm_rollback_ai_agent` | `mcp:write` | `critico`; clona uma versão antiga e publica |
+
+O servidor manda a cada cliente as dicas do protocolo (`annotations`) a partir do risco do
+catálogo: `readOnlyHint` para leitura, `destructiveHint` para `critico` (`dicasDaFerramenta`,
+`lib/mcp/server.ts`). O limite do texto de instruções é o da tela (20.000 caracteres).
 
 ## 4. Tool selection (per agent)
 
