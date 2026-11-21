@@ -32,6 +32,8 @@ import { COLUNAS_DA_ORIGEM, transfereParaOFunil } from "@/lib/leads/transfere-pa
 // O degrau compartilhado com a captação por webhook (#3101): "o negócio aberto
 // do contato neste funil" é UMA pergunta, com um dono só.
 import { negocioAbertoDoContato } from "@/lib/leads/negocio-aberto-do-contato";
+// O recorte do CASO (#4900): as duas regras que valem só no gatilho de caso.
+import { ehGatilhoDeCaso } from "@/lib/schemas/webhooks";
 
 /** O que a linha do tempo diz de quem levou o card — o roteador de intenção diz outra coisa. */
 const RAZAO_DA_AUTOMACAO = "Levado para outro funil pela automação";
@@ -336,6 +338,27 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
       return { type: "create_or_move_lead", status: "success", detail: { moved: lead.id } };
     }
     if (contact) {
+      // ── O CASO (#4900): DUAS RÉGUAS SÓ DELE ─────────────────────────────
+      //
+      // O gatilho de caso é o único que nasce de um fato da CENTRAL e aponta
+      // para o funil de ATENDIMENTO. Duas coisas que valem em todos os outros
+      // gatilhos de contato estão erradas aqui, e o recorte é estreito de
+      // propósito (`ehGatilhoDeCaso`), como o de `lead.tag_added` acima:
+      //
+      //   1. NADA DE TRANSFERIR O CARD DE OUTRO FUNIL. O contato quase sempre
+      //      tem um card ABERTO em Vendas quando abre um caso no atendimento.
+      //      A regra de `negocioAbertoEmOutroFunil` levaria (clonando e
+      //      encerrando a origem) o card de vendas para o funil de atendimento:
+      //      o board de quem vende esvaziaria a cada caso aberto. O card do
+      //      atendimento é OUTRO card, criado no funil da regra.
+      //   2. MESMA ETAPA É NADA A FAZER. O mesmo evento pode chegar duas vezes
+      //      (o dreno re-tenta uma entrega que já moveu o card, o Reenviar da
+      //      aba Atividade reenfileira a linha). `moveLeadHandler` não é no-op
+      //      na mesma etapa: ele reescreve `updated_at`, reordena e emite
+      //      `lead.stage_changed`. Aqui o card já está onde a regra manda, e a
+      //      resposta diz isso (`ja_na_etapa`) sem escrever nada — é a
+      //      idempotência que o gatilho de caso promete.
+      const deCaso = ehGatilhoDeCaso(ctx.event?.event_type);
       // Gatilho de CONTATO não traz lead no contexto (`lib/automation/engine.ts`),
       // e sem isto a ação chamada de "criar/mover" só sabia criar: o contato
       // ganhava um negócio novo a cada vez que a regra rodava (#958). O negócio
@@ -343,6 +366,10 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
       // fora, pela mesma regra que recusa mover entre funis.
       const existente = await negocioAbertoDoContato(ctx.admin, ctx.organizationId, contact.id, pipelineId);
       if (existente) {
+        if (deCaso && existente.stage_id === stageId) {
+          publicaNoContexto(ctx, { ...existente }, contact.id);
+          return { type: "create_or_move_lead", status: "success", detail: { ja_na_etapa: existente.id } };
+        }
         const movido = await moveLeadHandler(ctx.admin, handlerCtx, existente.id, {
           to_stage_id: stageId,
           ...(motivoDaPerda ? { lost_reason: motivoDaPerda } : {}),
@@ -363,7 +390,9 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
       // `lib/leads/clonar-para-funil.ts` decide o que se copia e qual etapa
       // recebe o clone; `encerraDemanda` fecha a origem). Duas implementações de
       // "trocar de funil" divergiriam na primeira mudança de uma delas.
-      const emOutroFunil = await negocioAbertoEmOutroFunil(ctx, contact.id, pipelineId);
+      const emOutroFunil = deCaso
+        ? null
+        : await negocioAbertoEmOutroFunil(ctx, contact.id, pipelineId);
       if (emOutroFunil) {
         const transferencia = await transfereParaOFunil(ctx.admin, ctx.organizationId, handlerCtx, emOutroFunil, pipelineId, stageId, RAZAO_DA_AUTOMACAO);
         if (!transferencia.ok) {
