@@ -165,7 +165,14 @@ describe("#4191 — classificar como não comercial", () => {
       expect.objectContaining({
         action: "lead.non_commercial",
         resourceId: LEAD,
-        metadata: { motivo: "golpe" },
+        resourceType: "crm_lead",
+        requestId: "req-1",
+        // ⚠️ `api_audit_log` é append-only e a cascata de LGPD não o alcança, e o
+        // motivo é texto livre escrito pela equipe (cabe CPF, nome, o que o
+        // contato disse). O audit registra QUE houve motivo e o tamanho, nunca a
+        // frase: o texto fica só na coluna (que o gatilho da 9431 redige) e na
+        // timeline (que a cascata apaga).
+        metadata: { motivo_presente: true, motivo_caracteres: 5 },
       }),
     );
   });

@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { apiClient } from "@/lib/api/client";
-import { traduzir } from "@/lib/i18n/dicionario";
+import { DICIONARIO, traduzir } from "@/lib/i18n/dicionario";
 import type { Lead } from "@/lib/types/leads";
 
 import { LeadDossier } from "./LeadDossier";
@@ -168,9 +168,7 @@ describe("#4191 item 1 — a ficha do negócio chama a rota", () => {
   it("o texto da tela está no dicionário — a tecla portuguesa traduz para espanhol", () => {
     for (const chave of [
       "Classificação comercial",
-      // "Comercial" fica de fora da lista de tradução de propósito: a palavra é
-      // a mesma em espanhol, então `traduzir` devolve a própria chave e o caso
-      // não mediria nada. O bloco da tela já a exibe (`toHaveTextContent` acima).
+      "Comercial",
       "Não comercial",
       "Classificar como não comercial",
       "Restaurar como comercial",
@@ -186,7 +184,12 @@ describe("#4191 item 1 — a ficha do negócio chama a rota", () => {
       "Escreva o que decide o caso (golpe, spam, contato sem finalidade comercial…).",
       "Não foi possível confirmar o resultado. Recarregue antes de tentar novamente.",
     ]) {
-      expect(traduzir(chave, "es"), `sem espanhol: ${chave}`).not.toBe(chave);
+      // A régua é TER ENTRADA explícita em espanhol, não "a string muda de
+      // forma": há palavra idêntica nos dois idiomas ("Cancelar", "Comercial"),
+      // e exigir diferença empurraria tradução errada só para o teste passar.
+      // Chave ausente do dicionário, ou sem `es`, continua vermelho.
+      expect(DICIONARIO[chave]?.es, `sem espanhol: ${chave}`).toBeTruthy();
+      expect(traduzir(chave, "es")).toBe(DICIONARIO[chave]?.es);
     }
   });
 });
