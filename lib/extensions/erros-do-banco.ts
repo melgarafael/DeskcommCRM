@@ -8,6 +8,10 @@
  * tabela. Módulo puro, sem cliente de banco.
  */
 export const SQL_ERRORS: Readonly<Record<string, { message: string; status: number }>> = {
+  extension_events_forbidden: {
+    message: "Este módulo não pode ler esses avisos.",
+    status: 403,
+  },
   extension_forbidden: {
     message: "Seu acesso mudou. Entre novamente para continuar.",
     status: 403,
@@ -80,6 +84,22 @@ export const SQL_ERRORS: Readonly<Record<string, { message: string; status: numb
   },
   extension_revision_conflict: {
     message: "A configuração mudou em outra sessão. Recarregue antes de salvar.",
+    status: 409,
+  },
+  extension_consent_not_applicable: {
+    message: "Só um módulo conectado tem áreas para consentir.",
+    status: 409,
+  },
+  extension_not_activated: {
+    message: "Ative o módulo nesta organização antes de consentir áreas.",
+    status: 409,
+  },
+  extension_area_not_declared: {
+    message: "O módulo não declarou esta área no pacote. Ela não pode ser consentida.",
+    status: 409,
+  },
+  extension_area_requires_admin: {
+    message: "Só um administrador da organização pode consentir esta área.",
     status: 409,
   },
   extension_active_limit: {

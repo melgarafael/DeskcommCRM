@@ -996,6 +996,13 @@ export const DICIONARIO: Traducoes = {
     },
   "Enviar o telefone do contato criptografado": { es: "Enviar el teléfono del contacto cifrado" },
   "Enviar vendas pelo canal da conversa": { es: "Enviar ventas por el canal de la conversación" },
+  "Bloquear chamadas recebidas": { es: "Bloquear llamadas recibidas" },
+  "Quando alguém liga por voz para o WhatsApp dos seus números, a chamada é recusada sozinha. As mensagens continuam chegando normalmente. Vem desligado: a chamada toca como antes.": {
+    es: "Cuando alguien llama por voz al WhatsApp de tus números, la llamada se rechaza sola. Los mensajes siguen llegando con normalidad. Viene desactivado: la llamada suena como antes.",
+  },
+  "Recusa sozinha a ligação de voz que chega no WhatsApp dos números da empresa.": {
+    es: "Rechaza sola la llamada de voz que llega al WhatsApp de los números de la empresa.",
+  },
   "Sem conexão direta com a Meta, a venda de quem veio de anúncio pode ir pelo canal intermediado do WhatsApp, quando ele já liga o seu conjunto de dados da Meta ao número. Saem para o provedor do canal o valor, a moeda, o telefone do cliente e a conversa. Vem desligado: ligue só se a sua política de privacidade cobre esse uso.":
     {
       es: "Sin conexión directa con Meta, la venta de quien vino de un anuncio puede ir por el canal intermediado de WhatsApp, cuando este ya vincula tu conjunto de datos de Meta al número. Al proveedor del canal salen el valor, la moneda, el teléfono del cliente y la conversación. Viene desactivado: actívalo solo si tu política de privacidad cubre ese uso.",
@@ -1521,6 +1528,7 @@ export const DICIONARIO: Traducoes = {
     es: "Todavía no se importó nada: la revisión no crea una campaña.",
   },
   "Suas campanhas": { es: "Tus campañas" },
+  "Sem nicho": { es: "Sin nicho" },
   "empresas": { es: "empresas" },
   "Sua próxima conversa começa aqui": { es: "Tu próxima conversación comienza aquí" },
   "Escolha um segmento e uma região. Depois da pesquisa, defina como a IA deve abordar e o que precisa confirmar para qualificar.": { es: "Elige un segmento y una región. Después de la búsqueda, define cómo debe contactar la IA y qué necesita confirmar para calificar." },
@@ -3300,6 +3308,9 @@ export const DICIONARIO: Traducoes = {
   "Grátis": { es: "Gratis" },
   "Este modelo é a variante de lote e não responde no chat. Escolha outro da lista.": {
     es: "Este modelo es la variante por lotes y no responde en el chat. Elige otro de la lista.",
+  },
+  "Este modelo foi aposentado pelo provedor. Escolha outro modelo.": {
+    es: "El proveedor ha retirado este modelo. Elige otro modelo.",
   },
   "Digite o identificador do modelo": { es: "Escribe el identificador del modelo" },
   "Conecte a assinatura do ChatGPT em IA › Credenciais para listar os modelos.": {
@@ -8893,6 +8904,10 @@ export const DICIONARIO: Traducoes = {
   "Token revogado.": { es: "Token revocado." },
   "Módulo": { es: "Módulo" },
   "Módulo conectado": { es: "Módulo conectado" },
+  "Abrir ao lado": { es: "Abrir al lado" },
+  "Escolha um módulo": { es: "Elige un módulo" },
+  "Abrindo o módulo...": { es: "Abriendo el módulo..." },
+  "Não foi possível abrir este módulo.": { es: "No se pudo abrir este módulo." },
   "Módulo desativado e token revogado.": { es: "Módulo desactivado y token revocado." },
   "Saia do acompanhamento para desativar módulos.": { es: "Sal del modo de seguimiento para desactivar módulos." },
   "O escopo actor:module é reservado aos módulos conectados.": { es: "El alcance actor:module está reservado a los módulos conectados." },
@@ -16237,8 +16252,13 @@ export const DICIONARIO: Traducoes = {
   "IA, depois time humano": { es: "La IA y después el equipo humano" },
   "Agente de voz": { es: "Agente de voz" },
   "Nenhum agente": { es: "Ningún agente" },
-  "Nenhum agente de voz publicado ainda — crie um em IA › Agentes.": {
-    es: "Aún no hay agentes de voz publicados. Crea uno en IA › Agentes.",
+  "Novo agente de voz": { es: "Nuevo agente de voz" },
+  "Criar agente de voz": { es: "Crear agente de voz" },
+  "Ative um agente de voz para selecioná-lo aqui.": {
+    es: "Activa un agente de voz para seleccionarlo aquí.",
+  },
+  "Depois de criar, configure e ative o agente no editor de voz.": {
+    es: "Después de crearlo, configura y activa el agente en el editor de voz.",
   },
   "Sem rótulo": { es: "Sin etiqueta" },
 
@@ -16601,6 +16621,34 @@ export const DICIONARIO: Traducoes = {
   "Não consegui copiar — selecione e copie o segredo manualmente.": { es: "No pude copiar. Selecciona el secreto y cópialo manualmente." },
   "Só um módulo conectado tem o que ligar ou desligar nesta instalação.": { es: "Solo un módulo conectado tiene algo que activar o desactivar en esta instalación." },
   "Módulo {nome}": { es: "Módulo {nome}" },
+  "Áreas do CRM que este módulo pode usar": { es: "Áreas del CRM que este módulo puede usar" },
+  "O módulo só alcança o que o pacote pede e o que você marcar aqui. Tirar uma marca vale na hora.": { es: "El módulo solo alcanza lo que el paquete pide y lo que marques aquí. Quitar una marca vale al instante." },
+  "Este módulo não pede acesso a nenhuma área do CRM.": { es: "Este módulo no pide acceso a ninguna área del CRM." },
+  "Configuração e agentes de IA são áreas sensíveis: mexem no funcionamento da organização e do atendimento. Libere só para um módulo em que você confia.": { es: "Configuración y agentes de IA son áreas sensibles: afectan el funcionamiento de la organización y de la atención. Libéralas solo para un módulo en el que confíes." },
+  "Sensível": { es: "Sensible" },
+  "Salvar áreas": { es: "Guardar áreas" },
+  "Ative o módulo nesta organização para escolher as áreas.": { es: "Activa el módulo en esta organización para elegir las áreas." },
+  "Saia do acompanhamento para alterar o consentimento.": { es: "Sal del acompañamiento para cambiar el consentimiento." },
+  "Só um administrador da organização pode alterar este consentimento.": { es: "Solo un administrador de la organización puede cambiar este consentimiento." },
+  "Áreas do módulo salvas.": { es: "Áreas del módulo guardadas." },
+  "Ver seus contatos: nomes, telefones, etiquetas e empresas.": { es: "Ver tus contactos: nombres, teléfonos, etiquetas y empresas." },
+  "Criar e alterar contatos, etiquetas e empresas.": { es: "Crear y modificar contactos, etiquetas y empresas." },
+  "Ver os negócios, as propostas e a previsão de vendas.": { es: "Ver los negocios, las propuestas y la previsión de ventas." },
+  "Criar e alterar negócios e propostas.": { es: "Crear y modificar negocios y propuestas." },
+  "Ler as conversas com seus clientes e as notas internas.": { es: "Leer las conversaciones con tus clientes y las notas internas." },
+  "Escrever nas conversas, criar notas e passar atendimentos adiante.": { es: "Escribir en las conversaciones, crear notas y transferir atenciones." },
+  "Ver a agenda e os agendamentos.": { es: "Ver la agenda y las citas." },
+  "Marcar, mudar e cancelar agendamentos.": { es: "Agendar, cambiar y cancelar citas." },
+  "Ver os funis, as etapas e as regras de automação.": { es: "Ver los embudos, las etapas y las reglas de automatización." },
+  "Alterar os funis e as etapas.": { es: "Modificar los embudos y las etapas." },
+  "Ver como seus agentes de IA estão configurados: orientações, estilo, regras e memória.": { es: "Ver cómo están configurados tus agentes de IA: orientaciones, estilo, reglas y memoria." },
+  "Alterar seus agentes de IA: o que eles dizem e como decidem.": { es: "Modificar tus agentes de IA: lo que dicen y cómo deciden." },
+  "Ver produtos, serviços e modelos de mensagem.": { es: "Ver productos, servicios y plantillas de mensaje." },
+  "Criar e alterar produtos, serviços e modelos de mensagem.": { es: "Crear y modificar productos, servicios y plantillas de mensaje." },
+  "Ver as configurações da organização e da equipe.": { es: "Ver la configuración de la organización y del equipo." },
+  "Alterar as configurações da organização e da equipe.": { es: "Modificar la configuración de la organización y del equipo." },
+  "Ver relatórios e números de desempenho.": { es: "Ver informes y cifras de desempeño." },
+  "Alterar relatórios e análises.": { es: "Modificar informes y análisis." },
   "Confira o catálogo admitido e tente a instalação novamente.": { es: "Revisa el catálogo admitido e intenta instalar de nuevo." },
   "Revise o arquivo ou a configuração indicada e tente novamente.": { es: "Revisa el archivo o la configuración indicada e inténtalo de nuevo." },
   "Verificar instalação": { es: "Verificar instalación" },
@@ -16999,6 +17047,22 @@ export const DICIONARIO: Traducoes = {
   "{data} às {hora} — {motivo}": { es: "{data} a las {hora} — {motivo}" },
   "A remarcação não foi aceita — o compromisso voltou para {data}.": { es: "No se aceptó la reprogramación: la cita volvió a {data}." },
   "Não dá para remarcar para esse horário — {motivo}.": { es: "No se puede reprogramar para ese horario: {motivo}." },
+  // A borda de baixo do card (#4450): mudar só o tempo do compromisso.
+  "Arraste para mudar a duração": { es: "Arrastra para cambiar la duración" },
+  "Mudar a duração de": { es: "Cambiar la duración de" },
+  "Se a agenda estiver ligada ao Google Agenda, quem foi convidado pode receber um e-mail de atualização do Google.": {
+    es: "Si la agenda está conectada a Google Calendar, los invitados pueden recibir un correo de actualización de Google.",
+  },
+  "Alterar duração": { es: "Cambiar duración" },
+  "Duração alterada.": { es: "Duración cambiada." },
+  "A duração de {nome} não foi alterada — {motivo}.": { es: "No se cambió la duración de {nome}: {motivo}." },
+  "não consegui salvar agora": { es: "no pude guardar ahora" },
+  "Este compromisso foi alterado por outra pessoa enquanto você ajustava — agora vai de {inicio} a {fim}. Ajuste de novo se ainda precisar.": {
+    es: "Otra persona cambió esta cita mientras la ajustabas: ahora va de {inicio} a {fim}. Ajústala de nuevo si todavía lo necesitas.",
+  },
+  "Este compromisso foi alterado por outra pessoa enquanto você ajustava. Confira o horário atual dele antes de ajustar de novo.": {
+    es: "Otra persona cambió esta cita mientras la ajustabas. Revisa su horario actual antes de ajustarla de nuevo.",
+  },
   "o compromisso": { es: "la cita" },
   "Entendi": { es: "Entendido" },
   "e-mail do convidado inválido": { es: "correo del invitado no válido" },
@@ -17300,18 +17364,32 @@ export const DICIONARIO: Traducoes = {
     { es: "Siempre el número de la empresa" },
   "Quem está com o atendimento":
     { es: "Quien está a cargo de la conversación" },
-  "O aviso vai para quem está com a conversa; se essa pessoa não tiver WhatsApp cadastrado, para quem é dono do negócio; depois, para o dono da carteira do contato. Se ninguém tiver, vai para o número acima.":
-    { es: "El aviso va a quien está a cargo de la conversación; si esa persona no tiene un WhatsApp registrado, a quien es dueño del negocio; luego, al dueño de la cartera del contacto. Si nadie lo tiene, va al número de arriba." },
+  "O aviso vai para quem está com a conversa; se essa pessoa não tiver WhatsApp cadastrado, para quem é dono do negócio; depois, para o dono da carteira do contato. Se ninguém tiver, vai para o número acima. Se nessa ordem a vez chegar a alguém com \"Não enviar aviso de caso\" ligado — mesmo depois de pular quem não tem número —, o aviso do caso não sai para ninguém, nem para o número acima.":
+    { es: "El aviso va a quien está a cargo de la conversación; si esa persona no tiene un WhatsApp registrado, a quien es dueño del negocio; luego, al dueño de la cartera del contacto. Si nadie lo tiene, va al número de arriba. Si en ese orden el turno llega a alguien con \"No enviar aviso de caso\" activado —incluso después de saltear a quien no tiene número—, el aviso del caso no sale para nadie, ni para el número de arriba." },
   "Todo aviso vai para o número acima, como sempre foi.":
     { es: "Todos los avisos van al número de arriba, como siempre." },
   "WhatsApp de cada pessoa da equipe":
     { es: "WhatsApp de cada persona del equipo" },
-  "É este número que recebe o aviso quando a pessoa é a responsável. Sem número, ela é pulada — o aviso não fica sem destinatário.":
-    { es: "Es este número el que recibe el aviso cuando la persona es la responsable. Sin número, se la saltea: el aviso nunca queda sin destinatario." },
+  "É este número que recebe o aviso quando a pessoa é a responsável. Sem número, ela é pulada e o aviso segue para o próximo da ordem. Com \"Não enviar aviso de caso\" ligado, o aviso do caso para nela e não sai.":
+    { es: "Es este número el que recibe el aviso cuando la persona es la responsable. Sin número, se la saltea y el aviso sigue al siguiente en el orden. Con \"No enviar aviso de caso\" activado, el aviso del caso se detiene en ella y no sale." },
   "Ainda não há outras pessoas nesta organização.":
     { es: "Todavía no hay otras personas en esta organización." },
   "Ninguém da equipe tem WhatsApp cadastrado: os avisos vão continuar saindo para o número acima.":
     { es: "Nadie del equipo tiene WhatsApp registrado: los avisos van a seguir saliendo al número de arriba." },
+  "Ninguém da equipe tem WhatsApp cadastrado: os avisos vão continuar saindo para o número acima, menos os casos de quem está com \"Não enviar aviso de caso\" ligado.":
+    { es: "Nadie del equipo tiene WhatsApp registrado: los avisos van a seguir saliendo al número de arriba, salvo los casos de quien tiene \"No enviar aviso de caso\" activado." },
+  "Não enviar aviso de caso":
+    { es: "No enviar aviso de caso" },
+  "Os casos desta pessoa não geram aviso no WhatsApp. Continuam no painel Casos.":
+    { es: "Los casos de esta persona no generan aviso en WhatsApp. Siguen en el panel Casos." },
+  "Não foi possível ler quem está com \"Não enviar aviso de caso\" ligado. Atualize a página para mudar essa opção; salvar agora não mexe nela.":
+    { es: "No fue posible leer quién tiene \"No enviar aviso de caso\" activado. Actualiza la página para cambiar esa opción; guardar ahora no la modifica." },
+  "Quando a vez do aviso chega a alguém com \"Não enviar aviso de caso\" ligado, nenhuma linha entra aqui: o caso fica só no painel Casos. O que já estava na lista continua.":
+    { es: "Cuando el turno del aviso llega a alguien con \"No enviar aviso de caso\" activado, no entra ninguna línea aquí: el caso queda solo en el panel Casos. Lo que ya estaba en la lista sigue." },
+  "Não foi possível salvar \"Não enviar aviso de caso\". Tente de novo.":
+    { es: "No fue posible guardar \"No enviar aviso de caso\". Inténtalo de nuevo." },
+  "O resto foi salvo, mas a marca \"Não enviar aviso de caso\" não. Salve de novo.":
+    { es: "El resto se guardó, pero la opción \"No enviar aviso de caso\" no. Guarda de nuevo." },
   "Não foi possível ler os números da equipe agora. Atualize a página antes de salvar: sem eles a tela não sabe para quem os avisos vão.":
     { es: "No fue posible leer los números del equipo ahora. Actualiza la página antes de guardar: sin ellos la pantalla no sabe a quién van los avisos." },
   "Enquanto ninguém puder abrir um caso, nenhum aviso vai sair. Ligue a opção de abrir casos na configuração do assistente.":
@@ -21149,6 +21227,8 @@ export const DICIONARIO: Traducoes = {
   "Também me lembrar antes de cada horário": { es: "Recordarme también antes de cada horario" },
   "Nos mesmos horários do lembrete do cliente, definidos em cada tipo de atendimento (por exemplo, 1 dia e 1 hora antes). Se a reunião for pelo Google Meet, o link vai junto.": { es: "En los mismos horarios del recordatorio del cliente, definidos en cada tipo de atención (por ejemplo, 1 día y 1 hora antes). Si la reunión es por Google Meet, el enlace va incluido." },
   "Ligue os avisos de agendamento acima para usar esta opção.": { es: "Activa los avisos de citas arriba para usar esta opción." },
+  "Enviar o resumo do dia só quando houver agendamento": { es: "Enviar el resumen del día solo cuando haya citas" },
+  "No dia sem nenhum horário, o resumo das 7h não sai. Se algo foi marcado, remarcado ou cancelado durante a noite, ele sai mesmo assim. Os avisos de cada horário continuam chegando.": { es: "En el día sin ninguna cita, el resumen de las 7h no se envía. Si algo se agendó, reprogramó o canceló durante la noche, se envía igual. Los avisos de cada cita siguen llegando." },
   "Salve primeiro o número que recebe os avisos.": { es: "Guarda primero el número que recibe los avisos." },
   "lembrete de compromisso": { es: "recordatorio de cita" },
   "em 1 dia": { es: "en 1 día" },
@@ -22274,6 +22354,20 @@ export const DICIONARIO: Traducoes = {
   "Ligado, feriado nacional conta como dia fechado: quem escrever recebe a mensagem de fora do horário e o agente responde no próximo dia útil. Desligado, o feriado é um dia comum.": {
     es: "Activado, el feriado nacional cuenta como día cerrado: quien escriba recibe el mensaje de fuera de horario y el agente responde el próximo día hábil. Desactivado, el feriado es un día común.",
   },
+  "O serviço deste módulo não respondeu": { es: "El servicio de este módulo no respondió" },
+  "O resto do CRM continua funcionando. Tente de novo em instantes.": { es: "El resto del CRM sigue funcionando. Inténtalo de nuevo en unos instantes." },
+  "Suspenso: este módulo foi feito para outra versão do CRM. Ele some do menu e o acesso dele está recusado até você instalar uma versão compatível.": { es: "Suspendido: este módulo fue hecho para otra versión del CRM. Desaparece del menú y su acceso está rechazado hasta que instales una versión compatible." },
+  "Suspenso: não foi possível conferir se este módulo é compatível com esta versão do CRM. Por segurança, o acesso dele está recusado.": { es: "Suspendido: no se pudo comprobar si este módulo es compatible con esta versión del CRM. Por seguridad, su acceso está rechazado." },
+  "Suspenso: este módulo não é compatível com esta versão do CRM. Ele some do menu e o acesso dele está recusado.": { es: "Suspendido: este módulo no es compatible con esta versión del CRM. Desaparece del menú y su acceso está rechazado." },
+  "Leitura dos avisos pelo módulo": { es: "Lectura de los avisos por el módulo" },
+  "Empresa {n}": { es: "Empresa {n}" },
+  "ainda não leu nenhum aviso": { es: "aún no ha leído ningún aviso" },
+  "último aviso lido": { es: "último aviso leído" },
+  "em dia": { es: "al día" },
+  "{n} aviso(s) por ler": { es: "{n} aviso(s) por leer" },
+  "Atrasado": { es: "Atrasado" },
+  "Este módulo ainda não apagou os dados de {n} contato(s) anonimizado(s).": { es: "Este módulo aún no ha borrado los datos de {n} contacto(s) anonimizado(s)." },
+  "Faz mais de 24 horas que o módulo não busca os avisos, e a LGPD manda apagar esses dados.": { es: "Hace más de 24 horas que el módulo no busca los avisos, y la LGPD exige borrar esos datos." },
   // Abrir a conversa pelo canal escolhido quando ele não serve (#3483).
   "Este canal está desligado ou fora do ar. Reative a conexão ou escolha outro canal.": { es: "Este canal está desactivado o fuera de línea. Reactiva la conexión o elige otro canal." },
   // O seletor único de variável (#3687): o catálogo é o mesmo nas quatro telas,
@@ -22978,6 +23072,9 @@ export const DICIONARIO: Traducoes = {
   "Levando…": { es: "Llevando…" },
   "negócios levados.": { es: "negocios llevados." },
   "Não foram levados:": { es: "No se llevaron:" },
+  "O negócio já foi criado no funil de destino. Confira-o antes de tentar novamente.": {
+    es: "El negocio ya se creó en el embudo de destino. Revíselo antes de volver a intentarlo.",
+  },
   "levados para": { es: "llevados a" },
   "Não foi possível levar este negócio.": { es: "No fue posible llevar este negocio." },
   "ficaram de fora pelo limite de 50 por vez. Selecione-os de novo para levar.": {

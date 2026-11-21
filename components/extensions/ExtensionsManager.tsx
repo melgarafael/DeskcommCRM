@@ -12,6 +12,7 @@ import { useIdioma } from "@/lib/i18n/IdiomaProvider";
 import { randomId } from "@/lib/random-id";
 import { ehTrocaParaVersaoMenor } from "@/lib/extensions/versao";
 import type { CatalogEntry, ExtensionConfiguration } from "@/lib/extensions/manifest";
+import type { PermissaoDeArea } from "@/lib/extensions/portas-legiveis";
 import type {
   ExtensionListView,
   ExtensionOperationView,
@@ -667,6 +668,60 @@ export function ExtensionsManager({
     [carregar, snapshotFresh, staleInstallation, t],
   );
 
+  /**
+   * Grava as áreas que a organização consente ao módulo `connected`. Fora de `runMutation` de propósito:
+   * a função do banco não tem livro de operações, e quem protege a repetição é a revisão esperada (o
+   * mesmo pedido repetido depois de aplicado recusa com `extension_revision_conflict`). Sucesso e erro
+   * saem por aviso, porque a recarga muda a revisão e o card remonta, e uma frase local se perderia.
+   */
+  const saveConsent = useCallback(
+    async (extension: InstalledExtensionView, areas: PermissaoDeArea[]): Promise<boolean> => {
+      if (!snapshotFresh) {
+        toast.error(t("Atualize o estado das extensões antes de enviar um novo pedido."));
+        return false;
+      }
+      const result = await requestExtensionApi<unknown>(
+        `/api/v1/extensions/${encodeURIComponent(extension.id)}/consentimento`,
+        {
+          method: "PUT",
+          headers: {
+            "content-type": "application/json",
+            [EXPECTED_ORGANIZATION_HEADER]: organizationId,
+          },
+          body: JSON.stringify({ expected_revision: extension.revision, areas }),
+        },
+      );
+      if (!result.ok) {
+        if (result.error.code === "extension_context_changed") {
+          invalidateContext(result.error.message);
+          return false;
+        }
+        if (result.status === 409 && result.error.code === "extension_revision_conflict") {
+          await carregar(true);
+          toast.error(
+            t(
+              "Outra pessoa alterou esta extensão. Recarregamos o valor atual; revise antes de salvar novamente.",
+            ),
+          );
+          return false;
+        }
+        if (result.error.code === "extension_removed") {
+          await carregar(true);
+        }
+        if (result.uncertain) {
+          // Sem resposta: pode ter gravado. Recarregar mostra o que ficou valendo.
+          await carregar(true);
+        }
+        toast.error(t(result.error.message));
+        return false;
+      }
+      await carregar(true);
+      toast.success(t("Áreas do módulo salvas."));
+      return true;
+    },
+    [carregar, invalidateContext, organizationId, snapshotFresh, t],
+  );
+
   const configure = useCallback(
     async (
       extension: InstalledExtensionView,
@@ -1146,6 +1201,7 @@ export function ExtensionsManager({
                       onRemove={(alvo) => changeInstallation(alvo, "remove")}
                       onSwitch={switchInstallation}
                       onRotateSecret={rotateSecret}
+                      onConsent={saveConsent}
                     />
                   ))}
                 </div>

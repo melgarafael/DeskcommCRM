@@ -34,6 +34,9 @@ export const CLASSES_DE_GRUPO: Readonly<Record<NavGroupId, string>> = Object.fre
   canais: "nav-grupo-canais",
   analise: "nav-grupo-analise",
   organizacao: "nav-grupo-organizacao",
+  // O grupo GERADO "Módulos" (Spec 33, F4): só aparece no menu quando a organização tem módulo
+  // conectado ativo, e então leva a mesma convenção dos outros grupos.
+  modulos: "nav-grupo-modulos",
 });
 
 const PREFIXO_DO_ITEM = "nav-item-";

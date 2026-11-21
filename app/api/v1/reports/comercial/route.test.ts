@@ -87,7 +87,7 @@ function makeDb(linhas: Record<string, unknown>[], opts: { semData?: number } = 
   return { db, consultas };
 }
 
-function authOk() {
+function authOk(timezone = "America/Sao_Paulo") {
   vi.mocked(requireRole).mockResolvedValue({
     ok: true,
     user: { id: "u1", idioma: "pt-BR", is_platform_admin: false, support: false },
@@ -95,7 +95,7 @@ function authOk() {
       orgId: ORG,
       name: "Empresa",
       role: "viewer",
-      timezone: "America/Sao_Paulo",
+      timezone,
       currency: "BRL",
     },
   } as never);
@@ -161,6 +161,19 @@ describe("GET /api/v1/reports/comercial", () => {
     expect(primeira).toContain("eq:status=won");
     expect(primeira).toContain("gte:closed_at=2026-09-01T03:00:00.000Z");
     expect(primeira).toContain("lt:closed_at=2026-10-01T03:00:00.000Z");
+  });
+
+  it("starts the sales query at the first local hour when midnight is skipped", async () => {
+    authOk("America/Santiago");
+    const { consultas } = makeDb([]);
+
+    const { GET } = await import("./route");
+    const res = await GET(pedir("?de=2026-09-06&ate=2026-09-06"));
+
+    expect(res.status).toBe(200);
+    // In Santiago, September 6 started at 01:00 local time (04:00 UTC).
+    expect(consultas[0]?.ops).toContain("gte:closed_at=2026-09-06T04:00:00.000Z");
+    expect(consultas[0]?.ops).toContain("lt:closed_at=2026-09-07T03:00:00.000Z");
   });
 
   it("(c) período vazio devolve ZEROS explícitos e 200 — não erro", async () => {

@@ -119,6 +119,11 @@ export interface MembroDoAvisoNaTela {
   nome: string | null;
   /** `null` = a pessoa não cadastrou. É ele que faz o elo cair para o próximo. */
   whatsapp: string | null;
+  /**
+   * `true` = "Não enviar aviso de caso" (#4989): a cadeia PARA nesta pessoa.
+   * Opcional porque um pacote de JS antigo não tem o campo; ausente = desligado.
+   */
+  nao_avisar?: boolean;
 }
 
 /** A configuração como ela está no banco, projetada para a tela. */

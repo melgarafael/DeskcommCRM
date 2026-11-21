@@ -28,9 +28,16 @@ const patchSchema = z.object({
  * empresa vê nem liga Propostas. 404, o mesmo de `seModuloDesligado` do banco
  * externo. Vem depois do papel (403 antes de 404: não diz a quem não pode o
  * que está instalado).
+ *
+ * #4871 (F2 do #3868): além da instalação (o teto), a recusa considera a linha
+ * da EMPRESA do request em `organization_modules`. Uma empresa que o
+ * administrador da instalação desligou responde 404 aqui, como se o módulo não
+ * existisse para ela — e a instalação desligada continua vencendo a linha
+ * `ligado` da empresa. Sem linha da empresa, herda a instalação: nenhuma
+ * instalação que nunca configurou por empresa muda de resposta.
  */
-async function seModuloDesligado(requestId: string): Promise<Response | null> {
-  if (await moduloLigado(createAdminClient(), "propostas")) return null;
+async function seModuloDesligado(requestId: string, organizacaoId: string): Promise<Response | null> {
+  if (await moduloLigado(createAdminClient(), "propostas", organizacaoId)) return null;
   return fail("not_found", "Not found.", 404, { requestId });
 }
 
@@ -40,7 +47,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (!authz.ok) return authz.response;
   const teto = await tetoDeEscritaDoToken(authz, "settings.proposals", requestId);
   if (teto) return teto;
-  const desligado = await seModuloDesligado(requestId);
+  const desligado = await seModuloDesligado(requestId, authz.organizationId);
   if (desligado) return desligado;
   const supabase = authz.supabase;
   const { data } = await supabase.from("organizations").select("settings").eq("id", authz.organizationId).single();
@@ -65,7 +72,7 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   if (!authz.ok) return authz.response;
   const teto = await tetoDeEscritaDoToken(authz, "settings.proposals", requestId);
   if (teto) return teto;
-  const desligado = await seModuloDesligado(requestId);
+  const desligado = await seModuloDesligado(requestId, authz.organizationId);
   if (desligado) return desligado;
   const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
