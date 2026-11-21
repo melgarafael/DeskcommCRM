@@ -401,6 +401,14 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
     painelEm: "/app/connections",
   },
   {
+    modulo: "canal_webchat",
+    id: "modulo-canal-webchat",
+    rotulo: "Chat no site",
+    descricao:
+      "Ligado, cada empresa ganha o chat para colocar na página do próprio site, e as conversas que começam nele chegam ao Inbox. Desligado, o chat não recebe conversas novas; as que já chegaram ficam guardadas.",
+    foraDoMenu: "Não cria porta no menu do CRM: a configuração do chat ainda não tem tela.",
+  },
+  {
     modulo: "campanha_por_email",
     id: "modulo-campanha-por-email",
     rotulo: "Campanha por e-mail (em construção)",
