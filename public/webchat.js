@@ -6,7 +6,8 @@
  * O script cria uma bolha no canto da tela e um iframe com a janela do chat
  * (`/chat/<chave>`, ver lib/channels/webchat/janela-html.ts). A origem do CRM sai do
  * próprio `src` do script, nunca de parâmetro. Não grava nada no site: sem cookie, sem
- * localStorage, sem fetch, sem <style> global. Sem `eval`, sem `innerHTML`.
+ * localStorage, sem requisição de rede, sem <style> global. Sem avaliação de texto como código
+ * e sem HTML montado por string.
  *
  * Escrito em JavaScript simples, sem módulo e sem build, porque é servido como arquivo
  * estático de public/ (como public/notify-sw.js e public/rastreio/v1.js).
@@ -71,16 +72,16 @@
       if (valor) utm[nome] = valor;
     });
 
-    var href = new URL(url.href);
-    href.hash = "";
+    // Origem + caminho, sem userinfo (user:pass@) e sem fragmento; na query, só os utm_*.
+    var base = url.protocol + "//" + url.host + url.pathname;
     var manter = new URLSearchParams();
     NOMES_UTM.forEach(function (nome) {
       if (Object.prototype.hasOwnProperty.call(utm, nome)) manter.set(nome, utm[nome]);
     });
-    href.search = manter.toString();
+    var consulta = manter.toString();
 
     return {
-      href: href.href,
+      href: consulta ? base + "?" + consulta : base,
       referrer: referrerLimpo(doc ? doc.referrer : ""),
       utm: utm,
     };
@@ -114,6 +115,11 @@
   function montar() {
     if (typeof window === "undefined" || typeof document === "undefined") return;
     if (window.__webchatMontado) return;
+    // Script no <head> sem defer: o corpo ainda não existe. Espera o DOM ficar pronto.
+    if (!document.body && document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", montar, { once: true });
+      return;
+    }
 
     var src = srcDoProprioScript();
     if (!src) return;
@@ -132,7 +138,7 @@
     iframe.setAttribute("src", origem + "/chat/" + chave);
     iframe.setAttribute("allow", "");
     iframe.setAttribute("loading", "lazy");
-    iframe.setAttribute("referrerpolicy", "no-referrer-when-downgrade");
+    iframe.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
     iframe.setAttribute(
       "sandbox",
       "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox",
@@ -228,6 +234,7 @@
     function atualizar() {
       iframe.style.display = aberto ? "block" : "none";
       bolha.setAttribute("aria-expanded", aberto ? "true" : "false");
+      bolha.setAttribute("aria-label", aberto ? "Fechar chat" : "Abrir chat");
       badge.textContent = String(naoLidas);
       badge.style.display = !aberto && naoLidas > 0 ? "block" : "none";
       aplicarTamanho();
@@ -244,9 +251,21 @@
       );
     }
 
-    bolha.addEventListener("click", function () {
-      aberto = !aberto;
+    // Abrir leva o foco ao iframe; fechar devolve o foco à bolha.
+    function abrirOuFechar(abrir) {
+      aberto = abrir;
       atualizar();
+      if (aberto) iframe.focus();
+      else bolha.focus();
+    }
+
+    bolha.addEventListener("click", function () {
+      abrirOuFechar(!aberto);
+    });
+
+    // Esc no documento do site fecha o painel quando ele está aberto.
+    document.addEventListener("keydown", function (evento) {
+      if (evento.key === "Escape" && aberto) abrirOuFechar(false);
     });
 
     iframe.addEventListener("load", enviarContexto);
@@ -259,11 +278,7 @@
       if (dado.tipo === "pronto") {
         enviarContexto();
       } else if (dado.tipo === "fechar") {
-        if (aberto) {
-          aberto = false;
-          atualizar();
-          bolha.focus();
-        }
+        if (aberto) abrirOuFechar(false);
       } else if (
         dado.tipo === "nao-lidas" &&
         typeof dado.n === "number" &&

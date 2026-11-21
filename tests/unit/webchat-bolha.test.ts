@@ -5,10 +5,11 @@
  * ele expõe as funções puras por `module.exports`. O teste de DOM roda no jsdom, que já é
  * o ambiente padrão deste repositório (`vitest.config.ts`).
  */
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 interface ModuloDaBolha {
   origemDoScript: (src: string) => string | null;
@@ -257,12 +258,189 @@ describe("montagem no DOM", () => {
     expect(iframe?.getAttribute("title")).toBeTruthy();
     expect(iframe?.getAttribute("allow")).toBe("");
     expect(iframe?.getAttribute("loading")).toBe("lazy");
-    expect(iframe?.getAttribute("referrerpolicy")).toBe("no-referrer-when-downgrade");
+    expect(iframe?.getAttribute("referrerpolicy")).toBe("strict-origin-when-cross-origin");
     expect(iframe?.getAttribute("sandbox")).toBe(
       "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox",
     );
 
     const bolha = document.querySelector("button");
     expect(bolha?.getAttribute("aria-label")).toBe("Abrir chat");
+  });
+
+  function montarNoDom(): {
+    bolha: HTMLButtonElement;
+    iframe: HTMLIFrameElement;
+    janela: { postMessage: ReturnType<typeof vi.fn> };
+  } {
+    montarComSrc(`${SRC_CRM}?k=wck_abc`);
+    const iframe = document.querySelector("iframe") as HTMLIFrameElement;
+    const bolha = document.querySelector("button") as HTMLButtonElement;
+    // jsdom não garante janela real no iframe: a janela de teste é um espião.
+    const janela = { postMessage: vi.fn() };
+    Object.defineProperty(iframe, "contentWindow", { value: janela, configurable: true });
+    return { bolha, iframe, janela };
+  }
+
+  function dispararMensagem(data: unknown, origin: string, source: unknown): void {
+    const evento = new Event("message");
+    Object.defineProperty(evento, "data", { value: data });
+    Object.defineProperty(evento, "origin", { value: origin });
+    Object.defineProperty(evento, "source", { value: source });
+    window.dispatchEvent(evento);
+  }
+
+  const ORIGEM_CRM = "https://crm.exemplo.com.br";
+
+  it("mensagem com origin forjada é ignorada, mesmo com a janela certa", () => {
+    const { bolha, iframe, janela } = montarNoDom();
+    bolha.click();
+
+    dispararMensagem({ tipo: "fechar" }, "https://atacante.exemplo.com", janela);
+
+    expect(iframe.style.display).toBe("block");
+  });
+
+  it("mensagem com source forjada é ignorada, mesmo com a origem certa", () => {
+    const { bolha, iframe } = montarNoDom();
+    bolha.click();
+
+    dispararMensagem({ tipo: "fechar" }, ORIGEM_CRM, {});
+
+    expect(iframe.style.display).toBe("block");
+  });
+
+  it("nao-lidas com origem ou source forjadas não mexe no badge", () => {
+    const { bolha, janela } = montarNoDom();
+    const badge = bolha.querySelector("span") as HTMLSpanElement;
+
+    dispararMensagem({ tipo: "nao-lidas", n: 7 }, "https://atacante.exemplo.com", janela);
+    dispararMensagem({ tipo: "nao-lidas", n: 7 }, ORIGEM_CRM, {});
+
+    expect(badge.style.display).toBe("none");
+    expect(badge.textContent).toBe("0");
+  });
+
+  it("nao-lidas com n inteiro de 0 a 99 atualiza o badge", () => {
+    const { bolha, janela } = montarNoDom();
+    const badge = bolha.querySelector("span") as HTMLSpanElement;
+
+    dispararMensagem({ tipo: "nao-lidas", n: 5 }, ORIGEM_CRM, janela);
+    expect(badge.textContent).toBe("5");
+    expect(badge.style.display).toBe("block");
+
+    dispararMensagem({ tipo: "nao-lidas", n: 99 }, ORIGEM_CRM, janela);
+    expect(badge.textContent).toBe("99");
+
+    dispararMensagem({ tipo: "nao-lidas", n: 0 }, ORIGEM_CRM, janela);
+    expect(badge.style.display).toBe("none");
+  });
+
+  it.each([
+    ["fracionário", 1.5],
+    ["negativo", -1],
+    ["100", 100],
+    ["string", "5"],
+    ["NaN", Number.NaN],
+    ["Infinity", Number.POSITIVE_INFINITY],
+  ])("nao-lidas com n inválido (%s) é ignorado", (_nome, n) => {
+    const { bolha, janela } = montarNoDom();
+    const badge = bolha.querySelector("span") as HTMLSpanElement;
+
+    dispararMensagem({ tipo: "nao-lidas", n }, ORIGEM_CRM, janela);
+
+    expect(badge.style.display).toBe("none");
+    expect(badge.textContent).toBe("0");
+  });
+
+  it("fechar válido fecha o painel e devolve aria-expanded", () => {
+    const { bolha, iframe, janela } = montarNoDom();
+    bolha.click();
+    expect(bolha.getAttribute("aria-expanded")).toBe("true");
+
+    dispararMensagem({ tipo: "fechar" }, ORIGEM_CRM, janela);
+
+    expect(iframe.style.display).toBe("none");
+    expect(bolha.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("pronto responde com o contexto e o targetOrigin é a origem do CRM, nunca '*'", () => {
+    const { iframe, janela } = montarNoDom();
+
+    dispararMensagem({ tipo: "pronto" }, ORIGEM_CRM, janela);
+    expect(janela.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ tipo: "contexto" }),
+      ORIGEM_CRM,
+    );
+
+    iframe.dispatchEvent(new Event("load"));
+    expect(janela.postMessage.mock.calls.length).toBe(2);
+    for (const chamada of janela.postMessage.mock.calls) {
+      expect(chamada[1]).toBe(ORIGEM_CRM);
+      expect(chamada[1]).not.toBe("*");
+    }
+  });
+
+  it("clique alterna aria-expanded, visibilidade e o rótulo", () => {
+    const { bolha, iframe } = montarNoDom();
+
+    bolha.click();
+    expect(iframe.style.display).toBe("block");
+    expect(bolha.getAttribute("aria-expanded")).toBe("true");
+    expect(bolha.getAttribute("aria-label")).toBe("Fechar chat");
+
+    bolha.click();
+    expect(iframe.style.display).toBe("none");
+    expect(bolha.getAttribute("aria-expanded")).toBe("false");
+    expect(bolha.getAttribute("aria-label")).toBe("Abrir chat");
+  });
+
+  it("Esc fecha o painel aberto", () => {
+    const { bolha, iframe } = montarNoDom();
+    bolha.click();
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+
+    expect(iframe.style.display).toBe("none");
+  });
+
+  it("segunda execução do script não cria um segundo botão", () => {
+    montarNoDom();
+    // Sem apagar `__webchatMontado`: é a segunda carga do mesmo script.
+    delete requerer.cache[requerer.resolve(CAMINHO)];
+    requerer(CAMINHO);
+
+    expect(document.querySelectorAll("button").length).toBe(1);
+    expect(document.querySelectorAll("iframe").length).toBe(1);
+  });
+
+  it("espera o DOMContentLoaded quando o corpo ainda não existe", () => {
+    const corpo = document.body;
+    Object.defineProperty(document, "readyState", { configurable: true, get: () => "loading" });
+    corpo.remove();
+    try {
+      montarComSrc(`${SRC_CRM}?k=wck_abc`);
+      expect(document.querySelector("iframe")).toBeNull();
+    } finally {
+      document.documentElement.appendChild(corpo);
+      delete (document as unknown as Record<string, unknown>).readyState;
+    }
+
+    document.dispatchEvent(new Event("DOMContentLoaded"));
+
+    expect(document.querySelector("iframe")).not.toBeNull();
+  });
+
+  it("o arquivo não contém eval(, new Function, innerHTML, console.log, fetch(, document.cookie", () => {
+    const texto = readFileSync(CAMINHO, "utf8");
+    for (const proibido of [
+      "eval(",
+      "new Function",
+      "innerHTML",
+      "console.log",
+      "fetch(",
+      "document.cookie",
+    ]) {
+      expect(texto).not.toContain(proibido);
+    }
   });
 });
