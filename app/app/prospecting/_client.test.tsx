@@ -1052,3 +1052,85 @@ describe("baixar a lista da campanha (issue #4360)", () => {
     expect(screen.queryByText(FRASE_DO_CARTAO)).toBeNull();
   });
 });
+
+describe("R4: 'Suas campanhas' agrupa por nicho (#4956/PR9)", () => {
+  /** Uma campanha como o servidor manda — `search.niche` é o único campo que o grupo lê. */
+  function doGrupo(id: string, nome: string, nicho: string | null, result_count = 3) {
+    return {
+      id: `99999999-9999-4999-8999-00000000000${id}`,
+      name: nome,
+      search: nicho === null ? null : { niche: nicho, location: "São Paulo", origem: "busca" },
+      status: "draft",
+      search_status: "succeeded",
+      error: null,
+      config: null,
+      result_count,
+      skipped_count: 0,
+      cost_usd: null,
+      next_send_at: "2026-10-10T00:00:00Z",
+    };
+  }
+
+  async function abrirCom(campanhas: ReturnType<typeof doGrupo>[]) {
+    api.get.mockImplementation(async () => ({
+      data: { ...fixture(), campaigns: campanhas, candidates: [] },
+    }));
+    openPage();
+    // O cabeçalho "Suas campanhas" existe ANTES de a resposta chegar; esperar o
+    // primeiro cartão é o que garante que os grupos já foram desenhados.
+    await screen.findByRole("button", { name: new RegExp(campanhas[0]!.name) });
+    // Só os grupos da LISTA: a página tem outros `role="group"` implícitos (o
+    // `<details>` de "Voz e vocabulário", os `<fieldset>` do detalhe).
+    const lista = screen.getByRole("heading", { name: "Suas campanhas" }).closest("section")!;
+    return within(lista).getAllByRole("group");
+  }
+
+  it("nicho repetido: um cabeçalho só, com as campanhas na ordem da lista", async () => {
+    const todos = await abrirCom([
+      doGrupo("1", "Padarias centro", "Padarias"),
+      doGrupo("2", "Clínicas do bairro", "Clínicas"),
+      doGrupo("3", "Padarias zona sul", "Padarias"),
+    ]);
+
+    // A ordem dos grupos é a da lista: "Padarias" apareceu primeiro e não é reordenado.
+    expect(todos.map((g) => g.getAttribute("aria-label"))).toEqual(["Padarias", "Clínicas"]);
+    expect(within(todos[0]!).getAllByRole("heading", { name: "Padarias" })).toHaveLength(1);
+
+    const texto = todos[0]!.textContent ?? "";
+    expect(texto).toContain("Padarias centro");
+    expect(texto).toContain("Padarias zona sul");
+    expect(texto.indexOf("Padarias centro")).toBeLessThan(texto.indexOf("Padarias zona sul"));
+    // Cada campanha aparece UMA vez na LISTA (o cartão aberto no detalhe repete o
+    // nome, e isso não é a lista): agrupar não duplica cartão.
+    expect(within(todos[0]!).getAllByText("Padarias centro")).toHaveLength(1);
+    expect(within(todos[1]!).queryByText("Padarias centro")).toBeNull();
+  });
+
+  it("nicho único: a campanha fica sob um cabeçalho com o nicho dela", async () => {
+    const todos = await abrirCom([doGrupo("4", "Imobiliárias da serra", "Imobiliárias")]);
+
+    expect(todos).toHaveLength(1);
+    expect(within(todos[0]!).getByRole("heading", { name: "Imobiliárias" })).toBeVisible();
+    expect(within(todos[0]!).getByText("Imobiliárias da serra")).toBeVisible();
+  });
+
+  it("campanha sem nicho cai num grupo próprio, nomeado, e não some da lista", async () => {
+    const todos = await abrirCom([
+      doGrupo("5", "Sem busca nenhuma", null),
+      doGrupo("6", "Padarias centro", "Padarias"),
+    ]);
+
+    expect(todos.map((g) => g.getAttribute("aria-label"))).toEqual(["Sem nicho", "Padarias"]);
+    expect(within(todos[0]!).getByText("Sem busca nenhuma")).toBeVisible();
+  });
+
+  it("a contagem e o status do cartão continuam exatamente os mesmos", async () => {
+    const todos = await abrirCom([
+      doGrupo("7", "Padarias centro", "Padarias", 5),
+      doGrupo("8", "Padarias zona sul", "Padarias", 12),
+    ]);
+
+    expect(within(todos[0]!).getByText("Preparar campanha · 5 empresas")).toBeVisible();
+    expect(within(todos[0]!).getByText("Preparar campanha · 12 empresas")).toBeVisible();
+  });
+});

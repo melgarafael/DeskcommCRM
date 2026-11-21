@@ -3,7 +3,7 @@ import { Pool } from "pg";
 
 import { audit } from "@/lib/audit";
 import { criarPorta } from "@/lib/db";
-import { criarProximaDaSerie, gerarOcorrencias } from "@/lib/tarefas/recorrencia";
+import { criarProximaDaSerie, gerarOcorrencias, TAMANHO_DO_LOTE } from "@/lib/tarefas/recorrencia";
 import type { RegraDeRecorrencia } from "@/lib/tarefas/tipos";
 
 /**
@@ -514,16 +514,31 @@ describe("o agendador continua gerando (doc 374 = A)", () => {
     expect(await ocorrenciasDe(desligada)).toHaveLength(0);
   });
 
-  it("série de organização PARADA não gera — a suspensão vale para a recorrência", async () => {
-    const parada = await criarSerie({
-      title: "Agendador: org suspensa",
-      organizationId: ORG_MA,
+  it("generates active organizations' tasks even when older suspended series could fill the batch", async () => {
+    const orgParada = "e4595000-0000-4000-8000-00000000000c";
+    await pool.query(
+      `insert into organizations (id, slug, legal_name, display_name, status)
+       values ($1, 'recorrencia-4595-suspensa', 'Org suspensa', 'Org suspensa', 'suspended')`,
+      [orgParada],
+    );
+    await pool.query(
+      `insert into crm_tasks (organization_id, title, due_date, created_at, status, recurrence)
+       select $1, 'Paused series ' || n, $2::timestamptz, $2::timestamptz, 'done', $3::jsonb
+         from generate_series(1, $4::integer) as n`,
+      [orgParada, SEGUNDA_PASSADA.toISOString(), regraJson(REGRA_SEGUNDA_9H), TAMANHO_DO_LOTE],
+    );
+    const ativa = await criarSerie({
+      title: "Agendador: org ativa",
       dueDate: SEGUNDA_PASSADA,
-      withLead: false,
     });
 
-    await gerarOcorrencias(db, SEGUNDA_8H, new Set([ORG_MA]));
+    await gerarOcorrencias(db, SEGUNDA_8H);
 
-    expect(await ocorrenciasDe(parada)).toHaveLength(0);
+    expect(await ocorrenciasDe(ativa)).toHaveLength(1);
+    const criadasNaOrgParada = await db.query(
+      "select id from crm_tasks where organization_id = $1 and recurrence_source_id is not null",
+      [orgParada],
+    );
+    expect(criadasNaOrgParada).toHaveLength(0);
   });
 });

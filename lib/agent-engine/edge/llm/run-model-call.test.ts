@@ -330,6 +330,40 @@ describe("Terra grava custo real por passo do seam", () => {
   });
 });
 
+it("grava o custo do Luna com um passo longo e um passo curto", async () => {
+  const modelo = "gpt-6-luna";
+  vi.mocked(generateText).mockResolvedValue({
+    text: "ok",
+    usage: {
+      inputTokens: 450_000,
+      outputTokens: 200_000,
+      inputTokenDetails: { cacheReadTokens: 0, cacheWriteTokens: 0 },
+    },
+    steps: [
+      { usage: { inputTokens: 300_000, outputTokens: 100_000 } },
+      { usage: { inputTokens: 150_000, outputTokens: 100_000 } },
+    ],
+    response: { id: "luna-test", modelId: modelo },
+    responseMessages: [],
+    toolCalls: [],
+    finishReason: "stop",
+  } as never);
+  const { pool, inserts } = poolDaAnthropic("openai", modelo);
+  const resultado = await runModelCall(
+    pool,
+    { openaiApiKey: "sk-de-teste" },
+    { tenantId: ORG, purpose: "agent_preview", messages: [{ role: "user", content: "oi" }] },
+    {
+      registry: {
+        openai: () => ({ modelId: modelo, provider: "openai.responses", specificationVersion: "v3" }),
+      } as never,
+    },
+  );
+  // 13,5 centavos no passo longo e 6,5 no curto.
+  expect(resultado.costCents).toBeCloseTo(20);
+  expect(inserts[0]?.params[11]).toBeCloseTo(20);
+});
+
 /**
  * CLAUDE PELA OPENROUTER, PELO SEAM INTEIRO.
  *

@@ -281,7 +281,10 @@ export async function GET(req: NextRequest): Promise<Response> {
   // Setores é módulo opcional (doc 213): desligado, o filtro não existe — a
   // mesma resposta das rotas de setor. O selo, sozinho, não vira 404: sem
   // setores não há o que desenhar, e derrubar a lista inteira seria pior.
-  const desligado = await seSetoresDesligado(requestId);
+  // A EMPRESA entra porque aqui ela já está na mão (`organizationId` da sessão
+  // ou do token), #3868/F2 da #4871: com o setor desligado só para ela, o
+  // filtro responde o mesmo 404 das rotas de setor e o selo some da lista.
+  const desligado = await seSetoresDesligado(requestId, organizationId);
   if (desligado) {
     return filtros.sector_id ? desligado : ok({ tasks: lista }, { requestId });
   }

@@ -41,6 +41,8 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // Sem ponte de conversão: a venda desta linha sai pela conexão direta com a Meta
     // (conjunto de dados + token). Declarar `true` ofereceria uma chave que não envia nada.
     reportaConversao: false,
+    // O visto azul por id de mensagem (#5015): o NOWEB sem store só marca assim.
+    marcaLidasPorMensagem: true,
   },
   // Hetero-restrição: não me banem, mas a Meta me proíbe e me cobra.
   meta_cloud: {
@@ -67,6 +69,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // Sem ponte de conversão: a venda desta linha sai pela conexão direta com a Meta
     // (conjunto de dados + token). Declarar `true` ofereceria uma chave que não envia nada.
     reportaConversao: false,
+    marcaLidasPorMensagem: false,
   },
   // Mesma hetero-restrição do canal oficial, por baixo: é um BSP: a WABA é da
   // Meta, os templates são aprovados pela Meta e a janela de 24h é da Meta. O
@@ -130,6 +133,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // Sem ponte de conversão: a venda desta linha sai pela conexão direta com a Meta
     // (conjunto de dados + token). Declarar `true` ofereceria uma chave que não envia nada.
     reportaConversao: false,
+    marcaLidasPorMensagem: false,
   },
   zernio: {
     freeformOutsideWindow: false,
@@ -157,6 +161,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // O provedor tem a ponte: reporta a venda ao conjunto de dados da Meta pela
     // conversa (`reportConversion` no adapter, `../zernio/conversoes.ts`).
     reportaConversao: true,
+    marcaLidasPorMensagem: false,
   },
   // Parceiro homologado pela Meta que espelha a Cloud API (recorte do #1130):
   // a WABA, a janela de 24h e o custo são da Meta. O parceiro muda o TRANSPORTE
@@ -189,6 +194,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // Sem ponte de conversão: a venda desta linha sai pela conexão direta com a Meta
     // (conjunto de dados + token). Declarar `true` ofereceria uma chave que não envia nada.
     reportaConversao: false,
+    marcaLidasPorMensagem: false,
   },
   /**
    * Bot do Telegram (Bot API, o robô do @BotFather — issue #3440).
@@ -243,6 +249,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // A conversão de venda volta à Meta pela conversa de WhatsApp; o robô do
     // Telegram não tem ponte, e `true` ofereceria uma chave que não envia nada.
     reportaConversao: false,
+    marcaLidasPorMensagem: false,
   },
 };
 
@@ -541,6 +548,20 @@ export function canalTemTransmissao(provider: string | null | undefined): boolea
   if (!transportaMensagem(provider)) return false;
   try {
     return capabilitiesOf(provider as ProviderDeMensagem).transmissao;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * O canal desta sessão marca como lidas mensagens específicas (#5015)? Falso para
+ * provider fora da matriz, como `canalTemTransmissao`: na dúvida, o envio não lê
+ * o histórico atrás de ids que ninguém vai usar.
+ */
+export function canalMarcaLidasPorMensagem(provider: string | null | undefined): boolean {
+  if (!transportaMensagem(provider)) return false;
+  try {
+    return capabilitiesOf(provider as ProviderDeMensagem).marcaLidasPorMensagem;
   } catch {
     return false;
   }

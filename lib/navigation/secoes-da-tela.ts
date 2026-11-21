@@ -45,8 +45,15 @@ export const CLASSE_DA_SECAO = "tela-secao";
 /** O prefixo da família: é por ele que o validador reconhece (e confere) a classe. */
 export const PREFIXO_DA_SECAO = `${CLASSE_DA_SECAO}-`;
 
+/**
+ * As seções do CONTEÚDO são os grupos do catálogo. O grupo gerado "Módulos" (Spec 33, F4) fica de
+ * fora: a tela de um módulo (`/app/m/<slug>`) não está no registro de navegação, então, pela regra
+ * de cima, fica só com `tela-secao` — como qualquer rota fora do registro.
+ */
+type SecaoDoConteudo = Exclude<NavGroupId, "modulos">;
+
 /** Uma classe por seção — o alvo de `.tela-secao-crm .rounded-lg { … }`. */
-export const CLASSES_DE_SECAO: Readonly<Record<NavGroupId, string>> = Object.freeze({
+export const CLASSES_DE_SECAO: Readonly<Record<SecaoDoConteudo, string>> = Object.freeze({
   atendimento: "tela-secao-atendimento",
   crm: "tela-secao-crm",
   ia: "tela-secao-ia",
@@ -64,8 +71,8 @@ export const CLASSES_DE_SECAO_CONHECIDAS: readonly string[] = Object.freeze([
   ...Object.values(CLASSES_DE_SECAO),
 ]);
 
-export function classeDaSecaoDoGrupo(id: NavGroupId): string {
-  return CLASSES_DE_SECAO[id];
+export function classeDaSecaoDoGrupo(id: NavGroupId): string | null {
+  return id === "modulos" ? null : CLASSES_DE_SECAO[id];
 }
 
 /** `tela-secao-crm` → true; `tela-secao-inbox` → true (e o validador recusa); `.card` → false. */
