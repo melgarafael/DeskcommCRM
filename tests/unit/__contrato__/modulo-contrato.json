@@ -182,6 +182,7 @@
       "GET /api/v1/reports/activities",
       "GET /api/v1/reports/comercial",
       "GET /api/v1/reports/financeiro",
+      "GET /api/v1/reports/painel-de-vendas",
       "GET /api/v1/reports/tags",
       "GET /api/v1/reports/vendas/export",
       "PATCH /api/v1/metrics/atrito"
@@ -1666,6 +1667,16 @@
           "nome": "periodoSchema",
           "origem": "local",
           "hash": "b5415df7c9d81027"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/reports/painel-de-vendas": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "7ab3a0cdc9f09a29"
         }
       ],
       "resposta": []
