@@ -11556,5 +11556,12 @@
   "Somente as contas marcadas abaixo podem receber respostas automáticas enquanto o canal está em teste. Sem nenhuma marcada, a IA fica pausada.": "Kanal test modundayken yalnızca aşağıda işaretlenen hesaplar otomatik yanıt alabilir. Hiçbiri işaretli değilse yapay zekâ duraklatılmış kalır.",
   "Contas autorizadas para teste": "Test için yetkili hesaplar",
   "Nenhum contato desta rede conversou com o canal ainda. Peça para a conta de teste mandar uma mensagem e reabra este painel.": "Bu ağdan henüz hiçbir kişi kanalla yazışmadı. Test hesabından bir mesaj göndermesini isteyin ve bu paneli yeniden açın.",
-  "Salvar contas de teste": "Test hesaplarını kaydet"
+  "Salvar contas de teste": "Test hesaplarını kaydet",
+  "O serviço deste módulo não respondeu": "Bu modülün hizmeti yanıt vermedi",
+  "O resto do CRM continua funcionando. Tente de novo em instantes.": "CRM'in geri kalanı çalışmaya devam ediyor. Birazdan tekrar deneyin.",
+  "Módulo conectado": "Bağlı modül",
+  "Abrir ao lado": "Yan panelde aç",
+  "Escolha um módulo": "Bir modül seçin",
+  "Abrindo o módulo...": "Modül açılıyor...",
+  "Não foi possível abrir este módulo.": "Bu modül açılamadı."
 }

@@ -82,6 +82,7 @@ describe("o contrato de classes do menu é fechado e declarado", () => {
       canais: "nav-grupo-canais",
       analise: "nav-grupo-analise",
       organizacao: "nav-grupo-organizacao",
+      modulos: "nav-grupo-modulos",
     });
   });
 
