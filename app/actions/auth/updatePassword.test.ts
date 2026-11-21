@@ -89,12 +89,15 @@ vi.mock("@/lib/logger", () => ({ logger: { error: m.logErro, warn: vi.fn(), info
 const { updatePassword } = await import("./updatePassword");
 
 /** A mesma frase da mensagem do schema — a chave do dicionário (pt → es). */
-const MENSAGEM = "Senha longa demais: o limite é de 72 bytes";
+const MENSAGEM =
+  "A senha deve ter no máximo 72 caracteres (acentos e emojis contam mais de um)";
 
 /** 72 bytes exatos: 4 + 68 caracteres ASCII, um byte cada. */
 const SENHA_72_BYTES = `Aa1!${"b".repeat(68)}`;
 /** 73 bytes: um caractere ASCII acima do teto do bcrypt. */
 const SENHA_73_BYTES = `${SENHA_72_BYTES}b`;
+/** 80 caracteres — o caso relatado na issue #4313. */
+const SENHA_80 = `Aa1!${"b".repeat(76)}`;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -151,6 +154,18 @@ describe("updatePassword — teto de 72 bytes (issue #4313)", () => {
       password_confirm: SENHA_73_BYTES,
     });
 
+    expect(res).toMatchObject({ ok: false, error: "validation_error" });
+    expect(res.details?.password).toContain(MENSAGEM);
+    expect(m.createClient).not.toHaveBeenCalled();
+    expect(m.updateUser).not.toHaveBeenCalled();
+  });
+
+  it("recusa 80 caracteres no fluxo de reset antes de chegar ao GoTrue, com a mensagem nova", async () => {
+    expect(SENHA_80.length).toBe(80);
+
+    const res = await updatePassword({ password: SENHA_80, password_confirm: SENHA_80 });
+
+    // Defesa em profundidade: a action nem cria o cliente do Supabase.
     expect(res).toMatchObject({ ok: false, error: "validation_error" });
     expect(res.details?.password).toContain(MENSAGEM);
     expect(m.createClient).not.toHaveBeenCalled();
