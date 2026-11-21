@@ -249,7 +249,7 @@ export async function aplicaGatilhoDeEtapa(
       version_id: pointer.active_version_id,
       contact_id: contatoId,
       // #4191: a inscrição nasce do NEGÓCIO que mudou de etapa, não do contato.
-      lead_id: leadId,
+      lead_id: negocioId,
       current_node_id: noDeGatilho.id,
       // `next_eval_at` NÃO vai: o default do banco decide. Ver o comentário na
       // interface e a migration 0147.
