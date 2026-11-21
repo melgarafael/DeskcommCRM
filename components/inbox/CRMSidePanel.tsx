@@ -63,6 +63,7 @@ import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { AtalhosDoNegocio } from "@/components/kanban/AtalhosDoCard";
 import type { AtalhoDoCard } from "@/lib/leads/atalhos-do-card";
+import { VendasDoNegocio } from "@/components/vendas/VendasDoNegocio";
 
 interface Props {
   conversation: ConversationWithContact | null;
@@ -1562,6 +1563,7 @@ export function CRMSidePanel({
              do navegador) e repassaria a largura da faixa em nowrap da barra de
              etapas para a `aside`, que rolaria de lado inteira. Com ele, quem
              rola é só a faixa (`BarraDeEtapas`). */
+          <>
           <fieldset disabled={readonly} className="min-w-0"><InboxLeadEditor
             leads={leads}
             selecionadoId={leadAtivoId}
@@ -1572,6 +1574,20 @@ export function CRMSidePanel({
             moedaDaOrg={activeOrg?.currency ?? MOEDA_PADRAO}
             onTrocouDeNegocio={aoTrocarDeNegocio}
           /></fieldset>
+          {/* As VENDAS do negócio ativo (Orken CRM): registrar a compra daqui,
+              sem sair da conversa. Mesma seção do negócio aberto no funil. */}
+          {negocioAtivoId && (
+            <div className="mt-3" data-testid="inbox-vendas">
+              <h4 className="mb-1 text-xs font-semibold text-text">{t("Vendas")}</h4>
+              <VendasDoNegocio
+                leadId={negocioAtivoId}
+                titulo={leads.find((l) => l.id === negocioAtivoId)?.title ?? null}
+                moeda={(activeOrg?.currency ?? MOEDA_PADRAO).toUpperCase()}
+                somenteLeitura={readonly}
+              />
+            </div>
+          )}
+          </>
         ) : (
           <SemLista
             vazio={t("Sem negócios.")}

@@ -9,6 +9,7 @@ import type { Lead } from "@/lib/types/leads";
 import type { Stage } from "@/lib/kanban/types";
 import { resolveCardState, stageAgeLabel, type CardInput } from "@/lib/kanban/card-state";
 import { KanbanCardActions } from "./KanbanCardActions";
+import { BotaoRegistrarVenda } from "@/components/vendas/BotaoRegistrarVenda";
 import { NextActionSlot } from "./NextActionSlot";
 import { ReactivationSlot } from "./ReactivationSlot";
 import { ConversaSlot } from "./ConversaSlot";
@@ -303,12 +304,20 @@ export const KanbanCard = memo(function KanbanCard({
               </h3>
             </div>
             {!somenteLeitura && (
-              <KanbanCardActions
-                lead={lead}
-                pipelineId={pipelineId}
-                etapas={etapas}
-                onMoverPara={onMoverPara}
-              />
+              <div className="flex shrink-0 items-center">
+                {/* Registrar venda sem abrir o negócio. */}
+                <BotaoRegistrarVenda
+                  leadId={lead.id}
+                  titulo={card.title}
+                  moeda={(card.currency ?? MOEDA_PADRAO).toUpperCase()}
+                />
+                <KanbanCardActions
+                  lead={lead}
+                  pipelineId={pipelineId}
+                  etapas={etapas}
+                  onMoverPara={onMoverPara}
+                />
+              </div>
             )}
           </div>
 

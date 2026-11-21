@@ -6,9 +6,17 @@ import { apiClient } from "@/lib/api/client";
 import type { JanelaDoRelatorio } from "@/lib/relatorios/janela";
 import type { PainelDeVendas } from "@/lib/relatorios/painel-de-vendas";
 
+export interface ContatoDoPainel {
+  display_name: string | null;
+  name: string | null;
+  phone_number: string | null;
+}
+
 export type RespostaDoPainelDeVendas = PainelDeVendas & {
   janela: JanelaDoRelatorio;
   truncado: boolean;
+  contatos: Record<string, ContatoDoPainel>;
+  nomes_dos_funis: Record<string, string | null>;
 };
 
 export function usePainelDeVendas(periodo: {

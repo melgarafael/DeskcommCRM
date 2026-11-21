@@ -156,3 +156,82 @@ describe("montarPainelDeVendas — o recorte por funil e tag", () => {
     expect(painel.perdidos).toBe(2);
   });
 });
+
+describe("montarPainelDeVendas — vendas registradas", () => {
+  const ATE_DIA_20 = janelaDoRelatorio("2026-11-01", "2026-11-20", TZ);
+  const LEAD_ABERTO = "aaaaaaaa-0000-4000-8000-000000000001";
+  const LEAD_GANHO_COM_VENDA = "aaaaaaaa-0000-4000-8000-000000000002";
+  const LEAD_GANHO_SEM_VENDA = "aaaaaaaa-0000-4000-8000-000000000003";
+  const FUNIL = "ffffffff-0000-4000-8000-000000000001";
+
+  const negocios: NegocioDoPainel[] = [
+    // ganho COM venda registrada (de qualquer data): não conta pelo ganho
+    { id: LEAD_GANHO_COM_VENDA, status: "won", closed_at: "2026-11-10T15:00:00Z", value_cents: 99_999, currency: "BRL", pipeline_id: FUNIL, tags: [] },
+    // ganho SEM venda registrada: conta pelo valor do card
+    { id: LEAD_GANHO_SEM_VENDA, status: "won", closed_at: "2026-11-11T15:00:00Z", value_cents: 5_000, currency: "BRL", pipeline_id: FUNIL, tags: ["varejo"], contact_id: "c2" },
+    { id: "perdido", status: "lost", closed_at: "2026-11-12T15:00:00Z", value_cents: 1_000, currency: "BRL", pipeline_id: FUNIL, tags: [] },
+  ];
+  const negociosDasVendas = new Map([
+    [LEAD_ABERTO, { pipeline_id: FUNIL, tags: ["Atacado"], title: "Dãm Dãm Baby", contact_id: "c1" }],
+    [LEAD_GANHO_COM_VENDA, { pipeline_id: FUNIL, tags: [], title: "Ganho", contact_id: "c3" }],
+  ]);
+  const vendasRegistradas = [
+    // card ABERTO, em qualquer etapa: conta
+    { id: "r1", lead_id: LEAD_ABERTO, contact_id: "c1", valor_cents: 18_000, moeda: "BRL", data: "2026-11-20", tags: [] },
+    // recompra no mesmo negócio
+    { id: "r2", lead_id: LEAD_ABERTO, contact_id: "c1", valor_cents: 12_000, moeda: "BRL", data: "2026-11-15", tags: ["recompra"] },
+    { id: "r3", lead_id: LEAD_GANHO_COM_VENDA, contact_id: "c3", valor_cents: 7_000, moeda: "BRL", data: "2026-11-10", tags: [] },
+    // fora da janela
+    { id: "r4", lead_id: LEAD_ABERTO, contact_id: "c1", valor_cents: 50_000, moeda: "BRL", data: "2026-10-31", tags: [] },
+  ];
+
+  function painel(filtro?: { pipeline_id: string | null; tag: string | null }) {
+    return montarPainelDeVendas({
+      negocios,
+      janela: ATE_DIA_20,
+      moedaDaOrganizacao: "BRL",
+      filtro,
+      vendasRegistradas,
+      negociosDasVendas,
+      negociosComVendaRegistrada: new Set([LEAD_ABERTO, LEAD_GANHO_COM_VENDA]),
+    });
+  }
+
+  it("venda registrada conta em qualquer etapa; recompra conta duas vezes; ganho com venda não conta em dobro", () => {
+    const p = painel();
+
+    // r1 + r2 + r3 registradas + o ganho sem registro; r4 está fora da janela
+    expect(p.vendas).toBe(4);
+    expect(p.vendido_centavos).toBe(18_000 + 12_000 + 7_000 + 5_000);
+    expect(p.origens).toEqual({ registradas: 3, ganhos_sem_registro: 1 });
+    // o valor do card ganho que TEM venda registrada (99.999) não entra
+    expect(p.lista.some((v) => v.centavos === 99_999)).toBe(false);
+  });
+
+  it("a conversão é dos NEGÓCIOS fechados, e não muda com as vendas registradas", () => {
+    const p = painel();
+
+    expect(p.negocios_ganhos).toBe(2);
+    expect(p.perdidos).toBe(1);
+    expect(p.conversao).toBeCloseTo(2 / 3);
+  });
+
+  it("as tags da venda somam as do negócio: venda sem tag num negócio 'Atacado' é de atacado", () => {
+    const p = painel({ pipeline_id: null, tag: "atacado" });
+
+    expect(p.vendas).toBe(2);
+    expect(p.vendido_centavos).toBe(30_000);
+    expect(p.lista.map((v) => v.id)).toEqual(["r1", "r2"]);
+  });
+
+  it("a série, os rankings e a lista saem da mesma lista de vendas", () => {
+    const p = painel();
+
+    expect(p.serie.find((s) => s.chave === "2026-11-20")).toEqual({ chave: "2026-11-20", vendas: 1, centavos: 18_000 });
+    expect(p.serie.reduce((s, x) => s + x.centavos, 0)).toBe(p.vendido_centavos);
+    expect(p.rankings.clientes[0]).toEqual({ chave: "c1", centavos: 30_000, vendas: 2 });
+    expect(p.rankings.funis[0]).toEqual({ chave: FUNIL, centavos: 42_000, vendas: 4 });
+    expect(p.lista[0]!.id).toBe("r1");
+    expect(p.opcoes.tags).toEqual(["atacado", "recompra", "varejo"]);
+  });
+});
