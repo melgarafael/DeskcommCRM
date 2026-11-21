@@ -70344,19 +70344,25 @@ notify pgrst, 'reload schema';
 
 alter table public.organization_extensions
   add column if not exists consented_areas text[] not null default '{}';
-alter table public.organization_extensions drop constraint if exists organization_extensions_consented_areas_check;
-alter table public.organization_extensions add constraint organization_extensions_consented_areas_check
-  check (consented_areas <@ array[
-    'area.contatos.leitura','area.contatos.escrita',
-    'area.negocios.leitura','area.negocios.escrita',
-    'area.conversas.leitura','area.conversas.escrita',
-    'area.agenda.leitura','area.agenda.escrita',
-    'area.funis.leitura','area.funis.escrita',
-    'area.agentes_ia.leitura','area.agentes_ia.escrita',
-    'area.catalogo.leitura','area.catalogo.escrita',
-    'area.configuracao.leitura','area.configuracao.escrita',
-    'area.analise.leitura','area.analise.escrita'
-  ]::text[]);
+-- Num bloco só: o update.sh reaplica sem ON_ERROR_STOP e em autocommit. Solto, um add que falhe (lista
+-- encolhida numa versão futura, por exemplo) deixaria a coluna SEM a CHECK (lição do #2670).
+do $consentidas$
+begin
+  alter table public.organization_extensions drop constraint if exists organization_extensions_consented_areas_check;
+  alter table public.organization_extensions add constraint organization_extensions_consented_areas_check
+    check (consented_areas <@ array[
+      'area.contatos.leitura','area.contatos.escrita',
+      'area.negocios.leitura','area.negocios.escrita',
+      'area.conversas.leitura','area.conversas.escrita',
+      'area.agenda.leitura','area.agenda.escrita',
+      'area.funis.leitura','area.funis.escrita',
+      'area.agentes_ia.leitura','area.agentes_ia.escrita',
+      'area.catalogo.leitura','area.catalogo.escrita',
+      'area.configuracao.leitura','area.configuracao.escrita',
+      'area.analise.leitura','area.analise.escrita'
+    ]::text[]);
+end
+$consentidas$;
 
 create or replace function public.fn_extensions_set_consent(p_actor uuid, p_organization uuid, p_installation uuid,
   p_expected_revision integer, p_areas text[])
