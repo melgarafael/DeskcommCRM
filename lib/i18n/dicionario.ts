@@ -23080,6 +23080,35 @@ export const DICIONARIO: Traducoes = {
   "ficaram de fora pelo limite de 50 por vez. Selecione-os de novo para levar.": {
     es: "quedaron fuera por el límite de 50 por vez. Selecciónelos de nuevo para llevarlos.",
   },
+  // O painel de vendas (Análise › Vendas).
+  "Este mês": { es: "Este mes" },
+  "Mês passado": { es: "Mes pasado" },
+  "Data inicial": { es: "Fecha inicial" },
+  "Data final": { es: "Fecha final" },
+  "Erro ao carregar o painel de vendas.": { es: "Error al cargar el panel de ventas." },
+  "ganhos": { es: "ganados" },
+  "perdidos": { es: "perdidos" },
+  "Vendas por mês": { es: "Ventas por mes" },
+  "Vendas por dia": { es: "Ventas por día" },
+  "Nenhuma venda no período.": { es: "Ninguna venta en el período." },
+  "venda(s) sem valor preenchido: contam em Vendas, mas não no valor nem no ticket médio.": {
+    es: "venta(s) sin valor: cuentan en Ventas, pero no en el valor ni en el ticket promedio.",
+  },
+  "venda(s) em outra moeda: contam em Vendas, mas não no valor.": {
+    es: "venta(s) en otra moneda: cuentan en Ventas, pero no en el valor.",
+  },
+  "Período com muitos negócios: a leitura parou no limite e os números podem estar incompletos.": {
+    es: "Período con muchos negocios: la lectura se detuvo en el límite y los números pueden estar incompletos.",
+  },
+  "Quanto você vendeu, quantas vendas, o ticket médio e a conversão — os negócios ganhos no funil.": {
+    es: "Cuánto vendió, cuántas ventas, el ticket promedio y la conversión — los negocios ganados en el embudo.",
+  },
+  "Quanto você vendeu, o ticket médio e a conversão, com o gráfico do período.": {
+    es: "Cuánto vendió, el ticket promedio y la conversión, con el gráfico del período.",
+  },
+  "As vendas do período, por tag, cliente e funil, com o mesmo recorte dos cartões.": {
+    es: "Las ventas del período, por etiqueta, cliente y embudo, con el mismo recorte de las tarjetas.",
+  },
 };
 
 /**
